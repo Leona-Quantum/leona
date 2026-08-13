@@ -376,9 +376,17 @@ test("the authored graph's slot entries are all declared, and no row has gone st
 
 test("the map is three regions, and ten of its twenty-three slots consume something nothing produces", () => {
   const regions = regionsOf(LAYER_GRAPH);
+  // **[104, 13, 5] since session 15's anchoring pass, and the SHAPE did not change** —
+  // which is the thing this assertion is actually watching. Five new methods landed,
+  // all five inside the algorithms region, so region 1 grew and the other two did not
+  // move. Nothing joined and nothing split: there are still three regions, compilation
+  // is still reached only from the algorithms side, and error mitigation is still
+  // reached by nothing. A region count that stayed at three while a region grew by five
+  // is the honest reading — new methods on existing slots cannot join anything, because
+  // joining is a property of states and these introduced none.
   assert.deepEqual(
     regions.map((region) => region.nodes.length),
-    [99, 13, 5],
+    [104, 13, 5],
     "the region shape changed; re-read what joined or split before updating this",
   );
 
@@ -394,7 +402,7 @@ test("the map is three regions, and ten of its twenty-three slots consume someth
   assert.equal(bySupply("joined"), 0, "by construction — `open` already excludes them");
 });
 
-test("the cross-region join surface is 105 compositions at three states", () => {
+test("the cross-region join surface is 119 compositions at three states", () => {
   // **The figure this file exists to pin.** A join's blast radius is a product,
   // and the commonest way to move it is one `specializes` line in
   // `state-vocabulary.ts` — which changes no contract, touches no node, and
@@ -404,15 +412,28 @@ test("the cross-region join surface is 105 compositions at three states", () => 
   // the join surface, 386 of them inside one region and 105 across one. All 105
   // land on the same seven compilation methods, which is what "connect the
   // compilation region" is worth today.
+  //
+  // **552 / 119 since session 15's anchoring pass, and the delta is arithmetic rather
+  // than a new join.** Two of the five new methods — `generalized-excitation-ansatz`
+  // and `batched-adapt-ansatz` — realize `ansatz-construction`, whose exit is
+  // `parameterized-circuit`. That state's crossings are a PRODUCT: arrivals times the
+  // seven compilation departures. Arrivals went 11 -> 13, so 11x7 = 77 became 13x7 =
+  // 91, and the total moved 105 -> 119 with the other two states untouched. This is
+  // exactly the blast radius the comment above warns about, arriving from the
+  // direction it did not name: not a `specializes` line, but two ordinary methods on
+  // an existing slot. **Adding one method to a slot whose exit already crosses a
+  // region costs seven crossings, not one** — worth knowing before authoring on
+  // `ansatz-construction` again, and the reason a per-state breakdown is pinned
+  // beside the total rather than the total alone.
   const surface = joinSurface(LAYER_GRAPH, STATE_VOCABULARY);
-  assert.equal(surface.within + surface.crosses, 491);
-  assert.equal(surface.crosses, 105, "the cross-region surface moved — say why in the PR");
+  assert.equal(surface.within + surface.crosses, 552);
+  assert.equal(surface.crosses, 119, "the cross-region surface moved — say why in the PR");
 
   const crossing = surface.states.filter((state) => state.crosses > 0);
   assert.deepEqual(
     crossing.map((state) => [state.state, state.crosses]),
     [
-      ["parameterized-circuit", 77],
+      ["parameterized-circuit", 91],
       ["evolution-circuit", 21],
       ["runnable-evolution", 7],
     ],
@@ -430,7 +451,7 @@ test("every crossing on the authored graph leaves the algorithms region for comp
 
   const surface = joinSurface(LAYER_GRAPH, STATE_VOCABULARY);
   const crossings = surface.crossings.filter((crossing) => crossing.crosses);
-  assert.equal(crossings.length, 105);
+  assert.equal(crossings.length, 119);
   for (const crossing of crossings) {
     assert.equal(region.get(crossing.arrival), 1, `${crossing.arrival} leaves region 1`);
     assert.equal(region.get(crossing.departure), 2, `${crossing.departure} arrives in region 2`);
@@ -438,7 +459,7 @@ test("every crossing on the authored graph leaves the algorithms region for comp
   assert.equal(
     new Set(crossings.map((crossing) => crossing.departure)).size,
     7,
-    "all 105 land on the same seven compilation methods",
+    "all 119 land on the same seven compilation methods",
   );
 });
 
@@ -487,6 +508,12 @@ test("the map is three regions under containment and two under what a trace walk
     return sizes.sort((a, b) => b - a);
   };
 
-  assert.deepEqual(componentsUnder(layerAdjacency(LAYER_GRAPH)), [99, 13, 5]);
-  assert.deepEqual(componentsUnder(walkableAdjacency(LAYER_GRAPH, STATE_VOCABULARY)), [112, 5]);
+  assert.deepEqual(componentsUnder(layerAdjacency(LAYER_GRAPH)), [104, 13, 5]);
+  // [117, 5] since session 15's five new methods, and the point ADR-0027 is making
+  // survives the change intact: the merged component grew by exactly the five that
+  // landed in the algorithms region (99 + 13 = 112 became 104 + 13 = 117), while error
+  // mitigation stayed at 5 under BOTH relations. Adding methods moves the sizes and
+  // never the split, which is what makes these two numbers worth asserting side by
+  // side — the day one of them changes shape rather than size, something joined.
+  assert.deepEqual(componentsUnder(walkableAdjacency(LAYER_GRAPH, STATE_VOCABULARY)), [117, 5]);
 });
