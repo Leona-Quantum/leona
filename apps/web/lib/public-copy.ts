@@ -532,3 +532,32 @@ export const TERMS_COPY: Record<PublicLocale, {
     ],
   },
 };
+
+/**
+ * The 404 page. Reached by a typo, a stale bookmark, a crawler, or a
+ * `notFound()` inside a route that has no closer boundary of its own — so the
+ * copy names what happened without guessing why, and offers the two doors a
+ * lost visitor can always take: the home page and the public Atlas.
+ */
+export const NOT_FOUND_COPY: Record<PublicLocale, {
+  label: string;
+  title: string;
+  body: string;
+  home: string;
+  repository: string;
+}> = {
+  en: {
+    label: "404",
+    title: "This page does not exist.",
+    body: "The address you followed does not match anything on Leona Quantum. It may have been mistyped, or the page may have moved since it was linked.",
+    home: "Return home",
+    repository: "Browse the Atlas",
+  },
+  ja: {
+    label: "404",
+    title: "このページは存在しません。",
+    body: "お探しのアドレスに一致するページはありません。入力に誤りがあるか、リンクされた後にページが移動した可能性があります。",
+    home: "ホームに戻る",
+    repository: "Atlasを見る",
+  },
+};
