@@ -69,7 +69,7 @@ $$|+\rangle = \frac{|0\rangle+|1\rangle}{\sqrt2}, \qquad |-\rangle = \frac{|0\ra
       { label: "|−⟩", value: "(|0⟩−|1⟩)/√2, X-eigenvalue −1" },
       { label: "Basis", value: "Mutually unbiased with {|0⟩,|1⟩}" },
     ],
-    sourceTitle: "Quantum Computation and Quantum Information",
+    sourceTitle: "Quantum Computation and Quantum Information: 10th Anniversary Edition",
     sourceUrl: "https://doi.org/10.1017/CBO9780511976667",
     wires: ["q[0] (|+⟩)", "q[1] (|−⟩)"],
     operations: [
@@ -337,7 +337,7 @@ $$|\mathrm{NOON}(\phi)\rangle = \frac{e^{iN\phi}|N,0\rangle + |0,N\rangle}{\sqrt
       { label: "Standard quantum limit", value: "Δφ = 1/√N" },
       { label: "Heisenberg limit", value: "Δφ = 1/N" },
     ],
-    sourceTitle: "A quantum Rosetta stone for interferometry",
+    sourceTitle: "A Quantum Rosetta Stone for Interferometry",
     sourceUrl: "https://arxiv.org/abs/quant-ph/0202133",
     wires: ["NOON qubit (|N,0⟩/|0,N⟩)"],
     operations: [
@@ -476,7 +476,7 @@ $$\rho = \frac{I}{2^n} = \frac{1}{2^n}\sum_{x\in\{0,1\}^n} |x\rangle\langle x|$$
       { label: "Invariance", value: "UρU† = ρ for all unitary U" },
       { label: "T→∞ limit of", value: "Any Gibbs state e^{-βH}/Z" },
     ],
-    sourceTitle: "Quantum Computation and Quantum Information",
+    sourceTitle: "Quantum Computation and Quantum Information: 10th Anniversary Edition",
     sourceUrl: "https://doi.org/10.1017/CBO9780511976667",
     wires: ["q[0]", "q[1]"],
     operations: [
