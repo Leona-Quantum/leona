@@ -359,7 +359,13 @@ export const CONTACT_COPY: Record<PublicLocale, {
     body: "Leona Quantum is building an evidence layer around quantum software: public research, private workspaces, and execution that can be inspected. Send a short brief and we’ll take it from there.",
     panelTitle: "Good reasons to write",
     reasons: ["Research workflows and early product access", "Enterprise R&D and private-corpus conversations", "Public research contributions and technical feedback", "Press, partnerships, and speaking"],
-    note: "Submitting opens a prepared email in your email app. The current queue is mailto-backed; server-side delivery and CRM routing will follow when the operating workflow is finalized.",
+    // One sentence, and it is the one a sender needs: what the button does.
+    // The clause that used to follow it ("the current queue is mailto-backed;
+    // server-side delivery and CRM routing will follow…") described our own
+    // unfinished plumbing to the person deciding whether to write in. How the
+    // note reaches us is ours to know; that the button opens their mail client
+    // is theirs.
+    note: "Submitting opens a prepared email in your email app.",
     measure: { label: "Measure a qubit" },
     fields: { name: "Name", email: "Email", topic: "What is this about?", message: "Message", placeholder: "What are you building, and what evidence or access would help?", submit: "Prepare inquiry", status: "Your email app should open with the inquiry prepared. Send it to add the note to the queue." },
     topics: ["Product access", "Research workflow", "Enterprise R&D", "Public research contribution", "Other"],
@@ -370,7 +376,7 @@ export const CONTACT_COPY: Record<PublicLocale, {
     body: "Leona Quantumは、量子回路の作成から実行、検証、保存、共有までを支える研究基盤です。研究内容や必要な利用環境をお送りください。",
     panelTitle: "ご連絡いただける内容",
     reasons: ["研究ワークフローと早期アクセス", "企業・研究機関向けの導入相談", "公開研究への投稿と技術フィードバック", "取材、パートナーシップ、登壇"],
-    note: "送信ボタンを押すと、入力内容を反映したメール作成画面が開きます。現在、お問い合わせはメールで受け付けています。",
+    note: "送信ボタンを押すと、入力内容を反映したメール作成画面が開きます。",
     measure: { label: "量子ビットを測定" },
     fields: { name: "お名前", email: "メールアドレス", topic: "内容", message: "メッセージ", placeholder: "取り組んでいる研究テーマと、必要な実行・検証環境を教えてください。", submit: "メールを作成", status: "内容を確認してメールを送信してください。" },
     topics: ["プロダクトへのアクセス", "研究ワークフロー", "企業R&D", "公開研究への投稿", "その他"],
