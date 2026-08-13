@@ -52,6 +52,7 @@ import type {
 import { cardSections } from "../lib/repository/card-content";
 import { LOOP_CLOSURE_COPY } from "../lib/repository/loop-closure-copy";
 import { THEORY_MARKS, type TheoryMark, type TheorySpan } from "../lib/repository/theory-marks";
+import { THEORY_MARK_COPY } from "../lib/repository/theory-mark-copy";
 import { ownStepName } from "../lib/repository/converge-layout";
 import type { PublicLocale } from "../lib/public-locale";
 import { MathText } from "./math-text";
@@ -226,10 +227,11 @@ const COPY: Record<Lang, Copy> = {
     // Singular. Each names one marked clause, so the legend reads as a key to
     // what is highlighted rather than as a heading over a list — which is the
     // whole difference between this and the two sections it replaced.
-    marks: {
-      approximation: "approximation",
-      assumption: "assumption",
-    },
+    //
+    // **Read from `theory-mark-copy.ts` rather than written here**, since the
+    // method page's *Requires* section began drawing the same notes — the same
+    // move, for the same reason, that `LOOP_CLOSURE_COPY` above records.
+    marks: THEORY_MARK_COPY.en,
     openStep: "Open this step",
     // The lead-in to a folded refinement's potential-path note. The claim is
     // about the MAP's backlog ("what research would earn this its own drawn
@@ -313,10 +315,7 @@ const COPY: Record<Lang, Copy> = {
       "bypassed-by": "これを不要にする経路",
       "classical-equivalents": "古典的な対応物",
     },
-    marks: {
-      approximation: "近似",
-      assumption: "仮定",
-    },
+    marks: THEORY_MARK_COPY.ja,
     openStep: "この工程を開く",
     refinementNote: "独自の経路として描くために必要な研究",
     implementationSections: {
