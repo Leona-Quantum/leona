@@ -220,12 +220,19 @@ const rows = families.foldRows(records, (slug) => groupIndex.get(slug));
 // Note for whoever changes it next: this count is computed from the **manifest**,
 // not from the corpus module — so a corpus change that has not regenerated
 // `services/api/catalog_bootstrap/manifest.json` yet will report the OLD number
-// and look like it did not move the fold at all. That nearly went wrong here: the
-// record above was first pushed without a regenerated manifest and every check
-// stayed green, because the corpus/manifest cross-check below compares width
-// *families* and a record belonging to no family is invisible to it. If you add a
-// record, regenerate the manifest in the same commit whether or not anything
-// complains — otherwise the corpus has it and the serving surface does not.
+// and look like it did not move the fold at all. That happened here: the record
+// above was pushed once without a regenerated manifest, and **everything inside
+// `apps/web` stayed green** — lint, typecheck, and 1038 tests. Two things in this
+// file that look like they should have caught it did not. The corpus/manifest
+// cross-check below compares width *families*, and a literature record belongs to
+// none, so it compared the two surfaces and saw no difference. This constant reads
+// the stale manifest, so it agreed with itself.
+//
+// What caught it was CI's `ts` job, in a step outside this package —
+// `node scripts/generate-catalog-bootstrap-manifest.mjs --check` — with
+// `✖ manifest drift: committed 346 items, regenerated 347`. So the backstop
+// exists and it works; it is just nowhere near here, and "green locally" does not
+// reach it. Regenerate the manifest in the same commit as any record you add.
 const EXPECTED_BROWSE_ROWS = 240;
 if (rows.length !== EXPECTED_BROWSE_ROWS) {
   errors.push(
