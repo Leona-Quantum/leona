@@ -913,7 +913,10 @@ test("every capability draws a figure — not just the two that converge", () =>
   // its job a third time: the slot exists because three papers in unit 1 needed a
   // readout that reads an eigenvalue off an accumulated phase and this map had none,
   // and its figure had to be looked at before it could ship.
-  assert.equal(capabilities.length, 24, "the graph's slot count changed; update these figures");
+  // **25 since session 15 unit 3**, which added `hidden-period-finding` — the first
+  // genuinely new SUBJECT region on this map rather than another slot inside one of
+  // the two spines it already had.
+  assert.equal(capabilities.length, 25, "the graph's slot count changed; update these figures");
 
   for (const focus of capabilities) {
     for (const locale of ["en", "ja"] as const) {
@@ -944,7 +947,7 @@ test("every capability draws a figure — not just the two that converge", () =>
   // one chain every filler walks.
   const byGrain = capabilities.map((focus) => diagramFor(focus.id).grain);
   assert.equal(byGrain.filter((grain) => grain === "states").length, 1);
-  assert.equal(byGrain.filter((grain) => grain === "methods").length, 23);
+  assert.equal(byGrain.filter((grain) => grain === "methods").length, 24);
 });
 
 test("`drawableSlots` is the list of slots that actually draw", () => {
@@ -960,7 +963,7 @@ test("`drawableSlots` is the list of slots that actually draw", () => {
   // 22 since W21, 23 since W21-E, 24 since session 15's `phase-estimation` — the
   // same new slots the figure test above pins, and the point of asserting the
   // length beside the deepEqual is that two empty lists are also deep-equal.
-  assert.equal(offered.length, 24);
+  assert.equal(offered.length, 25);
 
   // And it is still a strict superset of the convergence claim, which is a
   // different and narrower statement — narrower by one since session 119,
@@ -1859,9 +1862,16 @@ test("a line that opens into something says so, and a line that does not is not 
   // separates them — a register of ancillas against one reused ancilla with classical
   // feedback — is a resource choice inside the method, not a step this graph draws.
   // `openable` unchanged at 30, `leaves` 66 -> 68.
-  assert.equal(openable + leaves + 1, 99, "the twenty-four figures draw 99 lines between them");
+  // Three more in session 15 unit 3, all LEAVES again. A brand-new subject region's
+  // methods are undecomposed by construction — that is the honest opening state W21
+  // recorded for the variational region and it is still true here. `openable`
+  // unchanged at 30, `leaves` 68 -> 71. That `openable` has now not moved across two
+  // consecutive new regions is worth reading as a fact rather than a coincidence: a
+  // new region adds figures, and it adds nothing to open until somebody breaks one of
+  // its methods apart.
+  assert.equal(openable + leaves + 1, 102, "the twenty-five figures draw 102 lines between them");
   assert.equal(openable, 30, "30 of them open into something the canvas draws");
-  assert.equal(leaves, 68, "68 are leaves — the canvas records nothing finer for them");
+  assert.equal(leaves, 71, "71 are leaves — the canvas records nothing finer for them");
 
 });
 

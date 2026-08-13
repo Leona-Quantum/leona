@@ -429,7 +429,9 @@ test("Theory is held on every method, and each hop inside it is empty or filled 
   // 145 in session 15 unit 2: `register-phase-estimation` and
   // `single-ancilla-phase-estimation` carry one hop each — each is a single
   // undivided act, so the hop IS the method.
-  assert.equal(hops, 145, `${hops} hops, not 145`);
+  // 148 in session 15 unit 3: the three number-theory routes carry one hop each, for
+  // the same reason the two phase-estimation ones do — each is a single undivided act.
+  assert.equal(hops, 148, `${hops} hops, not 148`);
 
   // **A floor, and it must not be zero.** The marked-prose path is the whole of the owner's
   // re-decision, and a rendering path with no instance anywhere has never been drawn. One
@@ -1399,7 +1401,11 @@ test("the unnamed stretch is 56 of 63 methods, one each, and 13 of them follow a
   // index 0 — they delegate to nothing — so `withOwn` moves by two and `trailing`
   // does not move at all. The two numbers coming apart again is the point of
   // counting them separately.
-  assert.equal(withOwn.length, 86);
+  // 89/15 in session 15 unit 3. All three number-theory routes add a stretch at index
+  // 0 and none of them delegates, so `withOwn` moves by three and `trailing` again does
+  // not move. Two new regions in a row have moved these two numbers apart, which is
+  // what a region opening looks like from here.
+  assert.equal(withOwn.length, 89);
   assert.equal(trailing.length, 15);
 
   // The three that remain of the four the owner named. Pinned by their states
@@ -1479,7 +1485,8 @@ test("an own: card exists for exactly the methods that have the stretch, and no 
   // the stretch population have come apart and one of them is wrong — which is the
   // only claim this number is here to make.
   // 86 in session 15 unit 2, tracking the stretch census above one-for-one as it must.
-  assert.equal(built, 86);
+  // 89 in session 15 unit 3, tracking the stretch census above one-for-one as it must.
+  assert.equal(built, 89);
   // A prefix on nothing, and a prefix on a capability, both resolve to shut
   // rather than to something. `?card=` is user-supplied.
   assert.equal(cardExists(input, ownCardId("not-a-method")), false);

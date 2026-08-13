@@ -1422,6 +1422,18 @@ const HOLLOW_BY_SLOT: ReadonlyMap<string, number> = new Map([
   // stricter of the two — which is worth knowing before trusting a green
   // `check-layer-graph` as evidence that a new slot's methods are distinguishable.
   ["phase-estimation", 2],
+  // **Session 15 unit 3, and the largest opening row this census has ever carried** —
+  // all three methods of a brand-new subject region, none of them decomposed. What
+  // separates them is not a step but WHAT KIND OF THING THE PERIOD IS: an integer in a
+  // finite cyclic group, an irrational real, a lattice of rank r. That is a difference
+  // in what is possible rather than in cost, and Hallgren states it against Shor in his
+  // own words — an irrational period "prevents direct application of Shor's
+  // algorithms". So this row is as far from rot as a row here can be: the distinction
+  // is sourced to a primary paper, it is written into the slot's `whyALayer`, and the
+  // drawing simply has no vocabulary for the type of a period. If a `via` ever becomes
+  // pinnable here it will be because the group type got a state, not because these
+  // three were decomposed.
+  ["hidden-period-finding", 3],
 ]);
 
 /**
