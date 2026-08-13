@@ -171,6 +171,7 @@ import {
   methodsRealizing,
   repetitionOf,
   routeOf,
+  specificationOf,
   type LayerCapability,
   type LayerGraph,
   type LayerMethod,
@@ -279,14 +280,29 @@ export const CONVERGE_METRICS = {
    *  vertical cut landed** — see the block above for what the four numbers moved
    *  together and which one of them did not come with them. */
   strandHalf: 8,
-  /** Room beside a strand for its own name.
+  /**
+   * **Gone, and this note is where a reader looking for it lands.**
    *
-   *  13, and the single most expensive tolerance on the canvas — the sweep
-   *  measured −828px of summed saturated height for three pixels off it,
-   *  because every lane at every depth reserves it on both sides — **on both
-   *  sides, and a lane writes its name on one**, which is the whole of why this
-   *  one is still 13 while the other three moved. See the block above. */
-  labelBand: 13,
+   * It was *"room beside a strand for its own name"* — 13px, the single most
+   * expensive tolerance on the canvas, and the one number of issue 22's vertical
+   * cut that could not move. Its own note said why: *"every lane at every depth
+   * reserves it on both sides — **on both sides, and a lane writes its name on
+   * one**"*.
+   *
+   * Both halves of that sentence are now answered by functions rather than by a
+   * constant, which is why nothing reads it any more:
+   *
+   * - **how much room** a name beside a lane takes is `besideNameReach()`, and
+   *   it is 18.5 or 20.1 rather than 13 — measured off the placement `place`
+   *   actually uses and the plate a reader actually sees. 13 was short, and the
+   *   collision that proved it is in that function's own comment.
+   * - **which side** it is taken on is `VBand`, and two of the three placements
+   *   now take it on one side only.
+   *
+   * A constant nothing reads, defended by a comment nobody can falsify, is a
+   * shape this repository has shipped before. It is deleted rather than left at
+   * 13 with a note saying it does not matter.
+   */
   /**
    * Between two sibling strands.
    *
@@ -318,14 +334,24 @@ export const CONVERGE_METRICS = {
    * rendered page the two ways into `linear-ivp` were almost a single line and
    * the convergence did not read as one.
    *
-   * **47 since the vertical cut landed** — `2·(8 + 13) + 5`. It is written out rather
-   * than computed, so the test `allocateBows reproduces laneOffsets exactly when
-   * every sibling is a leaf` exists to catch exactly this: a change to
-   * `strandHalf`, `labelBand` or `laneGap` that forgets to bring this with it.
-   * It caught nothing this time because it was updated in the same edit, which
-   * is the point of having it.
+   * **61.2 since the name band became honest** — `2·(8 + 20.1) + 5`, where 20.1
+   * is `besideNameReach().below`, the room a name beside a lane actually takes.
+   * It was 47 = `2·(8 + 13) + 5` against a `labelBand` that has since been
+   * deleted for being both wrong and unread, so the closed form was describing a
+   * shut fan the layout had stopped producing.
+   *
+   * **Raising it changes no figure**, and that is worth stating rather than
+   * assuming: the only reader is `laneOffsets`, whose only reader in turn is the
+   * `tallestShut` floor under `halfHeight` — and on every bundle the corpus has,
+   * the measured band beats that floor. Measured either way: the tallest figure
+   * is 1,608.74px at 47 and at 61.2.
+   *
+   * It is written out rather than computed, so the test `allocateBows reproduces
+   * laneOffsets exactly when every sibling is a leaf` exists to catch exactly
+   * this: a change to `strandHalf`, `besideNameReach` or `laneGap` that forgets
+   * to bring this with it.
    */
-  laneBow: 47,
+  laneBow: 61.2,
   /** Shortest a bundle may be drawn before its labels are considered.
    *  Left at 150 through issue 22: the sweep measured 110 and 90 at −28px of
    *  summed width between them, which is one figure's rounding. It binds on
@@ -465,10 +491,41 @@ export const CONVERGE_METRICS = {
    *
    * A muscle reading rather than a decorative one: the fibres inside a fascicle
    * are thinner than the fascicle. It also does real work — the band a child is
-   * allotted has to hold its taper *and* its name, and letting depth-3 strands
-   * keep a depth-0 thickness is what makes a four-level figure a solid block.
+   * allotted has to hold its own thickness *and* its name, and letting depth-3
+   * strands keep a depth-0 thickness is what makes a four-level figure a solid
+   * block.
    */
   depthTaper: 0.78,
+  /**
+   * Half the thickness of a **tendon** — the thin line either side of a body.
+   *
+   * The owner's ask, verbatim: *"i don't like how lines taper off — just keep
+   * thin tendon lines and the same short line bodies around labels rather than
+   * this taper."* (ai-ops#64). Before R15 a tendon had no thickness of its own:
+   * it was the body's `half` scaled by φ, so it ran from `2·half` down to
+   * **nothing** at each circle, and that ramp is the taper.
+   *
+   * 1, so a tendon draws at 2px — the same weight as `.mj-converge-spine`, which
+   * is the other thin line on this canvas and the one a reader already reads as
+   * "a line, not a body". It does **not** scale with `depthTaper`: at depth 3
+   * that would be 0.47 and a sub-pixel line renders as a grey smear rather than
+   * as a thin line. One thickness for every tendon at every depth is also what
+   * the owner asked for — *"the same short line bodies"* is a uniformity ask,
+   * and a tendon that thins with depth is the taper coming back in the other
+   * axis. `ribbonOutline` clamps it to `half` so a strand thinner than 2px
+   * cannot end up with a tendon wider than its own body.
+   */
+  tendonHalf: 1,
+  /**
+   * The shortest body a line may be drawn with, in px.
+   *
+   * A line with no name — a fan base, a composite run — would otherwise be
+   * `2·labelPad` of body and nothing else, which at 16px is a dash. This is the
+   * floor that keeps an unnamed line reading as a line with a body rather than
+   * as a tendon somebody forgot to finish, and it is what the rule below means
+   * by "a line is never all tendon".
+   */
+  minBody: 24,
   /**
    * The shortest tendon, in px — the taper every strand gets whatever its bow.
    *
@@ -609,7 +666,13 @@ export const CONVERGE_METRICS = {
  */
 export function legendMark(): { outline: string; spine: string } {
   const mark: Ribbon = { x0: 2, x1: 32, y: 13, bow: -4, run: 9 };
-  return { outline: ribbonOutline(mark, 3.5), spine: ribbonPath(mark) };
+  // A body in the middle of its belly (`[11, 23]`), thin tendons either side —
+  // the same three parts a lane draws, at legend scale. Written out rather than
+  // taken from `bodySpan`, because the swatch has no name to be in relation to
+  // and feeding it a fictional label width would be a number a reader could not
+  // check against anything.
+  const body = { x0: 13, x1: 21, tendonHalf: CONVERGE_METRICS.tendonHalf };
+  return { outline: ribbonOutline(mark, 3.5, body), spine: ribbonPath(mark) };
 }
 
 /**
@@ -974,9 +1037,13 @@ export interface ConvergeLane {
    */
   d: string;
   /**
-   * The **outline**: the region between `bow ± half`, closed and fillable. This
-   * is what a reader actually sees — tapered through the two tendons, exactly
-   * `2·half` thick across the whole belly.
+   * The **outline**: the drawn region, closed and fillable. This is what a reader
+   * actually sees — `2·tendonHalf` thick along both tendons and along whatever of
+   * the belly the body does not cover, and exactly `2·half` across the body.
+   *
+   * It was `2·half·φ(x)` until R15 — a taper from nothing at each circle to full
+   * thickness across the whole belly. `bodyX0`/`bodyX1` are the stretch that is
+   * still full thickness; `bodySpan` is the rule that decides them.
    */
   outline: string;
   x0: number;
@@ -1008,6 +1075,20 @@ export interface ConvergeLane {
   bellyX1: number;
   /** The height of the belly: `yc + bow`. */
   bellyY: number;
+  /**
+   * The **body**, in x — the stretch drawn at full thickness, around the name.
+   *
+   * A sub-range of the belly, `name + 2·labelPad` long, and everything outside it
+   * on this lane is drawn as a thin tendon. See `bodySpan` for the rule and for
+   * the measurement that made it necessary; R15.
+   *
+   * Carried for the same reason `run` and `bellyX0` are, and here it earns it
+   * twice over: the belly and the body come apart by hundreds of pixels on a long
+   * column, so a reader of this struct who assumed "the thick part is the belly"
+   * would be wrong about the shape rather than merely redundant.
+   */
+  bodyX0: number;
+  bodyX1: number;
   /** 0 for a lane of the figure's own bundles; deeper inside an opened lane. */
   depth: number;
   /**
@@ -1025,6 +1106,17 @@ export interface ConvergeLane {
   label: string;
   /** The full name, always — the `<title>`, the accessible list, the print view. */
   fullLabel: string;
+  /**
+   * The **specification** this hop's label carries, if the route records one —
+   * ai-ops#51's third kind of thing a label can hold. See `LayerMethod.spec`.
+   *
+   * Carried rather than left to be read back out of `label`, because a spec is
+   * joined to the name with `", "` and plenty of authored names contain a comma
+   * (*"Homotopy series, linear ODE"*). Recovering it by splitting would be a
+   * second derivation of a string this struct already knows, and it would be
+   * wrong on exactly the names that already read well.
+   */
+  spec: string | null;
   /**
    * The authored short name if this lane drew one, else null.
    *
@@ -1329,6 +1421,71 @@ export interface ConvergeDiagram {
  * general figure is measured bottom-up instead — see `measure` — and the layout
  * asserts it never reserves less than this.
  */
+/**
+ * How far a thing reaches **up** and **down** from its own line, as two numbers.
+ *
+ * ## The one-sided name band — issue 22's last vertical pixels
+ *
+ * Every band on this canvas used to be one number, `vHalf`, reserved equally on
+ * both sides. Names are not written on both sides. An opened chain writes its
+ * name on the **upper** edge of its shell and nothing on the lower one
+ * (`NAME_EDGE`, whose comment says *"always"*); an opened fan writes its name
+ * **above** the bone and nothing below it. Both reserved for a name twice and
+ * used the room once, and issue 22's own note said what the remedy was and that
+ * it had not been taken:
+ *
+ * > *"The remedy is a one-sided name band — a lane reserves a name's room on the
+ * > side it actually writes it and nothing on the other — which needs `Measure`
+ * > to carry `vAbove`/`vBelow` and the three allocators to pack asymmetric
+ * > halves. That is a whole unit of work with its own measurements, and it is
+ * > the one that would buy the rest of issue 22's height. Recorded rather than
+ * > taken."*
+ *
+ * Taken here.
+ *
+ * **`above` and `below` are absolute directions, not "inward" and "outward".**
+ * That is what makes this tractable without threading a sign through `measure`:
+ * both placements above are fixed global sides, so a strand knows which of its
+ * own edges carries text before anything has decided where it sits. The third
+ * placement — a name written *beside* a shut lane — goes on the side the lane
+ * bows toward, and the bow comes from the allocator that reads these bands. See
+ * `besideNameReach` for what that one costs and what is owed on it.
+ */
+export interface VBand {
+  above: number;
+  below: number;
+}
+
+/** The larger side, for the places that must stay symmetric. Named so that each
+ *  such place has to say it is choosing the conservative reading. */
+function widerSide(band: VBand): number {
+  return Math.max(band.above, band.below);
+}
+
+/** A measured strand's own band, as the two numbers the allocators pack. */
+function bandOf(size: { vAbove: number; vBelow: number }): VBand {
+  return { above: size.vAbove, below: size.vBelow };
+}
+
+/**
+ * The band an **opened fan's own bone** keeps down the middle of its fan.
+ *
+ * `spineBand` above, because that is where the name is written — the whole
+ * derivation on `spineBand` is about a name clearing the bone's stroke, and it
+ * is a derivation about one side. Below the bone there is no name, so what a
+ * child has to clear is the stroke itself and then `laneGap` like any other
+ * neighbour: **17px per opened fan**, paid in the middle of the fan where it
+ * directly shrinks the reach on that side.
+ *
+ * One function because `measureCore` and `place` both allocate this row and must
+ * pass the identical argument; two literals is how a reservation and a placement
+ * come to disagree by exactly the number nobody re-derives.
+ */
+function spineBand(): VBand {
+  const M = CONVERGE_METRICS;
+  return { above: M.spineBand, below: M.spineStroke / 2 };
+}
+
 export function reservedHalfHeight(tallest: number): number {
   const M = CONVERGE_METRICS;
   return tallest + M.labelLift + M.laneFont + M.stateRadius;
@@ -1380,16 +1537,16 @@ export function laneOffsets(n: number): number[] {
  * measurement and the placement disagree by one gap.
  */
 export function allocateBowsAroundSpine(
-  halves: readonly number[],
+  bands: readonly VBand[],
   centre: number,
   gap: number,
-  spineHalf: number,
+  spine: VBand,
 ): number[] {
-  if (halves.length === 0) return [];
+  if (bands.length === 0) return [];
   // Ceil, so the extra member of an odd fan sits **above** the bone: the reading
   // order of a fan is top-first, and a reader who opens a line looks up.
-  const mid = Math.ceil(halves.length / 2);
-  const out: number[] = new Array(halves.length);
+  const mid = Math.ceil(bands.length / 2);
+  const out: number[] = new Array(bands.length);
   // Packed **outward from the spine's own edges**, not centred as a row that
   // happens to contain the spine. Centring the row is what the first version
   // did, and it only holds the spine at `centre` when the two groups are
@@ -1398,17 +1555,24 @@ export function allocateBowsAroundSpine(
   // `centre - 7` — *inside* the band the spine reserved, which is the whole
   // thing this function exists to prevent, on the 23-of-29 case (a fan of one).
   // Every odd fan drifts the same way.
-  let cursor = centre - spineHalf - gap;
+  //
+  // **Asymmetric since the one-sided name band.** Going up, a member's `below`
+  // faces the cursor and its `above` is what the next one has to clear; going
+  // down it is the other way about. With `above === below` everywhere this is
+  // arithmetically the old function, which is what
+  // `allocateBows reproduces laneOffsets exactly when every sibling is a leaf`
+  // still checks.
+  let cursor = centre - spine.above - gap;
   for (let index = mid - 1; index >= 0; index -= 1) {
-    const half = halves[index]!;
-    out[index] = cursor - half;
-    cursor -= half * 2 + gap;
+    const band = bands[index]!;
+    out[index] = cursor - band.below;
+    cursor = out[index] - band.above - gap;
   }
-  cursor = centre + spineHalf + gap;
-  for (let index = mid; index < halves.length; index += 1) {
-    const half = halves[index]!;
-    out[index] = cursor + half;
-    cursor += half * 2 + gap;
+  cursor = centre + spine.below + gap;
+  for (let index = mid; index < bands.length; index += 1) {
+    const band = bands[index]!;
+    out[index] = cursor + band.above;
+    cursor = out[index] + band.below + gap;
   }
   return out;
 }
@@ -1448,15 +1612,22 @@ export function allocateBowsOutward(
   return out;
 }
 
-export function allocateBows(halves: readonly number[], centre: number, gap: number): number[] {
-  if (halves.length === 0) return [];
+export function allocateBows(bands: readonly VBand[], centre: number, gap: number): number[] {
+  if (bands.length === 0) return [];
   const total =
-    halves.reduce((sum, half) => sum + half * 2, 0) + gap * Math.max(0, halves.length - 1);
+    bands.reduce((sum, band) => sum + band.above + band.below, 0) +
+    gap * Math.max(0, bands.length - 1);
   const out: number[] = [];
+  // The row's **extent** is centred on `centre`, not its members' midpoints.
+  // With symmetric bands the two are the same thing; with asymmetric ones,
+  // centring the extent is what keeps a figure the height of what it draws
+  // rather than twice its deeper side. The base line — where the circles are and
+  // where every line begins and ends — is still `centre`, so what moves is how
+  // the bows are distributed about it, not where anything converges.
   let cursor = centre - total / 2;
-  for (const half of halves) {
-    out.push(cursor + half);
-    cursor += half * 2 + gap;
+  for (const band of bands) {
+    out.push(cursor + band.above);
+    cursor += band.above + band.below + gap;
   }
   return out;
 }
@@ -1853,6 +2024,15 @@ interface PlanStrand {
    * cut) rather than one string spelled out in two places.
    */
   standingName: string | null;
+  /**
+   * The **specification** written on this hop, if the route records one — the
+   * third kind of thing a label can hold (ai-ops#51). See `LayerMethod.spec`.
+   *
+   * Resolved to the reader's locale here, beside every other localized string on
+   * a strand, so `drawnName` and `spokenName` read one value rather than each
+   * picking a locale.
+   */
+  spec: string | null;
   opensInto: OpensInto | null;
   slots: readonly string[];
   interior: readonly string[];
@@ -2007,31 +2187,37 @@ function chainInside(
         // what `repeats` is keyed on: the route says it walks *this step* T/h
         // times, and which algorithm fills the step is a separate record. A pin
         // must not lose the count.
-        return withRepeatMark(
-          planForMethod(
-            graph,
-            vocabulary,
-            filler,
-            locale,
-            open,
-            depth,
+        return withSpec(
+          withRepeatMark(
+            planForMethod(
+              graph,
+              vocabulary,
+              filler,
+              locale,
+              open,
+              depth,
           // The **slot** joins `seen`, not just the filler. `planForMethod` cuts
           // the recursion on the method's own id; the slot is what a route below
           // could delegate back to, and pinning must not open a door the
           // unpinned hop had shut. Every pin in the corpus today names an
           // atomic filler, so this cannot bite yet — which is exactly when a
           // cycle guard is cheap to get right.
-            new Set([...seen, segment.capabilityId]),
-            `${parentKey}/${index}/`,
-            `${parentAddress}.${index}`,
+              new Set([...seen, segment.capabilityId]),
+              `${parentKey}/${index}/`,
+              `${parentAddress}.${index}`,
+            ),
+            method,
+            segment.capabilityId,
+            locale,
           ),
           method,
           segment.capabilityId,
           locale,
         );
       }
-      return withRepeatMark(
-        planForSlot(
+      return withSpec(
+        withRepeatMark(
+          planForSlot(
           graph,
           vocabulary,
           segment.capabilityId,
@@ -2039,8 +2225,12 @@ function chainInside(
           open,
           depth,
           seen,
-          `${parentKey}/${index}/`,
-          `${parentAddress}.${index}`,
+            `${parentKey}/${index}/`,
+            `${parentAddress}.${index}`,
+          ),
+          method,
+          segment.capabilityId,
+          locale,
         ),
         method,
         segment.capabilityId,
@@ -2098,6 +2288,9 @@ function chainInside(
       // What it draws, resolved here with every other localized string on the
       // plan. See `standingName`.
       standingName: ownStepName(locale),
+      // Set by `withSpec` where a parent route expands one of its own steps; a
+      // strand nothing has annotated draws its plain name.
+      spec: null,
       opensInto: null,
       slots: [],
       interior: [],
@@ -2175,6 +2368,9 @@ function planForSlot(
     draws: node === null ? null : slotId,
     own: null,
     standingName: null,
+    // Set by `withSpec` where a parent route expands one of its own steps; a
+    // strand nothing has annotated draws its plain name.
+    spec: null,
     opensInto: methods.length > 0 ? "ways" : null,
     slots: [slotId],
     interior: [],
@@ -2398,6 +2594,9 @@ function planForMethod(
     draws: method.id,
     own: null,
     standingName: null,
+    // Set by `withSpec` where a parent route expands one of its own steps; a
+    // strand nothing has annotated draws its plain name.
+    spec: null,
     opensInto: holds ? "steps" : null,
     slots: [],
     interior: [],
@@ -2495,6 +2694,9 @@ function planForLane(
     draws: null,
     own: null,
     standingName: null,
+    // Set by `withSpec` where a parent route expands one of its own steps; a
+    // strand nothing has annotated draws its plain name.
+    spec: null,
     opensInto: "steps",
     slots: named.slots,
     interior: lane.interior,
@@ -2574,6 +2776,60 @@ export function chainColumnNeed(childNeeds: readonly number[]): number {
 /** Half a strand's drawn thickness at `depth`. */
 function halfAt(depth: number): number {
   return CONVERGE_METRICS.strandHalf * CONVERGE_METRICS.depthTaper ** depth;
+}
+
+/**
+ * **The relational compactness rule (R15), in one function.**
+ *
+ * > *"Mostly let there be some rule for relational compactness, how far the body
+ * > of the line should go in relation to the label, and then tendons can pad the
+ * > rest!"*                                                  — owner, ai-ops#64
+ *
+ * A line's body is `name + 2·labelPad` long and everything else on that line is
+ * tendon. That is a **drawing** rule, not a sizing one, and the distinction is
+ * the whole reason it can ship on its own: the column's width, the runs, the
+ * bands and the crossing-free argument are all untouched, and what changes is
+ * how much of a line is drawn as a body.
+ *
+ * ## Why the sizing could not carry it, measured
+ *
+ * `hugRuns` already gives each lane the run its own content leaves over —
+ * `(span − bare)/2` — so on paper a belly is already its own `bare`. It is not,
+ * and the reason is the crossing-free precondition rather than a missing clamp:
+ * a row's runs must be non-increasing in `|bow|`, so the lane furthest from the
+ * spine can never have a longer tendon than the innermost one, and whatever the
+ * innermost lane's content leaves over is what every outer lane's belly grows
+ * to. Measured over all 46 figure-locales, shut and saturated, before this
+ * change: **419 of 674 named lanes (62.2%) were drawn on a belly longer than
+ * their own name plus its padding, 54,746px of empty belly in total**, the worst
+ * being *"HHL"* — a 19.1px name — on an **854.5px** belly, 44.8× its own label.
+ *
+ * Shortening those bellies means shortening the *column*, which means breaking
+ * the shared span a row of siblings converges on. That is the owner's fourth ask
+ * in the same message — muscle groups pushed together along the x-axis — and it
+ * is a different piece of work. This one draws the line he asked for on the
+ * column that exists.
+ *
+ * `centreX` is where the name is written, not where the belly's midpoint is: a
+ * framed name sits at the left of its shell, and a body centred on the belly
+ * under a name at the left would be a bar the name hangs off.
+ */
+export function bodySpan(
+  centreX: number,
+  nameWidth: number,
+  belly: { x0: number; x1: number },
+): { x0: number; x1: number } {
+  const M = CONVERGE_METRICS;
+  const length = Math.min(
+    Math.max(M.minBody, nameWidth + 2 * M.labelPad),
+    Math.max(0, belly.x1 - belly.x0),
+  );
+  // Slid back inside the belly rather than clipped at it. A body clipped at the
+  // edge would be shorter than the rule says at exactly the lanes whose name is
+  // off-centre, which is every framed one — and "shorter than its own name" is
+  // the one failure this rule must not produce.
+  const lo = Math.min(Math.max(centreX - length / 2, belly.x0), belly.x1 - length);
+  return { x0: lo, x1: lo + length };
 }
 
 /**
@@ -2697,6 +2953,48 @@ function framedNameInward(): number {
 }
 
 /**
+ * How far a name written **beside** its lane reaches past that lane's own edge —
+ * the third placement, and the one whose reservation was a guess.
+ *
+ * `place` writes such a name at `peak.y − bandHalf − labelLift` above, or at
+ * `peak.y + bandHalf + labelLift + laneFont·0.8` below, and the plate a reader
+ * sees runs from `labelY − 12.5` to `labelY + 4.5`. So the room the text
+ * actually takes past the edge is
+ *
+ *     above   labelLift + laneFont·NAME_PLATE_TOP_RATIO         = 18.5px
+ *     below   labelLift + laneFont·0.8 + laneFont·PLATE_BELOW    = 20.1px
+ *
+ * against the **13** that `labelBand` reserved. `labelBand`'s own note has said
+ * this out loud since issue 22 — *"the band would have to be at least
+ * `laneFont · NAME_INK_RATIO` = 15.2px for the ink to clear the strand at all,
+ * against the 13 it is"* — and understated it, because 15.2px is the bare ink
+ * and the plate is the box a reader sees.
+ *
+ * **It was wrong the whole time and nothing failed, because an opened chain's
+ * 4.7px of over-reservation was paying for it.** That over-reservation is
+ * exactly what the one-sided band removes, and the first thing that happened was
+ * *"Level sets for PDE observables"* landing 0.30px into *"Homotopy series,
+ * linear ODE"* on `homotopy-perturbation-route`'s own page — a shut leaf's name
+ * reaching 5.8px past its own band into the chain packed `laneGap` away from it.
+ * A fix can come undone one layer below itself; this is the layer below, and the
+ * gate that found it is `no two names overlap on an opened figure either`, which
+ * is the same gate that stopped the previous session's cut.
+ *
+ * Two numbers because the two placements genuinely differ, and read through
+ * `widerSide` for now: which side a *shut* lane writes on is its bow's sign, and
+ * the bow comes from the allocator that reads this band. Taking the cheaper side
+ * needs the sign threaded through `measure` and `place` together — measured at a
+ * further **−70.80px** on the tallest figure, and the last of issue 22's height.
+ */
+export function besideNameReach(): VBand {
+  const M = CONVERGE_METRICS;
+  return {
+    above: M.labelLift + M.laneFont * NAME_PLATE_TOP_RATIO,
+    below: M.labelLift + M.laneFont * 0.8 + M.laneFont * NAME_PLATE_BELOW_RATIO,
+  };
+}
+
+/**
  * May this lane give up the band beside it — the `labelBand` it reserves for a
  * name it does not write there?
  *
@@ -2741,18 +3039,24 @@ function stepDemand(step: Measure): number {
 }
 
 interface Measure {
-  /** Half the band this strand occupies, at the peak, in pixels. */
-  vHalf: number;
+  /** How far this strand's band reaches **up** from its peak, in pixels. */
+  vAbove: number;
+  /** And **down**. Equal to `vAbove` on every arm but the two that write a name
+   *  on one fixed edge — see `VBand`. */
+  vBelow: number;
   /**
-   * How much of `vHalf` is room kept **beside** this strand for its own name.
+   * How much of `vAbove` / `vBelow` is room kept for this strand's own name.
    *
-   * Zero where the name is not written beside it — inside its own line for a
-   * leaf, on the bone for an opened fan — and `labelBand` where it is. It is a
-   * field rather than a rule each reader re-derives because `coreBandHalf` has
-   * to be able to take it back off again, and a second derivation of a band is
-   * the `hFit` mistake in the other axis.
+   * Zero on the side no text is written — which is *both* sides for a leaf that
+   * wears its name inside its own line and for an opened fan that wears it on
+   * the bone, and the **lower** side for an opened chain, whose name sits on the
+   * upper edge of its shell and only there. Fields rather than a rule each
+   * reader re-derives because `coreBand` has to be able to take them back off
+   * again, and a second derivation of a band is the `hFit` mistake in the other
+   * axis.
    */
-  nameBand: number;
+  nameAbove: number;
+  nameBelow: number;
   /**
    * How much **label width** everything inside this strand needs, unpadded.
    *
@@ -2800,12 +3104,19 @@ interface Measure {
    *
    * The number the variant row has to start past, and it is stored rather than
    * recomputed because the two ways of getting it disagree on exactly the shape
-   * that matters: `max(children.vHalf) + innerStateRadius` is right for a
+   * that matters: `max(children band) + innerStateRadius` is right for a
    * **chain** — its steps sit on the spine — and wrong for a **fan**, whose
-   * children are at allocated offsets and reach `|offset| + vHalf`. Same
+   * children are at allocated offsets and reach `offset ± their own band`. Same
    * measurement, one writer.
+   *
+   * Two numbers since the one-sided band, and they differ only for a fan. A
+   * **chain's** stay equal on purpose: this is also the half-thickness its
+   * exoskeleton is drawn at (`frameHalf`), and `ribbonOutline` draws a shell of
+   * one thickness. Splitting them would buy a few pixels and cost a second
+   * argument on the emitter that every other shape would have to carry.
    */
-  innerReach: number;
+  innerAbove: number;
+  innerBelow: number;
 }
 
 /**
@@ -2865,7 +3176,18 @@ function fitMarkedName(
   font: number,
   budget: number,
 ): { text: string; truncated: boolean } {
-  return fitLabel(strand.shortLabel ?? strand.label, font, budget, markSuffix(strand));
+  // **`specified`, not `shortLabel ?? label` — and this was a second writer of
+  // what gets drawn.** `ownNameDemand` sizes the column from `drawnName`, and
+  // this cut the text from a differently-composed string; the moment `spec`
+  // arrived the two disagreed, and the symptom was exactly the shape this file
+  // has paid for twice. `nonlinear-ode-solve` drew *"Quantum singular value
+  // transformation"* in a column built for *"Quantum singular value
+  // transformation, an odd polynomial in 1/x"* — 361px of column for 235px of
+  // text — and the only thing that noticed was the invariant asserting a chain's
+  // steps are drawn in proportion to their own names.
+  //
+  // One composition, in `specified`, read by the demand and by the cut.
+  return fitLabel(specified(strand), font, budget, markSuffix(strand));
 }
 
 /**
@@ -2897,6 +3219,8 @@ type MarkedStrand = {
   refinement: StrandRefinement | null;
   /** See `PlanStrand.standingName`. */
   standingName?: string | null;
+  /** See `PlanStrand.spec`. */
+  spec?: string | null;
 };
 
 /**
@@ -3015,6 +3339,25 @@ function refinementOf(
   };
 }
 
+/**
+ * Write this route's specification for this hop onto the strand (ai-ops#51).
+ *
+ * Applied at the same two call sites as `withRepeatMark` and for the same
+ * reason: both facts are keyed by (route, step), and both are known only where
+ * the parent route is expanding one of its own steps. A pinned hop keeps it —
+ * the spec is keyed on the **slot**, exactly as `repeats` is, so naming which
+ * algorithm fills the step must not lose which one of it this route uses.
+ */
+function withSpec(
+  strand: PlanStrand,
+  method: LayerMethod,
+  stepId: string,
+  locale: PublicLocale,
+): PlanStrand {
+  const spec = specificationOf(method, stepId, locale);
+  return spec === null ? strand : { ...strand, spec };
+}
+
 function withRepeatMark(
   strand: PlanStrand,
   method: LayerMethod,
@@ -3075,11 +3418,39 @@ export function spokenName(lane: {
   return `${lane.fullLabel}${refines}${repeats}${shared}`;
 }
 
+/**
+ * The name a lane draws, **before** the mark and before any cut — the one
+ * composition of "what this line is called".
+ *
+ * Extracted because it has two readers that must never disagree: `drawnName`,
+ * which is what the column is *sized* for, and `fitMarkedName`, which is what
+ * the text is *cut* to. They were two compositions until `spec` arrived and made
+ * them differ; see `fitMarkedName` for the 361px column that drew 235px of text.
+ *
+ * A standing phrase displaces the name entirely — it is not a short form of it —
+ * so the `??` chain reads in drawing order: what the canvas writes, then the
+ * authored short form, then the name.
+ *
+ * **The spec is part of the name, not a suffix**, and that is the whole
+ * difference between it and the repeat mark. A mark annotates a lane; a
+ * specification says WHICH ONE this lane is, so it sits with the name and is cut
+ * with the name when a column is short. The mark still survives the cut —
+ * `fitLabel` spends the budget on the suffix first — which is the right way
+ * round: a count is a fact a reader can get nowhere else, and a spec is a
+ * distinction the card repeats.
+ *
+ * A standing phrase takes no spec. *"the method itself"* is not a hop through a
+ * slot, so there is no step for one to be keyed by and nothing that could have
+ * written one.
+ */
+function specified(strand: MarkedStrand): string {
+  const named = strand.standingName ?? strand.shortLabel ?? strand.label;
+  if (strand.standingName != null) return named;
+  return strand.spec === null || strand.spec === undefined ? named : `${named}, ${strand.spec}`;
+}
+
 export function drawnName(strand: MarkedStrand): string {
-  // A standing phrase displaces the name entirely — it is not a short form of
-  // it. The `??` chain reads in drawing order for that reason: what the canvas
-  // writes, then the authored short form, then the name.
-  return `${strand.standingName ?? strand.shortLabel ?? strand.label}${markSuffix(strand)}`;
+  return `${specified(strand)}${markSuffix(strand)}`;
 }
 
 /** How far past its own edge a strand must clear before a variant row starts:
@@ -3091,13 +3462,29 @@ const VARIANT_FRAME_PAD = 3;
  * The band a strand keeps for itself before anything nests outward of it —
  * its content, and the `labelBand` its own name sits in.
  *
- * Equal to every arm of `measureCore`'s `vHalf` by construction, and written
- * once here because `place`'s variant row and the exoskeleton frame both need
- * it back from a `Measure` whose `vHalf` has since grown to include the
+ * Equal to every arm of `measureCore`'s `vAbove`/`vBelow` by construction, and
+ * written once here because `place`'s variant row and the exoskeleton frame both
+ * need it back from a `Measure` whose band has since grown to include the
  * variants. A second derivation of a band is the `hFit` mistake again.
+ *
+ * **It was not equal, and the one-sided band is what made that visible.** The
+ * chain arm returned `vHalf = innerReach + labelBand` (13) while this returned
+ * `innerReach + nameBand` = `innerReach + framedNameHalf()` (8.3), so the
+ * sentence above was false by 4.7px for every opened chain on the canvas and had
+ * been since `nameBand` was introduced. Nothing failed, because the two numbers
+ * are read by different callers: the band by the allocator, this by the shell.
+ * Now that the arm reserves what the name actually occupies, they agree.
  */
-function coreBandHalf(size: { innerReach: number; nameBand: number }): number {
-  return size.innerReach + size.nameBand;
+function coreBand(size: {
+  innerAbove: number;
+  innerBelow: number;
+  nameAbove: number;
+  nameBelow: number;
+}): VBand {
+  return {
+    above: size.innerAbove + size.nameAbove,
+    below: size.innerBelow + size.nameBelow,
+  };
 }
 
 /**
@@ -3116,12 +3503,21 @@ function measure(strand: PlanStrand, depth: number): Measure {
   if (strand.variants.length === 0) return { ...core, variants: [] };
   const M = CONVERGE_METRICS;
   const variants = strand.variants.map((variant) => measure(variant, depth + 1));
-  const clear = coreBandHalf(core) + M.labelLift;
-  const offsets = allocateBowsOutward(variants.map((v) => v.vHalf), M.laneGap, clear);
-  const reach = Math.max(...offsets.map((offset, i) => offset + variants[i]!.vHalf));
+  // **Symmetrised, and this is the one place the one-sided band gives room
+  // back.** A variant row nests on the side its parent bows toward, and that
+  // side is `place`'s `outward`, which is not decided until the parent's own row
+  // is allocated — the circularity the rest of this change avoids by only
+  // splitting bands whose text sits on a fixed global edge. So a variant is
+  // packed at its wider side, here and in `place`, which reserves a few pixels
+  // no variant uses on the lanes that carry one rather than getting the
+  // direction wrong on any of them.
+  const clear = widerSide(coreBand(core)) + M.labelLift;
+  const offsets = allocateBowsOutward(variants.map((v) => widerSide(bandOf(v))), M.laneGap, clear);
+  const reach = Math.max(...offsets.map((offset, i) => offset + widerSide(bandOf(variants[i]!))));
   return {
     ...core,
-    vHalf: reach + VARIANT_FRAME_PAD + M.laneGap,
+    vAbove: Math.max(core.vAbove, reach + VARIANT_FRAME_PAD + M.laneGap),
+    vBelow: Math.max(core.vBelow, reach + VARIANT_FRAME_PAD + M.laneGap),
     hFit: Math.max(core.hFit, ...variants.map((v) => v.hFit)),
     hRun: Math.max(
       core.hRun,
@@ -3178,17 +3574,30 @@ function measureCore(strand: PlanStrand, depth: number): Omit<Measure, "variants
       // name is written **in** the line instead. See `insideNameHalf` for the
       // measurement. A `max`, not a sum: an inside name is centred on the
       // belly, so the band is the thicker of the stroke and the text.
-      vHalf: dropsNameBand(strand)
+      // **Honest, and still symmetric.** `labelBand`'s 13 was never what a name
+      // beside a lane occupies — see `besideNameReach`, and see the collision
+      // its own comment records, which is what made this arm move. Which of the
+      // two sides is the one written on is the lane's bow sign, and that is not
+      // knowable here; taking it is worth a further −70.80px and is recorded
+      // rather than taken, the same way issue 22 recorded this whole change.
+      vAbove: dropsNameBand(strand)
         ? Math.max(halfAt(depth), insideNameHalf())
-        : halfAt(depth) + M.labelBand,
-      nameBand: dropsNameBand(strand) ? 0 : M.labelBand,
+        : halfAt(depth) + widerSide(besideNameReach()),
+      vBelow: dropsNameBand(strand)
+        ? Math.max(halfAt(depth), insideNameHalf())
+        : halfAt(depth) + widerSide(besideNameReach()),
+      nameAbove: dropsNameBand(strand) ? 0 : widerSide(besideNameReach()),
+      nameBelow: dropsNameBand(strand) ? 0 : widerSide(besideNameReach()),
       hFit: own,
       hRun: 0,
       children: [],
       // The text is centred on the belly, so an inside name widens the strand's
       // own reach rather than sitting beyond it — `max`, and the same `max` the
       // band above is built from.
-      innerReach: dropsNameBand(strand)
+      innerAbove: dropsNameBand(strand)
+        ? Math.max(halfAt(depth), insideNameHalf())
+        : halfAt(depth),
+      innerBelow: dropsNameBand(strand)
         ? Math.max(halfAt(depth), insideNameHalf())
         : halfAt(depth),
     };
@@ -3232,16 +3641,28 @@ function measureCore(strand: PlanStrand, depth: number): Omit<Measure, "variants
     // `max` is where the engine is told about it. It is a `max` and not a sum
     // because the boundary circle and the name occupy the same space inward of
     // the edge; whichever reaches further is what the interior must start past.
+    // `widerSide`, because the shell is drawn at one thickness and a step sits
+    // on the spine at bow 0 — so whichever way a step reaches furthest is what
+    // the shell has to contain, on both of its edges.
     const innerReach =
-      Math.max(...children.map((child) => child.vHalf))
+      Math.max(...children.map((child) => widerSide(bandOf(child))))
       + Math.max(M.innerStateRadius, framedNameInward());
     return {
-      vHalf: innerReach + M.labelBand,
-      // An opened chain wears its name ON the exoskeleton edge, at `frameHalf`
-      // — which is this band less exactly this number — so the band it needs is
-      // what the text reaches past that edge, not a flat `labelBand`. See
-      // `framedNameHalf`.
-      nameBand: framedNameHalf(),
+      // **The one-sided band, half one.** An opened chain wears its name ON the
+      // exoskeleton edge, at `frameHalf` — and on the **upper** edge, always
+      // (`NAME_EDGE` in `place`, whose comment says so and says why: the only
+      // text population that approaches a shell hangs *below* its own spine, so
+      // the upper edge faces nothing). The lower edge carries no name and needs
+      // no room for one.
+      //
+      // It reserved `labelBand` — 13 — on both. Above, the name reaches
+      // `framedNameHalf()` = 8.3px past the edge; below it reaches nothing.
+      // **17.7px per opened chain**, and the largest single line of this change,
+      // because a deep figure is mostly opened chains.
+      vAbove: innerReach + framedNameHalf(),
+      vBelow: innerReach,
+      nameAbove: framedNameHalf(),
+      nameBelow: 0,
       // **`own` belongs in this max and was missing from it.** An opened chain
       // wears its own name on the exoskeleton drawn along this very span (see
       // `labelInside`/`framed`), so the column has to hold that name as much as
@@ -3272,7 +3693,8 @@ function measureCore(strand: PlanStrand, depth: number): Omit<Measure, "variants
       // for letting those two collapse into each other.
       hRun: chainColumnNeed(children.map((child) => child.hRun + 2 * M.minTendonRun)),
       children,
-      innerReach,
+      innerAbove: innerReach,
+      innerBelow: innerReach,
     };
   }
   // A fan: children stack **across**, so their bands sum. The extra `labelBand`
@@ -3282,12 +3704,7 @@ function measureCore(strand: PlanStrand, depth: number): Omit<Measure, "variants
   // The very offsets `place` will use, computed from the same allocator against
   // the same half-bands, so the bound is measured against the drawing rather
   // than against an idea of it.
-  const offsets = allocateBowsAroundSpine(
-    children.map((child) => child.vHalf),
-    0,
-    M.laneGap,
-    M.spineBand,
-  );
+  const offsets = allocateBowsAroundSpine(children.map(bandOf), 0, M.laneGap, spineBand());
   // Read off those offsets, **not** from a closed form of the row's total. The
   // closed form (`half the summed spread`) is only the true half-band when the
   // two groups mirror each other, and since `mid` is a ceil they never do for an
@@ -3297,10 +3714,18 @@ function measureCore(strand: PlanStrand, depth: number): Omit<Measure, "variants
   // member actually reaches — floored at the spine's own band, because a fan of
   // one leaves the other side of the bone empty and the bone still needs its
   // room.
-  const reach = Math.max(
-    M.spineBand,
-    ...children.map((child, index) => Math.abs(offsets[index]!) + child.vHalf),
-  );
+  //
+  // **Read per side since the one-sided band, half two.** It was
+  // `max(spineBand, |offset| + vHalf)` — one number over both directions, so a
+  // fan reached as far below the bone as its deepest member reached above it,
+  // whether or not anything was drawn there. Now each side is the furthest
+  // anything actually reaches that way, floored at the bone's own asymmetric
+  // band.
+  const spine = spineBand();
+  const reach: VBand = {
+    above: Math.max(spine.above, ...children.map((child, i) => child.vAbove - offsets[i]!)),
+    below: Math.max(spine.below, ...children.map((child, i) => offsets[i]! + child.vBelow)),
+  };
   return {
     // **No name band.** An opened fan wears its name ON THE BONE — `onBone` in
     // `place`, at `peak.y − spineStroke/2 − labelLift`, inside the `spineBand`
@@ -3311,8 +3736,10 @@ function measureCore(strand: PlanStrand, depth: number): Omit<Measure, "variants
     // pushed apart"*. The owner's ask is that breathing room, by name — *"much
     // less horizontal and vertical tolerance between things"* — and the
     // siblings are still `laneGap` apart with their own bands intact.
-    vHalf: reach,
-    nameBand: 0,
+    vAbove: reach.above,
+    vBelow: reach.below,
+    nameAbove: 0,
+    nameBelow: 0,
     hFit: Math.max(own, ...children.map((child) => child.hFit)),
     // The two runs this fan spends getting its children off its own belly, plus
     // whatever the deepest thing inside it spends. **Not** clamped to a range
@@ -3324,7 +3751,8 @@ function measureCore(strand: PlanStrand, depth: number): Omit<Measure, "variants
       2 * Math.max(0, ...offsets.map((offset) => tendonRunFor(offset))) +
       Math.max(0, ...children.map((child) => child.hRun)),
     children,
-    innerReach: reach,
+    innerAbove: reach.above,
+    innerBelow: reach.below,
   };
 }
 
@@ -3451,7 +3879,10 @@ function place(
   // carried here — it would be a placement rule nothing on this graph exercises.
   // The measurement and what it is owed are in NEXT.md, for the tendons.
   const outward = bow >= 0 ? 1 : -1;
-  const bandHalf = strand.open ? size.vHalf : half;
+  // The side the name is going on, since the band is no longer the same both
+  // ways. `outward` is decided immediately above, so this is the one placement
+  // that reads an asymmetric band by the direction it is about to write in.
+  const bandHalf = strand.open ? (outward > 0 ? size.vBelow : size.vAbove) : half;
   // **An opened fan wears its name on the bone.**
   //
   // Owner, session 104: *"the name of the process line resides there not in some
@@ -3477,8 +3908,16 @@ function place(
   // composite run lane is drawn open by construction and has no click to
   // carry, so it gets no shell.
   const framed = strand.open && strand.opensInto === "steps" && !strand.composite;
-  const frameHalf = coreBandHalf(size) - size.nameBand;
-  const frame = framed ? { d: ribbonOutline(ribbon, frameHalf), half: frameHalf } : null;
+  // The shell's own edge: the band this chain keeps, less the room its name
+  // takes past that edge. Read on the side the name is written (`NAME_EDGE`),
+  // which is the side `coreBand` has the name in.
+  const frameHalf = coreBand(size).above - size.nameAbove;
+  // The shell's body is its **whole belly**, and that is the rule rather than an
+  // exception to it: a body is the stretch of a line that holds content, and
+  // what this shell holds — the chain's steps — is laid end to end along the
+  // belly. Its tendons hold nothing and are drawn thin like every other tendon.
+  const shellBody = { x0: belly.x0, x1: belly.x1, tendonHalf: M.tendonHalf };
+  const frame = framed ? { d: ribbonOutline(ribbon, frameHalf, shellBody), half: frameHalf } : null;
   // **The variant row (W13):** refinements nested under this lane's own line,
   // packed outward from the band the lane keeps for itself, wrapped in a
   // bracket. Same allocator, same clearance and same shared run as `measure`
@@ -3487,16 +3926,18 @@ function place(
     strand.variants.length === 0
       ? null
       : (() => {
-          const clear = coreBandHalf(size) + M.labelLift;
+          // `widerSide`, matching `measure` exactly — see the note there on
+          // why a variant row cannot take the one-sided band.
+          const clear = widerSide(coreBand(size)) + M.labelLift;
           const offsets = allocateBowsOutward(
-            size.variants.map((v) => v.vHalf),
+            size.variants.map((v) => widerSide(bandOf(v))),
             M.laneGap,
             clear,
           );
           const run = runAcross(offsets, belly.x1 - belly.x0);
-          const lo = offsets[0]! - size.variants[0]!.vHalf - VARIANT_FRAME_PAD;
+          const lo = offsets[0]! - widerSide(bandOf(size.variants[0]!)) - VARIANT_FRAME_PAD;
           const hi =
-            Math.max(...offsets.map((offset, i) => offset + size.variants[i]!.vHalf)) +
+            Math.max(...offsets.map((offset, i) => offset + widerSide(bandOf(size.variants[i]!)))) +
             VARIANT_FRAME_PAD;
           const bracket: Ribbon = {
             x0: belly.x0,
@@ -3505,7 +3946,18 @@ function place(
             bow: outward * ((lo + hi) / 2),
             run,
           };
-          return { offsets, run, d: ribbonOutline(bracket, (hi - lo) / 2) };
+          // Same as the shell above: a variant spans the belly, so the bracket
+          // that holds the row is full-thickness across the belly and thin
+          // through the two tendons where there is no variant to hold.
+          return {
+            offsets,
+            run,
+            d: ribbonOutline(bracket, (hi - lo) / 2, {
+              x0: belly.x0,
+              x1: belly.x1,
+              tendonHalf: M.tendonHalf,
+            }),
+          };
         })();
   // The shell's name goes on its **upper** edge, always. Only one text
   // population approaches the shell now that ingredients are card content
@@ -3588,6 +4040,15 @@ function place(
         peak.x,
       )
     : peak.x;
+  // **The body: how much of this line is drawn thick, and where** (R15).
+  //
+  // Around the name, not around the belly's midpoint — `labelX` is where the
+  // text actually is, and on a framed lane that is the left of the shell.
+  // `fittedWidth` and not the label's *demand*: what the body has to be in
+  // relation to is the string this lane draws, which is the fitted one, and
+  // sizing it off the demand would draw a body wider than the name on the two
+  // lanes per figure where a cap or a shared allowance bites.
+  const body = bodySpan(labelX, fittedWidth, belly);
   if (strand.standing === "unpublished") out.unpublished += 1;
   // **A partition of the old single count, on `openable`.** Both arms need
   // `!open` and neither can drop it: a run of named hops is drawn open from the
@@ -3616,7 +4077,7 @@ function place(
     // it is building or who asked for it.
     subject: false,
     d: ribbonPath(ribbon),
-    outline: ribbonOutline(ribbon, half),
+    outline: ribbonOutline(ribbon, half, { ...body, tendonHalf: M.tendonHalf }),
     x0: base.x0,
     x1: base.x1,
     yc: base.y,
@@ -3631,6 +4092,8 @@ function place(
     bellyX0: belly.x0,
     bellyX1: belly.x1,
     bellyY: belly.y,
+    bodyX0: body.x0,
+    bodyX1: body.x1,
     depth,
     parentKey: context.parentKey,
     label: fitted.text,
@@ -3640,7 +4103,13 @@ function place(
     // page. Two tests assert `label === fullLabel`; they now have to allow the
     // authored short form, and the thing they must keep refusing is a short form
     // leaking into this field.
-    fullLabel: strand.label,
+    // **The spec joins here and only here.** `fullLabel` is what the `<title>`
+    // shows and what `spokenName` reads, so composing it once means a reader who
+    // hovers, a reader who listens and a reader who looks all get the same
+    // sentence. Joined to `label` and not to `shortLabel ?? label`, because
+    // `fullLabel`'s whole contract is that a short form removes nothing.
+    fullLabel: strand.spec === null ? strand.label : `${strand.label}, ${strand.spec}`,
+    spec: strand.spec,
     shortLabel: strand.shortLabel,
     repeatMark: strand.repeatMark,
     loopClosure: strand.loopClosure,
@@ -3851,12 +4320,7 @@ function place(
   // Centred on **0**, not on `bow`: a child's base is now this strand's belly, so
   // its offset is measured from the belly rather than from the figure's own axis.
   // Passing `bow` here would add this strand's own displacement a second time.
-  const bows = allocateBowsAroundSpine(
-    size.children.map((child) => child.vHalf),
-    0,
-    M.laneGap,
-    M.spineBand,
-  );
+  const bows = allocateBowsAroundSpine(size.children.map(bandOf), 0, M.laneGap, spineBand());
   // **One run for the whole row.** See `runAcross`: the crossing-free argument is
   // that every line in a row is `belly + bow·φ` for one shared φ, and φ is built
   // from the run.
@@ -4563,7 +5027,7 @@ function layoutFigure(options: {
   const bundleHalves = measured.map((lanes) => {
     if (lanes.length === 0) return 0;
     return (
-      lanes.reduce((sum, lane) => sum + lane.vHalf * 2, 0) + M.laneGap * (lanes.length - 1)
+      lanes.reduce((sum, lane) => sum + lane.vAbove + lane.vBelow, 0) + M.laneGap * (lanes.length - 1)
     ) / 2;
   });
 
@@ -4587,7 +5051,7 @@ function layoutFigure(options: {
     // 21,849px on `hamiltonian-simulation` and **87,449px** on
     // `quantum-linear-solve`. A tendon confines the rise to its own run and the
     // run has a ceiling, so what a bow costs is now two runs, bounded, per level.
-    const offsets = allocateBows(lanes.map((lane) => lane.vHalf), 0, M.laneGap);
+    const offsets = allocateBows(lanes.map(bandOf), 0, M.laneGap);
     // The line **without its tendons on it**: everything drawn along it, plus the
     // padding. This is what `firstOrderRun` takes its share of, and taking it here
     // rather than off `span` is what cuts the circularity — `span` is this plus
@@ -4674,7 +5138,7 @@ function layoutFigure(options: {
 
   for (const [index, bundle] of plan.bundles.entries()) {
     const base: Level = { x0: xs[index]!, x1: xs[index + 1]!, y: yc };
-    const halves = measured[index]!.map((lane) => lane.vHalf);
+    const halves = measured[index]!.map(bandOf);
     const bows = allocateBows(halves, 0, M.laneGap);
     // **Read, not re-derived.** This used to recompute `runAcross` off the placed
     // base, so the number the column was sized for and the number the row was

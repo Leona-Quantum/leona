@@ -14,9 +14,16 @@
 // construction rather than by minimising crossings, and it is why nesting needed
 // no new proof — a strand's children are offsets of *its* belly by the same law.
 //
-// A strand's two edges are the same law applied twice, at `bow − half` and
-// `bow + half`, so the drawn shape pinches to a point at each circle for free.
-// The taper is not drawn on top of the curve; it *is* the displacement law.
+// **The thickness is not part of that law, and since R15 it is not derived from
+// it either.** A strand's two edges used to be the same law applied twice, at
+// `bow − half` and `bow + half`, so the drawn shape pinched to a point at each
+// circle for free — the taper *was* the displacement law. The owner asked for
+// the taper to go (ai-ops#64: *"just keep thin tendon lines and the same short
+// line bodies around labels rather than this taper"*), so the edges are now the
+// centre line offset by a **constant**: `tendonHalf` along the tendons, `half`
+// across the body, stepping between the two. The displacement law above is
+// untouched, which is why nothing about crossings had to be re-argued — see
+// `ribbonOutline` for the one cost that did change, and where it is bounded.
 //
 // ## Which φ, and why it changed (R14)
 //
@@ -230,30 +237,100 @@ export function ribbonPath(ribbon: Ribbon): string {
 }
 
 /**
- * The drawn region: the ribbon at `bow − half` and the ribbon at `bow + half`,
- * the second one reversed so the outline is one closed subpath.
+ * The stretch of a ribbon drawn at full thickness, and how thin the rest is.
  *
- * Both edges carry the **same** `run`, so both are the same φ scaled — which is
- * what makes the shape pinch to a point at each circle and stand at exactly
- * `2·half` across the whole belly. That is a muscle: a tendon that tapers in, a
- * belly of constant thickness, a tendon that tapers out. The old shape was a
- * lens, thickest at one point in the middle and thinning everywhere else, which
- * is what made a name written on it sit on a moving target.
+ * **This is R15, and it is the owner's ask in one type.**
+ *
+ * > *"i don't like how lines taper off — just keep thin tendon lines and the
+ * > same short line bodies around labels rather than this taper."*
+ * >
+ * > *"…let there be some rule for relational compactness, how far the body of
+ * > the line should go in relation to the label, and then tendons can pad the
+ * > rest!"*                                                  — owner, ai-ops#64
+ *
+ * A line therefore has three parts and only the middle one is sized by content:
+ * a **body** of exactly `2·half`, and a **tendon** at each end of exactly
+ * `2·tendonHalf`, with a step between them rather than a ramp. `x0`/`x1` are
+ * where the body starts and stops — clamped into the belly below, because a
+ * full-thickness stretch reaching into a tendon would be a bar hanging off the
+ * curve rather than a body sitting on it.
+ *
+ * Required rather than optional, and there are only four call sites. An optional
+ * body would let a new one silently draw the old shape, which is how the legend
+ * swatch came to describe a lens the canvas had stopped drawing; the compiler
+ * asking the question is cheaper than finding that on production again.
  */
-export function ribbonOutline(ribbon: Ribbon, half: number): string {
-  const upper = ribbonPath({ ...ribbon, bow: ribbon.bow - half });
-  const lower = { ...ribbon, bow: ribbon.bow + half };
-  const { x0, x1, y, run } = lower;
-  const belly = y + lower.bow;
+export interface Body {
+  x0: number;
+  x1: number;
+  /** Half the thickness everywhere OUTSIDE the body — the thin tendon line. */
+  tendonHalf: number;
+}
+
+/**
+ * The drawn region: the centre line offset by `∓h(x)`, the lower edge reversed
+ * so the outline is one closed subpath.
+ *
+ * ## What changed at R15, and what did not
+ *
+ * It used to be the ribbon at `bow − half` and the ribbon at `bow + half` —
+ * both edges the same φ scaled — so the thickness at x was `2·half·φ(x)` and
+ * the shape pinched to a **point** at each circle. That is the taper the owner
+ * asked to be rid of. Now the two edges are the centre line displaced by a
+ * *constant*, `tendonHalf` along the tendons and `half` across the body, and a
+ * ribbon's ends stand `2·tendonHalf` apart instead of meeting.
+ *
+ * **The crossing-free argument is untouched, because it was never about the
+ * thickness.** It is about the centre lines: two lines over one base are
+ * `(b₁ − b₂)·φ(x)` apart at every x, and φ, the runs, and every band the layout
+ * allocates from are all exactly where they were. What a constant offset does
+ * change is the *ink* near a shared circle — where the centre lines converge,
+ * two thin lines overlap for a short stretch instead of vanishing into each
+ * other. That cost is bounded, it is measured rather than asserted away, and the
+ * bound is what `two lines' ink meets only where they converge on a circle they
+ * share` checks. Naming it is the whole of the no-crossings-by-design rule: a
+ * guarantee with an unstated cost is one somebody quietly breaks later.
+ *
+ * Offsetting a ribbon by a constant `c` is `ribbonPath({...ribbon, y: y + c})` —
+ * `y + c + bow·φ(x)` — which is why the tendon cubics below are the emitter's
+ * own control points with `c` added to every y, and not a second curve.
+ */
+export function ribbonOutline(ribbon: Ribbon, half: number, body: Body): string {
+  const { x0, x1, y, run } = ribbon;
+  // A tendon is never drawn thicker than the body it runs into: on a strand
+  // thinner than the tendon line (a deep step) the step would invert and the
+  // shape would read as a bar with a wider line through it.
+  const thin = Math.min(body.tendonHalf, half);
+  const bellyY = y + ribbon.bow;
   const a = x0 + run;
   const b = x1 - run;
+  const bx0 = Math.min(Math.max(body.x0, a), b);
+  const bx1 = Math.max(Math.min(body.x1, b), bx0);
+  // The left tendon and the right tendon, at a constant offset from the centre.
+  const rise = (c: number) =>
+    `C ${n(x0 + run / 3)} ${n(y + c)}, ${n(x0 + (2 * run) / 3)} ${n(bellyY + c)}, ${n(a)} ${n(bellyY + c)}`;
   return [
-    upper,
-    // The lower edge, walked backwards from the right-hand circle.
-    `L ${n(x1)} ${n(y)}`,
-    `C ${n(b + (2 * run) / 3)} ${n(y)}, ${n(b + run / 3)} ${n(belly)}, ${n(b)} ${n(belly)}`,
-    `L ${n(a)} ${n(belly)}`,
-    `C ${n(x0 + (2 * run) / 3)} ${n(belly)}, ${n(x0 + run / 3)} ${n(y)}, ${n(x0)} ${n(y)}`,
+    // The upper edge, left to right: thin up the tendon, a step out to the body,
+    // the body, a step back in, thin down the far tendon.
+    `M ${n(x0)} ${n(y - thin)}`,
+    rise(-thin),
+    `L ${n(bx0)} ${n(bellyY - thin)}`,
+    `L ${n(bx0)} ${n(bellyY - half)}`,
+    `L ${n(bx1)} ${n(bellyY - half)}`,
+    `L ${n(bx1)} ${n(bellyY - thin)}`,
+    `L ${n(b)} ${n(bellyY - thin)}`,
+    `C ${n(b + run / 3)} ${n(bellyY - thin)}, ${n(b + (2 * run) / 3)} ${n(y - thin)}, ${n(x1)} ${n(y - thin)}`,
+    // The right-hand end: a cap of `2·thin`, where the old shape had a point.
+    `L ${n(x1)} ${n(y + thin)}`,
+    // The lower edge, walked backwards from that cap.
+    `C ${n(b + (2 * run) / 3)} ${n(y + thin)}, ${n(b + run / 3)} ${n(bellyY + thin)}, ${n(b)} ${n(bellyY + thin)}`,
+    `L ${n(bx1)} ${n(bellyY + thin)}`,
+    `L ${n(bx1)} ${n(bellyY + half)}`,
+    `L ${n(bx0)} ${n(bellyY + half)}`,
+    `L ${n(bx0)} ${n(bellyY + thin)}`,
+    `L ${n(a)} ${n(bellyY + thin)}`,
+    `C ${n(x0 + (2 * run) / 3)} ${n(bellyY + thin)}, ${n(x0 + run / 3)} ${n(y + thin)}, ${n(x0)} ${n(y + thin)}`,
+    // Closing draws the left-hand cap, the same `2·thin` as the right.
     "Z",
   ].join(" ");
 }
