@@ -1,6 +1,8 @@
 # ADR-0026: A component may be extracted from a paper that is about something else
 
-**Date:** 2026-08-13 · **Status:** accepted — in force
+**Date:** 2026-08-13 · **Status:** accepted — in force. **§2 superseded and §1a added the same day
+by the owner's ai-ops#58 ruling; §3's locus is now option (a), a structured field, not yet built.**
+See *Owner rulings* at the foot.
 
 **Context:** Four owner rulings on `EshMis/ai-ops` say the same thing from four directions and
 have never been written down as one policy, so each has been applied by whoever happened to
@@ -59,15 +61,84 @@ claim than Lucas makes, and it stays a refusal. The right shipping form is a dec
 the general record plus a `knownGap` with `reason: "not_stated_in_source"` naming the binary
 expansion — which converts "we could not source this" into "here is precisely what is missing".
 
-**2. What a sub-paper extraction may claim, and what it may not.** It may claim the component's
-definition or construction as the paper states it; any property the paper states **of the
-component**; and that this paper uses it, in the setting it uses it. It may **not** carry down a
-figure the paper states only for its whole algorithm — a complexity, a qubit count, a depth, an
-error bound, a speedup. Those are claims about the assembled pipeline and are not properties of a
-part of it. Where the paper does not state the figure for the component itself, the field is left
-out or declared as a `knownGap`; §3.6's rule is untouched — *a block may ship with a hole, it may
-never ship with a guess in the hole.* This is the half of the policy a checker cannot see, and it
-is the reviewer's job.
+**2. A claim sits at the level of abstraction the paper stated it at.**
+**Superseded 2026-08-13 by the owner's ruling on ai-ops#58** — see *Owner rulings* at the foot of
+this ADR for the quote, URL and timestamp. The clause below is his rule; the original text is
+recorded there rather than silently rewritten, because it was half right in a way worth keeping
+visible.
+
+> Claims are different — they should hold only at the level it is mentioned in the paper. So if a
+> paper claims a specific cost for their whole algorithm without individual components, the cost
+> claim should exist at the whole algorithm and reference the paper. If the paper mentions cost
+> along each of its components as well, then those card should mention the papers claims about
+> cost for each of the components it mentions.
+> — owner, ai-ops#58, 2026-08-13T04:51:46Z
+
+So the rule is **not** "only what the paper says of the part". It is: **every claim exists, at
+exactly the level the paper made it, referencing the paper.**
+
+- A paper stating a cost for its **whole algorithm only** → the cost claim exists **at the whole
+  algorithm**, citing that paper. It is not deleted, and it is not pushed down onto a component.
+- A paper stating costs **per component** as well → each component's card carries that paper's
+  claim **for that component**.
+- Neither level may borrow the other's figure. Carrying a whole-algorithm number down onto a part
+  remains forbidden, and this is the half of the policy no checker can see once a locus field
+  exists to hold the pointer — it is the reviewer's job.
+
+**What this corrects in the original text:** it said the field is "left out or declared as a
+`knownGap`" where the paper states no per-component figure. Leaving it out is right *for the
+component*; it was wrong to imply the claim disappears. The claim has a home — the level the paper
+made it at — and §3.6's rule is untouched either way: *a block may ship with a hole, it may never
+ship with a guess in the hole.*
+
+**The exception he named himself, and it is a channel rather than a caveat:**
+
+> Let me know when you come across exceptions — one thing I can think of is a paper claiming
+> something about an abstraction/process that doesn't exist on the map yet — but I'm sure there are
+> easy ways to fold it in as the whole point of the map is to track what's marked in literature and
+> other know sources of scientific information.
+
+A paper making a claim about a level of abstraction the map does not yet carry is **reported to him
+on ai-ops**, not resolved by inventing the level or by dropping the claim to the nearest level that
+exists. Dropping it would restate the claim at an abstraction the paper never used, which is the
+failure this whole clause is about.
+
+**1a. The order a paper is taken in — pipeline, then components, then the joins.**
+**Added 2026-08-13 from the owner's ai-ops#58 ruling.** He volunteered this; nobody asked. It is
+the most consequential part of that comment because it governs intake for every future paper.
+
+> I think it makes sense to map the pipeline of each paper first. Then see how they can be broken
+> into components. Then build the map by connecting components and states that are shared across
+> papers. I feel like this is extremely clear, and can make it easy for future papers to add onto
+> the map easily, either by integrating into it or by expanding it.
+> — owner, ai-ops#58, 2026-08-13T04:51:46Z
+
+Three steps, in order, and the order is the point:
+
+1. **Map the paper's own pipeline first** — end to end, as that paper runs it.
+2. **Then break the pipeline into components.**
+3. **Then build the map by connecting components and the states shared across papers.**
+
+**Why the order matters rather than being a preference.** Extracting components before mapping the
+paper's pipeline is how a component gets recorded at the wrong level of abstraction — you cannot
+tell what a piece *is* until you have seen what it sits inside. It is also what makes the map grow
+by **shared states** rather than by one author's favourite arrangement, which is R1's whole defence
+of the ladder. And it is why the join is step 3: a component that connects to nothing yet is still
+correctly recorded, and the map gains the edge when a second paper shares the state.
+
+**Papers that are not a pipeline fold in afterwards**, and he named the kinds:
+
+> Other papers can theory and such, comparative analysis, one-off analysi of specific components.
+> These can obviously be folded in after considering which fields they apply to.
+
+A theory paper, a comparative analysis, or a one-off treatment of a single component is not run
+through steps 1–2. It is folded in against **which fields it applies to** — which is the same
+question §2 answers about level of abstraction, asked of a paper that has no pipeline of its own.
+
+**This pairs with his ai-ops#57 answer** — grow the map, add new top-level regions; *"the nonlinear
+odes were just a proof of concept."* So step 3 legitimately produces a **new region**, not only a
+new node inside an existing one. R1 is untouched: a paper still never becomes a node, and a region
+still has to be a place where genuinely different methods compete.
 
 **2a. When two papers each hold half, neither becomes the record's `source`.** The commonest shape
 this doctrine produces: one paper states the *problem* exactly, another states the *method* exactly,
@@ -105,13 +176,33 @@ citation is the home.
   `scripts/check-paper-register.mjs` for any arXiv- or DOI-shaped address. Textbooks are primary
   sources (#44); a textbook with a DOI registers like any other row, and Nielsen & Chuang
   (`doi:10.1017/cbo9780511976667`) already does.
-- **A locus.** The `relevance` prose names *where in the paper the component is* — a section,
-  figure, equation, table or named subroutine — not merely that the paper is relevant. The repo
-  already holds this rule three times for other fields and it is the same rule:
-  `MethodExampleRun.at` (`layers.ts`, enforced at the message *"a whole paper is not a run"*),
-  `SlotClosure.sourceLocus` (ADR-0025), and G1's `locator`, which is a section number **and** a
-  short verbatim quote. There is no structured locus field on `PublicRepositoryCitation` today
-  and this ADR does not add one — see *Open* below.
+- **A locus, and the owner has ruled it becomes a structured field.** It names *where in the paper
+  the component is* — a section, figure, equation, table or named subroutine — not merely that the
+  paper is relevant. The repo already holds this rule three times for other fields and it is the
+  same rule: `MethodExampleRun.at` (`layers.ts`, enforced at the message *"a whole paper is not a
+  run"*), `SlotClosure.sourceLocus` (ADR-0025), and G1's `locator`, which is a section number
+  **and** a short verbatim quote.
+
+  **He picked option (a) on ai-ops#58** — *"let's go with the first option"* — which is the strict
+  reading **with the locus as its own field on `PublicRepositoryCitation`, so a checker can require
+  it**. Until that field exists the locus goes in the `relevance` prose, which is what every record
+  authored to date does and what keeps them correct under the new rule rather than needing rework.
+
+  **What building it costs, so whoever picks it up has the number in front of them and does not
+  discover it mid-PR.** Not started, deliberately:
+  - It changes the **shape of every published record**. `PublicRepositoryCitation` is inside the
+    `record` blob the public catalog serves, re-validated in TypeScript on every request.
+  - It is therefore a **two-part deploy**, the pattern `papers.ts` already describes for the
+    citation normalisation it is waiting on: ship the field optional and backfill, then require it.
+    Requiring it in one step refuses every record authored before it existed.
+  - It touches the **API list projection allowlist** and **both `from-catalog.ts` guards** — a
+    field missing from either is dropped silently, in production only, against a healthy API. That
+    is the failure `topics` and `knownGaps` both hit.
+  - It moves each edited record's `evidence_hash` but **not** its `claim_hash`, which is sha256
+    over the `source` object alone (`catalog_attestation.py:77-88`), so the existing grants carry
+    forward and **no re-signature is needed**. This is the one part that is cheaper than it looks.
+  - Every record's citations then need a locus authored, which is a **content pass over the
+    corpus**, not a schema change with a migration at the end of it. That is the real cost.
 - **A declaration when the extraction is shared.** Where `DECLARED_SHARED_SOURCES` applies (see 5),
   the URL and its exact slug set are written down with the reason.
 - **A reference list is never inherited.** Every reference that enters the register or a citation is
@@ -187,9 +278,49 @@ dressed up. **Reversal trigger:** if `DECLARED_SCATTERED_PAPERS` grows past a ha
 the scatter gate is measuring the map's disconnection rather than an extraction's drift, and the
 right fix is the map's missing edges — revisit this ADR rather than keep extending the list.
 
-**Open, and with the owner rather than settled here** (one consolidated question, ai-ops):
-whether a sub-paper extraction needs a **structured** locus field rather than prose; whether a
-vendor library (#42's Classiq case) is a source of record in its own right or only permission to
-keep an entry whose method is sourced elsewhere; and whether an extracted component may ever carry
-a complexity the paper states only for the whole algorithm — (2) above is the conservative default
-until he rules, chosen because a record built that way stays correct under either answer.
+## Owner rulings
+
+**ai-ops#58, 2026-08-13T04:51:46Z — answered the question this ADR was opened with, and two things
+it did not ask.** Quoted in full because the shape matters; the clauses above cite it by section.
+
+> I think it makes sense to map the pipeline of each paper first. Then see how they can be broken
+> into components. Then build the map by connecting components and states that are shared across
+> papers. I feel like this is extremely clear, and can make it easy for future papers to add onto
+> the map easily, either by integrating into it or by expanding it.
+>
+> Other papers can theory and such, comparative analysis, one-off analysi of specific components.
+> These can obviously be folded in after considering which fields they apply to.
+>
+> Claims are different- they should hold only at the level it is mentioned in the paper. So if a
+> paper claims a specific cost for their whole algorithm without individual components, the cost
+> claim should exist at the whole algorithm and reference the paper. If the paper mentions cost
+> along each of its components as well, then those card should mention the papers claims about cost
+> for each of the components it mentions. So let's go with the first option, with the clarification
+> that whole-algorithm claims or more general claims can still exist in the map- but only at that
+> same level of abstraction. Let me know when you come across exceptions- one thing I can think of
+> is a paper claiming something about an abstraction/process that doesn't exist on the map yet- but
+> I'm sure there are easy ways to fold it in as the whole point of the map is to track what's
+> marked in literature and other know sources of scientific information.
+
+What it settled, in the order it appears: **§1a** the intake order (pipeline → components → joins,
+with non-pipeline papers folded in by which fields they apply to); **§2** claims sit at the level of
+abstraction the paper stated them at, and the exception channel; **§3** option (a) — the locus
+becomes a structured field.
+
+**What §2 said before it was superseded**, kept because it was half right and the half that was
+wrong is instructive: *"It may **not** carry down a figure the paper states only for its whole
+algorithm … Where the paper does not state the figure for the component itself, the field is left
+out or declared as a `knownGap`."* The refusal to carry a figure downward survives. What did not is
+the implication that the claim then has nowhere to go — his rule gives it a home at the level the
+paper made it, which is more permissive **and** more precise than the conservative default this ADR
+shipped with.
+
+**ai-ops#57, same day — grow the map.** New top-level regions are in scope; *"the nonlinear odes
+were just a proof of concept."* Recorded here because §1a's third step now legitimately produces a
+region rather than only a node. R1 is untouched: a paper still never becomes a node, and a region
+still has to be a place where genuinely different methods compete.
+
+**Settled without him, under rulings he had already given** (his queue was at its working maximum):
+whether a reputable vendor library is a source of record — #42 option (b) answers it, the paper is
+the source and the notebook is the demonstration; and the three clauses in §1, §2a and §3 that came
+out of lane 4's first real cases.
