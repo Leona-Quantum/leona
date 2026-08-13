@@ -764,6 +764,7 @@ async def _handle_agent_execution(
         requested_seed=ctx.seed,
         initial_source=ctx.source_code,
         rollback=session.rollback,
+        research_sink=ctx.sink,
     )
     outcome = await SimpleCircuitPipeline(
         ports=ports,

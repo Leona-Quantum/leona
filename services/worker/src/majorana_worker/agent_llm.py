@@ -23,6 +23,7 @@ _ROLE_STAGE = {
     "agent_tool_call": Stage.GENERATE,
     "generate_circuit": Stage.GENERATE,
     "intent_alignment": Stage.VERIFY,
+    "research_triage": Stage.PLAN,
 }
 
 _LIVE_DELTA_CHARS = 160
