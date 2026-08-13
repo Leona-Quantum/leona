@@ -33,10 +33,10 @@
 //   * Every slug's declared width equals its own circuit's `qubitCount`, so the
 //     suffix the fold reads is not a naming convention drifting from the
 //     circuit it names.
-//   * 239 browse rows. The number the roadmap promises, computed the way the
+//   * 259 browse rows. The number the roadmap promises, computed the way the
 //     page computes it rather than typed in. It was 176 when R2.6 sized it
 //     against 281 cards; the parity intake published 12 unfolded records and then
-//     6, 6, 8, 8, 19 and 4 more, so the number moved by exactly 63. Deliberately, which is what the error
+//     6, 6, 8, 8, 19, 4, 6, 1, 6, 4, 2 and 1 more, so the number moved by exactly 83. Deliberately, which is what the error
 //     message below asks for: this figure exists to make an *accidental* change
 //     in the fold — a member's `status` drifting and eight cards reappearing —
 //     visible, and it can only do that if intake changes are entered by hand.
@@ -208,32 +208,46 @@ for (const [index, slugs] of CURATED_GROUPS.entries()) {
 }
 
 const rows = families.foldRows(records, (slug) => groupIndex.get(slug));
-// 176 at R2.6 (281 records), then +12, +6, +6, +8, +8, +19 and +4 as the Zoo- and
-// Classiq-parity intake batches added records that belong to no width family and
-// therefore fold to nothing: 188, 194, 200, 208, 216, 235, 239. See the header.
+// 176 at R2.6 (281 records), then +12, +6, +6, +8, +8, +19, +4, +1, +6, +6, +4 and
+// +2 as the Zoo- and Classiq-parity intake batches added records that belong to no
+// width family and therefore fold to nothing: 188, 194, 200, 208, 216, 235, 239,
+// 240, 246, 252, 256, 258. See the header.
 //
-// +1 for ai-ops#42, taking it to 240: `qaoa-combinatorial-optimization`, the one
-// general QAOA record the owner asked for, is a literature reference in no width
-// family and so adds exactly one row. The thirteen declarations that landed with
-// it add nothing here — a declaration writes no record.
+// The +1 is ai-ops#42's `qaoa-combinatorial-optimization`, described below. The
+// last four steps are the W22 Zoo-parity pass, which took Zoo coverage from 39/60
+// to 57/60 — matrix powers, string rewriting, zeta functions, Gauss sums,
+// exponential congruences and subset finding; then semiring matrix products,
+// weight enumerators, Viterbi decoding, lattice filtering, double-bracket
+// diagonalization and primality proving; then Pell's equation, the principal ideal
+// problem, the unit group and the class group; then representation matrix elements
+// and boson sampling. Eighteen literature records in no width family, so eighteen
+// new rows.
+//
+// +2 for ai-ops#42, taking it to 241 — one at a time, 239 → 240 → 241. Both are
+// literature references belonging to no width family, so each adds exactly one
+// row: `qaoa-combinatorial-optimization` (the general QAOA record the owner asked
+// for) and `quantum-forward-kinematics-inverse-solve` (the robot-posture paper he
+// supplied the PDF for). The thirteen QAOA declarations and the three
+// CFD/chemistry ones that landed alongside them add nothing here — a declaration
+// writes no record.
 //
 // Note for whoever changes it next: this count is computed from the **manifest**,
 // not from the corpus module — so a corpus change that has not regenerated
 // `services/api/catalog_bootstrap/manifest.json` yet will report the OLD number
-// and look like it did not move the fold at all. That happened here: the record
-// above was pushed once without a regenerated manifest, and **everything inside
-// `apps/web` stayed green** — lint, typecheck, and 1038 tests. Two things in this
-// file that look like they should have caught it did not. The corpus/manifest
-// cross-check below compares width *families*, and a literature record belongs to
-// none, so it compared the two surfaces and saw no difference. This constant reads
-// the stale manifest, so it agreed with itself.
+// and look like it did not move the fold at all. That happened here: the first of
+// the two records was pushed once without a regenerated manifest, and
+// **everything inside `apps/web` stayed green** — lint, typecheck, and 1038
+// tests. Two things in this file that look like they should have caught it did
+// not. The corpus/manifest cross-check below compares width *families*, and a
+// literature record belongs to none, so it compared the two surfaces and saw no
+// difference. This constant reads the stale manifest, so it agreed with itself.
 //
 // What caught it was CI's `ts` job, in a step outside this package —
 // `node scripts/generate-catalog-bootstrap-manifest.mjs --check` — with
 // `✖ manifest drift: committed 346 items, regenerated 347`. So the backstop
 // exists and it works; it is just nowhere near here, and "green locally" does not
 // reach it. Regenerate the manifest in the same commit as any record you add.
-const EXPECTED_BROWSE_ROWS = 240;
+const EXPECTED_BROWSE_ROWS = 259;
 if (rows.length !== EXPECTED_BROWSE_ROWS) {
   errors.push(
     `${records.length} records fold to ${rows.length} browse rows, expected ${EXPECTED_BROWSE_ROWS}. `
