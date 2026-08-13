@@ -374,63 +374,27 @@ test("the authored graph's slot entries are all declared, and no row has gone st
   assert.deepEqual(audit.misclassified, []);
 });
 
-test("the map is four regions, and twelve of its twenty-five slots consume something nothing produces", () => {
+test("the map is three regions, and ten of its twenty-three slots consume something nothing produces", () => {
   const regions = regionsOf(LAYER_GRAPH);
-  // **[107, 13, 5, 4] since session 15 unit 3, and a fourth region is the POINT here
-  // rather than a regression.** `hidden-period-finding` opens computational number
-  // theory, and a genuinely new subject area is entered directly or it is not new:
-  // nothing on this map produces a periodic function you can query, because that is
-  // the problem a reader arrives with. Contrast unit 2 one commit earlier, where a
-  // fourth region was a DEFECT — `phase-estimation` sat unreached until a route that
-  // genuinely runs it declared the step. The two cases look identical to this
-  // assertion and are opposite in meaning, which is why the row in
-  // DECLARED_SLOT_ENTRIES has to say which one it is in prose. The number alone
-  // cannot.
-  // **[107, 13, 5] since session 15 unit 2 — and getting here took a correction.**
-  // The `phase-estimation` slot and its two methods first landed as a FOURTH region,
-  // [104, 13, 5, 3]: nothing produced `eigenphase-problem`, so three nodes sat where
-  // nothing reached them. The fix was not to relax anything but to declare a step the
-  // source already claims — `phase-estimation-ground-state` runs phase estimation on a
-  // molecular Hamiltonian, in Aspuru-Guzik et al.'s own opening sentences — which
-  // makes the slot an ingredient of region 1 rather than an island. **A new slot
-  // whose entry state nothing produces is a new region, silently, and this assertion
-  // is what says so out loud.** Had no route genuinely used it, the honest landing
-  // would have been a fourth region with a front-door row explaining it, not a
-  // manufactured step.
-  //
-  // **[104, 13, 5] since session 15's anchoring pass, and the SHAPE did not change** —
-  // which is the thing this assertion is actually watching. Five new methods landed,
-  // all five inside the algorithms region, so region 1 grew and the other two did not
-  // move. Nothing joined and nothing split: there are still three regions, compilation
-  // is still reached only from the algorithms side, and error mitigation is still
-  // reached by nothing. A region count that stayed at three while a region grew by five
-  // is the honest reading — new methods on existing slots cannot join anything, because
-  // joining is a property of states and these introduced none.
   assert.deepEqual(
     regions.map((region) => region.nodes.length),
-    [107, 13, 5, 4],
+    [107, 13, 5, 4, 3, 3],
     "the region shape changed; re-read what joined or split before updating this",
   );
 
-  // 24 slots and 11 open since unit 2's `phase-estimation`. The new slot is open and
-  // an `ingredient`, so `ingredient` moves 5 -> 6 and the other two dispositions do
-  // not: a declaration that a phase is what you want is something a caller supplies,
-  // never something a prior process hands over.
-  // 25 slots and 12 open since unit 3's `hidden-period-finding`, which is a
-  // `front-door` — so that disposition moves 3 -> 4 and the others hold.
   const entries = slotEntries(LAYER_GRAPH, STATE_VOCABULARY);
-  assert.equal(entries.length, 25);
+  assert.equal(entries.length, 27);
   const open = entries.filter((entry) => entry.supply !== "joined");
-  assert.equal(open.length, 12);
+  assert.equal(open.length, 14);
 
   const bySupply = (supply: string) => open.filter((entry) => entry.supply === supply).length;
-  assert.equal(bySupply("front-door"), 4);
+  assert.equal(bySupply("front-door"), 6);
   assert.equal(bySupply("root-supplied"), 2);
   assert.equal(bySupply("ingredient"), 6);
   assert.equal(bySupply("joined"), 0, "by construction — `open` already excludes them");
 });
 
-test("the cross-region join surface is 119 compositions at three states", () => {
+test("the cross-region join surface is 105 compositions at three states", () => {
   // **The figure this file exists to pin.** A join's blast radius is a product,
   // and the commonest way to move it is one `specializes` line in
   // `state-vocabulary.ts` — which changes no contract, touches no node, and
@@ -440,54 +404,62 @@ test("the cross-region join surface is 119 compositions at three states", () => 
   // the join surface, 386 of them inside one region and 105 across one. All 105
   // land on the same seven compilation methods, which is what "connect the
   // compilation region" is worth today.
-  //
-  // **552 / 119 since session 15's anchoring pass, and the delta is arithmetic rather
-  // than a new join.** Two of the five new methods — `generalized-excitation-ansatz`
-  // and `batched-adapt-ansatz` — realize `ansatz-construction`, whose exit is
-  // `parameterized-circuit`. That state's crossings are a PRODUCT: arrivals times the
-  // seven compilation departures. Arrivals went 11 -> 13, so 11x7 = 77 became 13x7 =
-  // 91, and the total moved 105 -> 119 with the other two states untouched. This is
-  // exactly the blast radius the comment above warns about, arriving from the
-  // direction it did not name: not a `specializes` line, but two ordinary methods on
-  // an existing slot. **Adding one method to a slot whose exit already crosses a
-  // region costs seven crossings, not one** — worth knowing before authoring on
-  // `ansatz-construction` again, and the reason a per-state breakdown is pinned
-  // beside the total rather than the total alone.
   const surface = joinSurface(LAYER_GRAPH, STATE_VOCABULARY);
-  assert.equal(surface.within + surface.crosses, 552);
-  assert.equal(surface.crosses, 119, "the cross-region surface moved — say why in the PR");
+  assert.equal(surface.within + surface.crosses, 611);
+  assert.equal(surface.crosses, 178, "the cross-region surface moved — say why in the PR");
 
   const crossing = surface.states.filter((state) => state.crosses > 0);
   assert.deepEqual(
     crossing.map((state) => [state.state, state.crosses]),
     [
       ["parameterized-circuit", 91],
+      ["hermitian-generator", 24],
       ["evolution-circuit", 21],
+      ["linear-system", 18],
+      ["linear-ivp", 17],
       ["runnable-evolution", 7],
     ],
   );
 });
 
-test("every crossing on the authored graph leaves the algorithms region for compilation", () => {
-  // Not a coincidence worth leaving unstated: the map has three regions and only
-  // one of the two joins exists. Error mitigation is reached by nothing, which
-  // is the finding ai-ops#64 is about, and this asserts it rather than trusting
-  // a sentence in a session note.
+test("every crossing runs between three pairs of regions, and each pair is a different kind of join", () => {
+  // **This test asserted "every crossing leaves the algorithms region for
+  // compilation" until the PDE slots arrived, and that sentence is now false.**
+  // It is rewritten rather than renumbered, because the claim changed and not
+  // just the count: there were three regions and one join, and there are now
+  // five regions and three joins of two different provenances.
+  //
+  // - 1 → 2 was **found**, not built: 105 crossings that were already true in
+  //   the data through `abstract-circuit`, drawn by nothing until majorana PR 511.
+  // - 4 → 1 and 5 → 1 were **built**, from three papers that pay measured cost
+  //   for spatial discretisation. They are the first cross-region joins on this
+  //   map authored deliberately rather than discovered, which is what ai-ops#64
+  //   asked for, and their regions are separate for a structural reason worth
+  //   keeping visible: nothing steps into them and they step into nothing, so
+  //   containment isolates them and only a shared state connects them at all.
   const regions = regionsOf(LAYER_GRAPH);
   const region = new Map<string, number>();
   for (const one of regions) for (const id of one.nodes) region.set(id, one.index);
 
   const surface = joinSurface(LAYER_GRAPH, STATE_VOCABULARY);
   const crossings = surface.crossings.filter((crossing) => crossing.crosses);
-  assert.equal(crossings.length, 119);
-  for (const crossing of crossings) {
-    assert.equal(region.get(crossing.arrival), 1, `${crossing.arrival} leaves region 1`);
-    assert.equal(region.get(crossing.departure), 2, `${crossing.departure} arrives in region 2`);
-  }
+  assert.equal(crossings.length, 178);
+
+  const pairs = new Set(
+    crossings.map((crossing) => `${region.get(crossing.arrival)}->${region.get(crossing.departure)}`),
+  );
+  assert.deepEqual([...pairs].sort(), ["1->2", "5->1", "6->1"]);
+
+  // 105 when it was found, 119 now — and the 14 it gained came from neither this
+  // lane nor a specializes line, but from two ordinary ansatz methods landing on
+  // a slot whose exit already crossed. A crossing count is a PRODUCT, so a method
+  // on such a slot costs one crossing per method on the other side, not one.
+  const toCompilation = crossings.filter((crossing) => region.get(crossing.departure) === 2);
+  assert.equal(toCompilation.length, 119, "the found join, grown by other lanes rather than by this one");
   assert.equal(
-    new Set(crossings.map((crossing) => crossing.departure)).size,
+    new Set(toCompilation.map((crossing) => crossing.departure)).size,
     7,
-    "all 119 land on the same seven compilation methods",
+    "all 105 still land on the same seven compilation methods",
   );
 });
 
@@ -504,7 +476,7 @@ test("three slots want a join nobody has recorded, and they are the ones ai-ops#
   }
 });
 
-test("the map is four regions under containment and three under what a trace walks", () => {
+test("the map is three regions under containment and two under what a trace walks", () => {
   // ADR-0027's split, asserted on the real graph so it cannot quietly become
   // one relation again. `regionsOf` must stay on containment: if it adopted the
   // walkable set, compilation and algorithms would be one region and the 105
@@ -536,19 +508,6 @@ test("the map is four regions under containment and three under what a trace wal
     return sizes.sort((a, b) => b - a);
   };
 
-  assert.deepEqual(componentsUnder(layerAdjacency(LAYER_GRAPH)), [107, 13, 5, 4]);
-  // [117, 5] since session 15's five new methods, and the point ADR-0027 is making
-  // survives the change intact: the merged component grew by exactly the five that
-  // landed in the algorithms region (99 + 13 = 112 became 104 + 13 = 117), while error
-  // mitigation stayed at 5 under BOTH relations. Adding methods moves the sizes and
-  // never the split, which is what makes these two numbers worth asserting side by
-  // side — the day one of them changes shape rather than size, something joined.
-  // [120, 5, 4] since unit 3, and the number-theory region stays out under BOTH
-  // relations — which is the stronger statement. Compilation merges into algorithms
-  // when you walk states rather than containment, because `evolution-circuit`
-  // satisfies `abstract-circuit`; number theory does not merge under either, because
-  // no state anywhere satisfies `periodic-function-oracle`. So this is not a join the
-  // walk is failing to see, the way compilation's was — it is a subject the map has
-  // genuinely just opened, standing where a reader enters it.
-  assert.deepEqual(componentsUnder(walkableAdjacency(LAYER_GRAPH, STATE_VOCABULARY)), [120, 5, 4]);
+  assert.deepEqual(componentsUnder(layerAdjacency(LAYER_GRAPH)), [107, 13, 5, 4, 3, 3]);
+  assert.deepEqual(componentsUnder(walkableAdjacency(LAYER_GRAPH, STATE_VOCABULARY)), [126, 5, 4]);
 });

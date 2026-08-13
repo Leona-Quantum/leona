@@ -1297,6 +1297,21 @@ test("a coined composite is refused in the short form too, where it is likeliest
  * behind for later rot to fill.
  */
 const HOLLOW_BY_SLOT: ReadonlyMap<string, number> = new Map([
+  // A region opening, in the gate's own words, rather than rot. The PDE
+  // discretization slots arrived in session 15 with two methods each and no
+  // recorded interior, for the same reason the discretization slots above are
+  // hollow: what a discretization produces is a system of rows, and assembling
+  // rows is not a capability this graph decomposes.
+  //
+  // **`spatial-discretization` is deliberately NOT here, and it was, for an
+  // hour.** Recording that the graph-Laplacian route lands on a Hermitian
+  // generator rather than a bare linear one — which its paper states outright,
+  // and which is what lets it reach a simulator directly — made the two methods
+  // draw different chains, and the census dropped to 0 on its own. The gate then
+  // asked for the row to be deleted rather than left as silent room. That is the
+  // better outcome than declaring the twins: the narrowing was true, sourced,
+  // and the exception stopped being needed.
+  ["full-discretization", 2],
   // The three the owner named by sight. Each is a corpus job, not a gate problem.
   // 5 → 6 in session 130, and declared rather than absorbed: the sixth is
   // `chebyshev-pseudospectral-collocation`, authored from arXiv:1901.00961 §2 so

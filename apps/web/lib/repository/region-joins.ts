@@ -440,6 +440,18 @@ export const DECLARED_SLOT_ENTRIES: Readonly<Record<string, EntryDisposition>> =
     reason:
       "The map's own front door. A reader arrives holding a nonlinear initial-value problem; nothing in the literature produces one, because it is the problem you came with.",
   },
+  "spatial-discretization": {
+    supply: "front-door",
+    intent: "settled",
+    reason:
+      "A reader arrives holding a partial differential equation. Nothing in the literature produces one — it is the problem you came with — so this is a front door in the same sense nonlinear-ode-solve is, and correctly so. What is new is where it leads: it produces a linear ODE system, which the algorithms region already consumes, so this slot is joined to that region by a shared state rather than by containment. That is the first cross-region join on this map built from sourced content rather than found in it.",
+  },
+  "full-discretization": {
+    supply: "front-door",
+    intent: "settled",
+    reason:
+      "The same front door as spatial-discretization and the same reason: a PDE is brought, not produced. It is a separate slot because it is a separate act — Linden, Montanaro and Shao's forward-time centre-space scheme builds one block system over every timestep at once rather than discretising space and then time, and Novikau et al. have no time axis to discretise at all. It joins the algorithms region at linear-system.",
+  },
   "nonlinear-linear-embedding": {
     supply: "root-supplied",
     intent: "settled",
