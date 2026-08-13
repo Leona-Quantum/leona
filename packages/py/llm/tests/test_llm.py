@@ -562,6 +562,20 @@ def test_planner_and_reviewer_prompts_prevent_observed_live_false_failures():
     assert "1e-6 * max(1, sum(abs(Hamiltonian coefficients)))" in SIMPLE_PLAN_SYSTEM_PROMPT
 
 
+def test_requested_visualizations_are_bounded_and_remain_non_evidentiary():
+    plan = " ".join(SIMPLE_PLAN_SYSTEM_PROMPT.split())
+    generation = " ".join(SIMPLE_GENERATION_SYSTEM_PROMPT.split())
+    review = " ".join(SIMPLE_REVIEW_SYSTEM_PROMPT.split())
+
+    assert "explicitly requests a graph, chart, or plot" in plan
+    assert "Never use `visualizations` as success_criteria.primary_metric" in plan
+    assert "at most 4 charts, 4 series per chart, and 96 points per series" in plan
+    assert "actual computed values" in generation
+    assert "Keep every underlying numeric evidence key separately" in generation
+    assert "Never place SVG, HTML, base64" in generation
+    assert "never as independent evidence" in review
+
+
 def test_prompts_pin_general_numerical_and_representation_invariants():
     plan = " ".join(SIMPLE_PLAN_SYSTEM_PROMPT.split())
     generation = " ".join(SIMPLE_GENERATION_SYSTEM_PROMPT.split())

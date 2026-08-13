@@ -196,6 +196,41 @@ test("a research-style optimization history becomes a convergence visual", () =>
   assert.deepEqual(result?.values, [{ key: "energy", label: "Energy", value: "-1.137" }]);
 });
 
+test("a requested structured visualization survives the event-to-result projection", () => {
+  const result = runResultFromEvents([
+    { type: "run.queued", mode: "execute" },
+    {
+      type: "plan.produced",
+      plan: {
+        problem_summary: "Compare optimizer energy",
+        framework: "qiskit",
+        expected_output_keys: ["final_energy", "visualizations"],
+      },
+    },
+    { type: "code.generated", revision: 1, code: "compare_optimizers()" },
+    {
+      type: "sandbox.result",
+      result: {
+        final_energy: -1.137,
+        visualizations: [{
+          type: "line",
+          title: "Optimizer comparison",
+          x_label: "Iteration",
+          y_label: "Energy (Ha)",
+          series: [{ label: "COBYLA", x: [0, 1], y: [-0.8, -1.137] }],
+        }],
+      },
+    } as OutcomeEvent,
+    { type: "run.finished", status: "succeeded" },
+  ]);
+
+  assert.equal(result?.charts.length, 1);
+  assert.equal(result?.charts[0]?.title, "Optimizer comparison");
+  assert.deepEqual(result?.values, [
+    { key: "final_energy", label: "Final Energy", value: "-1.137" },
+  ]);
+});
+
 test("a review that did not accept is marked, not hidden", () => {
   const result = runResultFromEvents(
     succeeded(
