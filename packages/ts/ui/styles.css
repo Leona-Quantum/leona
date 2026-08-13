@@ -11453,14 +11453,20 @@ div.mj-rail-row:hover {
 .mj-converge-key { color: var(--text-2); }
 
 /* --- the ways across -----------------------------------------------------
-   Was a plain 2px stroke (`.mj-converge-strand`, now gone). The redraw pinches
-   each line to a point at both circles and thickens it toward the middle, so
-   the shape itself now carries how much of the crossing runs through here,
-   which a uniform stroke could not say. What a reader sees is a filled region
-   — `lane.outline`, the tapered area, closed — and the geometry invariants
-   still live on the centre line underneath it (`lane.d`), which is why the hit
-   target below is stroked along `d` and not the fill: see `.mj-converge-spine`
-   for where `d` is drawn directly. */
+   What a reader sees is a filled region — `lane.outline`, closed — and the
+   geometry invariants still live on the centre line underneath it (`lane.d`),
+   which is why the hit target below is stroked along `d` and not the fill: see
+   `.mj-converge-spine` for where `d` is drawn directly.
+
+   **The region is thin / thick / thin since R15, not a taper.** It ran from
+   nothing at each circle up to `2·half` in the middle, and the owner asked for
+   that to stop (ai-ops#64: *"i don't like how lines taper off — just keep thin
+   tendon lines and the same short line bodies around labels"*). So the fill is
+   now a 2px line for most of its length with a short bar around the name, and
+   that bar is `name + 16px` long however long the column is. The consequence for
+   this rule is that `opacity` is doing more work than it was: half the ink on a
+   long line is a 2px sliver, so a lower opacity here reads as a line that has
+   faded out rather than as one drawn faintly. */
 .mj-converge-strand-body {
   fill: currentColor;
   stroke: none;

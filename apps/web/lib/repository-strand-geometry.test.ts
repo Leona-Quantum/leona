@@ -1,8 +1,9 @@
 // The arithmetic the whole convergence canvas rests on.
 //
 // These are not "does it render" tests. Every claim the drawing makes — lines
-// meet only at circles they both touch, a strand pinches to a point at each end
-// and stands at a constant thickness across its belly, a step drawn inside a lane
+// meet only at circles they both touch, a strand is a thin tendon and a body of
+// constant thickness and a thin tendon (R15; it *pinched to a point* until the
+// owner asked for the taper to go), a step drawn inside a lane
 // sits *on* that lane — is a statement about the handful of functions here, and
 // each one is checked against the law it is supposed to obey rather than against
 // a stored string. A stored string would pass a mutation that changed the law and
@@ -160,35 +161,95 @@ test("the emitted path is the curve the profile describes", () => {
   }
 });
 
-test("the outline pinches to a point at both circles and is 2·half thick across the belly", () => {
-  // The taper is not drawn on top of the ribbon; it *is* the same φ applied at
-  // `bow ± half`. So this is a check that the outline was built from the law
-  // rather than from a second shape that resembles it — which is what the strand
-  // canvas's bespoke `lensPath` was.
+test("the outline is a thin tendon, a step, a body of 2·half, a step, a thin tendon", () => {
+  // **R15, and it is the inversion of what stood here.** The assertion this
+  // replaces was *"halfway up a tendon the shape is thinner than the belly and
+  // thicker than the pinch — a taper, not a step"*, which is the taper's own
+  // signature. The owner asked for the taper to go, so that sentence is now the
+  // thing which must NOT hold, and its negation is asserted below.
+  //
+  // The load-bearing half is the *off-body belly*. A test that checked only the
+  // two tendons would pass on a shape that still thickens across the whole
+  // belly — which is the shape the owner was complaining about, a 19px name on
+  // an 855px muscle. Thickness is checked either side of the body, on the belly,
+  // where the old shape and the new one disagree.
   const half = 9;
+  const tendonHalf = 1;
   for (const bow of [-40, 0, 55]) {
     const r = ribbon(bow, 40);
-    const edges = sampleOutline(ribbonOutline(r, half));
     const belly = bellyOf(r);
-    close(edges.upper(r.x0), edges.lower(r.x0), "pinched at the left circle", ROUNDING * 4);
-    close(edges.upper(r.x1), edges.lower(r.x1), "pinched at the right circle", ROUNDING * 4);
+    const bodyX0 = belly.x0 + (belly.x1 - belly.x0) * 0.4;
+    const bodyX1 = belly.x0 + (belly.x1 - belly.x0) * 0.6;
+    const edges = sampleOutline(ribbonOutline(r, half, { x0: bodyX0, x1: bodyX1, tendonHalf }));
+    // Both ends stand open at the tendon's own thickness. A point here is the
+    // defect, so it is asserted as a value and not as "greater than zero".
+    close(
+      edges.lower(r.x0) - edges.upper(r.x0),
+      2 * tendonHalf,
+      `the left circle end (bow ${bow})`,
+      ROUNDING * 4,
+    );
+    close(
+      edges.lower(r.x1) - edges.upper(r.x1),
+      2 * tendonHalf,
+      `the right circle end (bow ${bow})`,
+      ROUNDING * 4,
+    );
+    // Full thickness across the body...
     for (let i = 1; i < 20; i += 1) {
-      const x = belly.x0 + ((belly.x1 - belly.x0) * i) / 20;
+      const x = bodyX0 + ((bodyX1 - bodyX0) * i) / 20;
       close(
         edges.lower(x) - edges.upper(x),
         2 * half,
-        `thickness across the belly at ${x} (bow ${bow})`,
+        `thickness across the body at ${x} (bow ${bow})`,
         ROUNDING * 4,
       );
     }
-    // Halfway up a tendon the shape is thinner than the belly and thicker than
-    // the pinch — a taper, not a step.
-    const mid = edges.lower(r.x0 + r.run / 2) - edges.upper(r.x0 + r.run / 2);
-    assert.ok(
-      mid > 0.05 && mid < 2 * half - 0.05,
-      `the tendon is ${mid} thick against a belly of ${2 * half} — it is not tapering`,
-    );
+    // ...and thin everywhere else, tendon and belly alike.
+    for (const x of [
+      r.x0 + r.run / 2,
+      belly.x0 + 1,
+      bodyX0 - 1,
+      bodyX1 + 1,
+      belly.x1 - 1,
+      r.x1 - r.run / 2,
+    ]) {
+      close(
+        edges.lower(x) - edges.upper(x),
+        2 * tendonHalf,
+        `thickness off the body at ${x} (bow ${bow}) — the taper is back`,
+        ROUNDING * 4,
+      );
+    }
   }
+});
+
+test("a body is clamped into its own belly, and a tendon is never thicker than the body", () => {
+  // The two arguments `ribbonOutline` does not trust its caller about, each with
+  // the shape it would otherwise draw.
+  const r = ribbon(30, 40);
+  const belly = bellyOf(r);
+  // A body asked for past the belly's ends is a full-thickness bar hanging off
+  // the curve where the line is supposed to be climbing.
+  const overrun = sampleOutline(
+    ribbonOutline(r, 9, { x0: r.x0 - 500, x1: r.x1 + 500, tendonHalf: 1 }),
+  );
+  close(overrun.lower(r.x0) - overrun.upper(r.x0), 2, "a body ran into the left tendon", ROUNDING * 4);
+  close(
+    overrun.lower(belly.x0 + 1) - overrun.upper(belly.x0 + 1),
+    18,
+    "a body clamped to the belly still fills it",
+    ROUNDING * 4,
+  );
+  // A strand thinner than the tendon line — a deep step — would otherwise be
+  // drawn as a bar with a *wider* line through it, the step inverted.
+  const thinner = sampleOutline(ribbonOutline(r, 0.6, { x0: belly.x0, x1: belly.x1, tendonHalf: 1 }));
+  close(
+    thinner.lower(r.x0) - thinner.upper(r.x0),
+    1.2,
+    "a tendon drew thicker than the body it runs into",
+    ROUNDING * 4,
+  );
 });
 
 test("tendonSlope is the steepest the tendon actually gets", () => {

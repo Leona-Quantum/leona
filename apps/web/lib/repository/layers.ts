@@ -313,6 +313,58 @@ export interface LayerMethod extends LayerNodeBase {
    */
   via?: Readonly<Record<string, string>>;
   /**
+   * Step id → a **specification** written into that hop's drawn label.
+   *
+   * The third kind of thing a label can hold, and the owner's own answer to
+   * ai-ops#51 (*"several methods draw an identical picture"*):
+   *
+   * > *"we can put specifications in the labels rather than another item on the
+   * > map — something like 'penalty objective'."*
+   *
+   * ## Why neither of the two existing kinds could carry it
+   *
+   * `via` names a **method** and `through` names a **state**, so both can only
+   * say a thing the graph already holds a node for. What separates four of the
+   * `excited-state-energy` routes is the objective handed to the optimiser — a
+   * weighted sum over orthogonal inputs, an energy-plus-symmetry-penalty, a
+   * contracted multistate objective — and what separates `qsvt-matrix-inversion`
+   * from `eigenstate-filtering-inversion` is which polynomial goes through one
+   * transform. Those are neither methods nor states. Authoring a node for each
+   * would put the same papers on the map a second time, and the admission rule
+   * would rightly refuse most of them.
+   *
+   * So this is deliberately **not** a node, and that is the point: it has no id,
+   * nothing links to it, nothing may be `realizes`d by it, and it can never be a
+   * step. It is a phrase on one hop of one route. Because it names nothing, the
+   * admission rule has no opinion on it — which is exactly why it can carry the
+   * distinctions the admission rule was right to keep off the map.
+   *
+   * ## What keeps it honest
+   *
+   * The same standard `via` and `through` hold to, and it needs to be stated
+   * harder here, because a free-text field on a drawing is the easiest place in
+   * this repository to write something no source says. **Read off prose the
+   * record already carries, never composed to make two pictures differ.** A
+   * specification that cannot be pointed at in the method's own recorded text is
+   * the sentence ADR-0026 §3.6 forbids inventing, and it is worse than the twin
+   * it was written to remove: two honest identical pictures say *"the map cannot
+   * tell these apart"*, and one invented phrase says something false.
+   *
+   * Validation holds it to being a *mark* rather than a second description —
+   * `SPEC_MAX` characters, no sentence-ending punctuation — for the same reason
+   * `mark` is bounded: it is drawn in a lane's label, which has a pixel budget,
+   * and a field that can hold a paragraph will eventually hold one.
+   *
+   * Keyed by the hop and not the method, for the reason `through`, `via`,
+   * `repeats` and `theory` are all keyed by the hop: **a method does not
+   * specialise; it specialises something.** `penalty-excited-state` puts its
+   * penalty in the *objective it optimises* and nowhere else, and a field on the
+   * node would leave a reader to guess which of three hops it qualifies.
+   */
+  spec?: Readonly<Record<string, string>>;
+  /** The same, in Japanese. Both locales or neither — validation rejects a half. */
+  specJa?: Readonly<Record<string, string>>;
+  /**
    * Declared to have no sub-steps **at this level, on purpose** — as opposed to
    * simply not having been decomposed yet. Only meaningful when `steps` is
    * empty; validation rejects it beside a non-empty `steps`.
@@ -793,6 +845,33 @@ export interface StepRepetition {
  * enough that a sentence cannot be written here by accident.
  */
 export const REPEAT_MARK_MAX = 12;
+
+/**
+ * How long a `spec` may be, in characters.
+ *
+ * A budget rather than a taste, and the same argument `REPEAT_MARK_MAX` makes
+ * one field over: a spec is appended to a lane's name on the canvas, the name is
+ * fitted into a column sized for it, and a spec long enough to be a sentence
+ * would push the name it qualifies out of its own label.
+ *
+ * 34, which holds *"an odd polynomial in a scaled 1/x"* (32) and
+ * *"energy plus a symmetry penalty"* (30) with room, and is short enough that a
+ * second description cannot be written here by accident. Validation also refuses
+ * sentence-ending punctuation, because the failure this field invites is prose:
+ * `spec` says *which one*, not *how it works* — how it works is what the
+ * method's own record and its card are for.
+ */
+export const SPEC_MAX = 34;
+
+/** The specification written on one hop of one route, in the reader's locale. */
+export function specificationOf(
+  method: LayerMethod,
+  stepId: string,
+  locale: "en" | "ja",
+): string | null {
+  const table = locale === "ja" ? method.specJa : method.spec;
+  return table?.[stepId] ?? null;
+}
 
 /**
  * How long a refinement mark may be, in characters — the name only.
@@ -2889,6 +2968,55 @@ export function validateLayerGraph(
           );
         }
         if (methodId === node.id) errors.push(`${node.id}: via[${stepId}] names itself`);
+      }
+    }
+
+    // `spec` writes a phrase onto a hop's drawn label. It names no node, so
+    // nothing here can check it against the graph — which is precisely why the
+    // checks it CAN carry are worth having. What is checkable is that it
+    // annotates a step this route actually walks, that both locales are present
+    // (a missing `specJa` would silently draw the English one to a Japanese
+    // reader, or nothing at all), and that it stays a mark rather than becoming
+    // a second description of the method.
+    for (const [field, table] of [["spec", node.spec], ["specJa", node.specJa]] as const) {
+      if (table === undefined) continue;
+      const entries = Object.entries(table);
+      if (entries.length === 0) {
+        errors.push(`${node.id}: ${field} specifies nothing — omit it instead`);
+      }
+      for (const [stepId, text] of entries) {
+        if (!node.steps.includes(stepId)) {
+          errors.push(`${node.id}: ${field} names ${stepId}, which is not one of its steps`);
+          continue;
+        }
+        const trimmed = text.trim();
+        if (trimmed === "") {
+          errors.push(`${node.id}: ${field}[${stepId}] is blank — omit it instead`);
+          continue;
+        }
+        if ([...trimmed].length > SPEC_MAX) {
+          errors.push(
+            `${node.id}: ${field}[${stepId}] is ${[...trimmed].length} characters — a specification drawn in a label may be at most ${SPEC_MAX}`,
+          );
+        }
+        if (/[.。!?！？]$/.test(trimmed)) {
+          errors.push(
+            `${node.id}: ${field}[${stepId}] ends a sentence — a specification says WHICH ONE, not how it works; the prose belongs in the record`,
+          );
+        }
+      }
+    }
+    // Both locales or neither. A spec is drawn, so a half-authored one is a
+    // Japanese reader seeing an English phrase or seeing the hop lose the very
+    // distinction the field exists to draw.
+    for (const [a, b] of [["spec", "specJa"], ["specJa", "spec"]] as const) {
+      const mine = node[a];
+      const other = node[b] ?? {};
+      if (mine === undefined) continue;
+      for (const stepId of Object.keys(mine)) {
+        if (!(stepId in other)) {
+          errors.push(`${node.id}: ${a}[${stepId}] has no ${b} — a specification is drawn in both locales or neither`);
+        }
       }
     }
 
