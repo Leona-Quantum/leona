@@ -178,13 +178,29 @@ if (AS_JSON) {
 // record without a word; an exact count makes reading a paper an edit to this line,
 // which is the diff that records the win.
 const SPEEDUP_PROVENANCE_CENSUS = {
-  // Nobody has yet found a primary paper stating a comparable speedup in its own
-  // words. Zero is a real value here, not an unfinished one.
-  reported: 0,
-  // gibbs-state-sampling. Poulin and Wocjan's abstract was read in full and makes
-  // no comparison to a classical algorithm; the Zoo's "Superpolynomial" is the
-  // section heading's. This is the record the owner's ruling was about.
-  absent: 1,
+  // Primary papers that state a comparable speedup in their own words. This read
+  // 0 until W22, when the second Zoo-parity pass read six primary papers in full
+  // rather than from their abstracts:
+  //   sparse-matrix-power-diagonal-entries — Janzing and Wocjan, conditional on
+  //     BQP≠BPP and, as section 2 insists, on the b^m scale the accuracy is
+  //     measured against.
+  //   string-rewriting-derivation-counts   — the same authors, same condition.
+  //   zeta-function-of-a-curve             — Kedlaya names Schoof and Lauder-Wan
+  //     and their costs; he never writes "superpolynomial", which is the Zoo's word.
+  //   exponential-congruences              — van Dam and Shparlinski state the
+  //     cubic gap outright, and in the same breath that both sides are still
+  //     superpolynomial in log q.
+  reported: 4,
+  // Read and silent. gibbs-state-sampling was the first: Poulin and Wocjan's
+  // abstract makes no comparison to a classical algorithm and the Zoo's
+  // "Superpolynomial" is the section heading's. This is the record the owner's
+  // ruling was about. W22 added two more, both from full-text reads:
+  //   gauss-sum-estimation        — van Dam and Seroussi decline to prove classical
+  //     hardness and leave it open in their conclusion, so the Zoo's
+  //     "Superpolynomial" has no support in the paper the Zoo cites for it.
+  //   subset-finding-quantum-walk — Childs and Eisenberg compare only against
+  //     quantum query lower bounds; the word "classical" is not in the body.
+  absent: 3,
   // The worklist. The intake checked the problem statement, the class against the
   // Zoo, the reference metadata and the complexity claim — it never asked whether
   // the paper supports the class. `unknown` says that, rather than pretending.

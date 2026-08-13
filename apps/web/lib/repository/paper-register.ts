@@ -1,11 +1,19 @@
-// The register: 143 papers, one row each, and the only place their metadata is
-// written down.
+// The register: one row per paper, and the only place their metadata is written
+// down.
 //
-// **Generated once and then authored.** The rows came from the arXiv API for the
-// 127 arXiv sources and from the corpus's own hand-recorded metadata for the 16
-// others; from here it is edited like any other file. There is no generator to
-// re-run, on purpose — a regenerable register would let a wrong row be "fixed"
-// by re-running a script against the thing it is supposed to be checking.
+// **Do not read the count here — run `node scripts/check-paper-register.mjs`,
+// which prints it.** This header said "143 papers" until W22, by which point the
+// file held 241. The register grows every time a parity intake reads a new
+// primary source, so a total written into prose is a measurement taken once and
+// quoted forever — the same failure the `unanchored` comment in
+// ./map-eligibility.ts records against itself.
+//
+// **Generated once and then authored.** The first 143 rows came from the arXiv
+// API for the 127 arXiv sources and from the corpus's own hand-recorded metadata
+// for the 16 others; from here it is edited like any other file. There is no
+// generator to re-run, on purpose — a regenerable register would let a wrong row
+// be "fixed" by re-running a script against the thing it is supposed to be
+// checking.
 //
 // See ./papers.ts for the identity rule, the year convention, and the
 // measurement that produced this file.
@@ -20,7 +28,9 @@ import type { PaperRegister } from "./papers.ts";
 export const PAPER_REGISTER: PaperRegister = {
   papers: [
     { id: "arxiv:quant-ph/0010005", title: "Exponential Gain in Quantum Computing of Quantum Chaos and Localization", authors: "B. Georgeot, D. L. Shepelyansky", year: "2000", url: "https://arxiv.org/abs/quant-ph/0010005", reports: { theory: "reported", simulation: "unknown", hardware: "absent" }, reportsBasis: "abstract" },
+    { id: "arxiv:0705.1180", title: "A PromiseBQP-complete String Rewriting Problem", authors: "Dominik Janzing, Pawel Wocjan", year: "2007", url: "https://arxiv.org/abs/0705.1180", reports: { theory: "reported", simulation: "unknown", hardware: "absent" }, reportsBasis: "abstract" },
     { id: "arxiv:0705.2784", title: "Quantum algorithms for hidden nonlinear structures", authors: "Andrew M. Childs, Leonard J. Schulman, Umesh V. Vazirani", year: "2007", url: "https://arxiv.org/abs/0705.2784", reports: { theory: "reported", simulation: "unknown", hardware: "absent" }, reportsBasis: "abstract" },
+    { id: "arxiv:0804.1109", title: "Classical and Quantum Algorithms for Exponential Congruences", authors: "Wim van Dam, Igor E. Shparlinski", year: "2008", url: "https://arxiv.org/abs/0804.1109", reports: { theory: "reported", simulation: "unknown", hardware: "absent" }, reportsBasis: "abstract" },
     { id: "arxiv:0804.1571", title: "Quantum Simulations of Classical Annealing Processes", authors: "R. D. Somma, S. Boixo, H. Barnum, E. Knill", year: "2008", url: "https://arxiv.org/abs/0804.1571", reports: { theory: "reported", simulation: "unknown", hardware: "absent" }, reportsBasis: "abstract" },
     { id: "arxiv:0805.2741", title: "Environment-Assisted Quantum Walks in Photosynthetic Energy Transfer", authors: "Masoud Mohseni, Patrick Rebentrost, Seth Lloyd, Alán Aspuru-Guzik", year: "2008", url: "https://arxiv.org/abs/0805.2741", reports: { theory: "reported", simulation: "unknown", hardware: "absent" }, reportsBasis: "abstract" },
     { id: "arxiv:0810.0312", title: "On the relationship between continuous- and discrete-time quantum walk", authors: "Andrew M. Childs", year: "2008", url: "https://arxiv.org/abs/0810.0312", reports: { theory: "reported", simulation: "unknown", hardware: "absent" }, reportsBasis: "abstract" },
@@ -198,6 +208,7 @@ export const PAPER_REGISTER: PaperRegister = {
     { id: "arxiv:2504.06948", title: "A quantum algorithm for linear autonomous differential equations via Padé approximation", authors: "Dekuan Dong, Yingzhou Li, Jungong Xue", year: "2025", url: "https://arxiv.org/abs/2504.06948", reports: { theory: "reported", simulation: "reported", hardware: "absent" }, reportsBasis: "full-text" },
     { id: "arxiv:2504.15460", title: "Quantum Simulation-Based Optimization for Cooling System Design", authors: "Leonhard Hölscher, Lukas Müller, Or Samimi, Tamuz Danzig", year: "2025", url: "https://arxiv.org/abs/2504.15460", reports: { theory: "reported", simulation: "reported", hardware: "absent" }, reportsBasis: "abstract" },
     { id: "arxiv:2512.06488", title: "Efficient quantum algorithm for solving differential equations with Fourier nonlinearity via Koopman linearization", authors: "Judd Katz, Gopikrishnan Muraleedharan, Abhijeet Alase", year: "2025", url: "https://arxiv.org/abs/2512.06488", reports: { theory: "reported", simulation: "unknown", hardware: "absent" }, reportsBasis: "abstract" },
+    { id: "arxiv:math/0411623", title: "Quantum computation of zeta functions of curves", authors: "Kiran S. Kedlaya", year: "2004", url: "https://arxiv.org/abs/math/0411623", reports: { theory: "reported", simulation: "unknown", hardware: "absent" }, reportsBasis: "abstract" },
     { id: "arxiv:quant-ph/0001106", title: "Quantum Computation by Adiabatic Evolution", authors: "Edward Farhi, Jeffrey Goldstone, Sam Gutmann, Michael Sipser", year: "2000", url: "https://arxiv.org/abs/quant-ph/0001106" },
     { id: "arxiv:quant-ph/0005055", title: "Quantum Amplitude Amplification and Estimation", authors: "Gilles Brassard, Peter Hoyer, Michele Mosca, Alain Tapp", year: "2000", url: "https://arxiv.org/abs/quant-ph/0005055", reports: { theory: "reported", simulation: "unknown", hardware: "absent" }, reportsBasis: "abstract" },
     { id: "arxiv:quant-ph/0005115", title: "Three qubits can be entangled in two inequivalent ways", authors: "W. Dür, G. Vidal, J. I. Cirac", year: "2000", url: "https://arxiv.org/abs/quant-ph/0005115" },
@@ -208,6 +219,7 @@ export const PAPER_REGISTER: PaperRegister = {
     { id: "arxiv:quant-ph/0110143", title: "Topological quantum memory", authors: "Eric Dennis, Alexei Kitaev, Andrew Landahl, John Preskill", year: "2001", url: "https://arxiv.org/abs/quant-ph/0110143", reports: { theory: "reported", simulation: "reported", hardware: "absent" }, reportsBasis: "abstract" },
     { id: "arxiv:quant-ph/0201067", title: "An approximate Fourier transform useful in quantum factoring", authors: "D. Coppersmith", year: "2002", url: "https://arxiv.org/abs/quant-ph/0201067" },
     { id: "arxiv:quant-ph/0202133", title: "A Quantum Rosetta Stone for Interferometry", authors: "Hwang Lee, Pieter Kok, Jonathan P. Dowling", year: "2002", url: "https://arxiv.org/abs/quant-ph/0202133" },
+    { id: "arxiv:quant-ph/0207131", title: "Efficient Quantum Algorithms for Estimating Gauss Sums", authors: "Wim van Dam, Gadiel Seroussi", year: "2002", url: "https://arxiv.org/abs/quant-ph/0207131", reports: { theory: "reported", simulation: "unknown", hardware: "absent" }, reportsBasis: "abstract" },
     { id: "arxiv:quant-ph/0208112", title: "Creating superpositions that correspond to efficiently integrable probability distributions", authors: "Lov Grover, Terry Rudolph", year: "2002", url: "https://arxiv.org/abs/quant-ph/0208112", reports: { theory: "reported", simulation: "unknown", hardware: "absent" }, reportsBasis: "full-text" },
     { id: "arxiv:quant-ph/0209035", title: "Natural two-qubit gate for quantum computation using the XY interaction", authors: "Norbert Schuch, Jens Siewert", year: "2002", url: "https://arxiv.org/abs/quant-ph/0209035" },
     { id: "arxiv:quant-ph/0209131", title: "Exponential algorithmic speedup by quantum walk", authors: "Andrew M. Childs, Richard Cleve, Enrico Deotto, Edward Farhi, Sam Gutmann, Daniel A. Spielman", year: "2002", url: "https://arxiv.org/abs/quant-ph/0209131", reports: { theory: "reported", simulation: "unknown", hardware: "absent" }, reportsBasis: "abstract" },
@@ -215,6 +227,7 @@ export const PAPER_REGISTER: PaperRegister = {
     { id: "arxiv:quant-ph/0303081", title: "Quantum random walks - an introductory overview", authors: "Julia Kempe", year: "2003", url: "https://arxiv.org/abs/quant-ph/0303081" },
     { id: "arxiv:quant-ph/0307130", title: "Multi-party entanglement in graph states", authors: "M. Hein, J. Eisert, H. J. Briegel", year: "2003", url: "https://arxiv.org/abs/quant-ph/0307130" },
     { id: "arxiv:quant-ph/0311001", title: "Quantum walk algorithm for element distinctness", authors: "Andris Ambainis", year: "2003", url: "https://arxiv.org/abs/quant-ph/0311001", reports: { theory: "reported", simulation: "unknown", hardware: "absent" }, reportsBasis: "abstract" },
+    { id: "arxiv:quant-ph/0311038", title: "Quantum algorithms for subset finding", authors: "Andrew M. Childs, Jason M. Eisenberg", year: "2003", url: "https://arxiv.org/abs/quant-ph/0311038", reports: { theory: "reported", simulation: "unknown", hardware: "absent" }, reportsBasis: "abstract" },
     { id: "arxiv:quant-ph/0401091", title: "Quantum query complexity of some graph problems", authors: "Christoph Durr, Mark Heiligman, Peter Hoyer, Mehdi Mhalla", year: "2004", url: "https://arxiv.org/abs/quant-ph/0401091", reports: { theory: "reported", simulation: "unknown", hardware: "absent" }, reportsBasis: "abstract" },
     { id: "arxiv:quant-ph/0403025", title: "Universal Quantum Computation with ideal Clifford gates and noisy ancillas", authors: "Sergei Bravyi, Alexei Kitaev", year: "2004", url: "https://arxiv.org/abs/quant-ph/0403025" },
     { id: "arxiv:quant-ph/0407010", title: "Transformation of quantum states using uniformly controlled rotations", authors: "Mikko Mottonen, Juha J. Vartiainen, Ville Bergholm, Martti M. Salomaa", year: "2004", url: "https://arxiv.org/abs/quant-ph/0407010", reports: { theory: "reported", simulation: "unknown", hardware: "absent" }, reportsBasis: "abstract" },
@@ -226,6 +239,7 @@ export const PAPER_REGISTER: PaperRegister = {
     { id: "arxiv:quant-ph/0509206", title: "Quantum Algorithm for Commutativity Testing of a Matrix Set", authors: "Yuki Kelly Itakura", year: "2005", url: "https://arxiv.org/abs/quant-ph/0509206", reports: { theory: "reported", simulation: "unknown", hardware: "absent" }, reportsBasis: "abstract" },
     { id: "arxiv:quant-ph/0511096", title: "A Polynomial Quantum Algorithm for Approximating the Jones Polynomial", authors: "Dorit Aharonov, Vaughan Jones, Zeph Landau", year: "2005", url: "https://arxiv.org/abs/quant-ph/0511096", reports: { theory: "reported", simulation: "unknown", hardware: "absent" }, reportsBasis: "abstract" },
     { id: "arxiv:quant-ph/0604193", title: "Simulated Quantum Computation of Molecular Energies", authors: "Alán Aspuru-Guzik, Anthony D. Dutoi, Peter J. Love, Martin Head-Gordon", year: "2006", url: "https://arxiv.org/abs/quant-ph/0604193", reports: { theory: "reported", simulation: "reported", hardware: "absent" }, reportsBasis: "abstract" },
+    { id: "arxiv:quant-ph/0606229", title: "Estimating diagonal entries of powers of sparse symmetric matrices is BQP-complete", authors: "Dominik Janzing, Pawel Wocjan", year: "2006", url: "https://arxiv.org/abs/quant-ph/0606229", reports: { theory: "reported", simulation: "unknown", hardware: "absent" }, reportsBasis: "abstract" },
     { id: "arxiv:quant-ph/0607019", title: "Optimal Quantum Measurements of Expectation Values of Observables", authors: "Emanuel Knill, Gerardo Ortiz, Rolando D. Somma", year: "2006", url: "https://arxiv.org/abs/quant-ph/0607019", reports: { theory: "reported", simulation: "unknown", hardware: "absent" }, reportsBasis: "abstract" },
     { id: "arxiv:quant-ph/0608161", title: "Improved quantum algorithms for the ordered search problem via semidefinite programming", authors: "Andrew M. Childs, Andrew J. Landahl, Pablo A. Parrilo", year: "2006", url: "https://arxiv.org/abs/quant-ph/0608161", reports: { theory: "reported", simulation: "unknown", hardware: "absent" }, reportsBasis: "abstract" },
     { id: "arxiv:quant-ph/0610214", title: "Arbitrary accuracy iterative phase estimation algorithm as a two qubit benchmark", authors: "M. Dobsicek, G. Johansson, V. S. Shumeiko, G. Wendin", year: "2006", url: "https://arxiv.org/abs/quant-ph/0610214" },
