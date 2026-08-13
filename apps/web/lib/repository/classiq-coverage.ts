@@ -164,21 +164,36 @@ export const CLASSIQ_COVERAGE: Readonly<Record<string, readonly string[]>> = {
   //
   // Each was read first-hand at the pinned commit ac61dccb, notebook by notebook,
   // and the note beside it says what the demonstration says about itself and what
-  // its own reference list does and does not contain. Three things that read
+  // its own reference list does and does not contain. Four things that read
   // needs recording, because they bear on how much weight a demo's bibliography
   // can carry:
   //
-  //   * **Five of the thirteen have no `## References` cell at all.** Two of
-  //     those five still print a citation marker pointing at an anchor that does
-  //     not exist in the notebook.
+  //   * **Only five of the thirteen cite Farhi's paper at all** —
+  //     `portfolio_optimization`, `integer_linear_programming`,
+  //     `max_induced_k_color_subgraph`, `max_k_vertex_cover` and
+  //     `minimum_dominating_set`.
+  //   * **Six have no `## References` cell at all**: `facility_location`,
+  //     `vehicle_routing_problem`, `rectangles_packing`,
+  //     `network_traffic_optimization`, `radio_access_network` and
+  //     `resiliency_planning`.
   //   * **`kidney_exchange` cites Barkoutsos et al., arXiv:1907.04769, and
   //     nothing else.** That is *Improving Variational Quantum Optimization using
   //     CVaR* — a different paper by different authors about a different
   //     objective function. It is not Farhi's paper and is not an alternative
-  //     citation for QAOA. Eight of these thirteen carry that same id alongside
-  //     Farhi; where it appears, it is the CVaR objective some Classiq demos
-  //     substitute for the expectation value, and nothing here rests on it.
-  //   * **Three cite a broken or wrong link** (noted individually below).
+  //     citation for QAOA. Six of the thirteen carry that id; in five of them it
+  //     sits alongside Farhi, where it is the CVaR objective some Classiq demos
+  //     substitute for the expectation value. Nothing here rests on it.
+  //   * **Three print a citation marker against an anchor that does not exist**:
+  //     `facility_location` (`#QAOA` and `#cvar`, in a notebook with no
+  //     references cell at all), `electric_grid_optimization` (`#OpPwer` against
+  //     `id='OpPower'`, plus `#cvar`) and `integer_linear_programming` (`#ILP`
+  //     against `id='MVC'`). A fourth link is not broken but wrong:
+  //     `minimum_dominating_set`'s [1] is labelled "Dominating Set (Wikipedia)"
+  //     and points at the article for the *partition* problem.
+  //
+  // Those counts are from a script over the notebooks at the pinned commit, not
+  // from reading and tallying by hand; an earlier draft of this comment said five,
+  // eight and two and was wrong on all three.
   //
   // So none of these declarations is made on the strength of a demonstration's
   // bibliography. Each is made on what the notebook's own prose and code say the
