@@ -16,7 +16,23 @@
 //
 // Measured 2026-08-13, over the whole corpus: **28 of 101 object records join a
 // state the map names.** All 12 states do. **16 of 62 operators do. None of the
-// 27 gates do**, by the owner's own ruling twice over.
+// 27 gates do** — because nothing in the 34-state vocabulary is a unitary you
+// can apply, and separately because the owner ruled gates off the map in
+// ai-ops#14. Re-measured at 45395f9e (2026-08-13): unchanged, on a corpus that
+// has since grown to 368 records.
+//
+// ## The count on each row is a property of the STATE, not of the object
+//
+// Every one of the 28 joins lands on `prepared-state` or `hamiltonian-access`,
+// so the count `processesTouching` returns takes exactly **two** values across
+// the whole shelf — 5 and 3 — and it is constant within a section. Verified on
+// leonaqt.com at 45395f9e: the rendered page contains `5 of 23 processes`
+// twelve times and `3 of 23 processes` sixteen times, and nothing else. So the
+// sort below separates joined rows from abstained ones and then falls through to
+// the slug; it cannot rank two operators against each other, which is what the
+// owner's question asked for. The number is true and the ordering is honest —
+// it just carries less information than its phrasing implies, and that is a fact
+// about how few states the map reaches, not about the objects.
 //
 // A shelf that listed only the 28 would read as a working join. So every record
 // is listed, the unjoined ones carry the reason the map cannot reach them, and
@@ -78,7 +94,7 @@ const COPY: Record<"en" | "ja", ShelfCopy> = {
       "documents-a-process":
         "it documents a procedure rather than an object; the map's anchor for that is a node, not a state",
       "primitive-by-ruling":
-        "it is a gate, and the owner ruled twice that gates stay off the map and keep their own section",
+        "it is a gate, and no state the map names is a unitary you can apply — the circuit states name the gate set as a parameter, and a parameter is not a state. Gates keep their own section",
     },
     none: "No record in this section.",
   },
@@ -101,7 +117,7 @@ const COPY: Record<"en" | "ja", ShelfCopy> = {
       "documents-a-process":
         "対象ではなく手続きを記述しているからです。マップ側の受け皿はノードであって状態ではありません",
       "primitive-by-ruling":
-        "ゲートだからです。ゲートはマップに載せず独自の節を持つという裁定が二度示されています",
+        "ゲートだからです。マップが名前を与える状態のうち、適用できるユニタリにあたるものはありません。回路の状態はゲート集合をパラメータとして挙げており、パラメータは状態ではありません。ゲートは独自の節を持ちます",
     },
     none: "この節に項目はありません。",
   },
