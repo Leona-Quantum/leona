@@ -275,6 +275,14 @@ export const PAPER_REGISTER: PaperRegister = {
     { id: "doi:10.1016/0003-4916(70)90270-8", title: "The one-dimensional Ising model with a transverse field", authors: "P. Pfeuty", year: "1970", url: "https://doi.org/10.1016/0003-4916(70)90270-8" },
     { id: "doi:10.1017/cbo9780511973765", title: "Quantum Phase Transitions", authors: "S. Sachdev", year: "2011", url: "https://doi.org/10.1017/cbo9780511973765", medium: "textbook" },
     { id: "doi:10.1017/cbo9780511976667", title: "Quantum Computation and Quantum Information: 10th Anniversary Edition", authors: "Michael A. Nielsen and Isaac L. Chuang", year: "2010", url: "https://doi.org/10.1017/cbo9780511976667", medium: "textbook" },
+    // Read in full from the publisher PDF the owner supplied on ai-ops#42, not from
+    // an abstract — hence `full-text`. Sci Rep 15, 28508 (2025); received 28 March
+    // 2025, accepted 15 July 2025. All three reports are the paper's own: the
+    // method, a Fujitsu 40-qubit mpiQulacs simulation, and a run on the 64-qubit
+    // superconducting machine of the RIKEN RQC-Fujitsu Collaboration Center.
+    // No `medium`: this is a journal article, and that field marks the textbooks
+    // the owner's ai-ops#44 ruling admitted as primary sources.
+    { id: "doi:10.1038/s41598-025-12109-0", title: "Quantum computation for robot posture optimization", authors: "Takuya Otani, Atsuo Takanishi, Nobuyuki Hara, Yutaka Takita, Koichi Kimura", year: "2025", url: "https://doi.org/10.1038/s41598-025-12109-0", reports: { theory: "reported", simulation: "reported", hardware: "reported" }, reportsBasis: "full-text" },
     { id: "doi:10.1098/rspa.1963.0204", title: "Electron Correlations in Narrow Energy Bands", authors: "J. Hubbard", year: "1963", url: "https://doi.org/10.1098/rspa.1963.0204" },
     { id: "doi:10.1098/rspa.1992.0167", title: "Rapid solution of problems by quantum computation", authors: "David Deutsch, Richard Jozsa", year: "1992", url: "https://doi.org/10.1098/rspa.1992.0167" },
     { id: "doi:10.1103/physicsphysiquefizika.1.195", title: "On the Einstein Podolsky Rosen Paradox", authors: "John S. Bell", year: "1964", url: "https://doi.org/10.1103/physicsphysiquefizika.1.195" },
