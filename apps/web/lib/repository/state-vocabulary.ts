@@ -377,6 +377,31 @@ export const STATE_VOCABULARY: StateVocabulary = {
       specializes: ["evolution-circuit", "prepared-state"],
     },
     {
+      id: "eigenphase-problem",
+      label: "Unitary whose eigenphase is wanted",
+      labelJa: "固有位相を求めたいユニタリ",
+      summary:
+        "A circuit you can apply controlled powers of, together with the routine preparing the state it acts on, plus the declaration that what is being asked for is the phase that state picks up — not the state, and not an expectation value read off it. The second half is not decoration: the same pair handed to a readout returns an average over a distribution, and an eigenphase is a single number sitting in the operator's spectrum.",
+      summaryJa:
+        "制御べき乗を作用させられる回路と、それが作用する状態を準備する手続き。そこに、求めているのはその状態が獲得する位相であるという宣言が加わります。状態そのものでも、そこから読み出す期待値でもありません。後半は飾りではありません。同じ組を読み出しに渡せば分布の平均が返りますが、固有位相は演算子のスペクトルの中にある一つの数です。",
+      // **Narrower than `runnable-evolution` on purpose, and the reason is the same
+      // bug `ground-state-problem` exists to prevent** (W21 §0.1, and W25 §3.3 puts
+      // it on the wall: *a new region's entry state must be narrower than the
+      // nearest existing state, or the path-finder invents routes*). Entered from
+      // `runnable-evolution` itself, `statePathsBetween` would have chained the KvN
+      // route — the one method on this map that produces that state — straight into
+      // phase estimation and called the result an answer. Every hop type-checks and
+      // the claim is nonsense: a Koopman–von Neumann simulation of a nonlinear ODE
+      // hands you an evolved state to measure, and it never declares that a phase in
+      // that evolution's spectrum is the quantity wanted.
+      //
+      // The pattern is the codebase's own, not a new invention: `hermitian-generator`
+      // vs `linear-ivp`, `ground-state-problem` vs `hamiltonian-access`. "The same
+      // object plus what is being asked of it" is a real state every time the
+      // question changes which methods can answer.
+      specializes: ["runnable-evolution"],
+    },
+    {
       id: "routed-circuit",
       label: "Routed circuit",
       labelJa: "ルーティング済み回路",

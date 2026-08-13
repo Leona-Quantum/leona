@@ -232,7 +232,7 @@ export const PAPER_REGISTER: PaperRegister = {
     { id: "arxiv:quant-ph/0011049", title: "String Matching in ${\\tilde O}(\\sqrt{n}+\\sqrt{m})$ Quantum Time", authors: "H. Ramesh, V. Vinay", year: "2000", url: "https://arxiv.org/abs/quant-ph/0011049", reports: { theory: "reported", simulation: "unknown", hardware: "absent" }, reportsBasis: "abstract" },
     { id: "arxiv:quant-ph/0012090", title: "Quantum Walks On Graphs", authors: "Dorit Aharonov, Andris Ambainis, Julia Kempe, Umesh Vazirani", year: "2000", url: "https://arxiv.org/abs/quant-ph/0012090" },
     { id: "arxiv:quant-ph/0110143", title: "Topological quantum memory", authors: "Eric Dennis, Alexei Kitaev, Andrew Landahl, John Preskill", year: "2001", url: "https://arxiv.org/abs/quant-ph/0110143", reports: { theory: "reported", simulation: "reported", hardware: "absent" }, reportsBasis: "abstract" },
-    { id: "arxiv:quant-ph/0201067", title: "An approximate Fourier transform useful in quantum factoring", authors: "D. Coppersmith", year: "2002", url: "https://arxiv.org/abs/quant-ph/0201067" },
+    { id: "arxiv:quant-ph/0201067", title: "An approximate Fourier transform useful in quantum factoring", authors: "D. Coppersmith", year: "2002", url: "https://arxiv.org/abs/quant-ph/0201067", reports: { theory: "reported", simulation: "unknown", hardware: "absent" }, reportsBasis: "full-text" },
     { id: "arxiv:quant-ph/0202133", title: "A Quantum Rosetta Stone for Interferometry", authors: "Hwang Lee, Pieter Kok, Jonathan P. Dowling", year: "2002", url: "https://arxiv.org/abs/quant-ph/0202133" },
     { id: "arxiv:quant-ph/0207131", title: "Efficient Quantum Algorithms for Estimating Gauss Sums", authors: "Wim van Dam, Gadiel Seroussi", year: "2002", url: "https://arxiv.org/abs/quant-ph/0207131", reports: { theory: "reported", simulation: "unknown", hardware: "absent" }, reportsBasis: "abstract" },
     { id: "arxiv:quant-ph/0208112", title: "Creating superpositions that correspond to efficiently integrable probability distributions", authors: "Lov Grover, Terry Rudolph", year: "2002", url: "https://arxiv.org/abs/quant-ph/0208112", reports: { theory: "reported", simulation: "unknown", hardware: "absent" }, reportsBasis: "full-text" },
@@ -258,7 +258,16 @@ export const PAPER_REGISTER: PaperRegister = {
     { id: "arxiv:quant-ph/0606229", title: "Estimating diagonal entries of powers of sparse symmetric matrices is BQP-complete", authors: "Dominik Janzing, Pawel Wocjan", year: "2006", url: "https://arxiv.org/abs/quant-ph/0606229", reports: { theory: "reported", simulation: "unknown", hardware: "absent" }, reportsBasis: "abstract" },
     { id: "arxiv:quant-ph/0607019", title: "Optimal Quantum Measurements of Expectation Values of Observables", authors: "Emanuel Knill, Gerardo Ortiz, Rolando D. Somma", year: "2006", url: "https://arxiv.org/abs/quant-ph/0607019", reports: { theory: "reported", simulation: "unknown", hardware: "absent" }, reportsBasis: "abstract" },
     { id: "arxiv:quant-ph/0608161", title: "Improved quantum algorithms for the ordered search problem via semidefinite programming", authors: "Andrew M. Childs, Andrew J. Landahl, Pablo A. Parrilo", year: "2006", url: "https://arxiv.org/abs/quant-ph/0608161", reports: { theory: "reported", simulation: "unknown", hardware: "absent" }, reportsBasis: "abstract" },
-    { id: "arxiv:quant-ph/0610214", title: "Arbitrary accuracy iterative phase estimation algorithm as a two qubit benchmark", authors: "M. Dobsicek, G. Johansson, V. S. Shumeiko, G. Wendin", year: "2006", url: "https://arxiv.org/abs/quant-ph/0610214" },
+    // `hardware: absent` on the abstract's own verb, and the verb is the whole
+    // judgement: the paper "exemplif[ies] with a superconducting circuit" and
+    // "suggest[s] using this algorithm as a benchmark" — a proposed realization, not
+    // a run. A 2006 superconducting phase-estimation run would have been headline
+    // material and the abstract would have said so, which is the reason this axis's
+    // negative is well founded while `simulation`'s is not. `simulation: unknown`
+    // rather than `reported`: "show that 7 bits of precision is obtainable, even with
+    // very limited gate accuracies" does not say whether that came from numerics or
+    // from analysis, and the rule is that the abstract not saying is never "absent".
+    { id: "arxiv:quant-ph/0610214", title: "Arbitrary accuracy iterative phase estimation algorithm as a two qubit benchmark", authors: "M. Dobsicek, G. Johansson, V. S. Shumeiko, G. Wendin", year: "2006", url: "https://arxiv.org/abs/quant-ph/0610214", reports: { theory: "reported", simulation: "unknown", hardware: "absent" }, reportsBasis: "abstract" },
     // Authored over the seed: the corpus already recorded these nine authors by
     // their full given names and arXiv lists initials. arXiv is authoritative for
     // the title and the year; the author string is a rendering of the author
@@ -266,7 +275,7 @@ export const PAPER_REGISTER: PaperRegister = {
     { id: "arxiv:quant-ph/0702160", title: "Discrete-query quantum algorithm for NAND trees", authors: "Andrew M. Childs, Richard Cleve, Stephen P. Jordan, David Yonge-Mallo", year: "2007", url: "https://arxiv.org/abs/quant-ph/0702160", reports: { theory: "reported", simulation: "unknown", hardware: "absent" }, reportsBasis: "abstract" },
     { id: "arxiv:quant-ph/9503016", title: "Elementary gates for quantum computation", authors: "Adriano Barenco, Charles H. Bennett, Richard Cleve, David P. DiVincenzo, Norman Margolus, Peter Shor, Tycho Sleator, John A. Smolin, Harald Weinfurter", year: "1995", url: "https://arxiv.org/abs/quant-ph/9503016" },
     { id: "arxiv:quant-ph/9508027", title: "Polynomial-Time Algorithms for Prime Factorization and Discrete Logarithms on a Quantum Computer", authors: "Peter W. Shor", year: "1995", url: "https://arxiv.org/abs/quant-ph/9508027" },
-    { id: "arxiv:quant-ph/9511026", title: "Quantum measurements and the Abelian Stabilizer Problem", authors: "A. Yu. Kitaev", year: "1995", url: "https://arxiv.org/abs/quant-ph/9511026" },
+    { id: "arxiv:quant-ph/9511026", title: "Quantum measurements and the Abelian Stabilizer Problem", authors: "A. Yu. Kitaev", year: "1995", url: "https://arxiv.org/abs/quant-ph/9511026", reports: { theory: "reported", simulation: "unknown", hardware: "absent" }, reportsBasis: "full-text" },
     { id: "arxiv:quant-ph/9512032", title: "Good Quantum Error-Correcting Codes Exist", authors: "A. R. Calderbank, Peter W. Shor", year: "1995", url: "https://arxiv.org/abs/quant-ph/9512032" },
     { id: "arxiv:quant-ph/9605043", title: "A fast quantum mechanical algorithm for database search", authors: "Lov K. Grover", year: "1996", url: "https://arxiv.org/abs/quant-ph/9605043" },
     { id: "arxiv:quant-ph/9607014", title: "A Quantum Algorithm for Finding the Minimum", authors: "Christoph Durr, Peter Hoyer", year: "1996", url: "https://arxiv.org/abs/quant-ph/9607014", reports: { theory: "reported", simulation: "unknown", hardware: "absent" }, reportsBasis: "abstract" },
