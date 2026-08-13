@@ -571,6 +571,12 @@ test("no branch of a fan enters the band the opened line reserved for itself", (
   // one, so it was the majority of the drawing.
   const spineHalf = 22;
   const gap = 10;
+  // **Driven with even bands on purpose.** This test and the next are about the
+  // allocator's odd/even packing, which predates the one-sided name band and did
+  // not change with it; `even` keeps them asking their own question. What the
+  // asymmetry does is a separate test below, so that a regression in one is not
+  // mistakable for a regression in the other.
+  const even = (half: number) => ({ above: half, below: half });
   for (const halves of [
     [20],
     [20, 20],
@@ -583,7 +589,7 @@ test("no branch of a fan enters the band the opened line reserved for itself", (
     [20, 20, 140],
     [9, 200, 31, 12],
   ]) {
-    const offsets = allocateBowsAroundSpine(halves, 0, gap, spineHalf);
+    const offsets = allocateBowsAroundSpine(halves.map(even), 0, gap, even(spineHalf));
     assert.equal(offsets.length, halves.length);
     for (const [index, offset] of offsets.entries()) {
       const half = halves[index]!;
@@ -606,7 +612,7 @@ test("no branch of a fan enters the band the opened line reserved for itself", (
       );
     }
   }
-  assert.deepEqual(allocateBowsAroundSpine([], 0, gap, spineHalf), []);
+  assert.deepEqual(allocateBowsAroundSpine([], 0, gap, even(spineHalf)), []);
 });
 
 test("a fan reserves the band its own branches reach, not half of a summed row", () => {
@@ -617,8 +623,9 @@ test("a fan reserves the band its own branches reach, not half of a summed row",
   // Failable: `spread / 2 + labelBand` for the first case below is 47 against a
   // drawing that reaches 72, so the parent reserved a band its own child
   // overflowed by 25px and the siblings it was packed against never knew.
+  const even = (half: number) => ({ above: half, below: half });
   for (const halves of [[20], [20, 20, 20], [140, 20, 20]]) {
-    const offsets = allocateBowsAroundSpine(halves, 0, M.laneGap, M.spineBand);
+    const offsets = allocateBowsAroundSpine(halves.map(even), 0, M.laneGap, even(M.spineBand));
     const reach = Math.max(...offsets.map((offset, index) => Math.abs(offset) + halves[index]!));
     const spread =
       halves.reduce((sum, half) => sum + half * 2, 0) + M.spineBand * 2 + M.laneGap * halves.length;
@@ -631,7 +638,7 @@ test("a fan reserves the band its own branches reach, not half of a summed row",
   // An even fan is the case where the two agree, and it must keep agreeing —
   // otherwise the fix moved every figure, not just the odd ones.
   for (const halves of [[20, 20], [20, 20, 20, 20], [140, 20, 20, 140]]) {
-    const offsets = allocateBowsAroundSpine(halves, 0, M.laneGap, M.spineBand);
+    const offsets = allocateBowsAroundSpine(halves.map(even), 0, M.laneGap, even(M.spineBand));
     const reach = Math.max(...offsets.map((offset, index) => Math.abs(offset) + halves[index]!));
     const spread =
       halves.reduce((sum, half) => sum + half * 2, 0) + M.spineBand * 2 + M.laneGap * halves.length;
@@ -2170,7 +2177,7 @@ test("allocateBows reproduces laneOffsets exactly when every sibling is a leaf",
   assert.equal(leaf * 2 + M.laneGap, M.laneBow, "laneBow is not an independent number");
   for (const count of [1, 2, 3, 4, 5, 7]) {
     const closed = laneOffsets(count);
-    const allocated = allocateBows(new Array(count).fill(leaf), 0, M.laneGap);
+    const allocated = allocateBows(new Array(count).fill({ above: leaf, below: leaf }), 0, M.laneGap);
     for (let index = 0; index < count; index += 1) {
       assert.ok(
         Math.abs(closed[index]! - allocated[index]!) < 1e-9,
