@@ -41,8 +41,8 @@ const COPY = {
     lede:
       "Every algorithm record here shows a speedup class, and that class is quoted from an outside index rather than"
       + " derived here. This page says, for each one, whether the paper behind it states the same thing.",
-    backToAtlas: "Atlas",
-    papersLink: "Papers — every source behind the Atlas and the map",
+    backToAtlas: "The Quantum Atlas",
+    papersLink: "Papers — every source behind the Quantum Atlas and the Map",
     absentHeading: "Checked, and the paper does not state it",
     absentLede:
       "Each of these is the narrow claim that a named paper does not contain a named result — not that the class is"
@@ -65,8 +65,8 @@ const COPY = {
     lede:
       "本サイトのアルゴリズム記録には速度向上の区分が示されていますが、これは外部の索引からの引用であって、ここで導いたものではありません。"
       + "このページは、その根拠となる論文が同じことを述べているかどうかを一件ずつ示します。",
-    backToAtlas: "アトラス",
-    papersLink: "論文 — アトラスと地図の背後にあるすべての資料",
+    backToAtlas: "量子アトラス",
+    papersLink: "論文 — 量子アトラスと地図の背後にあるすべての資料",
     absentHeading: "照合の結果、論文に記載がなかったもの",
     absentLede:
       "いずれも、特定の論文に特定の結果が含まれていないという限定的な主張であり、区分が誤りだという主張ではありません。"

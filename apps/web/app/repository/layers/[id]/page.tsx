@@ -49,7 +49,10 @@ export async function generateMetadata({
       description: locale === "ja" ? state.summaryJa : state.summary,
     };
   }
-  return { title: locale === "ja" ? "階層" : "Layers" };
+  // The surface's own name, for an id that names neither a node nor a state —
+  // "Map" since ai-ops#78, matching `layers/page.tsx` and the breadcrumb this
+  // page renders. The route is untouched.
+  return { title: locale === "ja" ? "地図" : "Map" };
 }
 
 /** `?open=` as a list, tolerating the repeated-parameter form the canvas emits. */
