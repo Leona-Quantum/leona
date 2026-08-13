@@ -3940,6 +3940,16 @@ export const LAYER_GRAPH: LayerGraph = {
     // block-encode → prepare → matrix-function and differed only in decoration,
     // because the hop could only name the slot they share.
     via: { "matrix-function": "qsvt-transform" },
+    // **And which polynomial goes through it** — ai-ops#51's third kind of thing
+    // a label can hold. The pin above says QSVT and so does
+    // `eigenstate-filtering-inversion`'s, so with the pins alone the two drew one
+    // identical picture and the map could not say why they are different
+    // methods. What separates them is the polynomial, which is neither a node nor
+    // a way through one, and authoring a node for it would put this paper on the
+    // map a second time. Read off the `summary` clause quoted above, cut to a
+    // mark — never composed to make the two pictures differ.
+    spec: { "matrix-function": "an odd polynomial in 1/x" },
+    specJa: { "matrix-function": "スケールした 1/x の奇多項式" },
     // Transcribed from `summary`, `conditions` and the `repeats` note. The
     // subnormalisation sentence is the reason this listing is worth having:
     // `conditions` says what the transform produces is (δ/2)·A⁺ and therefore
@@ -4617,6 +4627,13 @@ export const LAYER_GRAPH: LayerGraph = {
     // partition, and it is the same clause its `discrete-adiabatic-inversion`
     // sibling names when it says it does the opposite.
     via: { "matrix-function": "qsvt-transform" },
+    // The pin carries "apply it through quantum signal processing"; this carries
+    // the half of the same sentence it could not — "the minimax-optimal
+    // polynomial that is 1 at a target eigenvalue and uniformly small outside a
+    // spectral gap". See `qsvt-matrix-inversion` for the twin the two pins made
+    // together and which this splits (ai-ops#51).
+    spec: { "matrix-function": "a minimax eigenstate filter" },
+    specJa: { "matrix-function": "ミニマックス固有状態フィルタ" },
     bypasses: ["success-amplification"],
     // The two action lines at the end are `summary`: "Construct the
     // minimax-optimal polynomial that is 1 at a target eigenvalue and uniformly
@@ -4821,6 +4838,19 @@ export const LAYER_GRAPH: LayerGraph = {
     id: "qsvt-transform",
     label: "Quantum singular value transformation",
     labelJa: "量子特異値変換",
+    // **A short form, because a specification now shares this label's column.**
+    // `labelCap`'s own note says how this is meant to go — *"attempt to make each
+    // label shorter, then the width cap"* — and the cap bit for the first time
+    // when `qsvt-matrix-inversion` began drawing *"Quantum singular value
+    // transformation, an odd polynomial in 1/x"* (394px against a 300px cap) and
+    // the canvas cut it to *"…an odd…"*. Shortening the name is what buys the
+    // room, not cutting the distinction the spec exists to draw.
+    //
+    // "QSVT" in both locales because the corpus already writes it in both —
+    // `qsvt-matrix-inversion` is labelled "QSVT matrix inversion" and
+    // "QSVT による行列の反転". This is the established short form, not a new coinage.
+    shortLabel: "QSVT",
+    shortLabelJa: "QSVT",
     summary: "Interleave the block-encoding $U$, its inverse, and projector-controlled phase shifts $e^{iφ(2Π-I)}$ so that the designated block becomes $P$ applied to the singular values of $A$. The phase sequence is the compiled form of the polynomial, and a single ancilla qubit carries the phase shifts.",
     summaryJa: "ブロック符号化 $U$、その逆、そして射影子で制御される位相シフト $e^{iφ(2Π-I)}$ を交互に並べ、指定ブロックが $A$ の特異値に $P$ を適用した形になるようにします。位相列は多項式をコンパイルした形であり、位相シフトは 1 つの補助量子ビットが担います。",
     realizes: "matrix-function",

@@ -171,6 +171,7 @@ import {
   methodsRealizing,
   repetitionOf,
   routeOf,
+  specificationOf,
   type LayerCapability,
   type LayerGraph,
   type LayerMethod,
@@ -1106,6 +1107,17 @@ export interface ConvergeLane {
   /** The full name, always — the `<title>`, the accessible list, the print view. */
   fullLabel: string;
   /**
+   * The **specification** this hop's label carries, if the route records one —
+   * ai-ops#51's third kind of thing a label can hold. See `LayerMethod.spec`.
+   *
+   * Carried rather than left to be read back out of `label`, because a spec is
+   * joined to the name with `", "` and plenty of authored names contain a comma
+   * (*"Homotopy series, linear ODE"*). Recovering it by splitting would be a
+   * second derivation of a string this struct already knows, and it would be
+   * wrong on exactly the names that already read well.
+   */
+  spec: string | null;
+  /**
    * The authored short name if this lane drew one, else null.
    *
    * Carried so a test — and a reader of the data — can tell "drawn short because
@@ -2012,6 +2024,15 @@ interface PlanStrand {
    * cut) rather than one string spelled out in two places.
    */
   standingName: string | null;
+  /**
+   * The **specification** written on this hop, if the route records one — the
+   * third kind of thing a label can hold (ai-ops#51). See `LayerMethod.spec`.
+   *
+   * Resolved to the reader's locale here, beside every other localized string on
+   * a strand, so `drawnName` and `spokenName` read one value rather than each
+   * picking a locale.
+   */
+  spec: string | null;
   opensInto: OpensInto | null;
   slots: readonly string[];
   interior: readonly string[];
@@ -2166,31 +2187,37 @@ function chainInside(
         // what `repeats` is keyed on: the route says it walks *this step* T/h
         // times, and which algorithm fills the step is a separate record. A pin
         // must not lose the count.
-        return withRepeatMark(
-          planForMethod(
-            graph,
-            vocabulary,
-            filler,
-            locale,
-            open,
-            depth,
+        return withSpec(
+          withRepeatMark(
+            planForMethod(
+              graph,
+              vocabulary,
+              filler,
+              locale,
+              open,
+              depth,
           // The **slot** joins `seen`, not just the filler. `planForMethod` cuts
           // the recursion on the method's own id; the slot is what a route below
           // could delegate back to, and pinning must not open a door the
           // unpinned hop had shut. Every pin in the corpus today names an
           // atomic filler, so this cannot bite yet — which is exactly when a
           // cycle guard is cheap to get right.
-            new Set([...seen, segment.capabilityId]),
-            `${parentKey}/${index}/`,
-            `${parentAddress}.${index}`,
+              new Set([...seen, segment.capabilityId]),
+              `${parentKey}/${index}/`,
+              `${parentAddress}.${index}`,
+            ),
+            method,
+            segment.capabilityId,
+            locale,
           ),
           method,
           segment.capabilityId,
           locale,
         );
       }
-      return withRepeatMark(
-        planForSlot(
+      return withSpec(
+        withRepeatMark(
+          planForSlot(
           graph,
           vocabulary,
           segment.capabilityId,
@@ -2198,8 +2225,12 @@ function chainInside(
           open,
           depth,
           seen,
-          `${parentKey}/${index}/`,
-          `${parentAddress}.${index}`,
+            `${parentKey}/${index}/`,
+            `${parentAddress}.${index}`,
+          ),
+          method,
+          segment.capabilityId,
+          locale,
         ),
         method,
         segment.capabilityId,
@@ -2257,6 +2288,9 @@ function chainInside(
       // What it draws, resolved here with every other localized string on the
       // plan. See `standingName`.
       standingName: ownStepName(locale),
+      // Set by `withSpec` where a parent route expands one of its own steps; a
+      // strand nothing has annotated draws its plain name.
+      spec: null,
       opensInto: null,
       slots: [],
       interior: [],
@@ -2334,6 +2368,9 @@ function planForSlot(
     draws: node === null ? null : slotId,
     own: null,
     standingName: null,
+    // Set by `withSpec` where a parent route expands one of its own steps; a
+    // strand nothing has annotated draws its plain name.
+    spec: null,
     opensInto: methods.length > 0 ? "ways" : null,
     slots: [slotId],
     interior: [],
@@ -2557,6 +2594,9 @@ function planForMethod(
     draws: method.id,
     own: null,
     standingName: null,
+    // Set by `withSpec` where a parent route expands one of its own steps; a
+    // strand nothing has annotated draws its plain name.
+    spec: null,
     opensInto: holds ? "steps" : null,
     slots: [],
     interior: [],
@@ -2654,6 +2694,9 @@ function planForLane(
     draws: null,
     own: null,
     standingName: null,
+    // Set by `withSpec` where a parent route expands one of its own steps; a
+    // strand nothing has annotated draws its plain name.
+    spec: null,
     opensInto: "steps",
     slots: named.slots,
     interior: lane.interior,
@@ -3133,7 +3176,18 @@ function fitMarkedName(
   font: number,
   budget: number,
 ): { text: string; truncated: boolean } {
-  return fitLabel(strand.shortLabel ?? strand.label, font, budget, markSuffix(strand));
+  // **`specified`, not `shortLabel ?? label` — and this was a second writer of
+  // what gets drawn.** `ownNameDemand` sizes the column from `drawnName`, and
+  // this cut the text from a differently-composed string; the moment `spec`
+  // arrived the two disagreed, and the symptom was exactly the shape this file
+  // has paid for twice. `nonlinear-ode-solve` drew *"Quantum singular value
+  // transformation"* in a column built for *"Quantum singular value
+  // transformation, an odd polynomial in 1/x"* — 361px of column for 235px of
+  // text — and the only thing that noticed was the invariant asserting a chain's
+  // steps are drawn in proportion to their own names.
+  //
+  // One composition, in `specified`, read by the demand and by the cut.
+  return fitLabel(specified(strand), font, budget, markSuffix(strand));
 }
 
 /**
@@ -3165,6 +3219,8 @@ type MarkedStrand = {
   refinement: StrandRefinement | null;
   /** See `PlanStrand.standingName`. */
   standingName?: string | null;
+  /** See `PlanStrand.spec`. */
+  spec?: string | null;
 };
 
 /**
@@ -3283,6 +3339,25 @@ function refinementOf(
   };
 }
 
+/**
+ * Write this route's specification for this hop onto the strand (ai-ops#51).
+ *
+ * Applied at the same two call sites as `withRepeatMark` and for the same
+ * reason: both facts are keyed by (route, step), and both are known only where
+ * the parent route is expanding one of its own steps. A pinned hop keeps it —
+ * the spec is keyed on the **slot**, exactly as `repeats` is, so naming which
+ * algorithm fills the step must not lose which one of it this route uses.
+ */
+function withSpec(
+  strand: PlanStrand,
+  method: LayerMethod,
+  stepId: string,
+  locale: PublicLocale,
+): PlanStrand {
+  const spec = specificationOf(method, stepId, locale);
+  return spec === null ? strand : { ...strand, spec };
+}
+
 function withRepeatMark(
   strand: PlanStrand,
   method: LayerMethod,
@@ -3343,11 +3418,39 @@ export function spokenName(lane: {
   return `${lane.fullLabel}${refines}${repeats}${shared}`;
 }
 
+/**
+ * The name a lane draws, **before** the mark and before any cut — the one
+ * composition of "what this line is called".
+ *
+ * Extracted because it has two readers that must never disagree: `drawnName`,
+ * which is what the column is *sized* for, and `fitMarkedName`, which is what
+ * the text is *cut* to. They were two compositions until `spec` arrived and made
+ * them differ; see `fitMarkedName` for the 361px column that drew 235px of text.
+ *
+ * A standing phrase displaces the name entirely — it is not a short form of it —
+ * so the `??` chain reads in drawing order: what the canvas writes, then the
+ * authored short form, then the name.
+ *
+ * **The spec is part of the name, not a suffix**, and that is the whole
+ * difference between it and the repeat mark. A mark annotates a lane; a
+ * specification says WHICH ONE this lane is, so it sits with the name and is cut
+ * with the name when a column is short. The mark still survives the cut —
+ * `fitLabel` spends the budget on the suffix first — which is the right way
+ * round: a count is a fact a reader can get nowhere else, and a spec is a
+ * distinction the card repeats.
+ *
+ * A standing phrase takes no spec. *"the method itself"* is not a hop through a
+ * slot, so there is no step for one to be keyed by and nothing that could have
+ * written one.
+ */
+function specified(strand: MarkedStrand): string {
+  const named = strand.standingName ?? strand.shortLabel ?? strand.label;
+  if (strand.standingName != null) return named;
+  return strand.spec === null || strand.spec === undefined ? named : `${named}, ${strand.spec}`;
+}
+
 export function drawnName(strand: MarkedStrand): string {
-  // A standing phrase displaces the name entirely — it is not a short form of
-  // it. The `??` chain reads in drawing order for that reason: what the canvas
-  // writes, then the authored short form, then the name.
-  return `${strand.standingName ?? strand.shortLabel ?? strand.label}${markSuffix(strand)}`;
+  return `${specified(strand)}${markSuffix(strand)}`;
 }
 
 /** How far past its own edge a strand must clear before a variant row starts:
@@ -4000,7 +4103,13 @@ function place(
     // page. Two tests assert `label === fullLabel`; they now have to allow the
     // authored short form, and the thing they must keep refusing is a short form
     // leaking into this field.
-    fullLabel: strand.label,
+    // **The spec joins here and only here.** `fullLabel` is what the `<title>`
+    // shows and what `spokenName` reads, so composing it once means a reader who
+    // hovers, a reader who listens and a reader who looks all get the same
+    // sentence. Joined to `label` and not to `shortLabel ?? label`, because
+    // `fullLabel`'s whole contract is that a short form removes nothing.
+    fullLabel: strand.spec === null ? strand.label : `${strand.label}, ${strand.spec}`,
+    spec: strand.spec,
     shortLabel: strand.shortLabel,
     repeatMark: strand.repeatMark,
     loopClosure: strand.loopClosure,

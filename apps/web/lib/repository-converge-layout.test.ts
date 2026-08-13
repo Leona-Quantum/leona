@@ -3162,6 +3162,118 @@ test("every declared refinement is drawn on the lane of the method that declares
   );
 });
 
+test("every authored specification is drawn on the hop that records it, and nowhere else", () => {
+  // **ai-ops#51's mechanism, and the reason it needs a gate of its own.**
+  //
+  // > *"we can put specifications in the labels rather than another item on the
+  // > map — something like 'penalty objective'."*   — owner, ai-ops#51
+  //
+  // `spec` is the only one of the four hop annotations that names **nothing**:
+  // `via` must be a method that fills the step, `through` must be a state that
+  // narrows it, `repeats` carries a closure the graph checks. A specification is
+  // free text on a drawing, so validation can only hold it to a shape — which
+  // makes "does it actually reach the picture, and does the picture compose it
+  // the way the demand does" the whole of what a test can add.
+  //
+  // Three claims, and the second is the one that already caught a real defect:
+  // the column was sized from `drawnName` and the text cut by a separately
+  // composed string, so `nonlinear-ode-solve` drew *"Quantum singular value
+  // transformation"* into a 361px column built for 235px of text.
+  const authored: Array<{ method: string; step: string; en: string; ja: string }> = [];
+  for (const id of METHOD_IDS) {
+    const node = layerNode(LAYER_GRAPH, id);
+    if (!node || !isMethod(node) || node.spec === undefined) continue;
+    for (const [step, en] of Object.entries(node.spec)) {
+      authored.push({ method: id, step, en, ja: node.specJa?.[step] ?? "" });
+    }
+  }
+  assert.ok(authored.length >= 2, `only ${authored.length} specifications authored — is the field in use?`);
+
+  for (const locale of ["en", "ja"] as const) {
+    const wanted = new Map(authored.map((a) => [`${a.method}/${a.step}`, locale === "ja" ? a.ja : a.en]));
+    const reached = new Set<string>();
+    for (const focus of drawableSlots(LAYER_GRAPH, STATE_VOCABULARY)) {
+      for (const lane of openDiagram(focus.id, openableAddresses(focus.id), locale).lanes) {
+        if (lane.spec === null) continue;
+        assert.ok(
+          [...wanted.values()].includes(lane.spec),
+          `a lane draws "${lane.spec}", which no method records — the canvas invented a specification`,
+        );
+        for (const [key, text] of wanted) if (text === lane.spec) reached.add(key);
+
+        // **One composition, two readers.** `fullLabel` is the name plus the
+        // spec, and the drawn `label` is the same string with a short form and a
+        // cut allowed. Asserting the join here is what would have failed on the
+        // 361px column, because the two were composed apart.
+        assert.ok(
+          lane.fullLabel.endsWith(`, ${lane.spec}`),
+          `${lane.key}: fullLabel "${lane.fullLabel}" does not carry its own spec "${lane.spec}"`,
+        );
+        assert.ok(
+          lane.label.includes(lane.spec) || lane.labelTruncated,
+          `${lane.key}: the label "${lane.label}" drops the spec "${lane.spec}" without saying it was cut`,
+        );
+        // And the reader who listens gets it too, because `spokenName` reads
+        // `fullLabel` — one string for the eye, the tooltip and the screen
+        // reader, which is what `spokenName` exists to keep true.
+        assert.ok(
+          spokenName(lane).includes(lane.spec),
+          `${lane.key}: the spoken name drops the specification`,
+        );
+      }
+    }
+    for (const key of wanted.keys()) {
+      assert.ok(reached.has(key), `${locale}: ${key} records a specification the map draws nowhere`);
+    }
+  }
+
+  // **The failable half: without it, the two collide.** The row these two split
+  // was in `DRAWN_TWINS` until this field existed, and a test that only checked
+  // the string reached a label would stay green if the field stopped doing the
+  // job it was built for. So the hop is drawn twice — once with the specs the
+  // corpus records and once with them stripped — and the two runs must disagree.
+  //
+  // The hop, not the subtree. `qsvt-matrix-inversion` walks four steps and
+  // `eigenstate-filtering-inversion` three, so their subtrees were never
+  // identical; what was identical, and what the retired row was about, is the
+  // `matrix-function` hop both of them pin to `qsvt-transform`.
+  const qsvtHops = (strip: boolean): string[] => {
+    const graph = strip
+      ? {
+          ...LAYER_GRAPH,
+          nodes: LAYER_GRAPH.nodes.map((node) =>
+            isMethod(node) && node.spec !== undefined
+              ? { ...node, spec: undefined, specJa: undefined }
+              : node,
+          ),
+        }
+      : LAYER_GRAPH;
+    const focus = layerNode(graph, "quantum-linear-solve");
+    assert.ok(focus && isCapability(focus));
+    const open = new Set(openableAddresses("quantum-linear-solve", graph));
+    return layoutConverge({ graph, vocabulary: STATE_VOCABULARY, focus, locale: "en", open })
+      // `nodeId`, not the href — an href carries the reader's whole `?open=` set,
+      // and the method's own stretch borrows its parent's href while naming no
+      // node at all.
+      .lanes.filter((lane) => lane.nodeId === "qsvt-transform")
+      .map((lane) => lane.fullLabel)
+      .sort();
+  };
+  const stripped = qsvtHops(true);
+  const authoredHops = qsvtHops(false);
+  assert.ok(stripped.length >= 2, `only ${stripped.length} hops draw qsvt-transform — the control is vacuous`);
+  assert.equal(
+    new Set(stripped).size,
+    1,
+    `with specifications stripped, the hops that pin QSVT should all read the same — they read ${JSON.stringify([...new Set(stripped)])}, so this control has stopped controlling for anything`,
+  );
+  assert.equal(
+    new Set(authoredHops).size,
+    authoredHops.length,
+    `with specifications authored, two hops still read the same: ${JSON.stringify(authoredHops)} — the field is not reaching the picture`,
+  );
+});
+
 test("nothing on the canvas is marked a narrowing that the corpus did not declare", () => {
   // The other direction, and the one that matters more. 46 of 63 methods draw a
   // chain a sibling already drew (`W10-hollow-twins.md`), and `refines` is the
@@ -4847,27 +4959,21 @@ test("a route that pins its step draws the algorithm's name there, not the slot'
  * pictures are one, and it is checked structurally below.
  */
 const DRAWN_TWINS: ReadonlyArray<{ slot: string; methods: readonly string[]; why: string }> = [
-  {
-    slot: "quantum-linear-solve",
-    methods: ["qsvt-matrix-inversion", "eigenstate-filtering-inversion"],
-    why:
-      "**Made by pinning, and kept rather than un-pinned, because the pins are true.** Both records "
-      + "name their construction outright — one says \"apply the quantum singular value transformation "
-      + "with an odd polynomial approximating a scaled $1/x$ away from the origin\", the other applies "
-      + "its filter \"through quantum signal processing\" — and of the two methods realising "
-      + "`matrix-function` only `qsvt-transform` carries a phase sequence. So both hops honestly read "
-      + "QSVT, and drawing the same name twice is the correct drawing. Before the pins these two drew "
-      + "the slot's name and looked identical for a worse reason: the map could not say what filled the "
-      + "hop at all. This row is a smaller gap than the one it replaces. What still separates the two "
-      + "and the map cannot say is WHICH POLYNOMIAL goes through the transform — a scaled $1/x$ against "
-      + "a minimax filter that is 1 at a target eigenvalue and uniformly small outside a spectral gap — "
-      + "and that is a specification on a hop, not a method filling it. It is the same missing mechanism "
-      + "the three remaining `excited-state-energy` routes are waiting on, and the owner has named the "
-      + "shape of it in ai-ops#51: *\"we can put specifications in the labels rather than another item on "
-      + "the map\"*. `via` names a method and `through` names a state; neither can carry \"with an odd "
-      + "polynomial approximating $1/x$\". Both records already state their polynomial, so this row's "
-      + "exit is a field to write it into, not a source to go and find.",
-  },
+  // **The `quantum-linear-solve` row is gone, and ai-ops#51 is why.** It held
+  // `qsvt-matrix-inversion` and `eigenstate-filtering-inversion`, and its own
+  // text named its exit precisely: *"What still separates the two and the map
+  // cannot say is WHICH POLYNOMIAL goes through the transform — a scaled $1/x$
+  // against a minimax filter that is 1 at a target eigenvalue and uniformly
+  // small outside a spectral gap — and that is a specification on a hop, not a
+  // method filling it. … `via` names a method and `through` names a state;
+  // neither can carry 'with an odd polynomial approximating $1/x$'. Both records
+  // already state their polynomial, so this row's exit is a field to write it
+  // into, not a source to go and find."*
+  //
+  // The field is `LayerMethod.spec`, the two phrases are read off the two
+  // `summary` clauses, and the row deleted itself: the census now finds the two
+  // interiors distinct and the "delete the row" assertion below is what said so.
+  //
   // The `time-discretization` row — `backward-euler` with `trapezoidal-rule` —
   // was deleted in session 118. Both drew one interior only because both hung the
   // same `quantum-linear-solve` stub, and that step is gone by the owner's
