@@ -73,3 +73,67 @@ def test_allowlisted_id_does_not_block(monkeypatch):
 
 def test_empty_report_is_clean():
     assert check_osv_report.findings({"results": []}) == ([], [])
+
+
+# The other half of the gate: findings() answers "is anything wrong with what was
+# scanned", coverage_failures() answers "was anything scanned". A report of no
+# findings and a report of no scan are the same object to the first function, and
+# `|| true` on the scan step used to let the second one through as "clean".
+
+
+def _covered(**counts):
+    """A report shaped like `osv-scanner --all-packages`, which lists every
+    lockfile it read rather than only the ones carrying advisories."""
+    return {
+        "results": [
+            {
+                # osv-scanner reports absolute runner paths, not basenames.
+                "source": {"path": f"/home/runner/work/majorana/majorana/{name}"},
+                "packages": [{"package": {"name": f"p{i}"}} for i in range(n)],
+            }
+            for name, n in counts.items()
+        ]
+    }
+
+
+def _full():
+    return _covered(**{n: f + 1 for n, f in check_osv_report.REQUIRED_SOURCES.items()})
+
+
+def test_a_report_covering_every_lockfile_passes():
+    assert check_osv_report.coverage_failures(_full()) == []
+
+
+def test_a_scan_that_read_nothing_is_refused():
+    """The failure this exists for: osv-scanner emits `{"results": []}` when it
+    finds no lockfiles, which is byte-identical to a clean scan by severity."""
+    for empty in ({"results": []}, {}):
+        assert check_osv_report.coverage_failures(empty), f"{empty} must be refused"
+
+
+def test_a_missing_lockfile_is_refused():
+    problems = check_osv_report.coverage_failures(_covered(**{"uv.lock": 500}))
+    assert any("pnpm-lock.yaml" in p and "not scanned" in p for p in problems)
+
+
+def test_a_lockfile_under_its_floor_is_refused():
+    """A truncated or half-parsed lockfile still produces a source entry."""
+    problems = check_osv_report.coverage_failures(_covered(**{"uv.lock": 1, "pnpm-lock.yaml": 1}))
+    assert len(problems) == 2
+    assert all("floor is" in p for p in problems)
+
+
+def test_coverage_is_independent_of_findings():
+    """A report can carry a blocking advisory and still be fully covered — the
+    two checks must not stand in for each other."""
+    report = _full()
+    report["results"][0]["packages"][0]["groups"] = [
+        {"ids": ["GHSA-aaaa-bbbb-cccc"], "max_severity": "9.8"}
+    ]
+    assert check_osv_report.coverage_failures(report) == []
+    assert check_osv_report.findings(report)[0]
+
+
+def test_the_self_test_passes():
+    """The gate's own CI self-test, so a break shows up in pytest too."""
+    assert check_osv_report._self_test() == 0
