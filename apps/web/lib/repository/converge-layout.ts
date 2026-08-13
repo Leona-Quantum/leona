@@ -4046,6 +4046,86 @@ export function layoutConverge(options: {
 }
 
 /**
+ * Every address on this figure a reader could reach by clicking, to saturation
+ * — *"fully open"*, as a set.
+ *
+ * A fixed point and not one pass, because that is what "everything" means here:
+ * a lane nested inside another lane does not exist as a shape until its parent
+ * is open, so a single layout can only ever see the outermost rung. The walk
+ * lays the figure out, banks every control it can see, lays it out again with
+ * those banked, and stops when a pass adds nothing.
+ *
+ * **One writer, for the same reason `methodHasInterior` is one.** The test file
+ * grew this walk first, to measure `CONVERGE_OPEN_MAX` against what a reader
+ * can reach; the expand-all control needs the identical set. Two copies would
+ * mean the cap is asserted against one set while the control emits another, and
+ * the day they diverge is the day the control mints an address the page drops
+ * on arrival — the dead control this canvas has produced twice already.
+ *
+ * **Jump controls are not open controls.** A W15-demoted shared lane carries an
+ * `openHref` that goes to the *earlier* occurrence where its interior is drawn;
+ * putting its own address in `?open=` opens nothing, because `openable` is
+ * false on it. Excluded here so the emitted set is addresses that actually do
+ * something. Measured today: excluding them changes the total not at all
+ * (138 either way, over 23 figures) — every one of those 47 saturated jump
+ * lanes sits at an address a toggle had already banked. Kept as a filter rather
+ * than dropped as a no-op because "identical today" is the thing that drifts.
+ *
+ * Memoised per graph, subject, locale and unfold. The walk costs about seven
+ * layouts on the widest figure — ~160ms measured, against ~5ms for the one
+ * layout the render already does — and the map re-renders on every pan, every
+ * card and every section click. The result is a pure function of the graph, so
+ * the cache is sound by construction; it is keyed on the graph *object* so a
+ * fixture graph in a test cannot be answered with the real one's addresses.
+ * Locale is in the key rather than argued away, though the two agree today:
+ * every one of the 23 figures returns byte-identical address sets in `en` and
+ * `ja`, which is what you would expect from a plan built before any text is
+ * measured — but it is an expectation, not an invariant this file enforces.
+ */
+const OPENABLE_CACHE = new WeakMap<LayerGraph, Map<string, readonly string[]>>();
+
+export function openableAddresses(options: {
+  graph: LayerGraph;
+  vocabulary: StateVocabulary;
+  focus: LayerCapability;
+  locale: PublicLocale;
+  unfold?: string;
+}): readonly string[] {
+  let perGraph = OPENABLE_CACHE.get(options.graph);
+  if (perGraph === undefined) {
+    perGraph = new Map();
+    OPENABLE_CACHE.set(options.graph, perGraph);
+  }
+  const key = `${options.focus.id}|${options.locale}|${options.unfold ?? ""}`;
+  const cached = perGraph.get(key);
+  if (cached !== undefined) return cached;
+
+  const seen = new Set<string>();
+  for (;;) {
+    const diagram = layoutFigure({
+      graph: options.graph,
+      vocabulary: options.vocabulary,
+      focus: options.focus,
+      locale: options.locale,
+      open: new Set(seen),
+      unfold: options.unfold,
+    });
+    let grew = false;
+    for (const lane of diagram.lanes) {
+      if (lane.openHref === null) continue;
+      if (lane.sharedWith !== null) continue;
+      if (seen.has(lane.address)) continue;
+      seen.add(lane.address);
+      grew = true;
+    }
+    if (!grew) break;
+  }
+  const addresses = [...seen];
+  perGraph.set(key, addresses);
+  return addresses;
+}
+
+/**
  * One fingerprint of what a strand **holds** — ids, layout and boundaries,
  * recursively. Addresses are excluded because two occurrences of one node
  * differ in address by construction; open flags and marks are excluded because
