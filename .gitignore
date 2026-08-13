@@ -26,3 +26,13 @@ report.json
 .venv.nosync/
 .DS_Store
 bench/k6/out/
+
+# The Leona plan tree lives in the PRIVATE repo EshMis/ai-ops (leona/plans/), and this
+# path is a symlink to it. This repository is public and the tree includes
+# plans/rebuild/05-security.md, which enumerates which security controls are built and
+# which are not — owner ruling 2026-08-14.
+#
+# No trailing slash on purpose. `plans/` does NOT match a symlink named `plans`; git
+# treats the entry as a directory pattern and the symlink is a file, so the ignore silently
+# misses and the link gets committed.
+/plans
