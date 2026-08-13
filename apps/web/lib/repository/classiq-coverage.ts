@@ -335,6 +335,87 @@ export const CLASSIQ_COVERAGE: Readonly<Record<string, readonly string[]>> = {
   // simulator — a change of simulator backend, not of algorithm, which is why one
   // declaration covers the directory. No references cell in either.
   "applications/telecom/resiliency_planning": ["qaoa-combinatorial-optimization"],
+
+  // ---- Three rows released by reading the code, 2026-08-13 ------------------
+  //
+  // These three sat in MISSING under judgements recorded above and in earlier
+  // sessions — "a title and nothing else", "no references at all", "a
+  // polynomial-approximation primitive". **Each of those judgements came from
+  // reading a notebook's markdown.** All 37 files of the four remaining
+  // application directories were fetched from the pinned commit ac61dccb and read
+  // through, code cells included, and three of the four turned out to state their
+  // algorithm plainly in Python while saying little or nothing in prose. A
+  // notebook is a program; reading only its prose measures the wrong thing.
+
+  // Its markdown is one cell — `# Second Quantized Hamiltonian` — which is what
+  // "a title and nothing else" was based on. Its seven code cells build a
+  // fermionic Hamiltonian as an OpenFermion `FermionOperator`, wrap it in
+  // `FermionHamiltonianProblem` with `n_particles=(1, 1)`, map it to qubits with
+  // `FermionToQubitMapper`, build a `full_hea` hardware-efficient ansatz out of X,
+  // RY and CX at three repetitions, and call
+  // `es.minimize(cost_function=vqe_hamiltonian, ...)`. That is VQE with a
+  // hardware-efficient ansatz — the same pair of slugs already declared for
+  // `molecule_eigensolver`, which is exactly what the platform tour in
+  // `classiq_chemistry_application` says: there are two ways to define an
+  // electronic structure problem, and "for the direct definition see this
+  // example", linking here.
+  //
+  // Basis `same-subject` rather than `method-instance`: the demonstration
+  // variationally minimises the expectation value of a Hamiltonian, which is the
+  // subject of the record's source, not an application of it to some further
+  // problem. Unlike `molecule_eigensolver` the evidence is the code rather than a
+  // written problem statement, because the notebook does not contain one.
+  "applications/chemistry/second_quantized_hamiltonian": [
+    "vqe-ground-state-energy",
+    "vqe-hardware-efficient-ansatz",
+  ],
+
+  // "Quantum Double Slit Experiment", and the reason it was left missing is that
+  // it carries no bibliography at all. That was never the right test: what a
+  // record cites is our problem, not the demo's. The notebook discretizes a wave
+  // equation on a 2D grid with slits as boundary conditions, states in its own
+  // learning objectives that it covers "the principles of Quantum Signal
+  // Processing (QSP) and Quantum Singular Value Transformation (QSVT) for quantum
+  // linear algebra", and says the problem is "mapped to a quantum circuit, and
+  // QSP/QSVT is used to approximate the matrix inverse". Its code imports
+  // `qsvt_phases` from `classiq.applications.qsp`. Solving a linear system by
+  // QSVT matrix inversion is the same claim already declared for
+  // `algorithms/quantum_linear_solvers/qsvt_matrix_inversion`.
+  //
+  // `method-instance`: Gilyén et al. give the QSVT framework and do not formulate
+  // a slitted wave equation.
+  "applications/CFD/double_slit_experiment": ["quantum-singular-value-transformation"],
+
+  // Left missing as "a polynomial-approximation primitive", which is true of one
+  // of the directory's four notebooks — `chebyshev_approximation.ipynb`, which
+  // approximates 1/x on a spectral interval and cites Childs, Kothari and Somma
+  // for the trimmed variant. The other three are the solver itself:
+  // `qls_qsvt.ipynb` is titled "Quantum Linear Solver Based on QSVT" and imports
+  // `qsvt_phases` and `poly_inversion`; `qls_chebyshev_lcu.ipynb` is titled
+  // "Quantum Linear Solver with LCU of Chebyshev Polynomials"; and
+  // `verify_block_encoding.ipynb` checks the Pauli-decomposition and
+  // banded-diagonal block encodings the other two consume. Both notebooks say the
+  // solver can stand in for a classical `spsolve` call inside a CFD solver.
+  //
+  // So the directory demonstrates matrix inversion by QSVT and by an LCU of
+  // Chebyshev polynomials over a block-encoded matrix — the same pairing of slugs
+  // already declared for
+  // `algorithms/hamiltonian_simulation/hamiltonian_simulation_with_block_encoding`.
+  // `method-instance`: neither record's source formulates a CFD problem.
+  "applications/CFD/QLS_for_hybrid_solvers": [
+    "quantum-singular-value-transformation",
+    "linear-combination-unitaries",
+  ],
+
+  // `applications/chemistry/classiq_chemistry_application` is the fourth of that
+  // group and is deliberately NOT declared here. It demonstrates VQE — UCC
+  // ansatz, Hartree-Fock reference state, Z2 symmetry tapering — but its own first
+  // line states its subject as "the functionality of Classiq's Chemistry
+  // application module", a vendor software module rather than an algorithm.
+  // Declaring it covered would be the first time this catalog claimed coverage of
+  // something whose stated subject is software, which is a precedent rather than
+  // a finding. Raised for the owner rather than settled between agents; it stays
+  // in MISSING until he rules.
 };
 
 /**
@@ -461,6 +542,11 @@ export const CLASSIQ_COVERAGE_BASIS: Readonly<Record<string, ClassiqClaimBasis>>
   "applications/telecom/network_traffic_optimization": "method-instance",
   "applications/telecom/radio_access_network": "method-instance",
   "applications/telecom/resiliency_planning": "method-instance",
+
+  // The three released by reading the code. Arguments where they are declared.
+  "applications/chemistry/second_quantized_hamiltonian": "same-subject",
+  "applications/CFD/double_slit_experiment": "method-instance",
+  "applications/CFD/QLS_for_hybrid_solvers": "method-instance",
 };
 
 /** Index path → why this catalog does not carry it. Empty by design; see ./zoo-coverage.ts. */

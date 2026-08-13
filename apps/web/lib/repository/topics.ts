@@ -518,6 +518,15 @@ const FAMILY_RULES: readonly TopicRule[] = [
   // contradicted the record.
   { family: "Lattice problems", topics: ["algorithm-reference", "cryptography"] },
   { family: "Diagonalization · double-bracket flow", topics: ["algorithm-reference", "variational"] },
+  // Robot inverse kinematics by a variational hybrid loop: the quantum circuit
+  // computes forward kinematics from parameterised rotations, a classical
+  // optimiser closes the loop. `variational` because the parameters are the joint
+  // angles a classical optimiser tunes, `optimization` because minimising the
+  // distance to a target end-effector position is the whole problem. Not `qaoa` —
+  // the paper explicitly says only that its method is "based on variational
+  // optimization methods similar to" VQE and QAOA, and there is no cost
+  // Hamiltonian and no mixer anywhere in it.
+  { family: "Optimization · variational kinematics", topics: ["algorithm-reference", "variational", "optimization"] },
 ];
 
 /**
