@@ -650,18 +650,44 @@ export function buildShelf(
   let joinedTotal = 0;
   let recordTotal = 0;
 
+  // **Two caches, because this runs on every render of `/repository` and the
+  // owner's ai-ops#45 acceptance condition is about exactly that.** Neither
+  // changes an answer; both stop one being computed hundreds of times.
+  //
+  // Measured on the production build before they were added: the shelf cost
+  // `/repository` 14 ms of its 65 ms median. The cause was arithmetic, not
+  // width — `roleFor` re-derived every record's topics once per role, so 346
+  // records became 1038 derivations, and `processesTouching` walked all 23
+  // contracts per joined record even though the 28 joined records resolve to
+  // just **two** distinct states between them.
+  const roleCache = new Map<string, TopicId | null>();
+  const roleOnce = (record: IngredientCandidate): TopicId | null => {
+    const hit = roleCache.get(record.slug);
+    if (hit !== undefined) return hit;
+    const role = roleFor(record);
+    roleCache.set(record.slug, role);
+    return role;
+  };
+  const touchCache = new Map<string, readonly TouchingProcess[]>();
+  const touchOnce = (stateId: string): readonly TouchingProcess[] => {
+    const hit = touchCache.get(stateId);
+    if (hit !== undefined) return hit;
+    const found = processesTouching(graph, vocabulary, stateId);
+    touchCache.set(stateId, found);
+    return found;
+  };
+
   for (const role of OBJECT_ROLES) {
     const entries: ShelfEntry[] = [];
     const abstained = emptyCounts();
     let joined = 0;
     for (const record of records) {
-      if (roleFor(record) !== role) continue;
+      if (roleOnce(record) !== role) continue;
       recordTotal += 1;
       const join = ingredientJoin(record);
       if (join.kind === "unclassified") unclassified.push(record.slug);
       if (join.kind === "abstained") abstained[join.reason] += 1;
-      const processes =
-        join.kind === "joined" ? processesTouching(graph, vocabulary, join.state) : [];
+      const processes = join.kind === "joined" ? touchOnce(join.state) : [];
       if (join.kind === "joined") joined += 1;
       entries.push({
         slug: record.slug,
