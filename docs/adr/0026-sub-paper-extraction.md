@@ -205,10 +205,26 @@ citation is the home.
     corpus**, not a schema change with a migration at the end of it. That is the real cost.
 - **A declaration when the extraction is shared.** Where `DECLARED_SHARED_SOURCES` applies (see 5),
   the URL and its exact slug set are written down with the reason.
+- **A notebook is a program; its prose is a cover letter.** Where a demonstration ships code, the
+  code is the authoritative text and the markdown is not. Three Classiq rows were recorded as
+  unsourceable on a markdown-only read and all three were released by opening the code cells at
+  pinned commit `ac61dccb` (lane 4, 2026-08-13): `chemistry/second_quantized_hamiltonian` has one
+  markdown cell — a title — and **seven code cells** building an OpenFermion Hamiltonian, mapping it
+  with `FermionToQubitMapper`, constructing a `full_hea` ansatz and calling `es.minimize`, which is
+  VQE with a hardware-efficient ansatz; `CFD/double_slit_experiment` publishes no bibliography at all
+  and imports `qsvt_phases` to solve its system by QSVT matrix inversion; `CFD/QLS_for_hybrid_solvers`
+  was judged on one of its four notebooks, and the other three are titled for QSVT and for LCU of
+  Chebyshev polynomials. This is the same shape as the rule that a cited constant is checked by
+  grepping the paper for the distinctive *word* rather than the number, and the same shape as the
+  clause below: **in each case the authoritative text is the one that does the work, not the one that
+  describes it.** A record may not be refused for want of a source until what the thing actually does
+  has been read.
 - **A reference list is never inherited.** Every reference that enters the register or a citation is
   opened and confirmed to be the paper it is labelled as. This is not a general caution; it is a
   measurement. Reading the 13 Classiq notebooks of the #42 batch first-hand at pinned commit
-  `ac61dccb` (lane 4, 2026-08-13) found **3 of 13 carrying a broken or wrong reference**:
+  `ac61dccb` (lane 4, 2026-08-13) found that **six publish no references cell at all**, **three**
+  print a citation marker against an anchor that does not exist, **six cite the CVaR paper** — which
+  is not a QAOA reference — and **3 of 13 carry a broken or wrong reference**:
   `minimum_dominating_set`'s `[1]` is labelled "Dominating Set (Wikipedia)" and points at
   `wiki/Partition_problem`; `integer_linear_programming` cites `#ILP` against an anchor spelled
   `id='MVC'`, copy-paste residue from the neighbouring notebook; `electric_grid_optimization` cites
@@ -217,6 +233,19 @@ citation is the home.
   **This sharpens #42 rather than contradicting it.** "Reputable source (like classiq library)" is a
   claim about the *implementation*: it runs, it is maintained, it is used. None of that is evidence
   about a hyperlink somebody pasted into a markdown cell.
+
+  **Those figures are the script-measured ones, and an earlier hand tally of the same batch was
+  wrong** — it said five, two and eight where a script over the pinned notebooks says six, three and
+  six. The hand tally was made while reading, which is exactly the condition under which this ADR
+  says not to trust a count. Recorded rather than silently replaced, because the correction is the
+  clause working on itself.
+
+  **And a citation count concludes the opposite of the truth on this batch.** Six notebooks cite the
+  CVaR paper (arXiv:1907.04769) and **none uses a CVaR objective**: only two expose the parameter and
+  both pin it to `alpha_cvar = 1`, the degenerate value at which CVaR *is* the plain expectation
+  value. Reading only the bibliography would have recorded six CVaR implementations that do not
+  exist. Note also that grepping for `alpha` hits eight of the thirteen and means CVaR in none of
+  them — it is matplotlib's plot transparency. A token that looks like evidence.
 - **An encyclopedia article is not a source.** ai-ops#12 settled that a directory entry is not a
   source; a Wikipedia link is the same shape and does not belong in `literature[]`. A demonstration
   whose only reference is one has **no** per-problem primary source, which is a different and more
