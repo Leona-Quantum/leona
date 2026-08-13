@@ -234,8 +234,10 @@ gcloud run jobs execute leona-admin-oneshot --project=majorana-core --region=us-
 `sync-bootstrap` rather than `attest-bootstrap`, because re-signing alone leaves the records
 attested and still private — the publish step is what returns them to the browse listing.
 
-**`--authorization` is required with `--re-attest`, and this command did not have it until
-2026-08-14.** The pair is checked before anything connects to a database
+**`--authorization` is required with `--re-attest`. The flag has existed since 2026-08-12
+(`b685482f`); it was *this runbook's own snippet* that omitted it until 2026-08-14**, so anyone
+who pasted the documented form got a parser error rather than a signing run. The pair is checked
+before anything connects to a database
 (`catalog_admin.py:1106-1112`), so the form printed here previously failed with
 `--re-attest requires --authorization: a re-signature is a human decision, and the row it
 writes cannot say whose afterwards` — after the operator had assembled the list, which is the
