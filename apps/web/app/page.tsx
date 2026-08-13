@@ -2,11 +2,13 @@ import type { Metadata } from "next";
 import { CircuitBand } from "../components/circuit-band";
 import { BrandMark } from "../components/icons";
 import { LeoConstellation } from "../components/leo-constellation";
+import { LandingPrompt } from "../components/landing-prompt";
 import { PublicSite } from "../components/public-site";
 import { Reveal } from "../components/reveal";
 import { ScrollCue } from "../components/scroll-cue";
 import { HOME_COPY } from "../lib/public-copy";
 import { getPublicLocale } from "../lib/public-locale-server";
+import { getMajoranaAuth, getMajoranaSignUpUrl, isMajoranaAuthConfigured } from "../lib/auth";
 
 export const metadata: Metadata = {
   title: "Leona Quantum",
@@ -14,10 +16,22 @@ export const metadata: Metadata = {
 };
 
 export default async function Home() {
-  const locale = await getPublicLocale();
+  const [locale, auth] = await Promise.all([getPublicLocale(), getMajoranaAuth()]);
   const copy = HOME_COPY[locale];
+  const authConfigured = isMajoranaAuthConfigured();
+  const signUpHref = !auth.user && authConfigured ? await getMajoranaSignUpUrl() : null;
+  const primaryAction = auth.user
+    ? { href: "/run", label: copy.hero.primary }
+    : signUpHref
+      ? { href: signUpHref, label: copy.promptDemo.modalPrimary }
+      : { href: "/contact", label: copy.hero.contact };
   return (
-    <PublicSite activePath="/" className="mj-company-site" locale={locale}>
+    <PublicSite
+      activePath="/"
+      className="mj-company-site"
+      locale={locale}
+      authOverride={{ signedIn: Boolean(auth.user), primaryAction }}
+    >
       {/* Centered hero over the constellation, with the live pipeline as a
           full-width band beneath — the owner retired the old split
           left-copy/right-card composition (Owner Inbox 2026-07-17). */}
@@ -39,6 +53,11 @@ export default async function Home() {
             ))}
           </h1>
           <p className="mj-company-hero-lede">{copy.hero.lede}</p>
+          <LandingPrompt
+            copy={copy.promptDemo}
+            signUpHref={signUpHref}
+            isSignedIn={Boolean(auth.user)}
+          />
           <div className="mj-public-actions">
             <a className="mj-primary-button" href="/workspace">{copy.hero.primary}</a>
             <a className="mj-secondary-button" href="/repository">{copy.hero.secondary}</a>

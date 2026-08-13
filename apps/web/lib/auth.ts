@@ -1,5 +1,6 @@
 import {
   getSignInUrl,
+  getSignUpUrl,
   signOut,
   withAuth,
   type NoUserInfo,
@@ -48,6 +49,11 @@ export async function getMajoranaSignInUrl(): Promise<string> {
   // the callback route. This avoids falling back to a stale caller/default
   // pathname when a user starts sign-in from a public page.
   return getSignInUrl({ returnTo: "/run" });
+}
+
+export async function getMajoranaSignUpUrl(): Promise<string> {
+  if (isLocalDevAuthEnabled()) return "/run";
+  return getSignUpUrl({ returnTo: "/run" });
 }
 
 export function isMajoranaAuthConfigured(): boolean {

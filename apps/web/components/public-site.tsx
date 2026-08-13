@@ -18,6 +18,7 @@ export async function PublicSite({
   locale,
   showLanguageToggle = true,
   chrome = "full",
+  authOverride,
 }: {
   activePath?: string;
   children: ReactNode;
@@ -45,6 +46,13 @@ export async function PublicSite({
    * information box's footer.
    */
   chrome?: "full" | "none";
+  /** Lets a page that needs a sign-up URL reuse the same auth decision in the
+   * public header. AuthKit URLs set a PKCE cookie when they are created, so a
+   * page must not mint independent sign-in and sign-up URLs in one render. */
+  authOverride?: {
+    signedIn: boolean;
+    primaryAction: { href: string; label: string };
+  };
 }) {
   const resolvedLocale = locale ?? await getPublicLocale();
   if (chrome === "none") {
@@ -62,13 +70,15 @@ export async function PublicSite({
     { href: "/workspace", label: copy.nav.workspace },
     { href: "/contact", label: copy.nav.contact },
   ];
-  const { user } = await getMajoranaAuth();
-  const signInHref = isMajoranaAuthConfigured() ? await getMajoranaSignInUrl() : null;
-  const primaryAction = user
+  const auth = authOverride ? null : await getMajoranaAuth();
+  const user = auth?.user ?? null;
+  const signInHref = !authOverride && isMajoranaAuthConfigured() ? await getMajoranaSignInUrl() : null;
+  const primaryAction = authOverride?.primaryAction ?? (user
     ? { href: "/run", label: copy.actions.workspace }
     : signInHref
       ? { href: signInHref, label: copy.actions.signIn }
-      : { href: "/contact", label: copy.actions.talk };
+      : { href: "/contact", label: copy.actions.talk });
+  const signedIn = authOverride?.signedIn ?? Boolean(user);
 
   return (
     <main className={["mj-public-site", className].filter(Boolean).join(" ")}>
@@ -91,7 +101,7 @@ export async function PublicSite({
           </nav>
           {showLanguageToggle ? <LanguageToggle locale={resolvedLocale} /> : null}
           <ThemeToggle locale={resolvedLocale} />
-          {user ? (
+          {signedIn ? (
             <a className="mj-public-nav-signout" href="/auth/sign-out">
               {copy.actions.signOut}
             </a>

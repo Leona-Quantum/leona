@@ -384,7 +384,7 @@
 }
 .mj-company-hero-copy .mj-public-actions {
   justify-content: center;
-  margin-top: var(--sp-8);
+  margin-top: var(--sp-6);
 }
 .mj-company-hero-lede {
   max-width: 640px;
@@ -400,6 +400,130 @@
   font-size: var(--fs-12);
   line-height: 1.6;
 }
+.mj-landing-prompt {
+  width: min(760px, calc(100vw - var(--sp-8)));
+  min-height: 156px;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  margin: var(--sp-8) auto 0;
+  padding: var(--sp-4);
+  border: 1px solid var(--border-0);
+  border-radius: calc(var(--radius-card) + var(--sp-2));
+  background: color-mix(in srgb, var(--bg-1) 92%, transparent);
+  text-align: left;
+  backdrop-filter: blur(12px);
+}
+.mj-landing-prompt textarea {
+  width: 100%;
+  min-height: 68px;
+  box-sizing: border-box;
+  flex: 1 1 auto;
+  resize: none;
+  border: 0;
+  outline: 0;
+  color: var(--text-0);
+  background: transparent;
+  font: inherit;
+  font-size: var(--fs-16);
+  line-height: 1.55;
+}
+.mj-landing-prompt textarea::placeholder { color: var(--text-2); opacity: 0.78; }
+.mj-landing-prompt-controls,
+.mj-landing-prompt-actions {
+  display: flex;
+  align-items: center;
+}
+.mj-landing-prompt-controls { justify-content: space-between; gap: var(--sp-4); }
+.mj-landing-prompt-actions { gap: var(--sp-3); }
+.mj-landing-prompt button { font: inherit; cursor: pointer; }
+.mj-landing-prompt-icon {
+  width: 44px;
+  height: 44px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 1px solid var(--border-0);
+  border-radius: 50%;
+  color: var(--text-1);
+  background: transparent;
+}
+.mj-landing-prompt-icon:hover,
+.mj-landing-prompt-mode:hover { color: var(--text-0); border-color: var(--text-2); }
+.mj-landing-prompt-mode {
+  height: 44px;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: 0 var(--sp-3);
+  border: 1px solid transparent;
+  border-radius: var(--radius-control);
+  color: var(--text-1);
+  background: transparent;
+}
+.mj-landing-prompt-mode span { color: var(--accent); }
+.mj-landing-prompt-submit {
+  height: 44px;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: 0 var(--sp-5);
+  border: 1px solid var(--accent);
+  border-radius: 999px;
+  color: var(--bg-0);
+  background: var(--accent);
+  font-weight: 500;
+}
+.mj-landing-prompt-submit:hover { background: var(--accent-press); border-color: var(--accent-press); }
+.mj-landing-signup-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: grid;
+  place-items: center;
+  padding: var(--sp-4);
+  background: color-mix(in srgb, var(--bg-0) 72%, transparent);
+  backdrop-filter: blur(8px);
+}
+.mj-landing-signup-dialog {
+  position: relative;
+  width: min(480px, 100%);
+  box-sizing: border-box;
+  padding: var(--sp-8);
+  border: 1px solid var(--border-0);
+  border-radius: calc(var(--radius-card) + var(--sp-2));
+  color: var(--text-0);
+  background: var(--bg-1);
+  text-align: left;
+}
+.mj-landing-signup-dialog h2 { margin: var(--sp-3) 0; font-size: var(--fs-display-3); font-weight: 400; }
+.mj-landing-signup-dialog > p:not(.mj-section-label) { margin: 0 0 var(--sp-5); color: var(--text-1); font-size: var(--fs-14); line-height: 1.6; }
+.mj-landing-signup-dialog blockquote {
+  margin: 0 0 var(--sp-5);
+  padding: var(--sp-3) var(--sp-4);
+  border-left: 2px solid var(--accent);
+  color: var(--text-1);
+  background: var(--bg-2);
+  font-size: var(--fs-13);
+  line-height: 1.5;
+}
+.mj-landing-signup-dialog .mj-primary-button { display: flex; margin-bottom: var(--sp-4); }
+.mj-landing-signup-close {
+  position: absolute;
+  top: var(--sp-4);
+  right: var(--sp-4);
+  width: 32px;
+  height: 32px;
+  border: 0;
+  border-radius: 50%;
+  color: var(--text-1);
+  background: transparent;
+  font: inherit;
+  font-size: var(--fs-20);
+  cursor: pointer;
+}
+.mj-landing-signup-close:hover { color: var(--text-0); background: var(--bg-2); }
+.mj-landing-signup-note { padding: var(--sp-3); border: 1px solid var(--border-0); border-radius: var(--radius-control); }
 .mj-company-pipeline-band {
   width: 100%;
   box-sizing: border-box;
@@ -1626,6 +1750,16 @@ a.mj-facet-option:hover {
   .mj-company-pipeline-band {
     padding: var(--sp-4);
   }
+  .mj-landing-prompt {
+    width: 100%;
+    min-height: 148px;
+    margin-top: var(--sp-6);
+    padding: var(--sp-4);
+  }
+  .mj-landing-prompt textarea { min-height: 60px; font-size: var(--fs-14); }
+  .mj-landing-prompt-mode { padding-inline: var(--sp-2); }
+  .mj-landing-prompt-submit { padding-inline: var(--sp-4); }
+  .mj-landing-signup-dialog { padding: var(--sp-6); }
   .mj-company-capability-list article {
     flex-wrap: wrap;
     gap: var(--sp-3);
