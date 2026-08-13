@@ -41,6 +41,37 @@
 // verdict on the record — several of the unreachable ones are among the
 // best-sourced things in the catalogue.
 //
+// ## One reason, printed once
+//
+// When *every* record in a section abstains for the *same* reason, the reason is
+// printed once above the list and the rows carry only their links. Today that is
+// exactly one section: **Gates, 0 of 27, all `primitive-by-ruling`.** Before this
+// it printed the same forty-word refusal twenty-seven times, one row after
+// another, and a reader opening the section met a wall of identical sentences
+// rather than a statement they could read once and act on.
+//
+// This is the argument `EntryStateLinks` already made one level up — it renders
+// nothing on the 73 unjoined record pages because *"a 'the map does not reach
+// this' note on 73 pages would be one sentence about the map repeated until it
+// stopped being read"*. The shelf is where that sentence is supposed to be
+// published once; it was publishing it twenty-seven times.
+//
+// **The section stays, and so does its zero.** `ingredients.ts` is explicit that
+// the `primitive-by-ruling` abstention exists so the gate records are *counted*
+// as deliberately unjoined rather than merely unmatched — "an honest zero instead
+// of an empty one" — and deleting the section would delete the count that
+// abstention exists to publish, along with 27 links into the gate records. It
+// would also strand the three Pauli records, which sit in **Operators** with the
+// same reason and a clause that points at *"their own section"*.
+//
+// The test for "same reason" is `soleAbstentionReason` in `ingredients.ts`, not
+// here: it is the condition under which a sentence about a whole section is
+// true, which is logic, and it is unit-tested there. It is deliberately narrow —
+// no joined row, one reason, more than one row — so the sentence it licenses
+// ("None of these …") cannot be true of some rows and false of others, and a
+// section that gains a single join or a second reason returns to per-row reasons
+// with nothing here edited.
+//
 // ## Shut by default
 //
 // Three `<details>`, closed. The owner's ai-ops#45 acceptance condition is that
@@ -55,6 +86,7 @@ import type { StateVocabulary } from "../lib/repository/states";
 import { layerState } from "../lib/repository/states";
 import {
   buildShelf,
+  soleAbstentionReason,
   type AbstentionReason,
   type IngredientCandidate,
   type ObjectRole,
@@ -68,7 +100,21 @@ interface ShelfCopy {
   reach: (joined: number, total: number) => string;
   processes: (n: number, of: number) => string;
   unreachable: string;
+  /**
+   * The same statement for a whole section, printed once above the list when
+   * every row in it abstains for one reason. It carries the count so the
+   * sentence is checkable against the summary line above it.
+   */
+  allUnreachable: (n: number) => string;
   reasons: Record<AbstentionReason, string>;
+  /**
+   * A reason's wording when it is printed for a whole section rather than a
+   * row. Only needed where the row-level wording points at the reader's
+   * surroundings: `primitive-by-ruling` ends by sending a Pauli record in
+   * **Operators** to the Gates section, which is nonsense printed at the head of
+   * the Gates section itself. Anything absent here falls back to `reasons`.
+   */
+  sectionReasons: Partial<Record<AbstentionReason, string>>;
   none: string;
 }
 
@@ -80,6 +126,11 @@ const COPY: Record<"en" | "ja", ShelfCopy> = {
     reach: (joined, total) => `${joined} of ${total} are objects the map names`,
     processes: (n, of) => (n === 1 ? `1 of ${of} processes` : `${n} of ${of} processes`),
     unreachable: "Not an object the map names, because:",
+    // Plural throughout, and the hoist below never fires on a one-row section,
+    // so there is no singular case to get wrong. The phrasing matches the
+    // summary line's "N of M are objects the map names" on purpose: a reader
+    // should be able to see that the sentence and the count say one thing.
+    allUnreachable: (n) => `None of these ${n} are objects the map names, because:`,
     reasons: {
       observable:
         "it is measured. The map names the operator being measured inside a process's contract, as a parameter, and a parameter is not a state",
@@ -96,6 +147,10 @@ const COPY: Record<"en" | "ja", ShelfCopy> = {
       "primitive-by-ruling":
         "it is a gate, and no state the map names is a unitary you can apply — the circuit states name the gate set as a parameter, and a parameter is not a state. Gates keep their own section",
     },
+    sectionReasons: {
+      "primitive-by-ruling":
+        "they are gates, and no state the map names is a unitary you can apply — the circuit states name the gate set as a parameter, and a parameter is not a state",
+    },
     none: "No record in this section.",
   },
   ja: {
@@ -105,6 +160,7 @@ const COPY: Record<"en" | "ja", ShelfCopy> = {
     reach: (joined, total) => `${total} 件中 ${joined} 件がマップの名前を持つ対象です`,
     processes: (n, of) => `工程 ${of} 件中 ${n} 件`,
     unreachable: "マップが名前を与えている対象ではありません。理由：",
+    allUnreachable: (n) => `この ${n} 件はいずれも、マップが名前を与えている対象ではありません。理由：`,
     reasons: {
       observable:
         "測定される対象だからです。測定される演算子は工程の契約の中でパラメータとして言及されており、パラメータは状態ではありません",
@@ -118,6 +174,10 @@ const COPY: Record<"en" | "ja", ShelfCopy> = {
         "対象ではなく手続きを記述しているからです。マップ側の受け皿はノードであって状態ではありません",
       "primitive-by-ruling":
         "ゲートだからです。マップが名前を与える状態のうち、適用できるユニタリにあたるものはありません。回路の状態はゲート集合をパラメータとして挙げており、パラメータは状態ではありません。ゲートは独自の節を持ちます",
+    },
+    sectionReasons: {
+      "primitive-by-ruling":
+        "いずれもゲートだからです。マップが名前を与える状態のうち、適用できるユニタリにあたるものはありません。回路の状態はゲート集合をパラメータとして挙げており、パラメータは状態ではありません",
     },
     none: "この節に項目はありません。",
   },
@@ -163,49 +223,63 @@ export function IngredientShelf({
     <section className="mj-shelf" aria-labelledby="ingredient-shelf">
       <h2 id="ingredient-shelf">{copy.heading}</h2>
       <p className="mj-shelf-lead">{copy.lead}</p>
-      {shelf.sections.map((section) => (
-        <details key={section.role} className="mj-shelf-section">
-          <summary>
-            <span className="mj-shelf-role">{copy.roles[section.role]}</span>{" "}
-            {/* Both halves, always. A section headed "Operators (16)" would be
-                read as sixteen operators rather than as sixteen of sixty-two,
-                and the difference is the entire finding. */}
-            <span className="mj-shelf-count">
-              {copy.reach(section.joined, section.entries.length)}
-            </span>
-          </summary>
-          {section.entries.length === 0 ? (
-            <p>{copy.none}</p>
-          ) : (
-            <ul className="mj-shelf-list">
-              {section.entries.map((entry) => {
-                const state =
-                  entry.join.kind === "joined" ? layerState(vocabulary, entry.join.state) : null;
-                return (
-                  <li key={entry.slug} className="mj-shelf-row" data-join={entry.join.kind}>
-                    <a href={`/repository/${entry.slug}`}>{entry.title}</a>
-                    {entry.join.kind === "joined" && state ? (
-                      <>
-                        {" "}
-                        <span className="mj-shelf-processes">
-                          {copy.processes(entry.processes.length, shelf.processDenominator)}
-                        </span>{" "}
-                        <a className="mj-shelf-state" href={`/repository/layers/${state.id}`}>
-                          {isJa ? state.labelJa : state.label}
-                        </a>
-                      </>
-                    ) : entry.join.kind === "abstained" ? (
-                      <p className="mj-shelf-reason">
-                        {copy.unreachable} {copy.reasons[entry.join.reason]}
-                      </p>
-                    ) : null}
-                  </li>
-                );
-              })}
-            </ul>
-          )}
-        </details>
-      ))}
+      {shelf.sections.map((section) => {
+        // Printed once above the list, or `null` and every row prints its own.
+        const hoisted = soleAbstentionReason(section);
+        return (
+          <details key={section.role} className="mj-shelf-section">
+            <summary>
+              <span className="mj-shelf-role">{copy.roles[section.role]}</span>{" "}
+              {/* Both halves, always. A section headed "Operators (16)" would be
+                  read as sixteen operators rather than as sixteen of sixty-two,
+                  and the difference is the entire finding. */}
+              <span className="mj-shelf-count">
+                {copy.reach(section.joined, section.entries.length)}
+              </span>
+            </summary>
+            {/* One statement for the whole section, above the list, instead of the
+                same sentence on every row. Its count is the section's own
+                denominator, so it can be read against the summary line. Never set
+                on an empty section — `soleAbstentionReason` needs two rows. */}
+            {hoisted ? (
+              <p className="mj-shelf-reason mj-shelf-reason-all">
+                {copy.allUnreachable(section.entries.length)}{" "}
+                {copy.sectionReasons[hoisted] ?? copy.reasons[hoisted]}
+              </p>
+            ) : null}
+            {section.entries.length === 0 ? (
+              <p>{copy.none}</p>
+            ) : (
+              <ul className="mj-shelf-list">
+                {section.entries.map((entry) => {
+                  const state =
+                    entry.join.kind === "joined" ? layerState(vocabulary, entry.join.state) : null;
+                  return (
+                    <li key={entry.slug} className="mj-shelf-row" data-join={entry.join.kind}>
+                      <a href={`/repository/${entry.slug}`}>{entry.title}</a>
+                      {entry.join.kind === "joined" && state ? (
+                        <>
+                          {" "}
+                          <span className="mj-shelf-processes">
+                            {copy.processes(entry.processes.length, shelf.processDenominator)}
+                          </span>{" "}
+                          <a className="mj-shelf-state" href={`/repository/layers/${state.id}`}>
+                            {isJa ? state.labelJa : state.label}
+                          </a>
+                        </>
+                      ) : entry.join.kind === "abstained" && hoisted === null ? (
+                        <p className="mj-shelf-reason">
+                          {copy.unreachable} {copy.reasons[entry.join.reason]}
+                        </p>
+                      ) : null}
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
+          </details>
+        );
+      })}
     </section>
   );
 }

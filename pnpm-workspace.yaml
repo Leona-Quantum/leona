@@ -72,6 +72,25 @@ overrides:
   # being closed; it is a patch bump taken because "build-time only" is a reason
   # not to panic and not a reason to sit on a known-vulnerable parser.
   postcss: 8.5.23
+  # GHSA-2v37-7h3g-55p8: a custom alphabet passed to nanoid's generator loops
+  # indefinitely when `size` is zero, hanging the caller. Reached here only
+  # through postcss (pinned above), which uses nanoid for source-map ids at
+  # build time, so as with postcss itself this is a patch bump taken on the
+  # standing rule rather than exposure being closed — no user's bytes reach it.
+  #
+  # Recorded because the version arithmetic here is a trap. The advisory was
+  # published 2026-07-29 naming 3.3.17 as the 3.x fix, and it was RE-SCOPED on
+  # 2026-08-13T16:00Z to `fixed: 3.3.18` — so a tree sitting on 3.3.17, which
+  # had been correct for two weeks, became a blocking finding with no change on
+  # our side. That is what turned every open PR red at once; the gate was
+  # working. Read the OSV record live before concluding a nanoid finding is a
+  # false positive, and do not trust the GitHub advisory's summary range alone:
+  # it lists only `>= 4.0.0, < 5.1.6` and omits the 3.x branch entirely, which
+  # makes 3.3.17 look unaffected when OSV says otherwise.
+  #
+  # 3.3.18 published 2026-08-07, so it clears `minimumReleaseAge` above without
+  # the exclude hatch.
+  nanoid: 3.3.18
   # brace-expansion DoS, twice over: GHSA-mh99-v99m-4gvg (unbounded expansion
   # length OOMs the process) and then GHSA-rgw5-rvv9-x895, which bypasses the
   # first one's mitigation via unbounded *intermediate* arrays. Both CVSS 7.5.
