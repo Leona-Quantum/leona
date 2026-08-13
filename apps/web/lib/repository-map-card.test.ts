@@ -414,7 +414,19 @@ test("Theory is held on every method, and each hop inside it is empty or filled 
   // 137 in session 130: `childs-liu-spectral` carries two (its Chebyshev
   // collocation and its linear solve) and `chebyshev-pseudospectral-collocation`
   // one (its own stretch).
-  assert.equal(hops, 137, `${hops} hops, not 137`);
+  // 143 in session 15's map-growth pass (+6 across five new methods, which is the
+  // ingredient/segment distinction again rather than a miscount).
+  // `generalized-excitation-ansatz`, `spsa-optimization`, `batched-adapt-ansatz` and
+  // `thc-block-encoding` carry ONE each: the first two are leaves, and the other two
+  // declare a step that is an ingredient they HANG (`observable-estimation`,
+  // `state-preparation`), which costs a stub and no second hop — the same shape
+  // `layerwise-training` is annotated for above. `phase-estimation-ground-state`
+  // carries TWO, because `state-preparation` and `hamiltonian-simulation` are named
+  // segments on its spine and it then closes the last stretch itself: it evolves the
+  // molecular Hamiltonian and reads the energy off a phase, and there is no readout
+  // slot on this map for that. It is the fifth witness to `OWNER_TODO` §1's missing
+  // readout, and the first from the variational side rather than the ODE side.
+  assert.equal(hops, 143, `${hops} hops, not 143`);
 
   // **A floor, and it must not be zero.** The marked-prose path is the whole of the owner's
   // re-decision, and a rendering path with no instance anywhere has never been drawn. One
@@ -1169,7 +1181,11 @@ test("a method's card says what it is a narrower version of, and what narrows it
   // Six since W21: `qubit-adapt-ansatz` refines `adapt-ansatz`, with the mark "ADAPT"
   // verifiable against the parent's own label in both locales, as validation requires.
   // 7 since B5 folded `tetris-adapt-ansatz` into `adapt-ansatz` (W17/s121).
-  assert.equal(declared.length, 8, `${declared.length} methods declare refines, not 8`);
+  // 9 since session 15 folded `batched-adapt-ansatz` into `adapt-ansatz` too. It is the
+  // THIRD child of that parent, which is why the twin group under `ansatz-construction`
+  // did not shrink: the refinement rule drops a member only when the group forms a chain,
+  // and three siblings refining one parent is a fork three ways.
+  assert.equal(declared.length, 9, `${declared.length} methods declare refines, not 9`);
 
   for (const node of declared) {
     const card = byId.get(node.id);
@@ -1235,7 +1251,13 @@ test("a method's card says what it is a narrower version of, and what narrows it
     // 9 since B5 folded `tetris-adapt-ansatz` into `adapt-ansatz`: the refinement LINE is
     // a card-level statement ("a narrower version of X"), which a folded refinement still
     // makes — folding removes its LANE from the slot figure, never its card.
-    10,
+    // 11 since session 15 folded `batched-adapt-ansatz` into `adapt-ansatz`. It moves the
+    // count by ONE, not two, and the asymmetry is the thing to notice: the child gains its
+    // own back-link, while the parent was already drawing the line for its two earlier
+    // children and cannot draw it a third time. So each additional child after the first
+    // costs one card, not two — which is why the ratio this paragraph watches (11 of 99)
+    // is still chrome and not yet a section.
+    11,
     `the refinement line draws on ${drawn.length} of ${methods.length} cards: ${drawn.map((c) => c.id).sort().join(", ")}`,
   );
   const sectioned = methods.filter((card) => card.refinements.held);
@@ -1360,8 +1382,18 @@ test("the unnamed stretch is 56 of 63 methods, one each, and 13 of them follow a
   // unchanged at 14, the same way `layerwise-training` moved one number and not the
   // other. `childs-liu-spectral`, authored in the same commit, moves NEITHER: it
   // delegates both of its hops to named slots, so it has no own stretch at all.
-  assert.equal(withOwn.length, 79);
-  assert.equal(trailing.length, 14);
+  // 84/15 since session 15's map-growth pass, and this is the one place the two numbers
+  // move together rather than apart. Four of the five new methods add a stretch standing
+  // at index 0 — `generalized-excitation-ansatz` and `spsa-optimization` are leaves, and
+  // `batched-adapt-ansatz` and `thc-block-encoding` hang their step as an ingredient
+  // rather than walking through it. `phase-estimation-ground-state` is the fifth and the
+  // one that moves `trailing`: it walks `state-preparation` and `hamiltonian-simulation`
+  // as named segments and then has a stretch left over, because reading an eigenvalue off
+  // an accumulated phase is a readout this map has no slot for. A new region's methods
+  // having own stretches is the honest starting state, not a defect — the W21 note above
+  // says the same thing about the variational region, and it is still true.
+  assert.equal(withOwn.length, 84);
+  assert.equal(trailing.length, 15);
 
   // The three that remain of the four the owner named. Pinned by their states
   // as well as their ids: the complaint was about a specific place on the
@@ -1369,6 +1401,19 @@ test("the unnamed stretch is 56 of 63 methods, one each, and 13 of them follow a
   // the hop is still `evolution-circuit -> solution-answer`. These three keep
   // their tails by W11's measurement — they recover a solution *state*, and
   // the recovery is each method's own work.
+  //
+  // **`phase-estimation-ground-state` joined in session 15 and is deliberately NOT a
+  // fourth instance of the owner's complaint**, which is exactly why the list pins
+  // states and not just ids. The three above end `evolution-circuit -> solution-answer`
+  // and are recovering a solution; this one ends `evolution-circuit -> observable-value`
+  // and is doing something else entirely — running controlled powers of the evolution
+  // and reading an eigenvalue off the accumulated phase. Pinning by id alone would have
+  // filed a quantum phase estimation under a complaint about ODE readouts. What it does
+  // share with them is the cause: no slot on this map draws its readout. Three papers
+  // walked into that hole in one pass (this one, the tensor-hypercontraction encoding
+  // that exists to feed phase estimation, and the double-bracket paper that argues
+  // against phase estimation by name), so the missing capability now has more witnesses
+  // than `OWNER_TODO` §1's readout does.
   const afterSimulation = trailing
     .filter((row) => row.after === "hamiltonian-simulation")
     .map((row) => `${row.method}: ${row.from} -> ${row.to}`)
@@ -1376,6 +1421,7 @@ test("the unnamed stretch is 56 of 63 methods, one each, and 13 of them follow a
   assert.deepEqual(afterSimulation, [
     "lchs-improved-kernel: evolution-circuit -> solution-answer",
     "lchs-route: evolution-circuit -> solution-answer",
+    "phase-estimation-ground-state: evolution-circuit -> observable-value",
     "schrodingerisation: evolution-circuit -> solution-answer",
   ]);
 });
@@ -1421,7 +1467,11 @@ test("an own: card exists for exactly the methods that have the stretch, and no 
   // the same set, so they move together or one of them is wrong.
   // 79 since `chebyshev-pseudospectral-collocation`, tracking the stretch census
   // above one-for-one as it must.
-  assert.equal(built, 79);
+  // 84 since session 15's five new methods, tracking the stretch census above
+  // one-for-one as it must. If these two ever disagree, the own-card population and
+  // the stretch population have come apart and one of them is wrong — which is the
+  // only claim this number is here to make.
+  assert.equal(built, 84);
   // A prefix on nothing, and a prefix on a capability, both resolve to shut
   // rather than to something. `?card=` is user-supplied.
   assert.equal(cardExists(input, ownCardId("not-a-method")), false);

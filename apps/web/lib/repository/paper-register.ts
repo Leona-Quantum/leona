@@ -296,7 +296,16 @@ export const PAPER_REGISTER: PaperRegister = {
     { id: "doi:10.1103/physreva.97.022304", title: "The QAOA for MaxCut: a fermionic view", authors: "Wang, Hadfield, Jiang, Rieffel", year: "2018", url: "https://doi.org/10.1103/physreva.97.022304" },
     { id: "doi:10.1103/physrevlett.69.2881", title: "Communication via one- and two-particle operators on Einstein-Podolsky-Rosen states", authors: "Charles H. Bennett, Stephen J. Wiesner", year: "1992", url: "https://doi.org/10.1103/physrevlett.69.2881", reports: { theory: "reported", simulation: "absent", hardware: "absent" }, reportsBasis: "full-text" },
     { id: "doi:10.1103/physrevlett.70.1895", title: "Teleporting an unknown quantum state via dual classical and EPR channels", authors: "Charles H. Bennett et al.", year: "1993", url: "https://doi.org/10.1103/physrevlett.70.1895" },
-    { id: "doi:10.1109/9.119632", title: "Multivariate stochastic approximation using a simultaneous perturbation gradient approximation", authors: "J. C. Spall", year: "1992", url: "https://doi.org/10.1109/9.119632" },
+    // Read in full (10pp.) from the author's own copy at jhuapl.edu/spsa, because
+    // IEEE Xplore serves no parseable abstract. `simulation: reported` is on the
+    // abstract's own words — "Theory and numerical experience indicate that the
+    // algorithm presented here can be significantly more efficient" — and §V
+    // ("Numerical Evaluation of the Algorithm") is the study behind them. `theory`
+    // likewise: §III proves strong convergence and asymptotic normality. `hardware:
+    // absent` is well founded rather than assumed — the "noisy measurements" of the
+    // abstract are an observation model, not an instrument, and the only machine named
+    // is the mainframe the numerics ran on.
+    { id: "doi:10.1109/9.119632", title: "Multivariate stochastic approximation using a simultaneous perturbation gradient approximation", authors: "J. C. Spall", year: "1992", url: "https://doi.org/10.1109/9.119632", reports: { theory: "reported", simulation: "reported", hardware: "absent" }, reportsBasis: "full-text" },
     { id: "doi:10.1109/dac18074.2021.9586240", title: "An Efficient Algorithm for Sparse Quantum State Preparation", authors: "Gleinig, Hoefler", year: "2021", url: "https://doi.org/10.1109/dac18074.2021.9586240" },
     { id: "doi:10.1126/science.273.5278.1073", title: "Universal Quantum Simulators", authors: "Seth Lloyd", year: "1996", url: "https://doi.org/10.1126/science.273.5278.1073" },
     { id: "doi:10.1137/s0097539796300921", title: "Quantum Complexity Theory", authors: "Ethan Bernstein, Umesh Vazirani", year: "1997", url: "https://doi.org/10.1137/s0097539796300921" },
