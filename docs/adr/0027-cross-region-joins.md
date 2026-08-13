@@ -1,0 +1,168 @@
+# ADR-0027: A cross-region join is a shared state, a missing process, or a refusal
+
+**Date:** 2026-08-13 · **Status:** accepted (instrument shipped; no join built under it yet)
+
+**Context:** The owner's largest standing direction for the map, `EshMis/ai-ops` issue #64:
+
+> **BIG:** i believe several groups can eventually be combined into bigger maps. For example,
+> error correction happens on states measured on computers, so that whole map can come after in
+> some way when states [are] being measured and such in another pipeline. Transpilation is a
+> process that happens along the pipeline in some way, some problems can be solved using VQE by
+> different framing and preparation of the problem itself, etc etc. This whole map can be
+> eventually filled out and interconnected like this, and expanded well beyond what it is of course.
+
+His intake order from ai-ops#58 governs how that gets done — *"map the pipeline of each paper
+first. Then see how they can be broken into components. Then build the map by connecting
+components and states that are shared across papers."* This ADR is about the third step, and only
+the third: what a cross-region edge **is**, what makes two states the same state, and what a
+checker may refuse.
+
+Measured at commit `45395f9e` (117 nodes, 23 capabilities, 94 methods, 34 states), the map is
+**three connected components** under the containment edges `realizes` / `steps` / `refines` — 99
+nodes of algorithms, 13 of compilation and error correction, 5 of error mitigation. That split is
+already documented and already load-bearing: `paper-traces.ts` grades a paper `scattered` when its
+citations fall in different components, and ADR-0026 arms a gate on it.
+
+## Decision
+
+**A cross-region join is never a new kind of edge.** The map has exactly one way to say work
+happens — a capability with a `from`/`to` contract — and exactly one way to say two objects are
+the same thing — `stateSatisfies`, walking `specializes`. Every join is therefore one of three
+things:
+
+1. **A shared state.** One region produces something that *is* what another consumes. Nothing is
+   authored: the edge is a consequence of two contracts that were each written and sourced
+   already, so it asserts nothing new and carries no sourcing risk.
+2. **A missing process.** The states differ and the conversion is real work. It is authored as an
+   ordinary capability — two ways through it, primary sources, the same bar as any other slot —
+   or it is not drawn.
+3. **A refusal.** A reader expects an edge, none may be drawn, and the reason is written where the
+   next author will find it.
+
+There is deliberately **no `joins:` field**. A join field would be a claim with no contract, no
+methods, no source and no cost, sitting in a graph where every other claim has all four. ADR-0026
+§"the unit of extraction" already refuses the shape; a reader cannot tell a wrong link from a
+missing one, so the cheap version of this idea is worse than none of it.
+
+**Sameness is `stateSatisfies`, direction included.** Producing something *narrower* than a slot
+requires composes — a block-encoding is a matrix access. Producing something *broader* does not,
+and a join drawn that way has an unrecorded conversion hidden inside it. A join is therefore
+directional, and the reverse of a valid join is usually not one.
+
+**A join's blast radius is a product, not an edge.** Naming one state on two contracts does not
+assert one composition; it asserts **every arrival against every departure** at that state. This
+is the single most important consequence of the model and the reason the guard below pins a total.
+
+## What that means, measured
+
+At `45395f9e` the join surface is **491 method-to-method compositions**: 386 inside one region and
+**105 across one**. The 105 sit at exactly three states and every one of them leaves the algorithms
+region for the *same seven* compilation methods:
+
+| state | arrivals × departures | asserted | crossing |
+|---|---|---|---|
+| `parameterized-circuit` | 11 × 12 | 132 | **77** |
+| `evolution-circuit` | 3 × 7 | 21 | **21** |
+| `runnable-evolution` | 1 × 11 | 11 | **7** |
+
+So **the transpilation join the owner asked for already exists in the data** and is simply not
+drawn or counted anywhere. It needs no new claim about the literature. The other two joins he named
+do not exist at all, and neither does a fourth nobody had noticed:
+
+- **Error correction.** Its contract is `physical-qubits → logical-qubits`, `routeOf` files it as a
+  **feed** of `fault-tolerant-compilation` — an ingredient hanging off a hop, not a hop — and its
+  own `whyALayer` says everything above it is *"indifferent to which code sits underneath"*. Three
+  independent places in the map say **substrate**. ai-ops#64 says **stage**. Both are defensible
+  readings of the literature and the choice is the owner's; it is raised on ai-ops and this ADR
+  does not pre-empt it.
+- **VQE framing.** `ground-state-energy` has no way in. Its entry is produced by nothing and all
+  three routes naming it file it as a feed, so a reader may reach a ground-state energy only as an
+  ingredient of an excited-state calculation, never by bringing a problem to it. That missing
+  framing process is exactly what #64's *"different framing and preparation of the problem itself"*
+  names. Building it must not dissolve the guard `state-vocabulary.ts` documents at length: the
+  narrowness of `ground-state-problem` exists to stop a recast Hamiltonian reaching the variational
+  region and drawing a branch no literature contains.
+- **Error mitigation, unnamed by him and worse than either.** Nothing produces `noisy-estimate`, so
+  the whole five-node region can only be entered directly; and its `whyALayer` says nothing
+  downstream can consume its output either. It is sealed at both ends. The missing process is the
+  one that runs a circuit on hardware and returns a biased number — the map has only
+  `observable-estimation`, which returns the idealised one.
+
+## The rule this model cannot check, stated rather than hidden
+
+The owner's session-91 rule is that **an arrival which cannot use every exit means the state has to
+split**. That is a *restriction* relation and `specializes` only ever widens, so nothing can decide
+it mechanically; `check-layer-graph.mjs` reached the same conclusion and counts instead of
+checking. This model inherits the limit exactly: it counts a join's product and reports where it
+lands, and it never certifies that every member of the product is honest. `stateCompositionCensus`
+already grades individual crossings `recorded` / `unpinned` / `unpublished`, and that grading —
+not this model — is what says whether anybody has walked one.
+
+The practical consequence is that the guard is a **pin on the product**, not a verdict on it. A
+`specializes` line added in `state-vocabulary.ts` changes no contract, touches no node, and
+re-types every slot naming the parent; it is the cheapest way to connect two regions and the
+easiest to do by accident. Pinning 105 means whoever moves it has to say why.
+
+## Ten slots consume something nothing produces, and only a human can grade them
+
+`slotEntries` classifies every slot mechanically into four supply classes, and at `45395f9e`
+**10 of 23** consume a state no process produces: 3 `front-door`, 2 `root-supplied`, 5
+`ingredient`. That is the normal condition of a map grown region by region, not a defect.
+
+What a machine cannot tell is whether a given slot is *correctly* unfed. `error-mitigation` is a
+front door for structurally the same reason `nonlinear-ode-solve` is one — nothing steps into
+either, and nothing produces what either consumes — and only one of them is right. So
+`DECLARED_SLOT_ENTRIES` carries a row per open slot with two fields: the mechanical `supply`,
+re-derived on every lint so a row cannot outlive the shape it describes, and an authored `intent`
+of `settled` or `join-wanted`. Three rows are `join-wanted` today and they are the three above.
+
+Every open slot needs a row, not only the bad ones, because **which ones are bad is the
+judgement**, and a list of only the bad ones records the judgement nowhere. Ten silent editorial
+decisions become ten written ones.
+
+**There is provably no fifth supply class.** An `orphan` — a slot walked on some route's spine that
+nothing can supply — was written, tested, and removed. `routeOf` (`layers.ts:1429`) advances
+through a step only when what the route holds satisfies it, and files it as a feed otherwise; what
+a route holds is its own slot's `from` or a prior hop's output; the steps graph is acyclic, so
+walking down terminates at a root and `stateSatisfies` is transitive. An unsuppliable step is
+therefore always a feed and can never be walked. Keeping the branch would have read to the next
+author as coverage the checker does not have.
+
+## Consequences
+
+- `scripts/check-region-joins.mjs` runs in `lint`. It refuses exactly three things, all of them a
+  declaration going out of date: an open slot with no row; a row for a slot that has since gained
+  a supplier; and **a row whose recorded supply no longer matches the graph** — the direction that
+  catches a region being joined or cut by accident.
+- It refuses nothing about the *size* of the join surface. There is no honest threshold: a map
+  that grows correctly grows it. The figure is pinned once, in
+  `apps/web/lib/repository-region-joins.test.ts`, where moving it is a reviewed edit.
+- `regionsOf` reaches `layerAdjacency` from `paper-traces.ts` rather than re-deriving components,
+  so "region" here and "component" in ADR-0026's scatter gate cannot drift. This matters: the
+  scatter gate's whole meaning is that two citations fall in different components.
+- **Making the walk see state adjacency is a separate, deliberate PR — and it is now measured
+  rather than feared.** Teaching `layerAdjacency` that a producer's `to` satisfying a consumer's
+  `from` is an edge adds **23 undirected capability edges** and takes the map from **3 components
+  to 2** (112 nodes and 5): compilation joins the algorithms region, and error mitigation stays
+  separate, because nothing produces `noisy-estimate`. The paper census is **unchanged in every
+  bucket** — 117 papers cited, 86 `point` / 2 `contiguous` / 29 `joinable` / **0 `scattered`**
+  before and after — so the ADR-0026 gate does not move today. What the change buys is the future
+  false positive: a paper cited at both `hamiltonian-simulation` and `gate-synthesis` is following
+  the pipeline legitimately and would be graded `scattered` today.
+
+  It stays a separate PR for a reason found while measuring it: **`regionsOf` must not adopt the
+  widened edge set.** A region is a *containment* component — an area somebody authored as one —
+  and a join is a state-level edge *between* two of them. Fold the joins into the definition of a
+  region and there are no cross-region joins by construction, and this instrument measures
+  nothing. So the widening needs `paper-traces.ts` to export two relations, not one: containment
+  (what a region is) and containment-plus-state (what a trace may walk).
+- `producedStates` is exported for `check-ingredients.mjs`, which asks the same question of object
+  records that this asks of slots. Two definitions of "the map produces this" would drift the first
+  time either was edited.
+
+## What this does not decide
+
+Whether error correction is a stage or a substrate (ai-ops, open, options A/B/C put to the owner);
+whether a locus field is added to citations (ADR-0026, open); and any particular join. This ADR
+fixes the *shape* a join must take and the instrument that watches for one appearing. The three
+joins ai-ops#64 names are worklist rows under it, not decisions inside it.
