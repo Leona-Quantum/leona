@@ -467,8 +467,8 @@ export const CLASSIQ_COVERAGE: Readonly<Record<string, readonly string[]>> = {
   // application module", a vendor software module rather than an algorithm.
   // Declaring it covered would be the first time this catalog claimed coverage of
   // something whose stated subject is software, which is a precedent rather than
-  // a finding. Raised for the owner rather than settled between agents; it stays
-  // in MISSING until he rules.
+  // a finding. Raised for the owner rather than settled between agents — and he
+  // ruled. See `CLASSIQ_NOT_APPLICABLE` below: it is declined, not missing.
 };
 
 /**
@@ -602,5 +602,44 @@ export const CLASSIQ_COVERAGE_BASIS: Readonly<Record<string, ClassiqClaimBasis>>
   "applications/CFD/QLS_for_hybrid_solvers": "method-instance",
 };
 
-/** Index path → why this catalog does not carry it. Empty by design; see ./zoo-coverage.ts. */
-export const CLASSIQ_NOT_APPLICABLE: Readonly<Record<string, string>> = {};
+/**
+ * A demonstration this catalog will not carry, why, and who decided.
+ *
+ * ## Why a decline needs a URL and not just a sentence
+ *
+ * A gauge that sits one short forever invites every session to re-open the same
+ * question, and the cheapest answer each time is to add the record. The reason a
+ * row is out has to travel with the row, and it has to be attributable — a
+ * sentence an agent wrote and a ruling the owner made read identically once
+ * they are both comments.
+ *
+ * So `ruling` is required and `check-classiq-parity.mjs` fails without it. A
+ * decline is the one declaration that makes a gauge look better, which is
+ * exactly why it is the one that must name someone outside this repository.
+ */
+export interface ClassiqDecline {
+  /** What the entry is, and why it is not an algorithm this catalog can hold. */
+  reason: string;
+  /** Where the owner ruled. Required; the check refuses a decline without it. */
+  ruling: string;
+}
+
+/**
+ * Index path → the decline.
+ *
+ * One row, and it is the last of the 61 `applications/`. The other 60 are
+ * covered, so this file's headline is "60 of 61, one declined", not "60 of 61,
+ * one missing" — a permanent one-short fraction with no reason attached is how a
+ * settled decision gets re-litigated.
+ */
+export const CLASSIQ_NOT_APPLICABLE: Readonly<Record<string, ClassiqDecline>> = {
+  "applications/chemistry/classiq_chemistry_application": {
+    reason:
+      "The demonstration's own first line states its subject as \"the functionality of Classiq's"
+      + " Chemistry application module\" — a vendor software module, not an algorithm. It does run VQE"
+      + " with a UCC ansatz, a Hartree-Fock reference state and Z2 symmetry tapering, all of which this"
+      + " catalog holds records for; what it does not have is an algorithmic subject of its own. Covering"
+      + " it would make this the first row claimed on the strength of a software tour.",
+    ruling: "https://github.com/EshMis/ai-ops/issues/61",
+  },
+};
