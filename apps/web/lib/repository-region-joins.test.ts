@@ -374,8 +374,18 @@ test("the authored graph's slot entries are all declared, and no row has gone st
   assert.deepEqual(audit.misclassified, []);
 });
 
-test("the map is three regions, and ten of its twenty-three slots consume something nothing produces", () => {
+test("the map is four regions, and twelve of its twenty-five slots consume something nothing produces", () => {
   const regions = regionsOf(LAYER_GRAPH);
+  // **[107, 13, 5, 4] since session 15 unit 3, and a fourth region is the POINT here
+  // rather than a regression.** `hidden-period-finding` opens computational number
+  // theory, and a genuinely new subject area is entered directly or it is not new:
+  // nothing on this map produces a periodic function you can query, because that is
+  // the problem a reader arrives with. Contrast unit 2 one commit earlier, where a
+  // fourth region was a DEFECT — `phase-estimation` sat unreached until a route that
+  // genuinely runs it declared the step. The two cases look identical to this
+  // assertion and are opposite in meaning, which is why the row in
+  // DECLARED_SLOT_ENTRIES has to say which one it is in prose. The number alone
+  // cannot.
   // **[107, 13, 5] since session 15 unit 2 — and getting here took a correction.**
   // The `phase-estimation` slot and its two methods first landed as a FOURTH region,
   // [104, 13, 5, 3]: nothing produced `eigenphase-problem`, so three nodes sat where
@@ -398,7 +408,7 @@ test("the map is three regions, and ten of its twenty-three slots consume someth
   // joining is a property of states and these introduced none.
   assert.deepEqual(
     regions.map((region) => region.nodes.length),
-    [107, 13, 5],
+    [107, 13, 5, 4],
     "the region shape changed; re-read what joined or split before updating this",
   );
 
@@ -406,13 +416,15 @@ test("the map is three regions, and ten of its twenty-three slots consume someth
   // an `ingredient`, so `ingredient` moves 5 -> 6 and the other two dispositions do
   // not: a declaration that a phase is what you want is something a caller supplies,
   // never something a prior process hands over.
+  // 25 slots and 12 open since unit 3's `hidden-period-finding`, which is a
+  // `front-door` — so that disposition moves 3 -> 4 and the others hold.
   const entries = slotEntries(LAYER_GRAPH, STATE_VOCABULARY);
-  assert.equal(entries.length, 24);
+  assert.equal(entries.length, 25);
   const open = entries.filter((entry) => entry.supply !== "joined");
-  assert.equal(open.length, 11);
+  assert.equal(open.length, 12);
 
   const bySupply = (supply: string) => open.filter((entry) => entry.supply === supply).length;
-  assert.equal(bySupply("front-door"), 3);
+  assert.equal(bySupply("front-door"), 4);
   assert.equal(bySupply("root-supplied"), 2);
   assert.equal(bySupply("ingredient"), 6);
   assert.equal(bySupply("joined"), 0, "by construction — `open` already excludes them");
@@ -492,7 +504,7 @@ test("three slots want a join nobody has recorded, and they are the ones ai-ops#
   }
 });
 
-test("the map is three regions under containment and two under what a trace walks", () => {
+test("the map is four regions under containment and three under what a trace walks", () => {
   // ADR-0027's split, asserted on the real graph so it cannot quietly become
   // one relation again. `regionsOf` must stay on containment: if it adopted the
   // walkable set, compilation and algorithms would be one region and the 105
@@ -524,12 +536,19 @@ test("the map is three regions under containment and two under what a trace walk
     return sizes.sort((a, b) => b - a);
   };
 
-  assert.deepEqual(componentsUnder(layerAdjacency(LAYER_GRAPH)), [107, 13, 5]);
+  assert.deepEqual(componentsUnder(layerAdjacency(LAYER_GRAPH)), [107, 13, 5, 4]);
   // [117, 5] since session 15's five new methods, and the point ADR-0027 is making
   // survives the change intact: the merged component grew by exactly the five that
   // landed in the algorithms region (99 + 13 = 112 became 104 + 13 = 117), while error
   // mitigation stayed at 5 under BOTH relations. Adding methods moves the sizes and
   // never the split, which is what makes these two numbers worth asserting side by
   // side — the day one of them changes shape rather than size, something joined.
-  assert.deepEqual(componentsUnder(walkableAdjacency(LAYER_GRAPH, STATE_VOCABULARY)), [120, 5]);
+  // [120, 5, 4] since unit 3, and the number-theory region stays out under BOTH
+  // relations — which is the stronger statement. Compilation merges into algorithms
+  // when you walk states rather than containment, because `evolution-circuit`
+  // satisfies `abstract-circuit`; number theory does not merge under either, because
+  // no state anywhere satisfies `periodic-function-oracle`. So this is not a join the
+  // walk is failing to see, the way compilation's was — it is a subject the map has
+  // genuinely just opened, standing where a reader enters it.
+  assert.deepEqual(componentsUnder(walkableAdjacency(LAYER_GRAPH, STATE_VOCABULARY)), [120, 5, 4]);
 });

@@ -470,6 +470,12 @@ export const DECLARED_SLOT_ENTRIES: Readonly<Record<string, EntryDisposition>> =
     reason:
       "Takes physical qubits, which no process here produces, and `fault-tolerant-compilation` files it as a feed rather than a hop — so the map says error correction is the substrate the pipeline runs on, matching this slot's own whyALayer ('everything above this layer is written in logical qubits and is indifferent to which code sits underneath'). ai-ops#64 asks for the other reading, that it 'happens on states measured on computers' and should come after measurement. Both are defensible and the choice is the owner's; the row stays join-wanted until he rules.",
   },
+  "hidden-period-finding": {
+    supply: "front-door",
+    intent: "settled",
+    reason:
+      "**The map's second front door, and the first one added deliberately.** A reader arrives holding a function they can evaluate in superposition and a promise that it repeats; nothing in the literature produces one, because it is the problem you came with — the same reading `nonlinear-ode-solve` carries, for the same reason. That this slot opens a FOURTH region is what growing the map into a new subject area looks like from the join model's side: a genuinely new subject is entered directly or it is not new. The alternative was manufacturing a producer, and the only honest candidate would have been a problem-framing step turning factoring into order finding — which Shor does contain (\"The order of the generator could in fact be computed using the quantum order-finding algorithm given in §5 of this paper\") but which lives INSIDE this region rather than joining it to another. Recorded as settled rather than join-wanted on that basis: nothing outside number theory produces a periodic function, and nothing should be invented so that something does.",
+  },
   "phase-estimation": {
     supply: "ingredient",
     intent: "settled",
