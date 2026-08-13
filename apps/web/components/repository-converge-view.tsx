@@ -295,7 +295,7 @@ const COPY: Record<"en" | "ja", ConvergeCopy> = {
       `Of the routes that have been taken apart, ${delegated} are built entirely from named slots, ${partly} hand off part of the work and finish the rest themselves, and ${whole} are one undivided act. None of the three is a defect; they are different things to reuse.`,
     canvasLabel: (subject: string) =>
       `${subject} — drag to move the figure, pinch or ctrl-scroll to zoom, arrow keys to pan, 0 to reset`,
-    backToAtlas: "Back to the Atlas",
+    backToAtlas: "Back to the Quantum Atlas",
     openInfo: "About this map",
     closeInfo: "Close",
     expandAll: (n: number) =>
@@ -383,7 +383,7 @@ const COPY: Record<"en" | "ja", ConvergeCopy> = {
       `分解されている経路のうち、${delegated} 件は名前のついた枠だけで構成され、${partly} 件は一部を枠に委ね残りを自身で行い、${whole} 件は分けられないひとつの作業です。いずれも欠陥ではなく、再利用の単位が違うということです。`,
     canvasLabel: (subject: string) =>
       `${subject} — ドラッグで移動、ピンチまたは ctrl+スクロールで拡大縮小、矢印キーで移動、0 で元に戻ります`,
-    backToAtlas: "アトラスに戻る",
+    backToAtlas: "量子アトラスに戻る",
     openInfo: "この地図について",
     closeInfo: "閉じる",
     expandAll: (n: number) => `開ける線 ${n} 本をすべて開く`,

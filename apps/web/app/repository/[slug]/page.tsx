@@ -31,7 +31,7 @@ export async function generateMetadata({ params }: { params: Promise<{ slug: str
   const locale = await getPublicLocale();
   return entry
     ? { title: locale === "ja" ? entry.titleJa : entry.title, description: locale === "ja" ? entry.descriptionJa : entry.description }
-    : { title: locale === "ja" ? "Atlasエントリ" : "Atlas entry" };
+    : { title: locale === "ja" ? "量子アトラスのエントリ" : "Quantum Atlas entry" };
 }
 
 export default async function RepositoryEntryPage({

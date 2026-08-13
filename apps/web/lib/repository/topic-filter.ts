@@ -37,6 +37,70 @@ export interface TopicOptionGroup {
 }
 
 /**
+ * Topics the browse control does not offer, because the category tabs on the
+ * same page already own the word — and answer it with a different number.
+ *
+ * ## The collision
+ *
+ * `/repository` carries two controls that classify a record by what kind of
+ * thing it is, and four of the five `role` topics are the tab's word with a
+ * different count beside it (measured over the 369-record corpus, 2026-08-14):
+ *
+ * | word        | category tab (record kind) | `role` topic |
+ * | ----------- | -------------------------- | ------------ |
+ * | Gates       | 29                         | 27           |
+ * | Operators   | 60                         | 62           |
+ * | States      | 13                         | 12           |
+ * | Algorithms  | 267                        | 148          |
+ *
+ * In Japanese the labels are not merely close, they are **identical strings** —
+ * ゲート, 演算子, 状態, アルゴリズム are both the tab and the topic. A reader
+ * cannot tell the two controls apart at all, and reads the gap as a bug.
+ *
+ * ## Why the topic yields the word rather than the tab
+ *
+ * Owner ruling, ai-ops#75: *"reconcile them to one number and drop whichever
+ * slice matters less."* The record kind is the structural one — it is
+ * `PUBLIC_REPOSITORY_CATEGORY_IDS`, the first level of the folder tree, the
+ * `?category=` param, the four-kind model `check-repository-data.mjs` validates,
+ * and the axis `?fits=` already agrees with (transform 29 = gates 29, source 13
+ * = states 13, observable 60 = operators 60), including the "See all 29" a gate
+ * record's interface panel prints. The `role` facet is one tag group inside a
+ * collapsed rail. So the tabs keep the words, and this control stops offering a
+ * second answer to their question.
+ *
+ * The numbers are **not** reconciled by reclassifying records: the three that
+ * disagree do so for good reasons — `pauli-y-gate` and `pauli-z-gate` are filed
+ * under `gates` but their family is `Pauli operator`, and
+ * `quantum-teleportation` is filed under `states` but is a protocol. Deriving
+ * the role from the category instead would file a protocol as an object on the
+ * Ingredients shelf and split the three Pauli records that shelf deliberately
+ * keeps together. That is a physics classification, not a copy fix.
+ *
+ * ## What survives, and why
+ *
+ * `benchmark-circuit` is **not** here. It is the one role no tab can express —
+ * it splits the 267 `algorithms` into 120 published yardsticks and the rest —
+ * and no category word collides with it. Dropping it would delete the only
+ * thing this facet says that the tabs cannot.
+ *
+ * Nothing is removed from the vocabulary. These four still classify every
+ * record, still drive `roleOf`, `OBJECT_ROLES` and the Ingredients shelf, and
+ * `?topic=gate-primitive` still filters — a bookmark made before this keeps
+ * working. They are simply no longer *offered*, and no surface links to them.
+ *
+ * Held here rather than in `topics.ts` because it is a fact about a control on
+ * one page, not about the vocabulary; and because `topics.ts` cannot import the
+ * category list from `types.ts` without a cycle.
+ */
+export const TOPICS_A_CATEGORY_TAB_OWNS: ReadonlySet<TopicId> = new Set<TopicId>([
+  "gate-primitive",
+  "state",
+  "operator",
+  "algorithm-reference",
+]);
+
+/**
  * The options a control may offer, grouped by facet and counted against the
  * entries in hand.
  *
@@ -44,6 +108,10 @@ export interface TopicOptionGroup {
  * empty the list, and an empty list reads as "the corpus has nothing like this"
  * when the truth is narrower — nothing *here*, under the filters already
  * applied. The vocabulary is closed but the control is not the vocabulary.
+ *
+ * **A topic a category tab already owns is not offered either** — see
+ * `TOPICS_A_CATEGORY_TAB_OWNS` for which four, and for the owner ruling that
+ * says the tab is the one that keeps the word.
  */
 export function topicOptions(
   entries: readonly TopicFilterable[],
@@ -63,6 +131,7 @@ export function topicOptions(
   }
   const groups = new Map<TopicFacet, TopicOption[]>();
   for (const topic of PUBLIC_REPOSITORY_TOPICS) {
+    if (TOPICS_A_CATEGORY_TAB_OWNS.has(topic.id)) continue;
     const count = counts.get(topic.id) ?? 0;
     if (count === 0) continue;
     const option: TopicOption = {
