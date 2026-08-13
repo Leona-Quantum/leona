@@ -178,13 +178,21 @@ for (const { nodeId, slug, sourceKind } of anchorAudit.uncitable) {
 // Runs on the default path on purpose. The census this reads has been printed
 // since #392, but only under `--unanchored`, which CI does not pass — a guard
 // behind a reporting flag is a guard that never runs.
+//
+// The message changed with ai-ops#51 and the change is not cosmetic. It used to
+// offer two remedies in the order "give each its own primary paper, or declare
+// the share" — and under #51 the first is no longer the default: a paper does
+// not have to be dedicated to a thing for that thing to have a record, so two
+// records extracted from one paper are the expected shape. Telling an author to
+// go and find a second paper for a component that has only ever appeared in one
+// is telling them to satisfy a checker by weakening a citation. See ADR-0026.
 for (const { url, slugs, declared } of eligibilityMod.undeclaredSharedSources(
   anchorAudit.sharedSources,
 )) {
   errors.push(
     declared
       ? `${url} is declared shared by ${declared.join(", ")} but is actually cited by ${slugs.join(", ")} — update DECLARED_SHARED_SOURCES, and if a record just got its own paper, remove it from the list`
-      : `${slugs.length} unanchored records share ${url} (${slugs.join(", ")}) with no entry in DECLARED_SHARED_SOURCES — a per-method map claim cannot rest on a document shared by default; give each its own primary paper or declare the share with its reason`,
+      : `${slugs.length} unanchored records share ${url} (${slugs.join(", ")}) with no entry in DECLARED_SHARED_SOURCES — declare the share with its reason (one line, exact slug set). A shared source is legitimate when the paper really does contain each component (ADR-0026); it is a defect when a factory default put it there, and this check cannot tell those apart, which is why the reason is written by hand`,
   );
 }
 

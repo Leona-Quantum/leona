@@ -285,6 +285,93 @@ export function traceFor(traces: readonly PaperTrace[], paper: PaperId): PaperTr
   return traces.find((trace) => trace.paper === paper) ?? null;
 }
 
+// ---------------------------------------------------------------------------
+// The drift guard (ADR-0026)
+// ---------------------------------------------------------------------------
+
+/**
+ * Papers whose citations are allowed to sit in different components of the map,
+ * each with the reason somebody wrote down.
+ *
+ * ## Why a scattered trace is the checkable half of the owner's rule
+ *
+ * ai-ops#51 made it doctrine that a component may be extracted from a paper
+ * about something else, on two conditions: *"that we know that the paper is
+ * actually relevant to the topic at hand, and that when going at this more
+ * granular level it doesn't abstract to unrelated topics."*
+ *
+ * The second condition has a graph form and it is already computed here.
+ * `scattered` means the citing nodes fall in **different connected components**
+ * — no chain of `realizes`, `steps` or `refines` joins the places this one paper
+ * has been used. Not "far apart"; **not joined at all**. That is the strongest
+ * statement the map can make that two uses of one paper are about unrelated
+ * things, and it is a property of the data rather than an opinion about it.
+ *
+ * ## Why it is not vacuous, measured
+ *
+ * A gate on a shape the data cannot take is decoration. Measured 2026-08-13 on
+ * `origin/dev`: the map is **three** connected components under the trace edge
+ * set — 99 nodes (the algorithms cluster), 13 (compilation and error
+ * correction), 5 (error mitigation) — so a paper cited from two of them is
+ * scattered, and `repository-paper-traces.test.ts` has carried a fixture that
+ * produces the shape since the module was written. Also measured the same day:
+ * **0 of the 117 papers the map cites are scattered**, so this arms on a clean
+ * board and grandfathers nothing.
+ *
+ * ## Why a declaration list rather than a hard refusal
+ *
+ * Because the honest reading of a scatter is ambiguous and only a human can pick
+ * between the two: either the extraction drifted, or **the map is missing an
+ * edge** and the paper is telling us so. A list makes whoever hits it say which.
+ *
+ * Stale-proof in both directions, the same rule `DECLARED_SHARED_SOURCES` and
+ * `KNOWN_SOURCE_TITLE_DRIFT` obey: an undeclared scatter fails, and a
+ * declaration for a paper that is no longer scattered **also** fails, so a row
+ * cannot outlive the condition it excuses.
+ *
+ * **Empty is the intended state.** If this grows past a handful, the gate has
+ * started measuring the map's disconnection rather than an extraction's drift —
+ * ADR-0026's reversal trigger.
+ */
+export const DECLARED_SCATTERED_PAPERS: Readonly<Record<PaperId, string>> = {};
+
+export interface ScatterAudit {
+  /** Scattered traces with no declaration. **The error.** */
+  undeclared: readonly PaperTrace[];
+  /**
+   * Declared papers that are not scattered today — either they were joined, or
+   * the map stopped citing them. **Also an error**, and a different one: the fix
+   * is to delete the row, not to write another.
+   */
+  stale: readonly PaperId[];
+}
+
+/**
+ * Compare the scattered traces against the declarations.
+ *
+ * Takes `declared` as an argument rather than reading the constant, so the
+ * rule can be exercised against fixtures in both directions without the
+ * repository's own declarations leaking into the test.
+ */
+export function auditScatteredTraces(
+  traces: readonly PaperTrace[],
+  declared: Readonly<Record<string, string>> = DECLARED_SCATTERED_PAPERS,
+): ScatterAudit {
+  const scattered = new Set(
+    traces.filter((trace) => trace.shape === "scattered").map((trace) => trace.paper),
+  );
+  return {
+    undeclared: traces.filter(
+      (trace) =>
+        trace.shape === "scattered" &&
+        // An empty reason is not a declaration. A row that excuses a failure has
+        // to say why, or the list becomes a list of ids nobody can re-judge.
+        (declared[trace.paper] ?? "").trim() === "",
+    ),
+    stale: Object.keys(declared).filter((paper) => !scattered.has(paper)),
+  };
+}
+
 /** Every node in a trace including its bridge, in graph order — what a renderer draws. */
 export function traceNodes(graph: LayerGraph, trace: PaperTrace): LayerNode[] {
   const wanted = new Set([...trace.nodes, ...(trace.bridgeUpperBound ?? [])]);

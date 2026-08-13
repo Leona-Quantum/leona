@@ -83,6 +83,13 @@ with no sources, is untracked, has no `pyproject.toml`, and nothing imports `maj
    didn't happen is reported as not run.
 5. Ask-first (owner): pushes to protected branches, credential actions, spending money,
    making anything public.
+6. **Sourcing doctrine — `docs/adr/0026-sub-paper-extraction.md`.** Read it before authoring
+   any Atlas record, map node or citation. In one line: a component may be extracted from a
+   paper whose subject is something else, provided the paper contains it, the citation names
+   where in the paper it is, and the extraction does not reach a topic the paper is not about.
+   The two rules it does **not** relax: a record may never cite a paper that does not contain
+   what it claims, and a figure the paper states only for its whole algorithm is not a claim
+   about a part of it.
 
 ## Branching / commits / PRs
 
