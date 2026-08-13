@@ -1449,6 +1449,13 @@ const HOLLOW_BY_SLOT: ReadonlyMap<string, number> = new Map([
   // pinnable here it will be because the group type got a state, not because these
   // three were decomposed.
   ["hidden-period-finding", 3],
+  // Unit 4's region, and a slot opening again rather than rot. What separates quantum
+  // volume from randomized benchmarking is WHAT THE NUMBER IS ABOUT — a whole machine
+  // against a gate set in isolation — and "what a measurement is about" is not a step,
+  // so the drawing cannot show it. Unusually well sourced for a hollow row: one of the
+  // two papers argues explicitly against the other's category, which is a stronger
+  // distinction than most slots have and still undrawable.
+  ["device-characterization", 2],
 ]);
 
 /**

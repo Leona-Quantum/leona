@@ -476,11 +476,17 @@ export const DECLARED_SLOT_ENTRIES: Readonly<Record<string, EntryDisposition>> =
     reason:
       "Takes a routine with a good branch, which is what the subroutine being amplified already returned. Four routes hang it off the hop that produced the flagged routine; it advances nothing on its own.",
   },
+  "device-characterization": {
+    supply: "front-door",
+    intent: "settled",
+    reason:
+      "Takes a programmable device — its qubits, its gate set, its connectivity, its measurement. Nothing produces one, because a machine is not the output of any process this map draws; a reader arrives holding the hardware, the same way `nonlinear-ode-solve`'s reader arrives holding a problem. Owner ruling ai-ops#68 put these protocols on the map so one parity number covers both surfaces; it did not claim they are reached from anywhere, and inventing a producer would have been the dishonest way to make the region look connected.",
+  },
   "error-correction": {
-    supply: "ingredient",
+    supply: "root-supplied",
     intent: "join-wanted",
     reason:
-      "Takes physical qubits, which no process here produces, and `fault-tolerant-compilation` files it as a feed rather than a hop — so the map says error correction is the substrate the pipeline runs on, matching this slot's own whyALayer ('everything above this layer is written in logical qubits and is indifferent to which code sits underneath'). ai-ops#64 asks for the other reading, that it 'happens on states measured on computers' and should come after measurement. Both are defensible and the choice is the owner's; the row stays join-wanted until he rules.",
+      "Takes physical qubits, which no process here produces, and `fault-tolerant-compilation` files it as a feed rather than a hop — so the map says error correction is the substrate the pipeline runs on, matching this slot's own whyALayer ('everything above this layer is written in logical qubits and is indifferent to which code sits underneath'). ai-ops#64 asks for the other reading, that it 'happens on states measured on computers' and should come after measurement. Both are defensible and the choice is the owner's; the row stays join-wanted until he rules. **Reclassified `ingredient` -> `root-supplied` in session 15 without anyone editing this slot**: `device-characterization` is a root capability that also consumes `physical-qubits`, so the state is now entered at a root and every slot naming it re-types. The change is mechanical and it is also an improvement in honesty — the map now has an explicit place where a reader hands over hardware, where before it only had slots quietly assuming one. What it is NOT is an answer to this row's open question, which is about whether error correction belongs before or after measurement. `intent` deliberately stays `join-wanted`.",
   },
   "hidden-period-finding": {
     supply: "front-door",
