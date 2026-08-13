@@ -114,10 +114,26 @@ citation is the home.
   and this ADR does not add one — see *Open* below.
 - **A declaration when the extraction is shared.** Where `DECLARED_SHARED_SOURCES` applies (see 5),
   the URL and its exact slug set are written down with the reason.
+- **A notebook is a program; its prose is a cover letter.** Where a demonstration ships code, the
+  code is the authoritative text and the markdown is not. Three Classiq rows were recorded as
+  unsourceable on a markdown-only read and all three were released by opening the code cells at
+  pinned commit `ac61dccb` (lane 4, 2026-08-13): `chemistry/second_quantized_hamiltonian` has one
+  markdown cell — a title — and **seven code cells** building an OpenFermion Hamiltonian, mapping it
+  with `FermionToQubitMapper`, constructing a `full_hea` ansatz and calling `es.minimize`, which is
+  VQE with a hardware-efficient ansatz; `CFD/double_slit_experiment` publishes no bibliography at all
+  and imports `qsvt_phases` to solve its system by QSVT matrix inversion; `CFD/QLS_for_hybrid_solvers`
+  was judged on one of its four notebooks, and the other three are titled for QSVT and for LCU of
+  Chebyshev polynomials. This is the same shape as the rule that a cited constant is checked by
+  grepping the paper for the distinctive *word* rather than the number, and the same shape as the
+  clause below: **in each case the authoritative text is the one that does the work, not the one that
+  describes it.** A record may not be refused for want of a source until what the thing actually does
+  has been read.
 - **A reference list is never inherited.** Every reference that enters the register or a citation is
   opened and confirmed to be the paper it is labelled as. This is not a general caution; it is a
   measurement. Reading the 13 Classiq notebooks of the #42 batch first-hand at pinned commit
-  `ac61dccb` (lane 4, 2026-08-13) found **3 of 13 carrying a broken or wrong reference**:
+  `ac61dccb` (lane 4, 2026-08-13) found that **five publish no references cell at all**, two of those
+  five print a citation marker against an anchor that does not exist, `kidney_exchange` cites only the
+  CVaR paper — which is not a QAOA reference — and **3 of 13 carry a broken or wrong reference**:
   `minimum_dominating_set`'s `[1]` is labelled "Dominating Set (Wikipedia)" and points at
   `wiki/Partition_problem`; `integer_linear_programming` cites `#ILP` against an anchor spelled
   `id='MVC'`, copy-paste residue from the neighbouring notebook; `electric_grid_optimization` cites
