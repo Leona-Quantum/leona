@@ -488,6 +488,45 @@ const FAMILY_RULES: readonly TopicRule[] = [
   // existing topic ids, asserting no method.
   { family: "Hamiltonian simulation · model systems", topics: ["algorithm-reference", "materials"] },
   { family: "Optimization · Ising encoding", topics: ["algorithm-reference", "optimization"] },
+  // Zoo-parity intake, second pass (W22). Two more families over existing topic ids,
+  // for the two subject areas that account for most of the Zoo entries this catalog
+  // still had no record of. Neither could reuse a family already here without saying
+  // something false about the record.
+  //
+  // `Computational number theory` covers the Zoo's largest gap by far — 11 of the 21
+  // uncovered entries sit in "Algebraic and Number Theoretic Algorithms". The obvious
+  // existing family, `Hidden-period / factoring`, carries the topic `cryptography`,
+  // which is right for Shor and wrong for the zeta function of a curve; the machinery
+  // these papers share is period finding and Fourier sampling, so `phase-estimation`
+  // is the facet that is actually true of all of them.
+  //
+  // `PromiseBQP-complete problem` is a family the corpus genuinely lacked a shape for.
+  // These records are not "here is a faster way to do X" — they are "this innocuous
+  // matrix or combinatorial question is exactly as hard as quantum computation itself",
+  // and the algorithm inside them is phase estimation applied to a spectral quantity.
+  // Filing them under a method family would state the method as the subject.
+  { family: "Computational number theory", topics: ["algorithm-reference", "phase-estimation"] },
+  { family: "PromiseBQP-complete problem", topics: ["algorithm-reference", "phase-estimation"] },
+  // Two more from the same pass. `Lattice problems` is filed under `cryptography`
+  // rather than `phase-estimation` because that is what the papers are for and what
+  // their own limitations sections argue about — Chen, Liu and Zhandry spend their
+  // future-work section explaining that their result does *not* affect deployed
+  // lattice cryptosystems, which is only a thing worth saying about a cryptography
+  // record. `Diagonalization · double-bracket flow` could not reuse
+  // `Eigenvalue estimation`: that family carries `phase-estimation`, and the paper
+  // is explicitly an alternative to phase estimation, so the facet would have
+  // contradicted the record.
+  { family: "Lattice problems", topics: ["algorithm-reference", "cryptography"] },
+  { family: "Diagonalization · double-bracket flow", topics: ["algorithm-reference", "variational"] },
+  // Robot inverse kinematics by a variational hybrid loop: the quantum circuit
+  // computes forward kinematics from parameterised rotations, a classical
+  // optimiser closes the loop. `variational` because the parameters are the joint
+  // angles a classical optimiser tunes, `optimization` because minimising the
+  // distance to a target end-effector position is the whole problem. Not `qaoa` —
+  // the paper explicitly says only that its method is "based on variational
+  // optimization methods similar to" VQE and QAOA, and there is no cost
+  // Hamiltonian and no mixer anywhere in it.
+  { family: "Optimization · variational kinematics", topics: ["algorithm-reference", "variational", "optimization"] },
 ];
 
 /**
