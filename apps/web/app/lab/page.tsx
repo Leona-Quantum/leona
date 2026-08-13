@@ -1,6 +1,8 @@
 import type { CSSProperties } from "react";
 import type { Metadata } from "next";
+import { notFound } from "next/navigation";
 import { BrandMark } from "../../components/icons";
+import { isLabDirectionEnabled } from "../../lib/lab-direction";
 import { getPublicLocale } from "../../lib/public-locale-server";
 import { LAB_COPY } from "./lab-copy";
 
@@ -28,6 +30,9 @@ const IDEAL_AMPLITUDES = [
 ];
 
 export default async function LabPage() {
+  // Preview and local dev only — see lib/lab-direction.ts. On production this
+  // renders the 404, not a second landing page.
+  if (!isLabDirectionEnabled()) notFound();
   const locale = await getPublicLocale();
   const copy = LAB_COPY[locale];
   const peak = Math.max(...BELL_COUNTS.map((c) => c.pct));

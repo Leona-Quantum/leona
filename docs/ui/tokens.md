@@ -48,7 +48,10 @@ oscilloscope has no light mode. It is an exploration of an alternative direction
 2026-07-31), it is **not owner-ratified**, and the attribute selector is what keeps it from
 reaching any existing page — only `apps/web/app/lab/` opts in. Do not reference a `--lab-*`
 token from a product surface, and do not promote one into the ramps above without a taste-
-check. If the direction is rejected, the block and `/lab` are deleted together.
+check. If the direction is rejected, the block and `/lab` are deleted together. Until it is
+ruled on, `/lab` is fenced in a second way: `lib/lab-direction.ts` 404s the route outside
+preview deployments and local dev, so an unratified landing page cannot be reached on
+production by typing the URL.
 
 Its contrast ratios are computed against all three lab grounds and written into the block
 because they had to be: `--lab-ink-2` shipped as `#626d76`, which measured 3.70:1 — below
