@@ -106,8 +106,7 @@ async def test_classifier_verdict_of_chat_is_honoured():
 
 async def test_classifier_marks_action_with_missing_data_for_ai_completion_affordance():
     llm = _ScriptedLLM(
-        '{"intent": "chat", "needs_user_inputs": true, '
-        '"reason": "the graph data is not specified"}'
+        '{"intent": "chat", "needs_user_inputs": true, "reason": "the graph data is not specified"}'
     )
 
     decision = await resolve_mode("Calculate MaxCut and build the circuit", RunMode.AUTO, llm)
@@ -117,9 +116,7 @@ async def test_classifier_marks_action_with_missing_data_for_ai_completion_affor
 
 
 async def test_missing_data_affordance_recovers_when_router_omits_optional_flag():
-    llm = _ScriptedLLM(
-        '{"intent": "chat", "reason": "取引データが未指定で計算できない"}'
-    )
+    llm = _ScriptedLLM('{"intent": "chat", "reason": "取引データが未指定で計算できない"}')
 
     decision = await resolve_mode("最小カットを計算して回路を生成", RunMode.AUTO, llm)
 

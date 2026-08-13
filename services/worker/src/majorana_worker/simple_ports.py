@@ -4228,10 +4228,9 @@ class ProductionSimplePipelinePorts:
             custom["assumptions"] = assumptions
             summary = plan.problem_summary
             if "assistant-selected assumptions" not in summary.casefold():
-                summary = (
-                    f"{summary}\nAssistant-selected assumptions: "
-                    + "; ".join(assumptions)
-                )[:2_000]
+                summary = (f"{summary}\nAssistant-selected assumptions: " + "; ".join(assumptions))[
+                    :2_000
+                ]
             plan = plan.model_copy(
                 update={
                     "parameters": plan.parameters.model_copy(update={"custom": custom}),
