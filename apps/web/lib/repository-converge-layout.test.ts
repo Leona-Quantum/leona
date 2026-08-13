@@ -3812,6 +3812,121 @@ test("every belly is level, and every rise happens inside a tendon", () => {
   );
 });
 
+/**
+ * The bar for how far past a shared circle two lines may still be one line.
+ *
+ * **The cost R15 created, named and bounded rather than argued away.** While a
+ * strand pinched to a point, two siblings' ink could not meet anywhere: their
+ * centres are `(b₁ − b₂)·φ(x)` apart and their thicknesses shrank by the same φ,
+ * so both went to zero together at the circle. A tendon of *constant* thickness
+ * does not, so near a shared circle — where the centre lines genuinely converge
+ * — two 2px lines overlap for a short stretch.
+ *
+ * That is a real change to the drawing and it is defensible on its own terms: the
+ * lines are converging on a node they share, which is what the figure is about.
+ * What it is not is unbounded, and the numbers are the reason to accept it rather
+ * than the reason to hide it. Measured over all 46 figure-locales, shut and
+ * saturated, at f1617681 — 1,042 sibling pairs over one base:
+ *
+ *     ink meets somewhere                            1,042 of 1,042
+ *     entirely under the state circle (r = 11)         948 (91.0%)
+ *     visible merge past the circle       p50 3.84px  p90 17.45px  max 35.14px
+ *     furthest merge from a circle        p50 3.99px  p90 10.08px  max 46.14px
+ *     worst as a share of its own span                        6.50%
+ *
+ * The two worsts are different pairs — 46.14px is 6.00% of its own 769px line,
+ * and the 6.50% is a shorter one — which is why both bars are checked per pair
+ * rather than one being derived from the other.
+ *
+ * So nine merges in ten are painted over by the very circle the lines are
+ * converging on, and the worst visible one is 35px on a 769px line.
+ *
+ * 60px and 12%, both, because either alone is the wrong instrument: an absolute
+ * bar goes vacuous on a 3,000px figure and a share goes vacuous on a short one.
+ * Doubling today's worst on each is deliberate headroom — this is a bar that
+ * should fail when the shape changes, not when the corpus grows a node.
+ */
+const INK_MERGE_MAX = { px: 60, share: 0.12 } as const;
+
+test("two lines' ink meets only where they converge on a circle they share", () => {
+  // `ribbonY` on the lane's own declared numbers, and the ink half-width from
+  // `bodyX0`/`bodyX1` — the same two fields the emitter draws from. The claim is
+  // about the *middle* of a span: two lines may run into each other at the ends,
+  // where they are arriving at one circle, and must be apart everywhere else.
+  const inkHalf = (lane: ConvergeLane, x: number): number =>
+    lane.open
+      ? M.spineStroke / 2
+      : x >= lane.bodyX0 && x <= lane.bodyX1
+        ? lane.half
+        : Math.min(M.tendonHalf, lane.half);
+  let pairs = 0;
+  let worst = { px: 0, share: 0, why: "" };
+  let hidden = 0;
+  let merged = 0;
+  for (const focus of drawableSlots(LAYER_GRAPH, STATE_VOCABULARY)) {
+    const addresses = openableAddresses(focus.id);
+    for (const locale of ["en", "ja"] as const) {
+      for (const open of [[], addresses]) {
+        const lanes = openDiagram(focus.id, open, locale).lanes;
+        for (let i = 0; i < lanes.length; i += 1) {
+          for (let j = i + 1; j < lanes.length; j += 1) {
+            const a = lanes[i]!;
+            const b = lanes[j]!;
+            // Only lanes over one base can meet at all — different bundles hold
+            // disjoint x, and that is a separate invariant's job.
+            if (a.parentKey !== b.parentKey) continue;
+            if (Math.abs(a.x0 - b.x0) > 0.01 || Math.abs(a.x1 - b.x1) > 0.01) continue;
+            if (Math.abs(a.yc - b.yc) > 0.01) continue;
+            pairs += 1;
+            const span = a.x1 - a.x0;
+            const ra = { x0: a.x0, x1: a.x1, y: a.yc, bow: a.bow, run: a.run };
+            const rb = { x0: b.x0, x1: b.x1, y: b.yc, bow: b.bow, run: b.run };
+            let far = -1;
+            for (let k = 0; k <= 400; k += 1) {
+              const x = a.x0 + (span * k) / 400;
+              const gap =
+                Math.abs(ribbonY(ra, x) - ribbonY(rb, x)) - inkHalf(a, x) - inkHalf(b, x);
+              if (gap >= 0) continue;
+              far = Math.max(far, Math.min(x - a.x0, a.x1 - x));
+            }
+            if (far < 0) continue;
+            merged += 1;
+            if (far <= M.stateRadius) hidden += 1;
+            const share = far / span;
+            if (far > worst.px) {
+              worst = {
+                px: far,
+                share,
+                why: `${focus.id} (${locale}) "${a.label}" vs "${b.label}" on a ${span.toFixed(0)}px line`,
+              };
+            }
+            assert.ok(
+              far <= INK_MERGE_MAX.px && share <= INK_MERGE_MAX.share,
+              `${focus.id} (${locale}): "${a.label}" and "${b.label}" are one line for ` +
+                `${far.toFixed(1)}px (${(100 * share).toFixed(1)}% of a ${span.toFixed(0)}px span) ` +
+                `past the circle they share — the bar is ${INK_MERGE_MAX.px}px and ` +
+                `${100 * INK_MERGE_MAX.share}%`,
+            );
+            // And the two ends stay two ends: a merge reaching the midpoint would
+            // satisfy both bars on a short enough line and mean the lines never
+            // separate at all.
+            assert.ok(
+              far < span / 2 - 0.01,
+              `${focus.id} (${locale}): "${a.label}" and "${b.label}" never come apart`,
+            );
+          }
+        }
+      }
+    }
+  }
+  assert.ok(pairs > 500, `only ${pairs} sibling pairs swept`);
+  console.log(
+    `[ink merge] ${merged} of ${pairs} sibling pairs meet near a shared circle, ` +
+      `${hidden} (${((100 * hidden) / Math.max(1, merged)).toFixed(1)}%) entirely under it; ` +
+      `worst ${worst.px.toFixed(2)}px / ${(100 * worst.share).toFixed(2)}% — ${worst.why}`,
+  );
+});
+
 test("a row's runs are order-preserving — the crossing-free precondition, hug form", () => {
   // The geometry used to demand **one** φ per row: `base + bow·φ(x)`, one run.
   // `hugRuns` (the owner's belly-compaction ask, s121) relaxes that with a
