@@ -21,6 +21,7 @@ import {
   drawableSlots,
   allocateBows,
   allocateBowsAroundSpine,
+  besideNameReach,
   chainColumnNeed,
   laneOffsets,
   reservedHalfHeight,
@@ -2171,9 +2172,16 @@ test("allocateBows reproduces laneOffsets exactly when every sibling is a leaf",
   // Two writers of one spacing. `laneOffsets` is the shut case in closed form —
   // the one a reader can check by looking — and `allocateBows` is what the
   // layout actually calls. They have to agree, and `laneBow` is the number that
-  // makes them agree, so a change to `strandHalf`, `labelBand` or `laneGap` that
-  // forgets `laneBow` fails here rather than drifting the picture.
-  const leaf = M.strandHalf + M.labelBand;
+  // makes them agree, so a change to `strandHalf`, `besideNameReach` or
+  // `laneGap` that forgets `laneBow` fails here rather than drifting the picture.
+  //
+  // **`besideNameReach()`, not a literal, and not `labelBand` which is gone.**
+  // A leaf that writes its name beside itself reserves its own thickness plus
+  // the room that name takes, and this test's whole job is that `laneBow` keeps
+  // describing *that* band. Written as a literal it would have gone on passing
+  // while `laneOffsets` described a fan the layout no longer draws, which is
+  // exactly what it did do until the band was corrected.
+  const leaf = M.strandHalf + Math.max(besideNameReach().above, besideNameReach().below);
   assert.equal(leaf * 2 + M.laneGap, M.laneBow, "laneBow is not an independent number");
   for (const count of [1, 2, 3, 4, 5, 7]) {
     const closed = laneOffsets(count);
@@ -2569,7 +2577,12 @@ test("a name written inside its own line is not given a second band beside it", 
   // The names themselves are guarded elsewhere and deliberately not restated:
   // `no two names overlap on an opened figure either` is what says the text
   // still clears, and it is the invariant this compaction was tightened against.
-  const OLD_RESERVATION = 2 * CONVERGE_METRICS.labelBand + CONVERGE_METRICS.laneGap;
+  // A **historical** number, and a literal on purpose: 13 was `labelBand`, which
+  // this canvas no longer has (see its note in `CONVERGE_METRICS`). The bar is
+  // "tighter than the reservation this compaction removed", so it has to keep
+  // meaning the number that was removed rather than tracking whatever replaced
+  // it — a bar that moves with the thing it is measuring is not a bar.
+  const OLD_RESERVATION = 2 * 13 + CONVERGE_METRICS.laneGap;
   const gaps: number[] = [];
   for (const focus of drawableSlots(LAYER_GRAPH, STATE_VOCABULARY)) {
     for (const locale of ["en", "ja"] as const) {

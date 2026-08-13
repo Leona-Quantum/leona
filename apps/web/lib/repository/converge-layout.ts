@@ -279,14 +279,29 @@ export const CONVERGE_METRICS = {
    *  vertical cut landed** — see the block above for what the four numbers moved
    *  together and which one of them did not come with them. */
   strandHalf: 8,
-  /** Room beside a strand for its own name.
+  /**
+   * **Gone, and this note is where a reader looking for it lands.**
    *
-   *  13, and the single most expensive tolerance on the canvas — the sweep
-   *  measured −828px of summed saturated height for three pixels off it,
-   *  because every lane at every depth reserves it on both sides — **on both
-   *  sides, and a lane writes its name on one**, which is the whole of why this
-   *  one is still 13 while the other three moved. See the block above. */
-  labelBand: 13,
+   * It was *"room beside a strand for its own name"* — 13px, the single most
+   * expensive tolerance on the canvas, and the one number of issue 22's vertical
+   * cut that could not move. Its own note said why: *"every lane at every depth
+   * reserves it on both sides — **on both sides, and a lane writes its name on
+   * one**"*.
+   *
+   * Both halves of that sentence are now answered by functions rather than by a
+   * constant, which is why nothing reads it any more:
+   *
+   * - **how much room** a name beside a lane takes is `besideNameReach()`, and
+   *   it is 18.5 or 20.1 rather than 13 — measured off the placement `place`
+   *   actually uses and the plate a reader actually sees. 13 was short, and the
+   *   collision that proved it is in that function's own comment.
+   * - **which side** it is taken on is `VBand`, and two of the three placements
+   *   now take it on one side only.
+   *
+   * A constant nothing reads, defended by a comment nobody can falsify, is a
+   * shape this repository has shipped before. It is deleted rather than left at
+   * 13 with a note saying it does not matter.
+   */
   /**
    * Between two sibling strands.
    *
@@ -318,14 +333,24 @@ export const CONVERGE_METRICS = {
    * rendered page the two ways into `linear-ivp` were almost a single line and
    * the convergence did not read as one.
    *
-   * **47 since the vertical cut landed** — `2·(8 + 13) + 5`. It is written out rather
-   * than computed, so the test `allocateBows reproduces laneOffsets exactly when
-   * every sibling is a leaf` exists to catch exactly this: a change to
-   * `strandHalf`, `labelBand` or `laneGap` that forgets to bring this with it.
-   * It caught nothing this time because it was updated in the same edit, which
-   * is the point of having it.
+   * **61.2 since the name band became honest** — `2·(8 + 20.1) + 5`, where 20.1
+   * is `besideNameReach().below`, the room a name beside a lane actually takes.
+   * It was 47 = `2·(8 + 13) + 5` against a `labelBand` that has since been
+   * deleted for being both wrong and unread, so the closed form was describing a
+   * shut fan the layout had stopped producing.
+   *
+   * **Raising it changes no figure**, and that is worth stating rather than
+   * assuming: the only reader is `laneOffsets`, whose only reader in turn is the
+   * `tallestShut` floor under `halfHeight` — and on every bundle the corpus has,
+   * the measured band beats that floor. Measured either way: the tallest figure
+   * is 1,608.74px at 47 and at 61.2.
+   *
+   * It is written out rather than computed, so the test `allocateBows reproduces
+   * laneOffsets exactly when every sibling is a leaf` exists to catch exactly
+   * this: a change to `strandHalf`, `besideNameReach` or `laneGap` that forgets
+   * to bring this with it.
    */
-  laneBow: 47,
+  laneBow: 61.2,
   /** Shortest a bundle may be drawn before its labels are considered.
    *  Left at 150 through issue 22: the sweep measured 110 and 90 at −28px of
    *  summed width between them, which is one figure's rounding. It binds on
@@ -2918,7 +2943,7 @@ function framedNameInward(): number {
  * needs the sign threaded through `measure` and `place` together — measured at a
  * further **−70.80px** on the tallest figure, and the last of issue 22's height.
  */
-function besideNameReach(): VBand {
+export function besideNameReach(): VBand {
   const M = CONVERGE_METRICS;
   return {
     above: M.labelLift + M.laneFont * NAME_PLATE_TOP_RATIO,
