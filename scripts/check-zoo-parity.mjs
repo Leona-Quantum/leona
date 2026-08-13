@@ -200,7 +200,10 @@ const SPEEDUP_PROVENANCE_CENSUS = {
   //     no polynomial-time algorithm, classical or quantum, was known for these
   //     variants. Not the Zoo's "Exponential".
   //   quantum-primality-test-order-finding — compared against AKS by exponent.
-  reported: 8,
+  // Two more from the third batch. Both from Hallgren's J. ACM paper, which is the
+  // one number-theory source here that does state a classical cost, in L-notation.
+  //   pell-equation-regulator, principal-ideal-problem
+  reported: 10,
   // Read and silent. gibbs-state-sampling was the first: Poulin and Wocjan's
   // abstract makes no comparison to a classical algorithm and the Zoo's
   // "Superpolynomial" is the section heading's. This is the record the owner's
@@ -217,7 +220,11 @@ const SPEEDUP_PROVENANCE_CENSUS = {
   //   double-bracket-diagonalization — every comparison is against other quantum
   //     methods. `read` scopes this to a partial retrieval, which is exactly the
   //     case the field's narrowness was written for.
-  absent: 5,
+  // Two more from the third batch, and the contrast with the pair above is the
+  // finding: the SAME author's STOC 2005 paper, read cover to cover, states no
+  // classical running time at all, where his J. ACM paper states one in L-notation.
+  //   unit-group-of-a-number-field, class-group-of-a-number-field
+  absent: 7,
   // The worklist. The intake checked the problem statement, the class against the
   // Zoo, the reference metadata and the complexity claim — it never asked whether
   // the paper supports the class. `unknown` says that, rather than pretending.

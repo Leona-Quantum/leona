@@ -33,10 +33,10 @@
 //   * Every slug's declared width equals its own circuit's `qubitCount`, so the
 //     suffix the fold reads is not a naming convention drifting from the
 //     circuit it names.
-//   * 251 browse rows. The number the roadmap promises, computed the way the
+//   * 255 browse rows. The number the roadmap promises, computed the way the
 //     page computes it rather than typed in. It was 176 when R2.6 sized it
 //     against 281 cards; the parity intake published 12 unfolded records and then
-//     6, 6, 8, 8, 19, 4, 6 and 6 more, so the number moved by exactly 75. Deliberately, which is what the error
+//     6, 6, 8, 8, 19, 4, 6, 6 and 4 more, so the number moved by exactly 79. Deliberately, which is what the error
 //     message below asks for: this figure exists to make an *accidental* change
 //     in the fold — a member's `status` drifting and eight cards reappearing —
 //     visible, and it can only do that if intake changes are entered by hand.
@@ -208,20 +208,22 @@ for (const [index, slugs] of CURATED_GROUPS.entries()) {
 }
 
 const rows = families.foldRows(records, (slug) => groupIndex.get(slug));
-// 176 at R2.6 (281 records), then +12, +6, +6, +8, +8, +19, +4, +6 and +6 as the
-// Zoo- and Classiq-parity intake batches added records that belong to no width
-// family and therefore fold to nothing: 188, 194, 200, 208, 216, 235, 239, 245,
-// 251. See the header. The last two sixes are the W22 Zoo-parity pass — matrix
-// powers, string rewriting, zeta functions, Gauss sums, exponential congruences
-// and subset finding, then semiring matrix products, weight enumerators, Viterbi
-// decoding, lattice filtering, double-bracket diagonalization and primality
-// proving. Twelve literature records in no width family, so twelve new rows.
+// 176 at R2.6 (281 records), then +12, +6, +6, +8, +8, +19, +4, +6, +6 and +4 as
+// the Zoo- and Classiq-parity intake batches added records that belong to no
+// width family and therefore fold to nothing: 188, 194, 200, 208, 216, 235, 239,
+// 245, 251, 255. See the header. The last three are the W22 Zoo-parity pass —
+// matrix powers, string rewriting, zeta functions, Gauss sums, exponential
+// congruences and subset finding; then semiring matrix products, weight
+// enumerators, Viterbi decoding, lattice filtering, double-bracket diagonalization
+// and primality proving; then Pell's equation, the principal ideal problem, the
+// unit group and the class group. Sixteen literature records in no width family,
+// so sixteen new rows.
 //
 // Note for whoever changes it next: this count is computed from the **manifest**,
 // not from the corpus module — so a corpus change that has not regenerated
 // `services/api/catalog_bootstrap/manifest.json` yet will report the OLD number
 // and look like it did not move the fold at all.
-const EXPECTED_BROWSE_ROWS = 251;
+const EXPECTED_BROWSE_ROWS = 255;
 if (rows.length !== EXPECTED_BROWSE_ROWS) {
   errors.push(
     `${records.length} records fold to ${rows.length} browse rows, expected ${EXPECTED_BROWSE_ROWS}. `

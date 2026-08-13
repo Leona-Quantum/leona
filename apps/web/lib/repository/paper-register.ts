@@ -280,6 +280,8 @@ export const PAPER_REGISTER: PaperRegister = {
     { id: "doi:10.1109/dac18074.2021.9586240", title: "An Efficient Algorithm for Sparse Quantum State Preparation", authors: "Gleinig, Hoefler", year: "2021", url: "https://doi.org/10.1109/dac18074.2021.9586240" },
     { id: "doi:10.1126/science.273.5278.1073", title: "Universal Quantum Simulators", authors: "Seth Lloyd", year: "1996", url: "https://doi.org/10.1126/science.273.5278.1073" },
     { id: "doi:10.1137/s0097539796300921", title: "Quantum Complexity Theory", authors: "Ethan Bernstein, Umesh Vazirani", year: "1997", url: "https://doi.org/10.1137/s0097539796300921" },
+    { id: "doi:10.1145/1060590.1060660", title: "Fast Quantum Algorithms for Computing the Unit Group and Class Group of a Number Field", authors: "Sean Hallgren", year: "2005", url: "https://doi.org/10.1145/1060590.1060660", reports: { theory: "reported", simulation: "unknown", hardware: "absent" }, reportsBasis: "full-text" },
+    { id: "doi:10.1145/1206035.1206039", title: "Polynomial-Time Quantum Algorithms for Pell's Equation and the Principal Ideal Problem", authors: "Sean Hallgren", year: "2007", url: "https://doi.org/10.1145/1206035.1206039", reports: { theory: "reported", simulation: "unknown", hardware: "absent" }, reportsBasis: "full-text" },
     { id: "doi:10.1145/3168822", title: "Qubit allocation", authors: "Siraichi, Santos, Collange, Pereira", year: "2018", url: "https://doi.org/10.1145/3168822" },
   ],
 };

@@ -307,6 +307,22 @@ export const DECLARED_SHARED_SOURCES: Readonly<Record<string, readonly string[]>
   // this same paper for both. Two records sharing it is the literature's own
   // shape, not a default filling in for a search nobody ran.
   "https://arxiv.org/abs/quant-ph/9508027": ["discrete-logarithm", "shor-period-finding"],
+  // Zoo-parity intake, W22. Two more of the literature's own shape, and the same
+  // shape as the Shor row above: one paper, two problems, and the Quantum
+  // Algorithm Zoo files each pair as two entries citing that one paper for both.
+  //
+  // Hallgren's J. ACM paper names both problems in its own title — "Pell's
+  // Equation **and** the Principal Ideal Problem" — and proves them as separate
+  // theorems (Theorem 2 for the regulator, Theorem 3 for the principal ideal
+  // problem) with different guarantees: Theorem 3 additionally needs the regulator
+  // to exceed an absolute constant and succeeds only with probability Ω(1/log Δ)
+  // per trial. Two records rather than one because those are two different claims.
+  "https://doi.org/10.1145/1206035.1206039": ["pell-equation-regulator", "principal-ideal-problem"],
+  // The STOC 2005 paper likewise does the unit group and the class group in one
+  // document, and splitting them is not bookkeeping: the unit-group theorem is
+  // unconditional and the class-group theorem assumes the GRH. A single record
+  // would have to state one condition for both and would be wrong about one of them.
+  "https://doi.org/10.1145/1060590.1060660": ["class-group-of-a-number-field", "unit-group-of-a-number-field"],
 };
 
 /**
