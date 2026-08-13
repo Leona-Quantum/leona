@@ -24,7 +24,17 @@ export default async function PricingPage() {
       </Reveal>
 
       <section className="mj-pricing-grid" aria-label={locale === "ja" ? "Leona Quantumのプラン" : "Leona Quantum plans"}>
-        {copy.plans.map((plan, index) => (
+        {copy.plans.map((plan, index) => {
+          // With the demo off the Free plan's button goes to /contact, so its
+          // copy label ("Try the preview") is stale — computed once here and
+          // used for BOTH the visible text and the tooltip. They used to be
+          // computed separately, which shipped a button reading "Talk to us"
+          // whose hover tooltip still said "Try the preview".
+          const toDemo = plan.name === "Free" && demoEnabled;
+          const actionLabel = plan.name === "Free" && !demoEnabled
+            ? (locale === "ja" ? "お問い合わせ" : "Talk to us")
+            : plan.action;
+          return (
           <Reveal delay={index * 90} key={plan.name}>
             <article className={`mj-pricing-card mj-pricing-card--${plan.tone}`}>
             <div className="mj-pricing-card-head">
@@ -39,14 +49,15 @@ export default async function PricingPage() {
             </ul>
             <a
               className={plan.tone === "featured" ? "mj-primary-button" : "mj-secondary-button"}
-              href={plan.name === "Free" && demoEnabled ? "/demo" : "/contact"}
-              title={plan.action}
+              href={toDemo ? "/demo" : "/contact"}
+              title={actionLabel}
             >
-              {plan.name === "Free" && !demoEnabled ? (locale === "ja" ? "お問い合わせ" : "Talk to us") : plan.action}
+              {actionLabel}
             </a>
             </article>
           </Reveal>
-        ))}
+          );
+        })}
       </section>
 
       <Reveal>
