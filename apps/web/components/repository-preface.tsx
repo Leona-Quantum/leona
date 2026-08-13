@@ -99,7 +99,16 @@ import { PUBLIC_REPOSITORY_CATEGORY_IDS, type PublicRepositoryCategory } from ".
  */
 const ABOUT_COPY: Record<
   PublicLocale,
-  { summary: string; repository: string; map: string; mapLink: string; papers: string; papersLink: string }
+  {
+    summary: string;
+    repository: string;
+    map: string;
+    mapLink: string;
+    papers: string;
+    papersLink: string;
+    claims: string;
+    claimsLink: string;
+  }
 > = {
   en: {
     summary: "About the Atlas",
@@ -109,6 +118,10 @@ const ABOUT_COPY: Record<
     mapLink: "Open the interactive map",
     papers: "Every source behind both surfaces, and what each one actually reports.",
     papersLink: "See the papers",
+    claims:
+      "A speedup class on a record is quoted from an outside index, not derived here — and on some records the"
+      + " paper behind it does not state the same thing.",
+    claimsLink: "See whose claim it is",
   },
   ja: {
     summary: "Atlas について",
@@ -118,6 +131,10 @@ const ABOUT_COPY: Record<
     mapLink: "対話型の地図を開く",
     papers: "どちらの画面も依拠している出典と、それぞれが実際に報告している内容です。",
     papersLink: "論文を見る",
+    claims:
+      "記録に示された速度向上の区分は外部の索引からの引用であって、ここで導いたものではありません。"
+      + "根拠となる論文が同じことを述べていない記録もあります。",
+    claimsLink: "誰の主張かを見る",
   },
 };
 
@@ -150,6 +167,14 @@ export function AboutTheAtlas({ locale }: { locale: PublicLocale }) {
         </p>
         <p>
           {copy.papers} <a href="/repository/papers">{copy.papersLink}</a>
+        </p>
+        {/* A route nothing links to is a route nobody reaches, and this one
+            carries the finding the corpus produced rather than a navigation
+            convenience. It sits here rather than in the site nav on purpose:
+            seven records against thirty-one nobody has checked is a real result
+            and not yet a headline. */}
+        <p>
+          {copy.claims} <a href="/repository/claims">{copy.claimsLink}</a>
         </p>
       </div>
     </details>

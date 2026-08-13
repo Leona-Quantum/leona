@@ -2527,11 +2527,21 @@ export const ZOO_PARITY_COVERAGE: ReadonlyArray<{ slug: string; zooName: string 
  */
 export const ZOO_SPEEDUP_PROVENANCE: ReadonlyArray<{
   slug: string;
+  title: string;
+  titleJa: string;
+  zooName: string;
+  zooSection: string;
   speedup: string;
+  source: ZooAlgorithm["source"];
   primary: ZooAlgorithm["speedupPrimary"];
 }> = ZOO_ALGORITHMS.map((concept) => ({
   slug: concept.slug,
+  title: concept.title,
+  titleJa: concept.titleJa,
+  zooName: concept.zooName,
+  zooSection: concept.zooSection,
   speedup: concept.speedup,
+  source: concept.source,
   primary: concept.speedupPrimary,
 }));
 
