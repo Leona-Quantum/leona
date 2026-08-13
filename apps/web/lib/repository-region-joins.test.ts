@@ -405,16 +405,17 @@ test("the cross-region join surface is 105 compositions at three states", () => 
   // land on the same seven compilation methods, which is what "connect the
   // compilation region" is worth today.
   const surface = joinSurface(LAYER_GRAPH, STATE_VOCABULARY);
-  assert.equal(surface.within + surface.crosses, 541);
-  assert.equal(surface.crosses, 155, "the cross-region surface moved — say why in the PR");
+  assert.equal(surface.within + surface.crosses, 547);
+  assert.equal(surface.crosses, 161, "the cross-region surface moved — say why in the PR");
 
   const crossing = surface.states.filter((state) => state.crosses > 0);
   assert.deepEqual(
     crossing.map((state) => [state.state, state.crosses]),
     [
       ["parameterized-circuit", 77],
-      ["linear-ivp", 34],
+      ["hermitian-generator", 23],
       ["evolution-circuit", 21],
+      ["linear-ivp", 17],
       ["linear-system", 16],
       ["runnable-evolution", 7],
     ],
@@ -442,7 +443,7 @@ test("every crossing runs between three pairs of regions, and each pair is a dif
 
   const surface = joinSurface(LAYER_GRAPH, STATE_VOCABULARY);
   const crossings = surface.crossings.filter((crossing) => crossing.crosses);
-  assert.equal(crossings.length, 155);
+  assert.equal(crossings.length, 161);
 
   const pairs = new Set(
     crossings.map((crossing) => `${region.get(crossing.arrival)}->${region.get(crossing.departure)}`),

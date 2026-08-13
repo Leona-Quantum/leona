@@ -598,6 +598,26 @@ export const LAYER_GRAPH: LayerGraph = {
     summary: "Discretize the domain onto a lattice and read the discrete Laplacian off the resulting graph: off-diagonal entries minus one between neighbours, each diagonal entry the degree of its vertex. Higher-order stencils are obtained by factorizing the operator through hypergraph incidence matrices, which is what lets the error fall faster than the second power of the spacing while keeping a form a simulator can consume.",
     summaryJa: "領域を格子に離散化し、得られたグラフから離散ラプラシアンを読み取ります。隣接する頂点間の非対角成分は −1 であり、各対角成分はその頂点の次数です。より高次のステンシルは、この作用素をハイパーグラフの接続行列を通して分解することで得られます。これにより、シミュレータが扱える形を保ったまま、誤差を格子間隔の 2 乗より速く小さくできます。",
     realizes: "spatial-discretization",
+    // **Narrower than the slot promises, and the paper says so outright.** The
+    // slot returns a linear generator; this route returns a Hermitian one,
+    // because the construction factorises the discrete Laplacian as $BB^\dagger$
+    // and assembles the block form $H = \frac{1}{a}[[0, B],[B^\dagger, 0]]$,
+    // "which by construction is Hermitian independent of the specific choice of
+    // matrix B". Recording the narrowing is not decoration: `hermitian-generator`
+    // specializes `hamiltonian-access` as well as `linear-ivp`, so this is the
+    // hop that lets the route reach a simulator directly — which is exactly what
+    // the paper then does, handing Eq. (5) to sparse Hamiltonian simulation
+    // rather than to any ODE solver. Without it the map would record a route
+    // whose own source contradicts it.
+    contract: {
+      from: "pde-problem",
+      to: "hermitian-generator",
+
+      takes: "The wave equation on a region, a lattice spacing, and Dirichlet or Neumann conditions on the boundary — including the boundary of a scatterer, which is modelled as removed lattice points.",
+      takesJa: "領域上の波動方程式、格子間隔、そして境界における Dirichlet 条件または Neumann 条件。散乱体の境界も含みます。散乱体は格子点を取り除いたものとして表されます。",
+      returns: "A Hermitian generator on the direct sum of the vertex and edge spaces, whose square is the discrete Laplacian, together with the truncation error of the stencil that built it.",
+      returnsJa: "頂点空間と辺空間の直和の上のエルミート生成子であり、その 2 乗が離散ラプラシアンになります。あわせて、それを組み立てたステンシルの打ち切り誤差を伴います。",
+    },
     conditions: "The truncation bound assumes the exact solution has the derivatives the stencil's Taylor expansion uses: Costa, Jordan and Ostrander state that a discretization with error $O(a^k)$ of an $m$-th derivative 'is only justified if the exact solution is $(k+m)$-times differentiable'. A scatterer is modelled as removed lattice points, and the presence of one breaks translational invariance, so the Laplacian can no longer simply be diagonalized by a Fourier transform. The hypergraph incidence-matrix factorizations the higher orders rest on are, in the authors' own words, not known to appear elsewhere in the literature.",
     conditionsJa: "打ち切り誤差の評価は、厳密解がステンシルの Taylor 展開で用いる階数の微分をもつことを前提とします。Costa・Jordan・Ostrander は、$m$ 階微分に対する誤差 $O(a^k)$ の離散化は「厳密解が $(k+m)$ 回微分可能である場合にのみ正当化される」と述べています。散乱体は格子点を取り除いたものとして表され、散乱体があると並進対称性が破れるため、ラプラシアンはもはや Fourier 変換で単純に対角化できません。高次の構成が依拠するハイパーグラフ接続行列による分解は、著者ら自身の言によれば、他の文献には見当たらないものです。",
     cost: "Costa, Jordan and Ostrander give the truncation error of the second-order stencil as $O(a^2)$ at finite lattice spacing $a$, and generalise it: a $k$-th order Laplacian gives truncation errors of order $a^k$, so over evolution time $T$ the accumulated error is of order $a^k T$. Relating the order to the sparsity actually simulated, a $D$-dimensional Laplacian of order $k$ has a $D(k/2+1)$-sparse incidence matrix, so an $s$-sparse Hamiltonian corresponds to $k = 2(s/D) - 2$ and the total accumulated error is on the order of $T a^{2(s/D)-2}$.",
