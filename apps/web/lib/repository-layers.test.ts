@@ -1297,6 +1297,17 @@ test("a coined composite is refused in the short form too, where it is likeliest
  * behind for later rot to fill.
  */
 const HOLLOW_BY_SLOT: ReadonlyMap<string, number> = new Map([
+  // A region opening, in the gate's own words, rather than rot. The two PDE
+  // discretization slots arrived in session 15 with two methods each and no
+  // recorded interior, for the same reason the discretization slots above are
+  // hollow: what a discretization produces is a system of rows, and assembling
+  // rows is not a capability this graph decomposes. The methods are
+  // distinguishable in every way the map records EXCEPT their drawn interior —
+  // different stencils, different orders, different error bounds, different
+  // papers — which is precisely the case this table exists to let through with a
+  // reason attached rather than absorb silently.
+  ["spatial-discretization", 2],
+  ["full-discretization", 2],
   // The three the owner named by sight. Each is a corpus job, not a gate problem.
   // 5 → 6 in session 130, and declared rather than absorbed: the sixth is
   // `chebyshev-pseudospectral-collocation`, authored from arXiv:1901.00961 §2 so
