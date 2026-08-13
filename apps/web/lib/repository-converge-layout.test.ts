@@ -919,7 +919,7 @@ test("every capability draws a figure — not just the two that converge", () =>
   // overview past `CONVERGE_OPEN_MAX` (see that constant's own note).
     // 25 in session 15: the two PDE discretization slots, each a root nothing
   // steps into, joined to the rest of the map only by the states they produce.
-  assert.equal(capabilities.length, 25, "the graph's slot count changed; update these figures");
+  assert.equal(capabilities.length, 27, "the graph's slot count changed; update these figures");
 
   for (const focus of capabilities) {
     for (const locale of ["en", "ja"] as const) {
@@ -950,7 +950,7 @@ test("every capability draws a figure — not just the two that converge", () =>
   // one chain every filler walks.
   const byGrain = capabilities.map((focus) => diagramFor(focus.id).grain);
   assert.equal(byGrain.filter((grain) => grain === "states").length, 1);
-  assert.equal(byGrain.filter((grain) => grain === "methods").length, 24);
+  assert.equal(byGrain.filter((grain) => grain === "methods").length, 26);
 });
 
 test("`drawableSlots` is the list of slots that actually draw", () => {
@@ -966,7 +966,7 @@ test("`drawableSlots` is the list of slots that actually draw", () => {
   // 22 since W21, 23 since W21-E — the same new slots the figure test above
   // pins, and the point of asserting the length beside the deepEqual is that two
   // empty lists are also deep-equal.
-  assert.equal(offered.length, 25);
+  assert.equal(offered.length, 27);
 
   // And it is still a strict superset of the convergence claim, which is a
   // different and narrower statement — narrower by one since session 119,
@@ -1860,10 +1860,10 @@ test("a line that opens into something says so, and a line that does not is not 
   // not a miscount — the same distinction `layerwise-training` is annotated for above.
   // `openable` 29 → 30, `leaves` 62 → 66.
     // 101 with the two PDE slots: two lanes each, all four leaves.
-  assert.equal(openable + leaves + 1, 101, "the twenty-three figures draw 97 lines between them");
+  assert.equal(openable + leaves + 1, 106, "the twenty-three figures draw 97 lines between them");
   assert.equal(openable, 30, "30 of them open into something the canvas draws");
     // 70 with the four PDE methods: all atomic, nothing finer to open into.
-  assert.equal(leaves, 70, "66 are leaves — the canvas records nothing finer for them");
+  assert.equal(leaves, 75, "66 are leaves — the canvas records nothing finer for them");
 
 });
 

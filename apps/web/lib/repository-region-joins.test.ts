@@ -378,19 +378,19 @@ test("the map is three regions, and ten of its twenty-three slots consume someth
   const regions = regionsOf(LAYER_GRAPH);
   assert.deepEqual(
     regions.map((region) => region.nodes.length),
-    [104, 13, 5, 3, 3],
+    [107, 13, 5, 4, 3, 3],
     "the region shape changed; re-read what joined or split before updating this",
   );
 
   const entries = slotEntries(LAYER_GRAPH, STATE_VOCABULARY);
-  assert.equal(entries.length, 25);
+  assert.equal(entries.length, 27);
   const open = entries.filter((entry) => entry.supply !== "joined");
-  assert.equal(open.length, 12);
+  assert.equal(open.length, 14);
 
   const bySupply = (supply: string) => open.filter((entry) => entry.supply === supply).length;
-  assert.equal(bySupply("front-door"), 5);
+  assert.equal(bySupply("front-door"), 6);
   assert.equal(bySupply("root-supplied"), 2);
-  assert.equal(bySupply("ingredient"), 5);
+  assert.equal(bySupply("ingredient"), 6);
   assert.equal(bySupply("joined"), 0, "by construction — `open` already excludes them");
 });
 
@@ -448,7 +448,7 @@ test("every crossing runs between three pairs of regions, and each pair is a dif
   const pairs = new Set(
     crossings.map((crossing) => `${region.get(crossing.arrival)}->${region.get(crossing.departure)}`),
   );
-  assert.deepEqual([...pairs].sort(), ["1->2", "4->1", "5->1"]);
+  assert.deepEqual([...pairs].sort(), ["1->2", "5->1", "6->1"]);
 
   // 105 when it was found, 119 now — and the 14 it gained came from neither this
   // lane nor a specializes line, but from two ordinary ansatz methods landing on
@@ -508,6 +508,6 @@ test("the map is three regions under containment and two under what a trace walk
     return sizes.sort((a, b) => b - a);
   };
 
-  assert.deepEqual(componentsUnder(layerAdjacency(LAYER_GRAPH)), [104, 13, 5, 3, 3]);
-  assert.deepEqual(componentsUnder(walkableAdjacency(LAYER_GRAPH, STATE_VOCABULARY)), [123, 5]);
+  assert.deepEqual(componentsUnder(layerAdjacency(LAYER_GRAPH)), [107, 13, 5, 4, 3, 3]);
+  assert.deepEqual(componentsUnder(walkableAdjacency(LAYER_GRAPH, STATE_VOCABULARY)), [126, 5, 4]);
 });
