@@ -101,12 +101,35 @@ const byId = papers.indexPapers(PAPER_REGISTER);
 // Every `entry.source.title` that disagrees with the register **today**, pinned
 // to the exact wrong string, with what it should say.
 //
-// **It is empty, and that is the finished state, not an unstarted one.** All
-// twelve records this list was built to hold were corrected together — see the
-// entry for 2026-08-13 in the desk decisions file. Each one's `source.title` now
-// equals its register row, so each one's line had to come out of here in the
-// same commit: the second loop below fails a slug that no longer records the
-// wrong string it is pinned to.
+// **Ten of the original twelve were corrected and are gone from here.** Their
+// `source.title` now equals its register row, so each line had to come out in
+// the same commit: the second loop below fails a slug that no longer records
+// the wrong string it is pinned to. See the 2026-08-13 entries in the desk
+// decisions file.
+//
+// **The two that remain are held deliberately, and they are not the same kind
+// of thing as the ten.** A record disagreeing with the document its own URL
+// resolves to is an error, and correcting it is a correction. These two carry
+// the **peer-reviewed journal title** for a paper the register holds from its
+// arXiv preprint — two real titles for one work, not a mistake:
+//
+//   hhl-linear-systems  record: "Quantum algorithm for linear systems of equations"
+//                       = Crossref's title for the published PRL, exactly
+//                       arXiv 0811.3171 prints "...for solving linear systems..."
+//   graph-state-ring    record: "Multiparty entanglement in graph states"
+//                       = Crossref's title for the published PRA, exactly
+//                       arXiv quant-ph/0307130 prints "Multi-party..."
+//
+// Checked against arXiv's own metadata and Crossref on 2026-08-13, not inferred
+// from the shape of the strings. Choosing between them is a decision about which
+// of two legitimate titles the record should carry — and the better fix may be
+// to register the journal DOI and point the record there, rather than to rewrite
+// the title. That is the owner's call, and it must not be settled by being
+// swept into a signing run, because a signature cannot be taken back.
+//
+// **The batch they land in:** whichever run answers that question. They are the
+// only two rows here, and neither is waiting on a person to notice them — the
+// question is on record.
 //
 // Why the list existed at all, since the mechanism is worth keeping: `source` is
 // what the catalog attestation hashes, so correcting a title moves that record's
@@ -126,10 +149,8 @@ const byId = papers.indexPapers(PAPER_REGISTER);
 // `excluded_identities`): a slug whose title stops matching the pinned wrong
 // string fails as a stale line, so fixing a record forces its line out of here
 // in the same commit; and a *new* drift is not in the list and fails outright.
-// Both directions were broken deliberately and confirmed to exit 1 before this
-// list was emptied; the evidence is in the PR that emptied it. With the map at
-// zero entries the stale-line direction has no live input, so it is the one to
-// re-break by hand if you ever add a line back.
+// Both directions were broken deliberately and confirmed to exit 1; the evidence
+// is in the PR that emptied it down to these two.
 //
 // The worst of the twelve is worth remembering, because it is the failure
 // ./papers.ts was written to kill and it survived here for months:
@@ -139,7 +160,10 @@ const byId = papers.indexPapers(PAPER_REGISTER);
 // and the record's own `literature` array had it right all along — only
 // `source.title` disagreed. The register caught it in `literature` in PR #305
 // and could not see it here.
-const KNOWN_SOURCE_TITLE_DRIFT = new Map([]);
+const KNOWN_SOURCE_TITLE_DRIFT = new Map([
+  ["hhl-linear-systems", "Quantum algorithm for linear systems of equations"],
+  ["graph-state-ring", "Multiparty entanglement in graph states"],
+]);
 
 // A URL that is not an arXiv or DOI address is not a paper. "The register
 // cannot key on it" must not become the way a *typo'd* arXiv link goes quiet,

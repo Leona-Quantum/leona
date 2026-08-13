@@ -323,7 +323,7 @@ $$K_0 = X_0 Z_1 Z_3,\quad K_1 = X_1 Z_0 Z_2,\quad K_2 = X_2 Z_1 Z_3,\quad K_3 = 
       { label: "Entangling gate", value: "CZ" },
       { label: "Symmetry", value: "Cyclic (translation-invariant)" },
     ],
-    sourceTitle: "Multi-party entanglement in graph states",
+    sourceTitle: "Multiparty entanglement in graph states",
     sourceUrl: "https://arxiv.org/abs/quant-ph/0307130",
     wires: ["q[0]", "q[1]", "q[2]", "q[3]"],
     operations: [

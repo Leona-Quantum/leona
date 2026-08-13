@@ -957,7 +957,7 @@ export const RAW_PUBLIC_REPOSITORY_ENTRIES: PublicRepositoryEntry[] = [
     ],
     source: {
       kind: "curated_reference",
-      title: "Quantum algorithm for solving linear systems of equations",
+      title: "Quantum algorithm for linear systems of equations",
       url: "https://arxiv.org/abs/0811.3171",
       reviewedBy: "LeonaQ literature curation pass",
       license: "Public bibliographic link; code is an original reference sketch",
