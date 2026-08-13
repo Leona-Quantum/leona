@@ -1309,7 +1309,7 @@ export const RAW_PUBLIC_REPOSITORY_ENTRIES: PublicRepositoryEntry[] = [
     ],
     source: {
       kind: "curated_reference",
-      title: "The XZZX surface code",
+      title: "The XZZX Surface Code",
       url: "https://arxiv.org/abs/2009.07851",
       reviewedBy: "LeonaQ literature curation pass",
       license: "Public bibliographic link; code is an original reference sketch",
