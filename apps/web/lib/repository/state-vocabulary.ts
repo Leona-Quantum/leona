@@ -32,6 +32,36 @@ export const STATE_VOCABULARY: StateVocabulary = {
   states: [
     // --- the differential-equation spine -----------------------------------
     {
+      id: "pde-problem",
+      label: "Partial differential equation",
+      labelJa: "偏微分方程式",
+      summary:
+        "A linear PDE on a continuous spatial domain, with the initial or boundary conditions that pin its solution — the problem as it is posed, before any grid exists. It is the one object here with infinitely many degrees of freedom, and that is what makes the first step real work rather than bookkeeping: replacing the continuum with finitely many numbers costs an error nobody can avoid, and that error is the first term in every budget downstream.",
+      summaryJa:
+        "連続な空間領域の上の線形偏微分方程式と、その解を定める初期条件あるいは境界条件。すなわち、格子を導入する前の、提示されたままの問題です。ここに登場する対象のうち、自由度が無限であるのはこれだけであり、そのために最初の一歩は帳簿づけではなく実質的な作業になります。連続体を有限個の数値で置き換えるには誰にも避けられない誤差が伴い、その誤差こそ、下流のあらゆる見積もりにおける最初の項だからです。",
+      // **Two processes leave this state, which is what `states.ts`'s admission
+      // test asks for**, and one paper states both by itself rather than the two
+      // being lined up from separate sources. Linden, Montanaro and Shao
+      // (arXiv:2004.06516) discretise space *and* time by FTCS into a single
+      // block system over all timesteps (§I A, Eq. 38), and give the alternative
+      // explicitly in their Appendix A: *"if we just discretise x_1,...,x_d ...
+      // we obtain a system of ODEs"*.
+      //
+      // So this is deliberately NOT one process composed with
+      // `time-discretization`. Heat's FTCS produces the whole linear system in
+      // one step rather than discretising space and then time, and the plasma
+      // problem (arXiv:2403.11989) has no time axis to discretise at all — it is
+      // a boundary-value problem at a fixed drive frequency. Reading them as a
+      // composition would attribute to those papers a two-stage structure
+      // neither of them has.
+      //
+      // **No `specializes`, and no parent is tempting.** A PDE is not a kind of
+      // `nonlinear-ivp` or `linear-ivp`: those are finite vector systems and this
+      // is not, which is the whole reason the discretisation between them costs
+      // anything. Declaring a parent here would let `stateSatisfies` hand a PDE
+      // straight to an ODE solver and call the continuum limit free.
+    },
+    {
       id: "nonlinear-ivp",
       label: "Nonlinear initial-value problem",
       labelJa: "非線形の初期値問題",
@@ -400,6 +430,25 @@ export const STATE_VOCABULARY: StateVocabulary = {
       // object plus what is being asked of it" is a real state every time the
       // question changes which methods can answer.
       specializes: ["runnable-evolution"],
+    },
+    {
+      id: "device-figure",
+      label: "Number about the machine",
+      labelJa: "機械についての数値",
+      summary:
+        "A figure of merit for the hardware itself — an average error rate, a largest circuit it can actually run — together with the protocol that produced it and the confidence it was established at. It answers a question about the computer, never a question the computer was asked.",
+      summaryJa:
+        "ハードウェアそのものについての性能指標。平均誤り率や、実際に実行できる最大の回路といったものであり、それを生んだプロトコルと、確立された際の信頼度を伴います。答えているのは計算機についての問いであって、計算機に与えられた問いではありません。",
+      // **Deliberately not `observable-value`, and this is the distinction the
+      // owner's ai-ops#68 ruling makes possible rather than removes.** That state
+      // is "a scalar estimate with an additive-error guarantee" and it sits under
+      // `solution-answer` — the family of things a route hands back about a
+      // problem it was given. A quantum volume is an integer about a machine and
+      // an average error rate is a property of a gate set; neither is an answer to
+      // anything the machine was asked to compute. Reusing `observable-value`
+      // would have let the path-finder hand a benchmark result to anything that
+      // consumes a measured number, and would have told a reader that these
+      // protocols solve problems. They characterise the thing that solves them.
     },
     {
       id: "periodic-function-oracle",

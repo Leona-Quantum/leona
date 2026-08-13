@@ -571,6 +571,143 @@ export const LAYER_GRAPH: LayerGraph = {
   },
   {
     kind: "capability",
+    id: "spatial-discretization",
+    label: "Replace a spatial domain with a finite grid",
+    labelJa: "空間領域を有限の格子に置き換える",
+    shortLabel: "Discretize space",
+    shortLabelJa: "空間を離散化する",
+    summary: "Approximate the spatial derivatives of a PDE on finitely many points, leaving time continuous, so that what remains is a system of ordinary differential equations in the grid values. The method of lines: the continuum is gone, the clock is not.",
+    summaryJa: "偏微分方程式の空間微分を有限個の点の上で近似し、時間は連続なまま残すことで、格子上の値についての常微分方程式系を得ます。いわゆる線の方法であり、連続体は消えても時計は残ります。",
+    contract: {
+      from: "pde-problem",
+      to: "linear-ivp",
+
+      takes: "A linear PDE with its initial and boundary conditions, a domain, a lattice spacing or basis size, and a smoothness assumption on the exact solution — the truncation bound is derived by Taylor expansion and is only valid to the order the solution is differentiable.",
+      takesJa: "線形偏微分方程式と、その初期条件・境界条件、領域、格子間隔または基底のサイズ、そして厳密解の滑らかさについての仮定。打ち切り誤差の評価は Taylor 展開から導かれるため、解が微分可能な階数までしか有効ではありません。",
+      returns: "A generator A acting on the vector of grid values, an initial vector, and the truncation error the replacement cost — stated as a power of the lattice spacing, which is the term that fixes how fine the grid has to be.",
+      returnsJa: "格子上の値のベクトルに作用する生成子 A、初期ベクトル、そして置き換えの代価である打ち切り誤差。誤差は格子間隔のべきとして表され、格子をどこまで細かくすべきかを決めるのはこの項です。",
+    },
+    whyALayer: "The choice made here is not which grid but which approximation of the derivative — concretely, the three-point second-order stencil against a higher-order one, which is the difference between the two methods drawn below. The competing answers trade against each other rather than dominating. A low-order stencil touches few neighbours, so the generator stays sparse and every downstream simulation cost — which is charged in sparsity — stays low, and the truncation error falls only as the square of the spacing. A high-order stencil buys error falling as a much higher power of the spacing and pays for it in a denser generator, which Costa, Jordan and Ostrander state outright as the trade: better error scaling comes 'at the cost of simulating more complex (less sparse) Hamiltonians'. Which side of that trade wins depends on the smoothness of the solution, because a high-order discretization is only justified if the exact solution has the derivatives its Taylor expansion assumes. So a reader standing here is choosing between sparsity and grid size under a regularity assumption they have to make explicit, and no theorem settles it for them.",
+    whyALayerJa: "ここで選ぶのはどの格子かではなく、微分をどう近似するかであり、競合する答えは互いを圧倒するのではなく引き換えの関係にあります。低次のステンシルは近傍を少数しか参照しないため生成子は疎に保たれ、疎性で課金される下流のシミュレーション費用はすべて低く抑えられますが、打ち切り誤差は格子間隔の 2 乗でしか小さくなりません。高次のステンシルは、はるかに高いべきで小さくなる誤差を買い、その代価を生成子の密度で支払います。Costa・Jordan・Ostrander はこの引き換えを明言しており、誤差のスケーリングの改善は「より複雑な（疎性の低い）ハミルトニアンをシミュレートする代価を伴って」得られるとしています。どちらが有利かは解の滑らかさに依存します。高次の離散化が正当化されるのは、厳密解が Taylor 展開の前提とする階数の微分をもつ場合に限られるからです。したがってここに立つ読み手は、明示せざるをえない正則性の仮定のもとで、疎性と格子の細かさのあいだを選ぶことになり、それを決めてくれる定理はありません。",
+  },
+  {
+    kind: "method",
+    id: "graph-laplacian-discretization",
+    label: "Graph-Laplacian finite differences",
+    labelJa: "グラフラプラシアンによる差分",
+    summary: "Discretize the domain onto a lattice and read the discrete Laplacian off the resulting graph: off-diagonal entries minus one between neighbours, each diagonal entry the degree of its vertex. Higher-order stencils are obtained by factorizing the operator through hypergraph incidence matrices, which is what lets the error fall faster than the second power of the spacing while keeping a form a simulator can consume.",
+    summaryJa: "領域を格子に離散化し、得られたグラフから離散ラプラシアンを読み取ります。隣接する頂点間の非対角成分は −1 であり、各対角成分はその頂点の次数です。より高次のステンシルは、この作用素をハイパーグラフの接続行列を通して分解することで得られます。これにより、シミュレータが扱える形を保ったまま、誤差を格子間隔の 2 乗より速く小さくできます。",
+    realizes: "spatial-discretization",
+    // **Narrower than the slot promises, and the paper says so outright.** The
+    // slot returns a linear generator; this route returns a Hermitian one,
+    // because the construction factorises the discrete Laplacian as $BB^\dagger$
+    // and assembles the block form $H = \frac{1}{a}[[0, B],[B^\dagger, 0]]$,
+    // "which by construction is Hermitian independent of the specific choice of
+    // matrix B". Recording the narrowing is not decoration: `hermitian-generator`
+    // specializes `hamiltonian-access` as well as `linear-ivp`, so this is the
+    // hop that lets the route reach a simulator directly — which is exactly what
+    // the paper then does, handing Eq. (5) to sparse Hamiltonian simulation
+    // rather than to any ODE solver. Without it the map would record a route
+    // whose own source contradicts it.
+    contract: {
+      from: "pde-problem",
+      to: "hermitian-generator",
+
+      takes: "The wave equation on a region, a lattice spacing, and Dirichlet or Neumann conditions on the boundary — including the boundary of a scatterer, which is modelled as removed lattice points.",
+      takesJa: "領域上の波動方程式、格子間隔、そして境界における Dirichlet 条件または Neumann 条件。散乱体の境界も含みます。散乱体は格子点を取り除いたものとして表されます。",
+      returns: "A Hermitian generator on the direct sum of the vertex and edge spaces, whose square is the discrete Laplacian, together with the truncation error of the stencil that built it.",
+      returnsJa: "頂点空間と辺空間の直和の上のエルミート生成子であり、その 2 乗が離散ラプラシアンになります。あわせて、それを組み立てたステンシルの打ち切り誤差を伴います。",
+    },
+    conditions: "The truncation bound assumes the exact solution has the derivatives the stencil's Taylor expansion uses: Costa, Jordan and Ostrander state that a discretization with error $O(a^k)$ of an $m$-th derivative 'is only justified if the exact solution is $(k+m)$-times differentiable'. A scatterer is modelled as removed lattice points, and the presence of one breaks translational invariance, so the Laplacian can no longer simply be diagonalized by a Fourier transform. The hypergraph incidence-matrix factorizations the higher orders rest on are, in the authors' own words, not known to appear elsewhere in the literature.",
+    conditionsJa: "打ち切り誤差の評価は、厳密解がステンシルの Taylor 展開で用いる階数の微分をもつことを前提とします。Costa・Jordan・Ostrander は、$m$ 階微分に対する誤差 $O(a^k)$ の離散化は「厳密解が $(k+m)$ 回微分可能である場合にのみ正当化される」と述べています。散乱体は格子点を取り除いたものとして表され、散乱体があると並進対称性が破れるため、ラプラシアンはもはや Fourier 変換で単純に対角化できません。高次の構成が依拠するハイパーグラフ接続行列による分解は、著者ら自身の言によれば、他の文献には見当たらないものです。",
+    cost: "Costa, Jordan and Ostrander give the truncation error of the second-order stencil as $O(a^2)$ at finite lattice spacing $a$, and generalise it: a $k$-th order Laplacian gives truncation errors of order $a^k$, so over evolution time $T$ the accumulated error is of order $a^k T$. Relating the order to the sparsity actually simulated, a $D$-dimensional Laplacian of order $k$ has a $D(k/2+1)$-sparse incidence matrix, so an $s$-sparse Hamiltonian corresponds to $k = 2(s/D) - 2$ and the total accumulated error is on the order of $T a^{2(s/D)-2}$.",
+    costJa: "Costa・Jordan・Ostrander は、2 次のステンシルの打ち切り誤差を、有限の格子間隔 $a$ において $O(a^2)$ と与え、さらに一般化しています。$k$ 次のラプラシアンは $a^k$ の位数の打ち切り誤差を与えるため、発展時間 $T$ にわたって蓄積する誤差は $a^k T$ の位数になります。次数を実際にシミュレートする疎性に結びつけると、$k$ 次の $D$ 次元ラプラシアンの接続行列は $D(k/2+1)$ 疎であり、$s$ 疎なハミルトニアンは $k = 2(s/D) - 2$ に対応するので、蓄積誤差の総量は $T a^{2(s/D)-2}$ の位数になります。",
+    steps: [],
+    atomic: true,
+    entries: ["wave-equation-simulation"],
+    citations: [
+      { title: "Quantum Algorithm for Simulating the Wave Equation", authors: "Pedro C.S. Costa, Stephen Jordan, Aaron Ostrander", year: "2017", url: "https://arxiv.org/abs/1711.05394" },
+    ],
+  },
+  {
+    kind: "method",
+    id: "central-difference-semidiscretization",
+    label: "Central differences, space only",
+    labelJa: "中心差分による空間のみの離散化",
+    summary: "Replace each second spatial derivative by the three-point central difference on a uniform grid and leave the time derivative alone. What comes out is the plainest form the method of lines takes: one generator, assembled from a single stencil repeated at every interior point, acting on the vector of grid values.",
+    summaryJa: "一様格子の上で、各 2 階空間微分を 3 点の中心差分で置き換え、時間微分にはいっさい手を触れません。得られるのは線の方法が取りうる最も素朴な形であり、内部の各点で同一のステンシルを繰り返して組み立てた 1 個の生成子が、格子上の値のベクトルに作用します。",
+    realizes: "spatial-discretization",
+    conditions: "Linden, Montanaro and Shao derive the stencil from Taylor's theorem with remainder and require the solution to be four times differentiable in space for the bound to hold. Their analysis fixes the fourth spatial derivatives by assumption rather than reading them off the problem, and they note the constraint applies to the solution of the heat equation rather than to the initial condition — though a bound on the initial condition implies one at later times, because the discrete time-evolution operator cannot increase the infinity norm and commutes with the discretized partial-derivative operators.",
+    conditionsJa: "Linden・Montanaro・Shao はこのステンシルを剰余項つきの Taylor の定理から導いており、評価が成り立つには解が空間について 4 回微分可能であることを要求します。彼らの解析は 4 階空間微分を問題から読み取るのではなく仮定によって固定しており、この制約は初期条件ではなく熱方程式の解に課されるものだと注記しています。ただし初期条件に対する評価は後の時刻での評価を含意します。離散的な時間発展作用素は無限大ノルムを増加させず、離散化された偏微分作用素と可換だからです。",
+    cost: "Linden, Montanaro and Shao's Eq. (9) bounds the second-derivative stencil itself: the difference from the exact derivative is at most $\\frac{h^2}{12}\\sup_x |d^4u/dx^4(x)|$ at spacing $h$. Applied to the heat equation and stated in their Appendix A, discretizing only the spatial variables gives the ODE system $d\\tilde{u}/dt = (\\alpha/\\Delta x^2) A\\tilde{u}$, whose generator is a sum of $d$ tensor factors of one circulant $n \\times n$ matrix, has sparsity $\\Theta(d)$, and carries eigenvalues $\\lambda_j = -4\\sin^2(j\\pi/n)$ so that $\\lVert A\\rVert = 4\\alpha d/\\Delta x^2$.",
+    costJa: "Linden・Montanaro・Shao の式 (9) はステンシルそのものを評価します。間隔 $h$ において、厳密な 2 階微分とのずれは高々 $\\frac{h^2}{12}\\sup_x |d^4u/dx^4(x)|$ です。熱方程式に適用して付録 A に述べられているとおり、空間変数のみを離散化すると常微分方程式系 $d\\tilde{u}/dt = (\\alpha/\\Delta x^2) A\\tilde{u}$ が得られます。その生成子は 1 個の巡回 $n \\times n$ 行列の $d$ 個のテンソル因子の和であり、疎性は $\\Theta(d)$、固有値は $\\lambda_j = -4\\sin^2(j\\pi/n)$ であって $\\lVert A\\rVert = 4\\alpha d/\\Delta x^2$ となります。",
+    steps: [],
+    atomic: true,
+    citations: [
+      { title: "Quantum vs. classical algorithms for solving the heat equation", authors: "Noah Linden, Ashley Montanaro, Changpeng Shao", year: "2020", url: "https://arxiv.org/abs/2004.06516" },
+    ],
+  },
+  {
+    kind: "capability",
+    id: "full-discretization",
+    label: "Discretize a PDE into one linear system",
+    labelJa: "偏微分方程式を単一の線形方程式系に離散化する",
+    shortLabel: "Discretize to a linear system",
+    shortLabelJa: "線形系へ離散化する",
+    summary: "Replace every continuous variable at once — space together with time, or space together with velocity — so that the whole problem becomes a single matrix equation. Nothing is left to march: the grid values at every recorded point are unknowns of one system, solved in one go.",
+    summaryJa: "連続な変数をすべて一度に置き換えます。空間と時間、あるいは空間と速度をまとめて離散化し、問題全体を単一の行列方程式にします。前進させるべきものは残りません。記録されるすべての点における格子上の値が 1 つの系の未知数となり、一度に解かれます。",
+    contract: {
+      from: "pde-problem",
+      to: "linear-system",
+
+      takes: "A linear PDE with its conditions, a grid over every continuous variable the problem carries, and — where the problem is posed as a boundary-value problem rather than an initial-value one — the boundary treatment that makes the resulting matrix well posed.",
+      takesJa: "線形偏微分方程式とその条件、問題がもつすべての連続変数にわたる格子、そして問題が初期値問題ではなく境界値問題として提示されている場合には、得られる行列を適切に定める境界の扱い。",
+      returns: "One matrix and one right-hand side over all the grid unknowns together, with the condition number that the cost of solving it will be measured against, and the discretization error that fixes how fine the grid had to be.",
+      returnsJa: "すべての格子上の未知数をまとめた 1 つの行列と 1 つの右辺。求解の計算量が基準とする条件数と、格子をどこまで細かくすべきかを決める離散化誤差を伴います。",
+    },
+    whyALayer: "This is a different act from discretizing space and then discretizing time, and the clearest case is the one where that composition is not merely a different reading but unavailable. Novikau, Dodin and Startsev have no time axis to discretize at all: their problem is posed at a fixed drive frequency as a boundary-value problem, so what they grid is space and velocity, the matrix that comes out is the answer rather than a propagator, and there is no time-discretization step for a composition to pass through. Linden, Montanaro and Shao point the same way from the other side, though less decisively: their forward-time centre-space scheme produces one block system over every timestep at once, and its condition number is a property of that whole system rather than of either stage. What competes here is which continuous variables get replaced together, and the choice is forced by how the problem was posed rather than by a preference — which is why a reader arriving with a boundary-value problem cannot use the method of lines at all.",
+    whyALayerJa: "これは空間を離散化してから時間を離散化する行為とは別のものであり、そう合成として扱えば、いずれの文献ももたない二段構造をそれらに帰することになります。Linden・Montanaro・Shao の前進時間・中心空間の格子は、すべての時間ステップにわたるブロック系を一度に生成し、その条件数はどちらかの段階ではなく系全体の性質です。Novikau・Dodin・Startsev には離散化すべき時間軸がそもそもありません。彼らの問題は固定した駆動周波数のもとで提示されるため、格子を張るのは空間と速度であり、得られる行列は伝播子ではなく答えそのものです。ここで競うのはどの連続変数をまとめて置き換えるかであり、その選択は好みではなく問題の提示のされ方によって強制されます。境界値問題を携えて到着した読み手が線の方法をそもそも使えないのは、そのためです。",
+  },
+  {
+    kind: "method",
+    id: "ftcs-discretization",
+    label: "Forward-time, centre-space (FTCS)",
+    labelJa: "前進時間・中心空間（FTCS）",
+    summary: "Take the forward difference in time and the three-point central difference in space, then stack the resulting one-step relations for every timestep into a single block lower-bidiagonal system whose unknowns are the grid values at all recorded times together.",
+    summaryJa: "時間について前進差分、空間について 3 点の中心差分を取り、各時間ステップについて得られる 1 ステップの関係式を積み上げて、記録されるすべての時刻における格子上の値をまとめて未知数とする単一のブロック下二重対角系にします。",
+    realizes: "full-discretization",
+    conditions: "Stability requires the step sizes to satisfy $\\Delta t \\le \\Delta x^2/(2d\\alpha)$, which is exactly the condition under which Linden, Montanaro and Shao's one-step operator is stochastic — and the whole error argument runs through that stochasticity, because it is what stops earlier errors being amplified as the march proceeds. Under that choice the one-step operator is precisely a simple random walk on the grid, which is the observation their fastest classical and quantum algorithms are built on. The bound also assumes the solution's fourth spatial derivatives are bounded.",
+    conditionsJa: "安定性のために刻み幅は $\\Delta t \\le \\Delta x^2/(2d\\alpha)$ を満たす必要があり、これはまさに Linden・Montanaro・Shao の 1 ステップ作用素が確率行列となる条件です。誤差の議論全体がその確率性を経由します。行進が進むにつれて前段の誤差が増幅されるのを止めているのが、それだからです。この選択のもとで 1 ステップ作用素はちょうど格子上の単純ランダムウォークになり、彼らの最速の古典アルゴリズムと量子アルゴリズムはいずれもこの観察の上に建てられています。評価はさらに、解の 4 階空間微分が有界であることを仮定します。",
+    cost: "Linden, Montanaro and Shao's Theorem 1 bounds the discretization error outright: for $\\Delta t \\le \\Delta x^2/(2d\\alpha)$, $\\lVert \\tilde{u} - u\\rVert_\\infty \\le \\frac{\\zeta\\alpha d T}{L^d}\\left(\\frac{\\alpha d \\Delta t}{2} + \\frac{\\Delta x^2}{12}\\right)$. Their Corollary 2 inverts it into the grid a target accuracy demands — $\\Delta t = 3\\epsilon/(2d^2\\alpha^2\\zeta T)$ and $\\Delta x = \\sqrt{3\\epsilon/(d\\alpha\\zeta T)}$, giving $m = 2T^2d^2\\alpha^2\\zeta/(3\\epsilon)$ timesteps and $n = L\\sqrt{d\\alpha\\zeta T/(3\\epsilon)}$ points per dimension. Their Theorem 3 gives the condition number of the assembled system as $\\Theta(m)$, with $\\lVert A\\rVert = \\Theta(1)$ and $\\lVert A^{-1}\\rVert = \\Theta(m)$.",
+    costJa: "Linden・Montanaro・Shao の定理 1 は離散化誤差を直接に評価します。$\\Delta t \\le \\Delta x^2/(2d\\alpha)$ のもとで $\\lVert \\tilde{u} - u\\rVert_\\infty \\le \\frac{\\zeta\\alpha d T}{L^d}\\left(\\frac{\\alpha d \\Delta t}{2} + \\frac{\\Delta x^2}{12}\\right)$ です。系 2 はこれを逆に解き、目標精度が要求する格子を与えます。$\\Delta t = 3\\epsilon/(2d^2\\alpha^2\\zeta T)$、$\\Delta x = \\sqrt{3\\epsilon/(d\\alpha\\zeta T)}$ であり、時間ステップ数は $m = 2T^2d^2\\alpha^2\\zeta/(3\\epsilon)$、各次元あたりの点数は $n = L\\sqrt{d\\alpha\\zeta T/(3\\epsilon)}$ になります。定理 3 は組み上がった系の条件数を $\\Theta(m)$ と与え、$\\lVert A\\rVert = \\Theta(1)$、$\\lVert A^{-1}\\rVert = \\Theta(m)$ としています。",
+    steps: [],
+    atomic: true,
+    entries: ["heat-equation-solver"],
+    citations: [
+      { title: "Quantum vs. classical algorithms for solving the heat equation", authors: "Noah Linden, Ashley Montanaro, Changpeng Shao", year: "2020", url: "https://arxiv.org/abs/2004.06516" },
+    ],
+  },
+  {
+    kind: "method",
+    id: "phase-space-discretization",
+    label: "Phase-space grid for a boundary-value problem",
+    labelJa: "境界値問題のための位相空間格子",
+    summary: "Grid the position and velocity coordinates together and take central differences in both, with the derivatives at the edges obtained from Lagrange interpolating polynomials. Because the problem is posed at a fixed drive frequency rather than as an evolution, what results is directly the matrix equation to be solved — there is no time axis left to march along.",
+    summaryJa: "位置と速度の座標をまとめて格子化し、その双方で中心差分を取ります。端点での微分は Lagrange 補間多項式から得ます。問題が時間発展としてではなく固定した駆動周波数のもとで提示されているため、得られるのは解くべき行列方程式そのものです。行進すべき時間軸はもはや残っていません。",
+    realizes: "full-discretization",
+    conditions: "Outgoing, non-reflecting boundary conditions are imposed at both spatial edges to avoid artifacts from reflected waves, and an artificial diffusivity $\\eta$ is imposed in velocity space so that the grid resolution can be kept low. Novikau, Dodin and Startsev are explicit that the diffusivity is not free: it complicates the block-encoding and increases the condition number of the resulting matrix. Their scheme is validated against an analytical solution for homogeneous plasma only, and they describe the system as a minimal problem chosen as a testbed rather than a practical application.",
+    conditionsJa: "反射波による人工的な効果を避けるため、両方の空間端で外向き（無反射）境界条件を課し、格子の解像度を低く保てるように速度空間で人工的な拡散 $\\eta$ を導入します。Novikau・Dodin・Startsev は、この拡散が無償ではないことを明言しています。ブロックエンコーディングを複雑にし、得られる行列の条件数を増加させます。この格子は一様プラズマに対する解析解との比較でのみ検証されており、著者らはこの系を実用的な応用ではなく試験台として選んだ最小の問題だと述べています。",
+    cost: "The paper states the price of the diffusivity as measured condition numbers at one resolution rather than as a general bound: at $n_x = 7$, $n_v = 5$ and $\\omega = 1.2$, the matrix has $\\kappa_A = 8.844 \\times 10^4$ with $\\eta = 0.002$ against $\\kappa_A = 3.489 \\times 10^4$ without it. No bound on the discretization error itself is stated, and none is recorded here.",
+    costJa: "この論文は拡散の代価を、一般的な上界としてではなく、ある解像度で測定した条件数として述べています。$n_x = 7$、$n_v = 5$、$\\omega = 1.2$ において、$\\eta = 0.002$ のとき行列は $\\kappa_A = 8.844 \\times 10^4$、拡散を入れないときは $\\kappa_A = 3.489 \\times 10^4$ です。離散化誤差そのものについての評価は述べられておらず、ここにも記録していません。",
+    steps: [],
+    atomic: true,
+    entries: ["linear-kinetic-plasma-encoding"],
+    citations: [
+      { title: "Encoding of linear kinetic plasma problems in quantum circuits via data compression", authors: "Ivan Novikau, Ilya Y. Dodin, Edward A. Startsev", year: "2024", url: "https://arxiv.org/abs/2403.11989" },
+    ],
+  },
+  {
+    kind: "capability",
     id: "nonlinear-linear-embedding",
     label: "Embed a nonlinear system into a linear one",
     labelJa: "非線形系を線形系に埋め込む",
@@ -9039,6 +9176,87 @@ export const LAYER_GRAPH: LayerGraph = {
     entries: ["vqe-measurement-grouping"],
     citations: [
       { title: "Measurement Optimization in the Variational Quantum Eigensolver Using a Minimum Clique Cover", authors: "Vladyslav Verteletskyi, Tzu-Ching Yen, Artur F. Izmaylov", year: "2019", url: "https://arxiv.org/abs/1907.03358" },
+    ],
+  },
+  // ── Session 15 unit 4, ai-ops#68: the device-characterisation region ────────
+  // **Built against a recommendation this lane made and the owner overruled.**
+  // Asked whether benchmarking protocols belong on the map, the recommendation was
+  // no — they are characterisation protocols, they do not take a problem and return
+  // an answer, and W21's precedent was to refuse a node on relevance rather than
+  // stretch a contract. He answered "option 2": put them on the map as a
+  // hardware-side region, so one parity number covers both surfaces. The trade he
+  // was choosing against is the one that made the question worth asking — refusing
+  // them keeps `/repository` and the map on different denominators, which is what
+  // ai-ops#57 asked us to close.
+  //
+  // **His ruling puts them on the map; it does not waive the map's own bar.** The
+  // two records were checked against the admission test on their papers and pass,
+  // which is why this is a slot with two methods rather than a topic tag.
+  //
+  // The entry state is `physical-qubits`, which already exists — so this region is
+  // NOT a new front door invented for it. It consumes the same floor
+  // `error-correction` consumes, which is the honest reading: both are about the
+  // machine underneath, and neither is about the computation running on it.
+  {
+    kind: "capability",
+    id: "device-characterization",
+    label: "Measure what the machine can actually do",
+    labelJa: "機械に実際に何ができるかを測る",
+    summary: "Run a protocol whose answer is already known, on the hardware, and read the machine's own performance off how far the result falls short. Nothing here computes anything a user wanted — the point is that the answer is known in advance, because that is what makes the shortfall a measurement.",
+    summaryJa: "答えがあらかじめ分かっているプロトコルをハードウェア上で実行し、結果がどれだけ及ばないかから機械自身の性能を読み取ります。ここでは利用者が求めた計算は何も行われません。答えが事前に分かっていることこそが要点であり、それゆえに「及ばなさ」が測定になります。",
+    contract: {
+      from: "physical-qubits",
+      to: "device-figure",
+      takes: "A programmable device — its qubits, its native gate set, its connectivity and its measurement — plus how many circuits and how many shots you are willing to spend, and the confidence level the answer has to be established at.",
+      takesJa: "プログラム可能なデバイス。すなわち量子ビット、ネイティブゲート集合、接続性、測定機構。あわせて、費やしてよい回路数とショット数、そして答えを確立すべき信頼水準。",
+      returns: "A number characterising the hardware, the protocol that produced it, and the statistical confidence it holds at — never an answer to a computational problem, because no computational problem was posed.",
+      returnsJa: "ハードウェアを特徴づける数値と、それを生んだプロトコル、そしてそれが成り立つ統計的信頼度。計算問題への答えではありません。そもそも計算問題が課されていないからです。",
+    },
+    entries: [],
+    whyALayer: "What a reader is choosing between is **what the number is about**: one method isolates a gate set from the rest of the machine, the other refuses to. Randomized benchmarking reports the average error rate of a gate set, from the decay of fidelity over random Clifford sequences, deliberately independent of everything around it. Quantum volume reports the largest random square circuit the whole machine can actually execute — gates, connectivity, crosstalk and compiler together — and Cross et al. introduce it precisely because they hold that the first kind of number does not predict the second: \"performance of isolated gates may not predict the behavior of the system. Methods such as randomized benchmarking, state and process tomography, and gateset tomography are valued for measuring the performance of operations on a few qubits, yet they fail to account for errors arising from interactions with spectator qubits.\" So the two do not merely differ in what they measure — one of them is an argument about the other's category, which is a stronger condition than a layer needs and the reason this one is not a topic tag.",
+    whyALayerJa: "読み手が選んでいるのは、**その数値が何についての数値か**です。一方の手法はゲート集合を機械の他の部分から切り離し、他方はそれを拒みます。ランダム化ベンチマークは、ランダムな Clifford 列に対する忠実度の減衰から、ゲート集合の平均誤り率を報告します。これは周囲のすべてから意図的に独立です。量子ボリュームは、機械全体、すなわちゲート・接続性・クロストーク・コンパイラを合わせたものが実際に実行できる最大のランダム正方回路を報告します。Cross らがこれを導入したのは、前者の種類の数値が後者を予測しないと考えるからです。「孤立したゲートの性能は、系全体の振る舞いを予測しないことがある。ランダム化ベンチマーク、状態・プロセストモグラフィ、ゲートセットトモグラフィといった手法は、少数の量子ビット上での操作の性能を測るものとして評価されているが、傍観者量子ビットとの相互作用に起因する誤りを説明できない」。つまり両者は測る対象が違うだけではありません。一方が他方の範疇についての主張になっています。これは層に必要な条件より強く、この層が単なる話題のタグではない理由です。",
+  },
+  {
+    kind: "method",
+    id: "quantum-volume-protocol",
+    label: "Quantum volume from random square circuits",
+    labelJa: "ランダム正方回路による量子ボリューム",
+    shortLabel: "Quantum volume",
+    shortLabelJa: "量子ボリューム",
+    summary: "Run random circuits that are as deep as they are wide, and ask how often the machine returns one of the outputs that should be more likely than the median. Widen and deepen together until it can no longer beat that bar; the last size it managed is the number.",
+    summaryJa: "幅と深さの等しいランダム回路を実行し、中央値より起こりやすいはずの出力を機械がどれだけの頻度で返すかを問います。幅と深さを同時に増やしていき、その基準を超えられなくなったところで止めます。最後に達成できた大きさが、その数値です。",
+    realizes: "device-characterization",
+    conditions: "The circuits are specified exactly: *\"Each layer is specified by choosing a uniformly random permutation of the m qubit indices and sampling each U^(t)_{a,b}, acting on qubits a and b, from the Haar measure on SU(4)\"*. The bar is a fixed fraction rather than a fitted curve — *\"The heavy output generation problem is to produce a set of output strings such that more than two-thirds are heavy\"* — and the number is where that bar is last cleared: *\"We define the achievable depth d(m) to be the largest d such that we are confident h_d > 2/3\"*, giving $\\log_2 V_Q = \\arg\\max_m \\min(m, d(m))$. What it is claimed to cover is broad and stated: *\"This metric takes into account all relevant hardware parameters. This includes the performance parameters (coherence, calibration errors, crosstalk, spectator errors, gate fidelity, measurement fidelity, initialization fidelity) as well as the design parameters such as connectivity and gate set.\"*",
+    conditionsJa: "回路は厳密に定められています。「各層は、m 個の量子ビット添字の一様ランダムな置換を選び、量子ビット a と b に作用する各 U^(t)_{a,b} を SU(4) 上の Haar 測度から標本抽出することで指定される」。基準は当てはめた曲線ではなく固定された割合です。「重い出力生成問題とは、出力文字列の集合であって、その 3 分の 2 を超えるものが重いようなものを生成することである」。そして数値は、その基準を最後に満たした点で定まります。「達成可能な深さ d(m) を、h_d > 2/3 であると確信できる最大の d と定義する」。これにより $\\log_2 V_Q = \\arg\\max_m \\min(m, d(m))$ が得られます。何を覆うと主張しているかも広く、明示されています。「この指標は関連するすべてのハードウェア・パラメータを考慮する。これには性能パラメータ（コヒーレンス、較正誤差、クロストーク、傍観者誤差、ゲート忠実度、測定忠実度、初期化忠実度）と、接続性やゲート集合といった設計パラメータが含まれる」。",
+    steps: [],
+    entries: ["quantum-volume-benchmark"],
+    citations: [
+      { title: "Validating quantum computers using randomized model circuits", authors: "Andrew W. Cross, Lev S. Bishop, Sarah Sheldon, Paul D. Nation, Jay M. Gambetta", year: "2018", url: "https://arxiv.org/abs/1811.12926" },
+    ],
+  },
+  {
+    kind: "method",
+    id: "clifford-randomized-benchmarking",
+    label: "Randomized benchmarking over Clifford sequences",
+    labelJa: "Clifford 列によるランダム化ベンチマーク",
+    shortLabel: "RB",
+    shortLabelJa: "RB",
+    summary: "Apply a random sequence of Clifford gates, then the one gate that undoes all of them, and see how often the machine comes back to where it started. Lengthen the sequence and the return probability decays; the decay rate is the average error a single gate costs, and preparation and measurement errors fall out of the fit rather than contaminating it.",
+    summaryJa: "ランダムな Clifford ゲートの列を作用させ、続いてそれらすべてを打ち消す一つのゲートを作用させ、機械がどれだけの頻度で出発点に戻るかを見ます。列を長くすると復帰確率は減衰し、その減衰率が 1 ゲートあたりの平均誤りです。状態準備と測定の誤りは、汚染要因になるのではなく、当てはめの中で分離されます。",
+    realizes: "device-characterization",
+    conditions: "The protocol's shape is stated exactly: *\"Generate a sequence of m + 1 quantum operations with the first m operations chosen uniformly at random from some group G ⊆ U(d) and the final operation chosen so that the net sequence (if realized without errors) is the identity operation\"*, with the Clifford group chosen *\"because each element of the Clifford group can be realized efficiently on a quantum processor\"*. The number that comes out is a per-gate average, read off the decay: $r = 1 - p - (1-p)/d$. **What \"robust\" means here is the paper's own contribution and it is a correction rather than a refinement:** earlier randomized benchmarking could be defeated outright — *\"it is easy to show (via a counter example with gate-dependent errors that consist of the exact inverse of the gate applied) that the decay rate estimated via RB methods can be totally unrelated to the actual error-rate\"* — and this analysis *\"is valid for a realistic noise model admitting time-dependent and gate-dependent errors and also accounts for state preparation and measurement errors\"*, requiring only that the variation across the gate set is not too strong.",
+    conditionsJa: "プロトコルの形は正確に述べられています。「m + 1 個の量子操作の列を生成する。最初の m 個は群 G ⊆ U(d) から一様ランダムに選び、最後の操作は、誤りなく実現されたときに列全体が恒等操作となるように選ぶ」。Clifford 群が選ばれるのは「Clifford 群の各要素は量子プロセッサ上で効率的に実現できる」からです。得られる数値は減衰から読み取る 1 ゲートあたりの平均であり、$r = 1 - p - (1-p)/d$ です。**ここでの「頑健（robust）」が意味するのは本論文自身の貢献であり、それは改良というより訂正です。** 従来のランダム化ベンチマークは完全に破られうるものでした。「（作用させたゲートのちょうど逆になるようなゲート依存誤りによる反例によって）RB 法で推定される減衰率が、実際の誤り率とまったく無関係になりうることは容易に示せる」。本論文の解析は「時間依存およびゲート依存の誤りを許す現実的な雑音モデルに対して有効であり、状態準備と測定の誤りも考慮する」ものであり、要求するのはゲート集合にわたる変動が強すぎないことだけです。",
+    // **The `whyALayer` above quotes Cross et al. naming this method's category,
+    // not this paper.** Their citation for "randomized benchmarking" resolves to
+    // Magesan, Gambetta and Emerson's later 2012 PRA paper, not to this 2010
+    // Letter. Same three authors and the same method family, so the argument
+    // applies — but they are not literally citing this node's source, and saying
+    // they were would be the citation drift ADR-0026 §1 forbids. Recorded here so
+    // the slot's justification can be checked without re-reading both papers.
+    steps: [],
+    entries: ["randomized-benchmarking-protocol"],
+    citations: [
+      { title: "Robust randomized benchmarking of quantum processes", authors: "Easwar Magesan, J. M. Gambetta, Joseph Emerson", year: "2010", url: "https://arxiv.org/abs/1009.3639" },
     ],
   },
   // ── Session 15 unit 3, ai-ops#57: the number-theory region ──────────────────

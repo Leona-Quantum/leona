@@ -11679,7 +11679,15 @@ div.mj-rail-row:hover {
   opacity: 0.82;
 }
 
-.mj-converge-lane-name {
+/* `--key-name` is the legend swatch's sample text. One rule and two selectors,
+   never two rules: the swatch's whole job is to look like what the canvas draws,
+   so the day these two diverge is the day the key starts describing a picture
+   nobody has. It is a separate CLASS so that `.mj-converge-lane-name` means
+   exactly "a painted name on the canvas" and a probe can count it without
+   subtracting a legend — see `map-info-popup.tsx` for the arm that was off by
+   one. */
+.mj-converge-lane-name,
+.mj-converge-key-name {
   fill: var(--text-1);
   font-family: var(--font-ui);
   font-size: 12px;
@@ -11717,7 +11725,8 @@ div.mj-rail-row:hover {
    that selector list: the comment above `.mj-converge-scroll` already states
    the rule for these two surfaces — a change meant for one picture must not
    silently reach the other, even a change that happens to agree with it. */
-.mj-converge-lane--atlas .mj-converge-lane-name {
+.mj-converge-lane--atlas .mj-converge-lane-name,
+.mj-converge-lane--atlas .mj-converge-key-name {
   text-decoration: underline dotted from-font;
   text-underline-offset: 3px;
   text-decoration-thickness: 1px;

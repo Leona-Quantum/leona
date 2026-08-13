@@ -440,6 +440,18 @@ export const DECLARED_SLOT_ENTRIES: Readonly<Record<string, EntryDisposition>> =
     reason:
       "The map's own front door. A reader arrives holding a nonlinear initial-value problem; nothing in the literature produces one, because it is the problem you came with.",
   },
+  "spatial-discretization": {
+    supply: "front-door",
+    intent: "settled",
+    reason:
+      "A reader arrives holding a partial differential equation. Nothing in the literature produces one — it is the problem you came with — so this is a front door in the same sense nonlinear-ode-solve is, and correctly so. What is new is where it leads: it produces a linear ODE system, which the algorithms region already consumes, so this slot is joined to that region by a shared state rather than by containment. That is the first cross-region join on this map built from sourced content rather than found in it.",
+  },
+  "full-discretization": {
+    supply: "front-door",
+    intent: "settled",
+    reason:
+      "The same front door as spatial-discretization and the same reason: a PDE is brought, not produced. It is a separate slot because it is a separate act — Linden, Montanaro and Shao's forward-time centre-space scheme builds one block system over every timestep at once rather than discretising space and then time, and Novikau et al. have no time axis to discretise at all. It joins the algorithms region at linear-system.",
+  },
   "nonlinear-linear-embedding": {
     supply: "root-supplied",
     intent: "settled",
@@ -464,11 +476,17 @@ export const DECLARED_SLOT_ENTRIES: Readonly<Record<string, EntryDisposition>> =
     reason:
       "Takes a routine with a good branch, which is what the subroutine being amplified already returned. Four routes hang it off the hop that produced the flagged routine; it advances nothing on its own.",
   },
+  "device-characterization": {
+    supply: "front-door",
+    intent: "settled",
+    reason:
+      "Takes a programmable device — its qubits, its gate set, its connectivity, its measurement. Nothing produces one, because a machine is not the output of any process this map draws; a reader arrives holding the hardware, the same way `nonlinear-ode-solve`'s reader arrives holding a problem. Owner ruling ai-ops#68 put these protocols on the map so one parity number covers both surfaces; it did not claim they are reached from anywhere, and inventing a producer would have been the dishonest way to make the region look connected.",
+  },
   "error-correction": {
-    supply: "ingredient",
+    supply: "root-supplied",
     intent: "join-wanted",
     reason:
-      "Takes physical qubits, which no process here produces, and `fault-tolerant-compilation` files it as a feed rather than a hop — so the map says error correction is the substrate the pipeline runs on, matching this slot's own whyALayer ('everything above this layer is written in logical qubits and is indifferent to which code sits underneath'). ai-ops#64 asks for the other reading, that it 'happens on states measured on computers' and should come after measurement. Both are defensible and the choice is the owner's; the row stays join-wanted until he rules.",
+      "Takes physical qubits, which no process here produces, and `fault-tolerant-compilation` files it as a feed rather than a hop — so the map says error correction is the substrate the pipeline runs on, matching this slot's own whyALayer ('everything above this layer is written in logical qubits and is indifferent to which code sits underneath'). ai-ops#64 asks for the other reading, that it 'happens on states measured on computers' and should come after measurement. Both are defensible and the choice is the owner's; the row stays join-wanted until he rules. **Reclassified `ingredient` -> `root-supplied` in session 15 without anyone editing this slot**: `device-characterization` is a root capability that also consumes `physical-qubits`, so the state is now entered at a root and every slot naming it re-types. The change is mechanical and it is also an improvement in honesty — the map now has an explicit place where a reader hands over hardware, where before it only had slots quietly assuming one. What it is NOT is an answer to this row's open question, which is about whether error correction belongs before or after measurement. `intent` deliberately stays `join-wanted`.",
   },
   "hidden-period-finding": {
     supply: "front-door",

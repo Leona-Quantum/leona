@@ -924,7 +924,12 @@ test("every capability draws a figure — not just the two that converge", () =>
   // **25 since session 15 unit 3**, which added `hidden-period-finding` — the first
   // genuinely new SUBJECT region on this map rather than another slot inside one of
   // the two spines it already had.
-  assert.equal(capabilities.length, 25, "the graph's slot count changed; update these figures");
+  // **27 since ai-ops#64**: the two PDE discretization slots, each a root nothing
+  // steps into, joined to the rest of the map only by the states they produce.
+  // **28 since session 15 unit 4**, `device-characterization` — and this one arrived
+  // by owner ruling (ai-ops#68) over this lane's own recommendation to keep
+  // characterisation protocols off the map. The tripwire fired a fifth time.
+  assert.equal(capabilities.length, 28, "the graph's slot count changed; update these figures");
 
   for (const focus of capabilities) {
     for (const locale of ["en", "ja"] as const) {
@@ -955,7 +960,7 @@ test("every capability draws a figure — not just the two that converge", () =>
   // one chain every filler walks.
   const byGrain = capabilities.map((focus) => diagramFor(focus.id).grain);
   assert.equal(byGrain.filter((grain) => grain === "states").length, 1);
-  assert.equal(byGrain.filter((grain) => grain === "methods").length, 24);
+  assert.equal(byGrain.filter((grain) => grain === "methods").length, 27);
 });
 
 test("`drawableSlots` is the list of slots that actually draw", () => {
@@ -968,10 +973,11 @@ test("`drawableSlots` is the list of slots that actually draw", () => {
     .filter((focus) => !diagramFor(focus.id).empty)
     .map((focus) => focus.id);
   assert.deepEqual(offered, draws);
-  // 22 since W21, 23 since W21-E, 24 since session 15's `phase-estimation` — the
-  // same new slots the figure test above pins, and the point of asserting the
-  // length beside the deepEqual is that two empty lists are also deep-equal.
-  assert.equal(offered.length, 25);
+  // 22 since W21, 23 since W21-E, 24 since session 15's `phase-estimation`, 27 with
+  // the two PDE slots and 28 with `device-characterization` — the same new slots the
+  // figure test above pins, and the point of asserting the length beside the
+  // deepEqual is that two empty lists are also deep-equal.
+  assert.equal(offered.length, 28);
 
   // And it is still a strict superset of the convergence claim, which is a
   // different and narrower statement — narrower by one since session 119,
@@ -1873,13 +1879,18 @@ test("a line that opens into something says so, and a line that does not is not 
   // Three more in session 15 unit 3, all LEAVES again. A brand-new subject region's
   // methods are undecomposed by construction — that is the honest opening state W21
   // recorded for the variational region and it is still true here. `openable`
-  // unchanged at 30, `leaves` 68 -> 71. That `openable` has now not moved across two
-  // consecutive new regions is worth reading as a fact rather than a coincidence: a
-  // new region adds figures, and it adds nothing to open until somebody breaks one of
-  // its methods apart.
-  assert.equal(openable + leaves + 1, 102, "the twenty-five figures draw 102 lines between them");
+  // unchanged at 30, `leaves` 68 -> 71.
+  // Four more from ai-ops#64's two PDE slots, two lanes each and all four atomic:
+  // `openable` unchanged at 30, `leaves` 71 -> 75.
+  // Two more in unit 4, both leaves, and `openable` STILL 30. Across four new regions
+  // in a row — number theory, the two PDE roots, and device characterisation, landed
+  // by two lanes that never coordinated — that number has not moved once. That is a
+  // fact about what a region is on this map rather than a coincidence: a new subject
+  // area arrives as slots and undecomposed methods, and contributes nothing to open
+  // until somebody breaks one apart. `leaves` 75 -> 77.
+  assert.equal(openable + leaves + 1, 108, "the twenty-eight figures draw 108 lines between them");
   assert.equal(openable, 30, "30 of them open into something the canvas draws");
-  assert.equal(leaves, 71, "71 are leaves — the canvas records nothing finer for them");
+  assert.equal(leaves, 77, "77 are leaves — the canvas records nothing finer for them");
 
 });
 

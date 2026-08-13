@@ -734,6 +734,46 @@ export interface ShelfSection {
   readonly abstained: Readonly<Record<AbstentionReason, number>>;
 }
 
+/**
+ * The one reason a whole section abstains for, or `null` if it has no such
+ * reason.
+ *
+ * **What this is for.** The shelf printed each record's reason on its own row,
+ * which is right where the reasons differ and wrong where they do not: the Gates
+ * section is 27 records that all abstain as `primitive-by-ruling`, so it printed
+ * the same forty-word sentence twenty-seven times. `EntryStateLinks` already
+ * made this argument one level up — it shows nothing on the 73 unjoined record
+ * pages because *"one sentence about the map repeated until it stopped being
+ * read"* is not a statement. The shelf is where that sentence gets published
+ * once, and this is the test for when once is enough.
+ *
+ * Three conditions, and each one rules out a way the section-level sentence
+ * could be false of a row it sits above:
+ *
+ * - **More than one row.** Hoisting a single row's reason above that single row
+ *   moves words without removing any.
+ * - **Nothing joined.** *"None of these are objects the map names"* has to hold
+ *   for every row, and one joined row cancels it. Read from `joined`, which
+ *   `buildShelf` counted from these same entries.
+ * - **One reason, on every row.** An `unclassified` row is not an abstention and
+ *   must not be spoken for — the checker refuses one into the corpus, and if one
+ *   ever appears the section falls back to per-row reasons rather than
+ *   attributing a reason nothing gave it.
+ *
+ * So a section that gains a single join, or a second reason, returns to per-row
+ * reasons with nothing edited. Today exactly one section qualifies.
+ */
+export function soleAbstentionReason(section: ShelfSection): AbstentionReason | null {
+  if (section.entries.length < 2 || section.joined > 0) return null;
+  let only: AbstentionReason | null = null;
+  for (const entry of section.entries) {
+    if (entry.join.kind !== "abstained") return null;
+    if (only === null) only = entry.join.reason;
+    else if (only !== entry.join.reason) return null;
+  }
+  return only;
+}
+
 export interface Shelf {
   readonly sections: readonly ShelfSection[];
   /**
