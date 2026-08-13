@@ -222,9 +222,9 @@ citation is the home.
 - **A reference list is never inherited.** Every reference that enters the register or a citation is
   opened and confirmed to be the paper it is labelled as. This is not a general caution; it is a
   measurement. Reading the 13 Classiq notebooks of the #42 batch first-hand at pinned commit
-  `ac61dccb` (lane 4, 2026-08-13) found that **five publish no references cell at all**, two of those
-  five print a citation marker against an anchor that does not exist, `kidney_exchange` cites only the
-  CVaR paper — which is not a QAOA reference — and **3 of 13 carry a broken or wrong reference**:
+  `ac61dccb` (lane 4, 2026-08-13) found that **six publish no references cell at all**, **three**
+  print a citation marker against an anchor that does not exist, **six cite the CVaR paper** — which
+  is not a QAOA reference — and **3 of 13 carry a broken or wrong reference**:
   `minimum_dominating_set`'s `[1]` is labelled "Dominating Set (Wikipedia)" and points at
   `wiki/Partition_problem`; `integer_linear_programming` cites `#ILP` against an anchor spelled
   `id='MVC'`, copy-paste residue from the neighbouring notebook; `electric_grid_optimization` cites
@@ -233,6 +233,19 @@ citation is the home.
   **This sharpens #42 rather than contradicting it.** "Reputable source (like classiq library)" is a
   claim about the *implementation*: it runs, it is maintained, it is used. None of that is evidence
   about a hyperlink somebody pasted into a markdown cell.
+
+  **Those figures are the script-measured ones, and an earlier hand tally of the same batch was
+  wrong** — it said five, two and eight where a script over the pinned notebooks says six, three and
+  six. The hand tally was made while reading, which is exactly the condition under which this ADR
+  says not to trust a count. Recorded rather than silently replaced, because the correction is the
+  clause working on itself.
+
+  **And a citation count concludes the opposite of the truth on this batch.** Six notebooks cite the
+  CVaR paper (arXiv:1907.04769) and **none uses a CVaR objective**: only two expose the parameter and
+  both pin it to `alpha_cvar = 1`, the degenerate value at which CVaR *is* the plain expectation
+  value. Reading only the bibliography would have recorded six CVaR implementations that do not
+  exist. Note also that grepping for `alpha` hits eight of the thirteen and means CVaR in none of
+  them — it is matplotlib's plot transparency. A token that looks like evidence.
 - **An encyclopedia article is not a source.** ai-ops#12 settled that a directory entry is not a
   source; a Wikipedia link is the same shape and does not belong in `literature[]`. A demonstration
   whose only reference is one has **no** per-problem primary source, which is a different and more
