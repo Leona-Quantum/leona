@@ -59,6 +59,8 @@ import {
 } from "../lib/repository/converge-layout";
 import { convergeNotes } from "../lib/repository/converge-notes";
 import { LOOP_CLOSURE_COPY } from "../lib/repository/loop-closure-copy";
+import { THEORY_MARK_COPY } from "../lib/repository/theory-mark-copy";
+import { THEORY_MARKS, type TheorySpan } from "../lib/repository/theory-marks";
 import { IDENTITY, type Viewport } from "../lib/repository/canvas-viewport";
 import { absenceOf, cardFor, exampleRunNote } from "../lib/repository/card-content";
 import { PAPER_REGISTER } from "../lib/repository/paper-register";
@@ -164,10 +166,25 @@ const COPY = {
     implementationsNone:
       "Nobody has written one up yet. That is a gap in this record, not a statement that the method has never been run — the paper register already records, per paper, which sources report numerics or a hardware run.",
     contestedHeading: "Where the claim is contested",
+    // The owner's fourth section, and until now the one this page did not draw
+    // at all. See `RequiresSection` for what was missing and for how much.
+    requiresHeading: "Requires",
+    requiresLead:
+      "These do not move the route along. The method needs each of them alongside its own work, and the cost of getting them is part of what the method costs.",
+    requiresNone:
+      "Every step this method names moves its route along, so there is nothing it needs alongside them.",
     needsHeading: "What it needs",
     needsNone: "Nothing below this — it bottoms out here.",
     needsUndecomposed:
       "Nobody has taken this apart yet. That is a gap in this graph, not a claim that the method has no parts.",
+    // **A fourth thing this heading can mean, and it needed its own sentence.**
+    // The list above draws the steps that move the route along; a method every
+    // one of whose steps is an ingredient has none, and it is neither atomic nor
+    // undecomposed. Measured 2026-08-13: 17 of the 27 methods with an ingredient
+    // are in exactly this position, so the wrong note here would have been the
+    // common case rather than an edge one.
+    needsAllRequired:
+      "Every step this method names is listed under Requires above. It walks its own span in one hop and calls out to the rest — that is a fact about the recorded route, not a claim that the span is simple.",
     needsWays: (n: number) =>
       n === 0 ? "no method recorded" : n === 1 ? "1 method" : `${n} methods`,
     // The badge says the multiplicity; the closure says what one turn costs.
@@ -318,10 +335,17 @@ const COPY = {
     implementationsNone:
       "まだ誰も書き起こしていません。これはこのレコードの欠落であって、この手法が一度も実行されたことがないという主張ではありません。どの文献が数値計算や実機実行を報告しているかは、論文レジスタが論文ごとにすでに記録しています。",
     contestedHeading: "主張が争われている点",
+    requiresHeading: "必要な材料",
+    requiresLead:
+      "これらは経路を前へ進めるものではありません。この手法は自身の作業と並行してこれらを必要とし、それらを用意する費用も、この手法の費用の一部です。",
+    requiresNone:
+      "この手法が挙げる手順はすべて経路を前へ進めるものです。並行して必要とするものはありません。",
     needsHeading: "必要とするもの",
     needsNone: "これより下はありません。ここで行き止まりです。",
     needsUndecomposed:
       "まだ分解されていません。これはこのグラフ側の欠落であって、この手法に部品がないという主張ではありません。",
+    needsAllRequired:
+      "この手法が挙げる手順は、すべて上の「必要な材料」に挙げられています。自身の区間を 1 ホップで歩き、残りは外部に呼び出します。これは記録された経路についての事実であって、その区間が単純だという主張ではありません。",
     needsWays: (n: number) => (n === 0 ? "手法の記録なし" : `手法${n}件`),
     repeatsBadge: LOOP_CLOSURE_COPY.ja.badge,
     repeatsCoherent: LOOP_CLOSURE_COPY.ja.closure.coherent,
@@ -950,6 +974,158 @@ function LoopComparison({
   );
 }
 
+/**
+ * The mathematics of one ingredient, with the two clauses a reader must not
+ * miss marked where they occur.
+ *
+ * The card draws this too, and the labels are shared (`theory-mark-copy.ts`);
+ * the markup is not, because the two surfaces carry different class prefixes
+ * and the card's version sits inside a disclosure this page does not have. What
+ * had to be one copy is the wording — including the screen-reader prefix, where
+ * a divergence between surfaces would be inaudible rather than visible.
+ */
+function IngredientTheory({
+  spans,
+  locale,
+}: {
+  spans: readonly TheorySpan[];
+  locale: PublicLocale;
+}) {
+  const labels = THEORY_MARK_COPY[locale === "ja" ? "ja" : "en"];
+  const marked = THEORY_MARKS.filter((mark) => spans.some((span) => span.mark === mark));
+  return (
+    <>
+      <p className="mj-layers-requires-math">
+        {spans.map((span, index) =>
+          span.mark === null ? (
+            <span key={index}>
+              <MathText source={span.text} />
+            </span>
+          ) : (
+            <span
+              key={index}
+              className={`mj-layers-mark mj-layers-mark--${span.mark}`}
+              data-mark={span.mark}
+            >
+              <span className="sr-only">{labels[span.mark]}: </span>
+              <MathText source={span.text} />
+            </span>
+          ),
+        )}
+      </p>
+      {marked.length > 0 ? (
+        <p className="mj-layers-mark-key">
+          {marked.map((mark) => (
+            <span key={mark} className={`mj-layers-mark mj-layers-mark--${mark}`}>
+              {labels[mark]}
+            </span>
+          ))}
+        </p>
+      ) : null}
+    </>
+  );
+}
+
+/**
+ * *Requires* on the method's own page — the section the #16 ruling created and
+ * only one of the two renderers ever built.
+ *
+ * ## What was missing, and how much of it
+ *
+ * A method is drawn by two renderers: the card a reader gets on the map, and
+ * this page. #16 moved ingredients off the canvas and into the card's *Requires*
+ * section — pages and links, not pixels — and the card grew one. This page did
+ * not, so a visitor who arrived here directly got neither the drawing (removed)
+ * nor the replacement (never built).
+ *
+ * Measured against the graph on 2026-08-13, before this section existed:
+ *
+ * - **27 of 94 methods have at least one ingredient; there are 36 in total.**
+ * - The page did list them — inside *What it needs*, mixed in with the steps
+ *   that move the route along and indistinguishable from them. **On 17 of the
+ *   27, every step is an ingredient**, so that list was entirely ingredients
+ *   and read as the route's spine.
+ * - **10 ingredients carry the one sentence of mathematics that says why they
+ *   are expensive here, and this page rendered none of them.** They are on five
+ *   methods — `hhl-qpe-inversion` (3), `chebyshev-lcu-inversion` (3),
+ *   `qsvt-matrix-inversion` (2), `discrete-adiabatic-inversion` (1),
+ *   `eigenstate-filtering-inversion` (1) — and `CardIngredient.theory`'s own doc
+ *   comment predicted exactly this: a note "written about an ingredient
+ *   rendered on no surface at all". It was rendered on one. Not this one.
+ *
+ * ## Read through `cardFor`, not off the node
+ *
+ * The section is composed by the same function the map card is, for the reason
+ * `EntryNodeContract` below already gives and `W23-record-join.md` §4 states:
+ * one subject, one source per field. The partition into chain and ingredients
+ * is `routeOf`'s, reached here through `card.ingredients` — so a step that moves
+ * from hop to feed moves on both surfaces at once, and neither renderer can
+ * hold an opinion about which list a step belongs in.
+ */
+function RequiresSection({
+  card,
+  node,
+  locale,
+  copy,
+}: {
+  card: ReturnType<typeof cardFor>;
+  node: LayerMethod;
+  locale: PublicLocale;
+  copy: LayersCopy;
+}) {
+  const ingredients = card !== null && card.kind === "method" && card.ingredients.held
+    ? card.ingredients.value
+    : [];
+  return (
+    <section className="mj-layers-section" aria-labelledby={`requires-${node.id}`}>
+      <h2 id={`requires-${node.id}`}>{copy.requiresHeading}</h2>
+      {ingredients.length === 0 ? (
+        <EmptyNote>{copy.requiresNone}</EmptyNote>
+      ) : (
+        <>
+          <p>{copy.requiresLead}</p>
+          <ul className="mj-layers-list mj-layers-requires">
+            {ingredients.map(({ link, repetition, theory }) => (
+              <li key={link.id}>
+                {/* The space before the badge is deliberate, and the card's own
+                    comment records why: an `inline-block` badge is not
+                    guaranteed to be announced apart from the name before it. */}
+                <a href={href(link.id)}>{link.label}</a>{" "}
+                {repetition ? (
+                  <span
+                    className={`mj-layers-repeat mj-layers-repeat--${repetition.closure}`}
+                    data-closure={repetition.closure}
+                  >
+                    {copy.repeatsBadge(repetition.count)}
+                  </span>
+                ) : null}
+                {link.summary ? (
+                  <p>
+                    <MathText source={link.summary} />
+                  </p>
+                ) : null}
+                {repetition ? (
+                  <p className="mj-layers-repeat-note">
+                    {repetition.closure === "measured"
+                      ? copy.repeatsMeasured
+                      : copy.repeatsCoherent}{" "}
+                    <MathText source={repetition.note} />
+                  </p>
+                ) : null}
+                {/* Drawn only when a source states it. No gap note beside the
+                    ones without: printing "no source states the mathematics
+                    here" against all 36 would bury the 10 that have one — the
+                    card made the same call for the same reason. */}
+                {theory.held ? <IngredientTheory spans={theory.value} locale={locale} /> : null}
+              </li>
+            ))}
+          </ul>
+        </>
+      )}
+    </section>
+  );
+}
+
 /** One method page. */
 function MethodView({
   graph,
@@ -973,6 +1149,20 @@ function MethodView({
   const skipped = (node.bypasses ?? [])
     .map((id) => layerNode(graph, id))
     .filter((target): target is LayerNode => target !== null);
+  // One composition, read by two sections: *Requires* draws the ingredients and
+  // *What it needs* draws the steps that are not ingredients. Reading the
+  // partition twice — or reading it here and recomputing it there — is how the
+  // two lists would come to disagree about one step.
+  const card = cardFor(
+    { graph, vocabulary: STATE_VOCABULARY, corpus, locale, register: PAPER_REGISTER },
+    node.id,
+  );
+  const ingredientIds = new Set(
+    card !== null && card.kind === "method" && card.ingredients.held
+      ? card.ingredients.value.map((ingredient) => ingredient.link.id)
+      : [],
+  );
+  const chainSteps = node.steps.filter((stepId) => !ingredientIds.has(stepId));
 
   return (
     <>
@@ -998,6 +1188,19 @@ function MethodView({
           <EmptyNote>{copy.conditionsNone}</EmptyNote>
         )}
       </section>
+
+      {/* **Before Example, because the owner's order puts Requires before it**
+          — his seven were Input, Theory, Output, Requires, Example,
+          Performance, Implementations. The section below already follows that
+          order for Example-before-Performance; this is the fourth of the seven,
+          and until now this page drew six of them.
+
+          Methods only, for the reason `example` and `implementations` are: a
+          capability is a slot rather than a procedure, so it has no route and
+          therefore nothing alongside one. */}
+      {isMethod(node) ? (
+        <RequiresSection card={card} node={node} locale={locale} copy={copy} />
+      ) : null}
 
       {/* **Before Cost, because the owner's order puts Example before
           Performance** — his seven were Input, Theory, Output, Requires,
@@ -1154,9 +1357,18 @@ function MethodView({
 
       <section className="mj-layers-section" aria-labelledby={`needs-${node.id}`}>
         <h2 id={`needs-${node.id}`}>{copy.needsHeading}</h2>
-        {outlook === "decomposed" ? (
+        {/* **The steps that move the route along, and only those.** The
+            ingredients are drawn under *Requires* above, and listing them in
+            both places would put one step in two lists that answer different
+            questions. The third branch is the case that partition creates: a
+            method all of whose steps are ingredients has an empty chain here
+            and is neither atomic nor undecomposed — 17 of the 27, so the note
+            for it is the common case rather than an edge one. */}
+        {outlook === "decomposed" && chainSteps.length === 0 ? (
+          <EmptyNote>{copy.needsAllRequired}</EmptyNote>
+        ) : outlook === "decomposed" ? (
           <ol className="mj-layers-steps">
-            {node.steps.map((stepId) => {
+            {chainSteps.map((stepId) => {
               const step = layerNode(graph, stepId);
               if (!step) return null;
               // The count is the branching factor, and printing it here is what
