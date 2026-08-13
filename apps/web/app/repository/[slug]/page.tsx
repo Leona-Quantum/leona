@@ -12,9 +12,10 @@ import {
 import { RepositoryEstimatePanel, hasVisibleEstimate } from "../../../components/repository-estimate";
 import { RepositoryProfilePanel, hasVisibleProfile } from "../../../components/repository-profile";
 import { RepositoryInterfacePanel } from "../../../components/repository-interface";
-import { EntryLayerLinks } from "../../../components/repository-layers";
+import { EntryLayerLinks, EntryStateLinks } from "../../../components/repository-layers";
 import { LAYER_GRAPH } from "../../../lib/repository/layer-graph";
 import { layerCorpusEntry } from "../../../lib/repository/layers";
+import { STATE_VOCABULARY } from "../../../lib/repository/state-vocabulary";
 import { deriveInterface, neighboursOf, type EntryInterface } from "../../../lib/repository/interface";
 import { resolveEntryPort, type BrowseSearchParams } from "../../../lib/repository/browse-params";
 import { RepositoryEntryView } from "./repository-entry-view";
@@ -180,12 +181,32 @@ export default async function RepositoryEntryPage({
           // strip is absent rather than
           // empty, and the honest count of what the graph does cover is printed
           // on /repository/layers instead.
-          <EntryLayerLinks
-            graph={LAYER_GRAPH}
-            slug={entry.slug}
-            locale={locale}
-            corpus={[layerCorpusEntry(entry)]}
-          />
+          <>
+            <EntryLayerLinks
+              graph={LAYER_GRAPH}
+              slug={entry.slug}
+              locale={locale}
+              corpus={[layerCorpusEntry(entry)]}
+            />
+            {/* The other half of the join, and a different claim from the strip
+                above it. `EntryLayerLinks` answers "which map nodes name this
+                record" — the `entries` anchor, which `map-eligibility.ts`
+                restricts to algorithm records. This answers "the map names an
+                object this record is an instance of, and here is where it uses
+                one". A record can honestly have either, both, or neither.
+
+                Returns null unless the record is joined, which is 28 of the 101
+                object records: the other 73 abstain, and a note saying so on
+                each of them would be one sentence about the map repeated until
+                it stopped being read. The count and the reasons are published
+                once, on the shelf. */}
+            <EntryStateLinks
+              graph={LAYER_GRAPH}
+              vocabulary={STATE_VOCABULARY}
+              entry={layerCorpusEntry(entry)}
+              locale={locale}
+            />
+          </>
         }
       />
     </PublicSite>

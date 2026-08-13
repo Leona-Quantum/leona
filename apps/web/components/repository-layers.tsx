@@ -69,6 +69,12 @@ import { indexPapers, paperIdFromUrl, paperSlug } from "../lib/repository/papers
 import { SOURCE_COVERAGE_AXES } from "../lib/repository/types";
 import { STATE_VOCABULARY } from "../lib/repository/state-vocabulary";
 import {
+  contractedProcessCount,
+  ingredientJoin,
+  processesTouching,
+  recordsForState,
+} from "../lib/repository/ingredients";
+import {
   kindsOf,
   layerState,
   specializationsOf,
@@ -166,6 +172,31 @@ const COPY = {
     implementationsNone:
       "Nobody has written one up yet. That is a gap in this record, not a statement that the method has never been run — the paper register already records, per paper, which sources report numerics or a hardware run.",
     contestedHeading: "Where the claim is contested",
+    // --- the record ↔ state join (ai-ops#41 option B) ----------------------
+    //
+    // Three headings for one relation seen from three places. They are worded
+    // as three different sentences on purpose: the same link means "here is an
+    // instance of the thing you are reading about" on a state page, "here is
+    // where the map would use this" on a record page, and "here is what this
+    // slot is handling" on a slot page. A single reused string would read as
+    // correct on one of the three and vague on the other two.
+    stateRecordsHeading: "Records that are this object",
+    stateRecordsLead:
+      "Each of these is an instance of this state, filed in the catalogue with its own construction. The map does not know them individually — it knows the object, and these are what the object is.",
+    stateRecordsNone:
+      "Nothing in the catalogue has been joined to this state. That is a gap in the join rather than a claim that no such object exists; the shelf on /repository lists what is joined and what is not, with the reason.",
+    recordProcessesHeading: "Where the map uses this",
+    recordProcessesLead:
+      "This record is an instance of an object the map names, so these are the processes that consume or produce one. None of them is about this record in particular.",
+    recordProcessesConsumes: "takes one",
+    recordProcessesProduces: "hands one back",
+    slotObjectsHeading: "Records for what it handles",
+    slotObjectsLead:
+      "The catalogue's own entries for the objects on either side of this contract.",
+    slotObjectsTakes: "It takes",
+    slotObjectsReturns: "It returns",
+    joinCount: (n: number, of: number) =>
+      n === 1 ? `1 of ${of} processes` : `${n} of ${of} processes`,
     // The owner's fourth section, and until now the one this page did not draw
     // at all. See `RequiresSection` for what was missing and for how much.
     requiresHeading: "Requires",
@@ -335,6 +366,21 @@ const COPY = {
     implementationsNone:
       "まだ誰も書き起こしていません。これはこのレコードの欠落であって、この手法が一度も実行されたことがないという主張ではありません。どの文献が数値計算や実機実行を報告しているかは、論文レジスタが論文ごとにすでに記録しています。",
     contestedHeading: "主張が争われている点",
+    stateRecordsHeading: "この対象にあたる項目",
+    stateRecordsLead:
+      "いずれもこの状態の一例であり、それぞれ独自の構成とともにカタログに登録されています。マップはこれらを個別に把握しているわけではありません。マップが把握しているのは対象そのものであり、これらはその対象が何であるかを示すものです。",
+    stateRecordsNone:
+      "カタログのどの項目もこの状態に結び付けられていません。これは結び付けの側の欠落であって、そのような対象が存在しないという主張ではありません。何が結び付けられ、何が結び付けられていないかは、理由とともに /repository の棚に一覧があります。",
+    recordProcessesHeading: "マップ上でこれが使われる箇所",
+    recordProcessesLead:
+      "この項目はマップが名前を与えている対象の一例です。したがって以下は、その対象を受け取る、あるいは返す工程です。いずれもこの項目そのものについての記述ではありません。",
+    recordProcessesConsumes: "受け取る",
+    recordProcessesProduces: "返す",
+    slotObjectsHeading: "扱う対象にあたる項目",
+    slotObjectsLead: "この契約の両側にある対象について、カタログが持つ項目です。",
+    slotObjectsTakes: "受け取るもの",
+    slotObjectsReturns: "返すもの",
+    joinCount: (n: number, of: number) => `工程 ${of} 件中 ${n} 件`,
     requiresHeading: "必要な材料",
     requiresLead:
       "これらは経路を前へ進めるものではありません。この手法は自身の作業と並行してこれらを必要とし、それらを用意する費用も、この手法の費用の一部です。",
@@ -855,6 +901,20 @@ function CapabilityView({
         </p>
       </section>
 
+      {/* The catalogue's entries for the objects on either side of this slot's
+          contract. Not the slot's `entries`, which are records documenting the
+          PROCESS and are governed by `map-eligibility.ts` — these are records
+          that ARE the object, joined by `ingredients.ts`. Two different claims,
+          so two different sections. */}
+      <SlotObjects
+        vocabulary={STATE_VOCABULARY}
+        contract={node.contract}
+        nodeId={node.id}
+        corpus={corpus}
+        locale={locale}
+        copy={copy}
+      />
+
       <section className="mj-layers-section" aria-labelledby={`ways-${node.id}`}>
         <h2 id={`ways-${node.id}`}>{copy.waysHeading}</h2>
         {methods.length === 0 ? (
@@ -970,6 +1030,202 @@ function LoopComparison({
           </ul>
         </>
       ) : null}
+    </section>
+  );
+}
+
+/**
+ * The three halves of the record ↔ state join, as three sections.
+ *
+ * ## What did not exist before this
+ *
+ * Measured 2026-08-13: the map carries a vocabulary of 34 named states, each
+ * with a page; the catalogue carries 101 records whose role is an object. **Not
+ * one of the 34 pointed at a record, and not one of the 101 pointed back.** The
+ * two halves were built separately and never joined.
+ *
+ * ## Why the join is derived here rather than read from a field
+ *
+ * `ingredients.ts` joins a record to a **state**, once, by rule. Everything on
+ * these three surfaces is then computed from the graph: which slots consume or
+ * produce that state is `processesTouching`, which reads the contracts that were
+ * already there. So a slot that is split, renamed or re-contracted carries its
+ * records with it and nothing here is edited — which matters this session, with
+ * the map being decomposed in the next lane over.
+ *
+ * The count each surface prints comes with its denominator, because "5
+ * processes" is a different claim on a map of 23 slots than on a map of 200 and
+ * the reader cannot tell which without being told.
+ */
+function RecordLink({ slug, title }: { slug: string; title: string }) {
+  return <a href={`/repository/${slug}`}>{title}</a>;
+}
+
+/** *Records that are this object* — on a state's own page. */
+function StateRecords({
+  vocabulary,
+  state,
+  corpus,
+  locale,
+  copy,
+}: {
+  vocabulary: StateVocabulary;
+  state: LayerState;
+  corpus: readonly LayerCorpusEntry[];
+  locale: PublicLocale;
+  copy: LayersCopy;
+}) {
+  const records = recordsForState(
+    corpus.map((entry) => ({
+      slug: entry.slug,
+      title: locale === "ja" ? (entry.titleJa ?? entry.title) : entry.title,
+      category: entry.category,
+      algorithmFamily: entry.algorithmFamily ?? "",
+      tags: entry.tags ?? [],
+    })),
+    vocabulary,
+    state.id,
+  );
+  return (
+    <section className="mj-layers-section" aria-labelledby={`records-${state.id}`}>
+      <h2 id={`records-${state.id}`}>{copy.stateRecordsHeading}</h2>
+      {records.length === 0 ? (
+        <EmptyNote>{copy.stateRecordsNone}</EmptyNote>
+      ) : (
+        <>
+          <p>{copy.stateRecordsLead}</p>
+          <ul className="mj-layers-list mj-layers-state-records">
+            {records.map((record) => (
+              <li key={record.slug}>
+                <RecordLink slug={record.slug} title={record.title ?? record.slug} />
+              </li>
+            ))}
+          </ul>
+        </>
+      )}
+    </section>
+  );
+}
+
+/**
+ * *Where the map uses this* — on a record's own page.
+ *
+ * Renders nothing when the record is not joined, and that is deliberate rather
+ * than lazy: 73 of the 101 object records abstain, most of them because the map
+ * has no state for an observable, and a "the map does not reach this" note on 73
+ * pages would be one sentence about the map repeated until it stopped being
+ * read. The count and the reasons are published once, on the shelf, where they
+ * can be compared.
+ */
+export function EntryStateLinks({
+  graph,
+  vocabulary,
+  entry,
+  locale,
+}: {
+  graph: LayerGraph;
+  vocabulary: StateVocabulary;
+  entry: LayerCorpusEntry;
+  locale: PublicLocale;
+}) {
+  const copy = copyFor(locale);
+  const join = ingredientJoin({
+    slug: entry.slug,
+    category: entry.category,
+    algorithmFamily: entry.algorithmFamily ?? "",
+    tags: entry.tags ?? [],
+  });
+  if (join.kind !== "joined") return null;
+  const state = layerState(vocabulary, join.state);
+  const processes = processesTouching(graph, vocabulary, join.state);
+  if (state === null || processes.length === 0) return null;
+  const denominator = contractedProcessCount(graph);
+  return (
+    <section className="mj-layers-entry-strip" aria-labelledby={`entry-states-${entry.slug}`}>
+      <h2 id={`entry-states-${entry.slug}`}>{copy.recordProcessesHeading}</h2>
+      <p>{copy.recordProcessesLead}</p>
+      {/* The object first, then the processes: a reader has to know WHICH
+          object the map thinks this is before a list of processes means
+          anything, and the state's own page is where the claim can be checked. */}
+      <p className="mj-layers-item-kind">
+        <a href={href(state.id)}>{stateLabel(state, locale)}</a>{" "}
+        {copy.joinCount(processes.length, denominator)}
+      </p>
+      <ul className="mj-layers-list">
+        {processes.map((process) => {
+          const node = layerNode(graph, process.id);
+          if (!node) return null;
+          return (
+            <li key={`${process.id}:${process.relation}`} className="mj-layers-item">
+              <a href={href(node.id)}>{label(node, locale)}</a>{" "}
+              <span className="mj-layers-item-kind">
+                {process.relation === "consumes"
+                  ? copy.recordProcessesConsumes
+                  : copy.recordProcessesProduces}
+              </span>
+            </li>
+          );
+        })}
+      </ul>
+    </section>
+  );
+}
+
+/** *Records for what it handles* — on a slot's own page, both sides of the contract. */
+function SlotObjects({
+  vocabulary,
+  contract,
+  nodeId,
+  corpus,
+  locale,
+  copy,
+}: {
+  vocabulary: StateVocabulary;
+  contract: { from: string; to: string };
+  nodeId: string;
+  corpus: readonly LayerCorpusEntry[];
+  locale: PublicLocale;
+  copy: LayersCopy;
+}) {
+  const candidates = corpus.map((entry) => ({
+    slug: entry.slug,
+    title: locale === "ja" ? (entry.titleJa ?? entry.title) : entry.title,
+    category: entry.category,
+    algorithmFamily: entry.algorithmFamily ?? "",
+    tags: entry.tags ?? [],
+  }));
+  const sides = (
+    [
+      ["takes", contract.from, copy.slotObjectsTakes],
+      ["returns", contract.to, copy.slotObjectsReturns],
+    ] as const
+  )
+    .map(([key, stateId, heading]) => ({
+      key,
+      heading,
+      state: layerState(vocabulary, stateId),
+      records: recordsForState(candidates, vocabulary, stateId),
+    }))
+    .filter((side) => side.records.length > 0 && side.state !== null);
+  if (sides.length === 0) return null;
+  return (
+    <section className="mj-layers-section" aria-labelledby={`objects-${nodeId}`}>
+      <h2 id={`objects-${nodeId}`}>{copy.slotObjectsHeading}</h2>
+      <p>{copy.slotObjectsLead}</p>
+      {sides.map((side) => (
+        <div key={side.key}>
+          <h3>
+            {side.heading}: <a href={href(side.state!.id)}>{stateLabel(side.state!, locale)}</a>
+          </h3>
+          <ul className="mj-layers-list">
+            {side.records.map((record) => (
+              <li key={record.slug}>
+                <RecordLink slug={record.slug} title={record.title ?? record.slug} />
+              </li>
+            ))}
+          </ul>
+        </div>
+      ))}
     </section>
   );
 }
@@ -1583,11 +1839,22 @@ export function LayerStateView({
   vocabulary,
   state,
   locale,
+  corpus = [],
 }: {
   graph: LayerGraph;
   vocabulary: StateVocabulary;
   state: LayerState;
   locale: PublicLocale;
+  /**
+   * **New, and it reverses a deliberate decision that was right until now.**
+   * The page route used to skip the Atlas fetch for a state page with the note
+   * that "a state page names processes and other states and never touches a
+   * record". That is no longer true: a state page is now one of the two ends of
+   * the record join, and the whole point of the join is that it is reachable
+   * from both. Defaulted so a caller that has no corpus renders the same page
+   * minus one section rather than failing.
+   */
+  corpus?: readonly LayerCorpusEntry[];
 }) {
   const copy = copyFor(locale);
   const index = new Map(vocabulary.states.map((entry) => [entry.id, entry]));
@@ -1628,6 +1895,16 @@ export function LayerStateView({
         <h2 id={`narrower-${state.id}`}>{copy.stateNarrowerHeading}</h2>
         <StateList states={narrower} locale={locale} empty={copy.stateNarrowerNone} />
       </section>
+      {/* Before the traffic sections, because it answers the question a reader
+          arrives with. "What IS this object" is settled by the lede and then by
+          these; "which processes touch it" is the next question, not the first. */}
+      <StateRecords
+        vocabulary={vocabulary}
+        state={state}
+        corpus={corpus}
+        locale={locale}
+        copy={copy}
+      />
       <section className="mj-layers-section" aria-labelledby={`arriving-${state.id}`}>
         <h2 id={`arriving-${state.id}`}>{copy.stateArrivingHeading}</h2>
         {traffic.arriving.length === 0 ? (

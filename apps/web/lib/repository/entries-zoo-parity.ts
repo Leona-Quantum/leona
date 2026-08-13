@@ -2340,6 +2340,125 @@ const ZOO_ALGORITHMS: ZooAlgorithm[] = [
     ],
     relatedSlugs: ["quantum-fourier-transform", "gibbs-state-sampling", "jones-polynomial-approximation"],
   },
+  // ---------------------------------------------------------------------------
+  // The last two records of the W22 pass cover Zoo entries that are **subject
+  // headings rather than results**, and they are declared differently from every
+  // record above them.
+  //
+  // `check-zoo-parity.mjs` marks a Zoo entry covered when `row.slugs.length > 0`
+  // — one slug is enough. For a single-result entry that is exactly right. For a
+  // heading the Zoo files with eight references it is not: one record would make
+  // the whole heading read as closed, and the gauge would move on the strength of
+  // one strand out of eight. That inflates the number fastest precisely where
+  // coverage is thinnest, which is the `print-the-denominator` failure.
+  //
+  // Lane 1's doctrine ruling (ADR-0026, applying ai-ops#51 and #12): coverage of
+  // such a heading is a **union** of narrow records, each cited to a paper that
+  // genuinely contains its own claim — and the declaration must say which of the
+  // heading's references are carried and which are outstanding. So each of the two
+  // records below lists exactly that, here and in its own caveat, and neither
+  // claims the heading is closed.
+  //
+  // What is forbidden, and what these two are not: one record for the whole
+  // heading cited to whichever reference looks most canonical. That record would
+  // claim a paper says something it does not — the ai-ops#12 failure, which #51
+  // did not touch.
+  // ---------------------------------------------------------------------------
+  //
+  // "Quantum Cryptanalysis" — the Zoo lists 8 references. Carried: Shor 1995 and
+  // its FOCS 1994 predecessor, by the existing `shor-period-finding` and
+  // `discrete-logarithm` records; and Proos and Zalka, by the record below.
+  // **Outstanding: 5** — Boneh and Lipton on hidden linear functions; Childs, Jao
+  // and Soukharev on isogenies (arXiv:1012.4019); Eldar and Hallgren on lattices
+  // (arXiv:2201.13450) together with Ducas and van Woerden's note disputing it;
+  // and Chen and Gao on Boolean equation solving (arXiv:1712.06239).
+  {
+    slug: "elliptic-curve-discrete-log-resources",
+    title: "Resource counts for elliptic-curve discrete logarithms",
+    titleJa: "楕円曲線離散対数に要する資源の見積り",
+    family: "Hidden-period / factoring",
+    zooName: "Quantum Cryptanalysis",
+    zooSection: "Algebraic and Number Theoretic Algorithms",
+    speedup: "Various",
+    speedupPrimary: {
+      states: "reported",
+      quote: "The classical complexity of this problem seems to depend strongly on the underlying group… for discrete logarithms over elliptic curves, nothing better than \"generic\" algorithms are known… e.g. the Pollard ρ algorithm [3], have truly exponential complexity.",
+    },
+    problem: "Carry Shor's discrete-logarithm algorithm through concretely for the group of points on an elliptic curve over GF(p), and count the qubits and operations it needs, so that the cost of attacking elliptic-curve cryptography can be compared with the cost of attacking RSA at an equivalent classical security level.",
+    problemJa: "Shor の離散対数アルゴリズムを、GF(p) 上の楕円曲線の点がなす群について具体的に遂行し、必要な量子ビット数と演算回数を数え上げる問題です。これにより、楕円曲線暗号への攻撃コストを、古典的な安全性水準が同等な RSA への攻撃コストと比較できるようになります。",
+    idea: "The algorithm is Shor's two-dimensional hidden-subgroup construction: build the superposition over |x, y, xP + yQ⟩ using double-and-add point arithmetic on the curve, then apply a two-dimensional quantum Fourier transform and read the discrete logarithm off the dual lattice. The work is in the arithmetic. Each group operation decomposes into modular divisions and multiplications, and each division needs a reversible extended Euclidean algorithm — whose classical running time depends on its input, which is the obstacle the authors call the quantum halting problem. Their contribution is a piecewise-reversible implementation that lets different branches of the superposition desynchronize and move through the algorithm's five basic operations at their own pace instead of in lockstep, taking that subroutine from cubic to quadratic. Sharing registers between intermediate values then brings the qubit count down further.",
+    ideaJa: "アルゴリズムは Shor の二次元隠れ部分群の構成そのものです。曲線上の点の二倍算と加算によって |x, y, xP + yQ⟩ の重ね合わせを作り、二次元の量子 Fourier 変換を施して、双対格子から離散対数を読み取ります。実際の作業は算術の部分にあります。各群演算は剰余の除算と乗算に分解され、除算のたびに可逆な拡張 Euclid の互除法が必要になりますが、その古典的な実行時間は入力に依存します。著者らはこれを量子版の停止問題と呼び、最大の障害としています。彼らの寄与は区分的に可逆な実装であり、重ね合わせの各分岐が歩調をそろえるのではなく、五つの基本演算をそれぞれの速さで進むことを許します。これによりこの副手続きは三次から二次になります。さらに中間結果でレジスタを共有することで、量子ビット数も削減されます。",
+    complexity: "About 6n qubits and order n³ operations for an n-bit prime field, given as roughly 360n³ n-bit additions against about 4kn³ for factoring. Concretely the paper's table pairs a 160-bit elliptic-curve key at around 1000 qubits with the security-equivalent 1024-bit RSA modulus at about 2000 qubits, and it gives the same pairing at 512, 2048, 3072 and 15360-bit RSA against 110, 224, 256 and 512-bit curves.",
+    complexityBasis: 'abstract of arXiv:quant-ph/0301141: "A 160 bit elliptic curve cryptographic key could be broken on a quantum computer using around 1000 qubits while factoring the security-wise equivalent 1024 bit RSA modulus would require about 2000 qubits."; section 6.2: "the DLP algorithm requires either f(n) = 7n + 4 log₂ n + ǫ or f′(n) = 5n + 8√n + 4 log₂ n + ǫ bits depending o[n] whether register sharing is used"; section 6.1: "the discrete logarithm algorithm is O(n³) … has a running time of approximately 360kn³ compared to only about 4kn³ for factoring."',
+    caveat: "This is a literature record: no circuit was built, compiled, simulated or run here, and no key was broken. The famous headline number is a count of **logical** qubits on an idealised machine, and the paper says so in both places it matters — parenthetically, that this is on a perfect, noise free, quantum computer, and in section 6.3, that for large scale quantum computation error correction or full fault tolerance is very probably necessary, so each logical qubit has to be encoded into several physical qubits, possibly dozens, and each logical gate becomes many physical ones. **None of the counts here include that overhead**, so \"around 1000 qubits\" is not a statement about any machine anyone would build. The figures are also estimates rather than a gate-level tally: section 6.1 says outright that the authors do not go to the lowest level and count gates but count n-bit additions instead, and the factor converting quantum-quantum to classical-quantum additions is estimated from networks in another paper. The scope is curves over GF(p) only; the abstract says curves over GF(2^n) and other fields are not yet considered. Parallelisation is not analysed, and the authors note factoring may parallelise more easily, which would move the comparison. Finally, this record covers one strand of the Zoo's \"Quantum Cryptanalysis\" heading — the elliptic-curve resource analysis. Five of that heading's eight references are not covered by any record here: Boneh and Lipton on hidden linear functions, Childs, Jao and Soukharev on isogenies, Eldar and Hallgren on lattices together with the Ducas and van Woerden note disputing it, and Chen and Gao on Boolean equation solving.",
+    caveatJa: "本項目は文献に基づく記録です。ここで回路を構成・コンパイル・シミュレート・実行したことはなく、鍵を破ったわけでもありません。よく引かれる見出しの数値は、理想化された機械における**論理**量子ビットの数であり、論文もそれが重要な二箇所でそう述べています。すなわち、これは完全で雑音のない量子計算機上の話だと括弧書きで述べ、第6.3節では、大規模な量子計算には誤り訂正あるいは完全な誤り耐性がほぼ確実に必要であり、その場合には各論理量子ビットを複数の、おそらく数十の物理量子ビットに符号化しなければならず、各論理ゲートも多数の物理ゲートになると述べています。**ここに示された数値にはそのオーバーヘッドが一切含まれていません**ので、「およそ1000量子ビット」は誰かが実際に作る機械についての主張ではありません。またこれらの数値はゲートレベルの集計ではなく見積りです。第6.1節は、最下層まで降りてゲート数を数えるのではなく n ビット加算の回数を数えると明言しており、量子・量子加算と古典・量子加算の比も別の論文の回路から見積もったものだと述べています。対象は GF(p) 上の曲線に限られ、要旨は GF(2^n) やその他の体の上の曲線はまだ扱っていないと述べています。並列化は解析されておらず、著者らは素因数分解のほうが並列化しやすいかもしれないと注記していますが、それは比較を動かしうる点です。最後に、本記録が扱うのは Zoo の「Quantum Cryptanalysis」という見出しの一つの筋、すなわち楕円曲線の資源解析です。この見出しが挙げる八つの参考文献のうち五つは、ここのどの記録でも扱われていません。隠れ線形関数に関する Boneh と Lipton、同種写像に関する Childs, Jao, Soukharev、格子に関する Eldar と Hallgren およびそれに異を唱える Ducas と van Woerden の覚書、そして Boole 方程式の求解に関する Chen と Gao です。",
+    tags: ["elliptic curve cryptography", "discrete logarithm", "resource estimation", "modular arithmetic", "cryptanalysis"],
+    source: {
+      id: "arxiv:quant-ph/0301141",
+      title: "Shor's discrete logarithm quantum algorithm for elliptic curves",
+      authors: "John Proos, Christof Zalka",
+      year: "2003",
+      url: "https://arxiv.org/abs/quant-ph/0301141",
+    },
+    literature: [
+      {
+        title: "Shor's discrete logarithm quantum algorithm for elliptic curves",
+        authors: "John Proos, Christof Zalka",
+        year: "2003",
+        url: "https://arxiv.org/abs/quant-ph/0301141",
+        relevance: "Primary source, and the source of this record's cost claim. The qubit and operation counts are in section 6, with the RSA-versus-curve table in section 6.3; the reversible extended Euclidean algorithm that the whole cost turns on is in section 5. Consult section 6.3 in particular before quoting any number from this record: it is where the authors say that error correction or fault tolerance is very probably necessary and that each logical qubit would then become several physical ones, which is the overhead none of the published figures include.",
+        relevanceJa: "一次資料であり、本記録の計算量の出典です。量子ビット数と演算回数は第6節にあり、RSA と楕円曲線を対比する表は第6.3節にあります。コスト全体を左右する可逆な拡張 Euclid の互除法は第5節です。本記録から数値を引用する前に、とりわけ第6.3節を確認してください。そこでは、誤り訂正あるいは誤り耐性がほぼ確実に必要であり、その場合には各論理量子ビットが複数の物理量子ビットになると著者らが述べています。公表されている数値はいずれもそのオーバーヘッドを含んでいません。",
+      },
+    ],
+    relatedSlugs: ["discrete-logarithm", "shor-period-finding", "quantum-fourier-transform"],
+  },
+  // "Polynomial Quantum Speedups for Constraint Satisfaction Problems" — the Zoo
+  // lists 8 references. Carried: Montanaro's quantum walk speedup of backtracking,
+  // by the record below. **Outstanding: 7** — the adiabatic cross-reference;
+  // Ambainis's SIGACT survey; Cerf, Grover and Williams on nested quantum search;
+  // Mandra, Guerreschi and Aspuru-Guzik (arXiv:1512.00859); Hastings's short-path
+  // algorithm (arXiv:1802.10124); Dalzell, Pancotti, Campbell and Brandão
+  // (arXiv:2212.01513); and Brandão, Kueng and Stilck França (arXiv:1909.04613).
+  {
+    slug: "backtracking-quantum-walk-speedup",
+    title: "Quantum walk speedup of backtracking",
+    titleJa: "量子ウォークによるバックトラッキングの高速化",
+    family: "Quantum walk",
+    zooName: "Polynomial Quantum Speedups for Constraint Satisfaction Problems",
+    zooSection: "Optimization, Numerics, and Machine Learning",
+    speedup: "Polynomial",
+    speedupPrimary: {
+      states: "reported",
+      quote: "We usually think of T as being exponential in n; in this regime this complexity is a near-quadratic speedup over the classical algorithm.",
+    },
+    problem: "Backtracking is the general classical technique for exploiting problem structure in constraint satisfaction: explore a tree of partial assignments and prune the branches a predicate rules out. The question is whether an arbitrary backtracking algorithm — any predicate and any branching heuristic — can be sped up quantumly, rather than replaced by brute-force search over the whole assignment space.",
+    problemJa: "バックトラッキングは、制約充足において問題の構造を活用するための一般的な古典技法です。部分割当ての木を探索し、述語が排除する枝を刈り込みます。ここでの問いは、任意のバックトラッキングアルゴリズム、すなわち任意の述語と任意の分岐ヒューリスティックに対して、割当て空間全体への力任せの探索に置き換えるのではなく、量子的な高速化が可能かどうかです。",
+    idea: "The algorithm runs a discrete-time quantum walk on the tree that the classical backtracking algorithm implicitly defines, without knowing that tree's structure in advance. It is a special case of Belovs's correspondence between quantum walks and effective resistance, itself the quantum analogue of the classical link between random walks and electrical networks. Diffusion operators at each vertex mix it with its children and are defined purely from local calls to the predicate and the heuristic, so the walk never needs the tree laid out. Phase estimation on the walk operator then distinguishes the case where a marked vertex exists — the eigenvalue-one eigenvector stays close to the starting state — from the case where none does. Detection is extended to actually finding a solution by binary search down the tree, repeating detection on subtrees, and a separate eigenvector analysis gives a faster algorithm when the solution is promised unique.",
+    ideaJa: "このアルゴリズムは、古典的なバックトラッキングアルゴリズムが暗に定める木の上で離散時間量子ウォークを走らせます。その木の構造をあらかじめ知る必要はありません。これは、量子ウォークと実効抵抗との Belovs による対応の特別な場合であり、その対応自体、ランダムウォークと電気回路網との古典的な関係の量子版です。各頂点における拡散作用素はその頂点と子頂点とを混ぜ合わせ、述語とヒューリスティックへの局所的な呼び出しのみから定義されるため、ウォークが木の全体像を必要とすることはありません。次にウォーク作用素に対する位相推定によって、印のついた頂点が存在する場合、すなわち固有値1の固有ベクトルが初期状態の近くに留まる場合と、存在しない場合とを区別します。検出から実際に解を見つけることへの拡張は、木を下る二分探索によって行われ、部分木に対して検出を繰り返します。解が一意であると約束されている場合には、別の固有ベクトルの解析によってより速いアルゴリズムが得られます。",
+    complexity: "O(√T · n^(3/2) · log n) evaluations of the predicate and the heuristic to find a solution or report none, where T is the number of vertices in the classical backtracking algorithm's tree and n the number of variables. Detecting whether a solution exists is cheaper, at O(√T · n) evaluations, and the promised-unique case costs O(√T · n · log³ n).",
+    complexityBasis: 'abstract of arXiv:1509.02374: "Assume there is a classical backtracking algorithm which finds a solution to a CSP on n variables, or outputs that none exists, and whose corresponding tree contains T vertices, each vertex corresponding to a test of a partial solution. Then we show that there is a bounded-error quantum algorithm which completes the same task using O(√T n^{3/2} log n) tests."; section 1.1, Theorem 1, for detection: "there is a quantum algorithm which, given T, evaluates P and h O(√T n log(1/δ)) times each, outputs true if there exists x such that P(x) is true, and outputs false otherwise"; section 1.1, Theorem 2, for the unique case: "there is a quantum algorithm which outputs x₀ using P and h O(√T n log³ n log(1/δ)) times each."',
+    caveat: "This is a literature record: nothing was constructed, compiled, simulated or run, and no constraint satisfaction problem was solved here. **The square root is taken of the tree size T, not of the problem size**, and n enters only as a polynomial overhead — so this is a near-quadratic speedup over the classical backtracking algorithm's own running time, not a quadratic speedup in the number of variables, and it says nothing about problems where backtracking explores few nodes. Detecting whether a solution exists and finding one are separate theorems with different costs, and the finding algorithm is the more expensive by a factor of √n; the finding extension also assumes every vertex has bounded degree. The bound is stated with T given as input, though the paper notes that doubling a guess costs only a logarithmic factor. The paper is explicit that its algorithm may not beat the classical one on every instance: where classical backtracking is lucky and finds a solution without exploring the whole tree, the quantum algorithm, which is forced to explore it, may not outperform it. The dramatic exponential separation the paper also derives holds in a non-standard average-case setting under particular input distributions, not in the worst case. Finally, this record covers one strand of the Zoo's heading. Seven of that heading's eight references are not covered by any record here: the adiabatic cross-reference, Ambainis's survey, Cerf, Grover and Williams on nested quantum search, Mandra et al., Hastings's short-path algorithm, Dalzell et al., and Brandão, Kueng and Stilck França.",
+    caveatJa: "本項目は文献に基づく記録です。ここで何かを構成・コンパイル・シミュレート・実行したことはなく、具体的な制約充足問題を解いたわけでもありません。**平方根がとられているのは木の大きさ T であって問題の大きさではなく**、n は多項式のオーバーヘッドとしてのみ現れます。したがってこれは古典的なバックトラッキングアルゴリズム自身の実行時間に対するほぼ二乗の高速化であって、変数の個数についての二乗の高速化ではなく、バックトラッキングが少数の節点しか探索しない問題については何も述べていません。解の存在を検出することと解を実際に見つけることは別々の定理であり、コストも異なります。発見のアルゴリズムのほうが √n の因子だけ高価であり、さらにすべての頂点の次数が有界であることを仮定します。評価は T が入力として与えられる前提で述べられていますが、推測値を倍々にしていく方法では対数因子しかかからないと論文は注記しています。論文は、自らのアルゴリズムがすべての問題例で古典を上回るとは限らないことを明言しています。古典的なバックトラッキングが幸運にも木全体を探索せずに解を見つける場合、木全体を探索せざるをえない量子アルゴリズムはそれを上回らないかもしれません。論文が併せて導く劇的な指数的分離は、通常とは異なる平均時の設定において特定の入力分布のもとで成り立つものであり、最悪時のものではありません。最後に、本記録が扱うのは Zoo のこの見出しの一つの筋にすぎません。この見出しが挙げる八つの参考文献のうち七つは、ここのどの記録でも扱われていません。断熱計算への参照、Ambainis の解説、入れ子量子探索に関する Cerf, Grover, Williams、Mandra ら、Hastings の短経路アルゴリズム、Dalzell ら、そして Brandão, Kueng, Stilck França です。",
+    tags: ["backtracking", "constraint satisfaction", "quantum walk", "effective resistance", "tree search"],
+    source: {
+      id: "arxiv:1509.02374",
+      title: "Quantum walk speedup of backtracking algorithms",
+      authors: "Ashley Montanaro",
+      year: "2015",
+      url: "https://arxiv.org/abs/1509.02374",
+    },
+    literature: [
+      {
+        title: "Quantum walk speedup of backtracking algorithms",
+        authors: "Ashley Montanaro",
+        year: "2015",
+        url: "https://arxiv.org/abs/1509.02374",
+        relevance: "Primary source, and the source of this record's cost claim. Theorem 1 in section 1.1 is detection and Theorem 2 is finding — different costs, and worth reading as two results rather than one. Section 2.1 carries the bounded-degree assumption and the doubling trick that removes the need to know the tree size in advance. Section 5 is where the author states the limit that matters most in practice: where classical backtracking finds a solution early without exploring the whole tree, this algorithm may not outperform it.",
+        relevanceJa: "一次資料であり、本記録の計算量の出典です。第1.1節の定理1は検出、定理2は発見であり、コストが異なるため一つの結果としてではなく二つの結果として読む価値があります。第2.1節には次数有界の仮定と、木の大きさを事前に知る必要をなくす倍加の技法があります。実務上もっとも重要な限界が述べられているのは第5節です。すなわち、古典的なバックトラッキングが木全体を探索せずに早く解を見つける場合、このアルゴリズムはそれを上回らないかもしれない、という指摘です。",
+      },
+    ],
+    relatedSlugs: ["subset-finding-quantum-walk", "grover-unstructured-search", "element-distinctness"],
+  },
 ];
 
 /** The Zoo entry each record covers — read by scripts/check-zoo-parity.mjs. */

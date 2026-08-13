@@ -25,6 +25,11 @@ const COPY = {
   en: {
     title: "Folders",
     lede: "Browse down through the catalogue: what kind of record it is, then which family, then the subject topics inside it.",
+    // The second scheme's own sentence. Reusing the first one would describe the
+    // wrong three levels on a page that draws the other three — the kind of
+    // wrong claim a reader has no way to catch, because both pages look right.
+    ledeMethod:
+      "Browse down through the catalogue by technique: which kind of algorithm it is, then what kind of record the catalogue holds for it, then which family.",
     backToAtlas: "← The Quantum Atlas",
     root: "Folders",
     holds: (n: number) => `${n} record${n === 1 ? "" : "s"}`,
@@ -35,10 +40,30 @@ const COPY = {
       "A record carries more than one topic, so these add up to more than the folder holds.",
     empty: "No folders here. That is a gap in the catalogue, not a page that failed to load.",
     noRecords: "No records at this address.",
+    // The two schemes, named by what a reader is choosing between rather than by
+    // their internals. The owner's own words for option 2 were "the kind of
+    // algorithm", and that is the label.
+    schemeLabel: "Arrange by",
+    schemeCategory: "Kind of record",
+    schemeMethod: "Kind of algorithm",
+    // Printed only under the second scheme, and always as a fraction.
+    //
+    // **The sentence after the fraction was wrong twice before it was measured**,
+    // and the wrong version was the one that sounded obvious: "most of them are
+    // gates, which have none by design". The 83 unplaced records are 51
+    // operators, 16 gates, 15 algorithm references and 1 state — so gates are
+    // under a fifth of it, and the group that actually dominates is operators.
+    // The reason is not "by design" either; it is that a technique is a way of
+    // doing something and an operator is a thing, so most of them have nothing
+    // to put in that facet.
+    coverage: (placed: number, total: number) =>
+      `This arrangement reaches ${placed} of ${total} records. The rest carry no technique in the catalogue's vocabulary — most of them are operators, which name a thing rather than a way of doing something.`,
   },
   ja: {
     title: "フォルダ",
     lede: "カタログを上から順にたどれます。記録の種別、次にファミリー、その中の主題トピックへ。",
+    ledeMethod:
+      "カタログを手法からたどれます。アルゴリズムの種類、次にその手法についてカタログが持つ記録の種別、そしてファミリーへ。",
     backToAtlas: "← 量子アトラス",
     root: "フォルダ",
     holds: (n: number) => `${n} 件`,
@@ -47,14 +72,45 @@ const COPY = {
     overlap: "1 件の記録が複数のトピックを持つため、内訳の合計はこのフォルダの件数を上回ります。",
     empty: "ここにはフォルダがありません。読み込みの失敗ではなく、カタログ側の空白です。",
     noRecords: "この階層には記録がありません。",
+    schemeLabel: "並べ方",
+    schemeCategory: "記録の種別",
+    schemeMethod: "アルゴリズムの種類",
+    coverage: (placed: number, total: number) =>
+      `この並べ方が到達するのは ${total} 件中 ${placed} 件です。残りはカタログの語彙で手法が付いていない記録で、その多くは演算子です。演算子はやり方ではなく対象そのものを指すためです。`,
   },
 } as const;
 
-/** `/repository/folders/a/b/c` for a trail. Built once, here, so no caller concatenates. */
-export function folderHref(segments: readonly string[]): string {
-  return segments.length === 0
-    ? "/repository/folders"
-    : `/repository/folders/${segments.map(encodeURIComponent).join("/")}`;
+/**
+ * Which of the two trees the reader is walking.
+ *
+ * `"category"` is the scheme the owner picked in ai-ops#15 and is the default in
+ * every sense that matters: it is what a bare `/repository/folders` serves, it
+ * is what an unrecognised value falls back to, and no link to it carries a
+ * parameter. The second scheme (ai-ops#45 option 2) is opt-in and says so in
+ * the address.
+ */
+export type FolderScheme = "category" | "method";
+
+export function parseFolderScheme(raw: string | string[] | undefined): FolderScheme {
+  const value = Array.isArray(raw) ? raw[0] : raw;
+  return value === "method" ? "method" : "category";
+}
+
+/**
+ * `/repository/folders/a/b/c` for a trail. Built once, here, so no caller
+ * concatenates.
+ *
+ * **The scheme rides on every link or it rides on none.** A switcher that set a
+ * scheme and then handed the reader child links back to the other tree would
+ * lose the choice on the first click — and it would do so silently, because both
+ * trees render through this same view and the page would look like it worked.
+ */
+export function folderHref(segments: readonly string[], scheme: FolderScheme = "category"): string {
+  const path =
+    segments.length === 0
+      ? "/repository/folders"
+      : `/repository/folders/${segments.map(encodeURIComponent).join("/")}`;
+  return scheme === "method" ? `${path}?scheme=method` : path;
 }
 
 /**
@@ -68,12 +124,13 @@ function crumbs(
   trail: readonly FolderNode[],
   rootLabel: string,
   label: (node: FolderNode) => string,
+  scheme: FolderScheme = "category",
 ): Array<{ key: string; text: string; href: string | null }> {
   const rows = [
     {
       key: "root",
       text: rootLabel,
-      href: trail.length === 0 ? null : folderHref([]),
+      href: trail.length === 0 ? null : folderHref([], scheme),
     },
   ];
   for (const [index, node] of trail.entries()) {
@@ -83,7 +140,7 @@ function crumbs(
       href:
         index === trail.length - 1
           ? null
-          : folderHref(trail.slice(0, index + 1).map((crumb) => crumb.segment)),
+          : folderHref(trail.slice(0, index + 1).map((crumb) => crumb.segment), scheme),
     });
   }
   return rows;
@@ -92,9 +149,25 @@ function crumbs(
 export function FolderView({
   location,
   locale,
+  scheme = "category",
+  unplaced = 0,
+  placed = 0,
 }: {
   location: FolderLocation;
   locale: PublicLocale;
+  scheme?: FolderScheme;
+  /**
+   * Records this scheme cannot place, and records it can.
+   *
+   * **Both, or neither.** ai-ops#45 option 2 was pitched to the owner as
+   * "already recorded on most records", and it is — 263 of 346. A tree that
+   * printed neither number would let the reader take a walk over three quarters
+   * of the catalogue for a walk over all of it, which is the misreading option 1
+   * was rejected for at a larger scale. The first scheme places everything and
+   * passes zero, so the line does not draw there.
+   */
+  unplaced?: number;
+  placed?: number;
 }) {
   const copy = COPY[locale === "ja" ? "ja" : "en"];
   const isJapanese = locale === "ja";
@@ -109,7 +182,7 @@ export function FolderView({
           middle segments are text is a trail a reader can read and cannot walk. */}
       <nav className="mj-layers-breadcrumb" aria-label={copy.title}>
         <a href="/repository">{copy.backToAtlas}</a>
-        {crumbs(trail, copy.root, label).map((crumb) => (
+        {crumbs(trail, copy.root, label, scheme).map((crumb) => (
           <span key={crumb.key}>
             {" · "}
             {crumb.href === null ? (
@@ -121,6 +194,38 @@ export function FolderView({
         ))}
       </nav>
 
+      {/* **Two links, and the current one is not a link.** ai-ops#45's first
+          acceptance condition is that the interface must not get extremely
+          complicated; a switcher is one row of two words and no control that
+          did less would let a reader reach the second tree at all. It sits at
+          the root only — offering "arrange by" halfway down a trail would have
+          to either drop the reader at the other tree's root or claim a
+          corresponding address exists in it, and neither is true. */}
+      {trail.length === 0 ? (
+        <p className="mj-folders-scheme">
+          <span className="mj-layers-item-kind">{copy.schemeLabel}</span>{" "}
+          {scheme === "category" ? (
+            <span aria-current="true">{copy.schemeCategory}</span>
+          ) : (
+            <a href={folderHref([], "category")}>{copy.schemeCategory}</a>
+          )}
+          {" · "}
+          {scheme === "method" ? (
+            <span aria-current="true">{copy.schemeMethod}</span>
+          ) : (
+            <a href={folderHref([], "method")}>{copy.schemeMethod}</a>
+          )}
+        </p>
+      ) : null}
+
+      {/* The fraction, wherever the reader is in the second tree. Not only at
+          the root: a reader who deep-linked into `variational` never saw the
+          root and is the one most likely to read the tree as the whole
+          catalogue. */}
+      {scheme === "method" && unplaced > 0 ? (
+        <p className="mj-folders-coverage">{copy.coverage(placed, placed + unplaced)}</p>
+      ) : null}
+
       {/* The lede belongs to the root and to nowhere else. Repeating "browse down
           through the catalogue" on every folder is a sentence that stops being read by
           the second one, and it would sit where a folder's own description should be —
@@ -128,7 +233,7 @@ export function FolderView({
           state for those, not the root's sentence borrowed. */}
       <header className="mj-layers-node-head">
         <h1>{here ? label(here) : copy.title}</h1>
-        {here ? null : <p>{copy.lede}</p>}
+        {here ? null : <p>{scheme === "method" ? copy.ledeMethod : copy.lede}</p>}
         {here && note(here) ? <p>{note(here)}</p> : null}
         {here ? <p className="mj-layers-count">{copy.holds(here.records)}</p> : null}
       </header>
@@ -141,7 +246,17 @@ export function FolderView({
             "the page failed" render identically otherwise. Same rule the papers index
             follows. */}
         {location.children.length === 0 ? <p className="mj-layers-empty">{copy.empty}</p> : null}
-        {location.level === "family" && location.children.length > 0 ? (
+        {/* **Scheme-specific, because it is a claim about arithmetic and it is
+            only true in one of the two trees.** In the first scheme this depth
+            lists topics, a record carries several, and the children genuinely
+            sum to more than the parent. In the second it lists families, which
+            partition their category — the children add up exactly, and printing
+            the note there would tell a reader the numbers do not add up while
+            they are looking at numbers that do. The second scheme's
+            non-partition is at its ROOT, where a record under three techniques
+            is counted three times, and that is what the coverage line above
+            covers. */}
+        {scheme === "category" && location.level === "family" && location.children.length > 0 ? (
           <p className="mj-layers-empty">{copy.overlap}</p>
         ) : null}
         <ul className="mj-papers-list">
@@ -149,7 +264,7 @@ export function FolderView({
             <li key={child.segment}>
               <a
                 className="mj-papers-list-title"
-                href={folderHref([...trail.map((crumb) => crumb.segment), child.segment])}
+                href={folderHref([...trail.map((crumb) => crumb.segment), child.segment], scheme)}
               >
                 {label(child)}
               </a>

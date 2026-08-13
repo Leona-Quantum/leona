@@ -3189,6 +3189,25 @@ export interface LayerCorpusEntry {
   verification?: string;
   /** The record's provenance line, verbatim. Half of the classification stamp. */
   provenance?: string;
+  /**
+   * The two label fields the ingredient join classifies on.
+   *
+   * **Widened for `ingredients.ts`, and deliberately only this far.** The join
+   * is a rule table over the fields that were written *as labels* — family and
+   * the free tags — and `topics.ts` gives the reason the projection must not
+   * grow past them: `description` and `title` are prose a content pass rewrites
+   * without thinking about classification, so a rule keyed off a phrase in them
+   * re-joins records when the copy is edited. They are on this interface anyway,
+   * for display; a rule that read them would be a rule this projection cannot
+   * stop, which is why the stopping happens in `IngredientRule` instead.
+   *
+   * Optional, because two surfaces build a corpus entry for a record they
+   * already hold and one of them predates the join. A record arriving without
+   * them is simply unjoined, which is the same answer an abstention gives and
+   * never a wrong link.
+   */
+  algorithmFamily?: string;
+  tags?: readonly string[];
 }
 
 /** One runnable variant of a record, as the map is allowed to know it. */
@@ -3221,6 +3240,8 @@ export function layerCorpusEntry(entry: {
   codeVariants?: readonly { framework: string; status?: string; filename?: string }[];
   verification?: string;
   provenance?: string;
+  algorithmFamily?: string;
+  tags?: readonly string[];
 }): LayerCorpusEntry {
   return {
     slug: entry.slug,
@@ -3236,6 +3257,8 @@ export function layerCorpusEntry(entry: {
     })),
     verification: entry.verification,
     provenance: entry.provenance,
+    algorithmFamily: entry.algorithmFamily,
+    tags: entry.tags,
   };
 }
 

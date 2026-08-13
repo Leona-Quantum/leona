@@ -16,7 +16,13 @@ import { PublicSite } from "../../../../components/public-site";
 import { FolderView } from "../../../../components/repository-folders";
 import { getPublicLocale } from "../../../../lib/public-locale-server";
 import { getRepositoryListEntries } from "../../../../lib/repository-source";
-import { buildFolderTree, resolveFolderPath } from "../../../../lib/repository/folder-tree";
+import {
+  buildFolderTree,
+  buildMethodFolderTree,
+  resolveFolderPath,
+  resolveMethodFolderPath,
+} from "../../../../lib/repository/folder-tree";
+import { parseFolderScheme } from "../../../../components/repository-folders";
 
 /**
  * Localised, for the reason every other public Atlas route is: a static English export
@@ -41,19 +47,36 @@ export async function generateMetadata(): Promise<Metadata> {
 
 export default async function RepositoryFoldersPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ path?: string[] }>;
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
-  const [{ path }, locale, entries] = await Promise.all([
+  const [{ path }, query, locale, entries] = await Promise.all([
     params,
+    searchParams,
     getPublicLocale(),
     getRepositoryListEntries(),
   ]);
-  const tree = buildFolderTree(entries);
+  // **Exactly one tree is built per request.** ai-ops#45's second acceptance
+  // condition is that load times must not spike, and building both so the
+  // switcher could count the other one would double the work on every render
+  // for a number nobody asked for.
+  //
+  // An unrecognised `?scheme=` resolves to the scheme the owner already picked
+  // rather than 404ing — the `browse-params.ts` rule, not the path rule, because
+  // this genuinely is a filter over one address and not an identity. The path
+  // segments below keep the path rule.
+  const scheme = parseFolderScheme(query.scheme);
+  const tree = scheme === "method" ? buildMethodFolderTree(entries) : buildFolderTree(entries);
   // `notFound()` rather than falling back to the root — see the comment on
   // `resolveFolderPath`. A path segment is an identity, not a filter, and answering a
   // folder that does not exist with its parent's contents tells the reader it does.
-  const location = resolveFolderPath(tree, entries, (path ?? []).map(decodeURIComponent));
+  const segments = (path ?? []).map(decodeURIComponent);
+  const location =
+    scheme === "method"
+      ? resolveMethodFolderPath(tree, entries, segments)
+      : resolveFolderPath(tree, entries, segments);
   if (!location) notFound();
 
   return (
@@ -63,7 +86,13 @@ export default async function RepositoryFoldersPage({
       locale={locale}
       showLanguageToggle
     >
-      <FolderView location={location} locale={locale} />
+      <FolderView
+        location={location}
+        locale={locale}
+        scheme={scheme}
+        placed={tree.placed}
+        unplaced={tree.unreachable.length}
+      />
     </PublicSite>
   );
 }
