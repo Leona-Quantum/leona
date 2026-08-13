@@ -1845,9 +1845,21 @@ test("a line that opens into something says so, and a line that does not is not 
   // `chebyshev-pseudospectral-collocation` it pins is a LEAF — atomic, like
   // every other member of `time-discretization` except the two propagator
   // series. `openable` 28 → 29, `leaves` 61 → 62.
-  assert.equal(openable + leaves + 1, 92, "the twenty-three figures draw 92 lines between them");
-  assert.equal(openable, 29, "29 of them open into something the canvas draws");
-  assert.equal(leaves, 62, "62 are leaves — the canvas records nothing finer for them");
+  // Five more in session 15's map-growth pass, splitting 1 openable / 4 leaves, and the
+  // split is the honest shape of new work rather than an accident. Only
+  // `phase-estimation-ground-state` opens: it walks `state-preparation` and
+  // `hamiltonian-simulation` as named route segments, so the canvas has something to
+  // expand. The other four are leaves for two different reasons worth keeping apart —
+  // `generalized-excitation-ansatz` and `spsa-optimization` are genuinely undecomposed
+  // (nobody has recorded an interior, which is the honest state of a method just
+  // authored), while `batched-adapt-ansatz` and `thc-block-encoding` each declare a step
+  // that hangs as an INGREDIENT rather than as a segment, so there is nothing on the
+  // spine to open. A method with a step that still draws a leaf is the ingredient shape,
+  // not a miscount — the same distinction `layerwise-training` is annotated for above.
+  // `openable` 29 → 30, `leaves` 62 → 66.
+  assert.equal(openable + leaves + 1, 97, "the twenty-three figures draw 97 lines between them");
+  assert.equal(openable, 30, "30 of them open into something the canvas draws");
+  assert.equal(leaves, 66, "66 are leaves — the canvas records nothing finer for them");
 
 });
 

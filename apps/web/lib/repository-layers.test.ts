@@ -1339,7 +1339,16 @@ const HOLLOW_BY_SLOT: ReadonlyMap<string, number> = new Map([
   // `scripts/check-layer-graph.mjs`; this line is its count.
   ["linear-ode-solve", 2],
   ["polynomial-approximation", 2],
-  ["block-encode-matrix", 2],
+  // 4 since session 15, and the +2 for ONE new method is the summing rule working rather
+  // than two methods rotting. `thc-block-encoding` does not join the existing pair — it
+  // forms a SECOND group with `pauli-lcu-block-encoding`, because both draw one own hop
+  // with a `state-preparation` stub, and a group of one is not a group. So the slot goes
+  // from one group of two to two groups of two. What separates the new pair is what the
+  // LCU sum runs over — Pauli strings against tensor-hypercontraction factors — and a
+  // decomposition is not a step this graph draws, the same shape as the objective and
+  // readout rows below. Their reason is written out in `KNOWN_TWINS`
+  // (`scripts/check-layer-graph.mjs`), which is the gate that fails the build.
+  ["block-encode-matrix", 4],
   ["qubit-routing", 2],
   ["gate-synthesis", 2],
   ["error-correction", 2],
@@ -1353,7 +1362,13 @@ const HOLLOW_BY_SLOT: ReadonlyMap<string, number> = new Map([
   // family nobody has decomposed — and each is authored as a LEAF rather than given a stub
   // it was never described as having, which would be inventing structure to escape this
   // line.
-  ["ansatz-construction", 8],
+  // 9 since session 15, and it moves by ONE although two ansätze were authored — which is
+  // the `refines` rule doing exactly what it was written for. `generalized-excitation-ansatz`
+  // is a sixth fixed family, a leaf with no recorded interior, so it counts.
+  // `batched-adapt-ansatz` declares `refines: adapt-ansatz` and is dropped, the same way
+  // `qubit-adapt-ansatz` is: a declared refinement has already said why it looks like its
+  // sibling, which is the whole question this census asks.
+  ["ansatz-construction", 9],
   // **W21-E's region, and this line is the thing a global ceiling could not say.** Six of
   // the seven excited-state methods draw a sibling's picture, in two groups: four take
   // VQE's three hops and differ only in the objective handed to the optimiser, and two
@@ -1384,7 +1399,13 @@ const HOLLOW_BY_SLOT: ReadonlyMap<string, number> = new Map([
   // 3 since B5 unit 4: `natural-gradient-optimization` is a third one-hop filler.
   // The three differ in the objective (`cvar-objective`, `variance-objective`) or in the
   // metric the step is taken against (this one), and neither is a step this graph draws.
-  ["parameter-optimization", 3],
+  // 4 since session 15: `spsa-optimization` is a fourth one-hop filler. It differs from the
+  // other three in neither the objective nor the metric but in HOW THE GRADIENT IS
+  // ESTIMATED — two objective evaluations in one random direction instead of one pair per
+  // parameter — and an estimator is not a step this graph draws either. Three different
+  // kinds of difference now sit in one undrawable group, which is the argument for giving
+  // the objective a state rather than for raising this number again.
+  ["parameter-optimization", 4],
 ]);
 
 /**
