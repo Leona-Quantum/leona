@@ -307,6 +307,22 @@ export const DECLARED_SHARED_SOURCES: Readonly<Record<string, readonly string[]>
   // this same paper for both. Two records sharing it is the literature's own
   // shape, not a default filling in for a search nobody ran.
   "https://arxiv.org/abs/quant-ph/9508027": ["discrete-logarithm", "shor-period-finding"],
+  // Farhi, Goldstone and Gutmann 2014 is one paper doing two things, and this
+  // repository holds a record for each of them. It introduces QAOA as a general
+  // method for combinatorial optimization — `qaoa-combinatorial-optimization`,
+  // written for the owner's ai-ops#42 ruling — and it then works exactly one
+  // problem, MaxCut on regular graphs, which is what `qaoa-maxcut-ring`
+  // demonstrates at p = 1 on a five-node ring with a recorded TVD run. Neither
+  // record could be given a different primary paper without citing a document
+  // that does not contain its subject, so the share is the literature's own
+  // shape rather than a default filling in.
+  //
+  // The pairing is also load-bearing in the other direction. Thirteen Classiq
+  // demonstrations are declared against the general record in
+  // ./classiq-coverage.ts precisely *because* Farhi formulates MaxCut and none of
+  // their thirteen problems, so the one problem this paper does formulate needs
+  // to stay visibly attached to the record that demonstrates it.
+  "https://arxiv.org/abs/1411.4028": ["qaoa-combinatorial-optimization", "qaoa-maxcut-ring"],
 };
 
 /**
