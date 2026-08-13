@@ -2006,7 +2006,7 @@ export function LayerCensusPanel({
           it documents it *from*. A reader who wants the second is otherwise
           stuck opening node pages one at a time. */}
       <p>
-        {copy.papersLead(paperTraces(graph).length, PAPER_REGISTER.papers.length)}{" "}
+        {copy.papersLead(paperTraces(graph, STATE_VOCABULARY).length, PAPER_REGISTER.papers.length)}{" "}
         <a href="/repository/papers">{copy.papersLink}</a>
       </p>
     </section>

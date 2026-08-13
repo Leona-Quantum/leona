@@ -8,6 +8,7 @@ import test from "node:test";
 
 import type { LayerGraph } from "./repository/layers.ts";
 import type { PaperRegister } from "./repository/papers.ts";
+import type { StateVocabulary } from "./repository/states.ts";
 import {
   paperIndexCensus,
   paperPageFor,
@@ -17,6 +18,13 @@ import {
 
 const contract = { from: "a", to: "b", takes: "x", takesJa: "x", returns: "y", returnsJa: "y" };
 const cite = (n: string) => ({ title: "t", authors: "a", year: "2020", url: `https://arxiv.org/abs/${n}` });
+
+const VOCABULARY: StateVocabulary = {
+  states: [
+    { id: "a", label: "a", labelJa: "a", summary: "s", summaryJa: "s" },
+    { id: "b", label: "b", labelJa: "b", summary: "s", summaryJa: "s" },
+  ],
+};
 
 const GRAPH: LayerGraph = {
   nodes: [
@@ -84,7 +92,7 @@ test("every registered paper gets a page, including the ones nothing cites", () 
   // ingestion queue. Giving it an address is what makes the queue readable
   // rather than merely counted — dropping it would make the register's own
   // index disagree with the register.
-  const pages = paperPages(REGISTER, GRAPH, CORPUS);
+  const pages = paperPages(REGISTER, GRAPH, CORPUS, VOCABULARY);
   assert.deepEqual(
     pages.map((page) => page.paper.id),
     ["arxiv:1", "arxiv:2", "arxiv:3"],
@@ -99,7 +107,7 @@ test("every registered paper gets a page, including the ones nothing cites", () 
 });
 
 test("a node citing one paper twice is one citing node", () => {
-  const page = paperPageFor(paperPages(REGISTER, GRAPH, CORPUS), "arxiv:1");
+  const page = paperPageFor(paperPages(REGISTER, GRAPH, CORPUS, VOCABULARY), "arxiv:1");
   assert.deepEqual(
     page?.nodes.map((site) => site.href),
     ["/repository/layers/slot", "/repository/layers/m1"],
@@ -110,7 +118,7 @@ test("a slot and a method are labelled as different kinds of citing thing", () =
   // Merging them would report "cited in 2 places" for a paper cited by a method
   // and by the slot it fills — which is one claim seen from two levels, not two
   // independent ones.
-  const page = paperPageFor(paperPages(REGISTER, GRAPH, CORPUS), "arxiv:1");
+  const page = paperPageFor(paperPages(REGISTER, GRAPH, CORPUS, VOCABULARY), "arxiv:1");
   assert.deepEqual(
     page?.nodes.map((site) => site.kind),
     ["slot", "method"],
@@ -127,12 +135,12 @@ test("a slot and a method are labelled as different kinds of citing thing", () =
 test("a page with no Japanese record title falls back to the English one rather than blanking", () => {
   // A missing `titleJa` renders as an empty link on the Japanese page — a real
   // control with no label, which is worse than an untranslated one.
-  const page = paperPageFor(paperPages(REGISTER, GRAPH, CORPUS), "arxiv:1");
+  const page = paperPageFor(paperPages(REGISTER, GRAPH, CORPUS, VOCABULARY), "arxiv:1");
   assert.equal(page?.records[0]?.labelJa, "Record A");
 });
 
 test("the index census counts overlapping facts against one total, and does not partition them", () => {
-  const pages = paperPages(REGISTER, GRAPH, CORPUS);
+  const pages = paperPages(REGISTER, GRAPH, CORPUS, VOCABULARY);
   const census = paperIndexCensus(pages);
   assert.deepEqual(census, {
     papers: 3,
@@ -165,7 +173,7 @@ test("the bridge carries labels, never the ids it is computed from", () => {
       { ...GRAPH.nodes[2], citations: [cite("2")] },
     ],
   };
-  const page = paperPageFor(paperPages(REGISTER, graph, []), "arxiv:2");
+  const page = paperPageFor(paperPages(REGISTER, graph, [], VOCABULARY), "arxiv:2");
   assert.equal(page?.trace?.shape, "joinable");
   assert.deepEqual(page?.trace?.bridgeUpperBound, ["slot"]);
   assert.deepEqual(page?.bridge, [
@@ -177,7 +185,7 @@ test("a trace with no bridge carries an empty one, on every shape", () => {
   // `point` and `contiguous` must not inherit a stale bridge from the previous
   // paper, and `scattered` has no walk at all — the field is empty in all
   // three, which is what lets a renderer test `bridge.length` alone.
-  const pages = paperPages(REGISTER, GRAPH, CORPUS);
+  const pages = paperPages(REGISTER, GRAPH, CORPUS, VOCABULARY);
   for (const page of pages) {
     if (page.trace?.shape === "joinable") continue;
     assert.deepEqual(page.bridge, [], page.paper.id);
@@ -187,7 +195,7 @@ test("a trace with no bridge carries an empty one, on every shape", () => {
 test("the trace on a page is the same object the map census counted", () => {
   // Two surfaces read this; a page that recomputed the shape with its own rule
   // is how the index and the detail page start disagreeing about one paper.
-  const pages = paperPages(REGISTER, GRAPH, CORPUS);
+  const pages = paperPages(REGISTER, GRAPH, CORPUS, VOCABULARY);
   assert.equal(paperPageFor(pages, "arxiv:1")?.trace?.shape, "contiguous");
   assert.equal(paperPageFor(pages, "arxiv:2")?.trace?.shape, "point");
 });

@@ -13,6 +13,7 @@ import { getPublicLocale } from "../../../lib/public-locale-server";
 import { getRepositoryEntries } from "../../../lib/repository-source";
 import { LAYER_GRAPH } from "../../../lib/repository/layer-graph";
 import { PAPER_REGISTER } from "../../../lib/repository/paper-register";
+import { STATE_VOCABULARY } from "../../../lib/repository/state-vocabulary";
 import { paperIndexCensus, paperPages } from "../../../lib/repository/paper-pages";
 
 export async function generateMetadata(): Promise<Metadata> {
@@ -32,7 +33,7 @@ export async function generateMetadata(): Promise<Metadata> {
 
 export default async function RepositoryPapersPage() {
   const [locale, entries] = await Promise.all([getPublicLocale(), getRepositoryEntries()]);
-  const pages = paperPages(PAPER_REGISTER, LAYER_GRAPH, entries);
+  const pages = paperPages(PAPER_REGISTER, LAYER_GRAPH, entries, STATE_VOCABULARY);
   return (
     <PublicSite
       activePath="/repository"
