@@ -8,7 +8,7 @@ dependencies = ["pydantic>=2.8", "majorana-contracts"]
 [project.optional-dependencies]
 # The real Vercel Sandbox provider. Kept optional so the guard + local test
 # double install without the SDK (the SDK needs Vercel OIDC/token to do anything).
-vercel = ["vercel>=0.4"]
+vercel = ["vercel>=0.9.0"]
 
 [build-system]
 requires = ["hatchling"]
