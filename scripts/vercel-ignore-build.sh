@@ -92,7 +92,16 @@ fi
 # means a tenth is simply unrecognised, and unrecognised means build.
 IRRELEVANT='^(services/api/|services/worker/'
 IRRELEVANT="${IRRELEVANT}|packages/py/(agent|estimation|frameworks|llm|openqasm|qpu|sandbox|verification)/"
-IRRELEVANT="${IRRELEVANT}|evals/|infra/|db/|docs/|\.github/|[^/]*\.md$)"
+IRRELEVANT="${IRRELEVANT}|evals/|infra/|db/|docs/|\.github/|[^/]*\.md$"
+# The root uv workspace files. `uv.lock` is one lockfile for every Python
+# package in this repo, and root `pyproject.toml` is uv's workspace manifest
+# — neither is `packages/py/contracts`, both are anchored so a same-named
+# file inside a package (already covered above) can't collide, and nothing
+# under apps/web ever reads either one. Before this, EVERY python-only
+# Dependabot bump built the web app anyway, because the version bump always
+# touches uv.lock at root and the individual-package rule above only ever
+# looked at the package's own pyproject.toml.
+IRRELEVANT="${IRRELEVANT}|^uv\.lock$|^pyproject\.toml$)"
 
 if grep -qvE "$IRRELEVANT" <<<"$CHANGED"; then
   build "$(grep -vE "$IRRELEVANT" <<<"$CHANGED" | head -3 | tr '\n' ' ')"
