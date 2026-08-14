@@ -36,10 +36,14 @@
  * Widening the AuthKit list to match `isPublicPath()` exposes no gated route:
  * every public path either has no children in `app/` (`/auth/callback`,
  * `/auth/sign-out`, `/open-source`, `/demo`), has only public ones
- * (`/repository`), or lives under `[locale]` and is rewritten before the gate
- * is consulted at all (`/pricing`, `/contact`, `/privacy`, `/terms`,
- * `/workspace`). It also stops a typo under a public path from being 307'd to
- * WorkOS, which is the same defect `routed-paths.ts` was written to fix.
+ * (`/repository/<slug>`, `/repository/papers`, `/repository/folders` — the
+ * children the exact `/repository` entry below still has, now that the bare
+ * path itself has joined the next group), or lives under `[locale]` and is
+ * rewritten before the gate is consulted at all (`/pricing`, `/contact`,
+ * `/privacy`, `/terms`, `/workspace`, and since the Atlas caching change,
+ * `/repository` itself — see `routed-paths.ts`'s `LOCALE_ROUTES`). It also
+ * stops a typo under a public path from being 307'd to WorkOS, which is the
+ * same defect `routed-paths.ts` was written to fix.
  */
 import { isPublicDemoEnabled } from "./public-demo.ts";
 

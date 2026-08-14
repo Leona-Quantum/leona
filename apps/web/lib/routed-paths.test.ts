@@ -80,6 +80,13 @@ test("paths inside the app are routed, including ones that will 404 deeper down"
   assert.equal(isRoutedPath("/"), true);
   // /pricing and its siblings moved under app/[locale]/ and are answered by the
   // middleware rewrite before this function is consulted; see LOCALE_ROUTES.
+  // The bare `/repository` path joined them, and in production is answered the
+  // same way before this function ever sees it — but unlike pricing's segment,
+  // "repository" stays a ROUTED_SEGMENT (below) for everything under it, so
+  // this function's own answer for the exact string "/repository" is still,
+  // correctly, `true`. The two facts describe different things and do not
+  // conflict; see the "nothing served from [locale]..." test for why this one
+  // is exempted from the usual either/or.
   assert.equal(isRoutedPath("/repository"), true);
   // /repository/<slug> stays behind the repository gate; whether that slug
   // exists is the page's question, not the middleware's.
@@ -109,15 +116,34 @@ const PREFIX_FIRST_SEGMENTS = new Set(
   LOCALE_PREFIX_ROUTES.map((route) => route.split("/")[1]).filter((segment) => segment !== ""),
 );
 
-/** What `app/[locale]/` serves at the top level, as clean paths, excluding the prefix subtrees. */
+/**
+ * What `app/[locale]/` serves at the top level, as clean paths, excluding the
+ * prefix subtrees.
+ *
+ * A prefix-owned segment ("repository") is not simply skipped: it can ALSO
+ * carry an exact route of its own, at its own root, through a route group
+ * (a parenthesized directory, transparent in the URL). `/repository` is that
+ * case — `app/[locale]/repository/(browse)/page.tsx` resolves to `/repository`
+ * itself, distinct from the `layers/`/`claims/` subtrees `localePrefixRoutesOnDisk()`
+ * below already accounts for. Only route-group children are looked at here,
+ * never a plain named subdirectory, so a page added under `layers/` or
+ * `claims/` cannot silently start counting as an exact route too.
+ */
 function localeRoutesOnDisk(): string[] {
   const dir = join(APP_DIR, "[locale]");
   const found = ["/"];
   for (const entry of readdirSync(dir, { withFileTypes: true })) {
     if (!entry.isDirectory()) continue;
     if (entry.name.startsWith("@") || entry.name.startsWith("_")) continue;
-    // Answered by LOCALE_PREFIX_ROUTES and checked by its own test below.
-    if (PREFIX_FIRST_SEGMENTS.has(entry.name)) continue;
+    if (PREFIX_FIRST_SEGMENTS.has(entry.name)) {
+      const segmentDir = join(dir, entry.name);
+      for (const child of readdirSync(segmentDir, { withFileTypes: true })) {
+        if (!child.isDirectory()) continue;
+        if (!(child.name.startsWith("(") && child.name.endsWith(")"))) continue;
+        if (servesARoute(join(segmentDir, child.name))) found.push(`/${entry.name}`);
+      }
+      continue;
+    }
     if (servesARoute(join(dir, entry.name))) found.push(`/${entry.name}`);
   }
   return found.sort();
@@ -129,6 +155,11 @@ function localeRoutesOnDisk(): string[] {
  *
  * `[id]` and friends are not walked into: LOCALE_PREFIX_ROUTES names subtrees,
  * and a dynamic child is part of the subtree its parent declares.
+ *
+ * A route-group child — `(browse)`, today — is skipped here rather than
+ * counted as a named subtree. It contributes no URL segment of its own, so
+ * `/repository/(browse)` is not a real path; it is `localeRoutesOnDisk()`'s
+ * job to find it, as the exact `/repository` entry.
  */
 function localePrefixRoutesOnDisk(): string[] {
   const found: string[] = [];
@@ -137,6 +168,7 @@ function localePrefixRoutesOnDisk(): string[] {
     for (const entry of readdirSync(dir, { withFileTypes: true })) {
       if (!entry.isDirectory()) continue;
       if (entry.name.startsWith("@") || entry.name.startsWith("_")) continue;
+      if (entry.name.startsWith("(") && entry.name.endsWith(")")) continue;
       if (servesARoute(join(dir, entry.name))) found.push(`/${segment}/${entry.name}`);
     }
   }
@@ -166,7 +198,12 @@ test("the prefix matcher takes descendants and not lookalikes", () => {
     // while telling the auth gate the path had been handled.
     assert.equal(localePrefixRoute(`${route}extra`), null, `${route}extra must not match`);
   }
-  assert.equal(localePrefixRoute("/repository"), null, "the browse index stays in app/repository/");
+  // `/repository` itself IS locale-rewritten now (LOCALE_ROUTES, exact) — it
+  // must still be null HERE, from the PREFIX matcher, because prefix matching
+  // is startsWith-shaped and would treat every entry page below it as a
+  // "descendant" of `/repository` and rewrite those too. Exact vs prefix is
+  // the whole reason `/repository` lives in the other list.
+  assert.equal(localePrefixRoute("/repository"), null, "/repository is an exact LOCALE_ROUTES entry, not a prefix");
   assert.equal(localePrefixRoute("/repository/some-record-slug"), null, "an entry page stays in app/repository/");
 });
 
@@ -190,8 +227,19 @@ test("nothing served from [locale] is also claimed as a routed segment", () => {
   // LOCALE_ROUTES is answered by the rewrite and never reaches isRoutedPath(),
   // so a segment claiming to be routed as well would be dead weight that also
   // reads as a second, contradictory declaration of where that path lives.
+  //
+  // `/repository` is the one deliberate exception. Unlike the other entries —
+  // each of which moved WHOLESALE to app/[locale]/, leaving nothing behind for
+  // ROUTED_SEGMENTS to legitimately claim — "repository" still has to stay a
+  // ROUTED_SEGMENT for everything below the exact root: `/repository/<slug>`,
+  // `/repository/papers`, `/repository/folders` are all still served from
+  // app/repository/ and still need the auth gate. Only the bare `/repository`
+  // path is answered by the rewrite; isRoutedPath("/repository") is never
+  // consulted for it in practice, and its result would still be `true` if it
+  // were — the two are not in conflict, they are both true about different
+  // things, which is why this is a skip and not a second exception list.
   for (const route of LOCALE_ROUTES) {
-    if (route === "/") continue;
+    if (route === "/" || route === "/repository") continue;
     assert.equal(
       ROUTED_SEGMENTS.includes(route.slice(1)),
       false,

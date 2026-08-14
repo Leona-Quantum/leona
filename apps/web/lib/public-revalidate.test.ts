@@ -60,7 +60,13 @@ function pageFiles(): { route: string; source: string }[] {
         pages.push({ route: route === "" ? "/" : route, source: readFileSync(join(dir, entry.name), "utf8") });
       }
       if (entry.isDirectory() && !entry.name.startsWith("_") && !entry.name.startsWith("@")) {
-        walk(join(dir, entry.name), `${route}/${entry.name}`);
+        // A route group — `(browse)`, today — is transparent in the URL, so it
+        // contributes no segment of its own. Walked into without extending
+        // `route`, the same rule `routed-paths.test.ts`'s own disk-walker
+        // applies, or a page inside one (`/repository`'s browse index) would
+        // be counted under a path nothing ever requests.
+        const isGroup = entry.name.startsWith("(") && entry.name.endsWith(")");
+        walk(join(dir, entry.name), isGroup ? route : `${route}/${entry.name}`);
       }
     }
   };
@@ -116,13 +122,25 @@ test("a page that reads searchParams carries no revalidate, and is CDN-cached in
       false,
       `${route} reads searchParams, so it renders on every request and cannot prerender; its \`revalidate\` claims a static render that never happens`,
     );
-    // The subtree the header names, not the page's own route: `next.config.ts`
-    // covers `/repository/layers` and everything under it with one source pair.
-    const covered = LOCALE_PREFIX_ROUTES.filter(
+    // Two ways a dynamic page can be covered, because `/repository` (exact)
+    // joined the prefix subtrees as the first LOCALE_ROUTES entry that also
+    // reads searchParams — no earlier exact entry needed this branch, since
+    // all six marketing pages prerender.
+    //
+    // Prefix: the subtree the header names, not the page's own route —
+    // `next.config.ts` covers `/repository/layers` and everything under it
+    // with one source pair.
+    const prefixCovered = LOCALE_PREFIX_ROUTES.filter(
       (prefix) => route === prefix || route.startsWith(`${prefix}/`),
     ).some((prefix) => config.includes(`"${prefix}"`));
+    // Exact: the page's own route, named directly — `/repository` itself,
+    // not a subtree. A page reachable only via an exact LOCALE_ROUTES entry
+    // is covered this way instead; the prefix filter above is legitimately
+    // empty for it, which is why `some()` on an empty array (`false`) must
+    // not be the final word.
+    const exactCovered = LOCALE_ROUTES.includes(route) && config.includes(`"${route}"`);
     assert.ok(
-      covered,
+      prefixCovered || exactCovered,
       `${route} reads searchParams but no Vercel-CDN-Cache-Control source in next.config.ts covers it, so it renders on every request and is never cached`,
     );
     // **The third half of the rule, and the one that looks redundant.**
