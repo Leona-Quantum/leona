@@ -265,17 +265,29 @@ jobs:
           # slowest request anyone sees. Verified live, 2026-08-14, alongside the
           # cpu/memory/concurrency values above.
           #
-          # --update-env-vars, never --set-env-vars: neither service's env is
-          # fully declared here yet (DATABASE_URL and the MAJORANA_* runtime
-          # settings are live-service state), so --set would wipe them and the
-          # revision would come up unable to reach the database.
+          # --update-env-vars, never --set-env-vars: the service's env is still
+          # not fully declared here (DATABASE_URL and a handful of other
+          # MAJORANA_* settings remain live-service state), so --set would wipe
+          # them and the revision would come up unable to reach the database.
+          #
+          # MAJORANA_ENV and SENTRY_DSN join the declared set as of ai-ops#97:
+          # both were ALSO live-service state — set by hand at some point,
+          # correctly, but invisible here — which is exactly the pattern that
+          # caused the incidents this workflow exists to stop. MAJORANA_ENV is
+          # hardcoded to `production` rather than read from anywhere, because
+          # this job only ever runs against `dev`, which IS production
+          # (AGENTS.md § Branching) — there is no second value it could
+          # legitimately be. SENTRY_DSN comes from Secret Manager, not a literal,
+          # so a DSN rotation is one `gcloud secrets versions add` away from
+          # every service instead of a hand-edit per Cloud Run service.
           gcloud run deploy majorana-api --project "$GCP_PROJECT" --region "$GCP_REGION" \
             --image "$IMAGE_REPO:${{ steps.tag.outputs.tag }}" \
             --set-cloudsql-instances "$CLOUDSQL_INSTANCE" \
             --max-instances "$API_MAX_INSTANCES" \
             --cpu "$API_CPU" --memory "${API_MEMORY_MI}Mi" --concurrency "$API_CONCURRENCY" \
             --cpu-boost \
-            --update-env-vars MAJORANA_SERVICE=api \
+            --update-env-vars "MAJORANA_SERVICE=api,MAJORANA_ENV=production,MAJORANA_RELEASE=${{ steps.tag.outputs.tag }}" \
+            --update-secrets SENTRY_DSN=SENTRY_DSN:latest \
             --no-traffic --tag verify
           # Parse the URL out with jq rather than a --format projection. Two
           # earlier attempts failed here (2026-07-19):
@@ -408,11 +420,16 @@ jobs:
           # several of those plus the API blows the instance's 50-connection
           # ceiling. The worker holds at most two sessions at once (handler +
           # heartbeat).
+          #
+          # MAJORANA_ENV, MAJORANA_RELEASE and SENTRY_DSN: same reasoning as the
+          # api deploy step above (ai-ops#97) — declared here instead of being
+          # live-service state nobody wrote down.
           gcloud run deploy majorana-worker --project "$GCP_PROJECT" --region "$GCP_REGION" \
             --image "$IMAGE_REPO:${{ steps.tag.outputs.tag }}" \
             --command majorana-worker \
             --set-cloudsql-instances "$CLOUDSQL_INSTANCE" \
-            --update-env-vars MAJORANA_SERVICE=worker,DB_POOL_SIZE=$WORKER_POOL_SIZE,DB_MAX_OVERFLOW=$WORKER_MAX_OVERFLOW \
+            --update-env-vars "MAJORANA_SERVICE=worker,MAJORANA_ENV=production,MAJORANA_RELEASE=${{ steps.tag.outputs.tag }},DB_POOL_SIZE=$WORKER_POOL_SIZE,DB_MAX_OVERFLOW=$WORKER_MAX_OVERFLOW" \
+            --update-secrets SENTRY_DSN=SENTRY_DSN:latest \
             --min-instances "$WORKER_INSTANCES" --max-instances "$WORKER_INSTANCES" --no-cpu-throttling
           rev=$(gcloud run services describe majorana-worker \
             --project "$GCP_PROJECT" --region "$GCP_REGION" \
