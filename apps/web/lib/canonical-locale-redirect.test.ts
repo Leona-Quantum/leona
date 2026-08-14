@@ -53,11 +53,14 @@ test("no path can move the redirect off this origin", () => {
     assert.equal(target.origin, ORIGIN, `${pathname} escaped to ${target.toString()}`);
     assert.equal(target.host, "leonaqt.com", pathname);
   }
+  // A loop over an empty array passes every assertion inside it, so the count is
+  // asserted HERE, in the test that owns the array. Asserting it in a sibling
+  // test does not protect this one: a future edit could delete rows from
+  // `hostile` above and every assertion in this file would still pass.
+  assert.equal(hostile.length, 9);
 });
 
-test("the hostile list is not vacuously empty", () => {
-  // A loop over an empty array passes every assertion inside it. The count is
-  // asserted so a future edit cannot quietly delete the cases above.
+test("the hostile forms keep the host and expose the path", () => {
   const bs = String.fromCharCode(92);
   assert.equal(canonicalLocaleTarget(`/en/${bs}evil.com`, REQUEST, PUBLIC_LOCALES)?.host, "leonaqt.com");
   assert.equal(canonicalLocaleTarget("/en//evil.com", REQUEST, PUBLIC_LOCALES)?.pathname, "/evil.com");
