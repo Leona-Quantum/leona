@@ -27,8 +27,8 @@
  * `/repository/<slug>` collapses to the literal string `/repository/[slug]`.
  * Writing the slug would make the log unbounded in cardinality and would turn a
  * counter into a record of what each visitor read, which is a different and
- * more sensitive artifact than the one that was approved. The four patterns
- * below are the whole vocabulary; anything else returns null and is not logged.
+ * more sensitive artifact than the one that was approved. `PAGEVIEW_ROUTES`
+ * below is the whole vocabulary; anything else returns null and is not logged.
  *
  * ## Why it is import-free
  *
@@ -45,7 +45,54 @@
 export const PAGEVIEW_LOG_MARKER = "leona.pageview";
 
 /** The only routes this counter knows. Anything else is not a public page. */
-export const PAGEVIEW_ROUTES = ["/", "/repository", "/repository/layers", "/repository/[slug]"] as const;
+export const PAGEVIEW_ROUTES = [
+  "/",
+  "/repository",
+  "/repository/layers",
+  "/repository/layers/[id]",
+  "/repository/papers",
+  "/repository/papers/[id]",
+  "/repository/claims",
+  "/repository/folders",
+  "/repository/[slug]",
+] as const;
+
+/**
+ * The children of `app/repository/` that are their own routes, not entry slugs.
+ *
+ * ## The bug this exists to make impossible
+ *
+ * The first version of `publicRoute` treated **anything** slug-shaped under
+ * `/repository/` as an entry: `path.startsWith("/repository/")` and then a
+ * lowercase-with-hyphens test. `papers`, `claims` and `folders` are all
+ * lowercase words, so all three passed, and production was counting three index
+ * pages as "somebody read a record". Verified live on 2026-08-14 — a GET of
+ * `/repository/papers` logged `"route":"/repository/[slug]"` — rather than
+ * inferred from the regex.
+ *
+ * Meanwhile `/repository/layers/<id>` — the map's card pages, which are the
+ * single most requested shape in the production logs — matched nothing at all,
+ * because the slug test rejects a path containing a slash. The counter was
+ * built to answer "does anyone read the map?" and was blind to exactly that.
+ *
+ * `pageview-signal.test.ts` asserts this list equals the directory listing of
+ * `apps/web/app/repository/`, so a new sibling route cannot quietly start
+ * counting itself as an entry the way these three did. That check is the point
+ * of keeping the list here rather than inlining the names in `publicRoute`.
+ */
+export const RESERVED_REPOSITORY_SEGMENTS = {
+  // `claims/page.tsx` — one page, no child route.
+  claims: { subtree: "none" },
+  // `folders/[[...path]]/page.tsx` — an optional catch-all, so every depth
+  // below it is served by the same page.
+  folders: { subtree: "catch-all" },
+  // `layers/page.tsx` + `layers/[id]/page.tsx` — the map, and its card pages.
+  layers: { subtree: "id" },
+  // `papers/page.tsx` + `papers/[id]/page.tsx`.
+  papers: { subtree: "id" },
+} as const satisfies Record<string, { subtree: "none" | "id" | "catch-all" }>;
+
+export type ReservedRepositorySegment = keyof typeof RESERVED_REPOSITORY_SEGMENTS;
 
 export type PageviewRoute = (typeof PAGEVIEW_ROUTES)[number];
 
@@ -106,12 +153,31 @@ export function publicRoute(pathname: string): PageviewRoute | null {
   if (path === "") return "/";
   if (path === "/") return "/";
   if (path === "/repository") return "/repository";
-  // Checked before the slug branch on purpose: "layers" is a real slug shape,
-  // and matching it as `[slug]` would silently merge the layers page — one of
-  // the two surfaces the map question is actually about — into the entry bucket.
-  if (path === "/repository/layers") return "/repository/layers";
-  const entry = path.startsWith("/repository/") ? path.slice("/repository/".length) : null;
-  if (entry !== null && SLUG.test(entry)) return "/repository/[slug]";
+  if (!path.startsWith("/repository/")) return null;
+  const [head, ...tail] = path.slice("/repository/".length).split("/");
+
+  // The reserved siblings are matched BEFORE the slug branch, because every one
+  // of them is also a valid slug shape. Getting this order wrong is not a
+  // hypothetical: it is the bug that had production counting /repository/papers
+  // as a record read.
+  const reserved = RESERVED_REPOSITORY_SEGMENTS[head as ReservedRepositorySegment];
+  if (reserved !== undefined) {
+    if (reserved.subtree === "catch-all") {
+      // `folders` is `[[...path]]`, an optional catch-all of unbounded depth.
+      // Every level of it is the same page to a reader, so it collapses to one
+      // pattern rather than growing a route name per level.
+      return "/repository/folders";
+    }
+    if (tail.length === 0) return `/repository/${head}` as PageviewRoute;
+    if (reserved.subtree === "id" && tail.length === 1 && SLUG.test(tail[0])) {
+      return `/repository/${head}/[id]` as PageviewRoute;
+    }
+    // Deeper than the route tree goes, or a segment that is not id-shaped.
+    // Counting it as its parent would overstate a page nobody opened.
+    return null;
+  }
+
+  if (tail.length === 0 && SLUG.test(head)) return "/repository/[slug]";
   return null;
 }
 

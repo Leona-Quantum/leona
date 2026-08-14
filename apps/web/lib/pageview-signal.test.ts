@@ -1,7 +1,10 @@
 import assert from "node:assert/strict";
+import { readdirSync } from "node:fs";
 import test from "node:test";
 import {
   PAGEVIEW_LOG_MARKER,
+  PAGEVIEW_ROUTES,
+  RESERVED_REPOSITORY_SEGMENTS,
   isPrefetch,
   isProbablyBot,
   isReadRequest,
@@ -22,7 +25,7 @@ function headers(entries: Record<string, string> = {}): HeaderLookup {
 const REAL_BROWSER =
   "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0 Safari/537.36";
 
-test("the four approved routes are the ones that count", () => {
+test("the approved routes are the ones that count", () => {
   assert.equal(publicRoute("/"), "/");
   assert.equal(publicRoute("/repository"), "/repository");
   assert.equal(publicRoute("/repository/layers"), "/repository/layers");
@@ -198,4 +201,73 @@ test("only a GET is a read; HEAD and OPTIONS are instruments, not readers", () =
   };
   assert.equal(pageviewSignal({ ...base, method: "HEAD" }), null);
   assert.equal(pageviewSignal({ ...base, method: "GET" })?.route, "/repository");
+});
+
+test("the reserved segments are exactly the real children of app/repository", () => {
+  // The guard that makes the rest of this file more than an opinion. The bug
+  // being fixed was a route existing in `app/` that `publicRoute` had never
+  // heard of, so a test that only exercises hand-written examples would have
+  // passed just as happily before the fix as after it. This one reads the route
+  // tree, so adding `app/repository/<something>/` and forgetting this file
+  // fails here rather than in production three weeks later.
+  const dir = new URL("../app/repository/", import.meta.url);
+  const children = readdirSync(dir, { withFileTypes: true })
+    .filter((entry) => entry.isDirectory())
+    // `(browse)` is a route group — parentheses mean it contributes no URL
+    // segment — and `[slug]` is the entry route this list exists to protect.
+    .filter((entry) => !entry.name.startsWith("(") && !entry.name.startsWith("["))
+    .map((entry) => entry.name)
+    .sort();
+  assert.deepEqual(Object.keys(RESERVED_REPOSITORY_SEGMENTS).sort(), children);
+});
+
+test("an index page under /repository is not a record somebody read", () => {
+  // Each of these was verified logging as "/repository/[slug]" on production
+  // on 2026-08-14, before this fix. They are lowercase words, so the slug
+  // shape test admitted all three.
+  assert.equal(publicRoute("/repository/papers"), "/repository/papers");
+  assert.equal(publicRoute("/repository/claims"), "/repository/claims");
+  assert.equal(publicRoute("/repository/folders"), "/repository/folders");
+  // The positive control: a real entry slug still reads as one, so the fix
+  // cannot have worked by refusing everything.
+  assert.equal(publicRoute("/repository/grover-search"), "/repository/[slug]");
+});
+
+test("the map's card pages are counted, and are not entries", () => {
+  // The single most requested shape in the production logs, and it matched
+  // nothing at all before this fix — the counter was built to answer "does
+  // anyone read the map?" and could not see the map's own card pages.
+  assert.equal(publicRoute("/repository/layers/adapt-ansatz"), "/repository/layers/[id]");
+  assert.equal(publicRoute("/repository/layers/uccsd-ansatz"), "/repository/layers/[id]");
+  // The map itself stays its own bucket rather than merging into its children.
+  assert.equal(publicRoute("/repository/layers"), "/repository/layers");
+  assert.equal(publicRoute("/repository/papers/2006-14904"), "/repository/papers/[id]");
+});
+
+test("a path deeper than the route tree is not counted as its parent", () => {
+  // Overstating a page nobody opened is the same class of error as counting
+  // an index page as a record, so it gets the same answer: no line.
+  assert.equal(publicRoute("/repository/layers/adapt-ansatz/extra"), null);
+  assert.equal(publicRoute("/repository/claims/anything"), null);
+  assert.equal(publicRoute("/repository/grover-search/extra"), null);
+  // `folders` is an optional catch-all, so every depth of it IS the same page.
+  assert.equal(publicRoute("/repository/folders/a/b/c"), "/repository/folders");
+});
+
+test("every route publicRoute can return is declared in PAGEVIEW_ROUTES", () => {
+  // `publicRoute` builds two of its return values by template string, which
+  // TypeScript cannot check against the union on its own. Without this, a typo
+  // would ship a route name nothing downstream knows how to bucket.
+  const produced = [
+    "/", "/repository", "/repository/layers", "/repository/layers/adapt-ansatz",
+    "/repository/papers", "/repository/papers/2006-14904", "/repository/claims",
+    "/repository/folders", "/repository/folders/a/b", "/repository/grover-search",
+  ].map(publicRoute).filter((route) => route !== null);
+  assert.ok(produced.length > 0);
+  for (const route of produced) {
+    assert.ok(
+      (PAGEVIEW_ROUTES as readonly string[]).includes(route),
+      `publicRoute returned ${route}, which is not in PAGEVIEW_ROUTES`,
+    );
+  }
 });

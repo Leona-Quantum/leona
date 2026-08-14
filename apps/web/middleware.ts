@@ -110,7 +110,7 @@ export default async function middleware(request: NextRequest, event: NextFetchE
   // First, and before any early return: the counter's contract is that it runs
   // exactly once per request. It is also why placement here is safe next to the
   // 404 fall-through below — `publicRoute()` returns null for anything outside
-  // the four PAGEVIEW_ROUTES, all of which are routed paths, so an unrouted URL
+  // PAGEVIEW_ROUTES, all of which are routed paths, so an unrouted URL
   // logs nothing either way. Counting first keeps that true if the route list
   // ever grows.
   countPageview(request);
