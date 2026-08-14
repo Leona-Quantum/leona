@@ -35,6 +35,16 @@ _OPENQASM_CONTRACT = (
     "program merely to make OpenQASM conversion possible."
 )
 
+_RESULT_VISUALIZATION_SCHEMA = """A requested graph uses the reserved RESULT key
+`visualizations`, whose value is a JSON list. Each item has exactly this shape:
+`{"type": "line" | "scatter" | "bar", "title": str, "x_label": str,
+"y_label": str, "series": [{"label": str, "x": [...], "y": [...]}]}`.
+For line and scatter, x and y are equal-length finite numeric lists. For bar, x is
+an equal-length list of short category strings or finite numbers and y is finite
+numeric data. Use at most 4 charts, 4 series per chart, and 96 points per series.
+The chart must be derived from values the program actually computed. Never place SVG,
+HTML, base64, plotting-library objects, or invented display-only numbers in RESULT."""
+
 FRAMEWORK_DIRECTIVE = (
     "Default framework is Qiskit for executable Python. Generate PennyLane, Cirq, Amazon "
     "Braket, Qibo, or Qulacs only when the user explicitly selects it. If Qiskit cannot "
@@ -640,6 +650,11 @@ y rather than bounding the continuous sin(theta)**2. Never decode the other phas
 its cosine-squared complement, and omit expected_range if you have not computed the
 finite-register rule requested by the task.
 
+When the user explicitly requests a graph, chart, or plot, include `visualizations` in
+expected_output_keys in addition to the underlying numeric evidence keys. Never use
+`visualizations` as success_criteria.primary_metric; a display specification is not
+scientific evidence. {_RESULT_VISUALIZATION_SCHEMA}
+
 When the request includes known_reference, it is trusted task-specific data supplied
 by the worker. Use it verbatim for the matching verification_plan and metric
 convention; do not replace its coefficients or constants from memory. When it is null,
@@ -995,6 +1010,12 @@ RESULT requirements; the promised output keys still apply when that entry point 
 - use current Qiskit 2.x, Cirq, PennyLane, Amazon Braket, Qibo, or Qulacs APIs
   and only installed packages;
 - never use stdout as a result channel and never make network or credential calls.
+
+If `visualizations` is one of the Plan's expected_output_keys, populate it from the
+actual computed values and labels using the contract below. Keep every underlying
+numeric evidence key separately in RESULT so a reader can inspect the values without
+trusting the chart. Do not add a visualization when the Plan did not promise one.
+{_RESULT_VISUALIZATION_SCHEMA}
 
 {_QISKIT_GENERATION_API_RULES}
 
@@ -2797,6 +2818,11 @@ secondary probability, cost, norm, fidelity, or baseline. In a noiseless algorit
 that should be deterministic for the stated inputs, inspect the full returned
 distribution or concentration evidence; a correct most-likely label with unexplained
 off-target support is not enough for READY.
+
+When RESULT contains `visualizations`, confirm each plotted series is derived from the
+candidate's actual numeric results and matches its axis meaning. Treat the chart as a
+presentation of those values, never as independent evidence. A malformed, fabricated,
+or mismatched requested visualization is a concrete source/RESULT defect.
 
 For open-system code in basis |0>,|1>, check that lowering is |0><1| =
 [[0,1],[0,0]] and raising is |1><0| = [[0,0],[1,0]]. Read a literal multiplier such
