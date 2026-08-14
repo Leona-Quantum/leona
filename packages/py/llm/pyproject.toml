@@ -11,7 +11,7 @@ dependencies = ["pydantic>=2.8", "majorana-contracts"]
 # + DeepSeek (2026-07-10); DeepSeek speaks the OpenAI wire protocol, so one SDK
 # covers both. Anthropic stays as an alternate profile.
 openai = ["openai>=1.50"]
-anthropic = ["anthropic>=0.40"]
+anthropic = ["anthropic>=0.121.0"]
 
 [build-system]
 requires = ["hatchling"]
