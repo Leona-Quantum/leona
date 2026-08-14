@@ -1,0 +1,38 @@
+# Post-deploy only, never a PR gate: there is no build artifact to check before a
+# merge, only the live edge after one. Fires on every Vercel Production deployment
+# (i.e. every push to `dev` that Vercel deploys, regardless of whether apps/web
+# changed) and asks the one question none of the required checks can:
+# `client-bundle`'s `check-static-routes.mjs` reads a local build's route table,
+# never a live request. This is the request.
+#
+# Built after PR 591 shipped and a live cache-buster test wrongly read it as
+# broken (`cache-buster-cannot-test-a-cache` memory) — see
+# scripts/check-live-repository-cache.mjs for the full account of why a
+# cache-buster is exactly the wrong tool here and what this checks instead.
+#
+# Deliberately soft: see the script's own header for why a cache miss warns
+# rather than fails, and never blocks anything either way — nothing is gated on
+# a workflow that only runs after the deploy it is checking.
+name: verify-web-cache
+on:
+  deployment_status:
+
+permissions:
+  contents: read
+
+jobs:
+  check-repository-layers:
+    if: >
+      github.event.deployment_status.state == 'success' &&
+      github.event.deployment.environment == 'Production' &&
+      github.event.deployment.creator.login == 'vercel[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 26
+      - name: scanner self-test
+        run: node scripts/check-live-repository-cache.mjs --self-test
+      - name: the highest-traffic public route is actually served from the CDN
+        run: node scripts/check-live-repository-cache.mjs
