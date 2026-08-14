@@ -194,6 +194,49 @@ test("MALFORMED is still refused, which is the half that must not be lost", () =
   assert.equal(parseCatalogListRecord(record), null, "visualization.wires was not shape-checked");
 });
 
+/**
+ * The same two terms one level INSIDE `visualization`, which is where its cost is.
+ *
+ * `visualization` is 16.0% of the list payload and `operations` is 138,156 of
+ * its 171,410 bytes, measured against the live 369-record listing. `outcomes` is
+ * read by nothing in the browse view. So the projection that pays trims inside
+ * the field rather than removing it — and the outer tolerance above does not
+ * cover that at all: `{ wires: [...] }` alone passes `!== undefined` and
+ * `isRecord`, then used to die on `!Array.isArray(undefined)` and take all 369
+ * records with it.
+ */
+test("the list parse survives visualization being trimmed a level down", () => {
+  for (const key of ["operations", "outcomes", "wires"] as const) {
+    const record = listRecord("Qiskit");
+    delete (record.visualization as Record<string, unknown>)[key];
+    assert.ok(parseCatalogListRecord(record), `dropping visualization.${key} rejected the record`);
+  }
+  // What the projection actually sends for a non-gate record: wires only.
+  const wiresOnly = listRecord("Qiskit");
+  wiresOnly.visualization = { wires: ["q0", "q1"] };
+  const parsed = parseCatalogListRecord(wiresOnly) as unknown as Record<string, unknown>;
+  assert.ok(parsed, "a wires-only visualization was rejected");
+  // Filled, because `repository-browser.tsx:1562` reads `.operations` with no
+  // `?? []` — a partial object reaching a consumer is the throw this prevents.
+  assert.deepEqual(parsed.visualization, { wires: ["q0", "q1"], operations: [], outcomes: [] });
+});
+
+test("a malformed visualization key is still refused a level down", () => {
+  for (const [key, bad] of [
+    ["wires", [1, 2]],
+    ["operations", "not-an-array"],
+    ["outcomes", 42],
+  ] as const) {
+    const record = listRecord("Qiskit");
+    (record.visualization as Record<string, unknown>)[key] = bad;
+    assert.equal(
+      parseCatalogListRecord(record),
+      null,
+      `a malformed visualization.${key} was accepted`,
+    );
+  }
+});
+
 test("the FULL parse keeps requiring them, because its payload is not shrinking", () => {
   // Only the list projection gets smaller. The detail page fetches one record
   // and needs all of it, so weakening that guard would buy nothing and cost the
@@ -202,5 +245,17 @@ test("the FULL parse keeps requiring them, because its payload is not shrinking"
     const record = fullRecord("Qiskit");
     delete record[field];
     assert.equal(parseCatalogRecord(record), null, `the full parse tolerated a missing ${field}`);
+  }
+  // Including one level down: the detail page renders `visualization.outcomes`
+  // (`repository-entry-view.tsx:414`) and destructures `{ wires, operations }`
+  // (`:750`), so the full record is exactly where those keys are required.
+  for (const key of ["wires", "operations", "outcomes"] as const) {
+    const record = fullRecord("Qiskit");
+    delete (record.visualization as Record<string, unknown>)[key];
+    assert.equal(
+      parseCatalogRecord(record),
+      null,
+      `the full parse tolerated a missing visualization.${key}`,
+    );
   }
 });
