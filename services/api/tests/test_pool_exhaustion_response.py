@@ -102,13 +102,21 @@ async def test_an_ordinary_fault_is_still_a_500():
     assert response.json()["code"] == "internal_error"
 
 
-def test_the_engine_bounds_the_wait_rather_than_taking_sqlalchemys_default():
+def test_the_engine_bounds_the_wait_rather_than_taking_sqlalchemys_default(monkeypatch):
     """30s of waiting holds a Cloud Run request slot that serves nobody.
 
     Asserted against the engine's live pool rather than against the constant,
     so that deleting the `pool_timeout=` argument fails this test even though
     the constant it named still exists.
+
+    `engine_from_env()` never connects here — SQLAlchemy's async engine builds
+    the pool lazily, and this only inspects `.pool.timeout()` — so a fake
+    DATABASE_URL is enough. That's deliberate: unlike the `*_live.py` suite,
+    which the `db` CI job wires to a real postgres service and skips without
+    `DATABASE_URL`, this file runs in `py`, which has no database. Skipping
+    here would mean never running at all.
     """
+    monkeypatch.setenv("DATABASE_URL", "postgresql://test:test@localhost:5432/test")
     engine = db.engine_from_env()
     try:
         assert engine.sync_engine.pool.timeout() == pytest.approx(db.DEFAULT_POOL_TIMEOUT_S)
