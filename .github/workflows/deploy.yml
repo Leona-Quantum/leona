@@ -65,7 +65,7 @@ jobs:
       # gcloud reads it as "clear this setting" and ships a revision nobody sized.
       - name: load fleet sizing
         run: |
-          for key in WORKER_INSTANCES WORKER_POOL_SIZE WORKER_MAX_OVERFLOW API_MAX_INSTANCES; do
+          for key in WORKER_INSTANCES WORKER_POOL_SIZE WORKER_MAX_OVERFLOW API_MAX_INSTANCES API_CPU API_MEMORY_MI API_CONCURRENCY; do
             grep -qE "^${key}=[0-9]+$" infra/fleet.env || {
               echo "::error::${key} is missing from infra/fleet.env or is not a plain integer"
               exit 1
@@ -239,6 +239,21 @@ jobs:
           # which is also where db.py reads it for that budget — one number, not
           # two that have to be kept equal.
           #
+          # --cpu / --memory / --concurrency are new as of infra/pin-api-cloud-run-shape
+          # (2026-08-14). Before this, the API's per-instance shape was NOT
+          # declared anywhere in the repo: this command never passed those
+          # flags, so `gcloud run deploy --image` silently preserved whatever
+          # the previous revision had, and the real numbers lived only in
+          # whichever manual `gcloud` invocation last touched the service.
+          # Pinned here from the live values read via `gcloud run services
+          # describe majorana-api`: 1 vCPU, 512Mi, concurrency 80 — see
+          # infra/fleet.env for the per-key reasoning.
+          #
+          # --min-instances is deliberately still absent. Production scales to
+          # zero today — no min-instances has ever been set on this service —
+          # and this is a pin-what's-live change, not a behaviour change; see
+          # the PR that introduced this comment for a minScale recommendation.
+          #
           # --update-env-vars, never --set-env-vars: neither service's env is
           # fully declared here yet (DATABASE_URL and the MAJORANA_* runtime
           # settings are live-service state), so --set would wipe them and the
@@ -247,6 +262,7 @@ jobs:
             --image "$IMAGE_REPO:${{ steps.tag.outputs.tag }}" \
             --set-cloudsql-instances "$CLOUDSQL_INSTANCE" \
             --max-instances "$API_MAX_INSTANCES" \
+            --cpu "$API_CPU" --memory "${API_MEMORY_MI}Mi" --concurrency "$API_CONCURRENCY" \
             --update-env-vars MAJORANA_SERVICE=api \
             --no-traffic --tag verify
           # Parse the URL out with jq rather than a --format projection. Two

@@ -43,7 +43,10 @@ hundred arriving together inflate the median about thirtyfold. It queued; it did
 
 **Not production capacity.** This gate has always said it does not claim the local machine
 represents Cloud Run, and that caveat is doing real work here. Production is 1 vCPU, 512Mi,
-`containerConcurrency: 80`, `maxScale: 2`. This ran one uvicorn process on ten M1 Pro cores
+`containerConcurrency: 80`, `maxScale: 2` — pinned in `infra/fleet.env` (`API_CPU`,
+`API_MEMORY_MI`, `API_CONCURRENCY`, `API_MAX_INSTANCES`) as of `infra/pin-api-cloud-run-shape`,
+2026-08-14; before that these numbers were live-service state with no declared source, and this
+sentence was the closest thing to one. This ran one uvicorn process on ten M1 Pro cores
 against loopback Postgres with no network round trip, where Cloud SQL has a real one. The
 arithmetic differs in both directions: production gets two instances × ten connections, but one
 vCPU each, and a 1-vCPU instance serialising a 400 KB JSON response is the part most likely to
