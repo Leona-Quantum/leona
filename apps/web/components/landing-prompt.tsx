@@ -87,7 +87,14 @@ export function LandingPrompt({ copy }: { copy: LandingPromptCopy }) {
   }, [dialogOpen]);
 
   const ghost = ghostFrame(reduceMotion ? 0 : elapsedMs, copy.prompts);
-  const placeholder = reduceMotion ? copy.prompts[0] ?? copy.label : ghost?.text || copy.label;
+  // Never `copy.label` here: it used to double as the placeholder fallback,
+  // which put "Describe the quantum circuit you want to build" on screen for
+  // every render before the typing animation had produced its first
+  // character (`ghost.text` is `""`, and `"" || copy.label` falls through) —
+  // visible on first paint and on every server render, since `elapsedMs`
+  // starts at 0. The label still exists for the screen-reader-only <label>
+  // below; it just never becomes visible text (owner, ai-ops#94).
+  const placeholder = reduceMotion ? copy.prompts[0] : ghost?.text || copy.prompts[0];
 
   // Every visitor gets the same dialog, because a prerendered page cannot know
   // who is reading it. A visitor who already has a session is not sent the long
@@ -104,7 +111,7 @@ export function LandingPrompt({ copy }: { copy: LandingPromptCopy }) {
         <label className="sr-only" htmlFor="mj-landing-prompt-input">{copy.label}</label>
         <textarea
           id="mj-landing-prompt-input"
-          rows={2}
+          rows={1}
           value={value}
           placeholder={placeholder}
           onChange={(event) => setValue(event.target.value)}
