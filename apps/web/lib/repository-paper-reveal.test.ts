@@ -156,7 +156,7 @@ test("every map-citing paper reveals — or is verifiably undrawn, never silentl
     // this was false for every folded node the chosen figure didn't host.
     index = reveal.elsewhere.length > 0 ? (index ?? saturatedIndex()) : index;
     for (const nodeId of reveal.elsewhere) {
-      const hereOrSomewhere =
+      const hereOrSomewhere: boolean =
         (index!.has(nodeId) || drawableIds.has(nodeId)) ||
         (() => {
           const node = layerNode(LAYER_GRAPH, nodeId);
@@ -236,7 +236,7 @@ test("the reveal is minimal: removing any single address hides a claimed occurre
       const addresses = drawnAddresses(reveal.focusId, smaller, reveal.unfold ?? undefined);
       // Fold-host occurrences are reveal targets exactly as drawn ones (v2):
       // an address whose only job is drawing a host is load-bearing, not dead.
-      const stillAllDrawn =
+      const stillAllDrawn: boolean =
         reveal.drawn.every((node) => addresses.has(node.address)) &&
         reveal.folded.every((fold) => addresses.has(fold.hostAddress));
       assert.ok(
