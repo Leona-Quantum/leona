@@ -12,13 +12,25 @@
  *
  * ## Why it is a position and never a time
  *
- * A count is a fact the queue can be asked for. A duration is not: the
- * wall-clock time of a successful run has never been measured against the real
- * pipeline, so any ETA would be derived from a number nobody has. A wrong
- * estimate is worse than none, because a user plans around it — they close the
- * tab, or they sit through a "2 minutes" that turns out to be twelve. If an ETA
- * is ever wanted, it needs a capacity profile of the real pipeline first, and
- * then it belongs beside this rather than instead of it.
+ * A count is a fact the queue can be asked for. A duration is a prediction.
+ *
+ * **This was originally "and nobody has measured the duration", and that is no
+ * longer true — do not repeat it.** As of 2026-08-14, production reports
+ * `execute` runs at **19.7s p50 / 28.1s p95** over 217 runs in seven days, and
+ * the queue wait itself at **4s p50 / 85s p95**. So `position x 19.7s` is
+ * arithmetic anyone can now do.
+ *
+ * It is still not shown, and the reason is now a product decision rather than a
+ * missing measurement: a median is not a promise. The p95 is 43% above the p50
+ * for the run alone, and 21x above it for the wait, so an estimate built from
+ * the median would be wrong in the direction that costs the most — the user who
+ * is told two minutes and waits twelve is the one who closes the tab. Showing a
+ * number a user plans around is the owner's call, and he has not made it.
+ *
+ * If he asks for one, it is a small change on top of this: the figures are
+ * measured, the position is already here, and the honest shape is a range or a
+ * "usually under N" rather than a point estimate. Until then this stays a count,
+ * and `queue-position.test.ts` fails if an estimate appears.
  *
  * Its own module, with no imports beyond the locale type, so the bare
  * `node --test` runner can load it — `live-run.tsx` is a client component full

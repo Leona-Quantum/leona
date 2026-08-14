@@ -97,10 +97,14 @@ test("the run view polls for a position and drops it when the poll fails", () =>
 });
 
 test("no estimate is offered anywhere in the queue surface", () => {
-  // The refusal, asserted. `scale-perf` established that the real wall-clock
-  // duration of a run is UNKNOWN — no capacity profile has ever exercised the
-  // real pipeline — so a time here would be invented, and a user plans around a
-  // wrong one. If this ever changes it should fail here first.
+  // The refusal, asserted.
+  //
+  // Note for whoever reads this next: the duration IS measured now (2026-08-14,
+  // production: execute runs 19.7s p50 / 28.1s p95 over 217 runs in 7 days), so
+  // "we cannot" is no longer the reason and must not be repeated. The reason is
+  // that a median is not a promise — see `queue-position.ts`. Showing a number a
+  // user plans around is the owner's call, and until he makes it this test is
+  // what stops an estimate arriving by increment.
   const web = fileURLToPath(new URL("../", import.meta.url));
   for (const rel of ["lib/queue-position.ts", "app/(app)/run/[taskId]/live-run.tsx"]) {
     const source = readFileSync(join(web, rel), "utf8");
