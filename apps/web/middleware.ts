@@ -91,6 +91,7 @@ function countPageview(request: NextRequest): void {
     // and the off switch would silently never turn anything off.
     if (!pageviewLoggingEnabled({ LEONA_PAGEVIEW_LOG: process.env.LEONA_PAGEVIEW_LOG })) return;
     const signal = pageviewSignal({
+      method: request.method,
       pathname: request.nextUrl.pathname,
       headers: request.headers,
       selfHost: request.nextUrl.host,

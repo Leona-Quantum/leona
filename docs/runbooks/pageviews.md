@@ -55,11 +55,14 @@ Vercel's, not ours — see the ceiling below.
 **From the dashboard.** Project `web` → Observability → Logs, filter on
 `leona.pageview`, group by the `route` value.
 
-**From the CLI**, against the current production deployment:
+**From the CLI**, against the current production deployment. `vercel logs` needs
+a deployment URL or id — it has no "whatever is in production right now" mode, and
+`vercel inspect` needs the same argument, so there is no one-liner that discovers
+it for you. Take the URL from the dashboard, or list them:
 
 ```bash
-vercel logs "$(vercel inspect --scope majoranaq 2>&1 | grep -o 'https://[^ ]*vercel.app' | head -1)" \
-  | grep leona.pageview
+vercel ls web --scope majoranaq          # the top row is the current production deployment
+vercel logs <deployment-url> --scope majoranaq | grep leona.pageview
 ```
 
 Pipe that through `jq` to get counts per route for a day:

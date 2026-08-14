@@ -4,6 +4,7 @@ import {
   PAGEVIEW_LOG_MARKER,
   isPrefetch,
   isProbablyBot,
+  isReadRequest,
   pageviewLoggingEnabled,
   pageviewSignal,
   publicRoute,
@@ -107,6 +108,7 @@ test("only somebody else's host is kept, and only the host", () => {
 
 test("a counted read writes a route pattern, a UTC day, and nothing else", () => {
   const signal = pageviewSignal({
+    method: "GET",
     pathname: "/repository/grover-search",
     headers: headers({ "user-agent": REAL_BROWSER, referer: "https://news.ycombinator.com/item?id=1" }),
     selfHost: "leonaqt.com",
@@ -130,6 +132,7 @@ test("the day is UTC, not the reader's and not the owner's", () => {
   // California. The bucket is UTC so that a run of daily counts is comparable
   // with itself; anyone reading it must not assume local days.
   const signal = pageviewSignal({
+    method: "GET",
     pathname: "/",
     headers: headers({ "user-agent": REAL_BROWSER }),
     selfHost: "leonaqt.com",
@@ -140,6 +143,7 @@ test("the day is UTC, not the reader's and not the owner's", () => {
 
 test("prefetches, bots, and private paths produce no line at all", () => {
   const base = {
+    method: "GET",
     headers: headers({ "user-agent": REAL_BROWSER }),
     selfHost: "leonaqt.com",
     now: new Date("2026-08-14T12:00:00.000Z"),
@@ -172,4 +176,26 @@ test("the counter is on unless somebody turns it off", () => {
   assert.equal(pageviewLoggingEnabled({ LEONA_PAGEVIEW_LOG: "OFF" }), false);
   assert.equal(pageviewLoggingEnabled({ LEONA_PAGEVIEW_LOG: "0" }), false);
   assert.equal(pageviewLoggingEnabled({ LEONA_PAGEVIEW_LOG: "false" }), false);
+});
+
+test("only a GET is a read; HEAD and OPTIONS are instruments, not readers", () => {
+  assert.equal(isReadRequest("GET"), true);
+  // Lowercased because a proxy is allowed to hand the method back in any case,
+  // and a counter that misses those would undercount silently.
+  assert.equal(isReadRequest("get"), true);
+  assert.equal(isReadRequest("HEAD"), false);
+  assert.equal(isReadRequest("OPTIONS"), false);
+  assert.equal(isReadRequest("POST"), false);
+
+  // And at the level that matters: the same fixtures that DO produce a line
+  // under GET produce nothing under HEAD. Without this pair the assertions
+  // above could pass against a signal that ignores the method entirely.
+  const base = {
+    pathname: "/repository",
+    headers: headers({ "user-agent": REAL_BROWSER }),
+    selfHost: "leonaqt.com",
+    now: new Date("2026-08-14T12:00:00.000Z"),
+  };
+  assert.equal(pageviewSignal({ ...base, method: "HEAD" }), null);
+  assert.equal(pageviewSignal({ ...base, method: "GET" })?.route, "/repository");
 });

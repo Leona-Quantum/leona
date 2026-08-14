@@ -116,6 +116,24 @@ export function publicRoute(pathname: string): PageviewRoute | null {
 }
 
 /**
+ * True when this request is somebody reading the page.
+ *
+ * A pageview is a GET. `HEAD` is what uptime monitors, link checkers and
+ * `curl -I` send; `OPTIONS` is a CORS preflight. Neither renders anything for
+ * anyone, and both reach middleware looking exactly like a visit — so counting
+ * them would fold our own health checks into the number. A client-side
+ * navigation is still a GET, so this excludes nothing a reader did.
+ *
+ * The check lives here rather than in the caller because this module is the
+ * decision half and `middleware.ts` only logs what it returns; a filter in the
+ * caller could not be unit tested, which is how the counter would come to
+ * disagree with its own tests.
+ */
+export function isReadRequest(method: string): boolean {
+  return method.toUpperCase() === "GET";
+}
+
+/**
  * True when the browser asked for this page speculatively.
  *
  * `next/link` prefetches on hover and on viewport entry, and a prefetch is a
@@ -179,12 +197,14 @@ export function referrerHost(referer: string | null, selfHost: string | null): s
  * also wraps this, and both belts are intentional.
  */
 export function pageviewSignal(input: {
+  method: string;
   pathname: string;
   headers: HeaderLookup;
   selfHost: string | null;
   now: Date;
 }): PageviewSignal | null {
   try {
+    if (!isReadRequest(input.method)) return null;
     const route = publicRoute(input.pathname);
     if (route === null) return null;
     if (isPrefetch(input.headers)) return null;
