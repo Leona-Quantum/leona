@@ -6,16 +6,25 @@ The product is **Leona Quantum**. The repo, the Python distributions, the databa
 every internal identifier stay `majorana` on purpose — renaming them buys nothing and
 would invalidate published artifact ids. Do not "fix" this.
 
-Plan authority: `~/Documents/Projects/Majorana/plans/roadmap/00-INDEX.md` is the stage map;
-architecture decisions live in the ADRs under `majorana/docs/adr/`; the security gate is
-`plans/rebuild/05-security.md`; block-repository direction is
-`plans/leona-block-repository-roadmap.md`. (The old `plans/rebuild/` index and its phase
-docs were archived 2026-08-04 to `plans/archive/rebuild/` — history, not authority.)
+Plan authority lives in the private repo `EshMis/ai-ops`, checked out at
+`~/Developer/ai-ops/desk/leona/plans/`. **Cite that path, not a `plans/...` one.** The
+`plans` entry at this repo's root is an untracked, gitignored symlink to it that exists
+only in the primary checkout — `git clone` and `git worktree add` do not create it, so a
+bare `plans/...` reference dangles in every worktree, which is where lane agents work.
+Verified 2026-08-14: 29 of 29 `majorana-wt-*` worktrees had no `plans/` directory.
+
+- Stage map: `~/Developer/ai-ops/desk/leona/plans/roadmap/00-INDEX.md`
+- Security gate: `~/Developer/ai-ops/desk/leona/plans/rebuild/05-security.md`
+- Block-repository direction: `~/Developer/ai-ops/desk/leona/plans/leona-block-repository-roadmap.md`
+- Architecture decisions: the ADRs under `docs/adr/` — in this repo, so these resolve everywhere.
+
+(The old `plans/rebuild/` index and its phase docs were archived 2026-08-04 to
+`.../plans/archive/rebuild/` — history, not authority.)
 
 If any instruction you are carrying points the security gate at
 `plans/security-baseline.md`, it is out of date: that path does not exist, and the file it
-names sits in `plans/attic/` describing a Supabase/Firebase stack this project never built.
-The gate is `plans/rebuild/05-security.md`.
+names sits in `.../plans/attic/` describing a Supabase/Firebase stack this project never
+built. The gate is `~/Developer/ai-ops/desk/leona/plans/rebuild/05-security.md`.
 Scope your context: each app/service/package has its own AGENTS.md — read the one for
 the package you're touching, not the whole tree.
 
@@ -28,9 +37,28 @@ Before substantive work in a fresh standalone Codex session, read these sources 
    `~/Documents/Projects/_ops/CODEX_ONBOARDING.md` (Claude/Codex handoff and Codex environment).
 3. `~/Documents/Projects/Majorana/memory/START_NEXT.md` if present; process
    its Owner Inbox first, then read `STATUS.md` and `NEXT.md`.
-4. `~/Documents/Projects/Majorana/plans/roadmap/00-INDEX.md` (the stage map) and
-   `~/Documents/Projects/Majorana/plans/leona-block-repository-roadmap.md`.
+4. `~/Developer/ai-ops/desk/leona/plans/roadmap/00-INDEX.md` (the stage map) and
+   `~/Developer/ai-ops/desk/leona/plans/leona-block-repository-roadmap.md`.
 5. The nested `AGENTS.md` for every package you will touch.
+
+**If items 1–3 fail with `Operation not permitted`, that is expected and is not your bug.**
+`~/Documents` is an iCloud/TCC-protected container: SSH-launched and some sandboxed sessions
+can `stat` those files but cannot read them (verified 2026-08-14 — all four read as EPERM
+while `ls -l` on each succeeded, which makes the failure look like a missing file rather
+than a denied read). Item 4 is unaffected because it resolves into `~/Developer`.
+
+**Do not conclude the files are missing, moved, or stale — you cannot see them, which is a
+different fact.** The remedy, if you are at the machine: give
+`/usr/libexec/sshd-keygen-wrapper` Full Disk Access (System Settings → Privacy & Security →
+Full Disk Access; the "Files & Folders" pane is the wrong one, and granting `sshd` or `ssh`
+does nothing — macOS attributes the login session to the wrapper), then reconnect, because
+the grant binds at process start.
+
+When 1–3 are unreadable, take the ops layer as the substitute source — `~/Developer/ai-ops/desk/`
+(`README.md`, `GOALS.md`, `DESK.md`, `ENVIRONMENT.md`), the per-project decision log
+`~/Developer/ai-ops/desk/decisions/Leona.md`, and the most recent
+`~/Developer/ai-ops/desk/handoffs/` entry — and say in your five lines that you did, so
+nobody reads your summary as though you had the Owner Inbox in front of you.
 
 Then report exactly five short lines covering current phase/revision, active pickup,
 lane boundary, highest risk or plan gap, and intended next action. After that, proceed
@@ -93,7 +121,14 @@ with no sources, is untracked, has no `pyproject.toml`, and nothing imports `maj
 
 ## Branching / commits / PRs
 
-- `feature/* → dev → prod`; squash merge only; protected branches require checks (admins too).
+- `feature/* → dev`; squash merge only; protected branches require checks (admins too).
+  **`dev` IS production.** leonaqt.com serves from `dev`: `apps/web` self-deploys from it
+  through Vercel (ADR-0011) and `.github/workflows/deploy.yml` ships api + worker on every
+  merge to it. The `prod` branch is vestigial — measured 2026-08-14, `origin/dev` is **559
+  commits ahead of `origin/prod`**, and nothing has shipped from `prod` in months. Do not
+  open a `dev → prod` PR expecting it to deploy anything. The consequence that matters:
+  a merge to `dev` is a production release and needs the same owner authorisation a deploy
+  does (hard rule 5), not the lighter bar a merge to a staging branch would.
 - Commit prefixes: `add:` `fix:` `rm:` `mv:` `chore:` `docs:` `refactor:` `ci:` — one
   concise English line, one logical change per commit.
 - PR bodies follow `.github/PULL_REQUEST_TEMPLATE.md`; UI PRs attach screenshots;
@@ -109,6 +144,14 @@ uv run ruff check . && uv run ruff format --check .
 
 ## Session protocol
 
-Read `Projects/Majorana/memory/{STATUS,NEXT}.md` before starting; update them plus
-`memory/DECISIONS.md` and `Projects/_ops/SESSION_LOG.md` when done; end with the
-continuation prompt template from `plans/rebuild/09-agent-operating-model.md` §5.
+Read `~/Documents/Projects/Majorana/memory/{STATUS,NEXT}.md` before starting; update them
+plus `~/Documents/Projects/Majorana/memory/DECISIONS.md` and
+`~/Documents/Projects/_ops/SESSION_LOG.md` when done; end with the continuation prompt
+template from `~/Developer/ai-ops/desk/leona/plans/rebuild/09-agent-operating-model.md` §5.
+
+The four `~/Documents` paths are subject to the same EPERM caveat as the bootstrap block
+above. When they are unreadable, record the session against the ops layer instead —
+`~/Developer/ai-ops/desk/decisions/Leona.md` for decisions and
+`python3 ~/Developer/ai-ops/desk/desk.py handoff <lane> --scaffold` for the session record —
+rather than skipping the write, which is what leaves the next session reconstructing your
+lane second-hand.
