@@ -138,6 +138,17 @@ function projectForListView(record) {
       (row) => row && typeof row === "object" && resourceLabels.has(row.label),
     );
   }
+  if (projected.visualization && typeof projected.visualization === "object") {
+    // Reads a SECOND field of the record — `category` — and reads it off the
+    // source rather than the projection, exactly as the Python does.
+    const vizKeys =
+      record.category === "gates"
+        ? pythonFrozenset("LIST_VIEW_GATE_VISUALIZATION_FIELDS", 2)
+        : pythonFrozenset("LIST_VIEW_VISUALIZATION_FIELDS", 1);
+    projected.visualization = Object.fromEntries(
+      Object.entries(projected.visualization).filter(([key]) => vizKeys.has(key)),
+    );
+  }
   return projected;
 }
 
@@ -239,6 +250,50 @@ test("the resource projection preserves every browse card's qubit chip", () => {
   // A corpus where no record carried the row would make the assertion above
   // true and empty. The chip is common, not rare.
   assert.ok(withChip > 50, `only ${withChip} records carry a Qubits row — the lookup label moved`);
+});
+
+/**
+ * The gate sidebar still has a circuit to draw, and nothing else carries one.
+ *
+ * `visualization.operations` is 138,156 of the field's 171,410 bytes and the
+ * browse list draws exactly one circuit: `selectedGateEntry`
+ * (`repository-browser.tsx:1053`, drawn at `:1562`), on a tab whose entries are
+ * `category === "gates" ? ordered : []`. So the projection keeps `operations`
+ * for that category and drops it everywhere else — and both halves of that
+ * sentence are worth asserting, because the failure modes are opposite: a gate
+ * without operations draws an empty circuit, and a non-gate with them is 138 KB
+ * nobody reads.
+ */
+test("every gate keeps a drawable circuit and nothing else carries one", () => {
+  let gates = 0;
+  let others = 0;
+  for (const item of manifest.items) {
+    const full = JSON.parse(item.source_blob);
+    const projected = projectForListView(full);
+    if (!projected.visualization) continue;
+    if (full.category === "gates") {
+      gates += 1;
+      assert.deepEqual(
+        projected.visualization.operations,
+        full.visualization.operations,
+        `${item.upstream_identity} is a gate whose circuit was projected away`,
+      );
+    } else {
+      others += 1;
+      assert.equal(
+        "operations" in projected.visualization,
+        false,
+        `${item.upstream_identity} is not a gate and still carries operations`,
+      );
+    }
+    // Every record keeps its register: `deriveInterface` reads its length, and a
+    // record whose width silently became 0 reclassifies rather than blanks.
+    assert.deepEqual(projected.visualization.wires, full.visualization.wires);
+    assert.equal("outcomes" in projected.visualization, false);
+  }
+  // Neither branch may be empty, or half this test is vacuous.
+  assert.ok(gates > 0, "no gate-category record in the manifest — the category value moved");
+  assert.ok(others > 0, "every record is a gate, so the drop branch was never exercised");
 });
 
 test("the list guard rejects a corrupted closed-vocabulary field", () => {
