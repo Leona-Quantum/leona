@@ -45,8 +45,16 @@ Before substantive work in a fresh standalone Codex session, read these sources 
 `~/Documents` is an iCloud/TCC-protected container: SSH-launched and some sandboxed sessions
 can `stat` those files but cannot read them (verified 2026-08-14 — all four read as EPERM
 while `ls -l` on each succeeded, which makes the failure look like a missing file rather
-than a denied read). Item 4 is unaffected because it resolves into `~/Developer`. When
-1–3 are unreadable, take the ops layer as the substitute source — `~/Developer/ai-ops/desk/`
+than a denied read). Item 4 is unaffected because it resolves into `~/Developer`.
+
+**Do not conclude the files are missing, moved, or stale — you cannot see them, which is a
+different fact.** The remedy, if you are at the machine: give
+`/usr/libexec/sshd-keygen-wrapper` Full Disk Access (System Settings → Privacy & Security →
+Full Disk Access; the "Files & Folders" pane is the wrong one, and granting `sshd` or `ssh`
+does nothing — macOS attributes the login session to the wrapper), then reconnect, because
+the grant binds at process start.
+
+When 1–3 are unreadable, take the ops layer as the substitute source — `~/Developer/ai-ops/desk/`
 (`README.md`, `GOALS.md`, `DESK.md`, `ENVIRONMENT.md`), the per-project decision log
 `~/Developer/ai-ops/desk/decisions/Leona.md`, and the most recent
 `~/Developer/ai-ops/desk/handoffs/` entry — and say in your five lines that you did, so
