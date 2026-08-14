@@ -66,7 +66,6 @@ export default async function WorkspacePage({ params }: { params: Promise<{ loca
             <div className="mj-open-source-circuits">
               {copy.compute.map((item) => <div key={item.title}><strong>{item.title}</strong><span>{item.body}</span></div>)}
             </div>
-            <p className="mj-open-source-note">{copy.note}</p>
           </Reveal>
         </section>
 
