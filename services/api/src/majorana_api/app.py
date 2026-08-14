@@ -102,9 +102,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     #
     # `compresslevel=6` rather than the library's 9. On JSON, 9 buys one or two
     # percent over 6 for several times the CPU, and this service has ONE vCPU
-    # (`1000m`, verified from `gcloud run services describe majorana-api` — the
-    # 2-vCPU figure in docs/runbooks/system-catalog.md:195 describes a `gcloud
-    # run jobs` import batch, a different resource). Spending that CPU on the
+    # (`1000m` — `API_CPU` in `infra/fleet.env`, the declared source since
+    # infra/pin-api-cloud-run-shape; before that this figure was only "verified
+    # from `gcloud run services describe majorana-api`" by hand. The 2-vCPU
+    # figure in docs/runbooks/system-catalog.md:195 describes a `gcloud run
+    # jobs` import batch, a different resource). Spending that CPU on the
     # last one percent of a response is the wrong trade on a box that also has
     # to serve the request.
     #
