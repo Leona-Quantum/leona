@@ -15,7 +15,7 @@ import { isLocalDevAuthEnabled } from "./lib/local-dev-auth";
 import { pageviewLoggingEnabled, pageviewSignal } from "./lib/pageview-signal";
 import { LEGACY_PUBLIC_LOCALE_COOKIE, parsePublicLocale, PUBLIC_LOCALE_COOKIE, PUBLIC_LOCALES } from "./lib/public-locale";
 import { isPublicPath, workosUnauthenticatedPaths } from "./lib/public-paths";
-import { isRoutedPath, LOCALE_ROUTES } from "./lib/routed-paths";
+import { isRoutedPath, localePrefixRoute, LOCALE_ROUTES } from "./lib/routed-paths";
 import { canonicalHostRedirect } from "./lib/site-origin";
 
 // The public list and its glob form both live in lib/public-paths.ts, which is
@@ -137,9 +137,16 @@ function readLocale(request: NextRequest) {
 
 function localeRewrite(request: NextRequest): NextResponse | null {
   const { pathname } = request.nextUrl;
-  if (!LOCALE_ROUTE_SET.has(pathname)) return null;
+  // Exact for the six marketing pages, prefix for the Atlas subtrees — see
+  // LOCALE_PREFIX_ROUTES for why the second list cannot be folded into the first.
+  if (!LOCALE_ROUTE_SET.has(pathname) && localePrefixRoute(pathname) === null) return null;
   const locale = readLocale(request);
   const target = pathname === "/" ? `/${locale}` : `/${locale}${pathname}`;
+  // `request.url` carries the query string and `NextResponse.rewrite` keeps it,
+  // which is not incidental here: Vercel's cache key is the request URL
+  // including the query, and `/repository/layers` resolves ten parameters on the
+  // server. Dropping them would serve every deep link the bare map from one
+  // cache entry.
   return NextResponse.rewrite(new URL(target, request.url));
 }
 
