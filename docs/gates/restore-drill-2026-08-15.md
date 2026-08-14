@@ -125,17 +125,21 @@ runtime.
 **RTO to correct, queryable data: 429s (7m9s)** — clone issued 17:45:35, first
 successful verification query returned correct point-in-time data at 17:52:44.
 
-**A real finding, not a footnote: the operation object lags data availability by a
-lot for a REGIONAL clone.** `gcloud sql instances clone`'s own client-side wait gave
-up after ~3 minutes ("Operation ... is taking longer than expected"). The
-server-side operation (`fcc2b0a6-c44e-440c-a76e-773100000033`) ran 17:45:38.579Z →
-17:55:59.278Z — **621s (10m21s) to formal `DONE`**, almost certainly standing up the
-HA standby replica, which a ZONAL restore has no equivalent step for. The instance
-was `RUNNABLE` and returned fully correct, verified data **192s earlier**, at 429s.
+### The operation object lags data availability — do not trust it
+
+`gcloud sql instances clone`'s own client-side wait gave up after ~3 minutes
+("Operation ... is taking longer than expected"). The server-side operation
+(`fcc2b0a6-c44e-440c-a76e-773100000033`) ran 17:45:38.579Z → 17:55:59.278Z —
+**621s (10m21s) to formal `DONE`**, almost certainly standing up the HA standby
+replica, which a ZONAL restore has no equivalent step for. The instance was
+`RUNNABLE` and returned fully correct, verified data **192s earlier**, at 429s.
+
 **If this runbook is ever followed under `gcloud`'s default behavior, do not wait for
 the CLI or the operation object to say done — verify the data directly**, the way
 this drill did, or you will believe a clone is still in progress for over three
-minutes after it is actually usable.
+minutes after it is actually usable. That gap is exactly the window in which a
+stressed operator, watching a CLI that already said "taking longer than expected,"
+concludes the restore has failed and starts doing something worse.
 
 ### Verification — point-in-time correctness, not just data integrity
 

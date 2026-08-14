@@ -336,12 +336,30 @@ timestamp (~5 minutes back). Verified as *point-in-time correct*, not just intac
 three readings bracketing the clone's target (production before, the clone, production
 after) show the clone's row counts landing strictly between the two, matching linear
 interpolation to within 1 row on the highest-traffic table — proof `--point-in-time`
-honored the requested moment rather than cloning current state. One caveat worth
-carrying forward: `gcloud`'s own client-side wait, and the Cloud SQL operation object
-itself, both ran far longer than the data took to become correct and queryable
-(20+ minutes and still `RUNNING` when this was written, almost certainly standing up
-the HA standby) — **verify the data directly; do not trust the CLI or the operation
-status to say when a clone is actually usable.**
+honored the requested moment rather than cloning current state.
+
+### Which path to reach for
+
+**PITR is the path you want; the daily backup is the fallback.** The backup path can
+lose up to ~24h of data (daily at 10:00 UTC) and only restores to that snapshot. PITR
+loses seconds — whatever hadn't hit the transaction log at the moment of failure — and
+can target any point in the last 7 days, not just "now." Reach for PITR first; the
+daily backup exists for when PITR's 7-day window doesn't reach far enough back.
+
+### Do not trust the CLI or the operation status — verify the data
+
+**A finding worth its own heading, because it is the one someone needs to hit at
+speed:** for a REGIONAL clone, `gcloud sql instances clone`'s own client-side wait gave
+up after ~3 minutes ("Operation ... is taking longer than expected"), and the Cloud
+SQL operation object itself did not reach formal `DONE` until **621s** — a full **192
+seconds after** the data was already correct and queryable at **429s**. Almost
+certainly the HA standby replica finishing setup after the primary is already usable.
+
+**The failure mode this causes:** an operator at 3am, watching a CLI that has already
+said "taking longer than expected," concludes the restore has failed and starts doing
+something worse. It has not failed — it is done, and has been for over three minutes.
+**Verify the data directly** (query it, run the same table/row-count/digest check this
+drill used) rather than waiting for the CLI or the operation object to say done.
 
 ### The restore drill — commands, for next time
 
