@@ -37,6 +37,14 @@ from sqlalchemy.ext.asyncio import (
     create_async_engine,
 )
 
+#: What a request sees when `DEFAULT_POOL_TIMEOUT_S` elapses with no free
+#: connection. Re-exported under a name that says what happened, because the
+#: handler that turns it into a 503 lives in `app.py`, where a sqlalchemy import
+#: is forbidden by `scripts/check_raw_queries.py`. SQLAlchemy's own name for it
+#: is `TimeoutError`, which shadows the builtin and reads, wherever it is
+#: caught, as though a network call timed out rather than a queue filled up.
+PoolTimeout = SQLAlchemyTimeoutError
+
 _meter = metrics.get_meter("majorana.database")
 _connections = _meter.create_counter(
     "majorana.db.connections.created", description="Physical database connections created"
@@ -66,6 +74,27 @@ _query_duration = _meter.create_histogram(
 #: here and everything else is not.
 DEFAULT_POOL_SIZE = 5
 DEFAULT_MAX_OVERFLOW = 5
+
+#: How long a request waits for a pool slot before it is refused.
+#:
+#: SQLAlchemy's default is 30 seconds and was in force here until now, which is
+#: the wrong shape for this fleet in a way that compounds. A request blocked on
+#: pool checkout is already *admitted*: it holds one of `API_CONCURRENCY` (16)
+#: request slots on its instance for the whole wait, without holding a database
+#: connection it can use. Thirty seconds of that is thirty seconds during which
+#: the instance looks busy to Cloud Run's autoscaler and cannot accept the cheap
+#: requests — health, a 404, a validation refusal — that need no database at
+#: all. Failing fast returns the slot.
+#:
+#: ARGUED, NOT MEASURED, and the honest bound is stated rather than implied.
+#: What *is* measured (docs/gates/capacity-100-users.md, three runs) is that 100
+#: concurrent catalog reads against a pool of this size settle at a p95 of about
+#: 1.4s — so 15s is roughly ten times the observed queue depth at the load this
+#: gate exists to survive, and a request that has waited that long is not one
+#: the pool is about to serve. It is deliberately not tightened to the p95: the
+#: gate's own collapse guard is 10s, and a timeout below that would refuse
+#: requests the gate is willing to call passing.
+DEFAULT_POOL_TIMEOUT_S = 15.0
 
 #: Where the rest of the fleet's sizing lives. Deliberately not in this file:
 #: every one of those numbers is also a `gcloud run deploy` argument, and two
@@ -310,6 +339,7 @@ def engine_from_env() -> AsyncEngine:
         pool_pre_ping=True,
         pool_size=_pool_setting("DB_POOL_SIZE", DEFAULT_POOL_SIZE),
         max_overflow=_pool_setting("DB_MAX_OVERFLOW", DEFAULT_MAX_OVERFLOW),
+        pool_timeout=DEFAULT_POOL_TIMEOUT_S,
         # libpq connection parameter, forwarded by the psycopg dialect. Costs
         # nothing per connection and is the only thing that makes a backend
         # attributable to a service.
