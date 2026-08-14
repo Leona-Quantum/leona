@@ -42,7 +42,7 @@ from majorana_contracts import PublicCatalogEntry
 from majorana_api.app import create_app
 from majorana_api.auth import deps as auth_deps
 from majorana_api.catalog_authority import CatalogAuthority
-from majorana_api.rate_limit import CALLER_TRUST_HEADER
+from majorana_api.rate_limit import CALLER_TRUST_HEADER, TRUSTED_CALLER_HEADER
 from majorana_api.repos import NotFoundError
 from majorana_api.repos import catalog as catalog_repo
 from majorana_api.routes import catalog as catalog_routes
@@ -56,6 +56,10 @@ SETTINGS_KWARGS = dict(
     workos_jwks_url="https://test.invalid/jwks",
     web_origin="http://localhost:3000",
 )
+
+# The settings loader refuses a token under 32 characters, deliberately —
+# "unset it entirely to meter our own renderer as an anonymous caller".
+_TRUSTED_TOKEN = "t" * 32
 
 EXPECTED_CACHE_CONTROL = (
     f"public, max-age={catalog_routes.CATALOG_CACHE_MAX_AGE_SECONDS}, "
@@ -243,6 +247,10 @@ async def test_a_cacheable_catalog_response_does_not_carry_the_caller_trust_head
     assert response.status_code == 200
     assert response.headers["cache-control"] == EXPECTED_CACHE_CONTROL
     assert CALLER_TRUST_HEADER not in response.headers
+    # And the cache is keyed on the credential, so a stored anonymous variant
+    # cannot be served to the renderer and hide its diagnostic (see the trusted
+    # test below).
+    assert TRUSTED_CALLER_HEADER.lower() in response.headers["vary"].lower()
 
 
 async def test_a_non_cacheable_catalog_response_still_carries_the_caller_trust_header(monkeypatch):
@@ -335,3 +343,64 @@ def test_the_grace_window_does_not_double_the_staleness_budget() -> None:
         < catalog_routes.CATALOG_CACHE_STALE_WHILE_REVALIDATE_SECONDS
         <= (catalog_routes.CATALOG_CACHE_MAX_AGE_SECONDS // 2)
     )
+
+
+async def test_the_renderer_keeps_its_trust_verdict_on_a_privately_cached_response(monkeypatch):
+    """The regression this split exists to prevent.
+
+    The first version of the strip removed CALLER_TRUST_HEADER from every
+    `public` response, reasoning that nothing downstream reads it. Something
+    does: `apps/web/lib/trusted-caller.ts`'s `reportCallerTrust` runs on every
+    catalog fetch the renderer makes, and its module comment says a mismatch is
+    **the only symptom** the failure it detects has — the renderer's token
+    misconfigured or rejected, so our own server-side renders are metered
+    against the anonymous ceiling, hit it under load, and fall back to the
+    bundled static corpus with nothing saying why.
+
+    Stripping the header from exactly the six routes the renderer fetches turned
+    that detector off. So the split is by CALLER: a trusted caller keeps the
+    verdict and the response becomes `private`, which no shared cache may store.
+    """
+    monkeypatch.setattr(catalog_repo, "list_public_catalog_entries", AsyncMock(return_value=[]))
+    settings = Settings(
+        **SETTINGS_KWARGS, catalog_authority=_authority(), trusted_caller_token=_TRUSTED_TOKEN
+    )
+    app = create_app(settings)
+    app.dependency_overrides[auth_deps.get_session] = lambda: object()
+
+    async with _http_client(app) as client:
+        response = await client.get(
+            "/v1/catalog/profiles", headers={TRUSTED_CALLER_HEADER: _TRUSTED_TOKEN}
+        )
+
+    assert response.status_code == 200
+    cache_control = response.headers["cache-control"]
+    # Private, not public: the payload is identical either way, but this variant
+    # carries a header describing its caller and must not be shared.
+    assert cache_control.startswith("private,")
+    assert "public" not in cache_control
+    # The max-age is unchanged — this is a scope change, not a freshness change.
+    assert cache_control == EXPECTED_CACHE_CONTROL.replace("public", "private", 1)
+    assert response.headers[CALLER_TRUST_HEADER] == "trusted"
+
+
+async def test_an_anonymous_caller_still_gets_the_shared_cacheable_variant(monkeypatch):
+    """The control. The split must key off the credential, not off the route —
+    otherwise `private` would leak onto every catalog response and the CDN
+    caching this whole change exists for would never happen."""
+    monkeypatch.setattr(catalog_repo, "list_public_catalog_entries", AsyncMock(return_value=[]))
+    settings = Settings(
+        **SETTINGS_KWARGS, catalog_authority=_authority(), trusted_caller_token=_TRUSTED_TOKEN
+    )
+    app = create_app(settings)
+    app.dependency_overrides[auth_deps.get_session] = lambda: object()
+
+    async with _http_client(app) as client:
+        anonymous = await client.get("/v1/catalog/profiles")
+        wrong_token = await client.get(
+            "/v1/catalog/profiles", headers={TRUSTED_CALLER_HEADER: "not-the-secret"}
+        )
+
+    for response in (anonymous, wrong_token):
+        assert response.headers["cache-control"] == EXPECTED_CACHE_CONTROL
+        assert CALLER_TRUST_HEADER not in response.headers
