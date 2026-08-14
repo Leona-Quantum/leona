@@ -346,6 +346,16 @@ test("every capability is monotonic up the ladder", () => {
       atLeast(upper.sharedProjects, lower.sharedProjects),
       `${ACCOUNT_TIERS[i]} shared projects below ${ACCOUNT_TIERS[i - 1]}`,
     );
+    // The browser lane joined this sweep with ai-ops#82. It was outside it while
+    // the cards quoted "up to 8 / 12 / 18 qubits" and a test compared each
+    // figure to its tier; the cards now say "Browser simulation" / "Wider" /
+    // "Widest", and a comparative nothing enforces is exactly the unbacked claim
+    // the numbered copy existed to prevent. `preview` shares free's 8, so the
+    // relation is >= rather than >.
+    assert.ok(
+      upper.cpuSimQubits >= lower.cpuSimQubits,
+      `${ACCOUNT_TIERS[i]} browser qubits below ${ACCOUNT_TIERS[i - 1]}`,
+    );
   }
 });
 
