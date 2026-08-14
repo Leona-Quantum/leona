@@ -210,7 +210,7 @@ async def set_member_role(
         action="workspace.member_role_changed",
         target_kind="user",
         target_id=user_id,
-        meta={"email": user.email, "from": previous.value, "to": role.value},
+        meta={"email": user.email, "from": str(previous), "to": str(role)},
     )
     return membership, user
 
@@ -230,7 +230,13 @@ async def remove_member(scope: Scope, session: AsyncSession, *, user_id: uuid.UU
     # Captured before the row goes, like the two container deletes: the role is
     # the one fact about this membership that the audit entry cannot reconstruct
     # afterwards, because there is nothing left to read it off.
-    removed_role = membership.role.value
+    #
+    # `str()` rather than `.value`. SQLAlchemy hands this attribute back as a
+    # plain `str` when the row was loaded from Postgres and as a `Role` when the
+    # object was built in Python, so `.value` works in a unit test with a
+    # hand-made Membership and raises AttributeError against the real database.
+    # `Role` is a StrEnum, so `str()` gives "member" for both.
+    removed_role = str(membership.role)
     await session.execute(
         delete(Membership).where(
             Membership.workspace_id == scope.workspace_id,

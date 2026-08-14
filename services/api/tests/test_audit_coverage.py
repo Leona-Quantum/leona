@@ -166,10 +166,22 @@ def test_disconnecting_nothing_records_nothing():
     assert audit_rows(session) == []
 
 
-def test_removing_a_member_records_the_role_they_held():
+# Both representations of a role, because they are BOTH real.
+#
+# SQLAlchemy hands `Membership.role` back as a plain `str` when the row came
+# from Postgres and as a `Role` when the object was built in Python. The first
+# version of these tests only ever built one in Python, so `.value` passed here
+# and raised `AttributeError: 'str' object has no attribute 'value'` against the
+# real database — caught by the live authz suite, not by this file. Parametrizing
+# is what makes this file able to see it.
+ROLE_FORMS = pytest.mark.parametrize("as_role", [Role.MEMBER, "member"], ids=["enum", "str"])
+
+
+@ROLE_FORMS
+def test_removing_a_member_records_the_role_they_held(as_role):
     scope = make_scope(Role.ADMIN)
     user_id = uuid.uuid4()
-    membership = Membership(workspace_id=scope.workspace_id, user_id=user_id, role=Role.MEMBER)
+    membership = Membership(workspace_id=scope.workspace_id, user_id=user_id, role=as_role)
     session = ScriptedSession([_Result(membership), _Result(rowcount=1), _Result(rowcount=0)])
 
     import asyncio
@@ -183,10 +195,11 @@ def test_removing_a_member_records_the_role_they_held():
     assert row.meta == {"role": "member"}
 
 
-def test_a_role_change_records_both_ends():
+@pytest.mark.parametrize("as_role", [Role.VIEWER, "viewer"], ids=["enum", "str"])
+def test_a_role_change_records_both_ends(as_role):
     scope = make_scope(Role.ADMIN)
     user_id = uuid.uuid4()
-    membership = Membership(workspace_id=scope.workspace_id, user_id=user_id, role=Role.VIEWER)
+    membership = Membership(workspace_id=scope.workspace_id, user_id=user_id, role=as_role)
     user = User(id=user_id, email="someone@example.test")
     session = ScriptedSession([_Result(membership), _Result(user)])
 
