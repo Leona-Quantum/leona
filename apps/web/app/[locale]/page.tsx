@@ -20,8 +20,17 @@ export function generateStaticParams() {
   return PUBLIC_LOCALES.map((locale) => ({ locale }));
 }
 
+// No `title` on purpose. The root layout declares
+// `template: "%s · Leona Quantum"`, so a segment title of "Leona Quantum" was
+// composed into **"Leona Quantum · Leona Quantum"** — which is what a reader saw
+// in the browser tab, what a bookmark saved, and what a search result showed.
+//
+// Omitting it falls through to the root layout's `default`, which is the one
+// title in this app deliberately written to stand alone. Every other
+// `[locale]` page names a SECTION ("Pricing", "Contact"), which is exactly what
+// the template is for; the home page is the one page whose subject is the
+// template's own suffix, which is why it is the one page that must not use it.
 export const metadata: Metadata = {
-  title: "Leona Quantum",
   description: "Generate, run, and use quantum circuits with AI in one platform.",
 };
 
