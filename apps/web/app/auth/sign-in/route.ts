@@ -1,4 +1,4 @@
-import { NextResponse } from "next/server";
+import { NextResponse, type NextRequest } from "next/server";
 import { getMajoranaSignInUrl, isMajoranaAuthConfigured } from "../../../lib/auth";
 
 /**
@@ -16,9 +16,15 @@ import { getMajoranaSignInUrl, isMajoranaAuthConfigured } from "../../../lib/aut
  */
 export const dynamic = "force-dynamic";
 
-export async function GET() {
-  if (!isMajoranaAuthConfigured()) {
-    return NextResponse.redirect(new URL("/contact", process.env.NEXT_PUBLIC_SITE_URL ?? "https://leonaqt.com"));
-  }
-  return NextResponse.redirect(await getMajoranaSignInUrl());
+export async function GET(request: NextRequest) {
+  // `getMajoranaSignInUrl()` returns an absolute WorkOS URL in every deployed
+  // environment and the RELATIVE "/run" under local dev auth (lib/auth.ts:46),
+  // and Next 16 rejects a relative argument to `NextResponse.redirect` outright.
+  // Resolving against `request.url` handles both without asking which one it is:
+  // an absolute input is returned unchanged, a relative one is resolved against
+  // the host the reader actually arrived on — which also keeps this correct on
+  // preview deployments and on each of the site's several hostnames, where a
+  // hardcoded origin would have sent them somewhere else to sign in.
+  const target = isMajoranaAuthConfigured() ? await getMajoranaSignInUrl() : "/contact";
+  return NextResponse.redirect(new URL(target, request.url));
 }
