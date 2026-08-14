@@ -208,9 +208,13 @@ const CANONICAL_PAGE_SOURCES: Record<string, string> = {
   "/terms": "app/[locale]/terms/page.tsx",
   "/repository": "app/repository/(browse)/page.tsx",
   "/repository/folders": "app/repository/folders/[[...path]]/page.tsx",
-  "/repository/layers": "app/repository/layers/page.tsx",
+  // Under `[locale]` since the Atlas caching change: these two carry no
+  // per-visitor read, so they moved to where the locale is a path segment and
+  // the CDN can hold them. Their canonical address is unchanged, which is the
+  // whole point of `canonicalMetadata` taking the clean path.
+  "/repository/layers": "app/[locale]/repository/layers/page.tsx",
+  "/repository/claims": "app/[locale]/repository/claims/page.tsx",
   "/repository/papers": "app/repository/papers/page.tsx",
-  "/repository/claims": "app/repository/claims/page.tsx",
 };
 
 function pageSource(relative: string): string {

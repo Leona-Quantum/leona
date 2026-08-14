@@ -520,9 +520,19 @@ async def test_exhausted_says_yes_exactly_when_the_gate_refuses(tokens_used, sco
     async def no_backstop(*_args, **_kwargs):
         return {}
 
+    # The per-account submission backstop (ai-ops 86) also runs on every
+    # EXECUTE/AUTO admission now, after the token gate this test is about.
+    # `LockOnlySession` answers the reservation's own row lock but cannot
+    # answer a real count query, so this stub keeps that second check a no-op.
+    async def no_submissions(*_args, **_kwargs):
+        return 0
+
     monkeypatch.setattr(runs_routes.runs_repo.usage_repo, "account_tokens_since", spent)
     monkeypatch.setattr(runs_routes.runs_repo, "count_in_flight_execute_runs", nothing_in_flight)
     monkeypatch.setattr(runs_routes.runs_repo, "count_runs_by_mode_since", no_backstop)
+    monkeypatch.setattr(
+        runs_routes.runs_repo, "count_submitted_runs_for_account_since", no_submissions
+    )
 
     request = runs_routes.CreateRunRequest(
         task_prompt="Build a Bell pair", framework=Framework.QISKIT, mode=RunMode.EXECUTE

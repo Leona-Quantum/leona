@@ -13,7 +13,13 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import JSONResponse
 
-from .db import engine_from_env, session_factory
+# PoolTimeout is re-exported by db.py rather than imported from sqlalchemy here.
+# `scripts/check_raw_queries.py` forbids a sqlalchemy import outside the
+# repository layer, and it is right to: the exemption would have to be a
+# blanket one on the module, and the next sqlalchemy import into app.py would
+# then arrive unchallenged. Routing it through the module that owns the pool
+# also puts the exception next to the timeout that raises it.
+from .db import DEFAULT_POOL_TIMEOUT_S, PoolTimeout, engine_from_env, session_factory
 from .observability import init_telemetry
 from .rate_limit import (
     CALLER_TRUST_HEADER,
@@ -301,6 +307,33 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     @app.exception_handler(RequestValidationError)
     async def _validation(request: Request, exc: RequestValidationError):
         return _problem(422, "validation failed", "validation_error")
+
+    @app.exception_handler(PoolTimeout)
+    async def _pool_exhausted(request: Request, exc: PoolTimeout):
+        # Saturation is not a bug, and it must not be reported as one. Before
+        # this handler a request that waited out `DEFAULT_POOL_TIMEOUT_S` for a
+        # database connection fell through to the catch-all below and left as
+        # `500 internal error` — indistinguishable, to a client, a dashboard or
+        # an on-call reader, from a genuine fault. The distinction is worth a
+        # handler of its own for three reasons: a 5xx rate is the signal a
+        # launch is watched by, and overload folded into it hides real faults;
+        # a 503 is the only response a client may safely retry, where a 500
+        # says the request will never succeed; and `Retry-After` turns a retry
+        # storm into a spread one, which is the one thing that helps a pool
+        # that is already full.
+        #
+        # The value is the pool timeout itself: a caller that comes back sooner
+        # arrives while the same requests are still holding the same
+        # connections. It carries no internals — a fixed integer discloses
+        # nothing beyond "this server is busy", which the status code already
+        # says (05-security.md §1).
+        return _problem(
+            503,
+            "the service is at capacity",
+            "capacity_exhausted",
+            headers={"Retry-After": str(int(DEFAULT_POOL_TIMEOUT_S))},
+            extra={"reason": "capacity_exhausted"},
+        )
 
     @app.exception_handler(Exception)
     async def _unhandled(request: Request, exc: Exception):

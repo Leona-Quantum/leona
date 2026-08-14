@@ -169,11 +169,33 @@ async def test_tier_allowance_counts_the_account_not_the_workspace(scope, sessio
 async def test_the_abuse_backstop_stays_bound_to_the_workspace(scope, session):
     """The ceiling above the allowance bounds a TENANT, so it keeps the
     workspace predicate. If this ever starts counting per account instead, one
-    tenant's runaway script stops being contained by its own workspace."""
+    tenant's runaway script stops being contained by its own workspace.
+
+    This is `EXECUTE_BACKSTOP_LIMIT`'s counter specifically — ai-ops 86
+    (2026-08-14) left that one workspace-scoped on purpose. The OTHER backstop,
+    the combined EXECUTE+AUTO submission ceiling, moved to per-account the same
+    ruling; see the test directly below."""
     import datetime as _dt
 
     await runs.count_runs_by_mode_since(scope, session, _dt.datetime.now(_dt.UTC))
     assert_workspace_bound(session.statements[0], scope)
+
+
+async def test_the_submission_backstop_counts_the_account_not_the_workspace(scope, session):
+    """ai-ops 86's second documented exception, and for the same reason as the
+    tier allowance above: the free tier sells `owned_workspaces=3`
+    (`tiers.TIER_LIMITS`), and a workspace-bound count let one free signup clear
+    the backstop three times over by spreading submissions across them.
+    """
+    import datetime as _dt
+
+    await runs.count_submitted_runs_for_account_since(scope, session, _dt.datetime.now(_dt.UTC))
+    sql, params = compiled(session.statements[0])
+    assert "user_id" in sql
+    assert scope.user_id in params.values()
+    assert scope.workspace_id not in params.values(), (
+        "the per-account submission backstop must not be narrowed to one workspace"
+    )
 
 
 async def test_list_folders(scope, session):

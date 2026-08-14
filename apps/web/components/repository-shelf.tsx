@@ -143,10 +143,18 @@ const COPY: Record<"en" | "ja", ShelfCopy> = {
     // not the category the browse tab sorts by, so the two no longer collide
     // even where their counts also happen to agree (see the pairwise-agreement
     // check `apps/web`'s corpus lint runs against both surfaces). Kept as its
-    // own small `Record` rather than inlined into the JSX below so a future
-    // naming choice — set B was recommended, not yet an owner ruling — is a
-    // one-line swap here, in both locales, and nowhere else.
-    roles: { state: "Prepared states", operator: "Applied operators", "gate-primitive": "Primitive gates" },
+    // own small `Record` rather than inlined into the JSX below so a naming
+    // choice is a one-line swap here, in both locales, and nowhere else.
+    //
+    // The middle one is "Measured", not set B's "Applied" — owner ruling on
+    // ai-ops 93, 2026-08-15. Set B shipped with "Applied operators", which
+    // contradicted this codebase's own explanation of the word: both
+    // `repository-preface.tsx` and `topics.ts` tell the reader an operator is
+    // "something to measure... you do not apply it". A physics product that
+    // asserts one thing in a heading and the opposite two screens away spends
+    // credibility with exactly the readers it wants. "Measured" is the
+    // explainer's own word. The other two headings were not in question.
+    roles: { state: "Prepared states", operator: "Measured operators", "gate-primitive": "Primitive gates" },
     reach: (joined, total) => `${joined} of ${total} are objects the map names`,
     processes: (n, of) => (n === 1 ? `1 of ${of} processes` : `${n} of ${of} processes`),
     unreachable: "Not an object the map names, because:",
@@ -181,15 +189,24 @@ const COPY: Record<"en" | "ja", ShelfCopy> = {
     heading: "材料",
     lead: "このカタログが持つのは手続きだけではありません。ここに並ぶのは対象そのものです。各行には、マップ上の工程のうちいくつがそれを受け取る、あるいは返すかを示しています。対象を掘り下げる価値があるかどうかは、この数で決まります。",
     // Mirrors the `en` naming above — see its comment. Not a literal
-    // word-for-word translation: 基本ゲート ("primitive/basic gate") and
-    // 作用演算子 ("operator that acts [on a state]") are this catalogue's own
-    // established Japanese for "primitive" and for an operator's relationship
-    // to a state (`repository-preface.tsx`'s gates blurb already uses 基本要素
-    // "primitive/basic element"; `state-vocabulary.ts` already uses 作用させる
-    // for "to act [an operator] upon" a state), so the heading reads the way a
+    // word-for-word translation: 基本ゲート ("primitive/basic gate") is this
+    // catalogue's own established Japanese for "primitive"
+    // (`repository-preface.tsx`'s gates blurb already uses 基本要素,
+    // "primitive/basic element"), so the heading reads the way a
     // Japanese-speaking physicist would say it rather than as a translated
     // English phrase.
-    roles: { state: "準備状態", operator: "作用演算子", "gate-primitive": "基本ゲート" },
+    //
+    // The middle heading was 作用演算子 ("operator that acts [on a state]"),
+    // chosen to match `state-vocabulary.ts`'s existing 作用させる, "to act
+    // [an operator] upon". That reasoning was sound about the vocabulary and
+    // wrong about the claim: it carried exactly the contradiction the English
+    // "Applied operators" did, since this catalogue's own explainer says an
+    // operator is something you measure and do not apply. Owner ruling on
+    // ai-ops 93 replaced it with the explainer's own word. 測定演算子 is the
+    // conventional term and keeps the parallel compact-compound shape of its
+    // two neighbours. 作用させる remains correct where a process really does
+    // act an operator on a state — this heading was just not that place.
+    roles: { state: "準備状態", operator: "測定演算子", "gate-primitive": "基本ゲート" },
     reach: (joined, total) => `${total} 件中 ${joined} 件がマップの名前を持つ対象です`,
     processes: (n, of) => `工程 ${of} 件中 ${n} 件`,
     unreachable: "マップが名前を与えている対象ではありません。理由：",
