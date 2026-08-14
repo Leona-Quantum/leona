@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { PublicSite } from "../../../components/public-site";
 import { PRIVACY_COPY } from "../../../lib/public-copy";
 import { parsePublicLocale, PUBLIC_LOCALES } from "../../../lib/public-locale";
+import { canonicalMetadata } from "../../../lib/public-metadata";
 
 // Served from the CDN. The locale comes from the path segment because a cached
 // page cannot read a cookie — `middleware.ts` rewrites the clean URL to this
@@ -16,6 +17,7 @@ export function generateStaticParams() {
 }
 
 export const metadata: Metadata = {
+  ...canonicalMetadata("/privacy"),
   title: "Privacy policy",
   description: "Leona Quantum privacy policy for the early-access product and public website.",
 };

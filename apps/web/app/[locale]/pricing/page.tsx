@@ -4,6 +4,7 @@ import { Reveal } from "../../../components/reveal";
 import { PRICING_COPY } from "../../../lib/public-copy";
 import { isPublicDemoEnabled } from "../../../lib/public-demo";
 import { parsePublicLocale, PUBLIC_LOCALES } from "../../../lib/public-locale";
+import { canonicalMetadata } from "../../../lib/public-metadata";
 
 // Served from the CDN. The locale comes from the path segment because a cached
 // page cannot read a cookie — `middleware.ts` rewrites the clean URL to this
@@ -18,6 +19,7 @@ export function generateStaticParams() {
 }
 
 export const metadata: Metadata = {
+  ...canonicalMetadata("/pricing"),
   title: "Pricing",
   description: "Early-access Leona Quantum plans for individual researchers and teams.",
 };
