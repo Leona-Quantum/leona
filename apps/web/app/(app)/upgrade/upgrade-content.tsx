@@ -102,7 +102,6 @@ export async function UpgradeContent() {
                   <span className="mj-mono-muted">{plan.price}</span>
                 </div>
                 <p className="mj-panel-help">{plan.cadence}</p>
-                <p className="mj-upgrade-description">{plan.description}</p>
                 <ul className="mj-upgrade-features">
                   {plan.features.map((feature) => (
                     <li key={feature}>{feature}</li>

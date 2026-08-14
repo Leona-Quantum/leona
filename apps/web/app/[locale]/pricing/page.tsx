@@ -57,7 +57,6 @@ export default async function PricingPage({ params }: { params: Promise<{ locale
             </div>
             <p className="mj-pricing-price">{plan.price}</p>
             <p className="mj-pricing-cadence">{plan.cadence}</p>
-            <p className="mj-pricing-description">{plan.description}</p>
             <ul>
               {plan.features.map((feature) => <li key={feature}>{feature}</li>)}
             </ul>

@@ -1,7 +1,11 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 import {
   ACCOUNT_TIERS,
+  DEFAULT_PROJECT_ARTIFACT_LIMIT,
   TIER_LIMITS,
   atLeastTier,
   developerEmails,
@@ -11,6 +15,9 @@ import {
   proEmails,
   resolveAccountTier,
 } from "./account-tier.ts";
+
+/** The three cards that sell an enforced tier. Enterprise sells none. */
+const ENFORCED_CARDS = ["Free", "Plus", "Professional"] as const;
 
 const ALLOWLIST = ["rui@keio.jp", "rei@keio.jp", "ryu@gmail.com"];
 
@@ -88,18 +95,111 @@ test("the browser lane stays inside the measured responsiveness budget", () => {
   }
 });
 
-test("the public Free plan quotes the numbers the free tier actually enforces", async () => {
-  // The pricing page states allowances as prose, so nothing but a pin stops it
-  // drifting from TIER_LIMITS. A plan that overstates the allowance is a
-  // promise the product then breaks.
+test("no enforced card states an allowance number, in either language", async () => {
+  // ## This test is the inverse of the one it replaces, and the inversion is the
+  // ## owner's (ai-ops#82, 2026-08-14)
+  //
+  // > *"prices stay, 50 moves to /account. shorten each of the bullet points to
+  // > be <=4 words each."*
+  //
+  // Until this commit, three tests pinned every figure on these cards to
+  // `TIER_LIMITS` — the right guard for prose that states allowances, because
+  // prose that overstates one is a promise the product breaks the first time
+  // somebody reaches it. Generic prose cannot be pinned that way; there is
+  // nothing left to compare.
+  //
+  // So the protection is taken from the other side: no digit may appear in a
+  // feature list on an enforced card at all. Numbers came back onto this page
+  // one at a time before, and a card that regains "75 agent runs a week" while
+  // `TIER_LIMITS.pro` says something else has no symptom on the page — the
+  // symptom reaches the person who hits the cap.
+  //
+  // Prices are untouched and deliberately outside this: `$0`, `$50`, `$240` and
+  // `$420+` are what the owner kept, and they are read from `plan.price`, not
+  // from `plan.features`.
   const { PRICING_COPY } = await import("./public-copy.ts");
-  const free = PRICING_COPY.en.plans.find((plan) => plan.name === "Free");
-  assert.ok(free, "the Free plan disappeared from the pricing page");
-  const features = free.features.join(" | ");
-  const limits = TIER_LIMITS.free;
-  assert.match(features, new RegExp(`\\b${limits.agentRunsPerWeek}\\b.*week`, "i"));
-  assert.match(features, new RegExp(`\\b${limits.privateArtifacts}\\b`));
-  assert.match(features, new RegExp(`\\b${limits.cpuSimQubits}\\b.*qubit`, "i"));
+  for (const language of ["en", "ja"] as const) {
+    for (const name of ENFORCED_CARDS) {
+      const plan = PRICING_COPY[language].plans.find((entry) => entry.name === name);
+      assert.ok(plan, `the ${name} plan disappeared from the ${language} pricing page`);
+      for (const feature of plan.features) {
+        assert.doesNotMatch(
+          feature,
+          /[0-9]/,
+          `the ${language} ${name} card states an allowance nothing on this page enforces: "${feature}"`,
+        );
+      }
+    }
+  }
+  // And the prices did stay, which is the half of the ruling a digit ban could
+  // quietly undo.
+  for (const [name, price] of [["Free", "$0"], ["Plus", "$50"], ["Professional", "$240"], ["Enterprise", "$420+"]] as const) {
+    const plan = PRICING_COPY.en.plans.find((entry) => entry.name === name);
+    assert.equal(plan?.price, price, `${name} lost its price`);
+  }
+});
+
+test("every feature bullet is four words or fewer", async () => {
+  // The owner's rule, asserted rather than asked for. English only: the
+  // Japanese cards are held to the same terseness in spirit, but splitting
+  // Japanese on whitespace counts every card's bullets as one word and would
+  // make this pass for a reason unrelated to the copy.
+  const { PRICING_COPY } = await import("./public-copy.ts");
+  for (const plan of PRICING_COPY.en.plans) {
+    for (const feature of plan.features) {
+      const words = feature.trim().split(/\s+/);
+      assert.ok(
+        words.length <= 4,
+        `the ${plan.name} card's "${feature}" is ${words.length} words, and the limit is four`,
+      );
+    }
+  }
+});
+
+test("no card carries a tagline, because the field no longer exists", async () => {
+  // > *"no headliners like 'Enough to browse the public evidence and put the
+  // > workbench through a real problem.'"* — owner, ai-ops#82
+  //
+  // Asserted on the data rather than on the renderers: `description` was read
+  // by /pricing and by /upgrade, and a field left on the type is one the next
+  // copy pass fills back in without either page changing.
+  const { PRICING_COPY } = await import("./public-copy.ts");
+  for (const language of ["en", "ja"] as const) {
+    for (const plan of PRICING_COPY[language].plans) {
+      assert.equal(
+        Object.hasOwn(plan, "description"),
+        false,
+        `the ${language} ${plan.name} card grew a tagline back`,
+      );
+    }
+  }
+});
+
+test("the account page states the per-project artifact limit", async () => {
+  // Where the 50 went. It is not a tier allowance — it belongs to the project
+  // and its owner can change it — so it has no entry in `TIER_LIMITS` and
+  // nothing but this ties the screen to the constant the server mirrors.
+  //
+  // Read rather than rendered: the page is an async server component that
+  // reaches WorkOS through `lib/auth`, which the bare node runner cannot load.
+  // The assertion is that the reference was FOUND as well as that it is the
+  // constant — a scan that matches nothing passes forever.
+  assert.equal(DEFAULT_PROJECT_ARTIFACT_LIMIT, 50);
+  const web = fileURLToPath(new URL("../", import.meta.url));
+  const source = readFileSync(join(web, "app", "(app)", "account", "account-content.tsx"), "utf8");
+  assert.match(
+    source,
+    /copy\.usageProjectArtifactsValue\(DEFAULT_PROJECT_ARTIFACT_LIMIT\)/,
+    "the account page no longer states the per-project artifact limit",
+  );
+  const { ACCOUNT_COPY } = await import("./workspace-locale.ts");
+  for (const locale of ["en", "ja"] as const) {
+    assert.match(
+      ACCOUNT_COPY[locale].usageProjectArtifactsValue(DEFAULT_PROJECT_ARTIFACT_LIMIT),
+      /50/,
+      `the ${locale} account page does not print the limit it was given`,
+    );
+  }
 });
 
 test("no tier grants QPU submission", () => {
@@ -268,86 +368,70 @@ test("atLeastTier reads the ladder, not a hand-written comparison", () => {
   assert.equal(atLeastTier("preview", "free"), false);
 });
 
-test("the published Professional plan quotes the allowances the team tier grants", async () => {
-  // Same pin as the Free plan above, for the same reason: the pricing page is
-  // prose, and prose that overstates an allowance is a promise the product
-  // breaks the first time somebody reaches it.
+test("sharing is claimed on Professional and on neither card below it", async () => {
+  // The capability the control plane REFUSES rather than counts: `projectSharing`
+  // is false for `free` and `pro`, and the API answers 403. A sharing line on
+  // either card therefore sells something that breaks on the first click, which
+  // is a worse failure than an overstated allowance — there is no cap to reach,
+  // the button simply does not work.
   //
-  // "Professional" is the `team` tier. The card was renamed on 2026-08-02; the
-  // id was deliberately not.
+  // Until ai-ops#82 this was one `doesNotMatch` on the Plus card and nothing at
+  // all on Free. Free is the card most people read.
   const { PRICING_COPY } = await import("./public-copy.ts");
-  const team = PRICING_COPY.en.plans.find((plan) => plan.name === "Professional");
-  assert.ok(team, "the Professional plan disappeared from the pricing page");
-  const features = team.features.join(" | ");
-  assert.match(features, new RegExp(`\\b${TIER_LIMITS.team.privateArtifacts}\\b`));
-  assert.match(features, new RegExp(`\\b${TIER_LIMITS.team.sharedProjects}\\b.*shared project`, "i"));
-});
-
-test("the published Plus plan quotes the numbers the pro tier enforces", async () => {
-  // Plus is the `pro` tier. Its card previously said "Higher run limits" and
-  // "Priority access to new capabilities" — no number, nothing enforced, for a
-  // plan whose accounts were metered as free. Every figure on it is now tied to
-  // the table the server mirrors.
-  const { PRICING_COPY } = await import("./public-copy.ts");
-  const plus = PRICING_COPY.en.plans.find((plan) => plan.name === "Plus");
-  assert.ok(plus, "the Plus plan disappeared from the pricing page");
-  const features = plus.features.join(" | ");
-  const limits = TIER_LIMITS.pro;
-  assert.match(features, new RegExp(`\\b${limits.agentRunsPerWeek}\\b.*week`, "i"));
-  assert.match(features, new RegExp(`\\b${limits.privateArtifacts}\\b`));
-  assert.match(features, new RegExp(`\\b${limits.cpuSimQubits}\\b.*qubit`, "i"));
-  // And it must not advertise the capability it does not have. Sharing is what
-  // Professional is; a Plus card promising it sells a 403.
-  assert.equal(limits.projectSharing, false);
-  assert.doesNotMatch(features, /shared? (a )?project/i);
-});
-
-test("both published Plus and Professional plans quote the same numbers", async () => {
-  // The Japanese page is a separate literal, so a number changed on one side
-  // stays wrong on the other until somebody reads both — that is exactly how
-  // the JA privacy section disappeared in PR 194. Nothing else on these lines
-  // can be compared across the two scripts, but digits are digits.
-  const { PRICING_COPY } = await import("./public-copy.ts");
-  // Card name -> the tier it sells. The pair is the whole point: a test that
-  // looked up "Pro" would silently find nothing and assert over an empty list.
-  for (const [name, limits] of [
-    ["Plus", TIER_LIMITS.pro],
-    ["Professional", TIER_LIMITS.team],
-  ] as const) {
-    const en = PRICING_COPY.en.plans.find((plan) => plan.name === name);
-    const ja = PRICING_COPY.ja.plans.find((plan) => plan.name === name);
-    assert.ok(en, `the ${name} plan disappeared from the English pricing page`);
-    assert.ok(ja, `the ${name} plan disappeared from the Japanese pricing page`);
-    // Each ALLOWANCE, asked for by name, rather than every digit on the line:
-    // the first version of this test compared all of them and failed on the "1"
-    // in 1人あたり, which is prose. What has to agree is the numbers the tier
-    // enforces, and those are these.
-    const advertised = [
-      limits.agentRunsPerWeek,
-      limits.privateArtifacts,
-      limits.cpuSimQubits,
-      // `DEFAULT_PROJECT_ARTIFACT_LIMIT` was here and is gone with the sentence
-      // that carried it — see the ai-ops#77 note below. It was tied to the
-      // server's constant, which was the right thing to do with a number the
-      // page states; what the owner struck is the page stating it at all.
-      ...(limits.projectSharing ? [limits.sharedProjects] : []),
-    ];
-    for (const value of advertised) {
-      const pattern = new RegExp(`(^|\\D)${value}(\\D|$)`);
-      assert.match(
-        en.features.join(" | "),
-        pattern,
-        `the English ${name} plan does not state ${value}`,
-      );
-      assert.match(
-        ja.features.join(" | "),
-        pattern,
-        `the Japanese ${name} plan does not state ${value}`,
+  const sharing = { en: /shar(e|ed|ing)/i, ja: /共有/ } as const;
+  for (const language of ["en", "ja"] as const) {
+    for (const [name, tier] of [["Free", "free"], ["Plus", "pro"]] as const) {
+      assert.equal(limitsForTier(tier).projectSharing, false, `${tier} gained sharing`);
+      const plan = PRICING_COPY[language].plans.find((entry) => entry.name === name);
+      assert.ok(plan, `the ${name} plan disappeared from the ${language} pricing page`);
+      assert.doesNotMatch(
+        plan.features.join(" | "),
+        sharing[language],
+        `the ${language} ${name} card sells sharing, which the control plane 403s`,
       );
     }
-    // And the same price and cadence on both pages: a plan that costs $50 in
-    // one language and $240 in the other is worse than a plan with no price.
-    assert.equal(en.price, ja.price, `${name} is priced differently per language`);
+    // And the card that DOES have it says so — otherwise this test passes on a
+    // page that never mentions sharing at all.
+    const professional = PRICING_COPY[language].plans.find((entry) => entry.name === "Professional");
+    assert.ok(professional, `the Professional plan disappeared from the ${language} pricing page`);
+    assert.match(
+      professional.features.join(" | "),
+      sharing[language],
+      `the ${language} Professional card no longer offers the capability that distinguishes it`,
+    );
+  }
+  assert.equal(limitsForTier("team").projectSharing, true);
+});
+
+test("a plan costs the same in both languages", async () => {
+  // The Japanese page is a separate literal, so a value changed on one side
+  // stays wrong on the other until somebody reads both — that is exactly how
+  // the JA privacy section disappeared in PR 194.
+  //
+  // This used to compare the allowance figures across the two scripts as well.
+  // There are none left to compare (ai-ops#82); the price is what remains, and
+  // a plan that costs $50 in one language and $240 in the other is worse than a
+  // plan with no price.
+  const { PRICING_COPY } = await import("./public-copy.ts");
+  for (const plan of PRICING_COPY.en.plans) {
+    const ja = PRICING_COPY.ja.plans.find((entry) => entry.name === plan.name);
+    assert.ok(ja, `the ${plan.name} plan disappeared from the Japanese pricing page`);
+    assert.equal(plan.price, ja.price, `${plan.name} is priced differently per language`);
+  }
+});
+
+test("the two cards below Professional differ from each other and from it", async () => {
+  // Without numbers the ladder is carried entirely by wording, so three cards
+  // reading the same is a live failure mode rather than a pedantic one: a
+  // reader comparing them would see no reason for the $50.
+  const { PRICING_COPY } = await import("./public-copy.ts");
+  for (const language of ["en", "ja"] as const) {
+    const lists = ENFORCED_CARDS.map((name) => {
+      const plan = PRICING_COPY[language].plans.find((entry) => entry.name === name);
+      assert.ok(plan, `the ${name} plan disappeared from the ${language} pricing page`);
+      return plan.features.join(" | ");
+    });
+    assert.equal(new Set(lists).size, lists.length, `${language}: two enforced cards say the same thing`);
   }
 });
 
