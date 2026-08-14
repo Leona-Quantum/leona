@@ -486,15 +486,21 @@ async def get_conversation(
     run_id: uuid.UUID, scope: CurrentScope, session: DbSession
 ) -> ConversationResource:
     current = await runs_repo.get_run(scope, session, run_id)
-    turns: list[ConversationTurn] = []
-    for row in await runs_repo.list_conversation_runs(scope, session, current.conversation_id):
-        events = await runs_repo.list_run_events(scope, session, row.id)
-        turns.append(
-            ConversationTurn(
-                run=_to_resource(row),
-                events=[_event_json(event) for event in events],
-            )
+    rows = await runs_repo.list_conversation_runs(scope, session, current.conversation_id)
+    # Two queries regardless of how long the conversation is. Reading the events
+    # per turn instead cost one round trip per turn, up to 51 of them, and held
+    # one of the instance's ten pool connections for all of them — see
+    # `runs_repo.list_run_events_for_runs`.
+    events_by_run = await runs_repo.list_run_events_for_runs(
+        scope, session, [row.id for row in rows]
+    )
+    turns = [
+        ConversationTurn(
+            run=_to_resource(row),
+            events=[_event_json(event) for event in events_by_run.get(row.id, [])],
         )
+        for row in rows
+    ]
     return ConversationResource(
         id=current.conversation_id,
         workspace_id=scope.workspace_id,
