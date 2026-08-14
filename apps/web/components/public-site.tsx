@@ -43,8 +43,15 @@ export async function PublicSite({
    * asking for `"none"` therefore owes its reader a theme and a language
    * control somewhere of its own — `/repository/layers` puts both in the
    * information box's footer.
+   *
+   * `"static"` is the full chrome with no per-visitor part: it never calls
+   * `getMajoranaAuth()` or `getMajoranaSignInUrl()`, both of which reach a
+   * Dynamic API and so make the whole page uncacheable. The header's
+   * call-to-action becomes the constant `/auth/sign-in`, which redirects. The
+   * cost is real and belongs in the open: a signed-in reader on a cached page
+   * is shown the signed-out header until they navigate somewhere personal.
    */
-  chrome?: "full" | "none";
+  chrome?: "full" | "none" | "static";
 }) {
   const resolvedLocale = locale ?? await getPublicLocale();
   if (chrome === "none") {
@@ -62,8 +69,15 @@ export async function PublicSite({
     { href: "/workspace", label: copy.nav.workspace },
     { href: "/contact", label: copy.nav.contact },
   ];
-  const { user } = await getMajoranaAuth();
-  const signInHref = isMajoranaAuthConfigured() ? await getMajoranaSignInUrl() : null;
+  // Both of these reach a Dynamic API — `getMajoranaAuth()` → `withAuth()` →
+  // `headers()`, and `getMajoranaSignInUrl()` → `getAuthorizationUrl()` →
+  // `headers()`. Either one alone opts every page rendering this component out
+  // of the CDN, which is why `"static"` returns before both rather than before
+  // one of them.
+  const { user } = chrome === "static" ? { user: null } : await getMajoranaAuth();
+  const signInHref = chrome === "static"
+    ? "/auth/sign-in"
+    : isMajoranaAuthConfigured() ? await getMajoranaSignInUrl() : null;
   const primaryAction = user
     ? { href: "/run", label: copy.actions.workspace }
     : signInHref
