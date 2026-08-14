@@ -229,6 +229,9 @@ does not disturb secret-backed variables already on the service.
 | `LEONA_TEAM_EMAILS` | ✔ | ✔ |
 | `LEONA_PRO_EMAILS` | ✔ | ✔ |
 | `DEPLOY_PROBE_TOKEN` (secret) | ✔ | — |
+| `SENTRY_DSN` (secret) | ✔ | ✔ |
+| `MAJORANA_ENV` (`production`, hardcoded in `deploy.yml` — this workflow only ever deploys `dev`) | ✔ | ✔ |
+| `MAJORANA_RELEASE` (short git SHA — `steps.tag.outputs.tag`) | ✔ | ✔ |
 
 The three `LEONA_*_EMAILS` lists are tier allowlists, named after the internal
 tier ids rather than the plan names on the pricing page: `pro` is sold as

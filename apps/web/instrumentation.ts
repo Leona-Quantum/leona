@@ -13,6 +13,10 @@ export async function register() {
       dsn: process.env.SENTRY_DSN,
       environment: process.env.MAJORANA_ENV ?? "dev",
       tracesSampleRate: 0.1,
+      // VERCEL_GIT_COMMIT_SHA is a Vercel System Environment Variable — always
+      // present on a Vercel deploy, absent (and harmless as undefined) in
+      // local dev/CI. Ties an event to the exact commit it came from.
+      release: process.env.VERCEL_GIT_COMMIT_SHA,
     });
   }
 }
