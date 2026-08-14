@@ -47,6 +47,50 @@ export const LOCALE_ROUTES: readonly string[] = [
   "/workspace",
 ];
 
+/**
+ * The Atlas subtrees served from `app/[locale]/repository/`, matched as a path
+ * PLUS everything under it — unlike `LOCALE_ROUTES`, which is exact.
+ *
+ * A prefix list rather than more `LOCALE_ROUTES` entries because
+ * `/repository/layers/<id>` is around 72% of everything this site serves and
+ * there are some 800 such ids, so enumerating them in middleware would put the
+ * layer graph into the Edge bundle — the data dependency the AuthKit matcher
+ * comment above already records getting rid of once.
+ *
+ * ## What is NOT here, and why the omission is the interesting part
+ *
+ * `/repository` itself and `/repository/<slug>` stay in `app/repository/` and
+ * stay uncached. Both call `getMajoranaAuth()` to decide what the export button
+ * offers, so both are personalized by construction; a shared cache entry for
+ * either is the bug, not the goal. Everything listed here reads no per-visitor
+ * state at all.
+ *
+ * That split is what makes the ordering below load-bearing. `app/repository/`
+ * still has a `[slug]` segment, so an unrewritten `/repository/layers` would
+ * match it, look up a record called "layers", find none and 404. The failure is
+ * a 404 rather than a wrong page, which is the right way round — but it is
+ * silent, so `routed-paths.test.ts` checks this list against
+ * `app/[locale]/repository/` on disk in both directions.
+ */
+export const LOCALE_PREFIX_ROUTES: readonly string[] = [
+  "/repository/claims",
+  "/repository/layers",
+];
+
+/**
+ * Does `pathname` sit inside one of the prefix subtrees above?
+ *
+ * Exact match or a `/`-delimited descendant, never a bare `startsWith`:
+ * `/repository/layersinger` is not `/repository/layers`, and letting it match
+ * would rewrite it into a route that does not exist while telling the auth gate
+ * it had been handled.
+ */
+export function localePrefixRoute(pathname: string): string | null {
+  return LOCALE_PREFIX_ROUTES.find(
+    (prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`),
+  ) ?? null;
+}
+
 export const ROUTED_SEGMENTS: readonly string[] = [
   "account",
   "api",

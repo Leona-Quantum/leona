@@ -1,27 +1,62 @@
 import type { Metadata } from "next";
-import { canonicalMetadata } from "../../../lib/public-metadata";
-import { PublicSite } from "../../../components/public-site";
-import { ConvergeView } from "../../../components/repository-converge-view";
-import { getPublicLocale } from "../../../lib/public-locale-server";
-import { getRepositoryListEntries } from "../../../lib/repository-source";
-import { LAYER_GRAPH } from "../../../lib/repository/layer-graph";
-import { drawableSlots, resolveOpenIds } from "../../../lib/repository/converge-layout";
-import { parseViewport } from "../../../lib/repository/canvas-viewport";
-import { SEL_PARAM } from "../../../lib/repository/canvas-selection";
-import { cardExists } from "../../../lib/repository/card-content";
+import { notFound } from "next/navigation";
+import { canonicalMetadata } from "../../../../lib/public-metadata";
+import { PublicSite } from "../../../../components/public-site";
+import { ConvergeView } from "../../../../components/repository-converge-view";
+import { isPublicLocale, parsePublicLocale, PUBLIC_LOCALES } from "../../../../lib/public-locale";
+import { getRepositoryListEntries } from "../../../../lib/repository-source";
+import { LAYER_GRAPH } from "../../../../lib/repository/layer-graph";
+import { drawableSlots, resolveOpenIds } from "../../../../lib/repository/converge-layout";
+import { parseViewport } from "../../../../lib/repository/canvas-viewport";
+import { SEL_PARAM } from "../../../../lib/repository/canvas-selection";
+import { cardExists } from "../../../../lib/repository/card-content";
 import {
   INNER_PARAM,
   IOPEN_PARAM,
   parseCardId,
   parseInnerId,
   SECTION_PARAM,
-} from "../../../lib/repository/map-card";
-import { parseAboutSection } from "../../../lib/repository/map-about";
-import { isCapability, layerCorpusEntry, layerNode, type LayerCorpusEntry } from "../../../lib/repository/layers";
-import { STATE_VOCABULARY } from "../../../lib/repository/state-vocabulary";
-import { PAPER_REGISTER } from "../../../lib/repository/paper-register";
-import { PAPER_PARAM, paperRevealFor } from "../../../lib/repository/paper-reveal";
-import { paperSlug } from "../../../lib/repository/papers";
+} from "../../../../lib/repository/map-card";
+import { parseAboutSection } from "../../../../lib/repository/map-about";
+import { isCapability, layerCorpusEntry, layerNode, type LayerCorpusEntry } from "../../../../lib/repository/layers";
+import { STATE_VOCABULARY } from "../../../../lib/repository/state-vocabulary";
+import { PAPER_REGISTER } from "../../../../lib/repository/paper-register";
+import { PAPER_PARAM, paperRevealFor } from "../../../../lib/repository/paper-reveal";
+import { paperSlug } from "../../../../lib/repository/papers";
+
+/**
+ * Served from the CDN, and NOT by being prerendered — the distinction is the
+ * whole design of this file's move and is worth stating where it will be read.
+ *
+ * This page resolves ten search parameters on the server (`?open=`, `?at=`,
+ * `?card=`, `?paper=`, `?focus=`, `?inner=`, `?iopen=`, `?about=`, `?section=`,
+ * `?sel=`), on purpose: a shared link lands where its sender was standing, and
+ * it does so with JavaScript off. Next is unambiguous that this costs static
+ * rendering — "`searchParams` is a Request-time API whose values cannot be known
+ * ahead of time. Using it will opt the page into dynamic rendering at request
+ * time." So the recipe that put `/pricing` and its five siblings on the CDN
+ * (`revalidate` + `dynamicParams = false` + `chrome="static"`) cannot reach this
+ * route, and no amount of removing cookie reads changes that.
+ *
+ * What CAN reach it is the edge cache in front of the render.
+ * `next.config.ts` attaches `Vercel-CDN-Cache-Control` to this path, and
+ * Vercel's cache key is the request URL *including the query string* — so every
+ * distinct deep link gets its own entry rather than one entry serving them all.
+ * That this works on a response Next itself marks `no-store` is measured, not
+ * assumed: see the header block in `next.config.ts`.
+ *
+ * The move under `[locale]` is what makes that cache SAFE rather than merely
+ * fast. Cookies are not part of Vercel's cache key — measured on the same
+ * preview: two requests to one URL carrying `leona.locale.v2=en` and
+ * `leona.locale.v2=ja` were served ONE render. Reading the locale cookie here,
+ * with an edge cache in front, would therefore have handed a Japanese reader the
+ * English page and called it a hit. The locale has to be in the path, and now is.
+ */
+export const dynamicParams = false;
+
+export function generateStaticParams() {
+  return PUBLIC_LOCALES.map((locale) => ({ locale }));
+}
 
 /**
  * Localised, because the node route beside it already is.
@@ -29,10 +64,14 @@ import { paperSlug } from "../../../lib/repository/papers";
  * A static English `metadata` export here would give a Japanese reader an
  * English title and description on the index and a Japanese one on every node
  * page — the inconsistency being the tell, since the two surfaces are one
- * reading. The page reads the locale cookie anyway, so this costs nothing.
+ * reading. The locale is a path segment now, so this still costs nothing.
  */
-export async function generateMetadata(): Promise<Metadata> {
-  const locale = await getPublicLocale();
+export async function generateMetadata({
+  params,
+}: {
+  params: Promise<{ locale: string }>;
+}): Promise<Metadata> {
+  const locale = parsePublicLocale((await params).locale);
   return {
     ...(locale === "ja"
       ? {
@@ -140,15 +179,28 @@ function resolveFocus(params: Record<string, string | string[] | undefined>): st
 }
 
 export default async function RepositoryLayersPage({
+  params: routeParams,
   searchParams,
 }: {
+  params: Promise<{ locale: string }>;
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
-  const [params, locale, entries] = await Promise.all([
-    searchParams,
-    getPublicLocale(),
-    getRepositoryListEntries(),
-  ]);
+  // Locale is validated BEFORE the catalog read starts, not alongside it: with
+  // `MAJORANA_PUBLIC_CATALOG_API` on, `getRepositoryListEntries()` is a network
+  // call, and a `Promise.all` starting it next to `routeParams` fires that call
+  // for every mistyped locale too, only to throw the result away on the next
+  // line. `/zz/repository/layers` should cost a 404, not a catalog fetch.
+  //
+  // **`dynamicParams = false` does not cover this page.** It restricts params
+  // only on a route that prerenders; this one reads `searchParams` and
+  // therefore never does, so every locale is "outside the prerendered set" and
+  // Next renders it. Measured: `/zz/repository/claims` (prerendered) 404s on
+  // its own and `/zz/repository/layers` returned 200 with the English map — a
+  // second address for the site's most-read page. See `isPublicLocale`.
+  const routeLocale = await routeParams;
+  if (!isPublicLocale(routeLocale.locale)) notFound();
+  const [params, entries] = await Promise.all([searchParams, getRepositoryListEntries()]);
+  const locale = parsePublicLocale(routeLocale.locale);
   const openSet = resolveOpenSet(params);
   // `?paper=` — the paper surface (W20). Its whole meaning is an ARRIVAL open
   // set — the owner's "expands only branches needed … other branches that

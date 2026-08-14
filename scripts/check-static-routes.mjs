@@ -63,6 +63,26 @@ const LOCALES = ["en", "ja"];
  */
 const LOCALE_ROUTES = ["", "/contact", "/pricing", "/privacy", "/terms", "/workspace"];
 
+/**
+ * Atlas routes that prerender, which is NOT the same set as the Atlas routes
+ * that reach the CDN — and the difference is the thing to understand before
+ * editing either list.
+ *
+ * `/repository/layers` and `/repository/layers/[id]` are around 96% of this
+ * site's traffic and they are deliberately absent here. Both resolve search
+ * parameters during render so a shared link arrives already panned and
+ * expanded with JavaScript off, and Next opts any page reading `searchParams`
+ * into request-time rendering. They cannot prerender, so requiring them here
+ * would be requiring the build to do something the framework forbids. They are
+ * cached in front of the render instead, by `Vercel-CDN-Cache-Control` in
+ * `apps/web/next.config.ts`, and `public-revalidate.test.ts` is what asserts
+ * that header still covers them.
+ *
+ * `/repository/claims` reads no search parameters and fetches nothing, so it is
+ * the one Atlas route this check can speak for.
+ */
+const LOCALE_ATLAS_ROUTES = ["/repository/claims"];
+
 export const REQUIRED_STATIC_ROUTES = [
   { route: "/_not-found", why: "the boundary in every route's tree; dynamic here makes the whole app dynamic" },
   { route: "/demo", why: "public marketing page, no per-visitor content" },
@@ -73,6 +93,12 @@ export const REQUIRED_STATIC_ROUTES = [
     LOCALE_ROUTES.map((path) => ({
       route: `/${locale}${path}`,
       why: `public page served from the CDN at ${path === "" ? "/" : path} via the ${locale} rewrite`,
+    })),
+  ),
+  ...LOCALES.flatMap((locale) =>
+    LOCALE_ATLAS_ROUTES.map((path) => ({
+      route: `/${locale}${path}`,
+      why: `Atlas page with no searchParams and no corpus fetch, served from the CDN at ${path} via the ${locale} rewrite`,
     })),
   ),
 ];
