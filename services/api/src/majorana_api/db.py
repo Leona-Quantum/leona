@@ -158,6 +158,23 @@ def fleet_peak_connections(
     (36 of 45) and 52 of 45 for the length of every deploy — and a deploy is
     exactly when the connections matter, because that is when Alembic needs one.
 
+    **The API term is deliberately NOT doubled, and that is not an omission.**
+    The API can absolutely have two revisions live at once — `--max-instances`
+    is per revision, so a rollout can transiently run 2 × API_MAX_INSTANCES
+    instances. What it cannot have is a *guaranteed* pair: the worker's doubling
+    exists because `--min-instances` holds a FLOOR that both revisions keep,
+    while the API has no `--min-instances` at all, so its outgoing revision holds
+    whatever traffic demanded and then drains. One is arithmetic, the other is a
+    function of load.
+
+    The pessimistic figure is worth knowing because it is close: two revisions ×
+    2 instances × 10 connections is 40, plus a worker at rest (4) is 44 of 45.
+    It is not gated on — a gate on a load-dependent worst case fails on a quiet
+    week for reasons nobody can reproduce — but anyone raising API_MAX_INSTANCES,
+    DEFAULT_POOL_SIZE/DEFAULT_MAX_OVERFLOW, or the worker count should compute
+    that number rather than the resting one. See
+    docs/gates/capacity-100-users.md § the asymmetry in the connection budget.
+
     `workers` overrides the deployed count, so the boundary can be probed
     without editing infra/fleet.env.
     """

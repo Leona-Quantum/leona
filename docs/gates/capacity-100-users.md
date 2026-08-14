@@ -67,6 +67,51 @@ and must not be quoted as "the product serves 65 requests per second".
 - `CAPACITY_MIN_CATALOG_ENTRIES` defaulted to **1**, so the profile would print
   `CAPACITY SUITE PASSED` against a catalogue holding a single record. The default is now 300.
 
+## What the fix is, and why it is not a concurrency change yet
+
+The finding above — pool-bound, ten connections against a `containerConcurrency` of 80 — has
+two candidate fixes, and the obvious one is currently the wrong one.
+
+**Raising the API pool costs budget that a deploy already spends.** `db.py`'s
+`fleet_peak_connections()` computes `API_MAX_INSTANCES × (POOL + OVERFLOW)` for the API and
+doubles only the worker term. The budget is 45 (a `db-g1-small`'s 50, less 3 superuser and 2
+operational), and the API is `2 × 10 = 20` of it. Doubling the pool to `8 + 8` would take the
+API term to 32 and the resting total to 40 — inside 45, but with the API's own rollout
+behaviour unaccounted for (below), and with nothing left for the worker count to grow into.
+
+**Lowering `containerConcurrency` toward the pool is free**, and it is the change this file
+would otherwise recommend. But it should not be made against this measurement, because two
+changes shipped the same day attack the same bottleneck from in front of it:
+
+- the list payload is **35.9% smaller** (`metadata` dropped, `resources` projected to the one
+  row a card renders, `visualization` reduced to the register except on gates), and
+- the six public catalog GETs now carry `Cache-Control: public`, so a shared cache absorbs
+  repeat reads that previously each re-ran the query plus the Python cost/profile computation.
+
+Both reduce work per request and requests per reader. Tuning admission against a p95 measured
+before either would be tuning against a system that no longer exists. **Re-run `read_100`
+first**, then decide — and the re-run is cheap, which is the whole reason the harness exists.
+
+### The asymmetry in the connection budget, stated because it looks like an omission
+
+`fleet_peak_connections(during_worker_rollout=True)` doubles the **worker** term and not the
+**API** term, and the reason is not that the API cannot have two revisions at once — it can.
+It is that the two revisions hold connections for different reasons:
+
+- `--min-instances` is a revision-level setting. While a worker deploy is in flight the
+  outgoing revision is still in the traffic split and still holding its **floor**, so 2N worker
+  instances is guaranteed, not merely possible.
+- The API has **no** `--min-instances`. Its outgoing revision holds whatever traffic demanded
+  and then drains, so its instance count during a rollout is a function of load, not a floor.
+
+The pessimistic figure is worth writing down anyway, because it is close: two revisions × 2
+instances × 10 connections is **40**, plus a worker at rest (4) is **44 of 45**. That is
+reached only if a deploy's traffic shift lands inside a burst big enough to have scaled both
+revisions out, and it is one connection from the ceiling. It is not gated on, because a gate on
+a load-dependent worst case would fail on a quiet week for reasons nobody could reproduce — but
+anyone raising `API_MAX_INSTANCES`, the API pool, or the worker count should compute this
+number first rather than the resting one.
+
 ## Workload definition
 
 The default run uses 100 VUs and one iteration per VU.
