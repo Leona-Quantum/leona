@@ -947,11 +947,6 @@
   font-size: var(--fs-12);
   line-height: 1.5;
 }
-.mj-pricing-description {
-  margin: var(--sp-6) 0 0;
-  color: var(--text-1);
-  line-height: 1.6;
-}
 .mj-pricing-card ul {
   display: grid;
   gap: var(--sp-3);
@@ -8946,12 +8941,6 @@ div.mj-rail-row:hover {
 .mj-upgrade-card .mj-primary-button {
   margin-top: auto;
 }
-.mj-upgrade-description {
-  margin: 0 0 var(--sp-3);
-  color: var(--text-1);
-  font-size: var(--fs-13);
-  line-height: 1.6;
-}
 .mj-upgrade-features {
   margin: 0 0 var(--sp-4);
   padding-left: var(--sp-4);
@@ -9321,7 +9310,6 @@ div.mj-rail-row:hover {
 .mj-company-hero-lede,
 .mj-company-hero-note,
 .mj-public-page-hero > p:last-child,
-.mj-pricing-description,
 .mj-pricing-note > p {
   text-wrap: pretty;
 }

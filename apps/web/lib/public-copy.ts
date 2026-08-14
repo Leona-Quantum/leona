@@ -273,11 +273,43 @@ export const HOME_COPY: Record<PublicLocale, {
  *   Professional → tier `team`   ← nor here
  *   Enterprise   → no tier at all: a sales motion, negotiated per customer
  *
- * `account-tier.test.ts` ties every number on the Free, Plus and Professional
- * cards to `TIER_LIMITS`, in both languages, because prose that overstates an
+ * ## The cards carry no allowance numbers at all, and no tagline (ai-ops#82)
+ *
+ * > *"prices stay, 50 moves to /account. shorten each of the bullet points to
+ * > be <=4 words each. no headliners like 'Enough to browse the public evidence
+ * > and put the workbench through a real problem.'"* — owner, 2026-08-14
+ *
+ * Prices stayed; every allowance figure and every card tagline went. So did the
+ * `description` field itself, in both languages and in both renderers, because
+ * a field that exists is a field somebody refills.
+ *
+ * **The guard inverted with the copy.** `account-tier.test.ts` used to tie
+ * every number on these three cards to `TIER_LIMITS` — prose that overstates an
  * allowance is a promise the product breaks the first time somebody reaches it.
+ * Generic prose cannot be tied that way, so the pin became its opposite: the
+ * Free, Plus and Professional feature lists must contain **no digits**, in
+ * either language. That is the same protection from the other side. Numbers
+ * came back onto this page one at a time before, and the failure was never
+ * visible on the page — it was visible to the person who hit the cap.
+ *
+ * A bullet is at most four words, which is also asserted rather than merely
+ * asked for. The ladder is legible without figures because each card opens with
+ * "Everything in <the card below>" and states its differences as comparatives —
+ * "More weekly runs", "Wider browser simulation" — every one of which is true
+ * of `TIER_LIMITS` as it stands.
+ *
  * Enterprise states capabilities and no allowances — there is nothing for a
  * test to tie it to, and a number on that card would be one nothing enforces.
+ *
+ * **The 50 moved to `/account`**, where a signed-in reader sees it beside their
+ * own run and artifact allowances, read from `DEFAULT_PROJECT_ARTIFACT_LIMIT`.
+ * A number that looks like it was already shown live in two places — the owner's
+ * editable limit input in `components/project-share-dialog.tsx` and the
+ * "N of M circuits" line in
+ * `app/(app)/shared/[projectId]/shared-project-view.tsx`. Neither is this
+ * constant: both render the PROJECT's own limit, which equals 50 only while
+ * nobody has changed it, and both sit inside a project that is already shared —
+ * the wrong moment to learn what the limit is.
  *
  * ## No card says "unlimited artifacts", however it is phrased (ai-ops#77)
  *
@@ -298,33 +330,45 @@ export const HOME_COPY: Record<PublicLocale, {
  * was struck for.
  *
  * What went with it is the true half: private projects really are uncapped, and
- * `50` really is a project's default artifact limit. Neither is stated on the
- * pricing page now. That is the owner's call to reverse, and it wants a phrasing
- * that cannot be read as an artifact allowance — the reason the sentence failed
- * was that it put a per-project number where a reader was counting their plan.
+ * `50` really is a project's default artifact limit. The `50` is on `/account`
+ * as of ai-ops#82. "Unlimited private projects" is still not on any enforced
+ * card and is still the owner's call to reverse: now that the artifact figure
+ * is gone from the bullet beside it, the word has nothing to contradict, but it
+ * also has nothing to be read against — "unlimited" sitting next to "Private
+ * artifacts" is the same misreading in a shorter sentence.
+ *
+ * ## Sharing appears on Professional and nowhere below it
+ *
+ * `projectSharing` is false for `free` and `pro`, and the control plane returns
+ * 403 rather than counting anything — so a sharing line on either card is a
+ * promise that breaks on the first click, not one that breaks at a cap.
+ * `account-tier.test.ts` asserts its absence on both, which it did for Plus
+ * only until ai-ops#82.
  */
 export const PRICING_COPY: Record<PublicLocale, {
   hero: { title: string; body: string };
-  plans: Array<{ name: string; price: string; cadence: string; description: string; features: string[]; action: string; tone: "quiet" | "featured" }>;
+  // No `description`: the per-card tagline is gone by ruling, and a field left
+  // in place is a field the next copy pass fills back in.
+  plans: Array<{ name: string; price: string; cadence: string; features: string[]; action: string; tone: "quiet" | "featured" }>;
   note: { label: string; title: string; body: string };
 }> = {
   en: {
     hero: { title: "A clear path from first run to team work.", body: "Start free, keep private work in Studio, and move up when you need more verification capacity, export tooling, or shared R&D controls." },
     plans: [
-      { name: "Free", price: "$0", cadence: "per user, per month", description: "Enough to browse the public evidence and put the workbench through a real problem.", features: ["The full public Atlas", "5 agent runs a week", "10 private artifacts", "Browser simulation up to 8 qubits"], action: "Try the preview", tone: "quiet" },
-      { name: "Plus", price: "$50", cadence: "per user, per month", description: "Room to work at your own pace: enough runs to iterate on a problem all week, room to keep the whole line of work, and a wider browser lane. Sharing a project with someone else starts at Professional.", features: ["75 agent runs a week", "75 private artifacts", "Browser simulation up to 12 qubits"], action: "Join early access", tone: "featured" },
-      { name: "Professional", price: "$240", cadence: "per user, per month", description: "Share a project with someone outside your workspace — read-only, or read-and-edit so they can put work back — with a per-project limit you set.", features: ["Share a project with people outside your workspace", "Up to 4 shared projects per person — ones you share and ones shared with you", "250 agent runs a week", "250 private artifacts, not counting anything in a shared project", "Browser simulation up to 18 qubits"], action: "Contact us", tone: "quiet" },
-      { name: "Enterprise", price: "$420+", cadence: "per user, per month", description: "Everything in Professional, with the allowances, review path, and terms agreed with your organisation rather than set here.", features: ["Everything in Professional", "Run and artifact allowances agreed with your organisation", "Private-corpus and internal-research conversations", "Named contact for onboarding and evaluation"], action: "Talk to sales", tone: "quiet" },
+      { name: "Free", price: "$0", cadence: "per user, per month", features: ["Full public Atlas", "Weekly agent runs", "Private artifacts", "Browser simulation"], action: "Try the preview", tone: "quiet" },
+      { name: "Plus", price: "$50", cadence: "per user, per month", features: ["Everything in Free", "More weekly runs", "More private artifacts", "Wider browser simulation"], action: "Join early access", tone: "featured" },
+      { name: "Professional", price: "$240", cadence: "per user, per month", features: ["Everything in Plus", "Share outside your workspace", "Read-only or editable sharing", "More runs and artifacts", "Widest browser simulation"], action: "Contact us", tone: "quiet" },
+      { name: "Enterprise", price: "$420+", cadence: "per user, per month", features: ["Everything in Professional", "Allowances agreed with you", "Private-corpus conversations", "Named onboarding contact"], action: "Talk to sales", tone: "quiet" },
     ],
     note: { label: "A transparent starting point", title: "The prices are set; checkout is not live yet.", body: "These are the intended early-access prices, per user per month. No payment method can be added in this deployment — there is no card entry, checkout, or charge — so nothing here bills anyone today. Exact credits and enterprise terms are confirmed before paid billing is enabled." },
   },
   ja: {
     hero: { title: "まずは個人で試し、そのままチームで研究へ。", body: "無料で始め、非公開の研究はStudioに保存できます。検証できる実行回数、エクスポート、共同研究の管理が必要になったら次のプランへ進めます。" },
     plans: [
-      { name: "Free", price: "$0", cadence: "1ユーザーあたり月額", description: "公開されている回路と検証結果を確認し、実際の課題で一連の操作を試せます。", features: ["公開Atlasのすべて", "週5回のエージェント実行", "非公開の回路・実行記録10件", "8量子ビットまでのブラウザ実行"], action: "プレビューを試す", tone: "quiet" },
-      { name: "Plus", price: "$50", cadence: "1ユーザーあたり月額", description: "個人の非公開研究を自分のペースで進められます。1週間を通して試行を重ねられる実行回数と、その過程をまとめて残せる保存件数、そしてより広いブラウザ実行の枠を用意しています。他の人とのプロジェクト共有はProfessionalからです。", features: ["週75回のエージェント実行", "非公開の回路・実行記録75件", "12量子ビットまでのブラウザ実行"], action: "早期アクセスに参加", tone: "featured" },
-      { name: "Professional", price: "$240", cadence: "1ユーザーあたり月額", description: "ワークスペースの外の相手にプロジェクトを共有できます。閲覧のみ、または編集可能（相手から回路を追加できます）を選べ、追加できる件数はプロジェクトごとに指定できます。", features: ["ワークスペース外の相手とプロジェクトを共有", "共有プロジェクトは1人あたり4件まで（自分が共有したものと、共有されたものの合計）", "週250回のエージェント実行", "非公開の回路・実行記録250件（共有プロジェクト内のものは含みません）", "18量子ビットまでのブラウザ実行"], action: "お問い合わせ", tone: "quiet" },
-      { name: "Enterprise", price: "$420+", cadence: "1ユーザーあたり月額", description: "Professionalのすべての機能に加えて、利用上限、審査の進め方、契約条件を組織ごとに調整します。", features: ["Professionalのすべての機能", "実行回数と保存件数は組織ごとに調整", "社内データや非公開研究に関するご相談", "導入と評価を担当する窓口"], action: "営業担当に相談", tone: "quiet" },
+      { name: "Free", price: "$0", cadence: "1ユーザーあたり月額", features: ["公開Atlasのすべて", "週ごとのエージェント実行", "非公開の回路・実行記録", "ブラウザ実行"], action: "プレビューを試す", tone: "quiet" },
+      { name: "Plus", price: "$50", cadence: "1ユーザーあたり月額", features: ["Freeのすべて", "実行回数を拡大", "保存件数を拡大", "より広いブラウザ実行"], action: "早期アクセスに参加", tone: "featured" },
+      { name: "Professional", price: "$240", cadence: "1ユーザーあたり月額", features: ["Plusのすべて", "ワークスペース外への共有", "閲覧のみ／編集可を選択", "実行と保存をさらに拡大", "最も広いブラウザ実行"], action: "お問い合わせ", tone: "quiet" },
+      { name: "Enterprise", price: "$420+", cadence: "1ユーザーあたり月額", features: ["Professionalのすべて", "利用上限は個別に調整", "社内データに関する相談", "導入と評価の担当窓口"], action: "営業担当に相談", tone: "quiet" },
     ],
     note: { label: "早期アクセス版の提供内容", title: "価格は確定していますが、決済はまだ開始していません。", body: "上記は早期アクセス期間の価格（1ユーザーあたり月額）です。現在の環境では支払い方法を登録できず、カード入力も決済も行われないため、請求は発生しません。クレジットの詳細と法人向け条件は、有料提供の開始前に確定します。" },
   },

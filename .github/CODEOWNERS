@@ -12,4 +12,8 @@
 # ROUTED_SEGMENTS changes whether an unknown URL is gated or falls through to a
 # 404. Both were reachable without a blast-radius declaration until now.
 /apps/web/lib/routed-paths.ts  @EshMis
+# The public-path list and its AuthKit glob form, extracted from middleware.ts
+# so they can be tested at all. Owned for the same reason middleware.ts is:
+# adding an entry here publishes a path and its whole subtree.
+/apps/web/lib/public-paths.ts   @EshMis
 /services/api/src/majorana_api/auth/  @EshMis
