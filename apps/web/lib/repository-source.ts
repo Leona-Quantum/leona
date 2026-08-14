@@ -66,11 +66,12 @@ import {
 import { PUBLIC_REPOSITORY_ENTRIES } from "./public-repository";
 import type { PublicRepositoryEntry, PublicRepositoryListEntry } from "./repository/types";
 import { reportCallerTrust, withTrustedCallerHeader } from "./trusted-caller";
+import { CATALOG_REVALIDATE_SECONDS } from "./catalog-revalidate";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 
 /** Revalidation window for the catalog fetch, in seconds. */
-const CATALOG_REVALIDATE_SECONDS = 300;
+
 
 /**
  * Fetch + JSON-decode one catalog URL, or null with a loud log.

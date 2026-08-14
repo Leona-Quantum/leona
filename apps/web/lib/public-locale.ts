@@ -1,5 +1,18 @@
 export type PublicLocale = "en" | "ja";
 
+/**
+ * Every locale the public site prerenders, and the only values `[locale]` will
+ * answer to.
+ *
+ * Typed as the union rather than `string[]` on purpose: adding a language means
+ * adding it to `PublicLocale`, and this list then fails to compile until the
+ * copy records below have it too. A page's `generateStaticParams` reads this, so
+ * a locale absent here is a locale nothing is built for — with
+ * `dynamicParams = false` on those pages, it 404s instead of rendering English
+ * under a wrong path.
+ */
+export const PUBLIC_LOCALES: readonly PublicLocale[] = ["en", "ja"];
+
 export const PUBLIC_LOCALE_COOKIE = "leona.locale.v2";
 export const LEGACY_PUBLIC_LOCALE_COOKIE = "majorana.locale.v1";
 

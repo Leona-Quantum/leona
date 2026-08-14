@@ -20,7 +20,16 @@ const SURFACE = {
 function routeSegments(dir: URL): string[] {
   return readdirSync(fileURLToPath(dir), { withFileTypes: true })
     .filter((entry) => entry.isDirectory())
-    .map((entry) => entry.name)
+    .flatMap((entry) => {
+      // `[locale]` is transparent in the address a visitor sees, the same way a
+      // route group is: middleware rewrites `/pricing` into `/en/pricing` and
+      // 308s the prefixed form back out, so the URL segment a crawler and this
+      // sitemap deal with is `pricing`, not `en`. Its children are therefore
+      // the top-level segments, and each of them still has to be published,
+      // aliased or disallowed like any other.
+      if (entry.name === "[locale]") return routeSegments(new URL(`${entry.name}/`, dir));
+      return [entry.name];
+    })
     // Route groups `(app)`, parallel routes `@modal` and private folders `_x`
     // are not URL segments.
     .filter((name) => !/^[(@_]/.test(name));

@@ -1,9 +1,9 @@
 "use client";
 
 import { type FormEvent, useState } from "react";
-import { CONTACT_EMAIL } from "../../lib/public-contact";
-import { CONTACT_COPY } from "../../lib/public-copy";
-import type { PublicLocale } from "../../lib/public-locale";
+import { CONTACT_EMAIL } from "../../../lib/public-contact";
+import { CONTACT_COPY } from "../../../lib/public-copy";
+import type { PublicLocale } from "../../../lib/public-locale";
 
 export function ContactForm({ locale }: { locale: PublicLocale }) {
   const [status, setStatus] = useState<string | null>(null);

@@ -12,8 +12,9 @@ import { NextResponse, type NextFetchEvent, type NextRequest } from "next/server
 import { isWorkosAuthConfigured } from "./lib/auth-config";
 import { isLocalDevAuthEnabled } from "./lib/local-dev-auth";
 import { pageviewLoggingEnabled, pageviewSignal } from "./lib/pageview-signal";
+import { LEGACY_PUBLIC_LOCALE_COOKIE, parsePublicLocale, PUBLIC_LOCALE_COOKIE, PUBLIC_LOCALES } from "./lib/public-locale";
 import { isPublicDemoEnabled } from "./lib/public-demo";
-import { isRoutedPath } from "./lib/routed-paths";
+import { isRoutedPath, LOCALE_ROUTES } from "./lib/routed-paths";
 
 const PUBLIC_PATHS = [
   "/",
@@ -110,6 +111,71 @@ function countPageview(request: NextRequest): void {
   }
 }
 
+/**
+ * The public paths served from a `[locale]` route, and answered here.
+ *
+ * ## Why the rewrite exists at all
+ *
+ * These pages render different copy per language, so one cache entry cannot
+ * serve both — the locale has to be part of the cache key, and on Vercel the
+ * cache key is the path. The alternative, reading the cookie during render,
+ * is a Dynamic API and is exactly what kept the whole site off the CDN.
+ *
+ * The rewrite is internal, so the reader keeps `/pricing` in the address bar
+ * and still gets `/en/pricing` or `/ja/pricing` out of the edge cache. That an
+ * internally-rewritten request is served from the CDN at all is measured, not
+ * assumed — no Vercel documentation answers it, and the one page on "rewrite
+ * caching" covers EXTERNAL rewrites, a different mechanism. A preview
+ * deployment of `spike/locale-rewrite-caching` returned PRERENDER, HIT, HIT on
+ * three consecutive GETs of `/pricing` with a byte-identical render timestamp,
+ * against a MISS, MISS, MISS control on an untouched page in the same run.
+ *
+ * ## Why these paths never reach AuthKit, which is load-bearing
+ *
+ * `authkitMiddleware` refreshes the session on every request it sees, and
+ * Vercel will not store a response carrying `Set-Cookie`. A public page that
+ * kept the gate could therefore never cache for a signed-in reader. These paths
+ * are public by definition — every one of them is already in PUBLIC_PATHS — so
+ * the gate has nothing to decide about them.
+ *
+ * The pageview counter is unaffected: it runs before this, and therefore still
+ * counts the clean path the reader typed rather than the rewritten one.
+ */
+const LOCALE_ROUTE_SET = new Set(LOCALE_ROUTES);
+
+function readLocale(request: NextRequest) {
+  return parsePublicLocale(
+    request.cookies.get(PUBLIC_LOCALE_COOKIE)?.value
+      ?? request.cookies.get(LEGACY_PUBLIC_LOCALE_COOKIE)?.value,
+  );
+}
+
+function localeRewrite(request: NextRequest): NextResponse | null {
+  const { pathname } = request.nextUrl;
+  if (!LOCALE_ROUTE_SET.has(pathname)) return null;
+  const locale = readLocale(request);
+  const target = pathname === "/" ? `/${locale}` : `/${locale}${pathname}`;
+  return NextResponse.rewrite(new URL(target, request.url));
+}
+
+/**
+ * `/en/pricing` is a real, reachable route once the pages move under
+ * `[locale]`, and leaving it reachable would publish every public page at two
+ * addresses. One canonical URL, so send it back to the clean one.
+ *
+ * No loop: the rewrite above is internal, so the browser is never asked for the
+ * prefixed form and never arrives here carrying it.
+ */
+function canonicalRedirect(request: NextRequest): NextResponse | null {
+  const segments = request.nextUrl.pathname.split("/");
+  const first = segments[1] ?? "";
+  if (!(PUBLIC_LOCALES as readonly string[]).includes(first)) return null;
+  const rest = `/${segments.slice(2).join("/")}`.replace(/\/$/, "");
+  const target = new URL(rest === "" ? "/" : rest, request.url);
+  target.search = request.nextUrl.search;
+  return NextResponse.redirect(target, 308);
+}
+
 export default async function middleware(request: NextRequest, event: NextFetchEvent) {
   // First, and before any early return: the counter's contract is that it runs
   // exactly once per request. It is also why placement here is safe next to the
@@ -118,6 +184,12 @@ export default async function middleware(request: NextRequest, event: NextFetchE
   // logs nothing either way. Counting first keeps that true if the route list
   // ever grows.
   countPageview(request);
+  // Both before the gate. The rewrite serves a cached page; the redirect
+  // collapses the locale-prefixed form back onto the clean one.
+  const rewritten = localeRewrite(request);
+  if (rewritten) return rewritten;
+  const canonical = canonicalRedirect(request);
+  if (canonical) return canonical;
   // Before the gate, deliberately: an auth gate handed a path that resolves to
   // nothing can only send the visitor to AuthKit, so a typo, a stale bookmark
   // or a crawler landed on api.workos.com's sign-in screen. Nothing is exposed
