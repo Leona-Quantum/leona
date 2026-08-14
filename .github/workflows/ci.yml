@@ -86,6 +86,11 @@ jobs:
         run: uv run lint-imports
       - name: no raw queries outside repository layer
         run: uv run python scripts/check_raw_queries.py
+      # Migration 0050: run_events/audit_log/usage_events are append-only by
+      # trigger, with one deliberate, transaction-scoped bypass for test
+      # cleanup. This is what keeps that bypass from spreading into product code.
+      - name: append-only bypass confined to its two allowed locations
+        run: uv run python scripts/check_append_only_bypass.py
 
   # Migration gate (04-database.md §4): up→down→up + seed; B-D3 budget (<60 s)
   # enforced by `timeout`.

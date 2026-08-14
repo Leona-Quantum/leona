@@ -188,7 +188,7 @@ async def delete_committed_tenants(factory, workspace_ids, user_ids) -> None:
     delete rather than a wrong answer, which is the good direction for a gap
     like this to be found in.
     """
-    from sqlalchemy import delete, select, update
+    from sqlalchemy import delete, select, text, update
 
     from majorana_api.orm import (
         AgentLLMCall,
@@ -214,6 +214,18 @@ async def delete_committed_tenants(factory, workspace_ids, user_ids) -> None:
     workspace_ids = list(workspace_ids)
     user_ids = list(user_ids)
     async with factory() as session:
+        # run_events, audit_log and usage_events are append-only by trigger
+        # (migration 0050) — deliberately, and everywhere else. This helper is
+        # the one place allowed to delete from them anyway, because a few
+        # two-connection race tests below must COMMIT real rows for a second
+        # connection to see them rather than rolling back like most of this
+        # suite, and those rows are then this helper's to remove. SET LOCAL
+        # scopes the bypass to this one transaction — it cannot leak to any
+        # other session, or to a later transaction on a connection the pool
+        # reuses — and `scripts/check_append_only_bypass.py` fails the build
+        # if this GUC is ever referenced anywhere outside this file and
+        # `db/migrations/`, so the escape hatch cannot spread from here.
+        await session.execute(text("SET LOCAL majorana.append_only_bypass = 'on'"))
         artifact_ids = list(
             (
                 await session.execute(
