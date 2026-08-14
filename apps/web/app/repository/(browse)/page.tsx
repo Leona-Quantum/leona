@@ -9,12 +9,9 @@ import {
   getRepositoryProfiles,
 } from "../../../lib/repository-source";
 import { VerificationLegend } from "../../../components/repository-verification";
-import { AboutTheAtlas, RepositoryPreface } from "../../../components/repository-preface";
+import { AboutTheAtlas } from "../../../components/repository-preface";
 import { resolveBrowseParams } from "../../../lib/repository/browse-params";
 import { RepositoryBrowser } from "../repository-browser";
-import { IngredientShelf } from "../../../components/repository-shelf";
-import { LAYER_GRAPH } from "../../../lib/repository/layer-graph";
-import { STATE_VOCABULARY } from "../../../lib/repository/state-vocabulary";
 
 /**
  * Localised, for the reason `layers/page.tsx:12-19` already states: a static
@@ -117,27 +114,14 @@ export default async function RepositoryPage({
             description is unaffected — that is a different reader (a search
             result) and it is not on the page. */}
         <h1 id="repository-heading">{isJapanese ? "量子アトラス" : "The Quantum Atlas"}</h1>
-        {/* Above the kinds and therefore above the search bar, which is the
-            order the owner specified: what this is, then which kinds of record
-            there are, then the controls. */}
+        {/* Above the search bar, which is the order the owner specified: what
+            this is, then the controls. The "four kinds" preface and the
+            Ingredients shelf that used to sit between the two were removed
+            from this page by owner instruction (ai-ops#94) — see the comment
+            left in `repository-preface.tsx` for what that took with it.
+            `repository-shelf.tsx`'s `IngredientShelf` is now unused rather
+            than deleted, in case this is revisited. */}
         <AboutTheAtlas locale={locale} />
-        {/* The four kinds, as links into their `?category=` sections. Its
-            counted paragraphs went in session 110; what remains is navigation,
-            and it still takes `entries` because the corpus is what decides
-            which kinds exist. */}
-        <RepositoryPreface entries={entries} locale={locale} />
-        {/* The Ingredients shelf, between the kinds and the controls: it is
-            navigation over the objects, which is the same job the preface does
-            over the categories, and it belongs on the same side of the search
-            box. Three shut `<details>` — see `repository-shelf.tsx` for why the
-            counts have to be legible without opening one, and why it takes the
-            listing already in hand rather than fetching anything. */}
-        <IngredientShelf
-          records={entries}
-          graph={LAYER_GRAPH}
-          vocabulary={STATE_VOCABULARY}
-          locale={locale}
-        />
         <RepositoryBrowser
           entries={entries}
           locale={locale}
