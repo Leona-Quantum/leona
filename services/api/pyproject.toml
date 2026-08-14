@@ -9,9 +9,9 @@ dependencies = [
     "majorana-estimation",
     "majorana-openqasm",
     "majorana-qpu",
-    "alembic>=1.16",
-    "sqlalchemy[asyncio]>=2.0",
-    "psycopg[binary]>=3.2",
+    "alembic>=1.19.1",
+    "sqlalchemy[asyncio]>=2.0.52",
+    "psycopg[binary]>=3.3.4",
     # Function-scoped yield dependencies are required so SSE does not retain
     # database sessions until the response body finishes (FastAPI >=0.121).
     "fastapi>=0.121",

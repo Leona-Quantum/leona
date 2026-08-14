@@ -32,6 +32,27 @@ def test_default_run_timeout_matches_api_maximum():
     assert handlers.DEFAULT_RUN_TIMEOUT_S == 600.0
 
 
+def test_pipeline_remaining_time_s_is_not_shrunk_by_the_explanation_reserve():
+    """Pins the 2026-08-14 incident's arithmetic directly.
+
+    `_handle_agent_execution` used to hand `SimpleCircuitPipeline` `run_deadline
+    - now - RUN_EXPLANATION_RESERVE_S` as its remaining time — reserving 75 s
+    for the optional post-pipeline explanation call before the mandatory
+    stages ever ran. On the deploy probe's 120 s run, with ~20 s already spent
+    reaching `reviewing`, that left the pipeline believing it had 25 s, not
+    100 s; `_estimated_finalization_s` (~25 s, packages/py/agent) then reserved
+    that again, flooring `reviewing`'s stage budget to ~0.1 s and failing every
+    probe whose earlier stages took longer than that to run. The explanation
+    call does not need this: it measures its own leftover time fresh, after
+    the pipeline returns (`remaining_time_s` below), and already caps itself
+    against `RUN_EXPLANATION_RESERVE_S` there — see
+    `test_completed_execute_generates_a_grounded_natural_language_explanation`.
+    """
+    remaining = handlers._pipeline_remaining_time_s(run_deadline=120.0, now=20.0)
+
+    assert remaining == 100.0  # not 120 - 20 - 75 == 25
+
+
 async def test_dead_letter_handler_commits_terminal_sequence_once(monkeypatch):
     commits = 0
     observed = {}

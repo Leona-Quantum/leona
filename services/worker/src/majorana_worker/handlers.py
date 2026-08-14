@@ -80,10 +80,11 @@ from majorana_api.tiers import EnvTierSources, limits_for, tier_of
 
 from .agent_llm import MeteredAgentLLM
 from .agent_store import RepoAgentStore
-from .context import RunContext
+from .context import EventSink, RunContext
 from .intent import resolve_mode
 from majorana_frameworks.roles import result_was_derived
 
+from .research import research_enabled
 from .runtime_ports import SandboxCandidateExecutor, TrustedOpenQASMConverter
 from .simple_events import SimpleEventObserver
 from .simple_ports import (
@@ -103,11 +104,29 @@ log = logging.getLogger("majorana_worker")
 # explicit upper bound so an omitted timeout is not stricter than an accepted
 # client timeout.
 DEFAULT_RUN_TIMEOUT_S = 600.0
-# Keep enough of the run deadline for the user-facing answer after the durable
-# artifact exists. Without an explicit reserve, the repair controller can spend
-# every remaining second before the final explanation call begins.
+# Ceiling on the OPTIONAL post-pipeline explanation call (`_emit_run_explanation`),
+# applied there against genuine leftover time measured fresh after the pipeline
+# returns — never against the pipeline's own budget. Do not also subtract this
+# from `_pipeline_remaining_time_s` below: that double-reserved it (once here,
+# once as `_estimated_finalization_s` inside `simple_pipeline.py`) and starved
+# `reviewing` to under 2 s on the deploy probe's 120 s run — 2026-08-14 incident,
+# introduced by PR 485. The mandatory stages must not be shorted to protect an
+# optional one that already degrades gracefully (`timeout_s < 1.0` skips it).
 RUN_EXPLANATION_RESERVE_S = 75.0
 RUN_TERMINAL_WRITE_RESERVE_S = 5.0
+
+
+def _pipeline_remaining_time_s(run_deadline: float, now: float) -> float:
+    """Time left for the mandatory pipeline stages: plan through save.
+
+    Deliberately just the raw run deadline minus now, with no reserve for the
+    explanation call folded in — see `RUN_EXPLANATION_RESERVE_S` above for why.
+    A named function rather than an inline lambda so this exact arithmetic is
+    the one place a future reserve gets added back by mistake, and the one
+    place a test can pin it without constructing a whole pipeline run.
+    """
+    return run_deadline - now
+
 
 _verification_meter = metrics.get_meter("majorana.worker.verification")
 _verification_decisions = _verification_meter.create_counter("majorana.verification.decisions")
@@ -688,6 +707,25 @@ async def _finish_legacy_progress(
     )
 
 
+def _research_sink_for(ctx: RunContext) -> EventSink | None:
+    """The kill switch for implicit arXiv research, and the only place it acts.
+
+    `ctx.sink` is a non-optional field on a frozen `RunContext`, so handing it
+    to the pipeline unconditionally is exactly what makes research on for every
+    run's first planning attempt — and off only by editing this file and
+    redeploying. Withholding it is what
+    `ProductionSimplePipelinePorts._research_for_plan` already reads as "not
+    enabled" on its first line, before the triage LLM call, so a deployment with
+    `MAJORANA_RESEARCH` switched off spends nothing rather than paying a model
+    to decide not to look anything up.
+
+    A named function rather than a conditional inline in the constructor call
+    because a switch that cannot be unit-tested is a switch nobody has checked:
+    the composition root itself needs a live session to drive.
+    """
+    return ctx.sink if research_enabled() else None
+
+
 async def _handle_agent_execution(
     ctx: RunContext,
     run_store: RepoRunStateStore,
@@ -777,12 +815,13 @@ async def _handle_agent_execution(
         initial_source=ctx.source_code,
         allow_ai_assumptions=ctx.allow_ai_assumptions,
         rollback=session.rollback,
+        research_sink=_research_sink_for(ctx),
     )
     outcome = await SimpleCircuitPipeline(
         ports=ports,
         cancel_requested=cancelled,
-        remaining_time_s=lambda: (
-            run_deadline - asyncio.get_running_loop().time() - RUN_EXPLANATION_RESERVE_S
+        remaining_time_s=lambda: _pipeline_remaining_time_s(
+            run_deadline, asyncio.get_running_loop().time()
         ),
         monotonic=asyncio.get_running_loop().time,
     ).run(ctx.run_id)

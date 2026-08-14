@@ -3,7 +3,7 @@ import test from "node:test";
 import { readdirSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { join } from "node:path";
-import { isRoutedPath, LOCALE_ROUTES, ROUTED_SEGMENTS } from "./routed-paths.ts";
+import { isRoutedPath, LOCALE_PREFIX_ROUTES, localePrefixRoute, LOCALE_ROUTES, ROUTED_SEGMENTS } from "./routed-paths.ts";
 
 const APP_DIR = fileURLToPath(new URL("../app/", import.meta.url));
 const ROUTE_FILES = new Set(["page.tsx", "page.ts", "page.jsx", "page.js", "route.ts", "route.tsx", "route.js"]);
@@ -97,17 +97,78 @@ test("the URLs a visitor guesses are not routed", () => {
   }
 });
 
-/** What `app/[locale]/` actually serves, as clean paths. */
+/**
+ * The first segment under `app/[locale]/` that is served by a PREFIX entry
+ * rather than an exact one — `repository`, today.
+ *
+ * Derived from LOCALE_PREFIX_ROUTES rather than hardcoded, so adding a prefix
+ * subtree under a new first segment cannot silently disappear from the exact
+ * list's accounting below.
+ */
+const PREFIX_FIRST_SEGMENTS = new Set(
+  LOCALE_PREFIX_ROUTES.map((route) => route.split("/")[1]).filter((segment) => segment !== ""),
+);
+
+/** What `app/[locale]/` serves at the top level, as clean paths, excluding the prefix subtrees. */
 function localeRoutesOnDisk(): string[] {
   const dir = join(APP_DIR, "[locale]");
   const found = ["/"];
   for (const entry of readdirSync(dir, { withFileTypes: true })) {
     if (!entry.isDirectory()) continue;
     if (entry.name.startsWith("@") || entry.name.startsWith("_")) continue;
+    // Answered by LOCALE_PREFIX_ROUTES and checked by its own test below.
+    if (PREFIX_FIRST_SEGMENTS.has(entry.name)) continue;
     if (servesARoute(join(dir, entry.name))) found.push(`/${entry.name}`);
   }
   return found.sort();
 }
+
+/**
+ * The Atlas subtrees actually on disk under `app/[locale]/repository/`, as
+ * clean paths.
+ *
+ * `[id]` and friends are not walked into: LOCALE_PREFIX_ROUTES names subtrees,
+ * and a dynamic child is part of the subtree its parent declares.
+ */
+function localePrefixRoutesOnDisk(): string[] {
+  const found: string[] = [];
+  for (const segment of PREFIX_FIRST_SEGMENTS) {
+    const dir = join(APP_DIR, "[locale]", segment);
+    for (const entry of readdirSync(dir, { withFileTypes: true })) {
+      if (!entry.isDirectory()) continue;
+      if (entry.name.startsWith("@") || entry.name.startsWith("_")) continue;
+      if (servesARoute(join(dir, entry.name))) found.push(`/${segment}/${entry.name}`);
+    }
+  }
+  return found.sort();
+}
+
+test("LOCALE_PREFIX_ROUTES is exactly what app/[locale]/repository/ serves", () => {
+  // The same two-directional check as the exact list, with one extra failure
+  // mode that is specific to this list and worth naming.
+  //
+  // `app/repository/` still exists — `/repository` and `/repository/<slug>` live
+  // there because both call `getMajoranaAuth()` and must stay personalized — and
+  // it still has a `[slug]` segment. So a subtree that is on disk under
+  // `app/[locale]/repository/` but MISSING from this list is not a 404 at the
+  // middleware: the request falls through unrewritten, `[slug]` matches it, the
+  // catalogue is asked for a record named "layers", and the reader gets the
+  // Atlas's own 404 page. Right answer, wrong reason, no error anywhere.
+  assert.deepEqual([...LOCALE_PREFIX_ROUTES].sort(), localePrefixRoutesOnDisk());
+});
+
+test("the prefix matcher takes descendants and not lookalikes", () => {
+  for (const route of LOCALE_PREFIX_ROUTES) {
+    assert.equal(localePrefixRoute(route), route, `${route} should match itself`);
+    assert.equal(localePrefixRoute(`${route}/child`), route, `${route}/child should match`);
+    assert.equal(localePrefixRoute(`${route}/a/b/c`), route, `${route}/a/b/c should match`);
+    // A bare startsWith would rewrite this into a route that does not exist
+    // while telling the auth gate the path had been handled.
+    assert.equal(localePrefixRoute(`${route}extra`), null, `${route}extra must not match`);
+  }
+  assert.equal(localePrefixRoute("/repository"), null, "the browse index stays in app/repository/");
+  assert.equal(localePrefixRoute("/repository/some-record-slug"), null, "an entry page stays in app/repository/");
+});
 
 test("LOCALE_ROUTES is exactly what app/[locale]/ serves", () => {
   // Both directions are a real failure and they differ.

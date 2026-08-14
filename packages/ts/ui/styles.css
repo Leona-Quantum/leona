@@ -384,7 +384,7 @@
 }
 .mj-company-hero-copy .mj-public-actions {
   justify-content: center;
-  margin-top: var(--sp-8);
+  margin-top: var(--sp-6);
 }
 .mj-company-hero-lede {
   max-width: 640px;
@@ -400,6 +400,135 @@
   font-size: var(--fs-12);
   line-height: 1.6;
 }
+.mj-landing-prompt {
+  width: min(760px, calc(100vw - var(--sp-8)));
+  /* Was 156px, sized for a 2-row textarea (rows={2}, 68px min-height below).
+     The textarea is one row now, so the container no longer needs to reserve
+     a second line of blank space above the controls — 124px is padding (32)
+     + one text row (~48) + the 44px control row, with a little slack. */
+  min-height: 124px;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  margin: var(--sp-8) auto 0;
+  padding: var(--sp-4);
+  border: 1px solid var(--border-0);
+  border-radius: calc(var(--radius-card) + var(--sp-2));
+  background: color-mix(in srgb, var(--bg-1) 92%, transparent);
+  text-align: left;
+  backdrop-filter: blur(12px);
+}
+.mj-landing-prompt textarea {
+  width: 100%;
+  /* Was 68px (room for 2 rows); rows={2} is now rows={1}, so this only needs
+     to hold one line of the 16px/1.55 type. */
+  min-height: 40px;
+  box-sizing: border-box;
+  flex: 1 1 auto;
+  resize: none;
+  border: 0;
+  outline: 0;
+  color: var(--text-0);
+  background: transparent;
+  font: inherit;
+  font-size: var(--fs-16);
+  line-height: 1.55;
+}
+.mj-landing-prompt textarea::placeholder { color: var(--text-2); opacity: 0.78; }
+.mj-landing-prompt-controls,
+.mj-landing-prompt-actions {
+  display: flex;
+  align-items: center;
+}
+.mj-landing-prompt-controls { justify-content: space-between; gap: var(--sp-4); }
+.mj-landing-prompt-actions { gap: var(--sp-3); }
+.mj-landing-prompt button { font: inherit; cursor: pointer; }
+.mj-landing-prompt-icon {
+  width: 44px;
+  height: 44px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 1px solid var(--border-0);
+  border-radius: 50%;
+  color: var(--text-1);
+  background: transparent;
+}
+.mj-landing-prompt-icon:hover,
+.mj-landing-prompt-mode:hover { color: var(--text-0); border-color: var(--text-2); }
+.mj-landing-prompt-mode {
+  height: 44px;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: 0 var(--sp-3);
+  border: 1px solid transparent;
+  border-radius: var(--radius-control);
+  color: var(--text-1);
+  background: transparent;
+}
+.mj-landing-prompt-mode span { color: var(--accent); }
+.mj-landing-prompt-submit {
+  height: 44px;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: 0 var(--sp-5);
+  border: 1px solid var(--accent);
+  border-radius: 999px;
+  color: var(--bg-0);
+  background: var(--accent);
+  font-weight: 500;
+}
+.mj-landing-prompt-submit:hover { background: var(--accent-press); border-color: var(--accent-press); }
+.mj-landing-signup-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: grid;
+  place-items: center;
+  padding: var(--sp-4);
+  background: color-mix(in srgb, var(--bg-0) 72%, transparent);
+  backdrop-filter: blur(8px);
+}
+.mj-landing-signup-dialog {
+  position: relative;
+  width: min(480px, 100%);
+  box-sizing: border-box;
+  padding: var(--sp-8);
+  border: 1px solid var(--border-0);
+  border-radius: calc(var(--radius-card) + var(--sp-2));
+  color: var(--text-0);
+  background: var(--bg-1);
+  text-align: left;
+}
+.mj-landing-signup-dialog h2 { margin: var(--sp-3) 0; font-size: var(--fs-display-3); font-weight: 400; }
+.mj-landing-signup-dialog > p:not(.mj-section-label) { margin: 0 0 var(--sp-5); color: var(--text-1); font-size: var(--fs-14); line-height: 1.6; }
+.mj-landing-signup-dialog blockquote {
+  margin: 0 0 var(--sp-5);
+  padding: var(--sp-3) var(--sp-4);
+  border-left: 2px solid var(--accent);
+  color: var(--text-1);
+  background: var(--bg-2);
+  font-size: var(--fs-13);
+  line-height: 1.5;
+}
+.mj-landing-signup-dialog .mj-primary-button { display: flex; margin-bottom: var(--sp-4); }
+.mj-landing-signup-close {
+  position: absolute;
+  top: var(--sp-4);
+  right: var(--sp-4);
+  width: 32px;
+  height: 32px;
+  border: 0;
+  border-radius: 50%;
+  color: var(--text-1);
+  background: transparent;
+  font: inherit;
+  font-size: var(--fs-20);
+  cursor: pointer;
+}
+.mj-landing-signup-close:hover { color: var(--text-0); background: var(--bg-2); }
 .mj-company-pipeline-band {
   width: 100%;
   box-sizing: border-box;
@@ -794,10 +923,18 @@
 .mj-pricing-card--featured {
   border-color: var(--accent);
 }
+/* Row, not column (owner, ai-ops#94): the "Recommended" badge used to stack
+   under the card name, which made the Plus card's head taller than every
+   other card's and pushed its price/cadence/features out of line with the
+   rest of the row — `.mj-pricing-price` below has a fixed margin-top off this
+   element, so any extra height here is extra height under it. Laid out
+   side-by-side and vertically centered, the badge sits inside the name's own
+   line box instead of adding one, so every card's head is the same height
+   whether or not it carries a badge. */
 .mj-pricing-card-head {
   display: flex;
-  flex-direction: column;
-  align-items: flex-start;
+  align-items: center;
+  justify-content: space-between;
   gap: var(--sp-3);
 }
 .mj-pricing-card h2 {
@@ -1633,6 +1770,16 @@ a.mj-facet-option:hover {
   .mj-company-pipeline-band {
     padding: var(--sp-4);
   }
+  .mj-landing-prompt {
+    width: 100%;
+    min-height: 148px;
+    margin-top: var(--sp-6);
+    padding: var(--sp-4);
+  }
+  .mj-landing-prompt textarea { min-height: 60px; font-size: var(--fs-14); }
+  .mj-landing-prompt-mode { padding-inline: var(--sp-2); }
+  .mj-landing-prompt-submit { padding-inline: var(--sp-4); }
+  .mj-landing-signup-dialog { padding: var(--sp-6); }
   .mj-company-capability-list article {
     flex-wrap: wrap;
     gap: var(--sp-3);
@@ -3174,6 +3321,13 @@ a.mj-facet-option:hover {
   display: block;
   width: 100%;
   min-height: var(--sp-8);
+  /* No `:focus-within` rule doubling this to var(--sp-16) anymore (owner,
+     ai-ops#94): it grew the box on every focus regardless of how much text
+     was typed, which read as a blank line sitting between the caret and the
+     control row for the entire time someone was composing — the common case,
+     not an edge one. A multi-line prompt still has somewhere to go: the
+     textarea scrolls internally up to `max-height`, and `resize: vertical`
+     lets a reader drag it taller by hand. */
   max-height: calc(var(--sp-16) + var(--sp-16));
   box-sizing: border-box;
   padding: var(--sp-1) 0;
@@ -3184,9 +3338,6 @@ a.mj-facet-option:hover {
   background: transparent;
   font: inherit;
   line-height: 1.5;
-}
-.mj-composer:focus-within .mj-composer-input {
-  min-height: var(--sp-16);
 }
 .mj-composer-input::placeholder {
   color: var(--text-2);
@@ -4294,10 +4445,23 @@ a.mj-facet-option:hover {
   }
 }
 .mj-chat-message--loading {
+  /* Column, not row: the queue position sits UNDER the thinking label rather
+     than beside it. Side by side, "3 runs ahead of yours" reads as part of the
+     label's own sentence. */
   display: flex;
-  align-items: center;
+  flex-direction: column;
+  align-items: flex-start;
   gap: 4px;
   min-height: 28px;
+}
+/* The one line a queued reader gets. Quiet on purpose — it is a fact about the
+   wait, not a warning, and it disappears the moment the run starts or the poll
+   can no longer confirm it. */
+.mj-run-queue-position {
+  margin: 0;
+  color: var(--text-2);
+  font-size: var(--fs-12);
+  line-height: 1.4;
 }
 /* The waiting state is a word plus the dots, not the dots alone: three pulsing
    dots read identically at half a second and at forty, and this pipeline can
@@ -5212,7 +5376,6 @@ a.mj-facet-option:hover {
   font-weight: 600;
 }
 .mj-open-source-card p,
-.mj-open-source-note,
 .mj-open-source-start p {
   margin: 0;
   color: var(--text-1);
@@ -5238,10 +5401,6 @@ a.mj-facet-option:hover {
 }
 .mj-open-source-circuits span {
   color: var(--text-1);
-}
-.mj-open-source-note {
-  margin-top: var(--sp-4);
-  font-size: var(--fs-12);
 }
 .mj-open-source-start {
   display: grid;

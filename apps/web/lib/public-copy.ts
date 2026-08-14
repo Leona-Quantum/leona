@@ -32,6 +32,18 @@ export const HOME_COPY: Record<PublicLocale, {
     contact: string;
     scrollCue: string;
   };
+  promptDemo: {
+    label: string;
+    attach: string;
+    mode: string;
+    submit: string;
+    prompts: string[];
+    modalLabel: string;
+    modalTitle: string;
+    modalBody: string;
+    modalPrimary: string;
+    close: string;
+  };
   visual: {
     label: string;
     status: string;
@@ -73,6 +85,29 @@ export const HOME_COPY: Record<PublicLocale, {
       secondary: "Explore the Atlas",
       contact: "Get in touch",
       scrollCue: "Scroll",
+    },
+    promptDemo: {
+      label: "Describe the quantum circuit you want to build",
+      attach: "Attach context",
+      mode: "Plan",
+      submit: "Build now",
+      // Mostly plain English a non-specialist would type, with a couple that
+      // reach for quantum vocabulary — mix and match, not all-technical
+      // (owner, ai-ops#94). The natural-language ones are shared verbatim with
+      // `workspace-locale.ts`'s `run.examples`, so the same prompt that types
+      // itself out here is proven to work once a visitor signs in.
+      prompts: [
+        "Split 6 suppliers into two groups, cutting the fewest links.",
+        "Pick 8 stocks for the best return at a fixed risk.",
+        "Build a Bell state and verify the measured distribution.",
+        "Schedule 6 jobs on 3 machines to finish soonest.",
+        "Use QAOA to solve MaxCut on a five-node ring.",
+      ],
+      modalLabel: "Start building",
+      modalTitle: "Create an account to run this prompt.",
+      modalBody: "Your prompt is ready. Sign up to generate the circuit, run it in a guarded simulator, and keep the result in your private workspace.",
+      modalPrimary: "Create an account",
+      close: "Close",
     },
     visual: {
       label: "LEONA QUANTUM / PRODUCT",
@@ -150,6 +185,24 @@ export const HOME_COPY: Record<PublicLocale, {
       secondary: "Atlasを見る",
       contact: "お問い合わせ",
       scrollCue: "スクロール",
+    },
+    promptDemo: {
+      label: "作りたい量子回路を入力",
+      attach: "コンテキストを添付",
+      mode: "プラン",
+      submit: "生成する",
+      prompts: [
+        "6社の取引先を2組に分け、切る取引を最少にしてください。",
+        "リスク一定で、8銘柄の最適な組み合わせを選んでください。",
+        "ベル状態を作り、測定分布を検証してください。",
+        "6件の作業を3台の機械に割り当て、最短で終わらせてください。",
+        "5ノードのリンググラフのMaxCut問題をQAOAで解いてください。",
+      ],
+      modalLabel: "量子回路開発を始める",
+      modalTitle: "アカウントを作成して、このプロンプトを実行",
+      modalBody: "プロンプトの準備ができました。アカウントを作成すると、量子回路の生成、保護されたシミュレータでの実行、結果の保存ができます。",
+      modalPrimary: "アカウントを作成",
+      close: "閉じる",
     },
     visual: {
       label: "LEONA QUANTUM / PRODUCT",
@@ -306,7 +359,6 @@ export const PRICING_COPY: Record<PublicLocale, {
   // No `description`: the per-card tagline is gone by ruling, and a field left
   // in place is a field the next copy pass fills back in.
   plans: Array<{ name: string; price: string; cadence: string; features: string[]; action: string; tone: "quiet" | "featured" }>;
-  note: { label: string; title: string; body: string };
 }> = {
   en: {
     hero: { title: "A clear path from first run to team work.", body: "Start free, keep private work in Studio, and move up when you need more verification capacity, export tooling, or shared R&D controls." },
@@ -316,7 +368,6 @@ export const PRICING_COPY: Record<PublicLocale, {
       { name: "Professional", price: "$240", cadence: "per user, per month", features: ["Everything in Plus", "Share outside your workspace", "Read-only or editable sharing", "More runs and artifacts", "Widest browser simulation"], action: "Contact us", tone: "quiet" },
       { name: "Enterprise", price: "$420+", cadence: "per user, per month", features: ["Everything in Professional", "Allowances agreed with you", "Private-corpus conversations", "Named onboarding contact"], action: "Talk to sales", tone: "quiet" },
     ],
-    note: { label: "A transparent starting point", title: "The prices are set; checkout is not live yet.", body: "These are the intended early-access prices, per user per month. No payment method can be added in this deployment — there is no card entry, checkout, or charge — so nothing here bills anyone today. Exact credits and enterprise terms are confirmed before paid billing is enabled." },
   },
   ja: {
     hero: { title: "まずは個人で試し、そのままチームで研究へ。", body: "無料で始め、非公開の研究はStudioに保存できます。検証できる実行回数、エクスポート、共同研究の管理が必要になったら次のプランへ進めます。" },
@@ -326,7 +377,6 @@ export const PRICING_COPY: Record<PublicLocale, {
       { name: "Professional", price: "$240", cadence: "1ユーザーあたり月額", features: ["Plusのすべて", "ワークスペース外への共有", "閲覧のみ／編集可を選択", "実行と保存をさらに拡大", "最も広いブラウザ実行"], action: "お問い合わせ", tone: "quiet" },
       { name: "Enterprise", price: "$420+", cadence: "1ユーザーあたり月額", features: ["Professionalのすべて", "利用上限は個別に調整", "社内データに関する相談", "導入と評価の担当窓口"], action: "営業担当に相談", tone: "quiet" },
     ],
-    note: { label: "早期アクセス版の提供内容", title: "価格は確定していますが、決済はまだ開始していません。", body: "上記は早期アクセス期間の価格（1ユーザーあたり月額）です。現在の環境では支払い方法を登録できず、カード入力も決済も行われないため、請求は発生しません。クレジットの詳細と法人向け条件は、有料提供の開始前に確定します。" },
   },
 };
 
@@ -463,7 +513,6 @@ export const WORKSPACE_LANDING_COPY: Record<PublicLocale, {
   computeLabel: string;
   computeTitle: string;
   compute: Array<{ title: string; body: string }>;
-  note: string;
   foundationsLabel: string;
   foundationsTitle: string;
   foundationsBody: string;
@@ -489,7 +538,6 @@ export const WORKSPACE_LANDING_COPY: Record<PublicLocale, {
       { title: "GPU simulation", body: "Planned heavy-compute lane for larger circuits; provider, limits, and cost remain explicit." },
       { title: "QPU access", body: "Planned hardware lane with estimates, attestation, and confirmation before spend." },
     ],
-    note: "GPU and QPU execution are roadmap items, not available services in this early-access slice.",
     foundationsLabel: "Open foundations",
     foundationsTitle: "Review the engineering boundary.",
     foundationsBody: "The public research surface is open for review, while authenticated workspaces, credentials, and saved artifacts remain account-scoped.",
@@ -515,7 +563,6 @@ export const WORKSPACE_LANDING_COPY: Record<PublicLocale, {
       { title: "GPUシミュレーション", body: "大きな回路向けの実行環境を予定しています。提供元、上限、費用を明示します。" },
       { title: "量子コンピュータで実行", body: "見積り、実行証明、利用前の確認を備えた実機実行を予定しています。" },
     ],
-    note: "GPUとQPUの実行はロードマップ項目であり、現在の早期アクセスでは利用できません。",
     foundationsLabel: "公開技術を基盤に",
     foundationsTitle: "公開情報と非公開データの扱いを確認する。",
     foundationsBody: "Atlasの公開研究は誰でも確認できます。非公開ワークスペースの情報は、参加者だけがアクセスできます。",

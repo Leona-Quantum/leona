@@ -72,16 +72,6 @@ export default async function PricingPage({ params }: { params: Promise<{ locale
           );
         })}
       </section>
-
-      <Reveal>
-        <section className="mj-pricing-note" aria-labelledby="pricing-note-heading">
-          <div>
-            <p className="mj-section-label">{copy.note.label}</p>
-            <h2 id="pricing-note-heading">{copy.note.title}</h2>
-          </div>
-          <p>{copy.note.body}</p>
-        </section>
-      </Reveal>
     </PublicSite>
   );
 }

@@ -37,6 +37,14 @@ from sqlalchemy.ext.asyncio import (
     create_async_engine,
 )
 
+#: What a request sees when `DEFAULT_POOL_TIMEOUT_S` elapses with no free
+#: connection. Re-exported under a name that says what happened, because the
+#: handler that turns it into a 503 lives in `app.py`, where a sqlalchemy import
+#: is forbidden by `scripts/check_raw_queries.py`. SQLAlchemy's own name for it
+#: is `TimeoutError`, which shadows the builtin and reads, wherever it is
+#: caught, as though a network call timed out rather than a queue filled up.
+PoolTimeout = SQLAlchemyTimeoutError
+
 _meter = metrics.get_meter("majorana.database")
 _connections = _meter.create_counter(
     "majorana.db.connections.created", description="Physical database connections created"
@@ -66,6 +74,27 @@ _query_duration = _meter.create_histogram(
 #: here and everything else is not.
 DEFAULT_POOL_SIZE = 5
 DEFAULT_MAX_OVERFLOW = 5
+
+#: How long a request waits for a pool slot before it is refused.
+#:
+#: SQLAlchemy's default is 30 seconds and was in force here until now, which is
+#: the wrong shape for this fleet in a way that compounds. A request blocked on
+#: pool checkout is already *admitted*: it holds one of `API_CONCURRENCY` (16)
+#: request slots on its instance for the whole wait, without holding a database
+#: connection it can use. Thirty seconds of that is thirty seconds during which
+#: the instance looks busy to Cloud Run's autoscaler and cannot accept the cheap
+#: requests — health, a 404, a validation refusal — that need no database at
+#: all. Failing fast returns the slot.
+#:
+#: ARGUED, NOT MEASURED, and the honest bound is stated rather than implied.
+#: What *is* measured (docs/gates/capacity-100-users.md, three runs) is that 100
+#: concurrent catalog reads against a pool of this size settle at a p95 of about
+#: 1.4s — so 15s is roughly ten times the observed queue depth at the load this
+#: gate exists to survive, and a request that has waited that long is not one
+#: the pool is about to serve. It is deliberately not tightened to the p95: the
+#: gate's own collapse guard is 10s, and a timeout below that would refuse
+#: requests the gate is willing to call passing.
+DEFAULT_POOL_TIMEOUT_S = 15.0
 
 #: Where the rest of the fleet's sizing lives. Deliberately not in this file:
 #: every one of those numbers is also a `gcloud run deploy` argument, and two
@@ -154,9 +183,15 @@ def fleet_peak_connections(
     minimum, so both revisions run their full complement at once. The steady
     state is what you see in `pg_stat_activity`; the rollout is what breaks.
 
-    This is what caps the worker count at three. Four is comfortable at rest
+    This used to cap the worker count at three: four was comfortable at rest
     (36 of 45) and 52 of 45 for the length of every deploy — and a deploy is
     exactly when the connections matter, because that is when Alembic needs one.
+    That cap was a property of db-g1-small's 50 connections. Since 2026-08-15
+    the instance is db-custom-1-3840 with an explicit max_connections=200, so
+    the budget is 195 and the worker count is no longer what runs out first.
+    `test_where_the_worker_count_actually_runs_out` finds the boundary rather
+    than restating it here, so this paragraph cannot drift away from the truth
+    a second time.
 
     **The API term is deliberately NOT doubled, and that is not an omission.**
     The API can absolutely have two revisions live at once — `--max-instances`
@@ -167,8 +202,11 @@ def fleet_peak_connections(
     whatever traffic demanded and then drains. One is arithmetic, the other is a
     function of load.
 
-    The pessimistic figure is worth knowing because it is close: two revisions ×
-    2 instances × 10 connections is 40, plus a worker at rest (4) is 44 of 45.
+    The pessimistic figure was worth knowing because it used to be close: two
+    revisions × 2 instances × 10 connections is 40, plus a worker at rest (4)
+    was 44 of 45. At four API instances and a 195 budget the same shape is two
+    revisions × 4 × 10 = 80 plus 3 workers at rest (12), or 92 — no longer
+    close, but still the figure to compute rather than the resting one.
     It is not gated on — a gate on a load-dependent worst case fails on a quiet
     week for reasons nobody can reproduce — but anyone raising API_MAX_INSTANCES,
     DEFAULT_POOL_SIZE/DEFAULT_MAX_OVERFLOW, or the worker count should compute
@@ -310,6 +348,7 @@ def engine_from_env() -> AsyncEngine:
         pool_pre_ping=True,
         pool_size=_pool_setting("DB_POOL_SIZE", DEFAULT_POOL_SIZE),
         max_overflow=_pool_setting("DB_MAX_OVERFLOW", DEFAULT_MAX_OVERFLOW),
+        pool_timeout=DEFAULT_POOL_TIMEOUT_S,
         # libpq connection parameter, forwarded by the psycopg dialect. Costs
         # nothing per connection and is the only thing that makes a backend
         # attributable to a service.

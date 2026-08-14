@@ -170,11 +170,27 @@ test("a benchmark family carries no domain unless the record names a problem", (
 });
 
 test("an override replaces the derived set rather than merging with it", () => {
-  // Empty today, and `check-repository-data.mjs` fails on any slug listed here
-  // that the corpus does not carry — an override keyed on a renamed slug is
-  // otherwise silent, and the entry goes back to whatever the rules say without
-  // anyone being told.
-  assert.deepEqual(Object.keys(TOPIC_OVERRIDES), []);
+  // Two entries as of ai-ops 84 (2026-08-14), keyed on the real slugs —
+  // `check-repository-data.mjs` fails on any slug listed here that the corpus
+  // does not carry, so an override keyed on a renamed slug cannot go silent
+  // and fall back to whatever the rules say without anyone being told.
+  assert.deepEqual(Object.keys(TOPIC_OVERRIDES).sort(), ["pauli-y-gate", "pauli-z-gate"]);
+
+  // The property the name promises: without the override, `pauli-y-gate`'s
+  // real evidence resolves through `FAMILY_RULES`'s `"Pauli operator"` rule to
+  // `["operator"]` alone — no `REFINEMENT_RULES` tag matches `pauli`, `phase`
+  // or `single qubit`. The override must REPLACE that with `gate-primitive`,
+  // not add to it; a merge would leave the record claiming both roles, which
+  // `roleOf` cannot express (it returns the first role topic it finds) and
+  // `check-repository-data.mjs`'s "exactly one role" check refuses.
+  const evidence = {
+    slug: "pauli-y-gate",
+    category: "gates",
+    algorithmFamily: "Pauli operator",
+    tags: ["pauli", "phase", "single qubit"],
+  };
+  assert.deepEqual(deriveTopics(evidence), ["gate-primitive"]);
+  assert.equal(roleOf(deriveTopics(evidence)), "gate-primitive");
 });
 
 test("every topic an entry can carry resolves to a facet", () => {

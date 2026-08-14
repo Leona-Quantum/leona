@@ -59,7 +59,16 @@
  * ## Usage
  *
  *   node scripts/check-blast-radius.mjs --base origin/dev --body "$PR_BODY"
+ *   node scripts/check-blast-radius.mjs --base origin/dev --body-file pr-body.txt
  *   node scripts/check-blast-radius.mjs --self-test
+ *
+ * `--body-file` exists for the `merge_group` event: that event carries no PR object
+ * at all (GitHub's payload is deliberately sparse there — confirmed against
+ * github/docs and community discussion #65239), so the workflow step recovers the
+ * PR number from `merge_group.head_ref` and re-fetches the live body over the API
+ * into a file itself. Reading it from a file here keeps that fetched text off the
+ * command line and out of any further shell expansion, same reasoning as reading
+ * `--body`/`PR_BODY` rather than interpolating the body into the step's `run:`.
  *
  * Acknowledge with a line in the PR body:
  *
@@ -188,8 +197,12 @@ function main() {
   }
   const baseFlag = argv.indexOf("--base");
   const base = baseFlag === -1 ? "origin/dev" : argv[baseFlag + 1];
+  const bodyFileFlag = argv.indexOf("--body-file");
   const bodyFlag = argv.indexOf("--body");
-  const body = bodyFlag === -1 ? (process.env.PR_BODY ?? "") : argv[bodyFlag + 1];
+  const body =
+    bodyFileFlag !== -1
+      ? readFileSync(argv[bodyFileFlag + 1], "utf8")
+      : (bodyFlag === -1 ? (process.env.PR_BODY ?? "") : argv[bodyFlag + 1]);
 
   const patterns = ownedPatterns(readFileSync(CODEOWNERS, "utf8"));
   const hits = matches(changedFiles(base), patterns);

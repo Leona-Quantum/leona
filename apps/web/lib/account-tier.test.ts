@@ -506,12 +506,14 @@ test("the pricing page sells four cards, and Enterprise is not a tier", async ()
   );
 });
 
-test("the pricing note still says checkout is not live", async () => {
-  // Three cards now carry a dollar figure. Payments are hard-off in this
-  // deployment — no card entry, no checkout, no charge — so the page has to
-  // keep saying so, or the prices read as something a person can buy today.
-  const { PRICING_COPY } = await import("./public-copy.ts");
-  assert.match(PRICING_COPY.en.note.body, /no payment method|checkout/i);
-  assert.match(PRICING_COPY.en.note.title, /not live|not enabled/i);
-  assert.match(PRICING_COPY.ja.note.body, /決済/);
-});
+// The "the pricing note still says checkout is not live" test that used to
+// live here guarded `PRICING_COPY.note`, which owned the pricing page's only
+// disclosure that checkout is not live. The whole "A transparent starting
+// point" section — the note included — was removed from `/pricing` by owner
+// instruction (ai-ops#94), so there is nothing left on this page for the test
+// to check. The fact itself is still stated to a reader: `UPGRADE_COPY`'s
+// `checkoutTitle`/`checkoutBody` carry it on `/upgrade`, and `TERMS_COPY`'s
+// "Early-access packaging" section carries it site-wide. Neither is pinned by
+// a test today — flagged to the owner rather than added here silently, since
+// which surface is the load-bearing one for "no payment method exists yet" is
+// a product call, not a copy-file cleanup.
