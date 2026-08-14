@@ -256,3 +256,79 @@ def test_metadata_is_no_longer_on_the_browse_list():
         "slug": "x",
         "metadata": [{"label": "Depth"}],
     }
+
+
+def test_the_list_view_keeps_the_register_and_drops_the_circuit():
+    """`visualization` is 16.0% of the list payload; `operations` is 81% of that.
+
+    Every record needs `wires` — `deriveInterface` reads its length as the
+    record's stated register width. Nothing on the browse list reads `outcomes`.
+    """
+    projected = project_record_for_list_view(
+        {
+            "slug": "x",
+            "category": "algorithms",
+            "visualization": {
+                "wires": ["q0", "q1"],
+                "operations": [{"label": "H", "qubits": [0]}],
+                "outcomes": [{"label": "0", "probability": 0.5}],
+            },
+        }
+    )
+    assert projected["visualization"] == {"wires": ["q0", "q1"]}
+
+
+def test_a_gate_keeps_its_circuit_because_the_sidebar_draws_it():
+    """The one place the browse list draws a circuit.
+
+    `gateEntries` is `category === "gates" ? ordered : []`
+    (repository-browser.tsx:660-663) and the sidebar draws `selectedGateEntry`
+    at :1562. Gates are 29 of 369 records and their circuits are small, so
+    keeping this costs 1,822 bytes — measured, against dropping it everywhere.
+    An on-demand fetch would trade those bytes for a round trip, a loading state
+    and an error path on a pane that cannot currently fail.
+    """
+    projected = project_record_for_list_view(
+        {
+            "slug": "x",
+            "category": "gates",
+            "visualization": {
+                "wires": ["q0"],
+                "operations": [{"label": "H", "qubits": [0]}],
+                "outcomes": [{"label": "0", "probability": 0.5}],
+            },
+        }
+    )
+    assert projected["visualization"] == {
+        "wires": ["q0"],
+        "operations": [{"label": "H", "qubits": [0]}],
+    }
+    # `outcomes` goes even for a gate: the gate pane does not read it either.
+    assert "outcomes" not in projected["visualization"]
+
+
+def test_the_category_is_read_off_the_source_record():
+    """The only projection here that depends on a second field.
+
+    Reading it off the projected dict would couple this to `category` staying on
+    the allowlist, and the coupling would be silent: every gate would quietly
+    lose its circuit the day `category` left.
+    """
+    record = {
+        "slug": "x",
+        "category": "gates",
+        "visualization": {"wires": ["q0"], "operations": [{"label": "H"}]},
+        "classicalComparison": {"baseline": "O(N)"},
+    }
+    assert "operations" in project_record_for_list_view(record)["visualization"]
+
+
+def test_a_malformed_visualization_is_passed_through_rather_than_repaired():
+    """Same terms as the other two inner projections: never launder a schema
+    disagreement into a well-formed empty object."""
+    assert (
+        project_record_for_list_view({"slug": "x", "visualization": "nonsense"})["visualization"]
+        == "nonsense"
+    )
+    # An empty mapping stays an empty mapping — absent keys are not fabricated.
+    assert project_record_for_list_view({"slug": "x", "visualization": {}})["visualization"] == {}

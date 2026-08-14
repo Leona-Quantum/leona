@@ -221,6 +221,62 @@ def _project_code_variants(variants: Any) -> Any:
     ]
 
 
+# What `visualization` keeps on the browse list, and the one category that keeps
+# more.
+#
+# This is the largest remaining item and the only one of the four that needed a
+# design decision rather than a measurement. `visualization` is 171,410 bytes of
+# the list payload (16.0%), and it splits very unevenly:
+#
+#     operations  138,156      wires  12,911      outcomes  7,059
+#
+# Every record needs `wires` and only `wires`: `deriveInterface` takes
+# `visualization.wires.length` as the record's stated register width, and
+# `repository-browser.tsx:523` passes `entry.visualization?.wires?.length ?? 0`.
+# `outcomes` is read by NOTHING in the browse view, including the gate pane —
+# only the detail page renders it (`repository-entry-view.tsx:414`), and that
+# page fetches a full record.
+#
+# `operations` is the interesting one. It is needed to DRAW a circuit, and the
+# browse list draws exactly one: the gate sidebar's `selectedGateEntry`
+# (`repository-browser.tsx:1053`, drawn at `:1562`) — and `gateEntries` is
+# `category === "gates" ? ordered : []`, so the sidebar does not exist on any
+# other tab.
+#
+# THE DECISION, and it was made on a measurement rather than on taste: the
+# alternative was to fetch the selected gate's circuit on demand. Gates are 29 of
+# 369 records and gate circuits are small, so keeping `operations` for that one
+# category costs **1,822 bytes** — 685,988 against 684,166 for dropping it
+# everywhere, 0.17% of the payload. An on-demand fetch would buy those 1,822
+# bytes back in exchange for a round trip on every gate click, a loading state,
+# and an error path on a pane that cannot currently fail. That is a bad trade at
+# any size, and at 1.8 KB it is not close.
+#
+# So: `wires` for every record, plus `operations` for gates, and `outcomes` for
+# no one. If a second view ever draws a circuit from the LIST payload, this is
+# the constant to widen — and widening it is a byte cost, not a redesign.
+LIST_VIEW_VISUALIZATION_FIELDS: frozenset[str] = frozenset({"wires"})
+LIST_VIEW_GATE_VISUALIZATION_FIELDS: frozenset[str] = frozenset({"wires", "operations"})
+
+
+def _project_visualization(visualization: Any, category: Any) -> Any:
+    """Keep the register, and the circuit only where one is drawn.
+
+    Not returned untouched when malformed, but not repaired either: a
+    non-mapping is passed through exactly as `_project_code_variants` passes
+    through a non-list, so the web validator still sees the schema disagreement
+    instead of a well-formed empty object.
+    """
+    if not isinstance(visualization, dict):
+        return visualization
+    keep = (
+        LIST_VIEW_GATE_VISUALIZATION_FIELDS
+        if category == "gates"
+        else LIST_VIEW_VISUALIZATION_FIELDS
+    )
+    return {key: value for key, value in visualization.items() if key in keep}
+
+
 def project_record_for_list_view(record: dict[str, Any] | None) -> dict[str, Any] | None:
     """Project a rich `record` down to the browse-list allowlist (Slice E).
 
@@ -230,13 +286,19 @@ def project_record_for_list_view(record: dict[str, Any] | None) -> dict[str, Any
     `None`. `record=None` (a non-manifest source, see `parse_source_record`)
     survives unchanged.
 
-    Two fields are projected a level deeper than the allowlist reaches, because
+    Three fields are projected a level deeper than the allowlist reaches, because
     that is where their cost is rather than in the field itself:
 
     * `codeVariants` keeps its shape and loses the code inside it
       (LIST_VIEW_CODE_VARIANT_FIELDS).
     * `resources` keeps the rows the browse card reads and loses the rest of the
       table (LIST_VIEW_RESOURCE_LABELS).
+    * `visualization` keeps the register for every record and the circuit only
+      for the one category that draws one (LIST_VIEW_VISUALIZATION_FIELDS).
+      This is the only projection here that reads a SECOND field of the record —
+      `category` — so it is applied against the source record rather than the
+      projected one, and it is unaffected if `category` is ever dropped from the
+      allowlist.
 
     Both keep the field present and its type unchanged, which is what makes them
     behaviour-preserving: `families.ts:148` folds `codeVariants` into the
@@ -251,6 +313,10 @@ def project_record_for_list_view(record: dict[str, Any] | None) -> dict[str, Any
         projected["codeVariants"] = _project_code_variants(projected["codeVariants"])
     if "resources" in projected:
         projected["resources"] = _project_resources(projected["resources"])
+    if "visualization" in projected:
+        projected["visualization"] = _project_visualization(
+            projected["visualization"], record.get("category")
+        )
     return projected
 
 
