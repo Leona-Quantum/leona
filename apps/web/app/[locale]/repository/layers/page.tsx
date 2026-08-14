@@ -185,19 +185,21 @@ export default async function RepositoryLayersPage({
   params: Promise<{ locale: string }>;
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
-  const [params, routeLocale, entries] = await Promise.all([
-    searchParams,
-    routeParams,
-    getRepositoryListEntries(),
-  ]);
-  // **`dynamicParams = false` does not cover this page, and the line above says
-  // so.** It restricts params only on a route that prerenders; this one reads
-  // `searchParams` and therefore never does, so every locale is "outside the
-  // prerendered set" and Next renders it. Measured: `/zz/repository/claims`
-  // (prerendered) 404s on its own and `/zz/repository/layers` returned 200 with
-  // the English map — a second address for the site's most-read page. See
-  // `isPublicLocale`.
+  // Locale is validated BEFORE the catalog read starts, not alongside it: with
+  // `MAJORANA_PUBLIC_CATALOG_API` on, `getRepositoryListEntries()` is a network
+  // call, and a `Promise.all` starting it next to `routeParams` fires that call
+  // for every mistyped locale too, only to throw the result away on the next
+  // line. `/zz/repository/layers` should cost a 404, not a catalog fetch.
+  //
+  // **`dynamicParams = false` does not cover this page.** It restricts params
+  // only on a route that prerenders; this one reads `searchParams` and
+  // therefore never does, so every locale is "outside the prerendered set" and
+  // Next renders it. Measured: `/zz/repository/claims` (prerendered) 404s on
+  // its own and `/zz/repository/layers` returned 200 with the English map — a
+  // second address for the site's most-read page. See `isPublicLocale`.
+  const routeLocale = await routeParams;
   if (!isPublicLocale(routeLocale.locale)) notFound();
+  const [params, entries] = await Promise.all([searchParams, getRepositoryListEntries()]);
   const locale = parsePublicLocale(routeLocale.locale);
   const openSet = resolveOpenSet(params);
   // `?paper=` — the paper surface (W20). Its whole meaning is an ARRIVAL open
