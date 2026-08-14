@@ -1,21 +1,33 @@
 import type { Metadata } from "next";
-import { PublicSite } from "../../components/public-site";
-import { Reveal } from "../../components/reveal";
-import { PRICING_COPY } from "../../lib/public-copy";
-import { getPublicLocale } from "../../lib/public-locale-server";
-import { isPublicDemoEnabled } from "../../lib/public-demo";
+import { PublicSite } from "../../../components/public-site";
+import { Reveal } from "../../../components/reveal";
+import { PRICING_COPY } from "../../../lib/public-copy";
+import { isPublicDemoEnabled } from "../../../lib/public-demo";
+import { parsePublicLocale, PUBLIC_LOCALES } from "../../../lib/public-locale";
+
+// Served from the CDN. The locale comes from the path segment because a cached
+// page cannot read a cookie — `middleware.ts` rewrites the clean URL to this
+// one, keeping `/{clean}` in the address bar while giving each language its own
+// cache entry. `dynamicParams = false` is what stops `[locale]` from swallowing
+// every mistyped URL and answering it with this page instead of a 404.
+export const revalidate = 300;
+export const dynamicParams = false;
+
+export function generateStaticParams() {
+  return PUBLIC_LOCALES.map((locale) => ({ locale }));
+}
 
 export const metadata: Metadata = {
   title: "Pricing",
   description: "Early-access Leona Quantum plans for individual researchers and teams.",
 };
 
-export default async function PricingPage() {
-  const locale = await getPublicLocale();
+export default async function PricingPage({ params }: { params: Promise<{ locale: string }> }) {
+  const locale = parsePublicLocale((await params).locale);
   const copy = PRICING_COPY[locale];
   const demoEnabled = isPublicDemoEnabled();
   return (
-    <PublicSite activePath="/pricing" className="mj-pricing-site" locale={locale}>
+    <PublicSite activePath="/pricing" className="mj-pricing-site" locale={locale} chrome="static">
       <Reveal>
         <section className="mj-public-page-hero">
           <h1>{copy.hero.title}</h1>

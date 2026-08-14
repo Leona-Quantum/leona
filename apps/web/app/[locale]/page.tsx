@@ -1,23 +1,35 @@
 import type { Metadata } from "next";
-import { CircuitBand } from "../components/circuit-band";
-import { BrandMark } from "../components/icons";
-import { LeoConstellation } from "../components/leo-constellation";
-import { PublicSite } from "../components/public-site";
-import { Reveal } from "../components/reveal";
-import { ScrollCue } from "../components/scroll-cue";
-import { HOME_COPY } from "../lib/public-copy";
-import { getPublicLocale } from "../lib/public-locale-server";
+import { CircuitBand } from "../../components/circuit-band";
+import { BrandMark } from "../../components/icons";
+import { LeoConstellation } from "../../components/leo-constellation";
+import { PublicSite } from "../../components/public-site";
+import { Reveal } from "../../components/reveal";
+import { ScrollCue } from "../../components/scroll-cue";
+import { HOME_COPY } from "../../lib/public-copy";
+import { parsePublicLocale, PUBLIC_LOCALES } from "../../lib/public-locale";
+
+// Served from the CDN. The locale comes from the path segment because a cached
+// page cannot read a cookie — `middleware.ts` rewrites the clean URL to this
+// one, keeping `/{clean}` in the address bar while giving each language its own
+// cache entry. `dynamicParams = false` is what stops `[locale]` from swallowing
+// every mistyped URL and answering it with this page instead of a 404.
+export const revalidate = 300;
+export const dynamicParams = false;
+
+export function generateStaticParams() {
+  return PUBLIC_LOCALES.map((locale) => ({ locale }));
+}
 
 export const metadata: Metadata = {
   title: "Leona Quantum",
   description: "Generate, run, and use quantum circuits with AI in one platform.",
 };
 
-export default async function Home() {
-  const locale = await getPublicLocale();
+export default async function Home({ params }: { params: Promise<{ locale: string }> }) {
+  const locale = parsePublicLocale((await params).locale);
   const copy = HOME_COPY[locale];
   return (
-    <PublicSite activePath="/" className="mj-company-site" locale={locale}>
+    <PublicSite activePath="/" className="mj-company-site" locale={locale} chrome="static">
       {/* Centered hero over the constellation, with the live pipeline as a
           full-width band beneath — the owner retired the old split
           left-copy/right-card composition (Owner Inbox 2026-07-17). */}

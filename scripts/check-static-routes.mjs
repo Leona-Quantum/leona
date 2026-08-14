@@ -52,12 +52,28 @@ import { join } from "node:path";
  * Adding a public page? Add it here. Deleting a line is a decision that this
  * page may stop being served from the edge, and it should be made on purpose.
  */
+const LOCALES = ["en", "ja"];
+
+/**
+ * The clean paths middleware rewrites into `app/[locale]/`. Kept in step with
+ * `apps/web/lib/routed-paths.ts` by `routed-paths.test.ts`, which checks that
+ * list against the filesystem — this one only has to name what must CACHE, and
+ * every entry becomes one prerendered route per locale.
+ */
+const LOCALE_ROUTES = ["", "/contact", "/pricing", "/privacy", "/terms", "/workspace"];
+
 export const REQUIRED_STATIC_ROUTES = [
   { route: "/_not-found", why: "the boundary in every route's tree; dynamic here makes the whole app dynamic" },
   { route: "/demo", why: "public marketing page, no per-visitor content" },
   { route: "/dev/ui", why: "static component gallery" },
   { route: "/lab", why: "public marketing page, no per-visitor content" },
   { route: "/open-source", why: "public marketing page, no per-visitor content" },
+  ...LOCALES.flatMap((locale) =>
+    LOCALE_ROUTES.map((path) => ({
+      route: `/${locale}${path}`,
+      why: `public page served from the CDN at ${path === "" ? "/" : path} via the ${locale} rewrite`,
+    })),
+  ),
 ];
 
 /** Pure, so `--self-test` exercises the same code path CI does. */
