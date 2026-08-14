@@ -11,12 +11,23 @@
 # and nothing else: `latest` is the live rootfs (majorana_sandbox.vercel.DEFAULT_IMAGE
 # is untagged), so moving it is the deploy. Promotion stays manual and stays behind
 # the runbook's step 4 — run a circuit in the real sandbox, do not just import.
+#
+# `container_scan` is the third job, added because `05-security.md` §1 claimed a
+# weekly rebuild+scan that did not exist while §5 conceded "the container half is
+# genuinely uncovered" — two sections of one gate contradicting each other, and
+# §5 was the true one. The schedule below is what makes the rebuild half real: a
+# rootfs that is never rebuilt accumulates unpatched base-image CVEs silently,
+# and this is the rootfs that runs untrusted LLM-generated code.
 name: sandbox-image
 on:
   pull_request:
     paths:
       - "infra/sandbox/**"
       - ".github/workflows/sandbox-image.yml"
+  schedule:
+    # Weekly, Monday 04:00 UTC — an hour after the gitleaks full-history scan in
+    # security.yml so the two long jobs do not contend for runners.
+    - cron: "0 4 * * 1"
   workflow_dispatch:
     inputs:
       tag:
@@ -143,3 +154,96 @@ jobs:
         run: |
           echo "Pushed :${TAG}. It is NOT live."
           echo "Verify it in a real sandbox and promote it to :latest — docs/runbooks/sandbox-image.md steps 4 and 5."
+
+  # Weekly rebuild + vulnerability scan of the rootfs that runs untrusted code.
+  #
+  # Also runs on a PR touching infra/sandbox/**, which is where a CVE-bearing
+  # dependency would actually be introduced. It is NOT a required check: the
+  # point is to be seen, and making a scan against a moving upstream advisory
+  # database a merge blocker is how you end up deleting it from protection three
+  # months later (05-security.md §5 on snyk, and §2 on the gitleaks box that was
+  # unmeetable for months and therefore unenforced).
+  container_scan:
+    if: github.event_name != 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      # A rebuild, not a pull of :latest. On the weekly schedule this is the half
+      # that matters — it re-resolves the base image and every apt/pip layer, so
+      # the scan below reports what a rootfs built TODAY would contain rather
+      # than what the published tag contained whenever it was last promoted.
+      # A finding here is therefore "the image we would publish is vulnerable",
+      # which is the actionable form. Promotion stays manual either way.
+      - name: rebuild the sandbox image
+        run: |
+          docker buildx build --platform linux/amd64 --load \
+            -t majorana-runner:scan infra/sandbox
+      # Downloaded and checksummed rather than run as `aquasecurity/trivy-action`.
+      # That action shipped a credential stealer in March 2026 and reached
+      # everyone tracking its tags, which is the specific reason 05-security.md §5
+      # says container scanning, if adopted, goes in the same way osv-scanner did.
+      # This is that.
+      #
+      # v0.73.0 rather than the newest release: v0.74.0 was published on the day
+      # this was written, and pinning a security tool's freshest build would
+      # contradict the same repository's `minimumReleaseAge: 1440`
+      # (pnpm-workspace.yaml), which exists precisely because the compromised
+      # version is usually the newest one. The checksum was verified against the
+      # downloaded artifact, not transcribed from the release page.
+      - name: install trivy
+        timeout-minutes: 5
+        env:
+          TRIVY_VERSION: 0.73.0
+          TRIVY_SHA256: 2edd39da482bb4e9831962487b68f68e3928ec3137794757f54d00383d79547b
+        run: |
+          : "${TRIVY_VERSION:?TRIVY_VERSION is empty -- set it in the env: block of this step}"
+          : "${TRIVY_SHA256:?TRIVY_SHA256 is empty -- refusing to download an unpinned binary}"
+          # Retry the download, never the trust decision — same rule as the
+          # osv-scanner install in security.yml. A tampered file fails sha256sum
+          # on attempt one and attempt five identically.
+          curl -fsSL --retry 5 --retry-delay 4 --retry-all-errors --retry-max-time 180 \
+            --connect-timeout 10 --max-time 180 \
+            -o trivy.tar.gz \
+            "https://github.com/aquasecurity/trivy/releases/download/v${TRIVY_VERSION}/trivy_${TRIVY_VERSION}_Linux-64bit.tar.gz"
+          echo "${TRIVY_SHA256}  trivy.tar.gz" | sha256sum -c -
+          tar -xzf trivy.tar.gz trivy
+          chmod +x trivy
+          # The checksum proves the bytes; this proves they are the version the
+          # pin claims and that they run here.
+          ./trivy --version
+          ./trivy --version | head -1 | grep -qx "Version: ${TRIVY_VERSION}"
+      # Proves the scanner can still fail before its clean verdict is believed —
+      # the same rule as `check_osv_report.py --self-test` and the client-bundle
+      # scanner. A gate that has never been seen to fail has not been shown to
+      # work, and a clean container scan is indistinguishable from a broken one.
+      - name: scanner self-test
+        run: |
+          # A synthetic manifest rather than an old base image. A base image is
+          # the tempting probe and it is the wrong one: `debian:11-slim` and
+          # friends are rebuilt with patches applied, so under --ignore-unfixed
+          # they can legitimately come back clean and turn this guard into a
+          # flake that fails the week nobody has time for it. A pinned ancient
+          # library version cannot be patched out from under the test — the fix
+          # is a different version, which this file does not name.
+          mkdir -p /tmp/trivy-selftest
+          printf 'django==2.2.0\n' > /tmp/trivy-selftest/requirements.txt
+          if ./trivy fs --quiet --scanners vuln --severity HIGH,CRITICAL \
+               --ignore-unfixed --exit-code 1 /tmp/trivy-selftest > selftest.txt 2>&1; then
+            echo "trivy reported a clean bill on django==2.2.0 — the scanner is not working," >&2
+            echo "or its advisory database failed to load. Either way the scan below would" >&2
+            echo "report clean for the same reason, so this fails instead." >&2
+            cat selftest.txt
+            exit 1
+          fi
+          echo "self-test: trivy correctly reported fixed HIGH/CRITICAL advisories"
+      # `--ignore-unfixed` is the load-bearing flag, not a softener. Without it
+      # this job goes permanently red on base-image CVEs that have no upstream
+      # patch, nobody can act on the output, and a check that is always red is a
+      # check everyone learns to ignore — the exact failure 05-security.md §2
+      # records for the gitleaks box. With it, a finding means "a fix exists and
+      # we have not taken it", which is a thing a human can do something about.
+      - name: scan the rootfs
+        run: |
+          ./trivy image --quiet --scanners vuln --severity HIGH,CRITICAL \
+            --ignore-unfixed --exit-code 1 --format table majorana-runner:scan
