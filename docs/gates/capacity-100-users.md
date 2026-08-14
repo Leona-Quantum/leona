@@ -67,7 +67,55 @@ and must not be quoted as "the product serves 65 requests per second".
 - `CAPACITY_MIN_CATALOG_ENTRIES` defaulted to **1**, so the profile would print
   `CAPACITY SUITE PASSED` against a catalogue holding a single record. The default is now 300.
 
-## What the fix is, and why it is not a concurrency change yet
+## Re-run after the payload cut: the p95 did not move, and that is the finding
+
+The section below said to re-run before tuning admission, because the list payload had just been
+cut and tuning against a stale measurement would be tuning against a system that no longer
+exists. **The re-run happened. The payload change makes no difference to this number.**
+
+Three `read_100` runs at `26b5d849` — current `dev`, carrying all four list projections — against
+a local stack with the real 369-record published corpus (`observed_catalog_entries: 369` in every
+`config.json`, floor set to 369):
+
+| run | p50 | p95 | p99 | max | requests | server errors | exit |
+|---|---|---|---|---|---|---|---|
+| 1 | 858 ms | **1484 ms** | 1518 ms | 1527 ms | 101 | 0 | 0 |
+| 2 | 807 ms | **1401 ms** | 1426 ms | 1427 ms | 101 | 0 | 0 |
+| 3 | 790 ms | **1394 ms** | 1416 ms | 1418 ms | 101 | 0 | 0 |
+
+Against the three runs at `a3c8b43a`, before any of it: p50 796–874 ms, p95 **1361 / 1396 /
+1481 ms**. The two sets are the same numbers. Every threshold passed in all six runs (and
+remember k6 records a *passing* threshold as `false` — the boolean means breached).
+
+**This is a confirmation by intervention, which is stronger than the two the diagnosis already
+had.** The pool-bound reading was reached twice by observation — sampling `pg_stat_activity`
+during a run, and reading `DEFAULT_POOL_SIZE = 5` + `DEFAULT_MAX_OVERFLOW = 5` against a
+`containerConcurrency` of 80. Now something was *changed*: the response body shrank by roughly
+60% (1,539,091 → 609,581 by `JSON.stringify` length) and the latency did not move. If bytes were
+the constraint, that had to show. It did not, so they are not.
+
+Note what this run does and does not include. `read_100` hits the API directly, so the
+`Cache-Control` work has no effect on it at all — k6 is not a caching client, and the only
+variable that changed between the two sets of runs is the size of the response. That is what
+makes the comparison clean.
+
+**So the deferral below is discharged and the concurrency question is unblocked.** Lowering
+`--concurrency` toward what ten connections can serve is the remaining lever, it is free, and it
+is no longer waiting on anything. The payload work was worth doing for bytes on the wire, the
+CDN, and the Vercel data-cache ceiling — it was never going to move this number.
+
+**Still not production capacity.** One uvicorn process on ten M1 Pro cores against loopback
+Postgres, on a working laptop at load average 6.21 (10 cores). Production is 1 vCPU on Cloud Run
+with a real Cloud SQL round trip. And `read_100` is 100 VUs × one iteration — about a hundred
+requests in a second and a half — so the `iterations/s` k6 prints is a burst divided by a wall
+clock, not a throughput figure.
+
+**One more inversion in the artefacts, for whoever reads a `result.json` next.** In
+`http_req_failed`, k6's `passes` counts the requests that FAILED and `fails` counts those that
+did not. These runs record `{"fails": 101, "passes": 0, "value": 0}` — that is **zero failures**,
+and `value` is the only field of the three that reads the way it sounds.
+
+## What the fix is (the reasoning below is superseded by the re-run above, and kept for it)
 
 The finding above — pool-bound, ten connections against a `containerConcurrency` of 80 — has
 two candidate fixes, and the obvious one is currently the wrong one.
