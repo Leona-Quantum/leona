@@ -37,15 +37,42 @@ export interface ResultValueView {
   value: string;
 }
 
+export type ResultChartKind = "bar" | "line" | "scatter";
+
+export interface ResultChartPoint {
+  x: number | string;
+  y: number;
+}
+
+export interface ResultChartSeries {
+  label: string;
+  points: ResultChartPoint[];
+}
+
+export interface ResultChartView {
+  key: string;
+  kind: ResultChartKind;
+  title: string;
+  xLabel: string | null;
+  yLabel: string | null;
+  series: ResultChartSeries[];
+}
+
 export interface ResultVisualizationView {
   distribution: ResultDistributionView | null;
   traces: ResultTraceView[];
+  charts: ResultChartView[];
   values: ResultValueView[];
 }
 
 const MAX_RESULT_VALUES = 10;
 const MAX_RESULT_TRACES = 3;
 const MAX_TRACE_POINTS = 96;
+const MAX_RESULT_CHARTS = 4;
+const MAX_CHART_SERIES = 4;
+const MAX_CHART_POINTS = 96;
+const MAX_BAR_CATEGORIES = 24;
+const MAX_CHART_MAGNITUDE = 1e100;
 const TRACE_KEY = /(?:history|trace|curve|trajectory|convergence|loss(?:es)?|energies|costs|objectives)/i;
 const COUNT_KEY = /(?:counts|samples|histogram)/i;
 const PROBABILITY_KEY = /(?:distribution|probabilit)/i;
@@ -54,6 +81,99 @@ function recordValue(value: unknown): Record<string, unknown> | null {
   return value !== null && typeof value === "object" && !Array.isArray(value)
     ? value as Record<string, unknown>
     : null;
+}
+
+function boundedLabel(value: unknown, maximum: number): string | null {
+  if (typeof value !== "string") return null;
+  const normalized = value.replace(/\s+/g, " ").trim();
+  return normalized && normalized.length <= maximum ? normalized : null;
+}
+
+function chartNumber(value: unknown): value is number {
+  return typeof value === "number"
+    && Number.isFinite(value)
+    && Math.abs(value) <= MAX_CHART_MAGNITUDE;
+}
+
+/**
+ * Parse model-authored chart specifications from protected RESULT data.
+ *
+ * The renderer never evaluates plotting code or accepts SVG/HTML. It receives a
+ * small, finite numeric shape with hard caps, which keeps a requested graph on the
+ * same evidence path as the values displayed next to it. Malformed charts are
+ * omitted as a whole instead of partially drawing a potentially misleading series.
+ */
+export function chartsFromResult(result: Record<string, unknown> | null): ResultChartView[] {
+  const rawCharts = result?.visualizations;
+  if (!Array.isArray(rawCharts)) return [];
+
+  const charts: ResultChartView[] = [];
+  for (let chartIndex = 0; chartIndex < rawCharts.length; chartIndex += 1) {
+    if (charts.length === MAX_RESULT_CHARTS) break;
+    const rawChart = recordValue(rawCharts[chartIndex]);
+    if (!rawChart) continue;
+    const kind = rawChart.type;
+    if (kind !== "bar" && kind !== "line" && kind !== "scatter") continue;
+    const title = boundedLabel(rawChart.title, 120);
+    const rawSeries = rawChart.series;
+    if (!title || !Array.isArray(rawSeries) || rawSeries.length < 1 || rawSeries.length > MAX_CHART_SERIES) {
+      continue;
+    }
+
+    const series: ResultChartSeries[] = [];
+    let valid = true;
+    for (const rawSeriesItem of rawSeries) {
+      const item = recordValue(rawSeriesItem);
+      const label = boundedLabel(item?.label, 80);
+      const x = item?.x;
+      const y = item?.y;
+      if (
+        !label
+        || !Array.isArray(x)
+        || !Array.isArray(y)
+        || x.length < 1
+        || x.length > MAX_CHART_POINTS
+        || x.length !== y.length
+        || !y.every(chartNumber)
+      ) {
+        valid = false;
+        break;
+      }
+      const validX = kind === "bar"
+        ? x.every((value) =>
+            chartNumber(value)
+            || (typeof value === "string" && value.trim().length > 0 && value.length <= 60))
+        : x.every(chartNumber);
+      if (!validX) {
+        valid = false;
+        break;
+      }
+      series.push({
+        label,
+        points: x.map((value, pointIndex) => ({
+          x: typeof value === "string" ? value.trim() : value as number,
+          y: y[pointIndex] as number,
+        })),
+      });
+    }
+    if (!valid || !series.length) continue;
+    if (
+      kind === "bar"
+      && new Set(series.flatMap((item) => item.points.map((point) => String(point.x)))).size
+        > MAX_BAR_CATEGORIES
+    ) {
+      continue;
+    }
+    charts.push({
+      key: `visualization-${chartIndex}`,
+      kind,
+      title,
+      xLabel: boundedLabel(rawChart.x_label, 80),
+      yLabel: boundedLabel(rawChart.y_label, 80),
+      series,
+    });
+  }
+  return charts;
 }
 
 function basisWidth(length: number): number | null {
@@ -349,6 +469,7 @@ export function resultVisualizationFromResult(
   return {
     distribution: distributionFromResult(result, locale),
     traces: tracesFromResult(result, locale),
+    charts: chartsFromResult(result),
     values: valuesFromResult(result, expectedKeys, locale),
   };
 }
