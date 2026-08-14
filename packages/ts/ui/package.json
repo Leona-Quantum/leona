@@ -18,11 +18,11 @@
     "@majorana/contracts-gen": "workspace:*"
   },
   "peerDependencies": {
-    "react": "^19.0.0"
+    "react": "^19.2.8"
   },
   "devDependencies": {
-    "@types/react": "^19.0.0",
-    "react": "^19.0.0",
+    "@types/react": "^19.2.18",
+    "react": "^19.2.8",
     "typescript": "^5.9.3"
   }
 }
