@@ -44,7 +44,7 @@ jobs:
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: build the sandbox image
         run: |
           docker buildx build --platform linux/amd64 --load \
@@ -118,7 +118,7 @@ jobs:
     if: github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       # `inputs.tag` never reaches a `run:` script as an expression — it goes through
       # env and is then validated. A workflow_dispatch input interpolated into a shell
       # is a shell injection, and the tag is also the thing that must not be `latest`,
@@ -168,7 +168,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       # A rebuild, not a pull of :latest. On the weekly schedule this is the half
       # that matters — it re-resolves the base image and every apt/pip layer, so
       # the scan below reports what a rootfs built TODAY would contain rather
