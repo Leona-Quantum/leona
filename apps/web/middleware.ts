@@ -10,6 +10,7 @@
 import { authkitMiddleware } from "@workos-inc/authkit-nextjs";
 import { NextResponse, type NextFetchEvent, type NextRequest } from "next/server";
 import { isWorkosAuthConfigured } from "./lib/auth-config";
+import { canonicalLocaleTarget } from "./lib/canonical-locale-redirect";
 import { isLocalDevAuthEnabled } from "./lib/local-dev-auth";
 import { pageviewLoggingEnabled, pageviewSignal } from "./lib/pageview-signal";
 import { LEGACY_PUBLIC_LOCALE_COOKIE, parsePublicLocale, PUBLIC_LOCALE_COOKIE, PUBLIC_LOCALES } from "./lib/public-locale";
@@ -148,13 +149,15 @@ function localeRewrite(request: NextRequest): NextResponse | null {
  *
  * No loop: the rewrite above is internal, so the browser is never asked for the
  * prefixed form and never arrives here carrying it.
+ *
+ * The target is built by `lib/canonical-locale-redirect.ts`, which is where the
+ * reason it is not a one-liner is written down: this runs before the auth gate,
+ * so handing an attacker-influenced tail to the relative `new URL(str, base)`
+ * form made it an unauthenticated open redirect off this origin.
  */
 function canonicalRedirect(request: NextRequest): NextResponse | null {
-  const segments = request.nextUrl.pathname.split("/");
-  const first = segments[1] ?? "";
-  if (!(PUBLIC_LOCALES as readonly string[]).includes(first)) return null;
-  const rest = `/${segments.slice(2).join("/")}`.replace(/\/$/, "");
-  const target = new URL(rest === "" ? "/" : rest, request.url);
+  const target = canonicalLocaleTarget(request.nextUrl.pathname, request.url, PUBLIC_LOCALES);
+  if (target === null) return null;
   target.search = request.nextUrl.search;
   return NextResponse.redirect(target, 308);
 }
