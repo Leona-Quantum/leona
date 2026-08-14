@@ -28,6 +28,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import re
 from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Mapping
@@ -65,6 +66,7 @@ class ModeDecision:
     resolved: RunMode
     source: DecisionSource
     reason: str
+    needs_user_inputs: bool = False
 
     @property
     def changed(self) -> bool:
@@ -79,7 +81,7 @@ class ModeDecision:
         }
 
 
-def _parse_verdict(text: str) -> tuple[RunMode, str] | None:
+def _parse_verdict(text: str) -> tuple[RunMode, str, bool] | None:
     """Read the classifier's JSON verdict, or None if it did not produce one."""
     candidate = text.strip()
     if candidate.startswith("```"):
@@ -98,7 +100,24 @@ def _parse_verdict(text: str) -> tuple[RunMode, str] | None:
     if raw not in {mode.value for mode in _ROUTABLE}:
         return None
     reason = str(payload.get("reason") or "").strip()
-    return RunMode(raw), reason[:200]
+    needs_user_inputs = bool(payload.get("needs_user_inputs", False))
+    return RunMode(raw), reason[:200], needs_user_inputs
+
+
+_ACTION_WORDS = re.compile(
+    r"(?:build|create|generate|run|execute|simulate|calculate|実装|作成|生成|実行|計算|求めて|調べて)",
+    re.IGNORECASE,
+)
+_MISSING_WORDS = re.compile(
+    r"(?:missing|required|not provided|not specified|omitted|未指定|不足|必要|欠け|与えられていない)",
+    re.IGNORECASE,
+)
+
+
+def _looks_like_missing_inputs(prompt: str, reason: str) -> bool:
+    """Recover the UI affordance when a route model omits the optional boolean."""
+
+    return bool(_ACTION_WORDS.search(prompt) and _MISSING_WORDS.search(reason))
 
 
 async def resolve_mode(
@@ -108,6 +127,7 @@ async def resolve_mode(
     *,
     has_source_code: bool = False,
     conversation_messages: Sequence[Mapping[str, str]] = (),
+    allow_ai_assumptions: bool = False,
 ) -> ModeDecision:
     """Resolve `requested` to the mode this run will actually dispatch in."""
     if requested is not RunMode.AUTO:
@@ -121,7 +141,11 @@ async def resolve_mode(
     # the non-execute conversation path. Tell the classifier that source exists
     # without sending the code itself, so "run this attached circuit" is input-
     # ready while an explanation question about the same attachment stays chat.
-    rendered = render_intent_prompt(prompt, has_source_code=has_source_code)
+    rendered = render_intent_prompt(
+        prompt,
+        has_source_code=has_source_code,
+        allow_ai_assumptions=allow_ai_assumptions,
+    )
     # Routing decides whether USER-SUPPLIED task data is complete. Assistant prose
     # can explain or propose a formulation, but it cannot fill an omitted instance
     # or turn that proposal into authorization to execute. Enforce the prompt's
@@ -162,5 +186,12 @@ async def resolve_mode(
             requested, RunMode.CHAT, "fallback", "router verdict unreadable; chat fallback"
         )
 
-    resolved, reason = verdict
-    return ModeDecision(requested, resolved, "classifier", reason or "classified from the message")
+    resolved, reason, needs_user_inputs = verdict
+    return ModeDecision(
+        requested,
+        resolved,
+        "classifier",
+        reason or "classified from the message",
+        needs_user_inputs=(needs_user_inputs or _looks_like_missing_inputs(prompt, reason))
+        and resolved is RunMode.CHAT,
+    )

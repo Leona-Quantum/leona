@@ -51,6 +51,26 @@ body {
 .mj-run-composer-stage {
   display: contents;
 }
+
+.mj-ai-assumption-action {
+  display: grid;
+  gap: var(--sp-3);
+  margin-top: var(--sp-6);
+  padding: var(--sp-4);
+  border: 1px solid color-mix(in srgb, var(--accent) 55%, var(--border-0));
+  border-left: 4px solid var(--accent);
+  border-radius: var(--radius-card);
+  background: color-mix(in srgb, var(--accent) 9%, var(--bg-1));
+}
+.mj-ai-assumption-action p {
+  margin: 0;
+  color: var(--text-0);
+  font-size: var(--fs-14);
+  line-height: 1.55;
+}
+.mj-ai-assumption-action button {
+  justify-self: start;
+}
 .mj-run-home-hero {
   gap: var(--sp-3);
 }
@@ -1200,7 +1220,7 @@ html[lang="ja"] .mj-company-hero-title-line {
 }
 .mj-run-follow-ups-heading strong {
   color: var(--text-1);
-  font-size: var(--fs-20);
+  font-size: var(--fs-16);
   font-weight: 500;
 }
 .mj-run-follow-ups-list {
@@ -1217,7 +1237,7 @@ html[lang="ja"] .mj-company-hero-title-line {
   color: var(--text-1);
   cursor: pointer;
   font: inherit;
-  font-size: var(--fs-16);
+  font-size: var(--fs-14);
   line-height: 1.35;
   text-align: left;
 }

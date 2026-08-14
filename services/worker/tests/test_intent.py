@@ -104,6 +104,33 @@ async def test_classifier_verdict_of_chat_is_honoured():
     assert decision.reason == "asks how Grover works"
 
 
+async def test_classifier_marks_action_with_missing_data_for_ai_completion_affordance():
+    llm = _ScriptedLLM(
+        '{"intent": "chat", "needs_user_inputs": true, "reason": "the graph data is not specified"}'
+    )
+
+    decision = await resolve_mode("Calculate MaxCut and build the circuit", RunMode.AUTO, llm)
+
+    assert decision.resolved is RunMode.CHAT
+    assert decision.needs_user_inputs is True
+
+
+async def test_missing_data_affordance_recovers_when_router_omits_optional_flag():
+    llm = _ScriptedLLM('{"intent": "chat", "reason": "取引データが未指定で計算できない"}')
+
+    decision = await resolve_mode("最小カットを計算して回路を生成", RunMode.AUTO, llm)
+
+    assert decision.needs_user_inputs is True
+
+
+async def test_explanation_chat_does_not_offer_missing_data_affordance():
+    llm = _ScriptedLLM('{"intent": "chat", "reason": "explains how the algorithm works"}')
+
+    decision = await resolve_mode("Explain how to calculate MaxCut", RunMode.AUTO, llm)
+
+    assert decision.needs_user_inputs is False
+
+
 async def test_verdict_wrapped_in_a_code_fence_still_parses():
     llm = _ScriptedLLM('```json\n{"intent": "execute", "reason": "builds and runs a circuit"}\n```')
 
