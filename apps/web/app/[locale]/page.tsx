@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { CircuitBand } from "../../components/circuit-band";
 import { BrandMark } from "../../components/icons";
+import { LandingPrompt } from "../../components/landing-prompt";
 import { LeoConstellation } from "../../components/leo-constellation";
 import { PublicSite } from "../../components/public-site";
 import { Reveal } from "../../components/reveal";
@@ -67,6 +68,9 @@ export default async function Home({ params }: { params: Promise<{ locale: strin
             ))}
           </h1>
           <p className="mj-company-hero-lede">{copy.hero.lede}</p>
+          {/* A client island. It takes copy and nothing else — no auth state,
+              no minted URL — which is what keeps this page prerenderable. */}
+          <LandingPrompt copy={copy.promptDemo} />
           <div className="mj-public-actions">
             <a className="mj-primary-button" href="/workspace">{copy.hero.primary}</a>
             <a className="mj-secondary-button" href="/repository">{copy.hero.secondary}</a>

@@ -80,10 +80,11 @@ from majorana_api.tiers import EnvTierSources, limits_for, tier_of
 
 from .agent_llm import MeteredAgentLLM
 from .agent_store import RepoAgentStore
-from .context import RunContext
+from .context import EventSink, RunContext
 from .intent import resolve_mode
 from majorana_frameworks.roles import result_was_derived
 
+from .research import research_enabled
 from .runtime_ports import SandboxCandidateExecutor, TrustedOpenQASMConverter
 from .simple_events import SimpleEventObserver
 from .simple_ports import (
@@ -688,6 +689,25 @@ async def _finish_legacy_progress(
     )
 
 
+def _research_sink_for(ctx: RunContext) -> EventSink | None:
+    """The kill switch for implicit arXiv research, and the only place it acts.
+
+    `ctx.sink` is a non-optional field on a frozen `RunContext`, so handing it
+    to the pipeline unconditionally is exactly what makes research on for every
+    run's first planning attempt — and off only by editing this file and
+    redeploying. Withholding it is what
+    `ProductionSimplePipelinePorts._research_for_plan` already reads as "not
+    enabled" on its first line, before the triage LLM call, so a deployment with
+    `MAJORANA_RESEARCH` switched off spends nothing rather than paying a model
+    to decide not to look anything up.
+
+    A named function rather than a conditional inline in the constructor call
+    because a switch that cannot be unit-tested is a switch nobody has checked:
+    the composition root itself needs a live session to drive.
+    """
+    return ctx.sink if research_enabled() else None
+
+
 async def _handle_agent_execution(
     ctx: RunContext,
     run_store: RepoRunStateStore,
@@ -777,6 +797,7 @@ async def _handle_agent_execution(
         initial_source=ctx.source_code,
         allow_ai_assumptions=ctx.allow_ai_assumptions,
         rollback=session.rollback,
+        research_sink=_research_sink_for(ctx),
     )
     outcome = await SimpleCircuitPipeline(
         ports=ports,
