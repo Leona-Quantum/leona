@@ -77,10 +77,17 @@ jobs:
       #
       # The guard that this stays honest is the count: after `uv sync
       # --all-packages --frozen`, serial and parallel both report 2312 passed /
-      # 419 skipped (79.7s vs 30.7s locally). A parallel run that quietly
-      # collected FEWER tests is the failure mode worth fearing here — it would
-      # look like a speedup — so the count is what to re-check if this line is
-      # ever edited, not the wall clock.
+      # 419 skipped. A parallel run that quietly collected FEWER tests is the
+      # failure mode worth fearing here — it would look like a speedup — so the
+      # count is what to re-check if this line is ever edited, not the clock.
+      #
+      # What it is actually worth, measured on this runner rather than projected:
+      # 177s -> 140s, and the job 223s -> 186s. Locally the same change is 79.7s
+      # -> 30.7s (2.6x), and the gap is the point — `ubuntu-latest` is 4 vCPU,
+      # and under `loadfile` the floor is the slowest SINGLE file, which no
+      # amount of extra workers moves. Do not quote the local number as the CI
+      # number. Further gain here means splitting the dominant file, not adding
+      # `-n` workers.
       - run: uv run pytest -q -n auto --dist loadfile
       # The framework-native sandbox suites EXECUTE generated code through
       # LocalSubprocessSandbox, so they need the SDK extras that the sync above
