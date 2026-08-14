@@ -32,6 +32,18 @@ export const HOME_COPY: Record<PublicLocale, {
     contact: string;
     scrollCue: string;
   };
+  promptDemo: {
+    label: string;
+    attach: string;
+    mode: string;
+    submit: string;
+    prompts: string[];
+    modalLabel: string;
+    modalTitle: string;
+    modalBody: string;
+    modalPrimary: string;
+    close: string;
+  };
   visual: {
     label: string;
     status: string;
@@ -73,6 +85,22 @@ export const HOME_COPY: Record<PublicLocale, {
       secondary: "Explore the Atlas",
       contact: "Get in touch",
       scrollCue: "Scroll",
+    },
+    promptDemo: {
+      label: "Describe the quantum circuit you want to build",
+      attach: "Attach context",
+      mode: "Plan",
+      submit: "Build now",
+      prompts: [
+        "Build a Bell state and verify the measured distribution.",
+        "Use QAOA to solve MaxCut on a five-node ring.",
+        "Estimate the resources for an eight-qubit QFT circuit.",
+      ],
+      modalLabel: "Start building",
+      modalTitle: "Create an account to run this prompt.",
+      modalBody: "Your prompt is ready. Sign up to generate the circuit, run it in a guarded simulator, and keep the result in your private workspace.",
+      modalPrimary: "Create an account",
+      close: "Close",
     },
     visual: {
       label: "LEONA QUANTUM / PRODUCT",
@@ -150,6 +178,22 @@ export const HOME_COPY: Record<PublicLocale, {
       secondary: "Atlasを見る",
       contact: "お問い合わせ",
       scrollCue: "スクロール",
+    },
+    promptDemo: {
+      label: "作りたい量子回路を入力",
+      attach: "コンテキストを添付",
+      mode: "プラン",
+      submit: "生成する",
+      prompts: [
+        "ベル状態を作り、測定分布を検証してください。",
+        "5ノードのリンググラフのMaxCut問題をQAOAで解いてください。",
+        "8量子ビットのQFT回路に必要なリソースを見積もってください。",
+      ],
+      modalLabel: "量子回路開発を始める",
+      modalTitle: "アカウントを作成して、このプロンプトを実行",
+      modalBody: "プロンプトの準備ができました。アカウントを作成すると、量子回路の生成、保護されたシミュレータでの実行、結果の保存ができます。",
+      modalPrimary: "アカウントを作成",
+      close: "閉じる",
     },
     visual: {
       label: "LEONA QUANTUM / PRODUCT",
