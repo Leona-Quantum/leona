@@ -197,7 +197,17 @@ def _assert_same_request(existing: RunRow, request_hash: str | None) -> None:
     )
 
 
-def _to_resource(run: RunRow) -> RunResource:
+def _to_resource(run: RunRow, queue_position: int | None = None) -> RunResource:
+    """The wire shape of a run.
+
+    `queue_position` is passed in rather than read here because it is not a
+    property of the row — it is a question about the job queue at this instant,
+    and answering it costs a query. Endpoints that can answer it do; the rest
+    leave it `None`, which the field documents as "not waiting" rather than
+    "unknown". That conflation is deliberate and bounded: every endpoint a
+    queued run is actually watched through fills it in (see below), so the only
+    callers that leave it null are the ones whose runs have already started.
+    """
     return RunResource(
         id=run.id,
         conversation_id=run.conversation_id,
@@ -221,6 +231,7 @@ def _to_resource(run: RunRow) -> RunResource:
         created_at=run.created_at,
         started_at=run.started_at,
         finished_at=run.finished_at,
+        queue_position=queue_position,
     )
 
 
@@ -394,6 +405,11 @@ async def _enforce_execute_backstop(
         )
 
 
+async def _queue_position(scope: CurrentScope, session: DbSession, run: RunRow) -> int | None:
+    """Position for one run, or None when it is not waiting for a worker."""
+    return (await runs_repo.queue_positions(scope, session, [run.id])).get(run.id)
+
+
 @router.post("/runs", response_model=RunResource, status_code=201)
 async def create_run(
     body: CreateRunRequest,
@@ -408,7 +424,7 @@ async def create_run(
         existing = await runs_repo.find_run_by_idempotency_key(scope, session, idempotency_key)
         if existing is not None:
             _assert_same_request(existing, request_hash)
-            return _to_resource(existing)
+            return _to_resource(existing, await _queue_position(scope, session, existing))
     await _enforce_execute_backstop(body, scope, session, identity, settings)
     artifact_version_id = await _create_stale_source_draft(body, scope, session)
     try:
@@ -464,7 +480,9 @@ async def create_run(
         },
         run_id=run.id,
     )
-    return _to_resource(run)
+    # Answered on the 201 itself: the caller is about to start waiting, and the
+    # first thing they can be told is how long the line is.
+    return _to_resource(run, await _queue_position(scope, session, run))
 
 
 @router.get("/runs", response_model=list[RunResource])
@@ -478,12 +496,17 @@ async def list_runs(
     rows = await runs_repo.list_runs(
         scope, session, status=status, cursor=cursor, limit=min(max(limit, 1), 100)
     )
-    return [_to_resource(r) for r in rows]
+    # One query for the whole page. A per-row call here would be up to 100
+    # round trips on a list endpoint, which is how a "cheap" derived field
+    # becomes the slowest thing on the screen.
+    positions = await runs_repo.queue_positions(scope, session, [r.id for r in rows])
+    return [_to_resource(r, positions.get(r.id)) for r in rows]
 
 
 @router.get("/runs/{run_id}", response_model=RunResource)
 async def get_run(run_id: uuid.UUID, scope: CurrentScope, session: DbSession) -> RunResource:
-    return _to_resource(await runs_repo.get_run(scope, session, run_id))
+    run = await runs_repo.get_run(scope, session, run_id)
+    return _to_resource(run, await _queue_position(scope, session, run))
 
 
 @router.get("/runs/{run_id}/conversation", response_model=ConversationResource)
@@ -491,12 +514,17 @@ async def get_conversation(
     run_id: uuid.UUID, scope: CurrentScope, session: DbSession
 ) -> ConversationResource:
     current = await runs_repo.get_run(scope, session, run_id)
+    rows = await runs_repo.list_conversation_runs(scope, session, current.conversation_id)
+    # This is the endpoint the run view loads, so it is the one that has to
+    # carry the position — a turn that is still waiting is exactly what the
+    # reader is looking at. Batched for the same reason as the list endpoint.
+    positions = await runs_repo.queue_positions(scope, session, [row.id for row in rows])
     turns: list[ConversationTurn] = []
-    for row in await runs_repo.list_conversation_runs(scope, session, current.conversation_id):
+    for row in rows:
         events = await runs_repo.list_run_events(scope, session, row.id)
         turns.append(
             ConversationTurn(
-                run=_to_resource(row),
+                run=_to_resource(row, positions.get(row.id)),
                 events=[_event_json(event) for event in events],
             )
         )

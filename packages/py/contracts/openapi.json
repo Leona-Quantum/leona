@@ -3733,6 +3733,19 @@
           "mode": {
             "$ref": "#/components/schemas/RunMode"
           },
+          "queue_position": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Claimable jobs ahead of this run in the worker queue; 0 means next, null means not waiting. Derived per request, never stored.",
+            "title": "Queue Position"
+          },
           "residual_risks": {
             "anyOf": [
               {

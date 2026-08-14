@@ -25,12 +25,13 @@ Nothing else may import this module from request-handling code.
 import datetime as dt
 import uuid
 from dataclasses import dataclass
+from collections.abc import Sequence
 from typing import Any
 
 from majorana_contracts.enums import Role, RunStatus, WorkspaceKind
 from majorana_openqasm import fingerprint as qasm_fingerprint
 from majorana_openqasm import normalize
-from sqlalchemy import case, func, or_, select, update
+from sqlalchemy import case, func, or_, select, tuple_, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -1185,14 +1186,73 @@ async def count_runnable_jobs(session: AsyncSession) -> int:
     uses the exact readiness predicates from ``claim_job`` so the signal means
     "work a worker could claim now" rather than all queued rows.
     """
-    result = await session.execute(
-        select(func.count(Job.id)).where(
-            Job.status == "queued",
-            Job.run_after <= func.now(),
-            Job.attempts < Job.max_attempts,
-        )
-    )
+    result = await session.execute(select(func.count(Job.id)).where(*_claimable()))
     return int(result.scalar_one())
+
+
+#: The readiness predicates a worker claims on. Written once and used by
+#: ``claim_job``, ``count_runnable_jobs`` and ``queue_positions_for_jobs`` so a
+#: position can never be counted against a different definition of "waiting"
+#: than the one that decides who runs next.
+def _claimable() -> Any:
+    return (
+        Job.status == "queued",
+        Job.run_after <= func.now(),
+        Job.attempts < Job.max_attempts,
+    )
+
+
+async def queue_positions_for_jobs(
+    session: AsyncSession, *, run_ids: Sequence[uuid.UUID]
+) -> dict[uuid.UUID, int]:
+    """How many claimable jobs sit ahead of each of ``run_ids``. 0 means next.
+
+    Count-only and workspace-neutral, exactly like ``count_runnable_jobs``: the
+    caller names the runs it is allowed to ask about (``repos/runs.py`` applies
+    the scope) and gets back integers. No payload, no other tenant's run id, no
+    prompt — a number that says "three ahead of you" is not a fact about whose
+    they are.
+
+    **The count is deliberately global rather than workspace-scoped.** There is
+    one worker running one job at a time (AD-7), so the thing a waiting user is
+    behind is the whole queue. Scoping this to their own workspace would produce
+    a smaller number that is not a position in anything, and it would say "0
+    ahead" to somebody who is about to wait ten minutes. Scope decides *which
+    run you may ask about*; it cannot decide what the queue is.
+
+    Ordering matches ``claim_job``'s ``ORDER BY run_after``, with ``id`` as a
+    tiebreak because that query has none: two jobs stamped the same microsecond
+    are claimed in an order Postgres does not promise, so a position derived
+    from ``run_after`` alone would flicker between two equally true answers.
+    The tiebreak makes the number stable; for exact ties it may disagree with
+    the claim order by one, which is the honest cost of reporting a total order
+    over a queue that only has a partial one.
+    """
+    if not run_ids:
+        return {}
+    ahead = aliased(Job)
+    position = (
+        select(func.count(ahead.id))
+        .where(
+            *_claimable_on(ahead),
+            tuple_(ahead.run_after, ahead.id) < tuple_(Job.run_after, Job.id),
+        )
+        .correlate(Job)
+        .scalar_subquery()
+    )
+    rows = await session.execute(
+        select(Job.run_id, position).where(*_claimable(), Job.run_id.in_(list(run_ids)))
+    )
+    return {run_id: int(count) for run_id, count in rows if run_id is not None}
+
+
+def _claimable_on(alias: Any) -> Any:
+    """``_claimable()`` against an alias, for the self-join above."""
+    return (
+        alias.status == "queued",
+        alias.run_after <= func.now(),
+        alias.attempts < alias.max_attempts,
+    )
 
 
 async def claim_job(
@@ -1202,11 +1262,7 @@ async def claim_job(
     lease_delta = _lease_delta(lease_seconds)
     stmt = (
         select(Job)
-        .where(
-            Job.status == "queued",
-            Job.run_after <= func.now(),
-            Job.attempts < Job.max_attempts,
-        )
+        .where(*_claimable())
         .order_by(Job.run_after)
         .limit(1)
         .with_for_update(skip_locked=True)
