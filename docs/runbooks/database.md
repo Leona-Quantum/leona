@@ -8,12 +8,12 @@ aws-us-west-2), on the free plan.
 
 | | |
 |---|---|
-| Instance | `majorana-pg`, us-west1, Enterprise edition, `db-g1-small` (shared core, 1.7 GB) |
+| Instance | `majorana-pg`, us-west1, Enterprise edition, `db-custom-1-3840` (1 vCPU, 3.75 GB), **REGIONAL** (HA) — raised from `db-g1-small`/ZONAL on 2026-08-15 |
 | Database / role | `majorana` / `majorana_app` (owns every object, so Alembic can issue DDL) |
 | Storage | 10 GB SSD, auto-increase on. The data is ~50 MB |
-| Backups | daily 10:00 UTC, 7 retained. No HA replica |
+| Backups | daily 10:00 UTC, 7 retained, REGIONAL, **PITR on** — see § Backups and the restore drill |
 | Public IP | assigned, but **zero authorized networks** — nothing reaches it by IP |
-| Connections | `max_connections` 50; fleet worst case 44 during a deploy (see § Connection budget) |
+| Connections | `max_connections` **200** as of 2026-08-15 (explicit flag, no longer the shared-core default); fleet terms live in `infra/fleet.env` — the § Connection budget prose below still states the pre-2026-08-15 figures (50/44/45) and needs its own pass, out of scope here |
 
 ## How each caller connects
 
@@ -49,6 +49,36 @@ gcloud sql instances patch majorana-pg --project=majorana-core --clear-authorize
 
 **Leave it cleared.** The instance holds every user's data and the only reason it
 has a public IP at all is that private IP needs VPC peering that was not set up.
+
+**What this posture actually protects, and what it does not — written down because
+nobody has consciously decided it, it happened by default.** Verified 2026-08-15:
+`compute.googleapis.com` and `servicenetworking.googleapis.com` are both disabled on
+this project, so there is no VPC, no Private Services Access peering, and no path to
+a genuinely private-IP-only instance without standing that up first.
+
+- **What it protects against:** an unauthenticated network client. With zero
+  authorized networks, nothing reaches port 5432 by raw TCP no matter what
+  credentials it holds — the allowlist admits nothing, full stop. Every real
+  connection (Cloud Run's socket, the Auth Proxy above) goes through the Cloud SQL
+  connector's own IAM/mTLS handshake instead, which is a second, independent gate on
+  top of the database password.
+- **What it does not protect against:** anything holding valid IAM credentials for
+  `roles/cloudsql.client` plus the database password, from *anywhere on the
+  internet*. The connector's whole point is that it does not care about network
+  origin — that is what let this drill run from a laptop with no special network
+  position, and it is exactly as true of a leaked service-account key or a stolen
+  `DATABASE_URL_SECRET` value. A public IP with zero authorized networks is not
+  "closed"; it is "open to anyone who authenticates correctly, from anywhere." Private
+  IP would add a genuine second perimeter — reachable only from inside the VPC — that
+  today does not exist for any actor, legitimate or not.
+- **What enabling it would cost:** `compute.googleapis.com` +
+  `servicenetworking.googleapis.com` enabled project-wide, a VPC, an allocated
+  Service Networking peering range, and (for Cloud Run to keep reaching the
+  instance) a Serverless VPC Access connector — a small ongoing cost (roughly
+  $8–10/month for the smallest connector) plus a real migration: cut over
+  `--set-cloudsql-instances` on both Cloud Run services and confirm nothing else
+  depends on the current public-IP path. Not a flag flip, and not something to do to
+  satisfy a one-hour drill (see below).
 
 ## Connection budget
 
@@ -262,6 +292,107 @@ genuine rollback has to remove it, which is exactly the amount of friction it
 should have.
 
 Anything written to Cloud SQL after the cutover would need copying across.
+
+## Backups, and the restore drill
+
+Verified against live GCP on 2026-08-15 (`gcloud sql instances describe majorana-pg`,
+`gcloud sql backups list`), because every figure below had only ever been prose or was
+stale from before the previous day's tier change:
+
+| | |
+|---|---|
+| Automated backups | **on** — daily, `startTime: 10:00` UTC, `retainedBackups: 7` (COUNT retention), `backupTier: STANDARD` |
+| Last 8 runs | **all `SUCCESSFUL`**, 2026-08-09 through 2026-08-14, plus one `ON_DEMAND` at 2026-08-14T14:13 |
+| Backup location | `us` (multi-region) |
+| **Point-in-time recovery** | **ON.** `pointInTimeRecoveryEnabled: true`, `replicationLogArchivingEnabled: true`, `transactionLogRetentionDays: 7`, storage `CLOUD_STORAGE` |
+| Availability | **REGIONAL** — HA replica, raised from ZONAL on 2026-08-15 alongside the `db-custom-1-3840` tier change |
+
+REGIONAL/HA and PITR protect against different failures and neither substitutes for
+the other. HA fails over to the standby on a zone or instance outage — it does not
+help if the *data* itself is wrong (a bad migration, a bug that deletes rows), because
+the standby has the same bad data. PITR is what recovers from that: any point inside
+the 7-day transaction-log window, not only the daily snapshot.
+
+### What the restore drill proved — run 2026-08-15
+
+Both restore paths were run against real production data, into throwaway instances
+(`majorana-pg-drill-restore-20260814`, `majorana-pg-drill-pitr-20260814`) with **zero
+authorized networks** — same posture as production, reachable only through the Cloud
+SQL Auth Proxy's IAM/mTLS tunnel. Full write-up, per-table numbers, and what this run
+does and does not establish: `docs/gates/restore-drill-2026-08-15.md`.
+
+**Backup restore — RTO 440s (7m20s)**, create-to-restore-DONE (operations-API
+timestamps; the driving script's own wall-clock reading was 460s, the gap being
+`gcloud`'s CLI polling interval). 12 of 33 tables (every
+one with no write traffic in the gap) matched production **exactly**, row count and
+content digest both; the other 21 differed only in the direction and rough magnitude
+~2h40m of ordinary traffic predicts (the backup used was ~2h40m old at the moment of
+comparison) — 1,033 rows out of 46,748 (2.2%), never a table where the backup had rows
+production didn't. `alembic_version` was one migration behind (`0050` vs. `0051`),
+consistent with a migration landing in that same gap.
+
+**PITR clone — RTO 429s (7m9s)** to verified, correct data at the requested
+timestamp (~5 minutes back). Verified as *point-in-time correct*, not just intact:
+three readings bracketing the clone's target (production before, the clone, production
+after) show the clone's row counts landing strictly between the two, matching linear
+interpolation to within 1 row on the highest-traffic table — proof `--point-in-time`
+honored the requested moment rather than cloning current state. One caveat worth
+carrying forward: `gcloud`'s own client-side wait, and the Cloud SQL operation object
+itself, both ran far longer than the data took to become correct and queryable
+(20+ minutes and still `RUNNING` when this was written, almost certainly standing up
+the HA standby) — **verify the data directly; do not trust the CLI or the operation
+status to say when a clone is actually usable.**
+
+### The restore drill — commands, for next time
+
+Cloud SQL restores into an instance; it cannot restore "to a scratch copy" in place,
+so a drill creates a second one, proves the data, and deletes it. This is the
+procedure the run above followed.
+
+**Backup restore:**
+```bash
+BACKUP_ID=$(gcloud sql backups list --instance majorana-pg --project majorana-core \
+  --limit 1 --format='value(id)')
+
+gcloud sql instances create majorana-pg-restoretest --project majorana-core \
+  --database-version POSTGRES_17 --tier db-g1-small --edition ENTERPRISE \
+  --region us-west1 --no-backup --availability-type ZONAL
+gcloud sql backups restore "$BACKUP_ID" --project majorana-core \
+  --restore-instance majorana-pg-restoretest --backup-instance majorana-pg
+```
+**`--edition ENTERPRISE` is required**, not optional flourish — this project's default
+edition for new instances is `ENTERPRISE_PLUS`, which rejects `db-g1-small` outright
+(production itself is `ENTERPRISE`; match that, not the project default).
+
+**Point-in-time clone**, to any timestamp inside the 7-day log window:
+```bash
+gcloud sql instances clone majorana-pg majorana-pg-pitrtest --project majorana-core \
+  --point-in-time '2026-08-15T00:00:00Z'
+```
+(`clone` provisions the target itself — do not `create` one first for this path.)
+
+**Verify — more than row counts**, same standard as the Neon cutover above: for every
+table in `information_schema.tables`, compare the row count and an order-independent
+content digest (`md5` per row, sorted, hashed) against production, plus the
+`alembic_version` row. A restore that silently dropped a column, or a clone that
+landed a transaction behind, passes a row count and fails the digest.
+
+**Time it.** The clock from `create`/`clone` issued to the verify query passing is the
+RTO, and it is the only version of that number worth writing down — not a vendor SLA,
+not an estimate.
+
+**Delete the clone. Always, even on a failed drill:**
+```bash
+gcloud sql instances delete majorana-pg-restoretest --project majorana-core --quiet
+gcloud sql instances delete majorana-pg-pitrtest --project majorana-core --quiet
+gcloud sql instances list --project majorana-core   # confirm only majorana-pg remains
+```
+Cloud SQL instances do not expire on their own; an interrupted drill bills until
+someone notices and deletes it by hand.
+
+> `docs/runbooks/incident.md` § The database is lost or corrupted links here rather
+> than restating these commands — a second copy would drift, and the drifted copy
+> would read as current.
 
 ## CI and bench
 
