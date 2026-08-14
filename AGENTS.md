@@ -17,7 +17,7 @@ longer what the owner wants.
   Cloud SQL `majorana-pg`, Cloud Run `majorana-api` / `majorana-worker`, the Artifact
   Registry repo, and the Vercel team slug `majoranaq` keep their names. Do not reopen this.
 - **Not yet ruled, so do not assume**: whether **published record ids** change. Those are
-  public addresses, changing them is a migration with a redirect obligation, and rows
+  public addresses. Changing them is a migration with a redirect obligation, and rows
   already signed in `license_assertions` cannot be updated in place (ADR-0020, append-only,
   enforced by a Postgres trigger). Get that decided before touching identities.
 
