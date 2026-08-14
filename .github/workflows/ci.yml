@@ -62,7 +62,26 @@ jobs:
       - run: uv sync --all-packages --frozen
       - run: uv run ruff check .
       - run: uv run ruff format --check .
-      - run: uv run pytest -q
+      # This step was 177s of the job's 223s — 79%, and the pacing item for the
+      # whole required-check gate, so PR-to-green was effectively "how long does
+      # pytest take".
+      #
+      # `--dist loadfile` is NOT a tuning knob, do not drop it for a bare `-n auto`.
+      # Measured, both ways, before this landed: with the default `--dist load`,
+      # which spreads individual tests across workers,
+      # test_roles_and_lowering.py::test_a_measured_circuit_gains_a_result_in_every_framework[pennylane]
+      # FAILS while passing serially — module-level framework state leaks between
+      # workers when parametrized cases of the same file land on different ones.
+      # `loadfile` keeps every test in a file on one worker, which restores the
+      # isolation the suite was written against.
+      #
+      # The guard that this stays honest is the count: after `uv sync
+      # --all-packages --frozen`, serial and parallel both report 2312 passed /
+      # 419 skipped (79.7s vs 30.7s locally). A parallel run that quietly
+      # collected FEWER tests is the failure mode worth fearing here — it would
+      # look like a speedup — so the count is what to re-check if this line is
+      # ever edited, not the wall clock.
+      - run: uv run pytest -q -n auto --dist loadfile
       # The framework-native sandbox suites EXECUTE generated code through
       # LocalSubprocessSandbox, so they need the SDK extras that the sync above
       # deliberately leaves out. Without this step they skip — and they are the
