@@ -21,6 +21,10 @@ const PUBLIC_PATHS = [
   // Logout must remain reachable after the session cookie is gone; the route
   // itself makes the operation idempotent for already-signed-out visitors.
   "/auth/sign-out",
+  // The header's sign-in link on a cached page. It must be reachable without a
+  // session for the same reason /auth/callback is: it is what a signed-out
+  // reader clicks to get one.
+  "/auth/sign-in",
   "/pricing",
   "/repository",
   "/workspace",

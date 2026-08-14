@@ -173,6 +173,15 @@ jobs:
         run: pnpm --filter @majorana/web build
       - name: no secret-shaped strings in browser-served files
         run: node scripts/check-client-bundle-secrets.mjs --dist apps/web/.next
+      # Rides this job's existing build rather than adding one. The check needs
+      # the route table, which only `next build` produces, and this is the only
+      # job in the repository that runs it — `ci.yml` runs lint, typecheck and
+      # test, so a page silently going dynamic is invisible to every required
+      # check. Same self-test-before-believed rule as the scanner above.
+      - name: routes that must be prerendered still are
+        run: |
+          node scripts/check-static-routes.mjs --self-test
+          node scripts/check-static-routes.mjs --dist apps/web/.next
 
   # AGENTS.md hard rule 1 — migrations, contracts, sandbox, workflows and auth are
   # "never merged on subagent/Codex authority". That rule names `.github/CODEOWNERS`
