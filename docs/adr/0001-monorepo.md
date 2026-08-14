@@ -1,6 +1,13 @@
-# ADR-0001: Single monorepo `EshMis/majorana`
+# ADR-0001: Single monorepo
 
 **Date:** 2026-07-09 · **Status:** accepted
+
+> **Amendment, 2026-08-14 — where the monorepo lives, and who can see it.** The decision
+> below is unchanged; two facts in its wording are not. The repository was `EshMis/majorana`
+> and is being transferred to **`LeonaQuantum/leona`** (owner rulings ai-ops#46 and #70), and
+> it is **public**, not private as the Decision line says — it went public before the launch
+> work and the sentence was never revisited. Neither changes the argument for one repo, so
+> the original text is left as written rather than edited in place; this note is the record.
 **Context:** Rebuild replaces two legacy repos (nameko, quepo). Solo founder + agent-driven
 development: cross-cutting changes (contracts → API → UI) are the common case, and agents
 pay context cost per repo boundary. Owner confirmed monorepo 2026-07-09.
