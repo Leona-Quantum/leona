@@ -8,8 +8,8 @@
 #
 # ## Why this exists
 #
-# Read from the Vercel usage console on 2026-08-15, current billing cycle
-# (Aug 11 -> Sep 11), four days in:
+# Read from the Vercel usage console on 2026-08-14 (UTC), current billing
+# cycle (Aug 11 -> Sep 11), four days in:
 #
 #   Build CPU Minutes    129 hours   $26.54   <- 57% of everything
 #   Observability Events 7.64M       $9.16
@@ -65,22 +65,37 @@ if [ -z "$BASE" ]; then
   build "no VERCEL_GIT_PREVIOUS_SHA, so the change set is unknown"
 fi
 
-CHANGED="$(git diff --name-only "$BASE" "$HEAD_SHA" 2>/dev/null)"
-if [ $? -ne 0 ] || [ -z "$CHANGED" ]; then
+if ! CHANGED="$(git diff --name-only "$BASE" "$HEAD_SHA" 2>/dev/null)" || [ -z "$CHANGED" ]; then
   build "could not compute a diff from $BASE to $HEAD_SHA"
 fi
 
+# Every `grep` below reads a HERE-STRING, never a pipe. `grep -q` exits at its
+# first match, which can SIGPIPE a writer that is still going; under
+# `pipefail` the pipeline then reports 141 rather than 0, and an `if` reads
+# that as "no match". On a long enough change list that would silently skip
+# the contracts guard immediately below — the one check that must never be
+# missed. A here-string is not a pipeline, so the hazard does not exist.
+
 # The one Python path the web build compiles against. Checked before the
-# blacklist because `packages/py/` is inside it.
-if printf '%s\n' "$CHANGED" | grep -qE '^packages/py/contracts/'; then
+# irrelevant-set test, and listed there by its siblings rather than by its
+# parent, so this can never be shadowed.
+if grep -qE '^packages/py/contracts/' <<<"$CHANGED"; then
   build "packages/py/contracts changed — contracts-gen regenerates the web app's types"
 fi
 
 # Paths that cannot affect the web bundle. Anything outside this set builds.
-IRRELEVANT='^(services/api/|services/worker/|packages/py/|evals/|infra/|db/|docs/|\.github/|[^/]*\.md$)'
+#
+# The Python packages are listed INDIVIDUALLY rather than as `packages/py/`.
+# The parent form was fail-CLOSED: a package added under `packages/py/` later
+# that the web app did come to depend on would have been silently skipped
+# until someone remembered to edit this line. Naming the nine that exist today
+# means a tenth is simply unrecognised, and unrecognised means build.
+IRRELEVANT='^(services/api/|services/worker/'
+IRRELEVANT="${IRRELEVANT}|packages/py/(agent|estimation|frameworks|llm|openqasm|qpu|sandbox|verification)/"
+IRRELEVANT="${IRRELEVANT}|evals/|infra/|db/|docs/|\.github/|[^/]*\.md$)"
 
-if printf '%s\n' "$CHANGED" | grep -qvE "$IRRELEVANT"; then
-  build "$(printf '%s\n' "$CHANGED" | grep -vE "$IRRELEVANT" | head -3 | tr '\n' ' ')"
+if grep -qvE "$IRRELEVANT" <<<"$CHANGED"; then
+  build "$(grep -vE "$IRRELEVANT" <<<"$CHANGED" | head -3 | tr '\n' ' ')"
 fi
 
-skip "$(printf '%s\n' "$CHANGED" | wc -l | tr -d ' ') changed path(s), none of which the web app builds from"
+skip "$(wc -l <<<"$CHANGED" | tr -d ' ') changed path(s), none of which the web app builds from"
