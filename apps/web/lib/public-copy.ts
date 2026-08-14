@@ -259,11 +259,13 @@ export const HOME_COPY: Record<PublicLocale, {
  *
  * **The 50 moved to `/account`**, where a signed-in reader sees it beside their
  * own run and artifact allowances, read from `DEFAULT_PROJECT_ARTIFACT_LIMIT`.
- * It was already shown live in two places — the owner's editable limit input in
- * `components/project-share-dialog.tsx` and the "N of 50 circuits" line in
- * `app/(app)/shared/[projectId]/shared-project-view.tsx` — but both are inside
- * a project that is already shared, which is the wrong moment to learn what the
- * limit is.
+ * A number that looks like it was already shown live in two places — the owner's
+ * editable limit input in `components/project-share-dialog.tsx` and the
+ * "N of M circuits" line in
+ * `app/(app)/shared/[projectId]/shared-project-view.tsx`. Neither is this
+ * constant: both render the PROJECT's own limit, which equals 50 only while
+ * nobody has changed it, and both sit inside a project that is already shared —
+ * the wrong moment to learn what the limit is.
  *
  * ## No card says "unlimited artifacts", however it is phrased (ai-ops#77)
  *
