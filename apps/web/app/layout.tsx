@@ -1,5 +1,6 @@
 import type { CSSProperties, ReactNode } from "react";
 import type { Metadata } from "next";
+import { Analytics } from "@vercel/analytics/next";
 import { Instrument_Sans, Instrument_Serif, JetBrains_Mono } from "next/font/google";
 import { THEME_STORAGE_KEY } from "../lib/theme";
 import { LEGACY_PUBLIC_LOCALE_COOKIE, PUBLIC_LOCALE_COOKIE } from "../lib/public-locale";
@@ -88,7 +89,13 @@ export default function RootLayout({ children }: { children: ReactNode }) {
         <script dangerouslySetInnerHTML={{ __html: themeScript }} />
         <script dangerouslySetInnerHTML={{ __html: localeScript }} />
       </head>
-      <body>{children}</body>
+      <body>
+        {children}
+        {/* Vercel Web Analytics: cookie-free pageview beacon (ai-ops#92). The
+            script no-ops when the project's Analytics feature is off, so this
+            is safe to render unconditionally rather than env-gating it. */}
+        <Analytics />
+      </body>
     </html>
   );
 }
