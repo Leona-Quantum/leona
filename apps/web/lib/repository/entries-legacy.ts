@@ -1099,9 +1099,19 @@ export const RAW_PUBLIC_REPOSITORY_ENTRIES: PublicRepositoryEntry[] = [
     slug: "quantum-teleportation",
     title: "Quantum teleportation",
     titleJa: "量子テレポーテーション",
-    category: "states",
-    categoryLabel: "States",
-    categoryLabelJa: "状態",
+    // Was `category: "states"` until ai-ops 84 (2026-08-14). Teleportation is a
+    // protocol — it consumes a shared Bell pair and two classical bits and
+    // produces a recovered state elsewhere; it is not itself a named
+    // preparation the way `bell-state-qiskit` is. `category: "states"` put it
+    // in the browse tab's States count (13) while `algorithmFamily:
+    // "Entanglement and communication"` already resolved its shelf role to
+    // `algorithm-reference` (FAMILY_RULES in topics.ts), which is not one of
+    // the shelf's three object sections at all — so it counted as a state on
+    // one surface and as nothing on the other. `category: "algorithms"` agrees
+    // with the role every other field on this record already implies.
+    category: "algorithms",
+    categoryLabel: "Algorithms",
+    categoryLabelJa: "アルゴリズム",
     algorithmFamily: "Entanglement and communication",
     framework: "Qiskit",
     status: "verified_caveats",

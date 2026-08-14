@@ -425,12 +425,20 @@ export const INGREDIENT_ABSTAIN_RULES: readonly AbstainRule[] = [
       "Rotation gate",
       "Phase gate",
       "Universal single-qubit gate",
-      // Filed as operators by role and gates by every other reading: the three
-      // Pauli records. `pauli-y-gate` and `pauli-z-gate` even carry
-      // `category: "gates"` while their family resolves to the `operator` role —
-      // one of the three category/role disagreements in the corpus, measured
-      // 2026-08-13. The abstention is the same either way, which is the useful
-      // property: this join does not have to settle that disagreement first.
+      // Still keyed on the family, not the role, which is what makes this rule
+      // indifferent to a disagreement ai-ops 84 fixed elsewhere (2026-08-14):
+      // `pauli-y-gate` and `pauli-z-gate` used to resolve to the `operator`
+      // role while carrying `category: "gates"` — one of three category/role
+      // disagreements in the corpus, measured 2026-08-13 — because `FAMILY_RULES`
+      // resolves every `"Pauli operator"` record to `operator` by default and
+      // nothing corrected the two of them specifically. `topics.ts`'s
+      // `TOPIC_OVERRIDES` now does, so they resolve to `gate-primitive` and sit
+      // in the shelf's Gates section like every other gate. `pauli-x-operator`
+      // is unaffected — `category: "operators"` already agreed with its role —
+      // and this family entry is *why* all three still abstain identically
+      // regardless of which role each one carries: the join does not have to
+      // settle a role/category disagreement (or notice one was fixed) to know
+      // none of them are a state the map can name.
       "Pauli operator",
     ] as const
   ).map((family) => ({
