@@ -14,45 +14,28 @@ import { canonicalLocaleTarget } from "./lib/canonical-locale-redirect";
 import { isLocalDevAuthEnabled } from "./lib/local-dev-auth";
 import { pageviewLoggingEnabled, pageviewSignal } from "./lib/pageview-signal";
 import { LEGACY_PUBLIC_LOCALE_COOKIE, parsePublicLocale, PUBLIC_LOCALE_COOKIE, PUBLIC_LOCALES } from "./lib/public-locale";
-import { isPublicDemoEnabled } from "./lib/public-demo";
+import { isPublicPath, workosUnauthenticatedPaths } from "./lib/public-paths";
 import { isRoutedPath, LOCALE_ROUTES } from "./lib/routed-paths";
 import { canonicalHostRedirect } from "./lib/site-origin";
 
-const PUBLIC_PATHS = [
-  "/",
-  "/auth/callback",
-  // Logout must remain reachable after the session cookie is gone; the route
-  // itself makes the operation idempotent for already-signed-out visitors.
-  "/auth/sign-out",
-  // The header's sign-in link on a cached page. It must be reachable without a
-  // session for the same reason /auth/callback is: it is what a signed-out
-  // reader clicks to get one.
-  "/auth/sign-in",
-  "/pricing",
-  "/repository",
-  "/workspace",
-  "/open-source",
-  "/contact",
-  "/privacy",
-  "/terms",
-  ...(isPublicDemoEnabled() ? ["/demo"] : []),
-];
-
-function isPublicPath(pathname: string): boolean {
-  return PUBLIC_PATHS.some((path) => path === "/" ? pathname === "/" : pathname === path || pathname.startsWith(`${path}/`));
-}
-
-// The two matchers have DIFFERENT syntaxes and must be kept in step deliberately.
-// isPublicPath() above treats each entry as an exact path plus its subtree, so
-// "/repository" already covers "/repository/<slug>". authkitMiddleware instead
-// uses Next.js matcher glob syntax, where "/repository" matches that path ONLY —
-// so the subtree has to be spelled out as a pattern.
+// The public list and its glob form both live in lib/public-paths.ts, which is
+// where they can be tested — this file cannot be loaded by `node --test`,
+// because authkit-nextjs resolves `next/cache`.
 //
-// This previously enumerated every entry path by importing the static corpus,
-// which forced the entire repository dataset into the Edge bundle at cold start
-// and made the middleware a build-time consumer of data that Slice D moves behind
-// an async API call. The glob is equivalent and carries no data dependency.
-const WORKOS_UNAUTHENTICATED_PATHS = [...PUBLIC_PATHS, "/repository/:path*"];
+// The two matchers have DIFFERENT syntaxes: isPublicPath() treats each entry as
+// an exact path plus its subtree, while authkitMiddleware uses Next.js matcher
+// glob syntax, where "/repository" matches that path ONLY. They used to be
+// written out separately and had silently disagreed about every subtree except
+// /repository — so a page under /auth/sign-in/ was public to us and gated by
+// AuthKit. workosUnauthenticatedPaths() now derives the glob form from the same
+// list, and public-paths.test.ts asserts the two agree.
+//
+// The glob deliberately carries no data dependency: this previously enumerated
+// every entry path by importing the static corpus, which forced the entire
+// repository dataset into the Edge bundle at cold start and made the middleware
+// a build-time consumer of data that Slice D moves behind an async API call.
+// Spread: authkitMiddleware's option is a mutable `string[]`.
+const WORKOS_UNAUTHENTICATED_PATHS = [...workosUnauthenticatedPaths()];
 
 const workosMiddleware = authkitMiddleware({
   middlewareAuth: {
