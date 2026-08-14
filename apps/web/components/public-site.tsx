@@ -5,6 +5,7 @@ import { PUBLIC_SHELL_COPY, type PublicLocale } from "../lib/public-locale";
 import { getPublicLocale } from "../lib/public-locale-server";
 import { LanguageToggle } from "./language-toggle";
 import { ThemeToggle } from "./theme-toggle";
+import { AuthStatus } from "./auth-status";
 import { CONTACT_EMAIL, CONTACT_MAILTO } from "../lib/public-contact";
 
 export { CONTACT_EMAIL, CONTACT_MAILTO } from "../lib/public-contact";
@@ -44,12 +45,23 @@ export async function PublicSite({
    * control somewhere of its own — `/repository/layers` puts both in the
    * information box's footer.
    *
-   * `"static"` is the full chrome with no per-visitor part: it never calls
-   * `getMajoranaAuth()` or `getMajoranaSignInUrl()`, both of which reach a
-   * Dynamic API and so make the whole page uncacheable. The header's
-   * call-to-action becomes the constant `/auth/sign-in`, which redirects. The
-   * cost is real and belongs in the open: a signed-in reader on a cached page
-   * is shown the signed-out header until they navigate somewhere personal.
+   * `"static"` is the full chrome with no per-visitor part IN THE SERVER
+   * RENDER: it never calls `getMajoranaAuth()` or `getMajoranaSignInUrl()`,
+   * both of which reach a Dynamic API and so make the whole page uncacheable.
+   * The HTML this branch produces is the same for every visitor and holds on
+   * the CDN.
+   *
+   * The sign-in/sign-out control is NOT frozen at "signed out" the way it used
+   * to be, though (ai-ops#94 — a signed-in reader saw a different sign-in
+   * status on this page than on `/repository`, which is `chrome="full"` and
+   * always correct, and the inconsistency was confusing rather than merely
+   * imprecise). `<AuthStatus>` renders that one control client-side: it starts
+   * in the same signed-out state this render produces — so hydration matches
+   * and the cached HTML is unaffected — then asks `/api/auth/session` once
+   * mounted and swaps in the real state a moment later if the visitor turns
+   * out to be signed in. The page stays static; only that one control learns
+   * who is reading it, and it does so without ever being in the cached
+   * payload itself.
    */
   chrome?: "full" | "none" | "static";
 }) {
@@ -105,14 +117,26 @@ export async function PublicSite({
           </nav>
           {showLanguageToggle ? <LanguageToggle locale={resolvedLocale} /> : null}
           <ThemeToggle locale={resolvedLocale} />
-          {user ? (
-            <a className="mj-public-nav-signout" href="/auth/sign-out">
-              {copy.actions.signOut}
-            </a>
-          ) : null}
-          <a className="mj-public-nav-primary" href={primaryAction.href}>
-            {primaryAction.label}
-          </a>
+          {chrome === "static" ? (
+            <AuthStatus
+              signOutLabel={copy.actions.signOut}
+              signInLabel={copy.actions.signIn}
+              workspaceLabel={copy.actions.workspace}
+              talkLabel={copy.actions.talk}
+              fallbackSignInHref={signInHref ?? "/auth/sign-in"}
+            />
+          ) : (
+            <>
+              {user ? (
+                <a className="mj-public-nav-signout" href="/auth/sign-out">
+                  {copy.actions.signOut}
+                </a>
+              ) : null}
+              <a className="mj-public-nav-primary" href={primaryAction.href}>
+                {primaryAction.label}
+              </a>
+            </>
+          )}
         </header>
 
         {children}
