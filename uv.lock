@@ -43,7 +43,7 @@ wheels = [
 
 [[package]]
 name = "amazon-braket-default-simulator"
-version = "1.39.5"
+version = "1.39.9"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "amazon-braket-schemas" },
@@ -53,12 +53,11 @@ dependencies = [
     { name = "opt-einsum" },
     { name = "pydantic" },
     { name = "scipy" },
-    { name = "setuptools" },
     { name = "sympy" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/2c/77/690f9f26cf076350c0697e7b85ae6b6d1f2e4c9a815e2e25893ed900c7cd/amazon_braket_default_simulator-1.39.5.tar.gz", hash = "sha256:8dbc2ee30d13e33af593d7e93ac58786a9467003b4f15368c7269ce86cdd56e2", size = 204241, upload-time = "2026-06-22T16:15:40.985Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/14/b8/ddd91e89636e5d34eea1b15689fdddc3bd1f02137f20b3655ee180f3a989/amazon_braket_default_simulator-1.39.9.tar.gz", hash = "sha256:38e1c3a61dcb11736c7ec9f04ea1ae4f5fafb08b6bcd4c3629d4984b6d7be129", size = 204886, upload-time = "2026-08-06T22:47:17.929Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/d9/1c/c015ef20aeb90e4231e6013bce93a2ee5d3522e8e780bfa69d1bb4d25d2a/amazon_braket_default_simulator-1.39.5-py3-none-any.whl", hash = "sha256:e2419d116e0df39e0990074a6e178e3b62e967b616e5fecf8e01642c42b194fc", size = 246369, upload-time = "2026-06-22T16:15:39.407Z" },
+    { url = "https://files.pythonhosted.org/packages/57/e7/8e365ab79967d281a2066c0e1b6da68dc578f951f25a8d5e304557b9ac68/amazon_braket_default_simulator-1.39.9-py3-none-any.whl", hash = "sha256:c57b18e74e3636967d59ec562ab4ce5df60e794cca8dc45cb8645960f801c4f3", size = 246995, upload-time = "2026-08-06T22:47:16.057Z" },
 ]
 
 [[package]]
@@ -1524,7 +1523,7 @@ requires-dist = [{ name = "majorana-contracts", editable = "packages/py/contract
 
 [package.metadata.requires-dev]
 dev = [
-    { name = "amazon-braket-default-simulator", specifier = "==1.39.5" },
+    { name = "amazon-braket-default-simulator", specifier = "==1.39.9" },
     { name = "amazon-braket-sdk", specifier = "==1.122.0" },
     { name = "cirq-core", specifier = ">=1.4" },
     { name = "httpx", specifier = ">=0.27" },
@@ -3104,15 +3103,6 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/60/31/b7341f156a5f6f36f0b4845d6f1c28a2ae4799171dba7007f3a1e9b234b4/sentry_sdk-2.64.0.tar.gz", hash = "sha256:68be2c29e14ae310f8a39e1a79916b6d85c6cb41dcce789d14ff05fe293e4c55", size = 921020, upload-time = "2026-06-30T08:13:47.682Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/36/a8/3fb9a4319efa3b26f5be0e90e6d8918df43fa7c7e977d26390f589501d82/sentry_sdk-2.64.0-py3-none-any.whl", hash = "sha256:715ea91ca860a819e8d8a50a7bde3a80d0df3b4ed7b6660a20fb9a2d084188f1", size = 498901, upload-time = "2026-06-30T08:13:45.566Z" },
-]
-
-[[package]]
-name = "setuptools"
-version = "81.0.0"
-source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/0d/1c/73e719955c59b8e424d015ab450f51c0af856ae46ea2da83eba51cc88de1/setuptools-81.0.0.tar.gz", hash = "sha256:487b53915f52501f0a79ccfd0c02c165ffe06631443a886740b91af4b7a5845a", size = 1198299, upload-time = "2026-02-06T21:10:39.601Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/e1/e3/c164c88b2e5ce7b24d667b9bd83589cf4f3520d97cad01534cd3c4f55fdb/setuptools-81.0.0-py3-none-any.whl", hash = "sha256:fdd925d5c5d9f62e4b74b30d6dd7828ce236fd6ed998a08d81de62ce5a6310d6", size = 1062021, upload-time = "2026-02-06T21:10:37.175Z" },
 ]
 
 [[package]]
