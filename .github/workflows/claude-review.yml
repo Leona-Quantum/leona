@@ -1,0 +1,78 @@
+name: claude-review
+
+# Automated PR review, running on the Claude subscription rather than a metered API bill.
+#
+# Why this and not a SaaS reviewer: CodeRabbit's free tier is PR *summaries* (1/dev/hour),
+# not review — real review is Pro at $24-30/dev/mo. Of the free alternatives, Copilot review
+# and Sourcery are public-repos-only, Codacy is IDE-only, Cursor BugBot went usage-based in
+# June 2026, and Korbit's free tier no longer exists. Self-hosting PR-Agent against a Max
+# subscription is not an option either: Anthropic's terms do not permit third-party tools to
+# route requests through Pro/Max credentials. This action is the sanctioned route — Anthropic
+# documents that authenticating with an OAuth token makes runs draw on the subscription.
+#
+# INERT UNTIL ARMED. The job is gated on a repository *variable*, not a secret, because a
+# job-level `if` cannot read secrets. Nothing runs until both of these are done:
+#
+#   1. `claude setup-token`  — mints a one-year OAuth token, printed once and stored nowhere.
+#      Add it as the repository secret CLAUDE_CODE_OAUTH_TOKEN.
+#   2. `gh variable set CLAUDE_REVIEW_ENABLED --body true`
+#
+# To switch it off again, set that variable to anything but `true`. No file change needed.
+#
+# Two costs worth knowing before arming it. It draws on the SAME 5-hour and 7-day Max window
+# as interactive sessions — there is no separate CI pool — so a busy review day competes with
+# the desk. And it burns private-repo Actions minutes on top of six existing workflows.
+# It triggers on `opened` and `ready_for_review` only, never `synchronize`, so a branch that
+# is pushed to ten times is reviewed once rather than ten times.
+#
+# Blast-radius: adds a workflow file. Not a required check — the eight required checks are
+# unchanged, so a failure here can never block a merge.
+
+on:
+  pull_request:
+    types: [opened, ready_for_review]
+
+permissions:
+  contents: read
+  pull-requests: write
+  id-token: write
+
+concurrency:
+  group: claude-review-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  review:
+    if: vars.CLAUDE_REVIEW_ENABLED == 'true' && github.event.pull_request.draft == false
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with: { fetch-depth: 0 }
+
+      - uses: anthropics/claude-code-action@v1
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          prompt: |
+            Review this pull request and post your findings as PR comments.
+
+            Report a finding only when you can name the input or state that makes it go
+            wrong. Skip style, formatting and naming — the lint chain owns those, and a
+            review that lists them buries the one comment worth reading.
+
+            What this repository actually gets wrong, from its own history:
+            - A guard that does not guard: a check whose condition can never be false, or
+              that runs after the thing it protects.
+            - Counting and coverage claims in comments or docs that the code does not
+              support.
+            - Duplicated logic where one copy was fixed and the other was not. When you see
+              a fix, grep for its silent twins.
+            - "Nothing downstream reads this" — usually a claim about where someone looked.
+              The reader is often in the other service.
+            - Tests that assert the mock rather than the behaviour, and tests that pass
+              because a fixture is stale rather than because the code is right.
+            - A `#NNN` PR reference written in a comment: the `check-raw-hex` gate reads it
+              as a CSS colour and fails the lint chain. Flag it and say to write `PR NNN`.
+
+            Be brief. No summary of what the PR does — the author knows. If you find
+            nothing worth raising, say exactly that in one line and stop.
