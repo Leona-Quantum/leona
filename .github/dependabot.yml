@@ -46,8 +46,16 @@ updates:
       # which member broke it, which matters most for the framework packages.
       npm-minor-and-patch:
         patterns: ["*"]
-        exclude-patterns: ["next", "react", "react-dom", "typescript", "eslint"]
+        exclude-patterns: ["next", "react", "react-dom", "@types/react", "@types/react-dom", "typescript", "eslint"]
         update-types: ["minor", "patch"]
+      # React and react-dom are one release, and `ui-visual` enforces it:
+      # "Incompatible React versions: the `react` and `react-dom` packages must
+      # have the exact same version". Split across two PRs, EACH one is red on
+      # its own and neither can go green first — the pair deadlocks, which is
+      # what happened to #579/#580 on the first run. They travel together, types
+      # included, so the group is installable at every point.
+      react:
+        patterns: ["react", "react-dom", "@types/react", "@types/react-dom"]
     commit-message:
       prefix: "chore"
       include: scope
@@ -99,6 +107,24 @@ updates:
     open-pull-requests-limit: 5
     cooldown:
       default-days: 2
+    groups:
+      # ONE PR for the whole ecosystem, and the reason is `blast-radius`, not tidiness.
+      #
+      # Every action lives in `.github/workflows/`, which is a blast-radius path
+      # (CODEOWNERS), so `check-blast-radius.mjs` requires a `Blast-radius:` line
+      # in the PR body. Dependabot does not write one and cannot be taught to, so
+      # EVERY actions PR fails a REQUIRED check and none of them can merge — five
+      # did on the first run (#573-#577). The check is doing its job; the fix is
+      # not to exempt the bot from it.
+      #
+      # A human adds the line and pushes (or reopens) to re-fire the event, since
+      # the workflow reads the body from the event payload and a later edit alone
+      # changes nothing. That is a fine weekly chore for ONE PR and an absurd one
+      # for five, so: one group, majors included. Majors are the whole point here
+      # — a SHA pin is invisible when it goes stale, and splitting them out would
+      # just recreate the pile.
+      github-actions:
+        patterns: ["*"]
     commit-message:
       prefix: "ci"
       include: scope
