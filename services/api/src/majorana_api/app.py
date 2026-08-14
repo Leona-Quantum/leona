@@ -225,7 +225,23 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 extra={"reason": reason},
             )
         response = await call_next(request)
-        response.headers[CALLER_TRUST_HEADER] = trust_header[CALLER_TRUST_HEADER]
+        # `routes/catalog.py` marks its six public GETs `Cache-Control: public`
+        # (via `_set_public_cache_control`) because they are anonymous,
+        # unauthenticated and identical for every caller. A shared cache is
+        # then free to store one such response and replay it to a DIFFERENT
+        # caller than the one that produced it — but CALLER_TRUST_HEADER
+        # describes THIS request's caller (our own renderer vs. an anonymous
+        # one), not the payload, so replaying it would attach the wrong
+        # verdict to whoever the cache serves next. Nothing downstream reads
+        # this header (it exists to be read back by a human verifying a
+        # deploy, per rate_limit.py), so a stale verdict is cosmetic rather
+        # than a security hole — but it is still a wrong answer sitting on a
+        # response, and leaving it invites something to start trusting it
+        # later. Stripped rather than `Vary`'d: the verdict never changes the
+        # body, so varying the cache key on a header nothing reads would only
+        # fragment the cache for no benefit.
+        if "public" not in response.headers.get("Cache-Control", ""):
+            response.headers[CALLER_TRUST_HEADER] = trust_header[CALLER_TRUST_HEADER]
         return response
 
     @app.exception_handler(HTTPException)

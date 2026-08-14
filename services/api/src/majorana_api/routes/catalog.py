@@ -68,6 +68,62 @@ CATALOG_ENTRIES_MAX_LIMIT = 500
 #: server stopped early", which is otherwise indistinguishable from the outside.
 CATALOG_TOTAL_HEADER = "X-Catalog-Total"
 
+#: Mirrors `CATALOG_REVALIDATE_SECONDS` in `apps/web/lib/catalog-revalidate.ts`.
+#:
+#: (Its own module rather than `repository-source.ts`, which is where the fetch
+#: lives: that file reaches `./catalog-pagination` through an extensionless
+#: import, and bare `node --test` cannot resolve those, so every test that
+#: imported the constant died before running an assertion.)
+#:
+#: That constant is the staleness the site has already accepted for this data:
+#: `repository-source.ts` revalidates its fetch of these same six routes every
+#: 300 seconds, so an API response cached no longer than that cannot make the
+#: renderer's own view any staler than it already agreed to be.
+#:
+#: There is no shared constants module between TypeScript and Python, so the two
+#: values are not derived from one source. The asymmetry is what matters: a
+#: TIGHTER max-age here is harmless (extra cache misses), a LOOSER one is not —
+#: a shared cache would then hold a response older than the window the site
+#: agreed to, and the API would become the stale side without anything saying
+#: so. `test_catalog_cache_control.py` reads the TypeScript constant and fails
+#: on the unsafe direction, rather than leaving it to be kept in step by hand.
+CATALOG_CACHE_MAX_AGE_SECONDS = 300
+
+#: Grace window in which a shared cache may keep serving a just-expired response
+#: while it revalidates in the background, rather than making the caller that
+#: triggers the refresh wait on a fresh DB read plus the cost/profile
+#: computation. Sized as a fifth of the max-age: enough to absorb the
+#: revalidation itself and a thundering herd landing on the same expiry, without
+#: meaningfully extending the staleness budget `CATALOG_CACHE_MAX_AGE_SECONDS`
+#: already spends. Not mirrored from the web constant — `stale-while-revalidate`
+#: is an HTTP cache-layer knob with no Next.js `fetch` counterpart in the file
+#: it mirrors, so there is nothing on that side to stay equal to.
+CATALOG_CACHE_STALE_WHILE_REVALIDATE_SECONDS = CATALOG_CACHE_MAX_AGE_SECONDS // 5
+
+
+def _set_public_cache_control(response: Response) -> None:
+    """Mark a response safe for a SHARED cache to store and replay to anyone.
+
+    Call this only from a route that is anonymous, unauthenticated and
+    identical for every caller. Every route in this file qualifies: scope comes
+    exclusively from `PublicCatalogScope` (auth/catalog_deps.py), which is
+    derived solely from server settings and never from the caller, so there is
+    nothing in a response here that could vary by who is asking. A route added
+    to this file in future that reads anything caller-specific — a header, a
+    workspace-scoped token — must not call this.
+
+    A single helper rather than six copy-pasted header dicts so the policy (the
+    two constants above, and the `public` directive itself) has one place to
+    change. `app.py`'s rate-limit middleware inspects the `public` directive
+    this sets to decide whether to strip `X-Majorana-Caller-Trust` from the
+    same response — see the comment there for why a shared cache must never
+    replay that header.
+    """
+    response.headers["Cache-Control"] = (
+        f"public, max-age={CATALOG_CACHE_MAX_AGE_SECONDS}, "
+        f"stale-while-revalidate={CATALOG_CACHE_STALE_WHILE_REVALIDATE_SECONDS}"
+    )
+
 
 def _precision_conflict(exc: ContradictoryPrecision) -> str:
     """Say which two values disagreed, because the caller supplied both."""
@@ -141,6 +197,7 @@ async def list_catalog_entries(
     endpoint, and refusing a caller who asked for too much would turn a
     harmless mistake into an error page on the public site.
     """
+    _set_public_cache_control(response)
     total = await catalog_repo.count_public_catalog_entries(
         scope, session, authority=settings.catalog_authority
     )
@@ -165,6 +222,7 @@ async def list_catalog_estimates(
     scope: PublicCatalogScope,
     session: DbSession,
     settings: _Settings,
+    response: Response,
     assumptions: Annotated[str | None, Query()] = None,
     # `None`, not the default value: `resolve_assumptions` has to be able to tell
     # "the caller chose this precision" from "nobody said", because an identity
@@ -188,6 +246,7 @@ async def list_catalog_estimates(
     integer-only — the whole corpus costs single-digit milliseconds — so this
     stays safe on an anonymous route.
     """
+    _set_public_cache_control(response)
     try:
         resolved = resolve_assumptions(assumptions, epsilon)
     except UnknownAssumptionSet as exc:
@@ -210,6 +269,7 @@ async def list_catalog_profiles(
     scope: PublicCatalogScope,
     session: DbSession,
     settings: _Settings,
+    response: Response,
 ) -> CatalogProfileList:
     """Every published entry's circuit size (R1).
 
@@ -222,6 +282,7 @@ async def list_catalog_profiles(
     rankable against every other unconditionally. The arithmetic is a single pass
     over each step list, which is why this stays safe on an anonymous route.
     """
+    _set_public_cache_control(response)
     entries = await _whole_published_corpus(scope, session, settings, derivation="profile")
     return profile_list_for_records([(entry.slug, entry.record) for entry in entries])
 
@@ -232,7 +293,9 @@ async def get_catalog_entry(
     scope: PublicCatalogScope,
     session: DbSession,
     settings: _Settings,
+    response: Response,
 ) -> PublicCatalogEntry:
+    _set_public_cache_control(response)
     return await catalog_repo.get_public_catalog_entry(
         scope, session, slug, authority=settings.catalog_authority
     )
@@ -244,6 +307,7 @@ async def get_catalog_entry_estimate(
     scope: PublicCatalogScope,
     session: DbSession,
     settings: _Settings,
+    response: Response,
     assumptions: Annotated[
         str | None,
         Query(
@@ -300,6 +364,7 @@ async def get_catalog_entry_estimate(
     The 404 comes from the same lookup the detail route uses, so a slug that
     resolves there resolves here.
     """
+    _set_public_cache_control(response)
     entry = await catalog_repo.get_public_catalog_entry(
         scope, session, slug, authority=settings.catalog_authority
     )
@@ -323,6 +388,7 @@ async def get_catalog_entry_profile(
     scope: PublicCatalogScope,
     session: DbSession,
     settings: _Settings,
+    response: Response,
 ) -> CatalogEntryProfile:
     """This entry's circuit size, or why it has none (R1).
 
@@ -336,6 +402,7 @@ async def get_catalog_entry_profile(
     The 404 comes from the same lookup the detail and estimate routes use, so a
     slug that resolves there resolves here.
     """
+    _set_public_cache_control(response)
     entry = await catalog_repo.get_public_catalog_entry(
         scope, session, slug, authority=settings.catalog_authority
     )
