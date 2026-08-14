@@ -91,7 +91,18 @@ def init_telemetry(service_name: str) -> TracerProvider | None:
             # handle other people's provider credentials.
             include_local_variables=False,
             before_send=_scrub_event,
+            # MAJORANA_RELEASE is the deploy's short git SHA (deploy.yml), so an
+            # event can be tied to the exact commit that produced it. Absent in
+            # local dev/CI; sentry-sdk treats `release=None` as no release.
+            release=os.environ.get("MAJORANA_RELEASE"),
         )
+        # api and worker share one Sentry project (docs/runbooks/secrets.md) —
+        # both are majorana-api's dependency tree and neither owns a project of
+        # its own. Without this tag, "which service produced this event" is a
+        # question only the stack trace's file paths can answer, and workers and
+        # the API import from mostly-disjoint packages, so it usually can. It
+        # should not have to.
+        sentry_sdk.set_tag("majorana_service", service_name)
 
     if not os.environ.get("OTEL_EXPORTER_OTLP_ENDPOINT"):
         return None
