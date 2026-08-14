@@ -303,23 +303,56 @@ jobs:
           test "$code" = "401" || { echo "/v1/me returned $code, expected 401"; exit 1; }
           count=$(curl -sS "$url/v1/catalog/entries?view=list" | jq 'length')
           test "$count" -gt 0 || { echo "catalog returned $count entries"; exit 1; }
-          # The trusted-caller verdict must be READABLE, and for an unauthenticated
-          # curl it must say `anonymous`. This asserts the mechanism shipped, not
-          # that the renderer's secret is right — only the renderer can prove that,
-          # and it does, in `lib/trusted-caller.ts::reportCallerTrust`.
+          # A publicly cacheable catalog GET must be marked `public` and must NOT
+          # carry the caller-trust verdict. The verdict describes the CALLER, so a
+          # shared cache replaying a stored response would attach one caller's
+          # verdict to another; the middleware strips it from exactly the
+          # responses it marks public (app.py's `_anon_rate_limit`).
           #
-          # Deliberately NOT asserting `trusted` here. This job holds no token, so
-          # the only way to make that pass would be to hand the deploy pipeline the
-          # catalog secret — and a gate that needs a secret to go green is a gate
-          # that gets deleted the first time the secret rotates.
-          trust=$(curl -sSI "$url/v1/catalog/entries?view=list" \
+          # THIS USED TO BE `curl -sSI`, AND THAT IS A HEAD REQUEST. These routes
+          # answer HEAD with **405**, a 405 carries no Cache-Control, and the
+          # middleware therefore leaves the verdict on it — so the assertion below
+          # passed on a Method Not Allowed and never once looked at the catalog
+          # response it names. It would have gone on passing with the header
+          # removed from every GET route in the service. Verified against the
+          # running service, 2026-08-15: `curl -sSI .../v1/catalog/entries` is
+          # `HTTP/2 405` with `x-majorana-caller-trust: anonymous`.
+          headers=$(curl -sS -D - -o /dev/null "$url/v1/catalog/entries?view=list" | tr -d '\r')
+          grep -qiE '^cache-control:.*\bpublic\b' <<<"$headers" || {
+            echo "::error::a public catalog GET is not marked publicly cacheable"
+            printf '%s\n' "$headers" | grep -i '^cache-control:' || echo "  (no Cache-Control at all)"
+            exit 1
+          }
+          # `if` rather than `grep ... && { ... }`, for legibility and to match the
+          # `||` block above — not because the `&&` form is broken. It is not:
+          # this step runs under `bash -e`, and errexit exempts a failing command
+          # that is not the last of an AND-OR list, so a grep finding nothing does
+          # NOT abort the step. Checked rather than assumed, because the
+          # neighbouring `||` form and this one behave differently for reasons
+          # that are easy to get backwards.
+          if grep -qi '^x-majorana-caller-trust:' <<<"$headers"; then
+            echo "::error::a publicly cacheable response carries the caller-trust verdict"
+            echo "a shared cache would replay one caller's verdict to another"
+            exit 1
+          fi
+          # And the mechanism itself must still be alive, asserted where it is
+          # supposed to appear: a 404 sets no Cache-Control, so nothing strips the
+          # verdict, and an unauthenticated caller must read `anonymous`.
+          #
+          # Deliberately NOT asserting `trusted` anywhere here. This job holds no
+          # token, so the only way to make that pass would be to hand the deploy
+          # pipeline the catalog secret — and a gate that needs a secret to go
+          # green is a gate that gets deleted the first time the secret rotates.
+          # Only the renderer can prove the trusted path, and it does, in
+          # `lib/trusted-caller.ts::reportCallerTrust`.
+          trust=$(curl -sS -D - -o /dev/null "$url/v1/catalog/entries/deploy-smoke-no-such-slug" \
             | tr -d '\r' | awk -F': ' 'tolower($1)=="x-majorana-caller-trust"{print $2}')
           test "$trust" = "anonymous" || {
             echo "::error::caller-trust header was '$trust', expected 'anonymous'"
-            echo "an empty value means this revision predates the trusted-caller exemption"
+            echo "an empty value means the trusted-caller mechanism is not running"
             exit 1
           }
-          echo "dark revision healthy: $count catalog entries, caller-trust readable"
+          echo "dark revision healthy: $count catalog entries, publicly cacheable, verdict alive"
 
       - name: shift api traffic
         if: steps.creds.outputs.have == 'true'
