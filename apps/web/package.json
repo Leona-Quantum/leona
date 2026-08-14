@@ -20,7 +20,7 @@
     "katex": "^0.16.47",
     "next": "^16.2.11",
     "react": "^19.0.0",
-    "react-dom": "^19.0.0",
+    "react-dom": "^19.2.8",
     "react-markdown": "^10.1.0",
     "rehype-katex": "^7.0.1",
     "remark-gfm": "^4.0.1",
@@ -30,7 +30,7 @@
     "@tailwindcss/postcss": "^4.1.0",
     "@types/node": "^24.0.0",
     "@types/react": "^19.0.0",
-    "@types/react-dom": "^19.0.0",
+    "@types/react-dom": "^19.2.4",
     "tailwindcss": "^4.1.0",
     "typescript": "^5.9.3"
   }
