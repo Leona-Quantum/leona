@@ -6,11 +6,16 @@
 // > *"operators are useful for certain algorithms like VQE, QSVT, and others"*
 // > — owner, ai-ops#14
 //
-// That sentence is the reason the corpus has 62 operator records and no way to
-// tell which of them matter. The count on each row here is that sentence turned
-// into a number: **how many of the map's processes consume or produce this
-// object.** It is the first honest measurement of which objects are worth
-// deepening and which are decoration.
+// That sentence is the reason the corpus has 60 operator records and no way to
+// tell which of them matter. (62 before ai-ops 84, 2026-08-14: `pauli-y-gate`
+// and `pauli-z-gate` resolved to the `operator` role despite their own
+// `category: "gates"` filing, which is what made this shelf's Operators and
+// Gates counts disagree with the browse tab's. `topics.ts`'s `TOPIC_OVERRIDES`
+// now resolves both to `gate-primitive`, so they count as gates on both
+// surfaces.) The count on each row here is that sentence turned into a number:
+// **how many of the map's processes consume or produce this object.** It is
+// the first honest measurement of which objects are worth deepening and which
+// are decoration.
 //
 // ## And the number it exists to publish honestly
 //
@@ -19,7 +24,11 @@
 // 27 gates do** — because nothing in the 34-state vocabulary is a unitary you
 // can apply, and separately because the owner ruled gates off the map in
 // ai-ops#14. Re-measured at 45395f9e (2026-08-13): unchanged, on a corpus that
-// has since grown to 368 records.
+// has since grown to 368 records. Re-measured again after ai-ops 84's retag
+// (2026-08-14): still 28/101 joined, 12/12 states, 16/62→16/**60** operators,
+// 0/27→0/**29** gates — `pauli-y-gate` and `pauli-z-gate` were already
+// unjoined `primitive-by-ruling` abstentions either way, so correcting their
+// role moved them between sections without changing who joins.
 //
 // ## The count on each row is a property of the STATE, not of the object
 //
@@ -45,8 +54,8 @@
 //
 // When *every* record in a section abstains for the *same* reason, the reason is
 // printed once above the list and the rows carry only their links. Today that is
-// exactly one section: **Gates, 0 of 27, all `primitive-by-ruling`.** Before this
-// it printed the same forty-word refusal twenty-seven times, one row after
+// exactly one section: **Gates, 0 of 29, all `primitive-by-ruling`.** Before this
+// it printed the same forty-word refusal twenty-nine times, one row after
 // another, and a reader opening the section met a wall of identical sentences
 // rather than a statement they could read once and act on.
 //
@@ -54,15 +63,19 @@
 // nothing on the 73 unjoined record pages because *"a 'the map does not reach
 // this' note on 73 pages would be one sentence about the map repeated until it
 // stopped being read"*. The shelf is where that sentence is supposed to be
-// published once; it was publishing it twenty-seven times.
+// published once; it was publishing it twenty-nine times.
 //
 // **The section stays, and so does its zero.** `ingredients.ts` is explicit that
 // the `primitive-by-ruling` abstention exists so the gate records are *counted*
 // as deliberately unjoined rather than merely unmatched — "an honest zero instead
 // of an empty one" — and deleting the section would delete the count that
-// abstention exists to publish, along with 27 links into the gate records. It
-// would also strand the three Pauli records, which sit in **Operators** with the
-// same reason and a clause that points at *"their own section"*.
+// abstention exists to publish, along with 29 links into the gate records: the
+// 27 already there plus `pauli-y-gate` and `pauli-z-gate`, retagged into this
+// section by ai-ops 84 (2026-08-14) to agree with their own `category: "gates"`
+// filing. `pauli-x-operator` is the one Pauli record still in **Operators**; it
+// carries the same reason and the same clause pointing at *"their own
+// section"*, which stays true of it and only it — `category: "operators"`
+// already agreed with its role, so nothing about it needed correcting.
 //
 // The test for "same reason" is `soleAbstentionReason` in `ingredients.ts`, not
 // here: it is the condition under which a sentence about a whole section is
@@ -122,7 +135,18 @@ const COPY: Record<"en" | "ja", ShelfCopy> = {
   en: {
     heading: "Ingredients",
     lead: "The objects this catalogue holds, rather than the procedures. Each row says how many of the map's processes take or return one — which is what makes an object worth deepening.",
-    roles: { state: "States", operator: "Operators", "gate-primitive": "Gates" },
+    // Naming set B (ai-ops 84, 2026-08-14): plain "States"/"Operators"/"Gates"
+    // read as the same three words the browse tab's category filter already
+    // uses, two counts apart on the same page — so a section that carried a
+    // real finding ("Primitive gates — 0 of 29") read as a broken filter
+    // instead. Each heading now names the ROLE this shelf actually sorts by,
+    // not the category the browse tab sorts by, so the two no longer collide
+    // even where their counts also happen to agree (see the pairwise-agreement
+    // check `apps/web`'s corpus lint runs against both surfaces). Kept as its
+    // own small `Record` rather than inlined into the JSX below so a future
+    // naming choice — set B was recommended, not yet an owner ruling — is a
+    // one-line swap here, in both locales, and nowhere else.
+    roles: { state: "Prepared states", operator: "Applied operators", "gate-primitive": "Primitive gates" },
     reach: (joined, total) => `${joined} of ${total} are objects the map names`,
     processes: (n, of) => (n === 1 ? `1 of ${of} processes` : `${n} of ${of} processes`),
     unreachable: "Not an object the map names, because:",
@@ -156,7 +180,16 @@ const COPY: Record<"en" | "ja", ShelfCopy> = {
   ja: {
     heading: "材料",
     lead: "このカタログが持つのは手続きだけではありません。ここに並ぶのは対象そのものです。各行には、マップ上の工程のうちいくつがそれを受け取る、あるいは返すかを示しています。対象を掘り下げる価値があるかどうかは、この数で決まります。",
-    roles: { state: "状態", operator: "演算子", "gate-primitive": "ゲート" },
+    // Mirrors the `en` naming above — see its comment. Not a literal
+    // word-for-word translation: 基本ゲート ("primitive/basic gate") and
+    // 作用演算子 ("operator that acts [on a state]") are this catalogue's own
+    // established Japanese for "primitive" and for an operator's relationship
+    // to a state (`repository-preface.tsx`'s gates blurb already uses 基本要素
+    // "primitive/basic element"; `state-vocabulary.ts` already uses 作用させる
+    // for "to act [an operator] upon" a state), so the heading reads the way a
+    // Japanese-speaking physicist would say it rather than as a translated
+    // English phrase.
+    roles: { state: "準備状態", operator: "作用演算子", "gate-primitive": "基本ゲート" },
     reach: (joined, total) => `${total} 件中 ${joined} 件がマップの名前を持つ対象です`,
     processes: (n, of) => `工程 ${of} 件中 ${n} 件`,
     unreachable: "マップが名前を与えている対象ではありません。理由：",

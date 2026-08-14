@@ -571,17 +571,39 @@ const REFINEMENT_RULES: readonly TopicRule[] = [
  * Per-slug corrections, for records the rules read correctly and still land
  * somewhere a domain expert would not. Corrections REPLACE the derived set.
  *
- * **Empty, and that is a measurement rather than an omission.** Every published
- * entry is classified by the tables above; none needed a hand
- * correction. `deriveVerificationMethods` needed sixteen, which is the honest
- * comparison — that classifier reads free prose, and this one reads fields that
- * were written as labels.
+ * **Two entries, added by ai-ops 84 (2026-08-14) — the first hand corrections
+ * this table has held.** `pauli-y-gate` and `pauli-z-gate` are filed
+ * `category: "gates"`, but `FAMILY_RULES` resolves every record whose
+ * `algorithmFamily` is `"Pauli operator"` to the `operator` role, because that
+ * rule is right for most of the family — `pauli-x-operator`, filed `category:
+ * "operators"`, is the record it is right for. It is wrong for these two: a
+ * domain expert reads a curated single-gate OpenQASM reference titled "Pauli-Y
+ * gate" as a gate, and the corpus's own browse tab already agreed, which is
+ * what made `apps/web/components/repository-shelf.tsx`'s Gates/Operators
+ * counts disagree with the browse tab's by exactly two in each direction.
+ *
+ * The correction is here rather than on `FAMILY_RULES`, because `"Pauli
+ * operator"` stays the right rule for the family in general — rewriting it
+ * would flip `pauli-x-operator` and any future member of the family too. It is
+ * also not on `algorithmFamily` itself: that field is read for display
+ * (`familyLabel`, the browse-by-family grouping, the API's `family` export)
+ * everywhere a `PublicRepositoryEntry` is rendered, and "Pauli operator" is
+ * true of `pauli-y-gate` and `pauli-z-gate` in every one of those places — only
+ * the *role* was wrong. `[..."gate-primitive"]` is exactly what
+ * `deriveTopics` would have produced had `algorithmFamily` instead named one of
+ * the gate families (e.g. `"Single-qubit gate"`) — no `REFINEMENT_RULES` tag
+ * matches either record's tags (`pauli`, `phase`/`phase flip`, `single qubit`),
+ * so this replaces the same single topic the rules already derive, just the
+ * correct one.
  *
  * A stale entry here would be invisible, so `scripts/check-repository-data.mjs`
  * fails on any slug listed here that the corpus does not carry. This list held
  * one such entry within an hour of being written.
  */
-export const TOPIC_OVERRIDES: Readonly<Record<string, readonly TopicId[]>> = {};
+export const TOPIC_OVERRIDES: Readonly<Record<string, readonly TopicId[]>> = {
+  "pauli-y-gate": ["gate-primitive"],
+  "pauli-z-gate": ["gate-primitive"],
+};
 
 const ROLE_IDS: ReadonlySet<string> = new Set(
   topicsInFacet("role").map((topic) => topic.id),

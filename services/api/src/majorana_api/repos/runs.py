@@ -9,6 +9,7 @@ docstring for why the DB-grant approach in 0001 never worked.
 import datetime as dt
 import json
 import uuid
+from collections.abc import Sequence
 from typing import Any
 
 from majorana_contracts import Scope
@@ -23,6 +24,7 @@ from ..tiers import TOKENS_PER_RUN_EQUIVALENT
 from . import artifacts as artifacts_repo
 from . import usage as usage_repo
 from ._base import NotFoundError, require_write
+from .system import queue_positions_for_jobs
 
 
 async def get_run(
@@ -35,6 +37,45 @@ async def get_run(
     if run is None:
         raise NotFoundError("run")
     return run
+
+
+async def queue_positions(
+    scope: Scope, session: AsyncSession, run_ids: Sequence[uuid.UUID]
+) -> dict[uuid.UUID, int]:
+    """Claimable jobs ahead of each of ``run_ids``. Absent key = not waiting.
+
+    The scoped entry point for ``system.queue_positions_for_jobs``, and the
+    scoping is the reason it exists rather than the route calling that directly:
+    the ``jobs`` table carries no ``workspace_id``, so nothing in the system repo
+    can tell whose run an id names. This narrows the ids to runs in
+    ``scope.workspace_id`` FIRST, so a caller can only ever ask about their own
+    runs. An id belonging to another workspace is dropped, not refused — the
+    same silence ``NotFoundError`` gives, for the same reason: telling somebody
+    their guess was a real run elsewhere is itself the leak.
+
+    What comes back is a count, and it is global on purpose. One worker claims
+    one job at a time (AD-7), so what a waiting user is behind is the whole
+    queue, not their own share of it. A workspace-scoped count would be a
+    smaller number that is a position in nothing, and it would tell a first-time
+    user "0 ahead" at the start of a ten-minute wait. See the system repo for
+    why that does not breach the no-tenant-data rule: integers, no ids.
+    """
+    if not run_ids:
+        return {}
+    mine = (
+        (
+            await session.execute(
+                select(Run.id).where(
+                    Run.id.in_(list(run_ids)), Run.workspace_id == scope.workspace_id
+                )
+            )
+        )
+        .scalars()
+        .all()
+    )
+    if not mine:
+        return {}
+    return await queue_positions_for_jobs(session, run_ids=list(mine))
 
 
 async def list_runs(
