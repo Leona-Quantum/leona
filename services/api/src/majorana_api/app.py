@@ -10,6 +10,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import JSONResponse
 
 from .db import engine_from_env, session_factory
@@ -93,6 +94,34 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         allow_methods=["*"],
         allow_headers=["Authorization", "Content-Type"],
     )
+
+    # There was no response compression at all. `/v1/catalog/entries` is the
+    # hot public path and returns JSON that gzips to roughly a tenth of its
+    # size, over a link that is 3,800 km long in the direction that matters —
+    # Vercel's functions are in `iad1`, this service is in `us-west1`.
+    #
+    # `compresslevel=6` rather than the library's 9. On JSON, 9 buys one or two
+    # percent over 6 for several times the CPU, and this service has ONE vCPU
+    # (`1000m`, verified from `gcloud run services describe majorana-api` — the
+    # 2-vCPU figure in docs/runbooks/system-catalog.md:195 describes a `gcloud
+    # run jobs` import batch, a different resource). Spending that CPU on the
+    # last one percent of a response is the wrong trade on a box that also has
+    # to serve the request.
+    #
+    # ## SSE is safe, and it is the library that makes it safe
+    #
+    # `/v1/runs/{id}/events/stream` returns a `StreamingResponse` with
+    # `media_type="text/event-stream"` (routes/runs.py:624). Compressing that
+    # would hold each event in the gzip window until it filled, turning a live
+    # stream into a stuttering one — the standard way this middleware breaks SSE.
+    #
+    # It does not happen here: Starlette declares
+    # `DEFAULT_EXCLUDED_CONTENT_TYPES = ("text/event-stream",)` and skips those
+    # responses (starlette/middleware/gzip.py:8,56). Read from the installed
+    # source rather than assumed, because the whole safety of this line rests on
+    # it — and because it is a library DEFAULT, which is exactly the kind of
+    # thing an upgrade changes silently. `test_gzip.py` pins it.
+    app.add_middleware(GZipMiddleware, minimum_size=500, compresslevel=6)
 
     # Per-IP admission control for callers presenting no credential — the
     # `/v1/catalog/*` surface, which has no account to meter (rate_limit.py).
