@@ -26,6 +26,8 @@ class RunContext:
     timeout_s: int | None
     sink: EventSink
     response_locale: ResponseLocale = "en"
+    allow_ai_assumptions: bool = False
+    needs_user_inputs: bool = False
     conversation_id: Any | None = None
     source_code: str | None = None
     source_framework: Framework | None = None

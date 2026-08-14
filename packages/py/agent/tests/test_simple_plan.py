@@ -68,7 +68,8 @@ def test_known_reference_is_scoped_to_equilibrium_h2():
     )
 
     assert reference is not None
-    assert "-1.0523732" in reference
+    assert "-0.3324043" in reference
+    assert "-1.1373061" in reference
     assert known_reference_for_task("Estimate the H2 molecular ground-state energy") is not None
     assert known_reference_for_task("Estimate LiH at 1.6 Angstrom with VQE") is None
     assert known_reference_for_task("Estimate H2 at 1.5 Angstrom with VQE") is None

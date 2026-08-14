@@ -15,7 +15,7 @@ import uuid
 import pytest
 from majorana_contracts import Scope
 from majorana_contracts.enums import Framework, Role, RunMode, RunStatus
-from sqlalchemy import update
+from sqlalchemy import text, update
 
 from majorana_api.db import engine_from_env, session_factory
 from majorana_api.jobs import RUN_EXECUTE_JOB_KIND
@@ -319,6 +319,33 @@ async def test_reaping_an_old_direct_run_records_the_no_job_reason(env):
 
 
 @requires_db
+async def test_reaping_an_old_run_with_a_terminal_job_is_still_allowed(env):
+    """A completed historical job must not hide a run left active by its handler."""
+    factory, scope = env
+    run_id = await _jobless_run(
+        factory,
+        scope,
+        age_s=system.ORPHANED_DIRECT_RUN_GRACE_S + 60,
+    )
+    async with factory() as session:
+        await system.enqueue_job(
+            session,
+            kind="run.execute",
+            payload={"run_id": str(run_id)},
+            run_id=run_id,
+        )
+        await session.execute(
+            text("update jobs set status = 'done', updated_at = now() where run_id = :run_id"),
+            {"run_id": run_id},
+        )
+        await session.commit()
+        orphan = next(
+            o for o in await system.list_orphaned_runs(session, limit=1_000) if o.run_id == run_id
+        )
+        assert orphan.run_id == run_id
+
+
+@requires_db
 async def test_reaping_is_idempotent_against_a_partial_delivery_sequence(env):
     """A delivery that wrote run.error then died must be completed, not duplicated."""
     factory, scope = env
@@ -348,3 +375,35 @@ async def test_reaping_is_idempotent_against_a_partial_delivery_sequence(env):
     async with factory() as session:
         events = await runs.list_run_events(scope, session, run_id)
     assert [event.type for event in events] == ["run.error", "run.finished"]
+
+
+@requires_db
+async def test_reaping_recovers_from_a_conflicting_legacy_error_event(env):
+    """A stale event-id collision must not leave the run spinning forever."""
+    factory, scope = env
+    run_id = await _orphan(factory, scope)
+
+    async with factory() as session:
+        orphan = next(
+            o for o in await system.list_orphaned_runs(session, limit=1_000) if o.run_id == run_id
+        )
+        await runs.append_run_event(
+            scope,
+            session,
+            run_id,
+            type="run.error",
+            payload={"stage": None, "code": "legacy_error", "message": "old"},
+            event_id=uuid.uuid5(run_id, "run.error.job_dead_letter"),
+        )
+        await session.commit()
+
+    async with factory() as session:
+        assert await close_orphaned_run(session, orphan) is True
+
+    async with factory() as session:
+        run = await runs.get_run(scope, session, run_id)
+        events = await runs.list_run_events(scope, session, run_id)
+    assert RunStatus(run.status) is RunStatus.FAILED
+    assert events[-2].payload["code"] == "run_orphaned"
+    assert events[-2].id == uuid.uuid5(run_id, "run.error.orphaned")
+    assert events[-1].type == "run.finished"
