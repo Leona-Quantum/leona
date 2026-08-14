@@ -16,6 +16,7 @@ import { pageviewLoggingEnabled, pageviewSignal } from "./lib/pageview-signal";
 import { LEGACY_PUBLIC_LOCALE_COOKIE, parsePublicLocale, PUBLIC_LOCALE_COOKIE, PUBLIC_LOCALES } from "./lib/public-locale";
 import { isPublicDemoEnabled } from "./lib/public-demo";
 import { isRoutedPath, LOCALE_ROUTES } from "./lib/routed-paths";
+import { canonicalHostRedirect } from "./lib/site-origin";
 
 const PUBLIC_PATHS = [
   "/",
@@ -179,13 +180,73 @@ function canonicalRedirect(request: NextRequest): NextResponse | null {
   return NextResponse.redirect(target, 308);
 }
 
+/**
+ * Send the three non-canonical hosts to `leonaqt.com` (ai-ops#83), path and
+ * query intact.
+ *
+ * 308 rather than 301 or 307: permanent, so a crawler moves its index across
+ * and a browser stops asking, and method-preserving, so a POST that arrives on
+ * the wrong host is replayed rather than silently turned into a GET.
+ *
+ * The host list and the destination are in `lib/site-origin.ts` — see there for
+ * why it is an allowlist of three rather than "everything that is not
+ * canonical", which is the version that breaks every preview deployment.
+ *
+ * ## Two hops with `canonicalRedirect`, and this one is first
+ *
+ * `www.leonaquantum.com/en/pricing` carries both problems at once and is
+ * answered with two 308s: to `leonaqt.com/en/pricing` here, then to
+ * `leonaqt.com/pricing` by `canonicalRedirect` below. It terminates — after the
+ * first hop the host is canonical so this returns null, and after the second
+ * there is no locale prefix so that one does.
+ *
+ * Collapsing them into a single hop would mean rebuilding the locale rule in
+ * here, which is a second copy of the thing `lib/canonical-locale-redirect.ts`
+ * exists to be the only copy of. The shape that pays for the extra hop — a
+ * locale-prefixed URL on a hostname nothing links to — is not one a reader
+ * arrives at by clicking.
+ *
+ * Order matters for a reason beyond tidiness. `canonicalRedirect` runs before
+ * the auth gate, by necessity, and it was an open redirect until PR 558; keeping
+ * it downstream of this hop means it is only ever exercised on the canonical
+ * origin. This hop is safe on any host for a different reason — it never uses
+ * the relative `new URL(str, base)` form that caused that bug, because the
+ * origin is a literal prefix of the target string, so no path tail can displace
+ * the authority. Both properties are asserted in `lib/site-origin.test.ts`
+ * rather than left as this paragraph.
+ *
+ * ## Not covered by the matcher, on purpose
+ *
+ * `config.matcher` at the bottom of this file excludes `_next/static`,
+ * `_next/image` and the file-convention metadata routes, so those are not
+ * redirected. That is the right outcome and not an oversight: the document
+ * itself is redirected before the browser asks for anything, so by the time an
+ * asset is requested the page is already on the canonical host, and adding a
+ * hop in front of every static file would cost a round trip per asset for a
+ * case that does not arise.
+ */
+function canonicalHost(request: NextRequest): NextResponse | null {
+  const host = request.headers.get("host") ?? request.nextUrl.host;
+  const target = canonicalHostRedirect(host, `${request.nextUrl.pathname}${request.nextUrl.search}`);
+  return target === null ? null : NextResponse.redirect(target, 308);
+}
+
 export default async function middleware(request: NextRequest, event: NextFetchEvent) {
-  // First, and before any early return: the counter's contract is that it runs
-  // exactly once per request. It is also why placement here is safe next to the
-  // 404 fall-through below — `publicRoute()` returns null for anything outside
-  // PAGEVIEW_ROUTES, all of which are routed paths, so an unrouted URL
-  // logs nothing either way. Counting first keeps that true if the route list
-  // ever grows.
+  // Ahead of the counter, and it is the one thing that may be. A request on a
+  // non-canonical host is answered with a redirect and nothing else — the
+  // reader has not read a page yet, and the request that serves them one is
+  // counted on the next line of the next request. Counting both would inflate
+  // every figure on those hosts by exactly one, and this counter has no
+  // de-duplication to absorb it (`lib/pageview-signal.ts`: it counts pageviews,
+  // never people).
+  const canonicalHostHop = canonicalHost(request);
+  if (canonicalHostHop) return canonicalHostHop;
+  // First among the things that answer a request, and before any early return:
+  // the counter's contract is that it runs exactly once per request. It is also
+  // why placement here is safe next to the 404 fall-through below —
+  // `publicRoute()` returns null for anything outside PAGEVIEW_ROUTES, all of
+  // which are routed paths, so an unrouted URL logs nothing either way.
+  // Counting first keeps that true if the route list ever grows.
   countPageview(request);
   // Both before the gate. The rewrite serves a cached page; the redirect
   // collapses the locale-prefixed form back onto the clean one.
