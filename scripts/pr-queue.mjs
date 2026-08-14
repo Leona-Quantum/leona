@@ -40,8 +40,13 @@
  * or in private repositories under GitHub Enterprise Cloud. `EshMis/majorana` is public
  * but owned by a **user** account, so no branch-protection rule and no ruleset on it can
  * carry one. Nothing to click, on any plan, at any price — the fix is a repository
- * transfer to an organization, which is the owner's call and is asked on that issue
- * rather than assumed here.
+ * transfer to an organization.
+ *
+ * **That transfer is now ruled and scheduled.** The owner answered ai-ops#46 with "do the
+ * complete move for me": `EshMis/majorana` becomes `LeonaQuantum/leona`. So the paragraph
+ * above describes the state this file was written in, not a permanent one — once the
+ * transfer lands, the merge queue becomes available and this whole comment should be
+ * rewritten rather than merely amended.
  *
  * So the 122-test-runs-on-side-branches night this board was written for is not something
  * a switch fixes. What reduces it is merge ORDER (the overlap section below) and arming
@@ -77,9 +82,13 @@ export function repoFromRemote(url) {
   return match ? `${match[1]}/${match[2]}` : null;
 }
 
+// The fallback names the repo's DESTINATION, not its current path: `EshMis/majorana` is
+// being transferred to `LeonaQuantum/leona` (ai-ops#46). It is only reached when `origin`
+// cannot be read at all, and GitHub redirects the old path either way, so pointing it
+// forward costs nothing and stops it going stale the moment the transfer lands.
 const REPO =
   repoFromRemote(execFileSync("git", ["remote", "get-url", "origin"], { encoding: "utf8" })) ??
-  "EshMis/majorana";
+  "LeonaQuantum/leona";
 
 /** CODEOWNERS is the only list of blast-radius paths; a second copy here would drift. */
 export function codeownerPaths(text) {

@@ -402,7 +402,11 @@
 }
 .mj-landing-prompt {
   width: min(760px, calc(100vw - var(--sp-8)));
-  min-height: 156px;
+  /* Was 156px, sized for a 2-row textarea (rows={2}, 68px min-height below).
+     The textarea is one row now, so the container no longer needs to reserve
+     a second line of blank space above the controls — 124px is padding (32)
+     + one text row (~48) + the 44px control row, with a little slack. */
+  min-height: 124px;
   box-sizing: border-box;
   display: flex;
   flex-direction: column;
@@ -416,7 +420,9 @@
 }
 .mj-landing-prompt textarea {
   width: 100%;
-  min-height: 68px;
+  /* Was 68px (room for 2 rows); rows={2} is now rows={1}, so this only needs
+     to hold one line of the 16px/1.55 type. */
+  min-height: 40px;
   box-sizing: border-box;
   flex: 1 1 auto;
   resize: none;
@@ -917,10 +923,18 @@
 .mj-pricing-card--featured {
   border-color: var(--accent);
 }
+/* Row, not column (owner, ai-ops#94): the "Recommended" badge used to stack
+   under the card name, which made the Plus card's head taller than every
+   other card's and pushed its price/cadence/features out of line with the
+   rest of the row — `.mj-pricing-price` below has a fixed margin-top off this
+   element, so any extra height here is extra height under it. Laid out
+   side-by-side and vertically centered, the badge sits inside the name's own
+   line box instead of adding one, so every card's head is the same height
+   whether or not it carries a badge. */
 .mj-pricing-card-head {
   display: flex;
-  flex-direction: column;
-  align-items: flex-start;
+  align-items: center;
+  justify-content: space-between;
   gap: var(--sp-3);
 }
 .mj-pricing-card h2 {
@@ -3307,6 +3321,13 @@ a.mj-facet-option:hover {
   display: block;
   width: 100%;
   min-height: var(--sp-8);
+  /* No `:focus-within` rule doubling this to var(--sp-16) anymore (owner,
+     ai-ops#94): it grew the box on every focus regardless of how much text
+     was typed, which read as a blank line sitting between the caret and the
+     control row for the entire time someone was composing — the common case,
+     not an edge one. A multi-line prompt still has somewhere to go: the
+     textarea scrolls internally up to `max-height`, and `resize: vertical`
+     lets a reader drag it taller by hand. */
   max-height: calc(var(--sp-16) + var(--sp-16));
   box-sizing: border-box;
   padding: var(--sp-1) 0;
@@ -3317,9 +3338,6 @@ a.mj-facet-option:hover {
   background: transparent;
   font: inherit;
   line-height: 1.5;
-}
-.mj-composer:focus-within .mj-composer-input {
-  min-height: var(--sp-16);
 }
 .mj-composer-input::placeholder {
   color: var(--text-2);
@@ -5358,7 +5376,6 @@ a.mj-facet-option:hover {
   font-weight: 600;
 }
 .mj-open-source-card p,
-.mj-open-source-note,
 .mj-open-source-start p {
   margin: 0;
   color: var(--text-1);
@@ -5384,10 +5401,6 @@ a.mj-facet-option:hover {
 }
 .mj-open-source-circuits span {
   color: var(--text-1);
-}
-.mj-open-source-note {
-  margin-top: var(--sp-4);
-  font-size: var(--fs-12);
 }
 .mj-open-source-start {
   display: grid;

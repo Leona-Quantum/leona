@@ -4,9 +4,17 @@
 # Job names ts/py/db are required checks on dev+prod — do not rename.
 # Contracts chain (ADR-0008): models are truth → py job verifies openapi.json is
 # current → ts job regenerates schema.d.ts and fails on diff.
+#
+# `merge_group` is required alongside `pull_request`: a merge queue re-validates
+# required checks against its own trial-merge ref (`gh-readonly-queue/...`), and a
+# required check with no merge_group trigger never reports there, which stalls the
+# queue forever (ai-ops#46/#70 merge-queue-prerequisites lane). None of ts/py/db
+# carries an `if:` or reads `github.event.pull_request.*`, so all three run
+# unchanged under both events — no other change needed in this file.
 name: ci
 on:
   pull_request:
+  merge_group:
 
 # A push to an open PR supersedes the run already in flight: that run is testing a
 # commit that can no longer be merged, so letting it finish only holds a runner and
