@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..orm import Artifact, Membership, Run, User, Workspace
 from ._base import AuthzError, NotFoundError, require_admin, require_owner
+from .audit import record_audit
 from .system import reserve_owned_workspace_slot
 
 
@@ -193,11 +194,24 @@ async def set_member_role(
     membership = await _member_row(scope, session, user_id)
     if membership.role == Role.OWNER:
         raise AuthzError("cannot change the role of the workspace owner")
+    previous = membership.role
     membership.role = role
     await session.flush()
     user = (await session.execute(select(User).where(User.id == user_id))).scalars().first()
     if user is None:  # pragma: no cover - a membership cannot outlive its user
         raise NotFoundError("user")
+    # `from` as well as `to`. A role change recorded only as its destination
+    # cannot answer the question actually asked after an incident — whether
+    # somebody was promoted — because "set to member" reads identically whether
+    # they were an admin a moment ago or have always been one.
+    await record_audit(
+        scope,
+        session,
+        action="workspace.member_role_changed",
+        target_kind="user",
+        target_id=user_id,
+        meta={"email": user.email, "from": str(previous), "to": str(role)},
+    )
     return membership, user
 
 
@@ -213,6 +227,16 @@ async def remove_member(scope: Scope, session: AsyncSession, *, user_id: uuid.UU
     membership = await _member_row(scope, session, user_id)
     if membership.role == Role.OWNER:
         raise AuthzError("cannot remove the workspace owner")
+    # Captured before the row goes, like the two container deletes: the role is
+    # the one fact about this membership that the audit entry cannot reconstruct
+    # afterwards, because there is nothing left to read it off.
+    #
+    # `str()` rather than `.value`. SQLAlchemy hands this attribute back as a
+    # plain `str` when the row was loaded from Postgres and as a `Role` when the
+    # object was built in Python, so `.value` works in a unit test with a
+    # hand-made Membership and raises AttributeError against the real database.
+    # `Role` is a StrEnum, so `str()` gives "member" for both.
+    removed_role = str(membership.role)
     await session.execute(
         delete(Membership).where(
             Membership.workspace_id == scope.workspace_id,
@@ -229,6 +253,17 @@ async def remove_member(scope: Scope, session: AsyncSession, *, user_id: uuid.UU
         .values(active_workspace_id=None)
     )
     await session.flush()
+    # Access revocation is the single highest-value row in this log: it is what
+    # "who removed them, and when" is answered from, and the membership row that
+    # would otherwise have carried the answer is the thing being deleted.
+    await record_audit(
+        scope,
+        session,
+        action="workspace.member_removed",
+        target_kind="user",
+        target_id=user_id,
+        meta={"role": removed_role},
+    )
 
 
 class CannotTransferPersonalWorkspace(Exception):
@@ -313,6 +348,17 @@ async def transfer_ownership(
     membership.role = Role.OWNER
     caller_membership.role = Role.ADMIN
     await session.flush()
+    # The most consequential single operation in the product: the tenant changes
+    # hands, and afterwards the log's own `actor_user_id` is no longer the owner,
+    # so nothing else in the row says who gave it away.
+    await record_audit(
+        scope,
+        session,
+        action="workspace.ownership_transferred",
+        target_kind="workspace",
+        target_id=workspace.id,
+        meta={"to_user_id": str(target.id), "to_email": target.email},
+    )
     return await list_members_with_users(scope, session)
 
 
