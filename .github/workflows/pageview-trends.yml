@@ -1,0 +1,134 @@
+# Copy the day's public pageview counts out of the Vercel runtime log into
+# Postgres, so the trend outlives the log's retention window.
+#
+# Why this exists: #536's counter writes to the Vercel runtime log and nowhere
+# else. Base-plan runtime logs retain for ONE DAY. The ~30-day window the project
+# has today comes from the metered Observability Plus add-on — measured 2026-08-14,
+# lines present 19–20 days back, absent 30–31 — and if that lapses the history
+# collapses to a day with nothing noticing. This job is the durable half.
+#
+# 00:20 UTC, i.e. just after the day the counter stamps rolls over. That timing is
+# deliberate: at the 1-day retention floor a run here still sees essentially all of
+# the day it is completing. The 36h window then overlaps into the previous day, and
+# because the write replaces rather than adds, the overlap is free and a single
+# missed run self-heals on the next one.
+#
+# The job never computes a date. `day` is copied from the counter's own payload,
+# where apps/web/lib/pageview-signal.ts stamped it in UTC at request time — so
+# re-running at any hour produces identical rows, and the usual "a cloud cron's
+# today is UTC, not the owner's day" trap cannot bite. See the migration 0051
+# docstring for the consequence: these are UTC days.
+name: pageview-trends
+permissions:
+  contents: read
+on:
+  schedule:
+    - cron: "20 0 * * *"
+  workflow_dispatch:
+
+# A second run cannot improve on the first — the write is idempotent — so a
+# queued duplicate is pure waste. Not cancel-in-progress: a run partway through
+# its write should finish rather than be killed mid-transaction.
+concurrency:
+  group: pageview-trends
+  cancel-in-progress: false
+
+jobs:
+  collect:
+    runs-on: ubuntu-latest
+    # Forks have neither the secrets nor any reason to run this.
+    if: github.repository == 'EshMis/majorana'
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      # The parse and count logic, exercised offline before anything touches the
+      # network or the database. Cheap, and it means a refactor that breaks the
+      # payload shape fails here rather than by quietly writing zeros.
+      - name: self-test
+        run: python3 scripts/collect_pageviews.py --self-test
+
+      - id: creds
+        name: are the deploy credentials present
+        run: echo "have=${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER != '' && secrets.GCP_DEPLOY_SERVICE_ACCOUNT != '' }}" >> "$GITHUB_OUTPUT"
+
+      - uses: google-github-actions/auth@c200f3691d83b41bf9bbd8638997a462592937ed # v2
+        if: steps.creds.outputs.have == 'true'
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ secrets.GCP_DEPLOY_SERVICE_ACCOUNT }}
+
+      - uses: google-github-actions/setup-gcloud@6189d56e4096ee891640bb02ac264be376592d6a # v2
+        if: steps.creds.outputs.have == 'true'
+
+      - uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e # v6
+        if: steps.creds.outputs.have == 'true'
+        with:
+          enable-cache: true
+          cache-dependency-glob: "**/uv.lock"
+
+      # Same pin and same reasoning as deploy.yml: the instance has no authorized
+      # networks, so the proxy is the only way in, and the binary is checked
+      # against a recorded SHA-256 rather than trusted by URL. Bump both fields
+      # together, never one. Keep this hash in step with deploy.yml's.
+      - name: start the Cloud SQL Auth Proxy
+        if: steps.creds.outputs.have == 'true'
+        env:
+          PROXY_VERSION: v2.24.1
+          PROXY_SHA256: fae2766aac9d614a2bdef2f2a7778f3d054f3acd5ff07a81a9e300bd471512eb
+          CLOUDSQL_INSTANCE: majorana-core:us-west1:majorana-pg
+        run: |
+          curl -fsSL -o cloud-sql-proxy \
+            "https://storage.googleapis.com/cloud-sql-connectors/cloud-sql-proxy/${PROXY_VERSION}/cloud-sql-proxy.linux.amd64"
+          echo "${PROXY_SHA256}  cloud-sql-proxy" | sha256sum -c - || {
+            echo "::error::the Cloud SQL Auth Proxy binary does not match its pinned"
+            echo "::error::SHA-256. Do NOT update the hash to make this pass without"
+            echo "::error::establishing why the artifact changed."
+            exit 1
+          }
+          chmod +x cloud-sql-proxy
+          ./cloud-sql-proxy --port 5432 --health-check --http-address 127.0.0.1 \
+            "$CLOUDSQL_INSTANCE" &
+          for _ in $(seq 1 30); do
+            if curl -fsS http://127.0.0.1:9090/startup >/dev/null 2>&1; then
+              echo "proxy ready"
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "::error::the Cloud SQL Auth Proxy never became ready. See docs/runbooks/database.md."
+          exit 1
+
+      # Both credentials come from Secret Manager rather than repo secrets: they
+      # already live there (VERCEL_TOKEN, DATABASE_URL_SECRET) and a second copy
+      # would be a second thing to rotate. Both are masked the moment they are
+      # read — ::add-mask:: applies to every later line of the job, so neither can
+      # reach the log through an error message or a `set -x`.
+      - name: collect and write
+        if: steps.creds.outputs.have == 'true'
+        env:
+          GCP_PROJECT: majorana-core
+        run: |
+          if ! vercel_token=$(gcloud secrets versions access latest \
+            --secret=VERCEL_TOKEN --project "$GCP_PROJECT" 2>/tmp/secret.err); then
+            echo "::error::could not read VERCEL_TOKEN: $(cat /tmp/secret.err)"
+            exit 1
+          fi
+          echo "::add-mask::$vercel_token"
+          if ! db_url=$(gcloud secrets versions access latest \
+            --secret=DATABASE_URL_SECRET --project "$GCP_PROJECT" 2>/tmp/secret.err); then
+            echo "::error::could not read DATABASE_URL_SECRET: $(cat /tmp/secret.err)"
+            exit 1
+          fi
+          echo "::add-mask::$db_url"
+          test -n "$vercel_token" || { echo "::error::VERCEL_TOKEN is empty"; exit 1; }
+          test -n "$db_url" || { echo "::error::DATABASE_URL_SECRET is empty"; exit 1; }
+          export VERCEL_TOKEN="$vercel_token"
+          export DATABASE_URL_DIRECT="$db_url"
+          uv run --package majorana-api python scripts/collect_pageviews.py
+
+      - name: no credentials, nothing to do
+        if: steps.creds.outputs.have != 'true'
+        run: |
+          echo "::notice::GCP deploy credentials are not configured for this repository,"
+          echo "::notice::so there is no database to write to. Skipping rather than failing."
