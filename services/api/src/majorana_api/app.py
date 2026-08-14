@@ -10,6 +10,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import JSONResponse
 
 from .db import engine_from_env, session_factory
@@ -17,6 +18,7 @@ from .observability import init_telemetry
 from .rate_limit import (
     CALLER_TRUST_HEADER,
     EXEMPT_PATHS,
+    TRUSTED_CALLER_HEADER,
     MAX_REQUEST_BYTES,
     BodyTooLarge,
     FixedWindowLimiter,
@@ -93,6 +95,36 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         allow_methods=["*"],
         allow_headers=["Authorization", "Content-Type"],
     )
+
+    # There was no response compression at all. `/v1/catalog/entries` is the
+    # hot public path and returns JSON that gzips to roughly a tenth of its
+    # size, over a link that is 3,800 km long in the direction that matters —
+    # Vercel's functions are in `iad1`, this service is in `us-west1`.
+    #
+    # `compresslevel=6` rather than the library's 9. On JSON, 9 buys one or two
+    # percent over 6 for several times the CPU, and this service has ONE vCPU
+    # (`1000m` — `API_CPU` in `infra/fleet.env`, the declared source since
+    # infra/pin-api-cloud-run-shape; before that this figure was only "verified
+    # from `gcloud run services describe majorana-api`" by hand. The 2-vCPU
+    # figure in docs/runbooks/system-catalog.md:195 describes a `gcloud run
+    # jobs` import batch, a different resource). Spending that CPU on the
+    # last one percent of a response is the wrong trade on a box that also has
+    # to serve the request.
+    #
+    # ## SSE is safe, and it is the library that makes it safe
+    #
+    # `/v1/runs/{id}/events/stream` returns a `StreamingResponse` with
+    # `media_type="text/event-stream"` (routes/runs.py:624). Compressing that
+    # would hold each event in the gzip window until it filled, turning a live
+    # stream into a stuttering one — the standard way this middleware breaks SSE.
+    #
+    # It does not happen here: Starlette declares
+    # `DEFAULT_EXCLUDED_CONTENT_TYPES = ("text/event-stream",)` and skips those
+    # responses (starlette/middleware/gzip.py:8,56). Read from the installed
+    # source rather than assumed, because the whole safety of this line rests on
+    # it — and because it is a library DEFAULT, which is exactly the kind of
+    # thing an upgrade changes silently. `test_gzip.py` pins it.
+    app.add_middleware(GZipMiddleware, minimum_size=500, compresslevel=6)
 
     # Per-IP admission control for callers presenting no credential — the
     # `/v1/catalog/*` surface, which has no account to meter (rate_limit.py).
@@ -194,7 +226,48 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 extra={"reason": reason},
             )
         response = await call_next(request)
-        response.headers[CALLER_TRUST_HEADER] = trust_header[CALLER_TRUST_HEADER]
+        # CALLER_TRUST_HEADER describes THIS request's caller — our own renderer
+        # versus an anonymous one — not the payload. `routes/catalog.py` marks
+        # its six public GETs `Cache-Control: public`, and a shared cache is then
+        # free to replay one caller's stored response to a different caller, so
+        # the verdict must never ride on a publicly cacheable response.
+        #
+        # **Stripping it outright was wrong, and this is the correction.** The
+        # first version of this block dropped the header from every `public`
+        # response, on the reasoning that "nothing downstream reads this header".
+        # Something does: `apps/web/lib/trusted-caller.ts`'s `reportCallerTrust`
+        # is called on every catalog fetch the renderer makes, and its module
+        # comment says in as many words that a mismatch is **the only symptom
+        # this failure has**. The failure it detects is real — the renderer's
+        # token misconfigured or rejected, so our own server-side renders are
+        # metered against the anonymous per-address ceiling, hit it under load,
+        # and fall back to the bundled static corpus. Stripping the header from
+        # the six routes the renderer actually fetches turned off the only
+        # detector for that, silently, on exactly those routes.
+        #
+        # So the split is by caller rather than by route:
+        #
+        #   trusted   -> keep the verdict, and mark the response `private` so no
+        #                SHARED cache stores it. A private cache holding a
+        #                response whose trust verdict is its own is correct.
+        #   anonymous -> keep `public`, strip the verdict. An anonymous caller
+        #                has nothing to learn from it, and this is the variant a
+        #                CDN is allowed to keep.
+        #
+        # `Vary` is added on the credential header so a cache cannot serve the
+        # public variant to a trusted caller and hide the diagnostic again. It
+        # costs one extra cache key for a caller that is a single deployment.
+        cache_control = response.headers.get("Cache-Control", "")
+        if "public" in cache_control:
+            response.headers["Vary"] = (
+                f"{response.headers['Vary']}, {TRUSTED_CALLER_HEADER}"
+                if response.headers.get("Vary")
+                else TRUSTED_CALLER_HEADER
+            )
+        if "public" in cache_control and trusted:
+            response.headers["Cache-Control"] = cache_control.replace("public", "private", 1)
+        if "public" not in response.headers.get("Cache-Control", ""):
+            response.headers[CALLER_TRUST_HEADER] = trust_header[CALLER_TRUST_HEADER]
         return response
 
     @app.exception_handler(HTTPException)

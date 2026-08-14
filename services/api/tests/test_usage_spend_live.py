@@ -90,11 +90,11 @@ async def _spend(factory, scope, *, role, model, tokens, ago=dt.timedelta(minute
     """One ledger row, aged.
 
     Written as an INSERT with an explicit `ts` rather than through
-    `record_usage` and then backdated: migration 0001 revokes UPDATE on
-    `usage_events` from `app_rw` (it is an append-only billing substrate), so
-    backdating is not a thing production could do and not a thing a test should
-    teach. `meta=None` is reachable — the parameter is optional — so it is
-    passed through as-is rather than defaulted to a dict here.
+    `record_usage` and then backdated: `usage_events` is append-only, enforced
+    by a BEFORE UPDATE OR DELETE trigger (migration 0050), so backdating is not
+    a thing production could do and not a thing a test should teach.
+    `meta=None` is reachable — the parameter is optional — so it is passed
+    through as-is rather than defaulted to a dict here.
     """
     async with factory() as session:
         session.add(

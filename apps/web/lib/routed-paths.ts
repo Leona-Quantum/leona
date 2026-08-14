@@ -19,27 +19,50 @@
  * visitor to WorkOS again). Add a top-level route, add it here — the test says
  * so before CI does.
  */
+/**
+ * The public paths served out of `app/[locale]/` through a middleware rewrite.
+ *
+ * These do NOT appear in ROUTED_SEGMENTS, and that is not an oversight.
+ * `middleware.ts` answers them before `isRoutedPath()` is ever consulted — it
+ * rewrites `/pricing` to `/en/pricing` or `/ja/pricing` and returns. So the
+ * fall-through never sees them, and listing them would be a claim about a code
+ * path that does not run.
+ *
+ * What DOES still reach `isRoutedPath()` is a deeper path like
+ * `/pricing/anything`, which matches no route and should 404. That is why
+ * `pricing` and its siblings were removed from ROUTED_SEGMENTS when they moved.
+ *
+ * Every entry here is public by construction: the rewrite bypasses the auth
+ * gate deliberately, because AuthKit refreshes the session on every request it
+ * sees and Vercel will not cache a response carrying `Set-Cookie`. Adding a
+ * path here therefore publishes it. `routed-paths.test.ts` checks this list
+ * against what `app/[locale]/` actually serves, in both directions.
+ */
+export const LOCALE_ROUTES: readonly string[] = [
+  "/",
+  "/contact",
+  "/pricing",
+  "/privacy",
+  "/terms",
+  "/workspace",
+];
+
 export const ROUTED_SEGMENTS: readonly string[] = [
   "account",
   "api",
   "auth",
-  "contact",
   "dashboard",
   "demo",
   "dev",
   "lab",
   "library",
   "open-source",
-  "pricing",
-  "privacy",
   "repository",
   "run",
   "shared",
   "studio",
-  "terms",
   "upgrade",
   "welcome",
-  "workspace",
 ];
 
 const ROUTED = new Set(ROUTED_SEGMENTS);

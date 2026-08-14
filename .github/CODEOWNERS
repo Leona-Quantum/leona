@@ -6,4 +6,10 @@
 /packages/py/sandbox/      @EshMis
 /.github/workflows/        @EshMis
 /apps/web/middleware.ts    @EshMis
+# The two lists the middleware decides from. Owned for the same reason the
+# middleware is: LOCALE_ROUTES entries are rewritten BEFORE the auth gate and
+# are therefore public by construction, and a segment added to or removed from
+# ROUTED_SEGMENTS changes whether an unknown URL is gated or falls through to a
+# 404. Both were reachable without a blast-radius declaration until now.
+/apps/web/lib/routed-paths.ts  @EshMis
 /services/api/src/majorana_api/auth/  @EshMis

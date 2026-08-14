@@ -54,8 +54,37 @@ function isNonEmptyString(value: unknown): value is string {
   return typeof value === "string" && value.length > 0;
 }
 
+/**
+ * What a record carries when the API projected its circuit away.
+ *
+ * Frozen and shared rather than constructed per record: 369 of these per page
+ * render otherwise, and nothing may mutate it into a non-empty one.
+ */
+const EMPTY_VISUALIZATION = Object.freeze({
+  wires: Object.freeze([]),
+  operations: Object.freeze([]),
+  outcomes: Object.freeze([]),
+});
+
 function isStringArray(value: unknown): value is string[] {
   return Array.isArray(value) && value.every((item) => typeof item === "string");
+}
+
+/**
+ * A complete `visualization` from whatever the list projection sent.
+ *
+ * Absent, or absent one key: an empty array stands in, because every browse-path
+ * consumer treats an empty circuit as "nothing to draw" and none of them
+ * optional-chains past the field itself. Shape is already validated by the
+ * caller — this only fills.
+ */
+function fillVisualization(value: unknown): unknown {
+  if (!isRecord(value)) return EMPTY_VISUALIZATION;
+  return {
+    wires: value.wires ?? EMPTY_VISUALIZATION.wires,
+    operations: value.operations ?? EMPTY_VISUALIZATION.operations,
+    outcomes: value.outcomes ?? EMPTY_VISUALIZATION.outcomes,
+  };
 }
 
 /**
@@ -183,12 +212,50 @@ export function parseCatalogListRecord(record: unknown): PublicRepositoryListEnt
 
   // Structures iterated without a null check.
   if (!isStringArray(record.tags)) return null;
-  if (!Array.isArray(record.resources) || !Array.isArray(record.metadata)) return null;
-  if (!Array.isArray(record.codeVariants)) return null;
 
-  if (!isRecord(record.visualization)) return null;
-  const { wires, operations, outcomes } = record.visualization;
-  if (!isStringArray(wires) || !Array.isArray(operations) || !Array.isArray(outcomes)) return null;
+  // ABSENT is tolerated here; MALFORMED is not. Same two terms, and the same
+  // reason, as `sourceCoverage` and `knownGaps` below — and this is the LIST
+  // parse specifically, whose payload is about to get smaller.
+  //
+  // These four fields are 63% of the list payload and a browse card renders
+  // almost none of them. Trimming them from the API's projection is the point of
+  // the work; requiring them here is what would make that trim catastrophic
+  // rather than beneficial. `null` from this function is not a degraded record,
+  // it is NO record — so a required guard would reject all 369 at once the
+  // moment the API stopped sending one of them.
+  //
+  // And it would not even show an empty page. `repository-source.ts` treats a
+  // zero-length parse as a failed fetch and falls back to the bundled static
+  // corpus with a console line, so the site would go on rendering — from a
+  // snapshot, silently, exactly the way the 362-of-369 incident did.
+  //
+  // The two deploy pipelines are independent (Actions ships Cloud Run, Vercel
+  // ships the web app), so there is no ordering that avoids a window. This is
+  // what makes the window survivable.
+  if (record.resources !== undefined && !Array.isArray(record.resources)) return null;
+  if (record.metadata !== undefined && !Array.isArray(record.metadata)) return null;
+  if (record.codeVariants !== undefined && !Array.isArray(record.codeVariants)) return null;
+  // And the same two terms ONE LEVEL DOWN, which is where this field's cost
+  // actually is. `visualization` is 16.0% of the list payload and `operations`
+  // is 138,156 of its 171,410 bytes (measured against the live 369-record
+  // listing, 2026-08-15); `outcomes` is read by nothing in the browse view at
+  // all. So the projection that pays here trims INSIDE the field — the same
+  // shape as `codeVariants` losing its `code` — and a required inner guard
+  // would turn that trim into a total rejection of all 369 records rather than
+  // a smaller payload.
+  //
+  // Requiring the inner keys was the sharper trap of the two, because the outer
+  // tolerance above reads as if it already covered this: an API that sends
+  // `visualization: { wires: [...] }` and nothing else passes
+  // `record.visualization !== undefined` and `isRecord`, then dies on
+  // `!Array.isArray(undefined)`.
+  if (record.visualization !== undefined) {
+    if (!isRecord(record.visualization)) return null;
+    const { wires, operations, outcomes } = record.visualization;
+    if (wires !== undefined && !isStringArray(wires)) return null;
+    if (operations !== undefined && !Array.isArray(operations)) return null;
+    if (outcomes !== undefined && !Array.isArray(outcomes)) return null;
+  }
 
   if (record.verificationMethods !== undefined && !isStringArray(record.verificationMethods)) return null;
   // Same terms as the line above, and needed for the same reason: `topics` is
@@ -210,7 +277,23 @@ export function parseCatalogListRecord(record: unknown): PublicRepositoryListEnt
   if (record.sourceCoverage !== undefined && !isSourceCoverage(record.sourceCoverage)) return null;
   if (record.knownGaps !== undefined && !isKnownGapList(record.knownGaps)) return null;
 
-  return record as unknown as PublicRepositoryListEntry;
+  // Filled rather than left undefined, so no consumer has to learn a new shape.
+  // `families.ts:148` maps `entry.codeVariants` with no `?? []` and would throw;
+  // `repository-browser.tsx:786` searches `entry.resources`; the gate sidebar
+  // reads `entry.visualization.wires` directly. An empty structure degrades each
+  // of those to "nothing to show", which is what a reader should see for a field
+  // the server chose not to send.
+  //
+  // `visualization` is filled a level down for the same reason: `:1562` reads
+  // `entry.visualization.operations` with no `?? []`, so a partial object from
+  // the server has to arrive complete here or the gates tab throws.
+  return {
+    ...record,
+    resources: record.resources ?? [],
+    metadata: record.metadata ?? [],
+    codeVariants: record.codeVariants ?? [],
+    visualization: fillVisualization(record.visualization),
+  } as unknown as PublicRepositoryListEntry;
 }
 
 export interface CatalogParseResult {

@@ -1,19 +1,31 @@
 import type { Metadata } from "next";
-import { PublicSite } from "../../components/public-site";
-import { Reveal } from "../../components/reveal";
-import { WORKSPACE_LANDING_COPY } from "../../lib/public-copy";
-import { getPublicLocale } from "../../lib/public-locale-server";
+import { PublicSite } from "../../../components/public-site";
+import { Reveal } from "../../../components/reveal";
+import { WORKSPACE_LANDING_COPY } from "../../../lib/public-copy";
+import { parsePublicLocale, PUBLIC_LOCALES } from "../../../lib/public-locale";
+
+// Served from the CDN. The locale comes from the path segment because a cached
+// page cannot read a cookie — `middleware.ts` rewrites the clean URL to this
+// one, keeping `/{clean}` in the address bar while giving each language its own
+// cache entry. `dynamicParams = false` is what stops `[locale]` from swallowing
+// every mistyped URL and answering it with this page instead of a 404.
+export const revalidate = 300;
+export const dynamicParams = false;
+
+export function generateStaticParams() {
+  return PUBLIC_LOCALES.map((locale) => ({ locale }));
+}
 
 export const metadata: Metadata = {
   title: "Workspace",
   description: "Leona Quantum's personal quantum workspace for guided development, Studio, and verified artifacts.",
 };
 
-export default async function WorkspacePage() {
-  const locale = await getPublicLocale();
+export default async function WorkspacePage({ params }: { params: Promise<{ locale: string }> }) {
+  const locale = parsePublicLocale((await params).locale);
   const copy = WORKSPACE_LANDING_COPY[locale];
   return (
-    <PublicSite activePath="/workspace" className="mj-open-source" locale={locale}>
+    <PublicSite activePath="/workspace" className="mj-open-source" locale={locale} chrome="static">
       <div className="mj-open-source-inner">
         <section className="mj-open-source-hero">
           <p className="mj-public-overline">{copy.overline}</p>

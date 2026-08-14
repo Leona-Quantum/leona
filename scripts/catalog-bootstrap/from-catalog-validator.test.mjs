@@ -68,33 +68,94 @@ assert.ok(
 // performs the projection. Parsed rather than duplicated: a copy kept here by
 // hand would be a THIRD copy, and would agree with whichever one it was typed
 // from forever.
-function apiListViewFields() {
-  const source = readFileSync(
-    join(root, "services/api/src/majorana_api/catalog_read_model.py"),
-    "utf8",
-  );
-  const marker = "LIST_VIEW_RECORD_FIELDS: frozenset[str] = frozenset(";
-  const start = source.indexOf(marker);
-  assert.notEqual(start, -1, `${marker} not found — the allowlist moved or was renamed`);
-  const open = source.indexOf("{", start);
-  const close = source.indexOf("}", open);
-  assert.ok(open !== -1 && close > open, "could not find the frozenset literal's braces");
-  // Strip Python comments before extracting literals, so a `#` line that
-  // happens to quote something cannot be read as a member.
-  const body = source
-    .slice(open + 1, close)
+const READ_MODEL_SOURCE = readFileSync(
+  join(root, "services/api/src/majorana_api/catalog_read_model.py"),
+  "utf8",
+);
+
+/**
+ * One named `frozenset[str]` literal out of the Python read model, as a Set.
+ *
+ * `minMembers` is not decoration. A parse that silently returned nothing would
+ * make every assertion built on it vacuous — passing whether the set has 24
+ * members or 2 — which is the same class of blindness as the API's own
+ * `issubset` checks that this file exists to compensate for.
+ */
+function pythonFrozenset(name, minMembers) {
+  const marker = `${name}: frozenset[str] = frozenset(`;
+  const start = READ_MODEL_SOURCE.indexOf(marker);
+  assert.notEqual(start, -1, `${marker} not found — the constant moved or was renamed`);
+  // Comments are stripped BEFORE the braces are located, not after. A `#` line
+  // inside the literal that quotes a route template — `/v1/catalog/entries/` and
+  // a braced slug — puts a closing brace in front of the real one, and the body
+  // is then truncated mid-list. Found the honest way: the min-member guard below
+  // failed at 18 of 23 the first time this file grew such a comment.
+  const source = READ_MODEL_SOURCE.slice(start)
     .split("\n")
     .map((line) => line.split("#")[0])
     .join("\n");
-  const fields = [...body.matchAll(/"([^"]+)"/g)].map((m) => m[1]);
-  // A parse that silently returns nothing would make every assertion below
-  // vacuous. This corpus has ~24 list fields; anything under 20 means the
-  // extraction broke, not that the allowlist shrank by half.
+  const open = source.indexOf("{");
+  const close = source.indexOf("}", open);
+  assert.ok(open !== -1 && close > open, `could not find ${name}'s frozenset braces`);
+  const members = [...source.slice(open + 1, close).matchAll(/"([^"]+)"/g)].map((m) => m[1]);
   assert.ok(
-    fields.length >= 20,
-    `parsed only ${fields.length} fields out of the Python allowlist — the extraction is broken, not the allowlist`,
+    members.length >= minMembers,
+    `parsed only ${members.length} members out of ${name} — the extraction is broken, not the constant`,
   );
-  return new Set(fields);
+  return new Set(members);
+}
+
+// This corpus has ~24 list fields; anything under 20 means the extraction broke,
+// not that the allowlist shrank by half.
+const apiListViewFields = () => pythonFrozenset("LIST_VIEW_RECORD_FIELDS", 20);
+
+/**
+ * `project_record_for_list_view` as the API actually performs it, mirrored here.
+ *
+ * The intersection alone is NOT what production sends, and testing the
+ * intersection was a real gap: two fields are projected a level deeper than the
+ * allowlist reaches, and a record that survives the outer trim can still be
+ * rejected by the inner one. Every inner allowlist is read out of the same
+ * Python source as the outer one rather than restated, so this mirror cannot
+ * drift from the projection it claims to reproduce without failing above.
+ */
+function projectForListView(record) {
+  const fields = apiListViewFields();
+  const variantKeys = pythonFrozenset("LIST_VIEW_CODE_VARIANT_FIELDS", 2);
+  const resourceLabels = pythonFrozenset("LIST_VIEW_RESOURCE_LABELS", 1);
+  const projected = Object.fromEntries(
+    Object.entries(record).filter(([key]) => fields.has(key)),
+  );
+  if (Array.isArray(projected.codeVariants)) {
+    projected.codeVariants = projected.codeVariants.map((variant) =>
+      variant && typeof variant === "object"
+        ? Object.fromEntries(Object.entries(variant).filter(([key]) => variantKeys.has(key)))
+        : variant,
+    );
+  }
+  if (Array.isArray(projected.resources)) {
+    projected.resources = projected.resources.filter(
+      (row) => row && typeof row === "object" && resourceLabels.has(row.label),
+    );
+  }
+  if (projected.visualization && typeof projected.visualization === "object") {
+    // Reads a SECOND field of the record — `category` — and reads it off the
+    // source rather than the projection, exactly as the Python does.
+    const vizKeys =
+      record.category === "gates"
+        ? pythonFrozenset("LIST_VIEW_GATE_VISUALIZATION_FIELDS", 2)
+        : pythonFrozenset("LIST_VIEW_VISUALIZATION_FIELDS", 1);
+    projected.visualization = Object.fromEntries(
+      Object.entries(projected.visualization).filter(([key]) => vizKeys.has(key)),
+    );
+  }
+  if (projected.portableCircuit && typeof projected.portableCircuit === "object") {
+    const circuitKeys = pythonFrozenset("LIST_VIEW_PORTABLE_CIRCUIT_FIELDS", 2);
+    projected.portableCircuit = Object.fromEntries(
+      Object.entries(projected.portableCircuit).filter(([key]) => circuitKeys.has(key)),
+    );
+  }
+  return projected;
 }
 
 // THE GUARD. apps/web/lib/repository/types.ts's PUBLIC_REPOSITORY_LIST_FIELDS
@@ -144,16 +205,13 @@ test("the web's list projection and the API's allowlist are the same set", () =>
 // real record anywhere: the tests above import only the full parser, which
 // guards getRepositoryEntries, and that function has no callers at all.
 test("the list guard accepts every real record after projection", () => {
-  const api = apiListViewFields();
-  const projected = manifest.items.map((item) => {
-    const record = JSON.parse(item.source_blob);
+  const projected = manifest.items.map((item) => ({
+    slug: item.upstream_identity,
     // Exactly what project_record_for_list_view does: intersection, never
-    // filling in defaults — an absent key stays absent rather than arriving null.
-    return {
-      slug: item.upstream_identity,
-      record: Object.fromEntries(Object.entries(record).filter(([key]) => api.has(key))),
-    };
-  });
+    // filling in defaults — an absent key stays absent rather than arriving
+    // null — and then the two inner trims, which the intersection alone misses.
+    record: projectForListView(JSON.parse(item.source_blob)),
+  }));
 
   const rejected = projected
     .filter((row) => parseCatalogListRecord(row.record) === null)
@@ -172,13 +230,82 @@ test("the list guard accepts every real record after projection", () => {
   assert.equal(parsed.entries.length, projected.length);
 });
 
+/**
+ * The inner trims are projections, not behaviour changes — asserted over the
+ * real corpus rather than argued.
+ *
+ * A browse card's qubit chip is `resources.find((r) => r.label === "Qubits")
+ * ?.value` (`app/repository/repository-browser.tsx:786`). The filter here uses
+ * the same literal, so the claim to check is the strong one: every record that
+ * renders a chip before the projection renders the SAME chip after, and every
+ * record that renders none still renders none.
+ */
+test("the resource projection preserves every browse card's qubit chip", () => {
+  const qubitsOf = (record) =>
+    (Array.isArray(record.resources) ? record.resources : []).find((row) => row?.label === "Qubits")
+      ?.value ?? null;
+
+  let withChip = 0;
+  for (const item of manifest.items) {
+    const full = JSON.parse(item.source_blob);
+    const before = qubitsOf(full);
+    const after = qubitsOf(projectForListView(full));
+    assert.equal(after, before, `${item.upstream_identity}'s qubit chip changed under projection`);
+    if (before !== null) withChip += 1;
+  }
+  // A corpus where no record carried the row would make the assertion above
+  // true and empty. The chip is common, not rare.
+  assert.ok(withChip > 50, `only ${withChip} records carry a Qubits row — the lookup label moved`);
+});
+
+/**
+ * The gate sidebar still has a circuit to draw, and nothing else carries one.
+ *
+ * `visualization.operations` is 138,156 of the field's 171,410 bytes and the
+ * browse list draws exactly one circuit: `selectedGateEntry`
+ * (`repository-browser.tsx:1053`, drawn at `:1562`), on a tab whose entries are
+ * `category === "gates" ? ordered : []`. So the projection keeps `operations`
+ * for that category and drops it everywhere else — and both halves of that
+ * sentence are worth asserting, because the failure modes are opposite: a gate
+ * without operations draws an empty circuit, and a non-gate with them is 138 KB
+ * nobody reads.
+ */
+test("every gate keeps a drawable circuit and nothing else carries one", () => {
+  let gates = 0;
+  let others = 0;
+  for (const item of manifest.items) {
+    const full = JSON.parse(item.source_blob);
+    const projected = projectForListView(full);
+    if (!projected.visualization) continue;
+    if (full.category === "gates") {
+      gates += 1;
+      assert.deepEqual(
+        projected.visualization.operations,
+        full.visualization.operations,
+        `${item.upstream_identity} is a gate whose circuit was projected away`,
+      );
+    } else {
+      others += 1;
+      assert.equal(
+        "operations" in projected.visualization,
+        false,
+        `${item.upstream_identity} is not a gate and still carries operations`,
+      );
+    }
+    // Every record keeps its register: `deriveInterface` reads its length, and a
+    // record whose width silently became 0 reclassifies rather than blanks.
+    assert.deepEqual(projected.visualization.wires, full.visualization.wires);
+    assert.equal("outcomes" in projected.visualization, false);
+  }
+  // Neither branch may be empty, or half this test is vacuous.
+  assert.ok(gates > 0, "no gate-category record in the manifest — the category value moved");
+  assert.ok(others > 0, "every record is a gate, so the drop branch was never exercised");
+});
+
 test("the list guard rejects a corrupted closed-vocabulary field", () => {
   // Proves the guard above can fail. A validator that accepts everything would
   // pass the projection test forever.
-  const api = apiListViewFields();
-  const good = Object.fromEntries(
-    Object.entries(JSON.parse(manifest.items[0].source_blob)).filter(([key]) => api.has(key)),
-  );
+  const good = projectForListView(JSON.parse(manifest.items[0].source_blob));
   assert.notEqual(parseCatalogListRecord(good), null);
   assert.equal(parseCatalogListRecord({ ...good, category: "not-a-category" }), null);
   assert.equal(parseCatalogListRecord({ ...good, topics: "optimization" }), null);
@@ -222,10 +349,6 @@ test("a record with a corrupted closed-vocabulary field is rejected", () => {
 const { deriveInterface } = await loadModule("apps/web/lib/repository/interface.ts");
 
 /** Exactly what `project_record_for_list_view` does: intersection, no defaults. */
-function projectForList(record, allowed) {
-  return Object.fromEntries(Object.entries(record).filter(([key]) => allowed.has(key)));
-}
-
 function stanceOf(record) {
   return deriveInterface({
     slug: record.slug,
@@ -254,12 +377,11 @@ function stanceOf(record) {
 // interface, in the one view a reader uses to find them, and only in production
 // against a healthy API.
 test("the browse list derives the same interface stance as the entry page", () => {
-  const allowed = apiListViewFields();
   const disagreed = [];
   for (const item of manifest.items) {
     const record = JSON.parse(item.source_blob);
     const full = stanceOf(record);
-    const listed = stanceOf(projectForList(record, allowed));
+    const listed = stanceOf(projectForListView(record));
     if (full !== listed) disagreed.push(`${item.upstream_identity}: ${full} → ${listed}`);
   }
   assert.deepEqual(
@@ -290,14 +412,13 @@ test("the browse list derives the same interface stance as the entry page", () =
 // the allowlist: `knownGaps` costs ~1 KB per record that carries one, and one
 // record carries one today.
 test("the projected browse payload stays under the data-cache ceiling", () => {
-  const allowed = apiListViewFields();
   const CEILING = 2 * 1024 * 1024;
   // Well under the ceiling, so this fails while there is still room to decide
   // what to do rather than on the deploy that breaks the page.
   const BUDGET = Math.floor(CEILING * 0.75);
   const projected = manifest.items.reduce(
     (bytes, item) =>
-      bytes + Buffer.byteLength(JSON.stringify(projectForList(JSON.parse(item.source_blob), allowed)), "utf8"),
+      bytes + Buffer.byteLength(JSON.stringify(projectForListView(JSON.parse(item.source_blob))), "utf8"),
     0,
   );
   assert.ok(
@@ -305,4 +426,34 @@ test("the projected browse payload stays under the data-cache ceiling", () => {
     `the projected list payload is ${projected} bytes, over the ${BUDGET}-byte budget (75% of the ` +
       `${CEILING}-byte ceiling). Either drop a field from the allowlist or stop projecting prose.`,
   );
+});
+
+/**
+ * The circuit trim keeps every width, which is the only thing the list reads.
+ *
+ * `portableCircuit.steps` is 75,329 of the field's 80,159 bytes, and
+ * `deriveInterface` reads `qubitCount` and `measure` — there is no third read in
+ * its body. The stance test above already proves the trim does not reclassify a
+ * record, because it derives a stance from the PROJECTED record. This asserts
+ * the narrower thing that makes that non-vacuous: the two keys survive
+ * byte-identically on every record that carries a circuit, and `steps` survives
+ * on none.
+ */
+test("the circuit trim keeps the register on every record and the gates on none", () => {
+  let withCircuit = 0;
+  for (const item of manifest.items) {
+    const full = JSON.parse(item.source_blob);
+    if (!full.portableCircuit) continue;
+    withCircuit += 1;
+    const projected = projectForListView(full).portableCircuit;
+    assert.equal(
+      projected.qubitCount,
+      full.portableCircuit.qubitCount,
+      `${item.upstream_identity} lost or changed its qubitCount`,
+    );
+    assert.equal(projected.measure, full.portableCircuit.measure);
+    assert.equal("steps" in projected, false, `${item.upstream_identity} still carries its gates`);
+  }
+  // The corpus must actually exercise this, or the assertions above are empty.
+  assert.ok(withCircuit > 50, `only ${withCircuit} records carry a portableCircuit`);
 });
