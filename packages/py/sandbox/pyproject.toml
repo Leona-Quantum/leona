@@ -8,7 +8,22 @@ dependencies = ["pydantic>=2.8", "majorana-contracts"]
 [project.optional-dependencies]
 # The real Vercel Sandbox provider. Kept optional so the guard + local test
 # double install without the SDK (the SDK needs Vercel OIDC/token to do anything).
-vercel = ["vercel>=0.4"]
+#
+# Held at 0.6.0 (the version currently proven-good on dev): the python-minor-and-patch
+# dependabot group wants 0.9.0, but that release restructures the SDK, not just renames
+# it — `vercel.sandbox.aio` is gone, `Sandbox.create()` no longer exists (replaced by a
+# module-level, operation-returning `create_sandbox()`), `Resources` is
+# `SandboxResources`, and `SandboxAuthError` / `SandboxPermissionError` collapse into one
+# `SandboxApiError` keyed by `.status_code`. Confirmed the break lands earlier than 0.9:
+# 0.8.1 already lacks `SandboxPermissionError`. Exact-pinned rather than range-capped
+# because the true safe/unsafe boundary between 0.6.0 and 0.8.1 hasn't been bisected.
+# `majorana_sandbox.vercel.VercelSandbox._execute` — the deny-all-egress boundary
+# (AGENTS.md rule 3) — would need a real rewrite against the new create/await lifecycle,
+# including checking whether `timeout=` (ms) survives as `execution_time_limit=` with the
+# same unit, and none of that is verifiable here without live Vercel credentials.
+# `packages/py/sandbox/` is a blast-radius path (CODEOWNERS): owner review, not a
+# dependency-bump PR, is the right place to take this on.
+vercel = ["vercel==0.6.0"]
 
 [build-system]
 requires = ["hatchling"]
