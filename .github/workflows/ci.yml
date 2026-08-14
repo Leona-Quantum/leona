@@ -244,6 +244,7 @@ jobs:
             services/api/tests/test_qpu_spend_allowance_live.py \
             services/api/tests/test_run_allowance_race_live.py \
             services/api/tests/test_run_terminal_live.py \
+            services/api/tests/test_submission_backstop_race_live.py \
             services/api/tests/test_usage_allowance_live.py \
             services/api/tests/test_usage_spend_live.py \
             services/api/tests/test_workspace_cap_race_live.py \

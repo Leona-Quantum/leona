@@ -8,6 +8,7 @@ import asyncio
 import datetime as dt
 import hashlib
 import json
+import logging
 import uuid
 from typing import Annotated, Any, Literal
 
@@ -31,10 +32,11 @@ from ..repos import runs as runs_repo
 from ..repos import system
 from ..settings import Settings
 from ..tiers import TIER_WINDOW as _TIER_WINDOW
-from ..tiers import limits_for, tier_of
+from ..tiers import TierLimits, limits_for, tier_of
 from ..verification_summary import parse_verification_summary
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
 
 _meter = metrics.get_meter("majorana.api.sse")
 _sse_active_streams = _meter.create_up_down_counter(
@@ -49,6 +51,18 @@ _sse_polls = _meter.create_counter(
 _sse_disconnects = _meter.create_counter(
     "majorana.sse.disconnects",
     description="SSE streams observed after a client disconnect",
+)
+#: ai-ops 86: "Enterprise alert-only" — the tier with no submission-backstop
+#: ceiling is never refused, so this counter is the alert in its place. An
+#: external rule (Cloud Monitoring, Grafana, ...) watches its rate; nothing in
+#: this service asserts what "too much" is for a tier sold as unlimited.
+_unmetered_tier_submissions = _meter.create_counter(
+    "majorana.backstop.unmetered_tier_submission",
+    unit="{submission}",
+    description=(
+        "EXECUTE/AUTO run submissions from a tier with no submission-backstop "
+        "ceiling. Counted for abuse monitoring; never refused."
+    ),
 )
 
 SSE_POLL_INTERVAL_S = 1.0
@@ -245,11 +259,9 @@ def _to_resource(run: RunRow, queue_position: int | None = None) -> RunResource:
 # the tier-accurate gate into this service (`tiers.py`, applied below).
 #
 # So this is no longer the tier gate, and it never was a mirror of the tier
-# policy. It is a flat per-workspace ceiling far above every tier: it cannot
-# refuse a legitimate user, needs no tier model and no environment variable, and
-# removes the property that actually matters — that a token holder can spend
-# unboundedly. It sits ABOVE the real gate so a metered user reads "your plan
-# includes 5 runs", never "platform abuse ceiling".
+# policy. It cannot refuse a legitimate user and needs no tier model or
+# environment variable to exist, and it sits ABOVE the real gate so a metered
+# user reads "your plan includes 5 runs", never "platform abuse ceiling".
 #
 # TWO ceilings, not one, because AUTO is the DEFAULT mode on CreateRunRequest.
 # A first cut gated only `mode == EXECUTE`, which a caller defeated simply by
@@ -261,18 +273,66 @@ def _to_resource(run: RunRow, queue_position: int | None = None) -> RunResource:
 # execute ceiling would refuse legitimate users — which is the one thing a
 # backstop must never do.
 EXECUTE_BACKSTOP_WINDOW = dt.timedelta(days=7)
-#: Explicit `mode="execute"` submissions.
+#: Explicit `mode="execute"` submissions, counted PER WORKSPACE. A flat ceiling
+#: far above every tier. ai-ops 86 (2026-08-14) deliberately left this one
+#: alone — it was never the leak that ruling closed, and it stays a flat,
+#: workspace-scoped number on purpose. Do not touch it here.
 EXECUTE_BACKSTOP_LIMIT = 200
-#: EXECUTE + AUTO together — the bound that closes the default-mode bypass.
-SUBMISSION_BACKSTOP_LIMIT = 1000
+
+#: EXECUTE + AUTO together, per ACCOUNT — the bound that closes the
+#: default-mode bypass. This is the ceiling ai-ops 86 fixes.
+#:
+#: Until 2026-08-14 this was a flat 1000, counted PER WORKSPACE like
+#: `EXECUTE_BACKSTOP_LIMIT` above. That was two bugs stacked: the free tier
+#: sells `owned_workspaces=3` (`tiers.TIER_LIMITS`), so one free signup could
+#: spread submissions across three workspaces and clear ~3,000 model turns a
+#: week against a backstop meant to bound abuse; and the constant was
+#: tier-blind, checked identically against every tier, so it could never widen
+#: for an account that had in fact been sold more.
+#:
+#: The owner's ruling (ai-ops 86, 2026-08-14) fixes both: "Ten times the
+#: tier's weekly allowance, per user — Free 50, Plus 750, Professional 2,500,
+#: Enterprise alert-only." `submission_backstop_limit` below derives the
+#: number from `TierLimits.agent_runs_per_week` — the figure the plan is sold
+#: as — rather than restating the table as a second set of constants that
+#: could drift from it.
+#:
+#: Counted per ACCOUNT now, the way `count_execute_runs_since` already counts
+#: the tier gate: `reserve_submission_backstop_slot` locks the account's row
+#: before counting, which is what makes it safe against a burst of concurrent
+#: submissions the way the paid tier gate already is
+#: (`reserve_execute_run_slot`) — the old per-workspace comparison held
+#: nothing between its read and its write and could not have made that
+#: guarantee.
+SUBMISSION_BACKSTOP_MULTIPLIER = 10
 
 
-def _backstop_refusal(reason: str, used: int, limit: int) -> HTTPException:
+def submission_backstop_limit(limits: TierLimits) -> int | None:
+    """The per-account submission backstop for a tier.
+
+    `SUBMISSION_BACKSTOP_MULTIPLIER` times the tier's weekly run allowance, or
+    `None` — no ceiling — for a tier with no weekly allowance to multiply.
+    `None` propagates rather than becoming some multiple of nothing:
+    `reserve_submission_backstop_slot` reads it as "take no lock, refuse
+    nothing", the same way `reserve_execute_run_slot` and
+    `system.reserve_owned_workspace_slot` already read a `None` limit. The
+    caller alerts on that case instead of refusing (ai-ops 86: "Enterprise
+    alert-only") — see `_enforce_execute_backstop`.
+    """
+    if limits.agent_runs_per_week is None:
+        return None
+    return limits.agent_runs_per_week * SUBMISSION_BACKSTOP_MULTIPLIER
+
+
+def _backstop_refusal(reason: str, used: int, limit: int, *, held_by: str) -> HTTPException:
+    """`held_by` names what the ceiling is counted against — "workspace" for
+    `EXECUTE_BACKSTOP_LIMIT`, "account" for the submission backstop (ai-ops 86)
+    — so the message never tells a user the wrong noun was exhausted."""
     return HTTPException(
         status_code=429,
         detail={
             "error": (
-                "This workspace has reached the platform ceiling on runs for a "
+                f"This {held_by} has reached the platform ceiling on runs for a "
                 "rolling seven-day window. This is an abuse backstop, not your "
                 "plan allowance — if you are seeing it in normal use, contact "
                 "support."
@@ -358,9 +418,11 @@ async def _enforce_execute_backstop(
     if body.mode not in (RunMode.EXECUTE, RunMode.AUTO):
         return
     since = dt.datetime.now(dt.timezone.utc) - EXECUTE_BACKSTOP_WINDOW
+    # Still per WORKSPACE: backs only `EXECUTE_BACKSTOP_LIMIT` below, which
+    # ai-ops 86 leaves untouched. Do not read `submitted` out of this dict — the
+    # combined EXECUTE+AUTO ceiling is the per-account reservation further down.
     counts = await runs_repo.count_runs_by_mode_since(scope, session, since)
     executed = counts.get(RunMode.EXECUTE.value, 0)
-    submitted = executed + counts.get(RunMode.AUTO.value, 0)
 
     # The tier gate runs FIRST, because it is the smaller number and the one the
     # user recognises. A metered account that has spent its week should read
@@ -373,7 +435,8 @@ async def _enforce_execute_backstop(
     # where the decision is actually made, in the worker's mode resolution:
     # majorana_worker.handlers._resolve_mode.
     user, _workspace = identity
-    limits = limits_for(tier_of(user, settings))
+    tier = tier_of(user, settings)
+    limits = limits_for(tier)
     if body.mode == RunMode.EXECUTE:
         # Reserved under the account's lock rather than merely counted: two
         # submissions at the boundary used to read the same number and both
@@ -398,10 +461,37 @@ async def _enforce_execute_backstop(
             ) from reached
 
     if body.mode == RunMode.EXECUTE and executed >= EXECUTE_BACKSTOP_LIMIT:
-        raise _backstop_refusal("execute_backstop_exhausted", executed, EXECUTE_BACKSTOP_LIMIT)
-    if submitted >= SUBMISSION_BACKSTOP_LIMIT:
         raise _backstop_refusal(
-            "submission_backstop_exhausted", submitted, SUBMISSION_BACKSTOP_LIMIT
+            "execute_backstop_exhausted", executed, EXECUTE_BACKSTOP_LIMIT, held_by="workspace"
+        )
+
+    # Per ACCOUNT and tier-aware since ai-ops 86 (see SUBMISSION_BACKSTOP_MULTIPLIER
+    # above). `reserve_submission_backstop_slot` takes the same account-row lock
+    # `reserve_execute_run_slot` above already takes for EXECUTE — reentrant
+    # within one transaction, so acquiring it twice is cheap — and additionally
+    # takes it for AUTO, which never locked before this ruling.
+    try:
+        submitted = await runs_repo.reserve_submission_backstop_slot(
+            scope, session, since, submission_backstop_limit(limits)
+        )
+    except runs_repo.SubmissionBackstopReached as reached:
+        raise _backstop_refusal(
+            "submission_backstop_exhausted", reached.used, reached.limit, held_by="account"
+        ) from reached
+    if limits.agent_runs_per_week is None:
+        # ai-ops 86: "Enterprise alert-only" — no ceiling, so nothing above just
+        # refused anything. Surfaced instead of silent: the counter is the
+        # alert an external rule can threshold on, and the log line is there for
+        # anyone grepping after the fact. Routine for this tier by design (it is
+        # the operator's own traffic and the deploy probe as much as any real
+        # Enterprise seat), so INFO rather than WARNING — this is not itself a
+        # problem, only something worth being able to see.
+        _unmetered_tier_submissions.add(1, {"tier": tier})
+        logger.info(
+            "unmetered-tier submission: user_id=%s tier=%s submitted_7d=%d",
+            user.id,
+            tier,
+            submitted,
         )
 
 
