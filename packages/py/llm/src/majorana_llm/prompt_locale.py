@@ -11,7 +11,7 @@ from typing import Literal
 
 
 ResponseLocale = Literal["en", "ja"]
-PromptSurface = Literal["chat", "plan", "review", "alignment", "title"]
+PromptSurface = Literal["chat", "plan", "review", "alignment", "title", "analysis"]
 
 
 def normalize_response_locale(value: object) -> ResponseLocale:
@@ -56,6 +56,10 @@ _SURFACE_FIELDS: dict[PromptSurface, dict[ResponseLocale, str]] = {
     "title": {
         "en": "Write the title in English.",
         "ja": "タイトルは自然で簡潔な日本語にしてください。",
+    },
+    "analysis": {
+        "en": "Write the entire final explanation in natural English.",
+        "ja": "最終解説の全文を、読みやすく自然な日本語で書いてください。",
     },
 }
 

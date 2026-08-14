@@ -16,6 +16,7 @@
 import { friendlyFailure, type OutcomeEvent } from "./run-outcome.ts";
 import {
   resultVisualizationFromResult,
+  type ResultChartView,
   type ResultDistributionView,
   type ResultTraceView,
   type ResultValueView,
@@ -44,6 +45,7 @@ export interface RunResultView {
   saved: boolean;
   distribution: ResultDistributionView | null;
   traces: ResultTraceView[];
+  charts: ResultChartView[];
   values: RunResultValue[];
   facts: RunResultFact[];
   code: { label: string; language: string; source: string } | null;
@@ -227,12 +229,13 @@ export function runResultFromEvents(
     saved: Boolean(lastEvent(events, "artifact.saved")),
     distribution: visualization.distribution,
     traces: visualization.traces,
+    charts: visualization.charts,
     values: visualization.values,
     facts: [
       ...(plan?.algorithm ? [{ label: locale === "ja" ? "アルゴリズム" : "Algorithm", value: plan.algorithm }] : []),
       ...(plan?.framework ? [{ label: locale === "ja" ? "フレームワーク" : "Framework", value: plan.framework }] : []),
       ...(source?.revision !== undefined
-        ? [{ label: locale === "ja" ? "リビジョン" : "Revision", value: String(source.revision) }]
+        ? [{ label: locale === "ja" ? "コードの更新版" : "Code version", value: String(source.revision) }]
         : []),
       ...(shots ? [{ label: locale === "ja" ? "ショット数" : "Shots", value: shots.toLocaleString(locale === "ja" ? "ja-JP" : "en-US") }] : []),
     ],
