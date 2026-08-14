@@ -19,7 +19,7 @@
 # dist/index.js looks up the GitHub account type of the repo owner and, the instant
 # it comes back "Organization", requires a `GITLEAKS_LICENSE` secret or exits 1 --
 # on every run, leak or no leak. `EshMis/majorana` is about to transfer to the
-# LeonaQuantum org (ai-ops#46), which would have turned this required check
+# Leona-Quantum org (ai-ops#46), which would have turned this required check
 # permanently red, including on the PR meant to fix it. Buying a license would not
 # have been a durable fix either: the validation that key would satisfy is itself
 # commented out upstream at that pin ("keygen payment method is getting declined
@@ -45,6 +45,15 @@ on:
   merge_group:
   schedule:
     - cron: "0 3 * * 1" # weekly full-history scan
+
+# Same reasoning as ci.yml: a superseded PR run is scanning a commit that can no
+# longer be merged. The weekly scan is not at risk of being cancelled by PR
+# traffic — on `schedule` the ref is the default branch, not refs/pull/<n>/merge,
+# so it lands in a different group and always runs to completion.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   gitleaks:
     runs-on: ubuntu-latest

@@ -17,11 +17,11 @@ jobs:
     # Only run when the LLM key is configured; otherwise there is no honest number.
     #
     # Both slugs, deliberately, until the org move lands. This job is about to move
-    # from `EshMis/majorana` to `LeonaQuantum/leona` (ai-ops#46 + #70). A straight
+    # from `EshMis/majorana` to `Leona-Quantum/leona` (ai-ops#46 + #70). A straight
     # swap merged before the transfer would make this job SKIP in the window between
     # the two — and a skipped job reports success, so the gap would be invisible.
     # Drop `EshMis/majorana` once the transfer is confirmed.
-    if: ${{ github.repository == 'EshMis/majorana' || github.repository == 'LeonaQuantum/leona' }}
+    if: ${{ github.repository == 'EshMis/majorana' || github.repository == 'Leona-Quantum/leona' }}
     # Was a throwaway Neon branch until 2026-07-27. The baseline needs a real
     # database, not production's data — a fresh migrated + seeded Postgres is
     # closer to what it was actually using, since a Neon branch was reset on
