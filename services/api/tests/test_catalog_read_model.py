@@ -118,3 +118,71 @@ def test_entry_survives_a_non_record_source():
     assert entry.record is None
     assert entry.slug == "some-slug"
     assert entry.updated_at is not None
+
+
+def test_the_list_view_keeps_code_variants_but_not_their_code():
+    """The largest single item in the list payload, and the cheapest to remove.
+
+    `code` is 82.8% of the `codeVariants` field across the published corpus and
+    nothing in the browse list reads it — `getPublicRepositoryVariant()` takes a
+    full entry and is reached only from the detail view and the export route.
+    """
+    record = {
+        "slug": "bell-state",
+        "title": "Bell state",
+        "codeVariants": [
+            {
+                "framework": "Qiskit",
+                "status": "native",
+                "code": "from qiskit import QuantumCircuit\n" * 200,
+                "filename": "bell.py",
+                "language": "python",
+                "note": "A note nobody reads in a list.",
+            }
+        ],
+    }
+    projected = project_record_for_list_view(record)
+    assert projected is not None
+    assert projected["codeVariants"] == [{"framework": "Qiskit", "status": "native"}]
+
+
+def test_the_field_survives_so_width_families_still_fold():
+    """Dropping the field entirely would be the tempting version and is wrong.
+
+    `apps/web/lib/repository/families.ts:148` folds
+    `codeVariants.map(v => f"{v.framework}:{v.status}")` into the signature that
+    decides which records belong to the same width family. Remove the field and
+    every record's signature component becomes identical, changing which records
+    fold together with nothing failing anywhere.
+    """
+    record = {
+        "slug": "x",
+        "codeVariants": [{"framework": "Cirq", "status": "conversion", "code": "x"}],
+    }
+    projected = project_record_for_list_view(record)
+    assert "codeVariants" in projected, "the field itself must survive the projection"
+    assert projected["codeVariants"][0]["framework"] == "Cirq"
+    assert projected["codeVariants"][0]["status"] == "conversion"
+
+
+def test_a_record_with_no_variants_is_untouched():
+    # Projecting by intersection means an absent key stays absent rather than
+    # arriving as an empty list.
+    assert "codeVariants" not in project_record_for_list_view({"slug": "x", "title": "t"})
+    assert project_record_for_list_view({"slug": "x", "codeVariants": []})["codeVariants"] == []
+
+
+def test_a_malformed_codeVariants_is_passed_through_rather_than_repaired():
+    """A projection must not launder a schema disagreement.
+
+    The web validator refuses a malformed `codeVariants`, which is the behaviour
+    that catches an API/web schema drift. If this coerced a string into a
+    well-formed empty list, that check would never fire and the disagreement
+    would be invisible on both sides.
+    """
+    assert (
+        project_record_for_list_view({"slug": "x", "codeVariants": "nonsense"})["codeVariants"]
+        == "nonsense"
+    )
+    weird = project_record_for_list_view({"slug": "x", "codeVariants": [None, 3]})
+    assert weird["codeVariants"] == [None, 3]

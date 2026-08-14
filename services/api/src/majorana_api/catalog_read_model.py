@@ -119,6 +119,45 @@ LIST_VIEW_RECORD_FIELDS: frozenset[str] = frozenset(
 )
 
 
+# The keys of a code variant the browse list actually reads.
+#
+# A variant is `{code, filename, framework, language, note, status}`, and `code`
+# alone is 82.8% of the whole `codeVariants` field — 362,564 of 437,825 bytes
+# across the published corpus, measured against the live listing rather than a
+# fixture. Nothing in the browse list reads it: `getPublicRepositoryVariant()`
+# and `getPublicRepositoryLibraryVariant()` both take a full
+# `PublicRepositoryEntry` and are reached only from the detail view and the
+# export route, each of which fetches one record on its own.
+#
+# What the list DOES read is two keys, in one place —
+# `apps/web/lib/repository/families.ts:148` folds
+# `codeVariants.map((v) => f"{v.framework}:{v.status}")` into the signature that
+# decides which records belong to the same width family, and
+# `repository-browser.tsx:44` imports that. So the field cannot be dropped: doing
+# so would give every record an identical signature component and silently change
+# which records fold together, with nothing failing. Keeping the field and
+# dropping the code is the version with no behaviour change at all.
+LIST_VIEW_CODE_VARIANT_FIELDS: frozenset[str] = frozenset({"framework", "status"})
+
+
+def _project_code_variants(variants: Any) -> Any:
+    """Keep each variant's identity, drop the source it carries.
+
+    Anything that is not a list of objects is returned untouched rather than
+    coerced. A projection is not the place to discover a schema disagreement —
+    the web validator refuses a malformed `codeVariants` and this must not turn
+    a malformed one into a well-formed empty one on the way past.
+    """
+    if not isinstance(variants, list):
+        return variants
+    return [
+        {key: value for key, value in variant.items() if key in LIST_VIEW_CODE_VARIANT_FIELDS}
+        if isinstance(variant, dict)
+        else variant
+        for variant in variants
+    ]
+
+
 def project_record_for_list_view(record: dict[str, Any] | None) -> dict[str, Any] | None:
     """Project a rich `record` down to the browse-list allowlist (Slice E).
 
@@ -127,10 +166,18 @@ def project_record_for_list_view(record: dict[str, Any] | None) -> dict[str, Any
     records) must stay absent from the output rather than appearing as
     `None`. `record=None` (a non-manifest source, see `parse_source_record`)
     survives unchanged.
+
+    One field is projected a level deeper than the allowlist reaches:
+    `codeVariants` keeps its shape and loses the code inside it. See
+    LIST_VIEW_CODE_VARIANT_FIELDS for why that is the whole field's cost and
+    none of its use.
     """
     if record is None:
         return None
-    return {key: value for key, value in record.items() if key in LIST_VIEW_RECORD_FIELDS}
+    projected = {key: value for key, value in record.items() if key in LIST_VIEW_RECORD_FIELDS}
+    if "codeVariants" in projected:
+        projected["codeVariants"] = _project_code_variants(projected["codeVariants"])
+    return projected
 
 
 def build_public_catalog_entry(
