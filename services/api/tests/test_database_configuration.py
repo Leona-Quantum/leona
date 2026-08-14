@@ -104,28 +104,51 @@ def test_where_the_worker_count_actually_runs_out():
     """A positive control, and the answer to "can we turn it up?".
 
     A budget assertion that holds for every input is the same as no assertion.
-    This pins the boundary rather than today's setting: whatever
-    infra/fleet.env says, three workers must fit and four must not, ONCE the
-    deploy-time doubling is counted. Change any other term — the API's maxScale,
-    either pool number, the instance tier — and this test moves, which is the
-    point. It fails if someone raises WORKER_INSTANCES past what fits, so that
-    edit is caught in CI rather than in production.
+    So this finds the boundary and proves it is real: some worker count fits and
+    the next one does not, ONCE the deploy-time doubling is counted.
 
-    Three is the stress-test setting the owner asked to be able to reach; one is
-    the default because at today's usage the queue is empty and each always-on
-    instance is real money. Four is not blocked by the database at rest — it is
-    blocked by the deploy. Buying the fourth means shrinking the API pool,
-    raising the tier, or draining the old worker revision first.
+    It used to hard-code "three fits, four does not", which was the boundary
+    under db-g1-small's 50 connections. That stopped being true on 2026-08-15
+    when the instance moved to db-custom-1-3840 with an explicit
+    max_connections=200, and the hard-coded pair then failed for the right
+    reason — the budget really had moved. Hard-coding it again would only queue
+    up the same failure for the next tier change, and the docstring already
+    claimed to pin the boundary "rather than today's setting". Now it does.
+
+    What still holds regardless of the tier: the deployed count must fit, there
+    must EXIST a count that does not fit (or the budget is not bounding
+    anything), and the deployed count must sit at or below that boundary. It
+    fails if someone raises WORKER_INSTANCES past what fits, so that edit is
+    caught in CI rather than in production.
+
+    Four workers is no longer blocked by the database. It was never blocked at
+    rest — it was blocked by the deploy, because `--min-instances` is a
+    REVISION-level floor that both revisions hold at once.
     """
     budget = FLEET.connection_budget
 
     def fits(workers: int) -> bool:
         return fleet_peak_connections(workers=workers) <= budget
 
-    assert fits(3), "three workers were expected to fit, deploy included"
-    assert not fits(4), "four workers were expected to exceed the budget during a deploy"
     assert fits(FLEET.worker_instances), (
         f"infra/fleet.env deploys {FLEET.worker_instances} workers, which does not fit the budget"
+    )
+
+    # Walk up until it stops fitting. The cap is a runaway guard, not a claim
+    # about plausible fleet sizes — if nothing in 1..512 exceeds the budget then
+    # the budget is not bounding the worker count at all, which is the one thing
+    # this test exists to rule out.
+    boundary = next((n for n in range(1, 513) if not fits(n)), None)
+    assert boundary is not None, (
+        "no worker count up to 512 exceeded the connection budget — the budget "
+        "is not bounding anything, so this check proves nothing"
+    )
+    assert fits(boundary - 1), (
+        f"{boundary} workers is where the budget runs out, so {boundary - 1} must fit"
+    )
+    assert FLEET.worker_instances < boundary, (
+        f"infra/fleet.env deploys {FLEET.worker_instances} workers but the budget "
+        f"runs out at {boundary}"
     )
 
 

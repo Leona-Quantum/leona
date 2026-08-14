@@ -1,3 +1,4 @@
+import json
 import uuid
 from datetime import UTC, datetime
 from types import SimpleNamespace
@@ -29,6 +30,27 @@ from majorana_worker.context import RunContext
 
 def test_default_run_timeout_matches_api_maximum():
     assert handlers.DEFAULT_RUN_TIMEOUT_S == 600.0
+
+
+def test_pipeline_remaining_time_s_is_not_shrunk_by_the_explanation_reserve():
+    """Pins the 2026-08-14 incident's arithmetic directly.
+
+    `_handle_agent_execution` used to hand `SimpleCircuitPipeline` `run_deadline
+    - now - RUN_EXPLANATION_RESERVE_S` as its remaining time — reserving 75 s
+    for the optional post-pipeline explanation call before the mandatory
+    stages ever ran. On the deploy probe's 120 s run, with ~20 s already spent
+    reaching `reviewing`, that left the pipeline believing it had 25 s, not
+    100 s; `_estimated_finalization_s` (~25 s, packages/py/agent) then reserved
+    that again, flooring `reviewing`'s stage budget to ~0.1 s and failing every
+    probe whose earlier stages took longer than that to run. The explanation
+    call does not need this: it measures its own leftover time fresh, after
+    the pipeline returns (`remaining_time_s` below), and already caps itself
+    against `RUN_EXPLANATION_RESERVE_S` there — see
+    `test_completed_execute_generates_a_grounded_natural_language_explanation`.
+    """
+    remaining = handlers._pipeline_remaining_time_s(run_deadline=120.0, now=20.0)
+
+    assert remaining == 100.0  # not 120 - 20 - 75 == 25
 
 
 async def test_dead_letter_handler_commits_terminal_sequence_once(monkeypatch):
@@ -180,6 +202,124 @@ async def test_simple_terminal_success_records_typed_advisory_outcome():
         "verification_summary": summary,
         "residual_risks": "AI review is advisory",
     }
+
+
+async def test_completed_execute_generates_a_grounded_natural_language_explanation():
+    run_id = uuid.uuid4()
+    emitted = []
+    observed_request = None
+
+    class Sink:
+        async def emit(self, event_type, payload, *, event_id=None):
+            emitted.append((event_type, payload, event_id))
+
+    class LLM:
+        async def complete(self, request, *, on_delta=None):
+            nonlocal observed_request
+            observed_request = request
+            return LLMResponse(
+                text=(
+                    "基底状態エネルギーは -1.137 でした。VQEで試行状態を最適化し、"
+                    "隔離されたシミュレータ上で評価しています。\n\n"
+                    "次は厳密対角化の基準値と比較すると、誤差を定量的に確認できます。"
+                ),
+                model="analysis-model",
+                input_tokens=100,
+                output_tokens=80,
+            )
+
+    candidate = SimpleNamespace(
+        framework=Framework.QISKIT,
+        revision=2,
+        source="run_vqe()",
+    )
+    execution = SimpleNamespace(
+        was_not_run=False,
+        succeeded=True,
+        duration_ms=1200,
+        result={"ground_state_energy": -1.137},
+        observation={"sandbox_provider": "vercel"},
+    )
+    review = SimpleNamespace(
+        decision=SemanticReviewDecision.READY,
+        severity="none",
+        feedback={"critic": {"residual_risks": ["AI review is advisory."]}},
+    )
+    outcome = SimplePipelineOutcome(
+        status=SimplePipelineStatus.SUCCEEDED,
+        stage=SimplePipelineStage.COMPLETED,
+        counters=SimplePipelineCounters(generation_attempts=2, execution_attempts=1),
+        candidate=candidate,
+        execution=execution,
+        review=review,
+        artifact=SimpleNamespace(),
+    )
+    ctx = RunContext(
+        run_id=run_id,
+        task_prompt="H2分子の基底状態エネルギーを求めて",
+        mode=RunMode.EXECUTE,
+        framework=Framework.QISKIT,
+        seed=None,
+        shots=None,
+        timeout_s=None,
+        sink=Sink(),
+        response_locale="ja",
+    )
+
+    await handlers._emit_run_explanation(ctx, outcome, LLM(), remaining_time_s=70)
+
+    assert observed_request is not None
+    assert observed_request.schema_name == "explain_result"
+    assert observed_request.model == handlers.model_for("analyze")
+    assert "最終解説の全文" in observed_request.system
+    evidence = json.loads(observed_request.user.removeprefix("EVIDENCE\n"))
+    assert evidence["request"] == ctx.task_prompt
+    assert evidence["candidate"]["revision"] == 2
+    assert evidence["execution"]["result"] == {"ground_state_energy": -1.137}
+    assert evidence["review"]["decision"] == "ready"
+    assert len(emitted) == 1
+    assert emitted[0][0] == "run.analysis"
+    assert "VQEで試行状態を最適化" in emitted[0][1]["interpretation"]
+    assert emitted[0][1]["residual_risks"] == "AI review is advisory."
+
+
+async def test_explanation_failure_keeps_the_completed_result_available():
+    rollbacks = 0
+
+    class FailingLLM:
+        async def complete(self, request, *, on_delta=None):
+            raise RuntimeError("provider unavailable")
+
+    async def rollback():
+        nonlocal rollbacks
+        rollbacks += 1
+
+    ctx = RunContext(
+        run_id=uuid.uuid4(),
+        task_prompt="Bell state",
+        mode=RunMode.EXECUTE,
+        framework=Framework.QISKIT,
+        seed=None,
+        shots=None,
+        timeout_s=None,
+        sink=SimpleNamespace(),
+    )
+    outcome = SimplePipelineOutcome(
+        status=SimplePipelineStatus.SUCCEEDED,
+        stage=SimplePipelineStage.COMPLETED,
+        counters=SimplePipelineCounters(),
+        artifact=SimpleNamespace(),
+    )
+
+    await handlers._emit_run_explanation(
+        ctx,
+        outcome,
+        FailingLLM(),
+        remaining_time_s=70,
+        rollback=rollback,
+    )
+
+    assert rollbacks == 1
 
 
 async def test_unexecuted_artifact_finishes_successfully_without_result_claims():
@@ -394,6 +534,11 @@ async def test_missing_conversation_inputs_return_a_clarification_instead_of_run
     assert "次の問題固有の情報が必要" in completed["text"]
     assert "expected returns for each stock" in completed["text"]
     assert "無関係なサンプル回路" in completed["text"]
+    assert completed["missing_inputs"] == [
+        "expected returns for each stock",
+        "risk model and fixed risk bound",
+    ]
+    assert completed["allow_ai_assumptions_available"] is True
     assert completed["model"] == "majorana-readiness-gate"
     assert run_store.observed == (
         RunStatus.SUCCEEDED,

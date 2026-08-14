@@ -203,21 +203,37 @@ test("only a GET is a read; HEAD and OPTIONS are instruments, not readers", () =
   assert.equal(pageviewSignal({ ...base, method: "GET" })?.route, "/repository");
 });
 
-test("the reserved segments are exactly the real children of app/repository", () => {
+test("the reserved segments are exactly the real children of /repository, in BOTH trees", () => {
   // The guard that makes the rest of this file more than an opinion. The bug
   // being fixed was a route existing in `app/` that `publicRoute` had never
   // heard of, so a test that only exercises hand-written examples would have
   // passed just as happily before the fix as after it. This one reads the route
-  // tree, so adding `app/repository/<something>/` and forgetting this file
-  // fails here rather than in production three weeks later.
-  const dir = new URL("../app/repository/", import.meta.url);
-  const children = readdirSync(dir, { withFileTypes: true })
-    .filter((entry) => entry.isDirectory())
-    // `(browse)` is a route group — parentheses mean it contributes no URL
-    // segment — and `[slug]` is the entry route this list exists to protect.
-    .filter((entry) => !entry.name.startsWith("(") && !entry.name.startsWith("["))
-    .map((entry) => entry.name)
+  // tree, so adding `/repository/<something>/` and forgetting this file fails
+  // here rather than in production three weeks later.
+  //
+  // **Two directories, and reading only one is the trap.** The Atlas routes
+  // that carry no per-visitor read now live under `app/[locale]/repository/` so
+  // the CDN can hold them, while `/repository` and `/repository/<slug>` stay in
+  // `app/repository/` because both call `getMajoranaAuth()`. The clean URL is
+  // unchanged for every one of them — a reader still asks for
+  // `/repository/layers` — and this counter runs BEFORE the middleware rewrite,
+  // so what it sees is the clean path either way. Reading `app/repository/`
+  // alone would therefore have quietly dropped `layers` and `claims` from the
+  // reserved list and started logging the site's most-read route as
+  // `/repository/[slug]`, which is the exact bug this test was written for.
+  const children = ["../app/repository/", "../app/[locale]/repository/"]
+    .flatMap((relative) =>
+      readdirSync(new URL(relative, import.meta.url), { withFileTypes: true })
+        .filter((entry) => entry.isDirectory())
+        // `(browse)` is a route group — parentheses mean it contributes no URL
+        // segment — and `[slug]` is the entry route this list exists to protect.
+        .filter((entry) => !entry.name.startsWith("(") && !entry.name.startsWith("["))
+        .map((entry) => entry.name),
+    )
     .sort();
+  // A segment appearing in both trees would be two routes at one address, so
+  // the duplicate check is worth having rather than de-duplicating silently.
+  assert.deepEqual([...new Set(children)], children, "a /repository child exists in both app/ trees");
   assert.deepEqual(Object.keys(RESERVED_REPOSITORY_SEGMENTS).sort(), children);
 });
 

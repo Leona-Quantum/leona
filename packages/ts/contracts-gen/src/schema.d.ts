@@ -1957,6 +1957,12 @@ export interface components {
             id: string;
             mode: components["schemas"]["RunMode"];
             /**
+             * Queue Position
+             * @description Claimable jobs ahead of this run in the worker queue; 0 means next, null means not waiting. Derived per request, never stored.
+             * @default null
+             */
+            queue_position: number | null;
+            /**
              * Residual Risks
              * @default null
              */

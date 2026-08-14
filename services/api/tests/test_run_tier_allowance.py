@@ -61,12 +61,26 @@ def _request(mode: RunMode = RunMode.EXECUTE) -> runs.CreateRunRequest:
 
 @pytest.fixture(autouse=True)
 def _no_backstop(monkeypatch):
-    """Keep the flat ceiling out of the way; it has its own tests."""
+    """Keep both abuse backstops out of the way; each has its own test file.
 
-    async def none(*_args, **_kwargs):
+    Two mocks now, not one. `mode=EXECUTE` (this file's default request) always
+    reaches `reserve_submission_backstop_slot` after the tier gate, and unlike
+    the untouched `EXECUTE_BACKSTOP_LIMIT` check that reads `count_runs_by_mode_
+    since`'s dict, the submission backstop calls `count_submitted_runs_for_
+    account_since` directly and expects an int back. Left unmocked, that call
+    would reach `LockOnlySession.execute`, which answers every statement with
+    `None` — fine for the reservation's own lock, fatal for a caller that then
+    does `.scalar_one()` on it.
+    """
+
+    async def empty_counts(*_args, **_kwargs):
         return {}
 
-    monkeypatch.setattr(runs.runs_repo, "count_runs_by_mode_since", none)
+    async def zero_submitted(*_args, **_kwargs):
+        return 0
+
+    monkeypatch.setattr(runs.runs_repo, "count_runs_by_mode_since", empty_counts)
+    monkeypatch.setattr(runs.runs_repo, "count_submitted_runs_for_account_since", zero_submitted)
 
 
 def _spent(monkeypatch, tokens: int, *, in_flight: int = 0, captured: dict | None = None):

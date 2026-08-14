@@ -9,6 +9,7 @@ from majorana_llm import (
     LLMRequest,
     LLMResponse,
     RetryingLLM,
+    RUN_EXPLANATION_SYSTEM_PROMPT,
     SIMPLE_ARTIFACT_REVIEW_SYSTEM_PROMPT,
     SIMPLE_BUSINESS_REFERENCE_EXTRACTION_SYSTEM_PROMPT,
     SIMPLE_GENERATION_SYSTEM_PROMPT,
@@ -28,6 +29,20 @@ from majorana_llm import (
     roles_for_profile,
     simple_generation_system_prompt,
 )
+
+
+def test_run_explanation_prompt_requests_natural_grounded_final_prose():
+    prompt = " ".join(RUN_EXPLANATION_SYSTEM_PROMPT.split())
+
+    assert "answering the user directly" in prompt
+    assert "four to eight short paragraphs" in prompt
+    assert "what the observed values mean" in prompt
+    assert "task-specific suggestions" in prompt
+    assert "Never invent a value, unit, baseline" in prompt
+    assert "advisory AI review is not strict verification" in prompt
+    assert "Write for someone seeing this product for the first time" in prompt
+    assert "Never expose the hidden evidence object" in prompt
+    assert "今回の計算" in prompt
 
 
 def test_artifact_only_review_prompt_demands_deep_static_feedback_without_result_claims():
@@ -560,6 +575,20 @@ def test_planner_and_reviewer_prompts_prevent_observed_live_false_failures():
         SIMPLE_PLAN_SYSTEM_PROMPT
     )
     assert "1e-6 * max(1, sum(abs(Hamiltonian coefficients)))" in SIMPLE_PLAN_SYSTEM_PROMPT
+
+
+def test_requested_visualizations_are_bounded_and_remain_non_evidentiary():
+    plan = " ".join(SIMPLE_PLAN_SYSTEM_PROMPT.split())
+    generation = " ".join(SIMPLE_GENERATION_SYSTEM_PROMPT.split())
+    review = " ".join(SIMPLE_REVIEW_SYSTEM_PROMPT.split())
+
+    assert "explicitly requests a graph, chart, or plot" in plan
+    assert "Never use `visualizations` as success_criteria.primary_metric" in plan
+    assert "at most 4 charts, 4 series per chart, and 96 points per series" in plan
+    assert "actual computed values" in generation
+    assert "Keep every underlying numeric evidence key separately" in generation
+    assert "Never place SVG, HTML, base64" in generation
+    assert "never as independent evidence" in review
 
 
 def test_prompts_pin_general_numerical_and_representation_invariants():

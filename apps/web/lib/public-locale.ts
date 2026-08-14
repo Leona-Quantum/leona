@@ -20,6 +20,33 @@ export function parsePublicLocale(value: string | undefined): PublicLocale {
   return value === "ja" ? "ja" : "en";
 }
 
+/**
+ * Strict, unlike `parsePublicLocale`, which coerces anything to `"en"`.
+ *
+ * Both are needed and using the wrong one is a bug that renders rather than
+ * throws. Reading a COOKIE, coercion is right — a stale or hand-edited value
+ * should give the reader the default, not a 404. Reading a PATH SEGMENT it is
+ * wrong: `/zz/repository/layers` is not the English page, it is a second
+ * address for it.
+ *
+ * ## Why a page has to call this rather than lean on `dynamicParams = false`
+ *
+ * `dynamicParams = false` only restricts params on a route that actually
+ * prerenders — it decides whether to render params OUTSIDE the prerendered set,
+ * and on a route where nothing is prerendered every param is outside it. So a
+ * PRERENDERED page under `[locale]` (`/zz/pricing`, `/zz/repository/claims`)
+ * 404s on its own, and a DYNAMIC one (`/zz/repository/layers`, which reads
+ * `searchParams` and therefore cannot prerender) served the English map at that
+ * address with a 200. Measured on a preview deployment, both halves in one run.
+ *
+ * Left alone that undoes the mistyped-URL fix for exactly the routes with the
+ * most traffic, and the `dynamicParams = false` line in their source reads as a
+ * guarantee it is not giving.
+ */
+export function isPublicLocale(value: string | undefined): value is PublicLocale {
+  return (PUBLIC_LOCALES as readonly (string | undefined)[]).includes(value);
+}
+
 export const PUBLIC_SHELL_COPY: Record<PublicLocale, {
   nav: { product: string; pricing: string; repository: string; workspace: string; contact: string };
   footer: {

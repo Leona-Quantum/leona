@@ -9,6 +9,7 @@ docstring for why the DB-grant approach in 0001 never worked.
 import datetime as dt
 import json
 import uuid
+from collections.abc import Sequence
 from typing import Any
 
 from majorana_contracts import Scope
@@ -23,6 +24,7 @@ from ..tiers import TOKENS_PER_RUN_EQUIVALENT
 from . import artifacts as artifacts_repo
 from . import usage as usage_repo
 from ._base import NotFoundError, require_write
+from .system import queue_positions_for_jobs
 
 
 async def get_run(
@@ -35,6 +37,45 @@ async def get_run(
     if run is None:
         raise NotFoundError("run")
     return run
+
+
+async def queue_positions(
+    scope: Scope, session: AsyncSession, run_ids: Sequence[uuid.UUID]
+) -> dict[uuid.UUID, int]:
+    """Claimable jobs ahead of each of ``run_ids``. Absent key = not waiting.
+
+    The scoped entry point for ``system.queue_positions_for_jobs``, and the
+    scoping is the reason it exists rather than the route calling that directly:
+    the ``jobs`` table carries no ``workspace_id``, so nothing in the system repo
+    can tell whose run an id names. This narrows the ids to runs in
+    ``scope.workspace_id`` FIRST, so a caller can only ever ask about their own
+    runs. An id belonging to another workspace is dropped, not refused — the
+    same silence ``NotFoundError`` gives, for the same reason: telling somebody
+    their guess was a real run elsewhere is itself the leak.
+
+    What comes back is a count, and it is global on purpose. One worker claims
+    one job at a time (AD-7), so what a waiting user is behind is the whole
+    queue, not their own share of it. A workspace-scoped count would be a
+    smaller number that is a position in nothing, and it would tell a first-time
+    user "0 ahead" at the start of a ten-minute wait. See the system repo for
+    why that does not breach the no-tenant-data rule: integers, no ids.
+    """
+    if not run_ids:
+        return {}
+    mine = (
+        (
+            await session.execute(
+                select(Run.id).where(
+                    Run.id.in_(list(run_ids)), Run.workspace_id == scope.workspace_id
+                )
+            )
+        )
+        .scalars()
+        .all()
+    )
+    if not mine:
+        return {}
+    return await queue_positions_for_jobs(session, run_ids=list(mine))
 
 
 async def list_runs(
@@ -94,6 +135,42 @@ async def count_runs_by_mode_since(
         .group_by(Run.mode)
     )
     return {str(mode): int(count) for mode, count in (await session.execute(stmt)).all()}
+
+
+async def count_submitted_runs_for_account_since(
+    scope: Scope, session: AsyncSession, since: dt.datetime
+) -> int:
+    """This ACCOUNT's EXECUTE+AUTO submissions since `since`, across every
+    workspace it acts in — the per-user half of the abuse backstop (ai-ops 86).
+
+    Per account and not per workspace for the same reason `count_execute_runs_
+    since` below is (see that function's docstring): the free tier sells
+    `owned_workspaces=3` (`tiers.TIER_LIMITS`), and a per-workspace count let
+    one free signup spread submissions across three workspaces and clear three
+    times the ceiling this exists to enforce.
+
+    Unlike `count_execute_runs_since` this counts BOTH modes in
+    `BACKSTOP_COUNTED_MODES`, not EXECUTE alone — the backstop has to bound AUTO
+    too, for the reason `count_runs_by_mode_since` above documents: AUTO is the
+    default mode on `CreateRunRequest` and the worker only resolves it to
+    EXECUTE after admission, which is too late for a gate that runs at
+    admission.
+
+    Also unscoped by workspace on purpose, like `count_execute_runs_since`:
+    `Run.user_id == scope.user_id` selects only rows the caller itself created,
+    so this leaks nothing across the tenancy boundary the workspace-scoped
+    queries in this module protect.
+    """
+    stmt = (
+        select(func.count())
+        .select_from(Run)
+        .where(
+            Run.user_id == scope.user_id,
+            Run.mode.in_(BACKSTOP_COUNTED_MODES),
+            Run.created_at >= since,
+        )
+    )
+    return int((await session.execute(stmt)).scalar_one())
 
 
 async def count_execute_runs_since(scope: Scope, session: AsyncSession, since: dt.datetime) -> int:
@@ -292,6 +369,54 @@ async def count_in_flight_execute_runs(scope: Scope, session: AsyncSession) -> i
         )
     )
     return int((await session.execute(stmt)).scalar_one())
+
+
+class SubmissionBackstopReached(Exception):
+    """The account has spent its per-user submission backstop (ai-ops 86).
+
+    Simpler than `RunAllowanceReached`: the backstop counts rows, not tokens,
+    and has no in-flight reservation to charge — a submitted run is either
+    counted or it is not, from the moment its row exists.
+    """
+
+    def __init__(self, used: int, limit: int) -> None:
+        super().__init__(f"{used}/{limit} weekly submissions used")
+        self.used = used
+        self.limit = limit
+
+
+async def reserve_submission_backstop_slot(
+    scope: Scope, session: AsyncSession, since: dt.datetime, limit: int | None
+) -> int:
+    """Reserve a slot against the per-account submission backstop, race-safely.
+
+    Same shape as `reserve_execute_run_slot` above and
+    `system.reserve_owned_workspace_slot`, and for the same reason: comparing a
+    count to a limit with nothing held between the read and the write lets a
+    burst of concurrent submissions at the boundary all read the same count and
+    all pass, exceeding the ceiling by the width of the burst. That was true of
+    the per-workspace comparison this replaces (ai-ops 86) — it held no lock at
+    all, so two submissions at the boundary could both read "999 of 1000" and
+    both be admitted.
+
+    `limit is None` takes no lock, same as `reserve_owned_workspace_slot`: the
+    Enterprise/developer tier refuses nothing (ai-ops 86 ruling: "Enterprise
+    alert-only"), so there is no decision here to race, and queueing every
+    submission from an unmetered account behind one row would be a cost with no
+    purchase. The count is still computed and returned so the caller can log
+    it — see `routes.runs._enforce_execute_backstop`.
+
+    Returns the count either way, refused or not, so a caller building a
+    refusal message or a log line never has to read it again under a second
+    query.
+    """
+    if limit is None:
+        return await count_submitted_runs_for_account_since(scope, session, since)
+    await session.execute(select(User.id).where(User.id == scope.user_id).with_for_update())
+    submitted = await count_submitted_runs_for_account_since(scope, session, since)
+    if submitted >= limit:
+        raise SubmissionBackstopReached(submitted, limit)
+    return submitted
 
 
 def _spends_the_weekly_allowance(scope: Scope, since: dt.datetime):
@@ -692,10 +817,14 @@ async def list_conversation_messages(
     )
     rows = list((await session.execute(stmt)).scalars().all())
     rows.reverse()
+    # One query for every turn's events, not one per turn. This runs on the
+    # worker, ahead of each chat/AUTO/EXECUTE turn past the first, against a
+    # pool of 4 (WORKER_POOL_SIZE + WORKER_MAX_OVERFLOW) that a run already
+    # holds for its whole duration.
+    events_by_run = await list_run_events_for_runs(scope, session, [row.id for row in rows])
     turns: list[tuple[str, str]] = []
     for row in rows:
-        events = await list_run_events(scope, session, row.id)
-        assistant_text = _conversation_assistant_text(events)
+        assistant_text = _conversation_assistant_text(events_by_run.get(row.id, []))
         if assistant_text is None:
             continue
         turns.append((row.task_prompt, assistant_text))
@@ -952,6 +1081,50 @@ async def list_run_events(
         .order_by(RunEvent.seq)
     )
     return list((await session.execute(stmt)).scalars().all())
+
+
+async def list_run_events_for_runs(
+    scope: Scope,
+    session: AsyncSession,
+    run_ids: list[uuid.UUID],
+) -> dict[uuid.UUID, list[RunEvent]]:
+    """Events for many runs at once, grouped by run, in `seq` order within each.
+
+    The batched twin of `list_run_events`, and it exists for a capacity reason
+    rather than a tidiness one. `GET /v1/runs/{id}/conversation` replays up to
+    50 turns and used to call `list_run_events` once per turn — 51 sequential
+    round trips on a single held session. The latency of that is the smaller
+    half of the cost: the API's pool is 10 connections per instance
+    (`db.DEFAULT_POOL_SIZE + DEFAULT_MAX_OVERFLOW`), so one conversation read
+    held a tenth of an instance's database capacity for 51 round trips' worth
+    of wall clock, against a `containerConcurrency` of 16. At a hundred
+    readers that is the difference between a queue that drains and one that
+    does not.
+
+    Scoping is unchanged and still applies here: run_events carries no
+    workspace_id, so the join to Run under `scope.workspace_id` is what makes
+    the read legal. A run id belonging to another workspace simply contributes
+    no rows — the same outcome the per-run function reaches, reached once.
+
+    Runs with no events are absent from the mapping rather than present with an
+    empty list; callers reconstructing a fixed set of turns should use
+    `.get(run_id, [])` so a turn that has not emitted yet still renders.
+    """
+    if not run_ids:
+        return {}
+    stmt = (
+        select(RunEvent)
+        .join(Run, RunEvent.run_id == Run.id)
+        .where(
+            RunEvent.run_id.in_(run_ids),
+            Run.workspace_id == scope.workspace_id,
+        )
+        .order_by(RunEvent.run_id, RunEvent.seq)
+    )
+    grouped: dict[uuid.UUID, list[RunEvent]] = {}
+    for event in (await session.execute(stmt)).scalars().all():
+        grouped.setdefault(event.run_id, []).append(event)
+    return grouped
 
 
 async def list_run_events_with_status(

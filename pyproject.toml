@@ -8,7 +8,17 @@ dependencies = ["majorana-contracts"]
 dev = [
     "pytest>=8",
     "pytest-asyncio>=1.0",
-    "ruff>=0.14",
+    # `pytest -n auto --dist loadfile` in the ci `py` job. See the comment on that
+    # step for why `--dist loadfile` is load-bearing rather than a tuning knob.
+    "pytest-xdist>=3.6",
+    # Held back from the 0.16.2 the python-minor-and-patch dependabot group wants:
+    # ruff 0.16.2 resolves a far broader default rule set than 0.14.x on this repo's
+    # bare `[tool.ruff]` config (line-length only, no explicit select) — 0.14.14
+    # reports "All checks passed!" on this exact tree, 0.16.2 reports 508 violations
+    # across services/ and packages/py/. Adopting it is a repo-wide lint sweep
+    # (--fix alone touches 200 files), not something to bundle into a dependency
+    # patch bump. Track separately; re-open this pin once that sweep lands.
+    "ruff>=0.14,<0.16",
     "import-linter>=2.3",
     "httpx>=0.27",
     "pyyaml>=6",
@@ -32,8 +42,8 @@ dev = [
     # the simulator and its otherwise-unbounded numba dependency too: retaining
     # an old lock selected numba 0.53.1, which cannot install on Python 3.12.
     "amazon-braket-sdk==1.122.0",
-    "amazon-braket-default-simulator==1.39.5",
-    "numba==0.66.0",
+    "amazon-braket-default-simulator==1.39.9",
+    "numba==0.67.0",
     # Qibo stays on its in-process NumPy backend; optional Qibolab hardware
     # backends are not installed inside the network-locked sandbox.
     "qibo==0.3.4",

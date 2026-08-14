@@ -10,47 +10,33 @@
 import { authkitMiddleware } from "@workos-inc/authkit-nextjs";
 import { NextResponse, type NextFetchEvent, type NextRequest } from "next/server";
 import { isWorkosAuthConfigured } from "./lib/auth-config";
+import { canonicalLocaleTarget } from "./lib/canonical-locale-redirect";
 import { isLocalDevAuthEnabled } from "./lib/local-dev-auth";
 import { pageviewLoggingEnabled, pageviewSignal } from "./lib/pageview-signal";
 import { LEGACY_PUBLIC_LOCALE_COOKIE, parsePublicLocale, PUBLIC_LOCALE_COOKIE, PUBLIC_LOCALES } from "./lib/public-locale";
-import { isPublicDemoEnabled } from "./lib/public-demo";
-import { isRoutedPath, LOCALE_ROUTES } from "./lib/routed-paths";
+import { isPublicPath, workosUnauthenticatedPaths } from "./lib/public-paths";
+import { localeRewriteTarget } from "./lib/locale-rewrite";
+import { isRoutedPath, localePrefixRoute, LOCALE_ROUTES } from "./lib/routed-paths";
+import { canonicalHostRedirect } from "./lib/site-origin";
 
-const PUBLIC_PATHS = [
-  "/",
-  "/auth/callback",
-  // Logout must remain reachable after the session cookie is gone; the route
-  // itself makes the operation idempotent for already-signed-out visitors.
-  "/auth/sign-out",
-  // The header's sign-in link on a cached page. It must be reachable without a
-  // session for the same reason /auth/callback is: it is what a signed-out
-  // reader clicks to get one.
-  "/auth/sign-in",
-  "/pricing",
-  "/repository",
-  "/workspace",
-  "/open-source",
-  "/contact",
-  "/privacy",
-  "/terms",
-  ...(isPublicDemoEnabled() ? ["/demo"] : []),
-];
-
-function isPublicPath(pathname: string): boolean {
-  return PUBLIC_PATHS.some((path) => path === "/" ? pathname === "/" : pathname === path || pathname.startsWith(`${path}/`));
-}
-
-// The two matchers have DIFFERENT syntaxes and must be kept in step deliberately.
-// isPublicPath() above treats each entry as an exact path plus its subtree, so
-// "/repository" already covers "/repository/<slug>". authkitMiddleware instead
-// uses Next.js matcher glob syntax, where "/repository" matches that path ONLY —
-// so the subtree has to be spelled out as a pattern.
+// The public list and its glob form both live in lib/public-paths.ts, which is
+// where they can be tested — this file cannot be loaded by `node --test`,
+// because authkit-nextjs resolves `next/cache`.
 //
-// This previously enumerated every entry path by importing the static corpus,
-// which forced the entire repository dataset into the Edge bundle at cold start
-// and made the middleware a build-time consumer of data that Slice D moves behind
-// an async API call. The glob is equivalent and carries no data dependency.
-const WORKOS_UNAUTHENTICATED_PATHS = [...PUBLIC_PATHS, "/repository/:path*"];
+// The two matchers have DIFFERENT syntaxes: isPublicPath() treats each entry as
+// an exact path plus its subtree, while authkitMiddleware uses Next.js matcher
+// glob syntax, where "/repository" matches that path ONLY. They used to be
+// written out separately and had silently disagreed about every subtree except
+// /repository — so a page under /auth/sign-in/ was public to us and gated by
+// AuthKit. workosUnauthenticatedPaths() now derives the glob form from the same
+// list, and public-paths.test.ts asserts the two agree.
+//
+// The glob deliberately carries no data dependency: this previously enumerated
+// every entry path by importing the static corpus, which forced the entire
+// repository dataset into the Edge bundle at cold start and made the middleware
+// a build-time consumer of data that Slice D moves behind an async API call.
+// Spread: authkitMiddleware's option is a mutable `string[]`.
+const WORKOS_UNAUTHENTICATED_PATHS = [...workosUnauthenticatedPaths()];
 
 const workosMiddleware = authkitMiddleware({
   middlewareAuth: {
@@ -152,10 +138,19 @@ function readLocale(request: NextRequest) {
 
 function localeRewrite(request: NextRequest): NextResponse | null {
   const { pathname } = request.nextUrl;
-  if (!LOCALE_ROUTE_SET.has(pathname)) return null;
+  // Exact for the six marketing pages, prefix for the Atlas subtrees — see
+  // LOCALE_PREFIX_ROUTES for why the second list cannot be folded into the first.
+  if (!LOCALE_ROUTE_SET.has(pathname) && localePrefixRoute(pathname) === null) return null;
   const locale = readLocale(request);
-  const target = pathname === "/" ? `/${locale}` : `/${locale}${pathname}`;
-  return NextResponse.rewrite(new URL(target, request.url));
+  // **`localeRewriteTarget` and not `new URL(target, request.url)`.** The
+  // relative form replaces everything from the path onward, so it drops the
+  // query string — which was invisible while this rewrite served only the six
+  // marketing pages and became a bug the moment it served `/repository/layers`,
+  // whose ten parameters are all resolved during render. The whole account, and
+  // the measurement that caught it, is in `lib/locale-rewrite.ts`; it is a
+  // separate module so `locale-rewrite.test.ts` can hold the rule rather than
+  // review having to.
+  return NextResponse.rewrite(localeRewriteTarget(request.nextUrl.toString(), pathname, locale));
 }
 
 /**
@@ -165,24 +160,86 @@ function localeRewrite(request: NextRequest): NextResponse | null {
  *
  * No loop: the rewrite above is internal, so the browser is never asked for the
  * prefixed form and never arrives here carrying it.
+ *
+ * The target is built by `lib/canonical-locale-redirect.ts`, which is where the
+ * reason it is not a one-liner is written down: this runs before the auth gate,
+ * so handing an attacker-influenced tail to the relative `new URL(str, base)`
+ * form made it an unauthenticated open redirect off this origin.
  */
 function canonicalRedirect(request: NextRequest): NextResponse | null {
-  const segments = request.nextUrl.pathname.split("/");
-  const first = segments[1] ?? "";
-  if (!(PUBLIC_LOCALES as readonly string[]).includes(first)) return null;
-  const rest = `/${segments.slice(2).join("/")}`.replace(/\/$/, "");
-  const target = new URL(rest === "" ? "/" : rest, request.url);
+  const target = canonicalLocaleTarget(request.nextUrl.pathname, request.url, PUBLIC_LOCALES);
+  if (target === null) return null;
   target.search = request.nextUrl.search;
   return NextResponse.redirect(target, 308);
 }
 
+/**
+ * Send the three non-canonical hosts to `leonaqt.com` (ai-ops#83), path and
+ * query intact.
+ *
+ * 308 rather than 301 or 307: permanent, so a crawler moves its index across
+ * and a browser stops asking, and method-preserving, so a POST that arrives on
+ * the wrong host is replayed rather than silently turned into a GET.
+ *
+ * The host list and the destination are in `lib/site-origin.ts` — see there for
+ * why it is an allowlist of three rather than "everything that is not
+ * canonical", which is the version that breaks every preview deployment.
+ *
+ * ## Two hops with `canonicalRedirect`, and this one is first
+ *
+ * `www.leonaquantum.com/en/pricing` carries both problems at once and is
+ * answered with two 308s: to `leonaqt.com/en/pricing` here, then to
+ * `leonaqt.com/pricing` by `canonicalRedirect` below. It terminates — after the
+ * first hop the host is canonical so this returns null, and after the second
+ * there is no locale prefix so that one does.
+ *
+ * Collapsing them into a single hop would mean rebuilding the locale rule in
+ * here, which is a second copy of the thing `lib/canonical-locale-redirect.ts`
+ * exists to be the only copy of. The shape that pays for the extra hop — a
+ * locale-prefixed URL on a hostname nothing links to — is not one a reader
+ * arrives at by clicking.
+ *
+ * Order matters for a reason beyond tidiness. `canonicalRedirect` runs before
+ * the auth gate, by necessity, and it was an open redirect until PR 558; keeping
+ * it downstream of this hop means it is only ever exercised on the canonical
+ * origin. This hop is safe on any host for a different reason — it never uses
+ * the relative `new URL(str, base)` form that caused that bug, because the
+ * origin is a literal prefix of the target string, so no path tail can displace
+ * the authority. Both properties are asserted in `lib/site-origin.test.ts`
+ * rather than left as this paragraph.
+ *
+ * ## Not covered by the matcher, on purpose
+ *
+ * `config.matcher` at the bottom of this file excludes `_next/static`,
+ * `_next/image` and the file-convention metadata routes, so those are not
+ * redirected. That is the right outcome and not an oversight: the document
+ * itself is redirected before the browser asks for anything, so by the time an
+ * asset is requested the page is already on the canonical host, and adding a
+ * hop in front of every static file would cost a round trip per asset for a
+ * case that does not arise.
+ */
+function canonicalHost(request: NextRequest): NextResponse | null {
+  const host = request.headers.get("host") ?? request.nextUrl.host;
+  const target = canonicalHostRedirect(host, `${request.nextUrl.pathname}${request.nextUrl.search}`);
+  return target === null ? null : NextResponse.redirect(target, 308);
+}
+
 export default async function middleware(request: NextRequest, event: NextFetchEvent) {
-  // First, and before any early return: the counter's contract is that it runs
-  // exactly once per request. It is also why placement here is safe next to the
-  // 404 fall-through below — `publicRoute()` returns null for anything outside
-  // PAGEVIEW_ROUTES, all of which are routed paths, so an unrouted URL
-  // logs nothing either way. Counting first keeps that true if the route list
-  // ever grows.
+  // Ahead of the counter, and it is the one thing that may be. A request on a
+  // non-canonical host is answered with a redirect and nothing else — the
+  // reader has not read a page yet, and the request that serves them one is
+  // counted on the next line of the next request. Counting both would inflate
+  // every figure on those hosts by exactly one, and this counter has no
+  // de-duplication to absorb it (`lib/pageview-signal.ts`: it counts pageviews,
+  // never people).
+  const canonicalHostHop = canonicalHost(request);
+  if (canonicalHostHop) return canonicalHostHop;
+  // First among the things that answer a request, and before any early return:
+  // the counter's contract is that it runs exactly once per request. It is also
+  // why placement here is safe next to the 404 fall-through below —
+  // `publicRoute()` returns null for anything outside PAGEVIEW_ROUTES, all of
+  // which are routed paths, so an unrouted URL logs nothing either way.
+  // Counting first keeps that true if the route list ever grows.
   countPageview(request);
   // Both before the gate. The rewrite serves a cached page; the redirect
   // collapses the locale-prefixed form back onto the clean one.

@@ -72,7 +72,33 @@ jobs:
       - run: uv sync --all-packages --frozen
       - run: uv run ruff check .
       - run: uv run ruff format --check .
-      - run: uv run pytest -q
+      # This step was 177s of the job's 223s — 79%, and the pacing item for the
+      # whole required-check gate, so PR-to-green was effectively "how long does
+      # pytest take".
+      #
+      # `--dist loadfile` is NOT a tuning knob, do not drop it for a bare `-n auto`.
+      # Measured, both ways, before this landed: with the default `--dist load`,
+      # which spreads individual tests across workers,
+      # test_roles_and_lowering.py::test_a_measured_circuit_gains_a_result_in_every_framework[pennylane]
+      # FAILS while passing serially — module-level framework state leaks between
+      # workers when parametrized cases of the same file land on different ones.
+      # `loadfile` keeps every test in a file on one worker, which restores the
+      # isolation the suite was written against.
+      #
+      # The guard that this stays honest is the count: after `uv sync
+      # --all-packages --frozen`, serial and parallel both report 2312 passed /
+      # 419 skipped. A parallel run that quietly collected FEWER tests is the
+      # failure mode worth fearing here — it would look like a speedup — so the
+      # count is what to re-check if this line is ever edited, not the clock.
+      #
+      # What it is actually worth, measured on this runner rather than projected:
+      # 177s -> 140s, and the job 223s -> 186s. Locally the same change is 79.7s
+      # -> 30.7s (2.6x), and the gap is the point — `ubuntu-latest` is 4 vCPU,
+      # and under `loadfile` the floor is the slowest SINGLE file, which no
+      # amount of extra workers moves. Do not quote the local number as the CI
+      # number. Further gain here means splitting the dominant file, not adding
+      # `-n` workers.
+      - run: uv run pytest -q -n auto --dist loadfile
       # The framework-native sandbox suites EXECUTE generated code through
       # LocalSubprocessSandbox, so they need the SDK extras that the sync above
       # deliberately leaves out. Without this step they skip — and they are the
@@ -215,6 +241,7 @@ jobs:
             services/api/tests/test_catalog_provenance_live.py \
             services/api/tests/test_catalog_public_read_live.py \
             services/api/tests/test_catalog_staging_live.py \
+            services/api/tests/test_conversation_events_batch_live.py \
             services/api/tests/test_conversation_turns_live.py \
             services/api/tests/test_folder_ordering_live.py \
             services/api/tests/test_job_queue_live.py \
@@ -228,6 +255,7 @@ jobs:
             services/api/tests/test_qpu_spend_allowance_live.py \
             services/api/tests/test_run_allowance_race_live.py \
             services/api/tests/test_run_terminal_live.py \
+            services/api/tests/test_submission_backstop_race_live.py \
             services/api/tests/test_usage_allowance_live.py \
             services/api/tests/test_usage_spend_live.py \
             services/api/tests/test_workspace_cap_race_live.py \

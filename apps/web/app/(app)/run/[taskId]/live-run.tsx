@@ -14,6 +14,7 @@ import {
 } from "@majorana/ui";
 import { ChatMarkdown } from "../../../../components/chat-markdown";
 import { runToFollow } from "../../../../lib/conversation-follow";
+import { QUEUE_POLL_INTERVAL_MS, isWaitingForWorker, queuePositionLabel } from "../../../../lib/queue-position";
 import { archiveChat, loadChatHistory, rememberChat, updateChat, type ChatSummary } from "../../../../lib/chat-history";
 import { displayChatTitle, titleFromPrompt } from "../../../../lib/chat-title";
 import { RunComposer, type ComposerFramework } from "../../../../components/run-composer";
@@ -50,6 +51,7 @@ type WireEvent = {
   message?: string;
   status?: string;
   mode?: string;
+  resolved?: string;
   stage?: string | null;
   verifier_decision?: string | null;
   evidence_strength?: string | null;
@@ -78,6 +80,8 @@ type WireEvent = {
   compatibility?: Record<string, unknown>;
   artifact_id?: string;
   title?: string;
+  missing_inputs?: string[];
+  allow_ai_assumptions_available?: boolean;
   plan?: {
     problem_summary?: string;
     domain?: string;
@@ -365,6 +369,9 @@ export function LiveRun({ taskId, locale = "en" }: { taskId: string; locale?: Pu
   const [stopping, setStopping] = useState(false);
   const [prompt, setPrompt] = useState("");
   const [pending, setPending] = useState(Boolean(fixtureEvents && !fixtureIsTerminal));
+  // Claimable runs ahead of this one, or null for "we are not claiming to know"
+  // (ai-ops#91). Null is also what a failed poll sets — see the effect below.
+  const [queuePosition, setQueuePosition] = useState<number | null>(null);
   const [liveEvents, setLiveEvents] = useState<WireEvent[]>(
     fixtureEvents ? (fixtureEvents as WireEvent[]) : [],
   );
@@ -617,6 +624,57 @@ export function LiveRun({ taskId, locale = "en" }: { taskId: string; locale?: Pu
     // eslint-disable-next-line react-hooks/exhaustive-deps -- taskId is read only for the sidebar row's identity; the stream follows activeRunId
   }, [fixtureEvents, activeRunId, taskId]);
 
+  /**
+   * How many runs are ahead of this one, while it is still waiting.
+   *
+   * A poll rather than a stream event, and that is forced rather than chosen:
+   * the SSE stream emits `run.queued` and then nothing at all until
+   * `run.started`, so the entire wait is a period with no events. There is
+   * nothing to push a changing number down.
+   *
+   * ## A stale position is worse than none
+   *
+   * The stream reconnects on a 1s loop and does not blank the screen, so a
+   * number left over from before a drop would sit there looking live. Every
+   * exit from this effect therefore clears it: a failed fetch, a non-OK
+   * response, a run that is no longer queued, and unmount. The user then sees
+   * the plain waiting state, which is honest, instead of "3 runs ahead" frozen
+   * from four minutes ago.
+   *
+   * Deliberately no time estimate. See `lib/queue-position.ts`.
+   */
+  useEffect(() => {
+    if (fixtureEvents) return;
+    const runId = activeRunId;
+    let cancelled = false;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+
+    const poll = async () => {
+      try {
+        const response = await fetch(`/api/runs/${encodeURIComponent(runId)}`, { cache: "no-store" });
+        if (!response.ok) throw new Error(String(response.status));
+        const payload = (await response.json()) as { status?: string; queue_position?: number | null };
+        if (cancelled) return;
+        if (!isWaitingForWorker(payload.status)) {
+          setQueuePosition(null);
+          return;
+        }
+        setQueuePosition(payload.queue_position ?? null);
+        timer = setTimeout(() => void poll(), QUEUE_POLL_INTERVAL_MS);
+      } catch {
+        // Whatever went wrong, we can no longer stand behind the last number.
+        if (!cancelled) setQueuePosition(null);
+      }
+    };
+
+    void poll();
+    return () => {
+      cancelled = true;
+      if (timer) clearTimeout(timer);
+      setQueuePosition(null);
+    };
+  }, [fixtureEvents, activeRunId]);
+
   function addFiles(files: File[]) {
     void (async () => {
       const candidates: Array<{ name: string; size: number; content: string }> = [];
@@ -679,7 +737,10 @@ export function LiveRun({ taskId, locale = "en" }: { taskId: string; locale?: Pu
 
   async function submitFollowup(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    const taskPrompt = prompt.trim();
+    await sendFollowup(prompt.trim(), false);
+  }
+
+  async function sendFollowup(taskPrompt: string, allowAssumptions: boolean) {
     if (!taskPrompt) return;
     // The composer stays editable during a turn — drafting the next question
     // while reading the answer is the normal way to use this — but a turn is a
@@ -722,7 +783,8 @@ export function LiveRun({ taskId, locale = "en" }: { taskId: string; locale?: Pu
           // neither control here, so a conversation could never be told to
           // execute, and every turn was submitted as Qiskit whatever the user
           // had picked on the way in.
-          mode,
+          mode: allowAssumptions ? "execute" : mode,
+          allow_ai_assumptions: allowAssumptions,
           framework,
           response_locale: locale,
         }),
@@ -836,11 +898,12 @@ export function LiveRun({ taskId, locale = "en" }: { taskId: string; locale?: Pu
                     turn={turn}
                     locale={locale}
                     onFollowUp={fixtureEvents ? undefined : selectFollowUp}
+                    onUseAiAssumptions={fixtureEvents ? undefined : (promptText) => void sendFollowup(promptText, true)}
                   />
                 ) : turn.id === activeRunId && (streamingText || reasoningText || liveEvents.length > 0) ? (
                   <AssistantMessage reasoning={reasoningText} text={streamingText} streaming={streaming} events={liveEvents} turnId={turn.id} locale={locale} />
                 ) : turn.id === activeRunId && pending ? (
-                  <AssistantLoading turnId={turn.id} locale={locale} />
+                  <AssistantLoading turnId={turn.id} locale={locale} queuePosition={queuePosition} />
                 ) : null}
               </div>
             ))}
@@ -849,7 +912,7 @@ export function LiveRun({ taskId, locale = "en" }: { taskId: string; locale?: Pu
                 <div className="mj-chat-message mj-chat-message--user"><ChatMarkdown source={activePrompt ?? ""} /></div>
                 {streamingText || reasoningText || liveEvents.length > 0 ? (
                   <AssistantMessage reasoning={reasoningText} text={streamingText} streaming={streaming} events={liveEvents} turnId={activeRunId} locale={locale} />
-                ) : pending ? <AssistantLoading turnId={activeRunId} locale={locale} /> : null}
+                ) : pending ? <AssistantLoading turnId={activeRunId} locale={locale} queuePosition={queuePosition} /> : null}
               </div>
             ) : null}
             {!turns.length && !activePrompt && !pending ? <p className="mj-run-waiting">{locale === "ja" ? "会話に接続しています…" : "Connecting to the conversation…"}</p> : null}
@@ -885,10 +948,12 @@ export function CompletedAssistant({
   turn,
   locale = "en",
   onFollowUp,
+  onUseAiAssumptions,
 }: {
   turn: Turn;
   locale?: PublicLocale;
   onFollowUp?: (prompt: string) => void;
+  onUseAiAssumptions?: (prompt: string) => void;
 }) {
   // Failure context and the best produced output are separate concerns. A rejected
   // candidate still remains inspectable after the reason it was rejected.
@@ -906,6 +971,13 @@ export function CompletedAssistant({
     : result
       ? "result"
       : "answer";
+  const canOfferAiAssumptions = turn.events.some(
+    (event) => event.type === "chat.completed" && event.allow_ai_assumptions_available,
+  ) || turn.events.some(
+    (event) => event.type === "run.mode_resolved"
+      && event.resolved === "chat"
+      && /(?:missing|required|not provided|not specified|未指定|不足|必要|欠け)/i.test(event.reason ?? ""),
+  );
   return (
     <div className={`mj-chat-message mj-chat-message--assistant${activity || result || outcome ? " mj-chat-message--run" : ""}`}>
       {chatFallbackNotice(turn.events) ? <ChatFallbackNotice locale={locale} /> : null}
@@ -927,6 +999,14 @@ export function CompletedAssistant({
           <ArtifactLink events={turn.events} locale={locale} />
         </>
       )}
+      {onUseAiAssumptions && canOfferAiAssumptions ? (
+        <section className="mj-ai-assumption-action" aria-label={locale === "ja" ? "不足情報の補完" : "Complete missing details"}>
+          <p>{locale === "ja" ? "不足している値をAIが教育用の例として補完し、そのまま実行できます。" : "The AI can fill the missing values with a clearly labeled educational example and run it."}</p>
+          <button className="mj-primary-button" type="button" onClick={() => onUseAiAssumptions(turn.prompt)}>
+            {locale === "ja" ? "AIが補完して実行" : "Fill details and run"}
+          </button>
+        </section>
+      ) : null}
       {onFollowUp ? (
         <FollowUpQuestions
           kind={followUpKind}
@@ -1081,7 +1161,7 @@ function FinalOutput({
             {result.trust.tone === "ok" ? "✓" : "–"}
           </span>
           <span className="mj-run-final-output-heading-copy">
-            <span>{accepted ? locale === "ja" ? "成果物" : "Deliverable" : locale === "ja" ? "結果を保持" : "Result preserved"}</span>
+            <span>{accepted ? locale === "ja" ? "結果とコード" : "Result and code" : locale === "ja" ? "確認できる結果" : "Result preserved"}</span>
             <strong>{heading}</strong>
           </span>
         </summary>
@@ -1222,7 +1302,7 @@ function SimulationResult({ event, locale }: { event: WireEvent; locale: PublicL
           <pre className="mj-run-live-result-json">{JSON.stringify(result, null, 2)}</pre>
         ) : (
           <p className="mj-run-live-empty-result">
-            {locale === "ja" ? "この記録は構造化シミュレーション値に対応していません。実行診断は以下で確認できます。" : "This replay predates structured simulation values. Runtime diagnostics remain below."}
+            {locale === "ja" ? "この結果には数値の詳細が含まれていません。実行の状態は以下で確認できます。" : "This replay predates structured simulation values. Runtime diagnostics remain below."}
           </p>
         )}
       </section>
@@ -1395,12 +1475,12 @@ function ResourceStage({ event }: { event: WireEvent }) {
 
 function ActivityEmptyDetail({ state, locale }: { state: AgentActivityState; locale: PublicLocale }) {
   const copy = state === "active"
-    ? locale === "ja" ? "処理を続けています。新しい証拠が記録されると、ここに表示されます。" : "Work is continuing. New evidence will appear here when it is recorded."
+    ? locale === "ja" ? "処理を続けています。新しい確認結果が出ると、ここに表示されます。" : "Work is continuing. New evidence will appear here when it is recorded."
     : state === "error"
-      ? locale === "ja" ? "詳細な証拠を記録する前に、この処理は停止しました。" : "This operation stopped before detailed evidence was recorded."
+      ? locale === "ja" ? "詳しい確認結果が出る前に、この処理は停止しました。" : "This operation stopped before detailed evidence was recorded."
       : state === "warn"
-        ? locale === "ja" ? "記録された証拠が限定された状態で、この処理は完了しました。" : "This operation completed with limited recorded evidence."
-        : locale === "ja" ? "この処理には追加の詳細が記録されていません。" : "No additional detail was recorded for this operation.";
+        ? locale === "ja" ? "確認できる情報が限られた状態で、この処理は完了しました。" : "This operation completed with limited recorded evidence."
+        : locale === "ja" ? "この処理には追加の詳細がありません。" : "No additional detail was recorded for this operation.";
   return (
     <div className="mj-run-live-active-copy">
       {state === "active" ? <span className="mj-run-live-pulse" aria-hidden="true" /> : null}
@@ -1458,9 +1538,9 @@ function CodeActivityDetail({
       {detail.attempts.length > 1 || bestEffort?.candidates_considered ? (
         <div className="mj-run-attempt-history">
           <div className="mj-run-activity-section-head">
-            <strong>{locale === "ja" ? "修正履歴" : "Repair history"}</strong>
+            <strong>{locale === "ja" ? "コードの更新履歴" : "Repair history"}</strong>
             {bestEffort?.candidates_considered ? (
-              <span>{bestEffort.candidates_considered}{locale === "ja" ? "件の候補を検討" : " candidates considered"}</span>
+              <span>{bestEffort.candidates_considered}{locale === "ja" ? "通りを確認" : " candidates considered"}</span>
             ) : null}
           </div>
           {detail.attempts.length ? (
@@ -1470,7 +1550,7 @@ function CodeActivityDetail({
                   <span aria-hidden="true">
                     {attempt.state === "done" ? "✓" : attempt.state === "error" ? "×" : "–"}
                   </span>
-                  <strong>{locale === "ja" ? "リビジョン" : "Revision"} {attempt.revision}</strong>
+                  <strong>{locale === "ja" ? "更新版" : "Revision"} {attempt.revision}</strong>
                   <small>{attempt.status}</small>
                 </li>
               ))}
@@ -1484,15 +1564,15 @@ function CodeActivityDetail({
       <section>
         <div className="mj-run-activity-section-head mj-run-code-section-head">
           <div>
-            <strong>{locale === "ja" ? "候補コード" : "Candidate source"}</strong>
-            {selectedRevision ? <span>{locale === "ja" ? "リビジョン" : "Revision"} {selectedRevision}</span> : null}
+            <strong>{locale === "ja" ? "実行用コード" : "Candidate source"}</strong>
+            {selectedRevision ? <span>{locale === "ja" ? "更新版" : "Revision"} {selectedRevision}</span> : null}
           </div>
           <div className="mj-run-code-actions">
             {detail.attempts.length > 1 ? (
               <label>
-                <span className="sr-only">{locale === "ja" ? "表示するコードリビジョン" : "Displayed code revision"}</span>
+                <span className="sr-only">{locale === "ja" ? "表示するコードの更新版" : "Displayed code revision"}</span>
                 <select
-                  aria-label={locale === "ja" ? "表示するコードリビジョン" : "Displayed code revision"}
+                  aria-label={locale === "ja" ? "表示するコードの更新版" : "Displayed code revision"}
                   value={selectedIndex ?? ""}
                   onChange={(event) => {
                     selectionTouched.current = true;
@@ -1502,7 +1582,7 @@ function CodeActivityDetail({
                 >
                   {detail.attempts.map((attempt) => (
                     <option key={`${attempt.revision}-${attempt.eventIndex}`} value={attempt.eventIndex}>
-                      {locale === "ja" ? "リビジョン" : "Revision"} {attempt.revision} · {attempt.status}
+                      {locale === "ja" ? "更新版" : "Revision"} {attempt.revision} · {attempt.status}
                     </option>
                   ))}
                 </select>
@@ -1619,12 +1699,12 @@ function VerificationActivityDetail({
         const methodLabels = locale === "ja" ? VERIFICATION_METHOD_LABEL_JA : VERIFICATION_METHOD_LABEL;
         const label = event.method && methodLabels[event.method]
           ? methodLabels[event.method]
-          : locale === "ja" ? `検証: ${event.method ?? "確認"}` : `Verification: ${event.method ?? "check"}`;
+          : locale === "ja" ? `確認: ${event.method ?? "確認"}` : `Verification: ${event.method ?? "check"}`;
         return (
           <VerificationRow event={event} key={`${event.seq ?? index}-${event.method ?? "check"}`} label={label} locale={locale}>
             {event.details ? (
               <details className="mj-run-verification-evidence">
-                <summary>{locale === "ja" ? "証拠" : "Evidence"}</summary>
+                <summary>{locale === "ja" ? "確認内容" : "Evidence"}</summary>
                 <EventRecord value={event.details} />
               </details>
             ) : null}
@@ -1638,7 +1718,7 @@ function VerificationActivityDetail({
         </VerificationRow>
       ) : null}
       {strict ? (
-        <VerificationRow event={strict} label={locale === "ja" ? "厳密な採用レビュー" : "Strict acceptance review"} locale={locale}>
+        <VerificationRow event={strict} label={locale === "ja" ? "追加の確認" : "Strict acceptance review"} locale={locale}>
           <StrictVerificationStage event={strict} />
         </VerificationRow>
       ) : null}
@@ -1687,8 +1767,8 @@ const FINALIZE_LABEL_JA: Record<string, string> = {
   "sandbox.result": "最終シミュレーション",
   "baseline.result": "参照ベースラインとの比較",
   "run.analysis": "結果分析",
-  "artifact.saved": "結果パッケージを作成",
-  "run.best_effort": "利用可能な最良候補を保持",
+  "artifact.saved": "Result package created",
+  "run.best_effort": "確認用に最良の結果を保持",
 };
 
 function finalizeState(event: WireEvent): "done" | "warn" | "error" {
@@ -1701,8 +1781,8 @@ function finalizeStatus(event: WireEvent, locale: PublicLocale): string {
   if (event.type === "run.best_effort") return locale === "ja" ? "不採用" : "Not accepted";
   if (event.not_applicable_reason) return locale === "ja" ? "対象外" : "Not applicable";
   if (event.type === "sandbox.result") return event.exit_code === 0 ? locale === "ja" ? "合格" : "Passed" : locale === "ja" ? "失敗" : "Failed";
-  if (event.type === "artifact.saved") return locale === "ja" ? "パッケージ済み" : "Packaged";
-  if (event.type === "code.finalized" && event.revision) return `${locale === "ja" ? "リビジョン" : "Revision"} ${event.revision}`;
+  if (event.type === "artifact.saved") return locale === "ja" ? "保存済み" : "Packaged";
+  if (event.type === "code.finalized" && event.revision) return `${locale === "ja" ? "更新版" : "Revision"} ${event.revision}`;
   return locale === "ja" ? "完了" : "Complete";
 }
 
@@ -1889,10 +1969,16 @@ function ArtifactLink({ events, locale }: { events: WireEvent[]; locale: PublicL
   );
 }
 
-function AssistantLoading({ turnId, locale }: { turnId?: string | null; locale: PublicLocale }) {
+function AssistantLoading({ turnId, locale, queuePosition }: { turnId?: string | null; locale: PublicLocale; queuePosition?: number | null }) {
+  // The queue line replaces nothing — it sits under the thinking label, because
+  // "waiting" and "where in the line" are different facts and the second one is
+  // absent most of the time. `role="status"` so a reader who cannot see the
+  // number is told it when it changes.
+  const queued = queuePositionLabel(queuePosition, locale);
   return (
     <div className="mj-chat-message mj-chat-message--assistant mj-chat-message--loading" aria-label={locale === "ja" ? "応答を待っています" : "Waiting for response"}>
       <ThinkingLabel turnId={turnId} locale={locale} />
+      {queued ? <p className="mj-run-queue-position" role="status">{queued}</p> : null}
     </div>
   );
 }

@@ -1,12 +1,14 @@
 import type { Metadata } from "next";
 import { CircuitBand } from "../../components/circuit-band";
 import { BrandMark } from "../../components/icons";
+import { LandingPrompt } from "../../components/landing-prompt";
 import { LeoConstellation } from "../../components/leo-constellation";
 import { PublicSite } from "../../components/public-site";
 import { Reveal } from "../../components/reveal";
 import { ScrollCue } from "../../components/scroll-cue";
 import { HOME_COPY } from "../../lib/public-copy";
 import { parsePublicLocale, PUBLIC_LOCALES } from "../../lib/public-locale";
+import { canonicalMetadata } from "../../lib/public-metadata";
 
 // Served from the CDN. The locale comes from the path segment because a cached
 // page cannot read a cookie — `middleware.ts` rewrites the clean URL to this
@@ -31,6 +33,12 @@ export function generateStaticParams() {
 // the template is for; the home page is the one page whose subject is the
 // template's own suffix, which is why it is the one page that must not use it.
 export const metadata: Metadata = {
+  // The clean path, and the same one for both locales. `/en` and `/ja` are the
+  // routes that render this page, not addresses anybody should link to — the
+  // middleware 308s them back — and the language is a cookie preference rather
+  // than a second version of the site. So the two locales are one canonical
+  // URL, not a pair of alternates.
+  ...canonicalMetadata("/"),
   description: "Generate, run, and use quantum circuits with AI in one platform.",
 };
 
@@ -60,6 +68,9 @@ export default async function Home({ params }: { params: Promise<{ locale: strin
             ))}
           </h1>
           <p className="mj-company-hero-lede">{copy.hero.lede}</p>
+          {/* A client island. It takes copy and nothing else — no auth state,
+              no minted URL — which is what keeps this page prerenderable. */}
+          <LandingPrompt copy={copy.promptDemo} />
           <div className="mj-public-actions">
             <a className="mj-primary-button" href="/workspace">{copy.hero.primary}</a>
             <a className="mj-secondary-button" href="/repository">{copy.hero.secondary}</a>
