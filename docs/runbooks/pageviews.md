@@ -102,6 +102,43 @@ account** — see the options table in the analytics plan at
 `plans/analytics/00-PRODUCT-METRICS.md`. That is an owner decision, not an
 implementation gap to quietly fill.
 
+## Observability Events cost — what's actually driving it, and what isn't
+
+**ai-ops#97/#92, 2026-08-15.** Vercel's "Observability Events" line
+(7.9M / $9.47 in the current billing cycle at the time of this measurement —
+the second-largest line on the bill after Build CPU Minutes) was suspected of
+being driven by this counter's own `console.log` calls. Measured, not
+assumed: two live samples pulled via `vercel logs --json` against real
+production deployments (40 + 500 rows, ~13 seconds combined) contained **zero**
+`leona.pageview` lines — including 111 rows that were edge-middleware
+invocations on the canonical host with a 200 response, exactly the population
+`countPageview()` runs against unconditionally. `LEONA_PAGEVIEW_LOG` is not
+set in Production, so the counter is at its default-on state; the zero is the
+bot filter doing its job (or a crawler evading its crude UA-substring check),
+not the counter being off.
+
+What the samples show instead, and neither is this counter's doing:
+
+1. **A crawler (or several) sweeping the whole Atlas.** ~40 requests/second
+   sustained, hitting distinct `/repository/layers/<slug>` pages across all
+   **three** domain aliases (`leonaqt.com`, `www.leonaqt.com`,
+   `leonaquantum.com`). Two of every three hits are the canonical-host
+   redirect (`canonicalHost()` in `middleware.ts`, which — correctly — runs
+   and returns before `countPageview()` on line 235-243) and each one is its
+   own logged edge-middleware invocation. One (probably automated) reader
+   costs three log rows.
+2. **Duplicate warning-level log lines per single render.** Some individual
+   page renders logged the *same* `"LaTeX-incompatible input... Unrecognized
+   Unicode character..."` warning from `components/math-text.tsx` two or
+   three times in one request — a real, separate inefficiency (looks like a
+   re-render without memoization) that's a more direct and certain
+   contributor to log-line volume than anything analytics-related.
+
+Neither is this doc's or this counter's problem to fix, and neither has been
+fixed — recorded here so the next person investigating this bill starts from
+measurement instead of re-deriving the same suspicion this section closes
+out.
+
 ## Why it is not written to Postgres
 
 The obvious design — a `pageviews` table with an upsert per request — was
