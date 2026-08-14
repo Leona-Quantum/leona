@@ -71,6 +71,23 @@ function isStringArray(value: unknown): value is string[] {
 }
 
 /**
+ * A complete `visualization` from whatever the list projection sent.
+ *
+ * Absent, or absent one key: an empty array stands in, because every browse-path
+ * consumer treats an empty circuit as "nothing to draw" and none of them
+ * optional-chains past the field itself. Shape is already validated by the
+ * caller — this only fills.
+ */
+function fillVisualization(value: unknown): unknown {
+  if (!isRecord(value)) return EMPTY_VISUALIZATION;
+  return {
+    wires: value.wires ?? EMPTY_VISUALIZATION.wires,
+    operations: value.operations ?? EMPTY_VISUALIZATION.operations,
+    outcomes: value.outcomes ?? EMPTY_VISUALIZATION.outcomes,
+  };
+}
+
+/**
  * Narrow one catalog `record` blob to a PublicRepositoryEntry, or return null.
  *
  * Checks the fields the /repository routes and their client components read
@@ -218,10 +235,26 @@ export function parseCatalogListRecord(record: unknown): PublicRepositoryListEnt
   if (record.resources !== undefined && !Array.isArray(record.resources)) return null;
   if (record.metadata !== undefined && !Array.isArray(record.metadata)) return null;
   if (record.codeVariants !== undefined && !Array.isArray(record.codeVariants)) return null;
+  // And the same two terms ONE LEVEL DOWN, which is where this field's cost
+  // actually is. `visualization` is 16.0% of the list payload and `operations`
+  // is 138,156 of its 171,410 bytes (measured against the live 369-record
+  // listing, 2026-08-15); `outcomes` is read by nothing in the browse view at
+  // all. So the projection that pays here trims INSIDE the field — the same
+  // shape as `codeVariants` losing its `code` — and a required inner guard
+  // would turn that trim into a total rejection of all 369 records rather than
+  // a smaller payload.
+  //
+  // Requiring the inner keys was the sharper trap of the two, because the outer
+  // tolerance above reads as if it already covered this: an API that sends
+  // `visualization: { wires: [...] }` and nothing else passes
+  // `record.visualization !== undefined` and `isRecord`, then dies on
+  // `!Array.isArray(undefined)`.
   if (record.visualization !== undefined) {
     if (!isRecord(record.visualization)) return null;
     const { wires, operations, outcomes } = record.visualization;
-    if (!isStringArray(wires) || !Array.isArray(operations) || !Array.isArray(outcomes)) return null;
+    if (wires !== undefined && !isStringArray(wires)) return null;
+    if (operations !== undefined && !Array.isArray(operations)) return null;
+    if (outcomes !== undefined && !Array.isArray(outcomes)) return null;
   }
 
   if (record.verificationMethods !== undefined && !isStringArray(record.verificationMethods)) return null;
@@ -250,12 +283,16 @@ export function parseCatalogListRecord(record: unknown): PublicRepositoryListEnt
   // reads `entry.visualization.wires` directly. An empty structure degrades each
   // of those to "nothing to show", which is what a reader should see for a field
   // the server chose not to send.
+  //
+  // `visualization` is filled a level down for the same reason: `:1562` reads
+  // `entry.visualization.operations` with no `?? []`, so a partial object from
+  // the server has to arrive complete here or the gates tab throws.
   return {
     ...record,
     resources: record.resources ?? [],
     metadata: record.metadata ?? [],
     codeVariants: record.codeVariants ?? [],
-    visualization: record.visualization ?? EMPTY_VISUALIZATION,
+    visualization: fillVisualization(record.visualization),
   } as unknown as PublicRepositoryListEntry;
 }
 
