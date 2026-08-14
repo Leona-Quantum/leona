@@ -51,6 +51,26 @@ body {
 .mj-run-composer-stage {
   display: contents;
 }
+
+.mj-ai-assumption-action {
+  display: grid;
+  gap: var(--sp-3);
+  margin-top: var(--sp-6);
+  padding: var(--sp-4);
+  border: 1px solid color-mix(in srgb, var(--accent) 55%, var(--border-0));
+  border-left: 4px solid var(--accent);
+  border-radius: var(--radius-card);
+  background: color-mix(in srgb, var(--accent) 9%, var(--bg-1));
+}
+.mj-ai-assumption-action p {
+  margin: 0;
+  color: var(--text-0);
+  font-size: var(--fs-14);
+  line-height: 1.55;
+}
+.mj-ai-assumption-action button {
+  justify-self: start;
+}
 .mj-run-home-hero {
   gap: var(--sp-3);
 }
@@ -1200,7 +1220,7 @@ html[lang="ja"] .mj-company-hero-title-line {
 }
 .mj-run-follow-ups-heading strong {
   color: var(--text-1);
-  font-size: var(--fs-20);
+  font-size: var(--fs-16);
   font-weight: 500;
 }
 .mj-run-follow-ups-list {
@@ -1217,7 +1237,7 @@ html[lang="ja"] .mj-company-hero-title-line {
   color: var(--text-1);
   cursor: pointer;
   font: inherit;
-  font-size: var(--fs-16);
+  font-size: var(--fs-14);
   line-height: 1.35;
   text-align: left;
 }
@@ -1384,6 +1404,76 @@ html[lang="ja"] .mj-company-hero-title-line {
   stroke-linejoin: round;
   stroke-width: 1.5;
   vector-effect: non-scaling-stroke;
+}
+.mj-generic-chart > svg {
+  width: 100%;
+  min-height: 220px;
+  overflow: visible;
+}
+.mj-generic-chart svg text {
+  fill: var(--text-2);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+}
+.mj-generic-chart-grid line {
+  stroke: var(--border-0);
+  stroke-width: 1;
+  vector-effect: non-scaling-stroke;
+}
+.mj-generic-chart polyline {
+  fill: none;
+  stroke: var(--series-color);
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 1.75;
+  vector-effect: non-scaling-stroke;
+}
+.mj-generic-chart circle {
+  fill: var(--bg-0);
+  stroke: var(--series-color);
+  stroke-width: 1.5;
+  vector-effect: non-scaling-stroke;
+}
+.mj-generic-chart rect {
+  fill: var(--series-color);
+  opacity: 0.82;
+}
+.mj-generic-chart [data-series="0"] { --series-color: var(--accent); }
+.mj-generic-chart [data-series="1"] { --series-color: var(--text-0); }
+.mj-generic-chart [data-series="2"] { --series-color: var(--text-1); }
+.mj-generic-chart [data-series="3"] { --series-color: var(--accent-press); }
+.mj-generic-chart polyline[data-series="1"],
+.mj-generic-chart [data-series="1"] polyline { stroke-dasharray: 7 4; }
+.mj-generic-chart polyline[data-series="2"],
+.mj-generic-chart [data-series="2"] polyline { stroke-dasharray: 2 3; }
+.mj-generic-chart polyline[data-series="3"],
+.mj-generic-chart [data-series="3"] polyline { stroke-dasharray: 10 3 2 3; }
+.mj-generic-chart-axis-label {
+  fill: var(--text-1) !important;
+  font-family: var(--font-ui) !important;
+  font-size: 11px !important;
+}
+.mj-generic-chart-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-2) var(--sp-4);
+  margin: 0;
+  padding: 0;
+  color: var(--text-1);
+  font-size: var(--fs-12);
+  list-style: none;
+}
+.mj-generic-chart-legend li {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-2);
+}
+.mj-generic-chart-legend span {
+  width: 18px;
+  height: 3px;
+  border-radius: 999px;
+  background: var(--series-color);
 }
 .mj-result-trace-summary {
   display: grid;

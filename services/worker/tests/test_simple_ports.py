@@ -1481,13 +1481,24 @@ async def test_plan_and_generate_share_the_exact_task_reference():
     terms = planned.value.plan.verification_plan.reference_hamiltonian
     assert terms is not None
     assert terms[0].coefficient == pytest.approx(-0.3324043)
+    custom = planned.value.plan.parameters.custom or {}
+    assert custom["report_convention"] == "total_energy"
+    assert custom["hamiltonian_terms"][0] == {"pauli": "II", "coefficient": -0.3324043}
+    assert "total ground-state energy" in planned.value.plan.problem_summary
+    assert "-1.1373061 Hartree" in planned.value.plan.algorithm_rationale
+    assert planned.value.plan.success_criteria.additional_notes
+    assert (
+        "electronic-only value -1.8572750 Hartree"
+        in planned.value.plan.success_criteria.additional_notes[-1]
+    )
 
     plan_request = json.loads(llm.requests[-1].user)
     await ports.generate(run_id, planned.value, None, None)
 
     generation_request = json.loads(llm.requests[-1].user)
     assert plan_request["known_reference"] == generation_request["known_reference"]
-    assert "-1.0523732" in generation_request["known_reference"]
+    assert "-0.3324043" in generation_request["known_reference"]
+    assert "-1.1373061" in generation_request["known_reference"]
     assert "reference_template" not in generation_request
 
 

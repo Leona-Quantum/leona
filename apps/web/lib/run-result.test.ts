@@ -123,6 +123,25 @@ test("a successful run leads with what it produced, not with a verdict", () => {
   assert.equal(result.code?.source, "print('bell')");
 });
 
+test("a generated final explanation replaces the short deterministic fallback", () => {
+  const explanation = [
+    "H2の基底状態エネルギーは **-1.137 Ha** でした。",
+    "VQEで試行状態を最適化し、隔離されたシミュレータ上で期待値を評価しました。",
+    "次は厳密対角化の基準値と比較すると、誤差を定量的に確認できます。",
+  ].join("\n\n");
+  const result = runResultFromEvents(
+    succeeded([
+      { type: "sandbox.result", result: { energy_Ha: -1.137 } } as OutcomeEvent,
+      { type: "run.analysis", interpretation: explanation } as OutcomeEvent,
+    ]),
+    null,
+    "ja",
+  );
+
+  assert.equal(result?.summary, explanation);
+  assert.doesNotMatch(result?.summary ?? "", /ご依頼に基づく成果物/);
+});
+
 test("scalar values are reported in the order the plan promised them", () => {
   const result = runResultFromEvents([
     { type: "run.queued", mode: "execute" },
@@ -194,6 +213,41 @@ test("a research-style optimization history becomes a convergence visual", () =>
   assert.equal(result?.traces[0]?.label, "Optimization History");
   assert.equal(result?.traces[0]?.end, -1.137);
   assert.deepEqual(result?.values, [{ key: "energy", label: "Energy", value: "-1.137" }]);
+});
+
+test("a requested structured visualization survives the event-to-result projection", () => {
+  const result = runResultFromEvents([
+    { type: "run.queued", mode: "execute" },
+    {
+      type: "plan.produced",
+      plan: {
+        problem_summary: "Compare optimizer energy",
+        framework: "qiskit",
+        expected_output_keys: ["final_energy", "visualizations"],
+      },
+    },
+    { type: "code.generated", revision: 1, code: "compare_optimizers()" },
+    {
+      type: "sandbox.result",
+      result: {
+        final_energy: -1.137,
+        visualizations: [{
+          type: "line",
+          title: "Optimizer comparison",
+          x_label: "Iteration",
+          y_label: "Energy (Ha)",
+          series: [{ label: "COBYLA", x: [0, 1], y: [-0.8, -1.137] }],
+        }],
+      },
+    } as OutcomeEvent,
+    { type: "run.finished", status: "succeeded" },
+  ]);
+
+  assert.equal(result?.charts.length, 1);
+  assert.equal(result?.charts[0]?.title, "Optimizer comparison");
+  assert.deepEqual(result?.values, [
+    { key: "final_energy", label: "Final Energy", value: "-1.137" },
+  ]);
 });
 
 test("a review that did not accept is marked, not hidden", () => {

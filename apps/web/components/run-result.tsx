@@ -51,6 +51,7 @@ export function RunResult({
       <ResultVisualizations
         distribution={distribution}
         traces={result.traces}
+        charts={result.charts}
         values={result.values}
         locale={locale}
       />
