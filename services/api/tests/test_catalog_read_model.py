@@ -186,3 +186,73 @@ def test_a_malformed_codeVariants_is_passed_through_rather_than_repaired():
     )
     weird = project_record_for_list_view({"slug": "x", "codeVariants": [None, 3]})
     assert weird["codeVariants"] == [None, 3]
+
+
+def test_the_list_view_keeps_the_qubits_row_and_drops_the_rest_of_the_table():
+    """`resources` is 8.7% of the list payload; one row of it is rendered.
+
+    The browse card's lookup is
+    `entry.resources.find((r) => r.label === "Qubits")?.value`
+    (apps/web/app/repository/repository-browser.tsx:786), and it is the only read
+    of `entry.resources` on the browse path. Filtering by the same literal is
+    what makes this a projection rather than a behaviour change.
+    """
+    projected = project_record_for_list_view(
+        {
+            "slug": "x",
+            "resources": [
+                {"label": "Qubits", "value": "1 system + 1 ancilla"},
+                {"label": "Reported cost", "value": "a long paragraph of prose"},
+                {"label": "Primary source on the speedup", "value": "another one"},
+            ],
+        }
+    )
+    assert projected["resources"] == [{"label": "Qubits", "value": "1 system + 1 ancilla"}]
+
+
+def test_a_non_numeric_qubits_value_survives_verbatim():
+    """The reason this is a row filter and not a swap to the derived profile.
+
+    `RepositoryProfile.qubits` is `int | None` and is null whenever the record
+    has no `portableCircuit`, while these rows are hand-authored prose that does
+    not depend on a circuit — several of them are not numbers at all. Reading the
+    profile instead would blank the chip on every literature, operator and state
+    record.
+    """
+    for value in ("1 system + 1 ancilla", "1 per mode", "n + 1"):
+        projected = project_record_for_list_view(
+            {"slug": "x", "resources": [{"label": "Qubits", "value": value}]}
+        )
+        assert projected["resources"] == [{"label": "Qubits", "value": value}]
+
+
+def test_a_malformed_resources_is_passed_through_rather_than_repaired():
+    """Same terms as `codeVariants`: a projection must not launder a schema
+    disagreement into a well-formed empty list, or the web validator's refusal —
+    the check that catches API/web drift — never fires."""
+    assert (
+        project_record_for_list_view({"slug": "x", "resources": "nonsense"})["resources"]
+        == "nonsense"
+    )
+    # A row that is not an object cannot be the one the card looks up, so it is
+    # dropped rather than kept. The FIELD's shape is what the validator checks.
+    assert project_record_for_list_view({"slug": "x", "resources": [None, 3]})["resources"] == []
+
+
+def test_metadata_is_no_longer_on_the_browse_list():
+    """13.1% of the list payload, rendered by nothing in the browse list.
+
+    Its one consumer is the detail page, which fetches its own full record. This
+    asserts the removal rather than trusting the allowlist to stay put: a field
+    silently re-added here costs 140 KB across the corpus and nothing else says so.
+    """
+    assert "metadata" not in LIST_VIEW_RECORD_FIELDS
+    projected = project_record_for_list_view(
+        {"slug": "x", "metadata": [{"label": "Depth", "value": "O(n)"}]}
+    )
+    assert "metadata" not in projected
+    # And the full record still carries it — only the list view is projected.
+    assert parse_source_record(json.dumps({"slug": "x", "metadata": [{"label": "Depth"}]})) == {
+        "slug": "x",
+        "metadata": [{"label": "Depth"}],
+    }
