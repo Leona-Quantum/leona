@@ -61,6 +61,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..ids import uuid7
 from ..orm import ProviderCredential
+from .audit import record_audit
 
 
 async def get(scope: Scope, session: AsyncSession, provider: str) -> ProviderCredential | None:
@@ -178,7 +179,25 @@ async def delete(scope: Scope, session: AsyncSession, provider: str) -> bool:
             ProviderCredential.provider == provider,
         )
     )
-    return bool(result.rowcount)
+    deleted = bool(result.rowcount)
+    if deleted:
+        # Only on a real deletion. Disconnecting a provider that was never
+        # connected is a no-op, and recording it would put rows in the log for
+        # an event that did not occur — the same reason the artifact deletion is
+        # audited after its rowcount check.
+        #
+        # The provider name is the whole payload. There is deliberately nothing
+        # here about the credential itself, not even a fingerprint: this table
+        # holds a decryptable third-party API key, and an audit log is the wrong
+        # place to start accumulating derived facts about one.
+        await record_audit(
+            scope,
+            session,
+            action="provider_credential.deleted",
+            target_kind="provider_credential",
+            meta={"provider": provider},
+        )
+    return deleted
 
 
 async def mark_provider_success(scope: Scope, session: AsyncSession, provider: str) -> None:

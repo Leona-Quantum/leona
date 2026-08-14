@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from ..ids import uuid7
 from ..orm import Run, WorkspaceFolder
 from ._base import NotFoundError, require_write, touched_now
+from .audit import record_audit
 from .runs import get_run
 
 
@@ -137,6 +138,10 @@ async def delete_folder(scope: Scope, session: AsyncSession, folder_id: uuid.UUI
     """
     require_write(scope)
     folder = await get_folder(scope, session, folder_id)
+    # Read before the delete, for the reason `projects.delete_project` states:
+    # an attribute touched after `delete()` + `flush()` can become a lazy load
+    # against a row that is gone.
+    name = folder.name
     await session.execute(
         update(Run)
         .where(Run.workspace_id == scope.workspace_id, Run.folder_id == folder.id)
@@ -144,6 +149,14 @@ async def delete_folder(scope: Scope, session: AsyncSession, folder_id: uuid.UUI
     )
     await session.delete(folder)
     await session.flush()
+    await record_audit(
+        scope,
+        session,
+        action="folder.deleted",
+        target_kind="workspace_folder",
+        target_id=folder_id,
+        meta={"name": name},
+    )
 
 
 async def reorder_folders(
