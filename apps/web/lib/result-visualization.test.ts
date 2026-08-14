@@ -2,12 +2,118 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import {
+  chartsFromResult,
   distributionFromResult,
   humanizeResultKey,
   resultVisualizationFromResult,
   tracesFromResult,
   valuesFromResult,
 } from "./result-visualization.ts";
+
+test("parses bounded model-authored line, scatter, and bar charts", () => {
+  const charts = chartsFromResult({
+    visualizations: [
+      {
+        type: "line",
+        title: "Energy convergence",
+        x_label: "Iteration",
+        y_label: "Energy (Ha)",
+        series: [
+          { label: "COBYLA", x: [0, 1, 2], y: [-0.5, -1.0, -1.13] },
+          { label: "SPSA", x: [0, 1, 2], y: [-0.4, -0.9, -1.08] },
+        ],
+      },
+      {
+        type: "scatter",
+        title: "Accuracy and runtime",
+        series: [{ label: "Trials", x: [2.1, 3.4], y: [0.98, 0.99] }],
+      },
+      {
+        type: "bar",
+        title: "Success rate",
+        x_label: "Framework",
+        series: [{ label: "Pass rate", x: ["Qiskit", "Qibo"], y: [0.9, 0.7] }],
+      },
+    ],
+  });
+
+  assert.deepEqual(charts.map((chart) => chart.kind), ["line", "scatter", "bar"]);
+  assert.equal(charts[0]?.series[1]?.points[2]?.y, -1.08);
+  assert.deepEqual(charts[2]?.series[0]?.points[0], { x: "Qiskit", y: 0.9 });
+});
+
+test("rejects malformed or non-finite chart data instead of partially drawing it", () => {
+  const charts = chartsFromResult({
+    visualizations: [
+      {
+        type: "line",
+        title: "Mismatched arrays",
+        series: [{ label: "Energy", x: [0, 1], y: [-1] }],
+      },
+      {
+        type: "scatter",
+        title: "Categorical scatter",
+        series: [{ label: "Invalid", x: ["first"], y: [1] }],
+      },
+      {
+        type: "bar",
+        title: "One bad series invalidates the chart",
+        series: [
+          { label: "Valid", x: ["A"], y: [1] },
+          { label: "Invalid", x: ["A"], y: [Number.NaN] },
+        ],
+      },
+      {
+        type: "line",
+        title: "Unsafe numeric magnitude",
+        series: [{ label: "Overflow", x: [0, 1e200], y: [0, 1] }],
+      },
+    ],
+  });
+
+  assert.deepEqual(charts, []);
+});
+
+test("caps categorical bar charts before rendering unreadable labels", () => {
+  assert.deepEqual(chartsFromResult({
+    visualizations: [{
+      type: "bar",
+      title: "Too many categories",
+      series: [{
+        label: "Values",
+        x: Array.from({ length: 25 }, (_, index) => `category-${index}`),
+        y: Array.from({ length: 25 }, (_, index) => index),
+      }],
+    }],
+  }), []);
+});
+
+test("caps chart count, series count, and point count", () => {
+  const valid = (index: number) => ({
+    type: "line",
+    title: `Chart ${index}`,
+    series: [{ label: "Series", x: [0, 1], y: [index, index + 1] }],
+  });
+  assert.equal(chartsFromResult({ visualizations: [0, 1, 2, 3, 4].map(valid) }).length, 4);
+  assert.deepEqual(chartsFromResult({
+    visualizations: [{
+      type: "line",
+      title: "Too many series",
+      series: Array.from({ length: 5 }, (_, index) => ({ label: `${index}`, x: [0], y: [0] })),
+    }],
+  }), []);
+  assert.deepEqual(chartsFromResult({
+    visualizations: [{
+      type: "line",
+      title: "Too many points",
+      series: [{
+        label: "Series",
+        x: Array.from({ length: 97 }, (_, index) => index),
+        y: Array.from({ length: 97 }, (_, index) => index),
+      }],
+    }],
+  }), []);
+});
 
 test("finds measured distributions by shape instead of one result key", () => {
   const distribution = distributionFromResult({

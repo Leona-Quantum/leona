@@ -88,6 +88,10 @@ class CreateRunRequest(RequestModel):
     # Controls user-facing natural language only. Code, identifiers, enum values,
     # RESULT keys, and verification contracts remain locale-neutral.
     response_locale: Literal["en", "ja"] = "en"
+    # When enabled, the worker may choose small, clearly disclosed educational
+    # defaults for task-specific values the user did not provide. The default is
+    # strict: missing scientific inputs are requested from the user.
+    allow_ai_assumptions: bool = False
 
 
 class SetRunFolderRequest(RequestModel):
@@ -455,6 +459,7 @@ async def create_run(
             "workspace_id": str(scope.workspace_id),
             "user_id": str(scope.user_id),
             "response_locale": body.response_locale,
+            "allow_ai_assumptions": body.allow_ai_assumptions,
             **({"source_code": body.source_code} if body.source_code is not None else {}),
         },
         run_id=run.id,

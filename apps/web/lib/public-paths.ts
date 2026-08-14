@@ -1,0 +1,113 @@
+/**
+ * The paths that answer without an AuthKit session — in both of the syntaxes
+ * `middleware.ts` needs them in, derived from one list so they cannot disagree.
+ *
+ * ## Why this is a lib module and not part of middleware.ts
+ *
+ * The same reason `routed-paths.ts` is: `middleware.ts` imports
+ * `@workos-inc/authkit-nextjs`, which resolves `next/cache`, which exists only
+ * inside a Next build. `node --test` cannot load it, so nothing in
+ * `middleware.ts` can be asserted against. A list that decides what is public
+ * and has no test is a list that drifts — and it did.
+ *
+ * ## The asymmetry this file exists to remove
+ *
+ * The two matchers read the same strings differently, and the difference is
+ * silent:
+ *
+ *   - `isPublicPath()` treats each entry as an exact path PLUS its subtree, so
+ *     `/repository` already covers `/repository/<slug>`.
+ *   - `authkitMiddleware`'s `unauthenticatedPaths` uses Next.js matcher glob
+ *     syntax, where `/repository` matches THAT PATH ONLY. A subtree has to be
+ *     spelled out as a pattern.
+ *
+ * That was documented in `middleware.ts` and then not enforced, so
+ * `/auth/sign-in` was public while `/auth/sign-in/<anything>` was gated. Any
+ * page added under a public path inherited the trap: `isPublicPath()` said
+ * public, AuthKit said sign in first. For a page under `/auth/sign-in/` that is
+ * a contradiction in terms — the sign-in *failure* page would send a visitor to
+ * the provider that had just failed.
+ *
+ * `workosUnauthenticatedPaths()` derives the glob form instead of restating it,
+ * so the next path added to `PUBLIC_PATHS` gets its subtree automatically and
+ * the two matchers cannot drift apart again. `public-paths.test.ts` asserts
+ * they agree on every entry rather than on a remembered list.
+ *
+ * Widening the AuthKit list to match `isPublicPath()` exposes no gated route:
+ * every public path either has no children in `app/` (`/auth/callback`,
+ * `/auth/sign-out`, `/open-source`, `/demo`), has only public ones
+ * (`/repository`), or lives under `[locale]` and is rewritten before the gate
+ * is consulted at all (`/pricing`, `/contact`, `/privacy`, `/terms`,
+ * `/workspace`). It also stops a typo under a public path from being 307'd to
+ * WorkOS, which is the same defect `routed-paths.ts` was written to fix.
+ */
+import { isPublicDemoEnabled } from "./public-demo.ts";
+
+/** Each entry is an exact path and everything beneath it, except "/". */
+export const PUBLIC_PATHS: readonly string[] = [
+  "/",
+  "/auth/callback",
+  // Logout must remain reachable after the session cookie is gone; the route
+  // itself makes the operation idempotent for already-signed-out visitors.
+  "/auth/sign-out",
+  // The header's sign-in link on a cached page. It must be reachable without a
+  // session for the same reason /auth/callback is: it is what a signed-out
+  // reader clicks to get one. Its subtree must be reachable for a stronger
+  // reason: a page that explains why sign-in failed cannot require sign-in.
+  "/auth/sign-in",
+  "/pricing",
+  "/repository",
+  "/workspace",
+  "/open-source",
+  "/contact",
+  "/privacy",
+  "/terms",
+  ...(isPublicDemoEnabled() ? ["/demo"] : []),
+];
+
+/** The subtree suffix in Next.js matcher glob syntax. */
+const SUBTREE = "/:path*";
+
+/**
+ * Our own gate: an entry matches itself and everything under it.
+ *
+ * "/" is the one entry that does NOT carry a subtree — it is the home page, not
+ * the whole site.
+ */
+export function isPublicPath(pathname: string): boolean {
+  return PUBLIC_PATHS.some((path) =>
+    path === "/" ? pathname === "/" : pathname === path || pathname.startsWith(`${path}/`));
+}
+
+/**
+ * The same list in the glob syntax `authkitMiddleware` expects.
+ *
+ * Takes `paths` so the test can drive it with cases that are not the live list.
+ */
+export function workosUnauthenticatedPaths(
+  paths: readonly string[] = PUBLIC_PATHS,
+): readonly string[] {
+  return paths.flatMap((path) => (path === "/" ? [path] : [path, `${path}${SUBTREE}`]));
+}
+
+/**
+ * Does `pathname` match one Next.js matcher glob entry?
+ *
+ * Only the two forms this file produces are implemented — a literal path, and a
+ * literal path plus `SUBTREE`. It exists so the test can assert what AuthKit
+ * will actually do with the list rather than that the list contains a string.
+ */
+export function matchesUnauthenticatedGlob(pattern: string, pathname: string): boolean {
+  if (!pattern.endsWith(SUBTREE)) return pattern === pathname;
+  const base = pattern.slice(0, -SUBTREE.length);
+  return pathname === base || pathname.startsWith(`${base}/`);
+}
+
+/** Will AuthKit let `pathname` through without a session? */
+export function isUnauthenticatedForAuthKit(
+  pathname: string,
+  paths: readonly string[] = PUBLIC_PATHS,
+): boolean {
+  return workosUnauthenticatedPaths(paths).some((pattern) =>
+    matchesUnauthenticatedGlob(pattern, pathname));
+}

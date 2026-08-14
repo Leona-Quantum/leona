@@ -1091,10 +1091,10 @@ async def list_orphaned_runs(
     attempts ~30s apart), and — belt and braces against a future second
     run-bearing job kind — the run must have no other job still working.
 
-    The direct API/evaluation path intentionally creates no Job. Its only
-    recoverable liveness signal is ``runs.updated_at``, so a separate and much
-    longer grace selects active no-job rows. Requiring that *no* Job exists keeps
-    this fallback disjoint from durable execution and its delivery machinery.
+    The direct API/evaluation path normally creates no Job. Its only recoverable
+    liveness signal is ``runs.updated_at``, so a separate and much longer grace
+    selects rows with no *live* Job. A terminal historical Job is harmless and
+    must not hide a run that was left active by an older handler.
 
     The two candidate classes are merged oldest-abandoned-first before the batch
     limit applies, so a persistently full job-backed backlog cannot starve a
@@ -1140,13 +1140,18 @@ async def list_orphaned_runs(
     )
     job_rows = (await session.execute(stmt)).all()
     direct_grace = dt.timedelta(seconds=direct_grace_seconds)
-    any_job = Job.__table__.alias("any_job")
+    live_direct_job = Job.__table__.alias("live_direct_job")
     direct_stmt = (
         select(Run.id, Run.workspace_id, Run.user_id, Run.updated_at)
         .where(
             Run.status.in_((RunStatus.QUEUED.value, RunStatus.RUNNING.value)),
             Run.updated_at <= func.now() - direct_grace,
-            ~select(any_job.c.id).where(any_job.c.run_id == Run.id).exists(),
+            ~select(live_direct_job.c.id)
+            .where(
+                live_direct_job.c.run_id == Run.id,
+                live_direct_job.c.status.not_in(("failed", "dead", "done")),
+            )
+            .exists(),
         )
         .order_by(Run.updated_at)
         .limit(limit)
