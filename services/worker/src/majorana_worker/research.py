@@ -227,10 +227,13 @@ class ArxivResearchClient:
         normalized = normalize_research_query(query)
         if not normalized:
             return ResearchResult(query="", error="arXiv lookup skipped: empty query")
-        # Two clocks, deliberately. The deadline handed to the thread starts when
-        # the thread starts, so it cannot bound the time the task spends queued
-        # in a saturated executor before it runs at all; `wait_for` starts at the
-        # call and does. Neither one alone bounds what a caller actually waits.
+        # Two clocks off the same instant — the deadline argument is evaluated
+        # here, not in the thread — because neither one alone is enough.
+        # `wait_for` is what bounds a task that is still sitting in a saturated
+        # executor, since a deadline can only be honoured by code that is
+        # actually running. The deadline is what lets a thread that IS running
+        # stop waiting and go back to the pool, since cancelling the future does
+        # not reach into the thread.
         try:
             return await asyncio.wait_for(
                 asyncio.to_thread(self._search_sync, normalized, time.monotonic() + self._budget_s),
