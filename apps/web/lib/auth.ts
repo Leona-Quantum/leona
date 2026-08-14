@@ -7,6 +7,7 @@ import {
 } from "@workos-inc/authkit-nextjs";
 import { isWorkosAuthConfigured } from "./auth-config";
 import { isLocalDevAuthEnabled, LOCAL_DEV_ACCESS_TOKEN } from "./local-dev-auth";
+import { safeReturnTo } from "./return-to";
 import { siteOrigin } from "./site-origin";
 
 const LOCAL_DEV_AUTH: UserInfo = {
@@ -48,6 +49,22 @@ export async function getMajoranaSignInUrl(): Promise<string> {
   // the callback route. This avoids falling back to a stale caller/default
   // pathname when a user starts sign-in from a public page.
   return getSignInUrl({ returnTo: "/run" });
+}
+
+/**
+ * The provider hand-off itself. Called ONLY from `app/auth/sign-in/route.ts`,
+ * after a click has already reached this deployment.
+ *
+ * Separate from `getMajoranaSignInUrl()` on purpose: this one is per-request by
+ * construction (it reads `headers()`, and carries a one-shot PKCE challenge when
+ * `WORKOS_ENABLE_PKCE` is on), so it must never be reached during a page render
+ * that a CDN could store. Returning the relative `returnTo` under local dev auth
+ * keeps the route handler's `new URL(target, request.url)` correct either way.
+ */
+export async function getMajoranaAuthorizationUrl(returnTo: string): Promise<string> {
+  const destination = safeReturnTo(returnTo);
+  if (isLocalDevAuthEnabled()) return destination;
+  return getSignInUrl({ returnTo: destination });
 }
 
 export function isMajoranaAuthConfigured(): boolean {
