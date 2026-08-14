@@ -265,13 +265,105 @@ Interpretation:  NO capacity claim. Worker claim/heartbeat/finish control flow i
                  is excluded by construction.
 ```
 
-The k6 result template below remains **not run**. Two orders of magnitude of headroom in a
-harness that talks to no database says nothing about the gate this document exists to hold.
+Two orders of magnitude of headroom in a harness that talks to no database says nothing about
+the gate this document exists to hold.
+
+## The three write/stream profiles, run for the first time (2026-08-14)
+
+`submit_100`, `sse_100` and `mixed_100` had been defined, documented and never executed. They
+have now been executed. **All four profiles exit 0 with zero 5xx and zero unexpected
+responses.**
+
+```text
+Date/time (UTC): 2026-08-14
+Target:          http://127.0.0.1:8000  (local; no non-local approval variable was set)
+Commit:          86e657c7 — NOTE: a worktree carrying three unmerged fixes (pool_timeout+503,
+                 the conversation N+1 batch, and the runs(workspace_id, id DESC) index),
+                 not plain dev. Stated because it is the tree that was measured.
+k6 version:      v2.1.0
+Stack:           local postgres:17, alembic head 0051, system catalog published=369 blocked=0
+Result JSON:     bench/k6/out/capacity/{read_100,submit_100,sse_100,mixed_100}-20260814T12*/result.json
+```
+
+| profile | counters | p95 | exit |
+|---|---|---|---|
+| `read_100` | 100 read_success, 0 unexpected, 0 5xx | 1.38 s (see the load caveat) | 0 |
+| `submit_100` | **100 attempts, 100 created (201)**, 0 unexpected, 0 5xx | **632.6 ms** | 0 |
+| `sse_100` | **100 attempts, 100 handled**, 0 protocol errors, 0 unexpected, 0 5xx | held to the client bound | 0 |
+| `mixed_100` | 70 reads + 20 SSE + 10 submits, 0 unexpected, 0 5xx | read 1.07 s, submit 655 ms | 0 |
+
+**`sse_100` reports 100 timeouts, and that is the profile working rather than failing.** No
+Worker runs during a capacity profile, so a queued run emits no events and every stream is held
+until the client's own bound. What the run establishes is that **100 concurrent SSE connections
+were accepted and held simultaneously with no protocol error and no 5xx** — connection
+pressure, which is what it claims. It is not evidence that a stream delivers a terminal event.
+`http_req_failed: 98%` is the same artefact: a deliberately-timed-out held stream is counted as
+a failed HTTP request.
+
+**Submission is cheaper than reading**: 632 ms p95 against 1.38 s for a catalog read, on the
+same stack. A submission is a few small INSERTs; a browse read materialises a hundred rows.
+
+### What these runs do NOT establish, stated as plainly as the numbers
+
+**They do not produce T, the wall-clock duration of a real run.** `submit_100` measures
+admission — `POST /v1/runs` returns 201 once the row and the job are written, before anything
+executes. The harness starts no Worker and makes no provider call **by design**, so no profile
+here can say how long a queued user waits. T needs either a real pipeline execution (real
+provider tokens, real sandbox minutes) or, better and free, a read of production's own history:
+
+```sql
+SELECT count(*),
+       percentile_cont(0.50) WITHIN GROUP (ORDER BY finished_at - started_at) AS p50,
+       percentile_cont(0.95) WITHIN GROUP (ORDER BY finished_at - started_at) AS p95
+FROM runs WHERE status = 'succeeded'
+  AND started_at IS NOT NULL AND finished_at IS NOT NULL;
+```
+
+**The latency figures are this machine's, and this machine was loaded.** The runs above were
+taken at a 1-minute load average between **30 and 43 on 10 cores** — several unrelated agent
+sessions were building and testing concurrently. The earlier `read_100` record in this document
+was taken at load 6.21 and reported 1.36–1.48 s; three consecutive `read_100` runs at load ~37
+reported **2.81 / 2.46 / 3.09 s**. Same commit, same stack, same profile. **The spread is the
+machine, not the service** — which is the caveat this document already raised, now with a
+number attached to it.
+
+## The bottleneck is the API process's CPU, not the connection pool
+
+This is a correction to the finding recorded earlier in this document, and it is a correction
+about *inference* rather than about the earlier measurement, which reproduces.
+
+`pg_stat_activity` pinned at exactly 10 backends showed the pool **fully utilised**. That is
+not the same as the pool being the constraint, and three measurements say it is not:
+
+| experiment | result | reading |
+|---|---|---|
+| `/health` (no DB, no rows) at 100 concurrent | p95 **17.3 ms** | 100 concurrent connections are not a problem in themselves |
+| catalog read at the same 100 concurrent | p95 **1.26 s** | **73× the no-DB endpoint** on the same process |
+| API process CPU during that burst | **92–99% of one core** | the Python process is saturated |
+| Postgres container CPU during the same burst | **23%** | the database is not |
+| response 770 KB → 182 KB (`view=list`), warmed, 3 rounds | 1.43–1.49 s → 1.38–1.39 s | payload is a ~4% term |
+
+The API saturates a core while Postgres idles. **Production matches this shape**: the image's
+`CMD` runs `uvicorn` with no `--workers`, so one Python process per instance, at `API_CPU=1` —
+one vCPU. Read capacity is therefore about two cores of Python across the fleet.
+
+The remedies differ completely from the pool reading, which is why the distinction is worth
+the correction: more connections and a larger database tier do not address a saturated
+interpreter. Reducing per-request Python work does, and so does CPU — and **`API_CPU` is not a
+term in the connection budget** (`infra/fleet.env` says so), which makes it the one scaling
+knob not blocked by the 50-connection ceiling.
+
+**One caveat, honestly: raising `--workers` is NOT free of the budget.** The pool is per
+process (`db.py`: "Per process"), so two uvicorn workers at today's sizes would double
+connections per instance. Holding the budget means splitting it — e.g. two workers at 2+3 each
+rather than one at 5+5. **That A/B was attempted and could not be measured here**: variance
+within a single configuration ran 1.34 s to 5.27 s at this machine's load, swamping the effect.
+It needs a quiet machine, or Cloud Run itself.
 
 ## Result template
 
-When a real run is performed, replace this section with the actual command, environment, result
-path, and interpretation. A run that was not performed must remain explicitly marked as not run.
+For a run not yet performed. A run that was not performed must remain explicitly marked as not
+run.
 
 ```text
 Date/time (UTC): not run
