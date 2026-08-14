@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { canonicalMetadata } from "../../../lib/public-metadata";
 import { PublicSite } from "../../../components/public-site";
 import { getMajoranaAuth, getMajoranaSignInUrl, isMajoranaAuthConfigured } from "../../../lib/auth";
 import { getPublicLocale } from "../../../lib/public-locale-server";
@@ -25,17 +26,20 @@ import { STATE_VOCABULARY } from "../../../lib/repository/state-vocabulary";
  */
 export async function generateMetadata(): Promise<Metadata> {
   const locale = await getPublicLocale();
-  return locale === "ja"
-    ? {
-        title: "量子アトラス",
-        description:
-          "回路とアルゴリズムの公開研究データベース。各項目について、出典、どこまで検証されているか、そしてエクスポートの境界を明示しています。",
-      }
-    : {
-        title: "The Quantum Atlas",
-        description:
-          "A public Leona Quantum research database for circuits and algorithms with evidence, sources, and export boundaries visible.",
-      };
+  return {
+    ...(locale === "ja"
+      ? {
+          title: "量子アトラス",
+          description:
+            "回路とアルゴリズムの公開研究データベース。各項目について、出典、どこまで検証されているか、そしてエクスポートの境界を明示しています。",
+        }
+      : {
+          title: "The Quantum Atlas",
+          description:
+            "A public Leona Quantum research database for circuits and algorithms with evidence, sources, and export boundaries visible.",
+        }),
+    ...canonicalMetadata("/repository"),
+  };
 }
 
 /**

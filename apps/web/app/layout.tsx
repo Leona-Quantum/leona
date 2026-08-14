@@ -3,6 +3,7 @@ import type { Metadata } from "next";
 import { Instrument_Sans, Instrument_Serif, JetBrains_Mono } from "next/font/google";
 import { THEME_STORAGE_KEY } from "../lib/theme";
 import { LEGACY_PUBLIC_LOCALE_COOKIE, PUBLIC_LOCALE_COOKIE } from "../lib/public-locale";
+import { canonicalOrigin } from "../lib/site-origin";
 import "./globals.css";
 
 const themeScript = `(() => {
@@ -51,6 +52,17 @@ const instrumentSerif = Instrument_Serif({ subsets: ["latin"], weight: "400", va
 const jetbrainsMono = JetBrains_Mono({ subsets: ["latin"], variable: "--font-jbmono" });
 
 export const metadata: Metadata = {
+  // The origin every relative address in this application's metadata resolves
+  // against — `alternates.canonical` and `og:url` on the public pages, and any
+  // OG image added later. Read from the same source `robots.ts` and
+  // `sitemap.ts` use, so the three cannot disagree about which origin this
+  // deployment claims to be.
+  //
+  // Set here and NOT `alternates.canonical`: metadata is inherited by every
+  // route that does not override it, so a canonical URL declared in the root
+  // layout would tell a crawler that all seven hundred pages are the homepage.
+  // Each public page states its own with `canonicalMetadata()`.
+  metadataBase: new URL(canonicalOrigin()),
   title: {
     default: "Leona Quantum · Evidence for quantum work",
     template: "%s · Leona Quantum",
