@@ -129,7 +129,12 @@ async function probe(url) {
   } catch (err) {
     // A network failure is not a 200, so it folds into the same "non-200" bucket
     // `classify` already handles — no separate branch needed for it.
-    console.error(`check-live-repository-cache: request to ${url} threw: ${err.message}`);
+    //
+    // `err` is not guaranteed to be an Error — fetch can reject with other
+    // shapes — so `.message` alone risks logging "undefined" instead of
+    // whatever was actually thrown.
+    const message = err instanceof Error ? err.message : String(err);
+    console.error(`check-live-repository-cache: request to ${url} threw: ${message}`);
     return { status: 0, cacheHeader: null };
   }
 }
