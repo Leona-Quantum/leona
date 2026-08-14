@@ -13,6 +13,21 @@
 # Both are intended to be required checks on dev. Neither uploads SARIF: that
 # needs GitHub Code Security, which is a paid add-on on private repos, so the
 # gate is the job's exit code and the findings are in the job log.
+#
+# `gitleaks` stopped being `gitleaks/gitleaks-action@ff98106` (v2) on 2026-08-15,
+# for the same reason `snyk` is gone: an unmeetable third-party gate. That action's
+# dist/index.js looks up the GitHub account type of the repo owner and, the instant
+# it comes back "Organization", requires a `GITLEAKS_LICENSE` secret or exits 1 --
+# on every run, leak or no leak. `EshMis/majorana` is about to transfer to the
+# LeonaQuantum org (ai-ops#46), which would have turned this required check
+# permanently red, including on the PR meant to fix it. Buying a license would not
+# have been a durable fix either: the validation that key would satisfy is itself
+# commented out upstream at that pin ("keygen payment method is getting declined
+# ... disable this check for now"), so only the env var's *presence* was ever being
+# tested, and that comment could be un-commented at any time. Replaced with the
+# gitleaks binary, downloaded and checksummed the same way osv-scanner is below --
+# the gate depends on a pinned hash now, not on a vendor's licensing branch or on
+# who owns the repo.
 name: security
 permissions:
   contents: read
@@ -36,9 +51,145 @@ jobs:
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with: { fetch-depth: 0 }
-      - uses: gitleaks/gitleaks-action@ff98106e4c7b2bc287b24eaf42907196329070c7 # v2
+      # Downloaded and checksummed rather than run as gitleaks/gitleaks-action (see
+      # the file header for why that action had to go). Same reasoning as
+      # osv-scanner below: the binary is what we actually trust, pinned by hash so a
+      # compromised release can't change what runs here without failing loudly.
+      - name: install gitleaks
+        timeout-minutes: 5
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITLEAKS_VERSION: 8.30.1
+          GITLEAKS_SHA256: 551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb
+        run: |
+          : "${GITLEAKS_VERSION:?GITLEAKS_VERSION is empty -- set it in the env: block of this step, or you are running this by hand outside CI}"
+          : "${GITLEAKS_SHA256:?GITLEAKS_SHA256 is empty -- refusing to install an unpinned binary}"
+          curl -fsSL --retry 5 --retry-delay 4 --retry-all-errors --retry-max-time 180 \
+            --connect-timeout 10 --max-time 60 \
+            -o gitleaks.tar.gz \
+            "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz"
+          echo "${GITLEAKS_SHA256}  gitleaks.tar.gz" | sha256sum -c -
+          tar -xzf gitleaks.tar.gz gitleaks
+          chmod +x gitleaks
+          # The checksum proves the bytes; this proves they are the version the pin
+          # claims and that they run on this runner.
+          ./gitleaks version
+          ./gitleaks version | grep -qx "${GITLEAKS_VERSION}"
+      # The gate proves it still catches a secret before its verdict is believed --
+      # same reason osv-scanner and client-bundle self-test below. Runs entirely
+      # against a throwaway scratch repo, never against this one, torn down before
+      # the real scan runs.
+      - name: gate self-test (planted secret caught, clean tree passes)
+        run: |
+          set -e
+          d=$(mktemp -d)
+          git init -q "$d"
+          git -C "$d" config user.email "gate-self-test@localhost"
+          git -C "$d" config user.name "gate-self-test"
+          cp .gitleaks.toml "$d/.gitleaks.toml"
+          git -C "$d" add .gitleaks.toml
+          git -C "$d" commit -q -m config
+
+          set +e
+          ./gitleaks detect --redact --exit-code=2 --report-format=json --report-path="$d/clean.json" \
+            --config "$d/.gitleaks.toml" --no-banner -s "$d"
+          clean_rc=$?
+          set -e
+          if [ "$clean_rc" -ne 0 ]; then
+            echo "::error::gate self-test failed -- a clean tree was flagged (exit ${clean_rc}, expected 0). The gitleaks gate cannot be trusted until this passes."
+            rm -rf "$d"
+            exit 1
+          fi
+
+          # Built from runtime randomness, not a literal -- no realistic-looking
+          # secret ever sits in this committed file for GitHub's own push
+          # protection (or a later gitleaks scan of this very workflow) to trip on.
+          # A random 40-char value next to a "SECRET"-shaped name is enough to
+          # fire the default generic-api-key rule this repo's .gitleaks.toml
+          # extends; it's not shaped like any real vendor's key.
+          secret_value="testkey_$(head -c 33 /dev/urandom | base64 | tr -d '=+/\n' | head -c 40)"
+          printf 'GITLEAKS_SELFTEST_SECRET = "%s"\n' "$secret_value" > "$d/planted.py"
+          git -C "$d" add planted.py
+          git -C "$d" commit -q -m planted
+
+          set +e
+          ./gitleaks detect --redact --exit-code=2 --report-format=json --report-path="$d/leak.json" \
+            --config "$d/.gitleaks.toml" --no-banner -s "$d"
+          leak_rc=$?
+          set -e
+          rm -rf "$d"
+          if [ "$leak_rc" -ne 2 ]; then
+            echo "::error::gate self-test failed -- a planted secret was not flagged (exit ${leak_rc}, expected 2). The gitleaks gate proves nothing until this passes."
+            exit 1
+          fi
+          echo "self-test ok: clean tree passed, planted secret was caught"
+      # PR runs are scoped to the PR's own commits, mirroring what
+      # gitleaks/gitleaks-action did: the range is `<first PR commit>^..<last PR
+      # commit>`, read from the PR's commit list rather than from base.sha.
+      # base.sha is dev's CURRENT tip, which for any PR opened before the last dev
+      # merge is not an ancestor of the PR's head -- using it here would silently
+      # mis-scope (or error) the range on a large share of real PRs. Schedule runs
+      # get no range at all, i.e. full history, same as the action's `schedule`
+      # path did (see the "weekly full-history scan" comment on the `on:` block).
+      - name: determine PR commit range
+        if: github.event_name == 'pull_request'
+        id: range
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          shas=$(gh api --paginate "repos/${REPO}/pulls/${PR_NUMBER}/commits" --jq '.[].sha')
+          first=$(printf '%s\n' "$shas" | head -1)
+          last=$(printf '%s\n' "$shas" | tail -1)
+          : "${first:?no commits returned for this PR}"
+          : "${last:?no commits returned for this PR}"
+          echo "base=${first}" >> "$GITHUB_OUTPUT"
+          echo "head=${last}" >> "$GITHUB_OUTPUT"
+      # No PR comments/SARIF upload, matching this file's stated convention for
+      # osv/semgrep (see file header): the gate is the exit code, findings are in
+      # the job log. `--redact` keeps the matched secret value itself out of the
+      # log even on a real hit.
+      - name: scan
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          RANGE_BASE: ${{ steps.range.outputs.base }}
+          RANGE_HEAD: ${{ steps.range.outputs.head }}
+        run: |
+          args=(detect --redact -v --exit-code=2 --report-format=json --report-path=gitleaks-report.json --log-level=info --config .gitleaks.toml --no-banner)
+          if [ "$EVENT_NAME" = "pull_request" ]; then
+            : "${RANGE_BASE:?RANGE_BASE is empty -- the determine-range step should have set this}"
+            : "${RANGE_HEAD:?RANGE_HEAD is empty -- the determine-range step should have set this}"
+            # gitleaks fails open on an unresolvable range: if `${RANGE_BASE}^` has
+            # no parent in this checkout (found empirically while testing this
+            # change), the internal `git log` call errors, gitleaks logs the git
+            # error but still reports "0 commits scanned" / "no leaks found" and
+            # exits 0. Verifying the range resolves to something ourselves, before
+            # handing it to gitleaks, is what turns that silent pass into a loud
+            # failure instead.
+            range_count=$(git rev-list --count --no-merges --first-parent "${RANGE_BASE}^..${RANGE_HEAD}") || {
+              echo "::error::the PR commit range ${RANGE_BASE}^..${RANGE_HEAD} does not resolve in this checkout. Refusing to scan an unresolvable range as though it were clean -- that is exactly the fail-open this job exists to avoid. Check fetch-depth on the checkout step above."
+              exit 1
+            }
+            if [ "$range_count" -eq 0 ]; then
+              echo "::error::the PR commit range ${RANGE_BASE}^..${RANGE_HEAD} resolves to 0 commits, which should not happen for a PR with at least one commit. Refusing to treat this as a clean scan."
+              exit 1
+            fi
+            args+=(--log-opts="--no-merges --first-parent ${RANGE_BASE}^..${RANGE_HEAD}")
+          fi
+          echo "gitleaks cmd: ./gitleaks ${args[*]}"
+          set +e
+          ./gitleaks "${args[@]}"
+          rc=$?
+          set -e
+          if [ "$rc" -eq 0 ]; then
+            echo "no leaks found"
+          elif [ "$rc" -eq 2 ]; then
+            echo "::error::gitleaks found a leak -- see the redacted findings above and gitleaks-report.json in the run log."
+            exit 1
+          else
+            echo "::error::gitleaks exited ${rc} -- the scan did not run to completion, so this job proves nothing about secrets. See the log above."
+            exit 1
+          fi
 
   osv:
     runs-on: ubuntu-latest
