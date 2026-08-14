@@ -24,6 +24,7 @@ _ROLE_STAGE = {
     "generate_circuit": Stage.GENERATE,
     "intent_alignment": Stage.VERIFY,
     "explain_result": Stage.ANALYZE,
+    "research_triage": Stage.PLAN,
 }
 
 _LIVE_DELTA_CHARS = 160
