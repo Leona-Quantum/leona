@@ -84,8 +84,24 @@ LIST_VIEW_RECORD_FIELDS: frozenset[str] = frozenset(
         # nothing in the payload to say a field was dropped. `tags` is one line
         # up and would have looked like coverage.
         "topics",
+        # Kept, and projected a level down — see LIST_VIEW_RESOURCE_LABELS. The
+        # browse card reads exactly one row out of this array.
         "resources",
-        "metadata",
+        # `metadata` is NOT here, and its absence is the deliberate kind.
+        #
+        # It was 140,334 bytes — 13.1% of the whole list payload — and the browse
+        # list renders none of it. Its one consumer is the detail page, which
+        # spreads it alongside `resources`
+        # (`app/repository/[slug]/repository-entry-view.tsx:533`) and fetches its
+        # own full record from `/v1/catalog/entries/{slug}`, so it is unaffected.
+        # The export route (`app/api/repository/[slug]/export/route.ts`) likewise
+        # reads a full record.
+        #
+        # Removing a field from this set is only safe because
+        # `parseCatalogListRecord` tolerates an absent one; before that landed,
+        # dropping any of the four heavy fields took the browse list from 369
+        # records to ZERO, and the site went on rendering from the bundled
+        # snapshot with one console line.
         "verificationMethods",
         "codeVariants",
         "visualization",
@@ -140,6 +156,53 @@ LIST_VIEW_RECORD_FIELDS: frozenset[str] = frozenset(
 LIST_VIEW_CODE_VARIANT_FIELDS: frozenset[str] = frozenset({"framework", "status"})
 
 
+# The `resources` rows the browse list actually renders, matched by label.
+#
+# `resources` is 92,870 bytes of the list payload (8.7%), of which the one row a
+# browse card reads is 5,662. The card's lookup is
+# `entry.resources.find((r) => r.label === "Qubits")?.value`
+# (`app/repository/repository-browser.tsx:786`) — one label, matched literally,
+# and it is the ONLY read of `entry.resources` anywhere on the browse path. The
+# other two readers, the detail view and the export route, each fetch a full
+# record and are untouched by this.
+#
+# Filtering by the same literal the client matches on is what makes this a
+# projection rather than a behaviour change: a record whose rows do not include
+# a "Qubits" label shows no qubit chip today and shows none after, and a record
+# that does keeps the same string. Nothing derives a *count* from this array.
+#
+# **This is deliberately not the swap the earlier plan called for.** That plan
+# was to drop `resources` outright and read `profileOf(entry)?.qubits` instead,
+# since the page already fetches profiles. It is unsafe: `RepositoryProfile.qubits`
+# is null exactly when `present` is false, and `present` is false whenever
+# `portableCircuit` is absent (`lib/repository/profile.ts:25-26`,
+# `catalog_profile.py:59-61`), while these rows are hand-authored prose that does
+# not depend on a circuit at all — `entries-states-operators.ts` carries seven
+# `label: "Qubits"` rows and zero `portableCircuit` occurrences, and some of their
+# values are not numbers ("1 system + 1 ancilla", "1 per mode") and cannot be
+# represented by `qubits: int | None`. The swap would silently blank the chip on
+# every literature, operator and state record. Keeping the row costs 5,662 bytes.
+LIST_VIEW_RESOURCE_LABELS: frozenset[str] = frozenset({"Qubits"})
+
+
+def _project_resources(resources: Any) -> Any:
+    """Keep the rows the browse card reads, drop the rest of the table.
+
+    Anything that is not a list of objects is returned untouched, for the same
+    reason `_project_code_variants` does: the web validator refuses a malformed
+    `resources` and a projection must not launder one into a well-formed empty
+    list on the way past. A row without a recognisable `label` is dropped, not
+    kept — an unlabelled row cannot be the one the card looks up.
+    """
+    if not isinstance(resources, list):
+        return resources
+    return [
+        row
+        for row in resources
+        if isinstance(row, dict) and row.get("label") in LIST_VIEW_RESOURCE_LABELS
+    ]
+
+
 def _project_code_variants(variants: Any) -> Any:
     """Keep each variant's identity, drop the source it carries.
 
@@ -167,16 +230,27 @@ def project_record_for_list_view(record: dict[str, Any] | None) -> dict[str, Any
     `None`. `record=None` (a non-manifest source, see `parse_source_record`)
     survives unchanged.
 
-    One field is projected a level deeper than the allowlist reaches:
-    `codeVariants` keeps its shape and loses the code inside it. See
-    LIST_VIEW_CODE_VARIANT_FIELDS for why that is the whole field's cost and
-    none of its use.
+    Two fields are projected a level deeper than the allowlist reaches, because
+    that is where their cost is rather than in the field itself:
+
+    * `codeVariants` keeps its shape and loses the code inside it
+      (LIST_VIEW_CODE_VARIANT_FIELDS).
+    * `resources` keeps the rows the browse card reads and loses the rest of the
+      table (LIST_VIEW_RESOURCE_LABELS).
+
+    Both keep the field present and its type unchanged, which is what makes them
+    behaviour-preserving: `families.ts:148` folds `codeVariants` into the
+    width-family signature with no `?? []`, and `repository-browser.tsx:786`
+    searches `resources`. Removing a field is not the same as slimming it, and
+    the difference is silent.
     """
     if record is None:
         return None
     projected = {key: value for key, value in record.items() if key in LIST_VIEW_RECORD_FIELDS}
     if "codeVariants" in projected:
         projected["codeVariants"] = _project_code_variants(projected["codeVariants"])
+    if "resources" in projected:
+        projected["resources"] = _project_resources(projected["resources"])
     return projected
 
 

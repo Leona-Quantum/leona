@@ -334,8 +334,16 @@ export const PUBLIC_REPOSITORY_LIST_FIELDS = [
   "descriptionJa",
   "tags",
   "topics",
+  // Kept, but the API sends only the rows this list reads — the browse card's
+  // one lookup is `resources.find((r) => r.label === "Qubits")`. See
+  // LIST_VIEW_RESOURCE_LABELS in catalog_read_model.py.
   "resources",
-  "metadata",
+  // `metadata` was here and is gone on purpose, not by oversight: 140,334 bytes
+  // (13.1% of the list payload) that the browse list never renders. Its only
+  // reader is the detail page, which fetches its own full record. Dropping it
+  // from THIS array is the half that matters — it removes the field from
+  // `PublicRepositoryListEntry`, so a future browse-path consumer fails to
+  // compile rather than reading an empty array in production only.
   "visualization",
   "decomposition",
   "portableCircuit",
