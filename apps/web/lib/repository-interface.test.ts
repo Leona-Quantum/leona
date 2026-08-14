@@ -65,7 +65,7 @@ const PROGRAM = (width: number): InterfaceEvidence =>
     category: "algorithms",
     topics: ["benchmark-circuit"] as TopicId[],
     wireCount: width,
-    portableCircuit: { qubitCount: width, steps: [{ gate: "H", qubits: [0] }], measure: true },
+    portableCircuit: { qubitCount: width, measure: true },
   });
 
 /**
@@ -103,7 +103,7 @@ test("a circuit that does not measure is a transform, and still assumes its inpu
   const held = deriveInterface(
     evidence({
       slug: "unmeasured",
-      portableCircuit: { qubitCount: 3, steps: [{ gate: "H", qubits: [0] }], measure: false },
+      portableCircuit: { qubitCount: 3, measure: false },
     }),
   );
   assert.equal(held.stance, "transform");
@@ -188,7 +188,7 @@ test("a malformed circuit width falls through rather than entering the graph", (
     const derived = deriveInterface(
       evidence({
         slug: "malformed",
-        portableCircuit: { qubitCount, steps: [{ gate: "H", qubits: [0] }], measure: true },
+        portableCircuit: { qubitCount, measure: true },
       }),
     );
     assert.equal(derived.stance, "undeclared", `qubitCount ${qubitCount} produced a port`);
@@ -202,7 +202,7 @@ test("a malformed circuit width falls through rather than entering the graph", (
       slug: "malformed-gate",
       category: "gates",
       wireCount: 2,
-      portableCircuit: { qubitCount: 0, steps: [], measure: true },
+      portableCircuit: { qubitCount: 0, measure: true },
     }),
   );
   assert.equal(salvaged.stance, "transform");
@@ -616,7 +616,7 @@ test("exactly three outlook cells are unreachable, and the copy map documents wh
     evidence({
       slug: "unmeasured",
       wireCount: 3,
-      portableCircuit: { qubitCount: 3, steps: [{ gate: "H", qubits: [0] }], measure: false },
+      portableCircuit: { qubitCount: 3, measure: false },
     }),
     HOLE(2, "input"),
     HOLE(2, "readout"),
