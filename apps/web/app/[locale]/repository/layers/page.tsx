@@ -1,8 +1,9 @@
 import type { Metadata } from "next";
+import { notFound } from "next/navigation";
 import { canonicalMetadata } from "../../../../lib/public-metadata";
 import { PublicSite } from "../../../../components/public-site";
 import { ConvergeView } from "../../../../components/repository-converge-view";
-import { parsePublicLocale, PUBLIC_LOCALES } from "../../../../lib/public-locale";
+import { isPublicLocale, parsePublicLocale, PUBLIC_LOCALES } from "../../../../lib/public-locale";
 import { getRepositoryListEntries } from "../../../../lib/repository-source";
 import { LAYER_GRAPH } from "../../../../lib/repository/layer-graph";
 import { drawableSlots, resolveOpenIds } from "../../../../lib/repository/converge-layout";
@@ -189,6 +190,14 @@ export default async function RepositoryLayersPage({
     routeParams,
     getRepositoryListEntries(),
   ]);
+  // **`dynamicParams = false` does not cover this page, and the line above says
+  // so.** It restricts params only on a route that prerenders; this one reads
+  // `searchParams` and therefore never does, so every locale is "outside the
+  // prerendered set" and Next renders it. Measured: `/zz/repository/claims`
+  // (prerendered) 404s on its own and `/zz/repository/layers` returned 200 with
+  // the English map — a second address for the site's most-read page. See
+  // `isPublicLocale`.
+  if (!isPublicLocale(routeLocale.locale)) notFound();
   const locale = parsePublicLocale(routeLocale.locale);
   const openSet = resolveOpenSet(params);
   // `?paper=` — the paper surface (W20). Its whole meaning is an ARRIVAL open

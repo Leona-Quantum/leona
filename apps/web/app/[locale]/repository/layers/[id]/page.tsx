@@ -15,7 +15,7 @@ import { PublicSite } from "../../../../../components/public-site";
 import { LayerNodeView, LayerStateView } from "../../../../../components/repository-layers";
 import { IDENTITY, formatViewport, parseViewport } from "../../../../../lib/repository/canvas-viewport";
 import { resolveOpenIds } from "../../../../../lib/repository/converge-layout";
-import { parsePublicLocale, PUBLIC_LOCALES } from "../../../../../lib/public-locale";
+import { isPublicLocale, parsePublicLocale, PUBLIC_LOCALES } from "../../../../../lib/public-locale";
 import { getRepositoryListEntries } from "../../../../../lib/repository-source";
 import { LAYER_GRAPH } from "../../../../../lib/repository/layer-graph";
 import { isCapability, layerCorpusEntry, layerNode, type LayerCorpusEntry } from "../../../../../lib/repository/layers";
@@ -109,6 +109,11 @@ export default async function RepositoryLayerNodePage({
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
   const [{ id, locale: rawLocale }, query] = await Promise.all([params, searchParams]);
+  // Before anything else, and not covered by `dynamicParams = false` — that
+  // restricts params only on a route that prerenders, and this one reads
+  // `searchParams` so it never does. Without this, `/zz/repository/layers/<id>`
+  // served the English page with a 200. See `isPublicLocale`.
+  if (!isPublicLocale(rawLocale)) notFound();
   const locale = parsePublicLocale(rawLocale);
   // Both lookups, unconditionally: the two namespaces are disjoint by validation,
   // so at most one can answer and there is no precedence question to get wrong.

@@ -125,6 +125,26 @@ test("a page that reads searchParams carries no revalidate, and is CDN-cached in
       covered,
       `${route} reads searchParams but no Vercel-CDN-Cache-Control source in next.config.ts covers it, so it renders on every request and is never cached`,
     );
+    // **The third half of the rule, and the one that looks redundant.**
+    //
+    // Every page here also sets `dynamicParams = false`, which reads like it
+    // already refuses an unknown locale. On these pages it does not.
+    // `dynamicParams` restricts params only on a route that PRERENDERS — it
+    // decides whether to render params outside the prerendered set, and where
+    // nothing is prerendered, every param is outside it.
+    //
+    // Measured on a preview deployment, both halves in one run:
+    //   /zz/repository/claims  (prerendered)  404
+    //   /zz/repository/layers  (dynamic)      200, English map
+    //
+    // So a dynamic page has to check for itself, or `[locale]` quietly becomes
+    // a second address for the site's most-read route — the mistyped-URL fix
+    // undone exactly where it matters most.
+    assert.match(
+      source,
+      /isPublicLocale\([^)]*\)\)\s*notFound\(\)/,
+      `${route} reads searchParams, so it never prerenders and \`dynamicParams = false\` cannot refuse an unknown locale for it; it must call notFound() on one itself`,
+    );
   }
 });
 
