@@ -14,6 +14,7 @@ import {
 } from "@majorana/ui";
 import { ChatMarkdown } from "../../../../components/chat-markdown";
 import { runToFollow } from "../../../../lib/conversation-follow";
+import { QUEUE_POLL_INTERVAL_MS, isWaitingForWorker, queuePositionLabel } from "../../../../lib/queue-position";
 import { archiveChat, loadChatHistory, rememberChat, updateChat, type ChatSummary } from "../../../../lib/chat-history";
 import { displayChatTitle, titleFromPrompt } from "../../../../lib/chat-title";
 import { RunComposer, type ComposerFramework } from "../../../../components/run-composer";
@@ -368,6 +369,9 @@ export function LiveRun({ taskId, locale = "en" }: { taskId: string; locale?: Pu
   const [stopping, setStopping] = useState(false);
   const [prompt, setPrompt] = useState("");
   const [pending, setPending] = useState(Boolean(fixtureEvents && !fixtureIsTerminal));
+  // Claimable runs ahead of this one, or null for "we are not claiming to know"
+  // (ai-ops#91). Null is also what a failed poll sets — see the effect below.
+  const [queuePosition, setQueuePosition] = useState<number | null>(null);
   const [liveEvents, setLiveEvents] = useState<WireEvent[]>(
     fixtureEvents ? (fixtureEvents as WireEvent[]) : [],
   );
@@ -620,6 +624,57 @@ export function LiveRun({ taskId, locale = "en" }: { taskId: string; locale?: Pu
     // eslint-disable-next-line react-hooks/exhaustive-deps -- taskId is read only for the sidebar row's identity; the stream follows activeRunId
   }, [fixtureEvents, activeRunId, taskId]);
 
+  /**
+   * How many runs are ahead of this one, while it is still waiting.
+   *
+   * A poll rather than a stream event, and that is forced rather than chosen:
+   * the SSE stream emits `run.queued` and then nothing at all until
+   * `run.started`, so the entire wait is a period with no events. There is
+   * nothing to push a changing number down.
+   *
+   * ## A stale position is worse than none
+   *
+   * The stream reconnects on a 1s loop and does not blank the screen, so a
+   * number left over from before a drop would sit there looking live. Every
+   * exit from this effect therefore clears it: a failed fetch, a non-OK
+   * response, a run that is no longer queued, and unmount. The user then sees
+   * the plain waiting state, which is honest, instead of "3 runs ahead" frozen
+   * from four minutes ago.
+   *
+   * Deliberately no time estimate. See `lib/queue-position.ts`.
+   */
+  useEffect(() => {
+    if (fixtureEvents) return;
+    const runId = activeRunId;
+    let cancelled = false;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+
+    const poll = async () => {
+      try {
+        const response = await fetch(`/api/runs/${encodeURIComponent(runId)}`, { cache: "no-store" });
+        if (!response.ok) throw new Error(String(response.status));
+        const payload = (await response.json()) as { status?: string; queue_position?: number | null };
+        if (cancelled) return;
+        if (!isWaitingForWorker(payload.status)) {
+          setQueuePosition(null);
+          return;
+        }
+        setQueuePosition(payload.queue_position ?? null);
+        timer = setTimeout(() => void poll(), QUEUE_POLL_INTERVAL_MS);
+      } catch {
+        // Whatever went wrong, we can no longer stand behind the last number.
+        if (!cancelled) setQueuePosition(null);
+      }
+    };
+
+    void poll();
+    return () => {
+      cancelled = true;
+      if (timer) clearTimeout(timer);
+      setQueuePosition(null);
+    };
+  }, [fixtureEvents, activeRunId]);
+
   function addFiles(files: File[]) {
     void (async () => {
       const candidates: Array<{ name: string; size: number; content: string }> = [];
@@ -848,7 +903,7 @@ export function LiveRun({ taskId, locale = "en" }: { taskId: string; locale?: Pu
                 ) : turn.id === activeRunId && (streamingText || reasoningText || liveEvents.length > 0) ? (
                   <AssistantMessage reasoning={reasoningText} text={streamingText} streaming={streaming} events={liveEvents} turnId={turn.id} locale={locale} />
                 ) : turn.id === activeRunId && pending ? (
-                  <AssistantLoading turnId={turn.id} locale={locale} />
+                  <AssistantLoading turnId={turn.id} locale={locale} queuePosition={queuePosition} />
                 ) : null}
               </div>
             ))}
@@ -857,7 +912,7 @@ export function LiveRun({ taskId, locale = "en" }: { taskId: string; locale?: Pu
                 <div className="mj-chat-message mj-chat-message--user"><ChatMarkdown source={activePrompt ?? ""} /></div>
                 {streamingText || reasoningText || liveEvents.length > 0 ? (
                   <AssistantMessage reasoning={reasoningText} text={streamingText} streaming={streaming} events={liveEvents} turnId={activeRunId} locale={locale} />
-                ) : pending ? <AssistantLoading turnId={activeRunId} locale={locale} /> : null}
+                ) : pending ? <AssistantLoading turnId={activeRunId} locale={locale} queuePosition={queuePosition} /> : null}
               </div>
             ) : null}
             {!turns.length && !activePrompt && !pending ? <p className="mj-run-waiting">{locale === "ja" ? "会話に接続しています…" : "Connecting to the conversation…"}</p> : null}
@@ -1914,10 +1969,16 @@ function ArtifactLink({ events, locale }: { events: WireEvent[]; locale: PublicL
   );
 }
 
-function AssistantLoading({ turnId, locale }: { turnId?: string | null; locale: PublicLocale }) {
+function AssistantLoading({ turnId, locale, queuePosition }: { turnId?: string | null; locale: PublicLocale; queuePosition?: number | null }) {
+  // The queue line replaces nothing — it sits under the thinking label, because
+  // "waiting" and "where in the line" are different facts and the second one is
+  // absent most of the time. `role="status"` so a reader who cannot see the
+  // number is told it when it changes.
+  const queued = queuePositionLabel(queuePosition, locale);
   return (
     <div className="mj-chat-message mj-chat-message--assistant mj-chat-message--loading" aria-label={locale === "ja" ? "応答を待っています" : "Waiting for response"}>
       <ThinkingLabel turnId={turnId} locale={locale} />
+      {queued ? <p className="mj-run-queue-position" role="status">{queued}</p> : null}
     </div>
   );
 }
