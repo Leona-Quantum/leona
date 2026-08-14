@@ -16,6 +16,16 @@ on:
   pull_request:
   merge_group:
 
+# A push to an open PR supersedes the run already in flight: that run is testing a
+# commit that can no longer be merged, so letting it finish only holds a runner and
+# delays the run that matters. Cancelling weakens no gate — the required ts/py/db
+# checks are re-reported by the new run against the new head, which is the commit
+# branch protection actually reads. `github.ref` is refs/pull/<n>/merge here, so
+# each PR gets its own group and PRs never cancel each other.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   ts:
     runs-on: ubuntu-latest
