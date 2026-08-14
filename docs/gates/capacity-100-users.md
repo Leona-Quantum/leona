@@ -1,11 +1,68 @@
 # 100-user capacity gate
 
-Status: **harness added; no capacity result recorded by this change**.
+Status: **first result recorded 2026-08-14** (below). The harness had existed since it was
+added and had never once been run, so every capacity figure quoted for this product before this
+date was an estimate.
 
 This gate is driven by [`bench/k6/capacity.js`](../../bench/k6/capacity.js) and
 [`bench/k6/run-capacity.sh`](../../bench/k6/run-capacity.sh). It is intentionally separate from
 the admission-control run in [`k6-abuse-2026-08-06.md`](./k6-abuse-2026-08-06.md): this gate
 measures a bounded 100-VU burst and does not claim that the local machine represents Cloud Run.
+
+## Recorded result — `read_100`, 2026-08-14
+
+Three runs at `a3c8b43a`, k6 v2.1.0, against `http://127.0.0.1:8000` with the real published
+corpus (369 records, `published=369 blocked=0`). Latency is
+`http_req_duration{capacity_operation:catalog_read}`, milliseconds.
+
+| run | p50 | p90 | p95 | max | failed | 5xx |
+|---|---|---|---|---|---|---|
+| 1 | 839.7 | 1347.2 | 1396.0 | 1429.0 | 0 / 101 | 0 |
+| 2 | 796.5 | 1321.2 | 1361.0 | 1403.9 | 0 / 101 | 0 |
+| 3 | 873.8 | 1424.2 | 1480.8 | 1498.9 | 0 / 101 | 0 |
+
+All three exited 0 with no threshold breached. p95 spread is about ±4%. A supplementary fourth
+run with `K6_SUMMARY_TREND_STATS` set gave p99 = 1.33 s — with n=100 that is one sample, and it
+is the reason this wrapper now exports p99 by default.
+
+### What the number is evidence for
+
+That the read path serves 100 simultaneous anonymous readers with **zero errors**, that the
+published corpus reads end to end, and that at this concurrency **the binding constraint is the
+database connection pool**, not CPU and not the query.
+
+That last part was measured rather than inferred: sampling `pg_stat_activity` during a run
+showed the API's backends pinned at exactly 10 for the run's whole duration.
+`services/api/src/majorana_api/db.py` sets `DEFAULT_POOL_SIZE = 5` and
+`DEFAULT_MAX_OVERFLOW = 5`, and the API never overrides either — only the worker does
+(`.github/workflows/deploy.yml`, the `deploy worker` step). So ten connections, fully
+saturated, against a `containerConcurrency` of 80. An uncontended request is ~27 ms median; a
+hundred arriving together inflate the median about thirtyfold. It queued; it did not time out.
+
+### What the number is NOT evidence for
+
+**Not production capacity.** This gate has always said it does not claim the local machine
+represents Cloud Run, and that caveat is doing real work here. Production is 1 vCPU, 512Mi,
+`containerConcurrency: 80`, `maxScale: 2`. This ran one uvicorn process on ten M1 Pro cores
+against loopback Postgres with no network round trip, where Cloud SQL has a real one. The
+arithmetic differs in both directions: production gets two instances × ten connections, but one
+vCPU each, and a 1-vCPU instance serialising a 400 KB JSON response is the part most likely to
+be worse there. No measurement of that exists.
+
+The machine was also a working laptop, not a quiet bench — load average 7.77 on 10 cores
+immediately before the first run.
+
+**Not a throughput figure.** `read_100` is 100 VUs × one iteration: a hundred requests inside
+about 1.5 seconds. The `iterations/s` k6 prints (~65) is that burst divided by that wall clock,
+and must not be quoted as "the product serves 65 requests per second".
+
+**Two ways this file's own artefacts mislead**, both now fixed in the wrapper but true of every
+`result.json` written before this date:
+
+- k6's summary export records a threshold's boolean as *breached*, so a **passing** threshold
+  appears as `"p(95)<10000": false`. Read it backwards and a clean run looks like a failure.
+- `CAPACITY_MIN_CATALOG_ENTRIES` defaulted to **1**, so the profile would print
+  `CAPACITY SUITE PASSED` against a catalogue holding a single record. The default is now 300.
 
 ## Workload definition
 

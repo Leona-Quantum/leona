@@ -41,7 +41,12 @@ MAX_DURATION="${CAPACITY_MAX_DURATION:-60s}"
 REQUEST_TIMEOUT="${CAPACITY_REQUEST_TIMEOUT:-15s}"
 SSE_TIMEOUT="${CAPACITY_SSE_TIMEOUT:-15s}"
 READ_LIMIT="${CAPACITY_READ_LIMIT:-100}"
-MIN_CATALOG_ENTRIES="${CAPACITY_MIN_CATALOG_ENTRIES:-1}"
+# A floor of 1 means the profile passes against a catalogue holding one record,
+# printing "CAPACITY SUITE PASSED" while measuring essentially nothing. That is
+# not hypothetical: the local stack is stood up by hand and a half-finished
+# import leaves exactly that state. The published corpus is 369; anything much
+# below it means the run is not measuring the product.
+MIN_CATALOG_ENTRIES="${CAPACITY_MIN_CATALOG_ENTRIES:-300}"
 READ_P95_MS="${CAPACITY_READ_P95_MS:-10000}"
 SUBMIT_P95_MS="${CAPACITY_SUBMIT_P95_MS:-10000}"
 MIX_READ_PERCENT="${CAPACITY_MIX_READ_PERCENT:-70}"
@@ -126,6 +131,11 @@ if [[ "$VALIDATE_ONLY" -eq 1 ]]; then
   echo "capacity configuration valid: ${CAPACITY_SCENARIO} -> ${BASE_URL}"
   exit 0
 fi
+
+# k6 emits only the trend statistics it is told to. The default set stops at
+# p95, so every result.json this harness has ever written is silently missing
+# p99 — the number anyone reading a capacity report asks for second.
+export K6_SUMMARY_TREND_STATS="${K6_SUMMARY_TREND_STATS:-min,avg,med,p(90),p(95),p(99),max}"
 
 K6_BIN="${K6_BIN:-k6}"
 command -v "$K6_BIN" >/dev/null || {
