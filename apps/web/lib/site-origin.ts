@@ -57,3 +57,65 @@ export function canonicalOrigin(
 ): string {
   return siteOrigin(env) ?? PRODUCTION_ORIGIN;
 }
+
+/**
+ * The one host a reader and a crawler should end up on.
+ *
+ * Derived from `PRODUCTION_ORIGIN` rather than written a second time, so moving
+ * the site to another address stays the one-line change it looks like. Nothing
+ * below hardcodes "leonaqt.com" again.
+ */
+export const CANONICAL_HOST = new URL(PRODUCTION_ORIGIN).host;
+
+/**
+ * The hosts that answer for this site but are not it (ai-ops#83).
+ *
+ * > *"leonaqt.com is canonical — redirect the other three, in middleware."*
+ * > — owner, 2026-08-14
+ *
+ * All four were serving 200 with no redirect, which publishes every public page
+ * at four addresses: a crawler sees four copies of the pricing page and picks
+ * one, and it is not necessarily the one every link points at.
+ *
+ * **This is an allowlist and must stay one.** The tempting shape — "redirect
+ * anything that is not the canonical host" — breaks every preview deployment on
+ * `*.vercel.app`, every branch alias, and `localhost`, by sending them to
+ * production the moment they are opened. Listing the three hosts we own is the
+ * only version that cannot do that: a host nobody wrote down here is left
+ * alone.
+ *
+ * All four are registered origins on the WorkOS application, and the two
+ * `leonaqt.com` forms are its registered redirect URIs
+ * (`docs/archive/one-time-cutovers/workos-cutover.md`). The callback therefore
+ * lands on the canonical host and is never redirected mid-flow — verified
+ * against production on 2026-08-14, where `/robots.txt` publishes
+ * `https://leonaqt.com/sitemap.xml`, and that origin is read off the configured
+ * redirect URI by `canonicalOrigin()` above.
+ */
+export const NON_CANONICAL_HOSTS: readonly string[] = [
+  "www.leonaqt.com",
+  "leonaquantum.com",
+  "www.leonaquantum.com",
+];
+
+const NON_CANONICAL_HOST_SET = new Set(NON_CANONICAL_HOSTS);
+
+/**
+ * Where a request should be sent instead, or `null` to leave it alone.
+ *
+ * `pathAndQuery` is passed through untouched: a 308 preserves the method and
+ * the body, and preserving the rest of the URL is what stops a redirect from
+ * turning a deep link into a homepage visit.
+ *
+ * The destination is the constant above, never anything derived from the
+ * request, so a forged `Host` header can do nothing except redirect its sender
+ * to the real site.
+ */
+export function canonicalHostRedirect(
+  host: string | null | undefined,
+  pathAndQuery: string,
+): string | null {
+  if (!host) return null;
+  if (!NON_CANONICAL_HOST_SET.has(host.trim().toLowerCase())) return null;
+  return `${PRODUCTION_ORIGIN}${pathAndQuery}`;
+}

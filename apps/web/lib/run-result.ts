@@ -16,6 +16,7 @@
 import { friendlyFailure, type OutcomeEvent } from "./run-outcome.ts";
 import {
   resultVisualizationFromResult,
+  type ResultChartView,
   type ResultDistributionView,
   type ResultTraceView,
   type ResultValueView,
@@ -44,6 +45,7 @@ export interface RunResultView {
   saved: boolean;
   distribution: ResultDistributionView | null;
   traces: ResultTraceView[];
+  charts: ResultChartView[];
   values: RunResultValue[];
   facts: RunResultFact[];
   code: { label: string; language: string; source: string } | null;
@@ -227,6 +229,7 @@ export function runResultFromEvents(
     saved: Boolean(lastEvent(events, "artifact.saved")),
     distribution: visualization.distribution,
     traces: visualization.traces,
+    charts: visualization.charts,
     values: visualization.values,
     facts: [
       ...(plan?.algorithm ? [{ label: locale === "ja" ? "アルゴリズム" : "Algorithm", value: plan.algorithm }] : []),
