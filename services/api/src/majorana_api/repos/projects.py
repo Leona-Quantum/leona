@@ -21,6 +21,7 @@ from ..ids import uuid7
 from ..orm import Artifact, Project
 from . import artifacts as artifacts_repo
 from ._base import NotFoundError, require_admin, require_write, touched_now
+from .audit import record_audit
 from ._project_limits import MAX_PROJECT_ARTIFACT_LIMIT, is_project_shared
 from .artifacts import get_artifact
 
@@ -175,6 +176,11 @@ async def delete_project(scope: Scope, session: AsyncSession, project_id: uuid.U
     """
     require_write(scope)
     project = await get_project(scope, session, project_id)
+    # Read BEFORE the delete. After `session.delete()` + `flush()` the instance is
+    # deleted-and-expired, so touching an attribute can send SQLAlchemy to refresh
+    # a row that is no longer there — a lazy load on a deleted object, raised from
+    # inside the audit call rather than from anything that looks like the cause.
+    name = project.name
     await session.execute(
         update(Artifact)
         .where(Artifact.workspace_id == scope.workspace_id, Artifact.project_id == project.id)
@@ -182,6 +188,17 @@ async def delete_project(scope: Scope, session: AsyncSession, project_id: uuid.U
     )
     await session.delete(project)
     await session.flush()
+    # The name is carried in `meta` because the row is gone: an audit entry
+    # naming only a uuid nobody can resolve answers "who deleted this" and not
+    # "what was deleted", and those are usually asked together.
+    await record_audit(
+        scope,
+        session,
+        action="project.deleted",
+        target_kind="project",
+        target_id=project_id,
+        meta={"name": name},
+    )
 
 
 async def reorder_projects(

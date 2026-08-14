@@ -14,6 +14,30 @@ from pydantic import BaseModel, Field
 DEFAULT_TIMEOUT_S = 120
 MAX_TIMEOUT_S = 120
 DEFAULT_MEMORY_MB = 2048
+#: Hard ceiling on a spec's requested memory.
+#:
+#: **Not currently reachable, and this is defence in depth rather than a fix for
+#: a live hole.** `ExecutionSpec` is built by the worker, no code path sets
+#: `memory_mb` at all, and every spec in the product therefore takes the 2048
+#: default. Nothing a user can send reaches this field today. The bound is here
+#: because the field had `ge=64` and no upper limit while `05-security.md` §1
+#: claimed a memory cap, so the *stated* control did not exist in either
+#: direction — and the one that would bite is the upper one.
+#:
+#: What it actually bounds is spend, which is the non-obvious part.
+#: `vercel._create_kwargs` derives the sandbox's vCPU count from this number
+#: (`(memory_mb + 2047) // 2048`, because Vercel provisions 2 GiB per vCPU), so
+#: an unbounded `memory_mb` is an unbounded vCPU request against a paid provider
+#: — a memory field that is really a billing field one call away.
+#:
+#: 4096 is two vCPUs: one doubling of headroom over the default lane, which at
+#: 27 qubits needs 2^27 x 16 bytes = exactly 2 GiB for a statevector. Larger
+#: belongs to the deferred Modal heavy lane, not to this one.
+#:
+#: The "per plan tier" half of §1's wording stays **unimplemented**: no tier
+#: carries a sandbox memory allowance, and inventing that mapping here would be
+#: a product decision rather than a bound. This is the hard ceiling only.
+MAX_MEMORY_MB = 4096
 DEFAULT_QUBIT_CEILING = 27  # ≤27-qubit default lane (AD-12); Modal heavy lane deferred.
 MAX_OUTPUT_BYTES = 1_048_576  # 1 MiB, matching the legacy runner.
 
@@ -24,7 +48,7 @@ class ExecutionSpec(BaseModel):
 
     code: str = Field(min_length=1)
     timeout_s: int = Field(default=DEFAULT_TIMEOUT_S, ge=1, le=MAX_TIMEOUT_S)
-    memory_mb: int = Field(default=DEFAULT_MEMORY_MB, ge=64)
+    memory_mb: int = Field(default=DEFAULT_MEMORY_MB, ge=64, le=MAX_MEMORY_MB)
     qubits_estimate: int | None = Field(
         default=None,
         ge=1,

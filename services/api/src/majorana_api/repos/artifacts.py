@@ -16,6 +16,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from ..ids import uuid7
 from ..orm import Artifact, ArtifactVersion, Project, Workspace
 from ._base import NotFoundError, RepoError, require_admin, require_write
+from .audit import record_audit
 from ._project_limits import (
     ProjectFull,
     count_project_artifacts,
@@ -467,6 +468,19 @@ async def soft_delete_artifact(scope: Scope, session: AsyncSession, artifact_id:
     result = await session.execute(stmt)
     if result.rowcount == 0:
         raise NotFoundError("artifact")
+    # AFTER the rowcount check, so a miss records nothing: an audit row for a
+    # deletion that did not happen is worse than none, because the log is what a
+    # later question is answered FROM. Here in the repository rather than in the
+    # route for the reason the neighbouring `record_audit` calls in catalog.py and
+    # shares.py are — a second caller of this primitive inherits the row instead
+    # of having to remember it.
+    await record_audit(
+        scope,
+        session,
+        action="artifact.deleted",
+        target_kind="artifact",
+        target_id=artifact_id,
+    )
 
 
 async def _point_current_version(
