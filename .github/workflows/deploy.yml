@@ -254,6 +254,17 @@ jobs:
           # and this is a pin-what's-live change, not a behaviour change; see
           # the PR that introduced this comment for a minScale recommendation.
           #
+          # --cpu-boost is the last piece of this service's per-instance shape
+          # that was live and undeclared: `run.googleapis.com/startup-cpu-boost:
+          # 'true'` is set on the running revision and appears nowhere in this
+          # repo. It is a boolean, so it has no place in infra/fleet.env (the
+          # loader takes KEY=INTEGER only) and is stated here instead. It
+          # matters more on this service than on most: with no min-instances the
+          # API scales to zero, so a burst arriving at an idle service pays a
+          # cold start, and the boost is what keeps that start from being the
+          # slowest request anyone sees. Verified live, 2026-08-14, alongside the
+          # cpu/memory/concurrency values above.
+          #
           # --update-env-vars, never --set-env-vars: neither service's env is
           # fully declared here yet (DATABASE_URL and the MAJORANA_* runtime
           # settings are live-service state), so --set would wipe them and the
@@ -263,6 +274,7 @@ jobs:
             --set-cloudsql-instances "$CLOUDSQL_INSTANCE" \
             --max-instances "$API_MAX_INSTANCES" \
             --cpu "$API_CPU" --memory "${API_MEMORY_MI}Mi" --concurrency "$API_CONCURRENCY" \
+            --cpu-boost \
             --update-env-vars MAJORANA_SERVICE=api \
             --no-traffic --tag verify
           # Parse the URL out with jq rather than a --format projection. Two

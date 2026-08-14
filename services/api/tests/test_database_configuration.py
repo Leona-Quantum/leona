@@ -218,6 +218,14 @@ def test_the_deploy_reads_the_sizing_from_the_same_file_the_budget_does():
         '--cpu "$API_CPU" --memory "${API_MEMORY_MI}Mi" --concurrency "$API_CONCURRENCY" \\'
         in workflow
     ), "the api deploy line does not take its CPU/memory/concurrency from infra/fleet.env"
+    # `--cpu-boost` is the same class of pin and has no fleet.env key, because
+    # it is a boolean and the loader takes KEY=INTEGER only. Asserted here so it
+    # cannot be dropped back into live-service state: the API has no
+    # min-instances, so it scales to zero and every burst starts cold.
+    assert "--cpu-boost \\" in workflow, (
+        "the api deploy no longer states --cpu-boost; startup-cpu-boost is live on the "
+        "service and would go back to being state no file in this repo declares"
+    )
     # `[^\s"]+` rather than `\S+`: this file's own prose writes "--cpu /
     # --memory / --concurrency" side by side in a comment, and a plain `\S+`
     # capture after `--concurrency` there would grab the next English word
