@@ -7,7 +7,7 @@ from this router can vary by who is asking. That is what makes all six safe
 for a SHARED cache to store and replay: `_set_public_cache_control` marks
 them `Cache-Control: public, max-age=..., stale-while-revalidate=...`, with
 the max-age mirroring `CATALOG_REVALIDATE_SECONDS` in
-`apps/web/lib/repository-source.ts` (the staleness the site already accepts
+`apps/web/lib/catalog-revalidate.ts` (the staleness the site already accepts
 for this data).
 
 `X-Majorana-Caller-Trust` (rate_limit.py) describes the CALLER of one
@@ -30,7 +30,9 @@ The six routes are exercised two ways:
 """
 
 import datetime as dt
+import re
 import uuid
+from pathlib import Path
 from unittest.mock import AsyncMock
 
 import httpx
@@ -45,6 +47,8 @@ from majorana_api.repos import NotFoundError
 from majorana_api.repos import catalog as catalog_repo
 from majorana_api.routes import catalog as catalog_routes
 from majorana_api.settings import Settings
+
+REPO_ROOT = Path(__file__).resolve().parents[3]
 
 SETTINGS_KWARGS = dict(
     workos_client_id="client_test",
@@ -280,3 +284,54 @@ async def test_an_unrelated_authenticated_route_is_never_marked_publicly_cacheab
 
     assert response.status_code == 401
     assert "cache-control" not in response.headers
+
+
+# --------------------------------------------------------------------------
+# The cross-language coupling, read rather than remembered
+# --------------------------------------------------------------------------
+
+
+def test_the_api_never_caches_longer_than_the_site_agreed_to() -> None:
+    """The one direction of drift that is not harmless.
+
+    `CATALOG_CACHE_MAX_AGE_SECONDS` and the web's `CATALOG_REVALIDATE_SECONDS`
+    are the same staleness budget written twice, in two languages, in two
+    services, with no shared module between them. A TIGHTER value here costs
+    extra cache misses and nothing else. A LOOSER one means a shared cache may
+    hold a catalog response older than the window the site accepted — the API
+    becomes the stale side, silently, in production only.
+
+    So this reads the TypeScript source rather than restating its number, the
+    same way `scripts/catalog-bootstrap/from-catalog-validator.test.mjs` reads
+    the Python allowlist rather than keeping a third copy of it. A copy typed in
+    here would agree with whichever side it was typed from, forever.
+    """
+    source = (REPO_ROOT / "apps" / "web" / "lib" / "catalog-revalidate.ts").read_text(
+        encoding="utf-8"
+    )
+    match = re.search(r"export const CATALOG_REVALIDATE_SECONDS\s*=\s*(\d+)", source)
+    assert match, (
+        "CATALOG_REVALIDATE_SECONDS was not found in apps/web/lib/catalog-revalidate.ts — "
+        "it moved or was renamed, and this guard is reading nothing"
+    )
+    web_seconds = int(match.group(1))
+    assert web_seconds > 0, "the web revalidate window parsed as zero; the extraction is broken"
+    assert catalog_routes.CATALOG_CACHE_MAX_AGE_SECONDS <= web_seconds, (
+        f"the API caches for {catalog_routes.CATALOG_CACHE_MAX_AGE_SECONDS}s while the site "
+        f"revalidates every {web_seconds}s. A shared cache can now serve a catalog response "
+        "older than the staleness the site accepted, and nothing downstream will say so."
+    )
+
+
+def test_the_grace_window_does_not_double_the_staleness_budget() -> None:
+    """`stale-while-revalidate` extends how long a stale copy may be served.
+
+    It is a grace window for the revalidation itself, not a second max-age. Left
+    unbounded it would quietly turn the budget asserted above into
+    `max-age + swr`, which is the thing that assertion exists to prevent.
+    """
+    assert (
+        0
+        < catalog_routes.CATALOG_CACHE_STALE_WHILE_REVALIDATE_SECONDS
+        <= (catalog_routes.CATALOG_CACHE_MAX_AGE_SECONDS // 2)
+    )

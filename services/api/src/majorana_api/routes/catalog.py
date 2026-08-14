@@ -68,16 +68,25 @@ CATALOG_ENTRIES_MAX_LIMIT = 500
 #: server stopped early", which is otherwise indistinguishable from the outside.
 CATALOG_TOTAL_HEADER = "X-Catalog-Total"
 
-#: Mirrors `CATALOG_REVALIDATE_SECONDS` in `apps/web/lib/repository-source.ts`.
+#: Mirrors `CATALOG_REVALIDATE_SECONDS` in `apps/web/lib/catalog-revalidate.ts`.
+#:
+#: (Its own module rather than `repository-source.ts`, which is where the fetch
+#: lives: that file reaches `./catalog-pagination` through an extensionless
+#: import, and bare `node --test` cannot resolve those, so every test that
+#: imported the constant died before running an assertion.)
 #:
 #: That constant is the staleness the site has already accepted for this data:
 #: `repository-source.ts` revalidates its fetch of these same six routes every
 #: 300 seconds, so an API response cached no longer than that cannot make the
-#: renderer's own view any staler than it already agreed to be. There is no
-#: shared constants module between TypeScript and Python, so the two values are
-#: NOT derived from one source and must be changed together by hand. If they
-#: drift, the tighter one is harmless (extra cache misses) and the looser one is
-#: not (the API would then be the stale side) — so when in doubt, round down.
+#: renderer's own view any staler than it already agreed to be.
+#:
+#: There is no shared constants module between TypeScript and Python, so the two
+#: values are not derived from one source. The asymmetry is what matters: a
+#: TIGHTER max-age here is harmless (extra cache misses), a LOOSER one is not —
+#: a shared cache would then hold a response older than the window the site
+#: agreed to, and the API would become the stale side without anything saying
+#: so. `test_catalog_cache_control.py` reads the TypeScript constant and fails
+#: on the unsafe direction, rather than leaving it to be kept in step by hand.
 CATALOG_CACHE_MAX_AGE_SECONDS = 300
 
 #: Grace window in which a shared cache may keep serving a just-expired response
