@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
+import { canonicalMetadata } from "../../../lib/public-metadata";
 import { PublicSite } from "../../../components/public-site";
 import { getMajoranaAuth, getMajoranaSignInUrl, isMajoranaAuthConfigured } from "../../../lib/auth";
 import { getPublicLocale } from "../../../lib/public-locale-server";
@@ -30,7 +31,11 @@ export async function generateMetadata({ params }: { params: Promise<{ slug: str
   const entry = await getRepositoryEntry(slug);
   const locale = await getPublicLocale();
   return entry
-    ? { title: locale === "ja" ? entry.titleJa : entry.title, description: locale === "ja" ? entry.descriptionJa : entry.description }
+    ? {
+        title: locale === "ja" ? entry.titleJa : entry.title,
+        description: locale === "ja" ? entry.descriptionJa : entry.description,
+        ...canonicalMetadata(`/repository/${slug}`),
+      }
     : { title: locale === "ja" ? "量子アトラスのエントリ" : "Quantum Atlas entry" };
 }
 

@@ -1,0 +1,127 @@
+# Dependency update PRs. `05-security.md` §1 named "Dependabot weekly" as a
+# supply-chain control; nothing implemented it, so the line had been decorative
+# since it was written.
+#
+# ## What this adds that osv-scanner does not
+#
+# `osv` (security.yml) tells you a lockfile contains a known-vulnerable version
+# and fails the PR. It never proposes the upgrade. So the control that existed
+# could report a problem indefinitely without anything moving, and the two are
+# complements rather than duplicates: osv is the gate, this is the hand.
+#
+# ## Weekly, and why not daily
+#
+# Daily on a three-ecosystem monorepo is a PR firehose that gets muted, and a
+# muted bot is worse than none — the same disease `05-security.md` §5 records
+# for a required check that could not pass. Weekly, grouped, with a small open-PR
+# ceiling, is a volume a single maintainer can actually review.
+#
+# ## The interaction with `minimumReleaseAge` that has to be got right
+#
+# `pnpm-workspace.yaml` sets `minimumReleaseAge: 1440` — pnpm refuses any npm
+# release younger than 24 hours, because the compromised version is usually the
+# newest one. Dependabot does not read that setting, so left alone it would open
+# PRs bumping to a version pnpm then refuses to install, and the PR fails at
+# `pnpm install` with an error about the release age that reads like a broken
+# lockfile. `cooldown` below is the Dependabot-side equivalent and is set to the
+# same 24 hours (plus a margin for slow registry propagation) so the two agree.
+# If one is changed, change the other.
+version: 2
+
+updates:
+  # ---- npm / pnpm (apps/web, packages/ts/*) ------------------------------
+  - package-ecosystem: npm
+    directory: "/"
+    schedule:
+      interval: weekly
+      day: monday
+      time: "05:00"
+      timezone: Etc/UTC
+    open-pull-requests-limit: 5
+    cooldown:
+      default-days: 2
+    groups:
+      # One PR for the routine noise, separate PRs for anything that can break a
+      # build on its own. A grouped update that fails tells you nothing about
+      # which member broke it, which matters most for the framework packages.
+      npm-minor-and-patch:
+        patterns: ["*"]
+        exclude-patterns: ["next", "react", "react-dom", "typescript", "eslint"]
+        update-types: ["minor", "patch"]
+    commit-message:
+      prefix: "chore"
+      include: scope
+    labels: ["dependencies"]
+
+  # ---- Python / uv (services/*, packages/py/*) ---------------------------
+  #
+  # `uv.lock` is the committed lockfile. Dependabot's `uv` support reads
+  # pyproject.toml + uv.lock, which is the shape this repo uses.
+  - package-ecosystem: uv
+    directory: "/"
+    schedule:
+      interval: weekly
+      day: monday
+      time: "05:00"
+      timezone: Etc/UTC
+    open-pull-requests-limit: 5
+    cooldown:
+      default-days: 2
+    groups:
+      python-minor-and-patch:
+        patterns: ["*"]
+        # The scientific stack is where a minor bump most often changes numerical
+        # output, and this product's whole claim is reproducible results. Those
+        # move one at a time so a shifted expectation value has one suspect.
+        exclude-patterns: ["qiskit*", "pennylane*", "cirq*", "amazon-braket*", "qibo*", "qulacs*", "numpy", "scipy"]
+        update-types: ["minor", "patch"]
+    commit-message:
+      prefix: "chore"
+      include: scope
+    labels: ["dependencies"]
+
+  # ---- GitHub Actions ----------------------------------------------------
+  #
+  # The highest-value ecosystem here and the least obvious. Every `uses:` in this
+  # repository is pinned to a full commit SHA on purpose — see the osv-scanner
+  # install comment in security.yml, and `aquasecurity/trivy-action`'s March 2026
+  # credential stealer, which reached everyone tracking a moving tag. A SHA pin
+  # is safe and it is also invisible: nothing tells you the action is a year out
+  # of date. This is what re-proposes the pin, with the new SHA, as a reviewable
+  # diff.
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      interval: weekly
+      day: monday
+      time: "05:00"
+      timezone: Etc/UTC
+    open-pull-requests-limit: 5
+    cooldown:
+      default-days: 2
+    commit-message:
+      prefix: "ci"
+      include: scope
+    labels: ["dependencies"]
+
+  # ---- The sandbox rootfs ------------------------------------------------
+  #
+  # `infra/sandbox/Dockerfile` is the base image for untrusted code execution.
+  # Paired with the weekly `container_scan` job added to sandbox-image.yml: that
+  # job reports a vulnerable base, this proposes the bump that fixes it.
+  # Promotion to `:latest` stays manual behind docs/runbooks/sandbox-image.md —
+  # merging a Dockerfile bump is not a deploy, and nothing here changes that.
+  - package-ecosystem: docker
+    directory: "/infra/sandbox"
+    schedule:
+      interval: weekly
+      day: monday
+      time: "05:00"
+      timezone: Etc/UTC
+    open-pull-requests-limit: 3
+    cooldown:
+      default-days: 2
+    commit-message:
+      prefix: "chore"
+      include: scope
+    labels: ["dependencies"]
