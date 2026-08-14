@@ -47,7 +47,7 @@ jobs:
       contents: read
       id-token: write # Workload Identity Federation
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       # Load infra/fleet.env into the job environment so every `gcloud run
       # deploy` below passes the numbers from that file rather than a literal
@@ -111,7 +111,7 @@ jobs:
 
       # Python toolchain, needed only by the migrate step below. Mirrors ci.yml's
       # `db` job so the two run alembic through an identical uv environment.
-      - uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e # v6
+      - uses: astral-sh/setup-uv@ae62891fec2bb8e7d6c99fc78c9fec3a63790f8d # v10.0.0
         if: steps.creds.outputs.have == 'true'
         with:
           python-version: "3.12"
@@ -280,6 +280,21 @@ jobs:
           # legitimately be. SENTRY_DSN comes from Secret Manager, not a literal,
           # so a DSN rotation is one `gcloud secrets versions add` away from
           # every service instead of a hand-edit per Cloud Run service.
+          #
+          # --remove-env-vars SENTRY_DSN, immediately before --update-secrets of
+          # the same name, is required and not decorative. Both services already
+          # carried SENTRY_DSN as a plain literal (the exact pre-existing
+          # live-service state this PR formalizes), and `gcloud run deploy
+          # --update-secrets SENTRY_DSN=...` alone fails outright against that:
+          # "Cannot update environment variable [SENTRY_DSN] to the given type
+          # because it has already been set with a different type." Hit for real
+          # on the first deploy after this PR merged (2026-08-15) — a failed
+          # dark-deploy, no traffic shift, no user impact, but it did block every
+          # later PR's deploy until fixed by hand. --remove-env-vars first is
+          # gcloud's documented way to change a key's backing type in one
+          # command; removing a key that is not set is a no-op, so this line is
+          # safe to leave in permanently rather than reverting once the type is
+          # fixed.
           gcloud run deploy majorana-api --project "$GCP_PROJECT" --region "$GCP_REGION" \
             --image "$IMAGE_REPO:${{ steps.tag.outputs.tag }}" \
             --set-cloudsql-instances "$CLOUDSQL_INSTANCE" \
@@ -287,6 +302,7 @@ jobs:
             --cpu "$API_CPU" --memory "${API_MEMORY_MI}Mi" --concurrency "$API_CONCURRENCY" \
             --cpu-boost \
             --update-env-vars "MAJORANA_SERVICE=api,MAJORANA_ENV=production,MAJORANA_RELEASE=${{ steps.tag.outputs.tag }}" \
+            --remove-env-vars SENTRY_DSN \
             --update-secrets SENTRY_DSN=SENTRY_DSN:latest \
             --no-traffic --tag verify
           # Parse the URL out with jq rather than a --format projection. Two
@@ -429,6 +445,7 @@ jobs:
             --command majorana-worker \
             --set-cloudsql-instances "$CLOUDSQL_INSTANCE" \
             --update-env-vars "MAJORANA_SERVICE=worker,MAJORANA_ENV=production,MAJORANA_RELEASE=${{ steps.tag.outputs.tag }},DB_POOL_SIZE=$WORKER_POOL_SIZE,DB_MAX_OVERFLOW=$WORKER_MAX_OVERFLOW" \
+            --remove-env-vars SENTRY_DSN \
             --update-secrets SENTRY_DSN=SENTRY_DSN:latest \
             --min-instances "$WORKER_INSTANCES" --max-instances "$WORKER_INSTANCES" --no-cpu-throttling
           rev=$(gcloud run services describe majorana-worker \
