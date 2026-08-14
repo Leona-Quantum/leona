@@ -31,6 +31,13 @@ That the read path serves 100 simultaneous anonymous readers with **zero errors*
 published corpus reads end to end, and that at this concurrency **the binding constraint is the
 database connection pool**, not CPU and not the query.
 
+> **Superseded on the last point — see "The bottleneck is the API process's CPU" at the end of
+> this file.** The observation below is real and reproduces: the pool *is* pinned at 10. What
+> does not follow is that it is the constraint. Cutting the pool from 10 to 1 costs about 27%;
+> `/health` at the same 100 concurrent is 17 ms against this route's 1.26 s; and during the
+> burst the API process sits at 92–99% of one core while Postgres sits at 23%. A saturated
+> resource and a binding one are not the same thing, and the remedies differ.
+
 That last part was measured rather than inferred: sampling `pg_stat_activity` during a run
 showed the API's backends pinned at exactly 10 for the run's whole duration.
 `services/api/src/majorana_api/db.py` sets `DEFAULT_POOL_SIZE = 5` and
