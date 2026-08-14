@@ -1,6 +1,10 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { readdirSync } from "node:fs";
+import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 
+import { isPublicPath, isUnauthenticatedForAuthKit } from "./public-paths.ts";
 import { majoranaSignInPath, signInFailurePath } from "./sign-in.ts";
 
 test("sign-in starts on this deployment rather than at the provider", () => {
@@ -46,13 +50,49 @@ test("the failure page carries bounded diagnostics and a safe retry target", () 
 });
 
 /**
- * The failure page lives under the sign-in path on purpose: `public-paths.ts`
- * publishes `/auth/sign-in` and everything beneath it to both matchers, so a
- * page that explains a provider outage is not itself gated behind that
- * provider. If this ever moves out from under `/auth/sign-in/`, it silently
- * falls back into the auth gate.
+ * The whole point of the page, asserted against the real gate rather than
+ * against a remembered string.
+ *
+ * A visitor reaches this page precisely because the identity provider did not
+ * answer. If the auth gate covers it, they are redirected to that provider to
+ * sign in before being allowed to read why signing in failed — and nothing about
+ * that failure announces itself, because the page renders fine in isolation.
+ *
+ * So this drives `isUnauthenticatedForAuthKit()` and `isPublicPath()` — the
+ * actual functions `middleware.ts` decides with — using the actual URL
+ * `signInFailurePath()` emits, rather than asserting that some pattern is in
+ * some list.
  */
-test("the failure page stays inside the published sign-in subtree", () => {
-  const path = signInFailurePath("provider_unavailable", "id", "/run");
-  assert.equal(path.startsWith("/auth/sign-in/"), true);
+test("the failure page is reachable without a session", () => {
+  const { pathname } = new URL(
+    signInFailurePath("provider_unavailable", "req-1", "/run"),
+    "https://leonaqt.com",
+  );
+  assert.equal(pathname, "/auth/sign-in/error");
+  assert.equal(isPublicPath(pathname), true, "our own gate would require a session");
+  assert.equal(
+    isUnauthenticatedForAuthKit(pathname),
+    true,
+    "AuthKit would 307 this page to the provider that just failed",
+  );
+});
+
+/**
+ * And the page is really there. The reachability assertion above is only worth
+ * something if a route answers that path — a published path with nothing behind
+ * it proves nothing.
+ */
+test("a page actually answers the failure path", () => {
+  const appDir = fileURLToPath(new URL("../app/", import.meta.url));
+  const { pathname } = new URL(
+    signInFailurePath("provider_unavailable", "req-1", "/run"),
+    "https://leonaqt.com",
+  );
+  const dir = join(appDir, pathname.slice(1));
+  const entries = readdirSync(dir, { withFileTypes: true });
+  assert.equal(
+    entries.some((entry) => entry.isFile() && /^page\.(tsx?|jsx?)$/.test(entry.name)),
+    true,
+    `nothing under app/${pathname.slice(1)} answers ${pathname}`,
+  );
 });
