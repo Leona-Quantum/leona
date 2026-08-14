@@ -45,12 +45,11 @@
 //   two things meeting, in the one place a reader is about to draw the wrong
 //   conclusion from. Here it argued about a page where nothing is composing.
 //
-// **The counts still run**; they just decide rather than print. `counts` below
-// is what drops a kind with no records instead of linking to an empty section.
-// A count used as a predicate is not a claim a reader has to believe.
+// **The counts still run**; they just decide rather than print. That was true
+// of the "four kinds" section this file used to also export — see the note
+// further down for why it, the counts, and the category imports it needed are
+// gone from this file now (ai-ops#94). `AboutTheAtlas` below never used them.
 import type { PublicLocale } from "../lib/public-locale";
-import type { PublicRepositoryListEntry } from "../lib/repository/types";
-import { PUBLIC_REPOSITORY_CATEGORY_IDS, type PublicRepositoryCategory } from "../lib/repository/types";
 
 /**
  * "About the Atlas" — the box above everything else on `/repository`.
@@ -110,33 +109,33 @@ const ABOUT_COPY: Record<
     claimsLink: string;
   }
 > = {
+  // Verbatim from the owner (ai-ops#94), replacing the longer three-sentence
+  // version above. The link labels ("Open the Map", "See the papers", "See
+  // whose claim it is") are unchanged — the owner's text names the same three
+  // destinations, only the sentence in front of each is new.
   en: {
     summary: "About the Atlas",
     repository:
-      "Every quantum algorithm worth knowing about, written down the same way: what it takes, what it returns, what it costs, and who proved it. Where the sources disagree, we say so.",
-    map: "The Map draws the same corpus as one connected structure — every method is a route, and the routes share their steps.",
+      "Every quantum algorithm worth knowing about, written down the same way: what it takes, what it returns, what it costs, and who proved it.",
+    map: "The Map draws our corpus as one connected structure:",
     // "Open the Map", not "Open the interactive map" (ai-ops#78). This link is
     // where the four names met: it sent a reader who had just read "the
     // interactive map" to a page headed "Layers". Both ends now say Map.
     mapLink: "Open the Map",
-    papers: "Every source behind both surfaces, and what each one actually reports.",
+    papers: "Every source behind both surfaces:",
     papersLink: "See the papers",
-    claims:
-      "A speedup class on a record is quoted from an outside index, not derived here — and on some records the"
-      + " paper behind it does not state the same thing.",
+    claims: "A speedup class on a record is quoted:",
     claimsLink: "See whose claim it is",
   },
   ja: {
     summary: "量子アトラスについて",
     repository:
-      "知る価値のある量子アルゴリズムを、何を取り、何を返し、どれだけかかり、誰が証明したのか、すべて同じ形式で記述しています。出典どうしが食い違うところは、そのまま記録します。",
-    map: "地図は同じ収録内容を、工程を共有しあう経路のつながりとしてひとつの構造に描いた図です。",
+      "知る価値のある量子アルゴリズムを、何を取り、何を返し、どれだけかかり、誰が証明したのか、すべて同じ形式で記述しています。",
+    map: "地図は、収録内容全体をひとつのつながった構造として描いています：",
     mapLink: "地図を開く",
-    papers: "どちらの画面も依拠している出典と、それぞれが実際に報告している内容です。",
+    papers: "どちらの画面も依拠している出典はこちらです：",
     papersLink: "論文を見る",
-    claims:
-      "記録に示された速度向上の区分は外部の索引からの引用であって、ここで導いたものではありません。"
-      + "根拠となる論文が同じことを述べていない記録もあります。",
+    claims: "記録に示された速度向上の区分は、次から引用されています：",
     claimsLink: "誰の主張かを見る",
   },
 };
@@ -184,114 +183,12 @@ export function AboutTheAtlas({ locale }: { locale: PublicLocale }) {
   );
 }
 
-/** Section copy per category. The label is the browse control's own wording. */
-const KIND_COPY: Record<
-  PublicRepositoryCategory,
-  { label: string; labelJa: string; blurb: string; blurbJa: string }
-> = {
-  gates: {
-    label: "Gates",
-    labelJa: "ゲート",
-    blurb:
-      "Primitives, each with the circuit it stands for and — where one exists — its decomposition into basic gates. Its own section, because a gate is a different kind of object from a workflow.",
-    blurbJa:
-      "基本要素です。それぞれ対応する回路と、存在する場合は基本ゲートへの分解を持ちます。ゲートはワークフローとは別種のものなので、独立したセクションにしています。",
-  },
-  algorithms: {
-    label: "Algorithms",
-    labelJa: "アルゴリズム",
-    blurb:
-      "Methods and benchmark circuits. Some pin a gate sequence you can run and export; most are literature records that name a method and cite the paper it comes from.",
-    blurbJa:
-      "手法とベンチマーク回路です。実行・エクスポートできるゲート列を持つものもありますが、多くは手法を示し出典論文を引用する文献レコードです。",
-  },
-  operators: {
-    label: "Operators",
-    labelJa: "演算子",
-    blurb:
-      "Observables and Hamiltonians. You measure a state with one; you do not apply it and pass a register on, so they sit beside a pipeline rather than in it.",
-    blurbJa:
-      "オブザーバブルとハミルトニアンです。状態の測定に用いるものであり、適用してレジスタを次段に渡すものではないため、パイプラインの中ではなく傍らに位置します。",
-  },
-  states: {
-    label: "States",
-    labelJa: "状態",
-    blurb:
-      "Named preparations. Nothing goes in, and what comes out is a register another stage can take — which makes them where a composition starts.",
-    blurbJa:
-      "名前のついた状態準備です。入力はなく、出力は次段が受け取れるレジスタであるため、合成の起点になります。",
-  },
-};
-
-const COPY = {
-  en: {
-    kinds: "The four kinds",
-    folders: "Browse by folder",
-  },
-  ja: {
-    kinds: "四つの種別",
-    folders: "フォルダで見る",
-  },
-} as const;
-
-/**
- * The four kinds, as links into their sections.
- *
- * A server component taking the already-fetched listing: it adds no request and
- * no client JavaScript. Each kind links to `?category=` — the address §0.5.1's
- * "separate gate section" ask turned out to be missing, and the reason a section
- * is a section rather than a tab.
- *
- * **`entries` is still the argument even though no number is printed**, and that
- * is the point of keeping it: the listing decides which kinds appear. A kind the
- * corpus has no record of is dropped rather than linked to an empty section, and
- * the only way to know that is to count. What the owner asked to lose was the
- * numbers a reader is shown, not the ones the page thinks with.
- */
-export function RepositoryPreface({
-  entries,
-  locale,
-}: {
-  entries: PublicRepositoryListEntry[];
-  locale: PublicLocale;
-}) {
-  const copy = COPY[locale === "ja" ? "ja" : "en"];
-  const isJapanese = locale === "ja";
-  const counts = new Map<string, number>();
-  for (const entry of entries) counts.set(entry.category, (counts.get(entry.category) ?? 0) + 1);
-
-  return (
-    <section className="mj-repo-preface" aria-labelledby="repository-preface-heading">
-      <h2 id="repository-preface-heading" className="mj-repo-preface-kinds">
-        {copy.kinds}
-      </h2>
-      <ul className="mj-repo-preface-list">
-        {/* Ordered by the vocabulary, not by size: sorting by count would put
-            `algorithms` first every time and read as a ranking of importance. A
-            kind no record carries is dropped rather than linked to an empty
-            section — same rule the topic and stance controls follow. */}
-        {PUBLIC_REPOSITORY_CATEGORY_IDS.filter((kind) => counts.get(kind)).map((kind) => {
-          const kindCopy = KIND_COPY[kind];
-          return (
-            <li key={kind}>
-              <a href={`/repository?category=${kind}`}>
-                {isJapanese ? kindCopy.labelJa : kindCopy.label}
-              </a>
-              <p>{isJapanese ? kindCopy.blurbJa : kindCopy.blurb}</p>
-            </li>
-          );
-        })}
-      </ul>
-      {/* The folder tree's only entrance.
-          The hierarchy the owner picked (EshMis/ai-ops#15) is a public surface at
-          `/repository/folders`, and a surface nothing links to is one no reader and no
-          crawler will ever reach — the same defect `?category=` had before §0.5.1, and
-          it looks identical to not having built it. One link, here, because this
-          section is already the "what kinds of thing are these" answer and browsing
-          down is the next question after it. */}
-      <p className="mj-repo-preface-kinds">
-        <a href="/repository/folders">{copy.folders}</a>
-      </p>
-    </section>
-  );
-}
+// The "four kinds" preface section and its "Browse by folder" link
+// (`RepositoryPreface`, `KIND_COPY`, and the `COPY` it used) were removed from
+// this page by owner instruction (ai-ops#94): "we should just remove these
+// from the page altogether." That took the folder tree's only UI entrance
+// with it (the comment on the removed link called it exactly that) — the
+// route at `/repository/folders` still exists and still resolves, it is just
+// no longer reachable by clicking anything. Left alive rather than deleted,
+// per the owner's own instruction not to remove underlying data/routes that
+// merely lose their shelf.
