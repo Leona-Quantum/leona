@@ -5,6 +5,7 @@ import { CONTACT_COPY } from "../../../lib/public-copy";
 import { ContactForm } from "./contact-form";
 import { MeasurementLab } from "../../../components/measurement-lab";
 import { parsePublicLocale, PUBLIC_LOCALES } from "../../../lib/public-locale";
+import { canonicalMetadata } from "../../../lib/public-metadata";
 
 // Served from the CDN. The locale comes from the path segment because a cached
 // page cannot read a cookie — `middleware.ts` rewrites the clean URL to this
@@ -19,6 +20,7 @@ export function generateStaticParams() {
 }
 
 export const metadata: Metadata = {
+  ...canonicalMetadata("/contact"),
   title: "Contact",
   description: "Contact Leona Quantum about research workflows and early product access.",
 };

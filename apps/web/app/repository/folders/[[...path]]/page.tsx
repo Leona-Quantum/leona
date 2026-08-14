@@ -12,6 +12,7 @@
 // the Atlas deep links.
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
+import { canonicalMetadata } from "../../../../lib/public-metadata";
 import { PublicSite } from "../../../../components/public-site";
 import { FolderView } from "../../../../components/repository-folders";
 import { getPublicLocale } from "../../../../lib/public-locale-server";
@@ -30,19 +31,30 @@ import { parseFolderScheme } from "../../../../components/repository-folders";
  * it links to, and the inconsistency is the tell. The page reads the locale cookie
  * anyway, so it costs nothing.
  */
-export async function generateMetadata(): Promise<Metadata> {
-  const locale = await getPublicLocale();
-  return locale === "ja"
-    ? {
-        title: "フォルダ",
-        description:
-          "カタログを階層でたどる索引。記録の種別、アルゴリズムのファミリー、その中の主題トピックの順に降りていけます。",
-      }
-    : {
-        title: "Folders",
-        description:
-          "Browse the catalogue as a hierarchy: the kind of record, then its algorithm family, then the subject topics inside it.",
-      };
+export async function generateMetadata({
+  params,
+}: {
+  params: Promise<{ path?: string[] }>;
+}): Promise<Metadata> {
+  const [{ path }, locale] = await Promise.all([params, getPublicLocale()]);
+  // Same derivation the page body below uses for `segments` — so the canonical
+  // address always names the folder this render resolved, not a re-guess of it.
+  const segments = (path ?? []).map(decodeURIComponent);
+  const canonicalPath = segments.length > 0 ? `/repository/folders/${segments.join("/")}` : "/repository/folders";
+  return {
+    ...(locale === "ja"
+      ? {
+          title: "フォルダ",
+          description:
+            "カタログを階層でたどる索引。記録の種別、アルゴリズムのファミリー、その中の主題トピックの順に降りていけます。",
+        }
+      : {
+          title: "Folders",
+          description:
+            "Browse the catalogue as a hierarchy: the kind of record, then its algorithm family, then the subject topics inside it.",
+        }),
+    ...canonicalMetadata(canonicalPath),
+  };
 }
 
 export default async function RepositoryFoldersPage({

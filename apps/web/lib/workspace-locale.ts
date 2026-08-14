@@ -1445,6 +1445,15 @@ export const ACCOUNT_COPY: Record<PublicLocale, {
   usageRunsPerWeek: (count: number) => string;
   usageArtifacts: (count: number) => string;
   usageQubits: (count: number) => string;
+  // The per-project artifact limit, which is not a tier allowance and does not
+  // live in `TierLimits`: it belongs to the project and its owner can change it.
+  // It is stated here because ai-ops#82 took it off /pricing, where it read as
+  // an allowance a plan grants, and this is the screen where it is neither the
+  // largest number nor the surprising one. `DEFAULT_PROJECT_ARTIFACT_LIMIT` is
+  // the source; the value says "by default" because the share dialog can raise
+  // or lower it per project.
+  usageProjectArtifacts: string;
+  usageProjectArtifactsValue: (count: number) => string;
   usageNowTitle: string;
   // The weekly allowance meter. `meterTokens` names what the bar measures;
   // `meterTokensRuns` is the sentence that makes a six-figure token number mean
@@ -1646,6 +1655,8 @@ export const ACCOUNT_COPY: Record<PublicLocale, {
     usageRunsPerWeek: (count) => `${count} per week`,
     usageArtifacts: (count) => `${count} artifacts`,
     usageQubits: (count) => `Up to ${count} qubits`,
+    usageProjectArtifacts: "Artifacts per project",
+    usageProjectArtifactsValue: (count) => `${count} by default, set per project`,
     usageNowTitle: "Right now",
     meterWeeklyTitle: "Weekly limits",
     meterTokens: "Agent tokens",
@@ -1841,6 +1852,8 @@ export const ACCOUNT_COPY: Record<PublicLocale, {
     usageRunsPerWeek: (count) => `週${count}回`,
     usageArtifacts: (count) => `${count}件`,
     usageQubits: (count) => `${count}量子ビットまで`,
+    usageProjectArtifacts: "プロジェクトごとの回路数",
+    usageProjectArtifactsValue: (count) => `既定で${count}件（プロジェクトごとに変更可）`,
     usageNowTitle: "現在の使用状況",
     meterWeeklyTitle: "週あたりの上限",
     meterTokens: "エージェントトークン",

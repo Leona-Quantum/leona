@@ -2,7 +2,7 @@
 /**
  * Every `apps/web/lib/*.test.ts` is in the `test` script. Nothing else says so.
  *
- * The web app has no test runner config: `pnpm --filter web test` is a single
+ * The web app has no test runner config: `pnpm --filter @majorana/web test` is a single
  * `node --test` invocation with fifty file paths written out by hand. A test
  * file that is not on that line is not a failing test — it is a file nobody
  * runs, and it stays green forever because it never executes. There is no
