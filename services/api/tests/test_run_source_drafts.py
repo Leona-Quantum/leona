@@ -120,12 +120,18 @@ async def test_run_and_job_are_bound_to_the_new_draft_version(scope, monkeypatch
     async def no_runs_yet(*_args, **_kwargs):
         return {}
 
+    # Same reason, for the same `object()`: the 201 now carries the run's queue
+    # position, which is a real query. This test is about draft binding.
+    async def no_queue(*_args, **_kwargs):
+        return {}
+
+    monkeypatch.setattr(runs.runs_repo, "queue_positions", no_queue)
     monkeypatch.setattr(runs.runs_repo, "count_runs_by_mode_since", no_runs_yet)
     monkeypatch.setattr(runs, "_create_stale_source_draft", create_draft)
     monkeypatch.setattr(runs.runs_repo, "create_run", create_run)
     monkeypatch.setattr(runs.runs_repo, "append_run_event", append_event)
     monkeypatch.setattr(runs.system, "enqueue_job", enqueue_job)
-    monkeypatch.setattr(runs, "_to_resource", lambda row: row.id)
+    monkeypatch.setattr(runs, "_to_resource", lambda row, queue_position=None: row.id)
 
     # A DEVELOPER identity so the per-tier gate is a no-op here; this test is
     # about draft binding, not allowances (see test_run_tier_allowance.py).
