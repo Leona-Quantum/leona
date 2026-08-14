@@ -3,6 +3,7 @@ import { PublicSite } from "../../../components/public-site";
 import { Reveal } from "../../../components/reveal";
 import { WORKSPACE_LANDING_COPY } from "../../../lib/public-copy";
 import { parsePublicLocale, PUBLIC_LOCALES } from "../../../lib/public-locale";
+import { canonicalMetadata } from "../../../lib/public-metadata";
 
 // Served from the CDN. The locale comes from the path segment because a cached
 // page cannot read a cookie — `middleware.ts` rewrites the clean URL to this
@@ -17,6 +18,7 @@ export function generateStaticParams() {
 }
 
 export const metadata: Metadata = {
+  ...canonicalMetadata("/workspace"),
   title: "Workspace",
   description: "Leona Quantum's personal quantum workspace for guided development, Studio, and verified artifacts.",
 };

@@ -1,4 +1,5 @@
 import { getMajoranaAuth } from "../../../lib/auth";
+import { DEFAULT_PROJECT_ARTIFACT_LIMIT } from "../../../lib/account-tier";
 import { getAccountTier } from "../../../lib/account-tier-server";
 import { AccountSettings } from "./account-settings";
 import { ArchivedChats } from "./archived-chats";
@@ -73,6 +74,12 @@ export async function AccountContent() {
           <div><dt>{copy.usagePlan}</dt><dd>{copy.tierNames[tier]}</dd></div>
           <div><dt>{copy.usageRuns}</dt><dd>{runs}</dd></div>
           <div><dt>{copy.usageStorage}</dt><dd>{storage}</dd></div>
+          {/* Beside the two allowances rather than in a panel of its own, and
+              not read from `limits`: this one is the same on every tier and
+              belongs to the project, not to the plan (ai-ops#82 moved it here
+              off /pricing, where a per-project figure printed under a per-
+              account cap was the misreading that got the whole line struck). */}
+          <div><dt>{copy.usageProjectArtifacts}</dt><dd>{copy.usageProjectArtifactsValue(DEFAULT_PROJECT_ARTIFACT_LIMIT)}</dd></div>
           <div><dt>{copy.usageSimulation}</dt><dd>{copy.usageQubits(limits.cpuSimQubits)}</dd></div>
         </dl>
         {/* The ceilings above are the plan; this is what is left of it.
