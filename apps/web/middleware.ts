@@ -15,6 +15,7 @@ import { isLocalDevAuthEnabled } from "./lib/local-dev-auth";
 import { pageviewLoggingEnabled, pageviewSignal } from "./lib/pageview-signal";
 import { LEGACY_PUBLIC_LOCALE_COOKIE, parsePublicLocale, PUBLIC_LOCALE_COOKIE, PUBLIC_LOCALES } from "./lib/public-locale";
 import { isPublicPath, workosUnauthenticatedPaths } from "./lib/public-paths";
+import { localeRewriteTarget } from "./lib/locale-rewrite";
 import { isRoutedPath, localePrefixRoute, LOCALE_ROUTES } from "./lib/routed-paths";
 import { canonicalHostRedirect } from "./lib/site-origin";
 
@@ -141,13 +142,15 @@ function localeRewrite(request: NextRequest): NextResponse | null {
   // LOCALE_PREFIX_ROUTES for why the second list cannot be folded into the first.
   if (!LOCALE_ROUTE_SET.has(pathname) && localePrefixRoute(pathname) === null) return null;
   const locale = readLocale(request);
-  const target = pathname === "/" ? `/${locale}` : `/${locale}${pathname}`;
-  // `request.url` carries the query string and `NextResponse.rewrite` keeps it,
-  // which is not incidental here: Vercel's cache key is the request URL
-  // including the query, and `/repository/layers` resolves ten parameters on the
-  // server. Dropping them would serve every deep link the bare map from one
-  // cache entry.
-  return NextResponse.rewrite(new URL(target, request.url));
+  // **`localeRewriteTarget` and not `new URL(target, request.url)`.** The
+  // relative form replaces everything from the path onward, so it drops the
+  // query string — which was invisible while this rewrite served only the six
+  // marketing pages and became a bug the moment it served `/repository/layers`,
+  // whose ten parameters are all resolved during render. The whole account, and
+  // the measurement that caught it, is in `lib/locale-rewrite.ts`; it is a
+  // separate module so `locale-rewrite.test.ts` can hold the rule rather than
+  // review having to.
+  return NextResponse.rewrite(localeRewriteTarget(request.nextUrl.toString(), pathname, locale));
 }
 
 /**
