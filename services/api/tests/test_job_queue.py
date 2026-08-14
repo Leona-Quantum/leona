@@ -24,6 +24,11 @@ class _Result:
     def all(self):
         return self._rows
 
+    def __iter__(self):
+        # A real Result is iterable over its rows; the queue-position query reads
+        # it that way rather than through .scalars().
+        return iter(self._rows)
+
 
 class _Session:
     def __init__(self, *results):
@@ -257,3 +262,76 @@ async def test_dead_letter_retry_budget_is_bounded():
             error="callback unavailable",
             max_delivery_attempts=0,
         )
+
+
+# ---- queue position (ai-ops#91) --------------------------------------------
+
+
+async def _claim_predicates() -> str:
+    """The WHERE clause `claim_job` actually claims on, as compiled SQL."""
+    session = _Session(_Result(rows=[]))
+    await system.claim_job(session, worker_id="w")
+    sql = _sql(session.statements[0])
+    return sql[sql.index("WHERE") :]
+
+
+async def test_queue_position_counts_against_the_claim_predicates():
+    """A position counted against a different definition of "waiting" than the
+    claimer uses is a wrong number that looks right.
+
+    Asserted as a comparison between the two statements rather than by
+    re-listing the predicates here, because a copy of the list in the test
+    drifts in exactly the same way the copy in the query would.
+    """
+    session = _Session(_Result(rows=[]))
+    await system.queue_positions_for_jobs(session, run_ids=[uuid.uuid4()])
+    sql = _sql(session.statements[0])
+    claim = await _claim_predicates()
+    for predicate in (
+        "jobs.status = ",
+        "jobs.run_after <= now()",
+        "jobs.attempts < jobs.max_attempts",
+    ):
+        assert predicate in claim, f"claim_job no longer filters on {predicate!r}"
+        assert predicate in sql, f"the position query does not filter on {predicate!r}"
+    # And the same three against the aliased self-join that counts what is ahead.
+    assert "jobs_1.status = " in sql
+    assert "jobs_1.run_after <= now()" in sql
+    assert "jobs_1.attempts < jobs_1.max_attempts" in sql
+
+
+async def test_queue_position_orders_by_run_after_then_id():
+    """`claim_job` orders by run_after alone and has no tiebreak, so two jobs
+    stamped the same microsecond have no defined order. The position query adds
+    `id` so the number it reports is stable rather than flickering between two
+    equally true answers."""
+    session = _Session(_Result(rows=[]))
+    await system.queue_positions_for_jobs(session, run_ids=[uuid.uuid4()])
+    sql = _sql(session.statements[0])
+    assert "(jobs_1.run_after, jobs_1.id) < (jobs.run_after, jobs.id)" in sql
+
+
+async def test_queue_position_selects_a_count_and_a_run_id_and_nothing_else():
+    """The no-tenant-data property of the system repo, asserted.
+
+    This query is workspace-neutral by necessity — the jobs table has no
+    workspace_id — so what keeps it from leaking is that it returns integers and
+    the caller's own run ids. A payload, a prompt or another tenant's job id in
+    the SELECT list would be the leak, and it would be invisible at the route.
+    """
+    session = _Session(_Result(rows=[]))
+    await system.queue_positions_for_jobs(session, run_ids=[uuid.uuid4()])
+    sql = _sql(session.statements[0])
+    selected = sql[sql.index("SELECT") + len("SELECT") : sql.index("FROM")]
+    assert "jobs.run_id" in selected
+    assert "count(" in selected
+    for forbidden in ("jobs.payload", "jobs.last_error", "jobs.locked_by", "jobs.kind"):
+        assert forbidden not in selected, f"the position query exposes {forbidden}"
+
+
+async def test_queue_position_asks_nothing_when_given_nothing():
+    """An empty id list must not become `IN ()` — that is a query that scans the
+    whole queue to answer a question nobody asked."""
+    session = _Session()
+    assert await system.queue_positions_for_jobs(session, run_ids=[]) == {}
+    assert session.statements == []

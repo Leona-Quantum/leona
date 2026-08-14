@@ -770,6 +770,21 @@ class Run(_ResourceBase):
     created_at: datetime
     started_at: datetime | None = None
     finished_at: datetime | None = None
+    #: Derived per request, never stored: how many claimable jobs sit ahead of
+    #: this run in the worker queue. 0 means it is next. `null` means it is not
+    #: waiting for a worker — it has started, finished, or never had a job.
+    #:
+    #: A count, and NOT a time. The wall-clock duration of a run has never been
+    #: measured against the real pipeline, so any estimate derived from this
+    #: would be invented; a wrong ETA is worse than none because a user plans
+    #: around it. Position is a fact the queue can be asked for.
+    queue_position: int | None = Field(
+        default=None,
+        description=(
+            "Claimable jobs ahead of this run in the worker queue; 0 means next, "
+            "null means not waiting. Derived per request, never stored."
+        ),
+    )
 
 
 class ConversationTurn(_ResourceBase):
