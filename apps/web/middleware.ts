@@ -192,6 +192,29 @@ function canonicalRedirect(request: NextRequest): NextResponse | null {
  * why it is an allowlist of three rather than "everything that is not
  * canonical", which is the version that breaks every preview deployment.
  *
+ * ## Two hops with `canonicalRedirect`, and this one is first
+ *
+ * `www.leonaquantum.com/en/pricing` carries both problems at once and is
+ * answered with two 308s: to `leonaqt.com/en/pricing` here, then to
+ * `leonaqt.com/pricing` by `canonicalRedirect` below. It terminates — after the
+ * first hop the host is canonical so this returns null, and after the second
+ * there is no locale prefix so that one does.
+ *
+ * Collapsing them into a single hop would mean rebuilding the locale rule in
+ * here, which is a second copy of the thing `lib/canonical-locale-redirect.ts`
+ * exists to be the only copy of. The shape that pays for the extra hop — a
+ * locale-prefixed URL on a hostname nothing links to — is not one a reader
+ * arrives at by clicking.
+ *
+ * Order matters for a reason beyond tidiness. `canonicalRedirect` runs before
+ * the auth gate, by necessity, and it was an open redirect until PR 558; keeping
+ * it downstream of this hop means it is only ever exercised on the canonical
+ * origin. This hop is safe on any host for a different reason — it never uses
+ * the relative `new URL(str, base)` form that caused that bug, because the
+ * origin is a literal prefix of the target string, so no path tail can displace
+ * the authority. Both properties are asserted in `lib/site-origin.test.ts`
+ * rather than left as this paragraph.
+ *
  * ## Not covered by the matcher, on purpose
  *
  * `config.matcher` at the bottom of this file excludes `_next/static`,

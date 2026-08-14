@@ -3,6 +3,8 @@ import test from "node:test";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { canonicalLocaleTarget } from "./canonical-locale-redirect.ts";
+import { PUBLIC_LOCALES } from "./public-locale.ts";
 import { PUBLIC_STATIC_PATHS } from "./sitemap-paths.ts";
 import {
   CANONICAL_HOST,
@@ -264,4 +266,131 @@ test("the middleware matcher still covers every public page", () => {
   for (const path of ["/", "/pricing", "/repository", "/repository/grover-search", "/auth/callback", "/account", "/studio"]) {
     assert.ok(pattern.test(path), `the matcher no longer covers ${path}`);
   }
+});
+
+// ---- the two redirects together (PR 558 + PR 559) --------------------------
+
+/**
+ * A request carrying BOTH problems at once, which is the case neither PR tested
+ * on its own: a non-canonical host AND a locale prefix.
+ *
+ * It takes two hops, host first, and that order is deliberate rather than
+ * incidental. Collapsing them into one would mean rebuilding the locale rule
+ * inside the host redirect — a second copy of the thing `canonicalLocaleTarget`
+ * exists to be the only copy of. Two 308s are cached by browsers and followed by
+ * crawlers, and the shape that needs both (a locale-prefixed URL on a host
+ * nothing links to) is not one anybody arrives at by clicking.
+ *
+ * Host first matters for a reason beyond tidiness: `canonicalRedirect` runs
+ * BEFORE the auth gate, so keeping it downstream of the host hop means it is
+ * only ever exercised on the canonical origin.
+ */
+test("a non-canonical host and a locale prefix resolve in two hops, host first", () => {
+  const first = canonicalHostRedirect("www.leonaquantum.com", "/en/pricing");
+  assert.equal(first, "https://leonaqt.com/en/pricing");
+
+  const second = canonicalLocaleTarget("/en/pricing", first!, PUBLIC_LOCALES);
+  assert.equal(second?.toString(), "https://leonaqt.com/pricing");
+
+  // And the destination is a fixed point: neither redirect fires on it again.
+  assert.equal(canonicalHostRedirect("leonaqt.com", "/pricing"), null);
+  assert.equal(canonicalLocaleTarget("/pricing", "https://leonaqt.com/pricing", PUBLIC_LOCALES), null);
+});
+
+test("neither hop can be re-entered by the other's output, in either direction", () => {
+  // The loop this rules out is not hypothetical in shape: two redirects that
+  // each undo the other's normalisation is the classic redirect cycle, and a
+  // browser answers it with ERR_TOO_MANY_REDIRECTS rather than a page.
+  for (const path of ["/", "/pricing", "/en/pricing", "/repository/grover-search"]) {
+    const hop = canonicalHostRedirect("leonaquantum.com", path);
+    assert.ok(hop, path);
+    const { host, pathname, search } = new URL(hop);
+    assert.equal(host, "leonaqt.com", path);
+    // Second pass over the same decision: the host hop is done.
+    assert.equal(canonicalHostRedirect(host, `${pathname}${search}`), null, path);
+    const locale = canonicalLocaleTarget(pathname, hop, PUBLIC_LOCALES);
+    if (locale) {
+      assert.equal(locale.host, "leonaqt.com", path);
+      // ...and the locale hop is done too.
+      assert.equal(canonicalLocaleTarget(locale.pathname, locale.toString(), PUBLIC_LOCALES), null, path);
+      assert.equal(canonicalHostRedirect(locale.host, locale.pathname), null, path);
+    }
+  }
+});
+
+/**
+ * The host hop is same-origin by construction, for a DIFFERENT reason than
+ * `canonicalLocaleTarget` is.
+ *
+ * That module was an open redirect because it handed an attacker-influenced
+ * path tail to the relative `new URL(str, base)` form, which is allowed to
+ * replace the authority. This one never uses that form: the origin is a literal
+ * PREFIX of the string, so the authority is already consumed before any path
+ * byte is read, and no tail can displace it.
+ *
+ * That is a claim about the URL parser, so it is asserted here rather than
+ * argued in a comment — the same reason the rows below exist on the other side.
+ * The two are composed in production, and the composition is safe in both
+ * orders: this hop carries `/en//evil.com` across verbatim and the sanitiser
+ * then collapses it on the canonical origin.
+ */
+test("no path can move the host hop off this origin", () => {
+  const bs = String.fromCharCode(92);
+  const hostile = [
+    "//evil.com",
+    "//evil.com/path",
+    "///evil.com",
+    `/${bs}evil.com`,
+    `/${bs}${bs}evil.com`,
+    `/${bs}/evil.com`,
+    "//evil.com@leonaqt.com",
+    "/en//evil.com",
+    "//",
+  ];
+  for (const path of hostile) {
+    const target = canonicalHostRedirect("leonaquantum.com", path);
+    assert.ok(target, path);
+    const url = new URL(target);
+    assert.equal(url.origin, "https://leonaqt.com", `${path} escaped to ${target}`);
+    assert.equal(url.host, "leonaqt.com", path);
+  }
+  // Asserted here, in the test that owns the array: a loop over an emptied array
+  // passes every assertion inside it, so a count in a sibling test would not
+  // protect this one.
+  assert.equal(hostile.length, 9);
+});
+
+test("a hostile path survives the host hop and is defused by the locale hop", () => {
+  // The composition, end to end. The host hop deliberately does NOT sanitize —
+  // it preserves the path so a deep link is not silently rewritten — and the
+  // locale hop is what collapses the authority-shaped tail, on the canonical
+  // origin where it can no longer matter.
+  const first = canonicalHostRedirect("www.leonaquantum.com", "/en//evil.com");
+  assert.equal(first, "https://leonaqt.com/en//evil.com");
+  const second = canonicalLocaleTarget("/en//evil.com", first!, PUBLIC_LOCALES);
+  assert.equal(second?.host, "leonaqt.com");
+  assert.equal(second?.pathname, "/evil.com");
+  assert.equal(second?.origin, "https://leonaqt.com");
+});
+
+/** The reconciliation itself: PR 558's fix must still be wired in. */
+test("the locale redirect still routes through the same-origin builder", () => {
+  const source = readFileSync(fileURLToPath(new URL("../middleware.ts", import.meta.url)), "utf8");
+  assert.match(
+    source,
+    /import \{ canonicalLocaleTarget \} from "\.\/lib\/canonical-locale-redirect"/,
+    "middleware lost the canonical-locale-redirect import in a merge",
+  );
+  assert.match(
+    source,
+    /import \{ canonicalHostRedirect \} from "\.\/lib\/site-origin"/,
+    "middleware lost the canonical-host import in a merge",
+  );
+  // The pre-fix body built the target with the relative `new URL(rest, base)`
+  // form. If a merge resolution took the wrong side of this hunk the open
+  // redirect comes back with it, and nothing else in this file would notice.
+  const body = source.match(/function canonicalRedirect\(request: NextRequest\)[^}]*\}/);
+  assert.ok(body, "canonicalRedirect disappeared");
+  assert.match(body[0], /canonicalLocaleTarget\(/, "canonicalRedirect no longer uses the safe builder");
+  assert.doesNotMatch(body[0], /new URL\(rest/, "the relative-URL open redirect came back");
 });
