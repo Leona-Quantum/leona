@@ -77,6 +77,16 @@ def test_render_intent_prompt_passes_the_message_through_unchanged():
     assert rendered.user == "User message:\nBell状態とは？"
 
 
+def test_render_intent_prompt_can_enable_assumption_routing_only_per_request():
+    normal = render_intent_prompt("Build a circuit")
+    enabled = render_intent_prompt("Build a circuit", allow_ai_assumptions=True)
+
+    assert "needs_user_inputs" in normal.system
+    assert "overrides the input-readiness refusal" not in normal.system
+    assert "overrides the input-readiness refusal" in enabled.system
+    assert "AI completion of missing task data is enabled" in enabled.user
+
+
 def test_render_intent_prompt_describes_an_attachment_without_copying_source():
     rendered = render_intent_prompt(
         "Run this attached circuit",

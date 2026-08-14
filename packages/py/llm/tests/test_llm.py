@@ -9,6 +9,7 @@ from majorana_llm import (
     LLMRequest,
     LLMResponse,
     RetryingLLM,
+    RUN_EXPLANATION_SYSTEM_PROMPT,
     SIMPLE_ARTIFACT_REVIEW_SYSTEM_PROMPT,
     SIMPLE_BUSINESS_REFERENCE_EXTRACTION_SYSTEM_PROMPT,
     SIMPLE_GENERATION_SYSTEM_PROMPT,
@@ -28,6 +29,20 @@ from majorana_llm import (
     roles_for_profile,
     simple_generation_system_prompt,
 )
+
+
+def test_run_explanation_prompt_requests_natural_grounded_final_prose():
+    prompt = " ".join(RUN_EXPLANATION_SYSTEM_PROMPT.split())
+
+    assert "answering the user directly" in prompt
+    assert "four to eight short paragraphs" in prompt
+    assert "what the observed values mean" in prompt
+    assert "task-specific suggestions" in prompt
+    assert "Never invent a value, unit, baseline" in prompt
+    assert "advisory AI review is not strict verification" in prompt
+    assert "Write for someone seeing this product for the first time" in prompt
+    assert "Never expose the hidden evidence object" in prompt
+    assert "今回の計算" in prompt
 
 
 def test_artifact_only_review_prompt_demands_deep_static_feedback_without_result_claims():

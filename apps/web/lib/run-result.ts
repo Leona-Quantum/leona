@@ -235,7 +235,7 @@ export function runResultFromEvents(
       ...(plan?.algorithm ? [{ label: locale === "ja" ? "アルゴリズム" : "Algorithm", value: plan.algorithm }] : []),
       ...(plan?.framework ? [{ label: locale === "ja" ? "フレームワーク" : "Framework", value: plan.framework }] : []),
       ...(source?.revision !== undefined
-        ? [{ label: locale === "ja" ? "リビジョン" : "Revision", value: String(source.revision) }]
+        ? [{ label: locale === "ja" ? "コードの更新版" : "Code version", value: String(source.revision) }]
         : []),
       ...(shots ? [{ label: locale === "ja" ? "ショット数" : "Shots", value: shots.toLocaleString(locale === "ja" ? "ja-JP" : "en-US") }] : []),
     ],

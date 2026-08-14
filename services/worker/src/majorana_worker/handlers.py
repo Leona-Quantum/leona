@@ -5,6 +5,7 @@ at enqueue time), never a broader one; repos.system stays provisioning+jobs only
 """
 
 import asyncio
+import json
 import logging
 import os
 import uuid
@@ -37,6 +38,7 @@ from majorana_agent import (
 from majorana_contracts.events import run_event_adapter
 from majorana_llm import (
     CHAT_SYSTEM_PROMPT,
+    RUN_EXPLANATION_SYSTEM_PROMPT,
     LLMClient,
     LLMRequest,
     conversation_request_messages,
@@ -101,6 +103,11 @@ log = logging.getLogger("majorana_worker")
 # explicit upper bound so an omitted timeout is not stricter than an accepted
 # client timeout.
 DEFAULT_RUN_TIMEOUT_S = 600.0
+# Keep enough of the run deadline for the user-facing answer after the durable
+# artifact exists. Without an explicit reserve, the repair controller can spend
+# every remaining second before the final explanation call begins.
+RUN_EXPLANATION_RESERVE_S = 75.0
+RUN_TERMINAL_WRITE_RESERVE_S = 5.0
 
 _verification_meter = metrics.get_meter("majorana.worker.verification")
 _verification_decisions = _verification_meter.create_counter("majorana.verification.decisions")
@@ -297,6 +304,7 @@ async def handle_run_execute(
         timeout_s=run.timeout_s,
         sink=RepoEventSink(scope, session, run_id),
         response_locale=normalize_response_locale(payload.get("response_locale")),
+        allow_ai_assumptions=bool(payload.get("allow_ai_assumptions", False)),
         conversation_id=run.conversation_id,
         source_code=payload.get("source_code"),
         source_framework=Framework(run.framework),
@@ -326,6 +334,7 @@ async def handle_run_execute(
                 llm=provider,
                 has_source_code=bool(payload.get("source_code")),
                 conversation_messages=conversation_messages,
+                allow_ai_assumptions=ctx.allow_ai_assumptions,
             )
             ctx = await _title_conversation(ctx, store, scope=scope, session=session, llm=provider)
             if ctx.mode is not RunMode.EXECUTE:
@@ -585,6 +594,7 @@ async def _resolve_mode(
     llm: LLMClient,
     has_source_code: bool,
     conversation_messages: list[dict[str, str]] | None = None,
+    allow_ai_assumptions: bool = False,
 ) -> RunContext:
     """Settle which mode this run dispatches in, before anything else happens.
 
@@ -612,9 +622,11 @@ async def _resolve_mode(
         llm,
         has_source_code=has_source_code,
         conversation_messages=conversation_messages or (),
+        allow_ai_assumptions=allow_ai_assumptions,
     )
     if not decision.changed:
         return ctx
+    ctx = replace(ctx, needs_user_inputs=decision.needs_user_inputs)
     if decision.resolved is RunMode.EXECUTE:
         # Checked BEFORE the row is rewritten. The reservation sees this row as
         # AUTO, which is exactly the in-flight state that must be charged once
@@ -763,19 +775,164 @@ async def _handle_agent_execution(
         requested_shots=ctx.shots,
         requested_seed=ctx.seed,
         initial_source=ctx.source_code,
+        allow_ai_assumptions=ctx.allow_ai_assumptions,
         rollback=session.rollback,
     )
     outcome = await SimpleCircuitPipeline(
         ports=ports,
         cancel_requested=cancelled,
-        remaining_time_s=lambda: run_deadline - asyncio.get_running_loop().time(),
+        remaining_time_s=lambda: (
+            run_deadline - asyncio.get_running_loop().time() - RUN_EXPLANATION_RESERVE_S
+        ),
         monotonic=asyncio.get_running_loop().time,
     ).run(ctx.run_id)
     if ports.projection_dirty:
         # Durable records are authoritative. Do not terminalize until their
         # idempotent public projection has caught up.
         await observer.recover(ctx.run_id)
+    if outcome.status is SimplePipelineStatus.SUCCEEDED:
+        await _emit_run_explanation(
+            ctx,
+            outcome,
+            metered_llm,
+            remaining_time_s=run_deadline - asyncio.get_running_loop().time(),
+            rollback=session.rollback,
+        )
     return await _finish_simple_pipeline(ctx, run_store, outcome)
+
+
+def _outcome_explanation_evidence(
+    ctx: RunContext,
+    outcome: SimplePipelineOutcome,
+) -> dict[str, Any]:
+    """Bound the exact durable evidence sent to the prose-only analysis call."""
+
+    plan = outcome.plan.plan.model_dump(mode="json") if outcome.plan is not None else None
+    candidate = outcome.candidate
+    execution = outcome.execution
+    review = outcome.review
+    return {
+        "request": ctx.task_prompt,
+        "allow_ai_assumptions": ctx.allow_ai_assumptions,
+        "run_status": outcome.status.value,
+        "plan": plan,
+        "candidate": (
+            {
+                "framework": candidate.framework.value,
+                "revision": candidate.revision,
+                # Enough source to explain the implementation without allowing a
+                # pathological generated file to dominate a second model call.
+                "source": candidate.source[:20_000],
+                "source_truncated": len(candidate.source) > 20_000,
+            }
+            if candidate is not None
+            else None
+        ),
+        "execution": (
+            {
+                "status": "not_run"
+                if execution.was_not_run
+                else "succeeded"
+                if execution.succeeded
+                else "failed",
+                "duration_ms": execution.duration_ms,
+                "result": execution.result,
+                "observation": execution.observation,
+            }
+            if execution is not None
+            else None
+        ),
+        "review": (
+            {
+                "decision": review.decision.value,
+                "severity": review.severity,
+                "feedback": review.feedback,
+            }
+            if review is not None
+            else None
+        ),
+        "attempts": vars(outcome.counters),
+        "warnings": [
+            {
+                "stage": warning.stage.value,
+                "code": warning.code,
+                "message": warning.message,
+            }
+            for warning in outcome.warnings
+        ],
+    }
+
+
+async def _emit_run_explanation(
+    ctx: RunContext,
+    outcome: SimplePipelineOutcome,
+    llm: LLMClient,
+    *,
+    remaining_time_s: float,
+    rollback: Callable[[], Awaitable[None]] | None = None,
+) -> None:
+    """Generate optional grounded final prose without risking the durable result."""
+
+    timeout_s = min(
+        RUN_EXPLANATION_RESERVE_S - RUN_TERMINAL_WRITE_RESERVE_S,
+        remaining_time_s - RUN_TERMINAL_WRITE_RESERVE_S,
+    )
+    if timeout_s < 1.0:
+        log.warning("skipping run explanation for %s: no deadline budget remains", ctx.run_id)
+        return
+    evidence = _outcome_explanation_evidence(ctx, outcome)
+    try:
+        async with asyncio.timeout(timeout_s):
+            response = await llm.complete(
+                LLMRequest(
+                    model=model_for("analyze"),
+                    system=with_response_locale(
+                        RUN_EXPLANATION_SYSTEM_PROMPT,
+                        ctx.response_locale,
+                        surface="analysis",
+                    ),
+                    user="EVIDENCE\n"
+                    + json.dumps(
+                        evidence,
+                        ensure_ascii=False,
+                        sort_keys=True,
+                        separators=(",", ":"),
+                    ),
+                    temperature=0.4,
+                    schema_name="explain_result",
+                )
+            )
+        interpretation = response.text.strip()
+        if not interpretation:
+            log.warning("run explanation model returned empty text for %s", ctx.run_id)
+            return
+        critic = evidence.get("review")
+        feedback = critic.get("feedback") if isinstance(critic, dict) else None
+        critic_body = feedback.get("critic") if isinstance(feedback, dict) else None
+        risks = critic_body.get("residual_risks") if isinstance(critic_body, dict) else None
+        residual_risks = (
+            "\n".join(str(item) for item in risks if str(item).strip())
+            if isinstance(risks, list)
+            else None
+        )
+        await ctx.sink.emit(
+            "run.analysis",
+            {
+                "summary": interpretation.split("\n\n", 1)[0][:2000],
+                "interpretation": interpretation,
+                "results": {},
+                "comparison": {},
+                "residual_risks": residual_risks,
+            },
+            event_id=uuid.uuid5(ctx.run_id, "run.analysis.final"),
+        )
+    except Exception:
+        # The result and artifact already exist. A provider or persistence failure
+        # in this optional prose pass must fall back to deterministic UI copy, not
+        # convert a completed quantum run into a failed run.
+        log.exception("could not generate final explanation for run %s", ctx.run_id)
+        if rollback is not None:
+            await rollback()
 
 
 _SIMPLE_EVENT_STAGE = {
@@ -997,6 +1154,8 @@ async def _finish_missing_inputs_clarification(
         "chat.completed",
         {
             "text": text,
+            "missing_inputs": missing,
+            "allow_ai_assumptions_available": True,
             "model": "majorana-readiness-gate",
             "input_tokens": 0,
             "output_tokens": 0,
@@ -1151,6 +1310,14 @@ async def _handle_conversation(
         "chat.completed",
         {
             "text": interpretation,
+            **(
+                {
+                    "allow_ai_assumptions_available": True,
+                    "missing_inputs": [],
+                }
+                if ctx.needs_user_inputs
+                else {}
+            ),
             "model": response.model,
             "input_tokens": response.input_tokens,
             "output_tokens": response.output_tokens,
@@ -1220,12 +1387,24 @@ async def close_orphaned_run(session: AsyncSession, orphan: system.OrphanedRun) 
         "run.error",
         {"stage": None, "code": "run_orphaned", "message": reason[:2000]},
     )
+    error_event_id = uuid.uuid5(orphan.run_id, "run.error.job_dead_letter")
+    # Older delivery attempts used the job-dead-letter id for this event too.
+    # Reusing that id with the orphan-specific payload raises an idempotency
+    # conflict forever, leaving the run in RUNNING and making the reaper spin.
+    # Preserve the old id when its content already matches; otherwise use a
+    # distinct orphan id so the terminal sequence can still be repaired.
+    existing_events = await runs_repo.list_run_events(scope, session, orphan.run_id)
+    if any(
+        event.id == error_event_id and (event.type != "run.error" or event.payload != error_payload)
+        for event in existing_events
+    ):
+        error_event_id = uuid.uuid5(orphan.run_id, "run.error.orphaned")
     closed = await runs_repo.fail_run_from_dead_letter(
         scope,
         session,
         orphan.run_id,
         error_payload=error_payload,
-        error_event_id=uuid.uuid5(orphan.run_id, "run.error.job_dead_letter"),
+        error_event_id=error_event_id,
         finished_event_id=uuid.uuid5(orphan.run_id, "run.finished"),
     )
     await session.commit()
