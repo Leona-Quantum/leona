@@ -13,12 +13,12 @@
     "@majorana/ui": "workspace:*"
   },
   "devDependencies": {
-    "@axe-core/playwright": "^4.10.1",
-    "@playwright/test": "^1.51.1",
+    "@axe-core/playwright": "^4.13.0",
+    "@playwright/test": "^1.62.1",
     "@types/node": "^22.0.0",
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
-    "esbuild": "^0.25.0",
+    "esbuild": "^0.28.2",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "typescript": "^5.9.3"

@@ -1249,6 +1249,48 @@ async def test_slow_optional_export_is_cut_off_so_artifact_can_still_save():
     assert ports.calls[-1] == "save"
 
 
+async def test_a_real_review_call_is_not_starved_by_the_explanation_reserve():
+    """Pins the observable shape of the 2026-08-14 incident at the pipeline level.
+
+    `services/worker/handlers.py` used to hand this pipeline
+    `run_deadline - now - RUN_EXPLANATION_RESERVE_S` (75 s) as its remaining
+    time — a reserve for the OPTIONAL post-pipeline explanation call, taken
+    before the mandatory stages ever ran. On the deploy probe's 120 s run, with
+    ~20 s already spent on plan/generate/execute/check (matching production:
+    the sandbox had already returned a correct Bell-state result), that left
+    `reviewing` a raw remaining time of 100 - 75 = 25 s. This module's own
+    `_estimated_finalization_s` (~25 s) then reserved that again, so
+    `_stage_timeout_s` floored to `max(0.1, 25 - 25)` = 0.1 s: any review call
+    that took real time at all was cancelled and reported
+    `stage_time_budget_exhausted` on a run whose circuit had already executed
+    correctly. The fix stopped subtracting the explanation reserve upstream
+    (`_pipeline_remaining_time_s` in handlers.py now passes the raw 100 s
+    through undiminished); this test drives that same 100 s-remaining shape
+    with a review call that genuinely takes wall-clock time and asserts it is
+    no longer starved.
+    """
+
+    class SlowRealReviewPorts(FakePorts):
+        async def review(self, *args):
+            # Real time the old formula's 0.1 s floor could not have survived,
+            # comfortably under the ~75 s the fixed formula actually grants.
+            await asyncio.sleep(0.3)
+            return await super().review(*args)
+
+    ports = SlowRealReviewPorts()
+    outcome = await SimpleCircuitPipeline(
+        ports=ports,
+        # The run's raw remaining time at the moment reviewing starts (120 s
+        # total, ~20 s already spent), undiminished by any post-pipeline
+        # reserve — matching `_pipeline_remaining_time_s`'s fixed contract.
+        remaining_time_s=lambda: 100.0,
+    ).run(uuid4())
+
+    assert outcome.status is SimplePipelineStatus.SUCCEEDED
+    assert outcome.review is not None
+    assert "review" in ports.calls
+
+
 async def test_an_upstream_timeout_is_not_reported_as_our_budget():
     """A TimeoutError from inside the operation is not the stage running out of time.
 
