@@ -817,10 +817,14 @@ async def list_conversation_messages(
     )
     rows = list((await session.execute(stmt)).scalars().all())
     rows.reverse()
+    # One query for every turn's events, not one per turn. This runs on the
+    # worker, ahead of each chat/AUTO/EXECUTE turn past the first, against a
+    # pool of 4 (WORKER_POOL_SIZE + WORKER_MAX_OVERFLOW) that a run already
+    # holds for its whole duration.
+    events_by_run = await list_run_events_for_runs(scope, session, [row.id for row in rows])
     turns: list[tuple[str, str]] = []
     for row in rows:
-        events = await list_run_events(scope, session, row.id)
-        assistant_text = _conversation_assistant_text(events)
+        assistant_text = _conversation_assistant_text(events_by_run.get(row.id, []))
         if assistant_text is None:
             continue
         turns.append((row.task_prompt, assistant_text))
@@ -1077,6 +1081,50 @@ async def list_run_events(
         .order_by(RunEvent.seq)
     )
     return list((await session.execute(stmt)).scalars().all())
+
+
+async def list_run_events_for_runs(
+    scope: Scope,
+    session: AsyncSession,
+    run_ids: list[uuid.UUID],
+) -> dict[uuid.UUID, list[RunEvent]]:
+    """Events for many runs at once, grouped by run, in `seq` order within each.
+
+    The batched twin of `list_run_events`, and it exists for a capacity reason
+    rather than a tidiness one. `GET /v1/runs/{id}/conversation` replays up to
+    50 turns and used to call `list_run_events` once per turn — 51 sequential
+    round trips on a single held session. The latency of that is the smaller
+    half of the cost: the API's pool is 10 connections per instance
+    (`db.DEFAULT_POOL_SIZE + DEFAULT_MAX_OVERFLOW`), so one conversation read
+    held a tenth of an instance's database capacity for 51 round trips' worth
+    of wall clock, against a `containerConcurrency` of 16. At a hundred
+    readers that is the difference between a queue that drains and one that
+    does not.
+
+    Scoping is unchanged and still applies here: run_events carries no
+    workspace_id, so the join to Run under `scope.workspace_id` is what makes
+    the read legal. A run id belonging to another workspace simply contributes
+    no rows — the same outcome the per-run function reaches, reached once.
+
+    Runs with no events are absent from the mapping rather than present with an
+    empty list; callers reconstructing a fixed set of turns should use
+    `.get(run_id, [])` so a turn that has not emitted yet still renders.
+    """
+    if not run_ids:
+        return {}
+    stmt = (
+        select(RunEvent)
+        .join(Run, RunEvent.run_id == Run.id)
+        .where(
+            RunEvent.run_id.in_(run_ids),
+            Run.workspace_id == scope.workspace_id,
+        )
+        .order_by(RunEvent.run_id, RunEvent.seq)
+    )
+    grouped: dict[uuid.UUID, list[RunEvent]] = {}
+    for event in (await session.execute(stmt)).scalars().all():
+        grouped.setdefault(event.run_id, []).append(event)
+    return grouped
 
 
 async def list_run_events_with_status(

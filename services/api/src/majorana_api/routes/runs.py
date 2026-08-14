@@ -608,16 +608,23 @@ async def get_conversation(
     # This is the endpoint the run view loads, so it is the one that has to
     # carry the position — a turn that is still waiting is exactly what the
     # reader is looking at. Batched for the same reason as the list endpoint.
+    #
+    # Events are batched too, and for a capacity reason rather than a tidiness
+    # one: reading them per turn cost one round trip per turn, up to 51 of
+    # them, and held one of the instance's ten pool connections for all of
+    # them — see `runs_repo.list_run_events_for_runs`. Two queries regardless
+    # of how long the conversation is.
     positions = await runs_repo.queue_positions(scope, session, [row.id for row in rows])
-    turns: list[ConversationTurn] = []
-    for row in rows:
-        events = await runs_repo.list_run_events(scope, session, row.id)
-        turns.append(
-            ConversationTurn(
-                run=_to_resource(row, positions.get(row.id)),
-                events=[_event_json(event) for event in events],
-            )
+    events_by_run = await runs_repo.list_run_events_for_runs(
+        scope, session, [row.id for row in rows]
+    )
+    turns = [
+        ConversationTurn(
+            run=_to_resource(row, positions.get(row.id)),
+            events=[_event_json(event) for event in events_by_run.get(row.id, [])],
         )
+        for row in rows
+    ]
     return ConversationResource(
         id=current.conversation_id,
         workspace_id=scope.workspace_id,
