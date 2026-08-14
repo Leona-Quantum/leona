@@ -1,7 +1,9 @@
 """Run, run-event, and verification-record repositories.
 
 run_events and verification_records carry no workspace_id; every access resolves
-the parent run under scope first. run_events is append-only (DB grant enforced).
+the parent run under scope first. run_events is append-only, enforced by a
+BEFORE UPDATE OR DELETE trigger (migration 0050) — see that migration's
+docstring for why the DB-grant approach in 0001 never worked.
 """
 
 import datetime as dt
