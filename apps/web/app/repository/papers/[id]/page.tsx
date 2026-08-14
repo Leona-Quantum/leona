@@ -7,6 +7,7 @@
 // collision fails the build rather than serving one paper at another's address.
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
+import { canonicalMetadata } from "../../../../lib/public-metadata";
 import { PublicSite } from "../../../../components/public-site";
 import { PaperView } from "../../../../components/repository-papers";
 import { getPublicLocale } from "../../../../lib/public-locale-server";
@@ -31,7 +32,11 @@ export async function generateMetadata({
   const paperId = paperIdFromSlug(id);
   const paper = paperId && PAPER_REGISTER.papers.find((row) => row.id === paperId);
   if (!paper) return { title: locale === "ja" ? "論文" : "Papers" };
-  return { title: paper.title, description: `${paper.authors} · ${paper.year}` };
+  return {
+    title: paper.title,
+    description: `${paper.authors} · ${paper.year}`,
+    ...canonicalMetadata(`/repository/papers/${id}`),
+  };
 }
 
 export default async function RepositoryPaperPage({

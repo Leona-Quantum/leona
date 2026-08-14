@@ -10,6 +10,7 @@
 // it says otherwise.
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
+import { canonicalMetadata } from "../../../../lib/public-metadata";
 import { PublicSite } from "../../../../components/public-site";
 import { LayerNodeView, LayerStateView } from "../../../../components/repository-layers";
 import { IDENTITY, formatViewport, parseViewport } from "../../../../lib/repository/canvas-viewport";
@@ -40,6 +41,7 @@ export async function generateMetadata({
     return {
       title: locale === "ja" ? node.labelJa : node.label,
       description: locale === "ja" ? node.summaryJa : node.summary,
+      ...canonicalMetadata(`/repository/layers/${id}`),
     };
   }
   const state = layerState(STATE_VOCABULARY, id);
@@ -47,6 +49,7 @@ export async function generateMetadata({
     return {
       title: locale === "ja" ? state.labelJa : state.label,
       description: locale === "ja" ? state.summaryJa : state.summary,
+      ...canonicalMetadata(`/repository/layers/${id}`),
     };
   }
   // The surface's own name, for an id that names neither a node nor a state —
