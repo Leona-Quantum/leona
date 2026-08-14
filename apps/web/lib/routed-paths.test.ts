@@ -43,7 +43,7 @@ function segmentsOnDisk(): Set<string> {
       //   1. Its pages set `dynamicParams = false`, so it answers only to the
       //      locales in `generateStaticParams`. Without that it would match
       //      every unknown URL and serve the home page instead of a 404 —
-      //      undoing #527, which exists because mistyped URLs used to land on
+      //      undoing the mistyped-URL fix, which exists because those URLs used to land on
       //      api.workos.com.
       //   2. Nothing reaches it by URL. `middleware.ts` rewrites `/pricing`
       //      into it and 308s `/en/pricing` back out, so `[locale]` contributes
