@@ -113,5 +113,19 @@ id = "generic-api-key"
     #    Anchored on the literal alphabet, A through Z in order. Nothing with
     #    real entropy can contain it, so this cannot suppress a genuine key.
     '''ABCDEFGHIJKLMNOPQRSTUVWXYZ''',
+
+    # 6. This codebase's own browser-storage key convention —
+    #    "majorana.<name>.v<n>" — assigned to a constant whose name ends in
+    #    `_KEY` (`lib/landing-prompt-handoff.ts`'s `HANDOFF_KEY`, and its
+    #    test's local copy of the same literal string). The hundred-plus keys
+    #    already living in this exact shape inside `lib/user-storage.ts`'s
+    #    `SCOPED_STORAGE_KEYS`/`DEVICE_STORAGE_KEYS` arrays never trip this
+    #    rule, because they sit as array elements rather than a bare
+    #    `IDENTIFIER = "value"` assignment — the shape `generic-api-key`
+    #    actually looks for. A single new one declared as its own named
+    #    constant does. Anchored the same way entry 1 is: a dotted,
+    #    low-entropy, `.vN`-suffixed identifier under this repo's own fixed
+    #    `majorana.` namespace — never a value any provider issues.
+    '''(?i)["']majorana\.[a-z0-9-]+\.v[0-9]+["']''',
   ]
 

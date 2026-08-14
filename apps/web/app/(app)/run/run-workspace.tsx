@@ -6,6 +6,7 @@ import { useEffect, useRef, useState } from "react";
 import { rememberChat } from "../../../lib/chat-history";
 import { titleFromPrompt } from "../../../lib/chat-title";
 import { artifactFromResource, type LibraryArtifact } from "../../../lib/library-data";
+import { consumeLandingPromptHandoff } from "../../../lib/landing-prompt-handoff";
 import type { PublicLocale } from "../../../lib/public-locale";
 import { WORKSPACE_COPY } from "../../../lib/workspace-locale";
 import {
@@ -93,6 +94,22 @@ export function RunWorkspace({ demoMode = false, locale = "en" }: { demoMode?: b
       setArtifactHydration("error");
     });
     return () => { active = false; };
+  }, []);
+
+  // Pre-fills from the landing page's composer (ai-ops 102), signed-out visitor
+  // → sign-in → straight back here with their own words already in the box —
+  // never auto-submitted; the owner's ruling was explicit that the person still
+  // presses run themselves. `?artifact=` above wins when both are present: it is
+  // a deliberate "view in Run" action, and a leftover landing prompt should
+  // never override an explicit one. Checked independently here rather than
+  // folded into the effect above because the two sources are unrelated (a URL
+  // param that starts an async fetch vs. a synchronous read of the visitor's
+  // own storage), and merging them would make the precedence harder to see, not
+  // easier.
+  useEffect(() => {
+    if (new URLSearchParams(window.location.search).get("artifact")) return;
+    const carried = consumeLandingPromptHandoff();
+    if (carried) setPrompt(carried);
   }, []);
 
   function addFiles(files: File[]) {
