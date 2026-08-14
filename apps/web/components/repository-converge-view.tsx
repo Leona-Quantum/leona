@@ -115,7 +115,14 @@ interface ConvergeCopy {
   heading: string;
   lede: string;
   ledeFan: string;
-  ledeOverview: string;
+  /**
+   * The unfocused overview's opening line. Takes the number of root figures
+   * actually drawn rather than spelling one into the sentence: the map grows
+   * as the corpus does — it drew four roots when this copy was written and
+   * seven by the time a reader counted them — and a numeral typed into a
+   * string is a claim that stops being true without anybody editing it.
+   */
+  ledeOverview: (roots: number) => string;
   grainStates: (interior: number) => string;
   grainMethods: (n: number, slot: string, folded: number) => string;
   truncatedNote: string;
@@ -217,8 +224,8 @@ const COPY: Record<"en" | "ja", ConvergeCopy> = {
       "Every circle is drawn once. Several ways of getting somewhere end on the same circle, and every way onward leaves from it — so a route you can take is any line in, followed by any line out, whether or not a paper has put those two together.",
     ledeFan:
       "Every circle is drawn once. This step has no smaller object recorded inside it, so the strands between its two circles are the recorded ways of taking it — one strand per method.",
-    ledeOverview:
-      "Four problems nothing else needs — the places a reader arrives. Open a line to see what is recorded inside it, or click its name to go there.",
+    ledeOverview: (roots: number) =>
+      `${roots} problem${roots === 1 ? "" : "s"} nothing else needs — the places a reader arrives. Open a line to see what is recorded inside it, or click its name to go there.`,
     grainStates: (interior: number) =>
       `The ${interior === 1 ? "circle" : `${interior} circles`} between the ends ${interior === 1 ? "is an object" : "are objects"} every way across passes through.`,
     // The drawn count must not impersonate the recorded count (s121, W17): a
@@ -274,7 +281,11 @@ const COPY: Record<"en" | "ja", ConvergeCopy> = {
     narrower: "Narrower kinds",
     noNarrower: "Nothing recorded is a narrower kind of this.",
     writeUp: "Read the full write-up",
-    back: "All four",
+    // Numberless on purpose. This label renders on a FOCUSED figure, where the
+    // overview's drawn-root count is not computed — laying out every root just
+    // to number a back link would be the expensive way to get a figure that
+    // goes stale anyway. The overview's own lede carries the live count.
+    back: "All the starting points",
     sizeLabel: "Size",
     sizeFit: "Back to the start",
     sizePercent: (n: number) => `${n}%`,
@@ -284,7 +295,7 @@ const COPY: Record<"en" | "ja", ConvergeCopy> = {
       `Of the routes that have been taken apart, ${delegated} are built entirely from named slots, ${partly} hand off part of the work and finish the rest themselves, and ${whole} are one undivided act. None of the three is a defect; they are different things to reuse.`,
     canvasLabel: (subject: string) =>
       `${subject} — drag to move the figure, pinch or ctrl-scroll to zoom, arrow keys to pan, 0 to reset`,
-    backToAtlas: "Back to the Atlas",
+    backToAtlas: "Back to the Quantum Atlas",
     openInfo: "About this map",
     closeInfo: "Close",
     expandAll: (n: number) =>
@@ -313,8 +324,8 @@ const COPY: Record<"en" | "ja", ConvergeCopy> = {
       "円はひとつずつ描かれます。ある場所に至る複数の道はすべて同じ円で終わり、そこから先へ向かう道はすべてその円から出ます。したがって、入る線と出る線の任意の組み合わせが、たどりうる経路になります。論文がその二つを結びつけているかどうかとは無関係です。",
     ledeFan:
       "円はひとつずつ描かれます。この工程の内側により小さな対象は記録されていないため、二つの円のあいだの帯は、この工程を行う記録された手法そのものです。手法ひとつにつき一本です。",
-    ledeOverview:
-      "他のどの手法からも必要とされない四つの問題 — 読者が最初に立つ場所です。線をクリックすると内側が開き、名前をクリックするとそこへ移動します。",
+    ledeOverview: (roots: number) =>
+      `他のどの手法からも必要とされない ${roots} 個の問題 — 読者が最初に立つ場所です。線をクリックすると内側が開き、名前をクリックするとそこへ移動します。`,
     grainStates: (interior: number) =>
       `両端のあいだにある ${interior} 個の円は、どの道を通っても必ず経由する対象です。`,
     grainMethods: (n: number, slot: string, folded: number) =>
@@ -362,7 +373,7 @@ const COPY: Record<"en" | "ja", ConvergeCopy> = {
     narrower: "より狭い種類",
     noNarrower: "これより狭い種類として記録されているものはありません。",
     writeUp: "解説を全文読む",
-    back: "四つすべて",
+    back: "出発点すべて",
     sizeLabel: "表示倍率",
     sizeFit: "最初の位置に戻す",
     sizePercent: (n: number) => `${n}%`,
@@ -372,7 +383,7 @@ const COPY: Record<"en" | "ja", ConvergeCopy> = {
       `分解されている経路のうち、${delegated} 件は名前のついた枠だけで構成され、${partly} 件は一部を枠に委ね残りを自身で行い、${whole} 件は分けられないひとつの作業です。いずれも欠陥ではなく、再利用の単位が違うということです。`,
     canvasLabel: (subject: string) =>
       `${subject} — ドラッグで移動、ピンチまたは ctrl+スクロールで拡大縮小、矢印キーで移動、0 で元に戻ります`,
-    backToAtlas: "アトラスに戻る",
+    backToAtlas: "量子アトラスに戻る",
     openInfo: "この地図について",
     closeInfo: "閉じる",
     expandAll: (n: number) => `開ける線 ${n} 本をすべて開く`,
@@ -799,7 +810,7 @@ export function ConvergeView({
   const label = (item: { label: string; labelJa: string }) =>
     lang === "ja" ? item.labelJa : item.label;
 
-  // Unfocused, this draws the four roots — the map's overview, which converge
+  // Unfocused, this draws every root — the map's overview, which converge
   // never had. It used to fall back to `candidates[0]`, which showed a reader
   // arriving at the page one arbitrary slot and no way to tell it was arbitrary.
   // IDENTITY is the default, so omitting it keeps a bare `/repository/layers`
@@ -1039,10 +1050,10 @@ export function ConvergeView({
   // cannot come to different answers about what "open" means.
   //
   // **Union across the drawn figures, not the focused one.** Unfocused this
-  // page draws four roots and hands one `?open=` set to all of them; a set
+  // page draws every root and hands one `?open=` set to all of them; a set
   // built from `focus` alone would open everything on one figure and nothing on
-  // the other three. Addresses carry their subject's id as a prefix, so the
-  // four sets are disjoint by construction (`addressRoot`).
+  // the rest. Addresses carry their subject's id as a prefix, so the per-root
+  // sets are disjoint by construction (`addressRoot`).
   //
   // Drawn figures and not every subject, because `drawn` is what `collapsed`
   // below is summed over and the two have to be about the same picture.
@@ -1333,7 +1344,7 @@ export function ConvergeView({
         <h1 id="converge-heading">{copy.heading}</h1>
         <p className="mj-strand-lede">
           {!focus
-            ? copy.ledeOverview
+            ? copy.ledeOverview(drawn.length)
             : first && !first.empty && first.grain === "methods"
               ? copy.ledeFan
               : copy.lede}
@@ -1399,7 +1410,7 @@ export function ConvergeView({
             {drawn.map((figure) => (
               <div key={figure.subject.id}>
                 {/* Which figure this list is of. Only when there is more than
-                    one: the unfocused surface draws all four roots, and four
+                    one: the unfocused surface draws every root, and several
                     ordered lists in a row under one heading is a reading that
                     cannot be followed — this is the reading a screen reader and
                     a printout get, so it is the one that must not be
@@ -1416,12 +1427,12 @@ export function ConvergeView({
             {/* Only when one figure is drawn.
 
                 `shared` and `unpublishedCount` come from the first figure, and
-                on the unfocused overview there are four — so this stated the
+                on the unfocused overview there are several — so this stated the
                 shared circles and the unpublished count of one root as facts
                 about the page. A count over a mixed population names no
                 problem: the sentence was true of `drawn[0]` and false of what
                 the reader was looking at. `collapsedCount` above is aggregated
-                across all four because it can be; these two cannot, because "2
+                across every root because it can be; these two cannot, because "2
                 ways arrive at Linear ODE system" is a fact about one figure. */}
             {focus && first ? (
               <ul className="mj-converge-facts">

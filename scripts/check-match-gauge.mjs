@@ -124,7 +124,7 @@ const anchorAudit = auditAnchors(
 // every reveal. `paperRevealFor` returning null is the honest "this paper's
 // cited nodes draw nowhere" — it is a real state, not an error, and it is the
 // numerator's complement rather than something to skip.
-const traces = paperTraces(LAYER_GRAPH);
+const traces = paperTraces(LAYER_GRAPH, STATE_VOCABULARY);
 const unrevealed = [];
 let revealing = 0;
 let undrawnTotal = 0;

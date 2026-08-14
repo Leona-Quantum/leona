@@ -571,6 +571,155 @@ export const LAYER_GRAPH: LayerGraph = {
   },
   {
     kind: "capability",
+    id: "spatial-discretization",
+    label: "Replace a spatial domain with a finite grid",
+    labelJa: "空間領域を有限の格子に置き換える",
+    shortLabel: "Discretize space",
+    shortLabelJa: "空間を離散化する",
+    summary: "Approximate the spatial derivatives of a PDE on finitely many points, leaving time continuous, so that what remains is a system of ordinary differential equations in the grid values. The method of lines: the continuum is gone, the clock is not.",
+    summaryJa: "偏微分方程式の空間微分を有限個の点の上で近似し、時間は連続なまま残すことで、格子上の値についての常微分方程式系を得ます。いわゆる線の方法であり、連続体は消えても時計は残ります。",
+    contract: {
+      from: "pde-problem",
+      to: "linear-ivp",
+
+      takes: "A linear PDE with its initial and boundary conditions, a domain, a lattice spacing or basis size, and a smoothness assumption on the exact solution — the truncation bound is derived by Taylor expansion and is only valid to the order the solution is differentiable.",
+      takesJa: "線形偏微分方程式と、その初期条件・境界条件、領域、格子間隔または基底のサイズ、そして厳密解の滑らかさについての仮定。打ち切り誤差の評価は Taylor 展開から導かれるため、解が微分可能な階数までしか有効ではありません。",
+      returns: "A generator A acting on the vector of grid values, an initial vector, and the truncation error the replacement cost — stated as a power of the lattice spacing, which is the term that fixes how fine the grid has to be.",
+      returnsJa: "格子上の値のベクトルに作用する生成子 A、初期ベクトル、そして置き換えの代価である打ち切り誤差。誤差は格子間隔のべきとして表され、格子をどこまで細かくすべきかを決めるのはこの項です。",
+    },
+    whyALayer: "The choice made here is not which grid but which approximation of the derivative — concretely, the three-point second-order stencil against a higher-order one, which is the difference between the two methods drawn below. The competing answers trade against each other rather than dominating. A low-order stencil touches few neighbours, so the generator stays sparse and every downstream simulation cost — which is charged in sparsity — stays low, and the truncation error falls only as the square of the spacing. A high-order stencil buys error falling as a much higher power of the spacing and pays for it in a denser generator, which Costa, Jordan and Ostrander state outright as the trade: better error scaling comes 'at the cost of simulating more complex (less sparse) Hamiltonians'. Which side of that trade wins depends on the smoothness of the solution, because a high-order discretization is only justified if the exact solution has the derivatives its Taylor expansion assumes. So a reader standing here is choosing between sparsity and grid size under a regularity assumption they have to make explicit, and no theorem settles it for them.",
+    whyALayerJa: "ここで選ぶのはどの格子かではなく、微分をどう近似するかであり、競合する答えは互いを圧倒するのではなく引き換えの関係にあります。低次のステンシルは近傍を少数しか参照しないため生成子は疎に保たれ、疎性で課金される下流のシミュレーション費用はすべて低く抑えられますが、打ち切り誤差は格子間隔の 2 乗でしか小さくなりません。高次のステンシルは、はるかに高いべきで小さくなる誤差を買い、その代価を生成子の密度で支払います。Costa・Jordan・Ostrander はこの引き換えを明言しており、誤差のスケーリングの改善は「より複雑な（疎性の低い）ハミルトニアンをシミュレートする代価を伴って」得られるとしています。どちらが有利かは解の滑らかさに依存します。高次の離散化が正当化されるのは、厳密解が Taylor 展開の前提とする階数の微分をもつ場合に限られるからです。したがってここに立つ読み手は、明示せざるをえない正則性の仮定のもとで、疎性と格子の細かさのあいだを選ぶことになり、それを決めてくれる定理はありません。",
+  },
+  {
+    kind: "method",
+    id: "graph-laplacian-discretization",
+    label: "Graph-Laplacian finite differences",
+    labelJa: "グラフラプラシアンによる差分",
+    summary: "Discretize the domain onto a lattice and read the discrete Laplacian off the resulting graph: off-diagonal entries minus one between neighbours, each diagonal entry the degree of its vertex. Higher-order stencils are obtained by factorizing the operator through hypergraph incidence matrices, which is what lets the error fall faster than the second power of the spacing while keeping a form a simulator can consume.",
+    summaryJa: "領域を格子に離散化し、得られたグラフから離散ラプラシアンを読み取ります。隣接する頂点間の非対角成分は −1 であり、各対角成分はその頂点の次数です。より高次のステンシルは、この作用素をハイパーグラフの接続行列を通して分解することで得られます。これにより、シミュレータが扱える形を保ったまま、誤差を格子間隔の 2 乗より速く小さくできます。",
+    realizes: "spatial-discretization",
+    // **Narrower than the slot promises, and the paper says so outright.** The
+    // slot returns a linear generator; this route returns a Hermitian one,
+    // because the construction factorises the discrete Laplacian as $BB^\dagger$
+    // and assembles the block form $H = \frac{1}{a}[[0, B],[B^\dagger, 0]]$,
+    // "which by construction is Hermitian independent of the specific choice of
+    // matrix B". Recording the narrowing is not decoration: `hermitian-generator`
+    // specializes `hamiltonian-access` as well as `linear-ivp`, so this is the
+    // hop that lets the route reach a simulator directly — which is exactly what
+    // the paper then does, handing Eq. (5) to sparse Hamiltonian simulation
+    // rather than to any ODE solver. Without it the map would record a route
+    // whose own source contradicts it.
+    contract: {
+      from: "pde-problem",
+      to: "hermitian-generator",
+
+      takes: "The wave equation on a region, a lattice spacing, and Dirichlet or Neumann conditions on the boundary — including the boundary of a scatterer, which is modelled as removed lattice points.",
+      takesJa: "領域上の波動方程式、格子間隔、そして境界における Dirichlet 条件または Neumann 条件。散乱体の境界も含みます。散乱体は格子点を取り除いたものとして表されます。",
+      returns: "A Hermitian generator on the direct sum of the vertex and edge spaces, whose square is the discrete Laplacian, together with the truncation error of the stencil that built it.",
+      returnsJa: "頂点空間と辺空間の直和の上のエルミート生成子であり、その 2 乗が離散ラプラシアンになります。あわせて、それを組み立てたステンシルの打ち切り誤差を伴います。",
+    },
+    conditions: "The truncation bound assumes the exact solution has the derivatives the stencil's Taylor expansion uses: Costa, Jordan and Ostrander state that a discretization with error $O(a^k)$ of an $m$-th derivative 'is only justified if the exact solution is $(k+m)$-times differentiable'. A scatterer is modelled as removed lattice points, and the presence of one breaks translational invariance, so the Laplacian can no longer simply be diagonalized by a Fourier transform. The hypergraph incidence-matrix factorizations the higher orders rest on are, in the authors' own words, not known to appear elsewhere in the literature.",
+    conditionsJa: "打ち切り誤差の評価は、厳密解がステンシルの Taylor 展開で用いる階数の微分をもつことを前提とします。Costa・Jordan・Ostrander は、$m$ 階微分に対する誤差 $O(a^k)$ の離散化は「厳密解が $(k+m)$ 回微分可能である場合にのみ正当化される」と述べています。散乱体は格子点を取り除いたものとして表され、散乱体があると並進対称性が破れるため、ラプラシアンはもはや Fourier 変換で単純に対角化できません。高次の構成が依拠するハイパーグラフ接続行列による分解は、著者ら自身の言によれば、他の文献には見当たらないものです。",
+    // **Deliberately stops short of the paper's T-resolved figure, and that is
+    // ai-ops#58 rather than caution.** §8 continues: over evolution time $T$ the
+    // accumulated error is of order $a^k T$, resolving to $T a^{2(s/D)-2}$. That
+    // sentence carries two claims at two levels — the subordinate clause is about
+    // the stencil and belongs on this card, the main clause is about running the
+    // whole algorithm for a time $T$ and belongs at the whole algorithm. This map
+    // has no node for that algorithm, so the figure has nowhere honest to live and
+    // is omitted rather than borrowed downward.
+    //
+    // Caught in review by `regions`, who put the reason better than the rule does:
+    // a whole-algorithm figure sitting on a part is the half of #58 no checker can
+    // see. Do not restore it here without a whole-algorithm node to move it to.
+    cost: "Costa, Jordan and Ostrander give the truncation error of the second-order stencil as $O(a^2)$ at finite lattice spacing $a$, and generalise it: a $k$-th order Laplacian gives truncation errors of order $a^k$. The order is not free of what the stencil feeds — a $D$-dimensional Laplacian of order $k$ has a $D(k/2+1)$-sparse incidence matrix, so an $s$-sparse Hamiltonian corresponds to $k = 2(s/D) - 2$, which is the order-against-sparsity trade in the form the paper states it.",
+    costJa: "Costa・Jordan・Ostrander は、2 次のステンシルの打ち切り誤差を、有限の格子間隔 $a$ において $O(a^2)$ と与え、さらに一般化しています。$k$ 次のラプラシアンは $a^k$ の位数の打ち切り誤差を与えます。この次数は、ステンシルが供給する先と無関係ではありません。$k$ 次の $D$ 次元ラプラシアンの接続行列は $D(k/2+1)$ 疎であり、$s$ 疎なハミルトニアンは $k = 2(s/D) - 2$ に対応します。これが、論文の述べる形での次数と疎性の引き換えです。",
+    steps: [],
+    atomic: true,
+    entries: ["wave-equation-simulation"],
+    citations: [
+      { title: "Quantum Algorithm for Simulating the Wave Equation", authors: "Pedro C.S. Costa, Stephen Jordan, Aaron Ostrander", year: "2017", url: "https://arxiv.org/abs/1711.05394" },
+    ],
+  },
+  {
+    kind: "method",
+    id: "central-difference-semidiscretization",
+    label: "Central differences, space only",
+    labelJa: "中心差分による空間のみの離散化",
+    summary: "Replace each second spatial derivative by the three-point central difference on a uniform grid and leave the time derivative alone. What comes out is the plainest form the method of lines takes: one generator, assembled from a single stencil repeated at every interior point, acting on the vector of grid values.",
+    summaryJa: "一様格子の上で、各 2 階空間微分を 3 点の中心差分で置き換え、時間微分にはいっさい手を触れません。得られるのは線の方法が取りうる最も素朴な形であり、内部の各点で同一のステンシルを繰り返して組み立てた 1 個の生成子が、格子上の値のベクトルに作用します。",
+    realizes: "spatial-discretization",
+    conditions: "Linden, Montanaro and Shao derive the stencil from Taylor's theorem with remainder and require the solution to be four times differentiable in space for the bound to hold. Their analysis fixes the fourth spatial derivatives by assumption rather than reading them off the problem, and they note the constraint applies to the solution of the heat equation rather than to the initial condition — though a bound on the initial condition implies one at later times, because the discrete time-evolution operator cannot increase the infinity norm and commutes with the discretized partial-derivative operators.",
+    conditionsJa: "Linden・Montanaro・Shao はこのステンシルを剰余項つきの Taylor の定理から導いており、評価が成り立つには解が空間について 4 回微分可能であることを要求します。彼らの解析は 4 階空間微分を問題から読み取るのではなく仮定によって固定しており、この制約は初期条件ではなく熱方程式の解に課されるものだと注記しています。ただし初期条件に対する評価は後の時刻での評価を含意します。離散的な時間発展作用素は無限大ノルムを増加させず、離散化された偏微分作用素と可換だからです。",
+    cost: "Linden, Montanaro and Shao's Eq. (9) bounds the second-derivative stencil itself: the difference from the exact derivative is at most $\\frac{h^2}{12}\\sup_x |d^4u/dx^4(x)|$ at spacing $h$. Applied to the heat equation and stated in their Appendix A, discretizing only the spatial variables gives the ODE system $d\\tilde{u}/dt = (\\alpha/\\Delta x^2) A\\tilde{u}$, whose generator is a sum of $d$ tensor factors of one circulant $n \\times n$ matrix, has sparsity $\\Theta(d)$, and carries eigenvalues $\\lambda_j = -4\\sin^2(j\\pi/n)$ so that $\\lVert A\\rVert = 4\\alpha d/\\Delta x^2$.",
+    costJa: "Linden・Montanaro・Shao の式 (9) はステンシルそのものを評価します。間隔 $h$ において、厳密な 2 階微分とのずれは高々 $\\frac{h^2}{12}\\sup_x |d^4u/dx^4(x)|$ です。熱方程式に適用して付録 A に述べられているとおり、空間変数のみを離散化すると常微分方程式系 $d\\tilde{u}/dt = (\\alpha/\\Delta x^2) A\\tilde{u}$ が得られます。その生成子は 1 個の巡回 $n \\times n$ 行列の $d$ 個のテンソル因子の和であり、疎性は $\\Theta(d)$、固有値は $\\lambda_j = -4\\sin^2(j\\pi/n)$ であって $\\lVert A\\rVert = 4\\alpha d/\\Delta x^2$ となります。",
+    steps: [],
+    atomic: true,
+    citations: [
+      { title: "Quantum vs. classical algorithms for solving the heat equation", authors: "Noah Linden, Ashley Montanaro, Changpeng Shao", year: "2020", url: "https://arxiv.org/abs/2004.06516" },
+    ],
+  },
+  {
+    kind: "capability",
+    id: "full-discretization",
+    label: "Discretize a PDE into one linear system",
+    labelJa: "偏微分方程式を単一の線形方程式系に離散化する",
+    shortLabel: "Discretize to a linear system",
+    shortLabelJa: "線形系へ離散化する",
+    summary: "Replace every continuous variable at once — space together with time, or space together with velocity — so that the whole problem becomes a single matrix equation. Nothing is left to march: the grid values at every recorded point are unknowns of one system, solved in one go.",
+    summaryJa: "連続な変数をすべて一度に置き換えます。空間と時間、あるいは空間と速度をまとめて離散化し、問題全体を単一の行列方程式にします。前進させるべきものは残りません。記録されるすべての点における格子上の値が 1 つの系の未知数となり、一度に解かれます。",
+    contract: {
+      from: "pde-problem",
+      to: "linear-system",
+
+      takes: "A linear PDE with its conditions, a grid over every continuous variable the problem carries, and — where the problem is posed as a boundary-value problem rather than an initial-value one — the boundary treatment that makes the resulting matrix well posed.",
+      takesJa: "線形偏微分方程式とその条件、問題がもつすべての連続変数にわたる格子、そして問題が初期値問題ではなく境界値問題として提示されている場合には、得られる行列を適切に定める境界の扱い。",
+      returns: "One matrix and one right-hand side over all the grid unknowns together, with the condition number that the cost of solving it will be measured against, and the discretization error that fixes how fine the grid had to be.",
+      returnsJa: "すべての格子上の未知数をまとめた 1 つの行列と 1 つの右辺。求解の計算量が基準とする条件数と、格子をどこまで細かくすべきかを決める離散化誤差を伴います。",
+    },
+    whyALayer: "This is a different act from discretizing space and then discretizing time, and the clearest case is the one where that composition is not merely a different reading but unavailable. Novikau, Dodin and Startsev have no time axis to discretize at all: their problem is posed at a fixed drive frequency as a boundary-value problem, so what they grid is space and velocity, the matrix that comes out is the answer rather than a propagator, and there is no time-discretization step for a composition to pass through. Linden, Montanaro and Shao point the same way from the other side, though less decisively: their forward-time centre-space scheme produces one block system over every timestep at once, and its condition number is a property of that whole system rather than of either stage. What competes here is which continuous variables get replaced together, and the choice is forced by how the problem was posed rather than by a preference — which is why a reader arriving with a boundary-value problem cannot use the method of lines at all.",
+    whyALayerJa: "これは空間を離散化してから時間を離散化する行為とは別のものであり、そう合成として扱えば、いずれの文献ももたない二段構造をそれらに帰することになります。Linden・Montanaro・Shao の前進時間・中心空間の格子は、すべての時間ステップにわたるブロック系を一度に生成し、その条件数はどちらかの段階ではなく系全体の性質です。Novikau・Dodin・Startsev には離散化すべき時間軸がそもそもありません。彼らの問題は固定した駆動周波数のもとで提示されるため、格子を張るのは空間と速度であり、得られる行列は伝播子ではなく答えそのものです。ここで競うのはどの連続変数をまとめて置き換えるかであり、その選択は好みではなく問題の提示のされ方によって強制されます。境界値問題を携えて到着した読み手が線の方法をそもそも使えないのは、そのためです。",
+  },
+  {
+    kind: "method",
+    id: "ftcs-discretization",
+    label: "Forward-time, centre-space (FTCS)",
+    labelJa: "前進時間・中心空間（FTCS）",
+    summary: "Take the forward difference in time and the three-point central difference in space, then stack the resulting one-step relations for every timestep into a single block lower-bidiagonal system whose unknowns are the grid values at all recorded times together.",
+    summaryJa: "時間について前進差分、空間について 3 点の中心差分を取り、各時間ステップについて得られる 1 ステップの関係式を積み上げて、記録されるすべての時刻における格子上の値をまとめて未知数とする単一のブロック下二重対角系にします。",
+    realizes: "full-discretization",
+    conditions: "Stability requires the step sizes to satisfy $\\Delta t \\le \\Delta x^2/(2d\\alpha)$, which is exactly the condition under which Linden, Montanaro and Shao's one-step operator is stochastic — and the whole error argument runs through that stochasticity, because it is what stops earlier errors being amplified as the march proceeds. Under that choice the one-step operator is precisely a simple random walk on the grid, which is the observation their fastest classical and quantum algorithms are built on. The bound also assumes the solution's fourth spatial derivatives are bounded.",
+    conditionsJa: "安定性のために刻み幅は $\\Delta t \\le \\Delta x^2/(2d\\alpha)$ を満たす必要があり、これはまさに Linden・Montanaro・Shao の 1 ステップ作用素が確率行列となる条件です。誤差の議論全体がその確率性を経由します。行進が進むにつれて前段の誤差が増幅されるのを止めているのが、それだからです。この選択のもとで 1 ステップ作用素はちょうど格子上の単純ランダムウォークになり、彼らの最速の古典アルゴリズムと量子アルゴリズムはいずれもこの観察の上に建てられています。評価はさらに、解の 4 階空間微分が有界であることを仮定します。",
+    cost: "Linden, Montanaro and Shao's Theorem 1 bounds the discretization error outright: for $\\Delta t \\le \\Delta x^2/(2d\\alpha)$, $\\lVert \\tilde{u} - u\\rVert_\\infty \\le \\frac{\\zeta\\alpha d T}{L^d}\\left(\\frac{\\alpha d \\Delta t}{2} + \\frac{\\Delta x^2}{12}\\right)$. Their Corollary 2 inverts it into the grid a target accuracy demands — $\\Delta t = 3\\epsilon/(2d^2\\alpha^2\\zeta T)$ and $\\Delta x = \\sqrt{3\\epsilon/(d\\alpha\\zeta T)}$, giving $m = 2T^2d^2\\alpha^2\\zeta/(3\\epsilon)$ timesteps and $n = L\\sqrt{d\\alpha\\zeta T/(3\\epsilon)}$ points per dimension. Their Theorem 3 gives the condition number of the assembled system as $\\Theta(m)$, with $\\lVert A\\rVert = \\Theta(1)$ and $\\lVert A^{-1}\\rVert = \\Theta(m)$.",
+    costJa: "Linden・Montanaro・Shao の定理 1 は離散化誤差を直接に評価します。$\\Delta t \\le \\Delta x^2/(2d\\alpha)$ のもとで $\\lVert \\tilde{u} - u\\rVert_\\infty \\le \\frac{\\zeta\\alpha d T}{L^d}\\left(\\frac{\\alpha d \\Delta t}{2} + \\frac{\\Delta x^2}{12}\\right)$ です。系 2 はこれを逆に解き、目標精度が要求する格子を与えます。$\\Delta t = 3\\epsilon/(2d^2\\alpha^2\\zeta T)$、$\\Delta x = \\sqrt{3\\epsilon/(d\\alpha\\zeta T)}$ であり、時間ステップ数は $m = 2T^2d^2\\alpha^2\\zeta/(3\\epsilon)$、各次元あたりの点数は $n = L\\sqrt{d\\alpha\\zeta T/(3\\epsilon)}$ になります。定理 3 は組み上がった系の条件数を $\\Theta(m)$ と与え、$\\lVert A\\rVert = \\Theta(1)$、$\\lVert A^{-1}\\rVert = \\Theta(m)$ としています。",
+    steps: [],
+    atomic: true,
+    entries: ["heat-equation-solver"],
+    citations: [
+      { title: "Quantum vs. classical algorithms for solving the heat equation", authors: "Noah Linden, Ashley Montanaro, Changpeng Shao", year: "2020", url: "https://arxiv.org/abs/2004.06516" },
+    ],
+  },
+  {
+    kind: "method",
+    id: "phase-space-discretization",
+    label: "Phase-space grid for a boundary-value problem",
+    labelJa: "境界値問題のための位相空間格子",
+    summary: "Grid the position and velocity coordinates together and take central differences in both, with the derivatives at the edges obtained from Lagrange interpolating polynomials. Because the problem is posed at a fixed drive frequency rather than as an evolution, what results is directly the matrix equation to be solved — there is no time axis left to march along.",
+    summaryJa: "位置と速度の座標をまとめて格子化し、その双方で中心差分を取ります。端点での微分は Lagrange 補間多項式から得ます。問題が時間発展としてではなく固定した駆動周波数のもとで提示されているため、得られるのは解くべき行列方程式そのものです。行進すべき時間軸はもはや残っていません。",
+    realizes: "full-discretization",
+    conditions: "Outgoing, non-reflecting boundary conditions are imposed at both spatial edges to avoid artifacts from reflected waves, and an artificial diffusivity $\\eta$ is imposed in velocity space so that the grid resolution can be kept low. Novikau, Dodin and Startsev are explicit that the diffusivity is not free: it complicates the block-encoding and increases the condition number of the resulting matrix. Their scheme is validated against an analytical solution for homogeneous plasma only, and they describe the system as a minimal problem chosen as a testbed rather than a practical application.",
+    conditionsJa: "反射波による人工的な効果を避けるため、両方の空間端で外向き（無反射）境界条件を課し、格子の解像度を低く保てるように速度空間で人工的な拡散 $\\eta$ を導入します。Novikau・Dodin・Startsev は、この拡散が無償ではないことを明言しています。ブロックエンコーディングを複雑にし、得られる行列の条件数を増加させます。この格子は一様プラズマに対する解析解との比較でのみ検証されており、著者らはこの系を実用的な応用ではなく試験台として選んだ最小の問題だと述べています。",
+    cost: "The paper states the price of the diffusivity as measured condition numbers at one resolution rather than as a general bound: at $n_x = 7$, $n_v = 5$ and $\\omega = 1.2$, the matrix has $\\kappa_A = 8.844 \\times 10^4$ with $\\eta = 0.002$ against $\\kappa_A = 3.489 \\times 10^4$ without it. No bound on the discretization error itself is stated, and none is recorded here.",
+    costJa: "この論文は拡散の代価を、一般的な上界としてではなく、ある解像度で測定した条件数として述べています。$n_x = 7$、$n_v = 5$、$\\omega = 1.2$ において、$\\eta = 0.002$ のとき行列は $\\kappa_A = 8.844 \\times 10^4$、拡散を入れないときは $\\kappa_A = 3.489 \\times 10^4$ です。離散化誤差そのものについての評価は述べられておらず、ここにも記録していません。",
+    steps: [],
+    atomic: true,
+    entries: ["linear-kinetic-plasma-encoding"],
+    citations: [
+      { title: "Encoding of linear kinetic plasma problems in quantum circuits via data compression", authors: "Ivan Novikau, Ilya Y. Dodin, Edward A. Startsev", year: "2024", url: "https://arxiv.org/abs/2403.11989" },
+    ],
+  },
+  {
+    kind: "capability",
     id: "nonlinear-linear-embedding",
     label: "Embed a nonlinear system into a linear one",
     labelJa: "非線形系を線形系に埋め込む",
@@ -1119,7 +1268,17 @@ export const LAYER_GRAPH: LayerGraph = {
     // pointing at it, so a reader arriving from the catalog could not reach the
     // region at all — the parity gap measured from the other side by
     // `scripts/check-zoo-parity.mjs`.
-    entries: ["linear-differential-equations"],
+    //
+    // `wave-equation-simulation` added session 15. Costa, Jordan and Ostrander
+    // write the discretised wave equation as a genuine linear ODE system on the
+    // enlarged vertex-plus-edge space — their eq. (5), $d/dt[\phi_V;\phi_E]$ against
+    // an anti-Hermitian generator — and then simulate it: "Simulating the time
+    // evolution according to (5) can be achieved using state of the art quantum
+    // algorithms for simulating the dynamics induced by general sparse
+    // Hamiltonians" (§2). That is this slot's second family exactly, the one that
+    // never assembles a linear system. Anchored at the capability rather than at
+    // `schrodingerisation`, whose node cites a different paper.
+    entries: ["linear-differential-equations", "wave-equation-simulation"],
     whyALayer: "This is the pivot of the cluster. Methods fulfilling it split into two structurally different families: those that assemble one large linear system and call a quantum linear solver, and those that never form a linear system at all, reducing instead to Hamiltonian simulation or to repeated singular value amplification. The two families differ in how many queries they make to the initial-state preparation oracle, and that difference is structural rather than a matter of constants — when the initial state is expensive to prepare, it dominates the end-to-end cost.",
     whyALayerJa: "この層が全体の分岐点です。ここを満たす手法は、構造的に二つの系統に分かれます。ひとつは大きな線形系をまとめて組み立てて量子線形ソルバーを呼ぶもの、もうひとつは線形系をそもそも作らず、ハミルトニアンシミュレーションや特異値増幅の反復に帰着させるものです。両者は初期状態準備オラクルへのクエリ数が定数倍ではなく構造的に異なり、初期状態の準備が高価な場合には、その差が全体の費用を支配します。",
   },
@@ -3940,6 +4099,16 @@ export const LAYER_GRAPH: LayerGraph = {
     // block-encode → prepare → matrix-function and differed only in decoration,
     // because the hop could only name the slot they share.
     via: { "matrix-function": "qsvt-transform" },
+    // **And which polynomial goes through it** — ai-ops#51's third kind of thing
+    // a label can hold. The pin above says QSVT and so does
+    // `eigenstate-filtering-inversion`'s, so with the pins alone the two drew one
+    // identical picture and the map could not say why they are different
+    // methods. What separates them is the polynomial, which is neither a node nor
+    // a way through one, and authoring a node for it would put this paper on the
+    // map a second time. Read off the `summary` clause quoted above, cut to a
+    // mark — never composed to make the two pictures differ.
+    spec: { "matrix-function": "an odd polynomial in 1/x" },
+    specJa: { "matrix-function": "スケールした 1/x の奇多項式" },
     // Transcribed from `summary`, `conditions` and the `repeats` note. The
     // subnormalisation sentence is the reason this listing is worth having:
     // `conditions` says what the transform produces is (δ/2)·A⁺ and therefore
@@ -4617,6 +4786,13 @@ export const LAYER_GRAPH: LayerGraph = {
     // partition, and it is the same clause its `discrete-adiabatic-inversion`
     // sibling names when it says it does the opposite.
     via: { "matrix-function": "qsvt-transform" },
+    // The pin carries "apply it through quantum signal processing"; this carries
+    // the half of the same sentence it could not — "the minimax-optimal
+    // polynomial that is 1 at a target eigenvalue and uniformly small outside a
+    // spectral gap". See `qsvt-matrix-inversion` for the twin the two pins made
+    // together and which this splits (ai-ops#51).
+    spec: { "matrix-function": "a minimax eigenstate filter" },
+    specJa: { "matrix-function": "ミニマックス固有状態フィルタ" },
     bypasses: ["success-amplification"],
     // The two action lines at the end are `summary`: "Construct the
     // minimax-optimal polynomial that is 1 at a target eigenvalue and uniformly
@@ -4821,6 +4997,19 @@ export const LAYER_GRAPH: LayerGraph = {
     id: "qsvt-transform",
     label: "Quantum singular value transformation",
     labelJa: "量子特異値変換",
+    // **A short form, because a specification now shares this label's column.**
+    // `labelCap`'s own note says how this is meant to go — *"attempt to make each
+    // label shorter, then the width cap"* — and the cap bit for the first time
+    // when `qsvt-matrix-inversion` began drawing *"Quantum singular value
+    // transformation, an odd polynomial in 1/x"* (394px against a 300px cap) and
+    // the canvas cut it to *"…an odd…"*. Shortening the name is what buys the
+    // room, not cutting the distinction the spec exists to draw.
+    //
+    // "QSVT" in both locales because the corpus already writes it in both —
+    // `qsvt-matrix-inversion` is labelled "QSVT matrix inversion" and
+    // "QSVT による行列の反転". This is the established short form, not a new coinage.
+    shortLabel: "QSVT",
+    shortLabelJa: "QSVT",
     summary: "Interleave the block-encoding $U$, its inverse, and projector-controlled phase shifts $e^{iφ(2Π-I)}$ so that the designated block becomes $P$ applied to the singular values of $A$. The phase sequence is the compiled form of the polynomial, and a single ancilla qubit carries the phase shifts.",
     summaryJa: "ブロック符号化 $U$、その逆、そして射影子で制御される位相シフト $e^{iφ(2Π-I)}$ を交互に並べ、指定ブロックが $A$ の特異値に $P$ を適用した形になるようにします。位相列は多項式をコンパイルした形であり、位相シフトは 1 つの補助量子ビットが担います。",
     realizes: "matrix-function",
@@ -5756,6 +5945,17 @@ export const LAYER_GRAPH: LayerGraph = {
       returns: "A unitary U on s+a qubits, its subnormalization α, and its ancilla/flag count a. Because ||U|| = 1, Gilyén, Su, Low and Wiebe's Definition 43 forces ||A|| ≤ α + ε.",
       returnsJa: "s+a 量子ビット上のユニタリ U、その副正規化係数 α、およびアンシラ（フラグ）数 a。||U|| = 1 であるため、Gilyén–Su–Low–Wiebe の Definition 43 により ||A|| ≤ α + ε が課されます。",
     },
+    // `linear-kinetic-plasma-encoding` added session 15, and it is a cross-link to
+    // this slot rather than to a solver on purpose. Novikau and Joseph stop at the
+    // encoding by their own statement: the plasma problem is "cast in the form of a
+    // linear vector equation $A\psi = b$ to be solved by using the quantum signal
+    // processing algorithm... We propose how to encode $A$ in a circuit in a
+    // compressed form" (abstract), and "The presentation of the rest of the
+    // algorithm and (emulation of) quantum simulations are left to the future work"
+    // (§1). Anchoring it to a differential-equation solver would have claimed the
+    // solve the paper explicitly defers — and it is not an initial-value problem at
+    // all, but a frequency-domain boundary-value problem.
+    entries: ["linear-kinetic-plasma-encoding"],
     whyALayer: "Downstream query counts are linear in $\\alpha$, so the same matrix encoded two different ways can differ in end-to-end cost by orders of magnitude: $\\alpha = 1$ for a purified density operator, $||c||_1$ for a Pauli LCU, $sqrt(s_r·s_c)$ for sparse access under $|a_ij| \\leq 1$, and $2^n$ for FABLE. Comparing two block-encodings without comparing their $\\alpha$ says nothing. This is also where an exponential advantage most often dies quietly, because a construction that needs $\\Omega(N)$ gates to build $U$ erases whatever the solver above it saves — and most results at this layer are stated in queries to an oracle rather than in gates.",
     whyALayerJa: "上位のクエリ数は $\\alpha$ に比例するため、同じ行列でもエンコード方法が異なれば全体のコストは桁で変わります。純粋化された密度演算子なら $\\alpha = 1$、Pauli LCU なら $||c||_1$、$|a_ij| \\leq 1$ のスパースアクセスなら $sqrt(s_r·s_c)$、FABLE なら $2^n$ です。$\\alpha$ を比べずに二つのブロックエンコーディングを比較しても、何も言ったことになりません。指数的な優位が静かに失われるのもこの層です。$U$ の構成に $\\Omega(N)$ 個のゲートが必要なら、上位のソルバが節約した分はそこで相殺されます。しかもこの層の結果の多くは、ゲート数ではなくオラクルへのクエリ数で述べられています。",
   },
@@ -6473,7 +6673,21 @@ export const LAYER_GRAPH: LayerGraph = {
     },
     whyALayer: "The families here consume genuinely different inputs and pay in different currencies. Product formulas need only a term decomposition and build no block-encoding, but carry a polynomial dependence on $1/\\varepsilon$. LCU and qubitization need a block-encoding and its ancillas and reach a logarithmic dependence on $1/\\varepsilon$. Which is cheaper depends on the precision regime and on the structure of $H$, so a cost model that names \"Hamiltonian simulation\" without naming the family has not costed anything. The norm parameter is inherited from the block-encoding layer below, which is where the constant that dominates real resource estimates is actually fixed.",
     whyALayerJa: "ここに並ぶ系統は、消費する入力も支払う通貨も本当に異なります。積公式は項への分解だけを必要とし、ブロックエンコーディングを構成しませんが、$1/\\varepsilon$ に対する依存は多項式です。LCU と qubitization はブロックエンコーディングとそのアンシラを必要とする代わりに、$1/\\varepsilon$ に対して対数的な依存に到達します。どちらが安いかは要求精度の領域と $H$ の構造で決まるため、系統を指定せずに「ハミルトニアンシミュレーション」とだけ書いたコスト見積もりは、何も見積もっていません。ノルムのパラメータは下位のブロックエンコーディング層から継承され、実際の資源見積もりを支配する定数はそこで決まります。",
-    entries: ["trotter-suzuki-simulation", "hamiltonian-simulation-ising"],
+    // `correlated-fermion-simulation` added session 15. Kivlichan et al. state the
+    // time-evolution contribution in the abstract — "We also present methods to
+    // simulate each time step in the evolution of the 2D Fermi-Hubbard model —
+    // again on a 2D qubit array — with $O(N)$ gates and $O(\sqrt{N})$ circuit
+    // depth" — under the connectivity the paper fixes throughout: "two-dimensional
+    // (2D) or linear geometry with nearest-neighbor qubit-qubit couplings, typical
+    // for superconducting transmon qubit arrays".
+    //
+    // **Deliberately anchored here only, and the record is wider than this slot.**
+    // The same paper's Slater-determinant and fermionic-Gaussian-state preparations
+    // are a second, independently substantial contribution — a separate extraction
+    // under ADR-0026, belonging to `state-preparation`, and none of the three
+    // methods there is the Givens-rotation construction. Not authored in this pass
+    // because a second extraction needs its own node, not a second cross-link.
+    entries: ["trotter-suzuki-simulation", "hamiltonian-simulation-ising", "correlated-fermion-simulation"],
   },
   {
     kind: "method",
@@ -8200,8 +8414,8 @@ export const LAYER_GRAPH: LayerGraph = {
       returns: "A scalar estimate of the lowest eigenvalue with a stated additive-error guarantee, plus the run or query budget it consumed. Whether that estimate is also a rigorous upper bound is a property of the method and is not promised by the slot.",
       returnsJa: "最小固有値のスカラー推定値と、明示された加法的誤差の保証。あわせて、消費した実行回数または問い合わせ回数を返します。その推定値が厳密な上界にもなっているかどうかは各方式の性質であり、この層が約束するものではありません。",
     },
-    whyALayer: "Four genuinely different families compete for this slot and none of them dominates, because they do not even promise the same kind of thing. A variational search returns a rigorous upper bound on the energy for any trial state it reaches — that much is the variational principle and needs no assumption — but nothing bounds how close to the true minimum it gets, or how many turns it takes to get there. Phase estimation returns an actual eigenvalue to a precision you can prove, and pays for it in coherent circuit depth far beyond what present hardware runs, plus a trial state whose overlap with the ground state is not negligible. Adiabatic preparation trades that depth for a runtime governed by the spectral gap, which is exactly the quantity nobody can bound in general. Imaginary-time methods converge without any optimiser at all, and pay in ancillas or in tomography of local domains. So the choice here is forced by which resource you are short of — depth, shots, coherence, or a proof — rather than settled by theory, and a reader standing on this slot is choosing between incomparable guarantees. That is the condition a layer has to meet.",
-    whyALayerJa: "この層には本質的に異なる四つの系統が競合しており、いずれも他を圧倒しません。そもそも約束している事柄の種類が違うからです。変分的な探索は、到達したどの試行状態についてもエネルギーの厳密な上界を返します。これは変分原理そのものであって仮定を要しません。しかし真の最小値にどれだけ近づけるか、そこに至るまで何回まわるかについては、何も保証がありません。位相推定は固有値そのものを証明可能な精度で返しますが、その代償として現在のハードウェアが実行できる範囲をはるかに超えるコヒーレントな回路深さと、基底状態との重なりが無視できない試行状態を要求します。断熱的な準備はその深さをスペクトルギャップに支配される実行時間と引き換えにしますが、そのギャップこそ一般には誰も評価できない量です。虚時間発展系の方式は最適化器を一切使わずに収束しますが、補助量子ビットや局所領域のトモグラフィという形で代償を払います。つまりここでの選択は、深さ、ショット数、コヒーレンス、証明のうち何が不足しているかによって決まるのであって、理論によって決着がついているわけではありません。この層に立つ読者は、互いに比較できない保証のあいだで選ぶことになります。層が層であるための条件は、まさにこれです。",
+    whyALayer: "Four genuinely different families compete for this slot and none of them dominates, because they do not even promise the same kind of thing. A variational search returns a rigorous upper bound on the energy for any trial state it reaches — that much is the variational principle and needs no assumption — but nothing bounds how close to the true minimum it gets, or how many turns it takes to get there. Phase estimation returns an actual eigenvalue to a precision you can prove, and pays for it in coherent circuit depth far beyond what present hardware runs, plus a trial state whose overlap with the ground state is not negligible. Adiabatic preparation trades that depth for a runtime governed by the spectral gap, which is exactly the quantity nobody can bound in general. Imaginary-time methods converge without any optimiser at all, and pay in ancillas or in tomography of local domains. So the choice here is forced by which resource you are short of — depth, shots, coherence, or a proof — rather than settled by theory, and a reader standing on this slot is choosing between incomparable guarantees. That is the condition a layer has to meet. **Three of those four families are drawn here; adiabatic preparation is not, and its absence is a refusal rather than a gap.** W21 declined it a node on relevance: Farhi et al. prepare a ground state, they do not estimate an energy, so the contract does not meet — and stretching a contract to admit a family this paragraph names would be the easier and worse move. Until session 15 only two families were drawn while this paragraph named four, which is this test failing quietly: a justification describing a population the graph does not have is a sentence doing the work of methods that are not there.",
+    whyALayerJa: "この層には本質的に異なる四つの系統が競合しており、いずれも他を圧倒しません。そもそも約束している事柄の種類が違うからです。変分的な探索は、到達したどの試行状態についてもエネルギーの厳密な上界を返します。これは変分原理そのものであって仮定を要しません。しかし真の最小値にどれだけ近づけるか、そこに至るまで何回まわるかについては、何も保証がありません。位相推定は固有値そのものを証明可能な精度で返しますが、その代償として現在のハードウェアが実行できる範囲をはるかに超えるコヒーレントな回路深さと、基底状態との重なりが無視できない試行状態を要求します。断熱的な準備はその深さをスペクトルギャップに支配される実行時間と引き換えにしますが、そのギャップこそ一般には誰も評価できない量です。虚時間発展系の方式は最適化器を一切使わずに収束しますが、補助量子ビットや局所領域のトモグラフィという形で代償を払います。つまりここでの選択は、深さ、ショット数、コヒーレンス、証明のうち何が不足しているかによって決まるのであって、理論によって決着がついているわけではありません。この層に立つ読者は、互いに比較できない保証のあいだで選ぶことになります。層が層であるための条件は、まさにこれです。**この四系統のうち三つが本層に描かれています。断熱的な準備は描かれていませんが、それは欠落ではなく拒否です。** W21 は関連性を理由にノードを与えませんでした。Farhi らは基底状態を準備するのであってエネルギーを推定するのではなく、したがって層の入出力が噛み合わないからです。本段落が名を挙げている系統を受け入れるために層の契約を引き伸ばすのは、より容易で、より悪い手です。セッション 15 までは、この段落が四系統を名指す一方で描かれていた系統は二つでした。これはこの試験が静かに失格していた状態です。グラフが持たない構成員について語る正当化は、そこに存在しない手法の仕事を文章が代わりに引き受けているということだからです。",
   },
   {
     kind: "capability",
@@ -8974,6 +9188,380 @@ export const LAYER_GRAPH: LayerGraph = {
     entries: ["vqe-measurement-grouping"],
     citations: [
       { title: "Measurement Optimization in the Variational Quantum Eigensolver Using a Minimum Clique Cover", authors: "Vladyslav Verteletskyi, Tzu-Ching Yen, Artur F. Izmaylov", year: "2019", url: "https://arxiv.org/abs/1907.03358" },
+    ],
+  },
+  // ── Session 15 unit 4, ai-ops#68: the device-characterisation region ────────
+  // **Built against a recommendation this lane made and the owner overruled.**
+  // Asked whether benchmarking protocols belong on the map, the recommendation was
+  // no — they are characterisation protocols, they do not take a problem and return
+  // an answer, and W21's precedent was to refuse a node on relevance rather than
+  // stretch a contract. He answered "option 2": put them on the map as a
+  // hardware-side region, so one parity number covers both surfaces. The trade he
+  // was choosing against is the one that made the question worth asking — refusing
+  // them keeps `/repository` and the map on different denominators, which is what
+  // ai-ops#57 asked us to close.
+  //
+  // **His ruling puts them on the map; it does not waive the map's own bar.** The
+  // two records were checked against the admission test on their papers and pass,
+  // which is why this is a slot with two methods rather than a topic tag.
+  //
+  // The entry state is `physical-qubits`, which already exists — so this region is
+  // NOT a new front door invented for it. It consumes the same floor
+  // `error-correction` consumes, which is the honest reading: both are about the
+  // machine underneath, and neither is about the computation running on it.
+  {
+    kind: "capability",
+    id: "device-characterization",
+    label: "Measure what the machine can actually do",
+    labelJa: "機械に実際に何ができるかを測る",
+    summary: "Run a protocol whose answer is already known, on the hardware, and read the machine's own performance off how far the result falls short. Nothing here computes anything a user wanted — the point is that the answer is known in advance, because that is what makes the shortfall a measurement.",
+    summaryJa: "答えがあらかじめ分かっているプロトコルをハードウェア上で実行し、結果がどれだけ及ばないかから機械自身の性能を読み取ります。ここでは利用者が求めた計算は何も行われません。答えが事前に分かっていることこそが要点であり、それゆえに「及ばなさ」が測定になります。",
+    contract: {
+      from: "physical-qubits",
+      to: "device-figure",
+      takes: "A programmable device — its qubits, its native gate set, its connectivity and its measurement — plus how many circuits and how many shots you are willing to spend, and the confidence level the answer has to be established at.",
+      takesJa: "プログラム可能なデバイス。すなわち量子ビット、ネイティブゲート集合、接続性、測定機構。あわせて、費やしてよい回路数とショット数、そして答えを確立すべき信頼水準。",
+      returns: "A number characterising the hardware, the protocol that produced it, and the statistical confidence it holds at — never an answer to a computational problem, because no computational problem was posed.",
+      returnsJa: "ハードウェアを特徴づける数値と、それを生んだプロトコル、そしてそれが成り立つ統計的信頼度。計算問題への答えではありません。そもそも計算問題が課されていないからです。",
+    },
+    entries: [],
+    whyALayer: "What a reader is choosing between is **what the number is about**: one method isolates a gate set from the rest of the machine, the other refuses to. Randomized benchmarking reports the average error rate of a gate set, from the decay of fidelity over random Clifford sequences, deliberately independent of everything around it. Quantum volume reports the largest random square circuit the whole machine can actually execute — gates, connectivity, crosstalk and compiler together — and Cross et al. introduce it precisely because they hold that the first kind of number does not predict the second: \"performance of isolated gates may not predict the behavior of the system. Methods such as randomized benchmarking, state and process tomography, and gateset tomography are valued for measuring the performance of operations on a few qubits, yet they fail to account for errors arising from interactions with spectator qubits.\" So the two do not merely differ in what they measure — one of them is an argument about the other's category, which is a stronger condition than a layer needs and the reason this one is not a topic tag.",
+    whyALayerJa: "読み手が選んでいるのは、**その数値が何についての数値か**です。一方の手法はゲート集合を機械の他の部分から切り離し、他方はそれを拒みます。ランダム化ベンチマークは、ランダムな Clifford 列に対する忠実度の減衰から、ゲート集合の平均誤り率を報告します。これは周囲のすべてから意図的に独立です。量子ボリュームは、機械全体、すなわちゲート・接続性・クロストーク・コンパイラを合わせたものが実際に実行できる最大のランダム正方回路を報告します。Cross らがこれを導入したのは、前者の種類の数値が後者を予測しないと考えるからです。「孤立したゲートの性能は、系全体の振る舞いを予測しないことがある。ランダム化ベンチマーク、状態・プロセストモグラフィ、ゲートセットトモグラフィといった手法は、少数の量子ビット上での操作の性能を測るものとして評価されているが、傍観者量子ビットとの相互作用に起因する誤りを説明できない」。つまり両者は測る対象が違うだけではありません。一方が他方の範疇についての主張になっています。これは層に必要な条件より強く、この層が単なる話題のタグではない理由です。",
+  },
+  {
+    kind: "method",
+    id: "quantum-volume-protocol",
+    label: "Quantum volume from random square circuits",
+    labelJa: "ランダム正方回路による量子ボリューム",
+    shortLabel: "Quantum volume",
+    shortLabelJa: "量子ボリューム",
+    summary: "Run random circuits that are as deep as they are wide, and ask how often the machine returns one of the outputs that should be more likely than the median. Widen and deepen together until it can no longer beat that bar; the last size it managed is the number.",
+    summaryJa: "幅と深さの等しいランダム回路を実行し、中央値より起こりやすいはずの出力を機械がどれだけの頻度で返すかを問います。幅と深さを同時に増やしていき、その基準を超えられなくなったところで止めます。最後に達成できた大きさが、その数値です。",
+    realizes: "device-characterization",
+    conditions: "The circuits are specified exactly: *\"Each layer is specified by choosing a uniformly random permutation of the m qubit indices and sampling each U^(t)_{a,b}, acting on qubits a and b, from the Haar measure on SU(4)\"*. The bar is a fixed fraction rather than a fitted curve — *\"The heavy output generation problem is to produce a set of output strings such that more than two-thirds are heavy\"* — and the number is where that bar is last cleared: *\"We define the achievable depth d(m) to be the largest d such that we are confident h_d > 2/3\"*, giving $\\log_2 V_Q = \\arg\\max_m \\min(m, d(m))$. What it is claimed to cover is broad and stated: *\"This metric takes into account all relevant hardware parameters. This includes the performance parameters (coherence, calibration errors, crosstalk, spectator errors, gate fidelity, measurement fidelity, initialization fidelity) as well as the design parameters such as connectivity and gate set.\"*",
+    conditionsJa: "回路は厳密に定められています。「各層は、m 個の量子ビット添字の一様ランダムな置換を選び、量子ビット a と b に作用する各 U^(t)_{a,b} を SU(4) 上の Haar 測度から標本抽出することで指定される」。基準は当てはめた曲線ではなく固定された割合です。「重い出力生成問題とは、出力文字列の集合であって、その 3 分の 2 を超えるものが重いようなものを生成することである」。そして数値は、その基準を最後に満たした点で定まります。「達成可能な深さ d(m) を、h_d > 2/3 であると確信できる最大の d と定義する」。これにより $\\log_2 V_Q = \\arg\\max_m \\min(m, d(m))$ が得られます。何を覆うと主張しているかも広く、明示されています。「この指標は関連するすべてのハードウェア・パラメータを考慮する。これには性能パラメータ（コヒーレンス、較正誤差、クロストーク、傍観者誤差、ゲート忠実度、測定忠実度、初期化忠実度）と、接続性やゲート集合といった設計パラメータが含まれる」。",
+    steps: [],
+    entries: ["quantum-volume-benchmark"],
+    citations: [
+      { title: "Validating quantum computers using randomized model circuits", authors: "Andrew W. Cross, Lev S. Bishop, Sarah Sheldon, Paul D. Nation, Jay M. Gambetta", year: "2018", url: "https://arxiv.org/abs/1811.12926" },
+    ],
+  },
+  {
+    kind: "method",
+    id: "clifford-randomized-benchmarking",
+    label: "Randomized benchmarking over Clifford sequences",
+    labelJa: "Clifford 列によるランダム化ベンチマーク",
+    shortLabel: "RB",
+    shortLabelJa: "RB",
+    summary: "Apply a random sequence of Clifford gates, then the one gate that undoes all of them, and see how often the machine comes back to where it started. Lengthen the sequence and the return probability decays; the decay rate is the average error a single gate costs, and preparation and measurement errors fall out of the fit rather than contaminating it.",
+    summaryJa: "ランダムな Clifford ゲートの列を作用させ、続いてそれらすべてを打ち消す一つのゲートを作用させ、機械がどれだけの頻度で出発点に戻るかを見ます。列を長くすると復帰確率は減衰し、その減衰率が 1 ゲートあたりの平均誤りです。状態準備と測定の誤りは、汚染要因になるのではなく、当てはめの中で分離されます。",
+    realizes: "device-characterization",
+    conditions: "The protocol's shape is stated exactly: *\"Generate a sequence of m + 1 quantum operations with the first m operations chosen uniformly at random from some group G ⊆ U(d) and the final operation chosen so that the net sequence (if realized without errors) is the identity operation\"*, with the Clifford group chosen *\"because each element of the Clifford group can be realized efficiently on a quantum processor\"*. The number that comes out is a per-gate average, read off the decay: $r = 1 - p - (1-p)/d$. **What \"robust\" means here is the paper's own contribution and it is a correction rather than a refinement:** earlier randomized benchmarking could be defeated outright — *\"it is easy to show (via a counter example with gate-dependent errors that consist of the exact inverse of the gate applied) that the decay rate estimated via RB methods can be totally unrelated to the actual error-rate\"* — and this analysis *\"is valid for a realistic noise model admitting time-dependent and gate-dependent errors and also accounts for state preparation and measurement errors\"*, requiring only that the variation across the gate set is not too strong.",
+    conditionsJa: "プロトコルの形は正確に述べられています。「m + 1 個の量子操作の列を生成する。最初の m 個は群 G ⊆ U(d) から一様ランダムに選び、最後の操作は、誤りなく実現されたときに列全体が恒等操作となるように選ぶ」。Clifford 群が選ばれるのは「Clifford 群の各要素は量子プロセッサ上で効率的に実現できる」からです。得られる数値は減衰から読み取る 1 ゲートあたりの平均であり、$r = 1 - p - (1-p)/d$ です。**ここでの「頑健（robust）」が意味するのは本論文自身の貢献であり、それは改良というより訂正です。** 従来のランダム化ベンチマークは完全に破られうるものでした。「（作用させたゲートのちょうど逆になるようなゲート依存誤りによる反例によって）RB 法で推定される減衰率が、実際の誤り率とまったく無関係になりうることは容易に示せる」。本論文の解析は「時間依存およびゲート依存の誤りを許す現実的な雑音モデルに対して有効であり、状態準備と測定の誤りも考慮する」ものであり、要求するのはゲート集合にわたる変動が強すぎないことだけです。",
+    // **The `whyALayer` above quotes Cross et al. naming this method's category,
+    // not this paper.** Their citation for "randomized benchmarking" resolves to
+    // Magesan, Gambetta and Emerson's later 2012 PRA paper, not to this 2010
+    // Letter. Same three authors and the same method family, so the argument
+    // applies — but they are not literally citing this node's source, and saying
+    // they were would be the citation drift ADR-0026 §1 forbids. Recorded here so
+    // the slot's justification can be checked without re-reading both papers.
+    steps: [],
+    entries: ["randomized-benchmarking-protocol"],
+    citations: [
+      { title: "Robust randomized benchmarking of quantum processes", authors: "Easwar Magesan, J. M. Gambetta, Joseph Emerson", year: "2010", url: "https://arxiv.org/abs/1009.3639" },
+    ],
+  },
+  // ── Session 15 unit 3, ai-ops#57: the number-theory region ──────────────────
+  // The first genuinely new SUBJECT region on this map — everything before it was
+  // the differential-equation spine, the variational spine, or the hardware tail.
+  // Eight corpus records, three methods, one slot, and the axis that separates the
+  // methods is stated by Hallgren himself rather than inferred by us.
+  //
+  // **These routes do NOT step into `phase-estimation`, and that absence was
+  // checked rather than assumed.** All three primary papers were read looking for
+  // exactly that link and none of them frames its method that way: Shor computes a
+  // Fourier transform and extracts the period with a continued-fraction expansion,
+  // and Hallgren calls his technique Fourier sampling — "the main workhorse of
+  // quantum algorithms". The identification of period finding with phase estimation
+  // is Kitaev's later unification, and Proos and Zalka name it as an import when
+  // they use it ("we will use the eigenvalue estimation viewpoint introduced by
+  // Kitaev"). Drawing the step would have put a 1995 paper's name on a framing it
+  // does not use. When the register carries Kitaev's unification as a citable
+  // paper, this becomes a `bypasses`-style question worth reopening; until then the
+  // honest drawing is no edge.
+  {
+    kind: "capability",
+    id: "hidden-period-finding",
+    label: "Recover the period of a periodic function",
+    labelJa: "周期関数の周期を回復する",
+    summary: "Given a function you can evaluate in superposition and a promise that it repeats, find what it repeats by. This is the engine underneath factoring, discrete logarithms and a row of classical number-theory problems that had no efficient algorithm at all — and the whole difficulty is that the period is read out of an interference pattern rather than looked up.",
+    summaryJa: "重ね合わせの上で評価できる関数と、それが繰り返すという約束が与えられたとき、何を周期として繰り返すのかを求めます。これは素因数分解、離散対数、そして効率的なアルゴリズムがまったく知られていなかった一連の古典的な整数論の問題の根底にある機構です。難しさのすべては、周期を調べて得るのではなく干渉パターンから読み出す点にあります。",
+    contract: {
+      from: "periodic-function-oracle",
+      to: "hidden-period",
+      takes: "A circuit evaluating f on a superposition of inputs, the promise that f is periodic, the kind of object its period is (an integer in a finite cyclic group, an irrational real, a lattice of rank r), and — where the period is not an integer — the precision wanted.",
+      takesJa: "入力の重ね合わせの上で f を評価する回路、f が周期的であるという約束、その周期がどのような対象であるか（有限巡回群の中の整数、無理数の実数、階数 r の格子）、そして周期が整数でない場合には求める精度。",
+      returns: "The period: an exact integer where the group is finite, or an approximation to the requested precision together with the classical post-processing that turned the measured samples into it.",
+      returnsJa: "周期。群が有限であれば正確な整数、そうでなければ要求された精度までの近似値と、測定したサンプルをそれに変換した古典的な後処理を伴います。",
+    },
+    entries: [],
+    whyALayer: "The routes here are separated by **what kind of thing the period is allowed to be**, and that is a difference in what is possible rather than in cost. Hallgren states it against Shor directly: the structure behind Pell's equation is \"a group-like subset of the reals modulo an irrational number\", and \"this prevents direct application of Shor's algorithms\" — an irrational period cannot be written down, so the continued-fraction step that finishes the integer route has nothing to finish. Going from one irrational period to a lattice of them costs again, and for a stated reason: the lattice method \"only appears to work for a constant number of dimensions because the rounding introduces new noise into the distribution that is not present in the integer lattice case\". So a claim that a problem \"reduces to period finding\" has said nothing until it says which of the three. The wider family these belong to is the **hidden subgroup problem**, which is deliberately not drawn as a node beside them: it also contains instances with no period interpretation at all — Hallgren names graph isomorphism as one of the \"still unsolved problems\" it covers — so a node for it would be a family standing beside three of its own members.",
+    whyALayerJa: "ここに並ぶ経路を分けているのは、**周期がどのような対象でありうるか**であり、これは費用の違いではなく可能かどうかの違いです。Hallgren は Shor に対してそれを直接述べています。Pell 方程式の背後にある構造は「無理数を法とする実数の、群に似た部分集合」であり、「これが Shor のアルゴリズムの直接的な適用を妨げる」。無理数の周期は書き下せないため、整数の経路を締めくくる連分数の工程には締めくくるべきものがありません。一つの無理数の周期から周期の格子へ進むと、さらに費用がかかります。その理由も述べられています。格子の手法は「丸めが、整数格子の場合には存在しない新たな雑音を分布に持ち込むため、次元数が定数の場合にしか機能しないように見える」。したがって、ある問題が「周期発見に帰着する」という主張は、三つのうちどれであるかを言うまでは何も言っていません。これらが属するより広い族は**隠れ部分群問題**ですが、それは意図的にノードとして並置していません。この族には周期としての解釈をもたない事例も含まれ、Hallgren はそれが覆う「未解決の問題」としてグラフ同型性を挙げています。そのためノードを立てれば、族が自らの三つの構成員の隣に並ぶことになります。",
+  },
+  {
+    kind: "method",
+    id: "cyclic-period-finding",
+    label: "Period finding in a finite cyclic group",
+    labelJa: "有限巡回群における周期発見",
+    shortLabel: "Order finding",
+    shortLabelJa: "位数発見",
+    summary: "Evaluate the function across a superposition of exponents, transform the input register, and measure. What comes back is a multiple of the sample size divided by the period, near enough that a continued-fraction expansion recovers the period exactly — and once it is exact it can be checked classically, so the whole quantum part may fail and be retried.",
+    summaryJa: "指数の重ね合わせにわたって関数を評価し、入力レジスタを変換して測定します。返ってくるのはサンプル数を周期で割った値の倍数に十分近い数であり、連分数展開によって周期を正確に回復できます。正確であればそれは古典的に検証できるので、量子的な部分は失敗しても再試行すれば済みます。",
+    realizes: "hidden-period-finding",
+    conditions: "Shor's paper gives the two algorithms separately — \"In §5, we give our algorithm for prime factorization, and in §6, we give our algorithm for extracting discrete logarithms\" — and both land here because both recover a period in a finite cyclic group. The extraction step is stated as classical post-processing, not as a quantum readout: \"We then perform our Fourier transform $A_q$ on the first register... This fraction can be found in polynomial time by using a continued fraction expansion of $c/q$, which finds all the best approximations of $c/q$ by fractions.\" Discrete log costs more of the same machinery rather than different machinery — \"two modular exponentiations and two quantum Fourier transforms\" against order finding's one of each — and Shor ties the two together explicitly: \"The order of the generator could in fact be computed using the quantum order-finding algorithm given in §5 of this paper.\"",
+    conditionsJa: "Shor の論文は二つのアルゴリズムを別々に与えています。「§5 で素因数分解のアルゴリズムを、§6 で離散対数を取り出すアルゴリズムを与える」。どちらもここに属するのは、いずれも有限巡回群における周期を回復するからです。取り出しの工程は量子的な読み出しではなく古典的な後処理として述べられています。「次に第一レジスタに Fourier 変換 $A_q$ を施す……この分数は $c/q$ の連分数展開を用いて多項式時間で求められる。連分数展開は $c/q$ の分数による最良近似をすべて与える」。離散対数が要するのは異なる機構ではなく同じ機構をより多く使うことです。位数発見がそれぞれ一回であるのに対し「二回の冪剰余計算と二回の量子 Fourier 変換」を要します。そして Shor は両者を明示的に結び付けています。「生成元の位数は、実際には本論文 §5 で与えた量子位数発見アルゴリズムを用いて計算できる」。",
+    // Two records here are **applications of this method rather than siblings of
+    // it**, which is the owner's ai-ops#57 shape — a problem is a wrapper of
+    // context around a method that already exists — and both papers say so
+    // themselves. `quantum-primality-test-order-finding` uses "the quantum order
+    // finding algorithm behind Shor's factoring and discrete logarithm algorithms"
+    // and treats it as "a black box"; `elliptic-curve-discrete-log-resources`
+    // shows "in some detail how to implement Shor's efficient quantum algorithm
+    // for discrete logarithms for the particular case of elliptic curve groups".
+    // Neither is a fourth route and neither gets a node.
+    steps: [],
+    entries: ["shor-period-finding", "discrete-logarithm", "quantum-primality-test-order-finding", "elliptic-curve-discrete-log-resources"],
+    citations: [
+      { title: "Polynomial-Time Algorithms for Prime Factorization and Discrete Logarithms on a Quantum Computer", authors: "Peter W. Shor", year: "1995", url: "https://arxiv.org/abs/quant-ph/9508027" },
+      { title: "A quantum primality test with order finding", authors: "Alvaro Donis-Vela, Juan Carlos Garcia-Escartin", year: "2017", url: "https://arxiv.org/abs/1711.02616" },
+      { title: "Shor's discrete logarithm quantum algorithm for elliptic curves", authors: "John Proos, Christof Zalka", year: "2003", url: "https://arxiv.org/abs/quant-ph/0301141" },
+    ],
+  },
+  {
+    kind: "method",
+    id: "real-period-finding",
+    label: "Period finding over the reals",
+    labelJa: "実数上の周期発見",
+    shortLabel: "Irrational period",
+    shortLabelJa: "無理数周期",
+    summary: "When the period is irrational there is no exact answer to land on, so the function is evaluated on a discretisation of the reals and the period is approximated instead. Two samples are taken rather than one, and the continued-fraction step runs on their ratio — the same idea as the integer route, doing a job the integer route cannot do at all.",
+    summaryJa: "周期が無理数である場合、たどり着くべき正確な答えが存在しません。そこで関数は実数の離散化の上で評価され、周期は代わりに近似されます。サンプルは一つではなく二つ取られ、連分数の工程はその比に対して実行されます。着想は整数の経路と同じですが、整数の経路には決してできない仕事をしています。",
+    realizes: "hidden-period-finding",
+    conditions: "Hallgren is explicit that this is a different method and not a re-run of Shor's: the principal ideal problem \"reduces to a discrete log type problem, but there is no longer an underlying group. Instead, a group-like subset of the reals modulo an irrational number is used. This prevents direct application of Shor's algorithms.\" He names the technique and its limit in the same breath — \"Fourier sampling can only be performed over finite groups... In this work we extend Fourier sampling to non-finitely generated groups, as there will be an underlying periodic function over the reals whose period we wish to approximate\" — and states where the new difficulty sits: \"The general idea for the algorithm is the same as in Shor's discrete log algorithm, but we have new technical difficulties because we are computing modulo an irrational number.\"",
+    conditionsJa: "Hallgren は、これが Shor のものの再実行ではなく別の手法であることを明示しています。主イデアル問題は「離散対数型の問題に帰着するが、もはや背後に群は存在しない。代わりに、無理数を法とする実数の群に似た部分集合が用いられる。これが Shor のアルゴリズムの直接的な適用を妨げる」。彼は手法とその限界を同じ流れで名指しします。「Fourier サンプリングは有限群の上でしか実行できない……本研究では、近似したい周期をもつ実数上の周期関数が背後に存在することから、Fourier サンプリングを有限生成でない群へ拡張する」。そして新たな困難がどこにあるかを述べます。「アルゴリズムの一般的な着想は Shor の離散対数アルゴリズムと同じであるが、無理数を法として計算するために新たな技術的困難がある」。",
+    contested: "Hallgren's later paper calls this a special case of the next method rather than a parallel one: \"Solving Pell's equation is a special case of the more general problem of finding the unit group of a number field.\" The two are kept as separate nodes because the techniques are separably hard rather than nested — the rank-1 construction here does not generalise on its own, and the lattice route needed new machinery for the rounding noise that appears only in higher rank. A reader should hold both facts: mathematically one contains the other, and as algorithms they were solved apart.",
+    contestedJa: "Hallgren の後年の論文は、これを並行する手法ではなく次の手法の特別な場合と呼んでいます。「Pell 方程式を解くことは、数体の単数群を求めるというより一般の問題の特別な場合である」。それでも両者を別のノードとして保っているのは、二つの技法が入れ子であるというより、それぞれ別個に難しいからです。ここでの階数 1 の構成はそれ自体では一般化せず、格子の経路は、より高い階数でのみ現れる丸め雑音のために新しい機構を必要としました。読み手は両方の事実を保持すべきです。数学的には一方が他方を含み、アルゴリズムとしては別々に解かれました。",
+    steps: [],
+    entries: ["pell-equation-regulator", "principal-ideal-problem"],
+    citations: [
+      { title: "Polynomial-Time Quantum Algorithms for Pell's Equation and the Principal Ideal Problem", authors: "Sean Hallgren", year: "2007", url: "https://doi.org/10.1145/1206035.1206039" },
+    ],
+  },
+  {
+    kind: "method",
+    id: "period-lattice-finding",
+    label: "Finding a lattice of periods",
+    labelJa: "周期の格子を求める",
+    shortLabel: "Period lattice",
+    shortLabelJa: "周期格子",
+    summary: "Some functions repeat in several independent directions at once, so what is hidden is not one period but a lattice of them. Sampling the dual lattice and reconstructing a basis from the samples replaces the continued fraction, and the rounding that makes real-valued directions representable is what limits how many directions can be handled.",
+    summaryJa: "関数によっては、独立な複数の方向に同時に繰り返します。そのとき隠れているのは一つの周期ではなく、周期の格子です。双対格子からサンプリングし、そのサンプルから基底を再構成することが連分数の代わりとなり、実数値の方向を表現可能にする丸めこそが、扱える方向の数を制限します。",
+    realizes: "hidden-period-finding",
+    conditions: "Hallgren states the extension and its cost together: \"Most of the success in solving this problem has been for abelian groups, including finite abelian groups, $\\mathbb{Z}$, $\\mathbb{Z}^n$, and $\\mathbb{R}$. In this paper we extend the hidden subgroup problem to work for $\\mathbb{R}^r$.\" The gap between the integer and the real case is not a matter of constants — \"While there is a straightforward solution of the HSP over $\\mathbb{Z}^n$, this does not appear to be the case for $\\mathbb{R}^r$\" — and the limit is stated with its cause rather than as a bound: the method \"only appears to work for a constant number of dimensions because the rounding introduces new noise into the distribution that is not present in the integer lattice case\". That is why the corpus records for both the unit group and the class group say *constant-degree* number field: the constant is the paper's, not ours.",
+    conditionsJa: "Hallgren は拡張とその代償を同時に述べています。「この問題の解決の多くはアーベル群について得られてきた。有限アーベル群、$\\mathbb{Z}$、$\\mathbb{Z}^n$、$\\mathbb{R}$ である。本論文では隠れ部分群問題を $\\mathbb{R}^r$ に対して機能するよう拡張する」。整数の場合と実数の場合の隔たりは定数倍の問題ではありません。「$\\mathbb{Z}^n$ 上の HSP には素直な解法があるが、$\\mathbb{R}^r$ についてはそうではないように見える」。そして限界は、単なる上界としてではなく原因とともに述べられます。この手法は「丸めが、整数格子の場合には存在しない新たな雑音を分布に持ち込むため、次元数が定数の場合にしか機能しないように見える」。単数群と類群のどちらの記録も *constant-degree* な数体と述べているのはこのためです。その定数は論文のものであって、こちらのものではありません。",
+    steps: [],
+    entries: ["class-group-of-a-number-field", "unit-group-of-a-number-field"],
+    citations: [
+      { title: "Fast Quantum Algorithms for Computing the Unit Group and Class Group of a Number Field", authors: "Sean Hallgren", year: "2005", url: "https://doi.org/10.1145/1060590.1060660" },
+    ],
+  },
+  // ── Session 15 unit 2, ai-ops#57: the phase-estimation slot ─────────────────
+  // **Built because three papers in unit 1 walked into the hole where it should
+  // have been** — the Aspuru-Guzik molecular-energy route IS phase estimation end
+  // to end, the tensor-hypercontraction encoding exists to make phase estimation
+  // affordable ("With O(λ/ε) repetitions of these circuits one can use phase
+  // estimation to sample in the molecular eigenbasis"), and the double-bracket
+  // paper argues against phase estimation by name. The corpus was already holding
+  // two records for it, unanchored, and they are two genuinely different methods
+  // rather than one drawn twice, which is what makes this a slot.
+  {
+    kind: "capability",
+    id: "phase-estimation",
+    label: "Estimate the eigenphase of a unitary",
+    labelJa: "ユニタリの固有位相を推定する",
+    summary: "Given a circuit whose controlled powers you can apply, and a routine preparing a state with non-negligible overlap on one of its eigenvectors, return that eigenvector's phase as a number with an error bar. The phase is read out of an ancilla, never out of the system register — the system is only ever the thing the controlled powers act on.",
+    summaryJa: "制御べき乗を作用させられる回路と、その固有ベクトルの一つと無視できない重なりをもつ状態を準備する手続きが与えられたとき、その固有ベクトルの位相を誤差付きの数として返します。位相が読み出されるのは常に補助量子ビットからであり、系のレジスタからではありません。系は制御べき乗が作用する対象であるにすぎません。",
+    contract: {
+      from: "eigenphase-problem",
+      to: "observable-value",
+      takes: "A circuit for U that can be applied as controlled U^(2^j), a preparation routine for a state whose overlap with the target eigenvector is not negligible, the number of bits of the phase wanted, and the failure probability that may be tolerated.",
+      takesJa: "制御 U^(2^j) の形で作用させられる U の回路、目標の固有ベクトルとの重なりが無視できない状態の準備手続き、求めたい位相の桁数、そして許容できる失敗確率。",
+      returns: "An estimate of the eigenphase to the requested number of bits, with the failure probability it was obtained at, plus the two costs that actually differ between routes: how many ancillas were held at once, and how many sequential rounds were run.",
+      returnsJa: "要求した桁数までの固有位相の推定値と、それが得られた際の失敗確率。あわせて、経路ごとに実際に異なる二つの費用、すなわち同時に保持した補助量子ビットの数と、逐次実行した周回数を返します。",
+    },
+    entries: [],
+    whyALayer: "The methods here differ in a resource trade a reader has to make deliberately, and Dobsicek et al. state both sides of it in one sentence: to reach a precision of order $1/2^m$ \"it is possible to run either log m rounds (iterations) with m ancillary qubits or m log(m) rounds with only a single ancilla\". So the choice is ancillas against rounds — hold a whole register coherent and finish quickly, or hold one qubit and pay in sequential measurements with classical feedback between them. Which is cheaper is a property of the machine rather than of the algorithm, and their own motivation says so: \"As long as the number of qubits is a limiting factor, implementations of phase estimation with only a single ancillary qubit will be of foremost importance.\" A cost model that says \"phase estimation\" without saying which of the two has not said what the machine is being asked for.",
+    whyALayerJa: "ここに並ぶ手法は、読み手が意識して選ぶべき資源の交換において異なります。Dobsicek らはその両側を一文で述べています。$1/2^m$ 程度の精度に到達するには「m 個の補助量子ビットで log m 周回を実行することも、補助量子ビット 1 個だけで m log(m) 周回を実行することもできる」。つまり選択は補助量子ビットと周回数の交換です。レジスタ全体をコヒーレントに保って短く終えるか、1 量子ビットだけを保ち、その代わりに古典的なフィードバックを挟む逐次測定で支払うか。どちらが安いかはアルゴリズムではなく機械の性質であり、著者ら自身の動機がそう述べています。「量子ビット数が制約である限り、補助量子ビット 1 個だけの位相推定の実装が最重要となる」。どちらであるかを言わずに「位相推定」とだけ書いたコスト見積もりは、機械に何を求めているかを述べていません。",
+  },
+  {
+    kind: "method",
+    id: "register-phase-estimation",
+    label: "Phase estimation into an ancilla register",
+    labelJa: "補助レジスタへの位相推定",
+    shortLabel: "Register QPE",
+    shortLabelJa: "レジスタ型 QPE",
+    summary: "Put a register of ancillas into superposition, apply controlled U raised to each power of two into it, and let the phase accumulate across the register. The register then holds the phase in the Fourier basis, and one transform back turns it into bits you can measure.",
+    summaryJa: "補助量子ビットのレジスタを重ね合わせにし、2 のべき乗ごとの制御 U を作用させて、レジスタ全体に位相を蓄積させます。するとレジスタは位相を Fourier 基底で保持しており、逆変換を一度かければ、測定できるビット列になります。",
+    realizes: "phase-estimation",
+    conditions: "Kitaev's paper is where measuring an eigenvalue of a unitary is introduced — \"Our method is based on a procedure for measuring an eigenvalue of a unitary operator\" — and it is introduced in the service of something else, the Abelian Stabilizer Problem, which is the shape ADR-0026 permits. The construction is the ancilla-and-controlled-U one: with $S$ the Hadamard, \"the operator $\\Xi(U) = S \\Lambda(U) S$ is a measurement operator for the observable $\\varphi$\", and precision comes from having the controlled powers available — \"the situation is different if we have in our disposal the operators $\\Lambda(U^k)$ for all $k$\".",
+    conditionsJa: "ユニタリの固有値を測るという発想が導入されたのは Kitaev のこの論文です。「我々の方法は、ユニタリ演算子の固有値を測定する手続きに基づく」。そしてそれは別のもの、すなわちアーベル安定化群問題のために導入されています。これは ADR-0026 が認める形です。構成は補助量子ビットと制御 U によるものです。$S$ を Hadamard として「演算子 $\\Xi(U) = S \\Lambda(U) S$ は可観測量 $\\varphi$ に対する測定演算子である」とされ、精度は制御べき乗が使えることから得られます。「すべての $k$ について演算子 $\\Lambda(U^k)$ が手元にあるなら、事情は異なる」。",
+    contested: "The circuit usually drawn for this method — one coherent register and a single inverse quantum Fourier transform at the end — is NOT the circuit in the paper cited here. Kitaev localizes each power separately and combines the results classically; Dobsicek et al. describe his scheme from the outside as the one \"where the Fourier transform is replaced with a Hadamard transform\". The coherent-register-plus-inverse-QFT formulation is the later one, usually credited to Cleve, Ekert, Macchiavello and Mosca (1998), which this repository's paper register does not yet carry. Recorded rather than quietly fixed, because which paper a method is credited to is the owner's call, not an agent's. Nothing about the slot turns on it: the resource trade against the single-ancilla route is stated by Dobsicek et al. and holds whichever paper this circuit is attributed to.",
+    contestedJa: "この手法に対して通常描かれる回路、すなわち一つのコヒーレントなレジスタと末尾の逆量子 Fourier 変換は、ここで引用している論文の回路ではありません。Kitaev は各べき乗を個別に絞り込み、その結果を古典的に統合します。Dobsicek らは外から彼の方式を「Fourier 変換が Hadamard 変換に置き換えられた」ものと表現しています。コヒーレントなレジスタと逆 QFT による定式化は後年のものであり、通常は Cleve、Ekert、Macchiavello、Mosca（1998）に帰されますが、その論文は本リポジトリの論文レジスタにまだ収録されていません。黙って直すのではなく記録しているのは、ある手法をどの論文に帰すかが所有者の判断であってエージェントの判断ではないからです。この層の成立自体はこの点に依存しません。単一補助量子ビット経路との資源の交換は Dobsicek らが述べており、この回路がどちらの論文に帰されようと成り立ちます。",
+    steps: [],
+    entries: ["quantum-phase-estimation", "quantum-fourier-transform"],
+    citations: [
+      { title: "Quantum measurements and the Abelian Stabilizer Problem", authors: "A. Yu. Kitaev", year: "1995", url: "https://arxiv.org/abs/quant-ph/9511026" },
+      { title: "An approximate Fourier transform useful in quantum factoring", authors: "D. Coppersmith", year: "2002", url: "https://arxiv.org/abs/quant-ph/0201067" },
+    ],
+  },
+  {
+    kind: "method",
+    id: "single-ancilla-phase-estimation",
+    label: "Iterative phase estimation on one ancilla",
+    labelJa: "単一補助量子ビットによる反復位相推定",
+    shortLabel: "Iterative QPE",
+    shortLabelJa: "反復型 QPE",
+    summary: "Use one ancilla and measure it, over and over, least significant bit first. Each measured bit is fed back classically as a rotation angle on the next round, so the register the other route holds in superposition is replaced by a classical string that grows one bit at a time.",
+    summaryJa: "補助量子ビットを 1 個だけ使い、それを何度も測定します。下位のビットから順に求め、測定した各ビットは次の周回の回転角として古典的にフィードバックされます。もう一方の経路が重ね合わせで保持するレジスタが、1 ビットずつ伸びていく古典的なビット列に置き換わります。",
+    realizes: "phase-estimation",
+    conditions: "Dobsicek et al. state the size claim in the abstract — an iterative phase estimation \"with a single ancillary qubit\" — and make explicit that the qubit count does not grow with the precision: \"The minimal system for implementing the iterative PEA is a two qubit system, where one qubit is a read-out ancilla, and the second qubit represents a physical system.\" The order of the rounds is part of the method rather than an implementation detail: \"first less significant digits are evaluated and then the obtained information improves the quantum part of the search for more significant digits\", carried by \"an extra single qubit Z-rotation that is inserted into the circuit\" whose angle is a function of the bits already measured — $\\omega_k = -2\\pi(0.0x_{k+1}x_{k+2} \\ldots x_m)$, with $\\omega_m = 0$. Nothing quantum passes between rounds; the feedback is a classically computed angle.",
+    conditionsJa: "Dobsicek らは規模に関する主張を要旨で述べています。「単一の補助量子ビットによる」反復位相推定です。そして量子ビット数が精度とともに増えないことを明示します。「反復 PEA を実装する最小の系は 2 量子ビット系であり、一方が読み出し用の補助量子ビット、他方が物理系を表す」。周回の順序は実装上の細部ではなく手法の一部です。「まず下位の桁を評価し、得られた情報が上位の桁の探索の量子的部分を改善する」。これは「回路に挿入される追加の単一量子ビット Z 回転」によって運ばれ、その角度はすでに測定されたビットの関数です。すなわち $\\omega_k = -2\\pi(0.0x_{k+1}x_{k+2} \\ldots x_m)$ であり、$\\omega_m = 0$ です。周回のあいだを量子的な情報が渡ることはなく、フィードバックは古典的に計算された角度です。",
+    steps: [],
+    entries: ["iterative-phase-estimation"],
+    citations: [
+      { title: "Arbitrary accuracy iterative phase estimation algorithm as a two qubit benchmark", authors: "M. Dobsicek, G. Johansson, V. S. Shumeiko, G. Wendin", year: "2006", url: "https://arxiv.org/abs/quant-ph/0610214" },
+    ],
+  },
+  // ── Session 15, ai-ops#57 "grow the map" ────────────────────────────────────
+  // Five methods for corpus records that were map-eligible and reached by no
+  // node. Each was chosen after reading the paper, not the record's one-line
+  // description, and that distinction did real work: of seventeen records
+  // hand-classified as "needs no new region", nine did not survive the reading
+  // and are recorded as refusals in the PR rather than anchored here.
+  {
+    kind: "method",
+    id: "generalized-excitation-ansatz",
+    label: "Generalized singles and doubles ansatz",
+    labelJa: "一般化一重・二重励起アンザッツ",
+    shortLabel: "UCCGSD",
+    shortLabelJa: "UCCGSD",
+    summary: "Drop the rule that an excitation has to move an electron from an occupied orbital into an empty one. Every pair of orbitals may be coupled, so the circuit stops depending on which reference determinant it was built around — a wider variational manifold, paid for in parameters.",
+    summaryJa: "励起は電子を占有軌道から空軌道へ移すものでなければならない、という制約を外します。どの軌道の組も結合できるようになるため、回路はどの参照行列式を土台に組まれたかに依存しなくなります。変分多様体は広がり、その代償はパラメータ数です。",
+    realizes: "ansatz-construction",
+    conditions: "Lee et al. define the ansatz by the distinction it removes: \"Here the single and double 'excitation' terms do not distinguish between occupied and unoccupied orbitals and they are therefore called 'generalized' singles and doubles (GSD)\", and name the result in the same section — \"We shall term this ansatz UCCGSD\". Its cost is stated beside its sibling's rather than alone: the paper's Table 1 puts UCCGSD at $O(N^4)$ gates and $O(N^3)$ depth against k-UpCCGSD's $O(kN^2)$ and $O(kN)$. The two are separate ansätze in this paper, compared against each other and against UCCSD, which is why `k-upccgsd-ansatz` and this node are separate rather than one node drawn twice.",
+    conditionsJa: "Lee らは、このアンザッツを「取り除いた区別」によって定義しています。「ここでは一重および二重の『励起』の項が占有軌道と非占有軌道を区別しない。それゆえこれらは『一般化された』一重・二重励起（GSD）と呼ばれる」。そして同じ節で結果に名前を与えます。「このアンザッツを UCCGSD と呼ぶことにする」。コストは単独ではなく、兄弟手法と並べて述べられています。同論文の Table 1 は、UCCGSD を $O(N^4)$ ゲート・$O(N^3)$ 深さとし、k-UpCCGSD の $O(kN^2)$・$O(kN)$ と対置しています。両者はこの論文の中で互いに、また UCCSD と比較される別々のアンザッツです。`k-upccgsd-ansatz` と本ノードを一つにまとめず別に立てているのは、そのためです。",
+    steps: [],
+    entries: ["vqe-generalized-excitations"],
+    citations: [
+      { title: "Generalized Unitary Coupled Cluster Wavefunctions for Quantum Computation", authors: "Joonho Lee, William J. Huggins, Martin Head-Gordon, K. Birgitta Whaley", year: "2018", url: "https://arxiv.org/abs/1810.02327" },
+    ],
+  },
+  {
+    kind: "method",
+    id: "batched-adapt-ansatz",
+    label: "Batched ADAPT-VQE ansatz",
+    labelJa: "バッチ型 ADAPT-VQE アンザッツ",
+    shortLabel: "Batched ADAPT",
+    shortLabelJa: "バッチ型 ADAPT",
+    summary: "Keep ADAPT's habit of growing the ansatz from measured gradients, and stop adding exactly one operator per round. Every operator whose gradient is close to the largest goes in together, so the ansatz reaches the same size in far fewer rounds — and it is the rounds, not the operators, that cost measurements.",
+    summaryJa: "測定した勾配からアンザッツを育てるという ADAPT のやり方はそのままに、1 周につき 1 演算子という制限をやめます。勾配が最大値に近い演算子はまとめて加えられるため、同じ規模のアンザッツに達するまでの周回数が大きく減ります。測定の費用を決めているのは演算子の数ではなく周回数です。",
+    realizes: "ansatz-construction",
+    conditions: "Sapova and Fedorov introduce the variant by name — \"we introduce batched ADAPT-VQE that adds multiple operators with the largest gradients simultaneously. This approach allows reducing the number of gradient computations while building a compact ansatz\" — and state the selection rule as a ratio rather than a fixed count: \"At each ADAPT-VQE iteration, we pick all the gradients that differ from the largest by a ratio less than r\". What it buys is stated without a number: \"Since batched ADAPT-VQE adds multiple operators at each step, it requires sizably fewer iterations to build an ansatz, which considerably reduces the cost of computing gradients\". The saving is in iterations, not in the per-iteration measurement — the whole operator pool is still scanned each round, which is why this method carries the same `observable-estimation` step its parent does.",
+    conditionsJa: "Sapova と Fedorov は、この変種に自ら名前を与えています。「勾配が最大の演算子を複数同時に加えるバッチ型 ADAPT-VQE を導入する。この方法により、コンパクトなアンザッツを構成しながら勾配計算の回数を減らすことができる」。選択の規則は固定数ではなく比で述べられます。「各 ADAPT-VQE の反復において、最大値との比が r 未満であるような勾配をすべて選ぶ」。得られるものは数値を伴わずに述べられています。「バッチ型 ADAPT-VQE は各ステップで複数の演算子を加えるため、アンザッツの構成に要する反復回数が大幅に少なくなり、勾配計算の費用を相当に減らす」。節約されるのは反復回数であって、1 反復あたりの測定ではありません。演算子プール全体の走査は毎周そのまま残ります。本手法が親と同じ `observable-estimation` のステップを持つのは、そのためです。",
+    refines: "adapt-ansatz",
+    refinesMark: "ADAPT",
+    refinesMarkJa: "ADAPT",
+    steps: ["observable-estimation"],
+    entries: ["vqe-batched-adapt"],
+    citations: [
+      { title: "Variational quantum eigensolver techniques for simulating carbon monoxide oxidation", authors: "M. D. Sapova, A. K. Fedorov", year: "2021", url: "https://arxiv.org/abs/2108.11167" },
+    ],
+  },
+  {
+    kind: "method",
+    id: "spsa-optimization",
+    label: "Simultaneous-perturbation optimization",
+    labelJa: "同時摂動による最適化",
+    shortLabel: "SPSA",
+    shortLabelJa: "SPSA",
+    summary: "Perturb every parameter at once, in one random direction, and take the difference of two objective evaluations as the gradient estimate. The estimate is bad in any single round and unbiased across rounds, so the cost of a step stops growing with the number of parameters.",
+    summaryJa: "すべてのパラメータを一度に、ひとつのランダムな方向へ摂動させ、目的関数の 2 回の評価の差を勾配の推定値とします。この推定値は 1 周ごとに見れば粗いものですが、周回を通じては偏りがありません。そのため 1 ステップの費用がパラメータ数とともに増えなくなります。",
+    realizes: "parameter-optimization",
+    conditions: "Spall states the saving as a count of measurements, against the finite-difference alternative: \"In contrast to SA algorithms based on finite difference methods, which require 2p (noisy) measurements of L at each iteration, the 'simultaneous perturbation' algorithm here requires only 2q, q ≥ 1, measurements of L at each iteration, where for large p we typically have q ≪ p\" (§I). The mechanism is named in the same paper: \"this estimate differs from the usual finite difference approximation in that only two measurements (instead of 2p) are used. (The name 'simultaneous perturbation'... arises from the fact that all elements of the θ_k vector are being varied simultaneously.)\" (§II). **This citation is a 1992 control-theory paper and predates variational quantum algorithms entirely.** It is cited here for what it contains — the optimizer and its measurement count — and for nothing about quantum circuits; the claim this node makes is a claim about SPSA.",
+    conditionsJa: "Spall はこの節約を、有限差分法との対比で測定回数として述べています。「有限差分法にもとづく確率近似アルゴリズムが各反復で L の（雑音を含む）測定を 2p 回必要とするのに対し、ここでの『同時摂動』アルゴリズムは各反復で L の測定を 2q 回（q ≥ 1）しか必要とせず、p が大きい場合には通常 q ≪ p である」（§I）。仕組みも同じ論文の中で名指しされています。「この推定は、2p 回ではなく 2 回の測定しか用いない点で、通常の有限差分近似とは異なる。（『同時摂動』という名は、θ_k ベクトルのすべての成分が同時に変化させられることに由来する。）」（§II）。**この引用は 1992 年の制御理論の論文であり、変分量子アルゴリズムよりも前のものです。** ここで引用しているのは、この論文が含んでいるもの、すなわち最適化手法とその測定回数だけであって、量子回路については何も引用していません。本ノードが述べているのは SPSA についての主張です。",
+    steps: [],
+    entries: ["vqe-spsa-optimizer"],
+    citations: [
+      { title: "Multivariate stochastic approximation using a simultaneous perturbation gradient approximation", authors: "J. C. Spall", year: "1992", url: "https://doi.org/10.1109/9.119632" },
+    ],
+  },
+  {
+    kind: "method",
+    id: "phase-estimation-ground-state",
+    label: "Ground-state energy by phase estimation",
+    labelJa: "位相推定による基底状態エネルギー",
+    shortLabel: "PEA energy",
+    shortLabelJa: "位相推定",
+    summary: "Prepare a state that already overlaps the ground state, evolve it under the molecular Hamiltonian, and read the energy off the accumulated phase. Nothing is optimized and nothing is varied — the answer is a measured eigenvalue, and the whole difficulty moves into the starting state.",
+    summaryJa: "あらかじめ基底状態と重なりを持つ状態を用意し、分子ハミルトニアンのもとで発展させ、蓄積した位相からエネルギーを読み取ります。最適化も変分もありません。答えは測定された固有値であり、難しさはすべて初期状態の側へ移ります。",
+    realizes: "ground-state-energy",
+    conditions: "Aspuru-Guzik et al. state the identification the method rests on — \"A molecular ground-state energy is the lowest eigenvalue of a time-independent Schrödinger equation. The phase estimation algorithm (PEA) of Abrams and Lloyd can be used to obtain eigenvalues of Hermitian operators; we address issues concerning its implementation for molecular Hamiltonians\" — and then name the condition that decides whether it works: \"the algorithm requires that any estimated ground state has a large overlap with the actual eigenstate. We show how a good estimate of the ground-state wave function may be prepared adiabatically from a crude starting point\". Their preparation is stated concretely: \"Our Hamiltonian is changed slowly by discretized linear interpolation from the trivial HF case to the FCI operator\". The evolution operator is a product-formula approximation whose error is a free parameter — \"M can always be chosen such that the error is bounded by some preset threshold. The number of gates to implement Û then scales polynomially with the system size\".",
+    conditionsJa: "Aspuru-Guzik らは、この手法が拠って立つ同定をまず述べます。「分子の基底状態エネルギーは、時間に依存しない Schrödinger 方程式の最小固有値である。Abrams と Lloyd の位相推定アルゴリズム（PEA）はエルミート演算子の固有値を得るために用いることができる。本稿では、それを分子ハミルトニアンに対して実装する際の問題を扱う」。そのうえで、成否を決める条件を名指しします。「このアルゴリズムは、推定された基底状態が実際の固有状態と大きな重なりを持つことを要求する。粗い出発点から断熱的に良い基底状態波動関数の推定を用意する方法を示す」。その準備は具体的に述べられています。「ハミルトニアンを、自明な Hartree–Fock の場合から FCI 演算子へと、離散化した線形補間によってゆっくり変化させる」。発展演算子は積公式による近似であり、その誤差は自由なパラメータです。「M は常に、誤差があらかじめ定めた閾値以下になるように選ぶことができる。そのとき Û を実装するゲート数は系の大きさに対して多項式的に増える」。",
+    // **The readout is quantum phase estimation and this map has no slot for it.**
+    // Controlled powers of Û followed by an inverse QFT match none of the four
+    // methods on `observable-estimation`, all of which measure a state already
+    // prepared. Rather than pin this route to a readout it does not use, the phase
+    // estimation stays inside this method's own description, and the missing
+    // capability is a finding handed to the lane that owns joins between regions —
+    // its contract would take an `evolution-circuit` AND a `prepared-state`, a
+    // two-input shape the graph does not currently have. Two other records walked
+    // into the same hole in the same pass (`tensor-hypercontraction-block-encoding`
+    // exists to make phase estimation affordable; `double-bracket-diagonalization`
+    // argues against phase estimation by name), so this is three independent
+    // sightings, not one.
+    // **`phase-estimation` added as a step in unit 2, and it is what stops this slot
+    // landing as an island.** Authored in unit 1, this route closed its own stretch
+    // because the map had no phase-estimation slot to hand the readout to; unit 2
+    // built the slot, and `check-region-joins.mjs` immediately reported it as a
+    // FOURTH region — three nodes nothing reaches — because nothing produced
+    // `eigenphase-problem`. Declaring the step here is not a fix for the checker, it
+    // is the claim the paper makes in its own first sentences: "The phase estimation
+    // algorithm (PEA) of Abrams and Lloyd can be used to obtain eigenvalues of
+    // Hermitian operators; we address issues concerning its implementation for
+    // molecular Hamiltonians." The route does not merely resemble phase estimation,
+    // it is phase estimation applied to a molecular Hamiltonian.
+    steps: ["state-preparation", "hamiltonian-simulation", "phase-estimation"],
+    entries: ["molecular-energy-phase-estimation"],
+    citations: [
+      { title: "Simulated Quantum Computation of Molecular Energies", authors: "Alán Aspuru-Guzik, Anthony D. Dutoi, Peter J. Love, Martin Head-Gordon", year: "2006", url: "https://arxiv.org/abs/quant-ph/0604193" },
+    ],
+  },
+  {
+    kind: "method",
+    id: "thc-block-encoding",
+    label: "Tensor hypercontraction block encoding",
+    labelJa: "テンソル超縮約によるブロックエンコーディング",
+    shortLabel: "THC",
+    shortLabelJa: "THC",
+    summary: "Factorize the chemistry Hamiltonian's two-electron integrals into a product of much smaller matrices first, then build the block-encoding of the factorized form. The saving is not in the encoding technique but in what is being encoded — a tensor with far fewer independent entries than the one the basis handed you.",
+    summaryJa: "まず量子化学ハミルトニアンの二電子積分を、はるかに小さな行列の積へと分解し、そのうえで分解後の形のブロックエンコーディングを構成します。節約されているのはエンコーディングの技法ではなく、エンコードされる対象です。基底が与えたテンソルよりも、独立成分の数がはるかに少ないテンソルを扱います。",
+    realizes: "block-encode-matrix",
+    conditions: "Lee et al. state the contribution as a circuit and a complexity, not as a solve: \"We describe quantum circuits with only Õ(N) Toffoli complexity that block encode the spectra of quantum chemistry Hamiltonians in a basis of $N$ arbitrary (e.g., molecular) orbitals\" (abstract). What a consumer does with it is stated as an option rather than as this paper's work — \"With O(λ/ε) repetitions of these circuits one can use phase estimation to sample in the molecular eigenbasis\" — and §II is titled \"Tensor Hypercontraction Representations for Quantum Simulation\", a representation rather than an algorithm. The mechanism is the one its siblings on this slot use: \"Our approach to encoding the eigenspectra of the THC representation... will use the linear combination of unitaries (LCU) query model\", with the coefficient loading done by \"a three step procedure where we first prepare an equal superposition over the μ and ν registers, then perform coherent alias sampling, then swap\" — which is why this node steps into `state-preparation`.",
+    conditionsJa: "Lee らは、その貢献を回路と計算量として述べており、求解としては述べていません。「$N$ 個の任意の（例えば分子）軌道からなる基底における量子化学ハミルトニアンのスペクトルをブロックエンコードする、Toffoli 計算量が Õ(N) にとどまる量子回路を与える」（要旨）。それを使って何をするかは、この論文の仕事としてではなく可能性として述べられます。「これらの回路を O(λ/ε) 回繰り返せば、位相推定によって分子の固有基底からサンプリングすることができる」。§II の表題も「量子シミュレーションのためのテンソル超縮約表現」であり、アルゴリズムではなく表現です。仕組みは、この層の兄弟手法が使うものと同じです。「THC 表現の固有スペクトルをエンコードする我々の方法は……ユニタリの線形結合（LCU）クエリモデルを用いる」。係数の読み込みは「まず μ と ν のレジスタ上に一様な重ね合わせを用意し、次にコヒーレントなエイリアスサンプリングを行い、そして交換する、という 3 段階の手続き」で行われます。本ノードが `state-preparation` へステップを持つのは、そのためです。",
+    steps: ["state-preparation"],
+    entries: ["tensor-hypercontraction-block-encoding"],
+    citations: [
+      { title: "Even more efficient quantum computations of chemistry through tensor hypercontraction", authors: "Joonho Lee, Dominic W. Berry, Craig Gidney, William J. Huggins, Jarrod R. McClean, Nathan Wiebe, Ryan Babbush", year: "2020", url: "https://arxiv.org/abs/2011.03494" },
     ],
   },
   ],

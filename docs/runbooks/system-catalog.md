@@ -226,13 +226,30 @@ person looks at each record, and that is deliberate.
 ```bash
 gcloud run jobs update leona-admin-oneshot \
   --project=majorana-core --region=us-west1 \
-  --args="^~^-m~majorana_api.catalog_admin~sync-bootstrap~--attested-by~<reviewer-uuid>~--re-attest~<id>,<id>,…"
+  --args="^~^-m~majorana_api.catalog_admin~sync-bootstrap~--attested-by~<reviewer-uuid>~--re-attest~<id>,<id>,…~--authorization~<who said so, and where>"
 
 gcloud run jobs execute leona-admin-oneshot --project=majorana-core --region=us-west1 --wait
 ```
 
 `sync-bootstrap` rather than `attest-bootstrap`, because re-signing alone leaves the records
 attested and still private — the publish step is what returns them to the browse listing.
+
+**`--authorization` is required with `--re-attest`. The flag has existed since 2026-08-12
+(`b685482f`); it was *this runbook's own snippet* that omitted it until 2026-08-14**, so anyone
+who pasted the documented form got a parser error rather than a signing run. The pair is checked
+before anything connects to a database
+(`catalog_admin.py:1106-1112`), so the form printed here previously failed with
+`--re-attest requires --authorization: a re-signature is a human decision, and the row it
+writes cannot say whose afterwards` — after the operator had assembled the list, which is the
+expensive part and the same failure mode the `^~^` paragraph above exists to prevent. It is
+checked in both directions: an `--authorization` with no `--re-attest` is refused too, because
+it stamps a basis onto a run that exercised no human decision.
+
+Its value is a citation a later reader can follow — the issue comment URL, its author and its
+timestamp — not the word "standing". A standing permission changes what the cited basis *is*,
+never whether one is cited; an `--authorization` without an address is exactly the inherited
+grant `majorana#472` added the flag to prevent. It is stamped onto every re-signed row and onto
+the run's ledger entry.
 
 **Name the reviewer explicitly here.** `--attested-by-standing` is the pipeline's form and it
 resolves correctly, but a re-signature is a human act and the audit row should carry the

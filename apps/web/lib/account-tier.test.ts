@@ -2,7 +2,6 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   ACCOUNT_TIERS,
-  DEFAULT_PROJECT_ARTIFACT_LIMIT,
   TIER_LIMITS,
   atLeastTier,
   developerEmails,
@@ -327,11 +326,10 @@ test("both published Plus and Professional plans quote the same numbers", async 
       limits.agentRunsPerWeek,
       limits.privateArtifacts,
       limits.cpuSimQubits,
-      // The per-project limit is the second half of what bounds the shared
-      // bucket, so the page states it and this ties it to the same constant the
-      // server enforces. Without it the page could advertise "4 shared projects"
-      // while saying nothing about how much fits in one.
-      DEFAULT_PROJECT_ARTIFACT_LIMIT,
+      // `DEFAULT_PROJECT_ARTIFACT_LIMIT` was here and is gone with the sentence
+      // that carried it — see the ai-ops#77 note below. It was tied to the
+      // server's constant, which was the right thing to do with a number the
+      // page states; what the owner struck is the page stating it at all.
       ...(limits.projectSharing ? [limits.sharedProjects] : []),
     ];
     for (const value of advertised) {
@@ -353,26 +351,48 @@ test("both published Plus and Professional plans quote the same numbers", async 
   }
 });
 
-test("both published plans say unshared projects are unlimited", async () => {
+test("no enforced tier advertises an allowance its cap refuses", async () => {
   const { PRICING_COPY } = await import("./public-copy.ts");
-  // The owner's rule has two halves and only one of them is a number. A page
-  // that states the 4 without stating "unlimited private projects" reads as a
-  // cap on every project, which is what the product did before 2026-08-02 and
-  // is the thing the owner corrected.
+  // ## This test used to assert the opposite, and the reversal is the owner's
+  //
+  // > *"10 artifacts is the cap and the unlimited line should go."* — owner,
+  // > ai-ops#77, 2026-08-14
+  //
+  // Until this commit it read "both published plans say unshared projects are
+  // unlimited", and required `unlimited private projects` / `無制限` on all
+  // three cards. That came from an owner correction on 2026-08-02 with a real
+  // reason: stating "4 shared projects" and nothing else reads as a cap on
+  // every project.
+  //
+  // The 2026-08-14 ruling supersedes it, and the reason the older one gave is
+  // **not** answered by the newer one — it is narrowed. What the owner was
+  // reading is a Free card that says "10 private artifacts" and then, one line
+  // down, unlimited projects holding fifty each. Under a per-account cap those
+  // two lines cannot both be what bills.
+  //
+  // So the assertion is inverted rather than deleted: an enforced card may not
+  // put the word "unlimited" beside its artifact allowance. The older concern
+  // is live and unaddressed — it wants a sentence about projects that a reader
+  // cannot mistake for an artifact allowance, which is a wording the owner has
+  // to choose. Raised, not guessed.
   for (const [language, unlimited] of [
-    ["en", /unlimited private projects/i],
+    ["en", /\bunlimited\b/i],
     ["ja", /無制限/],
   ] as const) {
     for (const name of ["Free", "Plus", "Professional"]) {
       const plan = PRICING_COPY[language].plans.find((entry) => entry.name === name);
       assert.ok(plan, `the ${name} plan disappeared from the ${language} pricing page`);
-      assert.match(
+      assert.doesNotMatch(
         plan.features.join(" | "),
         unlimited,
-        `the ${language} ${name} plan does not say unshared projects are unlimited`,
+        `the ${language} ${name} card offers an unlimited allowance beside a capped one`,
       );
     }
   }
+  // Enterprise is exempt and stays exempt: it has no entry in `TIER_LIMITS`, so
+  // it has no cap for a word to contradict. Its allowances are negotiated.
+  const enterprise = PRICING_COPY.en.plans.find((plan) => plan.name === "Enterprise");
+  assert.ok(enterprise);
 });
 
 test("the pricing page sells four cards, and Enterprise is not a tier", async () => {

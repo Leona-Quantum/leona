@@ -18,12 +18,14 @@ import test from "node:test";
 
 import {
   ABSTENTION_REASONS,
+  INGREDIENT_ABSTAIN_RULES,
   buildShelf,
   contractedProcessCount,
   ingredientJoin,
   isObjectRole,
   processesTouching,
   recordsForState,
+  soleAbstentionReason,
   validateIngredientJoin,
   type IngredientCandidate,
 } from "./repository/ingredients.ts";
@@ -322,6 +324,92 @@ test("the shelf publishes a denominator for every count it prints", () => {
   assert.equal(gates.joined, 0);
 });
 
+/**
+ * The condition under which the shelf may say one thing about a whole section
+ * instead of the same thing on every row.
+ *
+ * The failure this guards is not a crash: it is a true-looking sentence printed
+ * above rows it is false of. So every assertion below is a case where the
+ * sentence must NOT be licensed, and only the first is a case where it is.
+ */
+test("a section speaks with one voice only when every row agrees", () => {
+  const withTwoGates: IngredientCandidate[] = [
+    ...RECORDS,
+    {
+      slug: "toffoli-gate",
+      title: "Toffoli gate",
+      category: "gates",
+      algorithmFamily: "Multi-controlled gate",
+      tags: ["toffoli"],
+    },
+  ];
+  const shelf = buildShelf(withTwoGates, LAYER_GRAPH, STATE_VOCABULARY);
+  const gates = shelf.sections.find((section) => section.role === "gate-primitive")!;
+  assert.equal(gates.entries.length, 2);
+  assert.equal(gates.joined, 0);
+  assert.equal(soleAbstentionReason(gates), "primitive-by-ruling");
+
+  // Operators: abstentions AND a join, which is the corpus's real shape — 16 of
+  // 62 joined, 46 abstained over five reasons.
+  const operators = shelf.sections.find((section) => section.role === "operator")!;
+  assert.ok(operators.entries.length > 1);
+  assert.ok(operators.joined > 0);
+  assert.equal(soleAbstentionReason(operators), null);
+
+  // Two abstentions that do not agree — the only shape the reason-equality
+  // check defends, and it has to be built rather than taken from the fixture's
+  // Operators section, because a joined row there cancels the hoist first and
+  // would let a broken equality check pass.
+  const mixed = buildShelf(
+    [
+      RECORDS[2]!, // molecular dipole — `observable`
+      {
+        slug: "operator-bravyi-kitaev",
+        title: "Bravyi–Kitaev mapped operator",
+        category: "operators",
+        algorithmFamily: "VQE Hamiltonians and observables",
+        tags: ["VQE operator", "bravyi–kitaev mapping"],
+      },
+    ],
+    LAYER_GRAPH,
+    STATE_VOCABULARY,
+  ).sections.find((section) => section.role === "operator")!;
+  assert.equal(mixed.entries.length, 2);
+  assert.equal(mixed.joined, 0);
+  assert.deepEqual(
+    mixed.entries
+      .map((entry) => (entry.join.kind === "abstained" ? entry.join.reason : entry.join.kind))
+      .sort(),
+    ["encoding", "observable"],
+  );
+  assert.equal(soleAbstentionReason(mixed), null);
+
+  // States: every row joined, so there is no reason to print at all.
+  const states = shelf.sections.find((section) => section.role === "state")!;
+  assert.equal(soleAbstentionReason(states), null);
+
+  // One row is not a section. Lifting its reason above it removes nothing.
+  const oneGate = buildShelf(RECORDS, LAYER_GRAPH, STATE_VOCABULARY).sections.find(
+    (section) => section.role === "gate-primitive",
+  )!;
+  assert.equal(oneGate.entries.length, 1);
+  assert.equal(soleAbstentionReason(oneGate), null);
+
+  // A single joined row cancels it even when every abstention agrees — "none of
+  // these" would then be false of that row.
+  assert.equal(soleAbstentionReason({ ...gates, joined: 1 }), null);
+
+  // And a row nothing classified is not an abstention, so it cannot be spoken
+  // for. The checker refuses one into the corpus; if one ever arrives, the
+  // section falls back to per-row reasons rather than attributing a reason
+  // nothing gave it.
+  const withUnclassified = {
+    ...gates,
+    entries: [gates.entries[0]!, { ...gates.entries[1]!, join: { kind: "unclassified" } as const }],
+  };
+  assert.equal(soleAbstentionReason(withUnclassified), null);
+});
+
 test("only object roles are in scope", () => {
   assert.ok(isObjectRole("state"));
   assert.ok(isObjectRole("operator"));
@@ -329,4 +417,36 @@ test("only object roles are in scope", () => {
   assert.ok(!isObjectRole("algorithm-reference"));
   assert.ok(!isObjectRole("benchmark-circuit"));
   assert.ok(!isObjectRole(null));
+});
+
+/**
+ * **No abstention may cite ai-ops#44 as a reason a record is off the map.**
+ *
+ * ai-ops#44 says *"just leave the gates. they are primitives, not needed to be
+ * sourced"*, answering whether 31 gate records citing a normative specification
+ * should cite an academic paper instead. It is a citation standard, and
+ * `check-paper-register.mjs` cites it correctly for that. `primitive-by-ruling`
+ * cited it as a *second* ruling that gates stay off the map, and the shelf
+ * printed "the owner ruled twice" to every visitor — thirty rows, live on
+ * leonaqt.com, measured 45395f9e.
+ *
+ * The mechanism is worth naming because it will recur: the quote was clipped one
+ * clause early. Drop *"not needed to be sourced"* and a sourcing ruling reads as
+ * a map ruling, and no checker can tell, because the sentence is well-formed and
+ * the issue number is real. So the guard is a **denylist of one issue on one
+ * surface** rather than a general claim-checker, which is the honest scope: it
+ * cannot verify what any ruling says, only that this file has stopped
+ * attributing a map decision to the one ruling known not to be about the map.
+ *
+ * If ai-ops#44 is ever genuinely widened to cover map eligibility, this test is
+ * the thing that has to be deleted deliberately — which is the point.
+ */
+test("no abstention reason attributes a map ruling to ai-ops#44", () => {
+  const sourcingOnly = /ai-ops#44/;
+  for (const rule of INGREDIENT_ABSTAIN_RULES) {
+    assert.ok(
+      !sourcingOnly.test(rule.because),
+      `abstention "${rule.reason}" cites ai-ops#44, which ruled on sourcing ("not needed to be sourced") and not on map eligibility — cite ai-ops#14 for the map, or state the structural reason`,
+    );
+  }
 });

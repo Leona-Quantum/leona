@@ -444,6 +444,89 @@ function vqeEntry(concept: Concept): PublicRepositoryEntry {
   });
 }
 
+/**
+ * What a deepening pass found when it went looking for a primary source.
+ *
+ * **Typed rather than prose, and the reason is the one `print-the-denominator`
+ * keeps making.** These fifty records are one six-field table expanded by
+ * `operatorEntry` — each carries two authored strings and all fifty cite the
+ * same software-package paper — so "how much of this corpus says anything" is
+ * the question about it, and a question answered in prose cannot be counted.
+ * `check-ingredients.mjs --depth` counts these and prints the denominator.
+ *
+ * The four non-default values are outcomes of a *search*, not judgements of the
+ * object. `dissolved` says the literature has no paper about this thing; it does
+ * not say the thing is unimportant — the fermionic creation operator is in every
+ * many-body calculation ever done.
+ */
+export const DEPTH_OUTCOMES = [
+  /** Not yet looked at. The default, and the honest state of most of the table. */
+  "template",
+  /** A primary source about this object was found and read. */
+  "deepened",
+  /**
+   * No paper's subject is this object, but real primary results sit one level up
+   * — about *products* or *transformations* of it. Written in two registers so a
+   * reader can see which sentence rests on which, per the owner's ai-ops#58
+   * ruling that claims hold only at the level the paper states them. **A partial
+   * deepening that blurs its own levels is worse than the stub**, because a stub
+   * claims nothing.
+   */
+  "partial",
+  /**
+   * Searched, and there is nothing to cite beyond a definition. The record says
+   * so rather than padding itself, and that sentence is the finding.
+   */
+  "dissolved",
+  /**
+   * A primary source exists, is the right one, and cannot be read — paywalled
+   * with no free route. Content is limited to what the abstract states, the
+   * register carries *reportsBasis: "abstract"*, and the gap is the owner's to
+   * close if he wants it closed (he offered exactly this on ai-ops#44).
+   */
+  "abstract-only",
+] as const;
+
+export type DepthOutcome = (typeof DEPTH_OUTCOMES)[number];
+
+/**
+ * The content a deepening pass adds. Absent on a record nobody has deepened.
+ *
+ * **`tags` DOES reach the classifier, and this comment said the opposite for
+ * about ten minutes.** The first draft claimed no field here could affect
+ * classification. That was wrong: `depth.tags` is appended to the same `tags`
+ * array `ingredients.ts` keys its join rules on, and the first deepened record
+ * to use it added `"hubbard model"` — which an existing rule already matches, so
+ * `operator-fermi-hubbard` was claimed by two join rules at once.
+ * `check-ingredients.mjs` refused the build and named the record.
+ *
+ * Nothing shipped, and the episode is the argument for the guard rather than
+ * against the field: a reviewer reading "no field here reaches the classifier"
+ * would have believed it, because it was written by the person adding the
+ * field. The checker did not.
+ *
+ * So, concretely, when adding `depth.tags`: they are additive and they are
+ * evidence the rule tables read. Check them against `INGREDIENT_JOIN_RULES` and
+ * `INGREDIENT_ABSTAIN_RULES` in `ingredients.ts`, or let the checker do it —
+ * but do not assume they are inert. Everything else in this object (prose,
+ * resources, metadata, source) genuinely is.
+ */
+type OperatorDepth = {
+  outcome: Exclude<DepthOutcome, "template">;
+  /** Replaces the shared OpenFermion citation. Must be registered in `paper-register.ts`. */
+  source?: { title: string; authors: string; year: string; url: string };
+  /** Extra tags. Additive — the title-cased tag the join rules read is untouched. */
+  tags?: readonly string[];
+  explanationMd?: string;
+  explanationMdJa?: string;
+  resources?: { label: string; value: string }[];
+  metadata?: { label: string; value: string }[];
+  /** What was actually checked, in the register the yardstick records use. */
+  verification?: string;
+  method?: string;
+  result?: string;
+};
+
 type OperatorConcept = {
   slug: string;
   title: string;
@@ -451,6 +534,7 @@ type OperatorConcept = {
   form: string;
   role: string;
   roleJa: string;
+  depth?: OperatorDepth;
 };
 
 const OPERATOR_CONCEPTS: OperatorConcept[] = [
@@ -459,21 +543,230 @@ const OPERATOR_CONCEPTS: OperatorConcept[] = [
   { slug: "operator-electronic-structure", title: "Electronic-structure Hamiltonian", titleJa: "電子構造Hamiltonian", form: "H = Σ hₚq a†ₚa_q + 1/2 Σ hₚqrs a†ₚa†_q a_r a_s", role: "Second-quantized molecular energy operator.", roleJa: "分子エネルギーの第二量子化演算子です。" },
   { slug: "operator-one-body-fermion", title: "One-body fermionic operator", titleJa: "一体フェルミオン演算子", form: "O₁ = Σ hₚq a†ₚa_q", role: "Kinetic, external-potential, or orbital-rotation term.", roleJa: "運動、外部ポテンシャル、軌道回転の項です。" },
   { slug: "operator-two-body-fermion", title: "Two-body fermionic operator", titleJa: "二体フェルミオン演算子", form: "O₂ = 1/2 Σ hₚqrs a†ₚa†_q a_r a_s", role: "Electron-electron interaction term.", roleJa: "電子間相互作用項です。" },
-  { slug: "operator-creation", title: "Fermionic creation operator", titleJa: "フェルミオン生成演算子", form: "a†ₚ", role: "Adds a fermion in spin orbital p subject to antisymmetry.", roleJa: "反対称性を満たしつつスピン軌道pへフェルミオンを追加します。" },
+  {
+    slug: "operator-creation",
+    title: "Fermionic creation operator",
+    titleJa: "フェルミオン生成演算子",
+    form: "a†ₚ",
+    role: "Adds a fermion in spin orbital p subject to antisymmetry.",
+    roleJa: "反対称性を満たしつつスピン軌道pへフェルミオンを追加します。",
+    depth: {
+      outcome: "partial",
+      source: {
+        title: "Fermionic quantum computation",
+        authors: "Sergey B. Bravyi, Alexei Yu. Kitaev",
+        year: "2002",
+        url: "https://arxiv.org/abs/quant-ph/0003137",
+      },
+      tags: ["second quantization", "anticommutation"],
+      verification: "Searched for a primary paper whose subject is this operator and found none; the definition is cited to a paper that states it while being about something else.",
+      method:
+        "A deliberate attempt was made to refute the expectation that this object has no primary source. arXiv:quant-ph/0003137 was read end to end; §2 Eqs. (1)–(2) state the operator's action and its anticommutation algebra.",
+      result:
+        "Partial · no paper's subject is this operator, and that sentence stands. The definition is sourced at the level a paper states it, per ai-ops#58.",
+      resources: [
+        { label: "Definition cited to", value: "Bravyi & Kitaev 2002, §2 Eqs. (1)–(2)" },
+        { label: "Paper about this operator", value: "None found" },
+        { label: "Read depth", value: "Full text of the cited paper" },
+      ],
+      metadata: [
+        { label: "Algebra", value: "{aⱼ, a†ₖ} = δⱼₖ, {aⱼ, aₖ} = 0" },
+        { label: "Order dependence", value: "Action carries a sign from the modes below" },
+        { label: "Outcome", value: "Partial — see the record" },
+      ],
+      explanationMd: String.raw`**This record is written in two registers, and the division is the point.**
+
+*What no source establishes.* No paper's subject is the fermionic creation operator. It was searched for — including in the mathematical-physics literature, where a paper about the operator algebra itself would most plausibly sit — and none was found. It is a textbook primitive: universally used, entirely correct, and not the result of anybody's paper. That sentence is the honest core of this record and is not replaced by the citation below.
+
+*What a source does state.* Bravyi and Kitaev's *Fermionic quantum computation* is about a model of computation with local fermionic modes, not about this operator — but §2 of it states the definition, and a claim may be taken at the level a paper states it. Eq. (1) gives the action on occupation-number basis vectors,
+
+$$a_j\,|n_0,\dots,n_{j-1},1,n_{j+1},\dots\rangle = (-1)^{\sum_{s<j} n_s}\,|n_0,\dots,n_{j-1},0,n_{j+1},\dots\rangle,$$
+
+with $a_j$ annihilating any vector where mode $j$ is already empty, and $a^\dagger_j$ the Hermitian conjugate. Eq. (2) gives the algebra: $a_j a_k + a_k a_j = 0$, $a^\dagger_j a^\dagger_k + a^\dagger_k a^\dagger_j = 0$, and $a_j a^\dagger_k + a^\dagger_k a_j = \delta_{jk}$.
+
+**The sign is the content.** The paper draws attention to it in its own words — the definition depends on the order of the modes — and that dependence is not bookkeeping. It is antisymmetry, it is why fermionic operators on disjoint sites fail to commute where qubit operators on disjoint sites succeed, and it is the reason every fermion-to-qubit encoding in this catalog exists at all. The operator alone is a definition; the sign it carries is what the rest of the shelf is about.
+
+**Why the record stops here.** Real primary results exist one level up — about products of these operators, and about when a transformation of them is implementable — but none of them was read, so none is cited. A partial deepening that blurs which sentence rests on which source is worse than the stub it replaces, because a stub claims nothing.`,
+      explanationMdJa: String.raw`**この記録は二つの語り口で書かれており、その区分こそが要点です。**
+
+*どの出典も確立していないこと。* フェルミオン生成演算子そのものを主題とする論文は存在しません。演算子代数そのものを扱う論文が最もありそうな数理物理の文献も含めて探しましたが、見つかりませんでした。これは教科書的な基本要素です。普遍的に用いられ、完全に正しく、そして誰かの論文の成果ではありません。この一文が本記録の誠実な中核であり、以下の引用がこれに取って代わることはありません。
+
+*ある出典が述べていること。* Bravyi と Kitaev の *Fermionic quantum computation* は局所フェルミオン・モードによる計算模型についての論文であって、この演算子についての論文ではありません。しかし §2 が定義を述べており、主張は論文が述べている水準で引用できます。式 (1) は占有数基底ベクトルへの作用を
+
+$$a_j\,|n_0,\dots,n_{j-1},1,n_{j+1},\dots\rangle = (-1)^{\sum_{s<j} n_s}\,|n_0,\dots,n_{j-1},0,n_{j+1},\dots\rangle$$
+
+と与え、モード $j$ が既に空のベクトルには $a_j$ が零を返し、$a^\dagger_j$ はその Hermite 共役です。式 (2) は代数を与えます。$a_j a_k + a_k a_j = 0$、$a^\dagger_j a^\dagger_k + a^\dagger_k a^\dagger_j = 0$、$a_j a^\dagger_k + a^\dagger_k a_j = \delta_{jk}$。
+
+**符号が内容です。** 論文自身が注意を促しているとおり、定義はモードの順序に依存します。この依存は帳簿づけではありません。それが反対称性であり、互いに素なサイト上の量子ビット演算子が可換であるのにフェルミオン演算子がそうならない理由であり、本カタログのフェルミオン量子ビット符号化がそもそも存在する理由です。演算子そのものは定義にすぎず、それが担う符号こそが棚の残りが扱っているものです。
+
+**ここで止める理由。** 一段上には実在の一次結果があります（これらの演算子の積について、またそれらの変換がいつ実装可能かについて）。しかしいずれも読んでいないため、いずれも引用しません。どの文がどの出典に依拠するかを曖昧にした部分的な深掘りは、置き換える先のスタブより悪いものです。スタブは何も主張しないからです。`,
+    },
+  },
   { slug: "operator-annihilation", title: "Fermionic annihilation operator", titleJa: "フェルミオン消滅演算子", form: "aₚ", role: "Removes a fermion from spin orbital p.", roleJa: "スピン軌道pからフェルミオンを除去します。" },
   { slug: "operator-number", title: "Orbital number operator", titleJa: "軌道数演算子", form: "nₚ = a†ₚaₚ", role: "Measures occupation of one spin orbital.", roleJa: "1つのスピン軌道の占有数を測定します。" },
   { slug: "operator-total-particle-number", title: "Total particle-number operator", titleJa: "全粒子数演算子", form: "N = Σₚ a†ₚaₚ", role: "Defines fixed-number sectors and symmetry checks.", roleJa: "固定粒子数セクターと対称性確認を定義します。" },
   { slug: "operator-fermionic-hopping", title: "Fermionic hopping operator", titleJa: "フェルミオン・ホッピング演算子", form: "Tₚq = a†ₚa_q + a†_q aₚ", role: "Moves amplitude between orbitals or lattice sites.", roleJa: "軌道または格子サイト間で振幅を移します。" },
   { slug: "operator-pairing", title: "Fermionic pairing operator", titleJa: "フェルミオン対形成演算子", form: "Δₚq = a†ₚa†_q + a_q aₚ", role: "Creates and annihilates correlated fermion pairs.", roleJa: "相関したフェルミオン対を生成・消滅します。" },
-  { slug: "operator-coulomb", title: "Coulomb interaction operator", titleJa: "Coulomb相互作用演算子", form: "V = 1/2 Σ hₚqrs a†ₚa†_q a_r a_s", role: "Represents two-electron repulsion in an orbital basis.", roleJa: "軌道基底で二電子反発を表します。" },
-  { slug: "operator-fermi-hubbard", title: "Fermi–Hubbard Hamiltonian", titleJa: "Fermi–Hubbard Hamiltonian", form: "H = -tΣ⟨ij⟩σ(c†ᵢσcⱼσ+h.c.) + UΣᵢnᵢ↑nᵢ↓", role: "Correlated lattice-fermion benchmark Hamiltonian.", roleJa: "相関格子フェルミオンの標準ベンチマークHamiltonianです。" },
+  {
+    slug: "operator-coulomb",
+    title: "Coulomb interaction operator",
+    titleJa: "Coulomb相互作用演算子",
+    form: "V = 1/2 Σ hₚqrs a†ₚa†_q a_r a_s",
+    role: "Represents two-electron repulsion in an orbital basis.",
+    roleJa: "軌道基底で二電子反発を表します。",
+    depth: {
+      outcome: "dissolved",
+      verification: "Searched for a primary source about this object and found none; the two candidate rescues were checked and both turned out to be about something else.",
+      method:
+        "A deliberate attempt was made to refute the expectation that this object has no primary source, including the integral-evaluation literature and the analytic literature on the Coulomb singularity.",
+      result:
+        "Dissolved · no primary source about this object was found, and the record says so rather than citing a paper about an adjacent one.",
+      resources: [
+        { label: "Paper about this operator", value: "None found" },
+        { label: "Outcome", value: "Dissolved — nothing to cite beyond a definition" },
+        { label: "Near misses", value: "Two, both about adjacent objects" },
+      ],
+      metadata: [
+        { label: "What it is", value: "Standard second quantization of a known interaction" },
+        { label: "Instance data", value: "Required for execution" },
+        { label: "Read depth", value: "Not applicable — no source claimed" },
+      ],
+      explanationMd: String.raw`**This record was searched and did not deepen. That is the finding, not a gap in the search.**
+
+There is no primary research paper whose subject is $V = \tfrac{1}{2}\sum h_{pqrs}\,a^\dagger_p a^\dagger_q a_r a_s$. It is the standard second-quantized form of an interaction that was already known, written in the formalism of second quantization that was already established — textbook composition rather than a result. Nothing beyond the definition and the formula could be honestly added, so nothing was.
+
+**Two near misses were checked and rejected, and the reasons are the useful part.**
+
+*The integral literature is about the coefficients, not the operator.* There is a substantial and genuinely primary literature on evaluating the numbers $h_{pqrs}$ — Gaussian basis functions and the recurrence schemes built on them. Those papers are about computing matrix elements. Citing one here would claim this record documents an evaluation algorithm, which it does not.
+
+*The analytic literature is about a different representation of the same physics.* The Coulomb cusp condition — the constraint the $1/|\mathbf{r}_i - \mathbf{r}_j|$ singularity imposes on exact wavefunctions — is a real theorem and it is not about this object. It concerns the first-quantized operator in real space; what this record holds is the already-integrated orbital-basis form, in which the singularity has been integrated away. The connection is real but indirect: the cusp is *why* finite orbital-basis expansions converge slowly. Citing it as though it were about this operator is precisely the slippage the catalog's sourcing rule forbids.
+
+**So the record keeps its shared citation and its two authored strings**, and adds this note about why. A search that returns nothing is worth recording once so the next person does not repeat it, and an object that genuinely cannot carry more than a formula should not be padded until it looks like one that can.`,
+      explanationMdJa: String.raw`**この記録は調査され、深まりませんでした。それが調査の不備ではなく結論です。**
+
+$V = \tfrac{1}{2}\sum h_{pqrs}\,a^\dagger_p a^\dagger_q a_r a_s$ を主題とする一次研究論文は存在しません。これは既に知られていた相互作用を、既に確立していた第二量子化の形式で書いたものであり、成果ではなく教科書的な合成です。定義と式を超えて誠実に加えられるものがなかったため、何も加えていません。
+
+**二つの惜しい候補を検討し、退けました。その理由が有用な部分です。**
+
+*積分の文献は係数についてであって演算子についてではありません。* 数値 $h_{pqrs}$ の評価については、実質的で真に一次の文献群が存在します（Gauss 型基底関数とその上に築かれた漸化式）。それらは行列要素の計算についての論文です。ここで引用すれば、本記録が評価アルゴリズムを記述していると主張することになりますが、そうではありません。
+
+*解析的な文献は同じ物理の別の表現についてです。* Coulomb カスプ条件——$1/|\mathbf{r}_i - \mathbf{r}_j|$ の特異性が厳密な波動関数に課す制約——は実在の定理ですが、この対象についてのものではありません。それは実空間の第一量子化演算子に関するもので、本記録が保持するのは既に積分された軌道基底の形であり、そこでは特異性は積分によって消えています。関係は実在しますが間接的です。カスプは有限の軌道基底展開の収束が遅い**理由**です。この演算子についてのものであるかのように引用することは、カタログの出典規則が禁じるまさにその滑りです。
+
+**したがって本記録は共有の引用と二つの記述文字列を保持し**、その理由についてのこの注記を加えます。何も返さなかった調査は、次の人が繰り返さないよう一度記録する価値があり、式以上のものを担えない対象を、担える対象のように見えるまで水増しすべきではありません。`,
+    },
+  },
+  {
+    slug: "operator-fermi-hubbard",
+    title: "Fermi–Hubbard Hamiltonian",
+    titleJa: "Fermi–Hubbard Hamiltonian",
+    form: "H = -tΣ⟨ij⟩σ(c†ᵢσcⱼσ+h.c.) + UΣᵢnᵢ↑nᵢ↓",
+    role: "Correlated lattice-fermion benchmark Hamiltonian.",
+    roleJa: "相関格子フェルミオンの標準ベンチマークHamiltonianです。",
+    depth: {
+      outcome: "abstract-only",
+      source: {
+        title: "Electron correlations in narrow energy bands",
+        authors: "J. Hubbard",
+        year: "1963",
+        url: "https://doi.org/10.1098/rspa.1963.0204",
+      },
+      tags: ["lattice fermions", "electron correlation"],
+      verification: "The correct primary source was identified and its abstract read directly; the full text is paywalled with no free route found, and nothing here is claimed from beyond the abstract.",
+      method:
+        "The DOI was opened in a browser after a curl request returned 403 — which on this publisher is a bot challenge and not evidence of a paywall. The rendered page gives the abstract and the sentence “You do not currently have access to this content.”",
+      result:
+        "Inconclusive on the paper's contents · abstract read and used; full text not read. The register records reportsBasis: \"abstract\" so the gap is countable rather than invisible.",
+      resources: [
+        { label: "Primary source", value: "Hubbard 1963, Proc. R. Soc. A 276" },
+        { label: "Read depth", value: "Abstract only — full text paywalled" },
+        { label: "Free route", value: "None found; pre-arXiv" },
+      ],
+      metadata: [
+        { label: "Model", value: "Hopping t, on-site repulsion U" },
+        { label: "Paper's method", value: "Hartree–Fock, then a Green function treatment" },
+        { label: "Access", value: "Owner decision — he offered exactly this on ai-ops#44" },
+      ],
+      explanationMd: String.raw`**This record is limited by what could be read, and says so.** Hubbard's 1963 paper is the right primary source and its full text is paywalled, with no free preprint, author copy or open mirror found — it predates arXiv by nearly thirty years. The abstract was read directly from the publisher's page; everything below comes from it, and nothing is claimed from the body.
+
+What the abstract states: that a main effect of correlation in $d$- and $f$-bands is to produce behaviour characteristic of the atomic or Heitler–London picture; that the paper introduces a simple approximate model for the interaction of electrons in narrow energy bands to study this; that Hartree–Fock is applied to that model and its results examined; that a Green function technique then yields an approximate solution to the correlation problem; that this solution reduces to the exact atomic solution in one limit and to the ordinary uncorrelated band picture in the opposite one; and that the condition for ferromagnetism of the solution is discussed, with a two-electron example given to clarify the physical meaning.
+
+**The limiting behaviour is the part that matters for this catalog**, and it is in the abstract rather than needing the body: a model that interpolates between the atomic limit and the uncorrelated band limit is exactly a model with a tunable correlation strength, which is why the ratio $U/t$ became the standard dial and why this Hamiltonian is a benchmark rather than a curiosity.
+
+**What is deliberately not here.** No equation number, no section reference, no statement about the paper's derivation or its notation, because the body was not read. The catalog's paper register records this source with *reportsBasis: "abstract"*, so the gap is a fact the corpus knows about itself rather than an absence a reader has to infer. Closing it needs the PDF, which is an owner decision — he offered precisely that on ai-ops#44, and this record is the first concrete instance of the offer being needed.`,
+      explanationMdJa: String.raw`**この記録は読めた範囲に限定されており、そのことを明記します。** Hubbard の 1963 年論文は正しい一次資料ですが、全文はペイウォールの内側にあり、無料のプレプリント、著者版、オープンアクセスのミラーはいずれも見つかりませんでした。arXiv より三十年ほど前の論文です。要旨は出版社のページから直接読みました。以下はすべて要旨に基づくもので、本文からの主張は一切含みません。
+
+要旨が述べていること。$d$ 帯および $f$ 帯における相関の主要な効果の一つが、原子的すなわち Heitler–London 的な描像に特徴的な振る舞いを生むこと。これを調べるため、狭いエネルギー帯における電子間相互作用の単純な近似模型を導入すること。その模型に Hartree–Fock 近似を適用して結果を検討すること。次に Green 関数の手法により相関問題の近似解を得ること。この解が一方の極限で厳密な原子解に、逆の極限で通常の無相関バンド描像に帰着すること。そして解の強磁性条件が議論され、物理的意味を明らかにするため二電子の例が検討されること。
+
+**本カタログにとって重要なのは極限の振る舞いであり**、それは本文を要さず要旨にあります。原子極限と無相関バンド極限のあいだを補間する模型とは、まさに相関の強さを調整できる模型であり、比 $U/t$ が標準的なつまみとなった理由であり、このハミルトニアンが好奇の対象ではなくベンチマークである理由です。
+
+**意図的に記載しないもの。** 式番号、節番号、論文の導出や記法に関する記述は一切ありません。本文を読んでいないからです。カタログの論文レジスタはこの出典を *reportsBasis: "abstract"* として記録しており、この欠落は読者が推測すべき不在ではなく、コーパス自身が把握している事実です。これを埋めるには PDF が必要で、それはオーナーの判断事項です。ai-ops#44 で本人がまさにその申し出をしており、本記録はその申し出が必要となった最初の具体例です。`,
+    },
+  },
   { slug: "operator-bose-hubbard", title: "Bose–Hubbard Hamiltonian", titleJa: "Bose–Hubbard Hamiltonian", form: "H = -tΣ⟨ij⟩(b†ᵢbⱼ+h.c.) + U/2Σᵢnᵢ(nᵢ-1)", role: "Interacting lattice-boson model.", roleJa: "相互作用する格子ボソン模型です。" },
   { slug: "operator-ising-cost", title: "Ising cost Hamiltonian", titleJa: "IsingコストHamiltonian", form: "H_C = Σᵢ hᵢZᵢ + ΣᵢⱼJᵢⱼZᵢZⱼ", role: "Diagonal optimization and spin-model objective.", roleJa: "対角な最適化・スピン模型目的演算子です。" },
   { slug: "operator-transverse-field-ising", title: "Transverse-field Ising Hamiltonian", titleJa: "横磁場Ising Hamiltonian", form: "H = -JΣZᵢZᵢ₊₁ - hΣXᵢ", role: "Non-commuting spin-chain ground-state benchmark.", roleJa: "非可換スピン鎖の基底状態ベンチマークです。" },
   { slug: "operator-xy-model", title: "XY spin Hamiltonian", titleJa: "XYスピンHamiltonian", form: "H = ΣJₓXᵢXⱼ + JᵧYᵢYⱼ", role: "Excitation-preserving spin-exchange model.", roleJa: "励起数を保存するスピン交換模型です。" },
   { slug: "operator-heisenberg", title: "Heisenberg Hamiltonian", titleJa: "Heisenberg Hamiltonian", form: "H = ΣJ(XᵢXⱼ + YᵢYⱼ + ZᵢZⱼ)", role: "Isotropic interacting-spin model.", roleJa: "等方的な相互作用スピン模型です。" },
   { slug: "operator-xyz-model", title: "XYZ spin Hamiltonian", titleJa: "XYZスピンHamiltonian", form: "H = Σ(JₓXX + JᵧYY + J_zZZ)", role: "Anisotropic extension of the Heisenberg model.", roleJa: "Heisenberg模型の異方的拡張です。" },
-  { slug: "operator-kitaev-chain", title: "Kitaev-chain Hamiltonian", titleJa: "Kitaev鎖Hamiltonian", form: "H = -μΣnᵢ - tΣ(c†ᵢcᵢ₊₁+h.c.) + ΔΣ(cᵢcᵢ₊₁+h.c.)", role: "Topological superconducting-chain model.", roleJa: "トポロジカル超伝導鎖模型です。" },
+  {
+    slug: "operator-kitaev-chain",
+    title: "Kitaev-chain Hamiltonian",
+    titleJa: "Kitaev鎖Hamiltonian",
+    form: "H = -μΣnᵢ - tΣ(c†ᵢcᵢ₊₁+h.c.) + ΔΣ(cᵢcᵢ₊₁+h.c.)",
+    role: "Topological superconducting-chain model.",
+    roleJa: "トポロジカル超伝導鎖模型です。",
+    depth: {
+      outcome: "deepened",
+      source: {
+        title: "Unpaired Majorana fermions in quantum wires",
+        authors: "A. Yu. Kitaev",
+        year: "2001",
+        url: "https://arxiv.org/abs/cond-mat/0010440",
+      },
+      tags: ["majorana", "topological superconductor", "p-wave"],
+      verification: "Read against the primary source; the paper's own symbols and equation numbers are quoted rather than the community's conventional restatement.",
+      method:
+        "arXiv:cond-mat/0010440 was read end to end. The Hamiltonian, its two limiting cases, the bulk spectrum, the phase boundary and the ground-state splitting were located in the paper's own numbering.",
+      result:
+        "Pass, with one recorded discrepancy · the paper writes the hopping amplitude as w and carries a −1/2 offset on the number term; the form this catalog previously quoted uses t and drops the offset.",
+      resources: [
+        { label: "Primary source", value: "Kitaev 2001, Eq. (4)" },
+        { label: "Topological phase", value: "2|w| > |μ|, Δ ≠ 0" },
+        { label: "Ground-state splitting", value: "t ∝ e^(−L/l₀)" },
+      ],
+      metadata: [
+        { label: "Paper's symbols", value: "w hopping, μ chemical potential, Δ = |Δ|e^(iθ)" },
+        { label: "Unpaired modes", value: "b′ = c₁, b″ = c_2L" },
+        { label: "Read depth", value: "Full text" },
+      ],
+      explanationMd: String.raw`Kitaev states the model as Eq. (4) of *Unpaired Majorana fermions in quantum wires*:
+
+$$H_1 = \sum_j \left( -w(a^\dagger_j a_{j+1} + a^\dagger_{j+1} a_j) - \mu\left(a^\dagger_j a_j - \tfrac{1}{2}\right) + \Delta a_j a_{j+1} + \Delta^* a^\dagger_{j+1} a^\dagger_j \right)$$
+
+and glosses it in the same sentence: $w$ is a hopping amplitude, $\mu$ a chemical potential, and $\Delta = |\Delta|e^{i\theta}$ the induced superconducting gap.
+
+**The form this catalog quoted is the community's, not the paper's.** Two differences, both small and both worth stating rather than smoothing over: the paper writes the hopping amplitude as $w$ where the conventional restatement uses $t$, and it carries the $-\tfrac{1}{2}$ offset on the number term, which the conventional form drops. Neither changes the physics — the offset is a constant shift — but a record that quotes a paper should quote it.
+
+**Two limits, and the whole point sits between them.** Kitaev works the model at two special parameter choices before the general case. At $|\Delta| = w = 0$, $\mu < 0$, the two Majorana operators of a site pair with each other and the chain is trivial. At $|\Delta| = w > 0$, $\mu = 0$, the Hamiltonian collapses to Eq. (7), $H_1 = iw\sum_j c_{2j}c_{2j+1}$ — Majorana operators now pair **across** sites, which leaves $b' = c_1$ and $b'' = c_{2L}$ appearing in no term of the Hamiltonian at all. Those are the unpaired Majorana fermions the title is about, and they are a consequence of the pairing pattern rather than an added ingredient.
+
+**Where the phases are.** The bulk spectrum is Eq. (13), $\epsilon(q) = \pm\sqrt{(2w\cos q + \mu)^2 + 4|\Delta|^2\sin^2 q}$, and the paper places the trivial phase at $2|w| < |\mu|$ and the topological one at $2|w| > |\mu|$ with $\Delta \neq 0$. At finite length the two boundary modes interact through Eq. (15), $H_{\mathrm{eff}} = \tfrac{i}{2}t\,b'b''$ with $t \propto e^{-L/l_0}$ — so the two ground states differ in energy by an amount exponentially small in the chain length, and in fermionic parity, which is the abstract's own claim.
+
+**Why the catalog holds it.** This is a quadratic fermionic Hamiltonian with a closed-form spectrum and an exactly-known phase boundary, which makes it a benchmark whose right answer is known at every size — the same property that makes the transverse-field Ising model one. It is joined to *Hamiltonian you can query* because it is a Pauli sum after a Jordan–Wigner mapping, not because any route in this map is about topological order.`,
+      explanationMdJa: String.raw`Kitaev は論文 *Unpaired Majorana fermions in quantum wires* の式 (4) でこの模型を次のように書いています。
+
+$$H_1 = \sum_j \left( -w(a^\dagger_j a_{j+1} + a^\dagger_{j+1} a_j) - \mu\left(a^\dagger_j a_j - \tfrac{1}{2}\right) + \Delta a_j a_{j+1} + \Delta^* a^\dagger_{j+1} a^\dagger_j \right)$$
+
+同じ文で、$w$ はホッピング振幅、$\mu$ は化学ポテンシャル、$\Delta = |\Delta|e^{i\theta}$ は誘起された超伝導ギャップであると説明されています。
+
+**本カタログがこれまで引用していた形は論文のものではなく、慣用形です。** 違いは二点あり、いずれも小さいものの、ならすのではなく明記します。論文はホッピング振幅を $t$ ではなく $w$ と書き、数演算子の項に $-\tfrac{1}{2}$ のオフセットを保持しています。慣用形はこれを落とします。物理は変わりません（定数シフトです）が、論文を引用する記録は論文の形で引用すべきです。
+
+**二つの極限。** $|\Delta| = w = 0$、$\mu < 0$ では同一サイトの二つの Majorana 演算子が対を組み、鎖は自明です。$|\Delta| = w > 0$、$\mu = 0$ では式 (7) の $H_1 = iw\sum_j c_{2j}c_{2j+1}$ となり、Majorana 演算子は**サイトをまたいで**対を組みます。その結果 $b' = c_1$ と $b'' = c_{2L}$ はハミルトニアンのどの項にも現れません。これが表題の非対 Majorana フェルミオンであり、後から加えた要素ではなく対の組み方の帰結です。
+
+**相の位置。** バルクのスペクトルは式 (13) の $\epsilon(q) = \pm\sqrt{(2w\cos q + \mu)^2 + 4|\Delta|^2\sin^2 q}$ で、論文は自明相を $2|w| < |\mu|$、トポロジカル相を $2|w| > |\mu|$ かつ $\Delta \neq 0$ に置いています。有限長では二つの境界モードが式 (15) の $H_{\mathrm{eff}} = \tfrac{i}{2}t\,b'b''$（$t \propto e^{-L/l_0}$）を通じて相互作用します。したがって二つの基底状態のエネルギー差は鎖長に対して指数的に小さく、フェルミオンパリティが異なります。これは要旨自身の主張です。
+
+**カタログが保持する理由。** これは閉形式のスペクトルと厳密に既知の相境界を持つ二次形式のフェルミオン・ハミルトニアンであり、あらゆるサイズで正解が分かっているベンチマークになります。横磁場イジング模型と同じ性質です。Jordan–Wigner 写像の後に Pauli 和になるため *問い合わせ可能なハミルトニアン* に接続されているのであって、この地図のいずれかの経路がトポロジカル秩序を扱っているからではありません。`,
+    },
+  },
   { slug: "operator-maxcut-cost", title: "MaxCut cost operator", titleJa: "MaxCutコスト演算子", form: "C = 1/2 Σ(i,j)∈E (I - ZᵢZⱼ)", role: "QAOA objective for graph cuts.", roleJa: "グラフ分割に対するQAOA目的演算子です。" },
   { slug: "operator-qubo", title: "QUBO operator mapping", titleJa: "QUBO演算子写像", form: "xᵀQx, xᵢ ↦ (I-Zᵢ)/2", role: "Maps binary quadratic objectives into diagonal Pauli form.", roleJa: "二次バイナリ目的を対角Pauli形式へ写像します。" },
   { slug: "operator-constraint-penalty", title: "Constraint-penalty operator", titleJa: "制約罰則演算子", form: "H_penalty = λ(Ax-b)²", role: "Raises energy outside a feasible subspace.", roleJa: "実行可能部分空間外のエネルギーを上げます。" },
@@ -485,10 +778,128 @@ const OPERATOR_CONCEPTS: OperatorConcept[] = [
   { slug: "operator-total-spin-squared", title: "Total-spin-squared operator", titleJa: "全スピン二乗演算子", form: "S² = Sₓ² + Sᵧ² + S_z²", role: "Labels total-spin sectors and spin contamination.", roleJa: "全スピン・セクターとスピン混入を判別します。" },
   { slug: "operator-fermion-parity", title: "Fermion-parity operator", titleJa: "フェルミオン・パリティ演算子", form: "Π = (-1)^N", role: "Z2 symmetry used for sectors and tapering.", roleJa: "セクター選択とテーパリングに使うZ2対称性です。" },
   { slug: "operator-jordan-wigner-creation", title: "Jordan–Wigner mapped creation operator", titleJa: "Jordan–Wigner生成演算子写像", form: "a†ₚ ↦ (Xₚ-iYₚ)/2 ⊗ Z₀···Zₚ₋₁", role: "Maps fermionic antisymmetry into a parity string.", roleJa: "フェルミオン反対称性をパリティ文字列へ写像します。" },
-  { slug: "operator-jordan-wigner-number", title: "Jordan–Wigner number mapping", titleJa: "Jordan–Wigner数演算子写像", form: "nₚ ↦ (I-Zₚ)/2", role: "Local qubit representation of orbital occupation.", roleJa: "軌道占有数の局所量子ビット表現です。" },
+  {
+    slug: "operator-jordan-wigner-number",
+    title: "Jordan–Wigner number mapping",
+    titleJa: "Jordan–Wigner数演算子写像",
+    form: "nₚ ↦ (I-Zₚ)/2",
+    role: "Local qubit representation of orbital occupation.",
+    roleJa: "軌道占有数の局所量子ビット表現です。",
+    depth: {
+      outcome: "deepened",
+      source: {
+        title: "Fermionic quantum computation",
+        authors: "Sergey B. Bravyi, Alexei Yu. Kitaev",
+        year: "2002",
+        url: "https://arxiv.org/abs/quant-ph/0003137",
+      },
+      tags: ["fermion-to-qubit", "occupation number"],
+      verification: "Derived in one line from two statements the cited paper makes, with both located; the 1928 origin is named but not cited, because it was not read.",
+      method:
+        "arXiv:quant-ph/0003137 was read end to end. Eq. (24) and the §8 identity Bₖ = −i c_2k c_2k+1 = 1 − 2a†ₖaₖ were located, and the qubit form was derived from them rather than quoted from a secondary source.",
+      result:
+        "Pass · the mapping follows from Eq. (24) plus one Pauli identity. Jordan & Wigner 1928 is the historical origin and is deliberately NOT cited here — see the record.",
+      resources: [
+        { label: "Primary source", value: "Bravyi & Kitaev 2002, Eq. (24) and §8" },
+        { label: "Derivation", value: "One line of Pauli algebra" },
+        { label: "Historical origin", value: "Jordan & Wigner 1928 (not read)" },
+      ],
+      metadata: [
+        { label: "Locality", value: "Diagonal — no Z string survives" },
+        { label: "Contrast", value: "a†ₚ alone carries an O(m) Z string" },
+        { label: "Read depth", value: "Full text of the cited paper" },
+      ],
+      explanationMd: String.raw`**Why the number operator is the cheap one.** Under Jordan–Wigner a single creation or annihilation operator drags a string of $Z$s across every mode below it, which is the whole reason the encoding costs $O(m)$ per fermionic gate. The number operator does not, and the cancellation is worth seeing rather than asserting.
+
+Bravyi and Kitaev give the Majorana operators at Eq. (24),
+
+$$c_{2k} = a_k + a^\dagger_k = \sigma^x[k]\prod_{j<k}\sigma^z[j], \qquad c_{2k+1} = \frac{a_k - a^\dagger_k}{i} = \sigma^y[k]\prod_{j<k}\sigma^z[j],$$
+
+and state separately, in §8, the identity $B_k = -i\,c_{2k}c_{2k+1} = 1 - 2a^\dagger_k a_k$. Multiplying the two expressions in Eq. (24), the $Z$ strings are identical and square to the identity, so they cancel and leave $c_{2k}c_{2k+1} = \sigma^x\sigma^y[k] = i\sigma^z[k]$. Substituting into the §8 identity gives $1 - 2n_k = \sigma^z[k]$, that is
+
+$$n_p \;\mapsto\; \frac{I - Z_p}{2}.$$
+
+**One product, no string.** The strings cancel because both Majorana operators for mode $k$ carry the *same* prefix. That is why occupation is locally measurable under an encoding whose defining feature is nonlocality, and it is why a Hamiltonian written only in number operators — the Coulomb-repulsion diagonal of a Hubbard model, say — maps to a diagonal Pauli sum with no string cost at all.
+
+**What this record deliberately does not cite.** Jordan and Wigner's 1928 *Über das Paulische Äquivalenzverbot* is where the transformation comes from, and it is not the source of the statement above, because it was not read. Its full text is behind a publisher paywall; a free scan of the whole 1928 volume exists but is in German and reached only through imperfect OCR of a 924-page file. Naming it as the origin costs nothing and claims nothing. Citing it for a qubit-form identity nobody here has read would be the failure this catalog most wants to avoid, and the identity is available from a paper that is free, in English, and was read end to end.`,
+      explanationMdJa: String.raw`**数演算子が安価である理由。** Jordan–Wigner 変換のもとでは、生成・消滅演算子は単独ではそれより下のすべてのモードにわたる $Z$ の列を引きずります。これがフェルミオン・ゲート一つあたり $O(m)$ の費用がかかる理由そのものです。数演算子はそうならず、その相殺は主張するより見るほうが早いものです。
+
+Bravyi と Kitaev は式 (24) で Majorana 演算子を
+
+$$c_{2k} = a_k + a^\dagger_k = \sigma^x[k]\prod_{j<k}\sigma^z[j], \qquad c_{2k+1} = \frac{a_k - a^\dagger_k}{i} = \sigma^y[k]\prod_{j<k}\sigma^z[j]$$
+
+と与え、別に §8 で $B_k = -i\,c_{2k}c_{2k+1} = 1 - 2a^\dagger_k a_k$ という関係を述べています。式 (24) の二つを掛けると $Z$ 列は同一で二乗すると恒等演算子になるため相殺し、$c_{2k}c_{2k+1} = \sigma^x\sigma^y[k] = i\sigma^z[k]$ が残ります。これを §8 の関係に代入すると $1 - 2n_k = \sigma^z[k]$、すなわち
+
+$$n_p \;\mapsto\; \frac{I - Z_p}{2}$$
+
+が得られます。
+
+**積は一つ、列は残らない。** モード $k$ の二つの Majorana 演算子が**同じ**接頭列を持つため相殺します。だからこそ、非局所性を定義的特徴とする符号化のもとで占有数が局所的に測定可能になり、数演算子だけで書かれたハミルトニアン（たとえば Hubbard 模型の Coulomb 斥力の対角部分）は列の費用なしに対角 Pauli 和へ写ります。
+
+**この記録が意図的に引用しないもの。** Jordan と Wigner の 1928 年の *Über das Paulische Äquivalenzverbot* は変換の出典ですが、上の記述の典拠ではありません。読んでいないからです。全文は出版社のペイウォールの内側にあり、1928 年の巻全体の無料スキャンは存在するもののドイツ語で、924 ページのファイルの不完全な OCR を通してしか読めません。起源として名を挙げることは何も費やさず何も主張しません。誰も読んでいない量子ビット形の等式の典拠として引用することは、本カタログが最も避けたい失敗にあたります。しかもその等式は、無料で、英語で、通読された論文から得られます。`,
+    },
+  },
   { slug: "operator-jordan-wigner-hopping", title: "Jordan–Wigner hopping mapping", titleJa: "Jordan–Wignerホッピング写像", form: "a†ₚa_q+h.c. ↦ Pauli strings with a Z parity chain", role: "Qubit representation of fermion transport.", roleJa: "フェルミオン移動の量子ビット表現です。" },
   { slug: "operator-parity-mapping", title: "Parity fermion-to-qubit mapping", titleJa: "パリティ・フェルミオン量子ビット写像", form: "occupation ↦ cumulative parity bits", role: "Alternative encoding that can expose removable symmetries.", roleJa: "除去可能な対称性を示しやすい代替符号化です。" },
-  { slug: "operator-bravyi-kitaev-mapping", title: "Bravyi–Kitaev mapping", titleJa: "Bravyi–Kitaev写像", form: "occupation and parity stored in logarithmic update sets", role: "Balances locality of parity and occupation updates.", roleJa: "パリティと占有更新の局所性を両立します。" },
+  {
+    slug: "operator-bravyi-kitaev-mapping",
+    title: "Bravyi–Kitaev mapping",
+    titleJa: "Bravyi–Kitaev写像",
+    form: "occupation and parity stored in logarithmic update sets",
+    role: "Balances locality of parity and occupation updates.",
+    roleJa: "パリティと占有更新の局所性を両立します。",
+    depth: {
+      outcome: "deepened",
+      source: {
+        title: "Fermionic quantum computation",
+        authors: "Sergey B. Bravyi, Alexei Yu. Kitaev",
+        year: "2002",
+        url: "https://arxiv.org/abs/quant-ph/0003137",
+      },
+      tags: ["fermion-to-qubit", "binary tree", "logarithmic locality"],
+      verification: "Read against the primary source; the name this mapping is known by does not appear in it, and that is recorded rather than papered over.",
+      method:
+        "arXiv:quant-ph/0003137 was read end to end. The encoding, its inverse, the parity sum and the update operator were located in the paper's own numbering, and the paper was searched for the name the community gives it.",
+      result:
+        "Pass, with one recorded caveat · the paper defines the encoding at §5 Eqs. (19)–(22) and never calls it the “Bravyi–Kitaev transform”; that name is later community usage.",
+      resources: [
+        { label: "Primary source", value: "Bravyi & Kitaev 2002, §5 Eqs. (19)–(22)" },
+        { label: "Cost per fermionic gate", value: "O(log m) qubit gates" },
+        { label: "Cost it replaces", value: "O(m) under the standard encoding" },
+      ],
+      metadata: [
+        { label: "Encoding", value: "xⱼ = Σ_{s ⪯ j} nₛ over a binary-tree partial order" },
+        { label: "Name in the paper", value: "None — “encodings of the form…”" },
+        { label: "Read depth", value: "Full text" },
+      ],
+      explanationMd: String.raw`**The paper never uses the name.** Bravyi and Kitaev define this encoding in §5, *Fast simulation procedures*, and call it nothing — the text says "encodings of the form" and draws a binary tree. *Bravyi–Kitaev transform* is what the community later called it. This record uses the common name because that is what a reader will search for, and states here that it is not the paper's own word, because a record that quotes a paper should not put a word in its mouth.
+
+**The problem it solves is a bookkeeping cost.** Under the standard identification of $m$ fermionic modes with $m$ qubits, an annihilation operator carries the Jordan–Wigner sign $(-1)^{\sum_{s<j} n_s}$, and computing that string touches every qubit below $j$. Storing $y_j = \sum_{s<j} n_s$ instead fixes the read and breaks the write: changing one occupation number then forces an update to every $y_k$ above it. The paper states the trade in exactly those terms and resolves it by storing *partial* sums.
+
+**The encoding.** Eq. (19) is
+
+$$|n_0,\dots,n_{m-1}\rangle \mapsto |x_0\rangle \otimes \cdots \otimes |x_{m-1}\rangle, \qquad x_j = \sum_{s \preceq j} n_s,$$
+
+where $\preceq$ is a partial order on binary strings that makes the index set a binary tree. The inverse is Eq. (20), $n_j = x_j - \sum_{s \in K(j)} x_s$, and the parity sum the sign needs is Eq. (21), $y_j = \sum_{s \in L(j)} x_s$.
+
+**Where the logarithm comes from.** The paper's own sentence is that each $n_s$ enters only $O(\log m)$ of the $x_j$, and that the sums in Eqs. (20) and (21) each contain $O(\log m)$ terms. Both directions are therefore cheap at once, which is what neither the occupation encoding nor the parity encoding manages alone. The extraction operator is Eq. (22), built from controlled-$X$ and controlled-$Z$ gates over the sets $K(j)$, $L(j)$ and $\{k : k \succeq j\}$, and the paper states it costs $O(\log m)$ operations. The abstract puts the headline the same way: simulating one fermionic gate costs $O(m)$ qubit gates under the standard correspondence, and a different encoding reduces it to $O(\log m)$.
+
+**Why this record does not join the map.** What it documents is a *transformation between representations*, and the map draws no process that performs one. The operator it publishes is the output of the mapping, not an object a route holds between two processes — which is what the ingredient shelf's *encoding* abstention says, and this record is one of the six it says it about.`,
+      explanationMdJa: String.raw`**論文はこの名前を使っていません。** Bravyi と Kitaev はこの符号化を §5 *Fast simulation procedures* で定義していますが、名前を与えていません。本文は「encodings of the form」と述べ、二分木を描いているだけです。*Bravyi–Kitaev 変換* は後にコミュニティが付けた呼称です。本記録が通称を用いるのは読者がその語で探すからであり、それが論文自身の語ではないことをここに明記します。論文を引用する記録が、論文の言っていない言葉をその口に入れるべきではないからです。
+
+**解決している問題は帳簿づけのコストです。** $m$ 個のフェルミオン・モードを $m$ 個の量子ビットと標準的に同一視すると、消滅演算子は Jordan–Wigner 符号 $(-1)^{\sum_{s<j} n_s}$ を伴い、この文字列の計算は $j$ より下のすべての量子ビットに触れます。代わりに $y_j = \sum_{s<j} n_s$ を保持すれば読み出しは解決しますが書き込みが壊れ、占有数を一つ変えるたびに上位のすべての $y_k$ を更新することになります。論文はこのトレードオフをまさにその言葉で述べ、**部分**和を保持することで解決します。
+
+**符号化。** 式 (19) は
+
+$$|n_0,\dots,n_{m-1}\rangle \mapsto |x_0\rangle \otimes \cdots \otimes |x_{m-1}\rangle, \qquad x_j = \sum_{s \preceq j} n_s$$
+
+であり、$\preceq$ は添字集合を二分木にする二進文字列上の半順序です。逆変換は式 (20) の $n_j = x_j - \sum_{s \in K(j)} x_s$、符号に必要なパリティ和は式 (21) の $y_j = \sum_{s \in L(j)} x_s$ です。
+
+**対数はどこから来るか。** 論文自身の文によれば、各 $n_s$ は $O(\log m)$ 個の $x_j$ にしか現れず、式 (20) と (21) の和はそれぞれ $O(\log m)$ 項しか含みません。したがって両方向が同時に安価になります。これは占有数符号化にもパリティ符号化にも単独では達成できないことです。取り出し演算子は式 (22) で、集合 $K(j)$、$L(j)$、$\{k : k \succeq j\}$ 上の制御 $X$ と制御 $Z$ から構成され、論文はその費用を $O(\log m)$ 回の操作としています。要旨も同じ形で述べています。標準的な対応では一つのフェルミオン・ゲートの模擬に $O(m)$ の量子ビット・ゲートを要し、別の符号化を使えば $O(\log m)$ に減ります。
+
+**この記録が地図に接続されない理由。** これが記述しているのは**表現のあいだの変換**であり、地図はそれを行う工程を描いていません。ここで公開されている演算子は写像の出力であって、経路が二つの工程のあいだで保持する対象ではありません。材料棚の *encoding* 留保が述べているのはこのことで、本記録はその六件のうちの一つです。`,
+    },
+  },
   { slug: "operator-z2-symmetry-generator", title: "Z2 symmetry generator", titleJa: "Z2対称性生成子", form: "S = ⊗ᵢ Pᵢ, S²=I, [S,H]=0", role: "Defines conserved sectors and qubit tapering constraints.", roleJa: "保存セクターと量子ビット削減制約を定義します。" },
   { slug: "operator-reference-projector", title: "Reference-state projector", titleJa: "参照状態射影演算子", form: "Π_ref = |φ⟩⟨φ|", role: "Overlap, fidelity, and penalty observable.", roleJa: "重なり、忠実度、罰則の観測量です。" },
   { slug: "operator-deflation-projector", title: "Deflation projector", titleJa: "デフレーション射影演算子", form: "H' = H + β|ψ⟩⟨ψ|", role: "Penalizes an already found eigenstate.", roleJa: "既に求めた固有状態へ罰則を加えます。" },
@@ -501,8 +912,109 @@ const OPERATOR_CONCEPTS: OperatorConcept[] = [
   { slug: "operator-qubit-adapt-pool", title: "Qubit-ADAPT Pauli pool", titleJa: "Qubit-ADAPT Pauliプール", form: "{iP_k}", role: "Qubit-space anti-Hermitian generator candidates.", roleJa: "量子ビット空間の反Hermitian生成子候補です。" },
   { slug: "operator-pauli-time-evolution", title: "Pauli time-evolution operator", titleJa: "Pauli時間発展演算子", form: "U_P(t) = exp(-itP)", role: "Primitive for Trotter simulation and problem-inspired ansätze.", roleJa: "Trotterシミュレーションと問題着想型アンサッツの基本要素です。" },
   { slug: "operator-trotter-product", title: "First-order Trotter product", titleJa: "一次Trotter積演算子", form: "e^{-itΣH_j} ≈ ∏_j e^{-itH_j}", role: "Product-formula approximation to Hamiltonian evolution.", roleJa: "Hamiltonian時間発展の積公式近似です。" },
-  { slug: "operator-commuting-group", title: "Commuting observable group", titleJa: "可換観測量グループ", form: "G_k={P_j : [P_i,P_j]=0}", role: "Measurement partition for shared basis estimation.", roleJa: "共有基底推定のための測定分割です。" },
-  { slug: "operator-one-rdm", title: "One-particle reduced density matrix", titleJa: "一粒子縮約密度行列", form: "γₚq = ⟨a†ₚa_q⟩", role: "Compact one-body state descriptor and orbital gradient input.", roleJa: "一体状態のコンパクトな記述と軌道勾配入力です。" },
+  {
+    slug: "operator-commuting-group",
+    title: "Commuting observable group",
+    titleJa: "可換観測量グループ",
+    form: "G_k={P_j : [P_i,P_j]_qw=0}",
+    role: "Measurement partition for shared basis estimation.",
+    roleJa: "共有基底推定のための測定分割です。",
+    depth: {
+      outcome: "deepened",
+      source: {
+        title:
+          "Measurement Optimization in the Variational Quantum Eigensolver Using a Minimum Clique Cover",
+        authors: "Vladyslav Verteletskyi, Tzu-Ching Yen, Artur F. Izmaylov",
+        year: "2019",
+        url: "https://arxiv.org/abs/1907.03358",
+      },
+      tags: ["qubit-wise commutativity", "minimum clique cover"],
+      verification: "Read against the primary source, which corrected this record's own stated form: full commutativity is the wrong relation and the paper gives the counterexample.",
+      method:
+        "arXiv:1907.03358 was read end to end, specifically to test whether an object record can say anything a method record citing the same paper does not.",
+      result:
+        "Pass, and one correction shipped · the form was [Pᵢ,Pⱼ]=0 and is now the qubit-wise commutator, because the paper shows plain commutativity does not give simultaneous single-qubit measurability.",
+      resources: [
+        { label: "Primary source", value: "Verteletskyi, Yen & Izmaylov 2019, §II A" },
+        { label: "Relation", value: "Qubit-wise commutativity, Eq. (4)" },
+        { label: "Not an equivalence relation", value: "Transitivity fails" },
+      ],
+      metadata: [
+        { label: "Counterexample", value: "[x₁x₂, y₁y₂] = 0 but not qubit-wise" },
+        { label: "Consequence", value: "No unique partition — hence clique cover" },
+        { label: "Read depth", value: "Full text" },
+      ],
+      explanationMd: String.raw`**The relation is not the one this record used to state.** Its form was $G_k = \{P_j : [P_i,P_j] = 0\}$ — ordinary commutativity — and the cited paper shows that is the wrong condition. Two Pauli words that commute need not be simultaneously measurable by single-qubit projective measurements, and the paper's own counterexample is $[\hat{x}_1\hat{x}_2, \hat{y}_1\hat{y}_2] = 0$ while the two are not qubit-wise commuting. Their common eigenstates are entangled superpositions rather than product states, so no set of single-qubit measurements resolves both. The relation that does the work is the **qubit-wise commutator** of Eq. (4), which vanishes only when every single-qubit factor of $P_I$ commutes with its counterpart in $P_J$. Qubit-wise commuting implies commuting; the converse fails.
+
+**The property worth knowing about this object is that it is not a partition.** Qubit-wise commutativity is reflexive and symmetric but **not transitive** — the paper's example is $[\hat{x}_1,\hat{y}_2]_{qw} = 0$ and $[\hat{y}_2,\hat{z}_1]_{qw} = 0$ while $[\hat{x}_1,\hat{z}_1]_{qw} \neq 0$. So it is not an equivalence relation, there are no equivalence classes, and a Hamiltonian has **no unique grouping** of its terms.
+
+That is why the object is a *group* in the loose sense and never a partition, and it is the reason the optimization problem is a minimum clique cover over a graph rather than a sort into buckets. Represent each Pauli word as a vertex and join qubit-wise commuting pairs by an edge; a set of mutually measurable terms is then a clique, and the best grouping is a minimum cover by cliques — which the paper notes is NP-hard, hence the heuristics.
+
+**Why this record exists beside the method record, which cites the same paper.** It was written to test whether it should. The answer is that the two carry different halves and neither is the other's summary: the algebraic facts above — which relation, why it is not transitive, why no unique grouping exists — are properties of the object and hold whatever procedure you use. What belongs to *vqe-measurement-grouping* instead is the procedure and its measured result: which heuristics were benchmarked, and that grouping reduced the operator count roughly threefold against the total number of Hamiltonian terms. **An object record that repeated the threefold figure would be restating the method from the object's side, and this one does not.**`,
+      explanationMdJa: String.raw`**この関係は、本記録がこれまで記していたものではありません。** 従来の形は $G_k = \{P_j : [P_i,P_j] = 0\}$、すなわち通常の可換性でしたが、引用論文はそれが誤った条件であることを示しています。可換な二つの Pauli 語が単一量子ビットの射影測定で同時測定可能とは限らず、論文自身の反例は $[\hat{x}_1\hat{x}_2, \hat{y}_1\hat{y}_2] = 0$ でありながら両者が量子ビットごとには可換でない、というものです。共通固有状態が積状態ではなくもつれた重ね合わせになるため、いかなる単一量子ビット測定の組も両方を解決しません。実際に機能する関係は式 (4) の**量子ビットごとの交換子**であり、$P_I$ の各単一量子ビット因子が $P_J$ の対応factorと可換であるときにのみ零になります。量子ビットごとに可換ならば可換ですが、逆は成り立ちません。
+
+**この対象について知る価値のある性質は、それが分割ではないということです。** 量子ビットごとの可換性は反射的かつ対称的ですが、**推移的ではありません**。論文の例は $[\hat{x}_1,\hat{y}_2]_{qw} = 0$ かつ $[\hat{y}_2,\hat{z}_1]_{qw} = 0$ でありながら $[\hat{x}_1,\hat{z}_1]_{qw} \neq 0$ です。したがって同値関係ではなく、同値類も存在せず、ハミルトニアンの項に**一意なグループ分けは存在しません**。
+
+だからこそこの対象は緩い意味での「グループ」であって決して分割ではなく、最適化問題がバケツへの仕分けではなくグラフ上の最小クリーク被覆になるのです。各 Pauli 語を頂点とし、量子ビットごとに可換な対を辺で結ぶと、相互に測定可能な項の集合はクリークとなり、最良のグループ分けは最小クリーク被覆になります。論文はこれが NP 困難であることを述べており、ヒューリスティクスが用いられる理由がそこにあります。
+
+**同じ論文を引用する手法の記録と並んで本記録が存在する理由。** それを検証するために書かれました。答えは、両者が異なる半分を担っており、どちらも他方の要約ではない、というものです。上の代数的事実——どの関係か、なぜ推移的でないか、なぜ一意なグループ分けが存在しないか——は対象の性質であり、どの手続きを使おうと成り立ちます。一方 *vqe-measurement-grouping* に属するのは手続きとその測定結果です。どのヒューリスティクスがベンチマークされたか、そしてグループ化によりハミルトニアンの全項数に対して演算子数がおよそ三分の一に減ったこと。**三分の一という数値を繰り返す対象記録は、手法を対象の側から述べ直しているだけであり、本記録はそれをしません。**`,
+    },
+  },
+  {
+    slug: "operator-one-rdm",
+    title: "One-particle reduced density matrix",
+    titleJa: "一粒子縮約密度行列",
+    form: "γₚq = ⟨a†ₚa_q⟩",
+    role: "Compact one-body state descriptor and orbital gradient input.",
+    roleJa: "一体状態のコンパクトな記述と軌道勾配入力です。",
+    depth: {
+      outcome: "deepened",
+      source: {
+        title: "N-representability is QMA-complete",
+        authors: "Yi-Kai Liu, Matthias Christandl, F. Verstraete",
+        year: "2007",
+        url: "https://arxiv.org/abs/quant-ph/0609125",
+      },
+      tags: ["n-representability", "reduced density matrix", "qma-complete"],
+      verification: "Read against the primary source; the paper's own statement about the one-body case is used, and the condition it does not state is not stated here.",
+      method:
+        "arXiv:quant-ph/0609125 was read end to end. The one-body claim was taken from the paper's own closing discussion, and the complexity result was checked for which reduced density matrix it is about.",
+      result:
+        "Pass, with two claims refused · the paper says the one-body case is decidable from eigenvalues alone but does not give the explicit condition, so no explicit condition is quoted; and the QMA-completeness is about the TWO-body matrix.",
+      resources: [
+        { label: "Primary source", value: "Liu, Christandl & Verstraete 2007" },
+        { label: "1-RDM consistency", value: "Decidable from eigenvalues alone" },
+        { label: "2-RDM consistency", value: "QMA-complete" },
+      ],
+      metadata: [
+        { label: "Why 1-body is easy", value: "Extreme points are free-fermion ground states" },
+        { label: "Problem posed by", value: "Coulson, per this paper" },
+        { label: "Read depth", value: "Full text" },
+      ],
+      explanationMd: String.raw`**The interesting fact about this object is a negative one about its neighbour.** Given a matrix $\gamma_{pq}$, when is it the one-body reduced density matrix of *some* antisymmetric $N$-fermion state? That is the $N$-representability question, and Liu, Christandl and Verstraete record that Coulson posed the problem and that its fermionic form takes its name from Coleman.
+
+For the one-body case their paper is explicit, and the sentence is worth having exactly: *"checking consistency of 2-body reduced density operators of fermionic states is so hard, while checking consistency of 1-body reduced density operators is simple"* — and, they add, consistency in that case *"can be decided … based solely on the eigenvalues of the reduced density operators."*
+
+**The reason is structural rather than lucky.** The paper gives it: the extreme points of the convex set of one-body density operators $\langle a^\dagger_i a_j\rangle$ are ground states of Hamiltonians containing only bilinear terms in $a^\dagger_i$ and $a_j$ — free fermions — and those diagonalize easily. So the one-body consistency problem inherits the tractability of the free-fermion problem, which is exactly why this object is a workable state descriptor and a workable orbital-gradient input.
+
+**The neighbouring object is intractable, and the precise claim matters.** The paper's result is that deciding $N$-representability of the **two**-body reduced density matrix is QMA-complete, and hence NP-hard. Two qualifications that a shortened version of this sentence would lose: the result classifies the problem's difficulty rather than solving it, and it is about the 2-RDM specifically — the 1-RDM case remains the easy one described above. The paper separately notes that restricting to the diagonal elements of the 2-RDM leaves an NP-hard problem.
+
+**One claim this record refuses to make.** The explicit one-body condition often quoted — occupation numbers in $[0,1]$ summing to $N$ — is *not* stated in the paper cited here, which says only that eigenvalues suffice. It may well be correct and it is attributed elsewhere to Coleman's 1963 paper, which is behind a paywall and was not read. So it is left out. Citing this source for a condition it does not state would be the exact failure the catalog's sourcing rule exists to prevent, and "decidable from the eigenvalues" is the true claim and is enough.
+
+**Why it does not join the map.** It is measured. *observable-estimation* names the operator being measured in its contract prose, where a parameter lives and a state does not — this record is one of the seventeen the shelf's *observable* abstention covers.`,
+      explanationMdJa: String.raw`**この対象について興味深い事実は、隣の対象についての否定的な事実です。** 行列 $\gamma_{pq}$ が与えられたとき、それが**何らかの**反対称 $N$ フェルミオン状態の一体縮約密度行列であるのはいつか。これが $N$ 表現可能性の問いであり、Liu、Christandl、Verstraete はこの問題を Coulson が提起したこと、フェルミオン版の名称が Coleman に由来することを記しています。
+
+一体の場合について論文は明確です。*「フェルミオン状態の二体縮約密度演算子の整合性検査がこれほど難しい一方で、一体縮約密度演算子の整合性検査は簡単である」*、そしてその場合の整合性は*「縮約密度演算子の固有値のみに基づいて」*判定できる、と述べています。
+
+**理由は偶然ではなく構造的です。** 論文はこう与えています。一体密度演算子 $\langle a^\dagger_i a_j\rangle$ の凸集合の端点は、$a^\dagger_i$ と $a_j$ の双一次項のみを含むハミルトニアン、すなわち自由フェルミオンの基底状態であり、それらは容易に対角化できます。したがって一体の整合性問題は自由フェルミオン問題の扱いやすさを受け継ぎます。この対象が実用的な状態記述子であり軌道勾配の入力である理由がこれです。
+
+**隣の対象は困難であり、主張の正確さが重要です。** 論文の結果は、**二**体縮約密度行列の $N$ 表現可能性の判定が QMA 完全であり、したがって NP 困難であるというものです。短縮すると失われる限定が二つあります。この結果は問題の難しさを**分類**するものであって解決するものではないこと、そして対象は 2-RDM に固有であり、1-RDM は上述のとおり容易なままであることです。論文は別に、2-RDM の対角成分に制限しても NP 困難であることを述べています。
+
+**この記録が拒む主張が一つあります。** しばしば引用される一体の明示的条件——占有数が $[0,1]$ に入り総和が $N$ になる——は、ここで引用した論文には**書かれていません**。論文が述べているのは固有値で足りるということだけです。この条件は正しい可能性が高く、他所では Coleman の 1963 年論文に帰されていますが、その論文はペイウォールの内側にあり読んでいません。したがって記載しません。述べていない条件の典拠としてこの出典を引くことは、本カタログの出典規則が防ごうとしている失敗そのものです。「固有値で判定できる」が真の主張であり、それで十分です。
+
+**地図に接続されない理由。** これは測定される対象です。*observable-estimation* は測定される演算子を契約の散文の中で挙げており、そこはパラメータの居場所であって状態の居場所ではありません。本記録は棚の *observable* 留保が対象とする 17 件のうちの一つです。`,
+    },
+  },
   { slug: "operator-two-rdm", title: "Two-particle reduced density matrix", titleJa: "二粒子縮約密度行列", form: "Γₚqrs = ⟨a†ₚa†_q a_s a_r⟩", role: "Two-body correlation descriptor used in energy and response.", roleJa: "エネルギーと応答に使う二体相関記述です。" },
 ];
 
@@ -513,7 +1025,20 @@ const OPENFERMION_SOURCE = {
   url: "https://arxiv.org/abs/1710.07629",
 };
 
+/**
+ * The record for one operator concept, deepened where a pass has deepened it.
+ *
+ * **The template half is not a defect to be apologised for.** Fifty operator
+ * definitions that share a scaffold and differ in a formula and a sentence are
+ * an honest way to publish fifty definitions. What was wrong was that nothing
+ * said which of them had been *looked into* and which had not — so a record
+ * carrying a real primary source read end to end was indistinguishable from one
+ * carrying a software-package citation that states nothing about it. `depth`
+ * makes that difference a fact the corpus knows about itself.
+ */
 function operatorEntry(concept: OperatorConcept): PublicRepositoryEntry {
+  const depth = concept.depth;
+  const source = depth?.source ?? OPENFERMION_SOURCE;
   return makeReferenceEntry({
     slug: concept.slug,
     title: concept.title,
@@ -524,10 +1049,14 @@ function operatorEntry(concept: OperatorConcept): PublicRepositoryEntry {
     algorithmFamily: "VQE Hamiltonians and observables",
     framework: "Qiskit",
     status: "verified_caveats",
-    verification: "Definition and role checked against quantum-simulation literature; no circuit or coefficient data set is implied.",
+    verification:
+      depth?.verification ??
+      "Definition and role checked against quantum-simulation literature; no circuit or coefficient data set is implied.",
     verificationMethods: ["research_paper"],
-    method: "Mathematical-definition and literature curation",
-    result: "Pass · representative form, VQE role, and non-circuit conversion boundary are explicit.",
+    method: depth?.method ?? "Mathematical-definition and literature curation",
+    result:
+      depth?.result ??
+      "Pass · representative form, VQE role, and non-circuit conversion boundary are explicit.",
     caveat: "Indices, coefficients, basis conventions, mappings, and units are instance dependent and must be recorded in an executable experiment.",
     exportStatus: "Operator reference · circuit conversion not applicable",
     provenance: "Leona Quantum VQE operator expansion",
@@ -538,17 +1067,29 @@ function operatorEntry(concept: OperatorConcept): PublicRepositoryEntry {
     introductionJa: `${concept.titleJa}は回路ではなく演算子として収録します。${concept.roleJa}`,
     explanation: `${concept.role} A representative mathematical form is ${concept.form}. To use this record in VQE, an implementation must specify index ordering, coefficient values and units, basis conventions, fermion-to-qubit mapping where applicable, symmetry sector, and measurement grouping. Those choices can change resource counts and even the physical interpretation. The catalog therefore preserves this as a sourced operator definition and refuses to fabricate seven circuit variants for an object that is not itself an ordered gate program.`,
     explanationJa: `${concept.roleJa} 代表的な数学形式は ${concept.form} です。VQEで使うには、添字順序、係数と単位、基底規約、必要な場合のフェルミオン量子ビット写像、対称性セクター、測定グループを明示する必要があります。これらは資源量や物理的解釈を変え得ます。そのため本カタログは出典付き演算子定義として保持し、順序付きゲートプログラムではない対象に7種類の回路を捏造しません。`,
-    tags: ["VQE operator", "Hamiltonian", concept.title.toLowerCase()],
-    resources: [
+    // **The third element is the tag `ingredients.ts` keys its rules on**, so it
+    // stays exactly where it was and any deepening tags are appended after it.
+    // Prepending would not break anything today — the rules match on membership,
+    // not position — but the ordering is the only thing making it obvious to a
+    // reader that this list has a load-bearing element in it.
+    ...(depth?.explanationMd ? { explanationMd: depth.explanationMd } : {}),
+    ...(depth?.explanationMdJa ? { explanationMdJa: depth.explanationMdJa } : {}),
+    tags: [
+      "VQE operator",
+      "Hamiltonian",
+      concept.title.toLowerCase(),
+      ...(depth?.tags ?? []),
+    ],
+    resources: depth?.resources ?? [
       { label: "Representative form", value: concept.form },
       { label: "Record type", value: "Operator definition" },
     ],
-    metadata: [
+    metadata: depth?.metadata ?? [
       { label: "Circuit", value: "Not supplied" },
       { label: "Instance data", value: "Required for execution" },
     ],
-    sourceTitle: OPENFERMION_SOURCE.title,
-    sourceUrl: OPENFERMION_SOURCE.url,
+    sourceTitle: source.title,
+    sourceUrl: source.url,
     sourceLicense: "Citation metadata only; source publication terms apply",
     wires: ["definition", "mapping", "measurement"],
     operations: [
@@ -561,13 +1102,38 @@ function operatorEntry(concept: OperatorConcept): PublicRepositoryEntry {
     filename: `${concept.slug}.txt`,
     language: "text",
     relatedSlugs: ["vqe-ground-state-energy", "pauli-x-operator"],
-    literature: [{
-      ...OPENFERMION_SOURCE,
-      relevance: "Provides open-source representations and transformations for fermionic and qubit operators used in quantum simulation.",
-      relevanceJa: "量子シミュレーションで使うフェルミオン・量子ビット演算子の表現と変換を提供します。",
-    }],
+    literature: [
+      depth?.source
+        ? {
+            ...depth.source,
+            relevance: `Primary source for this record, read at the depth its ${depth.outcome} outcome states.`,
+            relevanceJa: `本記録の一次資料です。読んだ深さは ${depth.outcome} の結果が示すとおりです。`,
+          }
+        : {
+            ...OPENFERMION_SOURCE,
+            relevance: "Provides open-source representations and transformations for fermionic and qubit operators used in quantum simulation.",
+            relevanceJa: "量子シミュレーションで使うフェルミオン・量子ビット演算子の表現と変換を提供します。",
+          },
+    ],
   });
 }
+
+/**
+ * How far each operator record has been looked into — the census, derived from
+ * the table rather than maintained beside it.
+ *
+ * **Published because the number it produces is the one that decides what to do
+ * with the other forty-two.** "Most of this corpus is a stub" and "we deepened
+ * eight and here is what it cost" are different claims, and only the second is
+ * checkable. `check-ingredients.mjs --depth` prints this with its denominator.
+ */
+export const OPERATOR_DEPTH_CENSUS: Readonly<Record<string, DepthOutcome>> = Object.freeze(
+  Object.fromEntries(
+    OPERATOR_CONCEPTS.map(
+      (concept) => [concept.slug, concept.depth?.outcome ?? "template"] as const,
+    ),
+  ),
+);
 
 export const LITERATURE_EXPANSION_ENTRIES: PublicRepositoryEntry[] = [
   ...CIRCUIT_FAMILIES.flatMap((family) => WIDTHS.map((width) => circuitEntry(family, width))),

@@ -105,13 +105,22 @@ export interface PaperReveal {
 type OccurrenceMap = ReadonlyMap<string, readonly string[]>;
 
 const saturationCache = new WeakMap<LayerGraph, Map<string, OccurrenceMap>>();
-const traceCache = new WeakMap<LayerGraph, readonly PaperTrace[]>();
+// Keyed on the graph AND the vocabulary. Production has one of each, so a
+// single-level cache would look correct forever and hand back traces walked
+// under the wrong state relation the first time a caller passed a second
+// vocabulary — which every fixture-based test does.
+const traceCache = new WeakMap<LayerGraph, WeakMap<StateVocabulary, readonly PaperTrace[]>>();
 
-function tracesOf(graph: LayerGraph): readonly PaperTrace[] {
-  let traces = traceCache.get(graph);
+function tracesOf(graph: LayerGraph, vocabulary: StateVocabulary): readonly PaperTrace[] {
+  let byVocabulary = traceCache.get(graph);
+  if (!byVocabulary) {
+    byVocabulary = new WeakMap();
+    traceCache.set(graph, byVocabulary);
+  }
+  let traces = byVocabulary.get(vocabulary);
   if (!traces) {
-    traces = paperTraces(graph);
-    traceCache.set(graph, traces);
+    traces = paperTraces(graph, vocabulary);
+    byVocabulary.set(vocabulary, traces);
   }
   return traces;
 }
@@ -293,7 +302,7 @@ export function paperRevealFor(
 ): PaperReveal | null {
   const paperId = paperIdFromSlug(slugOrId) ?? (slugOrId.includes(":") ? (slugOrId as PaperId) : null);
   if (paperId === null) return null;
-  const trace = traceFor(tracesOf(graph), paperId);
+  const trace = traceFor(tracesOf(graph, vocabulary), paperId);
   if (trace === null) return null;
 
   // W22 / OWNER RULING 06de05 — the unfold that would apply if this slot were

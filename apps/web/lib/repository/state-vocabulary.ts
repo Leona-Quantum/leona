@@ -32,6 +32,36 @@ export const STATE_VOCABULARY: StateVocabulary = {
   states: [
     // --- the differential-equation spine -----------------------------------
     {
+      id: "pde-problem",
+      label: "Partial differential equation",
+      labelJa: "偏微分方程式",
+      summary:
+        "A linear PDE on a continuous spatial domain, with the initial or boundary conditions that pin its solution — the problem as it is posed, before any grid exists. It is the one object here with infinitely many degrees of freedom, and that is what makes the first step real work rather than bookkeeping: replacing the continuum with finitely many numbers costs an error nobody can avoid, and that error is the first term in every budget downstream.",
+      summaryJa:
+        "連続な空間領域の上の線形偏微分方程式と、その解を定める初期条件あるいは境界条件。すなわち、格子を導入する前の、提示されたままの問題です。ここに登場する対象のうち、自由度が無限であるのはこれだけであり、そのために最初の一歩は帳簿づけではなく実質的な作業になります。連続体を有限個の数値で置き換えるには誰にも避けられない誤差が伴い、その誤差こそ、下流のあらゆる見積もりにおける最初の項だからです。",
+      // **Two processes leave this state, which is what `states.ts`'s admission
+      // test asks for**, and one paper states both by itself rather than the two
+      // being lined up from separate sources. Linden, Montanaro and Shao
+      // (arXiv:2004.06516) discretise space *and* time by FTCS into a single
+      // block system over all timesteps (§I A, Eq. 38), and give the alternative
+      // explicitly in their Appendix A: *"if we just discretise x_1,...,x_d ...
+      // we obtain a system of ODEs"*.
+      //
+      // So this is deliberately NOT one process composed with
+      // `time-discretization`. Heat's FTCS produces the whole linear system in
+      // one step rather than discretising space and then time, and the plasma
+      // problem (arXiv:2403.11989) has no time axis to discretise at all — it is
+      // a boundary-value problem at a fixed drive frequency. Reading them as a
+      // composition would attribute to those papers a two-stage structure
+      // neither of them has.
+      //
+      // **No `specializes`, and no parent is tempting.** A PDE is not a kind of
+      // `nonlinear-ivp` or `linear-ivp`: those are finite vector systems and this
+      // is not, which is the whole reason the discretisation between them costs
+      // anything. Declaring a parent here would let `stateSatisfies` hand a PDE
+      // straight to an ODE solver and call the continuum limit free.
+    },
+    {
       id: "nonlinear-ivp",
       label: "Nonlinear initial-value problem",
       labelJa: "非線形の初期値問題",
@@ -375,6 +405,81 @@ export const STATE_VOCABULARY: StateVocabulary = {
       // what lets a `through` narrowing record the landing without widening
       // `observable-estimation.from` for the three readouts that rely on it.
       specializes: ["evolution-circuit", "prepared-state"],
+    },
+    {
+      id: "eigenphase-problem",
+      label: "Unitary whose eigenphase is wanted",
+      labelJa: "固有位相を求めたいユニタリ",
+      summary:
+        "A circuit you can apply controlled powers of, together with the routine preparing the state it acts on, plus the declaration that what is being asked for is the phase that state picks up — not the state, and not an expectation value read off it. The second half is not decoration: the same pair handed to a readout returns an average over a distribution, and an eigenphase is a single number sitting in the operator's spectrum.",
+      summaryJa:
+        "制御べき乗を作用させられる回路と、それが作用する状態を準備する手続き。そこに、求めているのはその状態が獲得する位相であるという宣言が加わります。状態そのものでも、そこから読み出す期待値でもありません。後半は飾りではありません。同じ組を読み出しに渡せば分布の平均が返りますが、固有位相は演算子のスペクトルの中にある一つの数です。",
+      // **Narrower than `runnable-evolution` on purpose, and the reason is the same
+      // bug `ground-state-problem` exists to prevent** (W21 §0.1, and W25 §3.3 puts
+      // it on the wall: *a new region's entry state must be narrower than the
+      // nearest existing state, or the path-finder invents routes*). Entered from
+      // `runnable-evolution` itself, `statePathsBetween` would have chained the KvN
+      // route — the one method on this map that produces that state — straight into
+      // phase estimation and called the result an answer. Every hop type-checks and
+      // the claim is nonsense: a Koopman–von Neumann simulation of a nonlinear ODE
+      // hands you an evolved state to measure, and it never declares that a phase in
+      // that evolution's spectrum is the quantity wanted.
+      //
+      // The pattern is the codebase's own, not a new invention: `hermitian-generator`
+      // vs `linear-ivp`, `ground-state-problem` vs `hamiltonian-access`. "The same
+      // object plus what is being asked of it" is a real state every time the
+      // question changes which methods can answer.
+      specializes: ["runnable-evolution"],
+    },
+    {
+      id: "device-figure",
+      label: "Number about the machine",
+      labelJa: "機械についての数値",
+      summary:
+        "A figure of merit for the hardware itself — an average error rate, a largest circuit it can actually run — together with the protocol that produced it and the confidence it was established at. It answers a question about the computer, never a question the computer was asked.",
+      summaryJa:
+        "ハードウェアそのものについての性能指標。平均誤り率や、実際に実行できる最大の回路といったものであり、それを生んだプロトコルと、確立された際の信頼度を伴います。答えているのは計算機についての問いであって、計算機に与えられた問いではありません。",
+      // **Deliberately not `observable-value`, and this is the distinction the
+      // owner's ai-ops#68 ruling makes possible rather than removes.** That state
+      // is "a scalar estimate with an additive-error guarantee" and it sits under
+      // `solution-answer` — the family of things a route hands back about a
+      // problem it was given. A quantum volume is an integer about a machine and
+      // an average error rate is a property of a gate set; neither is an answer to
+      // anything the machine was asked to compute. Reusing `observable-value`
+      // would have let the path-finder hand a benchmark result to anything that
+      // consumes a measured number, and would have told a reader that these
+      // protocols solve problems. They characterise the thing that solves them.
+    },
+    {
+      id: "periodic-function-oracle",
+      label: "Function promised to be periodic",
+      labelJa: "周期をもつと約束された関数",
+      summary:
+        "A function you can evaluate on a superposition of inputs, together with the promise that it repeats — and, decisively, the kind of thing its period is allowed to be. An integer in a finite cyclic group, an irrational real, or a lattice of periods in several dimensions are three different promises, and the routes that answer them are not interchangeable.",
+      summaryJa:
+        "入力の重ね合わせの上で評価できる関数と、それが繰り返すという約束。そして決定的に重要なのは、その周期がどのようなものでありうるかという指定です。有限巡回群の中の整数、無理数である実数、そして複数次元の周期の格子は、三つの異なる約束であり、それらに答える経路は互いに置き換えられません。",
+      // Which group the period lives in is part of the state rather than a
+      // parameter of the method, because it decides which methods can answer at
+      // all. Hallgren says so about his own problem in as many words: the periodic
+      // structure behind Pell's equation is "a group-like subset of the reals
+      // modulo an irrational number", and "this prevents direct application of
+      // Shor's algorithms."
+    },
+    {
+      id: "hidden-period",
+      label: "The period, recovered",
+      labelJa: "回復された周期",
+      summary:
+        "What the promise was hiding: a single integer period, a real number known to enough bits to be useful, or a basis for the lattice of periods. Not a number with an error bar — an exact integer where the group is finite, and elsewhere an approximation whose precision is itself part of the answer.",
+      summaryJa:
+        "約束が隠していたもの。すなわち、単一の整数周期、役に立つだけの桁数まで求めた実数、あるいは周期の格子の基底です。誤差付きの数ではありません。群が有限であるところでは正確な整数であり、それ以外では精度そのものが答えの一部となる近似値です。",
+      // **Deliberately not `observable-value`.** That state is "a scalar estimate
+      // with an additive-error guarantee", and an integer period recovered through
+      // a continued-fraction expansion is not an estimate at all — it is exact, and
+      // it is verifiable by evaluating the function. Reusing `observable-value`
+      // here would have let the path-finder hand a period to anything that consumes
+      // a measured number, and would have told a reader that Shor's algorithm
+      // returns an error bar. It does not.
     },
     {
       id: "routed-circuit",

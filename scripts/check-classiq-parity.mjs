@@ -147,12 +147,25 @@ for (const path of Object.keys(CLASSIQ_COVERAGE_BASIS)) {
   }
 }
 
-for (const path of Object.keys(CLASSIQ_NOT_APPLICABLE)) {
+// A decline is the one declaration that makes this gauge look better, so it is the
+// one that has to name someone outside this repository. Without the ruling the
+// cheapest way to close the remaining gap is to write a sentence.
+for (const [path, decline] of Object.entries(CLASSIQ_NOT_APPLICABLE)) {
   if (!indexPaths.has(path)) {
     errors.push(`notApplicable declares "${path}", which is not in the pinned index`);
   }
   if (coverage.has(path)) {
     errors.push(`"${path}" is declared both covered and not-applicable — pick one`);
+  }
+  if (!decline?.reason?.trim()) {
+    errors.push(`"${path}" is declined with no reason — a reader cannot disagree with it`);
+  }
+  if (!/^https?:\/\//.test(decline?.ruling ?? "")) {
+    errors.push(
+      `"${path}" is declined without a ruling url. A decline removes a row from the denominator,`
+      + " so it must point at where the owner decided — an agent's sentence and an owner's ruling"
+      + " read identically once they are both comments.",
+    );
   }
 }
 
@@ -164,14 +177,15 @@ const rows = index.entries.map((entry) => ({
   notApplicable: Object.hasOwn(CLASSIQ_NOT_APPLICABLE, entry.path),
 }));
 const covered = rows.filter((row) => row.slugs.length > 0);
-const notApplicable = rows.filter((row) => row.notApplicable && row.slugs.length === 0);
+const declined = rows.filter((row) => row.notApplicable && row.slugs.length === 0);
 const missing = rows.filter((row) => row.slugs.length === 0 && !row.notApplicable);
 
 const byCategory = {};
 for (const row of rows) {
-  byCategory[row.category] ??= { total: 0, covered: 0 };
+  byCategory[row.category] ??= { total: 0, covered: 0, declined: 0 };
   byCategory[row.category].total += 1;
   if (row.slugs.length > 0) byCategory[row.category].covered += 1;
+  else if (row.notApplicable) byCategory[row.category].declined += 1;
 }
 
 const report = {
@@ -180,7 +194,8 @@ const report = {
   indexFetchedAt: index.fetchedAt,
   classiqEntries: rows.length,
   covered: covered.length,
-  notApplicable: notApplicable.length,
+  declined: declined.length,
+  declinedPaths: declined.map((row) => ({ path: row.path, ...CLASSIQ_NOT_APPLICABLE[row.path] })),
   missing: missing.length,
   byCategory,
   declaredByBasis: Object.fromEntries(basisCounts),
@@ -193,13 +208,23 @@ if (AS_JSON) {
 } else if (!QUIET || errors.length > 0) {
   console.log(
     `Classiq parity: ${covered.length}/${rows.length} covered`
-    + `${notApplicable.length > 0 ? `, ${notApplicable.length} declared not-applicable` : ""}`
+    + `${declined.length > 0 ? `, ${declined.length} declined by owner ruling` : ""}`
     + `, ${missing.length} missing  (index at ${String(index.commit).slice(0, 8)},`
     + ` fetched ${index.fetchedAt})`,
   );
   if (!QUIET) {
     for (const [category, counts] of Object.entries(byCategory)) {
-      console.log(`  ${counts.covered}/${counts.total}  ${category}`);
+      // "60/61, 1 declined" and "60/61" are different sentences: the first says the
+      // category is finished and the second says it is one short.
+      console.log(
+        `  ${counts.covered}/${counts.total}  ${category}`
+        + `${counts.declined > 0 ? `  (${counts.total - counts.covered - counts.declined} outstanding;` : ""}`
+        + `${counts.declined > 0 ? ` ${counts.declined} declined, so this category is closed)` : ""}`,
+      );
+    }
+    for (const row of declined) {
+      console.log(`  declined: ${row.path}`);
+      console.log(`    ruled at ${CLASSIQ_NOT_APPLICABLE[row.path].ruling}`);
     }
     // The split the headline cannot show. `source-formulates-problem` is a
     // stronger claim than `method-instance`, and after ai-ops#42 the two are

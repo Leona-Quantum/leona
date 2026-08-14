@@ -16,6 +16,7 @@ import { StarIcon } from "../../../components/icons";
 import { VerificationMethodChips, VerificationTierBadge } from "../../../components/repository-verification";
 import { loadStarredRepositorySlugs, toggleRepositoryStar } from "../../../lib/repository-stars";
 import { TOPICS_BY_ID } from "../../../lib/repository/topics";
+import { TOPICS_A_CATEGORY_TAB_OWNS } from "../../../lib/repository/topic-filter";
 import { isInformative, isPermanentGap, knownGapsState } from "../../../lib/repository/coverage";
 import type {
   SourceCoverage,
@@ -321,7 +322,17 @@ export function RepositoryEntryView({
   const methods = entryVerificationMethods(entry);
   // Resolved through the vocabulary rather than rendered from the ids, so an id
   // the API knows and this build does not is dropped instead of printed raw.
+  //
+  // The four topics a category tab owns are dropped as well (ai-ops#75). On this
+  // page they were the worst case of that collision rather than the mildest: the
+  // kicker two elements up already prints `categoryLabel` — "Gates" — and the
+  // chip beside it said "Gate" and linked to `?topic=gate-primitive`, a list of
+  // 27 under a word the tabs answer with 29. In Japanese the kicker and the chip
+  // were the same string. Nothing is lost by dropping it, because the kicker is
+  // still there saying which kind this is; what goes is the second, quieter
+  // answer and the link onto the smaller number.
   const topics = (entry.topics ?? [])
+    .filter((id) => !TOPICS_A_CATEGORY_TAB_OWNS.has(id))
     .map((id) => TOPICS_BY_ID.get(id))
     .filter((topic): topic is NonNullable<typeof topic> => topic !== undefined);
   const title = locale === "ja" ? entry.titleJa : entry.title;
@@ -359,10 +370,11 @@ export function RepositoryEntryView({
         <h1>{title}</h1>
         <p>{description}</p>
         {/* The closed vocabulary above the free keywords, and separated from
-            them, because they are different kinds of claim: a topic is one of
-            twenty-nine values the whole corpus is classified against and is what
-            /repository filters on; a tag is a keyword this record happens to
-            wear, and 217 of the 307 in the corpus are worn by exactly one entry.
+            them, because they are different kinds of claim: a topic is one of a
+            fixed set of values the whole corpus is classified against and is
+            offered as a filter on /repository; a tag is a keyword this record
+            happens to wear, and 217 of the 307 in the corpus are worn by
+            exactly one entry.
             Each topic carries its definition on hover — a vocabulary whose terms
             a reader has to guess at is a vocabulary they will read wrong. */}
         {topics.length > 0 ? (

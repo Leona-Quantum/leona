@@ -99,25 +99,45 @@ import { PUBLIC_REPOSITORY_CATEGORY_IDS, type PublicRepositoryCategory } from ".
  */
 const ABOUT_COPY: Record<
   PublicLocale,
-  { summary: string; repository: string; map: string; mapLink: string; papers: string; papersLink: string }
+  {
+    summary: string;
+    repository: string;
+    map: string;
+    mapLink: string;
+    papers: string;
+    papersLink: string;
+    claims: string;
+    claimsLink: string;
+  }
 > = {
   en: {
     summary: "About the Atlas",
     repository:
       "Every quantum algorithm worth knowing about, written down the same way: what it takes, what it returns, what it costs, and who proved it. Where the sources disagree, we say so.",
-    map: "The map draws the same corpus as one connected structure — every method is a route, and the routes share their steps.",
-    mapLink: "Open the interactive map",
+    map: "The Map draws the same corpus as one connected structure — every method is a route, and the routes share their steps.",
+    // "Open the Map", not "Open the interactive map" (ai-ops#78). This link is
+    // where the four names met: it sent a reader who had just read "the
+    // interactive map" to a page headed "Layers". Both ends now say Map.
+    mapLink: "Open the Map",
     papers: "Every source behind both surfaces, and what each one actually reports.",
     papersLink: "See the papers",
+    claims:
+      "A speedup class on a record is quoted from an outside index, not derived here — and on some records the"
+      + " paper behind it does not state the same thing.",
+    claimsLink: "See whose claim it is",
   },
   ja: {
-    summary: "Atlas について",
+    summary: "量子アトラスについて",
     repository:
       "知る価値のある量子アルゴリズムを、何を取り、何を返し、どれだけかかり、誰が証明したのか、すべて同じ形式で記述しています。出典どうしが食い違うところは、そのまま記録します。",
     map: "地図は同じ収録内容を、工程を共有しあう経路のつながりとしてひとつの構造に描いた図です。",
-    mapLink: "対話型の地図を開く",
+    mapLink: "地図を開く",
     papers: "どちらの画面も依拠している出典と、それぞれが実際に報告している内容です。",
     papersLink: "論文を見る",
+    claims:
+      "記録に示された速度向上の区分は外部の索引からの引用であって、ここで導いたものではありません。"
+      + "根拠となる論文が同じことを述べていない記録もあります。",
+    claimsLink: "誰の主張かを見る",
   },
 };
 
@@ -150,6 +170,14 @@ export function AboutTheAtlas({ locale }: { locale: PublicLocale }) {
         </p>
         <p>
           {copy.papers} <a href="/repository/papers">{copy.papersLink}</a>
+        </p>
+        {/* A route nothing links to is a route nobody reaches, and this one
+            carries the finding the corpus produced rather than a navigation
+            convenience. It sits here rather than in the site nav on purpose:
+            seven records against thirty-one nobody has checked is a real result
+            and not yet a headline. */}
+        <p>
+          {copy.claims} <a href="/repository/claims">{copy.claimsLink}</a>
         </p>
       </div>
     </details>

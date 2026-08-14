@@ -88,7 +88,12 @@ import { InfiniteCanvas } from "./infinite-canvas";
 
 const COPY = {
   en: {
-    indexHeading: "Layers",
+    // The surface is the Map and the catalogue is the Quantum Atlas — one name
+    // each (ai-ops#78). This heading said "Layers" while the Atlas page that
+    // sends readers here said "the interactive map", the nav said "Atlas" over
+    // a page headed "The Quantum Atlas", and this breadcrumb said "← Layers":
+    // four names for two places. The route `/repository/layers` is unchanged.
+    indexHeading: "Map",
     indexLead:
       "A record in the Atlas says what one circuit is. This says what a piece is made of, and what else could fill its place. Open a step to see the slot it fills and every method recorded for it; climb back out to see what that slot is a part of.",
     modelHeading: "How to read it",
@@ -259,9 +264,9 @@ const COPY = {
     reportsAxis: { theory: "theory", simulation: "simulation", hardware: "hardware" },
     reportsStatus: { reported: "yes", absent: "no", unknown: "?" },
     reportsUnread: "nobody has read this paper for what it reports",
-    backToLayers: "← Layers",
-    backToAtlas: "Atlas",
-    layersLink: "Layers — how the pieces fit together",
+    backToLayers: "← Map",
+    backToAtlas: "The Quantum Atlas",
+    layersLink: "Map — how the pieces fit together",
     onLayers: "Where this sits",
     onLayersLead: "This record is named by the layer graph at:",
     kindState: "State",
@@ -313,7 +318,11 @@ const COPY = {
     zoomPercent: (n: number) => `${n}%`,
   },
   ja: {
-    indexHeading: "階層",
+    // 地図 rather than マップ: the map's own about box (`map-info-popup.tsx`)
+    // and every JA sentence pointing at this surface already say 地図, so it is
+    // the name this locale had — 階層 was the odd one, and it is the word for a
+    // layer, which is a thing *on* the map.
+    indexHeading: "地図",
     indexLead:
       "Atlas の各項目は、ひとつの回路が何であるかを述べます。この画面が述べるのは、ある部品が何から成り立っているか、そしてその場所を他に何が埋めうるかです。ステップを開けば、それが埋める枠と、そこに記録されたすべての手法が見えます。戻れば、その枠がどこの一部なのかが見えます。",
     modelHeading: "読み方",
@@ -420,9 +429,9 @@ const COPY = {
     reportsAxis: { theory: "理論", simulation: "数値計算", hardware: "実機" },
     reportsStatus: { reported: "あり", absent: "なし", unknown: "未確定" },
     reportsUnread: "この論文が何を報告しているかは、まだ誰も読んでいません",
-    backToLayers: "← 階層",
-    backToAtlas: "Atlas",
-    layersLink: "階層 — 部品どうしの組み合わさり方",
+    backToLayers: "← 地図",
+    backToAtlas: "量子アトラス",
+    layersLink: "地図 — 部品どうしの組み合わさり方",
     onLayers: "この項目の位置",
     onLayersLead: "この項目は階層グラフの次の箇所から参照されています：",
     kindState: "対象",
@@ -2006,7 +2015,7 @@ export function LayerCensusPanel({
           it documents it *from*. A reader who wants the second is otherwise
           stuck opening node pages one at a time. */}
       <p>
-        {copy.papersLead(paperTraces(graph).length, PAPER_REGISTER.papers.length)}{" "}
+        {copy.papersLead(paperTraces(graph, STATE_VOCABULARY).length, PAPER_REGISTER.papers.length)}{" "}
         <a href="/repository/papers">{copy.papersLink}</a>
       </p>
     </section>

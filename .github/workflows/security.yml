@@ -51,6 +51,29 @@ jobs:
           OSV_VERSION: v2.4.0
           OSV_SHA256: 15314940c10d26af9c6649f150b8a47c1262e8fc7e17b1d1029b0e479e8ed8a0
         run: |
+          # Both pins must be non-empty before the URL is built. This cannot fire
+          # in CI -- `env:` above sets them at job scope -- and it is here for
+          # legibility, not because anything is broken.
+          #
+          # Why it earns its four lines: ai-ops#50 was reported as this download
+          # 404ing against a renamed release asset. It was not. The job's real
+          # failure was a one-off 503 from GitHub's release host, fixed by #490.
+          # The 404 came from reproducing the command BY HAND in a shell, where
+          # OSV_VERSION is a workflow-scoped variable and therefore empty:
+          #
+          #   .../releases/download//osv-scanner_linux_amd64   <- note the //
+          #   curl: (56) The requested URL returned error: 404   x6, exit 56
+          #
+          # Reproduced exactly, 2026-08-13. An empty pin silently produces a URL
+          # that looks almost right and 404s, which reads as a missing asset and
+          # sends the next reader hunting upstream. v2.4.0 and its linux_amd64
+          # asset both still exist and the checksum below still matches the
+          # SHA256SUMS published with that release -- verified the same day.
+          # No apostrophes in these messages: the word in ${VAR:?word} is parsed
+          # for quotes, so one unmatched ' is a syntax error that fails the step
+          # unconditionally -- which is how the first draft of this guard broke.
+          : "${OSV_VERSION:?OSV_VERSION is empty -- set it in the env: block of this step, or you are running this by hand outside CI}"
+          : "${OSV_SHA256:?OSV_SHA256 is empty -- refusing to download an unpinned binary}"
           # Retry the download, not the trust decision. The release host returned
           # 503 on 2026-08-12 and reddened an unrelated PR (ai-ops#50); a single
           # attempt makes any blip on someone else's server look like a security
@@ -150,6 +173,15 @@ jobs:
         run: pnpm --filter @majorana/web build
       - name: no secret-shaped strings in browser-served files
         run: node scripts/check-client-bundle-secrets.mjs --dist apps/web/.next
+      # Rides this job's existing build rather than adding one. The check needs
+      # the route table, which only `next build` produces, and this is the only
+      # job in the repository that runs it — `ci.yml` runs lint, typecheck and
+      # test, so a page silently going dynamic is invisible to every required
+      # check. Same self-test-before-believed rule as the scanner above.
+      - name: routes that must be prerendered still are
+        run: |
+          node scripts/check-static-routes.mjs --self-test
+          node scripts/check-static-routes.mjs --dist apps/web/.next
 
   # AGENTS.md hard rule 1 — migrations, contracts, sandbox, workflows and auth are
   # "never merged on subagent/Codex authority". That rule names `.github/CODEOWNERS`

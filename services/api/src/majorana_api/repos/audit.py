@@ -1,4 +1,5 @@
-"""Audit-log repository — security-relevant actions only. Append-only (DB grant).
+"""Audit-log repository — security-relevant actions only. Append-only, enforced
+by a BEFORE UPDATE OR DELETE trigger (migration 0050).
 
 Any role may generate audit rows (auth events include viewers); reading the
 log is admin-only.

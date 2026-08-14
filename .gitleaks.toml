@@ -36,6 +36,25 @@ useDefault = true
 id = "generic-api-key"
 
   [rules.allowlist]
+  # A path here means: nothing in this file is a finding. Used once, deliberately.
+  #
+  # `scripts/zoo-parity/zoo-index.json` is a fetched copy of a PUBLIC bibliography —
+  # the Quantum Algorithm Zoo's entry list, regenerated wholesale by
+  # `scripts/generate-zoo-index.mjs`. Its `refs[]` entries carry BibTeX citation keys
+  # ("Biasse_Song16", "Reichardt2010", "Ambainis_Montanaro12") under a field literally
+  # named `key`, which is what trips `generic-api-key`. There are 291 of them and every
+  # one names a paper.
+  #
+  # Anchored on the path rather than a value pattern, and that is the narrower choice:
+  # a regex loose enough to cover "HH21" and "Shor_factoring94" would be loose enough to
+  # hide a short weak credential ANYWHERE in the repository. Nobody hand-edits a
+  # generated index, so it is not a place a credential arrives.
+  #
+  # Found 2026-08-14 while making the weekly full-history scan green again. These seven
+  # were NOT in the 2026-08-10 CI run — the commit adding them is dated 2026-08-12 — so
+  # without this the gate would have gone red again on the next Sunday run, six days
+  # after the fix looked complete.
+  paths = ['''^scripts/zoo-parity/zoo-index\.json$''']
   regexTarget = "match"
   regexes = [
     # 1. A dotted, version-suffixed scientific identifier — "optimizer.slsqp.v1",
@@ -71,4 +90,28 @@ id = "generic-api-key"
     #    40 hex characters is also what a hex-encoded secret looks like, so this
     #    is anchored on a `*_commit`/`*_sha` field name rather than on the shape.
     '''(?i)[a-z_]*(?:commit|sha)["'\s]*[:=]{1,2}[\s"']*[0-9a-f]{40}["']''',
+
+    # 4. The disposable CI ledger key in `test_vqe_production_e2e.py`. The file's
+    #    own comment says what it is: "an intentionally public, CI-only key for
+    #    the disposable test ledger ... It must never be reused by a deployed
+    #    service." It exists so the production Settings contract can be tested
+    #    without weakening the requirement for a real provisioned secret.
+    #
+    #    Anchored on the field name AND a slug-shaped value — lowercase words
+    #    joined by hyphens, no entropy. A real HMAC key is base64 or hex and
+    #    would not match, so pasting one into this same constant still fails the
+    #    gate. That is the point: the suppression is exactly as wide as the
+    #    evidence.
+    '''(?i)DECISION_HMAC_KEY["'\s]*[:=]{1,2}[\s"']*[a-z0-9]+(?:-[a-z0-9]+){2,}["']''',
+
+    # 5. The placeholder in `test_secret_like_model_output_is_rejected_without_
+    #    echoing_it`, which is a test OF the secret-rejection path: it asserts
+    #    the parser raises `potential_secret_in_candidate` and that the value is
+    #    absent from the error. The fixture has to look like a key for the test
+    #    to mean anything.
+    #
+    #    Anchored on the literal alphabet, A through Z in order. Nothing with
+    #    real entropy can contain it, so this cannot suppress a genuine key.
+    '''ABCDEFGHIJKLMNOPQRSTUVWXYZ''',
   ]
+

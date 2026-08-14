@@ -1498,6 +1498,18 @@ a.mj-facet-option:hover {
   font-weight: 500;
 }
 
+/* 404 — borrows the legal hero's typography, but it is the only section on the
+   page: nothing follows it except the footer, whose own rule would sit a
+   hand's width under the hero's, so the hero drops its bottom border. The
+   actions need their own top margin because the lede's small bottom margin was
+   sized for a document continuing beneath it, not for a pair of buttons. */
+.mj-not-found-site .mj-legal-hero {
+  border-bottom: none;
+}
+.mj-not-found-site .mj-public-actions {
+  margin-top: var(--sp-6);
+}
+
 @media (max-width: 860px) {
   .mj-contact-hero,
   .mj-company-intro,
@@ -11453,14 +11465,20 @@ div.mj-rail-row:hover {
 .mj-converge-key { color: var(--text-2); }
 
 /* --- the ways across -----------------------------------------------------
-   Was a plain 2px stroke (`.mj-converge-strand`, now gone). The redraw pinches
-   each line to a point at both circles and thickens it toward the middle, so
-   the shape itself now carries how much of the crossing runs through here,
-   which a uniform stroke could not say. What a reader sees is a filled region
-   — `lane.outline`, the tapered area, closed — and the geometry invariants
-   still live on the centre line underneath it (`lane.d`), which is why the hit
-   target below is stroked along `d` and not the fill: see `.mj-converge-spine`
-   for where `d` is drawn directly. */
+   What a reader sees is a filled region — `lane.outline`, closed — and the
+   geometry invariants still live on the centre line underneath it (`lane.d`),
+   which is why the hit target below is stroked along `d` and not the fill: see
+   `.mj-converge-spine` for where `d` is drawn directly.
+
+   **The region is thin / thick / thin since R15, not a taper.** It ran from
+   nothing at each circle up to `2·half` in the middle, and the owner asked for
+   that to stop (ai-ops#64: *"i don't like how lines taper off — just keep thin
+   tendon lines and the same short line bodies around labels"*). So the fill is
+   now a 2px line for most of its length with a short bar around the name, and
+   that bar is `name + 16px` long however long the column is. The consequence for
+   this rule is that `opacity` is doing more work than it was: half the ink on a
+   long line is a 2px sliver, so a lower opacity here reads as a line that has
+   faded out rather than as one drawn faintly. */
 .mj-converge-strand-body {
   fill: currentColor;
   stroke: none;
@@ -11673,7 +11691,15 @@ div.mj-rail-row:hover {
   opacity: 0.82;
 }
 
-.mj-converge-lane-name {
+/* `--key-name` is the legend swatch's sample text. One rule and two selectors,
+   never two rules: the swatch's whole job is to look like what the canvas draws,
+   so the day these two diverge is the day the key starts describing a picture
+   nobody has. It is a separate CLASS so that `.mj-converge-lane-name` means
+   exactly "a painted name on the canvas" and a probe can count it without
+   subtracting a legend — see `map-info-popup.tsx` for the arm that was off by
+   one. */
+.mj-converge-lane-name,
+.mj-converge-key-name {
   fill: var(--text-1);
   font-family: var(--font-ui);
   font-size: 12px;
@@ -11711,7 +11737,8 @@ div.mj-rail-row:hover {
    that selector list: the comment above `.mj-converge-scroll` already states
    the rule for these two surfaces — a change meant for one picture must not
    silently reach the other, even a change that happens to agree with it. */
-.mj-converge-lane--atlas .mj-converge-lane-name {
+.mj-converge-lane--atlas .mj-converge-lane-name,
+.mj-converge-lane--atlas .mj-converge-key-name {
   text-decoration: underline dotted from-font;
   text-underline-offset: 3px;
   text-decoration-thickness: 1px;

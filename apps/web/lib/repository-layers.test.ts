@@ -1297,6 +1297,21 @@ test("a coined composite is refused in the short form too, where it is likeliest
  * behind for later rot to fill.
  */
 const HOLLOW_BY_SLOT: ReadonlyMap<string, number> = new Map([
+  // A region opening, in the gate's own words, rather than rot. The PDE
+  // discretization slots arrived in session 15 with two methods each and no
+  // recorded interior, for the same reason the discretization slots above are
+  // hollow: what a discretization produces is a system of rows, and assembling
+  // rows is not a capability this graph decomposes.
+  //
+  // **`spatial-discretization` is deliberately NOT here, and it was, for an
+  // hour.** Recording that the graph-Laplacian route lands on a Hermitian
+  // generator rather than a bare linear one — which its paper states outright,
+  // and which is what lets it reach a simulator directly — made the two methods
+  // draw different chains, and the census dropped to 0 on its own. The gate then
+  // asked for the row to be deleted rather than left as silent room. That is the
+  // better outcome than declaring the twins: the narrowing was true, sourced,
+  // and the exception stopped being needed.
+  ["full-discretization", 2],
   // The three the owner named by sight. Each is a corpus job, not a gate problem.
   // 5 → 6 in session 130, and declared rather than absorbed: the sixth is
   // `chebyshev-pseudospectral-collocation`, authored from arXiv:1901.00961 §2 so
@@ -1339,7 +1354,16 @@ const HOLLOW_BY_SLOT: ReadonlyMap<string, number> = new Map([
   // `scripts/check-layer-graph.mjs`; this line is its count.
   ["linear-ode-solve", 2],
   ["polynomial-approximation", 2],
-  ["block-encode-matrix", 2],
+  // 4 since session 15, and the +2 for ONE new method is the summing rule working rather
+  // than two methods rotting. `thc-block-encoding` does not join the existing pair — it
+  // forms a SECOND group with `pauli-lcu-block-encoding`, because both draw one own hop
+  // with a `state-preparation` stub, and a group of one is not a group. So the slot goes
+  // from one group of two to two groups of two. What separates the new pair is what the
+  // LCU sum runs over — Pauli strings against tensor-hypercontraction factors — and a
+  // decomposition is not a step this graph draws, the same shape as the objective and
+  // readout rows below. Their reason is written out in `KNOWN_TWINS`
+  // (`scripts/check-layer-graph.mjs`), which is the gate that fails the build.
+  ["block-encode-matrix", 4],
   ["qubit-routing", 2],
   ["gate-synthesis", 2],
   ["error-correction", 2],
@@ -1353,7 +1377,13 @@ const HOLLOW_BY_SLOT: ReadonlyMap<string, number> = new Map([
   // family nobody has decomposed — and each is authored as a LEAF rather than given a stub
   // it was never described as having, which would be inventing structure to escape this
   // line.
-  ["ansatz-construction", 8],
+  // 9 since session 15, and it moves by ONE although two ansätze were authored — which is
+  // the `refines` rule doing exactly what it was written for. `generalized-excitation-ansatz`
+  // is a sixth fixed family, a leaf with no recorded interior, so it counts.
+  // `batched-adapt-ansatz` declares `refines: adapt-ansatz` and is dropped, the same way
+  // `qubit-adapt-ansatz` is: a declared refinement has already said why it looks like its
+  // sibling, which is the whole question this census asks.
+  ["ansatz-construction", 9],
   // **W21-E's region, and this line is the thing a global ceiling could not say.** Six of
   // the seven excited-state methods draw a sibling's picture, in two groups: four take
   // VQE's three hops and differ only in the objective handed to the optimiser, and two
@@ -1384,7 +1414,48 @@ const HOLLOW_BY_SLOT: ReadonlyMap<string, number> = new Map([
   // 3 since B5 unit 4: `natural-gradient-optimization` is a third one-hop filler.
   // The three differ in the objective (`cvar-objective`, `variance-objective`) or in the
   // metric the step is taken against (this one), and neither is a step this graph draws.
-  ["parameter-optimization", 3],
+  // 4 since session 15: `spsa-optimization` is a fourth one-hop filler. It differs from the
+  // other three in neither the objective nor the metric but in HOW THE GRADIENT IS
+  // ESTIMATED — two objective evaluations in one random direction instead of one pair per
+  // parameter — and an estimator is not a step this graph draws either. Three different
+  // kinds of difference now sit in one undrawable group, which is the argument for giving
+  // the objective a state rather than for raising this number again.
+  ["parameter-optimization", 4],
+  // **New in session 15 unit 2, and this row is a slot OPENING rather than rot** — the
+  // distinction this census exists to let us state. `phase-estimation` was authored with
+  // exactly two methods and neither has a recorded interior yet, which is the honest
+  // starting state of a slot nobody has decomposed. What separates them is not a step
+  // but a resource choice — m ancillas read out together against one ancilla reused
+  // across m rounds with classical feedback — and Dobsicek et al. state that trade in
+  // their own words, so the difference is sourced even though the drawing cannot show
+  // it.
+  //
+  // **Note this row has NO matching `KNOWN_TWINS` entry, unlike every other row here,
+  // and that is not an omission.** That gate only inspects methods whose route opens
+  // into something; these two open into nothing at all, so it never sees them. The two
+  // instruments therefore disagree about what a look-alike is, and this census is the
+  // stricter of the two — which is worth knowing before trusting a green
+  // `check-layer-graph` as evidence that a new slot's methods are distinguishable.
+  ["phase-estimation", 2],
+  // **Session 15 unit 3, and the largest opening row this census has ever carried** —
+  // all three methods of a brand-new subject region, none of them decomposed. What
+  // separates them is not a step but WHAT KIND OF THING THE PERIOD IS: an integer in a
+  // finite cyclic group, an irrational real, a lattice of rank r. That is a difference
+  // in what is possible rather than in cost, and Hallgren states it against Shor in his
+  // own words — an irrational period "prevents direct application of Shor's
+  // algorithms". So this row is as far from rot as a row here can be: the distinction
+  // is sourced to a primary paper, it is written into the slot's `whyALayer`, and the
+  // drawing simply has no vocabulary for the type of a period. If a `via` ever becomes
+  // pinnable here it will be because the group type got a state, not because these
+  // three were decomposed.
+  ["hidden-period-finding", 3],
+  // Unit 4's region, and a slot opening again rather than rot. What separates quantum
+  // volume from randomized benchmarking is WHAT THE NUMBER IS ABOUT — a whole machine
+  // against a gate set in isolation — and "what a measurement is about" is not a step,
+  // so the drawing cannot show it. Unusually well sourced for a hollow row: one of the
+  // two papers argues explicitly against the other's category, which is a stronger
+  // distinction than most slots have and still undrawable.
+  ["device-characterization", 2],
 ]);
 
 /**

@@ -234,6 +234,30 @@ export const HOME_COPY: Record<PublicLocale, {
  * allowance is a promise the product breaks the first time somebody reaches it.
  * Enterprise states capabilities and no allowances — there is nothing for a
  * test to tie it to, and a number on that card would be one nothing enforces.
+ *
+ * ## No card says "unlimited artifacts", however it is phrased (ai-ops#77)
+ *
+ * > *"10 artifacts is the cap and the unlimited line should go."* — owner,
+ * > 2026-08-14
+ *
+ * Every card carried `"Unlimited private projects, 50 artifacts in each"`
+ * directly under its own artifact cap. Free read "10 private artifacts" and then
+ * offered unlimited projects holding fifty each; Plus said 75 and Professional
+ * 250 with the same line under them. The multiplication is the problem: the
+ * enforced cap is per account, so the second line advertised an allowance the
+ * first line refuses, and a reader has no way to tell which one bills.
+ *
+ * The line is gone from all three enforced tiers rather than from Free alone.
+ * The ruling names Free because that is the card the owner was reading, but the
+ * reason it gives — the account cap is the cap — is not a fact about Free, and
+ * leaving the sentence on the two paid cards would keep exactly the promise it
+ * was struck for.
+ *
+ * What went with it is the true half: private projects really are uncapped, and
+ * `50` really is a project's default artifact limit. Neither is stated on the
+ * pricing page now. That is the owner's call to reverse, and it wants a phrasing
+ * that cannot be read as an artifact allowance — the reason the sentence failed
+ * was that it put a per-project number where a reader was counting their plan.
  */
 export const PRICING_COPY: Record<PublicLocale, {
   hero: { title: string; body: string };
@@ -243,9 +267,9 @@ export const PRICING_COPY: Record<PublicLocale, {
   en: {
     hero: { title: "A clear path from first run to team work.", body: "Start free, keep private work in Studio, and move up when you need more verification capacity, export tooling, or shared R&D controls." },
     plans: [
-      { name: "Free", price: "$0", cadence: "per user, per month", description: "Enough to browse the public evidence and put the workbench through a real problem.", features: ["The full public Atlas", "5 agent runs a week", "10 private artifacts", "Unlimited private projects, 50 artifacts in each", "Browser simulation up to 8 qubits"], action: "Try the preview", tone: "quiet" },
-      { name: "Plus", price: "$50", cadence: "per user, per month", description: "Room to work at your own pace: enough runs to iterate on a problem all week, room to keep the whole line of work, and a wider browser lane. Sharing a project with someone else starts at Professional.", features: ["75 agent runs a week", "75 private artifacts", "Unlimited private projects, 50 artifacts in each", "Browser simulation up to 12 qubits"], action: "Join early access", tone: "featured" },
-      { name: "Professional", price: "$240", cadence: "per user, per month", description: "Share a project with someone outside your workspace — read-only, or read-and-edit so they can put work back — with a per-project limit you set.", features: ["Share a project with people outside your workspace", "Up to 4 shared projects per person — ones you share and ones shared with you", "Unlimited private projects, 50 artifacts in each", "250 agent runs a week", "250 private artifacts, not counting anything in a shared project", "Browser simulation up to 18 qubits"], action: "Contact us", tone: "quiet" },
+      { name: "Free", price: "$0", cadence: "per user, per month", description: "Enough to browse the public evidence and put the workbench through a real problem.", features: ["The full public Atlas", "5 agent runs a week", "10 private artifacts", "Browser simulation up to 8 qubits"], action: "Try the preview", tone: "quiet" },
+      { name: "Plus", price: "$50", cadence: "per user, per month", description: "Room to work at your own pace: enough runs to iterate on a problem all week, room to keep the whole line of work, and a wider browser lane. Sharing a project with someone else starts at Professional.", features: ["75 agent runs a week", "75 private artifacts", "Browser simulation up to 12 qubits"], action: "Join early access", tone: "featured" },
+      { name: "Professional", price: "$240", cadence: "per user, per month", description: "Share a project with someone outside your workspace — read-only, or read-and-edit so they can put work back — with a per-project limit you set.", features: ["Share a project with people outside your workspace", "Up to 4 shared projects per person — ones you share and ones shared with you", "250 agent runs a week", "250 private artifacts, not counting anything in a shared project", "Browser simulation up to 18 qubits"], action: "Contact us", tone: "quiet" },
       { name: "Enterprise", price: "$420+", cadence: "per user, per month", description: "Everything in Professional, with the allowances, review path, and terms agreed with your organisation rather than set here.", features: ["Everything in Professional", "Run and artifact allowances agreed with your organisation", "Private-corpus and internal-research conversations", "Named contact for onboarding and evaluation"], action: "Talk to sales", tone: "quiet" },
     ],
     note: { label: "A transparent starting point", title: "The prices are set; checkout is not live yet.", body: "These are the intended early-access prices, per user per month. No payment method can be added in this deployment — there is no card entry, checkout, or charge — so nothing here bills anyone today. Exact credits and enterprise terms are confirmed before paid billing is enabled." },
@@ -253,9 +277,9 @@ export const PRICING_COPY: Record<PublicLocale, {
   ja: {
     hero: { title: "まずは個人で試し、そのままチームで研究へ。", body: "無料で始め、非公開の研究はStudioに保存できます。検証できる実行回数、エクスポート、共同研究の管理が必要になったら次のプランへ進めます。" },
     plans: [
-      { name: "Free", price: "$0", cadence: "1ユーザーあたり月額", description: "公開されている回路と検証結果を確認し、実際の課題で一連の操作を試せます。", features: ["公開Atlasのすべて", "週5回のエージェント実行", "非公開の回路・実行記録10件", "非共有プロジェクトは無制限。1プロジェクトあたり50件まで", "8量子ビットまでのブラウザ実行"], action: "プレビューを試す", tone: "quiet" },
-      { name: "Plus", price: "$50", cadence: "1ユーザーあたり月額", description: "個人の非公開研究を自分のペースで進められます。1週間を通して試行を重ねられる実行回数と、その過程をまとめて残せる保存件数、そしてより広いブラウザ実行の枠を用意しています。他の人とのプロジェクト共有はProfessionalからです。", features: ["週75回のエージェント実行", "非公開の回路・実行記録75件", "非共有プロジェクトは無制限。1プロジェクトあたり50件まで", "12量子ビットまでのブラウザ実行"], action: "早期アクセスに参加", tone: "featured" },
-      { name: "Professional", price: "$240", cadence: "1ユーザーあたり月額", description: "ワークスペースの外の相手にプロジェクトを共有できます。閲覧のみ、または編集可能（相手から回路を追加できます）を選べ、追加できる件数はプロジェクトごとに指定できます。", features: ["ワークスペース外の相手とプロジェクトを共有", "共有プロジェクトは1人あたり4件まで（自分が共有したものと、共有されたものの合計）", "非共有プロジェクトは無制限。1プロジェクトあたり50件まで", "週250回のエージェント実行", "非公開の回路・実行記録250件（共有プロジェクト内のものは含みません）", "18量子ビットまでのブラウザ実行"], action: "お問い合わせ", tone: "quiet" },
+      { name: "Free", price: "$0", cadence: "1ユーザーあたり月額", description: "公開されている回路と検証結果を確認し、実際の課題で一連の操作を試せます。", features: ["公開Atlasのすべて", "週5回のエージェント実行", "非公開の回路・実行記録10件", "8量子ビットまでのブラウザ実行"], action: "プレビューを試す", tone: "quiet" },
+      { name: "Plus", price: "$50", cadence: "1ユーザーあたり月額", description: "個人の非公開研究を自分のペースで進められます。1週間を通して試行を重ねられる実行回数と、その過程をまとめて残せる保存件数、そしてより広いブラウザ実行の枠を用意しています。他の人とのプロジェクト共有はProfessionalからです。", features: ["週75回のエージェント実行", "非公開の回路・実行記録75件", "12量子ビットまでのブラウザ実行"], action: "早期アクセスに参加", tone: "featured" },
+      { name: "Professional", price: "$240", cadence: "1ユーザーあたり月額", description: "ワークスペースの外の相手にプロジェクトを共有できます。閲覧のみ、または編集可能（相手から回路を追加できます）を選べ、追加できる件数はプロジェクトごとに指定できます。", features: ["ワークスペース外の相手とプロジェクトを共有", "共有プロジェクトは1人あたり4件まで（自分が共有したものと、共有されたものの合計）", "週250回のエージェント実行", "非公開の回路・実行記録250件（共有プロジェクト内のものは含みません）", "18量子ビットまでのブラウザ実行"], action: "お問い合わせ", tone: "quiet" },
       { name: "Enterprise", price: "$420+", cadence: "1ユーザーあたり月額", description: "Professionalのすべての機能に加えて、利用上限、審査の進め方、契約条件を組織ごとに調整します。", features: ["Professionalのすべての機能", "実行回数と保存件数は組織ごとに調整", "社内データや非公開研究に関するご相談", "導入と評価を担当する窓口"], action: "営業担当に相談", tone: "quiet" },
     ],
     note: { label: "早期アクセス版の提供内容", title: "価格は確定していますが、決済はまだ開始していません。", body: "上記は早期アクセス期間の価格（1ユーザーあたり月額）です。現在の環境では支払い方法を登録できず、カード入力も決済も行われないため、請求は発生しません。クレジットの詳細と法人向け条件は、有料提供の開始前に確定します。" },
@@ -359,7 +383,13 @@ export const CONTACT_COPY: Record<PublicLocale, {
     body: "Leona Quantum is building an evidence layer around quantum software: public research, private workspaces, and execution that can be inspected. Send a short brief and we’ll take it from there.",
     panelTitle: "Good reasons to write",
     reasons: ["Research workflows and early product access", "Enterprise R&D and private-corpus conversations", "Public research contributions and technical feedback", "Press, partnerships, and speaking"],
-    note: "Submitting opens a prepared email in your email app. The current queue is mailto-backed; server-side delivery and CRM routing will follow when the operating workflow is finalized.",
+    // One sentence, and it is the one a sender needs: what the button does.
+    // The clause that used to follow it ("the current queue is mailto-backed;
+    // server-side delivery and CRM routing will follow…") described our own
+    // unfinished plumbing to the person deciding whether to write in. How the
+    // note reaches us is ours to know; that the button opens their mail client
+    // is theirs.
+    note: "Submitting opens a prepared email in your email app.",
     measure: { label: "Measure a qubit" },
     fields: { name: "Name", email: "Email", topic: "What is this about?", message: "Message", placeholder: "What are you building, and what evidence or access would help?", submit: "Prepare inquiry", status: "Your email app should open with the inquiry prepared. Send it to add the note to the queue." },
     topics: ["Product access", "Research workflow", "Enterprise R&D", "Public research contribution", "Other"],
@@ -370,7 +400,7 @@ export const CONTACT_COPY: Record<PublicLocale, {
     body: "Leona Quantumは、量子回路の作成から実行、検証、保存、共有までを支える研究基盤です。研究内容や必要な利用環境をお送りください。",
     panelTitle: "ご連絡いただける内容",
     reasons: ["研究ワークフローと早期アクセス", "企業・研究機関向けの導入相談", "公開研究への投稿と技術フィードバック", "取材、パートナーシップ、登壇"],
-    note: "送信ボタンを押すと、入力内容を反映したメール作成画面が開きます。現在、お問い合わせはメールで受け付けています。",
+    note: "送信ボタンを押すと、入力内容を反映したメール作成画面が開きます。",
     measure: { label: "量子ビットを測定" },
     fields: { name: "お名前", email: "メールアドレス", topic: "内容", message: "メッセージ", placeholder: "取り組んでいる研究テーマと、必要な実行・検証環境を教えてください。", submit: "メールを作成", status: "内容を確認してメールを送信してください。" },
     topics: ["プロダクトへのアクセス", "研究ワークフロー", "企業R&D", "公開研究への投稿", "その他"],
@@ -530,5 +560,34 @@ export const TERMS_COPY: Record<PublicLocale, {
       { title: "6. 免責事項", paragraphs: ["法令で許される範囲で、サービスが中断しないこと、エラーがないこと、安全であること、特定目的に適合することを保証しません。生成コード、シミュレーション、エクスポート、公開されている回路・実行記録の利用は自己責任で行ってください。", "Leona Quantum上の情報は、法務、医療、金融、安全に関する助言ではありません。有料または法人向け契約に必要な責任制限や補償条件は、該当する商用契約に記載します。"] },
       { title: "7. 変更とお問い合わせ", paragraphs: ["規約に関する質問はお問い合わせページからお送りください。アカウント、有料プラン、新しい実行機能の追加に応じて更新することがあります。上記の日付が最新版を示します。"] },
     ],
+  },
+};
+
+/**
+ * The 404 page. Reached by a typo, a stale bookmark, a crawler, or a
+ * `notFound()` inside a route that has no closer boundary of its own — so the
+ * copy names what happened without guessing why, and offers the two doors a
+ * lost visitor can always take: the home page and the public Atlas.
+ */
+export const NOT_FOUND_COPY: Record<PublicLocale, {
+  label: string;
+  title: string;
+  body: string;
+  home: string;
+  repository: string;
+}> = {
+  en: {
+    label: "404",
+    title: "This page does not exist.",
+    body: "The address you followed does not match anything on Leona Quantum. It may have been mistyped, or the page may have moved since it was linked.",
+    home: "Return home",
+    repository: "Browse the Atlas",
+  },
+  ja: {
+    label: "404",
+    title: "このページは存在しません。",
+    body: "お探しのアドレスに一致するページはありません。入力に誤りがあるか、リンクされた後にページが移動した可能性があります。",
+    home: "ホームに戻る",
+    repository: "Atlasを見る",
   },
 };

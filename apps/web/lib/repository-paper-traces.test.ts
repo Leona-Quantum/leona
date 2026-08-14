@@ -8,11 +8,14 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import type { LayerGraph } from "./repository/layers.ts";
+import type { StateVocabulary } from "./repository/states.ts";
 import {
   DECLARED_SCATTERED_PAPERS,
   auditScatteredTraces,
   layerAdjacency,
   paperTraces,
+  stateAdjacency,
+  walkableAdjacency,
   papersByNode,
   traceCensus,
   traceFor,
@@ -26,6 +29,16 @@ const contract = {
   takesJa: "x",
   returns: "y",
   returnsJa: "y",
+};
+
+/** The two states every fixture contract names. `b-state` is not a kind of
+ * `a-state`, so no fixture gains a state edge unless it asks for one — which is
+ * what keeps the scatter fixtures below meaning what they meant. */
+const VOCABULARY: StateVocabulary = {
+  states: [
+    { id: "a-state", label: "a", labelJa: "a", summary: "s", summaryJa: "s" },
+    { id: "b-state", label: "b", labelJa: "b", summary: "s", summaryJa: "s" },
+  ],
 };
 
 const capability = (id: string, citations: string[] = []) =>
@@ -71,7 +84,7 @@ test("a paper cited once is a point, and a point is not a line", () => {
   const graph: LayerGraph = {
     nodes: [capability("slot"), method("m", "slot", [], [paper(1)])],
   };
-  const [trace] = paperTraces(graph);
+  const [trace] = paperTraces(graph, VOCABULARY);
   assert.equal(trace.shape, "point");
   assert.deepEqual(trace.nodes, ["m"]);
   assert.deepEqual(trace.bridgeUpperBound, []);
@@ -81,7 +94,7 @@ test("a method and the slot it fills are adjacent, so citing both is contiguous"
   const graph: LayerGraph = {
     nodes: [capability("slot", [paper(1)]), method("m", "slot", [], [paper(1)])],
   };
-  const [trace] = paperTraces(graph);
+  const [trace] = paperTraces(graph, VOCABULARY);
   assert.equal(trace.shape, "contiguous");
   assert.equal(trace.components.length, 1);
   assert.deepEqual(trace.bridgeUpperBound, []);
@@ -98,7 +111,7 @@ test("two siblings citing one paper are joinable through the slot they compete f
       method("m2", "slot", [], [paper(1)]),
     ],
   };
-  const [trace] = paperTraces(graph);
+  const [trace] = paperTraces(graph, VOCABULARY);
   assert.equal(trace.shape, "joinable");
   assert.equal(trace.components.length, 2);
   assert.deepEqual(trace.bridgeUpperBound, ["slot"]);
@@ -120,7 +133,7 @@ test("citations in two different components of the map are scattered, and carry 
       method("m2", "slot-b", [], [paper(1)]),
     ],
   };
-  const [trace] = paperTraces(graph);
+  const [trace] = paperTraces(graph, VOCABULARY);
   assert.equal(trace.shape, "scattered");
   assert.equal(trace.components.length, 2);
   assert.equal(trace.bridgeUpperBound, undefined);
@@ -144,7 +157,7 @@ test("a bypass does not join a trace", () => {
       method("m2", "slot-b", ["skipped"], [paper(1)]),
     ],
   };
-  const [trace] = paperTraces(graph);
+  const [trace] = paperTraces(graph, VOCABULARY);
   assert.equal(trace.shape, "scattered");
   // …and the adjacency itself never carries the bypass edge.
   assert.equal(layerAdjacency(graph).get("m1")?.has("skipped"), false);
@@ -161,7 +174,7 @@ test("a refinement is an edge — a narrower version of a method sits next to it
       method("narrow", "slot", [], [paper(1)], { refines: "broad" }),
     ],
   };
-  assert.equal(paperTraces(graph)[0].shape, "contiguous");
+  assert.equal(paperTraces(graph, VOCABULARY)[0].shape, "contiguous");
 });
 
 test("the bridge is an upper bound and the greedy walk never reports a node twice", () => {
@@ -176,7 +189,7 @@ test("the bridge is an upper bound and the greedy walk never reports a node twic
       method("m3", "slot", [], [paper(1)]),
     ],
   };
-  const [trace] = paperTraces(graph);
+  const [trace] = paperTraces(graph, VOCABULARY);
   assert.equal(trace.components.length, 3);
   assert.deepEqual(trace.bridgeUpperBound, ["slot"]);
 });
@@ -188,7 +201,7 @@ test("an unparseable citation url is skipped rather than thrown on", () => {
   const graph: LayerGraph = {
     nodes: [capability("slot"), method("m", "slot", [], ["https://example.org/not-a-paper"])],
   };
-  assert.deepEqual(paperTraces(graph), []);
+  assert.deepEqual(paperTraces(graph, VOCABULARY), []);
   assert.equal(papersByNode(graph).size, 0);
 });
 
@@ -203,7 +216,7 @@ test("the census sums to the number of papers, so no shape can go uncounted", ()
       method("m4", "far", [], [paper(4)]),
     ],
   };
-  const traces = paperTraces(graph);
+  const traces = paperTraces(graph, VOCABULARY);
   const census = traceCensus(traces);
   assert.equal(census.papers, traces.length);
   assert.equal(census.point + census.contiguous + census.joinable + census.scattered, census.papers);
@@ -234,7 +247,7 @@ const SCATTERED_GRAPH: LayerGraph = {
 };
 
 test("an undeclared scattered paper is reported", () => {
-  const audit = auditScatteredTraces(paperTraces(SCATTERED_GRAPH), {});
+  const audit = auditScatteredTraces(paperTraces(SCATTERED_GRAPH, VOCABULARY), {});
   assert.equal(audit.undeclared.length, 1);
   assert.equal(audit.undeclared[0].paper, "arxiv:1");
   // The components travel with it, because "this paper is scattered" is not
@@ -244,7 +257,7 @@ test("an undeclared scattered paper is reported", () => {
 });
 
 test("a declaration clears the scatter only when it carries a reason", () => {
-  const traces = paperTraces(SCATTERED_GRAPH);
+  const traces = paperTraces(SCATTERED_GRAPH, VOCABULARY);
   assert.deepEqual(auditScatteredTraces(traces, { "arxiv:1": "why" }).undeclared, []);
   // Without these two arms the list degenerates into a set of ids, and the one
   // thing it exists to preserve — the judgement, written where the next reader
@@ -264,7 +277,7 @@ test("a declaration for a paper that is no longer scattered fails as stale", () 
       method("m2", "slot-a", [], [paper(1)]),
     ],
   };
-  const audit = auditScatteredTraces(paperTraces(joined), { "arxiv:1": "why" });
+  const audit = auditScatteredTraces(paperTraces(joined, VOCABULARY), { "arxiv:1": "why" });
   assert.deepEqual(audit.undeclared, []);
   assert.deepEqual(audit.stale, ["arxiv:1"]);
   // A declaration for a paper the map does not cite at all is stale too: a
@@ -287,7 +300,7 @@ test("point, contiguous and joinable traces are never reported as drift", () => 
       method("m4", "slot", [], [paper(2)]),
     ],
   };
-  const traces = paperTraces(graph);
+  const traces = paperTraces(graph, VOCABULARY);
   assert.equal(traceCensus(traces).scattered, 0);
   assert.deepEqual(auditScatteredTraces(traces, {}).undeclared, []);
 });
@@ -298,4 +311,99 @@ test("the repository declares no scattered papers, and that is the intended stat
   // that point the gate is measuring the map's disconnection rather than an
   // extraction's drift, and the fix is the map's missing edges.
   assert.deepEqual(Object.keys(DECLARED_SCATTERED_PAPERS), []);
+});
+
+// ---------------------------------------------------------------------------
+// The state relation (ADR-0027)
+// ---------------------------------------------------------------------------
+//
+// Every test here would have failed before the state edges existed, which is
+// the only reason to have them: a guard exercised only on the behaviour that
+// was already there has not been shown to guard anything.
+
+/** Two slots that meet at a state, in two different containment components. */
+const JOINED_BY_STATE: LayerGraph = {
+  nodes: [
+    { ...capability("makes", [paper(1)]), contract: { ...contract, from: "a-state", to: "b-state" } },
+    method("makes-one", "makes"),
+    { ...capability("takes", [paper(1)]), contract: { ...contract, from: "b-state", to: "a-state" } },
+    method("takes-one", "takes"),
+  ],
+} as unknown as LayerGraph;
+
+test("a slot whose output satisfies another's input is adjacent to it", () => {
+  const adjacency = stateAdjacency(JOINED_BY_STATE, VOCABULARY);
+  assert.equal(adjacency.get("makes")?.has("takes"), true);
+  assert.equal(adjacency.get("takes")?.has("makes"), true);
+});
+
+test("producing something broader than a slot requires adds no edge", () => {
+  // The asymmetry `stateSatisfies` exists for, read at the level of the trace:
+  // an evolution circuit is an abstract circuit and may be compiled; a general
+  // abstract circuit is not an evolution circuit, and no edge may claim it is.
+  const vocabulary: StateVocabulary = {
+    states: [
+      { id: "broad", label: "b", labelJa: "b", summary: "s", summaryJa: "s" },
+      {
+        id: "narrow",
+        label: "n",
+        labelJa: "n",
+        summary: "s",
+        summaryJa: "s",
+        specializes: ["broad"],
+      },
+      { id: "in", label: "i", labelJa: "i", summary: "s", summaryJa: "s" },
+      { id: "out", label: "o", labelJa: "o", summary: "s", summaryJa: "s" },
+    ],
+  };
+  const graph = {
+    nodes: [
+      { ...capability("makes-broad"), contract: { ...contract, from: "in", to: "broad" } },
+      { ...capability("needs-narrow"), contract: { ...contract, from: "narrow", to: "out" } },
+    ],
+  } as unknown as LayerGraph;
+  assert.equal(stateAdjacency(graph, vocabulary).get("makes-broad")?.has("needs-narrow"), false);
+
+  const reversed = {
+    nodes: [
+      { ...capability("makes-narrow"), contract: { ...contract, from: "in", to: "narrow" } },
+      { ...capability("needs-broad"), contract: { ...contract, from: "broad", to: "out" } },
+    ],
+  } as unknown as LayerGraph;
+  assert.equal(
+    stateAdjacency(reversed, vocabulary).get("makes-narrow")?.has("needs-broad"),
+    true,
+    "the narrower product satisfies the broader requirement, and that direction composes",
+  );
+});
+
+test("layerAdjacency stays blind to states, because that is what a region is", () => {
+  // The split ADR-0027 turns on. Fold the state edges in here and two areas
+  // joined by a shared state become one region, so "cross-region join" means
+  // nothing by construction and `region-joins.ts` measures nothing.
+  assert.equal(layerAdjacency(JOINED_BY_STATE).get("makes")?.has("takes"), false);
+  assert.equal(walkableAdjacency(JOINED_BY_STATE, VOCABULARY).get("makes")?.has("takes"), true);
+});
+
+test("a paper cited across a shared state is joined, not scattered", () => {
+  // The false positive this change closes, and the reason it is not cosmetic:
+  // under containment alone these two citations fall in different components,
+  // so one paper following the pipeline from a slot that produces a circuit to
+  // one that consumes it was graded as having drifted to an unrelated topic —
+  // ADR-0026's strongest negative claim, made about a paper doing exactly what
+  // the map says it should.
+  const [trace] = paperTraces(JOINED_BY_STATE, VOCABULARY);
+  assert.equal(trace.shape, "contiguous");
+  assert.deepEqual(auditScatteredTraces([trace], {}).undeclared, []);
+
+  // And the control: the same graph with no state in common is still scattered,
+  // so the gate did not stop working — it stopped firing on the wrong thing.
+  const unrelated = {
+    nodes: JOINED_BY_STATE.nodes.map((node) =>
+      node.id === "takes"
+        ? { ...node, contract: { ...contract, from: "c-state", to: "d-state" } }
+        : node,
+    ),
+  } as unknown as LayerGraph;
+  assert.equal(paperTraces(unrelated, VOCABULARY)[0].shape, "scattered");
 });

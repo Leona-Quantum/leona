@@ -690,8 +690,8 @@ async def revoke_share(
     admin pressing the button on a stale list deserves the second one.
 
     The row is DELETEd rather than stamped — see migration 0042. The audit row
-    written here is the history, and `audit_log` is append-only by database
-    grant, which this table deliberately is not.
+    written here is the history, and `audit_log` is append-only by a trigger
+    (migration 0050), which this table deliberately is not.
     """
     require_admin(scope)
     project = await _lock_project(scope, session, project_id)

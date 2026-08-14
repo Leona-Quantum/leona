@@ -20,7 +20,7 @@
 // exists for: a link that claims the map documents an object it does not is the
 // worst thing the shelf can publish, and it is invisible to every other check.
 //
-// Usage: node scripts/check-ingredients.mjs [--quiet] [--audit] [--unjoined]
+// Usage: node scripts/check-ingredients.mjs [--quiet] [--audit] [--unjoined] [--depth]
 //
 // `--audit` prints, per rule, exactly which records it claimed. That is how the
 // editorial calls in the table were reviewed in the first place, and it is the
@@ -42,6 +42,7 @@ const esbuild = require("esbuild");
 const QUIET = process.argv.includes("--quiet");
 const AUDIT = process.argv.includes("--audit");
 const UNJOINED = process.argv.includes("--unjoined");
+const DEPTH = process.argv.includes("--depth");
 
 async function bundle(relativePath, label) {
   const outDir = mkdtempSync(join(tmpdir(), "ingredients-"));
@@ -68,6 +69,7 @@ const repository = await bundle("apps/web/lib/public-repository.ts", "repository
 const ingredients = await bundle("apps/web/lib/repository/ingredients.ts", "ingredients");
 const graphModule = await bundle("apps/web/lib/repository/layer-graph.ts", "graph");
 const vocabularyModule = await bundle("apps/web/lib/repository/state-vocabulary.ts", "vocabulary");
+const expansion = await bundle("apps/web/lib/repository/entries-literature-expansion.ts", "expansion");
 
 const entries = repository.PUBLIC_REPOSITORY_ENTRIES;
 const graph = graphModule.LAYER_GRAPH;
@@ -120,6 +122,27 @@ if (AUDIT) {
   }
 }
 
+if (DEPTH) {
+  // How far each of the 50 templated operator records has been looked into.
+  // **Printed with its denominator**, because "8 deepened" and "8 of 50" are
+  // different claims and only the second says anything about the corpus.
+  const census = expansion.OPERATOR_DEPTH_CENSUS;
+  const slugs = Object.keys(census);
+  const byOutcome = new Map();
+  for (const [slug, outcome] of Object.entries(census)) {
+    const bucket = byOutcome.get(outcome) ?? [];
+    bucket.push(slug);
+    byOutcome.set(outcome, bucket);
+  }
+  console.log(`-- how far the operator records have been looked into (${slugs.length} in the generated table) --`);
+  for (const [outcome, list] of [...byOutcome].sort((a, b) => b[1].length - a[1].length)) {
+    console.log(`  ${outcome}: ${list.length}/${slugs.length}`);
+    if (outcome !== "template") for (const slug of list) console.log(`      ${slug}`);
+  }
+  const looked = slugs.length - (byOutcome.get("template")?.length ?? 0);
+  console.log(`  looked into: ${looked}/${slugs.length}`);
+}
+
 if (UNJOINED) {
   console.log("-- what the map cannot reach, by reason --");
   const byReason = new Map();
@@ -137,12 +160,39 @@ if (UNJOINED) {
   }
 }
 
-if (!QUIET || AUDIT || UNJOINED) {
+if (!QUIET || AUDIT || UNJOINED || DEPTH) {
   const parts = shelf.sections.map(
     (section) => `${section.role} ${section.joined}/${section.entries.length}`,
   );
   console.log(
     `check-ingredients: ${shelf.joined}/${shelf.recordDenominator} object records join a map state ` +
       `(${parts.join(" · ")}) · ${shelf.processDenominator} processes carry a contract`,
+  );
+
+  // **How much the shelf's ordering can actually distinguish**, printed beside
+  // the headline because it is the caveat on it.
+  //
+  // The row count answers the owner's *"relevant to many processes"* by asking
+  // how many contracted slots touch the object. But the join is to a STATE, so
+  // two objects joined to one state are indistinguishable by construction, and
+  // the figure below is the resolution that leaves: the number of distinct
+  // values the ordering key can take, and the number of states the whole shelf
+  // reaches. At 28/101 those are 2 and 2 — every joined record lands on
+  // `prepared-state` or `hamiltonian-access` — so the sort separates joined rows
+  // from abstained ones and then falls through to the slug.
+  //
+  // Reported rather than refused: a low resolution is a true statement about how
+  // little of the map the objects reach, not a defect in this file. It becomes
+  // the worklist, the same way `--unjoined` does. If it ever reads 1, the column
+  // is telling every reader the same thing and is worth removing.
+  const joinedEntries = shelf.sections.flatMap((section) =>
+    section.entries.filter((entry) => entry.join.kind === "joined"),
+  );
+  const distinctCounts = new Set(joinedEntries.map((entry) => entry.processes.length));
+  const distinctStates = new Set(joinedEntries.map((entry) => entry.join.state));
+  console.log(
+    `  ordering resolution: ${distinctCounts.size} distinct process-count(s) ` +
+      `[${[...distinctCounts].sort((a, b) => a - b).join(", ")}] over ${distinctStates.size} state(s) ` +
+      `[${[...distinctStates].sort().join(", ")}] — ties fall through to the slug`,
   );
 }

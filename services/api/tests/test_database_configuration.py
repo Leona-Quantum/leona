@@ -212,6 +212,33 @@ def test_the_deploy_reads_the_sizing_from_the_same_file_the_budget_does():
         f"deploy.yml pins a scaling flag to a literal: {literals}. "
         "Every instance count comes from infra/fleet.env — see the 'load fleet sizing' step"
     )
+    # The API's per-instance shape (infra/pin-api-cloud-run-shape, 2026-08-14):
+    # same failure mode as the instance counts above, so the same assertion.
+    assert (
+        '--cpu "$API_CPU" --memory "${API_MEMORY_MI}Mi" --concurrency "$API_CONCURRENCY" \\'
+        in workflow
+    ), "the api deploy line does not take its CPU/memory/concurrency from infra/fleet.env"
+    # `--cpu-boost` is the same class of pin and has no fleet.env key, because
+    # it is a boolean and the loader takes KEY=INTEGER only. Asserted here so it
+    # cannot be dropped back into live-service state: the API has no
+    # min-instances, so it scales to zero and every burst starts cold.
+    assert "--cpu-boost \\" in workflow, (
+        "the api deploy no longer states --cpu-boost; startup-cpu-boost is live on the "
+        "service and would go back to being state no file in this repo declares"
+    )
+    # `[^\s"]+` rather than `\S+`: this file's own prose writes "--cpu /
+    # --memory / --concurrency" side by side in a comment, and a plain `\S+`
+    # capture after `--concurrency` there would grab the next English word
+    # ("are") as if it were a value. A real gcloud value always starts with a
+    # digit ("2", "512Mi") or a variable ("$API_CPU"); no prose word does, so
+    # that is the check — not "does this start with $", which is exactly what
+    # broke on "are".
+    shape = re.findall(r'--(?:cpu|memory|concurrency) +"?([^\s"]+)', workflow)
+    shape_literals = [value for value in shape if re.match(r"^[0-9]", value)]
+    assert not shape_literals, (
+        f"deploy.yml pins a shape flag (cpu/memory/concurrency) to a literal: {shape_literals}. "
+        "Every value comes from infra/fleet.env — see the 'load fleet sizing' step"
+    )
 
 
 def test_every_value_the_deploy_needs_survives_the_grep_that_exports_it():
@@ -240,6 +267,9 @@ def test_every_value_the_deploy_needs_survives_the_grep_that_exports_it():
         "WORKER_POOL_SIZE",
         "WORKER_MAX_OVERFLOW",
         "API_MAX_INSTANCES",
+        "API_CPU",
+        "API_MEMORY_MI",
+        "API_CONCURRENCY",
     }
     assert required <= exported, (
         f"infra/fleet.env keys the deploy needs but the export regex would drop: "

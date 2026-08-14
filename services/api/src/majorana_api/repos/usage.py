@@ -1,4 +1,5 @@
-"""Usage-event repository — quota + billing substrate. Append-only (DB grant)."""
+"""Usage-event repository — quota + billing substrate. Append-only, enforced by
+a BEFORE UPDATE OR DELETE trigger (migration 0050)."""
 
 import datetime as dt
 import uuid

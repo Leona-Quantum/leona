@@ -9,7 +9,10 @@ import { safeReturnTo } from "../../lib/return-to";
 import { WelcomeNameForm } from "./welcome-form";
 
 export const metadata: Metadata = {
-  title: "Your name — Leona Quantum",
+  // Just the section name. The root layout's `template: "%s · Leona Quantum"`
+  // appends the brand, so spelling it out here composed to
+  // "Your name — Leona Quantum · Leona Quantum" in the tab.
+  title: "Your name",
   robots: { index: false, follow: false },
 };
 

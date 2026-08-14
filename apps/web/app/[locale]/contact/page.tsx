@@ -1,21 +1,33 @@
 import type { Metadata } from "next";
-import { PublicSite } from "../../components/public-site";
-import { Reveal } from "../../components/reveal";
-import { CONTACT_COPY } from "../../lib/public-copy";
-import { getPublicLocale } from "../../lib/public-locale-server";
+import { PublicSite } from "../../../components/public-site";
+import { Reveal } from "../../../components/reveal";
+import { CONTACT_COPY } from "../../../lib/public-copy";
 import { ContactForm } from "./contact-form";
-import { MeasurementLab } from "../../components/measurement-lab";
+import { MeasurementLab } from "../../../components/measurement-lab";
+import { parsePublicLocale, PUBLIC_LOCALES } from "../../../lib/public-locale";
+
+// Served from the CDN. The locale comes from the path segment because a cached
+// page cannot read a cookie — `middleware.ts` rewrites the clean URL to this
+// one, keeping `/{clean}` in the address bar while giving each language its own
+// cache entry. `dynamicParams = false` is what stops `[locale]` from swallowing
+// every mistyped URL and answering it with this page instead of a 404.
+export const revalidate = 300;
+export const dynamicParams = false;
+
+export function generateStaticParams() {
+  return PUBLIC_LOCALES.map((locale) => ({ locale }));
+}
 
 export const metadata: Metadata = {
   title: "Contact",
   description: "Contact Leona Quantum about research workflows and early product access.",
 };
 
-export default async function ContactPage() {
-  const locale = await getPublicLocale();
+export default async function ContactPage({ params }: { params: Promise<{ locale: string }> }) {
+  const locale = parsePublicLocale((await params).locale);
   const copy = CONTACT_COPY[locale];
   return (
-    <PublicSite activePath="/contact" className="mj-contact-site" locale={locale}>
+    <PublicSite activePath="/contact" className="mj-contact-site" locale={locale} chrome="static">
       <Reveal>
         <section className="mj-contact-hero">
           <div>

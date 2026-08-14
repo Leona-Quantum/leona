@@ -40,10 +40,10 @@ import { canonicalPaperUrl } from "../lib/repository/papers";
 const COPY = {
   en: {
     title: "Papers",
-    lede: "Every source behind the map and the Atlas, checked against one register so a paper cannot be two papers.",
-    backToAtlas: "Atlas",
+    lede: "Every source behind the Map and the Quantum Atlas, checked against one register so a paper cannot be two papers.",
+    backToAtlas: "The Quantum Atlas",
     backToPapers: "← Papers",
-    layersLink: "Layers — how the pieces fit together",
+    layersLink: "Map — how the pieces fit together",
     readLine: (read: number, total: number) =>
       `${read} of ${total} record what they report. The rest have not been read for it — that is an absence, not a claim that they report nothing.`,
     reportsHeading: "What it reports",
@@ -97,10 +97,10 @@ const COPY = {
   },
   ja: {
     title: "論文",
-    lede: "地図とアトラスが依拠しているすべての出典を、ひとつの登録簿と照合しています。ひとつの論文がふたつの論文になることはありません。",
-    backToAtlas: "アトラス",
+    lede: "地図と量子アトラスが依拠しているすべての出典を、ひとつの登録簿と照合しています。ひとつの論文がふたつの論文になることはありません。",
+    backToAtlas: "量子アトラス",
     backToPapers: "← 論文",
-    layersLink: "階層 — 部品どうしの組み合わさり方",
+    layersLink: "地図 — 部品どうしの組み合わさり方",
     readLine: (read: number, total: number) =>
       `${total} 件のうち ${read} 件について、何を報告しているかが記録されています。残りはまだそのために読まれていません。これは記載がないということであり、「何も報告していない」という主張ではありません。`,
     reportsHeading: "何を報告しているか",
