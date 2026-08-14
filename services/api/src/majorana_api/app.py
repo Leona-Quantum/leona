@@ -18,6 +18,7 @@ from .observability import init_telemetry
 from .rate_limit import (
     CALLER_TRUST_HEADER,
     EXEMPT_PATHS,
+    TRUSTED_CALLER_HEADER,
     MAX_REQUEST_BYTES,
     BodyTooLarge,
     FixedWindowLimiter,
@@ -225,21 +226,46 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 extra={"reason": reason},
             )
         response = await call_next(request)
-        # `routes/catalog.py` marks its six public GETs `Cache-Control: public`
-        # (via `_set_public_cache_control`) because they are anonymous,
-        # unauthenticated and identical for every caller. A shared cache is
-        # then free to store one such response and replay it to a DIFFERENT
-        # caller than the one that produced it — but CALLER_TRUST_HEADER
-        # describes THIS request's caller (our own renderer vs. an anonymous
-        # one), not the payload, so replaying it would attach the wrong
-        # verdict to whoever the cache serves next. Nothing downstream reads
-        # this header (it exists to be read back by a human verifying a
-        # deploy, per rate_limit.py), so a stale verdict is cosmetic rather
-        # than a security hole — but it is still a wrong answer sitting on a
-        # response, and leaving it invites something to start trusting it
-        # later. Stripped rather than `Vary`'d: the verdict never changes the
-        # body, so varying the cache key on a header nothing reads would only
-        # fragment the cache for no benefit.
+        # CALLER_TRUST_HEADER describes THIS request's caller — our own renderer
+        # versus an anonymous one — not the payload. `routes/catalog.py` marks
+        # its six public GETs `Cache-Control: public`, and a shared cache is then
+        # free to replay one caller's stored response to a different caller, so
+        # the verdict must never ride on a publicly cacheable response.
+        #
+        # **Stripping it outright was wrong, and this is the correction.** The
+        # first version of this block dropped the header from every `public`
+        # response, on the reasoning that "nothing downstream reads this header".
+        # Something does: `apps/web/lib/trusted-caller.ts`'s `reportCallerTrust`
+        # is called on every catalog fetch the renderer makes, and its module
+        # comment says in as many words that a mismatch is **the only symptom
+        # this failure has**. The failure it detects is real — the renderer's
+        # token misconfigured or rejected, so our own server-side renders are
+        # metered against the anonymous per-address ceiling, hit it under load,
+        # and fall back to the bundled static corpus. Stripping the header from
+        # the six routes the renderer actually fetches turned off the only
+        # detector for that, silently, on exactly those routes.
+        #
+        # So the split is by caller rather than by route:
+        #
+        #   trusted   -> keep the verdict, and mark the response `private` so no
+        #                SHARED cache stores it. A private cache holding a
+        #                response whose trust verdict is its own is correct.
+        #   anonymous -> keep `public`, strip the verdict. An anonymous caller
+        #                has nothing to learn from it, and this is the variant a
+        #                CDN is allowed to keep.
+        #
+        # `Vary` is added on the credential header so a cache cannot serve the
+        # public variant to a trusted caller and hide the diagnostic again. It
+        # costs one extra cache key for a caller that is a single deployment.
+        cache_control = response.headers.get("Cache-Control", "")
+        if "public" in cache_control:
+            response.headers["Vary"] = (
+                f"{response.headers['Vary']}, {TRUSTED_CALLER_HEADER}"
+                if response.headers.get("Vary")
+                else TRUSTED_CALLER_HEADER
+            )
+        if "public" in cache_control and trusted:
+            response.headers["Cache-Control"] = cache_control.replace("public", "private", 1)
         if "public" not in response.headers.get("Cache-Control", ""):
             response.headers[CALLER_TRUST_HEADER] = trust_header[CALLER_TRUST_HEADER]
         return response
