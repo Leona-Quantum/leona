@@ -2,9 +2,30 @@
 
 Conventions for AI agents (Claude Code / Codex / others) working in this repository.
 
-The product is **Leona Quantum**. The repo, the Python distributions, the database and
-every internal identifier stay `majorana` on purpose — renaming them buys nothing and
-would invalidate published artifact ids. Do not "fix" this.
+The product is **Leona Quantum** (short: **Leona**). The name `majorana` is still
+everywhere in this tree, and the rule about it changed on 2026-08-14 — the paragraph that
+used to sit here said the rename buys nothing and told you not to "fix" it, which is no
+longer what the owner wants.
+
+**The rename is scheduled work, and it stops above the infrastructure layer.**
+
+- **In scope** (owner ruling ai-ops#70, widened in chat 2026-08-14 to "internal and
+  external"): code, Python packages, npm scope, modules, env vars, storage keys, docs,
+  user-facing copy, and the repo name itself. Do not add new `majorana` identifiers.
+- **Permanently exempt, by explicit ruling** — *"write the infra ids down as a permanent,
+  deliberate exception. They are invisible to every user."* GCP project `majorana-core`,
+  Cloud SQL `majorana-pg`, Cloud Run `majorana-api` / `majorana-worker`, the Artifact
+  Registry repo, and the Vercel team slug `majoranaq` keep their names. Do not reopen this.
+- **Not yet ruled, so do not assume**: whether **published record ids** change. Those are
+  public addresses, changing them is a migration with a redirect obligation, and rows
+  already signed in `license_assertions` cannot be updated in place (ADR-0020, append-only,
+  enforced by a Postgres trigger). Get that decided before touching identities.
+
+Still true, and still the trap: `apps/web/lib/public-repository.ts` holds
+`replaceLegacyBrand()`, a display-time scrub over legacy fixture text. It is a bridge, not
+a source of truth — the fixtures in `apps/web/lib/repository/entries-legacy.ts` still
+contain the retired words. It also rewrites text it should not: never let a brand rewrite
+run across physics terms or cited paper titles.
 
 Plan authority lives in the private repo `EshMis/ai-ops`, checked out at
 `~/Developer/ai-ops/desk/leona/plans/`. **Cite that path, not a `plans/...` one.** The
