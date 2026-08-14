@@ -7,6 +7,7 @@
 // print "cited in 1 place" for a paper eight records also cite, which is the
 // kind of wrong number this whole surface exists to stop.
 import type { Metadata } from "next";
+import { canonicalMetadata } from "../../../lib/public-metadata";
 import { PublicSite } from "../../../components/public-site";
 import { PaperIndexView } from "../../../components/repository-papers";
 import { getPublicLocale } from "../../../lib/public-locale-server";
@@ -18,17 +19,20 @@ import { paperIndexCensus, paperPages } from "../../../lib/repository/paper-page
 
 export async function generateMetadata(): Promise<Metadata> {
   const locale = await getPublicLocale();
-  return locale === "ja"
-    ? {
-        title: "論文",
-        description:
-          "本サイトが引用するすべての論文を、論文ごとに 1 行で。何を報告しているか、どこから引用されているか、そして地図の上で線になるかどうか。",
-      }
-    : {
-        title: "Papers",
-        description:
-          "Every paper this site cites, one row each: what it reports, where it is cited from, and whether it draws a line on the map.",
-      };
+  return {
+    ...(locale === "ja"
+      ? {
+          title: "論文",
+          description:
+            "本サイトが引用するすべての論文を、論文ごとに 1 行で。何を報告しているか、どこから引用されているか、そして地図の上で線になるかどうか。",
+        }
+      : {
+          title: "Papers",
+          description:
+            "Every paper this site cites, one row each: what it reports, where it is cited from, and whether it draws a line on the map.",
+        }),
+    ...canonicalMetadata("/repository/papers"),
+  };
 }
 
 export default async function RepositoryPapersPage() {

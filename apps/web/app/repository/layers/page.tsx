@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { canonicalMetadata } from "../../../lib/public-metadata";
 import { PublicSite } from "../../../components/public-site";
 import { ConvergeView } from "../../../components/repository-converge-view";
 import { getPublicLocale } from "../../../lib/public-locale-server";
@@ -32,25 +33,28 @@ import { paperSlug } from "../../../lib/repository/papers";
  */
 export async function generateMetadata(): Promise<Metadata> {
   const locale = await getPublicLocale();
-  return locale === "ja"
-    ? {
-        // 地図 / "Map", not 階層 / "Layers" (ai-ops#78). The route stays
-        // `/repository/layers`; what changes is what a reader is told this page
-        // is called, which everything linking here — including the Atlas's own
-        // "open the map" line — already called a map.
-        //
-        // 階層 survives *inside* the description because there it is the data
-        // model: a layer is a thing on this surface, and "the routes that skip
-        // a layer entirely" is a sentence about layers, not about the page.
-        title: "地図",
-        description:
-          "部品どうしの組み合わさり方。パイプラインを構成する枠、各枠に記録された手法、そして階層そのものを飛ばす経路を示します。",
-      }
-    : {
-        title: "Map",
-        description:
-          "How the pieces fit: the slots a quantum pipeline is made of, the methods recorded for each, and the routes that skip a layer entirely.",
-      };
+  return {
+    ...(locale === "ja"
+      ? {
+          // 地図 / "Map", not 階層 / "Layers" (ai-ops#78). The route stays
+          // `/repository/layers`; what changes is what a reader is told this page
+          // is called, which everything linking here — including the Atlas's own
+          // "open the map" line — already called a map.
+          //
+          // 階層 survives *inside* the description because there it is the data
+          // model: a layer is a thing on this surface, and "the routes that skip
+          // a layer entirely" is a sentence about layers, not about the page.
+          title: "地図",
+          description:
+            "部品どうしの組み合わさり方。パイプラインを構成する枠、各枠に記録された手法、そして階層そのものを飛ばす経路を示します。",
+        }
+      : {
+          title: "Map",
+          description:
+            "How the pieces fit: the slots a quantum pipeline is made of, the methods recorded for each, and the routes that skip a layer entirely.",
+        }),
+    ...canonicalMetadata("/repository/layers"),
+  };
 }
 
 /**

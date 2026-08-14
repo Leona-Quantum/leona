@@ -294,7 +294,7 @@ function main() {
   const dist = resolve(ROOT, distFlag === -1 ? "apps/web/.next" : argv[distFlag + 1]);
   if (!existsSync(dist)) {
     console.error(
-      `no build output at ${dist}. Run \`pnpm --filter web build\` first — this check ` +
+      `no build output at ${dist}. Run \`pnpm --filter @majorana/web build\` first — this check ` +
         `must not pass by finding nothing to look at.`,
     );
     process.exit(1);
