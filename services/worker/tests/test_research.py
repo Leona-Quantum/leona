@@ -112,12 +112,16 @@ def test_recognised_affirmatives_keep_research_on(monkeypatch, value: str) -> No
     assert research_enabled() is True
 
 
-@pytest.mark.parametrize("value", ["0", "false", "no", "off", "disabled", "OFF", "please stop"])
+@pytest.mark.parametrize(
+    "value", ["0", "false", "no", "off", "disabled", "OFF", "please stop", "", "   "]
+)
 def test_anything_not_an_affirmative_switches_research_off(monkeypatch, value: str) -> None:
     """A kill switch may not require the operator to guess our spelling.
 
-    Unset means on, and so does a value we recognise as yes. Everything else is
-    someone reaching for this variable to stop something, and is honoured.
+    Absent means on, and so does a value we recognise as yes. Everything else is
+    someone reaching for this variable to stop something, and is honoured — the
+    empty string included, which is a field someone cleared in a console and is
+    how every other empty-valued variable in this deployment already reads.
     """
     monkeypatch.setenv(RESEARCH_ENABLED_ENV, value)
     assert research_enabled() is False

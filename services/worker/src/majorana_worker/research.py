@@ -33,24 +33,32 @@ _RESEARCH_BUDGET_S = 15.0
 
 RESEARCH_ENABLED_ENV = "MAJORANA_RESEARCH"
 
-#: Only these keep research on. Everything else that is not "unset" turns it
-#: off, which is the asymmetry a kill switch needs: an operator reaching for
-#: this variable during an incident is trying to stop something, and a value we
-#: failed to recognise must not be read as consent to keep going. Refusing to
-#: start on an unparseable value — the rule `majorana_api.settings` uses for
-#: numeric limits — is wrong here for the same reason: it would turn a botched
-#: attempt to disable an optional enrichment into a worker that will not boot.
+#: The only values that keep research on once the variable exists at all.
+#: Everything else present in the environment turns it off, which is the
+#: asymmetry a kill switch needs: an operator reaching for this during an
+#: incident is trying to stop something, and a value we failed to recognise must
+#: not be read as consent to keep going. Refusing to start on an unparseable
+#: value — the rule `majorana_api.settings` uses for numeric limits — is wrong
+#: here for the opposite reason: it would turn a botched attempt to disable an
+#: optional enrichment into a worker that will not boot.
 _ENABLED_VALUES = frozenset({"1", "true", "yes", "on", "enabled"})
 
 
 def research_enabled() -> bool:
     """Whether implicit arXiv research may run at all.
 
-    Default ON: unset is the state every environment is in today, and this
-    switch exists to take the feature away in an incident, not to hold it back.
-    Read at call time rather than at import so that flipping the Cloud Run
-    variable takes effect on the next revision without a code change — which is
+    Absent means ON. That is the state every environment is in today, and this
+    switch exists to take the feature away in an incident rather than to hold it
+    back. Read at call time rather than at import so that flipping the Cloud Run
+    variable takes effect on the next revision without a code change, which is
     the whole point of it existing.
+
+    Present-but-empty means OFF, and the distinction is deliberate. An operator
+    who clears this field in a console is trying to disable something, and every
+    other empty-valued variable in this deployment already reads that way —
+    `MAJORANA_CREDENTIAL_KEYS`, `DEPLOY_PROBE_TOKEN`, `TRUSTED_CALLER_TOKEN` all
+    treat empty as "off". Losing research when it was wanted costs a slightly
+    worse plan; keeping it when it was not is the wedge this switch exists for.
 
     It is not on `majorana_api.settings.Settings` even though that is where this
     project keeps configuration. The worker cannot construct that object:
@@ -61,8 +69,10 @@ def research_enabled() -> bool:
     `handlers.py::_default_sandbox` — a named `MAJORANA_*` variable read through
     a documented helper — and this follows it.
     """
-    raw = os.environ.get(RESEARCH_ENABLED_ENV, "").strip().lower()
-    return not raw or raw in _ENABLED_VALUES
+    raw = os.environ.get(RESEARCH_ENABLED_ENV)
+    if raw is None:
+        return True
+    return raw.strip().lower() in _ENABLED_VALUES
 
 
 @dataclass(frozen=True)
