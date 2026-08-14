@@ -11,6 +11,21 @@ trigger, and making `blast-radius` behave correctly under that event — landed
 separately (ai-ops#46/#70, merge-queue-prerequisites lane) and needs no further
 action here. What's left is entirely branch-protection configuration.
 
+> [!IMPORTANT]
+> **The first thing to do the first time the queue actually runs is confirm
+> `blast-radius` ran, not that the queue went green.** Before this PR, `blast-radius`
+> had no `merge_group` trigger at all; under that event its `if:` evaluated false,
+> the job was **skipped**, and a skipped required check reports success. A queue
+> that merges every PR without that gate ever executing looks *identical* — green,
+> fast, no errors — to a queue where the gate is doing its job. The `blast-radius`
+> job's own `merge_group` code path (the part that recovers the PR number from
+> `head_ref` and re-fetches the body over the API) was verified by direct
+> simulation against a real historical diff and against GitHub's documented
+> payload shape, not by an actual `merge_group`-triggered run — the queue can't be
+> switched on until this transfer lands, so no real `merge_group` event has ever
+> reached this job. Step 4 below is not optional the first time; do not skip
+> straight to "it merged, done."
+
 ## 1. Confirm the required checks survived the transfer
 
 Repo transfers normally carry branch protection over, but confirm it rather than
@@ -55,10 +70,37 @@ actual on-switch; everything before this point is prerequisite.
 
 Configure, in the same panel:
 
-- **Merge method: squash.** `AGENTS.md` states "squash merge only" as a hard
-  branching rule for this repo — the queue's merge method is a separate setting
-  from the repo-level default and does not inherit it, so this has to be set
-  explicitly or the queue will pick a different method.
+### 3a. Set the queue's merge method to squash — with a verification, not just a click
+
+`AGENTS.md` states "squash merge only" as a hard branching rule for this repo,
+enforced today by the repo's `allow_squash_merge`/`allow_merge_commit`/
+`allow_rebase_merge` settings. **The merge queue's "Merge method" dropdown is a
+separate setting that does not inherit those** — it is entirely possible to
+finish step 3 with the queue live and merging clean fast-forwards or merge
+commits into `dev` while the repo-level settings still say squash-only, and
+nothing will flag the mismatch: the PR merges, the checks are green, `dev`
+moves. The discrepancy only becomes visible in `git log`, by which point the
+non-squash commits are already in production history.
+
+1. In the "Require merge queue" panel, set **Merge method: Squash**.
+2. Immediately after the first PR merges through the queue, verify the commit
+   that landed is actually a squash commit, not a merge commit or a
+   fast-forwarded set of the PR's original commits:
+
+   ```
+   git log --oneline -1 origin/dev          # exactly one new commit, not N
+   git log --format='%P' -1 origin/dev | wc -w   # 1 parent, not 2 (a 2-parent
+                                                  # commit is a merge commit —
+                                                  # the queue picked the wrong method)
+   ```
+
+3. If either check fails, fix the queue's Merge method setting immediately —
+   every PR merged before the fix has already written the wrong kind of commit
+   into `dev`'s permanent history, and that cannot be rewritten after the fact
+   without rewriting production history.
+
+### 3b. Other settings in the same panel
+
 - **Only merge non-failing pull requests: recommend Yes (enabled).** With it off,
   a PR that fails a required check can still ride into a batch as long as the
   *last* PR in the group passes — useful for flaky tests, but this repo has
@@ -83,17 +125,27 @@ direct merge. Two independent signals, check both:
    merge has no such event. `gh pr view <N> --json timelineItems` surfaces these
    as `AddedToMergeQueueEvent` / `RemovedFromMergeQueueEvent` entries in the
    GraphQL timeline; the web UI shows them inline.
-2. **The check runs' event type.** Every one of the eight required checks should
-   have a second run whose `event` is `merge_group`, not just the original
-   `pull_request` run:
+2. **The check runs' event type — check all eight by name, not just that the PR
+   shows green.** This is the check that actually catches the skip case above:
+   a job that silently skips under `merge_group` still reports a conclusion (
+   `skipped`), a skipped required check still counts as passing, and the PR still
+   shows all-green. The only way to tell "ran and passed" from "silently skipped"
+   is to look at each job individually:
 
    ```
    gh run list --workflow ci.yml --json event,headBranch,conclusion,createdAt \
      | jq '[.[] | select(.event=="merge_group")]'
+   gh run list --workflow security.yml --json event,headBranch,conclusion,createdAt \
+     | jq '[.[] | select(.event=="merge_group")]'
    ```
 
-   The `headBranch` for that run will be `gh-readonly-queue/dev/pr-<N>-<sha>`. If
-   a merged PR has no `merge_group` run at all, it did not go through the queue.
+   The `headBranch` for these runs will be `gh-readonly-queue/dev/pr-<N>-<sha>`.
+   For each of `ts`, `py`, `db`, `gitleaks`, `osv`, `semgrep`, `client-bundle`,
+   `blast-radius`, confirm the job's own conclusion in that run is
+   `success` — not `skipped`, and not just "the workflow run overall succeeded."
+   If a merged PR has no `merge_group` run at all, it did not go through the
+   queue; if it has one but a job inside it shows `skipped`, the queue ran but
+   that gate did not.
 
 ## What NOT to assume
 
