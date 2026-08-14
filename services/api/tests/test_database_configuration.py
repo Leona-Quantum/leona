@@ -214,9 +214,10 @@ def test_the_deploy_reads_the_sizing_from_the_same_file_the_budget_does():
     )
     # The API's per-instance shape (infra/pin-api-cloud-run-shape, 2026-08-14):
     # same failure mode as the instance counts above, so the same assertion.
-    assert '--cpu "$API_CPU" --memory "${API_MEMORY_MI}Mi" --concurrency "$API_CONCURRENCY" \\' in workflow, (
-        "the api deploy line does not take its CPU/memory/concurrency from infra/fleet.env"
-    )
+    assert (
+        '--cpu "$API_CPU" --memory "${API_MEMORY_MI}Mi" --concurrency "$API_CONCURRENCY" \\'
+        in workflow
+    ), "the api deploy line does not take its CPU/memory/concurrency from infra/fleet.env"
     # `[^\s"]+` rather than `\S+`: this file's own prose writes "--cpu /
     # --memory / --concurrency" side by side in a comment, and a plain `\S+`
     # capture after `--concurrency` there would grab the next English word
