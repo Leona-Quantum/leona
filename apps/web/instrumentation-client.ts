@@ -7,6 +7,10 @@ if (process.env.NEXT_PUBLIC_SENTRY_DSN) {
     dsn: process.env.NEXT_PUBLIC_SENTRY_DSN,
     environment: process.env.NEXT_PUBLIC_MAJORANA_ENV ?? "dev",
     tracesSampleRate: 0,
+    // Client-bundle mirror of instrumentation.ts's `release`. Only populated
+    // when the project's "Automatically expose System Environment Variables"
+    // setting is on; undefined otherwise, which Sentry treats as no release.
+    release: process.env.NEXT_PUBLIC_VERCEL_GIT_COMMIT_SHA,
   });
 }
 
