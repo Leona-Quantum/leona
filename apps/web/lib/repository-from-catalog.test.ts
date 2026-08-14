@@ -124,3 +124,83 @@ test("the fixtures are otherwise valid, so a refusal above means the framework",
   assert.equal("introduction" in listRecord("Qiskit"), false);
   assert.equal("source" in listRecord("Qiskit"), false);
 });
+
+/**
+ * The four heavy fields, and why absence must not be a rejection.
+ *
+ * `resources`, `metadata`, `codeVariants` and `visualization` are 63% of the
+ * list payload and a browse card renders almost none of them. Trimming them out
+ * of the API's projection is the point of that work — and `null` from
+ * `parseCatalogListRecord` is not a degraded record, it is NO record, so a
+ * required guard would drop all 369 at once the moment the API stopped sending
+ * one of them.
+ *
+ * It would not even show an empty page: `repository-source.ts` reads a
+ * zero-length parse as a failed fetch and falls back to the bundled static
+ * corpus, so the site keeps rendering from a snapshot, silently. That is the
+ * 362-of-369 shape.
+ *
+ * The two deploy pipelines are independent, so there is no merge order that
+ * avoids a window in which one side has changed and the other has not. These
+ * tests are what makes the window survivable.
+ */
+const TRIMMABLE = ["resources", "metadata", "codeVariants", "visualization"] as const;
+
+test("the list parse survives every heavy field being projected away", () => {
+  for (const field of TRIMMABLE) {
+    const record = listRecord("Qiskit");
+    delete record[field];
+    const parsed = parseCatalogListRecord(record);
+    assert.ok(parsed, `dropping ${field} rejected the whole record`);
+  }
+  // And all four at once, which is what the projection will actually do.
+  const stripped = listRecord("Qiskit");
+  for (const field of TRIMMABLE) delete stripped[field];
+  assert.ok(parseCatalogListRecord(stripped), "dropping all four rejected the record");
+});
+
+test("an absent heavy field arrives as an empty structure, not undefined", () => {
+  // Consumers iterate these without guards — `families.ts` maps `codeVariants`
+  // with no `?? []` and would throw, and the gate sidebar reads
+  // `visualization.wires` directly. Filling here means no consumer has to learn
+  // a new shape.
+  const record = listRecord("Qiskit");
+  for (const field of TRIMMABLE) delete record[field];
+  const parsed = parseCatalogListRecord(record) as unknown as Record<string, unknown>;
+  assert.deepEqual(parsed.resources, []);
+  assert.deepEqual(parsed.metadata, []);
+  assert.deepEqual(parsed.codeVariants, []);
+  assert.deepEqual(parsed.visualization, { wires: [], operations: [], outcomes: [] });
+});
+
+test("MALFORMED is still refused, which is the half that must not be lost", () => {
+  // Tolerating absence is deliberate; tolerating a schema disagreement is not.
+  // A string where an array belongs means the API and this build disagree, and
+  // rendering should stop rather than guess.
+  for (const [field, bad] of [
+    ["resources", "not-an-array"],
+    ["metadata", 42],
+    ["codeVariants", { framework: "Qiskit" }],
+    ["visualization", "not-a-record"],
+  ] as const) {
+    const record = listRecord("Qiskit");
+    record[field] = bad;
+    assert.equal(parseCatalogListRecord(record), null, `a malformed ${field} was accepted`);
+  }
+  // A visualization that is a record but whose wires are not strings is the
+  // subtle one — the shape is right one level down and wrong two levels down.
+  const record = listRecord("Qiskit");
+  record.visualization = { wires: [1, 2], operations: [], outcomes: [] };
+  assert.equal(parseCatalogListRecord(record), null, "visualization.wires was not shape-checked");
+});
+
+test("the FULL parse keeps requiring them, because its payload is not shrinking", () => {
+  // Only the list projection gets smaller. The detail page fetches one record
+  // and needs all of it, so weakening that guard would buy nothing and cost the
+  // schema check.
+  for (const field of TRIMMABLE) {
+    const record = fullRecord("Qiskit");
+    delete record[field];
+    assert.equal(parseCatalogRecord(record), null, `the full parse tolerated a missing ${field}`);
+  }
+});
