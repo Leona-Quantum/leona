@@ -8,6 +8,9 @@ dependencies = ["majorana-contracts"]
 dev = [
     "pytest>=8",
     "pytest-asyncio>=1.0",
+    # `pytest -n auto --dist loadfile` in the ci `py` job. See the comment on that
+    # step for why `--dist loadfile` is load-bearing rather than a tuning knob.
+    "pytest-xdist>=3.6",
     "ruff>=0.14",
     "import-linter>=2.3",
     "httpx>=0.27",
@@ -32,7 +35,7 @@ dev = [
     # the simulator and its otherwise-unbounded numba dependency too: retaining
     # an old lock selected numba 0.53.1, which cannot install on Python 3.12.
     "amazon-braket-sdk==1.122.0",
-    "amazon-braket-default-simulator==1.39.5",
+    "amazon-braket-default-simulator==1.39.9",
     "numba==0.66.0",
     # Qibo stays on its in-process NumPy backend; optional Qibolab hardware
     # backends are not installed inside the network-locked sandbox.
