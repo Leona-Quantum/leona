@@ -15,7 +15,8 @@ import { isLocalDevAuthEnabled } from "./lib/local-dev-auth";
 import { pageviewLoggingEnabled, pageviewSignal } from "./lib/pageview-signal";
 import { LEGACY_PUBLIC_LOCALE_COOKIE, parsePublicLocale, PUBLIC_LOCALE_COOKIE, PUBLIC_LOCALES } from "./lib/public-locale";
 import { isPublicPath, workosUnauthenticatedPaths } from "./lib/public-paths";
-import { isRoutedPath, LOCALE_ROUTES } from "./lib/routed-paths";
+import { localeRewriteTarget } from "./lib/locale-rewrite";
+import { isRoutedPath, localePrefixRoute, LOCALE_ROUTES } from "./lib/routed-paths";
 import { canonicalHostRedirect } from "./lib/site-origin";
 
 // The public list and its glob form both live in lib/public-paths.ts, which is
@@ -137,10 +138,19 @@ function readLocale(request: NextRequest) {
 
 function localeRewrite(request: NextRequest): NextResponse | null {
   const { pathname } = request.nextUrl;
-  if (!LOCALE_ROUTE_SET.has(pathname)) return null;
+  // Exact for the six marketing pages, prefix for the Atlas subtrees — see
+  // LOCALE_PREFIX_ROUTES for why the second list cannot be folded into the first.
+  if (!LOCALE_ROUTE_SET.has(pathname) && localePrefixRoute(pathname) === null) return null;
   const locale = readLocale(request);
-  const target = pathname === "/" ? `/${locale}` : `/${locale}${pathname}`;
-  return NextResponse.rewrite(new URL(target, request.url));
+  // **`localeRewriteTarget` and not `new URL(target, request.url)`.** The
+  // relative form replaces everything from the path onward, so it drops the
+  // query string — which was invisible while this rewrite served only the six
+  // marketing pages and became a bug the moment it served `/repository/layers`,
+  // whose ten parameters are all resolved during render. The whole account, and
+  // the measurement that caught it, is in `lib/locale-rewrite.ts`; it is a
+  // separate module so `locale-rewrite.test.ts` can hold the rule rather than
+  // review having to.
+  return NextResponse.rewrite(localeRewriteTarget(request.nextUrl.toString(), pathname, locale));
 }
 
 /**

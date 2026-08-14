@@ -137,6 +137,42 @@ async def count_runs_by_mode_since(
     return {str(mode): int(count) for mode, count in (await session.execute(stmt)).all()}
 
 
+async def count_submitted_runs_for_account_since(
+    scope: Scope, session: AsyncSession, since: dt.datetime
+) -> int:
+    """This ACCOUNT's EXECUTE+AUTO submissions since `since`, across every
+    workspace it acts in — the per-user half of the abuse backstop (ai-ops 86).
+
+    Per account and not per workspace for the same reason `count_execute_runs_
+    since` below is (see that function's docstring): the free tier sells
+    `owned_workspaces=3` (`tiers.TIER_LIMITS`), and a per-workspace count let
+    one free signup spread submissions across three workspaces and clear three
+    times the ceiling this exists to enforce.
+
+    Unlike `count_execute_runs_since` this counts BOTH modes in
+    `BACKSTOP_COUNTED_MODES`, not EXECUTE alone — the backstop has to bound AUTO
+    too, for the reason `count_runs_by_mode_since` above documents: AUTO is the
+    default mode on `CreateRunRequest` and the worker only resolves it to
+    EXECUTE after admission, which is too late for a gate that runs at
+    admission.
+
+    Also unscoped by workspace on purpose, like `count_execute_runs_since`:
+    `Run.user_id == scope.user_id` selects only rows the caller itself created,
+    so this leaks nothing across the tenancy boundary the workspace-scoped
+    queries in this module protect.
+    """
+    stmt = (
+        select(func.count())
+        .select_from(Run)
+        .where(
+            Run.user_id == scope.user_id,
+            Run.mode.in_(BACKSTOP_COUNTED_MODES),
+            Run.created_at >= since,
+        )
+    )
+    return int((await session.execute(stmt)).scalar_one())
+
+
 async def count_execute_runs_since(scope: Scope, session: AsyncSession, since: dt.datetime) -> int:
     """Runs whose RESOLVED mode is EXECUTE, for the per-tier weekly allowance.
 
@@ -333,6 +369,54 @@ async def count_in_flight_execute_runs(scope: Scope, session: AsyncSession) -> i
         )
     )
     return int((await session.execute(stmt)).scalar_one())
+
+
+class SubmissionBackstopReached(Exception):
+    """The account has spent its per-user submission backstop (ai-ops 86).
+
+    Simpler than `RunAllowanceReached`: the backstop counts rows, not tokens,
+    and has no in-flight reservation to charge — a submitted run is either
+    counted or it is not, from the moment its row exists.
+    """
+
+    def __init__(self, used: int, limit: int) -> None:
+        super().__init__(f"{used}/{limit} weekly submissions used")
+        self.used = used
+        self.limit = limit
+
+
+async def reserve_submission_backstop_slot(
+    scope: Scope, session: AsyncSession, since: dt.datetime, limit: int | None
+) -> int:
+    """Reserve a slot against the per-account submission backstop, race-safely.
+
+    Same shape as `reserve_execute_run_slot` above and
+    `system.reserve_owned_workspace_slot`, and for the same reason: comparing a
+    count to a limit with nothing held between the read and the write lets a
+    burst of concurrent submissions at the boundary all read the same count and
+    all pass, exceeding the ceiling by the width of the burst. That was true of
+    the per-workspace comparison this replaces (ai-ops 86) — it held no lock at
+    all, so two submissions at the boundary could both read "999 of 1000" and
+    both be admitted.
+
+    `limit is None` takes no lock, same as `reserve_owned_workspace_slot`: the
+    Enterprise/developer tier refuses nothing (ai-ops 86 ruling: "Enterprise
+    alert-only"), so there is no decision here to race, and queueing every
+    submission from an unmetered account behind one row would be a cost with no
+    purchase. The count is still computed and returned so the caller can log
+    it — see `routes.runs._enforce_execute_backstop`.
+
+    Returns the count either way, refused or not, so a caller building a
+    refusal message or a log line never has to read it again under a second
+    query.
+    """
+    if limit is None:
+        return await count_submitted_runs_for_account_since(scope, session, since)
+    await session.execute(select(User.id).where(User.id == scope.user_id).with_for_update())
+    submitted = await count_submitted_runs_for_account_since(scope, session, since)
+    if submitted >= limit:
+        raise SubmissionBackstopReached(submitted, limit)
+    return submitted
 
 
 def _spends_the_weekly_allowance(scope: Scope, since: dt.datetime):

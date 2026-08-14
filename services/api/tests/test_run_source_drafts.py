@@ -125,8 +125,16 @@ async def test_run_and_job_are_bound_to_the_new_draft_version(scope, monkeypatch
     async def no_queue(*_args, **_kwargs):
         return {}
 
+    # The per-account submission backstop (ai-ops 86) is a second, separate
+    # count on the same admission path — stubbed for the same reason.
+    async def no_submissions_yet(*_args, **_kwargs):
+        return 0
+
     monkeypatch.setattr(runs.runs_repo, "queue_positions", no_queue)
     monkeypatch.setattr(runs.runs_repo, "count_runs_by_mode_since", no_runs_yet)
+    monkeypatch.setattr(
+        runs.runs_repo, "count_submitted_runs_for_account_since", no_submissions_yet
+    )
     monkeypatch.setattr(runs, "_create_stale_source_draft", create_draft)
     monkeypatch.setattr(runs.runs_repo, "create_run", create_run)
     monkeypatch.setattr(runs.runs_repo, "append_run_event", append_event)
