@@ -21,6 +21,15 @@ on:
   pull_request:
   schedule:
     - cron: "0 3 * * 1" # weekly full-history scan
+
+# Same reasoning as ci.yml: a superseded PR run is scanning a commit that can no
+# longer be merged. The weekly scan is not at risk of being cancelled by PR
+# traffic — on `schedule` the ref is the default branch, not refs/pull/<n>/merge,
+# so it lands in a different group and always runs to completion.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   gitleaks:
     runs-on: ubuntu-latest
