@@ -149,6 +149,12 @@ function projectForListView(record) {
       Object.entries(projected.visualization).filter(([key]) => vizKeys.has(key)),
     );
   }
+  if (projected.portableCircuit && typeof projected.portableCircuit === "object") {
+    const circuitKeys = pythonFrozenset("LIST_VIEW_PORTABLE_CIRCUIT_FIELDS", 2);
+    projected.portableCircuit = Object.fromEntries(
+      Object.entries(projected.portableCircuit).filter(([key]) => circuitKeys.has(key)),
+    );
+  }
   return projected;
 }
 
@@ -420,4 +426,34 @@ test("the projected browse payload stays under the data-cache ceiling", () => {
     `the projected list payload is ${projected} bytes, over the ${BUDGET}-byte budget (75% of the ` +
       `${CEILING}-byte ceiling). Either drop a field from the allowlist or stop projecting prose.`,
   );
+});
+
+/**
+ * The circuit trim keeps every width, which is the only thing the list reads.
+ *
+ * `portableCircuit.steps` is 75,329 of the field's 80,159 bytes, and
+ * `deriveInterface` reads `qubitCount` and `measure` — there is no third read in
+ * its body. The stance test above already proves the trim does not reclassify a
+ * record, because it derives a stance from the PROJECTED record. This asserts
+ * the narrower thing that makes that non-vacuous: the two keys survive
+ * byte-identically on every record that carries a circuit, and `steps` survives
+ * on none.
+ */
+test("the circuit trim keeps the register on every record and the gates on none", () => {
+  let withCircuit = 0;
+  for (const item of manifest.items) {
+    const full = JSON.parse(item.source_blob);
+    if (!full.portableCircuit) continue;
+    withCircuit += 1;
+    const projected = projectForListView(full).portableCircuit;
+    assert.equal(
+      projected.qubitCount,
+      full.portableCircuit.qubitCount,
+      `${item.upstream_identity} lost or changed its qubitCount`,
+    );
+    assert.equal(projected.measure, full.portableCircuit.measure);
+    assert.equal("steps" in projected, false, `${item.upstream_identity} still carries its gates`);
+  }
+  // The corpus must actually exercise this, or the assertions above are empty.
+  assert.ok(withCircuit > 50, `only ${withCircuit} records carry a portableCircuit`);
 });

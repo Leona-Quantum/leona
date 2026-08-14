@@ -49,12 +49,24 @@ def parse_source_record(source_code: str | None) -> dict | None:
 
 # The exact `record` keys the /repository browse list renders and filters on:
 # title/category/framework/status for the cards and filter chips, the
-# tags/resources/metadata/verification* summaries the list filters and badges
-# by, and portableCircuit, which getPublicRepositoryVariant() reads to
-# synthesise a converted framework variant when no native one exists (without
-# it the framework filter silently under-reports support). Everything else in
-# `record` — long-form prose, classical comparisons, citations, and other
-# detail-page-only content — is dropped here.
+# tags/resources/verification* summaries the list filters and badges by, and
+# portableCircuit, which `deriveInterface` reads for the takes/returns facet.
+# Everything else in `record` — long-form prose, classical comparisons,
+# citations, and other detail-page-only content — is dropped here.
+#
+# **The old justification for `portableCircuit` named a control that no longer
+# exists** and is corrected rather than quietly deleted, because it was quoted
+# forward twice: it said `getPublicRepositoryVariant()` reads the field here so
+# the browse list's *framework filter* does not under-report export support.
+# There is no framework filter. It was removed as "a control that removes a
+# third of the rows at its most aggressive setting is not a filter" — its eight
+# options produced five distinct result sets — and the browse bar is now
+# search · topic · takes-returns. Every surviving caller of
+# `getPublicRepositoryVariant` fetches a FULL record.
+#
+# Note the membership below is not the whole contract: four of these fields are
+# projected a level deeper, and the constants that do it carry their own
+# measurements.
 #
 # This allowlist is Slice E's whole fix for the /v1/catalog/entries list
 # response exceeding Vercel's 2 MB Next.js data-cache ceiling (measured at
@@ -259,6 +271,48 @@ LIST_VIEW_VISUALIZATION_FIELDS: frozenset[str] = frozenset({"wires"})
 LIST_VIEW_GATE_VISUALIZATION_FIELDS: frozenset[str] = frozenset({"wires", "operations"})
 
 
+# The register, not the circuit.
+#
+# `portableCircuit` is 80,159 bytes of the list payload (11.7% of what is left
+# after the other three projections), and `steps` is **75,329** of them. Nothing
+# on the browse path reads a step: `deriveInterface`
+# (`apps/web/lib/repository/interface.ts`) reads `qubitCount` and `measure` and
+# there is no third read in its body, and `repository-browser.tsx:524` passes the
+# field straight into it.
+#
+# **Two comments used to say otherwise and both were stale**, which is why this
+# needed checking rather than assuming. The old note on this allowlist said
+# `getPublicRepositoryVariant()` reads `portableCircuit` on the list "to
+# synthesise a converted framework variant when no native one exists (without it
+# the framework filter silently under-reports support)", and
+# `public-repository.ts` said the same. **There is no framework filter.** It was
+# removed as "a control that removes a third of the rows at its most aggressive
+# setting is not a filter" (repository-browser.tsx, the FacetRail comment), and
+# the browse bar is search · topic · takes-returns. Every remaining caller of
+# `getPublicRepositoryVariant` — the detail view and the export route — fetches a
+# FULL record.
+#
+# Confirmed independently by something that already shipped: the list's
+# `codeVariants` lost its `code` in an earlier projection, and
+# `getPublicRepositoryVariant` reads `nativeVariant?.code` first. Had the browse
+# list still called it, that would already be broken. It is not.
+LIST_VIEW_PORTABLE_CIRCUIT_FIELDS: frozenset[str] = frozenset({"qubitCount", "measure"})
+
+
+def _project_portable_circuit(circuit: Any) -> Any:
+    """Keep the width and the terminal-measurement flag, drop the gate list.
+
+    Passed through untouched when it is not a mapping, for the same reason as
+    the other three inner projections: a projection must not launder a schema
+    disagreement into a well-formed object.
+    """
+    if not isinstance(circuit, dict):
+        return circuit
+    return {
+        key: value for key, value in circuit.items() if key in LIST_VIEW_PORTABLE_CIRCUIT_FIELDS
+    }
+
+
 def _project_visualization(visualization: Any, category: Any) -> Any:
     """Keep the register, and the circuit only where one is drawn.
 
@@ -286,7 +340,7 @@ def project_record_for_list_view(record: dict[str, Any] | None) -> dict[str, Any
     `None`. `record=None` (a non-manifest source, see `parse_source_record`)
     survives unchanged.
 
-    Three fields are projected a level deeper than the allowlist reaches, because
+    Four fields are projected a level deeper than the allowlist reaches, because
     that is where their cost is rather than in the field itself:
 
     * `codeVariants` keeps its shape and loses the code inside it
@@ -295,6 +349,8 @@ def project_record_for_list_view(record: dict[str, Any] | None) -> dict[str, Any
       table (LIST_VIEW_RESOURCE_LABELS).
     * `visualization` keeps the register for every record and the circuit only
       for the one category that draws one (LIST_VIEW_VISUALIZATION_FIELDS).
+    * `portableCircuit` keeps the width and the measurement flag and drops the
+      gate list (LIST_VIEW_PORTABLE_CIRCUIT_FIELDS).
       This is the only projection here that reads a SECOND field of the record —
       `category` — so it is applied against the source record rather than the
       projected one, and it is unaffected if `category` is ever dropped from the
@@ -317,6 +373,8 @@ def project_record_for_list_view(record: dict[str, Any] | None) -> dict[str, Any
         projected["visualization"] = _project_visualization(
             projected["visualization"], record.get("category")
         )
+    if "portableCircuit" in projected:
+        projected["portableCircuit"] = _project_portable_circuit(projected["portableCircuit"])
     return projected
 
 

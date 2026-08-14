@@ -374,10 +374,27 @@ export const PUBLIC_REPOSITORY_LIST_FIELDS = [
   "knownGaps",
 ] as const;
 
-export type PublicRepositoryListEntry = Pick<
-  PublicRepositoryEntry,
-  (typeof PUBLIC_REPOSITORY_LIST_FIELDS)[number]
->;
+/**
+ * What `/v1/catalog/entries?view=list` actually sends.
+ *
+ * The `Pick` alone would be a lie about one field. `portableCircuit` is on the
+ * allowlist and is projected a level down — the list carries the register, not
+ * the circuit (`LIST_VIEW_PORTABLE_CIRCUIT_FIELDS` in `catalog_read_model.py`),
+ * because `steps` is 75,329 of the field's 80,159 bytes and the browse path
+ * reads only `qubitCount` and `measure`, via `deriveInterface`.
+ *
+ * Narrowing it here is the half that makes the trim safe rather than merely
+ * smaller: without it TypeScript would keep promising every consumer a `steps`
+ * array that does not exist at runtime, and the failure would be a `.length` of
+ * undefined in production against a healthy API — the exact shape this whole
+ * file's allowlist exists to prevent.
+ */
+export type PublicRepositoryListEntry = Omit<
+  Pick<PublicRepositoryEntry, (typeof PUBLIC_REPOSITORY_LIST_FIELDS)[number]>,
+  "portableCircuit"
+> & {
+  portableCircuit?: Pick<PortableCircuit, "qubitCount" | "measure">;
+};
 
 export const PUBLIC_REPOSITORY_CATEGORIES: Array<{
   value: "all" | PublicRepositoryCategory;

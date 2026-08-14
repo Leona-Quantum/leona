@@ -77,7 +77,15 @@ def test_project_keeps_allowlisted_keys_and_drops_others():
         "slug": "amplitude-amplification",
         "title": "Amplitude Amplification",
         "algorithmFamily": "Grover",
-        "portableCircuit": {"qasm": "OPENQASM 3.0;"},
+        # A real PortableCircuit, not `{"qasm": ...}` as this fixture used to
+        # say — that shape has no `qubitCount` and is not what the field holds
+        # (apps/web/lib/circuit-frameworks.ts). It now also has to be real,
+        # because the field is projected a level down.
+        "portableCircuit": {
+            "qubitCount": 2,
+            "measure": True,
+            "steps": [{"gate": "H", "qubits": [0]}],
+        },
         # not on the allowlist: detail-page-only prose
         "classicalComparison": {"baseline": "O(N)", "metrics": [{"label": "queries"}]},
     }
@@ -85,7 +93,8 @@ def test_project_keeps_allowlisted_keys_and_drops_others():
     assert projected["slug"] == "amplitude-amplification"
     assert projected["title"] == "Amplitude Amplification"
     assert projected["algorithmFamily"] == "Grover"
-    assert projected["portableCircuit"] == {"qasm": "OPENQASM 3.0;"}
+    # The register survives; the gate list does not.
+    assert projected["portableCircuit"] == {"qubitCount": 2, "measure": True}
     assert "classicalComparison" not in projected
 
 
@@ -332,3 +341,44 @@ def test_a_malformed_visualization_is_passed_through_rather_than_repaired():
     )
     # An empty mapping stays an empty mapping — absent keys are not fabricated.
     assert project_record_for_list_view({"slug": "x", "visualization": {}})["visualization"] == {}
+
+
+def test_the_list_view_keeps_the_register_and_drops_the_gate_list():
+    """`portableCircuit.steps` is 75,329 of the field's 80,159 bytes.
+
+    `deriveInterface` (apps/web/lib/repository/interface.ts) reads `qubitCount`
+    and `measure`, and there is no third read in its body;
+    `repository-browser.tsx:524` passes the field straight into it. Every other
+    reader — `getPublicRepositoryVariant`, the export route — fetches a full
+    record.
+    """
+    projected = project_record_for_list_view(
+        {
+            "slug": "x",
+            "portableCircuit": {
+                "qubitCount": 3,
+                "measure": True,
+                "steps": [{"gate": "H", "qubits": [0]}, {"gate": "CX", "qubits": [0, 1]}],
+            },
+        }
+    )
+    assert projected["portableCircuit"] == {"qubitCount": 3, "measure": True}
+
+
+def test_a_circuit_without_a_measure_flag_keeps_its_absence():
+    """`measure` is optional on the type and its absence is meaningful — it is
+    the difference between a program that ends in bits and one that ends holding
+    a state. Projecting by intersection must not fabricate it as False."""
+    projected = project_record_for_list_view(
+        {"slug": "x", "portableCircuit": {"qubitCount": 2, "steps": []}}
+    )
+    assert projected["portableCircuit"] == {"qubitCount": 2}
+
+
+def test_a_malformed_portable_circuit_is_passed_through_rather_than_repaired():
+    assert (
+        project_record_for_list_view({"slug": "x", "portableCircuit": "nonsense"})[
+            "portableCircuit"
+        ]
+        == "nonsense"
+    )

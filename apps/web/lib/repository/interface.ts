@@ -227,7 +227,19 @@ export interface InterfaceEvidence {
   category: string;
   /** `visualization.wires.length` — the only width a circuit-less record states. */
   wireCount: number;
-  portableCircuit?: PortableCircuit;
+  /**
+   * The register, not the circuit. This function reads exactly `qubitCount` and
+   * `measure` — grep the body, there is no third — and declaring the full
+   * `PortableCircuit` here asked every caller for a `steps` array it would never
+   * look at. That mattered once the browse list stopped carrying one: the list
+   * projection sends `{qubitCount, measure}` (LIST_VIEW_PORTABLE_CIRCUIT_FIELDS
+   * in catalog_read_model.py), and a signature demanding `steps` would have made
+   * the honest payload the one that fails to typecheck.
+   *
+   * A full `PortableCircuit` still satisfies this, so the detail page's call
+   * site is unchanged.
+   */
+  portableCircuit?: Pick<PortableCircuit, "qubitCount" | "measure">;
   /**
    * §3.6's declared holes. **Only `role` is read here, and that is a rule rather
    * than an implementation detail** — `detail` and `detailJa` are prose, and the
