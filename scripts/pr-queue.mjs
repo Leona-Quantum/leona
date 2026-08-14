@@ -43,7 +43,7 @@
  * transfer to an organization.
  *
  * **That transfer is now ruled and scheduled.** The owner answered ai-ops#46 with "do the
- * complete move for me": `EshMis/majorana` becomes `LeonaQuantum/leona`. So the paragraph
+ * complete move for me": `EshMis/majorana` becomes `Leona-Quantum/leona`. So the paragraph
  * above describes the state this file was written in, not a permanent one — once the
  * transfer lands, the merge queue becomes available and this whole comment should be
  * rewritten rather than merely amended.
@@ -83,12 +83,12 @@ export function repoFromRemote(url) {
 }
 
 // The fallback names the repo's DESTINATION, not its current path: `EshMis/majorana` is
-// being transferred to `LeonaQuantum/leona` (ai-ops#46). It is only reached when `origin`
+// being transferred to `Leona-Quantum/leona` (ai-ops#46). It is only reached when `origin`
 // cannot be read at all, and GitHub redirects the old path either way, so pointing it
 // forward costs nothing and stops it going stale the moment the transfer lands.
 const REPO =
   repoFromRemote(execFileSync("git", ["remote", "get-url", "origin"], { encoding: "utf8" })) ??
-  "LeonaQuantum/leona";
+  "Leona-Quantum/leona";
 
 /** CODEOWNERS is the only list of blast-radius paths; a second copy here would drift. */
 export function codeownerPaths(text) {

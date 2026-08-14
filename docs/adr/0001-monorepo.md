@@ -4,7 +4,7 @@
 
 > **Amendment, 2026-08-14 — where the monorepo lives, and who can see it.** The decision
 > below is unchanged; two facts in its wording are not. The repository was `EshMis/majorana`
-> and is being transferred to **`LeonaQuantum/leona`** (owner rulings ai-ops#46 and #70), and
+> and is being transferred to **`Leona-Quantum/leona`** (owner rulings ai-ops#46 and #70), and
 > it is **public**, not private as the Decision line says — it went public before the launch
 > work and the sentence was never revisited. Neither changes the argument for one repo, so
 > the original text is left as written rather than edited in place; this note is the record.
