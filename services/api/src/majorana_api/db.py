@@ -183,9 +183,15 @@ def fleet_peak_connections(
     minimum, so both revisions run their full complement at once. The steady
     state is what you see in `pg_stat_activity`; the rollout is what breaks.
 
-    This is what caps the worker count at three. Four is comfortable at rest
+    This used to cap the worker count at three: four was comfortable at rest
     (36 of 45) and 52 of 45 for the length of every deploy — and a deploy is
     exactly when the connections matter, because that is when Alembic needs one.
+    That cap was a property of db-g1-small's 50 connections. Since 2026-08-15
+    the instance is db-custom-1-3840 with an explicit max_connections=200, so
+    the budget is 195 and the worker count is no longer what runs out first.
+    `test_where_the_worker_count_actually_runs_out` finds the boundary rather
+    than restating it here, so this paragraph cannot drift away from the truth
+    a second time.
 
     **The API term is deliberately NOT doubled, and that is not an omission.**
     The API can absolutely have two revisions live at once — `--max-instances`
@@ -196,8 +202,11 @@ def fleet_peak_connections(
     whatever traffic demanded and then drains. One is arithmetic, the other is a
     function of load.
 
-    The pessimistic figure is worth knowing because it is close: two revisions ×
-    2 instances × 10 connections is 40, plus a worker at rest (4) is 44 of 45.
+    The pessimistic figure was worth knowing because it used to be close: two
+    revisions × 2 instances × 10 connections is 40, plus a worker at rest (4)
+    was 44 of 45. At four API instances and a 195 budget the same shape is two
+    revisions × 4 × 10 = 80 plus 3 workers at rest (12), or 92 — no longer
+    close, but still the figure to compute rather than the resting one.
     It is not gated on — a gate on a load-dependent worst case fails on a quiet
     week for reasons nobody can reproduce — but anyone raising API_MAX_INSTANCES,
     DEFAULT_POOL_SIZE/DEFAULT_MAX_OVERFLOW, or the worker count should compute
