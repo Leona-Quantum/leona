@@ -62,15 +62,28 @@ it for you. Take the URL from the dashboard, or list them:
 
 ```bash
 vercel ls web --scope majoranaq          # the top row is the current production deployment
-vercel logs <deployment-url> --scope majoranaq | grep leona.pageview
+vercel logs --deployment <deployment-url> --scope majoranaq \
+  --query "leona.pageview" --since 24h --limit 1000
 ```
 
-Pipe that through `jq` to get counts per route for a day:
+**Use `--query`, not a pipe into `grep`.** This is the one part of this procedure
+that fails silently rather than loudly. `vercel logs` returns the most recent 100
+entries by default and this site takes enough crawler traffic to fill that window
+in **seconds** — so `vercel logs ... | grep leona.pageview` prints nothing, which
+is indistinguishable from "nobody visited". That is exactly the reading this
+counter exists to prevent, and it happened on the first attempt to verify the
+counter after it shipped: the counter was working perfectly and the grep said
+zero. `--query` filters server-side, before the limit is applied. Set `--since`
+and `--limit` deliberately; both silently truncate.
+
+Counts per route for a day:
 
 ```bash
-... | grep -o '{"evt":"leona.pageview".*}' \
-    | jq -r 'select(.day == "2026-08-14") | .route' \
-    | sort | uniq -c | sort -rn
+vercel logs --deployment <deployment-url> --scope majoranaq \
+  --query "leona.pageview" --since 24h --limit 1000 --json \
+  | grep -o '{"evt":"leona.pageview"[^}]*}' \
+  | jq -r 'select(.day == "2026-08-14") | .route' \
+  | sort | uniq -c | sort -rn
 ```
 
 ## The ceiling — read this before trusting a total
