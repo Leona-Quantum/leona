@@ -2,12 +2,18 @@
 
 import { Fragment, useEffect, useMemo, useRef, useState, useTransition, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
+// Leaf modules, NOT `lib/public-repository`. This is a `"use client"` component,
+// and that module value-imports all nine `entries-*.ts` files — so importing
+// these four through it shipped the whole Atlas catalog into the browser bundle
+// (measured: 454 KB of one 686 KB chunk, ~1.6 MB unpacked) to classify rows the
+// server had already sent. Both leaves below are corpus-free.
+// `lib/client-catalog-leak.test.ts` fails if this import comes back.
+import { entryVerificationMethods } from "../../lib/repository/entry-verification";
 import {
-  entryVerificationMethods,
   PUBLIC_REPOSITORY_CATEGORIES,
   type PublicRepositoryCategory,
   type PublicRepositoryListEntry,
-} from "../../lib/public-repository";
+} from "../../lib/repository/types";
 import type { PublicLocale } from "../../lib/public-locale";
 import { VerificationTierBadge } from "../../components/repository-verification";
 import { StarIcon } from "../../components/icons";
