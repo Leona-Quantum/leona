@@ -100,6 +100,26 @@ updates:
       # Remove this entry when the lint sweep lands, not before.
       - dependency-name: "ruff"
         versions: [">=0.16"]
+      # The Vercel SDK is exact-pinned at 0.6.0 in packages/py/sandbox/pyproject.toml,
+      # and that pin guards a security control rather than a preference: 0.9.0
+      # restructures the SDK (`vercel.sandbox.aio` gone, `Sandbox.create()` replaced by a
+      # module-level `create_sandbox()`, `SandboxAuthError`/`SandboxPermissionError`
+      # collapsed into `SandboxApiError`), and the code that has to be rewritten against
+      # that new lifecycle is `majorana_sandbox.vercel.VercelSandbox._execute` — the
+      # deny-all-egress boundary of AGENTS.md rule 3. The break already lands by 0.8.1,
+      # and the true safe/unsafe boundary between 0.6.0 and 0.8.1 has never been bisected.
+      #
+      # `packages/py/sandbox/` is a CODEOWNERS blast-radius path, and the pin's own
+      # comment says the same thing this entry now says to the bot: owner review, not a
+      # dependency-bump PR, is where this gets taken on. leona#637 proposed 0.10.0 and
+      # failed `blast-radius` — correctly. Acknowledging that check to get the bump
+      # through would be a subagent self-authorising a change to the egress boundary,
+      # which is exactly what the check exists to stop.
+      #
+      # Remove only as part of a deliberate SDK migration with live Vercel credentials to
+      # verify `_execute` against — including whether `timeout=` (ms) survives as
+      # `execution_time_limit=` with the same unit.
+      - dependency-name: "vercel"
     commit-message:
       prefix: "chore"
       include: scope
