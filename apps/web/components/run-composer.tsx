@@ -321,6 +321,12 @@ function useGhostPrompt(suggestions: readonly string[] | undefined, typedValue: 
 
   useEffect(() => {
     if (!hasSuggestions || !active || reduceMotion) return;
+    // Restart the cycle from its first character rather than resuming wherever
+    // the clock was left — the same reset the landing composer does, and for
+    // the same reason: a visitor who types and then clears the box would
+    // otherwise get one frame of the stale `elapsedMs`, flashing a
+    // half-finished sentence in before the interval's first tick corrects it.
+    setElapsedMs(0);
     const started = Date.now();
     // Sampled at the faster of the two per-character durations, not a fixed
     // 55ms: at 30ms/typed-character and 12ms/deleted-character (ai-ops 108),
