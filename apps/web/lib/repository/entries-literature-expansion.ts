@@ -49,11 +49,21 @@ const SHOWCASE_WIDTH = 16;
  * a single pair. At width 2 each of those either vanishes or collapses into a
  * Bell pair the corpus already publishes standalone.
  *
- * The exception is the Bell-pair ladder at 2, which is the owner's own example
- * ("Bell state: 2q and 16q"). By the repeats-once rule it would be 4 — two rungs
- * are what make it a ladder — but at 2q it is exactly the Bell pair that gives
- * the family its name, and the 16q member already demonstrates the tiling. Flagged
- * on the issue rather than silently resolved either way.
+ * The exception is the Bell-pair ladder at 4, and it is the one width the owner
+ * ruled on directly (ai-ops issue 124): "entry with 2q is bell state, 4q variant
+ * is bell pair ladder". It shipped at 2 first, following his earlier example
+ * ("Bell state: 2q and 16q"), and the flag on that PR is what produced the
+ * ruling. Two rungs are what make it a ladder; one rung is the Bell pair this
+ * corpus already publishes standalone as `bell-state-qiskit`, so at 2q the
+ * family's smallest member was a second copy of another record under a different
+ * name.
+ *
+ * He also offered to delete the family outright "if there is no substantive
+ * difference in the use". There is: from 4 qubits up this is a bank of DISJOINT
+ * pairs, and what it exercises is parallel two-qubit-gate structure — a compiler
+ * and hardware property that a single Bell pair cannot exhibit at any width. One
+ * pair is an entanglement example; several at once is a benchmark. So the family
+ * stays and its floor moves.
  */
 const widthsFor = (family: CircuitFamily): number[] =>
   family.minWidth === SHOWCASE_WIDTH ? [SHOWCASE_WIDTH] : [family.minWidth, SHOWCASE_WIDTH];
@@ -117,7 +127,7 @@ const CIRCUIT_FAMILIES: CircuitFamily[] = [
     description: "A bank of disjoint Bell-pair preparations that exposes parallel two-qubit-gate structure.",
     descriptionJa: "互いに独立なBellペアを並列準備し、2量子ビットゲートの並列性を示す回路です。",
     tags: ["Bell pair", "parallelism", "CNOT"],
-    minWidth: 2,
+    minWidth: 4,
     build: (width) => ({
       qubitCount: width,
       steps: Array.from({ length: Math.floor(width / 2) }, (_, index) => [single("H", index * 2), pair("CX", index * 2, index * 2 + 1)]).flat(),
