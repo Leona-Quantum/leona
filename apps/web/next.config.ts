@@ -1,5 +1,8 @@
 import type { NextConfig } from "next";
-import { contentSecurityPolicy } from "./lib/content-security-policy";
+import {
+  contentSecurityPolicy,
+  errorReportingOrigin,
+} from "./lib/content-security-policy";
 
 /**
  * Content-Security-Policy (05-security.md §1 platform+edge).
@@ -51,6 +54,9 @@ const CONTROL_PLANE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000"
 const csp = contentSecurityPolicy({
   controlPlane: CONTROL_PLANE,
   development: process.env.NODE_ENV === "development",
+  // Same env var `instrumentation-client.ts` gates the browser SDK on, so the
+  // policy and the SDK can never disagree about whether Sentry is configured.
+  errorReporting: errorReportingOrigin(process.env.NEXT_PUBLIC_SENTRY_DSN),
 });
 
 const nextConfig: NextConfig = {
