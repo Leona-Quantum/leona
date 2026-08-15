@@ -43,19 +43,39 @@ showed the API's backends pinned at exactly 10 for the run's whole duration.
 `services/api/src/majorana_api/db.py` sets `DEFAULT_POOL_SIZE = 5` and
 `DEFAULT_MAX_OVERFLOW = 5`, and the API never overrides either — only the worker does
 (`.github/workflows/deploy.yml`, the `deploy worker` step). So ten connections, fully
-saturated, against a `containerConcurrency` of 80. An uncontended request is ~27 ms median; a
-hundred arriving together inflate the median about thirtyfold. It queued; it did not time out.
+saturated, against the `containerConcurrency` of 80 that production ran **at the time of this
+measurement**. An uncontended request is ~27 ms median; a hundred arriving together inflate the
+median about thirtyfold. It queued; it did not time out. (Production is 16 now — see the
+correction below. The pool-bound *conclusion* survives the change, because 16 admitted requests
+still exceed 10 connections; only the size of the queue in front of them shrinks.)
 
 ### What the number is NOT evidence for
 
 **Not production capacity.** This gate has always said it does not claim the local machine
 represents Cloud Run, and that caveat is doing real work here. Production is 1 vCPU, 512Mi,
-`containerConcurrency: 80`, `maxScale: 2` — pinned in `infra/fleet.env` (`API_CPU`,
+**`containerConcurrency: 16`**, `maxScale: 4` — pinned in `infra/fleet.env` (`API_CPU`,
 `API_MEMORY_MI`, `API_CONCURRENCY`, `API_MAX_INSTANCES`) as of `infra/pin-api-cloud-run-shape`,
 2026-08-14; before that these numbers were live-service state with no declared source, and this
-sentence was the closest thing to one. This ran one uvicorn process on ten M1 Pro cores
+sentence was the closest thing to one.
+
+> **Corrected 2026-08-14: this sentence said `containerConcurrency: 80`, and it was the
+> pre-change value.** The concurrency reduction this file argues for below **has shipped** —
+> `infra/fleet.env` now carries `API_CONCURRENCY=16`, `deploy.yml` passes it as
+> `--concurrency "$API_CONCURRENCY"`, and `gcloud run services describe majorana-api
+> --region us-west1` reports `containerConcurrency: 16` (first at 16 in revision
+> `majorana-api-00862-yit`; the preceding `majorana-api-00860-lob` was 80). **So the
+> site-wide admission ceiling is `API_CONCURRENCY × API_MAX_INSTANCES`, which is 16 × 4 = 64
+> concurrent requests as of 2026-08-15, not the 160 this file used to imply.** That product is
+> quoted as a derivation rather than a bare number on purpose: this correction itself was
+> written when `API_MAX_INSTANCES` was 2 and said "32", and was already wrong by the time it
+> landed. Read `infra/fleet.env` for the current terms rather than trusting the product here.
+> Read the "what the fix is" section below as the record of a decision already taken — do not
+> go and lower concurrency again on its authority.
+
+This ran one uvicorn process on ten M1 Pro cores
 against loopback Postgres with no network round trip, where Cloud SQL has a real one. The
-arithmetic differs in both directions: production gets two instances × ten connections, but one
+arithmetic differs in both directions: production gets `API_MAX_INSTANCES` instances × ten
+connections — four instances as of 2026-08-15, two when this paragraph was written — but one
 vCPU each, and a 1-vCPU instance serialising a 400 KB JSON response is the part most likely to
 be worse there. No measurement of that exists.
 
@@ -122,10 +142,14 @@ clock, not a throughput figure.
 did not. These runs record `{"fails": 101, "passes": 0, "value": 0}` — that is **zero failures**,
 and `value` is the only field of the three that reads the way it sounds.
 
-## What the fix is (the reasoning below is superseded by the re-run above, and kept for it)
+## What the fix was — SHIPPED 2026-08-14 (reasoning kept as the record of the decision)
 
-The finding above — pool-bound, ten connections against a `containerConcurrency` of 80 — has
-two candidate fixes, and the obvious one is currently the wrong one.
+**The concurrency reduction argued for in this section is done: production runs
+`containerConcurrency: 16`.** Everything below is why, preserved because the arithmetic is
+still the arithmetic — but it is history, not a proposal. Nothing here is waiting on anyone.
+
+The finding above — pool-bound, ten connections against a `containerConcurrency` of 80 — had
+two candidate fixes, and the obvious one was the wrong one.
 
 **Raising the API pool costs budget that a deploy already spends.** `db.py`'s
 `fleet_peak_connections()` computes `API_MAX_INSTANCES × (POOL + OVERFLOW)` for the API and
