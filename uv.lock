@@ -1032,17 +1032,19 @@ wheels = [
 
 [[package]]
 name = "ibm-quantum-schemas"
-version = "0.9.20260612"
+version = "0.10.20260723"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
+    { name = "numpy" },
     { name = "pybase64" },
     { name = "pydantic" },
     { name = "qiskit" },
+    { name = "qiskit-qasm3-import" },
     { name = "samplomatic" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/d5/41/448a23f4ea497d6eec461a34bb1ad599d37a36ee72f126340d95c3c78fae/ibm_quantum_schemas-0.9.20260612.tar.gz", hash = "sha256:d22ad0f900fb897ad446ba7413979e003bdc29d75584d74890c8c8ccff3c6544", size = 97979, upload-time = "2026-06-12T14:20:24.235Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/e5/6c/d63cdbf8358a5f40be39945c946422771085666dd163b454a236bee525bb/ibm_quantum_schemas-0.10.20260723.tar.gz", hash = "sha256:e3435cd86140bf8e0d2fc09af9e7c3d799adb732928b99dc90079a7372197044", size = 104341, upload-time = "2026-07-23T15:45:37.098Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/ad/7f/a41b1cee6cfd140c978dd3177dc78dfe04f9a7566c9ef211fe8ce2a6c3eb/ibm_quantum_schemas-0.9.20260612-py3-none-any.whl", hash = "sha256:31afc35c15c56d10f4c9c39155478802daaab5baffb4215fbb93d8ddbdf3f285", size = 111323, upload-time = "2026-06-12T14:20:22.865Z" },
+    { url = "https://files.pythonhosted.org/packages/ea/6b/f3c4e3910ff5653caf30aa052fe2ff3833a46a50fd1712587b1418efda76/ibm_quantum_schemas-0.10.20260723-py3-none-any.whl", hash = "sha256:265ad9209f34b01d3d85f9c9ca2afb4c757faf0fd062a48e4c9d154515cac281", size = 120650, upload-time = "2026-07-23T15:45:35.625Z" },
 ]
 
 [[package]]
@@ -1455,7 +1457,7 @@ ibm = [
 [package.metadata]
 requires-dist = [
     { name = "pydantic", specifier = ">=2.8" },
-    { name = "qiskit-ibm-runtime", marker = "extra == 'ibm'", specifier = ">=0.48,<1" },
+    { name = "qiskit-ibm-runtime", marker = "extra == 'ibm'", specifier = ">=0.49.0,<1" },
 ]
 provides-extras = ["ibm"]
 
@@ -2884,7 +2886,7 @@ wheels = [
 
 [[package]]
 name = "qiskit-ibm-runtime"
-version = "0.48.0"
+version = "0.49.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "ibm-platform-services" },
@@ -2900,9 +2902,9 @@ dependencies = [
     { name = "scipy" },
     { name = "urllib3" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/f8/9e/853be37179502be1c3e1c2cd406eb326853067d365e31920c3bbe91ccca2/qiskit_ibm_runtime-0.48.0.tar.gz", hash = "sha256:b6b5944c7698cdce147b16bdef1fcae773490c271c8a5ae26c3fd302bb3e94cb", size = 2068278, upload-time = "2026-07-14T18:13:31.454Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/5b/ef/b6845813b5d45da702a6ef06a67cb7a236b11a8b9a440339c8ac7b28c499/qiskit_ibm_runtime-0.49.0.tar.gz", hash = "sha256:f300eec48784afc5ce4be2691f1bd63ba7905ae4c0702c822e699376aa39432c", size = 2107733, upload-time = "2026-08-10T16:43:43.929Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/38/0a/74386aaa4894f44c0b57649a851c9209a592aa24406cf23f8685c72a586e/qiskit_ibm_runtime-0.48.0-py3-none-any.whl", hash = "sha256:ecbd70a85efbbeec4add8de1c446ace21b196b2587c74306e9d3fe1e4fdddd2e", size = 1990089, upload-time = "2026-07-14T18:13:29.34Z" },
+    { url = "https://files.pythonhosted.org/packages/78/32/c8a84aa1ca3308f7c04b660586341df7a6959d7730073abda0ff1c8d4a21/qiskit_ibm_runtime-0.49.0-py3-none-any.whl", hash = "sha256:b29b4a0a5e013b6e6fd6556158fd34a05e2930dea870c60edef738b834977f2b", size = 2001333, upload-time = "2026-08-10T16:43:42.283Z" },
 ]
 
 [[package]]
