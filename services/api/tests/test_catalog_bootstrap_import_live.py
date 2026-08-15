@@ -328,6 +328,13 @@ async def test_a_withdrawn_record_is_revived_by_the_next_import_not_rejected(env
         job_id = job.id
     await _drain_batch(scope, factory, job_id, authority=authority, source=source)
 
+    # Any manifest identity exercises this — the bug is in the resolver, not in
+    # any record's content — so the first in sort order is chosen only to be
+    # deterministic across runs. It is deliberately NOT pinned to a literal slug:
+    # the corpus is edited constantly and a named record would make this test fail
+    # for the wrong reason the day that record is renamed. The identity actually
+    # used is asserted to exist below, so a manifest that no longer contains it
+    # fails loudly rather than silently testing nothing.
     identity = sorted(source.identities())[0]
     async with factory() as session:
         found = await catalog.find_staged_artifact_by_upstream_identity(
@@ -335,6 +342,11 @@ async def test_a_withdrawn_record_is_revived_by_the_next_import_not_rejected(env
         )
         assert found is not None, "the seed import did not stage the record under test"
         artifact_id = found[0].id
+        # Captured BEFORE withdrawal so the assertions after revival compare
+        # against what actually existed, not against what the revival produced.
+        version_id_before = found[0].current_version_id
+        hash_before = found[1].normalized_source_hash if found[1] is not None else None
+        assert version_id_before is not None, "the record under test has no current version"
         # Withdraw it exactly the way `retire-bootstrap` does.
         found[0].deleted_at = dt.datetime.now(dt.timezone.utc)
         await session.commit()
@@ -377,3 +389,15 @@ async def test_a_withdrawn_record_is_revived_by_the_next_import_not_rejected(env
             "adopting the withdrawn one — the history and the stars are on the first"
         )
         assert revived[0].deleted_at is None
+        # The primary key surviving is necessary and not sufficient: an artifact
+        # revived with a fresh version chain would satisfy the id check and still
+        # have lost everything the id was protecting. Content is unchanged across
+        # this round trip, so the version must be the SAME row carrying the SAME
+        # hash — a new version here would also mean the reconciler took the
+        # "changed" branch on bytes that did not change, dropping the record to
+        # DRAFT and off /repository until it was re-attested.
+        assert revived[0].current_version_id == version_id_before, (
+            "revival replaced the current version — the record's history did not survive"
+        )
+        assert revived[1] is not None
+        assert revived[1].normalized_source_hash == hash_before
