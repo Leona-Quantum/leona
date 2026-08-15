@@ -51,12 +51,33 @@ const CONTROL_PLANE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000"
  * out from under us, and a developer pointing at a deployed https API should
  * still get the directive.
  */
+/**
+ * The Vercel Toolbar's origins are admitted on preview deployments and on a
+ * local dev server, never on production. See the `vercelToolbar` doc comment in
+ * lib/content-security-policy.ts for what it costs and why production declines.
+ *
+ * Written as an allowlist of two known-safe cases rather than
+ * `VERCEL_ENV !== "production"`, so it fails CLOSED. An unset or unexpected
+ * `VERCEL_ENV` — a self-hosted build, a container build, a platform rename —
+ * then yields the tight policy instead of silently widening production's.
+ */
+const vercelToolbar =
+  process.env.VERCEL_ENV === "preview" ||
+  // `vercel dev` sets VERCEL_ENV="development"; a plain `next dev` sets it to
+  // nothing at all. Both are a local server on a laptop, so both are listed —
+  // without the first, which of the two commands you happened to start decided
+  // whether the toolbar worked. Raised by CodeRabbit on PR 651, numbered without
+  // a hash because `check-raw-hex` reads a three-digit hash-number as a colour.
+  process.env.VERCEL_ENV === "development" ||
+  (process.env.VERCEL_ENV === undefined && process.env.NODE_ENV === "development");
+
 const csp = contentSecurityPolicy({
   controlPlane: CONTROL_PLANE,
   development: process.env.NODE_ENV === "development",
   // Same env var `instrumentation-client.ts` gates the browser SDK on, so the
   // policy and the SDK can never disagree about whether Sentry is configured.
   errorReporting: errorReportingOrigin(process.env.NEXT_PUBLIC_SENTRY_DSN),
+  vercelToolbar,
 });
 
 const nextConfig: NextConfig = {

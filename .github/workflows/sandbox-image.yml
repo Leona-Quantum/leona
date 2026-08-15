@@ -7,10 +7,21 @@
 # ModuleNotFoundError inside the sandbox. A merged Dockerfile change was not a
 # shipped Dockerfile change, and no check said so.
 #
-# `build` gates the PR. `publish` is workflow_dispatch only and pushes a DATED tag
-# and nothing else: `latest` is the live rootfs (majorana_sandbox.vercel.DEFAULT_IMAGE
-# is untagged), so moving it is the deploy. Promotion stays manual and stays behind
-# the runbook's step 4 — run a circuit in the real sandbox, do not just import.
+# `build` gates the PR. There is deliberately NO publish job: the image is pushed
+# from a laptop via docs/runbooks/sandbox-image.md step 1, which mints a
+# short-lived OIDC token with `vercel vcr login docker` rather than storing a
+# long-lived registry credential in this repo.
+#
+# One existed until 2026-08-16 and had never once succeeded. It needed
+# `VERCEL_TOKEN` and `VERCEL_TEAM_ID` as repository secrets; neither was ever
+# set, so `docker login` ran with empty values and failed with `Must provide
+# --username with --password-stdin` — an error that never mentions a secret. It
+# survived because nothing ever dispatched it: the only run in the repo's
+# history was the one that found this. Deleted by owner ruling (ai-ops#118) in
+# preference to setting the secrets, on the grounds that a second, broken route
+# to a deploy is worse than one obvious route, and `latest` is the live rootfs
+# for untrusted code — moving it IS the deploy, so it stays a deliberate human
+# act behind the runbook's step 4 (run a circuit, do not just import).
 #
 # `container_scan` is the third job, added because `05-security.md` §1 claimed a
 # weekly rebuild+scan that did not exist while §5 conceded "the container half is
@@ -28,11 +39,11 @@ on:
     # Weekly, Monday 04:00 UTC — an hour after the gitleaks full-history scan in
     # security.yml so the two long jobs do not contend for runners.
     - cron: "0 4 * * 1"
+  # Kept, with no inputs, so the rebuild-and-scan below can be run on demand —
+  # e.g. the morning an advisory lands, rather than waiting for Monday. It used
+  # to carry a `tag` input for the deleted publish job, which meant a manual run
+  # skipped `container_scan` and did nothing else useful.
   workflow_dispatch:
-    inputs:
-      tag:
-        description: "Tag to publish (YYYY-MM-DD). Never `latest` — promote by hand per the runbook."
-        required: true
 
 permissions:
   contents: read
@@ -113,48 +124,6 @@ jobs:
         run: |
           echo "image size: $(docker image inspect majorana-runner:ci --format '{{.Size}}') bytes"
 
-  # Manual. Pushes a dated tag; does NOT touch `latest`.
-  publish:
-    if: github.event_name == 'workflow_dispatch'
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      # `inputs.tag` never reaches a `run:` script as an expression — it goes through
-      # env and is then validated. A workflow_dispatch input interpolated into a shell
-      # is a shell injection, and the tag is also the thing that must not be `latest`,
-      # so one step does both.
-      - name: validate the tag
-        env:
-          TAG: ${{ inputs.tag }}
-        run: |
-          if [ "$TAG" = "latest" ]; then
-            echo "latest is promoted by hand after verification — docs/runbooks/sandbox-image.md" >&2
-            exit 1
-          fi
-          case "$TAG" in
-            [0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]) ;;
-            *) echo "tag must be YYYY-MM-DD, got: $TAG" >&2; exit 1 ;;
-          esac
-      # Token auth, not OIDC: the docker username is the TEAM ID, not a username.
-      - name: authenticate to VCR
-        env:
-          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
-          VERCEL_TEAM_ID: ${{ secrets.VERCEL_TEAM_ID }}
-        run: printf '%s' "$VERCEL_TOKEN" | docker login vcr.vercel.com --username "$VERCEL_TEAM_ID" --password-stdin
-      - name: build and push the dated tag
-        env:
-          TAG: ${{ inputs.tag }}
-        run: |
-          docker buildx build --platform linux/amd64 \
-            --output "type=image,name=vcr.vercel.com/majoranaq/web/majorana-runner:${TAG},push=true,oci-mediatypes=true,compression=zstd,compression-level=3,force-compression=true" \
-            infra/sandbox
-      - name: what to do next
-        env:
-          TAG: ${{ inputs.tag }}
-        run: |
-          echo "Pushed :${TAG}. It is NOT live."
-          echo "Verify it in a real sandbox and promote it to :latest — docs/runbooks/sandbox-image.md steps 4 and 5."
-
   # Weekly rebuild + vulnerability scan of the rootfs that runs untrusted code.
   #
   # Also runs on a PR touching infra/sandbox/**, which is where a CVE-bearing
@@ -164,7 +133,6 @@ jobs:
   # months later (05-security.md §5 on snyk, and §2 on the gitleaks box that was
   # unmeetable for months and therefore unenforced).
   container_scan:
-    if: github.event_name != 'workflow_dispatch'
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
