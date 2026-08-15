@@ -197,7 +197,7 @@ event can decide is unnecessary.
 **There was a `publish` job here until 2026-08-16, and it had never worked.** It read
 `VERCEL_TOKEN` and `VERCEL_TEAM_ID` from repository secrets that were never set, so
 `docker login` ran with empty values and died on `Must provide --username with
---password-stdin` — an error that never names a secret. Nothing noticed because
+--password-stdin` — an error that never names a secret. No one noticed because
 nothing ever dispatched it; the only run in the repo's history is the one that found
 it. Deleted rather than fixed (owner ruling, ai-ops#118): step 1's
 `vercel vcr login docker` mints a short-lived OIDC token on demand, which is a

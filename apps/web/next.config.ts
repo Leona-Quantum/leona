@@ -63,6 +63,12 @@ const CONTROL_PLANE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000"
  */
 const vercelToolbar =
   process.env.VERCEL_ENV === "preview" ||
+  // `vercel dev` sets VERCEL_ENV="development"; a plain `next dev` sets it to
+  // nothing at all. Both are a local server on a laptop, so both are listed —
+  // without the first, which of the two commands you happened to start decided
+  // whether the toolbar worked. Raised by CodeRabbit on PR 651, numbered without
+  // a hash because `check-raw-hex` reads a three-digit hash-number as a colour.
+  process.env.VERCEL_ENV === "development" ||
   (process.env.VERCEL_ENV === undefined && process.env.NODE_ENV === "development");
 
 const csp = contentSecurityPolicy({
