@@ -105,7 +105,16 @@ export const HOME_COPY: Record<PublicLocale, {
       ],
       modalLabel: "Start building",
       modalTitle: "Create an account to run this prompt.",
-      modalBody: "Your prompt is ready. Sign up to generate the circuit, run it in a guarded simulator, and keep the result in your private workspace.",
+      // Was "Sign up to generate the circuit, run it in a guarded simulator,
+      // and keep the result" — read together with the blockquote below, which
+      // quotes the exact words back, that promised the three things would
+      // happen as part of signing up. They no longer do: ai-ops 102 carries
+      // the prompt into the workspace composer and stops there, deliberately
+      // — the owner's ruling was pre-fill only, never auto-run, so a real run
+      // still costs a press of the button and one of the free tier's five
+      // weekly runs. This says what actually happens now (flagged by
+      // team-lead, corrected in the same PR that changed the behaviour).
+      modalBody: "Your prompt carries over. Sign up and it will be waiting in your workspace — press run when you are ready.",
       modalPrimary: "Create an account",
       close: "Close",
     },
@@ -200,7 +209,7 @@ export const HOME_COPY: Record<PublicLocale, {
       ],
       modalLabel: "量子回路開発を始める",
       modalTitle: "アカウントを作成して、このプロンプトを実行",
-      modalBody: "プロンプトの準備ができました。アカウントを作成すると、量子回路の生成、保護されたシミュレータでの実行、結果の保存ができます。",
+      modalBody: "入力したプロンプトはそのまま引き継がれます。アカウントを作成すると、ワークスペースにその内容が用意されているので、準備ができたら実行してください。",
       modalPrimary: "アカウントを作成",
       close: "閉じる",
     },
