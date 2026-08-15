@@ -23,10 +23,18 @@ class MemoryStorage {
 }
 
 let storage: MemoryStorage;
+/**
+ * A decoy, and the point of it: `sessionStorage` is per-tab, so writing the
+ * handoff there loses it the moment a signup's verification email opens a new
+ * tab — the case this whole feature exists for (ai-ops 102). Every test runs
+ * with both stubbed, and the two below fail if the module ever reads this one.
+ */
+let perTabStorage: MemoryStorage;
 
 beforeEach(() => {
   storage = new MemoryStorage();
-  (globalThis as { window?: unknown }).window = { sessionStorage: storage };
+  perTabStorage = new MemoryStorage();
+  (globalThis as { window?: unknown }).window = { localStorage: storage, sessionStorage: perTabStorage };
 });
 
 test("a written prompt is read back once, then gone", () => {
@@ -112,10 +120,47 @@ test("storage unavailable (no window) degrades to null/no-op rather than throwin
 
 test("a storage that throws on access is treated as unavailable", () => {
   (globalThis as { window?: unknown }).window = {
-    get sessionStorage(): never {
+    get localStorage(): never {
       throw new Error("blocked");
     },
   };
   assert.doesNotThrow(() => writeLandingPromptHandoff("anything"));
   assert.equal(consumeLandingPromptHandoff(), null);
+});
+
+// ── ai-ops 102: the new-user case this feature was built for ──────────────
+//
+// The first version of this shipped on `sessionStorage` and every test above
+// passed, because they all ran inside one simulated tab. A brand-new signup is
+// sent a verification email, and a link clicked in a mail client opens a NEW
+// browsing context with its own empty `sessionStorage` — so the returning-user
+// path worked and the new-user path silently lost the prompt. These two pin the
+// storage choice itself, which is the only thing that was ever wrong.
+
+test("the prompt survives into a NEW tab — the verification-email path", () => {
+  writeLandingPromptHandoff("Build a 3-qubit GHZ state and measure it.");
+
+  // A second tab of the same browser: a fresh window with a fresh, empty
+  // sessionStorage, but the SAME localStorage instance — which is exactly how
+  // the two differ in a real browser.
+  (globalThis as { window?: unknown }).window = {
+    localStorage: storage,
+    sessionStorage: new MemoryStorage(),
+  };
+
+  assert.equal(
+    consumeLandingPromptHandoff(),
+    "Build a 3-qubit GHZ state and measure it.",
+    "a prompt typed before signup must reach the workspace even when the tab it was typed in is not the tab that returns",
+  );
+});
+
+test("nothing is written to per-tab storage — that is what broke the new-user case", () => {
+  writeLandingPromptHandoff("Use QAOA to solve MaxCut on a five-node ring.");
+  assert.equal(
+    perTabStorage.getItem(STORAGE_KEY),
+    null,
+    "the handoff must not live in sessionStorage; a new tab cannot see it there",
+  );
+  assert.ok(storage.getItem(STORAGE_KEY), "the handoff should be in localStorage");
 });

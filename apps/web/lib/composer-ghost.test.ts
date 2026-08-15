@@ -5,6 +5,7 @@ import {
   GAP_MS,
   HOLD_MS,
   TYPE_MS_PER_CHARACTER,
+  composerGhost,
   ghostFrame,
 } from "./composer-ghost.ts";
 
@@ -99,6 +100,54 @@ test("the cycle advances to the next prompt and wraps", () => {
   assert.equal(ghostFrame(firstCycle + 10, PROMPTS)?.index, 1);
   const secondCycle = cycleMs(PROMPTS[1]!);
   assert.equal(ghostFrame(firstCycle + secondCycle + 10, PROMPTS)?.index, 0);
+});
+
+// ai-ops 112: "typing into the composer overlays text on top of the rotating
+// example prompts". The landing page stopped its animation interval once the
+// visitor typed, which freezes `elapsedMs` but does not unmount anything, so
+// the half-typed example stayed painted in the same box underneath the
+// visitor's own words. `composerGhost` is the shared rule both composers ask
+// now; these pin the part that was wrong.
+const VISIBLE = { elapsedMs: 4 * TYPE_MS_PER_CHARACTER, suggestions: PROMPTS, reduceMotion: false };
+
+test("a typed value hides the ghost entirely, however the clock is left", () => {
+  // Every timestamp, not just one: the bug was that a *frozen* clock still
+  // produced a drawable frame, so the guard must not depend on where in the
+  // cycle the visitor happened to start typing.
+  for (const elapsedMs of [0, 120, 1500, 4000, 10 ** 6]) {
+    assert.equal(composerGhost({ ...VISIBLE, elapsedMs, typedValue: "b" }), null);
+    assert.equal(composerGhost({ ...VISIBLE, elapsedMs, typedValue: "build a Bell state" }), null);
+  }
+});
+
+test("whitespace counts as typed — a held space bar is still using the box", () => {
+  assert.equal(composerGhost({ ...VISIBLE, typedValue: " " }), null);
+  assert.equal(composerGhost({ ...VISIBLE, typedValue: "\n" }), null);
+});
+
+test("an empty field shows the ghost, and clearing the box brings it back", () => {
+  const typing = composerGhost({ ...VISIBLE, typedValue: "" });
+  assert.equal(typing?.text, "Buil");
+  assert.equal(typing?.phase, "typing");
+});
+
+test("reduced motion holds the whole prompt still, with no caret phase", () => {
+  const frame = composerGhost({ ...VISIBLE, typedValue: "", reduceMotion: true });
+  assert.equal(frame?.text, PROMPTS[0]);
+  // `ComposerGhostOverlay` draws a caret for "typing" and "deleting" only, so
+  // "holding" is what makes reduced motion mean no blink as well as no typing.
+  assert.equal(frame?.phase, "holding");
+});
+
+test("reduced motion still hides the ghost once the visitor types", () => {
+  assert.equal(composerGhost({ ...VISIBLE, typedValue: "x", reduceMotion: true }), null);
+});
+
+test("no suggestions means no ghost, whatever else is true", () => {
+  assert.equal(composerGhost({ ...VISIBLE, suggestions: [], typedValue: "" }), null);
+  assert.equal(composerGhost({ ...VISIBLE, suggestions: undefined, typedValue: "" }), null);
+  assert.equal(composerGhost({ ...VISIBLE, suggestions: ["", "  "], typedValue: "" }), null);
+  assert.equal(composerGhost({ ...VISIBLE, suggestions: [], typedValue: "", reduceMotion: true }), null);
 });
 
 test("a negative or absurd timestamp still lands inside the cycle", () => {

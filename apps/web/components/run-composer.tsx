@@ -5,7 +5,7 @@ import { ChevronIcon, PaperclipIcon } from "./icons";
 import { ComposerGhostOverlay } from "./composer-ghost-overlay";
 import type { PublicLocale } from "../lib/public-locale";
 import { COMPOSER_MODES, type ComposerMode } from "../lib/run-mode";
-import { DELETE_MS_PER_CHARACTER, TYPE_MS_PER_CHARACTER, ghostFrame, type GhostFrame } from "../lib/composer-ghost";
+import { DELETE_MS_PER_CHARACTER, TYPE_MS_PER_CHARACTER, composerGhost, type GhostFrame } from "../lib/composer-ghost";
 import {
   COMPOSER_FRAMEWORKS,
   type ComposerFramework,
@@ -106,7 +106,7 @@ export function RunComposer({
         framework: "Circuit framework",
         tabHint: "Press Tab to use the suggested prompt",
       };
-  const ghost = useGhostPrompt(suggestions, value.length === 0);
+  const ghost = useGhostPrompt(suggestions, value);
 
   return (
     <div className={`mj-composer-dock${centered ? " mj-composer-dock--centered" : ""}`}>
@@ -305,10 +305,11 @@ function basePlaceholder(locale: PublicLocale): string {
  * Under `prefers-reduced-motion` the suggestion is still offered — Tab accepts
  * it exactly the same way — it just stops typing itself out.
  */
-function useGhostPrompt(suggestions: readonly string[] | undefined, active: boolean): GhostFrame | null {
+function useGhostPrompt(suggestions: readonly string[] | undefined, typedValue: string): GhostFrame | null {
   const [elapsedMs, setElapsedMs] = useState(0);
   const [reduceMotion, setReduceMotion] = useState(false);
   const hasSuggestions = Boolean(suggestions?.length);
+  const active = typedValue.length === 0;
 
   useEffect(() => {
     const query = window.matchMedia("(prefers-reduced-motion: reduce)");
@@ -332,14 +333,8 @@ function useGhostPrompt(suggestions: readonly string[] | undefined, active: bool
     return () => window.clearInterval(timer);
   }, [hasSuggestions, active, reduceMotion]);
 
-  if (!suggestions?.length || !active) return null;
-  if (reduceMotion) {
-    // The whole prompt sitting still rather than an empty box, `phase:
-    // "holding"` so `ComposerGhostOverlay` never draws a caret here — no
-    // blink and no typing effect for a reader who asked for less motion
-    // (owner, ai-ops 108).
-    const frame = ghostFrame(0, suggestions);
-    return frame ? { ...frame, text: frame.suggestion, phase: "holding" } : null;
-  }
-  return ghostFrame(elapsedMs, suggestions);
+  // The visibility rule and the reduced-motion frame both live in
+  // `composerGhost` now, shared with the landing page — see ai-ops 112 for what
+  // it cost to have each composer carry its own copy of this.
+  return composerGhost({ elapsedMs, suggestions, typedValue, reduceMotion });
 }

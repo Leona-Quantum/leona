@@ -6,7 +6,7 @@
  * that would spend one of the free tier's five weekly runs before the person
  * chose to).
  *
- * ## Why sessionStorage and not a query parameter
+ * ## Why browser storage and not a query parameter
  *
  * The landing page (`app/[locale]/page.tsx`) is `chrome="static"` — prerendered
  * and held on the CDN for 5 minutes (ai-ops#88). Nothing about carrying this
@@ -14,39 +14,55 @@
  * at the moment a visitor clicks through to sign in, so it costs the cached
  * page nothing. A query parameter would work mechanically but puts
  * user-typed text in a URL — logs, referrers, and (worse, on this project) the
- * CDN cache key itself. `sessionStorage` carries it on the visitor's own side
- * of the round trip instead.
+ * CDN cache key itself. Browser storage carries it on the visitor's own side of
+ * the round trip instead.
  *
- * ## Why a TTL on top of sessionStorage's own lifetime
+ * ## Why localStorage and not sessionStorage (ai-ops 102)
  *
- * sessionStorage already clears when the tab closes, which covers "typed
- * something, gave up, closed the tab." It does NOT cover "typed something,
- * left the tab open, came back to /run days later through some other route" —
- * same tab, so the entry is still there and would resurface stale text with no
- * connection to what the visitor is doing now. `HANDOFF_TTL_MS` closes that
- * gap: `consumeLandingPromptHandoff` discards (and never returns) anything
- * older than the window, on top of deleting it unconditionally so it is a true
- * one-shot either way.
+ * This shipped on `sessionStorage` and that was wrong for the one case it was
+ * built for. sessionStorage is scoped to a *browsing context*, not a browser:
+ * a brand-new signup gets an email verification link, and clicking a link in a
+ * mail client opens a NEW tab — where the sessionStorage the landing page wrote
+ * does not exist at all. So the returning-visitor path worked (verified: the
+ * value survives the WorkOS round trip in the same tab) and the new-user path,
+ * the entire point of the feature, silently lost the prompt. localStorage is
+ * shared across tabs of the same origin, so the new tab can read it.
+ *
+ * What this cannot fix, and nothing on our side can: a visitor who opens the
+ * verification email on a *different device*. That is a different browser with
+ * different storage, and the prompt is genuinely gone.
+ *
+ * ## Why a TTL, and why it matters more now
+ *
+ * sessionStorage used to clear itself when the tab closed. localStorage does
+ * not clear at all, so `HANDOFF_TTL_MS` is no longer a refinement on top of a
+ * lifetime — it IS the lifetime, and it is the only thing standing between this
+ * and a stale prompt resurfacing days later with no connection to what the
+ * visitor is doing now. `consumeLandingPromptHandoff` discards anything past
+ * the window, on top of deleting the entry unconditionally so it is a true
+ * one-shot whether or not it is returned.
  */
 
-// Deliberately not named with the naming convention `storage-key-registry.test.ts`
-// scans for, and not registered anywhere that guard checks — correctly, since
-// that guard is about the persistent, cross-tab browser storage the rest of
-// this app uses for per-account content: a key that outlives the tab, so a
-// second person signing in on the same browser can inherit the first
-// person's data. That is the leak that guard exists to catch, and this key
-// cannot cause it by construction: `sessionStorage` does not survive the tab
-// closing, and this module additionally makes it a true one-shot with its own
-// 30-minute TTL (`HANDOFF_TTL_MS` below) on top of that. The one narrow case
-// the guard's categories don't quite name — a shared computer, account A
-// types and abandons, account B signs in in the SAME tab within the window,
-// before A's entry is ever consumed — still only pre-fills B's composer with
-// A's own typed words: no account data, no credential, nothing
-// identity-bearing changes hands. Worth naming here so it reads as
-// considered, not missed.
+// Registered in `DEVICE_STORAGE_KEYS` (lib/user-storage.ts), which is what
+// `storage-key-registry.test.ts` requires of any localStorage key. The earlier
+// version of this file argued its way OUT of that registry on the grounds that
+// sessionStorage cannot outlive a tab; moving to localStorage removes that
+// argument, so the key is now classified explicitly rather than exempted.
+//
+// It is device-level rather than per-account on purpose: it is written by a
+// signed-OUT visitor on a prerendered page, where no account scope exists to
+// write it under. The residual case is a shared computer where A types, walks
+// away, and B signs in within 30 minutes before A's entry is consumed — B's
+// composer is pre-filled with A's own typed words. No account data, no
+// credential, nothing identity-bearing changes hands, and the one-shot delete
+// plus the TTL below bound it. Named here so it reads as considered, not missed.
 const HANDOFF_KEY = "majorana.landing-prompt-handoff.v1";
 
-/** Long enough for a real sign-up (email confirmation included), short enough that it never reads as a memory. */
+/**
+ * Long enough for a real sign-up (email confirmation included), short enough
+ * that it never reads as a memory. On localStorage this is load-bearing rather
+ * than belt-and-braces — see the module comment.
+ */
 const HANDOFF_TTL_MS = 30 * 60 * 1000;
 
 /**
@@ -64,10 +80,10 @@ interface StoredHandoff {
   ts: number;
 }
 
-function sessionStorageOrNull(): Storage | null {
+function handoffStorageOrNull(): Storage | null {
   if (typeof window === "undefined") return null;
   try {
-    return window.sessionStorage ?? null;
+    return window.localStorage ?? null;
   } catch {
     // Safari private mode and blocked storage contexts throw on access.
     return null;
@@ -86,7 +102,7 @@ function sessionStorageOrNull(): Storage | null {
  * then looks broken.
  */
 export function writeLandingPromptHandoff(text: string): void {
-  const storage = sessionStorageOrNull();
+  const storage = handoffStorageOrNull();
   if (!storage) return;
   const trimmed = text.trim();
   try {
@@ -113,7 +129,7 @@ export function writeLandingPromptHandoff(text: string): void {
  * `HANDOFF_TTL_MS`, or a payload that fails to parse as the expected shape.
  */
 export function consumeLandingPromptHandoff(): string | null {
-  const storage = sessionStorageOrNull();
+  const storage = handoffStorageOrNull();
   if (!storage) return null;
   try {
     const raw = storage.getItem(HANDOFF_KEY);

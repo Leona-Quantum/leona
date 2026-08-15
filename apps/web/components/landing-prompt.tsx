@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { ChevronIcon, PlusIcon } from "./icons";
 import { ComposerGhostOverlay } from "./composer-ghost-overlay";
-import { DELETE_MS_PER_CHARACTER, TYPE_MS_PER_CHARACTER, ghostFrame } from "../lib/composer-ghost";
+import { DELETE_MS_PER_CHARACTER, TYPE_MS_PER_CHARACTER, composerGhost } from "../lib/composer-ghost";
 import { writeLandingPromptHandoff } from "../lib/landing-prompt-handoff";
 
 /**
@@ -55,6 +55,11 @@ export function LandingPrompt({ copy }: { copy: LandingPromptCopy }) {
 
   useEffect(() => {
     if (reduceMotion || value) return;
+    // Restart the cycle from its first character rather than resuming wherever
+    // the clock was left. Without this, a visitor who types and then clears the
+    // box gets one frame of the stale `elapsedMs` — a half-finished sentence
+    // flashing in before the interval's first tick corrects it.
+    setElapsedMs(0);
     const started = Date.now();
     // Sampled at the faster of the two per-character durations, not a fixed
     // 55ms: at 30ms/typed-character and 12ms/deleted-character (ai-ops 108),
@@ -95,11 +100,15 @@ export function LandingPrompt({ copy }: { copy: LandingPromptCopy }) {
     };
   }, [dialogOpen]);
 
-  // No ghost at all under reduced motion: the animation (and its caret) does
-  // not run, so there is nothing for `ComposerGhostOverlay` to draw, and the
-  // textarea's own `placeholder` carries the first prompt instead, sitting
-  // still (owner, ai-ops 108 — "no blink, and ideally no typing animation").
-  const ghost = reduceMotion ? null : ghostFrame(elapsedMs, copy.prompts);
+  // `composerGhost`, not a condition written out here: this page used to decide
+  // for itself when the placeholder was visible, and it decided differently
+  // from the workspace. It stopped the interval once the visitor typed but
+  // never unmounted the overlay — and stopping the clock only *freezes*
+  // `elapsedMs` — so a half-typed example stayed painted in the box and the
+  // visitor's own words rendered on top of it (owner, ai-ops 112). The rule
+  // now lives in one place and both composers ask it the same question,
+  // including what to draw under reduced motion.
+  const ghost = composerGhost({ elapsedMs, suggestions: copy.prompts, typedValue: value, reduceMotion });
   // Never `copy.label` here: it used to double as the placeholder fallback,
   // which put "Describe the quantum circuit you want to build" on screen for
   // every render before the typing animation had produced its first
