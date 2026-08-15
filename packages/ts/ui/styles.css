@@ -8990,6 +8990,31 @@ div.mj-rail-row:hover {
   }
 }
 
+/* Public header, auth-dependent controls (ai-ops#114).
+
+   The cached marketing pages ship BOTH the signed-in and signed-out controls,
+   because one HTML payload is shared by every visitor and cannot name one. The
+   choice is made here, from `<html data-auth>`, which an inline script in the
+   root layout stamps from the hint cookie before the first frame is drawn. That
+   is the whole point of doing it in CSS: a React state swap can only happen
+   after hydration, which is late enough to see, and it was being seen on every
+   page because this header navigates with plain `<a>` links.
+
+   `display: contents` keeps the wrapper out of the header's flex layout, so the
+   chosen control sits in the row exactly as it did when it was rendered
+   directly — no extra box, and no gap where the other one would have been.
+
+   The signed-OUT slot is the default: with no attribute at all (JavaScript off,
+   cookies refused, script not yet run) the first rule below cannot match and
+   the reader sees the signed-out control, which is what the server rendered. */
+.mj-auth-slot {
+  display: contents;
+}
+html[data-auth="in"] .mj-auth-slot[data-auth-slot="out"],
+html:not([data-auth="in"]) .mj-auth-slot[data-auth-slot="in"] {
+  display: none;
+}
+
 /* public header sign-out */
 .mj-public-nav-signout {
   color: var(--text-2);
