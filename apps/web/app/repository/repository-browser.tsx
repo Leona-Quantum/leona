@@ -378,8 +378,22 @@ export function RepositoryBrowser({
    * interruptible and low-priority: the input stays responsive to the very
    * next keystroke instead of queuing behind the render this navigation
    * produces, and `isPending` becomes available for the busy state above.
+   *
+   * Also cancels any pending search debounce. Every OTHER control reaches
+   * this function directly with the search box's current buffered text
+   * already baked into its `href` (`browseHref` reads live `query` state),
+   * so a debounce timer left running past this point is not "one more
+   * keystroke" — it is a second, stale navigation queued to fire seconds
+   * later and silently undo whatever this one just did. Caught in review:
+   * type into the box, then click "Clear filters" inside the 300ms window,
+   * and the abandoned timer would re-apply the very search the reader just
+   * cleared.
    */
   function navigate(href: string) {
+    if (searchDebounceRef.current) {
+      clearTimeout(searchDebounceRef.current);
+      searchDebounceRef.current = null;
+    }
     startTransition(() => {
       router.replace(href, { scroll: false });
     });
@@ -431,12 +445,25 @@ export function RepositoryBrowser({
    * to `params.query` on every render where it changed — a chip or the clear-
    * all link can change the query without this box ever being touched, and
    * this is what keeps the box from showing stale text after that happens.
+   *
+   * Guarded on `searchDebounceRef`, though, rather than syncing
+   * unconditionally. Caught in review: the debounced navigation this box
+   * fires is exactly the kind of update this effect reacts to, and a reader
+   * who keeps typing while that navigation is in flight would have every
+   * keystroke typed during the round trip overwritten by the older value the
+   * server just confirmed — text visibly vanishing mid-word. A non-null ref
+   * means a newer edit is already queued to be sent (typing resets the timer,
+   * so a fresh keystroke after the request fired starts a new one before the
+   * response can land), so the incoming `params.query` is answering a
+   * question the reader has since revised and must not overwrite the box.
+   * Nothing is lost by skipping it: the pending timer already carries the
+   * newer text to the server on its own.
    */
   const [query, setQuery] = useState(params.query);
-  useEffect(() => {
-    setQuery(params.query);
-  }, [params.query]);
   const searchDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => {
+    if (!searchDebounceRef.current) setQuery(params.query);
+  }, [params.query]);
   useEffect(
     () => () => {
       if (searchDebounceRef.current) clearTimeout(searchDebounceRef.current);
