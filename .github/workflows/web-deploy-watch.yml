@@ -1,0 +1,99 @@
+# Does Vercel actually build what we merge?
+#
+# This exists because on 2026-08-14 it silently stopped. The repository moved to
+# the Leona-Quantum organisation; Vercel's project link followed the OWNER
+# rename and kept the OLD REPOSITORY NAME, so it watched
+# `Leona-Quantum/majorana` while every push arrived for `Leona-Quantum/leona`.
+# No build was ever started. Nothing errored, nothing went red, and no
+# deployment record was created to be noticed missing — the site simply served
+# the last good build for ten hours while fourteen merges landed behind it,
+# including the feature the owner then reported as broken when he walked the
+# signup path.
+#
+# Every other gate in this repo watches something that RAN. This one is the
+# only one that watches for something that DID NOT, which is why nothing
+# existing could have caught it:
+#
+#   - `deploy.yml` ships Cloud Run through GitHub Actions. Entirely separate
+#     pipeline, and it was green throughout.
+#   - `verify-web-cache.yml` triggers on `deployment_status`. When Vercel never
+#     deploys, that event never fires, so the workflow never runs — and a
+#     workflow that never runs reports nothing at all.
+#   - The failure watch reads workflow runs. There was no failing run to read.
+#
+# The check is deliberately dumb: after a push to `dev`, a Production
+# deployment for THIS commit must appear within the window, or fail loudly.
+name: web-deploy-watch
+
+on:
+  push:
+    branches: [dev]
+
+permissions:
+  contents: read
+  deployments: read
+
+jobs:
+  vercel-picked-it-up:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with: { fetch-depth: 0 }
+
+      # Reuse the ignore-build script rather than re-deciding here. It is the
+      # single source of truth for "should the web app build for this diff", so
+      # a change to what counts as web-irrelevant can never drift out of step
+      # with this gate. Exit 0 means SKIP (Vercel will legitimately not build),
+      # exit 1 means BUILD.
+      - name: should Vercel have built this at all
+        id: expect
+        env:
+          BEFORE: ${{ github.event.before }}
+          AFTER: ${{ github.sha }}
+        run: |
+          if [ -z "$BEFORE" ] || [ "$BEFORE" = "0000000000000000000000000000000000000000" ]; then
+            echo "no usable base commit; assuming a build is expected"
+            echo "expected=yes" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if VERCEL_GIT_PREVIOUS_SHA="$BEFORE" VERCEL_GIT_COMMIT_SHA="$AFTER" \
+               bash scripts/vercel-ignore-build.sh; then
+            echo "expected=no" >> "$GITHUB_OUTPUT"
+          else
+            echo "expected=yes" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: a Production deployment exists for this commit
+        if: steps.expect.outputs.expected == 'yes'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SHA: ${{ github.sha }}
+        # 12 minutes. A cold build of this app takes 2-4; the margin is for a
+        # queue on Vercel's side. Polling rather than waiting on
+        # `deployment_status` is the whole point: the failure being guarded
+        # against is the event never arriving.
+        run: |
+          for attempt in $(seq 1 24); do
+            # Filtered to vercel[bot], not just counted. The failure this guards
+            # against is Vercel specifically never building; a Production
+            # deployment created by any other integration would otherwise
+            # satisfy the check and make this workflow quietly useless — the
+            # exact shape of the ten silent hours it exists to prevent.
+            # `verify-web-cache.yml` already gates on the same login.
+            count=$(gh api "repos/${GITHUB_REPOSITORY}/deployments?sha=${SHA}&environment=Production" \
+              --jq '[.[] | select(.creator.login == "vercel[bot]")] | length')
+            if [ "$count" -gt 0 ]; then
+              echo "Vercel created a Production deployment for ${SHA} (attempt ${attempt})"
+              exit 0
+            fi
+            echo "attempt ${attempt}/24: no Production deployment for ${SHA} yet"
+            sleep 30
+          done
+
+          echo "::error::Vercel has not started a build for ${SHA} after 12 minutes."
+          echo "::error::The website is now serving an older build than dev, and nothing else will say so."
+          echo "::error::First thing to check is the project's git link, which is what broke on 2026-08-14:"
+          echo "::error::  curl -H \"Authorization: Bearer \$VERCEL_TOKEN\" 'https://api.vercel.com/v9/projects/prj_AtHnlVhlFc1mFNyAb3RvlET2NtBh?teamId=team_DRpA2jUgcqzPCQ24jjjOLN0O' | jq '.link | {org, repo, repoId}'"
+          echo "::error::VERCEL_TOKEN is a Vercel API token you create yourself at vercel.com/account/tokens — it is NOT GH_TOKEN above, and this workflow does not hold one. Run that curl locally."
+          echo "::error::It must read org=Leona-Quantum repo=leona. If repo is wrong, DELETE then POST /v9/projects/{id}/link — a bare POST refuses with cant_link_project rather than overwriting."
+          exit 1
