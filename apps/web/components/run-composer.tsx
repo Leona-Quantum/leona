@@ -2,9 +2,10 @@
 
 import { useEffect, useRef, useState, type FormEvent, type Ref } from "react";
 import { ChevronIcon, PaperclipIcon } from "./icons";
+import { ComposerGhostOverlay } from "./composer-ghost-overlay";
 import type { PublicLocale } from "../lib/public-locale";
 import { COMPOSER_MODES, type ComposerMode } from "../lib/run-mode";
-import { ghostFrame } from "../lib/composer-ghost";
+import { DELETE_MS_PER_CHARACTER, TYPE_MS_PER_CHARACTER, ghostFrame, type GhostFrame } from "../lib/composer-ghost";
 import {
   COMPOSER_FRAMEWORKS,
   type ComposerFramework,
@@ -143,39 +144,50 @@ export function RunComposer({
             ))}
           </div>
         ) : null}
-        <textarea
-          ref={inputRef}
-          className="mj-composer-input"
-          value={value}
-          onChange={(event) => onChange(event.target.value)}
-          onKeyDown={(event) => {
-            if (
-              event.key === "Enter"
-              && (event.metaKey || event.ctrlKey)
-              && !event.nativeEvent.isComposing
-            ) {
-              event.preventDefault();
-              event.currentTarget.form?.requestSubmit();
-              return;
-            }
-            // Tab only steals focus movement while there is something to accept
-            // and the box is empty, so the composer never becomes a keyboard trap.
-            if (
-              event.key === "Tab"
-              && !event.shiftKey
-              && !event.nativeEvent.isComposing
-              && !value
-              && ghost
-            ) {
-              event.preventDefault();
-              onChange(ghost.suggestion);
-            }
-          }}
-          placeholder={ghost?.text || basePlaceholder(locale)}
-          aria-label={labels.task}
-          aria-describedby={ghost ? "mj-composer-tab-hint" : undefined}
-          rows={1}
-        />
+        <div className="mj-composer-ghost-wrap">
+          {ghost ? <ComposerGhostOverlay frame={ghost} /> : null}
+          <textarea
+            ref={inputRef}
+            className="mj-composer-input"
+            value={value}
+            onChange={(event) => onChange(event.target.value)}
+            onKeyDown={(event) => {
+              if (
+                event.key === "Enter"
+                && (event.metaKey || event.ctrlKey)
+                && !event.nativeEvent.isComposing
+              ) {
+                event.preventDefault();
+                event.currentTarget.form?.requestSubmit();
+                return;
+              }
+              // Tab only steals focus movement while there is something to accept
+              // and the box is empty, so the composer never becomes a keyboard trap.
+              if (
+                event.key === "Tab"
+                && !event.shiftKey
+                && !event.nativeEvent.isComposing
+                && !value
+                && ghost
+              ) {
+                event.preventDefault();
+                onChange(ghost.suggestion);
+              }
+            }}
+            // Never `ghost?.text || basePlaceholder(locale)`: `""` is the frame
+            // that plays during the pause between prompts, and `||` treats it
+            // as absent, flashing the generic placeholder into that gap on
+            // every rotation — the "text that appears in between each
+            // rotation" the owner asked to have removed (ai-ops 108). Once a
+            // ghost animation is running at all, `ComposerGhostOverlay` above
+            // is what draws it; the native placeholder only covers the case
+            // where there is no ghost (reduced motion off, no suggestions).
+            placeholder={ghost ? "" : basePlaceholder(locale)}
+            aria-label={labels.task}
+            aria-describedby={ghost ? "mj-composer-tab-hint" : undefined}
+            rows={1}
+          />
+        </div>
         {ghost ? <span className="sr-only" id="mj-composer-tab-hint">{labels.tabHint}</span> : null}
         <div className="mj-composer-controls">
           <div className="mj-composer-left">
@@ -293,7 +305,7 @@ function basePlaceholder(locale: PublicLocale): string {
  * Under `prefers-reduced-motion` the suggestion is still offered — Tab accepts
  * it exactly the same way — it just stops typing itself out.
  */
-function useGhostPrompt(suggestions: readonly string[] | undefined, active: boolean) {
+function useGhostPrompt(suggestions: readonly string[] | undefined, active: boolean): GhostFrame | null {
   const [elapsedMs, setElapsedMs] = useState(0);
   const [reduceMotion, setReduceMotion] = useState(false);
   const hasSuggestions = Boolean(suggestions?.length);
@@ -309,13 +321,25 @@ function useGhostPrompt(suggestions: readonly string[] | undefined, active: bool
   useEffect(() => {
     if (!hasSuggestions || !active || reduceMotion) return;
     const started = Date.now();
-    const timer = window.setInterval(() => setElapsedMs(Date.now() - started), 55);
+    // Sampled at the faster of the two per-character durations, not a fixed
+    // 55ms: at 30ms/typed-character and 12ms/deleted-character (ai-ops 108),
+    // a slower poll would skip characters — deletion in particular would jump
+    // several at once instead of reading as "quick" one at a time.
+    const timer = window.setInterval(
+      () => setElapsedMs(Date.now() - started),
+      Math.min(TYPE_MS_PER_CHARACTER, DELETE_MS_PER_CHARACTER),
+    );
     return () => window.clearInterval(timer);
   }, [hasSuggestions, active, reduceMotion]);
 
   if (!suggestions?.length || !active) return null;
-  const frame = ghostFrame(reduceMotion ? 0 : elapsedMs, suggestions);
-  if (!frame) return null;
-  // Reduced motion gets the whole prompt sitting still rather than an empty box.
-  return reduceMotion ? { ...frame, text: frame.suggestion } : frame;
+  if (reduceMotion) {
+    // The whole prompt sitting still rather than an empty box, `phase:
+    // "holding"` so `ComposerGhostOverlay` never draws a caret here — no
+    // blink and no typing effect for a reader who asked for less motion
+    // (owner, ai-ops 108).
+    const frame = ghostFrame(0, suggestions);
+    return frame ? { ...frame, text: frame.suggestion, phase: "holding" } : null;
+  }
+  return ghostFrame(elapsedMs, suggestions);
 }

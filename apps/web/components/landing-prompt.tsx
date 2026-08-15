@@ -2,7 +2,8 @@
 
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { ChevronIcon, PlusIcon } from "./icons";
-import { ghostFrame } from "../lib/composer-ghost";
+import { ComposerGhostOverlay } from "./composer-ghost-overlay";
+import { DELETE_MS_PER_CHARACTER, TYPE_MS_PER_CHARACTER, ghostFrame } from "../lib/composer-ghost";
 import { writeLandingPromptHandoff } from "../lib/landing-prompt-handoff";
 
 /**
@@ -55,7 +56,14 @@ export function LandingPrompt({ copy }: { copy: LandingPromptCopy }) {
   useEffect(() => {
     if (reduceMotion || value) return;
     const started = Date.now();
-    const timer = window.setInterval(() => setElapsedMs(Date.now() - started), 55);
+    // Sampled at the faster of the two per-character durations, not a fixed
+    // 55ms: at 30ms/typed-character and 12ms/deleted-character (ai-ops 108),
+    // a slower poll would skip characters — deletion in particular would jump
+    // several at once instead of reading as "quick" one at a time.
+    const timer = window.setInterval(
+      () => setElapsedMs(Date.now() - started),
+      Math.min(TYPE_MS_PER_CHARACTER, DELETE_MS_PER_CHARACTER),
+    );
     return () => window.clearInterval(timer);
   }, [reduceMotion, value]);
 
@@ -87,15 +95,25 @@ export function LandingPrompt({ copy }: { copy: LandingPromptCopy }) {
     };
   }, [dialogOpen]);
 
-  const ghost = ghostFrame(reduceMotion ? 0 : elapsedMs, copy.prompts);
+  // No ghost at all under reduced motion: the animation (and its caret) does
+  // not run, so there is nothing for `ComposerGhostOverlay` to draw, and the
+  // textarea's own `placeholder` carries the first prompt instead, sitting
+  // still (owner, ai-ops 108 — "no blink, and ideally no typing animation").
+  const ghost = reduceMotion ? null : ghostFrame(elapsedMs, copy.prompts);
   // Never `copy.label` here: it used to double as the placeholder fallback,
   // which put "Describe the quantum circuit you want to build" on screen for
   // every render before the typing animation had produced its first
-  // character (`ghost.text` is `""`, and `"" || copy.label` falls through) —
-  // visible on first paint and on every server render, since `elapsedMs`
-  // starts at 0. The label still exists for the screen-reader-only <label>
+  // character. The label still exists for the screen-reader-only <label>
   // below; it just never becomes visible text (owner, ai-ops#94).
-  const placeholder = reduceMotion ? copy.prompts[0] : ghost?.text || copy.prompts[0];
+  //
+  // And never `ghost?.text || copy.prompts[0]`: `""` is a real, correct frame
+  // — it is what plays during the pause between one prompt deleting and the
+  // next typing in — and `||` treats that empty string as absent, resurrecting
+  // the first prompt as a flash of static text in every single gap. That *was*
+  // the "text that appears in between each rotation" the owner asked to have
+  // removed (ai-ops 108). The fallback below is only for when there is no
+  // ghost animation running at all (reduced motion, or no prompts to show).
+  const placeholder = ghost ? "" : copy.prompts[0];
 
   // Every visitor gets the same dialog, because a prerendered page cannot know
   // who is reading it. A visitor who already has a session is not sent the long
@@ -110,19 +128,22 @@ export function LandingPrompt({ copy }: { copy: LandingPromptCopy }) {
     <>
       <form className="mj-landing-prompt" onSubmit={act}>
         <label className="sr-only" htmlFor="mj-landing-prompt-input">{copy.label}</label>
-        <textarea
-          id="mj-landing-prompt-input"
-          rows={1}
-          value={value}
-          placeholder={placeholder}
-          onChange={(event) => setValue(event.target.value)}
-          onKeyDown={(event) => {
-            if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) {
-              event.preventDefault();
-              event.currentTarget.form?.requestSubmit();
-            }
-          }}
-        />
+        <div className="mj-composer-ghost-wrap">
+          {ghost ? <ComposerGhostOverlay frame={ghost} /> : null}
+          <textarea
+            id="mj-landing-prompt-input"
+            rows={1}
+            value={value}
+            placeholder={placeholder}
+            onChange={(event) => setValue(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) {
+                event.preventDefault();
+                event.currentTarget.form?.requestSubmit();
+              }
+            }}
+          />
+        </div>
         <div className="mj-landing-prompt-controls">
           <button className="mj-landing-prompt-icon" type="button" aria-label={copy.attach} title={copy.attach} onClick={() => act()}>
             <PlusIcon size={20} />
