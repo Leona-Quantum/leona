@@ -11,6 +11,7 @@ import {
 import { VerificationLegend } from "../../../../components/repository-verification";
 import { AboutTheAtlas } from "../../../../components/repository-preface";
 import { resolveBrowseParams } from "../../../../lib/repository/browse-params";
+import { buildRepositoryBrowseView } from "../../../../lib/repository/browse-view";
 import { RepositoryBrowser } from "../../../repository/repository-browser";
 
 // Served from the CDN, not by being prerendered — same split as
@@ -119,16 +120,7 @@ export default async function RepositoryPage({
   // catalogue. The list is capped at `rows`, so the address of "the rest of it"
   // had to exist before the cap could ship — a cap with no link is a list with
   // rows nothing can reach.
-  const {
-    topic: initialTopic,
-    stance: initialStance,
-    category: initialCategory,
-    gate: initialGate,
-    query: initialQuery,
-    order: initialOrder,
-    circuitOnly: initialCircuitOnly,
-    rows: initialRows,
-  } = resolveBrowseParams(searchParamsValue);
+  const resolvedParams = resolveBrowseParams(searchParamsValue);
   const isJapanese = locale === "ja";
   // One request each for the whole corpus's cost and its circuit structure, and
   // concurrently with the listing — they share no inputs, so awaiting them in
@@ -144,6 +136,13 @@ export default async function RepositoryPage({
     getRepositoryEstimates(),
     getRepositoryProfiles(),
   ]);
+  // ai-ops#105: the whole filter/order/fold/cap pipeline runs HERE, once, over
+  // the full corpus this request already paid to fetch, and its result is what
+  // crosses into the client component — not `entries` itself. See
+  // `browse-view.ts`'s header for why a client component could never have made
+  // this bound on its own: it can decide what to RENDER from an array it
+  // already has, but not what arrives across the network in the first place.
+  const view = buildRepositoryBrowseView(entries, estimates, profiles, resolvedParams, locale);
 
   return (
     <PublicSite
@@ -178,19 +177,10 @@ export default async function RepositoryPage({
             than deleted, in case this is revisited. */}
         <AboutTheAtlas locale={locale} />
         <RepositoryBrowser
-          entries={entries}
           locale={locale}
           legend={<VerificationLegend locale={locale} />}
-          estimates={estimates}
-          profiles={profiles}
-          initialTopic={initialTopic}
-          initialStance={initialStance}
-          initialCategory={initialCategory}
-          initialGate={initialGate}
-          initialQuery={initialQuery}
-          initialOrder={initialOrder}
-          initialCircuitOnly={initialCircuitOnly}
-          initialRows={initialRows}
+          params={resolvedParams}
+          view={view}
         />
       </section>
     </PublicSite>
