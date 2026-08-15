@@ -135,6 +135,15 @@ class ChatCompleted(_EventBase):
     input_tokens: int = Field(ge=0)
     output_tokens: int = Field(ge=0)
     duration_ms: int = Field(ge=0)
+    #: Present only for the readiness-gate's clarification turn (worker
+    #: `_finish_missing_inputs_clarification`) — the task-specific inputs it
+    #: could not find in the prompt. `apps/web`'s live-run view reads both of
+    #: these fields to render the bullet list and the "proceed anyway" action;
+    #: they were added to the wire payload by #485 without being added here,
+    #: which made every such turn raise `extra_forbidden` in production instead
+    #: of ever reaching a reader (see test_events.py for the regression case).
+    missing_inputs: list[str] | None = None
+    allow_ai_assumptions_available: bool = False
 
 
 class ChatError(_EventBase):

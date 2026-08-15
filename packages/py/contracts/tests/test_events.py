@@ -105,6 +105,52 @@ def test_run_finished_typed_summary_round_trips():
     assert revived == original
 
 
+def test_chat_completed_readiness_gate_clarification_payload_validates():
+    """Regression for the 2026-08-15 production incident: the worker's readiness
+    gate (`_finish_missing_inputs_clarification`) emits exactly this shape when a
+    task-specific input is missing from the prompt, and `apps/web`'s live-run view
+    already reads both extra fields to render the bullet list and the "proceed
+    anyway" action (added by #485). The contract was never updated to match, so
+    `extra="forbid"` on `_EventBase` rejected the payload with `2 validation
+    errors ... extra_forbidden` on every real occurrence, and the worker's own
+    test for this path used a fake sink that never called this validator, so
+    nothing caught it before it reached a live run."""
+    event = run_event_adapter.validate_python(
+        {
+            **ENVELOPE,
+            "type": "chat.completed",
+            "text": "I need the following task-specific inputs before generating "
+            "the quantum circuit:\n\n- Molecule identity",
+            "missing_inputs": ["Molecule identity", "basis set", "acceptable accuracy"],
+            "allow_ai_assumptions_available": True,
+            "model": "majorana-readiness-gate",
+            "input_tokens": 0,
+            "output_tokens": 0,
+            "duration_ms": 0,
+        }
+    )
+    assert event.missing_inputs == ["Molecule identity", "basis set", "acceptable accuracy"]
+    assert event.allow_ai_assumptions_available is True
+
+
+def test_chat_completed_missing_inputs_fields_are_optional_for_ordinary_chat():
+    """An ordinary chat turn carries neither field; both must default rather than
+    become required, or every non-clarification `chat.completed` breaks instead."""
+    event = run_event_adapter.validate_python(
+        {
+            **ENVELOPE,
+            "type": "chat.completed",
+            "text": "Sure, here's how Execute mode works.",
+            "model": "deepseek-chat",
+            "input_tokens": 12,
+            "output_tokens": 40,
+            "duration_ms": 900,
+        }
+    )
+    assert event.missing_inputs is None
+    assert event.allow_ai_assumptions_available is False
+
+
 def test_historical_exact_event_remains_parseable():
     event = run_event_adapter.validate_python(
         {
