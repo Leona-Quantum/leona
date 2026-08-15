@@ -8,10 +8,10 @@
 # sandbox than the one that was reviewed and scanned, and nothing in the repo,
 # the diff, or the weekly container scan would say so.
 #
-# The digest below is `3.13-slim-bookworm` as of 2026-08-05. Updating it is a
+# The digest below is `3.13-slim-bookworm` as of 2026-08-15. Updating it is a
 # deliberate edit with a reviewable diff, which is the entire point; the tag is
 # kept alongside so the next person knows which line to re-resolve.
-FROM python:3.13-slim-bookworm@sha256:9d7f287598e1a5a978c015ee176d8216435aaf335ed69ac3c38dd1bbb10e8d64
+FROM python:3.13-slim-bookworm@sha256:00faa2debb87529f9f0764e9491d8ba400a3678976616c3bd7cb193745ac20d1
 
 # This image is the Vercel Sandbox root filesystem for generated quantum code.
 # Keep it dependency-complete because production sandboxes are created with the
@@ -21,8 +21,7 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PIP_DISABLE_PIP_VERSION_CHECK=1
 
 # Two HIGH findings that `container_scan` (trivy, HIGH+CRITICAL) reports against
-# this image, both in packages nothing here asks for directly — one ships with the
-# base image, one arrives transitively:
+# this image:
 #
 #   setuptools 70.3.0  CVE-2025-47273        path traversal        fixed in 78.1.1
 #   msgpack    1.1.2   GHSA-6v7p-g79w-8964   OOB read / crash      fixed in 1.2.1
@@ -33,25 +32,51 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 # path traversal in a package that generated code can `import` is a boundary
 # problem, not a housekeeping one.
 #
-# setuptools is 81.0.0 rather than the 78.1.1 that merely closes the CVE, because
-# `amazon-braket-default-simulator==1.39.5` declares `setuptools==81.0.0` as an
-# EXACT requirement — 78.1.1 makes the resolve impossible (verified: the build
-# fails with `ResolutionImpossible`, naming those two). 81.0.0 is above the fixed
-# version, so taking braket's number satisfies both constraints and leaves nothing
-# for a future braket bump to fight with.
+# ## Neither one is an installed package, which is why pinning them did nothing
 #
-# Pinned rather than left to float, because everything else in this file is
-# exact-pinned for the same reason: production sandboxes are created with the
-# deny-all network policy and cannot install anything at runtime, so what is baked
-# in here is the whole world the code gets.
+# The first attempt pinned both to their fixed versions in the install below.
+# The scan still reported 70.3.0 and 1.1.2, unchanged, because those two
+# versions are not installed anywhere: they are **pip's own vendored copies**,
+# and the base image ships no installed setuptools at all — `import setuptools`
+# in a bare `python:3.13-slim-bookworm` raises ModuleNotFoundError. Installing a
+# newer copy alongside left pip's untouched.
 #
-# Worth knowing when this next changes: the scan passed on 2026-08-14 and failed on
-# 2026-08-15 against a base-image digest refresh that touched nothing else. Trivy's
-# vulnerability database updates daily, so a scan going red without the Dockerfile
-# changing usually means the database learned something, not that the image did.
+# What trivy is actually reading is `pip/_vendor/bom.cdx.json`, a CycloneDX SBOM
+# that pip ships describing everything under `pip/_vendor/` — and `msgpack` and
+# `pkg_resources` (setuptools) are both really there as vendored source. That
+# file is also the whole reason this appeared to arrive out of nowhere: pip
+# **26.1.2**, in the previous digest, did not ship it, and pip **26.2.1**, in the
+# digest above, does. Both digests vendor the same two versions; only one of them
+# tells the scanner so. Checked in both images rather than inferred.
+#
+# So the fix is to remove pip, not to out-pin it. That is not a way around the
+# scanner — it is the end state this file's own second paragraph already implies:
+# production sandboxes are created with the deny-all network policy and cannot
+# install anything at runtime, so pip has no function here once the build is
+# over. Removing it takes both findings out at the root rather than arguing with
+# them, and drops a package manager out of the filesystem that untrusted code
+# executes in. It would be worth doing with no CVE attached. It is not a size
+# win — the image measures 1.58 GB either way, since pip is a rounding error
+# next to the wheels.
+#
+# The `build` job in `.github/workflows/sandbox-image.yml` is what makes this
+# safe to do: it imports every framework and runs a Bell pair on each, with
+# `--network none`, against the image this file produces. Anything that needed
+# pip or `pkg_resources` at runtime fails there rather than in production.
+#
+# setuptools is still installed, and still exactly 81.0.0, for a reason unrelated
+# to the CVE: `amazon-braket-default-simulator==1.39.5` declares
+# `setuptools==81.0.0` as an EXACT requirement, and 78.1.1 makes the resolve
+# impossible (verified — the build fails with `ResolutionImpossible` naming those
+# two). The msgpack pin is gone: nothing here required it, it was only ever an
+# attempt to out-pin the vendored copy, and it never did.
+#
+# Worth knowing when this next changes: a scan can go red against a base-image
+# refresh that changed no version at all, because trivy's database updates daily
+# AND — as here — because the base image can start *declaring* what it always
+# contained. Check what the scanner is reading before believing the diff.
 RUN python -m pip install --no-cache-dir --only-binary=:all: \
     "setuptools==81.0.0" \
-    "msgpack==1.2.1" \
     "qiskit==2.5.0" \
     "qiskit-aer==0.17.2" \
     "pennylane==0.43.1" \
@@ -61,7 +86,21 @@ RUN python -m pip install --no-cache-dir --only-binary=:all: \
     "numba==0.66.0" \
     "qibo==0.3.4" \
     "qulacs==0.6.14" \
-    "gast==0.7.0"
+    "gast==0.7.0" \
+ && python -m pip uninstall --yes pip \
+ && rm -rf /usr/local/lib/python3.13/ensurepip \
+           /usr/local/lib/python3.13/site-packages/pip \
+           /usr/local/lib/python3.13/site-packages/pip-*.dist-info \
+           /usr/local/bin/pip /usr/local/bin/pip3 /usr/local/bin/pip3.13
+
+# Chained into the RUN above rather than written as its own layer, on purpose: a
+# `rm` in a later layer hides the files from the merged filesystem but leaves
+# them in the image's history, where an operator can still recover them and where
+# they still cost download bytes. Same layer means they were never committed.
+#
+# `ensurepip` goes with pip because it bundles its own pip wheel — the same
+# vendored payload again, in archive form, and the obvious way to reinstall the
+# thing this line just removed.
 
 WORKDIR /tmp/run
 
