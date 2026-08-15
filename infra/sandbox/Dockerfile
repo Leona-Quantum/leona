@@ -33,17 +33,24 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 # path traversal in a package that generated code can `import` is a boundary
 # problem, not a housekeeping one.
 #
-# Pinned to the fixed versions rather than left to float, because everything else
-# in this file is exact-pinned for the same reason: production sandboxes are
-# created with the deny-all network policy and cannot install anything at runtime,
-# so what is baked in here is the whole world the code gets.
+# setuptools is 81.0.0 rather than the 78.1.1 that merely closes the CVE, because
+# `amazon-braket-default-simulator==1.39.5` declares `setuptools==81.0.0` as an
+# EXACT requirement — 78.1.1 makes the resolve impossible (verified: the build
+# fails with `ResolutionImpossible`, naming those two). 81.0.0 is above the fixed
+# version, so taking braket's number satisfies both constraints and leaves nothing
+# for a future braket bump to fight with.
+#
+# Pinned rather than left to float, because everything else in this file is
+# exact-pinned for the same reason: production sandboxes are created with the
+# deny-all network policy and cannot install anything at runtime, so what is baked
+# in here is the whole world the code gets.
 #
 # Worth knowing when this next changes: the scan passed on 2026-08-14 and failed on
 # 2026-08-15 against a base-image digest refresh that touched nothing else. Trivy's
 # vulnerability database updates daily, so a scan going red without the Dockerfile
 # changing usually means the database learned something, not that the image did.
 RUN python -m pip install --no-cache-dir --only-binary=:all: \
-    "setuptools==78.1.1" \
+    "setuptools==81.0.0" \
     "msgpack==1.2.1" \
     "qiskit==2.5.0" \
     "qiskit-aer==0.17.2" \
