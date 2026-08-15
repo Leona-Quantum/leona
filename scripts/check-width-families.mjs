@@ -22,8 +22,10 @@
 // What it pins, all of it falsifiable and none of it derivable from the code
 // under test:
 //
-//   * 15 families, 8 widths each, 120 member records — the measurement R2.6 is
-//     sized against.
+//   * 15 families, 2 widths each, 30 member records. It was 8 widths and 120
+//     records — the size R2.6 was measured against — until the owner ruled on
+//     ai-ops issue 116 that only the narrowest honest width and one high one
+//     are worth publishing.
 //   * Zero refusals. A refusal is the derivation declining to call a stem one
 //     thing, and it is silent by construction: the browse list simply shows the
 //     members separately again, exactly as it did before R2.6. A content batch
@@ -33,7 +35,7 @@
 //   * Every slug's declared width equals its own circuit's `qubitCount`, so the
 //     suffix the fold reads is not a naming convention drifting from the
 //     circuit it names.
-//   * 261 browse rows. The number the roadmap promises, computed the way the
+//   * 262 browse rows. The number the roadmap promises, computed the way the
 //     page computes it rather than typed in. It was 176 when R2.6 sized it
 //     against 281 cards; the parity intake published 12 unfolded records and then
 //     6, 6, 8, 8, 19, 4, 6, 1, 6, 4, 2 and 1 more, so the number moved by exactly 83. Deliberately, which is what the error
@@ -138,16 +140,33 @@ if (derived.length !== 15) {
 const memberSlugs = new Set();
 for (const family of derived) {
   for (const member of family.members) memberSlugs.add(member.slug);
-  if (family.members.length !== 8) {
+  // Two: the family's own minimum width, and the 16q showcase. Eight until
+  // 2026-08-16 — see EXPECTED_FAMILY_MEMBERS below for what changed and why.
+  if (family.members.length !== 2) {
     errors.push(
-      `${family.key}: ${family.members.length} widths, expected 8 ` +
+      `${family.key}: ${family.members.length} widths, expected 2 ` +
         `(${family.members.map((member) => member.width).join(", ")})`,
     );
   }
 }
 
-if (memberSlugs.size !== 120) {
-  errors.push(`${memberSlugs.size} records fold into a family, expected 120`);
+/**
+ * 15 families x 2 widths. It was 15 x 8 = 120 until 2026-08-16, when the owner
+ * ruled (ai-ops issue 116) that a family needs only "lowest needed to demonstrate
+ * all general function of the algorithm, and one high" and that "the rest of the
+ * variants can be permanently deleted".
+ *
+ * Note what did NOT move: EXPECTED_BROWSE_ROWS is 262 before and after. The fold
+ * already showed one row per family, so deleting 90 members changes what the row
+ * *contains*, never how many rows there are. That is the useful property of this
+ * pair of numbers being pinned separately — if this figure drops and the row
+ * count moves with it, a family stopped folding rather than getting narrower.
+ */
+const EXPECTED_FAMILY_MEMBERS = 30;
+if (memberSlugs.size !== EXPECTED_FAMILY_MEMBERS) {
+  errors.push(
+    `${memberSlugs.size} records fold into a family, expected ${EXPECTED_FAMILY_MEMBERS}`,
+  );
 }
 
 // An orphan is a stem published at a single width. It is not a family — and it

@@ -263,7 +263,13 @@ def test_every_published_circuit_says_what_it_built():
         if classify_source(code) is ProgramRole.UNKNOWN
     ]
 
-    assert len(variants) == 224, "executable variants in the published catalog"
+    # 224 until 2026-08-16, when the fifteen width families were cut from eight
+    # published widths to two (owner ruling, ai-ops issue 116) and 90 records
+    # left the corpus. Entered by hand on purpose: this figure exists to make an
+    # *accidental* shrink visible, which it can only do if a deliberate one is
+    # typed in. The assertion that actually protects the reader is `unknown == []`
+    # below; this one guards the coverage the reader gets it over.
+    assert len(variants) == 134, "executable variants in the published catalog"
     assert unknown == [], (
         f"{len(unknown)} published variants bind neither FINAL_CIRCUIT nor RESULT, so "
         "Leona reads them as something it cannot execute and sends them to a model to "
@@ -342,7 +348,7 @@ def test_a_prose_record_never_claims_to_be_framework_source():
 
 
 def test_builder_generated_entries_all_name_what_they_built():
-    """The 120 entries `generateBuilderCode` owns must classify as circuits.
+    """The 30 entries `generateBuilderCode` owns must classify as circuits.
 
     They are identified by carrying a `portableCircuit` — the framework-neutral
     gate graph the generator renders from — and NOT by the shape of the code.
@@ -365,7 +371,9 @@ def test_builder_generated_entries_all_name_what_they_built():
         and variant.get("language") == "python"
     ]
 
-    assert len(generated) == 120
+    # 120 until the same 2026-08-16 width-family cut; 15 families x 8 widths
+    # became 15 x 2, so the builder now owns 30 entries rather than 120.
+    assert len(generated) == 30
     not_circuits = [
         (identity, framework)
         for identity, framework, code in generated
