@@ -1,0 +1,126 @@
+import assert from "node:assert/strict";
+import test from "node:test";
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
+import { dirname, join } from "node:path";
+import {
+  AUTH_HINT_COOKIE,
+  AUTH_HINT_MAX_AGE_SECONDS,
+  AUTH_HINT_SIGNED_IN,
+} from "./auth-hint.ts";
+
+/**
+ * The auth hint is a contract between four files that cannot import each other's
+ * intent (ai-ops issue 114):
+ *
+ *   - `app/layout.tsx` reads the cookie in an inline string of JavaScript, before
+ *     any module system exists,
+ *   - `app/api/auth/session/route.ts` writes it,
+ *   - `app/auth/sign-out/route.ts` clears it,
+ *   - `packages/ts/ui/styles.css` decides what the reader sees from it.
+ *
+ * Break the agreement in any one of them and nothing throws. The header simply
+ * goes back to showing "Sign in" to signed-in readers on every page, which is
+ * the bug this replaced and which no other test in this suite would notice —
+ * the flash is correct HTML, correct CSS, and correct JavaScript that happen to
+ * disagree about one string. So these assertions are deliberately literal.
+ */
+
+const webRoot = dirname(dirname(fileURLToPath(import.meta.url)));
+const repoRoot = dirname(dirname(webRoot));
+
+function read(...segments: string[]): string {
+  return readFileSync(join(...segments), "utf8");
+}
+
+const layout = read(webRoot, "app", "layout.tsx");
+const sessionRoute = read(webRoot, "app", "api", "auth", "session", "route.ts");
+const signOutRoute = read(webRoot, "app", "auth", "sign-out", "route.ts");
+const authStatus = read(webRoot, "components", "auth-status.tsx");
+const middleware = read(webRoot, "middleware.ts");
+const styles = read(repoRoot, "packages", "ts", "ui", "styles.css");
+
+test("the pre-paint script reads the same cookie the session route writes", () => {
+  // The script is built by interpolating the constants, so what this really
+  // catches is the interpolation being replaced by a hand-typed literal that
+  // then drifts.
+  assert.equal(AUTH_HINT_COOKIE, "mj_auth");
+  assert.equal(AUTH_HINT_SIGNED_IN, "1");
+  assert.match(layout, /authHintScript/);
+  assert.match(layout, /AUTH_HINT_COOKIE/);
+  assert.match(layout, /AUTH_HINT_SIGNED_IN/);
+  assert.match(
+    layout,
+    /document\.documentElement\.dataset\.auth = signedIn \? "in" : "out"/,
+  );
+});
+
+test("the script is rendered into <head>, where it runs before the first paint", () => {
+  // Correct content in the wrong place is the failure mode with no symptom
+  // other than the flash coming back: a script in <body> runs after the header
+  // above it has already been painted from the wrong branch.
+  const head = layout.slice(layout.indexOf("<head>"), layout.indexOf("</head>"));
+  assert.ok(
+    head.includes("authHintScript"),
+    "authHintScript must be inside <head>, not merely present in the layout",
+  );
+});
+
+test("only uncacheable routes write the hint, and middleware never does", () => {
+  // The load-bearing one. Vercel will not store a response carrying Set-Cookie,
+  // so writing this cookie from middleware or a page render would drop every
+  // public page out of the CDN — trading the cache for the flash rather than
+  // fixing it. See the comment in `lib/auth-hint.ts`.
+  assert.ok(
+    !middleware.includes(AUTH_HINT_COOKIE) && !middleware.includes("auth-hint"),
+    "middleware.ts must not touch the auth hint — a Set-Cookie there makes every public page uncacheable",
+  );
+  assert.match(sessionRoute, /export const dynamic = "force-dynamic"/);
+  assert.match(sessionRoute, /Cache-Control": "private, no-store/);
+  assert.match(sessionRoute, /cookies\.set\(\s*AUTH_HINT_COOKIE/);
+  assert.match(sessionRoute, /cookies\.delete\(AUTH_HINT_COOKIE\)/);
+});
+
+test("the hint is readable by the pre-paint script and scoped to the whole site", () => {
+  // httpOnly would make the cookie invisible to the one consumer it exists for.
+  assert.match(sessionRoute, /httpOnly: false/);
+  assert.match(sessionRoute, /path: "\/"/);
+  assert.match(sessionRoute, /sameSite: "lax"/);
+  assert.match(sessionRoute, /maxAge: AUTH_HINT_MAX_AGE_SECONDS/);
+  assert.ok(AUTH_HINT_MAX_AGE_SECONDS > 0);
+});
+
+test("signing out clears the hint on both of its paths", () => {
+  // Including the early return for a reader who is already signed out — that is
+  // precisely the visitor holding a stale hint.
+  assert.match(signOutRoute, /cookies\(\)\)\.delete\(AUTH_HINT_COOKIE\)/);
+  const deleteAt = signOutRoute.indexOf("delete(AUTH_HINT_COOKIE)");
+  const earlyReturnAt = signOutRoute.indexOf('if (!user) redirect("/")');
+  assert.ok(deleteAt !== -1 && earlyReturnAt !== -1);
+  assert.ok(
+    deleteAt < earlyReturnAt,
+    "the hint must be cleared before the early return, or a signed-out revisit keeps it",
+  );
+});
+
+test("both controls are in the markup, so the cached HTML can serve either reader", () => {
+  assert.match(authStatus, /data-auth-slot="in"/);
+  assert.match(authStatus, /data-auth-slot="out"/);
+  assert.match(authStatus, /href="\/auth\/sign-out"/);
+  assert.match(authStatus, /href="\/run"/);
+});
+
+test("the stylesheet defaults to the signed-out control when the attribute is absent", () => {
+  // JavaScript off, cookies refused, or the script not yet run all land here,
+  // and all three must see what the server actually rendered rather than a
+  // header with both controls in it or none.
+  assert.match(styles, /\.mj-auth-slot\s*\{\s*display: contents;\s*\}/);
+  assert.match(
+    styles,
+    /html\[data-auth="in"\] \.mj-auth-slot\[data-auth-slot="out"\]/,
+  );
+  assert.match(
+    styles,
+    /html:not\(\[data-auth="in"\]\) \.mj-auth-slot\[data-auth-slot="in"\]/,
+  );
+});

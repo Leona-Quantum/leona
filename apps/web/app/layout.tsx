@@ -3,6 +3,7 @@ import type { Metadata } from "next";
 import { Analytics } from "@vercel/analytics/next";
 import { Instrument_Sans, Instrument_Serif, JetBrains_Mono } from "next/font/google";
 import { THEME_STORAGE_KEY } from "../lib/theme";
+import { AUTH_HINT_COOKIE, AUTH_HINT_SIGNED_IN } from "../lib/auth-hint";
 import { LEGACY_PUBLIC_LOCALE_COOKIE, PUBLIC_LOCALE_COOKIE } from "../lib/public-locale";
 import { canonicalOrigin } from "../lib/site-origin";
 import "./globals.css";
@@ -43,6 +44,28 @@ const localeScript = `(() => {
     const value = read(${JSON.stringify(PUBLIC_LOCALE_COOKIE)}) ?? read(${JSON.stringify(LEGACY_PUBLIC_LOCALE_COOKIE)});
     if (value === "ja") document.documentElement.lang = "ja";
   } catch {}
+})();`;
+
+/**
+ * Paint the header's sign-in control correctly on the first frame (ai-ops issue 114).
+ *
+ * Same shape as the two scripts above, and for the same reason: the pages that
+ * need this are held on the CDN, so the answer cannot be in their HTML — it has
+ * to be read from the visitor's own browser before anything is drawn. See
+ * `lib/auth-hint.ts` for what the cookie is, what it is not, and why it may only
+ * be written from routes that are already uncacheable.
+ *
+ * Absent or unreadable, this stamps `"out"`, which is exactly the state the
+ * server rendered — so a first-time visitor, a visitor with cookies disabled,
+ * and a visitor with JavaScript off all get today's behaviour rather than a
+ * broken one.
+ */
+const authHintScript = `(() => {
+  var signedIn = false;
+  try {
+    signedIn = document.cookie.split("; ").some((c) => c === ${JSON.stringify(`${AUTH_HINT_COOKIE}=${AUTH_HINT_SIGNED_IN}`)});
+  } catch {}
+  document.documentElement.dataset.auth = signedIn ? "in" : "out";
 })();`;
 
 // Fonts land as CSS variables that override the tokens.css fallback stacks.
@@ -88,6 +111,7 @@ export default function RootLayout({ children }: { children: ReactNode }) {
       <head>
         <script dangerouslySetInnerHTML={{ __html: themeScript }} />
         <script dangerouslySetInnerHTML={{ __html: localeScript }} />
+        <script dangerouslySetInnerHTML={{ __html: authHintScript }} />
       </head>
       <body>
         {children}
