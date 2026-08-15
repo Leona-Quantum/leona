@@ -259,6 +259,42 @@ async def find_staged_artifact_by_upstream_identity(
     return row[0], row[1]
 
 
+async def list_public_upstream_identities(
+    scope: Scope,
+    session: AsyncSession,
+    *,
+    authority: CatalogAuthority,
+) -> dict[str, uuid.UUID]:
+    """Every upstream identity the public catalog is serving, mapped to its artifact.
+
+    This answers the one question the importer cannot. `catalog_import` reconciles
+    absent -> create, unchanged -> no-op, changed -> new version, and there is no
+    fourth branch: a record deleted from the manifest is simply never visited
+    again and keeps its ACCEPTED/PUBLIC row indefinitely. Nothing read the
+    database the other way round — "what is published that the manifest no longer
+    claims" — so a deletion was structurally invisible.
+
+    Measured, not theorised: removing 90 width-family records from the corpus
+    (ai-ops issue 116) changed the corpus, the manifest, five pinned test counts
+    and nothing whatsoever that a visitor to /repository saw, because the API kept
+    serving all 369 from rows the import had stopped mentioning.
+
+    Uses `_public_catalog_predicate` rather than its own filter, so what this
+    returns is exactly the set /repository serves. A near-copy of that predicate
+    would be the dangerous version of this function: it decides what gets
+    retired, and a filter that is subtly wider than the public one would retire
+    rows the public list was never showing.
+    """
+    workspace = await get_importer_workspace(scope, session, authority=authority)
+    rows = await session.execute(
+        select(Artifact.upstream_identity, Artifact.id).where(
+            *_public_catalog_predicate(workspace.id),
+            Artifact.upstream_identity.is_not(None),
+        )
+    )
+    return {identity: artifact_id for identity, artifact_id in rows.all()}
+
+
 async def stage_artifact(
     scope: Scope,
     session: AsyncSession,

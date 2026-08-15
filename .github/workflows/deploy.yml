@@ -735,6 +735,49 @@ jobs:
             exit 1
           fi
 
+      # Withdraw published records the manifest no longer claims. OFF unless a
+      # human sets the variable, and it names a COUNT rather than being a boolean.
+      #
+      # ## Why this is not automatic
+      #
+      # The importer has no delete branch — absent, unchanged, changed, and no
+      # fourth case — so a record deleted from the corpus keeps its ACCEPTED and
+      # PUBLIC row and goes on being served. `sync-bootstrap` above now prints
+      # what is unclaimed, so the drift is visible on every deploy; acting on it
+      # is deliberate. If retirement ran unattended, one bad manifest generation
+      # would withdraw the public catalog in a single deploy, and the deploy
+      # would report success while doing it.
+      #
+      # ## Why the variable is a number
+      #
+      # `--authorize N` refuses unless N equals the orphan count exactly, so a
+      # variable left set after its job is done cannot silently retire a later,
+      # different set — it fails loudly instead, which is the direction to fail
+      # in. Set it, watch the deploy, then clear it:
+      #
+      #   gh variable set CATALOG_RETIRE_AUTHORIZED --body 90
+      #   gh variable delete CATALOG_RETIRE_AUTHORIZED
+      #
+      # Soft delete: `deleted_at` is what the public predicate filters on, so a
+      # withdrawal is auditable and reversible rather than a row disappearing.
+      - name: withdraw records the manifest no longer claims
+        if: >-
+          steps.creds.outputs.have == 'true' && vars.CATALOG_SYNC_ENABLED == 'true'
+          && vars.CATALOG_RETIRE_AUTHORIZED != ''
+        env:
+          AUTHORIZED: ${{ vars.CATALOG_RETIRE_AUTHORIZED }}
+        run: |
+          set -euo pipefail
+          # `|| exit 1` for the same errexit-inside-`||` reason the sync step
+          # documents above.
+          . scripts/catalog-admin-env.sh || exit 1
+          echo "CATALOG_RETIRE_AUTHORIZED=$AUTHORIZED — withdrawing exactly that many."
+          uv run --package majorana-api python -m majorana_api.catalog_admin \
+            retire-bootstrap --attested-by-standing --authorize "$AUTHORIZED"
+          echo "::notice::Retirement done. CLEAR THE VARIABLE NOW:"
+          echo "::notice::  gh variable delete CATALOG_RETIRE_AUTHORIZED"
+          echo "::notice::Left set, it will refuse the next deploy whose orphan count differs."
+
       # A skipped step is silent, and silence about a stale catalog is the exact
       # failure this feature was built to end — so the off state announces
       # itself every time rather than only in the file that turned it off.

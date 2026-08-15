@@ -566,9 +566,13 @@ def test_every_published_entry_that_shows_a_span_shows_one_that_trades():
             assert other.footprint.total_physical_qubits <= result.footprint.total_physical_qubits
             assert other.runtime.seconds >= result.runtime.seconds
             assert other.runtime.factory_count == 1
-        # Session 78: 56 of the 120 priced entries have a crossover above one.
+        # Session 78: 56 of the then-120 priced entries had a crossover above one.
+        # 14 of 30 since 2026-08-16, when the width families were cut from eight
+        # published widths to two (owner ruling, ai-ops issue 116). The ratio is
+        # unchanged — 56/120 and 14/30 are both 46.7% — which is the evidence that
+        # what shrank was the population and not the behaviour being measured.
         # A floor, not an equality — publishing more entries must not fail this.
-        assert spans >= 56, f"{key} produced {spans} spans; the corpus lost some"
+        assert spans >= 14, f"{key} produced {spans} spans; the corpus lost some"
 
 
 def test_the_flagship_entry_publishes_the_span_the_release_notes_quote():

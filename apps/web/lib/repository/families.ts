@@ -1,9 +1,16 @@
-// Width families: the 15 things this catalogue publishes 120 times (R2.6).
+// Width families: the 15 things this catalogue publishes twice each (R2.6).
 //
-// `benchmark-ghz-chain` exists eight times — `-2q`, `-3q`, `-4q`, `-5q`, `-6q`,
-// `-8q`, `-12q`, `-16q` — as eight slugs, eight records and eight browse cards.
-// 120 of the then-283 published entries, 42% of the corpus (measured 2026-07), are 15 circuits at eight
-// widths each. This module is the rule that reads them back as 15.
+// `benchmark-ghz-chain` exists as `-3q` and `-16q` — two slugs, two records, one
+// browse card. It existed eight times until 2026-08-16 (`-2q` through `-16q`),
+// which was 120 of the then-283 published entries and 42% of the corpus when
+// R2.6 measured it in 2026-07. The owner then ruled (ai-ops issue 116) that a
+// family needs only the narrowest width that demonstrates its function and one
+// high one, so the six interpolated widths were deleted: 120 records became 30.
+//
+// This module is unchanged by that and was never edited for it — it is the rule
+// that reads a family back as one row, and it does that for two members exactly
+// as it did for eight. The browse-row count did not move (262 either way), which
+// is the clearest statement of what the deletion did and did not change.
 //
 // **Derived, not authored**, for the reason `topics.ts` gives and R1 and R2.5
 // both followed: the owner may repopulate this corpus wholesale, and 15

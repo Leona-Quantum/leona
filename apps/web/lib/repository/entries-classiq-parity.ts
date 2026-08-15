@@ -113,7 +113,7 @@ const CLASSIQ_ALGORITHMS: ClassiqAlgorithm[] = [
           "一次資料です。量子ボリュームという指標を提案し、規模の限られた近未来の計算機（n ≲ 50）に対して具体的なプロトコルで測定できると述べ、幅と深さの等しいランダム回路のうち計算機が実行できる最大のものとして定義し、システムの誤り率と結び付け、いくつかの最先端のトランズモン方式の装置で最大16という測定値を報告しています。プロトコルそのもの、すなわちモデル回路、成功の判定基準、回路の本数、信頼水準は要旨に記載がないため、原論文で確認してください。",
       },
     ],
-    relatedSlugs: ["benchmark-clifford-brickwork-8q", "benchmark-swap-network-8q", "surface-code-memory"],
+    relatedSlugs: ["benchmark-clifford-brickwork-16q", "benchmark-swap-network-16q", "surface-code-memory"],
   },
   {
     slug: "randomized-benchmarking-protocol",
@@ -159,7 +159,7 @@ const CLASSIQ_ALGORITHMS: ClassiqAlgorithm[] = [
           "一次資料です。プロトコルを記述し、誤差の摂動展開から観測される忠実度減衰に対するモデルの列を導き、時間依存およびゲート依存の誤差を許すノイズモデルのもとで平均誤り率の推定が効率的かつ信頼できることを証明したと述べています。プロトコルの具体的な構成、推定が有効であり続けるための条件、数値例については、要旨は後の2つに言及するのみで内容を述べておらず、構成には何も触れていません。コストに関する数値も一切ないため、これらは原論文で確認してください。",
       },
     ],
-    relatedSlugs: ["benchmark-clifford-brickwork-8q", "surface-code-memory", "shor-code-error-correction"],
+    relatedSlugs: ["benchmark-clifford-brickwork-16q", "surface-code-memory", "shor-code-error-correction"],
   },
   {
     slug: "heat-equation-solver",
@@ -849,7 +849,7 @@ const CLASSIQ_ALGORITHMS: ClassiqAlgorithm[] = [
           "一次資料です。教師あり・教師なし手法(OC-SVM を含む)による古典的ベンチマーク、再アップロードを含む量子カーネルのプロトコル、および20量子ビットにおける15%という average precision の分離のシミュレーション結果が述べられています。使用したデータセット、比較された具体的な量子カーネル、回路の構成、20量子ビットを超える結果については要旨に記載がないため、原論文で確認してください。",
       },
     ],
-    relatedSlugs: ["quantum-kernel-svm", "benchmark-phase-feature-map-8q", "option-pricing-amplitude-estimation"],
+    relatedSlugs: ["quantum-kernel-svm", "benchmark-phase-feature-map-16q", "option-pricing-amplitude-estimation"],
   },
   {
     slug: "derivative-pricing-resource-threshold",

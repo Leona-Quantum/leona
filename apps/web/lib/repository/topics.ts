@@ -652,9 +652,11 @@ export function deriveTopics(evidence: TopicEvidence): TopicId[] {
   // labels a repopulation would discard. `parseWidthSlug` is the same predicate
   // `families.ts` folds the browse list with, and it is the definition of the
   // thing: a `-16q` sibling of a `-2q` is published to be measured against.
-  // Measured before adding this — every one of the 120 width-suffixed slugs is a
+  // Measured before adding this — every one of the width-suffixed slugs is a
   // family member and no family member lacks the suffix — so this reclassifies
-  // exactly the eight and touches nothing else.
+  // exactly the family members and touches nothing else. There were 120 of them
+  // at eight widths when this was written; there are 30 at two widths since
+  // 2026-08-16 (ai-ops issue 116), and the rule is indifferent to which.
   //
   // It REPLACES rather than adds, unlike `REFINEMENT_RULES`, because a role is
   // exactly-one and two roles is the same failure as none.

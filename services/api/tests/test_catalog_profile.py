@@ -143,7 +143,14 @@ def test_every_published_entry_either_measures_or_says_why():
     # The session-70 corpus measurement: 120 entries carry a portable circuit.
     # A floor, not an equality, so publishing more entries does not fail the
     # build — the point is that the measuring branch is exercised by real data.
-    assert measured >= 100, f"only {measured} published entries could be measured"
+    # A floor of 100 until 2026-08-16. The entries this can measure are exactly
+    # the ones carrying a portable circuit, which were the 120 width-family
+    # members; the owner's ruling on ai-ops issue 116 cut those to 30, so the
+    # honest floor is 30 rather than a number the corpus can no longer reach.
+    # This is a real reduction in measured coverage, not a relaxed test: the
+    # circuits that stopped being measured are the six interpolated widths per
+    # family, each derivable from the two that remain.
+    assert measured >= 30, f"only {measured} published entries could be measured"
 
 
 def test_the_corpus_profile_matches_the_shape_the_cost_reports():
