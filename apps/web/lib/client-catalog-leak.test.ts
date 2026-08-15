@@ -63,14 +63,46 @@ function isClientModule(source: string): boolean {
   return /^\s*(\/\*[\s\S]*?\*\/\s*)?["']use client["']/.test(head);
 }
 
-/** A value import — `import type { … }` is erased and costs nothing at runtime. */
+function isBarrel(specifier: string): boolean {
+  return /(^|\/)public-repository$/.test(specifier.replace(/\.(ts|tsx|js)$/, ""));
+}
+
+/**
+ * Does this module pull the barrel in at RUNTIME?
+ *
+ * Only `import type …` and `{ type X }` are erased. Everything else emits a
+ * require of the module, whatever the clause looks like — which is the whole
+ * point, because it is the module's evaluation that costs 1.6 MB, not the
+ * binding you took from it.
+ *
+ * The first version of this checked only `{ … }` clauses. Sourcery caught that
+ * on the PR: a namespace import (`import * as repo from …`), a default import,
+ * or a bare side-effect import (`import "…"`) would all have sailed past a
+ * guard whose entire job is to stop them. A test that reports success on the
+ * bug it exists to catch is worse than no test, so the forms are enumerated
+ * here rather than pattern-matched loosely.
+ */
 function valueImportsPublicRepository(source: string): boolean {
-  const importRe = /import\s+(type\s+)?([\s\S]*?)from\s+["']([^"']+)["']/g;
-  for (const [, typeOnly, clause, specifier] of source.matchAll(importRe)) {
-    if (!/(^|\/)public-repository$/.test(specifier.replace(/\.(ts|tsx|js)$/, ""))) continue;
-    if (typeOnly) continue;
-    // `import { type A, type B } from "…"` is also fully erased.
-    const named = clause.slice(clause.indexOf("{") + 1, clause.lastIndexOf("}"));
+  // Bare side-effect import: no clause at all, and it still evaluates the module.
+  for (const [, specifier] of source.matchAll(/^\s*import\s+["']([^"']+)["']/gm)) {
+    if (isBarrel(specifier)) return true;
+  }
+  // Re-export: `export … from "…"` evaluates the module exactly as an import does.
+  for (const [, specifier] of source.matchAll(/^\s*export\s+(?!type\s)[\s\S]*?from\s+["']([^"']+)["']/gm)) {
+    if (isBarrel(specifier)) return true;
+  }
+  for (const match of source.matchAll(/^\s*import\s+(type\s+)?([\s\S]*?)\s*from\s+["']([^"']+)["']/gm)) {
+    const [, typeOnly, clause, specifier] = match;
+    if (!isBarrel(specifier)) continue;
+    if (typeOnly) continue; // `import type { … } from` — erased entirely.
+    const braceStart = clause.indexOf("{");
+    // Default (`import X from`) or namespace (`import * as X from`), alone or
+    // alongside a named clause: any of these emits a runtime require.
+    const beforeBraces = (braceStart === -1 ? clause : clause.slice(0, braceStart)).trim();
+    if (beforeBraces.replace(/,$/, "").trim()) return true;
+    if (braceStart === -1) return true;
+    // Named-only: erased only if EVERY specifier is inline-type.
+    const named = clause.slice(braceStart + 1, clause.lastIndexOf("}"));
     const hasValue = named
       .split(",")
       .map((s) => s.trim())
@@ -96,6 +128,38 @@ test("no client component value-imports the corpus barrel", () => {
     `These "use client" modules value-import lib/public-repository, which ships the whole Atlas catalog to the browser:\n  ${offenders.join("\n  ")}\n` +
       "Import from the leaf instead (./repository/types, ./repository/verification, ./repository/entry-verification), or pass the data down as props from the server.",
   );
+});
+
+test("the detector catches every import form that evaluates the barrel", () => {
+  // A guard that has never been seen to fail has not been shown to work — and
+  // this one shipped with a hole in it (named clauses only) that a reviewer
+  // found, not the suite. These are the forms that hole let through.
+  const leaks = [
+    'import repo from "../lib/public-repository";',
+    'import * as repo from "../lib/public-repository";',
+    'import "../lib/public-repository";',
+    'import repo, { PUBLIC_REPOSITORY_CATEGORIES } from "../lib/public-repository";',
+    'import { entryVerificationMethods } from "../lib/public-repository";',
+    'import { type A, entryVerificationMethods } from "../lib/public-repository";',
+    'export { entryVerificationMethods } from "../lib/public-repository";',
+    'export * from "../lib/public-repository";',
+    'import { PUBLIC_REPOSITORY_CATEGORIES } from "../../lib/public-repository.ts";',
+  ];
+  for (const line of leaks) {
+    assert.ok(valueImportsPublicRepository(line), `should be flagged as a runtime import: ${line}`);
+  }
+
+  const erased = [
+    'import type { PublicRepositoryEntry } from "../lib/public-repository";',
+    'import { type PublicRepositoryEntry, type PublicRepositoryFramework } from "../lib/public-repository";',
+    'export type { PublicRepositoryEntry } from "../lib/public-repository";',
+    // A different module whose name merely ends similarly must not be flagged.
+    'import { loadStarredRepositorySlugs } from "../lib/repository-stars";',
+    'import { entryVerificationMethods } from "../lib/repository/entry-verification";',
+  ];
+  for (const line of erased) {
+    assert.ok(!valueImportsPublicRepository(line), `should NOT be flagged: ${line}`);
+  }
 });
 
 test("the barrel really is the expensive thing this guards", () => {
