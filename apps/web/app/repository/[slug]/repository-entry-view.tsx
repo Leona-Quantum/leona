@@ -2,14 +2,19 @@
 
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { SyntaxHighlightedCode } from "@majorana/ui";
+// Leaves, NOT `lib/public-repository`. This is a `"use client"` component, and
+// that barrel value-imports all nine `entries-*.ts` files — so importing these
+// through it shipped the whole Atlas catalog to anyone opening a single record,
+// a page that already receives the one entry it renders as a prop.
+// `lib/client-catalog-leak.test.ts` fails if this import comes back.
+import { entryVerificationMethods } from "../../../lib/repository/entry-verification";
+import { getPublicRepositoryVariant } from "../../../lib/repository/entry-variant";
 import {
-  entryVerificationMethods,
-  getPublicRepositoryVariant,
   PUBLIC_REPOSITORY_FRAMEWORKS,
   type PublicRepositoryClassicalComparison,
   type PublicRepositoryEntry,
   type PublicRepositoryFramework,
-} from "../../../lib/public-repository";
+} from "../../../lib/repository/types";
 import type { PublicLocale } from "../../../lib/public-locale";
 import { MarkdownContent } from "../../../components/chat-markdown";
 import { StarIcon } from "../../../components/icons";

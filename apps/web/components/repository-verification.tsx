@@ -1,3 +1,8 @@
+// From the leaf, NOT from `lib/public-repository`. That module is a barrel over
+// the corpus — it value-imports every `entries-*.ts` file — so importing these
+// six through it shipped the entire Atlas catalog to the browser. All six are
+// defined here anyway; the barrel only re-exported them. See
+// `lib/repository/entry-verification.ts` for the measurement.
 import {
   VERIFICATION_METHODS,
   VERIFICATION_TIERS,
@@ -5,7 +10,7 @@ import {
   getVerificationTierInfo,
   strongestTier,
   type VerificationMethodId,
-} from "../lib/public-repository";
+} from "../lib/repository/verification";
 import type { PublicLocale } from "../lib/public-locale";
 
 /**

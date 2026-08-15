@@ -21,6 +21,10 @@ import type {
   PublicRepositoryListEntry,
 } from "./repository/types";
 import { strongestTier, type VerificationMethodId, type VerificationTier } from "./repository/verification";
+// Imported as well as re-exported below: `export … from` re-publishes the name
+// without binding it locally, and the list projection here still calls it.
+import { deriveVerificationMethods } from "./repository/entry-verification";
+import { getPublicRepositoryVariant } from "./repository/entry-variant";
 import { deriveTopics } from "./repository/topics";
 import { unknownCoverage } from "./repository/coverage";
 import { ENTRY_ENRICHMENT } from "./repository/enrichment";
@@ -63,6 +67,22 @@ export {
   type VerificationTierInfo,
   type VerificationTone,
 } from "./repository/verification";
+/**
+ * Re-exported, not defined here, since 2026-08-15. These three are pure over the
+ * entry passed to them and never read the corpus — but this module value-imports
+ * every `entries-*.ts` file, so a `"use client"` component importing one of them
+ * from here pulled the whole catalog into the browser bundle. Moving the
+ * definitions to a leaf and keeping the names here means every server-side caller
+ * is untouched while the client can reach the leaf directly. The reasoning, and
+ * the numbers, are in `./repository/entry-verification`.
+ */
+export {
+  deriveVerificationMethods,
+  entryVerificationMethods,
+  entryVerificationTier,
+} from "./repository/entry-verification";
+/** Same split, same reason — see `./repository/entry-variant`. */
+export { getPublicRepositoryVariant } from "./repository/entry-variant";
 
 function replaceLegacyBrand(value: string): string {
   return value
@@ -143,72 +163,6 @@ function normalizePublicRepositoryText(value: unknown): unknown {
   return value;
 }
 
-/**
- * Deterministic classification for entries that predate explicit
- * verificationMethods. The rules key off the entry's own verification prose and
- * provenance; per-slug corrections belong in VERIFICATION_OVERRIDES, not here.
- * scripts/check-repository-data.mjs prints the resulting slug → methods table so
- * the classification stays reviewable.
- */
-function deriveVerificationMethods(entry: PublicRepositoryEntry): VerificationMethodId[] {
-  if (entry.verificationMethods?.length) return entry.verificationMethods;
-  const override = VERIFICATION_OVERRIDES[entry.slug];
-  if (override) return override;
-
-  const text = `${entry.verification} ${entry.verificationDetails.method} ${entry.verificationDetails.result}`.toLowerCase();
-  const methods = new Set<VerificationMethodId>();
-
-  if (entry.status === "community_review" || entry.source.kind === "community_submission") {
-    methods.add("community_submission");
-  }
-  if (/unitary|matrix/.test(text)) methods.add("unitary_equivalence");
-  if (/truth[ -]table|basis[ -]state action|reversible classical/.test(text)) methods.add("truth_table");
-  if (/statevector|state vector|exact state|exact simulation|exact diag|amplitudes match/.test(text)) {
-    methods.add("exact_simulation");
-  }
-  if (/stabilizer/.test(text)) methods.add("stabilizer_simulation");
-  if (/analytic|identity|closed form|derivation/.test(text)) methods.add("direct_math");
-  if (/statistical|counts|tvd|shots|sampled/.test(text)) methods.add("statistical_counts");
-  if (/small[ -]instance|small sizes|tractable size/.test(text)) methods.add("small_instance");
-  if (/sub-block|subblock|module|oracle in isolation/.test(text)) methods.add("subblock");
-  if (/echo|inverse test|uncompute/.test(text)) methods.add("echo_inverse");
-  if (/invariant|contract|conservation|symmetry check|parse/.test(text)) methods.add("invariant_checks");
-  if (/construction|specification|spec-aligned|reference implementation/.test(text)) methods.add("construction");
-  if (entry.source.kind === "verified_run") {
-    methods.add("statistical_counts");
-    methods.add("invariant_checks");
-  }
-  if (entry.literature?.length) methods.add("research_paper");
-  if (!methods.size || (methods.size === 1 && methods.has("community_submission"))) {
-    // Every curated legacy record cites an official spec/vendor source.
-    methods.add("textbook_citation");
-  }
-  return [...methods];
-}
-
-/**
- * Per-slug corrections where the keyword derivation above misreads the prose.
- * Audited against each entry's own verification text on 2026-07-16: "documented"
- * or "reviewed" records must not claim simulation-grade methods, and toy-circuit
- * checks are small-instance evidence, not exact verification.
- */
-const VERIFICATION_OVERRIDES: Record<string, VerificationMethodId[]> = {
-  "ghz-state-pennylane": ["exact_simulation", "invariant_checks"],
-  "grover-unstructured-search": ["small_instance", "construction", "research_paper"],
-  "shor-period-finding": ["community_submission", "construction", "research_paper"],
-  "amplitude-estimation": ["small_instance", "construction", "research_paper"],
-  "vqe-ground-state-energy": ["small_instance", "invariant_checks", "research_paper"],
-  "quantum-phase-estimation": ["small_instance", "construction", "research_paper"],
-  "hhl-linear-systems": ["community_submission", "construction", "research_paper"],
-  "quantum-kernel-svm": ["community_submission", "small_instance", "invariant_checks", "research_paper"],
-  "quantum-teleportation": ["construction", "research_paper"],
-  "shor-code-error-correction": ["construction", "research_paper"],
-  "surface-code-memory": ["community_submission", "construction", "research_paper"],
-  "swap-gate": ["truth_table", "textbook_citation"],
-  "deutsch-jozsa-cirq": ["construction", "textbook_citation"],
-  "bernstein-vazirani-qiskit": ["construction", "textbook_citation"],
-  "superdense-coding-circuit": ["construction", "textbook_citation"],
-};
 
 const ALL_RAW_ENTRIES: PublicRepositoryEntry[] = [
   ...RAW_PUBLIC_REPOSITORY_ENTRIES,
@@ -255,129 +209,11 @@ export const PUBLIC_REPOSITORY_ENTRIES: PublicRepositoryEntry[] = ALL_RAW_ENTRIE
   };
 });
 
-/**
- * Accepts a list entry as well as a full one: the browse cards render the
- * verification badge, and the list projection omits the verificationDetails and
- * source fields deriveVerificationMethods() falls back to.
- *
- * That fallback is unreachable for list entries in practice — verificationMethods
- * is derived for every record before the bootstrap manifest is generated, and every
- * published record carries it — so the narrowing below is a guard, not a code
- * path with a behaviour to preserve. It is written as a type narrowing rather
- * than a cast so that widening the projection later cannot silently reintroduce
- * a call to derive on a record that lacks the fields it reads.
- */
-export function entryVerificationMethods(
-  entry: PublicRepositoryEntry | PublicRepositoryListEntry,
-): VerificationMethodId[] {
-  if (entry.verificationMethods?.length) return entry.verificationMethods;
-  if (!("verificationDetails" in entry)) return [];
-  return deriveVerificationMethods(entry);
-}
-
-export function entryVerificationTier(entry: PublicRepositoryEntry): VerificationTier {
-  return strongestTier(entryVerificationMethods(entry));
-}
 
 export function getPublicRepositoryEntry(slug: string): PublicRepositoryEntry | undefined {
   return PUBLIC_REPOSITORY_ENTRIES.find((entry) => entry.slug === slug);
 }
 
-// FULL entries only, and the signature says so now.
-//
-// It used to read `PublicRepositoryEntry | PublicRepositoryListEntry`, with a
-// comment explaining that the union existed "so the browse list's framework
-// filter can call it with a projected list entry". **There is no framework
-// filter** — it was removed as a control that still kept two thirds of the
-// catalogue at its most aggressive setting — and the union had quietly become
-// false besides: this function reads a variant's `code` and a circuit's
-// `steps`, and the list projection sends neither. A list entry passed here
-// would have produced an empty conversion rather than an error.
-//
-// Every real caller already passes a full record: the detail view, the export
-// route, and getPublicRepositoryLibraryVariant below. Narrowing the type is how
-// that stays true.
-export function getPublicRepositoryVariant(
-  entry: PublicRepositoryEntry,
-  framework: PublicRepositoryFramework,
-): PublicRepositoryCodeVariant {
-  const nativeVariant = entry.codeVariants.find((variant) => variant.framework === framework);
-  if (nativeVariant?.code) return nativeVariant;
-
-  const target = circuitFramework(framework);
-  const portable = entry.portableCircuit ?? inferPortableCircuit(entry);
-  if (portable) {
-    const code = generatePortableCircuitCode(portable)[target.key];
-    return {
-      framework,
-      status: "conversion",
-      language: target.language,
-      filename: `${entry.slug}.${target.extension}`,
-      code,
-      note: "Deterministic Leona Quantum conversion from the bounded portable gate model. Gate order, parameters, qubit indices, and terminal all-qubit measurement are preserved; review target-SDK and hardware decomposition before execution.",
-    };
-  }
-
-  const qasmVariant = entry.codeVariants.find((variant) => (
-    variant.framework === "OpenQASM 3.0" && looksLikeOpenQasm3(variant.code)
-  ));
-  const sourceVariant = entry.codeVariants.find((variant) => variant.status === "native" && Boolean(variant.code));
-  if (sourceVariant && qasmVariant) {
-    const conversion = convertCircuitSource(
-      sourceVariant.code,
-      circuitFramework(sourceVariant.framework).key,
-      target.key,
-      qasmVariant.code,
-    );
-    if (conversion) {
-      return {
-        framework,
-        status: "conversion",
-        language: target.language,
-        filename: `${entry.slug}.${target.extension}`,
-        code: conversion.code,
-        note: conversion.note,
-      };
-    }
-  }
-
-  if (sourceVariant?.code) {
-    return {
-      framework,
-      status: "source",
-      language: sourceVariant.language,
-      filename: sourceVariant.filename,
-      code: sourceVariant.code,
-      note: `No safe direct ${framework} conversion is available for this reference. Showing the stored ${sourceVariant.framework} source instead of an executable-looking conversion recipe.`,
-    };
-  }
-
-  return {
-    framework,
-    status: "unsupported",
-    language: framework === "OpenQASM 3.0" ? "openqasm" : "python",
-    filename: `${entry.slug}-not-a-concrete-circuit.txt`,
-    code: "",
-    note: `This record does not expose source code, so a ${framework} circuit would be speculative.`,
-  };
-}
-
-function inferPortableCircuit(entry: PublicRepositoryEntry): PortableCircuit | null {
-  for (const variant of entry.codeVariants) {
-    if (variant.status !== "native" || !variant.code) continue;
-    const parsed = parseCircuitSource(variant.code, circuitFramework(variant.framework).key);
-    if (!parsed) continue;
-    return {
-      qubitCount: parsed.qubitCount,
-      steps: parsed.steps
-        .filter((step) => step.gate !== "M" && step.gate !== "CUSTOM")
-        .map((step) => ({ gate: step.gate as PortableCircuitGate, qubits: step.qubits, ...(step.param ? { param: step.param } : {}) })),
-      measure: parsed.steps.some((step) => step.gate === "M"),
-    };
-  }
-
-  return null;
-}
 
 const PERSONAL_LIBRARY_FRAMEWORKS: PublicRepositoryFramework[] = ["Qiskit", "PennyLane", "Cirq"];
 
