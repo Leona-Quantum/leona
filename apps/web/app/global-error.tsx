@@ -52,37 +52,44 @@ export default function GlobalError({
           padding: "2rem",
         }}
       >
-        <main style={{ maxWidth: "34rem" }} role="alert">
-          <p style={{ fontSize: "0.8125rem", letterSpacing: "0.08em", textTransform: "uppercase", opacity: 0.6 }}>
-            Leona Quantum
-          </p>
-          <h1 style={{ fontSize: "1.75rem", fontWeight: 600, margin: "0.5rem 0 1rem" }}>
-            Something went wrong.
-          </h1>
-          <p style={{ margin: "0 0 1.5rem" }}>
-            Nothing was saved or changed. Reloading usually clears it; if it does not, the site itself
-            is having trouble and we are already being told.
-          </p>
-          <button
-            type="button"
-            onClick={reset}
-            style={{
-              font: "inherit",
-              padding: "0.625rem 1.25rem",
-              border: "1px solid CanvasText",
-              borderRadius: "0.5rem",
-              background: "transparent",
-              color: "inherit",
-              cursor: "pointer",
-            }}
-          >
-            Try again
-          </button>
-          {error.digest ? (
-            <p style={{ fontSize: "0.8125rem", opacity: 0.6, marginTop: "1.5rem" }}>
-              Reference: {error.digest}
+        {/* `role="alert"` sits on the inner element, not on `<main>`. Putting it
+            on the landmark REPLACES the implicit `main` role rather than adding
+            to it, so a screen-reader user loses the one landmark on a page that
+            has nothing else to navigate by. The nested element keeps both: the
+            landmark, and the live announcement. */}
+        <main style={{ maxWidth: "34rem" }}>
+          <div role="alert">
+            <p style={{ fontSize: "0.8125rem", letterSpacing: "0.08em", textTransform: "uppercase", opacity: 0.6 }}>
+              Leona Quantum
             </p>
-          ) : null}
+            <h1 style={{ fontSize: "1.75rem", fontWeight: 600, margin: "0.5rem 0 1rem" }}>
+              Something went wrong.
+            </h1>
+            <p style={{ margin: "0 0 1.5rem" }}>
+              Nothing was saved or changed. Reloading usually clears it; if it does not, the site itself
+              is having trouble and we are already being told.
+            </p>
+            <button
+              type="button"
+              onClick={reset}
+              style={{
+                font: "inherit",
+                padding: "0.625rem 1.25rem",
+                border: "1px solid CanvasText",
+                borderRadius: "0.5rem",
+                background: "transparent",
+                color: "inherit",
+                cursor: "pointer",
+              }}
+            >
+              Try again
+            </button>
+            {error.digest ? (
+              <p style={{ fontSize: "0.8125rem", opacity: 0.6, marginTop: "1.5rem" }}>
+                Reference: {error.digest}
+              </p>
+            ) : null}
+          </div>
         </main>
       </body>
     </html>
