@@ -13,10 +13,18 @@
  * replaying however many frames it missed.
  */
 
-const TYPE_MS_PER_CHARACTER = 55;
-const DELETE_MS_PER_CHARACTER = 22;
-const HOLD_MS = 2200;
-const GAP_MS = 420;
+// Retiming, owner ai-ops 108: "typing out to occur faster, pause a bit, then
+// quick deletion, very short pause before next one gets written out." Exported
+// so the timing lives in exactly one place — the test file pins the values
+// below and derives every boundary in this file from these constants, rather
+// than repeating the numbers, so a retune here cannot silently drift out of
+// sync with what the tests assert.
+export const TYPE_MS_PER_CHARACTER = 30; // was 55 — faster type-out
+export const DELETE_MS_PER_CHARACTER = 12; // was 22 — quick deletion, 2.5x the typing speed
+export const HOLD_MS = 1400; // was 2200 — a shorter but still readable pause on the finished sentence
+export const GAP_MS = 140; // was 420 — a very short pause before the next prompt starts
+
+export type GhostPhase = "typing" | "holding" | "deleting" | "gap";
 
 export interface GhostFrame {
   /** The characters to show as the placeholder right now. */
@@ -25,6 +33,15 @@ export interface GhostFrame {
   suggestion: string;
   /** Which suggestion this is, for keys and tests. */
   index: number;
+  /**
+   * Where in the cycle this frame falls. A caller renders a blinking caret
+   * during `"typing"` and `"deleting"` only (owner, ai-ops 108) — `"holding"`
+   * shows the finished sentence sitting still, and `"gap"` is the empty pause
+   * between prompts, which must render as nothing rather than a fallback
+   * string (that fallback *was* the "text that appears in between each
+   * rotation" the owner asked to have removed).
+   */
+  phase: GhostPhase;
 }
 
 function cycleMs(suggestion: string): number {
@@ -58,15 +75,15 @@ export function ghostFrame(elapsedMs: number, suggestions: readonly string[]): G
     const holding = typing + HOLD_MS;
     const deleting = holding + suggestion.length * DELETE_MS_PER_CHARACTER;
     if (offset < typing) {
-      return { text: suggestion.slice(0, Math.floor(offset / TYPE_MS_PER_CHARACTER)), suggestion, index };
+      return { text: suggestion.slice(0, Math.floor(offset / TYPE_MS_PER_CHARACTER)), suggestion, index, phase: "typing" };
     }
-    if (offset < holding) return { text: suggestion, suggestion, index };
+    if (offset < holding) return { text: suggestion, suggestion, index, phase: "holding" };
     if (offset < deleting) {
       const deleted = Math.floor((offset - holding) / DELETE_MS_PER_CHARACTER);
-      return { text: suggestion.slice(0, Math.max(0, suggestion.length - deleted)), suggestion, index };
+      return { text: suggestion.slice(0, Math.max(0, suggestion.length - deleted)), suggestion, index, phase: "deleting" };
     }
-    return { text: "", suggestion, index };
+    return { text: "", suggestion, index, phase: "gap" };
   }
   // Unreachable: `offset` is reduced modulo the sum of every span above.
-  return { text: "", suggestion: usable[0], index: 0 };
+  return { text: "", suggestion: usable[0], index: 0, phase: "gap" };
 }
