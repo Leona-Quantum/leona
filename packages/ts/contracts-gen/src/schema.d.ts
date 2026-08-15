@@ -524,10 +524,20 @@ export interface components {
         };
         /** ChatCompleted */
         ChatCompleted: {
+            /**
+             * Allow Ai Assumptions Available
+             * @default false
+             */
+            allow_ai_assumptions_available: boolean;
             /** Duration Ms */
             duration_ms: number;
             /** Input Tokens */
             input_tokens: number;
+            /**
+             * Missing Inputs
+             * @default null
+             */
+            missing_inputs: string[] | null;
             /** Model */
             model: string;
             /** Output Tokens */
