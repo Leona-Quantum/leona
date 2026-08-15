@@ -211,7 +211,36 @@
     white-space: nowrap;
   }
 }
-@media (max-width: 1120px) {
+/* 1400px, not 1120px, and the gaps now tighten BEFORE the theme toggle's words
+   are hidden — both corrections come from measuring the live signed-in Japanese
+   header rather than from re-reasoning about it.
+
+   What was wrong: this ladder started below the width where the header actually
+   runs out of room, so there was a band of roughly 1281-1386px where nothing
+   in it applied and the header simply wrapped. The `mj-public-nav-primary`
+   button ("ワークスペースを開く") fell to a second row and landed flush LEFT,
+   under the brand, because it is the only item on that row and the nav's
+   `margin-left: auto` no longer has anything to push against. The header
+   doubles from 64px to 128px and the button reads as a rendering fault rather
+   than a layout choice.
+
+   Measured on production at a 1318px viewport, signed in, `lang="ja"`:
+   the header's six children total 1100px of content, its five gaps add
+   5 x 24px = 120px, so the row needs 1220px inside a header box that is
+   viewport - 166px wide. That puts the wrap at about 1386px, which is why
+   1280px never caught it.
+
+   Why the order is inverted from the comment above: hiding the theme toggle's
+   words was measured to recover only 40px (145px -> 105px) against a 68px
+   shortfall at 1318px, so it does not fix the band on its own — applying it
+   first would have left the header wrapped anyway. Tightening the gaps and the
+   nav's padding does fix it (header height 128px -> 72px, one row), and it
+   costs whitespace rather than a word. So gaps go first now.
+
+   Signed-out Japanese is unaffected: it carries one "サインイン" in place of
+   "サインアウト" plus "ワークスペースを開く", which is ~140px narrower and fits. This
+   is a signed-in-only defect, which is exactly the visitor who is paying. */
+@media (max-width: 1400px) {
   :lang(ja) .mj-public-header {
     gap: var(--sp-3);
   }
