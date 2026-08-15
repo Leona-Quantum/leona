@@ -51,6 +51,18 @@ test("connect-src names the Sentry ingest origin, or the browser SDK reports not
   assert.match(withSentry, /object-src 'none';/);
 });
 
+test("a mis-set DSN cannot widen connect-src to an arbitrary host", () => {
+  // Each of these parses as a URL, so the only thing stopping it becoming an
+  // allowed exfiltration target is the scheme and host check.
+  assert.equal(errorReportingOrigin("https://key@evil.example.com/1"), null);
+  assert.equal(errorReportingOrigin("http://key@o1.ingest.us.sentry.io/1"), null);
+  assert.equal(errorReportingOrigin("https://key@notsentry.io/1"), null);
+  assert.equal(errorReportingOrigin("https://key@sentry.io.evil.com/1"), null);
+  // …and the shapes that must still work.
+  assert.equal(errorReportingOrigin(DSN), "https://o4511708586901504.ingest.us.sentry.io");
+  assert.equal(errorReportingOrigin("https://k@sentry.io/1"), "https://sentry.io");
+});
+
 test("no DSN adds no host, and a malformed DSN does not fail the build", () => {
   assert.equal(errorReportingOrigin(undefined), null);
   assert.equal(errorReportingOrigin(""), null);

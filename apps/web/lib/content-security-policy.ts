@@ -55,11 +55,25 @@ export function contentSecurityPolicy({
  * only its origin belongs in a CSP, never the key. Returns null rather than
  * throwing on a malformed value, because a bad DSN must not fail the build —
  * the SDK itself is already env-gated the same way.
+ *
+ * The origin must be `https:` and a `sentry.io` host. Without that check this
+ * function turns a mis-set environment variable into a CSP hole: whatever host
+ * someone typed becomes an allowed `connect-src` target, which is the exact
+ * exfiltration path the directive exists to close. Narrowing here is safe in
+ * the direction that matters — a rejected DSN loses error reporting, it does
+ * not widen the policy.
+ *
+ * If Sentry is ever self-hosted, this is the line to widen, and it will fail
+ * closed and silently until someone does. Raised by Sourcery on PR #628.
  */
 export function errorReportingOrigin(dsn: string | undefined): string | null {
   if (!dsn) return null;
   try {
-    return new URL(dsn).origin;
+    const url = new URL(dsn);
+    const host = url.hostname;
+    if (url.protocol !== "https:") return null;
+    if (host !== "sentry.io" && !host.endsWith(".sentry.io")) return null;
+    return url.origin;
   } catch {
     return null;
   }
