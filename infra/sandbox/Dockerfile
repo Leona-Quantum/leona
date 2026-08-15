@@ -20,7 +20,31 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PIP_DISABLE_PIP_VERSION_CHECK=1
 
+# Two HIGH findings that `container_scan` (trivy, HIGH+CRITICAL) reports against
+# this image, both in packages nothing here asks for directly — one ships with the
+# base image, one arrives transitively:
+#
+#   setuptools 70.3.0  CVE-2025-47273        path traversal        fixed in 78.1.1
+#   msgpack    1.1.2   GHSA-6v7p-g79w-8964   OOB read / crash      fixed in 1.2.1
+#
+# They matter more here than the severities alone suggest. This image is the root
+# filesystem in which *generated, unreviewed* code executes, so its dependency
+# surface is reachable by an attacker who can influence what the model writes — a
+# path traversal in a package that generated code can `import` is a boundary
+# problem, not a housekeeping one.
+#
+# Pinned to the fixed versions rather than left to float, because everything else
+# in this file is exact-pinned for the same reason: production sandboxes are
+# created with the deny-all network policy and cannot install anything at runtime,
+# so what is baked in here is the whole world the code gets.
+#
+# Worth knowing when this next changes: the scan passed on 2026-08-14 and failed on
+# 2026-08-15 against a base-image digest refresh that touched nothing else. Trivy's
+# vulnerability database updates daily, so a scan going red without the Dockerfile
+# changing usually means the database learned something, not that the image did.
 RUN python -m pip install --no-cache-dir --only-binary=:all: \
+    "setuptools==78.1.1" \
+    "msgpack==1.2.1" \
     "qiskit==2.5.0" \
     "qiskit-aer==0.17.2" \
     "pennylane==0.43.1" \
