@@ -1133,6 +1133,21 @@ export function RepositoryBrowser({
               search is not twelve history entries and Back still leaves the
               page. */}
           <input
+            // `id` and `name`, because a form field with neither is what Chrome
+            // reports as an issue on every load of this page — found by reading
+            // the production console rather than the code (ai-ops issue 116 item
+            // 8, which had been reported UNTESTED because the older browser
+            // tooling returned no console output at all).
+            //
+            // The accessible name was never the problem: the wrapping <label>
+            // already supplies it. What was missing is the pair that lets the
+            // browser treat this as a field — autofill, restore-on-back, and
+            // password-manager heuristics all key off them. `name="q"` matches
+            // the `?q=` parameter the box writes to the address bar, so the two
+            // names for one thing agree. There is no <form> on this page, so
+            // `name` changes no submission behaviour.
+            id="repository-search"
+            name="q"
             value={query}
             onChange={(event) => {
               const next = event.target.value;
