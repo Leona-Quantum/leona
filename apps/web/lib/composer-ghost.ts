@@ -87,3 +87,40 @@ export function ghostFrame(elapsedMs: number, suggestions: readonly string[]): G
   // Unreachable: `offset` is reduced modulo the sum of every span above.
   return { text: "", suggestion: usable[0], index: 0, phase: "gap" };
 }
+
+/**
+ * The frame a composer should actually draw, or `null` for "draw nothing".
+ *
+ * This exists because both composers used to decide that for themselves and
+ * they decided it differently. The workspace refused to render once the field
+ * had a value; the landing page only stopped its *clock*, which freezes
+ * `elapsedMs` without unmounting anything — so a half-typed example stayed
+ * painted in the box and the visitor's own words rendered on top of it (owner,
+ * ai-ops 112). Two call sites, one rule, and the rule now has one home.
+ *
+ * `typedValue` is the field's current contents rather than a boolean so a
+ * caller cannot pass the wrong polarity, and whitespace counts as typed — a
+ * visitor holding down the space bar is still using the box.
+ */
+export function composerGhost({
+  elapsedMs,
+  suggestions,
+  typedValue,
+  reduceMotion,
+}: {
+  elapsedMs: number;
+  suggestions: readonly string[] | undefined;
+  typedValue: string;
+  reduceMotion: boolean;
+}): GhostFrame | null {
+  if (!suggestions?.length) return null;
+  if (typedValue.length > 0) return null;
+  if (reduceMotion) {
+    // The whole prompt sitting still rather than an empty box, `phase:
+    // "holding"` so `ComposerGhostOverlay` never draws a caret here — no blink
+    // and no typing effect for a reader who asked for less motion (ai-ops 108).
+    const frame = ghostFrame(0, suggestions);
+    return frame ? { ...frame, text: frame.suggestion, phase: "holding" } : null;
+  }
+  return ghostFrame(elapsedMs, suggestions);
+}

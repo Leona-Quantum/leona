@@ -88,6 +88,13 @@ export const DEVICE_STORAGE_KEYS = [
   // that on their desktop. Carries no titles, prompts or private content.
   "majorana.recents-position.v1",
   "majorana.public-repository-stars.v1",
+  // The landing-page prompt being carried through sign-in (ai-ops 102). Written
+  // by a signed-OUT visitor on a prerendered page, so there is no account scope
+  // in existence to write it under — device-level is the only classification
+  // available, not a preference. It is a one-shot with a 30-minute TTL and it
+  // holds only the visitor's own typed words; see lib/landing-prompt-handoff.ts
+  // for why it is localStorage rather than sessionStorage and what that costs.
+  "majorana.landing-prompt-handoff.v1",
 ] as const;
 
 /** Records the scope that adopted the pre-scoping (unscoped) data, once. */
