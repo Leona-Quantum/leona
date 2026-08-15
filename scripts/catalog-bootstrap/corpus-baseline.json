@@ -21,7 +21,7 @@
     "asian-option-pricing-karhunen-loeve",
     "bell-state-qiskit",
     "benchmark-bell-pair-ladder-16q",
-    "benchmark-bell-pair-ladder-2q",
+    "benchmark-bell-pair-ladder-4q",
     "benchmark-bernstein-vazirani-16q",
     "benchmark-bernstein-vazirani-3q",
     "benchmark-clifford-brickwork-16q",
