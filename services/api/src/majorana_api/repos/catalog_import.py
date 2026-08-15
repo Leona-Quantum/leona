@@ -338,6 +338,24 @@ async def _advance_item(
         existing = await catalog.find_staged_artifact_by_upstream_identity(
             scope, session, authority=authority, upstream_identity=item.upstream_identity
         )
+        # A withdrawn record is not an absent one. `retire-bootstrap` soft-deletes,
+        # and the resolver above filters `deleted_at IS NULL`, so a withdrawn
+        # identity reads as absent and the create path below collides with the
+        # withdrawn row's own version on the table-wide unique
+        # `normalized_source_hash` — `duplicate_source`, the record rejected for
+        # being itself. That is a fourth reconciliation case, and it is REVIVE.
+        #
+        # Not hypothetical: the Bell-pair ladder's floor moved 2q -> 4q on
+        # 2026-08-16 (ai-ops issue 124), `-4q` had been withdrawn an hour before
+        # as one of 90, and the deploy failed with `accepted=278 rejected=1`.
+        # Retirement without revival is a one-way door.
+        if existing is None:
+            existing = await catalog.revive_withdrawn_artifact(
+                scope,
+                session,
+                authority=authority,
+                upstream_identity=item.upstream_identity,
+            )
         incoming_hash = hash_normalized_source(normalized)
 
         try:
