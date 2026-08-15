@@ -1,9 +1,10 @@
 # Runbook: rebuilding and publishing the `majorana-runner` sandbox image
 
 `infra/sandbox/Dockerfile` is the root filesystem that untrusted, LLM-generated
-quantum code executes in. **Nothing publishes it automatically** — `sandbox-image.yml`
-builds and exercises it on every PR that touches it, and publishes only when a human
-dispatches the workflow, to a dated tag. Until 2026-08-06 the procedure existed
+quantum code executes in. **Nothing publishes it automatically, and nothing in CI
+publishes it at all** — `sandbox-image.yml` builds and exercises it on every PR that
+touches it and rebuilds-and-scans it weekly, but the push comes from a laptop, by
+step 1 below. Until 2026-08-06 the procedure existed
 nowhere at all: the only trace in the repo was a comment in
 `packages/py/sandbox/src/majorana_sandbox/vercel.py` saying the image is
 "built + scanned weekly". This file is that procedure.
@@ -187,8 +188,18 @@ There is now a CI job that **builds the image and exercises it**
 imports all six frameworks and runs a Bell pair on each, with `--network none` so a
 package missing from the rootfs fails there rather than in a deny-all sandbox. So a
 Dockerfile that cannot build — or that builds and cannot run a circuit — fails the PR
-instead of failing in production a day later. Publishing stays manual and stays behind
-`workflow_dispatch`: `latest` is the live sandbox rootfs for
+instead of failing in production a day later. Publishing stays manual and stays in this
+runbook: `latest` is the live sandbox rootfs for
 untrusted code, an automatic push on merge would move it before anyone verified
 it, and step 4 above — run a circuit, do not just import — is not a step a merge
 event can decide is unnecessary.
+
+**There was a `publish` job here until 2026-08-16, and it had never worked.** It read
+`VERCEL_TOKEN` and `VERCEL_TEAM_ID` from repository secrets that were never set, so
+`docker login` ran with empty values and died on `Must provide --username with
+--password-stdin` — an error that never names a secret. Nothing noticed because
+nothing ever dispatched it; the only run in the repo's history is the one that found
+it. Deleted rather than fixed (owner ruling, ai-ops#118): step 1's
+`vercel vcr login docker` mints a short-lived OIDC token on demand, which is a
+better credential than a long-lived registry token living in CI, and a second
+route to moving `latest` is a liability rather than a convenience.

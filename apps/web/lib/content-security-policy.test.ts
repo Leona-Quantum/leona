@@ -14,11 +14,13 @@ test("development permits React's debugging eval without weakening production", 
     controlPlane: "http://localhost:8000",
     development: true,
     errorReporting: null,
+    vercelToolbar: false,
   });
   const production = contentSecurityPolicy({
     controlPlane: "https://api.example.test",
     development: false,
     errorReporting: null,
+    vercelToolbar: false,
   });
 
   assert.match(development, /script-src 'self' 'unsafe-inline' 'unsafe-eval'/);
@@ -35,6 +37,7 @@ test("connect-src names the Sentry ingest origin, or the browser SDK reports not
     controlPlane: "https://api.example.test",
     development: false,
     errorReporting: origin,
+    vercelToolbar: false,
   });
 
   // The failing arm: without this the browser refuses every envelope POST with
@@ -72,7 +75,45 @@ test("no DSN adds no host, and a malformed DSN does not fail the build", () => {
     controlPlane: "https://api.example.test",
     development: false,
     errorReporting: errorReportingOrigin(undefined),
+    vercelToolbar: false,
   });
   assert.match(withoutSentry, /connect-src 'self' https:\/\/api\.example\.test;/);
   assert.doesNotMatch(withoutSentry, /sentry\.io/);
+});
+
+test("the Vercel Toolbar's six origins reach preview and never production", () => {
+  const base = { controlPlane: "https://api.example.test", development: false, errorReporting: null };
+  const preview = contentSecurityPolicy({ ...base, vercelToolbar: true });
+  const production = contentSecurityPolicy({ ...base, vercelToolbar: false });
+
+  // Preview gets every directive the toolbar documents. Anything short of all
+  // six and the toolbar half-loads, which is worse than declining it outright:
+  // the console fills with a *different* violation and the feature still fails.
+  assert.match(preview, /script-src [^;]*https:\/\/vercel\.live/);
+  assert.match(preview, /connect-src [^;]*https:\/\/vercel\.live wss:\/\/ws-us3\.pusher\.com/);
+  assert.match(preview, /img-src [^;]*https:\/\/vercel\.live https:\/\/vercel\.com/);
+  assert.match(preview, /font-src [^;]*https:\/\/vercel\.live https:\/\/assets\.vercel\.com/);
+  assert.match(preview, /style-src [^;]*https:\/\/vercel\.live/);
+  assert.match(preview, /frame-src https:\/\/vercel\.live/);
+
+  // The one that actually matters. `vercel.live` must not appear anywhere in the
+  // production policy — not in one directive, not in six. This is the assertion
+  // that fails if someone later "fixes" the owner's console message by widening
+  // production instead of clearing the cookie that triggers it.
+  assert.doesNotMatch(production, /vercel\.live/);
+  assert.doesNotMatch(production, /pusher\.com/);
+  assert.doesNotMatch(production, /frame-src/);
+
+  // Production is byte-identical to the policy that shipped before the toolbar
+  // parameter existed — the widening is additive or it is a regression.
+  assert.equal(
+    production,
+    "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; " +
+      "img-src 'self' data: blob:; font-src 'self' data:; " +
+      "connect-src 'self' https://api.example.test; object-src 'none'; base-uri 'self'; " +
+      "form-action 'self'; frame-ancestors 'none'; upgrade-insecure-requests",
+  );
+
+  // Clickjacking protection is not a thing the toolbar gets to relax.
+  assert.match(preview, /frame-ancestors 'none'/);
 });

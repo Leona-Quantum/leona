@@ -2,9 +2,43 @@ export function contentSecurityPolicy({
   controlPlane,
   development,
   errorReporting,
+  vercelToolbar,
 }: {
   controlPlane: string;
   development: boolean;
+  /**
+   * Whether to admit the Vercel Toolbar's six origins. True on preview
+   * deployments, false on production.
+   *
+   * Next bundles a loader for the toolbar into the client on every deployment,
+   * production included. It is gated on a cookie, so it is inert for a visitor:
+   *
+   *     if (/(?:^|;\s)__vercel_toolbar=1(?:;|$)/.test(document.cookie)) { ... }
+   *
+   * For anyone holding `__vercel_toolbar=1` it appends a `vercel.live` script
+   * tag, this policy refuses it, and the refusal is logged on every page. That
+   * is what the owner was seeing on production and reported as a site bug
+   * (ai-ops issue 116 — numbered without a hash on purpose, because
+   * `check-raw-hex` reads a three-digit hash-number as a CSS colour and fails
+   * lint on it). It is not one — an anonymous load of leonaqt.com requests no
+   * `vercel.live` at all, checked before this was written — but a console that
+   * cries wolf on every navigation is how a real error goes unread.
+   *
+   * The toolbar needs SIX directives widened, not one: `script-src`,
+   * `connect-src` (including a `wss://` to Pusher), `img-src`, `frame-src`,
+   * `style-src` and `font-src`. That is the whole reason this is keyed on the
+   * environment rather than granted everywhere. On a preview deployment the
+   * toolbar is the point — it is how a change gets commented on before it
+   * ships — and the blast radius is a URL nobody but us opens. On production it
+   * would buy one developer a convenience in exchange for letting a third-party
+   * origin execute script, frame, and open a socket on the page every visitor
+   * loads. `frame-ancestors 'none'` is untouched either way.
+   *
+   * Production consequence, stated so it is not a surprise: the toolbar cannot
+   * work on leonaqt.com under this policy. Clearing the `__vercel_toolbar=1`
+   * cookie for the domain silences the message at the source.
+   */
+  vercelToolbar: boolean;
   /**
    * The Sentry ingest origin, or null when no DSN is configured.
    *
@@ -23,23 +57,32 @@ export function contentSecurityPolicy({
   errorReporting: string | null;
 }): string {
   const controlPlaneIsHttp = controlPlane.startsWith("http://");
+  // Exactly the origins vercel.com/docs/vercel-toolbar/managing-toolbar lists,
+  // per directive. Empty on production, which is what keeps the arrays below
+  // byte-identical to the policy that shipped before this parameter existed.
+  const toolbar = (...origins: string[]) => (vercelToolbar ? origins : []);
   const scriptSources = [
     "'self'",
     "'unsafe-inline'",
     ...(development ? ["'unsafe-eval'"] : []),
+    ...toolbar("https://vercel.live"),
   ];
   const connectSources = [
     "'self'",
     controlPlane,
     ...(errorReporting ? [errorReporting] : []),
+    ...toolbar("https://vercel.live", "wss://ws-us3.pusher.com"),
   ];
   return [
     "default-src 'self'",
     `script-src ${scriptSources.join(" ")}`,
-    "style-src 'self' 'unsafe-inline'",
-    "img-src 'self' data: blob:",
-    "font-src 'self' data:",
+    `style-src ${["'self'", "'unsafe-inline'", ...toolbar("https://vercel.live")].join(" ")}`,
+    `img-src ${["'self'", "data:", "blob:", ...toolbar("https://vercel.live", "https://vercel.com")].join(" ")}`,
+    `font-src ${["'self'", "data:", ...toolbar("https://vercel.live", "https://assets.vercel.com")].join(" ")}`,
     `connect-src ${connectSources.join(" ")}`,
+    // Only ever emitted for the toolbar. Absent on production, where `frame-src`
+    // falls back to `default-src 'self'` exactly as it did before.
+    ...toolbar("frame-src https://vercel.live"),
     "object-src 'none'",
     "base-uri 'self'",
     "form-action 'self'",
