@@ -4,7 +4,7 @@ Leona Quantum is an open quantum workbench that turns a natural-language questio
 copyable code, a measured result, and an evidence-backed artifact. Run owns the
 pipeline, and Studio edits verified versions and keeps the provenance.
 
-Public product page: `https://web-majoranaq.vercel.app/open-source`
+Public product page: `https://leonaqt.com/workspace`
 
 ## Architecture
 
