@@ -65,7 +65,7 @@ jobs:
       # gcloud reads it as "clear this setting" and ships a revision nobody sized.
       - name: load fleet sizing
         run: |
-          for key in WORKER_INSTANCES WORKER_POOL_SIZE WORKER_MAX_OVERFLOW API_MAX_INSTANCES API_CPU API_MEMORY_MI API_CONCURRENCY; do
+          for key in WORKER_INSTANCES WORKER_POOL_SIZE WORKER_MAX_OVERFLOW API_MAX_INSTANCES API_CPU API_MEMORY_MI API_CONCURRENCY API_REQUEST_TIMEOUT_S; do
             grep -qE "^${key}=[0-9]+$" infra/fleet.env || {
               echo "::error::${key} is missing from infra/fleet.env or is not a plain integer"
               exit 1
@@ -246,13 +246,23 @@ jobs:
           # the previous revision had, and the real numbers lived only in
           # whichever manual `gcloud` invocation last touched the service.
           # Pinned here from the live values read via `gcloud run services
-          # describe majorana-api`: 1 vCPU, 512Mi, concurrency 80 — see
+          # describe majorana-api`: 1 vCPU, 512Mi, concurrency 16 — see
           # infra/fleet.env for the per-key reasoning.
           #
           # --min-instances is deliberately still absent. Production scales to
           # zero today — no min-instances has ever been set on this service —
           # and this is a pin-what's-live change, not a behaviour change; see
           # the PR that introduced this comment for a minScale recommendation.
+          #
+          # --timeout was ALSO undeclared, and unlike the others its silent
+          # default was wrong rather than merely unstated: 300s against an
+          # application that believes it has SSE_MAX_DURATION_S = 3600, so a run
+          # stream died at five minutes with no message from the app. The value
+          # is derived in infra/fleet.env from the run cap (`timeout_s` is
+          # Field(le=600)) and the site-wide admission slots. The slot count is
+          # deliberately NOT repeated here: it is API_CONCURRENCY x
+          # API_MAX_INSTANCES, and it already went stale once while this change
+          # sat unlanded (API_MAX_INSTANCES moved 2 -> 4). One home for it.
           #
           # --cpu-boost is the last piece of this service's per-instance shape
           # that was live and undeclared: `run.googleapis.com/startup-cpu-boost:
@@ -300,6 +310,7 @@ jobs:
             --set-cloudsql-instances "$CLOUDSQL_INSTANCE" \
             --max-instances "$API_MAX_INSTANCES" \
             --cpu "$API_CPU" --memory "${API_MEMORY_MI}Mi" --concurrency "$API_CONCURRENCY" \
+            --timeout "$API_REQUEST_TIMEOUT_S" \
             --cpu-boost \
             --update-env-vars "MAJORANA_SERVICE=api,MAJORANA_ENV=production,MAJORANA_RELEASE=${{ steps.tag.outputs.tag }}" \
             --remove-env-vars SENTRY_DSN \
