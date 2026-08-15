@@ -75,3 +75,83 @@ def test_the_rule_does_not_mutate_what_it_is_given():
     orphaned_identities(published, {"a"})
 
     assert published == before
+
+
+def test_the_orphan_lookup_is_made_with_the_importer_scope_not_the_reviewer_one():
+    """The bug this file did not catch the first time.
+
+    `list_public_upstream_identities` resolves its workspace through
+    `get_importer_workspace`, which admits ONLY the configured importer user at
+    `Role.OWNER`. The first version of `_orphaned_identities` handed it the ADMIN
+    reviewer scope it had built for the soft delete, which fails
+    `is_importer_scope` and raises `AuthzError` before a single row is read — so
+    every `sync-bootstrap` report and every `retire-bootstrap` run would have
+    failed outright, in production, on the first call.
+
+    Five green tests of `orphaned_identities` said nothing about it, because the
+    rule was right and the call was wrong. This asserts the call: whatever scope
+    reaches the lookup must satisfy the same predicate the lookup checks.
+    """
+    import asyncio
+    import uuid as _uuid
+
+    from majorana_api import catalog_admin as admin
+    from majorana_api.catalog_authority import CatalogAuthority
+
+    fake = CatalogAuthority(
+        enabled=True,
+        workspace_id=_uuid.uuid4(),
+        importer_user_id=_uuid.uuid4(),
+        public_reader_user_id=_uuid.uuid4(),
+    )
+    seen: dict[str, object] = {}
+
+    class _Manifest:
+        def identities(self):
+            return ["kept"]
+
+    class _Session:
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *exc):
+            return False
+
+    class _Engine:
+        async def dispose(self):
+            return None
+
+    async def _lookup(scope, session, *, authority):
+        seen["scope"] = scope
+        return {"kept": _uuid.uuid4(), "orphan": _uuid.uuid4()}
+
+    originals = (
+        admin.CatalogAuthority,
+        admin.BootstrapManifestSource,
+        admin.engine_from_env,
+        admin.session_factory,
+        admin.catalog.list_public_upstream_identities,
+    )
+    admin.CatalogAuthority = type("A", (), {"from_env": staticmethod(lambda: fake)})
+    admin.BootstrapManifestSource = _Manifest
+    admin.engine_from_env = lambda: _Engine()
+    admin.session_factory = lambda engine: lambda: _Session()
+    admin.catalog.list_public_upstream_identities = _lookup
+    try:
+        orphans, total = asyncio.run(admin._orphaned_identities(_uuid.uuid4()))
+    finally:
+        (
+            admin.CatalogAuthority,
+            admin.BootstrapManifestSource,
+            admin.engine_from_env,
+            admin.session_factory,
+            admin.catalog.list_public_upstream_identities,
+        ) = originals
+
+    assert set(orphans) == {"orphan"}
+    assert total == 2
+    # The assertion that matters: the exact predicate `get_importer_workspace`
+    # applies. A reviewer scope fails this, which is the bug.
+    assert fake.is_importer_scope(seen["scope"]), (
+        "the orphan lookup was handed a scope get_importer_workspace will reject"
+    )

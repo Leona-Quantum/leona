@@ -730,17 +730,26 @@ async def _orphaned_identities(attested_by: uuid.UUID) -> tuple[dict[str, uuid.U
     """
     authority = CatalogAuthority.from_env()
     authority.require_configured()
-    reviewer_scope = Scope(
-        user_id=attested_by, workspace_id=authority.workspace_id, role=Role.ADMIN
-    )
     claimed = set(BootstrapManifestSource().identities())
 
+    # The IMPORTER scope, not the reviewer one. `list_public_upstream_identities`
+    # resolves its workspace through `get_importer_workspace`, which admits only
+    # the configured importer user at Role.OWNER — a reviewer scope is an ADMIN
+    # human and fails `is_importer_scope`, so passing one raises AuthzError before
+    # a single row is read. That is not a subtle degradation: it would have made
+    # every `sync-bootstrap` report and every `retire-bootstrap` run fail outright.
+    # Caught in review on PR 652, numbered without a hash because `check-raw-hex`
+    # reads a three-digit hash-number as a colour.
+    #
+    # The withdrawal itself still runs as the reviewer — see `_retire_bootstrap`.
+    # Reading the catalog and deleting from it are different authorities on
+    # purpose, and this function only reads.
     engine = engine_from_env()
     factory = session_factory(engine)
     try:
         async with factory() as session:
             published = await catalog.list_public_upstream_identities(
-                reviewer_scope, session, authority=authority
+                authority.importer_scope(), session, authority=authority
             )
     finally:
         await engine.dispose()
