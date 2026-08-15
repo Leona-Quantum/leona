@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { ChevronIcon, PlusIcon } from "./icons";
 import { ghostFrame } from "../lib/composer-ghost";
+import { writeLandingPromptHandoff } from "../lib/landing-prompt-handoff";
 
 /**
  * The one destination this component links to, and the reason it is a constant.
@@ -153,7 +154,18 @@ export function LandingPrompt({ copy }: { copy: LandingPromptCopy }) {
             <h2 id="mj-landing-signup-title">{copy.modalTitle}</h2>
             <p>{copy.modalBody}</p>
             {value ? <blockquote>{value}</blockquote> : null}
-            <a className="mj-primary-button" href={SIGN_IN_HREF}>{copy.modalPrimary}</a>
+            {/* The one write point (ai-ops 102): committed only on the click that
+                actually leaves for sign-in, never earlier. Opening this dialog
+                commits nothing, so closing it without clicking through carries
+                nothing forward — which is the correct behaviour for the
+                abandoned case, not a special case of it. */}
+            <a
+              className="mj-primary-button"
+              href={SIGN_IN_HREF}
+              onClick={() => writeLandingPromptHandoff(value)}
+            >
+              {copy.modalPrimary}
+            </a>
           </section>
         </div>
       ) : null}

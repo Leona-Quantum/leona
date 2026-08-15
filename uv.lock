@@ -74,13 +74,12 @@ wheels = [
 
 [[package]]
 name = "amazon-braket-sdk"
-version = "1.122.0"
+version = "1.125.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "amazon-braket-default-simulator" },
     { name = "amazon-braket-schemas" },
     { name = "backoff" },
-    { name = "backports-entry-points-selectable" },
     { name = "boltons" },
     { name = "boto3" },
     { name = "cloudpickle" },
@@ -92,9 +91,9 @@ dependencies = [
     { name = "oqpy" },
     { name = "sympy" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/ac/84/7bee769c15b7fd2030319c03dd4d035e0a715eed1e28aa057fbc3d8f8b43/amazon_braket_sdk-1.122.0.tar.gz", hash = "sha256:23290c2873e0d979de824e77950d372317ebbec37df7c2bc1847d13dbf4d88c1", size = 271916, upload-time = "2026-07-08T17:07:44.828Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/06/31/7f131fa7046a9bab21e927d055f72ddc0cfb059e36380e444f67bd0487f3/amazon_braket_sdk-1.125.0.tar.gz", hash = "sha256:7851f1e39c19b326c557b722208fcd948b8a962de8f5578f3ccded65f1e8cd23", size = 274453, upload-time = "2026-08-03T16:13:22.74Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/07/1a/4e9e77f8bac0b5ac65b876862df5736f11292a84a2ece2b2cec0f806d405/amazon_braket_sdk-1.122.0-py3-none-any.whl", hash = "sha256:a0b7823ed3f8072811274bf63504f51ecdb661351e7e33e4553a7d5ed6d1d597", size = 399238, upload-time = "2026-07-08T17:07:42.941Z" },
+    { url = "https://files.pythonhosted.org/packages/4d/db/0e47a2370202e688564f4ee1d116d2990a57bfcc59b961459e15dfde05e1/amazon_braket_sdk-1.125.0-py3-none-any.whl", hash = "sha256:58cbd0aa36d660cadcc5bb45f1b2fb75b771fed895e1753ab54945112da6ed52", size = 402147, upload-time = "2026-08-03T16:13:20.525Z" },
 ]
 
 [[package]]
@@ -211,15 +210,6 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/47/d7/5bbeb12c44d7c4f2fb5b56abce497eb5ed9f34d85701de869acedd602619/backoff-2.2.1.tar.gz", hash = "sha256:03f829f5bb1923180821643f8753b0502c3b682293992485b0eef2807afa5cba", size = 17001, upload-time = "2022-10-05T19:19:32.061Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/df/73/b6e24bd22e6720ca8ee9a85a0c4a2971af8497d8f3193fa05390cbd46e09/backoff-2.2.1-py3-none-any.whl", hash = "sha256:63579f9a0628e06278f7e47b7d7d5b6ce20dc65c5e96a6f3ca99a6adca0396e8", size = 15148, upload-time = "2022-10-05T19:19:30.546Z" },
-]
-
-[[package]]
-name = "backports-entry-points-selectable"
-version = "1.3.0"
-source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/fc/25/dae014b114397a6f60578d7358bf5fcb103f71556e5363a50d7b42e9bc51/backports.entry_points_selectable-1.3.0.tar.gz", hash = "sha256:17a8b44ae700fba548686dd274ddc91c060371565cd63806c20a1d33911746e6", size = 9882, upload-time = "2023-11-27T19:03:06.585Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/5a/78/b3ba5d804ae21e26e6179bbe4e1338deaaba9d20161918f59e20e9d92ea0/backports.entry_points_selectable-1.3.0-py3-none-any.whl", hash = "sha256:66f5da003eb4b283c7b60581bc8bb0baf0d810eb3e3068da786d3821b4d5746a", size = 6217, upload-time = "2023-11-27T19:03:04.844Z" },
 ]
 
 [[package]]
@@ -1032,17 +1022,19 @@ wheels = [
 
 [[package]]
 name = "ibm-quantum-schemas"
-version = "0.9.20260612"
+version = "0.10.20260723"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
+    { name = "numpy" },
     { name = "pybase64" },
     { name = "pydantic" },
     { name = "qiskit" },
+    { name = "qiskit-qasm3-import" },
     { name = "samplomatic" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/d5/41/448a23f4ea497d6eec461a34bb1ad599d37a36ee72f126340d95c3c78fae/ibm_quantum_schemas-0.9.20260612.tar.gz", hash = "sha256:d22ad0f900fb897ad446ba7413979e003bdc29d75584d74890c8c8ccff3c6544", size = 97979, upload-time = "2026-06-12T14:20:24.235Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/e5/6c/d63cdbf8358a5f40be39945c946422771085666dd163b454a236bee525bb/ibm_quantum_schemas-0.10.20260723.tar.gz", hash = "sha256:e3435cd86140bf8e0d2fc09af9e7c3d799adb732928b99dc90079a7372197044", size = 104341, upload-time = "2026-07-23T15:45:37.098Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/ad/7f/a41b1cee6cfd140c978dd3177dc78dfe04f9a7566c9ef211fe8ce2a6c3eb/ibm_quantum_schemas-0.9.20260612-py3-none-any.whl", hash = "sha256:31afc35c15c56d10f4c9c39155478802daaab5baffb4215fbb93d8ddbdf3f285", size = 111323, upload-time = "2026-06-12T14:20:22.865Z" },
+    { url = "https://files.pythonhosted.org/packages/ea/6b/f3c4e3910ff5653caf30aa052fe2ff3833a46a50fd1712587b1418efda76/ibm_quantum_schemas-0.10.20260723-py3-none-any.whl", hash = "sha256:265ad9209f34b01d3d85f9c9ca2afb4c757faf0fd062a48e4c9d154515cac281", size = 120650, upload-time = "2026-07-23T15:45:35.625Z" },
 ]
 
 [[package]]
@@ -1329,7 +1321,7 @@ requires-dist = [
     { name = "opentelemetry-instrumentation-fastapi", specifier = ">=0.48b0" },
     { name = "opentelemetry-sdk", specifier = ">=1.27" },
     { name = "psycopg", extras = ["binary"], specifier = ">=3.3.4" },
-    { name = "pyjwt", extras = ["crypto"], specifier = ">=2.9" },
+    { name = "pyjwt", extras = ["crypto"], specifier = ">=2.13.0" },
     { name = "sentry-sdk", specifier = ">=2.0" },
     { name = "sqlalchemy", extras = ["asyncio"], specifier = ">=2.0.52" },
     { name = "uvicorn", specifier = ">=0.35" },
@@ -1435,7 +1427,7 @@ dependencies = [
 requires-dist = [
     { name = "majorana-contracts", editable = "packages/py/contracts" },
     { name = "pydantic", specifier = ">=2.8" },
-    { name = "qiskit", specifier = ">=2.4,<3" },
+    { name = "qiskit", specifier = ">=2.5.1,<3" },
     { name = "qiskit-qasm3-import", specifier = ">=0.6,<0.7" },
 ]
 
@@ -1455,7 +1447,7 @@ ibm = [
 [package.metadata]
 requires-dist = [
     { name = "pydantic", specifier = ">=2.8" },
-    { name = "qiskit-ibm-runtime", marker = "extra == 'ibm'", specifier = ">=0.48,<1" },
+    { name = "qiskit-ibm-runtime", marker = "extra == 'ibm'", specifier = ">=0.49.0,<1" },
 ]
 provides-extras = ["ibm"]
 
@@ -1564,7 +1556,7 @@ requires-dist = [{ name = "majorana-contracts", editable = "packages/py/contract
 [package.metadata.requires-dev]
 dev = [
     { name = "amazon-braket-default-simulator", specifier = "==1.39.9" },
-    { name = "amazon-braket-sdk", specifier = "==1.122.0" },
+    { name = "amazon-braket-sdk", specifier = "==1.125.0" },
     { name = "cirq-core", specifier = ">=1.4" },
     { name = "httpx", specifier = ">=0.27" },
     { name = "import-linter", specifier = ">=2.3" },
@@ -2827,7 +2819,7 @@ wheels = [
 
 [[package]]
 name = "qiskit"
-version = "2.5.0"
+version = "2.5.1"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "dill" },
@@ -2837,15 +2829,15 @@ dependencies = [
     { name = "stevedore" },
     { name = "typing-extensions" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/c3/88/0faeb20fa5644b179a8a06781790e086a5000274e25ac73da03666293b89/qiskit-2.5.0.tar.gz", hash = "sha256:c65c46ee30b15e38b1359ef8a1d0bf98383416d59780572e46e8fddf8a4b3efe", size = 4251511, upload-time = "2026-07-02T20:05:43.743Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/fd/b8/9900e3c8e2c1f7d97e15e9a7b5fcf7274211887ace8947cd0e0075583da5/qiskit-2.5.1.tar.gz", hash = "sha256:923e11f02c6720da4f9435cbfc78b6d2c4a106198175a16d32ae730eaa007fa6", size = 4253196, upload-time = "2026-07-23T18:39:23.67Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/9c/3d/f482566927b66e2aaf9c1dcd5fb88487e3332a1f946e5eb152349c6e744e/qiskit-2.5.0-cp310-abi3-macosx_10_12_x86_64.whl", hash = "sha256:c2ef7b07fab103eefa00505a55b32d60c3fb6627b541e6dfb59d6d8e0a8c7a8b", size = 9429562, upload-time = "2026-07-02T23:30:59.791Z" },
-    { url = "https://files.pythonhosted.org/packages/fc/b8/d13df60c5264f74529ecbfd4c9b827c34b89fb1f0e2a02bf2990d6010a94/qiskit-2.5.0-cp310-abi3-macosx_11_0_arm64.whl", hash = "sha256:896d24f564d5192ccdad26d9628251942155cc637059e2dbb24df891a56567de", size = 8793084, upload-time = "2026-07-02T20:05:33.94Z" },
-    { url = "https://files.pythonhosted.org/packages/f3/06/4674b0a5fea57e04f75020d4c76fd7cb0f2102159d0986215ba2a4c2f438/qiskit-2.5.0-cp310-abi3-manylinux_2_28_aarch64.whl", hash = "sha256:cd493cb9c57eefd9f73510d526410b02bdf935cbdc0673ba98a932103bdb9663", size = 9079173, upload-time = "2026-07-02T20:05:36.376Z" },
-    { url = "https://files.pythonhosted.org/packages/7d/72/9fe7ca2be1c806aa7d051a017bedc3c47e2af74735ce7093f2f47090cfe3/qiskit-2.5.0-cp310-abi3-manylinux_2_28_ppc64le.whl", hash = "sha256:309c139953ecd6a00a2384f15a65e0bcb4db44efa3f7e06f4dca6c01087439a0", size = 9997476, upload-time = "2026-07-02T23:31:02.075Z" },
-    { url = "https://files.pythonhosted.org/packages/75/b9/4dfdfafe83762144a1cf1456eafb3e17052c1b7ad9195c6af30d9899cd28/qiskit-2.5.0-cp310-abi3-manylinux_2_28_s390x.whl", hash = "sha256:4aa04541b78f3a81967ae411733929749fd67ae4bce2d228a9cdcb06e64dc9c7", size = 9512568, upload-time = "2026-07-02T23:31:04.374Z" },
-    { url = "https://files.pythonhosted.org/packages/da/a4/78971e41c5ce8bd54f750f82d5ce7313cae821b0730c8fdac9dd8cbaafd7/qiskit-2.5.0-cp310-abi3-manylinux_2_28_x86_64.whl", hash = "sha256:6efe02541f49c97aac2073befd9458a37cfae58a3ee1616db12ee3ee8791eef7", size = 9763212, upload-time = "2026-07-02T20:05:38.61Z" },
-    { url = "https://files.pythonhosted.org/packages/08/c1/193fbdfceebec892c7aed59ccbd521dacc1e596780032ba7ba5a138a0a27/qiskit-2.5.0-cp310-abi3-win_amd64.whl", hash = "sha256:f9daa14b6499ec0da4db0eadb57d28ea2a38922cefa158b49723f78c544a27f5", size = 9449710, upload-time = "2026-07-02T20:05:41.156Z" },
+    { url = "https://files.pythonhosted.org/packages/a9/01/70fc67393981089786e7f3ccdb1450bed9f76a6e4d07d0d50aab19cada41/qiskit-2.5.1-cp310-abi3-macosx_10_12_x86_64.whl", hash = "sha256:090e4c2f6f97a5e9d2fbeb910ed1cb33476fd9ded16b0fe42bb4f05726c61b0d", size = 9335588, upload-time = "2026-07-23T19:21:37.295Z" },
+    { url = "https://files.pythonhosted.org/packages/94/ff/24ad78571f4368e3575860b185709f41eae8f171aa1a68dd7dc33aea1560/qiskit-2.5.1-cp310-abi3-macosx_11_0_arm64.whl", hash = "sha256:b70e7b1b1b1e988ac758a102eb2c06dd643afb7977ef7b005f2eba1190a71747", size = 8736917, upload-time = "2026-07-23T18:39:12.035Z" },
+    { url = "https://files.pythonhosted.org/packages/9c/61/ecd80b064476e2b7a0c73b640ec56dfed255bc18b97c123578b5698c03aa/qiskit-2.5.1-cp310-abi3-manylinux_2_28_aarch64.whl", hash = "sha256:083cf6743d88bfbe711fae150c8a84b9f621e82a1983202c1be10dbada5f24c0", size = 9022618, upload-time = "2026-07-23T18:39:15.015Z" },
+    { url = "https://files.pythonhosted.org/packages/0a/30/b238d7ce67dd23d8483ec8a11062500a27c2bf0991af6212b9cfee662801/qiskit-2.5.1-cp310-abi3-manylinux_2_28_ppc64le.whl", hash = "sha256:162aa151a5892913bbdc9910a0ebcb291f268331d26020ab2f0e0dbc674c6b55", size = 9940998, upload-time = "2026-07-23T19:21:39.911Z" },
+    { url = "https://files.pythonhosted.org/packages/48/e0/50a5e3518c1da8fbd4dd2f4a915e919613b389a44d97b1bc71bde5835432/qiskit-2.5.1-cp310-abi3-manylinux_2_28_s390x.whl", hash = "sha256:7a10203bf4e058e104188f3e0ed333c8974e3c2298bfcc2d3f87da2c5530e034", size = 9446636, upload-time = "2026-07-23T19:21:42.009Z" },
+    { url = "https://files.pythonhosted.org/packages/a7/d7/bca6581752d00bc9615e54ad246baff0946c62db232b5eb4b93a170e8327/qiskit-2.5.1-cp310-abi3-manylinux_2_28_x86_64.whl", hash = "sha256:c1a0cee82eb8e008fad6c79d568fbb52f05db4952f6d61c0542dc50f9c06c53c", size = 9711786, upload-time = "2026-07-23T18:39:17.94Z" },
+    { url = "https://files.pythonhosted.org/packages/98/17/88644857596749eeca472634a8b1e646a743541ea7d1160ba55d5fdb66d7/qiskit-2.5.1-cp310-abi3-win_amd64.whl", hash = "sha256:08b861f35cf0c1731853e58ed1b2b7741f9f4a8522cd39d1da3b64b9cb5e3a06", size = 9440092, upload-time = "2026-07-23T18:39:21.05Z" },
 ]
 
 [[package]]
@@ -2884,7 +2876,7 @@ wheels = [
 
 [[package]]
 name = "qiskit-ibm-runtime"
-version = "0.48.0"
+version = "0.49.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "ibm-platform-services" },
@@ -2900,9 +2892,9 @@ dependencies = [
     { name = "scipy" },
     { name = "urllib3" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/f8/9e/853be37179502be1c3e1c2cd406eb326853067d365e31920c3bbe91ccca2/qiskit_ibm_runtime-0.48.0.tar.gz", hash = "sha256:b6b5944c7698cdce147b16bdef1fcae773490c271c8a5ae26c3fd302bb3e94cb", size = 2068278, upload-time = "2026-07-14T18:13:31.454Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/5b/ef/b6845813b5d45da702a6ef06a67cb7a236b11a8b9a440339c8ac7b28c499/qiskit_ibm_runtime-0.49.0.tar.gz", hash = "sha256:f300eec48784afc5ce4be2691f1bd63ba7905ae4c0702c822e699376aa39432c", size = 2107733, upload-time = "2026-08-10T16:43:43.929Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/38/0a/74386aaa4894f44c0b57649a851c9209a592aa24406cf23f8685c72a586e/qiskit_ibm_runtime-0.48.0-py3-none-any.whl", hash = "sha256:ecbd70a85efbbeec4add8de1c446ace21b196b2587c74306e9d3fe1e4fdddd2e", size = 1990089, upload-time = "2026-07-14T18:13:29.34Z" },
+    { url = "https://files.pythonhosted.org/packages/78/32/c8a84aa1ca3308f7c04b660586341df7a6959d7730073abda0ff1c8d4a21/qiskit_ibm_runtime-0.49.0-py3-none-any.whl", hash = "sha256:b29b4a0a5e013b6e6fd6556158fd34a05e2930dea870c60edef738b834977f2b", size = 2001333, upload-time = "2026-08-10T16:43:42.283Z" },
 ]
 
 [[package]]
