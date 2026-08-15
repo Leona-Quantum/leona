@@ -74,7 +74,14 @@ jobs:
         # against is the event never arriving.
         run: |
           for attempt in $(seq 1 24); do
-            count=$(gh api "repos/${GITHUB_REPOSITORY}/deployments?sha=${SHA}&environment=Production" --jq 'length')
+            # Filtered to vercel[bot], not just counted. The failure this guards
+            # against is Vercel specifically never building; a Production
+            # deployment created by any other integration would otherwise
+            # satisfy the check and make this workflow quietly useless — the
+            # exact shape of the ten silent hours it exists to prevent.
+            # `verify-web-cache.yml` already gates on the same login.
+            count=$(gh api "repos/${GITHUB_REPOSITORY}/deployments?sha=${SHA}&environment=Production" \
+              --jq '[.[] | select(.creator.login == "vercel[bot]")] | length')
             if [ "$count" -gt 0 ]; then
               echo "Vercel created a Production deployment for ${SHA} (attempt ${attempt})"
               exit 0
