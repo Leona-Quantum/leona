@@ -1051,6 +1051,11 @@
       "ChatCompleted": {
         "additionalProperties": false,
         "properties": {
+          "allow_ai_assumptions_available": {
+            "default": false,
+            "title": "Allow Ai Assumptions Available",
+            "type": "boolean"
+          },
           "duration_ms": {
             "minimum": 0,
             "title": "Duration Ms",
@@ -1060,6 +1065,21 @@
             "minimum": 0,
             "title": "Input Tokens",
             "type": "integer"
+          },
+          "missing_inputs": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Missing Inputs"
           },
           "model": {
             "maxLength": 200,
