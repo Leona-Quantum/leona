@@ -64,7 +64,9 @@ export function contentSecurityPolicy({
  * not widen the policy.
  *
  * If Sentry is ever self-hosted, this is the line to widen, and it will fail
- * closed and silently until someone does. Raised by Sourcery on PR #628.
+ * closed and silently until someone does. Raised by Sourcery on PR 628 —
+ * numbered without a hash on purpose, because `check-raw-hex` reads a
+ * three-digit hash-number as a CSS colour and fails lint on it.
  */
 export function errorReportingOrigin(dsn: string | undefined): string | null {
   if (!dsn) return null;
