@@ -83,6 +83,23 @@ updates:
         # move one at a time so a shifted expectation value has one suspect.
         exclude-patterns: ["qiskit*", "pennylane*", "cirq*", "amazon-braket*", "qibo*", "qulacs*", "numpy", "scipy"]
         update-types: ["minor", "patch"]
+    ignore:
+      # ruff 0.16 turns a bare `[tool.ruff]` config (line-length only, no
+      # explicit `select`) into 527 violations on this tree — TRY004, RUF059,
+      # PLR171, BLE001, RET501 and friends, none of which existed as errors
+      # under 0.15. Adopting it is a repo-wide lint sweep touching ~200 files,
+      # which is its own reviewable change and not something to ride in on a
+      # dependency bump.
+      #
+      # pyproject.toml already pins `ruff>=0.14,<0.16` and says exactly this in
+      # a comment sitting on the line above. Dependabot rewrote that line to
+      # `>=0.16.2,<0.17` anyway — correctly, because it cannot read comments.
+      # A pin whose only defence is a comment is not defended; this is the half
+      # that Dependabot can actually see (leona#619).
+      #
+      # Remove this entry when the lint sweep lands, not before.
+      - dependency-name: "ruff"
+        versions: [">=0.16"]
     commit-message:
       prefix: "chore"
       include: scope
@@ -147,6 +164,25 @@ updates:
     open-pull-requests-limit: 3
     cooldown:
       default-days: 2
+    ignore:
+      # Python 3.14 cannot be built at all, and the blocker is upstream rather
+      # than ours. `qibo` declares `Requires-Python >=3.10,<3.14` on EVERY
+      # release it has ever published — 0.3.4 included — so
+      # `pip install --only-binary=:all: qibo==0.3.4` on a 3.14 base resolves to
+      # nothing and the image build exits 1:
+      #
+      #   ERROR: Could not find a version that satisfies the requirement qibo==0.3.4
+      #   ERROR: No matching distribution found for qibo==0.3.4
+      #
+      # That is leona#572, which failed `build` and `container_scan` for exactly
+      # this reason. Without this entry it is re-proposed every Monday and fails
+      # every Monday, and a check that is always red teaches people to ignore
+      # red.
+      #
+      # Patch bumps of 3.13 still come through; only the move off 3.13 is held.
+      # Remove this when qibo ships a release whose Requires-Python admits 3.14.
+      - dependency-name: "python"
+        update-types: ["version-update:semver-major", "version-update:semver-minor"]
     commit-message:
       prefix: "chore"
       include: scope
