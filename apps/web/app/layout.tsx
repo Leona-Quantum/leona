@@ -47,7 +47,7 @@ const localeScript = `(() => {
 })();`;
 
 /**
- * Paint the header's sign-in control correctly on the first frame (ai-ops#114).
+ * Paint the header's sign-in control correctly on the first frame (ai-ops issue 114).
  *
  * Same shape as the two scripts above, and for the same reason: the pages that
  * need this are held on the CDN, so the answer cannot be in their HTML — it has

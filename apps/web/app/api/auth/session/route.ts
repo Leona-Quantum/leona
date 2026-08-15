@@ -42,7 +42,7 @@ export async function GET() {
     { signedIn, signInHref },
     { headers: { "Cache-Control": "private, no-store" } },
   );
-  // Write the hint the next page will paint from (ai-ops#114). This route is
+  // Write the hint the next page will paint from (ai-ops issue 114). This route is
   // the only place that both knows the truth and is allowed to record it: it is
   // `force-dynamic` and `no-store`, so the `Set-Cookie` below cannot be stored
   // by the CDN and shown to somebody else. See `lib/auth-hint.ts` — doing this

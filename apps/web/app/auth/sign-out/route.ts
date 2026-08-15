@@ -14,7 +14,7 @@ export async function GET(): Promise<Response> {
   // Dropped on both paths, and before the early return: the reader who lands
   // here already signed out somewhere else is exactly the one whose hint is
   // stale, and leaving it set would paint "Sign out" at them on the page this
-  // route is about to redirect them to (ai-ops#114).
+  // route is about to redirect them to (ai-ops issue 114).
   (await cookies()).delete(AUTH_HINT_COOKIE);
   if (!user) redirect("/");
   await signOutMajorana();

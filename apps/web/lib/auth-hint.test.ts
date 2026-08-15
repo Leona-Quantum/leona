@@ -11,7 +11,7 @@ import {
 
 /**
  * The auth hint is a contract between four files that cannot import each other's
- * intent (ai-ops#114):
+ * intent (ai-ops issue 114):
  *
  *   - `app/layout.tsx` reads the cookie in an inline string of JavaScript, before
  *     any module system exists,

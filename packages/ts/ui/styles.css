@@ -8990,7 +8990,7 @@ div.mj-rail-row:hover {
   }
 }
 
-/* Public header, auth-dependent controls (ai-ops#114).
+/* Public header, auth-dependent controls (ai-ops issue 114).
 
    The cached marketing pages ship BOTH the signed-in and signed-out controls,
    because one HTML payload is shared by every visitor and cannot name one. The

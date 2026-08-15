@@ -1,6 +1,6 @@
 /**
  * The auth *hint* — a non-secret, non-httpOnly cookie whose only job is to let
- * a cached page paint the right header on the first frame (ai-ops#114).
+ * a cached page paint the right header on the first frame (ai-ops issue 114).
  *
  * ## What it fixes
  *

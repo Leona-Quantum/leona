@@ -22,7 +22,7 @@ import { useEffect, useState } from "react";
  * one-off: every link in this header is a plain `<a>`, so each navigation is a
  * full page load and a signed-in reader paid the swap again on every page —
  * "Sign in" for about half a second, then the top bar shifting sideways as the
- * sign-out link appeared beside it (ai-ops#114).
+ * sign-out link appeared beside it (ai-ops issue 114).
  *
  * The `/api/auth/session` fetch below did not go away, and is not redundant. It
  * is what makes the hint *true*: it writes the cookie, clears it when the
