@@ -1,4 +1,4 @@
-// Server-side assembly of the `/repository` browse list (ai-ops#105).
+// Server-side assembly of the `/repository` browse list (ai-ops 105).
 //
 // ## The problem this module exists to fix
 //
@@ -44,7 +44,7 @@
 // Every step below already existed as a `useMemo` body in
 // `repository-browser.tsx`, computed from a full `entries` prop on every
 // render. Moving it here rather than leaving it there and only trimming the
-// prop was the point of ai-ops#105 — the owner's ruling was "server-side
+// prop was the point of ai-ops 105 — the owner's ruling was "server-side
 // filtering and pagination, so the browser gets only what it is showing", and
 // a client component cannot bound what it is SENT no matter what it does with
 // the array once it arrives. A plain function also means the whole pipeline is
@@ -223,7 +223,7 @@ export function buildRepositoryBrowseView(
   // -------------------------------------------------------------------------
   // Facets and per-entry interfaces: corpus-wide, computed once, independent
   // of every filter above. See the module header for why counting the whole
-  // corpus here is not the thing ai-ops#105 was about.
+  // corpus here is not the thing ai-ops 105 was about.
   // -------------------------------------------------------------------------
   const topicGroups = topicOptions(entries, locale);
   const interfaces = new Map<string, EntryInterface>();

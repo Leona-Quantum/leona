@@ -136,7 +136,7 @@ export default async function RepositoryPage({
     getRepositoryEstimates(),
     getRepositoryProfiles(),
   ]);
-  // ai-ops#105: the whole filter/order/fold/cap pipeline runs HERE, once, over
+  // ai-ops 105: the whole filter/order/fold/cap pipeline runs HERE, once, over
   // the full corpus this request already paid to fetch, and its result is what
   // crosses into the client component — not `entries` itself. See
   // `browse-view.ts`'s header for why a client component could never have made

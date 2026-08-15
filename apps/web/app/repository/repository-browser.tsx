@@ -318,7 +318,7 @@ function MiniCircuit({
 
 /**
  * How long to hold a keystroke before the search box turns into a request
- * (ai-ops#105). Every other control on this rail navigates on the click that
+ * (ai-ops 105). Every other control on this rail navigates on the click that
  * changes it, because a click is already the reader saying "now" — but typing
  * is a sequence of them, and firing a server round trip per keystroke would
  * turn "grover" into six requests for one search. 300ms is short enough that
@@ -337,7 +337,7 @@ export function RepositoryBrowser({
   legend?: ReactNode;
   /**
    * The resolved `?topic=`/`?fits=`/`?category=`/`?gate=`/`?q=`/`?order=`
-   * `?circuit=`/`?rows=` — the server's read of the URL, and since ai-ops#105
+   * `?circuit=`/`?rows=` — the server's read of the URL, and since ai-ops 105
    * the only source of truth for every filter except the search box's own
    * buffered keystrokes (see `query` state below). A control that used to
    * call `setState` now builds the href this same shape would resolve to and
@@ -366,7 +366,7 @@ export function RepositoryBrowser({
    * Every control that used to call `setState` now calls this instead.
    *
    * `replace`, not `push` — the same choice `syncUrl`'s `history.replaceState`
-   * made before ai-ops#105, and for the reason stated at the search box: a
+   * made before ai-ops 105, and for the reason stated at the search box: a
    * search is not twelve history entries, and neither is a chain of "show
    * more" presses. `{ scroll: false }` keeps the reader's scroll position
    * across a filter change, which is what let "show more" grow the list in
@@ -420,7 +420,7 @@ export function RepositoryBrowser({
   const signInHref = session?.signInHref ?? "/auth/sign-in";
 
   /**
-   * The search box's own buffered text (ai-ops#105).
+   * The search box's own buffered text (ai-ops 105).
    *
    * Every other filter on this page is read straight off `params` — there is
    * no local copy to go stale, because every change to it is a navigation and
@@ -804,7 +804,7 @@ export function RepositoryBrowser({
   /**
    * The filters currently narrowing the list, each with the URL that drops it.
    *
-   * Every entry here is just a chip and an href now — before ai-ops#105 each
+   * Every entry here is just a chip and an href now — before ai-ops 105 each
    * one also carried a client `setState` call the href's navigation had to
    * agree with, and the two had to be kept in sync by hand. A real navigation
    * makes that agreement structural: the href IS the whole next state.
@@ -1092,7 +1092,7 @@ export function RepositoryBrowser({
         <label>
           <span>{copy.search}</span>
           {/* The address follows the box, on a short delay rather than every
-              keystroke (see `SEARCH_DEBOUNCE_MS`) — since ai-ops#105 this is a
+              keystroke (see `SEARCH_DEBOUNCE_MS`) — since ai-ops 105 this is a
               real request, not a client-side re-filter of an array already in
               memory. A reader who types "grover", finds what they wanted and
               copies the URL gets the filtered Atlas, because `?q=` is written
@@ -1163,7 +1163,7 @@ export function RepositoryBrowser({
           The `href` is what makes each category a **section** rather than a
           view: it is a URL to link, share, bookmark and crawl, and it is the
           only way a reader without JS reaches the gates sidebar at all — before
-          this the whole surface lived behind an onClick. Since ai-ops#105 the
+          this the whole surface lived behind an onClick. Since ai-ops 105 the
           hydrated click also has to reach the server — switching categories
           used to be a free client-side reslice of an array that already held
           everything, and now `view.gateEntries` / `view.algorithmGroups` /
@@ -1354,7 +1354,7 @@ export function RepositoryBrowser({
 
           Real `<a href>`s. A reader with JS off follows them and the server
           renders the longer page; a hydrated click is intercepted and
-          navigates — since ai-ops#105 this is a real request rather than a
+          navigates — since ai-ops 105 this is a real request rather than a
           re-slice of an array already in memory, because the earlier rows
           beyond the cap were never sent in the first place. `{ scroll: false }`
           on `navigate()` is what keeps this from losing the reader's scroll

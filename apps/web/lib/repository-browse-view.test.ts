@@ -8,7 +8,7 @@ import type { RepositoryProfileList } from "./repository/profile.ts";
 import type { PublicRepositoryListEntry } from "./repository/types.ts";
 
 /**
- * ai-ops#105 wiring tests.
+ * ai-ops 105 wiring tests.
  *
  * This file does NOT re-prove the ingredients — `matchesRepositoryQuery`,
  * `filterByTopic`, `filterByStance`, `orderEntries`, `foldRows`, `capRows` and
@@ -16,7 +16,7 @@ import type { PublicRepositoryListEntry } from "./repository/types.ts";
  * internals here would be a second copy that could drift from the first. What
  * this file is the only place that can check is the WIRING: that
  * `buildRepositoryBrowseView` calls them in the right order, on the right
- * inputs, and — the reason ai-ops#105 exists — that what it returns is bounded
+ * inputs, and — the reason ai-ops 105 exists — that what it returns is bounded
  * to what a request is actually about to draw rather than the whole corpus
  * `entries` arrived with.
  */
