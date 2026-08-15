@@ -37,12 +37,17 @@
  * sees and Vercel will not cache a response carrying `Set-Cookie`. Adding a
  * path here therefore publishes it. `routed-paths.test.ts` checks this list
  * against what `app/[locale]/` actually serves, in both directions.
+ *
+ * `/repository` is the one entry here that shares its first segment with
+ * `ROUTED_SEGMENTS` and with `LOCALE_PREFIX_ROUTES` — see the "What moved
+ * here" section below `LOCALE_PREFIX_ROUTES` for why that split is safe.
  */
 export const LOCALE_ROUTES: readonly string[] = [
   "/",
   "/contact",
   "/pricing",
   "/privacy",
+  "/repository",
   "/terms",
   "/workspace",
 ];
@@ -59,11 +64,19 @@ export const LOCALE_ROUTES: readonly string[] = [
  *
  * ## What is NOT here, and why the omission is the interesting part
  *
- * `/repository` itself and `/repository/<slug>` stay in `app/repository/` and
- * stay uncached. Both call `getMajoranaAuth()` to decide what the export button
- * offers, so both are personalized by construction; a shared cache entry for
- * either is the bug, not the goal. Everything listed here reads no per-visitor
+ * `/repository/<slug>` — the entry pages — stay in `app/repository/` and stay
+ * uncached. They call `getMajoranaAuth()` per record to decide what the export
+ * button offers, so each is personalized by construction; a shared cache entry
+ * would be the bug, not the goal. Everything listed here reads no per-visitor
  * state at all.
+ *
+ * `/repository` itself used to be uncached for the same reason and is not
+ * anymore — see the section below. It is NOT in this array: it moved to
+ * `LOCALE_ROUTES` (exact), not here (prefix), because a prefix match on the
+ * bare `/repository` would also swallow `/repository/<slug>` as a
+ * "descendant" and rewrite the one subtree that must stay personalized.
+ * `routed-paths.test.ts` asserts `localePrefixRoute("/repository")` is null
+ * for exactly this reason.
  *
  * That split is what makes the ordering below load-bearing. `app/repository/`
  * still has a `[slug]` segment, so an unrewritten `/repository/layers` would
@@ -71,6 +84,34 @@ export const LOCALE_ROUTES: readonly string[] = [
  * a 404 rather than a wrong page, which is the right way round — but it is
  * silent, so `routed-paths.test.ts` checks this list against
  * `app/[locale]/repository/` on disk in both directions.
+ *
+ * ## What moved here: `/repository` itself
+ *
+ * Until ai-ops#94's follow-up, `/repository` (the Atlas browse index) called
+ * `getMajoranaAuth()` on the server for the same reason `/repository/<slug>`
+ * still does — to decide what each entry's "Add to Studio" button offers —
+ * which is a Dynamic API and made the whole route uncacheable. Measured
+ * uncached: 960,478 bytes decoded, MISS on every request, no matter how many
+ * times the same URL was asked for.
+ *
+ * The fix moved the page to `app/[locale]/repository/(browse)/page.tsx` (a
+ * route group, so it resolves to `/repository` with no extra path segment) and
+ * removed the auth call. The header's sign-in state now comes from
+ * `PublicSite`'s `chrome="static"` + `<AuthStatus>` (ai-ops#94 — the same
+ * mechanism the six `LOCALE_ROUTES` marketing pages already use); the export
+ * button's now comes from `RepositoryBrowser`'s own client-side fetch to
+ * `/api/auth/session`. Neither reads auth during the server render, so the
+ * render is identical for every visitor and the response holds on the CDN
+ * behind the `Vercel-CDN-Cache-Control` header in `next.config.ts` — exact
+ * path only, not a `:path*` subtree, so `/repository/<slug>` is untouched by
+ * it either way.
+ *
+ * `/repository`'s first segment, "repository", therefore now does three
+ * different things depending on the exact path: `LOCALE_ROUTES` rewrites the
+ * bare path, `LOCALE_PREFIX_ROUTES` rewrites two named subtrees below it, and
+ * `ROUTED_SEGMENTS` still routes everything else (`/repository/<slug>`,
+ * `/repository/papers`, `/repository/folders`) through `app/repository/` as
+ * before. `routed-paths.test.ts` checks all three against the filesystem.
  */
 export const LOCALE_PREFIX_ROUTES: readonly string[] = [
   "/repository/claims",

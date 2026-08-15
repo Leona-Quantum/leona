@@ -13,11 +13,17 @@ import { useEffect, useState } from "react";
  * then asks `/api/auth/session` once the page is interactive and swaps in the
  * real state if the visitor turns out to be signed in.
  *
- * `chrome="full"` pages (`/repository`, `/repository/papers`,
- * `/repository/[slug]`) do not use this: they are uncached and already call
- * `getMajoranaAuth()` on the server, so they are correct from first paint and
- * switching them to this component would only add a visible flash where none
- * exists today.
+ * `chrome="full"` pages (`/repository/papers`, `/repository/[slug]`) do not
+ * use this: they are uncached and already call `getMajoranaAuth()` on the
+ * server, so they are correct from first paint and switching them to this
+ * component would only add a visible flash where none exists today.
+ *
+ * `/repository` (the Atlas browse index) used to be one of these and is not
+ * anymore — it moved to `chrome="static"` so the page itself could cache. Its
+ * header uses this component like every other `chrome="static"` page; its
+ * per-entry "Add to Studio" buttons resolve sign-in state the same way but
+ * independently, via `RepositoryBrowser`'s own `/api/auth/session` fetch,
+ * because that state lives on ~369 buttons rather than one header control.
  */
 export function AuthStatus({
   signOutLabel,

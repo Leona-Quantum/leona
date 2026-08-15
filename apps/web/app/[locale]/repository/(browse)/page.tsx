@@ -1,28 +1,64 @@
 import type { Metadata } from "next";
-import { canonicalMetadata } from "../../../lib/public-metadata";
-import { PublicSite } from "../../../components/public-site";
-import { getMajoranaAuth, getMajoranaSignInUrl, isMajoranaAuthConfigured } from "../../../lib/auth";
-import { getPublicLocale } from "../../../lib/public-locale-server";
+import { notFound } from "next/navigation";
+import { canonicalMetadata } from "../../../../lib/public-metadata";
+import { PublicSite } from "../../../../components/public-site";
+import { isPublicLocale, parsePublicLocale, PUBLIC_LOCALES } from "../../../../lib/public-locale";
 import {
   getRepositoryEstimates,
   getRepositoryListEntries,
   getRepositoryProfiles,
-} from "../../../lib/repository-source";
-import { VerificationLegend } from "../../../components/repository-verification";
-import { AboutTheAtlas } from "../../../components/repository-preface";
-import { resolveBrowseParams } from "../../../lib/repository/browse-params";
-import { RepositoryBrowser } from "../repository-browser";
+} from "../../../../lib/repository-source";
+import { VerificationLegend } from "../../../../components/repository-verification";
+import { AboutTheAtlas } from "../../../../components/repository-preface";
+import { resolveBrowseParams } from "../../../../lib/repository/browse-params";
+import { RepositoryBrowser } from "../../../repository/repository-browser";
+
+// Served from the CDN, not by being prerendered — same split as
+// `layers/page.tsx` and for the same first reason: this page resolves
+// `?topic=`, `?fits=`, `?category=`, `?gate=`, `?q=`, `?order=`, `?circuit=`
+// and `?rows=` on the server, and reading `searchParams` opts a page out of
+// static rendering unconditionally. `dynamicParams = false` is what stops
+// `[locale]` from swallowing a mistyped one-segment URL and answering it with
+// this page instead of a 404; `next.config.ts` attaches
+// `Vercel-CDN-Cache-Control` here, exact-path only — this page does NOT also
+// cover `/repository/<slug>`, which stays personalized and uncached in
+// `app/repository/`.
+//
+// ## Why this page moved here at all
+//
+// It used to live at `app/repository/(browse)/page.tsx`, reading the locale
+// from a cookie and calling `getMajoranaAuth()` for the "Add to Studio"
+// button state — both Dynamic APIs, both making the whole route uncacheable,
+// and the auth call is now not just costly but a plain bug at this address:
+// `middleware.ts` answers a locale-rewritten path BEFORE the AuthKit gate
+// ever runs (`localeRewrite()` returns before `workosMiddleware()` is
+// reached), so `getMajoranaAuth()` -> `withAuth()` would THROW here, not
+// merely personalize — see the same note on `claims/page.tsx`. The header's
+// sign-in state now comes from `chrome="static"` + `<AuthStatus>` (ai-ops#94);
+// the export button's now comes from `RepositoryBrowser`'s own client-side
+// fetch to `/api/auth/session`. Neither reads auth during this render.
+//
+// `lib/routed-paths.ts` has the caching/routing side of this move — why
+// `/repository` is now an exact `LOCALE_ROUTES` entry rather than folded into
+// the `LOCALE_PREFIX_ROUTES` `repository` subtree, and why `/repository/<slug>`
+// is unaffected by either.
+export const dynamicParams = false;
+
+export function generateStaticParams() {
+  return PUBLIC_LOCALES.map((locale) => ({ locale }));
+}
 
 /**
- * Localised, for the reason `layers/page.tsx:12-19` already states: a static
- * English export here gives a Japanese reader an English title on the index and
- * a Japanese one on every entry page, and the inconsistency is the tell. This
- * was the last public Atlas route still breaking that rule — its two siblings
- * (`layers/page.tsx`, `layers/[id]/page.tsx`) had both been converted. The page
- * reads the locale cookie anyway, so it costs nothing.
+ * Localised, for the reason `layers/page.tsx` already states: a static
+ * English export here gives a Japanese reader an English title on the index
+ * and a Japanese one on every entry page, and the inconsistency is the tell.
  */
-export async function generateMetadata(): Promise<Metadata> {
-  const locale = await getPublicLocale();
+export async function generateMetadata({
+  params,
+}: {
+  params: Promise<{ locale: string }>;
+}): Promise<Metadata> {
+  const locale = parsePublicLocale((await params).locale);
   return {
     ...(locale === "ja"
       ? {
@@ -49,11 +85,24 @@ export async function generateMetadata(): Promise<Metadata> {
  * ternaries.
  */
 export default async function RepositoryPage({
+  params,
   searchParams,
 }: {
+  params: Promise<{ locale: string }>;
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
-  const params = await searchParams;
+  // `dynamicParams = false` does NOT cover this page, even though it is set
+  // above — that flag restricts params only on a route that prerenders, and
+  // this one reads `searchParams` and therefore never does (see the file
+  // header). So every locale is "outside the prerendered set" and Next
+  // renders it regardless, exactly the trap `layers/page.tsx` documents and
+  // guards against the same way: check first, before the catalog read starts
+  // (a mistyped locale should cost a 404, not a corpus fetch), and guard here
+  // rather than trust the segment config to have done it.
+  const routeLocale = await params;
+  if (!isPublicLocale(routeLocale.locale)) notFound();
+  const locale = parsePublicLocale(routeLocale.locale);
+  const searchParamsValue = await searchParams;
   // All four deep links in one call — see lib/repository/browse-params.ts for
   // the rule they share and for why `?category=` was the one that went two
   // sessions without an address.
@@ -79,10 +128,7 @@ export default async function RepositoryPage({
     order: initialOrder,
     circuitOnly: initialCircuitOnly,
     rows: initialRows,
-  } = resolveBrowseParams(params);
-  const locale = await getPublicLocale();
-  const { user } = await getMajoranaAuth();
-  const signInHref = !user && isMajoranaAuthConfigured() ? await getMajoranaSignInUrl() : null;
+  } = resolveBrowseParams(searchParamsValue);
   const isJapanese = locale === "ja";
   // One request each for the whole corpus's cost and its circuit structure, and
   // concurrently with the listing — they share no inputs, so awaiting them in
@@ -100,7 +146,16 @@ export default async function RepositoryPage({
   ]);
 
   return (
-    <PublicSite activePath="/repository" className="mj-repository-site" locale={locale} showLanguageToggle>
+    <PublicSite
+      activePath="/repository"
+      className="mj-repository-site"
+      locale={locale}
+      // The full chrome with no per-visitor part in the server render — see
+      // the file header for why `"full"` is not just costlier here but wrong:
+      // `getMajoranaAuth()` would throw on this locale-rewritten path.
+      chrome="static"
+      showLanguageToggle
+    >
       <section className="mj-repository-index-hero" aria-labelledby="repository-heading">
         {/* > *"Atlas page title card something like 'The Quantum Atlas'."*
             > — owner, session 110
@@ -125,8 +180,6 @@ export default async function RepositoryPage({
         <RepositoryBrowser
           entries={entries}
           locale={locale}
-          isSignedIn={Boolean(user)}
-          signInHref={signInHref}
           legend={<VerificationLegend locale={locale} />}
           estimates={estimates}
           profiles={profiles}

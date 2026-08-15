@@ -382,8 +382,6 @@ function MiniCircuit({
 export function RepositoryBrowser({
   entries,
   locale,
-  isSignedIn,
-  signInHref,
   legend,
   estimates,
   profiles,
@@ -398,8 +396,6 @@ export function RepositoryBrowser({
 }: {
   entries: PublicRepositoryListEntry[];
   locale: PublicLocale;
-  isSignedIn: boolean;
-  signInHref: string | null;
   legend?: ReactNode;
   /**
    * Every entry's fault-tolerant cost under ONE assumption set, or null.
@@ -436,6 +432,39 @@ export function RepositoryBrowser({
   initialRows?: RowLimit;
 }) {
   const copy = COPY[locale];
+  // Sign-in state, resolved client-side rather than passed as a prop from the
+  // server component — the same move `AuthStatus` makes for the header, and
+  // for the same reason. `/repository` used to call `getMajoranaAuth()` on the
+  // server to decide what every "Add to Studio" button offers, which reaches a
+  // Dynamic API and made the whole route uncacheable; see
+  // `lib/routed-paths.ts` for the caching side of this and `AuthStatus` for the
+  // header's version of the same fix.
+  //
+  // One fetch here, not 369 — `entries.length` `RepositoryExportAction`
+  // instances all read this same state rather than each calling
+  // `/api/auth/session` itself. Starts in the signed-out state the server
+  // already rendered, so hydration has nothing to reconcile, then corrects
+  // itself once mounted if the visitor turns out to be signed in — a export
+  // button that was already open when the real answer lands stays open; only
+  // its enabled behaviour (export vs. sign-in prompt) changes under it.
+  const [session, setSession] = useState<{ signedIn: boolean; signInHref: string | null } | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    fetch("/api/auth/session", { credentials: "include" })
+      .then((response) => (response.ok ? response.json() : null))
+      .then((data: { signedIn: boolean; signInHref: string | null } | null) => {
+        if (!cancelled && data) setSession(data);
+      })
+      .catch(() => {
+        // Left in the default signed-out state — the same thing the server
+        // rendered, so a network hiccup here is silent, not broken.
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+  const isSignedIn = session?.signedIn ?? false;
+  const signInHref = session?.signInHref ?? "/auth/sign-in";
   // Seeded from `?q=`, so a search is a thing you can send somebody. It was the
   // only control on this page whose state a reader could see and not address.
   const [query, setQuery] = useState(initialQuery);

@@ -132,6 +132,18 @@ const nextConfig: NextConfig = {
           headers: [{ key: "Vercel-CDN-Cache-Control", value: "max-age=300" }],
         })),
       ),
+      // The Atlas browse index, same mechanism, exact path ONLY — no `:path*`.
+      // `/repository/layers` above deliberately covers its subtree
+      // (`/repository/layers/<id>`) because every child there is equally
+      // public; `/repository` must NOT do that, because its own children
+      // (`/repository/<slug>`) are the entry pages that stay personalized and
+      // uncached in `app/repository/` — see lib/routed-paths.ts. A `:path*`
+      // here would cache them anyway, silently, at the platform layer, no
+      // matter what the route protection says.
+      ...["/repository", "/:locale(en|ja)/repository"].map((source) => ({
+        source,
+        headers: [{ key: "Vercel-CDN-Cache-Control", value: "max-age=300" }],
+      })),
       {
         source: "/(.*)",
         headers: [

@@ -206,12 +206,17 @@ const CANONICAL_PAGE_SOURCES: Record<string, string> = {
   "/contact": "app/[locale]/contact/page.tsx",
   "/privacy": "app/[locale]/privacy/page.tsx",
   "/terms": "app/[locale]/terms/page.tsx",
-  "/repository": "app/repository/(browse)/page.tsx",
   "/repository/folders": "app/repository/folders/[[...path]]/page.tsx",
-  // Under `[locale]` since the Atlas caching change: these two carry no
-  // per-visitor read, so they moved to where the locale is a path segment and
-  // the CDN can hold them. Their canonical address is unchanged, which is the
-  // whole point of `canonicalMetadata` taking the clean path.
+  // Under `[locale]` since the Atlas caching change: these three carry no
+  // per-visitor read during their server render, so they moved to where the
+  // locale is a path segment and the CDN can hold them. Their canonical
+  // address is unchanged, which is the whole point of `canonicalMetadata`
+  // taking the clean path. `/repository` is the newest of the three — it
+  // still has a per-entry personalized control (the "Add to Studio" button),
+  // which is why it moved later than its two siblings: that control had to
+  // learn to resolve sign-in state client-side (`/api/auth/session`) before
+  // the page itself could stop calling `getMajoranaAuth()` server-side.
+  "/repository": "app/[locale]/repository/(browse)/page.tsx",
   "/repository/layers": "app/[locale]/repository/layers/page.tsx",
   "/repository/claims": "app/[locale]/repository/claims/page.tsx",
   "/repository/papers": "app/repository/papers/page.tsx",
