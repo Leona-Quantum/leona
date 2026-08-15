@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { ChevronIcon, PlusIcon } from "./icons";
 import { ghostFrame } from "../lib/composer-ghost";
+import { writeLandingPromptHandoff } from "../lib/landing-prompt-handoff";
 
 /**
  * The one destination this component links to, and the reason it is a constant.
@@ -87,7 +88,14 @@ export function LandingPrompt({ copy }: { copy: LandingPromptCopy }) {
   }, [dialogOpen]);
 
   const ghost = ghostFrame(reduceMotion ? 0 : elapsedMs, copy.prompts);
-  const placeholder = reduceMotion ? copy.prompts[0] ?? copy.label : ghost?.text || copy.label;
+  // Never `copy.label` here: it used to double as the placeholder fallback,
+  // which put "Describe the quantum circuit you want to build" on screen for
+  // every render before the typing animation had produced its first
+  // character (`ghost.text` is `""`, and `"" || copy.label` falls through) —
+  // visible on first paint and on every server render, since `elapsedMs`
+  // starts at 0. The label still exists for the screen-reader-only <label>
+  // below; it just never becomes visible text (owner, ai-ops#94).
+  const placeholder = reduceMotion ? copy.prompts[0] : ghost?.text || copy.prompts[0];
 
   // Every visitor gets the same dialog, because a prerendered page cannot know
   // who is reading it. A visitor who already has a session is not sent the long
@@ -104,7 +112,7 @@ export function LandingPrompt({ copy }: { copy: LandingPromptCopy }) {
         <label className="sr-only" htmlFor="mj-landing-prompt-input">{copy.label}</label>
         <textarea
           id="mj-landing-prompt-input"
-          rows={2}
+          rows={1}
           value={value}
           placeholder={placeholder}
           onChange={(event) => setValue(event.target.value)}
@@ -146,7 +154,18 @@ export function LandingPrompt({ copy }: { copy: LandingPromptCopy }) {
             <h2 id="mj-landing-signup-title">{copy.modalTitle}</h2>
             <p>{copy.modalBody}</p>
             {value ? <blockquote>{value}</blockquote> : null}
-            <a className="mj-primary-button" href={SIGN_IN_HREF}>{copy.modalPrimary}</a>
+            {/* The one write point (ai-ops 102): committed only on the click that
+                actually leaves for sign-in, never earlier. Opening this dialog
+                commits nothing, so closing it without clicking through carries
+                nothing forward — which is the correct behaviour for the
+                abandoned case, not a special case of it. */}
+            <a
+              className="mj-primary-button"
+              href={SIGN_IN_HREF}
+              onClick={() => writeLandingPromptHandoff(value)}
+            >
+              {copy.modalPrimary}
+            </a>
           </section>
         </div>
       ) : null}

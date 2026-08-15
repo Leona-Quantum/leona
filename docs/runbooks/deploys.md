@@ -219,6 +219,31 @@ Secrets come from GCP Secret Manager (`docs/runbooks/secrets.md`); the catalog
 identity UUIDs are plain config, not secrets. `--update-env-vars` merges, so it
 does not disturb secret-backed variables already on the service.
 
+**Converting a hand-set literal to a secret reference needs `--remove-env-vars`
+first, in the same command.** `gcloud run deploy --update-secrets KEY=SECRET:latest`
+refuses to change an existing key's backing type in place:
+`ERROR: (gcloud.run.deploy) Cannot update environment variable [KEY] to the
+given type because it has already been set with a different type.` This bit
+`SENTRY_DSN` for real (2026-08-15, ai-ops#97/PR 609→ PR 615): the value had
+been set by hand as a literal, formalizing it into Secret Manager and adding
+`--update-secrets` alone failed every deploy until `--remove-env-vars KEY` was
+added ahead of it. Removing a key that is not currently set is a documented
+no-op, so the pattern below is safe to leave in permanently rather than
+reverting once a given key's type is fixed:
+
+```bash
+gcloud run deploy ... \
+  --remove-env-vars SENTRY_DSN \
+  --update-secrets SENTRY_DSN=SENTRY_DSN:latest \
+  ...
+```
+
+The failure is contained if the deploy step it happens in is `--no-traffic`
+(the api step always is): no traffic shifts, so it is a failed dark deploy,
+not an outage. The real cost is that the failure is deterministic and lives
+in the workflow, so it blocks every later deploy — not just the one that
+first hit it — until fixed.
+
 | Variable | api | worker |
 |---|---|---|
 | `DATABASE_URL` (secret, pooled) | ✔ | ✔ |

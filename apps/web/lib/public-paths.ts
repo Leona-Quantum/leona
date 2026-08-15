@@ -62,6 +62,14 @@ export const PUBLIC_PATHS: readonly string[] = [
   "/contact",
   "/privacy",
   "/terms",
+  // `<AuthStatus>` (ai-ops#94) calls this from every `chrome="static"` page —
+  // home, pricing, workspace, contact, privacy, terms — to learn the real
+  // sign-in state after a cached, signed-out-by-default render. A signed-out
+  // visitor is exactly who needs a clean answer from it: gated, they would be
+  // 307'd to WorkOS by the very request that was supposed to tell them they
+  // are not signed in. The route still sees a session cookie when one exists —
+  // being on this list only means AuthKit does not require one.
+  "/api/auth/session",
   ...(isPublicDemoEnabled() ? ["/demo"] : []),
 ];
 
