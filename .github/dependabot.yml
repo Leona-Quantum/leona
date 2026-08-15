@@ -83,6 +83,23 @@ updates:
         # move one at a time so a shifted expectation value has one suspect.
         exclude-patterns: ["qiskit*", "pennylane*", "cirq*", "amazon-braket*", "qibo*", "qulacs*", "numpy", "scipy"]
         update-types: ["minor", "patch"]
+    ignore:
+      # ruff 0.16 turns a bare `[tool.ruff]` config (line-length only, no
+      # explicit `select`) into 527 violations on this tree — TRY004, RUF059,
+      # PLR171, BLE001, RET501 and friends, none of which existed as errors
+      # under 0.15. Adopting it is a repo-wide lint sweep touching ~200 files,
+      # which is its own reviewable change and not something to ride in on a
+      # dependency bump.
+      #
+      # pyproject.toml already pins `ruff>=0.14,<0.16` and says exactly this in
+      # a comment sitting on the line above. Dependabot rewrote that line to
+      # `>=0.16.2,<0.17` anyway — correctly, because it cannot read comments.
+      # A pin whose only defence is a comment is not defended; this is the half
+      # that Dependabot can actually see (leona#619).
+      #
+      # Remove this entry when the lint sweep lands, not before.
+      - dependency-name: "ruff"
+        versions: [">=0.16"]
     commit-message:
       prefix: "chore"
       include: scope
