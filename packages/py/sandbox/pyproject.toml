@@ -23,7 +23,7 @@ dependencies = ["pydantic>=2.8", "majorana-contracts"]
 # same unit, and none of that is verifiable here without live Vercel credentials.
 # `packages/py/sandbox/` is a blast-radius path (CODEOWNERS): owner review, not a
 # dependency-bump PR, is the right place to take this on.
-vercel = ["vercel==0.6.0"]
+vercel = ["vercel==0.10.0"]
 
 [build-system]
 requires = ["hatchling"]
