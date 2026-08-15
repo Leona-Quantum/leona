@@ -86,6 +86,7 @@ jobs:
           echo "::error::Vercel has not started a build for ${SHA} after 12 minutes."
           echo "::error::The website is now serving an older build than dev, and nothing else will say so."
           echo "::error::First thing to check is the project's git link, which is what broke on 2026-08-14:"
-          echo "::error::  curl -H \"Authorization: Bearer \$TOKEN\" 'https://api.vercel.com/v9/projects/prj_AtHnlVhlFc1mFNyAb3RvlET2NtBh?teamId=team_DRpA2jUgcqzPCQ24jjjOLN0O' | jq '.link | {org, repo, repoId}'"
+          echo "::error::  curl -H \"Authorization: Bearer \$VERCEL_TOKEN\" 'https://api.vercel.com/v9/projects/prj_AtHnlVhlFc1mFNyAb3RvlET2NtBh?teamId=team_DRpA2jUgcqzPCQ24jjjOLN0O' | jq '.link | {org, repo, repoId}'"
+          echo "::error::VERCEL_TOKEN is a Vercel API token you create yourself at vercel.com/account/tokens — it is NOT GH_TOKEN above, and this workflow does not hold one. Run that curl locally."
           echo "::error::It must read org=Leona-Quantum repo=leona. If repo is wrong, DELETE then POST /v9/projects/{id}/link — a bare POST refuses with cant_link_project rather than overwriting."
           exit 1
