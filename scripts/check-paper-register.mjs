@@ -44,10 +44,127 @@
 import { createRequire } from "node:module";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join, dirname } from "node:path";
+import { join, dirname, basename, resolve, relative, isAbsolute } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
+
+/**
+ * The six modules this gate bundles, as `[relativePath, label]`.
+ *
+ * Named once so `selfTest()` asserts the guard accepts the paths the real run
+ * uses, rather than asserting against a list that could drift away from the
+ * call sites and quietly stop covering them.
+ */
+const BUNDLE_TARGETS = [
+  ["apps/web/lib/repository/papers.ts", "papers"],
+  ["apps/web/lib/repository/paper-register.ts", "paper-register"],
+  ["apps/web/lib/public-repository.ts", "public-repository"],
+  ["apps/web/lib/repository/layer-graph.ts", "layer-graph"],
+  ["apps/web/lib/repository/paper-traces.ts", "paper-traces"],
+  ["apps/web/lib/repository/state-vocabulary.ts", "state-vocabulary"],
+];
+
+/**
+ * Where one `bundle()` call is allowed to read from and write to.
+ *
+ * Pure, and separate from `bundle()` itself, so `--self-test` drives the same
+ * code path the real run does. A guard whose test re-implements it is not a
+ * test of the guard — the Aikido autofix this replaces shipped a 245-line test
+ * that declared its own copy of `bundle()`, so it would have passed with the
+ * guard deleted, and it sat at `scripts/check-paper-register.test.mjs` where no
+ * CI glob would ever have run it.
+ *
+ * Both arguments are literals at the six call sites below, so nothing here is
+ * reachable by an attacker today. It is written down because the entry point is
+ * a path built by string join and the outfile is a name built by interpolation,
+ * and the next caller may not be a literal.
+ *
+ * `label` is reduced to its basename: it names a file inside a fresh mkdtemp
+ * directory, so a separator in it would place the bundle somewhere else.
+ * `relativePath` must resolve back inside the repo root.
+ *
+ * Returns `{ entry, outFile }`, or `{ error }` naming which argument was
+ * refused. Never throws, never exits — the caller decides, so the self-test can
+ * assert a refusal without taking the process down.
+ */
+export function resolveBundleTarget(rootDir, relativePath, label, outDir) {
+  const resolvedRoot = resolve(rootDir);
+  const entry = resolve(resolvedRoot, relativePath);
+  const inside = relative(resolvedRoot, entry);
+  if (inside === "" || inside.startsWith("..") || isAbsolute(inside)) {
+    return { error: `entry path escapes the repository root: ${relativePath}` };
+  }
+  const safeLabel = basename(label);
+  if (safeLabel !== label) {
+    return { error: `bundle label must be a bare filename: ${label}` };
+  }
+  if (safeLabel === "" || safeLabel === "." || safeLabel === "..") {
+    return { error: `bundle label is not a usable filename: ${label}` };
+  }
+  return { entry, outFile: join(outDir, `${safeLabel}.mjs`) };
+}
+
+/**
+ * Prove the guard can REFUSE, not merely that it accepts what we already pass.
+ *
+ * Every refusal case below fails against the unguarded version of
+ * `resolveBundleTarget`, and the acceptance cases are the six real call sites,
+ * so a future edit that widens the guard shows up as a self-test failure rather
+ * than as nothing at all. Wired into `.github/workflows/security.yml` beside the
+ * other `--self-test` gates, because a checker nobody runs is not a checker.
+ */
+export function selfTest() {
+  const failures = [];
+  const out = "/tmp/selftest-out";
+  const refuse = (relativePath, label, why) => {
+    const got = resolveBundleTarget(root, relativePath, label, out);
+    if (!got.error) failures.push(`${why}: accepted ${JSON.stringify({ relativePath, label })}`);
+  };
+  const accept = (relativePath, label) => {
+    const got = resolveBundleTarget(root, relativePath, label, out);
+    if (got.error) failures.push(`refused a real call site: ${relativePath} (${got.error})`);
+  };
+
+  refuse("../../etc/passwd", "x", "parent traversal");
+  refuse("apps/../../outside.ts", "x", "traversal after a valid prefix");
+  refuse("/etc/passwd", "x", "absolute entry path");
+  refuse("", "x", "empty entry path");
+  refuse("apps/web/lib/repository/papers.ts", "../escape", "label with a parent segment");
+  refuse("apps/web/lib/repository/papers.ts", "sub/dir", "label with a separator");
+  refuse("apps/web/lib/repository/papers.ts", "/abs", "absolute label");
+  refuse("apps/web/lib/repository/papers.ts", "..", "label that is a parent reference");
+
+  for (const [path, label] of BUNDLE_TARGETS) accept(path, label);
+
+  // The guard must not be vacuous: an unguarded resolve would have accepted the
+  // first refusal case, so assert that the shape it produces is the one that
+  // would have been dangerous.
+  const escaped = resolve(resolve(root), "../../etc/passwd");
+  if (!relative(resolve(root), escaped).startsWith("..")) {
+    failures.push("the traversal fixture no longer escapes the root, so the refusals prove nothing");
+  }
+  return failures;
+}
+
+// Before esbuild is required, deliberately: the self-test is pure path
+// arithmetic, and making it need an installed toolchain is how a gate ends up
+// skipped in the one environment that matters. `npx tsc` in a worktree with no
+// node_modules is already on this repository's list of false greens.
+if (process.argv.includes("--self-test")) {
+  const failures = selfTest();
+  if (failures.length > 0) {
+    console.error("✖ check-paper-register self-test FAILED:");
+    for (const failure of failures) console.error(`  - ${failure}`);
+    process.exit(1);
+  }
+  console.log(
+    `check-paper-register self-test passed (8 traversal refusals, ` +
+      `${BUNDLE_TARGETS.length} real call sites accepted)`,
+  );
+  process.exit(0);
+}
+
 const require = createRequire(join(root, "packages/ts/ui-visual/package.json"));
 const esbuild = require("esbuild");
 
@@ -55,31 +172,39 @@ const QUIET = process.argv.includes("--quiet");
 
 async function bundle(relativePath, label) {
   const outDir = mkdtempSync(join(tmpdir(), "papers-"));
-  const outFile = join(outDir, `${label}.mjs`);
+  const target = resolveBundleTarget(root, relativePath, label, outDir);
+  if (target.error) {
+    rmSync(outDir, { recursive: true, force: true });
+    console.error(`✖ refusing to bundle ${relativePath}: ${target.error}`);
+    process.exit(1);
+  }
   try {
     await esbuild.build({
-      entryPoints: [join(root, relativePath)],
+      entryPoints: [target.entry],
       bundle: true,
       format: "esm",
       platform: "neutral",
-      outfile: outFile,
+      outfile: target.outFile,
       logLevel: "silent",
     });
   } catch (error) {
     console.error(`✖ failed to bundle ${relativePath}:`, error.message);
     process.exit(1);
   }
-  const mod = await import(pathToFileURL(outFile).href);
+  const mod = await import(pathToFileURL(target.outFile).href);
   rmSync(outDir, { recursive: true, force: true });
   return mod;
 }
 
-const papers = await bundle("apps/web/lib/repository/papers.ts", "papers");
-const registerMod = await bundle("apps/web/lib/repository/paper-register.ts", "paper-register");
-const corpusMod = await bundle("apps/web/lib/public-repository.ts", "public-repository");
-const graphMod = await bundle("apps/web/lib/repository/layer-graph.ts", "layer-graph");
-const tracesMod = await bundle("apps/web/lib/repository/paper-traces.ts", "paper-traces");
-const statesMod = await bundle("apps/web/lib/repository/state-vocabulary.ts", "state-vocabulary");
+// Driven off BUNDLE_TARGETS so the self-test above covers exactly these paths;
+// a target added here without being added there stops being checked, which is
+// the drift the single list exists to prevent. Sequential, as before — these
+// bundles were never concurrent and esbuild is the slow part either way.
+const bundled = [];
+for (const [relativePath, label] of BUNDLE_TARGETS) {
+  bundled.push(await bundle(relativePath, label));
+}
+const [papers, registerMod, corpusMod, graphMod, tracesMod, statesMod] = bundled;
 
 const { PAPER_REGISTER } = registerMod;
 const errors = [...papers.validatePaperRegister(PAPER_REGISTER)];

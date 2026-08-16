@@ -373,6 +373,16 @@ jobs:
       # how the gitleaks gate stayed meaningless for months.
       - name: scanner self-test
         run: node scripts/check-client-bundle-secrets.mjs --self-test
+      # Same rule, for the path guard on the paper-register gate's bundler. It is
+      # pure path arithmetic and needs no node_modules, so it runs before any
+      # install step and cannot be skipped by a toolchain that is not there yet.
+      # Aikido's autofix for this finding shipped a 245-line test that declared
+      # its OWN copy of the function under test and lived at a path no CI glob
+      # matched — it would have passed with the guard deleted, and never ran. The
+      # self-test asserts the guard REFUSES eight traversal shapes and accepts the
+      # six real call sites, so removing the guard turns this red.
+      - name: paper-register bundler path guard self-test
+        run: node scripts/check-paper-register.mjs --self-test
       - name: build the web app
         run: pnpm --filter @majorana/web build
       - name: no secret-shaped strings in browser-served files
