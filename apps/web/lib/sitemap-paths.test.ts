@@ -4,11 +4,14 @@ import { test } from "node:test";
 import { fileURLToPath } from "node:url";
 import {
   CRAWLER_DISALLOWED_PATHS,
+  MACHINE_READABLE_PATHS,
   PUBLIC_REDIRECT_ALIASES,
   PUBLIC_STATIC_PATHS,
   sitemapPaths,
 } from "./sitemap-paths.ts";
 import { PRODUCTION_ORIGIN, canonicalOrigin } from "./site-origin.ts";
+import { isPublicPath } from "./public-paths.ts";
+import { ROUTED_SEGMENTS } from "./routed-paths.ts";
 
 const SURFACE = {
   entrySlugs: ["bell-state", "grover-unstructured-search"],
@@ -80,9 +83,80 @@ test("every top-level app route is published, aliased, or disallowed", () => {
     const path = `/${name}`;
     if (PUBLIC_STATIC_PATHS.some((page) => page === path || page.startsWith(`${path}/`))) return false;
     if (PUBLIC_REDIRECT_ALIASES.includes(path)) return false;
+    // Public, crawlable, and not a page — see MACHINE_READABLE_PATHS.
+    if (MACHINE_READABLE_PATHS.includes(path)) return false;
     return !CRAWLER_DISALLOWED_PATHS.some((prefix) => prefix === path || prefix === `${path}/`);
   });
   assert.deepEqual(unaccounted, [], `route segments in none of the three lists: ${unaccounted.join(", ")}`);
+});
+
+/**
+ * The fourth list is an exemption from the census above, so it needs its own
+ * fence — otherwise "add it to MACHINE_READABLE_PATHS" becomes the way any new
+ * route escapes being classified, which is exactly the failure the census
+ * exists to catch.
+ */
+test("a machine-readable path is genuinely public, and genuinely not a page", () => {
+  assert.ok(MACHINE_READABLE_PATHS.length > 0, "nothing to check");
+  for (const path of MACHINE_READABLE_PATHS) {
+    // Being read is the point, so it must not be blocked.
+    const blocked = CRAWLER_DISALLOWED_PATHS.find(
+      (prefix) => path === prefix || path.startsWith(prefix),
+    );
+    assert.equal(blocked, undefined, `${path} is machine-readable but robots.txt disallows ${blocked}`);
+
+    // It is not a page, so it must not be advertised as one.
+    assert.ok(
+      !sitemapPaths(SURFACE).includes(path),
+      `${path} is in the sitemap; a sitemap lists pages to index, not descriptors`,
+    );
+    assert.ok(
+      !PUBLIC_STATIC_PATHS.includes(path),
+      `${path} is in PUBLIC_STATIC_PATHS, which would publish it in the sitemap`,
+    );
+    assert.ok(
+      !PUBLIC_REDIRECT_ALIASES.includes(path),
+      `${path} cannot be both a machine-readable endpoint and a redirect alias`,
+    );
+
+    // A file extension is what makes these recognisable as not-a-page. If a
+    // bare path ever lands here it is probably an ordinary route that someone
+    // routed around the census rather than classifying.
+    assert.match(
+      path,
+      /^\/[a-z0-9-]+\.[a-z]{2,4}$/,
+      `${path} does not look like a machine-readable file endpoint`,
+    );
+
+    // BOTH lists, and this is the assertion that earns the test.
+    //
+    // "Routed" and "public" are separate, and an endpoint served by a Route
+    // Handler needs both: ROUTED_SEGMENTS stops the middleware treating it as
+    // a typo, and PUBLIC_PATHS stops AuthKit gating it once it IS routed.
+    // Adding only the first is strictly worse than adding neither — before
+    // routing, an anonymous request falls through unauthenticated and Next
+    // answers; after routing without publishing, the same request reaches
+    // authkitMiddleware and is 307'd to WorkOS. A file whose whole purpose is
+    // to be fetched by crawlers then answers every one of them with a sign-in
+    // redirect.
+    //
+    // That is not hypothetical: it is what PR 684 did, and Aikido's Deep
+    // Review caught it rather than any check here. Local verification could
+    // not have: middleware.ts returns early under isLocalDevAuthEnabled(), so
+    // the gate never runs against a local build and curl returned the file
+    // correctly on a tree where production would have redirected.
+    const segment = path.slice(1);
+    assert.ok(
+      ROUTED_SEGMENTS.includes(segment),
+      `${path} is machine-readable but "${segment}" is not in ROUTED_SEGMENTS, so the ` +
+        "middleware treats it as an unrouted path",
+    );
+    assert.ok(
+      isPublicPath(path),
+      `${path} is routed but not in PUBLIC_PATHS, so AuthKit will redirect anonymous ` +
+        "fetches to WorkOS and the endpoint ships unreachable to the clients it exists for",
+    );
+  }
 });
 
 /** The `(app)` group's own pages are URL segments even though its folder is not. */

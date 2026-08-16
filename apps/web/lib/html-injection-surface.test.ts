@@ -48,6 +48,20 @@ const ALLOWED = new Map<string, { sinks: number; reason: string }>([
   // HTML being injected — they are code we wrote, deliberately executed before
   // first paint (theme, locale, and the auth hint from ai-ops issue 114). There
   // is no untrusted input and nothing to sanitize; a sanitizer would delete them.
+  //
+  // STILL THREE after the JSON-LD block was added for ai-ops 133, and that is
+  // the interesting part rather than an oversight. The structured data is
+  // rendered as a text child of <script type="application/ld+json">, not
+  // through `dangerouslySetInnerHTML`, so it is not a sink at all.
+  //
+  // That was not a stylistic choice. Measured both ways: with `__html`, a value
+  // containing "</script>" is emitted verbatim, closes the tag, and whatever
+  // follows becomes real markup — three closing tags in the rendered output.
+  // As a text child, React applies script-specific escaping and the value
+  // cannot leave the element. So the version that would have needed an entry
+  // here is the one that was genuinely less safe, which is worth knowing the
+  // next time a "just use dangerouslySetInnerHTML, the input is ours" argument
+  // shows up: it is ours until the day it carries a record name.
   ["app/layout.tsx", { sinks: 3, reason: "inline <script>: our own constants, pre-paint" }],
   // An inline <style> built from our own locale constant, same reasoning.
   //

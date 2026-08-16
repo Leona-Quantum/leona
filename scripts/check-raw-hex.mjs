@@ -8,7 +8,21 @@ import { fileURLToPath } from "node:url";
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const SCAN_ROOTS = ["apps/web", "packages/ts/ui"];
-const ALLOWED = new Set(["packages/ts/ui/tokens.css"]);
+const ALLOWED = new Set([
+  "packages/ts/ui/tokens.css",
+  // The Open Graph card. `next/og` renders through Satori, which resolves no
+  // CSS custom properties and loads no stylesheet — it takes a small inline
+  // style subset only — so `var(--bg-0)` there produces a transparent box
+  // rather than a colour. The literals are therefore structural, not a
+  // shortcut, which is the same reason `app/icon.svg` carries them (that file
+  // is exempt only because .svg is not a scanned extension).
+  //
+  // The exemption does not mean unchecked: `apps/web/lib/opengraph-tokens.test.ts`
+  // parses the dark theme out of tokens.css and asserts every literal in this
+  // file still matches it, so a palette change fails there instead of silently
+  // shipping an off-brand card.
+  "apps/web/app/opengraph-image.tsx",
+]);
 const EXTENSIONS = new Set([".css", ".ts", ".tsx", ".js", ".jsx", ".mjs"]);
 const SKIP_DIRS = new Set(["node_modules", ".next", ".turbo", ".vercel", "dist"]);
 // Build output under an alternate NEXT_DIST_DIR (a second local dev server).
