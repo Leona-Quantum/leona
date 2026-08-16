@@ -48,6 +48,7 @@ jobs:
       id-token: write # Workload Identity Federation
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with: { persist-credentials: false }
 
       # Load infra/fleet.env into the job environment so every `gcloud run
       # deploy` below passes the numbers from that file rather than a literal

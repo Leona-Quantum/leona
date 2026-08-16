@@ -42,7 +42,14 @@ import re
 import tarfile
 from dataclasses import dataclass, field
 from typing import Literal
-from xml.etree import ElementTree
+
+# defusedxml for the same reason research.py uses it: this parses an arXiv API
+# response, and the stdlib parser accepts a DTD, so a hostile or malformed body
+# can expand entities until the harness runs out of memory. This one runs on a
+# developer's machine rather than in production, which lowers the stakes without
+# changing the answer — the two arXiv parsers in this repo should not disagree
+# about whether that is worth one import.
+from defusedxml import ElementTree
 
 __all__ = [
     "MATH_READING_FIELDS",

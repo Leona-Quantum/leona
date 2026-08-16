@@ -44,6 +44,7 @@ jobs:
       BENCH_DATABASE_URL: postgresql://pg:pg@localhost:5432/majorana_bench
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with: { persist-credentials: false }
       - name: guard on provider keys
         # The openai profile needs BOTH keys (gpt-5.5 plans/verifies,
         # deepseek-v4-pro generates/writes back) — starting with one would fail

@@ -14,6 +14,8 @@ dependencies = [
     # pulls the provider SDKs. Both complete profiles the bench guard accepts:
     # openai+deepseek (one SDK) and anthropic.
     "majorana-llm[openai,anthropic]",
+    # paper_source.py parses the arXiv API's Atom response directly.
+    "defusedxml>=0.7.1",
 ]
 
 [project.optional-dependencies]
