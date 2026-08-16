@@ -264,9 +264,13 @@ silent half of this operation, because the site keeps working and the status
 heading above becomes false without anything failing.
 
 ```bash
+# `rtk proxy` is the BYPASS when rtk is installed, and a no-op prefix otherwise —
+# see the note below on why the naive-looking form is the corrupted one.
+GC=$(command -v rtk >/dev/null 2>&1 && echo "rtk proxy gcloud" || echo "gcloud")
+
 for svc in majorana-api majorana-worker; do
   printf '%-18s ' "$svc"
-  rtk proxy gcloud run services describe "$svc" --region=us-west1 --project=majorana-core \
+  $GC run services describe "$svc" --region=us-west1 --project=majorana-core \
     --format='json(spec.template.spec.containers[0].env)' \
     | jq -r '[.spec.template.spec.containers[0].env[] | select(.name=="DATABASE_URL")]
              | .[0] // {} | .valueFrom.secretKeyRef.name // "LITERAL (not a secret ref)"'
@@ -274,8 +278,13 @@ done
 # Both must print DATABASE_URL_APP_SECRET.
 ```
 
-Read the revision back afterwards rather than trusting the exit code — **and run
-the read through `rtk proxy` if `rtk` is on the path.** That is not a style
+Read the revision back afterwards rather than trusting the exit code — **and if
+`rtk` is on the path, prefix the read with `rtk proxy`, which is the BYPASS, not a
+detour through it.** `rtk proxy <cmd>` runs the raw command with rtk's filtering
+switched off (see `~/.claude/RTK.md`); a bare `gcloud` is what gets rewritten and
+truncated, because the rtk hook rewrites commands automatically. So `rtk proxy
+gcloud …` is the *uncorrupted* read and plain `gcloud …` is the corrupted one,
+which is the opposite of how it looks. That is not a style
 preference. `rtk` is the local token-reducing command proxy, and it *truncates*
 long `gcloud` output: measured on this exact command, `describe --format=yaml(…env)`
 returned **11** env keys through `rtk` and **17** raw. A "before" snapshot taken
