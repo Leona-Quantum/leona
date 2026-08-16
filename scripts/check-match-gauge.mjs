@@ -49,7 +49,7 @@
 import { createRequire } from "node:module";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join, dirname } from "node:path";
+import path, { join, dirname } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
@@ -65,7 +65,19 @@ const QUIET = process.argv.includes("--quiet");
 // a third script needs it.
 async function bundle(relativePath, label) {
   const outDir = mkdtempSync(join(tmpdir(), "match-gauge-"));
+  const resolvedLabel = path.resolve(outDir, label);
+  const relativeCheck = path.relative(outDir, resolvedLabel);
+  if (relativeCheck.startsWith('..') || path.isAbsolute(relativeCheck)) {
+    console.error(`✖ failed to bundle ${relativePath}: invalid label`);
+    process.exit(1);
+  }
   const outFile = join(outDir, `${label}.mjs`);
+  const resolvedPath = path.resolve(root, relativePath);
+  const relativePathCheck = path.relative(root, resolvedPath);
+  if (relativePathCheck.startsWith('..') || path.isAbsolute(relativePathCheck)) {
+    console.error(`✖ failed to bundle ${relativePath}: invalid path`);
+    process.exit(1);
+  }
   try {
     await esbuild.build({
       entryPoints: [join(root, relativePath)],
