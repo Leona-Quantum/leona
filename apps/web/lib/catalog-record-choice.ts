@@ -17,7 +17,7 @@
  * payload proving it existed outlived the record. A withdrawn record therefore
  * kept serving indefinitely, and no deploy cleared it.
  *
- * Measured on production 2026-08-16, the day after #656 withdrew the 2-qubit
+ * Measured on production 2026-08-16, the day after PR 656 withdrew the 2-qubit
  * width variants: `/repository/benchmark-bell-pair-ladder-2q` and
  * `/repository/benchmark-ghz-chain-2q` both answered 200 with a full record and
  * its verification badges, while the API answered 404 for both and the sitemap
@@ -61,16 +61,24 @@ export function chooseRepositoryRecord<T>(input: {
   fallback: T | undefined;
   /**
    * Slugs the catalog currently publishes, or null when no authoritative
-   * listing could be obtained this render (the API was unreachable). Null
-   * disables the staleness check entirely rather than guessing — a corpus
-   * standing in for the catalog is exactly what must not be read as the
-   * catalog's own statement.
+   * listing could be obtained this render.
+   *
+   * **Null must mean "could not be proved", not merely "unreachable".** Absence
+   * from this set is about to be read as a withdrawal, so anything that could
+   * remove a slug for a reason OTHER than withdrawal has to produce null
+   * instead. `authoritativePublishedSlugs()` in repository-source.ts is the only
+   * intended producer, and it returns null when pagination could not prove
+   * completeness, when any row failed validation, and when the listing came back
+   * empty — because in each of those a live record can be missing from the set,
+   * and 404ing live records is far worse than briefly serving a withdrawn one.
    */
   publishedSlugs: ReadonlySet<string> | null;
 }): RepositoryRecordChoice<T> {
   const { slug, parsed, fallback, publishedSlugs } = input;
 
-  if (parsed && publishedSlugs !== null && !publishedSlugs.has(slug)) {
+  // `parsed !== null` rather than a truthiness test: T is generic, and a falsy
+  // T would otherwise skip the branch silently.
+  if (parsed !== null && publishedSlugs !== null && !publishedSlugs.has(slug)) {
     // Withdrawn: the catalog is reachable and does not list this slug, so the
     // parsed payload can only have come from the cache. Fall through to the
     // corpus, which is still allowed to carry it for the reasons above; when it

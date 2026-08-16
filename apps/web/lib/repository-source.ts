@@ -150,6 +150,49 @@ async function fetchCatalogListEntries(): Promise<PublicRepositoryListEntry[] | 
 }
 
 /**
+ * The slugs the catalog currently publishes, or null if that could not be
+ * PROVED this render.
+ *
+ * Absence from this set is read as a withdrawal by chooseRepositoryRecord, so
+ * every way a live slug could go missing for some other reason has to return
+ * null instead. Three of them, and each one really can happen:
+ *
+ *   1. `fetchAllCatalogPages` returns null when it cannot prove it collected
+ *      every page. A short page set is a subset of the catalog, and a subset
+ *      would read as a mass withdrawal.
+ *   2. `parseCatalogListEntries` DROPS rows that fail validation and returns the
+ *      rest. A record whose list row is malformed, or carries a field from a
+ *      newer schema, would otherwise be indistinguishable from a withdrawn one —
+ *      while its per-slug payload is still perfectly valid. That is the whole
+ *      failure this guard could have caused, so a single rejected row disables
+ *      it for the render.
+ *   3. An empty listing. `fetchCatalogListEntries` already treats zero usable
+ *      entries as a fault rather than as a real catalog state, and the same
+ *      judgement applies harder here: an empty set would refuse every cached
+ *      record on the site at once.
+ *
+ * The asymmetry is deliberate and is the whole design. Failing to reject a
+ * withdrawn record leaves one stale page up. Wrongly rejecting live records
+ * takes real pages down. This returns null whenever it is not certain.
+ */
+async function authoritativePublishedSlugs(): Promise<ReadonlySet<string> | null> {
+  const payload = await fetchAllCatalogPages("list");
+  if (payload === null) return null;
+
+  const { entries, rejected } = parseCatalogListEntries(payload);
+  if (rejected.length > 0) {
+    console.error(
+      `[repository-source] not treating the listing as authoritative: ${rejected.length} row(s) ` +
+        "failed validation, and a dropped row is indistinguishable from a withdrawn record. " +
+        "Withdrawn entries may serve from cache until this is fixed.",
+    );
+    return null;
+  }
+  if (entries.length === 0) return null;
+  return new Set(entries.map((entry) => entry.slug));
+}
+
+/**
  * Every entry backing /repository, with the FULL record. Async by construction
  * so the call sites do not have to change again when the flag flips.
  *
@@ -203,12 +246,11 @@ export async function getRepositoryEntry(slug: string): Promise<PublicRepository
   // in the render that matters this costs nothing.
   const [payload, listed] = await Promise.all([
     fetchCatalogPayload(`${API_URL}/v1/catalog/entries/${encodeURIComponent(slug)}`, true),
-    // Deliberately the RAW list fetch, not getRepositoryListEntries(): that one
-    // substitutes the committed corpus when the API cannot be reached, and a
-    // corpus standing in for the catalog is exactly the thing that must not be
-    // read as the catalog's own statement here. `null` means "no authoritative
-    // listing this render", and the check below then does nothing.
-    fetchCatalogListEntries(),
+    // Deliberately NOT getRepositoryListEntries(): that one substitutes the
+    // committed corpus when the API cannot be reached, and a corpus standing in
+    // for the catalog is exactly what must not be read as the catalog's own
+    // statement here. This returns null unless completeness was proved.
+    authoritativePublishedSlugs(),
   ]);
   // Fall through to the static corpus on a miss so a transient API failure does
   // not 404 a record that genuinely exists; a slug in neither is undefined, and
@@ -222,7 +264,7 @@ export async function getRepositoryEntry(slug: string): Promise<PublicRepository
     slug,
     parsed,
     fallback,
-    publishedSlugs: listed === null ? null : new Set(listed.map((entry) => entry.slug)),
+    publishedSlugs: listed,
   });
   if (refusedStaleCache) {
     console.error(

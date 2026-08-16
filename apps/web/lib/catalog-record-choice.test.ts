@@ -12,7 +12,7 @@ const published = (...slugs: string[]) => new Set(slugs);
  * The regression this file exists for.
  *
  * `/repository/benchmark-bell-pair-ladder-2q` answered 200 on production for a
- * day after #656 withdrew it, serving a full record with verification badges
+ * day after PR 656 withdrew it, serving a full record with verification badges
  * while the API answered 404 and the sitemap listed neither it nor its sibling.
  * The per-slug payload was a cached 200 that Next would not overwrite with a
  * 404, so the record could not stop serving on its own.
@@ -70,6 +70,42 @@ test("no authoritative listing disables the check rather than guessing", () => {
   });
   assert.deepEqual(choice.record, api("benchmark-bell-pair-ladder-2q"));
   assert.equal(choice.refusedStaleCache, false);
+});
+
+/**
+ * The contract that makes the producer's job clear, pinned so it cannot drift.
+ *
+ * An EMPTY set is authoritative-and-empty, so it refuses every cached record at
+ * once. That is the correct reading of the type, and it is precisely why
+ * `authoritativePublishedSlugs()` must return `null` — never an empty set — when
+ * the listing came back empty, when any row failed validation, or when
+ * pagination could not prove completeness. Getting that backwards would take
+ * live pages down site-wide, which is the expensive direction.
+ */
+test("an empty set is authoritative and refuses everything, which is why the producer sends null instead", () => {
+  const choice = chooseRepositoryRecord({
+    slug: "bell-state-qiskit",
+    parsed: api("bell-state-qiskit"),
+    fallback: undefined,
+    publishedSlugs: new Set<string>(),
+  });
+  assert.equal(choice.record, undefined);
+  assert.equal(choice.refusedStaleCache, true);
+});
+
+/**
+ * A falsy record must not skip the staleness branch. The helper is generic, so
+ * `parsed` is checked against null rather than for truthiness.
+ */
+test("a falsy record is still a record", () => {
+  const choice = chooseRepositoryRecord<number>({
+    slug: "withdrawn",
+    parsed: 0,
+    fallback: undefined,
+    publishedSlugs: published("something-else"),
+  });
+  assert.equal(choice.record, undefined);
+  assert.equal(choice.refusedStaleCache, true, "0 is a parsed payload, not the absence of one");
 });
 
 test("an unknown slug in neither the catalog nor the corpus is undefined", () => {
