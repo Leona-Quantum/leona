@@ -68,7 +68,16 @@ export async function sendContactEmail(
       }),
       signal: AbortSignal.timeout(CONTACT_SEND_TIMEOUT_MS),
     });
-  } catch {
+  } catch (error) {
+    // Logged for the same reason the rejection below is. Without this the two
+    // failure modes are not symmetric in the logs: a provider 4xx is visible
+    // and a DNS failure or a timeout is silent, so "nobody is receiving contact
+    // mail" looks like "nobody wrote in". The timeout is included because it is
+    // the likeliest cause and the number is not otherwise in the log line.
+    console.error("contact: could not reach the provider", {
+      timeoutMs: CONTACT_SEND_TIMEOUT_MS,
+      cause: error instanceof Error ? error.name : "unknown",
+    });
     return { delivered: false, reason: "unreachable" };
   }
 

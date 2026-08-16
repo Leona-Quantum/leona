@@ -18,14 +18,20 @@ import type { PublicLocale } from "../../../lib/public-locale";
  * chunk. Even the fallback address now arrives from the server, on demand.
  */
 
-type Delivery = "sends" | "mailto" | "unknown";
+type Delivery = "sends" | "mailto";
 type Status = { kind: "idle" | "sending" | "sent" | "failed"; detail?: string };
 
 export function ContactForm({ locale }: { locale: PublicLocale }) {
   const [status, setStatus] = useState<Status>({ kind: "idle" });
   // What the button will actually do. Fetched rather than built in, because
   // this page is served from the CDN and cannot know it at render time.
-  const [delivery, setDelivery] = useState<Delivery>("unknown");
+  //
+  // Starts on "mailto", the CONSERVATIVE of the two, and that is the whole
+  // reason there is no third "unknown" state: an unresolved probe rendered the
+  // "Send inquiry" label, which promises server-side delivery before anything
+  // has confirmed it exists. Raised by Sourcery on PR 661 — the comment below
+  // already claimed this behaviour and the code did not have it.
+  const [delivery, setDelivery] = useState<Delivery>("mailto");
   const copy = CONTACT_COPY[locale];
 
   useEffect(() => {
@@ -47,7 +53,11 @@ export function ContactForm({ locale }: { locale: PublicLocale }) {
   }, []);
 
   function openMailto(mailto: string | null, inquiry: Record<string, string>) {
-    if (!mailto) {
+    // `CONTACT_FALLBACK` is set by hand, so this string can be misconfigured —
+    // a bare address with no scheme is the obvious way. Without this check the
+    // slice below silently produces a broken href and the button appears to do
+    // nothing, which is the failure this whole PR exists to remove.
+    if (!mailto || !mailto.trim().toLowerCase().startsWith("mailto:")) {
       setStatus({ kind: "failed", detail: copy.fields.failed });
       return;
     }
@@ -61,7 +71,7 @@ export function ContactForm({ locale }: { locale: PublicLocale }) {
     ].join("\n");
     // The route hands back a mailto URL with a placeholder subject; keep the
     // address it chose and replace the query with this submission's own.
-    const address = mailto.slice("mailto:".length).split("?")[0];
+    const address = mailto.trim().slice("mailto:".length).split("?")[0];
     window.location.href = `mailto:${address}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
     setStatus({ kind: "sent", detail: copy.fields.status });
   }
@@ -118,9 +128,9 @@ export function ContactForm({ locale }: { locale: PublicLocale }) {
   const sending = status.kind === "sending";
   const label = sending
     ? copy.fields.sending
-    : delivery === "mailto"
-      ? copy.fields.submit
-      : copy.fields.send;
+    : delivery === "sends"
+      ? copy.fields.send
+      : copy.fields.submit;
 
   return (
     <form className="mj-contact-form" onSubmit={submit}>
