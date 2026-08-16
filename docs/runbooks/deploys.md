@@ -190,8 +190,8 @@ revision, that opens the door.
 
 ## Deploy the worker
 
-The worker takes no traffic, so there is no tagged-revision step — but it does
-need `--command majorana-worker` preserved, and it reads `CatalogAuthority`
+The worker serves no HTTP requests, so there is no tagged-revision step — but it
+does need `--command majorana-worker` preserved, and it reads `CatalogAuthority`
 config for `catalog.import` jobs, so it needs the same `SYSTEM_CATALOG_*`
 variables as the API.
 
@@ -200,6 +200,29 @@ gcloud run deploy majorana-worker --project majorana-core --region us-west1 \
   --image us-west1-docker.pkg.dev/majorana-core/majorana/api:$TAG \
   --command majorana-worker
 ```
+
+**"Takes no traffic" is about requests, not about Cloud Run's traffic
+assignment — and reading it the other way cost three days of unshipped deploys.**
+Traffic assignment is what decides which revision *runs at all*. If
+`spec.traffic` names an explicit revision, a plain `gcloud run deploy`
+**preserves that pin** rather than taking traffic, and the new revision sits
+healthy and idle with no instances. That happened: a `--tag
+sentry-postfix-worker3` deploy on 2026-08-14 pinned traffic to
+`majorana-worker-00483-lb7`, and every deploy through 2026-08-16 shipped
+nothing while production kept polling release `8e56bbb`. Always shift, and
+always read back which revision serves:
+
+```bash
+gcloud run services update-traffic majorana-worker \
+  --project majorana-core --region us-west1 --to-latest
+
+# The two must agree. If they do not, the deploy did not ship.
+gcloud run services describe majorana-worker --project majorana-core \
+  --region us-west1 --format='value(status.latestCreatedRevisionName,status.traffic.revisionName)'
+```
+
+`deploy.yml` now does this in a `shift worker traffic` step, and its gate fails
+when the created revision is not the serving one.
 
 Then confirm it is not crash-looping — an unhealthy worker still reports as a
 healthy Cloud Run service, because the failure is inside the poll loop:
@@ -211,7 +234,10 @@ gcloud logging read 'resource.type="cloud_run_revision"
   --format="value(severity,textPayload)"
 ```
 
-Expect `worker <id> started (poll 2.0s)` and no repeated tracebacks.
+Expect `worker <id> started (poll 2.0s)` and no repeated tracebacks. **Require
+that line rather than settling for an absence of errors:** a revision with no
+traffic logs nothing at all, so "no errors" is what a revision that never ran
+looks like.
 
 ## Environment
 
