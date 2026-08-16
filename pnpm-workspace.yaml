@@ -107,6 +107,13 @@ overrides:
   # 2.1.3 and 2.1.4, so the finding is now upgradable and the acceptance is gone.
   brace-expansion@^2.0.0: 2.1.4
   brace-expansion@^5.0.0: 5.0.9
+  # AIKIDO-2026-584205 (LOW): jose cryptographic timing side-channel. Patched at
+  # 6.2.5. The only consumer on the tree is @workos-inc/authkit-nextjs, which
+  # pins jose@^5.10.0 across all published releases (latest 4.3.1 still carries
+  # ^5.10.0), so no parent bump can reach the fix — override is the only path.
+  # Selector-scoped to the 5.x range so a future authkit-nextjs that ships jose
+  # 6.x or 7.x is not silently pinned to 6.2.5.
+  jose@^5.0.0: 6.2.5
   # NOT `minimatch@^5 -> 10`, though that is the tempting way to collapse the
   # two lines above into one. minimatch 10 moved from a callable default export
   # to named exports, and @redocly/openapi-core (the only minimatch@5 consumer
