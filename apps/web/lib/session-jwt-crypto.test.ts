@@ -26,13 +26,15 @@
  * jose under authkit whose API or behaviour has moved, this fails here rather
  * than on a visitor's sign-in.
  *
- * ## Why it asserts the resolved major first
+ * ## Why it asserts the resolved version first
  *
  * A test that would pass identically on jose 5 does not gate an upgrade to jose
- * 6 — it just runs twice. `resolvedJoseMajor` reads the version out of the
- * package the app actually resolves, so if the override is reverted, dropped in
- * a merge, or quietly outvoted by another override, this file FAILS instead of
- * going green against the version it was written to replace.
+ * 6 — it just runs twice. `resolvedJoseVersion` reads the version out of the
+ * package the app actually resolves and compares it against the version the
+ * advisory is patched at, so if the override is reverted, dropped in a merge, or
+ * quietly outvoted by another override, this file FAILS instead of going green
+ * against the version it was written to replace. It is a floor and not an
+ * equality check on purpose — see `atLeast`.
  *
  * ## Scope, stated honestly
  *
@@ -60,10 +62,34 @@ import {
 
 const require_ = createRequire(import.meta.url);
 
-/** The major of the jose the app resolves — not the one this file hoped for. */
-function resolvedJoseMajor(): number {
+/** The version of the jose the app resolves — not the one this file hoped for. */
+function resolvedJoseVersion(): string {
   const pkg = require_("jose/package.json") as { version: string };
-  return Number.parseInt(pkg.version.split(".")[0] ?? "", 10);
+  return pkg.version;
+}
+
+/** AIKIDO-2026-584205 is patched here. Anything below it is still vulnerable. */
+const MINIMUM_PATCHED_JOSE = "6.2.5";
+
+/**
+ * True when `version` is at least `minimum`, compared numerically per component.
+ *
+ * Deliberately a floor rather than the exact-equality check the review asked
+ * for. Pinning the test to 6.2.5 exactly would go red on a routine Dependabot
+ * bump to 6.2.6 — a green-to-red transition caused by taking a NEWER fix, which
+ * is how a control gets deleted rather than updated. A floor encodes the thing
+ * that actually matters: the advisory is fixed at 6.2.5, so 6.2.4 must fail and
+ * 6.3.0 must pass. It still catches the case the review was aimed at, since any
+ * 6.0.x or 6.1.x that slipped through would be below the floor.
+ */
+function atLeast(version: string, minimum: string): boolean {
+  const parse = (v: string) => v.split("-")[0].split(".").map((n) => Number.parseInt(n, 10) || 0);
+  const [a, b] = [parse(version), parse(minimum)];
+  for (let i = 0; i < Math.max(a.length, b.length); i += 1) {
+    const [x, y] = [a[i] ?? 0, b[i] ?? 0];
+    if (x !== y) return x > y;
+  }
+  return true;
 }
 
 // WorkOS signs its access tokens RS256, and `createRemoteJWKSet` fetches an RSA
@@ -110,14 +136,25 @@ async function issuer() {
   return { sign, keySet: createLocalJWKSet(jwks), jwks };
 }
 
-test("the app resolves jose 6 — otherwise this file is not testing the override", () => {
-  const major = resolvedJoseMajor();
+test("the app resolves a PATCHED jose — otherwise this file tests the wrong library", () => {
+  // Self-test the comparator first. Without this the assertion below could pass
+  // because `atLeast` always returns true, which is the classic way a version
+  // gate silently stops gating.
+  assert.equal(atLeast("6.2.5", MINIMUM_PATCHED_JOSE), true, "6.2.5 meets the floor");
+  assert.equal(atLeast("6.3.0", MINIMUM_PATCHED_JOSE), true, "a later 6.x meets it");
+  assert.equal(atLeast("7.0.0", MINIMUM_PATCHED_JOSE), true, "a later major meets it");
+  assert.equal(atLeast("6.2.4", MINIMUM_PATCHED_JOSE), false, "the patch below must fail");
+  assert.equal(atLeast("6.1.9", MINIMUM_PATCHED_JOSE), false, "an earlier 6.x must fail");
+  assert.equal(atLeast("5.10.0", MINIMUM_PATCHED_JOSE), false, "the vulnerable pin must fail");
+
+  const version = resolvedJoseVersion();
   assert.equal(
-    major,
-    6,
-    `expected the pnpm override to resolve jose 6, got ${major}. If the override in ` +
-      "pnpm-workspace.yaml was reverted or lost in a merge, AIKIDO-2026-584205 is open " +
-      "again and every other assertion in this file is testing the wrong library.",
+    atLeast(version, MINIMUM_PATCHED_JOSE),
+    true,
+    `expected the pnpm override to resolve jose >= ${MINIMUM_PATCHED_JOSE}, got ${version}. ` +
+      "If the override in pnpm-workspace.yaml was reverted or lost in a merge, " +
+      "AIKIDO-2026-584205 is open again and every other assertion in this file is " +
+      "testing the wrong library.",
   );
 });
 
@@ -146,7 +183,7 @@ test("every claim authkit destructures survives the round trip", async () => {
     assert.deepEqual(
       decoded[key as keyof typeof decoded],
       expected,
-      `claim '${key}' did not survive sign -> decode under jose ${resolvedJoseMajor()}`,
+      `claim '${key}' did not survive sign -> decode under jose ${resolvedJoseVersion()}`,
     );
   }
   assert.equal(typeof decoded.exp, "number", "exp is read at session.js:236 and :438");
@@ -157,11 +194,23 @@ test("a tampered signature is REJECTED", async () => {
   const { sign, keySet } = await issuer();
   const token = await sign(workosShapedClaims());
 
-  // Flip the last character of the signature segment. Without this the suite
-  // would pass against a verifier that accepted everything.
+  // Mutate the FIRST character of the signature, never the last.
+  //
+  // An RS256 signature is 256 bytes, and 256 = 3x85 + 1, so base64url encodes
+  // the trailing byte in two characters: six significant bits, then two bits
+  // plus FOUR UNUSED ONES. Characters differing only in those four bits decode
+  // to identical bytes — 'A' and 'B' among them — so flipping the last
+  // character leaves the signature unchanged about a quarter of the time, the
+  // forged token verifies correctly, and `assert.rejects` fails. That is an
+  // intermittent red build caused by the test, on a schedule nobody could
+  // reproduce. Verified with Buffer.compare rather than reasoned about.
+  //
+  // The first character carries six significant bits of byte 0, so changing it
+  // always changes the signature. (Caught by CodeRabbit on PR 682.)
   const [header, body, signature] = token.split(".");
-  const lastChar = signature.slice(-1);
-  const forged = `${header}.${body}.${signature.slice(0, -1)}${lastChar === "A" ? "B" : "A"}`;
+  const firstChar = signature.slice(0, 1);
+  const forged = `${header}.${body}.${firstChar === "A" ? "B" : "A"}${signature.slice(1)}`;
+  assert.notEqual(forged, token, "the mutation must actually change the token");
 
   await assert.rejects(
     () => jwtVerify(forged, keySet),
