@@ -223,4 +223,28 @@ test("markdown is rendered without rehype-raw, so model output cannot become mar
   // And it must still be the component doing the rendering, so this test cannot
   // pass by the markdown path having quietly moved somewhere unchecked.
   assert.match(markdown, /ReactMarkdown/);
+
+  // **`urlTransform` is the second default this file leans on, and it was
+  // unguarded.** `react-markdown` sanitizes link and image URLs with
+  // `defaultUrlTransform`, which admits only http, https, irc, ircs, mailto and
+  // xmpp — that is what stops a model emitting `[click](javascript:…)` from
+  // becoming a working script link. Overriding the prop replaces that check
+  // wholesale, and the failure would be invisible: markdown still renders, links
+  // still look like links.
+  //
+  // It matters more than it looks because of the CSP. `script-src` carries
+  // `'unsafe-inline'` and cannot stop carrying it — see the measurement in
+  // lib/content-security-policy.ts — and `javascript:` URLs are governed by
+  // `script-src`, so with `'unsafe-inline'` present such a link WOULD execute.
+  // The reasoning recorded there for leaving that directive open depends on this
+  // assertion holding, which is the reason it is an assertion and not a sentence.
+  // Raised by CodeRabbit on PR 691.
+  assert.ok(
+    !/urlTransform/.test(markdown),
+    "chat-markdown.tsx overrides urlTransform, which replaces react-markdown's URL " +
+      "protocol allowlist. Model output reaches this renderer, so that turns a prompt " +
+      "into a javascript: link — and script-src carries 'unsafe-inline', so it would run. " +
+      "If a protocol genuinely needs adding, use createUrlTransform to EXTEND the " +
+      "allowlist rather than replacing the function, and say so here.",
+  );
 });

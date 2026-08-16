@@ -87,7 +87,7 @@ export function contentSecurityPolicy({
     // **`'unsafe-inline'` stays here, and it is not an oversight — it is the one
     // line in this policy that cannot be closed by the technique the rest of the
     // file uses.** Written down because it is the obvious next hardening step,
-    // it was attempted on 2026-08-17, and the reason it fails is only visible
+    // it was attempted on 2026-08-17 JST (2026-08-16 UTC), and the reason it fails is only visible
     // after measuring the built output.
     //
     // The hash approach that `style-src-elem` uses needs the complete set of
@@ -128,6 +128,14 @@ export function contentSecurityPolicy({
     // repo-authored corpus now sanitized by `lib/sanitize-math.ts`. So there is
     // no known path by which an injected inline script reaches a page for this
     // directive to stop.
+    //
+    // **Both halves of that premise are asserted, not assumed** — a directive left
+    // open on the strength of a sentence is left open on nothing.
+    // `lib/html-injection-surface.test.ts` fails if `rehype-raw` is added, and
+    // (since PR 691) if `urlTransform` is overridden — that prop is what keeps
+    // `react-markdown` from turning a model's `[click](javascript:…)` into a
+    // working script link, and `javascript:` URLs are governed by `script-src`,
+    // so with `'unsafe-inline'` present such a link would execute.
     //
     // **Revisit when either of those becomes false** — if `rehype-raw` is added,
     // or if any user-supplied string starts reaching a raw-markup sink, then a
