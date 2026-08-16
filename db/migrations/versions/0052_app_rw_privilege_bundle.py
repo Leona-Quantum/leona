@@ -136,8 +136,7 @@ def upgrade() -> None:
         f"grant select, insert, update, delete on tables to {ROLE}"
     )
     op.execute(
-        f"alter default privileges in schema public "
-        f"grant usage, select on sequences to {ROLE}"
+        f"alter default privileges in schema public grant usage, select on sequences to {ROLE}"
     )
 
     # Append-only, re-asserted at the grant layer. See the module docstring.
@@ -155,8 +154,7 @@ def downgrade() -> None:
         f"revoke select, insert, update, delete on tables from {ROLE}"
     )
     op.execute(
-        f"alter default privileges in schema public "
-        f"revoke usage, select on sequences from {ROLE}"
+        f"alter default privileges in schema public revoke usage, select on sequences from {ROLE}"
     )
     op.execute(f"revoke all on all tables in schema public from {ROLE}")
     op.execute(f"revoke all on all sequences in schema public from {ROLE}")
