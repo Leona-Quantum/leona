@@ -1,6 +1,16 @@
 import katex from "katex";
+import DOMPurify from 'dompurify';
 
 import { mathSegments } from "../lib/math-text";
+
+function sanitizeHtml(html: string | null | undefined) {
+  return html
+    ? DOMPurify.sanitize(html, {
+        ALLOWED_TAGS: ['span', 'p'],
+        ALLOWED_ATTR: ['class'],
+      })
+    : '';
+}
 
 /**
  * A line of corpus prose, with its `$…$` typeset and everything else printed as
@@ -49,11 +59,11 @@ export function MathText({ source }: { source: string }): React.ReactElement {
             // KaTeX's own output. The input is the corpus, which is authored in
             // this repository and gated on the way in — not user content.
             dangerouslySetInnerHTML={{
-              __html: katex.renderToString(segment.value, {
+              __html: sanitizeHtml(katex.renderToString(segment.value, {
                 throwOnError: false,
                 displayMode: false,
                 output: "htmlAndMathml",
-              }),
+              })),
             }}
           />
         ) : (
