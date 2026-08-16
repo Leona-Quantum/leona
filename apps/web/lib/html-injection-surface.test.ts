@@ -57,8 +57,18 @@ const ALLOWED = new Map<string, { sinks: number; reason: string }>([
   ["components/math-text.tsx", { sinks: 1, reason: "katex.renderToString on authored corpus" }],
 ]);
 
-/** Both ways a string becomes markup. Counted per occurrence, not per file. */
-const SINK = /dangerouslySetInnerHTML|\.innerHTML\s*=/g;
+/**
+ * Every way a string becomes markup, counted per occurrence rather than per file.
+ *
+ * The bracket forms are not hypothetical pedantry — `el["innerHTML"] = html` is
+ * what a minifier, a codemod, or anyone working around a typed property writes,
+ * and dot-notation-only matching would wave it straight through. `outerHTML`,
+ * `insertAdjacentHTML` and `document.write` are here for the same reason: they
+ * are the neighbours somebody reaches for when `innerHTML` is the thing being
+ * watched. Raised by CodeRabbit on PR 671.
+ */
+const SINK =
+  /dangerouslySetInnerHTML|(?:\.|\[\s*["'`])(?:inner|outer)HTML(?:["'`]\s*\])?\s*=|insertAdjacentHTML|document\s*\.\s*write/g;
 
 /**
  * Walk the app for source files, tolerating entries that vanish mid-walk.
@@ -75,11 +85,17 @@ const SINK = /dangerouslySetInnerHTML|\.innerHTML\s*=/g;
  * build is never that.
  */
 function sourceFiles(dir: string, out: string[] = []): string[] {
+  const vanished = (error: unknown) => (error as NodeJS.ErrnoException)?.code === "ENOENT";
+
   let entries: string[];
   try {
     entries = readdirSync(dir);
-  } catch {
-    return out;
+  } catch (error) {
+    // ENOENT only. Swallowing EACCES or an I/O error here would silently drop a
+    // whole subtree from the scan and still report green — a guard that fails
+    // open, quietly, which is worse than no guard because it is trusted.
+    if (vanished(error)) return out;
+    throw error;
   }
   for (const entry of entries) {
     if (entry === "node_modules" || entry.startsWith(".next") || entry === ".git") continue;
@@ -89,8 +105,9 @@ function sourceFiles(dir: string, out: string[] = []): string[] {
       // All four extensions, not just TypeScript: a sink in a .js or .jsx file
       // would otherwise walk straight past this control (CodeRabbit, PR 671).
       else if (/\.[jt]sx?$/.test(entry) && !/\.test\.[jt]sx?$/.test(entry)) out.push(full);
-    } catch {
-      continue;
+    } catch (error) {
+      if (vanished(error)) continue;
+      throw error;
     }
   }
   return out;
