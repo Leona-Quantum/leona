@@ -143,6 +143,41 @@ def upgrade() -> None:
         "alter role app_rw nologin nosuperuser nocreatedb nocreaterole noreplication nobypassrls"
     )
 
+    # And the same argument one level further out: attributes are not the only
+    # thing an existing role carries. MEMBERSHIPS are inherited, so an `app_rw`
+    # that is already a member of some other role passes that role's privileges
+    # straight through the bundle - and the whole design here is that the login
+    # user's effective privileges are exactly the grants written in this file.
+    #
+    # Raised in review. Revoked rather than merely detected, and the loop is
+    # deliberate: naming the roles to revoke would only cover the ones somebody
+    # thought of, and this must hold against a restored dump nobody has read.
+    # `format(%I)` quotes each identifier, so a role name needing quoting cannot
+    # break the statement.
+    #
+    # Safe to run every deploy: on a database built from these migrations there
+    # are no memberships to revoke and this is a no-op. It never touches
+    # membership IN app_rw - the login user granted at cutover keeps its
+    # membership, which is the one direction that must survive.
+    op.execute(
+        """
+        do $$
+        declare
+          granted text;
+        begin
+          for granted in
+            select r.rolname
+            from pg_auth_members m
+            join pg_roles r on r.oid = m.roleid
+            where m.member = 'app_rw'::regrole
+          loop
+            execute format('revoke %I from app_rw', granted);
+          end loop;
+        end
+        $$;
+        """
+    )
+
     # Reach the schema and the objects in it, but never create in it.
     op.execute("grant usage on schema public to app_rw")
     op.execute("revoke create on schema public from app_rw")
@@ -181,6 +216,21 @@ def upgrade() -> None:
     op.execute("revoke update, delete on run_events from app_rw")
     op.execute("revoke update, delete on audit_log from app_rw")
     op.execute("revoke update, delete on usage_events from app_rw")
+
+    # Alembic's own bookkeeping, taken back completely.
+    #
+    # `grant ... on all tables` reached `alembic_version` too, which is a real
+    # escalation and not a tidiness point: that table is the record of which
+    # migrations have run. An injection path or a leaked application credential
+    # could rewrite the version row, and the next `alembic upgrade head` would
+    # then SKIP migrations that had never actually been applied - leaving the
+    # schema in a state the deploy reports as current. The damage outlives the
+    # incident and is invisible in the application.
+    #
+    # ALL, not just update/delete: nothing in the application has any business
+    # reading this table either, and the migration credential is the owner, which
+    # keeps full access regardless of what is revoked here. Raised in review.
+    op.execute("revoke all on alembic_version from app_rw")
 
 
 def downgrade() -> None:
