@@ -2894,7 +2894,12 @@ a.mj-facet-option:hover {
   position: relative;
   display: flex;
   flex-direction: column;
-  width: min(100%, 860px);
+  /* 860px until ai-ops 134 put a 13rem rail down the left. Held at that, the
+     rail plus the gap plus the body's own padding left ~564px of detail — a
+     narrower reading column than the single stack it replaced, which is the
+     opposite of what "opens up in the largest right part" asked for. 1040
+     restores the detail pane to roughly the width the panels were built at. */
+  width: min(100%, 1040px);
   /* The backdrop's padding is the breathing room; the dialog takes the rest.
      Settings is long — preferences, identity, archive, usage, billing — so on
      a short viewport this is a hard ceiling and the body below scrolls, rather
@@ -2936,6 +2941,109 @@ a.mj-facet-option:hover {
   }
   .mj-account-modal-body {
     padding: var(--sp-5);
+  }
+}
+
+/* Settings: a rail of sections beside one large detail pane (ai-ops 134).
+   Deliberately the same construction as `.mj-map-info-layout`, because the
+   owner asked for the shape the map's information card already has. The rules
+   are not shared with it: that dialog is sized for reading prose at 62ch and
+   this one holds forms, tables and a billing panel, so one rule set serving
+   both would end up with a width that suits neither. */
+.mj-account-layout {
+  display: flex;
+  gap: var(--sp-6);
+  align-items: flex-start;
+  min-height: 0;
+}
+.mj-account-nav {
+  flex: 0 0 auto;
+  width: 13rem;
+  min-width: 0;
+  /* Sticky rather than scrolling with the body: the detail pane is the thing
+     that grows (QPU credentials and usage are both long), and a rail that
+     scrolled away would make switching section require scrolling back up. */
+  position: sticky;
+  top: 0;
+}
+.mj-account-nav:not([open]) {
+  width: auto;
+}
+.mj-account-nav > summary {
+  cursor: pointer;
+  color: var(--text-2);
+  font-size: var(--fs-12);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+.mj-account-nav ul {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+  margin: var(--sp-3) 0 0;
+  padding: 0;
+  list-style: none;
+}
+.mj-account-nav li button {
+  display: block;
+  width: 100%;
+  padding: var(--sp-2) var(--sp-3);
+  border: 0;
+  border-radius: var(--radius-control);
+  background: none;
+  color: var(--text-1);
+  font: inherit;
+  font-size: var(--fs-13);
+  font-weight: 400;
+  text-align: left;
+  cursor: pointer;
+}
+.mj-account-nav li button:hover {
+  color: var(--text-0);
+  background: var(--bg-2);
+}
+/* The section being read. `aria-current` is the fact and this is only its
+   rendering — but the rendering still has to be unambiguous, and a background
+   alone is not: the map rail gives hover and current the SAME `--bg-2`, which
+   on a pointer surface means the item under the cursor is indistinguishable
+   from the item you are on. Seen in a screenshot of this rail before the rule
+   below existed. The weight and the accent rule are what separate them, and
+   neither is a hue, so the distinction survives greyscale and colour-blindness
+   as well as it survives the theme flip. */
+.mj-account-nav li button[aria-current="true"] {
+  color: var(--text-0);
+  background: var(--bg-2);
+  font-weight: 500;
+  box-shadow: inset 2px 0 0 var(--accent);
+}
+.mj-account-detail {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.mj-account-pane[hidden] {
+  display: none;
+}
+/* Each pane is one panel, so the stack gap that used to separate six of them
+   has nothing left to separate. The panels keep their own internal spacing. */
+.mj-account-pane > * + * {
+  margin-top: var(--sp-5);
+}
+
+/* Below the modal's own breakpoint the rail cannot be a column — 13rem of a
+   375px viewport leaves no detail pane at all. It becomes the collapsed
+   disclosure it already knows how to be, above the body rather than beside it. */
+@media (max-width: 720px) {
+  .mj-account-layout {
+    flex-direction: column;
+    gap: var(--sp-4);
+  }
+  .mj-account-nav,
+  .mj-account-nav:not([open]) {
+    position: static;
+    width: 100%;
+  }
+  .mj-account-detail {
+    width: 100%;
   }
 }
 
