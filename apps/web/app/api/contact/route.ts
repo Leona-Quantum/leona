@@ -45,8 +45,15 @@ export const dynamic = "force-dynamic";
  * than one that publishes an address the owner did not choose to publish.
  */
 function fallbackMailto(): string | null {
-  const address = process.env.CONTACT_FALLBACK?.trim();
-  if (!address) return null;
+  const raw = process.env.CONTACT_FALLBACK?.trim();
+  if (!raw) return null;
+  // Normalised rather than assumed to be a bare address. Setting this to a full
+  // `mailto:` URL is the obvious misconfiguration, and it used to produce
+  // `mailto:mailto:…` — which still passes the scheme check on the client and
+  // yields a dead link, i.e. the failure is invisible until someone tries to
+  // write in. Raised by Sourcery on PR 661.
+  const address = raw.replace(/^mailto:/i, "").split("?")[0].trim();
+  if (!address || !address.includes("@")) return null;
   return `mailto:${address}?subject=${encodeURIComponent("Leona Quantum inquiry")}`;
 }
 
@@ -83,7 +90,12 @@ export async function POST(request: Request) {
     // Read as text first so an absent or lying `Content-Length` is still
     // bounded — the header check above is a cheap early exit, not the guard.
     const raw = await request.text();
-    if (raw.length > MAX_BODY_BYTES) {
+    // BYTES, not `raw.length`. A JS string length counts UTF-16 code units, so
+    // a Japanese message — and this site ships a full ja locale — is one unit
+    // per character but three bytes in UTF-8. Measuring the wrong one lets a
+    // body roughly three times the intended cap through, and it would have been
+    // the JA half of the audience that found it. Raised by Sourcery on PR 661.
+    if (new TextEncoder().encode(raw).length > MAX_BODY_BYTES) {
       return NextResponse.json({ error: "that message is too large" }, { status: 413, headers: noStore });
     }
     payload = JSON.parse(raw) as Record<string, unknown>;
