@@ -123,21 +123,37 @@ export function sweepExpired(store: RateLimitStore, now: number): void {
 /**
  * The address to meter, from the request's headers.
  *
- * `x-forwarded-for`'s first entry, matching `services/api/rate_limit.py` — one
- * convention for the whole product, so a reader does not have to work out
- * whether the two surfaces disagree.
+ * ## The platform header first, and why that is not a detail
  *
- * Spoofable in principle, and the module docstring already concedes that an
- * attacker who can vary the address defeats this. On Vercel the platform
- * appends the real peer to this header, so the FIRST entry is client-supplied
- * and the last is not — metering the first is deliberate anyway: it is what
- * keeps two people behind one corporate proxy from sharing a counter, and the
- * attacker it would otherwise catch is the one this limiter is documented not
- * to stop.
+ * The first version of this read `x-forwarded-for`'s first entry, to match
+ * `services/api/rate_limit.py`. Review pointed out what that costs here, and it
+ * is right: `x-forwarded-for` is a request header, so its first entry is written
+ * by the CALLER. A script that varies it defeats the limiter with one line and
+ * never has to leave one machine — which turns a limiter into decoration.
+ *
+ * `x-vercel-forwarded-for` is set by Vercel's edge and cannot be forged by a
+ * client, so it is preferred wherever it is present. That is the entire
+ * difference between bounding an abuser and bounding only an abuser who has not
+ * thought about it.
+ *
+ * `x-real-ip` is next — also platform-set on Vercel — and the client-supplied
+ * `x-forwarded-for` is the last resort, for local development and any
+ * environment where neither platform header exists. Metering something is better
+ * than metering nothing, and this ordering means the forgeable value is only
+ * consulted when there is nothing trustworthy to use.
+ *
+ * The divergence from `services/api` is therefore deliberate rather than an
+ * oversight: that service sits behind Cloud Run, where the trustworthy entry is
+ * in a different place, and it documents its own reasoning. What is shared is
+ * the principle, not the header name.
+ *
+ * None of this stops a genuinely distributed sender, and the module docstring
+ * says so. It stops the cheap attack, which is the one that actually happens.
  */
 export function contactAddress(headers: Headers): string {
+  const platform = headers.get("x-vercel-forwarded-for")?.trim() || headers.get("x-real-ip")?.trim();
+  if (platform) return platform;
   const forwarded = headers.get("x-forwarded-for") ?? "";
   const first = forwarded.split(",")[0]?.trim();
-  if (first) return first;
-  return headers.get("x-real-ip")?.trim() || "unknown";
+  return first || "unknown";
 }

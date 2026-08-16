@@ -97,13 +97,28 @@ describe("the contact form's per-address bound", () => {
 });
 
 describe("which address the contact form meters", () => {
-  it("takes the first x-forwarded-for entry, as services/api does", () => {
-    const headers = new Headers({ "x-forwarded-for": "203.0.113.7, 130.211.0.1" });
+  // The finding that changed this: x-forwarded-for is written by the CALLER, so
+  // preferring it let a script defeat the limiter from one machine by varying one
+  // header. The platform headers cannot be forged by a client.
+  it("prefers the platform header over anything the caller can write", () => {
+    const headers = new Headers({
+      "x-vercel-forwarded-for": "203.0.113.7",
+      "x-forwarded-for": "10.0.0.1, 10.0.0.2",
+      "x-real-ip": "198.51.100.4",
+    });
     assert.equal(contactAddress(headers), "203.0.113.7");
   });
 
-  it("falls back to x-real-ip, then to a constant", () => {
-    assert.equal(contactAddress(new Headers({ "x-real-ip": "198.51.100.4" })), "198.51.100.4");
+  it("ignores a forged x-forwarded-for whenever a platform header is present", () => {
+    const forged = new Headers({ "x-real-ip": "198.51.100.4", "x-forwarded-for": "1.2.3.4" });
+    assert.equal(contactAddress(forged), "198.51.100.4");
+  });
+
+  it("falls back to x-forwarded-for only when no platform header exists", () => {
+    // Local development, and anywhere else the edge is not in front of us.
+    // Metering something beats metering nothing.
+    const headers = new Headers({ "x-forwarded-for": "203.0.113.7, 130.211.0.1" });
+    assert.equal(contactAddress(headers), "203.0.113.7");
     assert.equal(contactAddress(new Headers()), "unknown");
   });
 

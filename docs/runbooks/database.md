@@ -127,6 +127,30 @@ printf 'postgresql+psycopg://majorana_api:%s@/majorana?host=/cloudsql/majorana-c
   | gcloud secrets create DATABASE_URL_APP_SECRET --data-file=- --project=majorana-core
 
 # 4. Repoint the two services at the restricted credential.
+#    --update-secrets, NOT --set-env-vars: the latter REMOVES every key it does
+#    not mention, which on these services is most of their configuration.
+gcloud run services update majorana-api --region=us-west1 --project=majorana-core \
+  --update-secrets=DATABASE_URL=DATABASE_URL_APP_SECRET:latest
+gcloud run services update majorana-worker --region=us-west1 --project=majorana-core \
+  --update-secrets=DATABASE_URL=DATABASE_URL_APP_SECRET:latest
+```
+
+**`DATABASE_URL` is currently a literal on these services, and Cloud Run cannot
+convert a literal env var into a secret reference.** The commands above fail on a
+key that is already set literally, and — this is the part that bites — they leave
+the service in a state where *every later deploy* fails the same way. Remove the
+key in its own update first, then attach the secret:
+
+```bash
+gcloud run services update majorana-api --region=us-west1 --project=majorana-core \
+  --remove-env-vars=DATABASE_URL
+```
+
+Read the revision back afterwards rather than trusting the exit code:
+
+```bash
+gcloud run services describe majorana-api --region=us-west1 --project=majorana-core \
+  --format='yaml(spec.template.spec.containers[0].env)'
 ```
 
 **Verify before trusting it.** Connect as `majorana_api` and confirm all six:

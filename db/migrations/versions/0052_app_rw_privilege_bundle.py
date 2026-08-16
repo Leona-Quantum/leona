@@ -125,9 +125,38 @@ def upgrade() -> None:
         """
     )
 
+    # The attributes are asserted UNCONDITIONALLY, outside the branch above.
+    #
+    # Raised in review, and it is the same bug this migration exists to correct,
+    # one level up: `if not exists ... create` means a role that ALREADY exists is
+    # accepted whatever it is. Somebody debugging the flip creates `app_rw` by
+    # hand with LOGIN, or a restored dump carries one with CREATEROLE, and the
+    # migration reports success over a role that is nothing like the one this file
+    # describes. A guard that only fires on a fresh database is not a guard.
+    #
+    # ALTER ROLE is idempotent, so stating them every run costs nothing and makes
+    # the file the authority on what `app_rw` is rather than a description of how
+    # it was first made. NOLOGIN matters most: it is what keeps this a privilege
+    # bundle rather than an account, and therefore what keeps the credential out
+    # of version control.
+    op.execute(
+        "alter role app_rw nologin nosuperuser nocreatedb nocreaterole noreplication nobypassrls"
+    )
+
     # Reach the schema and the objects in it, but never create in it.
     op.execute("grant usage on schema public to app_rw")
     op.execute("revoke create on schema public from app_rw")
+    # And revoke it from PUBLIC, which every role is a member of implicitly.
+    #
+    # Raised in review, and it is a real hole rather than tidiness: revoking CREATE
+    # from `app_rw` alone leaves the grant it INHERITS from PUBLIC untouched, so
+    # the role could still create objects in the schema through the back door.
+    # PostgreSQL 15 removed that default and this database is 17, so on a database
+    # built from these migrations it is already absent — but a database restored
+    # from an older dump carries the old grant with it, and that is precisely the
+    # database nobody re-checks. The owner keeps CREATE regardless of this line,
+    # because ownership is not a grant, so migrations are unaffected.
+    op.execute("revoke create on schema public from public")
 
     # The data-plane verbs, and only those. No TRUNCATE (it is DDL-shaped and
     # nothing in the application issues one), no REFERENCES, no TRIGGER.
