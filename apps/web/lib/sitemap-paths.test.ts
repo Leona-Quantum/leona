@@ -10,6 +10,8 @@ import {
   sitemapPaths,
 } from "./sitemap-paths.ts";
 import { PRODUCTION_ORIGIN, canonicalOrigin } from "./site-origin.ts";
+import { isPublicPath } from "./public-paths.ts";
+import { ROUTED_SEGMENTS } from "./routed-paths.ts";
 
 const SURFACE = {
   entrySlugs: ["bell-state", "grover-unstructured-search"],
@@ -124,6 +126,35 @@ test("a machine-readable path is genuinely public, and genuinely not a page", ()
       path,
       /^\/[a-z0-9-]+\.[a-z]{2,4}$/,
       `${path} does not look like a machine-readable file endpoint`,
+    );
+
+    // BOTH lists, and this is the assertion that earns the test.
+    //
+    // "Routed" and "public" are separate, and an endpoint served by a Route
+    // Handler needs both: ROUTED_SEGMENTS stops the middleware treating it as
+    // a typo, and PUBLIC_PATHS stops AuthKit gating it once it IS routed.
+    // Adding only the first is strictly worse than adding neither — before
+    // routing, an anonymous request falls through unauthenticated and Next
+    // answers; after routing without publishing, the same request reaches
+    // authkitMiddleware and is 307'd to WorkOS. A file whose whole purpose is
+    // to be fetched by crawlers then answers every one of them with a sign-in
+    // redirect.
+    //
+    // That is not hypothetical: it is what PR 684 did, and Aikido's Deep
+    // Review caught it rather than any check here. Local verification could
+    // not have: middleware.ts returns early under isLocalDevAuthEnabled(), so
+    // the gate never runs against a local build and curl returned the file
+    // correctly on a tree where production would have redirected.
+    const segment = path.slice(1);
+    assert.ok(
+      ROUTED_SEGMENTS.includes(segment),
+      `${path} is machine-readable but "${segment}" is not in ROUTED_SEGMENTS, so the ` +
+        "middleware treats it as an unrouted path",
+    );
+    assert.ok(
+      isPublicPath(path),
+      `${path} is routed but not in PUBLIC_PATHS, so AuthKit will redirect anonymous ` +
+        "fetches to WorkOS and the endpoint ships unreachable to the clients it exists for",
     );
   }
 });

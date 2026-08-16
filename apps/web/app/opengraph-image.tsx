@@ -33,13 +33,20 @@
  */
 import { ImageResponse } from "next/og";
 
-import { SITE_NAME } from "../lib/public-metadata";
+import { OG_IMAGE, SITE_NAME } from "../lib/public-metadata";
 
 // Facebook, X, LinkedIn and Slack all crop toward 1.91:1. This is the size they
 // all document, and it is what `twitter:card = summary_large_image` expects.
-export const size = { width: 1200, height: 630 };
+//
+// Taken from `OG_IMAGE` rather than restated, because these are not two
+// coincidentally-equal numbers: the metadata tells crawlers how large the image
+// is and this tells Next how large to draw it, so a disagreement between them
+// is a card that renders at one size and is advertised at another. Same for the
+// alt text, which would otherwise be defined in two places and drift silently
+// (Sourcery, PR 684).
+export const size = { width: OG_IMAGE.width, height: OG_IMAGE.height };
 export const contentType = "image/png";
-export const alt = `${SITE_NAME} — generate, run, and reuse quantum circuits`;
+export const alt = OG_IMAGE.alt;
 
 // From tokens.css, dark theme: --bg-0, --bg-1, --text-0, --text-1, --accent,
 // --border-0. Kept as literals because Satori cannot read CSS variables.
