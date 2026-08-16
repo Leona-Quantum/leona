@@ -431,11 +431,24 @@
 }
 .mj-landing-prompt {
   width: min(760px, calc(100vw - var(--sp-8)));
-  /* Was 156px, sized for a 2-row textarea (rows={2}, 68px min-height below).
-     The textarea is one row now, so the container no longer needs to reserve
-     a second line of blank space above the controls — 124px is padding (32)
-     + one text row (~48) + the 44px control row, with a little slack. */
-  min-height: 124px;
+  /* 156px -> 124px -> 101px, in two goes, and the second one is why this
+     comment is long.
+
+     The 124px step budgeted "padding (32) + one text row (~48) + the 44px
+     control row". One text row is not ~48px: this textarea is `--fs-16` at
+     `line-height: 1.55`, so a row is 24.8px. The figure was a row and a half
+     too generous, and because `.mj-composer-ghost-wrap` below is `flex: 1 1
+     auto`, the wrapper absorbed the surplus instead of the box shrinking to
+     fit. Measured on the rendered page: a 21px empty band between the bottom
+     of the typed text and the top of the control row. That band IS the
+     "extra empty line" the owner reported (ai-ops 94) — so the item was
+     reported as shipped when one of the two phantom lines was still there.
+
+     101px = padding (32) + one real row (24.8) + the control row (44), which
+     renders as 103px once the 1px borders are counted. Verified in the
+     browser rather than derived: the gap under the text goes 21px -> 0 and
+     the rotating ghost prompt is still drawn in full at every width. */
+  min-height: 101px;
   box-sizing: border-box;
   display: flex;
   flex-direction: column;
@@ -452,13 +465,25 @@
    overlay needs a positioned box to sit inside, and the textarea fills it. */
 .mj-landing-prompt .mj-composer-ghost-wrap {
   width: 100%;
-  min-height: 40px;
+  /* One line, not 40px. 40px reserved a line and a half for a one-row
+     textarea, and since this is the flexible child it kept whatever the
+     container over-reserved — the other half of the phantom band above. */
+  min-height: 1.55em;
   box-sizing: border-box;
   flex: 1 1 auto;
+  /* Flex so the textarea can actually FILL this box. It could not before:
+     `height: 100%` resolves against a parent with an indefinite height, so
+     the textarea fell back to its one-row intrinsic height and sat in the
+     top 25px of a 46px box. The reserved space was therefore not merely
+     ugly, it was unreachable — a two-line prompt scrolled its first line out
+     of view while blank space sat underneath it. */
+  display: flex;
 }
 .mj-landing-prompt textarea {
   width: 100%;
-  height: 100%;
+  /* `flex: 1 1 auto` and not `height: 100%` — see the note on the wrapper. */
+  flex: 1 1 auto;
+  height: auto;
   box-sizing: border-box;
   resize: none;
   border: 0;
@@ -1813,7 +1838,11 @@ a.mj-facet-option:hover {
   }
   .mj-landing-prompt {
     width: 100%;
-    min-height: 148px;
+    /* 148px -> 138px, the same 10px of dead band the desktop rule carried,
+       measured at 500px wide. The textarea keeps its 60px min-height below —
+       that is a touch target, not slack, so it is deliberately NOT trimmed
+       and the box simply stops reserving space nothing can reach. */
+    min-height: 138px;
     margin-top: var(--sp-6);
     padding: var(--sp-4);
   }
