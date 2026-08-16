@@ -147,30 +147,47 @@ NOCREATEDB, NOCREATEROLE and NOBYPASSRLS are the *defaults*, so the safe values
 need no `ALTER ROLE` — and setting those attributes at all requires a privilege
 `majorana_app` does not have.
 
-Generate the password and bind it as a `psql` variable. `:'pw'` is a variable
-reference, so it needs a binding — and the binding is where the password can leak
-if you are careless. `--set` on the command line puts it in `ps` and in shell
-history; the read below keeps it out of both, and `PGPASSWORD`/`\password` are
-not substitutes because the role does not exist yet.
+**Create the role without a password, then set it with `\password`.** There is no
+way to pass a password to `CREATE ROLE` that keeps it out of both the process list
+and the statement text — the statement *is* the password — so do not try. Two
+approaches that look safe and are not, both rejected here after being written down
+and corrected (Aikido, PR 689):
+
+- `psql -v pw="$PW"` — the shell expands `$PW` **before `psql` starts**, so the
+  full `-v pw=<password>` argument sits in `ps` for anyone with local access for
+  the life of the command. Same for `--set`, `--password=`, and
+  `gcloud sql users create --password=`.
+- `create role … password '<literal>'` — keeps it out of argv but puts the
+  cleartext in the statement text, which is visible in `pg_stat_activity` while it
+  runs and lands in the server log the moment anyone sets `log_statement` to `ddl`
+  or `all`. (Verified 2026-08-17: this instance is `log_statement = none`,
+  `log_min_duration_statement = -1`, pgaudit off — so nothing was logged. That is
+  a *setting*, not a guarantee, and it is one flag away from being false.)
+
+`\password` avoids both: psql prompts, hashes the input **client-side** into a
+SCRAM-SHA-256 verifier, and sends only the verifier. The cleartext never reaches
+the server, so it cannot reach a log or `pg_stat_activity` at all.
 
 ```bash
-# 40 URL-safe characters: this value also has to survive being placed in a URI.
-PW="$(LC_ALL=C tr -dc 'A-Za-z0-9' </dev/urandom | head -c 40)"
-
-# -v binds the variable; the value never appears in argv because it is expanded
-# from the environment by the shell into psql's own -v assignment, and this shell
-# has history off for the command (leading space) — check `set -o | grep history`.
- psql "$DATABASE_URL_DIRECT" -v pw="$PW" -f - <<'SQL'
--- as majorana_app, through the proxy. Password via a bound parameter, never
--- interpolated into the statement text: it would otherwise land in
--- pg_stat_activity and, with log_statement on, in the server log.
-create role majorana_api login password :'pw';
-grant app_rw to majorana_api;
-SQL
+psql "$DATABASE_URL_DIRECT"
 ```
 
-Keep `$PW` in the shell — the secret below needs the same value, and there is no
-way to read it back out of PostgreSQL.
+```sql
+-- as majorana_app, through the proxy.
+create role majorana_api login;   -- no password yet, so nothing can log one
+grant app_rw to majorana_api;
+\password majorana_api            -- prompts twice; sends a SCRAM verifier, not the password
+```
+
+Generate the value first and paste it at the prompt — it also has to survive being
+placed in a URI, so keep it alphanumeric:
+
+```bash
+LC_ALL=C tr -dc 'A-Za-z0-9' </dev/urandom | head -c 40; echo
+```
+
+Keep it on the clipboard or in the shell as `$PW` for the secret below; there is no
+way to read it back out of PostgreSQL once it is a SCRAM verifier.
 
 Then assert, rather than trust, that the role is what was asked for: `login` is
 true, `super`/`bypassrls`/`createdb`/`createrole`/`replication` are all false,
