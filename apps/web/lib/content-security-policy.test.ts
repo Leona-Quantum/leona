@@ -123,6 +123,17 @@ test("the Vercel Toolbar's six origins reach preview and never production", () =
   // It last changed when `script-src-attr`, `style-src-elem` and `style-src-attr`
   // were added. The toolbar widening remains additive to this — additive or it
   // is a regression.
+  //
+  // Sourcery asked on PR 676 (numbered without a hash on purpose — see
+  // `check-raw-hex`) for this to be relaxed into per-directive assertions,
+  // because an exact string makes "benign reordering" fail. Declined, and the
+  // reason is the reason it was written this way before this PR: in a security
+  // header there is no benign reordering. `'unsafe-inline'` moving between
+  // `style-src` and `style-src-elem`, or a hash appearing beside it, changes
+  // what the browser enforces while every per-directive assertion still passes.
+  // The parsed-directive helpers below exist for the questions that genuinely
+  // are about one directive; this assertion is the control that nothing else
+  // moved while they were satisfied.
   assert.equal(
     production,
     "default-src 'self'; script-src 'self' 'unsafe-inline'; script-src-attr 'none'; " +
@@ -246,10 +257,23 @@ test("the hashed stylesheet is the one the 404 page actually renders", () => {
   // module's copy, the two drift, and the 404 page renders with its
   // language-switching rules refused — showing the reader the English and the
   // Japanese copy stacked. It does not error, and nothing else here loads a 404.
+  // Reading the page's SOURCE, rather than importing it and asserting on an
+  // exported contract, is deliberate — Sourcery raised the alternative on
+  // PR 676 (numbered without a hash, because `check-raw-hex` reads a
+  // three-digit hash-number as a colour). The failure this guards is somebody
+  // re-inlining a second copy of the CSS into the page, and a copy renders
+  // perfectly well through any exported contract you could test against. The
+  // text of the file is the only place that divergence is visible.
+  // `lib/html-injection-surface.test.ts` reads source by path for the same
+  // reason.
+  //
+  // The import is matched loosely — the constant's NAME and module, not an
+  // exact relative path — so moving the page or adding a second named import
+  // does not fail this for a reason that has nothing to do with the hash.
   const page = readFileSync(join(webRoot, "app", "not-found.tsx"), "utf8");
   assert.match(
     page,
-    /import \{ NOT_FOUND_LOCALE_STYLE \} from "\.\.\/lib\/not-found-style\.ts";/,
+    /import \{[^}]*\bNOT_FOUND_LOCALE_STYLE\b[^}]*\} from "[^"]*not-found-style\.ts";/,
     "app/not-found.tsx must import the constant the CSP hashes, not carry its own copy",
   );
   assert.match(
