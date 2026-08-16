@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { validateInquiry } from "../../../lib/contact-inquiry";
 import { contactSender, sendContactEmail } from "../../../lib/send-contact-email";
+import { admitContact, contactAddress, type RateLimitStore } from "../../../lib/contact-rate-limit";
 
 /**
  * The public contact form's server half (ai-ops issue 125, owner chose a
@@ -79,7 +80,34 @@ export async function GET() {
  */
 const MAX_BODY_BYTES = 64 * 1024;
 
+/**
+ * The one long-lived counter table, per function instance.
+ *
+ * Module scope rather than per-request, which is the whole point — and the
+ * reason the logic itself lives in `lib/contact-rate-limit.ts` as a pure
+ * function over a store passed in, where the suite can drive the clock. See
+ * that file for what a per-instance window is and is not worth here.
+ */
+const rateLimitStore: RateLimitStore = new Map();
+
 export async function POST(request: Request) {
+  // Before the body is read, let alone sent. This route is the only
+  // unauthenticated surface in apps/web that spends something irreversible —
+  // an email on a 3,000/month tier, against the sending reputation of a domain
+  // the owner is still setting up (ai-ops 130). The honeypot in
+  // `validateInquiry` classifies one submission; this bounds how many may be
+  // attempted, which is the half that was missing (ai-ops 127).
+  const decision = admitContact(rateLimitStore, contactAddress(request.headers), Date.now());
+  if (!decision.allowed) {
+    return NextResponse.json(
+      { error: "too many messages from this address — please try again shortly" },
+      {
+        status: 429,
+        headers: { ...noStore, "Retry-After": String(decision.retryAfterSeconds) },
+      },
+    );
+  }
+
   const declared = Number(request.headers.get("content-length") ?? "");
   if (Number.isFinite(declared) && declared > MAX_BODY_BYTES) {
     return NextResponse.json({ error: "that message is too large" }, { status: 413, headers: noStore });
