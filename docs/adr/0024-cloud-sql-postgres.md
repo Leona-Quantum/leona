@@ -1,6 +1,15 @@
 # ADR-0024: Cloud SQL for PostgreSQL 17 (supersedes Neon)
 
-**Date:** 2026-07-27 · **Status:** implemented (in production since 2026-07-27)
+**Date:** 2026-07-27 · **Status:** implemented (in production since 2026-07-27), **amended 2026-08-15**
+
+> **Amendment, 2026-08-15 — the tier and availability in the Decision below have changed.**
+> The instance is now `db-custom-1-3840`, **REGIONAL** (HA) rather than ZONAL, with
+> point-in-time recovery enabled and `max_connections=200` set as an explicit database flag.
+> The `db-g1-small` in the Decision paragraph is left as written because that is what was
+> decided on 2026-07-27 and an ADR records a decision, not the current state. For the current
+> state read `docs/runbooks/database.md`; for the connection arithmetic read
+> `infra/fleet.env`. Everything else in this ADR — the instance name, the socket path, the
+> proxy pinning, the zero authorized networks — is unchanged and still accurate.
 **Context:** ADR-0003 chose Neon for $0-idle serverless Postgres. On 2026-07-27,
 seventeen days into the billing period, the free plan's 5 GB transfer allowance was
 exhausted (5.03 GB) and about 90 of 100 compute-hours were spent — against a 47 MB
