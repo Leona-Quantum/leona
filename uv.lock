@@ -1374,7 +1374,7 @@ pdf = [
 
 [package.metadata]
 requires-dist = [
-    { name = "defusedxml", specifier = ">=0.7.1" },
+    { name = "defusedxml", specifier = ">=0.7.1,<1" },
     { name = "majorana-api", editable = "services/api" },
     { name = "majorana-contracts", editable = "packages/py/contracts" },
     { name = "majorana-llm", extras = ["openai", "anthropic"], editable = "packages/py/llm" },
@@ -1525,7 +1525,7 @@ dependencies = [
 [package.metadata]
 requires-dist = [
     { name = "cryptography", specifier = ">=43" },
-    { name = "defusedxml", specifier = ">=0.7.1" },
+    { name = "defusedxml", specifier = ">=0.7.1,<1" },
     { name = "majorana-agent", editable = "packages/py/agent" },
     { name = "majorana-api", editable = "services/api" },
     { name = "majorana-frameworks", editable = "packages/py/frameworks" },

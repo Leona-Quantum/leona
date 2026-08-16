@@ -50,6 +50,7 @@ from typing import Literal
 # changing the answer — the two arXiv parsers in this repo should not disagree
 # about whether that is worth one import.
 from defusedxml import ElementTree
+from defusedxml.common import DefusedXmlException
 
 __all__ = [
     "MATH_READING_FIELDS",
@@ -308,8 +309,17 @@ def text_from_pdf_bytes(payload: bytes) -> str:
 def abstract_from_api(xml: str) -> str | None:
     """Pull `<summary>` out of an arXiv API response."""
     try:
-        root = ElementTree.fromstring(xml)
-    except ElementTree.ParseError:
+        root = ElementTree.fromstring(xml, forbid_dtd=True)
+    # `DefusedXmlException` is NOT a subclass of `ParseError` — checked, not
+    # assumed — so a document defusedxml REFUSES raises straight past a bare
+    # `except ParseError` and out of this function. That is the one way swapping
+    # the parser could make things worse rather than better: the abstract is the
+    # independent witness `assess_math_integrity` cross-checks against, and its
+    # contract is that a fetch which does not work returns None so the verdict
+    # degrades to `unchecked`. An exception escaping here would instead take the
+    # whole retrieval down. Raised by CodeRabbit on PR 659, numbered without a
+    # hash because `check-raw-hex` reads a three-digit hash-number as a colour.
+    except (ElementTree.ParseError, DefusedXmlException):
         return None
     for summary in root.iter("{http://www.w3.org/2005/Atom}summary"):
         if summary.text:

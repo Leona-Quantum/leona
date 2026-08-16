@@ -190,9 +190,11 @@ const nextConfig: NextConfig = {
           // hypothetical one.
           //
           // An ALLOWLIST by omission, not a blanket `*=()`. Every feature named
-          // here is denied outright; every feature NOT named keeps its browser
-          // default, which is `self`. That distinction is the whole reason this
-          // is safe to ship the week of a launch: `clipboard-write` is
+          // here is denied outright; every feature NOT named keeps whatever the
+          // browser's own default for THAT feature is — which is usually `self`
+          // but is set per feature, not globally, so this deliberately does not
+          // claim to know it. That distinction is the whole reason this is safe
+          // to ship the week of a launch: `clipboard-write` is
           // deliberately absent because four copy-code buttons depend on it
           // (repository-entry-view, studio-workspace, artifact-detail,
           // live-run), and a blanket denial would have broken all four
