@@ -146,13 +146,22 @@ rejected, and should stay rejected unless the constraints below change.
 
 `apps/web` holds no database connection at all; it reaches Postgres only
 through `majorana-api`. So a per-pageview write would mean a Cloud Run request
-per pageview on a service capped at **maxScale 2 / 1 vCPU**, and a Cloud SQL
-connection per write from a pool of **5 + 5 overflow** on a shared-core
-`db-g1-small` with **no `pool_timeout` configured**. That last detail is the
-decisive one: with no pool timeout, a burst of public traffic does not fail
-fast — it queues on the pool indefinitely and stalls the API for signed-in
-users. Adding a vanity metric to the request path of the tightest resource in
-the system, in exchange for a number nobody reads hourly, is a bad trade at the
-launch target of 50 concurrent readers.
+per pageview on a service capped at **maxScale 4 / 1 vCPU / concurrency 16**,
+and a Cloud SQL connection per write from a pool of **5 + 5 overflow**. Adding a
+vanity metric to the request path of the tightest resource in the system, in
+exchange for a number nobody reads hourly, is a bad trade at the launch target
+of 50 concurrent readers — 64 admission slots site-wide, and a pageview write
+would compete for them with the reads a visitor is actually waiting on.
+
+> **Two premises of this rejection have since changed, and one of them was the
+> one this paragraph called decisive.** It used to read "a shared-core
+> `db-g1-small` with **no `pool_timeout` configured**", and argued that a burst
+> would queue on the pool indefinitely and stall the API for signed-in users.
+> Both halves are now false: the instance is `db-custom-1-3840` with
+> `max_connections=200` (2026-08-15), and `db.py` sets
+> `pool_timeout=DEFAULT_POOL_TIMEOUT_S = 15.0` (landed in #569), so a burst fails
+> fast instead of stalling. **The rejection still stands on the paragraph above**
+> — request amplification on the narrowest service — but it no longer stands on
+> a database-stall argument, and nobody should quote one from this file.
 
 Logging costs a `console.log` on an invocation that was already happening.

@@ -153,10 +153,19 @@ two candidate fixes, and the obvious one was the wrong one.
 
 **Raising the API pool costs budget that a deploy already spends.** `db.py`'s
 `fleet_peak_connections()` computes `API_MAX_INSTANCES × (POOL + OVERFLOW)` for the API and
-doubles only the worker term. The budget is 45 (a `db-g1-small`'s 50, less 3 superuser and 2
-operational), and the API is `2 × 10 = 20` of it. Doubling the pool to `8 + 8` would take the
-API term to 32 and the resting total to 40 — inside 45, but with the API's own rollout
+doubles only the worker term. The budget was 45 (a `db-g1-small`'s 50, less 3 superuser and 2
+operational), and the API was `2 × 10 = 20` of it. Doubling the pool to `8 + 8` would have taken
+the API term to 32 and the resting total to 40 — inside 45, but with the API's own rollout
 behaviour unaccounted for (below), and with nothing left for the worker count to grow into.
+
+> **The budget figures in this section are the old tier's, and are left in the past tense
+> deliberately.** On 2026-08-15 `majorana-pg` moved to `db-custom-1-3840` with an explicit
+> `max_connections=200`, so the budget is now **195**, not 45, and `API_MAX_INSTANCES` was
+> later raised 2 → 4, so the API term is `4 × 10 = 40` and the fleet rests at 44. The
+> connection budget is no longer what constrains this decision. That does not resurrect the
+> rejected fix — raising the API pool is now affordable but still does not address the
+> bottleneck this gate measured — but anyone reading the arithmetic above for a live number
+> should take it from `infra/fleet.env` and `fleet_peak_connections()` instead.
 
 **Lowering `containerConcurrency` toward the pool is free**, and it is the change this file
 would otherwise recommend. But it should not be made against this measurement, because two

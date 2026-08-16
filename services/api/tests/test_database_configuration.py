@@ -63,9 +63,13 @@ def test_a_plain_postgres_host_is_accepted(monkeypatch):
 
 
 def test_the_whole_fleet_fits_under_the_instance_ceiling():
-    """db-g1-small allows 50. The fleet must not be able to claim them all, or a
-    deploy's migration step cannot connect and the deploy fails at the worst
-    possible moment.
+    """The instance allows 200 (`max_connections`, set explicitly on 2026-08-15
+    with the move to db-custom-1-3840; it was 50 under db-g1-small). The fleet
+    must not be able to claim them all, or a deploy's migration step cannot
+    connect and the deploy fails at the worst possible moment.
+
+    The ceiling is read from `infra/fleet.env`, so this test does not need
+    editing when the tier moves again — only that file does.
 
     This asserts the ACTUAL fleet — API maxScale plus the worker count — rather
     than a hardcoded process count. The old version of this test asserted

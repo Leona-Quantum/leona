@@ -82,7 +82,11 @@ a genuinely private-IP-only instance without standing that up first.
 
 ## Connection budget
 
-`db-g1-small` allows 50 and reserves 3 for superusers.
+The instance allows **200** and reserves 3 for superusers. 200 is `max_connections`
+as an explicit database flag on `majorana-pg`, set 2026-08-15 alongside the move to
+`db-custom-1-3840` — see `INSTANCE_CONNECTION_CEILING` in `infra/fleet.env` for why
+it is set rather than inherited. Before that date this line read `db-g1-small`
+allows 50, which is where every superseded figure below came from.
 
 **Every term below except the API's own pool lives in `infra/fleet.env`, and that
 file is the only place it lives.** `deploy.yml` loads it into the job environment
@@ -93,24 +97,33 @@ fails if a literal reappears on a deploy line.
 
 | Term | Value | Where it is stated |
 |---|---|---|
-| API instances | 2 | `API_MAX_INSTANCES` in `infra/fleet.env` |
+| API instances | 4 | `API_MAX_INSTANCES` in `infra/fleet.env` |
 | API pool, per instance | 5 + 5 | `DEFAULT_POOL_SIZE` / `DEFAULT_MAX_OVERFLOW` in `db.py` — the only sizing read on a request path |
 | Worker instances | **1** | `WORKER_INSTANCES` in `infra/fleet.env` |
 | Worker pool, per instance | 2 + 2 | `WORKER_POOL_SIZE` / `WORKER_MAX_OVERFLOW` in `infra/fleet.env`, deployed as `DB_POOL_SIZE`/`DB_MAX_OVERFLOW` |
-| Fleet at rest | 24 | `fleet_peak_connections(during_worker_rollout=False)` |
-| **Fleet during a deploy** | **28** | `fleet_peak_connections()` — both worker revisions hold their minimum |
+| Fleet at rest | 44 | `fleet_peak_connections(during_worker_rollout=False)` |
+| **Fleet during a deploy** | **48** | `fleet_peak_connections()` — both worker revisions hold their minimum |
+| Instance ceiling | 200 | `INSTANCE_CONNECTION_CEILING` in `infra/fleet.env` (`max_connections` flag) |
 | Superuser reserved | 3 | Postgres |
 | Alembic + one operator | 2 | `OPERATIONAL_HEADROOM` |
-| **Budget** | **45** | |
-
-At three workers — the stress-test setting — those two rows read 32 and **44**,
-against the same budget of 45.
+| **Budget** | **195** | |
 
 `services/api/tests/test_database_configuration.py` asserts the sum, asserts that
 `deploy.yml` takes its numbers from `infra/fleet.env` rather than from a literal,
 asserts that the shell's export regex actually matches every key the deploy
-needs, and pins the boundary: **three workers fit, four do not.** Do not re-derive
-this by hand — edit `infra/fleet.env` and run that file.
+needs, and pins the boundary — which it now DERIVES from the budget rather than
+hard-coding. At the current tier that boundary is **19 workers fit, 20 do not**
+(a rollout peak of 192 against 195). Do not re-derive any of this by hand — edit
+`infra/fleet.env` and run that file.
+
+> **Every number in the table above moved on 2026-08-15**, when the instance went
+> to `db-custom-1-3840` with `max_connections=200` and `API_MAX_INSTANCES` was
+> later raised 2 → 4. It previously read 2 API instances, 24 at rest, 28 during a
+> deploy, a budget of 45, and "three workers fit, four do not" — figures that were
+> correct under `db-g1-small` and are kept here only so that a reader who
+> remembers them knows they were replaced rather than mistyped. The worker count
+> is no longer anywhere near a database limit; `WORKER_INSTANCES` is now bounded
+> by cost (an always-on instance is billed continuously), not by connections.
 
 ### Changing the worker count
 
@@ -118,7 +131,7 @@ One edit:
 
 ```bash
 # infra/fleet.env
-WORKER_INSTANCES=3    # 1 = serial (default), 3 = stress test, 4 does not fit
+WORKER_INSTANCES=3    # 1 = serial (default), 3 = stress test; 19 is the budget ceiling
 ```
 
 Commit, push to `dev`, and the next deploy runs that many. Nothing else changes:
@@ -130,19 +143,28 @@ deploy rather than being live-service state.
 **The binding constraint is the deploy, not the workload.** `--min-instances` is
 a *revision-level* setting, so while a `gcloud run deploy` is in flight the
 outgoing revision is still in the traffic split and still holding its minimum:
-both revisions run their full complement at once and the worker term doubles.
-Four workers is 36 connections at rest and **52 for the length of every deploy**,
-against a budget of 45 — and a deploy is precisely when a spare connection has to
-exist, because that is when Alembic wants one. Buying a fourth worker means
-shrinking the API's pool, raising the tier, or draining the old worker revision
-before the new one starts. It does not mean changing this number alone.
+both revisions run their full complement at once and the worker term doubles. So
+N workers is `40 + 4N` connections at rest and **`40 + 8N` for the length of every
+deploy** — and a deploy is precisely when a spare connection has to exist, because
+that is when Alembic wants one. Against the budget of 195 that puts the ceiling at
+**19 workers** (192 during a deploy); 20 asks for 200 and fails CI.
+
+> **This paragraph used to end "four workers is 36 at rest and 52 during a deploy,
+> against a budget of 45 — buying a fourth worker means shrinking the API's pool or
+> raising the tier."** The tier WAS raised, on 2026-08-15, and the doubling rule is
+> the only part of that argument that survives it. Four workers now costs 56 at rest
+> and 72 during a deploy against 195, which fits with room to spare. **What stops the
+> worker count today is cost, not connections** — an always-on instance is billed
+> continuously whether or not the queue has work — so raising it is a spend decision
+> for the owner rather than a database one. The doubling itself has not changed and
+> is still the thing to compute before raising the number.
 
 **These are ceilings, not reservations.** SQLAlchemy opens connections on demand
 and keeps them up to `pool_size`; overflow connections are opened and closed per
 use. Measured against production on 2026-08-01 with the queue idle: **four
 backends on `majorana` for the entire fleet.** The budget is sized for the worst
 case because a burst that exhausts the ceiling takes the *next deploy's migration
-step* down with it, not because 36 connections are ever expected.
+step* down with it, not because the fleet's peak is ever expected.
 
 **The worker holds at most two sessions at once** — the job handler and the
 concurrent heartbeat that fences its lease (`_execute_with_heartbeat`).

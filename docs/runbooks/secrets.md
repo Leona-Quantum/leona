@@ -17,7 +17,7 @@
 
 | Provider | Project | Notes |
 |---|---|---|
-| GCP Cloud SQL | `majorana-core:us-west1:majorana-pg` | **The production database since 2026-07-27.** Postgres 17, db-g1-small, no authorized networks. docs/runbooks/database.md |
+| GCP Cloud SQL | `majorana-core:us-west1:majorana-pg` | **The production database since 2026-07-27.** Postgres 17, `db-custom-1-3840`, REGIONAL (HA), PITR on, `max_connections=200`, no authorized networks — raised from `db-g1-small`/ZONAL on 2026-08-15. docs/runbooks/database.md |
 | Neon | `majorana` (ID `twilight-wildflower-01313590`) | Postgres 17, aws-us-west-2, org `org-tiny-glade-89486766` (owned by `emistry@berkeley.edu`), free tier. **No longer serving traffic** — retained as the rollback, still holds the pre-cutover data |
 | GCP | `majorana-core` (number 639400385957) | Secret Manager + Cloud Run APIs enabled; billing linked |
 | WorkOS | `majorana` | AuthKit project, dashboard signup done 2026-07-10 (owner); API key + client ID pulled into env at Phase 1 step 5 |
