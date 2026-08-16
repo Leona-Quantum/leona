@@ -114,16 +114,27 @@ asserts that the shell's export regex actually matches every key the deploy
 needs, and pins the boundary — which it now DERIVES from the budget rather than
 hard-coding. At the current tier that boundary is **19 workers fit, 20 do not**
 (a rollout peak of 192 against 195). Do not re-derive any of this by hand — edit
-`infra/fleet.env` and run that file.
+`infra/fleet.env`, then run `services/api/tests/test_database_configuration.py`,
+which is the file that checks it.
 
-> **Every number in the table above moved on 2026-08-15**, when the instance went
-> to `db-custom-1-3840` with `max_connections=200` and `API_MAX_INSTANCES` was
-> later raised 2 → 4. It previously read 2 API instances, 24 at rest, 28 during a
-> deploy, a budget of 45, and "three workers fit, four do not" — figures that were
-> correct under `db-g1-small` and are kept here only so that a reader who
-> remembers them knows they were replaced rather than mistyped. The worker count
-> is no longer anywhere near a database limit; `WORKER_INSTANCES` is now bounded
-> by cost (an always-on instance is billed continuously), not by connections.
+> **Every number in the table above moved, in two separate changes on the same
+> day.** They are listed apart because they have different causes and either
+> could be reverted without the other:
+>
+> 1. **The tier and the ceiling (2026-08-15).** `majorana-pg` moved to
+>    `db-custom-1-3840` / REGIONAL, and `max_connections` was set explicitly to
+>    **200**, replacing `db-g1-small`'s inherited 50. This is what took the budget
+>    from 45 to **195**.
+> 2. **The fleet size (#600, also 2026-08-15, after the tier change and because
+>    of it).** `API_MAX_INSTANCES` went 2 → 4, which is what took the API term
+>    from 20 to **40** and the resting fleet from 24 to **44**.
+>
+> Before both, this table read 2 API instances, 24 at rest, 28 during a deploy, a
+> budget of 45, and "three workers fit, four do not". Those figures were correct
+> under `db-g1-small` and are named here only so a reader who remembers them can
+> see they were replaced rather than mistyped. The worker count is no longer
+> anywhere near a database limit; `WORKER_INSTANCES` is now bounded by cost (an
+> always-on instance is billed continuously), not by connections.
 
 ### Changing the worker count
 

@@ -192,13 +192,17 @@ It is that the two revisions hold connections for different reasons:
 - The API has **no** `--min-instances`. Its outgoing revision holds whatever traffic demanded
   and then drains, so its instance count during a rollout is a function of load, not a floor.
 
-The pessimistic figure is worth writing down anyway, because it is close: two revisions × 2
-instances × 10 connections is **40**, plus a worker at rest (4) is **44 of 45**. That is
-reached only if a deploy's traffic shift lands inside a burst big enough to have scaled both
-revisions out, and it is one connection from the ceiling. It is not gated on, because a gate on
-a load-dependent worst case would fail on a quiet week for reasons nobody could reproduce — but
-anyone raising `API_MAX_INSTANCES`, the API pool, or the worker count should compute this
-number first rather than the resting one.
+The pessimistic figure is worth writing down anyway. **Under the old tier it was close:** two
+revisions × 2 instances × 10 connections was **40**, plus a worker at rest (4) was **44 of
+45** — one connection from the ceiling, reached only if a deploy's traffic shift landed inside
+a burst big enough to have scaled both revisions out.
+
+**At the current shape it is no longer close.** Two revisions × 4 instances × 10 is 80, plus a
+worker at rest (4) is **84 of 195**; at the three-worker stress setting it is 92. The same
+sentence in `db.py`'s `fleet_peak_connections()` docstring states this figure and is the copy
+to trust. It is still not gated on, because a gate on a load-dependent worst case would fail on
+a quiet week for reasons nobody could reproduce — but anyone raising `API_MAX_INSTANCES`, the
+API pool, or the worker count should compute this number first rather than the resting one.
 
 ## Workload definition
 
