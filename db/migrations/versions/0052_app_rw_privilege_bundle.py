@@ -139,8 +139,67 @@ def upgrade() -> None:
     # it was first made. NOLOGIN matters most: it is what keeps this a privilege
     # bundle rather than an account, and therefore what keeps the credential out
     # of version control.
+    #
+    # ## Only NOLOGIN, because it is the one a non-superuser can always set
+    #
+    # The first version also stated NOSUPERUSER, NOCREATEDB, NOCREATEROLE,
+    # NOREPLICATION and NOBYPASSRLS. It FAILED the production deploy:
+    #
+    #     permission denied to alter role
+    #     DETAIL: Only roles with the SUPERUSER attribute may change the
+    #             SUPERUSER attribute.
+    #
+    # PostgreSQL requires the corresponding privilege to set these AT ALL, even
+    # to the value the role already holds. On Cloud SQL `majorana_app` has
+    # `cloudsqlsuperuser`, which grants CREATEROLE and is emphatically NOT
+    # SUPERUSER, so that statement could never have succeeded there.
+    #
+    # It passed locally because the local run was Docker's `postgres`, a real
+    # superuser. That is the whole lesson, and it is why this file says it
+    # rather than quietly dropping the words: A PRIVILEGE MIGRATION TESTED AS A
+    # SUPERUSER HAS NOT BEEN TESTED. Re-run against a role built to mirror
+    # `majorana_app` - LOGIN, CREATEROLE, database owner, no SUPERUSER - it
+    # immediately found a second: NOCREATEDB needs the CREATEDB attribute by the
+    # same rule.
+    #
+    # NOLOGIN is the one that matters and the one a CREATEROLE holder can always
+    # set on a role it administers. Everything else is checked below.
+    op.execute("alter role app_rw nologin")
+
+    # Everything that cannot be SET here is CHECKED, and refused loudly.
+    #
+    # Dropping the other five words silently would recreate exactly the hole this
+    # migration exists to close: an `app_rw` carrying SUPERUSER or BYPASSRLS would
+    # sail through, and the deploy would report that it had provisioned a
+    # restricted role. Clearing any of them needs a privilege the migration
+    # credential does not have, and therefore a human - so this says so instead of
+    # pretending.
     op.execute(
-        "alter role app_rw nologin nosuperuser nocreatedb nocreaterole noreplication nobypassrls"
+        """
+        do $$
+        declare
+          bad text;
+        begin
+          select string_agg(attr, ', ') into bad from (
+            select 'SUPERUSER' as attr from pg_roles where rolname = 'app_rw' and rolsuper
+            union all
+            select 'REPLICATION' from pg_roles where rolname = 'app_rw' and rolreplication
+            union all
+            select 'BYPASSRLS' from pg_roles where rolname = 'app_rw' and rolbypassrls
+            union all
+            select 'CREATEDB' from pg_roles where rolname = 'app_rw' and rolcreatedb
+            union all
+            select 'CREATEROLE' from pg_roles where rolname = 'app_rw' and rolcreaterole
+          ) s;
+          if bad is not null then
+            raise exception
+              'app_rw carries %, which this migration cannot clear with the privileges it '
+              'runs under. Clear it as a superuser and re-run the deploy - the role is NOT '
+              'the restricted bundle this file describes.', bad;
+          end if;
+        end
+        $$;
+        """
     )
 
     # And the same argument one level further out: attributes are not the only
