@@ -74,6 +74,20 @@ export const PUBLIC_PATHS: readonly string[] = [
   // are not signed in. The route still sees a session cookie when one exists —
   // being on this list only means AuthKit does not require one.
   "/api/auth/session",
+  // The contact form's submit target (ai-ops issue 125). `/contact` above does
+  // NOT cover this: `isPublicPath` matches an entry and its subtree, and
+  // `/api/contact` is not under `/contact`. Without this line the form is gated
+  // for exactly the people it exists for — an anonymous visitor's POST is 307'd
+  // to WorkOS, so the one page whose whole purpose is "you do not have an
+  // account yet, here is how to reach us" cannot be used without an account.
+  // Caught by CodeRabbit on PR 661 before it shipped; numbered without a hash
+  // because `check-raw-hex` reads a three-digit hash-number as a CSS colour.
+  //
+  // Publishing this path is the whole subtree, per the note at the top of this
+  // file. There is nothing under `/api/contact`, and the route itself validates
+  // every field, refuses anything oversize, and reveals nothing about who is
+  // signed in.
+  "/api/contact",
   ...(isPublicDemoEnabled() ? ["/demo"] : []),
 ];
 

@@ -43,8 +43,13 @@ export default async function ContactPage({ params }: { params: Promise<{ locale
       <Reveal>
         <section className="mj-contact-layout" aria-label={copy.overline}>
           <div className="mj-contact-form-section mj-contact-form-section--solo">
+            {/* The note moved INSIDE the form (ai-ops issue 125). It describes
+                what the button does, and what the button does is now decided at
+                runtime by whether a transactional sender is configured — which
+                this server-rendered, CDN-cached page cannot know. Rendering it
+                here would have left "opens a prepared email in your email app"
+                on the page after the form stopped doing that. */}
             <ContactForm locale={locale} />
-            <p className="mj-contact-note">{copy.note}</p>
           </div>
           {/* A small interactive aside (Owner Inbox 2026-07-19): compact, no
               explanatory copy — just a qubit to measure while you're here. */}
