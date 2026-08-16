@@ -91,23 +91,6 @@ const MAX_BODY_BYTES = 64 * 1024;
 const rateLimitStore: RateLimitStore = new Map();
 
 export async function POST(request: Request) {
-  // Before the body is read, let alone sent. This route is the only
-  // unauthenticated surface in apps/web that spends something irreversible —
-  // an email on a 3,000/month tier, against the sending reputation of a domain
-  // the owner is still setting up (ai-ops 130). The honeypot in
-  // `validateInquiry` classifies one submission; this bounds how many may be
-  // attempted, which is the half that was missing (ai-ops 127).
-  const decision = admitContact(rateLimitStore, contactAddress(request.headers), Date.now());
-  if (!decision.allowed) {
-    return NextResponse.json(
-      { error: "too many messages from this address — please try again shortly" },
-      {
-        status: 429,
-        headers: { ...noStore, "Retry-After": String(decision.retryAfterSeconds) },
-      },
-    );
-  }
-
   const declared = Number(request.headers.get("content-length") ?? "");
   if (Number.isFinite(declared) && declared > MAX_BODY_BYTES) {
     return NextResponse.json({ error: "that message is too large" }, { status: 413, headers: noStore });
@@ -144,6 +127,33 @@ export async function POST(request: Request) {
     return NextResponse.json(
       { error: "not-configured", mailto: fallbackMailto() },
       { status: 503, headers: noStore },
+    );
+  }
+
+  // Metered HERE — after validation and after the sender check, immediately
+  // before the only line that spends anything.
+  //
+  // The first version metered at the top of the handler, and review was right
+  // that this is better. The resource being protected is EMAIL SENDS: a
+  // malformed body, a tripped honeypot, or the 503 when no sender is configured
+  // all cost nothing and send nothing, so counting them bought no protection and
+  // did real damage — somebody who mistyped their address five times, or five
+  // people behind one office address who did once each, were locked out of a
+  // contact form for ten minutes by their own typos.
+  //
+  // Nothing is lost on the abuse side. A flood of INVALID requests is already
+  // bounded by the 64KB body cap and never reaches a provider; a flood of VALID
+  // ones is exactly what still gets counted. And requests that fail validation
+  // are refused earlier and more cheaply than the limiter would have refused
+  // them anyway.
+  const decision = admitContact(rateLimitStore, contactAddress(request.headers), Date.now());
+  if (!decision.allowed) {
+    return NextResponse.json(
+      { error: "too many messages from this address — please try again shortly" },
+      {
+        status: 429,
+        headers: { ...noStore, "Retry-After": String(decision.retryAfterSeconds) },
+      },
     );
   }
 

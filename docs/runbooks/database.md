@@ -112,11 +112,15 @@ the next deploy. Check with `alembic current` or `select version_num from
 alembic_version` before starting.
 
 ```bash
-# 1. A login user, granted membership in the bundle. Pick a strong password and
-#    keep it only in Secret Manager — never in a migration, never in a commit.
-PW="$(openssl rand -base64 32)"
+# 1. A login user, granted membership in the bundle.
+#
+#    --prompt-for-password, NOT --password="$PW". A password passed as an
+#    argument is visible in `ps` to every other process on the machine for the
+#    life of the call, and lands in shell history besides. Generate it, read it
+#    once, and let gcloud take it on stdin:
+PW="$(openssl rand -base64 32)"; printf '%s\n' "$PW"   # copy it, then clear the screen
 gcloud sql users create majorana_api --instance=majorana-pg \
-  --project=majorana-core --password="$PW"
+  --project=majorana-core --prompt-for-password
 
 # 2. Membership. Run through the Cloud SQL Auth Proxy as majorana_app.
 psql "$DATABASE_URL_DIRECT" -c "grant app_rw to majorana_api;"
@@ -145,6 +149,16 @@ key in its own update first, then attach the secret:
 gcloud run services update majorana-api --region=us-west1 --project=majorana-core \
   --remove-env-vars=DATABASE_URL
 ```
+
+**Do one service at a time, all the way through, and verify before starting the
+second.** The remove-then-attach pair is two commands, and a service left between
+them has no `DATABASE_URL` at all. Doing both removes first, or walking away
+after a failed attach, leaves a running service on either no credential or the
+old owner one — and the second case is the silent one, because the site keeps
+working and the whole point of the exercise is quietly undone. If you stop
+mid-flight, the service you have not finished is still on `majorana_app`; the
+status line at the top of this section is only true once BOTH read
+`DATABASE_URL_APP_SECRET`.
 
 Read the revision back afterwards rather than trusting the exit code:
 
