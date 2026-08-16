@@ -188,6 +188,13 @@ async function bundle(relativePath, label) {
       logLevel: "silent",
     });
   } catch (error) {
+    // Pre-existing on `dev`, raised in review on this PR: this arm exited
+    // without removing outDir, so every bundle failure left an empty mkdtemp
+    // directory behind. Bounded in practice — process.exit(1) follows, so it is
+    // one directory per failed run, not a loop — but the refusal arm above
+    // cleans up and this one did not, and an inconsistency like that is what a
+    // later reader copies.
+    rmSync(outDir, { recursive: true, force: true });
     console.error(`✖ failed to bundle ${relativePath}:`, error.message);
     process.exit(1);
   }
