@@ -6,11 +6,12 @@ import { getPublicLocale } from "../lib/public-locale-server";
 import { LanguageToggle } from "./language-toggle";
 import { ThemeToggle } from "./theme-toggle";
 import { AuthStatus } from "./auth-status";
-import { CONTACT_EMAIL, CONTACT_MAILTO } from "../lib/public-contact";
 
-export { CONTACT_EMAIL, CONTACT_MAILTO } from "../lib/public-contact";
-
-export const REPOSITORY_URL = "https://github.com/EshMis/majorana";
+// The repository moved to the Leona-Quantum organisation on 2026-08-14. The old
+// address still 301s, so nothing was broken — it was just the pre-move name, on
+// a constant the public site exports. Currently referenced nowhere; corrected
+// rather than deleted because it is exported API and the fix is a line.
+export const REPOSITORY_URL = "https://github.com/Leona-Quantum/leona";
 
 export async function PublicSite({
   activePath,
