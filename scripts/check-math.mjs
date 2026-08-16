@@ -216,10 +216,24 @@ function check(where, value) {
         .replace(/&quot;/g, String.fromCharCode(34))
         .replace(/&apos;/g, String.fromCharCode(39))
         .replace(/&amp;/g, "&");
+    // Attribute NAMES are not enough, and this is the second thing CodeRabbit was
+    // right about on PR 690: a sanitizer that emptied `style="width:0.8em"` to
+    // `style=""` keeps every name and every tag, so a name-only comparison waves
+    // through exactly the silent glyph-scrambling this gate exists to catch.
+    // Values are compared too — `viewBox="0 0 400000 …"` is geometry, not
+    // decoration.
     const shape = (html) => ({
       tags: (html.match(/<[a-zA-Z][a-zA-Z0-9:-]*/g) ?? []).join(","),
-      attrs: (html.match(/\s[a-zA-Z][a-zA-Z0-9-]*\s*=/g) ?? [])
+      attrs: (html.match(/\s([a-zA-Z][a-zA-Z0-9-]*)\s*=\s*"([^"]*)"/g) ?? [])
+        // The XML parser adds an inert xmlns to the root element; HTML parsers
+        // ignore it. Nothing else is dropped from the comparison.
         .filter((one) => !/^\s*xmlns\s*=/.test(one))
+        // Whitespace runs collapsed because XML 1.0 §3.3.3 REQUIRES
+        // attribute-value normalization — a literal newline in a value becomes a
+        // space. KaTeX writes `<path d="…">` across lines and SVG path grammar
+        // treats any whitespace as the same separator, so this is the spec, not a
+        // changed path.
+        .map((one) => decode(one.trim()).replace(/\s+/g, " "))
         .join(","),
       text: decode(html.replace(/<[^>]*>/g, "")).replace(/\s+/g, " ").trim(),
     });

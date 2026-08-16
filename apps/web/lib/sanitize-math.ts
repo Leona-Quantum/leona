@@ -34,13 +34,35 @@ import DOMPurify from "isomorphic-dompurify";
  * sanitizer that quietly eats correct output is worse than no sanitizer, because
  * the page still renders and nobody looks.
  *
- * So the config here is **additive to DOMPurify's defaults**, never a
- * replacement for them. Defaults already permit HTML, SVG and MathML, which
- * covers all but two of the elements KaTeX emits. Measured, not assumed: on the
- * default config KaTeX output loses `<semantics>`, `<annotation>` and the
- * `encoding` attribute — the MathML content-markup layer that carries the
- * original TeX. That is what a screen reader reads and what "copy as LaTeX"
- * copies, so losing it is a real regression that changes no pixel.
+ * So the config here **starts from DOMPurify's defaults and adjusts them in two
+ * directions** — it never replaces the allowlist wholesale, which is the specific
+ * thing PR 668 did wrong. It widens the defaults for the MathML elements KaTeX
+ * needs (`ADD_TAGS`, `ADD_ATTR`) and narrows them for form controls and
+ * document-scope elements KaTeX never emits (`FORBID_TAGS`, `FORBID_ATTR`). Each
+ * key says which direction it moves and why.
+ *
+ * Measured, not assumed: on the default config KaTeX output loses `<semantics>`,
+ * `<annotation>` and the `encoding` attribute — the MathML content-markup layer
+ * that carries the original TeX. That is what a screen reader reads and what
+ * "copy as LaTeX" copies, so losing it is a real regression that changes no
+ * pixel.
+ *
+ * ## Requires Node with `require(esm)` support — 22.12+ or 24+
+ *
+ * `isomorphic-dompurify` reaches jsdom on the server, and jsdom 30's CommonJS
+ * code requires `@exodus/bytes`, which is ESM-only (`"type": "module"`). On a Node
+ * without `require(esm)` that throws `ERR_REQUIRE_ESM` inside the Next server
+ * bundle — and it would surface on `/repository/[slug]`, which renders on demand,
+ * rather than at build time. Raised by CodeRabbit on PR 690, which proposed
+ * pinning jsdom back to 25.0.1.
+ *
+ * Not pinned, because the root `package.json` already sets `engines.node: 24.x`
+ * and that is the more honest fix — a downgrade would carry its own risk and
+ * would hide the real constraint. Verified rather than argued: the production
+ * build was served locally and `/repository/layers/qsvt-matrix-inversion`
+ * rendered sanitized MathML with no `ERR_REQUIRE_ESM`. **If that engine pin is
+ * ever lowered below 22.12, this module is what breaks, and it breaks at request
+ * time on one route.**
  *
  * ## `annotation`, deliberately NOT `annotation-xml`
  *
@@ -61,8 +83,10 @@ import DOMPurify from "isomorphic-dompurify";
  */
 
 /**
- * Additive only. Every key here widens DOMPurify's defaults; nothing narrows
- * them, so a tag or attribute the defaults reject stays rejected.
+ * Adjusts DOMPurify's defaults; never replaces them. `ADD_*` widens for the
+ * MathML KaTeX needs, `FORBID_*` narrows for elements KaTeX never emits. Nothing
+ * here hands back a fresh allowlist, so anything the defaults reject and this
+ * file does not name stays rejected.
  */
 const KATEX_CONFIG = {
   /**

@@ -41,13 +41,22 @@ const render = (tex: string): string =>
 function shape(html: string): { tags: string[]; attrs: string[]; text: string } {
   return {
     tags: [...html.matchAll(/<([a-zA-Z][a-zA-Z0-9:-]*)/g)].map((m) => m[1].toLowerCase()),
-    // `xmlns` is dropped from the comparison: the XML parser adds
-    // `xmlns="http://www.w3.org/1999/xhtml"` to the root element, HTML parsers
-    // ignore it, and counting it would report a difference that does not exist
-    // for a reader. Nothing else is normalized away.
-    attrs: [...html.matchAll(/\s([a-zA-Z][a-zA-Z0-9-]*)\s*=/g)]
-      .map((m) => m[1].toLowerCase())
-      .filter((name) => name !== "xmlns"),
+    // Names AND values. A name-only comparison passes for a sanitizer that
+    // emptied `style="width:0.8em"` to `style=""` — every tag and every attribute
+    // name intact, every glyph moved (CodeRabbit, PR 690).
+    //
+    // `xmlns` is dropped: the XML parser adds `xmlns="http://www.w3.org/1999/xhtml"`
+    // to the root element, HTML parsers ignore it, and counting it would report a
+    // difference that does not exist for a reader. Nothing else is normalized away.
+    // Whitespace runs inside a value are collapsed, because XML 1.0 §3.3.3
+    // REQUIRES attribute-value normalization: a literal newline in an attribute
+    // value becomes a space when parsed. KaTeX writes its `<path d="…">` geometry
+    // across several lines, and SVG path grammar treats any whitespace as an
+    // equivalent separator — so the newlines coming back as spaces is the spec
+    // working, not the path changing. Everything else about the value is compared.
+    attrs: [...html.matchAll(/\s([a-zA-Z][a-zA-Z0-9-]*)\s*=\s*"([^"]*)"/g)]
+      .filter((m) => m[1].toLowerCase() !== "xmlns")
+      .map((m) => `${m[1].toLowerCase()}=${decodeEntities(m[2]).replace(/\s+/g, " ").trim()}`),
     // Text between tags, whitespace-collapsed, with character references
     // resolved. Catches an annotation body or a glyph being dropped, which no
     // tag or attribute count would notice. Entities are resolved because
@@ -158,28 +167,65 @@ test("`style` and `class` survive — they are how KaTeX positions glyphs", () =
   assert.match(clean, /class="katex"/, "the katex root class was stripped");
 });
 
+const XHTML_NS = 'xmlns="http://www.w3.org/1999/xhtml"';
+const MATHML_NS = 'xmlns="http://www.w3.org/1998/Math/MathML"';
+
 /**
  * The control. Every case below is markup KaTeX would never emit, so these do
  * not test KaTeX — they test that the sanitizer in front of it is switched on.
  * Without them, a `sanitizeMathHtml` accidentally reduced to `(html) => html`
  * passes every assertion above.
+ *
+ * ## Every payload carries a marker, and that is not decoration
+ *
+ * The first version of this test asserted only that the dangerous part was
+ * absent, and **six of its eight cases passed for the wrong reason** (CodeRabbit,
+ * PR 690). Under the XML parser a payload that is not well-formed — an unclosed
+ * `<img>`, a `<math>` with no namespace — yields an empty string, and a payload
+ * whose ROOT element is forbidden (`<iframe>`, `<form>`) is removed whole. Empty
+ * output satisfies "no script survived" perfectly while proving nothing.
+ *
+ * So each payload is well-formed, namespaced, and wraps a `KEEP` marker that MUST
+ * come back. The marker is what distinguishes "the sanitizer removed the
+ * dangerous node" from "the parser rejected the document" — two results that look
+ * identical when you only test for absence.
  */
-test("CONTROL: executable markup does not survive", () => {
+test("CONTROL: executable markup does not survive, and the rest does", () => {
+  const html = (inner: string) => `<span ${XHTML_NS}>KEEP${inner}</span>`;
+  const mathml = (inner: string) =>
+    `<math ${MATHML_NS}><semantics><mtext>KEEP</mtext>${inner}</semantics></math>`;
+
   const cases: [string, string][] = [
-    ["raw script element", "<span><script>alert(1)</script></span>"],
-    ["event handler", '<img src="x" onerror="alert(1)">'],
-    ["javascript: href", '<a href="javascript:alert(1)">x</a>'],
-    ["svg onload", '<svg onload="alert(1)"></svg>'],
-    ["iframe", '<iframe src="//evil.example"></iframe>'],
-    ["object", '<object data="//evil.example"></object>'],
-    ["form", '<form action="//evil.example"><input name="a"></form>'],
-    ["script inside annotation", "<math><semantics><annotation>" + "<script>alert(1)</script>" + "</annotation></semantics></math>"],
+    ["raw script element", html("<script>alert(1)</script>")],
+    ["event handler", html('<img src="x" onerror="alert(1)"/>')],
+    ["javascript: href", html('<a href="javascript:alert(1)">x</a>')],
+    ["svg onload", html('<svg xmlns="http://www.w3.org/2000/svg" onload="alert(1)"></svg>')],
+    ["iframe", html('<iframe src="//evil.example"></iframe>')],
+    ["object", html('<object data="//evil.example"></object>')],
+    ["form with input", html('<form action="//evil.example"><input name="a"/></form>')],
+    // `<base href>` repoints every relative URL on the page, which is why it is
+    // in FORBID_TAGS despite looking harmless next to a script element.
+    ["base href", html('<base href="//evil.example"/>')],
+    ["script inside annotation", mathml("<annotation><script>alert(1)</script></annotation>")],
+    ["script inside mo", mathml("<mo><script>alert(1)</script></mo>")],
   ];
+
   for (const [label, payload] of cases) {
     const clean = sanitizeMathHtml(payload);
+    // First: the sanitizer actually processed this input rather than refusing it.
+    // Without this line every assertion below is satisfied by an empty string.
+    assert.ok(
+      clean.includes("KEEP"),
+      `${label}: the safe marker was lost, so this case proves nothing — ` +
+        `the payload was rejected whole rather than sanitized. Got: ${JSON.stringify(clean)}`,
+    );
     assert.doesNotMatch(clean, /<script/i, `${label}: a script element survived`);
     assert.doesNotMatch(clean, /\son[a-z]+\s*=/i, `${label}: an event handler survived`);
-    assert.doesNotMatch(clean, /<iframe|<object|<embed|<form/i, `${label}: a dangerous element survived`);
+    assert.doesNotMatch(
+      clean,
+      /<iframe|<object|<embed|<form|<input|<base/i,
+      `${label}: a dangerous element survived`,
+    );
     assert.doesNotMatch(
       clean,
       /(?:href|src)\s*=\s*"\s*javascript:/i,
@@ -194,9 +240,13 @@ test("CONTROL: annotation-xml stays forbidden even though annotation is allowed"
   // one hyphen away from the tag this file's config ADDS, so the day somebody
   // "adds the sibling too" should be a failing test rather than a new hole.
   const clean = sanitizeMathHtml(
-    '<math><semantics><annotation-xml encoding="text/html">' +
-      "<script>alert(1)</script></annotation-xml></semantics></math>",
+    `<math ${MATHML_NS}><semantics><mtext>KEEP</mtext>` +
+      '<annotation-xml encoding="text/html"><script>alert(1)</script></annotation-xml>' +
+      "</semantics></math>",
   );
+  // Marker first, for the same reason as the control above: without it, a parse
+  // failure returning "" would satisfy both assertions below.
+  assert.ok(clean.includes("KEEP"), `payload was rejected whole, not sanitized: ${JSON.stringify(clean)}`);
   assert.doesNotMatch(clean, /annotation-xml/i, "annotation-xml was allowed through");
   assert.doesNotMatch(clean, /<script/i, "a script inside annotation-xml survived");
 });
