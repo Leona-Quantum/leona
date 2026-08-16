@@ -161,16 +161,36 @@ export default function RootLayout({ children }: { children: ReactNode }) {
         <script dangerouslySetInnerHTML={{ __html: themeScript }} />
         <script dangerouslySetInnerHTML={{ __html: localeScript }} />
         <script dangerouslySetInnerHTML={{ __html: authHintScript }} />
-        {/* A JSON-LD data block, not executable script — browsers never run
-            `application/ld+json`, so this carries none of the risk the three
-            bootstrap scripts above are weighed against. `JSON.stringify` is
-            what escapes it: the content is repo-authored constants today, and
-            building the string by hand is how a future dynamic field would
-            become an injection point. */}
-        <script
-          type="application/ld+json"
-          dangerouslySetInnerHTML={{ __html: JSON.stringify(structuredData(canonicalOrigin())) }}
-        />
+        {/* A JSON-LD data block. Browsers never execute `application/ld+json`,
+            so it carries none of the risk the three bootstrap scripts above are
+            weighed against.
+
+            Rendered as a TEXT CHILD, deliberately, rather than through React's
+            raw-HTML escape hatch (the `__html` prop) that every JSON-LD example
+            reaches for. The difference is not stylistic, and it was measured
+            after Aikido flagged the first version of this block:
+
+              raw-HTML prop   a value containing a literal closing script tag is
+                              emitted verbatim, closes THIS element, and
+                              everything after it becomes real markup — the
+                              probe rendered three closing tags where there
+                              should have been one
+              text child      React applies script-specific escaping, the tag
+                              is neutralised, and the value cannot leave the
+                              element
+
+            React escapes text children of a script element and does nothing at
+            all to raw HTML. The inputs here are compile-time constants today,
+            so neither form is exploitable right now — but structured data grows
+            to carry page titles and record names, and the construct worth
+            choosing is the one that is still safe on that day.
+
+            Escaping `<` is the second layer: it survives even if someone later
+            "simplifies" this back to the raw-HTML prop, and no parser notices,
+            because that sequence is just a `<` once the JSON is read. */}
+        <script type="application/ld+json">
+          {JSON.stringify(structuredData(canonicalOrigin())).replace(/</g, "\\u003c")}
+        </script>
       </head>
       <body>
         {children}
