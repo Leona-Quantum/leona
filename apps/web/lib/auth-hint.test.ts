@@ -9,6 +9,7 @@ import {
   AUTH_HINT_SIGNED_IN,
   authHintCookieOptions,
 } from "./auth-hint.ts";
+import { WORKSPACE_LANDING_COPY } from "./public-copy.ts";
 
 /**
  * The auth hint is a contract between five files that cannot import each other's
@@ -42,6 +43,7 @@ const callbackRoute = read(webRoot, "app", "auth", "callback", "route.ts");
 const authStatus = read(webRoot, "components", "auth-status.tsx");
 const middleware = read(webRoot, "middleware.ts");
 const styles = read(repoRoot, "packages", "ts", "ui", "styles.css");
+const workspacePage = read(webRoot, "app", "[locale]", "workspace", "page.tsx");
 
 test("the pre-paint script reads the same cookie the session route writes", () => {
   // The script is built by interpolating the constants, so what this really
@@ -170,4 +172,26 @@ test("the stylesheet defaults to the signed-out control when the attribute is ab
     styles,
     /html:not\(\[data-auth="in"\]\) \.mj-auth-slot\[data-auth-slot="in"\]/,
   );
+});
+
+test("the workspace landing page does not tell a signed-in reader to request access", () => {
+  // The header was fixed for issue 114; this page's own hero was not, and it
+  // asked a reader who already HAS a workspace to go and request one. It is the
+  // same cached-HTML problem and it reuses the same slots rather than a second
+  // mechanism — so what this pins is that the page keeps BOTH controls and
+  // routes the signed-in one at the app instead of at the contact form.
+  assert.match(workspacePage, /data-auth-slot="out"/);
+  assert.match(workspacePage, /data-auth-slot="in"/);
+  assert.match(workspacePage, /href="\/run">\{copy\.primarySignedIn\}/);
+  assert.match(workspacePage, /href="\/contact">\{copy\.primary\}/);
+
+  // Both locales must carry the signed-in string, or the JA page falls back to
+  // `undefined` and renders an empty button rather than a wrong one — which is
+  // harder to notice, not easier.
+  for (const locale of ["en", "ja"] as const) {
+    assert.ok(
+      WORKSPACE_LANDING_COPY[locale].primarySignedIn.length > 0,
+      `${locale} is missing the signed-in call to action`,
+    );
+  }
 });
