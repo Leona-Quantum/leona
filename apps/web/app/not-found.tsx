@@ -14,8 +14,8 @@
 // one of them out of static rendering — including pages that import nothing and
 // render a single line of text. That is measurable: with an earlier version of
 // this file, which called `getPublicLocale()` and rendered `PublicSite` with
-// the default chrome (`getMajoranaAuth()` and `getMajoranaSignInUrl()`, two more
-// Dynamic APIs), a page consisting of exactly
+// the default chrome (`getMajoranaAuth()`, another Dynamic API), a page
+// consisting of exactly
 //
 //     export default function P() { return <main>probe</main>; }
 //

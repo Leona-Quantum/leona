@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 import { BrandMark } from "./icons";
-import { getMajoranaAuth, getMajoranaSignInUrl, isMajoranaAuthConfigured } from "../lib/auth";
+import { getMajoranaAuth, isMajoranaAuthConfigured } from "../lib/auth";
+import { majoranaSignInPath } from "../lib/sign-in";
 import { PUBLIC_SHELL_COPY, type PublicLocale } from "../lib/public-locale";
 import { getPublicLocale } from "../lib/public-locale-server";
 import { LanguageToggle } from "./language-toggle";
@@ -47,10 +48,9 @@ export async function PublicSite({
    * information box's footer.
    *
    * `"static"` is the full chrome with no per-visitor part IN THE SERVER
-   * RENDER: it never calls `getMajoranaAuth()` or `getMajoranaSignInUrl()`,
-   * both of which reach a Dynamic API and so make the whole page uncacheable.
-   * The HTML this branch produces is the same for every visitor and holds on
-   * the CDN.
+   * RENDER: it never calls `getMajoranaAuth()`, which reaches a Dynamic API and
+   * so makes the whole page uncacheable. The HTML this branch produces is the
+   * same for every visitor and holds on the CDN.
    *
    * The sign-in/sign-out control is NOT frozen at "signed out" the way it used
    * to be, though (ai-ops#94 — a signed-in reader saw a different sign-in
@@ -68,10 +68,10 @@ export async function PublicSite({
 }) {
   const resolvedLocale = locale ?? await getPublicLocale();
   if (chrome === "none") {
-    // Returned before `getMajoranaAuth()` and `getMajoranaSignInUrl()`, which
-    // exist only to decide what the header's call-to-action says. Calling them
-    // for a page that renders no header would put a WorkOS round trip in front
-    // of a public, cacheable figure for no output at all.
+    // Returned before `getMajoranaAuth()`, which exists only to decide what the
+    // header's call-to-action says. Calling it for a page that renders no header
+    // would put a WorkOS round trip in front of a public, cacheable figure for
+    // no output at all.
     return <main className={["mj-public-site", "mj-public-site--bare", className].filter(Boolean).join(" ")}>{children}</main>;
   }
   const copy = PUBLIC_SHELL_COPY[resolvedLocale];
@@ -82,15 +82,25 @@ export async function PublicSite({
     { href: "/workspace", label: copy.nav.workspace },
     { href: "/contact", label: copy.nav.contact },
   ];
-  // Both of these reach a Dynamic API — `getMajoranaAuth()` → `withAuth()` →
-  // `headers()`, and `getMajoranaSignInUrl()` → `getAuthorizationUrl()` →
-  // `headers()`. Either one alone opts every page rendering this component out
-  // of the CDN, which is why `"static"` returns before both rather than before
-  // one of them.
+  // `getMajoranaAuth()` → `withAuth()` → `headers()` reaches a Dynamic API, and
+  // that alone opts every page rendering this component out of the CDN — which
+  // is why `"static"` skips it.
+  //
+  // The sign-in href is now a constant string on BOTH branches. It used to be
+  // the WorkOS authorization URL, minted here by `getMajoranaSignInUrl()`, and
+  // that is a second Dynamic API read — but more importantly it is a cookie
+  // write: `getSignInUrl()` → `setPKCECookie()` → `cookies().set()`, which
+  // Next.js permits only in a Server Action or a Route Handler. Under
+  // authkit-nextjs v2 PKCE was opt-in (`WORKOS_ENABLE_PKCE`) so the write was
+  // skipped and this was merely wasteful; v4 makes PKCE unconditional, so every
+  // `chrome="full"` page — `/repository/papers`, `/repository/folders`,
+  // `/repository/<slug>` — returned 500 instead. See `lib/sign-in.ts` and
+  // `app/auth/sign-in/route.ts`: the per-request hand-off is minted after the
+  // click, never during a render.
   const { user } = chrome === "static" ? { user: null } : await getMajoranaAuth();
-  const signInHref = chrome === "static"
-    ? "/auth/sign-in"
-    : isMajoranaAuthConfigured() ? await getMajoranaSignInUrl() : null;
+  const signInHref = chrome === "static" || isMajoranaAuthConfigured()
+    ? majoranaSignInPath()
+    : null;
   const primaryAction = user
     ? { href: "/run", label: copy.actions.workspace }
     : signInHref
