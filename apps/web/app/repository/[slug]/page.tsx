@@ -2,7 +2,8 @@ import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { canonicalMetadata } from "../../../lib/public-metadata";
 import { PublicSite } from "../../../components/public-site";
-import { getMajoranaAuth, getMajoranaSignInUrl, isMajoranaAuthConfigured } from "../../../lib/auth";
+import { getMajoranaAuth, isMajoranaAuthConfigured } from "../../../lib/auth";
+import { majoranaSignInPath } from "../../../lib/sign-in";
 import { getPublicLocale } from "../../../lib/public-locale-server";
 import {
   getRepositoryEntry,
@@ -77,7 +78,16 @@ export default async function RepositoryEntryPage({
   ]);
   const locale = await getPublicLocale();
   const { user } = await getMajoranaAuth();
-  const signInHref = !user && isMajoranaAuthConfigured() ? await getMajoranaSignInUrl() : null;
+  // The same-origin entrypoint, never the WorkOS authorization URL itself.
+  // Minting that URL during a render calls `getSignInUrl()` -> `setPKCECookie()`
+  // -> `cookies().set()`, and Next.js allows a cookie write only in a Server
+  // Action or a Route Handler — so a page that does it 500s outright. It did
+  // not under authkit-nextjs v2 only because PKCE was opt-in there
+  // (`WORKOS_ENABLE_PKCE`) and the cookie write was skipped when it was off;
+  // v4 makes PKCE unconditional, which turned a dormant bug into every record
+  // page returning 500 (PR 654 reverted the upgrade for this). The per-request
+  // hand-off belongs in `app/auth/sign-in/route.ts`, after the click.
+  const signInHref = !user && isMajoranaAuthConfigured() ? majoranaSignInPath() : null;
   // What this entry takes and returns, and what meets it at either end.
   //
   // Derived here from the listing that is already on the page for the related
