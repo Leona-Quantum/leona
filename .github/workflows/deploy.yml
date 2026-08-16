@@ -466,6 +466,28 @@ jobs:
           test -n "$rev" || { echo "could not resolve the new worker revision"; exit 1; }
           echo "revision=$rev" >> "$GITHUB_OUTPUT"
 
+      # Cloud Run's traffic assignment decides which revision RUNS, not merely
+      # which one answers HTTP. This worker answers no requests, and the absence
+      # of this step was read for three days as "the worker needs no traffic
+      # step" — but a service whose `spec.traffic` names an explicit revision
+      # keeps serving that revision, and a plain `gcloud run deploy` PRESERVES
+      # that pin instead of taking traffic. On 2026-08-14 a `--tag` deploy
+      # (`sentry-postfix-worker3`, which never became ready) left traffic pinned
+      # to majorana-worker-00483-lb7. Every worker deploy from then to
+      # 2026-08-16 built an image, created a healthy revision, passed the gate
+      # below, and shipped nothing: production kept polling release 8e56bbb
+      # while `dev` moved on eight merges. The API never had this hole because
+      # it shifts traffic explicitly after its dark-revision probe.
+      #
+      # --to-latest restores "the newest ready revision serves", which is also
+      # what makes the pin unrepeatable: a future tagged deploy is undone by the
+      # next ordinary one.
+      - name: shift worker traffic
+        if: steps.creds.outputs.have == 'true'
+        run: |
+          gcloud run services update-traffic majorana-worker \
+            --project "$GCP_PROJECT" --region "$GCP_REGION" --to-latest
+
       # A crash-looping worker is the exact failure this workflow exists to stop,
       # and Cloud Run will not report it: the poll loop dies inside a container
       # that stays "healthy". Read the log directly and fail the deploy on errors.
@@ -483,23 +505,66 @@ jobs:
       # as jsonPayload, so the projection returned an empty string and `-n` read
       # a real alarm as silence. Both payload shapes are read now — an alarm the
       # gate cannot see is not a gate.
+      # The check is POSITIVE, and that is the point. Read only for the absence
+      # of errors and the gate cannot fail for a revision that never ran: no
+      # instance means no log line means no error means "clean". That is exactly
+      # how three days of unshipped worker deploys passed this step. A revision
+      # serving no traffic starts no container, so silence was proof of nothing.
+      #
+      # So require the startup line the worker actually emits
+      # (`__main__.py:569`, "worker <id> started (poll <n>s)") and, separately,
+      # that the revision this run created is the one serving traffic. Either
+      # assertion alone still has a hole: the startup line without the traffic
+      # check passes for a revision that came up and was then pinned away from,
+      # and the traffic check without the startup line passes for a revision
+      # that is routed but crash-looping.
       - name: worker is actually running
         if: steps.creds.outputs.have == 'true'
         run: |
           sleep 45
+          rev="${{ steps.worker.outputs.revision }}"
+
+          serving=$(gcloud run services describe majorana-worker \
+            --project "$GCP_PROJECT" --region "$GCP_REGION" \
+            --format="value(status.traffic.revisionName)")
+          case " $serving " in
+            *" $rev "*) echo "traffic is on $rev" ;;
+            *) echo "::error::$rev was deployed but traffic serves: $serving"
+               echo "::error::a revision with no traffic runs no instances, so the"
+               echo "::error::log check below would pass on silence. See the"
+               echo "::error::'shift worker traffic' step above."
+               exit 1 ;;
+          esac
+
           logs=$(gcloud logging read \
             'resource.type="cloud_run_revision"
              AND resource.labels.service_name="majorana-worker"
-             AND resource.labels.revision_name="${{ steps.worker.outputs.revision }}"
+             AND resource.labels.revision_name="'"$rev"'"
              AND severity>=ERROR' \
             --project "$GCP_PROJECT" --freshness=2m --limit 20 \
             --format="value(textPayload,jsonPayload.message)")
           if [ -n "$logs" ]; then
-            echo "revision ${{ steps.worker.outputs.revision }} logged errors after deploy:"
+            echo "revision $rev logged errors after deploy:"
             echo "$logs"
             exit 1
           fi
-          echo "revision ${{ steps.worker.outputs.revision }} clean for 45s after deploy"
+
+          # The poll loop announced itself. Without this, silence reads as health.
+          started=$(gcloud logging read \
+            'resource.type="cloud_run_revision"
+             AND resource.labels.service_name="majorana-worker"
+             AND resource.labels.revision_name="'"$rev"'"
+             AND ("started (poll" OR "worker localhost")' \
+            --project "$GCP_PROJECT" --freshness=5m --limit 5 \
+            --format="value(textPayload,jsonPayload.message)")
+          if [ -z "$started" ]; then
+            echo "::error::$rev never logged its startup line within 45s."
+            echo "::error::Expected \"worker <id> started (poll <n>s)\" from"
+            echo "::error::services/worker/src/majorana_worker/__main__.py. The"
+            echo "::error::revision holds traffic but the poll loop is not up."
+            exit 1
+          fi
+          echo "revision $rev serves traffic, logged startup, clean for 45s"
 
       # The gate every other step in this workflow is a proxy for: one real run,
       # on the stack that was just deployed, end to end.

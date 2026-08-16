@@ -281,9 +281,15 @@ There is no in-product spend cap; the per-user weekly allowance
 
 Several levers above replace the running revision. Do this first.
 
-1. **`audit_log`** — append-only at the database (migration 0050 revokes UPDATE
-   and DELETE from `app_rw` and adds triggers), so it cannot be tampered with by
-   the application. It records catalog actions, project-share actions, and — as
+1. **`audit_log`** — append-only at the database, so it cannot be tampered with
+   by the application. Two mechanisms, and it is worth knowing which does the
+   work: migration **0050 adds the triggers**, and **0052** revokes UPDATE and
+   DELETE from `app_rw`. The trigger is the one to rely on — it fires regardless
+   of who is connected, including `majorana_app`, which owns the table and whose
+   privileges no revoke can constrain. The grant is a second line that only began
+   applying to anything on 2026-08-17, when the services were flipped onto
+   `majorana_api`; before that no session held `app_rw` and the revoke bound
+   nobody. It records catalog actions, project-share actions, and — as
    of the audit-log change — deletions, member removal, role changes and
    ownership transfer. **It does not record auth events**; do not go looking for
    sign-ins here.

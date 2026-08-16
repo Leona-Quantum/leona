@@ -1,7 +1,11 @@
 # AGENTS.md — services/api
 
 FastAPI control plane. Owns the only Postgres repository layer; both the API and
-Worker use it with role `app_rw`. No other process may talk to Postgres.
+Worker use it as `majorana_api`, a LOGIN role whose sole membership is the
+`app_rw` privilege bundle — live since 2026-08-17, so this is a description and
+no longer a plan. No other process may talk to Postgres. `majorana_app` owns the
+tables and is the migration credential only; see
+`docs/runbooks/database.md` § *Connecting as `app_rw`*.
 
 - Authz invariant: repository functions take `Scope` first-arg; no raw queries outside
   the repository layer (import-linter + CI grep enforce; authz suite is a required check).
