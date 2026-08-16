@@ -1,6 +1,7 @@
 import katex from "katex";
 
 import { mathSegments } from "../lib/math-text";
+import { sanitizeMathHtml } from "../lib/sanitize-math";
 
 /**
  * A line of corpus prose, with its `$…$` typeset and everything else printed as
@@ -46,14 +47,21 @@ export function MathText({ source }: { source: string }): React.ReactElement {
           <span
             key={index}
             className="mj-math"
-            // KaTeX's own output. The input is the corpus, which is authored in
-            // this repository and gated on the way in — not user content.
+            // KaTeX's own output, sanitized on the way out. The input is corpus
+            // prose authored in this repository and gated by check-math.mjs, and
+            // KaTeX itself defaults to `trust: false` — but the injection point
+            // no longer depends on either of those staying true. Owner ruling,
+            // ai-ops 138: KaTeX is not accepted as its own sanitizer. The config
+            // that keeps this from eating KaTeX's MathML is the part that
+            // matters; it is documented in lib/sanitize-math.ts.
             dangerouslySetInnerHTML={{
-              __html: katex.renderToString(segment.value, {
-                throwOnError: false,
-                displayMode: false,
-                output: "htmlAndMathml",
-              }),
+              __html: sanitizeMathHtml(
+                katex.renderToString(segment.value, {
+                  throwOnError: false,
+                  displayMode: false,
+                  output: "htmlAndMathml",
+                }),
+              ),
             }}
           />
         ) : (
