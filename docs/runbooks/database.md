@@ -168,7 +168,27 @@ and corrected (Aikido, PR 689):
 SCRAM-SHA-256 verifier, and sends only the verifier. The cleartext never reaches
 the server, so it cannot reach a log or `pg_stat_activity` at all.
 
+**The same value has to reach two places, and there is no reading it back.** Once
+it is a SCRAM verifier PostgreSQL cannot tell you what it was, so if the role gets
+one password and `DATABASE_URL_APP_SECRET` gets another, nothing notices until both
+services are repointed and fail to authenticate together. Generate it exactly once,
+into the shell, and use that one variable for both steps:
+
 ```bash
+# 1. Generate ONCE. Alphanumeric because this value also has to survive being
+#    placed in a URI.
+PW="$(LC_ALL=C tr -dc 'A-Za-z0-9' </dev/urandom | head -c 40)"
+
+# 2. Print it once so it can be pasted at the prompt in step 3. This is the
+#    trade-off being made deliberately: on the terminal (and in scrollback) rather
+#    than in argv, where `ps` exposes it to every other process on the machine.
+#    Clear the screen afterwards.
+printf '%s\n' "$PW"
+```
+
+```bash
+# 3. Interactive psql — `\password` is a client command and does not work through
+#    `-c`. Paste the value from step 2 at both prompts.
 psql "$DATABASE_URL_DIRECT"
 ```
 
@@ -179,15 +199,21 @@ grant app_rw to majorana_api;
 \password majorana_api            -- prompts twice; sends a SCRAM verifier, not the password
 ```
 
-Generate the value first and paste it at the prompt — it also has to survive being
-placed in a URI, so keep it alphanumeric:
+**Then prove the two agree before repointing anything.** This is the step that
+makes a desync harmless instead of an outage — it authenticates with the value the
+secret will be built from, so a paste that went wrong fails here rather than on the
+services:
 
 ```bash
-LC_ALL=C tr -dc 'A-Za-z0-9' </dev/urandom | head -c 40; echo
+PGPASSWORD="$PW" psql -h 127.0.0.1 -p 5432 -U majorana_api -d majorana \
+  -c 'select current_user' \
+  || { echo "the password in \$PW does not match the role — redo step 3 before going on"; }
 ```
 
-Keep it on the clipboard or in the shell as `$PW` for the secret below; there is no
-way to read it back out of PostgreSQL once it is a SCRAM verifier.
+`PGPASSWORD` in the environment rather than on the command line: it is not in argv,
+and this is a throwaway check by the operator who already holds the value.
+
+`$PW` stays in the shell for the secret below. Do not regenerate it.
 
 Then assert, rather than trust, that the role is what was asked for: `login` is
 true, `super`/`bypassrls`/`createdb`/`createrole`/`replication` are all false,
