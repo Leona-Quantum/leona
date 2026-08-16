@@ -97,11 +97,20 @@ export function contentSecurityPolicy({
     // place. **What was genuinely missing was enforcement, not explanation** —
     // the reasoning existed only as prose, and prose does not fail a build.
     //
-    // Measured once, on leonaqt.com, to pin the number the argument turns on: a
-    // production page serves FIVE inline `<script>` bodies — our three constants,
-    // Next's `(self.__next_f=…)` bootstrap, and **41,919 bytes** of streamed RSC
-    // payload that differs per page and per build. That last one is why a
-    // build-time hash list can never be complete.
+    // One measurement added here, with its provenance, because the count was the
+    // part `next.config.ts` did not state: on **leonaqt.com `/` (the home page),
+    // production build, 2026-08-17 JST / 2026-08-16 UTC**, the served HTML carries
+    // **five** inline `<script>` elements with bodies — our three constants,
+    // Next's `(self.__next_f=…)` bootstrap, and one streamed RSC payload of
+    // **41,919 bytes**.
+    //
+    // `next.config.ts` cites the same script on **`/pricing` at 25,095 bytes**, and
+    // the two figures do not conflict — **together they are the argument.** Same
+    // script, two routes, a 16 KB difference: that is the per-page variance which
+    // makes a build-time hash list impossible in principle rather than merely
+    // laborious. Quote both, or neither, and always with the route attached; a
+    // single number here reads as a fact about the app when it is a fact about one
+    // page.
     //
     // The trap, which is what the test in `content-security-policy.test.ts`
     // actually guards: **the moment any hash appears in this directive,
