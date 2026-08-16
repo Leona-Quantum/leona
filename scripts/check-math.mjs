@@ -315,6 +315,24 @@ for (const node of LAYER_GRAPH.nodes) {
   const nested = [];
   const example = node.example ?? {};
   nested.push([`example`, ["text", example.text], ["textJa", example.textJa]]);
+  // **`contract` and `repetition` render through MathText and were NOT walked.**
+  // Found by Aikido on PR 690, and it was right about the thing that matters: the
+  // comment above claimed this walk visits every `$…$` in the corpus, and it did
+  // not. `card.contract.value.takes` / `.returns` and `repetition.note` are both
+  // printed by `MathText` on a record page (see the `<MathText source=…>` call
+  // sites in `map-card-panel.tsx` and `repository-layers.tsx`), so a formula that
+  // does not compile — or one the sanitizer alters — could merge green here and
+  // show up only as a red formula on the page.
+  //
+  // `whenItApplies` and `textReason` are NOT added, and that is not an omission:
+  // `whenItApplies` is derived from `conditions`, which the top-level PAIRS walk
+  // already covers, and `textReason` is not a corpus field at all. Adding either
+  // would report one value twice, which is its own way of making a gate untrusted.
+  const contract = node.contract ?? {};
+  nested.push([`contract`, ["takes", contract.takes], ["takesJa", contract.takesJa]]);
+  nested.push([`contract`, ["returns", contract.returns], ["returnsJa", contract.returnsJa]]);
+  const repetition = node.repetition ?? {};
+  nested.push([`repetition`, ["note", repetition.note], ["noteJa", repetition.noteJa]]);
   for (const implementation of node.implementations ?? []) {
     for (const field of ["about", "methods", "data", "code", "results"]) {
       nested.push([
