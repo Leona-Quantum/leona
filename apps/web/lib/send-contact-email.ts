@@ -1,4 +1,9 @@
-import { inquiryBody, inquiryReplyTo, inquirySubject, type ContactInquiry } from "./contact-inquiry";
+// `.ts` on purpose, matching `artifact-export.ts`, `chat-history.ts` and
+// `public-paths.ts`. This module is reached by the node test runner, which
+// resolves relative specifiers literally — an extensionless one here does not
+// fail to typecheck or to build, it fails at RUNTIME inside the test with
+// ERR_MODULE_NOT_FOUND, taking every test in the importing file with it.
+import { inquiryBody, inquiryReplyTo, inquirySubject, type ContactInquiry } from "./contact-inquiry.ts";
 
 /**
  * Hands a contact-form message to the transactional sender (ai-ops issue 125).
@@ -14,9 +19,10 @@ import { inquiryBody, inquiryReplyTo, inquirySubject, type ContactInquiry } from
  * ban to admit a special case would weaken a guard that is currently absolute.
  *
  * So the call lives here, out of the route tree, and the invariant the ban
- * actually protects is asserted directly on this file: a test in
- * `send-contact-email.test.ts` fails if this stops passing an abort signal.
- * The rule keeps its teeth and the outbound call keeps its timeout.
+ * actually protects is asserted directly on this file: `contact-inquiry.test.ts`
+ * fails if this stops passing an abort signal, and exercises both failure
+ * paths against a stubbed `fetch`. The rule keeps its teeth and the outbound
+ * call keeps its timeout.
  */
 
 /** One provider round trip. A visitor is watching a spinner, so this is short. */

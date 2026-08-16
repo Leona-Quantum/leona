@@ -61,11 +61,36 @@ export async function GET() {
   );
 }
 
+/**
+ * Refuse an oversize body BEFORE parsing it.
+ *
+ * `CONTACT_LIMITS` bounds the fields, but it only runs after `request.json()`
+ * has already parsed whatever arrived — so the caps protect what we send, not
+ * what we are willing to read. This is the guard on the second one. The number
+ * is the sum of the field caps with generous room for JSON overhead, so no
+ * legitimate submission is anywhere near it. Raised by CodeRabbit on PR 661.
+ */
+const MAX_BODY_BYTES = 64 * 1024;
+
 export async function POST(request: Request) {
+  const declared = Number(request.headers.get("content-length") ?? "");
+  if (Number.isFinite(declared) && declared > MAX_BODY_BYTES) {
+    return NextResponse.json({ error: "that message is too large" }, { status: 413, headers: noStore });
+  }
+
   let payload: Record<string, unknown>;
   try {
-    payload = (await request.json()) as Record<string, unknown>;
+    // Read as text first so an absent or lying `Content-Length` is still
+    // bounded — the header check above is a cheap early exit, not the guard.
+    const raw = await request.text();
+    if (raw.length > MAX_BODY_BYTES) {
+      return NextResponse.json({ error: "that message is too large" }, { status: 413, headers: noStore });
+    }
+    payload = JSON.parse(raw) as Record<string, unknown>;
   } catch {
+    return NextResponse.json({ error: "expected a JSON body" }, { status: 400, headers: noStore });
+  }
+  if (payload === null || typeof payload !== "object" || Array.isArray(payload)) {
     return NextResponse.json({ error: "expected a JSON body" }, { status: 400, headers: noStore });
   }
 

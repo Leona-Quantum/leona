@@ -10,6 +10,7 @@ import {
   inquirySubject,
   validateInquiry,
 } from "./contact-inquiry.ts";
+import { sendContactEmail } from "./send-contact-email.ts";
 
 const webRoot = dirname(dirname(fileURLToPath(import.meta.url)));
 const read = (...segments: string[]) => readFileSync(join(...segments), "utf8");
@@ -152,4 +153,77 @@ test("the outbound provider call is timed, which is what the no-fetch ban protec
   assert.ok(!/\bfetch\s*\(/.test(route), "the route must delegate the call, not make it");
   // Success is only ever reported after the provider accepted it.
   assert.match(route, /if \(!outcome\.delivered\)/);
+});
+
+test("a non-OK provider response is reported as not delivered", async () => {
+  // The failure that matters most: the provider answered, so the network is
+  // fine and nothing threw, but the message did not go anywhere. Reporting
+  // success here would show the visitor a thank-you for a message nobody has.
+  const original = globalThis.fetch;
+  const errors: unknown[][] = [];
+  const originalError = console.error;
+  console.error = (...args: unknown[]) => void errors.push(args);
+  try {
+    globalThis.fetch = (async () => new Response("nope", { status: 422 })) as typeof fetch;
+    const outcome = await sendContactEmail(
+      { apiKey: "k", from: "a@b.io", inbox: "c@d.io" },
+      { name: "Ada", email: "ada@example.org", topic: "T", message: "M" },
+    );
+    assert.deepEqual(outcome, { delivered: false, reason: "rejected" });
+    assert.equal(errors.length, 1, "a rejection must be logged");
+  } finally {
+    globalThis.fetch = original;
+    console.error = originalError;
+  }
+});
+
+test("an unreachable provider is reported as not delivered, and logged", async () => {
+  // The asymmetry this covers: before the review, this path returned without
+  // logging while the rejection above logged. A DNS failure or a timeout was
+  // therefore silent, and "nobody is receiving contact mail" looked exactly
+  // like "nobody wrote in".
+  const original = globalThis.fetch;
+  const errors: unknown[][] = [];
+  const originalError = console.error;
+  console.error = (...args: unknown[]) => void errors.push(args);
+  try {
+    globalThis.fetch = (async () => {
+      throw Object.assign(new Error("aborted"), { name: "TimeoutError" });
+    }) as typeof fetch;
+    const outcome = await sendContactEmail(
+      { apiKey: "k", from: "a@b.io", inbox: "c@d.io" },
+      { name: "Ada", email: "ada@example.org", topic: "T", message: "M" },
+    );
+    assert.deepEqual(outcome, { delivered: false, reason: "unreachable" });
+    assert.equal(errors.length, 1, "an unreachable provider must be logged");
+  } finally {
+    globalThis.fetch = original;
+    console.error = originalError;
+  }
+});
+
+test("the send passes an abort signal and never puts the visitor in From", async () => {
+  const original = globalThis.fetch;
+  try {
+    let seen: RequestInit | undefined;
+    globalThis.fetch = (async (_url: unknown, init: RequestInit) => {
+      seen = init;
+      return new Response("{}", { status: 200 });
+    }) as unknown as typeof fetch;
+    const outcome = await sendContactEmail(
+      { apiKey: "k", from: "Leona <hello@leonaquantum.com>", inbox: "inbox@leonaquantum.com" },
+      { name: "Ada", email: "ada@example.org", topic: "T", message: "M" },
+    );
+    assert.deepEqual(outcome, { delivered: true });
+    assert.ok(seen?.signal, "the outbound call must carry an abort signal");
+    const body = JSON.parse(String(seen?.body));
+    // DKIM and DMARC are checked against `from`. Putting the visitor's address
+    // there fails both and lands the mail in spam, which is the quiet version
+    // of the form not working at all.
+    assert.equal(body.from, "Leona <hello@leonaquantum.com>");
+    assert.equal(body.reply_to, "ada@example.org");
+    assert.deepEqual(body.to, ["inbox@leonaquantum.com"]);
+  } finally {
+    globalThis.fetch = original;
+  }
 });

@@ -153,7 +153,16 @@ export function ContactForm({ locale }: { locale: PublicLocale }) {
       </div>
       <div className="mj-contact-form-actions">
         <button className="mj-primary-button" type="submit" disabled={sending}>{label}</button>
-        {status.detail ? <p role="status">{status.detail}</p> : null}
+        {/*
+          Always mounted, never conditional. A live region has to exist in the
+          DOM BEFORE its content changes or screen readers commonly announce
+          nothing — mounting the element at the same moment its text appears is
+          the classic way to ship a status message only sighted users receive.
+          The button label is not a substitute: it is disabled while sending.
+          Empty until there is something to say, so it costs no visible space.
+          Raised by CodeRabbit on PR 661.
+        */}
+        <p role="status" aria-live="polite">{status.detail ?? ""}</p>
       </div>
       {/* Describes what the button does, so it has to live where that is known.
           Until the probe resolves it stays on the mailto wording, which is the
