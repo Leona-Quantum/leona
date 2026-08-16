@@ -276,6 +276,34 @@ def upgrade() -> None:
     op.execute("revoke update, delete on audit_log from app_rw")
     op.execute("revoke update, delete on usage_events from app_rw")
 
+    # The other four tables this repository has already decided are narrower than
+    # full CRUD, taken back for the same reason.
+    #
+    # `grant ... on all tables` is a blunt instrument, and the three append-only
+    # tables above are NOT the only ones it over-grants. Eight earlier migrations
+    # carry per-table `app_rw` grants behind the same inert `if exists` guard, and
+    # two of them are deliberately narrower than the schema-wide line in 0001:
+    #
+    #   0034_qpu_runs.py:96-97          qpu_runs: select, insert, update - NO delete
+    #   0026_verification_v2_evidence   run_plans, candidate_semantic_reviews,
+    #     .py:321-324                   candidate_verification_attempts:
+    #                                   select, insert only - NO update, NO delete
+    #
+    # Those guards have never fired, because nothing ever created `app_rw` - so
+    # the intent was recorded and never enforced. This migration is the first
+    # thing that makes the role real, which makes it the first thing that could
+    # QUIETLY WIDEN them: a blanket grant here would hand the application DELETE
+    # on `qpu_runs` and UPDATE on the verification-evidence tables, and the only
+    # trace that this was ever decided otherwise would be two dead code paths.
+    #
+    # Found by reading all nine `app_rw` migrations rather than the two this file
+    # already knew about.
+    op.execute("revoke delete on qpu_runs from app_rw")
+    op.execute(
+        "revoke update, delete on run_plans, candidate_semantic_reviews, "
+        "candidate_verification_attempts from app_rw"
+    )
+
     # Alembic's own bookkeeping, taken back completely.
     #
     # `grant ... on all tables` reached `alembic_version` too, which is a real
