@@ -1,10 +1,23 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
+import { dirname, join } from "node:path";
 
 import {
   contentSecurityPolicy,
   errorReportingOrigin,
+  inlineHash,
 } from "./content-security-policy.ts";
+import { NOT_FOUND_LOCALE_STYLE } from "./not-found-style.ts";
+
+const webRoot = dirname(dirname(fileURLToPath(import.meta.url)));
+const PRODUCTION = {
+  controlPlane: "https://api.example.test",
+  development: false,
+  errorReporting: null,
+  vercelToolbar: false,
+} as const;
 
 const DSN =
   "https://3465b040eb85179bc9ab59e3a775516c@o4511708586901504.ingest.us.sentry.io/4511711999164416";
@@ -104,11 +117,18 @@ test("the Vercel Toolbar's six origins reach preview and never production", () =
   assert.doesNotMatch(production, /pusher\.com/);
   assert.doesNotMatch(production, /frame-src/);
 
-  // Production is byte-identical to the policy that shipped before the toolbar
-  // parameter existed — the widening is additive or it is a regression.
+  // The production policy in full, pinned as an exact string so that any change
+  // to it is a decision somebody wrote down rather than a side effect.
+  //
+  // It last changed when `script-src-attr`, `style-src-elem` and `style-src-attr`
+  // were added. The toolbar widening remains additive to this — additive or it
+  // is a regression.
   assert.equal(
     production,
-    "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; " +
+    "default-src 'self'; script-src 'self' 'unsafe-inline'; script-src-attr 'none'; " +
+      "style-src 'self' 'unsafe-inline'; " +
+      "style-src-elem 'self' 'sha256-hl9qK6CxELuy3YEmCQFOW8oFkndsA/kDC9kyF0oQVXw='; " +
+      "style-src-attr 'unsafe-inline'; " +
       "img-src 'self' data: blob:; font-src 'self' data:; " +
       "connect-src 'self' https://api.example.test; object-src 'none'; base-uri 'self'; " +
       "form-action 'self'; frame-ancestors 'none'; upgrade-insecure-requests",
@@ -116,4 +136,121 @@ test("the Vercel Toolbar's six origins reach preview and never production", () =
 
   // Clickjacking protection is not a thing the toolbar gets to relax.
   assert.match(preview, /frame-ancestors 'none'/);
+});
+
+test("inline event handler attributes are refused on every environment", () => {
+  // `script-src-attr` does NOT inherit from `script-src` when it is present, so
+  // this is enforced even though `script-src` still carries `'unsafe-inline'`
+  // for Next's streaming payload. That is the whole point of the directive being
+  // here: `<img onerror=…>` is refused on a page whose `script-src` would
+  // otherwise admit it.
+  //
+  // Every environment, deliberately. React attaches listeners from the bundle
+  // and emits no handler attributes, so there is no arm — development, preview
+  // or production — that needs this open, and an exception is how one arrives.
+  for (const environment of [
+    PRODUCTION,
+    { ...PRODUCTION, development: true },
+    { ...PRODUCTION, vercelToolbar: true },
+  ]) {
+    assert.match(contentSecurityPolicy(environment), /script-src-attr 'none'/);
+  }
+});
+
+test("an injected <style> element is refused, while inline style attributes still work", () => {
+  const production = contentSecurityPolicy(PRODUCTION);
+
+  // The one inline stylesheet this app serves, named by its hash. Asserted with
+  // a substring rather than a regex on purpose: a base64 digest contains `/` and
+  // `+`, and escaping those into a pattern is a way to write a test that passes
+  // for the wrong reason.
+  assert.ok(
+    production.includes(`style-src-elem 'self' ${inlineHash(NOT_FOUND_LOCALE_STYLE)};`),
+    `style-src-elem must name the 404 stylesheet by hash; policy was: ${production}`,
+  );
+  // The failing arm, and the reason the directive is worth adding at all: an
+  // inline <style> that is NOT that one has nothing to match. A browser ignores
+  // `'unsafe-inline'` in a directive that also carries a hash, but this policy
+  // does not rely on that subtlety — the token is simply absent.
+  assert.doesNotMatch(production, /style-src-elem [^;]*'unsafe-inline'/);
+
+  // Inline style ATTRIBUTES stay open. 72 components position with `style={{…}}`
+  // and KaTeX emits one per glyph; closing this blanks the Atlas map and
+  // scrambles every rendered formula.
+  assert.match(production, /style-src-attr 'unsafe-inline'/);
+
+  // And the legacy fallback is untouched, so a browser that knows neither of the
+  // two directives above gets exactly the policy that shipped before them rather
+  // than a broken page.
+  assert.match(production, /style-src 'self' 'unsafe-inline';/);
+});
+
+test("the dev server's hot-reload stylesheets are admitted, and only there", () => {
+  // `next dev` injects CSS as <style> elements for hot reload and for the error
+  // overlay. Neither is hashable and neither exists in a production build, so
+  // development opens `style-src-elem` and nothing else does.
+  const development = contentSecurityPolicy({ ...PRODUCTION, development: true });
+  assert.match(development, /style-src-elem [^;]*'unsafe-inline'/);
+  assert.doesNotMatch(contentSecurityPolicy(PRODUCTION), /style-src-elem [^;]*'unsafe-inline'/);
+  assert.doesNotMatch(
+    contentSecurityPolicy({ ...PRODUCTION, vercelToolbar: true }),
+    /style-src-elem [^;]*'unsafe-inline'/,
+  );
+});
+
+test("development's style-src-elem carries no hash, or its 'unsafe-inline' is dead", () => {
+  // The trap this pins, which is a CSP rule and not a preference: a directive
+  // that lists a hash IGNORES `'unsafe-inline'` entirely. So `'self' <hash>
+  // 'unsafe-inline'` is not the permissive union it reads as — it is the hash,
+  // alone, and every other inline stylesheet is refused.
+  //
+  // This is a regression test rather than a precaution. That exact list was
+  // written first, and Chrome refused the dev server's own stylesheet on
+  // `next dev` with "Note that 'unsafe-inline' is ignored if either a hash or
+  // nonce value is present in the source list". A developer would have seen
+  // hot reload stop applying CSS and had nothing pointing here.
+  const development = contentSecurityPolicy({ ...PRODUCTION, development: true });
+  const styleSrcElem = development.split("; ").find((d) => d.startsWith("style-src-elem "));
+
+  assert.ok(styleSrcElem, "development must still emit style-src-elem");
+  assert.ok(
+    !styleSrcElem.includes("sha256-"),
+    `development's style-src-elem must carry no hash, or the 'unsafe-inline' beside it does ` +
+      `nothing: ${styleSrcElem}`,
+  );
+  assert.ok(styleSrcElem.includes("'unsafe-inline'"));
+
+  // The mirror of it: production carries the hash and no `'unsafe-inline'`, so
+  // there is nothing for the hash to cancel there.
+  const styleSrcElemProd = contentSecurityPolicy(PRODUCTION)
+    .split("; ")
+    .find((d) => d.startsWith("style-src-elem "));
+  assert.ok(styleSrcElemProd?.includes("sha256-"));
+  assert.ok(!styleSrcElemProd?.includes("'unsafe-inline'"));
+});
+
+test("the hashed stylesheet is the one the 404 page actually renders", () => {
+  // The load-bearing check, and the only one that can catch the failure mode
+  // that matters here. A hash is taken over exact bytes: if `app/not-found.tsx`
+  // ever goes back to defining its own CSS string, the policy keeps hashing this
+  // module's copy, the two drift, and the 404 page renders with its
+  // language-switching rules refused — showing the reader the English and the
+  // Japanese copy stacked. It does not error, and nothing else here loads a 404.
+  const page = readFileSync(join(webRoot, "app", "not-found.tsx"), "utf8");
+  assert.match(
+    page,
+    /import \{ NOT_FOUND_LOCALE_STYLE \} from "\.\.\/lib\/not-found-style\.ts";/,
+    "app/not-found.tsx must import the constant the CSP hashes, not carry its own copy",
+  );
+  assert.match(
+    page,
+    /dangerouslySetInnerHTML=\{\{ __html: NOT_FOUND_LOCALE_STYLE \}\}/,
+    "the inline <style> must render exactly the hashed constant",
+  );
+
+  // The digest itself, pinned against the bytes leonaqt.com served on
+  // 2026-08-16 — hashing the live page's <style> body gave this same value, so
+  // the derivation matches what a browser computes rather than merely being
+  // self-consistent.
+  assert.equal(inlineHash(NOT_FOUND_LOCALE_STYLE), "'sha256-hl9qK6CxELuy3YEmCQFOW8oFkndsA/kDC9kyF0oQVXw='");
 });

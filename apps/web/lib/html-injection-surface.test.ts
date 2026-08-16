@@ -50,7 +50,15 @@ const ALLOWED = new Map<string, { sinks: number; reason: string }>([
   // is no untrusted input and nothing to sanitize; a sanitizer would delete them.
   ["app/layout.tsx", { sinks: 3, reason: "inline <script>: our own constants, pre-paint" }],
   // An inline <style> built from our own locale constant, same reasoning.
-  ["app/not-found.tsx", { sinks: 1, reason: "inline <style>: our own constant" }],
+  //
+  // It is also the ONLY inline <style> element this app serves, and the CSP now
+  // depends on that: `style-src-elem` names this stylesheet by SHA-256 instead
+  // of admitting `'unsafe-inline'`. So a second inline <style> anywhere is not
+  // just a new sink to justify here — it is a stylesheet the browser will refuse
+  // until its hash is added in lib/content-security-policy.ts. The symptom is a
+  // page rendering unstyled rather than an error, which is why it is written
+  // down at the count that catches it.
+  ["app/not-found.tsx", { sinks: 1, reason: "inline <style>: our own constant, hashed into style-src-elem" }],
   // KaTeX's own output, from corpus prose WE author (see lib/math-text.ts).
   // No visitor can reach this input, and `throwOnError: false` renders an error
   // node rather than doing anything with malformed source.
