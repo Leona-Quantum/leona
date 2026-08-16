@@ -482,9 +482,37 @@ jobs:
       # --to-latest restores "the newest ready revision serves", which is also
       # what makes the pin unrepeatable: a future tagged deploy is undone by the
       # next ordinary one.
+      # The worker cannot be probed dark the way the api is: a revision with no
+      # traffic starts no instance, so there is nothing to ask. Verification
+      # therefore has to happen AFTER the cutover, which means the cutover needs a
+      # compensating rollback or a failed gate becomes a worker outage instead of a
+      # blocked rollout — run execution stalls until someone notices by hand.
+      # Raised by Aikido on PR 689, and it was right.
+      #
+      # So record who is serving BEFORE moving traffic, and let the `failure()`
+      # step below put it back.
       - name: shift worker traffic
         if: steps.creds.outputs.have == 'true'
+        id: worker_traffic
         run: |
+          # jq on a NARROW json projection, not `value(status.traffic)`: that
+          # renders a list whose separator is not guaranteed, and a substring match
+          # against it would confuse majorana-worker-00483 with ...-004831.
+          # `json(status.traffic)` rather than bare `--format=json` because this
+          # only needs the traffic block, and asking for the whole service pulls in
+          # annotations that have nothing to do with the question.
+          # Only targets actually carrying traffic count; tagged targets sit at 0%.
+          previous=$(gcloud run services describe majorana-worker \
+            --project "$GCP_PROJECT" --region "$GCP_REGION" --format='json(status.traffic)' \
+            | jq -r '[.status.traffic[]? | select((.percent // 0) > 0) | .revisionName] | first // empty')
+          if [ -z "$previous" ]; then
+            echo "::warning::could not resolve the currently serving worker revision;"
+            echo "::warning::proceeding, but the rollback step will have nothing to restore."
+          else
+            echo "serving before cutover: $previous"
+          fi
+          echo "previous=$previous" >> "$GITHUB_OUTPUT"
+
           gcloud run services update-traffic majorana-worker \
             --project "$GCP_PROJECT" --region "$GCP_REGION" --to-latest
 
@@ -524,17 +552,27 @@ jobs:
           sleep 45
           rev="${{ steps.worker.outputs.revision }}"
 
+          # jq on a narrow json projection rather than a `value(...)` projection.
+          # The projection renders a LIST with no guaranteed separator, so a
+          # substring match against it is wrong in both directions: it matches
+          # majorana-worker-00483 inside ...-004831, and it misses entirely if the
+          # separator is not the space the pattern assumed. Compare revision names
+          # as exact strings, and count only targets that actually carry traffic —
+          # a tagged target sits at 0% and must not satisfy this. (CodeRabbit, PR 689)
           serving=$(gcloud run services describe majorana-worker \
-            --project "$GCP_PROJECT" --region "$GCP_REGION" \
-            --format="value(status.traffic.revisionName)")
-          case " $serving " in
-            *" $rev "*) echo "traffic is on $rev" ;;
-            *) echo "::error::$rev was deployed but traffic serves: $serving"
-               echo "::error::a revision with no traffic runs no instances, so the"
-               echo "::error::log check below would pass on silence. See the"
-               echo "::error::'shift worker traffic' step above."
-               exit 1 ;;
-          esac
+            --project "$GCP_PROJECT" --region "$GCP_REGION" --format='json(status.traffic)' \
+            | jq -r --arg rev "$rev" \
+                '[.status.traffic[]? | select((.percent // 0) > 0) | .revisionName] as $live
+                 | if ($live | index($rev)) then "yes" else "no:" + ($live | join(",")) end')
+          if [ "$serving" = "yes" ]; then
+            echo "traffic is on $rev"
+          else
+            echo "::error::$rev was deployed but traffic serves: ${serving#no:}"
+            echo "::error::a revision with no traffic runs no instances, so the"
+            echo "::error::log check below would pass on silence. See the"
+            echo "::error::'shift worker traffic' step above."
+            exit 1
+          fi
 
           logs=$(gcloud logging read \
             'resource.type="cloud_run_revision"
@@ -675,6 +713,35 @@ jobs:
             exit 1
           fi
           echo "run $run_id succeeded in mode $mode on the deployed stack"
+
+      # Unlike the api step below, this one ACTS rather than advises, and the
+      # asymmetry is deliberate. The api is probed dark and only takes traffic
+      # after it is known healthy, so a failure there means the cutover never
+      # happened and there is usually nothing to undo. The worker has no dark
+      # phase — a revision with no traffic runs no instance — so by the time any
+      # gate can fail, production is already on the new revision. Advice in a log
+      # nobody is reading at 3am is not a rollback for a service that is already
+      # serving (Aikido, PR 689).
+      #
+      # Restores the exact revision recorded before the cutover. Skipped when that
+      # lookup came back empty, because `--to-revisions =100` would fail and bury
+      # the real error underneath it.
+      - name: rollback worker on failure
+        if: failure() && steps.creds.outputs.have == 'true' && steps.worker_traffic.outputs.previous != ''
+        run: |
+          previous='${{ steps.worker_traffic.outputs.previous }}'
+          echo "::error::a gate failed after the worker cutover — restoring $previous"
+          if gcloud run services update-traffic majorana-worker \
+               --project "$GCP_PROJECT" --region "$GCP_REGION" \
+               --to-revisions "$previous=100"; then
+            echo "::error::worker traffic restored to $previous. The deploy is red and"
+            echo "::error::production is back on the previous worker; investigate before retrying."
+          else
+            echo "::error::COULD NOT RESTORE worker traffic to $previous — do it by hand NOW:"
+            echo "::error::gcloud run services update-traffic majorana-worker \\"
+            echo "::error::  --project $GCP_PROJECT --region $GCP_REGION --to-revisions $previous=100"
+            exit 1
+          fi
 
       - name: rollback api on failure
         if: failure() && steps.creds.outputs.have == 'true'

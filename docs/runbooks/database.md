@@ -82,7 +82,10 @@ a genuinely private-IP-only instance without standing that up first.
 
 ## Connecting as `app_rw` (the privilege split)
 
-**Status: ACTIVE since 2026-08-17.** Both `majorana-api` and `majorana-worker`
+**Status: ACTIVE since 2026-08-17 JST.** (Dates in this file are JST, which is the
+owner's day. The commits and Cloud Run revisions behind this read 2026-08-16 in
+UTC — the same evening, not a claim dated into the future.) Both `majorana-api`
+and `majorana-worker`
 connect as `majorana_api`, a LOGIN role whose only membership is `app_rw`.
 `majorana_app` remains the migration credential and nothing else. "Restrict
 database permissions" (ai-ops 127) is satisfied on production, and the evidence
@@ -100,8 +103,8 @@ from pg_stat_activity where datname='majorana'
 group by usename, application_name order by usename;
 ```
 
-`majorana_api / majorana-api` and `majorana_api / majorana-worker` is the
-passing state. Any `majorana_app` row whose `application_name` is one of the two
+`majorana_api / majorana-api` and `majorana_api / majorana-worker` are both
+required for this to be passing — one without the other is the half-flipped state. Any `majorana_app` row whose `application_name` is one of the two
 services means that service is back on the owner credential. A `majorana_app`
 row with an *empty* application_name is somebody's psql or probe session, which
 is expected and is not a regression.
@@ -144,12 +147,30 @@ NOCREATEDB, NOCREATEROLE and NOBYPASSRLS are the *defaults*, so the safe values
 need no `ALTER ROLE` — and setting those attributes at all requires a privilege
 `majorana_app` does not have.
 
-```sql
--- as majorana_app, through the proxy. Password via a parameter, never
--- interpolated: it ends up in pg_stat_activity and the server log otherwise.
+Generate the password and bind it as a `psql` variable. `:'pw'` is a variable
+reference, so it needs a binding — and the binding is where the password can leak
+if you are careless. `--set` on the command line puts it in `ps` and in shell
+history; the read below keeps it out of both, and `PGPASSWORD`/`\password` are
+not substitutes because the role does not exist yet.
+
+```bash
+# 40 URL-safe characters: this value also has to survive being placed in a URI.
+PW="$(LC_ALL=C tr -dc 'A-Za-z0-9' </dev/urandom | head -c 40)"
+
+# -v binds the variable; the value never appears in argv because it is expanded
+# from the environment by the shell into psql's own -v assignment, and this shell
+# has history off for the command (leading space) — check `set -o | grep history`.
+ psql "$DATABASE_URL_DIRECT" -v pw="$PW" -f - <<'SQL'
+-- as majorana_app, through the proxy. Password via a bound parameter, never
+-- interpolated into the statement text: it would otherwise land in
+-- pg_stat_activity and, with log_statement on, in the server log.
 create role majorana_api login password :'pw';
 grant app_rw to majorana_api;
+SQL
 ```
+
+Keep `$PW` in the shell — the secret below needs the same value, and there is no
+way to read it back out of PostgreSQL.
 
 Then assert, rather than trust, that the role is what was asked for: `login` is
 true, `super`/`bypassrls`/`createdb`/`createrole`/`replication` are all false,
@@ -161,10 +182,15 @@ services run as `639400385957-compute@developer.gserviceaccount.com`, and
 cannot read and the revision does not start.
 
 ```bash
-# The password goes to the secret from a file, never through argv.
-printf 'postgresql+psycopg://majorana_api:%s@/majorana?host=/cloudsql/majorana-core:us-west1:majorana-pg' "$PW" > url.tmp
+# The password goes to the secret from a file, never through argv — and the file
+# is created private BEFORE anything is written to it. `> url.tmp` with a default
+# umask makes it world-readable for the moments it exists, which on a shared or
+# backed-up machine is long enough to matter.
+( umask 077
+  printf 'postgresql+psycopg://majorana_api:%s@/majorana?host=/cloudsql/majorana-core:us-west1:majorana-pg' "$PW" > url.tmp )
+test "$(stat -f '%Lp' url.tmp)" = "600" || { echo "url.tmp is not 0600 — stop"; exit 1; }
 gcloud secrets create DATABASE_URL_APP_SECRET --data-file=url.tmp --project=majorana-core
-shred -u url.tmp
+shred -u url.tmp 2>/dev/null || rm -f url.tmp
 
 gcloud secrets add-iam-policy-binding DATABASE_URL_APP_SECRET --project=majorana-core \
   --member=serviceAccount:639400385957-compute@developer.gserviceaccount.com \
@@ -189,17 +215,41 @@ real and still worth knowing (Cloud Run genuinely cannot convert a literal into 
 reference, and a failed attach poisons every later deploy), it simply did not
 apply. **Check which one you are looking at before believing either:**
 
+**Check BOTH services, every time.** The procedure updates two and it is the
+second one that gets forgotten — a worker left on the owner credential is the
+silent half of this operation, because the site keeps working and the status
+heading above becomes false without anything failing.
+
 ```bash
-gcloud run services describe majorana-api --region=us-west1 --project=majorana-core \
-  --format='yaml(spec.template.spec.containers[0].env)' | grep -A4 'name: DATABASE_URL'
+for svc in majorana-api majorana-worker; do
+  printf '%-18s ' "$svc"
+  rtk proxy gcloud run services describe "$svc" --region=us-west1 --project=majorana-core \
+    --format='json(spec.template.spec.containers[0].env)' \
+    | jq -r '[.spec.template.spec.containers[0].env[] | select(.name=="DATABASE_URL")]
+             | .[0] // {} | .valueFrom.secretKeyRef.name // "LITERAL (not a secret ref)"'
+done
+# Both must print DATABASE_URL_APP_SECRET.
 ```
 
-Read the revision back afterwards rather than trusting the exit code — and read
-it with `--format=json` into a parser, or with no `head` in the pipe. A
-`describe | tee file | grep | head` truncated the saved "before" snapshot by
-SIGPIPE-ing `tee`, which made a clean single-key change look like six keys had
-appeared out of nowhere and cost half an hour of chasing a production anomaly
-that did not exist.
+Read the revision back afterwards rather than trusting the exit code — **and run
+the read through `rtk proxy` if `rtk` is on the path.** That is not a style
+preference. `rtk` is the local token-reducing command proxy, and it *truncates*
+long `gcloud` output: measured on this exact command, `describe --format=yaml(…env)`
+returned **11** env keys through `rtk` and **17** raw. A "before" snapshot taken
+through it made a clean single-key change look like six keys had appeared from
+nowhere, and cost half an hour chasing a production anomaly that did not exist.
+It mangles `--format=json` too — long annotation values come back with unescaped
+newlines inside strings, so `jq` refuses to parse the document at all.
+
+```bash
+rtk proxy gcloud run services describe majorana-api --region=us-west1 \
+  --project=majorana-core --format='json(spec.template.spec.containers[0].env)' | jq .
+```
+
+The general rule, because this will not be the last time: **when a `gcloud` read
+is going to be compared against another read, or piped into a parser, take `rtk`
+out of the path first.** A truncated snapshot and a real configuration change are
+indistinguishable after the fact.
 
 **Verify before trusting it.** 21 checks were run as `majorana_api` against
 production, and the script is worth keeping the shape of: refusals are proved by
@@ -207,6 +257,18 @@ production, and the script is worth keeping the shape of: refusals are proved by
 means the grant refused it; any other error — a `NotNullViolation`, a foreign key
 — means the privilege check *passed* and a constraint stopped it, which is how a
 write privilege gets proved without leaving a row in a production table.
+
+**One limit of that method, worth knowing before it misleads someone
+(CodeRabbit, PR 689).** `InsufficientPrivilege` is SQLSTATE **42501**, and 42501
+is not specific to a missing `GRANT` — a row-level-security policy denial raises
+the same code. So "refused" here means "refused for one of two reasons", and the
+message text is what separates them: `permission denied for table …` is the grant,
+`new row violates row-level security policy …` is RLS. It does not matter today —
+this schema defines no policies and no table has RLS enabled, which is why the
+checks were left reading the class alone. It would matter the moment RLS is
+introduced for tenancy, and at that point a probe asserting only 42501 would
+report a *policy* working as though the *grant* were working. Assert on the
+message, not just the class, if that day comes.
 
 | group | result |
 |---|---|
@@ -236,16 +298,25 @@ Point both services back at the secret named `DATABASE_URL` (not
 `DATABASE_URL_SECRET`, which is the proxy-form migration credential and will not
 resolve from inside a Cloud Run container):
 
+**Both services, or the rollback is half done** — and a half-rolled-back pair is
+worse than either end state, because the two services then disagree about which
+credential they hold while the site keeps serving:
+
 ```bash
-gcloud run services update majorana-api --region=us-west1 --project=majorana-core \
-  --update-secrets=DATABASE_URL=DATABASE_URL:latest
+for svc in majorana-api majorana-worker; do
+  gcloud run services update "$svc" --region=us-west1 --project=majorana-core \
+    --update-secrets=DATABASE_URL=DATABASE_URL:latest
+done
 ```
 
+Then re-run the two-service readback above and confirm both print `DATABASE_URL`.
+
 Nothing about the schema changed, so there is no data to undo, and `app_rw` can
-stay — an unused role grants nothing. One trap still lives here: a
-`--set-env-vars` that omits an existing key **removes** it. Use
-`--update-secrets`, and read the revision back afterwards rather than trusting
-the command's exit code.
+stay — an unused role grants nothing. `majorana_api` can stay too; a LOGIN role
+nothing connects as is inert, and dropping it means recreating the password on the
+way back in. One trap still lives here: a `--set-env-vars` that omits an existing
+key **removes** it. Use `--update-secrets`, and read the revision back afterwards
+rather than trusting the command's exit code.
 
 ## Connection budget
 
