@@ -44,7 +44,7 @@
 import { createRequire } from "node:module";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join, dirname } from "node:path";
+import { join, dirname, basename, resolve, relative, isAbsolute } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
@@ -55,10 +55,18 @@ const QUIET = process.argv.includes("--quiet");
 
 async function bundle(relativePath, label) {
   const outDir = mkdtempSync(join(tmpdir(), "papers-"));
-  const outFile = join(outDir, `${label}.mjs`);
+  const resolvedLabel = basename(label);
+  const outFile = join(outDir, `${resolvedLabel}.mjs`);
+  const resolvedRoot = resolve(root);
+  const resolvedEntry = resolve(resolvedRoot, relativePath);
+  const relativeCheck = relative(resolvedRoot, resolvedEntry);
+  if (relativeCheck.startsWith('..') || isAbsolute(relativeCheck)) {
+    console.error(`✖ failed to bundle ${relativePath}: invalid path`);
+    process.exit(1);
+  }
   try {
     await esbuild.build({
-      entryPoints: [join(root, relativePath)],
+      entryPoints: [resolvedEntry],
       bundle: true,
       format: "esm",
       platform: "neutral",
