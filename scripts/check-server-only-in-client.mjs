@@ -32,7 +32,7 @@
 //        node scripts/check-server-only-in-client.mjs --self-test
 
 import { readdirSync, readFileSync, statSync, mkdtempSync, writeFileSync, mkdirSync, rmSync } from "node:fs";
-import { join, resolve, dirname } from "node:path";
+import { join, resolve, relative, isAbsolute, dirname } from "node:path";
 import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
 
@@ -83,7 +83,21 @@ function walk(dir, out = []) {
 }
 
 export function scan(dist) {
-  const files = CLIENT_DIRS.flatMap((sub) => walk(join(dist, sub)));
+  // Containment, so the only untrusted input this script takes — `--dist` — cannot
+  // aim the walk somewhere else. Each client directory is resolved and checked to
+  // still sit under the dist root before anything is read. Directory entries come
+  // from `readdirSync` and cannot contain a separator, so the root is the only place
+  // traversal could enter. Same class Aikido flags across the other build scripts;
+  // cheap enough here that adding it beats arguing about who the attacker is.
+  const root = resolve(dist);
+  const files = CLIENT_DIRS.flatMap((sub) => {
+    const target = resolve(root, sub);
+    const rel = relative(root, target);
+    if (rel.startsWith("..") || isAbsolute(rel)) {
+      throw new Error(`refusing to scan outside the dist root: ${target}`);
+    }
+    return walk(target);
+  });
   const hits = [];
   for (const file of files) {
     const text = readFileSync(file, "utf8");
