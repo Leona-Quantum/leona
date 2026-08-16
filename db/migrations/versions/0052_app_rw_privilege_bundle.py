@@ -87,12 +87,19 @@ down_revision = "0051"
 branch_labels = None
 depends_on = None
 
-# Written once and used by both directions so upgrade and downgrade cannot drift
-# on the name.
-ROLE = "app_rw"
-
-# The three tables 0050 made append-only with triggers.
-APPEND_ONLY = ("run_events", "audit_log", "usage_events")
+# Every statement below is a literal, with no interpolation anywhere.
+#
+# The first draft built these with f-strings over a ROLE constant, which reads as
+# tidier and drew a SQL-injection finding from Sourcery on every line. The finding
+# is a false positive on its own terms - the value is a module constant, not input
+# - but the fix it implies, binding a parameter, is not available either: a role
+# name is an IDENTIFIER, and identifiers cannot be bind parameters in any SQL
+# dialect. So the choice was between a permanently-suppressed warning and no
+# interpolation at all.
+#
+# No interpolation is simply better here. A migration is a fixed artifact that
+# runs once against one schema; it has nothing to be generic about, and the
+# literal form is what a reviewer can check against the grant they expect.
 
 
 def upgrade() -> None:
@@ -100,18 +107,18 @@ def upgrade() -> None:
     # several databases on one server, so the role can already exist from an
     # earlier database's migration run on the same cluster.
     #
-    # Unconditional otherwise — NOT wrapped in a "skip if we lack permission"
+    # Unconditional otherwise - NOT wrapped in a "skip if we lack permission"
     # guard. That guard is precisely what made 0001's version of this inert
     # everywhere, silently, and 0050 is a whole migration about the cost of it.
     # If the connecting role cannot create a role, this migration SHOULD fail
     # loudly, because a deploy that cannot provision the privilege set has not
     # done the thing it reports doing.
     op.execute(
-        f"""
+        """
         do $$
         begin
-          if not exists (select 1 from pg_roles where rolname = '{ROLE}') then
-            create role {ROLE} nologin;
+          if not exists (select 1 from pg_roles where rolname = 'app_rw') then
+            create role app_rw nologin;
           end if;
         end
         $$;
@@ -119,47 +126,50 @@ def upgrade() -> None:
     )
 
     # Reach the schema and the objects in it, but never create in it.
-    op.execute(f"grant usage on schema public to {ROLE}")
-    op.execute(f"revoke create on schema public from {ROLE}")
+    op.execute("grant usage on schema public to app_rw")
+    op.execute("revoke create on schema public from app_rw")
 
     # The data-plane verbs, and only those. No TRUNCATE (it is DDL-shaped and
     # nothing in the application issues one), no REFERENCES, no TRIGGER.
-    op.execute(f"grant select, insert, update, delete on all tables in schema public to {ROLE}")
+    op.execute("grant select, insert, update, delete on all tables in schema public to app_rw")
     # Sequences back every `bigserial` primary key; without USAGE an INSERT fails
     # on nextval() rather than on the table, which is a confusing way to find out.
-    op.execute(f"grant usage, select on all sequences in schema public to {ROLE}")
+    op.execute("grant usage, select on all sequences in schema public to app_rw")
 
-    # Tables and sequences that do not exist yet. No `FOR ROLE` — see the module
+    # Tables and sequences that do not exist yet. No `FOR ROLE` - see the module
     # docstring; it defaults to the current role, which is the one creating them.
     op.execute(
-        f"alter default privileges in schema public "
-        f"grant select, insert, update, delete on tables to {ROLE}"
+        "alter default privileges in schema public "
+        "grant select, insert, update, delete on tables to app_rw"
     )
     op.execute(
-        f"alter default privileges in schema public grant usage, select on sequences to {ROLE}"
+        "alter default privileges in schema public grant usage, select on sequences to app_rw"
     )
 
     # Append-only, re-asserted at the grant layer. See the module docstring.
-    for table in APPEND_ONLY:
-        op.execute(f"revoke update, delete on {table} from {ROLE}")
+    # Spelled out rather than looped, for the same reason as above: the three
+    # table names are the thing a reviewer is checking.
+    op.execute("revoke update, delete on run_events from app_rw")
+    op.execute("revoke update, delete on audit_log from app_rw")
+    op.execute("revoke update, delete on usage_events from app_rw")
 
 
 def downgrade() -> None:
-    # Default privileges must come off before the role can be dropped — they are
+    # Default privileges must come off before the role can be dropped - they are
     # recorded as a dependency on it, and `DROP ROLE` refuses while any remain.
     # This is the step that is easy to leave out and turns a downgrade into a
     # confusing "role cannot be dropped because objects depend on it".
     op.execute(
-        f"alter default privileges in schema public "
-        f"revoke select, insert, update, delete on tables from {ROLE}"
+        "alter default privileges in schema public "
+        "revoke select, insert, update, delete on tables from app_rw"
     )
     op.execute(
-        f"alter default privileges in schema public revoke usage, select on sequences from {ROLE}"
+        "alter default privileges in schema public revoke usage, select on sequences from app_rw"
     )
-    op.execute(f"revoke all on all tables in schema public from {ROLE}")
-    op.execute(f"revoke all on all sequences in schema public from {ROLE}")
-    op.execute(f"revoke all on schema public from {ROLE}")
+    op.execute("revoke all on all tables in schema public from app_rw")
+    op.execute("revoke all on all sequences in schema public from app_rw")
+    op.execute("revoke all on schema public from app_rw")
     # Deliberately NOT dropped. Once the Cloud SQL login user has been granted
-    # membership, dropping this role would break the application's connection —
+    # membership, dropping this role would break the application's connection -
     # and a downgrade is run to get OUT of trouble, not into more of it. Removing
     # the role is a manual step, documented beside the flip it reverses.
