@@ -387,6 +387,17 @@ jobs:
         run: pnpm --filter @majorana/web build
       - name: no secret-shaped strings in browser-served files
         run: node scripts/check-client-bundle-secrets.mjs --dist apps/web/.next
+      # Rides the same build. `isomorphic-dompurify` (lib/sanitize-math.ts) resolves
+      # to jsdom on the server and plain DOMPurify in a browser, and MathText is in
+      # the CLIENT graph via map-card-panel.tsx — so that split is load-bearing and
+      # was checked by nothing. Raised by Aikido on PR 690. A bundler upgrade that
+      # resolved the server condition for the client build would still compile and
+      # still render; it would just ship a Node DOM to every visitor. Self-test
+      # first, same rule as the scanner above.
+      - name: no server-only dependency in the browser bundle
+        run: |
+          node scripts/check-server-only-in-client.mjs --self-test
+          node scripts/check-server-only-in-client.mjs --dist apps/web/.next
       # Rides this job's existing build rather than adding one. The check needs
       # the route table, which only `next build` produces, and this is the only
       # job in the repository that runs it — `ci.yml` runs lint, typecheck and

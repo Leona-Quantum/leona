@@ -1,6 +1,7 @@
 import katex from "katex";
 
 import { mathSegments } from "../lib/math-text";
+import { sanitizeMathHtml } from "../lib/sanitize-math";
 
 /**
  * A line of corpus prose, with its `$…$` typeset and everything else printed as
@@ -33,6 +34,57 @@ import { mathSegments } from "../lib/math-text";
  * the corpus with `throwOnError: true` and fails the build. The fallback is
  * there for the one that gets past the gate, not instead of the gate.
  */
+/**
+ * Typeset one `$…$` body and sanitize it, memoized on the TeX source.
+ *
+ * ## Why a cache, when the previous version had none
+ *
+ * Because sanitizing is the expensive half, which was not obvious and is the
+ * opposite of the assumption. Measured on this machine, per formula:
+ *
+ *     katex.renderToString   0.025 ms
+ *     sanitizeMathHtml       0.619 ms      ~25x the render it follows
+ *
+ * So adding DOMPurify (ai-ops 138) made typesetting roughly 25 times more
+ * expensive, and the same handful of formulas recur across every surface that
+ * prints a record. Raised by CodeRabbit on PR 690; the numbers are the reason it
+ * was worth doing rather than declining.
+ *
+ * Keyed on the TeX source, which memoizes BOTH halves — the render options are
+ * constant, so the same source always produces the same HTML.
+ *
+ * ## Why a plain Map with a cap, and not `useMemo`
+ *
+ * `useMemo` is unavailable here: `MathText` renders in server components
+ * (`repository-layers.tsx`) as well as client ones (`map-card-panel.tsx`), and a
+ * hook would make it client-only. A module-level Map works in both.
+ *
+ * The cap is what keeps this from being a leak. The corpus is finite — 884
+ * populated values across two locales — so the working set is bounded in
+ * practice, but "in practice" is not a memory bound in a long-lived server
+ * process, and this module must not become one if `MathText` is ever pointed at
+ * something less finite. On overflow the cache is cleared wholesale rather than
+ * evicted one entry at a time: it is a cache, correctness does not depend on a
+ * hit, and an LRU here would be more moving parts than the problem deserves.
+ */
+const MAX_CACHED = 4096;
+const typesetCache = new Map<string, string>();
+
+function typeset(tex: string): string {
+  const hit = typesetCache.get(tex);
+  if (hit !== undefined) return hit;
+  const html = sanitizeMathHtml(
+    katex.renderToString(tex, {
+      throwOnError: false,
+      displayMode: false,
+      output: "htmlAndMathml",
+    }),
+  );
+  if (typesetCache.size >= MAX_CACHED) typesetCache.clear();
+  typesetCache.set(tex, html);
+  return html;
+}
+
 export function MathText({ source }: { source: string }): React.ReactElement {
   const segments = mathSegments(source);
   // The common case by a wide margin — most values carry no mathematics at all
@@ -46,15 +98,15 @@ export function MathText({ source }: { source: string }): React.ReactElement {
           <span
             key={index}
             className="mj-math"
-            // KaTeX's own output. The input is the corpus, which is authored in
-            // this repository and gated on the way in — not user content.
-            dangerouslySetInnerHTML={{
-              __html: katex.renderToString(segment.value, {
-                throwOnError: false,
-                displayMode: false,
-                output: "htmlAndMathml",
-              }),
-            }}
+            // KaTeX's own output, sanitized on the way out (and memoized — see
+            // `typeset` above, where the cost of the two halves is measured). The
+            // input is corpus prose authored in this repository and gated by
+            // check-math.mjs, and KaTeX itself defaults to `trust: false` — but
+            // the injection point no longer depends on either of those staying
+            // true. Owner ruling, ai-ops 138: KaTeX is not accepted as its own
+            // sanitizer. The config that keeps this from eating KaTeX's MathML is
+            // the part that matters; it is documented in lib/sanitize-math.ts.
+            dangerouslySetInnerHTML={{ __html: typeset(segment.value) }}
           />
         ) : (
           <span key={index}>{segment.value}</span>

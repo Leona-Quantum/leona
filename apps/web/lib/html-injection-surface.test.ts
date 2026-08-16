@@ -73,10 +73,26 @@ const ALLOWED = new Map<string, { sinks: number; reason: string }>([
   // page rendering unstyled rather than an error, which is why it is written
   // down at the count that catches it.
   ["app/not-found.tsx", { sinks: 1, reason: "inline <style>: our own constant, hashed into style-src-elem" }],
-  // KaTeX's own output, from corpus prose WE author (see lib/math-text.ts).
+  // KaTeX's own output, from corpus prose WE author (see lib/math-text.ts),
+  // now passed through DOMPurify on the way out — owner ruling on ai-ops 138:
+  // KaTeX is not accepted as its own sanitizer, whatever `trust: false`
+  // guarantees. So the reasoning below is no longer what holds this up; it is
+  // the second of two independent reasons rather than the only one.
+  //
   // No visitor can reach this input, and `throwOnError: false` renders an error
   // node rather than doing anything with malformed source.
-  ["components/math-text.tsx", { sinks: 1, reason: "katex.renderToString on authored corpus" }],
+  //
+  // The sanitizer is in `lib/sanitize-math.ts` and its config is the part that
+  // can go wrong — PR 668 added DOMPurify here with an allowlist that would have
+  // deleted KaTeX's entire MathML tree and every `style` attribute, which renders
+  // a scrambled page rather than an error. `lib/sanitize-math.test.ts` asserts
+  // preservation against real formula shapes AND strips a set of payloads as its
+  // control, and `scripts/check-math.mjs` extends the preservation assertion over
+  // every `$…$` in the corpus, both locales.
+  [
+    "components/math-text.tsx",
+    { sinks: 1, reason: "katex.renderToString on authored corpus, sanitized by lib/sanitize-math.ts" },
+  ],
 ]);
 
 /**

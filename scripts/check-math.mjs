@@ -43,15 +43,29 @@ const katex = createRequire(join(root, "apps/web/package.json"))("katex");
 
 const QUIET = process.argv.includes("--quiet");
 
-async function bundle(relativePath, label) {
-  const outDir = mkdtempSync(join(tmpdir(), "check-math-"));
+/**
+ * `node: true` keeps npm dependencies EXTERNAL and targets node instead of
+ * bundling everything for a neutral platform. `lib/sanitize-math.ts` imports
+ * `isomorphic-dompurify`, which reaches jsdom and therefore node builtins — a
+ * neutral-platform bundle of it fails to resolve `node:fs` and friends. Marking
+ * packages external also means the module under test imports the SAME dependency
+ * the app does, rather than a copy inlined at a different version.
+ */
+async function bundle(relativePath, label, { node = false } = {}) {
+  // An external import resolves from where the OUTPUT sits, so a node-mode
+  // bundle has to land inside the workspace or `isomorphic-dompurify` is
+  // unresolvable from /var/folders. Removed in the `finally`-equivalent below
+  // either way.
+  const outDir = node
+    ? mkdtempSync(join(root, "apps", "web", ".check-math-"))
+    : mkdtempSync(join(tmpdir(), "check-math-"));
   const outFile = join(outDir, `${label}.mjs`);
   try {
     await esbuild.build({
       entryPoints: [join(root, relativePath)],
       bundle: true,
       format: "esm",
-      platform: "neutral",
+      ...(node ? { platform: "node", packages: "external" } : { platform: "neutral" }),
       outfile: outFile,
       logLevel: "silent",
     });
@@ -70,6 +84,11 @@ const { mathBodies, mathDelimitersBalanced } = await bundle(
   "math-text",
 );
 const { parseTheory } = await bundle("apps/web/lib/repository/theory-marks.ts", "theory-marks");
+// The real sanitizer the page uses, not a copy of its config. See the
+// preservation check in `check()`.
+const { sanitizeMathHtml } = await bundle("apps/web/lib/sanitize-math.ts", "sanitize-math", {
+  node: true,
+});
 
 // The fields a reader sees as prose, paired with their locale sibling. The pair
 // is the unit the locale rule is checked over: `null` means the field has no
@@ -162,6 +181,74 @@ function check(where, value) {
       failures.push(`${where}: $${body}$ does not compile — ${error.message.split("\n")[0]}`);
       continue;
     }
+    // **The sanitizer must not eat correct output.** `components/math-text.tsx`
+    // passes KaTeX's render through `lib/sanitize-math.ts` (owner ruling, ai-ops
+    // 138), and the failure mode of a sanitizer is not an error — it is a page
+    // that still renders with glyphs moved or the MathML tree gone. PR 668
+    // proposed exactly that: an allowlist of `span`/`p` and `class`, which would
+    // have scrambled every value below while every test stayed green.
+    //
+    // So the preservation assertion runs HERE, over the real corpus, because this
+    // is the walk that already visits every `$…$` in both locales. Rendered with
+    // the page's options, not this gate's, or it would check something the reader
+    // never sees.
+    //
+    // Compared by structure rather than by bytes: DOMPurify reserializes through
+    // a DOM, so a self-closing `<path … />` legitimately comes back as
+    // `<path …></path>`.
+    const rendered = katex.renderToString(body, {
+      throwOnError: false,
+      displayMode: false,
+      output: "htmlAndMathml",
+    });
+    const sanitized = sanitizeMathHtml(rendered);
+    // Normalized exactly as lib/sanitize-math.test.ts normalizes, and for the
+    // same two reasons: the XML parser adds an inert xmlns to the root element,
+    // and reserializing resolves character references, so `&#x27;` becomes a
+    // literal apostrophe. The corpus is full of primes (P', \\varepsilon'), and
+    // counting either as a loss would make this gate cry wolf on every one.
+    const decode = (text) =>
+      text
+        .replace(/&#x([0-9a-fA-F]+);/g, (_, hex) => String.fromCodePoint(parseInt(hex, 16)))
+        .replace(/&#(\d+);/g, (_, dec) => String.fromCodePoint(Number(dec)))
+        .replace(/&lt;/g, "<")
+        .replace(/&gt;/g, ">")
+        .replace(/&quot;/g, String.fromCharCode(34))
+        .replace(/&apos;/g, String.fromCharCode(39))
+        .replace(/&amp;/g, "&");
+    // Attribute NAMES are not enough, and this is the second thing CodeRabbit was
+    // right about on PR 690: a sanitizer that emptied `style="width:0.8em"` to
+    // `style=""` keeps every name and every tag, so a name-only comparison waves
+    // through exactly the silent glyph-scrambling this gate exists to catch.
+    // Values are compared too — `viewBox="0 0 400000 …"` is geometry, not
+    // decoration.
+    const shape = (html) => ({
+      tags: (html.match(/<[a-zA-Z][a-zA-Z0-9:-]*/g) ?? []).join(","),
+      attrs: (html.match(/\s([a-zA-Z][a-zA-Z0-9-]*)\s*=\s*"([^"]*)"/g) ?? [])
+        // The XML parser adds an inert xmlns to the root element; HTML parsers
+        // ignore it. Nothing else is dropped from the comparison.
+        .filter((one) => !/^\s*xmlns\s*=/.test(one))
+        // Whitespace runs collapsed because XML 1.0 §3.3.3 REQUIRES
+        // attribute-value normalization — a literal newline in a value becomes a
+        // space. KaTeX writes `<path d="…">` across lines and SVG path grammar
+        // treats any whitespace as the same separator, so this is the spec, not a
+        // changed path.
+        .map((one) => decode(one.trim()).replace(/\s+/g, " "))
+        .join(","),
+      text: decode(html.replace(/<[^>]*>/g, "")).replace(/\s+/g, " ").trim(),
+    });
+    const before = shape(rendered);
+    const after = shape(sanitized);
+    for (const part of ["tags", "attrs", "text"]) {
+      if (before[part] !== after[part]) {
+        failures.push(
+          `${where}: $${body}$ renders correctly but the sanitizer in lib/sanitize-math.ts changes its ${part}. ` +
+            `A sanitizer that eats KaTeX output produces a scrambled page, not an error — see PR 668. ` +
+            `Widen the config there (ADD_TAGS / ADD_ATTR), do not silence this.`,
+        );
+        break;
+      }
+    }
     // **Compiles is not the same as written in TeX.** A conversion that wraps a
     // Unicode symbol KaTeX has no command for — `U†`, `Π̃`, `∈` — renders, and
     // renders *correctly*, so nothing above notices. But it is Unicode inside
@@ -228,6 +315,24 @@ for (const node of LAYER_GRAPH.nodes) {
   const nested = [];
   const example = node.example ?? {};
   nested.push([`example`, ["text", example.text], ["textJa", example.textJa]]);
+  // **`contract` and `repetition` render through MathText and were NOT walked.**
+  // Found by Aikido on PR 690, and it was right about the thing that matters: the
+  // comment above claimed this walk visits every `$…$` in the corpus, and it did
+  // not. `card.contract.value.takes` / `.returns` and `repetition.note` are both
+  // printed by `MathText` on a record page (see the `<MathText source=…>` call
+  // sites in `map-card-panel.tsx` and `repository-layers.tsx`), so a formula that
+  // does not compile — or one the sanitizer alters — could merge green here and
+  // show up only as a red formula on the page.
+  //
+  // `whenItApplies` and `textReason` are NOT added, and that is not an omission:
+  // `whenItApplies` is derived from `conditions`, which the top-level PAIRS walk
+  // already covers, and `textReason` is not a corpus field at all. Adding either
+  // would report one value twice, which is its own way of making a gate untrusted.
+  const contract = node.contract ?? {};
+  nested.push([`contract`, ["takes", contract.takes], ["takesJa", contract.takesJa]]);
+  nested.push([`contract`, ["returns", contract.returns], ["returnsJa", contract.returnsJa]]);
+  const repetition = node.repetition ?? {};
+  nested.push([`repetition`, ["note", repetition.note], ["noteJa", repetition.noteJa]]);
   for (const implementation of node.implementations ?? []) {
     for (const field of ["about", "methods", "data", "code", "results"]) {
       nested.push([
