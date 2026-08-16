@@ -8,8 +8,9 @@ import { QpuCredentials } from "./qpu-credentials";
 import { UsageNow } from "./usage-now";
 import { LanguageToggle } from "../../../components/language-toggle";
 import { getPublicLocale } from "../../../lib/public-locale-server";
-import { ACCOUNT_COPY } from "../../../lib/workspace-locale";
+import { ACCOUNT_COPY, WORKSPACE_COPY } from "../../../lib/workspace-locale";
 import { ACCOUNT_TITLE_ID } from "./account-title-id";
+import { AccountPanes } from "./account-panes";
 
 /**
  * The settings body, rendered identically by the full page and by the modal.
@@ -33,6 +34,9 @@ export async function AccountContent() {
     getAccountTier(),
   ]);
   const copy = ACCOUNT_COPY[locale];
+  // The archive panel is the sidebar's, not this page's — it is the same list
+  // the rail links to, so its label comes from the same string.
+  const archiveLabel = WORKSPACE_COPY[locale].sidebar.archive;
   // null means unlimited in TierLimits; the tier table is the single source for
   // both the words and the numbers, so this panel cannot drift from what the
   // product actually enforces.
@@ -42,6 +46,81 @@ export async function AccountContent() {
   const storage = limits.privateArtifacts === null
     ? copy.usageUnlimited
     : copy.usageArtifacts(limits.privateArtifacts);
+  // The rail's order is the order the old single stack had, top to bottom, so
+  // nothing moved for anyone who knew where a control was — it only stopped
+  // requiring a scroll to reach. The ids are the fragments `/account#usage` and
+  // `/account#archived` already pointed at; `account-panes.tsx` selects a pane
+  // from them rather than scrolling to one, which is the only behaviour change
+  // those two entry points see.
+  const panes = [
+    {
+      id: "preferences",
+      label: copy.preferences,
+      panel: (
+        <section className="mj-artifact-panel mj-language-preference-panel">
+          <div className="mj-panel-heading"><h2>{copy.preferences}</h2><span className="mj-mono-muted">{locale.toUpperCase()}</span></div>
+          <div className="mj-language-preference">
+            <div>
+              <strong>{copy.language}</strong>
+              <p>{copy.languageHelp}</p>
+            </div>
+            <LanguageToggle locale={locale} label={copy.language} />
+          </div>
+        </section>
+      ),
+    },
+    {
+      id: "identity",
+      label: copy.identity,
+      panel: <AccountSettings initialEmail={user.email} locale={locale} />,
+    },
+    {
+      id: "archived",
+      label: archiveLabel,
+      panel: <ArchivedChats locale={locale} />,
+    },
+    {
+      id: "usage",
+      label: copy.usageTitle,
+      panel: (
+        <section className="mj-artifact-panel" id="usage" aria-labelledby="usage-heading">
+          <div className="mj-panel-heading"><h2 id="usage-heading">{copy.usageTitle}</h2></div>
+          <p className="mj-panel-help">{copy.usageEnforcement}</p>
+          <dl className="mj-usage-list">
+            <div><dt>{copy.usagePlan}</dt><dd>{copy.tierNames[tier]}</dd></div>
+            <div><dt>{copy.usageRuns}</dt><dd>{runs}</dd></div>
+            <div><dt>{copy.usageStorage}</dt><dd>{storage}</dd></div>
+            {/* Beside the two allowances rather than in a panel of its own, and
+                not read from `limits`: this one is the same on every tier and
+                belongs to the project, not to the plan (ai-ops#82 moved it here
+                off /pricing, where a per-project figure printed under a per-
+                account cap was the misreading that got the whole line struck). */}
+            <div><dt>{copy.usageProjectArtifacts}</dt><dd>{copy.usageProjectArtifactsValue(DEFAULT_PROJECT_ARTIFACT_LIMIT)}</dd></div>
+            <div><dt>{copy.usageSimulation}</dt><dd>{copy.usageQubits(limits.cpuSimQubits)}</dd></div>
+          </dl>
+          {/* The ceilings above are the plan; this is what is left of it.
+              Client-side and additive — see usage-now.tsx for why the split. */}
+          <UsageNow locale={locale} renderedTier={tier} />
+        </section>
+      ),
+    },
+    {
+      // Immediately after the allowances, and before billing, because it is the
+      // one control here that changes what the hardware line means: a connected
+      // key moves IBM's free allowance off the pool everybody shares and onto
+      // the reader's own account. Adjacency was the whole argument for its old
+      // position in the stack, and the rail keeps it.
+      id: "qpu",
+      label: copy.qpuTitle,
+      panel: <QpuCredentials locale={locale} />,
+    },
+    {
+      id: "billing",
+      label: copy.billingTitle,
+      panel: <BillingPanel locale={locale} />,
+    },
+  ];
+
   return (
     <div className="mj-workspace-content">
       <header className="mj-page-header">
@@ -55,43 +134,7 @@ export async function AccountContent() {
             navigation to render. */}
         <a className="mj-secondary-button" href="/auth/sign-out">{copy.signOut}</a>
       </header>
-      <section className="mj-artifact-panel mj-language-preference-panel">
-        <div className="mj-panel-heading"><h2>{copy.preferences}</h2><span className="mj-mono-muted">{locale.toUpperCase()}</span></div>
-        <div className="mj-language-preference">
-          <div>
-            <strong>{copy.language}</strong>
-            <p>{copy.languageHelp}</p>
-          </div>
-          <LanguageToggle locale={locale} label={copy.language} />
-        </div>
-      </section>
-      <AccountSettings initialEmail={user.email} locale={locale} />
-      <ArchivedChats locale={locale} />
-      <section className="mj-artifact-panel" id="usage" aria-labelledby="usage-heading">
-        <div className="mj-panel-heading"><h2 id="usage-heading">{copy.usageTitle}</h2></div>
-        <p className="mj-panel-help">{copy.usageEnforcement}</p>
-        <dl className="mj-usage-list">
-          <div><dt>{copy.usagePlan}</dt><dd>{copy.tierNames[tier]}</dd></div>
-          <div><dt>{copy.usageRuns}</dt><dd>{runs}</dd></div>
-          <div><dt>{copy.usageStorage}</dt><dd>{storage}</dd></div>
-          {/* Beside the two allowances rather than in a panel of its own, and
-              not read from `limits`: this one is the same on every tier and
-              belongs to the project, not to the plan (ai-ops#82 moved it here
-              off /pricing, where a per-project figure printed under a per-
-              account cap was the misreading that got the whole line struck). */}
-          <div><dt>{copy.usageProjectArtifacts}</dt><dd>{copy.usageProjectArtifactsValue(DEFAULT_PROJECT_ARTIFACT_LIMIT)}</dd></div>
-          <div><dt>{copy.usageSimulation}</dt><dd>{copy.usageQubits(limits.cpuSimQubits)}</dd></div>
-        </dl>
-        {/* The ceilings above are the plan; this is what is left of it.
-            Client-side and additive — see usage-now.tsx for why the split. */}
-        <UsageNow locale={locale} renderedTier={tier} />
-      </section>
-      {/* Directly under the allowances, and above billing, because it is the
-          one control on this page that changes what the hardware line means:
-          a connected key moves IBM's free allowance off the pool everybody
-          shares and onto the reader's own account. */}
-      <QpuCredentials locale={locale} />
-      <BillingPanel locale={locale} />
+      <AccountPanes panes={panes} navLabel={copy.sectionsLabel} />
     </div>
   );
 }

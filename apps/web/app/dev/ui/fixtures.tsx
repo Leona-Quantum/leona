@@ -12,7 +12,8 @@ import { studioDraftBundle, type StudioDraftArtifact } from "../../../lib/studio
 import { DETAIL_COPY, MeasuredResultPanel } from "../../(app)/library/[artifactId]/artifact-detail";
 import { CompletedAssistant, type Turn } from "../../(app)/run/[taskId]/live-run";
 import { measuredResultFromMetadata } from "../../../lib/measured-result";
-import { WORKSPACE_COPY } from "../../../lib/workspace-locale";
+import { ACCOUNT_COPY, WORKSPACE_COPY } from "../../../lib/workspace-locale";
+import { AccountPanes } from "../../(app)/account/account-panes";
 
 /** A GHZ state on `n` qubits as interchange OpenQASM 3. */
 function ghzQasm(n: number): string {
@@ -330,6 +331,62 @@ function VerificationFixture({ title, summary }: { title: string; summary: unkno
   );
 }
 
+/**
+ * The settings rail (ai-ops 134), with stand-in panels.
+ *
+ * This fixture exists because of a specific, recorded blocker: `/account` is
+ * signed-in only, an agent cannot hold a session, and the last session declined
+ * to build this at all rather than ship a two-pane layout it had never seen
+ * rendered. The real panels each need a session, a tier and three fetches; the
+ * LAYOUT needs none of that, so it is the layout that is pulled out here.
+ *
+ * What this proves and what it does not: it proves the rail, the selected
+ * state, the collapse at 720px and the pane switching. It does not prove the
+ * real panels fit — those still want the human walk-through, because only a
+ * signed-in browser can render them.
+ */
+function SettingsPanesFixture() {
+  const copy = ACCOUNT_COPY.en;
+  const archive = WORKSPACE_COPY.en.sidebar.archive;
+  const stub = (heading: string, body: string) => (
+    <section className="mj-artifact-panel">
+      <div className="mj-panel-heading"><h2>{heading}</h2></div>
+      <p className="mj-panel-help">{body}</p>
+    </section>
+  );
+  return (
+    <section data-testid="settings-panes">
+      <h2 style={{ fontSize: "var(--fs-16)", fontWeight: 500 }}>
+        Settings — rail plus detail pane (ai-ops 134); panels are stand-ins
+      </h2>
+      {/* The real dialog's shell, so the rail is measured inside the box it
+          actually ships in rather than against the full gallery width. */}
+      <div className="mj-account-modal" style={{ maxHeight: "32rem" }}>
+        <div className="mj-account-modal-body">
+          <header className="mj-page-header">
+            <div>
+              <h1 className="mj-page-title">{copy.title}</h1>
+              <p className="mj-page-lede">{copy.lede}</p>
+            </div>
+            <a className="mj-secondary-button" href="#">{copy.signOut}</a>
+          </header>
+          <AccountPanes
+            navLabel={copy.sectionsLabel}
+            panes={[
+              { id: "preferences", label: copy.preferences, panel: stub(copy.preferences, copy.languageHelp) },
+              { id: "identity", label: copy.identity, panel: stub(copy.identity, "Email, display name and workspace boundaries.") },
+              { id: "archived", label: archive, panel: stub(archive, "Restore or delete an archived chat.") },
+              { id: "usage", label: copy.usageTitle, panel: stub(copy.usageTitle, copy.usageEnforcement) },
+              { id: "qpu", label: copy.qpuTitle, panel: stub(copy.qpuTitle, "Connect an IBM Quantum API key.") },
+              { id: "billing", label: copy.billingTitle, panel: stub(copy.billingTitle, "Plan and invoices.") },
+            ]}
+          />
+        </div>
+      </div>
+    </section>
+  );
+}
+
 export function UiFixtures() {
   return (
     // `minmax(0, 1fr)`, not the implicit `auto`. One grid column is sized to the
@@ -339,6 +396,8 @@ export function UiFixtures() {
     // value 7,000px off-screen. Nothing was wrong with those components; the
     // gallery meant to review them was measuring them in a column nobody could see.
     <div style={{ display: "grid", gap: "var(--sp-8)", gridTemplateColumns: "minmax(0, 1fr)" }}>
+      <SettingsPanesFixture />
+
       <VerificationFixture
         title="Verification — a deterministic check ran and failed (the repository holds this now)"
         summary={FAILED_SUMMARY}
