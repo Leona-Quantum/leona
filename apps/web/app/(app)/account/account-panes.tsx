@@ -81,6 +81,11 @@ export function AccountPanes({
   // Held in state rather than left to the browser so a re-render cannot spring
   // the rail back open under someone who just shut it — the same reason
   // `map-info-popup.tsx` holds its own.
+  //
+  // Open is the SSR default because the desktop layout is the one where the rail
+  // is a column beside the content, and rendering it closed there would collapse
+  // the navigation for everyone before hydration. The narrow case is corrected on
+  // mount below.
   const [navOpen, setNavOpen] = useState(true);
 
   // On mount, not during render: `window` does not exist on the server, and the
@@ -88,6 +93,20 @@ export function AccountPanes({
   // pane is therefore what SSR emits, and a deep link corrects it before paint
   // is observable because this runs in the same commit as the modal's own
   // effects.
+  // Below 720px the rail is stacked ON TOP of the detail pane rather than beside
+  // it, so six expanded items push the content the reader came for off the
+  // screen. Collapsed, the `<summary>` is still there and still the control that
+  // reopens it — the same affordance, one line tall instead of seven.
+  //
+  // A mount effect, not an initial state, because `matchMedia` does not exist on
+  // the server: deciding this during render would make the markup depend on a
+  // viewport the server cannot see, which is a hydration mismatch rather than a
+  // layout choice. Runs once — reacting to later resizes would fight a reader who
+  // had deliberately opened the rail.
+  useEffect(() => {
+    if (window.matchMedia("(max-width: 720px)").matches) setNavOpen(false);
+  }, []);
+
   useEffect(() => {
     // Derived from `panes` directly, NOT by splitting `paneKey` back apart.
     // That round-trip shipped a separator mismatch on the first push of this

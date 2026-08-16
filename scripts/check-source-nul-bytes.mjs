@@ -20,12 +20,30 @@
  * is never intentional. It comes from a tool that mangled a string on the way to
  * disk, and the give-away is exactly that everything else still compiles.
  *
+ * ## Widened once already, and why
+ *
+ * The first version rejected only byte 0x00. Aikido's review made the fair point
+ * that this same commit left OTHER raw control characters in
+ * `apps/web/lib/account-profile.ts`, so the gate could report success on a file
+ * that was still unreviewable in exactly the way it was written to prevent.
+ *
+ * One correction to that finding, since it matters for what the rule should be:
+ * only NUL makes git classify a file as binary, so the other control characters
+ * do not literally produce a binary diff. The reason to reject them anyway is the
+ * one that made the original bug expensive - a control character is INVISIBLE in
+ * a diff, an editor and a review, and every one of them has an escape sequence
+ * that is not. `\x1f` and `\x7f` read correctly to a human; the raw bytes read
+ * as nothing at all.
+ *
  * ## Scope, honestly
  *
- * This catches ONE encoding accident: the byte that turns a text file binary. It
- * says nothing about a wrong-but-printable separator, which is the same bug one
- * character away. It is cheap and it closes the case that no other gate here can
- * see, which is the whole argument for it.
+ * Tab, newline and carriage return are allowed - they are structure, not content.
+ * Everything else in C0, DEL, and C1 is rejected, and the fix is always the same:
+ * write the escape sequence instead.
+ *
+ * It still says nothing about a wrong-but-printable separator, which is the same
+ * bug one character away and is what actually broke the deep links. This closes
+ * the invisible half, which is the half no other gate here can see.
  */
 
 import { readFileSync, readdirSync, statSync } from "node:fs";
@@ -33,6 +51,14 @@ import { dirname, extname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
+
+// Tab (0x09), newline (0x0a) and carriage return (0x0d) are structure and are
+// allowed. Everything else in C0 plus DEL is rejected; C1 (U+0080-U+009F) is
+// handled separately below because it is two bytes in UTF-8.
+const FORBIDDEN_C0 = new Set([
+  ...Array.from({ length: 32 }, (_, i) => i).filter((b) => b !== 0x09 && b !== 0x0a && b !== 0x0d),
+  0x7f,
+]);
 
 const TEXT_EXTENSIONS = new Set([
   ".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs",
@@ -83,22 +109,39 @@ function main() {
     } catch {
       continue; // a broken symlink is not this check's business
     }
-    const index = bytes.indexOf(0);
-    if (index !== -1) offenders.push({ file: relative(ROOT, file), index });
+    let index = -1;
+    let what = "";
+    for (let i = 0; i < bytes.length; i += 1) {
+      const byte = bytes[i];
+      if (FORBIDDEN_C0.has(byte)) {
+        index = i;
+        what = byte === 0 ? "NUL (0x00)" : `control character 0x${byte.toString(16).padStart(2, "0")}`;
+        break;
+      }
+      // C1 controls are `0xC2 0x80`-`0xC2 0x9F` in UTF-8. Checked as a pair
+      // rather than by decoding the whole file, so this stays a byte scan.
+      if (byte === 0xc2 && i + 1 < bytes.length && bytes[i + 1] >= 0x80 && bytes[i + 1] <= 0x9f) {
+        index = i;
+        what = `C1 control U+00${bytes[i + 1].toString(16).toUpperCase()}`;
+        break;
+      }
+    }
+    if (index !== -1) offenders.push({ file: relative(ROOT, file), index, what });
   }
 
   if (offenders.length > 0) {
-    console.error("NUL byte in a text source file (a tool mangled a string on the way to disk):");
-    for (const { file, index } of offenders) {
-      console.error(`  ${file}: first NUL at byte ${index}`);
+    console.error("Raw control character in a text source file:");
+    for (const { file, index, what } of offenders) {
+      console.error(`  ${file}: ${what} at byte ${index}`);
     }
     console.error("");
-    console.error("This compiles, passes tests and reads correctly in most editors.");
-    console.error("Find the string literal it landed in and rewrite that line by hand.");
+    console.error("These compile, pass tests, and are INVISIBLE in a diff and in review.");
+    console.error("If the character is intended, write its escape sequence instead");
+    console.error('(\\x00, \\x1f, \\u009f); if it is not, a tool mangled the string.');
     process.exit(1);
   }
 
-  console.log("check-source-nul-bytes: OK (no NUL bytes in tracked text sources)");
+  console.log("check-source-nul-bytes: OK (no raw control characters in tracked text sources)");
 }
 
 main();

@@ -21,7 +21,7 @@
 export const MAX_PROFILE_NAME_LENGTH = 60;
 
 /** C0 and C1 control characters. Not names, and they break line layout. */
-const CONTROL_CHARACTERS = /[\x00--]/u;
+const CONTROL_CHARACTERS = /[\x00-\x1f\x7f-\u009f]/u;
 
 /** At least one letter, in any script — rejects "123" and "...". */
 const HAS_LETTER = /\p{L}/u;
