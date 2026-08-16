@@ -3,7 +3,7 @@
  *
  * ## Why this file exists, and why it is not the test that was proposed
  *
- * ai-ops#131 offered to land the jose 5 -> 6 bump "verified only by a synthetic
+ * ai-ops 131 offered to land the jose 5 -> 6 bump "verified only by a synthetic
  * seal/unseal test rather than a real browser sign-in", and the owner took that
  * option. A seal/unseal test would have proved nothing at all.
  *
@@ -40,7 +40,7 @@
  * against a locally generated key. It does NOT prove a real WorkOS sign-in: that
  * needs a live session cookie on the production domain, which a preview
  * deployment cannot hold because WorkOS redirect URIs are per-domain. That gap
- * is the owner's accepted risk on ai-ops#131 and is covered by a manual walk.
+ * is the owner's accepted risk on ai-ops 131 and is covered by a manual walk.
  */
 import assert from "node:assert/strict";
 import { createRequire } from "node:module";
