@@ -185,20 +185,23 @@ test("an injected <style> element is refused, while inline style attributes stil
   assert.match(production, /style-src 'self' 'unsafe-inline';/);
 });
 
-test("the dev server's hot-reload stylesheets are admitted, and only there", () => {
-  // `next dev` injects CSS as <style> elements for hot reload and for the error
-  // overlay. Neither is hashable and neither exists in a production build, so
-  // development opens `style-src-elem` and nothing else does.
-  const development = contentSecurityPolicy({ ...PRODUCTION, development: true });
-  assert.match(development, /style-src-elem [^;]*'unsafe-inline'/);
-  assert.doesNotMatch(contentSecurityPolicy(PRODUCTION), /style-src-elem [^;]*'unsafe-inline'/);
-  assert.doesNotMatch(
-    contentSecurityPolicy({ ...PRODUCTION, vercelToolbar: true }),
-    /style-src-elem [^;]*'unsafe-inline'/,
-  );
+const styleSrcElemOf = (policy: string) =>
+  policy.split("; ").find((d) => d.startsWith("style-src-elem ")) ?? "";
+
+test("only production gets the hashed style-src-elem; dev and preview inject unhashable CSS", () => {
+  // `next dev` injects CSS as <style> elements for hot reload and the error
+  // overlay. Vercel injects `vercel.live/_next-live/feedback/feedback.js` into
+  // every PREVIEW deployment — the widget a change gets reviewed with — and it
+  // writes its own. Six of them on `/pricing`, measured on a preview of the
+  // branch that added this directive, with no toolbar cookie set. Neither set is
+  // hashable and neither exists in a production build, so both open the
+  // directive and production alone closes it.
+  assert.match(styleSrcElemOf(contentSecurityPolicy({ ...PRODUCTION, development: true })), /'unsafe-inline'/);
+  assert.match(styleSrcElemOf(contentSecurityPolicy({ ...PRODUCTION, vercelToolbar: true })), /'unsafe-inline'/);
+  assert.doesNotMatch(styleSrcElemOf(contentSecurityPolicy(PRODUCTION)), /'unsafe-inline'/);
 });
 
-test("development's style-src-elem carries no hash, or its 'unsafe-inline' is dead", () => {
+test("wherever style-src-elem opens, it carries no hash — or the 'unsafe-inline' is dead", () => {
   // The trap this pins, which is a CSP rule and not a preference: a directive
   // that lists a hash IGNORES `'unsafe-inline'` entirely. So `'self' <hash>
   // 'unsafe-inline'` is not the permissive union it reads as — it is the hash,
@@ -209,24 +212,31 @@ test("development's style-src-elem carries no hash, or its 'unsafe-inline' is de
   // `next dev` with "Note that 'unsafe-inline' is ignored if either a hash or
   // nonce value is present in the source list". A developer would have seen
   // hot reload stop applying CSS and had nothing pointing here.
-  const development = contentSecurityPolicy({ ...PRODUCTION, development: true });
-  const styleSrcElem = development.split("; ").find((d) => d.startsWith("style-src-elem "));
-
-  assert.ok(styleSrcElem, "development must still emit style-src-elem");
-  assert.ok(
-    !styleSrcElem.includes("sha256-"),
-    `development's style-src-elem must carry no hash, or the 'unsafe-inline' beside it does ` +
-      `nothing: ${styleSrcElem}`,
-  );
-  assert.ok(styleSrcElem.includes("'unsafe-inline'"));
+  for (const [name, environment] of [
+    ["development", { ...PRODUCTION, development: true }],
+    ["preview", { ...PRODUCTION, vercelToolbar: true }],
+  ] as const) {
+    const directive = styleSrcElemOf(contentSecurityPolicy(environment));
+    assert.ok(directive, `${name} must still emit style-src-elem`);
+    assert.ok(
+      !directive.includes("sha256-"),
+      `${name}'s style-src-elem must carry no hash, or the 'unsafe-inline' beside it does ` +
+        `nothing: ${directive}`,
+    );
+    assert.ok(directive.includes("'unsafe-inline'"));
+  }
 
   // The mirror of it: production carries the hash and no `'unsafe-inline'`, so
   // there is nothing for the hash to cancel there.
-  const styleSrcElemProd = contentSecurityPolicy(PRODUCTION)
-    .split("; ")
-    .find((d) => d.startsWith("style-src-elem "));
-  assert.ok(styleSrcElemProd?.includes("sha256-"));
-  assert.ok(!styleSrcElemProd?.includes("'unsafe-inline'"));
+  //
+  // The corollary is a fact about how to VERIFY this directive, and it is
+  // asserted here rather than left in a comment because it is the thing most
+  // likely to be got wrong next: since preview opens the directive, a preview
+  // URL does not exercise production's `style-src-elem` at all. Checking a
+  // change to it means a local production build, not a preview link.
+  const produced = styleSrcElemOf(contentSecurityPolicy(PRODUCTION));
+  assert.ok(produced.includes("sha256-"));
+  assert.ok(!produced.includes("'unsafe-inline'"));
 });
 
 test("the hashed stylesheet is the one the 404 page actually renders", () => {

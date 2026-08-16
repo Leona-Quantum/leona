@@ -130,14 +130,31 @@ export function contentSecurityPolicy({
     // refused. `lib/html-injection-surface.test.ts` is what stops a second one
     // being added without this list being updated: it counts the sinks.
     //
-    // Development keeps `'unsafe-inline'` because the dev server injects
-    // stylesheets as `<style>` elements for hot reload and for the error
-    // overlay, both of which are unhashable and neither of which exists in a
-    // production build. Note it drops the HASH to do that, which is not a
-    // tidiness choice: **`'unsafe-inline'` is ignored in any directive that also
-    // carries a hash or a nonce.** Listing both is therefore not "permissive
-    // with a hash for good measure" — the hash silently wins and every other
-    // inline stylesheet is refused.
+    // ## Production ALONE gets the hashed form, and the two exceptions are real
+    //
+    // Development, because the dev server injects stylesheets as `<style>`
+    // elements for hot reload and for the error overlay. Neither is hashable and
+    // neither exists in a production build.
+    //
+    // Preview, because Vercel injects `vercel.live/_next-live/feedback/
+    // feedback.js` into every preview deployment — the widget the owner reviews
+    // a change with — and it writes its own inline stylesheets. Measured, not
+    // predicted: the hashed form on a preview of this very branch refused SIX of
+    // them on `/pricing` alone, on a page with no toolbar cookie set. Hashing
+    // them is not an option; they are Vercel's and they move with it.
+    //
+    // Leaving preview broken would also contradict the decision the
+    // `vercelToolbar` comment above records — that on a preview the toolbar is
+    // the point, and half-loading it is worse than declining it, because the
+    // console cries wolf on every navigation. Production is untouched by this:
+    // it admits no `vercel.live` and Vercel injects no feedback script into it.
+    //
+    // ## Why the exceptions DROP the hash rather than adding to it
+    //
+    // Not tidiness: **`'unsafe-inline'` is ignored in any directive that also
+    // carries a hash or a nonce.** `'self' <hash> 'unsafe-inline'` is therefore
+    // not the permissive union it reads as — the hash silently wins and every
+    // other inline stylesheet is refused anyway.
     //
     // That is not deduced from the specification, it is what happened: the first
     // version of this listed the hash and `'unsafe-inline'` together in
@@ -145,6 +162,10 @@ export function contentSecurityPolicy({
     // "Note that 'unsafe-inline' is ignored if either a hash or nonce value is
     // present in the source list". Production is unaffected — it has no
     // `'unsafe-inline'` in this directive for a hash to cancel.
+    //
+    // The consequence worth stating: a preview deployment does NOT exercise
+    // production's `style-src-elem`. Verifying a change to it means a local
+    // production build (`next build && next start`), not a preview URL.
     //
     // ## The one thing this knowingly breaks, and why it is accepted
     //
@@ -166,7 +187,9 @@ export function contentSecurityPolicy({
     // directive.
     `style-src-elem ${[
       "'self'",
-      ...(development ? ["'unsafe-inline'"] : [inlineHash(NOT_FOUND_LOCALE_STYLE)]),
+      ...(development || vercelToolbar
+        ? ["'unsafe-inline'"]
+        : [inlineHash(NOT_FOUND_LOCALE_STYLE)]),
       ...toolbar("https://vercel.live"),
     ].join(" ")}`,
     // Inline `style` ATTRIBUTES, which stay open, stated explicitly rather than
