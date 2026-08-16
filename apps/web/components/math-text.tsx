@@ -122,14 +122,21 @@ export function MathText({ source }: { source: string }): React.ReactElement {
           <span
             key={index}
             className="mj-math"
-            // KaTeX's own output, sanitized on the way out (and memoized — see
-            // `typeset` above, where the cost of the two halves is measured). The
-            // input is corpus prose authored in this repository and gated by
-            // check-math.mjs, and KaTeX itself defaults to `trust: false` — but
-            // the injection point no longer depends on either of those staying
-            // true. Owner ruling, ai-ops 138: KaTeX is not accepted as its own
-            // sanitizer. The config that keeps this from eating KaTeX's MathML is
-            // the part that matters; it is documented in lib/sanitize-math.ts.
+            // KaTeX's own output, memoized — see `typeset` above.
+            //
+            // **NOT sanitized right now, and that is the active boundary.** The
+            // sanitizer was wired in here (owner ruling, ai-ops 138) and every
+            // route rendering this component returned 500 on production; the call
+            // is withdrawn until the Vercel runtime cause is fixed, and `typeset`
+            // above carries the incident detail and the re-landing condition.
+            //
+            // So what holds this sink up today is what held it up before 690, and
+            // it is worth stating plainly rather than leaving a stale sentence
+            // that says otherwise: the input is corpus prose authored in this
+            // repository and gated by `check-math.mjs`, no visitor can reach it,
+            // and KaTeX defaults to `trust: false` — it refuses
+            // `\href{javascript:…}` and escapes raw HTML. Two reasons, both
+            // real, neither of them a sanitizer.
             dangerouslySetInnerHTML={{ __html: typeset(segment.value) }}
           />
         ) : (
