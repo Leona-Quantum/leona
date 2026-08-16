@@ -558,6 +558,12 @@ export const WORKSPACE_LANDING_COPY: Record<PublicLocale, {
   title: string;
   body: string;
   primary: string;
+  /**
+   * The same call to action for a reader who already has what `primary` asks
+   * them to request. Both ship in the cached HTML; CSS picks one — see the
+   * comment on this page's hero actions for why it cannot be picked here.
+   */
+  primarySignedIn: string;
   secondary: string;
   loopLabel: string;
   loopTitle: string;
@@ -575,6 +581,7 @@ export const WORKSPACE_LANDING_COPY: Record<PublicLocale, {
     title: "Turn a quantum question into work you can reopen.",
     body: "Leona Quantum connects a guided workflow to a guarded simulator, verification evidence, and a personal Studio for editing and keeping saved work. Every account starts with its own workspace; prompts, runs, and saved artifacts are private by default.",
     primary: "Request workspace access",
+    primarySignedIn: "Open your workspace",
     secondary: "Start from the Atlas",
     loopLabel: "One personal loop",
     loopTitle: "Research, Studio, and execution stay connected.",
@@ -600,6 +607,7 @@ export const WORKSPACE_LANDING_COPY: Record<PublicLocale, {
     title: "量子の問いを、再現できる研究成果へ。",
     body: "Leona Quantumは、ガイド付きのワークフローをシミュレータ、検証記録、そして編集と保存を担う個人用Studioにつなぎます。各アカウントには専用ワークスペースが用意され、質問、実行、保存した回路・実行結果は初期状態で非公開です。",
     primary: "利用を相談する",
+    primarySignedIn: "ワークスペースを開く",
     secondary: "Atlasから始める",
     loopLabel: "個人の研究ループ",
     loopTitle: "RunとStudioをひとつにつなぐ。",

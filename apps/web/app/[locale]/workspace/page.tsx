@@ -33,8 +33,30 @@ export default async function WorkspacePage({ params }: { params: Promise<{ loca
           <p className="mj-public-overline">{copy.overline}</p>
           <h1>{copy.title}</h1>
           <p className="mj-landing-copy">{copy.body}</p>
+          {/*
+            Both calls to action ship, and CSS shows one — the same mechanism the
+            header uses, and for the same reason. This page is `chrome="static"`
+            and held on the CDN, so its HTML is shared by every visitor and
+            cannot name one; asking the server would mean giving up the cache.
+            `<html data-auth>` is stamped from the hint cookie before first
+            paint, so each browser paints the right half of one shared payload.
+
+            Without this the page told a reader who already HAS a workspace to
+            go and request one — the signed-out copy is the default the header
+            fix left behind here, not a deliberate choice. Same bug family as
+            ai-ops issue 114, one page further in.
+
+            `.mj-auth-slot` defaults to the signed-OUT control when the attribute
+            is absent (JavaScript off, cookies refused, script not yet run), which
+            is the safe direction: a stranger is told how to ask for access.
+          */}
           <div className="mj-landing-actions">
-            <a className="mj-primary-button" href="/contact">{copy.primary}</a>
+            <span className="mj-auth-slot" data-auth-slot="out">
+              <a className="mj-primary-button" href="/contact">{copy.primary}</a>
+            </span>
+            <span className="mj-auth-slot" data-auth-slot="in">
+              <a className="mj-primary-button" href="/run">{copy.primarySignedIn}</a>
+            </span>
             <a className="mj-secondary-button" href="/repository">{copy.secondary}</a>
           </div>
         </section>
