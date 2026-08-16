@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { validateInquiry } from "../../../lib/contact-inquiry";
 import { contactSender, sendContactEmail } from "../../../lib/send-contact-email";
+import { admitContact, contactAddress, type RateLimitStore } from "../../../lib/contact-rate-limit";
 
 /**
  * The public contact form's server half (ai-ops issue 125, owner chose a
@@ -79,6 +80,16 @@ export async function GET() {
  */
 const MAX_BODY_BYTES = 64 * 1024;
 
+/**
+ * The one long-lived counter table, per function instance.
+ *
+ * Module scope rather than per-request, which is the whole point — and the
+ * reason the logic itself lives in `lib/contact-rate-limit.ts` as a pure
+ * function over a store passed in, where the suite can drive the clock. See
+ * that file for what a per-instance window is and is not worth here.
+ */
+const rateLimitStore: RateLimitStore = new Map();
+
 export async function POST(request: Request) {
   const declared = Number(request.headers.get("content-length") ?? "");
   if (Number.isFinite(declared) && declared > MAX_BODY_BYTES) {
@@ -116,6 +127,33 @@ export async function POST(request: Request) {
     return NextResponse.json(
       { error: "not-configured", mailto: fallbackMailto() },
       { status: 503, headers: noStore },
+    );
+  }
+
+  // Metered HERE — after validation and after the sender check, immediately
+  // before the only line that spends anything.
+  //
+  // The first version metered at the top of the handler, and review was right
+  // that this is better. The resource being protected is EMAIL SENDS: a
+  // malformed body, a tripped honeypot, or the 503 when no sender is configured
+  // all cost nothing and send nothing, so counting them bought no protection and
+  // did real damage — somebody who mistyped their address five times, or five
+  // people behind one office address who did once each, were locked out of a
+  // contact form for ten minutes by their own typos.
+  //
+  // Nothing is lost on the abuse side. A flood of INVALID requests is already
+  // bounded by the 64KB body cap and never reaches a provider; a flood of VALID
+  // ones is exactly what still gets counted. And requests that fail validation
+  // are refused earlier and more cheaply than the limiter would have refused
+  // them anyway.
+  const decision = admitContact(rateLimitStore, contactAddress(request.headers), Date.now());
+  if (!decision.allowed) {
+    return NextResponse.json(
+      { error: "too many messages from this address — please try again shortly" },
+      {
+        status: 429,
+        headers: { ...noStore, "Retry-After": String(decision.retryAfterSeconds) },
+      },
     );
   }
 

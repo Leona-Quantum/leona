@@ -80,6 +80,110 @@ a genuinely private-IP-only instance without standing that up first.
   depends on the current public-IP path. Not a flag flip, and not something to do to
   satisfy a one-hour drill (see below).
 
+## Connecting as `app_rw` (the privilege split)
+
+**Status: PROVISIONED, NOT ACTIVE.** Migration `0052` creates the `app_rw` role
+and grants it the data-plane privileges. Nothing connects as it yet — the API
+and the worker still connect as `majorana_app`, which **owns every table**. Until
+the flip below is performed, "restrict database permissions" is *not* satisfied
+on production, and this section is a plan rather than a description. Say so
+plainly if asked; a provisioned role reads exactly like an active one from the
+outside, which is the failure mode ai-ops 127 was about in the first place.
+
+### What `app_rw` is
+
+A **NOLOGIN privilege bundle**, not an account. It holds `SELECT, INSERT, UPDATE,
+DELETE` on the tables, `USAGE, SELECT` on the sequences, `USAGE` (never `CREATE`)
+on the schema, and default privileges so tables added by later migrations are
+covered automatically. `UPDATE`/`DELETE` are revoked again on `run_events`,
+`audit_log` and `usage_events`, which 0050 also protects with triggers.
+
+Verified against PostgreSQL 17 on the full migration chain, as the role: DDL is
+refused (`permission denied for schema public`), `DROP TABLE` is refused, writes
+to the three append-only tables are refused, ordinary reads and writes succeed, a
+table created *after* the migration is usable without further grants, and a role
+*without* `app_rw` is refused outright — the last one being the control that
+shows the grant is doing the work.
+
+### The flip
+
+Ordering matters: 0052 must already be applied to production, which happens on
+the next deploy. Check with `alembic current` or `select version_num from
+alembic_version` before starting.
+
+```bash
+# 1. A login user, granted membership in the bundle.
+#
+#    --prompt-for-password, NOT --password="$PW". A password passed as an
+#    argument is visible in `ps` to every other process on the machine for the
+#    life of the call, and lands in shell history besides. Generate it, read it
+#    once, and let gcloud take it on stdin:
+PW="$(openssl rand -base64 32)"; printf '%s\n' "$PW"   # copy it, then clear the screen
+gcloud sql users create majorana_api --instance=majorana-pg \
+  --project=majorana-core --prompt-for-password
+
+# 2. Membership. Run through the Cloud SQL Auth Proxy as majorana_app.
+psql "$DATABASE_URL_DIRECT" -c "grant app_rw to majorana_api;"
+
+# 3. A SECOND secret. DATABASE_URL_SECRET keeps pointing at majorana_app and
+#    stays the migration credential — alembic needs an owner to issue DDL.
+printf 'postgresql+psycopg://majorana_api:%s@/majorana?host=/cloudsql/majorana-core:us-west1:majorana-pg' "$PW" \
+  | gcloud secrets create DATABASE_URL_APP_SECRET --data-file=- --project=majorana-core
+
+# 4. Repoint the two services at the restricted credential.
+#    --update-secrets, NOT --set-env-vars: the latter REMOVES every key it does
+#    not mention, which on these services is most of their configuration.
+gcloud run services update majorana-api --region=us-west1 --project=majorana-core \
+  --update-secrets=DATABASE_URL=DATABASE_URL_APP_SECRET:latest
+gcloud run services update majorana-worker --region=us-west1 --project=majorana-core \
+  --update-secrets=DATABASE_URL=DATABASE_URL_APP_SECRET:latest
+```
+
+**`DATABASE_URL` is currently a literal on these services, and Cloud Run cannot
+convert a literal env var into a secret reference.** The commands above fail on a
+key that is already set literally, and — this is the part that bites — they leave
+the service in a state where *every later deploy* fails the same way. Remove the
+key in its own update first, then attach the secret:
+
+```bash
+gcloud run services update majorana-api --region=us-west1 --project=majorana-core \
+  --remove-env-vars=DATABASE_URL
+```
+
+**Do one service at a time, all the way through, and verify before starting the
+second.** The remove-then-attach pair is two commands, and a service left between
+them has no `DATABASE_URL` at all. Doing both removes first, or walking away
+after a failed attach, leaves a running service on either no credential or the
+old owner one — and the second case is the silent one, because the site keeps
+working and the whole point of the exercise is quietly undone. If you stop
+mid-flight, the service you have not finished is still on `majorana_app`; the
+status line at the top of this section is only true once BOTH read
+`DATABASE_URL_APP_SECRET`.
+
+Read the revision back afterwards rather than trusting the exit code:
+
+```bash
+gcloud run services describe majorana-api --region=us-west1 --project=majorana-core \
+  --format='yaml(spec.template.spec.containers[0].env)'
+```
+
+**Verify before trusting it.** Connect as `majorana_api` and confirm all six:
+a `SELECT` succeeds, an `INSERT` succeeds, `CREATE TABLE` is refused, `DROP
+TABLE` is refused, `UPDATE run_events` is refused, and a table created by a later
+migration is readable. A flip that is only checked by "the site still loads"
+proves nothing — most pages read a handful of tables, and the endpoint that needs
+the missing privilege may not be one a smoke test opens.
+
+### Rollback
+
+Point both services back at `DATABASE_URL_SECRET` and redeploy. Nothing about
+the schema changed, so there is no data to undo. Two traps, both recorded
+elsewhere and both live here: Cloud Run **cannot convert a literal env var into
+a secret reference** — remove the key in its own update first — and a
+`--set-env-vars` that omits an existing key **removes** it. Use
+`--update-secrets`, and read the revision back afterwards rather than trusting
+the command's exit code.
+
 ## Connection budget
 
 The instance allows **200** and reserves 3 for superusers. 200 is `max_connections`
