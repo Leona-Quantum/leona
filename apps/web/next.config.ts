@@ -10,14 +10,41 @@ import {
  * ## What this does and does not buy, stated plainly
  *
  * `script-src` carries `'unsafe-inline'`, and with it present this policy is
- * NOT an XSS defence — an injected inline script still runs. Saying otherwise
- * would be the failure this codebase keeps finding in itself: a guarantee
- * written down and not held. Removing it needs per-request nonces, which means
- * a nonce threaded from middleware through the document and the one inline
- * theme script in `app/layout.tsx`, plus Next's own hydration inlines. That is
- * a real change with a real way of half-working, and it is not this PR.
+ * NOT a general XSS defence — an injected inline `<script>` element still runs.
+ * Saying otherwise would be the failure this codebase keeps finding in itself: a
+ * guarantee written down and not held.
  *
- * What it does buy today is worth having on its own:
+ * ## Why `'unsafe-inline'` is still there, measured
+ *
+ * Not for the three pre-paint scripts in `app/layout.tsx` — those are constants
+ * and hash cleanly. It is there for Next's own streaming payload. Every App
+ * Router page carries the RSC flight data as inline
+ * `<script>self.__next_f.push([1,"…"])</script>`; on `/pricing` that one script
+ * is 25,095 bytes and its content is the page. It differs per page and per
+ * render, so no hash computed at build time can name it, and `headers()` in this
+ * file is evaluated before any page renders — the hash could not be computed
+ * here even for the prerendered pages.
+ *
+ * That leaves nonces, and a nonce has to be minted per request and appear in
+ * both the header and the HTML. The HTML on the public pages is served from
+ * Vercel's CDN with a nonce baked in at render time, so a fresh nonce in the
+ * header would match nothing in the cached document and block the whole page.
+ * Nonces therefore mean per-request rendering, which is precisely the caching
+ * that `localeRewrite` in `middleware.ts` and the `Vercel-CDN-Cache-Control`
+ * rules below exist to buy. That trade is the owner's call, not a refactor.
+ *
+ * ## What IS closed, and was not before
+ *
+ * - `script-src-attr 'none'` — inline event handler attributes are refused
+ *   outright, whatever `script-src` says, because `script-src-attr` does not
+ *   inherit when present. `<img onerror=…>` is the commonest injected payload
+ *   there is, and React never emits a handler attribute, so this costs nothing.
+ * - `style-src-elem` — inline `<style>` ELEMENTS are now named by hash. The app
+ *   serves exactly one, the 404 page's, so an injected stylesheet is refused.
+ *   Inline style ATTRIBUTES stay open under `style-src-attr`; the Atlas map and
+ *   KaTeX both position with them and there is no version of this that closes.
+ *
+ * The rest of what it buys was already true and is worth having on its own:
  *
  * - `default-src`/`script-src 'self'` — an injection cannot pull executable
  *   code from an attacker's origin, which is how most of them get their payload.

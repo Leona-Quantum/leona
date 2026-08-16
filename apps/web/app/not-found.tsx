@@ -32,6 +32,7 @@
 // `app/layout.tsx` sets before paint. No flash, and with JavaScript off the
 // reader gets English — the honest fallback for a page that cannot know.
 import { NOT_FOUND_COPY } from "../lib/public-copy";
+import { NOT_FOUND_LOCALE_STYLE } from "../lib/not-found-style.ts";
 import { PublicSite } from "../components/public-site";
 
 // Scoped to this page and inlined rather than added to globals.css, because it
@@ -39,16 +40,16 @@ import { PublicSite } from "../components/public-site";
 // `app/layout.tsx`'s locale script has already put on `<html>` before paint, so
 // there is one mechanism rather than two. The default — no script, no
 // JavaScript at all — shows English.
-const localeStyle = `
-  .mj-not-found-copy[lang="ja"] { display: none; }
-  html[lang="ja"] .mj-not-found-copy[lang="en"] { display: none; }
-  html[lang="ja"] .mj-not-found-copy[lang="ja"] { display: revert; }
-`;
+//
+// The CSS itself moved to `lib/not-found-style.ts` so that `style-src-elem` can
+// name it by hash instead of the policy admitting every inline stylesheet on
+// every page. It is imported rather than written here because the hash is taken
+// over this exact constant at build time — see that file.
 
 export default function NotFound() {
   return (
     <PublicSite className="mj-not-found-site" locale="en" chrome="static">
-      <style dangerouslySetInnerHTML={{ __html: localeStyle }} />
+      <style dangerouslySetInnerHTML={{ __html: NOT_FOUND_LOCALE_STYLE }} />
       {(["en", "ja"] as const).map((locale) => {
         const copy = NOT_FOUND_COPY[locale];
         return (
