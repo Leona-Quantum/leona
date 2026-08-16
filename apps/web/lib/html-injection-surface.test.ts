@@ -89,9 +89,17 @@ const ALLOWED = new Map<string, { sinks: number; reason: string }>([
   // preservation against real formula shapes AND strips a set of payloads as its
   // control, and `scripts/check-math.mjs` extends the preservation assertion over
   // every `$…$` in the corpus, both locales.
+  //
+  // **It is NOT in the render path right now.** leona 690 wired it in and every
+  // MathText-rendering route returned 500 on production while routes without
+  // mathematics stayed 200; it was withdrawn to restore service. So for the
+  // moment this sink is back to resting on the two reasons above and not on a
+  // sanitizer, which is what the reason string says. `math-text.tsx` carries the
+  // incident note and the fix forward. Re-landing it does not change this entry's
+  // COUNT, which is why that count — not this prose — is what the test asserts.
   [
     "components/math-text.tsx",
-    { sinks: 1, reason: "katex.renderToString on authored corpus, sanitized by lib/sanitize-math.ts" },
+    { sinks: 1, reason: "katex.renderToString on authored corpus; sanitizer WITHDRAWN from this path pending the Vercel runtime fix — see math-text.tsx" },
   ],
 ]);
 
