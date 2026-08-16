@@ -87,17 +87,52 @@ function walk(dir, found = []) {
   return found;
 }
 
+/**
+ * The detector itself, as one function.
+ *
+ * Extracted so the canary below can run THIS rather than a paraphrase of it. The
+ * first version asserted `canary.includes(0)`, which tested Buffer.includes and
+ * nothing else: had the scan loop been broken or deleted, that control would
+ * still have passed and the check would still have printed OK. Raised in review,
+ * and it is the same failure this script exists to talk about — a control that
+ * cannot fail is indistinguishable from one that passed.
+ *
+ * Returns `null` for a clean buffer, or the position and a human name for the
+ * first offending character.
+ */
+function firstControlCharacter(bytes) {
+  for (let i = 0; i < bytes.length; i += 1) {
+    const byte = bytes[i];
+    if (FORBIDDEN_C0.has(byte)) {
+      const what = byte === 0 ? "NUL (0x00)" : `control character 0x${byte.toString(16).padStart(2, "0")}`;
+      return { index: i, what };
+    }
+    // C1 controls are `0xC2 0x80`-`0xC2 0x9F` in UTF-8. Checked as a pair rather
+    // than by decoding the whole file, so this stays a byte scan.
+    if (byte === 0xc2 && i + 1 < bytes.length && bytes[i + 1] >= 0x80 && bytes[i + 1] <= 0x9f) {
+      return { index: i, what: `C1 control U+00${bytes[i + 1].toString(16).toUpperCase()}` };
+    }
+  }
+  return null;
+}
+
 function main() {
-  // A positive control, run first. This script's whole value is that it FAILS on
-  // a corrupted file, and a scanner that silently matched nothing would report
-  // exactly the same "OK" as a clean tree — the failure mode migration 0050 is
-  // written about. So prove the detector fires before trusting that it did not.
-  // Built from a byte value, never written as a literal: a raw NUL in this
-  // file would be caught by the very scan below, and a check that cannot pass
-  // its own rule has no business enforcing it on anyone else.
-  const canary = Buffer.concat([Buffer.from("const a = \"x"), Buffer.from([0]), Buffer.from("y\";")]);
-  if (!canary.includes(0)) {
-    console.error("check-source-nul-bytes: the detector's own canary has no NUL; the check is broken");
+  // A positive control, run first, through the real detector.
+  //
+  // Both buffers are built from byte values rather than written as literals: a
+  // raw control character in this file would be caught by the very scan below,
+  // and a check that cannot pass its own rule has no business enforcing it.
+  const dirty = Buffer.concat([Buffer.from('const a = "x'), Buffer.from([0]), Buffer.from('y";')]);
+  const clean = Buffer.from('const a = "x\ty";\r\n');
+  if (firstControlCharacter(dirty) === null) {
+    console.error("check-source-nul-bytes: the detector did not fire on a planted control character.");
+    console.error("The check is broken and its OK means nothing. Fix this before trusting a clean run.");
+    process.exit(2);
+  }
+  if (firstControlCharacter(clean) !== null) {
+    // The other direction. Without it, a detector that flagged EVERYTHING would
+    // pass the test above and then fail the whole repository.
+    console.error("check-source-nul-bytes: the detector fired on tab/CRLF, which are allowed.");
     process.exit(2);
   }
 
@@ -106,27 +141,17 @@ function main() {
     let bytes;
     try {
       bytes = readFileSync(file);
-    } catch {
-      continue; // a broken symlink is not this check's business
+    } catch (error) {
+      // Fail closed. "Could not read it" is not evidence that a file is clean,
+      // and skipping silently would let an unreadable file — a broken symlink, a
+      // permission problem, a half-written checkout — read as a pass. Raised in
+      // review, and it is the same principle as the canary above.
+      console.error(`check-source-nul-bytes: cannot read ${relative(ROOT, file)}: ${error.message}`);
+      console.error("Refusing to report OK on a tree this check could not fully scan.");
+      process.exit(2);
     }
-    let index = -1;
-    let what = "";
-    for (let i = 0; i < bytes.length; i += 1) {
-      const byte = bytes[i];
-      if (FORBIDDEN_C0.has(byte)) {
-        index = i;
-        what = byte === 0 ? "NUL (0x00)" : `control character 0x${byte.toString(16).padStart(2, "0")}`;
-        break;
-      }
-      // C1 controls are `0xC2 0x80`-`0xC2 0x9F` in UTF-8. Checked as a pair
-      // rather than by decoding the whole file, so this stays a byte scan.
-      if (byte === 0xc2 && i + 1 < bytes.length && bytes[i + 1] >= 0x80 && bytes[i + 1] <= 0x9f) {
-        index = i;
-        what = `C1 control U+00${bytes[i + 1].toString(16).toUpperCase()}`;
-        break;
-      }
-    }
-    if (index !== -1) offenders.push({ file: relative(ROOT, file), index, what });
+    const hit = firstControlCharacter(bytes);
+    if (hit !== null) offenders.push({ file: relative(ROOT, file), ...hit });
   }
 
   if (offenders.length > 0) {
