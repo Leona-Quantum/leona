@@ -84,6 +84,55 @@ export function contentSecurityPolicy({
   const toolbar = (...origins: string[]) => (vercelToolbar ? origins : []);
   const scriptSources = [
     "'self'",
+    // **`'unsafe-inline'` stays here, and it is not an oversight — it is the one
+    // line in this policy that cannot be closed by the technique the rest of the
+    // file uses.** Written down because it is the obvious next hardening step,
+    // it was attempted on 2026-08-17, and the reason it fails is only visible
+    // after measuring the built output.
+    //
+    // The hash approach that `style-src-elem` uses needs the complete set of
+    // inline bodies to be known at build time. A production page serves FIVE
+    // inline `<script>` elements with bodies, counted on leonaqt.com rather than
+    // assumed:
+    //
+    //   1-3. ours — the theme, locale and auth-hint scripts in app/layout.tsx.
+    //        Constant per build (each interpolates only compile-time constants),
+    //        so each is perfectly hashable.
+    //   4.   `(self.__next_f=self.__next_f||[]).push([0])` — Next's bootstrap.
+    //        Constant, also hashable.
+    //   5.   `self.__next_f.push([1,"…"])` — **41,919 bytes on the home page** of
+    //        streamed RSC payload. DIFFERENT ON EVERY PAGE and every build.
+    //
+    // (5) is what makes hashing impossible rather than merely tedious. A hash
+    // list in a static header cannot enumerate a body that varies per page, and
+    // — this is the part that would bite whoever tries — **the moment any hash
+    // appears in this directive, `'unsafe-inline'` is IGNORED**, exactly as the
+    // `style-src-elem` note below describes. So adding hashes for 1-4 does not
+    // tighten the policy: it REFUSES (5), which is React's hydration payload.
+    // The result is not a stricter site, it is a blank one.
+    //
+    // A nonce is the only mechanism that covers a per-page body, and Next does
+    // propagate a middleware nonce to its own inline scripts. It is rejected
+    // here on cost, not on difficulty: a nonce must be unique per response, so
+    // every page becomes dynamically rendered, and a nonce that survives in a
+    // CDN-cached HTML response is reused across visitors — which is not a weaker
+    // nonce, it is no nonce at all. This app is mostly statically prerendered and
+    // has already taken two production incidents from cache behaviour; trading
+    // that for a theoretical gain here is the wrong trade today.
+    //
+    // What makes it a theoretical gain: the one genuinely attacker-influenced
+    // string in this app is model output, and `react-markdown` runs without
+    // `rehype-raw`, so it cannot become markup at all (see
+    // lib/html-injection-surface.test.ts, which fails if that changes). The only
+    // element that writes HTML is `components/math-text.tsx`, and its input is
+    // repo-authored corpus now sanitized by `lib/sanitize-math.ts`. So there is
+    // no known path by which an injected inline script reaches a page for this
+    // directive to stop.
+    //
+    // **Revisit when either of those becomes false** — if `rehype-raw` is added,
+    // or if any user-supplied string starts reaching a raw-markup sink, then a
+    // nonce and dynamic rendering become the right trade and this comment is the
+    // wrong answer.
     "'unsafe-inline'",
     ...(development ? ["'unsafe-eval'"] : []),
     ...toolbar("https://vercel.live"),

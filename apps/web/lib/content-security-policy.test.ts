@@ -288,3 +288,44 @@ test("the hashed stylesheet is the one the 404 page actually renders", () => {
   // self-consistent.
   assert.equal(inlineHash(NOT_FOUND_LOCALE_STYLE), "'sha256-hl9qK6CxELuy3YEmCQFOW8oFkndsA/kDC9kyF0oQVXw='");
 });
+
+/**
+ * `script-src` must never carry a hash alongside `'unsafe-inline'`.
+ *
+ * This is the guard for the decision recorded in `contentSecurityPolicy`'s
+ * `scriptSources` comment, and it exists because the failure mode is invisible.
+ * **`'unsafe-inline'` is ignored in any directive that also carries a hash**, so
+ * adding a `'sha256-…'` here does not tighten the policy incrementally — it
+ * silently switches `'unsafe-inline'` off, and Next's own inline scripts go with
+ * it. A production page serves the RSC hydration payload as an inline
+ * `<script>` whose body is tens of kilobytes and differs per page, so it can
+ * never be on a build-time hash list. The result is not a stricter site, it is a
+ * blank one, and the build stays green.
+ *
+ * Someone will eventually try it — it is the obvious next hardening step, and the
+ * same file demonstrates the technique for `style-src-elem`. This is what tells
+ * them, before production does.
+ */
+test("script-src carries no hash — a hash silently disables 'unsafe-inline' and kills hydration", () => {
+  for (const [label, options] of [
+    ["production", PRODUCTION],
+    ["development", { ...PRODUCTION, development: true }],
+    ["preview", { ...PRODUCTION, vercelToolbar: true }],
+  ] as const) {
+    const directive = contentSecurityPolicy(options)
+      .split(";")
+      .map((one) => one.trim())
+      .find((one) => one.startsWith("script-src "));
+    assert.ok(directive, `${label}: no script-src directive at all`);
+    assert.doesNotMatch(
+      directive,
+      /'sha256-|'sha384-|'sha512-|'nonce-/,
+      `${label}: script-src gained a hash or nonce. That does NOT tighten this ` +
+        `directive — it makes the browser IGNORE 'unsafe-inline', which refuses ` +
+        `Next's per-page RSC hydration script and serves a blank page with a ` +
+        `green build. See the scriptSources comment in content-security-policy.ts ` +
+        `for the measurement and for what would have to change first.`,
+    );
+    assert.match(directive, /'unsafe-inline'/, `${label}: script-src lost 'unsafe-inline'`);
+  }
+});
