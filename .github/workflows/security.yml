@@ -130,14 +130,24 @@ jobs:
           # random and reliable at the same time; it has to be one that is known
           # to be caught.
           #
-          # The halves keep the original property that made this random: neither
-          # `AKIA3ZQ7W9` nor `XK2MTV8B4C` matches `AKIA[0-9A-Z]{16}` on its own
-          # (verified), so no complete secret-shaped literal ever sits in this
-          # committed file for GitHub's push protection, or for a later gitleaks
-          # scan of this very workflow, to trip on. Only the concatenation does.
-          secret_half_a="AKIA3ZQ7W9"
-          secret_half_b="XK2MTV8B4C"
-          secret_value="${secret_half_a}${secret_half_b}"
+          # Split so that no complete secret-shaped literal ever sits in this
+          # committed file for GitHub's push protection, or for a later scan of
+          # this very workflow, to trip on: `AKIA` is a bare vendor prefix and
+          # the body does not match `AKIA[0-9A-Z]{16}` without it. Only the
+          # concatenation does, and it exists only inside the scratch repo.
+          #
+          # The variable names matter as much as the split, and this is the
+          # second attempt at them. Naming the parts `secret_half_a` /
+          # `secret_half_b` put a credential-shaped keyword immediately beside a
+          # token-shaped literal, which is precisely the shape a generic-api-key
+          # rule looks for -- Aikido flagged this file as an exposed secret on
+          # the first revision of this PR. gitleaks did not, which is the useful
+          # part: two scanners disagreeing about the same line is exactly why the
+          # planted value has to be checked against both rather than reasoned
+          # about. Neither line below carries a credential keyword.
+          gate_prefix="AKIA"
+          gate_body="3ZQ7W9XK2MTV8B4C"
+          secret_value="${gate_prefix}${gate_body}"
           printf 'GITLEAKS_SELFTEST_SECRET = "%s"\n' "$secret_value" > "$d/planted.py"
           git -C "$d" add planted.py
           git -C "$d" commit -q -m planted
