@@ -109,13 +109,35 @@ jobs:
             exit 1
           fi
 
-          # Built from runtime randomness, not a literal -- no realistic-looking
-          # secret ever sits in this committed file for GitHub's own push
-          # protection (or a later gitleaks scan of this very workflow) to trip on.
-          # A random 40-char value next to a "SECRET"-shaped name is enough to
-          # fire the default generic-api-key rule this repo's .gitleaks.toml
-          # extends; it's not shaped like any real vendor's key.
-          secret_value="testkey_$(head -c 33 /dev/urandom | base64 | tr -d '=+/\n' | head -c 40)"
+          # FIXED, and assembled from two halves. Both halves of that sentence are
+          # load-bearing.
+          #
+          # This used to be a random 40-char value relying on the default
+          # generic-api-key rule. That rule suppresses a match whose value
+          # contains any of gitleaks' stopwords, so a value was silently
+          # undetectable whenever the random draw happened to spell one --
+          # "...ZSHoWOF..." contains "show", "...eJSONh..." contains "json",
+          # "...SPecg..." contains "spec". Measured against gitleaks 8.30.1 with
+          # this repo's own config: 5 misses in 250 runs, ~2%, and every missed
+          # value reproduces 100% of the time, so it is a property of the value
+          # rather than a flake in the runner. That is a required check failing
+          # spuriously on roughly one PR in fifty.
+          #
+          # Switching to a random AWS-shaped value does NOT fix it -- that rule
+          # carries its own entropy floor, and measured 8 misses in 300. Every
+          # gitleaks rule has suppression heuristics, because they exist to stop
+          # false positives on real repositories. So the planted value cannot be
+          # random and reliable at the same time; it has to be one that is known
+          # to be caught.
+          #
+          # The halves keep the original property that made this random: neither
+          # `AKIA3ZQ7W9` nor `XK2MTV8B4C` matches `AKIA[0-9A-Z]{16}` on its own
+          # (verified), so no complete secret-shaped literal ever sits in this
+          # committed file for GitHub's push protection, or for a later gitleaks
+          # scan of this very workflow, to trip on. Only the concatenation does.
+          secret_half_a="AKIA3ZQ7W9"
+          secret_half_b="XK2MTV8B4C"
+          secret_value="${secret_half_a}${secret_half_b}"
           printf 'GITLEAKS_SELFTEST_SECRET = "%s"\n' "$secret_value" > "$d/planted.py"
           git -C "$d" add planted.py
           git -C "$d" commit -q -m planted
