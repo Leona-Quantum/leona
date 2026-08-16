@@ -248,3 +248,28 @@ def test_live_phase_estimation_resolves_to_latex_not_pdf():
     paper = fetch_paper("2305.04908")
     assert paper.source_kind == "latex", paper.attempts
     assert paper.math.trustworthy
+
+
+def test_abstract_from_api_returns_none_for_a_document_defusedxml_refuses() -> None:
+    """A refusal must look like a failed fetch, not like an exception.
+
+    `DefusedXmlException` is not a subclass of `ParseError`, so the original
+    `except ElementTree.ParseError` did not catch it and a hostile body raised
+    straight out of this function. That matters more than it looks: the abstract
+    is the independent witness `assess_math_integrity` cross-checks the document
+    against, and its contract is that an abstract which could not be fetched
+    returns None so the verdict degrades to `unchecked`. An escaping exception
+    takes the whole retrieval down instead of degrading it.
+    """
+    bomb = """<?xml version="1.0"?>
+<!DOCTYPE feed [
+  <!ENTITY a "AAAAAAAAAA">
+  <!ENTITY b "&a;&a;&a;&a;&a;&a;&a;&a;&a;&a;">
+]>
+<feed xmlns="http://www.w3.org/2005/Atom"><entry><summary>&b;</summary></entry></feed>"""
+    assert abstract_from_api(bomb) is None
+
+    with_dtd = """<?xml version="1.0"?>
+<!DOCTYPE feed SYSTEM "feed.dtd">
+<feed xmlns="http://www.w3.org/2005/Atom"></feed>"""
+    assert abstract_from_api(with_dtd) is None

@@ -6,6 +6,7 @@ from types import SimpleNamespace
 from uuid import uuid4
 
 import pytest
+from defusedxml.common import DefusedXmlException, DTDForbidden
 from majorana_llm import LLMResponse
 
 from majorana_worker import handlers
@@ -318,3 +319,52 @@ async def test_a_timed_out_lookup_still_lets_the_run_plan() -> None:
     assert type_ == "research.completed"
     assert payload["sources"] == []
     assert payload["error"] == "arXiv lookup timed out"
+
+
+def test_parse_atom_entries_refuses_an_entity_bomb() -> None:
+    """A hostile feed must be refused, not expanded.
+
+    This is the whole reason `research.py` parses with defusedxml rather than
+    the stdlib: the expansion happens on the WORKER, the process a user's run is
+    waiting on, so a body like this costs memory and CPU where it hurts most.
+    The stdlib parser expands it happily.
+    """
+    bomb = b"""<?xml version="1.0"?>
+<!DOCTYPE feed [
+  <!ENTITY a "AAAAAAAAAA">
+  <!ENTITY b "&a;&a;&a;&a;&a;&a;&a;&a;&a;&a;">
+  <!ENTITY c "&b;&b;&b;&b;&b;&b;&b;&b;&b;&b;">
+]>
+<feed xmlns="http://www.w3.org/2005/Atom"><entry><title>&c;</title></entry></feed>"""
+    with pytest.raises(DefusedXmlException):
+        parse_atom_entries(bomb)
+
+
+def test_parse_atom_entries_refuses_a_declaration_only_dtd() -> None:
+    """`forbid_dtd=True` is passed explicitly, and this is what proves it.
+
+    defusedxml 0.7.1 defaults `forbid_dtd` to False, so without the explicit
+    argument this document parses fine — which would make the comment above the
+    import claim more than the code does. An arXiv Atom response never carries a
+    DTD, so refusing one costs nothing real.
+    """
+    with_dtd = b"""<?xml version="1.0"?>
+<!DOCTYPE feed SYSTEM "feed.dtd">
+<feed xmlns="http://www.w3.org/2005/Atom"></feed>"""
+    with pytest.raises(DTDForbidden):
+        parse_atom_entries(with_dtd)
+
+
+def test_parse_atom_entries_still_reads_an_ordinary_feed() -> None:
+    """The control. A guard that refuses everything would pass both tests above."""
+    ordinary = b"""<feed xmlns="http://www.w3.org/2005/Atom">
+  <entry>
+    <title>A paper</title>
+    <summary>An abstract.</summary>
+    <id>https://arxiv.org/abs/2401.00001</id>
+  </entry>
+</feed>"""
+    sources = parse_atom_entries(ordinary)
+    assert len(sources) == 1
+    assert sources[0].title == "A paper"
+    assert sources[0].url == "https://arxiv.org/abs/2401.00001"

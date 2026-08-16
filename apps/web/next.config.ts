@@ -83,6 +83,13 @@ const csp = contentSecurityPolicy({
 const nextConfig: NextConfig = {
   // @majorana/ui ships TS/TSX source (vendored components) — Next transpiles it.
   transpilePackages: ["@majorana/ui"],
+  // Next sends `X-Powered-By: Next.js` on every response unless this is off.
+  // It is not a vulnerability by itself — it discloses the framework, which an
+  // attacker can also read from the `/_next/static/...` asset paths in the HTML
+  // — but it names the framework without being asked, on every response, and
+  // turning it off costs nothing. Flagged against the live site by Aikido
+  // 2026-08-16; verified present on leonaqt.com before this line was added.
+  poweredByHeader: false,
   // Two dev servers in one worktree otherwise share `.next` and corrupt each
   // other's build cache, which surfaces as stale-resolve errors that survive a
   // restart. Unset everywhere except a second local server, so CI and Vercel
@@ -174,6 +181,52 @@ const nextConfig: NextConfig = {
           { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
           { key: "Cross-Origin-Opener-Policy", value: "same-origin" },
           { key: "Strict-Transport-Security", value: "max-age=63072000; includeSubDomains" },
+          // Denies the powerful browser features this product never asks for,
+          // so an injected script cannot ask for them either — a prompt that
+          // says "leonaqt.com wants to use your camera" carries this origin's
+          // name, and the CSP above admits `'unsafe-inline'` script by
+          // necessity (see lib/content-security-policy.ts), so "an injected
+          // script" is the threat this actually narrows rather than a
+          // hypothetical one.
+          //
+          // An ALLOWLIST by omission, not a blanket `*=()`. Every feature named
+          // here is denied outright; every feature NOT named keeps whatever the
+          // browser's own default for THAT feature is — which is usually `self`
+          // but is set per feature, not globally, so this deliberately does not
+          // claim to know it. That distinction is the whole reason this is safe
+          // to ship the week of a launch: `clipboard-write` is
+          // deliberately absent because four copy-code buttons depend on it
+          // (repository-entry-view, studio-workspace, artifact-detail,
+          // live-run), and a blanket denial would have broken all four
+          // silently — the write rejects, the button reports nothing, and no
+          // check in this repo submits a form or clicks one.
+          //
+          // `fullscreen` is likewise absent: the Atlas map is the kind of view
+          // that grows a fullscreen control, and denying it pre-emptively would
+          // make that a debugging session rather than a feature.
+          {
+            key: "Permissions-Policy",
+            value: [
+              "accelerometer=()",
+              "autoplay=()",
+              "camera=()",
+              "display-capture=()",
+              "encrypted-media=()",
+              "geolocation=()",
+              "gyroscope=()",
+              "magnetometer=()",
+              "microphone=()",
+              "midi=()",
+              "payment=()",
+              "picture-in-picture=()",
+              "usb=()",
+              "xr-spatial-tracking=()",
+              // Opts this origin out of Topics/FLoC ad-interest inference.
+              // Harmless here and stops the browser inferring interests from
+              // what a visitor reads on the Atlas.
+              "browsing-topics=()",
+            ].join(", "),
+          },
         ],
       },
     ];

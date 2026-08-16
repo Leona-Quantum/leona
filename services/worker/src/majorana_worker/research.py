@@ -16,8 +16,30 @@ import time
 import urllib.error
 import urllib.parse
 import urllib.request
-import xml.etree.ElementTree as ET
 from dataclasses import dataclass
+
+# defusedxml, not `xml.etree.ElementTree`, because what is parsed below is a
+# response from a host on the public internet. Python's stdlib parser has not
+# resolved external entities since 3.7, so classic XXE is already closed here —
+# what is NOT closed is entity expansion (billion laughs) and quadratic blowup,
+# which cost memory and CPU on the WORKER, the process a user's run is waiting
+# on. defusedxml refuses those by forbidding entity declarations.
+#
+# `forbid_dtd` is passed explicitly at the call site and is NOT the default:
+# defusedxml 0.7.1 ships `forbid_dtd=False`, so a declaration-only DTD is
+# accepted unless asked otherwise. An arXiv Atom response carries no DTD, so
+# refusing one costs nothing and closes the gap between what this parser does
+# and what a reader of this comment would assume it does. Raised by CodeRabbit
+# on PR 659, numbered without a hash because `check-raw-hex` reads a
+# three-digit hash-number as a CSS colour.
+#
+# The URL is already constrained to arxiv.org/export.arxiv.org (see
+# `_canonical_abs_url`), so this is defence in depth rather than the only thing
+# standing between a stranger and the parser. It is still worth the one import:
+# the host allowlist decides WHO answers, not WHAT they answer with, and an
+# upstream that starts serving a hostile or merely malformed body is exactly the
+# case a host check cannot see.
+from defusedxml import ElementTree as ET
 
 
 _ARXIV_API = "https://export.arxiv.org/api/query"
@@ -115,7 +137,7 @@ def _canonical_abs_url(raw: str) -> str | None:
 def parse_atom_entries(xml: bytes, *, limit: int = _MAX_RESULTS) -> tuple[ResearchSource, ...]:
     """Parse only the title, abstract, and arXiv abs URL from an API response."""
 
-    root = ET.fromstring(xml)
+    root = ET.fromstring(xml, forbid_dtd=True)
     sources: list[ResearchSource] = []
     for entry in root.findall(f"{{{_ATOM}}}entry"):
         title = " ".join((entry.findtext(f"{{{_ATOM}}}title") or "").split())
