@@ -113,6 +113,40 @@ overrides:
   # Pin the whole tree to 0.18.4 (the version already resolved for the direct dep
   # in apps/web) so both transitive consumers get the patched release.
   katex: 0.18.4
+  # AIKIDO-2026-584205 (LOW): jose cryptographic timing side-channel. Patched at
+  # 6.2.5. The only consumer on the tree is @workos-inc/authkit-nextjs, which
+  # pins jose@^5.10.0 across all published releases (4.3.1, the one we are on,
+  # still carries ^5.10.0), so no parent bump can reach the fix — an override is
+  # the only path. Selector-scoped to the 5.x range so a future authkit-nextjs
+  # that ships jose 6.x or 7.x itself is not silently held back at 6.2.5.
+  #
+  # jose 6 is ESM-only, which is the real compatibility risk here rather than the
+  # timing fix: a CommonJS `require("jose")` under it throws ERR_REQUIRE_ESM.
+  # authkit-nextjs 4.3.1 ships ESM (`"type": "module"`, exports map with an
+  # `import` condition and no `require` one) and imports jose in three places, so
+  # the resolution holds — but that is a claim about a module graph, and a graph
+  # that resolves can still fail to validate a token.
+  #
+  # `apps/web/lib/session-jwt-crypto.test.ts` is the control. Note what it does
+  # NOT test: ai-ops#131 proposed a "seal/unseal" test, and that would have
+  # proved nothing, because the session COOKIE is sealed by `iron-session`, whose
+  # only dependencies are cookie / iron-webcrypto / uncrypto — jose is not among
+  # them. The jose surface is the ACCESS TOKEN: `createRemoteJWKSet` and
+  # `jwtVerify` at session.js:19/419 and `decodeJwt` at ten call sites.
+  #
+  # The load-bearing assertion is the one comparing the jose path authkit
+  # resolves against the one apps/web resolves. `apps/web` carries jose as a
+  # devDependency so the test can import it at all, and with the override removed
+  # the other eight assertions still PASS against that private copy while authkit
+  # silently drops to 5.10.0 — verified by actually removing the line and
+  # re-installing. So the same-copy check is the only thing standing between a
+  # reverted override and a green suite over an open advisory.
+  #
+  # Owner ruled land-now on ai-ops#131, accepting that this synthetic control
+  # rather than a real browser sign-in is what gates it: a preview deployment
+  # cannot hold a production session cookie, because WorkOS redirect URIs are
+  # per-domain.
+  jose@^5.0.0: 6.2.5
   # NOT `minimatch@^5 -> 10`, though that is the tempting way to collapse the
   # two lines above into one. minimatch 10 moved from a callable default export
   # to named exports, and @redocly/openapi-core (the only minimatch@5 consumer
