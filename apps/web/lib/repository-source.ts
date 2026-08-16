@@ -64,6 +64,7 @@ import {
   type RepositoryProfileList,
 } from "./repository/profile.ts";
 import { PUBLIC_REPOSITORY_ENTRIES } from "./public-repository";
+import { chooseRepositoryRecord } from "./catalog-record-choice";
 import type { PublicRepositoryEntry, PublicRepositoryListEntry } from "./repository/types";
 import { reportCallerTrust, withTrustedCallerHeader } from "./trusted-caller";
 import { CATALOG_REVALIDATE_SECONDS } from "./catalog-revalidate";
@@ -196,12 +197,42 @@ export async function getRepositoryEntry(slug: string): Promise<PublicRepository
   if (!isPublicCatalogApiEnabled()) {
     return PUBLIC_REPOSITORY_ENTRIES.find((entry) => entry.slug === slug);
   }
-  const payload = await fetchCatalogPayload(`${API_URL}/v1/catalog/entries/${encodeURIComponent(slug)}`, true);
+  // The list comes along for the ride because it is the only CURRENT statement
+  // of what the catalog publishes. Both are `fetch`es Next memoizes per render,
+  // and the page already awaits this same list for its related-links strip, so
+  // in the render that matters this costs nothing.
+  const [payload, listed] = await Promise.all([
+    fetchCatalogPayload(`${API_URL}/v1/catalog/entries/${encodeURIComponent(slug)}`, true),
+    // Deliberately the RAW list fetch, not getRepositoryListEntries(): that one
+    // substitutes the committed corpus when the API cannot be reached, and a
+    // corpus standing in for the catalog is exactly the thing that must not be
+    // read as the catalog's own statement here. `null` means "no authoritative
+    // listing this render", and the check below then does nothing.
+    fetchCatalogListEntries(),
+  ]);
   // Fall through to the static corpus on a miss so a transient API failure does
   // not 404 a record that genuinely exists; a slug in neither is undefined, and
   // the caller turns that into a real notFound().
   const parsed = payload === null ? null : parseCatalogEntries([payload]).entries[0] ?? null;
   const fallback = PUBLIC_REPOSITORY_ENTRIES.find((entry) => entry.slug === slug);
+  // **A withdrawn record could not stop serving**, because a cached 200 outlives
+  // the record it describes — see catalog-record-choice.ts for the mechanism,
+  // the production measurement, and why the listing is the authority here.
+  const { record, refusedStaleCache } = chooseRepositoryRecord({
+    slug,
+    parsed,
+    fallback,
+    publishedSlugs: listed === null ? null : new Set(listed.map((entry) => entry.slug)),
+  });
+  if (refusedStaleCache) {
+    console.error(
+      `[repository-source] refusing a stale cached record for ${slug}: the per-slug ` +
+        "endpoint served a record but the catalog listing does not contain the slug, " +
+        "so this is a withdrawn record still held in the fetch cache" +
+        (fallback ? ", and the committed corpus copy is being served instead." : "."),
+    );
+    return record;
+  }
   // Logged, like both list paths above, and it is the one that most needed it.
   //
   // A miss HERE is narrower than "the API is down": the service can be perfectly
@@ -222,7 +253,9 @@ export async function getRepositoryEntry(slug: string): Promise<PublicRepository
         "catalog, and this page is now showing the committed corpus instead.",
     );
   }
-  return parsed ?? fallback;
+  // Not `parsed ?? fallback` a second time: that expression now lives in
+  // chooseRepositoryRecord, and having it here too is how the two would drift.
+  return record;
 }
 
 /**
