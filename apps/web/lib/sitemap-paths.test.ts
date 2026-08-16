@@ -4,6 +4,7 @@ import { test } from "node:test";
 import { fileURLToPath } from "node:url";
 import {
   CRAWLER_DISALLOWED_PATHS,
+  MACHINE_READABLE_PATHS,
   PUBLIC_REDIRECT_ALIASES,
   PUBLIC_STATIC_PATHS,
   sitemapPaths,
@@ -80,9 +81,51 @@ test("every top-level app route is published, aliased, or disallowed", () => {
     const path = `/${name}`;
     if (PUBLIC_STATIC_PATHS.some((page) => page === path || page.startsWith(`${path}/`))) return false;
     if (PUBLIC_REDIRECT_ALIASES.includes(path)) return false;
+    // Public, crawlable, and not a page — see MACHINE_READABLE_PATHS.
+    if (MACHINE_READABLE_PATHS.includes(path)) return false;
     return !CRAWLER_DISALLOWED_PATHS.some((prefix) => prefix === path || prefix === `${path}/`);
   });
   assert.deepEqual(unaccounted, [], `route segments in none of the three lists: ${unaccounted.join(", ")}`);
+});
+
+/**
+ * The fourth list is an exemption from the census above, so it needs its own
+ * fence — otherwise "add it to MACHINE_READABLE_PATHS" becomes the way any new
+ * route escapes being classified, which is exactly the failure the census
+ * exists to catch.
+ */
+test("a machine-readable path is genuinely public, and genuinely not a page", () => {
+  assert.ok(MACHINE_READABLE_PATHS.length > 0, "nothing to check");
+  for (const path of MACHINE_READABLE_PATHS) {
+    // Being read is the point, so it must not be blocked.
+    const blocked = CRAWLER_DISALLOWED_PATHS.find(
+      (prefix) => path === prefix || path.startsWith(prefix),
+    );
+    assert.equal(blocked, undefined, `${path} is machine-readable but robots.txt disallows ${blocked}`);
+
+    // It is not a page, so it must not be advertised as one.
+    assert.ok(
+      !sitemapPaths(SURFACE).includes(path),
+      `${path} is in the sitemap; a sitemap lists pages to index, not descriptors`,
+    );
+    assert.ok(
+      !PUBLIC_STATIC_PATHS.includes(path),
+      `${path} is in PUBLIC_STATIC_PATHS, which would publish it in the sitemap`,
+    );
+    assert.ok(
+      !PUBLIC_REDIRECT_ALIASES.includes(path),
+      `${path} cannot be both a machine-readable endpoint and a redirect alias`,
+    );
+
+    // A file extension is what makes these recognisable as not-a-page. If a
+    // bare path ever lands here it is probably an ordinary route that someone
+    // routed around the census rather than classifying.
+    assert.match(
+      path,
+      /^\/[a-z0-9-]+\.[a-z]{2,4}$/,
+      `${path} does not look like a machine-readable file endpoint`,
+    );
+  }
 });
 
 /** The `(app)` group's own pages are URL segments even though its folder is not. */

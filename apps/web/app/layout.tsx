@@ -6,6 +6,7 @@ import { THEME_STORAGE_KEY } from "../lib/theme";
 import { AUTH_HINT_COOKIE, AUTH_HINT_SIGNED_IN } from "../lib/auth-hint";
 import { LEGACY_PUBLIC_LOCALE_COOKIE, PUBLIC_LOCALE_COOKIE } from "../lib/public-locale";
 import { canonicalOrigin } from "../lib/site-origin";
+import { OG_IMAGE, SITE_NAME } from "../lib/public-metadata";
 import "./globals.css";
 
 const themeScript = `(() => {
@@ -92,7 +93,55 @@ export const metadata: Metadata = {
     template: "%s · Leona Quantum",
   },
   description: "Leona Quantum connects public research, private workspaces, and verifiable quantum execution.",
+  // `summary_large_image`, not the `summary` X was inferring. Until
+  // `app/opengraph-image.tsx` existed there was no image to be large, so the
+  // small card was the honest default; now that there is one, a `summary` card
+  // would crop a 1200x630 image into a thumbnail (ai-ops 133).
+  twitter: { card: "summary_large_image" },
+  // The default for every route that does NOT call `canonicalMetadata()` —
+  // the signed-in application, and any page added later that forgets to. A
+  // route which sets its own `openGraph` replaces this wholesale, which is
+  // why `canonicalMetadata()` restates the same image rather than relying on
+  // inheritance.
+  openGraph: { siteName: SITE_NAME, type: "website", images: [OG_IMAGE] },
 };
+
+/**
+ * Organization + WebSite, the two schema.org types a search engine actually
+ * uses here (ai-ops 133, "Missing structured data"). Emitted once in the root
+ * layout so every page carries it, rather than per page where it would drift.
+ *
+ * Deliberately NOT `SoftwareApplication` or an `Offer`: those invite a rich
+ * result quoting a price, and the pricing on this site is early-access and
+ * moving. Structured data is a claim to a crawler, and a stale claim about
+ * price is worse than no claim at all.
+ *
+ * `@id` is the origin, so the two nodes reference one entity rather than
+ * declaring two unrelated things that happen to share a name.
+ */
+function structuredData(origin: string) {
+  return {
+    "@context": "https://schema.org",
+    "@graph": [
+      {
+        "@type": "Organization",
+        "@id": `${origin}/#organization`,
+        name: "Leona Quantum",
+        url: origin,
+        logo: `${origin}/icon.svg`,
+        description:
+          "An AI workspace for generating, running and verifying quantum circuits, and a public atlas of quantum algorithms.",
+      },
+      {
+        "@type": "WebSite",
+        "@id": `${origin}/#website`,
+        name: "Leona Quantum",
+        url: origin,
+        publisher: { "@id": `${origin}/#organization` },
+      },
+    ],
+  };
+}
 
 export default function RootLayout({ children }: { children: ReactNode }) {
   return (
@@ -112,6 +161,16 @@ export default function RootLayout({ children }: { children: ReactNode }) {
         <script dangerouslySetInnerHTML={{ __html: themeScript }} />
         <script dangerouslySetInnerHTML={{ __html: localeScript }} />
         <script dangerouslySetInnerHTML={{ __html: authHintScript }} />
+        {/* A JSON-LD data block, not executable script — browsers never run
+            `application/ld+json`, so this carries none of the risk the three
+            bootstrap scripts above are weighed against. `JSON.stringify` is
+            what escapes it: the content is repo-authored constants today, and
+            building the string by hand is how a future dynamic field would
+            become an injection point. */}
+        <script
+          type="application/ld+json"
+          dangerouslySetInnerHTML={{ __html: JSON.stringify(structuredData(canonicalOrigin())) }}
+        />
       </head>
       <body>
         {children}

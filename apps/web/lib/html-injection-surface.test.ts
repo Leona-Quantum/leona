@@ -48,7 +48,17 @@ const ALLOWED = new Map<string, { sinks: number; reason: string }>([
   // HTML being injected — they are code we wrote, deliberately executed before
   // first paint (theme, locale, and the auth hint from ai-ops issue 114). There
   // is no untrusted input and nothing to sanitize; a sanitizer would delete them.
-  ["app/layout.tsx", { sinks: 3, reason: "inline <script>: our own constants, pre-paint" }],
+  //
+  // The fourth, added for ai-ops 133, is different in kind and worth naming as
+  // such: a `type="application/ld+json"` block carrying the site's structured
+  // data. Browsers do NOT execute `application/ld+json` — it is a data block, so
+  // it carries none of the execution risk the three above are weighed against.
+  // Its content is `JSON.stringify` of an object built from compile-time
+  // constants and `canonicalOrigin()`, and `JSON.stringify` is what escapes it:
+  // building that string by concatenation is how a future dynamic field (a page
+  // title, a record name) would turn a data block into an injection point. If
+  // one is ever added, it must stay inside the stringify.
+  ["app/layout.tsx", { sinks: 4, reason: "3 inline <script>: our own constants, pre-paint; 1 ld+json data block, JSON.stringify'd" }],
   // An inline <style> built from our own locale constant, same reasoning.
   //
   // It is also the ONLY inline <style> element this app serves, and the CSP now
