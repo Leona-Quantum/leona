@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { getMajoranaAuth, getMajoranaSignInUrl, isMajoranaAuthConfigured } from "../../../../lib/auth";
-import { AUTH_HINT_COOKIE, AUTH_HINT_MAX_AGE_SECONDS, AUTH_HINT_SIGNED_IN } from "../../../../lib/auth-hint";
+import { AUTH_HINT_COOKIE, AUTH_HINT_SIGNED_IN, authHintCookieOptions } from "../../../../lib/auth-hint";
 
 /**
  * The client-side half of the Atlas sign-in-status fix (ai-ops#94).
@@ -49,13 +49,7 @@ export async function GET() {
   // from middleware or a page render would instead drop those pages out of the
   // cache entirely, since Vercel will not store a response carrying a cookie.
   if (signedIn) {
-    response.cookies.set(AUTH_HINT_COOKIE, AUTH_HINT_SIGNED_IN, {
-      httpOnly: false, // read by the pre-paint script in `app/layout.tsx`
-      sameSite: "lax",
-      secure: process.env.NODE_ENV === "production",
-      path: "/",
-      maxAge: AUTH_HINT_MAX_AGE_SECONDS,
-    });
+    response.cookies.set(AUTH_HINT_COOKIE, AUTH_HINT_SIGNED_IN, authHintCookieOptions());
   } else {
     // Clearing matters as much as setting: a hint that outlives its session
     // paints "Sign out" at a signed-out reader, which is this bug inverted.

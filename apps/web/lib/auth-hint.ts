@@ -28,12 +28,24 @@
  * ## Where it may be written, and where it may NOT
  *
  * Only from routes that are already uncacheable: `/api/auth/session`
- * (`force-dynamic`, `no-store`) and `/auth/sign-out` (a redirect). It must never
- * be set from `middleware.ts` or from a page render — **Vercel will not store a
- * response carrying `Set-Cookie`**, so writing it there would quietly drop every
- * public page out of the CDN, which is the cost the `chrome="static"` split
- * exists to avoid in the first place. Fixing a flash by disabling the cache
- * would be a straight downgrade.
+ * (`force-dynamic`, `no-store`), `/auth/callback` (a redirect, and never
+ * cacheable — AuthKit stamps `Vary: Cookie` and cache-prevention headers on it
+ * itself) and `/auth/sign-out` (a redirect). It must never be set from
+ * `middleware.ts` or from a page render — **Vercel will not store a response
+ * carrying `Set-Cookie`**, so writing it there would quietly drop every public
+ * page out of the CDN, which is the cost the `chrome="static"` split exists to
+ * avoid in the first place. Fixing a flash by disabling the cache would be a
+ * straight downgrade.
+ *
+ * ## Why the callback writes it too
+ *
+ * `/api/auth/session` can only run after a page has hydrated, so it is always
+ * one page too late for the page the reader is looking at. That was the single
+ * case left open when this shipped: sign in, and the FIRST public page you land
+ * on still corrects itself, because the hint is written by the fetch that page
+ * makes rather than by the sign-in that preceded it. `/auth/callback` is the
+ * one place that knows the session exists before any page renders, so writing
+ * it there closes the gap at the source (owner: "close that last case").
  *
  * ## What it is not
  *
@@ -57,3 +69,32 @@ export const AUTH_HINT_SIGNED_IN = "1";
  * every static page a reader opens.
  */
 export const AUTH_HINT_MAX_AGE_SECONDS = 60 * 60 * 24 * 30;
+
+/**
+ * The cookie options both writers use, so the two cannot drift apart.
+ *
+ * Two routes now set this cookie — `/api/auth/session` and `/auth/callback` —
+ * and a hint written with different attributes by one of them is not the same
+ * cookie to the browser. A `path` mismatch in particular yields TWO `mj_auth`
+ * cookies, at which point which one the pre-paint script reads depends on
+ * ordering rather than on the truth. That is the failure this function exists
+ * to make impossible; the test asserts both call sites go through it rather
+ * than spelling the attributes out.
+ *
+ * A function and not a frozen object because of `secure`: as a module-level
+ * constant it would freeze `NODE_ENV` at import, which is the same value in
+ * practice but silently wrong the moment anything evaluates it earlier.
+ *
+ * `httpOnly: false` is the whole point and not an oversight — the only consumer
+ * is an inline script in `app/layout.tsx` that must read it before first paint,
+ * and this cookie authorises nothing (see the module header).
+ */
+export function authHintCookieOptions() {
+  return {
+    httpOnly: false, // read by the pre-paint script in `app/layout.tsx`
+    sameSite: "lax",
+    secure: process.env.NODE_ENV === "production",
+    path: "/",
+    maxAge: AUTH_HINT_MAX_AGE_SECONDS,
+  } as const;
+}
