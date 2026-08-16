@@ -42,7 +42,7 @@
  * is mandatory rather than nice to have.
  */
 import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
-import { dirname, join, relative, resolve } from "node:path";
+import { dirname, join, relative, resolve, isAbsolute } from "node:path";
 import { fileURLToPath } from "node:url";
 
 /**
@@ -147,6 +147,8 @@ function walkFiles(dir, out = []) {
   for (const entry of readdirSync(dir, { withFileTypes: true })) {
     if (entry.name === "node_modules" || entry.name.startsWith(".")) continue;
     const full = join(dir, entry.name);
+    const rel = relative(dir, full);
+    if (rel.startsWith('..') || isAbsolute(rel)) continue;
     if (entry.isDirectory()) walkFiles(full, out);
     else out.push(full);
   }
@@ -246,7 +248,13 @@ export function traceClosure(entryFiles, webDir) {
  * stale list here would read as "checked" while covering nothing.
  */
 export function personalizedRoutes(webDir) {
-  const appDir = join(webDir, "app");
+  const base = resolve(webDir);
+  const target = resolve(base, "app");
+  const rel = relative(base, target);
+  if (rel.startsWith("..") || isAbsolute(rel)) {
+    throw new Error("Invalid path");
+  }
+  const appDir = target;
   const all = walkFiles(appDir);
   const routes = [];
   const unresolved = [];
@@ -348,12 +356,20 @@ export function forbiddenPrerendered(manifest, forbidden) {
 }
 
 function readManifest(dist) {
-  const path = join(dist, "prerender-manifest.json");
+  const base = resolve('.');
+  const target = resolve(base, dist, "prerender-manifest.json");
+  const rel = relative(base, target);
+  if (rel.startsWith('..') || isAbsolute(rel)) {
+    console.error(`invalid path.`);
+    console.error("Run `pnpm --filter @majorana/web build` first — a missing manifest is");
+    console.error("not an empty one, and reporting it clean would be the failure this guards.");
+    process.exit(1);
+  }
   let raw;
   try {
-    raw = readFileSync(path, "utf8");
+    raw = readFileSync(target, "utf8");
   } catch {
-    console.error(`no prerender manifest at ${path}.`);
+    console.error(`no prerender manifest at ${target}.`);
     console.error("Run `pnpm --filter @majorana/web build` first — a missing manifest is");
     console.error("not an empty one, and reporting it clean would be the failure this guards.");
     process.exit(1);
@@ -361,7 +377,7 @@ function readManifest(dist) {
   try {
     return JSON.parse(raw);
   } catch (error) {
-    console.error(`prerender manifest at ${path} is not valid JSON: ${error.message}`);
+    console.error(`prerender manifest at ${target} is not valid JSON: ${error.message}`);
     process.exit(1);
   }
 }
