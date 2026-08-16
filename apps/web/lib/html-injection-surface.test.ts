@@ -35,24 +35,30 @@ import { dirname, join, relative } from "node:path";
 const webRoot = dirname(dirname(fileURLToPath(import.meta.url)));
 
 /**
- * Every site allowed to write HTML, with what it writes.
+ * Every site allowed to write HTML, with HOW MANY sinks it may contain and why.
  *
- * The test is the ALLOWLIST, not a count: a new entry here is a deliberate act
- * with a reviewer attached, and a new site NOT here fails.
+ * The count is the point, not decoration. A file-level allowlist would permit
+ * every FUTURE sink in an already-allowed file — a second
+ * `dangerouslySetInnerHTML` dropped into `app/layout.tsx` would inherit the
+ * first one's permission and never be looked at. Raised by CodeRabbit on
+ * PR 671, and it was right: that is a guard that does not guard.
  */
-const ALLOWED = new Map<string, string>([
+const ALLOWED = new Map<string, { sinks: number; reason: string }>([
   // Three inline <script> tags carrying our own constant source. They are not
   // HTML being injected — they are code we wrote, deliberately executed before
   // first paint (theme, locale, and the auth hint from ai-ops issue 114). There
   // is no untrusted input and nothing to sanitize; a sanitizer would delete them.
-  ["app/layout.tsx", "inline <script>: our own constants, pre-paint"],
+  ["app/layout.tsx", { sinks: 3, reason: "inline <script>: our own constants, pre-paint" }],
   // An inline <style> built from our own locale constant, same reasoning.
-  ["app/not-found.tsx", "inline <style>: our own constant"],
+  ["app/not-found.tsx", { sinks: 1, reason: "inline <style>: our own constant" }],
   // KaTeX's own output, from corpus prose WE author (see lib/math-text.ts).
   // No visitor can reach this input, and `throwOnError: false` renders an error
   // node rather than doing anything with malformed source.
-  ["components/math-text.tsx", "katex.renderToString on authored corpus"],
+  ["components/math-text.tsx", { sinks: 1, reason: "katex.renderToString on authored corpus" }],
 ]);
+
+/** Both ways a string becomes markup. Counted per occurrence, not per file. */
+const SINK = /dangerouslySetInnerHTML|\.innerHTML\s*=/g;
 
 /**
  * Walk the app for source files, tolerating entries that vanish mid-walk.
@@ -80,7 +86,9 @@ function sourceFiles(dir: string, out: string[] = []): string[] {
     const full = join(dir, entry);
     try {
       if (statSync(full).isDirectory()) sourceFiles(full, out);
-      else if (/\.tsx?$/.test(entry) && !/\.test\.tsx?$/.test(entry)) out.push(full);
+      // All four extensions, not just TypeScript: a sink in a .js or .jsx file
+      // would otherwise walk straight past this control (CodeRabbit, PR 671).
+      else if (/\.[jt]sx?$/.test(entry) && !/\.test\.[jt]sx?$/.test(entry)) out.push(full);
     } catch {
       continue;
     }
@@ -89,15 +97,25 @@ function sourceFiles(dir: string, out: string[] = []): string[] {
 }
 
 test("every place that writes HTML is on the allowlist, with a reason", () => {
-  const found = new Set<string>();
+  const found = new Map<string, number>();
   for (const file of sourceFiles(webRoot)) {
-    const source = readFileSync(file, "utf8");
-    if (/dangerouslySetInnerHTML|\.innerHTML\s*=/.test(source)) {
-      found.add(relative(webRoot, file));
+    let source: string;
+    try {
+      source = readFileSync(file, "utf8");
+    } catch (error) {
+      // ENOENT only — the file vanished between the walk and the read, which a
+      // concurrent build does. Anything else (a permission error, an unreadable
+      // mount) would SILENTLY drop a file from the scan, so it is rethrown:
+      // losing coverage without saying so is the one outcome a guard must not
+      // have. Raised by CodeRabbit on PR 671.
+      if ((error as NodeJS.ErrnoException)?.code === "ENOENT") continue;
+      throw error;
     }
+    const count = source.match(SINK)?.length ?? 0;
+    if (count > 0) found.set(relative(webRoot, file), count);
   }
 
-  const unexpected = [...found].filter((f) => !ALLOWED.has(f));
+  const unexpected = [...found.keys()].filter((f) => !ALLOWED.has(f));
   assert.deepEqual(
     unexpected,
     [],
@@ -112,6 +130,18 @@ test("every place that writes HTML is on the allowlist, with a reason", () => {
   // without being looked at.
   const stale = [...ALLOWED.keys()].filter((f) => !found.has(f));
   assert.deepEqual(stale, [], `allowlist entries no longer needed: ${stale.join(", ")}`);
+
+  // And the counts. This is what stops a new sink inheriting an existing file's
+  // permission.
+  for (const [file, { sinks }] of ALLOWED) {
+    assert.equal(
+      found.get(file),
+      sinks,
+      `${file} now has ${found.get(file)} HTML-writing site(s), not ${sinks}. ` +
+        "Every one needs its own reason — update the count here only after " +
+        "checking what the new one writes and where that string comes from.",
+    );
+  }
 });
 
 test("markdown is rendered without rehype-raw, so model output cannot become markup", () => {
