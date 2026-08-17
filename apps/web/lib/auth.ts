@@ -17,6 +17,12 @@ const LOCAL_DEV_AUTH: UserInfo = {
     email: "local-dev@majorana.test",
     emailVerified: true,
     profilePictureUrl: null,
+    // The SDK doesn't derive `name` from firstName/lastName — it deserializes
+    // whatever the API sent verbatim (`user.name ?? null`). A real WorkOS user
+    // with both names set carries a matching `name`, so mirror that here rather
+    // than pass `null`, which is what the API sends only for the email-only
+    // sign-ups this stub isn't modeling.
+    name: "Local developer",
     firstName: "Local",
     lastName: "developer",
     lastSignInAt: null,
