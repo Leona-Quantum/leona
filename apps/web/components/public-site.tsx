@@ -72,7 +72,14 @@ export async function PublicSite({
     // header's call-to-action says. Calling it for a page that renders no header
     // would put a WorkOS round trip in front of a public, cacheable figure for
     // no output at all.
-    return <main className={["mj-public-site", "mj-public-site--bare", className].filter(Boolean).join(" ")}>{children}</main>;
+    //
+    // `lang={resolvedLocale}` — see the comment on the other `<main>` below for
+    // why it lives here rather than on `<html>`.
+    return (
+      <main lang={resolvedLocale} className={["mj-public-site", "mj-public-site--bare", className].filter(Boolean).join(" ")}>
+        {children}
+      </main>
+    );
   }
   const copy = PUBLIC_SHELL_COPY[resolvedLocale];
   const publicNav = [
@@ -108,7 +115,26 @@ export async function PublicSite({
       : { href: "/contact", label: copy.actions.talk };
 
   return (
-    <main className={["mj-public-site", className].filter(Boolean).join(" ")}>
+    // `lang={resolvedLocale}`, not on `<html>` — `<html>` is declared in
+    // `app/layout.tsx`, which sits ABOVE every route in the app, including the
+    // ones this component never renders under (`/run`, `/account`, …). Next
+    // only gives a layout the params for segments from the root down to
+    // itself, so the root layout can never see `params.locale` from `[locale]`
+    // below it — and there is no `lang` field on the Metadata API either
+    // (checked: `next/dist/lib/metadata/types/metadata-interface.d.ts` has
+    // none). Moving `<html>` itself to vary by locale would mean making
+    // `app/[locale]/layout.tsx` the root layout, which `app/layout.tsx`
+    // already documents as "a move of every route in the app" — a real,
+    // larger decision, not this fix.
+    //
+    // `<main>` is the next best thing and a legitimate one: WCAG technique
+    // H58 explicitly allows a `lang` change on any containing element, not
+    // only `<html>`, and every visitor-facing element this component renders
+    // — header, nav, the page body, footer — sits inside this one tag. It
+    // costs nothing new: `resolvedLocale` above is already computed from
+    // `params.locale` for every `[locale]` page (never a cookie there), the
+    // same source the page body and, since PR 710, the page metadata read.
+    <main lang={resolvedLocale} className={["mj-public-site", className].filter(Boolean).join(" ")}>
       <div className="mj-public-frame">
         <header className="mj-public-header">
           <a className="mj-public-brand" href="/" aria-label="Leona Quantum home" title="Leona Quantum home">
