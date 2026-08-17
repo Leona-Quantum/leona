@@ -26,9 +26,15 @@ down because each one looks reasonable until it is tried:
 
 So `LIMITED_PATH_PREFIXES` decides, and on those paths **every** caller is
 metered. The cost is that a signed-in reader on a shared address is metered too;
-at 240/min on a public read surface, an office would have to sustain four
-catalog reads a second between them to notice. That is the right trade against
-a control that any client can opt out of.
+at `DEFAULT_ANON_LIMIT` an office would have to sustain that many catalog reads
+a minute between them to notice. That is the right trade against a control that
+any client can opt out of.
+
+(This paragraph named a figure — 240/min, "four reads a second" — and kept
+naming it after `DEFAULT_ANON_LIMIT` was raised to 1200, so for the whole of
+that time the prose under-stated the real ceiling by 5x while reading as though
+it had been checked. The constant is named rather than quoted now, because the
+next change to it will not come back to edit this sentence either.)
 
 Everywhere else is bounded by the gate that knows whose request it is — the tier
 allowance in `tiers.py`, reserved under the account's own row lock.
