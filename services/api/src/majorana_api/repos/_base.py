@@ -4,6 +4,8 @@ import datetime as dt
 
 from majorana_contracts import Scope
 from majorana_contracts.enums import Role
+from sqlalchemy import text
+from sqlalchemy.ext.asyncio import AsyncSession
 
 WRITE_ROLES = frozenset({Role.OWNER, Role.ADMIN, Role.MEMBER})
 ADMIN_ROLES = frozenset({Role.OWNER, Role.ADMIN})
@@ -67,3 +69,36 @@ def require_owner(scope: Scope) -> None:
     """
     if scope.role != Role.OWNER:
         raise AuthzError(f"role {scope.role} is not the workspace owner")
+
+
+async def set_rls_context(session: AsyncSession, scope: Scope, *, enforce: bool) -> None:
+    """Arm the RLS GUCs for the rest of this transaction (ai-ops#143;
+    docs/adr/0028-rls-defense-in-depth.md; db/migrations/versions/0053).
+
+    The one place the raw `text()`/`session.execute()` this needs is allowed to
+    live: `scripts/check_raw_queries.py` only exempts the repository layer plus
+    `db.py`/`orm.py`, so `auth/deps.py` — which is where this actually needs to
+    be CALLED, once, right after a `Scope` is derived — imports this function
+    instead of touching SQLAlchemy itself. Keeping the call site in `auth/deps.py`
+    and the SQL in here is deliberate, not a compromise: "does this code path
+    enforce RLS" is still answered by "does it call `get_scope`", and the raw
+    query stays inside the layer the authz invariant already trusts.
+
+    `enforce=False` (the default everywhere until `Settings.rls_enforced` is
+    flipped — see that field's docstring) is a genuine no-op: nothing is
+    executed, not even a `set_config` clearing the GUC to off, so a caller that
+    never reaches this function and a caller that reaches it with `enforce=False`
+    are indistinguishable to Postgres. `set_config(..., true)` is `SET LOCAL`'s
+    parameterizable form — transaction-scoped, gone the moment this request's
+    transaction ends, and never built by string-formatting `scope.workspace_id`
+    into SQL.
+    """
+    if not enforce:
+        return
+    await session.execute(
+        text(
+            "select set_config('majorana.rls_enforce', 'on', true), "
+            "set_config('majorana.workspace_id', :workspace_id, true)"
+        ),
+        {"workspace_id": str(scope.workspace_id)},
+    )

@@ -133,11 +133,13 @@ def test_no_route_accepts_a_caller_supplied_scope():
 
 
 def test_get_scope_reads_no_request_input():
-    """The dependency takes an identity and a session. Not a Request, not a
-    header, not a query parameter — so there is no value a caller can send that
-    changes which workspace their request acts in."""
+    """The dependency takes an identity, a session, and server-side settings
+    (ai-ops#143: `settings` arms the RLS GUCs via `_set_rls_context`, which
+    reads `Settings.rls_enforced` — process configuration, not a Request, not
+    a header, not a query parameter). So there is still no value a caller can
+    send that changes which workspace their request acts in."""
     params = inspect.signature(deps.get_scope).parameters
-    assert set(params) == {"identity", "session"}
+    assert set(params) == {"identity", "session", "settings"}
 
 
 def test_switch_refuses_extra_fields():

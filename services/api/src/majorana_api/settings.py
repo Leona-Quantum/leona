@@ -190,6 +190,19 @@ class Settings:
     #: makes it unbounded. See `DEFAULT_TRUSTED_LIMIT` for what this bound is
     #: actually protecting against, which is our own renderer looping.
     trusted_rate_limit_per_minute: int = DEFAULT_TRUSTED_LIMIT
+    #: RLS defense-in-depth (ai-ops#143; docs/adr/0028-rls-defense-in-depth.md).
+    #: `False` — the default everywhere, including production for this PR — means
+    #: `auth/deps.py::get_scope` never sets the `majorana.rls_enforce` GUC, which
+    #: is the ONE thing that makes db/migrations/versions/0053's policies do
+    #: anything: every policy is written `... OR workspace_id = current_setting(...)`
+    #: and that first branch is permissive whenever the GUC is not exactly `'on'`.
+    #: So this flag does not gate whether RLS is *installed* — 0053 installs it
+    #: unconditionally, on every environment, the moment it runs — it gates
+    #: whether the request path *engages* it. Flipping it to `True` is a
+    #: production change with real blast radius (a forgotten GUC anywhere in the
+    #: request path now returns zero rows instead of the row), so it is a
+    #: deliberate follow-up, not part of this PR.
+    rls_enforced: bool = False
 
     def __post_init__(self) -> None:
         if self.local_dev_auth and self.environment != "development":
@@ -274,4 +287,6 @@ class Settings:
             trusted_rate_limit_per_minute=_int_env(
                 "TRUSTED_RATE_LIMIT_PER_MINUTE", DEFAULT_TRUSTED_LIMIT
             ),
+            rls_enforced=os.environ.get("MAJORANA_RLS_ENFORCED", "").strip().lower()
+            in {"1", "true", "yes"},
         )
