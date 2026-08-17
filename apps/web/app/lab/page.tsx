@@ -1,7 +1,7 @@
 import type { CSSProperties } from "react";
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
-import { BrandMark } from "../../components/icons";
+import { LeonaWordmark } from "../../components/leona-wordmark";
 import { isLabDirectionEnabled } from "../../lib/lab-direction";
 import { getPublicLocale } from "../../lib/public-locale-server";
 import { LAB_COPY } from "./lab-copy";
@@ -41,9 +41,8 @@ export default async function LabPage() {
     <>
       <nav className="lab-nav">
         <div className="lab-shell lab-nav-inner">
-          <a className="lab-nav-brand" href="/lab">
-            <BrandMark size={22} />
-            <span>Leona Quantum</span>
+          <a className="lab-nav-brand" href="/lab" aria-label="Leona Quantum lab">
+            <LeonaWordmark className="lq-wordmark--lab" />
           </a>
           <div className="lab-nav-links">
             <a href="/repository">{copy.nav.atlas}</a>

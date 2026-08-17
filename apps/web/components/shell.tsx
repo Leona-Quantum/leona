@@ -7,7 +7,6 @@ import { useEffect, useRef, useState } from "react";
 import { AppShell, BRAND_NAME, NAV_SURFACES, navSurfaceLabel } from "@majorana/ui";
 import {
   ArchiveIcon,
-  BrandMark,
   ChevronIcon,
   FolderIcon,
   LibraryIcon,
@@ -18,6 +17,7 @@ import {
   StudioIcon,
   TrashIcon,
 } from "./icons";
+import { LeonaWordmark } from "./leona-wordmark";
 import {
   CHAT_FOLDERS_EVENT,
   CHAT_HISTORY_EVENT,
@@ -899,8 +899,7 @@ function WorkspaceSidebar({
     <div className="mj-sidebar-inner">
       <div className="mj-sidebar-brand-row">
         <a href="/" className="mj-sidebar-brand" aria-label={BRAND_NAME}>
-          <BrandMark size={20} />
-          <span className="mj-sidebar-copy">{BRAND_NAME}</span>
+          <LeonaWordmark className="lq-wordmark--sidebar mj-sidebar-copy" />
         </a>
         <button className="mj-sidebar-more" type="button" aria-label={copy.workspaceOptions} title={copy.workspaceOptions}>
           <MoreIcon size={16} />
@@ -1964,4 +1963,3 @@ function chatFromRun(value: unknown): ChatSummary[] {
     folderId: typeof run.folder_id === "string" ? run.folder_id : undefined,
   }];
 }
-

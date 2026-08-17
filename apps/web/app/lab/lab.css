@@ -104,9 +104,6 @@
   text-decoration: none;
   white-space: nowrap;
 }
-.lab-nav-brand svg {
-  color: var(--lab-signal);
-}
 .lab-nav-links {
   display: flex;
   gap: 28px;

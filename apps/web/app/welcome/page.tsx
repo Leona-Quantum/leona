@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import { redirect } from "next/navigation";
-import { BrandMark } from "../../components/icons";
+import { LeonaWordmark } from "../../components/leona-wordmark";
 import { PublicSite } from "../../components/public-site";
 import { hasCompleteProfileName } from "../../lib/account-profile";
 import { getMajoranaAuth } from "../../lib/auth";
@@ -57,7 +57,7 @@ export default async function WelcomePage({
       <section className="mj-auth-shell">
         <div className="mj-auth-card">
           <div className="mj-auth-card-head">
-            <BrandMark size={36} />
+            <LeonaWordmark className="lq-wordmark--welcome" />
             <h1>{copy.title}</h1>
             <p>{copy.lede}</p>
           </div>

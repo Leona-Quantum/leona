@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import { CircuitBand } from "../../components/circuit-band";
-import { BrandMark } from "../../components/icons";
+import { LeonaWordmark } from "../../components/leona-wordmark";
 import { LandingPrompt } from "../../components/landing-prompt";
 import { LeoConstellation } from "../../components/leo-constellation";
 import { PublicSite } from "../../components/public-site";
@@ -86,7 +86,7 @@ export default async function Home({ params }: { params: Promise<{ locale: strin
             <div className="mj-company-hero-orbit" aria-hidden="true">
               <span className="mj-company-orbit-ring mj-company-orbit-ring--one" />
               <span className="mj-company-orbit-ring mj-company-orbit-ring--two" />
-              <BrandMark size={72} />
+              <LeonaWordmark className="lq-wordmark--pipeline" />
               <span className="mj-company-orbit-dot mj-company-orbit-dot--one" />
               <span className="mj-company-orbit-dot mj-company-orbit-dot--two" />
             </div>
