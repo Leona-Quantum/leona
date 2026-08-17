@@ -29,6 +29,17 @@ const WORKSPACE = {
   run_count: 12,
 };
 
+// AccountSettings renders WorkspaceSharing as a child, and THAT component's
+// own mount effect fetches /api/workspaces — a request none of these tests
+// stubbed. The stub's default `throw` on an unhandled request made that
+// unhandled fetch reject, which WorkspaceSharing's loadWorkspaces() swallows
+// silently ("the panel simply does not list; the rest of Settings still
+// works") — so every test here ran the nested panel in an artificial
+// failed-load state that real users never see, rather than the page's real
+// loaded state. Stubbing this is what makes the rendered page match
+// production.
+const WORKSPACES_LIST = [{ id: "ws_1", name: "Ada's workspace", role: "owner", is_active: true, is_personal: true }];
+
 function stubIdentity(overrides: { me?: Partial<typeof ME> } = {}) {
   return stubFetch((request) => {
     if (request.method === "GET" && request.url === "/api/me") {
@@ -36,6 +47,9 @@ function stubIdentity(overrides: { me?: Partial<typeof ME> } = {}) {
     }
     if (request.method === "GET" && request.url === "/api/workspace") {
       return { status: 200, body: WORKSPACE };
+    }
+    if (request.method === "GET" && request.url === "/api/workspaces") {
+      return { status: 200, body: WORKSPACES_LIST };
     }
     // saveProfile() PATCHes /api/me with the new display_name and expects the
     // full Me record back — echo the change, the way the real route does.

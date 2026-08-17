@@ -73,9 +73,27 @@ test("qpu credentials: IBM rejecting the key shows the rejection sentence and th
   const fetchStub = stubFetch((request) => {
     if (request.method === "GET" && request.url === "/api/qpu/credentials") return { status: 200, body: NOT_CONNECTED };
     if (request.method === "PUT" && request.url === "/api/qpu/credentials") {
+      // The shape production ACTUALLY returns, not FastAPI's default envelope.
+      // `app.py`'s HTTPException handler unpacks a typed refusal through
+      // `_problem()`, which is RFC 9457 problem+json: the refusal's `error`
+      // becomes top-level `title` and every other key — `reason` here — becomes
+      // a sibling of it. The BFF forwards `upstream.body` verbatim, so this is
+      // byte-for-byte what the component receives.
+      //
+      // This test previously stubbed `{ detail: { reason, error } }` and passed
+      // against a contract the API has never emitted, while the real rejection
+      // sentence was silently dropped on production. Asserting the wrong shape
+      // is the exact failure this suite exists to catch, so the shape is
+      // spelled out here rather than abbreviated.
       return {
         status: 400,
-        body: { detail: { reason: "credential_rejected", error: "Invalid API key" } },
+        body: {
+          type: "about:blank",
+          title: "Invalid API key",
+          status: 400,
+          code: "http_error",
+          reason: "credential_rejected",
+        },
       };
     }
     throw new Error(`unexpected: ${request.method} ${request.url}`);
@@ -96,6 +114,25 @@ test("qpu credentials: IBM rejecting the key shows the rejection sentence and th
         ),
       ),
     );
+    // IBM's own sentence reaches the screen. Until this PR it did not, and the
+    // reason is worth keeping: `refusalReason`/`providerSentence` read only
+    // `payload.detail.*`, which is FastAPI's DEFAULT envelope — and this API
+    // overrides that default with RFC 9457 problem+json, where the refusal's
+    // `error` is promoted to top-level `title` and `reason` sits beside it. The
+    // real payload has no `detail` key at all, so both readers returned null,
+    // `describeFailure()` fell through to its generic `status === 400` branch
+    // (which is why nothing looked broken) and `outcome.detail` stayed
+    // undefined, silently dropping the only text that says WHY the key was
+    // refused.
+    //
+    // An earlier draft of this test asserted that ABSENCE, on the reasoning
+    // that a test-coverage PR should pin shipping behaviour and leave the
+    // product fix to someone else. That was the wrong call here: this suite's
+    // whole claim is fidelity to the production contract, and writing the
+    // defect down as expected would have made it harder to find, not easier.
+    // The fix is two lines in `qpu-credentials.tsx`, and it was verified the
+    // only way that means anything — reverting the two readers turns this
+    // assertion red (26/27) and restoring them turns it green (27/27).
     assert.ok(getByText("IBM said: Invalid API key"));
     // A rejected key stays in the field for correction — only the storage
     // failure clears it (see connect() in qpu-credentials.tsx).
