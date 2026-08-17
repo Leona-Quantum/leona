@@ -103,7 +103,17 @@ try {
     ["--import", join(here, "preload.mjs"), "--test", ...bundlePaths],
     { cwd: join(here, "..", ".."), stdio: "inherit" },
   );
-  const code = await new Promise((resolve) => child.on("exit", resolve));
+  // Both `exit` and `error`, because only one of them fires. If `spawn` fails
+  // before the child ever starts — a bad `process.execPath`, an exhausted
+  // process table — Node emits `error` and never emits `exit`, so awaiting
+  // `exit` alone leaves this promise pending forever and `pnpm test:forms`
+  // hangs with no output instead of failing. A test runner that hangs on a
+  // launch failure is worse than one that crashes: CI reports a timeout, which
+  // reads as a slow test rather than a broken harness.
+  const code = await new Promise((resolve, reject) => {
+    child.once("error", reject);
+    child.once("exit", resolve);
+  });
   // `process.exitCode =`, never `process.exit()`: the latter terminates the
   // process immediately, synchronously, WITHOUT unwinding through `finally`
   // — the bundle cleanup below would never run, and .form-test-bundles/

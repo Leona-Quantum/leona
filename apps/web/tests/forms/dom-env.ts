@@ -34,6 +34,16 @@ export function waitForNavigationAttempt(timeoutMs = 1000): Promise<void> {
   if (!virtualConsole) throw new Error("preload.mjs did not run — was this file started via run.mjs?");
   return new Promise((resolve, reject) => {
     const onError = (err: Error & { type?: string }) => {
+      // `"not-implemented"`, hyphenated, is the correct string and must not be
+      // "fixed" to `"not implemented"`. A scanner reported the opposite and it
+      // is wrong: jsdom sets it at
+      // `jsdom/lib/jsdom/browser/not-implemented.js` — `error.type =
+      // "not-implemented";` — which was read directly rather than inferred.
+      // The human-readable MESSAGE is "Not implemented: navigation ..." with a
+      // space, which is where the confusion comes from; the message is matched
+      // separately below, case-insensitively. The positive test corroborates
+      // it: if this comparison never matched, `await navigated` would reject on
+      // its timeout and that test would fail rather than pass.
       if (err.type === "not-implemented" && /navigation/i.test(err.message)) {
         virtualConsole.removeListener("jsdomError", onError);
         clearTimeout(timer);
