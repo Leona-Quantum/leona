@@ -408,6 +408,15 @@ jobs:
           node scripts/check-static-routes.mjs --self-test
           node scripts/check-static-routes.mjs --dist apps/web/.next
 
+      # `readback-probe.mjs` has carried a `--self-test` since it was written and
+      # NOTHING has ever run it — no package.json script, no turbo task, no
+      # workflow step. A self-test nobody invokes is a mechanism nobody armed,
+      # and this one guards the only `--state` path in the repo that WRITES.
+      # Pure path and argument arithmetic, so it needs no build output and no
+      # network.
+      - name: read-back probe self-test
+        run: node scripts/readback-probe.mjs --self-test
+
   # AGENTS.md hard rule 1 — migrations, contracts, sandbox, workflows and auth are
   # "never merged on subagent/Codex authority". That rule names `.github/CODEOWNERS`
   # as its mechanism, and CODEOWNERS was doing nothing: GitHub honours it only under

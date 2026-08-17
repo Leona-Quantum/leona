@@ -78,6 +78,8 @@ import { tmpdir } from "node:os";
 import { dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
+import { insideRepoSelfTest, resolveInsideRepo } from "./lib/inside-repo.mjs";
+
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 
 /**
@@ -272,6 +274,12 @@ export function selfTest() {
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
+  // The shared containment rule, folded into the self-test this script already
+  // runs in CI. Kept here rather than in a test file of its own because nothing
+  // in this repo discovers `scripts/*.mjs` tests — a self-test that no step
+  // invokes is the mechanism nobody armed.
+  failures.push(...insideRepoSelfTest(ROOT));
+
   return failures;
 }
 
@@ -291,7 +299,18 @@ function main() {
   }
 
   const distFlag = argv.indexOf("--dist");
-  const dist = resolve(ROOT, distFlag === -1 ? "apps/web/.next" : argv[distFlag + 1]);
+  // Contained before it is used. `resolve(ROOT, value)` reads like it confines
+  // the result and does not — `../` resolves cleanly elsewhere and an absolute
+  // value discards ROOT outright. Same shape #681 fixed in
+  // check-paper-register.mjs; see scripts/lib/inside-repo.mjs for why this is a
+  // tidy pass rather than an incident.
+  const requested = distFlag === -1 ? "apps/web/.next" : argv[distFlag + 1];
+  const contained = resolveInsideRepo(ROOT, requested);
+  if (contained.error) {
+    console.error(`--dist ${contained.error}`);
+    process.exit(1);
+  }
+  const dist = contained.path;
   if (!existsSync(dist)) {
     console.error(
       `no build output at ${dist}. Run \`pnpm --filter @majorana/web build\` first — this check ` +
