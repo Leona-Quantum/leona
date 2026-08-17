@@ -26,6 +26,7 @@ from .rate_limit import (
     EXEMPT_PATHS,
     TRUSTED_CALLER_HEADER,
     MAX_REQUEST_BYTES,
+    AuthFailureThrottle,
     BodyTooLarge,
     FixedWindowLimiter,
     client_address,
@@ -89,6 +90,17 @@ def _too_large() -> JSONResponse:
         f"Request body exceeds the {MAX_REQUEST_BYTES // 1024} KB limit.",
         "request_too_large",
         extra={"reason": "request_too_large", "limit_bytes": MAX_REQUEST_BYTES},
+    )
+
+
+def _auth_failures_throttled(retry_after_s: int) -> JSONResponse:
+    return _problem(
+        429,
+        "Too many failed authentication attempts from this address. Wait and "
+        "try again, or sign in again if your session has expired.",
+        "rate_limited",
+        headers={"Retry-After": str(retry_after_s)},
+        extra={"reason": "auth_failure_throttled"},
     )
 
 
@@ -169,6 +181,14 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     # DOWN, the trusted one is a runaway-loop backstop and wants headroom.
     app.state.trusted_limiter = FixedWindowLimiter(
         limit=app.state.settings.trusted_rate_limit_per_minute
+    )
+    # Meters every caller — credentialed or not, every path — by the 401s and
+    # 403s their own requests produce (ai-ops#145, `AuthFailureThrottle`). A
+    # third, independent bucket rather than folding into either limiter above:
+    # those two are scoped to `/v1/catalog/*` and count every request; this one
+    # runs everywhere and counts only a refusal.
+    app.state.auth_failure_throttle = AuthFailureThrottle(
+        limit=app.state.settings.auth_failure_limit
     )
 
     @app.middleware("http")
@@ -303,13 +323,45 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             response.headers[CALLER_TRUST_HEADER] = trust_header[CALLER_TRUST_HEADER]
         return response
 
+    # Registered after `_anon_rate_limit`, which makes it OUTER relative to
+    # that middleware (see the placement comment two blocks down for what
+    # "registration order" means for nesting). The practical effect: this
+    # runs its block-check before `_anon_rate_limit` does any work at all, so
+    # an address already over the auth-failure ceiling is refused before this
+    # service spends anything buffering its body or touching the catalog
+    # limiter's own counters.
+    @app.middleware("http")
+    async def _auth_failure_throttle(request: Request, call_next):
+        if request.url.path in EXEMPT_PATHS:
+            return await call_next(request)
+        headers = {k.lower(): v for k, v in request.headers.items()}
+        peer = request.client.host if request.client else None
+        address = client_address(headers, peer)
+        throttle = request.app.state.auth_failure_throttle
+
+        decision = throttle.should_block(address)
+        if not decision.allowed:
+            return _auth_failures_throttled(decision.retry_after_s)
+
+        response = await call_next(request)
+        # The OUTCOME, not the path or a header, decides what counts — see
+        # `AuthFailureThrottle`'s docstring for why that is what keeps a CI
+        # authz suite (which overrides the identity dependency and rejects
+        # nothing), our own health checks, the deploy probe's working path,
+        # and the trusted-caller path from ever contributing to this count at
+        # all: none of them, when everything is configured correctly, ever
+        # produces a 401 or a 403 for this to see.
+        if response.status_code in (401, 403):
+            throttle.record_failure(address)
+        return response
+
     # Registered LAST, which makes it OUTERMOST — Starlette's `add_middleware`
     # inserts at the front of `user_middleware`, and the front of that list is
     # the outside of the stack. That is the whole point of the placement: the
     # responses most worth covering are the ones that never reach a route
-    # handler — the limiter's own 429 above, the 413 for an oversized body, and
+    # handler — both limiters' 429s above, the 413 for an oversized body, and
     # every problem+json the exception handlers below produce. A middleware
-    # registered earlier would sit inside the limiter and see none of them.
+    # registered earlier would sit inside the limiters and see none of them.
     #
     # What it still does not cover is a 500 raised past every handler, because
     # Starlette's ServerErrorMiddleware is outside all user middleware by

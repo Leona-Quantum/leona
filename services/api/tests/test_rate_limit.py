@@ -12,9 +12,11 @@ from majorana_api.app import create_app
 from majorana_api.rate_limit import (
     CALLER_TRUST_HEADER,
     DEFAULT_ANON_LIMIT,
+    DEFAULT_AUTH_FAILURE_LIMIT,
     DEFAULT_TRUSTED_LIMIT,
     MAX_REQUEST_BYTES,
     TRUSTED_CALLER_HEADER,
+    AuthFailureThrottle,
     FixedWindowLimiter,
     client_address,
     is_rate_limited_path,
@@ -561,3 +563,176 @@ def test_the_trusted_token_may_not_be_the_deploy_probe_token():
     the obvious way to provision the second is to copy the first."""
     with pytest.raises(RuntimeError, match="must be different secrets"):
         _settings(trusted_caller_token=TRUSTED_TOKEN, deploy_probe_token=TRUSTED_TOKEN)
+
+
+# --------------------------------------------------------------------------
+# The auth-failure throttle (AuthFailureThrottle, ai-ops#145)
+#
+# Its whole design point is metering the RESPONSE rather than the request, so
+# the load-bearing test in this section is
+# `test_successful_requests_never_count_toward_the_ceiling` — the negative
+# control for the one failure mode this control cannot repeat: the anonymous
+# limiter's first shape counted a request that *looked* like the thing being
+# policed, and a CI authz suite that overrides the identity dependency and
+# rejects nothing showed the gap. Metering the outcome instead means there is
+# nothing for a passing request to accidentally resemble.
+# --------------------------------------------------------------------------
+
+
+def test_fewer_failures_than_the_limit_are_not_blocked():
+    throttle = AuthFailureThrottle(limit=3, window_s=300.0)
+    for _ in range(2):
+        throttle.record_failure("1.2.3.4", now=0.0)
+    assert throttle.should_block("1.2.3.4", now=0.0).allowed
+
+
+def test_reaching_the_limit_blocks_the_next_attempt():
+    """`limit` failures are allowed to happen — each one already reached the
+    route and was refused there — and only the attempt that would become the
+    NEXT failure is refused pre-emptively. See `should_block`'s `>=` comment
+    for why this is off by one from `FixedWindowLimiter.check`'s `>`."""
+    throttle = AuthFailureThrottle(limit=3, window_s=300.0)
+    for _ in range(3):
+        throttle.record_failure("1.2.3.4", now=0.0)
+    decision = throttle.should_block("1.2.3.4", now=0.0)
+    assert not decision.allowed
+    # Never zero, same reasoning as FixedWindowLimiter: "retry in 0 seconds" is
+    # the instruction that caused the block.
+    assert decision.retry_after_s >= 1
+
+
+def test_a_caller_who_has_never_failed_is_never_blocked():
+    throttle = AuthFailureThrottle(limit=1, window_s=300.0)
+    assert throttle.should_block("9.9.9.9", now=0.0).allowed
+
+
+def test_addresses_are_throttled_separately():
+    """The whole point, same as the anonymous limiter's version of this test:
+    one address's failures must not refuse a different one."""
+    throttle = AuthFailureThrottle(limit=1, window_s=300.0)
+    throttle.record_failure("1.1.1.1", now=0.0)
+    throttle.record_failure("1.1.1.1", now=0.0)
+    assert not throttle.should_block("1.1.1.1", now=0.0).allowed
+    assert throttle.should_block("2.2.2.2", now=0.0).allowed
+
+
+def test_the_window_rolls_and_clears_the_block():
+    throttle = AuthFailureThrottle(limit=1, window_s=300.0)
+    throttle.record_failure("1.2.3.4", now=0.0)
+    throttle.record_failure("1.2.3.4", now=0.0)
+    assert not throttle.should_block("1.2.3.4", now=100.0).allowed
+    assert throttle.should_block("1.2.3.4", now=301.0).allowed
+
+
+def test_a_zero_limit_disables_the_throttle():
+    """The documented escape hatch — a caller wrongly refused for their
+    address's failures is worse than an unmetered one."""
+    throttle = AuthFailureThrottle(limit=0)
+    for _ in range(1000):
+        throttle.record_failure("1.2.3.4", now=0.0)
+    assert throttle.should_block("1.2.3.4", now=0.0).allowed
+
+
+def test_should_block_never_creates_a_table_entry():
+    """Read-only, on purpose: a caller who never fails must never occupy a
+    table slot. This is what lets a full table degrade to OFF for a caller it
+    has genuinely never recorded a failure for — see the saturation test
+    below."""
+    throttle = AuthFailureThrottle(limit=1, window_s=300.0)
+    throttle.should_block("1.2.3.4", now=0.0)
+    assert len(throttle._windows) == 0
+
+
+def test_a_saturated_table_stops_tracking_rather_than_blocking():
+    """Same direction as FixedWindowLimiter's saturation test: an attacker
+    rotating source addresses to fill the table must not end up blocking
+    everyone else — degrading to OFF, not to REFUSE."""
+    throttle = AuthFailureThrottle(limit=1, window_s=300.0, max_keys=2)
+    throttle.record_failure("1.1.1.1", now=0.0)
+    throttle.record_failure("1.1.1.1", now=0.0)
+    throttle.record_failure("2.2.2.2", now=0.0)
+    throttle.record_failure("2.2.2.2", now=0.0)
+    # Table full of LIVE entries, so a third address's failure cannot be
+    # recorded at all.
+    throttle.record_failure("3.3.3.3", now=0.0)
+    assert throttle.should_block("3.3.3.3", now=0.0).allowed
+    assert throttle.saturated_admissions == 1
+
+
+def test_the_default_ceiling_has_headroom_over_a_shared_address():
+    """A floor, not a target. Sized against the population described in
+    `AuthFailureThrottle`'s docstring — Vercel's shared BFF egress carrying
+    every signed-in user's proxied requests, not one browser — so this has to
+    clear several stale-session clusters (~10 failures each, one dashboard
+    load's several panels all firing on one dead token at once) landing on the
+    same address inside one window, not just one."""
+    assert DEFAULT_AUTH_FAILURE_LIMIT >= 100
+
+
+# --------------------------------------------------------------------------
+# Wired into the app
+# --------------------------------------------------------------------------
+
+
+async def test_a_caller_under_the_ceiling_is_still_served():
+    app = create_app(_settings(auth_failure_limit=5))
+    async with _client(app) as client:
+        statuses = [(await client.get("/v1/runs")).status_code for _ in range(5)]
+    # Every one reached the route and was refused THERE (missing bearer
+    # token) — none of them was refused by the throttle.
+    assert statuses == [401] * 5
+
+
+async def test_a_caller_over_the_ceiling_is_throttled():
+    app = create_app(_settings(auth_failure_limit=3))
+    async with _client(app) as client:
+        for _ in range(3):
+            await client.get("/v1/runs")
+        response = await client.get("/v1/runs")
+
+    assert response.status_code == 429
+    assert response.json()["reason"] == "auth_failure_throttled"
+    assert response.headers["Retry-After"]
+
+
+async def test_successful_requests_never_count_toward_the_ceiling():
+    """The negative control for the one failure mode this control cannot
+    repeat — see this section's header comment. A limiter that (wrongly)
+    counted every request, or every request without a header, would fail this
+    exactly the way the anonymous limiter's first shape failed in CI."""
+    app = create_app(_settings(auth_failure_limit=3))
+    async with _client(app) as client:
+        statuses = {(await client.get("/v1/catalog/entries")).status_code for _ in range(10)}
+
+    assert 429 not in statuses
+
+
+async def test_the_throttle_is_scoped_to_the_address_not_one_route():
+    """Once an address is over the ceiling, a route it has never even called
+    is refused too — the block is keyed by who is asking, not by which
+    endpoint produced the failures."""
+    app = create_app(_settings(auth_failure_limit=2))
+    headers = {"x-forwarded-for": "203.0.113.80"}
+    async with _client(app) as client:
+        for _ in range(2):
+            await client.get("/v1/runs", headers=headers)
+        response = await client.get("/v1/me", headers=headers)
+
+    assert response.status_code == 429
+    assert response.json()["reason"] == "auth_failure_throttled"
+
+
+async def test_the_health_check_is_exempt_even_once_the_address_is_blocked():
+    """The one path this control must never be able to take down, the same
+    property `EXEMPT_PATHS` already guarantees against the anonymous limiter
+    and the body-size guard. Checked here for a caller already OVER the
+    ceiling, not merely an untested one — a throttled liveness probe takes the
+    revision down, which is the one outcome worse than the abuse."""
+    app = create_app(_settings(auth_failure_limit=1))
+    headers = {"x-forwarded-for": "203.0.113.81"}
+    async with _client(app) as client:
+        await client.get("/v1/runs", headers=headers)
+        await client.get("/v1/runs", headers=headers)  # now over the ceiling
+        health = await client.get("/health", headers=headers)
+
+    assert health.status_code == 200

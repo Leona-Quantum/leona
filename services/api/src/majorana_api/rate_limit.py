@@ -1,4 +1,10 @@
-"""Per-IP admission control for anonymous requests (05-security.md §1 edge).
+"""Per-IP admission control for anonymous requests (05-security.md §1 edge),
+and — in `AuthFailureThrottle` below — a second, unrelated control that meters
+every caller (credentialed or not) by the 401s and 403s their requests
+actually produce (ai-ops#145). They live in one module because both are
+address-keyed admission decisions made in front of a handler, not because
+they share a policy: the first is scoped to one path prefix and counts every
+request; the second runs on every path and counts only a refusal.
 
 This is the last unbuilt line of `05-security.md` §1: "Rate limiting at API
 middleware (per-user, per-IP for unauthenticated public pages)". The per-user
@@ -152,6 +158,25 @@ EXEMPT_PATHS = frozenset({"/health"})
 #: rather than the `Authorization` header, is what decides.
 LIMITED_PATH_PREFIXES = ("/v1/catalog",)
 
+#: Auth failures (401s and 403s the API actually returned) allowed from one
+#: address before it is refused outright (ai-ops#145). See
+#: `AuthFailureThrottle` for the mechanism and its docstring's "Sizing against
+#: the real population" section for why 300 is the right order of magnitude —
+#: it is not reasoned from a single browser the way `DEFAULT_ANON_LIMIT`'s
+#: superseded first value was, because a single browser is not what this
+#: address usually is.
+DEFAULT_AUTH_FAILURE_LIMIT = 300
+
+#: Window over which auth failures accumulate before the count resets.
+#:
+#: Five minutes, not the anonymous limiter's one: a stale-session cluster is
+#: bursty WITHIN a page load (every panel on the dashboard fetches at once,
+#: all with the same dead token) and then silent until the caller notices and
+#: signs in again. A one-minute window would need a disproportionately high
+#: per-minute ceiling just to clear one such burst; a longer window absorbs it
+#: naturally while still resetting inside a single support conversation.
+DEFAULT_AUTH_FAILURE_WINDOW_S = 300.0
+
 #: Ceiling on a single request body, across every route.
 #:
 #: Comfortably above the largest legitimate document this API accepts: the
@@ -224,6 +249,166 @@ class FixedWindowLimiter:
                 retry_after_s=max(1, int(self.window_s - elapsed) + 1),
             )
         return Decision(allowed=True, remaining=self.limit - window.count)
+
+    def _sweep(self, now: float) -> None:
+        expired = [k for k, w in self._windows.items() if now - w.started_at >= self.window_s]
+        for key in expired:
+            del self._windows[key]
+
+
+@dataclass
+class AuthFailureThrottle:
+    """Meters callers by the 401s and 403s their requests actually produce
+    (ai-ops#145), and refuses further requests from an address that has
+    produced too many.
+
+    ## Outcome, not shape — and why that is the fix this time
+
+    `LIMITED_PATH_PREFIXES` above exists because two earlier attempts to meter
+    by the *request's shape* both failed, in the same direction: a legitimate
+    caller looked like the thing being metered because the signal was about
+    what the request looked like rather than what it did. An authz suite that
+    overrides the identity dependency and sends no `Authorization` header is
+    the concrete case — 250 authenticated requests, zero of which the
+    application ever rejected, read as 250 anonymous ones.
+
+    That failure mode cannot repeat here, structurally: this counts the
+    response. An authz suite whose overridden dependency never rejects a
+    request produces zero 401s and zero 403s no matter how many requests it
+    sends — there is nothing for this class to count. A real caller who is
+    guessing tokens or replaying stale credentials produces almost nothing
+    *but* 401s and 403s. The two populations are separated by the one fact
+    that actually describes the behaviour being policed, so there is no
+    request shape left for a legitimate caller to accidentally resemble.
+
+    ## Sizing against the real population, and it is not a single browser
+
+    `DEFAULT_ANON_LIMIT`'s history is a warning about reasoning from "a person
+    clicking as fast as they can read" when the real caller on `/v1/catalog/*`
+    is Vercel's SSR egress — a handful of addresses shared by every visitor at
+    once. The same fact is true here, and worse: `apps/web/lib/control-plane.ts`
+    is how EVERY authenticated route is reached (`app/api/*/route.ts` proxies
+    the browser's request to this service with the signed-in user's own bearer
+    token, over a fresh server-to-server connection that carries no
+    `X-Forwarded-For` for the original visitor). So `client_address()` for
+    almost all authenticated traffic is not one person — it is Vercel's
+    function egress pool, shared across the whole active user base. An
+    attacker who wants a bucket of their own still gets one: they reach this
+    Cloud Run URL directly, which is how a stolen or guessed token is actually
+    replayed, and that connection's peer is *their* address, not Vercel's. The
+    case this ceiling has to clear is not one attacker — it is every ordinary
+    session hiccup across every signed-in user landing in the same bucket
+    within one window: a stale tab refreshing after the browser slept, a
+    revoked session still open somewhere, a dashboard load's several panels
+    all firing on one dead token at once. None of that is measured — there is
+    no production telemetry for it yet — so 300/5min is reasoned the same way
+    `DEFAULT_ANON_LIMIT` was when it was raised: pick a number large enough
+    that being wrong about the aggregate by a wide margin still refuses an
+    abuser and still never refuses the shared address everyone signed in is
+    behind. If this ever measurably refuses real sessions, the fix is likely a
+    *second* bucket for the BFF the way `DEFAULT_TRUSTED_LIMIT` gave the
+    renderer its own — not a bigger number on a bucket everyone shares.
+
+    ## Two methods, not one, because the event is not the request
+
+    `FixedWindowLimiter.check` decides and counts atomically, which is right
+    when the request itself is the thing being metered. Here the thing being
+    metered — whether the response was a 401 or 403 — does not exist until
+    after the handler has run. So admission and counting happen at different
+    points in the request's lifecycle: `should_block` is asked before the
+    request is allowed to proceed at all, and `record_failure` is told the
+    outcome once the response exists. Collapsing them into one atomic call, the
+    way the anonymous limiter does it, would require knowing the response
+    before the request has been handled.
+
+    ## The refusal lasts as long as the window, not a separate punishment
+
+    Blocked simply means "this window's count is already over the limit" —
+    there is no independent cooldown timer layered on top. That is a deliberate
+    reuse of the fixed-window idiom above rather than a new mechanism, and
+    given the previous section it is also the safer choice: a punitive cooldown
+    longer than the window would extend a false-positive block on the shared
+    BFF address past the window that caused it, for every signed-in user, for
+    no benefit against an attacker who is refused either way.
+
+    ## What is reused from `FixedWindowLimiter`, and why not the class itself
+
+    The window bookkeeping, the `max_keys` cap, the sweep-before-refusing-space
+    order, and the degrade-to-OFF-not-REFUSE rule when the table is still full
+    after sweeping are all the same shapes as `FixedWindowLimiter` for the same
+    reasons given there — in particular, an attacker rotating source addresses
+    to fill the table must not end up refusing everyone else. It is a separate
+    class rather than a second instance of `FixedWindowLimiter` only because
+    the two-method split above has no `.check()` equivalent to reuse.
+    """
+
+    limit: int = DEFAULT_AUTH_FAILURE_LIMIT
+    window_s: float = DEFAULT_AUTH_FAILURE_WINDOW_S
+    max_keys: int = DEFAULT_MAX_KEYS
+    _windows: dict[str, _Window] = field(default_factory=dict)
+    #: Same meaning as `FixedWindowLimiter.saturated_admissions` — read by the
+    #: tests, and the first thing to check if this throttle ever appears not to
+    #: be tracking a caller it should be.
+    saturated_admissions: int = 0
+
+    def should_block(self, key: str, *, now: float | None = None) -> Decision:
+        """Ask whether `key` is already over the limit for the current window.
+
+        Read-only: a caller with no record yet, or whose last record has aged
+        out of the window, has not failed anything *in this window* and is
+        allowed — this method never creates or rolls a window itself, only
+        `record_failure` does, so an address that never fails never occupies a
+        table slot.
+        """
+        if self.limit <= 0:  # explicitly disabled
+            return Decision(allowed=True, remaining=0)
+        now = time.monotonic() if now is None else now
+
+        window = self._windows.get(key)
+        if window is None or now - window.started_at >= self.window_s:
+            return Decision(allowed=True, remaining=self.limit)
+        # `>=`, not `>`. `FixedWindowLimiter.check` counts and decides in one
+        # call, so it lets exactly `limit` REQUESTS through by refusing the
+        # request whose own increment would push the count past the limit —
+        # `count > limit` after incrementing. This method cannot do that: the
+        # count for the request under consideration does not exist yet, because
+        # whether this request fails is not known until after `call_next`
+        # returns. So the equivalent statement is in terms of failures already
+        # on the books — once `limit` failures have already happened, the
+        # NEXT request is refused before it gets the chance to become one more.
+        # Using `>` here would let exactly one extra failing request through
+        # every window, silently, and the test that would have caught it did.
+        if window.count >= self.limit:
+            elapsed = now - window.started_at
+            return Decision(
+                allowed=False,
+                remaining=0,
+                # Always at least 1, same reasoning as FixedWindowLimiter.check:
+                # "retry in 0 seconds" is the instruction that caused the block.
+                retry_after_s=max(1, int(self.window_s - elapsed) + 1),
+            )
+        return Decision(allowed=True, remaining=self.limit - window.count)
+
+    def record_failure(self, key: str, *, now: float | None = None) -> None:
+        """Count one 401 or 403 against `key`. Call only on that outcome —
+        this has no opinion about which responses qualify, the caller does."""
+        if self.limit <= 0:  # explicitly disabled
+            return
+        now = time.monotonic() if now is None else now
+
+        window = self._windows.get(key)
+        if window is None or now - window.started_at >= self.window_s:
+            if window is None and len(self._windows) >= self.max_keys:
+                self._sweep(now)
+                if len(self._windows) >= self.max_keys:
+                    # Table full of live entries. Same direction as
+                    # FixedWindowLimiter: degrade to not tracking this caller,
+                    # never to refusing a caller we cannot even identify.
+                    self.saturated_admissions += 1
+                    return
+            window = _Window(started_at=now, count=0)
+            self._windows[key] = window
+        window.count += 1
 
     def _sweep(self, now: float) -> None:
         expired = [k for k, w in self._windows.items() if now - w.started_at >= self.window_s]
