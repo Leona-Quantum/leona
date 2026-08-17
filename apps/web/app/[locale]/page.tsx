@@ -108,6 +108,26 @@ export default async function Home({ params }: { params: Promise<{ locale: strin
             <span className="font-mono">{copy.visual.meta}</span>
           </div>
         </div>
+        <div className="lq-landing-demo">
+          <p className="sr-only" id="lq-landing-demo-description">
+            {copy.visual.demoDescription}
+          </p>
+          <video
+            aria-describedby="lq-landing-demo-description"
+            aria-label={copy.visual.demoLabel}
+            autoPlay
+            className="lq-landing-demo-video"
+            controls
+            loop
+            muted
+            playsInline
+            poster="/media/leona-product-demo-poster.jpg"
+            preload="metadata"
+          >
+            <source src="/media/leona-product-demo.mp4" type="video/mp4" />
+            <a href="/media/leona-product-demo.mp4">{copy.visual.demoFallback}</a>
+          </video>
+        </div>
         <ScrollCue href="#company-intro-heading" targetId="company-intro-heading">
           <span>{copy.hero.scrollCue}</span>
           <span className="mj-company-scroll-cue-chevron" aria-hidden="true">⌄</span>

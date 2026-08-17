@@ -295,10 +295,12 @@ body {
    fold (Owner ask 2026-07-18: nicer to scroll through). */
 .mj-company-hero-copy,
 .mj-company-pipeline-band,
+.lq-landing-demo,
 .mj-company-scroll-cue {
   animation: mj-company-rise 600ms ease-out both;
 }
 .mj-company-pipeline-band { animation-delay: 100ms; }
+.lq-landing-demo { animation-delay: 160ms; }
 .mj-company-scroll-cue { animation-delay: 220ms; }
 .mj-company-scroll-cue-chevron {
   animation: mj-scroll-cue-bob 2.4s ease-in-out infinite;
@@ -341,6 +343,7 @@ body {
 @media (prefers-reduced-motion: reduce) {
   .mj-company-hero-copy,
   .mj-company-pipeline-band,
+  .lq-landing-demo,
   .mj-company-scroll-cue,
   .mj-company-scroll-cue-chevron,
   .mj-open-source-hero,
@@ -359,6 +362,27 @@ body {
     transition: none;
     transform: none;
   }
+}
+
+/* Landing product demo: the video follows the product-flow band without a
+   second title card. The explicit aspect ratio reserves the full frame before
+   media metadata arrives, keeping the rest of the landing page still. */
+.lq-landing-demo {
+  position: relative;
+  z-index: 1;
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  overflow: hidden;
+  border: 1px solid var(--border-0);
+  border-radius: var(--radius-card);
+  background: var(--bg-1);
+}
+.lq-landing-demo-video {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  background: var(--bg-0);
 }
 
 .mj-run-process-detail-pre {
