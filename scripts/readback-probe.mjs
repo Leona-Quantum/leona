@@ -73,7 +73,10 @@
 
 import { execFileSync } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { dirname } from "node:path";
+import { dirname, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
+
+import { insideRepoSelfTest, resolveInsideRepo } from "./lib/inside-repo.mjs";
 
 const REGEX_PREFIX = "re:";
 
@@ -228,6 +231,28 @@ function deployFailedFor(sha) {
   }
 }
 
+const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
+
+/**
+ * `--state` is the only argument here that reaches the filesystem, and it is the
+ * only one in this family that reaches it to WRITE as well as read — `saveState`
+ * calls `mkdirSync(..., { recursive: true })` and then `writeFileSync`. An
+ * unconfined value therefore creates directories outside the tree rather than
+ * merely reading one. Contained once, here, so both callers inherit it.
+ *
+ * Returns the resolved path, or exits: unlike the pure helpers this file keeps
+ * for its self-test, there is nothing sensible to do with a refused state path.
+ */
+function statePath(path) {
+  if (!path) return null;
+  const contained = resolveInsideRepo(REPO_ROOT, path);
+  if (contained.error) {
+    console.error(`--state ${contained.error}`);
+    process.exit(4);
+  }
+  return contained.path;
+}
+
 function loadState(path, key) {
   if (!path || !existsSync(path)) return null;
   try {
@@ -276,7 +301,11 @@ function selfTest() {
   for (const check of checks) console.log(`  ${check.ok ? "ok  " : "FAIL"} ${check.name}`);
   const failures = checks.filter((c) => !c.ok).length;
   console.log(`self-test: ${checks.length - failures}/${checks.length} passed`);
-  return failures === 0 ? 0 : 1;
+  // Same shared containment rule as the two check scripts. `--state` is the one
+  // argument in this family that WRITES, so this is the copy that matters most.
+  const pathFailures = insideRepoSelfTest(REPO_ROOT);
+  for (const line of pathFailures) console.error(`  - ${line}`);
+  return failures === 0 && pathFailures.length === 0 ? 0 : 1;
 }
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -303,7 +332,7 @@ async function main(argv) {
   console.log(`  target : ${args.url}`);
   if (args.controlUrl) console.log(`  control: ${args.controlUrl}`);
 
-  const saved = loadState(args.state, key);
+  const saved = loadState(statePath(args.state), key);
   let pre;
   if (saved) {
     pre = saved.pre;
@@ -353,7 +382,7 @@ async function main(argv) {
     }
   }
 
-  saveState(args.state, { key, takenAt: pre.at, pre, preControl });
+  saveState(statePath(args.state), { key, takenAt: pre.at, pre, preControl });
 
   console.log(`\nPOLLING production every ${args.interval}s for up to ${args.timeout}s …`);
   const deadline = Date.now() + args.timeout * 1000;

@@ -17,7 +17,11 @@ import pytest
 from starlette.datastructures import MutableHeaders
 
 from majorana_api.app import create_app
-from majorana_api.security_headers import SECURITY_RESPONSE_HEADERS, apply_security_headers
+from majorana_api.security_headers import (
+    DOCUMENT_PATHS,
+    SECURITY_RESPONSE_HEADERS,
+    apply_security_headers,
+)
 from majorana_api.settings import Settings
 
 
@@ -186,13 +190,19 @@ def test_the_documentation_routes_are_exempt_from_the_csp_and_nothing_else():
     # `default-src 'none'` would render Swagger UI and ReDoc blank — they are
     # HTML documents that load their assets from a CDN. Every other header still
     # applies, because none of them is what those pages need.
-    headers = MutableHeaders()
-    apply_security_headers(headers, "/docs")
+    #
+    # Every member of the set, not just `/docs` (Sourcery, on #695). A set with
+    # one tested member is the shape where somebody later adds or removes an
+    # entry and nothing objects.
+    assert DOCUMENT_PATHS, "an empty exemption set would make this test vacuous"
+    for path in sorted(DOCUMENT_PATHS):
+        headers = MutableHeaders()
+        apply_security_headers(headers, path)
 
-    assert "Content-Security-Policy" not in headers
-    assert headers["X-Content-Type-Options"] == "nosniff"
-    assert headers["X-Frame-Options"] == "DENY"
-    assert headers["Referrer-Policy"] == "no-referrer"
+        assert "Content-Security-Policy" not in headers, f"{path} is not exempt"
+        assert headers["X-Content-Type-Options"] == "nosniff", path
+        assert headers["X-Frame-Options"] == "DENY", path
+        assert headers["Referrer-Policy"] == "no-referrer", path
 
 
 def test_a_missing_path_gets_the_strict_policy():

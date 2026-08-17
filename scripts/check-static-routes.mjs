@@ -45,6 +45,8 @@ import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
+import { insideRepoSelfTest, resolveInsideRepo } from "./lib/inside-repo.mjs";
+
 /**
  * Routes that must be prerendered, each with the reason it is on the list —
  * because a bare path tells a future reader nothing about whether removing it
@@ -113,7 +115,8 @@ export function missingRoutes(manifest, required = REQUIRED_STATIC_ROUTES) {
  * The other direction: routes that must NEVER be prerendered.
  * ========================================================================== */
 
-const WEB_DIR = resolve(dirname(fileURLToPath(import.meta.url)), "..", "apps", "web");
+const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
+const WEB_DIR = resolve(REPO_ROOT, "apps", "web");
 
 /**
  * Calls that make a render per-visitor, and therefore uncacheable.
@@ -456,6 +459,12 @@ export function selfTest() {
     );
   }
 
+  // The shared containment rule, folded into the self-test this script already
+  // runs in CI. Kept here rather than in a test file of its own because nothing
+  // in this repo discovers `scripts/*.mjs` tests — a self-test that no step
+  // invokes is the mechanism nobody armed.
+  failures.push(...insideRepoSelfTest(REPO_ROOT));
+
   return failures;
 }
 
@@ -483,7 +492,14 @@ function main(argv) {
     process.exit(1);
   }
 
-  const manifest = readManifest(argv[distIndex + 1]);
+  // See scripts/lib/inside-repo.mjs. The flag was checked for presence only; a
+  // present value is not a contained one.
+  const contained = resolveInsideRepo(REPO_ROOT, argv[distIndex + 1]);
+  if (contained.error) {
+    console.error(`--dist ${contained.error}`);
+    process.exit(1);
+  }
+  const manifest = readManifest(contained.path);
   const missing = missingRoutes(manifest);
   if (missing.length > 0) {
     console.error(`${missing.length} route(s) that must be prerendered are being server-rendered on demand:`);
