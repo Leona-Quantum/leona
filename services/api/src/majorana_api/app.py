@@ -45,6 +45,7 @@ from .routes.shares import router as shares_router
 from .routes.usage import router as usage_router
 from .settings import Settings
 from .routes.workspaces import router as workspaces_router
+from .security_headers import apply_security_headers
 
 
 def _wire_observability(app: FastAPI) -> None:
@@ -92,8 +93,29 @@ def _too_large() -> JSONResponse:
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
-    app = FastAPI(title="majorana-api", lifespan=_lifespan)
-    app.state.settings = settings or Settings.from_env()
+    resolved = settings or Settings.from_env()
+
+    # FastAPI serves `/docs`, `/redoc` and `/openapi.json` by default, and on
+    # 2026-08-17 all three answered 200 to an UNAUTHENTICATED caller on the live
+    # service: the full interactive documentation and machine-readable schema
+    # for every endpoint, including the ones behind auth. Nothing decided that —
+    # it is the framework's default rather than a choice this service made, and
+    # it hands anyone who knows the hostname a complete map of the API.
+    #
+    # Nothing depends on the served copies. The `openapi.json` in the repo comes
+    # from `packages/py/majorana_contracts/export.py`, a deterministic exporter
+    # CI runs directly, so the contract pipeline never reads these routes.
+    #
+    # Development keeps them, because that is where they are actually read.
+    docs_enabled = resolved.environment == "development"
+    app = FastAPI(
+        title="majorana-api",
+        lifespan=_lifespan,
+        docs_url="/docs" if docs_enabled else None,
+        redoc_url="/redoc" if docs_enabled else None,
+        openapi_url="/openapi.json" if docs_enabled else None,
+    )
+    app.state.settings = resolved
     app.add_middleware(
         CORSMiddleware,
         allow_origins=[app.state.settings.web_origin],
@@ -183,9 +205,14 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         # limiter runs.
         #
         # Metering signed-in readers too is the cost, and it is small: this is a
-        # public read surface at 240/min per address, where the concern that
-        # motivated the exemption — an office or lab on one NAT — would need to
-        # sustain four catalog reads a second between them.
+        # public read surface metered at the CONFIGURED anonymous limit per
+        # address (`ANON_RATE_LIMIT_PER_MINUTE`, defaulting to
+        # `DEFAULT_ANON_LIMIT`), and
+        # the concern that motivated the exemption — an office or lab on one NAT
+        # — would have to sustain that between them. The figure lives in
+        # rate_limit.py and is deliberately not repeated here; this sentence used
+        # to say "240/min", which stopped being true when that constant was
+        # raised to 1200 and stayed wrong because nothing makes a comment fail.
         if not is_rate_limited_path(request.url.path):
             return await call_next(request)
         peer = request.client.host if request.client else None
@@ -274,6 +301,30 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             response.headers["Cache-Control"] = cache_control.replace("public", "private", 1)
         if "public" not in response.headers.get("Cache-Control", ""):
             response.headers[CALLER_TRUST_HEADER] = trust_header[CALLER_TRUST_HEADER]
+        return response
+
+    # Registered LAST, which makes it OUTERMOST — Starlette's `add_middleware`
+    # inserts at the front of `user_middleware`, and the front of that list is
+    # the outside of the stack. That is the whole point of the placement: the
+    # responses most worth covering are the ones that never reach a route
+    # handler — the limiter's own 429 above, the 413 for an oversized body, and
+    # every problem+json the exception handlers below produce. A middleware
+    # registered earlier would sit inside the limiter and see none of them.
+    #
+    # What it still does not cover is a 500 raised past every handler, because
+    # Starlette's ServerErrorMiddleware is outside all user middleware by
+    # construction. That response is a bare "Internal Server Error" with no
+    # attacker-influenced content in it, which is the case these headers matter
+    # least for.
+    @app.middleware("http")
+    async def _security_headers(request: Request, call_next):
+        response = await call_next(request)
+        # The path is passed so the documentation routes can be exempted from the
+        # CSP and only the CSP — `default-src 'none'` would render Swagger UI and
+        # ReDoc blank. In production those routes do not exist at all (see
+        # `create_app` above), so this branch is a development affordance rather
+        # than a hole in the deployed policy.
+        apply_security_headers(response.headers, request.url.path)
         return response
 
     @app.exception_handler(HTTPException)
