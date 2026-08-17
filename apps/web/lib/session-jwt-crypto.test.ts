@@ -292,10 +292,17 @@ test("authkit resolves the SAME jose install this file just tested", () => {
       "The usual cause is a version bump that moved one half of the control " +
       'and not the other. The two halves are the `jose@^5.0.0` override in ' +
       "`pnpm-workspace.yaml` and the `jose` devDependency in " +
-      "`apps/web/package.json`. They must name the SAME version. Set both to " +
-      "the higher of the two and re-install; do not silence this by relaxing " +
-      "the assertion, which is the only thing standing between a split " +
-      "resolution and a green suite over an open advisory.",
+      "`apps/web/package.json`. They must name the SAME version, and which " +
+      "version that is belongs to the override: it is deliberately forcing a " +
+      "jose major that authkit-nextjs does not itself declare, and the comment " +
+      "above it in pnpm-workspace.yaml is where that is argued. So bring the " +
+      "devDependency to whatever the override says — do not pick the " +
+      "numerically higher of the two, which across a major boundary would move " +
+      "the override onto a jose that has never been checked against authkit's " +
+      "module graph. Raising the override itself is a separate decision that " +
+      "means re-reading that comment. Either way, do not silence this by " +
+      "relaxing the assertion, which is the only thing standing between a " +
+      "split resolution and a green suite over an open advisory.",
   );
 });
 
