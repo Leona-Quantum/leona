@@ -73,6 +73,28 @@ reach one through another transitively-scoped table (17):
     of their OWN grant, which is the feature working as designed, not a leak. Any
     future policy here has to key on `grantee_user_id` against a user-id GUC, which
     this migration does not introduce. Left as a named follow-up, not silently.
+
+    **This exclusion's blast radius is bigger than the one table**, and is a hard
+    blocker on ever setting `MAJORANA_RLS_ENFORCED`, not merely an open follow-up
+    (found in review, PR 709 — Aikido). `resolve_share` and every function built on it
+    (`get_shared_project`, `get_shared_artifact`, `get_shared_version`, …) deliberately
+    read `projects`/`artifacts`/`artifact_versions` — all THREE of which this migration
+    DOES protect — keyed on the grant, not on `scope.workspace_id`
+    (`repos/shares.py:784`: *"Deliberately keyed on `scope.user_id` and not on
+    `scope.workspace_id`"*). Under RLS enforcement, the grantee's session carries their
+    OWN workspace_id in the GUC, and the shared project/artifact/version rows live in
+    the GRANTOR's workspace — a different uuid. The repository layer's own predicate
+    already permits this by design; a workspace_id-keyed RLS policy on `projects`/
+    `artifacts`/`artifact_versions` does not know about grants at all, so it would
+    filter every one of these rows out, silently, for every Team-tier customer using
+    project sharing, the moment enforcement turns on. **Do not flip
+    `MAJORANA_RLS_ENFORCED` until this is resolved** — either the shares code path
+    needs a way to widen its RLS context to the grantor's workspace for the duration
+    of a shared read, or these three policies need a second, grant-aware disjunct. Not
+    designed here: it is a product/architecture decision (does a grantee's session get
+    to look "through" a grant at the database layer, and how is that bounded so it
+    cannot widen into a general cross-tenant escape) and belongs in its own reviewed
+    change, not as a rider on defense-in-depth going in disabled.
   - `provider_credentials` — the ORM's own docstring is explicit that this table is
     scoped by `user_id`, deliberately NOT `workspace_id`, because a provider account
     follows the person between workspaces. A workspace_id policy would be scoping it on

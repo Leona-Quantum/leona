@@ -202,6 +202,17 @@ class Settings:
     #: production change with real blast radius (a forgotten GUC anywhere in the
     #: request path now returns zero rows instead of the row), so it is a
     #: deliberate follow-up, not part of this PR.
+    #:
+    #: **DO NOT SET THIS TRUE YET** (found in review, PR 709 — Aikido):
+    #: `repos/shares.py` deliberately reads `projects`/`artifacts`/
+    #: `artifact_versions` — all three ARE covered by 0053's policies — keyed on
+    #: the grant (`scope.user_id`), not on `scope.workspace_id`, so a grantee in
+    #: one workspace can read a project another workspace owns. RLS has no
+    #: concept of a grant; the grantee's session GUC carries their own
+    #: workspace, and every one of those cross-tenant shared reads would
+    #: silently return nothing the moment this is `True`. See 0053's
+    #: `project_shares` docstring section and ADR-0028's Consequences for the
+    #: full argument. Resolving this is its own reviewed change.
     rls_enforced: bool = False
 
     def __post_init__(self) -> None:

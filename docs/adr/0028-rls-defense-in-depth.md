@@ -60,6 +60,18 @@ predicate is wrong for both by design (the first is a deliberate cross-tenant gr
 scoped by `user_id`), and a correct policy for either needs a GUC this migration does not
 introduce. Follow-up, not this PR.
 
+**A hard precondition on the flip, found in review (PR 709, Aikido) and not something this PR
+fixes:** excluding `project_shares` itself is not enough. `repos/shares.py`'s whole feature reads
+`projects`/`artifacts`/`artifact_versions` — all three ARE protected by this migration — keyed on
+the grant (`scope.user_id`), not on `scope.workspace_id`, precisely so a grantee in workspace B can
+read a project that lives in workspace A. Under enforcement, the grantee's session GUC carries
+their OWN workspace, and the shared rows live in a different one, so RLS would silently empty every
+shared read the moment `MAJORANA_RLS_ENFORCED` is set — a regression in a shipped, paying-tier
+feature, indistinguishable from "no results" to whoever hits it first. **`MAJORANA_RLS_ENFORCED`
+must not be set until this is resolved** — see 0053's docstring, `project_shares` section, for the
+detail. This is a design decision (how far a grant is allowed to reach through RLS, and how that
+stays bounded) for whoever does that follow-up, not a bug in this PR.
+
 Reversal trigger: none. The owner ruling that produced this ADR was itself the removal of the prior
 trigger; RLS as defense-in-depth is now the standing posture, not a conditional one. What remains
 open is operational — when `MAJORANA_RLS_ENFORCED` flips, and whether `project_shares`/
