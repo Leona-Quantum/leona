@@ -23,7 +23,7 @@ dependencies = [
 # is the last resort — LaTeX source and ar5iv HTML cover everything after 2007.
 # pypdf rather than PyMuPDF: PyMuPDF is AGPL, and every engine tested loses the same
 # glyphs, so the choice is licence and install weight, not extraction quality.
-pdf = ["pypdf>=6.15.0"]
+pdf = ["pypdf>=6.16.1"]
 
 [build-system]
 requires = ["hatchling"]
