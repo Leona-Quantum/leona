@@ -6,6 +6,7 @@ import { ContactForm } from "./contact-form";
 import { MeasurementLab } from "../../../components/measurement-lab";
 import { parsePublicLocale, PUBLIC_LOCALES } from "../../../lib/public-locale";
 import { canonicalMetadata } from "../../../lib/public-metadata";
+import { contactMetadataCopy } from "../../../lib/public-page-metadata";
 
 // Served from the CDN. The locale comes from the path segment because a cached
 // page cannot read a cookie — `middleware.ts` rewrites the clean URL to this
@@ -19,11 +20,14 @@ export function generateStaticParams() {
   return PUBLIC_LOCALES.map((locale) => ({ locale }));
 }
 
-export const metadata: Metadata = {
-  ...canonicalMetadata("/contact"),
-  title: "Contact",
-  description: "Contact Leona Quantum about research workflows and early product access.",
-};
+// Localized — a static English export here left a Japanese reader's browser
+// tab, search result and shared link in English while the page body (below)
+// already renders `CONTACT_COPY[locale]`. See `lib/public-page-metadata.ts`
+// for the locale branch and why it lives there rather than inline.
+export async function generateMetadata({ params }: { params: Promise<{ locale: string }> }): Promise<Metadata> {
+  const locale = parsePublicLocale((await params).locale);
+  return { ...contactMetadataCopy(locale), ...canonicalMetadata("/contact") };
+}
 
 export default async function ContactPage({ params }: { params: Promise<{ locale: string }> }) {
   const locale = parsePublicLocale((await params).locale);
