@@ -152,17 +152,37 @@ export function LibraryStudio({ demoMode = false, locale = "en" }: { demoMode?: 
             <label className="mj-library-search">
               <SearchIcon size={16} />
               <span className="sr-only">{copy.search}</span>
-              <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder={copy.search} />
+              {/* `id` and `name` on all three controls in this toolbar — see the
+                  note in studio-workspace.tsx. The label supplies the accessible
+                  name; this is the separate pair that stops the browser
+                  reporting an unidentified form field. */}
+              <input
+                id="library-search"
+                name="q"
+                value={query}
+                onChange={(event) => setQuery(event.target.value)}
+                placeholder={copy.search}
+              />
             </label>
             <label className="mj-filter-select">
               <span className="sr-only">{copy.framework}</span>
-              <select value={framework} onChange={(event) => setFramework(event.target.value)}>
+              <select
+                id="library-framework"
+                name="framework"
+                value={framework}
+                onChange={(event) => setFramework(event.target.value)}
+              >
                 {frameworks.map((option) => <option key={option} value={option}>{option === "all" ? copy.framework : option}</option>)}
               </select>
             </label>
             <label className="mj-filter-select">
               <span className="sr-only">{copy.verification}</span>
-              <select value={status} onChange={(event) => setStatus(event.target.value as "all" | LibraryStatus)}>
+              <select
+                id="library-verification"
+                name="verification"
+                value={status}
+                onChange={(event) => setStatus(event.target.value as "all" | LibraryStatus)}
+              >
                 {statusOptions.map((option) => <option key={option.value} value={option.value}>{option.value === "all" ? copy.verification : option.label}</option>)}
               </select>
             </label>
