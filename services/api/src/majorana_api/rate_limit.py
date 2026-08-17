@@ -497,6 +497,54 @@ def client_address(headers: dict[str, str], peer: str | None) -> str:
     the header buys an attacker exactly what rotating source addresses already
     buys them, and the module docstring is explicit that this limiter does not
     stop that attacker.
+
+    ## Cloudflare (ai-ops#141) does not change any of this — checked, not assumed
+
+    Owner ruling ai-ops#141 puts Cloudflare in front of Vercel for `leonaqt.com`
+    (DNS + CDN only, no WAF), not yet flipped as of this writing. Once it is,
+    `apps/web`'s own address derivation has to switch to `cf-connecting-ip` —
+    Vercel's edge and everything behind it will see one Cloudflare anycast
+    address for every visitor on Earth, and `X-Forwarded-For` alone collapses.
+    That is a real, separate change, made in `apps/web/lib/contact-rate-limit.ts`.
+
+    This service is not in that request path, and adding the same preference
+    here would be wrong rather than merely unnecessary. Checked directly rather
+    than assumed from "it's behind the same domain":
+
+    - **No Cloud Run domain mapping exists for this service in any region**
+      (`gcloud beta run domain-mappings list --project majorana-core`, every
+      region, empty). Cloud Run only accepts traffic on a custom domain through
+      an explicit mapping; without one, the only address this service answers
+      on is its own `*.a.run.app` hostname.
+    - **No DNS record for an API subdomain exists in the `leonaqt.com` zone**
+      (`api.leonaqt.com`, `majorana-api.leonaqt.com` — both NXDOMAIN). Cloudflare
+      can only proxy a hostname it holds authoritative DNS for; there is none
+      here for it to intercept.
+    - **Every caller that reaches this service — the BFF's authenticated proxy
+      (`control-plane.ts`'s `CONTROL_PLANE_URL`), the anonymous catalog SSR
+      fetch (`repository-source.ts`'s `API_URL`), and the GCP uptime checks —
+      addresses it by `NEXT_PUBLIC_API_URL`, confirmed in production (the live
+      site's CSP `connect-src`) to be the raw
+      `majorana-api-nikekeixtq-uw.a.run.app` URL, not a `leonaqt.com` subdomain.**
+
+    So every request this service receives arrives at Cloud Run's own front end
+    directly — the same front end that already sets `X-Forwarded-For` today —
+    whether the Cloudflare flip has happened or not. There is no hop between the
+    caller and this service for Cloudflare to sit on.
+
+    **The forgery analysis, run anyway because the caller reaches this service
+    either way:** preferring `cf-connecting-ip` here would not merely do
+    nothing — it would make things worse. Because no request to this service
+    ever actually passes through Cloudflare, nothing here could ever verify
+    that header; any value on it is exactly as client-supplied as a forged
+    `X-Forwarded-For` entry, except with no unforgeable fallback behind it. The
+    existing `X-Forwarded-For` design at least has Cloud Run's own front end as
+    the source of truth for *a* real address, even though the first (client)
+    entry is the one read; trusting `cf-connecting-ip` on a service Cloudflare
+    never touches would hand an attacker a second, unaudited way to pick their
+    own bucket, on top of the one already accepted above. If this service is
+    ever given a domain inside a Cloudflare-proxied zone, this reasoning is
+    what to revisit — not before.
     """
     forwarded = headers.get("x-forwarded-for", "")
     if forwarded:

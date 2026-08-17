@@ -129,6 +129,19 @@ def test_a_caller_with_no_address_at_all_still_gets_a_key():
     assert client_address({}, None) == "unknown"
 
 
+def test_cf_connecting_ip_is_not_preferred():
+    """Deliberate, not an oversight — see `client_address`'s "Cloudflare
+    (ai-ops#141) does not change any of this" section. This service has no
+    domain inside any Cloudflare-proxied zone (no Cloud Run domain mapping, no
+    DNS record under `leonaqt.com`), so nothing here could ever verify this
+    header — honouring it would hand an attacker a second, unaudited way to
+    pick their own bucket, on top of the one `X-Forwarded-For` already accepts.
+    apps/web's own limiter is where the Cloudflare rollout is actually handled.
+    """
+    headers = {"x-forwarded-for": "203.0.113.9", "cf-connecting-ip": "198.51.100.1"}
+    assert client_address(headers, "10.0.0.1") == "203.0.113.9"
+
+
 # --------------------------------------------------------------------------
 # Wired into the app
 # --------------------------------------------------------------------------
