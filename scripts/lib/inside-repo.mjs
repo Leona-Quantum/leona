@@ -15,7 +15,7 @@
  * exposure, and saying otherwise would be the kind of inflated framing that
  * makes the next real finding easier to ignore.
  *
- * What it *is*: the same shape leona #681 fixed in `check-paper-register.mjs`,
+ * What it *is*: the same shape leona PR 681 fixed in `check-paper-register.mjs`,
  * left in four other places. The value of closing it is that a check script
  * which writes wherever its argument points is one copy-paste away from being
  * called with an argument someone else controls — a matrix entry, an
