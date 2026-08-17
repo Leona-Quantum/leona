@@ -26,6 +26,7 @@ from .rate_limit import (
     EXEMPT_PATHS,
     TRUSTED_CALLER_HEADER,
     MAX_REQUEST_BYTES,
+    AuthFailureThrottle,
     BodyTooLarge,
     FixedWindowLimiter,
     client_address,
@@ -89,6 +90,17 @@ def _too_large() -> JSONResponse:
         f"Request body exceeds the {MAX_REQUEST_BYTES // 1024} KB limit.",
         "request_too_large",
         extra={"reason": "request_too_large", "limit_bytes": MAX_REQUEST_BYTES},
+    )
+
+
+def _auth_failures_throttled(retry_after_s: int) -> JSONResponse:
+    return _problem(
+        429,
+        "Too many failed authentication attempts from this address. Wait and "
+        "try again, or sign in again if your session has expired.",
+        "rate_limited",
+        headers={"Retry-After": str(retry_after_s)},
+        extra={"reason": "auth_failure_throttled"},
     )
 
 
@@ -170,12 +182,25 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.state.trusted_limiter = FixedWindowLimiter(
         limit=app.state.settings.trusted_rate_limit_per_minute
     )
+    # Meters every caller — credentialed or not, every path — by the 401s and
+    # 403s their own requests produce (ai-ops#145, `AuthFailureThrottle`). A
+    # third, independent bucket rather than folding into either limiter above:
+    # those two are scoped to `/v1/catalog/*` and count every request; this one
+    # runs everywhere and counts only a refusal.
+    app.state.auth_failure_throttle = AuthFailureThrottle(
+        limit=app.state.settings.auth_failure_limit
+    )
 
     @app.middleware("http")
     async def _anon_rate_limit(request: Request, call_next):
         if request.url.path in EXEMPT_PATHS:
             return await call_next(request)
-        headers = {k.lower(): v for k, v in request.headers.items()}
+        # `request.headers` (Starlette's `Headers`) is already case-insensitive
+        # and already normalizes multi-value headers, so there is nothing a
+        # rebuilt lowercased dict adds here — it only cost a per-request
+        # allocation this middleware and `_auth_failure_throttle` were each
+        # paying separately. `client_address` and `is_trusted_caller` accept
+        # any string-keyed mapping, `request.headers` included.
 
         # Total request size. Pydantic bounds each FIELD — `task_prompt` at
         # 20 KB, `source_code` at 100 KB — but a field limit applies AFTER the
@@ -188,7 +213,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         # confirmed a 2 MiB chunked body reaching the handler under a 1 MiB
         # "limit". The declared check stays because it refuses without reading
         # anything; `read_bounded_body` is what makes the limit true.
-        declared = headers.get("content-length")
+        declared = request.headers.get("content-length")
         if declared and declared.isdigit() and int(declared) > MAX_REQUEST_BYTES:
             return _too_large()
         try:
@@ -221,14 +246,16 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         # renderer's shared secret is counted against a separate, generous
         # ceiling; everyone else — including a caller that sent a wrong token —
         # is counted as anonymous. There is no branch here that skips metering.
-        trusted = is_trusted_caller(headers, request.app.state.settings.trusted_caller_token)
+        trusted = is_trusted_caller(
+            request.headers, request.app.state.settings.trusted_caller_token
+        )
         limiter = request.app.state.trusted_limiter if trusted else request.app.state.anon_limiter
         # Emitted on the refusal AND on the success, because the question this
         # answers — "is the deployed renderer actually being seen as trusted?" —
         # is asked of a healthy service, not a refused one.
         trust_header = {CALLER_TRUST_HEADER: "trusted" if trusted else "anonymous"}
 
-        decision = limiter.check(client_address(headers, peer))
+        decision = limiter.check(client_address(request.headers, peer))
         if not decision.allowed:
             # The refusal names the bucket that actually refused. Reporting a
             # trusted renderer's ceiling as "anonymous" would tell whoever is
@@ -303,13 +330,74 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             response.headers[CALLER_TRUST_HEADER] = trust_header[CALLER_TRUST_HEADER]
         return response
 
+    # Registered after `_anon_rate_limit`, which makes it OUTER relative to
+    # that middleware (see the placement comment two blocks down for what
+    # "registration order" means for nesting). The practical effect: this
+    # runs its block-check before `_anon_rate_limit` does any work at all, so
+    # an address already over the auth-failure ceiling is refused before this
+    # service spends anything buffering its body or touching the catalog
+    # limiter's own counters.
+    @app.middleware("http")
+    async def _auth_failure_throttle(request: Request, call_next):
+        if request.url.path in EXEMPT_PATHS:
+            return await call_next(request)
+        # `request.headers` directly — see the comment in `_anon_rate_limit`.
+        peer = request.client.host if request.client else None
+        address = client_address(request.headers, peer)
+        throttle = request.app.state.auth_failure_throttle
+
+        # Identity-gated exemption from REFUSAL, never from counting — see
+        # `AuthFailureThrottle`'s "The trusted-caller exemption" docstring
+        # section for the full reasoning (Aikido finding 1, PR 707) and its
+        # residual. A caller proving it holds the renderer's shared secret is
+        # never blocked here, because that secret cannot be forged the way an
+        # address can — so an attacker who does not hold it cannot make
+        # themselves look like the BFF and get the BFF blocked. An attacker
+        # who does not present it is metered and blocked exactly as before.
+        trusted = is_trusted_caller(
+            request.headers, request.app.state.settings.trusted_caller_token
+        )
+        if not trusted:
+            decision = throttle.should_block(address)
+            if not decision.allowed:
+                return _auth_failures_throttled(decision.retry_after_s)
+
+        response = await call_next(request)
+        # The OUTCOME, not the path or a header, decides what counts — see
+        # `AuthFailureThrottle`'s docstring for why that is what keeps a CI
+        # authz suite (which overrides the identity dependency and rejects
+        # nothing), our own health checks, and the deploy probe's working
+        # path from ever contributing to this count at all: none of them,
+        # when everything is configured correctly, ever produces a 401 for
+        # this to see. The trusted-caller path is different: it CAN produce a
+        # 401 in principle and is still counted when it does (`trusted` above
+        # only skips the refusal, not this line) — the count, and the WARN
+        # threshold it can trigger, must stay visible even for an exempt
+        # caller, or the exemption also hides the one signal that would show
+        # the shared bucket climbing.
+        #
+        # 401 only, not 403 — narrowed after review. `auth/deps.py`'s
+        # `get_verified_token` is the ONLY place this service raises a 401, for
+        # a missing/invalid/expired/reserved-identity bearer token, which is
+        # what "an auth failure" actually means. 403 is NOT counted: it is
+        # raised from several unrelated places, almost all of them a correctly
+        # authenticated caller being told no by business logic (a free-tier
+        # plan gate, a workspace-scope check) rather than a credential problem
+        # — see `AuthFailureThrottle`'s "401 only, not 403" section for the
+        # concrete exploit (a legitimate free-tier user tripping the block for
+        # every other signed-in user behind the shared BFF address) that this
+        # narrowing closes.
+        if response.status_code == 401:
+            throttle.record_failure(address)
+        return response
+
     # Registered LAST, which makes it OUTERMOST — Starlette's `add_middleware`
     # inserts at the front of `user_middleware`, and the front of that list is
     # the outside of the stack. That is the whole point of the placement: the
     # responses most worth covering are the ones that never reach a route
-    # handler — the limiter's own 429 above, the 413 for an oversized body, and
+    # handler — both limiters' 429s above, the 413 for an oversized body, and
     # every problem+json the exception handlers below produce. A middleware
-    # registered earlier would sit inside the limiter and see none of them.
+    # registered earlier would sit inside the limiters and see none of them.
     #
     # What it still does not cover is a 500 raised past every handler, because
     # Starlette's ServerErrorMiddleware is outside all user middleware by

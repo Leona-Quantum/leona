@@ -9,6 +9,7 @@ import {
   isControlPlaneTimeout,
   openControlPlaneStream,
 } from "./control-plane.ts";
+import { TRUSTED_CALLER_HEADER } from "./trusted-caller.ts";
 
 /**
  * These run against a real socket rather than a stubbed `fetch`. The whole
@@ -40,6 +41,84 @@ after(() => {
     server.closeAllConnections();
     server.close();
   }
+});
+
+/**
+ * Save, set, and restore `MAJORANA_TRUSTED_CALLER_TOKEN` around `run` —
+ * same idiom `trusted-caller.test.ts` uses, kept local here rather than
+ * exported because it mutates process-global state and no other file in
+ * this suite should be tempted to reuse it across a parallel test.
+ */
+async function withEnvToken<T>(token: string | undefined, run: () => Promise<T>): Promise<T> {
+  const previous = process.env.MAJORANA_TRUSTED_CALLER_TOKEN;
+  if (token === undefined) delete process.env.MAJORANA_TRUSTED_CALLER_TOKEN;
+  else process.env.MAJORANA_TRUSTED_CALLER_TOKEN = token;
+  try {
+    return await run();
+  } finally {
+    if (previous === undefined) delete process.env.MAJORANA_TRUSTED_CALLER_TOKEN;
+    else process.env.MAJORANA_TRUSTED_CALLER_TOKEN = previous;
+  }
+}
+
+const TOKEN = "trusted-caller-token-for-tests-0123456789";
+
+/**
+ * The proof leona 707 actually needs: every proxied call carries the secret,
+ * not just the ones a caller happens to build it into. Real sockets, same
+ * reasoning as the rest of this file — a stubbed `fetch` cannot tell
+ * "attached" from "silently dropped" on the way to the wire, and that
+ * distinction is the entire point of this change (`AuthFailureThrottle`'s
+ * block-exemption on the API side is inert unless this header actually
+ * arrives).
+ */
+test("fetchControlPlane attaches the trusted-caller secret when configured", async () => {
+  let received: NodeJS.Dict<string | string[]> = {};
+  const { origin, server } = await listen((request, response) => {
+    received = request.headers;
+    response.writeHead(200, { "Content-Type": "application/json" });
+    response.end("{}");
+  });
+  servers.push(server);
+
+  await withEnvToken(TOKEN, () =>
+    fetchControlPlane(`${origin}/v1/me`, { headers: { Authorization: "Bearer x" } }),
+  );
+
+  assert.equal(received[TRUSTED_CALLER_HEADER.toLowerCase()], TOKEN);
+  // The caller's own headers must survive alongside it, not be replaced by it.
+  assert.equal(received.authorization, "Bearer x");
+});
+
+test("fetchControlPlane sends nothing extra when the secret is unconfigured", async () => {
+  let received: NodeJS.Dict<string | string[]> = {};
+  const { origin, server } = await listen((request, response) => {
+    received = request.headers;
+    response.writeHead(200, { "Content-Type": "application/json" });
+    response.end("{}");
+  });
+  servers.push(server);
+
+  await withEnvToken(undefined, () => fetchControlPlane(`${origin}/v1/me`));
+
+  assert.equal(received[TRUSTED_CALLER_HEADER.toLowerCase()], undefined);
+});
+
+test("openControlPlaneStream attaches the trusted-caller secret too", async () => {
+  let received: NodeJS.Dict<string | string[]> = {};
+  const { origin, server } = await listen((request, response) => {
+    received = request.headers;
+    response.writeHead(200, { "Content-Type": "text/event-stream" });
+    response.end();
+  });
+  servers.push(server);
+
+  const upstream = await withEnvToken(TOKEN, () =>
+    openControlPlaneStream(`${origin}/v1/runs/x/events/stream`),
+  );
+  await upstream.body?.cancel();
+
+  assert.equal(received[TRUSTED_CALLER_HEADER.toLowerCase()], TOKEN);
 });
 
 test("a timeout is recognised through undici's wrapper, not just at the top", () => {

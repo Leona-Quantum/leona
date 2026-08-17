@@ -16,7 +16,52 @@
  * Nothing here imports from `next/server`: the repo's tests run on the bare
  * node runner, which cannot resolve it, and a helper the tests cannot load is
  * a helper nobody checks. Route handlers accept any `Response`.
+ *
+ * ## Every proxied call now carries the trusted-caller secret too (leona 707)
+ *
+ * Both helpers below attach `TRUSTED_CALLER_HEADER` (`withTrustedCallerHeader`,
+ * `./trusted-caller.ts`) to every outgoing request, not only the ones that
+ * happen to construct it themselves. Before this, exactly ONE caller in this
+ * whole app sent that header — `repository-source.ts`'s anonymous catalog
+ * fetch — because that was the only traffic the header was ever built for
+ * (metering our own SSR egress separately from anonymous readers on
+ * `/v1/catalog/*`). `services/api`'s `AuthFailureThrottle` (ai-ops issue 145) later
+ * grew a SECOND use for the same secret — a caller presenting it is exempt
+ * from being BLOCKED for accumulated 401s — and that exemption is worthless
+ * against the attack it exists for (an attacker forging this BFF's own
+ * address to get it blocked) unless the BFF's authenticated proxy traffic
+ * presents the secret too, which it did not, anywhere, until this change.
+ *
+ * **The exemption on the API side is inert unless the caller actually
+ * presents the secret.** Read `AuthFailureThrottle`'s docstring in
+ * `services/api/src/majorana_api/rate_limit.py` before assuming this header
+ * covers a caller it does not — at the time that exemption was written,
+ * exactly one caller sent it, and it was not this one.
+ *
+ * Safe to ship unconditionally: `withTrustedCallerHeader` degrades to
+ * returning the base headers unchanged when `MAJORANA_TRUSTED_CALLER_TOKEN`
+ * is unset (every environment except production today), so an unconfigured
+ * deployment sends exactly what it sent before this change.
+ *
+ * Not `server-only`, on purpose, checked rather than assumed: this package
+ * has `server-only` available transitively (`account-tier-server.ts` already
+ * imports it), but a bare `import("server-only")` under plain Node — the
+ * runtime `control-plane.test.ts` uses — throws `Cannot find package
+ * 'server-only'`, because its enforcement is a webpack/Next build-time
+ * resolution trick, not something the package does at import time outside
+ * that pipeline. Adding it here would break the exact test-without-Next
+ * property this file's own docstring already argues for. The guarantee this
+ * secret needs is the `NEXT_PUBLIC_` prefix rule instead: `trusted-caller.ts`
+ * reads `MAJORANA_TRUSTED_CALLER_TOKEN`, which carries no such prefix, so
+ * Next never inlines it into a client bundle — confirmed against
+ * `next.config.ts`, which defines no `env` override that would re-expose it.
+ * A client-bundled read would resolve to `undefined`, and
+ * `trustedCallerToken()` treats that identically to "unset": the failure mode
+ * of a leak attempt here is the header quietly not being sent, never the
+ * secret's value reaching a browser.
  */
+
+import { withTrustedCallerHeader } from "./trusted-caller.ts";
 
 /** Base URL of the control plane. The dev default matches `services/api`. */
 export const CONTROL_PLANE_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
@@ -40,8 +85,16 @@ export function controlPlaneUrl(path: string): URL {
  * `init` deliberately has no `signal`: this helper owns the abort, and a caller
  * that passed one would have it silently dropped. A route that genuinely needs
  * to compose signals should say so in the type, not discover it at runtime.
+ *
+ * `headers` is narrowed from `RequestInit`'s `HeadersInit` (which also allows
+ * a `Headers` instance or a tuple array) to a plain `Record<string, string>`.
+ * Every call site in this app already passes a plain object literal, and
+ * `withTrustedCallerHeader` needs one to merge into — narrowing here means
+ * that merge never has to branch on which shape it received.
  */
-type ControlPlaneInit = Omit<RequestInit, "signal">;
+type ControlPlaneInit = Omit<RequestInit, "signal" | "headers"> & {
+  headers?: Record<string, string>;
+};
 
 /*
  * Both helpers take `timeoutMs` last, defaulted to the constant above. It
@@ -64,6 +117,7 @@ export function fetchControlPlane(
   return fetch(input, {
     cache: "no-store",
     ...init,
+    headers: withTrustedCallerHeader(init.headers ?? {}),
     signal: AbortSignal.timeout(timeoutMs),
   });
 }
@@ -88,7 +142,12 @@ export async function openControlPlaneStream(
     timeoutMs,
   );
   try {
-    return await fetch(input, { cache: "no-store", ...init, signal: controller.signal });
+    return await fetch(input, {
+      cache: "no-store",
+      ...init,
+      headers: withTrustedCallerHeader(init.headers ?? {}),
+      signal: controller.signal,
+    });
   } finally {
     clearTimeout(timer);
   }
