@@ -21,23 +21,49 @@ const themeScript = `(() => {
 
 /**
  * `<html lang>`, set here rather than on the server, and why that is not a
- * downgrade.
+ * downgrade — updated, because the premise it was written against has changed.
  *
  * This layout used to `await getPublicLocale()`, which reads a cookie. A
  * Dynamic API in the ROOT layout makes every route in the application dynamic,
  * so one line for one attribute was disqualifying the entire site from the CDN.
  *
- * The attribute itself loses nothing measurable. A crawler carries no cookie,
- * so `getPublicLocale()` already returned the default for every crawler that
- * has ever visited — the served markup said `lang="en"` before this change and
- * says `lang="en"` after it. A screen reader reads the live DOM, which this
- * script has already corrected before paint, exactly as it corrects the theme
- * on the line above. What changes is which of the two is authoritative, and
- * nobody was reading the server's answer.
+ * When this comment was first written, the claim "the served markup said
+ * `lang="en"` before this change and says `lang="en"` after it" was the whole
+ * story, because every OTHER server-rendered byte on a Japanese `[locale]`
+ * page was English too — `lang="en"` was wrong but at least consistent with a
+ * page that was itself not yet localized. That stopped being true twice over:
+ * the page body always read locale-keyed copy, and PR 710 made the page
+ * TITLE and DESCRIPTION do the same. So a fresh, no-JS, pre-hydration load of
+ * a Japanese page now serves a Japanese `<h1>` and a Japanese `<title>` inside
+ * a document that still declares `lang="en"` — a real, now-measurable
+ * mismatch, not merely an unread one. `<main lang={resolvedLocale}>` in
+ * `components/public-site.tsx` closes that gap for every visitor-facing
+ * element this app renders under `[locale]` — see the comment there — but
+ * `<html lang>` itself still cannot vary, for the structural reason below,
+ * and this script remains the only thing that ever updates it (including
+ * on the language toggle's own `router.refresh()`, which re-renders the root
+ * layout but produces the identical literal `"en"` every time — the toggle's
+ * `document.documentElement.lang = nextLocale` line in
+ * `components/language-toggle.tsx` is therefore not redundant with anything
+ * added here).
  *
- * The real fix, if `lang` ever has to be right in the served bytes, is to make
- * `app/[locale]/layout.tsx` the root layout so it comes from the path. That is
- * a move of every route in the app and it buys nothing today.
+ * The real fix, if `<html lang>` itself ever has to be right in the served
+ * bytes, is to make `app/[locale]/layout.tsx` the root layout so it comes
+ * from the path — Next has no other mechanism (no `lang` field on the
+ * Metadata API, and a layout only ever receives params for segments from the
+ * root down to itself, never from a descendant segment like `[locale]`).
+ * That is a move of every route in the app: today only `app/[locale]/*` and
+ * `app/(app)/*` are grouped at all, so roughly nine other top-level segments
+ * (`api`, `auth`, `dashboard`, `demo`, `dev`, `lab`, `open-source`,
+ * `repository`, `welcome`) would each need a route group of their own or a
+ * shared one, and Next's "multiple root layouts" feature means crossing
+ * between the `[locale]` root and every other one costs a full page reload
+ * rather than a client-side transition. That cost may be near zero here
+ * specifically — every link this app renders FROM a `[locale]` page already
+ * uses a plain `<a href>`, never `next/link`, so that reload already happens
+ * today (checked: no `next/link` import anywhere under `app/[locale]/` or in
+ * `components/public-site.tsx`, `language-toggle.tsx`, `theme-toggle.tsx`) —
+ * but it is still a real, larger restructuring this comment is not deciding.
  */
 const localeScript = `(() => {
   try {
