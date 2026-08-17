@@ -130,3 +130,47 @@ describe("which address the contact form meters", () => {
     assert.equal(contactAddress(new Headers({ "x-forwarded-for": " , 203.0.113.7" })), "unknown");
   });
 });
+
+describe("cf-connecting-ip, once leonaqt.com is proxied through Cloudflare (ai-ops 141)", () => {
+  it("prefers cf-connecting-ip when Vercel's own witness confirms Cloudflare made the connection", () => {
+    // 104.20.1.1 is inside Cloudflare's published 104.16.0.0/13 — i.e. this is
+    // what x-vercel-forwarded-for looks like for every visitor once the zone is
+    // proxied, and it is what makes the Cloudflare header worth believing.
+    const headers = new Headers({
+      "cf-connecting-ip": "203.0.113.7",
+      "x-vercel-forwarded-for": "104.20.1.1",
+    });
+    assert.equal(contactAddress(headers), "203.0.113.7");
+  });
+
+  it("ignores a forged cf-connecting-ip when the connection did not come from Cloudflare", () => {
+    // The bypass this closes: a request that reached this deployment by some
+    // route other than the proxied domain (its `*.vercel.app` alias, for one)
+    // carries whatever cf-connecting-ip a caller cares to write, and
+    // x-vercel-forwarded-for shows their real address rather than a Cloudflare
+    // one. The forged header must be ignored, and metering must fall back to
+    // the address Vercel itself witnessed — never to "unknown", which would
+    // exempt this path from the limiter entirely.
+    const headers = new Headers({
+      "cf-connecting-ip": "198.51.100.4", // forged
+      "x-vercel-forwarded-for": "203.0.113.7", // the real caller, not a Cloudflare address
+    });
+    assert.equal(contactAddress(headers), "203.0.113.7");
+  });
+
+  it("behaves exactly as before when cf-connecting-ip is absent", () => {
+    // No Cloudflare in front of this request (local dev, or before ai-ops 141) —
+    // the platform header alone still governs, unchanged.
+    const headers = new Headers({ "x-vercel-forwarded-for": "203.0.113.7" });
+    assert.equal(contactAddress(headers), "203.0.113.7");
+  });
+
+  it("falls back past a Cloudflare address with no cf-connecting-ip to go with it", () => {
+    // x-vercel-forwarded-for being a Cloudflare address with no cf-connecting-ip
+    // present is not a state Cloudflare actually produces, but the function
+    // must not throw or invent an address for it — it meters the Cloudflare
+    // address itself rather than crashing or returning "unknown".
+    const headers = new Headers({ "x-vercel-forwarded-for": "104.20.1.1" });
+    assert.equal(contactAddress(headers), "104.20.1.1");
+  });
+});

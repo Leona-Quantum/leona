@@ -49,6 +49,8 @@
  * time instead of sleeping. The route owns the one long-lived store.
  */
 
+import { isCloudflareEdgeAddress } from "./cloudflare-proxy.ts";
+
 /** One address's usage of the current window. */
 export type WindowEntry = { count: number; resetAt: number };
 
@@ -149,9 +151,41 @@ export function sweepExpired(store: RateLimitStore, now: number): void {
  *
  * None of this stops a genuinely distributed sender, and the module docstring
  * says so. It stops the cheap attack, which is the one that actually happens.
+ *
+ * ## `cf-connecting-ip`, and why it goes first rather than replacing anything (ai-ops 141)
+ *
+ * `leonaqt.com` is proxied through Cloudflare as of ai-ops 141. That changes
+ * what `x-vercel-forwarded-for` means: Vercel's edge still sets it from the
+ * actual TCP peer, but that peer is now Cloudflare, not the visitor — every
+ * request from every visitor on Earth arrives from one of a small set of
+ * Cloudflare edge addresses, and the platform header this function has trusted
+ * since the finding above collapses to one shared bucket. The rate limiter would
+ * still be un-forgeable; it would just no longer discriminate between visitors,
+ * which defeats it as thoroughly as the original `x-forwarded-for` bug did.
+ *
+ * Cloudflare's fix for exactly this is `cf-connecting-ip`, set at its edge to
+ * the real visitor address. But it is trustworthy only CONDITIONALLY: this
+ * deployment's `*.vercel.app` alias is still reachable directly, entirely
+ * outside `leonaqt.com`'s DNS, and nothing stops a request from reaching Vercel
+ * that way instead of through Cloudflare. On that path `cf-connecting-ip` is
+ * just another caller-supplied header — as forgeable as `x-forwarded-for` ever
+ * was, under a name that sounds authoritative. Trusting it outright would trade
+ * one bypass for another.
+ *
+ * `isCloudflareEdgeAddress` (`./cloudflare-proxy.ts`) is the check that closes
+ * that gap: `cf-connecting-ip` is honoured only when `x-vercel-forwarded-for` —
+ * still un-forgeable, still Vercel's own witness to who actually connected — is
+ * itself one of Cloudflare's published edge addresses. That is true for every
+ * request that really came through Cloudflare, and false for one that reached
+ * Vercel by any other route, including the `*.vercel.app` alias. On that false
+ * branch this function falls through to `x-vercel-forwarded-for` exactly as it
+ * did before Cloudflare existed in front of this deployment — the real address
+ * of whoever actually connected, not a header they wrote themselves.
  */
 export function contactAddress(headers: Headers): string {
   const platform = headers.get("x-vercel-forwarded-for")?.trim() || headers.get("x-real-ip")?.trim();
+  const cloudflare = headers.get("cf-connecting-ip")?.trim();
+  if (cloudflare && platform && isCloudflareEdgeAddress(platform)) return cloudflare;
   if (platform) return platform;
   const forwarded = headers.get("x-forwarded-for") ?? "";
   const first = forwarded.split(",")[0]?.trim();
