@@ -1,5 +1,12 @@
 /**
- * The control that gates the `jose@^5.0.0: 6.2.5` override in `pnpm-workspace.yaml`.
+ * The control that gates the `jose@^5.0.0` override in `pnpm-workspace.yaml`.
+ *
+ * The override's version is deliberately NOT quoted here. It moved 6.2.5 -> 6.2.8
+ * and this sentence would not have been updated with it — the same failure the
+ * `DEFAULT_ANON_LIMIT` comment in `services/api/.../rate_limit.py` records, where
+ * prose under-stated a constant by 5x for as long as it went unread. What this
+ * file pins is `MINIMUM_PATCHED_JOSE`, below, which is a floor rather than the
+ * override's current value.
  *
  * ## Why this file exists, and why it is not the test that was proposed
  *
@@ -38,8 +45,9 @@
  *
  * ## Scope, stated honestly
  *
- * This proves the jose primitives authkit calls behave correctly under 6.2.5
- * against a locally generated key. It does NOT prove a real WorkOS sign-in: that
+ * This proves the jose primitives authkit calls behave correctly, under whatever
+ * jose the override actually resolves, against a locally generated key. It does
+ * NOT prove a real WorkOS sign-in: that
  * needs a live session cookie on the production domain, which a preview
  * deployment cannot hold because WorkOS redirect URIs are per-domain. That gap
  * is the owner's accepted risk on ai-ops 131 and is covered by a manual walk.
@@ -279,7 +287,22 @@ test("authkit resolves the SAME jose install this file just tested", () => {
     joseSeenByTheApp,
     "authkit-nextjs resolved a DIFFERENT jose than this test verified. The " +
       "pnpm override is not reaching the package that actually validates the " +
-      "session, so AIKIDO-2026-584205 is still open on the signed-in path.",
+      "session, so AIKIDO-2026-584205 is still open on the signed-in path.\n" +
+      "\n" +
+      "The usual cause is a version bump that moved one half of the control " +
+      'and not the other. The two halves are the `jose@^5.0.0` override in ' +
+      "`pnpm-workspace.yaml` and the `jose` devDependency in " +
+      "`apps/web/package.json`. They must name the SAME version, and which " +
+      "version that is belongs to the override: it is deliberately forcing a " +
+      "jose major that authkit-nextjs does not itself declare, and the comment " +
+      "above it in pnpm-workspace.yaml is where that is argued. So bring the " +
+      "devDependency to whatever the override says — do not pick the " +
+      "numerically higher of the two, which across a major boundary would move " +
+      "the override onto a jose that has never been checked against authkit's " +
+      "module graph. Raising the override itself is a separate decision that " +
+      "means re-reading that comment. Either way, do not silence this by " +
+      "relaxing the assertion, which is the only thing standing between a " +
+      "split resolution and a green suite over an open advisory.",
   );
 });
 
