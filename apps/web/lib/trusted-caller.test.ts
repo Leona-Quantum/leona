@@ -138,6 +138,19 @@ test("Vary is matched as a list entry, not as a substring", () => {
   assert.deepEqual(lines, []);
 });
 
+test("Vary token matching is case-insensitive", () => {
+  // `Headers` lowercases header NAMES but leaves the value string alone, and
+  // `Vary` is a value — so a proxy or framework that echoes our header name in
+  // its own casing produces this, and an implementation that compared raw
+  // strings would go quiet on a real fault. The lowercasing is in the
+  // implementation; without this it was unexercised.
+  const { lines, log } = collect();
+  const mixedCase = new Headers({ vary: "Accept-Encoding, x-mAjOrAnA-tRuStEd-CaLlEr" });
+  reportCallerTrust(mixedCase, "https://api.test/v1/catalog/entries", log, TOKEN);
+
+  assert.equal(lines.length, 1, "a differently-cased Vary entry is still our header");
+});
+
 test("an unconfigured deployment is silent even when the verdict was stripped", () => {
   // The new branch must not turn every render of an unconfigured deployment
   // into an error line — that is the noise that hides a real fault.
