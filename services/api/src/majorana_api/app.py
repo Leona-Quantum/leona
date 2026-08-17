@@ -346,18 +346,35 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         address = client_address(request.headers, peer)
         throttle = request.app.state.auth_failure_throttle
 
-        decision = throttle.should_block(address)
-        if not decision.allowed:
-            return _auth_failures_throttled(decision.retry_after_s)
+        # Identity-gated exemption from REFUSAL, never from counting — see
+        # `AuthFailureThrottle`'s "The trusted-caller exemption" docstring
+        # section for the full reasoning (Aikido finding 1, PR 707) and its
+        # residual. A caller proving it holds the renderer's shared secret is
+        # never blocked here, because that secret cannot be forged the way an
+        # address can — so an attacker who does not hold it cannot make
+        # themselves look like the BFF and get the BFF blocked. An attacker
+        # who does not present it is metered and blocked exactly as before.
+        trusted = is_trusted_caller(
+            request.headers, request.app.state.settings.trusted_caller_token
+        )
+        if not trusted:
+            decision = throttle.should_block(address)
+            if not decision.allowed:
+                return _auth_failures_throttled(decision.retry_after_s)
 
         response = await call_next(request)
         # The OUTCOME, not the path or a header, decides what counts — see
         # `AuthFailureThrottle`'s docstring for why that is what keeps a CI
         # authz suite (which overrides the identity dependency and rejects
-        # nothing), our own health checks, the deploy probe's working path,
-        # and the trusted-caller path from ever contributing to this count at
-        # all: none of them, when everything is configured correctly, ever
-        # produces a 401 for this to see.
+        # nothing), our own health checks, and the deploy probe's working
+        # path from ever contributing to this count at all: none of them,
+        # when everything is configured correctly, ever produces a 401 for
+        # this to see. The trusted-caller path is different: it CAN produce a
+        # 401 in principle and is still counted when it does (`trusted` above
+        # only skips the refusal, not this line) — the count, and the WARN
+        # threshold it can trigger, must stay visible even for an exempt
+        # caller, or the exemption also hides the one signal that would show
+        # the shared bucket climbing.
         #
         # 401 only, not 403 — narrowed after review. `auth/deps.py`'s
         # `get_verified_token` is the ONLY place this service raises a 401, for

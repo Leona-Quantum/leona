@@ -969,6 +969,87 @@ async def test_the_trusted_caller_surface_can_never_produce_a_401():
         assert 429 not in statuses, (headers, statuses)
 
 
+# --------------------------------------------------------------------------
+# The trusted-caller exemption from refusal (ai-ops#145, Aikido finding 1)
+#
+# Every positive case here (the trusted caller is never blocked) sits next to
+# a negative control (a wrong token, or no token, is blocked normally) —
+# otherwise a bug that trusts every caller with ANY header would pass the
+# positive case perfectly, exactly the failure the anon/trusted split's own
+# tests already guard against for the rate-limit bucket, now for refusal.
+# --------------------------------------------------------------------------
+
+
+async def test_a_trusted_caller_is_never_blocked_past_the_ceiling():
+    app = create_app(_settings(auth_failure_limit=2, trusted_caller_token=TRUSTED_TOKEN))
+    headers = {"x-forwarded-for": "203.0.113.100", TRUSTED_CALLER_HEADER: TRUSTED_TOKEN}
+    async with _client(app) as client:
+        statuses = [(await client.get("/v1/runs", headers=headers)).status_code for _ in range(10)]
+
+    assert statuses == [401] * 10, (
+        "the trusted caller must never be refused, only the route's own 401"
+    )
+
+
+async def test_a_trusted_callers_failures_still_count_against_its_address():
+    """Exemption from refusal, never from counting — checked from the outside
+    rather than by reading `record_failure`'s call site: an UNTRUSTED request
+    from the SAME address, right after the trusted caller's failures already
+    exceeded the ceiling, must be refused immediately. If counting were
+    skipped for the exempt caller too, this would still read 401."""
+    app = create_app(_settings(auth_failure_limit=2, trusted_caller_token=TRUSTED_TOKEN))
+    address = {"x-forwarded-for": "203.0.113.101"}
+    trusted_headers = {**address, TRUSTED_CALLER_HEADER: TRUSTED_TOKEN}
+    async with _client(app) as client:
+        for _ in range(3):  # over the ceiling of 2, all exempt from refusal
+            await client.get("/v1/runs", headers=trusted_headers)
+        # Same address, no trusted header this time.
+        response = await client.get("/v1/runs", headers=address)
+
+    assert response.status_code == 429
+    assert response.json()["reason"] == "auth_failure_throttled"
+
+
+async def test_a_wrong_trusted_caller_token_does_not_exempt_from_blocking():
+    """The control for the exemption itself. A membership check or an
+    exemption keyed on the header's mere PRESENCE would pass the two tests
+    above and hand every caller a bypass — the same failure class the
+    anon/trusted rate-limit split already guards against, now for refusal."""
+    app = create_app(_settings(auth_failure_limit=2, trusted_caller_token=TRUSTED_TOKEN))
+    headers = {"x-forwarded-for": "203.0.113.102", TRUSTED_CALLER_HEADER: "wrong-token"}
+    async with _client(app) as client:
+        statuses = [(await client.get("/v1/runs", headers=headers)).status_code for _ in range(3)]
+
+    assert 429 in statuses, "a wrong trusted-caller token bought an exemption from blocking"
+
+
+async def test_an_unconfigured_trusted_token_exempts_nobody_from_blocking():
+    """A secret set in the caller but not on the API buys nothing here
+    either — the same fail-safe direction `is_trusted_caller` already takes
+    for the rate-limit bucket."""
+    app = create_app(_settings(auth_failure_limit=2, trusted_caller_token=""))
+    headers = {"x-forwarded-for": "203.0.113.103", TRUSTED_CALLER_HEADER: TRUSTED_TOKEN}
+    async with _client(app) as client:
+        statuses = [(await client.get("/v1/runs", headers=headers)).status_code for _ in range(3)]
+
+    assert 429 in statuses
+
+
+async def test_the_warn_signal_still_fires_for_an_exempt_trusted_caller(caplog):
+    """Exemption from refusal must not mean invisibility — see
+    `AuthFailureThrottle`'s "trusted-caller exemption" docstring section. A
+    leaked or compromised secret producing sustained 401s must still surface
+    here even though nothing will act on it by blocking."""
+    app = create_app(_settings(auth_failure_limit=10, trusted_caller_token=TRUSTED_TOKEN))
+    headers = {"x-forwarded-for": "203.0.113.104", TRUSTED_CALLER_HEADER: TRUSTED_TOKEN}
+    with caplog.at_level("WARNING", logger="majorana_api.rate_limit"):
+        async with _client(app) as client:
+            for _ in range(8):  # crosses both 50% and 80%
+                await client.get("/v1/runs", headers=headers)
+
+    assert len(caplog.records) == 2
+
+
 async def test_auth_failure_limit_zero_disables_the_middleware():
     """The unit test on `AuthFailureThrottle(limit=0)` proves the class is a
     no-op; this proves the SETTING actually reaches the wired-up middleware —

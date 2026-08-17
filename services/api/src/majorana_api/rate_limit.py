@@ -386,9 +386,88 @@ class AuthFailureThrottle:
     `DEFAULT_ANON_LIMIT` was when it was raised: pick a number large enough
     that being wrong about the aggregate by a wide margin still refuses an
     abuser and still never refuses the shared address everyone signed in is
-    behind. If this ever measurably refuses real sessions, the fix is likely a
-    *second* bucket for the BFF the way `DEFAULT_TRUSTED_LIMIT` gave the
-    renderer its own — not a bigger number on a bucket everyone shares.
+    behind. The forward-looking fix this paragraph used to end on — a
+    *second* bucket for the BFF, the way `DEFAULT_TRUSTED_LIMIT` gave the
+    renderer its own — arrived sooner than expected, from a security review
+    rather than a measurement. See the next section.
+
+    ## The trusted-caller exemption — from refusal, never from counting
+
+    Two Aikido findings on this PR (2026-08-17) showed the address-based
+    refusal above is not a residual risk on shared BFF traffic, it is a
+    weapon. `client_address()`'s own docstring accepts that the leftmost
+    `X-Forwarded-For` entry is forgeable, reasoning that "between an attacker
+    who evades their own ceiling and one busy visitor taking the site down
+    for everybody, only the first is acceptable" — correct for a METERING
+    control, where forging only relocates the forger's own quota. It is
+    stale for a PUNITIVE one. Here, forging the header costs the forger
+    nothing: choose a victim address — the BFF's, for maximum blast radius —
+    send a junk bearer token (a free, trivial 401), and that address is
+    refused. The control becomes the weapon. The docstring's own second
+    horn, "takes the site down for everybody," is reached through the door
+    it was not watching.
+
+    So a caller presenting the renderer's shared secret
+    (`TRUSTED_CALLER_HEADER`, compared the same way `is_trusted_caller`
+    already compares it for the anonymous/trusted rate-limit split) is never
+    refused by `should_block` here, regardless of its address. The secret is
+    what makes this safe rather than merely convenient: unlike an address, it
+    cannot be forged by a caller who does not hold it, so an attacker cannot
+    make themselves look like the BFF and cannot get the BFF blocked. A
+    direct-to-Cloud-Run attacker — the population this control actually
+    exists for — holds no such secret and is refused on their own address
+    exactly as before.
+
+    **Narrower than exempting the trusted caller outright, and the narrowing
+    is deliberate.** An earlier version of this reasoning rejected a full
+    exemption — skip counting AND refusal — as trading a bounded false
+    positive for an unbounded bypass: anyone holding the secret could then
+    produce unlimited 401s with nothing to stop them. That trade reverses for
+    REFUSAL once refusal can be weaponised the way Aikido's finding shows,
+    but it does not reverse for COUNTING: `record_failure` runs for an
+    exempt caller exactly as it does for anyone else, so
+    `AUTH_FAILURE_WARN_THRESHOLDS` still fires if the BFF's own failure rate
+    climbs. Exemption from refusal must not mean invisibility — a leaked or
+    compromised trusted-caller secret producing sustained 401s with nothing
+    ever refusing it is precisely the case the count and the warning exist to
+    surface, even though nothing here will act on it by blocking.
+
+    **The residual, stated so nobody removes this thinking it is unrelated
+    cruft:** this control's safety against Aikido's finding now DEPENDS on
+    the trusted-caller mechanism correctly recognising the BFF. If
+    `TRUSTED_CALLER_TOKEN` is ever stale, unset, or misconfigured in
+    production — exactly the failure class a prior session's finding already
+    recorded once, where a correct-when-written check went blind after an
+    unrelated change elsewhere in this same file (`app.py`'s cache-control
+    handling started stripping `CALLER_TRUST_HEADER` from public responses,
+    fixed in PR 694) — the BFF stops presenting a recognisable identity and
+    becomes blockable again by address, silently, with no error anywhere.
+    That condition IS observable: `CALLER_TRUST_HEADER` is the read-back
+    mechanism PR 694 fixed, and this PR's own investigation confirmed it live
+    in production (ai-ops#145's read-back), so "is the renderer actually
+    being recognised" is answerable by one request against the deployed
+    service. It is not, however, watched continuously by anything in this
+    codebase today — a gap worth naming rather than assuming closed.
+
+    **Not yet effective for the traffic it exists to protect — this must
+    close before the safety claim above is true end to end.**
+    `TRUSTED_CALLER_HEADER` is presented today by exactly one caller:
+    `apps/web/lib/repository-source.ts`'s catalog SSR fetch
+    (`withTrustedCallerHeader`, grepped as the only call site in the whole of
+    `apps/web`, 2026-08-17). The BFF's AUTHENTICATED proxy —
+    `apps/web/lib/control-plane.ts`'s `fetchControlPlane` /
+    `openControlPlaneStream`, called from every `app/api/*/route.ts`
+    handler, which is the traffic Aikido's finding is actually about — sends
+    only `Authorization: Bearer <token>` and never this header. So today this
+    exemption protects a path (`/v1/catalog/*`) that could never have been
+    refused in the first place — no route under it ever calls
+    `get_verified_token` (see `is_trusted_caller`'s own docstring) — and does
+    NOT yet protect the authenticated BFF traffic the whole shared-address
+    problem is about. Closing that needs a companion change OUTSIDE this
+    service: `control-plane.ts` attaching the same secret to every proxied
+    call, not only the catalog ones. This PR does not make that change. The
+    mechanism here is correct and ready for it; the exposure Aikido found is
+    not yet closed end to end until it lands.
 
     ## Two methods, not one, because the event is not the request
 
