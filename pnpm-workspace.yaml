@@ -146,7 +146,17 @@ overrides:
   # rather than a real browser sign-in is what gates it: a preview deployment
   # cannot hold a production session cookie, because WorkOS redirect URIs are
   # per-domain.
-  jose@^5.0.0: 6.2.5
+  #
+  # THIS VERSION AND `apps/web`'s `jose` DEVDEPENDENCY MUST MOVE TOGETHER. They
+  # are two halves of one control and they live in two different files, so a bump
+  # that reads either file alone splits them. That is not hypothetical: Dependabot
+  # opened a PR raising the devDependency 6.2.5 -> 6.2.8 and left this line at
+  # 6.2.5, which resolved apps/web to one copy of jose and authkit to another and
+  # reopened the advisory on the signed-in path while every other assertion in the
+  # suite stayed green. The same-copy assertion in `session-jwt-crypto.test.ts`
+  # caught it, which is the whole reason that assertion exists — but it catches
+  # the split after the fact, so raise both numbers in the same commit.
+  jose@^5.0.0: 6.2.8
   # NOT `minimatch@^5 -> 10`, though that is the tempting way to collapse the
   # two lines above into one. minimatch 10 moved from a callable default export
   # to named exports, and @redocly/openapi-core (the only minimatch@5 consumer
