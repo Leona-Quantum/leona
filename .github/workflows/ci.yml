@@ -72,6 +72,31 @@ jobs:
       - name: axe over the @majorana/ui stories, plus the Atlas render checks
         run: pnpm --filter @majorana/ui-visual run a11y
 
+  # Form submission gate (ai-ops issue 123): apps/web has six user-facing forms
+  # (contact, welcome, account settings, workspace sharing, QPU credentials,
+  # studio's custom-gate builder) plus a seventh the audit's count of six
+  # missed — the project-sharing dialog reachable from the Studio sidebar.
+  # None had ever been submitted by any automated check; ui-visual explicitly
+  # renders @majorana/ui from source with no Next and no auth (its own
+  # AGENTS.md), so it could not have covered this either. Own job for the
+  # same reason ui-visual is one: a jsdom + esbuild + React Testing Library
+  # harness (tests/forms/) that the required `ts` job's `test` script does
+  # not pull in. Not a required check yet — same posture ui-visual started
+  # in; promote alongside it if the owner wants that.
+  form-submission:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with: { persist-credentials: false }
+      - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: submit every apps/web form and assert on the result
+        run: pnpm --filter @majorana/web run test:forms
+
   py:
     runs-on: ubuntu-latest
     steps:
