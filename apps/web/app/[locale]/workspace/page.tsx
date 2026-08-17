@@ -4,6 +4,7 @@ import { Reveal } from "../../../components/reveal";
 import { WORKSPACE_LANDING_COPY } from "../../../lib/public-copy";
 import { parsePublicLocale, PUBLIC_LOCALES } from "../../../lib/public-locale";
 import { canonicalMetadata } from "../../../lib/public-metadata";
+import { workspaceMetadataCopy } from "../../../lib/public-page-metadata";
 
 // Served from the CDN. The locale comes from the path segment because a cached
 // page cannot read a cookie — `middleware.ts` rewrites the clean URL to this
@@ -17,11 +18,14 @@ export function generateStaticParams() {
   return PUBLIC_LOCALES.map((locale) => ({ locale }));
 }
 
-export const metadata: Metadata = {
-  ...canonicalMetadata("/workspace"),
-  title: "Workspace",
-  description: "Leona Quantum's personal quantum workspace for guided development, Studio, and verified artifacts.",
-};
+// Localized — see `lib/public-page-metadata.ts` for the locale branch and why
+// it lives there rather than inline. A static English export here left a
+// Japanese reader's tab, search result and shared link in English while the
+// page body (below) already renders `WORKSPACE_LANDING_COPY[locale]`.
+export async function generateMetadata({ params }: { params: Promise<{ locale: string }> }): Promise<Metadata> {
+  const locale = parsePublicLocale((await params).locale);
+  return { ...workspaceMetadataCopy(locale), ...canonicalMetadata("/workspace") };
+}
 
 export default async function WorkspacePage({ params }: { params: Promise<{ locale: string }> }) {
   const locale = parsePublicLocale((await params).locale);
