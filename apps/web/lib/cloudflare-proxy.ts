@@ -158,6 +158,15 @@ function ipv6InCidr(ip: string, cidr: string): boolean {
  *
  * Not a general-purpose IP validator: an address that fails to parse as either
  * IPv4 or IPv6 simply is not in range, same as any other non-match.
+ *
+ * **Takes one address, not a header's raw value.** A caller holding a header
+ * that can be a comma-separated list (`x-vercel-forwarded-for` can be — see
+ * `contact-rate-limit.ts`'s `contactAddress`) must pick the one entry that
+ * matters before calling this, not pass the whole string: a list fails to
+ * parse as either IPv4 or IPv6, so it falls through to the `false` below —
+ * safe in that it never crashes or false-matches, but silently wrong for a
+ * caller that expected the list to be handled here. It isn't; nothing here
+ * splits on `,`.
  */
 export function isCloudflareEdgeAddress(address: string): boolean {
   const ip = address.trim();

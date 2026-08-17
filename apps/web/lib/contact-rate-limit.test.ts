@@ -173,4 +173,33 @@ describe("cf-connecting-ip, once leonaqt.com is proxied through Cloudflare (ai-o
     const headers = new Headers({ "x-vercel-forwarded-for": "104.20.1.1" });
     assert.equal(contactAddress(headers), "104.20.1.1");
   });
+
+  // Found by review on PR 702: x-vercel-forwarded-for can arrive as a
+  // comma-separated list. Handing the whole string to isCloudflareEdgeAddress
+  // makes it fail to parse — silently reverting to pre-fix behaviour, except
+  // worse, since the rate-limit key becomes the WHOLE LIST STRING rather than
+  // an address. Both cases below are confirmed to fail against the code as it
+  // stood before this fix (verified by running them against that version
+  // directly, not assumed): both returned the raw two-value string.
+  it("checks the FIRST entry of a chained x-vercel-forwarded-for against Cloudflare's ranges", () => {
+    // Per Vercel's own docs, x-vercel-forwarded-for is Vercel's own overwritten
+    // observation, not a preserved external chain — so if it is ever more than
+    // one entry, the first is Vercel's freshly substituted witness (who
+    // connected to VERCEL), which is what needs checking, not the last.
+    const headers = new Headers({
+      "x-vercel-forwarded-for": "104.20.1.1, 203.0.113.7", // Cloudflare address first
+      "cf-connecting-ip": "198.51.100.9",
+    });
+    assert.equal(contactAddress(headers), "198.51.100.9");
+  });
+
+  it("returns the chain's first entry, not the whole string, when it is not a Cloudflare address", () => {
+    const headers = new Headers({
+      "x-vercel-forwarded-for": "203.0.113.7, 192.0.2.55", // first entry is not Cloudflare
+      "cf-connecting-ip": "198.51.100.4", // forged — must be ignored
+    });
+    const result = contactAddress(headers);
+    assert.equal(result, "203.0.113.7", "the first entry, not the full list nor the forged header");
+    assert.notEqual(result, "203.0.113.7, 192.0.2.55", "must not use the whole list string as the key");
+  });
 });

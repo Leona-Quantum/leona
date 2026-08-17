@@ -51,6 +51,17 @@
 
 import { isCloudflareEdgeAddress } from "./cloudflare-proxy.ts";
 
+/**
+ * The first entry of a header that may be a bare value or a comma-separated
+ * list, trimmed; `""` if the header is absent or empty. Shared by every
+ * forwarding-style header this file reads — see `contactAddress`'s "The FIRST
+ * entry" section for why first, and why that is the same choice for all of
+ * them despite their different trust levels.
+ */
+function firstEntry(value: string | null | undefined): string {
+  return (value ?? "").split(",")[0]?.trim() ?? "";
+}
+
 /** One address's usage of the current window. */
 export type WindowEntry = { count: number; resetAt: number };
 
@@ -181,13 +192,41 @@ export function sweepExpired(store: RateLimitStore, now: number): void {
  * branch this function falls through to `x-vercel-forwarded-for` exactly as it
  * did before Cloudflare existed in front of this deployment — the real address
  * of whoever actually connected, not a header they wrote themselves.
+ *
+ * ## The FIRST entry, when a platform header carries more than one (found by review on PR 702)
+ *
+ * `x-vercel-forwarded-for` can arrive as a comma-separated list rather than a
+ * bare address. The first version of this fix read the whole header value as
+ * one string and handed it straight to `isCloudflareEdgeAddress`, which parses
+ * neither a list of IPv4s nor a list of IPv6s, so it simply returned `false` —
+ * `cf-connecting-ip` was silently ignored, and the entire list string (commas
+ * and all) became the rate-limit key instead of an address. That is not the
+ * "no Cloudflare header, behave as before" case; it is a key that varies with
+ * the chain rather than with the visitor, which is worse than either.
+ *
+ * The list's FIRST entry is the one to trust here, and this is the opposite
+ * choice from `x-forwarded-for`'s last-resort branch below on purpose, not by
+ * inconsistency: those are different headers with different construction. A
+ * generic `X-Forwarded-For` chain grows by each hop APPENDING the peer address
+ * it directly observed, so the standard reading is leftmost-is-oldest — but
+ * Vercel's own docs (`vercel.com/docs/headers/request-headers`) say
+ * `x-vercel-forwarded-for` does not follow that: *"If you are trying to use
+ * Vercel behind a proxy, we currently overwrite the X-Forwarded-For header and
+ * do not forward external IPs."* Vercel discards whatever chain arrived from
+ * upstream — from Cloudflare, in this topology — and starts the header fresh
+ * from what its own edge directly observed. So if this header is ever more than
+ * one entry despite that stated policy, the first one is Vercel's own freshly
+ * substituted observation (the party that connected to VERCEL, i.e. Cloudflare
+ * once proxied), and anything after it could only be Vercel's own further
+ * internal hops — never an external address, and never useful here. `x-real-ip`
+ * gets the same treatment: Vercel's docs describe it as identical in purpose to
+ * `x-forwarded-for`, so nothing guarantees it stays single-valued either, and
+ * there is no reason to trust its shape more than its sibling's.
  */
 export function contactAddress(headers: Headers): string {
-  const platform = headers.get("x-vercel-forwarded-for")?.trim() || headers.get("x-real-ip")?.trim();
+  const platform = firstEntry(headers.get("x-vercel-forwarded-for")) || firstEntry(headers.get("x-real-ip"));
   const cloudflare = headers.get("cf-connecting-ip")?.trim();
   if (cloudflare && platform && isCloudflareEdgeAddress(platform)) return cloudflare;
   if (platform) return platform;
-  const forwarded = headers.get("x-forwarded-for") ?? "";
-  const first = forwarded.split(",")[0]?.trim();
-  return first || "unknown";
+  return firstEntry(headers.get("x-forwarded-for")) || "unknown";
 }
