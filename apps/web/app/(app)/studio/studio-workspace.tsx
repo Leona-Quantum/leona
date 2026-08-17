@@ -894,7 +894,7 @@ export function StudioWorkspace({ artifactId, newDraft = false, locale = "en", l
                   wrapping label and its sr-only span supply it. What was missing
                   is the pair that makes a browser treat this as a FIELD, which
                   Chrome reports as an issue on every load of the page. Same
-                  defect and same fix as the Atlas search box (leona #653); that
+                  defect and same fix as the Atlas search box (leona PR 653); that
                   one was found by reading the production console, and this one
                   and the Library's were found by grepping for the shape rather
                   than waiting to read a second console. */}
