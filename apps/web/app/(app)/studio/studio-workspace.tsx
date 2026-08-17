@@ -890,7 +890,21 @@ export function StudioWorkspace({ artifactId, newDraft = false, locale = "en", l
             <label className="mj-studio-search mj-studio-search--dots">
               <SearchIcon size={17} />
               <span className="sr-only">{copy.search}</span>
-              <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder={copy.searchPlaceholder} />
+              {/* `id` and `name`. The accessible name was never missing — the
+                  wrapping label and its sr-only span supply it. What was missing
+                  is the pair that makes a browser treat this as a FIELD, which
+                  Chrome reports as an issue on every load of the page. Same
+                  defect and same fix as the Atlas search box (leona PR 653); that
+                  one was found by reading the production console, and this one
+                  and the Library's were found by grepping for the shape rather
+                  than waiting to read a second console. */}
+              <input
+                id="studio-search"
+                name="q"
+                value={query}
+                onChange={(event) => setQuery(event.target.value)}
+                placeholder={copy.searchPlaceholder}
+              />
               <StudioDots />
             </label>
             {/* No tabs at all until the workspace has a project — a lone "All"
