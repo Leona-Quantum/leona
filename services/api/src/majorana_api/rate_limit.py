@@ -1,7 +1,8 @@
 """Per-IP admission control for anonymous requests (05-security.md §1 edge),
 and — in `AuthFailureThrottle` below — a second, unrelated control that meters
-every caller (credentialed or not) by the 401s and 403s their requests
-actually produce (ai-ops#145). They live in one module because both are
+every caller (credentialed or not) by the 401s their requests actually produce
+(ai-ops#145; see that class's docstring for why 403 was cut after review).
+They live in one module because both are
 address-keyed admission decisions made in front of a handler, not because
 they share a policy: the first is scoped to one path prefix and counts every
 request; the second runs on every path and counts only a refusal.
@@ -70,6 +71,7 @@ from __future__ import annotations
 
 import hmac
 import time
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 
 #: Requests per window per address.
@@ -158,8 +160,9 @@ EXEMPT_PATHS = frozenset({"/health"})
 #: rather than the `Authorization` header, is what decides.
 LIMITED_PATH_PREFIXES = ("/v1/catalog",)
 
-#: Auth failures (401s and 403s the API actually returned) allowed from one
-#: address before it is refused outright (ai-ops#145). See
+#: Auth failures (401s the API actually returned — see `AuthFailureThrottle`
+#: for why 403 does not count) allowed from one address before it is refused
+#: outright (ai-ops#145). See
 #: `AuthFailureThrottle` for the mechanism and its docstring's "Sizing against
 #: the real population" section for why 300 is the right order of magnitude —
 #: it is not reasoned from a single browser the way `DEFAULT_ANON_LIMIT`'s
@@ -258,9 +261,8 @@ class FixedWindowLimiter:
 
 @dataclass
 class AuthFailureThrottle:
-    """Meters callers by the 401s and 403s their requests actually produce
-    (ai-ops#145), and refuses further requests from an address that has
-    produced too many.
+    """Meters callers by the 401s their requests actually produce (ai-ops#145),
+    and refuses further requests from an address that has produced too many.
 
     ## Outcome, not shape — and why that is the fix this time
 
@@ -274,12 +276,46 @@ class AuthFailureThrottle:
 
     That failure mode cannot repeat here, structurally: this counts the
     response. An authz suite whose overridden dependency never rejects a
-    request produces zero 401s and zero 403s no matter how many requests it
-    sends — there is nothing for this class to count. A real caller who is
-    guessing tokens or replaying stale credentials produces almost nothing
-    *but* 401s and 403s. The two populations are separated by the one fact
-    that actually describes the behaviour being policed, so there is no
-    request shape left for a legitimate caller to accidentally resemble.
+    request produces zero 401s no matter how many requests it sends — there is
+    nothing for this class to count. A real caller who is guessing tokens or
+    replaying stale credentials produces almost nothing *but* 401s. The two
+    populations are separated by the one fact that actually describes the
+    behaviour being policed, so there is no request shape left for a
+    legitimate caller to accidentally resemble.
+
+    ## 401 only, not 403 — narrowed on review, and here is why
+
+    This counted 403 too, in the first version, on the owner ruling's literal
+    words ("meter addresses by the 401s and 403s they produce"). Two Aikido
+    findings on this PR's own review (2026-08-17) showed that was wrong, with a
+    concrete exploit: a signed-in FREE-TIER user hitting the project-sharing
+    route repeatedly gets an immediate 403 — a plan refusal, not a credential
+    problem — and because every authenticated request funnels through one
+    shared BFF address (next section), a few hundred of those from ONE
+    ordinary, correctly-authenticated user would trip the block for every
+    OTHER signed-in user sharing that address for the rest of the window. A
+    legitimate user could cause that by accident, let alone on purpose.
+
+    Grepped the whole service for every `403` (`services/api/src/majorana_api/`,
+    2026-08-17): it is raised from at least four semantically different
+    places — a missing email claim, the deploy probe hitting the wrong route,
+    `AuthzError` for a workspace-scope violation, and a scatter of tier/plan/
+    ownership refusals inline in route handlers. Only the first two are
+    genuinely about the credential; the rest are a correctly-authenticated
+    caller being told no by business logic, which is not the threat model this
+    control is for.
+
+    401 has exactly ONE source in this entire service —
+    `auth/deps.py`'s `get_verified_token`, for a missing, invalid, expired, or
+    reserved-identity bearer token — which is precisely "someone is presenting
+    a bad credential." So this is not a smaller version of the ruling, it is a
+    more accurate reading of what "an auth failure" means in this codebase's
+    own status-code vocabulary: 401 is what a credential problem looks like
+    here, and most of what 403 is turns out to be something else wearing the
+    same status code. Recorded here rather than changed silently, because the
+    owner's words did name both codes — if the intent is broader (catching
+    tier-gate abuse, say), that is a decision for him and probably wants its
+    own control with its own ceiling, not this one repurposed for it.
 
     ## Sizing against the real population, and it is not a single browser
 
@@ -313,7 +349,7 @@ class AuthFailureThrottle:
 
     `FixedWindowLimiter.check` decides and counts atomically, which is right
     when the request itself is the thing being metered. Here the thing being
-    metered — whether the response was a 401 or 403 — does not exist until
+    metered — whether the response was a 401 — does not exist until
     after the handler has run. So admission and counting happen at different
     points in the request's lifecycle: `should_block` is asked before the
     request is allowed to proceed at all, and `record_failure` is told the
@@ -390,8 +426,8 @@ class AuthFailureThrottle:
         return Decision(allowed=True, remaining=self.limit - window.count)
 
     def record_failure(self, key: str, *, now: float | None = None) -> None:
-        """Count one 401 or 403 against `key`. Call only on that outcome —
-        this has no opinion about which responses qualify, the caller does."""
+        """Count one 401 against `key`. Call only on that outcome — this has
+        no opinion about which responses qualify, the caller does."""
         if self.limit <= 0:  # explicitly disabled
             return
         now = time.monotonic() if now is None else now
@@ -480,8 +516,14 @@ def replay(messages: list[dict], receive):
     return _receive
 
 
-def client_address(headers: dict[str, str], peer: str | None) -> str:
+def client_address(headers: Mapping[str, str], peer: str | None) -> str:
     """Best available identifier for the caller, given one trusted proxy.
+
+    `headers` is any string-keyed, case-insensitive-lookup mapping — a plain
+    `dict` with lowercase keys in tests, or `request.headers` (Starlette's own
+    `Headers`) in the app. Passing `request.headers` directly is deliberate:
+    it is already case-insensitive, so building a lowercased copy first would
+    only add an allocation this function does not need.
 
     Cloud Run terminates TLS at the Google front end, so the socket peer is
     always infrastructure and `X-Forwarded-For` carries the client. Its first
@@ -559,7 +601,7 @@ def is_rate_limited_path(path: str) -> bool:
     return path.startswith(LIMITED_PATH_PREFIXES)
 
 
-def is_trusted_caller(headers: dict[str, str], expected: str) -> bool:
+def is_trusted_caller(headers: Mapping[str, str], expected: str) -> bool:
     """True when the caller presented our own renderer's shared secret.
 
     ## Why a secret header here, when the module docstring rejects a header

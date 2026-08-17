@@ -27,6 +27,9 @@ from majorana_api.settings import Settings
 #: Long enough to satisfy the 32-character floor the settings enforce.
 TRUSTED_TOKEN = "trusted-caller-token-for-tests-0123456789"
 
+#: Same convention as test_deploy_probe_credential.py's PROBE_TOKEN.
+PROBE_TOKEN = "p" * 48
+
 ISSUER = "https://api.workos.com/user_management/client_test"
 JWKS_URL = "https://api.workos.com/sso/jwks/client_test"
 
@@ -720,6 +723,56 @@ async def test_successful_requests_never_count_toward_the_ceiling():
     assert 429 not in statuses
 
 
+async def test_403_does_not_count_toward_the_ceiling():
+    """The redesign this section's constants document: 403 was cut after
+    review because most of it is a correctly-authenticated caller being told
+    no by business logic, not a credential problem. The deploy probe hitting a
+    route it may not reach is a real, DB-free 403 that goes through the exact
+    same code path a route's own tier/ownership check would — a wrong probe
+    route rather than a wrong plan is used here only because it needs no
+    database to reach, not because the two are different for this control's
+    purposes. See `test_the_deploy_probe_is_never_counted_toward_the_ceiling`
+    for the same request sequence checked from the probe's own point of view.
+    """
+    app = create_app(_settings(auth_failure_limit=1, deploy_probe_token=PROBE_TOKEN))
+    headers = {"Authorization": f"Bearer {PROBE_TOKEN}"}
+    async with _client(app) as client:
+        # /v1/me is not in DEPLOY_PROBE_ROUTES, so every one of these is a
+        # clean 403 from `_probe_may_reach` — never a 401, never DB-backed.
+        statuses = [(await client.get("/v1/me", headers=headers)).status_code for _ in range(5)]
+
+    assert statuses == [403] * 5, "a limit of 1 would 429 the second call if 403 still counted"
+
+
+async def test_a_404_does_not_count_toward_the_ceiling():
+    """Negative control for the status-code check itself: only a broadening of
+    `response.status_code == 401` to something like `>= 400` would make an
+    ordinary unknown-path 404 start counting."""
+    app = create_app(_settings(auth_failure_limit=3))
+    async with _client(app) as client:
+        statuses = {
+            (await client.get("/v1/this-route-does-not-exist")).status_code for _ in range(10)
+        }
+
+    assert statuses == {404}
+
+
+async def test_a_500_does_not_count_toward_the_ceiling():
+    """Same negative control, for the other direction a broadened check could
+    take — `>= 400` would also sweep in 5xx. Registers a route that always
+    raises; nothing else in this app can be made to 500 without a database."""
+    app = create_app(_settings(auth_failure_limit=3))
+
+    @app.get("/__test_always_500")
+    async def _boom():
+        raise RuntimeError("deliberately unhandled, for this test only")
+
+    async with _client(app) as client:
+        statuses = {(await client.get("/__test_always_500")).status_code for _ in range(10)}
+
+    assert statuses == {500}
+
+
 async def test_the_throttle_is_scoped_to_the_address_not_one_route():
     """Once an address is over the ceiling, a route it has never even called
     is refused too — the block is keyed by who is asking, not by which
@@ -749,3 +802,82 @@ async def test_the_health_check_is_exempt_even_once_the_address_is_blocked():
         health = await client.get("/health", headers=headers)
 
     assert health.status_code == 200
+
+
+async def test_the_deploy_probe_is_never_counted_toward_the_ceiling():
+    """Not reasoned about — run, at a ceiling low enough that a single miss
+    would show immediately.
+
+    The deploy workflow's actual sequence: create a run, poll it, read its
+    events, all with the probe's own bearer token. No live database is wired
+    up here (`_client` runs with no lifespan, same as every other app-level
+    test in this file), so every call 500s downstream of auth — the point
+    isn't that these succeed, it's that NONE of them is ever a 401, because
+    `auth/deps.py`'s probe branch authenticates before anything here could
+    reach a database at all. Grepped as the exhaustive claim: 401 is raised
+    from exactly one place in this whole service, `get_verified_token`, and
+    the probe token satisfies it on every one of its allowed routes
+    (`test_the_probe_token_authenticates_on_the_routes_it_needs`,
+    test_deploy_probe_credential.py).
+    """
+    app = create_app(_settings(auth_failure_limit=1, deploy_probe_token=PROBE_TOKEN))
+    headers = {"Authorization": f"Bearer {PROBE_TOKEN}"}
+    async with _client(app) as client:
+        statuses = [
+            (await client.post("/v1/runs", headers=headers, json={})).status_code,
+            (await client.get("/v1/runs/some-run-id", headers=headers)).status_code,
+            (await client.get("/v1/runs/some-run-id/events", headers=headers)).status_code,
+            # Repeated: a real deploy polls GET .../{run_id} many times.
+            (await client.get("/v1/runs/some-run-id", headers=headers)).status_code,
+            (await client.get("/v1/runs/some-run-id", headers=headers)).status_code,
+        ]
+
+    assert 401 not in statuses, statuses
+    assert 429 not in statuses, statuses
+
+
+async def test_the_trusted_caller_surface_can_never_produce_a_401():
+    """The exemption claim, checked structurally rather than assumed: every
+    route `apps/web/lib/repository-source.ts` actually fetches — the six under
+    `/v1/catalog` — takes only `Depends(get_settings)` (grepped
+    `routes/catalog.py`, 2026-08-17; none imports `CurrentScope` or
+    `CurrentIdentity`). `get_verified_token` is the sole source of a 401 in
+    this service, and none of these handlers ever calls it, trusted-caller
+    header or not — so there is no branch here to exempt, only an absence to
+    confirm. Run at a ceiling of 1 so a single miss would 429 the second call.
+    """
+    app = create_app(_settings(auth_failure_limit=1, trusted_caller_token=TRUSTED_TOKEN))
+    for headers in (
+        {TRUSTED_CALLER_HEADER: TRUSTED_TOKEN},  # our own renderer
+        {},  # any other anonymous reader
+    ):
+        async with _client(app) as client:
+            statuses = [
+                (await client.get("/v1/catalog/entries", headers=headers)).status_code,
+                (await client.get("/v1/catalog/estimates", headers=headers)).status_code,
+                (await client.get("/v1/catalog/profiles", headers=headers)).status_code,
+                # Unknown slug — a 404, per the route's own `expected404`
+                # contract, never a 401.
+                (await client.get("/v1/catalog/entries/no-such-slug", headers=headers)).status_code,
+                (
+                    await client.get("/v1/catalog/entries/no-such-slug/estimate", headers=headers)
+                ).status_code,
+                (
+                    await client.get("/v1/catalog/entries/no-such-slug/profile", headers=headers)
+                ).status_code,
+            ]
+        assert 401 not in statuses, (headers, statuses)
+        assert 429 not in statuses, (headers, statuses)
+
+
+async def test_auth_failure_limit_zero_disables_the_middleware():
+    """The unit test on `AuthFailureThrottle(limit=0)` proves the class is a
+    no-op; this proves the SETTING actually reaches the wired-up middleware —
+    a wiring bug (the wrong field read, the throttle constructed before
+    `Settings.auth_failure_limit` is applied) would pass the unit test and
+    fail silently here."""
+    app = create_app(_settings(auth_failure_limit=0))
+    async with _client(app) as client:
+        statuses = {(await client.get("/v1/runs")).status_code for _ in range(50)}
+
+    assert statuses == {401}

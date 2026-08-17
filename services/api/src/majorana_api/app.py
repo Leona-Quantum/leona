@@ -195,7 +195,12 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     async def _anon_rate_limit(request: Request, call_next):
         if request.url.path in EXEMPT_PATHS:
             return await call_next(request)
-        headers = {k.lower(): v for k, v in request.headers.items()}
+        # `request.headers` (Starlette's `Headers`) is already case-insensitive
+        # and already normalizes multi-value headers, so there is nothing a
+        # rebuilt lowercased dict adds here — it only cost a per-request
+        # allocation this middleware and `_auth_failure_throttle` were each
+        # paying separately. `client_address` and `is_trusted_caller` accept
+        # any string-keyed mapping, `request.headers` included.
 
         # Total request size. Pydantic bounds each FIELD — `task_prompt` at
         # 20 KB, `source_code` at 100 KB — but a field limit applies AFTER the
@@ -208,7 +213,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         # confirmed a 2 MiB chunked body reaching the handler under a 1 MiB
         # "limit". The declared check stays because it refuses without reading
         # anything; `read_bounded_body` is what makes the limit true.
-        declared = headers.get("content-length")
+        declared = request.headers.get("content-length")
         if declared and declared.isdigit() and int(declared) > MAX_REQUEST_BYTES:
             return _too_large()
         try:
@@ -241,14 +246,16 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         # renderer's shared secret is counted against a separate, generous
         # ceiling; everyone else — including a caller that sent a wrong token —
         # is counted as anonymous. There is no branch here that skips metering.
-        trusted = is_trusted_caller(headers, request.app.state.settings.trusted_caller_token)
+        trusted = is_trusted_caller(
+            request.headers, request.app.state.settings.trusted_caller_token
+        )
         limiter = request.app.state.trusted_limiter if trusted else request.app.state.anon_limiter
         # Emitted on the refusal AND on the success, because the question this
         # answers — "is the deployed renderer actually being seen as trusted?" —
         # is asked of a healthy service, not a refused one.
         trust_header = {CALLER_TRUST_HEADER: "trusted" if trusted else "anonymous"}
 
-        decision = limiter.check(client_address(headers, peer))
+        decision = limiter.check(client_address(request.headers, peer))
         if not decision.allowed:
             # The refusal names the bucket that actually refused. Reporting a
             # trusted renderer's ceiling as "anonymous" would tell whoever is
@@ -334,9 +341,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     async def _auth_failure_throttle(request: Request, call_next):
         if request.url.path in EXEMPT_PATHS:
             return await call_next(request)
-        headers = {k.lower(): v for k, v in request.headers.items()}
+        # `request.headers` directly — see the comment in `_anon_rate_limit`.
         peer = request.client.host if request.client else None
-        address = client_address(headers, peer)
+        address = client_address(request.headers, peer)
         throttle = request.app.state.auth_failure_throttle
 
         decision = throttle.should_block(address)
@@ -350,8 +357,20 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         # nothing), our own health checks, the deploy probe's working path,
         # and the trusted-caller path from ever contributing to this count at
         # all: none of them, when everything is configured correctly, ever
-        # produces a 401 or a 403 for this to see.
-        if response.status_code in (401, 403):
+        # produces a 401 for this to see.
+        #
+        # 401 only, not 403 — narrowed after review. `auth/deps.py`'s
+        # `get_verified_token` is the ONLY place this service raises a 401, for
+        # a missing/invalid/expired/reserved-identity bearer token, which is
+        # what "an auth failure" actually means. 403 is NOT counted: it is
+        # raised from several unrelated places, almost all of them a correctly
+        # authenticated caller being told no by business logic (a free-tier
+        # plan gate, a workspace-scope check) rather than a credential problem
+        # — see `AuthFailureThrottle`'s "401 only, not 403" section for the
+        # concrete exploit (a legitimate free-tier user tripping the block for
+        # every other signed-in user behind the shared BFF address) that this
+        # narrowing closes.
+        if response.status_code == 401:
             throttle.record_failure(address)
         return response
 
