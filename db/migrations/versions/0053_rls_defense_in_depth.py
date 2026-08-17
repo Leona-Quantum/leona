@@ -98,8 +98,11 @@ ran. Nothing above needed a code change to keep working, and that is deliberate:
 the "give them an explicit, auditable escape" requirement, satisfied by construction
 rather than by naming each caller. The escape is auditable because there is exactly one
 function in the whole tree that sets `majorana.rls_enforce` —
-`auth/deps.py::_set_rls_context` — so "does this code path enforce RLS" is answered by
-"does it run through `auth/deps.py::get_scope`", not by reading every call site.
+`repos/_base.py::set_rls_context`, called from exactly one place,
+`auth/deps.py::get_scope` — so "does this code path enforce RLS" is answered by "does
+it run through `get_scope`", not by reading every call site. (The SQL lives in the
+repository layer rather than in `auth/deps.py` itself because
+`scripts/check_raw_queries.py` only allows raw SQL there plus `db.py`/`orm.py`.)
 
 `majorana.rls_enforce` only becomes `'on'` when `Settings.rls_enforced` is `True`
 (`settings.py`, env var `MAJORANA_RLS_ENFORCED`), and that defaults to `False`
@@ -300,6 +303,12 @@ def _direct_predicate(table: str) -> str:
 
 
 def _create_policy(table: str, predicate: str) -> None:
+    # `table` and `_POLICY_NAME` are drawn from this file's own fixed, reviewed
+    # constants (never from anything outside it) — the same false-positive shape
+    # 0052's module docstring already covers for a role name: an identifier
+    # cannot be a bind parameter in any SQL dialect, so f-string composition is
+    # the only way to generate these, and a SAST rule tuned for string-built
+    # queries over untrusted input cannot tell the difference from here.
     op.execute(f"alter table {table} enable row level security")
     op.execute(
         f"create policy {_POLICY_NAME} on {table} "

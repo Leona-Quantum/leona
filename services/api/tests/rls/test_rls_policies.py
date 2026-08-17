@@ -288,7 +288,12 @@ async def test_structural_policy_shape(db_session_factory, table, ancestor):
     assert ancestor in row.with_check, (
         f"{table}: WITH CHECK clause does not reference {ancestor}: {row.with_check}"
     )
-    assert "majorana.rls_enforce" in row.qual, f"{table}: policy has no enforcement escape hatch"
+    assert "majorana.rls_enforce" in row.qual, (
+        f"{table}: USING clause has no enforcement escape hatch: {row.qual}"
+    )
+    assert "majorana.rls_enforce" in row.with_check, (
+        f"{table}: WITH CHECK clause has no enforcement escape hatch: {row.with_check}"
+    )
 
 
 async def test_connecting_role_cannot_bypass_rls(db_session_factory):
