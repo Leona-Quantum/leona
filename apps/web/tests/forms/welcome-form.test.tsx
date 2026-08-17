@@ -76,12 +76,19 @@ test("welcome form: refreshed:false keeps the visitor on the page with a sign-in
     fireEvent.change(getByLabelText("First name"), { target: { value: "Ada" } });
     fireEvent.change(getByLabelText("Last name"), { target: { value: "Lovelace" } });
 
+    // Registered BEFORE the submit, not after: jsdom's "navigation attempted"
+    // event fires synchronously-ish during the submit flow if it fires at
+    // all, so a listener attached only once `fireEvent.submit` has already
+    // resolved can never observe it — a regression that navigates anyway
+    // would still leave this test green. Attaching first means the promise
+    // can only resolve from a navigation that happens DURING this submit.
+    const navigated = waitForNavigationAttempt(150);
     await act(async () => {
       fireEvent.submit(form);
     });
 
     await assert.rejects(
-      waitForNavigationAttempt(150),
+      navigated,
       /no navigation attempt/,
       "a stale-cookie response must not navigate the visitor onward",
     );

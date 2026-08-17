@@ -104,7 +104,15 @@ try {
     { cwd: join(here, "..", ".."), stdio: "inherit" },
   );
   const code = await new Promise((resolve) => child.on("exit", resolve));
-  process.exit(code ?? 1);
+  // `process.exitCode =`, never `process.exit()`: the latter terminates the
+  // process immediately, synchronously, WITHOUT unwinding through `finally`
+  // — the bundle cleanup below would never run, and .form-test-bundles/
+  // would accumulate a new run-* directory on every invocation, in CI and on
+  // dev machines alike. Setting exitCode lets this function return normally,
+  // the `finally` runs, and Node exits on its own once nothing else is
+  // keeping the event loop alive (the child process has already exited by
+  // this point).
+  process.exitCode = code ?? 1;
 } finally {
   rmSync(bundleRoot, { recursive: true, force: true });
 }
