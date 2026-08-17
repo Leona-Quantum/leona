@@ -45,9 +45,9 @@
  *
  * ## Scope, stated honestly
  *
- * This proves the jose primitives authkit calls behave correctly under whatever
- * jose the override actually resolves
- * against a locally generated key. It does NOT prove a real WorkOS sign-in: that
+ * This proves the jose primitives authkit calls behave correctly, under whatever
+ * jose the override actually resolves, against a locally generated key. It does
+ * NOT prove a real WorkOS sign-in: that
  * needs a live session cookie on the production domain, which a preview
  * deployment cannot hold because WorkOS redirect URIs are per-domain. That gap
  * is the owner's accepted risk on ai-ops 131 and is covered by a manual walk.
