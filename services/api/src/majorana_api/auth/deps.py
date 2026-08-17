@@ -13,7 +13,7 @@ from majorana_contracts import Scope
 
 from ..db import AsyncSession
 from ..orm import User, Workspace
-from ..repos import system
+from ..repos import set_rls_context, system
 from ..settings import Settings
 from .jwt import TokenError, VerifiedToken, verify_bearer_token
 
@@ -159,6 +159,7 @@ async def get_identity(
 async def get_scope(
     identity: Annotated[tuple[User, Workspace], Depends(get_identity)],
     session: Annotated[AsyncSession, Depends(get_session, scope="function")],
+    settings: Annotated[Settings, Depends(get_settings)],
 ) -> Scope:
     """Derive the scope for the authenticated user's active workspace.
 
@@ -171,6 +172,24 @@ async def get_scope(
 
     Absent or stale, the pointer resolves to the personal workspace — the
     pre-collaboration behaviour, unchanged for every account that never switches.
+
+    Also arms the RLS GUCs (`repos.set_rls_context`, ai-ops#143) for whatever
+    this scope resolved to — a no-op unless `settings.rls_enforced`, see that
+    field's docstring in `settings.py`. This is the ONLY place in the request
+    path that does, which is what makes "every route reachable through
+    `CurrentScope` is covered" a fact about this one function rather than a
+    claim about every route handler. Deliberately after `get_identity` has
+    already used this same session: `get_or_provision_user`/
+    `resolve_active_workspace` read `users`, `workspaces` and `memberships`,
+    none of which carry an RLS policy (they are the identity/bootstrap tables a
+    caller must be able to read before a workspace_id is even known — see
+    0053's docstring), so the ordering is safe regardless, but stating it here
+    means a future policy on one of those tables would have to reckon with
+    this comment rather than silently break login.
+
+    The `set_config` call itself lives in `repos/_base.py`, not here:
+    `scripts/check_raw_queries.py` only allows raw SQL inside the repository
+    layer (+ `db.py`/`orm.py`), and this module is deliberately not in it.
     """
     user, personal_ws = identity
     active = await system.resolve_active_workspace(
@@ -180,7 +199,9 @@ async def get_scope(
     )
     if active is None:
         raise HTTPException(404, "workspace not found")
-    return Scope(user_id=user.id, workspace_id=active.workspace_id, role=active.role)
+    scope = Scope(user_id=user.id, workspace_id=active.workspace_id, role=active.role)
+    await set_rls_context(session, scope, enforce=settings.rls_enforced)
+    return scope
 
 
 CurrentScope = Annotated[Scope, Depends(get_scope, scope="function")]

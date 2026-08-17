@@ -315,12 +315,19 @@ write privilege gets proved without leaving a row in a production table.
 is not specific to a missing `GRANT` — a row-level-security policy denial raises
 the same code. So "refused" here means "refused for one of two reasons", and the
 message text is what separates them: `permission denied for table …` is the grant,
-`new row violates row-level security policy …` is RLS. It does not matter today —
-this schema defines no policies and no table has RLS enabled, which is why the
-checks were left reading the class alone. It would matter the moment RLS is
-introduced for tenancy, and at that point a probe asserting only 42501 would
-report a *policy* working as though the *grant* were working. Assert on the
-message, not just the class, if that day comes.
+`new row violates row-level security policy …` is RLS. **That day has arrived**
+(ai-ops#143; `docs/adr/0028-rls-defense-in-depth.md`;
+`db/migrations/versions/0053_rls_defense_in_depth.py`) — the schema now defines
+policies on every genuinely tenant-scoped table, so the 21 checks below, run
+before 0053 existed, would need to assert on the message rather than the class
+if re-run today. It still does not change what they *found*: RLS enforcement is
+gated off by `Settings.rls_enforced` (default `False` in every environment,
+production included), so `majorana_api` sees the exact same permissive policies
+it always has, and a 42501 against production right now is still the grant, not
+a policy — but that stops being guaranteed the moment `MAJORANA_RLS_ENFORCED` is
+set, and a probe re-run after that point MUST assert on the message, not just
+the class, or it will report a *policy* refusal as though the *grant* had
+failed.
 
 | group | result |
 |---|---|

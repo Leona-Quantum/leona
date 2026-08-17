@@ -216,6 +216,45 @@ jobs:
         env:
           DATABASE_URL: postgresql://pg:pg@localhost:5432/majorana_authz
         run: uv run pytest services/api/tests/authz -q
+      # RLS suite (ai-ops#143; docs/adr/0028-rls-defense-in-depth.md).
+      #
+      # Everything above this step — migrations, seed, the authz suite — runs as
+      # `pg`, the CI Postgres superuser. A superuser bypasses row-level security
+      # unconditionally, so running the RLS suite the same way would report every
+      # policy in db/migrations/versions/0053 as working while proving nothing
+      # (see 0052's own note on testing a privilege change as a superuser, and
+      # 0053's and this suite's module docstrings). `majorana_api` here mirrors
+      # production's connecting role exactly: LOGIN, member of `app_rw` — created
+      # by migration 0052, already applied to `majorana_authz` above — and
+      # nothing else, so NOSUPERUSER/NOBYPASSRLS are the created-role defaults
+      # rather than something this step has to set.
+      #
+      # Idempotent by construction (`if not exists`) for the same reason 0052's
+      # own role-creation block is: this workflow runs the `db` job on every PR
+      # against the same long-lived Postgres SERVICE CONTAINER for the run, and
+      # roles are cluster-wide, not per-database.
+      - name: create the majorana_api test role
+        run: |
+          PGPASSWORD=pg psql -h localhost -U pg -d majorana_authz -c "
+          do \$\$ begin
+            if not exists (select 1 from pg_roles where rolname = 'majorana_api') then
+              create role majorana_api login password 'ci-only-not-a-secret';
+              grant app_rw to majorana_api;
+            end if;
+          end \$\$;
+          "
+      - name: RLS suite
+        env:
+          # The non-superuser role every assertion in this suite depends on —
+          # test_connecting_role_cannot_bypass_rls checks this dynamically rather
+          # than trusting the step above.
+          DATABASE_URL: postgresql://majorana_api:ci-only-not-a-secret@localhost:5432/majorana_authz
+          # Owns the tables (this job's migrations ran as `pg`), so only this ONE
+          # meta-test (test_deliberately_broken_policy_is_caught) can ALTER POLICY
+          # to prove the suite's cross-tenant assertions would catch a weakened
+          # policy. Every other test in the suite ignores this var entirely.
+          DATABASE_URL_OWNER: postgresql://pg:pg@localhost:5432/majorana_authz
+        run: uv run pytest services/api/tests/rls -q
       # Pipeline spine E2E (Phase 2 step 1): run -> job -> events -> SSE replay.
       # --all-extras keeps qiskit installed (a prior `uv run --package` step can
       # prune it) so the sandbox subprocess can import it for the QASM epilogue.
