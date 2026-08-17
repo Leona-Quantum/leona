@@ -70,9 +70,14 @@ take the site down for everyone who is not attacking it.
 from __future__ import annotations
 
 import hmac
+import logging
 import time
 from collections.abc import Mapping
 from dataclasses import dataclass, field
+
+import sentry_sdk
+
+logger = logging.getLogger(__name__)
 
 #: Requests per window per address.
 #:
@@ -180,6 +185,20 @@ DEFAULT_AUTH_FAILURE_LIMIT = 300
 #: naturally while still resetting inside a single support conversation.
 DEFAULT_AUTH_FAILURE_WINDOW_S = 300.0
 
+#: Fractions of `AuthFailureThrottle.limit` at which one address's window gets
+#: a WARN, once per (address, window, threshold) — never once per request past
+#: the line, which would just move the noise problem rather than solve it.
+#:
+#: This exists because `DEFAULT_AUTH_FAILURE_LIMIT` is reasoned, not measured
+#: — see `AuthFailureThrottle`'s "Sizing against the real population" section
+#: — and the failure mode if it is wrong is silent until the shared BFF bucket
+#: actually crosses it and every signed-in user gets 429'd at once. 50% and
+#: 80% turn that into something noticed with headroom to act: at 300/5min, a
+#: warning at 150 and again at 240 both land comfortably before the block that
+#: only starts at 300, converting "this number could be wrong" into "we will
+#: be told before it matters."
+AUTH_FAILURE_WARN_THRESHOLDS: tuple[float, ...] = (0.5, 0.8)
+
 #: Ceiling on a single request body, across every route.
 #:
 #: Comfortably above the largest legitimate document this API accepts: the
@@ -260,6 +279,24 @@ class FixedWindowLimiter:
 
 
 @dataclass
+class _FailureWindow:
+    """`AuthFailureThrottle`'s own window record — not the shared `_Window`
+    above. `FixedWindowLimiter` answers per REQUEST and has nothing like the
+    early-warning problem this exists for: a caller blocked for a window is
+    silent until it happens, which is exactly what `warned_thresholds` is for.
+    Giving the two limiters separate record shapes is a continuation of the
+    reasoning in `AuthFailureThrottle`'s "What is reused from
+    `FixedWindowLimiter`" section — the mechanics are shared, the state is not.
+    """
+
+    started_at: float
+    count: int
+    #: Which of `AUTH_FAILURE_WARN_THRESHOLDS` have already fired for this
+    #: window, so a crossing is reported once — not on every request past it.
+    warned_thresholds: set[float] = field(default_factory=set)
+
+
+@dataclass
 class AuthFailureThrottle:
     """Meters callers by the 401s their requests actually produce (ai-ops#145),
     and refuses further requests from an address that has produced too many.
@@ -318,6 +355,14 @@ class AuthFailureThrottle:
     own control with its own ceiling, not this one repurposed for it.
 
     ## Sizing against the real population, and it is not a single browser
+
+    **State this plainly, because every reader of this class needs it before
+    reasoning about any per-address control here: on this API, an address
+    does not identify a person for authenticated traffic.** `tiers.py`'s
+    per-account allowance, reserved under the account's own row lock, is the
+    mechanism that does. This class exists for the surface that mechanism
+    cannot see — the moment BEFORE an account is known, when all this API has
+    to go on is the connection.
 
     `DEFAULT_ANON_LIMIT`'s history is a warning about reasoning from "a person
     clicking as fast as they can read" when the real caller on `/v1/catalog/*`
@@ -381,7 +426,7 @@ class AuthFailureThrottle:
     limit: int = DEFAULT_AUTH_FAILURE_LIMIT
     window_s: float = DEFAULT_AUTH_FAILURE_WINDOW_S
     max_keys: int = DEFAULT_MAX_KEYS
-    _windows: dict[str, _Window] = field(default_factory=dict)
+    _windows: dict[str, _FailureWindow] = field(default_factory=dict)
     #: Same meaning as `FixedWindowLimiter.saturated_admissions` — read by the
     #: tests, and the first thing to check if this throttle ever appears not to
     #: be tracking a caller it should be.
@@ -427,7 +472,12 @@ class AuthFailureThrottle:
 
     def record_failure(self, key: str, *, now: float | None = None) -> None:
         """Count one 401 against `key`. Call only on that outcome — this has
-        no opinion about which responses qualify, the caller does."""
+        no opinion about which responses qualify, the caller does.
+
+        Also the only place `AUTH_FAILURE_WARN_THRESHOLDS` is checked — see
+        `_warn_threshold_crossed` for why a crossing fires once, not on every
+        request past the line.
+        """
         if self.limit <= 0:  # explicitly disabled
             return
         now = time.monotonic() if now is None else now
@@ -442,9 +492,47 @@ class AuthFailureThrottle:
                     # never to refusing a caller we cannot even identify.
                     self.saturated_admissions += 1
                     return
-            window = _Window(started_at=now, count=0)
+            window = _FailureWindow(started_at=now, count=0)
             self._windows[key] = window
         window.count += 1
+
+        # Ascending order matters when `limit` is small enough that one
+        # failure crosses more than one threshold at once (e.g. limit=2:
+        # count 1->2 crosses both 0.5 and 0.8 in the same call) — each
+        # newly-crossed threshold still gets exactly one warning.
+        for threshold in AUTH_FAILURE_WARN_THRESHOLDS:
+            if threshold in window.warned_thresholds:
+                continue
+            if window.count / self.limit >= threshold:
+                window.warned_thresholds.add(threshold)
+                self._warn_threshold_crossed(key, window.count, threshold)
+
+    def _warn_threshold_crossed(self, key: str, count: int, threshold: float) -> None:
+        """One signal per (address, window, threshold) — see
+        `AUTH_FAILURE_WARN_THRESHOLDS` for why this exists at all.
+
+        `sentry_sdk.capture_message` rather than `logger.warning` alone,
+        because a bare log call would not reach Sentry as its OWN alert:
+        sentry-sdk's default `LoggingIntegration` only turns WARNING+ logs
+        into breadcrumbs attached to some LATER event (`event_level` defaults
+        to ERROR), and there may never be a later event — the whole point
+        here is to be told before anything else goes wrong. `capture_message`
+        files a Sentry issue directly, and is a documented no-op when Sentry
+        was never initialised (dev, CI, every test in this file), so no
+        environment check is needed here — the same reason `client_address`
+        never checks whether `TRUSTED_CALLER_TOKEN` is set before comparing
+        against it.
+
+        The log call stays too, for the environments Sentry is not wired up
+        in and for anyone reading Cloud Run's own logs directly.
+        """
+        message = (
+            f"auth-failure throttle: {key} crossed {threshold:.0%} of its "
+            f"ceiling ({count}/{self.limit} failures in the current "
+            f"{self.window_s:.0f}s window)"
+        )
+        logger.warning(message)
+        sentry_sdk.capture_message(message, level="warning")
 
     def _sweep(self, now: float) -> None:
         expired = [k for k, w in self._windows.items() if now - w.started_at >= self.window_s]

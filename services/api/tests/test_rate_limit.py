@@ -10,6 +10,7 @@ import pytest
 
 from majorana_api.app import create_app
 from majorana_api.rate_limit import (
+    AUTH_FAILURE_WARN_THRESHOLDS,
     CALLER_TRUST_HEADER,
     DEFAULT_ANON_LIMIT,
     DEFAULT_AUTH_FAILURE_LIMIT,
@@ -683,6 +684,104 @@ def test_the_default_ceiling_has_headroom_over_a_shared_address():
     load's several panels all firing on one dead token at once) landing on the
     same address inside one window, not just one."""
     assert DEFAULT_AUTH_FAILURE_LIMIT >= 100
+
+
+# --------------------------------------------------------------------------
+# The early-warning signal
+#
+# Sized against the shared-BFF-address finding: nobody would find out the
+# ceiling was wrong until it fired on everyone. These tests are about the
+# ONE property that matters for that to be useful rather than more noise —
+# a crossing fires once per (address, window, threshold), never once per
+# request past the line.
+# --------------------------------------------------------------------------
+
+
+def test_a_threshold_crossing_captures_a_sentry_event_exactly_once(monkeypatch):
+    """`capture_message`, not a bare log call — see `_warn_threshold_crossed`
+    for why a WARNING-level log alone would not reach Sentry as its own alert.
+    Monkeypatched rather than requiring a real DSN: `sentry_sdk.init` is never
+    called in tests, so the unpatched function is already a safe no-op — this
+    proves it was CALLED, which a no-op return value cannot."""
+    import majorana_api.rate_limit as rate_limit_module
+
+    captured = []
+    monkeypatch.setattr(
+        rate_limit_module.sentry_sdk,
+        "capture_message",
+        lambda msg, level=None: captured.append((msg, level)),
+    )
+
+    throttle = AuthFailureThrottle(limit=10, window_s=300.0)
+    for _ in range(10):
+        throttle.record_failure("203.0.113.90", now=0.0)
+
+    # 50% at count 5, 80% at count 8 — exactly two crossings for ten failures.
+    assert len(captured) == 2
+    assert all(level == "warning" for _, level in captured)
+    assert "203.0.113.90" in captured[0][0]
+    assert "5/10" in captured[0][0]
+    assert "8/10" in captured[1][0]
+
+
+def test_a_threshold_crossing_logs_exactly_once(caplog):
+    throttle = AuthFailureThrottle(limit=10, window_s=300.0)
+    with caplog.at_level("WARNING", logger="majorana_api.rate_limit"):
+        for _ in range(10):
+            throttle.record_failure("203.0.113.91", now=0.0)
+
+    # Not one record per request past a threshold — one per (address, window,
+    # threshold): two thresholds, ten failures, two records.
+    assert len(caplog.records) == 2
+    assert "50%" in caplog.records[0].message
+    assert "80%" in caplog.records[1].message
+
+
+def test_fewer_failures_than_the_first_threshold_warns_never(caplog):
+    throttle = AuthFailureThrottle(limit=10, window_s=300.0)
+    with caplog.at_level("WARNING", logger="majorana_api.rate_limit"):
+        for _ in range(4):  # 40% — under the first threshold
+            throttle.record_failure("203.0.113.92", now=0.0)
+
+    assert caplog.records == []
+
+
+def test_a_small_limit_can_cross_two_thresholds_in_one_call(caplog):
+    """`limit=2`: the second failure alone takes the window from 50% to
+    100%, crossing both 0.5 and 0.8 in the same `record_failure` call. Both
+    must still fire — this is the case the ascending-order loop is for."""
+    throttle = AuthFailureThrottle(limit=2, window_s=300.0)
+    with caplog.at_level("WARNING", logger="majorana_api.rate_limit"):
+        throttle.record_failure("203.0.113.93", now=0.0)
+        assert len(caplog.records) == 1  # only 0.5 crossed so far
+        throttle.record_failure("203.0.113.93", now=0.0)
+
+    assert len(caplog.records) == 2  # 0.5 already fired; 0.8 fires now
+
+
+def test_the_window_rolling_resets_which_thresholds_have_warned(caplog):
+    throttle = AuthFailureThrottle(limit=10, window_s=300.0)
+    with caplog.at_level("WARNING", logger="majorana_api.rate_limit"):
+        for _ in range(8):  # crosses both thresholds
+            throttle.record_failure("203.0.113.94", now=0.0)
+        assert len(caplog.records) == 2
+        # New window: the same address failing again must be able to warn
+        # again, not stay silent because an EARLIER window already warned.
+        for _ in range(5):  # 50% of the NEW window
+            throttle.record_failure("203.0.113.94", now=301.0)
+
+    assert len(caplog.records) == 3
+    assert "50%" in caplog.records[2].message
+
+
+def test_addresses_warn_independently():
+    throttle = AuthFailureThrottle(limit=10, window_s=300.0)
+    for _ in range(8):
+        throttle.record_failure("203.0.113.95", now=0.0)
+    # A second, quiet address must not inherit the first one's warned state.
+    throttle.record_failure("203.0.113.96", now=0.0)
+    assert 0.5 not in throttle._windows["203.0.113.96"].warned_thresholds
+    assert throttle._windows["203.0.113.95"].warned_thresholds == set(AUTH_FAILURE_WARN_THRESHOLDS)
 
 
 # --------------------------------------------------------------------------
