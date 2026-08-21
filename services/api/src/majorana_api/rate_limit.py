@@ -103,13 +103,51 @@ logger = logging.getLogger(__name__)
 #: anonymous callers at all — the trusted-caller exemption below — after which
 #: this can come back down.
 #:
-#: **It has NOT come down yet, and that is deliberate.** Lowering it in the same
-#: change that adds the exemption would mean that if the shared secret is absent
-#: or wrong in production, the renderer is metered at the *new, lower* ceiling —
-#: strictly worse than today, and silent in exactly the same way. The sequence is:
-#: ship the exemption, read back `X-Majorana-Caller-Trust: trusted` from the
-#: deployed service, then lower this.
-DEFAULT_ANON_LIMIT = 1200
+#: **Lowered 1200 -> 900 on 2026-08-21** (owner ruling, ai-ops#145: *"a modest cut
+#: that keeps a wide margin"*), which is the third step of the sequence the
+#: superseded note below described. That note read:
+#:
+#: > It has NOT come down yet, and that is deliberate. Lowering it in the same
+#: > change that adds the exemption would mean that if the shared secret is absent
+#: > or wrong in production, the renderer is metered at the *new, lower* ceiling —
+#: > strictly worse than today, and silent in exactly the same way. The sequence is:
+#: > ship the exemption, read back `X-Majorana-Caller-Trust: trusted` from the
+#: > deployed service, then lower this.
+#:
+#: ## Why 900 and not something closer to real usage
+#:
+#: 900 is not a round number picked for feel — it is above the renderer's
+#: worst case *measured against production*, so that the cut is safe even under
+#: the pessimistic assumption that the exemption is NOT working.
+#:
+#: The renderer's ceiling is set by how many distinct catalog URLs exist, because
+#: `next: { revalidate: CATALOG_REVALIDATE_SECONDS }` fetches each at most once
+#: per window. Counted on production 2026-08-21: **279 catalog entries**, and
+#: `apps/web/lib/repository-source.ts` fetches THREE per-slug routes for each
+#: (`entries/{slug}`, `.../estimate`, `.../profile`) plus the paginated
+#: collections. So a cold walk of the whole corpus inside one minute — every
+#: detail page revalidating at once, which an on-demand purge of the
+#: `public-catalog` tag can genuinely cause — is about **840 requests**, and that
+#: is spread across the handful of Vercel egress addresses rather than landing on
+#: one. 900 clears that with the renderer metered as an anonymous caller; a
+#: scraper in a loop still does thousands a minute and is still refused.
+#:
+#: Going lower means measuring the real distribution rather than bounding it,
+#: which is the "something closer to real usage" option the owner was offered and
+#: did not take. Do not lower this further without that measurement — 800 is
+#: BELOW the worst case computed above.
+#:
+#: ## What makes this cut safe rather than merely smaller
+#:
+#: The read-back this sequence asked for could NOT be completed from the session
+#: that made the cut: the deployed API carries `TRUSTED_CALLER_TOKEN` and the
+#: exemption is provably live (`Vary: x-majorana-trusted-caller` comes back on
+#: the public catalog routes, and only this middleware adds it), but confirming
+#: that Vercel's `MAJORANA_TRUSTED_CALLER_TOKEN` holds the SAME value needs a
+#: secret read that was not available. So the cut does not rest on that
+#: assumption. `ANON_WARN_THRESHOLDS` below removes the silence instead, which is
+#: the property that made the old note nervous in the first place.
+DEFAULT_ANON_LIMIT = 900
 DEFAULT_WINDOW_S = 60.0
 
 #: Requests per window for a caller that proved it is our own renderer.
@@ -175,6 +213,28 @@ LIMITED_PATH_PREFIXES = ("/v1/catalog",)
 #: address usually is.
 DEFAULT_AUTH_FAILURE_LIMIT = 300
 
+#: Fractions of `FixedWindowLimiter.limit` at which one address's window gets a
+#: WARN, once per (address, window, threshold).
+#:
+#: The same mechanism `AUTH_FAILURE_WARN_THRESHOLDS` provides for the throttle,
+#: and it is here for a stronger reason than it is there. `_FailureWindow`'s
+#: docstring used to say `FixedWindowLimiter` "has nothing like the early-warning
+#: problem ... a caller blocked for a window is silent until it happens" — that
+#: is true of a caller who SEES the 429, and the caller this limiter most needs
+#: to warn about does not. `getRepositoryEntries` catches the refusal and falls
+#: back to the bundled static corpus, so our own renderer hitting this ceiling
+#: produces no error, no alert and a page that still renders — just with stale
+#: data. `DEFAULT_ANON_LIMIT`'s own docstring calls that out: "a control whose
+#: failure mode is silent staleness has to have enormous headroom over legitimate
+#: use."
+#:
+#: Warning at 50% and 80% is what let that headroom be reduced without the
+#: reduction being a gamble. At 900/min, warnings land at 450 and 720 — both
+#: comfortably above anything the renderer produces in normal operation and both
+#: well before the refusal at 900, so if the trusted-caller exemption ever stops
+#: working we are told while the catalog is still serving live data.
+ANON_WARN_THRESHOLDS: tuple[float, ...] = (0.5, 0.8)
+
 #: Window over which auth failures accumulate before the count resets.
 #:
 #: Five minutes, not the anonymous limiter's one: a stale-session cluster is
@@ -222,6 +282,9 @@ class Decision:
 class _Window:
     started_at: float
     count: int
+    #: Which of `ANON_WARN_THRESHOLDS` have already fired for this window, so a
+    #: crossing is reported once — not on every request past it.
+    warned_thresholds: set[float] = field(default_factory=set)
 
 
 @dataclass
@@ -236,6 +299,20 @@ class FixedWindowLimiter:
     limit: int = DEFAULT_ANON_LIMIT
     window_s: float = DEFAULT_WINDOW_S
     max_keys: int = DEFAULT_MAX_KEYS
+    #: Which bucket this instance IS, in the warning text. There are two
+    #: `FixedWindowLimiter`s — the anonymous one and the trusted renderer's — and a
+    #: warning that names the wrong one is worse than no warning: `app.py`'s refusal
+    #: comment already spells out why ("reporting a trusted renderer's ceiling as
+    #: 'anonymous' would tell whoever is reading the log to look at scrapers when the
+    #: cause is our own render path looping"). Defaulting to "anonymous catalog" would
+    #: have made the trusted limiter mislabel itself in exactly that direction, so this
+    #: has no default that silently applies to both.
+    bucket: str = ""
+    #: What the reader should go and check, appended to the warning. Bucket-specific,
+    #: because the two ceilings have entirely different causes.
+    warn_hint: str = ""
+    #: Fractions of `limit` at which to warn. Empty disables warning for this instance.
+    warn_thresholds: tuple[float, ...] = ANON_WARN_THRESHOLDS
     _windows: dict[str, _Window] = field(default_factory=dict)
     #: Incremented whenever the table was full and a request was let through
     #: because of it. Read by the tests, and the number to look at first if the
@@ -261,6 +338,19 @@ class FixedWindowLimiter:
             self._windows[key] = window
 
         window.count += 1
+
+        # Ascending order matters when `limit` is small enough that one request
+        # crosses more than one threshold at once — each newly-crossed threshold
+        # still gets exactly one warning. Same shape as `AuthFailureThrottle`,
+        # and see `ANON_WARN_THRESHOLDS` for why this limiter needs it MORE than
+        # that one does rather than less.
+        for threshold in self.warn_thresholds:
+            if threshold in window.warned_thresholds:
+                continue
+            if window.count / self.limit >= threshold:
+                window.warned_thresholds.add(threshold)
+                self._warn_threshold_crossed(key, window.count, threshold)
+
         if window.count > self.limit:
             elapsed = now - window.started_at
             return Decision(
@@ -272,6 +362,42 @@ class FixedWindowLimiter:
             )
         return Decision(allowed=True, remaining=self.limit - window.count)
 
+    def _warn_threshold_crossed(self, key: str, count: int, threshold: float) -> None:
+        """One signal per (address, window, threshold).
+
+        `sentry_sdk.capture_message` as well as the log line, for the same reason
+        `AuthFailureThrottle._warn_threshold_crossed` does it: sentry-sdk's
+        default `LoggingIntegration` turns a WARNING into a breadcrumb on some
+        LATER event, and here there may never be a later event — a renderer
+        metered as anonymous falls back to the static corpus and reports nothing
+        at all. `capture_message` files the issue directly, and is a documented
+        no-op when Sentry was never initialised, so dev, CI and every test in
+        this file need no environment check.
+
+        The message names which bucket crossed — `self.bucket` — because the two
+        ceilings have opposite causes and a reader sent to the wrong one investigates
+        scrapers while their own renderer loops. That is `app.py`'s own argument for
+        why its 429 body names the bucket, applied to the warning that precedes it.
+
+        **The caller's address goes to the log and NOT to Sentry.** The log is this
+        service's own Cloud Run stream, which already records the client address on
+        every request, so naming it there tells a reader WHICH address without
+        exposing anything that stream did not already hold. Sentry is a third party
+        and an address is personal data; it gets the fact, the bucket and the numbers,
+        which is what makes the alert actionable, and the log has the identity for
+        whoever follows it up. Same instinct as `SENSITIVE_BODY_KEYS` in
+        `observability.py`: decide what leaves the process, deliberately.
+        """
+        detail = (
+            f"crossed {threshold:.0%} of its ceiling ({count}/{self.limit} requests "
+            f"in the current {self.window_s:.0f}s window)"
+        )
+        hint = f" {self.warn_hint}" if self.warn_hint else ""
+        logger.warning("%s limiter: %s %s.%s", self.bucket, key, detail, hint)
+        sentry_sdk.capture_message(
+            f"{self.bucket} limiter: an address {detail}.{hint}", level="warning"
+        )
+
     def _sweep(self, now: float) -> None:
         expired = [k for k, w in self._windows.items() if now - w.started_at >= self.window_s]
         for key in expired:
@@ -281,12 +407,17 @@ class FixedWindowLimiter:
 @dataclass
 class _FailureWindow:
     """`AuthFailureThrottle`'s own window record — not the shared `_Window`
-    above. `FixedWindowLimiter` answers per REQUEST and has nothing like the
-    early-warning problem this exists for: a caller blocked for a window is
-    silent until it happens, which is exactly what `warned_thresholds` is for.
-    Giving the two limiters separate record shapes is a continuation of the
-    reasoning in `AuthFailureThrottle`'s "What is reused from
+    above. Giving the two limiters separate record shapes is a continuation of
+    the reasoning in `AuthFailureThrottle`'s "What is reused from
     `FixedWindowLimiter`" section — the mechanics are shared, the state is not.
+
+    This used to add that `FixedWindowLimiter` "has nothing like the
+    early-warning problem this exists for", and that was wrong (corrected
+    2026-08-21, when `DEFAULT_ANON_LIMIT` came down). It is true of a caller who
+    SEES its own 429; the caller that limiter most needs to warn about does not,
+    because `getRepositoryEntries` catches the refusal and serves the static
+    corpus instead. Both limiters now carry `warned_thresholds` — see
+    `ANON_WARN_THRESHOLDS`.
     """
 
     started_at: float
