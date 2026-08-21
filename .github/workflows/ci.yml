@@ -235,11 +235,34 @@ jobs:
           DATABASE_URL_DIRECT: postgresql://pg:pg@localhost:5432/majorana_authz
           DATABASE_URL: postgresql://pg:pg@localhost:5432/majorana_authz
         run: uv run --package majorana-api alembic -c db/alembic.ini upgrade head
+      - name: create the majorana_api test role
+        run: |
+          PGPASSWORD=pg psql -h localhost -U pg -d majorana_authz -c "
+          do \$\$ begin
+            if not exists (select 1 from pg_roles where rolname = 'majorana_api') then
+              create role majorana_api login password 'ci-only-not-a-secret';
+              grant app_rw to majorana_api;
+            end if;
+          end \$\$;
+          "
       # Authz suite (Phase 1 step 4): entity × role × cross-workspace.
       # Required-check status rides on this db job.
+      #
+      # **Runs as `majorana_api`, not as `pg`** (ai-ops#150). ADR-0004 names this suite
+      # "the load-bearing control replacing RLS", and for its entire git history it ran
+      # as the CI superuser — proving the authorization LOGIC while never once
+      # exercising it under the PRIVILEGE SET the application actually has. Production
+      # has connected as `majorana_api` (member of `app_rw` and nothing else) since
+      # 2026-08-17, so those were two different claims and only the first was being made.
+      #
+      # `DATABASE_URL_OWNER` is for TEARDOWN only — `repo_test_helpers.
+      # delete_committed_tenants` deletes from four tables `app_rw` deliberately holds no
+      # DELETE on, because production never deletes them. Test BODIES run restricted,
+      # which is the entire point; cleaning up afterwards is not part of the claim.
       - name: authz suite
         env:
-          DATABASE_URL: postgresql://pg:pg@localhost:5432/majorana_authz
+          DATABASE_URL: postgresql://majorana_api:ci-only-not-a-secret@localhost:5432/majorana_authz
+          DATABASE_URL_OWNER: postgresql://pg:pg@localhost:5432/majorana_authz
         run: uv run pytest services/api/tests/authz -q
       # RLS suite (ai-ops#143; docs/adr/0028-rls-defense-in-depth.md).
       #
@@ -258,16 +281,6 @@ jobs:
       # own role-creation block is: this workflow runs the `db` job on every PR
       # against the same long-lived Postgres SERVICE CONTAINER for the run, and
       # roles are cluster-wide, not per-database.
-      - name: create the majorana_api test role
-        run: |
-          PGPASSWORD=pg psql -h localhost -U pg -d majorana_authz -c "
-          do \$\$ begin
-            if not exists (select 1 from pg_roles where rolname = 'majorana_api') then
-              create role majorana_api login password 'ci-only-not-a-secret';
-              grant app_rw to majorana_api;
-            end if;
-          end \$\$;
-          "
       - name: RLS suite
         env:
           # The non-superuser role every assertion in this suite depends on —
@@ -301,10 +314,17 @@ jobs:
       # here — see services/api/tests/test_live_suite_is_wired_to_ci.py. They run
       # in one invocation, against one database, on purpose: that is also what
       # keeps them honest about the state they leave behind for each other.
+      # Also restricted, and for the same reason as the authz suite above
+      # (ai-ops#150) — these 27 files had never run as anything but the superuser
+      # either, and they are four times its size. `DATABASE_URL_DIRECT` stays `pg`
+      # because alembic needs the OWNER to run DDL; only the suites' own connection
+      # moves. Measured before flipping: 244 tests collected under both roles, so this
+      # is the same coverage evaluated under production's privileges, not less of it.
       - name: repository concurrency and integrity
         env:
           DATABASE_URL_DIRECT: postgresql://pg:pg@localhost:5432/majorana_live
-          DATABASE_URL: postgresql://pg:pg@localhost:5432/majorana_live
+          DATABASE_URL: postgresql://majorana_api:ci-only-not-a-secret@localhost:5432/majorana_live
+          DATABASE_URL_OWNER: postgresql://pg:pg@localhost:5432/majorana_live
         run: |
           uv run --package majorana-api alembic -c db/alembic.ini upgrade head
           uv run --all-extras pytest \

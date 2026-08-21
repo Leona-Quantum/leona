@@ -56,6 +56,7 @@ from majorana_contracts import Scope
 from majorana_contracts.enums import Framework, Role, RunMode, RunStatus, UsageKind
 from sqlalchemy import delete, select, text, update
 from sqlalchemy.exc import DBAPIError
+from sqlalchemy.ext.asyncio import create_async_engine
 
 from majorana_api.db import engine_from_env, session_factory
 from majorana_api.orm import AuditLog, Run, RunEvent, UsageEvent
@@ -82,14 +83,51 @@ def _sqlstate(error: DBAPIError) -> str | None:
     return getattr(diag, "sqlstate", None)
 
 
+def _trigger_layer_engine():
+    """The connection that can actually OBSERVE the trigger (ai-ops#150).
+
+    Migration 0052 protects these three tables with **two independent controls**:
+    the trigger 0050 installs, and a grant revoke — "two layers, neither relying on
+    the other", in its own words. Only one of them can be seen at a time, because
+    whichever refuses FIRST is the one the caller hears about, and the grant layer is
+    outside the trigger layer.
+
+    So a session connected as `majorana_api` — the restricted role production uses —
+    can never see the trigger fire: its UPDATE is refused with SQLSTATE `42501`,
+    `permission denied`, before the trigger runs at all. Every assertion in this file
+    matching `append-only` and `55000` fails there, and it fails while the control it
+    is testing is perfectly intact. That was measured, not predicted, when these suites
+    were first run under the real role.
+
+    This file's subject is the TRIGGER, so it connects as the owner, for whom the grant
+    layer does not apply and the trigger is therefore the thing that refuses. The other
+    layer is not left untested — `test_the_grant_layer_refuses_for_the_restricted_role`
+    below covers it, from the connection where IT is the one that fires. Between them
+    both of 0052's layers are proven, each in the environment where it is observable,
+    which is strictly more than this file proved when it only ever ran as a superuser.
+
+    Falls back to `DATABASE_URL` when no owner is configured, so a superuser-connected
+    environment behaves exactly as it always did.
+    """
+    owner_url = os.environ.get("DATABASE_URL_OWNER")
+    if not owner_url:
+        return engine_from_env()
+    if owner_url.startswith("postgresql://"):
+        owner_url = owner_url.replace("postgresql://", "postgresql+psycopg://", 1)
+    return create_async_engine(owner_url)
+
+
 @pytest.fixture
 async def account():
     """A workspace, its owner, and a run to hang a run_event off of — all
     written through one session that is never committed. See the module
     docstring for why: falling out of the `async with factory()` block without
     committing rolls back everything written through it, which is what leaves
-    this file with nothing to clean up afterward."""
-    engine = engine_from_env()
+    this file with nothing to clean up afterward.
+
+    Connects through `_trigger_layer_engine` — see there for why the trigger is
+    invisible from production's own role."""
+    engine = _trigger_layer_engine()
     factory = session_factory(engine)
     async with factory() as session:
         tag = uuid.uuid4().hex[:12]
@@ -211,7 +249,7 @@ async def test_the_bypass_is_scoped_to_its_own_transaction_not_the_session():
     same transaction as that rollback, including a freshly made workspace and
     user, would be undone by it too.
     """
-    engine = engine_from_env()
+    engine = _trigger_layer_engine()
     factory = session_factory(engine)
     tag = uuid.uuid4().hex[:12]
 
@@ -271,3 +309,56 @@ async def test_the_bypass_is_scoped_to_its_own_transaction_not_the_session():
 
         await session.rollback()
     await engine.dispose()
+
+
+async def test_the_grant_layer_refuses_for_the_restricted_role():
+    """The OTHER half of migration 0052's "two layers, neither relying on the other".
+
+    Everything above proves the TRIGGER, and has to connect as the owner to do it —
+    see `_trigger_layer_engine`. This proves the second control, from the role that
+    actually serves production requests, and it is the layer a reader is most likely
+    to assume rather than check: `app_rw` holds no UPDATE or DELETE on these three
+    tables at all, so a refusal arrives before the trigger is ever consulted.
+
+    Neither test can stand in for the other. If the trigger were dropped tomorrow, the
+    tests above would fail and this one would still pass; if the grant were widened,
+    this one would fail and those would still pass. That is what "neither relying on
+    the other" has to mean in a test file, and until ai-ops#150 it was true of the
+    controls but not of their coverage — this file only ever ran as a superuser, for
+    whom neither layer applies.
+
+    Skipped where `DATABASE_URL` IS the owner, because a grant revoke does not bind
+    the owner and there would be nothing here to observe.
+    """
+    if not os.environ.get("DATABASE_URL_OWNER"):
+        pytest.skip(
+            "DATABASE_URL is the owner or a superuser here, so the grant layer does not "
+            "bind it — set DATABASE_URL to the restricted role and DATABASE_URL_OWNER to "
+            "the owner, as CI's db job does"
+        )
+    # Deliberately `engine_from_env` and NOT `_trigger_layer_engine`: this is the one
+    # test in the file whose subject is the restricted role itself.
+    engine = engine_from_env()
+    factory = session_factory(engine)
+    try:
+        async with factory() as session:
+            role = (await session.execute(text("select current_user"))).scalar_one()
+            assert role != "postgres", "this test is vacuous as a superuser"
+            for table in ("run_events", "audit_log", "usage_events"):
+                for statement in (
+                    f"update {table} set created_at = now()",
+                    f"delete from {table}",
+                ):
+                    with pytest.raises(DBAPIError) as refused:
+                        async with session.begin_nested():
+                            await session.execute(text(statement))
+                    # 42501 = insufficient_privilege, the GRANT layer. Distinct from the
+                    # trigger's 55000, and that distinction is the whole point: asserting
+                    # only "it raised" would pass if the table had simply been dropped.
+                    assert _sqlstate(refused.value) == "42501", (
+                        f"{statement!r} was not refused by the grant layer; "
+                        f"got SQLSTATE {_sqlstate(refused.value)}"
+                    )
+            await session.rollback()
+    finally:
+        await engine.dispose()
