@@ -327,7 +327,14 @@ def test_the_body_limit_clears_the_largest_legitimate_document():
 #:
 #: Re-count it (`/v1/catalog/entries`) if the corpus grows a lot; this is a
 #: measurement with a date on it, not a constant of nature.
-RENDERER_WORST_CASE_PER_WINDOW = 279 * 3
+#: 279 entries / `CATALOG_PAGE_SIZE` = 3 pages, fetched for each of the two views the
+#: browse surface offers (full and `view=list`), plus the two collection endpoints
+#: `/catalog/estimates` and `/catalog/profiles`. Small next to the per-slug figure, and
+#: included anyway: leaving it out let a limit of 838 pass this guard while sitting below
+#: the real worst case, which is the exact failure this test exists to prevent.
+CATALOG_COLLECTION_REQUESTS = 3 * 2 + 2
+
+RENDERER_WORST_CASE_PER_WINDOW = 279 * 3 + CATALOG_COLLECTION_REQUESTS
 
 
 def test_the_default_limit_has_headroom_over_our_own_renderer():
@@ -1100,7 +1107,7 @@ async def test_auth_failure_limit_zero_disables_the_middleware():
 def test_the_anon_limiter_warns_before_it_refuses(caplog):
     """The whole point: the signal has to arrive while the catalog is still
     serving LIVE data, not at the moment it starts serving stale."""
-    limiter = FixedWindowLimiter(limit=10, window_s=60.0)
+    limiter = FixedWindowLimiter(limit=10, window_s=60.0, bucket="anonymous catalog")
     with caplog.at_level("WARNING", logger="majorana_api.rate_limit"):
         decisions = [limiter.check("203.0.113.200", now=0.0) for _ in range(10)]
 
@@ -1122,7 +1129,7 @@ def test_an_anon_threshold_crossing_captures_a_sentry_event_exactly_once(monkeyp
         lambda msg, level=None: captured.append((msg, level)),
     )
 
-    limiter = FixedWindowLimiter(limit=10, window_s=60.0)
+    limiter = FixedWindowLimiter(limit=10, window_s=60.0, bucket="anonymous catalog")
     for _ in range(20):  # ten past the ceiling: still exactly two crossings
         limiter.check("203.0.113.201", now=0.0)
 
@@ -1132,11 +1139,14 @@ def test_an_anon_threshold_crossing_captures_a_sentry_event_exactly_once(monkeyp
     assert "8/10" in captured[1][0]
     # The message has to point at the trusted-caller secret, because that is what
     # a reader has to go and check when the address crossing this is our own.
-    assert "trusted-caller" in captured[0][0]
+    # The address must NOT reach Sentry; the log keeps it. See
+    # `_warn_threshold_crossed` for the split.
+    assert "203.0.113.201" not in captured[0][0]
+    assert "anonymous catalog" in captured[0][0]
 
 
 def test_traffic_under_the_first_anon_threshold_warns_never(caplog):
-    limiter = FixedWindowLimiter(limit=10, window_s=60.0)
+    limiter = FixedWindowLimiter(limit=10, window_s=60.0, bucket="anonymous catalog")
     with caplog.at_level("WARNING", logger="majorana_api.rate_limit"):
         for _ in range(4):  # 40%
             limiter.check("203.0.113.202", now=0.0)
@@ -1144,7 +1154,7 @@ def test_traffic_under_the_first_anon_threshold_warns_never(caplog):
 
 
 def test_the_window_rolling_lets_the_same_address_warn_again(caplog):
-    limiter = FixedWindowLimiter(limit=10, window_s=60.0)
+    limiter = FixedWindowLimiter(limit=10, window_s=60.0, bucket="anonymous catalog")
     with caplog.at_level("WARNING", logger="majorana_api.rate_limit"):
         for _ in range(10):
             limiter.check("203.0.113.203", now=0.0)
@@ -1156,7 +1166,7 @@ def test_the_window_rolling_lets_the_same_address_warn_again(caplog):
 
 
 def test_anon_addresses_warn_independently():
-    limiter = FixedWindowLimiter(limit=10, window_s=60.0)
+    limiter = FixedWindowLimiter(limit=10, window_s=60.0, bucket="anonymous catalog")
     for _ in range(10):
         limiter.check("203.0.113.204", now=0.0)
     limiter.check("203.0.113.205", now=0.0)
@@ -1168,8 +1178,58 @@ def test_a_disabled_limiter_warns_never(caplog):
     """`ANON_RATE_LIMIT_PER_MINUTE=0` is the documented escape hatch. A disabled
     control must be silent as well as permissive — an operator who turned it off
     on purpose does not want a Sentry issue per request."""
-    limiter = FixedWindowLimiter(limit=0, window_s=60.0)
+    limiter = FixedWindowLimiter(limit=0, window_s=60.0, bucket="anonymous catalog")
     with caplog.at_level("WARNING", logger="majorana_api.rate_limit"):
         for _ in range(50):
             assert limiter.check("203.0.113.206", now=0.0).allowed
     assert caplog.records == []
+
+
+def test_the_trusted_limiter_warns_as_itself_not_as_the_anonymous_one(caplog):
+    """Both ceilings are a `FixedWindowLimiter`, and they mean opposite things.
+
+    The first version of this warning hard-coded the anonymous text, so a looping
+    RENDERER would have been reported as an address approaching the anonymous ceiling
+    with "the trusted-caller exemption is not being applied" attached — sending whoever
+    read it to check a secret that was working, about traffic that was ours. `app.py`'s
+    own refusal comment already makes this argument for the 429 body ("reporting a
+    trusted renderer's ceiling as 'anonymous' ... sends the investigation in exactly the
+    wrong direction"); this holds the warning to the same standard.
+    """
+    limiter = FixedWindowLimiter(
+        limit=10,
+        window_s=60.0,
+        bucket="trusted renderer",
+        warn_hint="This is the renderer's own ceiling, not the anonymous one.",
+    )
+    with caplog.at_level("WARNING", logger="majorana_api.rate_limit"):
+        for _ in range(10):
+            limiter.check("203.0.113.210", now=0.0)
+
+    assert len(caplog.records) == 2
+    for record in caplog.records:
+        assert "trusted renderer" in record.message
+        assert "anonymous" not in record.message.replace("not the anonymous one", "")
+
+
+def test_a_limiter_with_no_thresholds_warns_never(caplog):
+    """`warn_thresholds=()` is the per-instance off switch, separate from `limit=0`."""
+    limiter = FixedWindowLimiter(
+        limit=10, window_s=60.0, bucket="anonymous catalog", warn_thresholds=()
+    )
+    with caplog.at_level("WARNING", logger="majorana_api.rate_limit"):
+        for _ in range(20):
+            limiter.check("203.0.113.211", now=0.0)
+    assert caplog.records == []
+
+
+def test_the_app_gives_each_limiter_its_own_warning_identity():
+    """The wiring, not just the mechanism — a per-instance field nobody sets is a
+    default applied to both, which is the bug this whole split exists to prevent."""
+    app = create_app(_settings())
+    assert app.state.anon_limiter.bucket == "anonymous catalog"
+    assert app.state.trusted_limiter.bucket == "trusted renderer"
+    assert app.state.anon_limiter.bucket != app.state.trusted_limiter.bucket
+    # And each hint points at ITS OWN cause.
+    assert "trusted-caller exemption" in app.state.anon_limiter.warn_hint
+    assert "render path is" in app.state.trusted_limiter.warn_hint

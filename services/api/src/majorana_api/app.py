@@ -170,7 +170,19 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     # `/v1/catalog/*` surface, which has no account to meter (rate_limit.py).
     # On the app rather than a router: the point is to answer before a handler,
     # a dependency, or a database session has been created.
-    app.state.anon_limiter = FixedWindowLimiter(limit=app.state.settings.anon_rate_limit_per_minute)
+    # `bucket` and `warn_hint` are per-instance because BOTH limiters here are a
+    # `FixedWindowLimiter`, and a warning that names the wrong ceiling sends the reader
+    # in exactly the wrong direction — the same argument the refusal below makes for why
+    # its 429 body names the bucket, applied one step earlier.
+    app.state.anon_limiter = FixedWindowLimiter(
+        limit=app.state.settings.anon_rate_limit_per_minute,
+        bucket="anonymous catalog",
+        warn_hint=(
+            "If this is our own renderer, the trusted-caller exemption is not being "
+            "applied and the public catalog will fall back to the static corpus once it "
+            "is refused."
+        ),
+    )
     # A SECOND bucket, for the one caller we can recognise: our own server-side
     # renderer. Nothing in a browser reads /v1/catalog/*, so without this the
     # limiter's entire subject is Vercel's SSR egress — a handful of addresses
@@ -180,7 +192,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     # independently: the anonymous one is a security control and wants to come
     # DOWN, the trusted one is a runaway-loop backstop and wants headroom.
     app.state.trusted_limiter = FixedWindowLimiter(
-        limit=app.state.settings.trusted_rate_limit_per_minute
+        limit=app.state.settings.trusted_rate_limit_per_minute,
+        bucket="trusted renderer",
+        warn_hint=(
+            "This is the renderer's own ceiling, not the anonymous one; a render path is looping."
+        ),
     )
     # Meters every caller — credentialed or not, every path — by the 401s and
     # 403s their own requests produce (ai-ops#145, `AuthFailureThrottle`). A

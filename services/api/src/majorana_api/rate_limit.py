@@ -299,6 +299,20 @@ class FixedWindowLimiter:
     limit: int = DEFAULT_ANON_LIMIT
     window_s: float = DEFAULT_WINDOW_S
     max_keys: int = DEFAULT_MAX_KEYS
+    #: Which bucket this instance IS, in the warning text. There are two
+    #: `FixedWindowLimiter`s — the anonymous one and the trusted renderer's — and a
+    #: warning that names the wrong one is worse than no warning: `app.py`'s refusal
+    #: comment already spells out why ("reporting a trusted renderer's ceiling as
+    #: 'anonymous' would tell whoever is reading the log to look at scrapers when the
+    #: cause is our own render path looping"). Defaulting to "anonymous catalog" would
+    #: have made the trusted limiter mislabel itself in exactly that direction, so this
+    #: has no default that silently applies to both.
+    bucket: str = ""
+    #: What the reader should go and check, appended to the warning. Bucket-specific,
+    #: because the two ceilings have entirely different causes.
+    warn_hint: str = ""
+    #: Fractions of `limit` at which to warn. Empty disables warning for this instance.
+    warn_thresholds: tuple[float, ...] = ANON_WARN_THRESHOLDS
     _windows: dict[str, _Window] = field(default_factory=dict)
     #: Incremented whenever the table was full and a request was let through
     #: because of it. Read by the tests, and the number to look at first if the
@@ -330,7 +344,7 @@ class FixedWindowLimiter:
         # still gets exactly one warning. Same shape as `AuthFailureThrottle`,
         # and see `ANON_WARN_THRESHOLDS` for why this limiter needs it MORE than
         # that one does rather than less.
-        for threshold in ANON_WARN_THRESHOLDS:
+        for threshold in self.warn_thresholds:
             if threshold in window.warned_thresholds:
                 continue
             if window.count / self.limit >= threshold:
@@ -360,19 +374,29 @@ class FixedWindowLimiter:
         no-op when Sentry was never initialised, so dev, CI and every test in
         this file need no environment check.
 
-        The message names the ceiling as the ANONYMOUS one on purpose: if the
-        address crossing it is our own renderer, the thing to go and check is the
-        trusted-caller secret, and saying which bucket is what points there.
+        The message names which bucket crossed — `self.bucket` — because the two
+        ceilings have opposite causes and a reader sent to the wrong one investigates
+        scrapers while their own renderer loops. That is `app.py`'s own argument for
+        why its 429 body names the bucket, applied to the warning that precedes it.
+
+        **The caller's address goes to the log and NOT to Sentry.** The log is this
+        service's own Cloud Run stream, which already records the client address on
+        every request, so naming it there tells a reader WHICH address without
+        exposing anything that stream did not already hold. Sentry is a third party
+        and an address is personal data; it gets the fact, the bucket and the numbers,
+        which is what makes the alert actionable, and the log has the identity for
+        whoever follows it up. Same instinct as `SENSITIVE_BODY_KEYS` in
+        `observability.py`: decide what leaves the process, deliberately.
         """
-        message = (
-            f"anonymous catalog limiter: {key} crossed {threshold:.0%} of its "
-            f"ceiling ({count}/{self.limit} requests in the current "
-            f"{self.window_s:.0f}s window). If this address is our own renderer, "
-            f"the trusted-caller exemption is not being applied and the public "
-            f"catalog will fall back to the static corpus when it is refused."
+        detail = (
+            f"crossed {threshold:.0%} of its ceiling ({count}/{self.limit} requests "
+            f"in the current {self.window_s:.0f}s window)"
         )
-        logger.warning(message)
-        sentry_sdk.capture_message(message, level="warning")
+        hint = f" {self.warn_hint}" if self.warn_hint else ""
+        logger.warning("%s limiter: %s %s.%s", self.bucket, key, detail, hint)
+        sentry_sdk.capture_message(
+            f"{self.bucket} limiter: an address {detail}.{hint}", level="warning"
+        )
 
     def _sweep(self, now: float) -> None:
         expired = [k for k, w in self._windows.items() if now - w.started_at >= self.window_s]
