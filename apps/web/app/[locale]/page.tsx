@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { CircuitBand } from "../../components/circuit-band";
+import { LandingDemoVideo } from "../../components/landing-demo-video";
 import { LeonaWordmark } from "../../components/leona-wordmark";
 import { LandingPrompt } from "../../components/landing-prompt";
 import { LeoConstellation } from "../../components/leo-constellation";
@@ -124,21 +125,13 @@ export default async function Home({ params }: { params: Promise<{ locale: strin
           <p className="sr-only" id="lq-landing-demo-description">
             {copy.visual.demoDescription}
           </p>
-          <video
-            aria-describedby="lq-landing-demo-description"
-            aria-label={copy.visual.demoLabel}
-            autoPlay
-            className="lq-landing-demo-video"
-            controls
-            loop
-            muted
-            playsInline
+          <LandingDemoVideo
+            describedById="lq-landing-demo-description"
+            fallback={copy.visual.demoFallback}
+            label={copy.visual.demoLabel}
             poster="/media/leona-product-demo-poster.jpg"
-            preload="metadata"
-          >
-            <source src="/media/leona-product-demo.mp4" type="video/mp4" />
-            <a href="/media/leona-product-demo.mp4">{copy.visual.demoFallback}</a>
-          </video>
+            src="/media/leona-product-demo.mp4"
+          />
         </div>
         <ScrollCue href="#company-intro-heading" targetId="company-intro-heading">
           <span>{copy.hero.scrollCue}</span>

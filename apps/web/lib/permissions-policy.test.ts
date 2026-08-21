@@ -71,29 +71,53 @@ test("the denied list is sorted, because it is read by eye against a scanner", (
   assert.deepEqual([...DENIED_FEATURES], [...DENIED_FEATURES].sort());
 });
 
-test("the landing page asks for no feature this header refuses", () => {
-  // The connection nothing made before. A media element carrying `autoPlay`
-  // needs the `autoplay` feature; if a future edit adds `<video>` with a
-  // capture or picture-in-picture affordance, that is a denied feature and this
-  // fails rather than shipping a control that does nothing.
-  const page = readFileSync(join(WEB_ROOT, "app", "[locale]", "page.tsx"), "utf8");
+test("the landing demo asks for no feature this header refuses", () => {
+  // The connection nothing made before. The demo starts itself with a bare
+  // `play()` and no user gesture, which is exactly what the `autoplay` feature
+  // governs — so if that feature ever returns to the denied list, the video
+  // stops starting and this fails instead of shipping silently.
+  const video = readFileSync(join(WEB_ROOT, "components", "landing-demo-video.tsx"), "utf8");
   const asked = new Set<string>();
-  if (/\bautoPlay\b/.test(page)) asked.add("autoplay");
-  if (/\bdisablePictureInPicture\b/.test(page) === false && /<video\b/.test(page)) {
-    // A <video> without the opt-out offers picture-in-picture from the context
-    // menu; that is a browser affordance rather than a request the page makes,
-    // so it is noted here and NOT asserted — denying it is intentional.
-  }
+  if (/\.play\(\)/.test(video) || /\bautoPlay\b/.test(video)) asked.add("autoplay");
+  if (/requestPictureInPicture/.test(video)) asked.add("picture-in-picture");
+  if (/requestFullscreen/.test(video)) asked.add("fullscreen");
+
+  assert.ok(asked.size > 0, "the demo no longer asks for any feature — this guard is inert");
   for (const feature of asked) {
     assert.equal(
       DENIED_FEATURES.includes(feature as (typeof DENIED_FEATURES)[number]),
       false,
-      `the landing page uses ${feature}, which this header denies outright`,
+      `the landing demo uses ${feature}, which this header denies outright`,
     );
   }
-  // Positive control: the demo really is on the page, so a future removal of
-  // the video turns this test into a statement about nothing without saying so.
-  assert.match(page, /<video\b/, "the landing page no longer embeds a video — revisit `autoplay=(self)`");
+
+  // Positive control: the element really is there, and the page really renders
+  // it. Without these two a future removal would turn the case above into a
+  // statement about nothing without saying so.
+  assert.match(video, /<video\b/, "landing-demo-video.tsx no longer renders a video");
+  const page = readFileSync(join(WEB_ROOT, "app", "[locale]", "page.tsx"), "utf8");
+  assert.match(page, /<LandingDemoVideo\b/, "the landing page no longer renders the demo");
+});
+
+test("the demo does not autoplay past a reader who asked for less motion", () => {
+  // CSS cannot stop a video, so the reduced-motion rules in globals.css do not
+  // reach this and the check has to be on the component. Two halves: it must
+  // consult the preference, and the markup must carry no `autoplay` attribute —
+  // an attribute would start playback before the preference could be read,
+  // which is the flash of motion this exists to prevent.
+  const video = readFileSync(join(WEB_ROOT, "components", "landing-demo-video.tsx"), "utf8");
+  assert.match(video, /prefers-reduced-motion: reduce/, "the demo no longer consults the preference");
+  assert.match(video, /addEventListener\("change"/, "the preference is read once and never re-read");
+  // The RENDERED markup only. The doc comment above it names the attribute it
+  // is explaining, and a whole-file search reads that as the defect.
+  const markup = video.slice(video.indexOf("return ("));
+  assert.ok(markup.includes("<video"), "could not locate the rendered markup");
+  assert.doesNotMatch(
+    markup,
+    /\bautoPlay\b/,
+    "the markup carries an `autoplay` attribute, which plays before the preference is read",
+  );
+  assert.doesNotMatch(markup, /\bloop\b/, "`loop` in the markup loops regardless of the preference");
 });
 
 test("next.config.ts still sends this header, on every route", () => {
