@@ -84,6 +84,13 @@ async def set_rls_context(session: AsyncSession, scope: Scope, *, enforce: bool)
     enforce RLS" is still answered by "does it call `get_scope`", and the raw
     query stays inside the layer the authz invariant already trusts.
 
+    Three GUCs, set in ONE statement so they cannot drift apart or be armed
+    separately. `majorana.user_id` arrived with 0054 (ai-ops#149): it is what the
+    grant disjunct on `projects`/`artifacts`/`artifact_versions`/`project_shares`
+    keys on, and a session that had the workspace GUC without it would evaluate
+    every one of those disjuncts against NULL — no rows through any grant, which
+    is the silent breakage 0054 exists to remove.
+
     `enforce=False` (the default everywhere until `Settings.rls_enforced` is
     flipped — see that field's docstring) is a genuine no-op: nothing is
     executed, not even a `set_config` clearing the GUC to off, so a caller that
@@ -98,7 +105,8 @@ async def set_rls_context(session: AsyncSession, scope: Scope, *, enforce: bool)
     await session.execute(
         text(
             "select set_config('majorana.rls_enforce', 'on', true), "
-            "set_config('majorana.workspace_id', :workspace_id, true)"
+            "set_config('majorana.workspace_id', :workspace_id, true), "
+            "set_config('majorana.user_id', :user_id, true)"
         ),
-        {"workspace_id": str(scope.workspace_id)},
+        {"workspace_id": str(scope.workspace_id), "user_id": str(scope.user_id)},
     )
