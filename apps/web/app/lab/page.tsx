@@ -41,7 +41,7 @@ export default async function LabPage() {
     <>
       <nav className="lab-nav">
         <div className="lab-shell lab-nav-inner">
-          <a className="lab-nav-brand" href="/lab" aria-label="Leona Quantum lab">
+          <a className="lab-nav-brand" href="/lab" aria-label={copy.brandLab}>
             <LeonaWordmark className="lq-wordmark--lab" />
           </a>
           <div className="lab-nav-links">

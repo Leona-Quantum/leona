@@ -60,6 +60,17 @@ export const PUBLIC_SHELL_COPY: Record<PublicLocale, {
     builtFor: string;
   };
   actions: { workspace: string; signIn: string; talk: string; signOut: string };
+  /** Accessible name for the wordmark link in the header and the footer.
+   *
+   * The wordmark itself is `aria-hidden` — it is artwork, and a screen reader
+   * announcing the image would say nothing useful — so this string IS the link
+   * as far as assistive technology is concerned. It was hardcoded English on
+   * both, including on every `/ja` page, while the navigation landmark two
+   * lines below it localized correctly. Raised by CodeRabbit on leona 713.
+   *
+   * The brand name stays untranslated in both, because it is a proper noun;
+   * only the destination word changes. */
+  brandHome: string;
 }> = {
   en: {
     // `repository` is the catalogue at `/repository`, and it is called the
@@ -80,6 +91,7 @@ export const PUBLIC_SHELL_COPY: Record<PublicLocale, {
       builtFor: "For researchers, engineers, and teams who need evidence.",
     },
     actions: { workspace: "Open workspace", signIn: "Sign in", talk: "Talk to us", signOut: "Sign out" },
+    brandHome: "Leona Quantum home",
   },
   ja: {
     // 量子アトラス, not the Latin "Atlas" it said before: the page's own title,
@@ -97,5 +109,6 @@ export const PUBLIC_SHELL_COPY: Record<PublicLocale, {
       builtFor: "量子研究を検証し、再現・共有したい研究者、エンジニア、チームのために",
     },
     actions: { workspace: "ワークスペースを開く", signIn: "サインイン", talk: "相談する", signOut: "サインアウト" },
+    brandHome: "Leona Quantum ホーム",
   },
 };

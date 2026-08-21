@@ -899,7 +899,7 @@ function WorkspaceSidebar({
     <div className="mj-sidebar-inner">
       <div className="mj-sidebar-brand-row">
         <a href="/" className="mj-sidebar-brand" aria-label={BRAND_NAME}>
-          <LeonaWordmark className="lq-wordmark--sidebar mj-sidebar-copy" />
+          <LeonaWordmark className="lq-wordmark--sidebar" />
         </a>
         <button className="mj-sidebar-more" type="button" aria-label={copy.workspaceOptions} title={copy.workspaceOptions}>
           <MoreIcon size={16} />

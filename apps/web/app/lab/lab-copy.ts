@@ -6,6 +6,9 @@ import type { PublicLocale } from "../../lib/public-locale";
  * wants a break rather than mirroring the English clause order. */
 export const LAB_COPY: Record<PublicLocale, {
   nav: { atlas: string; workspace: string; pricing: string; shipped: string };
+  /** Accessible name for the wordmark link. The wordmark is `aria-hidden`
+   *  artwork, so this string IS the link to a screen reader. */
+  brandLab: string;
   hero: {
     eyebrow: string;
     titleLead: string;
@@ -30,6 +33,7 @@ export const LAB_COPY: Record<PublicLocale, {
 }> = {
   en: {
     nav: { atlas: "Atlas", workspace: "Workspace", pricing: "Pricing", shipped: "Shipped design" },
+    brandLab: "Leona Quantum lab",
     hero: {
       eyebrow: "Evidence layer for quantum work",
       titleLead: "Prove what your circuit ",
@@ -76,6 +80,7 @@ export const LAB_COPY: Record<PublicLocale, {
   },
   ja: {
     nav: { atlas: "Atlas", workspace: "ワークスペース", pricing: "料金", shipped: "公開中のデザイン" },
+    brandLab: "Leona Quantum ラボ",
     hero: {
       eyebrow: "量子回路の実行と検証",
       titleLead: "その回路が",
