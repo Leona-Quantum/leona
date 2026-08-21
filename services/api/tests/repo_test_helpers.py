@@ -5,11 +5,13 @@ assert the workspace predicate is present WITHOUT a database. The live authz
 suite (tests/authz/) covers entity × role × cross-workspace against Postgres.
 """
 
+import os
 import uuid
 
 from majorana_contracts import Scope
 from majorana_contracts.enums import Role
 from sqlalchemy.dialects import postgresql
+from sqlalchemy.ext.asyncio import create_async_engine
 
 #: A `users.plan` value that names no tier, for the tests that exercise the
 #: fall-through. `users.plan` has no CHECK constraint and `resolve_tier` maps an
@@ -161,6 +163,52 @@ class SequencedSession:
         pass
 
 
+def _owner_factory_or(factory):
+    """The session factory this helper's DELETEs should run through (ai-ops#150).
+
+    ## Why teardown needs a different connection from the test body
+
+    `qpu_runs`, `run_events`, `usage_events` and `audit_log` are append-only behind
+    **two independent controls** — a trigger (migration 0050) and a grant revoke
+    (0052, whose own words are "two layers, neither relying on the other"). The
+    `SET LOCAL majorana.append_only_bypass` below gets past the trigger. Nothing here
+    got past the GRANT layer, and for the whole of this helper's life nothing needed
+    to: every environment that ran it connected as the table owner or as a superuser,
+    and ownership bypasses a grant revoke by definition.
+
+    That stopped being true the moment these suites started running as `majorana_api`,
+    the role production actually connects as. Measured then, not guessed: 105 outcomes
+    differed between the two roles across the live suites, and **every single Postgres
+    refusal in the run was `permission denied` on exactly those four tables** — one
+    missing escape in one shared helper, not a hundred separate gaps.
+
+    ## Why escalating here is honest rather than a hole
+
+    The escalation is scoped to TEARDOWN. Test bodies keep running through the
+    restricted `factory` they were given, which is the entire point of running them
+    restricted — the claim being made is "the application's authorization works under
+    production's privilege set", and cleaning up afterwards is not part of that claim.
+    Production never deletes these rows at all; only a test that had to COMMIT them
+    does.
+
+    `DATABASE_URL_OWNER` is the same variable, meaning the same thing, that
+    `tests/rls/test_rls_policies.py::test_deliberately_broken_policy_is_caught`
+    already uses for the same reason. When it is unset this returns the factory it was
+    given, so every environment that works today — CI's superuser connection included —
+    behaves exactly as it did.
+    """
+    owner_url = os.environ.get("DATABASE_URL_OWNER")
+    if not owner_url:
+        return factory
+    from majorana_api.db import session_factory
+
+    # Same upgrade `db.py::engine_from_env` applies: a plain `postgresql://` scheme
+    # resolves to the psycopg2 dialect, which is not a dependency here.
+    if owner_url.startswith("postgresql://"):
+        owner_url = owner_url.replace("postgresql://", "postgresql+psycopg://", 1)
+    return session_factory(create_async_engine(owner_url))
+
+
 async def delete_committed_tenants(factory, workspace_ids, user_ids) -> None:
     """Remove everything a COMMITTING live fixture created. Not optional.
 
@@ -213,7 +261,9 @@ async def delete_committed_tenants(factory, workspace_ids, user_ids) -> None:
 
     workspace_ids = list(workspace_ids)
     user_ids = list(user_ids)
-    async with factory() as session:
+    # Teardown only — see `_owner_factory_or`. The test body that called this ran
+    # through whatever factory it was given.
+    async with _owner_factory_or(factory)() as session:
         # run_events, audit_log and usage_events are append-only by trigger
         # (migration 0050) — deliberately, and everywhere else. This helper is
         # the one place allowed to delete from them anyway, because a few
