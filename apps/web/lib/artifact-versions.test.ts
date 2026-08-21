@@ -121,17 +121,41 @@ test("paging carries the cursor forward only when the server sent one", () => {
 });
 
 test("only the capability refusal is read as one", () => {
+  // The body below is what `routes/artifacts.py` actually puts on the wire.
+  // It raises `HTTPException(detail={"error":…, "reason":…, "losses":…})`, but
+  // `app.py::_http_exc` flattens that before it leaves the service: `error`
+  // becomes `title` and every other key becomes a SIBLING of it.
+  //
+  // This case previously asserted the NESTED `{detail: {...}}` form, which no
+  // deployment has ever sent. Both the reader and the test agreed with each
+  // other and with nothing else, so the suite stayed green while the
+  // confirm-and-restore dialog could never open on production (ai-ops issue 153).
+  // That is the whole shape of the bug, preserved here as the reason this
+  // fixture is written out in full rather than abbreviated.
   assert.deepEqual(
     restoreRefusalLosses({
-      detail: { reason: "restore_loses_capabilities", losses: ["qasm", "verification"] },
+      type: "about:blank",
+      title: "Restoring this version would leave the artifact without qasm, verification.",
+      status: 409,
+      code: "http_error",
+      reason: "restore_loses_capabilities",
+      losses: ["qasm", "verification"],
     }),
     ["qasm", "verification"],
   );
   // Anything else must not be mistaken for "the user only has to confirm".
-  assert.equal(restoreRefusalLosses({ detail: "artifact version" }), null);
-  assert.equal(restoreRefusalLosses({ detail: { reason: "artifact_allowance_exhausted" } }), null);
+  assert.equal(restoreRefusalLosses({ title: "artifact version", status: 404 }), null);
+  assert.equal(restoreRefusalLosses({ reason: "artifact_allowance_exhausted" }), null);
   assert.equal(restoreRefusalLosses(null), null);
   assert.equal(restoreRefusalLosses("gateway timeout"), null);
+  // The shape that used to pass. Kept as an explicit negative so a future
+  // "tolerant" reader cannot quietly reintroduce the envelope that hid this.
+  assert.equal(
+    restoreRefusalLosses({
+      detail: { reason: "restore_loses_capabilities", losses: ["qasm", "verification"] },
+    }),
+    null,
+  );
 });
 
 test("a version says whether its code is a circuit or a program", () => {

@@ -14,6 +14,7 @@ import {
 } from "@majorana/ui";
 import { ChatMarkdown } from "../../../../components/chat-markdown";
 import { runToFollow } from "../../../../lib/conversation-follow";
+import { refusalSentence } from "../../../../lib/api-error.ts";
 import { QUEUE_POLL_INTERVAL_MS, isWaitingForWorker, queuePositionLabel } from "../../../../lib/queue-position";
 import { archiveChat, loadChatHistory, rememberChat, updateChat, type ChatSummary } from "../../../../lib/chat-history";
 import { displayChatTitle, titleFromPrompt } from "../../../../lib/chat-title";
@@ -717,14 +718,9 @@ export function LiveRun({ taskId, locale = "en" }: { taskId: string; locale?: Pu
         method: "POST",
       });
       if (!response.ok) {
-        const payload = (await response.json().catch(() => null)) as {
-          detail?: string;
-          error?: string;
-        } | null;
+        const payload = (await response.json().catch(() => null)) as unknown;
         throw new Error(
-          payload?.detail
-          ?? payload?.error
-          ?? `Run could not be stopped (${response.status})`,
+          refusalSentence(payload) ?? `Run could not be stopped (${response.status})`,
         );
       }
       // The event stream receives the durable run.finished/cancelled event and
@@ -789,8 +785,10 @@ export function LiveRun({ taskId, locale = "en" }: { taskId: string; locale?: Pu
           response_locale: locale,
         }),
       });
-      const payload = (await response.json()) as { id?: string; conversation_id?: string; detail?: string; error?: string };
-      if (!response.ok || !payload.id) throw new Error(payload.detail ?? payload.error ?? `Message submission failed (${response.status})`);
+      const payload = (await response.json()) as { id?: string; conversation_id?: string };
+      if (!response.ok || !payload.id) {
+        throw new Error(refusalSentence(payload) ?? `Message submission failed (${response.status})`);
+      }
       // Follow the new turn in place. This used to `router.replace` onto the new
       // run's URL, and because the whole authed surface sits behind a
       // `loading.tsx` boundary and the run page is `force-dynamic`, every

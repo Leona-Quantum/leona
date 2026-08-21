@@ -4,6 +4,7 @@ import type { FormEvent } from "react";
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { rememberChat } from "../../../lib/chat-history";
+import { refusalSentence } from "../../../lib/api-error.ts";
 import { titleFromPrompt } from "../../../lib/chat-title";
 import { artifactFromResource, type LibraryArtifact } from "../../../lib/library-data";
 import { consumeLandingPromptHandoff } from "../../../lib/landing-prompt-handoff";
@@ -198,9 +199,9 @@ export function RunWorkspace({ demoMode = false, locale = "en" }: { demoMode?: b
           ...(contextArtifact?.currentVersionId ? { artifact_version_id: contextArtifact.currentVersionId } : {}),
         }),
       });
-      const payload = (await response.json()) as { id?: string; conversation_id?: string; detail?: string; error?: string };
+      const payload = (await response.json()) as { id?: string; conversation_id?: string };
       if (!response.ok || !payload.id) {
-        throw new Error(payload.detail ?? payload.error ?? `Run submission failed (${response.status})`);
+        throw new Error(refusalSentence(payload) ?? `Run submission failed (${response.status})`);
       }
       rememberChat({
         id: payload.id,
