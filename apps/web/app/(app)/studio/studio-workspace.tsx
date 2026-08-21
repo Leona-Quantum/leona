@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { SyntaxHighlightedCode, VerificationSummaryPanel, verificationHeadline } from "@majorana/ui";
 import { CopyIcon, SearchIcon } from "../../../components/icons";
 import { artifactFromResource, frameworkVariantsFromRemote, getLibraryArtifact, loadLibraryArtifacts, statusFromVerificationSummary, type LibraryArtifact } from "../../../lib/library-data";
+import { refusalSentence, refusalStrings, submittedId } from "../../../lib/api-error.ts";
 import { fetchArtifactPages } from "../../../lib/artifact-page";
 import {
   ARTIFACT_PROJECTS_EVENT,
@@ -642,11 +643,12 @@ export function StudioWorkspace({ artifactId, newDraft = false, locale = "en", l
           ...(artifact?.currentVersionId ? { artifact_version_id: artifact.currentVersionId } : {}),
         }),
       });
-      const payload = (await response.json()) as { id?: string; detail?: string; error?: string };
-      if (!response.ok || !payload.id) {
-        throw new Error(payload.detail ?? payload.error ?? `Run submission failed (${response.status})`);
+      const payload = (await response.json()) as unknown;
+      const runId = submittedId(payload);
+      if (!response.ok || !runId) {
+        throw new Error(refusalSentence(payload) ?? `Run submission failed (${response.status})`);
       }
-      setRunId(payload.id);
+      setRunId(runId);
       setMessage(copy.verificationStarted);
     } catch (cause) {
       setMessage(cause instanceof Error ? cause.message : copy.submissionFailed);
@@ -684,20 +686,16 @@ export function StudioWorkspace({ artifactId, newDraft = false, locale = "en", l
           code,
         }),
       });
-      const payload = (await response.json()) as {
-        id?: string;
-        detail?: { error?: string; diagnostics?: string[] };
-        error?: string;
-      };
-      if (!response.ok || !payload.id) {
-        const detail = payload.detail;
-        const diagnostics = detail?.diagnostics?.length ? ` (${detail.diagnostics.join("; ")})` : "";
-        throw new Error(
-          `${detail?.error ?? payload.error ?? copy.broughtInFailed}${diagnostics}`,
-        );
+      const payload = (await response.json()) as unknown;
+      const importedId = submittedId(payload);
+      if (!response.ok || !importedId) {
+        // `diagnostics` is a SIBLING of `title`, not nested — see api-error.ts.
+        const named = refusalStrings(payload, "diagnostics");
+        const diagnostics = named.length ? ` (${named.join("; ")})` : "";
+        throw new Error(`${refusalSentence(payload) ?? copy.broughtInFailed}${diagnostics}`);
       }
       setMessage(copy.broughtInSaved);
-      router.push(`/library/${payload.id}`);
+      router.push(`/library/${importedId}`);
     } catch (cause) {
       setMessage(cause instanceof Error ? cause.message : copy.broughtInFailed);
     } finally {

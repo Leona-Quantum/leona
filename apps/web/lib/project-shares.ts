@@ -87,6 +87,14 @@ export class ShareRefused extends Error {
   }
 }
 
+// The refusal readers live in `api-error.ts` now: the same mistake they encode
+// was live in seven other call sites (ai-ops issue 153), which is not something a
+// module about project sharing should be the owner of. Re-exported because
+// `qpu.ts` and `artifact-projects.ts` import them from here.
+import { refusalReason, refusalSentence } from "./api-error.ts";
+
+export { refusalReason, refusalSentence };
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
 }
@@ -211,55 +219,11 @@ export function hasMoved(seen: string | null | undefined, current: string): bool
   return after > before;
 }
 
-/**
- * The control plane's refusals are RFC 7807 problem documents.
- *
- * `services/api/app._problem` turns EVERY `HTTPException` into
- * `{type, title, status, code, ...extensions}` — the sentence is `title`, and a
- * typed refusal's fields (`reason`, and whatever that reason carries) are
- * SIBLINGS of it, not nested under `detail`.
- *
- * This function read `detail` in its first draft, because that is FastAPI's
- * default and the route handlers raise `HTTPException(detail=...)`. Nothing
- * failed: `refusalMessage` returned null, every refusal fell back to its generic
- * sentence, and `parseConflict` never found a version id — so the conflict
- * dialog's "open theirs" button would have been permanently dead. Found by
- * asserting the real body in `test_project_shares_http_live.py` rather than by
- * reading the handler.
- *
- * `detail` is still read as a fallback: a 502/504 from the BFF's own
- * `controlPlaneUnavailable` is not a problem document, and neither is whatever
- * a future proxy layer inserts.
- */
-export function refusalSentence(payload: unknown): string | null {
-  if (!isRecord(payload)) return null;
-  if (typeof payload.title === "string" && payload.title) return payload.title;
-  if (typeof payload.detail === "string" && payload.detail) return payload.detail;
-  if (isRecord(payload.detail) && typeof payload.detail.error === "string") {
-    return payload.detail.error;
-  }
-  if (typeof payload.error === "string" && payload.error) return payload.error;
-  return null;
-}
-
 /** The version that won a conflict, out of the problem document that refused. */
 export function conflictVersionId(payload: unknown): string | null {
   if (!isRecord(payload)) return null;
   if (payload.reason !== "version_conflict") return null;
   return optionalString(payload.current_version_id);
-}
-
-/**
- * The machine-readable `reason` on a refusal, when it carries one.
- *
- * The `title` beside it is an English sentence written by the control plane,
- * and this app renders Japanese. A reason code is the only part of a refusal
- * that can be translated — everything keyed off the sentence would either read
- * English to a Japanese reader or match on prose that changes.
- */
-export function refusalReason(payload: unknown): string | null {
-  if (!isRecord(payload)) return null;
-  return typeof payload.reason === "string" && payload.reason ? payload.reason : null;
 }
 
 async function refusalMessage(response: Response): Promise<string | null> {
