@@ -10,6 +10,7 @@ import pytest
 
 from majorana_api.app import create_app
 from majorana_api.rate_limit import (
+    ANON_WARN_THRESHOLDS,
     AUTH_FAILURE_WARN_THRESHOLDS,
     CALLER_TRUST_HEADER,
     DEFAULT_ANON_LIMIT,
@@ -316,6 +317,19 @@ def test_the_body_limit_clears_the_largest_legitimate_document():
     assert MAX_REQUEST_BYTES > 256 * 1024
 
 
+#: The renderer's worst case, computed from production rather than felt.
+#:
+#: Counted on production 2026-08-21: 279 catalog entries. `repository-source.ts`
+#: fetches three per-slug routes for each (`entries/{slug}`, `.../estimate`,
+#: `.../profile`), so a cold walk of the whole corpus inside one window — every
+#: detail page revalidating at once, which an on-demand purge of the
+#: `public-catalog` tag can cause — is this many requests.
+#:
+#: Re-count it (`/v1/catalog/entries`) if the corpus grows a lot; this is a
+#: measurement with a date on it, not a constant of nature.
+RENDERER_WORST_CASE_PER_WINDOW = 279 * 3
+
+
 def test_the_default_limit_has_headroom_over_our_own_renderer():
     """The limit is sized for Vercel's SSR egress, not for a browser.
 
@@ -323,11 +337,21 @@ def test_the_default_limit_has_headroom_over_our_own_renderer():
     server-side — so this endpoint sees a handful of shared Vercel addresses
     carrying every visitor. Tripping the limiter there returns no error to
     anyone: the web catches it and serves the stale static corpus. A control
-    that fails silently to stale data needs enormous headroom, which is why
-    this floor is high and why lowering it needs the trusted-caller exemption
-    first.
+    that fails silently to stale data needs headroom over legitimate use.
+
+    This asserted `>= 1200` — the value at the time, which made the test a
+    restatement of the constant rather than a check on it. It now asserts what
+    the number actually has to clear, so lowering `DEFAULT_ANON_LIMIT` below the
+    renderer's own worst case fails here instead of shipping and going stale
+    under load. 900 clears 837 with the renderer metered as an ANONYMOUS caller,
+    which is the pessimistic case where the trusted-caller exemption is not
+    working at all.
     """
-    assert DEFAULT_ANON_LIMIT >= 1200
+    assert DEFAULT_ANON_LIMIT > RENDERER_WORST_CASE_PER_WINDOW, (
+        f"{DEFAULT_ANON_LIMIT}/min is at or below the renderer's own worst case "
+        f"({RENDERER_WORST_CASE_PER_WINDOW}/min). If the trusted-caller exemption is not "
+        "applying, the public catalog silently falls back to the static corpus under load."
+    )
 
 
 # --------------------------------------------------------------------------
@@ -1061,3 +1085,91 @@ async def test_auth_failure_limit_zero_disables_the_middleware():
         statuses = {(await client.get("/v1/runs")).status_code for _ in range(50)}
 
     assert statuses == {401}
+
+
+# --------------------------------------------------------------------------
+# The anonymous limiter's early-warning signal (ai-ops#145)
+#
+# Added when `DEFAULT_ANON_LIMIT` came down from 1200 to 900. The cut is only
+# safe because the ceiling stopped being silent: the caller this limiter most
+# needs to warn about — our own renderer — never sees its own 429, because
+# `getRepositoryEntries` catches it and serves the static corpus.
+# --------------------------------------------------------------------------
+
+
+def test_the_anon_limiter_warns_before_it_refuses(caplog):
+    """The whole point: the signal has to arrive while the catalog is still
+    serving LIVE data, not at the moment it starts serving stale."""
+    limiter = FixedWindowLimiter(limit=10, window_s=60.0)
+    with caplog.at_level("WARNING", logger="majorana_api.rate_limit"):
+        decisions = [limiter.check("203.0.113.200", now=0.0) for _ in range(10)]
+
+    assert all(d.allowed for d in decisions), "warned only after refusing — too late to act"
+    assert len(caplog.records) == 2
+    assert "50%" in caplog.records[0].message
+    assert "80%" in caplog.records[1].message
+
+
+def test_an_anon_threshold_crossing_captures_a_sentry_event_exactly_once(monkeypatch):
+    """One event per (address, window, threshold), never one per request past
+    the line — same property `AuthFailureThrottle` is held to."""
+    import majorana_api.rate_limit as rate_limit_module
+
+    captured = []
+    monkeypatch.setattr(
+        rate_limit_module.sentry_sdk,
+        "capture_message",
+        lambda msg, level=None: captured.append((msg, level)),
+    )
+
+    limiter = FixedWindowLimiter(limit=10, window_s=60.0)
+    for _ in range(20):  # ten past the ceiling: still exactly two crossings
+        limiter.check("203.0.113.201", now=0.0)
+
+    assert len(captured) == 2
+    assert all(level == "warning" for _, level in captured)
+    assert "5/10" in captured[0][0]
+    assert "8/10" in captured[1][0]
+    # The message has to point at the trusted-caller secret, because that is what
+    # a reader has to go and check when the address crossing this is our own.
+    assert "trusted-caller" in captured[0][0]
+
+
+def test_traffic_under_the_first_anon_threshold_warns_never(caplog):
+    limiter = FixedWindowLimiter(limit=10, window_s=60.0)
+    with caplog.at_level("WARNING", logger="majorana_api.rate_limit"):
+        for _ in range(4):  # 40%
+            limiter.check("203.0.113.202", now=0.0)
+    assert caplog.records == []
+
+
+def test_the_window_rolling_lets_the_same_address_warn_again(caplog):
+    limiter = FixedWindowLimiter(limit=10, window_s=60.0)
+    with caplog.at_level("WARNING", logger="majorana_api.rate_limit"):
+        for _ in range(10):
+            limiter.check("203.0.113.203", now=0.0)
+        for _ in range(10):
+            limiter.check("203.0.113.203", now=61.0)
+    # A new window is a new fact about the world; staying silent because an
+    # EARLIER window already warned would hide an ongoing problem.
+    assert len(caplog.records) == 4
+
+
+def test_anon_addresses_warn_independently():
+    limiter = FixedWindowLimiter(limit=10, window_s=60.0)
+    for _ in range(10):
+        limiter.check("203.0.113.204", now=0.0)
+    limiter.check("203.0.113.205", now=0.0)
+    assert limiter._windows["203.0.113.204"].warned_thresholds == set(ANON_WARN_THRESHOLDS)
+    assert limiter._windows["203.0.113.205"].warned_thresholds == set()
+
+
+def test_a_disabled_limiter_warns_never(caplog):
+    """`ANON_RATE_LIMIT_PER_MINUTE=0` is the documented escape hatch. A disabled
+    control must be silent as well as permissive — an operator who turned it off
+    on purpose does not want a Sentry issue per request."""
+    limiter = FixedWindowLimiter(limit=0, window_s=60.0)
+    with caplog.at_level("WARNING", logger="majorana_api.rate_limit"):
+        for _ in range(50):
+            assert limiter.check("203.0.113.206", now=0.0).allowed
+    assert caplog.records == []
