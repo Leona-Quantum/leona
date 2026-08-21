@@ -164,7 +164,8 @@ class SequencedSession:
 
 
 def _owner_factory_or(factory):
-    """The session factory this helper's DELETEs should run through (ai-ops#150).
+    """The session factory this helper's DELETEs should run through, and the engine
+    to dispose afterwards (ai-ops#150).
 
     ## Why teardown needs a different connection from the test body
 
@@ -199,14 +200,22 @@ def _owner_factory_or(factory):
     """
     owner_url = os.environ.get("DATABASE_URL_OWNER")
     if not owner_url:
-        return factory
+        # No engine of our own, so nothing to dispose — hence the None.
+        return factory, None
     from majorana_api.db import session_factory
 
     # Same upgrade `db.py::engine_from_env` applies: a plain `postgresql://` scheme
     # resolves to the psycopg2 dialect, which is not a dependency here.
     if owner_url.startswith("postgresql://"):
         owner_url = owner_url.replace("postgresql://", "postgresql+psycopg://", 1)
-    return session_factory(create_async_engine(owner_url))
+    engine = create_async_engine(owner_url)
+    # Returned for disposal, not just used: closing an AsyncSession returns its
+    # connection to the pool, it does not close the pool. This helper runs once per
+    # committing test — roughly seventy times across the live suites — so an engine
+    # created and dropped on the floor here is seventy leaked pools, each holding
+    # connections against a server whose `max_connections` is a real limit (see
+    # ai-ops#91). Caught in review by CodeRabbit.
+    return session_factory(engine), engine
 
 
 async def delete_committed_tenants(factory, workspace_ids, user_ids) -> None:
@@ -236,6 +245,21 @@ async def delete_committed_tenants(factory, workspace_ids, user_ids) -> None:
     delete rather than a wrong answer, which is the good direction for a gap
     like this to be found in.
     """
+    workspace_ids = list(workspace_ids)
+    user_ids = list(user_ids)
+    # Teardown only — see `_owner_factory_or`. The test body that called this ran
+    # through whatever factory it was given.
+    teardown_factory, owner_engine = _owner_factory_or(factory)
+    try:
+        await _delete_committed_tenants(teardown_factory, workspace_ids, user_ids)
+    finally:
+        if owner_engine is not None:
+            await owner_engine.dispose()
+
+
+async def _delete_committed_tenants(factory, workspace_ids, user_ids) -> None:
+    """The statements themselves. Split out so the engine disposal above is a `finally`
+    around the whole thing rather than something the FK ordering below has to remember."""
     from sqlalchemy import delete, select, text, update
 
     from majorana_api.orm import (
@@ -261,11 +285,7 @@ async def delete_committed_tenants(factory, workspace_ids, user_ids) -> None:
         Workspace,
     )
 
-    workspace_ids = list(workspace_ids)
-    user_ids = list(user_ids)
-    # Teardown only — see `_owner_factory_or`. The test body that called this ran
-    # through whatever factory it was given.
-    async with _owner_factory_or(factory)() as session:
+    async with factory() as session:
         # run_events, audit_log and usage_events are append-only by trigger
         # (migration 0050) — deliberately, and everywhere else. This helper is
         # the one place allowed to delete from them anyway, because a few
