@@ -3,6 +3,7 @@ import {
   contentSecurityPolicy,
   errorReportingOrigin,
 } from "./lib/content-security-policy";
+import { permissionsPolicy } from "./lib/permissions-policy";
 
 /**
  * Content-Security-Policy (05-security.md §1 platform+edge).
@@ -199,6 +200,41 @@ const nextConfig: NextConfig = {
         source,
         headers: [{ key: "Vercel-CDN-Cache-Control", value: "max-age=300" }],
       })),
+      // The landing page's demo video and the wordmark, which are the first
+      // binary assets this app has ever served.
+      //
+      // ## What Vercel does without this
+      //
+      // Files under `public/` leave the edge with
+      // `cache-control: public, max-age=0, must-revalidate` — measured on the
+      // preview deployment, on the 6.8 MB mp4 itself. That is a conditional
+      // request on every single page load. The 304 that comes back is cheap in
+      // bytes and not cheap in time: it is a full round trip to the edge before
+      // the poster frame can be trusted, on the largest asset the site owns, on
+      // the first screen a visitor sees.
+      //
+      // ## The two numbers, and why they differ
+      //
+      // `Vercel-CDN-Cache-Control` is a year because the edge cache is keyed to
+      // a deployment: a new deploy cannot serve a stale copy of this, so there
+      // is no upper bound worth choosing other than "as long as possible".
+      //
+      // `Cache-Control` is a week, and deliberately NOT `immutable`, because a
+      // browser cache is not keyed to a deployment. `immutable` is the right
+      // answer only for content-hashed filenames, and these are not hashed —
+      // they are `leona-product-demo.mp4` and a person will eventually replace
+      // it in place with a re-cut of the same name. A year of `immutable` would
+      // strand that re-cut in visitors' browsers with no way to reach them; a
+      // week bounds the damage to a week, while still costing zero requests for
+      // every repeat visit inside it. If these ever gain a content hash, raise
+      // the browser number to a year and add `immutable` in the same commit.
+      ...["/media/:path*", "/brand/:path*"].map((source) => ({
+        source,
+        headers: [
+          { key: "Cache-Control", value: "public, max-age=604800" },
+          { key: "Vercel-CDN-Cache-Control", value: "max-age=31536000" },
+        ],
+      })),
       {
         source: "/(.*)",
         headers: [
@@ -208,52 +244,11 @@ const nextConfig: NextConfig = {
           { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
           { key: "Cross-Origin-Opener-Policy", value: "same-origin" },
           { key: "Strict-Transport-Security", value: "max-age=63072000; includeSubDomains" },
-          // Denies the powerful browser features this product never asks for,
-          // so an injected script cannot ask for them either — a prompt that
-          // says "leonaqt.com wants to use your camera" carries this origin's
-          // name, and the CSP above admits `'unsafe-inline'` script by
-          // necessity (see lib/content-security-policy.ts), so "an injected
-          // script" is the threat this actually narrows rather than a
-          // hypothetical one.
-          //
-          // An ALLOWLIST by omission, not a blanket `*=()`. Every feature named
-          // here is denied outright; every feature NOT named keeps whatever the
-          // browser's own default for THAT feature is — which is usually `self`
-          // but is set per feature, not globally, so this deliberately does not
-          // claim to know it. That distinction is the whole reason this is safe
-          // to ship the week of a launch: `clipboard-write` is
-          // deliberately absent because four copy-code buttons depend on it
-          // (repository-entry-view, studio-workspace, artifact-detail,
-          // live-run), and a blanket denial would have broken all four
-          // silently — the write rejects, the button reports nothing, and no
-          // check in this repo submits a form or clicks one.
-          //
-          // `fullscreen` is likewise absent: the Atlas map is the kind of view
-          // that grows a fullscreen control, and denying it pre-emptively would
-          // make that a debugging session rather than a feature.
-          {
-            key: "Permissions-Policy",
-            value: [
-              "accelerometer=()",
-              "autoplay=()",
-              "camera=()",
-              "display-capture=()",
-              "encrypted-media=()",
-              "geolocation=()",
-              "gyroscope=()",
-              "magnetometer=()",
-              "microphone=()",
-              "midi=()",
-              "payment=()",
-              "picture-in-picture=()",
-              "usb=()",
-              "xr-spatial-tracking=()",
-              // Opts this origin out of Topics/FLoC ad-interest inference.
-              // Harmless here and stops the browser inferring interests from
-              // what a visitor reads on the Atlas.
-              "browsing-topics=()",
-            ].join(", "),
-          },
+          // Denies the powerful browser features this product never asks for.
+          // The list, the two deliberate omissions, and why `autoplay` is
+          // `(self)` rather than `()` all live in lib/permissions-policy.ts —
+          // extracted so it could be tested, which it never was before.
+          { key: "Permissions-Policy", value: permissionsPolicy() },
         ],
       },
     ];
