@@ -121,17 +121,63 @@ test("paging carries the cursor forward only when the server sent one", () => {
 });
 
 test("only the capability refusal is read as one", () => {
+  // The body below is what `routes/artifacts.py` actually puts on the wire.
+  // It raises `HTTPException(detail={"error":…, "reason":…, "losses":…})`, but
+  // `app.py::_http_exc` flattens that before it leaves the service: `error`
+  // becomes `title` and every other key becomes a SIBLING of it.
+  //
+  // This case previously asserted the NESTED `{detail: {...}}` form, which no
+  // deployment has ever sent. Both the reader and the test agreed with each
+  // other and with nothing else, so the suite stayed green while the
+  // confirm-and-restore dialog could never open on production (ai-ops issue 153).
+  // That is the whole shape of the bug, preserved here as the reason this
+  // fixture is written out in full rather than abbreviated.
   assert.deepEqual(
     restoreRefusalLosses({
-      detail: { reason: "restore_loses_capabilities", losses: ["qasm", "verification"] },
+      type: "about:blank",
+      title: "Restoring this version would leave the artifact without qasm, verification.",
+      status: 409,
+      code: "http_error",
+      reason: "restore_loses_capabilities",
+      losses: ["qasm", "verification"],
     }),
     ["qasm", "verification"],
   );
   // Anything else must not be mistaken for "the user only has to confirm".
-  assert.equal(restoreRefusalLosses({ detail: "artifact version" }), null);
-  assert.equal(restoreRefusalLosses({ detail: { reason: "artifact_allowance_exhausted" } }), null);
+  assert.equal(restoreRefusalLosses({ title: "artifact version", status: 404 }), null);
+  assert.equal(restoreRefusalLosses({ reason: "artifact_allowance_exhausted" }), null);
   assert.equal(restoreRefusalLosses(null), null);
   assert.equal(restoreRefusalLosses("gateway timeout"), null);
+  // The shape that used to pass. Kept as an explicit negative so a future
+  // "tolerant" reader cannot quietly reintroduce the envelope that hid this.
+  assert.equal(
+    restoreRefusalLosses({
+      detail: { reason: "restore_loses_capabilities", losses: ["qasm", "verification"] },
+    }),
+    null,
+  );
+});
+
+test("a capability refusal that names nothing this build can render is not confirmable", () => {
+  // `[]` is truthy, and the caller does `if (losses)`. Returning an empty list
+  // would open the acknowledgement dialog with nothing listed and offer to
+  // restore anyway — the user acknowledging a loss the screen never showed.
+  // Raised by CodeRabbit; reachable for the first time now that this reader
+  // reads the envelope the API actually sends.
+  const refusal = { title: "…", status: 409, reason: "restore_loses_capabilities" };
+  assert.equal(restoreRefusalLosses(refusal), null, "no losses key at all");
+  assert.equal(restoreRefusalLosses({ ...refusal, losses: [] }), null, "an empty list");
+  assert.equal(restoreRefusalLosses({ ...refusal, losses: "qasm" }), null, "not an array");
+  assert.equal(
+    restoreRefusalLosses({ ...refusal, losses: ["a-code-from-a-newer-server"] }),
+    null,
+    "only codes this build cannot name",
+  );
+  // A partially-recognised list still confirms, on the part it can name.
+  assert.deepEqual(
+    restoreRefusalLosses({ ...refusal, losses: ["qasm", "a-code-from-a-newer-server"] }),
+    ["qasm"],
+  );
 });
 
 test("a version says whether its code is a circuit or a program", () => {

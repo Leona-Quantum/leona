@@ -15,6 +15,8 @@
  *    say it out loud instead of the canvas discovering it.
  */
 
+import { refusalField, refusalReason } from "./api-error.ts";
+
 /** Which of the five writers produced a version. `unknown` is a real answer. */
 export type VersionOrigin =
   | "agent_run"
@@ -138,10 +140,23 @@ export function versionPageFromResource(payload: unknown): ArtifactVersionPage {
  * generic failure for "the user only has to confirm".
  */
 export function restoreRefusalLosses(payload: unknown): RestoreLoss[] | null {
-  if (typeof payload !== "object" || payload === null) return null;
-  const detail = (payload as Record<string, unknown>).detail;
-  if (typeof detail !== "object" || detail === null) return null;
-  const body = detail as Record<string, unknown>;
-  if (body.reason !== "restore_loses_capabilities") return null;
-  return losses(body.losses);
+  // `reason` and `losses` are SIBLINGS of `title`, not nested under `detail`.
+  // `routes/artifacts.py` raises `HTTPException(detail={...})`, but `_http_exc`
+  // flattens that into a problem document before it leaves the API, and the BFF
+  // forwards the body verbatim — so the `detail` this used to read never
+  // existed on the wire. It returned null for every real 409, which is the
+  // confirm-and-restore dialog silently never opening (ai-ops issue 153).
+  if (refusalReason(payload) !== "restore_loses_capabilities") return null;
+  // An EMPTY list is not a confirmable refusal, and must not be returned as
+  // one. The caller does `if (losses)` and opens the acknowledgement dialog,
+  // and `[]` is truthy — so a 409 whose `losses` was absent, not an array, or
+  // made entirely of codes this build cannot name would put up a dialog that
+  // lists nothing and offers to restore anyway. The user would be acknowledging
+  // an irreversible loss the screen never showed them.
+  //
+  // Unreachable until now, because this function read `detail` and returned
+  // null for every real 409. Fixing that is what makes this path live, which is
+  // why it is fixed in the same change. Raised by CodeRabbit on this PR.
+  const recognized = losses(refusalField(payload, "losses"));
+  return recognized.length ? recognized : null;
 }
