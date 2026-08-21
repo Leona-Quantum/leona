@@ -914,12 +914,11 @@ async def leave_shared_project(scope: Scope, session: AsyncSession, project_id: 
     `contribute_artifact` makes, for the same reason.
     """
     access = await resolve_share(scope, session, project_id)
-    await session.execute(
-        delete(ProjectShare).where(
-            ProjectShare.project_id == access.project_id,
-            ProjectShare.grantee_user_id == scope.user_id,
-        )
-    )
+    # Audited BEFORE the delete, not after (ai-ops#149). Both writes are in one
+    # transaction, so no reader can observe the order — but 0054's audit policy asks
+    # whether the writer holds a live grant on the project, and after the DELETE this
+    # caller no longer does. Writing the row while the grant it describes still exists
+    # is both the honest order and the one the database can check.
     await record_audit(
         _elevated(access, scope.user_id),
         session,
@@ -927,6 +926,12 @@ async def leave_shared_project(scope: Scope, session: AsyncSession, project_id: 
         target_kind="project",
         target_id=access.project_id,
         meta={"grantee_user_id": str(scope.user_id), "role": access.role.value},
+    )
+    await session.execute(
+        delete(ProjectShare).where(
+            ProjectShare.project_id == access.project_id,
+            ProjectShare.grantee_user_id == scope.user_id,
+        )
     )
     await session.flush()
 
@@ -1381,6 +1386,24 @@ async def contribute_artifact(
     # `uq_artifact_versions_fingerprint` is per artifact. Same rule as
     # `create_shared_version`, the function this one sits beside.
     fingerprint = hashlib.sha256(code.encode()).hexdigest()
+    # The cap this function already read is re-read here, against the project row it
+    # already holds locked, and the answer is the same because the new artifact does not
+    # exist yet. Kept rather than dropped: a second reading under the same lock costs one
+    # count, and the alternative is a creation path that trusts its caller checked. It
+    # used to run a few lines below, inside `set_artifact_project`, when the artifact was
+    # created unfiled and filed afterwards — see `project_id=` on the create.
+    await artifacts_repo.reserve_project_slot(elevated, session, access.project_id)
+    # Created ALREADY IN the project rather than filed a moment later (ai-ops#149).
+    #
+    # The old order — create unfiled, then `set_artifact_project` — left the row briefly
+    # in the owning workspace belonging to no project, and under 0054's RLS policies
+    # there is no honest way to permit writing that row: "an unfiled artifact in a
+    # workspace I hold a grant into" is a predicate that would also expose every one of
+    # the owner's own unfiled drafts to any grantee. Creating it filed keeps the policy
+    # narrow — the row is part of what was shared from the moment it exists — and removes
+    # a transient nobody wanted. `elevated.workspace_id` IS the owning workspace, and the
+    # project id comes from `access`, which `resolve_share` derived, so this cannot file
+    # the row under a project the grant does not name.
     artifact = await artifacts_repo.create_artifact(
         elevated,
         session,
@@ -1388,6 +1411,7 @@ async def contribute_artifact(
         title=normalized_title,
         family=family,
         framework=framework,
+        project_id=access.project_id,
         kept=True,
     )
     version = await artifacts_repo.create_version(
@@ -1418,18 +1442,6 @@ async def contribute_artifact(
             "Contributed through a project share. It carries no verification evidence of "
             "its own; run it before relying on any result."
         ),
-    )
-    # Filed into the project through the elevated scope, which resolves BOTH ids
-    # against the owning workspace — so this cannot file the new row under a
-    # different project, and it is the same function the owner's own drag uses.
-    #
-    # It re-checks the project cap this function has already checked, against the
-    # project row this function already holds locked, and the answer is the same
-    # because the new artifact is not in the project yet. Left in rather than
-    # bypassed: a second reading under the same lock costs one count, and the
-    # alternative is a filing path that trusts its caller checked.
-    await set_artifact_project(
-        elevated, session, artifact.id, access.project_id, workspace_artifact_limit=None
     )
     await record_audit(
         elevated,

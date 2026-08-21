@@ -307,9 +307,29 @@ async def create_artifact(
     family: Algorithm,
     framework: Framework,
     parent_artifact_id: uuid.UUID | None = None,
+    project_id: uuid.UUID | None = None,
     kept: bool,
 ) -> Artifact:
     """Create an artifact. Says nothing about allowances, and takes none.
+
+    ## `project_id` files the row at creation, and spends nothing by itself
+
+    It defaults to None — an artifact created outside any project, which is what
+    every caller but one wants. It exists for `shares.contribute_artifact`
+    (ai-ops#149), which used to create the row unfiled and file it a few lines
+    later through `projects.set_artifact_project`: under 0054's RLS policies that
+    transient row — in the owning workspace, in no project — is not something a
+    grant can be said to cover, and permitting it would have meant a policy wide
+    enough to expose the owner's own unfiled drafts to any grantee.
+
+    Passing it here does NOT check a cap, exactly like `kept` does not: this
+    function still takes no limit and calls no reservation. The caller reserves
+    the project slot first — `contribute_artifact` calls `reserve_project_slot`
+    under the project lock immediately before this — and a future caller that
+    passes `project_id` without doing so gets the same unmetered hole `kept=True`
+    is documented below for. There is no third state to get wrong: filing an
+    EXISTING artifact still goes through `set_artifact_project`, which meters both
+    directions.
 
     ## `kept` is REQUIRED, and that is the whole point of this signature
 
@@ -352,6 +372,7 @@ async def create_artifact(
         framework=framework,
         visibility=Visibility.PRIVATE,
         parent_artifact_id=parent_artifact_id,
+        project_id=project_id,
         kept_at=dt.datetime.now(dt.UTC) if kept else None,
     )
     session.add(artifact)

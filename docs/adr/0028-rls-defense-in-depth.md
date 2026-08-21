@@ -61,7 +61,7 @@ scoped by `user_id`), and a correct policy for either needs a GUC this migration
 introduce. Follow-up, not this PR.
 
 **A hard precondition on the flip, found in review (PR 709, Aikido) and not something this PR
-fixes:** excluding `project_shares` itself is not enough. `repos/shares.py`'s whole feature reads
+fixes — RESOLVED 2026-08-21 by `ADR-0029` / migration 0054, on owner ruling `EshMis/ai-ops#149`:** excluding `project_shares` itself is not enough. `repos/shares.py`'s whole feature reads
 `projects`/`artifacts`/`artifact_versions` — all three ARE protected by this migration — keyed on
 the grant (`scope.user_id`), not on `scope.workspace_id`, precisely so a grantee in workspace B can
 read a project that lives in workspace A. Under enforcement, the grantee's session GUC carries
@@ -70,10 +70,16 @@ shared read the moment `MAJORANA_RLS_ENFORCED` is set — a regression in a ship
 feature, indistinguishable from "no results" to whoever hits it first. **`MAJORANA_RLS_ENFORCED`
 must not be set until this is resolved** — see 0053's docstring, `project_shares` section, for the
 detail. This is a design decision (how far a grant is allowed to reach through RLS, and how that
-stays bounded) for whoever does that follow-up, not a bug in this PR.
+stays bounded) for whoever does that follow-up, not a bug in this PR. That follow-up is
+`docs/adr/0029-rls-share-grant-disjunct.md`: a grant now reaches through RLS, scoped to the shared
+project and no wider, and the eleven `repos/shares.py` paths are proved against live Postgres as
+the restricted role in `services/api/tests/rls/test_share_grant_rls.py`. 0029 also records a
+latent defect in THIS migration's policies that the work turned up — `current_setting(x, true)`
+returns `''` rather than NULL on a pooled connection, and `''::uuid` raises — which 0054 fixes on
+all 24 tables.
 
 Reversal trigger: none. The owner ruling that produced this ADR was itself the removal of the prior
 trigger; RLS as defense-in-depth is now the standing posture, not a conditional one. What remains
-open is operational — when `MAJORANA_RLS_ENFORCED` flips, and whether `project_shares`/
-`provider_credentials` get their own policy shape — and each of those is its own decision when it
+open is operational — when `MAJORANA_RLS_ENFORCED` flips, and whether `provider_credentials` gets
+its own policy shape (`project_shares` got one in 0054; see ADR-0029) — and each of those is its own decision when it
 happens, not a re-litigation of this one.

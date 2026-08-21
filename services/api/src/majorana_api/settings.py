@@ -203,16 +203,26 @@ class Settings:
     #: request path now returns zero rows instead of the row), so it is a
     #: deliberate follow-up, not part of this PR.
     #:
-    #: **DO NOT SET THIS TRUE YET** (found in review, PR 709 — Aikido):
-    #: `repos/shares.py` deliberately reads `projects`/`artifacts`/
-    #: `artifact_versions` — all three ARE covered by 0053's policies — keyed on
-    #: the grant (`scope.user_id`), not on `scope.workspace_id`, so a grantee in
-    #: one workspace can read a project another workspace owns. RLS has no
-    #: concept of a grant; the grantee's session GUC carries their own
-    #: workspace, and every one of those cross-tenant shared reads would
-    #: silently return nothing the moment this is `True`. See 0053's
-    #: `project_shares` docstring section and ADR-0028's Consequences for the
-    #: full argument. Resolving this is its own reviewed change.
+    #: ~~**DO NOT SET THIS TRUE YET**~~ — **that blocker is RESOLVED** by
+    #: migration 0054 and docs/adr/0029-rls-share-grant-disjunct.md, on the owner
+    #: ruling in ai-ops#149 ("option 1, before launch"). It read, correctly until
+    #: 2026-08-21: `repos/shares.py` deliberately reads `projects`/`artifacts`/
+    #: `artifact_versions` — all three covered by 0053's policies — keyed on the
+    #: grant (`scope.user_id`) rather than `scope.workspace_id`, so a grantee in
+    #: one workspace reads a project another workspace owns; RLS had no concept
+    #: of a grant, so every one of those reads would have returned nothing,
+    #: silently. 0054 gives the three policies a grant disjunct scoped to the
+    #: shared project, and `tests/rls/test_share_grant_rls.py` runs eleven
+    #: `repos/shares.py` paths under enforcement against live Postgres as the
+    #: restricted role to prove it.
+    #:
+    #: **What that does NOT mean.** Nothing above about blast radius changed:
+    #: this is still a production change where a forgotten GUC anywhere in the
+    #: request path returns zero rows rather than the row, and the failure mode
+    #: is silent by construction. `provider_credentials` is also still excluded
+    #: (0053's other named follow-up, scoped by `user_id`, unruled). Flipping
+    #: this remains its own deliberate change with its own verification — what
+    #: 0054 removed is the reason it was known-broken, not the need to think.
     rls_enforced: bool = False
     #: Auth failures (401s — see `AuthFailureThrottle` for why 403 does not
     #: count) allowed from one address per window before it is refused

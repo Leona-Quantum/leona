@@ -48,6 +48,8 @@ the work.
 | 0025 | A closed slot's population is pinned to a citable enumeration | **accepted** — one slot pinned (`linear-ode-solve`) |
 | 0026 | Sub-paper extraction: a component may come from a paper about something else | **accepted** — in force |
 | 0027 | A cross-region join is a shared state, a missing process, or a refusal | **accepted** — instrument shipped, no join built under it yet |
+| 0028 | Row-level security as defense-in-depth, enforcement gated off by default | **accepted** — policies installed on 24 tables; `MAJORANA_RLS_ENFORCED` still off |
+| 0029 | A project share reaches through RLS, scoped to the shared project | **accepted** — resolves 0028's hard precondition on the flip |
 
 ## Decisions with no ADR
 
@@ -125,6 +127,17 @@ answers "why" only from runbooks, memory and code comments.
   — the assumption lived in G1's pre-registration prose and in practice. Adds the
   scattered-trace gate to `check-paper-register.mjs` as the checkable half of the
   owner's "does not abstract to unrelated topics".
+- 2026-08-21: **ADR-0029** settles how far a project share reaches through RLS, on the
+  owner ruling in ai-ops#149 ("option 1, before launch"): a grant punches through,
+  scoped to the shared PROJECT rather than to the grantor's workspace, with `expires_at`
+  evaluated in the policy. Resolves the hard precondition ADR-0028 left on ever setting
+  `MAJORANA_RLS_ENFORCED` — measured first, as eleven `repos/shares.py` paths failing
+  under enforcement, `list_shared_projects` among them by returning **zero rows and
+  raising nothing**. Two things the work found that were not the task: the plain `EXISTS`
+  shape the research proposed **recurses** and PostgreSQL refuses it outright, so the
+  lookup is a `SECURITY DEFINER` function; and ADR-0028's own policies **raise** rather
+  than fall back to permissive on a pooled connection, because `SET LOCAL` leaves `''`
+  behind and `''::uuid` is an error — fixed on all 24 tables here.
 - 2026-08-13: **ADR-0027** fixes the shape of a cross-region join, for ai-ops#64's
   "several groups can eventually be combined into bigger maps". A join is a shared
   state, a missing process, or a refusal — never a new edge type, and never a

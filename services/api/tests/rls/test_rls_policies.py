@@ -95,6 +95,12 @@ ALL_PROTECTED_TABLES: tuple[str, ...] = tuple(t for t, _ in LIVE_TABLES) + tuple
 #: The full classification's other three buckets (0053's docstring), asserted to
 #: carry NO policy — a table moved into this list by accident, with no matching
 #: change here, is exactly the regression this test exists to catch.
+#:
+#: `project_shares` was here and is NOT any more: migration 0054 gives it the
+#: `grantee_user_id`-keyed policy 0053's docstring named as its follow-up, on the owner
+#: ruling in EshMis/ai-ops#149. It moved out of this list deliberately, and
+#: `test_share_grant_rls.py` is what now holds it to a shape. `provider_credentials`
+#: stays: 0053's other named follow-up is still open, and nothing has ruled on it.
 GLOBAL_AND_EXCLUDED_TABLES: tuple[str, ...] = (
     "users",
     "workspaces",
@@ -102,7 +108,6 @@ GLOBAL_AND_EXCLUDED_TABLES: tuple[str, ...] = (
     "jobs",
     "import_jobs",
     "import_items",
-    "project_shares",
     "provider_credentials",
 )
 
