@@ -41,6 +41,7 @@ from rls_helpers import requires_db
 from sqlalchemy import text
 
 from majorana_api.db import engine_from_env, session_factory
+from majorana_api.repos import NotFoundError
 from majorana_api.repos import artifacts as artifacts_repo
 from majorana_api.repos import projects as projects_repo
 from majorana_api.repos import shares, system
@@ -369,10 +370,13 @@ async def test_every_shared_write_path_succeeds_under_enforcement(sf, fx):
         await shares.leave_shared_project(fx.grantee, s, a.projects)
         await s.commit()
 
-    # And the grant really is gone afterwards.
+    # And the grant really is gone afterwards. `NotFoundError` specifically, not any
+    # exception: this suite exists to tell "no rows through the grant" apart from "the
+    # statement failed", and a bare `Exception` would accept a database error from a
+    # broken policy as proof the grant was removed.
     async with sf() as s:
         await _arm(s, fx.grantee, user_id=fx.grantee.user_id)
-        with pytest.raises(Exception):
+        with pytest.raises(NotFoundError):
             await shares.resolve_share(fx.grantee, s, a.projects)
 
 
@@ -581,3 +585,80 @@ async def test_a_stale_empty_guc_is_permissive_rather_than_an_error(sf, fx):
             # The assertion is that this does not RAISE. A count is what a permissive
             # policy returns; the pre-0054 behaviour was an exception, not a smaller count.
             await s.execute(text(f"select count(*) from {table}"))
+
+
+async def test_a_grantee_cannot_write_themselves_a_grant(sf, fx):
+    """The write-side control, and the one that separates a backstop from a hole.
+
+    The read policy on `project_shares` lets a grantee see the row that names them. If
+    that same predicate were also the WITH CHECK — which is what a single
+    `FOR ALL USING (p) WITH CHECK (p)` policy would do — then on an INSERT the
+    `grantee_user_id` being compared is *whatever the writer just put there*, and any
+    caller could issue themselves a grant on any project id and read it back through the
+    disjuncts on `projects`/`artifacts`/`artifact_versions`.
+
+    The application layer refuses this independently (`grant_share` requires ADMIN and
+    reaches the project through `scope.workspace_id`), so it was never reachable through
+    the API. But a database backstop that can be talked into minting its own credential is
+    worse than no backstop on that table — and this is the test that fails against the
+    single-policy version of 0054, which is how the shape below was arrived at.
+    """
+    a = fx.a
+    async with sf() as s:
+        await _arm(s, fx.stranger, user_id=fx.stranger.user_id)
+        with pytest.raises(Exception) as caught:
+            await s.execute(
+                text(
+                    "insert into project_shares (id, project_id, grantee_user_id, role, "
+                    "granted_by_user_id, expires_at) values "
+                    "(gen_random_uuid(), cast(:pid as uuid), cast(:me as uuid), 'editor', "
+                    "cast(:me as uuid), null)"
+                ),
+                {"pid": str(a.projects), "me": str(fx.stranger.user_id)},
+            )
+        # The refusal has to be the POLICY refusing, not a constraint or a typo.
+        assert "row-level security" in str(caught.value).lower()
+        await s.rollback()
+
+    # And nothing was created, so the forged grant cannot be read back either.
+    async with sf() as s:
+        await _arm(s, fx.stranger, user_id=fx.stranger.user_id)
+        forged = (
+            await s.execute(
+                text(
+                    "select count(*) from project_shares where grantee_user_id = cast(:me as uuid)"
+                ),
+                {"me": str(fx.stranger.user_id)},
+            )
+        ).scalar_one()
+        assert forged == 0
+        reached = (
+            await s.execute(
+                text("select count(*) from projects where id = cast(:p as uuid)"),
+                {"p": str(a.projects)},
+            )
+        ).scalar_one()
+        assert reached == 0, "a forged grant reached the project it named"
+
+
+async def test_a_grantee_cannot_promote_their_own_grant(sf, fx):
+    """UPDATE belongs to the owning workspace for the same reason INSERT does.
+
+    A VIEWER who could rewrite their own row's `role` would hand themselves editor
+    rights — the grant is idempotent on the person, so a role change IS the write path
+    `grant_share` uses, and it is admin-only there.
+    """
+    a = fx.a
+    async with sf() as s:
+        await _arm(s, fx.grantee, user_id=fx.grantee.user_id)
+        result = await s.execute(
+            text(
+                "update project_shares set expires_at = null "
+                "where project_id = cast(:p as uuid) and grantee_user_id = cast(:me as uuid)"
+            ),
+            {"p": str(a.projects), "me": str(fx.grantee.user_id)},
+        )
+        # RLS filters an UPDATE's target rows through the USING clause rather than
+        # raising: the row is simply not a row this caller may update, so zero are.
+        assert result.rowcount == 0, "the grantee rewrote their own grant row"
+        await s.rollback()

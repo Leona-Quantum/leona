@@ -28,9 +28,9 @@ disjunct.
 still called from one place, `auth/deps.py::get_scope` — now sets `majorana.user_id` alongside
 `majorana.workspace_id`, in the same statement so the two cannot be armed separately. The policies
 on `projects`, `artifacts` and `artifact_versions` gain a third disjunct: the row's project is one
-the session's user holds a LIVE grant on. `project_shares` gets its first policy, with both halves
-it is read from — the owning workspace's (through `projects`) and the grantee's own
-(`grantee_user_id`). `audit_log` gets a narrow pair of policies permitting a grantee to write, and
+the session's user holds a LIVE grant on. `project_shares` gets its first policies — four of them, split by
+command, because the two halves it is read from are not interchangeable with the two it is
+written from (below). `audit_log` gets a narrow pair of policies permitting a grantee to write, and
 read back, the audit row their own shared edit produces — and nothing of the grantor's history.
 
 Four properties bound it, and each has a test that fails without it:
@@ -78,6 +78,21 @@ via a new optional `project_id` on `repos/artifacts.create_artifact`. Both cap c
 the same order under the same lock. `leave_shared_project` likewise writes its audit row before
 deleting the grant rather than after, because the policy asks whether the writer holds the grant
 the row describes.
+
+*`project_shares` needs four policies, not one, and the difference is a privilege
+escalation.* The obvious `FOR ALL USING (p) WITH CHECK (p)` evaluates the grantee half on
+INSERT as well — and on an INSERT, `grantee_user_id` is whatever the writer put there. Any
+caller could write themselves a grant on any project id and then read that project,
+its artifacts and its versions through the disjuncts above. Verified as a real hole rather
+than a theoretical one: against the single-policy version, a user in an unrelated workspace
+inserted a grant naming themselves on another workspace's project and it was accepted. The
+application layer refuses this independently (`grant_share` requires ADMIN and reaches the
+project through `scope.workspace_id`), so it was never reachable through the API — but a
+backstop that can be talked into minting its own credential is worse than no backstop on
+that table, which is what 0028 excluded it to avoid. So: SELECT and DELETE carry
+owner-workspace OR grantee-self (a grantee reads the row naming them, and
+`leave_shared_project` removes it); INSERT and UPDATE carry owner-workspace only. Found by
+following up a CodeRabbit review comment asking for a write-side control.
 
 *A latent defect in ADR-0028's own policies was found and fixed here.* `set_config(…, true)` is
 `SET LOCAL`, and at commit a custom GUC reverts to the empty string rather than to unset.

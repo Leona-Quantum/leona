@@ -384,15 +384,44 @@ def _policy_predicate(table: str, *, fixed: bool, with_grant: bool) -> str:
 
 
 #: `project_shares` has no policy at all before this migration — 0053 excluded it. Both
-#: halves are needed; see the module docstring. This is the ONE policy that still reads
+#: halves are needed; see the module docstring. This is the ONE predicate that still reads
 #: `project_shares`'s sibling tables directly, and the one the helper function frees the
 #: others from having to.
-_PROJECT_SHARES_PREDICATE = (
-    f"{_ENFORCE_GATE} "
-    "or exists (select 1 from projects p where p.id = project_shares.project_id "
-    f"and p.workspace_id = {_guc('workspace_id', fixed=True)}) "
-    f"or project_shares.grantee_user_id = {_guc('user_id', fixed=True)}"
+#:
+#: **The two halves are NOT interchangeable between reading and writing, and getting that
+#: wrong is a privilege escalation rather than a mistake of degree.** A single
+#: `FOR ALL USING (p) WITH CHECK (p)` policy would evaluate the grantee half on INSERT
+#: too — and on an INSERT the row's `grantee_user_id` is whatever the writer put there.
+#: Any caller could then write themselves a grant on any project id and read it back
+#: through the disjuncts above. The app layer refuses that (`grant_share` requires ADMIN
+#: and reaches the project through `scope.workspace_id`), so it was never reachable
+#: through the API — but a backstop that can be talked into issuing its own credential is
+#: worse than no backstop on that table, which is the whole thing 0053 excluded it to
+#: avoid getting wrong. Caught by CodeRabbit's suggestion to add a write-side control,
+#: which is exactly the test that fails against the single-policy version.
+#:
+#: So the grantee half appears ONLY where reading and removing happen:
+#:
+#:   SELECT  owner-workspace OR grantee-self   `resolve_share`, and the grantor's admin list
+#:   DELETE  owner-workspace OR grantee-self   `leave_shared_project` (grantee removes their
+#:                                             own row) and `revoke_share` (owner removes it)
+#:   INSERT  owner-workspace ONLY              only the workspace that owns the project may
+#:                                             create a grant on it
+#:   UPDATE  owner-workspace ONLY              `grant_share` is idempotent on the person, so
+#:                                             a role change is an UPDATE and belongs to the
+#:                                             owner for the same reason the INSERT does
+_SHARES_OWNER_HALF = (
+    "exists (select 1 from projects p where p.id = project_shares.project_id "
+    f"and p.workspace_id = {_guc('workspace_id', fixed=True)})"
 )
+
+_SHARES_GRANTEE_HALF = f"project_shares.grantee_user_id = {_guc('user_id', fixed=True)}"
+
+#: Reading and removing: either party named on the row.
+_SHARES_READ_PREDICATE = f"{_ENFORCE_GATE} or {_SHARES_OWNER_HALF} or {_SHARES_GRANTEE_HALF}"
+
+#: Creating and changing: the owning workspace only. Never the grantee half — see above.
+_SHARES_WRITE_PREDICATE = f"{_ENFORCE_GATE} or {_SHARES_OWNER_HALF}"
 
 #: `audit_log` carries no `project_id`, so the grant is reached through the row's
 #: `workspace_id` — and narrowed by `actor_user_id`, which `record_audit` stamps from the
@@ -450,10 +479,24 @@ def upgrade() -> None:
         _replace_policy(table, _policy_predicate(table, fixed=True, with_grant=True))
 
     op.execute("alter table project_shares enable row level security")
+    # Four policies rather than one FOR ALL — see the predicates above for why the
+    # grantee half must not reach INSERT or UPDATE.
     op.execute(
-        f"create policy {_SHARE_POLICY_NAME} on project_shares "
-        f"for all using ({_PROJECT_SHARES_PREDICATE}) "
-        f"with check ({_PROJECT_SHARES_PREDICATE})"
+        f"create policy {_SHARE_POLICY_NAME}_read on project_shares "
+        f"for select using ({_SHARES_READ_PREDICATE})"
+    )
+    op.execute(
+        f"create policy {_SHARE_POLICY_NAME}_delete on project_shares "
+        f"for delete using ({_SHARES_READ_PREDICATE})"
+    )
+    op.execute(
+        f"create policy {_SHARE_POLICY_NAME}_insert on project_shares "
+        f"for insert with check ({_SHARES_WRITE_PREDICATE})"
+    )
+    op.execute(
+        f"create policy {_SHARE_POLICY_NAME}_update on project_shares "
+        f"for update using ({_SHARES_WRITE_PREDICATE}) "
+        f"with check ({_SHARES_WRITE_PREDICATE})"
     )
 
     # INSERT and SELECT, deliberately not FOR ALL: a grantee may write the audit row their
@@ -472,7 +515,8 @@ def upgrade() -> None:
 def downgrade() -> None:
     op.execute(f"drop policy if exists {_AUDIT_SELECT_POLICY_NAME} on audit_log")
     op.execute(f"drop policy if exists {_AUDIT_INSERT_POLICY_NAME} on audit_log")
-    op.execute(f"drop policy if exists {_SHARE_POLICY_NAME} on project_shares")
+    for suffix in ("read", "delete", "insert", "update"):
+        op.execute(f"drop policy if exists {_SHARE_POLICY_NAME}_{suffix} on project_shares")
     op.execute("alter table project_shares disable row level security")
     # 0053's exact original text, empty-string bug included — a downgrade puts back what
     # was there rather than leaving a fix behind under a revision that never had one.
