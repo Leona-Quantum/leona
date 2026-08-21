@@ -31,6 +31,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with: { persist-credentials: false }
       - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
@@ -56,6 +57,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with: { persist-credentials: false }
       - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
@@ -70,11 +72,37 @@ jobs:
       - name: axe over the @majorana/ui stories, plus the Atlas render checks
         run: pnpm --filter @majorana/ui-visual run a11y
 
+  # Form submission gate (ai-ops issue 123): apps/web has six user-facing forms
+  # (contact, welcome, account settings, workspace sharing, QPU credentials,
+  # studio's custom-gate builder) plus a seventh the audit's count of six
+  # missed — the project-sharing dialog reachable from the Studio sidebar.
+  # None had ever been submitted by any automated check; ui-visual explicitly
+  # renders @majorana/ui from source with no Next and no auth (its own
+  # AGENTS.md), so it could not have covered this either. Own job for the
+  # same reason ui-visual is one: a jsdom + esbuild + React Testing Library
+  # harness (tests/forms/) that the required `ts` job's `test` script does
+  # not pull in. Not a required check yet — same posture ui-visual started
+  # in; promote alongside it if the owner wants that.
+  form-submission:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with: { persist-credentials: false }
+      - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: submit every apps/web form and assert on the result
+        run: pnpm --filter @majorana/web run test:forms
+
   py:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: astral-sh/setup-uv@ae62891fec2bb8e7d6c99fc78c9fec3a63790f8d # v10.0.0
+        with: { persist-credentials: false }
+      - uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
         with:
           python-version: "3.12"
       - run: uv sync --all-packages --frozen
@@ -175,7 +203,8 @@ jobs:
           --health-retries 5
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: astral-sh/setup-uv@ae62891fec2bb8e7d6c99fc78c9fec3a63790f8d # v10.0.0
+        with: { persist-credentials: false }
+      - uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
         with:
           python-version: "3.12"
       # --all-extras pulls the optional `qiskit` extra: the pipeline e2e drives the
@@ -212,6 +241,45 @@ jobs:
         env:
           DATABASE_URL: postgresql://pg:pg@localhost:5432/majorana_authz
         run: uv run pytest services/api/tests/authz -q
+      # RLS suite (ai-ops#143; docs/adr/0028-rls-defense-in-depth.md).
+      #
+      # Everything above this step — migrations, seed, the authz suite — runs as
+      # `pg`, the CI Postgres superuser. A superuser bypasses row-level security
+      # unconditionally, so running the RLS suite the same way would report every
+      # policy in db/migrations/versions/0053 as working while proving nothing
+      # (see 0052's own note on testing a privilege change as a superuser, and
+      # 0053's and this suite's module docstrings). `majorana_api` here mirrors
+      # production's connecting role exactly: LOGIN, member of `app_rw` — created
+      # by migration 0052, already applied to `majorana_authz` above — and
+      # nothing else, so NOSUPERUSER/NOBYPASSRLS are the created-role defaults
+      # rather than something this step has to set.
+      #
+      # Idempotent by construction (`if not exists`) for the same reason 0052's
+      # own role-creation block is: this workflow runs the `db` job on every PR
+      # against the same long-lived Postgres SERVICE CONTAINER for the run, and
+      # roles are cluster-wide, not per-database.
+      - name: create the majorana_api test role
+        run: |
+          PGPASSWORD=pg psql -h localhost -U pg -d majorana_authz -c "
+          do \$\$ begin
+            if not exists (select 1 from pg_roles where rolname = 'majorana_api') then
+              create role majorana_api login password 'ci-only-not-a-secret';
+              grant app_rw to majorana_api;
+            end if;
+          end \$\$;
+          "
+      - name: RLS suite
+        env:
+          # The non-superuser role every assertion in this suite depends on —
+          # test_connecting_role_cannot_bypass_rls checks this dynamically rather
+          # than trusting the step above.
+          DATABASE_URL: postgresql://majorana_api:ci-only-not-a-secret@localhost:5432/majorana_authz
+          # Owns the tables (this job's migrations ran as `pg`), so only this ONE
+          # meta-test (test_deliberately_broken_policy_is_caught) can ALTER POLICY
+          # to prove the suite's cross-tenant assertions would catch a weakened
+          # policy. Every other test in the suite ignores this var entirely.
+          DATABASE_URL_OWNER: postgresql://pg:pg@localhost:5432/majorana_authz
+        run: uv run pytest services/api/tests/rls -q
       # Pipeline spine E2E (Phase 2 step 1): run -> job -> events -> SSE replay.
       # --all-extras keeps qiskit installed (a prior `uv run --package` step can
       # prune it) so the sandbox subprocess can import it for the QASM epilogue.

@@ -48,6 +48,7 @@ jobs:
       id-token: write # Workload Identity Federation
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with: { persist-credentials: false }
 
       # Load infra/fleet.env into the job environment so every `gcloud run
       # deploy` below passes the numbers from that file rather than a literal
@@ -111,7 +112,7 @@ jobs:
 
       # Python toolchain, needed only by the migrate step below. Mirrors ci.yml's
       # `db` job so the two run alembic through an identical uv environment.
-      - uses: astral-sh/setup-uv@ae62891fec2bb8e7d6c99fc78c9fec3a63790f8d # v10.0.0
+      - uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
         if: steps.creds.outputs.have == 'true'
         with:
           python-version: "3.12"
@@ -465,6 +466,56 @@ jobs:
           test -n "$rev" || { echo "could not resolve the new worker revision"; exit 1; }
           echo "revision=$rev" >> "$GITHUB_OUTPUT"
 
+      # Cloud Run's traffic assignment decides which revision RUNS, not merely
+      # which one answers HTTP. This worker answers no requests, and the absence
+      # of this step was read for three days as "the worker needs no traffic
+      # step" — but a service whose `spec.traffic` names an explicit revision
+      # keeps serving that revision, and a plain `gcloud run deploy` PRESERVES
+      # that pin instead of taking traffic. On 2026-08-14 a `--tag` deploy
+      # (`sentry-postfix-worker3`, which never became ready) left traffic pinned
+      # to majorana-worker-00483-lb7. Every worker deploy from then to
+      # 2026-08-16 built an image, created a healthy revision, passed the gate
+      # below, and shipped nothing: production kept polling release 8e56bbb
+      # while `dev` moved on eight merges. The API never had this hole because
+      # it shifts traffic explicitly after its dark-revision probe.
+      #
+      # --to-latest restores "the newest ready revision serves", which is also
+      # what makes the pin unrepeatable: a future tagged deploy is undone by the
+      # next ordinary one.
+      # The worker cannot be probed dark the way the api is: a revision with no
+      # traffic starts no instance, so there is nothing to ask. Verification
+      # therefore has to happen AFTER the cutover, which means the cutover needs a
+      # compensating rollback or a failed gate becomes a worker outage instead of a
+      # blocked rollout — run execution stalls until someone notices by hand.
+      # Raised by Aikido on PR 689, and it was right.
+      #
+      # So record who is serving BEFORE moving traffic, and let the `failure()`
+      # step below put it back.
+      - name: shift worker traffic
+        if: steps.creds.outputs.have == 'true'
+        id: worker_traffic
+        run: |
+          # jq on a NARROW json projection, not `value(status.traffic)`: that
+          # renders a list whose separator is not guaranteed, and a substring match
+          # against it would confuse majorana-worker-00483 with ...-004831.
+          # `json(status.traffic)` rather than bare `--format=json` because this
+          # only needs the traffic block, and asking for the whole service pulls in
+          # annotations that have nothing to do with the question.
+          # Only targets actually carrying traffic count; tagged targets sit at 0%.
+          previous=$(gcloud run services describe majorana-worker \
+            --project "$GCP_PROJECT" --region "$GCP_REGION" --format='json(status.traffic)' \
+            | jq -r '[.status.traffic[]? | select((.percent // 0) > 0) | .revisionName] | first // empty')
+          if [ -z "$previous" ]; then
+            echo "::warning::could not resolve the currently serving worker revision;"
+            echo "::warning::proceeding, but the rollback step will have nothing to restore."
+          else
+            echo "serving before cutover: $previous"
+          fi
+          echo "previous=$previous" >> "$GITHUB_OUTPUT"
+
+          gcloud run services update-traffic majorana-worker \
+            --project "$GCP_PROJECT" --region "$GCP_REGION" --to-latest
+
       # A crash-looping worker is the exact failure this workflow exists to stop,
       # and Cloud Run will not report it: the poll loop dies inside a container
       # that stays "healthy". Read the log directly and fail the deploy on errors.
@@ -482,23 +533,76 @@ jobs:
       # as jsonPayload, so the projection returned an empty string and `-n` read
       # a real alarm as silence. Both payload shapes are read now — an alarm the
       # gate cannot see is not a gate.
+      # The check is POSITIVE, and that is the point. Read only for the absence
+      # of errors and the gate cannot fail for a revision that never ran: no
+      # instance means no log line means no error means "clean". That is exactly
+      # how three days of unshipped worker deploys passed this step. A revision
+      # serving no traffic starts no container, so silence was proof of nothing.
+      #
+      # So require the startup line the worker actually emits
+      # (`__main__.py:569`, "worker <id> started (poll <n>s)") and, separately,
+      # that the revision this run created is the one serving traffic. Either
+      # assertion alone still has a hole: the startup line without the traffic
+      # check passes for a revision that came up and was then pinned away from,
+      # and the traffic check without the startup line passes for a revision
+      # that is routed but crash-looping.
       - name: worker is actually running
         if: steps.creds.outputs.have == 'true'
         run: |
           sleep 45
+          rev="${{ steps.worker.outputs.revision }}"
+
+          # jq on a narrow json projection rather than a `value(...)` projection.
+          # The projection renders a LIST with no guaranteed separator, so a
+          # substring match against it is wrong in both directions: it matches
+          # majorana-worker-00483 inside ...-004831, and it misses entirely if the
+          # separator is not the space the pattern assumed. Compare revision names
+          # as exact strings, and count only targets that actually carry traffic —
+          # a tagged target sits at 0% and must not satisfy this. (CodeRabbit, PR 689)
+          serving=$(gcloud run services describe majorana-worker \
+            --project "$GCP_PROJECT" --region "$GCP_REGION" --format='json(status.traffic)' \
+            | jq -r --arg rev "$rev" \
+                '[.status.traffic[]? | select((.percent // 0) > 0) | .revisionName] as $live
+                 | if ($live | index($rev)) then "yes" else "no:" + ($live | join(",")) end')
+          if [ "$serving" = "yes" ]; then
+            echo "traffic is on $rev"
+          else
+            echo "::error::$rev was deployed but traffic serves: ${serving#no:}"
+            echo "::error::a revision with no traffic runs no instances, so the"
+            echo "::error::log check below would pass on silence. See the"
+            echo "::error::'shift worker traffic' step above."
+            exit 1
+          fi
+
           logs=$(gcloud logging read \
             'resource.type="cloud_run_revision"
              AND resource.labels.service_name="majorana-worker"
-             AND resource.labels.revision_name="${{ steps.worker.outputs.revision }}"
+             AND resource.labels.revision_name="'"$rev"'"
              AND severity>=ERROR' \
             --project "$GCP_PROJECT" --freshness=2m --limit 20 \
             --format="value(textPayload,jsonPayload.message)")
           if [ -n "$logs" ]; then
-            echo "revision ${{ steps.worker.outputs.revision }} logged errors after deploy:"
+            echo "revision $rev logged errors after deploy:"
             echo "$logs"
             exit 1
           fi
-          echo "revision ${{ steps.worker.outputs.revision }} clean for 45s after deploy"
+
+          # The poll loop announced itself. Without this, silence reads as health.
+          started=$(gcloud logging read \
+            'resource.type="cloud_run_revision"
+             AND resource.labels.service_name="majorana-worker"
+             AND resource.labels.revision_name="'"$rev"'"
+             AND ("started (poll" OR "worker localhost")' \
+            --project "$GCP_PROJECT" --freshness=5m --limit 5 \
+            --format="value(textPayload,jsonPayload.message)")
+          if [ -z "$started" ]; then
+            echo "::error::$rev never logged its startup line within 45s."
+            echo "::error::Expected \"worker <id> started (poll <n>s)\" from"
+            echo "::error::services/worker/src/majorana_worker/__main__.py. The"
+            echo "::error::revision holds traffic but the poll loop is not up."
+            exit 1
+          fi
+          echo "revision $rev serves traffic, logged startup, clean for 45s"
 
       # The gate every other step in this workflow is a proxy for: one real run,
       # on the stack that was just deployed, end to end.
@@ -609,6 +713,35 @@ jobs:
             exit 1
           fi
           echo "run $run_id succeeded in mode $mode on the deployed stack"
+
+      # Unlike the api step below, this one ACTS rather than advises, and the
+      # asymmetry is deliberate. The api is probed dark and only takes traffic
+      # after it is known healthy, so a failure there means the cutover never
+      # happened and there is usually nothing to undo. The worker has no dark
+      # phase — a revision with no traffic runs no instance — so by the time any
+      # gate can fail, production is already on the new revision. Advice in a log
+      # nobody is reading at 3am is not a rollback for a service that is already
+      # serving (Aikido, PR 689).
+      #
+      # Restores the exact revision recorded before the cutover. Skipped when that
+      # lookup came back empty, because `--to-revisions =100` would fail and bury
+      # the real error underneath it.
+      - name: rollback worker on failure
+        if: failure() && steps.creds.outputs.have == 'true' && steps.worker_traffic.outputs.previous != ''
+        run: |
+          previous='${{ steps.worker_traffic.outputs.previous }}'
+          echo "::error::a gate failed after the worker cutover — restoring $previous"
+          if gcloud run services update-traffic majorana-worker \
+               --project "$GCP_PROJECT" --region "$GCP_REGION" \
+               --to-revisions "$previous=100"; then
+            echo "::error::worker traffic restored to $previous. The deploy is red and"
+            echo "::error::production is back on the previous worker; investigate before retrying."
+          else
+            echo "::error::COULD NOT RESTORE worker traffic to $previous — do it by hand NOW:"
+            echo "::error::gcloud run services update-traffic majorana-worker \\"
+            echo "::error::  --project $GCP_PROJECT --region $GCP_REGION --to-revisions $previous=100"
+            exit 1
+          fi
 
       - name: rollback api on failure
         if: failure() && steps.creds.outputs.have == 'true'
@@ -734,6 +867,49 @@ jobs:
             echo "::error::full — re-sign exactly those and the next deploy converges."
             exit 1
           fi
+
+      # Withdraw published records the manifest no longer claims. OFF unless a
+      # human sets the variable, and it names a COUNT rather than being a boolean.
+      #
+      # ## Why this is not automatic
+      #
+      # The importer has no delete branch — absent, unchanged, changed, and no
+      # fourth case — so a record deleted from the corpus keeps its ACCEPTED and
+      # PUBLIC row and goes on being served. `sync-bootstrap` above now prints
+      # what is unclaimed, so the drift is visible on every deploy; acting on it
+      # is deliberate. If retirement ran unattended, one bad manifest generation
+      # would withdraw the public catalog in a single deploy, and the deploy
+      # would report success while doing it.
+      #
+      # ## Why the variable is a number
+      #
+      # `--authorize N` refuses unless N equals the orphan count exactly, so a
+      # variable left set after its job is done cannot silently retire a later,
+      # different set — it fails loudly instead, which is the direction to fail
+      # in. Set it, watch the deploy, then clear it:
+      #
+      #   gh variable set CATALOG_RETIRE_AUTHORIZED --body 90
+      #   gh variable delete CATALOG_RETIRE_AUTHORIZED
+      #
+      # Soft delete: `deleted_at` is what the public predicate filters on, so a
+      # withdrawal is auditable and reversible rather than a row disappearing.
+      - name: withdraw records the manifest no longer claims
+        if: >-
+          steps.creds.outputs.have == 'true' && vars.CATALOG_SYNC_ENABLED == 'true'
+          && vars.CATALOG_RETIRE_AUTHORIZED != ''
+        env:
+          AUTHORIZED: ${{ vars.CATALOG_RETIRE_AUTHORIZED }}
+        run: |
+          set -euo pipefail
+          # `|| exit 1` for the same errexit-inside-`||` reason the sync step
+          # documents above.
+          . scripts/catalog-admin-env.sh || exit 1
+          echo "CATALOG_RETIRE_AUTHORIZED=$AUTHORIZED — withdrawing exactly that many."
+          uv run --package majorana-api python -m majorana_api.catalog_admin \
+            retire-bootstrap --attested-by-standing --authorize "$AUTHORIZED"
+          echo "::notice::Retirement done. CLEAR THE VARIABLE NOW:"
+          echo "::notice::  gh variable delete CATALOG_RETIRE_AUTHORIZED"
+          echo "::notice::Left set, it will refuse the next deploy whose orphan count differs."
 
       # A skipped step is silent, and silence about a stale catalog is the exact
       # failure this feature was built to end — so the off state announces

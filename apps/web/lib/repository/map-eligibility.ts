@@ -384,7 +384,7 @@ export function undeclaredSharedSources(
   const undeclared: Array<{ url: string; slugs: readonly string[]; declared: readonly string[] | null }> = [];
   for (const { url, slugs } of shared) {
     const declared = DECLARED_SHARED_SOURCES[url] ?? null;
-    if (declared && [...declared].sort().join(" ") === [...slugs].sort().join(" ")) continue;
+    if (declared && [...declared].sort().join("\x00") === [...slugs].sort().join("\x00")) continue;
     undeclared.push({ url, slugs, declared });
   }
   return undeclared;

@@ -141,6 +141,18 @@ export const ROUTED_SEGMENTS: readonly string[] = [
   "dev",
   "lab",
   "library",
+  // `/llms.txt` (ai-ops 133). It sits here and not with `robots.txt` or
+  // `sitemap.xml` because those two use Next's metadata FILE conventions —
+  // `app/robots.ts`, `app/sitemap.ts` — which contribute no directory and so
+  // never reach this list. There is no `llms` convention, so it has to be a
+  // Route Handler at `app/llms.txt/route.ts`, and a Route Handler is a
+  // directory, which makes it a real first segment.
+  //
+  // Public by design and safe to be: the handler reads only compile-time
+  // constants, sets no cookie, and touches no session, so nothing about it
+  // needs the auth gate. Being listed is what stops the middleware treating it
+  // as an unrouted path.
+  "llms.txt",
   "open-source",
   "repository",
   "run",

@@ -14,6 +14,8 @@ dependencies = [
     # pulls the provider SDKs. Both complete profiles the bench guard accepts:
     # openai+deepseek (one SDK) and anthropic.
     "majorana-llm[openai,anthropic]",
+    # paper_source.py parses the arXiv API's Atom response directly.
+    "defusedxml>=0.7.1,<1",
 ]
 
 [project.optional-dependencies]
@@ -21,7 +23,7 @@ dependencies = [
 # is the last resort — LaTeX source and ar5iv HTML cover everything after 2007.
 # pypdf rather than PyMuPDF: PyMuPDF is AGPL, and every engine tested loses the same
 # glyphs, so the choice is licence and install weight, not extraction quality.
-pdf = ["pypdf>=6.15.0"]
+pdf = ["pypdf>=6.16.1"]
 
 [build-system]
 requires = ["hatchling"]

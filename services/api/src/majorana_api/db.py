@@ -13,10 +13,21 @@ do, not because anything needs it today.
 
 Migrations use DATABASE_URL_DIRECT and never come through here.
 
-Pool sizes are set explicitly because the ceiling is now a fixed, small number.
-db-g1-small allows 50 connections total; SQLAlchemy's defaults (pool_size 5 +
-max_overflow 10) would let two API instances and the worker reach 45 on their
-own and leave nothing for a deploy's migration step or an operator's psql.
+Pool sizes are set explicitly because the ceiling is a declared number rather
+than an inherited one, and the fleet has to fit under it with room left for a
+deploy's migration step and an operator's psql. The instance allows 200
+(`max_connections`, set as a database flag on 2026-08-15 with the move to
+db-custom-1-3840), so the budget is 195 and the deployed fleet peaks at 48
+during a worker rollout. Both figures come from fleet_peak_connections() and
+infra/fleet.env — do not restate them anywhere else.
+
+This paragraph used to read "db-g1-small allows 50 connections total; SQLAlchemy's
+defaults (pool_size 5 + max_overflow 10) would let two API instances and the
+worker reach 45 on their own". That was the binding argument under the old tier
+and is no longer why these sizes are explicit: at 195 the defaults would fit.
+They stay explicit because an undeclared default is what the whole fleet.env
+mechanism exists to prevent, and because DEFAULT_POOL_SIZE/DEFAULT_MAX_OVERFLOW
+are the one term in the budget that does NOT live in fleet.env.
 """
 
 import functools

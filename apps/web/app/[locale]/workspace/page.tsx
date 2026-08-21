@@ -4,6 +4,7 @@ import { Reveal } from "../../../components/reveal";
 import { WORKSPACE_LANDING_COPY } from "../../../lib/public-copy";
 import { parsePublicLocale, PUBLIC_LOCALES } from "../../../lib/public-locale";
 import { canonicalMetadata } from "../../../lib/public-metadata";
+import { workspaceMetadataCopy } from "../../../lib/public-page-metadata";
 
 // Served from the CDN. The locale comes from the path segment because a cached
 // page cannot read a cookie — `middleware.ts` rewrites the clean URL to this
@@ -17,11 +18,14 @@ export function generateStaticParams() {
   return PUBLIC_LOCALES.map((locale) => ({ locale }));
 }
 
-export const metadata: Metadata = {
-  ...canonicalMetadata("/workspace"),
-  title: "Workspace",
-  description: "Leona Quantum's personal quantum workspace for guided development, Studio, and verified artifacts.",
-};
+// Localized — see `lib/public-page-metadata.ts` for the locale branch and why
+// it lives there rather than inline. A static English export here left a
+// Japanese reader's tab, search result and shared link in English while the
+// page body (below) already renders `WORKSPACE_LANDING_COPY[locale]`.
+export async function generateMetadata({ params }: { params: Promise<{ locale: string }> }): Promise<Metadata> {
+  const locale = parsePublicLocale((await params).locale);
+  return { ...workspaceMetadataCopy(locale), ...canonicalMetadata("/workspace") };
+}
 
 export default async function WorkspacePage({ params }: { params: Promise<{ locale: string }> }) {
   const locale = parsePublicLocale((await params).locale);
@@ -33,8 +37,30 @@ export default async function WorkspacePage({ params }: { params: Promise<{ loca
           <p className="mj-public-overline">{copy.overline}</p>
           <h1>{copy.title}</h1>
           <p className="mj-landing-copy">{copy.body}</p>
+          {/*
+            Both calls to action ship, and CSS shows one — the same mechanism the
+            header uses, and for the same reason. This page is `chrome="static"`
+            and held on the CDN, so its HTML is shared by every visitor and
+            cannot name one; asking the server would mean giving up the cache.
+            `<html data-auth>` is stamped from the hint cookie before first
+            paint, so each browser paints the right half of one shared payload.
+
+            Without this the page told a reader who already HAS a workspace to
+            go and request one — the signed-out copy is the default the header
+            fix left behind here, not a deliberate choice. Same bug family as
+            ai-ops issue 114, one page further in.
+
+            `.mj-auth-slot` defaults to the signed-OUT control when the attribute
+            is absent (JavaScript off, cookies refused, script not yet run), which
+            is the safe direction: a stranger is told how to ask for access.
+          */}
           <div className="mj-landing-actions">
-            <a className="mj-primary-button" href="/contact">{copy.primary}</a>
+            <span className="mj-auth-slot" data-auth-slot="out">
+              <a className="mj-primary-button" href="/contact">{copy.primary}</a>
+            </span>
+            <span className="mj-auth-slot" data-auth-slot="in">
+              <a className="mj-primary-button" href="/run">{copy.primarySignedIn}</a>
+            </span>
             <a className="mj-secondary-button" href="/repository">{copy.secondary}</a>
           </div>
         </section>

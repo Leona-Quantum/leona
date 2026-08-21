@@ -13,10 +13,60 @@ type CircuitFamily = {
   description: string;
   descriptionJa: string;
   tags: string[];
+  /**
+   * The narrowest width at which this circuit's motif is fully present and not
+   * degenerate. Published together with SHOWCASE_WIDTH and nothing between.
+   */
+  minWidth: number;
   build: (width: number) => PortableCircuit;
 };
 
-const WIDTHS = [2, 3, 4, 5, 6, 8, 12, 16];
+/**
+ * Every family publishes exactly TWO records: its own `minWidth`, and this.
+ *
+ * It used to publish eight — 2, 3, 4, 5, 6, 8, 12 and 16 — so 15 circuits
+ * occupied 120 of 369 catalog records, and `/repository` shipped all 120 in its
+ * HTML to draw 24 rows. Owner ruling (ai-ops issue 116): "records only need
+ * amount of qubits that correspond to lowest needed to demonstrate all general
+ * function of the algorithm, and one high [...] The rest of the variants can be
+ * permanently deleted, as the user themselves can use our ai and studio to build
+ * the other variants."
+ *
+ * The pair is chosen so the two together carry the whole claim: `minWidth` shows
+ * the motif in its smallest honest form, and SHOWCASE_WIDTH shows that it scales.
+ * The six widths in between were interpolation — each one derivable from the
+ * other two by the reader, and by the studio.
+ */
+const SHOWCASE_WIDTH = 16;
+
+/**
+ * `minWidth` is 3 for fourteen of the fifteen families, and that is a result
+ * rather than a default. Three is where a width-scaled motif first *repeats*:
+ * `chain(w)` has two links, `ringEdges(w)` actually closes (at w=2 it emits no
+ * closing edge, so a "ring" is indistinguishable from a line), the brickwork's
+ * odd layer becomes non-empty, the parity oracle first includes one input qubit
+ * and excludes another, and the swap network stops being SWAP-then-SWAP-back on
+ * a single pair. At width 2 each of those either vanishes or collapses into a
+ * Bell pair the corpus already publishes standalone.
+ *
+ * The exception is the Bell-pair ladder at 4, and it is the one width the owner
+ * ruled on directly (ai-ops issue 124): "entry with 2q is bell state, 4q variant
+ * is bell pair ladder". It shipped at 2 first, following his earlier example
+ * ("Bell state: 2q and 16q"), and the flag on that PR is what produced the
+ * ruling. Two rungs are what make it a ladder; one rung is the Bell pair this
+ * corpus already publishes standalone as `bell-state-qiskit`, so at 2q the
+ * family's smallest member was a second copy of another record under a different
+ * name.
+ *
+ * He also offered to delete the family outright "if there is no substantive
+ * difference in the use". There is: from 4 qubits up this is a bank of DISJOINT
+ * pairs, and what it exercises is parallel two-qubit-gate structure — a compiler
+ * and hardware property that a single Bell pair cannot exhibit at any width. One
+ * pair is an entanglement example; several at once is a benchmark. So the family
+ * stays and its floor moves.
+ */
+const widthsFor = (family: CircuitFamily): number[] =>
+  family.minWidth === SHOWCASE_WIDTH ? [SHOWCASE_WIDTH] : [family.minWidth, SHOWCASE_WIDTH];
 const angle = (index: number) => `${(index % 7) + 1}*pi/8`;
 const single = (gate: PortableCircuitGate, qubit: number, param?: string): Step => ({
   gate,
@@ -44,6 +94,7 @@ const CIRCUIT_FAMILIES: CircuitFamily[] = [
     description: "A width-scaled GHZ preparation circuit with one Hadamard and a nearest-neighbor CNOT chain.",
     descriptionJa: "1つのHadamardと最近接CNOTチェーンで構成する、幅可変のGHZ状態準備回路です。",
     tags: ["GHZ", "entanglement", "benchmark"],
+    minWidth: 3,
     build: (width) => ({ qubitCount: width, steps: [single("H", 0), ...chain(width, "CX")], measure: true }),
   },
   {
@@ -54,6 +105,7 @@ const CIRCUIT_FAMILIES: CircuitFamily[] = [
     description: "A linear graph-state preparation circuit using one Hadamard per qubit and nearest-neighbor CZ edges.",
     descriptionJa: "各量子ビットのHadamardと最近接CZエッジで線形グラフ状態を準備する回路です。",
     tags: ["cluster state", "graph state", "CZ"],
+    minWidth: 3,
     build: (width) => ({ qubitCount: width, steps: [...all(width, "H"), ...chain(width, "CZ")], measure: true }),
   },
   {
@@ -64,6 +116,7 @@ const CIRCUIT_FAMILIES: CircuitFamily[] = [
     description: "A cyclic graph-state preparation circuit with Hadamards followed by CZ interactions around a ring.",
     descriptionJa: "Hadamardの後にリング上のCZ相互作用を適用して巡回グラフ状態を準備する回路です。",
     tags: ["graph state", "ring", "entanglement"],
+    minWidth: 3,
     build: (width) => ({ qubitCount: width, steps: [...all(width, "H"), ...ringEdges(width).map(([a, b]) => pair("CZ", a, b))], measure: true }),
   },
   {
@@ -74,6 +127,7 @@ const CIRCUIT_FAMILIES: CircuitFamily[] = [
     description: "A bank of disjoint Bell-pair preparations that exposes parallel two-qubit-gate structure.",
     descriptionJa: "互いに独立なBellペアを並列準備し、2量子ビットゲートの並列性を示す回路です。",
     tags: ["Bell pair", "parallelism", "CNOT"],
+    minWidth: 4,
     build: (width) => ({
       qubitCount: width,
       steps: Array.from({ length: Math.floor(width / 2) }, (_, index) => [single("H", index * 2), pair("CX", index * 2, index * 2 + 1)]).flat(),
@@ -88,6 +142,7 @@ const CIRCUIT_FAMILIES: CircuitFamily[] = [
     description: "A reproducible hardware-efficient VQE layer with parameterized RY rotations and a linear CNOT entangler.",
     descriptionJa: "パラメータ付きRY回転と線形CNOTエンタングラーを用いる、再現可能なVQE層です。",
     tags: ["VQE", "hardware-efficient ansatz", "RY"],
+    minWidth: 3,
     build: (width) => ({ qubitCount: width, steps: [...all(width, "RY", angle), ...chain(width, "CX")], measure: true }),
   },
   {
@@ -98,6 +153,7 @@ const CIRCUIT_FAMILIES: CircuitFamily[] = [
     description: "A two-axis variational layer followed by a nearest-neighbor CZ entangling pattern.",
     descriptionJa: "2軸の変分回転に最近接CZエンタングル層を組み合わせたアンサッツです。",
     tags: ["VQE", "hardware-efficient ansatz", "CZ"],
+    minWidth: 3,
     build: (width) => ({ qubitCount: width, steps: [...all(width, "RZ", angle), ...all(width, "RY", (q) => angle(q + 2)), ...chain(width, "CZ")], measure: true }),
   },
   {
@@ -108,6 +164,7 @@ const CIRCUIT_FAMILIES: CircuitFamily[] = [
     description: "A first-order nearest-neighbor ZZ evolution scaffold expressed as CNOT–RZ–CNOT blocks.",
     descriptionJa: "最近接ZZ時間発展をCNOT–RZ–CNOTブロックで表す一次Trotter回路です。",
     tags: ["Ising", "Trotter", "Hamiltonian simulation"],
+    minWidth: 3,
     build: (width) => ({
       qubitCount: width,
       steps: ringEdges(width).flatMap(([a, b], index) => [pair("CX", a, b), single("RZ", b, angle(index)), pair("CX", a, b)]),
@@ -122,6 +179,7 @@ const CIRCUIT_FAMILIES: CircuitFamily[] = [
     description: "A fixed-angle p=1 MaxCut-style QAOA layer on a cycle graph, including cost and mixer blocks.",
     descriptionJa: "サイクルグラフ上の固定角p=1 MaxCut型QAOA層で、コスト項とミキサー項を含みます。",
     tags: ["QAOA", "MaxCut", "cycle graph"],
+    minWidth: 3,
     build: (width) => ({
       qubitCount: width,
       steps: [
@@ -140,6 +198,7 @@ const CIRCUIT_FAMILIES: CircuitFamily[] = [
     description: "A fixed all-ones Bernstein–Vazirani instance with the last qubit used as the phase-kickback ancilla.",
     descriptionJa: "最後の量子ビットを位相キックバック補助ビットに用いる、秘密列が全1の固定BV回路です。",
     tags: ["Bernstein–Vazirani", "oracle", "query algorithm"],
+    minWidth: 3,
     build: (width) => ({
       qubitCount: width,
       steps: [
@@ -159,6 +218,7 @@ const CIRCUIT_FAMILIES: CircuitFamily[] = [
     description: "A deterministic parity-oracle circuit that marks alternating input wires through phase kickback.",
     descriptionJa: "交互の入力ワイヤを位相キックバックで符号化する、決定的なパリティ・オラクル回路です。",
     tags: ["Deutsch–Jozsa", "parity", "oracle"],
+    minWidth: 3,
     build: (width) => ({
       qubitCount: width,
       steps: [
@@ -178,6 +238,7 @@ const CIRCUIT_FAMILIES: CircuitFamily[] = [
     description: "A forward-and-reverse nearest-neighbor SWAP network for testing routing and qubit-order preservation.",
     descriptionJa: "ルーティングと量子ビット順序の保持を確認する、往復の最近接SWAPネットワークです。",
     tags: ["SWAP", "routing", "compiler benchmark"],
+    minWidth: 3,
     build: (width) => ({ qubitCount: width, steps: [single("X", 0), ...chain(width, "SWAP"), ...chain(width, "SWAP").reverse()], measure: true }),
   },
   {
@@ -188,6 +249,7 @@ const CIRCUIT_FAMILIES: CircuitFamily[] = [
     description: "A deterministic H/S/CNOT brickwork circuit suited to stabilizer and compiler regression checks.",
     descriptionJa: "スタビライザー計算とコンパイラ回帰確認に適した、決定的なH/S/CNOTブリックワーク回路です。",
     tags: ["Clifford", "brickwork", "stabilizer"],
+    minWidth: 3,
     build: (width) => ({
       qubitCount: width,
       steps: [
@@ -207,6 +269,7 @@ const CIRCUIT_FAMILIES: CircuitFamily[] = [
     description: "A Hartree–Fock-like computational-basis seed followed by tunable rotations and a CNOT chain.",
     descriptionJa: "Hartree–Fock型の計算基底初期状態に、調整可能な回転とCNOTチェーンを加えた回路です。",
     tags: ["VQE", "occupation seed", "ansatz"],
+    minWidth: 3,
     build: (width) => ({
       qubitCount: width,
       steps: [
@@ -226,6 +289,7 @@ const CIRCUIT_FAMILIES: CircuitFamily[] = [
     description: "A problem-inspired layer combining ZZ interactions and transverse X rotations for a ring Ising model.",
     descriptionJa: "リングIsing模型向けにZZ相互作用と横方向X回転を組み合わせた問題着想型VQE層です。",
     tags: ["VQE", "TFIM", "problem-inspired ansatz"],
+    minWidth: 3,
     build: (width) => ({
       qubitCount: width,
       steps: [
@@ -244,6 +308,7 @@ const CIRCUIT_FAMILIES: CircuitFamily[] = [
     description: "A fixed-data feature-map scaffold with Hadamards, local phase rotations, and pairwise ZZ encodings.",
     descriptionJa: "Hadamard、局所位相回転、ペアZZ符号化を組み合わせた固定データ特徴量マップです。",
     tags: ["feature map", "quantum kernel", "QML"],
+    minWidth: 3,
     build: (width) => ({
       qubitCount: width,
       steps: [
@@ -1136,7 +1201,7 @@ export const OPERATOR_DEPTH_CENSUS: Readonly<Record<string, DepthOutcome>> = Obj
 );
 
 export const LITERATURE_EXPANSION_ENTRIES: PublicRepositoryEntry[] = [
-  ...CIRCUIT_FAMILIES.flatMap((family) => WIDTHS.map((width) => circuitEntry(family, width))),
+  ...CIRCUIT_FAMILIES.flatMap((family) => widthsFor(family).map((width) => circuitEntry(family, width))),
   ...VQE_METHODS.map(vqeEntry),
   ...OPERATOR_CONCEPTS.map(operatorEntry),
 ];

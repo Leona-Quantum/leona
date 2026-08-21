@@ -1399,6 +1399,12 @@ export const ACCOUNT_COPY: Record<PublicLocale, {
   /** Names the modal's scrollable region, which a keyboard user can focus in
    * order to scroll it. The dialog's own name comes from the page's <h1>. */
   settingsRegion: string;
+  /** Names the settings rail — the `<summary>` a narrow viewport collapses it
+   * to, and the accessible name of the `<nav>` inside it (ai-ops 134). Not
+   * `settingsRegion`: that one names the scroll container, and a screen reader
+   * reading "Settings, settings" for two nested landmarks is the reason they
+   * are separate strings. */
+  sectionsLabel: string;
   preferences: string;
   language: string;
   languageHelp: string;
@@ -1608,6 +1614,7 @@ export const ACCOUNT_COPY: Record<PublicLocale, {
     signOut: "Sign out",
     close: "Close settings",
     settingsRegion: "Settings",
+    sectionsLabel: "Sections",
     preferences: "Preferences",
     language: "Language",
     languageHelp: "Choose the language used for shared navigation and account settings.",
@@ -1805,6 +1812,7 @@ export const ACCOUNT_COPY: Record<PublicLocale, {
     signOut: "サインアウト",
     close: "設定を閉じる",
     settingsRegion: "設定",
+    sectionsLabel: "項目",
     preferences: "表示設定",
     language: "言語",
     languageHelp: "共通ナビゲーションとアカウント設定で使用する言語を選択します。",

@@ -486,7 +486,24 @@ export const CONTACT_COPY: Record<PublicLocale, {
   reasons: string[];
   note: string;
   measure: { label: string };
-  fields: { name: string; email: string; topic: string; message: string; placeholder: string; submit: string; status: string };
+  // `submit`/`status`/`note` describe the mailto path, which is what the form
+  // still falls back to while no transactional sender is configured. The
+  // `send*` keys describe the real one. Both sets exist because the form only
+  // learns which it is on at runtime, from `/api/contact` (ai-ops issue 125).
+  fields: {
+    name: string;
+    email: string;
+    topic: string;
+    message: string;
+    placeholder: string;
+    submit: string;
+    status: string;
+    send: string;
+    sending: string;
+    sent: string;
+    failed: string;
+  };
+  noteSends: string;
   topics: string[];
 }> = {
   en: {
@@ -503,7 +520,20 @@ export const CONTACT_COPY: Record<PublicLocale, {
     // is theirs.
     note: "Submitting opens a prepared email in your email app.",
     measure: { label: "Measure a qubit" },
-    fields: { name: "Name", email: "Email", topic: "What is this about?", message: "Message", placeholder: "What are you building, and what evidence or access would help?", submit: "Prepare inquiry", status: "Your email app should open with the inquiry prepared. Send it to add the note to the queue." },
+    fields: {
+      name: "Name",
+      email: "Email",
+      topic: "What is this about?",
+      message: "Message",
+      placeholder: "What are you building, and what evidence or access would help?",
+      submit: "Prepare inquiry",
+      status: "Your email app should open with the inquiry prepared. Send it to add the note to the queue.",
+      send: "Send inquiry",
+      sending: "Sending…",
+      sent: "Thanks — that reached us. We reply from a person, usually within a couple of days.",
+      failed: "That did not send. Try again in a moment, or write to us directly.",
+    },
+    noteSends: "We reply to the address you give us. Nothing else is collected.",
     topics: ["Product access", "Research workflow", "Enterprise R&D", "Public research contribution", "Other"],
   },
   ja: {
@@ -514,7 +544,20 @@ export const CONTACT_COPY: Record<PublicLocale, {
     reasons: ["研究ワークフローと早期アクセス", "企業・研究機関向けの導入相談", "公開研究への投稿と技術フィードバック", "取材、パートナーシップ、登壇"],
     note: "送信ボタンを押すと、入力内容を反映したメール作成画面が開きます。",
     measure: { label: "量子ビットを測定" },
-    fields: { name: "お名前", email: "メールアドレス", topic: "内容", message: "メッセージ", placeholder: "取り組んでいる研究テーマと、必要な実行・検証環境を教えてください。", submit: "メールを作成", status: "内容を確認してメールを送信してください。" },
+    fields: {
+      name: "お名前",
+      email: "メールアドレス",
+      topic: "内容",
+      message: "メッセージ",
+      placeholder: "取り組んでいる研究テーマと、必要な実行・検証環境を教えてください。",
+      submit: "メールを作成",
+      status: "内容を確認してメールを送信してください。",
+      send: "送信",
+      sending: "送信中…",
+      sent: "送信しました。担当者より数日以内にご返信します。",
+      failed: "送信できませんでした。しばらくしてからもう一度お試しください。",
+    },
+    noteSends: "ご記入のメールアドレスにご返信します。その他の情報は取得しません。",
     topics: ["プロダクトへのアクセス", "研究ワークフロー", "企業R&D", "公開研究への投稿", "その他"],
   },
 };
@@ -524,6 +567,12 @@ export const WORKSPACE_LANDING_COPY: Record<PublicLocale, {
   title: string;
   body: string;
   primary: string;
+  /**
+   * The same call to action for a reader who already has what `primary` asks
+   * them to request. Both ship in the cached HTML; CSS picks one — see the
+   * comment on this page's hero actions for why it cannot be picked here.
+   */
+  primarySignedIn: string;
   secondary: string;
   loopLabel: string;
   loopTitle: string;
@@ -541,6 +590,7 @@ export const WORKSPACE_LANDING_COPY: Record<PublicLocale, {
     title: "Turn a quantum question into work you can reopen.",
     body: "Leona Quantum connects a guided workflow to a guarded simulator, verification evidence, and a personal Studio for editing and keeping saved work. Every account starts with its own workspace; prompts, runs, and saved artifacts are private by default.",
     primary: "Request workspace access",
+    primarySignedIn: "Open your workspace",
     secondary: "Start from the Atlas",
     loopLabel: "One personal loop",
     loopTitle: "Research, Studio, and execution stay connected.",
@@ -566,6 +616,7 @@ export const WORKSPACE_LANDING_COPY: Record<PublicLocale, {
     title: "量子の問いを、再現できる研究成果へ。",
     body: "Leona Quantumは、ガイド付きのワークフローをシミュレータ、検証記録、そして編集と保存を担う個人用Studioにつなぎます。各アカウントには専用ワークスペースが用意され、質問、実行、保存した回路・実行結果は初期状態で非公開です。",
     primary: "利用を相談する",
+    primarySignedIn: "ワークスペースを開く",
     secondary: "Atlasから始める",
     loopLabel: "個人の研究ループ",
     loopTitle: "RunとStudioをひとつにつなぐ。",

@@ -6,6 +6,7 @@ import { ContactForm } from "./contact-form";
 import { MeasurementLab } from "../../../components/measurement-lab";
 import { parsePublicLocale, PUBLIC_LOCALES } from "../../../lib/public-locale";
 import { canonicalMetadata } from "../../../lib/public-metadata";
+import { contactMetadataCopy } from "../../../lib/public-page-metadata";
 
 // Served from the CDN. The locale comes from the path segment because a cached
 // page cannot read a cookie — `middleware.ts` rewrites the clean URL to this
@@ -19,11 +20,14 @@ export function generateStaticParams() {
   return PUBLIC_LOCALES.map((locale) => ({ locale }));
 }
 
-export const metadata: Metadata = {
-  ...canonicalMetadata("/contact"),
-  title: "Contact",
-  description: "Contact Leona Quantum about research workflows and early product access.",
-};
+// Localized — a static English export here left a Japanese reader's browser
+// tab, search result and shared link in English while the page body (below)
+// already renders `CONTACT_COPY[locale]`. See `lib/public-page-metadata.ts`
+// for the locale branch and why it lives there rather than inline.
+export async function generateMetadata({ params }: { params: Promise<{ locale: string }> }): Promise<Metadata> {
+  const locale = parsePublicLocale((await params).locale);
+  return { ...contactMetadataCopy(locale), ...canonicalMetadata("/contact") };
+}
 
 export default async function ContactPage({ params }: { params: Promise<{ locale: string }> }) {
   const locale = parsePublicLocale((await params).locale);
@@ -43,8 +47,13 @@ export default async function ContactPage({ params }: { params: Promise<{ locale
       <Reveal>
         <section className="mj-contact-layout" aria-label={copy.overline}>
           <div className="mj-contact-form-section mj-contact-form-section--solo">
+            {/* The note moved INSIDE the form (ai-ops issue 125). It describes
+                what the button does, and what the button does is now decided at
+                runtime by whether a transactional sender is configured — which
+                this server-rendered, CDN-cached page cannot know. Rendering it
+                here would have left "opens a prepared email in your email app"
+                on the page after the form stopped doing that. */}
             <ContactForm locale={locale} />
-            <p className="mj-contact-note">{copy.note}</p>
           </div>
           {/* A small interactive aside (Owner Inbox 2026-07-19): compact, no
               explanatory copy — just a qubit to measure while you're here. */}

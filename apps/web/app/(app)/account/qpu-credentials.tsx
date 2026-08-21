@@ -72,15 +72,48 @@ export function parseCredentialStatus(payload: unknown): CredentialStatus | null
   };
 }
 
-/** The API's discriminator, when it sent one. */
+/**
+ * The API's discriminator, when it sent one.
+ *
+ * ## Two shapes, and the one production actually sends is the top-level one
+ *
+ * These readers originally looked only inside `detail`, which is FastAPI's
+ * DEFAULT error envelope — and this API overrode that default. `app.py`'s
+ * `HTTPException` handler unpacks a typed refusal and calls `_problem()`, which
+ * emits RFC 9457 problem+json: `error` is promoted to top-level `title`, and
+ * every other key of the refusal — `reason` included — becomes a SIBLING of it,
+ * because that is what RFC 7807 says extensions are. The BFF at
+ * `app/api/qpu/credentials/route.ts` forwards `upstream.body` verbatim, so
+ * nothing puts it back under `detail` on the way here.
+ *
+ * So on production `payload.detail` did not exist, both readers returned null,
+ * and the provider's own sentence — the part that tells somebody WHY their key
+ * was refused — was never rendered. The refusal was still classified correctly,
+ * but only via the `response.status === 400` fallback below, which is why this
+ * looked like it worked.
+ *
+ * The nested shape is still read, second, because it is what FastAPI emits for
+ * anything the override does not catch (a `RequestValidationError` still
+ * produces `{"detail": [...]}`), and because a proxy that re-wraps an error is
+ * exactly the kind of thing that appears later.
+ *
+ * Found via a review bot noticing the TEST stubbed a body shape the API never
+ * returns — the test passed against a contract that did not exist, which is the
+ * failure this suite is supposed to prevent rather than commit.
+ */
 function refusalReason(payload: unknown): string | null {
-  if (!isRecord(payload) || !isRecord(payload.detail)) return null;
+  if (!isRecord(payload)) return null;
+  if (typeof payload.reason === "string") return payload.reason;
+  if (!isRecord(payload.detail)) return null;
   return typeof payload.detail.reason === "string" ? payload.detail.reason : null;
 }
 
 /** The provider's own sentence about why the key was refused. */
 function providerSentence(payload: unknown): string | null {
-  if (!isRecord(payload) || !isRecord(payload.detail)) return null;
+  if (!isRecord(payload)) return null;
+  // `title` is where `_problem()` puts the refusal's `error` sentence.
+  if (typeof payload.title === "string" && payload.title.length > 0) return payload.title;
+  if (!isRecord(payload.detail)) return null;
   const { error } = payload.detail;
   return typeof error === "string" && error.length > 0 ? error : null;
 }

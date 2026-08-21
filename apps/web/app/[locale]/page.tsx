@@ -9,6 +9,7 @@ import { ScrollCue } from "../../components/scroll-cue";
 import { HOME_COPY } from "../../lib/public-copy";
 import { parsePublicLocale, PUBLIC_LOCALES } from "../../lib/public-locale";
 import { canonicalMetadata } from "../../lib/public-metadata";
+import { homeMetadataCopy } from "../../lib/public-page-metadata";
 
 // Served from the CDN. The locale comes from the path segment because a cached
 // page cannot read a cookie — `middleware.ts` rewrites the clean URL to this
@@ -22,7 +23,7 @@ export function generateStaticParams() {
   return PUBLIC_LOCALES.map((locale) => ({ locale }));
 }
 
-// No `title` on purpose. The root layout declares
+// No `title` on English, on purpose. The root layout declares
 // `template: "%s · Leona Quantum"`, so a segment title of "Leona Quantum" was
 // composed into **"Leona Quantum · Leona Quantum"** — which is what a reader saw
 // in the browser tab, what a bookmark saved, and what a search result showed.
@@ -32,15 +33,26 @@ export function generateStaticParams() {
 // `[locale]` page names a SECTION ("Pricing", "Contact"), which is exactly what
 // the template is for; the home page is the one page whose subject is the
 // template's own suffix, which is why it is the one page that must not use it.
-export const metadata: Metadata = {
-  // The clean path, and the same one for both locales. `/en` and `/ja` are the
-  // routes that render this page, not addresses anybody should link to — the
-  // middleware 308s them back — and the language is a cookie preference rather
-  // than a second version of the site. So the two locales are one canonical
-  // URL, not a pair of alternates.
-  ...canonicalMetadata("/"),
-  description: "Generate, run, and use quantum circuits with AI in one platform.",
-};
+//
+// Japanese cannot lean on that fallback: the root layout's `default` is a
+// fixed English string (`app/layout.tsx` cannot read the locale — see the
+// comment on `localeScript` there for why), so a Japanese reader fell through
+// to it too and got an English tab title on an otherwise fully localized page.
+// `homeMetadataCopy` states an explicit Japanese title for that branch only —
+// see its own comment for why the ternary lives in `lib/public-page-metadata.ts`
+// rather than inline here.
+export async function generateMetadata({ params }: { params: Promise<{ locale: string }> }): Promise<Metadata> {
+  const locale = parsePublicLocale((await params).locale);
+  return {
+    ...homeMetadataCopy(locale),
+    // The clean path, and the same one for both locales. `/en` and `/ja` are the
+    // routes that render this page, not addresses anybody should link to — the
+    // middleware 308s them back — and the language is a cookie preference rather
+    // than a second version of the site. So the two locales are one canonical
+    // URL, not a pair of alternates.
+    ...canonicalMetadata("/"),
+  };
+}
 
 export default async function Home({ params }: { params: Promise<{ locale: string }> }) {
   const locale = parsePublicLocale((await params).locale);

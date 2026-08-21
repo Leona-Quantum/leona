@@ -14,6 +14,7 @@ reject the records as duplicate content on the Step 3 global hash constraint.
 """
 
 import asyncio
+import datetime as dt
 import json
 import os
 import uuid
@@ -26,7 +27,7 @@ from majorana_api.catalog_authority import CatalogAuthority
 from majorana_api.catalog_bootstrap_manifest import BootstrapManifestSource, default_manifest_path
 from majorana_api.db import engine_from_env, session_factory
 from majorana_api.orm import Artifact, ArtifactVersion, ImportItem
-from majorana_api.repos import catalog_import, system
+from majorana_api.repos import catalog, catalog_import, system
 
 requires_db = pytest.mark.skipif(
     "DATABASE_URL" not in os.environ, reason="catalog bootstrap import needs DATABASE_URL"
@@ -293,3 +294,110 @@ async def test_a_second_import_under_the_production_key_is_a_no_op(env):
     # thing being ruled out, not a passing result.
     assert final.status == ImportJobStatus.COMPLETED
     assert await _batch_state() == before  # nothing re-staged, nothing re-versioned
+
+
+@requires_db
+async def test_a_withdrawn_record_is_revived_by_the_next_import_not_rejected(env):
+    """Retirement must not be a one-way door.
+
+    `retire-bootstrap` soft-deletes, and `find_staged_artifact_by_upstream_identity`
+    filters `deleted_at IS NULL`, so a withdrawn identity reads as ABSENT and the
+    import takes the create path — which collides with the withdrawn row's own
+    version on the table-wide unique `normalized_source_hash` and comes back as
+    `duplicate_source`: the record rejected for being itself.
+
+    Found in production on 2026-08-16, not in a test. The Bell-pair ladder's floor
+    moved 2q -> 4q; `-4q` had been withdrawn an hour earlier as one of 90, and the
+    deploy failed with `accepted=278 rejected=1`. A corpus its owner intends to
+    restructure wholesale cannot have a delete that cannot be undone.
+    """
+    authority, factory = env
+    scope = authority.importer_scope()
+    source = BootstrapManifestSource()
+
+    # Import once so there is something to withdraw.
+    async with factory() as session:
+        job = await catalog_import.create_import_job(
+            scope,
+            session,
+            authority=authority,
+            source=source,
+            idempotency_key=f"revive-seed-{uuid.uuid4()}",
+        )
+        await session.commit()
+        job_id = job.id
+    await _drain_batch(scope, factory, job_id, authority=authority, source=source)
+
+    # Any manifest identity exercises this — the bug is in the resolver, not in
+    # any record's content — so the first in sort order is chosen only to be
+    # deterministic across runs. It is deliberately NOT pinned to a literal slug:
+    # the corpus is edited constantly and a named record would make this test fail
+    # for the wrong reason the day that record is renamed. The identity actually
+    # used is asserted to exist below, so a manifest that no longer contains it
+    # fails loudly rather than silently testing nothing.
+    identity = sorted(source.identities())[0]
+    async with factory() as session:
+        found = await catalog.find_staged_artifact_by_upstream_identity(
+            scope, session, authority=authority, upstream_identity=identity
+        )
+        assert found is not None, "the seed import did not stage the record under test"
+        artifact_id = found[0].id
+        # Captured BEFORE withdrawal so the assertions after revival compare
+        # against what actually existed, not against what the revival produced.
+        version_id_before = found[0].current_version_id
+        hash_before = found[1].normalized_source_hash if found[1] is not None else None
+        assert version_id_before is not None, "the record under test has no current version"
+        # Withdraw it exactly the way `retire-bootstrap` does.
+        found[0].deleted_at = dt.datetime.now(dt.timezone.utc)
+        await session.commit()
+
+    # The resolver must now report it absent — this is the precondition that made
+    # the create path fire, and asserting it keeps the test honest if the filter
+    # ever changes.
+    async with factory() as session:
+        assert (
+            await catalog.find_staged_artifact_by_upstream_identity(
+                scope, session, authority=authority, upstream_identity=identity
+            )
+            is None
+        )
+
+    async with factory() as session:
+        job = await catalog_import.create_import_job(
+            scope,
+            session,
+            authority=authority,
+            source=source,
+            idempotency_key=f"revive-run-{uuid.uuid4()}",
+        )
+        await session.commit()
+        job_id = job.id
+    final = await _drain_batch(scope, factory, job_id, authority=authority, source=source)
+
+    # The whole manifest lands. Before the revive branch this run came back
+    # `completed_with_rejections` with exactly one `duplicate_source`.
+    assert final.rejected_count == 0, "a withdrawn record was rejected instead of revived"
+    assert final.accepted_count == len(source.identities())
+
+    async with factory() as session:
+        revived = await catalog.find_staged_artifact_by_upstream_identity(
+            scope, session, authority=authority, upstream_identity=identity
+        )
+        assert revived is not None, "the withdrawn record was not brought back"
+        assert revived[0].id == artifact_id, (
+            "revival created a SECOND artifact for one upstream identity rather than "
+            "adopting the withdrawn one — the history and the stars are on the first"
+        )
+        assert revived[0].deleted_at is None
+        # The primary key surviving is necessary and not sufficient: an artifact
+        # revived with a fresh version chain would satisfy the id check and still
+        # have lost everything the id was protecting. Content is unchanged across
+        # this round trip, so the version must be the SAME row carrying the SAME
+        # hash — a new version here would also mean the reconciler took the
+        # "changed" branch on bytes that did not change, dropping the record to
+        # DRAFT and off /repository until it was re-attested.
+        assert revived[0].current_version_id == version_id_before, (
+            "revival replaced the current version — the record's history did not survive"
+        )
+        assert revived[1] is not None
+        assert revived[1].normalized_source_hash == hash_before

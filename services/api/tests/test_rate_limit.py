@@ -10,11 +10,14 @@ import pytest
 
 from majorana_api.app import create_app
 from majorana_api.rate_limit import (
+    AUTH_FAILURE_WARN_THRESHOLDS,
     CALLER_TRUST_HEADER,
     DEFAULT_ANON_LIMIT,
+    DEFAULT_AUTH_FAILURE_LIMIT,
     DEFAULT_TRUSTED_LIMIT,
     MAX_REQUEST_BYTES,
     TRUSTED_CALLER_HEADER,
+    AuthFailureThrottle,
     FixedWindowLimiter,
     client_address,
     is_rate_limited_path,
@@ -24,6 +27,9 @@ from majorana_api.settings import Settings
 
 #: Long enough to satisfy the 32-character floor the settings enforce.
 TRUSTED_TOKEN = "trusted-caller-token-for-tests-0123456789"
+
+#: Same convention as test_deploy_probe_credential.py's PROBE_TOKEN.
+PROBE_TOKEN = "p" * 48
 
 ISSUER = "https://api.workos.com/user_management/client_test"
 JWKS_URL = "https://api.workos.com/sso/jwks/client_test"
@@ -125,6 +131,19 @@ def test_a_caller_with_no_address_at_all_still_gets_a_key():
     """Grouping unidentifiable callers together is correct: they are metered as
     one noisy caller rather than escaping the limiter by being anonymous twice."""
     assert client_address({}, None) == "unknown"
+
+
+def test_cf_connecting_ip_is_not_preferred():
+    """Deliberate, not an oversight — see `client_address`'s "Cloudflare
+    (ai-ops#141) does not change any of this" section. This service has no
+    domain inside any Cloudflare-proxied zone (no Cloud Run domain mapping, no
+    DNS record under `leonaqt.com`), so nothing here could ever verify this
+    header — honouring it would hand an attacker a second, unaudited way to
+    pick their own bucket, on top of the one `X-Forwarded-For` already accepts.
+    apps/web's own limiter is where the Cloudflare rollout is actually handled.
+    """
+    headers = {"x-forwarded-for": "203.0.113.9", "cf-connecting-ip": "198.51.100.1"}
+    assert client_address(headers, "10.0.0.1") == "203.0.113.9"
 
 
 # --------------------------------------------------------------------------
@@ -561,3 +580,484 @@ def test_the_trusted_token_may_not_be_the_deploy_probe_token():
     the obvious way to provision the second is to copy the first."""
     with pytest.raises(RuntimeError, match="must be different secrets"):
         _settings(trusted_caller_token=TRUSTED_TOKEN, deploy_probe_token=TRUSTED_TOKEN)
+
+
+# --------------------------------------------------------------------------
+# The auth-failure throttle (AuthFailureThrottle, ai-ops#145)
+#
+# Its whole design point is metering the RESPONSE rather than the request, so
+# the load-bearing test in this section is
+# `test_successful_requests_never_count_toward_the_ceiling` — the negative
+# control for the one failure mode this control cannot repeat: the anonymous
+# limiter's first shape counted a request that *looked* like the thing being
+# policed, and a CI authz suite that overrides the identity dependency and
+# rejects nothing showed the gap. Metering the outcome instead means there is
+# nothing for a passing request to accidentally resemble.
+# --------------------------------------------------------------------------
+
+
+def test_fewer_failures_than_the_limit_are_not_blocked():
+    throttle = AuthFailureThrottle(limit=3, window_s=300.0)
+    for _ in range(2):
+        throttle.record_failure("1.2.3.4", now=0.0)
+    assert throttle.should_block("1.2.3.4", now=0.0).allowed
+
+
+def test_reaching_the_limit_blocks_the_next_attempt():
+    """`limit` failures are allowed to happen — each one already reached the
+    route and was refused there — and only the attempt that would become the
+    NEXT failure is refused pre-emptively. See `should_block`'s `>=` comment
+    for why this is off by one from `FixedWindowLimiter.check`'s `>`."""
+    throttle = AuthFailureThrottle(limit=3, window_s=300.0)
+    for _ in range(3):
+        throttle.record_failure("1.2.3.4", now=0.0)
+    decision = throttle.should_block("1.2.3.4", now=0.0)
+    assert not decision.allowed
+    # Never zero, same reasoning as FixedWindowLimiter: "retry in 0 seconds" is
+    # the instruction that caused the block.
+    assert decision.retry_after_s >= 1
+
+
+def test_a_caller_who_has_never_failed_is_never_blocked():
+    throttle = AuthFailureThrottle(limit=1, window_s=300.0)
+    assert throttle.should_block("9.9.9.9", now=0.0).allowed
+
+
+def test_addresses_are_throttled_separately():
+    """The whole point, same as the anonymous limiter's version of this test:
+    one address's failures must not refuse a different one."""
+    throttle = AuthFailureThrottle(limit=1, window_s=300.0)
+    throttle.record_failure("1.1.1.1", now=0.0)
+    throttle.record_failure("1.1.1.1", now=0.0)
+    assert not throttle.should_block("1.1.1.1", now=0.0).allowed
+    assert throttle.should_block("2.2.2.2", now=0.0).allowed
+
+
+def test_the_window_rolls_and_clears_the_block():
+    throttle = AuthFailureThrottle(limit=1, window_s=300.0)
+    throttle.record_failure("1.2.3.4", now=0.0)
+    throttle.record_failure("1.2.3.4", now=0.0)
+    assert not throttle.should_block("1.2.3.4", now=100.0).allowed
+    assert throttle.should_block("1.2.3.4", now=301.0).allowed
+
+
+def test_a_zero_limit_disables_the_throttle():
+    """The documented escape hatch — a caller wrongly refused for their
+    address's failures is worse than an unmetered one."""
+    throttle = AuthFailureThrottle(limit=0)
+    for _ in range(1000):
+        throttle.record_failure("1.2.3.4", now=0.0)
+    assert throttle.should_block("1.2.3.4", now=0.0).allowed
+
+
+def test_should_block_never_creates_a_table_entry():
+    """Read-only, on purpose: a caller who never fails must never occupy a
+    table slot. This is what lets a full table degrade to OFF for a caller it
+    has genuinely never recorded a failure for — see the saturation test
+    below."""
+    throttle = AuthFailureThrottle(limit=1, window_s=300.0)
+    throttle.should_block("1.2.3.4", now=0.0)
+    assert len(throttle._windows) == 0
+
+
+def test_a_saturated_table_stops_tracking_rather_than_blocking():
+    """Same direction as FixedWindowLimiter's saturation test: an attacker
+    rotating source addresses to fill the table must not end up blocking
+    everyone else — degrading to OFF, not to REFUSE."""
+    throttle = AuthFailureThrottle(limit=1, window_s=300.0, max_keys=2)
+    throttle.record_failure("1.1.1.1", now=0.0)
+    throttle.record_failure("1.1.1.1", now=0.0)
+    throttle.record_failure("2.2.2.2", now=0.0)
+    throttle.record_failure("2.2.2.2", now=0.0)
+    # Table full of LIVE entries, so a third address's failure cannot be
+    # recorded at all.
+    throttle.record_failure("3.3.3.3", now=0.0)
+    assert throttle.should_block("3.3.3.3", now=0.0).allowed
+    assert throttle.saturated_admissions == 1
+
+
+def test_the_default_ceiling_has_headroom_over_a_shared_address():
+    """A floor, not a target. Sized against the population described in
+    `AuthFailureThrottle`'s docstring — Vercel's shared BFF egress carrying
+    every signed-in user's proxied requests, not one browser — so this has to
+    clear several stale-session clusters (~10 failures each, one dashboard
+    load's several panels all firing on one dead token at once) landing on the
+    same address inside one window, not just one."""
+    assert DEFAULT_AUTH_FAILURE_LIMIT >= 100
+
+
+# --------------------------------------------------------------------------
+# The early-warning signal
+#
+# Sized against the shared-BFF-address finding: nobody would find out the
+# ceiling was wrong until it fired on everyone. These tests are about the
+# ONE property that matters for that to be useful rather than more noise —
+# a crossing fires once per (address, window, threshold), never once per
+# request past the line.
+# --------------------------------------------------------------------------
+
+
+def test_a_threshold_crossing_captures_a_sentry_event_exactly_once(monkeypatch):
+    """`capture_message`, not a bare log call — see `_warn_threshold_crossed`
+    for why a WARNING-level log alone would not reach Sentry as its own alert.
+    Monkeypatched rather than requiring a real DSN: `sentry_sdk.init` is never
+    called in tests, so the unpatched function is already a safe no-op — this
+    proves it was CALLED, which a no-op return value cannot."""
+    import majorana_api.rate_limit as rate_limit_module
+
+    captured = []
+    monkeypatch.setattr(
+        rate_limit_module.sentry_sdk,
+        "capture_message",
+        lambda msg, level=None: captured.append((msg, level)),
+    )
+
+    throttle = AuthFailureThrottle(limit=10, window_s=300.0)
+    for _ in range(10):
+        throttle.record_failure("203.0.113.90", now=0.0)
+
+    # 50% at count 5, 80% at count 8 — exactly two crossings for ten failures.
+    assert len(captured) == 2
+    assert all(level == "warning" for _, level in captured)
+    assert "203.0.113.90" in captured[0][0]
+    assert "5/10" in captured[0][0]
+    assert "8/10" in captured[1][0]
+
+
+def test_a_threshold_crossing_logs_exactly_once(caplog):
+    throttle = AuthFailureThrottle(limit=10, window_s=300.0)
+    with caplog.at_level("WARNING", logger="majorana_api.rate_limit"):
+        for _ in range(10):
+            throttle.record_failure("203.0.113.91", now=0.0)
+
+    # Not one record per request past a threshold — one per (address, window,
+    # threshold): two thresholds, ten failures, two records.
+    assert len(caplog.records) == 2
+    assert "50%" in caplog.records[0].message
+    assert "80%" in caplog.records[1].message
+
+
+def test_fewer_failures_than_the_first_threshold_warns_never(caplog):
+    throttle = AuthFailureThrottle(limit=10, window_s=300.0)
+    with caplog.at_level("WARNING", logger="majorana_api.rate_limit"):
+        for _ in range(4):  # 40% — under the first threshold
+            throttle.record_failure("203.0.113.92", now=0.0)
+
+    assert caplog.records == []
+
+
+def test_a_small_limit_can_cross_two_thresholds_in_one_call(caplog):
+    """`limit=2`: the second failure alone takes the window from 50% to
+    100%, crossing both 0.5 and 0.8 in the same `record_failure` call. Both
+    must still fire — this is the case the ascending-order loop is for."""
+    throttle = AuthFailureThrottle(limit=2, window_s=300.0)
+    with caplog.at_level("WARNING", logger="majorana_api.rate_limit"):
+        throttle.record_failure("203.0.113.93", now=0.0)
+        assert len(caplog.records) == 1  # only 0.5 crossed so far
+        throttle.record_failure("203.0.113.93", now=0.0)
+
+    assert len(caplog.records) == 2  # 0.5 already fired; 0.8 fires now
+
+
+def test_the_window_rolling_resets_which_thresholds_have_warned(caplog):
+    throttle = AuthFailureThrottle(limit=10, window_s=300.0)
+    with caplog.at_level("WARNING", logger="majorana_api.rate_limit"):
+        for _ in range(8):  # crosses both thresholds
+            throttle.record_failure("203.0.113.94", now=0.0)
+        assert len(caplog.records) == 2
+        # New window: the same address failing again must be able to warn
+        # again, not stay silent because an EARLIER window already warned.
+        for _ in range(5):  # 50% of the NEW window
+            throttle.record_failure("203.0.113.94", now=301.0)
+
+    assert len(caplog.records) == 3
+    assert "50%" in caplog.records[2].message
+
+
+def test_addresses_warn_independently():
+    throttle = AuthFailureThrottle(limit=10, window_s=300.0)
+    for _ in range(8):
+        throttle.record_failure("203.0.113.95", now=0.0)
+    # A second, quiet address must not inherit the first one's warned state.
+    throttle.record_failure("203.0.113.96", now=0.0)
+    assert 0.5 not in throttle._windows["203.0.113.96"].warned_thresholds
+    assert throttle._windows["203.0.113.95"].warned_thresholds == set(AUTH_FAILURE_WARN_THRESHOLDS)
+
+
+# --------------------------------------------------------------------------
+# Wired into the app
+# --------------------------------------------------------------------------
+
+
+async def test_a_caller_under_the_ceiling_is_still_served():
+    app = create_app(_settings(auth_failure_limit=5))
+    async with _client(app) as client:
+        statuses = [(await client.get("/v1/runs")).status_code for _ in range(5)]
+    # Every one reached the route and was refused THERE (missing bearer
+    # token) — none of them was refused by the throttle.
+    assert statuses == [401] * 5
+
+
+async def test_a_caller_over_the_ceiling_is_throttled():
+    app = create_app(_settings(auth_failure_limit=3))
+    async with _client(app) as client:
+        for _ in range(3):
+            await client.get("/v1/runs")
+        response = await client.get("/v1/runs")
+
+    assert response.status_code == 429
+    assert response.json()["reason"] == "auth_failure_throttled"
+    assert response.headers["Retry-After"]
+
+
+async def test_successful_requests_never_count_toward_the_ceiling():
+    """The negative control for the one failure mode this control cannot
+    repeat — see this section's header comment. A limiter that (wrongly)
+    counted every request, or every request without a header, would fail this
+    exactly the way the anonymous limiter's first shape failed in CI."""
+    app = create_app(_settings(auth_failure_limit=3))
+    async with _client(app) as client:
+        statuses = {(await client.get("/v1/catalog/entries")).status_code for _ in range(10)}
+
+    assert 429 not in statuses
+
+
+async def test_403_does_not_count_toward_the_ceiling():
+    """The redesign this section's constants document: 403 was cut after
+    review because most of it is a correctly-authenticated caller being told
+    no by business logic, not a credential problem. The deploy probe hitting a
+    route it may not reach is a real, DB-free 403 that goes through the exact
+    same code path a route's own tier/ownership check would — a wrong probe
+    route rather than a wrong plan is used here only because it needs no
+    database to reach, not because the two are different for this control's
+    purposes. See `test_the_deploy_probe_is_never_counted_toward_the_ceiling`
+    for the same request sequence checked from the probe's own point of view.
+    """
+    app = create_app(_settings(auth_failure_limit=1, deploy_probe_token=PROBE_TOKEN))
+    headers = {"Authorization": f"Bearer {PROBE_TOKEN}"}
+    async with _client(app) as client:
+        # /v1/me is not in DEPLOY_PROBE_ROUTES, so every one of these is a
+        # clean 403 from `_probe_may_reach` — never a 401, never DB-backed.
+        statuses = [(await client.get("/v1/me", headers=headers)).status_code for _ in range(5)]
+
+    assert statuses == [403] * 5, "a limit of 1 would 429 the second call if 403 still counted"
+
+
+async def test_a_404_does_not_count_toward_the_ceiling():
+    """Negative control for the status-code check itself: only a broadening of
+    `response.status_code == 401` to something like `>= 400` would make an
+    ordinary unknown-path 404 start counting."""
+    app = create_app(_settings(auth_failure_limit=3))
+    async with _client(app) as client:
+        statuses = {
+            (await client.get("/v1/this-route-does-not-exist")).status_code for _ in range(10)
+        }
+
+    assert statuses == {404}
+
+
+async def test_a_500_does_not_count_toward_the_ceiling():
+    """Same negative control, for the other direction a broadened check could
+    take — `>= 400` would also sweep in 5xx. Registers a route that always
+    raises; nothing else in this app can be made to 500 without a database."""
+    app = create_app(_settings(auth_failure_limit=3))
+
+    @app.get("/__test_always_500")
+    async def _boom():
+        raise RuntimeError("deliberately unhandled, for this test only")
+
+    async with _client(app) as client:
+        statuses = {(await client.get("/__test_always_500")).status_code for _ in range(10)}
+
+    assert statuses == {500}
+
+
+async def test_the_throttle_is_scoped_to_the_address_not_one_route():
+    """Once an address is over the ceiling, a route it has never even called
+    is refused too — the block is keyed by who is asking, not by which
+    endpoint produced the failures."""
+    app = create_app(_settings(auth_failure_limit=2))
+    headers = {"x-forwarded-for": "203.0.113.80"}
+    async with _client(app) as client:
+        for _ in range(2):
+            await client.get("/v1/runs", headers=headers)
+        response = await client.get("/v1/me", headers=headers)
+
+    assert response.status_code == 429
+    assert response.json()["reason"] == "auth_failure_throttled"
+
+
+async def test_the_health_check_is_exempt_even_once_the_address_is_blocked():
+    """The one path this control must never be able to take down, the same
+    property `EXEMPT_PATHS` already guarantees against the anonymous limiter
+    and the body-size guard. Checked here for a caller already OVER the
+    ceiling, not merely an untested one — a throttled liveness probe takes the
+    revision down, which is the one outcome worse than the abuse."""
+    app = create_app(_settings(auth_failure_limit=1))
+    headers = {"x-forwarded-for": "203.0.113.81"}
+    async with _client(app) as client:
+        await client.get("/v1/runs", headers=headers)
+        await client.get("/v1/runs", headers=headers)  # now over the ceiling
+        health = await client.get("/health", headers=headers)
+
+    assert health.status_code == 200
+
+
+async def test_the_deploy_probe_is_never_counted_toward_the_ceiling():
+    """Not reasoned about — run, at a ceiling low enough that a single miss
+    would show immediately.
+
+    The deploy workflow's actual sequence: create a run, poll it, read its
+    events, all with the probe's own bearer token. No live database is wired
+    up here (`_client` runs with no lifespan, same as every other app-level
+    test in this file), so every call 500s downstream of auth — the point
+    isn't that these succeed, it's that NONE of them is ever a 401, because
+    `auth/deps.py`'s probe branch authenticates before anything here could
+    reach a database at all. Grepped as the exhaustive claim: 401 is raised
+    from exactly one place in this whole service, `get_verified_token`, and
+    the probe token satisfies it on every one of its allowed routes
+    (`test_the_probe_token_authenticates_on_the_routes_it_needs`,
+    test_deploy_probe_credential.py).
+    """
+    app = create_app(_settings(auth_failure_limit=1, deploy_probe_token=PROBE_TOKEN))
+    headers = {"Authorization": f"Bearer {PROBE_TOKEN}"}
+    async with _client(app) as client:
+        statuses = [
+            (await client.post("/v1/runs", headers=headers, json={})).status_code,
+            (await client.get("/v1/runs/some-run-id", headers=headers)).status_code,
+            (await client.get("/v1/runs/some-run-id/events", headers=headers)).status_code,
+            # Repeated: a real deploy polls GET .../{run_id} many times.
+            (await client.get("/v1/runs/some-run-id", headers=headers)).status_code,
+            (await client.get("/v1/runs/some-run-id", headers=headers)).status_code,
+        ]
+
+    assert 401 not in statuses, statuses
+    assert 429 not in statuses, statuses
+
+
+async def test_the_trusted_caller_surface_can_never_produce_a_401():
+    """The exemption claim, checked structurally rather than assumed: every
+    route `apps/web/lib/repository-source.ts` actually fetches — the six under
+    `/v1/catalog` — takes only `Depends(get_settings)` (grepped
+    `routes/catalog.py`, 2026-08-17; none imports `CurrentScope` or
+    `CurrentIdentity`). `get_verified_token` is the sole source of a 401 in
+    this service, and none of these handlers ever calls it, trusted-caller
+    header or not — so there is no branch here to exempt, only an absence to
+    confirm. Run at a ceiling of 1 so a single miss would 429 the second call.
+    """
+    app = create_app(_settings(auth_failure_limit=1, trusted_caller_token=TRUSTED_TOKEN))
+    for headers in (
+        {TRUSTED_CALLER_HEADER: TRUSTED_TOKEN},  # our own renderer
+        {},  # any other anonymous reader
+    ):
+        async with _client(app) as client:
+            statuses = [
+                (await client.get("/v1/catalog/entries", headers=headers)).status_code,
+                (await client.get("/v1/catalog/estimates", headers=headers)).status_code,
+                (await client.get("/v1/catalog/profiles", headers=headers)).status_code,
+                # Unknown slug — a 404, per the route's own `expected404`
+                # contract, never a 401.
+                (await client.get("/v1/catalog/entries/no-such-slug", headers=headers)).status_code,
+                (
+                    await client.get("/v1/catalog/entries/no-such-slug/estimate", headers=headers)
+                ).status_code,
+                (
+                    await client.get("/v1/catalog/entries/no-such-slug/profile", headers=headers)
+                ).status_code,
+            ]
+        assert 401 not in statuses, (headers, statuses)
+        assert 429 not in statuses, (headers, statuses)
+
+
+# --------------------------------------------------------------------------
+# The trusted-caller exemption from refusal (ai-ops#145, Aikido finding 1)
+#
+# Every positive case here (the trusted caller is never blocked) sits next to
+# a negative control (a wrong token, or no token, is blocked normally) —
+# otherwise a bug that trusts every caller with ANY header would pass the
+# positive case perfectly, exactly the failure the anon/trusted split's own
+# tests already guard against for the rate-limit bucket, now for refusal.
+# --------------------------------------------------------------------------
+
+
+async def test_a_trusted_caller_is_never_blocked_past_the_ceiling():
+    app = create_app(_settings(auth_failure_limit=2, trusted_caller_token=TRUSTED_TOKEN))
+    headers = {"x-forwarded-for": "203.0.113.100", TRUSTED_CALLER_HEADER: TRUSTED_TOKEN}
+    async with _client(app) as client:
+        statuses = [(await client.get("/v1/runs", headers=headers)).status_code for _ in range(10)]
+
+    assert statuses == [401] * 10, (
+        "the trusted caller must never be refused, only the route's own 401"
+    )
+
+
+async def test_a_trusted_callers_failures_still_count_against_its_address():
+    """Exemption from refusal, never from counting — checked from the outside
+    rather than by reading `record_failure`'s call site: an UNTRUSTED request
+    from the SAME address, right after the trusted caller's failures already
+    exceeded the ceiling, must be refused immediately. If counting were
+    skipped for the exempt caller too, this would still read 401."""
+    app = create_app(_settings(auth_failure_limit=2, trusted_caller_token=TRUSTED_TOKEN))
+    address = {"x-forwarded-for": "203.0.113.101"}
+    trusted_headers = {**address, TRUSTED_CALLER_HEADER: TRUSTED_TOKEN}
+    async with _client(app) as client:
+        for _ in range(3):  # over the ceiling of 2, all exempt from refusal
+            await client.get("/v1/runs", headers=trusted_headers)
+        # Same address, no trusted header this time.
+        response = await client.get("/v1/runs", headers=address)
+
+    assert response.status_code == 429
+    assert response.json()["reason"] == "auth_failure_throttled"
+
+
+async def test_a_wrong_trusted_caller_token_does_not_exempt_from_blocking():
+    """The control for the exemption itself. A membership check or an
+    exemption keyed on the header's mere PRESENCE would pass the two tests
+    above and hand every caller a bypass — the same failure class the
+    anon/trusted rate-limit split already guards against, now for refusal."""
+    app = create_app(_settings(auth_failure_limit=2, trusted_caller_token=TRUSTED_TOKEN))
+    headers = {"x-forwarded-for": "203.0.113.102", TRUSTED_CALLER_HEADER: "wrong-token"}
+    async with _client(app) as client:
+        statuses = [(await client.get("/v1/runs", headers=headers)).status_code for _ in range(3)]
+
+    assert 429 in statuses, "a wrong trusted-caller token bought an exemption from blocking"
+
+
+async def test_an_unconfigured_trusted_token_exempts_nobody_from_blocking():
+    """A secret set in the caller but not on the API buys nothing here
+    either — the same fail-safe direction `is_trusted_caller` already takes
+    for the rate-limit bucket."""
+    app = create_app(_settings(auth_failure_limit=2, trusted_caller_token=""))
+    headers = {"x-forwarded-for": "203.0.113.103", TRUSTED_CALLER_HEADER: TRUSTED_TOKEN}
+    async with _client(app) as client:
+        statuses = [(await client.get("/v1/runs", headers=headers)).status_code for _ in range(3)]
+
+    assert 429 in statuses
+
+
+async def test_the_warn_signal_still_fires_for_an_exempt_trusted_caller(caplog):
+    """Exemption from refusal must not mean invisibility — see
+    `AuthFailureThrottle`'s "trusted-caller exemption" docstring section. A
+    leaked or compromised secret producing sustained 401s must still surface
+    here even though nothing will act on it by blocking."""
+    app = create_app(_settings(auth_failure_limit=10, trusted_caller_token=TRUSTED_TOKEN))
+    headers = {"x-forwarded-for": "203.0.113.104", TRUSTED_CALLER_HEADER: TRUSTED_TOKEN}
+    with caplog.at_level("WARNING", logger="majorana_api.rate_limit"):
+        async with _client(app) as client:
+            for _ in range(8):  # crosses both 50% and 80%
+                await client.get("/v1/runs", headers=headers)
+
+    assert len(caplog.records) == 2
+
+
+async def test_auth_failure_limit_zero_disables_the_middleware():
+    """The unit test on `AuthFailureThrottle(limit=0)` proves the class is a
+    no-op; this proves the SETTING actually reaches the wired-up middleware —
+    a wiring bug (the wrong field read, the throttle constructed before
+    `Settings.auth_failure_limit` is applied) would pass the unit test and
+    fail silently here."""
+    app = create_app(_settings(auth_failure_limit=0))
+    async with _client(app) as client:
+        statuses = {(await client.get("/v1/runs")).status_code for _ in range(50)}
+
+    assert statuses == {401}

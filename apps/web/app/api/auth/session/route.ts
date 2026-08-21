@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
-import { getMajoranaAuth, getMajoranaSignInUrl, isMajoranaAuthConfigured } from "../../../../lib/auth";
-import { AUTH_HINT_COOKIE, AUTH_HINT_MAX_AGE_SECONDS, AUTH_HINT_SIGNED_IN } from "../../../../lib/auth-hint";
+import { getMajoranaAuth, isMajoranaAuthConfigured } from "../../../../lib/auth";
+import { majoranaSignInPath } from "../../../../lib/sign-in";
+import { AUTH_HINT_COOKIE, AUTH_HINT_SIGNED_IN, authHintCookieOptions } from "../../../../lib/auth-hint";
 
 /**
  * The client-side half of the Atlas sign-in-status fix (ai-ops#94).
@@ -32,11 +33,20 @@ export const dynamic = "force-dynamic";
 
 export async function GET() {
   const { user } = await getMajoranaAuth();
-  const signInHref = user
-    ? null
-    : isMajoranaAuthConfigured()
-      ? await getMajoranaSignInUrl()
-      : null;
+  // The constant same-origin path, not the WorkOS authorization URL.
+  //
+  // A Route Handler MAY write cookies, so minting the real URL here does not
+  // throw the way it does during a render — but under authkit-nextjs v4 PKCE is
+  // unconditional, and `getSignInUrl()` seals a fresh verifier into a cookie
+  // whose NAME is a hash of that flow's state. Every anonymous poll therefore
+  // left behind another ~600-byte `wos-auth-verifier-<hash>` cookie, and
+  // `<AuthStatus>` polls this endpoint from every `chrome="static"` page — so a
+  // reader browsing the public site accumulated one per page view, toward the
+  // HTTP 431 the library's own middleware path has a purge step to avoid.
+  // Measured on 4.3.1 before this changed. Handing back the path defers the
+  // whole hand-off to `app/auth/sign-in/route.ts`, where it happens once, after
+  // a click.
+  const signInHref = user ? null : isMajoranaAuthConfigured() ? majoranaSignInPath() : null;
   const signedIn = Boolean(user);
   const response = NextResponse.json(
     { signedIn, signInHref },
@@ -49,13 +59,7 @@ export async function GET() {
   // from middleware or a page render would instead drop those pages out of the
   // cache entirely, since Vercel will not store a response carrying a cookie.
   if (signedIn) {
-    response.cookies.set(AUTH_HINT_COOKIE, AUTH_HINT_SIGNED_IN, {
-      httpOnly: false, // read by the pre-paint script in `app/layout.tsx`
-      sameSite: "lax",
-      secure: process.env.NODE_ENV === "production",
-      path: "/",
-      maxAge: AUTH_HINT_MAX_AGE_SECONDS,
-    });
+    response.cookies.set(AUTH_HINT_COOKIE, AUTH_HINT_SIGNED_IN, authHintCookieOptions());
   } else {
     // Clearing matters as much as setting: a hint that outlives its session
     // paints "Sign out" at a signed-out reader, which is this bug inverted.

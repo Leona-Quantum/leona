@@ -34,7 +34,7 @@ from . import (
     usage,
     workspaces,
 )
-from ._base import ADMIN_ROLES, WRITE_ROLES, AuthzError, NotFoundError, RepoError
+from ._base import ADMIN_ROLES, WRITE_ROLES, AuthzError, NotFoundError, RepoError, set_rls_context
 
 __all__ = [
     "ADMIN_ROLES",
@@ -42,6 +42,7 @@ __all__ = [
     "AuthzError",
     "NotFoundError",
     "RepoError",
+    "set_rls_context",
     "artifacts",
     "agent",
     "audit",

@@ -80,9 +80,310 @@ a genuinely private-IP-only instance without standing that up first.
   depends on the current public-IP path. Not a flag flip, and not something to do to
   satisfy a one-hour drill (see below).
 
+## Connecting as `app_rw` (the privilege split)
+
+**Status: ACTIVE since 2026-08-17 JST.** (Dates in this file are JST, which is the
+owner's day. The commits and Cloud Run revisions behind this read 2026-08-16 in
+UTC — the same evening, not a claim dated into the future.) Both `majorana-api`
+and `majorana-worker`
+connect as `majorana_api`, a LOGIN role whose only membership is `app_rw`.
+`majorana_app` remains the migration credential and nothing else. "Restrict
+database permissions" (ai-ops 127) is satisfied on production, and the evidence
+is in *The flip, as performed* below rather than in this sentence — a provisioned
+role reads exactly like an active one from the outside, which is the failure mode
+that issue was about in the first place.
+
+The check that distinguishes the two, and the one to re-run before believing this
+heading, reads the server rather than the config:
+
+```sql
+-- as majorana_app, through the proxy
+select usename, application_name, count(*)
+from pg_stat_activity where datname='majorana'
+group by usename, application_name order by usename;
+```
+
+`majorana_api / majorana-api` and `majorana_api / majorana-worker` are both
+required for this to be passing — one without the other is the half-flipped state. Any `majorana_app` row whose `application_name` is one of the two
+services means that service is back on the owner credential. A `majorana_app`
+row with an *empty* application_name is somebody's psql or probe session, which
+is expected and is not a regression.
+
+### What `app_rw` is
+
+A **NOLOGIN privilege bundle**, not an account. It holds `SELECT, INSERT, UPDATE,
+DELETE` on the tables, `USAGE, SELECT` on the sequences, `USAGE` (never `CREATE`)
+on the schema, and default privileges so tables added by later migrations are
+covered automatically. `UPDATE`/`DELETE` are revoked again on `run_events`,
+`audit_log` and `usage_events`, which 0050 also protects with triggers.
+
+Verified against PostgreSQL 17 on the full migration chain, as the role: DDL is
+refused (`permission denied for schema public`), `DROP TABLE` is refused, writes
+to the three append-only tables are refused, ordinary reads and writes succeed, a
+table created *after* the migration is usable without further grants, and a role
+*without* `app_rw` is refused outright — the last one being the control that
+shows the grant is doing the work.
+
+### The flip, as performed
+
+Done 2026-08-17. Ordering held: 0052 was already on production (`schema before:
+0051` → `schema after: 0052 (head)` in the deploy of leona 688, run
+31958007448), which is what made the role real enough to join.
+
+Two steps below differ from the plan this section used to carry, and both
+differences matter more than the commands do.
+
+**1. Create the login role in SQL, not through `gcloud sql users create`.** The
+Admin API grants every user it creates membership in `cloudsqlsuperuser`, which
+carries CREATEROLE and CREATEDB — it would have handed the application most of
+what this exercise exists to take away. Checked on this instance rather than
+assumed: `majorana_app` is a member of `cloudsqlsuperuser`, and `majorana_api`,
+created with plain `CREATE ROLE`, is a member of `app_rw` and nothing else. A
+SQL-created role still shows up in `gcloud sql users list` as `BUILT_IN`, so
+nothing is lost administratively.
+
+`CREATE ROLE` also sidesteps the trap leona 688 landed on: NOSUPERUSER,
+NOCREATEDB, NOCREATEROLE and NOBYPASSRLS are the *defaults*, so the safe values
+need no `ALTER ROLE` — and setting those attributes at all requires a privilege
+`majorana_app` does not have.
+
+**Create the role without a password, then set it with `\password`.** There is no
+way to pass a password to `CREATE ROLE` that keeps it out of both the process list
+and the statement text — the statement *is* the password — so do not try. Two
+approaches that look safe and are not, both rejected here after being written down
+and corrected (Aikido, PR 689):
+
+- `psql -v pw="$PW"` — the shell expands `$PW` **before `psql` starts**, so the
+  full `-v pw=<password>` argument sits in `ps` for anyone with local access for
+  the life of the command. Same for `--set`, `--password=`, and
+  `gcloud sql users create --password=`.
+- `create role … password '<literal>'` — keeps it out of argv but puts the
+  cleartext in the statement text, which is visible in `pg_stat_activity` while it
+  runs and lands in the server log the moment anyone sets `log_statement` to `ddl`
+  or `all`. (Verified 2026-08-17: this instance is `log_statement = none`,
+  `log_min_duration_statement = -1`, pgaudit off — so nothing was logged. That is
+  a *setting*, not a guarantee, and it is one flag away from being false.)
+
+`\password` avoids both: psql prompts, hashes the input **client-side** into a
+SCRAM-SHA-256 verifier, and sends only the verifier. The cleartext never reaches
+the server, so it cannot reach a log or `pg_stat_activity` at all.
+
+**The same value has to reach two places, and there is no reading it back.** Once
+it is a SCRAM verifier PostgreSQL cannot tell you what it was, so if the role gets
+one password and `DATABASE_URL_APP_SECRET` gets another, nothing notices until both
+services are repointed and fail to authenticate together. Generate it exactly once,
+into the shell, and use that one variable for both steps:
+
+```bash
+# 1. Generate ONCE. Alphanumeric because this value also has to survive being
+#    placed in a URI.
+PW="$(LC_ALL=C tr -dc 'A-Za-z0-9' </dev/urandom | head -c 40)"
+
+# 2. Print it once so it can be pasted at the prompt in step 3. This is the
+#    trade-off being made deliberately: on the terminal (and in scrollback) rather
+#    than in argv, where `ps` exposes it to every other process on the machine.
+#    Clear the screen afterwards.
+printf '%s\n' "$PW"
+```
+
+```bash
+# 3. Interactive psql — `\password` is a client command and does not work through
+#    `-c`. Paste the value from step 2 at both prompts.
+psql "$DATABASE_URL_DIRECT"
+```
+
+```sql
+-- as majorana_app, through the proxy.
+create role majorana_api login;   -- no password yet, so nothing can log one
+grant app_rw to majorana_api;
+\password majorana_api            -- prompts twice; sends a SCRAM verifier, not the password
+```
+
+**Then prove the two agree before repointing anything.** This is the step that
+makes a desync harmless instead of an outage — it authenticates with the value the
+secret will be built from, so a paste that went wrong fails here rather than on the
+services:
+
+```bash
+PGPASSWORD="$PW" psql -h 127.0.0.1 -p 5432 -U majorana_api -d majorana \
+  -c 'select current_user' \
+  || { echo "the password in \$PW does not match the role — redo step 3 before going on"; }
+```
+
+`PGPASSWORD` in the environment rather than on the command line: it is not in argv,
+and this is a throwaway check by the operator who already holds the value.
+
+`$PW` stays in the shell for the secret below. Do not regenerate it.
+
+Then assert, rather than trust, that the role is what was asked for: `login` is
+true, `super`/`bypassrls`/`createdb`/`createrole`/`replication` are all false,
+and its membership list is exactly `['app_rw']`. Anything else, stop and strip it.
+
+**2. The secret needs its own IAM binding, which the old plan omitted.** Both
+services run as `639400385957-compute@developer.gserviceaccount.com`, and
+`secretAccessor` is granted per secret. Attach a secret that service account
+cannot read and the revision does not start.
+
+```bash
+# The password goes to the secret from a file, never through argv — and the file
+# is created private BEFORE anything is written to it. `> url.tmp` with a default
+# umask makes it world-readable for the moments it exists, which on a shared or
+# backed-up machine is long enough to matter.
+( umask 077
+  printf 'postgresql+psycopg://majorana_api:%s@/majorana?host=/cloudsql/majorana-core:us-west1:majorana-pg' "$PW" > url.tmp )
+test "$(stat -f '%Lp' url.tmp)" = "600" || { echo "url.tmp is not 0600 — stop"; exit 1; }
+gcloud secrets create DATABASE_URL_APP_SECRET --data-file=url.tmp --project=majorana-core
+shred -u url.tmp 2>/dev/null || rm -f url.tmp
+
+gcloud secrets add-iam-policy-binding DATABASE_URL_APP_SECRET --project=majorana-core \
+  --member=serviceAccount:639400385957-compute@developer.gserviceaccount.com \
+  --role=roles/secretmanager.secretAccessor
+
+gcloud run services update majorana-api --region=us-west1 --project=majorana-core \
+  --update-secrets=DATABASE_URL=DATABASE_URL_APP_SECRET:latest
+gcloud run services update majorana-worker --region=us-west1 --project=majorana-core \
+  --update-secrets=DATABASE_URL=DATABASE_URL_APP_SECRET:latest
+```
+
+`DATABASE_URL_SECRET` is untouched and stays the migration credential — alembic
+needs an owner to issue DDL.
+
+**The "literal env var" warning that used to be here was stale, and it made the
+flip read as more dangerous than it was.** `DATABASE_URL` was already a
+`secretKeyRef` on both services (pointing at the secret named `DATABASE_URL`), so
+`--update-secrets` swapped one reference for another in a single command. The
+remove-then-attach dance — and the window it opens where a service has no
+credential at all — was not needed and was not performed. The underlying trap is
+real and still worth knowing (Cloud Run genuinely cannot convert a literal into a
+reference, and a failed attach poisons every later deploy), it simply did not
+apply. **Check which one you are looking at before believing either:**
+
+**Check BOTH services, every time.** The procedure updates two and it is the
+second one that gets forgotten — a worker left on the owner credential is the
+silent half of this operation, because the site keeps working and the status
+heading above becomes false without anything failing.
+
+```bash
+# `rtk proxy` is the BYPASS when rtk is installed, and a no-op prefix otherwise —
+# see the note below on why the naive-looking form is the corrupted one.
+GC=$(command -v rtk >/dev/null 2>&1 && echo "rtk proxy gcloud" || echo "gcloud")
+
+for svc in majorana-api majorana-worker; do
+  printf '%-18s ' "$svc"
+  $GC run services describe "$svc" --region=us-west1 --project=majorana-core \
+    --format='json(spec.template.spec.containers[0].env)' \
+    | jq -r '[.spec.template.spec.containers[0].env[] | select(.name=="DATABASE_URL")]
+             | .[0] // {} | .valueFrom.secretKeyRef.name // "LITERAL (not a secret ref)"'
+done
+# Both must print DATABASE_URL_APP_SECRET.
+```
+
+Read the revision back afterwards rather than trusting the exit code — **and if
+`rtk` is on the path, prefix the read with `rtk proxy`, which is the BYPASS, not a
+detour through it.** `rtk proxy <cmd>` runs the raw command with rtk's filtering
+switched off (see `~/.claude/RTK.md`); a bare `gcloud` is what gets rewritten and
+truncated, because the rtk hook rewrites commands automatically. So `rtk proxy
+gcloud …` is the *uncorrupted* read and plain `gcloud …` is the corrupted one,
+which is the opposite of how it looks. That is not a style
+preference. `rtk` is the local token-reducing command proxy, and it *truncates*
+long `gcloud` output: measured on this exact command, `describe --format=yaml(…env)`
+returned **11** env keys through `rtk` and **17** raw. A "before" snapshot taken
+through it made a clean single-key change look like six keys had appeared from
+nowhere, and cost half an hour chasing a production anomaly that did not exist.
+It mangles `--format=json` too — long annotation values come back with unescaped
+newlines inside strings, so `jq` refuses to parse the document at all.
+
+```bash
+rtk proxy gcloud run services describe majorana-api --region=us-west1 \
+  --project=majorana-core --format='json(spec.template.spec.containers[0].env)' | jq .
+```
+
+The general rule, because this will not be the last time: **when a `gcloud` read
+is going to be compared against another read, or piped into a parser, take `rtk`
+out of the path first.** A truncated snapshot and a real configuration change are
+indistinguishable after the fact.
+
+**Verify before trusting it.** 21 checks were run as `majorana_api` against
+production, and the script is worth keeping the shape of: refusals are proved by
+*attempting* the statement and reading the error class. `InsufficientPrivilege`
+means the grant refused it; any other error — a `NotNullViolation`, a foreign key
+— means the privilege check *passed* and a constraint stopped it, which is how a
+write privilege gets proved without leaving a row in a production table.
+
+**One limit of that method, worth knowing before it misleads someone
+(CodeRabbit, PR 689).** `InsufficientPrivilege` is SQLSTATE **42501**, and 42501
+is not specific to a missing `GRANT` — a row-level-security policy denial raises
+the same code. So "refused" here means "refused for one of two reasons", and the
+message text is what separates them: `permission denied for table …` is the grant,
+`new row violates row-level security policy …` is RLS. **That day has arrived**
+(ai-ops#143; `docs/adr/0028-rls-defense-in-depth.md`;
+`db/migrations/versions/0053_rls_defense_in_depth.py`) — the schema now defines
+policies on every genuinely tenant-scoped table, so the 21 checks below, run
+before 0053 existed, would need to assert on the message rather than the class
+if re-run today. It still does not change what they *found*: RLS enforcement is
+gated off by `Settings.rls_enforced` (default `False` in every environment,
+production included), so `majorana_api` sees the exact same permissive policies
+it always has, and a 42501 against production right now is still the grant, not
+a policy — but that stops being guaranteed the moment `MAJORANA_RLS_ENFORCED` is
+set, and a probe re-run after that point MUST assert on the message, not just
+the class, or it will report a *policy* refusal as though the *grant* had
+failed.
+
+| group | result |
+|---|---|
+| `SELECT` on `runs`, `workspaces` | allowed |
+| `INSERT`/`UPDATE`/`DELETE` on `workspace_folders` | allowed |
+| `INSERT` on `run_events` | allowed |
+| `CREATE TABLE`, `DROP TABLE`, `ALTER TABLE`, `CREATE SEQUENCE` | refused |
+| `UPDATE`/`DELETE` on `run_events`, `audit_log`, `usage_events` | refused |
+| `DELETE qpu_runs`, `UPDATE`/`DELETE run_plans`, `UPDATE` on both candidate tables | refused |
+| **`UPDATE qpu_runs` (the control)** | **allowed** |
+| `SELECT alembic_version` | refused |
+
+The control is the row that makes the table mean anything: it shows the revokes
+are targeted rather than a blanket denial that would pass every negative check
+for the wrong reason. A flip checked only by "the site still loads" proves
+nothing — most pages read a handful of tables, and the endpoint that needs the
+missing privilege may not be one a smoke test opens.
+
+Finally, prove it end to end from the outside: `/v1/catalog/entries` returned 279
+entries and 3.0 MB from the database, and `pg_stat_activity` showed the
+connections behind it owned by `majorana_api`. Config proves intent; the server's
+own view of who is connected proves the flip.
+
+### Rollback
+
+Point both services back at the secret named `DATABASE_URL` (not
+`DATABASE_URL_SECRET`, which is the proxy-form migration credential and will not
+resolve from inside a Cloud Run container):
+
+**Both services, or the rollback is half done** — and a half-rolled-back pair is
+worse than either end state, because the two services then disagree about which
+credential they hold while the site keeps serving:
+
+```bash
+for svc in majorana-api majorana-worker; do
+  gcloud run services update "$svc" --region=us-west1 --project=majorana-core \
+    --update-secrets=DATABASE_URL=DATABASE_URL:latest
+done
+```
+
+Then re-run the two-service readback above and confirm both print `DATABASE_URL`.
+
+Nothing about the schema changed, so there is no data to undo, and `app_rw` can
+stay — an unused role grants nothing. `majorana_api` can stay too; a LOGIN role
+nothing connects as is inert, and dropping it means recreating the password on the
+way back in. One trap still lives here: a `--set-env-vars` that omits an existing
+key **removes** it. Use `--update-secrets`, and read the revision back afterwards
+rather than trusting the command's exit code.
+
 ## Connection budget
 
-`db-g1-small` allows 50 and reserves 3 for superusers.
+The instance allows **200** and reserves 3 for superusers. 200 is `max_connections`
+as an explicit database flag on `majorana-pg`, set 2026-08-15 alongside the move to
+`db-custom-1-3840` — see `INSTANCE_CONNECTION_CEILING` in `infra/fleet.env` for why
+it is set rather than inherited. Before that date this line read `db-g1-small`
+allows 50, which is where every superseded figure below came from.
 
 **Every term below except the API's own pool lives in `infra/fleet.env`, and that
 file is the only place it lives.** `deploy.yml` loads it into the job environment
@@ -93,24 +394,44 @@ fails if a literal reappears on a deploy line.
 
 | Term | Value | Where it is stated |
 |---|---|---|
-| API instances | 2 | `API_MAX_INSTANCES` in `infra/fleet.env` |
+| API instances | 4 | `API_MAX_INSTANCES` in `infra/fleet.env` |
 | API pool, per instance | 5 + 5 | `DEFAULT_POOL_SIZE` / `DEFAULT_MAX_OVERFLOW` in `db.py` — the only sizing read on a request path |
 | Worker instances | **1** | `WORKER_INSTANCES` in `infra/fleet.env` |
 | Worker pool, per instance | 2 + 2 | `WORKER_POOL_SIZE` / `WORKER_MAX_OVERFLOW` in `infra/fleet.env`, deployed as `DB_POOL_SIZE`/`DB_MAX_OVERFLOW` |
-| Fleet at rest | 24 | `fleet_peak_connections(during_worker_rollout=False)` |
-| **Fleet during a deploy** | **28** | `fleet_peak_connections()` — both worker revisions hold their minimum |
+| Fleet at rest | 44 | `fleet_peak_connections(during_worker_rollout=False)` |
+| **Fleet during a deploy** | **48** | `fleet_peak_connections()` — both worker revisions hold their minimum |
+| Instance ceiling | 200 | `INSTANCE_CONNECTION_CEILING` in `infra/fleet.env` (`max_connections` flag) |
 | Superuser reserved | 3 | Postgres |
 | Alembic + one operator | 2 | `OPERATIONAL_HEADROOM` |
-| **Budget** | **45** | |
-
-At three workers — the stress-test setting — those two rows read 32 and **44**,
-against the same budget of 45.
+| **Budget** | **195** | |
 
 `services/api/tests/test_database_configuration.py` asserts the sum, asserts that
 `deploy.yml` takes its numbers from `infra/fleet.env` rather than from a literal,
 asserts that the shell's export regex actually matches every key the deploy
-needs, and pins the boundary: **three workers fit, four do not.** Do not re-derive
-this by hand — edit `infra/fleet.env` and run that file.
+needs, and pins the boundary — which it now DERIVES from the budget rather than
+hard-coding. At the current tier that boundary is **19 workers fit, 20 do not**
+(a rollout peak of 192 against 195). Do not re-derive any of this by hand — edit
+`infra/fleet.env`, then run `services/api/tests/test_database_configuration.py`,
+which is the file that checks it.
+
+> **Every number in the table above moved, in two separate changes on the same
+> day.** They are listed apart because they have different causes and either
+> could be reverted without the other:
+>
+> 1. **The tier and the ceiling (2026-08-15).** `majorana-pg` moved to
+>    `db-custom-1-3840` / REGIONAL, and `max_connections` was set explicitly to
+>    **200**, replacing `db-g1-small`'s inherited 50. This is what took the budget
+>    from 45 to **195**.
+> 2. **The fleet size (#600, also 2026-08-15, after the tier change and because
+>    of it).** `API_MAX_INSTANCES` went 2 → 4, which is what took the API term
+>    from 20 to **40** and the resting fleet from 24 to **44**.
+>
+> Before both, this table read 2 API instances, 24 at rest, 28 during a deploy, a
+> budget of 45, and "three workers fit, four do not". Those figures were correct
+> under `db-g1-small` and are named here only so a reader who remembers them can
+> see they were replaced rather than mistyped. The worker count is no longer
+> anywhere near a database limit; `WORKER_INSTANCES` is now bounded by cost (an
+> always-on instance is billed continuously), not by connections.
 
 ### Changing the worker count
 
@@ -118,7 +439,7 @@ One edit:
 
 ```bash
 # infra/fleet.env
-WORKER_INSTANCES=3    # 1 = serial (default), 3 = stress test, 4 does not fit
+WORKER_INSTANCES=3    # 1 = serial (default), 3 = stress test; 19 is the budget ceiling
 ```
 
 Commit, push to `dev`, and the next deploy runs that many. Nothing else changes:
@@ -130,19 +451,28 @@ deploy rather than being live-service state.
 **The binding constraint is the deploy, not the workload.** `--min-instances` is
 a *revision-level* setting, so while a `gcloud run deploy` is in flight the
 outgoing revision is still in the traffic split and still holding its minimum:
-both revisions run their full complement at once and the worker term doubles.
-Four workers is 36 connections at rest and **52 for the length of every deploy**,
-against a budget of 45 — and a deploy is precisely when a spare connection has to
-exist, because that is when Alembic wants one. Buying a fourth worker means
-shrinking the API's pool, raising the tier, or draining the old worker revision
-before the new one starts. It does not mean changing this number alone.
+both revisions run their full complement at once and the worker term doubles. So
+N workers is `40 + 4N` connections at rest and **`40 + 8N` for the length of every
+deploy** — and a deploy is precisely when a spare connection has to exist, because
+that is when Alembic wants one. Against the budget of 195 that puts the ceiling at
+**19 workers** (192 during a deploy); 20 asks for 200 and fails CI.
+
+> **This paragraph used to end "four workers is 36 at rest and 52 during a deploy,
+> against a budget of 45 — buying a fourth worker means shrinking the API's pool or
+> raising the tier."** The tier WAS raised, on 2026-08-15, and the doubling rule is
+> the only part of that argument that survives it. Four workers now costs 56 at rest
+> and 72 during a deploy against 195, which fits with room to spare. **What stops the
+> worker count today is cost, not connections** — an always-on instance is billed
+> continuously whether or not the queue has work — so raising it is a spend decision
+> for the owner rather than a database one. The doubling itself has not changed and
+> is still the thing to compute before raising the number.
 
 **These are ceilings, not reservations.** SQLAlchemy opens connections on demand
 and keeps them up to `pool_size`; overflow connections are opened and closed per
 use. Measured against production on 2026-08-01 with the queue idle: **four
 backends on `majorana` for the entire fleet.** The budget is sized for the worst
 case because a burst that exhausts the ceiling takes the *next deploy's migration
-step* down with it, not because 36 connections are ever expected.
+step* down with it, not because the fleet's peak is ever expected.
 
 **The worker holds at most two sessions at once** — the job handler and the
 concurrent heartbeat that fences its lease (`_execute_with_heartbeat`).

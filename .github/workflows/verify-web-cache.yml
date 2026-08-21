@@ -29,6 +29,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with: { persist-credentials: false }
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version-file: .nvmrc
@@ -36,3 +37,42 @@ jobs:
         run: node scripts/check-live-repository-cache.mjs --self-test
       - name: the highest-traffic public route is actually served from the CDN
         run: node scripts/check-live-repository-cache.mjs
+
+  # Does a visitor get a page at all, on each KIND of route?
+  #
+  # A SEPARATE job from the cache check above, and unlike it this one is HARD:
+  # a cache miss is a performance regression and warns, but a 500 on the route
+  # every Atlas link lands on is the product being down, and a warning is the
+  # wrong shape for that.
+  #
+  # It exists because on 2026-08-16 an auth library upgrade made every
+  # `/repository/<slug>` return 500 for over an hour while 1252 tests, the
+  # typecheck, the deploy and `web-deploy-watch` were all green — the last of
+  # those confirms a deployment COMPLETED, which is a different claim from a page
+  # RENDERING. A manual check of all seven marketing pages also passed, because
+  # they are prerendered onto the CDN and never execute the call that was
+  # throwing. See scripts/check-live-pages.mjs for the full account.
+  #
+  # Verified against the incident rather than assumed: pointed at the broken
+  # deployment it fails on the record page and passes on `/` and `/repository`,
+  # which is exactly the shape of what everyone missed.
+  render:
+    if: >
+      github.event.deployment_status.state == 'success' &&
+      github.event.deployment.environment == 'Production' &&
+      github.event.deployment.creator.login == 'vercel[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with: { persist-credentials: false }
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .nvmrc
+      # Proves the comparison can fail before its clean verdict is believed —
+      # the same rule as the trivy self-test and `check_osv_report.py
+      # --self-test`. A probe that reports every URL healthy is indistinguishable
+      # from a healthy site.
+      - name: probe self-test
+        run: node scripts/check-live-pages.mjs --self-test
+      - name: a visitor gets a page on every kind of route
+        run: node scripts/check-live-pages.mjs

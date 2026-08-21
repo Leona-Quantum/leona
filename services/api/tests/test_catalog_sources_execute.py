@@ -22,7 +22,7 @@ catalog.
 
 ## Why it lives in the ordinary suite
 
-Measured: 224 variants, ~30 s wall on six workers, ~0.5 s of CPU each. Cheap
+Measured: 134 variants, ~18 s wall on six workers, ~0.5 s of CPU each. Cheap
 enough that gating it behind an env var — the shape that let the live-provider
 test rot for weeks — buys nothing. It runs where every other test runs.
 
@@ -95,7 +95,10 @@ def _run(row: tuple[str, str, str]) -> tuple[str, str, str] | None:
 
 def test_every_published_source_runs():
     variants = _python_variants()
-    assert len(variants) == 224, "executable variants in the published catalog"
+    # 224 until 2026-08-16, when the width families went from eight published
+    # widths to two (owner ruling, ai-ops issue 116). Entered by hand so that an
+    # *accidental* shrink still fails here.
+    assert len(variants) == 134, "executable variants in the published catalog"
 
     workers = min(8, (os.cpu_count() or 2) + 2)
     with concurrent.futures.ThreadPoolExecutor(max_workers=workers) as pool:

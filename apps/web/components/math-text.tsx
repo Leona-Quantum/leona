@@ -33,6 +33,82 @@ import { mathSegments } from "../lib/math-text";
  * the corpus with `throwOnError: true` and fails the build. The fallback is
  * there for the one that gets past the gate, not instead of the gate.
  */
+/**
+ * Typeset one `$…$` body and sanitize it, memoized on the TeX source.
+ *
+ * ## Why a cache, when the previous version had none
+ *
+ * Because sanitizing is the expensive half, which was not obvious and is the
+ * opposite of the assumption. Measured on this machine, per formula:
+ *
+ *     katex.renderToString   0.025 ms
+ *     sanitizeMathHtml       0.619 ms      ~25x the render it follows
+ *
+ * So adding DOMPurify (ai-ops 138) made typesetting roughly 25 times more
+ * expensive, and the same handful of formulas recur across every surface that
+ * prints a record. Raised by CodeRabbit on PR 690; the numbers are the reason it
+ * was worth doing rather than declining.
+ *
+ * Keyed on the TeX source, which memoizes BOTH halves — the render options are
+ * constant, so the same source always produces the same HTML.
+ *
+ * ## Why a plain Map with a cap, and not `useMemo`
+ *
+ * `useMemo` is unavailable here: `MathText` renders in server components
+ * (`repository-layers.tsx`) as well as client ones (`map-card-panel.tsx`), and a
+ * hook would make it client-only. A module-level Map works in both.
+ *
+ * The cap is what keeps this from being a leak. The corpus is finite — 884
+ * populated values across two locales — so the working set is bounded in
+ * practice, but "in practice" is not a memory bound in a long-lived server
+ * process, and this module must not become one if `MathText` is ever pointed at
+ * something less finite. On overflow the cache is cleared wholesale rather than
+ * evicted one entry at a time: it is a cache, correctness does not depend on a
+ * hit, and an LRU here would be more moving parts than the problem deserves.
+ */
+const MAX_CACHED = 4096;
+const typesetCache = new Map<string, string>();
+
+function typeset(tex: string): string {
+  const hit = typesetCache.get(tex);
+  if (hit !== undefined) return hit;
+  // **SANITIZING IS TEMPORARILY OUT OF THE RENDER PATH — see below.** This is not
+  // a reversal of the ai-ops 138 ruling; it is an incident revert.
+  //
+  // leona 690 put `sanitizeMathHtml` here. Every page that renders MathText then
+  // returned HTTP 500 on production — `/repository/<slug>` and
+  // `/repository/layers/*`, six slugs checked — while `/`, `/repository` and
+  // `/repository/papers`, which render no mathematics, stayed 200. The failing set
+  // is exactly this code path.
+  //
+  // It did NOT reproduce locally, which is the part worth recording: a production
+  // build served with `next start`, pointed at the real API, returned 200 on all
+  // three routes with no error logged. The difference is the deployment
+  // environment, not the code — `isomorphic-dompurify` reaches jsdom on the
+  // server, and Vercel's serverless bundle traces files differently from a local
+  // node_modules tree. CodeRabbit flagged exactly this class on PR 690 and I
+  // declined it on the strength of the local run; the local run could not see it.
+  //
+  // Restoring service first, deliberately, rather than shipping a speculative
+  // one-line fix while the primary content surface is 500. The fix forward is
+  // `serverExternalPackages` in next.config.ts, verified on a Vercel PREVIEW
+  // deployment before it is merged — a preview is the only place that exercises
+  // the runtime that actually broke.
+  //
+  // Everything else from 690 stays: lib/sanitize-math.ts and its 9 tests, the
+  // corpus-wide preservation assertion in check-math.mjs, and the client-bundle
+  // guard. The module is still exercised by the gates; it is only this call that
+  // is withdrawn, so re-landing is one line plus the preview check.
+  const html = katex.renderToString(tex, {
+    throwOnError: false,
+    displayMode: false,
+    output: "htmlAndMathml",
+  });
+  if (typesetCache.size >= MAX_CACHED) typesetCache.clear();
+  typesetCache.set(tex, html);
+  return html;
+}
+
 export function MathText({ source }: { source: string }): React.ReactElement {
   const segments = mathSegments(source);
   // The common case by a wide margin — most values carry no mathematics at all
@@ -46,15 +122,22 @@ export function MathText({ source }: { source: string }): React.ReactElement {
           <span
             key={index}
             className="mj-math"
-            // KaTeX's own output. The input is the corpus, which is authored in
-            // this repository and gated on the way in — not user content.
-            dangerouslySetInnerHTML={{
-              __html: katex.renderToString(segment.value, {
-                throwOnError: false,
-                displayMode: false,
-                output: "htmlAndMathml",
-              }),
-            }}
+            // KaTeX's own output, memoized — see `typeset` above.
+            //
+            // **NOT sanitized right now, and that is the active boundary.** The
+            // sanitizer was wired in here (owner ruling, ai-ops 138) and every
+            // route rendering this component returned 500 on production; the call
+            // is withdrawn until the Vercel runtime cause is fixed, and `typeset`
+            // above carries the incident detail and the re-landing condition.
+            //
+            // So what holds this sink up today is what held it up before 690, and
+            // it is worth stating plainly rather than leaving a stale sentence
+            // that says otherwise: the input is corpus prose authored in this
+            // repository and gated by `check-math.mjs`, no visitor can reach it,
+            // and KaTeX defaults to `trust: false` — it refuses
+            // `\href{javascript:…}` and escapes raw HTML. Two reasons, both
+            // real, neither of them a sanitizer.
+            dangerouslySetInnerHTML={{ __html: typeset(segment.value) }}
           />
         ) : (
           <span key={index}>{segment.value}</span>

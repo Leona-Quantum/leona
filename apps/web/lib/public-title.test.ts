@@ -14,6 +14,13 @@
 // Read from source rather than from Next's metadata resolution: importing a
 // page module drags its whole component tree in, and the thing under test is a
 // string-composition rule, not a render.
+//
+// Six `[locale]` pages (home, contact, pricing, privacy, terms, workspace)
+// no longer declare `export const metadata` directly — their titles moved to
+// `lib/public-page-metadata.ts` so a Japanese branch could be added and
+// exercised by `node --test` (see that file's header). This file's scan
+// follows them there: `declaredTitlesInMetadataLib()` below plays the same
+// role for that one file that `declaredTitle()` plays for each `page.tsx`.
 import assert from "node:assert/strict";
 import test from "node:test";
 import { readdirSync, readFileSync, statSync } from "node:fs";
@@ -55,13 +62,33 @@ function declaredTitle(file: string): string | null {
   return /(?:^|\n)\s*title:\s*"([^"]+)"/.exec(withoutComments)?.[1] ?? null;
 }
 
+/**
+ * Every literal `title: "..."` in `lib/public-page-metadata.ts` — the
+ * English branch of each of the six pages named above. A plain global scan is
+ * enough (no block-extraction needed, unlike `declaredTitle()`): each page's
+ * Japanese branch there is a reference into a copy table (`CONTACT_COPY.ja
+ * .overline`, …), never a string literal, so this regex cannot see it and
+ * does not need to skip it. The Japanese side is checked for the same
+ * property directly in `public-page-metadata.test.ts`, against the real
+ * return value rather than source text.
+ */
+function declaredTitlesInMetadataLib(): string[] {
+  const source = readFileSync(join(WEB_ROOT, "lib", "public-page-metadata.ts"), "utf8");
+  const withoutComments = source.replace(/\/\/[^\n]*/g, "");
+  return [...withoutComments.matchAll(/title:\s*"([^"]+)"/g)].map((match) => match[1]);
+}
+
 test("the guard can see the pages it claims to guard", () => {
   // A walk that found nothing, or a template regex that stopped matching, would
   // make every assertion below vacuously true.
   const pages = pageFiles(join(WEB_ROOT, "app"));
   assert.ok(pages.length >= 10, `found only ${pages.length} page.tsx files — the walk is broken`);
   const titled = pages.filter((file) => declaredTitle(file) !== null);
-  assert.ok(titled.length >= 4, `only ${titled.length} pages declare a literal title`);
+  const titledInLib = declaredTitlesInMetadataLib();
+  assert.ok(
+    titled.length + titledInLib.length >= 4,
+    `only ${titled.length} page.tsx titles and ${titledInLib.length} in public-page-metadata.ts`,
+  );
 });
 
 test("no page's composed title says the brand twice", () => {
@@ -81,6 +108,11 @@ test("no page's composed title says the brand twice", () => {
     const occurrences = composed.split(brand).length - 1;
     if (occurrences > 1) offenders.push(`${file.slice(WEB_ROOT.length + 1)} -> "${composed}"`);
   }
+  for (const title of declaredTitlesInMetadataLib()) {
+    const composed = template.replace("%s", title);
+    const occurrences = composed.split(brand).length - 1;
+    if (occurrences > 1) offenders.push(`lib/public-page-metadata.ts -> "${composed}"`);
+  }
 
   assert.deepEqual(
     offenders,
@@ -94,6 +126,12 @@ test("no page's composed title says the brand twice", () => {
 test("the home page inherits the standalone default rather than composing one", () => {
   // The specific regression, pinned by location. The rule above would keep
   // passing if someone re-added `title: "Leona"` — shorter, still wrong.
+  //
+  // This only proves `page.tsx` itself declares nothing — which is still true
+  // after the move to `generateMetadata` — not that `homeMetadataCopy()` never
+  // will. The English branch of that function is checked directly in
+  // `public-page-metadata.test.ts` ("home: english inherits the root layout's
+  // title…"); this test would not catch a regression introduced there.
   const home = join(WEB_ROOT, "app", "[locale]", "page.tsx");
   assert.equal(
     declaredTitle(home),

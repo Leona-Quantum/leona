@@ -17,6 +17,12 @@ const LOCAL_DEV_AUTH: UserInfo = {
     email: "local-dev@majorana.test",
     emailVerified: true,
     profilePictureUrl: null,
+    // The SDK doesn't derive `name` from firstName/lastName — it deserializes
+    // whatever the API sent verbatim (`user.name ?? null`). A real WorkOS user
+    // with both names set carries a matching `name`, so mirror that here rather
+    // than pass `null`, which is what the API sends only for the email-only
+    // sign-ups this stub isn't modeling.
+    name: "Local developer",
     firstName: "Local",
     lastName: "developer",
     lastSignInAt: null,
@@ -43,23 +49,40 @@ export async function getMajoranaAuth(options?: { ensureSignedIn?: boolean }) {
   return withAuth();
 }
 
-export async function getMajoranaSignInUrl(): Promise<string> {
-  if (isLocalDevAuthEnabled()) return "/run";
-  // Keep the post-AuthKit destination explicit at the call site as well as in
-  // the callback route. This avoids falling back to a stale caller/default
-  // pathname when a user starts sign-in from a public page.
-  return getSignInUrl({ returnTo: "/run" });
-}
+/*
+ * There is deliberately no `getMajoranaSignInUrl()` here any more.
+ *
+ * It returned the WorkOS authorization URL and was called during page renders
+ * to fill in a sign-in link. `getSignInUrl()` → `setPKCECookie()` →
+ * `cookies().set()`, and Next.js permits a cookie write only in a Server Action
+ * or a Route Handler, so any render that reached it 500s. Under authkit-nextjs
+ * v2 this was dormant: PKCE was opt-in behind `WORKOS_ENABLE_PKCE`, and with it
+ * off the library skipped the cookie write. v4 makes PKCE unconditional, so the
+ * dormant bug became every `chrome="full"` page returning 500 in production
+ * (PR 654 reverted the upgrade rather than diagnose it under an outage).
+ *
+ * Callers now use `majoranaSignInPath()` from `lib/sign-in.ts` — a constant
+ * same-origin string — and the per-request hand-off happens once, after the
+ * click, in `app/auth/sign-in/route.ts` via `getMajoranaAuthorizationUrl()`
+ * below. Removing the export rather than documenting it is the point: a
+ * render-time caller is now a typecheck failure instead of an outage.
+ */
 
 /**
  * The provider hand-off itself. Called ONLY from `app/auth/sign-in/route.ts`,
  * after a click has already reached this deployment.
  *
- * Separate from `getMajoranaSignInUrl()` on purpose: this one is per-request by
- * construction (it reads `headers()`, and carries a one-shot PKCE challenge when
- * `WORKOS_ENABLE_PKCE` is on), so it must never be reached during a page render
- * that a CDN could store. Returning the relative `returnTo` under local dev auth
- * keeps the route handler's `new URL(target, request.url)` correct either way.
+ * The only caller is a Route Handler, and that is a hard requirement rather than
+ * a tidiness one. This is per-request by construction — it reads `headers()`,
+ * and it carries a one-shot PKCE challenge whose verifier `getSignInUrl()`
+ * writes to a cookie. Next.js permits a cookie write only in a Server Action or
+ * a Route Handler, so reaching this from a render is a 500, not merely a page a
+ * CDN cannot store. (Under authkit-nextjs v2 PKCE was opt-in behind
+ * `WORKOS_ENABLE_PKCE` and the write was skipped when it was off, which is why
+ * the render-time callers this replaced survived until the v4 upgrade.)
+ *
+ * Returning the relative `returnTo` under local dev auth keeps the route
+ * handler's `new URL(target, request.url)` correct either way.
  */
 export async function getMajoranaAuthorizationUrl(returnTo: string): Promise<string> {
   const destination = safeReturnTo(returnTo);

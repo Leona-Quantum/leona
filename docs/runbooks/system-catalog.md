@@ -355,6 +355,44 @@ loop is: edit the entries → regenerate the manifest
 (`node scripts/generate-catalog-bootstrap-manifest.mjs`) → `bootstrap-import` →
 `attest-bootstrap` → `publish-bootstrap`.
 
+### Deleting a record is a fourth step, and it is not automatic
+
+**Removing a record from the corpus does not remove it from the site.** The importer
+reconciles absent → create, unchanged → no-op, changed → new version, and has no
+fourth branch, so a record you delete from `entries-*.ts` is simply never visited
+again: its row keeps `review_state=ACCEPTED` and `publication_state=PUBLIC` and the
+public list goes on serving it. This was invisible until 2026-08-16 — deleting 90
+width-family records changed the corpus, the manifest and five pinned test counts,
+and changed nothing a visitor saw.
+
+Two things close it. `sync-bootstrap` now **reports** unclaimed records on every
+deploy, so the drift is never silent again. And `retire-bootstrap` withdraws them:
+
+```bash
+# What is published that the manifest no longer claims (read-only)
+uv run --package majorana-api python -m majorana_api.catalog_admin \
+  retire-bootstrap --attested-by-standing
+
+# Withdraw exactly that many — N must match the report or it refuses
+uv run --package majorana-api python -m majorana_api.catalog_admin \
+  retire-bootstrap --attested-by-standing --authorize N
+```
+
+From a deploy, set the repository variable and watch the run, then clear it:
+
+```bash
+gh variable set CATALOG_RETIRE_AUTHORIZED --body N
+gh variable delete CATALOG_RETIRE_AUTHORIZED
+```
+
+`--authorize N` is not a `--force`. If the orphan count is not exactly N the run
+refuses and withdraws nothing, so an authorization written for one situation
+cannot execute a different one that arose since — the same rule as `--re-attest`.
+Retirement is deliberately not part of the automatic sync: one bad manifest
+generation would otherwise withdraw the whole public catalog in a single deploy,
+and report success while doing it. The withdrawal is a soft delete (`deleted_at`,
+which is what the public predicate filters on), so it is audited and reversible.
+
 **Since 2026-08-12 the deploy pipeline runs the last three for you, and it is ON.**
 `deploy.yml`'s step `sync the published catalog` runs `sync-bootstrap
 --attested-by-standing` against production on every deploy, gated on the repository variable

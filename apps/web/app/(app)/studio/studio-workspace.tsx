@@ -890,7 +890,21 @@ export function StudioWorkspace({ artifactId, newDraft = false, locale = "en", l
             <label className="mj-studio-search mj-studio-search--dots">
               <SearchIcon size={17} />
               <span className="sr-only">{copy.search}</span>
-              <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder={copy.searchPlaceholder} />
+              {/* `id` and `name`. The accessible name was never missing — the
+                  wrapping label and its sr-only span supply it. What was missing
+                  is the pair that makes a browser treat this as a FIELD, which
+                  Chrome reports as an issue on every load of the page. Same
+                  defect and same fix as the Atlas search box (leona PR 653); that
+                  one was found by reading the production console, and this one
+                  and the Library's were found by grepping for the shape rather
+                  than waiting to read a second console. */}
+              <input
+                id="studio-search"
+                name="q"
+                value={query}
+                onChange={(event) => setQuery(event.target.value)}
+                placeholder={copy.searchPlaceholder}
+              />
               <StudioDots />
             </label>
             {/* No tabs at all until the workspace has a project — a lone "All"
@@ -1226,7 +1240,10 @@ function StudioDots() {
 
 const ANGLE_OPTIONS = ["pi/8", "pi/4", "pi/2", "pi", "3*pi/2", "2*pi"];
 
-function CircuitBuilder({ seed, framework, selectedGate, onSelectGate, onApply, onCircuitChange, hidden, popout, onTogglePopout, region, copy, syncState, onRebuildFromCode, sourceCode }: { seed: BuilderSeed; framework: StudioFramework; selectedGate: string; onSelectGate: (gate: string) => void; onApply: (codes: BuilderCodeVariants) => void; onCircuitChange?: (circuit: { qubitCount: number; steps: BuilderStep[]; customGates: CustomGateDefinition[] }) => void; hidden: boolean; popout: boolean; onTogglePopout: () => void; region?: Record<string, string>; copy: StudioCopy; syncState: CircuitSyncState; onRebuildFromCode: () => void; sourceCode: string }) {
+// Exported only for tests/forms/studio-custom-gate.test.tsx (ai-ops issue 123) —
+// the custom-gate <form> inside it had never been submitted by any check.
+// Not part of the module's public surface otherwise; StudioWorkspace is.
+export function CircuitBuilder({ seed, framework, selectedGate, onSelectGate, onApply, onCircuitChange, hidden, popout, onTogglePopout, region, copy, syncState, onRebuildFromCode, sourceCode }: { seed: BuilderSeed; framework: StudioFramework; selectedGate: string; onSelectGate: (gate: string) => void; onApply: (codes: BuilderCodeVariants) => void; onCircuitChange?: (circuit: { qubitCount: number; steps: BuilderStep[]; customGates: CustomGateDefinition[] }) => void; hidden: boolean; popout: boolean; onTogglePopout: () => void; region?: Record<string, string>; copy: StudioCopy; syncState: CircuitSyncState; onRebuildFromCode: () => void; sourceCode: string }) {
   const [qubitCount, setQubitCount] = useState(seed.qubitCount);
   const [steps, setSteps] = useState<BuilderStep[]>(seed.steps);
   const [pendingQubits, setPendingQubits] = useState<number[]>([]);

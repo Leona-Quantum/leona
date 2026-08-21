@@ -455,5 +455,11 @@ test("the circuit trim keeps the register on every record and the gates on none"
     assert.equal("steps" in projected, false, `${item.upstream_identity} still carries its gates`);
   }
   // The corpus must actually exercise this, or the assertions above are empty.
-  assert.ok(withCircuit > 50, `only ${withCircuit} records carry a portableCircuit`);
+  // The records carrying a portableCircuit are the width-family members, so this
+  // floor tracks that population: it was `> 50` against 120 of them, and is 30
+  // since the families went from eight published widths to two (owner ruling,
+  // ai-ops issue 116). A floor rather than an equality — publishing more circuits
+  // must not fail this — but not a floor of 1, because the point is to catch the
+  // trim being asserted against an empty loop.
+  assert.ok(withCircuit >= 30, `only ${withCircuit} records carry a portableCircuit`);
 });

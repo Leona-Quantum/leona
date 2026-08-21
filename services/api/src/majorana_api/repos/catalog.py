@@ -259,6 +259,111 @@ async def find_staged_artifact_by_upstream_identity(
     return row[0], row[1]
 
 
+async def revive_withdrawn_artifact(
+    scope: Scope,
+    session: AsyncSession,
+    *,
+    authority: CatalogAuthority,
+    upstream_identity: str,
+) -> tuple[Artifact, ArtifactVersion | None] | None:
+    """Clear `deleted_at` on a withdrawn record so an import can adopt it again.
+
+    `retire-bootstrap` soft-deletes; `deleted_at` is what the public predicate
+    filters on, and the whole point of a soft delete is that the row survives. But
+    the importer's resolver filters `deleted_at IS NULL`, so a withdrawn identity
+    reads as ABSENT and the import tries to CREATE — which collides with the
+    withdrawn row's own version on the table-wide unique
+    `normalized_source_hash`, and comes back as `duplicate_source`: the record
+    rejected for being itself.
+
+    Found the honest way, in production, on 2026-08-16. The Bell-pair ladder's
+    floor moved 2q -> 4q (ai-ops issue 124); `-4q` had been withdrawn an hour
+    earlier as one of the 90, and re-publishing it failed the deploy with
+    `accepted=278 rejected=1`. Retirement without revival is a one-way door, and
+    a one-way door on a corpus the owner intends to restructure wholesale is a
+    trap rather than a feature.
+
+    Safe against the partial unique index (migration 0046) that covers
+    `(workspace, upstream_identity) WHERE deleted_at IS NULL`: this only ever runs
+    when the resolver found no live row for the identity, so clearing the flag
+    cannot create a second live row for it. Audited, because un-deleting is as
+    much a state change as deleting.
+    """
+    workspace = await get_importer_workspace(scope, session, authority=authority)
+    artifact = (
+        (
+            await session.execute(
+                select(Artifact).where(
+                    Artifact.workspace_id == workspace.id,
+                    Artifact.upstream_identity == upstream_identity,
+                    Artifact.deleted_at.is_not(None),
+                )
+            )
+        )
+        .scalars()
+        .first()
+    )
+    if artifact is None:
+        return None
+    artifact.deleted_at = None
+    await session.flush()
+    await record_audit(
+        scope,
+        session,
+        action="artifact.revived",
+        target_kind="artifact",
+        target_id=artifact.id,
+    )
+    version = None
+    if artifact.current_version_id is not None:
+        version = (
+            (
+                await session.execute(
+                    select(ArtifactVersion).where(ArtifactVersion.id == artifact.current_version_id)
+                )
+            )
+            .scalars()
+            .first()
+        )
+    return artifact, version
+
+
+async def list_public_upstream_identities(
+    scope: Scope,
+    session: AsyncSession,
+    *,
+    authority: CatalogAuthority,
+) -> dict[str, uuid.UUID]:
+    """Every upstream identity the public catalog is serving, mapped to its artifact.
+
+    This answers the one question the importer cannot. `catalog_import` reconciles
+    absent -> create, unchanged -> no-op, changed -> new version, and there is no
+    fourth branch: a record deleted from the manifest is simply never visited
+    again and keeps its ACCEPTED/PUBLIC row indefinitely. Nothing read the
+    database the other way round — "what is published that the manifest no longer
+    claims" — so a deletion was structurally invisible.
+
+    Measured, not theorised: removing 90 width-family records from the corpus
+    (ai-ops issue 116) changed the corpus, the manifest, five pinned test counts
+    and nothing whatsoever that a visitor to /repository saw, because the API kept
+    serving all 369 from rows the import had stopped mentioning.
+
+    Uses `_public_catalog_predicate` rather than its own filter, so what this
+    returns is exactly the set /repository serves. A near-copy of that predicate
+    would be the dangerous version of this function: it decides what gets
+    retired, and a filter that is subtly wider than the public one would retire
+    rows the public list was never showing.
+    """
+    workspace = await get_importer_workspace(scope, session, authority=authority)
+    rows = await session.execute(
+        select(Artifact.upstream_identity, Artifact.id).where(
+            *_public_catalog_predicate(workspace.id),
+            Artifact.upstream_identity.is_not(None),
+        )
+    )
+    return {identity: artifact_id for identity, artifact_id in rows.all()}
+
+
 async def stage_artifact(
     scope: Scope,
     session: AsyncSession,

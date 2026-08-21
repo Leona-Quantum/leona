@@ -48,6 +48,25 @@ export const PUBLIC_STATIC_PATHS: readonly string[] = [
 export const PUBLIC_REDIRECT_ALIASES: readonly string[] = ["/open-source"];
 
 /**
+ * Public endpoints that are read by machines and are not pages.
+ *
+ * A fourth category because `llms.txt` (ai-ops 133) fits none of the three and
+ * forcing it into one would state something false. It must not be disallowed —
+ * being read is the entire point. It must not be published in the sitemap
+ * either: a sitemap is a list of PAGES a crawler should index, and listing a
+ * plain-text descriptor there invites it into search results as though it were
+ * one. And it redirects nowhere, so it is not an alias.
+ *
+ * `robots.txt` and `sitemap.xml` belong to this category conceptually and are
+ * absent for a mechanical reason worth writing down: they use Next's metadata
+ * file conventions (`app/robots.ts`, `app/sitemap.ts`), which contribute no
+ * directory under `app/`, so the route census in `sitemap-paths.test.ts` never
+ * sees them and has nothing to account for. `llms.txt` has no such convention,
+ * so it is a Route Handler in a directory, so it is a real route segment.
+ */
+export const MACHINE_READABLE_PATHS: readonly string[] = ["/llms.txt"];
+
+/**
  * Prefixes robots.txt refuses: the authenticated application, the machine
  * surfaces, and the pages that are neither.
  *

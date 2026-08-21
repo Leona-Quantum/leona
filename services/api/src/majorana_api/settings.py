@@ -8,7 +8,7 @@ import os
 from dataclasses import dataclass
 
 from .catalog_authority import CatalogAuthority
-from .rate_limit import DEFAULT_ANON_LIMIT, DEFAULT_TRUSTED_LIMIT
+from .rate_limit import DEFAULT_ANON_LIMIT, DEFAULT_AUTH_FAILURE_LIMIT, DEFAULT_TRUSTED_LIMIT
 from .tiers import TIER_ALLOWLIST_ENV, parse_developer_emails
 
 _MIN_TOKEN_LENGTH = 32
@@ -190,6 +190,39 @@ class Settings:
     #: makes it unbounded. See `DEFAULT_TRUSTED_LIMIT` for what this bound is
     #: actually protecting against, which is our own renderer looping.
     trusted_rate_limit_per_minute: int = DEFAULT_TRUSTED_LIMIT
+    #: RLS defense-in-depth (ai-ops#143; docs/adr/0028-rls-defense-in-depth.md).
+    #: `False` — the default everywhere, including production for this PR — means
+    #: `auth/deps.py::get_scope` never sets the `majorana.rls_enforce` GUC, which
+    #: is the ONE thing that makes db/migrations/versions/0053's policies do
+    #: anything: every policy is written `... OR workspace_id = current_setting(...)`
+    #: and that first branch is permissive whenever the GUC is not exactly `'on'`.
+    #: So this flag does not gate whether RLS is *installed* — 0053 installs it
+    #: unconditionally, on every environment, the moment it runs — it gates
+    #: whether the request path *engages* it. Flipping it to `True` is a
+    #: production change with real blast radius (a forgotten GUC anywhere in the
+    #: request path now returns zero rows instead of the row), so it is a
+    #: deliberate follow-up, not part of this PR.
+    #:
+    #: **DO NOT SET THIS TRUE YET** (found in review, PR 709 — Aikido):
+    #: `repos/shares.py` deliberately reads `projects`/`artifacts`/
+    #: `artifact_versions` — all three ARE covered by 0053's policies — keyed on
+    #: the grant (`scope.user_id`), not on `scope.workspace_id`, so a grantee in
+    #: one workspace can read a project another workspace owns. RLS has no
+    #: concept of a grant; the grantee's session GUC carries their own
+    #: workspace, and every one of those cross-tenant shared reads would
+    #: silently return nothing the moment this is `True`. See 0053's
+    #: `project_shares` docstring section and ADR-0028's Consequences for the
+    #: full argument. Resolving this is its own reviewed change.
+    rls_enforced: bool = False
+    #: Auth failures (401s — see `AuthFailureThrottle` for why 403 does not
+    #: count) allowed from one address per window before it is refused
+    #: (ai-ops#145). Unlike the two limits above, only the ceiling is
+    #: configurable here — the window is a code constant
+    #: (`DEFAULT_AUTH_FAILURE_WINDOW_S`), same split as `DEFAULT_WINDOW_S` for
+    #: the anonymous limiter. `0` disables the throttle entirely, the same
+    #: escape hatch as the other two: a caller wrongly refused for their
+    #: address's failures is worse than an unmetered one.
+    auth_failure_limit: int = DEFAULT_AUTH_FAILURE_LIMIT
 
     def __post_init__(self) -> None:
         if self.local_dev_auth and self.environment != "development":
@@ -274,4 +307,7 @@ class Settings:
             trusted_rate_limit_per_minute=_int_env(
                 "TRUSTED_RATE_LIMIT_PER_MINUTE", DEFAULT_TRUSTED_LIMIT
             ),
+            rls_enforced=os.environ.get("MAJORANA_RLS_ENFORCED", "").strip().lower()
+            in {"1", "true", "yes"},
+            auth_failure_limit=_int_env("AUTH_FAILURE_LIMIT", DEFAULT_AUTH_FAILURE_LIMIT),
         )

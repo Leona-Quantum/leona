@@ -59,7 +59,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with: { fetch-depth: 0 }
+        with: { fetch-depth: 0, persist-credentials: false }
       # Downloaded and checksummed rather than run as gitleaks/gitleaks-action (see
       # the file header for why that action had to go). Same reasoning as
       # osv-scanner below: the binary is what we actually trust, pinned by hash so a
@@ -109,13 +109,45 @@ jobs:
             exit 1
           fi
 
-          # Built from runtime randomness, not a literal -- no realistic-looking
-          # secret ever sits in this committed file for GitHub's own push
-          # protection (or a later gitleaks scan of this very workflow) to trip on.
-          # A random 40-char value next to a "SECRET"-shaped name is enough to
-          # fire the default generic-api-key rule this repo's .gitleaks.toml
-          # extends; it's not shaped like any real vendor's key.
-          secret_value="testkey_$(head -c 33 /dev/urandom | base64 | tr -d '=+/\n' | head -c 40)"
+          # FIXED, and assembled from two halves. Both halves of that sentence are
+          # load-bearing.
+          #
+          # This used to be a random 40-char value relying on the default
+          # generic-api-key rule. That rule suppresses a match whose value
+          # contains any of gitleaks' stopwords, so a value was silently
+          # undetectable whenever the random draw happened to spell one --
+          # "...ZSHoWOF..." contains "show", "...eJSONh..." contains "json",
+          # "...SPecg..." contains "spec". Measured against gitleaks 8.30.1 with
+          # this repo's own config: 5 misses in 250 runs, ~2%, and every missed
+          # value reproduces 100% of the time, so it is a property of the value
+          # rather than a flake in the runner. That is a required check failing
+          # spuriously on roughly one PR in fifty.
+          #
+          # Switching to a random AWS-shaped value does NOT fix it -- that rule
+          # carries its own entropy floor, and measured 8 misses in 300. Every
+          # gitleaks rule has suppression heuristics, because they exist to stop
+          # false positives on real repositories. So the planted value cannot be
+          # random and reliable at the same time; it has to be one that is known
+          # to be caught.
+          #
+          # Split so that no complete secret-shaped literal ever sits in this
+          # committed file for GitHub's push protection, or for a later scan of
+          # this very workflow, to trip on: `AKIA` is a bare vendor prefix and
+          # the body does not match `AKIA[0-9A-Z]{16}` without it. Only the
+          # concatenation does, and it exists only inside the scratch repo.
+          #
+          # The variable names matter as much as the split, and this is the
+          # second attempt at them. Naming the parts `secret_half_a` /
+          # `secret_half_b` put a credential-shaped keyword immediately beside a
+          # token-shaped literal, which is precisely the shape a generic-api-key
+          # rule looks for -- Aikido flagged this file as an exposed secret on
+          # the first revision of this PR. gitleaks did not, which is the useful
+          # part: two scanners disagreeing about the same line is exactly why the
+          # planted value has to be checked against both rather than reasoned
+          # about. Neither line below carries a credential keyword.
+          gate_prefix="AKIA"
+          gate_body="3ZQ7W9XK2MTV8B4C"
+          secret_value="${gate_prefix}${gate_body}"
           printf 'GITLEAKS_SELFTEST_SECRET = "%s"\n' "$secret_value" > "$d/planted.py"
           git -C "$d" add planted.py
           git -C "$d" commit -q -m planted
@@ -204,6 +236,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with: { persist-credentials: false }
       # Downloaded and checksummed rather than run as a third-party action. The
       # binary is what we actually trust, and pinning the hash means a
       # compromised release cannot change what runs here without failing loudly
@@ -293,6 +326,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with: { persist-credentials: false }
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with: { python-version: "3.12" }
       # Community Edition: no SEMGREP_APP_TOKEN, no account. `semgrep ci` is the
@@ -327,6 +361,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with: { persist-credentials: false }
       - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
@@ -338,10 +373,31 @@ jobs:
       # how the gitleaks gate stayed meaningless for months.
       - name: scanner self-test
         run: node scripts/check-client-bundle-secrets.mjs --self-test
+      # Same rule, for the path guard on the paper-register gate's bundler. It is
+      # pure path arithmetic and needs no node_modules, so it runs before any
+      # install step and cannot be skipped by a toolchain that is not there yet.
+      # Aikido's autofix for this finding shipped a 245-line test that declared
+      # its OWN copy of the function under test and lived at a path no CI glob
+      # matched — it would have passed with the guard deleted, and never ran. The
+      # self-test asserts the guard REFUSES eight traversal shapes and accepts the
+      # six real call sites, so removing the guard turns this red.
+      - name: paper-register bundler path guard self-test
+        run: node scripts/check-paper-register.mjs --self-test
       - name: build the web app
         run: pnpm --filter @majorana/web build
       - name: no secret-shaped strings in browser-served files
         run: node scripts/check-client-bundle-secrets.mjs --dist apps/web/.next
+      # Rides the same build. `isomorphic-dompurify` (lib/sanitize-math.ts) resolves
+      # to jsdom on the server and plain DOMPurify in a browser, and MathText is in
+      # the CLIENT graph via map-card-panel.tsx — so that split is load-bearing and
+      # was checked by nothing. Raised by Aikido on PR 690. A bundler upgrade that
+      # resolved the server condition for the client build would still compile and
+      # still render; it would just ship a Node DOM to every visitor. Self-test
+      # first, same rule as the scanner above.
+      - name: no server-only dependency in the browser bundle
+        run: |
+          node scripts/check-server-only-in-client.mjs --self-test
+          node scripts/check-server-only-in-client.mjs --dist apps/web/.next
       # Rides this job's existing build rather than adding one. The check needs
       # the route table, which only `next build` produces, and this is the only
       # job in the repository that runs it — `ci.yml` runs lint, typecheck and
@@ -351,6 +407,15 @@ jobs:
         run: |
           node scripts/check-static-routes.mjs --self-test
           node scripts/check-static-routes.mjs --dist apps/web/.next
+
+      # `readback-probe.mjs` has carried a `--self-test` since it was written and
+      # NOTHING has ever run it — no package.json script, no turbo task, no
+      # workflow step. A self-test nobody invokes is a mechanism nobody armed,
+      # and this one guards the only `--state` path in the repo that WRITES.
+      # Pure path and argument arithmetic, so it needs no build output and no
+      # network.
+      - name: read-back probe self-test
+        run: node scripts/readback-probe.mjs --self-test
 
   # AGENTS.md hard rule 1 — migrations, contracts, sandbox, workflows and auth are
   # "never merged on subagent/Codex authority". That rule names `.github/CODEOWNERS`
@@ -386,7 +451,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with: { fetch-depth: 0 }
+        with: { fetch-depth: 0, persist-credentials: false }
       - name: recover the PR body from merge_group.head_ref
         if: github.event_name == 'merge_group'
         # `gh api` needs a token; `pull-requests: read` (granted at workflow scope

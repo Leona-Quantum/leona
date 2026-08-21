@@ -1,6 +1,9 @@
 # ADR-0004: App-layer authorization primary; RLS deferred
 
-**Date:** 2026-07-09 · **Status:** accepted (supersedes security-baseline.md §1.1)
+**Date:** 2026-07-09 · **Status:** superseded-by-0028 (RLS deferral lifted 2026-08-17,
+`EshMis/ai-ops#143` — the app-layer predicate stays PRIMARY; RLS returns as
+defense-in-depth, unconditionally, not merely "before a regulated-enterprise deal" as the
+reversal trigger below once read). See `docs/adr/0028-rls-defense-in-depth.md`.
 **Context:** RLS-as-primary suits architectures where clients hit the DB directly. Here
 exactly one trusted caller (the FastAPI control plane) touches Postgres, so RLS would
 duplicate the authz layer while complicating migrations and query plans.

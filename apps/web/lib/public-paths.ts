@@ -74,6 +74,43 @@ export const PUBLIC_PATHS: readonly string[] = [
   // are not signed in. The route still sees a session cookie when one exists —
   // being on this list only means AuthKit does not require one.
   "/api/auth/session",
+  // The contact form's submit target (ai-ops issue 125). `/contact` above does
+  // NOT cover this: `isPublicPath` matches an entry and its subtree, and
+  // `/api/contact` is not under `/contact`. Without this line the form is gated
+  // for exactly the people it exists for — an anonymous visitor's POST is 307'd
+  // to WorkOS, so the one page whose whole purpose is "you do not have an
+  // account yet, here is how to reach us" cannot be used without an account.
+  // Caught by CodeRabbit on PR 661 before it shipped; numbered without a hash
+  // because `check-raw-hex` reads a three-digit hash-number as a CSS colour.
+  //
+  // Publishing this path is the whole subtree, per the note at the top of this
+  // file. There is nothing under `/api/contact`, and the route itself validates
+  // every field, refuses anything oversize, and reveals nothing about who is
+  // signed in.
+  "/api/contact",
+  // `/llms.txt` (ai-ops 133). Being a routed segment and being public are two
+  // different lists, and this endpoint needs BOTH: `ROUTED_SEGMENTS` in
+  // routed-paths.ts is what stops the middleware treating it as a typo, and
+  // this entry is what stops AuthKit gating it once it is routed.
+  //
+  // Adding it to only the first is strictly worse than adding it to neither.
+  // Before it was routed, an anonymous request fell through unauthenticated and
+  // Next answered; once routed and not public, the same request reaches
+  // `authkitMiddleware` and is 307'd to WorkOS — so a file whose entire purpose
+  // is to be read by crawlers and model clients would have shipped answering a
+  // sign-in redirect to every one of them.
+  //
+  // Caught by Aikido's Deep Review on PR 684. It is worth recording WHY local
+  // verification missed it: `middleware.ts` returns early when
+  // `isLocalDevAuthEnabled()`, so the gate never runs against a local build and
+  // `curl localhost:3115/llms.txt` returned the file correctly on a tree where
+  // production would have redirected. A local 200 is not evidence about this
+  // code path.
+  //
+  // Publishing the whole subtree costs nothing: there is nothing under
+  // `/llms.txt`, the handler reads compile-time constants only, and it sets no
+  // cookie and touches no session.
+  "/llms.txt",
   ...(isPublicDemoEnabled() ? ["/demo"] : []),
 ];
 

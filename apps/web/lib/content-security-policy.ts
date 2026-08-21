@@ -1,3 +1,24 @@
+import { createHash } from "node:crypto";
+
+import { NOT_FOUND_LOCALE_STYLE } from "./not-found-style.ts";
+
+/**
+ * A CSP `'sha256-…'` source for an inline element's exact body.
+ *
+ * `node:crypto` is safe to reach for here because this module has exactly one
+ * importer, `next.config.ts`, which runs in Node at build time; nothing in this
+ * file is bundled for a browser. If that ever stops being true the import is
+ * what will say so, loudly, at build time rather than at runtime.
+ *
+ * The digest is over UTF-8 bytes, which is what the CSP specification requires
+ * and what browsers hash. Getting the encoding wrong here would not fail the
+ * build — it would produce a well-formed hash that simply never matches, and the
+ * only symptom is the element silently not applying.
+ */
+export function inlineHash(body: string): string {
+  return `'sha256-${createHash("sha256").update(body, "utf8").digest("base64")}'`;
+}
+
 export function contentSecurityPolicy({
   controlPlane,
   development,
@@ -63,6 +84,48 @@ export function contentSecurityPolicy({
   const toolbar = (...origins: string[]) => (vercelToolbar ? origins : []);
   const scriptSources = [
     "'self'",
+    // **`'unsafe-inline'` stays, and the reasoning is NOT restated here.** It is
+    // already written out at length in `next.config.ts` (the file header, ~lines
+    // 8-63), which is where the header is assembled — the unhashable per-page RSC
+    // flight-data script, why a nonce means per-request rendering and would be
+    // baked into the CDN-cached document, and the blunt conclusion that with
+    // `'unsafe-inline'` present "this policy is NOT a general XSS defence".
+    //
+    // This comment deliberately does not duplicate that. Two copies of one
+    // argument drift: somebody updates the file they are editing and the other
+    // silently becomes the wrong answer, which is worse than having it in one
+    // place. **What was genuinely missing was enforcement, not explanation** —
+    // the reasoning existed only as prose, and prose does not fail a build.
+    //
+    // One measurement added here, with its provenance, because the count was the
+    // part `next.config.ts` did not state: on **leonaqt.com `/` (the home page),
+    // production build, 2026-08-17 JST / 2026-08-16 UTC**, the served HTML carries
+    // **five** inline `<script>` elements with bodies — our three constants,
+    // Next's `(self.__next_f=…)` bootstrap, and one streamed RSC payload of
+    // **41,919 bytes**.
+    //
+    // `next.config.ts` cites the same script on **`/pricing` at 25,095 bytes**, and
+    // the two figures do not conflict — **together they are the argument.** Same
+    // script, two routes, a 16 KB difference: that is the per-page variance which
+    // makes a build-time hash list impossible in principle rather than merely
+    // laborious. Quote both, or neither, and always with the route attached; a
+    // single number here reads as a fact about the app when it is a fact about one
+    // page.
+    //
+    // The trap, which is what the test in `content-security-policy.test.ts`
+    // actually guards: **the moment any hash appears in this directive,
+    // `'unsafe-inline'` is IGNORED** — the same behaviour documented for
+    // `style-src-elem` below, learned there from Chrome refusing the dev server's
+    // stylesheet. So adding hashes for the four constant scripts does not tighten
+    // this policy incrementally; it refuses React's hydration payload and serves a
+    // blank page with a green build.
+    //
+    // Both premises the open directive rests on are asserted in
+    // `lib/html-injection-surface.test.ts`: `react-markdown` runs without
+    // `rehype-raw`, and `urlTransform` is not overridden — that prop is what keeps
+    // a model's `[click](javascript:…)` from becoming a working script link, and
+    // `javascript:` URLs are governed by `script-src`, so under `'unsafe-inline'`
+    // such a link would execute. Revisit this whole decision if either breaks.
     "'unsafe-inline'",
     ...(development ? ["'unsafe-eval'"] : []),
     ...toolbar("https://vercel.live"),
@@ -76,7 +139,117 @@ export function contentSecurityPolicy({
   return [
     "default-src 'self'",
     `script-src ${scriptSources.join(" ")}`,
+    // Inline event handler attributes — `<img onerror=…>`, `<a onclick=…>` — the
+    // single most common shape an injected XSS payload takes. React never emits
+    // one: it attaches listeners from the bundle, so the served markup carries
+    // zero of them. Measured rather than assumed — every `on…="…"` attribute in
+    // every page of a production build was counted before this line was added,
+    // and on the live site's `/`, `/pricing`, `/repository`,
+    // `/repository/layers` and a 404. The count was zero.
+    //
+    // This is the one script directive that CAN be closed here, and it is worth
+    // stating why it is not redundant next to `script-src 'unsafe-inline'`:
+    // `script-src-attr` does not inherit from `script-src` when it is present,
+    // so `'none'` here is enforced even though `script-src` is permissive. The
+    // handler class is refused whatever `script-src` says.
+    "script-src-attr 'none'",
+    // Unchanged, and deliberately still carrying `'unsafe-inline'`.
+    //
+    // `style-src` is now only consulted by browsers too old to know
+    // `style-src-elem`/`style-src-attr` (pre-Chrome 75, pre-Safari 15.4,
+    // pre-Firefox 111). Those two shadow it completely everywhere else, so
+    // tightening this line would change nothing for a current browser and would
+    // break inline `style` attributes — which this app cannot do without — for
+    // an old one. Leaving it as the pre-existing behaviour is the fail-open
+    // direction on purpose: an old browser gets exactly today's policy, not a
+    // broken page.
     `style-src ${["'self'", "'unsafe-inline'", ...toolbar("https://vercel.live")].join(" ")}`,
+    // Inline `<style>` ELEMENTS, named by hash instead of admitted wholesale.
+    //
+    // This application serves exactly one, the 404 page's language-switching
+    // CSS, so the hash is a complete list rather than a sample. Anything else
+    // that reaches the document as a `<style>` element — an injected one — is
+    // refused. `lib/html-injection-surface.test.ts` is what stops a second one
+    // being added without this list being updated: it counts the sinks.
+    //
+    // ## Production ALONE gets the hashed form, and the two exceptions are real
+    //
+    // Development, because the dev server injects stylesheets as `<style>`
+    // elements for hot reload and for the error overlay. Neither is hashable and
+    // neither exists in a production build.
+    //
+    // Preview, because Vercel injects `vercel.live/_next-live/feedback/
+    // feedback.js` into every preview deployment — the widget the owner reviews
+    // a change with — and it writes its own inline stylesheets. Measured, not
+    // predicted: the hashed form on a preview of this very branch refused SIX of
+    // them on `/pricing` alone, on a page with no toolbar cookie set. Hashing
+    // them is not an option; they are Vercel's and they move with it.
+    //
+    // Leaving preview broken would also contradict the decision the
+    // `vercelToolbar` comment above records — that on a preview the toolbar is
+    // the point, and half-loading it is worse than declining it, because the
+    // console cries wolf on every navigation. Production is untouched by this:
+    // it admits no `vercel.live` and Vercel injects no feedback script into it.
+    //
+    // ## Why the exceptions DROP the hash rather than adding to it
+    //
+    // Not tidiness: **`'unsafe-inline'` is ignored in any directive that also
+    // carries a hash or a nonce.** `'self' <hash> 'unsafe-inline'` is therefore
+    // not the permissive union it reads as — the hash silently wins and every
+    // other inline stylesheet is refused anyway.
+    //
+    // That is not deduced from the specification, it is what happened: the first
+    // version of this listed the hash and `'unsafe-inline'` together in
+    // development, and Chrome refused the dev server's own stylesheet with
+    // "Note that 'unsafe-inline' is ignored if either a hash or nonce value is
+    // present in the source list". Production is unaffected — it has no
+    // `'unsafe-inline'` in this directive for a hash to cancel.
+    //
+    // The consequence worth stating: a preview deployment does NOT exercise
+    // production's `style-src-elem`. Verifying a change to it means a local
+    // production build (`next build && next start`), not a preview URL.
+    //
+    // ## The one thing this knowingly breaks, and why it is accepted
+    //
+    // A production build emits a SECOND inline `<style>`, in Next's own
+    // `_global-error.html` — the built-in error shell, carrying its
+    // `--next-error-*` colour variables. It is not hashed here and it is
+    // therefore refused. Counted, not guessed: a build of all 934 pages produced
+    // exactly two distinct inline `<style>` bodies, that one and the 404's.
+    //
+    // It is left refused deliberately. The hash would be Next's, not ours, so it
+    // would go stale on the next version bump with no test able to catch it —
+    // and a stale hash behaves exactly like no hash, so pinning it buys one
+    // release of correctness and then silently returns here. What it costs
+    // meanwhile is cosmetic and bounded: that shell renders unstyled black-on-
+    // white rather than themed, on a screen that only appears when the app has
+    // already failed, and the branded page a reader actually gets in that case is
+    // `app/global-error.tsx` — which styles itself entirely with inline `style`
+    // ATTRIBUTES and system colour keywords, so it is unaffected by this
+    // directive.
+    `style-src-elem ${[
+      "'self'",
+      ...(development || vercelToolbar
+        ? ["'unsafe-inline'"]
+        : [inlineHash(NOT_FOUND_LOCALE_STYLE)]),
+      ...toolbar("https://vercel.live"),
+    ].join(" ")}`,
+    // Inline `style` ATTRIBUTES, which stay open, stated explicitly rather than
+    // inherited so that the split above is legible as a decision.
+    //
+    // There is no version of this app that closes it. 72 components position
+    // themselves with `style={{…}}`, the Atlas map computes transforms per node
+    // at render time, and KaTeX emits a `style` attribute on essentially every
+    // glyph it lays out (see the math-text.tsx entry in
+    // lib/html-injection-surface.test.ts). Hashing is not an escape either:
+    // `'unsafe-hashes'` would need every distinct attribute VALUE enumerated,
+    // and those values are computed from data.
+    //
+    // What that leaves open is CSS injection, not script execution — and the
+    // usual exfiltration route out of injected CSS is already closed by the
+    // other directives here, since `img-src` and `font-src` name no external
+    // origin for a `url()` to smuggle a value to.
+    "style-src-attr 'unsafe-inline'",
     `img-src ${["'self'", "data:", "blob:", ...toolbar("https://vercel.live", "https://vercel.com")].join(" ")}`,
     `font-src ${["'self'", "data:", ...toolbar("https://vercel.live", "https://assets.vercel.com")].join(" ")}`,
     `connect-src ${connectSources.join(" ")}`,
