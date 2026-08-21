@@ -4,7 +4,7 @@ import type { FormEvent } from "react";
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { rememberChat } from "../../../lib/chat-history";
-import { refusalSentence } from "../../../lib/api-error.ts";
+import { refusalSentence, responseString, submittedId } from "../../../lib/api-error.ts";
 import { titleFromPrompt } from "../../../lib/chat-title";
 import { artifactFromResource, type LibraryArtifact } from "../../../lib/library-data";
 import { consumeLandingPromptHandoff } from "../../../lib/landing-prompt-handoff";
@@ -199,19 +199,24 @@ export function RunWorkspace({ demoMode = false, locale = "en" }: { demoMode?: b
           ...(contextArtifact?.currentVersionId ? { artifact_version_id: contextArtifact.currentVersionId } : {}),
         }),
       });
-      const payload = (await response.json()) as { id?: string; conversation_id?: string };
-      if (!response.ok || !payload.id) {
+      const payload = (await response.json()) as unknown;
+      // `typeof`, not just truthiness: the cast above is an assertion about this
+      // body, not a check of it, and a numeric `id` would satisfy `!payload.id`
+      // and then be carried into a route and a stored chat as if it were the
+      // string those expect. Raised by CodeRabbit on this PR.
+      const submitted = submittedId(payload);
+      if (!response.ok || !submitted) {
         throw new Error(refusalSentence(payload) ?? `Run submission failed (${response.status})`);
       }
       rememberChat({
-        id: payload.id,
+        id: submitted,
         title: titleFromPrompt(taskPrompt),
         prompt: taskPrompt,
         createdAt: new Date().toISOString(),
         status: "queued",
-        conversationId: payload.conversation_id,
+        conversationId: responseString(payload, "conversation_id") ?? undefined,
       });
-      router.push(`/run/${payload.id}`);
+      router.push(`/run/${submitted}`);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Run submission failed");
       setPending(false);

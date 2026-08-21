@@ -1,5 +1,5 @@
 /**
- * Reading the control plane's error envelope, in one place.
+ * Reading the control plane's response envelope, in one place.
  *
  * ## The shape, as the server actually sends it
  *
@@ -109,4 +109,30 @@ export function refusalField(payload: unknown, key: string): unknown {
 export function refusalStrings(payload: unknown, key: string): string[] {
   const value = refusalField(payload, key);
   return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : [];
+}
+
+/**
+ * The id out of a create/submit response, or null if the body did not carry one.
+ *
+ * Every one of these endpoints is identified by the id it returns, and every
+ * call site used to write `(await response.json()) as { id?: string }` and then
+ * test `!payload.id`. That pair looks like validation and is not: the cast is an
+ * assertion the compiler takes on trust, and the truthiness test accepts any
+ * non-zero number. A `{"id": 1}` would pass both and then be carried into a URL,
+ * a stored chat title and a subscription key as though it were the string those
+ * require. Raised by CodeRabbit on the PR that unified the refusal readers.
+ */
+export function submittedId(payload: unknown): string | null {
+  return responseString(payload, "id");
+}
+
+/**
+ * One string field off a response body, or null if it is absent or not a string.
+ *
+ * The same reasoning as `submittedId`, for the fields that ride alongside it —
+ * `conversation_id` in particular, which is written into local chat state and
+ * later interpolated into a request path.
+ */
+export function responseString(payload: unknown, key: string): string | null {
+  return isRecord(payload) ? nonEmptyString(payload[key]) : null;
 }

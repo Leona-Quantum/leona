@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { SyntaxHighlightedCode, VerificationSummaryPanel, verificationHeadline } from "@majorana/ui";
 import { CopyIcon, SearchIcon } from "../../../components/icons";
 import { artifactFromResource, frameworkVariantsFromRemote, getLibraryArtifact, loadLibraryArtifacts, statusFromVerificationSummary, type LibraryArtifact } from "../../../lib/library-data";
-import { refusalSentence, refusalStrings } from "../../../lib/api-error.ts";
+import { refusalSentence, refusalStrings, submittedId } from "../../../lib/api-error.ts";
 import { fetchArtifactPages } from "../../../lib/artifact-page";
 import {
   ARTIFACT_PROJECTS_EVENT,
@@ -114,14 +114,6 @@ const STARTER_SEED: Omit<BuilderSeed, "key"> = {
   readOnlyReasons: [],
   operationCount: STARTER_STEPS.length,
 };
-
-/** A create/submit response, which is identified only by the id it returns. */
-function isSubmitted(payload: unknown): payload is { id: string } {
-  return typeof payload === "object"
-    && payload !== null
-    && typeof (payload as { id?: unknown }).id === "string"
-    && (payload as { id: string }).id.length > 0;
-}
 
 export function StudioWorkspace({ artifactId, newDraft = false, locale = "en", limits = TIER_LIMITS.free }: { artifactId?: string; newDraft?: boolean; locale?: PublicLocale; limits?: CpuSimulationLimits }) {
   const copy = WORKSPACE_COPY[locale].studio;
@@ -652,10 +644,11 @@ export function StudioWorkspace({ artifactId, newDraft = false, locale = "en", l
         }),
       });
       const payload = (await response.json()) as unknown;
-      if (!response.ok || !isSubmitted(payload)) {
+      const runId = submittedId(payload);
+      if (!response.ok || !runId) {
         throw new Error(refusalSentence(payload) ?? `Run submission failed (${response.status})`);
       }
-      setRunId(payload.id);
+      setRunId(runId);
       setMessage(copy.verificationStarted);
     } catch (cause) {
       setMessage(cause instanceof Error ? cause.message : copy.submissionFailed);
@@ -694,14 +687,15 @@ export function StudioWorkspace({ artifactId, newDraft = false, locale = "en", l
         }),
       });
       const payload = (await response.json()) as unknown;
-      if (!response.ok || !isSubmitted(payload)) {
+      const importedId = submittedId(payload);
+      if (!response.ok || !importedId) {
         // `diagnostics` is a SIBLING of `title`, not nested — see api-error.ts.
         const named = refusalStrings(payload, "diagnostics");
         const diagnostics = named.length ? ` (${named.join("; ")})` : "";
         throw new Error(`${refusalSentence(payload) ?? copy.broughtInFailed}${diagnostics}`);
       }
       setMessage(copy.broughtInSaved);
-      router.push(`/library/${payload.id}`);
+      router.push(`/library/${importedId}`);
     } catch (cause) {
       setMessage(cause instanceof Error ? cause.message : copy.broughtInFailed);
     } finally {

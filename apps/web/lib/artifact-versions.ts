@@ -147,5 +147,16 @@ export function restoreRefusalLosses(payload: unknown): RestoreLoss[] | null {
   // existed on the wire. It returned null for every real 409, which is the
   // confirm-and-restore dialog silently never opening (ai-ops issue 153).
   if (refusalReason(payload) !== "restore_loses_capabilities") return null;
-  return losses(refusalField(payload, "losses"));
+  // An EMPTY list is not a confirmable refusal, and must not be returned as
+  // one. The caller does `if (losses)` and opens the acknowledgement dialog,
+  // and `[]` is truthy — so a 409 whose `losses` was absent, not an array, or
+  // made entirely of codes this build cannot name would put up a dialog that
+  // lists nothing and offers to restore anyway. The user would be acknowledging
+  // an irreversible loss the screen never showed them.
+  //
+  // Unreachable until now, because this function read `detail` and returned
+  // null for every real 409. Fixing that is what makes this path live, which is
+  // why it is fixed in the same change. Raised by CodeRabbit on this PR.
+  const recognized = losses(refusalField(payload, "losses"));
+  return recognized.length ? recognized : null;
 }

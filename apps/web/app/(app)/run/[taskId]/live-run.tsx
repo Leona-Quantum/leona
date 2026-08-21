@@ -14,7 +14,7 @@ import {
 } from "@majorana/ui";
 import { ChatMarkdown } from "../../../../components/chat-markdown";
 import { runToFollow } from "../../../../lib/conversation-follow";
-import { refusalSentence } from "../../../../lib/api-error.ts";
+import { refusalSentence, responseString, submittedId } from "../../../../lib/api-error.ts";
 import { QUEUE_POLL_INTERVAL_MS, isWaitingForWorker, queuePositionLabel } from "../../../../lib/queue-position";
 import { archiveChat, loadChatHistory, rememberChat, updateChat, type ChatSummary } from "../../../../lib/chat-history";
 import { displayChatTitle, titleFromPrompt } from "../../../../lib/chat-title";
@@ -785,8 +785,13 @@ export function LiveRun({ taskId, locale = "en" }: { taskId: string; locale?: Pu
           response_locale: locale,
         }),
       });
-      const payload = (await response.json()) as { id?: string; conversation_id?: string };
-      if (!response.ok || !payload.id) {
+      const payload = (await response.json()) as unknown;
+      // `typeof`, not just truthiness: the cast above is an assertion about this
+      // body, not a check of it, and a numeric `id` would satisfy `!payload.id`
+      // and then be carried into a route and a stored chat as if it were the
+      // string those expect. Raised by CodeRabbit on this PR.
+      const submitted = submittedId(payload);
+      if (!response.ok || !submitted) {
         throw new Error(refusalSentence(payload) ?? `Message submission failed (${response.status})`);
       }
       // Follow the new turn in place. This used to `router.replace` onto the new
@@ -797,7 +802,7 @@ export function LiveRun({ taskId, locale = "en" }: { taskId: string; locale?: Pu
       // message the user had just sent. Nothing needed the URL to name the
       // newest run: /conversation answers for any run in the conversation, and
       // every link back into one names its first.
-      followRun(payload.id);
+      followRun(submitted);
       const chatToContinue = existingChat ?? loadChatHistory({ includeDemo: false, includeArchived: true }).find(
         (chat) => chat.id === taskId || chat.conversationId === conversationId,
       );
@@ -808,7 +813,7 @@ export function LiveRun({ taskId, locale = "en" }: { taskId: string; locale?: Pu
         // the user sent a follow-up. Later turns are grouped by conversation id.
         rememberChat({
           id: taskId,
-          conversationId: payload.conversation_id ?? conversationId,
+          conversationId: responseString(payload, "conversation_id") ?? conversationId,
           title: titleFromPrompt(turns[0]?.prompt ?? taskPrompt),
           ...(conversationTitle ? { modelTitle: conversationTitle } : {}),
           prompt: turns[0]?.prompt ?? taskPrompt,

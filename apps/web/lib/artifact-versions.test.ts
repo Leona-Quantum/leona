@@ -158,6 +158,28 @@ test("only the capability refusal is read as one", () => {
   );
 });
 
+test("a capability refusal that names nothing this build can render is not confirmable", () => {
+  // `[]` is truthy, and the caller does `if (losses)`. Returning an empty list
+  // would open the acknowledgement dialog with nothing listed and offer to
+  // restore anyway — the user acknowledging a loss the screen never showed.
+  // Raised by CodeRabbit; reachable for the first time now that this reader
+  // reads the envelope the API actually sends.
+  const refusal = { title: "…", status: 409, reason: "restore_loses_capabilities" };
+  assert.equal(restoreRefusalLosses(refusal), null, "no losses key at all");
+  assert.equal(restoreRefusalLosses({ ...refusal, losses: [] }), null, "an empty list");
+  assert.equal(restoreRefusalLosses({ ...refusal, losses: "qasm" }), null, "not an array");
+  assert.equal(
+    restoreRefusalLosses({ ...refusal, losses: ["a-code-from-a-newer-server"] }),
+    null,
+    "only codes this build cannot name",
+  );
+  // A partially-recognised list still confirms, on the part it can name.
+  assert.deepEqual(
+    restoreRefusalLosses({ ...refusal, losses: ["qasm", "a-code-from-a-newer-server"] }),
+    ["qasm"],
+  );
+});
+
 test("a version says whether its code is a circuit or a program", () => {
   const row = { id: "v1", seq: 1, is_current: true };
   assert.equal(

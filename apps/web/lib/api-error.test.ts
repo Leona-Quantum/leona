@@ -18,7 +18,14 @@ import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { refusalField, refusalReason, refusalSentence, refusalStrings } from "./api-error.ts";
+import {
+  refusalField,
+  refusalReason,
+  refusalSentence,
+  refusalStrings,
+  responseString,
+  submittedId,
+} from "./api-error.ts";
 
 const WEB_ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 const API_APP = join(WEB_ROOT, "..", "..", "services", "api", "src", "majorana_api", "app.py");
@@ -127,4 +134,25 @@ test("the server still writes title, and still writes no detail", () => {
     /extra=\{k: v for k, v in detail\.items\(\) if k != "error"\}/,
     "_http_exc stopped flattening a typed refusal's fields into siblings of `title`",
   );
+});
+
+test("a submitted id is read only when it really is a non-empty string", () => {
+  // `as { id?: string }` followed by `!payload.id` looked like validation and
+  // was not: the cast is taken on trust and the truthiness test accepts any
+  // non-zero number, so `{"id": 1}` reached a route path and a stored chat as
+  // though it were a string. Raised by CodeRabbit on this PR.
+  assert.equal(submittedId({ id: "run_01J", conversation_id: "c_1" }), "run_01J");
+  assert.equal(submittedId({ id: 1 }), null);
+  assert.equal(submittedId({ id: "" }), null);
+  assert.equal(submittedId({ id: null }), null);
+  assert.equal(submittedId({ id: { toString: () => "run_01J" } }), null);
+  assert.equal(submittedId({}), null);
+  assert.equal(submittedId(null), null);
+});
+
+test("the fields riding alongside the id get the same treatment", () => {
+  assert.equal(responseString({ conversation_id: "c_1" }, "conversation_id"), "c_1");
+  assert.equal(responseString({ conversation_id: 7 }, "conversation_id"), null);
+  assert.equal(responseString({}, "conversation_id"), null);
+  assert.equal(responseString("nope", "conversation_id"), null);
 });
