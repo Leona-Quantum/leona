@@ -1,10 +1,10 @@
 import type { ReactNode } from "react";
-import { BrandMark } from "./icons";
 import { getMajoranaAuth, isMajoranaAuthConfigured } from "../lib/auth";
 import { majoranaSignInPath } from "../lib/sign-in";
 import { PUBLIC_SHELL_COPY, type PublicLocale } from "../lib/public-locale";
 import { getPublicLocale } from "../lib/public-locale-server";
 import { LanguageToggle } from "./language-toggle";
+import { LeonaWordmark } from "./leona-wordmark";
 import { ThemeToggle } from "./theme-toggle";
 import { AuthStatus } from "./auth-status";
 
@@ -137,9 +137,8 @@ export async function PublicSite({
     <main lang={resolvedLocale} className={["mj-public-site", className].filter(Boolean).join(" ")}>
       <div className="mj-public-frame">
         <header className="mj-public-header">
-          <a className="mj-public-brand" href="/" aria-label="Leona Quantum home" title="Leona Quantum home">
-            <BrandMark size={24} />
-            <span>Leona Quantum</span>
+          <a className="mj-public-brand" href="/" aria-label={copy.brandHome} title={copy.brandHome}>
+            <LeonaWordmark className="lq-wordmark--public-header" />
           </a>
           <nav className="mj-public-nav" aria-label={resolvedLocale === "ja" ? "公開ナビゲーション" : "Public navigation"}>
             {publicNav.map((item) => (
@@ -180,9 +179,8 @@ export async function PublicSite({
 
         <footer className="mj-public-footer">
           <div className="mj-public-footer-brand">
-            <a className="mj-public-brand" href="/" aria-label="Leona Quantum home">
-              <BrandMark size={24} />
-              <span>Leona Quantum</span>
+            <a className="mj-public-brand" href="/" aria-label={copy.brandHome}>
+              <LeonaWordmark className="lq-wordmark--public-footer" />
             </a>
             <p>{copy.footer.promise}</p>
           </div>

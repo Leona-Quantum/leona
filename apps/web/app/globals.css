@@ -295,10 +295,12 @@ body {
    fold (Owner ask 2026-07-18: nicer to scroll through). */
 .mj-company-hero-copy,
 .mj-company-pipeline-band,
+.lq-landing-demo,
 .mj-company-scroll-cue {
   animation: mj-company-rise 600ms ease-out both;
 }
 .mj-company-pipeline-band { animation-delay: 100ms; }
+.lq-landing-demo { animation-delay: 160ms; }
 .mj-company-scroll-cue { animation-delay: 220ms; }
 .mj-company-scroll-cue-chevron {
   animation: mj-scroll-cue-bob 2.4s ease-in-out infinite;
@@ -341,6 +343,7 @@ body {
 @media (prefers-reduced-motion: reduce) {
   .mj-company-hero-copy,
   .mj-company-pipeline-band,
+  .lq-landing-demo,
   .mj-company-scroll-cue,
   .mj-company-scroll-cue-chevron,
   .mj-open-source-hero,
@@ -359,6 +362,27 @@ body {
     transition: none;
     transform: none;
   }
+}
+
+/* Landing product demo: the video follows the product-flow band without a
+   second title card. The explicit aspect ratio reserves the full frame before
+   media metadata arrives, keeping the rest of the landing page still. */
+.lq-landing-demo {
+  position: relative;
+  z-index: 1;
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  overflow: hidden;
+  border: 1px solid var(--border-0);
+  border-radius: var(--radius-card);
+  background: var(--bg-1);
+}
+.lq-landing-demo-video {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  background: var(--bg-0);
 }
 
 .mj-run-process-detail-pre {
@@ -908,6 +932,42 @@ body {
 @keyframes lq-draw { from { stroke-dashoffset: 1; } to { stroke-dashoffset: 0; } }
 @keyframes lq-pop { 0% { opacity: 0; transform: scale(0.1); } 60% { opacity: 1; transform: scale(1.35); } 100% { opacity: 1; transform: scale(1); } }
 @keyframes lq-orbit { to { transform: rotate(360deg); } }
+
+/* Canonical owner-supplied wordmark. The source PNG has transparent breathing
+   room around the artwork; the pseudo-element preserves that exact raster as a
+   mask while this outer box clips to the visible 766 × 174px bounds. Using
+   currentColor keeps the white artwork on dark surfaces and makes it legible
+   in the light theme without a second, hand-maintained logo export. */
+.lq-wordmark {
+  position: relative;
+  display: inline-block;
+  flex: 0 0 auto;
+  width: 152px;
+  aspect-ratio: 766 / 174;
+  overflow: hidden;
+  color: var(--text-0);
+}
+.lq-wordmark::before {
+  content: "";
+  position: absolute;
+  left: -6.397%;
+  top: -29.31%;
+  width: 113.055%;
+  height: 165.517%;
+  background: currentColor;
+  -webkit-mask: url("/brand/leona-quantum-wordmark.png") center / 100% 100% no-repeat;
+  mask: url("/brand/leona-quantum-wordmark.png") center / 100% 100% no-repeat;
+}
+.lq-wordmark--public-header { width: 152px; }
+.lq-wordmark--public-footer { width: 172px; }
+.lq-wordmark--sidebar { width: 140px; }
+.lq-wordmark--welcome { width: min(190px, 72%); }
+.lq-wordmark--pipeline {
+  z-index: 2;
+  width: 108px;
+  color: var(--text-0);
+}
+.lq-wordmark--lab { width: 144px; }
 @keyframes lq-orbit-rev { to { transform: rotate(-360deg); } }
 @keyframes lq-twinkle { 0%, 100% { opacity: 0.35; } 50% { opacity: 1; } }
 @keyframes lq-glow { 0%, 100% { opacity: 0.4; transform: scale(1); } 50% { opacity: 0.75; transform: scale(1.08); } }

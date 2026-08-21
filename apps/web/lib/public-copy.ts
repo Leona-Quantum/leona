@@ -47,6 +47,9 @@ export const HOME_COPY: Record<PublicLocale, {
   visual: {
     label: string;
     status: string;
+    demoLabel: string;
+    demoDescription: string;
+    demoFallback: string;
     pipeline: Array<{ number: string; label: string; detail: string }>;
     footer: string;
     meta: string;
@@ -121,6 +124,9 @@ export const HOME_COPY: Record<PublicLocale, {
     visual: {
       label: "LEONA QUANTUM / PRODUCT",
       status: "AI-POWERED CIRCUIT DEVELOPMENT",
+      demoLabel: "Leona Quantum product demo",
+      demoDescription: "A product walkthrough showing Agent Run, Atlas, and Studio from generation and verification through reuse and editing.",
+      demoFallback: "Open the product demo video",
       pipeline: [
         { number: "01", label: "Describe", detail: "Express the circuit in natural language" },
         { number: "02", label: "Generate", detail: "Create the circuit, code, and diagram" },
@@ -216,6 +222,9 @@ export const HOME_COPY: Record<PublicLocale, {
     visual: {
       label: "LEONA QUANTUM / PRODUCT",
       status: "AIで量子回路を生成",
+      demoLabel: "Leona Quantum プロダクトデモ",
+      demoDescription: "Agent Runでの生成と検証から、Atlasでの再利用、Studioでの編集までを紹介するプロダクトデモです。",
+      demoFallback: "プロダクトデモ動画を開く",
       pipeline: [
         { number: "01", label: "自然言語で表現", detail: "生成したい量子回路を入力" },
         { number: "02", label: "量子回路を生成", detail: "コードや回路図を出力" },

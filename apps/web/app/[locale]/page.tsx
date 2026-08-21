@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { CircuitBand } from "../../components/circuit-band";
-import { BrandMark } from "../../components/icons";
+import { LandingDemoVideo } from "../../components/landing-demo-video";
+import { LeonaWordmark } from "../../components/leona-wordmark";
 import { LandingPrompt } from "../../components/landing-prompt";
 import { LeoConstellation } from "../../components/leo-constellation";
 import { PublicSite } from "../../components/public-site";
@@ -98,7 +99,7 @@ export default async function Home({ params }: { params: Promise<{ locale: strin
             <div className="mj-company-hero-orbit" aria-hidden="true">
               <span className="mj-company-orbit-ring mj-company-orbit-ring--one" />
               <span className="mj-company-orbit-ring mj-company-orbit-ring--two" />
-              <BrandMark size={72} />
+              <LeonaWordmark className="lq-wordmark--pipeline" />
               <span className="mj-company-orbit-dot mj-company-orbit-dot--one" />
               <span className="mj-company-orbit-dot mj-company-orbit-dot--two" />
             </div>
@@ -119,6 +120,18 @@ export default async function Home({ params }: { params: Promise<{ locale: strin
             <span>{copy.visual.footer}</span>
             <span className="font-mono">{copy.visual.meta}</span>
           </div>
+        </div>
+        <div className="lq-landing-demo">
+          <p className="sr-only" id="lq-landing-demo-description">
+            {copy.visual.demoDescription}
+          </p>
+          <LandingDemoVideo
+            describedById="lq-landing-demo-description"
+            fallback={copy.visual.demoFallback}
+            label={copy.visual.demoLabel}
+            poster="/media/leona-product-demo-poster.jpg"
+            src="/media/leona-product-demo.mp4"
+          />
         </div>
         <ScrollCue href="#company-intro-heading" targetId="company-intro-heading">
           <span>{copy.hero.scrollCue}</span>
