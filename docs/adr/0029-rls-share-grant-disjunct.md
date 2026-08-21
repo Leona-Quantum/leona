@@ -80,8 +80,11 @@ deleting the grant rather than after, because the policy asks whether the writer
 the row describes.
 
 *`project_shares` needs four policies, not one, and the difference is a privilege
-escalation.* The obvious `FOR ALL USING (p) WITH CHECK (p)` evaluates the grantee half on
-INSERT as well — and on an INSERT, `grantee_user_id` is whatever the writer put there. Any
+escalation.* The obvious `FOR ALL USING (p) WITH CHECK (p)` reuses one predicate for two
+different jobs. `USING` filters rows that already exist; `WITH CHECK` is what PostgreSQL
+evaluates against the NEW row on an INSERT — so reusing `p` there tests
+`grantee_user_id = current_setting('majorana.user_id')` against a column the writer just
+supplied, which is trivially satisfied by naming yourself. Any
 caller could write themselves a grant on any project id and then read that project,
 its artifacts and its versions through the disjuncts above. Verified as a real hole rather
 than a theoretical one: against the single-policy version, a user in an unrelated workspace

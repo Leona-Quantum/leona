@@ -390,8 +390,11 @@ def _policy_predicate(table: str, *, fixed: bool, with_grant: bool) -> str:
 #:
 #: **The two halves are NOT interchangeable between reading and writing, and getting that
 #: wrong is a privilege escalation rather than a mistake of degree.** A single
-#: `FOR ALL USING (p) WITH CHECK (p)` policy would evaluate the grantee half on INSERT
-#: too — and on an INSERT the row's `grantee_user_id` is whatever the writer put there.
+#: `FOR ALL USING (p) WITH CHECK (p)` policy uses one predicate for two different jobs:
+#: `USING` filters rows that ALREADY EXIST, while `WITH CHECK` is what PostgreSQL
+#: evaluates against the NEW row on an INSERT. Reusing the grantee half there compares
+#: `grantee_user_id` against the user GUC — but on an INSERT that column holds whatever
+#: the writer just supplied, so the test is satisfied by naming yourself.
 #: Any caller could then write themselves a grant on any project id and read it back
 #: through the disjuncts above. The app layer refuses that (`grant_share` requires ADMIN
 #: and reaches the project through `scope.workspace_id`), so it was never reachable
