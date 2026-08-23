@@ -657,13 +657,40 @@ jobs:
             --project "$GCP_PROJECT" --region "$GCP_REGION" --format='value(status.url)')
           test -n "$api" || { echo "::error::could not resolve the api URL"; exit 1; }
 
-          # Idempotency-Key is the deploy tag: re-running this workflow for the
-          # same commit re-reads the run it already created instead of spending
-          # another one.
+          # Idempotency-Key dedupes WITHIN one execution of this workflow, and
+          # deliberately not across executions.
+          #
+          # It used to be the deploy tag alone — the commit sha — so that
+          # re-running the workflow for the same commit re-read the run it had
+          # already created instead of spending another one. That is right for a
+          # duplicate, and wrong for a RETRY, because the API returns the
+          # existing run whatever its status: `find_run_by_idempotency_key`
+          # filters on workspace and key and nothing else. So once this gate's
+          # run failed for ANY reason, the deploy for that commit could never go
+          # green again — every re-run re-read the same terminal `failed` row and
+          # rolled the worker back on the strength of it.
+          #
+          # That is not hypothetical. 2026-08-23: the DEEPSEEK account ran out of
+          # credit on 2026-08-21, the gate's run failed `provider_failed`, and
+          # after the balance was topped up a re-run of this workflow REPLAYED THE
+          # TWO-DAY-OLD FAILURE — the events it printed were stamped 2026-08-21 —
+          # and rolled the worker back a fifth time. Four worker revisions were
+          # built and discarded that way. `live-llm` on the same commit passed
+          # minutes earlier, which is how the replay was spotted.
+          #
+          # run_id + run_attempt keeps the property that mattered (one provider
+          # run per workflow execution, so a retried step cannot double-spend)
+          # while making an explicit re-run mean what an operator thinks it means.
+          #
+          # The one case the old key covered and this one does not: if the POST
+          # succeeds but the runner loses the response, a re-run submits a second
+          # run rather than re-reading the first. That costs one Bell-state run at
+          # 128 shots on an ambiguous network failure, against a deploy that could
+          # previously never recover at all. Deliberate, and not close.
           created=$(curl -sS -X POST "$api/v1/runs" \
             -H "Authorization: Bearer $probe" \
             -H 'Content-Type: application/json' \
-            -H "Idempotency-Key: deploy-${{ steps.tag.outputs.tag }}" \
+            -H "Idempotency-Key: deploy-${{ steps.tag.outputs.tag }}-${{ github.run_id }}-${{ github.run_attempt }}" \
             -d '{"task_prompt":"Build a 2-qubit Bell state circuit, run it, and report the measurement counts.","framework":"qiskit","mode":"auto","shots":128,"seed":7,"timeout_s":120}')
           # `|| true` throughout the polling: the runner's default shell is
           # `bash -e -o pipefail`, so one transient curl or one unparseable body
@@ -701,15 +728,54 @@ jobs:
               echo "::error::of the probe prompt, not an outage."
             else
               echo "::error::post-deploy run $run_id ended '${status:-no terminal status before the deadline}'"
-              echo "::error::(mode '${mode:-unknown}') — the deployed stack cannot complete a run."
+              echo "::error::(mode '${mode:-unknown}')."
             fi
+
             # Whole events, not a summary. A failing check's output is the only
             # input the next person has, and the payload fields are flattened
             # into the envelope by the events contract — a projection down to
             # {type} would throw away the stage, the error code and the numbers.
+            events=$(curl -sS "$api/v1/runs/$run_id/events" -H "Authorization: Bearer $probe" || true)
+
+            # Name WHICH of the two things failed. This step's message used to say
+            # "the deployed stack cannot complete a run" for every failure, and on
+            # 2026-08-21 it said exactly that for two days while the stack was
+            # healthy and the LLM account was simply out of credit. A message that
+            # can only accuse the deploy sends the reader to the diff.
+            reason=$(printf '%s' "$events" \
+              | jq -r '[.[]? | objects | select(.type == "run.finished") | .reason_code] | last // empty' || true)
+            # The intent router fails as bare `provider_failed` (handlers.py), but a
+            # provider refusal inside a NAMED pipeline stage fails as
+            # `<role>_provider_failed` — simple_ports.py builds the code as
+            # f"{role}_provider_failed" and handlers.py sets reason_code from it. So
+            # matching the bare string alone would send an operator to the diff for
+            # exactly the case this branch exists to spare them, on any run that got
+            # past routing. `sandbox_provider_failed` is deliberately NOT in this arm:
+            # its "provider" is the sandbox, not the LLM account.
+            case "$reason" in
+              sandbox_provider_failed)
+                echo "::error::reason_code '$reason' — the SANDBOX provider refused, not the LLM"
+                echo "::error::account and not necessarily this revision. Check the sandbox's own"
+                echo "::error::status and quota before the diff."
+                ;;
+              provider_failed|*_provider_failed)
+                echo "::error::reason_code '$reason' — the run did not complete because the LLM"
+                echo "::error::PROVIDER refused the call. This deploy is UNVERIFIED, but nothing"
+                echo "::error::here says the new revision is bad: check the provider account"
+                echo "::error::(balance, rate limit, model availability) BEFORE the diff."
+                echo "::error::MAJORANA_LLM_PROVIDER selects ONE provider and a 402/429 is not"
+                echo "::error::retried against another, so one empty account stops every run."
+                ;;
+              "")
+                echo "::error::no terminal reason_code — see the events below."
+                ;;
+              *)
+                echo "::error::reason_code '$reason' — the deployed stack could not complete a run."
+                ;;
+            esac
+
             echo "last events:"
-            curl -sS "$api/v1/runs/$run_id/events" -H "Authorization: Bearer $probe" \
-              | jq -c '.[-20:][]? | del(.run_id)' || true
+            printf '%s' "$events" | jq -c '.[-20:][]? | del(.run_id)' || true
             exit 1
           fi
           echo "run $run_id succeeded in mode $mode on the deployed stack"

@@ -452,6 +452,70 @@ resolved to `execute`. A conversational answer also reports `succeeded` without
 entering the sandbox, so status alone would let a chat reply certify a broken
 execution path.
 
+### When this gate fails, read `reason_code` before you read the diff
+
+The step prints the run's terminal `reason_code` and says which kind of thing
+went wrong. **Anything matching `provider_failed` or `<role>_provider_failed`
+means the LLM provider refused the call** — an empty account, a rate limit, a
+withdrawn model — and says nothing about the revision you just shipped. The bare
+code comes from the intent router; the `<role>_` prefixed forms come from a named
+pipeline stage (`plan_provider_failed`, `generate_provider_failed`, …), and they
+mean the same thing about the account. `MAJORANA_LLM_PROVIDER` selects **one**
+provider and a 402 or 429 is not retried against another, so one empty account
+fails every run and therefore every deploy.
+
+`sandbox_provider_failed` is a different animal despite the name — that
+"provider" is the sandbox, not the LLM account.
+
+**Check the account of the provider actually in use, which is not always
+DeepSeek.** Read it off the service rather than assuming:
+
+```bash
+gcloud run services describe majorana-worker --project majorana-core --region us-west1 \
+  --format='value(spec.template.spec.containers[0].env)' | tr ',' '\n' | grep -i LLM_PROVIDER
+```
+
+With no `MAJORANA_LLM_PROVIDER` set, `resolve_provider()` falls back to whichever
+keys are present — see `packages/py/llm/src/majorana_llm/models.py`. For the
+DeepSeek case, this is the whole test:
+
+```bash
+curl -sS -o /dev/null -w '%{http_code}\n' https://api.deepseek.com/chat/completions \
+  -H "Authorization: Bearer $(gcloud secrets versions access latest \
+      --secret=DEEPSEEK_API_KEY --project majorana-core)" \
+  -H 'Content-Type: application/json' \
+  -d '{"model":"deepseek-v4-pro","messages":[{"role":"user","content":"ok"}],"max_tokens":4}'
+```
+
+`200` is a healthy account; `402` is Insufficient Balance. For OpenAI or
+Anthropic, swap the host, the secret and the model — `models.py` is the authority
+on which model each role uses under each profile.
+
+**A failed gate rolls the worker back, and the api does NOT roll back with it.**
+Step "rollback worker on failure" restores the previous worker revision, while
+the api step only advises. Migrations have already been applied by then, at step
+`migrate database`. So a deploy that fails this gate leaves production on **the
+new schema, the new api, and the OLD worker image** — the exact skew this
+workflow was built to prevent. If the gate failed for a provider reason, that
+skew is pure cost: nothing was wrong with the worker that was thrown away.
+
+**Re-running the workflow used to be futile, and no longer is.** The gate's
+`Idempotency-Key` was the commit sha alone, and the API returns an existing run
+for a known key **whatever its status** — so a commit whose gate had once failed
+replayed that terminal `failed` row on every subsequent re-run, forever, and
+rolled the worker back each time. Between 2026-08-21 and 2026-08-23 that
+discarded four worker revisions after a DeepSeek balance ran out. The key now
+includes `github.run_id` and `github.run_attempt`, so a re-run makes a genuinely
+new run while a retried step within one execution still cannot double-spend.
+
+**The trade this makes, stated plainly.** The old commit-wide key also covered one
+case the new one does not: if the `POST /v1/runs` succeeds but the runner loses the
+response, the attempt fails without knowing the run id, and a re-run now submits a
+second run instead of re-reading the first. The cost of that is one extra Bell-state
+run at 128 shots, on an ambiguous network failure. The cost of the old behaviour was
+a deploy that could never go green again for that commit, which is what actually
+happened for two days. The trade is deliberate and it is not close.
+
 ### The credential
 
 `DEPLOY_PROBE_TOKEN` — a Secret Manager entry, read by the workflow at deploy
