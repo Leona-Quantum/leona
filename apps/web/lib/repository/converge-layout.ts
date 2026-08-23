@@ -275,6 +275,17 @@ export const CONVERGE_METRICS = {
    * halves. That is a whole unit of work with its own measurements, and it is
    * the one that would buy the rest of issue 22's height. Recorded rather than
    * taken.
+   *
+   * **Both halves of that are now done, and the second one was not more
+   * tolerance.** The band work landed — see `VBand`, whose note ends *"Taken
+   * here."* The height it was supposed to buy did **not** arrive with it,
+   * because `halfHeight` still floored every figure to `laneOffsets`, the
+   * *symmetric* closed form, which describes the fan this file drew before the
+   * bands were corrected. Removing that floor is what finally spent it:
+   * summed height over the bare map's eight figures **2,045.2 -> 1,563.4
+   * (-23.6%)**, the same in `en` and `ja`, with all 94 layout invariants green
+   * and the two containment ones mutation-checked to prove they still bite. No
+   * tolerance moved. See `halfHeight`.
    */
   /** Half a top-level strand's thickness, at its thickest point. **8 since the
    *  vertical cut landed** — see the block above for what the four numbers moved
@@ -340,16 +351,27 @@ export const CONVERGE_METRICS = {
    * deleted for being both wrong and unread, so the closed form was describing a
    * shut fan the layout had stopped producing.
    *
-   * **Raising it changes no figure**, and that is worth stating rather than
-   * assuming: the only reader is `laneOffsets`, whose only reader in turn is the
-   * `tallestShut` floor under `halfHeight` — and on every bundle the corpus has,
-   * the measured band beats that floor. Measured either way: the tallest figure
-   * is 1,608.74px at 47 and at 61.2.
+   * **Raising it changes no figure — and this note used to say why, wrongly.**
+   * It read: *"the only reader is `laneOffsets`, whose only reader in turn is
+   * the `tallestShut` floor under `halfHeight` — and on every bundle the corpus
+   * has, the measured band beats that floor."* The second half of that was
+   * false. The floor beat the measured band on five of the bare map's eight
+   * figures, and on `spatial-discretization` it beat it by 27.6px a side over
+   * ink 38px tall. It was measured on the *tallest* figure, where the band does
+   * win, and the conclusion was written as if it held everywhere.
+   *
+   * Raising it changes no figure now, and for a simpler reason: **nothing in
+   * the layout reads it.** The floor is gone — see `halfHeight`, which is the
+   * measured band and only that. `laneOffsets` survives as the closed form a
+   * reader can check by looking, driven by the test below rather than by the
+   * drawing.
    *
    * It is written out rather than computed, so the test `allocateBows reproduces
    * laneOffsets exactly when every sibling is a leaf` exists to catch exactly
    * this: a change to `strandHalf`, `besideNameReach` or `laneGap` that forgets
-   * to bring this with it.
+   * to bring this with it. That test is now the *only* thing holding the closed
+   * form to the allocator, which is the right place for it — a test can fail,
+   * and the `Math.max` it replaced could only inflate.
    */
   laneBow: 61.2,
   /** Shortest a bundle may be drawn before its labels are considered.
@@ -5076,18 +5098,72 @@ function layoutFigure(options: {
     };
   });
   const spans = columns.map((column) => column.span);
-  // Never less than the closed form for the shut case. The two agree on a shut
-  // figure by construction; this is the guard that says so if either moves.
-  const tallestShut = plan.bundles.reduce(
-    (tall, bundle) => Math.max(tall, Math.max(0, ...laneOffsets(bundle.lanes.length).map(Math.abs))),
-    0,
-  );
-  const halfHeight = Math.max(
-    reservedHalfHeight(tallestShut),
-    Math.max(0, ...bundleHalves) + M.stateRadius,
-  );
-  const height = round(halfHeight * 2 + M.margin * 2 + M.captionFont + 8);
-  const yc = round(M.margin + M.captionFont + 8 + halfHeight);
+  /**
+   * The figure is as tall as what it draws — **and nothing is floored to the
+   * closed form any more.** This is the rest of issue 22's height, and it was
+   * not another tolerance to shave. It was a floor asserting something false.
+   *
+   * What stood here took `Math.max(reservedHalfHeight(tallestShut), …)`, where
+   * `tallestShut` came from `laneOffsets` — the shut fan in closed form. Its
+   * comment said *"the two agree on a shut figure by construction; this is the
+   * guard that says so if either moves."* **They do not agree, and had not for
+   * as long as the bands have been one-sided.** Measured on
+   * `spatial-discretization` (en), a two-lane shut figure a reader meets on the
+   * bare map:
+   *
+   *     laneOffsets(2)            ±30.6   -> reservedHalfHeight  59.6
+   *     what allocateBows placed  ±10.5   -> measured band      ~32.0
+   *
+   * So the floor won by 27.6px a side on a figure whose drawn ink is 38px tall
+   * in total, and the height it produced — 176.2 — was the closed form's, not
+   * the drawing's. Over the eight figures of the bare map that is **51.9% of
+   * the map's vertical extent standing empty between clusters**, read off the
+   * rendered page rather than off this file: gaps of 118-180px separating
+   * clusters whose ink is as little as 38px.
+   *
+   * **Why the closed form is the wrong number to floor with.** `laneBow` is
+   * `2·(strandHalf + max(above, below)) + laneGap` — the *symmetric* worst case,
+   * a lane reserving its name's room on both sides. The drawing stopped doing
+   * that when `VBand` landed ("Taken here.", above `VBand`): `measure` carries
+   * `vAbove`/`vBelow`, names are reserved on the side they are written, and
+   * `bundleHalves` sums exactly those. One number describes a fan the layout
+   * draws; the other describes the fan it drew before the bands were corrected.
+   * Taking the max of the two keeps paying for the old one forever.
+   *
+   * That is this repository's own recorded failure mode, and it is worth naming
+   * because the previous occurrence is three screens up in this same file: a
+   * derived value verifying itself against a second derivation nobody draws
+   * with. The fix then was to correct `laneBow` 47 -> 61.2. That made the closed
+   * form describe the symmetric band honestly — and left it floored over a
+   * drawing that is not symmetric, which made every small figure *taller*.
+   *
+   * **The guard is not lost, it is moved to where a guard belongs.** The test
+   * `allocateBows reproduces laneOffsets exactly when every sibling is a leaf`
+   * already drives the closed form against the allocator on the symmetric case
+   * and *fails* when they drift. A `Math.max` cannot fail; it can only silently
+   * inflate. Keeping both was the bug.
+   */
+  const halfHeight = Math.max(0, ...bundleHalves) + M.stateRadius;
+  /**
+   * **No caption band.** `M.captionFont + 8` stood in both of these, holding a
+   * strip of the figure's own top open for a caption drawn inside the SVG.
+   * Nothing has drawn one since issue 17 — *"states never have visible labels,
+   * only hover tooltips"* — and the caption a reader does see is a sibling
+   * `<figcaption>` in HTML (`repository-layers.tsx:683`), outside this drawing
+   * and costing it nothing. `caption` itself stays: it is the `<title>` and the
+   * `aria-label`, which take no room.
+   *
+   * This is the second half of a cleanup that was started and not finished.
+   * `mayDropBesideBand`'s note three thousand lines up removed the *other*
+   * place that held a caption up, and named the trap it was avoiding: *"a
+   * `depth > 0` clause whose comment defends a feature the canvas no longer
+   * has, is how a number comes to be defended by a sentence that has stopped
+   * describing it."* This arithmetic was the same feature, in the same
+   * removal, missed — 21px off the top of every figure at every locale, and
+   * the reason the top band read as deeper than the bottom one on the bare map.
+   */
+  const height = round(halfHeight * 2 + M.margin * 2);
+  const yc = round(M.margin + halfHeight);
 
   // Rounded here, once, rather than at each `d` string. Every span is a float
   // sum of estimated text widths, so a circle centre came out
