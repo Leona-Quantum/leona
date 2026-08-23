@@ -30,8 +30,10 @@ records that the entire `Vercel-CDN-Cache-Control` design rests on `localeRewrit
 middleware*, so the public pages are served from the CDN rather than rendered per request — and that
 keeping them cacheable is precisely what forced `'unsafe-inline'` into `script-src` instead of
 nonces. Moving that rewrite into a Node function is therefore not a runtime detail; it is a change to
-where the public site is cached, which is load-bearing for both cost and the CSP we already accepted
-a weaker form of in exchange.
+where the public site is cached. That is load-bearing twice over: it drives hosting cost, and it is
+the reason `script-src` carries `'unsafe-inline'` at all — we accepted a weaker CSP in exchange for
+keeping the public pages CDN-cacheable, and moving the rewrite reopens that bargain without settling
+it.
 
 Migrating would additionally move every authenticated request's gate off the edge network onto a Node
 function, changing latency, cold-start behaviour and Vercel cost across the whole authenticated
