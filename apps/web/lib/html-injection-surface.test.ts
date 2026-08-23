@@ -80,7 +80,22 @@ const ALLOWED = new Map<string, { sinks: number; reason: string }>([
   // until its hash is added in lib/content-security-policy.ts. The symptom is a
   // page rendering unstyled rather than an error, which is why it is written
   // down at the count that catches it.
-  ["app/not-found.tsx", { sinks: 1, reason: "inline <style>: our own constant, hashed into style-src-elem" }],
+  //
+  // MOVED to `components/not-found-body.tsx`, and the count is still ONE — which
+  // is the point. ai-ops issue 151 left two 404 boundaries: `app/not-found.tsx`
+  // for a `notFound()` thrown inside a segment, and `app/global-not-found.tsx`
+  // for a URL matching no segment at all (which has no root layout, so it renders
+  // the whole document). Both render one shared body, so there is still exactly
+  // one inline <style> element in the application and the note above still holds
+  // literally rather than by argument.
+  //
+  // It was briefly two, when the body was duplicated into the second boundary.
+  // That would have been defensible — the hash is over the stylesheet, not the
+  // file, so both copies matched the existing `style-src-elem` hash — but it is
+  // the weaker shape, and the reason is this note: an invariant that reads "the
+  // ONLY inline <style>" stops being checkable the moment it means "the only two,
+  // which happen to be identical". One writer keeps the guard honest.
+  ["components/not-found-body.tsx", { sinks: 1, reason: "inline <style>: our own constant, hashed into style-src-elem" }],
   // KaTeX's own output, from corpus prose WE author (see lib/math-text.ts),
   // now passed through DOMPurify on the way out — owner ruling on ai-ops 138:
   // KaTeX is not accepted as its own sanitizer, whatever `trust: false`
