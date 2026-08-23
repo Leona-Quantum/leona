@@ -699,7 +699,10 @@ function Theory({ hops, copy }: { hops: readonly CardHop[]; copy: Copy }): React
               {hop.via ? (
                 <span className="mj-card-hop-via">{hop.via.label}</span>
               ) : (
-                <span className="mj-card-trace-own">{ownStepName(copy.lang)}</span>
+                // What the record says this stretch does, and the standing
+                // phrase only where nothing has been recorded. Same order, same
+                // reader as the map's lane — see `CardHop.ownName`.
+                <span className="mj-card-trace-own">{hop.ownName ?? ownStepName(copy.lang)}</span>
               )}
               {hop.narrowed ? <span className="mj-card-trace-tag">{copy.narrowed}</span> : null}
               {/* On the summary, so a shut chain already says which of its hops
@@ -1066,7 +1069,7 @@ function Body({ card, id, copy }: { card: Card; id: CardSectionId; copy: Copy })
             <code>{card.from}</code>
             <span aria-hidden="true"> ⟶ </span>
             <code>{card.to}</code>
-            <span className="mj-card-trace-own">{ownStepName(copy.lang)}</span>
+            <span className="mj-card-trace-own">{card.ownName ?? ownStepName(copy.lang)}</span>
           </li>
         </ol>
       ) : null;

@@ -633,6 +633,94 @@ export interface HopNote {
    */
   theory?: string;
   theoryJa?: string;
+  /**
+   * **What this hop does, in a few words** — legal only on the own-stretch key,
+   * where it displaces the standing phrase `ownStepName` ("the method itself").
+   *
+   * ## Why the field exists
+   *
+   * The standing phrase was built to sit between two real failures, and its own
+   * comment says it is *"not a name and deliberately not one"*: naming the hop
+   * with the method's name printed that name twice (session 104, the owner:
+   * *"Time marching is all over the place — expands into propagation then
+   * itself"*), and leaving it blank was the session-113 complaint (*"I am
+   * seeing some blank processes — i would like them labeled"*). A phrase
+   * describing the *kind* of hop escapes both.
+   *
+   * It also says nothing. The owner's standing complaint (c) is *"i want to see
+   * no more of 'the method itself'"*, and the honest way out was never a third
+   * string — it is **recording what actually happens on that hop**, which is
+   * this field. A phrase authored here is a claim about the algorithm, so it
+   * carries the same burden every other claim on this record carries.
+   *
+   * ## The gate, and it is deliberately narrow
+   *
+   * Validation rejects a `name` on a note that has no `theory`. The drawn
+   * phrase must not outrun the recorded mathematics that sources it — a short
+   * phrase is far easier to invent than a paragraph with its assumptions
+   * marked, so the cheap field is gated behind the expensive one rather than
+   * being trusted on its own. `theory` in turn is already policed against the
+   * paper register by `check-paper-register.mjs`.
+   *
+   * Validation also rejects a `name` on a **delegated** hop's key. That hop's
+   * name is the capability's own label, drawn from the slot; a second name here
+   * would be one fact with two writers, which is the shape this file spends
+   * most of its length eliminating.
+   *
+   * ## What a good one looks like
+   *
+   * The verb the paper uses, applied to the object it acts on, short enough to
+   * sit inside the lane's band without clipping — the layout reports clipping
+   * as `labelTruncated` and the suite fails on it, so length is measured rather
+   * than guessed. *"amplify the flagged branch"*, not *"final step"*.
+   */
+  name?: string;
+  nameJa?: string;
+}
+
+/**
+ * What the record says this method does on the stretch it closes itself, or
+ * `null` where nothing has been recorded.
+ *
+ * Read off `hops[method.id].name`, the same key the card reads that hop's
+ * mathematics from, so the phrase drawn on the map and the paragraph opened in
+ * the card can never come from different places. Validation rejects a `name`
+ * with no `theory` beside it, so a non-null return here always has recorded,
+ * paper-registered mathematics behind it.
+ *
+ * **It lives here, not beside the map's `ownStepName`, only because of the
+ * import graph.** `converge-layout.ts` already imports `card-content.ts` for
+ * `ownCardId`, so a reader in either of those two would make the card and the
+ * map import each other. This module is below both and is where the field it
+ * reads is declared, which is where a reader of a field belongs anyway.
+ *
+ * **Trimmed, and empty reads as absent.** A whitespace-only string is authored
+ * by accident, never on purpose, and drawing it would put a blank back on the
+ * lane — the exact session-113 complaint (*"I am seeing some blank processes"*)
+ * that the standing phrase exists to prevent.
+ */
+/**
+ * Whether this method's route holds a stretch it closes itself.
+ *
+ * Exported for validation, which needs the yes/no and nothing else.
+ * `ownStepCard` deliberately does not call this — it needs the segment's
+ * *index* to read the two states off `route.states`, so it does its own
+ * `findIndex` rather than locating the segment twice.
+ */
+export function hasOwnStretch(
+  graph: LayerGraph,
+  vocabulary: StateVocabulary,
+  method: LayerMethod,
+): boolean {
+  return routeOf(graph, vocabulary, method).segments.some(
+    (segment) => segment.capabilityId === null,
+  );
+}
+
+export function ownStretchName(method: LayerMethod, ja: boolean): string | null {
+  const note = method.hops?.[method.id];
+  const name = (ja ? note?.nameJa : note?.name)?.trim();
+  return name === undefined || name === "" ? null : name;
 }
 
 /**
@@ -2646,8 +2734,49 @@ export function validateLayerGraph(
         errors.push(
           `${node.id}: hops names ${key}, which is neither one of its steps nor the method itself`,
         );
+      } else if (key === node.id && !hasOwnStretch(graph, vocabulary, node)) {
+        // **The own key is only legal where there IS an own stretch.** A route
+        // whose named steps reach the exit on their own has no trailing
+        // segment, so `ownStepCard` returns null and no lane is ever drawn for
+        // it — a note filed here would be annotating a hop that does not exist,
+        // which is the same defect as the branch above and needs saying
+        // separately because the key itself is well-formed.
+        //
+        // Found by CodeRabbit on PR 725, against `name`. It was already true of
+        // `theory`, which is why the check is on the key rather than on either
+        // field: 15 of the methods are fully delegated today and none of them
+        // carries one, so this closes the hole without moving any data.
+        errors.push(
+          `${node.id}: hops names the method itself, but its steps reach the exit — there is no own stretch to annotate`,
+        );
       }
-      pairs(`hops[${key}]`, [["theory", note.theory, note.theoryJa]]);
+      pairs(`hops[${key}]`, [
+        ["theory", note.theory, note.theoryJa],
+        ["name", note.name, note.nameJa],
+      ]);
+      // `name` is the own stretch's, and only where mathematics is already on
+      // the record for it. Two rules, two different failures.
+      //
+      // On a **delegated** hop the drawn name is the capability's label, read
+      // from the slot. A second one here would be one fact with two writers,
+      // and the two would drift — this file's most-repeated lesson.
+      //
+      // Without `theory` it would be a claim about the algorithm with nothing
+      // behind it. A phrase is far cheaper to invent than a paragraph with its
+      // assumptions marked and its paper in the register, so the cheap field is
+      // gated behind the expensive one. That is the whole reason this field is
+      // safe to draw where `ownStepName` used to sit.
+      if (note.name !== undefined || note.nameJa !== undefined) {
+        if (key !== node.id) {
+          errors.push(
+            `${node.id}: hops[${key}].name names a delegated hop, whose name is its slot's label`,
+          );
+        } else if (note.theory === undefined) {
+          errors.push(
+            `${node.id}: hops[${key}].name is authored with no theory behind it — record the mathematics first`,
+          );
+        }
+      }
       // The marks inside the mathematics, checked here rather than trusted to a
       // renderer. A malformed one does not fail loudly at draw time — the
       // parser skips it and the clause renders as prose with literal brackets

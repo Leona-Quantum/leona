@@ -51,6 +51,7 @@ import {
   isMethod,
   layerNode,
   methodsRealizing,
+  ownStretchName,
   REFINES_MARK_MAX,
   REPEAT_MARK_MAX,
   rootCapabilities,
@@ -2041,6 +2042,13 @@ test("nothing an opened figure draws leaves the canvas", () => {
 });
 
 test("an opened figure still names every drawn label without clipping it", () => {
+  // The census the owner's complaint (c) is measured against — *"i want to see
+  // no more of 'the method itself'"*. Counted over what the canvas DRAWS, which
+  // is the only population he can meet: 95 methods carry an own stretch, but an
+  // `all-own` route is one segment and so has no interior to open, and a folded
+  // refinement draws inside its parent. What survives to a lane is 14.
+  const named = new Set<string>();
+  const standing = new Set<string>();
   for (const focus of drawableSlots(LAYER_GRAPH, STATE_VOCABULARY)) {
     for (const locale of ["en", "ja"] as const) {
       for (const open of openings(focus.id)) {
@@ -2052,14 +2060,15 @@ test("an opened figure still names every drawn label without clipping it", () =>
           //                 Draws nothing, ever.
           //   `nameless`  — a lane whose real name something else on the canvas
           //                 already draws. Its remainder-hop case (`own`) draws
-          //                 the standing PHRASE since W19 — `ownStepName`, not
-          //                 the method's name, so the session-104 duplicate
-          //                 ("time marching expands into propagation then
-          //                 itself") stays impossible while the session-113
-          //                 blank ("i would like them labeled") is finally
-          //                 paid. The other nameless case (an open feed's fan
-          //                 base, session 118) still draws nothing: its name is
-          //                 on the stub one shape above.
+          //                 what the RECORD says that stretch does, and the
+          //                 standing phrase `ownStepName` only where nothing has
+          //                 been recorded — never the method's name, so the
+          //                 session-104 duplicate ("time marching expands into
+          //                 propagation then itself") stays impossible while the
+          //                 session-113 blank ("i would like them labeled") is
+          //                 still paid. The other nameless case (an open feed's
+          //                 fan base, session 118) still draws nothing: its name
+          //                 is on the stub one shape above.
           //
           // Checked both ways round, which is what makes it a check rather than
           // a restatement: `lane.open` was here first and is not the predicate —
@@ -2078,11 +2087,22 @@ test("an opened figure still names every drawn label without clipping it", () =>
               `nameless=${lane.nameless}) yet draws "${lane.label}"`,
           );
           if (lane.own !== null) {
+            // The two legal things a remainder hop may draw, and which one it
+            // drew is read off the RECORD rather than off the lane — so a
+            // standing phrase on a method that has an authored name fails here,
+            // and so does an authored name that reached the canvas from
+            // anywhere but `hops[method.id].name`.
+            const method = layerNode(LAYER_GRAPH, lane.own);
+            assert.ok(method !== null && isMethod(method), `${lane.key} owns ${lane.own}, which is no method`);
+            const recorded = ownStretchName(method, locale === "ja");
             assert.equal(
               lane.label,
-              ownStepName(locale),
-              `${lane.key} is a remainder hop but draws "${lane.label}", not the standing phrase`,
+              recorded ?? ownStepName(locale),
+              recorded === null
+                ? `${lane.key} has nothing recorded for its stretch but draws "${lane.label}", not the standing phrase`
+                : `${lane.key} records "${recorded}" for its stretch but draws "${lane.label}"`,
             );
+            (recorded === null ? standing : named).add(lane.own);
           }
           assert.ok(lane.fullLabel !== "", `${lane.key} has a drawn name but no full one`);
           assert.equal(
@@ -2094,6 +2114,24 @@ test("an opened figure still names every drawn label without clipping it", () =>
       }
     }
   }
+  console.log(
+    `[own-stretch census] ${named.size + standing.size} own stretches reach a drawn lane; `
+      + `${named.size} say what they do (${[...named].sort().join(", ")}), `
+      + `${standing.size} still draw the standing phrase (${[...standing].sort().join(", ")})`,
+  );
+  // Not vacuous, and pinned in the direction that can regress silently. The
+  // count is deliberately NOT asserted equal to a constant — this number is
+  // meant to climb as stretches are researched, and a test that has to be
+  // edited on every gain is a test that gets edited without being read. What it
+  // must never do is fall back to zero, which is what a broken reader looks
+  // like: every lane would still draw a phrase and every other assertion here
+  // would still pass.
+  assert.ok(named.size > 0, "no drawn own stretch says what it does — the recorded names stopped reaching the canvas");
+  assert.equal(
+    named.size + standing.size,
+    14,
+    "the number of own stretches the canvas draws changed — re-read the census comment above before editing this",
+  );
 });
 
 test("opening is a toggle, and toggling twice is where you started", () => {
