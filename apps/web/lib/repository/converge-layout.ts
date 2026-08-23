@@ -142,7 +142,6 @@ import {
   levelSlices,
   ribbonOutline,
   ribbonPath,
-  tributaryPath,
   tendonSlope,
   type Level,
   type Ribbon,
