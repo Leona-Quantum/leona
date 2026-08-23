@@ -31,6 +31,7 @@ import {
   innerToggleHref,
   layoutConverge,
   methodHasInterior,
+  ownStepName,
   resolveOpenIds,
 } from "./repository/converge-layout.ts";
 import {
@@ -46,7 +47,14 @@ import {
 import { LAYER_GRAPH } from "./repository/layer-graph.ts";
 import { STATE_VOCABULARY } from "./repository/state-vocabulary.ts";
 import { PAPER_REGISTER } from "./repository/paper-register.ts";
-import { isMethod, layerNode, routeOf, type LayerCorpusEntry, type LayerMethod } from "./repository/layers.ts";
+import {
+  isMethod,
+  layerNode,
+  ownStretchName,
+  routeOf,
+  type LayerCorpusEntry,
+  type LayerMethod,
+} from "./repository/layers.ts";
 import type { SourceCoverage } from "./repository/types.ts";
 
 const exists = (id: string) => layerNode(LAYER_GRAPH, id) !== null;
@@ -1500,6 +1508,79 @@ test("an own: card exists for exactly the methods that have the stretch, and no 
   assert.equal(cardExists(input, ownCardId("linear-ode-solve")), false);
   assert.equal(cardExists(input, "own:"), false);
 });
+
+test("an own: card says what its stretch does, or the standing phrase, in both locales", () => {
+  // The layout's own-stretch census covers the 14 stretches the canvas draws as
+  // a lane. This one covers the other surface, and it is the larger of the two:
+  // an `own:<methodId>` card exists for **all 95**, so 81 of these phrases are
+  // reachable at a URL a reader can open but are never drawn on the map. The
+  // owner's complaint (c) — *"i want to see no more of 'the method itself'"* —
+  // is about what a reader meets, and a reader meets these.
+  //
+  // Two claims, and the first is the one that cannot go stale:
+  //
+  //   1. Every own card draws either the phrase recorded on `hops[id].name` or
+  //      the standing phrase — never the method's own label (the session-104
+  //      duplicate) and never nothing (the session-113 blank). Read off the
+  //      RECORD rather than off the card, so a card that got its phrase from
+  //      anywhere else fails here.
+  //   2. The recorded population is pinned, and it ratchets. Filling one in is
+  //      an edit to this number; a phrase that stopped being recorded is a
+  //      regression that fails without one.
+  const named = new Set<string>();
+  const standing = new Set<string>();
+  for (const locale of ["en", "ja"] as const) {
+    const input = { graph: LAYER_GRAPH, vocabulary: STATE_VOCABULARY, corpus: [], locale, register: PAPER_REGISTER } as const;
+    for (const method of LAYER_GRAPH.nodes.filter(isMethod) as LayerMethod[]) {
+      const card = cardFor(input, ownCardId(method.id));
+      if (card === null) continue;
+      assert.equal(card.kind, "own-step", `${method.id}: own card is not an own-step card`);
+      if (card.kind !== "own-step") continue;
+      const recorded = ownStretchName(method, locale === "ja");
+      assert.equal(
+        card.ownName,
+        recorded,
+        `${method.id} (${locale}): the own card carries "${card.ownName}", the record says "${recorded}"`,
+      );
+      // What the reader actually sees, which is the card's phrase or the
+      // standing one — `map-card-panel.tsx` renders `ownName ?? ownStepName`.
+      const drawn = card.ownName ?? ownStepName(locale);
+      assert.notEqual(drawn.trim(), "", `${method.id} (${locale}): the own card draws nothing`);
+      assert.notEqual(
+        drawn,
+        locale === "ja" ? method.labelJa : method.label,
+        `${method.id} (${locale}): the own card draws the method's own name a second time`,
+      );
+      // Both locales or neither. One alone is a hole for half the readers, and
+      // it is the failure that a single-locale check cannot see.
+      assert.equal(
+        recorded === null,
+        ownStretchName(method, locale !== "ja") === null,
+        `${method.id}: recorded in one locale only`,
+      );
+      (recorded === null ? standing : named).add(method.id);
+    }
+  }
+  console.log(
+    `[own-card census] ${named.size + standing.size} own cards; `
+      + `${named.size} say what their stretch does, ${standing.size} still draw the standing phrase`,
+  );
+  assert.equal(named.size + standing.size, 95, "the own-card population moved — see the census above it");
+  // 14 when complaint (c) was closed on the DRAWN population (leona 725, 726):
+  // exactly the stretches the canvas reaches as a lane, and every one of them
+  // already carried paper-registered mathematics on its own hop.
+  // 31 with the seventeen whose own hop already carried `theory` — the phrase
+  // was derivable from mathematics already on the record, so no new claim about
+  // any paper was made to reach this number. The remaining 64 have no `theory`
+  // on their own hop, and validation refuses a `name` without one, so each of
+  // those is research before it is an edit here.
+  assert.equal(
+    named.size,
+    31,
+    "the number of own cards that say what their stretch does changed — ratchet it up when you fill one in, never down",
+  );
+});
+
 
 // --- the truncated map inside the card (W9) ---------------------------------
 //
