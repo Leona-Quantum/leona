@@ -1,6 +1,4 @@
-import { NOT_FOUND_COPY } from "../lib/public-copy";
-import { NOT_FOUND_LOCALE_STYLE } from "../lib/not-found-style.ts";
-import { PublicSite } from "../components/public-site";
+import { NotFoundBody } from "../components/not-found-body";
 import { RootDocument, rootMetadata } from "../components/root-document";
 
 /**
@@ -33,32 +31,5 @@ export default function GlobalNotFound() {
     <RootDocument lang="en">
       <NotFoundBody />
     </RootDocument>
-  );
-}
-
-function NotFoundBody() {
-  return (
-    <PublicSite className="mj-not-found-site" locale="en" chrome="static">
-      <style dangerouslySetInnerHTML={{ __html: NOT_FOUND_LOCALE_STYLE }} />
-      {(["en", "ja"] as const).map((locale) => {
-        const copy = NOT_FOUND_COPY[locale];
-        return (
-          <section
-            key={locale}
-            lang={locale}
-            className="mj-legal-hero mj-not-found-copy"
-            aria-labelledby={`not-found-heading-${locale}`}
-          >
-            <p className="mj-public-overline">{copy.label}</p>
-            <h1 id={`not-found-heading-${locale}`}>{copy.title}</h1>
-            <p>{copy.body}</p>
-            <div className="mj-public-actions">
-              <a className="mj-primary-button" href="/">{copy.home}</a>
-              <a className="mj-secondary-button" href="/repository">{copy.repository}</a>
-            </div>
-          </section>
-        );
-      })}
-    </PublicSite>
   );
 }

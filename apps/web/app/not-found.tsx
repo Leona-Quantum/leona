@@ -31,9 +31,7 @@
 // into the static HTML and one is hidden by CSS keyed on the `lang` on
 // `<html>` at paint time. No flash, and with JavaScript off the
 // reader gets English — the honest fallback for a page that cannot know.
-import { NOT_FOUND_COPY } from "../lib/public-copy";
-import { NOT_FOUND_LOCALE_STYLE } from "../lib/not-found-style.ts";
-import { PublicSite } from "../components/public-site";
+import { NotFoundBody } from "../components/not-found-body";
 
 // Scoped to this page and inlined rather than added to globals.css, because it
 // is meaningful only while a 404 is on screen. It keys off the `lang` that the
@@ -48,28 +46,5 @@ import { PublicSite } from "../components/public-site";
 // over this exact constant at build time — see that file.
 
 export default function NotFound() {
-  return (
-    <PublicSite className="mj-not-found-site" locale="en" chrome="static">
-      <style dangerouslySetInnerHTML={{ __html: NOT_FOUND_LOCALE_STYLE }} />
-      {(["en", "ja"] as const).map((locale) => {
-        const copy = NOT_FOUND_COPY[locale];
-        return (
-          <section
-            key={locale}
-            lang={locale}
-            className="mj-legal-hero mj-not-found-copy"
-            aria-labelledby={`not-found-heading-${locale}`}
-          >
-            <p className="mj-public-overline">{copy.label}</p>
-            <h1 id={`not-found-heading-${locale}`}>{copy.title}</h1>
-            <p>{copy.body}</p>
-            <div className="mj-public-actions">
-              <a className="mj-primary-button" href="/">{copy.home}</a>
-              <a className="mj-secondary-button" href="/repository">{copy.repository}</a>
-            </div>
-          </section>
-        );
-      })}
-    </PublicSite>
-  );
+  return <NotFoundBody />;
 }

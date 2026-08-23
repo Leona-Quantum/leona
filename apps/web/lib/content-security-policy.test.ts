@@ -270,7 +270,16 @@ test("the hashed stylesheet is the one the 404 page actually renders", () => {
   // The import is matched loosely — the constant's NAME and module, not an
   // exact relative path — so moving the page or adding a second named import
   // does not fail this for a reason that has nothing to do with the hash.
-  const page = readFileSync(join(webRoot, "app", "not-found.tsx"), "utf8");
+  // `components/not-found-body.tsx`, not `app/not-found.tsx`, since ai-ops
+  // issue 151. There are now TWO 404 boundaries — `app/not-found.tsx` for a
+  // `notFound()` thrown inside a segment, and `app/global-not-found.tsx` for a
+  // URL matching no segment at all, which has no root layout and so renders the
+  // whole document itself. Both render one shared body, and that body is the
+  // single file carrying the <style>. Pointing this guard at the file that
+  // actually renders the stylesheet is what keeps it load-bearing: aimed at
+  // either route file it would now match nothing and pass vacuously, which is
+  // the exact shape of failure the comment above is written against.
+  const page = readFileSync(join(webRoot, "components", "not-found-body.tsx"), "utf8");
   assert.match(
     page,
     /import \{[^}]*\bNOT_FOUND_LOCALE_STYLE\b[^}]*\} from "[^"]*not-found-style\.ts";/,
