@@ -681,6 +681,12 @@ jobs:
           # run_id + run_attempt keeps the property that mattered (one provider
           # run per workflow execution, so a retried step cannot double-spend)
           # while making an explicit re-run mean what an operator thinks it means.
+          #
+          # The one case the old key covered and this one does not: if the POST
+          # succeeds but the runner loses the response, a re-run submits a second
+          # run rather than re-reading the first. That costs one Bell-state run at
+          # 128 shots on an ambiguous network failure, against a deploy that could
+          # previously never recover at all. Deliberate, and not close.
           created=$(curl -sS -X POST "$api/v1/runs" \
             -H "Authorization: Bearer $probe" \
             -H 'Content-Type: application/json' \
@@ -738,18 +744,35 @@ jobs:
             # can only accuse the deploy sends the reader to the diff.
             reason=$(printf '%s' "$events" \
               | jq -r '[.[]? | objects | select(.type == "run.finished") | .reason_code] | last // empty' || true)
-            if [ "$reason" = "provider_failed" ]; then
-              echo "::error::reason_code is 'provider_failed' — the run never reached the sandbox"
-              echo "::error::because the LLM PROVIDER refused the call. This deploy is UNVERIFIED,"
-              echo "::error::but nothing here says the new revision is bad: check the provider"
-              echo "::error::account (balance, rate limit, model availability) BEFORE the diff."
-              echo "::error::MAJORANA_LLM_PROVIDER selects one provider and a 402/429 is not"
-              echo "::error::retried against another, so an empty account stops every run."
-            elif [ -n "$reason" ]; then
-              echo "::error::reason_code '$reason' — the deployed stack could not complete a run."
-            else
-              echo "::error::no terminal reason_code — see the events below."
-            fi
+            # The intent router fails as bare `provider_failed` (handlers.py), but a
+            # provider refusal inside a NAMED pipeline stage fails as
+            # `<role>_provider_failed` — simple_ports.py builds the code as
+            # f"{role}_provider_failed" and handlers.py sets reason_code from it. So
+            # matching the bare string alone would send an operator to the diff for
+            # exactly the case this branch exists to spare them, on any run that got
+            # past routing. `sandbox_provider_failed` is deliberately NOT in this arm:
+            # its "provider" is the sandbox, not the LLM account.
+            case "$reason" in
+              sandbox_provider_failed)
+                echo "::error::reason_code '$reason' — the SANDBOX provider refused, not the LLM"
+                echo "::error::account and not necessarily this revision. Check the sandbox's own"
+                echo "::error::status and quota before the diff."
+                ;;
+              provider_failed|*_provider_failed)
+                echo "::error::reason_code '$reason' — the run did not complete because the LLM"
+                echo "::error::PROVIDER refused the call. This deploy is UNVERIFIED, but nothing"
+                echo "::error::here says the new revision is bad: check the provider account"
+                echo "::error::(balance, rate limit, model availability) BEFORE the diff."
+                echo "::error::MAJORANA_LLM_PROVIDER selects ONE provider and a 402/429 is not"
+                echo "::error::retried against another, so one empty account stops every run."
+                ;;
+              "")
+                echo "::error::no terminal reason_code — see the events below."
+                ;;
+              *)
+                echo "::error::reason_code '$reason' — the deployed stack could not complete a run."
+                ;;
+            esac
 
             echo "last events:"
             printf '%s' "$events" | jq -c '.[-20:][]? | del(.run_id)' || true
