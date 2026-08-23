@@ -699,6 +699,24 @@ export interface HopNote {
  * lane — the exact session-113 complaint (*"I am seeing some blank processes"*)
  * that the standing phrase exists to prevent.
  */
+/**
+ * Whether this method's route holds a stretch it closes itself.
+ *
+ * Exported for validation, which needs the yes/no and nothing else.
+ * `ownStepCard` deliberately does not call this — it needs the segment's
+ * *index* to read the two states off `route.states`, so it does its own
+ * `findIndex` rather than locating the segment twice.
+ */
+export function hasOwnStretch(
+  graph: LayerGraph,
+  vocabulary: StateVocabulary,
+  method: LayerMethod,
+): boolean {
+  return routeOf(graph, vocabulary, method).segments.some(
+    (segment) => segment.capabilityId === null,
+  );
+}
+
 export function ownStretchName(method: LayerMethod, ja: boolean): string | null {
   const note = method.hops?.[method.id];
   const name = (ja ? note?.nameJa : note?.name)?.trim();
@@ -2715,6 +2733,21 @@ export function validateLayerGraph(
       if (key !== node.id && !node.steps.includes(key)) {
         errors.push(
           `${node.id}: hops names ${key}, which is neither one of its steps nor the method itself`,
+        );
+      } else if (key === node.id && !hasOwnStretch(graph, vocabulary, node)) {
+        // **The own key is only legal where there IS an own stretch.** A route
+        // whose named steps reach the exit on their own has no trailing
+        // segment, so `ownStepCard` returns null and no lane is ever drawn for
+        // it — a note filed here would be annotating a hop that does not exist,
+        // which is the same defect as the branch above and needs saying
+        // separately because the key itself is well-formed.
+        //
+        // Found by CodeRabbit on PR 725, against `name`. It was already true of
+        // `theory`, which is why the check is on the key rather than on either
+        // field: 15 of the methods are fully delegated today and none of them
+        // carries one, so this closes the hole without moving any data.
+        errors.push(
+          `${node.id}: hops names the method itself, but its steps reach the exit — there is no own stretch to annotate`,
         );
       }
       pairs(`hops[${key}]`, [

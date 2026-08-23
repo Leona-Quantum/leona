@@ -1757,14 +1757,24 @@ test("the per-slot census fails in all three directions, and says which one move
 // and the first record to use it wrongly is the one a reader sees.
 
 test("a hop note is filed against a hop the reader can actually see", () => {
+  // `route` runs alpha -> gamma and its one step runs alpha -> beta, so the
+  // step does not reach the exit and the method closes `beta -> gamma` itself.
+  // That is the shape most authored routes are in, and it is the shape that has
+  // an own stretch to annotate — see the fully-delegated fixture below, which
+  // deliberately does not.
   const errors = (hops: Record<string, unknown>): string[] =>
     validateLayerGraph(
       {
         nodes: [
-          capability("slot"),
+          capability("slot", { contract: contract("alpha", "gamma") }),
           capability("step-a"),
-          method("route", "slot", { steps: ["step-a"], atomic: undefined, hops: hops as never }),
-          method("other", "slot"),
+          method("route", "slot", {
+            contract: contract("alpha", "gamma"),
+            steps: ["step-a"],
+            atomic: undefined,
+            hops: hops as never,
+          }),
+          method("other", "slot", { contract: contract("alpha", "gamma") }),
         ],
       },
       new Set<string>(),
@@ -1833,6 +1843,30 @@ test("a hop note is filed against a hop the reader can actually see", () => {
   // register, so the cheap field is only reachable behind the expensive one.
   assert.deepEqual(errors({ route: { name: "x", nameJa: "x" } }), [
     "route: hops[route].name is authored with no theory behind it — record the mathematics first",
+  ]);
+
+  // **And the own key needs an own stretch to exist at all.** A route whose
+  // named steps already reach the exit closes nothing itself, so `ownStepCard`
+  // returns null and no lane is drawn — a note here annotates a hop that is not
+  // there. Caught by CodeRabbit on PR 725 against `name`; it was already true
+  // of `theory`, so the check is on the key and covers both.
+  const delegated = (hops: Record<string, unknown>): string[] =>
+    validateLayerGraph(
+      {
+        nodes: [
+          capability("slot"),
+          capability("step-a"),
+          method("route", "slot", { steps: ["step-a"], atomic: undefined, hops: hops as never }),
+        ],
+      },
+      new Set<string>(),
+      FIXTURE_STATES,
+      NO_DISPOSITIONS,
+    ).filter((error) => error.startsWith("route:"));
+  // The step alone runs alpha -> beta, which is the whole contract.
+  assert.deepEqual(delegated({ "step-a": { theory: "t", theoryJa: "t" } }), []);
+  assert.deepEqual(delegated({ route: { theory: "t", theoryJa: "t" } }), [
+    "route: hops names the method itself, but its steps reach the exit — there is no own stretch to annotate",
   ]);
 
   // **A well-formed pair of marks passes**, so the checks below are failing on the defect
