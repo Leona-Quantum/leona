@@ -1574,10 +1574,15 @@ test("an own: card says what its stretch does, or the standing phrase, in both l
   // any paper was made to reach this number. The remaining 64 have no `theory`
   // on their own hop, and validation refuses a `name` without one, so each of
   // those is research before it is an edit here.
-  // 43 with the first twelve of those 64 — the linear-ODE region's supporting
-  // slots, each read out of its own cited paper. Unlike the seventeen, every one
-  // of these is a NEW claim about a paper, so each arrived with the verbatim
-  // sentences behind it and each was checked against the source before landing.
+  // 43 with the first twelve of those 64, each read out of its own cited paper.
+  // They were picked as one region rather than by convenience: the two slots that
+  // produce a linear IVP (`spatial-discretization`, `full-discretization`) and
+  // the four the quantum solve delegates to (`polynomial-approximation`,
+  // `success-amplification`, `hamiltonian-simulation`, `state-preparation`) — so
+  // the batch advances complaint (c) and complaint (e), finishing linear ODE end
+  // to end, at once. Unlike the seventeen above, every one of these is a NEW
+  // claim about a paper, so each arrived with the verbatim sentences behind it
+  // and each was checked against the source before landing.
   assert.equal(
     named.size,
     43,
