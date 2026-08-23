@@ -39,12 +39,12 @@ export const metadata = rootMetadata;
 export default function LabLayout({ children }: { children: ReactNode }) {
   return (
     <RootDocument lang="en">
-    <div
-      data-surface="lab"
-      className={`lab-root ${spaceGrotesk.variable} ${jetbrainsMono.variable} ${zenKaku.variable}`}
-    >
-      {children}
-    </div>
+      <div
+        data-surface="lab"
+        className={`lab-root ${spaceGrotesk.variable} ${jetbrainsMono.variable} ${zenKaku.variable}`}
+      >
+        {children}
+      </div>
     </RootDocument>
   );
 }
