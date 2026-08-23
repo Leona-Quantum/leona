@@ -5473,6 +5473,16 @@ export const LAYER_GRAPH: LayerGraph = {
         "#   claims have not been reconciled in the literature",
       ].join("\n"),
     },
+    hops: {
+      "direct-root-finding-phases": {
+        name: "root-find the complement, peel layers",
+        nameJa: "補完式の根を求め、層を剥がす",
+        theory:
+          "Two steps, and the roots are only the first. The $SU(2)$-valued Laurent polynomial $F(z) = a(z)I + b(z)iX + c(z)iY + d(z)iZ$ must first be completed: its missing $c, d$ are built from the roots of $1 - a(z)^{2} - b(z)^{2}$ that lie inside the unit disk, $\\mathcal{D} = \\{r : 1 - a(r)^{2} - b(r)^{2} = 0,\\ |r| < 1\\}$, assembled as $e(z) = z^{-\\lfloor n'/2\\rfloor}\\prod_{r\\in\\mathcal{D}}(z-r)$ and then $c(z) = \\frac{e(z)+e(1/z)}{2}\\sqrt{\\alpha}$, $d(z) = \\frac{e(z)-e(1/z)}{2i}\\sqrt{\\alpha}$. [[assumption: Lemma 4 needs $a(\\eta)^{2} + b(\\eta)^{2} < 1$ at every point of the unit circle and $a(z)^{2}+b(z)^{2}$ reciprocal — that pairing of every root $r$ with $r^{-1}$, one inside the disk and one outside and neither on it, is what makes the selection well defined.]] The completed $F$ is then stripped one layer at a time: for $m = 2n, \\ldots, 1$ a rank-one projector $P_{m}$ is read off the top matrix coefficient, giving the primitive factor $E_{m}(t) = tP_{m} + t^{-1}(I - P_{m})$, and the polynomial is deflated by $F^{(m-1)}(t) = F^{(m)}(t)E_{m}^{\\dagger}(1/t)$. [[approximation: the roots are found numerically, which is the step this method is named for and the one the later methods in this slot exist to avoid.]]",
+        theoryJa:
+          "二つの段階があり、根を求めるのはその最初の一段階にすぎません。$SU(2)$ 値のローラン多項式 $F(z) = a(z)I + b(z)iX + c(z)iY + d(z)iZ$ は、まず完成させなければなりません。すなわち、欠けている $c, d$ を、単位円板の内側にある $1 - a(z)^{2} - b(z)^{2}$ の根から構成します。$\\mathcal{D} = \\{r : 1 - a(r)^{2} - b(r)^{2} = 0,\\ |r| < 1\\}$ とし、$e(z) = z^{-\\lfloor n'/2\\rfloor}\\prod_{r\\in\\mathcal{D}}(z-r)$ として組み立て、続いて $c(z) = \\frac{e(z)+e(1/z)}{2}\\sqrt{\\alpha}$、$d(z) = \\frac{e(z)-e(1/z)}{2i}\\sqrt{\\alpha}$ とします。[[assumption: 補題4は、単位円周上のすべての点で $a(\\eta)^{2} + b(\\eta)^{2} < 1$ であること、そして $a(z)^{2}+b(z)^{2}$ が相反的であることを必要とします。すべての根 $r$ を $r^{-1}$ と対にし、一方が円板の内側、他方が外側にあってどちらも円周上にはない、というこの対応関係こそが、根の選び方を well-defined にしています。]] 完成した $F$ は、そこから一層ずつ剥がされていきます。$m = 2n, \\ldots, 1$ について、階数1の射影子 $P_{m}$ を最上位の行列係数から読み取り、原始因子 $E_{m}(t) = tP_{m} + t^{-1}(I - P_{m})$ を得て、多項式を $F^{(m-1)}(t) = F^{(m)}(t)E_{m}^{\\dagger}(1/t)$ によってデフレートします。[[approximation: 根は数値的に求められます。これはこの手法の名前の由来となっている段階であり、この枠にある後続の手法群はまさにこれを避けるために存在しています。]]",
+      },
+    },
     citations: [
       { title: "Product Decomposition of Periodic Functions in Quantum Signal Processing", authors: "Jeongwan Haah", year: "2018", url: "https://arxiv.org/abs/1806.10236" },
       { title: "Fast Phase Factor Finding for Quantum Signal Processing", authors: "Hongkang Ni, Lexing Ying", year: "2024", url: "https://arxiv.org/abs/2410.06409" },
@@ -5586,6 +5596,16 @@ export const LAYER_GRAPH: LayerGraph = {
         "#   nonlinear-Fourier-transform route were developed for that regime",
         "#   specifically",
       ].join("\n"),
+    },
+    hops: {
+      "least-squares-optimization-phases": {
+        name: "descend the SU(2) product with L-BFGS",
+        nameJa: "L-BFGS で SU(2) 積を降下する",
+        theory:
+          "The optimiser never touches the full phase vector. It varies only the half $\\hat\\Phi = (\\phi_{0}, \\ldots, \\phi_{\\tilde{d}-1})$ and mirrors it about its centre to build the $\\Phi \\in [-\\pi,\\pi)^{d+1}$ the QSP unitary uses. [[assumption: that mirror is legitimate only because $Q(x)$ is taken real, which by the paper's inversion-symmetry theorem forces $\\Phi = \\Phi^{-}$ — invariance under reversing the phase order — halving the degrees of freedom.]] [[approximation: the loss is evaluated at $\\tilde{d}$ Chebyshev nodes rather than continuously, and Theorem 4 is what makes that safe: if $L(\\hat\\Phi) \\le \\varepsilon$ then every Chebyshev coefficient of $\\mathrm{Re}[\\langle 0|U_{\\Phi}(x)|0\\rangle]$ is within $\\sqrt{2\\varepsilon}$ of the target's, so driving the sampled loss down controls the fit on the whole interval and not merely at the samples.]] Every gradient and Hessian-vector product L-BFGS asks for is a product of $SU(2)$ matrices along the phase sequence — no root-finding and no high-order expansion anywhere, which is the whole reason this is more stable than the constructions it replaces.",
+        theoryJa:
+          "最適化器は完全な位相ベクトルには一切触れません。半分だけ、$\\hat\\Phi = (\\phi_{0}, \\ldots, \\phi_{\\tilde{d}-1})$ を変化させ、それを中心について鏡映することで、QSPユニタリが用いる $\\Phi \\in [-\\pi,\\pi)^{d+1}$ を構築します。[[assumption: この鏡映が正当化されるのは、$Q(x)$ が実数値とされているためだけです。論文の反転対称性定理により、これは $\\Phi = \\Phi^{-}$——位相の順序を逆転させても不変であること——を強制し、自由度を半分にします。]] [[approximation: 損失は連続的にではなく $\\tilde{d}$ 個のチェビシェフ節点で評価されます。これを安全にしているのが定理4であり、$L(\\hat\\Phi) \\le \\varepsilon$ ならば $\\mathrm{Re}[\\langle 0|U_{\\Phi}(x)|0\\rangle]$ のあらゆるチェビシェフ係数が目標のものから $\\sqrt{2\\varepsilon}$ 以内に収まることを示しています。したがって、サンプリングされた損失を下げることは、サンプル点だけでなく区間全体での適合を制御することになります。]] L-BFGSが要求するあらゆる勾配とヘッセ行列ベクトル積は、位相列に沿った $SU(2)$ 行列の積にすぎません。根を求める操作も高次展開もどこにも登場せず、これこそが、この手法が置き換える構成よりも安定である理由のすべてです。",
+      },
     },
     // From a read of the abstract page. Written beside its two siblings on
     // purpose: all three compute the same object, and what separates them in
@@ -5719,6 +5739,16 @@ export const LAYER_GRAPH: LayerGraph = {
         "#   structured-matrix method they describe as the fastest applicable",
         "#   across all regimes",
       ].join("\n"),
+    },
+    hops: {
+      "symmetric-newton-phases": {
+        name: "linearize F, solve for the phase update",
+        nameJa: "F を線形化し、位相の更新を解く",
+        theory:
+          "The map from target polynomial to phase factors, $F(\\Psi) = c$, is inverted by Newton's method. Here $c$ holds the target's Chebyshev coefficients and $F(\\Phi) := \\mathcal{F}(g(x,\\Phi))$ sends reduced phase factors to the Chebyshev coefficients of $g(x,\\Psi) := \\mathrm{Im}[\\langle 0|U(x,\\Psi)|0\\rangle]$, read off the symmetric QSP product $U(x,\\Psi) = e^{\\mathrm{i}\\psi_{0}Z}\\prod_{j=1}^{d}[W(x)e^{\\mathrm{i}\\psi_{j}Z}]$. [[assumption: the phases are constrained symmetric, $\\psi_{i} = \\psi_{d-i}$, and the target is normalised to $\\|f\\|_{\\infty} \\le 1$ — the condition under which $U(x,\\Psi)$ is an $\\mathrm{SU}(2)$ matrix at all.]] [[approximation: at each step $F$ is replaced by its Jacobian linearisation at the current iterate, $\\Phi^{t+1} = \\Phi^{t} - DF(\\Phi^{t})^{-1}(F(\\Phi^{t}) - c)$. The paper reports this reaching machine precision in 6 iterations for $\\alpha\\cos(1000x)$ at $\\alpha = 0.9$, rising only to 18 at $\\alpha = 1 - 10^{-9}$ where the Jacobian is highly ill-conditioned.]]",
+        theoryJa:
+          "目標多項式から位相因子への写像 $F(\\Psi) = c$ は、ニュートン法によって逆変換されます。ここで $c$ は目標のチェビシェフ係数を保持し、$F(\\Phi) := \\mathcal{F}(g(x,\\Phi))$ は、簡約された位相因子を $g(x,\\Psi) := \\mathrm{Im}[\\langle 0|U(x,\\Psi)|0\\rangle]$ のチェビシェフ係数へ送ります。これは対称QSP積 $U(x,\\Psi) = e^{\\mathrm{i}\\psi_{0}Z}\\prod_{j=1}^{d}[W(x)e^{\\mathrm{i}\\psi_{j}Z}]$ から読み取られます。[[assumption: 位相は対称であるという制約 $\\psi_{i} = \\psi_{d-i}$ を受けており、目標は $\\|f\\|_{\\infty} \\le 1$ に正規化されています。これは、$U(x,\\Psi)$ がそもそも $\\mathrm{SU}(2)$ 行列であるための条件です。]] [[approximation: 各ステップにおいて $F$ は、現在の反復点でのヤコビアン線形化 $\\Phi^{t+1} = \\Phi^{t} - DF(\\Phi^{t})^{-1}(F(\\Phi^{t}) - c)$ に置き換えられます。論文によれば、$\\alpha = 0.9$ における $\\alpha\\cos(1000x)$ に対してはこれが6回の反復で機械精度に達する一方、ヤコビアンが著しく悪条件になる $\\alpha = 1 - 10^{-9}$ では18回にまで増えるとされています。]]",
+      },
     },
     // From a read of the abstract page. The numbers here are an iteration count
     // against conditioning, not a degree — this record's claim is robustness "in
@@ -5865,6 +5895,16 @@ export const LAYER_GRAPH: LayerGraph = {
         "#   of the layer-stripping process most direct methods rely on -- this",
         "#   one included -- remains an open question",
       ].join("\n"),
+    },
+    hops: {
+      "prony-stable-factorization-phases": {
+        name: "find the polynomial without its roots",
+        nameJa: "根を求めずに多項式を得る",
+        theory:
+          "The characteristic polynomial $m(z) = \\prod_{|\\xi_{j}|<1}(z-\\xi_{j})$ is obtained without ever computing the roots $\\xi_{j}$, \"via a key component of Prony's method\". Writing $g(z) = (1 - a^{2}(z) - b^{2}(z))^{-1} = \\sum_{j}w_{j}/(\\xi_{j}-z) + \\mathrm{const}$, the shift relation $\\prod_{|\\xi_{i}|<1}(S - \\xi_{i})\\hat{g}_{-} = 0$ puts the coefficients of $m$ in the null space of a Hankel matrix $H$ built from the Fourier coefficients of $g$. [[assumption: the subleading coefficients of the complementary $b(z)$ are chosen randomly, so with probability 1 the $2d$ roots are simple and $H$ has full numerical rank — the paper shows that empirically rather than assuming it silently.]] [[approximation: the null vector is not taken from an SVD, which \"has $O(d^{3})$ time complexity\", but by shifted inverse iteration $m \\Leftarrow \\mathrm{normalize}((\\epsilon I + H^{T}H)^{-1}m)$ solved by conjugate gradient — stopping in 3 to 4 outer iterations at an empirical $O(d^{2})$.]] Setting $e(z) = z^{-d}m(z)$ recovers $c, d$ and hence $p, r$, and the phases come off top degree first from $e^{2i\\phi_{n}} = p_{n}/r_{n}$.",
+        theoryJa:
+          "特性多項式 $m(z) = \\prod_{|\\xi_{j}|<1}(z-\\xi_{j})$ は、根 $\\xi_{j}$ を一度も計算することなく、「プロニー法の鍵となる要素を介して」得られます。$g(z) = (1 - a^{2}(z) - b^{2}(z))^{-1} = \\sum_{j}w_{j}/(\\xi_{j}-z) + \\mathrm{const}$ と書くと、シフト関係式 $\\prod_{|\\xi_{i}|<1}(S - \\xi_{i})\\hat{g}_{-} = 0$ により、$m$ の係数は、$g$ のフーリエ係数から構成されるハンケル行列 $H$ の零空間に置かれます。[[assumption: 補完多項式 $b(z)$ の次数の低い係数はランダムに選ばれるため、確率1で $2d$ 個の根は単純根となり、$H$ はフルの数値ランクを持ちます。論文はこれを暗黙に仮定するのではなく、実証的に示しています。]] [[approximation: 零ベクトルはSVDから得るのではありません。SVDは「$O(d^{3})$ の時間計算量」を持つためであり、代わりにシフト付き逆反復 $m \\Leftarrow \\mathrm{normalize}((\\epsilon I + H^{T}H)^{-1}m)$ を共役勾配法で解くことで得られ、経験的に $O(d^{2})$ で外側の反復が3〜4回で止まります。]] $e(z) = z^{-d}m(z)$ とおくことで $c, d$、ひいては $p, r$ が復元され、位相は $e^{2i\\phi_{n}} = p_{n}/r_{n}$ から最高次数のものから順に得られます。",
+      },
     },
     // From a read of the abstract page, and it is the short one of the three.
     // The abstract reports that experiments were run for four applications and
@@ -6170,6 +6210,16 @@ export const LAYER_GRAPH: LayerGraph = {
         "# routine",
       ].join("\n"),
     },
+    hops: {
+      "sparse-access-block-encoding": {
+        name: "superpose the indices, rotate by the entry",
+        nameJa: "インデックスを重ね合わせ、成分で回転する",
+        theory:
+          "The encoding is a Gram-matrix sandwich $U = U_{L}^{\\dagger}U_{R}$. With $D_{s}$ preparing $|0\\rangle \\mapsto \\sum_{k=1}^{s}|k\\rangle/\\sqrt{s}$, the two halves are $V_{L} := O_{r}(I_{w+2} \\otimes D_{s_{r}})\\mathrm{SWAP}_{w+1}$ and $V_{R} := O_{c}(D_{s_{c}} \\otimes I_{w+1})$, so that $V_{L}$ spreads a row index over its $s_{r}$ nonzero positions and $V_{R}$ does the same down a column. Their overlap is a pure indicator: $\\langle 0|^{w+2}\\langle i|V_{L}^{\\dagger}V_{R}|0\\rangle^{w+2}|j\\rangle = 1/\\sqrt{s_{r}s_{c}}$ if $a_{ij} \\ne 0$ and $0$ otherwise. [[assumption: that identity says only that an entry is nonzero, so it rests entirely on $O_{r}$ and $O_{c}$ returning the true index of each row's and column's $k$-th nonzero, padded out past the sparsity bound.]] The value itself arrives separately: $U_{R}$ queries $O_{A}$ on the surviving pair and rotates one qubit to $a_{ij}|0\\rangle + \\sqrt{1-|a_{ij}|^{2}}|1\\rangle$, then calls $O_{A}$ again to uncompute the query register. [[approximation: that rotation is implemented \"with precision $O(\\mathrm{poly}(s_{r}s_{c}/\\varepsilon))$\" — an exact rotation through the arcsine of a queried value would take unboundedly many gates.]]",
+        theoryJa:
+          "この符号化はグラム行列のサンドイッチ $U = U_{L}^{\\dagger}U_{R}$ です。$D_{s}$ が $|0\\rangle \\mapsto \\sum_{k=1}^{s}|k\\rangle/\\sqrt{s}$ を準備するとして、二つの半分は $V_{L} := O_{r}(I_{w+2} \\otimes D_{s_{r}})\\mathrm{SWAP}_{w+1}$ と $V_{R} := O_{c}(D_{s_{c}} \\otimes I_{w+1})$ であり、$V_{L}$ は行インデックスをその $s_{r}$ 個の非ゼロ位置に広げ、$V_{R}$ は列方向に同じことを行います。両者の重なりは純粋な指示関数であり、$a_{ij} \\ne 0$ ならば $\\langle 0|^{w+2}\\langle i|V_{L}^{\\dagger}V_{R}|0\\rangle^{w+2}|j\\rangle = 1/\\sqrt{s_{r}s_{c}}$、そうでなければ $0$ です。[[assumption: この恒等式が示すのは成分が非ゼロであることだけであり、したがってこれは $O_{r}$ と $O_{c}$ が各行・各列の $k$ 番目の非ゼロ要素の真のインデックスを返すこと、そしてスパース性の上限を超えた分はパディングされることに全面的に依拠しています。]] 値そのものは別に得られます。$U_{R}$ は残った対に対して $O_{A}$ に問い合わせ、一つの量子ビットを $a_{ij}|0\\rangle + \\sqrt{1-|a_{ij}|^{2}}|1\\rangle$ へ回転させ、その後 $O_{A}$ を再び呼び出してクエリレジスタを逆計算します。[[approximation: 問い合わせた値のアークサインちょうどを通る厳密な回転には無制限に多くのゲートが必要になるため、この回転は「精度 $O(\\mathrm{poly}(s_{r}s_{c}/\\varepsilon))$」で実装されます。]]",
+      },
+    },
     citations: [
       { title: "Quantum singular value transformation and beyond: exponential improvements for quantum matrix arithmetics", authors: "András Gilyén, Yuan Su, Guang Hao Low, Nathan Wiebe", year: "2018", url: "https://arxiv.org/abs/1806.01838" },
       { title: "Circuit complexity of quantum access models for encoding classical data", authors: "Xiao-Ming Zhang, Xiao Yuan", year: "2023", url: "https://arxiv.org/abs/2311.11365" },
@@ -6268,6 +6318,16 @@ export const LAYER_GRAPH: LayerGraph = {
         "# O(N + log(1/epsilon)) for N orbitals, enabling qubitized phase estimation",
         "# with optimal query complexity O(lambda/epsilon)",
       ].join("\n"),
+    },
+    hops: {
+      "pauli-lcu-block-encoding": {
+        name: "sandwich SELECT between PREPARE calls",
+        nameJa: "PREPARE の間に SELECT を挟み込む",
+        theory:
+          "The block-encoding is $\\mathrm{PREPARE}^{\\dagger} \\cdot \\mathrm{SELECT} \\cdot \\mathrm{PREPARE}$. For $H = \\sum_{\\ell}w_{\\ell}H_{\\ell}$, the first loads the coefficients onto an ancilla, $\\mathrm{PREPARE}|0\\rangle^{\\otimes\\log L} = \\sum_{\\ell=0}^{L-1}\\sqrt{w_{\\ell}/\\lambda}\\,|\\ell\\rangle \\equiv |\\mathcal{L}\\rangle$, and $\\mathrm{SELECT} = \\sum_{\\ell}|\\ell\\rangle\\langle\\ell| \\otimes H_{\\ell}$ applies the indexed term to the system. [[assumption: each $H_{\\ell}$ must be self-inverse — a Pauli string is — because \"the self-inverse nature of the $H_{\\ell}$ operators implies that they are both Hermitian and unitary, which means they can be applied directly to a quantum state\".]] Projecting the ancilla back collapses the sandwich exactly: $(\\langle\\mathcal{L}| \\otimes \\mathbb{1})\\,\\mathrm{SELECT}\\,(|\\mathcal{L}\\rangle \\otimes \\mathbb{1}) = \\frac{1}{\\lambda}\\sum_{\\ell}w_{\\ell}H_{\\ell} = H/\\lambda$. [[approximation: the general statement replaces $\\mathrm{PREPARE}$ by any $(\\beta, b, \\varepsilon_{1})$-state-preparation-pair $(P_{L}, P_{R})$, which need only reproduce the coefficients to $\\varepsilon_{1}$, so an imperfectly synthesised preparation degrades the block before any per-term error is counted.]]",
+        theoryJa:
+          "ブロック符号化は $\\mathrm{PREPARE}^{\\dagger} \\cdot \\mathrm{SELECT} \\cdot \\mathrm{PREPARE}$ です。$H = \\sum_{\\ell}w_{\\ell}H_{\\ell}$ に対して、最初のPREPAREは係数をアンシラに読み込み、$\\mathrm{PREPARE}|0\\rangle^{\\otimes\\log L} = \\sum_{\\ell=0}^{L-1}\\sqrt{w_{\\ell}/\\lambda}\\,|\\ell\\rangle \\equiv |\\mathcal{L}\\rangle$ となり、$\\mathrm{SELECT} = \\sum_{\\ell}|\\ell\\rangle\\langle\\ell| \\otimes H_{\\ell}$ がインデックスされた項をシステムに適用します。[[assumption: 各 $H_{\\ell}$ は自己逆元でなければなりません——パウリ文字列はその一例です。「$H_{\\ell}$ 演算子が自己逆元であるという性質は、それらがエルミートかつユニタリであることを意味し、量子状態に直接適用できることを意味する」からです。]] アンシラを射影して戻すと、サンドイッチはちょうど $(\\langle\\mathcal{L}| \\otimes \\mathbb{1})\\,\\mathrm{SELECT}\\,(|\\mathcal{L}\\rangle \\otimes \\mathbb{1}) = \\frac{1}{\\lambda}\\sum_{\\ell}w_{\\ell}H_{\\ell} = H/\\lambda$ に収縮します。[[approximation: より一般的な主張では $\\mathrm{PREPARE}$ を任意の $(\\beta, b, \\varepsilon_{1})$-状態準備対 $(P_{L}, P_{R})$ に置き換えます。これは係数を $\\varepsilon_{1}$ の精度で再現しさえすればよいため、不完全に合成された準備は、項ごとの誤差が数えられる前の段階で、すでにブロックを劣化させています。]]",
+      },
     },
     citations: [
       { title: "Quantum singular value transformation and beyond: exponential improvements for quantum matrix arithmetics", authors: "András Gilyén, Yuan Su, Guang Hao Low, Nathan Wiebe", year: "2018", url: "https://arxiv.org/abs/1806.01838" },
@@ -6369,6 +6429,16 @@ export const LAYER_GRAPH: LayerGraph = {
         "# the paper states only that the circuit parameters can be easily generated",
         "# for problems up to fifteen qubits",
       ].join("\n"),
+    },
+    hops: {
+      "fable-approximate-block-encoding": {
+        name: "solve one Walsh-Hadamard for all angles",
+        nameJa: "一つの Walsh–Hadamard 変換で解く",
+        theory:
+          "Every entry is stored as a rotation amplitude by one oracle, $O_{A}|0\\rangle|i\\rangle|j\\rangle = a_{ij}|0\\rangle|i\\rangle|j\\rangle + \\sqrt{1-|a_{ij}|^{2}}|1\\rangle|i\\rangle|j\\rangle$, which for real $A$ is a controlled $R_{y}$ through $\\theta_{ij} = \\arccos(a_{ij})$. [[assumption: $|a_{ij}| \\le 1$, the domain on which that arccosine is real — the paper states the bound as a condition on the matrix.]] Synthesising $N^{2}$ separate multi-controlled rotations would cost $O(N^{4})$, which the authors call \"quadratically worse than the classical representation cost\"; instead the $N^{2}$ angles are treated as one uniformly controlled rotation and the per-gate angles $\\hat\\theta$ come from a single linear system $\\hat{H}^{\\otimes 2n}P_{G}\\hat\\theta = \\theta$ — a Walsh-Hadamard transform in Gray-code order, solvable classically in $O(N^{2}\\log N^{2})$ — leaving $O(N^{2})$ one- and two-qubit gates. Hadamard layers either side and a SWAP project the row superposition back onto $\\langle i|$, leaving $a_{ij}/2^{n}$. [[approximation: compression discards entries of $\\hat\\theta$ below a cutoff $\\delta_{c}$, which sparsifies in the transformed angle domain — \"a sparse representation of $\\hat\\theta$ does not typically mean that $\\theta$ and $A$ are sparse in the usual sense\".]]",
+        theoryJa:
+          "すべての成分は一つのオラクルによって回転振幅として保存されます。$O_{A}|0\\rangle|i\\rangle|j\\rangle = a_{ij}|0\\rangle|i\\rangle|j\\rangle + \\sqrt{1-|a_{ij}|^{2}}|1\\rangle|i\\rangle|j\\rangle$ であり、これは実数の $A$ に対しては $\\theta_{ij} = \\arccos(a_{ij})$ を通る制御 $R_{y}$ に相当します。[[assumption: $|a_{ij}| \\le 1$ であること——このアークコサインが実数となる定義域です——を前提としており、論文はこの上限を行列に対する条件として明示しています。]] $N^{2}$ 個の多重制御回転を個別に合成すれば $O(N^{4})$ のコストがかかり、著者らはこれを「古典的な表現コストに対して二乗分だけ悪化している」と呼んでいます。そこで代わりに、$N^{2}$ 個の角度は一つの一様制御回転として扱われ、ゲートごとの角度 $\\hat\\theta$ は単一の線形方程式 $\\hat{H}^{\\otimes 2n}P_{G}\\hat\\theta = \\theta$ ——グレイコード順のウォルシュ・アダマール変換であり、古典的に $O(N^{2}\\log N^{2})$ で解けます——から得られ、残るのは $O(N^{2})$ 個の1量子ビットおよび2量子ビットゲートです。両側のアダマール層とSWAPが行の重ね合わせを $\\langle i|$ へ射影し戻し、$a_{ij}/2^{n}$ が残ります。[[approximation: 圧縮はカットオフ $\\delta_{c}$ を下回る $\\hat\\theta$ の成分を捨てることで、変換後の角度領域においてスパース化を行います。ただし「$\\hat\\theta$ のスパースな表現は、通常の意味で $\\theta$ と $A$ がスパースであることを意味するとは限らない」とされています。]]",
+      },
     },
     citations: [
       { title: "FABLE: Fast Approximate Quantum Circuits for Block-Encodings", authors: "Daan Camps, Roel Van Beeumen", year: "2022", url: "https://arxiv.org/abs/2205.00081" },
@@ -7160,6 +7230,16 @@ export const LAYER_GRAPH: LayerGraph = {
         "# resting on shot-based readout has to answer that analysis",
       ].join("\n"),
     },
+    hops: {
+      "direct-sampling-readout": {
+        name: "measure each Pauli term, sum by weight",
+        nameJa: "各パウリ項を測定し、重みで足し合わせる",
+        theory:
+          "The observable is first written as a Pauli sum, $\\mathcal{H} = \\sum_{i\\alpha}h^{i}_{\\alpha}\\sigma_{\\alpha}^{i} + \\sum_{ij\\alpha\\beta}h^{ij}_{\\alpha\\beta}\\sigma_{\\alpha}^{i}\\sigma_{\\beta}^{j} + \\ldots$ with real coefficients. [[assumption: the decomposition must have a number of terms \"polynomial in the size of the system\", since every term is measured separately and the count is the bill.]] Then it is linearity and nothing else: $\\langle\\mathcal{H}\\rangle = \\sum_{i\\alpha}h^{i}_{\\alpha}\\langle\\sigma_{\\alpha}^{i}\\rangle + \\sum_{ij\\alpha\\beta}h^{ij}_{\\alpha\\beta}\\langle\\sigma_{\\alpha}^{i}\\sigma_{\\beta}^{j}\\rangle + \\ldots$, so the quantity is rebuilt from per-term averages weighted by the coefficients they came with. [[approximation: each $\\langle\\sigma\\cdots\\rangle$ is a sample mean over repeated preparations, not the expectation itself; reaching precision $p$ on a term of coefficient $h$ costs $O(|h|^{2}/p^{2})$ repetitions, so the coefficient enters twice — once as a weight and once as a sampling cost.]]",
+        theoryJa:
+          "観測量はまずパウリ和として $\\mathcal{H} = \\sum_{i\\alpha}h^{i}_{\\alpha}\\sigma_{\\alpha}^{i} + \\sum_{ij\\alpha\\beta}h^{ij}_{\\alpha\\beta}\\sigma_{\\alpha}^{i}\\sigma_{\\beta}^{j} + \\ldots$ と書かれ、係数は実数です。[[assumption: この分解は「システムの大きさに対して多項式個」の項を持たなければなりません。すべての項が個別に測定されるため、項の数がそのままコストになるからです。]] その先は線形性だけです。$\\langle\\mathcal{H}\\rangle = \\sum_{i\\alpha}h^{i}_{\\alpha}\\langle\\sigma_{\\alpha}^{i}\\rangle + \\sum_{ij\\alpha\\beta}h^{ij}_{\\alpha\\beta}\\langle\\sigma_{\\alpha}^{i}\\sigma_{\\beta}^{j}\\rangle + \\ldots$ となり、この量は各項の平均値を、それが付随していた係数で重み付けして再構成したものです。[[approximation: 各 $\\langle\\sigma\\cdots\\rangle$ は、期待値そのものではなく、繰り返し準備した状態にわたる標本平均です。係数 $h$ の項について精度 $p$ に到達するには $O(|h|^{2}/p^{2})$ 回の繰り返しが必要であり、係数は重みとしてと標本コストとしての両方で二重に効いてきます。]]",
+      },
+    },
     // From a read of the abstract page, like `surface-code`'s. The record already
     // cites this paper for the method; what the citation does not say, and this
     // section does, is that somebody ran it.
@@ -7247,6 +7327,16 @@ export const LAYER_GRAPH: LayerGraph = {
         "# a state that has been prepared and measured cannot be reused, so this is",
         "# the fault-tolerant-regime readout and direct sampling is the near-term one",
       ].join("\n"),
+    },
+    hops: {
+      "amplitude-estimation-readout": {
+        name: "phase-estimate the Grover iterate",
+        nameJa: "Grover 反復子を位相推定する",
+        theory:
+          "The whole method rests on the Grover iterate $Q = -AS_{0}A^{-1}S_{\\chi}$ leaving a two-dimensional space invariant. On it $Q$ has eigenvectors $|\\Psi_{\\pm}\\rangle = \\frac{1}{\\sqrt{2}}\\left(\\frac{1}{\\sqrt{a}}|\\Psi_{1}\\rangle \\pm \\frac{i}{\\sqrt{1-a}}|\\Psi_{0}\\rangle\\right)$ and eigenvalues $\\lambda_{\\pm} = e^{\\pm i2\\theta_{a}}$, where $\\sin^{2}(\\theta_{a}) = a = \\langle\\Psi_{1}|\\Psi_{1}\\rangle$. [[assumption: that decomposition needs $0 < a < 1$ — both the flagged and unflagged branches of $A|0\\rangle$ must be present, or the subspace collapses to one dimension.]] Since $A|0\\rangle = \\frac{-i}{\\sqrt{2}}(e^{i\\theta_{a}}|\\Psi_{+}\\rangle - e^{-i\\theta_{a}}|\\Psi_{-}\\rangle)$, the eigenphase carries $a$: the algorithm Fourier-transforms an $M$-dimensional ancilla, applies $\\Lambda_{M}(Q)$ so branch $j$ picks up $e^{\\pm i2j\\theta_{a}}$, inverse-transforms and measures $y$. [[approximation: a register of size $M$ resolves $\\theta_{a}$ only to a multiple of $\\pi/M$, so the reported $\\tilde{a} = \\sin^{2}(\\pi y/M)$ is a discretised reading of the amplitude rather than the amplitude.]]",
+        theoryJa:
+          "この手法全体は、グローバー反復子 $Q = -AS_{0}A^{-1}S_{\\chi}$ が二次元空間を不変に保つという事実に基づいています。その空間上で $Q$ は固有ベクトル $|\\Psi_{\\pm}\\rangle = \\frac{1}{\\sqrt{2}}\\left(\\frac{1}{\\sqrt{a}}|\\Psi_{1}\\rangle \\pm \\frac{i}{\\sqrt{1-a}}|\\Psi_{0}\\rangle\\right)$ と固有値 $\\lambda_{\\pm} = e^{\\pm i2\\theta_{a}}$ を持ち、ここで $\\sin^{2}(\\theta_{a}) = a = \\langle\\Psi_{1}|\\Psi_{1}\\rangle$ です。[[assumption: この分解には $0 < a < 1$ が必要です。$A|0\\rangle$ のフラグが立った枝と立っていない枝の両方が存在していなければならず、そうでなければ部分空間は一次元に潰れてしまいます。]] $A|0\\rangle = \\frac{-i}{\\sqrt{2}}(e^{i\\theta_{a}}|\\Psi_{+}\\rangle - e^{-i\\theta_{a}}|\\Psi_{-}\\rangle)$ であることから、固有位相は $a$ の情報を運びます。アルゴリズムは $M$ 次元のアンシラをフーリエ変換し、$\\Lambda_{M}(Q)$ を適用することで枝 $j$ が $e^{\\pm i2j\\theta_{a}}$ を獲得し、逆変換して $y$ を測定します。[[approximation: サイズ $M$ のレジスタは $\\theta_{a}$ を $\\pi/M$ の倍数の精度までしか分解できません。したがって報告される $\\tilde{a} = \\sin^{2}(\\pi y/M)$ は、振幅そのものではなく、振幅の離散化された読み取り値です。]]",
+      },
     },
     repeats: {
       "state-preparation": {
@@ -7395,6 +7485,16 @@ export const LAYER_GRAPH: LayerGraph = {
         "# measures the copies collectively, not a hardware shot count: the two are",
         "# not interchangeable despite the shared word",
       ].join("\n"),
+    },
+    hops: {
+      "classical-shadow-readout": {
+        name: "invert the channel, median-of-means",
+        nameJa: "チャネルを反転し、平均の中央値をとる",
+        theory:
+          "Each round rotates the state by a random unitary, $\\rho \\mapsto U\\rho U^{\\dagger}$, and measures in the computational basis. Averaged over unitary and outcome that defines a channel, $\\mathbb{E}[U^{\\dagger}|\\hat{b}\\rangle\\langle\\hat{b}|U] = \\mathcal{M}(\\rho)$. [[assumption: $\\mathcal{M}$ \"is invertible if the ensemble of unitary transformations defines a tomographically complete set of measurements\" — random $n$-qubit Clifford or single-qubit Clifford circuits are the two the paper uses.]] Applying the inverse classically to a single outcome gives a snapshot $\\hat{\\rho} = \\mathcal{M}^{-1}(U^{\\dagger}|\\hat{b}\\rangle\\langle\\hat{b}|U)$ that \"exactly reproduces the underlying state in expectation\", $\\mathbb{E}[\\hat{\\rho}] = \\rho$, and $N$ of them form the shadow. An observable is then read out of the array rather than from a fresh experiment: the shadow is split into $K$ equal batches averaged to $\\hat{\\rho}_{(k)}$, and $\\hat{o}_{i} = \\mathrm{median}\\{\\mathrm{tr}(O_{i}\\hat{\\rho}_{(1)}), \\ldots, \\mathrm{tr}(O_{i}\\hat{\\rho}_{(K)})\\}$. [[approximation: that median of means stands in for a single sample mean, buying robustness to outlier snapshots at some cost in statistical efficiency.]]",
+        theoryJa:
+          "各ラウンドでは、状態をランダムなユニタリによって $\\rho \\mapsto U\\rho U^{\\dagger}$ と回転させ、計算基底で測定します。ユニタリと測定結果にわたって平均をとると、それはチャネル $\\mathbb{E}[U^{\\dagger}|\\hat{b}\\rangle\\langle\\hat{b}|U] = \\mathcal{M}(\\rho)$ を定義します。[[assumption: $\\mathcal{M}$ は「ユニタリ変換のアンサンブルがトモグラフィー的に完全な測定の集合を定めるならば可逆である」とされています。論文が用いるのは、ランダムな $n$ 量子ビットクリフォード回路と、単一量子ビットクリフォード回路の二種類です。]] この逆写像を一つの測定結果に対して古典的に適用すると、スナップショット $\\hat{\\rho} = \\mathcal{M}^{-1}(U^{\\dagger}|\\hat{b}\\rangle\\langle\\hat{b}|U)$ が得られます。これは「期待値において背後の状態を厳密に再現する」もの、すなわち $\\mathbb{E}[\\hat{\\rho}] = \\rho$ であり、これを $N$ 個集めたものがシャドウを構成します。観測量はその後、新たな実験からではなく配列から読み出されます。シャドウは $K$ 個の等しいバッチに分割されて $\\hat{\\rho}_{(k)}$ へ平均され、$\\hat{o}_{i} = \\mathrm{median}\\{\\mathrm{tr}(O_{i}\\hat{\\rho}_{(1)}), \\ldots, \\mathrm{tr}(O_{i}\\hat{\\rho}_{(K)})\\}$ となります。[[approximation: この平均の中央値は、単一の標本平均の代わりを務めるものであり、統計的効率をいくらか犠牲にすることで、外れ値のスナップショットに対する頑健性を得ています。]]",
+      },
     },
     citations: [
       { title: "Predicting Many Properties of a Quantum System from Very Few Measurements", authors: "Hsin-Yuan Huang, Richard Kueng, John Preskill", year: "2020", url: "https://arxiv.org/abs/2002.08953" },
@@ -9421,6 +9521,16 @@ export const LAYER_GRAPH: LayerGraph = {
     conditions: "Verteletskyi et al. state the constraint that creates the problem — \"current hardware can perform only projective single-qubit measurements\", while \"the number of terms in the Hamiltonian grows as $O(N^4)$ with the size of the system\" — and then name the problem exactly: \"qubit-wise commutativity between the Hamiltonian terms can be expressed as a graph and the problem of the optimal grouping is equivalent of finding a minimum clique cover (MCC) for the Hamiltonian graph\". Two honest limits come with it. The optimum is not available — \"the MCC problem is NP-hard but there exist several polynomial heuristic algorithms to solve it approximately\" — and the saving quoted is measured rather than proved: \"on average, grouping qubit-wise commuting terms reduced the number of operators to measure three times compared to the total number of terms in the considered Hamiltonians\", on a set of molecular electronic Hamiltonians.",
     conditionsJa: "Verteletskyi らは、この問題を生む制約を述べています。「現行のハードウェアは射影的な単一量子ビット測定しか行えない」一方で、「ハミルトニアンの項数は系の大きさ $N$ に対して $O(N^4)$ で増える」。そのうえで問題を正確に同定します。「ハミルトニアンの項どうしの量子ビットごとの可換性はグラフとして表現でき、最適なグループ分けの問題は、そのハミルトニアングラフに対する最小クリーク被覆（MCC）を求める問題と等価である」。これには誠実な限界が二つ伴います。最適解は手に入りません。「MCC 問題は NP 困難であるが、それを近似的に解く多項式時間のヒューリスティックがいくつか存在する」。そして示された節約は証明ではなく実測です。「平均して、量子ビットごとに可換な項をまとめることで、測定すべき演算子の数は、対象としたハミルトニアンの全項数に比べて 3 分の 1 になった」。",
     steps: ["state-preparation"],
+    hops: {
+      "measurement-grouped-readout": {
+        name: "group qubit-wise commuting terms",
+        nameJa: "量子ビット単位で可換な項をまとめる",
+        theory:
+          "Commuting is not the criterion. [[assumption: \"within VQE, only single-qubit operators $\\hat{\\sigma}_{i}$ can be measured\", so two terms are co-measurable only if they share single-qubit eigenbases — a strictly stronger condition than commuting.]] The paper's qubit-wise commutator is therefore $[\\hat{P}_{I}, \\hat{P}_{J}]_{\\rm qw} = 0$ exactly when every one-qubit factor of $\\hat{P}_{I}$ commutes with its counterpart in $\\hat{P}_{J}$, and the Pauli words of $\\hat{H}_{q} = \\sum_{I}C_{I}\\hat{P}_{I}$ become vertices of a graph whose edges are the zero-qwc pairs. Splitting $\\hat{H}_{q} = \\sum_{n}\\hat{A}_{n}$ with $[\\hat{P}_{I}^{(n)}, \\hat{P}_{J}^{(n)}]_{\\rm qw} = 0$ inside each group makes every group a clique, and a clique \"allows one to measure all Pauli words within each $\\hat{A}_{n}$ group in a single set of $N$ one-qubit measurements\". [[approximation: fewest groups is the minimum clique cover, which \"is NP-hard in general\", so the partition comes from polynomial heuristics that only approach the true optimum.]]",
+        theoryJa:
+          "交換することそのものが基準ではありません。[[assumption: 「VQEにおいては、測定できるのは単一量子ビット演算子 $\\hat{\\sigma}_{i}$ だけである」ため、二つの項が共測定可能なのは単一量子ビットの固有基底を共有している場合に限られます。これは可換であることよりも厳格に強い条件です。]] したがって論文の量子ビット単位の交換子は、$\\hat{P}_{I}$ のすべての1量子ビット因子が $\\hat{P}_{J}$ の対応する因子と交換するとき、まさにそのときに限り $[\\hat{P}_{I}, \\hat{P}_{J}]_{\\rm qw} = 0$ となります。そして $\\hat{H}_{q} = \\sum_{I}C_{I}\\hat{P}_{I}$ のパウリ語は、ゼロqwcの対を辺とするグラフの頂点になります。$\\hat{H}_{q} = \\sum_{n}\\hat{A}_{n}$ を、各グループ内で $[\\hat{P}_{I}^{(n)}, \\hat{P}_{J}^{(n)}]_{\\rm qw} = 0$ となるように分割すると、どのグループもクリークになります。クリークは「各 $\\hat{A}_{n}$ グループ内のすべてのパウリ語を、$N$ 回の1量子ビット測定からなる単一の集合で測定することを可能にする」ものです。[[approximation: 最少グループ数は最小クリーク被覆に対応しますが、これは「一般にはNP困難」です。そのため分割は多項式時間のヒューリスティックから得られ、真の最適解に近づくにとどまります。]]",
+      },
+    },
     entries: ["vqe-measurement-grouping"],
     citations: [
       { title: "Measurement Optimization in the Variational Quantum Eigensolver Using a Minimum Clique Cover", authors: "Vladyslav Verteletskyi, Tzu-Ching Yen, Artur F. Izmaylov", year: "2019", url: "https://arxiv.org/abs/1907.03358" },
@@ -9805,6 +9915,16 @@ export const LAYER_GRAPH: LayerGraph = {
     conditions: "Lee et al. state the contribution as a circuit and a complexity, not as a solve: \"We describe quantum circuits with only Õ(N) Toffoli complexity that block encode the spectra of quantum chemistry Hamiltonians in a basis of $N$ arbitrary (e.g., molecular) orbitals\" (abstract). What a consumer does with it is stated as an option rather than as this paper's work — \"With O(λ/ε) repetitions of these circuits one can use phase estimation to sample in the molecular eigenbasis\" — and §II is titled \"Tensor Hypercontraction Representations for Quantum Simulation\", a representation rather than an algorithm. The mechanism is the one its siblings on this slot use: \"Our approach to encoding the eigenspectra of the THC representation... will use the linear combination of unitaries (LCU) query model\", with the coefficient loading done by \"a three step procedure where we first prepare an equal superposition over the μ and ν registers, then perform coherent alias sampling, then swap\" — which is why this node steps into `state-preparation`.",
     conditionsJa: "Lee らは、その貢献を回路と計算量として述べており、求解としては述べていません。「$N$ 個の任意の（例えば分子）軌道からなる基底における量子化学ハミルトニアンのスペクトルをブロックエンコードする、Toffoli 計算量が Õ(N) にとどまる量子回路を与える」（要旨）。それを使って何をするかは、この論文の仕事としてではなく可能性として述べられます。「これらの回路を O(λ/ε) 回繰り返せば、位相推定によって分子の固有基底からサンプリングすることができる」。§II の表題も「量子シミュレーションのためのテンソル超縮約表現」であり、アルゴリズムではなく表現です。仕組みは、この層の兄弟手法が使うものと同じです。「THC 表現の固有スペクトルをエンコードする我々の方法は……ユニタリの線形結合（LCU）クエリモデルを用いる」。係数の読み込みは「まず μ と ν のレジスタ上に一様な重ね合わせを用意し、次にコヒーレントなエイリアスサンプリングを行い、そして交換する、という 3 段階の手続き」で行われます。本ノードが `state-preparation` へステップを持つのは、そのためです。",
     steps: ["state-preparation"],
+    hops: {
+      "thc-block-encoding": {
+        name: "project the fermions into the THC basis",
+        nameJa: "フェルミオンを THC 基底へ射影する",
+        theory:
+          "The two-electron tensor is factorised as $G_{pqrs} = \\sum_{\\mu,\\nu=1}^{M}\\chi_{p}^{(\\mu)}\\chi_{q}^{(\\mu)}\\zeta_{\\mu\\nu}\\chi_{r}^{(\\nu)}\\chi_{s}^{(\\nu)}$, and the point of the factorisation is the basis it buys. Non-orthogonal ladder operators $c^{\\dagger}_{\\mu,\\sigma} = \\sum_{p}\\chi_{p}^{(\\mu)}a^{\\dagger}_{p,\\sigma}$ project the $N$-orbital fermions into an $M$-dimensional auxiliary basis in which the Coulomb operator is diagonal in the number operators, $G = \\frac{1}{2}\\sum_{\\alpha,\\beta}\\sum_{\\mu,\\nu}(c^{\\dagger}_{\\mu,\\alpha}c_{\\mu,\\alpha})(c^{\\dagger}_{\\nu,\\beta}c_{\\nu,\\beta})\\zeta_{\\mu\\nu}$. [[assumption: doing it the other way — encoding $p,q,r,s$ directly — gives a 1-norm \"much larger than even $\\lambda_{V}$, the 1-norm of the original Hamiltonian\", because the sum over $\\mu,\\nu$ sits outside the absolute value; so the diagonalising rotation, with each $\\chi^{(\\mu)}$ normalised, is what makes this worth doing at all.]] Each occupation number becomes one rotated qubit, giving the LCU form $H = -\\frac{1}{2}\\sum_{\\sigma,\\ell}t_{\\ell}U_{T,\\ell}^{\\dagger}Z_{1,\\sigma}U_{T,\\ell} + \\frac{1}{8}\\sum_{\\alpha,\\beta,\\mu,\\nu}\\zeta_{\\mu\\nu}U_{\\mu}^{\\dagger}Z_{1,\\alpha}U_{\\mu}U_{\\nu}^{\\dagger}Z_{1,\\beta}U_{\\nu}$. [[approximation: prepare loads amplitudes by coherent alias sampling, and an $\\aleph$-bit keep register \"is equivalent to discretizing the squared amplitudes to the nearest $1/(2^{\\aleph}d)$\".]]",
+        theoryJa:
+          "二電子テンソルは $G_{pqrs} = \\sum_{\\mu,\\nu=1}^{M}\\chi_{p}^{(\\mu)}\\chi_{q}^{(\\mu)}\\zeta_{\\mu\\nu}\\chi_{r}^{(\\nu)}\\chi_{s}^{(\\nu)}$ として因子分解され、この因子分解の意義はそれが手に入れる基底そのものにあります。非直交な階段演算子 $c^{\\dagger}_{\\mu,\\sigma} = \\sum_{p}\\chi_{p}^{(\\mu)}a^{\\dagger}_{p,\\sigma}$ は、$N$ 軌道のフェルミオンを $M$ 次元の補助基底へ射影し、その基底ではクーロン演算子が数演算子に対して対角になります。$G = \\frac{1}{2}\\sum_{\\alpha,\\beta}\\sum_{\\mu,\\nu}(c^{\\dagger}_{\\mu,\\alpha}c_{\\mu,\\alpha})(c^{\\dagger}_{\\nu,\\beta}c_{\\nu,\\beta})\\zeta_{\\mu\\nu}$ となります。[[assumption: 逆のやり方——$p,q,r,s$ を直接符号化すること——では、$\\mu,\\nu$ にわたる和が絶対値の外側に置かれるため、1-ノルムが「元のハミルトニアンの1-ノルムである $\\lambda_{V}$ よりもさらにはるかに大きく」なってしまいます。したがって、各 $\\chi^{(\\mu)}$ を正規化した対角化回転こそが、この手法をそもそも行う価値のあるものにしています。]] 各占有数は一つの回転された量子ビットになり、LCU形式 $H = -\\frac{1}{2}\\sum_{\\sigma,\\ell}t_{\\ell}U_{T,\\ell}^{\\dagger}Z_{1,\\sigma}U_{T,\\ell} + \\frac{1}{8}\\sum_{\\alpha,\\beta,\\mu,\\nu}\\zeta_{\\mu\\nu}U_{\\mu}^{\\dagger}Z_{1,\\alpha}U_{\\mu}U_{\\nu}^{\\dagger}Z_{1,\\beta}U_{\\nu}$ が得られます。[[approximation: PREPAREはコヒーレントなエイリアスサンプリングによって振幅を読み込み、$\\aleph$ ビットのキープレジスタは「振幅の二乗を最も近い $1/(2^{\\aleph}d)$ に離散化することと等価」です。]]",
+      },
+    },
     entries: ["tensor-hypercontraction-block-encoding"],
     citations: [
       { title: "Even more efficient quantum computations of chemistry through tensor hypercontraction", authors: "Joonho Lee, Dominic W. Berry, Craig Gidney, William J. Huggins, Jarrod R. McClean, Nathan Wiebe, Ryan Babbush", year: "2020", url: "https://arxiv.org/abs/2011.03494" },

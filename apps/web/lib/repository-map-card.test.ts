@@ -1583,9 +1583,15 @@ test("an own: card says what its stretch does, or the standing phrase, in both l
   // to end, at once. Unlike the seventeen above, every one of these is a NEW
   // claim about a paper, so each arrived with the verbatim sentences behind it
   // and each was checked against the source before landing.
+  // 55 with the next twelve — the rest of the machinery a linear-ODE route
+  // reaches: block-encoding (4), QSP phase factors (4) and observable
+  // estimation (4). Same discipline: verbatim sentences, checked against the
+  // paper before landing. Three of those papers could not be read through
+  // ar5iv at all, which renders a well-formed page with the mathematics simply
+  // absent — see the PR body.
   assert.equal(
     named.size,
-    43,
+    55,
     "the number of own cards that say what their stretch does changed — ratchet it up when you fill one in, never down",
   );
 });
