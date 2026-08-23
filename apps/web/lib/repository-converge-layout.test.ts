@@ -1655,7 +1655,7 @@ test("the figures that open nothing offer no control to open them", () => {
   }
   console.log(`figures with no expandable interior at all: ${barren.length} — ${barren.join(", ")}`);
   // The ruling this pins is now permanent, not provisional. On 2026-08-23 the
-  // owner closed ai-ops#165 with *"Issue 16 stands: ingredients stay in the
+  // owner closed ai-ops issue 165 with *"Issue 16 stands: ingredients stay in the
   // card, W8 is retired, Stage 2 becomes nothing to do."* So a future session
   // that finds this assertion failing has not found a stale test — it has put
   // ingredients back on the canvas, which is a decision only he can make.
