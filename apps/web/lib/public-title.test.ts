@@ -29,13 +29,22 @@ import { fileURLToPath } from "node:url";
 
 const WEB_ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 
-/** `template` and `default` from the root layout's metadata, as written. */
+/**
+ * `template` and `default` from the root metadata, as written.
+ *
+ * Read from `components/root-document.tsx`, not `app/layout.tsx`, since
+ * ai-ops issue 151: there is no single root layout any more. Each top-level
+ * segment has its own and they all re-export `rootMetadata` from that one
+ * module, so it is still exactly one declaration this guard has to find — and
+ * if it ever stops being one, the `assert.ok`s below go off rather than the
+ * scan quietly reading a file that no longer decides anything.
+ */
 function rootTitle(): { template: string; fallback: string } {
-  const source = readFileSync(join(WEB_ROOT, "app", "layout.tsx"), "utf8");
+  const source = readFileSync(join(WEB_ROOT, "components", "root-document.tsx"), "utf8");
   const template = /template:\s*"([^"]+)"/.exec(source)?.[1];
   const fallback = /default:\s*"([^"]+)"/.exec(source)?.[1];
-  assert.ok(template, "the root layout no longer declares a title template — this guard is inert");
-  assert.ok(fallback, "the root layout no longer declares a default title");
+  assert.ok(template, "the root metadata no longer declares a title template — this guard is inert");
+  assert.ok(fallback, "the root metadata no longer declares a default title");
   assert.ok(template.includes("%s"), `the title template has no %s placeholder: ${template}`);
   return { template, fallback };
 }

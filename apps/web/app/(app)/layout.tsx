@@ -2,6 +2,7 @@ import type { ReactNode } from "react";
 import type { UserInfo } from "@workos-inc/authkit-nextjs";
 import { redirect } from "next/navigation";
 import { InviteNotice } from "../../components/invite-notice";
+import { RootDocument, rootMetadata } from "../../components/root-document";
 import { Shell } from "../../components/shell";
 import { StorageScope } from "../../components/storage-scope";
 import { hasCompleteProfileName } from "../../lib/account-profile";
@@ -20,6 +21,12 @@ import { scopeMayAdoptLegacyData, storageScopeId } from "../../lib/storage-scope
 // in-flight stream and its component state, and closing the modal reveals it
 // untouched. On every route the slot does not match it renders
 // @modal/default.tsx, which is nothing at all.
+// A ROOT layout since `app/layout.tsx` was removed (ai-ops issue 151). The
+// signed-in surface already resolves the locale for `Shell`, so the document
+// gets the same value the UI is rendered in — no extra cookie read, and these
+// routes are behind auth and uncacheable regardless.
+export const metadata = rootMetadata;
+
 export default async function AppLayout({ children, modal }: { children: ReactNode; modal: ReactNode }) {
   const [auth, locale, workspace] = await Promise.all([
     getMajoranaAuth({ ensureSignedIn: true }),
@@ -39,6 +46,7 @@ export default async function AppLayout({ children, modal }: { children: ReactNo
 
   const scopeId = storageScopeId(auth.user.id, workspace);
   return (
+    <RootDocument lang={locale}>
     // The tier is resolved here rather than in the Shell because the developer
     // allowlist lives in a server-only environment variable: reading it in a
     // client component would silently resolve every account to "free".
@@ -78,6 +86,7 @@ export default async function AppLayout({ children, modal }: { children: ReactNo
         {modal}
       </Shell>
     </StorageScope>
+    </RootDocument>
   );
 }
 

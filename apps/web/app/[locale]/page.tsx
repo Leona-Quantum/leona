@@ -35,9 +35,10 @@ export function generateStaticParams() {
 // the template is for; the home page is the one page whose subject is the
 // template's own suffix, which is why it is the one page that must not use it.
 //
-// Japanese cannot lean on that fallback: the root layout's `default` is a
-// fixed English string (`app/layout.tsx` cannot read the locale — see the
-// comment on `localeScript` there for why), so a Japanese reader fell through
+// Japanese cannot lean on that fallback: the root metadata's `default` is a
+// fixed English string — metadata is shared by every root layout and so cannot
+// be per-locale, even now that `<html lang>` is (ai-ops issue 151) — so a
+// Japanese reader fell through
 // to it too and got an English tab title on an otherwise fully localized page.
 // `homeMetadataCopy` states an explicit Japanese title for that branch only —
 // see its own comment for why the ternary lives in `lib/public-page-metadata.ts`
