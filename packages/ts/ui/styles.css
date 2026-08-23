@@ -12774,6 +12774,15 @@ html:not([data-auth="in"]) .mj-auth-slot[data-auth-slot="in"] {
 .mj-map-shell {
   position: relative;
   height: 100%;
+  /* The rail's footprint, computed once from the same tokens that place it:
+     `.mj-map-overlay`'s own top inset, `.mj-map-overlay-button`'s size, and
+     one more gap as the clearance before content should start. Everything
+     downstream that needs to know how much room the rail takes — right now
+     just the canvas reservation below — reads this property instead of a
+     second, hand-typed 56px; move the rail (resize the button, change the
+     inset) and the reservation moves with it instead of drifting apart from
+     what it was measured against. */
+  --map-overlay-band: calc(var(--sp-4) + var(--sp-8) + var(--sp-2));
 }
 /* Nothing drawn: the graph produced no figure at all. Centred rather than left
    at the top-left, because on a chrome-less page a sentence in the corner reads
@@ -12803,16 +12812,20 @@ html:not([data-auth="in"]) .mj-auth-slot[data-auth-slot="in"] {
   align-items: center;
   gap: var(--sp-2);
 }
-/* A framed 32px button rather than a bare glyph. Over a canvas the reader can
-   pan, a control with no background sits on whatever line happens to be under
-   it — measured on the four-root overview, where the top-left corner is drawn
-   through. The border and the panel fill are what keep it a control. */
+/* A framed button rather than a bare glyph. Over a canvas the reader can pan,
+   a control with no background sits on whatever line happens to be under it
+   — measured on the four-root overview, where the top-left corner is drawn
+   through. The border and the panel fill are what keep it a control.
+
+   `var(--sp-8)`, not a literal `32px`: `--map-overlay-band` on `.mj-map-shell`
+   above sums this same token, so a hand-typed `32px` here would be a second
+   copy the band's calc() could silently drift from. */
 .mj-map-overlay-button {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 32px;
-  height: 32px;
+  width: var(--sp-8);
+  height: var(--sp-8);
   border: var(--border-hairline) solid var(--border-0);
   border-radius: var(--radius-control);
   color: var(--text-1);
@@ -12826,6 +12839,33 @@ html:not([data-auth="in"]) .mj-auth-slot[data-auth-slot="in"] {
 .mj-map-overlay-button:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
+}
+
+/* The canvas's own content is drawn flush to its layer's (0, 0) — see
+   `.mj-canvas-layer` — which at rest sits directly under the rail above.
+   Measured on production at 1438px, fetching each figure's rendered HTML and
+   intersecting every `<text>` box with the controls' rectangle: 23 of 28
+   figures had their first label's ink under an opaque button, from 11px
+   ("Multistep, all-at-once") to 72px ("Quantum volume", reading as "volume").
+   It is occlusion, not truncation — the DOM and `curl` both carry the whole
+   string — so no text-content check ever saw it.
+
+   The reservation is `padding-top` on `.mj-canvas-layer`, the content layer
+   *inside* `InfiniteCanvas`'s pan/zoom transform, not a shift on
+   `.mj-canvas-viewport` outside it: it has to be part of the drawing surface
+   itself so a reader who pans still reaches every pixel of the figure, and so
+   the reserved band scales with zoom exactly like everything else this layer
+   draws. `--map-overlay-band` is what makes it a no-JS fix too — `?at=` is
+   applied client-side, but the server renders this same layer either way, so
+   a reader with JavaScript off gets the same clearance a `curl` does.
+
+   Scoped to `.mj-map-shell`, not written on the bare class: `.mj-canvas-layer`
+   is also the embedded per-method figure on `/repository/<method>`
+   (`repository-layers.tsx`'s `.mj-layers-zoom`), which carries no
+   `.mj-map-overlay` and must not gain a reservation for controls it does not
+   have. */
+.mj-map-shell .mj-canvas-layer {
+  padding-top: var(--map-overlay-band);
 }
 
 /* --- the figure in words -------------------------------------------------- */
@@ -12913,6 +12953,13 @@ html:not([data-auth="in"]) .mj-auth-slot[data-auth-slot="in"] {
   /* The overlay controls are navigation, and navigation does not print. */
   .mj-map-overlay {
     display: none;
+  }
+  /* The reservation above exists for controls that just went `display: none`
+     on this same page. One override of the property both rules already read,
+     rather than a second `.mj-canvas-layer` rule with its own `padding-top: 0`
+     to keep in step with the first. */
+  .mj-map-shell {
+    --map-overlay-band: 0px;
   }
 }
 
