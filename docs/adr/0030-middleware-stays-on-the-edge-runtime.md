@@ -5,7 +5,7 @@
 
 **Context:** Next 16 prints a build-time deprecation warning on every `next dev` and every build:
 
-```
+```text
 ⚠ The "middleware" file convention is deprecated. Please use "proxy" instead.
   npx @next/codemod@canary middleware-to-proxy .
 ```

@@ -12,10 +12,11 @@
 // warning pointing at `proxy`, and that warning is accepted noise, not a task:
 // `proxy` is strictly the nodejs runtime — `runtime` is unavailable there and
 // setting it throws — so the codemod would move every matched request off the
-// edge, including the localeRewrite the CDN caching design in next.config.ts
-// depends on. Next's own v16 guide names `middleware` as the supported route
-// for anything needing the edge. Reasoning and what to fix if it is ever
-// reversed: docs/adr/0030-middleware-stays-on-the-edge-runtime.md (ai-ops issue 148).
+// edge. That includes `localeRewrite`, and next.config.ts records that the whole
+// Vercel-CDN-Cache-Control design depends on `localeRewrite` running here in
+// middleware. Next's own v16 guide names `middleware` as the supported route for
+// anything needing the edge. Reasoning, and what to fix if this is ever reversed:
+// docs/adr/0030-middleware-stays-on-the-edge-runtime.md (ai-ops issue 148).
 import { authkitMiddleware } from "@workos-inc/authkit-nextjs";
 import { NextResponse, type NextFetchEvent, type NextRequest } from "next/server";
 import { isWorkosAuthConfigured } from "./lib/auth-config";
