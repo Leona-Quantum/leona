@@ -86,12 +86,25 @@ test("the map surface reserves at least the control rail's own height before dra
   // from rather than retyped as a constant.
   const railHeight = spacingToken("sp-4") + spacingToken("sp-8");
 
-  const layerBody = ruleBody(".mj-map-shell .mj-canvas-layer");
+  // On the VIEWPORT, which is outside `InfiniteCanvas`'s pan/zoom transform —
+  // not on `.mj-canvas-layer`, which is inside it. Padding on the layer is in
+  // the layer's own coordinates, so the transform scales it while the rail stays
+  // at fixed screen size: measured on production, a 56px reservation on the
+  // layer holds at zoom 1 and 0.75 and fails at 0.5 (content top 28px, rail
+  // bottom 48px) and 0.3 (17px). Asserting the selector, not just the
+  // declaration, is what keeps that regression from coming back silently.
+  const viewportBody = ruleBody(".mj-map-shell .mj-canvas-viewport");
   assert.match(
-    layerBody,
+    viewportBody,
     /padding-top:\s*var\(--map-overlay-band\)/,
-    "expected `.mj-map-shell .mj-canvas-layer` to reserve `var(--map-overlay-band)` as padding-top, " +
-      "so the flush-to-origin content inside the pan/zoom transform starts below the rail",
+    "expected `.mj-map-shell .mj-canvas-viewport` to reserve `var(--map-overlay-band)` as padding-top, " +
+      "so the reservation is in screen pixels at every zoom rather than shrinking with the canvas",
+  );
+  assert.doesNotMatch(
+    styles,
+    /\.mj-map-shell \.mj-canvas-layer\s*\{[^}]*padding-top/,
+    "the reservation must not sit on `.mj-canvas-layer` — inside the pan/zoom transform it " +
+      "scales away when the reader zooms out, and the rail does not",
   );
 
   const shellBody = ruleBody(".mj-map-shell");
@@ -125,9 +138,34 @@ test("the button and the band read one token, not two independent copies of the 
 });
 
 test("print collapses the reservation along with the controls it exists for", () => {
-  const printMatch = styles.match(/@media print\s*\{([\s\S]*?)\n\}/);
-  assert.ok(printMatch, "expected an @media print block in styles.css");
-  const printBlock = printMatch![1];
+  // **Brace-counted, not regex-delimited.** A non-greedy `([\s\S]*?)\n\}` ends
+  // at the first `}` that starts a line, which today is the media block's own
+  // closer only because every rule inside it happens to be indented — one
+  // reformat and the block silently becomes the first nested rule, and both
+  // assertions below would then be searching the wrong text. Counting braces
+  // says what is meant.
+  // Anchored to the start of a line, because the plain string also occurs
+  // inside a comment further up ("`@media print` reveals it too") and
+  // `indexOf` finds that one first — which is how the first version of this
+  // test ended up brace-counting from the middle of a comment and asserting
+  // against `.mj-map-reading`'s body.
+  const atRule = /^@media print\s*\{/m.exec(styles);
+  assert.ok(atRule, "expected an @media print block in styles.css");
+  const open = atRule.index;
+  let depth = 0;
+  let close = -1;
+  for (let i = styles.indexOf("{", open); i < styles.length; i += 1) {
+    if (styles[i] === "{") depth += 1;
+    else if (styles[i] === "}") {
+      depth -= 1;
+      if (depth === 0) {
+        close = i;
+        break;
+      }
+    }
+  }
+  assert.notEqual(close, -1, "the @media print block never closes");
+  const printBlock = styles.slice(open, close);
 
   assert.match(
     printBlock,

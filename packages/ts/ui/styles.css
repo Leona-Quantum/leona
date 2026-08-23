@@ -12850,23 +12850,39 @@ html:not([data-auth="in"]) .mj-auth-slot[data-auth-slot="in"] {
    It is occlusion, not truncation — the DOM and `curl` both carry the whole
    string — so no text-content check ever saw it.
 
-   The reservation is `padding-top` on `.mj-canvas-layer`, the content layer
-   *inside* `InfiniteCanvas`'s pan/zoom transform, not a shift on
-   `.mj-canvas-viewport` outside it: it has to be part of the drawing surface
-   itself so a reader who pans still reaches every pixel of the figure, and so
-   the reserved band scales with zoom exactly like everything else this layer
-   draws. `--map-overlay-band` is what makes it a no-JS fix too — `?at=` is
-   applied client-side, but the server renders this same layer either way, so
-   a reader with JavaScript off gets the same clearance a `curl` does.
+   **On the viewport, which does not scale, and not on the layer, which does.**
+   The obvious place is `padding-top` on `.mj-canvas-layer`, the content layer
+   inside `InfiniteCanvas`'s pan/zoom transform — and that is wrong in a way
+   worth recording, because it looks right at rest. Padding there is in the
+   layer's own coordinates, so the transform scales it while the rail stays at
+   fixed screen size, and zooming OUT shrinks the clearance back under the rail.
+   Measured on production, reserving 56px on the layer:
 
-   Scoped to `.mj-map-shell`, not written on the bare class: `.mj-canvas-layer`
-   is also the embedded per-method figure on `/repository/<method>`
-   (`repository-layers.tsx`'s `.mj-layers-zoom`), which carries no
-   `.mj-map-overlay` and must not gain a reservation for controls it does not
-   have. */
-.mj-map-shell .mj-canvas-layer {
+       zoom  1.0   content top  56px   0 labels occluded
+       zoom  0.75  content top  42px   0
+       zoom  0.5   content top  28px   1   <- rail bottom is 48px
+       zoom  0.3   content top  17px   2
+
+   `.mj-canvas-viewport` is outside the transform, so the same declaration holds
+   56 screen pixels at every zoom (verified at 0.3x through 2x: content top stays
+   56px, nothing occluded). It costs no layout: the viewport is `border-box` and
+   `height: 100%`, so its box is still exactly the `100dvh` the full-bleed map
+   wants.
+
+   The band stays DRAWABLE rather than becoming a dead strip. `overflow: hidden`
+   clips at the padding edge, so a reader who pans up still sees the figure move
+   into it — panned -40px, the drawing's top reads 16px and every label stays
+   visible. The reservation is about where content STARTS, which is the thing a
+   reader who has not touched anything gets, and it takes nothing away from one
+   who has.
+
+   Scoped to `.mj-map-shell`: `.mj-canvas-viewport` is also the embedded
+   per-method figure on `/repository/<method>`, which carries no
+   `.mj-map-overlay` and must not reserve room for controls it does not have. */
+.mj-map-shell .mj-canvas-viewport {
   padding-top: var(--map-overlay-band);
 }
+
 
 /* --- the figure in words -------------------------------------------------- */
 /* Clipped to a pixel, not removed, and not `.sr-only`.
@@ -12959,7 +12975,7 @@ html:not([data-auth="in"]) .mj-auth-slot[data-auth-slot="in"] {
      rather than a second `.mj-canvas-layer` rule with its own `padding-top: 0`
      to keep in step with the first. */
   .mj-map-shell {
-    --map-overlay-band: 0px;
+    --map-overlay-band: 0;
   }
 }
 
