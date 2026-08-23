@@ -452,6 +452,45 @@ resolved to `execute`. A conversational answer also reports `succeeded` without
 entering the sandbox, so status alone would let a chat reply certify a broken
 execution path.
 
+### When this gate fails, read `reason_code` before you read the diff
+
+The step prints the run's terminal `reason_code` and says which of two different
+things went wrong. **`provider_failed` means the LLM provider refused the call** —
+an empty account, a rate limit, a withdrawn model — and says nothing about the
+revision you just shipped. `MAJORANA_LLM_PROVIDER` selects one provider and a
+402 or 429 is not retried against another, so one empty account fails every run
+and therefore every deploy.
+
+Check the provider account first. A quick unambiguous test, which does not
+require deploying anything:
+
+```
+curl -sS -o /dev/null -w '%{http_code}\n' https://api.deepseek.com/chat/completions \
+  -H "Authorization: Bearer $(gcloud secrets versions access latest \
+      --secret=DEEPSEEK_API_KEY --project majorana-core)" \
+  -H 'Content-Type: application/json' \
+  -d '{"model":"deepseek-v4-pro","messages":[{"role":"user","content":"ok"}],"max_tokens":4}'
+```
+
+`200` is a healthy account; `402` is Insufficient Balance.
+
+**A failed gate rolls the worker back, and the api does NOT roll back with it.**
+Step "rollback worker on failure" restores the previous worker revision, while
+the api step only advises. Migrations have already been applied by then, at step
+`migrate database`. So a deploy that fails this gate leaves production on **the
+new schema, the new api, and the OLD worker image** — the exact skew this
+workflow was built to prevent. If the gate failed for a provider reason, that
+skew is pure cost: nothing was wrong with the worker that was thrown away.
+
+**Re-running the workflow used to be futile, and no longer is.** The gate's
+`Idempotency-Key` was the commit sha alone, and the API returns an existing run
+for a known key **whatever its status** — so a commit whose gate had once failed
+replayed that terminal `failed` row on every subsequent re-run, forever, and
+rolled the worker back each time. Between 2026-08-21 and 2026-08-23 that
+discarded four worker revisions after a DeepSeek balance ran out. The key now
+includes `github.run_id` and `github.run_attempt`, so a re-run makes a genuinely
+new run while a retried step within one execution still cannot double-spend.
+
 ### The credential
 
 `DEPLOY_PROBE_TOKEN` — a Secret Manager entry, read by the workflow at deploy
