@@ -13454,6 +13454,16 @@ html:not([data-auth="in"]) .mj-auth-slot[data-auth-slot="in"] {
   color: var(--text-2);
   font-style: italic;
 }
+/* The own-step card renders `<code>from</code> ⟶ <code>to</code>` and then this
+   span, all as siblings inside the `<li>`, so with no margin the phrase butted
+   straight against the state id: `solution-answerthe method itself`. Scoped to a
+   DIRECT child of the `<li>` on purpose. The other user of this class sits inside
+   `.mj-card-hop > summary`, where `.mj-card-trace-states` is `display: block` and
+   so already breaks the line — a margin there would indent it and cost the
+   flush-left alignment the summary rules a few lines below exist to protect. */
+.mj-card-trace > li > .mj-card-trace-own {
+  margin-left: var(--sp-2);
+}
 .mj-card-trace-tag {
   margin-left: var(--sp-2);
   color: var(--text-2);
