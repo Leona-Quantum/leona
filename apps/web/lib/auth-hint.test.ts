@@ -36,7 +36,11 @@ function read(...segments: string[]): string {
   return readFileSync(join(...segments), "utf8");
 }
 
-const layout = read(webRoot, "app", "layout.tsx");
+// The document component, not `app/layout.tsx` — there is no single root layout
+// since ai-ops issue 151 split it per top-level segment. The bootstrap script
+// this test guards moved there with the rest of `<head>`, and it is still one
+// file rather than ten because every root layout renders this one component.
+const layout = read(webRoot, "components", "root-document.tsx");
 const sessionRoute = read(webRoot, "app", "api", "auth", "session", "route.ts");
 const signOutRoute = read(webRoot, "app", "auth", "sign-out", "route.ts");
 const callbackRoute = read(webRoot, "app", "auth", "callback", "route.ts");

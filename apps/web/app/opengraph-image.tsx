@@ -6,7 +6,7 @@
  * `og:title`, `og:description`, `og:url`, `og:site_name` and `og:type` were all
  * being emitted correctly on every public page. `og:image` was the one absent
  * tag, so every link shared into Slack, iMessage, LinkedIn or X unfurled as a
- * bare text card. `app/layout.tsx` even anticipated this — its `metadataBase`
+ * bare text card. The root metadata even anticipated this — its `metadataBase`
  * comment reads "and any OG image added later" — it was simply never added.
  *
  * ## Why a generated image and not a checked-in PNG

@@ -5,7 +5,7 @@
 //
 // No `metadata` export: Next only reads that from `layout` and `page`, so one
 // here would look like it set the tab title and quietly do nothing. The title
-// falls back to the default in app/layout.tsx.
+// falls back to the default in the root metadata (`components/root-document.tsx`).
 //
 // ## Why this file may not read a cookie or a header, which is not obvious
 //
@@ -28,16 +28,17 @@
 // misses the one that was disqualifying all of them.
 //
 // So the locale is chosen in the browser instead. Both languages are rendered
-// into the static HTML and one is hidden by CSS keyed on the `lang` that
-// `app/layout.tsx` sets before paint. No flash, and with JavaScript off the
+// into the static HTML and one is hidden by CSS keyed on the `lang` on
+// `<html>` at paint time. No flash, and with JavaScript off the
 // reader gets English — the honest fallback for a page that cannot know.
 import { NOT_FOUND_COPY } from "../lib/public-copy";
 import { NOT_FOUND_LOCALE_STYLE } from "../lib/not-found-style.ts";
 import { PublicSite } from "../components/public-site";
 
 // Scoped to this page and inlined rather than added to globals.css, because it
-// is meaningful only while a 404 is on screen. It keys off the `lang` that
-// `app/layout.tsx`'s locale script has already put on `<html>` before paint, so
+// is meaningful only while a 404 is on screen. It keys off the `lang` that the
+// locale script in `components/root-document.tsx` has already put on `<html>`
+// before paint, so
 // there is one mechanism rather than two. The default — no script, no
 // JavaScript at all — shows English.
 //

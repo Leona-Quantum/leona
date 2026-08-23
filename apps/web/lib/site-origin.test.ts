@@ -254,12 +254,18 @@ test("the canonical URL a page states is the address the sitemap publishes", () 
   }
 });
 
-test("no canonical URL is declared in the root layout", () => {
-  // Metadata is inherited. A canonical in `app/layout.tsx` would be applied to
+test("no canonical URL is declared in the root metadata", () => {
+  // Metadata is inherited. A canonical in the root metadata would be applied to
   // every route that does not override it, telling a crawler that all seven
   // hundred pages are the same page — strictly worse than declaring none.
   // `metadataBase` is the one field that belongs there.
-  const layout = pageSource("app/layout.tsx");
+  //
+  // Read from `components/root-document.tsx` since ai-ops issue 151: each
+  // top-level segment now has its own root layout and they all re-export
+  // `rootMetadata` from that module, so this is still the single declaration
+  // every route inherits — and the point of routing the split through one
+  // component rather than copying the object into ten layouts.
+  const layout = pageSource("components/root-document.tsx");
   assert.match(layout, /metadataBase:\s*new URL\(canonicalOrigin\(\)\)/);
   // The field, not the word: this file's own comment explains why the field is
   // absent, and a bare /alternates/ would match the explanation.

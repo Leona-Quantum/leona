@@ -1,3 +1,43 @@
+/**
+ * The one `<html>`/`<body>` document, shared by every root layout.
+ *
+ * **Why there is more than one root layout.** `<html lang>` has to come from
+ * the server, and a layout only ever receives params for segments from the
+ * root down to itself — so a single `app/layout.tsx` sitting *above*
+ * `[locale]` could never see the locale, on any route. Next's answer is
+ * "multiple root layouts": delete the one at the top and give each top-level
+ * segment its own. That is what each segment's own `layout.tsx` now is, and this is the
+ * document all of them render, so the head, the fonts, the three bootstrap
+ * scripts and the JSON-LD have exactly one writer.
+ *
+ * Owner ruling, ai-ops issue 151: *"option 2"* — fold it into the Atlas
+ * revamp rather than doing it on its own or leaving it.
+ *
+ * **What each caller passes as `lang`, and why it differs.** The issue framed
+ * this as one restructuring with one cost. Measured against production it is
+ * two different situations and only one of them was ever expensive:
+ *
+ *     [locale] pages   /  /pricing  /contact  /privacy
+ *                      cache-control: public          x-vercel-cache: PRERENDER
+ *                      locale comes from the PATH, so `params.locale` sets
+ *                      `lang` with no Dynamic API and no cache lost at all.
+ *
+ *     /repository/*    cache-control: private, no-cache, NO-STORE
+ *                      x-vercel-cache: MISS
+ *                      locale comes from the COOKIE, and this route tree is
+ *                      already fully dynamic — so `getPublicLocale()` costs
+ *                      nothing here that is not already being paid.
+ *
+ * The argument against reading the locale on the server was *"it would take
+ * every public page out of the CDN cache"*. That is true of the pages whose
+ * locale is a cookie and false of the pages that are cached — and those two
+ * sets do not overlap. Neither surface pays the cost the issue priced.
+ *
+ * Everything else — the signed-in app, `auth`, `dev`, `lab`, and the three
+ * segments that only redirect — passes `"en"`, which is exactly what it
+ * served before. This change does not invent a localisation those surfaces
+ * do not have.
+ */
 import type { CSSProperties, ReactNode } from "react";
 import type { Metadata } from "next";
 import { Analytics } from "@vercel/analytics/next";
@@ -7,7 +47,7 @@ import { AUTH_HINT_COOKIE, AUTH_HINT_SIGNED_IN } from "../lib/auth-hint";
 import { LEGACY_PUBLIC_LOCALE_COOKIE, PUBLIC_LOCALE_COOKIE } from "../lib/public-locale";
 import { canonicalOrigin } from "../lib/site-origin";
 import { OG_IMAGE, SITE_NAME } from "../lib/public-metadata";
-import "./globals.css";
+import "../app/globals.css";
 
 const themeScript = `(() => {
   try {
@@ -20,50 +60,25 @@ const themeScript = `(() => {
 })();`;
 
 /**
- * `<html lang>`, set here rather than on the server, and why that is not a
- * downgrade — updated, because the premise it was written against has changed.
+ * The locale script — **a client-side backstop now, not the mechanism.**
  *
- * This layout used to `await getPublicLocale()`, which reads a cookie. A
- * Dynamic API in the ROOT layout makes every route in the application dynamic,
- * so one line for one attribute was disqualifying the entire site from the CDN.
+ * This comment used to argue at length that `<html lang>` could not come from
+ * the server, and that this script was the only thing that would ever set it.
+ * Both halves are now false, and the whole argument is deleted rather than left
+ * standing with a note: it was the case for a single root layout, and there is
+ * no longer a single root layout. See the block at the top of this file.
  *
- * When this comment was first written, the claim "the served markup said
- * `lang="en"` before this change and says `lang="en"` after it" was the whole
- * story, because every OTHER server-rendered byte on a Japanese `[locale]`
- * page was English too — `lang="en"` was wrong but at least consistent with a
- * page that was itself not yet localized. That stopped being true twice over:
- * the page body always read locale-keyed copy, and PR 710 made the page
- * TITLE and DESCRIPTION do the same. So a fresh, no-JS, pre-hydration load of
- * a Japanese page now serves a Japanese `<h1>` and a Japanese `<title>` inside
- * a document that still declares `lang="en"` — a real, now-measurable
- * mismatch, not merely an unread one. `<main lang={resolvedLocale}>` in
- * `components/public-site.tsx` closes that gap for every visitor-facing
- * element this app renders under `[locale]` — see the comment there — but
- * `<html lang>` itself still cannot vary, for the structural reason below,
- * and this script remains the only thing that ever updates it (including
- * on the language toggle's own `router.refresh()`, which re-renders the root
- * layout but produces the identical literal `"en"` every time — the toggle's
- * `document.documentElement.lang = nextLocale` line in
- * `components/language-toggle.tsx` is therefore not redundant with anything
- * added here).
+ * Today `<html lang>` is server-rendered correctly on both surfaces that serve
+ * Japanese — `[locale]` from the path, `/repository` from the cookie — so a
+ * screen reader, a crawler and a no-JS load all get the right answer from the
+ * bytes, which is what ai-ops issue 151 was about.
  *
- * The real fix, if `<html lang>` itself ever has to be right in the served
- * bytes, is to make `app/[locale]/layout.tsx` the root layout so it comes
- * from the path — Next has no other mechanism (no `lang` field on the
- * Metadata API, and a layout only ever receives params for segments from the
- * root down to itself, never from a descendant segment like `[locale]`).
- * That is a move of every route in the app: today only `app/[locale]/*` and
- * `app/(app)/*` are grouped at all, so roughly nine other top-level segments
- * (`api`, `auth`, `dashboard`, `demo`, `dev`, `lab`, `open-source`,
- * `repository`, `welcome`) would each need a route group of their own or a
- * shared one, and Next's "multiple root layouts" feature means crossing
- * between the `[locale]` root and every other one costs a full page reload
- * rather than a client-side transition. That cost may be near zero here
- * specifically — every link this app renders FROM a `[locale]` page already
- * uses a plain `<a href>`, never `next/link`, so that reload already happens
- * today (checked: no `next/link` import anywhere under `app/[locale]/` or in
- * `components/public-site.tsx`, `language-toggle.tsx`, `theme-toggle.tsx`) —
- * but it is still a real, larger restructuring this comment is not deciding.
+ * The script stays for the segments that still ship a fixed `lang="en"` and for
+ * the language toggle's own `router.refresh()`, where the re-render produces
+ * the same literal it produced before. It is cheap, it runs pre-paint, and it
+ * can only ever agree with the server on the two surfaces that now decide for
+ * themselves — on `[locale]` the cookie is what chose the path in the first
+ * place, and on `/repository` it is the same cookie the layout just read.
  */
 const localeScript = `(() => {
   try {
@@ -102,7 +117,7 @@ const instrumentSans = Instrument_Sans({ subsets: ["latin"], variable: "--font-i
 const instrumentSerif = Instrument_Serif({ subsets: ["latin"], weight: "400", variable: "--font-instrument-serif" });
 const jetbrainsMono = JetBrains_Mono({ subsets: ["latin"], variable: "--font-jbmono" });
 
-export const metadata: Metadata = {
+export const rootMetadata: Metadata = {
   // The origin every relative address in this application's metadata resolves
   // against — `alternates.canonical` and `og:url` on the public pages, and any
   // OG image added later. Read from the same source `robots.ts` and
@@ -169,10 +184,11 @@ function structuredData(origin: string) {
   };
 }
 
-export default function RootLayout({ children }: { children: ReactNode }) {
+
+export function RootDocument({ lang, children }: { lang: string; children: ReactNode }) {
   return (
     <html
-      lang="en"
+      lang={lang}
       suppressHydrationWarning
       className={`${instrumentSans.variable} ${instrumentSerif.variable} ${jetbrainsMono.variable}`}
       style={
@@ -189,31 +205,15 @@ export default function RootLayout({ children }: { children: ReactNode }) {
         <script dangerouslySetInnerHTML={{ __html: authHintScript }} />
         {/* A JSON-LD data block. Browsers never execute `application/ld+json`,
             so it carries none of the risk the three bootstrap scripts above are
-            weighed against.
-
-            Rendered as a TEXT CHILD, deliberately, rather than through React's
-            raw-HTML escape hatch (the `__html` prop) that every JSON-LD example
-            reaches for. The difference is not stylistic, and it was measured
-            after Aikido flagged the first version of this block:
-
-              raw-HTML prop   a value containing a literal closing script tag is
-                              emitted verbatim, closes THIS element, and
-                              everything after it becomes real markup — the
-                              probe rendered three closing tags where there
-                              should have been one
-              text child      React applies script-specific escaping, the tag
-                              is neutralised, and the value cannot leave the
-                              element
-
-            React escapes text children of a script element and does nothing at
-            all to raw HTML. The inputs here are compile-time constants today,
-            so neither form is exploitable right now — but structured data grows
-            to carry page titles and record names, and the construct worth
-            choosing is the one that is still safe on that day.
-
-            Escaping `<` is the second layer: it survives even if someone later
-            "simplifies" this back to the raw-HTML prop, and no parser notices,
-            because that sequence is just a `<` once the JSON is read. */}
+            weighed against. Rendered as a TEXT CHILD, deliberately, rather than
+            through React's raw-HTML escape hatch — React escapes text children
+            of a script element and does nothing at all to raw HTML, so a value
+            containing a literal closing script tag would close THIS element and
+            everything after it would become real markup. The inputs are
+            compile-time constants today; structured data grows to carry page
+            titles and record names, and the construct worth choosing is the one
+            still safe on that day. Escaping `<` is the second layer, surviving
+            even if someone later "simplifies" this back to the raw-HTML prop. */}
         <script type="application/ld+json">
           {JSON.stringify(structuredData(canonicalOrigin())).replace(/</g, "\\u003c")}
         </script>

@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
 import { JetBrains_Mono, Space_Grotesk, Zen_Kaku_Gothic_New } from "next/font/google";
+import { RootDocument, rootMetadata } from "../../components/root-document";
 import "./lab.css";
 
 /* Exploration route. Its own type stack, deliberately not the shipped
@@ -28,13 +29,22 @@ const zenKaku = Zen_Kaku_Gothic_New({
   variable: "--font-lab-jp",
 });
 
+// A ROOT layout since `app/layout.tsx` was removed (ai-ops issue 151) — it is
+// the top-most layout on this segment, so it owns the document. The lab keeps
+// its own type stack inside that document rather than replacing it: `RootDocument`
+// still supplies the head, the bootstrap scripts and the shipped font variables,
+// and the three faces below override them on `.lab-root` only.
+export const metadata = rootMetadata;
+
 export default function LabLayout({ children }: { children: ReactNode }) {
   return (
-    <div
-      data-surface="lab"
-      className={`lab-root ${spaceGrotesk.variable} ${jetbrainsMono.variable} ${zenKaku.variable}`}
-    >
-      {children}
-    </div>
+    <RootDocument lang="en">
+      <div
+        data-surface="lab"
+        className={`lab-root ${spaceGrotesk.variable} ${jetbrainsMono.variable} ${zenKaku.variable}`}
+      >
+        {children}
+      </div>
+    </RootDocument>
   );
 }

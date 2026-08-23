@@ -12,7 +12,8 @@
  * for half the visitors. Omitted is a defined state for both fields; the
  * browser uses its own.
  *
- * The strings match `app/layout.tsx`'s default metadata rather than restating
+ * The strings match the root metadata's defaults (`components/root-document.tsx`)
+ * rather than restating
  * the product in different words. English only: the locale is a cookie
  * (`public-locale-server`), and reading it here would make an install manifest
  * a per-request render for one string.

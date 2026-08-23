@@ -62,7 +62,15 @@ const ALLOWED = new Map<string, { sinks: number; reason: string }>([
   // here is the one that was genuinely less safe, which is worth knowing the
   // next time a "just use dangerouslySetInnerHTML, the input is ours" argument
   // shows up: it is ours until the day it carries a record name.
-  ["app/layout.tsx", { sinks: 3, reason: "inline <script>: our own constants, pre-paint" }],
+  //
+  // MOVED, not changed: this was `app/layout.tsx` until ai-ops issue 151 split
+  // the single root layout into one per top-level segment. The three scripts,
+  // the JSON-LD block and every word of the reasoning above now live in the one
+  // document component all of those layouts render, so the count is still three
+  // and there is still exactly one file to justify — which is the reason the
+  // split went through a shared component rather than copying `<html>` into ten
+  // places. Ten copies would have been ten entries here, drifting apart.
+  ["components/root-document.tsx", { sinks: 3, reason: "inline <script>: our own constants, pre-paint" }],
   // An inline <style> built from our own locale constant, same reasoning.
   //
   // It is also the ONLY inline <style> element this app serves, and the CSP now

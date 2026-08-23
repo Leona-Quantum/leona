@@ -2,6 +2,7 @@ import type { ReactNode } from "react";
 import type { UserInfo } from "@workos-inc/authkit-nextjs";
 import { redirect } from "next/navigation";
 import { InviteNotice } from "../../components/invite-notice";
+import { RootDocument, rootMetadata } from "../../components/root-document";
 import { Shell } from "../../components/shell";
 import { StorageScope } from "../../components/storage-scope";
 import { hasCompleteProfileName } from "../../lib/account-profile";
@@ -20,6 +21,12 @@ import { scopeMayAdoptLegacyData, storageScopeId } from "../../lib/storage-scope
 // in-flight stream and its component state, and closing the modal reveals it
 // untouched. On every route the slot does not match it renders
 // @modal/default.tsx, which is nothing at all.
+// A ROOT layout since `app/layout.tsx` was removed (ai-ops issue 151). The
+// signed-in surface already resolves the locale for `Shell`, so the document
+// gets the same value the UI is rendered in — no extra cookie read, and these
+// routes are behind auth and uncacheable regardless.
+export const metadata = rootMetadata;
+
 export default async function AppLayout({ children, modal }: { children: ReactNode; modal: ReactNode }) {
   const [auth, locale, workspace] = await Promise.all([
     getMajoranaAuth({ ensureSignedIn: true }),
@@ -38,46 +45,54 @@ export default async function AppLayout({ children, modal }: { children: ReactNo
   if (!hasCompleteProfileName(auth.user)) redirect("/welcome");
 
   const scopeId = storageScopeId(auth.user.id, workspace);
+  // The tier is resolved here rather than in the Shell because the developer
+  // allowlist lives in a server-only environment variable: reading it in a
+  // client component would silently resolve every account to "free".
+  //
+  // Kept ABOVE the `return` rather than between the JSX tags. It used to sit
+  // inside the parentheses, where `//` is an ordinary comment in an expression;
+  // once `RootDocument` wrapped the tree those same lines became JSX *children*
+  // and React would have rendered them as visible text on every authenticated
+  // page. Both review bots caught it on this PR.
   return (
-    // The tier is resolved here rather than in the Shell because the developer
-    // allowlist lives in a server-only environment variable: reading it in a
-    // client component would silently resolve every account to "free".
-    <StorageScope scopeId={scopeId} mayAdoptLegacyData={scopeMayAdoptLegacyData(workspace)}>
-      {/*
-        Keyed by the scope so a change of account OR of workspace remounts rather
-        than reuses. Shell's workspace load effect depends on demoMode and a
-        refresh tick, not on who is signed in — without the key, a re-render that
-        swapped the identity would leave the previous account's chats on screen,
-        read from storage under the old key. The workspace is now part of that
-        key for the same reason.
-      */}
-      <Shell
-        key={scopeId ?? "unscoped"}
-        locale={locale}
-        accountName={accountName(auth.user)}
-        accountTier={resolveAccountTier(auth.user.email)}
-        workspaceName={workspace && !workspace.isPersonal ? workspace.name : undefined}
-      >
+    <RootDocument lang={locale}>
+      <StorageScope scopeId={scopeId} mayAdoptLegacyData={scopeMayAdoptLegacyData(workspace)}>
         {/*
-          Above the page, on every authenticated surface, because there is no
-          single place an invited person is guaranteed to visit — and it renders
-          nothing at all until its own fetch finds something, which is almost
-          always. Inside Shell rather than around it so it sits in the content
-          column instead of over the sidebar.
+          Keyed by the scope so a change of account OR of workspace remounts rather
+          than reuses. Shell's workspace load effect depends on demoMode and a
+          refresh tick, not on who is signed in — without the key, a re-render that
+          swapped the identity would leave the previous account's chats on screen,
+          read from storage under the old key. The workspace is now part of that
+          key for the same reason.
         */}
-        <InviteNotice locale={locale} />
-        {children}
-        {/*
-          Inside the Shell, not around it, for two reasons. The settings panels
-          read chats and archived chats out of storage keyed by the StorageScope
-          above — outside it they would read another account's data, or none.
-          And the dialog is `position: fixed`, so sitting in the content column
-          costs it nothing: it still covers the sidebar. (The sidebar's own
-          confirm dialogs already depend on that being true.)
-        */}
-        {modal}
-      </Shell>
-    </StorageScope>
+        <Shell
+          key={scopeId ?? "unscoped"}
+          locale={locale}
+          accountName={accountName(auth.user)}
+          accountTier={resolveAccountTier(auth.user.email)}
+          workspaceName={workspace && !workspace.isPersonal ? workspace.name : undefined}
+        >
+          {/*
+            Above the page, on every authenticated surface, because there is no
+            single place an invited person is guaranteed to visit — and it renders
+            nothing at all until its own fetch finds something, which is almost
+            always. Inside Shell rather than around it so it sits in the content
+            column instead of over the sidebar.
+          */}
+          <InviteNotice locale={locale} />
+          {children}
+          {/*
+            Inside the Shell, not around it, for two reasons. The settings panels
+            read chats and archived chats out of storage keyed by the StorageScope
+            above — outside it they would read another account's data, or none.
+            And the dialog is `position: fixed`, so sitting in the content column
+            costs it nothing: it still covers the sidebar. (The sidebar's own
+            confirm dialogs already depend on that being true.)
+          */}
+          {modal}
+        </Shell>
+      </StorageScope>
+    </RootDocument>
   );
 }
 
