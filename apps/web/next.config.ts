@@ -109,6 +109,7 @@ const csp = contentSecurityPolicy({
 });
 
 const nextConfig: NextConfig = {
+  experimental: { globalNotFound: true },
   // @majorana/ui ships TS/TSX source (vendored components) — Next transpiles it.
   transpilePackages: ["@majorana/ui"],
   // Next sends `X-Powered-By: Next.js` on every response unless this is off.

@@ -81,6 +81,23 @@ const ALLOWED = new Map<string, { sinks: number; reason: string }>([
   // page rendering unstyled rather than an error, which is why it is written
   // down at the count that catches it.
   ["app/not-found.tsx", { sinks: 1, reason: "inline <style>: our own constant, hashed into style-src-elem" }],
+  //
+  // The SAME constant, in the second of the two 404 boundaries — and the note
+  // above is why this needed checking rather than waving through. There are now
+  // two files rendering an inline <style>, which reads exactly like the thing
+  // that note warns about.
+  //
+  // It is not, and the distinction is the one the note actually turns on: the
+  // hash is taken over the STYLESHEET, not the file. Both render
+  // `NOT_FOUND_LOCALE_STYLE` verbatim, so both hash to the value already in
+  // `style-src-elem` and neither needs a new one. They also never appear in one
+  // response — `global-not-found.tsx` answers a URL that matches no segment,
+  // `not-found.tsx` answers a `notFound()` thrown inside one.
+  //
+  // Verified rather than reasoned: rendered locally, the global 404 comes back
+  // fully styled with no `style-src` violation in the console. A second DIFFERENT
+  // inline stylesheet would still be refused, exactly as the note says.
+  ["app/global-not-found.tsx", { sinks: 1, reason: "inline <style>: the same constant as not-found.tsx, already hashed into style-src-elem" }],
   // KaTeX's own output, from corpus prose WE author (see lib/math-text.ts),
   // now passed through DOMPurify on the way out — owner ruling on ai-ops 138:
   // KaTeX is not accepted as its own sanitizer, whatever `trust: false`
