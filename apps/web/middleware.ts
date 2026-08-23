@@ -7,6 +7,16 @@
 // what the gate was doing instead was 307ing every typo to WorkOS. The list of
 // routed segments is checked against app/ by lib/routed-paths.test.ts, so a new
 // top-level route cannot slip out of this gate by being forgotten.
+//
+// This file stays `middleware.ts` deliberately. Next 16 prints a deprecation
+// warning pointing at `proxy`, and that warning is accepted noise, not a task:
+// `proxy` is strictly the nodejs runtime — `runtime` is unavailable there and
+// setting it throws — so the codemod would move every matched request off the
+// edge. That includes `localeRewrite`, and next.config.ts records that the whole
+// Vercel-CDN-Cache-Control design depends on `localeRewrite` running here in
+// middleware. Next's own v16 guide names `middleware` as the supported route for
+// anything needing the edge. Reasoning, and what to fix if this is ever reversed:
+// docs/adr/0030-middleware-stays-on-the-edge-runtime.md (ai-ops issue 148).
 import { authkitMiddleware } from "@workos-inc/authkit-nextjs";
 import { NextResponse, type NextFetchEvent, type NextRequest } from "next/server";
 import { isWorkosAuthConfigured } from "./lib/auth-config";

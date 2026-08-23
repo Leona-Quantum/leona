@@ -50,6 +50,7 @@ the work.
 | 0027 | A cross-region join is a shared state, a missing process, or a refusal | **accepted** — instrument shipped, no join built under it yet |
 | 0028 | Row-level security as defense-in-depth, enforcement gated off by default | **accepted** — policies installed on 24 tables; `MAJORANA_RLS_ENFORCED` still off |
 | 0029 | A project share reaches through RLS, scoped to the shared project | **accepted** — resolves 0028's hard precondition on the flip |
+| 0030 | Auth, the locale rewrite and the canonical-host redirect stay in `middleware.ts` on the edge | **accepted** — in force; the Next 16 `proxy` deprecation warning is accepted noise |
 
 ## Decisions with no ADR
 
