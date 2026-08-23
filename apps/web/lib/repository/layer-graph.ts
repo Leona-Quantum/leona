@@ -2559,8 +2559,8 @@ export const LAYER_GRAPH: LayerGraph = {
     },
     hops: {
       "lchs-improved-kernel": {
-        name: "post-select the ancillas on 0, then amplify",
-        nameJa: "補助レジスタを 0 に後選択し、増幅する",
+        name: "amplify the flagged branch, then post-select",
+        nameJa: "成功枝を増幅してから後選択する",
         theory:
           "The ending is the parent's: \"postselecting the ancilla registers on 0 yields the desired state\", and \"for a constant-level success probability, we need to run O(‖c‖_1) rounds of the amplitude amplification\". " +
           "[[assumption: The state kept is the one where the ancilla registers read 0; everything else is discarded, and the repetition count is the price of that.]] " +
