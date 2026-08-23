@@ -12774,6 +12774,15 @@ html:not([data-auth="in"]) .mj-auth-slot[data-auth-slot="in"] {
 .mj-map-shell {
   position: relative;
   height: 100%;
+  /* The rail's footprint, computed once from the same tokens that place it:
+     `.mj-map-overlay`'s own top inset, `.mj-map-overlay-button`'s size, and
+     one more gap as the clearance before content should start. Everything
+     downstream that needs to know how much room the rail takes — right now
+     just the canvas reservation below — reads this property instead of a
+     second, hand-typed 56px; move the rail (resize the button, change the
+     inset) and the reservation moves with it instead of drifting apart from
+     what it was measured against. */
+  --map-overlay-band: calc(var(--sp-4) + var(--sp-8) + var(--sp-2));
 }
 /* Nothing drawn: the graph produced no figure at all. Centred rather than left
    at the top-left, because on a chrome-less page a sentence in the corner reads
@@ -12803,16 +12812,20 @@ html:not([data-auth="in"]) .mj-auth-slot[data-auth-slot="in"] {
   align-items: center;
   gap: var(--sp-2);
 }
-/* A framed 32px button rather than a bare glyph. Over a canvas the reader can
-   pan, a control with no background sits on whatever line happens to be under
-   it — measured on the four-root overview, where the top-left corner is drawn
-   through. The border and the panel fill are what keep it a control. */
+/* A framed button rather than a bare glyph. Over a canvas the reader can pan,
+   a control with no background sits on whatever line happens to be under it
+   — measured on the four-root overview, where the top-left corner is drawn
+   through. The border and the panel fill are what keep it a control.
+
+   `var(--sp-8)`, not a literal `32px`: `--map-overlay-band` on `.mj-map-shell`
+   above sums this same token, so a hand-typed `32px` here would be a second
+   copy the band's calc() could silently drift from. */
 .mj-map-overlay-button {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 32px;
-  height: 32px;
+  width: var(--sp-8);
+  height: var(--sp-8);
   border: var(--border-hairline) solid var(--border-0);
   border-radius: var(--radius-control);
   color: var(--text-1);
@@ -12827,6 +12840,49 @@ html:not([data-auth="in"]) .mj-auth-slot[data-auth-slot="in"] {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
 }
+
+/* The canvas's own content is drawn flush to its layer's (0, 0) — see
+   `.mj-canvas-layer` — which at rest sits directly under the rail above.
+   Measured on production at 1438px, fetching each figure's rendered HTML and
+   intersecting every `<text>` box with the controls' rectangle: 23 of 28
+   figures had their first label's ink under an opaque button, from 11px
+   ("Multistep, all-at-once") to 72px ("Quantum volume", reading as "volume").
+   It is occlusion, not truncation — the DOM and `curl` both carry the whole
+   string — so no text-content check ever saw it.
+
+   **On the viewport, which does not scale, and not on the layer, which does.**
+   The obvious place is `padding-top` on `.mj-canvas-layer`, the content layer
+   inside `InfiniteCanvas`'s pan/zoom transform — and that is wrong in a way
+   worth recording, because it looks right at rest. Padding there is in the
+   layer's own coordinates, so the transform scales it while the rail stays at
+   fixed screen size, and zooming OUT shrinks the clearance back under the rail.
+   Measured on production, reserving 56px on the layer:
+
+       zoom  1.0   content top  56px   0 labels occluded
+       zoom  0.75  content top  42px   0
+       zoom  0.5   content top  28px   1   <- rail bottom is 48px
+       zoom  0.3   content top  17px   2
+
+   `.mj-canvas-viewport` is outside the transform, so the same declaration holds
+   56 screen pixels at every zoom (verified at 0.3x through 2x: content top stays
+   56px, nothing occluded). It costs no layout: the viewport is `border-box` and
+   `height: 100%`, so its box is still exactly the `100dvh` the full-bleed map
+   wants.
+
+   The band stays DRAWABLE rather than becoming a dead strip. `overflow: hidden`
+   clips at the padding edge, so a reader who pans up still sees the figure move
+   into it — panned -40px, the drawing's top reads 16px and every label stays
+   visible. The reservation is about where content STARTS, which is the thing a
+   reader who has not touched anything gets, and it takes nothing away from one
+   who has.
+
+   Scoped to `.mj-map-shell`: `.mj-canvas-viewport` is also the embedded
+   per-method figure on `/repository/<method>`, which carries no
+   `.mj-map-overlay` and must not reserve room for controls it does not have. */
+.mj-map-shell .mj-canvas-viewport {
+  padding-top: var(--map-overlay-band);
+}
+
 
 /* --- the figure in words -------------------------------------------------- */
 /* Clipped to a pixel, not removed, and not `.sr-only`.
@@ -12913,6 +12969,13 @@ html:not([data-auth="in"]) .mj-auth-slot[data-auth-slot="in"] {
   /* The overlay controls are navigation, and navigation does not print. */
   .mj-map-overlay {
     display: none;
+  }
+  /* The reservation above exists for controls that just went `display: none`
+     on this same page. One override of the property both rules already read,
+     rather than a second `.mj-canvas-layer` rule with its own `padding-top: 0`
+     to keep in step with the first. */
+  .mj-map-shell {
+    --map-overlay-band: 0;
   }
 }
 
