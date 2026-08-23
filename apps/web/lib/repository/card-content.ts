@@ -35,6 +35,7 @@ import {
   isMethod,
   layerNode,
   methodsRealizing,
+  ownStretchName,
   refinementsOf,
   routeOf,
   type LayerCitation,
@@ -158,6 +159,23 @@ export interface CardHop {
   readonly to: string;
   /** The slot filling this hop, or null when the method does the work itself. */
   readonly via: CardLink | null;
+  /**
+   * What the method does on the hop it closes itself, where the record says —
+   * and `null` everywhere else, including on every hop a slot fills.
+   *
+   * Read off the same `hops[method.id]` entry as `theory`, through the one
+   * reader in `converge-layout.ts`, so the card and the map can never disagree
+   * about what this stretch is called. The component falls back to
+   * `ownStepName` when it is null, which is the standing phrase and says
+   * nothing about the algorithm — that is the state this field exists to
+   * shrink, hop by hop, exactly as `theory` above it does.
+   *
+   * Not a `CardValue`: an unnamed stretch already draws a phrase, so there is no
+   * gap for the card to report. "None recorded" under a line that reads *the
+   * method itself* would be the card telling a reader it has nothing, directly
+   * beneath the something it just drew.
+   */
+  readonly ownName: string | null;
   /** True when the state after this hop came from `through`, not the slot's contract. */
   readonly narrowed: boolean;
   /**
@@ -520,6 +538,18 @@ export interface OwnStepCard {
   /** The state it starts from and the state it must reach. */
   readonly from: string;
   readonly to: string;
+  /**
+   * What the method does across those two states, where the record says — and
+   * `null` where nothing has been recorded, in which case the panel draws the
+   * standing phrase.
+   *
+   * The same value the map draws on this stretch's lane, through the same
+   * reader (`ownStretchName`). A reader who clicks the phrase on the canvas
+   * must read that phrase back on the card, which is the promise `ownStepName`
+   * made in its own comment and which only held while both surfaces printed one
+   * hardcoded string.
+   */
+  readonly ownName: string | null;
   /** The method's own contract, which is the closest thing to a contract this has. */
   readonly contract: CardValue<CardContract>;
   /**
@@ -892,6 +922,10 @@ function methodCard(input: CardInput, method: LayerMethod): MethodCard {
     from: route.states[index] ?? "",
     to: route.states[index + 1] ?? "",
     via: segment.capabilityId === null ? null : linkFor(graph, segment.capabilityId, ja),
+    // Only on the stretch the method closes itself; a slot-filled hop is named
+    // by its slot, which `via` above already carries.
+    ownName:
+      segment.capabilityId === null ? ownStretchName(method, ja) : null,
     narrowed: segment.narrowed,
     // `none-recorded` now, not `no-field-yet`: `LayerMethod.hops` exists, so an
     // empty slot is a source nobody has read rather than a field nobody has
@@ -1017,6 +1051,7 @@ function ownStepCard(input: CardInput, method: LayerMethod): OwnStepCard | null 
     realizes: linkFor(graph, method.realizes, ja),
     from,
     to,
+    ownName: ownStretchName(method, ja),
     contract: contractOf(graph, method, ja),
     slotWanted: true,
   };

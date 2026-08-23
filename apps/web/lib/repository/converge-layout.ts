@@ -174,6 +174,7 @@ import {
   specificationOf,
   type LayerCapability,
   type LayerGraph,
+  ownStretchName,
   type LayerMethod,
   type LoopClosure,
 } from "./layers.ts";
@@ -2309,7 +2310,19 @@ function chainInside(
       own: method.id,
       // What it draws, resolved here with every other localized string on the
       // plan. See `standingName`.
-      standingName: ownStepName(locale),
+      //
+      // The authored phrase where the record has one, and the standing phrase
+      // where it does not. That order is the point of the field: `ownStepName`
+      // is *"not a name and deliberately not one"* (its own comment), built to
+      // sit between a name printed twice and a blank line. What it never was is
+      // an answer to the owner's *"i want to see no more of 'the method
+      // itself'"* — that is paid by recording what the hop does, per method,
+      // behind the same paper register every other claim goes through.
+      //
+      // Absent stays the correct default. 8 of the 14 own stretches this canvas
+      // actually draws have no recorded mathematics yet, and a placeholder that
+      // says nothing is honest where an invented phrase would not be.
+      standingName: ownStretchName(method, locale === "ja") ?? ownStepName(locale),
       // Set by `withSpec` where a parent route expands one of its own steps; a
       // strand nothing has annotated draws its plain name.
       spec: null,
@@ -3142,7 +3155,9 @@ interface Measure {
 }
 
 /**
- * What the map writes on the stretch a method performs itself.
+ * What the map writes on the stretch a method performs itself **when nothing
+ * has been recorded about it**. See `ownStretchName` for the case where
+ * something has, which is the one the reader should be getting.
  *
  * **Not a name and deliberately not one.** The two failures this string sits
  * between are one name printed twice (session 104) and no name at all (session
@@ -3154,10 +3169,27 @@ interface Measure {
  * reader who clicks it reads back what they clicked. One string in two places is
  * the duplication rule's exception it names itself: they are one fact, and the
  * test below asserts they stay equal rather than trusting this comment.
+ *
+ * ## It is a fallback now, not the answer
+ *
+ * The owner's complaint (c) is *"i want to see no more of 'the method itself'"*,
+ * and everything above explains why the string is not careless without making
+ * it any more informative. It says nothing about the algorithm, and no third
+ * string would. What answers him is recording what the hop does — `HopNote.name`
+ * — which is why this function's job shrank rather than its wording changing.
+ *
+ * Measured on the corpus this landed against: the canvas draws an own stretch
+ * for **14** methods, every one of them `partly-own` (a route that delegates
+ * some steps and closes the rest itself). The other 81 own stretches never
+ * reach a drawn lane — an `all-own` route is one segment, so it has no interior
+ * to open, and a folded refinement draws inside its parent. So the phrase a
+ * reader can actually meet on the map is a 14-item list, not a 95-item one, and
+ * that is what makes recording them tractable rather than a corpus-wide sweep.
  */
 export function ownStepName(locale: PublicLocale): string {
   return locale === "ja" ? "手法そのもの" : "the method itself";
 }
+
 
 /**
  * Put the route's count on the lane it walks many times, where a source states

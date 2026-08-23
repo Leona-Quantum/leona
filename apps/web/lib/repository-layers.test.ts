@@ -1807,6 +1807,34 @@ test("a hop note is filed against a hop the reader can actually see", () => {
     "route: hops[step-a] records nothing — omit it instead",
   ]);
 
+  // --- `name`, the phrase the map draws where "the method itself" used to sit ---
+  //
+  // Authored on the own stretch with mathematics already on the record: the one
+  // legal shape, checked first so the three refusals below are failing on their
+  // own defect and not on the field being unusable.
+  assert.deepEqual(
+    errors({ route: { theory: "t", theoryJa: "t", name: "amplify the flagged branch", nameJa: "成功枝を増幅する" } }),
+    [],
+  );
+  // The pair rule reaches it too. A phrase in one locale is half the readers
+  // reading what the hop does and half still reading "the method itself".
+  assert.deepEqual(errors({ route: { theory: "t", theoryJa: "t", name: "x" } }), [
+    "route: hops[route].name is present in one locale only",
+  ]);
+  // **A delegated hop's name is its slot's label.** A second one here is one
+  // fact with two writers, and the two drift — which is the failure this file
+  // spends most of its length preventing.
+  assert.deepEqual(errors({ "step-a": { theory: "t", theoryJa: "t", name: "x", nameJa: "x" } }), [
+    "route: hops[step-a].name names a delegated hop, whose name is its slot's label",
+  ]);
+  // **And a phrase may not outrun its mathematics.** This is the gate that makes
+  // the field safe to draw on the canvas: a five-word phrase is far cheaper to
+  // invent than a paragraph with its assumptions marked and its paper in the
+  // register, so the cheap field is only reachable behind the expensive one.
+  assert.deepEqual(errors({ route: { name: "x", nameJa: "x" } }), [
+    "route: hops[route].name is authored with no theory behind it — record the mathematics first",
+  ]);
+
   // **A well-formed pair of marks passes**, so the checks below are failing on the defect
   // and not on the syntax itself.
   assert.deepEqual(
