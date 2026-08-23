@@ -636,6 +636,16 @@ export const LAYER_GRAPH: LayerGraph = {
     costJa: "Costa・Jordan・Ostrander は、2 次のステンシルの打ち切り誤差を、有限の格子間隔 $a$ において $O(a^2)$ と与え、さらに一般化しています。$k$ 次のラプラシアンは $a^k$ の位数の打ち切り誤差を与えます。この次数は、ステンシルが供給する先と無関係ではありません。$k$ 次の $D$ 次元ラプラシアンの接続行列は $D(k/2+1)$ 疎であり、$s$ 疎なハミルトニアンは $k = 2(s/D) - 2$ に対応します。これが、論文の述べる形での次数と疎性の引き換えです。",
     steps: [],
     atomic: true,
+    hops: {
+      "graph-laplacian-discretization": {
+        name: "factor L into B, build a block Hamiltonian",
+        nameJa: "L を B に分解し、ブロック型ハミルトニアンを組む",
+        theory:
+          "The generator is built so that Schrödinger evolution reproduces the discretized wave equation $\\ddot{\\phi} = -\\frac{1}{a^{2}}L\\phi$. The graph Laplacian is factored as $L = BB^{\\dagger}$ for a signed vertex-by-edge incidence matrix $B$ [[assumption: for any graph, weighted or unweighted, with or without self-loops, such a $B$ always exists — the factorization is exhibited rather than solved for]], and $H = \\frac{1}{a}\\begin{bmatrix}0 & B\\\\ B^{\\dagger} & 0\\end{bmatrix}$, which the authors note is \"Hermitian independent of the specific choice of matrix $B$\". Evolving $\\dot{\\psi} = -iH\\psi$ on $\\psi = (\\phi_{V}, \\phi_{E})$ and differentiating once more gives $\\ddot{\\psi} = -\\frac{1}{a^{2}}\\begin{bmatrix}BB^{\\dagger} & 0\\\\ 0 & B^{\\dagger}B\\end{bmatrix}\\psi$, so \"a subspace of the full Hilbert space evolves according to a discretized wave equation\" — the $\\phi_{V}$ block obeys exactly the equation $L$ was built for. [[approximation: $L$ itself stands in for the continuous $\\nabla^{2}$, and at finite lattice spacing $a$ that substitution carries a truncation error of $O(a^{2})$.]]",
+        theoryJa:
+          "生成子は、シュレーディンガー発展が離散化された波動方程式 $\\ddot{\\phi} = -\\frac{1}{a^{2}}L\\phi$ を再現するように構成されます。グラフ・ラプラシアンは $L = BB^{\\dagger}$ の形に因数分解されます。ここで $B$ は符号付きの頂点・辺接続行列です[[assumption: 重み付き・重みなし、自己ループの有無を問わず、どのようなグラフに対してもこのような $B$ が必ず存在します——この分解は解いて求めるのではなく、具体的に構成して示されます]]。そして $H = \\frac{1}{a}\\begin{bmatrix}0 & B\\\\ B^{\\dagger} & 0\\end{bmatrix}$ であり、著者らはこれを「行列 $B$ の具体的な取り方によらずエルミートである」と述べています。$\\dot{\\psi} = -iH\\psi$ という発展を $\\psi = (\\phi_{V}, \\phi_{E})$ の上で行い、もう一度微分すると $\\ddot{\\psi} = -\\frac{1}{a^{2}}\\begin{bmatrix}BB^{\\dagger} & 0\\\\ 0 & B^{\\dagger}B\\end{bmatrix}\\psi$ が得られます。したがって「全ヒルベルト空間の部分空間が、離散化された波動方程式に従って発展する」——$\\phi_{V}$ のブロックは、まさに $L$ が構築された方程式にそのまま従います。[[approximation: $L$ 自体が連続的な $\\nabla^{2}$ の代わりを務めており、有限の格子間隔 $a$ のもとではその代替は $O(a^{2})$ の打ち切り誤差を伴います。]]",
+      },
+    },
     entries: ["wave-equation-simulation"],
     citations: [
       { title: "Quantum Algorithm for Simulating the Wave Equation", authors: "Pedro C.S. Costa, Stephen Jordan, Aaron Ostrander", year: "2017", url: "https://arxiv.org/abs/1711.05394" },
@@ -655,6 +665,16 @@ export const LAYER_GRAPH: LayerGraph = {
     costJa: "Linden・Montanaro・Shao の式 (9) はステンシルそのものを評価します。間隔 $h$ において、厳密な 2 階微分とのずれは高々 $\\frac{h^2}{12}\\sup_x |d^4u/dx^4(x)|$ です。熱方程式に適用して付録 A に述べられているとおり、空間変数のみを離散化すると常微分方程式系 $d\\tilde{u}/dt = (\\alpha/\\Delta x^2) A\\tilde{u}$ が得られます。その生成子は 1 個の巡回 $n \\times n$ 行列の $d$ 個のテンソル因子の和であり、疎性は $\\Theta(d)$、固有値は $\\lambda_j = -4\\sin^2(j\\pi/n)$ であって $\\lVert A\\rVert = 4\\alpha d/\\Delta x^2$ となります。",
     steps: [],
     atomic: true,
+    hops: {
+      "central-difference-semidiscretization": {
+        name: "stencil the Laplacian, tensor it into A",
+        nameJa: "ラプラシアンを差分化し、A へテンソル埋め込みする",
+        theory:
+          "Space is discretized and time is left continuous. Starting from $\\partial u/\\partial t = \\alpha(\\partial^{2}u/\\partial x_{1}^{2} + \\cdots + \\partial^{2}u/\\partial x_{d}^{2})$ on the hypercubic region $x_{i} \\in [0, L]$, [[approximation: each $\\partial^{2}u/\\partial x_{i}^{2}$ is replaced by the three-point stencil, whose error the paper bounds as $\\left|\\frac{d^{2}u}{dx^{2}} - \\frac{u(x+h) + u(x-h) - 2u(x)}{h^{2}}\\right| \\le \\frac{h^{2}}{12}\\sup_{x}\\left|\\frac{d^{4}u}{dx^{4}}(x)\\right|$]] while the time derivative is kept exact. [[assumption: \"periodic boundary conditions for each $x_{i}$, but not $t$\" — which is what closes the stencil into a circulant $n \\times n$ matrix $H$, with $-2$ on the diagonal, $1$ on the two neighbouring off-diagonals and $1$ in the two corners.]] The object handed on is the generator $A = \\sum_{j=1}^{d} I_{n}^{\\otimes(j-1)} \\otimes H \\otimes I_{n}^{\\otimes(d-j)}$, one tensor-embedded copy of $H$ per dimension, giving the semi-discretized system $\\frac{d\\widetilde{\\mathbf{u}}}{dt} = \\frac{\\alpha}{\\Delta x^{2}}A\\widetilde{\\mathbf{u}}$.",
+        theoryJa:
+          "空間は離散化され、時間は連続のまま残されます。$\\partial u/\\partial t = \\alpha(\\partial^{2}u/\\partial x_{1}^{2} + \\cdots + \\partial^{2}u/\\partial x_{d}^{2})$ から出発します(超立方体領域は $x_{i} \\in [0, L]$ です)。[[approximation: それぞれの $\\partial^{2}u/\\partial x_{i}^{2}$ を3点ステンシルで置き換えます。その誤差を論文は $\\left|\\frac{d^{2}u}{dx^{2}} - \\frac{u(x+h) + u(x-h) - 2u(x)}{h^{2}}\\right| \\le \\frac{h^{2}}{12}\\sup_{x}\\left|\\frac{d^{4}u}{dx^{4}}(x)\\right|$ という形で評価しています]]。一方で時間微分は厳密なまま保たれます。[[assumption: 「各 $x_{i}$ については周期境界条件を課すが、$t$ については課さない」——これによってステンシルは $n \\times n$ の巡回行列 $H$ にまとまります。対角成分は $-2$、隣り合う2本の非対角成分は $1$、両隅は $1$ です。]] 受け渡される対象は生成子 $A = \\sum_{j=1}^{d} I_{n}^{\\otimes(j-1)} \\otimes H \\otimes I_{n}^{\\otimes(d-j)}$ であり、次元ごとに $H$ を一つずつテンソル埋め込みしたコピーであって、半離散化系 $\\frac{d\\widetilde{\\mathbf{u}}}{dt} = \\frac{\\alpha}{\\Delta x^{2}}A\\widetilde{\\mathbf{u}}$ を与えます。",
+      },
+    },
     citations: [
       { title: "Quantum vs. classical algorithms for solving the heat equation", authors: "Noah Linden, Ashley Montanaro, Changpeng Shao", year: "2020", url: "https://arxiv.org/abs/2004.06516" },
     ],
@@ -694,6 +714,16 @@ export const LAYER_GRAPH: LayerGraph = {
     costJa: "Linden・Montanaro・Shao の定理 1 は離散化誤差を直接に評価します。$\\Delta t \\le \\Delta x^2/(2d\\alpha)$ のもとで $\\lVert \\tilde{u} - u\\rVert_\\infty \\le \\frac{\\zeta\\alpha d T}{L^d}\\left(\\frac{\\alpha d \\Delta t}{2} + \\frac{\\Delta x^2}{12}\\right)$ です。系 2 はこれを逆に解き、目標精度が要求する格子を与えます。$\\Delta t = 3\\epsilon/(2d^2\\alpha^2\\zeta T)$、$\\Delta x = \\sqrt{3\\epsilon/(d\\alpha\\zeta T)}$ であり、時間ステップ数は $m = 2T^2d^2\\alpha^2\\zeta/(3\\epsilon)$、各次元あたりの点数は $n = L\\sqrt{d\\alpha\\zeta T/(3\\epsilon)}$ になります。定理 3 は組み上がった系の条件数を $\\Theta(m)$ と与え、$\\lVert A\\rVert = \\Theta(1)$、$\\lVert A^{-1}\\rVert = \\Theta(m)$ としています。",
     steps: [],
     atomic: true,
+    hops: {
+      "ftcs-discretization": {
+        name: "stack every timestep into one system",
+        nameJa: "全時間ステップを一つの連立方程式にまとめる",
+        theory:
+          "Both derivatives go at once. [[approximation: the time derivative becomes a forward difference, first order in $\\Delta t$, and each spatial one the three-point central difference, second order in $\\Delta x$]], which rearranges into the explicit update $\\tilde{u}(\\mathbf{x}, t + \\Delta t) = \\left(1 - \\frac{2d\\alpha\\Delta t}{\\Delta x^{2}}\\right)\\tilde{u}(\\mathbf{x}, t) + \\frac{\\alpha\\Delta t}{\\Delta x^{2}}\\sum_{i=1}^{d}\\big(\\tilde{u}(\\ldots, x_{i} + \\Delta x, \\ldots, t) + \\tilde{u}(\\ldots, x_{i} - \\Delta x, \\ldots, t)\\big)$. Writing that one step as $\\widetilde{\\mathbf{u}}_{k+1} = \\mathcal{L}\\widetilde{\\mathbf{u}}_{k}$, the $m$ steps are not iterated but stacked: the block-bidiagonal system with $I$ on the diagonal and $-\\mathcal{L}$ below it, solved against $(\\mathcal{L}\\widetilde{\\mathbf{u}}_{0}, 0, \\ldots, 0)^{T}$, returns every recorded timestep at once. [[assumption: $\\mathcal{L}$ \"is stochastic if $1 - 2d\\alpha\\Delta t/\\Delta x^{2} \\ge 0$\", i.e. $\\Delta t \\le \\Delta x^{2}/(2d\\alpha)$ — the property the paper's whole error argument rests on.]]",
+        theoryJa:
+          "両方の微分を同時に扱います。[[approximation: 時間微分は前進差分——$\\Delta t$ について1次——に、各空間微分は3点中心差分——$\\Delta x$ について2次——に置き換えられます]]。これは陽的な更新式 $\\tilde{u}(\\mathbf{x}, t + \\Delta t) = \\left(1 - \\frac{2d\\alpha\\Delta t}{\\Delta x^{2}}\\right)\\tilde{u}(\\mathbf{x}, t) + \\frac{\\alpha\\Delta t}{\\Delta x^{2}}\\sum_{i=1}^{d}\\big(\\tilde{u}(\\ldots, x_{i} + \\Delta x, \\ldots, t) + \\tilde{u}(\\ldots, x_{i} - \\Delta x, \\ldots, t)\\big)$ に整理されます。この1ステップを $\\widetilde{\\mathbf{u}}_{k+1} = \\mathcal{L}\\widetilde{\\mathbf{u}}_{k}$ と書けば、$m$ ステップは反復されるのではなくスタックされます。すなわち、対角成分が $I$、その下が $-\\mathcal{L}$ であるブロック二重対角系を $(\\mathcal{L}\\widetilde{\\mathbf{u}}_{0}, 0, \\ldots, 0)^{T}$ に対して解くことで、記録された全ステップが一度に得られます。[[assumption: $\\mathcal{L}$ は「$1 - 2d\\alpha\\Delta t/\\Delta x^{2} \\ge 0$ ならば確率的である」——すなわち $\\Delta t \\le \\Delta x^{2}/(2d\\alpha)$ ——という性質を持ち、論文全体の誤差評価はこの性質の上に成り立っています。]]",
+      },
+    },
     entries: ["heat-equation-solver"],
     citations: [
       { title: "Quantum vs. classical algorithms for solving the heat equation", authors: "Noah Linden, Ashley Montanaro, Changpeng Shao", year: "2020", url: "https://arxiv.org/abs/2004.06516" },
@@ -713,6 +743,16 @@ export const LAYER_GRAPH: LayerGraph = {
     costJa: "この論文は拡散の代価を、一般的な上界としてではなく、ある解像度で測定した条件数として述べています。$n_x = 7$、$n_v = 5$、$\\omega = 1.2$ において、$\\eta = 0.002$ のとき行列は $\\kappa_A = 8.844 \\times 10^4$、拡散を入れないときは $\\kappa_A = 3.489 \\times 10^4$ です。離散化誤差そのものについての評価は述べられておらず、ここにも記録していません。",
     steps: [],
     atomic: true,
+    hops: {
+      "phase-space-discretization": {
+        name: "difference x and v, read off A and b",
+        nameJa: "x と v を差分化し、A と b を求める",
+        theory:
+          "The time derivative is removed before anything is gridded. [[assumption: the source drives at a single real frequency, $g, E \\propto e^{-\\mathrm{i}\\omega_{0}t}$, so $\\partial_{t} \\to -\\mathrm{i}\\omega_{0}$]], which turns the Vlasov-Ampère system into the boundary-value pair $\\mathrm{i}\\omega_{0}g - \\zeta^{\\rm bc}v\\partial_{x}g + \\eta\\partial_{v}^{2}g - vHE = 0$ and $\\mathrm{i}\\omega_{0}E + \\int v g\\,\\mathrm{d}v = j^{(S)}$. On the joint $(x, v)$ grid, [[approximation: $\\partial_{x}$ and $\\partial_{v}^{2}$ become the central stencils $\\sigma(y_{j+1,k} - y_{j-1,k})$ and $\\beta(y_{j,k+1} - 2y_{j,k} + y_{j,k-1})$ in the bulk, and at the edges one-sided stencils from a Lagrange interpolating polynomial — second order for $\\partial_{x}$, third for $\\partial_{v}^{2}$]], leaving per-point coefficients such as $P_{j,k} = \\mathrm{i}\\omega_{0} + \\zeta^{\\rm bc}_{j,k}(\\delta_{j,0} - \\delta_{j,q_{x}})3v_{k}\\sigma - p^{\\rm sign}_{k}2\\eta\\beta$. Stacking every $g_{j,k}$ and $E_{j}$ into $\\boldsymbol{\\psi}$ reads those coefficients straight into the block matrix $\\mathbf{A} = \\begin{pmatrix}\\mathbf{F} & \\mathbf{C}^{E}\\\\ \\mathbf{C}^{f} & \\mathbf{S}\\end{pmatrix}$ of $\\mathbf{A}\\boldsymbol{\\psi} = \\boldsymbol{b}$.",
+        theoryJa:
+          "何かを格子化する前に、まず時間微分を消去します。[[assumption: 発生源はただ一つの実周波数——$g, E \\propto e^{-\\mathrm{i}\\omega_{0}t}$——で駆動しており、したがって $\\partial_{t} \\to -\\mathrm{i}\\omega_{0}$ となります。]] これによって Vlasov–Ampère 系は境界値問題の対 $\\mathrm{i}\\omega_{0}g - \\zeta^{\\rm bc}v\\partial_{x}g + \\eta\\partial_{v}^{2}g - vHE = 0$ と $\\mathrm{i}\\omega_{0}E + \\int v g\\,\\mathrm{d}v = j^{(S)}$ に置き換わります。結合した $(x, v)$ 格子の上で、[[approximation: $\\partial_{x}$ と $\\partial_{v}^{2}$ はバルクでは中心ステンシル $\\sigma(y_{j+1,k} - y_{j-1,k})$ と $\\beta(y_{j,k+1} - 2y_{j,k} + y_{j,k-1})$ になり、端では Lagrange 補間多項式による片側ステンシル——$\\partial_{x}$ について2次、$\\partial_{v}^{2}$ について3次——になります]]、その結果、各点ごとの係数として例えば $P_{j,k} = \\mathrm{i}\\omega_{0} + \\zeta^{\\rm bc}_{j,k}(\\delta_{j,0} - \\delta_{j,q_{x}})3v_{k}\\sigma - p^{\\rm sign}_{k}2\\eta\\beta$ が残ります。すべての $g_{j,k}$ と $E_{j}$ を $\\boldsymbol{\\psi}$ にまとめると、それらの係数はそのままブロック行列 $\\mathbf{A} = \\begin{pmatrix}\\mathbf{F} & \\mathbf{C}^{E}\\\\ \\mathbf{C}^{f} & \\mathbf{S}\\end{pmatrix}$ に読み込まれ、$\\mathbf{A}\\boldsymbol{\\psi} = \\boldsymbol{b}$ の形になります。",
+      },
+    },
     entries: ["linear-kinetic-plasma-encoding"],
     citations: [
       { title: "Encoding of linear kinetic plasma problems in quantum circuits via data compression", authors: "Ivan Novikau, Ilya Y. Dodin, Edward A. Startsev", year: "2024", url: "https://arxiv.org/abs/2403.11989" },
@@ -5941,6 +5981,16 @@ export const LAYER_GRAPH: LayerGraph = {
         "return the truncated, rescaled polynomial",
       ].join("\n"),
     },
+    hops: {
+      "chebyshev-truncation": {
+        name: "regularise 1/x, then cut the series",
+        nameJa: "1/x を正則化し、級数を打ち切る",
+        theory:
+          "$1/x$ is not expanded directly. For Hermitian $H = A/d$ with spectrum in $D_{\\kappa d} := [-1, -1/(\\kappa d)] \\cup [1/(\\kappa d), 1]$ [[assumption: $H$ is Hermitian and its eigenvalues are bounded away from $0$ by a known $1/(\\kappa d)$ — a condition-number bound $\\kappa$ on the $d$-sparse $A$]], the target is regularised as $f(x) := \\frac{1 - (1 - x^{2})^{b}}{x}$, which is $\\varepsilon$-close to $1/x$ on that domain for any integer $b \\ge (\\kappa d)^{2}\\log(\\kappa d/\\varepsilon)$, and which on $[-1, 1]$ is exactly the Chebyshev sum $f(x) = 4\\sum_{j=0}^{b-1}(-1)^{j}\\left[\\frac{\\sum_{i=j+1}^{b}\\binom{2b}{b+i}}{2^{2b}}\\right]\\mathcal{T}_{2j+1}(x)$ — each bracketed weight \"the probability of seeing more than $b+j$ heads on flipping $2b$ fair coins\". [[approximation: that sum is truncated at $j_{0} = \\sqrt{b\\log(4b/\\varepsilon)}$, an order $O(\\sqrt{b\\log(b/\\varepsilon)})$ polynomial, and a Chernoff bound on the discarded tail gives $4be^{-j_{0}^{2}/b} = \\varepsilon$.]] The record's `conditions` quotes the later restatement in terms of a bare $\\kappa$; the form here is the original, in $\\kappa d$.",
+        theoryJa:
+          "$1/x$ は直接展開されません。エルミート行列 $H = A/d$ について、そのスペクトルが $D_{\\kappa d} := [-1, -1/(\\kappa d)] \\cup [1/(\\kappa d), 1]$ に収まるとき、[[assumption: $H$ はエルミートであり、その固有値は $0$ から既知の $1/(\\kappa d)$ だけ離れています——条件数の上限を $\\kappa$ とし、これは $d$-スパースな $A$ に対する値です]]、目標とする関数は $f(x) := \\frac{1 - (1 - x^{2})^{b}}{x}$ として正則化されます。これは $\\varepsilon$ の精度で $1/x$ に近く、その近さはその領域上の任意の整数 $b \\ge (\\kappa d)^{2}\\log(\\kappa d/\\varepsilon)$ について成り立ち、$[-1, 1]$ 上では厳密にチェビシェフ和 $f(x) = 4\\sum_{j=0}^{b-1}(-1)^{j}\\left[\\frac{\\sum_{i=j+1}^{b}\\binom{2b}{b+i}}{2^{2b}}\\right]\\mathcal{T}_{2j+1}(x)$ に一致します——各角括弧内の重みは「表の枚数が $b+j$ を超える確率(公正なコインを $2b$ 枚投げたとき)」です。[[approximation: この和は $j_{0} = \\sqrt{b\\log(4b/\\varepsilon)}$ で打ち切られ、これは $O(\\sqrt{b\\log(b/\\varepsilon)})$ 次の多項式であり、切り捨てた裾に対するチェルノフ限界から $4be^{-j_{0}^{2}/b} = \\varepsilon$ が得られます。]] このレコードの `conditions` は、のちに裸の $\\kappa$ で言い換えられた形を引用していますが、ここでの形は $\\kappa d$ による元の形です。",
+      },
+    },
     citations: [
       { title: "Quantum algorithm for systems of linear equations with exponentially improved dependence on precision", authors: "Andrew M. Childs, Robin Kothari, Rolando D. Somma", year: "2015", url: "https://arxiv.org/abs/1511.02306" },
       { title: "Quantum singular value transformation and beyond: exponential improvements for quantum matrix arithmetics", authors: "András Gilyén, Yuan Su, Guang Hao Low, Nathan Wiebe", year: "2018", url: "https://arxiv.org/abs/1806.01838" },
@@ -5990,6 +6040,16 @@ export const LAYER_GRAPH: LayerGraph = {
         "# classical approximation theory, not a quantum algorithm: the citation on",
         "# this record is the QSP paper that employs it, not its origin",
       ].join("\n"),
+    },
+    hops: {
+      "remez-minimax": {
+        name: "solve on references, swap in the worst",
+        nameJa: "参照点で解き、最大誤差点と交換する",
+        theory:
+          "What is wanted is the exact minimiser $f^{*} = \\operatorname{argmin}_{f \\in \\mathbb{R}[x],\\, \\deg(f) \\le d} \\max_{x \\in [a,b]} |F(x) - f(x)|$. [[assumption: the basis $\\{g_{1}, \\ldots, g_{N}\\}$ standing in for $\\{1, x, \\ldots, x^{d}\\}$ must satisfy the Haar condition — each $g_{j}$ continuous, and for every $N$ points the vectors $v_{j} := (g_{1}(x_{j}), \\ldots, g_{N}(x_{j}))$ linearly independent — which the paper secures by taking $g_{j}(x) = T_{2j-1}(x)$ or $T_{2j-2}(x)$, yielding the best odd or even polynomial.]] [[approximation: it is reached only iteratively. Each round solves $\\sum_{j} a_{j}g_{j}(x_{k}) - F(x_{k}) = (-1)^{k}\\Delta$ over $N+1$ reference points for the coefficients and the deviation $\\Delta$, forms the residual $r = F - f_{t}$, locates its extremum between consecutive sign changes, and if $\\|r\\|_{\\infty}$ beats every one of those, swaps the global maximiser in while keeping $r(y_{j})r(y_{j+1}) < 0$. The paper states $f_{t} \\to f^{*}$ uniformly at a linear, sometimes quadratic, rate.]]",
+        theoryJa:
+          "求めたいのは厳密な最小化元 $f^{*} = \\operatorname{argmin}_{f \\in \\mathbb{R}[x],\\, \\deg(f) \\le d} \\max_{x \\in [a,b]} |F(x) - f(x)|$ です。[[assumption: 基底 $\\{g_{1}, \\ldots, g_{N}\\}$——$\\{1, x, \\ldots, x^{d}\\}$ の代わりとなるもの——は Haar 条件を満たさなければなりません。すなわち各 $g_{j}$ が連続であり、任意の $N$ 個の点に対してベクトル $v_{j} := (g_{1}(x_{j}), \\ldots, g_{N}(x_{j}))$ が線形独立でなければなりません——論文はこれを $g_{j}(x) = T_{2j-1}(x)$ または $T_{2j-2}(x)$ を取ることで保証しており、最良の奇関数または偶関数近似多項式を与えます。]] [[approximation: これは反復によってのみ到達されます。各ラウンドでは $\\sum_{j} a_{j}g_{j}(x_{k}) - F(x_{k}) = (-1)^{k}\\Delta$ を $N+1$ 個の参照点にわたって、係数と偏差 $\\Delta$ について解き、残差 $r = F - f_{t}$ を作り、連続する符号変化の間でその極値を求め、もし $\\|r\\|_{\\infty}$ がそれらすべてを上回れば、$r(y_{j})r(y_{j+1}) < 0$ を保ちながら大域的な最大点を入れ替えます。論文は $f_{t} \\to f^{*}$ が一様に、線形の——ときに2次の——速さで収束すると述べています。]]",
+      },
     },
     citations: [
       { title: "Efficient phase-factor evaluation in quantum signal processing", authors: "Yulong Dong, Xiang Meng, K. Birgitta Whaley, Lin Lin", year: "2020", url: "https://arxiv.org/abs/2002.11649" },
@@ -6402,6 +6462,16 @@ export const LAYER_GRAPH: LayerGraph = {
         "# why it cannot beat the exponential bound",
       ].join("\n"),
     },
+    hops: {
+      "uniformly-controlled-rotations": {
+        name: "zero one qubit per rotation layer",
+        nameJa: "回転層ごとに量子ビットを1つゼロにする",
+        theory:
+          "The amplitude vector is folded down to $|e_{1}\\rangle = |0\\ldots0\\rangle$ one qubit at a time and the same recursion is run on the target and inverted, so that $B^{\\dagger}A|a\\rangle = |b\\rangle$. A cascade of uniformly controlled $z$-rotations equalises the phases first, $\\Xi_{z}|a\\rangle = e^{i\\phi}|\\hat{a}\\rangle$, with $\\alpha_{j,k}^{z} = \\sum_{l=1}^{2^{k-1}}(\\omega_{(2j-1)2^{k-1}+l} - \\omega_{(2j-2)2^{k-1}+l})/2^{k-1}$; a cascade of $y$-rotations then folds each sibling pair onto its parent's norm, $\\alpha_{j,k}^{y} = 2\\arcsin\\!\\left(\\sqrt{\\sum_{l=1}^{2^{k-1}}|a_{(2j-1)2^{k-1}+l}|^{2}} \\big/ \\sqrt{\\sum_{l=1}^{2^{k}}|a_{(j-1)2^{k}+l}|^{2}}\\right)$, zeroing one qubit per level. [[assumption: the state is \"normalized to unity\", which is what puts every ratio inside that $\\arcsin$ in $[0,1]$.]] Each cascade is a product of gates $R_{\\mathbf{a}}(\\alpha_{i}) = I\\cos\\frac{\\alpha_{i}}{2} + i(\\mathbf{a}\\cdot\\boldsymbol{\\sigma})\\sin\\frac{\\alpha_{i}}{2}$, one per control-bit string. [[assumption: \"the operational principle of the gate sequence requires that $a_{x} = 0$\", met here because the axis is $\\mathbf{y}$ or $\\mathbf{z}$.]]",
+        theoryJa:
+          "振幅ベクトルは1量子ビットずつ $|e_{1}\\rangle = |0\\ldots0\\rangle$ まで折りたたまれ、同じ再帰をターゲット側にも施して逆向きに実行することで $B^{\\dagger}A|a\\rangle = |b\\rangle$ となります。まず一様制御された $z$ 回転のカスケードが位相をそろえるもので($\\Xi_{z}|a\\rangle = e^{i\\phi}|\\hat{a}\\rangle$)、その角度は $\\alpha_{j,k}^{z} = \\sum_{l=1}^{2^{k-1}}(\\omega_{(2j-1)2^{k-1}+l} - \\omega_{(2j-2)2^{k-1}+l})/2^{k-1}$ です。続いて $y$ 回転のカスケードが、兄弟同士の対をその親のノルムへと折りたたみ、$\\alpha_{j,k}^{y} = 2\\arcsin\\!\\left(\\sqrt{\\sum_{l=1}^{2^{k-1}}|a_{(2j-1)2^{k-1}+l}|^{2}} \\big/ \\sqrt{\\sum_{l=1}^{2^{k}}|a_{(j-1)2^{k}+l}|^{2}}\\right)$ とし、1階層につき1量子ビットずつゼロにしていきます。[[assumption: 状態は「単位ノルムに正規化されている」ため、この $\\arcsin$ の中に入る比はすべて $[0,1]$ に収まります。]] 各カスケードはゲート $R_{\\mathbf{a}}(\\alpha_{i}) = I\\cos\\frac{\\alpha_{i}}{2} + i(\\mathbf{a}\\cdot\\boldsymbol{\\sigma})\\sin\\frac{\\alpha_{i}}{2}$ の積であり、制御ビット列ごとに1つずつ現れます。[[assumption: 「このゲート列が機能するための原理は $a_{x} = 0$ を要求する」ものであり、ここでは軸が $\\mathbf{y}$ または $\\mathbf{z}$ であるためこれが満たされています。]]",
+      },
+    },
     citations: [
       { title: "Transformation of quantum states using uniformly controlled rotations", authors: "Mikko Mottonen, Juha J. Vartiainen, Ville Bergholm, Martti M. Salomaa", year: "2004", url: "https://arxiv.org/abs/quant-ph/0407010" },
       { title: "Optimal (controlled) quantum state preparation and improved unitary synthesis by quantum circuits with any number of ancillary qubits", authors: "Pei Yuan, Shengyu Zhang", year: "2022", url: "https://arxiv.org/abs/2202.11302" },
@@ -6453,6 +6523,16 @@ export const LAYER_GRAPH: LayerGraph = {
         "# point at Monte Carlo for the log-concave case, so \"efficiently integrable\"",
         "# and \"log-concave\" are not the same class.",
       ].join("\n"),
+    },
+    hops: {
+      "grover-rudolph-preparation": {
+        name: "rotate an ancilla, split the mass",
+        nameJa: "補助ビットを回転させ、確率質量を分ける",
+        theory:
+          "The state is built one layer at a time: $|\\psi_{m}\\rangle = \\sum_{i=0}^{2^{m}-1}\\sqrt{p_{i}^{(m)}}|i\\rangle$ doubles its resolution over $n$ rounds until it is $\\sum_{i}\\sqrt{p_{i}}|i\\rangle$ on $N = 2^{n}$ bins. [[approximation: the continuous density $p(x)$ is replaced by that piecewise-constant histogram, and the paper states no bound on the resulting discretisation error.]] Each round computes an angle $\\theta_{i} \\equiv \\arccos\\sqrt{f(i)}$ into an ancilla, where $f(i)$ is \"the probability that, given $x$ lies in region $i$, it also lies in the left half of this region\" [[assumption: $f(i)$ is a ratio of two definite integrals of $p(x)$, so the construction needs an efficient classical routine evaluating it for every $i$ at every layer]], applies the controlled rotation $|\\theta_{i}\\rangle|i\\rangle|0\\rangle \\to |\\theta_{i}\\rangle|i\\rangle(\\cos\\theta_{i}|0\\rangle + \\sin\\theta_{i}|1\\rangle)$, and uncomputes $|\\theta_{i}\\rangle$ — turning $\\sqrt{p_{i}^{(m)}}|i\\rangle$ into $\\sqrt{p_{i}^{(m)}}(\\cos\\theta_{i}|i\\rangle|0\\rangle + \\sin\\theta_{i}|i\\rangle|1\\rangle)$ and splitting each interval's mass between its two halves.",
+        theoryJa:
+          "状態は1層ずつ構築されます。$|\\psi_{m}\\rangle = \\sum_{i=0}^{2^{m}-1}\\sqrt{p_{i}^{(m)}}|i\\rangle$ は $n$ 回にわたって分解能を倍にしていき、最終的には $\\sum_{i}\\sqrt{p_{i}}|i\\rangle$ になります($N = 2^{n}$ 個のビンの上で)。[[approximation: 連続な密度 $p(x)$ はその区分的に一定なヒストグラムで置き換えられており、論文はそこから生じる離散化誤差についていかなる評価も与えていません。]] 各回では角度 $\\theta_{i} \\equiv \\arccos\\sqrt{f(i)}$ をアンシラに計算します。ここで $f(i)$ は「$x$ が $i$ の領域にあるとして、それがさらにその領域の左半分にある確率」です。[[assumption: $f(i)$ は $p(x)$ の2つの定積分の比であるため、この構成にはあらゆる $i$ について毎層それを評価する効率的な古典ルーチンが必要になります。]] 制御回転 $|\\theta_{i}\\rangle|i\\rangle|0\\rangle \\to |\\theta_{i}\\rangle|i\\rangle(\\cos\\theta_{i}|0\\rangle + \\sin\\theta_{i}|1\\rangle)$ を適用し、$|\\theta_{i}\\rangle$ をアンコンピュートすることで、$\\sqrt{p_{i}^{(m)}}|i\\rangle$ を $\\sqrt{p_{i}^{(m)}}(\\cos\\theta_{i}|i\\rangle|0\\rangle + \\sin\\theta_{i}|i\\rangle|1\\rangle)$ に変え、各区間の質量をその2つの半分に分配します。",
+      },
     },
     citations: [
       { title: "Creating superpositions that correspond to efficiently integrable probability distributions", authors: "Lov Grover, Terry Rudolph", year: "2002", url: "https://arxiv.org/abs/quant-ph/0208112" },
@@ -6519,6 +6599,16 @@ export const LAYER_GRAPH: LayerGraph = {
         "# generally dense in another, so this is a property of the problem's",
         "# encoding as much as of the state",
       ].join("\n"),
+    },
+    hops: {
+      "sparse-state-preparation": {
+        name: "merge two strings, shrink support by one",
+        nameJa: "2つの文字列を統合し、台を1つ減らす",
+        theory:
+          "The circuit is built backwards, from $\\phi = \\sum_{x \\in S}c_{x}|x\\rangle$ toward $|0^{n}\\rangle$, and then inverted. Each pass shrinks the support by exactly one. The current support $T$ is repeatedly split on a qubit $b$ into $T_{0} = \\{x \\in T : x[b] = 0\\}$ and $T_{1} = \\{x \\in T : x[b] = 1\\}$, chosen so the two sizes are \"as unequal as possible but neither set is empty\", pushing the bit onto a stack until one string $x_{1}$ is left; the sibling branch is split the same way down to a second string $x_{2}$. CNOTs controlled on the differing bit make $x_{1}$ and $x_{2}$ \"equal on all bits except $dif$\", and a two-level gate controlled on the stacked bits merges $c_{x_{1}}|x_{1}\\rangle + c_{x_{2}}|x_{2}\\rangle$ into a single basis state — and because it is controlled on those bits \"it will only be applied to $x_{1}$ and $x_{2}$ but no other $y \\in S$\". [[assumption: $\\phi$ is a normalised state, $\\sum_{x \\in S}|c_{x}|^{2} = 1$; the merge itself needs nothing of the individual pair.]]",
+        theoryJa:
+          "回路は逆向きに、$\\phi = \\sum_{x \\in S}c_{x}|x\\rangle$ から $|0^{n}\\rangle$ に向かって構築され、その後で反転されます。各パスは台をちょうど1つずつ縮めます。現在の台 $T$ は、あるビット $b$ について繰り返し $T_{0} = \\{x \\in T : x[b] = 0\\}$ と $T_{1} = \\{x \\in T : x[b] = 1\\}$ に分割されます——2つの大きさが「できる限り不均等だが、どちらの集合も空にならない」ように選ばれます——ビットをスタックに積みながら、1つの文字列 $x_{1}$ だけが残るまで続けます。兄弟側の枝も同じ方法で分割していき、2つ目の文字列 $x_{2}$ に至ります。異なるビットで制御された CNOT によって $x_{1}$ と $x_{2}$ を「$dif$ を除くすべてのビットで等しく」し、スタックされたビットで制御された2準位ゲートが $c_{x_{1}}|x_{1}\\rangle + c_{x_{2}}|x_{2}\\rangle$ を単一の基底状態へと統合します——そしてそのビット列で制御されているため、「これは $x_{1}$ と $x_{2}$ にのみ適用され、他のどの $y \\in S$ にも適用されない」。[[assumption: $\\phi$ は正規化された状態、すなわち $\\sum_{x \\in S}|c_{x}|^{2} = 1$ であり、統合そのものはこの対の個々の値については何も必要としません。]]",
+      },
     },
     citations: [
       { title: "Nearly Optimal Circuit Size for Sparse Quantum State Preparation", authors: "Lvzhou Li, Jingquan Luo", year: "2024", url: "https://arxiv.org/abs/2406.16142" },
@@ -6637,6 +6727,16 @@ export const LAYER_GRAPH: LayerGraph = {
         "# behavior without sacrificing the quantum speedup",
       ].join("\n"),
     },
+    hops: {
+      "fixed-point-amplification": {
+        name: "set each reflection phase from Chebyshev",
+        nameJa: "反射位相をチェビシェフ多項式から定める",
+        theory:
+          "Grover's fixed $\\pm\\pi$ reflections are replaced by $l = (L-1)/2$ tuned generalized iterates $\\mathcal{S}_{L} = \\prod_{j=1}^{l}G(\\alpha_{j}, \\beta_{j})$ with $G(\\alpha, \\beta) = -S_{s}(\\alpha)S_{t}(\\beta)$, whose phases are read off Chebyshev polynomials: $\\alpha_{j} = -\\beta_{l-j+1} = 2\\cot^{-1}\\!\\left(\\tan(2\\pi j/L)\\sqrt{1-\\gamma^{2}}\\right)$ with $\\gamma^{-1} = T_{1/L}(1/\\delta)$. [[assumption: the whole construction lives in \"the two-dimensional subspace $\\mathcal{T}$ spanned by $|s\\rangle$ and $|T\\rangle$\", so the generalized reflections built from $A$, $A^{\\dagger}$ and $U$ must preserve it.]] The resulting overlap is exactly $P_{L} = |\\langle T|\\mathcal{S}_{L}|s\\rangle|^{2} = 1 - \\delta^{2}T_{L}\\!\\left(T_{1/L}(1/\\delta)\\sqrt{1-\\lambda}\\right)^{2}$, so the failure probability never exceeds $\\delta^{2}$ however large $\\lambda$ turns out to be. [[approximation: the exact threshold $w = 1 - T_{1/L}(1/\\delta)^{-2}$ is approximated for large $L$ and small $\\delta$ as $w \\approx (\\log(2/\\delta)/L)^{2}$, and that is what yields the clean sufficient query count $L \\ge \\log(2/\\delta)/\\sqrt{\\lambda}$.]]",
+        theoryJa:
+          "Grover の固定された $\\pm\\pi$ 反射は、$l = (L-1)/2$ 個の調整された一般化反復 $\\mathcal{S}_{L} = \\prod_{j=1}^{l}G(\\alpha_{j}, \\beta_{j})$(ただし $G(\\alpha, \\beta) = -S_{s}(\\alpha)S_{t}(\\beta)$)に置き換えられます。その位相はチェビシェフ多項式から読み取られ、$\\alpha_{j} = -\\beta_{l-j+1} = 2\\cot^{-1}\\!\\left(\\tan(2\\pi j/L)\\sqrt{1-\\gamma^{2}}\\right)$——ここで $\\gamma^{-1} = T_{1/L}(1/\\delta)$——として与えられます。[[assumption: この構成全体は2次元部分空間 $\\mathcal{T}$——$|s\\rangle$ と $|T\\rangle$ が張る——の中で完結しており、したがって $A$、$A^{\\dagger}$、$U$ から作られる一般化反射はこの部分空間を保たなければなりません。]] 得られる重なりは厳密に $P_{L} = |\\langle T|\\mathcal{S}_{L}|s\\rangle|^{2} = 1 - \\delta^{2}T_{L}\\!\\left(T_{1/L}(1/\\delta)\\sqrt{1-\\lambda}\\right)^{2}$ であり、したがって $\\lambda$ がどれほど大きくても失敗確率は $\\delta^{2}$ を超えません。[[approximation: 厳密なしきい値 $w = 1 - T_{1/L}(1/\\delta)^{-2}$ は、$L$ が大きく $\\delta$ が小さい極限で $w \\approx (\\log(2/\\delta)/L)^{2}$ と近似され、これがきれいな十分条件としてのクエリ数 $L \\ge \\log(2/\\delta)/\\sqrt{\\lambda}$ を導きます。]]",
+      },
+    },
     citations: [
       { title: "Fixed-point quantum search with an optimal number of queries", authors: "Theodore J. Yoder, Guang Hao Low, Isaac L. Chuang", year: "2014", url: "https://arxiv.org/abs/1409.3305" },
       { title: "A different kind of quantum search", authors: "Lov K. Grover", year: "2005", url: "https://arxiv.org/abs/quant-ph/0503205" },
@@ -6715,6 +6815,16 @@ export const LAYER_GRAPH: LayerGraph = {
         "# Chakraborty, Gilyen and Jeffery build variable-time amplitude estimation",
         "# directly on this technique",
       ].join("\n"),
+    },
+    hops: {
+      "variable-time-amplification": {
+        name: "amplify stage by stage, skip the stopped",
+        nameJa: "停止済みの枝を除き、段階ごとに増幅する",
+        theory:
+          "The routine is allowed to stop at different times on different branches, and the amplification follows it. At each stopping time the state decomposes as $|\\psi_{i}\\rangle = \\alpha_{i,0}|0\\rangle|\\psi_{i,0}\\rangle + \\alpha_{i,1}|1\\rangle|\\psi_{i,1}\\rangle + \\alpha_{i,2}|2\\rangle|\\psi_{i,2}\\rangle$, flagging each branch stopped-bad, stopped-good, or still running. [[assumption: a branch that has stopped must not move again — $P_{H_{i}}|\\psi_{i+1,0}\\rangle = |\\psi_{i,0}\\rangle$ and $P_{H_{i}}|\\psi_{i+1,1}\\rangle = |\\psi_{i,1}\\rangle$, so that \"the part of the state where the computation stopped at time $t_{i}$ should not change after that\".]] A nested sequence then amplifies each stage separately, [[approximation: only far enough to reach $r_{i} \\ge 1/9m$ rather than $\\Omega(1)$, which is what keeps $m$ nested amplifications from compounding]], giving $T_{i} \\le (1 + \\frac{1}{3m-1})\\sqrt{r_{i}/r_{i}'}(T_{i-1} + 2^{i-1})$ and a total $O\\!\\left(T_{max}\\sqrt{\\log T_{max}} + \\frac{T_{av}}{\\sqrt{p_{succ}}}\\log^{1.5}T_{max}\\right)$ against $O(T_{max}/\\sqrt{p_{succ}})$ for amplifying the routine as one block, where $T_{av} = \\sqrt{\\sum_{i}p_{i}t_{i}^{2}}$.",
+        theoryJa:
+          "このルーチンは枝ごとに異なる時刻で停止することが許されており、増幅もそれに追随します。各停止時刻において状態は $|\\psi_{i}\\rangle = \\alpha_{i,0}|0\\rangle|\\psi_{i,0}\\rangle + \\alpha_{i,1}|1\\rangle|\\psi_{i,1}\\rangle + \\alpha_{i,2}|2\\rangle|\\psi_{i,2}\\rangle$ のように分解され、各枝は「停止・悪い」「停止・良い」「まだ実行中」のいずれかに分類されます。[[assumption: 一度停止した枝は二度と動いてはなりません——$P_{H_{i}}|\\psi_{i+1,0}\\rangle = |\\psi_{i,0}\\rangle$ および $P_{H_{i}}|\\psi_{i+1,1}\\rangle = |\\psi_{i,1}\\rangle$——すなわち「時刻 $t_{i}$ で計算が停止した部分は、その後変化してはならない」。]] 入れ子になった手続きが各段階を個別に増幅していきます。[[approximation: ただし $r_{i} \\ge 1/9m$——$\\Omega(1)$ ではなく——に達する程度にまでしか増幅しません。これによって $m$ 個の入れ子になった増幅が積み重なって爆発することを防いでいます。]]これにより $T_{i} \\le (1 + \\frac{1}{3m-1})\\sqrt{r_{i}/r_{i}'}(T_{i-1} + 2^{i-1})$ が成り立ち、全体では $O\\!\\left(T_{max}\\sqrt{\\log T_{max}} + \\frac{T_{av}}{\\sqrt{p_{succ}}}\\log^{1.5}T_{max}\\right)$ となります。これは、ルーチン全体を一つのブロックとして増幅する場合の $O(T_{max}/\\sqrt{p_{succ}})$ と対比されるものです。ここで $T_{av} = \\sqrt{\\sum_{i}p_{i}t_{i}^{2}}$ です。",
+      },
     },
     citations: [
       { title: "Variable time amplitude amplification and a faster quantum algorithm for solving systems of linear equations", authors: "Andris Ambainis", year: "2010", url: "https://arxiv.org/abs/1010.4458" },
@@ -6795,6 +6905,16 @@ export const LAYER_GRAPH: LayerGraph = {
         "# the error is governed by commutators among the summands, and the term",
         "# order affects it -- the formula itself does not fix that order",
       ].join("\n"),
+    },
+    hops: {
+      "product-formula-simulation": {
+        name: "alternate exponentials of each term",
+        nameJa: "各項の指数関数を交互に掛け合わせる",
+        theory:
+          "The single exponential of $H = \\sum_{\\gamma=1}^{\\Gamma}H_{\\gamma}$ is replaced by a product of exponentials of its terms. The first-order formula fixes an ordering and alternates them, $\\mathscr{S}_{1}(t) := e^{tH_{\\Gamma}}\\cdots e^{tH_{1}}$ [[approximation: the joint exponential of the sum becomes the product of the separate ones, discarding the cross terms that non-commuting $H_{\\gamma}$ produce]]; higher orders are built recursively as $\\mathscr{S}_{2k}(t) := \\mathscr{S}_{2k-2}(u_{k}t)^{2}\\,\\mathscr{S}_{2k-2}((1-4u_{k})t)\\,\\mathscr{S}_{2k-2}(u_{k}t)^{2}$ with $u_{k} := 1/(4 - 4^{1/(2k-1)})$. Writing the additive error as $\\mathscr{S}(t) = e^{tH} + \\mathscr{A}(t)$, it is bounded by nested commutators: $\\|\\mathscr{A}(t)\\| = O(\\widetilde{\\alpha}_{\\mathrm{comm}}t^{p+1})$ with $\\widetilde{\\alpha}_{\\mathrm{comm}} = \\sum_{\\gamma_{1},\\ldots,\\gamma_{p+1}=1}^{\\Gamma}\\left\\lVert\\big[H_{\\gamma_{p+1}}, \\cdots \\big[H_{\\gamma_{2}}, H_{\\gamma_{1}}\\big]\\big]\\right\\rVert$. [[assumption: that clean form is the one stated for anti-Hermitian $H_{\\gamma}$ — $i$ times a physical Hermitian term — the general case carrying a further exponential factor.]] A circuit for time $t$ applies $\\mathscr{S}(t/r)$ $r$ times, and $r = O(\\widetilde{\\alpha}_{\\mathrm{comm}}^{1/p}t^{1+1/p}/\\varepsilon^{1/p})$ suffices for error $\\varepsilon$.",
+        theoryJa:
+          "$H = \\sum_{\\gamma=1}^{\\Gamma}H_{\\gamma}$ の単一の指数関数は、その各項の指数関数の積に置き換えられます。1次公式は順序を固定してそれらを交互に並べたもの、$\\mathscr{S}_{1}(t) := e^{tH_{\\Gamma}}\\cdots e^{tH_{1}}$ であり、[[approximation: 互いに非可換な $H_{\\gamma}$ が生み出す交差項を捨てて、和の指数関数を個々の指数関数の積に置き換えています]]。より高次のものは $\\mathscr{S}_{2k}(t) := \\mathscr{S}_{2k-2}(u_{k}t)^{2}\\,\\mathscr{S}_{2k-2}((1-4u_{k})t)\\,\\mathscr{S}_{2k-2}(u_{k}t)^{2}$(ただし $u_{k} := 1/(4 - 4^{1/(2k-1)})$)として再帰的に構成されます。加法的な誤差を $\\mathscr{S}(t) = e^{tH} + \\mathscr{A}(t)$ と書くと、これは入れ子になった交換子によって $\\|\\mathscr{A}(t)\\| = O(\\widetilde{\\alpha}_{\\mathrm{comm}}t^{p+1})$(ただし $\\widetilde{\\alpha}_{\\mathrm{comm}} = \\sum_{\\gamma_{1},\\ldots,\\gamma_{p+1}=1}^{\\Gamma}\\left\\lVert\\big[H_{\\gamma_{p+1}}, \\cdots \\big[H_{\\gamma_{2}}, H_{\\gamma_{1}}\\big]\\big]\\right\\rVert$)と評価されます。[[assumption: このきれいな形は、反エルミートな $H_{\\gamma}$——物理的にエルミートな項に $i$ を掛けたもの——について述べられたものであり、一般の場合はさらに指数因子が付きます。]] 時間 $t$ の回路は $\\mathscr{S}(t/r)$ を $r$ 回適用し、$r = O(\\widetilde{\\alpha}_{\\mathrm{comm}}^{1/p}t^{1+1/p}/\\varepsilon^{1/p})$ が誤差 $\\varepsilon$ に対して十分です。",
+      },
     },
     bypasses: ["block-encode-matrix"],
     entries: ["trotter-suzuki-simulation"],

@@ -1574,9 +1574,13 @@ test("an own: card says what its stretch does, or the standing phrase, in both l
   // any paper was made to reach this number. The remaining 64 have no `theory`
   // on their own hop, and validation refuses a `name` without one, so each of
   // those is research before it is an edit here.
+  // 43 with the first twelve of those 64 — the linear-ODE region's supporting
+  // slots, each read out of its own cited paper. Unlike the seventeen, every one
+  // of these is a NEW claim about a paper, so each arrived with the verbatim
+  // sentences behind it and each was checked against the source before landing.
   assert.equal(
     named.size,
-    31,
+    43,
     "the number of own cards that say what their stretch does changed — ratchet it up when you fill one in, never down",
   );
 });
