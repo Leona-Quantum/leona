@@ -2119,14 +2119,17 @@ test("an opened figure still names every drawn label without clipping it", () =>
       + `${named.size} say what they do (${[...named].sort().join(", ")}), `
       + `${standing.size} still draw the standing phrase (${[...standing].sort().join(", ")})`,
   );
-  // Not vacuous, and pinned in the direction that can regress silently. The
-  // count is deliberately NOT asserted equal to a constant — this number is
-  // meant to climb as stretches are researched, and a test that has to be
-  // edited on every gain is a test that gets edited without being read. What it
-  // must never do is fall back to zero, which is what a broken reader looks
-  // like: every lane would still draw a phrase and every other assertion here
-  // would still pass.
-  assert.ok(named.size > 0, "no drawn own stretch says what it does — the recorded names stopped reaching the canvas");
+  // Not vacuous, and pinned in the direction that can regress silently. What it
+  // must never do is fall back, which is what a broken reader looks like: every
+  // lane would still draw a phrase and every other assertion here would still
+  // pass. Complaint (c) is closed on the drawn population as of 2026-08-24, so
+  // this is now an equality — a stretch that stopped saying what it does is a
+  // regression, not a gap left to fill.
+  assert.equal(
+    standing.size,
+    0,
+    `${standing.size} drawn own stretches fell back to the standing phrase: ${[...standing].sort().join(", ")}`,
+  );
   assert.equal(
     named.size + standing.size,
     14,

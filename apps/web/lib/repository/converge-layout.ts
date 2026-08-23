@@ -2318,9 +2318,12 @@ function chainInside(
       // itself'"* — that is paid by recording what the hop does, per method,
       // behind the same paper register every other claim goes through.
       //
-      // Absent stays the correct default. 8 of the 14 own stretches this canvas
-      // actually draws have no recorded mathematics yet, and a placeholder that
-      // says nothing is honest where an invented phrase would not be.
+      // The fallback is not dead code even though this canvas no longer reaches
+      // it: all 14 own stretches a lane can draw now say what they do, but the
+      // `own:` CARD exists for all 95 methods that carry a stretch, and 81 of
+      // those have no recorded mathematics yet. Absent stays the correct
+      // default there — a placeholder that says nothing is honest where an
+      // invented phrase would not be.
       standingName: ownStretchName(method, locale === "ja") ?? ownStepName(locale),
       // Set by `withSpec` where a parent route expands one of its own steps; a
       // strand nothing has annotated draws its plain name.
@@ -3182,8 +3185,15 @@ interface Measure {
  * some steps and closes the rest itself). The other 81 own stretches never
  * reach a drawn lane — an `all-own` route is one segment, so it has no interior
  * to open, and a folded refinement draws inside its parent. So the phrase a
- * reader can actually meet on the map is a 14-item list, not a 95-item one, and
- * that is what makes recording them tractable rather than a corpus-wide sweep.
+ * reader can actually meet on the map was a 14-item list, not a 95-item one,
+ * and that is what made recording them tractable rather than a corpus-wide
+ * sweep.
+ *
+ * **All 14 are recorded as of 2026-08-24**, and the layout suite asserts it as
+ * an equality rather than a floor, so a lane falling back here again is a
+ * regression rather than a gap. What this function still answers for is the
+ * `own:` CARD, which exists for all 95 — 81 of those stretches have no recorded
+ * mathematics, and that is the remainder of Stage 3.
  */
 export function ownStepName(locale: PublicLocale): string {
   return locale === "ja" ? "手法そのもの" : "the method itself";
