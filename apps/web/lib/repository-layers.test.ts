@@ -2522,14 +2522,22 @@ test("the linear-ODE region does not go backwards on the half that is closed", (
  * fields have not been swept over this region, and ratcheting a field at 6 of 38
  * pins a number that means nothing. This asserts the one that was closed.
  *
- * **One method is exempt and it is not a gap.** `variational-ground-state` is
- * under the owner's 2026-07-19 ruling — VQE is a heuristic with no proven
- * worst-case speedup, and its price is to be said structurally rather than as a
- * number. Reading Peruzzo et al. found that they DO price one energy evaluation
- * while refusing to bound the iterations, which is a shape that ruling did not
- * anticipate, so it went back to him as ai-ops issue 169 rather than being decided
- * here. The exemption is spelled as a set of one so that the day it is answered,
- * this test tells whoever removes it exactly what they are removing.
+ * **The last exemption is gone, and the region is whole.** `variational-ground-state`
+ * sat outside this assertion under the owner's 2026-07-19 ruling — VQE is a
+ * heuristic with no proven worst-case speedup, and its price was to be said
+ * structurally rather than as a number. Reading Peruzzo et al. found that they DO
+ * price one energy evaluation while refusing to bound the iterations, a shape the
+ * ruling did not anticipate, so it went back to him as ai-ops issue 169. His
+ * answer was to record it — *"let's just add whatever we can from each paper,
+ * because each one is going to be specific to certain problems anyway"* — and the
+ * record now carries both halves in one paragraph: the per-evaluation count the
+ * two papers do prove, and the iteration count neither of them bounds.
+ *
+ * So `cost.missing` is asserted EMPTY rather than equal to a named exemption set.
+ * That is a stronger assertion than the one it replaces and it is the only shape
+ * that cannot rot: an exemption list keeps passing after the reason for it is
+ * gone, which is precisely what the AWAITING_OWNER block here was written to
+ * prevent happening to itself.
  */
 test("the variational region does not go quiet again about what it costs", () => {
   const SLOTS = [
@@ -2546,31 +2554,19 @@ test("the variational region does not go quiet again about what it costs", () =>
     region.methods.length >= 38,
     `the region has ${region.methods.length} methods, fewer than the 38 it was swept over`,
   );
-  const AWAITING_OWNER = ["variational-ground-state"];
   const cost = region.fields.find((entry) => entry.field === "cost")!;
-  // The exemption is checked in BOTH directions, and neither is decoration.
-  // Without the first, deleting the exempt method from the region makes this
-  // test pass while enforcing nothing — the same "measure less, look healthier"
-  // failure `unknown` guards at the slot level. Without the second, the day
-  // ai-ops issue 169 is answered and VQE gets a cost, the filter is empty, this
-  // still passes, and the stale exemption sits here forever — which is the
-  // opposite of what the comment above promises. Both were raised on the PR
-  // that added this test, by two different reviewers arriving from two
-  // different ends of the same hole.
   assert.deepEqual(
-    AWAITING_OWNER.filter((id) => !region.methods.includes(id)),
-    [],
-    "an exempt method has left the region, so the exemption now guards nothing",
-  );
-  assert.deepEqual(
-    AWAITING_OWNER.filter((id) => !cost.missing.includes(id)),
-    [],
-    "an exempt method now carries a cost — delete it from AWAITING_OWNER and this line goes quiet",
-  );
-  assert.deepEqual(
-    cost.missing.filter((id) => !AWAITING_OWNER.includes(id)),
+    cost.missing,
     [],
     `cost is missing on ${cost.missing.join(", ")} — this region was swept on that field`,
+  );
+  // The one method that used to be exempt, named so that deleting it from the
+  // region cannot make the line above pass on a smaller set. The two-direction
+  // check the exemption needed collapses into this once the exemption is gone:
+  // "every method has a cost" plus "this method is still one of them".
+  assert.ok(
+    region.methods.includes("variational-ground-state"),
+    "VQE has left the region — the field that was hardest to close is no longer measured",
   );
 });
 
