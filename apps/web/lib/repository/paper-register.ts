@@ -289,6 +289,39 @@ export const PAPER_REGISTER: PaperRegister = {
     { id: "doi:10.1007/978-3-642-38616-9_2", title: "Quantum algorithms for the subset-sum problem", authors: "Daniel J. Bernstein, Stacey Jeffery, Tanja Lange, Alexander Meurer", year: "2013", url: "https://doi.org/10.1007/978-3-642-38616-9_2", reports: { theory: "reported", simulation: "reported", hardware: "absent" }, reportsBasis: "full-text" },
     { id: "doi:10.1016/0003-4916(70)90270-8", title: "The one-dimensional Ising model with a transverse field", authors: "P. Pfeuty", year: "1970", url: "https://doi.org/10.1016/0003-4916(70)90270-8" },
     { id: "doi:10.1017/cbo9780511973765", title: "Quantum Phase Transitions", authors: "S. Sachdev", year: "2011", url: "https://doi.org/10.1017/cbo9780511973765", medium: "textbook" },
+    // **Read on 2026-08-24**, from the copy the owner supplied on ai-ops#56 on
+    // 2026-08-13. Recorded here because until that read this row was the only
+    // thing on the register carrying four dependent records and no evidence that
+    // anyone had opened the source — the PDF had been sitting in
+    // `~/Developer/leona-sources/` for eleven days.
+    //
+    // What the read changed: `bell-state-qiskit` cited "§1.3.6/§4.3" and §4.3 is
+    // "Controlled operations", eight pages that never mention a Bell state. That
+    // is corrected in ./entries-legacy.ts, where the full account is.
+    //
+    // What the read confirmed, so a later session need not re-derive it — section
+    // and printed page, checked against the table of contents:
+    //   §1.3.6  p.25   Bell states; H-then-CNOT, eq. (1.23)
+    //   §2.4.3  p.106  reduced density operator; the Bell pair traced to I/2
+    //   §4.3    p.177  Controlled operations (NOT Bell states)
+    //   §8.3.4  p.378  depolarizing channel; "the completely mixed state, I/2"
+    //   §10.5.8 p.472  ancilla circuits for measuring a Pauli product, Figs 10.13/10.15/10.16
+    //   Thm 11.8 p.513 entropy is log d iff the state is completely mixed
+    //   §12.6.3 p.587  BB84; |+⟩ and |−⟩ as two of the four encoding states
+    //
+    // No `reports`/`reportsBasis`, and that is the convention rather than an
+    // omission: those three fields say what a *paper* reports of theory,
+    // simulation and hardware, and `validatePaperRegister` requires them to stand
+    // or fall together. The other textbook on this register (Sachdev, above)
+    // carries `medium` and no reports for the same reason.
+    //
+    // One thing the read did NOT support, worth recording because it reads like a
+    // defect and is not one: the four records use "maximally mixed state",
+    // "mutually unbiased bases" and "parity operator", and this book uses none of
+    // those phrases — it says "completely mixed state" and writes parity as a
+    // product of Pauli operators. The records use the field's vocabulary and
+    // nowhere attribute the *terms* to this source, so nothing is misquoted. The
+    // physics behind each was checked and holds.
     { id: "doi:10.1017/cbo9780511976667", title: "Quantum Computation and Quantum Information: 10th Anniversary Edition", authors: "Michael A. Nielsen and Isaac L. Chuang", year: "2010", url: "https://doi.org/10.1017/cbo9780511976667", medium: "textbook" },
     // Read in full from the publisher PDF the owner supplied on ai-ops#42, not from
     // an abstract — hence `full-text`. Sci Rep 15, 28508 (2025); received 28 March
