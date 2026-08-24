@@ -34,13 +34,12 @@ overrides:
   #
   # Vercel's Node runtime runs every function with `--no-experimental-require-module`
   # in `execArgv`. Measured, not inferred: a probe route deployed to a preview on
-  # 2026-08-24 reported `node v24.18.0` with that flag present and
-  # `NODE_OPTIONS` unset. So `require()` of an ES module throws ERR_REQUIRE_ESM
-  # there no matter which Node version the project selects, and no `engines`
-  # field can change it.
+  # 2026-08-24 reported `node v24.18.0` with that flag present and `NODE_OPTIONS`
+  # unset. So `require()` of an ES module throws ERR_REQUIRE_ESM there no matter
+  # which Node version the project selects, and no `engines` field can change it.
   #
-  # jsdom 27 and above depend on `@exodus/bytes`, which is ESM-only, and jsdom
-  # itself is `"type": "commonjs"` — so its own `require()` of that package is
+  # jsdom 27 and later depend on `@exodus/bytes`, which is ESM-only, and jsdom is
+  # itself `"type": "commonjs"` — so jsdom's own `require()` of that package is
   # the one that throws. jsdom 26 is the last line that reaches encoding through
   # `whatwg-encoding`, which is CommonJS. **jsdom 27+ therefore cannot run in a
   # Vercel function at all**, which makes this a ceiling rather than a stale pin:
@@ -49,17 +48,23 @@ overrides:
   #
   # This is what took `sanitizeMathHtml` out of the maths render path for eight
   # days (leona 690 shipped it, every page drawing mathematics returned 500,
-  # leona 693 withdrew it). One consumer, `isomorphic-dompurify`, and it uses
-  # exactly one jsdom API — `new JSDOM("<!DOCTYPE html>").window` — which has
-  # been stable since jsdom 1.x. Pinned tree-wide rather than scoped to that one
-  # path on purpose: the test harness in `apps/web/tests/forms/preload.mjs` uses
-  # jsdom too, and a suite running a different DOM from production is how this
-  # class of defect stays invisible.
+  # leona 693 withdrew it). `isomorphic-dompurify` uses exactly one jsdom API —
+  # `new JSDOM("<!DOCTYPE html>").window` — which has been stable since jsdom
+  # 1.x, so holding its copy back costs nothing.
   #
-  # `apps/web/tests/sanitize-math-require.test.ts` reproduces the production
+  # **Scoped to that one consumer on purpose.** A tree-wide pin was written
+  # first, on the argument that a suite running a different DOM from production
+  # hides this class of defect. It does not apply here: the other jsdom consumer
+  # is `apps/web/tests/forms/preload.mjs`, which is simulating a BROWSER, and
+  # production never runs jsdom for a form. A newer jsdom is a better browser
+  # there, and holding it back cost two API adaptations for no safety. The
+  # sanitizer's own suite resolves through this override, so the thing that
+  # deploys is still the thing that is tested.
+  #
+  # `apps/web/lib/sanitize-math-runtime.test.ts` reproduces the production
   # runtime directly — it spawns node with the same flag — so a regression here
   # fails CI instead of a deployment.
-  jsdom: 26.1.0
+  isomorphic-dompurify>jsdom: 26.1.0
   # GHSA-5p4m-2wfm-xmqj (CVSS 7.5, published 2026-08-06): `resolveYamlOmap()`
   # enforces key uniqueness with `objectKeys.indexOf()` inside the per-element
   # loop, so resolving an n-entry `!!omap` is O(n²) and blocks the event loop
