@@ -156,7 +156,7 @@ overrides:
   # suite stayed green. The same-copy assertion in `session-jwt-crypto.test.ts`
   # caught it, which is the whole reason that assertion exists — but it catches
   # the split after the fact, so raise both numbers in the same commit.
-  jose@^5.0.0: 6.2.8
+  jose@^5.0.0: 6.2.10
   # NOT `minimatch@^5 -> 10`, though that is the tempting way to collapse the
   # two lines above into one. minimatch 10 moved from a callable default export
   # to named exports, and @redocly/openapi-core (the only minimatch@5 consumer
