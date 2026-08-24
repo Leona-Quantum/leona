@@ -36,7 +36,6 @@ const KNOWN_SLUGS = knownFlag >= 0 ? args[knownFlag + 1].split(",") : [];
 //: an empty set here would make every tab-owned role fail.
 const OFFERED_TOPIC_EXEMPTIONS = new Set([
   "gate-primitive",
-  "state",
   "operator",
   "algorithm-reference",
   "benchmark-circuit",
@@ -772,106 +771,59 @@ if (!ENTRY_FILE) {
   }
 }
 
-// `basic-circuits` and the `benchmark-circuit` topic must name the SAME records.
+// Every `benchmark-circuit` record sits in `basic-circuits`, and no
+// `algorithm-reference` record does.
 //
-// The split shipped for Stage 5 (ai-ops issue 168 §1) is not a new judgement about
-// which records are elementary — it surfaces a line the data already drew and
-// `map-eligibility.ts` already enforced. `MAP_ELIGIBLE_ROLES` is
-// `["algorithm-reference"]`, so a record carrying `benchmark-circuit` is one the
-// map refuses to anchor: *"a yardstick — a width-scaled RY-CZ ansatz is not a
-// way of solving anything"*. If the two ever name different sets, one of two
-// things has gone wrong and both are invisible at a reader: a benchmark filed
-// under Algorithms again, or a real method filed as a basic circuit and
-// silently dropped out of the map's eligible population.
+// This was a two-way SET EQUALITY when `basic-circuits` shipped (leona 760) and
+// the two named the same 30. ai-ops issue 174 then moved seven state records
+// into the category without making them benchmarks, so equality is now false —
+// and forcing it true would have meant relabelling a Bell state a
+// `benchmark-circuit`, which it is not.
 //
-// Checked as a two-way equality rather than as a count, because two sets can
-// have the same size and different members.
+// So the check is relaxed to the two failures it actually existed to catch,
+// stated as directions rather than as an equality:
+//
+//   * a benchmark filed anywhere else — the thing the split exists to stop,
+//     a yardstick shown beside Shor;
+//   * a METHOD filed here — which would silently remove it from the map's
+//     eligible population, since `MAP_ELIGIBLE_ROLES` is `algorithm-reference`.
+//
+// What is deliberately NOT checked any more is the reverse of the first: a
+// `basic-circuits` record need not be a benchmark. That is the space the seven
+// state records now occupy, and closing it again would re-break the ruling.
 {
-  const filedAsBasic = new Set(
-    entries.filter((entry) => entry.category === "basic-circuits").map((entry) => entry.slug),
+  const benchmarksElsewhere = entries.filter(
+    (entry) => (entry.topics ?? []).includes("benchmark-circuit") && entry.category !== "basic-circuits",
   );
-  const carriesBenchmarkRole = new Set(
-    entries.filter((entry) => (entry.topics ?? []).includes("benchmark-circuit")).map((entry) => entry.slug),
-  );
-  for (const slug of filedAsBasic) {
-    if (!carriesBenchmarkRole.has(slug)) {
-      errors.push(
-        `${slug}: category is basic-circuits but the record does not carry the benchmark-circuit topic. `
-          + "The category is the reader-facing half of a line map-eligibility.ts already draws; "
-          + "filing a method here removes it from the map's eligible population with nothing else failing.",
-      );
-    }
+  for (const entry of benchmarksElsewhere) {
+    errors.push(
+      `${entry.slug}: carries the benchmark-circuit topic but is filed under "${entry.category}". `
+        + "A benchmark scaffold shown beside Shor is the thing the basic-circuits split exists to stop.",
+    );
   }
-  for (const slug of carriesBenchmarkRole) {
-    if (!filedAsBasic.has(slug)) {
-      errors.push(
-        `${slug}: carries the benchmark-circuit topic but is filed under "${entries.find((e) => e.slug === slug)?.category}". `
-          + "A benchmark scaffold shown beside Shor is the thing the basic-circuits split exists to stop.",
-      );
-    }
+  const methodsFiledAsBasic = entries.filter(
+    (entry) => entry.category === "basic-circuits" && (entry.topics ?? []).includes("algorithm-reference"),
+  );
+  for (const entry of methodsFiledAsBasic) {
+    errors.push(
+      `${entry.slug}: is filed under basic-circuits but carries algorithm-reference. `
+        + "That is the map's eligible role — filing a method here removes it from the map's "
+        + "population with nothing else failing.",
+    );
   }
 }
 
-// No record may carry both roles, and every algorithms/basic-circuits record
-// must carry one. This is what makes the equality above a PARTITION rather than
-// two independently drifting labels — the 178 records that were one category
-// before Stage 5 split 148/30 with nothing in both and nothing in neither, and
-// a record acquiring both roles would satisfy the check above while being
-// eligible and elementary at once.
+// No record carries both `algorithm-reference` and `benchmark-circuit`.
+//
+// This used to also require every `algorithms`/`basic-circuits` record to carry
+// one of the two, which made the pair a partition. ai-ops issue 174 ended that:
+// seven records in `basic-circuits` carry `state` and neither of these, on
+// purpose. The half that still holds — and still matters — is that nothing is
+// both a method and a yardstick at once.
 for (const entry of entries) {
-  if (entry.category !== "algorithms" && entry.category !== "basic-circuits") continue;
   const topics = entry.topics ?? [];
-  const isReference = topics.includes("algorithm-reference");
-  const isBenchmark = topics.includes("benchmark-circuit");
-  if (isReference && isBenchmark) {
+  if (topics.includes("algorithm-reference") && topics.includes("benchmark-circuit")) {
     errors.push(`${entry.slug}: carries both algorithm-reference and benchmark-circuit; a record is one or the other`);
-  }
-  if (!isReference && !isBenchmark) {
-    errors.push(`${entry.slug}: is filed under ${entry.category} but carries neither algorithm-reference nor benchmark-circuit`);
-  }
-}
-
-// No OFFERED topic may select the same records a category tab selects.
-//
-// ai-ops#75 ruled that when a tab and a topic answer one question with two
-// numbers, the tab keeps the word. `TOPICS_A_CATEGORY_TAB_OWNS` implements it —
-// but by NAME, and the guard beside it in `repository-topic-filter.test.ts`
-// compares label strings. That is why adding `basic-circuits` slipped through:
-// "basic circuit" and "benchmark circuit" are different strings, so nothing
-// fired, while the two controls selected an identical set of 30 records and
-// printed the same 30 beside each. Identical sets, not overlapping ones — the
-// worst case for the ruling rather than an edge of it.
-//
-// This checks what the reader actually experiences: the RECORDS behind each
-// control. A topic that is a strict subset of a category is fine and common
-// (`variational` inside Algorithms); a topic that reproduces one exactly is the
-// duplicate the ruling forbids.
-{
-  const byCategory = new Map();
-  for (const entry of entries) {
-    if (!byCategory.has(entry.category)) byCategory.set(entry.category, new Set());
-    byCategory.get(entry.category).add(entry.slug);
-  }
-  const byTopic = new Map();
-  for (const entry of entries) {
-    for (const topic of entry.topics ?? []) {
-      if (!byTopic.has(topic)) byTopic.set(topic, new Set());
-      byTopic.get(topic).add(entry.slug);
-    }
-  }
-  const sameSet = (a, b) => a.size === b.size && [...a].every((slug) => b.has(slug));
-  for (const [topic, topicSlugs] of byTopic) {
-    if (OFFERED_TOPIC_EXEMPTIONS.has(topic)) continue;
-    for (const [category, categorySlugs] of byCategory) {
-      if (sameSet(topicSlugs, categorySlugs)) {
-        errors.push(
-          `topic "${topic}" and category "${category}" select the same ${topicSlugs.size} records. `
-            + "A reader meets two controls and one number twice, with nothing saying they are one "
-            + "thing (ai-ops#75). Add the topic to TOPICS_A_CATEGORY_TAB_OWNS in "
-            + "apps/web/lib/repository/topic-filter.ts, or record it in OFFERED_TOPIC_EXEMPTIONS here.",
-        );
-      }
-    }
   }
 }
 

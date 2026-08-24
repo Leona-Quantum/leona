@@ -49,13 +49,20 @@ export interface TopicOptionGroup {
  * | word           | category tab | `role` topic | same records |
  * | -------------- | ------------ | ------------ | ------------ |
  * | Gates          | 29           | 29           | yes          |
- * | Operators      | 60           | 60           | yes          |
- * | States         | 12           | 12           | yes          |
+ * | Operators      | 65           | 60           | **no**       |
  * | Algorithms     | 148          | 148          | yes          |
- * | Basic circuits | 30           | 30           | yes          |
+ * | Basic circuits | 37           | 30           | **no**       |
  *
- * Not merely equal counts — an identical *set* on every row, checked slug by
- * slug. The `role` facet has become a second name for `category`.
+ * Three of the four still collide exactly and yield the word. **`state` no
+ * longer does, and that is why it is not in the set below.** ai-ops issue 174
+ * cut the `States` tab and split its twelve records across `basic-circuits` (7)
+ * and `operators` (5) while leaving their `state` role intact — so the role now
+ * names twelve records spread over two tabs, which is a thing no tab can say and
+ * exactly what a facet is for. It is offered again, and the `role` group is back
+ * in this control with one member.
+ *
+ * For one PR, between leona 762 and the cut, all five collided and this control
+ * returned no `role` group at all. That was true and is no longer.
  *
  * **This table used to show the opposite**, and the difference is the history
  * worth keeping. Measured 2026-08-14 over a then-369-record corpus it read
@@ -73,7 +80,7 @@ export interface TopicOptionGroup {
  * Owner ruling, ai-ops#75: *"reconcile them to one number and drop whichever
  * slice matters less."* The record kind is the structural one — it is
  * `PUBLIC_REPOSITORY_CATEGORY_IDS`, the first level of the folder tree, the
- * `?category=` param, the five-kind model `check-repository-data.mjs` validates,
+ * `?category=` param, the four-kind model `check-repository-data.mjs` validates,
  * and the axis `?fits=` already agrees with (transform 29 = gates 29,
  * observable 60 = operators 60), including the "See all 29" a gate record's
  * interface panel prints. The third pair this used to quote — "source 13 =
@@ -121,7 +128,6 @@ export interface TopicOptionGroup {
  */
 export const TOPICS_A_CATEGORY_TAB_OWNS: ReadonlySet<TopicId> = new Set<TopicId>([
   "gate-primitive",
-  "state",
   "operator",
   "algorithm-reference",
   "benchmark-circuit",
@@ -138,8 +144,8 @@ export const TOPICS_A_CATEGORY_TAB_OWNS: ReadonlySet<TopicId> = new Set<TopicId>
  *
  * **A topic a category tab already owns is not offered either** — see
  * `TOPICS_A_CATEGORY_TAB_OWNS` for which ones, and for the owner ruling that
- * says the tab is the one that keeps the word. That set is now the whole `role`
- * facet, so this control returns no `role` group at all.
+ * says the tab is the one that keeps the word. Four of the five roles are in it;
+ * `state` is not, because ai-ops issue 174 cut the tab that owned its word.
  */
 export function topicOptions(
   entries: readonly TopicFilterable[],

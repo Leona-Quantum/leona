@@ -14,6 +14,22 @@ import type { PortableCircuit } from "../circuit-frameworks";
  * records in the missing category are simply rejected, or hidden, or not
  * addressable, depending on which copy it was.
  *
+ * `states` was CUT, not renamed — owner ruling, ai-ops issue 174. Its twelve
+ * records were redistributed on his criterion: the seven with a standard
+ * preparation circuit (Bell, GHZ, W, linear cluster, ring graph, Dicke, and the
+ * plus/minus pair) went to `basic-circuits` as "simple code implementations used
+ * inside larger algorithms", and the five that are density matrices or resource
+ * states rather than circuits (Werner, thermal Gibbs, maximally mixed, NOON,
+ * magic-T) went to `operators`. He named ten of the twelve; `w-state` and
+ * `plus-minus-states` were placed by that same criterion and are flagged as an
+ * agent's call on the issue.
+ *
+ * What the cut does NOT do is remove the idea. The `state` ROLE still classifies
+ * all twelve, `SOURCE_ROLES` still resolves their `?fits=` stance to `source`
+ * before any category is consulted, and the map's own 39-state vocabulary in
+ * `state-vocabulary.ts` is untouched — it never overlapped these records at all
+ * (intersection: zero), which was half the argument for cutting the category.
+ *
  * `basic-circuits` was split out of `algorithms` (Stage 5, ai-ops issue 168 §1). It is
  * NOT a new judgement about which records are fundamental — the boundary was
  * already drawn in the data and already load-bearing, and this only makes it
@@ -45,7 +61,6 @@ export const PUBLIC_REPOSITORY_CATEGORY_IDS = [
   "algorithms",
   "basic-circuits",
   "operators",
-  "states",
 ] as const;
 export type PublicRepositoryCategory = (typeof PUBLIC_REPOSITORY_CATEGORY_IDS)[number];
 
@@ -433,7 +448,6 @@ export const PUBLIC_REPOSITORY_CATEGORIES: Array<{
   { value: "algorithms", label: "Algorithms", labelJa: "アルゴリズム" },
   { value: "basic-circuits", label: "Basic circuits", labelJa: "基本回路" },
   { value: "operators", label: "Operators", labelJa: "演算子" },
-  { value: "states", label: "States", labelJa: "状態" },
 ];
 
 /**
