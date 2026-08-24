@@ -2595,19 +2595,29 @@ test("the variational region does not go quiet again about what it costs", () =>
  * number that means nothing.
  */
 test("every hop these two slots draw says what happens on it", () => {
-  const SLOTS = ["ground-state-energy", "excited-state-energy"];
-  const region = regionClosure(LAYER_GRAPH, STATE_VOCABULARY, SLOTS, new Map());
-  assert.deepEqual(region.unknown, [], "a slot id in this test names no capability");
-  assert.ok(
-    region.hopStretches >= 33,
-    `${region.hopStretches} drawn stretches, fewer than the 33 the region was closed over`,
-  );
-  assert.equal(
-    region.hopStretchesAuthored,
-    region.hopStretches,
-    `hop theory covers ${region.hopStretchesAuthored} of ${region.hopStretches} drawn route stretches — ` +
-      `unauthored: ${region.unauthoredHops.map((hop) => `${hop.method}/${hop.key}`).join(", ")}`,
-  );
+  // Per slot, not summed. An aggregate floor of 33 is met by one slot losing
+  // every route while the other grows past it — the same "measure less, look
+  // healthier" failure one level in from the one `region.unknown` catches, and
+  // raised on the PR that added this test. The floors are what each slot was
+  // actually closed over.
+  const FLOORS: readonly (readonly [string, number])[] = [
+    ["ground-state-energy", 11],
+    ["excited-state-energy", 22],
+  ];
+  for (const [slot, floor] of FLOORS) {
+    const region = regionClosure(LAYER_GRAPH, STATE_VOCABULARY, [slot], new Map());
+    assert.deepEqual(region.unknown, [], `${slot} names no capability`);
+    assert.ok(
+      region.hopStretches >= floor,
+      `${slot}: ${region.hopStretches} drawn stretches, fewer than the ${floor} it was closed over`,
+    );
+    assert.equal(
+      region.hopStretchesAuthored,
+      region.hopStretches,
+      `${slot}: hop theory covers ${region.hopStretchesAuthored} of ${region.hopStretches} — ` +
+        `unauthored: ${region.unauthoredHops.map((hop) => `${hop.method}/${hop.key}`).join(", ")}`,
+    );
+  }
 });
 
 
