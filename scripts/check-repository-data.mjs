@@ -30,6 +30,17 @@ const ENTRY_FILE = entryFileFlag >= 0 ? args[entryFileFlag + 1] : null;
 const knownFlag = args.indexOf("--known");
 const KNOWN_SLUGS = knownFlag >= 0 ? args[knownFlag + 1].split(",") : [];
 
+//: Topics allowed to select exactly a category's records, because a tab already
+//: owns their word and the filter no longer offers them. Kept as a named set so
+//: the check below reports a NEW collision rather than being silently widened —
+//: an empty set here would make every tab-owned role fail.
+const OFFERED_TOPIC_EXEMPTIONS = new Set([
+  "gate-primitive",
+  "state",
+  "operator",
+  "algorithm-reference",
+  "benchmark-circuit",
+]);
 const STATUSES = new Set(["verified", "verified_caveats", "community_review"]);
 const FRAMEWORKS = new Set(["Qiskit", "PennyLane", "Cirq", "CUDA-Q", "Amazon Braket", "OpenQASM 3.0", "PyQuil"]);
 const LANGUAGES = new Set(["python", "typescript", "openqasm", "text"]);
@@ -817,6 +828,50 @@ for (const entry of entries) {
   }
   if (!isReference && !isBenchmark) {
     errors.push(`${entry.slug}: is filed under ${entry.category} but carries neither algorithm-reference nor benchmark-circuit`);
+  }
+}
+
+// No OFFERED topic may select the same records a category tab selects.
+//
+// ai-ops#75 ruled that when a tab and a topic answer one question with two
+// numbers, the tab keeps the word. `TOPICS_A_CATEGORY_TAB_OWNS` implements it —
+// but by NAME, and the guard beside it in `repository-topic-filter.test.ts`
+// compares label strings. That is why adding `basic-circuits` slipped through:
+// "basic circuit" and "benchmark circuit" are different strings, so nothing
+// fired, while the two controls selected an identical set of 30 records and
+// printed the same 30 beside each. Identical sets, not overlapping ones — the
+// worst case for the ruling rather than an edge of it.
+//
+// This checks what the reader actually experiences: the RECORDS behind each
+// control. A topic that is a strict subset of a category is fine and common
+// (`variational` inside Algorithms); a topic that reproduces one exactly is the
+// duplicate the ruling forbids.
+{
+  const byCategory = new Map();
+  for (const entry of entries) {
+    if (!byCategory.has(entry.category)) byCategory.set(entry.category, new Set());
+    byCategory.get(entry.category).add(entry.slug);
+  }
+  const byTopic = new Map();
+  for (const entry of entries) {
+    for (const topic of entry.topics ?? []) {
+      if (!byTopic.has(topic)) byTopic.set(topic, new Set());
+      byTopic.get(topic).add(entry.slug);
+    }
+  }
+  const sameSet = (a, b) => a.size === b.size && [...a].every((slug) => b.has(slug));
+  for (const [topic, topicSlugs] of byTopic) {
+    if (OFFERED_TOPIC_EXEMPTIONS.has(topic)) continue;
+    for (const [category, categorySlugs] of byCategory) {
+      if (sameSet(topicSlugs, categorySlugs)) {
+        errors.push(
+          `topic "${topic}" and category "${category}" select the same ${topicSlugs.size} records. `
+            + "A reader meets two controls and one number twice, with nothing saying they are one "
+            + "thing (ai-ops#75). Add the topic to TOPICS_A_CATEGORY_TAB_OWNS in "
+            + "apps/web/lib/repository/topic-filter.ts, or record it in OFFERED_TOPIC_EXEMPTIONS here.",
+        );
+      }
+    }
   }
 }
 

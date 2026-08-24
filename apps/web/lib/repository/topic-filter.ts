@@ -43,29 +43,42 @@ export interface TopicOptionGroup {
  * ## The collision
  *
  * `/repository` carries two controls that classify a record by what kind of
- * thing it is, and four of the five `role` topics are the tab's word with a
- * different count beside it (measured over the 369-record corpus, 2026-08-14):
+ * thing it is, and they now draw the SAME partition. Measured over the whole
+ * 279-record corpus, 2026-08-25 JST (2026-08-24 UTC):
  *
- * | word        | category tab (record kind) | `role` topic |
- * | ----------- | -------------------------- | ------------ |
- * | Gates       | 29                         | 27           |
- * | Operators   | 60                         | 62           |
- * | States      | 13                         | 12           |
- * | Algorithms  | 267                        | 148          |
+ * | word           | category tab | `role` topic | same records |
+ * | -------------- | ------------ | ------------ | ------------ |
+ * | Gates          | 29           | 29           | yes          |
+ * | Operators      | 60           | 60           | yes          |
+ * | States         | 12           | 12           | yes          |
+ * | Algorithms     | 148          | 148          | yes          |
+ * | Basic circuits | 30           | 30           | yes          |
  *
- * In Japanese the labels are not merely close, they are **identical strings** —
- * ゲート, 演算子, 状態, アルゴリズム are both the tab and the topic. A reader
- * cannot tell the two controls apart at all, and reads the gap as a bug.
+ * Not merely equal counts — an identical *set* on every row, checked slug by
+ * slug. The `role` facet has become a second name for `category`.
+ *
+ * **This table used to show the opposite**, and the difference is the history
+ * worth keeping. Measured 2026-08-14 over a then-369-record corpus it read
+ * Gates 29/27, Operators 60/62, States 13/12, Algorithms 267/148 — one word,
+ * two numbers, four times over, which is the collision ai-ops#75 was ruled on.
+ * The corpus has since been reclassified and `basic-circuits` split out (leona
+ * 760), so the mismatch is gone and what remains is pure duplication.
+ *
+ * In Japanese the labels were never merely close, they are **identical strings**
+ * — ゲート, 演算子, 状態, アルゴリズム are both the tab and the topic. A reader
+ * cannot tell the two controls apart at all.
  *
  * ## Why the topic yields the word rather than the tab
  *
  * Owner ruling, ai-ops#75: *"reconcile them to one number and drop whichever
  * slice matters less."* The record kind is the structural one — it is
  * `PUBLIC_REPOSITORY_CATEGORY_IDS`, the first level of the folder tree, the
- * `?category=` param, the four-kind model `check-repository-data.mjs` validates,
- * and the axis `?fits=` already agrees with (transform 29 = gates 29, source 13
- * = states 13, observable 60 = operators 60), including the "See all 29" a gate
- * record's interface panel prints. The `role` facet is one tag group inside a
+ * `?category=` param, the five-kind model `check-repository-data.mjs` validates,
+ * and the axis `?fits=` already agrees with (transform 29 = gates 29,
+ * observable 60 = operators 60), including the "See all 29" a gate record's
+ * interface panel prints. The third pair this used to quote — "source 13 =
+ * states 13" — was measured when `states` held 13; it holds 12, and the pair is
+ * dropped rather than restated, because the argument does not rest on it. The `role` facet is one tag group inside a
  * collapsed rail. So the tabs keep the words, and this control stops offering a
  * second answer to their question.
  *
@@ -79,12 +92,25 @@ export interface TopicOptionGroup {
  *
  * ## What survives, and why
  *
- * `benchmark-circuit` is **not** here. It is the one role no tab can express —
- * it splits the 267 `algorithms` into 120 published yardsticks and the rest —
- * and no category word collides with it. Dropping it would delete the only
- * thing this facet says that the tabs cannot.
+ * `benchmark-circuit` **used to be** the exception, and the sentence that
+ * justified it was *"no category word collides with it"* — true when written and
+ * false since leona 760, which split `basic-circuits` out of `algorithms` as a
+ * fifth tab holding exactly the 30 records this role names. Two controls, the
+ * same 30 records, and — because the sets are identical rather than merely
+ * overlapping — the same number printed beside each. That is the worst case for
+ * ai-ops#75's confusion, not an edge of it: a reader meets *Basic circuits (30)*
+ * as a tab and *Benchmark circuit (30)* as a topic with nothing telling them the
+ * two are one thing. Measured on production before this fix.
  *
- * Nothing is removed from the vocabulary. These four still classify every
+ * The old sentence also said the role "splits the 267 `algorithms` into 120
+ * published yardsticks and the rest". Both figures are stale: the corpus is 279
+ * records, `algorithms` is 148 after the split, and the role names 30.
+ *
+ * So it joins the others, on the same ruling and for the same reason. Nothing is
+ * lost that the tabs cannot say — that was the argument for keeping it, and the
+ * tab now says it.
+ *
+ * Nothing is removed from the vocabulary. These five still classify every
  * record, still drive `roleOf`, `OBJECT_ROLES` and the Ingredients shelf, and
  * `?topic=gate-primitive` still filters — a bookmark made before this keeps
  * working. They are simply no longer *offered*, and no surface links to them.
@@ -98,6 +124,7 @@ export const TOPICS_A_CATEGORY_TAB_OWNS: ReadonlySet<TopicId> = new Set<TopicId>
   "state",
   "operator",
   "algorithm-reference",
+  "benchmark-circuit",
 ]);
 
 /**
@@ -110,8 +137,9 @@ export const TOPICS_A_CATEGORY_TAB_OWNS: ReadonlySet<TopicId> = new Set<TopicId>
  * applied. The vocabulary is closed but the control is not the vocabulary.
  *
  * **A topic a category tab already owns is not offered either** — see
- * `TOPICS_A_CATEGORY_TAB_OWNS` for which four, and for the owner ruling that
- * says the tab is the one that keeps the word.
+ * `TOPICS_A_CATEGORY_TAB_OWNS` for which ones, and for the owner ruling that
+ * says the tab is the one that keeps the word. That set is now the whole `role`
+ * facet, so this control returns no `role` group at all.
  */
 export function topicOptions(
   entries: readonly TopicFilterable[],
