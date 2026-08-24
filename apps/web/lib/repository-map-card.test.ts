@@ -1979,3 +1979,66 @@ test("every ingredient is one of the method's own steps, so the two lists partit
     "every method with an ingredient has only ingredients — the chain branch is unreachable",
   );
 });
+
+
+// ---------------------------------------------------------------------------
+// The `example.pseudocode` ratchet.
+//
+// `regionClosure` already computes this and `check-layer-graph.mjs --closure`
+// already prints it, but a number nobody asserts is a number that moves. These
+// are floors, not equalities, so the next batch raises them rather than breaking
+// them — and the denominator is asserted too, so deleting a method cannot make a
+// fraction pass on a smaller region.
+//
+// Ratcheting `example.pseudocode` and nothing else is deliberate. `example.text`
+// sits at 3 of 110 and `implementations` at 25, and both are evidence-bound —
+// `text` "needs a run somebody actually did", so pinning either would pin a
+// number that means nothing about work anybody can do. See the honesty taxonomy
+// on `LayerCensus.withPseudocode`.
+
+test("every ansatz-construction method carries a listing, and the region cannot shrink to pass", () => {
+  const ansatzMethods = LAYER_GRAPH.nodes.filter(
+    (node): node is LayerMethod => isMethod(node) && node.realizes === "ansatz-construction",
+  );
+
+  // The denominator first. Without this the assertion below passes on a region
+  // that lost twelve of its thirteen methods.
+  assert.ok(
+    ansatzMethods.length >= 13,
+    `ansatz-construction has ${ansatzMethods.length} methods, was 13 — a slot was renamed or removed`,
+  );
+
+  const missing = ansatzMethods
+    .filter((node) => (node.example?.pseudocode ?? "").trim() === "")
+    .map((node) => node.id);
+  assert.deepEqual(
+    missing,
+    [],
+    `ansatz-construction methods with no listing: ${missing.join(", ")}`,
+  );
+});
+
+test("the graph-wide pseudocode count is a floor that only goes up", () => {
+  const methods = LAYER_GRAPH.nodes.filter(isMethod);
+  const withPseudocode = methods.filter(
+    (node) => (node.example?.pseudocode ?? "").trim() !== "",
+  );
+
+  assert.ok(
+    methods.length >= 110,
+    `${methods.length} methods, was 110 — the denominator shrank`,
+  );
+  assert.ok(
+    withPseudocode.length >= 78,
+    `${withPseudocode.length} of ${methods.length} methods carry pseudocode, was 78`,
+  );
+
+  // Whitespace is authored-looking and reads as filled to every count that does
+  // not trim. `LayerCensus.withPseudocode` trims for this reason; so does this.
+  for (const node of withPseudocode) {
+    assert.ok(
+      node.example?.pseudocode?.includes("\n"),
+      `${node.id}'s listing is a single line — a block was flattened`,
+    );
+  }
+});
