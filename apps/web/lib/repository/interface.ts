@@ -327,11 +327,20 @@ const CATEGORY_STANCE: Readonly<Record<string, InterfaceStance>> = {
  *
  * Precedence, and each step is a decision rather than a fallback:
  *
- * 1. **A published circuit outranks everything.** 112 of the 120 circuits are
- *    classified `benchmark-circuit` and the other 8 are not, but all 120 are the
- *    same kind of object — a gate sequence ending in a measurement — and what it
- *    does to a register is a fact about the sequence, not about the label above
- *    it.
+ * 1. **A published circuit outranks everything.** What a gate sequence does to a
+ *    register is a fact about the sequence, not about the label above it.
+ *
+ *    The evidence this rule was written on has since evaporated, and saying so
+ *    is more useful than restating it. It read "112 of the 120 circuits are
+ *    classified `benchmark-circuit` and the other 8 are not" — eight records
+ *    where the circuit path and the label path would have disagreed, which is
+ *    what made the precedence observable. Measured 2026-08-25: **30 records
+ *    carry a `portableCircuit`, all 30 are `benchmark-circuit`, and all 30 sit
+ *    in `basic-circuits`.** Zero counterexamples, so this step currently changes
+ *    no record's stance and is defence in depth rather than something doing
+ *    work. Keep it — the next record that carries a circuit without the label is
+ *    exactly what it is for — but do not cite the old figures as if they still
+ *    stood.
  * 2. **A record filed under `gates` is a transform**, before the role facet is
  *    consulted, for the two Paulis described on `CATEGORY_STANCE`.
  * 3. **Then the role facet**, which is the vocabulary the corpus was classified
