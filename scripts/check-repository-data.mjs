@@ -30,7 +30,6 @@ const ENTRY_FILE = entryFileFlag >= 0 ? args[entryFileFlag + 1] : null;
 const knownFlag = args.indexOf("--known");
 const KNOWN_SLUGS = knownFlag >= 0 ? args[knownFlag + 1].split(",") : [];
 
-const CATEGORIES = new Set(["gates", "algorithms", "operators", "states"]);
 const STATUSES = new Set(["verified", "verified_caveats", "community_review"]);
 const FRAMEWORKS = new Set(["Qiskit", "PennyLane", "Cirq", "CUDA-Q", "Amazon Braket", "OpenQASM 3.0", "PyQuil"]);
 const LANGUAGES = new Set(["python", "typescript", "openqasm", "text"]);
@@ -96,6 +95,20 @@ if (ENTRY_FILE) {
   }
 } else {
   ({ PUBLIC_REPOSITORY_ENTRIES: entries, VERIFICATION_METHODS, VERIFICATION_TIERS, entryVerificationTier, getPublicRepositoryVariant } = mod);
+}
+
+// DERIVED, never restated. This line used to be
+// `new Set(["gates", "algorithms", "operators", "states"])` at the top of the
+// file — a fourth hand-written copy of a vocabulary whose own declaration
+// comment records that two earlier copies had already drifted. The failure mode
+// is silent in the worst direction: a copy that is short does not raise "this
+// list is stale", it rejects every record in the missing category as
+// `unknown category`, and adding `basic-circuits` would have failed 30 records
+// that were correct. Derive; do not restate.
+const CATEGORIES = new Set(mod.PUBLIC_REPOSITORY_CATEGORY_IDS);
+if (CATEGORIES.size === 0) {
+  console.error("✖ PUBLIC_REPOSITORY_CATEGORY_IDS came back empty — the bundle did not export the vocabulary");
+  process.exit(1);
 }
 const knownMethods = new Set(VERIFICATION_METHODS.map((m) => m.id));
 const errors = [];
@@ -706,6 +719,65 @@ if (!ENTRY_FILE) {
       `\nfolder tree: ${tree.placed}/${entries.length} records reachable · ${tree.root.length} categories · `
         + `${families} families · ${tree.root.map((n) => `${n.segment}:${n.children.length}`).join(", ")}`,
     );
+  }
+}
+
+// `basic-circuits` and the `benchmark-circuit` topic must name the SAME records.
+//
+// The split shipped for Stage 5 (ai-ops issue 168 §1) is not a new judgement about
+// which records are elementary — it surfaces a line the data already drew and
+// `map-eligibility.ts` already enforced. `MAP_ELIGIBLE_ROLES` is
+// `["algorithm-reference"]`, so a record carrying `benchmark-circuit` is one the
+// map refuses to anchor: *"a yardstick — a width-scaled RY-CZ ansatz is not a
+// way of solving anything"*. If the two ever name different sets, one of two
+// things has gone wrong and both are invisible at a reader: a benchmark filed
+// under Algorithms again, or a real method filed as a basic circuit and
+// silently dropped out of the map's eligible population.
+//
+// Checked as a two-way equality rather than as a count, because two sets can
+// have the same size and different members.
+{
+  const filedAsBasic = new Set(
+    entries.filter((entry) => entry.category === "basic-circuits").map((entry) => entry.slug),
+  );
+  const carriesBenchmarkRole = new Set(
+    entries.filter((entry) => (entry.topics ?? []).includes("benchmark-circuit")).map((entry) => entry.slug),
+  );
+  for (const slug of filedAsBasic) {
+    if (!carriesBenchmarkRole.has(slug)) {
+      errors.push(
+        `${slug}: category is basic-circuits but the record does not carry the benchmark-circuit topic. `
+          + "The category is the reader-facing half of a line map-eligibility.ts already draws; "
+          + "filing a method here removes it from the map's eligible population with nothing else failing.",
+      );
+    }
+  }
+  for (const slug of carriesBenchmarkRole) {
+    if (!filedAsBasic.has(slug)) {
+      errors.push(
+        `${slug}: carries the benchmark-circuit topic but is filed under "${entries.find((e) => e.slug === slug)?.category}". `
+          + "A benchmark scaffold shown beside Shor is the thing the basic-circuits split exists to stop.",
+      );
+    }
+  }
+}
+
+// No record may carry both roles, and every algorithms/basic-circuits record
+// must carry one. This is what makes the equality above a PARTITION rather than
+// two independently drifting labels — the 178 records that were one category
+// before Stage 5 split 148/30 with nothing in both and nothing in neither, and
+// a record acquiring both roles would satisfy the check above while being
+// eligible and elementary at once.
+for (const entry of entries) {
+  if (entry.category !== "algorithms" && entry.category !== "basic-circuits") continue;
+  const topics = entry.topics ?? [];
+  const isReference = topics.includes("algorithm-reference");
+  const isBenchmark = topics.includes("benchmark-circuit");
+  if (isReference && isBenchmark) {
+    errors.push(`${entry.slug}: carries both algorithm-reference and benchmark-circuit; a record is one or the other`);
+  }
+  if (!isReference && !isBenchmark) {
+    errors.push(`${entry.slug}: is filed under ${entry.category} but carries neither algorithm-reference nor benchmark-circuit`);
   }
 }
 

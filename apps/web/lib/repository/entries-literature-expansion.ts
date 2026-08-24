@@ -338,9 +338,14 @@ function circuitEntry(spec: CircuitFamily, width: number): PublicRepositoryEntry
     slug: `${spec.slug}-${width}q`,
     title: `${spec.title} · ${width} qubits`,
     titleJa: `${spec.titleJa}・${width}量子ビット`,
-    category: "algorithms",
-    categoryLabel: "Algorithms",
-    categoryLabelJa: "アルゴリズム",
+    // A benchmark scaffold is a yardstick, not a way of solving anything, and the
+    // map has always refused to anchor one — `MAP_ELIGIBLE_ROLES` is
+    // `["algorithm-reference"]` and these 30 records carry `benchmark-circuit`
+    // instead. Until Stage 5 the browse control still filed them under
+    // Algorithms beside Shor. `basic-circuits` is that same line, made visible.
+    category: "basic-circuits",
+    categoryLabel: "Basic circuits",
+    categoryLabelJa: "基本回路",
     algorithmFamily: spec.family,
     framework: "Qiskit",
     status: "verified_caveats",

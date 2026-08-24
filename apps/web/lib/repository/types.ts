@@ -14,12 +14,39 @@ import type { PortableCircuit } from "../circuit-frameworks";
  * records in the missing category are simply rejected, or hidden, or not
  * addressable, depending on which copy it was.
  *
+ * `basic-circuits` was split out of `algorithms` (Stage 5, ai-ops issue 168 §1). It is
+ * NOT a new judgement about which records are fundamental — the boundary was
+ * already drawn in the data and already load-bearing, and this only makes it
+ * something a reader can filter on. `category: "algorithms"` held 178 of the
+ * corpus's 279 records, and those 178 partition EXACTLY into the 148 carrying
+ * the `algorithm-reference` topic and the 30 carrying `benchmark-circuit`, with
+ * no record in both and none in neither. `map-eligibility.ts` has been reading
+ * that same line for as long as it has existed — `MAP_ELIGIBLE_ROLES` is
+ * `["algorithm-reference"]`, and its comment says why a benchmark circuit is
+ * excluded: *"a yardstick — a width-scaled RY-CZ ansatz is not a way of solving
+ * anything"*. So the map already refused to treat these 30 as methods while the
+ * browse control still filed them beside Shor.
+ *
+ * What this is NOT is a rule that map reachability decides a category. That was
+ * the obvious reading of the owner's Stage 5 sentence and it is wrong: the map
+ * graph reaches 0 of 60 operators, 0 of 29 gates, 0 of 12 states, and among the
+ * algorithms the records it does not reach include Grover, QAOA and quantum
+ * teleportation. Unreached means the map has a gap there, not that the record is
+ * elementary — deriving a type from it would relabel Grover as a basic circuit
+ * and would change a record's type whenever somebody drew a new node.
+ *
  * **Not `PUBLIC_REPOSITORY_CATEGORIES`**, which is the browse control's option
  * list and carries an `"all"` sentinel that is not a category. A validator
  * following a UI control would turn hiding a filter into rejecting every record
  * behind it.
  */
-export const PUBLIC_REPOSITORY_CATEGORY_IDS = ["gates", "algorithms", "operators", "states"] as const;
+export const PUBLIC_REPOSITORY_CATEGORY_IDS = [
+  "gates",
+  "algorithms",
+  "basic-circuits",
+  "operators",
+  "states",
+] as const;
 export type PublicRepositoryCategory = (typeof PUBLIC_REPOSITORY_CATEGORY_IDS)[number];
 
 export function isPublicRepositoryCategory(value: unknown): value is PublicRepositoryCategory {
@@ -404,6 +431,7 @@ export const PUBLIC_REPOSITORY_CATEGORIES: Array<{
   { value: "all", label: "All categories", labelJa: "すべてのカテゴリ" },
   { value: "gates", label: "Gates", labelJa: "ゲート" },
   { value: "algorithms", label: "Algorithms", labelJa: "アルゴリズム" },
+  { value: "basic-circuits", label: "Basic circuits", labelJa: "基本回路" },
   { value: "operators", label: "Operators", labelJa: "演算子" },
   { value: "states", label: "States", labelJa: "状態" },
 ];
