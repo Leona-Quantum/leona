@@ -43,26 +43,37 @@ export interface TopicOptionGroup {
  * ## The collision
  *
  * `/repository` carries two controls that classify a record by what kind of
- * thing it is, and four of the five `role` topics are the tab's word with a
- * different count beside it (measured over the 369-record corpus, 2026-08-14):
+ * thing it is, and they now draw the SAME partition. Measured over the whole
+ * 279-record corpus, 2026-08-25:
  *
- * | word        | category tab (record kind) | `role` topic |
- * | ----------- | -------------------------- | ------------ |
- * | Gates       | 29                         | 27           |
- * | Operators   | 60                         | 62           |
- * | States      | 13                         | 12           |
- * | Algorithms  | 267                        | 148          |
+ * | word           | category tab | `role` topic | same records |
+ * | -------------- | ------------ | ------------ | ------------ |
+ * | Gates          | 29           | 29           | yes          |
+ * | Operators      | 60           | 60           | yes          |
+ * | States         | 12           | 12           | yes          |
+ * | Algorithms     | 148          | 148          | yes          |
+ * | Basic circuits | 30           | 30           | yes          |
  *
- * In Japanese the labels are not merely close, they are **identical strings** —
- * ゲート, 演算子, 状態, アルゴリズム are both the tab and the topic. A reader
- * cannot tell the two controls apart at all, and reads the gap as a bug.
+ * Not merely equal counts — an identical *set* on every row, checked slug by
+ * slug. The `role` facet has become a second name for `category`.
+ *
+ * **This table used to show the opposite**, and the difference is the history
+ * worth keeping. Measured 2026-08-14 over a then-369-record corpus it read
+ * Gates 29/27, Operators 60/62, States 13/12, Algorithms 267/148 — one word,
+ * two numbers, four times over, which is the collision ai-ops#75 was ruled on.
+ * The corpus has since been reclassified and `basic-circuits` split out (leona
+ * 760), so the mismatch is gone and what remains is pure duplication.
+ *
+ * In Japanese the labels were never merely close, they are **identical strings**
+ * — ゲート, 演算子, 状態, アルゴリズム are both the tab and the topic. A reader
+ * cannot tell the two controls apart at all.
  *
  * ## Why the topic yields the word rather than the tab
  *
  * Owner ruling, ai-ops#75: *"reconcile them to one number and drop whichever
  * slice matters less."* The record kind is the structural one — it is
  * `PUBLIC_REPOSITORY_CATEGORY_IDS`, the first level of the folder tree, the
- * `?category=` param, the four-kind model `check-repository-data.mjs` validates,
+ * `?category=` param, the five-kind model `check-repository-data.mjs` validates,
  * and the axis `?fits=` already agrees with (transform 29 = gates 29,
  * observable 60 = operators 60), including the "See all 29" a gate record's
  * interface panel prints. The third pair this used to quote — "source 13 =
@@ -126,8 +137,9 @@ export const TOPICS_A_CATEGORY_TAB_OWNS: ReadonlySet<TopicId> = new Set<TopicId>
  * applied. The vocabulary is closed but the control is not the vocabulary.
  *
  * **A topic a category tab already owns is not offered either** — see
- * `TOPICS_A_CATEGORY_TAB_OWNS` for which four, and for the owner ruling that
- * says the tab is the one that keeps the word.
+ * `TOPICS_A_CATEGORY_TAB_OWNS` for which ones, and for the owner ruling that
+ * says the tab is the one that keeps the word. That set is now the whole `role`
+ * facet, so this control returns no `role` group at all.
  */
 export function topicOptions(
   entries: readonly TopicFilterable[],
