@@ -587,16 +587,43 @@ if (!QUIET) {
     .filter(([, count]) => count > 0)
     .map(([basis, count]) => `${count} from the ${basis}`)
     .join(", ");
+  // Textbooks are named on their own clause rather than left inside
+  // `papers - read`. They may not carry `reports` at all — see
+  // `RegisteredPaper.reports` — so counting them in the remainder prints a
+  // rule as if it were a backlog, and on leona 735 that is precisely how a
+  // textbook somebody HAD read still read as unread.
+  //
+  // The DENOMINATOR excludes them too, not just the note. `census.read` can
+  // never contain a textbook, so "211 of 258" mixed two populations and the
+  // remainder it implied was wrong by exactly the textbook count — the third
+  // place on this PR where subtracting from one side only would have moved the
+  // wrong number.
+  const reportable = census.papers - census.textbooks;
+  const textbookNote =
+    census.textbooks > 0
+      ? `; ${census.textbooks} textbook${census.textbooks === 1 ? "" : "s"} carry no reports by rule and are outside this count`
+      : "";
   console.log(
-    `  ${census.read} of ${census.papers} papers record what they report${bases ? ` — ${bases}` : ""}`,
+    `  ${census.read} of ${reportable} papers record what they report${bases ? ` — ${bases}` : ""}${textbookNote}`,
   );
   // The denominator that actually governs the pass. `reports` is filled on the
   // map-cited papers first because they are the ones a process page shows, so
   // "82 of 143" understates the coverage of the set being worked and would
   // read as stalled when it is finished. Both numbers, neither alone.
-  const mapCitedRead = audit.citedByNode.filter((id) => byId.get(id)?.reports).length;
+  //
+  // Textbooks come out of BOTH halves of this line, not just the remainder.
+  // Caught by Sourcery on leona 736, one consumer over from the defect that PR
+  // existed to fix — a textbook may not carry `reports` at all, so testing
+  // `paper.reports` here reported a read textbook as an unread paper, and
+  // subtracting it from only one side would have moved the wrong number.
+  const mapCited = audit.citedByNode.filter((id) => byId.get(id)?.medium !== "textbook");
+  const mapCitedTextbooks = audit.citedByNode.length - mapCited.length;
+  const mapCitedRead = mapCited.filter((id) => byId.get(id)?.reports).length;
   console.log(
-    `    of the ${audit.citedByNode.length} papers a map node cites: ${mapCitedRead} read, ${audit.citedByNode.length - mapCitedRead} not`,
+    `    of the ${mapCited.length} papers a map node cites: ${mapCitedRead} read, ${mapCited.length - mapCitedRead} not` +
+      (mapCitedTextbooks > 0
+        ? ` (plus ${mapCitedTextbooks} textbook${mapCitedTextbooks === 1 ? "" : "s"}, outside the reports contract)`
+        : ""),
   );
   for (const [axis, counts] of Object.entries(census.byAxis)) {
     console.log(

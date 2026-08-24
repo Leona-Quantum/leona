@@ -630,6 +630,33 @@ class AnthropicLLM:
 
         max_tokens = request.max_tokens or _ANTHROPIC_DEFAULT_MAX_TOKENS
         messages = request_messages(request)
+        # `request.temperature` is deliberately NOT forwarded on this profile, and
+        # the omission is load-bearing rather than an oversight.
+        #
+        # Sampling parameters are gone from the Messages API on every model this
+        # profile is configured for. `models.py` pins `claude-opus-4-8` (plan,
+        # verify, analyze) and `claude-sonnet-5` (chat, generate, audit): Opus 4.7
+        # and later return 400 for a request carrying `temperature` AT ALL — the
+        # default value included — and Sonnet 5 rejects any non-default value, so
+        # even the 0.0 this codebase asks for everywhere would be refused.
+        #
+        # The `anthropic` SDK removed it too. Verified against 1.0.0 rather than
+        # read off a changelog: `messages.create` and `messages.stream` have no
+        # `temperature` parameter and no `**kwargs`, so passing one is a
+        # `TypeError` before a request is ever built. Both call sites below used
+        # to, which is why the 0.121.0 -> 1.0.0 bump could not land.
+        #
+        # Nothing regressed when this was removed, because nothing was working:
+        # `resolve_provider()` prefers OpenAI/DeepSeek whenever either key is set,
+        # CI sets both, and production sets both — so this branch is a fallback
+        # that no test and no deploy has ever executed against the real SDK. It
+        # would have failed on the first request that reached it.
+        #
+        # The OpenAI-compatible profile above still forwards `temperature`, which
+        # is correct: those models still accept it. That is a real capability
+        # difference between the two profiles, not an inconsistency to tidy — a
+        # caller who needs a specific sampling temperature cannot get one from
+        # Anthropic's current models through any SDK.
         # Same wall-clock bound as the OpenAI-compatible client above, and for
         # the same reason: the SDK's timeout is per operation, not per request.
         attempt_budget = attempt_timeout_seconds()
@@ -644,7 +671,6 @@ class AnthropicLLM:
                     message = await client.messages.create(
                         model=request.model,
                         max_tokens=max_tokens,
-                        temperature=request.temperature,
                         system=system,
                         messages=messages,
                     )
@@ -654,7 +680,6 @@ class AnthropicLLM:
                     async with client.messages.stream(
                         model=request.model,
                         max_tokens=max_tokens,
-                        temperature=request.temperature,
                         system=system,
                         messages=messages,
                     ) as stream:

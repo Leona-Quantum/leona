@@ -264,6 +264,28 @@ export interface RegisteredPaper {
    *
    * Upgrading a row from an abstract read to a full-text read is a normal edit:
    * change the values and change `reportsBasis` with them.
+   *
+   * ## A textbook does not have these, and that is a rule rather than a gap
+   *
+   * All three axes are claims about what one document **reports of its own
+   * work** — an experiment it ran, numerics it produced, theorems it proved. A
+   * textbook reports nobody's work: it is an exposition of a field, so
+   * `simulation: "absent"` would be true of it in a way that carries no
+   * information, and `reportsBasis` has only `abstract` and `full-text`, neither
+   * of which describes reading seven sections of a 700-page book.
+   *
+   * So `validatePaperRegister` **refuses** `reports` on a row with
+   * `medium: "textbook"`. Before that refusal existed this was a convention
+   * nothing enforced, and it had already misled a reader: on 2026-08-24 a
+   * session read the Nielsen & Chuang textbook from the copy the owner supplied
+   * on ai-ops#56, found a wrong section citation, wrote the read up in a comment
+   * — and left a row that every consumer of `reports` still read as unread.
+   * CodeRabbit caught it on leona 735. **A convention that a comment records and
+   * a machine cannot see is the thing this module exists to stop.**
+   *
+   * Where a textbook's read is recorded instead: a comment on its register row,
+   * naming section and printed page. `reportsCensus` counts textbooks on their
+   * own line so they never sit in the unread remainder of "N of M read".
    */
   reports?: SourceCoverage;
   /**
@@ -291,6 +313,14 @@ export interface ReportsCensus {
   papers: number;
   /** Rows carrying a `reports` judgement at all. */
   read: number;
+  /**
+   * Rows that are `medium: "textbook"`, which may not carry `reports` at all.
+   *
+   * Counted separately so that `papers - read` is not printed or read as "the
+   * unread ones": a textbook is outside the reports contract by rule, not
+   * behind on it. See `RegisteredPaper.reports`.
+   */
+  textbooks: number;
   byBasis: Record<ReportsBasis, number>;
   /** Per axis, how the populated rows fall. The denominator is `read`. */
   byAxis: Record<SourceCoverageAxis, Record<SourceCoverageStatus, number>>;
@@ -316,13 +346,15 @@ export function reportsCensus(register: PaperRegister): ReportsCensus {
     number
   >;
   let read = 0;
+  let textbooks = 0;
   for (const paper of register.papers) {
+    if (paper.medium === "textbook") textbooks += 1;
     if (!paper.reports) continue;
     read += 1;
     if (paper.reportsBasis) byBasis[paper.reportsBasis] += 1;
     for (const axis of SOURCE_COVERAGE_AXES) byAxis[axis][paper.reports[axis]] += 1;
   }
-  return { papers: register.papers.length, read, byBasis, byAxis };
+  return { papers: register.papers.length, read, textbooks, byBasis, byAxis };
 }
 
 export interface PaperRegister {
@@ -399,6 +431,16 @@ export function validatePaperRegister(register: PaperRegister): string[] {
     ) {
       errors.push(
         `${paper.id}: this is a book DOI and the row does not say medium: "textbook" — a textbook is a primary source (ai-ops#44) and must be findable as one`,
+      );
+    }
+    // A textbook may not carry `reports`, and the refusal is what makes its
+    // absence mean "textbook" instead of "nobody has read this". Without it the
+    // two are the same row to every consumer — which is exactly how a textbook
+    // that HAD been read still counted as unread on leona 735. See
+    // `RegisteredPaper.reports`.
+    if (paper.medium === "textbook" && (paper.reports || paper.reportsBasis)) {
+      errors.push(
+        `${paper.id}: a textbook may not carry reports/reportsBasis — those axes are what a paper reports of its own work, and reportsBasis has no value describing a book read in part. Record the read as a comment on the row, naming section and printed page`,
       );
     }
     // `reports` and `reportsBasis` stand or fall together, in **both**

@@ -690,11 +690,20 @@ function Theory({ hops, copy }: { hops: readonly CardHop[]; copy: Copy }): React
   return (
     <ol className="mj-card-trace">
       {hops.map((hop, index) => (
-        <li key={`${hop.from}>${hop.to}#${index}`}>
-          <details className="mj-card-hop" data-hop={`${hop.from}>${hop.to}`}>
+        <li key={`${hop.from.id}>${hop.to.id}#${index}`}>
+          <details className="mj-card-hop" data-hop={`${hop.from.id}>${hop.to.id}`}>
             <summary>
+              {/* The states' LABELS, and the ids only in `data-hop` above.
+                  This line printed the ids until leona 754 — so a reader met
+                  `ground-state-problem → parameterized-circuit` here and
+                  *Hamiltonian whose ground state is wanted → Parameterised
+                  circuit family* on the same method's own page, off the same
+                  vocabulary. In `ja` the ids are still English, and all 39
+                  states carry a `labelJa` that reached this surface nowhere.
+                  Not links: this sits inside a `<summary>`, where a nested
+                  anchor both follows the link and toggles the disclosure. */}
               <span className="mj-card-trace-states">
-                {hop.from} → {hop.to}
+                {hop.from.label} → {hop.to.label}
               </span>
               {hop.via ? (
                 <span className="mj-card-hop-via">{hop.via.label}</span>
@@ -1066,9 +1075,12 @@ function Body({ card, id, copy }: { card: Card; id: CardSectionId; copy: Copy })
       return card.kind === "own-step" ? (
         <ol className="mj-card-trace">
           <li>
-            <code>{card.from}</code>
+            {/* Labels, not ids — see the same change in `Theory` above. This
+                card exists at a URL for all 95 methods, so it was the widest
+                surface printing a slug at a reader. */}
+            <span className="mj-card-trace-states">{card.from.label}</span>
             <span aria-hidden="true"> ⟶ </span>
-            <code>{card.to}</code>
+            <span className="mj-card-trace-states">{card.to.label}</span>
             <span className="mj-card-trace-own">{card.ownName ?? ownStepName(copy.lang)}</span>
           </li>
         </ol>

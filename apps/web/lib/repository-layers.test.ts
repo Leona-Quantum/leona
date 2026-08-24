@@ -16,8 +16,13 @@
 // `validateLayerGraph`, so the rules cannot drift apart.
 import assert from "node:assert/strict";
 import test from "node:test";
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
+import { dirname, join } from "node:path";
+import ts from "typescript";
 
 import {
+  DECLARABLE_ABSENCES,
   advancingStepCount,
   alternativesTo,
   bypassersOf,
@@ -2471,10 +2476,6 @@ test("the linear-ODE region does not go backwards on the half that is closed", (
   // rather than shrinking the thing being measured. `--closure` reports an
   // unrecognised id; here it must be an error.
   assert.deepEqual(region.unknown, [], "a slot id in this test names no capability");
-  assert.ok(
-    region.methods.length >= 19,
-    `the region has ${region.methods.length} methods, fewer than the 19 it was closed over`,
-  );
   const field = (name: string) => region.fields.find((entry) => entry.field === name)!;
   for (const name of ["summary", "conditions", "cost", "citations", "example.pseudocode"]) {
     const entry = field(name);
@@ -2493,11 +2494,509 @@ test("the linear-ODE region does not go backwards on the half that is closed", (
     `hop theory covers ${region.hopStretchesAuthored} of ${region.hopStretches} drawn route stretches — ` +
       `unauthored: ${region.unauthoredHops.map((hop) => `${hop.method}/${hop.key}`).join(", ")}`,
   );
-  // A floor under the denominator too. Without it, deleting a route would make
-  // the equality above pass on a smaller region — the same "measure less, look
-  // healthier" failure `unknown` guards at the slot level.
+  // The floors under the denominators, PER SLOT rather than summed over the
+  // region. A summed floor of 45 stretches is met by `quantum-linear-solve`
+  // losing all 21 of its while `linear-ode-solve` grows past the shortfall —
+  // the region reads closed, one quarter of it is gone, and no assertion here
+  // notices. That is the same "measure less, look healthier" failure
+  // `region.unknown` catches one level out, and it is why the variational hop
+  // ratchet below is written per slot too.
+  //
+  // These four numbers are measured, not inherited: the summed floors this
+  // replaces were 19 methods and 45 stretches, and the region is at 22 and 50
+  // today. A floor written without measuring is worse than no floor, so each
+  // one below is what its slot actually carries as of this commit.
+  const FLOORS: readonly (readonly [string, number, number])[] = [
+    ["linear-ode-solve", 9, 21],
+    ["hamiltonian-recasting", 2, 2],
+    ["time-discretization", 6, 6],
+    ["quantum-linear-solve", 5, 21],
+  ];
+  // The two lists are tied together, because they are two copies of one fact and
+  // nothing else here notices when they drift. Adding a valid capability to
+  // `SLOTS` without a `FLOORS` row leaves that slot with no floor at all while
+  // every assertion below still passes — `region.unknown` cannot see it, since
+  // both ids name real capabilities. Raised by Sourcery on the PR that added the
+  // per-slot floors, which is the same "measure less, look healthier" hole one
+  // more level in, in the very change written to close it.
+  assert.deepEqual(
+    FLOORS.map(([slot]) => slot).sort(),
+    [...SLOTS].sort(),
+    "a slot in this region has no floor, or a floor names a slot outside it",
+  );
+  for (const [slot, methodFloor, stretchFloor] of FLOORS) {
+    const one = regionClosure(LAYER_GRAPH, STATE_VOCABULARY, [slot], new Map());
+    assert.deepEqual(one.unknown, [], `${slot} names no capability`);
+    assert.ok(
+      one.methods.length >= methodFloor,
+      `${slot}: ${one.methods.length} methods, fewer than the ${methodFloor} it was closed over`,
+    );
+    assert.ok(
+      one.hopStretches >= stretchFloor,
+      `${slot}: ${one.hopStretches} drawn stretches, fewer than the ${stretchFloor} it was closed over`,
+    );
+  }
+});
+
+/**
+ * Every method in the Atlas says what it costs, or says why it does not.
+ *
+ * **The whole graph, and the field is closed on it.** `cost` read 99 of 110 on the
+ * morning of 2026-08-24 and 8 of 38 over the variational region alone. It is now 109
+ * filled and one accounted, which is **zero open** — every method either carries a
+ * complexity out of its own papers or carries a declared `absences.cost` naming the
+ * documents somebody opened and saying what they contain instead.
+ *
+ * **`open`, not `present`, is the number that matters**, and that is the whole reason
+ * this asserts against `declaredAbsences` rather than against 110. A field is closed
+ * when nothing is unaccounted for, not when nothing is empty — that distinction is what
+ * `absences` exists to draw, and a test that demanded 110/110 would push the next author
+ * to invent a number for a paper that states none, which is the failure the mechanism
+ * was built against.
+ *
+ * **The absence set is named, in both directions, and that is not decoration.** An
+ * absence is a *claim* — that somebody read the sources and they price nothing at this
+ * record's generality. Left as a bare count it can grow silently, and the field would go
+ * on reading "closed" while methods quietly moved from having an answer to having an
+ * excuse. Naming it means adding one is an edit to this test, in front of a reviewer.
+ * The single member is `koopman-linearization`: its only paper proves the linearization
+ * at arbitrary basis but scopes **both** of its complexity theorems to the Fourier
+ * instance, which is a different record in this graph — and that record does carry the
+ * numbers.
+ */
+test("every method says what it costs, or says why it does not", () => {
+  const caps = LAYER_GRAPH.nodes.filter(isCapability).map((node) => node.id);
+  const region = regionClosure(LAYER_GRAPH, STATE_VOCABULARY, caps, new Map());
+  assert.deepEqual(region.unknown, [], "a capability id is not in the graph");
+  // A floor under the denominator, so deleting methods cannot close the field by
+  // measuring less — the same guard every other ratchet here carries.
   assert.ok(
-    region.hopStretches >= 45,
-    `${region.hopStretches} drawn stretches, fewer than the 45 the region was closed over`,
+    region.methods.length >= 110,
+    `the graph has ${region.methods.length} methods, fewer than the 110 the field closed over`,
+  );
+  const cost = region.fields.find((entry) => entry.field === "cost")!;
+  const declared = region.declaredAbsences.get("cost") ?? [];
+  assert.deepEqual(
+    [...declared].sort(),
+    ["koopman-linearization"],
+    "the set of methods excused from carrying a cost has changed — an absence is a claim, not a default",
+  );
+  assert.deepEqual(
+    cost.missing.filter((id) => !declared.includes(id)),
+    [],
+    `cost is open on ${cost.missing.join(", ")} — every method must carry one or declare why not`,
+  );
+  // And the other direction: an excused method that has since been given a cost leaves a
+  // stale absence behind, which validation permits (it refuses an absence on a FILLED
+  // field, so the two cannot both be set — but a deleted method takes its absence with
+  // it and this list would not notice). Asserting the excuse is still doing work is what
+  // keeps it from outliving its reason, the way AWAITING_OWNER did until leona 755.
+  assert.deepEqual(
+    declared.filter((id) => !region.methods.includes(id)),
+    [],
+    "a method with a declared cost absence has left the graph, so the declaration guards nothing",
+  );
+});
+
+/**
+ * The variational / NISQ region says what it costs, and does not stop.
+ *
+ * The same ratchet as the linear-ODE one above, over the region the Atlas's own
+ * front page was quietest about. That page promises a reader four things —
+ * *"what it takes, what it returns, what it costs, and who proved it"* — and
+ * until this landed, **30 of these 38 methods answered the third with "No
+ * complexity is recorded here."** Every one of the 29 filled here was read out
+ * of the method's own cited papers.
+ *
+ * **`cost` only, deliberately.** The other six fields `regionClosure` measures
+ * are not ratcheted here: `example.pseudocode` and the two evidence-bound
+ * fields have not been swept over this region, and ratcheting a field at 6 of 38
+ * pins a number that means nothing. This asserts the one that was closed.
+ *
+ * **The last exemption is gone, and the region is whole.** `variational-ground-state`
+ * sat outside this assertion under the owner's 2026-07-19 ruling — VQE is a
+ * heuristic with no proven worst-case speedup, and its price was to be said
+ * structurally rather than as a number. Reading Peruzzo et al. found that they DO
+ * price one energy evaluation while refusing to bound the iterations, a shape the
+ * ruling did not anticipate, so it went back to him as ai-ops issue 169. His
+ * answer was to record it — *"let's just add whatever we can from each paper,
+ * because each one is going to be specific to certain problems anyway"* — and the
+ * record now carries both halves in one paragraph: the per-evaluation count the
+ * two papers do prove, and the iteration count neither of them bounds.
+ *
+ * So `cost.missing` is asserted EMPTY rather than equal to a named exemption set.
+ * That is a stronger assertion than the one it replaces and it is the only shape
+ * that cannot rot: an exemption list keeps passing after the reason for it is
+ * gone, which is precisely what the AWAITING_OWNER block here was written to
+ * prevent happening to itself.
+ */
+test("the variational region does not go quiet again about what it costs", () => {
+  const SLOTS = [
+    "ground-state-energy",
+    "excited-state-energy",
+    "ansatz-construction",
+    "parameter-optimization",
+    "observable-estimation",
+    "error-mitigation",
+  ];
+  const region = regionClosure(LAYER_GRAPH, STATE_VOCABULARY, SLOTS, new Map());
+  assert.deepEqual(region.unknown, [], "a slot id in this test names no capability");
+  assert.ok(
+    region.methods.length >= 38,
+    `the region has ${region.methods.length} methods, fewer than the 38 it was swept over`,
+  );
+  const cost = region.fields.find((entry) => entry.field === "cost")!;
+  assert.deepEqual(
+    cost.missing,
+    [],
+    `cost is missing on ${cost.missing.join(", ")} — this region was swept on that field`,
+  );
+  // The one method that used to be exempt, named so that deleting it from the
+  // region cannot make the line above pass on a smaller set. The two-direction
+  // check the exemption needed collapses into this once the exemption is gone:
+  // "every method has a cost" plus "this method is still one of them".
+  assert.ok(
+    region.methods.includes("variational-ground-state"),
+    "VQE has left the region — the field that was hardest to close is no longer measured",
+  );
+});
+
+/**
+ * Every hop the Atlas draws says what happens on it — all 28 slots, all 194 stretches.
+ *
+ * **What a reader met before this closed.** Opening VQD's route on production gave
+ * *"None found yet."* on all four of its hops, and it was not alone: the gauge read
+ * **5 of 33 route stretches** over two slots on the morning of 2026-08-24 and **166 of
+ * 194** over the whole graph. Every one of the rest was written out of the method's own
+ * citations, in five batches — leona 752, 756 and this one.
+ *
+ * **Stretches, not methods.** A method with one authored hop of five reads as "has hops"
+ * on any per-method count, and that is exactly the region that looks finished and is not.
+ * `hops` is keyed per stretch, so the honest denominator is the stretch — and a stretch
+ * is any step the route lists, whether it advances the route or **feeds** it as an
+ * ingredient, since both are drawn and both are keyable.
+ *
+ * **Per slot, and that is the whole design of this table.** An aggregate floor of 194 is
+ * met by `linear-ode-solve` growing while `quantum-linear-solve` loses all 21 of its —
+ * the region still reads closed, an eighth of it is gone, and no assertion here notices.
+ * That is the "measure less, look healthier" failure `region.unknown` catches one level
+ * out, it was raised on the PR that first split these floors, and it is why the numbers
+ * below are as uneven as they are: `ansatz-construction` carries 19 stretches and
+ * `gate-synthesis` carries 2.
+ *
+ * **The table is closed against the graph, not maintained beside it.** Every capability
+ * in `LAYER_GRAPH` must appear here and nothing else may — otherwise a slot added later
+ * sits outside every floor while this test stays green, which is the same hole one more
+ * level in. That equality is asserted first, before any floor is read.
+ *
+ * Each floor is what its slot carried when the field closed. Authoring more can never
+ * fail it; deleting always does.
+ */
+test("every hop the Atlas draws says what happens on it", () => {
+  const FLOORS: readonly (readonly [string, number, number])[] = [
+    ["ansatz-construction", 13, 19],
+    ["block-encode-matrix", 4, 6],
+    ["compile-to-device", 2, 5],
+    ["device-characterization", 2, 2],
+    ["error-correction", 2, 2],
+    ["error-mitigation", 4, 4],
+    ["excited-state-energy", 7, 22],
+    ["full-discretization", 2, 2],
+    ["gate-synthesis", 2, 2],
+    ["ground-state-energy", 4, 11],
+    ["hamiltonian-recasting", 2, 2],
+    ["hamiltonian-simulation", 3, 8],
+    ["hidden-period-finding", 3, 3],
+    ["linear-ode-solve", 9, 21],
+    ["matrix-function", 2, 7],
+    ["nonlinear-linear-embedding", 6, 6],
+    ["nonlinear-ode-solve", 4, 10],
+    ["observable-estimation", 4, 8],
+    ["parameter-optimization", 6, 8],
+    ["phase-estimation", 2, 2],
+    ["polynomial-approximation", 2, 2],
+    ["qsp-phase-factors", 4, 4],
+    ["quantum-linear-solve", 5, 21],
+    ["qubit-routing", 3, 3],
+    ["spatial-discretization", 2, 2],
+    ["state-preparation", 3, 3],
+    ["success-amplification", 2, 3],
+    ["time-discretization", 6, 6],
+  ];
+  // Closed against the graph before anything is measured, in BOTH directions: a new
+  // capability that nobody adds a row for would otherwise be unratcheted and silent,
+  // and a row naming a slot that no longer exists would measure an empty region and
+  // pass. `regionClosure`'s own `unknown` catches only the second.
+  assert.deepEqual(
+    FLOORS.map(([slot]) => slot).sort(),
+    LAYER_GRAPH.nodes.filter(isCapability).map((node) => node.id).sort(),
+    "a capability has no floor here, or a floor names a capability the graph no longer has",
+  );
+  let stretches = 0;
+  for (const [slot, methodFloor, stretchFloor] of FLOORS) {
+    const region = regionClosure(LAYER_GRAPH, STATE_VOCABULARY, [slot], new Map());
+    assert.deepEqual(region.unknown, [], `${slot} names no capability`);
+    assert.ok(
+      region.methods.length >= methodFloor,
+      `${slot}: ${region.methods.length} methods, fewer than the ${methodFloor} it was closed over`,
+    );
+    assert.ok(
+      region.hopStretches >= stretchFloor,
+      `${slot}: ${region.hopStretches} drawn stretches, fewer than the ${stretchFloor} it was closed over`,
+    );
+    assert.equal(
+      region.hopStretchesAuthored,
+      region.hopStretches,
+      `${slot}: hop theory covers ${region.hopStretchesAuthored} of ${region.hopStretches} — ` +
+        `unauthored: ${region.unauthoredHops.map((hop) => `${hop.method}/${hop.key}`).join(", ")}`,
+    );
+    stretches += region.hopStretches;
+  }
+  // The graph-wide total, which no per-slot assertion states. 194 at the commit that
+  // closed the field.
+  assert.ok(stretches >= 194, `${stretches} stretches across all slots, fewer than the 194 the field closed over`);
+});
+
+
+/** The reader-facing modules that may render a declared absence, as (name, source). */
+function absenceSurfaceSources(): { name: string; source: string }[] {
+  const webRoot = dirname(dirname(fileURLToPath(import.meta.url)));
+  return [
+    ["card-content.ts", join(webRoot, "lib", "repository", "card-content.ts")],
+    ["repository-layers.tsx", join(webRoot, "components", "repository-layers.tsx")],
+    ["map-card-panel.tsx", join(webRoot, "components", "map-card-panel.tsx")],
+  ].map(([name, file]) => ({ name: name!, source: readFileSync(file!, "utf8") }));
+}
+
+/**
+ * Every executable `absenceOf(<x>, "<field>", …)` in `source`, with its offset.
+ *
+ * **Parsed, not scanned, and the history is the argument for it.** Three review
+ * rounds killed three hand-rolled scanners, each time on a construct that spells
+ * the call without being one — or is one without looking like it:
+ *
+ * - a **comment** left behind after the renderer was deleted (Sourcery);
+ * - the call spelled inside a **string literal**, so a renderer that never
+ *   existed satisfied the guard (CodeRabbit) — the dangerous direction;
+ * - a **regex literal** whose pattern contains the call, which the previous
+ *   version mis-lexed into a false PASS, disproving a safety claim that version's
+ *   own comment made (Sourcery);
+ * - a real call inside a **`${…}` template interpolation**, masked away as if it
+ *   were literal text, which would have reported a working renderer as missing
+ *   (Sourcery).
+ *
+ * The compiler gets all four right by construction and needs no comment
+ * explaining which ones it gets wrong. That is the whole justification: a guard
+ * against "this looks like it verifies rendering and does not" must not itself be
+ * a thing that looks like it verifies code and does not.
+ */
+function absenceCalls(source: string, fileName = "surface.tsx"): { field?: string; at: number }[] {
+  const parsed = ts.createSourceFile(fileName, source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
+  const found: { field?: string; at: number }[] = [];
+  const walk = (node: ts.Node): void => {
+    if (
+      ts.isCallExpression(node) &&
+      ts.isIdentifier(node.expression) &&
+      node.expression.text === "absenceOf"
+    ) {
+      const arg = node.arguments[1];
+      found.push({
+        field: arg && ts.isStringLiteral(arg) ? arg.text : undefined,
+        at: node.getStart(parsed),
+      });
+    }
+    ts.forEachChild(node, walk);
+  };
+  walk(parsed);
+  return found;
+}
+
+/** Does `source` render the absence for `field` — as code, not as text about code? */
+function rendersAbsence(source: string, field: string): boolean {
+  return absenceCalls(source).some((call) => call.field === field);
+}
+
+const absenceIsRendered = (surfaces: readonly { source: string }[], field: string) =>
+  surfaces.some((surface) => rendersAbsence(surface.source, field));
+
+/**
+ * Declarable keys that no surface renders yet, and which nothing has declared.
+ *
+ * NOT a permanent exemption — it is the list one test below refuses to let grow,
+ * and the one above it refuses to let anyone *use*. Wiring one up is a one-line
+ * deletion here.
+ */
+const ABSENCE_KEYS_NOT_WIRED_UP = ["conditions", "example.pseudocode"];
+
+test("only an executable absenceOf call counts as rendering", () => {
+  // Every construct that killed a previous version of this helper, in one place.
+  // The guards below are worth exactly what this test is worth.
+  const call = 'absenceOf(node, "implementations", isJa)';
+
+  assert.equal(rendersAbsence(`// ${call}`, "implementations"), false, "line comment counted");
+  assert.equal(rendersAbsence(`/* ${call} */`, "implementations"), false, "block comment counted");
+  assert.equal(
+    rendersAbsence(`const s = "${call}";`, "implementations"),
+    false,
+    "string literal counted",
+  );
+  assert.equal(
+    rendersAbsence("const s = `" + call + "`;", "implementations"),
+    false,
+    "template literal counted",
+  );
+  assert.equal(
+    rendersAbsence(`const re = /absenceOf\\(node, "implementations"/;`, "implementations"),
+    false,
+    "regex literal counted — the false PASS that killed the hand-rolled scanner",
+  );
+
+  // And the calls that ARE code are found, including the two shapes the previous
+  // version got wrong in the other direction.
+  assert.ok(rendersAbsence(`x = ${call};`, "implementations"));
+  assert.ok(
+    rendersAbsence("y = `${" + call + "}`;", "implementations"),
+    "a call inside a template interpolation was reported missing",
+  );
+  assert.ok(rendersAbsence(`f("http://x"); y = ${call};`, "implementations"), "a URL swallowed it");
+  assert.ok(rendersAbsence(`x = absenceOf(method, "example.text", ja);`, "example.text"));
+
+  // The FIELD is matched, not merely the function name.
+  assert.equal(rendersAbsence(`x = ${call};`, "cost"), false, "matched the wrong field");
+});
+
+test("no absence anyone has actually declared is rendered by nothing", () => {
+  // The check that fires at the moment it matters: an author writes a reason,
+  // and it reaches a reader. Data-driven off the authored graph, because the
+  // failure is a *declared* key nothing reads — a declarable one nobody has used
+  // harms no reader yet.
+  //
+  // That is not hypothetical. `implementations` was read by `card-content.ts`
+  // and NOT by `components/repository-layers.tsx`, so for all three methods that
+  // declare one the map card drew the researched sentence and the method page
+  // drew `implementationsNone` — *"Nobody has written one up yet. That is a gap
+  // in this record"* — the precise opposite of a record saying the cited sources
+  // report none. Measured on production 2026-08-24 on `backward-euler`,
+  // `trapezoidal-rule` and `chebyshev-pseudospectral-collocation`, all three the
+  // same way round. An omission on one surface is a gap; two surfaces
+  // disagreeing tells the reader the Atlas does not know what it says.
+  //
+  // **What this one does NOT catch, stated so it is not over-trusted:** it asks
+  // whether ANY surface reads the key, so it stays green while one of two does —
+  // which is exactly the state that shipped. Reverting the method-page fix leaves
+  // this test passing. The test below it is the one that fails, and it is the one
+  // that holds the two surfaces together.
+  const sources = absenceSurfaceSources();
+  const declared = new Set(
+    LAYER_GRAPH.nodes.flatMap((node) => Object.keys((node as { absences?: object }).absences ?? {})),
+  );
+  assert.ok(declared.size > 0, "no absence is declared anywhere — this test is asserting nothing");
+
+  const unrendered = [...declared].filter((field) => !absenceIsRendered(sources, field)).sort();
+  assert.deepEqual(
+    unrendered,
+    [],
+    `declared on the graph and rendered by no surface: ${unrendered.join(", ")}`,
+  );
+});
+
+test("the set of declarable-but-unrendered absence keys does not grow", () => {
+  // The other half. A sixth key added to DECLARABLE_ABSENCES and wired to
+  // nothing is the same bug one step earlier — the validator would accept it,
+  // the gauge would count the field closed, and the first author to use it would
+  // ship research no reader meets. This fails on that addition rather than on
+  // its first use.
+  const sources = absenceSurfaceSources();
+  const unwired = DECLARABLE_ABSENCES.filter((field) => !absenceIsRendered(sources, field)).sort();
+  assert.deepEqual(
+    unwired,
+    [...ABSENCE_KEYS_NOT_WIRED_UP].sort(),
+    "a declarable absence key is rendered by nothing — wire it to a surface, or add it to ABSENCE_KEYS_NOT_WIRED_UP with a reason",
+  );
+});
+
+test("the two surfaces agree about a declared cost absence", () => {
+  // The twin of the test below, added when `cost` became the third key anyone has
+  // actually declared. Both surfaces must render the key, AND the method page must
+  // prefer it over `costNone` — asserted by ORDER, because a branch that draws the
+  // generic note first and the reason never is exactly what shipped for
+  // `implementations`, on three methods, and reached production.
+  //
+  // `costNone` is *"No complexity is recorded here"*, which reads as nobody having
+  // looked. Drawing it over a researched absence would tell a reader the opposite of
+  // what its author wrote — which is worse than the gap it replaces, because a gap is
+  // honest and this would not be.
+  const webRoot = dirname(dirname(fileURLToPath(import.meta.url)));
+  const pageSource = readFileSync(join(webRoot, "components", "repository-layers.tsx"), "utf8");
+  const cardSource = readFileSync(join(webRoot, "lib", "repository", "card-content.ts"), "utf8");
+
+  assert.ok(rendersAbsence(cardSource, "cost"), "card-content.ts stopped rendering the cost absence");
+
+  // The COST call specifically, not the first `absenceOf(node,` on the page — that is
+  // the `example.text` call, and taking it would measure an unrelated call and pass
+  // for the wrong reason. That mistake was made once already, on the test below.
+  const reasonAt = absenceCalls(pageSource, "repository-layers.tsx").find(
+    (call) => call.field === "cost",
+  );
+  assert.ok(reasonAt, "the method page stopped rendering the cost absence");
+  const genericAt = pageSource.indexOf("copy.costNone");
+  assert.ok(genericAt > 0, "the method page no longer draws costNone at all");
+  assert.ok(
+    reasonAt!.at < genericAt,
+    "the method page reaches costNone before the researched reason, so the reason never draws",
+  );
+});
+
+test("the two surfaces agree about a declared implementations absence", () => {
+  // The specific contradiction the checks above generalise. Both files must
+  // render the key, AND the method page must prefer it over its generic note —
+  // asserted by ORDER, because a branch that renders the generic note first and
+  // the reason never is exactly what shipped.
+  const webRoot = dirname(dirname(fileURLToPath(import.meta.url)));
+  const pageSource = readFileSync(join(webRoot, "components", "repository-layers.tsx"), "utf8");
+  const cardSource = readFileSync(join(webRoot, "lib", "repository", "card-content.ts"), "utf8");
+
+  assert.ok(
+    rendersAbsence(cardSource, "implementations"),
+    "card-content.ts stopped rendering the implementations absence",
+  );
+
+  // **The IMPLEMENTATIONS call specifically, not the first `absenceOf(node,` on
+  // the page.** An earlier version took the first one and that is the
+  // `example.text` call fifty lines up, so the ordering below was measuring an
+  // unrelated call and passing for the wrong reason. Caught by CodeRabbit; it is
+  // the same shape as the bug this whole PR is about — an assertion that looks
+  // like it checks the thing and checks its neighbour.
+  const reasonAt = absenceCalls(pageSource, "repository-layers.tsx").find(
+    (call) => call.field === "implementations",
+  )?.at;
+  assert.ok(reasonAt !== undefined, "the method page does not render the implementations absence");
+
+  // The generic note's position, found as a property access rather than as text,
+  // so a mention of it in a comment cannot stand in for the branch.
+  const parsed = ts.createSourceFile(
+    "repository-layers.tsx",
+    pageSource,
+    ts.ScriptTarget.Latest,
+    true,
+    ts.ScriptKind.TSX,
+  );
+  let genericAt: number | undefined;
+  const walk = (node: ts.Node): void => {
+    if (
+      genericAt === undefined &&
+      ts.isPropertyAccessExpression(node) &&
+      node.name.text === "implementationsNone"
+    ) {
+      genericAt = node.getStart(parsed);
+    }
+    ts.forEachChild(node, walk);
+  };
+  walk(parsed);
+  assert.ok(genericAt !== undefined, "the method page's generic implementations note is gone");
+
+  assert.ok(
+    reasonAt! < genericAt!,
+    "the method page falls back to its generic note before checking for a declared reason",
   );
 });

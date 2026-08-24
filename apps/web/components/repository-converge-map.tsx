@@ -698,10 +698,22 @@ export function ConvergeCanvas({
   selection = null,
   veiled = false,
   cited = null,
+  packVars = null,
 }: {
   diagram: ConvergeDiagram;
   locale: PublicLocale;
   title: string;
+  /**
+   * Where this figure sits in the packed arrangement, as one `--fx`/`--fy`
+   * pair per tier (`packVarsFor`). Null on every surface that draws a single
+   * figure — the embedded per-method canvas and `?focus=` — which is why the
+   * properties are written here rather than being a class: a figure with
+   * nowhere to be packed must carry no coordinates at all, not (0, 0).
+   *
+   * The properties are inert until a media query in `styles.css` reads them,
+   * so a narrow reader gets the block flow this surface has always had.
+   */
+  packVars?: Record<string, string> | null;
   /**
    * The one element `?sel=` resolved to on THIS figure, or null (W16).
    *
@@ -776,8 +788,11 @@ export function ConvergeCanvas({
       width={n(diagram.width)}
       height={n(diagram.height)}
       style={
-        subjectClaims
-          ? ({ viewTransitionName: transitionNameFor(subjectId!) } as React.CSSProperties)
+        subjectClaims || packVars
+          ? ({
+              ...(packVars ?? {}),
+              ...(subjectClaims ? { viewTransitionName: transitionNameFor(subjectId!) } : {}),
+            } as React.CSSProperties)
           : undefined
       }
     >

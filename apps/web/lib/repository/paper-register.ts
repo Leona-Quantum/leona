@@ -113,9 +113,37 @@ export const PAPER_REGISTER: PaperRegister = {
     { id: "arxiv:1810.02327", title: "Generalized Unitary Coupled Cluster Wavefunctions for Quantum Computation", authors: "Joonho Lee, William J. Huggins, Martin Head-Gordon, K. Birgitta Whaley", year: "2018", url: "https://arxiv.org/abs/1810.02327", reports: { theory: "reported", simulation: "reported", hardware: "absent" }, reportsBasis: "abstract" },
     { id: "arxiv:1810.09434", title: "Subspace-search variational quantum eigensolver for excited states", authors: "Ken M Nakanishi, Kosuke Mitarai, Keisuke Fujii", year: "2018", url: "https://arxiv.org/abs/1810.09434", reports: { theory: "reported", simulation: "reported", hardware: "absent" }, reportsBasis: "abstract" },
     { id: "arxiv:1811.03975", title: "Quantum computational finance: quantum algorithm for portfolio optimization", authors: "Patrick Rebentrost, Seth Lloyd", year: "2018", url: "https://arxiv.org/abs/1811.03975", reports: { theory: "reported", simulation: "unknown", hardware: "absent" }, reportsBasis: "abstract" },
-    { id: "arxiv:1811.11184", title: "Evaluating analytic gradients on quantum hardware", authors: "Maria Schuld, Ville Bergholm, Christian Gogolin, Josh Izaac, Nathan Killoran", year: "2018", url: "https://arxiv.org/abs/1811.11184", reports: { theory: "reported", simulation: "unknown", hardware: "absent" }, reportsBasis: "abstract" },
+    // Read in full 2026-08-24. **`simulation: "absent"`, which only a full-text
+    // basis may say** — see `validatePaperRegister`, which refuses that value on
+    // an abstract read precisely because numerics routinely sit in a section the
+    // abstract does not mention. Here they do not sit anywhere: both figures are
+    // schematics (a hybrid-loop block diagram and an LCU circuit) and both tables
+    // hold derived formulas, not measured or computed numbers.
+    //
+    // `theory: reported` is the paper's spine, stated rather than inferred —
+    // "Theorem 1. If the Hermitian generator G of the unitary operator
+    // G(mu) = e^{-i mu G} has at most two unique eigenvalues +/- r, the following
+    // identity holds", with its proof immediately after. That is the
+    // parameter-shift rule.
+    //
+    // The title says "on quantum hardware" and no hardware run is in it: every
+    // occurrence of Rigetti, photonic and superconducting is a citation to
+    // somebody else's device paper. A title is not a report.
+    { id: "arxiv:1811.11184", title: "Evaluating analytic gradients on quantum hardware", authors: "Maria Schuld, Ville Bergholm, Christian Gogolin, Josh Izaac, Nathan Killoran", year: "2018", url: "https://arxiv.org/abs/1811.11184", reports: { theory: "reported", simulation: "absent", hardware: "absent" }, reportsBasis: "full-text" },
     { id: "arxiv:1811.12926", title: "Validating quantum computers using randomized model circuits", authors: "Andrew W. Cross, Lev S. Bishop, Sarah Sheldon, Paul D. Nation, Jay M. Gambetta", year: "2018", url: "https://arxiv.org/abs/1811.12926", reports: { theory: "reported", simulation: "unknown", hardware: "reported" }, reportsBasis: "abstract" },
-    { id: "arxiv:1812.08767", title: "Theory of variational quantum simulation", authors: "Xiao Yuan, Suguru Endo, Qi Zhao, Ying Li, Simon Benjamin", year: "2018", url: "https://arxiv.org/abs/1812.08767", reports: { theory: "reported", simulation: "unknown", hardware: "absent" }, reportsBasis: "abstract" },
+    // Read in full 2026-08-24, upgrading `simulation` off `unknown`. Sec. 6.3
+    // "Numerical simulation" is a run: a two-qubit Ising model under independent
+    // amplitude damping, integrated with QuTiP from t = 0 to 10 at dt = 0.01
+    // against a six-parameter ansatz with two purification ancillas, and Fig. 5
+    // reports "excellent agreement between the results from the exact solution
+    // and our variational algorithm with a deviation less than 10^-2". Classical
+    // numerics of the paper's own algorithm, so `simulation: reported`.
+    //
+    // `hardware: absent` is now a full-text negative rather than an abstract one,
+    // and the Discussion says so itself — realising the algorithms on hardware is
+    // named as future work. Qiskit, Cirq, PennyLane, IBM, Rigetti and Sycamore
+    // do not occur in the body at all.
+    { id: "arxiv:1812.08767", title: "Theory of variational quantum simulation", authors: "Xiao Yuan, Suguru Endo, Qi Zhao, Ying Li, Simon Benjamin", year: "2018", url: "https://arxiv.org/abs/1812.08767", reports: { theory: "reported", simulation: "reported", hardware: "absent" }, reportsBasis: "full-text" },
     { id: "arxiv:1812.11173", title: "An adaptive variational algorithm for exact molecular simulations on a quantum computer", authors: "Harper R. Grimsley, Sophia E. Economou, Edwin Barnes, Nicholas J. Mayhall", year: "2018", url: "https://arxiv.org/abs/1812.11173", reports: { theory: "reported", simulation: "reported", hardware: "absent" }, reportsBasis: "abstract" },
     { id: "arxiv:1901.00961", title: "Quantum spectral methods for differential equations", authors: "Andrew M. Childs, Jin-Peng Liu", year: "2019", url: "https://arxiv.org/abs/1901.00961", reports: { theory: "reported", simulation: "absent", hardware: "absent" }, reportsBasis: "full-text" },
     { id: "arxiv:1901.01234", title: "Quantum Computation of Electronic Transitions using a Variational Quantum Eigensolver", authors: "Robert M. Parrish, Edward G. Hohenstein, Peter L. McMahon, Todd J. Martinez", year: "2019", url: "https://arxiv.org/abs/1901.01234", reports: { theory: "reported", simulation: "reported", hardware: "absent" }, reportsBasis: "abstract" },
@@ -127,7 +155,26 @@ export const PAPER_REGISTER: PaperRegister = {
     { id: "arxiv:1907.03358", title: "Measurement Optimization in the Variational Quantum Eigensolver Using a Minimum Clique Cover", authors: "Vladyslav Verteletskyi, Tzu-Ching Yen, Artur F. Izmaylov", year: "2019", url: "https://arxiv.org/abs/1907.03358", reports: { theory: "reported", simulation: "reported", hardware: "absent" }, reportsBasis: "full-text" },
     { id: "arxiv:1907.04769", title: "Improving Variational Quantum Optimization using CVaR", authors: "Panagiotis Kl. Barkoutsos, Giacomo Nannicini, Anton Robert, Ivano Tavernelli, Stefan Woerner", year: "2019", url: "https://arxiv.org/abs/1907.04769", reports: { theory: "reported", simulation: "reported", hardware: "reported" }, reportsBasis: "abstract" },
     { id: "arxiv:1908.02163", title: "Resource-Efficient Quantum Algorithm for Protein Folding", authors: "Anton Robert, Panagiotis Kl. Barkoutsos, Stefan Woerner, Ivano Tavernelli", year: "2019", url: "https://arxiv.org/abs/1908.02163", reports: { theory: "reported", simulation: "reported", hardware: "absent" }, reportsBasis: "abstract" },
-    { id: "arxiv:1909.02108", title: "Quantum Natural Gradient", authors: "James Stokes, Josh Izaac, Nathan Killoran, Giuseppe Carleo", year: "2019", url: "https://arxiv.org/abs/1909.02108", reports: { theory: "reported", simulation: "unknown", hardware: "absent" }, reportsBasis: "abstract" },
+    // Read in full 2026-08-24. Sec. 3 "Numerical Experiments" is a run: a
+    // parametrised circuit at n = 7, 9, 11 qubits and l = 3-6 layers, target
+    // observable Z1Z2, compared across vanilla gradient descent, Adam,
+    // Nelder-Mead, COBYLA and QNG at analytic, 1024-shot and 8192-shot noise,
+    // implemented in PennyLane. So `simulation: reported`.
+    //
+    // **`theory` stays `reported`, and the near-miss is worth recording.** A read
+    // pass proposed downgrading it on the grounds that the paper contains no
+    // Theorem, Lemma or Proof environment — true, and not the test. The rule here
+    // is "theorems, complexity bounds OR proved constructions": Sec. 2 is titled
+    // "Theory", derives the block-diagonal approximation to the Fubini-Study
+    // metric tensor, and Sec. 3 opens on "the analytical complexity of QNG,
+    // assuming oracle... per-iteration complexity of querying the oracle". A
+    // derived construction with a stated per-iteration cost is the reported case.
+    // Absence of a theorem environment is a fact about LaTeX.
+    //
+    // PennyLane here is a classical simulator, not a device: the noise levels are
+    // simulated shot counts, and no backend is named. `hardware: absent` holds on
+    // the full text.
+    { id: "arxiv:1909.02108", title: "Quantum Natural Gradient", authors: "James Stokes, Josh Izaac, Nathan Killoran, Giuseppe Carleo", year: "2019", url: "https://arxiv.org/abs/1909.02108", reports: { theory: "reported", simulation: "reported", hardware: "absent" }, reportsBasis: "full-text" },
     { id: "arxiv:1909.02611", title: "Quantum classifier with tailored quantum kernel", authors: "Carsten Blank, Daniel K. Park, June-Koo Kevin Rhee, Francesco Petruccione", year: "2019", url: "https://arxiv.org/abs/1909.02611" },
     { id: "arxiv:1910.06151", title: "Sampling-based sublinear low-rank matrix arithmetic framework for dequantizing quantum machine learning", authors: "Nai-Hui Chia, András Gilyén, Tongyang Li, Han-Hsuan Lin, Ewin Tang, Chunhao Wang", year: "2019", url: "https://arxiv.org/abs/1910.06151", reports: { theory: "reported", simulation: "unknown", hardware: "absent" }, reportsBasis: "abstract" },
     { id: "arxiv:1910.11526", title: "Orbital optimized unitary coupled cluster theory for quantum computer", authors: "Wataru Mizukami, Kosuke Mitarai, Yuya O. Nakagawa, Takahiro Yamamoto, Tennin Yan, Yu-ya Ohnishi", year: "2019", url: "https://arxiv.org/abs/1910.11526", reports: { theory: "reported", simulation: "reported", hardware: "absent" }, reportsBasis: "abstract" },
@@ -183,7 +230,27 @@ export const PAPER_REGISTER: PaperRegister = {
     { id: "arxiv:2207.08800", title: "Quantum tomography using state-preparation unitaries", authors: "Joran van Apeldoorn, Arjan Cornelissen, András Gilyén, Giacomo Nannicini", year: "2022", url: "https://arxiv.org/abs/2207.08800", reports: { theory: "reported", simulation: "unknown", hardware: "absent" }, reportsBasis: "abstract" },
     { id: "arxiv:2208.01203", title: "Unsupervised quantum machine learning for fraud detection", authors: "Oleksandr Kyriienko, Einar B. Magnusson", year: "2022", url: "https://arxiv.org/abs/2208.01203", reports: { theory: "reported", simulation: "reported", hardware: "absent" }, reportsBasis: "abstract" },
     { id: "arxiv:2208.06941", title: "Time-marching based quantum solvers for time-dependent linear differential equations", authors: "Di Fang, Lin Lin, Yu Tong", year: "2022", url: "https://arxiv.org/abs/2208.06941", reports: { theory: "reported", simulation: "reported", hardware: "absent" }, reportsBasis: "full-text" },
-    { id: "arxiv:2209.10562", title: "TETRIS-ADAPT-VQE: An adaptive algorithm that yields shallower, denser circuit ansätze", authors: "Panagiotis G. Anastasiou, Yanzhu Chen, Nicholas J. Mayhall, Edwin Barnes, Sophia E. Economou", year: "2022", url: "https://arxiv.org/abs/2209.10562", reports: { theory: "reported", simulation: "unknown", hardware: "absent" }, reportsBasis: "abstract" },
+    // Read in full 2026-08-24, and this row moved on TWO axes.
+    //
+    // **`theory` down from `reported` to `absent`**, which the abstract read got
+    // wrong. The paper's four sections are Introduction, Algorithm Details,
+    // Results and Conclusions — no theory section, no theorem, lemma, proof or
+    // corollary anywhere, and the words complexity, bound and scaling do not
+    // occur at all. Its central claim, that the depth advantage "increases with
+    // the system size", is measured over four molecules and not proved. The
+    // nearest thing to an analytic statement is a disclaimer that the
+    // highest-gradient operator "is not guaranteed to be the operator that causes
+    // the greatest energy reduction". An algorithm plus a benchmark is the
+    // `absent` case; checked against the section structure rather than against
+    // the absence of theorem environments, which is the trap the 1909.02108 row
+    // above records.
+    //
+    // **`simulation` up to `reported`.** Sec. III: "We numerically simulate the
+    // performances of TETRIS-ADAPT-VQE and the original ADAPT-VQE... for the
+    // following molecules: H4, LiH, H6, and BeH2 at varying bond lengths, all in
+    // the linear configuration, and using the STO-3G basis set", compiled through
+    // Qiskit. Table I reports depth reductions up to 2.73x on BeH2 at 14 qubits.
+    { id: "arxiv:2209.10562", title: "TETRIS-ADAPT-VQE: An adaptive algorithm that yields shallower, denser circuit ansätze", authors: "Panagiotis G. Anastasiou, Yanzhu Chen, Nicholas J. Mayhall, Edwin Barnes, Sophia E. Economou", year: "2022", url: "https://arxiv.org/abs/2209.10562", reports: { theory: "absent", simulation: "reported", hardware: "absent" }, reportsBasis: "full-text" },
     // hardware is `unknown`, not `reported`: the abstract quotes "the quantum computer's solve
     // time" without saying whether a device or a simulator produced it, and the record that cites
     // this row says exactly that. A run the abstract does not attribute is not a hardware report.
@@ -289,6 +356,39 @@ export const PAPER_REGISTER: PaperRegister = {
     { id: "doi:10.1007/978-3-642-38616-9_2", title: "Quantum algorithms for the subset-sum problem", authors: "Daniel J. Bernstein, Stacey Jeffery, Tanja Lange, Alexander Meurer", year: "2013", url: "https://doi.org/10.1007/978-3-642-38616-9_2", reports: { theory: "reported", simulation: "reported", hardware: "absent" }, reportsBasis: "full-text" },
     { id: "doi:10.1016/0003-4916(70)90270-8", title: "The one-dimensional Ising model with a transverse field", authors: "P. Pfeuty", year: "1970", url: "https://doi.org/10.1016/0003-4916(70)90270-8" },
     { id: "doi:10.1017/cbo9780511973765", title: "Quantum Phase Transitions", authors: "S. Sachdev", year: "2011", url: "https://doi.org/10.1017/cbo9780511973765", medium: "textbook" },
+    // **Read on 2026-08-24**, from the copy the owner supplied on ai-ops#56 on
+    // 2026-08-13. Recorded here because until that read this row was the only
+    // thing on the register carrying four dependent records and no evidence that
+    // anyone had opened the source — the PDF had been sitting in
+    // `~/Developer/leona-sources/` for eleven days.
+    //
+    // What the read changed: `bell-state-qiskit` cited "§1.3.6/§4.3" and §4.3 is
+    // "Controlled operations", eight pages that never mention a Bell state. That
+    // is corrected in ./entries-legacy.ts, where the full account is.
+    //
+    // What the read confirmed, so a later session need not re-derive it — section
+    // and printed page, checked against the table of contents:
+    //   §1.3.6  p.25   Bell states; H-then-CNOT, eq. (1.23)
+    //   §2.4.3  p.106  reduced density operator; the Bell pair traced to I/2
+    //   §4.3    p.177  Controlled operations (NOT Bell states)
+    //   §8.3.4  p.378  depolarizing channel; "the completely mixed state, I/2"
+    //   §10.5.8 p.472  ancilla circuits for measuring a Pauli product, Figs 10.13/10.15/10.16
+    //   Thm 11.8 p.513 entropy is log d iff the state is completely mixed
+    //   §12.6.3 p.587  BB84; |+⟩ and |−⟩ as two of the four encoding states
+    //
+    // No `reports`/`reportsBasis`, and that is the convention rather than an
+    // omission: those three fields say what a *paper* reports of theory,
+    // simulation and hardware, and `validatePaperRegister` requires them to stand
+    // or fall together. The other textbook on this register (Sachdev, above)
+    // carries `medium` and no reports for the same reason.
+    //
+    // One thing the read did NOT support, worth recording because it reads like a
+    // defect and is not one: the four records use "maximally mixed state",
+    // "mutually unbiased bases" and "parity operator", and this book uses none of
+    // those phrases — it says "completely mixed state" and writes parity as a
+    // product of Pauli operators. The records use the field's vocabulary and
+    // nowhere attribute the *terms* to this source, so nothing is misquoted. The
+    // physics behind each was checked and holds.
     { id: "doi:10.1017/cbo9780511976667", title: "Quantum Computation and Quantum Information: 10th Anniversary Edition", authors: "Michael A. Nielsen and Isaac L. Chuang", year: "2010", url: "https://doi.org/10.1017/cbo9780511976667", medium: "textbook" },
     // Read in full from the publisher PDF the owner supplied on ai-ops#42, not from
     // an abstract — hence `full-text`. Sci Rep 15, 28508 (2025); received 28 March

@@ -47,22 +47,28 @@ import DOMPurify from "isomorphic-dompurify";
  * "copy as LaTeX" copies, so losing it is a real regression that changes no
  * pixel.
  *
- * ## Requires Node with `require(esm)` support — 22.12+ or 24+
+ * ## jsdom is held at 26 because the deployment runs `--no-experimental-require-module`
  *
- * `isomorphic-dompurify` reaches jsdom on the server, and jsdom 30's CommonJS
- * code requires `@exodus/bytes`, which is ESM-only (`"type": "module"`). On a Node
- * without `require(esm)` that throws `ERR_REQUIRE_ESM` inside the Next server
- * bundle — and it would surface on `/repository/[slug]`, which renders on demand,
- * rather than at build time. Raised by CodeRabbit on PR 690, which proposed
- * pinning jsdom back to 25.0.1.
+ * `isomorphic-dompurify` reaches jsdom on the server, and jsdom 27 and later
+ * depend on `@exodus/bytes`, which is ESM-only. jsdom is itself
+ * `"type": "commonjs"`, so its own `require()` of that package throws
+ * `ERR_REQUIRE_ESM` on any runtime where `require(esm)` is off.
  *
- * Not pinned, because the root `package.json` already sets `engines.node: 24.x`
- * and that is the more honest fix — a downgrade would carry its own risk and
- * would hide the real constraint. Verified rather than argued: the production
- * build was served locally and `/repository/layers/qsvt-matrix-inversion`
- * rendered sanitized MathML with no `ERR_REQUIRE_ESM`. **If that engine pin is
- * ever lowered below 22.12, this module is what breaks, and it breaks at request
- * time on one route.**
+ * Vercel's is. Measured on a preview probe, 2026-08-24: `node v24.18.0` with
+ * `--no-experimental-require-module` in `execArgv` and `NODE_OPTIONS` unset. So
+ * this is a property of the platform, not of the Node version, and the
+ * `engines.node: 24.x` argument that used to sit in this comment could never
+ * have reached it — which is why every page rendering mathematics returned 500
+ * for the eight days between leona 690 and this note. **jsdom 27+ cannot run in
+ * a Vercel function at all.**
+ *
+ * `pnpm-workspace.yaml` pins jsdom to 26.1.0 and carries the full reasoning.
+ * `sanitize-math-runtime.test.ts` reproduces the production runtime by spawning
+ * node with the same flag, so this fails in CI rather than in a deployment.
+ *
+ * CodeRabbit raised exactly this class on PR 690 and proposed pinning jsdom.
+ * It was declined on the strength of a local run, and a local run does not carry
+ * the flag.
  *
  * ## `annotation`, deliberately NOT `annotation-xml`
  *

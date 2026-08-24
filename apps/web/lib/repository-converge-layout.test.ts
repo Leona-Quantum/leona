@@ -398,6 +398,109 @@ test("a belly sits exactly `bow` off the base, and the canvas reserves that much
   }
 });
 
+/**
+ * The vertical ink a figure actually draws, and the empty band left over.
+ *
+ * `d`, `outline` and `frame.d` are sampled at their control and end points
+ * rather than parsed — a cubic never leaves the hull of its own control
+ * points, so the extremes taken here bound the drawn curve from outside. That
+ * is the safe direction for a *containment* claim, and it is the conservative
+ * direction for the over-reservation one too: an over-estimated ink box can
+ * only make the slack look smaller than it is, so a slack this reports as
+ * excessive genuinely is.
+ */
+function inkBand(diagram: ConvergeDiagram): { above: number; below: number; ink: number } | null {
+  const ys = (d: string): number[] =>
+    [...d.matchAll(/[-\d.]+[, ][-\d.]+/gu)].map((m) => Number(m[0].split(/[, ]/u)[1]));
+  let lo = Infinity;
+  let hi = -Infinity;
+  for (const lane of diagram.lanes) {
+    for (const y of ys(lane.d)) { lo = Math.min(lo, y); hi = Math.max(hi, y); }
+    if (lane.outline !== "") for (const y of ys(lane.outline)) { lo = Math.min(lo, y); hi = Math.max(hi, y); }
+    if (lane.frame) for (const y of ys(lane.frame.d)) { lo = Math.min(lo, y); hi = Math.max(hi, y); }
+    // A refinement bracket is drawn ink like any other path, and it is the one
+    // piece of it that hangs off a lane rather than following it. Four lanes
+    // carry one on the shut sweep; none is outside the box the rest of this
+    // function builds today, which is exactly why it has to be sampled — an
+    // ink source a guard does not read is a guard that stops holding the
+    // moment the drawing changes. Caught by CodeRabbit on leona 732.
+    if (lane.variantBracket !== null) for (const y of ys(lane.variantBracket)) { lo = Math.min(lo, y); hi = Math.max(hi, y); }
+    if (lane.label !== "") {
+      const box = nameInkBox(lane);
+      lo = Math.min(lo, box.y0);
+      hi = Math.max(hi, box.y1);
+    }
+  }
+  for (const state of diagram.states) {
+    lo = Math.min(lo, state.cy - state.r);
+    hi = Math.max(hi, state.cy + state.r);
+  }
+  return Number.isFinite(lo) ? { above: lo, below: diagram.height - hi, ink: hi - lo } : null;
+}
+
+test("a figure is framed by the margin and by nothing else", () => {
+  // ## The guard that was missing, and the bug that proves it was missing
+  //
+  // `halfHeight` read `Math.max(0, ...bundleHalves) + M.stateRadius`. The
+  // circles are drawn *at* `yc`, inside the fan, so that `+ stateRadius` was
+  // never the binding term — it was 11px a side added to every figure at every
+  // locale unconditionally, 22px per figure, **1,232px over the 56 figure-locales
+  // this canvas draws**. It is the same shape as the `Math.max` floor removed
+  // three screens up in `converge-layout.ts`: a term that cannot fail and can
+  // only inflate.
+  //
+  // Nothing caught it, and the honest reason is that every height invariant
+  // here is one-sided. `the canvas reserves the height the fan actually
+  // reaches` samples lanes against `[0, height]` — but shrinking `halfHeight`
+  // also shrinks `yc`, so the whole drawing slides up with the frame and the
+  // 18px margin absorbs the difference. Measured by mutation before this test
+  // was written: `halfHeight − 12` passed all 94 tests. Only at −20 did
+  // anything fail. A canvas 12px too tall and a canvas 12px too short were
+  // indistinguishable to the suite.
+  //
+  // After the two review catches below — Sourcery on the two-minima hole,
+  // CodeRabbit on the unsampled refinement bracket — this bites at **±1px** on
+  // `halfHeight`, against the ±20 the suite could see before it.
+  //
+  // So this asserts the *other* side, and it asserts it where a single figure
+  // can carry it: over the whole canvas, **some** figure must be framed by
+  // exactly `margin` above and some by exactly `margin` below. Any
+  // unconditional term added back into the reservation lifts that floor off
+  // `margin` and fails here by exactly its own size, rather than by whatever
+  // slack the tightest figure happened to have.
+  const bands: { where: string; above: number; below: number; ink: number }[] = [];
+  for (const locale of ["en", "ja"] as const) {
+    for (const [name, diagram] of shutFigures(locale)) {
+      const band = inkBand(diagram);
+      if (band === null) continue;
+      bands.push({ where: `${locale}/${name}`, ...band });
+      // Containment, stated over the ink rather than over the lanes alone.
+      assert.ok(band.above >= 0, `${locale}/${name}: ink starts ${-band.above}px above the canvas`);
+      assert.ok(band.below >= 0, `${locale}/${name}: ink runs ${-band.below}px past the canvas`);
+    }
+  }
+  assert.ok(bands.length >= 50, `only ${bands.length} figures measured — the sweep found nothing`);
+  // **One figure, both sides.** This asserted `min(above) === margin` and
+  // `min(below) === margin` as two independent claims, and Sourcery caught that
+  // they can be met by two *different* figures — which would leave asymmetric
+  // over-reservation invisible, the very thing this test exists to see. 38 of
+  // the 276 are framed by the margin on both sides at once, so the stronger
+  // claim is not merely available, it is the common case.
+  const framed = bands.filter(
+    (band) => Math.abs(band.above - M.margin) <= 0.02 && Math.abs(band.below - M.margin) <= 0.02,
+  );
+  const worst = [...bands].sort((a, b) => b.above + b.below - (a.above + a.below))[0]!;
+  console.log(
+    `[frame census] ${bands.length} figures; ${framed.length} framed by the margin (${M.margin}) `
+      + `on both sides; loosest is ${worst.where} `
+      + `(${worst.above.toFixed(1)} above, ${worst.below.toFixed(1)} below, ${worst.ink.toFixed(1)} of ink)`,
+  );
+  assert.ok(
+    framed.length > 0,
+    "no figure is framed by the margin on both sides — the reservation carries a term the drawing does not",
+  );
+});
+
 test("the canvas reserves the height the fan actually reaches", () => {
   // `halfHeight` reserved (tallest*3)/4 while the emitter already scaled by 4/3,
   // so the outermost lane overshot its own canvas.

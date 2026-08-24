@@ -1541,6 +1541,24 @@ function MethodView({
           <p>
             <MathText source={(isJa ? node.costJa : node.cost) ?? ""} />
           </p>
+        ) : absenceOf(node, "cost", isJa) ? (
+          /* **A researched absence, not the standing gap note.** `costNone` says
+             "No complexity is recorded here", which reads to a reader as nobody
+             having looked — and for `koopman-linearization` somebody did: its
+             only paper proves the linearization at arbitrary basis and scopes
+             both of its complexity theorems to the Fourier instance, which is a
+             different record in this graph and does carry the numbers.
+
+             `cost` has been declarable since `DECLARABLE_ABSENCES` was written
+             and no surface read it, so the first declaration would have drawn the
+             opposite of what its author wrote. Same markers as the `example.text`
+             arm above, so a sweep counting explained gaps sees all of them; and
+             the card reads the same key through `card-content.ts`, because one
+             surface drawing the reason while the other draws the standing note is
+             the two-surface disagreement `implementations` already shipped once. */
+          <p className="mj-card-gap mj-card-gap--none-recorded" data-gap="none-recorded" data-explained="true">
+            <MathText source={absenceOf(node, "cost", isJa) ?? ""} />
+          </p>
         ) : (
           <EmptyNote>{copy.costNone}</EmptyNote>
         )}
@@ -1607,6 +1625,29 @@ function MethodView({
                 </li>
               ))}
             </ul>
+          ) : absenceOf(node, "implementations", isJa) ? (
+            /* The declared reason, when there is one — and this branch is the
+               fix for a contradiction that shipped, not a nicety.
+
+               `card-content.ts` already read this key (`missing("none-recorded",
+               absenceOf(...))`), and this page did not, so the two surfaces said
+               opposite things about the same field. Measured on production
+               2026-08-24 for all three methods that declare one — `backward-euler`,
+               `trapezoidal-rule`, `chebyshev-pseudospectral-collocation`: the card
+               drew the researched sentence and the page drew
+               `implementationsNone`, which says *"Nobody has written one up yet.
+               That is a gap in this record"* — the precise opposite of a record
+               that says the cited sources report none.
+
+               An omission on one surface would have been a gap. Two surfaces
+               disagreeing is worse: the reader who checks both learns that the
+               Atlas does not know what it says.
+
+               Same markers as the `example.text` gap fifty lines up, and as the
+               card's, so a sweep counting explained gaps sees all three. */
+            <p className="mj-card-gap mj-card-gap--none-recorded" data-gap="none-recorded" data-explained="true">
+              <MathText source={absenceOf(node, "implementations", isJa) ?? ""} />
+            </p>
           ) : (
             <EmptyNote>{copy.implementationsNone}</EmptyNote>
           )}
