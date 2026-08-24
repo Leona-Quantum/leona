@@ -2507,6 +2507,54 @@ test("the linear-ODE region does not go backwards on the half that is closed", (
   );
 });
 
+/**
+ * The variational / NISQ region says what it costs, and does not stop.
+ *
+ * The same ratchet as the linear-ODE one above, over the region the Atlas's own
+ * front page was quietest about. That page promises a reader four things —
+ * *"what it takes, what it returns, what it costs, and who proved it"* — and
+ * until this landed, **30 of these 38 methods answered the third with "No
+ * complexity is recorded here."** Every one of the 29 filled here was read out
+ * of the method's own cited papers.
+ *
+ * **`cost` only, deliberately.** The other six fields `regionClosure` measures
+ * are not ratcheted here: `example.pseudocode` and the two evidence-bound
+ * fields have not been swept over this region, and ratcheting a field at 6 of 38
+ * pins a number that means nothing. This asserts the one that was closed.
+ *
+ * **One method is exempt and it is not a gap.** `variational-ground-state` is
+ * under the owner's 2026-07-19 ruling — VQE is a heuristic with no proven
+ * worst-case speedup, and its price is to be said structurally rather than as a
+ * number. Reading Peruzzo et al. found that they DO price one energy evaluation
+ * while refusing to bound the iterations, which is a shape that ruling did not
+ * anticipate, so it went back to him as ai-ops issue 169 rather than being decided
+ * here. The exemption is spelled as a set of one so that the day it is answered,
+ * this test tells whoever removes it exactly what they are removing.
+ */
+test("the variational region does not go quiet again about what it costs", () => {
+  const SLOTS = [
+    "ground-state-energy",
+    "excited-state-energy",
+    "ansatz-construction",
+    "parameter-optimization",
+    "observable-estimation",
+    "error-mitigation",
+  ];
+  const region = regionClosure(LAYER_GRAPH, STATE_VOCABULARY, SLOTS, new Map());
+  assert.deepEqual(region.unknown, [], "a slot id in this test names no capability");
+  assert.ok(
+    region.methods.length >= 38,
+    `the region has ${region.methods.length} methods, fewer than the 38 it was swept over`,
+  );
+  const AWAITING_OWNER = ["variational-ground-state"];
+  const cost = region.fields.find((entry) => entry.field === "cost")!;
+  assert.deepEqual(
+    cost.missing.filter((id) => !AWAITING_OWNER.includes(id)),
+    [],
+    `cost is missing on ${cost.missing.join(", ")} — this region was swept on that field`,
+  );
+});
+
 
 /** The reader-facing modules that may render a declared absence, as (name, source). */
 function absenceSurfaceSources(): { name: string; source: string }[] {
