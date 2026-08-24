@@ -16,8 +16,12 @@
 // `validateLayerGraph`, so the rules cannot drift apart.
 import assert from "node:assert/strict";
 import test from "node:test";
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
+import { dirname, join } from "node:path";
 
 import {
+  DECLARABLE_ABSENCES,
   advancingStepCount,
   alternativesTo,
   bypassersOf,
@@ -2499,5 +2503,111 @@ test("the linear-ODE region does not go backwards on the half that is closed", (
   assert.ok(
     region.hopStretches >= 45,
     `${region.hopStretches} drawn stretches, fewer than the 45 the region was closed over`,
+  );
+});
+
+
+/**
+ * The reader-facing modules that may render a declared absence.
+ *
+ * A source scan rather than a render assertion, deliberately: jsdom does no
+ * layout, and these are two different surfaces in two different files, so the
+ * honest form of the question is "does any reader-facing module read this key".
+ * It is a floor — a key can be read and still be rendered wrongly — but it is
+ * the floor that was missing.
+ */
+function absenceSurfaces(): string {
+  const webRoot = dirname(dirname(fileURLToPath(import.meta.url)));
+  return [
+    join(webRoot, "lib", "repository", "card-content.ts"),
+    join(webRoot, "components", "repository-layers.tsx"),
+    join(webRoot, "components", "map-card-panel.tsx"),
+  ]
+    .map((file) => readFileSync(file, "utf8"))
+    .join("\n");
+}
+
+const absenceIsRendered = (source: string, field: string) =>
+  source.includes(`absenceOf(method, "${field}"`) || source.includes(`absenceOf(node, "${field}"`);
+
+/**
+ * Declarable keys that no surface renders yet, and which nothing has declared.
+ *
+ * NOT a permanent exemption — it is the list the test below refuses to let grow,
+ * and the list the test above it refuses to let anyone *use*. Wiring one of
+ * these up is a one-line deletion here.
+ */
+const ABSENCE_KEYS_NOT_WIRED_UP = ["cost", "conditions", "example.pseudocode"];
+
+test("no absence anyone has actually declared is rendered by nothing", () => {
+  // The check that fires at the moment it matters: an author writes a reason,
+  // and it reaches a reader. Data-driven off the authored graph, because the
+  // failure is a *declared* key nothing reads — a declarable one nobody has used
+  // harms no reader yet.
+  //
+  // That is not hypothetical. `implementations` was read by `card-content.ts`
+  // and NOT by `components/repository-layers.tsx`, so for all three methods that
+  // declare one the map card drew the researched sentence and the method page
+  // drew `implementationsNone` — *"Nobody has written one up yet. That is a gap
+  // in this record"* — the precise opposite of a record saying the cited sources
+  // report none. Measured on production 2026-08-24 on `backward-euler`,
+  // `trapezoidal-rule` and `chebyshev-pseudospectral-collocation`, all three the
+  // same way round. An omission on one surface is a gap; two surfaces
+  // disagreeing tells the reader the Atlas does not know what it says.
+  //
+  // **What this one does NOT catch, stated so it is not over-trusted:** it asks
+  // whether ANY surface reads the key, so it stays green while one of two does —
+  // which is exactly the state that shipped. Reverting the method-page fix leaves
+  // this test passing. The test below it is the one that fails, and it is the one
+  // that holds the two surfaces together.
+  const source = absenceSurfaces();
+  const declared = new Set(
+    LAYER_GRAPH.nodes.flatMap((node) => Object.keys((node as { absences?: object }).absences ?? {})),
+  );
+  assert.ok(declared.size > 0, "no absence is declared anywhere — this test is asserting nothing");
+
+  const unrendered = [...declared].filter((field) => !absenceIsRendered(source, field)).sort();
+  assert.deepEqual(
+    unrendered,
+    [],
+    `declared on the graph and rendered by no surface: ${unrendered.join(", ")}`,
+  );
+});
+
+test("the set of declarable-but-unrendered absence keys does not grow", () => {
+  // The other half. A sixth key added to DECLARABLE_ABSENCES and wired to
+  // nothing is the same bug one step earlier — the validator would accept it,
+  // the gauge would count the field closed, and the first author to use it would
+  // ship research no reader meets. This fails on that addition rather than on
+  // its first use.
+  const source = absenceSurfaces();
+  const unwired = DECLARABLE_ABSENCES.filter((field) => !absenceIsRendered(source, field)).sort();
+  assert.deepEqual(
+    unwired,
+    [...ABSENCE_KEYS_NOT_WIRED_UP].sort(),
+    "a declarable absence key is rendered by nothing — wire it to a surface, or add it to ABSENCE_KEYS_NOT_WIRED_UP with a reason",
+  );
+});
+
+test("the two surfaces agree about a declared implementations absence", () => {
+  // The specific contradiction the check above generalises. Both files must read
+  // the key, and the method page must prefer it over its generic note — asserted
+  // by ORDER, because a branch that renders the generic note first and the reason
+  // never is exactly what shipped.
+  const webRoot = dirname(dirname(fileURLToPath(import.meta.url)));
+  const page = readFileSync(join(webRoot, "components", "repository-layers.tsx"), "utf8");
+  const card = readFileSync(join(webRoot, "lib", "repository", "card-content.ts"), "utf8");
+
+  assert.ok(
+    card.includes('absenceOf(method, "implementations"'),
+    "card-content.ts stopped reading the implementations absence",
+  );
+  const reasonAt = page.indexOf('absenceOf(node, "implementations"');
+  const genericAt = page.indexOf("copy.implementationsNone");
+  assert.ok(reasonAt >= 0, "the method page does not read the implementations absence");
+  assert.ok(genericAt >= 0, "the method page's generic implementations note is gone");
+  assert.ok(
+    reasonAt < genericAt,
+    "the method page falls back to its generic note before checking for a declared reason",
   );
 });
