@@ -30,7 +30,6 @@ const ENTRY_FILE = entryFileFlag >= 0 ? args[entryFileFlag + 1] : null;
 const knownFlag = args.indexOf("--known");
 const KNOWN_SLUGS = knownFlag >= 0 ? args[knownFlag + 1].split(",") : [];
 
-const CATEGORIES = new Set(["gates", "algorithms", "operators", "states"]);
 const STATUSES = new Set(["verified", "verified_caveats", "community_review"]);
 const FRAMEWORKS = new Set(["Qiskit", "PennyLane", "Cirq", "CUDA-Q", "Amazon Braket", "OpenQASM 3.0", "PyQuil"]);
 const LANGUAGES = new Set(["python", "typescript", "openqasm", "text"]);
@@ -38,6 +37,39 @@ const TONES = new Set(["accent", "ok", "warn", "neutral"]);
 const SINGLE_QUBIT_GATES = new Set(["H", "X", "Y", "Z", "S", "T", "RX", "RY", "RZ"]);
 const TWO_QUBIT_GATES = new Set(["CX", "CZ", "SWAP"]);
 const ROTATION_GATES = new Set(["RX", "RY", "RZ"]);
+
+// The category vocabulary, from the module that DECLARES it.
+//
+// Its own bundle, because the module this checker otherwise loads depends on the
+// mode: the barrel in a normal run, a single batch module under `--entry-file`.
+// A batch module exports its entries array and nothing else, so a vocabulary
+// read off it is empty and every record fails as `unknown category`.
+async function loadCategoryIds() {
+  const dir = mkdtempSync(join(tmpdir(), "repo-data-vocab-"));
+  const file = join(dir, "types.mjs");
+  try {
+    await esbuild.build({
+      entryPoints: [join(root, "apps/web/lib/repository/types.ts")],
+      bundle: true,
+      format: "esm",
+      platform: "neutral",
+      outfile: file,
+      logLevel: "silent",
+    });
+    const vocab = await import(pathToFileURL(file).href);
+    return vocab.PUBLIC_REPOSITORY_CATEGORY_IDS ?? [];
+  } catch (error) {
+    // `process.exit()` terminates synchronously and a pending `finally` never
+    // runs, so the failure path has to clean up before it exits rather than
+    // after it. Otherwise every failed run leaves a temp directory behind — and
+    // the failing run is exactly the one somebody re-runs in a loop.
+    rmSync(dir, { recursive: true, force: true });
+    console.error("✖ failed to bundle the category vocabulary from types.ts:", error.message);
+    process.exit(1);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
 
 const outDir = mkdtempSync(join(tmpdir(), "repo-data-"));
 const outFile = join(outDir, "public-repository.mjs");
@@ -96,6 +128,26 @@ if (ENTRY_FILE) {
   }
 } else {
   ({ PUBLIC_REPOSITORY_ENTRIES: entries, VERIFICATION_METHODS, VERIFICATION_TIERS, entryVerificationTier, getPublicRepositoryVariant } = mod);
+}
+
+// DERIVED, never restated. This line used to be
+// `new Set(["gates", "algorithms", "operators", "states"])` at the top of the
+// file — a fourth hand-written copy of a vocabulary whose own declaration
+// comment records that two earlier copies had already drifted. The failure mode
+// is silent in the worst direction: a copy that is short does not raise "this
+// list is stale", it rejects every record in the missing category as
+// `unknown category`, and adding `basic-circuits` would have failed 30 records
+// that were correct. Derive; do not restate.
+//
+// Bundled from `types.ts` ON ITS OWN rather than read off `mod`, because `mod`
+// is not always the barrel: in `--entry-file` mode it is a single batch module,
+// which exports an entries array and no vocabulary at all. Reading it from there
+// left `CATEGORIES` empty and refused every batch run — the vocabulary has to
+// come from the file that declares it, in both modes.
+const CATEGORIES = new Set(await loadCategoryIds());
+if (CATEGORIES.size === 0) {
+  console.error("✖ PUBLIC_REPOSITORY_CATEGORY_IDS came back empty — types.ts did not export the vocabulary");
+  process.exit(1);
 }
 const knownMethods = new Set(VERIFICATION_METHODS.map((m) => m.id));
 const errors = [];
@@ -706,6 +758,65 @@ if (!ENTRY_FILE) {
       `\nfolder tree: ${tree.placed}/${entries.length} records reachable · ${tree.root.length} categories · `
         + `${families} families · ${tree.root.map((n) => `${n.segment}:${n.children.length}`).join(", ")}`,
     );
+  }
+}
+
+// `basic-circuits` and the `benchmark-circuit` topic must name the SAME records.
+//
+// The split shipped for Stage 5 (ai-ops issue 168 §1) is not a new judgement about
+// which records are elementary — it surfaces a line the data already drew and
+// `map-eligibility.ts` already enforced. `MAP_ELIGIBLE_ROLES` is
+// `["algorithm-reference"]`, so a record carrying `benchmark-circuit` is one the
+// map refuses to anchor: *"a yardstick — a width-scaled RY-CZ ansatz is not a
+// way of solving anything"*. If the two ever name different sets, one of two
+// things has gone wrong and both are invisible at a reader: a benchmark filed
+// under Algorithms again, or a real method filed as a basic circuit and
+// silently dropped out of the map's eligible population.
+//
+// Checked as a two-way equality rather than as a count, because two sets can
+// have the same size and different members.
+{
+  const filedAsBasic = new Set(
+    entries.filter((entry) => entry.category === "basic-circuits").map((entry) => entry.slug),
+  );
+  const carriesBenchmarkRole = new Set(
+    entries.filter((entry) => (entry.topics ?? []).includes("benchmark-circuit")).map((entry) => entry.slug),
+  );
+  for (const slug of filedAsBasic) {
+    if (!carriesBenchmarkRole.has(slug)) {
+      errors.push(
+        `${slug}: category is basic-circuits but the record does not carry the benchmark-circuit topic. `
+          + "The category is the reader-facing half of a line map-eligibility.ts already draws; "
+          + "filing a method here removes it from the map's eligible population with nothing else failing.",
+      );
+    }
+  }
+  for (const slug of carriesBenchmarkRole) {
+    if (!filedAsBasic.has(slug)) {
+      errors.push(
+        `${slug}: carries the benchmark-circuit topic but is filed under "${entries.find((e) => e.slug === slug)?.category}". `
+          + "A benchmark scaffold shown beside Shor is the thing the basic-circuits split exists to stop.",
+      );
+    }
+  }
+}
+
+// No record may carry both roles, and every algorithms/basic-circuits record
+// must carry one. This is what makes the equality above a PARTITION rather than
+// two independently drifting labels — the 178 records that were one category
+// before Stage 5 split 148/30 with nothing in both and nothing in neither, and
+// a record acquiring both roles would satisfy the check above while being
+// eligible and elementary at once.
+for (const entry of entries) {
+  if (entry.category !== "algorithms" && entry.category !== "basic-circuits") continue;
+  const topics = entry.topics ?? [];
+  const isReference = topics.includes("algorithm-reference");
+  const isBenchmark = topics.includes("benchmark-circuit");
+  if (isReference && isBenchmark) {
+    errors.push(`${entry.slug}: carries both algorithm-reference and benchmark-circuit; a record is one or the other`);
+  }
+  if (!isReference && !isBenchmark) {
+    errors.push(`${entry.slug}: is filed under ${entry.category} but carries neither algorithm-reference nor benchmark-circuit`);
   }
 }
 

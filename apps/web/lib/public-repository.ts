@@ -53,6 +53,7 @@ export type {
 } from "./repository/types";
 export {
   PUBLIC_REPOSITORY_CATEGORIES,
+  PUBLIC_REPOSITORY_CATEGORY_IDS,
   PUBLIC_REPOSITORY_FRAMEWORKS,
 } from "./repository/types";
 export {
