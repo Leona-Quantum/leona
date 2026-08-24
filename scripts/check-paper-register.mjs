@@ -587,8 +587,17 @@ if (!QUIET) {
     .filter(([, count]) => count > 0)
     .map(([basis, count]) => `${count} from the ${basis}`)
     .join(", ");
+  // Textbooks are named on their own clause rather than left inside
+  // `papers - read`. They may not carry `reports` at all — see
+  // `RegisteredPaper.reports` — so counting them in the remainder prints a
+  // rule as if it were a backlog, and on leona 735 that is precisely how a
+  // textbook somebody HAD read still read as unread.
+  const textbookNote =
+    census.textbooks > 0
+      ? `; ${census.textbooks} textbook${census.textbooks === 1 ? "" : "s"} carry no reports by rule, and are not in that remainder`
+      : "";
   console.log(
-    `  ${census.read} of ${census.papers} papers record what they report${bases ? ` — ${bases}` : ""}`,
+    `  ${census.read} of ${census.papers} papers record what they report${bases ? ` — ${bases}` : ""}${textbookNote}`,
   );
   // The denominator that actually governs the pass. `reports` is filled on the
   // map-cited papers first because they are the ones a process page shows, so

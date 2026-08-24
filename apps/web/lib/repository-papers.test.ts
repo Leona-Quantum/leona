@@ -327,3 +327,70 @@ test("citedByNode is the set the source-read passes are prioritised against", ()
   );
   assert.deepEqual(audit.citedByNode, ["arxiv:1"]);
 });
+
+test("a textbook may not carry reports, so its absence means textbook and not unread", () => {
+  // The rule exists because the convention did not enforce itself and had
+  // already misled a reader: on 2026-08-24 the Nielsen & Chuang textbook was
+  // read from the copy the owner supplied on ai-ops issue 56, the read was
+  // written up in a comment, and every consumer of `reports` went on seeing an
+  // unread row. CodeRabbit caught it on leona 735.
+  //
+  // `reportsBasis` is the sharp end of it: the two values are "abstract" and
+  // "full-text", and neither describes reading seven sections of a 700-page
+  // book. There is no honest value to put there, which is why the answer is a
+  // refusal rather than a value.
+  const errors = validatePaperRegister({
+    papers: [
+      {
+        id: "doi:10.1017/cbo9780511976667",
+        title: "Quantum Computation and Quantum Information: 10th Anniversary Edition",
+        authors: "Michael A. Nielsen and Isaac L. Chuang",
+        year: "2010",
+        url: "https://doi.org/10.1017/cbo9780511976667",
+        medium: "textbook",
+        reports: { theory: "reported", simulation: "unknown", hardware: "absent" },
+        reportsBasis: "full-text",
+      },
+    ],
+  });
+  assert.equal(errors.length, 1, `expected one error, got: ${JSON.stringify(errors)}`);
+  assert.match(errors[0]!, /textbook may not carry reports/);
+
+  // And the same row without them is accepted — the rule must not make a
+  // textbook unrepresentable.
+  assert.deepEqual(
+    validatePaperRegister({
+      papers: [
+        {
+          id: "doi:10.1017/cbo9780511976667",
+          title: "Quantum Computation and Quantum Information: 10th Anniversary Edition",
+          authors: "Michael A. Nielsen and Isaac L. Chuang",
+          year: "2010",
+          url: "https://doi.org/10.1017/cbo9780511976667",
+          medium: "textbook",
+        },
+      ],
+    }),
+    [],
+  );
+});
+
+test("the census counts textbooks apart from the unread remainder", () => {
+  // `papers - read` is printed by `check-paper-register.mjs` and read as "the
+  // ones nobody has opened". A textbook can never be in `read`, so without this
+  // it sits in that remainder permanently and by rule.
+  const census = reportsCensus(PAPER_REGISTER);
+  assert.ok(census.textbooks > 0, "the register has no textbooks to count");
+  assert.equal(
+    census.textbooks,
+    PAPER_REGISTER.papers.filter((paper) => paper.medium === "textbook").length,
+  );
+  // Every textbook is outside `read`, which is what makes subtracting them from
+  // the remainder correct rather than a fudge.
+  for (const paper of PAPER_REGISTER.papers) {
+    if (paper.medium === "textbook") {
+      assert.equal(paper.reports, undefined, `${paper.id} is a textbook carrying reports`);
+    }
+  }
+  assert.ok(census.papers - census.read - census.textbooks >= 0);
+});
