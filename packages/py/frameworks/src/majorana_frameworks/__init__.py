@@ -14,6 +14,7 @@ from majorana_frameworks.program import (
     InterchangeExtraction,
     extract_interchange_qasm,
 )
+from majorana_frameworks.optimizers import CircuitOptimizationError, optimize_circuit
 
 __all__ = [
     "FrameworkProgram",
@@ -22,8 +23,10 @@ __all__ = [
     "CIRCUIT_IR_SCHEMA",
     "CIRCUIT_IR_VERSION",
     "CircuitIRExtraction",
+    "CircuitOptimizationError",
     "build_circuit_ir",
     "extract_circuit_ir",
     "extract_interchange_qasm",
+    "optimize_circuit",
     "validate_circuit_ir",
 ]

@@ -23,6 +23,14 @@ saves the resulting evidence.
   and the result can be undone. Measurements and opaque custom gates remain
   rewrite boundaries on the qubits they touch. This surface does not claim
   hardware routing or device-native optimization.
+- The compression panel can also queue a bounded circuit IR to the Worker for
+  Qiskit, pytket, PennyLane, or PyZX compilation. Studio sends no user source
+  code in this lane, keeps the returned circuit as a preview until the user
+  explicitly applies it, and then regenerates every framework draft. Inputs
+  are limited to 64 qubits and 1,024 built-in operations; PyZX additionally
+  accepts only its smaller Clifford+T-compatible subset. Compiler output is an
+  equivalence claim up to global phase, not verification evidence. Applying it
+  makes prior evidence stale and requires a fresh `Verify & save` run.
 - `Simulate` opens an artifact-owned CPU surface. It executes only the parsed,
   bounded gate model in the browser for saved artifacts, then records the
   source fingerprint, inputs, and sampled result locally. It never starts
@@ -54,7 +62,7 @@ metrics.
 |---|---|
 | Header | `Studio`, artifact breadcrumb, framework selector, `Simulate`, `Verify & save` |
 | Code pane | Editable source, copy action, framework/version tabs, dirty-state indicator |
-| Circuit pane | Qubit wires, semantic gates, selection, pan/zoom affordances, parameter selection, and exact circuit-compression comparison/apply/undo controls |
+| Circuit pane | Qubit wires, semantic gates, selection, pan/zoom affordances, parameter selection, exact local circuit-compression comparison/apply/undo controls, and queued external-compiler preview/apply controls |
 | Inspector | `Circuit`, `Resources`, `Verification` tabs; selected-gate details and evidence |
 | Simulation pane | CPU eligibility, inputs, artifact-owned local result records, rerun confirmation, and unavailable GPU/QPU lanes. A local CPU result is never styled as verification or hardware evidence. |
 | Responsive fallback | Stack code, circuit, inspector, and output in that order; no horizontal page overflow |

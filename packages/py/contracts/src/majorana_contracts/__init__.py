@@ -6,6 +6,8 @@ from .enums import (
     ArtifactKind,
     ArtifactType,
     BaselineKind,
+    CircuitCompiler,
+    CircuitOptimizationGate,
     CitationRelation,
     EvidenceStrength,
     ExecutionState,
@@ -97,6 +99,9 @@ from .models import (
     CatalogProfileList,
     CatalogEstimateSummary,
     CatalogProvenance,
+    CircuitOptimizationOperation,
+    CircuitOptimizationRequest,
+    CircuitOptimizationResult,
     CodeDistanceSummary,
     CostOnSmallestMachine,
     FootprintSummary,
@@ -248,7 +253,10 @@ from .lifecycle import (
 # continue to use them.
 # 2.15.0: Qapp resources, execution status, qapp run mode, and the durable
 # qapp.generated event. Additive: existing clients never select the new mode.
-CONTRACTS_VERSION = "2.15.0"
+# 2.16.0: bounded, code-free Studio circuit-optimization request/result models
+# and the Qiskit, pytket, PennyLane, and PyZX compiler enums. Additive; compiler
+# output remains an explicitly unverified compilation result.
+CONTRACTS_VERSION = "2.16.0"
 
 __all__ = [
     "CONTRACTS_VERSION",
@@ -278,6 +286,11 @@ __all__ = [
     "CatalogEntryProfile",
     "CatalogEstimateList",
     "CatalogProfileList",
+    "CircuitCompiler",
+    "CircuitOptimizationGate",
+    "CircuitOptimizationOperation",
+    "CircuitOptimizationRequest",
+    "CircuitOptimizationResult",
     "CatalogEstimateSummary",
     "CatalogProvenance",
     "CodeDistanceSummary",

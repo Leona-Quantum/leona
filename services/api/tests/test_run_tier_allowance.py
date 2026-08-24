@@ -150,6 +150,35 @@ async def test_chat_traffic_is_never_metered_against_the_plan(scope, monkeypatch
     )
 
 
+async def test_external_compiler_preview_does_not_reserve_llm_tokens(scope, monkeypatch):
+    async def token_reservation_must_not_run(*_args, **_kwargs):
+        raise AssertionError("a code-free compiler preview does not consume LLM tokens")
+
+    monkeypatch.setattr(
+        runs.runs_repo,
+        "reserve_execute_run_slot",
+        token_reservation_must_not_run,
+    )
+    request = runs.CreateRunRequest(
+        task_prompt="Compile this Studio circuit",
+        framework=Framework.QISKIT,
+        mode=RunMode.EXECUTE,
+        circuit_optimization={
+            "compiler": "qiskit",
+            "qubit_count": 1,
+            "operations": [{"gate": "H", "qubits": [0]}],
+        },
+    )
+
+    await runs._enforce_execute_backstop(
+        request,
+        scope,
+        LockOnlySession(),
+        _identity("someone@example.com"),
+        _settings(),
+    )
+
+
 async def test_the_operator_is_never_throttled_by_a_missing_env_var(scope, monkeypatch):
     """The failure mode that kept this server-side gate from being written.
 

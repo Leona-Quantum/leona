@@ -14,7 +14,7 @@ from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from typing import Any, Awaitable, Callable
 
-from majorana_contracts import Scope
+from majorana_contracts import CircuitOptimizationRequest, Scope
 from majorana_contracts.enums import (
     CHAT_USAGE_ROLE,
     EvidenceStrength,
@@ -80,6 +80,7 @@ from majorana_api.catalog_import_sources import ImportSource
 from majorana_api.db import AsyncSession
 from majorana_api.jobs import (
     CATALOG_IMPORT_JOB_KIND,
+    CIRCUIT_OPTIMIZE_JOB_KIND,
     QAPP_EXECUTE_JOB_KIND,
     QPU_RUN_JOB_KIND,
     RUN_EXECUTE_JOB_KIND,
@@ -106,6 +107,7 @@ from .agent_llm import MeteredAgentLLM
 from .agent_store import RepoAgentStore
 from .context import EventSink, RunContext
 from .intent import resolve_mode
+from majorana_frameworks.optimizers import CircuitOptimizationError, optimize_circuit
 from majorana_frameworks.roles import result_was_derived
 
 from .research import research_enabled
@@ -847,6 +849,149 @@ async def _handle_qapp_generation(
     return await store.finish(
         RunStatus.SUCCEEDED,
         {"status": RunStatus.SUCCEEDED, "reason_code": "qapp_generated"},
+    )
+
+
+async def handle_circuit_optimize(session: AsyncSession, payload: dict[str, Any]) -> None:
+    """Compile Studio's closed circuit IR without invoking an LLM or user code.
+
+    The durable Run row and its existing ``compilation.result`` event provide
+    queueing, cancellation, replay, and dead-letter recovery. The compiler
+    result is explicitly unverified and is returned for Studio comparison; it
+    never creates an artifact version or inherits evidence from one.
+    """
+
+    scope = _scope_from_payload(payload)
+    run_id = uuid.UUID(payload["run_id"])
+    run = await runs_repo.get_run(scope, session, run_id)
+    store = RepoRunStateStore(scope, session, run_id)
+    if RunStatus(run.status) is not RunStatus.QUEUED:
+        return
+    request = CircuitOptimizationRequest.model_validate(payload["circuit_optimization"])
+    sink = RepoEventSink(scope, session, run_id)
+    await store.set_status(RunStatus.RUNNING, started_at_now=True)
+    await sink.emit("run.started", {}, event_id=uuid.uuid5(run_id, "run.started"))
+    await sink.emit(
+        "stage.started",
+        {"stage": Stage.COMPILE},
+        event_id=uuid.uuid5(run_id, "stage.started:compile"),
+    )
+    started = asyncio.get_running_loop().time()
+    timeout_s = min(float(run.timeout_s or 60), 60.0)
+    try:
+        result = await asyncio.wait_for(
+            asyncio.to_thread(optimize_circuit, request),
+            timeout=timeout_s,
+        )
+    except TimeoutError:
+        await _finish_circuit_optimization_failure(
+            store,
+            sink,
+            request,
+            code="compiler_timeout",
+            message=f"{request.compiler.value} exceeded the {int(timeout_s)} second limit.",
+            started=started,
+        )
+        return
+    except CircuitOptimizationError as exc:
+        await _finish_circuit_optimization_failure(
+            store,
+            sink,
+            request,
+            code=exc.code,
+            message=str(exc),
+            started=started,
+        )
+        return
+    except Exception as exc:
+        log.exception("circuit optimization %s failed", run_id)
+        await _finish_circuit_optimization_failure(
+            store,
+            sink,
+            request,
+            code="compiler_internal_error",
+            message=f"{request.compiler.value} failed internally ({type(exc).__name__}).",
+            started=started,
+        )
+        return
+
+    if await store.current_status() is RunStatus.CANCELLED:
+        return
+    changed = result.input_fingerprint != result.output_fingerprint
+    reduced = any(
+        after is not None and before is not None and after < before
+        for before, after in (
+            (result.before.gate_count, result.after.gate_count),
+            (result.before.depth, result.after.depth),
+            (result.before.two_qubit_gate_count, result.after.two_qubit_gate_count),
+        )
+    )
+    await sink.emit(
+        "compilation.result",
+        {
+            "accepted": True,
+            "mode": "compressed" if reduced else "transpiled" if changed else "unchanged",
+            "target": request.compiler.value,
+            "source_fingerprint": result.input_fingerprint,
+            "compiled_fingerprint": result.output_fingerprint,
+            "before": result.before.model_dump(mode="json"),
+            "after": result.after.model_dump(mode="json"),
+            "compatibility": {"circuit_optimization": result.model_dump(mode="json")},
+            "reason": (
+                "Third-party compiler output; unitary equivalence is up to global phase "
+                "and was not independently verified."
+            ),
+        },
+    )
+    duration_ms = int((asyncio.get_running_loop().time() - started) * 1000)
+    await sink.emit(
+        "stage.finished", {"stage": Stage.COMPILE, "ok": True, "duration_ms": duration_ms}
+    )
+    await store.finish(
+        RunStatus.SUCCEEDED,
+        {
+            "status": RunStatus.SUCCEEDED,
+            "reason_code": "circuit_optimization_completed",
+            "residual_risks": (
+                "Compiler output was not independently verified. Applying it creates an edited "
+                "Studio draft that must be verified again before use as evidence."
+            ),
+        },
+        residual_risks=(
+            "Compiler output was not independently verified. Applying it requires fresh verification."
+        ),
+    )
+
+
+async def _finish_circuit_optimization_failure(
+    store: RepoRunStateStore,
+    sink: RepoEventSink,
+    request: CircuitOptimizationRequest,
+    *,
+    code: str,
+    message: str,
+    started: float,
+) -> None:
+    duration_ms = int((asyncio.get_running_loop().time() - started) * 1000)
+    await sink.emit(
+        "compilation.result",
+        {
+            "accepted": False,
+            "mode": "rejected",
+            "target": request.compiler.value,
+            "compatibility": {},
+            "reason": message,
+        },
+    )
+    await sink.emit(
+        "stage.finished",
+        {"stage": Stage.COMPILE, "ok": False, "duration_ms": duration_ms},
+    )
+    await sink.emit("run.error", {"stage": Stage.COMPILE, "code": code, "message": message})
+    await store.finish(
+        RunStatus.FAILED,
+        {"status": RunStatus.FAILED, "reason_code": code, "residual_risks": message},
+        residual_risks=message,
     )
 
 
@@ -2486,6 +2631,7 @@ async def handle_qpu_run_dead_letter(
 HANDLERS: dict[str, JobHandler] = {
     RUN_EXECUTE_JOB_KIND: handle_run_execute,
     QAPP_EXECUTE_JOB_KIND: handle_qapp_execute,
+    CIRCUIT_OPTIMIZE_JOB_KIND: handle_circuit_optimize,
     CATALOG_IMPORT_JOB_KIND: handle_catalog_import,
     QPU_RUN_JOB_KIND: handle_qpu_run,
 }
@@ -2493,5 +2639,6 @@ HANDLERS: dict[str, JobHandler] = {
 DEAD_LETTER_HANDLERS: dict[str, DeadLetterHandler] = {
     RUN_EXECUTE_JOB_KIND: handle_run_dead_letter,
     QAPP_EXECUTE_JOB_KIND: handle_qapp_execute_dead_letter,
+    CIRCUIT_OPTIMIZE_JOB_KIND: handle_run_dead_letter,
     QPU_RUN_JOB_KIND: handle_qpu_run_dead_letter,
 }

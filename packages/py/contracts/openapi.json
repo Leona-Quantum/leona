@@ -1233,6 +1233,181 @@
         "title": "ChatError",
         "type": "object"
       },
+      "CircuitCompiler": {
+        "description": "Trusted third-party compiler selected for a bounded Studio IR job.",
+        "enum": [
+          "qiskit",
+          "pytket",
+          "pennylane",
+          "pyzx"
+        ],
+        "title": "CircuitCompiler",
+        "type": "string"
+      },
+      "CircuitOptimizationGate": {
+        "description": "Gate subset that Studio can round-trip through every framework draft.",
+        "enum": [
+          "H",
+          "X",
+          "Y",
+          "Z",
+          "S",
+          "T",
+          "RX",
+          "RY",
+          "RZ",
+          "CX",
+          "CZ",
+          "SWAP",
+          "M"
+        ],
+        "title": "CircuitOptimizationGate",
+        "type": "string"
+      },
+      "CircuitOptimizationOperation": {
+        "additionalProperties": false,
+        "description": "One operation in the bounded, code-free Studio compiler interchange.",
+        "properties": {
+          "angle_radians": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Angle Radians"
+          },
+          "gate": {
+            "$ref": "#/components/schemas/CircuitOptimizationGate"
+          },
+          "qubits": {
+            "items": {
+              "type": "integer"
+            },
+            "maxItems": 2,
+            "minItems": 1,
+            "title": "Qubits",
+            "type": "array"
+          }
+        },
+        "required": [
+          "gate",
+          "qubits"
+        ],
+        "title": "CircuitOptimizationOperation",
+        "type": "object"
+      },
+      "CircuitOptimizationRequest": {
+        "additionalProperties": false,
+        "description": "Declarative Studio circuit accepted by the trusted Worker compiler lane.\n\nThis is intentionally not source code. The worker constructs SDK circuit\nobjects from this closed gate set, so selecting a compiler never executes a\nuser-supplied import, expression, custom gate, or Python statement.",
+        "properties": {
+          "compiler": {
+            "$ref": "#/components/schemas/CircuitCompiler"
+          },
+          "operations": {
+            "items": {
+              "$ref": "#/components/schemas/CircuitOptimizationOperation"
+            },
+            "maxItems": 1024,
+            "minItems": 1,
+            "title": "Operations",
+            "type": "array"
+          },
+          "optimization_level": {
+            "default": 2,
+            "maximum": 3,
+            "minimum": 1,
+            "title": "Optimization Level",
+            "type": "integer"
+          },
+          "qubit_count": {
+            "maximum": 64,
+            "minimum": 1,
+            "title": "Qubit Count",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "compiler",
+          "qubit_count",
+          "operations"
+        ],
+        "title": "CircuitOptimizationRequest",
+        "type": "object"
+      },
+      "CircuitOptimizationResult": {
+        "additionalProperties": false,
+        "description": "Compiler output carried inside ``compilation.result.compatibility``.\n\nThird-party compiler equivalence is stated honestly as unitary equivalence\nup to global phase. It is not a verification verdict and does not inherit\nevidence from the source artifact.",
+        "properties": {
+          "after": {
+            "$ref": "#/components/schemas/ResourceMetrics"
+          },
+          "before": {
+            "$ref": "#/components/schemas/ResourceMetrics"
+          },
+          "compiler": {
+            "$ref": "#/components/schemas/CircuitCompiler"
+          },
+          "compiler_version": {
+            "maxLength": 120,
+            "minLength": 1,
+            "title": "Compiler Version",
+            "type": "string"
+          },
+          "equivalence": {
+            "const": "unitary_up_to_global_phase",
+            "default": "unitary_up_to_global_phase",
+            "title": "Equivalence",
+            "type": "string"
+          },
+          "input_fingerprint": {
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Input Fingerprint",
+            "type": "string"
+          },
+          "operations": {
+            "items": {
+              "$ref": "#/components/schemas/CircuitOptimizationOperation"
+            },
+            "maxItems": 4096,
+            "title": "Operations",
+            "type": "array"
+          },
+          "optimization_level": {
+            "maximum": 3,
+            "minimum": 1,
+            "title": "Optimization Level",
+            "type": "integer"
+          },
+          "output_fingerprint": {
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Output Fingerprint",
+            "type": "string"
+          },
+          "warnings": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 20,
+            "title": "Warnings",
+            "type": "array"
+          }
+        },
+        "required": [
+          "compiler",
+          "compiler_version",
+          "optimization_level",
+          "before",
+          "after",
+          "input_fingerprint",
+          "output_fingerprint"
+        ],
+        "title": "CircuitOptimizationResult",
+        "type": "object"
+      },
       "CodeDistanceSummary": {
         "additionalProperties": false,
         "description": "Layer 2's working, not just its answer.",

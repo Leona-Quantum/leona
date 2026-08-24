@@ -434,6 +434,29 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
     compressionOverwrite: string;
     compressionApplied: (removed: number, beforeDepth: number, afterDepth: number) => string;
     compressionUndone: string;
+    externalCompilation: string;
+    externalIntro: string;
+    externalLevel: string;
+    externalCompiler: string;
+    externalQiskit: string;
+    externalQiskitDescription: string;
+    externalPytket: string;
+    externalPytketDescription: string;
+    externalPennyLane: string;
+    externalPennyLaneDescription: string;
+    externalPyZX: string;
+    externalPyZXDescription: string;
+    externalBoundary: string;
+    externalRun: string;
+    externalRunning: string;
+    externalOpenRun: string;
+    externalFailed: string;
+    externalConnectionLost: string;
+    externalPreview: (compiler: string, version: string) => string;
+    externalUnverified: string;
+    externalApply: string;
+    externalConfirmApply: string;
+    externalApplied: (compiler: string, before: number, after: number) => string;
     angleLabel: string;
     builderEmpty: string;
     generatedPreview: string;
@@ -936,6 +959,29 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
       compressionOverwrite: "The Code tab no longer matches this diagram. Compression replaces it with generated code for the compressed diagram. Continue?",
       compressionApplied: (removed, beforeDepth, afterDepth) => `Compressed the circuit by ${removed} operations. Logical depth: ${beforeDepth} → ${afterDepth}. Framework drafts were regenerated.`,
       compressionUndone: "Compression was undone and the framework drafts were regenerated.",
+      externalCompilation: "External compilers",
+      externalIntro: "Queue a trusted compiler on the Worker, inspect its result, then decide whether to replace the Studio circuit.",
+      externalLevel: "Optimization level",
+      externalCompiler: "Compiler",
+      externalQiskit: "Qiskit",
+      externalQiskitDescription: "IBM's preset pass manager with a deterministic seed and Studio-compatible basis gates.",
+      externalPytket: "pytket",
+      externalPytketDescription: "Quantinuum's peephole compiler with implicit wire swaps disabled before rebasing to Studio gates.",
+      externalPennyLane: "PennyLane",
+      externalPennyLaneDescription: "Xanadu's compile transform: commuting, inverse cancellation, and rotation merging over repeated passes.",
+      externalPyZX: "PyZX",
+      externalPyZXDescription: "ZX-calculus and phase-polynomial optimization for bounded Clifford+T circuits.",
+      externalBoundary: "Only bound built-in gates are sent—never source code. Jobs are limited to 64 qubits and 1,024 operations; PyZX is further limited to 16 qubits, 512 unitary operations, and Clifford+T angles.",
+      externalRun: "Run compiler",
+      externalRunning: "Compiling…",
+      externalOpenRun: "Open compiler run",
+      externalFailed: "The external compiler did not return a usable Studio circuit.",
+      externalConnectionLost: "The compiler event stream closed before a result arrived.",
+      externalPreview: (compiler, version) => `${compiler} ${version} result`,
+      externalUnverified: "This is compiler output, not verification evidence. Equivalence is reported up to global phase; verify the edited draft before relying on it.",
+      externalApply: "Apply compiler result",
+      externalConfirmApply: "Replace code with compiler result",
+      externalApplied: (compiler, before, after) => `${compiler} result applied (${before} → ${after} gates). Framework drafts were regenerated; verification is stale.`,
       angleLabel: "Rotation angle",
       builderEmpty: "Empty circuit — place gates from the palette.",
       generatedPreview: "Built circuit",
@@ -1432,6 +1478,29 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
       compressionOverwrite: "コードタブは現在の図と一致していません。圧縮すると、圧縮後の図から生成したコードに置き換わります。続行しますか？",
       compressionApplied: (removed, beforeDepth, afterDepth) => `${removed}個の操作を削減しました。論理深さ: ${beforeDepth} → ${afterDepth}。各フレームワークのコードも再生成しました。`,
       compressionUndone: "圧縮を元に戻し、各フレームワークのコードを再生成しました。",
+      externalCompilation: "外部コンパイラ",
+      externalIntro: "Workerで実際のコンパイラを実行し、結果を比較してからStudioの回路へ反映できます。",
+      externalLevel: "最適化レベル",
+      externalCompiler: "コンパイラ",
+      externalQiskit: "Qiskit",
+      externalQiskitDescription: "決定的なシードとStudio対応ゲート集合を使うIBMのプリセット・パスマネージャです。",
+      externalPytket: "pytket",
+      externalPytketDescription: "暗黙の配線入れ替えを禁止し、Studioゲートへ戻すQuantinuumのピープホールコンパイラです。",
+      externalPennyLane: "PennyLane",
+      externalPennyLaneDescription: "可換移動、逆ゲート相殺、回転統合を反復するXanaduのcompile変換です。",
+      externalPyZX: "PyZX",
+      externalPyZXDescription: "小規模なClifford+T回路向けのZX計算・位相多項式最適化です。",
+      externalBoundary: "送信するのは値が確定した組み込みゲートだけで、ソースコードは送りません。上限は64量子ビット・1,024操作です。PyZXはさらに16量子ビット・512ユニタリ操作・Clifford+T角に限定されます。",
+      externalRun: "コンパイラを実行",
+      externalRunning: "コンパイル中…",
+      externalOpenRun: "コンパイル実行を開く",
+      externalFailed: "外部コンパイラからStudioで扱える回路を取得できませんでした。",
+      externalConnectionLost: "結果が届く前にコンパイラのイベント接続が切れました。",
+      externalPreview: (compiler, version) => `${compiler} ${version} の結果`,
+      externalUnverified: "これはコンパイラ出力であり、検証証拠ではありません。同値性は大域位相を除いて扱われます。利用前に編集後の回路を再検証してください。",
+      externalApply: "コンパイル結果を反映",
+      externalConfirmApply: "コードをコンパイル結果で置換",
+      externalApplied: (compiler, before, after) => `${compiler}の結果を反映しました（${before} → ${after}ゲート）。各フレームワークのコードを再生成し、検証状態を古いものとして扱います。`,
       angleLabel: "回転角",
       builderEmpty: "空の回路 — パレットからゲートを配置してください。",
       generatedPreview: "作成中の回路",

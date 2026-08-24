@@ -54,7 +54,7 @@ export async function POST(request: Request) {
   const body = await request.text();
   const idempotencyKey = request.headers.get("Idempotency-Key");
 
-  let submission: { mode?: string; artifact_version_id?: string | null } = {};
+  let submission: { mode?: string; artifact_version_id?: string | null; circuit_optimization?: unknown } = {};
   try {
     submission = JSON.parse(body) as typeof submission;
   } catch {
@@ -84,7 +84,7 @@ export async function POST(request: Request) {
     // workspace; refuse it at the cap. Reruns against an existing version append
     // evidence and stay allowed. `/v1/artifacts` counts kept artifacts only, so
     // a run the user never kept does not spend their allowance.
-    if (limits.privateArtifacts !== null && !submission.artifact_version_id) {
+    if (limits.privateArtifacts !== null && !submission.artifact_version_id && !submission.circuit_optimization) {
       const artifacts = await fetchJsonArray(
         `/v1/artifacts?limit=${limits.privateArtifacts + 1}`,
         accessToken,

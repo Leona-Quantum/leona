@@ -1,3 +1,4 @@
+import asyncio
 import json
 import uuid
 from datetime import UTC, datetime
@@ -13,6 +14,7 @@ from majorana_agent import (
     SimplePipelineStage,
     SimplePipelineStatus,
 )
+from majorana_contracts import CircuitOptimizationRequest, CircuitOptimizationResult
 from majorana_contracts.enums import (
     Framework,
     RunMode,
@@ -119,6 +121,156 @@ def test_default_sandbox_rejects_unknown_provider(monkeypatch):
 
     with pytest.raises(RuntimeError, match="must be 'vercel' or 'local'"):
         handlers._default_sandbox()
+
+
+def test_circuit_optimization_job_is_registered_with_run_dead_letter_recovery():
+    assert handlers.HANDLERS["circuit.optimize"] is handlers.handle_circuit_optimize
+    assert handlers.DEAD_LETTER_HANDLERS["circuit.optimize"] is handlers.handle_run_dead_letter
+
+
+async def test_circuit_optimization_job_emits_unverified_compiler_result(monkeypatch):
+    run_id = uuid.uuid4()
+    emitted = []
+
+    class Store:
+        def __init__(self, *_args):
+            self.status = RunStatus.QUEUED
+            self.finished = None
+
+        async def set_status(self, status, **_fields):
+            self.status = status
+
+        async def current_status(self):
+            return self.status
+
+        async def finish(self, status, payload, **fields):
+            self.status = status
+            self.finished = (payload, fields)
+            return status
+
+    class Sink:
+        def __init__(self, *_args):
+            pass
+
+        async def emit(self, event_type, payload, **_kwargs):
+            emitted.append((event_type, payload))
+
+    store = Store()
+
+    async def get_run(*_args):
+        return SimpleNamespace(status="queued", timeout_s=30)
+
+    result = CircuitOptimizationResult.model_validate(
+        {
+            "compiler": "qiskit",
+            "compiler_version": "2.5.2",
+            "optimization_level": 2,
+            "operations": [{"gate": "X", "qubits": [0]}],
+            "before": {
+                "qubits": 1,
+                "depth": 3,
+                "gate_count": 3,
+                "two_qubit_gate_count": 0,
+                "measurement_count": 0,
+            },
+            "after": {
+                "qubits": 1,
+                "depth": 1,
+                "gate_count": 1,
+                "two_qubit_gate_count": 0,
+                "measurement_count": 0,
+            },
+            "input_fingerprint": "a" * 64,
+            "output_fingerprint": "b" * 64,
+        }
+    )
+
+    monkeypatch.setattr(handlers.runs_repo, "get_run", get_run)
+    monkeypatch.setattr(handlers, "RepoRunStateStore", lambda *_args: store)
+    monkeypatch.setattr(handlers, "RepoEventSink", Sink)
+    monkeypatch.setattr(handlers, "optimize_circuit", lambda _request: result)
+
+    await handlers.handle_circuit_optimize(
+        object(),
+        {
+            "run_id": str(run_id),
+            "user_id": str(uuid.uuid4()),
+            "workspace_id": str(uuid.uuid4()),
+            "circuit_optimization": {
+                "compiler": "qiskit",
+                "qubit_count": 1,
+                "operations": [
+                    {"gate": "X", "qubits": [0]},
+                    {"gate": "X", "qubits": [0]},
+                    {"gate": "X", "qubits": [0]},
+                ],
+            },
+        },
+    )
+
+    compilation = next(payload for event, payload in emitted if event == "compilation.result")
+    assert compilation["accepted"] is True
+    assert compilation["mode"] == "compressed"
+    assert compilation["compatibility"]["circuit_optimization"]["compiler"] == "qiskit"
+    assert (
+        handlers._validated_event_payload(run_id, "compilation.result", compilation)[
+            "compatibility"
+        ]["circuit_optimization"]["compiler"]
+        == "qiskit"
+    )
+    assert store.status is RunStatus.SUCCEEDED
+    assert store.finished[0]["reason_code"] == "circuit_optimization_completed"
+    assert (
+        handlers._validated_event_payload(run_id, "run.finished", store.finished[0])["status"]
+        == "succeeded"
+    )
+    assert not any(event.startswith("verification.") for event, _payload in emitted)
+
+
+async def test_circuit_optimization_refusal_closes_the_run_with_typed_events():
+    run_id = uuid.uuid4()
+    emitted = []
+    finished = []
+
+    class Store:
+        async def finish(self, status, payload, **fields):
+            finished.append((status, payload, fields))
+            return status
+
+    class Sink:
+        async def emit(self, event_type, payload, **_kwargs):
+            emitted.append((event_type, payload))
+
+    request = CircuitOptimizationRequest.model_validate(
+        {
+            "compiler": "pyzx",
+            "qubit_count": 1,
+            "operations": [{"gate": "RZ", "qubits": [0], "angle_radians": 0.1}],
+        }
+    )
+
+    await handlers._finish_circuit_optimization_failure(
+        Store(),
+        Sink(),
+        request,
+        code="pyzx_requires_clifford_t",
+        message="PyZX requires a Clifford+T angle.",
+        started=asyncio.get_running_loop().time(),
+    )
+
+    for event_type, payload in emitted:
+        handlers._validated_event_payload(run_id, event_type, payload)
+    assert emitted[0][0] == "compilation.result"
+    assert emitted[0][1]["accepted"] is False
+    assert any(
+        event == "run.error" and payload["code"] == "pyzx_requires_clifford_t"
+        for event, payload in emitted
+    )
+    assert finished[0][0] is RunStatus.FAILED
+    assert (
+        handlers._validated_event_payload(run_id, "run.finished", finished[0][1])["status"]
+        == "failed"
+    )
 
 
 async def test_simple_terminal_success_records_typed_advisory_outcome():
