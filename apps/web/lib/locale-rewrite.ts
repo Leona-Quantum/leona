@@ -31,41 +31,6 @@
  * fail the suite at load time.
  */
 
-export const LOCALE_REWRITE_SOURCE_HEADER = "x-leona-locale-rewrite-source";
-
-/**
- * Carry the clean URL through Next's internal rewrite resolution.
- *
- * Next 16 can run middleware again for the rewritten pathname. This request
- * header lets that continuation be distinguished from a reader who actually
- * requested `/en/...`; it is upstream-only and is removed before rendering.
- */
-export function localeRewriteRequestHeaders(headers: Headers, sourcePathname: string): Headers {
-  const rewritten = new Headers(headers);
-  rewritten.set(LOCALE_REWRITE_SOURCE_HEADER, sourcePathname);
-  return rewritten;
-}
-
-/**
- * Validate that a marked request is the exact locale-prefixed destination of
- * a clean public route. The marker is routing provenance, never an auth signal;
- * callers must still restrict `isRewritableSource` to routes that are public.
- */
-export function isLocaleRewriteContinuation(
-  sourcePathname: string | null,
-  destinationPathname: string,
-  locales: readonly string[],
-  isRewritableSource: (pathname: string) => boolean,
-): boolean {
-  if (sourcePathname === null || !isRewritableSource(sourcePathname)) return false;
-
-  for (const locale of locales) {
-    const expected = sourcePathname === "/" ? `/${locale}` : `/${locale}${sourcePathname}`;
-    if (destinationPathname === expected) return true;
-  }
-  return false;
-}
-
 /**
  * `requestUrl` is the absolute URL of the incoming request, `pathname` its clean
  * path, and `locale` the language chosen for it. The host, scheme, query and

@@ -1,11 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import {
-  isLocaleRewriteContinuation,
-  LOCALE_REWRITE_SOURCE_HEADER,
-  localeRewriteRequestHeaders,
-  localeRewriteTarget,
-} from "./locale-rewrite.ts";
+import { localeRewriteTarget } from "./locale-rewrite.ts";
 
 const BASE = "https://leonaqt.com";
 
@@ -86,28 +81,4 @@ test("a non-canonical host is preserved rather than rewritten to the canonical o
   assert.equal(target.host, "web-abc123-majoranaq.vercel.app");
   assert.equal(target.pathname, "/en/repository/layers");
   assert.equal(target.search, "?open=a");
-});
-
-test("locale rewrite request headers carry the clean source without mutating the input", () => {
-  const original = new Headers({ accept: "text/html" });
-  const rewritten = localeRewriteRequestHeaders(original, "/pricing");
-
-  assert.equal(original.get(LOCALE_REWRITE_SOURCE_HEADER), null);
-  assert.equal(rewritten.get(LOCALE_REWRITE_SOURCE_HEADER), "/pricing");
-  assert.equal(rewritten.get("accept"), "text/html");
-});
-
-test("locale rewrite continuation accepts only an exact destination of a public source", () => {
-  const publicSources = new Set(["/", "/pricing", "/repository/layers"]);
-  const isPublicSource = (pathname: string) => publicSources.has(pathname);
-
-  assert.equal(isLocaleRewriteContinuation("/", "/en", ["en", "ja"], isPublicSource), true);
-  assert.equal(isLocaleRewriteContinuation("/pricing", "/ja/pricing", ["en", "ja"], isPublicSource), true);
-  assert.equal(
-    isLocaleRewriteContinuation("/repository/layers", "/en/repository/layers", ["en", "ja"], isPublicSource),
-    true,
-  );
-  assert.equal(isLocaleRewriteContinuation(null, "/en", ["en", "ja"], isPublicSource), false);
-  assert.equal(isLocaleRewriteContinuation("/pricing", "/en/contact", ["en", "ja"], isPublicSource), false);
-  assert.equal(isLocaleRewriteContinuation("/account", "/en/account", ["en", "ja"], isPublicSource), false);
 });

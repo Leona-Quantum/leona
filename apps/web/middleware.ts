@@ -25,12 +25,7 @@ import { isLocalDevAuthEnabled } from "./lib/local-dev-auth";
 import { pageviewLoggingEnabled, pageviewSignal } from "./lib/pageview-signal";
 import { LEGACY_PUBLIC_LOCALE_COOKIE, parsePublicLocale, PUBLIC_LOCALE_COOKIE, PUBLIC_LOCALES } from "./lib/public-locale";
 import { isPublicPath, workosUnauthenticatedPaths } from "./lib/public-paths";
-import {
-  isLocaleRewriteContinuation,
-  LOCALE_REWRITE_SOURCE_HEADER,
-  localeRewriteRequestHeaders,
-  localeRewriteTarget,
-} from "./lib/locale-rewrite";
+import { localeRewriteTarget } from "./lib/locale-rewrite";
 import { isRoutedPath, localePrefixRoute, LOCALE_ROUTES } from "./lib/routed-paths";
 import { canonicalHostRedirect } from "./lib/site-origin";
 
@@ -165,28 +160,7 @@ function localeRewrite(request: NextRequest): NextResponse | null {
   // the measurement that caught it, is in `lib/locale-rewrite.ts`; it is a
   // separate module so `locale-rewrite.test.ts` can hold the rule rather than
   // review having to.
-  return NextResponse.rewrite(localeRewriteTarget(request.nextUrl.toString(), pathname, locale), {
-    request: { headers: localeRewriteRequestHeaders(request.headers, pathname) },
-  });
-}
-
-function localeRewriteContinuation(request: NextRequest): NextResponse | null {
-  const sourcePathname = request.headers.get(LOCALE_REWRITE_SOURCE_HEADER);
-  const isContinuation = isLocaleRewriteContinuation(
-    sourcePathname,
-    request.nextUrl.pathname,
-    PUBLIC_LOCALES,
-    (pathname) => LOCALE_ROUTE_SET.has(pathname) || localePrefixRoute(pathname) !== null,
-  );
-  if (!isContinuation) return null;
-
-  // Do not expose the routing marker to the page, and do not let it survive a
-  // later internal resolution. The marked routes are all public by the source
-  // predicate above, so continuing directly is the same decision the first
-  // middleware pass already made when it returned the rewrite.
-  const headers = new Headers(request.headers);
-  headers.delete(LOCALE_REWRITE_SOURCE_HEADER);
-  return NextResponse.next({ request: { headers } });
+  return NextResponse.rewrite(localeRewriteTarget(request.nextUrl.toString(), pathname, locale));
 }
 
 /**
@@ -194,9 +168,8 @@ function localeRewriteContinuation(request: NextRequest): NextResponse | null {
  * `[locale]`, and leaving it reachable would publish every public page at two
  * addresses. One canonical URL, so send it back to the clean one.
  *
- * No loop: `localeRewriteContinuation()` recognizes the internal second pass
- * that Next 16 performs for a rewrite, while a reader who requests the
- * prefixed form directly still arrives here and is redirected.
+ * No loop: the rewrite above is internal, so the browser is never asked for the
+ * prefixed form and never arrives here carrying it.
  *
  * The target is built by `lib/canonical-locale-redirect.ts`, which is where the
  * reason it is not a one-liner is written down: this runs before the auth gate,
@@ -271,12 +244,6 @@ export default async function middleware(request: NextRequest, event: NextFetchE
   // never people).
   const canonicalHostHop = canonicalHost(request);
   if (canonicalHostHop) return canonicalHostHop;
-  // Next 16 resolves an internal rewrite through middleware again. Let only a
-  // validated continuation of one of the public locale routes proceed; without
-  // this guard `/` rewrites to `/en`, then canonicalRedirect sends the same
-  // response back to `/`, producing ERR_TOO_MANY_REDIRECTS in the browser.
-  const localeContinuation = localeRewriteContinuation(request);
-  if (localeContinuation) return localeContinuation;
   // First among the things that answer a request, and before any early return:
   // the counter's contract is that it runs exactly once per request. It is also
   // why placement here is safe next to the 404 fall-through below —
