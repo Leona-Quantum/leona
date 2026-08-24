@@ -3939,14 +3939,31 @@ export const LAYER_GRAPH: LayerGraph = {
         "    # one global system for the whole interval, not one system per step",
       ].join("\n"),
     },
-    // Read in full. The paper this node is transcribed from carries no numerics
-    // of any kind, so there is no run to write down here either.
+    // Read in full, twice and for two different questions. The paper this node is
+    // transcribed from reports no numerical *results*, so there is neither a run
+    // nor an implementation to write down — and those are two claims, not one, so
+    // they are declared separately below rather than one standing in for the
+    // other. `implementations` was the last unaccounted field in the whole
+    // linear-ODE region; with it the gauge reads 7/7.
+    //
+    // "No numerical results", not "no numerics": Appendix B does pick $d = 1$,
+    // $m = 3$, $n = 2$, $p = 1$ and prints matrices with integer entries. Those
+    // are the *shape* of the linear system at a chosen size, with $A(t)$, $f(t)$
+    // and $\gamma$ left symbolic — nothing is computed from data. The looser
+    // sentence was here first and was literally false; caught in review on
+    // leona 736.
     absences: {
       "example.text": {
         reason:
           "Read in full: arXiv:1901.00961, the only paper this node cites, carries no numerics anywhere — no figure, no table, no computed value, no dataset and no simulator. Its Appendix B is titled \"An example of the quantum spectral method\" and is a structural display rather than a run: it takes $d = 1$, $m = 3$, $n = 2$, $p = 1$ and writes out the shape of the linear system with $A(t)$, $f(t)$ and $\\gamma$ left symbolic. The register row for 1901.00961 records that as a full-text read.",
         reasonJa:
           "全文を読んだ結果です。このノードが引く唯一の論文 arXiv:1901.00961 には、数値が一切ありません。図も表も、計算された値も、データセットも、シミュレータもありません。付録 B は「量子スペクトル法の例」と題されていますが、実行ではなく構造の提示です。$d = 1$、$m = 3$、$n = 2$、$p = 1$ と取り、$A(t)$、$f(t)$、$\\gamma$ を記号のまま残して線形系の形を書き下しています。1901.00961 の登録行は、これを全文読解として記録しています。",
+      },
+      "implementations": {
+        reason:
+          "The same document as `example.text` above, read again for a different question, and the paper's own wording is the trap: its introduction does say \"we implement a Chebyshev pseudospectral method [4, 22] using the QLSA\". That is the algorithm being constructed on paper. Across all 29 pages of arXiv:1901.00961 the words Qiskit, MATLAB, Python and benchmark do not occur, there is no numbered figure and no numbered table, and the one worked passage — Appendix B, \"An example of the quantum spectral method\" — fixes $d = 1$, $m = 3$, $n = 2$, $p = 1$ and then writes the linear system out with $A(t)$, $f(t)$ and $\\gamma$ left symbolic. Nothing was built and nothing was run, so there is no implementation of this method in the only paper this record cites. Said of that one document and not of the method: this is a classical pseudospectral scheme lifted onto the QLSA, its classical half has been implemented for decades, and a paper that does report a quantum implementation would belong here rather than replacing this reason.",
+        reasonJa:
+          "上の `example.text` と同じ文献を、別の問いのために読み直した結果です。論文自身の言い回しが落とし穴になっています。序論には確かに「QLSA を用いて Chebyshev 擬スペクトル法を実装する」とありますが、これは紙の上でアルゴリズムを構成しているという意味です。arXiv:1901.00961 の全 29 ページを通して Qiskit、MATLAB、Python、ベンチマークという語は現れず、番号付きの図も表もありません。唯一の具体例である付録 B「量子スペクトル法の例」も、$d = 1$、$m = 3$、$n = 2$、$p = 1$ と定めたうえで、$A(t)$、$f(t)$、$\\gamma$ を記号のまま残して線形系を書き下すだけです。作られたものも走らせたものもないので、この記録が引く唯一の論文にこの手法の実装は存在しません。これはその一つの文献についての言明であって、手法についてではありません。本手法は古典的な擬スペクトル法を QLSA の上に載せたものであり、その古典側は何十年も前から実装されています。量子側の実装を報告する論文があれば、この理由を置き換えるのではなく、ここに加わることになります。",
       },
     },
     citations: [
