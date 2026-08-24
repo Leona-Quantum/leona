@@ -114,7 +114,11 @@ test("search, category, topic and stance filter before the cap is ever applied",
   const corpus = [
     entry("grover-search", { title: "Grover search", category: "algorithms", topics: ["algorithm-reference"] }),
     entry("hadamard-gate", { title: "Hadamard gate", category: "gates", topics: ["gate-primitive"] }),
-    entry("bell-state", { title: "Bell state", category: "states", topics: ["state"] }),
+    // `basic-circuits` rather than the `states` category this fixture used to
+    // name: ai-ops issue 174 cut that category and sent Bell there. The record
+    // keeps its `state` role, which is the shape this test wants — a category
+    // and a topic that do not imply each other.
+    entry("bell-state", { title: "Bell state", category: "basic-circuits", topics: ["state"] }),
   ];
   const view = buildRepositoryBrowseView(corpus, null, null, params({ query: "grover" }), "en");
   assert.equal(view.structureFilteredCount, 1);

@@ -118,7 +118,7 @@ test("groups come back in facet order whatever the corpus contains", () => {
   );
 });
 
-test("no role a category tab owns is offered — and that is now all five of them", () => {
+test("no role a category tab owns is offered — four of the five, since `states` was cut", () => {
   // ai-ops#75. `/repository` showed Gate (27) in the rail beside a Gates tab
   // holding 29, and the same three-word collision on States and Operators —
   // in Japanese with byte-identical labels. The tabs keep the words.
@@ -142,7 +142,21 @@ test("no role a category tab owns is offered — and that is now all five of the
     TOPICS_A_CATEGORY_TAB_OWNS.has("benchmark-circuit"),
     "benchmark-circuit is offered again, and the Basic circuits tab answers the same question",
   );
-  assert.equal(TOPICS_A_CATEGORY_TAB_OWNS.size, 5);
+
+  // `state` is deliberately NOT here, and it briefly was. Between leona 762 and
+  // ai-ops issue 174 all five roles were tab-owned and this control returned no
+  // `role` group at all. Then the ruling cut the `States` tab and split its
+  // twelve records across `basic-circuits` and `operators` while leaving the
+  // role intact — so `state` now names twelve records spanning two tabs, which
+  // is a thing no tab can say, and it is offered again.
+  //
+  // This assertion caught that change rather than being edited to match it: it
+  // read `size, 5` and failed the moment the tab went away.
+  assert.ok(
+    !TOPICS_A_CATEGORY_TAB_OWNS.has("state"),
+    "state is tab-owned again — has a States tab come back? The role spans two tabs and no tab says it",
+  );
+  assert.equal(TOPICS_A_CATEGORY_TAB_OWNS.size, 4);
 });
 
 test("no offered topic wears a word a category tab wears, in either locale", () => {

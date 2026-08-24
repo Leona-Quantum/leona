@@ -316,9 +316,13 @@ const OBSERVABLE_ROLES: ReadonlySet<TopicId> = new Set<TopicId>(["operator"]);
  * publishes an operation you apply, and that decides it.** The role facet
  * resolves everything else.
  */
+//: `states` is deliberately absent: ai-ops issue 174 cut that category. Nothing
+//: about those twelve records' stance changed, and that is the point — they keep
+//: the `state` ROLE, `SOURCE_ROLES` resolves them to `source` at step 3, and this
+//: map is only consulted at step 4. Removing the row is dead-code removal, not a
+//: behaviour change; verified before the cut rather than assumed after it.
 const CATEGORY_STANCE: Readonly<Record<string, InterfaceStance>> = {
   gates: "transform",
-  states: "source",
   operators: "observable",
 };
 
