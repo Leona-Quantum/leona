@@ -2523,7 +2523,31 @@ function absenceSurfaces(): string {
     join(webRoot, "components", "repository-layers.tsx"),
     join(webRoot, "components", "map-card-panel.tsx"),
   ]
-    .map((file) => readFileSync(file, "utf8"))
+    .map((file) => withoutComments(readFileSync(file, "utf8")))
+    .join("\n");
+}
+
+/**
+ * Source with `//` and block comments removed.
+ *
+ * Without this the guards below are the very bug they exist to catch: a surface
+ * that stops rendering a declared reason but keeps the comment explaining why it
+ * used to still counts as rendering it, and this PR's own fix adds exactly such
+ * comments. Raised by Sourcery on leona 748.
+ *
+ * Crude on purpose — it does not parse strings, so a `//` inside a string
+ * literal truncates that line. That is safe HERE and only here: the guards ask
+ * whether a call expression appears, and losing the tail of a string literal
+ * cannot manufacture one. It must not be reused as a general comment stripper.
+ */
+function withoutComments(source: string): string {
+  return source
+    .replace(/\/\*[\s\S]*?\*\//g, " ")
+    .split("\n")
+    .map((line) => {
+      const at = line.indexOf("//");
+      return at === -1 ? line : line.slice(0, at);
+    })
     .join("\n");
 }
 
@@ -2595,8 +2619,14 @@ test("the two surfaces agree about a declared implementations absence", () => {
   // by ORDER, because a branch that renders the generic note first and the reason
   // never is exactly what shipped.
   const webRoot = dirname(dirname(fileURLToPath(import.meta.url)));
-  const page = readFileSync(join(webRoot, "components", "repository-layers.tsx"), "utf8");
-  const card = readFileSync(join(webRoot, "lib", "repository", "card-content.ts"), "utf8");
+  // Comments stripped here too — this PR's own fix adds a comment naming the
+  // very call it must assert, so a raw scan would pass on the comment alone.
+  const page = withoutComments(
+    readFileSync(join(webRoot, "components", "repository-layers.tsx"), "utf8"),
+  );
+  const card = withoutComments(
+    readFileSync(join(webRoot, "lib", "repository", "card-content.ts"), "utf8"),
+  );
 
   assert.ok(
     card.includes('absenceOf(method, "implementations"'),
