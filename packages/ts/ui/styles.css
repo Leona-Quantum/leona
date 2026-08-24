@@ -9642,6 +9642,138 @@ html:not([data-auth="in"]) .mj-auth-slot[data-auth-slot="in"] {
   gap: var(--sp-2);
   padding-top: var(--sp-3);
 }
+.mj-studio-compression {
+  border-top: 1px solid var(--border-0);
+  border-bottom: 1px solid var(--border-0);
+  background: var(--bg-1);
+}
+.mj-studio-compression > summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-4);
+  padding: var(--sp-3) var(--sp-4);
+  color: var(--text-0);
+  cursor: pointer;
+}
+.mj-studio-compression > summary > span:first-child {
+  display: grid;
+  gap: var(--sp-1);
+  min-width: 0;
+}
+.mj-studio-compression > summary strong {
+  font-size: var(--fs-13);
+  font-weight: 500;
+}
+.mj-studio-compression > summary small {
+  color: var(--text-1);
+  font-size: var(--fs-12);
+  line-height: 1.45;
+}
+.mj-studio-compression-body {
+  display: grid;
+  gap: var(--sp-4);
+  padding: 0 var(--sp-4) var(--sp-4);
+}
+.mj-studio-compression-strategies {
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+.mj-studio-compression-strategies > legend {
+  padding: 0 0 var(--sp-2);
+}
+.mj-studio-compression-strategies > div {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--sp-2);
+}
+.mj-studio-compression-strategies label {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--sp-2);
+  min-width: 0;
+  padding: var(--sp-3);
+  border: 1px solid var(--border-0);
+  border-radius: var(--radius-control);
+  color: var(--text-1);
+  background: var(--bg-0);
+  cursor: pointer;
+}
+.mj-studio-compression-strategies label[data-selected="true"] {
+  border-color: var(--accent);
+  background: var(--bg-2);
+}
+.mj-studio-compression-strategies input {
+  flex: 0 0 auto;
+  margin: var(--sp-1) 0 0;
+  accent-color: var(--accent);
+}
+.mj-studio-compression-strategies label span {
+  display: grid;
+  gap: var(--sp-1);
+  min-width: 0;
+}
+.mj-studio-compression-strategies label strong {
+  color: var(--text-0);
+  font-size: var(--fs-13);
+  font-weight: 500;
+}
+.mj-studio-compression-strategies label small {
+  color: var(--text-1);
+  font-size: var(--fs-12);
+  line-height: 1.45;
+}
+.mj-studio-compression-metrics {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--sp-2);
+  margin: 0;
+}
+.mj-studio-compression-metrics > div {
+  display: grid;
+  gap: var(--sp-1);
+  padding: var(--sp-3);
+  border: 1px solid var(--border-0);
+  border-radius: var(--radius-control);
+  background: var(--bg-0);
+}
+.mj-studio-compression-metrics dt {
+  color: var(--text-1);
+  font-size: var(--fs-12);
+}
+.mj-studio-compression-metrics dd {
+  display: flex;
+  align-items: baseline;
+  gap: var(--sp-2);
+  margin: 0;
+  color: var(--text-1);
+  font-family: var(--font-mono);
+  font-size: var(--fs-13);
+}
+.mj-studio-compression-metrics dd strong {
+  color: var(--text-0);
+  font-weight: 500;
+}
+.mj-studio-compression-metrics > div[data-improved="true"] dd strong {
+  color: var(--accent);
+}
+.mj-studio-compression-boundary,
+.mj-studio-compression-empty {
+  margin: 0;
+  color: var(--text-1);
+  font-size: var(--fs-12);
+  line-height: 1.5;
+}
+.mj-studio-compression-empty {
+  color: var(--text-0);
+}
+.mj-studio-compression-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-2);
+}
 .mj-builder-custom-form {
   display: flex;
   flex-wrap: wrap;
@@ -9668,6 +9800,12 @@ html:not([data-auth="in"]) .mj-auth-slot[data-auth-slot="in"] {
 }
 .mj-builder-slot {
   cursor: pointer;
+}
+@media (max-width: 720px) {
+  .mj-studio-compression-strategies > div,
+  .mj-studio-compression-metrics {
+    grid-template-columns: minmax(0, 1fr);
+  }
 }
 .mj-builder-slot rect {
   stroke: var(--border-0);

@@ -16,6 +16,13 @@ saves the resulting evidence.
 - The editor is code-native and copyable. The circuit preview is a semantic
   SVG/HTML view, not a screenshot. Selecting a gate exposes its parameters in
   the inspector.
+- The visual circuit editor offers exact-identity compression strategies and
+  previews operation count, logical depth, and two-qubit operation count before
+  applying a rewrite. Applying compression regenerates every supported
+  framework draft; diverged source requires explicit replacement confirmation,
+  and the result can be undone. Measurements and opaque custom gates remain
+  rewrite boundaries on the qubits they touch. This surface does not claim
+  hardware routing or device-native optimization.
 - `Simulate` opens an artifact-owned CPU surface. It executes only the parsed,
   bounded gate model in the browser for saved artifacts, then records the
   source fingerprint, inputs, and sampled result locally. It never starts
@@ -47,7 +54,7 @@ metrics.
 |---|---|
 | Header | `Studio`, artifact breadcrumb, framework selector, `Simulate`, `Verify & save` |
 | Code pane | Editable source, copy action, framework/version tabs, dirty-state indicator |
-| Circuit pane | Qubit wires, semantic gates, selection, pan/zoom affordances, parameter selection |
+| Circuit pane | Qubit wires, semantic gates, selection, pan/zoom affordances, parameter selection, and exact circuit-compression comparison/apply/undo controls |
 | Inspector | `Circuit`, `Resources`, `Verification` tabs; selected-gate details and evidence |
 | Simulation pane | CPU eligibility, inputs, artifact-owned local result records, rerun confirmation, and unavailable GPU/QPU lanes. A local CPU result is never styled as verification or hardware evidence. |
 | Responsive fallback | Stack code, circuit, inspector, and output in that order; no horizontal page overflow |

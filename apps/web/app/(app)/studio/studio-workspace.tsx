@@ -42,6 +42,7 @@ import { artifactExportManifest } from "../../../lib/artifact-export";
 import { restoreRefusalLosses, versionPageFromResource, type ArtifactVersionSummary, type RestoreLoss, type VersionOrigin } from "../../../lib/artifact-versions";
 import { studioVerificationDisplayState } from "../../../lib/verification-display";
 import { DEFAULT_STUDIO_PANEL, STUDIO_PANELS, type StudioPanel } from "../../../lib/studio-panels";
+import { circuitStepSignature, compressCircuit, type CircuitCompressionStrategy } from "../../../lib/studio-compression";
 import { PanelTabs, panelRegion } from "../../../components/panel-tabs";
 
 // Tab order is the working order: you write code, you run it, you look at what
@@ -1314,8 +1315,8 @@ function StudioDots() {
 
 const ANGLE_OPTIONS = ["pi/8", "pi/4", "pi/2", "pi", "3*pi/2", "2*pi"];
 
-// Exported only for tests/forms/studio-custom-gate.test.tsx (ai-ops issue 123) —
-// the custom-gate <form> inside it had never been submitted by any check.
+// Exported for the focused CircuitBuilder form tests. The custom-gate <form>
+// inside it had never been submitted by any check before ai-ops issue 123.
 // Not part of the module's public surface otherwise; StudioWorkspace is.
 export function CircuitBuilder({ seed, framework, selectedGate, onSelectGate, onApply, onCircuitChange, hidden, popout, onTogglePopout, region, copy, syncState, onRebuildFromCode, sourceCode }: { seed: BuilderSeed; framework: StudioFramework; selectedGate: string; onSelectGate: (gate: string) => void; onApply: (codes: BuilderCodeVariants) => void; onCircuitChange?: (circuit: { qubitCount: number; steps: BuilderStep[]; customGates: CustomGateDefinition[] }) => void; hidden: boolean; popout: boolean; onTogglePopout: () => void; region?: Record<string, string>; copy: StudioCopy; syncState: CircuitSyncState; onRebuildFromCode: () => void; sourceCode: string }) {
   const [qubitCount, setQubitCount] = useState(seed.qubitCount);
@@ -1328,6 +1329,9 @@ export function CircuitBuilder({ seed, framework, selectedGate, onSelectGate, on
   const [customGateName, setCustomGateName] = useState("");
   const [builderMessage, setBuilderMessage] = useState<string | null>(null);
   const [applyConfirmPending, setApplyConfirmPending] = useState(false);
+  const [compressionStrategy, setCompressionStrategy] = useState<CircuitCompressionStrategy>("balanced");
+  const [compressionConfirmPending, setCompressionConfirmPending] = useState(false);
+  const [compressionSnapshot, setCompressionSnapshot] = useState<{ before: BuilderStep[]; afterSignature: string } | null>(null);
 
   // A pending confirmation describes one specific pair of a diagram and a
   // source. If either side moves — the code is edited again, the canvas is
@@ -1335,7 +1339,24 @@ export function CircuitBuilder({ seed, framework, selectedGate, onSelectGate, on
   // consenting to something the user was never shown, so disarm it.
   useEffect(() => {
     setApplyConfirmPending(false);
-  }, [syncState.kind, sourceCode, steps, qubitCount, customGates]);
+    setCompressionConfirmPending(false);
+  }, [syncState.kind, sourceCode, steps, qubitCount, customGates, compressionStrategy]);
+
+  const compression = useMemo(
+    () => compressCircuit(steps, compressionStrategy),
+    [steps, compressionStrategy],
+  );
+  const canUndoCompression = Boolean(
+    compressionSnapshot
+    && compressionSnapshot.afterSignature === circuitStepSignature(steps)
+    && syncState.kind === "in_sync",
+  );
+  const compressionOptions: { value: CircuitCompressionStrategy; label: string; description: string }[] = [
+    { value: "balanced", label: copy.compressionBalanced, description: copy.compressionBalancedDescription },
+    { value: "inverse_cancellation", label: copy.compressionInverse, description: copy.compressionInverseDescription },
+    { value: "rotation_folding", label: copy.compressionRotations, description: copy.compressionRotationsDescription },
+    { value: "pattern_rewrite", label: copy.compressionPatterns, description: copy.compressionPatternsDescription },
+  ];
 
   const onCircuitChangeRef = useRef(onCircuitChange);
   onCircuitChangeRef.current = onCircuitChange;
@@ -1469,6 +1490,44 @@ export function CircuitBuilder({ seed, framework, selectedGate, onSelectGate, on
     }
   }
 
+  function applyCompression() {
+    if (!compression.changed) return;
+    if (syncState.kind !== "in_sync" && !compressionConfirmPending) {
+      setCompressionConfirmPending(true);
+      setBuilderMessage(copy.compressionOverwrite);
+      return;
+    }
+    // Keep a distinct array even when `steps` is still the original seed. The
+    // builder deliberately suppresses persistence for the untouched seed by
+    // reference identity; an undo is a real edit and must not be mistaken for
+    // that untouched mount state.
+    const before = [...steps];
+    const compressed = compression.steps;
+    setSteps(compressed);
+    setSelectedStepIds([]);
+    setPendingQubits([]);
+    setCompressionConfirmPending(false);
+    setApplyConfirmPending(false);
+    setCompressionSnapshot({ before, afterSignature: circuitStepSignature(compressed) });
+    onApply(generateBuilderCode(compressed, qubitCount, customGates));
+    setBuilderMessage(copy.compressionApplied(
+      compression.removedOperations,
+      compression.before.depth,
+      compression.after.depth,
+    ));
+  }
+
+  function undoCompression() {
+    if (!compressionSnapshot || !canUndoCompression) return;
+    const restored = compressionSnapshot.before;
+    setSteps(restored);
+    setSelectedStepIds([]);
+    setPendingQubits([]);
+    setCompressionSnapshot(null);
+    onApply(generateBuilderCode(restored, qubitCount, customGates));
+    setBuilderMessage(copy.compressionUndone);
+  }
+
 
   return (
     <StudioPanelSurface
@@ -1478,7 +1537,7 @@ export function CircuitBuilder({ seed, framework, selectedGate, onSelectGate, on
       heading={copy.generatedPreview}
       meta={(
         <span className="mj-mono-muted">
-          {frameworkLabel(framework)} · {qubitCount}q · {seed.operationCount} ops
+          {frameworkLabel(framework)} · {qubitCount}q · {seed.readOnly ? seed.operationCount : steps.length} ops
           {seed.readOnly ? ` · ${copy.readOnly}` : ""}
         </span>
       )}
@@ -1553,6 +1612,55 @@ export function CircuitBuilder({ seed, framework, selectedGate, onSelectGate, on
         }}
       />
 
+      {seed.readOnly ? null : (
+        <details className="mj-studio-compression">
+          <summary>
+            <span>
+              <strong>{copy.compression}</strong>
+              <small>{copy.compressionIntro}</small>
+            </span>
+            <span className="mj-mono-muted">{compression.before.operations} → {compression.after.operations} ops</span>
+          </summary>
+          <div className="mj-studio-compression-body">
+            <fieldset className="mj-studio-compression-strategies">
+              <legend className="mj-section-label">{copy.compressionStrategy}</legend>
+              <div>
+                {compressionOptions.map((option) => (
+                  <label key={option.value} data-selected={compressionStrategy === option.value ? "true" : undefined}>
+                    <input
+                      type="radio"
+                      name="studio-compression-strategy"
+                      value={option.value}
+                      checked={compressionStrategy === option.value}
+                      onChange={() => setCompressionStrategy(option.value)}
+                    />
+                    <span><strong>{option.label}</strong><small>{option.description}</small></span>
+                  </label>
+                ))}
+              </div>
+            </fieldset>
+
+            <dl className="mj-studio-compression-metrics" aria-live="polite">
+              <CompressionMetric label={copy.compressionOperations} before={compression.before.operations} after={compression.after.operations} />
+              <CompressionMetric label={copy.compressionDepth} before={compression.before.depth} after={compression.after.depth} />
+              <CompressionMetric label={copy.compressionTwoQubit} before={compression.before.twoQubitOperations} after={compression.after.twoQubitOperations} />
+            </dl>
+
+            <p className="mj-studio-compression-boundary">{copy.compressionBoundary}</p>
+            {!compression.changed ? <p className="mj-studio-compression-empty" role="status">{copy.compressionNoChange}</p> : null}
+            <div className="mj-studio-compression-actions">
+              <button className="mj-primary-button" type="button" onClick={applyCompression} disabled={!compression.changed}>
+                {compressionConfirmPending ? copy.compressionConfirmApply : copy.compressionApply}
+              </button>
+              {compressionConfirmPending ? (
+                <button className="mj-secondary-button" type="button" onClick={() => { setCompressionConfirmPending(false); setBuilderMessage(null); }}>{copy.cancel}</button>
+              ) : null}
+              {canUndoCompression ? <button className="mj-secondary-button" type="button" onClick={undoCompression}>{copy.compressionUndo}</button> : null}
+            </div>
+          </div>
+        </details>
+      )}
+
       {seed.readOnly ? null : <div className="mj-builder-controls">
         <button className="mj-secondary-button" type="button" onClick={() => changeQubitCount(1)} disabled={qubitCount >= MAX_VIEWABLE_QUBITS}>{copy.addQubit}</button>
         <button className="mj-secondary-button" type="button" onClick={() => changeQubitCount(-1)} disabled={qubitCount <= 1}>{copy.removeQubit}</button>
@@ -1611,6 +1719,15 @@ export function CircuitBuilder({ seed, framework, selectedGate, onSelectGate, on
         <span className="mj-mono-muted">{steps.length ? (steps.length <= 40 ? steps.map((step) => builderStepLabel(step, customGates)).join(" → ") : `${steps.slice(0, 20).map((step) => builderStepLabel(step, customGates)).join(" → ")} → … (${steps.length} ops)`) : "—"}</span>
       </div>
     </StudioPanelSurface>
+  );
+}
+
+function CompressionMetric({ label, before, after }: { label: string; before: number; after: number }) {
+  return (
+    <div data-improved={after < before ? "true" : undefined}>
+      <dt>{label}</dt>
+      <dd><span>{before}</span><span aria-hidden="true">→</span><strong>{after}</strong></dd>
+    </div>
   );
 }
 

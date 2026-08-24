@@ -412,6 +412,28 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
     clearAll: string;
     applyToCode: string;
     appliedToCode: string;
+    compression: string;
+    compressionIntro: string;
+    compressionStrategy: string;
+    compressionInverse: string;
+    compressionInverseDescription: string;
+    compressionRotations: string;
+    compressionRotationsDescription: string;
+    compressionPatterns: string;
+    compressionPatternsDescription: string;
+    compressionBalanced: string;
+    compressionBalancedDescription: string;
+    compressionOperations: string;
+    compressionDepth: string;
+    compressionTwoQubit: string;
+    compressionNoChange: string;
+    compressionApply: string;
+    compressionConfirmApply: string;
+    compressionUndo: string;
+    compressionBoundary: string;
+    compressionOverwrite: string;
+    compressionApplied: (removed: number, beforeDepth: number, afterDepth: number) => string;
+    compressionUndone: string;
     angleLabel: string;
     builderEmpty: string;
     generatedPreview: string;
@@ -892,6 +914,28 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
       clearAll: "Clear",
       applyToCode: "Apply to code",
       appliedToCode: "Generated code applied to all framework drafts.",
+      compression: "Circuit compression",
+      compressionIntro: "Compare exact gate rewrites before replacing the circuit and its framework drafts.",
+      compressionStrategy: "Compression strategy",
+      compressionInverse: "Cancel inverse pairs",
+      compressionInverseDescription: "Removes matching self-inverse gates when no operation on the same qubits lies between them.",
+      compressionRotations: "Fold rotations",
+      compressionRotationsDescription: "Combines consecutive RX, RY, or RZ angles on the same qubit and removes exact zero rotations.",
+      compressionPatterns: "Rewrite identities",
+      compressionPatternsDescription: "Folds phase powers, H-X-H / H-Z-H basis changes, and three-CX SWAP patterns.",
+      compressionBalanced: "Balanced pipeline",
+      compressionBalancedDescription: "Repeats cancellation, rotation folding, and identity rewrites until no further exact reduction is found.",
+      compressionOperations: "Operations",
+      compressionDepth: "Logical depth",
+      compressionTwoQubit: "Two-qubit operations",
+      compressionNoChange: "This strategy found no exact reduction for the current circuit.",
+      compressionApply: "Compress circuit",
+      compressionConfirmApply: "Replace code and compress",
+      compressionUndo: "Undo compression",
+      compressionBoundary: "Measurements and custom gates stay as rewrite boundaries on their qubits. Compression does not claim hardware routing or device-native optimization.",
+      compressionOverwrite: "The Code tab no longer matches this diagram. Compression replaces it with generated code for the compressed diagram. Continue?",
+      compressionApplied: (removed, beforeDepth, afterDepth) => `Compressed the circuit by ${removed} operations. Logical depth: ${beforeDepth} → ${afterDepth}. Framework drafts were regenerated.`,
+      compressionUndone: "Compression was undone and the framework drafts were regenerated.",
       angleLabel: "Rotation angle",
       builderEmpty: "Empty circuit — place gates from the palette.",
       generatedPreview: "Built circuit",
@@ -1366,6 +1410,28 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
       clearAll: "クリア",
       applyToCode: "コードに反映",
       appliedToCode: "生成したコードを各フレームワークの下書きに反映しました。",
+      compression: "量子回路を圧縮",
+      compressionIntro: "厳密なゲート恒等式による変換結果を比較し、回路と各フレームワークのコードへ反映できます。",
+      compressionStrategy: "圧縮方式",
+      compressionInverse: "逆ゲートを相殺",
+      compressionInverseDescription: "同じ量子ビット上に別の操作が挟まっていない自己逆ゲートの組を削除します。",
+      compressionRotations: "回転ゲートを統合",
+      compressionRotationsDescription: "同じ量子ビットのRX・RY・RZ回転角を足し合わせ、厳密に0となる回転を削除します。",
+      compressionPatterns: "恒等式で書き換え",
+      compressionPatternsDescription: "位相ゲートの累乗、H-X-H / H-Z-H、3つのCXによるSWAPを短い形へ変換します。",
+      compressionBalanced: "バランス圧縮",
+      compressionBalancedDescription: "逆ゲート相殺、回転統合、恒等式変換を、厳密な削減がなくなるまで繰り返します。",
+      compressionOperations: "操作数",
+      compressionDepth: "論理深さ",
+      compressionTwoQubit: "2量子ビット操作",
+      compressionNoChange: "この方式で厳密に削減できる箇所はありません。",
+      compressionApply: "回路を圧縮",
+      compressionConfirmApply: "コードを置き換えて圧縮",
+      compressionUndo: "圧縮を元に戻す",
+      compressionBoundary: "測定とカスタムゲートは、その量子ビット上の変換境界として保持します。実機向けルーティングやデバイス固有最適化を行ったとは扱いません。",
+      compressionOverwrite: "コードタブは現在の図と一致していません。圧縮すると、圧縮後の図から生成したコードに置き換わります。続行しますか？",
+      compressionApplied: (removed, beforeDepth, afterDepth) => `${removed}個の操作を削減しました。論理深さ: ${beforeDepth} → ${afterDepth}。各フレームワークのコードも再生成しました。`,
+      compressionUndone: "圧縮を元に戻し、各フレームワークのコードを再生成しました。",
       angleLabel: "回転角",
       builderEmpty: "空の回路 — パレットからゲートを配置してください。",
       generatedPreview: "作成中の回路",
