@@ -63,9 +63,11 @@ export interface TopicOptionGroup {
  * slice matters less."* The record kind is the structural one — it is
  * `PUBLIC_REPOSITORY_CATEGORY_IDS`, the first level of the folder tree, the
  * `?category=` param, the four-kind model `check-repository-data.mjs` validates,
- * and the axis `?fits=` already agrees with (transform 29 = gates 29, source 13
- * = states 13, observable 60 = operators 60), including the "See all 29" a gate
- * record's interface panel prints. The `role` facet is one tag group inside a
+ * and the axis `?fits=` already agrees with (transform 29 = gates 29,
+ * observable 60 = operators 60), including the "See all 29" a gate record's
+ * interface panel prints. The third pair this used to quote — "source 13 =
+ * states 13" — was measured when `states` held 13; it holds 12, and the pair is
+ * dropped rather than restated, because the argument does not rest on it. The `role` facet is one tag group inside a
  * collapsed rail. So the tabs keep the words, and this control stops offering a
  * second answer to their question.
  *
@@ -79,12 +81,25 @@ export interface TopicOptionGroup {
  *
  * ## What survives, and why
  *
- * `benchmark-circuit` is **not** here. It is the one role no tab can express —
- * it splits the 267 `algorithms` into 120 published yardsticks and the rest —
- * and no category word collides with it. Dropping it would delete the only
- * thing this facet says that the tabs cannot.
+ * `benchmark-circuit` **used to be** the exception, and the sentence that
+ * justified it was *"no category word collides with it"* — true when written and
+ * false since leona 760, which split `basic-circuits` out of `algorithms` as a
+ * fifth tab holding exactly the 30 records this role names. Two controls, the
+ * same 30 records, and — because the sets are identical rather than merely
+ * overlapping — the same number printed beside each. That is the worst case for
+ * ai-ops#75's confusion, not an edge of it: a reader meets *Basic circuits (30)*
+ * as a tab and *Benchmark circuit (30)* as a topic with nothing telling them the
+ * two are one thing. Measured on production before this fix.
  *
- * Nothing is removed from the vocabulary. These four still classify every
+ * The old sentence also said the role "splits the 267 `algorithms` into 120
+ * published yardsticks and the rest". Both figures are stale: the corpus is 279
+ * records, `algorithms` is 148 after the split, and the role names 30.
+ *
+ * So it joins the others, on the same ruling and for the same reason. Nothing is
+ * lost that the tabs cannot say — that was the argument for keeping it, and the
+ * tab now says it.
+ *
+ * Nothing is removed from the vocabulary. These five still classify every
  * record, still drive `roleOf`, `OBJECT_ROLES` and the Ingredients shelf, and
  * `?topic=gate-primitive` still filters — a bookmark made before this keeps
  * working. They are simply no longer *offered*, and no surface links to them.
@@ -98,6 +113,7 @@ export const TOPICS_A_CATEGORY_TAB_OWNS: ReadonlySet<TopicId> = new Set<TopicId>
   "state",
   "operator",
   "algorithm-reference",
+  "benchmark-circuit",
 ]);
 
 /**

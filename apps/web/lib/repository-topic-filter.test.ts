@@ -63,10 +63,12 @@ test("the control offers only topics something in hand actually carries", () => 
   const groups = topicOptions(CORPUS, "en");
   const offered = groups.flatMap((group) => group.options.map((option) => option.id));
 
-  // `algorithm-reference`, `gate-primitive` and `operator` are carried by CORPUS
-  // and are still absent: a category tab owns those words (ai-ops#75).
+  // `algorithm-reference`, `gate-primitive`, `operator` and — since leona 760 put
+  // `basic-circuits` on the tab row — `benchmark-circuit` are all carried by
+  // CORPUS and are all absent: a category tab owns each of those words
+  // (ai-ops#75). Nothing of the `role` facet is offered any more, which is the
+  // ruling reaching its end rather than a new decision; see the next test.
   assert.deepEqual([...offered].sort(), [
-    "benchmark-circuit",
     "block-encoding",
     "fermionic-encoding",
     "finance",
@@ -82,15 +84,30 @@ test("the control offers only topics something in hand actually carries", () => 
 });
 
 test("groups come back in facet order whatever the corpus contains", () => {
+  // `role` is NOT here, and its absence is the point rather than an omission.
+  // The category tabs now cover all five roles one-for-one — gates, states,
+  // operators, algorithms, basic circuits — so every member of the facet is in
+  // `TOPICS_A_CATEGORY_TAB_OWNS` and the group has nothing left to offer. That
+  // is ai-ops#75's ruling ("the tabs keep the words, and this control stops
+  // offering a second answer to their question") arriving at its end state the
+  // moment the fifth tab existed, not a separate decision.
+  //
+  // If a sixth role is ever added without a tab, this list grows `role` back on
+  // its own and this assertion fails — which is the right way to be told.
   assert.deepEqual(
     topicOptions(CORPUS, "en").map((group) => group.facet),
-    ["role", "method", "domain"],
+    ["method", "domain"],
   );
   // And a corpus with no domain at all simply has no domain group, rather than
   // an empty one that reads as a facet with nothing in it.
+  //
+  // The fixture carries `variational` rather than `benchmark-circuit`, which it
+  // used to: with every role now tab-owned, a role-only corpus yields no groups
+  // at all, so this assertion would have stopped testing "one facet in, one
+  // group out" and started duplicating the tab-ownership case immediately below.
   assert.deepEqual(
-    topicOptions([entry("ansatz-2q", "benchmark-circuit")], "en").map((group) => group.facet),
-    ["role"],
+    topicOptions([entry("ansatz-2q", "variational")], "en").map((group) => group.facet),
+    ["method"],
   );
   // A corpus whose only role is one a category tab owns has no role group at
   // all — an empty heading reading "What it is" over nothing is worse than the
@@ -101,7 +118,7 @@ test("groups come back in facet order whatever the corpus contains", () => {
   );
 });
 
-test("a topic a category tab owns is not offered, and benchmark-circuit still is", () => {
+test("no role a category tab owns is offered — and that is now all five of them", () => {
   // ai-ops#75. `/repository` showed Gate (27) in the rail beside a Gates tab
   // holding 29, and the same three-word collision on States and Operators —
   // in Japanese with byte-identical labels. The tabs keep the words.
@@ -109,11 +126,23 @@ test("a topic a category tab owns is not offered, and benchmark-circuit still is
   for (const owned of TOPICS_A_CATEGORY_TAB_OWNS) {
     assert.ok(!offered.includes(owned), `${owned} is offered and a category tab owns its word`);
   }
-  // The one role no tab can express: 120 published yardsticks inside the 267
-  // the Algorithms tab holds. Dropping it would leave this facet saying nothing
-  // the tabs do not.
-  assert.ok(offered.includes("benchmark-circuit"));
-  assert.ok(!TOPICS_A_CATEGORY_TAB_OWNS.has("benchmark-circuit"));
+
+  // `benchmark-circuit` was the exception until leona 760, on the argument that
+  // "no category word collides with it". That stopped being true the moment
+  // `basic-circuits` became a tab holding exactly the 30 records this role
+  // names — and it shipped that way, with a reader meeting *Basic circuits (30)*
+  // and *Benchmark circuit (30)* on one page with nothing saying they are one
+  // thing. Identical sets, not overlapping ones, which is the worst case for
+  // ai-ops#75 rather than an edge of it.
+  //
+  // Asserted by name rather than only through the loop above, because the loop
+  // passes just as happily on four members as on five and would not notice this
+  // one being dropped again.
+  assert.ok(
+    TOPICS_A_CATEGORY_TAB_OWNS.has("benchmark-circuit"),
+    "benchmark-circuit is offered again, and the Basic circuits tab answers the same question",
+  );
+  assert.equal(TOPICS_A_CATEGORY_TAB_OWNS.size, 5);
 });
 
 test("no offered topic wears a word a category tab wears, in either locale", () => {
