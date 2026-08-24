@@ -101,13 +101,6 @@ class TierLimits:
     #: per workspace by design (it bounds one tenant's disk), so an account able
     #: to mint tenants without bound has no artifact cap at all.
     owned_workspaces: int | None
-    #: Whether this tier may share a project with somebody outside the workspace
-    #: that owns it. A capability, not an allowance — it refuses an operation
-    #: outright rather than counting one, which is why it is a bool here and has
-    #: no "used/limit" anywhere.
-    #:
-    #: Both ends are checked: the account granting and the account being granted
-    #: to. See `routes/shares.grant_project_share`.
     #: Megabytes of RAM one sandbox run may request on this tier.
     #:
     #: This is the "per plan tier" half of `05-security.md` §1, which had been
@@ -135,6 +128,13 @@ class TierLimits:
     #: 2048" is satisfied by there being no sandbox to size. `free` is the
     #: lowest row that can actually run code, and it is 2048.
     sandbox_memory_mb: int
+    #: Whether this tier may share a project with somebody outside the workspace
+    #: that owns it. A capability, not an allowance — it refuses an operation
+    #: outright rather than counting one, which is why it is a bool here and has
+    #: no "used/limit" anywhere.
+    #:
+    #: Both ends are checked: the account granting and the account being granted
+    #: to. See `routes/shares.grant_project_share`.
     project_sharing: bool
     #: SHARED projects this account may be in at once, counted per PERSON from
     #: both directions: projects it owns that carry a live grant, plus projects
