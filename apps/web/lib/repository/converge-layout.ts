@@ -5184,7 +5184,46 @@ function layoutFigure(options: {
    * and *fails* when they drift. A `Math.max` cannot fail; it can only silently
    * inflate. Keeping both was the bug.
    */
-  const halfHeight = Math.max(0, ...bundleHalves) + M.stateRadius;
+  /**
+   * **`max`, not `+`, and the difference was 1,232px of empty canvas.**
+   *
+   * This read `Math.max(0, ...bundleHalves) + M.stateRadius`. The sum is wrong
+   * for a reason the drawing settles rather than taste: a state circle is drawn
+   * at `cy = yc` with radius `stateRadius`, so it reaches `yc ± stateRadius` —
+   * *inside* the fan, on the same centre line, not stacked outside it. The fan
+   * reaches `yc ± max(bundleHalves)`. The half-extent of the two together is the
+   * larger of them, and adding them charged every figure for a circle that was
+   * already inside the band it was being added to.
+   *
+   * It never bound. `bundleHalves` is 18.5 on the *smallest* two-lane figure the
+   * bare map draws, against a `stateRadius` of 11, so the term was pure
+   * inflation on every figure at every locale: 11px a side, 22px a figure.
+   * Measured over the 56 figure-locales `drawableSlots` produces:
+   *
+   *     shut       summed height  9,869.1 -> 8,637.1  (-12.5%)
+   *     shut       tallest figure   481.4 ->   459.4
+   *     saturated  summed height 17,890.2 -> 16,658.2  (-6.9%)
+   *     saturated  tallest figure 1,587.7 -> 1,565.7
+   *
+   * On the rendered page that is the owner's complaint (a) — *"unnecessarily
+   * long and tall with too much space in between everywhere"* — read on the bare
+   * map, where `spatial-discretization` framed 38px of ink in a 95px canvas: 60%
+   * of that figure was empty and 22px of it was this line.
+   *
+   * **Nothing could have caught it, and that is now fixed too.** Every height
+   * invariant in the test file was one-sided: they sample the drawing against
+   * `[0, height]`, and shrinking `halfHeight` shrinks `yc` with it, so the whole
+   * drawing slides up inside the frame and `margin` absorbs the difference.
+   * `halfHeight - 12` passed all 94 of them. `a figure is framed by the margin
+   * and by nothing else` is the two-sided one, it fails on this line at ±4px,
+   * and it fails on the `+ stateRadius` version by exactly 11.
+   *
+   * This is the third occurrence of one shape in this file — `laneBow`
+   * verifying itself against a derivation nothing draws with, the `Math.max`
+   * floor over `laneOffsets`, and now this. All three were arithmetic that could
+   * only inflate, defended by a comment rather than by a test that could fail.
+   */
+  const halfHeight = Math.max(M.stateRadius, ...bundleHalves);
   /**
    * **No caption band.** `M.captionFont + 8` stood in both of these, holding a
    * strip of the figure's own top open for a caption drawn inside the SVG.
