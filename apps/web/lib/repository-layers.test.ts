@@ -2507,61 +2507,146 @@ test("the linear-ODE region does not go backwards on the half that is closed", (
 });
 
 
-/**
- * The reader-facing modules that may render a declared absence.
- *
- * A source scan rather than a render assertion, deliberately: jsdom does no
- * layout, and these are two different surfaces in two different files, so the
- * honest form of the question is "does any reader-facing module read this key".
- * It is a floor — a key can be read and still be rendered wrongly — but it is
- * the floor that was missing.
- */
-function absenceSurfaces(): string {
+/** The reader-facing modules that may render a declared absence. */
+function absenceSurfaceSources(): string[] {
   const webRoot = dirname(dirname(fileURLToPath(import.meta.url)));
   return [
     join(webRoot, "lib", "repository", "card-content.ts"),
     join(webRoot, "components", "repository-layers.tsx"),
     join(webRoot, "components", "map-card-panel.tsx"),
-  ]
-    .map((file) => withoutComments(readFileSync(file, "utf8")))
-    .join("\n");
+  ].map((file) => readFileSync(file, "utf8"));
 }
 
 /**
- * Source with `//` and block comments removed.
+ * A SAME-LENGTH mask of `source` with comments and string BODIES blanked out.
  *
- * Without this the guards below are the very bug they exist to catch: a surface
- * that stops rendering a declared reason but keeps the comment explaining why it
- * used to still counts as rendering it, and this PR's own fix adds exactly such
- * comments. Raised by Sourcery on leona 748.
+ * Same length is the whole trick: an index into the mask is an index into the
+ * original, so a call can be *located* in code context and then *read* from the
+ * real source. Blanking alone cannot work here, because the thing being matched
+ * — `absenceOf(node, "implementations")` — contains a string literal, so a
+ * scanner that blanks strings destroys the field name it needs to read.
  *
- * Crude on purpose — it does not parse strings, so a `//` inside a string
- * literal truncates that line. That is safe HERE and only here: the guards ask
- * whether a call expression appears, and losing the tail of a string literal
- * cannot manufacture one. It must not be reused as a general comment stripper.
+ * Both halves are load-bearing and a reviewer found each, which is why this is a
+ * hand-rolled scanner with its own tests rather than a one-line `includes`:
+ *
+ * - **Comments.** A surface that stops rendering a declared reason but keeps the
+ *   comment explaining why it used to would still count as rendering it. Not
+ *   hypothetical: this PR's own fix adds a comment naming the very call its
+ *   guard asserts. (Sourcery.)
+ * - **Strings.** The reverse direction, and the dangerous one: an
+ *   `absenceOf(...)` spelled inside a string literal — an error message, a
+ *   fixture — would satisfy the guard with nothing rendered at all. (CodeRabbit.)
+ *
+ * Not a TypeScript parser and it does not need to be: it tracks the three quote
+ * characters with backslash escapes, which is exactly enough to make "does this
+ * call expression appear" honest. Division-vs-regex is deliberately not
+ * disambiguated — no `/` in these three files precedes text that could spell an
+ * `absenceOf` call, and a regex literal that did would only ever cause a false
+ * FAILURE, never a false pass.
  */
-function withoutComments(source: string): string {
-  return source
-    .replace(/\/\*[\s\S]*?\*\//g, " ")
-    .split("\n")
-    .map((line) => {
-      const at = line.indexOf("//");
-      return at === -1 ? line : line.slice(0, at);
-    })
-    .join("\n");
+function codeMask(source: string): string {
+  const out: string[] = [];
+  let i = 0;
+  while (i < source.length) {
+    const two = source.slice(i, i + 2);
+    if (two === "//" || two === "/*") {
+      const end =
+        two === "//"
+          ? (source.indexOf("\n", i) === -1 ? source.length : source.indexOf("\n", i))
+          : (source.indexOf("*/", i + 2) === -1 ? source.length : source.indexOf("*/", i + 2) + 2);
+      // Blanked to spaces, one for one, so every later offset still lines up.
+      for (let k = i; k < end; k += 1) out.push(source[k] === "\n" ? "\n" : " ");
+      i = end;
+      continue;
+    }
+    const ch = source[i]!;
+    if (ch === '"' || ch === "'" || ch === "`") {
+      out.push(ch);
+      i += 1;
+      while (i < source.length && source[i] !== ch) {
+        if (source[i] === "\\") {
+          out.push(" ");
+          i += 1;
+          if (i < source.length) {
+            out.push(" ");
+            i += 1;
+          }
+          continue;
+        }
+        out.push(source[i] === "\n" ? "\n" : " ");
+        i += 1;
+      }
+      if (i < source.length) {
+        out.push(ch);
+        i += 1;
+      }
+      continue;
+    }
+    out.push(ch);
+    i += 1;
+  }
+  return out.join("");
 }
 
-const absenceIsRendered = (source: string, field: string) =>
-  source.includes(`absenceOf(method, "${field}"`) || source.includes(`absenceOf(node, "${field}"`);
+/** Does `source` contain an EXECUTABLE `absenceOf(method|node, "<field>", ...)`? */
+function rendersAbsence(source: string, field: string): boolean {
+  const mask = codeMask(source);
+  const escaped = field.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const call = new RegExp(`^absenceOf\\(\\s*(?:method|node)\\s*,\\s*["']${escaped}["']`);
+  for (let i = mask.indexOf("absenceOf("); i !== -1; i = mask.indexOf("absenceOf(", i + 1)) {
+    // Located in CODE (via the mask), read from the ORIGINAL (offsets align).
+    if (call.test(source.slice(i, i + 200))) return true;
+  }
+  return false;
+}
+
+const absenceIsRendered = (sources: readonly string[], field: string) =>
+  sources.some((source) => rendersAbsence(source, field));
 
 /**
  * Declarable keys that no surface renders yet, and which nothing has declared.
  *
- * NOT a permanent exemption — it is the list the test below refuses to let grow,
- * and the list the test above it refuses to let anyone *use*. Wiring one of
- * these up is a one-line deletion here.
+ * NOT a permanent exemption — it is the list one test below refuses to let grow,
+ * and the one above it refuses to let anyone *use*. Wiring one up is a one-line
+ * deletion here.
  */
 const ABSENCE_KEYS_NOT_WIRED_UP = ["cost", "conditions", "example.pseudocode"];
+
+test("the scanner ignores comments and strings, and nothing else", () => {
+  // The guards below are only as good as this, and the two directions fail
+  // oppositely: a missed comment lets a DELETED renderer pass, and a missed
+  // string lets a renderer that NEVER EXISTED pass.
+  const call = 'absenceOf(node, "implementations", isJa)';
+
+  assert.equal(rendersAbsence(`// ${call}`, "implementations"), false, "line comment counted");
+  assert.equal(rendersAbsence(`/* ${call} */`, "implementations"), false, "block comment counted");
+  assert.equal(
+    rendersAbsence(`const s = "${call}";`, "implementations"),
+    false,
+    "string literal counted",
+  );
+  assert.equal(
+    rendersAbsence("const s = `" + call + "`;", "implementations"),
+    false,
+    "template literal counted",
+  );
+
+  // Real calls survive — including one after a string containing `//`, which the
+  // previous comment-only stripper truncated away.
+  assert.ok(rendersAbsence(`x = ${call};`, "implementations"));
+  assert.ok(rendersAbsence(`f("http://x"); y = ${call};`, "implementations"), "a URL swallowed it");
+  assert.ok(rendersAbsence(`x = absenceOf(method, "example.text", ja);`, "example.text"));
+
+  // An escaped quote must not end the string early and expose its tail as code.
+  assert.equal(
+    rendersAbsence(`const s = "a\\"${call}";`, "implementations"),
+    false,
+    "escaped quote ended the string early",
+  );
+  // The FIELD is matched, not merely the function name.
+  assert.equal(rendersAbsence(`x = ${call};`, "cost"), false, "matched the wrong field");
+});
+
 
 test("no absence anyone has actually declared is rendered by nothing", () => {
   // The check that fires at the moment it matters: an author writes a reason,
@@ -2584,13 +2669,13 @@ test("no absence anyone has actually declared is rendered by nothing", () => {
   // which is exactly the state that shipped. Reverting the method-page fix leaves
   // this test passing. The test below it is the one that fails, and it is the one
   // that holds the two surfaces together.
-  const source = absenceSurfaces();
+  const sources = absenceSurfaceSources();
   const declared = new Set(
     LAYER_GRAPH.nodes.flatMap((node) => Object.keys((node as { absences?: object }).absences ?? {})),
   );
   assert.ok(declared.size > 0, "no absence is declared anywhere — this test is asserting nothing");
 
-  const unrendered = [...declared].filter((field) => !absenceIsRendered(source, field)).sort();
+  const unrendered = [...declared].filter((field) => !absenceIsRendered(sources, field)).sort();
   assert.deepEqual(
     unrendered,
     [],
@@ -2604,8 +2689,8 @@ test("the set of declarable-but-unrendered absence keys does not grow", () => {
   // the gauge would count the field closed, and the first author to use it would
   // ship research no reader meets. This fails on that addition rather than on
   // its first use.
-  const source = absenceSurfaces();
-  const unwired = DECLARABLE_ABSENCES.filter((field) => !absenceIsRendered(source, field)).sort();
+  const sources = absenceSurfaceSources();
+  const unwired = DECLARABLE_ABSENCES.filter((field) => !absenceIsRendered(sources, field)).sort();
   assert.deepEqual(
     unwired,
     [...ABSENCE_KEYS_NOT_WIRED_UP].sort(),
@@ -2614,30 +2699,31 @@ test("the set of declarable-but-unrendered absence keys does not grow", () => {
 });
 
 test("the two surfaces agree about a declared implementations absence", () => {
-  // The specific contradiction the check above generalises. Both files must read
-  // the key, and the method page must prefer it over its generic note — asserted
-  // by ORDER, because a branch that renders the generic note first and the reason
-  // never is exactly what shipped.
+  // The specific contradiction the checks above generalise. Both files must
+  // render the key, AND the method page must prefer it over its generic note —
+  // asserted by ORDER, because a branch that renders the generic note first and
+  // the reason never is exactly what shipped.
   const webRoot = dirname(dirname(fileURLToPath(import.meta.url)));
-  // Comments stripped here too — this PR's own fix adds a comment naming the
-  // very call it must assert, so a raw scan would pass on the comment alone.
-  const page = withoutComments(
-    readFileSync(join(webRoot, "components", "repository-layers.tsx"), "utf8"),
-  );
-  const card = withoutComments(
-    readFileSync(join(webRoot, "lib", "repository", "card-content.ts"), "utf8"),
-  );
+  const pageSource = readFileSync(join(webRoot, "components", "repository-layers.tsx"), "utf8");
+  const cardSource = readFileSync(join(webRoot, "lib", "repository", "card-content.ts"), "utf8");
 
   assert.ok(
-    card.includes('absenceOf(method, "implementations"'),
-    "card-content.ts stopped reading the implementations absence",
+    rendersAbsence(cardSource, "implementations"),
+    "card-content.ts stopped rendering the implementations absence",
   );
-  const reasonAt = page.indexOf('absenceOf(node, "implementations"');
-  const genericAt = page.indexOf("copy.implementationsNone");
-  assert.ok(reasonAt >= 0, "the method page does not read the implementations absence");
+  assert.ok(
+    rendersAbsence(pageSource, "implementations"),
+    "the method page does not render the implementations absence",
+  );
+
+  // Ordering, read off the MASK so a mention in a comment or a string cannot
+  // stand in for either branch.
+  const mask = codeMask(pageSource);
+  const reasonAt = mask.indexOf("absenceOf(node,");
+  const genericAt = mask.indexOf("copy.implementationsNone");
   assert.ok(genericAt >= 0, "the method page's generic implementations note is gone");
   assert.ok(
-    reasonAt < genericAt,
+    reasonAt >= 0 && reasonAt < genericAt,
     "the method page falls back to its generic note before checking for a declared reason",
   );
 });
