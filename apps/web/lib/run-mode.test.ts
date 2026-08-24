@@ -50,6 +50,14 @@ test("the authenticated Qapp surface scrolls inside the fixed workspace shell", 
   );
 });
 
+test("the Qapp gallery owns its scroll region inside the fixed workspace shell", () => {
+  const styles = readFileSync(join(repoRoot, "packages", "ts", "ui", "styles.css"), "utf8");
+  assert.match(
+    styles,
+    /\.mj-qapps-scroll\s*\{[^}]*overflow-y:\s*auto;[^}]*overscroll-behavior-y:\s*contain;/s,
+  );
+});
+
 test("run mode parsing rejects server-only and unknown values", () => {
   for (const mode of COMPOSER_MODES) assert.equal(isComposerMode(mode), true);
   assert.equal(isComposerMode("chat"), false);

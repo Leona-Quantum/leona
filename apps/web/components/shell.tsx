@@ -13,6 +13,8 @@ import {
   MoreIcon,
   PlayIcon,
   PlusIcon,
+  QappsIcon,
+  SearchIcon,
   SettingsIcon,
   StudioIcon,
   TrashIcon,
@@ -79,7 +81,7 @@ const SIDEBAR_STORAGE_KEY = "majorana.sidebar-collapsed.v1";
 // PR's own commits). The marker has to sit on the flagged line itself.
 const RECENTS_POSITION_KEY = "majorana.recents-position.v1"; // gitleaks:allow
 type RecentsPosition = "above" | "below";
-type WorkspaceSurface = "run" | "studio";
+type WorkspaceSurface = "run" | "studio" | "qapps";
 type DeleteTarget =
   | { kind: "chat"; item: ChatSummary }
   | { kind: "artifact"; item: LibraryArtifact };
@@ -279,7 +281,11 @@ export function Shell({
   }
 
   const copy = WORKSPACE_COPY[locale];
-  const activeSurface: WorkspaceSurface = pathname.startsWith("/studio") ? "studio" : "run";
+  const activeSurface: WorkspaceSurface = pathname.startsWith("/studio")
+    ? "studio"
+    : pathname.startsWith("/qapps")
+      ? "qapps"
+      : "run";
   const activeNavSurface = NAV_SURFACES.find(
     (surface) => pathname === surface.href || pathname.startsWith(`${surface.href}/`),
   );
@@ -906,7 +912,7 @@ function WorkspaceSidebar({
         </button>
       </div>
 
-      <nav className="mj-sidebar-surface-switch" aria-label={copy.surfaceSwitch}>
+      <nav className="mj-sidebar-surface-switch" aria-label={copy.surfaceSwitch} data-two={demoMode ? "true" : undefined}>
         <a className={surface === "run" ? "is-active" : ""} href={runHref} aria-current={surface === "run" ? "page" : undefined} aria-label={copy.run} title={copy.run}>
           <PlayIcon size={15} />
           <span className="mj-sidebar-copy">{copy.run}</span>
@@ -915,6 +921,12 @@ function WorkspaceSidebar({
           <StudioIcon size={15} />
           <span className="mj-sidebar-copy">{copy.studio}</span>
         </a>
+        {!demoMode ? (
+          <a className={surface === "qapps" ? "is-active" : ""} href="/qapps" aria-current={surface === "qapps" ? "page" : undefined} aria-label={copy.qapps} title={copy.qapps}>
+            <QappsIcon size={15} />
+            <span className="mj-sidebar-copy">{copy.qapps}</span>
+          </a>
+        ) : null}
       </nav>
 
       {surface === "run" ? (
@@ -1021,6 +1033,25 @@ function WorkspaceSidebar({
               </section>
             ),
           )}
+        </div>
+      ) : surface === "qapps" ? (
+        <div className="mj-sidebar-scroll">
+          <a className="mj-sidebar-new" href="/run?mode=qapp" aria-label={copy.createQapp} title={copy.createQapp}>
+            <PlusIcon size={16} />
+            <span className="mj-sidebar-copy">{copy.createQapp}</span>
+          </a>
+          <a className="mj-sidebar-library-link" href="/qapps?view=mine" aria-label={copy.myQapps} title={copy.myQapps}>
+            <QappsIcon size={16} />
+            <span className="mj-sidebar-copy">{copy.myQapps}</span>
+          </a>
+          <a className="mj-sidebar-library-link" href="/qapps?view=public" aria-label={copy.exploreQapps} title={copy.exploreQapps}>
+            <SearchIcon size={16} />
+            <span className="mj-sidebar-copy">{copy.exploreQapps}</span>
+          </a>
+          <a className="mj-sidebar-library-link" href="/studio?new=1" aria-label={copy.createQappStudio} title={copy.createQappStudio}>
+            <StudioIcon size={16} />
+            <span className="mj-sidebar-copy">{copy.createQappStudio}</span>
+          </a>
         </div>
       ) : (
         <div className="mj-sidebar-scroll">

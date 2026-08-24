@@ -2393,12 +2393,15 @@ a.mj-facet-option:hover {
 /* ---------- quiet workspace navigation ---------- */
 .mj-sidebar-surface-switch {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 2px;
   padding: 2px;
   border: 1px solid var(--border-0);
   border-radius: var(--radius-control);
   background: var(--bg-0);
+}
+.mj-sidebar-surface-switch[data-two="true"] {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 .mj-sidebar-surface-switch a {
   display: flex;
@@ -5065,6 +5068,177 @@ a.mj-facet-option:hover {
   margin: var(--sp-4) 0 0;
   color: var(--text-2);
   font-size: var(--fs-12);
+}
+
+/* ---------- Qapp gallery ---------- */
+.mj-qapps-page {
+  min-height: 0;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+.mj-qapps-scroll {
+  min-height: 0;
+  flex: 1 1 auto;
+  overflow-y: auto;
+  overscroll-behavior-y: contain;
+  padding: var(--sp-8) var(--sp-12) var(--sp-12);
+}
+.mj-qapps-hero {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: var(--sp-8);
+  margin-bottom: var(--sp-8);
+}
+.mj-qapps-hero .mj-section-label,
+.mj-qapps-hero > div:first-child > p:last-child,
+.mj-qapp-card-copy p {
+  margin: 0;
+}
+.mj-qapps-hero > div:first-child > p:last-child {
+  color: var(--text-1);
+  line-height: 1.6;
+}
+.mj-qapps-title-row {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  margin: var(--sp-2) 0 var(--sp-3);
+}
+.mj-qapps-title-row svg {
+  color: var(--accent);
+}
+.mj-qapps-title-row h1 {
+  margin: 0;
+  font-size: var(--fs-28);
+  font-weight: 500;
+}
+.mj-qapps-create-actions,
+.mj-qapp-card-actions,
+.mj-qapp-card-detail,
+.mj-qapp-card-meta {
+  display: flex;
+  align-items: center;
+}
+.mj-qapps-create-actions {
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: var(--sp-2);
+}
+.mj-qapps-create-actions a,
+.mj-qapp-card-actions a {
+  text-decoration: none;
+}
+.mj-qapps-tabs {
+  display: flex;
+  gap: var(--sp-6);
+  margin-bottom: var(--sp-4);
+  border-bottom: 1px solid var(--border-0);
+}
+.mj-qapps-tabs a {
+  padding: 0 0 var(--sp-3);
+  border-bottom: 2px solid transparent;
+  color: var(--text-1);
+  font-size: var(--fs-13);
+  font-weight: 500;
+  text-decoration: none;
+}
+.mj-qapps-tabs a:hover,
+.mj-qapps-tabs a:focus-visible,
+.mj-qapps-tabs a[aria-current="page"] {
+  border-bottom-color: var(--accent);
+  color: var(--text-0);
+}
+.mj-qapps-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(280px, 100%), 1fr));
+  gap: var(--sp-4);
+}
+.mj-qapp-card {
+  display: grid;
+  grid-template-rows: auto 1fr auto auto;
+  gap: var(--sp-4);
+  min-width: 0;
+  padding: var(--sp-5);
+  border: 1px solid var(--border-0);
+  border-radius: var(--radius-card);
+  background: var(--bg-1);
+}
+.mj-qapp-card:hover {
+  background: var(--bg-2);
+}
+.mj-qapp-card-meta {
+  justify-content: space-between;
+  gap: var(--sp-3);
+  color: var(--text-2);
+  font-size: var(--fs-12);
+}
+.mj-qapp-card-meta > span {
+  padding: var(--sp-1) var(--sp-2);
+  border: 1px solid var(--border-0);
+  border-radius: var(--radius-control);
+  color: var(--text-1);
+  font-family: var(--font-mono);
+}
+.mj-qapp-card-meta > span[data-public="true"] {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+.mj-qapp-card-copy {
+  min-width: 0;
+}
+.mj-qapp-card-copy h2 {
+  margin: 0 0 var(--sp-2);
+  overflow-wrap: anywhere;
+  font-size: var(--fs-16);
+  font-weight: 500;
+}
+.mj-qapp-card-copy p {
+  display: -webkit-box;
+  overflow: hidden;
+  color: var(--text-1);
+  line-height: 1.55;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+}
+.mj-qapp-card-detail {
+  flex-wrap: wrap;
+  gap: var(--sp-2);
+  color: var(--text-2);
+  font-family: var(--font-mono);
+  font-size: var(--fs-12);
+}
+.mj-qapp-card-detail span + span::before {
+  content: "·";
+  margin-right: var(--sp-2);
+}
+.mj-qapp-card-actions {
+  justify-content: flex-end;
+  gap: var(--sp-3);
+}
+.mj-qapp-card-actions > a:not(.mj-primary-button):not(.mj-secondary-button) {
+  color: var(--text-1);
+  font-size: var(--fs-12);
+}
+.mj-qapp-card-actions > a:not(.mj-primary-button):not(.mj-secondary-button):hover,
+.mj-qapp-card-actions > a:not(.mj-primary-button):not(.mj-secondary-button):focus-visible {
+  color: var(--text-0);
+  text-decoration: underline;
+}
+
+@media (max-width: 720px) {
+  .mj-qapps-scroll {
+    padding: var(--sp-6) var(--sp-4) var(--sp-8);
+  }
+  .mj-qapps-hero {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: var(--sp-4);
+  }
+  .mj-qapps-create-actions {
+    justify-content: flex-start;
+  }
 }
 
 /* ---------- Quepo Studio artifact detail ---------- */

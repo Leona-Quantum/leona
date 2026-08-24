@@ -165,6 +165,39 @@ async def list_qapps(scope: Scope, session: AsyncSession, *, limit: int = 100) -
     )
 
 
+async def list_public_qapps(
+    scope: Scope, session: AsyncSession, *, limit: int = 100
+) -> list[tuple[Qapp, QappVersion]]:
+    """List published Qapps with only their current version available to projection.
+
+    The route turns these rows into a deliberately small public summary. Keeping
+    the join here avoids both an N+1 lookup and exposing version source/UI fields
+    to callers that only need gallery metadata.
+    """
+    return list(
+        (
+            await session.execute(
+                select(Qapp, QappVersion)
+                .join(
+                    QappVersion,
+                    and_(
+                        QappVersion.qapp_id == Qapp.id,
+                        QappVersion.id == Qapp.current_version_id,
+                    ),
+                )
+                .where(
+                    _accessible(scope),
+                    Qapp.visibility == Visibility.PUBLIC.value,
+                    Qapp.published_at.is_not(None),
+                    Qapp.deleted_at.is_(None),
+                )
+                .order_by(Qapp.published_at.desc(), Qapp.id.desc())
+                .limit(limit)
+            )
+        ).all()
+    )
+
+
 async def get_qapp(scope: Scope, session: AsyncSession, qapp_id: uuid.UUID) -> Qapp:
     row = (
         await session.execute(

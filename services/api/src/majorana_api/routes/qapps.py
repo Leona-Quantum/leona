@@ -8,7 +8,7 @@ from typing import Any
 
 from fastapi import APIRouter, HTTPException
 from majorana_contracts import Qapp, QappExecution, QappVersion, PublicQapp
-from majorana_contracts.enums import Visibility
+from majorana_contracts.enums import Framework, Visibility
 from pydantic import BaseModel, ConfigDict, Field
 
 from ..auth.deps import CurrentScope, DbSession
@@ -28,6 +28,20 @@ class QappDetail(BaseModel):
 
     qapp: Qapp
     version: QappVersion
+
+
+class PublicQappSummary(BaseModel):
+    """Gallery-safe public metadata; excludes generated UI, source, and tenant ids."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    slug: str
+    title: str
+    description: str
+    framework: Framework
+    qubits_estimate: int = Field(ge=1, le=27)
+    version: int = Field(ge=1)
+    published_at: dt.datetime
 
 
 class SetQappVisibilityRequest(RequestModel):
@@ -98,6 +112,23 @@ def _execution_resource(row) -> QappExecution:
 @router.get("/qapps", response_model=list[Qapp])
 async def list_qapps(scope: CurrentScope, session: DbSession) -> list[Qapp]:
     return [_qapp_resource(row) for row in await qapps_repo.list_qapps(scope, session)]
+
+
+@router.get("/qapps/public", response_model=list[PublicQappSummary])
+async def list_public_qapps(scope: PublicQappScope, session: DbSession) -> list[PublicQappSummary]:
+    rows = await qapps_repo.list_public_qapps(scope, session)
+    return [
+        PublicQappSummary(
+            slug=qapp.slug,
+            title=qapp.title,
+            description=qapp.description,
+            framework=version.framework,
+            qubits_estimate=version.qubits_estimate,
+            version=version.seq,
+            published_at=_required(qapp.published_at, "published_at"),
+        )
+        for qapp, version in rows
+    ]
 
 
 @router.get("/qapps/public/{slug}", response_model=PublicQapp)

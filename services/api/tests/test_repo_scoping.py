@@ -149,6 +149,16 @@ async def test_list_qapps(scope, session):
     assert_workspace_bound(session.statements[0], scope)
 
 
+async def test_list_public_qapps_names_the_public_cross_workspace_exception(scope, session):
+    await qapps.list_public_qapps(scope, session)
+    sql, params = compiled(session.statements[0])
+    assert "JOIN qapp_versions" in sql
+    assert "workspace_id" in sql
+    assert "visibility" in sql
+    assert scope.workspace_id in params.values()
+    assert "public" in params.values()
+
+
 async def test_get_qapp(scope, session):
     with pytest.raises(NotFoundError):
         await qapps.get_qapp(scope, session, uuid.uuid4())

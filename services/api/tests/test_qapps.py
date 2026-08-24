@@ -12,6 +12,7 @@ from majorana_api.qapp_validation import (
     validate_qapp_ui_document,
 )
 from majorana_api.repos.qapps import _slug
+from majorana_api.routes.qapps import list_public_qapps
 from majorana_api.routes.runs import CreateRunRequest
 
 
@@ -139,3 +140,43 @@ async def test_public_qapp_scope_arms_the_anonymous_rls_context(monkeypatch):
 
     assert scope.workspace_id.int == 0 and scope.user_id.int == 0
     assert captured == {"session": session, "scope": scope, "enforce": True}
+
+
+async def test_public_qapp_listing_returns_only_gallery_safe_metadata(monkeypatch):
+    now = dt.datetime.now(dt.timezone.utc)
+    qapp = SimpleNamespace(
+        slug="h2-energy-123",
+        title="H₂ ground-state explorer",
+        description="Explore the H₂ energy curve",
+        published_at=now,
+        workspace_id=uuid.uuid4(),
+        owner_user_id=uuid.uuid4(),
+    )
+    version = SimpleNamespace(
+        framework="qiskit",
+        qubits_estimate=4,
+        seq=2,
+        quantum_source="must not cross the gallery boundary",
+        ui_document="<html>large generated app</html>",
+    )
+
+    async def rows(scope, session):
+        return [(qapp, version)]
+
+    monkeypatch.setattr("majorana_api.routes.qapps.qapps_repo.list_public_qapps", rows)
+    result = await list_public_qapps(SimpleNamespace(), object())
+    dumped = result[0].model_dump()
+
+    assert dumped == {
+        "slug": "h2-energy-123",
+        "title": "H₂ ground-state explorer",
+        "description": "Explore the H₂ energy curve",
+        "framework": "qiskit",
+        "qubits_estimate": 4,
+        "version": 2,
+        "published_at": now,
+    }
+    assert "workspace_id" not in dumped
+    assert "owner_user_id" not in dumped
+    assert "quantum_source" not in dumped
+    assert "ui_document" not in dumped
