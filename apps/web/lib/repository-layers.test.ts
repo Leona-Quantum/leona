@@ -2662,53 +2662,87 @@ test("the variational region does not go quiet again about what it costs", () =>
 });
 
 /**
- * Every hop the ground-state and excited-state routes draw says what happens on it.
+ * Every hop the Atlas draws says what happens on it — all 28 slots, all 194 stretches.
  *
  * **What a reader met before this closed.** Opening VQD's route on production gave
- * *"None found yet."* on all four of its hops — the same shape as the blank `cost`
- * field one level up, and the same cause: nobody had read the papers for it. The
- * gauge read **5 of 33 route stretches**; the other 28 were written out of each
- * method's own citations.
+ * *"None found yet."* on all four of its hops, and it was not alone: the gauge read
+ * **5 of 33 route stretches** over two slots on the morning of 2026-08-24 and **166 of
+ * 194** over the whole graph. Every one of the rest was written out of the method's own
+ * citations, in five batches — leona 752, 756 and this one.
  *
- * **Stretches, not methods, and the denominator has a floor under it.** A method
- * with one authored hop of five reads as "has hops" on any per-method count, and
- * that is exactly the region that looks finished and is not — so this asserts the
- * two numbers are equal AND that the denominator has not shrunk. Deleting a route
- * would otherwise make the equality pass on a smaller region, which is the
- * "measure less, look healthier" failure `region.unknown` guards at the slot level.
+ * **Stretches, not methods.** A method with one authored hop of five reads as "has hops"
+ * on any per-method count, and that is exactly the region that looks finished and is not.
+ * `hops` is keyed per stretch, so the honest denominator is the stretch — and a stretch
+ * is any step the route lists, whether it advances the route or **feeds** it as an
+ * ingredient, since both are drawn and both are keyable.
  *
- * **All six slots now, not two.** The four this test used to leave out —
- * `ansatz-construction`, `parameter-optimization`, `observable-estimation`,
- * `error-mitigation` — read `hop theory 27/39` when they were added to it, and the
- * twelve blanks were every one of them an INGREDIENT hop rather than a chain hop:
- * a slot the method reaches for and consumes, drawn in the card's *Requires* list
- * through `CardIngredient.theory` rather than on the chain. They were the last
- * twelve, and the region is 72/72.
+ * **Per slot, and that is the whole design of this table.** An aggregate floor of 194 is
+ * met by `linear-ode-solve` growing while `quantum-linear-solve` loses all 21 of its —
+ * the region still reads closed, an eighth of it is gone, and no assertion here notices.
+ * That is the "measure less, look healthier" failure `region.unknown` catches one level
+ * out, it was raised on the PR that first split these floors, and it is why the numbers
+ * below are as uneven as they are: `ansatz-construction` carries 19 stretches and
+ * `gate-synthesis` carries 2.
  *
- * That is why the floors below are so uneven — `ansatz-construction` has 13
- * methods and 19 stretches while `error-mitigation` has 4 and 4. Summing them
- * would let the largest slot's growth pay for the smallest one disappearing.
+ * **The table is closed against the graph, not maintained beside it.** Every capability
+ * in `LAYER_GRAPH` must appear here and nothing else may — otherwise a slot added later
+ * sits outside every floor while this test stays green, which is the same hole one more
+ * level in. That equality is asserted first, before any floor is read.
+ *
+ * Each floor is what its slot carried when the field closed. Authoring more can never
+ * fail it; deleting always does.
  */
-test("every hop these six slots draw says what happens on it", () => {
-  // Per slot, not summed. An aggregate floor of 33 is met by one slot losing
-  // every route while the other grows past it — the same "measure less, look
-  // healthier" failure one level in from the one `region.unknown` catches, and
-  // raised on the PR that added this test. The floors are what each slot was
-  // actually closed over.
-  const FLOORS: readonly (readonly [string, number])[] = [
-    ["ground-state-energy", 11],
-    ["excited-state-energy", 22],
-    ["ansatz-construction", 19],
-    ["parameter-optimization", 8],
-    ["observable-estimation", 8],
-    ["error-mitigation", 4],
+test("every hop the Atlas draws says what happens on it", () => {
+  const FLOORS: readonly (readonly [string, number, number])[] = [
+    ["ansatz-construction", 13, 19],
+    ["block-encode-matrix", 4, 6],
+    ["compile-to-device", 2, 5],
+    ["device-characterization", 2, 2],
+    ["error-correction", 2, 2],
+    ["error-mitigation", 4, 4],
+    ["excited-state-energy", 7, 22],
+    ["full-discretization", 2, 2],
+    ["gate-synthesis", 2, 2],
+    ["ground-state-energy", 4, 11],
+    ["hamiltonian-recasting", 2, 2],
+    ["hamiltonian-simulation", 3, 8],
+    ["hidden-period-finding", 3, 3],
+    ["linear-ode-solve", 9, 21],
+    ["matrix-function", 2, 7],
+    ["nonlinear-linear-embedding", 6, 6],
+    ["nonlinear-ode-solve", 4, 10],
+    ["observable-estimation", 4, 8],
+    ["parameter-optimization", 6, 8],
+    ["phase-estimation", 2, 2],
+    ["polynomial-approximation", 2, 2],
+    ["qsp-phase-factors", 4, 4],
+    ["quantum-linear-solve", 5, 21],
+    ["qubit-routing", 3, 3],
+    ["spatial-discretization", 2, 2],
+    ["state-preparation", 3, 3],
+    ["success-amplification", 2, 3],
+    ["time-discretization", 6, 6],
   ];
-  for (const [slot, floor] of FLOORS) {
+  // Closed against the graph before anything is measured, in BOTH directions: a new
+  // capability that nobody adds a row for would otherwise be unratcheted and silent,
+  // and a row naming a slot that no longer exists would measure an empty region and
+  // pass. `regionClosure`'s own `unknown` catches only the second.
+  assert.deepEqual(
+    FLOORS.map(([slot]) => slot).sort(),
+    LAYER_GRAPH.nodes.filter(isCapability).map((node) => node.id).sort(),
+    "a capability has no floor here, or a floor names a capability the graph no longer has",
+  );
+  let stretches = 0;
+  for (const [slot, methodFloor, stretchFloor] of FLOORS) {
     const region = regionClosure(LAYER_GRAPH, STATE_VOCABULARY, [slot], new Map());
     assert.deepEqual(region.unknown, [], `${slot} names no capability`);
     assert.ok(
-      region.hopStretches >= floor,
-      `${slot}: ${region.hopStretches} drawn stretches, fewer than the ${floor} it was closed over`,
+      region.methods.length >= methodFloor,
+      `${slot}: ${region.methods.length} methods, fewer than the ${methodFloor} it was closed over`,
+    );
+    assert.ok(
+      region.hopStretches >= stretchFloor,
+      `${slot}: ${region.hopStretches} drawn stretches, fewer than the ${stretchFloor} it was closed over`,
     );
     assert.equal(
       region.hopStretchesAuthored,
@@ -2716,7 +2750,11 @@ test("every hop these six slots draw says what happens on it", () => {
       `${slot}: hop theory covers ${region.hopStretchesAuthored} of ${region.hopStretches} — ` +
         `unauthored: ${region.unauthoredHops.map((hop) => `${hop.method}/${hop.key}`).join(", ")}`,
     );
+    stretches += region.hopStretches;
   }
+  // The graph-wide total, which no per-slot assertion states. 194 at the commit that
+  // closed the field.
+  assert.ok(stretches >= 194, `${stretches} stretches across all slots, fewer than the 194 the field closed over`);
 });
 
 
