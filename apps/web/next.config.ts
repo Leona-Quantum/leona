@@ -112,6 +112,26 @@ const nextConfig: NextConfig = {
   experimental: { globalNotFound: true },
   // @majorana/ui ships TS/TSX source (vendored components) — Next transpiles it.
   transpilePackages: ["@majorana/ui"],
+  // `lib/sanitize-math.ts` imports `isomorphic-dompurify`, which reaches jsdom
+  // when it runs on the server. Leona 690 wired that sanitizer into the KaTeX
+  // render path and every route that draws mathematics returned 500 **on
+  // production only** — leona 693 withdrew the call to restore service and named
+  // this line as the fix forward.
+  //
+  // The mechanism, since the incident note recorded the symptom and not the
+  // cause. `jsdom` is already on Next's own default external list
+  // (`next/dist/lib/server-external-packages.jsonc`, line 51), but
+  // `isomorphic-dompurify` is not — so Next bundled the wrapper while leaving
+  // its one dependency to a bare runtime `require`. Vercel's file tracing runs
+  // over the *bundled* output, where that require no longer appears as an
+  // import it can follow, so jsdom's tree was never copied into the lambda. It
+  // resolves locally because a local `node_modules` is the whole tree; on
+  // Vercel there is only what tracing collected. Naming the wrapper here makes
+  // both a native require, and tracing then follows the wrapper to jsdom.
+  //
+  // This must be verified on a Vercel PREVIEW, never on a local `next start` —
+  // the local run is what missed it the first time.
+  serverExternalPackages: ["isomorphic-dompurify"],
   // Next sends `X-Powered-By: Next.js` on every response unless this is off.
   // It is not a vulnerability by itself — it discloses the framework, which an
   // attacker can also read from the `/_next/static/...` asset paths in the HTML
