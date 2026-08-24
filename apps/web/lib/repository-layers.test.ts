@@ -19,6 +19,7 @@ import test from "node:test";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
+import ts from "typescript";
 
 import {
   DECLARABLE_ABSENCES,
@@ -2507,61 +2508,112 @@ test("the linear-ODE region does not go backwards on the half that is closed", (
 });
 
 
-/**
- * The reader-facing modules that may render a declared absence.
- *
- * A source scan rather than a render assertion, deliberately: jsdom does no
- * layout, and these are two different surfaces in two different files, so the
- * honest form of the question is "does any reader-facing module read this key".
- * It is a floor — a key can be read and still be rendered wrongly — but it is
- * the floor that was missing.
- */
-function absenceSurfaces(): string {
+/** The reader-facing modules that may render a declared absence, as (name, source). */
+function absenceSurfaceSources(): { name: string; source: string }[] {
   const webRoot = dirname(dirname(fileURLToPath(import.meta.url)));
   return [
-    join(webRoot, "lib", "repository", "card-content.ts"),
-    join(webRoot, "components", "repository-layers.tsx"),
-    join(webRoot, "components", "map-card-panel.tsx"),
-  ]
-    .map((file) => withoutComments(readFileSync(file, "utf8")))
-    .join("\n");
+    ["card-content.ts", join(webRoot, "lib", "repository", "card-content.ts")],
+    ["repository-layers.tsx", join(webRoot, "components", "repository-layers.tsx")],
+    ["map-card-panel.tsx", join(webRoot, "components", "map-card-panel.tsx")],
+  ].map(([name, file]) => ({ name: name!, source: readFileSync(file!, "utf8") }));
 }
 
 /**
- * Source with `//` and block comments removed.
+ * Every executable `absenceOf(<x>, "<field>", …)` in `source`, with its offset.
  *
- * Without this the guards below are the very bug they exist to catch: a surface
- * that stops rendering a declared reason but keeps the comment explaining why it
- * used to still counts as rendering it, and this PR's own fix adds exactly such
- * comments. Raised by Sourcery on leona 748.
+ * **Parsed, not scanned, and the history is the argument for it.** Three review
+ * rounds killed three hand-rolled scanners, each time on a construct that spells
+ * the call without being one — or is one without looking like it:
  *
- * Crude on purpose — it does not parse strings, so a `//` inside a string
- * literal truncates that line. That is safe HERE and only here: the guards ask
- * whether a call expression appears, and losing the tail of a string literal
- * cannot manufacture one. It must not be reused as a general comment stripper.
+ * - a **comment** left behind after the renderer was deleted (Sourcery);
+ * - the call spelled inside a **string literal**, so a renderer that never
+ *   existed satisfied the guard (CodeRabbit) — the dangerous direction;
+ * - a **regex literal** whose pattern contains the call, which the previous
+ *   version mis-lexed into a false PASS, disproving a safety claim that version's
+ *   own comment made (Sourcery);
+ * - a real call inside a **`${…}` template interpolation**, masked away as if it
+ *   were literal text, which would have reported a working renderer as missing
+ *   (Sourcery).
+ *
+ * The compiler gets all four right by construction and needs no comment
+ * explaining which ones it gets wrong. That is the whole justification: a guard
+ * against "this looks like it verifies rendering and does not" must not itself be
+ * a thing that looks like it verifies code and does not.
  */
-function withoutComments(source: string): string {
-  return source
-    .replace(/\/\*[\s\S]*?\*\//g, " ")
-    .split("\n")
-    .map((line) => {
-      const at = line.indexOf("//");
-      return at === -1 ? line : line.slice(0, at);
-    })
-    .join("\n");
+function absenceCalls(source: string, fileName = "surface.tsx"): { field?: string; at: number }[] {
+  const parsed = ts.createSourceFile(fileName, source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
+  const found: { field?: string; at: number }[] = [];
+  const walk = (node: ts.Node): void => {
+    if (
+      ts.isCallExpression(node) &&
+      ts.isIdentifier(node.expression) &&
+      node.expression.text === "absenceOf"
+    ) {
+      const arg = node.arguments[1];
+      found.push({
+        field: arg && ts.isStringLiteral(arg) ? arg.text : undefined,
+        at: node.getStart(parsed),
+      });
+    }
+    ts.forEachChild(node, walk);
+  };
+  walk(parsed);
+  return found;
 }
 
-const absenceIsRendered = (source: string, field: string) =>
-  source.includes(`absenceOf(method, "${field}"`) || source.includes(`absenceOf(node, "${field}"`);
+/** Does `source` render the absence for `field` — as code, not as text about code? */
+function rendersAbsence(source: string, field: string): boolean {
+  return absenceCalls(source).some((call) => call.field === field);
+}
+
+const absenceIsRendered = (surfaces: readonly { source: string }[], field: string) =>
+  surfaces.some((surface) => rendersAbsence(surface.source, field));
 
 /**
  * Declarable keys that no surface renders yet, and which nothing has declared.
  *
- * NOT a permanent exemption — it is the list the test below refuses to let grow,
- * and the list the test above it refuses to let anyone *use*. Wiring one of
- * these up is a one-line deletion here.
+ * NOT a permanent exemption — it is the list one test below refuses to let grow,
+ * and the one above it refuses to let anyone *use*. Wiring one up is a one-line
+ * deletion here.
  */
 const ABSENCE_KEYS_NOT_WIRED_UP = ["cost", "conditions", "example.pseudocode"];
+
+test("only an executable absenceOf call counts as rendering", () => {
+  // Every construct that killed a previous version of this helper, in one place.
+  // The guards below are worth exactly what this test is worth.
+  const call = 'absenceOf(node, "implementations", isJa)';
+
+  assert.equal(rendersAbsence(`// ${call}`, "implementations"), false, "line comment counted");
+  assert.equal(rendersAbsence(`/* ${call} */`, "implementations"), false, "block comment counted");
+  assert.equal(
+    rendersAbsence(`const s = "${call}";`, "implementations"),
+    false,
+    "string literal counted",
+  );
+  assert.equal(
+    rendersAbsence("const s = `" + call + "`;", "implementations"),
+    false,
+    "template literal counted",
+  );
+  assert.equal(
+    rendersAbsence(`const re = /absenceOf\\(node, "implementations"/;`, "implementations"),
+    false,
+    "regex literal counted — the false PASS that killed the hand-rolled scanner",
+  );
+
+  // And the calls that ARE code are found, including the two shapes the previous
+  // version got wrong in the other direction.
+  assert.ok(rendersAbsence(`x = ${call};`, "implementations"));
+  assert.ok(
+    rendersAbsence("y = `${" + call + "}`;", "implementations"),
+    "a call inside a template interpolation was reported missing",
+  );
+  assert.ok(rendersAbsence(`f("http://x"); y = ${call};`, "implementations"), "a URL swallowed it");
+  assert.ok(rendersAbsence(`x = absenceOf(method, "example.text", ja);`, "example.text"));
+
+  // The FIELD is matched, not merely the function name.
+  assert.equal(rendersAbsence(`x = ${call};`, "cost"), false, "matched the wrong field");
+});
 
 test("no absence anyone has actually declared is rendered by nothing", () => {
   // The check that fires at the moment it matters: an author writes a reason,
@@ -2584,13 +2636,13 @@ test("no absence anyone has actually declared is rendered by nothing", () => {
   // which is exactly the state that shipped. Reverting the method-page fix leaves
   // this test passing. The test below it is the one that fails, and it is the one
   // that holds the two surfaces together.
-  const source = absenceSurfaces();
+  const sources = absenceSurfaceSources();
   const declared = new Set(
     LAYER_GRAPH.nodes.flatMap((node) => Object.keys((node as { absences?: object }).absences ?? {})),
   );
   assert.ok(declared.size > 0, "no absence is declared anywhere — this test is asserting nothing");
 
-  const unrendered = [...declared].filter((field) => !absenceIsRendered(source, field)).sort();
+  const unrendered = [...declared].filter((field) => !absenceIsRendered(sources, field)).sort();
   assert.deepEqual(
     unrendered,
     [],
@@ -2604,8 +2656,8 @@ test("the set of declarable-but-unrendered absence keys does not grow", () => {
   // the gauge would count the field closed, and the first author to use it would
   // ship research no reader meets. This fails on that addition rather than on
   // its first use.
-  const source = absenceSurfaces();
-  const unwired = DECLARABLE_ABSENCES.filter((field) => !absenceIsRendered(source, field)).sort();
+  const sources = absenceSurfaceSources();
+  const unwired = DECLARABLE_ABSENCES.filter((field) => !absenceIsRendered(sources, field)).sort();
   assert.deepEqual(
     unwired,
     [...ABSENCE_KEYS_NOT_WIRED_UP].sort(),
@@ -2614,30 +2666,55 @@ test("the set of declarable-but-unrendered absence keys does not grow", () => {
 });
 
 test("the two surfaces agree about a declared implementations absence", () => {
-  // The specific contradiction the check above generalises. Both files must read
-  // the key, and the method page must prefer it over its generic note — asserted
-  // by ORDER, because a branch that renders the generic note first and the reason
-  // never is exactly what shipped.
+  // The specific contradiction the checks above generalise. Both files must
+  // render the key, AND the method page must prefer it over its generic note —
+  // asserted by ORDER, because a branch that renders the generic note first and
+  // the reason never is exactly what shipped.
   const webRoot = dirname(dirname(fileURLToPath(import.meta.url)));
-  // Comments stripped here too — this PR's own fix adds a comment naming the
-  // very call it must assert, so a raw scan would pass on the comment alone.
-  const page = withoutComments(
-    readFileSync(join(webRoot, "components", "repository-layers.tsx"), "utf8"),
-  );
-  const card = withoutComments(
-    readFileSync(join(webRoot, "lib", "repository", "card-content.ts"), "utf8"),
-  );
+  const pageSource = readFileSync(join(webRoot, "components", "repository-layers.tsx"), "utf8");
+  const cardSource = readFileSync(join(webRoot, "lib", "repository", "card-content.ts"), "utf8");
 
   assert.ok(
-    card.includes('absenceOf(method, "implementations"'),
-    "card-content.ts stopped reading the implementations absence",
+    rendersAbsence(cardSource, "implementations"),
+    "card-content.ts stopped rendering the implementations absence",
   );
-  const reasonAt = page.indexOf('absenceOf(node, "implementations"');
-  const genericAt = page.indexOf("copy.implementationsNone");
-  assert.ok(reasonAt >= 0, "the method page does not read the implementations absence");
-  assert.ok(genericAt >= 0, "the method page's generic implementations note is gone");
+
+  // **The IMPLEMENTATIONS call specifically, not the first `absenceOf(node,` on
+  // the page.** An earlier version took the first one and that is the
+  // `example.text` call fifty lines up, so the ordering below was measuring an
+  // unrelated call and passing for the wrong reason. Caught by CodeRabbit; it is
+  // the same shape as the bug this whole PR is about — an assertion that looks
+  // like it checks the thing and checks its neighbour.
+  const reasonAt = absenceCalls(pageSource, "repository-layers.tsx").find(
+    (call) => call.field === "implementations",
+  )?.at;
+  assert.ok(reasonAt !== undefined, "the method page does not render the implementations absence");
+
+  // The generic note's position, found as a property access rather than as text,
+  // so a mention of it in a comment cannot stand in for the branch.
+  const parsed = ts.createSourceFile(
+    "repository-layers.tsx",
+    pageSource,
+    ts.ScriptTarget.Latest,
+    true,
+    ts.ScriptKind.TSX,
+  );
+  let genericAt: number | undefined;
+  const walk = (node: ts.Node): void => {
+    if (
+      genericAt === undefined &&
+      ts.isPropertyAccessExpression(node) &&
+      node.name.text === "implementationsNone"
+    ) {
+      genericAt = node.getStart(parsed);
+    }
+    ts.forEachChild(node, walk);
+  };
+  walk(parsed);
+  assert.ok(genericAt !== undefined, "the method page's generic implementations note is gone");
+
   assert.ok(
-    reasonAt < genericAt,
+    reasonAt! < genericAt!,
     "the method page falls back to its generic note before checking for a declared reason",
   );
 });
