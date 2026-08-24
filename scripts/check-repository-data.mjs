@@ -59,6 +59,11 @@ async function loadCategoryIds() {
     const vocab = await import(pathToFileURL(file).href);
     return vocab.PUBLIC_REPOSITORY_CATEGORY_IDS ?? [];
   } catch (error) {
+    // `process.exit()` terminates synchronously and a pending `finally` never
+    // runs, so the failure path has to clean up before it exits rather than
+    // after it. Otherwise every failed run leaves a temp directory behind — and
+    // the failing run is exactly the one somebody re-runs in a loop.
+    rmSync(dir, { recursive: true, force: true });
     console.error("✖ failed to bundle the category vocabulary from types.ts:", error.message);
     process.exit(1);
   } finally {
