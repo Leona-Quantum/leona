@@ -243,11 +243,25 @@ export const RAW_PUBLIC_REPOSITORY_ENTRIES: PublicRepositoryEntry[] = [
     // `verification`/`verificationDetails` above, where it still is; `source`
     // is where the record says which *document* states the thing it shows.
     //
-    // The document is Nielsen & Chuang §1.3.6/§4.3 — the H-then-CNOT Bell-pair
-    // construction and its |00⟩/|11⟩ support. A textbook is a permissible
-    // primary source by the owner's ruling on ai-ops#44 (2026-08-12): *"textbooks
-    // are also primary sources!!"*. See `RegisteredPaper.medium` in ./papers.ts,
-    // which is where that ruling is enforced rather than only described.
+    // The document is Nielsen & Chuang **§1.3.6, "Example: Bell states"**, printed
+    // p.25 — the H-then-CNOT construction and its |00⟩/|11⟩ support, which the
+    // section states outright: *"the Hadamard gate takes the input |00⟩ to
+    // (|0⟩+|1⟩)|0⟩/√2, and then the [CNOT] gives the output state
+    // (|00⟩+|11⟩)/√2"*, written as eq. (1.23). Eqs. (1.24)–(1.26) give the other
+    // three Bell states.
+    //
+    // **This used to cite "§1.3.6/§4.3", and §4.3 was wrong.** §4.3 is "Controlled
+    // operations", printed pp.177–185 — it defines the CNOT matrix and the general
+    // controlled-U circuit, which is why it looked plausible, and it never
+    // constructs, names or mentions a Bell state anywhere in its eight pages. Read
+    // and checked against the owner's PDF from ai-ops#56 on 2026-08-24, against the
+    // table of contents and the section itself; before that nobody had opened the
+    // book, and the register row for it still recorded nothing read.
+    //
+    // A textbook is a permissible primary source by the owner's ruling on
+    // ai-ops#44 (2026-08-12): *"textbooks are also primary sources!!"*. See
+    // `RegisteredPaper.medium` in ./papers.ts, which is where that ruling is
+    // enforced rather than only described.
     source: {
       kind: "curated_reference",
       title: "Quantum Computation and Quantum Information: 10th Anniversary Edition",
