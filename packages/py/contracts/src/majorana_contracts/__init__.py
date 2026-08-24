@@ -25,6 +25,7 @@ from .enums import (
     QpuEstimateBasis,
     QpuProvider,
     QpuRunStatus,
+    QappExecutionStatus,
     ResourceEstimateBasis,
     ReviewState,
     Role,
@@ -62,6 +63,7 @@ from .events import (
     LlmCall,
     LlmDelta,
     PlanProduced,
+    QappGenerated,
     QasmEmission,
     ResearchCitation,
     ResearchCompleted,
@@ -103,6 +105,10 @@ from .models import (
     ProjectShare,
     PublicCatalogEntry,
     QpuRunRecord,
+    Qapp,
+    QappExecution,
+    QappVersion,
+    PublicQapp,
     ResourceMetrics,
     Run,
     RuntimeSummary,
@@ -240,7 +246,9 @@ from .lifecycle import (
 # 2.14.0: Framework adds offline Amazon Braket, Qibo, and Qulacs SDK lanes.
 # Additive: existing framework values keep their meaning and older clients
 # continue to use them.
-CONTRACTS_VERSION = "2.14.0"
+# 2.15.0: Qapp resources, execution status, qapp run mode, and the durable
+# qapp.generated event. Additive: existing clients never select the new mode.
+CONTRACTS_VERSION = "2.15.0"
 
 __all__ = [
     "CONTRACTS_VERSION",
@@ -308,6 +316,12 @@ __all__ = [
     "Plan",
     "PlanParameters",
     "PlanProduced",
+    "Qapp",
+    "QappExecution",
+    "QappExecutionStatus",
+    "QappGenerated",
+    "QappVersion",
+    "PublicQapp",
     "Project",
     "ProjectShare",
     "FootprintSummary",

@@ -18,7 +18,7 @@ different purpose).
 
 Two data classes:
 
-- **Live-probed (18 tables)** — every distinct join shape RLS uses (direct column;
+- **Live-probed (21 tables)** — every distinct join shape RLS uses (direct column;
   one hop via `artifacts`; two hops via `artifact_versions`; one hop via `runs`; one hop
   via `runs` through `agent_runs`'s shared primary key) proven against real rows from
   `rls_helpers.provision()`, with a positive control, a cross-tenant negative, and a
@@ -64,6 +64,9 @@ LIVE_TABLES: tuple[tuple[str, str], ...] = (
     ("usage_events", "id"),
     ("audit_log", "id"),
     ("qpu_runs", "id"),
+    ("qapps", "id"),
+    ("qapp_versions", "id"),
+    ("qapp_executions", "id"),
     ("artifact_citations", "id"),
     ("artifact_tags", "tag"),
     ("artifact_sources", "id"),
@@ -217,6 +220,56 @@ async def test_default_off_matches_pre_rls_behavior(db_session_factory, dataset,
             value=value,
         )
         assert count == 1, f"{table}: row invisible with enforcement OFF — a behaviour change"
+
+
+async def test_public_qapp_and_version_cross_the_tenant_boundary_but_execution_does_not(
+    db_session_factory,
+    dataset,
+):
+    """The deliberate public projection is the one exception to tenant reads.
+
+    Its version must be readable so the public UI can render and execute, while
+    the caller-specific execution row remains private even for a published app.
+    """
+    a, b = dataset
+    async with db_session_factory() as session:
+        await session.execute(text(f"select set_config('{ENFORCE}', 'on', true)"))
+        await session.execute(
+            text(f"select set_config('{WORKSPACE}', :w, true)"),
+            {"w": str(b.workspace_id)},
+        )
+        await session.execute(
+            text(
+                "update qapps set visibility = 'public', published_at = now() where id = :qapp_id"
+            ),
+            {"qapp_id": b.qapps},
+        )
+        await session.execute(
+            text(f"select set_config('{WORKSPACE}', :w, true)"),
+            {"w": str(a.workspace_id)},
+        )
+        qapp_count = (
+            await session.execute(
+                text("select count(*) from qapps where id = :id"), {"id": b.qapps}
+            )
+        ).scalar_one()
+        version_count = (
+            await session.execute(
+                text("select count(*) from qapp_versions where id = :id"),
+                {"id": b.qapp_versions},
+            )
+        ).scalar_one()
+        execution_count = (
+            await session.execute(
+                text("select count(*) from qapp_executions where id = :id"),
+                {"id": b.qapp_executions},
+            )
+        ).scalar_one()
+        await session.rollback()
+
+    assert qapp_count == 1
+    assert version_count == 1
+    assert execution_count == 0
 
 
 async def test_all_protected_tables_have_rls_enabled_not_forced(db_session_factory):

@@ -80,6 +80,8 @@ type WireEvent = {
   after?: Record<string, unknown> | null;
   compatibility?: Record<string, unknown>;
   artifact_id?: string;
+  qapp_id?: string;
+  slug?: string;
   title?: string;
   missing_inputs?: string[];
   allow_ai_assumptions_available?: boolean;
@@ -1002,6 +1004,7 @@ export function CompletedAssistant({
           <ArtifactLink events={turn.events} locale={locale} />
         </>
       )}
+      <QappLink events={turn.events} locale={locale} />
       {onUseAiAssumptions && canOfferAiAssumptions ? (
         <section className="mj-ai-assumption-action" aria-label={locale === "ja" ? "不足情報の補完" : "Complete missing details"}>
           <p>{locale === "ja" ? "不足している値をAIが教育用の例として補完し、そのまま実行できます。" : "The AI can fill the missing values with a clearly labeled educational example and run it."}</p>
@@ -1121,6 +1124,7 @@ function AssistantMessage({
         <ThinkingLabel turnId={turnId} className="mj-chat-message--loading mj-chat-thinking-label" locale={locale} />
       )}
       {!result && !outcomeWithoutDuplicateCode ? <ArtifactLink events={events} locale={locale} /> : null}
+      <QappLink events={events} locale={locale} />
     </div>
   );
 }
@@ -1969,6 +1973,16 @@ function ArtifactLink({ events, locale }: { events: WireEvent[]; locale: PublicL
         <small>{locale === "ja" ? "まだWorkspaceに保存されていません。" : "Not saved to your workspace yet."}</small>
       )}
     </span>
+  );
+}
+
+function QappLink({ events, locale }: { events: WireEvent[]; locale: PublicLocale }) {
+  const generated = [...events].reverse().find((event) => event.type === "qapp.generated");
+  if (!generated?.qapp_id) return null;
+  return (
+    <Link className="mj-primary-button" href={`/qapps/${encodeURIComponent(generated.qapp_id)}`}>
+      {locale === "ja" ? "Qappを開く" : "Open Qapp"} →
+    </Link>
   );
 }
 

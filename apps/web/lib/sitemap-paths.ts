@@ -48,6 +48,16 @@ export const PUBLIC_STATIC_PATHS: readonly string[] = [
 export const PUBLIC_REDIRECT_ALIASES: readonly string[] = ["/open-source"];
 
 /**
+ * Public page prefixes whose concrete addresses come from user-owned data.
+ *
+ * Unlike repository records, Qapp slugs are not part of this checkout's static
+ * corpus, so this module cannot enumerate them into the sitemap. The prefix is
+ * still classified explicitly so the route census cannot mistake a public
+ * dynamic surface for an authenticated page or an untracked route.
+ */
+export const PUBLIC_DYNAMIC_PATH_PREFIXES: readonly string[] = ["/q"];
+
+/**
  * Public endpoints that are read by machines and are not pages.
  *
  * A fourth category because `llms.txt` (ai-ops 133) fits none of the three and
@@ -91,6 +101,7 @@ export const CRAWLER_DISALLOWED_PATHS: readonly string[] = [
   "/dev/",
   "/lab",
   "/library",
+  "/qapps",
   "/run",
   "/shared/",
   "/studio",

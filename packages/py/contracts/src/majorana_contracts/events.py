@@ -167,6 +167,15 @@ class ConversationTitled(_EventBase):
     source: Literal["model", "fallback"] = "model"
 
 
+class QappGenerated(_EventBase):
+    type: Literal["qapp.generated"] = "qapp.generated"
+    qapp_id: UUID
+    version_id: UUID
+    slug: str = Field(min_length=1, max_length=160)
+    title: str = Field(min_length=1, max_length=240)
+    visibility: Literal["private"] = "private"
+
+
 class CodeGenerated(_EventBase):
     type: Literal["code.generated"] = "code.generated"
     language: str
@@ -444,6 +453,7 @@ RunEvent = Annotated[
     | ChatCompleted
     | ChatError
     | ConversationTitled
+    | QappGenerated
     | CodeGenerated
     | ScreenResult
     | ResourceEstimateResult

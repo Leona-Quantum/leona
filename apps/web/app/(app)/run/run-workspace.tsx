@@ -15,7 +15,7 @@ import {
   hydrateArtifactFramework,
   type ArtifactFrameworkHydration,
 } from "../../../lib/framework-selection";
-import type { ComposerMode } from "../../../lib/run-mode";
+import { isComposerMode, type ComposerMode } from "../../../lib/run-mode";
 import { RunComposer, type ComposerFramework } from "../../../components/run-composer";
 import { ElectronField } from "../../../components/electron-field";
 
@@ -48,7 +48,10 @@ export function RunWorkspace({ demoMode = false, locale = "en" }: { demoMode?: b
 
   useEffect(() => {
     let active = true;
-    const artifactId = new URLSearchParams(window.location.search).get("artifact");
+    const search = new URLSearchParams(window.location.search);
+    const requestedMode = search.get("mode");
+    if (requestedMode && isComposerMode(requestedMode)) setMode(requestedMode);
+    const artifactId = search.get("artifact");
     if (!artifactId) {
       setArtifactHydration("idle");
       return () => { active = false; };
@@ -85,8 +88,12 @@ export function RunWorkspace({ demoMode = false, locale = "en" }: { demoMode?: b
       setFramework(hydrated.framework);
       setArtifactHydration("ready");
       setPrompt(locale === "ja"
-        ? `保存済みArtifact「${artifact.title}」を次の質問のコンテキストとして使用してください。`
-        : `Use the saved artifact “${artifact.title}” as context for my next question.`);
+        ? requestedMode === "qapp"
+          ? `保存済みArtifact「${artifact.title}」を使って、操作しやすい量子アプリを作ってください。`
+          : `保存済みArtifact「${artifact.title}」を次の質問のコンテキストとして使用してください。`
+        : requestedMode === "qapp"
+          ? `Turn the saved artifact “${artifact.title}” into an interactive quantum application.`
+          : `Use the saved artifact “${artifact.title}” as context for my next question.`);
     }
 
     void loadContext().catch(() => {

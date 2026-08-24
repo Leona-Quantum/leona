@@ -12,6 +12,7 @@ from .enums import (
     EvidenceStrength,
     ExportStatus,
     Framework,
+    QappExecutionStatus,
     QpuEstimateBasis,
     QpuProvider,
     QpuRunStatus,
@@ -785,6 +786,67 @@ class Run(_ResourceBase):
             "null means not waiting. Derived per request, never stored."
         ),
     )
+
+
+class Qapp(_ResourceBase):
+    """Owner-facing Qapp resource. Generated UI and quantum source are versioned."""
+
+    id: UUID
+    workspace_id: UUID
+    owner_user_id: UUID
+    slug: str
+    title: str
+    description: str
+    visibility: Visibility
+    current_version_id: UUID
+    created_by_run_id: UUID
+    created_at: datetime
+    updated_at: datetime
+    published_at: datetime | None = None
+
+
+class QappVersion(_ResourceBase):
+    id: UUID
+    qapp_id: UUID
+    seq: int = Field(ge=1)
+    framework: Framework
+    qubits_estimate: int = Field(ge=1, le=27)
+    ui_document: str
+    quantum_source: str
+    input_schema: dict[str, Any]
+    output_schema: dict[str, Any]
+    fingerprint: str
+    source_artifact_version_id: UUID | None = None
+    created_at: datetime
+
+
+class PublicQapp(_ResourceBase):
+    """Allowlisted public projection; never exposes executable quantum source."""
+
+    slug: str
+    title: str
+    description: str
+    framework: Framework
+    qubits_estimate: int = Field(ge=1, le=27)
+    ui_document: str
+    input_schema: dict[str, Any]
+    output_schema: dict[str, Any]
+    version: int = Field(ge=1)
+    fingerprint: str
+    published_at: datetime
+
+
+class QappExecution(_ResourceBase):
+    id: UUID
+    qapp_id: UUID
+    qapp_version_id: UUID
+    status: QappExecutionStatus
+    inputs: dict[str, Any]
+    result: dict[str, Any] | None = None
+    error_code: str | None = None
+    created_at: datetime
+    started_at: datetime | None = None
+    finished_at: datetime | None = None
 
 
 class ConversationTurn(_ResourceBase):

@@ -1613,6 +1613,233 @@ export interface components {
             updated_at: string;
         };
         /**
+         * PublicQapp
+         * @description Allowlisted public projection; never exposes executable quantum source.
+         */
+        PublicQapp: {
+            /** Description */
+            description: string;
+            /** Fingerprint */
+            fingerprint: string;
+            framework: components["schemas"]["Framework"];
+            /** Input Schema */
+            input_schema: {
+                [key: string]: unknown;
+            };
+            /** Output Schema */
+            output_schema: {
+                [key: string]: unknown;
+            };
+            /**
+             * Published At
+             * Format: date-time
+             */
+            published_at: string;
+            /** Qubits Estimate */
+            qubits_estimate: number;
+            /** Slug */
+            slug: string;
+            /** Title */
+            title: string;
+            /** Ui Document */
+            ui_document: string;
+            /** Version */
+            version: number;
+        };
+        /**
+         * Qapp
+         * @description Owner-facing Qapp resource. Generated UI and quantum source are versioned.
+         */
+        Qapp: {
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /**
+             * Created By Run Id
+             * Format: uuid
+             */
+            created_by_run_id: string;
+            /**
+             * Current Version Id
+             * Format: uuid
+             */
+            current_version_id: string;
+            /** Description */
+            description: string;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Owner User Id
+             * Format: uuid
+             */
+            owner_user_id: string;
+            /**
+             * Published At
+             * @default null
+             */
+            published_at: string | null;
+            /** Slug */
+            slug: string;
+            /** Title */
+            title: string;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+            visibility: components["schemas"]["Visibility"];
+            /**
+             * Workspace Id
+             * Format: uuid
+             */
+            workspace_id: string;
+        };
+        /** QappExecution */
+        QappExecution: {
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /**
+             * Error Code
+             * @default null
+             */
+            error_code: string | null;
+            /**
+             * Finished At
+             * @default null
+             */
+            finished_at: string | null;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Inputs */
+            inputs: {
+                [key: string]: unknown;
+            };
+            /**
+             * Qapp Id
+             * Format: uuid
+             */
+            qapp_id: string;
+            /**
+             * Qapp Version Id
+             * Format: uuid
+             */
+            qapp_version_id: string;
+            /**
+             * Result
+             * @default null
+             */
+            result: {
+                [key: string]: unknown;
+            } | null;
+            /**
+             * Started At
+             * @default null
+             */
+            started_at: string | null;
+            status: components["schemas"]["QappExecutionStatus"];
+        };
+        /**
+         * QappExecutionStatus
+         * @enum {string}
+         */
+        QappExecutionStatus: "queued" | "running" | "succeeded" | "failed";
+        /** QappGenerated */
+        QappGenerated: {
+            /**
+             * Qapp Id
+             * Format: uuid
+             */
+            qapp_id: string;
+            /**
+             * Run Id
+             * Format: uuid
+             */
+            run_id: string;
+            /**
+             * Seq
+             * @description Unique per run; powers replay and SSE Last-Event-ID
+             */
+            seq: number;
+            /** Slug */
+            slug: string;
+            /** Title */
+            title: string;
+            /**
+             * Ts
+             * Format: date-time
+             */
+            ts: string;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "qapp.generated";
+            /**
+             * Version Id
+             * Format: uuid
+             */
+            version_id: string;
+            /**
+             * Visibility
+             * @default private
+             * @constant
+             */
+            visibility: "private";
+        };
+        /** QappVersion */
+        QappVersion: {
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Fingerprint */
+            fingerprint: string;
+            framework: components["schemas"]["Framework"];
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Input Schema */
+            input_schema: {
+                [key: string]: unknown;
+            };
+            /** Output Schema */
+            output_schema: {
+                [key: string]: unknown;
+            };
+            /**
+             * Qapp Id
+             * Format: uuid
+             */
+            qapp_id: string;
+            /** Quantum Source */
+            quantum_source: string;
+            /** Qubits Estimate */
+            qubits_estimate: number;
+            /** Seq */
+            seq: number;
+            /**
+             * Source Artifact Version Id
+             * @default null
+             */
+            source_artifact_version_id: string | null;
+            /** Ui Document */
+            ui_document: string;
+        };
+        /**
          * QasmEmission
          * @description Provenance for optional OpenQASM interchange from a protected sandbox result.
          *
@@ -2207,7 +2434,7 @@ export interface components {
          * RunEvent
          * @description Discriminated union of all run event types (class name sets the schema id).
          */
-        RunEvent: components["schemas"]["RunQueued"] | components["schemas"]["RunStarted"] | components["schemas"]["RunModeResolved"] | components["schemas"]["StageStarted"] | components["schemas"]["StageFinished"] | components["schemas"]["PlanProduced"] | components["schemas"]["ResearchCompleted"] | components["schemas"]["LlmCall"] | components["schemas"]["LlmDelta"] | components["schemas"]["ChatDelta"] | components["schemas"]["ChatCompleted"] | components["schemas"]["ChatError"] | components["schemas"]["ConversationTitled"] | components["schemas"]["CodeGenerated"] | components["schemas"]["ScreenResult"] | components["schemas"]["ResourceEstimateResult"] | components["schemas"]["CompilationResult"] | components["schemas"]["CodeFinalized"] | components["schemas"]["SandboxResult"] | components["schemas"]["VerificationResult"] | components["schemas"]["SemanticReviewRecorded"] | components["schemas"]["StrictVerificationRecorded"] | components["schemas"]["BaselineResult"] | components["schemas"]["ExportClassified"] | components["schemas"]["ArtifactSaved"] | components["schemas"]["RunAnalysis"] | components["schemas"]["RunDiagnosed"] | components["schemas"]["RunRestarted"] | components["schemas"]["RunBestEffort"] | components["schemas"]["RunErrorEvent"] | components["schemas"]["RunFinished"];
+        RunEvent: components["schemas"]["RunQueued"] | components["schemas"]["RunStarted"] | components["schemas"]["RunModeResolved"] | components["schemas"]["StageStarted"] | components["schemas"]["StageFinished"] | components["schemas"]["PlanProduced"] | components["schemas"]["ResearchCompleted"] | components["schemas"]["LlmCall"] | components["schemas"]["LlmDelta"] | components["schemas"]["ChatDelta"] | components["schemas"]["ChatCompleted"] | components["schemas"]["ChatError"] | components["schemas"]["ConversationTitled"] | components["schemas"]["QappGenerated"] | components["schemas"]["CodeGenerated"] | components["schemas"]["ScreenResult"] | components["schemas"]["ResourceEstimateResult"] | components["schemas"]["CompilationResult"] | components["schemas"]["CodeFinalized"] | components["schemas"]["SandboxResult"] | components["schemas"]["VerificationResult"] | components["schemas"]["SemanticReviewRecorded"] | components["schemas"]["StrictVerificationRecorded"] | components["schemas"]["BaselineResult"] | components["schemas"]["ExportClassified"] | components["schemas"]["ArtifactSaved"] | components["schemas"]["RunAnalysis"] | components["schemas"]["RunDiagnosed"] | components["schemas"]["RunRestarted"] | components["schemas"]["RunBestEffort"] | components["schemas"]["RunErrorEvent"] | components["schemas"]["RunFinished"];
         /** RunFinished */
         RunFinished: {
             /** @default null */
@@ -2253,7 +2480,7 @@ export interface components {
          * RunMode
          * @enum {string}
          */
-        RunMode: "auto" | "chat" | "execute" | "ideate" | "explain";
+        RunMode: "auto" | "chat" | "execute" | "ideate" | "explain" | "qapp";
         /**
          * RunModeResolved
          * @description How a run's requested mode became the mode it actually ran in.

@@ -2253,3 +2253,142 @@ html[lang="ja"] .mj-company-hero-title-line {
     transition: none;
   }
 }
+/* Qapps: the generated document owns the iframe interior; Leona owns only its frame. */
+.qapp-page,
+.qapp-private-page {
+  min-height: 100vh;
+  background: var(--bg-0);
+  color: var(--text-0);
+}
+
+.qapp-page {
+  padding: 0 clamp(1rem, 4vw, 4rem) 3rem;
+}
+
+.qapp-page-header,
+.qapp-private-header {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+}
+
+.qapp-page-header {
+  min-height: 4.5rem;
+  border-bottom: 1px solid color-mix(in srgb, currentColor 14%, transparent);
+  font-size: .9rem;
+}
+
+.qapp-brand {
+  color: inherit;
+  font-weight: 700;
+  text-decoration: none;
+  letter-spacing: -.02em;
+}
+
+.qapp-public-badge,
+.qapp-kicker {
+  color: var(--text-2);
+  font-family: var(--font-mono);
+  font-size: .72rem;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+}
+
+.qapp-page-spacer {
+  flex: 1;
+}
+
+.qapp-page-intro {
+  max-width: 60rem;
+  padding: clamp(2rem, 6vw, 5rem) 0 clamp(1.5rem, 4vw, 3rem);
+}
+
+.qapp-page-intro h1,
+.qapp-private-header h1 {
+  margin: .35rem 0 .65rem;
+  font-size: clamp(2rem, 5vw, 4.5rem);
+  line-height: .98;
+  letter-spacing: -.055em;
+}
+
+.qapp-page-intro > p:last-child,
+.qapp-private-header > div > p:last-child {
+  max-width: 48rem;
+  color: var(--text-2);
+  font-size: 1.05rem;
+  line-height: 1.6;
+}
+
+.qapp-runtime {
+  overflow: hidden;
+  border: 1px solid color-mix(in srgb, currentColor 16%, transparent);
+  border-radius: 1.25rem;
+  background: var(--bg-1);
+  box-shadow: 0 1.5rem 4rem rgb(0 0 0 / .08);
+}
+
+.qapp-runtime-frame {
+  display: block;
+  width: 100%;
+  min-height: min(72vh, 56rem);
+  border: 0;
+  background: var(--bg-1);
+}
+
+.qapp-runtime-status {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: .8rem 1rem;
+  border-top: 1px solid var(--border-0);
+  color: var(--text-2);
+  background: var(--bg-2);
+  font-size: .78rem;
+}
+
+.qapp-private-page {
+  padding: clamp(1rem, 3vw, 2.5rem);
+}
+
+.qapp-private-header {
+  justify-content: space-between;
+  margin-bottom: 1.5rem;
+}
+
+.qapp-private-header h1 {
+  font-size: clamp(2rem, 4vw, 3.5rem);
+}
+
+.qapp-private-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: .75rem;
+}
+
+.qapp-private-empty,
+.qapp-private-error {
+  margin: 2rem;
+  padding: 1rem;
+}
+
+@media (max-width: 700px) {
+  .qapp-page-header,
+  .qapp-private-header,
+  .qapp-runtime-status {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .qapp-page-spacer {
+    display: none;
+  }
+
+  .qapp-private-actions {
+    justify-content: flex-start;
+  }
+
+  .qapp-runtime-frame {
+    min-height: 70vh;
+  }
+}

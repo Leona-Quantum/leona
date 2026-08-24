@@ -8,3 +8,4 @@ CATALOG_IMPORT_JOB_KIND = "catalog.import"
 # worker handler exists so a row of this kind can never dead-letter as an
 # unknown kind, and fails closed instead.
 QPU_RUN_JOB_KIND = "qpu.run"
+QAPP_EXECUTE_JOB_KIND = "qapp.execute"

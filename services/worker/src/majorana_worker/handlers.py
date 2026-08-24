@@ -39,11 +39,13 @@ from majorana_contracts.events import run_event_adapter
 from majorana_llm import (
     CHAT_SYSTEM_PROMPT,
     RUN_EXPLANATION_SYSTEM_PROMPT,
+    QAPP_GENERATION_SYSTEM_PROMPT,
     LLMClient,
     LLMRequest,
     conversation_request_messages,
     default_llm,
     model_for,
+    extract_json,
     normalize_response_locale,
     render_conversation_title_prompt,
     with_response_locale,
@@ -54,12 +56,15 @@ from majorana_qpu import (
     QpuRunJobPayload,
     submission_block_reason,
 )
-from pydantic import ValidationError
+from pydantic import BaseModel, ConfigDict, Field, ValidationError
 from majorana_sandbox import (
     DEFAULT_MEMORY_MB,
+    ExecutionSpec,
     LocalSubprocessSandbox,
     Sandbox,
     VercelSandbox,
+    check_python_code,
+    run as run_sandbox,
 )
 from opentelemetry import metrics
 
@@ -71,16 +76,28 @@ from majorana_api.catalog_bootstrap_manifest import BootstrapManifestSource
 from majorana_api.catalog_import_fixtures import LocalFixtureSource
 from majorana_api.catalog_import_sources import ImportSource
 from majorana_api.db import AsyncSession
-from majorana_api.jobs import CATALOG_IMPORT_JOB_KIND, QPU_RUN_JOB_KIND, RUN_EXECUTE_JOB_KIND
+from majorana_api.jobs import (
+    CATALOG_IMPORT_JOB_KIND,
+    QAPP_EXECUTE_JOB_KIND,
+    QPU_RUN_JOB_KIND,
+    RUN_EXECUTE_JOB_KIND,
+)
 from majorana_api.orm import ImportJob, User
+from majorana_api.qapp_validation import (
+    normalize_qapp_schema,
+    validate_qapp_inputs,
+    validate_qapp_ui_document,
+)
 from majorana_api.repos import catalog_import as catalog_import_repo
 from majorana_api.repos import provider_credentials as credentials_repo
 from majorana_api.repos import runs as runs_repo
 from majorana_api.repos import artifacts as artifacts_repo
 from majorana_api.repos import qpu_runs as qpu_runs_repo
+from majorana_api.repos import qapps as qapps_repo
 from majorana_api.repos import system
 from majorana_api.repos import usage as usage_repo
 from majorana_api.repos import workspaces as workspaces_repo
+from majorana_api.repos import NotFoundError
 from majorana_api.tiers import EnvTierSources, limits_for, tier_of
 
 from .agent_llm import MeteredAgentLLM
@@ -361,7 +378,16 @@ async def handle_run_execute(
                 allow_ai_assumptions=ctx.allow_ai_assumptions,
             )
             ctx = await _title_conversation(ctx, store, scope=scope, session=session, llm=provider)
-            if ctx.mode is not RunMode.EXECUTE:
+            if ctx.mode is RunMode.QAPP:
+                final = await _handle_qapp_generation(
+                    ctx,
+                    store,
+                    scope=scope,
+                    session=session,
+                    llm=provider,
+                    source_artifact_version_id=parent_artifact_version_id,
+                )
+            elif ctx.mode is not RunMode.EXECUTE:
                 final = await _handle_conversation(
                     ctx,
                     store,
@@ -394,6 +420,131 @@ async def handle_run_execute(
             await _finish_timed_out_run(ctx, store)
         final = RunStatus.FAILED
     log.info("run %s finished: %s", run_id, final)
+
+
+class _GeneratedQapp(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    title: str = Field(min_length=1, max_length=240)
+    description: str = Field(min_length=1, max_length=4000)
+    ui_document: str = Field(min_length=1, max_length=300_000)
+    quantum_source: str = Field(min_length=1, max_length=200_000)
+    input_schema: dict[str, Any]
+    output_schema: dict[str, Any]
+    qubits_estimate: int = Field(ge=1, le=27)
+
+
+async def _handle_qapp_generation(
+    ctx: RunContext,
+    store: RepoRunStateStore,
+    *,
+    scope: Scope,
+    session: AsyncSession,
+    llm: LLMClient,
+    source_artifact_version_id: uuid.UUID | None,
+) -> RunStatus:
+    status = await store.current_status()
+    if status is not RunStatus.QUEUED:
+        return status
+    await store.set_status(RunStatus.RUNNING, started_at_now=True)
+    await ctx.sink.emit("run.started", {})
+    await ctx.sink.emit("stage.started", {"stage": Stage.GENERATE})
+    started = asyncio.get_running_loop().time()
+    source_context = (
+        f"\n\nSelected-framework source to preserve:\n```python\n{ctx.source_code}\n```"
+        if ctx.source_code
+        else ""
+    )
+    metered = MeteredAgentLLM(
+        delegate=llm,
+        sink=ctx.sink,
+        scope=scope,
+        session=session,
+        run_id=ctx.run_id,
+    )
+    try:
+        response = await metered.complete(
+            LLMRequest(
+                model=model_for("generate"),
+                system=QAPP_GENERATION_SYSTEM_PROMPT,
+                user=(
+                    f"Selected framework: {ctx.framework.value}\n"
+                    f"User request:\n{ctx.task_prompt}{source_context}"
+                ),
+                response_schema=_GeneratedQapp.model_json_schema(),
+                schema_name="generate_qapp",
+                temperature=0.2,
+            )
+        )
+        generated = _GeneratedQapp.model_validate_json(extract_json(response.text))
+        generated.input_schema = normalize_qapp_schema(generated.input_schema)
+        generated.output_schema = normalize_qapp_schema(generated.output_schema)
+        validate_qapp_ui_document(generated.ui_document)
+        guard = check_python_code(generated.quantum_source)
+        if not guard.ok:
+            raise ValueError("generated Qapp source did not pass the sandbox guard")
+        qapp, version = await qapps_repo.create_generated(
+            scope,
+            session,
+            run_id=ctx.run_id,
+            title=generated.title,
+            description=generated.description,
+            framework=ctx.framework.value,
+            qubits_estimate=generated.qubits_estimate,
+            ui_document=generated.ui_document,
+            quantum_source=generated.quantum_source,
+            input_schema=generated.input_schema,
+            output_schema=generated.output_schema,
+            generation_prompt=ctx.task_prompt,
+            source_artifact_version_id=source_artifact_version_id,
+        )
+        await session.commit()
+    except Exception:
+        await session.rollback()
+        log.exception("Qapp generation failed for run %s", ctx.run_id)
+        await ctx.sink.emit(
+            "stage.finished",
+            {
+                "stage": Stage.GENERATE,
+                "ok": False,
+                "duration_ms": int((asyncio.get_running_loop().time() - started) * 1000),
+            },
+        )
+        await ctx.sink.emit(
+            "run.error",
+            {
+                "stage": Stage.GENERATE,
+                "code": "qapp_generation_failed",
+                "message": "The Qapp could not be generated safely.",
+            },
+        )
+        return await store.finish(
+            RunStatus.FAILED,
+            {"status": RunStatus.FAILED, "reason_code": "qapp_generation_failed"},
+        )
+    await ctx.sink.emit(
+        "stage.finished",
+        {
+            "stage": Stage.GENERATE,
+            "ok": True,
+            "duration_ms": int((asyncio.get_running_loop().time() - started) * 1000),
+        },
+    )
+    await ctx.sink.emit(
+        "qapp.generated",
+        {
+            "qapp_id": qapp.id,
+            "version_id": version.id,
+            "slug": qapp.slug,
+            "title": qapp.title,
+            "visibility": "private",
+        },
+        event_id=uuid.uuid5(ctx.run_id, "qapp.generated"),
+    )
+    return await store.finish(
+        RunStatus.SUCCEEDED,
+        {"status": RunStatus.SUCCEEDED, "reason_code": "qapp_generated"},
+    )
 
 
 #: How long naming may take before the run gives up and uses its own fallback.
@@ -1409,6 +1560,112 @@ async def handle_run_dead_letter(
     await session.commit()
 
 
+async def handle_qapp_execute(
+    session: AsyncSession,
+    payload: dict[str, Any],
+    *,
+    sandbox: Sandbox | None = None,
+) -> None:
+    """Execute a Qapp program only through the guarded, network-locked provider."""
+    scope = _scope_from_payload(payload)
+    execution_id = uuid.UUID(payload["execution_id"])
+    execution, version = await qapps_repo.get_execution_source(scope, session, execution_id)
+    if execution.status in {
+        "succeeded",
+        "failed",
+    }:
+        return
+    await qapps_repo.mark_execution_running(scope, session, execution_id)
+    await session.commit()
+    trusted_setup = (
+        f"_majorana_namespace['QAPP_INPUTS'] = {execution.inputs!r}\n"
+        f"_majorana_namespace['QAPP_MAX_QUBITS'] = {version.qubits_estimate!r}"
+    )
+    try:
+        sandbox_result = await run_sandbox(
+            sandbox or _default_sandbox(),
+            ExecutionSpec(
+                code=version.quantum_source,
+                timeout_s=120,
+                qubits_estimate=version.qubits_estimate,
+                trusted_setup=trusted_setup,
+                protected_result_path="/tmp/leona-qapp-result.json",
+                source_fingerprint=version.fingerprint,
+                trusted_observer="# RESULT is captured by the provider-owned wrapper.",
+            ),
+        )
+        protected = sandbox_result.protected_result or {}
+        output = protected.get("result")
+        if not sandbox_result.ok:
+            error_code = "qapp_program_failed"
+            output = None
+        elif not isinstance(output, dict):
+            error_code = "qapp_result_missing"
+            output = None
+        else:
+            validate_qapp_inputs(version.output_schema, output)
+            error_code = None
+        meta = {
+            "provider": sandbox_result.provider,
+            "duration_ms": sandbox_result.duration_ms,
+            "memory_mb": sandbox_result.memory_mb,
+            "exit_code": sandbox_result.exit_code,
+            "truncated": sandbox_result.truncated,
+        }
+    except Exception as exc:
+        log.warning("Qapp execution %s failed: %s", execution_id, type(exc).__name__)
+        await session.rollback()
+        output = None
+        error_code = "qapp_execution_failed"
+        meta = None
+    await qapps_repo.finish_execution(
+        scope,
+        session,
+        execution_id,
+        result=output,
+        error_code=error_code,
+        sandbox_meta=meta,
+    )
+    await session.commit()
+    if meta is not None:
+        try:
+            await usage_repo.record_usage(
+                scope,
+                session,
+                kind=UsageKind.SANDBOX_SECONDS,
+                quantity=max(float(meta["duration_ms"]) / 1000.0, 0.001),
+                meta={
+                    "execution_id": str(execution_id),
+                    "qapp_id": str(execution.qapp_id),
+                    "provider": meta["provider"],
+                },
+                event_id=uuid.uuid5(execution_id, "usage:sandbox"),
+            )
+            await session.commit()
+        except Exception:
+            await session.rollback()
+            log.exception("Qapp execution %s completed but usage metering failed", execution_id)
+
+
+async def handle_qapp_execute_dead_letter(
+    session: AsyncSession, payload: dict[str, Any], reason: str
+) -> None:
+    scope = _scope_from_payload(payload)
+    execution_id = uuid.UUID(payload["execution_id"])
+    try:
+        await qapps_repo.finish_execution(
+            scope,
+            session,
+            execution_id,
+            result=None,
+            error_code="job_dead_letter",
+            sandbox_meta={"reason": reason[:500]},
+        )
+    except NotFoundError:
+        return
+    await session.commit()
+
+
 async def close_orphaned_run(session: AsyncSession, orphan: system.OrphanedRun) -> bool:
     """Close a run whose execution path ended but which nothing ever finished.
 
@@ -1878,11 +2135,13 @@ async def handle_qpu_run_dead_letter(
 
 HANDLERS: dict[str, JobHandler] = {
     RUN_EXECUTE_JOB_KIND: handle_run_execute,
+    QAPP_EXECUTE_JOB_KIND: handle_qapp_execute,
     CATALOG_IMPORT_JOB_KIND: handle_catalog_import,
     QPU_RUN_JOB_KIND: handle_qpu_run,
 }
 
 DEAD_LETTER_HANDLERS: dict[str, DeadLetterHandler] = {
     RUN_EXECUTE_JOB_KIND: handle_run_dead_letter,
+    QAPP_EXECUTE_JOB_KIND: handle_qapp_execute_dead_letter,
     QPU_RUN_JOB_KIND: handle_qpu_run_dead_letter,
 }

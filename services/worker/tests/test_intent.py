@@ -272,7 +272,10 @@ async def test_worker_persists_auto_attachment_as_execute_before_dispatch(monkey
     ]
 
 
-@pytest.mark.parametrize("mode", [RunMode.CHAT, RunMode.EXECUTE, RunMode.IDEATE, RunMode.EXPLAIN])
+@pytest.mark.parametrize(
+    "mode",
+    [RunMode.CHAT, RunMode.EXECUTE, RunMode.IDEATE, RunMode.EXPLAIN, RunMode.QAPP],
+)
 async def test_deliberately_selected_modes_pass_through_untouched(mode):
     llm = _ScriptedLLM()
 

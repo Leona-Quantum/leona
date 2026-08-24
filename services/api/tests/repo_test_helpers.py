@@ -250,6 +250,8 @@ async def delete_committed_tenants(factory, workspace_ids, user_ids) -> None:
         Project,
         ProjectShare,
         QpuRun,
+        Qapp,
+        QappExecution,
         Run,
         RunCandidate,
         RunEvent,
@@ -298,6 +300,16 @@ async def delete_committed_tenants(factory, workspace_ids, user_ids) -> None:
             await session.execute(
                 delete(ProjectShare).where(ProjectShare.project_id.in_(project_ids))
             )
+        qapp_ids = list(
+            (await session.execute(select(Qapp.id).where(Qapp.workspace_id.in_(workspace_ids))))
+            .scalars()
+            .all()
+        )
+        if qapp_ids:
+            await session.execute(delete(QappExecution).where(QappExecution.qapp_id.in_(qapp_ids)))
+            # The current-version edge is deferred; deleting the Qapp cascades
+            # its versions while removing the row that points back at one.
+            await session.execute(delete(Qapp).where(Qapp.id.in_(qapp_ids)))
         # First, because a qpu_run references an artifact VERSION as well as the
         # workspace and the user, and the versions go three statements below.
         # Nothing references a qpu_run, so nothing needs it to survive. Absent

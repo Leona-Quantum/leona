@@ -1,4 +1,4 @@
-export const COMPOSER_MODES = ["auto", "execute", "ideate", "explain"] as const;
+export const COMPOSER_MODES = ["auto", "execute", "qapp", "ideate", "explain"] as const;
 
 export type ComposerMode = (typeof COMPOSER_MODES)[number];
 

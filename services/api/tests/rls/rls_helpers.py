@@ -80,6 +80,9 @@ class TenantRows:
     usage_events: uuid.UUID
     audit_log: uuid.UUID
     qpu_runs: uuid.UUID
+    qapps: uuid.UUID
+    qapp_versions: uuid.UUID
+    qapp_executions: uuid.UUID
     artifact_citations: uuid.UUID
     artifact_tags: str
     artifact_sources: uuid.UUID
@@ -171,6 +174,40 @@ async def _build_tenant(session: AsyncSession, tag: str) -> TenantRows:
         {"id": qpu_id, "w": ws.id, "u": owner.id, "fp": f"rls-qpu-{tag}-{uuid.uuid4().hex[:8]}"},
     )
 
+    qapp_id = uuid.uuid4()
+    qapp_version_id = uuid.uuid4()
+    qapp_execution_id = uuid.uuid4()
+    await session.execute(
+        text(
+            "insert into qapps "
+            "(id, workspace_id, owner_user_id, slug, title, description, created_by_run_id) "
+            "values (:id, :w, :u, :slug, 'RLS Qapp', 'private probe', :r)"
+        ),
+        {"id": qapp_id, "w": ws.id, "u": owner.id, "slug": f"rls-qapp-{tag}-{uuid.uuid4().hex[:8]}", "r": run.id},
+    )
+    await session.execute(
+        text(
+            "insert into qapp_versions "
+            "(id, qapp_id, seq, framework, qubits_estimate, ui_document, quantum_source, "
+            "input_schema, output_schema, fingerprint, generation_prompt) values "
+            "(:id, :q, 1, 'qiskit', 2, '<html></html>', 'RESULT = {}', "
+            "'{\"type\":\"object\"}'::jsonb, '{\"type\":\"object\"}'::jsonb, :fp, 'probe')"
+        ),
+        {"id": qapp_version_id, "q": qapp_id, "fp": _hex64(f"qapp-{tag}")},
+    )
+    await session.execute(
+        text("update qapps set current_version_id = :v where id = :q"),
+        {"v": qapp_version_id, "q": qapp_id},
+    )
+    await session.execute(
+        text(
+            "insert into qapp_executions "
+            "(id, workspace_id, user_id, qapp_id, qapp_version_id, inputs) "
+            "values (:id, :w, :u, :q, :v, '{}'::jsonb)"
+        ),
+        {"id": qapp_execution_id, "w": ws.id, "u": owner.id, "q": qapp_id, "v": qapp_version_id},
+    )
+
     citation_id = uuid.uuid4()
     await session.execute(
         text(
@@ -257,6 +294,9 @@ async def _build_tenant(session: AsyncSession, tag: str) -> TenantRows:
         usage_events=usage_id,
         audit_log=audit_id,
         qpu_runs=qpu_id,
+        qapps=qapp_id,
+        qapp_versions=qapp_version_id,
+        qapp_executions=qapp_execution_id,
         artifact_citations=citation_id,
         artifact_tags=tag_value,
         artifact_sources=source_id,

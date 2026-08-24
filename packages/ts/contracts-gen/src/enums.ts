@@ -98,6 +98,14 @@ export const OPTIMIZER_VALUES = [
   "L_BFGS_B",
 ] as const;
 
+/** QappExecutionStatus — 4 members. */
+export const QAPP_EXECUTION_STATUS_VALUES = [
+  "queued",
+  "running",
+  "succeeded",
+  "failed",
+] as const;
+
 /** QpuEstimateBasis — 2 members. */
 export const QPU_ESTIMATE_BASIS_VALUES = [
   "vendor_rate_card",
@@ -144,13 +152,14 @@ export const ROLE_VALUES = [
   "viewer",
 ] as const;
 
-/** RunMode — 5 members. */
+/** RunMode — 6 members. */
 export const RUN_MODE_VALUES = [
   "auto",
   "chat",
   "execute",
   "ideate",
   "explain",
+  "qapp",
 ] as const;
 
 /** RunStatus — 5 members. */

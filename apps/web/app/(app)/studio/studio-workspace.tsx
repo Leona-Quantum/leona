@@ -50,7 +50,7 @@ import { PanelTabs, panelRegion } from "../../../components/panel-tabs";
 // tab, because a version list with no verdict beside it was never the thing
 // anyone opened it for. The list itself lives in lib/studio-panels so the order
 // can be asserted as a sequence.
-type StudioAction = "simulation" | "save" | "bring";
+type StudioAction = "simulation" | "save" | "bring" | "qapp";
 /** Panels that can be thrown full-screen. Both are things you look at closely. */
 type StudioPopout = "code" | "visual";
 
@@ -657,6 +657,43 @@ export function StudioWorkspace({ artifactId, newDraft = false, locale = "en", l
     }
   }
 
+  async function startQapp() {
+    if (!code.trim() || busy || !isExecutableCircuitFramework(sourceFramework)) return;
+    setBusy("qapp");
+    setMessage(null);
+    setRunId(null);
+    try {
+      const response = await fetch("/api/runs", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Idempotency-Key": crypto.randomUUID(),
+        },
+        body: JSON.stringify({
+          task_prompt: locale === "ja"
+            ? `量子回路「${title}」を、回路の意味を保ったまま操作しやすいQappにしてください。入力、説明、結果の可視化をこの回路に合わせて設計してください。`
+            : `Turn the quantum circuit “${title}” into an interactive Qapp. Preserve its semantics and design inputs, explanation, and result visualization for this circuit.`,
+          mode: "qapp",
+          framework: sourceFramework,
+          source_code: code,
+          response_locale: locale,
+          ...(artifact?.currentVersionId ? { artifact_version_id: artifact.currentVersionId } : {}),
+        }),
+      });
+      const payload = (await response.json()) as unknown;
+      const submitted = submittedId(payload);
+      if (!response.ok || !submitted) {
+        throw new Error(refusalSentence(payload) ?? `Qapp submission failed (${response.status})`);
+      }
+      setRunId(submitted);
+      setMessage(locale === "ja" ? "Qappの生成を開始しました。" : "Qapp generation started.");
+    } catch (cause) {
+      setMessage(cause instanceof Error ? cause.message : locale === "ja" ? "Qappを開始できませんでした。" : "Could not start the Qapp.");
+    } finally {
+      setBusy(null);
+    }
+  }
+
   /** File a circuit the user already has, without spending an agent run.
    *
    * The pipeline would plan it, review it, and hand back the same bytes it was
@@ -753,6 +790,14 @@ export function StudioWorkspace({ artifactId, newDraft = false, locale = "en", l
                       {busy === "bring" ? copy.bringingYourOwn : copy.bringYourOwn}
                     </button>
                   ) : null}
+                  <button
+                    className="mj-secondary-button"
+                    type="button"
+                    disabled={!code.trim() || busy !== null || !isExecutableCircuitFramework(sourceFramework)}
+                    onClick={() => void startQapp()}
+                  >
+                    {busy === "qapp" ? locale === "ja" ? "Qappを生成中…" : "Creating Qapp…" : locale === "ja" ? "Qappにする" : "Create Qapp"}
+                  </button>
                   <button className="mj-primary-button" type="button" disabled={!code.trim() || busy !== null || !isExecutableCircuitFramework(framework) || !isExecutableCircuitFramework(sourceFramework)} onClick={() => void startRun()}>{busy === "save" ? copy.starting : copy.verifySave}</button>
                 </div>
               </div>

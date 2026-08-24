@@ -22,6 +22,7 @@ _ROLE_STAGE = {
     "reference_audit": Stage.PLAN,
     "agent_tool_call": Stage.GENERATE,
     "generate_circuit": Stage.GENERATE,
+    "generate_qapp": Stage.GENERATE,
     "intent_alignment": Stage.VERIFY,
     "explain_result": Stage.ANALYZE,
     "research_triage": Stage.PLAN,
