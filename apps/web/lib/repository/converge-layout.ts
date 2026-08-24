@@ -5215,8 +5215,9 @@ function layoutFigure(options: {
    * `[0, height]`, and shrinking `halfHeight` shrinks `yc` with it, so the whole
    * drawing slides up inside the frame and `margin` absorbs the difference.
    * `halfHeight - 12` passed all 94 of them. `a figure is framed by the margin
-   * and by nothing else` is the two-sided one, it fails on this line at ±4px,
-   * and it fails on the `+ stateRadius` version by exactly 11.
+   * and by nothing else` is the two-sided one. It fails on this line at ±1px —
+   * twenty times tighter than what the suite could see — and it fails on the
+   * `+ stateRadius` version by exactly 11.
    *
    * This is the third occurrence of one shape in this file — `laneBow`
    * verifying itself against a derivation nothing draws with, the `Math.max`

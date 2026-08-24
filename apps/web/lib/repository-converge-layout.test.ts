@@ -418,6 +418,13 @@ function inkBand(diagram: ConvergeDiagram): { above: number; below: number; ink:
     for (const y of ys(lane.d)) { lo = Math.min(lo, y); hi = Math.max(hi, y); }
     if (lane.outline !== "") for (const y of ys(lane.outline)) { lo = Math.min(lo, y); hi = Math.max(hi, y); }
     if (lane.frame) for (const y of ys(lane.frame.d)) { lo = Math.min(lo, y); hi = Math.max(hi, y); }
+    // A refinement bracket is drawn ink like any other path, and it is the one
+    // piece of it that hangs off a lane rather than following it. Four lanes
+    // carry one on the shut sweep; none is outside the box the rest of this
+    // function builds today, which is exactly why it has to be sampled — an
+    // ink source a guard does not read is a guard that stops holding the
+    // moment the drawing changes. Caught by CodeRabbit on leona 732.
+    if (lane.variantBracket !== null) for (const y of ys(lane.variantBracket)) { lo = Math.min(lo, y); hi = Math.max(hi, y); }
     if (lane.label !== "") {
       const box = nameInkBox(lane);
       lo = Math.min(lo, box.y0);
@@ -451,6 +458,10 @@ test("a figure is framed by the margin and by nothing else", () => {
   // anything fail. A canvas 12px too tall and a canvas 12px too short were
   // indistinguishable to the suite.
   //
+  // After the two review catches below — Sourcery on the two-minima hole,
+  // CodeRabbit on the unsampled refinement bracket — this bites at **±1px** on
+  // `halfHeight`, against the ±20 the suite could see before it.
+  //
   // So this asserts the *other* side, and it asserts it where a single figure
   // can carry it: over the whole canvas, **some** figure must be framed by
   // exactly `margin` above and some by exactly `margin` below. Any
@@ -469,16 +480,25 @@ test("a figure is framed by the margin and by nothing else", () => {
     }
   }
   assert.ok(bands.length >= 50, `only ${bands.length} figures measured — the sweep found nothing`);
-  const tightestAbove = Math.min(...bands.map((b) => b.above));
-  const tightestBelow = Math.min(...bands.map((b) => b.below));
+  // **One figure, both sides.** This asserted `min(above) === margin` and
+  // `min(below) === margin` as two independent claims, and Sourcery caught that
+  // they can be met by two *different* figures — which would leave asymmetric
+  // over-reservation invisible, the very thing this test exists to see. 38 of
+  // the 276 are framed by the margin on both sides at once, so the stronger
+  // claim is not merely available, it is the common case.
+  const framed = bands.filter(
+    (band) => Math.abs(band.above - M.margin) <= 0.02 && Math.abs(band.below - M.margin) <= 0.02,
+  );
   const worst = [...bands].sort((a, b) => b.above + b.below - (a.above + a.below))[0]!;
   console.log(
-    `[frame census] ${bands.length} figures; tightest band above ${tightestAbove.toFixed(1)}, `
-      + `below ${tightestBelow.toFixed(1)}, margin ${M.margin}; loosest is ${worst.where} `
+    `[frame census] ${bands.length} figures; ${framed.length} framed by the margin (${M.margin}) `
+      + `on both sides; loosest is ${worst.where} `
       + `(${worst.above.toFixed(1)} above, ${worst.below.toFixed(1)} below, ${worst.ink.toFixed(1)} of ink)`,
   );
-  close(tightestAbove, M.margin, "the tightest figure's band above its ink is not the margin");
-  close(tightestBelow, M.margin, "the tightest figure's band below its ink is not the margin");
+  assert.ok(
+    framed.length > 0,
+    "no figure is framed by the margin on both sides — the reservation carries a term the drawing does not",
+  );
 });
 
 test("the canvas reserves the height the fan actually reaches", () => {
