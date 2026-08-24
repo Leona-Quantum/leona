@@ -334,7 +334,7 @@ const CATEGORY_STANCE: Readonly<Record<string, InterfaceStance>> = {
  *    is more useful than restating it. It read "112 of the 120 circuits are
  *    classified `benchmark-circuit` and the other 8 are not" — eight records
  *    where the circuit path and the label path would have disagreed, which is
- *    what made the precedence observable. Measured 2026-08-25: **30 records
+ *    what made the precedence observable. Measured 2026-08-25 JST: **30 records
  *    carry a `portableCircuit`, all 30 are `benchmark-circuit`, and all 30 sit
  *    in `basic-circuits`.** Zero counterexamples, so this step currently changes
  *    no record's stance and is defence in depth rather than something doing

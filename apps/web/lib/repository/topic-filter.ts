@@ -44,7 +44,7 @@ export interface TopicOptionGroup {
  *
  * `/repository` carries two controls that classify a record by what kind of
  * thing it is, and they now draw the SAME partition. Measured over the whole
- * 279-record corpus, 2026-08-25:
+ * 279-record corpus, 2026-08-25 JST (2026-08-24 UTC):
  *
  * | word           | category tab | `role` topic | same records |
  * | -------------- | ------------ | ------------ | ------------ |
