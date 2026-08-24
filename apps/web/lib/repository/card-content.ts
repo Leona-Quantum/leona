@@ -119,6 +119,29 @@ export interface CardLink {
   readonly href: string;
 }
 
+/**
+ * One end of a hop, as a reader meets it: the state's **label**, with its id
+ * kept for the addresses that need one.
+ *
+ * **A pair rather than a bare id, and that shape is the fix.** These two fields
+ * were one `string` holding the id, and both renderers printed it — so the card
+ * showed a reader `ground-state-problem ⟶ parameterized-circuit` where the
+ * method's own page, three clicks away, showed *Hamiltonian whose ground state
+ * is wanted ⟶ Parameterised circuit family* off `stateLabel()`. In `ja` it was
+ * worse than inconsistent: the slugs are English, every state carries a
+ * `labelJa`, and none of it reached the card.
+ *
+ * Swapping the printed string would have fixed today's two call sites and left
+ * the next one free to make the same mistake. A pair cannot be printed by
+ * accident — `{hop.from}` stops compiling — so the id survives exactly where an
+ * id belongs (`data-hop`, React keys, tests) and the label is what reaches a
+ * reader.
+ */
+export interface CardState {
+  readonly id: string;
+  readonly label: string;
+}
+
 /** One repository record this node names, joined through `LayerNode.entries`. */
 export interface CardRecord {
   readonly slug: string;
@@ -155,8 +178,8 @@ export interface CardRecord {
  * leaves the reader guessing which of three hops the approximation was made at.
  */
 export interface CardHop {
-  readonly from: string;
-  readonly to: string;
+  readonly from: CardState;
+  readonly to: CardState;
   /** The slot filling this hop, or null when the method does the work itself. */
   readonly via: CardLink | null;
   /**
@@ -536,8 +559,8 @@ export interface OwnStepCard {
   /** The slot the method fills, so the reader can climb back out. */
   readonly realizes: CardLink | null;
   /** The state it starts from and the state it must reach. */
-  readonly from: string;
-  readonly to: string;
+  readonly from: CardState;
+  readonly to: CardState;
   /**
    * What the method does across those two states, where the record says — and
    * `null` where nothing has been recorded, in which case the panel draws the
@@ -611,6 +634,19 @@ interface CardInput {
 /** The layer-graph page for a node. The card never replaces this — it links to it. */
 export function nodePageHref(id: string): string {
   return `/repository/layers/${id}`;
+}
+
+/**
+ * A state id and the label a reader should see for it.
+ *
+ * **Falls back to the id rather than to an empty string**, because a state the
+ * vocabulary does not hold is a graph error `validateLayerGraph` already
+ * refuses, and a blank end of a hop would hide it on the one surface where it
+ * would otherwise be obvious. The fallback is the loud one on purpose.
+ */
+function stateRef(vocabulary: StateVocabulary, id: string, ja: boolean): CardState {
+  const state = vocabulary.states.find((entry) => entry.id === id);
+  return { id, label: state === undefined ? id : ja ? state.labelJa : state.label };
 }
 
 function linkFor(graph: LayerGraph, id: string, ja: boolean): CardLink | null {
@@ -919,8 +955,8 @@ function methodCard(input: CardInput, method: LayerMethod): MethodCard {
   // section below. Reading both from `steps` would put every ingredient in the
   // chain and every hop in the ingredients.
   const hops: CardHop[] = route.segments.map((segment, index) => ({
-    from: route.states[index] ?? "",
-    to: route.states[index + 1] ?? "",
+    from: stateRef(vocabulary, route.states[index] ?? "", ja),
+    to: stateRef(vocabulary, route.states[index + 1] ?? "", ja),
     via: segment.capabilityId === null ? null : linkFor(graph, segment.capabilityId, ja),
     // Only on the stretch the method closes itself; a slot-filled hop is named
     // by its slot, which `via` above already carries.
@@ -1049,8 +1085,8 @@ function ownStepCard(input: CardInput, method: LayerMethod): OwnStepCard | null 
     pageHref: nodePageHref(method.id),
     method: link,
     realizes: linkFor(graph, method.realizes, ja),
-    from,
-    to,
+    from: stateRef(vocabulary, from, ja),
+    to: stateRef(vocabulary, to, ja),
     ownName: ownStretchName(method, ja),
     contract: contractOf(graph, method, ja),
     slotWanted: true,
