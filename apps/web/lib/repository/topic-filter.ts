@@ -80,22 +80,31 @@ export interface TopicOptionGroup {
  * Owner ruling, ai-ops#75: *"reconcile them to one number and drop whichever
  * slice matters less."* The record kind is the structural one — it is
  * `PUBLIC_REPOSITORY_CATEGORY_IDS`, the first level of the folder tree, the
- * `?category=` param, the four-kind model `check-repository-data.mjs` validates,
- * and the axis `?fits=` already agrees with (transform 29 = gates 29,
- * observable 60 = operators 60), including the "See all 29" a gate record's
- * interface panel prints. The third pair this used to quote — "source 13 =
- * states 13" — was measured when `states` held 13; it holds 12, and the pair is
- * dropped rather than restated, because the argument does not rest on it. The `role` facet is one tag group inside a
- * collapsed rail. So the tabs keep the words, and this control stops offering a
- * second answer to their question.
+ * `?category=` param, and the four-kind model `check-repository-data.mjs`
+ * validates. The `role` facet is one tag group inside a collapsed rail. So the
+ * tabs keep the words, and this control stops offering a second answer to their
+ * question.
  *
- * The numbers are **not** reconciled by reclassifying records: the three that
- * disagree do so for good reasons — `pauli-y-gate` and `pauli-z-gate` are filed
- * under `gates` but their family is `Pauli operator`, and
- * `quantum-teleportation` is filed under `states` but is a protocol. Deriving
- * the role from the category instead would file a protocol as an object on the
- * Ingredients shelf and split the three Pauli records that shelf deliberately
- * keeps together. That is a physics classification, not a copy fix.
+ * The `?fits=` axis was cited here as agreeing with the category axis, by three
+ * pairs. **Do not restate them from memory — two have moved.** Measured
+ * 2026-08-25 JST: `transform` 29 = `gates` 29 still holds, and so does the "See
+ * all 29" a gate record's interface panel prints. `observable` 60 vs `operators`
+ * **65** no longer matches, because ai-ops issue 174 sent five state records to
+ * that tab without changing their role. And the third pair is gone outright —
+ * it compared `source` to a `states` category that issue also cut. The argument
+ * never rested on the pairs being exact, so it survives them moving; it is the
+ * numbers that were quotable and are not.
+ *
+ * The numbers are **not** reconciled by reclassifying records. `pauli-y-gate`
+ * and `pauli-z-gate` are filed under `gates` while their family is `Pauli
+ * operator`, and deriving the role from the category would split the three Pauli
+ * records the Ingredients shelf deliberately keeps together. That is a physics
+ * classification, not a copy fix.
+ *
+ * This paragraph used to name `quantum-teleportation` as a second example, "filed
+ * under `states` but a protocol". It has been `algorithms` since ai-ops 84
+ * (2026-08-14) — the mismatch was real, it was fixed by moving the record, and
+ * the example outlived the problem it described.
  *
  * ## What survives, and why
  *
