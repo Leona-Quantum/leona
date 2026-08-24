@@ -43,7 +43,7 @@ wheels = [
 
 [[package]]
 name = "amazon-braket-default-simulator"
-version = "1.40.0"
+version = "1.40.1"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "amazon-braket-schemas" },
@@ -55,9 +55,9 @@ dependencies = [
     { name = "scipy" },
     { name = "sympy" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/bb/c3/cc6be14962d1de2c4606fe85bc08c99bd4584bd137562478cc85399b7575/amazon_braket_default_simulator-1.40.0.tar.gz", hash = "sha256:220b854c19b7fc87d0c9fa7e0bb4818688491e5b49fc2ec19e0ed71517658e04", size = 205179, upload-time = "2026-08-14T20:52:58.567Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/f2/27/28cce124ce1de9911a706e9a2ed103d783308b6776e9d7b2f2f74847c17e/amazon_braket_default_simulator-1.40.1.tar.gz", hash = "sha256:13e8e7c940f967a384a1897d806834a4c2c3af567f11f1335e51f16c39cc316e", size = 205386, upload-time = "2026-08-20T22:54:00.502Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/8a/d2/87fdb449d8589f927e28d739c639b968dda5f142f9bb965f9ecb7515309e/amazon_braket_default_simulator-1.40.0-py3-none-any.whl", hash = "sha256:eba7da5f63c262f9d83a990ced5ef7a843ee1617203f2a735c39935c81046f64", size = 247164, upload-time = "2026-08-14T20:52:57.262Z" },
+    { url = "https://files.pythonhosted.org/packages/15/64/f1ddd919c4129b0688f0dad907ae7a05feb8f24e33ee9a004b26cbf1d7a1/amazon_braket_default_simulator-1.40.1-py3-none-any.whl", hash = "sha256:4a431cfe27af8efcbdeee11cc7c0a78c70e2968f481c1c2978132fefbc75f56b", size = 247379, upload-time = "2026-08-20T22:53:58.529Z" },
 ]
 
 [[package]]
@@ -1568,7 +1568,7 @@ requires-dist = [{ name = "majorana-contracts", editable = "packages/py/contract
 
 [package.metadata.requires-dev]
 dev = [
-    { name = "amazon-braket-default-simulator", specifier = "==1.40.0" },
+    { name = "amazon-braket-default-simulator", specifier = "==1.40.1" },
     { name = "amazon-braket-sdk", specifier = "==1.125.0" },
     { name = "cirq-core", specifier = ">=1.4" },
     { name = "httpx", specifier = ">=0.27" },
