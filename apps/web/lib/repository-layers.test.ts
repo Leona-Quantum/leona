@@ -2548,6 +2548,25 @@ test("the variational region does not go quiet again about what it costs", () =>
   );
   const AWAITING_OWNER = ["variational-ground-state"];
   const cost = region.fields.find((entry) => entry.field === "cost")!;
+  // The exemption is checked in BOTH directions, and neither is decoration.
+  // Without the first, deleting the exempt method from the region makes this
+  // test pass while enforcing nothing — the same "measure less, look healthier"
+  // failure `unknown` guards at the slot level. Without the second, the day
+  // ai-ops issue 169 is answered and VQE gets a cost, the filter is empty, this
+  // still passes, and the stale exemption sits here forever — which is the
+  // opposite of what the comment above promises. Both were raised on the PR
+  // that added this test, by two different reviewers arriving from two
+  // different ends of the same hole.
+  assert.deepEqual(
+    AWAITING_OWNER.filter((id) => !region.methods.includes(id)),
+    [],
+    "an exempt method has left the region, so the exemption now guards nothing",
+  );
+  assert.deepEqual(
+    AWAITING_OWNER.filter((id) => !cost.missing.includes(id)),
+    [],
+    "an exempt method now carries a cost — delete it from AWAITING_OWNER and this line goes quiet",
+  );
   assert.deepEqual(
     cost.missing.filter((id) => !AWAITING_OWNER.includes(id)),
     [],
