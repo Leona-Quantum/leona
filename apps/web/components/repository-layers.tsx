@@ -1541,6 +1541,24 @@ function MethodView({
           <p>
             <MathText source={(isJa ? node.costJa : node.cost) ?? ""} />
           </p>
+        ) : absenceOf(node, "cost", isJa) ? (
+          /* **A researched absence, not the standing gap note.** `costNone` says
+             "No complexity is recorded here", which reads to a reader as nobody
+             having looked — and for `koopman-linearization` somebody did: its
+             only paper proves the linearization at arbitrary basis and scopes
+             both of its complexity theorems to the Fourier instance, which is a
+             different record in this graph and does carry the numbers.
+
+             `cost` has been declarable since `DECLARABLE_ABSENCES` was written
+             and no surface read it, so the first declaration would have drawn the
+             opposite of what its author wrote. Same markers as the `example.text`
+             arm above, so a sweep counting explained gaps sees all of them; and
+             the card reads the same key through `card-content.ts`, because one
+             surface drawing the reason while the other draws the standing note is
+             the two-surface disagreement `implementations` already shipped once. */
+          <p className="mj-card-gap mj-card-gap--none-recorded" data-gap="none-recorded" data-explained="true">
+            <MathText source={absenceOf(node, "cost", isJa) ?? ""} />
+          </p>
         ) : (
           <EmptyNote>{copy.costNone}</EmptyNote>
         )}
