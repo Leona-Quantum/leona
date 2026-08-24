@@ -2574,6 +2574,42 @@ test("the variational region does not go quiet again about what it costs", () =>
   );
 });
 
+/**
+ * Every hop the ground-state and excited-state routes draw says what happens on it.
+ *
+ * **What a reader met before this closed.** Opening VQD's route on production gave
+ * *"None found yet."* on all four of its hops — the same shape as the blank `cost`
+ * field one level up, and the same cause: nobody had read the papers for it. The
+ * gauge read **5 of 33 route stretches**; the other 28 were written out of each
+ * method's own citations.
+ *
+ * **Stretches, not methods, and the denominator has a floor under it.** A method
+ * with one authored hop of five reads as "has hops" on any per-method count, and
+ * that is exactly the region that looks finished and is not — so this asserts the
+ * two numbers are equal AND that the denominator has not shrunk. Deleting a route
+ * would otherwise make the equality pass on a smaller region, which is the
+ * "measure less, look healthier" failure `region.unknown` guards at the slot level.
+ *
+ * These two slots only. The other four of the six variational slots have not been
+ * swept for hop theory, and asserting a region that is partly authored pins a
+ * number that means nothing.
+ */
+test("every hop these two slots draw says what happens on it", () => {
+  const SLOTS = ["ground-state-energy", "excited-state-energy"];
+  const region = regionClosure(LAYER_GRAPH, STATE_VOCABULARY, SLOTS, new Map());
+  assert.deepEqual(region.unknown, [], "a slot id in this test names no capability");
+  assert.ok(
+    region.hopStretches >= 33,
+    `${region.hopStretches} drawn stretches, fewer than the 33 the region was closed over`,
+  );
+  assert.equal(
+    region.hopStretchesAuthored,
+    region.hopStretches,
+    `hop theory covers ${region.hopStretchesAuthored} of ${region.hopStretches} drawn route stretches — ` +
+      `unauthored: ${region.unauthoredHops.map((hop) => `${hop.method}/${hop.key}`).join(", ")}`,
+  );
+});
+
 
 /** The reader-facing modules that may render a declared absence, as (name, source). */
 function absenceSurfaceSources(): { name: string; source: string }[] {
