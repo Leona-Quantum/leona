@@ -38,6 +38,34 @@ const SINGLE_QUBIT_GATES = new Set(["H", "X", "Y", "Z", "S", "T", "RX", "RY", "R
 const TWO_QUBIT_GATES = new Set(["CX", "CZ", "SWAP"]);
 const ROTATION_GATES = new Set(["RX", "RY", "RZ"]);
 
+// The category vocabulary, from the module that DECLARES it.
+//
+// Its own bundle, because the module this checker otherwise loads depends on the
+// mode: the barrel in a normal run, a single batch module under `--entry-file`.
+// A batch module exports its entries array and nothing else, so a vocabulary
+// read off it is empty and every record fails as `unknown category`.
+async function loadCategoryIds() {
+  const dir = mkdtempSync(join(tmpdir(), "repo-data-vocab-"));
+  const file = join(dir, "types.mjs");
+  try {
+    await esbuild.build({
+      entryPoints: [join(root, "apps/web/lib/repository/types.ts")],
+      bundle: true,
+      format: "esm",
+      platform: "neutral",
+      outfile: file,
+      logLevel: "silent",
+    });
+    const vocab = await import(pathToFileURL(file).href);
+    return vocab.PUBLIC_REPOSITORY_CATEGORY_IDS ?? [];
+  } catch (error) {
+    console.error("✖ failed to bundle the category vocabulary from types.ts:", error.message);
+    process.exit(1);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+
 const outDir = mkdtempSync(join(tmpdir(), "repo-data-"));
 const outFile = join(outDir, "public-repository.mjs");
 const bundleTarget = ENTRY_FILE ?? "apps/web/lib/public-repository.ts";
@@ -105,9 +133,15 @@ if (ENTRY_FILE) {
 // list is stale", it rejects every record in the missing category as
 // `unknown category`, and adding `basic-circuits` would have failed 30 records
 // that were correct. Derive; do not restate.
-const CATEGORIES = new Set(mod.PUBLIC_REPOSITORY_CATEGORY_IDS);
+//
+// Bundled from `types.ts` ON ITS OWN rather than read off `mod`, because `mod`
+// is not always the barrel: in `--entry-file` mode it is a single batch module,
+// which exports an entries array and no vocabulary at all. Reading it from there
+// left `CATEGORIES` empty and refused every batch run — the vocabulary has to
+// come from the file that declares it, in both modes.
+const CATEGORIES = new Set(await loadCategoryIds());
 if (CATEGORIES.size === 0) {
-  console.error("✖ PUBLIC_REPOSITORY_CATEGORY_IDS came back empty — the bundle did not export the vocabulary");
+  console.error("✖ PUBLIC_REPOSITORY_CATEGORY_IDS came back empty — types.ts did not export the vocabulary");
   process.exit(1);
 }
 const knownMethods = new Set(VERIFICATION_METHODS.map((m) => m.id));
