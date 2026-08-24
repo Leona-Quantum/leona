@@ -2590,11 +2590,19 @@ test("the variational region does not go quiet again about what it costs", () =>
  * would otherwise make the equality pass on a smaller region, which is the
  * "measure less, look healthier" failure `region.unknown` guards at the slot level.
  *
- * These two slots only. The other four of the six variational slots have not been
- * swept for hop theory, and asserting a region that is partly authored pins a
- * number that means nothing.
+ * **All six slots now, not two.** The four this test used to leave out —
+ * `ansatz-construction`, `parameter-optimization`, `observable-estimation`,
+ * `error-mitigation` — read `hop theory 27/39` when they were added to it, and the
+ * twelve blanks were every one of them an INGREDIENT hop rather than a chain hop:
+ * a slot the method reaches for and consumes, drawn in the card's *Requires* list
+ * through `CardIngredient.theory` rather than on the chain. They were the last
+ * twelve, and the region is 72/72.
+ *
+ * That is why the floors below are so uneven — `ansatz-construction` has 13
+ * methods and 19 stretches while `error-mitigation` has 4 and 4. Summing them
+ * would let the largest slot's growth pay for the smallest one disappearing.
  */
-test("every hop these two slots draw says what happens on it", () => {
+test("every hop these six slots draw says what happens on it", () => {
   // Per slot, not summed. An aggregate floor of 33 is met by one slot losing
   // every route while the other grows past it — the same "measure less, look
   // healthier" failure one level in from the one `region.unknown` catches, and
@@ -2603,6 +2611,10 @@ test("every hop these two slots draw says what happens on it", () => {
   const FLOORS: readonly (readonly [string, number])[] = [
     ["ground-state-energy", 11],
     ["excited-state-energy", 22],
+    ["ansatz-construction", 19],
+    ["parameter-optimization", 8],
+    ["observable-estimation", 8],
+    ["error-mitigation", 4],
   ];
   for (const [slot, floor] of FLOORS) {
     const region = regionClosure(LAYER_GRAPH, STATE_VOCABULARY, [slot], new Map());
