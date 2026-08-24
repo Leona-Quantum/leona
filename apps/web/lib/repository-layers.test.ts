@@ -19,6 +19,7 @@ import test from "node:test";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
+import ts from "typescript";
 
 import {
   DECLARABLE_ABSENCES,
@@ -2507,101 +2508,66 @@ test("the linear-ODE region does not go backwards on the half that is closed", (
 });
 
 
-/** The reader-facing modules that may render a declared absence. */
-function absenceSurfaceSources(): string[] {
+/** The reader-facing modules that may render a declared absence, as (name, source). */
+function absenceSurfaceSources(): { name: string; source: string }[] {
   const webRoot = dirname(dirname(fileURLToPath(import.meta.url)));
   return [
-    join(webRoot, "lib", "repository", "card-content.ts"),
-    join(webRoot, "components", "repository-layers.tsx"),
-    join(webRoot, "components", "map-card-panel.tsx"),
-  ].map((file) => readFileSync(file, "utf8"));
+    ["card-content.ts", join(webRoot, "lib", "repository", "card-content.ts")],
+    ["repository-layers.tsx", join(webRoot, "components", "repository-layers.tsx")],
+    ["map-card-panel.tsx", join(webRoot, "components", "map-card-panel.tsx")],
+  ].map(([name, file]) => ({ name: name!, source: readFileSync(file!, "utf8") }));
 }
 
 /**
- * A SAME-LENGTH mask of `source` with comments and string BODIES blanked out.
+ * Every executable `absenceOf(<x>, "<field>", …)` in `source`, with its offset.
  *
- * Same length is the whole trick: an index into the mask is an index into the
- * original, so a call can be *located* in code context and then *read* from the
- * real source. Blanking alone cannot work here, because the thing being matched
- * — `absenceOf(node, "implementations")` — contains a string literal, so a
- * scanner that blanks strings destroys the field name it needs to read.
+ * **Parsed, not scanned, and the history is the argument for it.** Three review
+ * rounds killed three hand-rolled scanners, each time on a construct that spells
+ * the call without being one — or is one without looking like it:
  *
- * Both halves are load-bearing and a reviewer found each, which is why this is a
- * hand-rolled scanner with its own tests rather than a one-line `includes`:
+ * - a **comment** left behind after the renderer was deleted (Sourcery);
+ * - the call spelled inside a **string literal**, so a renderer that never
+ *   existed satisfied the guard (CodeRabbit) — the dangerous direction;
+ * - a **regex literal** whose pattern contains the call, which the previous
+ *   version mis-lexed into a false PASS, disproving a safety claim that version's
+ *   own comment made (Sourcery);
+ * - a real call inside a **`${…}` template interpolation**, masked away as if it
+ *   were literal text, which would have reported a working renderer as missing
+ *   (Sourcery).
  *
- * - **Comments.** A surface that stops rendering a declared reason but keeps the
- *   comment explaining why it used to would still count as rendering it. Not
- *   hypothetical: this PR's own fix adds a comment naming the very call its
- *   guard asserts. (Sourcery.)
- * - **Strings.** The reverse direction, and the dangerous one: an
- *   `absenceOf(...)` spelled inside a string literal — an error message, a
- *   fixture — would satisfy the guard with nothing rendered at all. (CodeRabbit.)
- *
- * Not a TypeScript parser and it does not need to be: it tracks the three quote
- * characters with backslash escapes, which is exactly enough to make "does this
- * call expression appear" honest. Division-vs-regex is deliberately not
- * disambiguated — no `/` in these three files precedes text that could spell an
- * `absenceOf` call, and a regex literal that did would only ever cause a false
- * FAILURE, never a false pass.
+ * The compiler gets all four right by construction and needs no comment
+ * explaining which ones it gets wrong. That is the whole justification: a guard
+ * against "this looks like it verifies rendering and does not" must not itself be
+ * a thing that looks like it verifies code and does not.
  */
-function codeMask(source: string): string {
-  const out: string[] = [];
-  let i = 0;
-  while (i < source.length) {
-    const two = source.slice(i, i + 2);
-    if (two === "//" || two === "/*") {
-      const end =
-        two === "//"
-          ? (source.indexOf("\n", i) === -1 ? source.length : source.indexOf("\n", i))
-          : (source.indexOf("*/", i + 2) === -1 ? source.length : source.indexOf("*/", i + 2) + 2);
-      // Blanked to spaces, one for one, so every later offset still lines up.
-      for (let k = i; k < end; k += 1) out.push(source[k] === "\n" ? "\n" : " ");
-      i = end;
-      continue;
+function absenceCalls(source: string, fileName = "surface.tsx"): { field?: string; at: number }[] {
+  const parsed = ts.createSourceFile(fileName, source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
+  const found: { field?: string; at: number }[] = [];
+  const walk = (node: ts.Node): void => {
+    if (
+      ts.isCallExpression(node) &&
+      ts.isIdentifier(node.expression) &&
+      node.expression.text === "absenceOf"
+    ) {
+      const arg = node.arguments[1];
+      found.push({
+        field: arg && ts.isStringLiteral(arg) ? arg.text : undefined,
+        at: node.getStart(parsed),
+      });
     }
-    const ch = source[i]!;
-    if (ch === '"' || ch === "'" || ch === "`") {
-      out.push(ch);
-      i += 1;
-      while (i < source.length && source[i] !== ch) {
-        if (source[i] === "\\") {
-          out.push(" ");
-          i += 1;
-          if (i < source.length) {
-            out.push(" ");
-            i += 1;
-          }
-          continue;
-        }
-        out.push(source[i] === "\n" ? "\n" : " ");
-        i += 1;
-      }
-      if (i < source.length) {
-        out.push(ch);
-        i += 1;
-      }
-      continue;
-    }
-    out.push(ch);
-    i += 1;
-  }
-  return out.join("");
+    ts.forEachChild(node, walk);
+  };
+  walk(parsed);
+  return found;
 }
 
-/** Does `source` contain an EXECUTABLE `absenceOf(method|node, "<field>", ...)`? */
+/** Does `source` render the absence for `field` — as code, not as text about code? */
 function rendersAbsence(source: string, field: string): boolean {
-  const mask = codeMask(source);
-  const escaped = field.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  const call = new RegExp(`^absenceOf\\(\\s*(?:method|node)\\s*,\\s*["']${escaped}["']`);
-  for (let i = mask.indexOf("absenceOf("); i !== -1; i = mask.indexOf("absenceOf(", i + 1)) {
-    // Located in CODE (via the mask), read from the ORIGINAL (offsets align).
-    if (call.test(source.slice(i, i + 200))) return true;
-  }
-  return false;
+  return absenceCalls(source).some((call) => call.field === field);
 }
 
-const absenceIsRendered = (sources: readonly string[], field: string) =>
-  sources.some((source) => rendersAbsence(source, field));
+const absenceIsRendered = (surfaces: readonly { source: string }[], field: string) =>
+  surfaces.some((surface) => rendersAbsence(surface.source, field));
 
 /**
  * Declarable keys that no surface renders yet, and which nothing has declared.
@@ -2612,10 +2578,9 @@ const absenceIsRendered = (sources: readonly string[], field: string) =>
  */
 const ABSENCE_KEYS_NOT_WIRED_UP = ["cost", "conditions", "example.pseudocode"];
 
-test("the scanner ignores comments and strings, and nothing else", () => {
-  // The guards below are only as good as this, and the two directions fail
-  // oppositely: a missed comment lets a DELETED renderer pass, and a missed
-  // string lets a renderer that NEVER EXISTED pass.
+test("only an executable absenceOf call counts as rendering", () => {
+  // Every construct that killed a previous version of this helper, in one place.
+  // The guards below are worth exactly what this test is worth.
   const call = 'absenceOf(node, "implementations", isJa)';
 
   assert.equal(rendersAbsence(`// ${call}`, "implementations"), false, "line comment counted");
@@ -2630,23 +2595,25 @@ test("the scanner ignores comments and strings, and nothing else", () => {
     false,
     "template literal counted",
   );
+  assert.equal(
+    rendersAbsence(`const re = /absenceOf\\(node, "implementations"/;`, "implementations"),
+    false,
+    "regex literal counted — the false PASS that killed the hand-rolled scanner",
+  );
 
-  // Real calls survive — including one after a string containing `//`, which the
-  // previous comment-only stripper truncated away.
+  // And the calls that ARE code are found, including the two shapes the previous
+  // version got wrong in the other direction.
   assert.ok(rendersAbsence(`x = ${call};`, "implementations"));
+  assert.ok(
+    rendersAbsence("y = `${" + call + "}`;", "implementations"),
+    "a call inside a template interpolation was reported missing",
+  );
   assert.ok(rendersAbsence(`f("http://x"); y = ${call};`, "implementations"), "a URL swallowed it");
   assert.ok(rendersAbsence(`x = absenceOf(method, "example.text", ja);`, "example.text"));
 
-  // An escaped quote must not end the string early and expose its tail as code.
-  assert.equal(
-    rendersAbsence(`const s = "a\\"${call}";`, "implementations"),
-    false,
-    "escaped quote ended the string early",
-  );
   // The FIELD is matched, not merely the function name.
   assert.equal(rendersAbsence(`x = ${call};`, "cost"), false, "matched the wrong field");
 });
-
 
 test("no absence anyone has actually declared is rendered by nothing", () => {
   // The check that fires at the moment it matters: an author writes a reason,
@@ -2711,19 +2678,43 @@ test("the two surfaces agree about a declared implementations absence", () => {
     rendersAbsence(cardSource, "implementations"),
     "card-content.ts stopped rendering the implementations absence",
   );
-  assert.ok(
-    rendersAbsence(pageSource, "implementations"),
-    "the method page does not render the implementations absence",
-  );
 
-  // Ordering, read off the MASK so a mention in a comment or a string cannot
-  // stand in for either branch.
-  const mask = codeMask(pageSource);
-  const reasonAt = mask.indexOf("absenceOf(node,");
-  const genericAt = mask.indexOf("copy.implementationsNone");
-  assert.ok(genericAt >= 0, "the method page's generic implementations note is gone");
+  // **The IMPLEMENTATIONS call specifically, not the first `absenceOf(node,` on
+  // the page.** An earlier version took the first one and that is the
+  // `example.text` call fifty lines up, so the ordering below was measuring an
+  // unrelated call and passing for the wrong reason. Caught by CodeRabbit; it is
+  // the same shape as the bug this whole PR is about — an assertion that looks
+  // like it checks the thing and checks its neighbour.
+  const reasonAt = absenceCalls(pageSource, "repository-layers.tsx").find(
+    (call) => call.field === "implementations",
+  )?.at;
+  assert.ok(reasonAt !== undefined, "the method page does not render the implementations absence");
+
+  // The generic note's position, found as a property access rather than as text,
+  // so a mention of it in a comment cannot stand in for the branch.
+  const parsed = ts.createSourceFile(
+    "repository-layers.tsx",
+    pageSource,
+    ts.ScriptTarget.Latest,
+    true,
+    ts.ScriptKind.TSX,
+  );
+  let genericAt: number | undefined;
+  const walk = (node: ts.Node): void => {
+    if (
+      genericAt === undefined &&
+      ts.isPropertyAccessExpression(node) &&
+      node.name.text === "implementationsNone"
+    ) {
+      genericAt = node.getStart(parsed);
+    }
+    ts.forEachChild(node, walk);
+  };
+  walk(parsed);
+  assert.ok(genericAt !== undefined, "the method page's generic implementations note is gone");
+
   assert.ok(
-    reasonAt >= 0 && reasonAt < genericAt,
+    reasonAt! < genericAt!,
     "the method page falls back to its generic note before checking for a declared reason",
   );
 });
