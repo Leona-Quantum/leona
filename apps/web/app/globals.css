@@ -2256,12 +2256,12 @@ html[lang="ja"] .mj-company-hero-title-line {
 /* Qapps: the generated document owns the iframe interior; Leona owns only its frame. */
 .qapp-page,
 .qapp-private-page {
-  min-height: 100vh;
   background: var(--bg-0);
   color: var(--text-0);
 }
 
 .qapp-page {
+  min-height: 100vh;
   padding: 0 clamp(1rem, 4vw, 4rem) 3rem;
 }
 
@@ -2347,6 +2347,11 @@ html[lang="ja"] .mj-company-hero-title-line {
 }
 
 .qapp-private-page {
+  box-sizing: border-box;
+  min-height: 0;
+  height: 100%;
+  overflow-y: auto;
+  overscroll-behavior: contain;
   padding: clamp(1rem, 3vw, 2.5rem);
 }
 

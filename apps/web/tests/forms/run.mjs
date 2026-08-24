@@ -29,15 +29,11 @@ if (testFiles.length === 0) {
   process.exit(1);
 }
 
-// studio-custom-gate.test.tsx imports `CircuitBuilder` out of
-// studio-workspace.tsx, which also has a MODULE-LEVEL `import { useRouter }
-// from "next/navigation"` for the (untested-here) outer `StudioWorkspace`
-// component. `next/navigation` is Next's own resolution target, not a plain
-// package export Node can follow outside a Next build. CircuitBuilder itself
-// never calls `useRouter()`, so a stub that only throws if actually invoked
-// is both sufficient and a canary: if a future edit makes CircuitBuilder
-// depend on the router, this stub turns that into a loud test failure
-// instead of a silent gap.
+// Studio imports `useRouter` at module scope. `next/navigation` is Next's own
+// resolution target, not a plain package export Node can follow outside a Next
+// build, so expose `push` through an explicit per-test spy. Tests that render
+// only CircuitBuilder never call it; tests that render StudioWorkspace must
+// install the spy before a route-changing action.
 const stubNextNavigation = {
   name: "stub-next-navigation",
   setup(build) {
@@ -47,7 +43,7 @@ const stubNextNavigation = {
     }));
     build.onLoad({ filter: /.*/, namespace: "stub-next-navigation" }, () => ({
       contents:
-        "export function useRouter() { throw new Error('next/navigation is stubbed in tests/forms — this code path was not expected to call useRouter()'); }",
+        "export function useRouter() { return { push(value) { const spy = globalThis.__formTestRouterPush; if (typeof spy !== 'function') throw new Error('next/navigation push called without __formTestRouterPush'); spy(value); } }; }",
       loader: "js",
     }));
   },

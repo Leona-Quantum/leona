@@ -143,6 +143,7 @@ export function StudioWorkspace({ artifactId, newDraft = false, locale = "en", l
   const [busy, setBusy] = useState<StudioAction | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [runId, setRunId] = useState<string | null>(null);
+  const [qappPrompt, setQappPrompt] = useState("");
   const [simulationRecords, setSimulationRecords] = useState<CpuSimulationRecord[]>([]);
   const [rerunPending, setRerunPending] = useState(false);
   const [copied, setCopied] = useState(false);
@@ -663,6 +664,7 @@ export function StudioWorkspace({ artifactId, newDraft = false, locale = "en", l
     setMessage(null);
     setRunId(null);
     try {
+      const customPrompt = qappPrompt.trim();
       const response = await fetch("/api/runs", {
         method: "POST",
         headers: {
@@ -670,9 +672,9 @@ export function StudioWorkspace({ artifactId, newDraft = false, locale = "en", l
           "Idempotency-Key": crypto.randomUUID(),
         },
         body: JSON.stringify({
-          task_prompt: locale === "ja"
+          task_prompt: customPrompt || (locale === "ja"
             ? `量子回路「${title}」を、回路の意味を保ったまま操作しやすいQappにしてください。入力、説明、結果の可視化をこの回路に合わせて設計してください。`
-            : `Turn the quantum circuit “${title}” into an interactive Qapp. Preserve its semantics and design inputs, explanation, and result visualization for this circuit.`,
+            : `Turn the quantum circuit “${title}” into an interactive Qapp. Preserve its semantics and design inputs, explanation, and result visualization for this circuit.`),
           mode: "qapp",
           framework: sourceFramework,
           source_code: code,
@@ -686,7 +688,8 @@ export function StudioWorkspace({ artifactId, newDraft = false, locale = "en", l
         throw new Error(refusalSentence(payload) ?? `Qapp submission failed (${response.status})`);
       }
       setRunId(submitted);
-      setMessage(locale === "ja" ? "Qappの生成を開始しました。" : "Qapp generation started.");
+      setMessage(locale === "ja" ? "Qappの生成を開始しました。Runへ移動します。" : "Qapp generation started. Opening Run.");
+      router.push(`/run/${encodeURIComponent(submitted)}`);
     } catch (cause) {
       setMessage(cause instanceof Error ? cause.message : locale === "ja" ? "Qappを開始できませんでした。" : "Could not start the Qapp.");
     } finally {
@@ -790,17 +793,45 @@ export function StudioWorkspace({ artifactId, newDraft = false, locale = "en", l
                       {busy === "bring" ? copy.bringingYourOwn : copy.bringYourOwn}
                     </button>
                   ) : null}
-                  <button
-                    className="mj-secondary-button"
-                    type="button"
-                    disabled={!code.trim() || busy !== null || !isExecutableCircuitFramework(sourceFramework)}
-                    onClick={() => void startQapp()}
-                  >
-                    {busy === "qapp" ? locale === "ja" ? "Qappを生成中…" : "Creating Qapp…" : locale === "ja" ? "Qappにする" : "Create Qapp"}
-                  </button>
                   <button className="mj-primary-button" type="button" disabled={!code.trim() || busy !== null || !isExecutableCircuitFramework(framework) || !isExecutableCircuitFramework(sourceFramework)} onClick={() => void startRun()}>{busy === "save" ? copy.starting : copy.verifySave}</button>
                 </div>
               </div>
+
+              <form
+                className="mj-studio-qapp-request"
+                onSubmit={(event) => {
+                  event.preventDefault();
+                  void startQapp();
+                }}
+              >
+                <label className="mj-studio-qapp-field" htmlFor="studio-qapp-prompt">
+                  <span>{locale === "ja" ? "Qappプロンプト" : "Qapp prompt"}</span>
+                  <textarea
+                    id="studio-qapp-prompt"
+                    value={qappPrompt}
+                    onChange={(event) => setQappPrompt(event.target.value)}
+                    disabled={busy !== null}
+                    placeholder={locale === "ja"
+                      ? "例：位相とショット数を操作でき、測定結果を円グラフで比較するQappにしてください。"
+                      : "Example: Make phase and shots adjustable, and compare measurements in a pie chart."}
+                  />
+                </label>
+                <div className="mj-studio-qapp-submit">
+                  <p id="studio-qapp-help">
+                    {locale === "ja"
+                      ? "空欄なら回路に合わせて自動設計します。送信後はRunで生成状況を表示します。"
+                      : "Leave blank for automatic design. Run opens after submission to show generation progress."}
+                  </p>
+                  <button
+                    className="mj-secondary-button"
+                    type="submit"
+                    aria-describedby="studio-qapp-help"
+                    disabled={!code.trim() || busy !== null || !isExecutableCircuitFramework(sourceFramework)}
+                  >
+                    {busy === "qapp" ? locale === "ja" ? "Qappを生成中…" : "Creating Qapp…" : locale === "ja" ? "Qappにする" : "Create Qapp"}
+                  </button>
+                </div>
+              </form>
 
               <PanelTabs
                 panels={STUDIO_PANELS}

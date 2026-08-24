@@ -35,6 +35,21 @@ test("the Qapp call-to-action keeps button ink inside chat prose", () => {
   );
 });
 
+test("the authenticated Qapp surface scrolls inside the fixed workspace shell", () => {
+  const styles = readFileSync(join(webRoot, "app", "globals.css"), "utf8");
+  const privatePageRules = [...styles.matchAll(/(?:^|\n)\.qapp-private-page\s*\{([^}]*)\}/g)]
+    .map((match) => match[1]);
+  assert.ok(privatePageRules.length > 0, "globals.css has no .qapp-private-page rule");
+  assert.ok(
+    privatePageRules.some((body) => /height:\s*100%/.test(body) && /overflow-y:\s*auto/.test(body)),
+    "the private Qapp page must own vertical scrolling inside .mj-shell--workspace",
+  );
+  assert.ok(
+    privatePageRules.every((body) => !/min-height:\s*100vh/.test(body)),
+    "100vh overflows the workspace shell but the shell clips its main region",
+  );
+});
+
 test("run mode parsing rejects server-only and unknown values", () => {
   for (const mode of COMPOSER_MODES) assert.equal(isComposerMode(mode), true);
   assert.equal(isComposerMode("chat"), false);
