@@ -73,28 +73,27 @@ const typesetCache = new Map<string, string>();
 function typeset(tex: string): string {
   const hit = typesetCache.get(tex);
   if (hit !== undefined) return hit;
-  // Sanitized again, and the incident that took this call out is worth keeping
-  // rather than deleting, because the shape of it is the reason for one line in
-  // `next.config.ts`.
+  // Sanitized again. The incident that took this call out is kept rather than
+  // deleted, because its recorded cause was wrong and the correction is the
+  // reason a version pin exists two files away.
   //
   // leona 690 put `sanitizeMathHtml` here on the owner's ruling (ai-ops 138).
   // Every page that renders MathText then returned HTTP 500 on production —
   // `/repository/<slug>` and `/repository/layers/*`, six slugs checked — while
   // `/`, `/repository` and `/repository/papers`, which render no mathematics,
-  // stayed 200. leona 693 withdrew the call to restore service.
+  // stayed 200. leona 693 withdrew the call to restore service and wrote down
+  // that it *"did NOT reproduce locally, which is the part worth recording"*,
+  // attributing the difference to Vercel tracing files differently.
   //
-  // It did NOT reproduce locally, and that is the part that matters: a
-  // production build served with `next start`, pointed at the real API,
-  // returned 200 on all three routes. The difference was the deployment
-  // environment, not the code — Next bundled `isomorphic-dompurify` (it is not
-  // on Next's default external list, though jsdom underneath it is), so
-  // Vercel's file tracing never saw the require that reaches jsdom and never
-  // copied jsdom into the lambda. `serverExternalPackages` in `next.config.ts`
-  // is what fixes that, and the note there carries the mechanism.
+  // It reproduces locally in one command, once you know which one:
   //
-  // **If this call is ever withdrawn again, withdraw that config line with it
-  // or say why not** — a package marked external for a dependency nothing
-  // imports any more is a line whose reason has quietly left.
+  //     node --no-experimental-require-module -e 'require("isomorphic-dompurify")'
+  //
+  // Vercel runs every function with that flag. jsdom 27+ then cannot load at
+  // all, whatever Node version the project selects. `lib/sanitize-math.ts` and
+  // `pnpm-workspace.yaml` carry the measurement; `lib/sanitize-math-runtime.test.ts`
+  // runs that command in CI so the next regression is a red test and not a
+  // production 500.
   const html = sanitizeMathHtml(
     katex.renderToString(tex, {
       throwOnError: false,
