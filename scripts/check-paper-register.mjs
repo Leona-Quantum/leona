@@ -592,12 +592,19 @@ if (!QUIET) {
   // `RegisteredPaper.reports` — so counting them in the remainder prints a
   // rule as if it were a backlog, and on leona 735 that is precisely how a
   // textbook somebody HAD read still read as unread.
+  //
+  // The DENOMINATOR excludes them too, not just the note. `census.read` can
+  // never contain a textbook, so "211 of 258" mixed two populations and the
+  // remainder it implied was wrong by exactly the textbook count — the third
+  // place on this PR where subtracting from one side only would have moved the
+  // wrong number.
+  const reportable = census.papers - census.textbooks;
   const textbookNote =
     census.textbooks > 0
-      ? `; ${census.textbooks} textbook${census.textbooks === 1 ? "" : "s"} carry no reports by rule, and are not in that remainder`
+      ? `; ${census.textbooks} textbook${census.textbooks === 1 ? "" : "s"} carry no reports by rule and are outside this count`
       : "";
   console.log(
-    `  ${census.read} of ${census.papers} papers record what they report${bases ? ` — ${bases}` : ""}${textbookNote}`,
+    `  ${census.read} of ${reportable} papers record what they report${bases ? ` — ${bases}` : ""}${textbookNote}`,
   );
   // The denominator that actually governs the pass. `reports` is filled on the
   // map-cited papers first because they are the ones a process page shows, so

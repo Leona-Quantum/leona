@@ -3940,11 +3940,18 @@ export const LAYER_GRAPH: LayerGraph = {
       ].join("\n"),
     },
     // Read in full, twice and for two different questions. The paper this node is
-    // transcribed from carries no numerics of any kind, so there is neither a run
+    // transcribed from reports no numerical *results*, so there is neither a run
     // nor an implementation to write down — and those are two claims, not one, so
     // they are declared separately below rather than one standing in for the
     // other. `implementations` was the last unaccounted field in the whole
     // linear-ODE region; with it the gauge reads 7/7.
+    //
+    // "No numerical results", not "no numerics": Appendix B does pick $d = 1$,
+    // $m = 3$, $n = 2$, $p = 1$ and prints matrices with integer entries. Those
+    // are the *shape* of the linear system at a chosen size, with $A(t)$, $f(t)$
+    // and $\gamma$ left symbolic — nothing is computed from data. The looser
+    // sentence was here first and was literally false; caught in review on
+    // leona 736.
     absences: {
       "example.text": {
         reason:
