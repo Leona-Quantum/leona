@@ -111,6 +111,18 @@ function stated(value: string | undefined): CardValue<string> {
   return value !== undefined && value.trim() !== "" ? held(value) : missing("none-recorded");
 }
 
+/**
+ * `stated`, but carrying the researched reason when the field is empty.
+ *
+ * Split from `stated` rather than folded into it because most fields have no
+ * `absences` key and passing `undefined` at every call site would read as if they
+ * might. The two that do — `cost` here, `implementations` below — say so at the
+ * call.
+ */
+function statedOr(value: string | undefined, reason: string | undefined): CardValue<string> {
+  return value !== undefined && value.trim() !== "" ? held(value) : missing("none-recorded", reason);
+}
+
 /** A node reduced to what a card draws for it: a name and a way to reach it. */
 export interface CardLink {
   readonly id: string;
@@ -1010,7 +1022,11 @@ function methodCard(input: CardInput, method: LayerMethod): MethodCard {
     refinements: refinementEntriesOf(graph, method, ja),
     contract: contractOf(graph, method, ja),
     whenItApplies: stated(ja ? method.conditionsJa : method.conditions),
-    cost: stated(ja ? method.costJa : method.cost),
+    // The researched reason where there is one, not the standing gap note — same
+    // key and same reader as the method page's, so the two surfaces cannot say
+    // opposite things about one field. `implementations` shipped exactly that
+    // disagreement on three methods before it was caught on production.
+    cost: statedOr(ja ? method.costJa : method.cost, absenceOf(method, "cost", ja)),
     contested: stated(ja ? method.contestedJa : method.contested),
     trace: hops.length === 0 ? missing("none-recorded") : held(hops),
     ingredients: listOrGap(ingredients),

@@ -2539,6 +2539,66 @@ test("the linear-ODE region does not go backwards on the half that is closed", (
 });
 
 /**
+ * Every method in the Atlas says what it costs, or says why it does not.
+ *
+ * **The whole graph, and the field is closed on it.** `cost` read 99 of 110 on the
+ * morning of 2026-08-24 and 8 of 38 over the variational region alone. It is now 109
+ * filled and one accounted, which is **zero open** — every method either carries a
+ * complexity out of its own papers or carries a declared `absences.cost` naming the
+ * documents somebody opened and saying what they contain instead.
+ *
+ * **`open`, not `present`, is the number that matters**, and that is the whole reason
+ * this asserts against `declaredAbsences` rather than against 110. A field is closed
+ * when nothing is unaccounted for, not when nothing is empty — that distinction is what
+ * `absences` exists to draw, and a test that demanded 110/110 would push the next author
+ * to invent a number for a paper that states none, which is the failure the mechanism
+ * was built against.
+ *
+ * **The absence set is named, in both directions, and that is not decoration.** An
+ * absence is a *claim* — that somebody read the sources and they price nothing at this
+ * record's generality. Left as a bare count it can grow silently, and the field would go
+ * on reading "closed" while methods quietly moved from having an answer to having an
+ * excuse. Naming it means adding one is an edit to this test, in front of a reviewer.
+ * The single member is `koopman-linearization`: its only paper proves the linearization
+ * at arbitrary basis but scopes **both** of its complexity theorems to the Fourier
+ * instance, which is a different record in this graph — and that record does carry the
+ * numbers.
+ */
+test("every method says what it costs, or says why it does not", () => {
+  const caps = LAYER_GRAPH.nodes.filter(isCapability).map((node) => node.id);
+  const region = regionClosure(LAYER_GRAPH, STATE_VOCABULARY, caps, new Map());
+  assert.deepEqual(region.unknown, [], "a capability id is not in the graph");
+  // A floor under the denominator, so deleting methods cannot close the field by
+  // measuring less — the same guard every other ratchet here carries.
+  assert.ok(
+    region.methods.length >= 110,
+    `the graph has ${region.methods.length} methods, fewer than the 110 the field closed over`,
+  );
+  const cost = region.fields.find((entry) => entry.field === "cost")!;
+  const declared = region.declaredAbsences.get("cost") ?? [];
+  assert.deepEqual(
+    [...declared].sort(),
+    ["koopman-linearization"],
+    "the set of methods excused from carrying a cost has changed — an absence is a claim, not a default",
+  );
+  assert.deepEqual(
+    cost.missing.filter((id) => !declared.includes(id)),
+    [],
+    `cost is open on ${cost.missing.join(", ")} — every method must carry one or declare why not`,
+  );
+  // And the other direction: an excused method that has since been given a cost leaves a
+  // stale absence behind, which validation permits (it refuses an absence on a FILLED
+  // field, so the two cannot both be set — but a deleted method takes its absence with
+  // it and this list would not notice). Asserting the excuse is still doing work is what
+  // keeps it from outliving its reason, the way AWAITING_OWNER did until leona 755.
+  assert.deepEqual(
+    declared.filter((id) => !region.methods.includes(id)),
+    [],
+    "a method with a declared cost absence has left the graph, so the declaration guards nothing",
+  );
+});
+
+/**
  * The variational / NISQ region says what it costs, and does not stop.
  *
  * The same ratchet as the linear-ODE one above, over the region the Atlas's own
@@ -2728,7 +2788,7 @@ const absenceIsRendered = (surfaces: readonly { source: string }[], field: strin
  * and the one above it refuses to let anyone *use*. Wiring one up is a one-line
  * deletion here.
  */
-const ABSENCE_KEYS_NOT_WIRED_UP = ["cost", "conditions", "example.pseudocode"];
+const ABSENCE_KEYS_NOT_WIRED_UP = ["conditions", "example.pseudocode"];
 
 test("only an executable absenceOf call counts as rendering", () => {
   // Every construct that killed a previous version of this helper, in one place.
@@ -2814,6 +2874,38 @@ test("the set of declarable-but-unrendered absence keys does not grow", () => {
     unwired,
     [...ABSENCE_KEYS_NOT_WIRED_UP].sort(),
     "a declarable absence key is rendered by nothing — wire it to a surface, or add it to ABSENCE_KEYS_NOT_WIRED_UP with a reason",
+  );
+});
+
+test("the two surfaces agree about a declared cost absence", () => {
+  // The twin of the test below, added when `cost` became the third key anyone has
+  // actually declared. Both surfaces must render the key, AND the method page must
+  // prefer it over `costNone` — asserted by ORDER, because a branch that draws the
+  // generic note first and the reason never is exactly what shipped for
+  // `implementations`, on three methods, and reached production.
+  //
+  // `costNone` is *"No complexity is recorded here"*, which reads as nobody having
+  // looked. Drawing it over a researched absence would tell a reader the opposite of
+  // what its author wrote — which is worse than the gap it replaces, because a gap is
+  // honest and this would not be.
+  const webRoot = dirname(dirname(fileURLToPath(import.meta.url)));
+  const pageSource = readFileSync(join(webRoot, "components", "repository-layers.tsx"), "utf8");
+  const cardSource = readFileSync(join(webRoot, "lib", "repository", "card-content.ts"), "utf8");
+
+  assert.ok(rendersAbsence(cardSource, "cost"), "card-content.ts stopped rendering the cost absence");
+
+  // The COST call specifically, not the first `absenceOf(node,` on the page — that is
+  // the `example.text` call, and taking it would measure an unrelated call and pass
+  // for the wrong reason. That mistake was made once already, on the test below.
+  const reasonAt = absenceCalls(pageSource, "repository-layers.tsx").find(
+    (call) => call.field === "cost",
+  );
+  assert.ok(reasonAt, "the method page stopped rendering the cost absence");
+  const genericAt = pageSource.indexOf("copy.costNone");
+  assert.ok(genericAt > 0, "the method page no longer draws costNone at all");
+  assert.ok(
+    reasonAt!.at < genericAt,
+    "the method page reaches costNone before the researched reason, so the reason never draws",
   );
 });
 
