@@ -2476,10 +2476,6 @@ test("the linear-ODE region does not go backwards on the half that is closed", (
   // rather than shrinking the thing being measured. `--closure` reports an
   // unrecognised id; here it must be an error.
   assert.deepEqual(region.unknown, [], "a slot id in this test names no capability");
-  assert.ok(
-    region.methods.length >= 19,
-    `the region has ${region.methods.length} methods, fewer than the 19 it was closed over`,
-  );
   const field = (name: string) => region.fields.find((entry) => entry.field === name)!;
   for (const name of ["summary", "conditions", "cost", "citations", "example.pseudocode"]) {
     const entry = field(name);
@@ -2498,13 +2494,48 @@ test("the linear-ODE region does not go backwards on the half that is closed", (
     `hop theory covers ${region.hopStretchesAuthored} of ${region.hopStretches} drawn route stretches — ` +
       `unauthored: ${region.unauthoredHops.map((hop) => `${hop.method}/${hop.key}`).join(", ")}`,
   );
-  // A floor under the denominator too. Without it, deleting a route would make
-  // the equality above pass on a smaller region — the same "measure less, look
-  // healthier" failure `unknown` guards at the slot level.
-  assert.ok(
-    region.hopStretches >= 45,
-    `${region.hopStretches} drawn stretches, fewer than the 45 the region was closed over`,
+  // The floors under the denominators, PER SLOT rather than summed over the
+  // region. A summed floor of 45 stretches is met by `quantum-linear-solve`
+  // losing all 21 of its while `linear-ode-solve` grows past the shortfall —
+  // the region reads closed, one quarter of it is gone, and no assertion here
+  // notices. That is the same "measure less, look healthier" failure
+  // `region.unknown` catches one level out, and it is why the variational hop
+  // ratchet below is written per slot too.
+  //
+  // These four numbers are measured, not inherited: the summed floors this
+  // replaces were 19 methods and 45 stretches, and the region is at 22 and 50
+  // today. A floor written without measuring is worse than no floor, so each
+  // one below is what its slot actually carries as of this commit.
+  const FLOORS: readonly (readonly [string, number, number])[] = [
+    ["linear-ode-solve", 9, 21],
+    ["hamiltonian-recasting", 2, 2],
+    ["time-discretization", 6, 6],
+    ["quantum-linear-solve", 5, 21],
+  ];
+  // The two lists are tied together, because they are two copies of one fact and
+  // nothing else here notices when they drift. Adding a valid capability to
+  // `SLOTS` without a `FLOORS` row leaves that slot with no floor at all while
+  // every assertion below still passes — `region.unknown` cannot see it, since
+  // both ids name real capabilities. Raised by Sourcery on the PR that added the
+  // per-slot floors, which is the same "measure less, look healthier" hole one
+  // more level in, in the very change written to close it.
+  assert.deepEqual(
+    FLOORS.map(([slot]) => slot).sort(),
+    [...SLOTS].sort(),
+    "a slot in this region has no floor, or a floor names a slot outside it",
   );
+  for (const [slot, methodFloor, stretchFloor] of FLOORS) {
+    const one = regionClosure(LAYER_GRAPH, STATE_VOCABULARY, [slot], new Map());
+    assert.deepEqual(one.unknown, [], `${slot} names no capability`);
+    assert.ok(
+      one.methods.length >= methodFloor,
+      `${slot}: ${one.methods.length} methods, fewer than the ${methodFloor} it was closed over`,
+    );
+    assert.ok(
+      one.hopStretches >= stretchFloor,
+      `${slot}: ${one.hopStretches} drawn stretches, fewer than the ${stretchFloor} it was closed over`,
+    );
+  }
 });
 
 /**
