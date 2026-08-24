@@ -603,9 +603,20 @@ if (!QUIET) {
   // map-cited papers first because they are the ones a process page shows, so
   // "82 of 143" understates the coverage of the set being worked and would
   // read as stalled when it is finished. Both numbers, neither alone.
-  const mapCitedRead = audit.citedByNode.filter((id) => byId.get(id)?.reports).length;
+  //
+  // Textbooks come out of BOTH halves of this line, not just the remainder.
+  // Caught by Sourcery on leona 736, one consumer over from the defect that PR
+  // existed to fix — a textbook may not carry `reports` at all, so testing
+  // `paper.reports` here reported a read textbook as an unread paper, and
+  // subtracting it from only one side would have moved the wrong number.
+  const mapCited = audit.citedByNode.filter((id) => byId.get(id)?.medium !== "textbook");
+  const mapCitedTextbooks = audit.citedByNode.length - mapCited.length;
+  const mapCitedRead = mapCited.filter((id) => byId.get(id)?.reports).length;
   console.log(
-    `    of the ${audit.citedByNode.length} papers a map node cites: ${mapCitedRead} read, ${audit.citedByNode.length - mapCitedRead} not`,
+    `    of the ${mapCited.length} papers a map node cites: ${mapCitedRead} read, ${mapCited.length - mapCitedRead} not` +
+      (mapCitedTextbooks > 0
+        ? ` (plus ${mapCitedTextbooks} textbook${mapCitedTextbooks === 1 ? "" : "s"}, outside the reports contract)`
+        : ""),
   );
   for (const [axis, counts] of Object.entries(census.byAxis)) {
     console.log(
