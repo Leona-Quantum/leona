@@ -1310,7 +1310,9 @@ test("the owner's LCHS pair: the fold puts the narrower one inside the broader c
   // fact, and validation refuses the flag the day the chains diverge, so this
   // pin is what says "the fold is still earned" rather than inherited.
   const chain = (card: typeof improved) =>
-    card.trace.held ? card.trace.value.map((hop) => `${hop.from}>${hop.to}:${hop.via?.id ?? "own"}`) : [];
+    card.trace.held
+      ? card.trace.value.map((hop) => `${hop.from.id}>${hop.to.id}:${hop.via?.id ?? "own"}`)
+      : [];
   assert.deepEqual(chain(improved), chain(original), "the LCHS pair no longer records one chain");
 
   // **What is different is still the child's own words, read in place, not
@@ -1452,12 +1454,90 @@ test("the unnamed stretch is 56 of 63 methods, one each, and 13 of them follow a
   ]);
 });
 
+/**
+ * No card hands a reader a state's id where its label belongs.
+ *
+ * **What a reader met before this closed.** Opening any method card's *Theory*
+ * section on production gave three lines reading
+ * `ground-state-problem ⟶ parameterized-circuit`, `parameterized-circuit ⟶
+ * prepared-state`, `prepared-state ⟶ observable-value` — the raw slugs, in
+ * monospace, above each hop's name. The same method's own page, one click away,
+ * drew the same two states as *Hamiltonian whose ground state is wanted* and
+ * *Parameterised circuit family*, off `stateLabel()`. Two renderers of one fact,
+ * which is the shape `card-content.ts` exists to eliminate.
+ *
+ * **In `ja` it was not merely inconsistent.** A slug is English. All 39 states
+ * carry a `labelJa` and none of it reached this surface, so a Japanese reader
+ * met English developer ids on the widest surface the map has: an `own:` card
+ * exists at a URL for all 95 methods, and every method card with a route draws
+ * this line once per hop.
+ *
+ * **Both arms are load-bearing and neither implies the other.** Without the
+ * first, a card could go back to printing ids and pass. Without the second, an
+ * `en` label reached through both locales — a `labelJa` silently falling back —
+ * would pass while showing half the readers the wrong language. The second is
+ * the one that would have caught the original bug on its own, since a slug is
+ * identical in both locales.
+ */
+test("no card draws a state's id where its label belongs", () => {
+  const byLocale = new Map<string, Map<string, string>>();
+  let hops = 0;
+  let ownCards = 0;
+  for (const locale of ["en", "ja"] as const) {
+    const input = { graph: LAYER_GRAPH, vocabulary: STATE_VOCABULARY, corpus: [], locale, register: PAPER_REGISTER } as const;
+    const seen = new Map<string, string>();
+    byLocale.set(locale, seen);
+    const check = (end: { id: string; label: string }, where: string): void => {
+      assert.notEqual(
+        end.label,
+        end.id,
+        `${where} (${locale}): draws the state id "${end.id}" where its label belongs`,
+      );
+      assert.notEqual(end.label.trim(), "", `${where} (${locale}): draws a blank state`);
+      seen.set(end.id, end.label);
+    };
+    for (const method of LAYER_GRAPH.nodes.filter(isMethod) as LayerMethod[]) {
+      const card = cardFor(input, method.id);
+      if (card !== null && card.kind === "method" && card.trace.held) {
+        for (const hop of card.trace.value) {
+          hops += 1;
+          check(hop.from, `${method.id} hop`);
+          check(hop.to, `${method.id} hop`);
+        }
+      }
+      const own = cardFor(input, ownCardId(method.id));
+      if (own !== null && own.kind === "own-step") {
+        ownCards += 1;
+        check(own.from, `own:${method.id}`);
+        check(own.to, `own:${method.id}`);
+      }
+    }
+  }
+  // A floor under what was swept, so a card that stops resolving cannot make
+  // this pass by measuring less — the same guard `region.unknown` is for one
+  // level out. Measured at the commit that fixed this: 99 hops and 95 own cards
+  // per locale.
+  assert.ok(hops >= 2 * 99, `${hops} hop ends swept across both locales, fewer than the 198 there were`);
+  assert.ok(ownCards >= 2 * 95, `${ownCards} own cards swept across both locales, fewer than the 190 there were`);
+
+  // And the two locales genuinely differ. A slug is the same string in both, so
+  // this arm alone catches the bug this test was written for.
+  const en = byLocale.get("en")!;
+  const ja = byLocale.get("ja")!;
+  assert.deepEqual([...en.keys()].sort(), [...ja.keys()].sort(), "the locales reach different states");
+  const untranslated = [...en.entries()].filter(([id, label]) => ja.get(id) === label).map(([id]) => id);
+  assert.deepEqual(untranslated, [], `these states draw the same string in en and ja: ${untranslated.join(", ")}`);
+});
+
 test("the unnamed stretch has a card of its own, and it is not the method's card", () => {
   const input = { graph: LAYER_GRAPH, vocabulary: STATE_VOCABULARY, corpus: [], locale: "en", register: PAPER_REGISTER } as const;
   const card = cardFor(input, ownCardId("lchs-route"));
   assert.ok(card !== null && card.kind === "own-step", "no own-step card for lchs-route");
-  assert.equal(card.from, "evolution-circuit");
-  assert.equal(card.to, "solution-answer");
+  // Both halves: the id, which is what `data-hop` and every address needs, and
+  // the label, which is what a reader is shown. Asserting only the id is what
+  // let this card print `evolution-circuit` at readers for as long as it did.
+  assert.deepEqual(card.from, { id: "evolution-circuit", label: "Circuit for e^{-iHt}" });
+  assert.deepEqual(card.to, { id: "solution-answer", label: "Answer about the solution" });
   assert.equal(card.method.id, "lchs-route");
   // The two are different cards at different addresses, which is the whole
   // point of the prefix — the owner asked for the blank to be *separately*
