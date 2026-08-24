@@ -20,7 +20,13 @@ from majorana_contracts.plan import Plan
 from majorana_frameworks import FrameworkProgram, extract_interchange_qasm
 from majorana_frameworks.roles import ProgramRole
 from majorana_openqasm import OpenQASMError, normalize
-from majorana_sandbox import DEFAULT_QUBIT_CEILING, ExecutionSpec, GuardRejection, Sandbox
+from majorana_sandbox import (
+    DEFAULT_MEMORY_MB,
+    DEFAULT_QUBIT_CEILING,
+    ExecutionSpec,
+    GuardRejection,
+    Sandbox,
+)
 from majorana_sandbox import run as sandbox_run
 from majorana_verification import supports_native_result_consistency
 
@@ -39,8 +45,16 @@ class SandboxCandidateExecutor:
     #: dictionary when a compatible GPU/QPU backend is later supplied."
     _ARTIFACT_ENTRY_POINT = "run"
 
-    def __init__(self, sandbox: Sandbox) -> None:
+    def __init__(self, sandbox: Sandbox, *, memory_mb: int = DEFAULT_MEMORY_MB) -> None:
         self._sandbox = sandbox
+        #: The account tier's sandbox allowance (`TierLimits.sandbox_memory_mb`),
+        #: passed in by the handler that already resolved the tier for the
+        #: artifact cap. It DEFAULTS to the free-lane number rather than to the
+        #: ceiling, so a construction site that forgets it under-provisions a
+        #: paid run instead of handing a free one two vCPUs on the operator's
+        #: bill — the safe direction for a field that is really a billing field
+        #: (`vercel._create_kwargs` derives vCPUs from it).
+        self._memory_mb = memory_mb
 
     async def run_candidate(self, candidate: CandidateRevision, plan: Plan) -> ExecutionOutput:
         program = FrameworkProgram(candidate.framework, candidate.source)
@@ -72,6 +86,7 @@ class SandboxCandidateExecutor:
         )
         spec = ExecutionSpec(
             code=program.normalized_source,
+            memory_mb=self._memory_mb,
             # A lowered circuit does strictly more work than it used to: the
             # native sampler runs 2048 shots on top of the circuit's own
             # execution. Without headroom a slow-but-passing circuit can cross the

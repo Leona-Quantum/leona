@@ -17,7 +17,9 @@ from majorana_sandbox.base import GuardRejection, Sandbox, run
 from majorana_sandbox.guard import GuardResult, check_python_code
 from majorana_sandbox.local import LocalSubprocessSandbox
 from majorana_sandbox.spec import (
+    DEFAULT_MEMORY_MB,
     DEFAULT_QUBIT_CEILING,
+    MAX_MEMORY_MB,
     ExecutionSpec,
     QubitCeilingExceeded,
     SandboxResult,
@@ -33,6 +35,8 @@ __all__ = [
     "preflight",
     "QubitCeilingExceeded",
     "DEFAULT_QUBIT_CEILING",
+    "DEFAULT_MEMORY_MB",
+    "MAX_MEMORY_MB",
     "Sandbox",
     "run",
     "GuardRejection",
