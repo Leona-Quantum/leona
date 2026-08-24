@@ -12706,6 +12706,69 @@ html:not([data-auth="in"]) .mj-auth-slot[data-auth-slot="in"] {
      only thing that moves it inside the fixed box above. */
   display: inline-block;
 }
+
+/* The map's figures, packed into columns — complaint (a)'s second half.
+   ---------------------------------------------------------------------------
+   Before this, the eight root figures stacked in ONE column at the layer's
+   left edge: 1,198px summed against a ~705px canvas, the widest figure 749px,
+   and the right two thirds of a 1440px viewport empty at every scroll
+   position. Two screenfuls of scrolling down a strip using a third of the
+   width. The owner picked packing on ai-ops issue 167 — *"Option 1... it will turn
+   into end to end mathematical problem statement to mathematical solution
+   pipeline"*.
+
+   `lib/repository/figure-pack.ts` computes the arrangement and writes it onto
+   each figure as `--fx<tier>` / `--fy<tier>`, and onto this container as
+   `--pw<tier>` / `--ph<tier>`. Two packs ship because a server component
+   cannot measure the reader's screen (D90.3), and the choice between them is
+   made here rather than in JavaScript.
+
+   **Below the narrower breakpoint neither block applies and this element is an
+   ordinary block box**, so the figures flow exactly as they did before — that
+   is deliberate. On a 1,000px screen the two-column pack is 1,100px wide and
+   would hand the reader a canvas to pan sideways, which is worse than the
+   strip it replaced. Each breakpoint therefore sits 40px above the width its
+   own pack was fitted to (1200 → 1240, 1440 → 1480); the slack absorbs a
+   scrollbar without a second measurement, and `repository-figure-pack.test.ts`
+   asserts the inequality so the two cannot drift apart.
+
+   Absolute positioning rather than grid or flow: the packer's whole advantage
+   over `flex-wrap` is that a column is as wide as ITS OWN widest figure and a
+   short figure does not reserve a tall row (measured: 495px packed against
+   839px wrapped, on the same eight figures). Neither grid nor flex can express
+   that, and both would need the row/column structure baked into the DOM, where
+   it could not vary by breakpoint. */
+.mj-figure-pack {
+  display: block;
+}
+@media (min-width: 1240px) {
+  .mj-figure-pack {
+    position: relative;
+    width: var(--pw0, auto);
+    height: var(--ph0, auto);
+  }
+  .mj-figure-pack > .mj-converge-canvas {
+    position: absolute;
+    left: var(--fx0, 0);
+    top: var(--fy0, 0);
+  }
+}
+@media (min-width: 1480px) {
+  .mj-figure-pack {
+    width: var(--pw1, auto);
+    height: var(--ph1, auto);
+  }
+  .mj-figure-pack > .mj-converge-canvas {
+    left: var(--fx1, 0);
+    top: var(--fy1, 0);
+  }
+}
+/* Every reference above carries a fallback, which `check-token-vars` requires
+   of a property no stylesheet defines — these are written per figure by
+   `packVarsFor`, so there is no `tokens.css` entry to point it at. The
+   fallbacks are not the single-figure guard, though: `repository-converge-view`
+   withholds the class itself when it is drawing one figure, so `?focus=` and
+   the embedded per-method canvas match none of these rules at any width. */
 /* A keyboard step used to ease this layer into place over 150ms. It has been
    removed rather than kept, because the permitted-animation list in the coding
    guidelines is a closed list — rail state transitions, the running-dot pulse,

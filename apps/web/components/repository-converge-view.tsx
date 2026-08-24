@@ -58,6 +58,7 @@ import type { FoldedNode } from "../lib/repository/paper-reveal";
 import { ConvergeCanvas } from "./repository-converge-map";
 import { CanvasContinuity } from "./canvas-continuity";
 import { InfiniteCanvas } from "./infinite-canvas";
+import { packBoxVars, packTiers, packVarsFor } from "../lib/repository/figure-pack";
 import { MapInfoPopup } from "./map-info-popup";
 import { ArrowLeftIcon, CollapseAllIcon, ExpandAllIcon, InfoIcon } from "./icons";
 import {
@@ -860,6 +861,21 @@ export function ConvergeView({
   }));
   const drawn = figures.filter((figure) => !figure.diagram.empty);
 
+  // Complaint (a)'s second half — the arrangement, answered on ai-ops issue 167 with
+  // *"Option 1"*, pack into columns. Computed here rather than in
+  // `layoutConverge` because it is the only place that knows how many figures
+  // the page is drawing; one figure has no arrangement, and `packTiers` on a
+  // single-element list returns the single column, which is what `?focus=` and
+  // the embedded per-method canvas must keep getting.
+  //
+  // Both tiers ship on every render and neither costs a measurement: which one
+  // applies is a media query, so a 1,280px laptop gets the two-column pack and
+  // a 1,512px one gets the three-column pack, and below the narrower
+  // breakpoint the figures fall back to the block flow they had before any of
+  // this. See `lib/repository/figure-pack.ts` for why rows lose to columns by
+  // 321px on this figure list.
+  const packs = packTiers(drawn.map((figure) => figure.diagram));
+
   // At most ONE highlighted element across every figure this page draws — the
   // same page-level-uniqueness shape as `claimed` below, resolved here because
   // this is the component that knows how many figures there are.
@@ -1188,6 +1204,13 @@ export function ConvergeView({
           // deleted gesture.
           fill
         >
+          {/* The class, and the box properties, only when there is something to
+              pack. Withheld rather than guarded in CSS so that `?focus=` — one
+              figure — matches none of the packed rules at any width. */}
+          <div
+            className={drawn.length > 1 ? "mj-figure-pack" : undefined}
+            style={drawn.length > 1 ? (packBoxVars(packs) as React.CSSProperties) : undefined}
+          >
           {drawn.map((figure, index) => (
             <ConvergeCanvas
               key={figure.subject.id}
@@ -1196,6 +1219,11 @@ export function ConvergeView({
               title={label(figure.subject)}
               subjectId={figure.subject.id}
               atlas={atlas}
+              // Where this figure sits in each tier's pack. Only when there is
+              // more than one figure: a lone figure carries no coordinates, so
+              // the packed rules have nothing to act on and the surface is
+              // byte-identical to what it drew before.
+              packVars={drawn.length > 1 ? packVarsFor(packs, index) : null}
               // One set across all four figures — see `claimed`. Built here
               // because this is the component that knows how many figures the
               // page is drawing.
@@ -1211,6 +1239,7 @@ export function ConvergeView({
               cited={citedForMap}
             />
           ))}
+          </div>
         </InfiniteCanvas>
       ) : (
         <p className="mj-map-empty">{copy.nothing}</p>
