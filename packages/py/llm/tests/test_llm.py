@@ -1221,6 +1221,7 @@ def test_grover_plan_and_review_prompts_pin_general_iteration_arithmetic():
 
 def test_json_extraction_accepts_fences_and_never_echoes_bad_output():
     assert extract_json('prefix ```json\\n{"ok": true}\\n``` suffix') == '{"ok": true}'
+    assert extract_json('{"ok": true}"}') == '{"ok": true}'
     secret = "sensitive-model-output"
     with pytest.raises(StageOutputError) as captured:
         extract_json(secret)

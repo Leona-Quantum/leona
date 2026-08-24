@@ -47,6 +47,46 @@ class Store:
         return status
 
 
+def test_targeted_qapp_contract_repair_ignores_unrequested_bundle_metadata():
+    repaired = handlers._QappContractRepair.model_validate(
+        {
+            "title": "unchanged title echoed by the model",
+            "description": "unchanged description echoed by the model",
+            "ui_document": "<html><script>void 0</script></html>",
+            "quantum_source": "RESULT = {}",
+            "input_schema": {"type": "object", "properties": {}},
+            "output_schema": {"type": "object", "properties": {}},
+            "qubits_estimate": 2,
+        }
+    )
+
+    assert repaired.qubits_estimate == 2
+    assert "title" not in repaired.model_dump()
+
+
+def test_qapp_truncated_json_feedback_requests_a_compact_full_retry():
+    feedback = handlers._qapp_repair_feedback(
+        ValueError("Invalid JSON: EOF while parsing a string")
+    )
+
+    assert "8,192-token completion limit" in feedback
+    assert "total serialized output under 12,000 characters" in feedback
+
+
+def test_initial_qapp_bundle_accepts_bounded_rich_source():
+    fields = {
+        "title": "H2",
+        "description": "VQE",
+        "ui_document": "<html></html>",
+        "quantum_source": "x" * 5_000,
+        "input_schema": {"type": "object", "properties": {}},
+        "output_schema": {"type": "object", "properties": {}},
+        "qubits_estimate": 2,
+    }
+
+    assert len(handlers._GeneratedQapp.model_validate(fields).quantum_source) == 5_000
+
+
 async def test_qapp_generation_persists_a_private_free_form_bundle(monkeypatch):
     run_id = uuid.uuid4()
     qapp_id = uuid.uuid4()
@@ -72,15 +112,23 @@ async def test_qapp_generation_persists_a_private_free_form_bundle(monkeypatch):
       },
       "qubits_estimate": 2
     }"""
+    rejected_response_text = response_text.replace(
+        "RESULT = {'summary': 'Bell counts collected'}",
+        "import os\\nRESULT = {'summary': 'Bell counts collected'}",
+    )
+    repaired_source_text = """{
+      "quantum_source": "RESULT = {'summary': 'Bell counts collected'}"
+    }"""
 
     class FakeMeteredLLM:
         def __init__(self, **_kwargs):
-            pass
+            self.requests = []
 
         async def complete(self, request):
-            captured["request"] = request
+            self.requests.append(request)
+            captured["requests"] = self.requests
             return LLMResponse(
-                text=response_text,
+                text=rejected_response_text if len(self.requests) == 1 else repaired_source_text,
                 model=request.model,
                 input_tokens=10,
                 output_tokens=20,
@@ -93,8 +141,22 @@ async def test_qapp_generation_persists_a_private_free_form_bundle(monkeypatch):
             SimpleNamespace(id=version_id),
         )
 
+    async def smoke_run(sandbox, spec):
+        captured["smoke_sandbox"] = sandbox
+        captured["smoke_spec"] = spec
+        return SandboxResult(
+            ok=True,
+            exit_code=0,
+            duration_ms=5,
+            stdout="",
+            stderr="",
+            provider="test",
+            protected_result={"result": {"summary": "Bell counts collected"}},
+        )
+
     monkeypatch.setattr(handlers, "MeteredAgentLLM", FakeMeteredLLM)
     monkeypatch.setattr(handlers.qapps_repo, "create_generated", create_generated)
+    monkeypatch.setattr(handlers, "run_sandbox", smoke_run)
     ctx = RunContext(
         run_id=run_id,
         task_prompt="Turn this circuit into an interactive Bell explorer",
@@ -114,13 +176,23 @@ async def test_qapp_generation_persists_a_private_free_form_bundle(monkeypatch):
         scope=scope,
         session=session,
         llm=SimpleNamespace(),
+        sandbox=SimpleNamespace(provider="test"),
         source_artifact_version_id=uuid.uuid4(),
     )
 
     assert result is RunStatus.SUCCEEDED
     assert captured["fields"]["ui_document"].startswith("<!doctype html>")
     assert captured["fields"]["input_schema"]["additionalProperties"] is False
-    assert "Selected-framework source to preserve" in captured["request"].user
+    assert len(captured["requests"]) == 2
+    assert "Selected-framework source to preserve" in captured["requests"][0].user
+    assert "Qiskit is version 2.5.2" in captured["requests"][0].user
+    assert "disallowed_import:os" in captured["requests"][1].user
+    assert rejected_response_text in captured["requests"][1].user
+    assert set(captured["requests"][1].response_schema["properties"]) == {"quantum_source"}
+    assert "repair one rejected portion" in captured["requests"][1].system
+    assert captured["requests"][1].max_tokens == 1800
+    assert captured["smoke_spec"].timeout_s == 30
+    assert "QAPP_INPUTS" in captured["smoke_spec"].trusted_setup
     assert any(event_type == "qapp.generated" for event_type, _payload, _id in sink.events)
     assert store.finished == {"status": RunStatus.SUCCEEDED, "reason_code": "qapp_generated"}
     assert session.commits == 1

@@ -38,7 +38,11 @@ class QappPublicationBlocked(RepoError):
 
 def _slug(title: str, qapp_id: uuid.UUID) -> str:
     stem = re.sub(r"[^a-z0-9]+", "-", title.lower()).strip("-")[:120]
-    return f"{stem or 'qapp'}-{str(qapp_id)[:8]}"
+    # UUIDv7 starts with its timestamp. Qapps generated in the same fraction of
+    # a second therefore share the first eight characters, which made repeated
+    # prompts collide on the globally unique slug. Keep the complete UUID bits:
+    # even a 120-character stem remains within the schema's 160-character cap.
+    return f"{stem or 'qapp'}-{qapp_id.hex}"
 
 
 async def create_generated(

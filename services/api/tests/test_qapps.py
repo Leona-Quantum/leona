@@ -1,5 +1,6 @@
 import datetime as dt
 from types import SimpleNamespace
+import uuid
 
 import pytest
 from majorana_contracts import PublicQapp
@@ -10,6 +11,7 @@ from majorana_api.qapp_validation import (
     validate_qapp_inputs,
     validate_qapp_ui_document,
 )
+from majorana_api.repos.qapps import _slug
 from majorana_api.routes.runs import CreateRunRequest
 
 
@@ -27,6 +29,14 @@ SCHEMA = {
 def test_qapp_is_an_explicit_run_mode():
     request = CreateRunRequest(task_prompt="build an app", mode="qapp")
     assert request.mode.value == "qapp"
+
+
+def test_qapp_slug_keeps_uuid_bits_that_differ_within_one_timestamp():
+    first = uuid.UUID("01a03280-032d-7fe5-b424-247126d8315f")
+    second = uuid.UUID("01a03280-0d85-7425-aa26-523de71fabc4")
+
+    assert _slug("Bell explorer", first) != _slug("Bell explorer", second)
+    assert _slug("Bell explorer", first).endswith(first.hex)
 
 
 def test_qapp_input_schema_is_bounded_and_enforced():
@@ -55,11 +65,25 @@ def test_qapp_schema_rejects_nested_objects_and_unbounded_arrays():
             }
         )
 
+    with pytest.raises(ValueError, match="additionalProperties"):
+        normalize_qapp_schema(
+            {
+                "type": "object",
+                "properties": {
+                    "counts": {
+                        "type": "object",
+                        "additionalProperties": {"type": "integer"},
+                    }
+                },
+            }
+        )
+
 
 def test_qapp_ui_guard_accepts_an_inline_capability_only_app():
     validate_qapp_ui_document(
         "<!doctype html><html><body><button type='button'>Run</button>"
-        "<script>button.onclick=async()=>{const result=await window.qapp.run({shots:100})}</script>"
+        "<script>const history=[1,2];history.forEach(draw);"
+        "button.onclick=async()=>{const result=await window.qapp.run({shots:100})}</script>"
         "</body></html>"
     )
 
@@ -70,6 +94,8 @@ def test_qapp_ui_guard_accepts_an_inline_capability_only_app():
         "<script>fetch('/secret')</script>",
         "<a href='https://example.test'>leave</a><script>void 0</script>",
         "<script>window.location='https://example.test'</script>",
+        "<script>history.pushState({},'', '/elsewhere')</script>",
+        "<script>location.assign('/elsewhere')</script>",
         "<script>localStorage.setItem('x','y')</script>",
         "<style>body{background:url(https://example.test/x)}</style><script>void 0</script>",
     ],

@@ -53,8 +53,12 @@ _FORBIDDEN_UI_PATTERNS: tuple[tuple[re.Pattern[str], str], ...] = (
     ),
     (
         re.compile(
-            r"(?:\bwindow\s*\.\s*open\b|\b(?:location|navigation)\s*(?:\.|\[|=)|"
-            r"\bhistory\s*(?:\.|\[)|"
+            r"(?:\bwindow\s*\.\s*open\b|"
+            r"\b(?:window|document|globalThis)\s*\.\s*(?:location|navigation|history)\b|"
+            r"\blocation\s*\.\s*(?:assign|replace|reload|href|pathname|search|hash|"
+            r"origin|host|hostname|port|protocol)\b|\blocation\s*(?:\[|=)|"
+            r"\bnavigation\s*\.\s*(?:navigate|reload|back|forward|traverseTo)\b|"
+            r"\bhistory\s*\.\s*(?:pushState|replaceState|go|back|forward)\b|"
             r"\b(?:parent|top)\s*(?:\.|\[)|\bdocument\s*\.\s*(?:open|write|writeln)\b)",
             re.IGNORECASE,
         ),
@@ -104,7 +108,10 @@ def normalize_qapp_schema(schema: dict[str, Any]) -> dict[str, Any]:
             raise ValueError(f"Qapp property {name} must be a schema")
         unknown = set(definition) - _PROPERTY_KEYS
         if unknown:
-            raise ValueError(f"Qapp property {name} uses unsupported schema keywords")
+            raise ValueError(
+                f"Qapp property {name} uses unsupported schema keywords: "
+                f"{', '.join(sorted(unknown))}"
+            )
         kind = definition.get("type")
         if kind not in _SCALARS | {"array"}:
             raise ValueError(f"Qapp property {name} has an unsupported type")
