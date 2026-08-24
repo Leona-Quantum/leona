@@ -3,10 +3,10 @@ import { CircuitBand } from "../../components/circuit-band";
 import { LandingDemoVideo } from "../../components/landing-demo-video";
 import { LeonaWordmark } from "../../components/leona-wordmark";
 import { LandingPrompt } from "../../components/landing-prompt";
-import { LeoConstellation } from "../../components/leo-constellation";
 import { PublicSite } from "../../components/public-site";
 import { Reveal } from "../../components/reveal";
 import { ScrollCue } from "../../components/scroll-cue";
+import { LiquidGridBackground } from "../../components/liquid-grid-background";
 import { HOME_COPY } from "../../lib/public-copy";
 import { parsePublicLocale, PUBLIC_LOCALES } from "../../lib/public-locale";
 import { canonicalMetadata } from "../../lib/public-metadata";
@@ -61,11 +61,11 @@ export default async function Home({ params }: { params: Promise<{ locale: strin
   const copy = HOME_COPY[locale];
   return (
     <PublicSite activePath="/" className="mj-company-site" locale={locale} chrome="static">
-      {/* Centered hero over the constellation, with the live pipeline as a
+      <LiquidGridBackground />
+      {/* Centered hero over the liquid grid, with the live pipeline as a
           full-width band beneath — the owner retired the old split
           left-copy/right-card composition (Owner Inbox 2026-07-17). */}
       <section className="mj-company-hero">
-        <LeoConstellation className="mj-company-constellation" />
         <div className="mj-company-hero-copy">
           <h1 className="mj-company-hero-title">
             {copy.hero.title.split("\n").map((line, lineIndex) => (
