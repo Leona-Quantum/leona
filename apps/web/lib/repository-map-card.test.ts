@@ -1589,11 +1589,35 @@ test("an own: card says what its stretch does, or the standing phrase, in both l
   // paper before landing. Three of those papers could not be read through
   // ar5iv at all, which renders a well-formed page with the mathematics simply
   // absent — see the PR body.
+  // **95 — the population, closed.** The last 40 were the whole variational /
+  // NISQ region, and they were the hard half by construction: every one is an
+  // `all-own` route with no `theory` on its own hop, so none could be derived
+  // from mathematics already on the record. Each is a new claim about a paper.
+  //
+  // What that cost, and it is worth recording because the number is the point:
+  // each of the 40 was drafted from its own cited papers, then handed to an
+  // INDEPENDENT reader who fetched the paper again and tried to refute it.
+  // **22 of the 40 came back with a condition the paper states and the draft
+  // had dropped** — against 4 caught across the two batches before this one.
+  // The failure was never an invented sentence; it was always a missing
+  // qualifier. `surface-code` gave $d_e=(d+1)/2$ as a bare definition where the
+  // paper says *"for odd d"* and rounds down otherwise, so the draft's formula
+  // returned 3.5 for distance 6. `qubit-adapt-ansatz` dropped the
+  // anti-Hermiticity of the pool operators, and its supporting quote stopped at
+  // exactly the words that state it. `symmetry-verification` claimed *strictly*
+  // greater overlap where the paper proves an inequality and names the equality
+  // case. Every one of those was fixed against the source before it landed here.
+  //
+  // The standing phrase is now unreachable on this surface. `ownStepName` stays
+  // — a method added tomorrow reaches it before anyone writes its hop — and the
+  // `standing` branch above still runs, so the day it becomes reachable again
+  // this number is what says so.
   assert.equal(
     named.size,
-    55,
+    95,
     "the number of own cards that say what their stretch does changed — ratchet it up when you fill one in, never down",
   );
+  assert.equal(standing.size, 0, "an own card fell back to the standing phrase — see the note above");
 });
 
 
