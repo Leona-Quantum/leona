@@ -256,7 +256,9 @@ from .lifecycle import (
 # 2.16.0: bounded, code-free Studio circuit-optimization request/result models
 # and the Qiskit, pytket, PennyLane, and PyZX compiler enums. Additive; compiler
 # output remains an explicitly unverified compilation result.
-CONTRACTS_VERSION = "2.16.0"
+# 2.17.0: CircuitCompiler adds the offline Cirq and BQSKit optimizer lanes.
+# Additive: existing compiler values and result semantics are unchanged.
+CONTRACTS_VERSION = "2.17.0"
 
 __all__ = [
     "CONTRACTS_VERSION",

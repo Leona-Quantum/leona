@@ -631,7 +631,7 @@ export interface components {
          * @description Trusted third-party compiler selected for a bounded Studio IR job.
          * @enum {string}
          */
-        CircuitCompiler: "qiskit" | "pytket" | "pennylane" | "pyzx";
+        CircuitCompiler: "qiskit" | "cirq" | "pytket" | "pennylane" | "pyzx" | "bqskit";
         /**
          * CircuitOptimizationGate
          * @description Gate subset that Studio can round-trip through every framework draft.

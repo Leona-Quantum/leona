@@ -7,6 +7,8 @@ dependencies = ["majorana-contracts"]
 
 [project.optional-dependencies]
 optimizers = [
+    "bqskit==1.2.1",
+    "cirq-core>=1.7,<1.8",
     "qiskit>=2.5.2,<3",
     "pennylane>=0.45.1,<0.46",
     "pytket>=2.18.1,<3",

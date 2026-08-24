@@ -58,12 +58,14 @@ export const BASELINE_KIND_VALUES = [
   "none",
 ] as const;
 
-/** CircuitCompiler — 4 members. */
+/** CircuitCompiler — 6 members. */
 export const CIRCUIT_COMPILER_VALUES = [
   "qiskit",
+  "cirq",
   "pytket",
   "pennylane",
   "pyzx",
+  "bqskit",
 ] as const;
 
 /** CircuitOptimizationGate — 13 members. */

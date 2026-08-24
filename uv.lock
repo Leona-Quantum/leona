@@ -258,6 +258,34 @@ wheels = [
 ]
 
 [[package]]
+name = "bqskit"
+version = "1.2.1"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "bqskitrs" },
+    { name = "dill" },
+    { name = "lark" },
+    { name = "numpy" },
+    { name = "scipy" },
+    { name = "typing-extensions" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/76/74/cef9c5460bdba9486593308cb27e6dd7d49a6d77750c24f5a5054ca70bd6/bqskit-1.2.1.tar.gz", hash = "sha256:8456433cd58df4bc003d33299300872cc22f6cf02432553cc4888643d9c420f9", size = 279608, upload-time = "2025-08-30T22:35:59.842Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/fb/26/c35c93075cfeec3dc00a5b007690d01e2e4efa200bd2c0ec3346dca3b047/bqskit-1.2.1-py3-none-any.whl", hash = "sha256:cff63fac74d477311d5546edd7f16bbdc76e9e705f2affc8aeb0241544f61e36", size = 439942, upload-time = "2025-08-30T22:35:58.321Z" },
+]
+
+[[package]]
+name = "bqskitrs"
+version = "0.4.1"
+source = { registry = "https://pypi.org/simple" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/41/22/dc1d72f7fa3c795a2b0a4b59e6bbb1ba643d1fd5879749bc6cf213c156fe/bqskitrs-0.4.1-cp38-abi3-macosx_10_12_x86_64.whl", hash = "sha256:12e54f7b1022c7f94223b8587dcdc0b8a4a1f886ebf41fcd2b26a7428880ac06", size = 2064645, upload-time = "2023-11-29T18:05:08.749Z" },
+    { url = "https://files.pythonhosted.org/packages/ab/c2/baf3af2a45243d0bcd3fef3ede3435325277d939b13afda2d6b7605e45da/bqskitrs-0.4.1-cp38-abi3-macosx_11_0_arm64.whl", hash = "sha256:4412e27f7d0fdd06e73d9cb347f5bd8c4f55f5a8477eded39f24b938d0380e42", size = 1793492, upload-time = "2023-11-29T18:05:11.738Z" },
+    { url = "https://files.pythonhosted.org/packages/39/97/3403af17d09e4b8bb071c3f19986894f734812408a8cb2e821d1acea5b4c/bqskitrs-0.4.1-cp38-abi3-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:1f8be7289bea26ca862c789210937aa0ef630a5505440e4c3b2799896e7a6aa2", size = 40004511, upload-time = "2023-11-29T18:05:21.65Z" },
+    { url = "https://files.pythonhosted.org/packages/e6/1d/64c6fd3f1b4180dd7c4766cfd7d241a0d7d432a477dca34fbf23386f88bd/bqskitrs-0.4.1-cp38-abi3-win_amd64.whl", hash = "sha256:92f438063ce769a5fdb35220666cd90bb6c20551147cc5c72e77b0996fb4bef4", size = 1944299, upload-time = "2023-11-29T18:05:24.532Z" },
+]
+
+[[package]]
 name = "cachetools"
 version = "7.1.4"
 source = { registry = "https://pypi.org/simple" }
@@ -1513,6 +1541,8 @@ dependencies = [
 
 [package.optional-dependencies]
 optimizers = [
+    { name = "bqskit" },
+    { name = "cirq-core" },
     { name = "pennylane" },
     { name = "pytket" },
     { name = "pyzx" },
@@ -1521,6 +1551,8 @@ optimizers = [
 
 [package.metadata]
 requires-dist = [
+    { name = "bqskit", marker = "extra == 'optimizers'", specifier = "==1.2.1" },
+    { name = "cirq-core", marker = "extra == 'optimizers'", specifier = ">=1.7,<1.8" },
     { name = "majorana-contracts", editable = "packages/py/contracts" },
     { name = "pennylane", marker = "extra == 'optimizers'", specifier = ">=0.45.1,<0.46" },
     { name = "pytket", marker = "extra == 'optimizers'", specifier = ">=2.18.1,<3" },

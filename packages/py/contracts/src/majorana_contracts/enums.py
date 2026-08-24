@@ -20,9 +20,11 @@ class CircuitCompiler(StrEnum):
     """Trusted third-party compiler selected for a bounded Studio IR job."""
 
     QISKIT = "qiskit"
+    CIRQ = "cirq"
     PYTKET = "pytket"
     PENNYLANE = "pennylane"
     PYZX = "pyzx"
+    BQSKIT = "bqskit"
 
 
 class CircuitOptimizationGate(StrEnum):

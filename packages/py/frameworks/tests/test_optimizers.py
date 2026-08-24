@@ -1,3 +1,4 @@
+import asyncio
 import math
 
 import pytest
@@ -37,7 +38,7 @@ def _operator(operations) -> Operator:
     return Operator(circuit)
 
 
-@pytest.mark.parametrize("compiler", ["qiskit", "pytket", "pennylane"])
+@pytest.mark.parametrize("compiler", ["qiskit", "cirq", "pytket", "pennylane"])
 def test_general_compilers_reduce_a_numeric_studio_circuit(compiler):
     result = optimize_circuit(
         _request(
@@ -61,6 +62,54 @@ def test_general_compilers_reduce_a_numeric_studio_circuit(compiler):
     assert result.after.gate_count == 1
     assert result.compiler_version
     assert result.equivalence == "unitary_up_to_global_phase"
+
+
+def test_bqskit_runs_a_bounded_synthesis_pipeline_and_returns_studio_gates():
+    operations = [
+        {"gate": "H", "qubits": [0]},
+        {"gate": "H", "qubits": [0]},
+        {"gate": "RX", "qubits": [1], "angle_radians": 0.2},
+        {"gate": "RX", "qubits": [1], "angle_radians": 0.3},
+        {"gate": "CX", "qubits": [0, 1]},
+        {"gate": "CX", "qubits": [0, 1]},
+    ]
+
+    result = optimize_circuit(_request("bqskit", operations, level=3))
+
+    assert result.after.gate_count < result.before.gate_count
+    assert _operator(operations).equiv(_operator(result.operations))
+    assert {operation.gate.value for operation in result.operations} <= {
+        "H",
+        "X",
+        "Y",
+        "Z",
+        "S",
+        "T",
+        "RX",
+        "RY",
+        "RZ",
+        "CX",
+        "CZ",
+        "SWAP",
+    }
+
+
+@pytest.mark.asyncio
+async def test_bqskit_can_run_from_the_worker_background_thread():
+    result = await asyncio.to_thread(
+        optimize_circuit,
+        _request(
+            "bqskit",
+            [
+                {"gate": "H", "qubits": [0]},
+                {"gate": "H", "qubits": [0]},
+            ],
+            level=1,
+        ),
+    )
+
+    assert result.compiler.value == "bqskit"
+    assert result.compiler_version == "1.2.1"
 
 
 def test_pyzx_runs_its_clifford_t_optimizer_and_lowers_back_to_studio_gates():
@@ -109,7 +158,7 @@ def test_pyzx_refuses_rotations_outside_exact_clifford_t_angles():
     assert raised.value.code == "pyzx_requires_clifford_t"
 
 
-@pytest.mark.parametrize("compiler", ["qiskit", "pytket", "pennylane", "pyzx"])
+@pytest.mark.parametrize("compiler", ["qiskit", "cirq", "pytket", "pennylane", "pyzx", "bqskit"])
 def test_compiler_adapters_preserve_a_representative_unitary_up_to_global_phase(compiler):
     operations = [
         {"gate": "H", "qubits": [0]},
@@ -151,3 +200,19 @@ def test_pyzx_refuses_a_rewrite_its_exact_equality_check_rejects():
         )
 
     assert raised.value.code == "compiler_equivalence_check_failed"
+
+
+def test_bqskit_refuses_circuits_beyond_its_synthesis_budget():
+    request = CircuitOptimizationRequest.model_validate(
+        {
+            "compiler": "bqskit",
+            "qubit_count": 9,
+            "optimization_level": 1,
+            "operations": [{"gate": "H", "qubits": [0]}],
+        }
+    )
+
+    with pytest.raises(CircuitOptimizationError) as raised:
+        optimize_circuit(request)
+
+    assert raised.value.code == "bqskit_budget_exceeded"

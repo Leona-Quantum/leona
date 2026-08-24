@@ -13,6 +13,7 @@ import hashlib
 import importlib.metadata
 import json
 import math
+import multiprocessing
 from collections.abc import Callable, Iterable
 from typing import Any
 
@@ -109,6 +110,130 @@ def _qiskit_compile(
     )
     optimized = manager.run(circuit)
     return _operations_from_qiskit(optimized, restore_output_permutation=True), _version("qiskit")
+
+
+def _cirq_compile(
+    qubit_count: int,
+    operations: list[CircuitOptimizationOperation],
+    level: int,
+) -> tuple[list[CircuitOptimizationOperation], str]:
+    import cirq
+
+    qubits = cirq.LineQubit.range(qubit_count)
+    circuit = cirq.Circuit(_cirq_operation(operation, qubits, cirq) for operation in operations)
+    # CZTargetGateset performs Cirq's documented merge/decompose/cleanup
+    # pipeline. Partial CZ gates are disabled because Studio cannot represent
+    # a fractional controlled phase without silently changing its gate model.
+    gateset = cirq.CZTargetGateset(allow_partial_czs=False)
+    optimized = cirq.optimize_for_target_gateset(circuit, gateset=gateset)
+    if level >= 3:
+        # The pipeline is convergent, but a second high-strength pass can expose
+        # cancellations after the first pass has decomposed composite gates.
+        optimized = cirq.optimize_for_target_gateset(optimized, gateset=gateset)
+    return _operations_from_cirq(optimized, cirq), _version("cirq-core")
+
+
+def _bqskit_compile(
+    qubit_count: int,
+    operations: list[CircuitOptimizationOperation],
+    level: int,
+) -> tuple[list[CircuitOptimizationOperation], str]:
+    """Run BQSKit where its signal-owning runtime has a real main thread.
+
+    The Worker invokes every optimizer from ``asyncio.to_thread``. BQSKit's
+    attached runtime registers process signal handlers and therefore refuses to
+    start in that thread. A spawn child gives it an isolated main thread while
+    also giving this adapter a hard way to terminate an over-budget synthesis.
+    """
+
+    if qubit_count > 8 or len(operations) > 128:
+        raise CircuitOptimizationError(
+            "bqskit_budget_exceeded",
+            "BQSKit is limited to 8 qubits and 128 unitary operations.",
+        )
+
+    context = multiprocessing.get_context("spawn")
+    receiver, sender = context.Pipe(duplex=False)
+    process = context.Process(
+        target=_bqskit_compile_child,
+        args=(sender, qubit_count, operations, level),
+        name="leona-bqskit-compiler",
+    )
+    process.start()
+    sender.close()
+    try:
+        if not receiver.poll(50.0):
+            process.terminate()
+            process.join(timeout=5.0)
+            raise CircuitOptimizationError(
+                "compiler_timeout", "BQSKit exceeded its 50 second synthesis limit."
+            )
+        outcome, payload = receiver.recv()
+    except EOFError as exc:
+        raise CircuitOptimizationError(
+            "compiler_failed", "BQSKit compiler process closed without a result."
+        ) from exc
+    finally:
+        receiver.close()
+        process.join(timeout=5.0)
+        if process.is_alive():
+            process.terminate()
+            process.join(timeout=5.0)
+    if outcome == "ok":
+        return payload
+    error_type, message = payload
+    raise CircuitOptimizationError(
+        "compiler_failed", f"bqskit could not compile this circuit ({error_type}: {message})."
+    )
+
+
+def _bqskit_compile_child(
+    sender: Any,
+    qubit_count: int,
+    operations: list[CircuitOptimizationOperation],
+    level: int,
+) -> None:
+    try:
+        sender.send(("ok", _bqskit_compile_native(qubit_count, operations, level)))
+    except Exception as exc:
+        sender.send(("error", (type(exc).__name__, str(exc))))
+    finally:
+        sender.close()
+
+
+def _bqskit_compile_native(
+    qubit_count: int,
+    operations: list[CircuitOptimizationOperation],
+    level: int,
+) -> tuple[list[CircuitOptimizationOperation], str]:
+    from bqskit import compile as bqskit_compile
+    from bqskit.ext.qiskit import bqskit_to_qiskit, qiskit_to_bqskit
+    from qiskit import QuantumCircuit
+    from qiskit.transpiler import generate_preset_pass_manager
+
+    if qubit_count > 8 or len(operations) > 128:
+        raise CircuitOptimizationError(
+            "bqskit_budget_exceeded",
+            "BQSKit is limited to 8 qubits and 128 unitary operations.",
+        )
+    source = QuantumCircuit(qubit_count)
+    _apply_operations(source, operations, _QISKIT_APPLIERS)
+    compiled = bqskit_compile(
+        qiskit_to_bqskit(source),
+        optimization_level=level,
+        max_synthesis_size=2,
+        seed=42,
+        # BQSKit starts a local compiler runtime. Keep it bounded inside the
+        # Worker instead of inheriting every available Cloud Run CPU.
+        num_workers=1,
+    )
+    qiskit_output = bqskit_to_qiskit(compiled)
+    normalized = generate_preset_pass_manager(
+        optimization_level=0,
+        basis_gates=_QISKIT_BASIS,
+        seed_transpiler=42,
+    ).run(qiskit_output)
+    return _operations_from_qiskit(normalized), _version("bqskit")
 
 
 def _pennylane_compile(
@@ -283,6 +408,79 @@ _PYTKET_APPLIERS = {
     CircuitOptimizationGate.CZ: _two("CZ"),
     CircuitOptimizationGate.SWAP: _two("SWAP"),
 }
+
+
+def _cirq_operation(operation: CircuitOptimizationOperation, qubits: list[Any], cirq: Any) -> Any:
+    selected = [qubits[index] for index in operation.qubits]
+    fixed = {
+        CircuitOptimizationGate.H: cirq.H,
+        CircuitOptimizationGate.X: cirq.X,
+        CircuitOptimizationGate.Y: cirq.Y,
+        CircuitOptimizationGate.Z: cirq.Z,
+        CircuitOptimizationGate.S: cirq.S,
+        CircuitOptimizationGate.T: cirq.T,
+        CircuitOptimizationGate.CX: cirq.CNOT,
+        CircuitOptimizationGate.CZ: cirq.CZ,
+        CircuitOptimizationGate.SWAP: cirq.SWAP,
+    }
+    if operation.gate in _ROTATION_GATES:
+        assert operation.angle_radians is not None
+        return getattr(cirq, operation.gate.value.lower())(operation.angle_radians)(selected[0])
+    return fixed[operation.gate].on(*selected)
+
+
+def _operations_from_cirq(circuit: Any, cirq: Any) -> list[CircuitOptimizationOperation]:
+    result: list[CircuitOptimizationOperation] = []
+    for operation in circuit.all_operations():
+        result.extend(_studio_operations_from_cirq_operation(operation, cirq))
+    return result
+
+
+def _studio_operations_from_cirq_operation(operation: Any, cirq: Any):
+    gate = operation.gate
+    qubits = [int(qubit.x) for qubit in operation.qubits]
+    if isinstance(gate, cirq.IdentityGate):
+        return []
+    if isinstance(gate, cirq.PhasedXZGate) or isinstance(gate, cirq.PhasedXPowGate):
+        decomposed = cirq.decompose_once(operation, default=None)
+        if decomposed is None:
+            raise CircuitOptimizationError(
+                "compiler_output_unsupported", "Cirq could not decompose a phased rotation."
+            )
+        result: list[CircuitOptimizationOperation] = []
+        for child in decomposed:
+            result.extend(_studio_operations_from_cirq_operation(child, cirq))
+        return result
+    rotations = {
+        cirq.XPowGate: CircuitOptimizationGate.RX,
+        cirq.YPowGate: CircuitOptimizationGate.RY,
+        cirq.ZPowGate: CircuitOptimizationGate.RZ,
+    }
+    for gate_type, studio_gate in rotations.items():
+        if isinstance(gate, gate_type):
+            angle = _normalized_rotation(float(gate.exponent) * math.pi)
+            if math.isclose(angle, 0.0, abs_tol=1e-10):
+                return []
+            return [
+                CircuitOptimizationOperation(
+                    gate=studio_gate,
+                    qubits=qubits,
+                    angle_radians=angle,
+                )
+            ]
+    if isinstance(gate, cirq.CZPowGate) and math.isclose(
+        float(gate.exponent) % 2, 1.0, abs_tol=1e-10
+    ):
+        return [CircuitOptimizationOperation(gate=CircuitOptimizationGate.CZ, qubits=qubits)]
+    raise CircuitOptimizationError(
+        "compiler_output_unsupported",
+        f"Compiler emitted unsupported Cirq gate {type(gate).__name__}.",
+    )
+
+
+def _normalized_rotation(angle: float) -> float:
+    normalized = (angle + math.pi) % (2 * math.pi) - math.pi
+    return 0.0 if math.isclose(normalized, 0.0, abs_tol=1e-12) else normalized
 
 
 def _pennylane_operation(operation: CircuitOptimizationOperation, qml: Any) -> Any:
@@ -524,7 +722,9 @@ _COMPILERS: dict[
     ],
 ] = {
     CircuitCompiler.QISKIT: _qiskit_compile,
+    CircuitCompiler.CIRQ: _cirq_compile,
     CircuitCompiler.PYTKET: _pytket_compile,
     CircuitCompiler.PENNYLANE: _pennylane_compile,
     CircuitCompiler.PYZX: _pyzx_compile,
+    CircuitCompiler.BQSKIT: _bqskit_compile,
 }
