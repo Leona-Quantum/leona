@@ -8845,12 +8845,30 @@ export const LAYER_GRAPH: LayerGraph = {
   //    one click from the original. So `variational-ground-state` descends into
   //    the existing readout layer, and the VQE estimation records anchor to the
   //    methods already there.
-  // 2. **It quotes no complexity.** The 2026-07-19 ruling stands — VQE and QAOA
-  //    are heuristics without a proven worst-case speedup and a number here
+  // 2. **It quotes no complexity.** ~~The 2026-07-19 ruling stands — VQE and
+  //    QAOA are heuristics without a proven worst-case speedup and a number here
   //    would misrepresent the state of the art. Every `cost` in this region is
-  //    ABSENT, and absent means "no source we read stated one". A reviewer
-  //    asking why a whole region has no complexities should be answered with
-  //    this comment, not with a number derived to fill the slot.
+  //    ABSENT, and absent means "no source we read stated one."~~
+  //
+  //    **This paragraph described the region for about a month after it stopped
+  //    being true, and it is left visible rather than deleted because the way it
+  //    went wrong is the reusable part.** It was written to ARGUE for leaving
+  //    `cost` empty; once the argument was acted on it read as a STATUS report,
+  //    and a fresh session arriving here would have been told a whole region had
+  //    no complexities when 29 of its 30 methods had one.
+  //
+  //    What is true: the ruling was never that the price is unknown, only that
+  //    it must not be quoted as a proven worst-case speedup it does not have.
+  //    Reading the papers found that they DO price one energy evaluation while
+  //    refusing to bound the iterations — a shape the ruling did not anticipate
+  //    — so leona 751 recorded that shape on 29 methods: the count that is
+  //    proved and the outer loop that is not, in the same paragraph. The gauge
+  //    reads `cost 37/38` over the six variational slots.
+  //
+  //    A reviewer asking why a `cost` here is a count of runs rather than a
+  //    complexity class should be answered with that distinction, not with a
+  //    number derived to fill the slot. The `absences` mechanism is what a
+  //    genuinely empty field uses, and it names the documents somebody opened.
   {
     kind: "capability",
     id: "ground-state-energy",
