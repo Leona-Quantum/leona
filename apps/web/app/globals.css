@@ -45,6 +45,27 @@ body {
   margin: 0;
 }
 
+/* The landing page keeps the interactive dot field on the viewport while its
+ * content scrolls above it. The canvas paints the active theme's background,
+ * so the existing light/dark control remains truthful. */
+.lq-liquid-grid-background {
+  position: fixed;
+  z-index: -1;
+  inset: 0;
+  display: block;
+  width: 100vw;
+  height: 100dvh;
+  pointer-events: none;
+}
+.mj-company-site {
+  position: relative;
+  background: transparent;
+}
+.mj-company-site .mj-public-frame {
+  position: relative;
+  isolation: isolate;
+}
+
 /* Run-home hero — the constellation mark and greeting are the only heading;
  * explanatory copy was retired per owner direction 2026-07-17. App-surface
  * motion lives here, keeping the vendored UI package within its allowlist. */
