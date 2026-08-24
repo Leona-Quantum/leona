@@ -2574,6 +2574,52 @@ test("the variational region does not go quiet again about what it costs", () =>
   );
 });
 
+/**
+ * Every hop the ground-state and excited-state routes draw says what happens on it.
+ *
+ * **What a reader met before this closed.** Opening VQD's route on production gave
+ * *"None found yet."* on all four of its hops — the same shape as the blank `cost`
+ * field one level up, and the same cause: nobody had read the papers for it. The
+ * gauge read **5 of 33 route stretches**; the other 28 were written out of each
+ * method's own citations.
+ *
+ * **Stretches, not methods, and the denominator has a floor under it.** A method
+ * with one authored hop of five reads as "has hops" on any per-method count, and
+ * that is exactly the region that looks finished and is not — so this asserts the
+ * two numbers are equal AND that the denominator has not shrunk. Deleting a route
+ * would otherwise make the equality pass on a smaller region, which is the
+ * "measure less, look healthier" failure `region.unknown` guards at the slot level.
+ *
+ * These two slots only. The other four of the six variational slots have not been
+ * swept for hop theory, and asserting a region that is partly authored pins a
+ * number that means nothing.
+ */
+test("every hop these two slots draw says what happens on it", () => {
+  // Per slot, not summed. An aggregate floor of 33 is met by one slot losing
+  // every route while the other grows past it — the same "measure less, look
+  // healthier" failure one level in from the one `region.unknown` catches, and
+  // raised on the PR that added this test. The floors are what each slot was
+  // actually closed over.
+  const FLOORS: readonly (readonly [string, number])[] = [
+    ["ground-state-energy", 11],
+    ["excited-state-energy", 22],
+  ];
+  for (const [slot, floor] of FLOORS) {
+    const region = regionClosure(LAYER_GRAPH, STATE_VOCABULARY, [slot], new Map());
+    assert.deepEqual(region.unknown, [], `${slot} names no capability`);
+    assert.ok(
+      region.hopStretches >= floor,
+      `${slot}: ${region.hopStretches} drawn stretches, fewer than the ${floor} it was closed over`,
+    );
+    assert.equal(
+      region.hopStretchesAuthored,
+      region.hopStretches,
+      `${slot}: hop theory covers ${region.hopStretchesAuthored} of ${region.hopStretches} — ` +
+        `unauthored: ${region.unauthoredHops.map((hop) => `${hop.method}/${hop.key}`).join(", ")}`,
+    );
+  }
+});
+
 
 /** The reader-facing modules that may render a declared absence, as (name, source). */
 function absenceSurfaceSources(): { name: string; source: string }[] {
