@@ -1,6 +1,7 @@
 import katex from "katex";
 
 import { mathSegments } from "../lib/math-text";
+import { sanitizeMathHtml } from "../lib/sanitize-math";
 
 /**
  * A line of corpus prose, with its `$…$` typeset and everything else printed as
@@ -72,38 +73,34 @@ const typesetCache = new Map<string, string>();
 function typeset(tex: string): string {
   const hit = typesetCache.get(tex);
   if (hit !== undefined) return hit;
-  // **SANITIZING IS TEMPORARILY OUT OF THE RENDER PATH — see below.** This is not
-  // a reversal of the ai-ops 138 ruling; it is an incident revert.
+  // Sanitized again. The incident that took this call out is kept rather than
+  // deleted, because its recorded cause was wrong and the correction is the
+  // reason a version pin exists two files away.
   //
-  // leona 690 put `sanitizeMathHtml` here. Every page that renders MathText then
-  // returned HTTP 500 on production — `/repository/<slug>` and
-  // `/repository/layers/*`, six slugs checked — while `/`, `/repository` and
-  // `/repository/papers`, which render no mathematics, stayed 200. The failing set
-  // is exactly this code path.
+  // leona 690 put `sanitizeMathHtml` here on the owner's ruling (ai-ops 138).
+  // Every page that renders MathText then returned HTTP 500 on production —
+  // `/repository/<slug>` and `/repository/layers/*`, six slugs checked — while
+  // `/`, `/repository` and `/repository/papers`, which render no mathematics,
+  // stayed 200. leona 693 withdrew the call to restore service and wrote down
+  // that it *"did NOT reproduce locally, which is the part worth recording"*,
+  // attributing the difference to Vercel tracing files differently.
   //
-  // It did NOT reproduce locally, which is the part worth recording: a production
-  // build served with `next start`, pointed at the real API, returned 200 on all
-  // three routes with no error logged. The difference is the deployment
-  // environment, not the code — `isomorphic-dompurify` reaches jsdom on the
-  // server, and Vercel's serverless bundle traces files differently from a local
-  // node_modules tree. CodeRabbit flagged exactly this class on PR 690 and I
-  // declined it on the strength of the local run; the local run could not see it.
+  // It reproduces locally in one command, once you know which one:
   //
-  // Restoring service first, deliberately, rather than shipping a speculative
-  // one-line fix while the primary content surface is 500. The fix forward is
-  // `serverExternalPackages` in next.config.ts, verified on a Vercel PREVIEW
-  // deployment before it is merged — a preview is the only place that exercises
-  // the runtime that actually broke.
+  //     node --no-experimental-require-module -e 'require("isomorphic-dompurify")'
   //
-  // Everything else from 690 stays: lib/sanitize-math.ts and its 9 tests, the
-  // corpus-wide preservation assertion in check-math.mjs, and the client-bundle
-  // guard. The module is still exercised by the gates; it is only this call that
-  // is withdrawn, so re-landing is one line plus the preview check.
-  const html = katex.renderToString(tex, {
-    throwOnError: false,
-    displayMode: false,
-    output: "htmlAndMathml",
-  });
+  // Vercel runs every function with that flag. jsdom 27+ then cannot load at
+  // all, whatever Node version the project selects. `lib/sanitize-math.ts` and
+  // `pnpm-workspace.yaml` carry the measurement; `lib/sanitize-math-runtime.test.ts`
+  // runs that command in CI so the next regression is a red test and not a
+  // production 500.
+  const html = sanitizeMathHtml(
+    katex.renderToString(tex, {
+      throwOnError: false,
+      displayMode: false,
+      output: "htmlAndMathml",
+    }),
+  );
   if (typesetCache.size >= MAX_CACHED) typesetCache.clear();
   typesetCache.set(tex, html);
   return html;
@@ -122,21 +119,20 @@ export function MathText({ source }: { source: string }): React.ReactElement {
           <span
             key={index}
             className="mj-math"
-            // KaTeX's own output, memoized — see `typeset` above.
+            // KaTeX's own output, sanitized and memoized — see `typeset` above.
             //
-            // **NOT sanitized right now, and that is the active boundary.** The
-            // sanitizer was wired in here (owner ruling, ai-ops 138) and every
-            // route rendering this component returned 500 on production; the call
-            // is withdrawn until the Vercel runtime cause is fixed, and `typeset`
-            // above carries the incident detail and the re-landing condition.
+            // This is the sink, and it now has three things holding it up rather
+            // than two. The two that were always here: the input is corpus prose
+            // authored in this repository and gated by `check-math.mjs`, so no
+            // visitor can reach it, and KaTeX defaults to `trust: false`, which
+            // refuses `\href{javascript:…}` and escapes raw HTML. The third is
+            // `sanitizeMathHtml`, wired in on the owner's ruling (ai-ops 138)
+            // precisely so the sink does not depend on a third-party default
+            // staying what it is today, or on the input staying repo-authored.
             //
-            // So what holds this sink up today is what held it up before 690, and
-            // it is worth stating plainly rather than leaving a stale sentence
-            // that says otherwise: the input is corpus prose authored in this
-            // repository and gated by `check-math.mjs`, no visitor can reach it,
-            // and KaTeX defaults to `trust: false` — it refuses
-            // `\href{javascript:…}` and escapes raw HTML. Two reasons, both
-            // real, neither of them a sanitizer.
+            // The first two are arguments about the input. Only the third is a
+            // check on the output, which is why it is the one that survives if
+            // either argument stops being true.
             dangerouslySetInnerHTML={{ __html: typeset(segment.value) }}
           />
         ) : (
