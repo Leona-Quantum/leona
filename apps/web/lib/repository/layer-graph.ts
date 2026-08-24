@@ -8845,10 +8845,11 @@ export const LAYER_GRAPH: LayerGraph = {
   //    one click from the original. So `variational-ground-state` descends into
   //    the existing readout layer, and the VQE estimation records anchor to the
   //    methods already there.
-  // 2. **It quotes no complexity.** ~~The 2026-07-19 ruling stands — VQE and
-  //    QAOA are heuristics without a proven worst-case speedup and a number here
-  //    would misrepresent the state of the art. Every `cost` in this region is
-  //    ABSENT, and absent means "no source we read stated one."~~
+  // 2. **It does not quote a proven worst-case speedup.**
+  //    ~~*It quotes no complexity.* The 2026-07-19 ruling stands — VQE and QAOA
+  //    are heuristics without a proven worst-case speedup and a number here would
+  //    misrepresent the state of the art. Every `cost` in this region is ABSENT,
+  //    and absent means "no source we read stated one."~~
   //
   //    **This paragraph described the region for about a month after it stopped
   //    being true, and it is left visible rather than deleted because the way it
@@ -8861,9 +8862,11 @@ export const LAYER_GRAPH: LayerGraph = {
   //    it must not be quoted as a proven worst-case speedup it does not have.
   //    Reading the papers found that they DO price one energy evaluation while
   //    refusing to bound the iterations — a shape the ruling did not anticipate
-  //    — so leona 751 recorded that shape on 29 methods: the count that is
-  //    proved and the outer loop that is not, in the same paragraph. The gauge
-  //    reads `cost 37/38` over the six variational slots.
+  //    — so leona 751 recorded that shape across the region: the count that is
+  //    proved and the outer loop that is not, in the same paragraph. No count is
+  //    quoted here on purpose; run `--closure` over the six variational slots for
+  //    the current one, because a number written into a comment is the thing that
+  //    goes stale next.
   //
   //    A reviewer asking why a `cost` here is a count of runs rather than a
   //    complexity class should be answered with that distinction, not with a

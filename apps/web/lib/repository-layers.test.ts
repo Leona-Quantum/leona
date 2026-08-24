@@ -2512,6 +2512,18 @@ test("the linear-ODE region does not go backwards on the half that is closed", (
     ["time-discretization", 6, 6],
     ["quantum-linear-solve", 5, 21],
   ];
+  // The two lists are tied together, because they are two copies of one fact and
+  // nothing else here notices when they drift. Adding a valid capability to
+  // `SLOTS` without a `FLOORS` row leaves that slot with no floor at all while
+  // every assertion below still passes — `region.unknown` cannot see it, since
+  // both ids name real capabilities. Raised by Sourcery on the PR that added the
+  // per-slot floors, which is the same "measure less, look healthier" hole one
+  // more level in, in the very change written to close it.
+  assert.deepEqual(
+    FLOORS.map(([slot]) => slot).sort(),
+    [...SLOTS].sort(),
+    "a slot in this region has no floor, or a floor names a slot outside it",
+  );
   for (const [slot, methodFloor, stretchFloor] of FLOORS) {
     const one = regionClosure(LAYER_GRAPH, STATE_VOCABULARY, [slot], new Map());
     assert.deepEqual(one.unknown, [], `${slot} names no capability`);
