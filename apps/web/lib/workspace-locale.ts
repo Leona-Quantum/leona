@@ -414,6 +414,14 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
     appliedToCode: string;
     compression: string;
     compressionIntro: string;
+    optimizationWorkflowLabel: string;
+    optimizationStepChoose: string;
+    optimizationStepCompare: string;
+    optimizationStepApply: string;
+    optimizationLocal: string;
+    optimizationLocalDescription: string;
+    optimizationExternal: string;
+    optimizationExternalDescription: string;
     compressionStrategy: string;
     compressionInverse: string;
     compressionInverseDescription: string;
@@ -440,14 +448,22 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
     externalCompiler: string;
     externalQiskit: string;
     externalQiskitDescription: string;
+    externalCirq: string;
+    externalCirqDescription: string;
     externalPytket: string;
     externalPytketDescription: string;
     externalPennyLane: string;
     externalPennyLaneDescription: string;
     externalPyZX: string;
     externalPyZXDescription: string;
+    externalBqskit: string;
+    externalBqskitDescription: string;
+    externalRecommended: string;
+    externalLevelHelp: string;
+    externalLevelOption: (level: number) => string;
     externalBoundary: string;
     externalRun: string;
+    externalRunSelected: (compiler: string) => string;
     externalRunning: string;
     externalOpenRun: string;
     externalFailed: string;
@@ -938,7 +954,15 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
       applyToCode: "Apply to code",
       appliedToCode: "Generated code applied to all framework drafts.",
       compression: "Circuit compression",
-      compressionIntro: "Compare exact gate rewrites before replacing the circuit and its framework drafts.",
+      compressionIntro: "Choose a method, compare before and after, then apply only the result you want to keep.",
+      optimizationWorkflowLabel: "Circuit optimization workflow",
+      optimizationStepChoose: "Choose a method",
+      optimizationStepCompare: "Compare the result",
+      optimizationStepApply: "Apply to Studio",
+      optimizationLocal: "Quick exact rewrites",
+      optimizationLocalDescription: "Runs instantly in the browser. Best for obvious cancellations and rotation folding.",
+      optimizationExternal: "Compiler optimization",
+      optimizationExternalDescription: "Runs one of six real compiler SDKs on the Worker and returns an editable Studio circuit.",
       compressionStrategy: "Compression strategy",
       compressionInverse: "Cancel inverse pairs",
       compressionInverseDescription: "Removes matching self-inverse gates when no operation on the same qubits lies between them.",
@@ -965,14 +989,22 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
       externalCompiler: "Compiler",
       externalQiskit: "Qiskit",
       externalQiskitDescription: "IBM's preset pass manager with a deterministic seed and Studio-compatible basis gates.",
+      externalCirq: "Cirq",
+      externalCirqDescription: "Google Quantum AI's merge, target-gateset decomposition, and cleanup transformer pipeline.",
       externalPytket: "pytket",
       externalPytketDescription: "Quantinuum's peephole compiler with implicit wire swaps disabled before rebasing to Studio gates.",
       externalPennyLane: "PennyLane",
       externalPennyLaneDescription: "Xanadu's compile transform: commuting, inverse cancellation, and rotation merging over repeated passes.",
       externalPyZX: "PyZX",
       externalPyZXDescription: "ZX-calculus and phase-polynomial optimization for bounded Clifford+T circuits.",
-      externalBoundary: "Only bound built-in gates are sent—never source code. Jobs are limited to 64 qubits and 1,024 operations; PyZX is further limited to 16 qubits, 512 unitary operations, and Clifford+T angles.",
+      externalBqskit: "BQSKit",
+      externalBqskitDescription: "Berkeley's synthesis-based compiler for deeper optimization of small circuits.",
+      externalRecommended: "Recommended",
+      externalLevelHelp: "1 is fastest, 2 is balanced, and 3 searches more thoroughly.",
+      externalLevelOption: (level) => level === 1 ? "1 · Fast" : level === 2 ? "2 · Balanced" : "3 · Thorough",
+      externalBoundary: "Only bound built-in gates are sent—never source code. General jobs are limited to 64 qubits and 1,024 operations. PyZX is limited to 16 qubits / 512 operations and Clifford+T angles; BQSKit to 8 qubits / 128 operations.",
       externalRun: "Run compiler",
+      externalRunSelected: (compiler) => `Run ${compiler}`,
       externalRunning: "Compiling…",
       externalOpenRun: "Open compiler run",
       externalFailed: "The external compiler did not return a usable Studio circuit.",
@@ -1457,7 +1489,15 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
       applyToCode: "コードに反映",
       appliedToCode: "生成したコードを各フレームワークの下書きに反映しました。",
       compression: "量子回路を圧縮",
-      compressionIntro: "厳密なゲート恒等式による変換結果を比較し、回路と各フレームワークのコードへ反映できます。",
+      compressionIntro: "方式を選び、圧縮前後を比較して、採用したい結果だけをStudioへ反映できます。",
+      optimizationWorkflowLabel: "量子回路最適化の流れ",
+      optimizationStepChoose: "方式を選ぶ",
+      optimizationStepCompare: "結果を比較",
+      optimizationStepApply: "Studioへ反映",
+      optimizationLocal: "かんたん圧縮",
+      optimizationLocalDescription: "ブラウザですぐ実行。明らかな相殺や回転ゲートの統合に向いています。",
+      optimizationExternal: "コンパイラで最適化",
+      optimizationExternalDescription: "6種類の実コンパイラをWorkerで動かし、編集可能なStudio回路として結果を返します。",
       compressionStrategy: "圧縮方式",
       compressionInverse: "逆ゲートを相殺",
       compressionInverseDescription: "同じ量子ビット上に別の操作が挟まっていない自己逆ゲートの組を削除します。",
@@ -1484,14 +1524,22 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
       externalCompiler: "コンパイラ",
       externalQiskit: "Qiskit",
       externalQiskitDescription: "決定的なシードとStudio対応ゲート集合を使うIBMのプリセット・パスマネージャです。",
+      externalCirq: "Cirq",
+      externalCirqDescription: "Google Quantum AIのゲート統合・ターゲット分解・クリーンアップ変換を実行します。",
       externalPytket: "pytket",
       externalPytketDescription: "暗黙の配線入れ替えを禁止し、Studioゲートへ戻すQuantinuumのピープホールコンパイラです。",
       externalPennyLane: "PennyLane",
       externalPennyLaneDescription: "可換移動、逆ゲート相殺、回転統合を反復するXanaduのcompile変換です。",
       externalPyZX: "PyZX",
       externalPyZXDescription: "小規模なClifford+T回路向けのZX計算・位相多項式最適化です。",
-      externalBoundary: "送信するのは値が確定した組み込みゲートだけで、ソースコードは送りません。上限は64量子ビット・1,024操作です。PyZXはさらに16量子ビット・512ユニタリ操作・Clifford+T角に限定されます。",
+      externalBqskit: "BQSKit",
+      externalBqskitDescription: "小規模回路をより深く最適化するBerkeleyの合成ベースコンパイラです。",
+      externalRecommended: "おすすめ",
+      externalLevelHelp: "1は高速、2は標準、3は時間をかけてより深く探索します。",
+      externalLevelOption: (level) => level === 1 ? "1・高速" : level === 2 ? "2・標準" : "3・念入り",
+      externalBoundary: "送信するのは値が確定した組み込みゲートだけで、ソースコードは送りません。通常上限は64量子ビット・1,024操作です。PyZXは16量子ビット・512操作・Clifford+T角、BQSKitは8量子ビット・128操作に限定されます。",
       externalRun: "コンパイラを実行",
+      externalRunSelected: (compiler) => `${compiler}で圧縮を実行`,
       externalRunning: "コンパイル中…",
       externalOpenRun: "コンパイル実行を開く",
       externalFailed: "外部コンパイラからStudioで扱える回路を取得できませんでした。",

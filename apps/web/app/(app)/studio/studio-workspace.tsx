@@ -1337,6 +1337,7 @@ export function CircuitBuilder({ seed, framework, selectedGate, onSelectGate, on
   const [builderMessage, setBuilderMessage] = useState<string | null>(null);
   const [applyConfirmPending, setApplyConfirmPending] = useState(false);
   const [compressionStrategy, setCompressionStrategy] = useState<CircuitCompressionStrategy>("balanced");
+  const [optimizationMode, setOptimizationMode] = useState<"local" | "compiler">("compiler");
   const [compressionConfirmPending, setCompressionConfirmPending] = useState(false);
   const [compressionSnapshot, setCompressionSnapshot] = useState<{ before: BuilderStep[]; afterSignature: string } | null>(null);
   const [externalCompiler, setExternalCompiler] = useState<ExternalCircuitCompiler>("qiskit");
@@ -1388,11 +1389,13 @@ export function CircuitBuilder({ seed, framework, selectedGate, onSelectGate, on
     { value: "rotation_folding", label: copy.compressionRotations, description: copy.compressionRotationsDescription },
     { value: "pattern_rewrite", label: copy.compressionPatterns, description: copy.compressionPatternsDescription },
   ];
-  const externalCompilerOptions: { value: ExternalCircuitCompiler; label: string; description: string }[] = [
-    { value: "qiskit", label: copy.externalQiskit, description: copy.externalQiskitDescription },
+  const externalCompilerOptions: { value: ExternalCircuitCompiler; label: string; description: string; recommended?: boolean }[] = [
+    { value: "qiskit", label: copy.externalQiskit, description: copy.externalQiskitDescription, recommended: true },
+    { value: "cirq", label: copy.externalCirq, description: copy.externalCirqDescription },
     { value: "pytket", label: copy.externalPytket, description: copy.externalPytketDescription },
     { value: "pennylane", label: copy.externalPennyLane, description: copy.externalPennyLaneDescription },
     { value: "pyzx", label: copy.externalPyZX, description: copy.externalPyZXDescription },
+    { value: "bqskit", label: copy.externalBqskit, description: copy.externalBqskitDescription },
   ];
 
   const onCircuitChangeRef = useRef(onCircuitChange);
@@ -1741,65 +1744,98 @@ export function CircuitBuilder({ seed, framework, selectedGate, onSelectGate, on
       />
 
       {seed.readOnly ? null : (
-        <details className="mj-studio-compression">
-          <summary>
-            <span>
-              <strong>{copy.compression}</strong>
-              <small>{copy.compressionIntro}</small>
-            </span>
-            <span className="mj-mono-muted">{compression.before.operations} → {compression.after.operations} ops</span>
-          </summary>
-          <div className="mj-studio-compression-body">
-            <fieldset className="mj-studio-compression-strategies">
-              <legend className="mj-section-label">{copy.compressionStrategy}</legend>
-              <div>
-                {compressionOptions.map((option) => (
-                  <label key={option.value} data-selected={compressionStrategy === option.value ? "true" : undefined}>
-                    <input
-                      type="radio"
-                      name="studio-compression-strategy"
-                      value={option.value}
-                      checked={compressionStrategy === option.value}
-                      onChange={() => setCompressionStrategy(option.value)}
-                    />
-                    <span><strong>{option.label}</strong><small>{option.description}</small></span>
-                  </label>
-                ))}
-              </div>
-            </fieldset>
-
-            <dl className="mj-studio-compression-metrics" aria-live="polite">
-              <CompressionMetric label={copy.compressionOperations} before={compression.before.operations} after={compression.after.operations} />
-              <CompressionMetric label={copy.compressionDepth} before={compression.before.depth} after={compression.after.depth} />
-              <CompressionMetric label={copy.compressionTwoQubit} before={compression.before.twoQubitOperations} after={compression.after.twoQubitOperations} />
-            </dl>
-
-            <p className="mj-studio-compression-boundary">{copy.compressionBoundary}</p>
-            {!compression.changed ? <p className="mj-studio-compression-empty" role="status">{copy.compressionNoChange}</p> : null}
-            <div className="mj-studio-compression-actions">
-              <button className="mj-primary-button" type="button" onClick={applyCompression} disabled={!compression.changed}>
-                {compressionConfirmPending ? copy.compressionConfirmApply : copy.compressionApply}
-              </button>
-              {compressionConfirmPending ? (
-                <button className="mj-secondary-button" type="button" onClick={() => { setCompressionConfirmPending(false); setBuilderMessage(null); }}>{copy.cancel}</button>
-              ) : null}
-              {canUndoCompression ? <button className="mj-secondary-button" type="button" onClick={undoCompression}>{copy.compressionUndo}</button> : null}
+        <section className="mj-studio-optimizer" aria-labelledby="studio-optimizer-heading">
+          <header className="mj-studio-optimizer-head">
+            <div>
+              <h3 id="studio-optimizer-heading">{copy.compression}</h3>
+              <p>{copy.compressionIntro}</p>
             </div>
+          </header>
 
-            <section className="mj-studio-external-compression" aria-labelledby="studio-external-compression-heading">
+          <ol className="mj-studio-optimizer-steps" aria-label={copy.optimizationWorkflowLabel}>
+            {[copy.optimizationStepChoose, copy.optimizationStepCompare, copy.optimizationStepApply].map((label, index) => (
+              <li key={label}><span>{index + 1}</span>{label}</li>
+            ))}
+          </ol>
+
+          <div className="mj-studio-optimizer-tabs" role="tablist" aria-label={copy.compression}>
+            <button
+              id="studio-optimizer-local-tab"
+              type="button"
+              role="tab"
+              aria-selected={optimizationMode === "local"}
+              aria-controls="studio-optimizer-local-panel"
+              onClick={() => setOptimizationMode("local")}
+            >
+              <span><strong>{copy.optimizationLocal}</strong><small>{copy.optimizationLocalDescription}</small></span>
+            </button>
+            <button
+              id="studio-optimizer-compiler-tab"
+              type="button"
+              role="tab"
+              aria-selected={optimizationMode === "compiler"}
+              aria-controls="studio-optimizer-compiler-panel"
+              onClick={() => setOptimizationMode("compiler")}
+            >
+              <span><strong>{copy.optimizationExternal}</strong><small>{copy.optimizationExternalDescription}</small></span>
+              <b aria-hidden="true">6</b>
+            </button>
+          </div>
+
+          {optimizationMode === "local" ? (
+            <div id="studio-optimizer-local-panel" className="mj-studio-optimizer-panel" role="tabpanel" aria-labelledby="studio-optimizer-local-tab">
+              <fieldset className="mj-studio-compression-strategies">
+                <legend className="mj-section-label">{copy.compressionStrategy}</legend>
+                <div>
+                  {compressionOptions.map((option) => (
+                    <label key={option.value} data-selected={compressionStrategy === option.value ? "true" : undefined}>
+                      <input
+                        type="radio"
+                        name="studio-compression-strategy"
+                        value={option.value}
+                        checked={compressionStrategy === option.value}
+                        onChange={() => setCompressionStrategy(option.value)}
+                      />
+                      <span><strong>{option.label}</strong><small>{option.description}</small></span>
+                    </label>
+                  ))}
+                </div>
+              </fieldset>
+
+              <dl className="mj-studio-compression-metrics" aria-live="polite">
+                <CompressionMetric label={copy.compressionOperations} before={compression.before.operations} after={compression.after.operations} />
+                <CompressionMetric label={copy.compressionDepth} before={compression.before.depth} after={compression.after.depth} />
+                <CompressionMetric label={copy.compressionTwoQubit} before={compression.before.twoQubitOperations} after={compression.after.twoQubitOperations} />
+              </dl>
+
+              <p className="mj-studio-compression-boundary">{copy.compressionBoundary}</p>
+              {!compression.changed ? <p className="mj-studio-compression-empty" role="status">{copy.compressionNoChange}</p> : null}
+              <div className="mj-studio-compression-actions">
+                <button className="mj-primary-button" type="button" onClick={applyCompression} disabled={!compression.changed}>
+                  {compressionConfirmPending ? copy.compressionConfirmApply : copy.compressionApply}
+                </button>
+                {compressionConfirmPending ? (
+                  <button className="mj-secondary-button" type="button" onClick={() => { setCompressionConfirmPending(false); setBuilderMessage(null); }}>{copy.cancel}</button>
+                ) : null}
+                {canUndoCompression ? <button className="mj-secondary-button" type="button" onClick={undoCompression}>{copy.compressionUndo}</button> : null}
+              </div>
+            </div>
+          ) : (
+            <div id="studio-optimizer-compiler-panel" className="mj-studio-optimizer-panel" role="tabpanel" aria-labelledby="studio-optimizer-compiler-tab">
               <div className="mj-studio-external-compression-head">
                 <div>
-                  <h3 id="studio-external-compression-heading">{copy.externalCompilation}</h3>
+                  <h4>{copy.externalCompilation}</h4>
                   <p>{copy.externalIntro}</p>
                 </div>
                 <label>
                   <span>{copy.externalLevel}</span>
                   <select value={externalLevel} onChange={(event) => setExternalLevel(Number(event.target.value))} disabled={externalBusy}>
-                    {[1, 2, 3].map((level) => <option key={level} value={level}>{level}</option>)}
+                    {[1, 2, 3].map((level) => <option key={level} value={level}>{copy.externalLevelOption(level)}</option>)}
                   </select>
+                  <small>{copy.externalLevelHelp}</small>
                 </label>
               </div>
-              <fieldset className="mj-studio-compression-strategies">
+              <fieldset className="mj-studio-compression-strategies mj-studio-compiler-grid">
                 <legend className="mj-section-label">{copy.externalCompiler}</legend>
                 <div>
                   {externalCompilerOptions.map((option) => (
@@ -1812,7 +1848,14 @@ export function CircuitBuilder({ seed, framework, selectedGate, onSelectGate, on
                         disabled={externalBusy}
                         onChange={() => setExternalCompiler(option.value)}
                       />
-                      <span><strong>{option.label}</strong><small>{option.description}</small></span>
+                      <span>
+                        <span className="mj-studio-compiler-name">
+                          <strong>{option.label}</strong>
+                          {option.recommended ? <em>{copy.externalRecommended}</em> : null}
+                        </span>
+                        <small>{option.description}</small>
+                      </span>
+                      <i aria-hidden="true">✓</i>
                     </label>
                   ))}
                 </div>
@@ -1820,7 +1863,7 @@ export function CircuitBuilder({ seed, framework, selectedGate, onSelectGate, on
               <p className="mj-studio-compression-boundary">{copy.externalBoundary}</p>
               <div className="mj-studio-compression-actions">
                 <button className="mj-primary-button" type="button" disabled={externalBusy || !steps.length} onClick={() => void runExternalCompression()}>
-                  {externalBusy ? copy.externalRunning : copy.externalRun}
+                  {externalBusy ? copy.externalRunning : copy.externalRunSelected(externalCompilerName(externalCompiler))}
                 </button>
                 {externalRunId ? <a href={`/run/${externalRunId}`}>{copy.externalOpenRun} →</a> : null}
               </div>
@@ -1855,9 +1898,9 @@ export function CircuitBuilder({ seed, framework, selectedGate, onSelectGate, on
                   </div>
                 </div>
               ) : null}
-            </section>
-          </div>
-        </details>
+            </div>
+          )}
+        </section>
       )}
 
       {seed.readOnly ? null : <div className="mj-builder-controls">
@@ -1950,9 +1993,11 @@ function compilerEventReason(value: unknown): string | null {
 
 function externalCompilerName(compiler: ExternalCircuitCompiler): string {
   if (compiler === "qiskit") return "Qiskit";
+  if (compiler === "cirq") return "Cirq";
   if (compiler === "pytket") return "pytket";
   if (compiler === "pennylane") return "PennyLane";
-  return "PyZX";
+  if (compiler === "pyzx") return "PyZX";
+  return "BQSKit";
 }
 
 /**

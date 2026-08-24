@@ -44,14 +44,17 @@ function renderCompressionBuilder(steps = REDUNDANT_STEPS, syncState: { kind: "i
       sourceCode=""
     />,
   );
-  const details = view.container.querySelector("details.mj-studio-compression") as HTMLDetailsElement | null;
-  assert.ok(details);
-  details.open = true;
+  assert.ok(view.container.querySelector("section.mj-studio-optimizer"));
   return { ...view, changes, applied };
+}
+
+function openLocalCompression(view: ReturnType<typeof renderCompressionBuilder>) {
+  fireEvent.click(view.getByRole("tab", { name: new RegExp(copy.optimizationLocal) }));
 }
 
 test("Studio compression previews, applies to every framework draft, and can be undone", async () => {
   const view = renderCompressionBuilder();
+  openLocalCompression(view);
 
   assert.ok(view.getByRole("radio", { name: new RegExp(copy.compressionBalanced) }).hasAttribute("checked"));
   fireEvent.click(view.getByRole("button", { name: copy.compressionApply }));
@@ -78,6 +81,7 @@ test("Studio compression disables application when the selected strategy has no 
     { id: "h", gate: "H", qubits: [0] },
     { id: "x", gate: "X", qubits: [0] },
   ]);
+  openLocalCompression(view);
 
   assert.ok(view.getByText(copy.compressionNoChange));
   assert.equal((view.getByRole("button", { name: copy.compressionApply }) as HTMLButtonElement).disabled, true);
@@ -85,6 +89,7 @@ test("Studio compression disables application when the selected strategy has no 
 
 test("Studio compression confirms before replacing code that no longer matches the diagram", () => {
   const view = renderCompressionBuilder(REDUNDANT_STEPS, { kind: "diverged" });
+  openLocalCompression(view);
 
   fireEvent.click(view.getByRole("button", { name: copy.compressionApply }));
   assert.equal(view.applied.length, 0);
@@ -124,15 +129,18 @@ test("Studio queues an external compiler, previews its result, and applies it ex
 
   try {
     const view = renderCompressionBuilder();
-    fireEvent.click(view.getByRole("button", { name: copy.externalRun }));
+    assert.equal(view.getAllByRole("radio").length, 6);
+    assert.equal(view.getByRole("tab", { name: new RegExp(copy.optimizationExternal) }).getAttribute("aria-selected"), "true");
+    fireEvent.click(view.getByRole("radio", { name: new RegExp(copy.externalBqskit) }));
+    fireEvent.click(view.getByRole("button", { name: copy.externalRunSelected("BQSKit") }));
 
     await waitFor(() => assert.equal(fakeFetch.calls.length, 1));
     assert.deepEqual(fakeFetch.calls[0].body, {
-      task_prompt: "Compile the bounded Studio circuit with qiskit.",
+      task_prompt: "Compile the bounded Studio circuit with bqskit.",
       mode: "execute",
       framework: "qiskit",
       circuit_optimization: {
-        compiler: "qiskit",
+        compiler: "bqskit",
         qubit_count: 2,
         optimization_level: 2,
         operations: [
@@ -151,8 +159,8 @@ test("Studio queues an external compiler, previews its result, and applies it ex
         accepted: true,
         compatibility: {
           circuit_optimization: {
-            compiler: "qiskit",
-            compiler_version: "2.5.2",
+            compiler: "bqskit",
+            compiler_version: "1.2.1",
             optimization_level: 2,
             operations: [{ gate: "X", qubits: [1], angle_radians: null }],
             before: { qubits: 2, depth: 2, gate_count: 3, two_qubit_gate_count: 0, measurement_count: 0, estimated_runtime_ms: null },
@@ -166,7 +174,7 @@ test("Studio queues an external compiler, previews its result, and applies it ex
       });
     });
 
-    await waitFor(() => assert.ok(view.getByText(copy.externalPreview("Qiskit", "2.5.2"))));
+    await waitFor(() => assert.ok(view.getByText(copy.externalPreview("BQSKit", "1.2.1"))));
     assert.equal(view.applied.length, 0);
     fireEvent.click(view.getByRole("button", { name: copy.externalApply }));
 
