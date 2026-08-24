@@ -384,3 +384,67 @@ test("each tier's breakpoint is wider than the pack it turns on", () => {
     `${PACK_TARGETS.length} tiers are computed, ${seen.size} are applied`,
   );
 });
+
+test("the reported column count is the one the figures actually landed in", () => {
+  // `FigurePack.columns` is a claim about the arrangement, and the search
+  // deliberately permits an assignment to leave a column empty, so the count it
+  // ran at is not the count it produced. Asserted against the pixels — distinct
+  // x origins — rather than against the field, which is the only way this can
+  // catch the field being wrong.
+  //
+  // **Honest about its own strength, per D90.8.** Sourcery raised this on PR
+  // 734 and the fix is right, but reverting it does NOT fail this test, and no
+  // input found so far makes it fail: a k-column assignment that leaves a
+  // column empty is isomorphic to one the (k−1) search also finds, and
+  // `packFigures` scans column counts ascending with a strict `<`, so the
+  // smaller count wins the tie and reports truthfully by accident. This is
+  // therefore an invariant guard, not a regression test — it holds the contract
+  // for whatever selection order a later edit introduces, which is exactly the
+  // reliance the fix removes.
+  const check = (sizes: readonly FigureSize[], target: number) => {
+    const pack = packFigures(sizes, target);
+    const distinct = new Set(pack.places.map((at) => at.x)).size;
+    assert.equal(
+      pack.columns,
+      distinct,
+      `reported ${pack.columns} columns, the figures sit in ${distinct}`,
+    );
+  };
+  for (const target of PACK_TARGETS) check(LIVE, target);
+  check([{ width: 600, height: 100 }, { width: 600, height: 100 }], 1240);
+  check(WIDE_AND_NARROW, 1000);
+});
+
+/**
+ * Past `SEARCH_CEILING` (20 figures, so even two columns is 2 ** 20), with three
+ * figures wide enough that no two of them can share a row inside the target.
+ *
+ * The naive shortest-column greedy opens a second column for the second wide
+ * figure, overflows, and gets the whole column count rejected — at every column
+ * count, so the pack degrades to one column with a fitting assignment sitting
+ * right there. That is the bug; these numbers are chosen to trigger it.
+ */
+const WIDE_AND_NARROW: readonly FigureSize[] = [
+  { width: 600, height: 50 },
+  { width: 600, height: 50 },
+  { width: 600, height: 50 },
+  ...Array.from({ length: 17 }, () => ({ width: 100, height: 40 })),
+];
+
+test("past the ceiling, a packable map is still packed", () => {
+  assert.ok(2 ** WIDE_AND_NARROW.length > SEARCH_CEILING, "this input does not reach the greedy path");
+
+  const target = 1000;
+  const pack = packFigures(WIDE_AND_NARROW, target);
+  const stacked = stackedHeight(WIDE_AND_NARROW);
+
+  assert.ok(pack.columns > 1, "the greedy overflowed and the pack fell back to one column");
+  assert.ok(pack.width <= target, `greedy pack came out ${pack.width}px wide`);
+  assert.ok(pack.height < stacked, `packed to ${pack.height}, stacked is ${stacked}`);
+  assert.equal(overlaps(WIDE_AND_NARROW, pack), null);
+
+  // And the reason it works: the three wide figures share one column, because
+  // two of them side by side is 1,224px against a 1,000px target.
+  const wideColumns = new Set(pack.places.slice(0, 3).map((at) => at.column));
+  assert.equal(wideColumns.size, 1, "the wide figures were spread across columns");
+});

@@ -96,7 +96,13 @@ export interface FigurePlace {
 }
 
 export interface FigurePack {
-  /** Column count actually used. 1 means "no packing happened". */
+  /**
+   * Columns the figures actually landed in — NOT the column count the search
+   * ran at. The search deliberately permits an assignment to leave a column
+   * empty (see `measure`), so a three-column search can return the two-column
+   * answer, and reporting 3 there would be a claim about the arrangement that
+   * the pixels do not support. 1 means no packing happened.
+   */
   readonly columns: number;
   /** Total extent, gaps included. */
   readonly width: number;
@@ -184,19 +190,63 @@ function measure(
   return { width, height };
 }
 
-/** Each figure to the shortest column so far; ties to the leftmost. */
-function greedy(sizes: readonly FigureSize[], columns: number): number[] {
+/**
+ * Each figure to the shortest column that does not push the pack past `target`;
+ * ties to the leftmost.
+ *
+ * The width clause is not decoration. The textbook greedy — shortest column,
+ * full stop — is height-blind to width, so on a map wide enough to reach
+ * `SEARCH_CEILING` it will happily open a column for one wide figure, overflow
+ * the target, and be rejected wholesale by `bestAssignment`. The pack then
+ * degrades to a single column even though an assignment that fits plainly
+ * exists. Caught in review by Sourcery on PR 734 rather than by a test, because
+ * every test here runs at the map's current eight figures, which is far below
+ * the ceiling and never reaches this path.
+ *
+ * When no column can take a figure without overflowing, the least-overflowing
+ * one is used and `bestAssignment` rejects the result — a pack that does not
+ * fit is not offered at any column count, and the fallback to one column is
+ * then the honest answer rather than an avoidable one.
+ */
+function greedy(sizes: readonly FigureSize[], columns: number, target: number): number[] {
   const filled = new Array<number>(columns).fill(0);
   const counts = new Array<number>(columns).fill(0);
+  const widths = new Array<number>(columns).fill(0);
   const assignment: number[] = [];
+
+  const widthWith = (column: number, figureWidth: number): number => {
+    const before = widths[column]!;
+    widths[column] = Math.max(before, figureWidth);
+    const used = widths.filter((w) => w > 0);
+    const total = used.reduce((a, b) => a + b, 0) + FIGURE_GAP * Math.max(0, used.length - 1);
+    widths[column] = before;
+    return total;
+  };
+
   for (const size of sizes) {
-    let best = 0;
-    for (let c = 1; c < columns; c += 1) {
-      if (filled[c]! < filled[best]!) best = c;
+    let fitting = -1;
+    let fittingHeight = Infinity;
+    let narrowest = 0;
+    let narrowestWidth = Infinity;
+    let narrowestHeight = Infinity;
+    for (let c = 0; c < columns; c += 1) {
+      const height = filled[c]! + size.height + (counts[c]! > 0 ? FIGURE_GAP : 0);
+      const width = widthWith(c, size.width);
+      if (width <= target && height < fittingHeight) {
+        fitting = c;
+        fittingHeight = height;
+      }
+      if (width < narrowestWidth || (width === narrowestWidth && height < narrowestHeight)) {
+        narrowest = c;
+        narrowestWidth = width;
+        narrowestHeight = height;
+      }
     }
+    const best = fitting >= 0 ? fitting : narrowest;
     assignment.push(best);
     filled[best] = filled[best]! + size.height + (counts[best]! > 0 ? FIGURE_GAP : 0);
     counts[best] = counts[best]! + 1;
+    widths[best] = Math.max(widths[best]!, size.width);
   }
   return assignment;
 }
@@ -214,7 +264,7 @@ function bestAssignment(
 ): number[] | null {
   const candidates = columns ** sizes.length;
   if (!Number.isFinite(candidates) || candidates > SEARCH_CEILING) {
-    const g = greedy(sizes, columns);
+    const g = greedy(sizes, columns, target);
     return measure(sizes, g, columns).width <= target ? g : null;
   }
   let best: number[] | null = null;
@@ -282,7 +332,14 @@ function place(
   }
   let height = 0;
   for (const c of cursor) height = Math.max(height, c);
-  return { columns, width: round(width), height: round(height), places };
+  // The columns figures landed in, not the count the search ran at — see
+  // `FigurePack.columns`.
+  return {
+    columns: used.filter(Boolean).length,
+    width: round(width),
+    height: round(height),
+    places,
+  };
 }
 
 /**
