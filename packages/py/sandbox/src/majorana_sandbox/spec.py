@@ -16,13 +16,18 @@ MAX_TIMEOUT_S = 120
 DEFAULT_MEMORY_MB = 2048
 #: Hard ceiling on a spec's requested memory.
 #:
-#: **Not currently reachable, and this is defence in depth rather than a fix for
-#: a live hole.** `ExecutionSpec` is built by the worker, no code path sets
-#: `memory_mb` at all, and every spec in the product therefore takes the 2048
-#: default. Nothing a user can send reaches this field today. The bound is here
-#: because the field had `ge=64` and no upper limit while `05-security.md` §1
-#: claimed a memory cap, so the *stated* control did not exist in either
-#: direction — and the one that would bite is the upper one.
+#: **Reachable since ai-ops#171.** It used to be defence in depth over a field
+#: nothing set: `ExecutionSpec` is built by the worker, no code path passed
+#: `memory_mb`, and every spec in the product took the 2048 default. The worker
+#: now passes the account tier's allowance
+#: (`majorana_api.tiers.TierLimits.sandbox_memory_mb`), so a paid run asks for
+#: 4096 and a free one for 2048. This bound is what stops a tier table edit — or
+#: anything else that ever reaches this field — from asking a paid provider for
+#: an unbounded vCPU count.
+#:
+#: Still not user-settable: the number comes from the tier, never from a request
+#: body, and `test_no_tier_may_exceed_the_sandbox_ceiling` pins that every row in
+#: the tier table validates against this constant.
 #:
 #: What it actually bounds is spend, which is the non-obvious part.
 #: `vercel._create_kwargs` derives the sandbox's vCPU count from this number
@@ -34,9 +39,13 @@ DEFAULT_MEMORY_MB = 2048
 #: 27 qubits needs 2^27 x 16 bytes = exactly 2 GiB for a statevector. Larger
 #: belongs to the deferred Modal heavy lane, not to this one.
 #:
-#: The "per plan tier" half of §1's wording stays **unimplemented**: no tier
-#: carries a sandbox memory allowance, and inventing that mapping here would be
-#: a product decision rather than a bound. This is the hard ceiling only.
+#: The "per plan tier" half of §1's wording is **implemented** — but not here,
+#: and deliberately not here. Which tier gets what is a product decision and it
+#: lives in the product's tier table (`majorana_api.tiers.TIER_LIMITS`, one
+#: `sandbox_memory_mb` per tier: free 2048, every paid tier 4096, on the owner's
+#: ruling at ai-ops#171). This module keeps the hard ceiling only, because a
+#: bound and an allowance are different things and a package that owns both
+#: makes the allowance look like a security control.
 MAX_MEMORY_MB = 4096
 DEFAULT_QUBIT_CEILING = 27  # ≤27-qubit default lane (AD-12); Modal heavy lane deferred.
 MAX_OUTPUT_BYTES = 1_048_576  # 1 MiB, matching the legacy runner.

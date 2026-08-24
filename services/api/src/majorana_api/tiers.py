@@ -108,6 +108,33 @@ class TierLimits:
     #:
     #: Both ends are checked: the account granting and the account being granted
     #: to. See `routes/shares.grant_project_share`.
+    #: Megabytes of RAM one sandbox run may request on this tier.
+    #:
+    #: This is the "per plan tier" half of `05-security.md` §1, which had been
+    #: wording with nothing behind it: every spec in the product took
+    #: `DEFAULT_MEMORY_MB` and the only real bound was `MAX_MEMORY_MB`, a hard
+    #: ceiling no caller could reach. Owner's ruling, ai-ops#171: "Lower the free
+    #: lane only, dropping preview and free to 2048 MB and leaving every paid
+    #: tier at 4096."
+    #:
+    #: It is a BILLING field wearing a memory field's name, which is why it
+    #: belongs in this table rather than in the sandbox package.
+    #: `vercel._create_kwargs` derives the vCPU count as
+    #: `(memory_mb + 2047) // 2048` because Vercel provisions 2 GiB per vCPU, so
+    #: 2048 buys one vCPU and 4096 buys two. The free lane's number is therefore
+    #: what a free run costs, not just what it may allocate.
+    #:
+    #: `None` is not allowed here and there is no unlimited row: every tier
+    #: carries a number, `developer` included, because the ceiling this feeds is
+    #: `ExecutionSpec.memory_mb`, whose validator refuses anything above
+    #: `MAX_MEMORY_MB`. A `None` would have to be turned back into a number at
+    #: the call site, and the call site is a worker that must not invent one.
+    #:
+    #: The web app's signed-out `preview` tier never reaches this table — it
+    #: serves fixtures and dispatches no sandbox at all — so "preview drops to
+    #: 2048" is satisfied by there being no sandbox to size. `free` is the
+    #: lowest row that can actually run code, and it is 2048.
+    sandbox_memory_mb: int
     project_sharing: bool
     #: SHARED projects this account may be in at once, counted per PERSON from
     #: both directions: projects it owns that carry a live grant, plus projects
@@ -251,6 +278,7 @@ TIER_LIMITS: dict[AccountTier, TierLimits] = {
         agent_tokens_per_week=5 * TOKENS_PER_RUN_EQUIVALENT,
         private_artifacts=10,
         owned_workspaces=3,
+        sandbox_memory_mb=2048,
         project_sharing=False,
         shared_projects=0,
         qpu_spend_usd_per_week=None,
@@ -260,6 +288,7 @@ TIER_LIMITS: dict[AccountTier, TierLimits] = {
         agent_tokens_per_week=75 * TOKENS_PER_RUN_EQUIVALENT,
         private_artifacts=75,
         owned_workspaces=5,
+        sandbox_memory_mb=4096,
         project_sharing=False,
         shared_projects=0,
         qpu_spend_usd_per_week=None,
@@ -269,6 +298,7 @@ TIER_LIMITS: dict[AccountTier, TierLimits] = {
         agent_tokens_per_week=250 * TOKENS_PER_RUN_EQUIVALENT,
         private_artifacts=250,
         owned_workspaces=20,
+        sandbox_memory_mb=4096,
         project_sharing=True,
         shared_projects=4,
         qpu_spend_usd_per_week=None,
@@ -278,6 +308,7 @@ TIER_LIMITS: dict[AccountTier, TierLimits] = {
         agent_tokens_per_week=None,
         private_artifacts=None,
         owned_workspaces=None,
+        sandbox_memory_mb=4096,
         project_sharing=True,
         shared_projects=None,
         qpu_spend_usd_per_week=None,

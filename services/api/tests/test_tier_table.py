@@ -70,7 +70,12 @@ def test_the_ladder_never_takes_something_away_as_it_goes_up():
     for index in range(1, len(ACCOUNT_TIERS)):
         lower_tier, upper_tier = ACCOUNT_TIERS[index - 1], ACCOUNT_TIERS[index]
         lower, upper = limits_for(lower_tier), limits_for(upper_tier)
-        for field in ("agent_runs_per_week", "private_artifacts", "owned_workspaces"):
+        for field in (
+            "agent_runs_per_week",
+            "private_artifacts",
+            "owned_workspaces",
+            "sandbox_memory_mb",
+        ):
             assert at_least_as_much(getattr(upper, field), getattr(lower, field)), (
                 f"{upper_tier} has less {field} than {lower_tier}"
             )
@@ -198,3 +203,35 @@ def test_unknown_plan_names_no_tier():
         "being about an unrecognised plan string — pick a value no tier claims."
     )
     assert resolve_tier("someone@example.test", plan=UNKNOWN_PLAN) == "free"
+
+
+def test_only_the_free_lane_was_lowered():
+    """The owner's ruling on ai-ops#171, as assertions rather than as a comment.
+
+    "Lower the free lane only, dropping preview and free to 2048 MB and leaving
+    every paid tier at 4096."
+
+    The `preview` half is satisfied by absence: it is a signed-out web tier that
+    serves fixtures and never dispatches a sandbox, so it reaches neither this
+    table nor a provider. `free` is the lowest row that can actually run code.
+    """
+    assert limits_for("free").sandbox_memory_mb == 2048
+    for tier in ("pro", "team", "developer"):
+        assert limits_for(tier).sandbox_memory_mb == 4096, tier
+
+
+def test_the_sandbox_allowance_is_a_whole_number_of_vcpus():
+    """The provider bills in 2 GiB steps, so a remainder buys a whole extra vCPU.
+
+    `vercel._create_kwargs` derives the vCPU count as `(memory_mb + 2047) // 2048`.
+    3000 MB and 4096 MB cost the same two vCPUs; the first just advertises less.
+
+    The ceiling itself is checked in the worker suite
+    (`test_runtime_ports.py::test_no_tier_may_exceed_the_sandbox_ceiling`) — this
+    service does not depend on `majorana-sandbox` and must not start.
+    """
+    for tier, limits in TIER_LIMITS.items():
+        assert limits.sandbox_memory_mb % 2048 == 0, (
+            f"{tier} asks for {limits.sandbox_memory_mb} MB, which is not a whole "
+            "number of 2 GiB vCPUs"
+        )

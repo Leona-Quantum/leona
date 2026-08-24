@@ -7,7 +7,8 @@ from majorana_agent import CandidateRevision, ExecutionEvidence, ExecutionFailur
 from majorana_contracts.enums import Algorithm, Framework
 from majorana_contracts.plan import Plan
 from majorana_frameworks import FrameworkProgram
-from majorana_sandbox import SandboxResult
+from majorana_api.tiers import TIER_LIMITS, limits_for
+from majorana_sandbox import DEFAULT_MEMORY_MB, MAX_MEMORY_MB, SandboxResult
 from majorana_worker.runtime_ports import SandboxCandidateExecutor, TrustedOpenQASMConverter
 
 
@@ -332,3 +333,51 @@ def test_a_statevector_estimate_stays_a_number_a_json_reader_can_hold():
     huge = executor._statevector_memory_mb(1_100)
     with pytest.raises(OverflowError):
         float(huge)
+
+
+async def test_the_spec_carries_the_tier_allowance_not_the_default():
+    """ai-ops#171: a paid run asks for the paid lane, and it must reach the spec.
+
+    Before this the executor set no `memory_mb` at all, so every run in the
+    product — free and paid alike — took `DEFAULT_MEMORY_MB`. The assertion that
+    matters is on `last_spec`, not on the executor's attribute: the field is only
+    a bound if it reaches the object the provider is handed.
+    """
+    sandbox = RecordingSandbox()
+
+    await SandboxCandidateExecutor(sandbox, memory_mb=4096).run_candidate(_candidate(), _plan())
+
+    assert sandbox.last_spec.memory_mb == 4096
+
+
+async def test_a_forgotten_tier_under_provisions_rather_than_over_provisions():
+    """The default is the free lane, and that direction is the whole point.
+
+    `memory_mb` is a vCPU request one call away — `vercel._create_kwargs` derives
+    `(memory_mb + 2047) // 2048` — so a construction site that omits the tier
+    must cost the operator less, not more. A default of `MAX_MEMORY_MB` would
+    have handed every un-threaded call site two vCPUs on a free account's run,
+    and nothing would have failed.
+    """
+    sandbox = RecordingSandbox()
+
+    await SandboxCandidateExecutor(sandbox).run_candidate(_candidate(), _plan())
+
+    assert sandbox.last_spec.memory_mb == DEFAULT_MEMORY_MB
+    assert DEFAULT_MEMORY_MB <= limits_for("free").sandbox_memory_mb
+
+
+def test_no_tier_may_exceed_the_sandbox_ceiling():
+    """The tier table feeds `ExecutionSpec.memory_mb`, which refuses above the cap.
+
+    A tier row edited to 8192 would not fail in any obvious place — it would fail
+    at the first execute run of an account on that tier, inside a job, as a
+    pydantic ValidationError. This is the only suite that can check it: the API
+    owns the allowance and does not depend on `majorana-sandbox`, the sandbox
+    owns the ceiling and does not know about tiers, and the worker imports both.
+    """
+    for tier, limits in TIER_LIMITS.items():
+        assert 64 <= limits.sandbox_memory_mb <= MAX_MEMORY_MB, (
+            f"{tier} asks for {limits.sandbox_memory_mb} MB, outside "
+            f"[64, {MAX_MEMORY_MB}] — ExecutionSpec would refuse it at run time"
+        )

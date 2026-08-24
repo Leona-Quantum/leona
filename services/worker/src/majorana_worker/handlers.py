@@ -55,7 +55,12 @@ from majorana_qpu import (
     submission_block_reason,
 )
 from pydantic import ValidationError
-from majorana_sandbox import LocalSubprocessSandbox, Sandbox, VercelSandbox
+from majorana_sandbox import (
+    DEFAULT_MEMORY_MB,
+    LocalSubprocessSandbox,
+    Sandbox,
+    VercelSandbox,
+)
 from opentelemetry import metrics
 
 from pathlib import Path
@@ -775,16 +780,23 @@ async def _handle_agent_execution(
     # "unlimited" — the safe direction for a worker: an artifact the account is
     # entitled to is never lost because a lookup came back empty.
     owner = await session.get(User, scope.user_id)
-    artifact_limit = (
-        limits_for(tier_of(owner, EnvTierSources.from_env())).private_artifacts
-        if owner is not None
-        else None
+    owner_limits = (
+        limits_for(tier_of(owner, EnvTierSources.from_env())) if owner is not None else None
+    )
+    artifact_limit = owner_limits.private_artifacts if owner_limits is not None else None
+    # The sandbox allowance goes the OTHER way when the owner row is missing.
+    # `artifact_limit=None` reads as unlimited, which is the safe direction for a
+    # thing the account already owns; an unresolvable tier must not buy the free
+    # lane a second vCPU, so this falls back to the free-lane default rather than
+    # to the ceiling. ai-ops#171.
+    sandbox_memory_mb = (
+        owner_limits.sandbox_memory_mb if owner_limits is not None else DEFAULT_MEMORY_MB
     )
     ports = ProductionSimplePipelinePorts(
         store=agent_store,
         observer=observer,
         llm=metered_llm,
-        executor=SandboxCandidateExecutor(sandbox),
+        executor=SandboxCandidateExecutor(sandbox, memory_mb=sandbox_memory_mb),
         reviewer=SimpleIntentReviewer(
             llm=metered_llm,
             task_prompt=ctx.task_prompt,
