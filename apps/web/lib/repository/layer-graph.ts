@@ -7828,6 +7828,16 @@ export const LAYER_GRAPH: LayerGraph = {
         "# problem LightSABRE was built to address",
       ].join("\n"),
     },
+    hops: {
+      "sabre-routing": {
+        name: "insert SWAPs to satisfy the coupling graph",
+        nameJa: "結合グラフを満たすようSWAPを挿入",
+        theory:
+          "SABRE turns an abstract circuit and a device coupling graph into a routed, hardware-compliant circuit by repeatedly executing every front-layer gate in $F$ whose mapped qubits $\\pi(q_1),\\pi(q_2)$ are adjacent, and otherwise inserting a SWAP. [[assumption: only SWAP insertion changes the mapping, and the coupling graph is symmetric, so a CNOT runs in either direction on a connected pair]]. Each candidate SWAP touching a qubit in $F$ is scored by $H=\\max(decay(q_1),decay(q_2))\\cdot\\{\\frac{1}{|F|}\\sum_{g\\in F} D_{\\pi(g.q_1),\\pi(g.q_2)} + W\\cdot\\frac{1}{|E|}\\sum_{g\\in E} D_{\\pi(g.q_1),\\pi(g.q_2)}\\}$, where $D$ is the coupling graph's shortest-path distance, [[approximation: E is a fixed-size window of near-term successor gates standing in for the rest of the circuit]], and $decay(q_i)=1+\\delta$ grows whenever $q_i$ was just swapped, discouraging overlapping SWAPs. The lowest-scoring SWAP updates $\\pi$; this repeats until $F$ empties, and $\\pi$'s own start point is refined by alternating forward/reverse traversals, each seeding the next with its final mapping.",
+        theoryJa:
+          "SABREは、$F$ に含まれるフロント層のすべてのゲートのうち、マップされた量子ビット $\\pi(q_1),\\pi(q_2)$ が隣接しているものを繰り返し実行し、隣接していない場合はSWAPを挿入することで、抽象回路とデバイスの結合グラフをルーティング済みのハードウェア準拠回路に変換します。[[assumption: マッピングを変化させるのはSWAPの挿入のみであり、また結合グラフは対称であるため、接続された量子ビット対上ではCNOTはどちらの向きにも実行できます]]。$F$ 中の量子ビットに触れる各候補SWAPは、$H=\\max(decay(q_1),decay(q_2))\\cdot\\{\\frac{1}{|F|}\\sum_{g\\in F} D_{\\pi(g.q_1),\\pi(g.q_2)} + W\\cdot\\frac{1}{|E|}\\sum_{g\\in E} D_{\\pi(g.q_1),\\pi(g.q_2)}\\}$ によってスコア付けされます。ここで $D$ は結合グラフの最短経路距離であり、[[approximation: E は回路の残り部分を代表する、近い将来に実行されるゲートの固定サイズのウィンドウです]]、また $decay(q_i)=1+\\delta$ は $q_i$ がちょうどSWAPされた直後に増加し、重複するSWAPを避けさせます。最もスコアの低いSWAPが $\\pi$ を更新し、これが $F$ が空になるまで繰り返されます。そして $\\pi$ 自身の初期点は、順方向・逆方向のトラバーサルを交互に行うことで洗練され、それぞれが最終的なマッピングを次に引き継ぎます。",
+      },
+    },
     citations: [
       { title: "Tackling the Qubit Mapping Problem for NISQ-Era Quantum Devices", authors: "Gushu Li, Yufei Ding, Yuan Xie", year: "2018", url: "https://arxiv.org/abs/1809.02573" },
       { title: "Qubit allocation", authors: "Siraichi, Santos, Collange, Pereira", year: "2018", url: "https://doi.org/10.1145/3168822" },
@@ -7858,6 +7868,16 @@ export const LAYER_GRAPH: LayerGraph = {
     costJa: "上界ではなくベンチマーク相対の値です。Qiskit 1.2.0 の実装は Qiskit 0.20.1 の実装に対しておよそ 200 倍高速で、同じベンチマーク回路上で Li らの SABRE と比べて SWAP ゲート数が平均 18.9% 減少します。",
     steps: [],
     atomic: true,
+    hops: {
+      "lightsabre-routing": {
+        name: "insert swaps scored by relative change",
+        nameJa: "相対的な変化でスコア付けしたスワップを挿入",
+        theory:
+          "LightSABRE keeps SABRE's heuristic $H = \\frac{1}{|F|}\\sum_{(i,j)\\in F}\\mathrm{dist}(i,j) + \\frac{k}{|E|}\\sum_{(i,j)\\in E}\\mathrm{dist}(i,j)$ over the front layer $F$ and extended set $E$, but changes how the best candidate swap is chosen. Because $H_{i\\leftrightarrow j}$ is minimised by the same swap that minimises $H_{i\\leftrightarrow j}-H_0$ for any constant $H_0$, LightSABRE fixes $H_0$ to the pre-swap heuristic value and scores each candidate swap only by the terms of eq. (1) it actually changes, without recomputing $H_0$. [[assumption: the extended set is bounded to a constant size, or to gates within a constant two-qubit-depth window beyond the front layer, so a single candidate swap perturbs only $O(1)$ terms of $H$]], which drops per-swap-selection cost from SABRE's $\\Theta(|F|^2)$ (rescoring the full heuristic for each of $\\Theta(|F|)$ candidates) to LightSABRE's $\\Theta(|F|)$.",
+        theoryJa:
+          "LightSABREはSABREのヒューリスティック $H = \\frac{1}{|F|}\\sum_{(i,j)\\in F}\\mathrm{dist}(i,j) + \\frac{k}{|E|}\\sum_{(i,j)\\in E}\\mathrm{dist}(i,j)$ を、フロント層 $F$ と拡張集合 $E$ にわたって保持しますが、最良の候補スワップを選ぶ方法を変更します。$H_{i\\leftrightarrow j}$ を最小化するスワップは、任意の定数 $H_0$ について $H_{i\\leftrightarrow j}-H_0$ を最小化するスワップと同じであるため、LightSABREはスワップ前のヒューリスティック値に $H_0$ を固定し、$H_0$ を再計算することなく、各候補スワップを式(1)のうち実際に変化する項だけでスコア付けします。[[assumption: 拡張集合が一定のサイズに制限されている、あるいはフロント層を越えて一定の2量子ビット深さの窓内にあるゲートに制限されているため、1つの候補スワップは $H$ の項のうち $O(1)$ 個しか変化させません]]。これにより、スワップ選択1回あたりのコストが、SABREの $\\Theta(|F|^2)$（$\\Theta(|F|)$ 個の候補それぞれについて完全なヒューリスティックを再スコア付けする）から、LightSABREの $\\Theta(|F|)$ へと下がります。",
+      },
+    },
     // **No `example` here, and the record is the reason rather than the backlog.**
     // The batch that gave the other qubit-routing methods a listing reached this
     // record and stopped, so the omission is written down instead of leaving the
@@ -7979,6 +7999,16 @@ export const LAYER_GRAPH: LayerGraph = {
         "return the layout -- placement and routing, decided together",
       ].join("\n"),
     },
+    hops: {
+      "exact-layout-synthesis": {
+        name: "map and route by growing-bound SMT",
+        nameJa: "増大するSMTで配置とルーティングを解く",
+        theory:
+          "OLSQ casts placement, scheduling and routing as a mathematical program over spacetime variables built from the gate list itself, re-solved at a growing time horizon $T$: a time coordinate $t_l$ per gate, a per-timestep mapping $\\pi_q^t$ of logical to physical qubits, a space coordinate $x_l$ (a physical qubit or coupling-graph edge) kept consistent with $\\pi$, and Boolean SWAP-use indicators $\\sigma_k^t$ on each edge. Injectivity of $\\pi$, the dependency ordering $t_l<t_{l'}$ for every $(g_l,g_{l'})\\in D$, and the edge-consistency constraints jointly force each two-qubit gate onto a connected physical pair at its own slot, while the $\\sigma$ variables transform $\\pi$ between slots to route qubits that start apart. [[assumption: a SWAP occupies a fixed number $S$ of time slots, so SWAPs sharing or spatially overlapping edges may not finish within $S-1$ slots of each other]]. At the current $T$ the solver either returns the assignment minimizing depth, SWAP count, or log-fidelity, or reports unsatisfiable, which triggers a larger $T$ and another solve. [[approximation: because $T$ is only grown geometrically by $(1+\\epsilon)$ until satisfiable, exactness holds only up to that resulting $T$ -- guaranteed for depth, but not always for SWAP-count or fidelity, where a larger $T$ can occasionally do better]].",
+        theoryJa:
+          "OLSQ は配置・スケジューリング・ルーティングを、ゲートリスト自体から構築される時空変数上の数理計画問題として定式化し、増大する時間ホライズン $T$ のもとで再度解き直します。各ゲートに対する時刻座標 $t_l$、論理量子ビットから物理量子ビットへの各タイムステップでの写像 $\\pi_q^t$、$\\pi$ と整合させた空間座標 $x_l$(物理量子ビットまたは結合グラフの辺)、そして各辺上のブール値 SWAP 使用指標 $\\sigma_k^t$ です。$\\pi$ の単射性、すべての $(g_l,g_{l'})\\in D$ に対する依存順序 $t_l<t_{l'}$、そして辺の整合性制約が合わさって、各2量子ビットゲートをそれぞれのスロットで連結した物理量子ビット対上に強制する一方、$\\sigma$ 変数はスロット間で $\\pi$ を変換し、はじめ離れていた量子ビットをルーティングします。[[assumption: SWAP は固定された数 $S$ の時間スロットを占有するため、辺を共有する、あるいは空間的に重なる SWAP 同士は $S-1$ スロット以内には終わらないことがある]]。現在の $T$ において、ソルバーは深さ・SWAP 数・対数忠実度のいずれかを最小化する割り当てを返すか、充足不可能であると報告し、後者の場合はより大きな $T$ で再び解きます。[[approximation: $T$ は充足されるまで幾何的に $(1+\\epsilon)$ 倍ずつ大きくされるだけなので、厳密性はその結果得られた $T$ までしか保証されません──深さについては保証されますが、SWAP 数や忠実度については必ずしもそうではなく、より大きな $T$ の方がまれに良い結果を与えることがあります]]。",
+      },
+    },
     citations: [
       { title: "Optimal Layout Synthesis for Quantum Computing", authors: "Bochen Tan, Jason Cong", year: "2020", url: "https://arxiv.org/abs/2007.15671" },
       { title: "Qubit allocation", authors: "Siraichi, Santos, Collange, Pereira", year: "2018", url: "https://doi.org/10.1145/3168822" },
@@ -8047,6 +8077,16 @@ export const LAYER_GRAPH: LayerGraph = {
         "# the general-purpose fallback: it works on gate sets with no exploitable",
         "# algebraic structure, and it gives no optimality guarantee",
       ].join("\n"),
+    },
+    hops: {
+      "solovay-kitaev-synthesis": {
+        name: "compile into gates via group commutators",
+        nameJa: "群交換子によってゲート列へコンパイルする",
+        theory:
+          "Given a finite instruction set $G$, the algorithm builds a sequence approximating any $U \\in SU(2)$ by recursion on a depth $n$: from an $\\epsilon_{n-1}$-approximation $U_{n-1}$ to $U$, it forms $\\Delta \\equiv U U_{n-1}^\\dagger$ and decomposes it as a balanced group commutator $\\Delta = V W V^\\dagger W^\\dagger$ with $d(I,V), d(I,W) < c_{gc}\\sqrt{\\epsilon_{n-1}}$, then recursively approximates $V$ and $W$ at depth $n-1$ and returns $U_n = V_{n-1} W_{n-1} V_{n-1}^\\dagger W_{n-1}^\\dagger U_{n-1}$. [[approximation: the recursion bottoms out at a fixed lookup-table approximation of accuracy $\\epsilon_0$, valid only once $\\epsilon_0 < 1/c_{approx}^2$]], and this construction is proven to satisfy $\\epsilon_n = c_{approx}\\epsilon_{n-1}^{3/2}$, so the sequence length needed for accuracy $\\epsilon$ grows only as $O(\\log^{3.97}(1/\\epsilon))$ — a bound the paper extends to general qudits $U \\in SU(d)$ using an approximate, not exact, group commutator decomposition whose constants become dimension-dependent. [[assumption: $G$ must be finite, with every gate in $SU(d)$, closed under inverse ($g \\in G \\Rightarrow g^\\dagger \\in G$), and its generated group dense in $SU(d)$]].",
+        theoryJa:
+          "有限な命令集合 $G$ が与えられたとき、このアルゴリズムは深さ $n$ による再帰によって、任意の $U \\in SU(2)$ を近似する列を構築します: $U$ への $\\epsilon_{n-1}$ 近似 $U_{n-1}$ から出発し、$\\Delta \\equiv U U_{n-1}^\\dagger$ を作り、これを均衡のとれた群交換子 $\\Delta = V W V^\\dagger W^\\dagger$ として、$d(I,V), d(I,W) < c_{gc}\\sqrt{\\epsilon_{n-1}}$ を満たすように分解します。続いて $V$ と $W$ を深さ $n-1$ で再帰的に近似し、$U_n = V_{n-1} W_{n-1} V_{n-1}^\\dagger W_{n-1}^\\dagger U_{n-1}$ を返します。[[approximation: 再帰は精度 $\\epsilon_0$ の固定されたルックアップテーブル近似で底を打ちますが、これは $\\epsilon_0 < 1/c_{approx}^2$ を満たす場合にのみ有効です]]。この構成は $\\epsilon_n = c_{approx}\\epsilon_{n-1}^{3/2}$ を満たすことが証明されており、したがって精度 $\\epsilon$ に必要な列の長さは $O(\\log^{3.97}(1/\\epsilon))$ としてしか増大しません — この論文はこの境界を一般のクディット $U \\in SU(d)$ にも拡張しており、その際には厳密ではなく近似的な群交換子分解を用い、その定数は次元に依存するものになります。[[assumption: $G$ は有限でなければならず、そのすべてのゲートが $SU(d)$ に属し、逆元について閉じており($g \\in G \\Rightarrow g^\\dagger \\in G$)、それが生成する群が $SU(d)$ において稠密であること]]。",
+      },
     },
     citations: [
       { title: "The Solovay-Kitaev algorithm", authors: "Christopher M. Dawson, Michael A. Nielsen", year: "2005", url: "https://arxiv.org/abs/quant-ph/0505030" },
@@ -8144,6 +8184,16 @@ export const LAYER_GRAPH: LayerGraph = {
         "#     and  K + 12 log2(1/epsilon)  for an arbitrary SU(2) element",
       ].join("\n"),
     },
+    hops: {
+      "ross-selinger-synthesis": {
+        name: "grid-search the ring, then exact-factor",
+        nameJa: "環をグリッド探索してから厳密分解する",
+        theory:
+          "Approximate a target $z$-rotation by a Clifford+T operator $U=\\begin{pmatrix}u&-t^\\dagger\\\\ t&u^\\dagger\\end{pmatrix}$ with $u,t\\in D[\\omega]=Z[1/\\sqrt2,i]$: first [[approximation: search for a candidate $u$ solving the two-dimensional grid problem $u\\in A$, $u^\\bullet\\in B$, where $(-)^\\bullet$ is $\\sqrt2$-conjugation and $A,B$ are the $\\varepsilon$-region and unit disk]], then solve the relative norm equation $t^\\dagger t=\\xi=1-u^\\dagger u$ over $D[\\sqrt2]$ by factoring the integer $n$ in $\\xi^\\bullet\\xi=n/2^\\ell$, and finally hand the resulting exact unitary to Kliuchnikov-Maslov-Mosca exact synthesis to emit the Clifford+T circuit. Absolute optimality (lowest possible $T$-count among ancilla-free, deterministic single-qubit Clifford+T circuits; the paper notes ancilla-, measurement-, or state-distillation-based methods can already beat this bound) holds only given a factoring oracle for $n$; [[assumption: absent one, the algorithm is merely near-optimal — its expected $T$-count exceeds that of the second-to-optimal solution by only $O(\\log\\log(1/\\varepsilon))$, not the true optimum, under a hypothesis that each such $n$ is asymptotically as likely to be prime as a random odd integer of comparable size]].",
+        theoryJa:
+          "目標とする $z$-回転を、$u,t\\in D[\\omega]=Z[1/\\sqrt2,i]$ を満たす Clifford+T 演算子 $U=\\begin{pmatrix}u&-t^\\dagger\\\\ t&u^\\dagger\\end{pmatrix}$ で近似します。まず [[approximation: 二次元グリッド問題 $u\\in A$、$u^\\bullet\\in B$ を解いて候補 $u$ を探します。ここで $(-)^\\bullet$ は $\\sqrt2$-共役であり、$A,B$ はそれぞれ $\\varepsilon$-領域と単位円板です]]、続いて相対ノルム方程式 $t^\\dagger t=\\xi=1-u^\\dagger u$ を $D[\\sqrt2]$ 上で、$\\xi^\\bullet\\xi=n/2^\\ell$ における整数 $n$ を因数分解することで解き、最後に得られた厳密なユニタリを Kliuchnikov-Maslov-Mosca の厳密合成に渡し、Clifford+T 回路を出力します。絶対的な最適性(補助量子ビットを用いない決定的な単一量子ビット Clifford+T 回路の中で可能な限り最小の $T$-count。ただし論文は、補助量子ビット・測定・状態蒸留に基づく手法であればすでにこの下界を上回りうると指摘しています)は、$n$ を因数分解するオラクルが与えられた場合にのみ成立します。[[assumption: そのようなオラクルがなければ、このアルゴリズムは準最適にすぎません──期待される $T$-count は真の最適解ではなく、次善解を $O(\\log\\log(1/\\varepsilon))$ しか上回りません。これは、そのような各 $n$ が同程度の大きさのランダムな奇数と漸近的に同じ確率で素数であるという仮定のもとでのことです]]。",
+      },
+    },
     citations: [
       { title: "Optimal ancilla-free Clifford+T approximation of z-rotations", authors: "Neil J. Ross, Peter Selinger", year: "2014", url: "https://arxiv.org/abs/1403.2975" },
       { title: "Efficient Clifford+T approximation of single-qubit operators", authors: "Peter Selinger", year: "2012", url: "https://arxiv.org/abs/1212.6253" },
@@ -8212,6 +8262,16 @@ export const LAYER_GRAPH: LayerGraph = {
         "# what comes back is an expectation value: it cannot be handed to a coherent",
         "# downstream subroutine",
       ].join("\n"),
+    },
+    hops: {
+      "zero-noise-extrapolation": {
+        name: "run at scaled noise, extrapolate to zero",
+        nameJa: "ノイズを増幅して測定しゼロへ外挿する",
+        theory:
+          "The mitigated estimate is built as $\\hat E_K^n(\\lambda) = \\sum_{j=0}^n \\gamma_j \\hat E_K(c_j\\lambda)$, a linear combination of estimates measured at $n+1$ rescaled noise strengths $c_j\\lambda$ ($c_0=1$), obtained physically by replacing the drive $J_\\alpha(t)$ with $J_\\alpha^j(t) = c_j^{-1}J_\\alpha(c_j^{-1}t)$ run for time $T_j = c_jT$, which reproduces the state noise $c_j\\lambda$ would produce at the original $T$. The weights solve $\\sum_j \\gamma_j = 1$ and $\\sum_j \\gamma_j c_j^k = 0$ for $k=1,\\ldots,n$, giving $\\gamma_j = \\prod_{m\\neq j} c_m(c_j-c_m)^{-1}$, [[approximation: this cancels the noise series $E_K(\\lambda) = E^* + \\sum_{k=1}^n a_k\\lambda^k + R_{n+1}$ only through order $\\lambda^n$; the remainder obeys $|R_{n+1}| \\le \\|A\\|\\,l_{n+1}(\\lambda T)^{n+1}/(n+1)!$, so the error against the true value is bounded by $\\Gamma_n\\big(\\delta^* + \\|A\\|\\,l_{n+1}(\\lambda T)^{n+1}/(n+1)!\\big)$, with $\\Gamma_n=\\sum_j|\\gamma_j|c_j^{n+1}$ and $\\delta^*=\\max_j|\\delta_j|$ the largest sampling error, amplifying both the remainder and the sampling error]]. [[assumption: the generator $\\mathcal L$ in $\\partial_t\\rho=-i[K(t),\\rho]+\\lambda\\mathcal L(\\rho)$ stays invariant under this time rescaling and independent of $J_\\alpha(t)$, with $\\lambda\\ll1$; more precisely, the expansion needs $NT\\lambda$ small ($N$ qubits, $T$ evolution time), not $\\lambda$ alone]].",
+        theoryJa:
+          "緩和された推定値は $\\hat E_K^n(\\lambda) = \\sum_{j=0}^n \\gamma_j \\hat E_K(c_j\\lambda)$ として構成され、これは $c_0=1$ を満たす $n+1$ 個の再スケールされたノイズ強度 $c_j\\lambda$ で測定された推定値の線形結合です。物理的には、駆動 $J_\\alpha(t)$ を $J_\\alpha^j(t) = c_j^{-1}J_\\alpha(c_j^{-1}t)$ に置き換え、時間 $T_j = c_jT$ だけ実行することで得られ、これは元の $T$ において $c_j\\lambda$ が生み出すであろう状態ノイズを再現します。重み係数は $\\sum_j \\gamma_j = 1$ を満たし、かつ $k=1,\\ldots,n$ について $\\sum_j \\gamma_j c_j^k = 0$ を満たすもので、$\\gamma_j = \\prod_{m\\neq j} c_m(c_j-c_m)^{-1}$ が得られます。[[approximation: これはノイズ級数 $E_K(\\lambda) = E^* + \\sum_{k=1}^n a_k\\lambda^k + R_{n+1}$ を、次数 $\\lambda^n$ までしか打ち消しません。剰余項は $|R_{n+1}| \\le \\|A\\|\\,l_{n+1}(\\lambda T)^{n+1}/(n+1)!$ を満たすため、真の値に対する誤差の上界は $\\Gamma_n\\big(\\delta^* + \\|A\\|\\,l_{n+1}(\\lambda T)^{n+1}/(n+1)!\\big)$ で与えられ、ここで $\\Gamma_n=\\sum_j|\\gamma_j|c_j^{n+1}$ であり、$\\delta^*=\\max_j|\\delta_j|$ は最大のサンプリング誤差であって、剰余とサンプリング誤差の双方を増幅します]]。[[assumption: $\\partial_t\\rho=-i[K(t),\\rho]+\\lambda\\mathcal L(\\rho)$ に現れる生成子 $\\mathcal L$ は、この時間の再スケーリングのもとで不変であり、かつ $J_\\alpha(t)$ に依存しないものとし、$\\lambda\\ll1$ とします。より正確には、展開が必要とするのは $NT\\lambda$ が小さいこと($N$ は量子ビット数、$T$ は発展時間)であって、$\\lambda$ 単独が小さいことではありません]]。",
+      },
     },
     entries: ["vqe-zero-noise-extrapolation"],
     citations: [
@@ -8314,6 +8374,16 @@ export const LAYER_GRAPH: LayerGraph = {
         "# introduced",
       ].join("\n"),
     },
+    hops: {
+      "probabilistic-error-cancellation": {
+        name: "sum signed noisy samples, scaled by gamma",
+        nameJa: "符号付きノイズ標本の合計をγでスケーリング",
+        theory:
+          "This method requires the device noise to be fully characterized in advance: each noisy operation $\\mathcal{O}_\\alpha$ in the implementable basis $\\Omega$ (built from maps acting on at most two qubits) must be a known map. Given that, the ideal circuit's action $\\mathcal{U}_{\\bm\\beta}$ is rewritten as a quasi-probability representation: $\\mathcal{U}_{\\bm\\beta} = \\gamma_{\\bm\\beta}\\sum_{\\bm\\alpha\\in\\Omega_L} P_{\\bm\\beta}(\\bm\\alpha)\\,\\sigma_{\\bm\\beta}(\\bm\\alpha)\\,\\mathcal{O}_{\\bm\\alpha}$, where [[assumption: $P_{\\bm\\beta}(\\bm\\alpha)$ is a genuine, efficiently sampleable probability distribution with signs $\\sigma_{\\bm\\beta}(\\bm\\alpha)=\\pm1$, and $\\gamma_{\\bm\\beta}$, $\\sigma_{\\bm\\beta}(\\bm\\alpha)$ must themselves be efficiently computable]], and $\\gamma_{\\bm\\beta}\\ge1$ is forced by both maps being trace-preserving. This gives an unbiased Monte Carlo estimator $\\hat E(\\bm\\beta)=\\frac{\\gamma_{\\bm\\beta}}{M}\\sum_a \\sigma_{\\bm\\beta}(\\bm\\alpha^a)\\langle x^a|A|x^a\\rangle$ with variance $O(\\gamma_{\\bm\\beta}^2)$, so reaching precision $\\delta$ needs $M=(\\delta^{-1}\\gamma_{\\bm\\beta})^2$ runs. [[approximation: for depolarizing noise $\\epsilon$ per gate the exact overhead is $\\gamma_{\\bm\\beta}=[(1+\\epsilon/2)/(1-\\epsilon)]^{nd/2}\\cdot[(1+7\\epsilon/8)/(1-\\epsilon)]^{nd/4}$, exponential in qubit count $n$ times depth $d$]].",
+        theoryJa:
+          "この手法では、デバイスのノイズが事前に完全に特徴づけられている必要があります。実装可能な基底 $\\Omega$ (高々2量子ビットに作用するマップから構成される)に含まれる各ノイズあり操作 $\\mathcal{O}_\\alpha$ は既知のマップでなければなりません。これを前提に、理想回路の作用 $\\mathcal{U}_{\\bm\\beta}$ は準確率表現として $\\mathcal{U}_{\\bm\\beta} = \\gamma_{\\bm\\beta}\\sum_{\\bm\\alpha\\in\\Omega_L} P_{\\bm\\beta}(\\bm\\alpha)\\,\\sigma_{\\bm\\beta}(\\bm\\alpha)\\,\\mathcal{O}_{\\bm\\alpha}$ と書き換えられます。ここで、[[assumption: $P_{\\bm\\beta}(\\bm\\alpha)$ は真に効率的にサンプリング可能な確率分布であり、符号 $\\sigma_{\\bm\\beta}(\\bm\\alpha)=\\pm1$ を持ち、$\\gamma_{\\bm\\beta}$ と $\\sigma_{\\bm\\beta}(\\bm\\alpha)$ 自体も効率的に計算可能でなければなりません]]、また $\\gamma_{\\bm\\beta}\\ge1$ は両マップがトレース保存であることから強制されます。これにより不偏なモンテカルロ推定量 $\\hat E(\\bm\\beta)=\\frac{\\gamma_{\\bm\\beta}}{M}\\sum_a \\sigma_{\\bm\\beta}(\\bm\\alpha^a)\\langle x^a|A|x^a\\rangle$ が得られ、その分散は $O(\\gamma_{\\bm\\beta}^2)$ となるため、精度 $\\delta$ に達するには $M=(\\delta^{-1}\\gamma_{\\bm\\beta})^2$ 回の実行が必要です。[[approximation: ゲートあたりの脱分極ノイズ $\\epsilon$ に対して、厳密なオーバーヘッドは $\\gamma_{\\bm\\beta}=[(1+\\epsilon/2)/(1-\\epsilon)]^{nd/2}\\cdot[(1+7\\epsilon/8)/(1-\\epsilon)]^{nd/4}$ であり、量子ビット数 $n$ と深さ $d$ の積に対して指数的です]]",
+      },
+    },
     // From a read of the abstract page. This record's `conditions` already says
     // the binding constraint is noise characterization and that "PEC's
     // experimental history is largely the history of noise-learning methods
@@ -8400,6 +8470,16 @@ export const LAYER_GRAPH: LayerGraph = {
         "# correlated as well as uncorrelated errors are accommodated",
       ].join("\n"),
     },
+    hops: {
+      "readout-error-mitigation": {
+        name: "invert the assignment matrix on the counts",
+        nameJa: "測定回数に割当行列の逆行列を適用",
+        theory:
+          "The noisy and true outcome distributions are linearly related, $\\vec p_{noisy} = A\\vec p_{ideal}$, where $A_{y,x}$ is the probability the readout process reports $y$ when the true outcome is $x$. [[assumption: readout error is fully captured by this stochastic relabeling of classical bit-strings, i.e. every POVM element $\\Pi_x$ is diagonal in the standard basis]] Correction applies $A^{-1}$ before averaging: $\\xi = M^{-1}\\sum_i \\langle O|A^{-1}|s_i\\rangle$ is an unbiased estimator of $\\mathrm{Tr}(\\rho O)$, with overhead $\\Gamma = \\max_y \\sum_x |\\langle x|A^{-1}|y\\rangle|$ setting $M = 4\\delta^{-2}\\Gamma^2$ shots for precision $\\delta$. Rather than build $A^{-1}$, the scalable route restricts the system to bit-strings present in $\\vec p_{noisy}$, renormalizes those columns of $A$ into $\\tilde A$, and solves $\\tilde A\\vec x = \\vec p_{noisy}$ by a Jacobi-preconditioned Krylov iteration; finite sampling can leave components of $\\vec x$ negative, a quasi-probability rather than a true probability vector, adequate for expectation values but needing a slower bounded least-squares solve if $\\vec p_{ideal}$ itself must be non-negative. [[approximation: for small error rates and enough circuit samples, the true outcome's support is assumed to already lie inside the observed noisy support, since errors predominantly move probability to bit-strings a short Hamming distance away]]",
+        theoryJa:
+          "ノイズを含む出力分布と真の出力分布は $\\vec p_{noisy} = A\\vec p_{ideal}$ という線形関係にあります。ここで $A_{y,x}$ は、真の測定結果が $x$ のとき読み出し過程が $y$ と報告する確率です。[[assumption: 読み出し誤差は、この古典ビット列の確率的な貼り替えによって完全に記述される、すなわちすべてのPOVM要素 $\\Pi_x$ が標準基底で対角である]] 補正は平均化の前に $A^{-1}$ を適用します。$\\xi = M^{-1}\\sum_i \\langle O|A^{-1}|s_i\\rangle$ は $\\mathrm{Tr}(\\rho O)$ の不偏推定量であり、オーバーヘッド $\\Gamma = \\max_y \\sum_x |\\langle x|A^{-1}|y\\rangle|$ が、精度 $\\delta$ のために必要なショット数を $M = 4\\delta^{-2}\\Gamma^2$ と定めます。$A^{-1}$ を構築する代わりに、スケーラブルな手法では系を $\\vec p_{noisy}$ に現れるビット列のみに制限し、$A$ のそれらの列を再正規化して $\\tilde A$ とし、ヤコビ前処理付きクリロフ法によって $\\tilde A\\vec x = \\vec p_{noisy}$ を解きます。有限のサンプリングにより $\\vec x$ の成分が負になることがあり、真の確率ベクトルではなく準確率となりますが、期待値の計算には十分であり、$\\vec p_{ideal}$ 自体を非負にする必要がある場合は、より低速な有界最小二乗法を要します。[[approximation: 誤り率が小さく回路サンプルが十分にあれば、誤りは主に短いハミング距離だけ離れたビット列へ確率を移すため、真の出力のサポートは観測されたノイズありサポートの内側に既に含まれると仮定します]]",
+      },
+    },
     entries: ["vqe-readout-mitigation"],
     citations: [
       { title: "Mitigating measurement errors in multi-qubit experiments", authors: "Sergey Bravyi, Sarah Sheldon, Abhinav Kandala, David C. McKay, Jay M. Gambetta", year: "2020", url: "https://arxiv.org/abs/2006.14044" },
@@ -8419,6 +8499,16 @@ export const LAYER_GRAPH: LayerGraph = {
     conditions: "Bonet-Monroig et al. give two mechanisms and one honest boundary. The mechanisms: \"two protocols to measure conserved symmetries during the bulk of an experiment\", and \"a zero-cost post-processing protocol which is equivalent to a variant of the quantum subspace expansion\" — the same construction this map draws under `subspace-expansion-excited-state`, arrived at from the error side rather than the spectrum side. They also \"develop methods for inserting global and local symmetries into quantum algorithms, and for adjusting natural symmetries of the problem to boost their mitigation against different error channels\", so which symmetry is checked is a design choice tuned to the noise, not a fixed recipe. The boundary is the scale of the evidence: the demonstration is \"two- and four-qubit simulations of the hydrogen molecule (using a classical density-matrix simulator)\", where they find \"up to an order of magnitude reduction of the error in obtaining the ground state dissociation curve\". *Up to*, on a density-matrix simulator, at two and four qubits — no device run and no larger system is claimed here.",
     conditionsJa: "Bonet-Monroig らは、二つの機構と一つの誠実な限界を示しています。機構は「実験の本体部分で保存対称性を測定する二つのプロトコル」と、「零コストの後処理プロトコルであり、量子部分空間展開の一変種と等価であるもの」です。後者は、この地図が `subspace-expansion-excited-state` として描いている構成そのものに、スペクトルの側からではなく誤りの側から到達したものです。さらに彼らは「大域的および局所的な対称性を量子アルゴリズムに埋め込む方法、および問題が本来もつ対称性を調整して、異なる誤りチャネルに対する軽減効果を高める方法」を開発しています。したがって、どの対称性を検査するかは固定の処方ではなく、雑音に合わせた設計上の選択です。限界は根拠の規模です。実証は「（古典的な密度行列シミュレータを用いた）水素分子の 2 量子ビットおよび 4 量子ビットのシミュレーション」であり、そこで「基底状態の解離曲線を求める際の誤差が最大で一桁減少する」ことを見出しています。「最大で」であり、密度行列シミュレータ上の 2 量子ビットと 4 量子ビットです。実機での実行も、より大きな系も、ここでは主張されていません。",
     steps: [],
+    hops: {
+      "symmetry-verification": {
+        name: "fold the symmetry readout into the estimate",
+        nameJa: "対称性の読み出しを推定値に組み込む",
+        theory:
+          "Given a Pauli symmetry $\\hat{S}$ with target eigenvalue $s=\\pm1$, the projector onto that sector is $\\hat{M}_s=\\frac{1}{2}(1+s\\hat{S})$, and post-selecting the noisy state $\\rho$ onto it gives $\\rho_s=\\hat{M}_s\\rho\\hat{M}_s/\\mathrm{Trace}[\\hat{M}_s\\rho]$, whose overlap with the true state is never smaller than $\\rho$'s, and strictly greater except in the degenerate case $\\hat{M}_s\\rho\\hat{M}_s=\\rho$. Rather than building this projection in hardware, the mitigated estimate of any observable $\\hat{P}$ [[assumption: with $[\\hat{P},\\hat{S}]=0$]] is recovered by post-processing three expectation values already obtainable from the unverified state: $\\mathrm{Trace}[\\hat{P}\\rho_s]=\\dfrac{\\mathrm{Trace}[\\hat{P}\\rho]+s\\,\\mathrm{Trace}[\\hat{P}\\hat{S}\\rho]}{1+s\\,\\mathrm{Trace}[\\hat{S}\\rho]}$. Summing over the Hamiltonian's Pauli decomposition turns the raw energy estimate into the symmetry-verified one with no extra circuitry, [[assumption: valid only while $s\\,\\mathrm{Trace}[\\hat{S}\\rho]\\neq-1$ keeps the denominator from vanishing]].",
+        theoryJa:
+          "目標固有値 $s=\\pm1$ を持つパウリ対称性 $\\hat{S}$ が与えられたとき、そのセクターへの射影子は $\\hat{M}_s=\\frac{1}{2}(1+s\\hat{S})$ であり、ノイズのある状態 $\\rho$ をこれに事後選択すると $\\rho_s=\\hat{M}_s\\rho\\hat{M}_s/\\mathrm{Trace}[\\hat{M}_s\\rho]$ が得られます。この状態の真の状態との重なりは $\\rho$ の重なりを下回ることは決してなく、縮退した場合 $\\hat{M}_s\\rho\\hat{M}_s=\\rho$ を除いて厳密に上回ります。このハードウェア上での射影の構成を行う代わりに、任意の可観測量 $\\hat{P}$ [[assumption: $[\\hat{P},\\hat{S}]=0$ とします]] の誤り低減された推定値は、未検証の状態からすでに得られる3つの期待値を事後処理することで復元されます: $\\mathrm{Trace}[\\hat{P}\\rho_s]=\\dfrac{\\mathrm{Trace}[\\hat{P}\\rho]+s\\,\\mathrm{Trace}[\\hat{P}\\hat{S}\\rho]}{1+s\\,\\mathrm{Trace}[\\hat{S}\\rho]}$。ハミルトニアンのパウリ分解にわたって和を取ることで、追加の回路を必要とせずに生のエネルギー推定値を対称性検証済みの推定値に変換できます。[[assumption: これは $s\\,\\mathrm{Trace}[\\hat{S}\\rho]\\neq-1$ が分母をゼロにしない場合にのみ成り立ちます]]。",
+      },
+    },
     entries: ["vqe-symmetry-verification"],
     citations: [
       { title: "Low-cost error mitigation by symmetry verification", authors: "X. Bonet-Monroig, R. Sagastizabal, M. Singh, T.E. O'Brien", year: "2018", url: "https://arxiv.org/abs/1807.10050" },
@@ -8545,6 +8635,16 @@ export const LAYER_GRAPH: LayerGraph = {
         "# sometimes quoted beside it was measured with repetition codes run to probe",
         "# the limits, not observed as the limit of the surface-code memories",
       ].join("\n"),
+    },
+    hops: {
+      "surface-code": {
+        name: "chain X and Z operators across the boundaries",
+        nameJa: "境界を結ぶX演算子とZ演算子の鎖",
+        theory:
+          "On the 2D lattice each measure-Z (measure-X) qubit forces its four neighbouring data qubits into an eigenstate of the weight-4 stabilizer $\\hat Z_a\\hat Z_b\\hat Z_c\\hat Z_d$ ($\\hat X_a\\hat X_b\\hat X_c\\hat X_d$). On a patch with 41 data qubits and 40 measure qubits the data qubits' $2\\times41$ real degrees of freedom exceed the $2\\times40$ independent stabilizer constraints by two, defining one logical qubit. The logical operators $\\hat X_L$, $\\hat Z_L$ are chains of single-qubit $\\hat X$, $\\hat Z$ operators connecting opposite lattice boundaries that commute with every stabilizer and anticommute with each other; the code distance $d$ is the minimum such chain weight. [[assumption: the physical error rate $p$ per step lies strictly below a threshold $p_{th}$ fixed jointly by the noise model, syndrome-extraction circuit and matching decoder]], below which $P_L \\sim 0.03(p/p_{th})^{d_e}$, with $d_e=(d+1)/2$ for odd $d$ and $d_e=d/2$ rounded down for even $d$, an [[approximation: empirical fit to matching-decoder simulation data, not a derived bound]].",
+        theoryJa:
+          "2次元格子上では、各測定Z（測定X）量子ビットが、隣接する4つのデータ量子ビットを重み4のスタビライザー $\\hat Z_a\\hat Z_b\\hat Z_c\\hat Z_d$（$\\hat X_a\\hat X_b\\hat X_c\\hat X_d$）の固有状態へと強制します。データ量子ビット41個、測定量子ビット40個からなるパッチでは、データ量子ビットの実自由度 $2\\times41$ が、独立なスタビライザー制約 $2\\times40$ を2だけ上回り、これが1つの論理量子ビットを定義します。論理演算子 $\\hat X_L$、$\\hat Z_L$ は、格子の対向する境界を結ぶ単一量子ビットの $\\hat X$、$\\hat Z$ 演算子の鎖であり、すべてのスタビライザーと可換で、互いには反可換です。符号距離 $d$ は、そのような鎖の最小重みです。[[assumption: 1ステップあたりの物理誤り率 $p$ が、ノイズモデル・シンドローム抽出回路・マッチングデコーダによって共同で決まる閾値 $p_{th}$ を厳密に下回ること]]、この場合 $P_L \\sim 0.03(p/p_{th})^{d_e}$ となり、奇数の $d$ に対しては $d_e=(d+1)/2$、偶数の $d$ に対しては $d_e=d/2$ を切り捨てた値をとります。これは[[approximation: マッチングデコーダのシミュレーションデータへの経験的なフィットであり、導出された上限ではありません]]。",
+      },
     },
     // **The first `implementations` entry in the graph, and it is written from a
     // read of the abstract page rather than from the record.**
@@ -8688,6 +8788,16 @@ export const LAYER_GRAPH: LayerGraph = {
         "# surgery on surface codes, so this is not yet a drop-in replacement for a",
         "# full computation",
       ].join("\n"),
+    },
+    hops: {
+      "qldpc-code": {
+        name: "pack many logical qubits per code block",
+        nameJa: "符号ブロックあたり多くの論理量子ビットを詰め込む",
+        theory:
+          "Two commuting shift matrices $x = S_\\ell \\otimes I_m$ and $y = I_\\ell \\otimes S_m$, satisfying $x^\\ell = y^m = I_{\\ell m}$ and $xy=yx$, generate two GF(2) polynomials $A = A_1+A_2+A_3$ and $B = B_1+B_2+B_3$, each term a power of $x$ or $y$ [[assumption: the three A_i are chosen distinct and the three B_j are chosen distinct so no terms cancel mod 2, and xy=yx so AB=BA and the X- and Z-checks commute]]. These build check matrices $H^X=[A|B]$ and $H^Z=[B^T|A^T]$ on $n=2\\ell m$ qubits, a CSS code with $k = 2\\cdot\\dim(\\ker(A)\\cap\\ker(B))$ logical qubits and distance $d=\\min\\{|v| : v\\in\\ker(H^X)\\setminus\\mathrm{rs}(H^Z)\\}$. The specific polynomials come from a numerical search over small $\\ell,m$; e.g. $\\ell=12,m=6$ with $A=x^3+y+y^2$, $B=y^3+x+x^2$ yields a 144-qubit code with 12 logical qubits and distance 12 [[approximation: for larger examples such as the 360-qubit code the mixed-integer-programming distance is only a verified upper bound, not confirmed exact]]. By construction every check has weight 6, giving the Tanner graph vertex-degree 6; it does not embed in a 2D grid like the surface code but decomposes into two edge-disjoint planar degree-3 subgraphs, i.e. thickness $\\theta\\le2$ [[assumption: this rate advantage over the surface code requires hardware supplying degree-6, thickness-2 non-planar connectivity, not a nearest-neighbor grid]].",
+        theoryJa:
+          "2つの可換なシフト行列 $x = S_\\ell \\otimes I_m$ と $y = I_\\ell \\otimes S_m$ は、$x^\\ell = y^m = I_{\\ell m}$ と $xy=yx$ を満たし、2つのGF(2)多項式 $A = A_1+A_2+A_3$ と $B = B_1+B_2+B_3$ を生成します。各項は $x$ または $y$ のべき乗です[[assumption: 3つのA_iは互いに異なるものとして選ばれ、3つのB_jも互いに異なるものとして選ばれるため、mod 2での項の相殺は起こりません。またxy=yxであるためAB=BAとなり、X検査とZ検査は可換です]]。これらから、$n=2\\ell m$ 個の量子ビット上の検査行列 $H^X=[A|B]$ と $H^Z=[B^T|A^T]$ が構築され、論理量子ビット数 $k = 2\\cdot\\dim(\\ker(A)\\cap\\ker(B))$ と距離 $d=\\min\\{|v| : v\\in\\ker(H^X)\\setminus\\mathrm{rs}(H^Z)\\}$ を持つCSS符号が得られます。具体的な多項式は、小さな $\\ell,m$ に対する数値探索から得られます。例えば $\\ell=12,m=6$ で $A=x^3+y+y^2$、$B=y^3+x+x^2$ とすると、論理量子ビット12個、距離12の144量子ビット符号が得られます[[approximation: 360量子ビット符号のようなより大きな例では、混合整数計画法による距離は検証済みの上界にすぎず、正確な値として確認されたものではありません]]。構成上、すべての検査は重み6を持ち、タナーグラフの頂点次数は6になります。この符号は表面符号のように2次元格子には埋め込めませんが、辺で交わらない2つの平面次数3部分グラフに分解できます。すなわち厚さ $\\theta\\le2$ です[[assumption: 表面符号に対するこのレート面での優位性は、最近接格子ではなく、次数6・厚さ2の非平面的な接続性をハードウェアが提供することを必要とします]]。",
+      },
     },
     citations: [
       { title: "High-threshold and low-overhead fault-tolerant quantum memory", authors: "Sergey Bravyi, Andrew W. Cross, Jay M. Gambetta, Dmitri Maslov, Patrick Rall, Theodore J. Yoder", year: "2023", url: "https://arxiv.org/abs/2308.07915" },
@@ -8846,6 +8956,16 @@ export const LAYER_GRAPH: LayerGraph = {
     // unitary — and nobody has decomposed it into this graph's slots yet.
     // Declaring it atomic would assert the opposite of what is true.
     steps: [],
+    hops: {
+      "qite-ground-state": {
+        name: "evolve to the ground state, then measure",
+        nameJa: "基底状態へ時間発展させてから測定する",
+        theory:
+          "The non-Hermitian step $|\\Psi'\\rangle = e^{-\\Delta\\tau\\hat{h}[m]}|\\Psi\\rangle$ is normalized to $|\\bar\\Psi'\\rangle$ and [[assumption: replaced by a unitary $e^{-i\\Delta\\tau\\hat{A}[m]}$, with Hermitian $\\hat{A}[m]=\\sum_I a[m]_I\\hat\\sigma_I$ expanded on a domain around $\\hat{h}[m]$'s support]]; the real coefficients $a[m]$ solve the linear system $\\mathbf{S}\\mathbf{a}[m]=\\mathbf{b}$ from measured expectation values, minimizing $\\|\\bar\\Psi'-(1-i\\Delta\\tau\\hat{A}[m])\\Psi\\|^2$, so no local minima arise. [[approximation: this equality is exact only when $|\\Psi\\rangle$ has zero correlation length; for a state whose correlations at distance $L$ are bounded by $\\exp(-L/C)$, Theorem 1 shows unitaries confined to $N_q=k(2C)^d\\ln^d(2\\sqrt{2}\\,nm\\,\\varepsilon^{-1})$ qubits reproduce the full $mn$-step trajectory to accuracy $\\varepsilon$: the domain grows with $C^d$ and only logarithmically with the step count $nm$ and $1/\\varepsilon$, not as a fixed $O(C)$]], via Uhlmann's theorem applied to the shrinking trace-distance between truncated reduced density matrices.",
+        theoryJa:
+          "非エルミートなステップ $|\\Psi'\\rangle = e^{-\\Delta\\tau\\hat{h}[m]}|\\Psi\\rangle$ は $|\\bar\\Psi'\\rangle$ へと規格化され、[[assumption: ユニタリ $e^{-i\\Delta\\tau\\hat{A}[m]}$ に置き換えられます。ここでエルミートな $\\hat{A}[m]=\\sum_I a[m]_I\\hat\\sigma_I$ は $\\hat{h}[m]$ のサポートの周りの領域上で展開されます]]。実係数 $a[m]$ は、測定された期待値から得られる線形方程式系 $\\mathbf{S}\\mathbf{a}[m]=\\mathbf{b}$ を、$\\|\\bar\\Psi'-(1-i\\Delta\\tau\\hat{A}[m])\\Psi\\|^2$ を最小化することで解くため、局所的な極小は生じません。[[approximation: この等式が厳密に成り立つのは $|\\Psi\\rangle$ の相関長がゼロの場合のみです。距離 $L$ での相関が $\\exp(-L/C)$ で抑えられる状態については、定理1により、$N_q=k(2C)^d\\ln^d(2\\sqrt{2}\\,nm\\,\\varepsilon^{-1})$ 個の量子ビットに限定されたユニタリが、精度 $\\varepsilon$ で $mn$ ステップの軌道全体を再現できることが示されます。この領域は $C^d$ とともに増大しますが、ステップ数 $nm$ および $1/\\varepsilon$ に対しては対数的にしか増大せず、固定された $O(C)$ にはなりません]]。これはウールマンの定理を、切り詰められた縮約密度行列間の縮小するトレース距離に適用することによります。",
+      },
+    },
     entries: ["qite-imaginary-time"],
     citations: [
       { title: "Determining eigenstates and thermal states on a quantum computer using quantum imaginary time evolution", authors: "Mario Motta, Chong Sun, Adrian Teck Keng Tan, Matthew J. O'Rourke, Erika Ye, Austin J. Minnich, Fernando G. S. L. Brandao, Garnet Kin-Lic Chan", year: "2019", url: "https://arxiv.org/abs/1901.07653" },
@@ -8899,6 +9019,16 @@ export const LAYER_GRAPH: LayerGraph = {
     cost: "Circuit depth $\\mathcal{O}((N-\\eta)^2\\eta)$ in the number $N$ of spin orbitals and the number $\\eta$ of electrons — the figure Lee et al. quote for UCCSD when placing their own ansatz against it. It is a depth for the family, not a complexity for solving the problem: no worst-case speedup is claimed here or anywhere in this region.",
     costJa: "スピン軌道数 $N$、電子数 $\\eta$ として、回路深さは $\\mathcal{O}((N-\\eta)^2\\eta)$ です。これは Lee らが自らのアンザッツを比較する際に UCCSD について挙げている数値です。これは族についての深さであって、問題を解くことの計算量ではありません。ここでも、この領域のどこでも、最悪計算量における高速化は主張されていません。",
     steps: [],
+    hops: {
+      "uccsd-ansatz": {
+        name: "exponentiate T minus T-dagger onto HF",
+        nameJa: "T引くTダガーをHFに指数化して作用させる",
+        theory:
+          "Starting from the Hartree-Fock determinant $|\\phi\\rangle$, the ansatz forms $|\\phi(\\theta)\\rangle=U(\\theta)|\\phi\\rangle=e^{T(\\theta)-T^\\dagger(\\theta)}|\\phi\\rangle$, exponentiating an anti-Hermitian generator rather than the non-unitary $e^{T}$ of classical coupled cluster. [[approximation: the cluster operator $T=\\sum_k {}^{(k)}T(\\theta)$ is cut to its first two terms]], leaving $T_1=\\sum_{i_1\\in occ,a_1\\in virt}\\theta_{i_1}^{a_1}\\hat a_{a_1}^\\dagger\\hat a_{i_1}$ and $T_2=\\frac14\\sum_{i_1,i_2\\in occ,a_1,a_2\\in virt}\\theta_{i_1,i_2}^{a_1,a_2}\\hat a_{a_2}^\\dagger\\hat a_{i_2}\\hat a_{a_1}^\\dagger\\hat a_{i_1}$, built on [[assumption: occ and virt are the occupied and unoccupied sites of that fixed Hartree-Fock state]]. The amplitudes $\\theta_{i_1}^{a_1},\\theta_{i_1,i_2}^{a_1,a_2}$ are not solved from CC's projection equations but varied to minimize $E(\\theta)=\\langle\\psi(\\theta)|\\hat H|\\psi(\\theta)\\rangle$ directly. [[approximation: on hardware $e^{T-T^\\dagger}$ is Trotterized into a product of exponentials of its individual excitation/de-excitation terms]]",
+        theoryJa:
+          "Hartree-Fock 行列式 $|\\phi\\rangle$ から出発し、このアンザッツは $|\\phi(\\theta)\\rangle=U(\\theta)|\\phi\\rangle=e^{T(\\theta)-T^\\dagger(\\theta)}|\\phi\\rangle$ を作ります。これは古典的な coupled cluster の非ユニタリな $e^{T}$ ではなく、反エルミートな生成子を指数化したものです。[[approximation: クラスター演算子 $T=\\sum_k {}^{(k)}T(\\theta)$ を最初の2項に打ち切ります]]。これにより $T_1=\\sum_{i_1\\in occ,a_1\\in virt}\\theta_{i_1}^{a_1}\\hat a_{a_1}^\\dagger\\hat a_{i_1}$ と $T_2=\\frac14\\sum_{i_1,i_2\\in occ,a_1,a_2\\in virt}\\theta_{i_1,i_2}^{a_1,a_2}\\hat a_{a_2}^\\dagger\\hat a_{i_2}\\hat a_{a_1}^\\dagger\\hat a_{i_1}$ が残り、[[assumption: occ と virt はその固定された Hartree-Fock 状態における占有サイトと非占有サイトです]] というもとで組み立てられます。振幅 $\\theta_{i_1}^{a_1},\\theta_{i_1,i_2}^{a_1,a_2}$ は CC の射影方程式から解かれるのではなく、$E(\\theta)=\\langle\\psi(\\theta)|\\hat H|\\psi(\\theta)\\rangle$ を直接最小化するように変分的に決定されます。[[approximation: ハードウェア上では $e^{T-T^\\dagger}$ は、個々の励起・脱励起項の指数関数の積へとトロッター化されます]]",
+      },
+    },
     entries: ["vqe-uccsd-ansatz"],
     citations: [
       { title: "Scalable Quantum Simulation of Molecular Energies", authors: "P. J. J. O'Malley, R. Babbush, I. D. Kivlichan, J. Romero, J. R. McClean, R. Barends, J. Kelly, P. Roushan, A. Tranter, N. Ding, B. Campbell, Y. Chen, Z. Chen, B. Chiaro, A. Dunsworth, A. G. Fowler, E. Jeffrey, A. Megrant, J. Y. Mutus, C. Neill, C. Quintana, D. Sank, A. Vainsencher, J. Wenner, T. C. White, P. V. Coveney, P. J. Love, H. Neven, A. Aspuru-Guzik, J. M. Martinis", year: "2015", url: "https://arxiv.org/abs/1512.06860" },
@@ -8916,6 +9046,16 @@ export const LAYER_GRAPH: LayerGraph = {
     conditions: "Kandala et al. describe the family as \"trial states specifically tailored to the available interactions in our quantum processor\" — which is the definition and also the limitation, since the family is then a property of that processor rather than of the problem. Their demonstration is bounded and they state its bounds: up to six qubits, Hamiltonians \"with over a hundred Pauli terms\", molecules up to BeH2, and it required \"a compact encoding of fermionic Hamiltonians and a robust stochastic optimization routine\" alongside the ansatz itself.",
     conditionsJa: "Kandala らはこの族を「我々の量子プロセッサで利用可能な相互作用に合わせて特別に仕立てられた試行状態」と説明しています。これは定義であると同時に限界でもあります。というのも、この族は問題ではなくそのプロセッサの性質になってしまうからです。彼らの実証は範囲が限られており、その範囲は明示されています。最大 6 量子ビット、「百を超える Pauli 項」をもつハミルトニアン、BeH2 までの分子であり、アンザッツ自体に加えて「フェルミオン系ハミルトニアンのコンパクトな符号化と頑健な確率的最適化ルーチン」を必要としました。",
     steps: [],
+    hops: {
+      "hardware-efficient-ansatz": {
+        name: "interleave ZXZ layers with fixed entanglers",
+        nameJa: "ZXZ層を固定エンタングラーと交互に重ねる",
+        theory:
+          "The N-qubit trial state is built from $|00\\ldots0\\rangle$ by alternating layers of single-qubit Euler rotations with a fixed entangling unitary drawn from the hardware itself: each qubit carries $U_{q,i}(\\vec\\theta)=Z_{\\theta_1}^{q,i}X_{\\theta_2}^{q,i}Z_{\\theta_3}^{q,i}$ at depth $i$, giving $|\\Phi(\\vec\\theta)\\rangle=\\prod_{q=1}^N U_{q,d}(\\vec\\theta)\\,U_{ENT}\\cdots U_{ENT}\\,\\prod_{q=1}^N U_{q,0}(\\vec\\theta)\\,|00\\ldots0\\rangle$, where $U_{ENT}=\\exp(-iH_0\\tau)$ is generated by the processor's own drift Hamiltonian $H_0$, not any operator chosen for the molecule. [[assumption: $U_{ENT}$ need only generate \"sufficient entanglement\" -- no specific two-qubit gate is assumed.]] Because the qubits start in $|0\\rangle$, the first Z rotation of $U_{q,0}$ is dropped, leaving $p=N(3d+2)$ free angles. [[approximation: $\\tau$ and the couplings in $H_0$ are held fixed rather than optimized, so only the $p$ Euler angles vary.]]",
+        theoryJa:
+          "N量子ビットの試行状態は $|00\\ldots0\\rangle$ から構築され、単一量子ビットのオイラー回転の層と、ハードウェア自体が持つ固定のエンタングルユニタリとを交互に重ねて構成されます。各量子ビットは深さ $i$ において $U_{q,i}(\\vec\\theta)=Z_{\\theta_1}^{q,i}X_{\\theta_2}^{q,i}Z_{\\theta_3}^{q,i}$ を担い、$|\\Phi(\\vec\\theta)\\rangle=\\prod_{q=1}^N U_{q,d}(\\vec\\theta)\\,U_{ENT}\\cdots U_{ENT}\\,\\prod_{q=1}^N U_{q,0}(\\vec\\theta)\\,|00\\ldots0\\rangle$ が得られます。ここで $U_{ENT}=\\exp(-iH_0\\tau)$ は、分子のために選ばれた演算子ではなく、プロセッサ自身のドリフト・ハミルトニアン $H_0$ によって生成されます。[[assumption: $U_{ENT}$ は「十分なエンタングルメント」を生成しさえすればよく、特定の2量子ビットゲートは仮定されません。]] 量子ビットは $|0\\rangle$ から出発するため、$U_{q,0}$ の最初のZ回転は省略され、自由パラメータの角度は $p=N(3d+2)$ 個残ります。[[approximation: $\\tau$ と $H_0$ 内の結合は最適化されず固定されたままであり、変化するのは $p$ 個のオイラー角のみです。]]",
+      },
+    },
     entries: ["vqe-hardware-efficient-ansatz"],
     citations: [
       { title: "Hardware-efficient Variational Quantum Eigensolver for Small Molecules and Quantum Magnets", authors: "Abhinav Kandala, Antonio Mezzacapo, Kristan Temme, Maika Takita, Markus Brink, Jerry M. Chow, Jay M. Gambetta", year: "2017", url: "https://arxiv.org/abs/1704.05018" },
@@ -8943,6 +9083,16 @@ export const LAYER_GRAPH: LayerGraph = {
     // hangs it as a stub, which is exactly the shape of "this one has an
     // interior and its siblings do not".
     steps: ["observable-estimation"],
+    hops: {
+      "adapt-ansatz": {
+        name: "measure gradients, add largest to ansatz",
+        nameJa: "勾配を測定し最大の演算子をアンザッツに追加",
+        theory:
+          "The ansatz is grown one factor at a time: $|\\psi^{(n)}\\rangle = e^{\\hat\\tau_n}\\cdots e^{\\hat\\tau_1}|\\psi^{HF}\\rangle$, where each $\\hat\\tau$ is an anti-Hermitian one- or two-body excitation operator, $\\hat\\tau_{ij}^{ab} = \\hat t_{ij}^{ab} - \\hat t_{ab}^{ij}$, drawn from [[assumption: a fixed pool defined in advance, here \"the set of all unique spin-complemented one- and two-body operators\"]]. To pick $\\hat\\tau_{n+1}$, the Hamiltonian's commutator with every pool operator is measured on the current state to get the gradient of the energy with respect to that operator's coefficient, and the operator with the largest gradient is appended with a fresh parameter. [[approximation: this replaces the exact result that FCI is an arbitrarily long product of such exponentials, Eq. 7, with a short sequence chosen greedily rather than fixed a priori]], stopping once the norm of the gradient vector drops below a threshold $\\epsilon$ (the paper uses the $L^2$ norm in its own numerical examples but notes this is just one choice among alternative convergence indicators for this step).",
+        theoryJa:
+          "アンザッツは一度に1つの因子ずつ成長させられます: $|\\psi^{(n)}\\rangle = e^{\\hat\\tau_n}\\cdots e^{\\hat\\tau_1}|\\psi^{HF}\\rangle$。ここで各 $\\hat\\tau$ は反エルミートな一体または二体の励起演算子 $\\hat\\tau_{ij}^{ab} = \\hat t_{ij}^{ab} - \\hat t_{ab}^{ij}$ であり、[[assumption: あらかじめ定義された固定プール、ここでは「スピン相補的な一体・二体演算子すべての集合」]]から選ばれます。$\\hat\\tau_{n+1}$ を選ぶには、プール中のすべての演算子とハミルトニアンとの交換子を現在の状態上で測定してその演算子の係数に関するエネルギーの勾配を求め、勾配が最大の演算子を新しいパラメータとともに追加します。[[approximation: これは、FCIがそのような指数関数の任意に長い積であるという厳密な結果(式7)を、あらかじめ固定するのではなく貪欲に選ばれた短い列で置き換えるものです]]。勾配ベクトルのノルムが閾値 $\\epsilon$ を下回った時点で停止します(論文自体の数値例では $L^2$ ノルムを用いていますが、これはこのステップに対する収束指標として考えられる選択肢の一つに過ぎないと述べられています)。",
+      },
+    },
     entries: ["vqe-adapt"],
     citations: [
       { title: "An adaptive variational algorithm for exact molecular simulations on a quantum computer", authors: "Harper R. Grimsley, Sophia E. Economou, Edwin Barnes, Nicholas J. Mayhall", year: "2018", url: "https://arxiv.org/abs/1812.11173" },
@@ -8971,6 +9121,16 @@ export const LAYER_GRAPH: LayerGraph = {
     // hangs it as a stub, which is exactly the shape of "this one has an
     // interior and its siblings do not".
     steps: ["observable-estimation"],
+    hops: {
+      "qubit-adapt-ansatz": {
+        name: "add the Pauli string with steepest gradient",
+        nameJa: "勾配が最も急なパウリ文字列を追加",
+        theory:
+          "The ansatz is built operator by operator from anti-Hermitian pool operators $\\hat\\tau_i=-\\hat\\tau_i^\\dagger$: after k steps, $|\\psi^{ADAPT}(\\vec\\theta)\\rangle = e^{\\theta_k\\hat\\tau_k}\\cdots e^{\\theta_2\\hat\\tau_2}e^{\\theta_1\\hat\\tau_1}|\\psi^{HF}\\rangle$, and the next $\\hat\\tau_i$ is the pool operator that maximizes the energy gradient $\\partial\\langle E\\rangle/\\partial\\theta_i=\\langle\\psi|[\\hat H,\\hat\\tau_i]|\\psi\\rangle$, with growth halted once $\\|\\vec g\\|=\\sqrt{\\sum_i(\\partial\\langle E\\rangle/\\partial\\theta_i)^2}$ falls below a threshold $\\epsilon$. qubit-ADAPT draws each $\\hat\\tau_i$ from single Pauli strings $\\hat P=i\\prod_i p_i$, $p_i\\in\\{X,Y,Z\\}$, restricted to odd numbers of $Y$s [[assumption: the fermionic operators being decomposed are real, so only odd-$Y$ $\\hat P$ are themselves real and admissible as generators; separately, $\\hat H$ being real and time-reversal symmetric means an even string's gradient $\\langle\\psi|[\\hat H,\\hat\\tau_i]|\\psi\\rangle$ vanishes identically, so nothing is lost by dropping them]]. The Jordan-Wigner $Z$-chains that would otherwise run the string length up to $n$ are then dropped [[approximation: cutting the $Z$-chains caps each Pauli string at length 4 for shallower circuits, a simplification checked only numerically -- the paper reports the two pools perform similarly, not that they are equivalent]].",
+        theoryJa:
+          "アンザッツは、反エルミートなプール演算子 $\\hat\\tau_i=-\\hat\\tau_i^\\dagger$ から演算子を1つずつ追加して構築されます: kステップ後には $|\\psi^{ADAPT}(\\vec\\theta)\\rangle = e^{\\theta_k\\hat\\tau_k}\\cdots e^{\\theta_2\\hat\\tau_2}e^{\\theta_1\\hat\\tau_1}|\\psi^{HF}\\rangle$ となり、次に加える $\\hat\\tau_i$ は、エネルギー勾配 $\\partial\\langle E\\rangle/\\partial\\theta_i=\\langle\\psi|[\\hat H,\\hat\\tau_i]|\\psi\\rangle$ を最大化するプール演算子です。成長は、ノルム $\\|\\vec g\\|=\\sqrt{\\sum_i(\\partial\\langle E\\rangle/\\partial\\theta_i)^2}$ が閾値 $\\epsilon$ を下回った時点で止められます。qubit-ADAPTは、各 $\\hat\\tau_i$ を単一のパウリ文字列 $\\hat P=i\\prod_i p_i$、$p_i\\in\\{X,Y,Z\\}$ から選び、$Y$ の個数が奇数のものに制限します [[assumption: 分解対象のフェルミオン演算子が実数であるため、奇数個の $Y$ を含む $\\hat P$ だけがそれ自身実数となり、生成子として許容されます。これとは別に、$\\hat H$ が実数かつ時間反転対称であることから、偶数個の文字列の勾配 $\\langle\\psi|[\\hat H,\\hat\\tau_i]|\\psi\\rangle$ は恒等的に消え、それらを除いても失われるものはありません]]。ジョルダン・ウィグナー変換による $Z$ 鎖は、それがなければ文字列の長さを $n$ まで伸ばしてしまいますが、これは取り除かれます [[approximation: $Z$ 鎖を打ち切ることで各パウリ文字列の長さを4に上限し、より浅い回路にします。これは数値的にのみ確認された簡略化であり——論文が報告しているのは2つのプールが同程度の性能を示すということであって、両者が等価であるということではありません]]。",
+      },
+    },
     entries: ["vqe-qubit-adapt"],
     citations: [
       { title: "qubit-ADAPT-VQE: An adaptive algorithm for constructing hardware-efficient ansatze on a quantum processor", authors: "Ho Lun Tang, V. O. Shkolnikov, George S. Barron, Harper R. Grimsley, Nicholas J. Mayhall, Edwin Barnes, Sophia E. Economou", year: "2019", url: "https://arxiv.org/abs/1911.10205" },
@@ -8989,6 +9149,16 @@ export const LAYER_GRAPH: LayerGraph = {
     cost: "Circuit depth $\\mathcal{O}(kN)$ in the number $N$ of spin orbitals and the number $k$ of repetitions, as stated in the abstract, against $\\mathcal{O}(N^3)$ for UCCGSD and $\\mathcal{O}((N-\\eta)^2\\eta)$ for UCCSD with $\\eta$ electrons. A depth for the family, not a complexity for solving the problem.",
     costJa: "スピン軌道数 $N$、繰り返し回数 $k$ として、要旨に述べられている回路深さは $\\mathcal{O}(kN)$ です。これに対し UCCGSD は $\\mathcal{O}(N^3)$、電子数 $\\eta$ の UCCSD は $\\mathcal{O}((N-\\eta)^2\\eta)$ です。これは族についての深さであって、問題を解くことの計算量ではありません。",
     steps: [],
+    hops: {
+      "k-upccgsd-ansatz": {
+        name: "generalize the singles, pair the doubles",
+        nameJa: "一重励起を一般化し、二重励起を対にする",
+        theory:
+          "The wavefunction is built as a $k$-fold product of independent unitary exponentials acting on a reference determinant: $|\\psi\\rangle=\\Pi_{\\alpha=1}^{k}\\left(e^{\\hat T^{(\\alpha)}-\\hat T^{(\\alpha)\\dagger}}\\right)|\\phi_0\\rangle$ (Eq. 15), where each $\\hat T^{(\\alpha)}=\\hat T_1+\\hat T_2$ carries its own independent set of singles and doubles amplitudes. $\\hat T_1=\\frac{1}{2}\\sum_{pq}t_p^q\\hat a_q^\\dagger\\hat a_p$ ranges over all spin-orbitals (the paper's default index convention, stated at the top of Sec. 2), not just occupied-to-virtual. $\\hat T_2=\\sum_{ia}t_{i_\\alpha i_\\beta}^{a_\\alpha a_\\beta}\\hat a^\\dagger_{a_\\alpha}\\hat a^\\dagger_{a_\\beta}\\hat a_{i_\\beta}\\hat a_{i_\\alpha}$ [[assumption: pairs the two spin-orbitals sharing a spatial orbital $i$ and moves both together into a shared spatial orbital $a$, so the amplitude indices run over spatial, not spin, orbitals]]. [[approximation: this pair restriction discards the rest of the generalized-doubles manifold that UCCGSD keeps, buying a circuit depth that grows only as $O(kN)$ instead of $O(N^3)$, with $k$ the dial that restores the accuracy the restriction gives up.]]",
+        theoryJa:
+          "波動関数は、参照配置に作用する独立なユニタリ指数関数の $k$ 重積として構築されます: $|\\psi\\rangle=\\Pi_{\\alpha=1}^{k}\\left(e^{\\hat T^{(\\alpha)}-\\hat T^{(\\alpha)\\dagger}}\\right)|\\phi_0\\rangle$ (式15)。ここで各 $\\hat T^{(\\alpha)}=\\hat T_1+\\hat T_2$ は、それぞれ独立な一重・二重励起振幅の集合を持ちます。$\\hat T_1=\\frac{1}{2}\\sum_{pq}t_p^q\\hat a_q^\\dagger\\hat a_p$ は、占有軌道から仮想軌道への遷移だけでなく、すべてのスピン軌道にわたります(第2節冒頭で述べられている論文既定の添字規約)。$\\hat T_2=\\sum_{ia}t_{i_\\alpha i_\\beta}^{a_\\alpha a_\\beta}\\hat a^\\dagger_{a_\\alpha}\\hat a^\\dagger_{a_\\beta}\\hat a_{i_\\beta}\\hat a_{i_\\alpha}$ は[[assumption: 空間軌道 $i$ を共有する2つのスピン軌道を対にし、両方をまとめて共有の空間軌道 $a$ に移すため、振幅の添字はスピン軌道ではなく空間軌道にわたります]]。[[approximation: この対の制限によって、UCCGSDが保持する一般化二重励起多様体の残りが捨てられ、回路深さは $O(N^3)$ ではなく $O(kN)$ としてのみ増大しますが、その代わりに $k$ が、この制限で失われた精度を取り戻すためのつまみとなります。]]",
+      },
+    },
     entries: ["vqe-k-upccgsd"],
     citations: [
       { title: "Generalized Unitary Coupled Cluster Wavefunctions for Quantum Computation", authors: "Joonho Lee, William J. Huggins, Martin Head-Gordon, K. Birgitta Whaley", year: "2018", url: "https://arxiv.org/abs/1810.02327" },
@@ -9010,6 +9180,16 @@ export const LAYER_GRAPH: LayerGraph = {
     // "uses energy response estimates for ranking the importance of individual
     // entanglers". A ranking read off estimates is an observable estimation.
     steps: ["observable-estimation"],
+    hops: {
+      "qcc-ansatz": {
+        name: "rank entanglers, then estimate the energy",
+        nameJa: "エンタングラーを順位付けしてからエネルギーを推定する",
+        theory:
+          "The QCC trial state $\\Psi(\\tau,\\Omega) = \\hat U(\\tau)|\\Omega\\rangle$ pairs a mean-field product of single-qubit Bloch states $|\\Omega\\rangle = \\prod_i \\big(\\cos(\\theta_i/2)|\\alpha_i\\rangle + e^{i\\phi_i}\\sin(\\theta_i/2)|\\beta_i\\rangle\\big)$ with a correlation unitary $\\hat U(\\tau) = \\prod_k \\exp(-i\\tau_k\\hat P_k/2)$ built from Pauli-word entanglers $\\hat P_k$. The observable is the energy $E(\\tau,\\Omega) = \\langle\\Omega|U(\\tau)^\\dagger \\hat H U(\\tau)|\\Omega\\rangle$, minimized over both parameter sets. [[assumption: each $\\hat P_k$ is involutory, $\\hat P_k^2=1$]], so the similarity-transformed Hamiltonian closes in two terms, $\\hat H[\\tau;\\hat P] = \\hat H - i\\frac{\\sin\\tau}{2}[\\hat H,\\hat P] + \\frac{1}{2}(1-\\cos\\tau)\\hat P[\\hat H,\\hat P]$. Candidate entanglers are ranked by $\\Delta E[\\hat P_k] = \\min_\\tau E[\\tau;\\hat P_k] - E_{QMF} \\le 0$; [[approximation: rather than fully optimizing $\\tau$ and $\\Omega$ for every candidate, a two-tier pre-screen flags entanglers first by a nonzero first derivative $dE/d\\tau|_{\\tau=0} = \\langle\\Omega_{min}|-\\frac{i}{2}[\\hat H,\\hat P_k]|\\Omega_{min}\\rangle$, and, only when that vanishes, by a significant negative second derivative from the paper's appendix]] before the costly full $\\Delta E$ evaluation runs on the surviving candidates.",
+        theoryJa:
+          "QCC試行状態 $\\Psi(\\tau,\\Omega) = \\hat U(\\tau)|\\Omega\\rangle$ は、単一量子ビットのブロッホ状態の平均場積 $|\\Omega\\rangle = \\prod_i \\big(\\cos(\\theta_i/2)|\\alpha_i\\rangle + e^{i\\phi_i}\\sin(\\theta_i/2)|\\beta_i\\rangle\\big)$ と、パウリ・ワード・エンタングラー $\\hat P_k$ から構築される相関ユニタリ $\\hat U(\\tau) = \\prod_k \\exp(-i\\tau_k\\hat P_k/2)$ とを組み合わせたものです。観測量はエネルギー $E(\\tau,\\Omega) = \\langle\\Omega|U(\\tau)^\\dagger \\hat H U(\\tau)|\\Omega\\rangle$ であり、両方のパラメータ集合について最小化されます。[[assumption: 各 $\\hat P_k$ は対合的である、すなわち $\\hat P_k^2=1$ ]]。そのため相似変換されたハミルトニアンは2項に閉じ、$\\hat H[\\tau;\\hat P] = \\hat H - i\\frac{\\sin\\tau}{2}[\\hat H,\\hat P] + \\frac{1}{2}(1-\\cos\\tau)\\hat P[\\hat H,\\hat P]$ となります。候補となるエンタングラーは $\\Delta E[\\hat P_k] = \\min_\\tau E[\\tau;\\hat P_k] - E_{QMF} \\le 0$ によって順位付けされます。[[approximation: すべての候補について $\\tau$ と $\\Omega$ を完全に最適化する代わりに、二段階の事前スクリーニングでは、まずゼロでない一次導関数 $dE/d\\tau|_{\\tau=0} = \\langle\\Omega_{min}|-\\frac{i}{2}[\\hat H,\\hat P_k]|\\Omega_{min}\\rangle$ によってエンタングラーにフラグを立て、それがゼロになる場合に限り、論文の付録にある有意に負の二次導関数によってフラグを立てます]]。その後、コストの高い完全な $\\Delta E$ の評価が、残った候補について実行されます。",
+      },
+    },
     entries: ["vqe-qcc"],
     citations: [
       { title: "Qubit coupled-cluster method: A systematic approach to quantum chemistry on a quantum computer", authors: "Ilya G. Ryabinkin, Tzu-Ching Yen, Scott N. Genin, Artur F. Izmaylov", year: "2018", url: "https://arxiv.org/abs/1809.03827" },
@@ -9028,6 +9208,16 @@ export const LAYER_GRAPH: LayerGraph = {
     conditions: "Restricted, by the authors' own argument, to classical optimization problems — the ones \"which yield diagonal Hamiltonians\". Barkoutsos et al. are explicit that expectation-value aggregation \"is fully justified for quantum mechanical observables such as molecular energies\" and that it is the diagonal case where \"aggregating the samples in a different way than the expected value is more natural\". So this belongs to the combinatorial branch of the variational family and not to the chemistry branch that the rest of this region is drawn from. The evidence offered is empirical — \"using classical simulation as well as quantum hardware\" — over the problems in that study, alongside analytical results explaining the differences observed.",
     conditionsJa: "著者ら自身の議論により、古典的な最適化問題、すなわち「対角なハミルトニアンを与える」問題に限定されます。Barkoutsos らは、期待値による集約が「分子エネルギーのような量子力学的オブザーバブルについては完全に正当化される」こと、そして「期待値とは別の仕方で標本を集約するほうが自然」なのは対角な場合であることを明示しています。したがってこれは変分系統のうち組合せ最適化の枝に属し、この領域の他の部分が描かれている化学の枝には属しません。示されている根拠は経験的なもので、当該研究で扱われた問題について「古典シミュレーションと量子ハードウェアの双方を用いて」得られたものであり、観測された差を説明する解析的結果が添えられています。",
     steps: [],
+    hops: {
+      "cvar-objective": {
+        name: "sort outcomes, average the lower alpha-tail",
+        nameJa: "測定結果を並べ替え、下位α裾を平均",
+        theory:
+          "The state $\\ket{\\psi(\\theta)}=\\sum_j \\alpha_j(\\theta)\\ket{j}$ turns each computational-basis measurement into a sample of the random variable $X(\\theta)$, taking value $H_{j,j}$ with $\\text{Prob}(X(\\theta)=H_{j,j})=|\\alpha_j(\\theta)|^2$. Rather than optimising $\\min_\\theta \\bra{\\psi(\\theta)}H\\ket{\\psi(\\theta)}$, the classical loop minimises the Conditional Value-at-Risk $\\text{CVaR}_\\alpha(X)=\\mathbb{E}(X\\mid X\\le F_X^{-1}(\\alpha))$, the mean of the lower $\\alpha$-tail of X, for a chosen [[assumption: confidence level $\\alpha$ with $0<\\alpha\\le 1$]]. In practice this is [[approximation: estimated from a finite batch of $K$ sorted outcomes $H_1\\le\\dots\\le H_K$ as $\\frac{1}{\\lceil\\alpha K\\rceil}\\sum_{k=0}^{\\lceil\\alpha K\\rceil}H_k$, an estimator whose variance scales as $O(1/(K\\alpha^2))$]]; $\\alpha\\searrow 0$ recovers the single best sample, $\\alpha=1$ the ordinary sample mean.",
+        theoryJa:
+          "状態 $\\ket{\\psi(\\theta)}=\\sum_j \\alpha_j(\\theta)\\ket{j}$ により、計算基底での各測定は確率変数 $X(\\theta)$ の1サンプルとなり、$\\text{Prob}(X(\\theta)=H_{j,j})=|\\alpha_j(\\theta)|^2$ の確率で値 $H_{j,j}$ を取ります。古典側の最適化ループは、$\\min_\\theta \\bra{\\psi(\\theta)}H\\ket{\\psi(\\theta)}$ を最適化する代わりに、選択した[[assumption: 信頼水準 $\\alpha$ ($0<\\alpha\\le 1$)]]に対する条件付きバリュー・アット・リスク $\\text{CVaR}_\\alpha(X)=\\mathbb{E}(X\\mid X\\le F_X^{-1}(\\alpha))$、すなわちXの下位 $\\alpha$ 裾の平均を最小化します。実際には、これは[[approximation: $K$ 個のソート済み結果 $H_1\\le\\dots\\le H_K$ からなる有限バッチから $\\frac{1}{\\lceil\\alpha K\\rceil}\\sum_{k=0}^{\\lceil\\alpha K\\rceil}H_k$ として推定され、その分散は $O(1/(K\\alpha^2))$ としてスケールする推定量です]]。$\\alpha\\searrow 0$ では単一の最良サンプルに、$\\alpha=1$ では通常の標本平均に帰着します。",
+      },
+    },
     entries: ["vqe-cvar"],
     citations: [
       { title: "Improving Variational Quantum Optimization using CVaR", authors: "Panagiotis Kl. Barkoutsos, Giacomo Nannicini, Anton Robert, Ivano Tavernelli, Stefan Woerner", year: "2019", url: "https://arxiv.org/abs/1907.04769" },
@@ -9050,6 +9240,16 @@ export const LAYER_GRAPH: LayerGraph = {
     // measurements are aggregated and adds no circuits. Two ways through one
     // slot that genuinely draw different pictures.
     steps: ["observable-estimation"],
+    hops: {
+      "analytic-gradient-optimization": {
+        name: "shift the angle by s, difference the runs",
+        nameJa: "角度をsだけシフトし、2回の実行の差を取る",
+        theory:
+          "For a gate $G(\\mu) = e^{-i\\mu G}$ with Hermitian generator $G$, [[assumption: Theorem 1 requires $G$ to have at most two distinct eigenvalues, which after removing the unobservable global phase can be written $\\pm r$]]. Substituting $G(\\pi/4r) = \\frac{1}{\\sqrt2}(1 - ir^{-1}G)$ into $\\partial_\\mu f = \\langle\\psi|G^\\dagger \\hat Q(\\partial_\\mu G)|\\psi\\rangle + h.c.$ gives the parameter-shift rule $\\partial_\\mu f = r[f(\\mu+s) - f(\\mu-s)]$ with shift $s = \\pi/4r$: two evaluations of the same circuit, one with the gate parameter shifted by $+s$ and one by $-s$. For a Pauli rotation generator $\\frac12\\sigma$, $r=1/2$ and $s=\\pi/2$. Unlike a finite-difference gradient this identity is exact for any shift size, since it follows from the trigonometric closed form of $e^{-i\\mu G}$ rather than a Taylor truncation; if $\\mu$ enters more than one gate, the product rule sums a shifted pair per gate.",
+        theoryJa:
+          "エルミート生成子 $G$ を持つゲート $G(\\mu) = e^{-i\\mu G}$ について、[[assumption: 定理1は、観測不可能な大域位相を除去した後に $\\pm r$ と書けるように、$G$ が高々2つの異なる固有値を持つことを要求します]]。$G(\\pi/4r) = \\frac{1}{\\sqrt2}(1 - ir^{-1}G)$ を $\\partial_\\mu f = \\langle\\psi|G^\\dagger \\hat Q(\\partial_\\mu G)|\\psi\\rangle + h.c.$ に代入すると、シフト $s = \\pi/4r$ を伴うパラメータシフト則 $\\partial_\\mu f = r[f(\\mu+s) - f(\\mu-s)]$ が得られます。すなわち同じ回路を2回評価し、一方はゲートパラメータを $+s$ だけシフトし、もう一方は $-s$ だけシフトします。パウリ回転生成子 $\\frac12\\sigma$ の場合、$r=1/2$ かつ $s=\\pi/2$ です。有限差分による勾配と異なり、この恒等式はどのようなシフト幅でも厳密です。なぜならこれはテイラー展開の打ち切りではなく、$e^{-i\\mu G}$ の三角関数による閉じた形から導かれるからです。$\\mu$ が複数のゲートに現れる場合、積の法則によりゲートごとにシフトした対を足し合わせます。",
+      },
+    },
     entries: ["vqe-gradient-based"],
     citations: [
       { title: "Evaluating analytic gradients on quantum hardware", authors: "Maria Schuld, Ville Bergholm, Christian Gogolin, Josh Izaac, Nathan Killoran", year: "2018", url: "https://arxiv.org/abs/1811.11184" },
@@ -9206,6 +9406,16 @@ export const LAYER_GRAPH: LayerGraph = {
     // them to a classical eigensolver, which is not a slot anything else on this
     // map fills. `routeOf` derives that from the steps rather than being told.
     steps: ["ground-state-energy", "observable-estimation"],
+    hops: {
+      "subspace-expansion-excited-state": {
+        name: "reuse the eigenvectors to weigh any operator",
+        nameJa: "固有ベクトルを再利用し任意の演算子を評価",
+        theory:
+          "Once the reference state $|\\Psi\\rangle$ is prepared, QSE builds a linear subspace spanned by particle-hole excitations $a_i^\\dagger a_j|\\Psi\\rangle$ [[approximation: truncated to this first order (k=1, linear response) of a hierarchy that would reach exact diagonalization only at k=Ne, exponential cost]] and diagonalizes it as the generalized eigenvalue problem $H_{LR}C=S_{LR}CE$, whose entries $H^{ij}_{kl}=\\langle\\Psi|(a_i^\\dagger a_j)^\\dagger H a_k^\\dagger a_l|\\Psi\\rangle$ and overlap $S^{ij}_{kl}=\\delta_{ik}\\,{}^1D^{j}_{l}-2\\,{}^2D^{jk}_{li}$ [[assumption: these matrix elements are recovered from the reference state's measured 1- and 2-RDM]] are estimated by measurement, giving eigenvectors $C$ and energies $E$. The same construction, $O^{ij}_{kl}=\\langle\\Psi|(a_i^\\dagger a_j)^\\dagger O a_k^\\dagger a_l|\\Psi\\rangle$, holds for any operator $O$ in place of $H$, so the eigenvectors already obtained can weigh that operator's matrix to read off its value for the ground or an excited state without a new optimization.",
+        theoryJa:
+          "参照状態 $|\\Psi\\rangle$ が準備されると、QSEは粒子・正孔励起 $a_i^\\dagger a_j|\\Psi\\rangle$ によって張られる線形部分空間を構築します[[approximation: これは、k=Neで初めて厳密対角化に到達する階層のうち、この最初の次数（k=1、線形応答）に切り詰めたものであり、それ以上は指数的なコストがかかります]]。そしてこれを一般化固有値問題 $H_{LR}C=S_{LR}CE$ として対角化します。その行列要素 $H^{ij}_{kl}=\\langle\\Psi|(a_i^\\dagger a_j)^\\dagger H a_k^\\dagger a_l|\\Psi\\rangle$ と重なり $S^{ij}_{kl}=\\delta_{ik}\\,{}^1D^{j}_{l}-2\\,{}^2D^{jk}_{li}$ は[[assumption: これらの行列要素は、参照状態について測定された1次および2次のRDMから復元されます]]測定によって推定され、固有ベクトル $C$ とエネルギー $E$ が得られます。同じ構成は $O^{ij}_{kl}=\\langle\\Psi|(a_i^\\dagger a_j)^\\dagger O a_k^\\dagger a_l|\\Psi\\rangle$ として、$H$ の代わりに任意の演算子 $O$ に対しても成り立つため、すでに得られている固有ベクトルを使ってその演算子の行列を評価し、新たな最適化を行うことなく基底状態や励起状態における値を読み取ることができます。",
+      },
+    },
     entries: ["vqe-quantum-subspace-expansion"],
     citations: [
       { title: "Hybrid Quantum-Classical Hierarchy for Mitigation of Decoherence and Determination of Excited States", authors: "Jarrod R. McClean, Mollie E. Schwartz, Jonathan Carter, Wibe A. de Jong", year: "2016", url: "https://arxiv.org/abs/1603.05681" },
@@ -9231,6 +9441,16 @@ export const LAYER_GRAPH: LayerGraph = {
     // them is which operators the matrix elements run over, and this graph has
     // no vocabulary for that yet.
     steps: ["ground-state-energy", "observable-estimation"],
+    hops: {
+      "equation-of-motion-excited-state": {
+        name: "measure M,Q,V,W then solve the eigenproblem",
+        nameJa: "M・Q・V・Wを測定して固有値問題を解く",
+        theory:
+          "The excitation operator $\\hat O_n^\\dagger$ is expanded over single/double ($\\alpha=1,2$) particle-hole operators $\\hat E_{\\mu_\\alpha}^{(\\alpha)}$ as $\\hat O_n^\\dagger=\\sum_\\alpha\\sum_{\\mu_\\alpha}[X_{\\mu_\\alpha}^{(\\alpha)}(n)\\hat E_{\\mu_\\alpha}^{(\\alpha)}-Y_{\\mu_\\alpha}^{(\\alpha)}(n)(\\hat E_{\\mu_\\alpha}^{(\\alpha)})^\\dagger]$ [[approximation: the operator basis is truncated to singles and doubles, dropping higher excitation ranks]]. Substituting into $E_{0n}=\\langle 0|[\\hat O_n,\\hat H,\\hat O_n^\\dagger]|0\\rangle/\\langle 0|[\\hat O_n,\\hat O_n^\\dagger]|0\\rangle$ and enforcing $\\delta(E_{0n})=0$ over the $X,Y$ coefficients gives $\\begin{pmatrix}M&Q\\\\ Q^*&M^*\\end{pmatrix}\\begin{pmatrix}X_n\\\\ Y_n\\end{pmatrix}=E_{0n}\\begin{pmatrix}V&W\\\\-W^*&-V^*\\end{pmatrix}\\begin{pmatrix}X_n\\\\ Y_n\\end{pmatrix}$, with $a\\equiv(\\hat E_{\\mu_\\alpha}^{(\\alpha)})^\\dagger$, $b\\equiv\\hat E_{\\nu_\\beta}^{(\\beta)}$: $M=\\langle 0|[a,\\hat H,b]|0\\rangle$ and $Q=-\\langle 0|[a,\\hat H,b^\\dagger]|0\\rangle$ are double commutators, while $V=\\langle 0|[a,b]|0\\rangle$ and $W=-\\langle 0|[a,b^\\dagger]|0\\rangle$ are single commutators with no $\\hat H$ — all measured on the ground state and diagonalized classically for $E_{0n}$ [[assumption: this three-term double-commutator numerator equals the plain nested commutator only when $|0\\rangle$ is a true eigenstate of $\\hat H$, not merely an approximate VQE ground state]].",
+        theoryJa:
+          "励起演算子$\\hat O_n^\\dagger$は、単一・二重（$\\alpha=1,2$）粒子-正孔演算子$\\hat E_{\\mu_\\alpha}^{(\\alpha)}$を用いて$\\hat O_n^\\dagger=\\sum_\\alpha\\sum_{\\mu_\\alpha}[X_{\\mu_\\alpha}^{(\\alpha)}(n)\\hat E_{\\mu_\\alpha}^{(\\alpha)}-Y_{\\mu_\\alpha}^{(\\alpha)}(n)(\\hat E_{\\mu_\\alpha}^{(\\alpha)})^\\dagger]$と展開されます[[approximation: 演算子基底は一重・二重励起に打ち切られ、それより高次の励起階数は無視されます]]。これを$E_{0n}=\\langle 0|[\\hat O_n,\\hat H,\\hat O_n^\\dagger]|0\\rangle/\\langle 0|[\\hat O_n,\\hat O_n^\\dagger]|0\\rangle$に代入し、係数$X,Y$について$\\delta(E_{0n})=0$を課すと、$\\begin{pmatrix}M&Q\\\\ Q^*&M^*\\end{pmatrix}\\begin{pmatrix}X_n\\\\ Y_n\\end{pmatrix}=E_{0n}\\begin{pmatrix}V&W\\\\-W^*&-V^*\\end{pmatrix}\\begin{pmatrix}X_n\\\\ Y_n\\end{pmatrix}$が得られます。ここで$a\\equiv(\\hat E_{\\mu_\\alpha}^{(\\alpha)})^\\dagger$、$b\\equiv\\hat E_{\\nu_\\beta}^{(\\beta)}$とすると、$M=\\langle 0|[a,\\hat H,b]|0\\rangle$と$Q=-\\langle 0|[a,\\hat H,b^\\dagger]|0\\rangle$は二重交換子であり、一方$V=\\langle 0|[a,b]|0\\rangle$と$W=-\\langle 0|[a,b^\\dagger]|0\\rangle$は$\\hat H$を含まない単一交換子です——いずれも基底状態上で測定され、$E_{0n}$について古典的に対角化されます[[assumption: この三項からなる二重交換子の分子が単純なネストされた交換子と等しくなるのは、$|0\\rangle$が$\\hat H$の厳密な固有状態である場合に限られ、近似的なVQE基底状態にすぎない場合には成り立ちません]]。",
+      },
+    },
     entries: ["vqe-qeom"],
     citations: [
       { title: "Quantum equation of motion for computing molecular excitation energies on a noisy quantum processor", authors: "Pauline J Ollitrault, Abhinav Kandala, Chun-Fu Chen, Panagiotis Kl Barkoutsos, Antonio Mezzacapo, Marco Pistoia, Sarah Sheldon, Stefan Woerner, Jay Gambetta, Ivano Tavernelli", year: "2019", url: "https://arxiv.org/abs/1910.12890" },
@@ -9337,6 +9557,16 @@ export const LAYER_GRAPH: LayerGraph = {
     conditions: "Zhang et al. name the property the objective is chosen for: variance-VQE \"can be viewed as an self-verifying eigensolver for arbitrary eigenstate by designing, since an eigenstate for a Hamiltonian should have zero energy variance\". Two consequences they state and this slot cares about. It is not selective — the variance is zero at EVERY eigenstate, so on its own it does not say which one was reached, and they find \"optimization of a combination of energy and variance may be more efficient to find low-energy excited states than those of minimizing energy or variance alone\". And it is expensive in the way any variance is, since it needs the square of the Hamiltonian; their answer is to stop evaluating all of it — \"the optimization can be boosted with stochastic gradient descent by Hamiltonian sampling, which uses only a few terms of the Hamiltonian and thus significantly reduces the quantum resource for evaluating variance and its gradients\".",
     conditionsJa: "Zhang らは、この目的関数が選ばれる理由となる性質を名指ししています。分散 VQE は「設計上、任意の固有状態に対する自己検証型の固有値ソルバーと見なせる。ハミルトニアンの固有状態であれば、エネルギー分散はゼロになるはずだからである」。彼らが述べている帰結のうち、この層に関わるものが二つあります。第一に、この目的関数は選択的ではありません。分散はどの固有状態でもゼロなので、それだけではどの状態に到達したのかを言えません。実際、「エネルギーと分散を組み合わせて最適化するほうが、エネルギーだけ、あるいは分散だけを最小化するよりも、低エネルギーの励起状態を求めるうえで効率的でありうる」と報告されています。第二に、分散である以上ハミルトニアンの二乗を要し、その分だけ高価です。彼らの答えは、その全体を評価するのをやめることです。「ハミルトニアンのサンプリングによる確率的勾配降下法によって最適化を加速でき、これはハミルトニアンのごく少数の項しか使わないため、分散とその勾配の評価に要する量子資源を大幅に削減する」。",
     steps: [],
+    hops: {
+      "variance-objective": {
+        name: "drive variance to zero at an eigenstate",
+        nameJa: "固有状態でエネルギー分散をゼロに追い込む",
+        theory:
+          "The paper builds the cost function directly as the energy variance $\\Delta(\\theta) \\equiv \\langle H^2\\rangle_\\theta - \\langle H\\rangle_\\theta^2 \\ge 0$ (Eq. 2), with $\\langle * \\rangle_\\theta$ the expectation in the ansatz state $|\\psi(\\theta)\\rangle$. [[assumption: $H$ is written as $H = c^T L$, a sum of local terms $L_i$, each a tensor product of a few Pauli matrices, with real coefficients $c_i$]]. Under this decomposition $\\Delta(\\theta)$ reduces to a bilinear form in the quantum covariance matrix $G_{ij}(\\theta) = \\langle L_i L_j\\rangle_\\theta - \\langle L_i\\rangle_\\theta\\langle L_j\\rangle_\\theta$ (Eq. 3), giving $\\Delta(\\theta) = c^T G(\\theta) c \\ge 0$ (Eq. 4), each element measurable on the quantum processor. Gradient descent then updates $\\theta_t = \\theta_{t-1} - \\eta\\, \\partial\\Delta(\\theta_{t-1})/\\partial\\theta$ (Eq. 6), using $\\partial\\Delta/\\partial\\theta = c^T(\\partial G/\\partial\\theta)c$ (Eq. 5).",
+        theoryJa:
+          "論文はコスト関数を直接、エネルギー分散 $\\Delta(\\theta) \\equiv \\langle H^2\\rangle_\\theta - \\langle H\\rangle_\\theta^2 \\ge 0$ (式2)として構築します。ここで $\\langle * \\rangle_\\theta$ はアンザッツ状態 $|\\psi(\\theta)\\rangle$ における期待値です。[[assumption: $H$ は $H = c^T L$ として書かれ、これは局所項 $L_i$ の和であり、それぞれが少数個のパウリ行列のテンソル積であって、実数係数 $c_i$ を持ちます]]。この分解の下で $\\Delta(\\theta)$ は量子共分散行列 $G_{ij}(\\theta) = \\langle L_i L_j\\rangle_\\theta - \\langle L_i\\rangle_\\theta\\langle L_j\\rangle_\\theta$ (式3)における双線形形式に帰着し、$\\Delta(\\theta) = c^T G(\\theta) c \\ge 0$ (式4)が得られます。各要素は量子プロセッサ上で測定可能です。勾配降下法はその後、$\\partial\\Delta/\\partial\\theta = c^T(\\partial G/\\partial\\theta)c$ (式5)を用いて $\\theta_t = \\theta_{t-1} - \\eta\\, \\partial\\Delta(\\theta_{t-1})/\\partial\\theta$ (式6)と更新します。",
+      },
+    },
     entries: ["vqe-variance-objective"],
     citations: [
       { title: "Variational quantum eigensolvers by variance minimization", authors: "Dan-Bo Zhang, Zhan-Hao Yuan, Tao Yin", year: "2020", url: "https://arxiv.org/abs/2006.15781" },
@@ -9355,6 +9585,16 @@ export const LAYER_GRAPH: LayerGraph = {
     conditions: "Barkoutsos et al. put the transformation before the circuit: they \"propose a transformation of the electronic structure Hamiltonian in the second quantization framework into the particle-hole (p/h) picture, which offers a better starting point for the expansion of the trial wavefunction\", so that the state \"is parametrized in a way to efficiently explore the sector of the molecular Fock space that contains the desired solution\". The circuit family follows from that choice — \"a new family of quantum circuits based on exchange-type gates that enable accurate calculations while keeping the gate count (i.e., the circuit depth) low\" — and the resulting method is named in the paper: \"the particle-hole implementation of the Unitary Coupled Cluster (UCC) method within the Variational Quantum Eigensolver approach ... named q-UCC\". The claim to read carefully is the last one, because it is about Trotterisation rather than about accuracy in general: they \"show how a single Trotter step can accurately and efficiently reproduce the ground state energies of simple molecular systems\", and *simple* is the paper's own word. No hardware run is reported.",
     conditionsJa: "Barkoutsos らは、回路より先に変換を置きます。彼らは「第二量子化の枠組みにおける電子構造ハミルトニアンを粒子・正孔（p/h）描像へ変換することを提案する。これは試行波動関数の展開のより良い出発点を与える」とし、その結果として状態は「望む解を含む分子 Fock 空間のセクターを効率的に探索できる形にパラメータ化される」と述べます。回路族はこの選択から導かれます。「交換型ゲートにもとづく新しい量子回路の族であり、ゲート数（すなわち回路深さ）を低く保ちながら精度のよい計算を可能にする」。そして得られる手法には論文自身が名前を与えています。「変分量子固有値ソルバーの枠組みにおけるユニタリ結合クラスター（UCC）法の粒子・正孔版であり、q-UCC と名づける」。注意して読むべきは最後の主張です。これは一般的な精度ではなく Trotter 分解についての主張だからです。彼らは「単一の Trotter ステップが単純な分子系の基底状態エネルギーを正確かつ効率的に再現しうることを示す」と述べており、「単純な」は論文自身の言葉です。実機での実行の報告はありません。",
     steps: [],
+    hops: {
+      "particle-hole-ansatz": {
+        name: "exponentiate excitations, Trotter-split",
+        nameJa: "励起演算子を指数化しトロッター分解する",
+        theory:
+          "The p/h picture redefines creation/annihilation operators as $\\hat b_i^\\dagger=\\hat a_i$ for holes and $\\hat b_m^\\dagger=\\hat a_m^\\dagger$ for particles (Eqs. 5-8), so normal-ordering $\\hat N_b[\\cdot]$ against $|\\Phi_0\\rangle$ gives $\\hat H^{p/h}=E_{HF}+\\sum_{rs}\\langle r|\\hat F|s\\rangle \\hat N_b[\\hat a_r^\\dagger \\hat a_s]+\\tfrac12\\sum_{rstu}\\langle rs|\\hat g|tu\\rangle \\hat N_b[\\hat a_r^\\dagger \\hat a_s^\\dagger \\hat a_u \\hat a_t]$ (Eq. 9). The end state is $|\\Psi(\\vec\\theta)\\rangle=e^{\\hat T(\\vec\\theta)-\\hat T^\\dagger(\\vec\\theta)}|\\Phi_0\\rangle$, with $\\hat T=\\hat T_1+\\hat T_2$ parameterised by amplitudes $\\theta_i^m,\\theta_{i,j}^{m,n}$ in $\\hat T_1=\\sum_{i;m}\\theta_i^m\\hat a_m^\\dagger \\hat a_i$ and $\\hat T_2=\\tfrac12\\sum_{i,j;m,n}\\theta_{i,j}^{m,n}\\hat a_n^\\dagger \\hat a_m^\\dagger \\hat a_j \\hat a_i$. [[approximation: the circuit realises this exponential by a first-order Trotter split $e^{\\hat A+\\hat B}=\\lim_{n\\to\\infty}(e^{\\hat A/n}e^{\\hat B/n})^n$ (Eq. 16) truncated at a finite number of steps n]]. [[assumption: the redefined operators still obey fermionic anti-commutation, so $\\hat N_b$ defines a valid quasiparticle vacuum at $|\\Phi_0\\rangle$]].",
+        theoryJa:
+          "p/h（粒子-正孔）描像は生成・消滅演算子を、正孔について$\\hat b_i^\\dagger=\\hat a_i$、粒子について$\\hat b_m^\\dagger=\\hat a_m^\\dagger$と再定義します（式5-8）。これにより、$|\\Phi_0\\rangle$に対して正規順序$\\hat N_b[\\cdot]$を取ると、$\\hat H^{p/h}=E_{HF}+\\sum_{rs}\\langle r|\\hat F|s\\rangle \\hat N_b[\\hat a_r^\\dagger \\hat a_s]+\\tfrac12\\sum_{rstu}\\langle rs|\\hat g|tu\\rangle \\hat N_b[\\hat a_r^\\dagger \\hat a_s^\\dagger \\hat a_u \\hat a_t]$が得られます（式9）。終状態は$|\\Psi(\\vec\\theta)\\rangle=e^{\\hat T(\\vec\\theta)-\\hat T^\\dagger(\\vec\\theta)}|\\Phi_0\\rangle$であり、ここで$\\hat T=\\hat T_1+\\hat T_2$は振幅$\\theta_i^m,\\theta_{i,j}^{m,n}$によってパラメータ化され、$\\hat T_1=\\sum_{i;m}\\theta_i^m\\hat a_m^\\dagger \\hat a_i$および$\\hat T_2=\\tfrac12\\sum_{i,j;m,n}\\theta_{i,j}^{m,n}\\hat a_n^\\dagger \\hat a_m^\\dagger \\hat a_j \\hat a_i$となります。[[approximation: この指数関数は回路上では1次のトロッター分解$e^{\\hat A+\\hat B}=\\lim_{n\\to\\infty}(e^{\\hat A/n}e^{\\hat B/n})^n$（式16）によって実現され、有限のステップ数nで打ち切られます]]。[[assumption: 再定義された演算子は依然としてフェルミオンの反交換関係に従い、$\\hat N_b$は$|\\Phi_0\\rangle$において有効な準粒子真空を定めます]]。",
+      },
+    },
     entries: ["vqe-particle-conserving"],
     citations: [
       { title: "Quantum algorithms for electronic structure calculations: particle/hole Hamiltonian and optimized wavefunction expansions", authors: "Panagiotis Kl. Barkoutsos, Jerome F. Gonthier, Igor Sokolov, Nikolaj Moll, Gian Salis, Andreas Fuhrer, Marc Ganzhorn, Daniel J. Egger, Matthias Troyer, Antonio Mezzacapo, Stefan Filipp, Ivano Tavernelli", year: "2018", url: "https://arxiv.org/abs/1805.04340" },
@@ -9373,6 +9613,16 @@ export const LAYER_GRAPH: LayerGraph = {
     conditions: "Stokes et al. state exactly what the step is taken with respect to: the optimization dynamics \"is interpreted as moving in the steepest descent direction with respect to the Quantum Information Geometry, corresponding to the real part of the Quantum Geometric Tensor (QGT), also known as the Fubini-Study metric tensor\". That tensor is the extra thing this method buys its better steps with, and the paper's own contribution is making it affordable rather than exact — \"an efficient algorithm is presented for computing a block-diagonal approximation to the Fubini-Study metric tensor for parametrized quantum circuits\". Block-diagonal is an approximation, and the abstract states no bound on what it costs in step quality, so none is quoted here.",
     conditionsJa: "Stokes らは、この一歩が何に関して取られるのかを明示しています。その最適化のダイナミクスは「量子情報幾何に関する最急降下方向へ進むものとして解釈される。これは量子幾何テンソル（QGT）の実部、すなわち Fubini-Study 計量テンソルに対応する」。このテンソルこそ、この方式がより良い一歩を買うために支払う追加の対象であり、論文自身の貢献は、それを厳密に求めることではなく手頃にすることにあります。「パラメータ付き量子回路に対する Fubini-Study 計量テンソルのブロック対角近似を計算する効率的なアルゴリズムを提示する」。ブロック対角化は近似であり、それが一歩の質にどれだけ影響するかについて要旨は限界を述べていないので、ここでも数値は挙げません。",
     steps: [],
+    hops: {
+      "natural-gradient-optimization": {
+        name: "invert the block-diagonal metric each step",
+        nameJa: "各ステップでブロック対角計量を反転",
+        theory:
+          "The step solves the linear system $g(\\theta_t)(\\theta_{t+1}-\\theta_t) = -\\eta\\nabla\\mathcal{L}(\\theta_t)$, where $g_{ij}(\\theta) = \\mathrm{Re}[G_{ij}(\\theta)]$ is built from the Quantum Geometric Tensor $G_{ij}(\\theta) = \\langle\\partial_i\\psi_\\theta,\\partial_j\\psi_\\theta\\rangle - \\langle\\partial_i\\psi_\\theta,\\psi_\\theta\\rangle\\langle\\psi_\\theta,\\partial_j\\psi_\\theta\\rangle$. For a layered circuit $U_L(\\theta) = V_L(\\theta_L)W_L\\cdots V_1(\\theta_1)W_1$ whose layer generators satisfy $\\partial_iV_l = -iK_iV_l$, [[assumption: within a layer $\\partial_iK_j = 0$ for $i \\neq j$, forcing $[K_i,K_j]=0$, so each block reduces to expectation values on the subcircuit state $\\psi_l = U_{[1:l]}|0\\rangle$: $G^{(l)}_{ij} = \\langle\\psi_l|K_iK_j|\\psi_l\\rangle - \\langle\\psi_l|K_i|\\psi_l\\rangle\\langle\\psi_l|K_j|\\psi_l\\rangle$]]. [[approximation: cross-layer blocks of $g$ are discarded, so only $G^{(1)},\\ldots,G^{(L)}$ are estimated and inverted rather than the full metric]].",
+        theoryJa:
+          "この更新ステップは線形方程式 $g(\\theta_t)(\\theta_{t+1}-\\theta_t) = -\\eta\\nabla\\mathcal{L}(\\theta_t)$ を解きます。ここで $g_{ij}(\\theta) = \\mathrm{Re}[G_{ij}(\\theta)]$ は、量子幾何テンソル $G_{ij}(\\theta) = \\langle\\partial_i\\psi_\\theta,\\partial_j\\psi_\\theta\\rangle - \\langle\\partial_i\\psi_\\theta,\\psi_\\theta\\rangle\\langle\\psi_\\theta,\\partial_j\\psi_\\theta\\rangle$ から構成されます。層状回路 $U_L(\\theta) = V_L(\\theta_L)W_L\\cdots V_1(\\theta_1)W_1$ について、その各層の生成子が $\\partial_iV_l = -iK_iV_l$ を満たすとき、[[assumption: 同じ層内では $i \\neq j$ に対して $\\partial_iK_j = 0$ となり $[K_i,K_j]=0$ が強制されるため、各ブロックはサブ回路の状態 $\\psi_l = U_{[1:l]}|0\\rangle$ 上での期待値 $G^{(l)}_{ij} = \\langle\\psi_l|K_iK_j|\\psi_l\\rangle - \\langle\\psi_l|K_i|\\psi_l\\rangle\\langle\\psi_l|K_j|\\psi_l\\rangle$ に帰着します]]。[[approximation: 層をまたぐ $g$ のブロックは破棄され、完全な計量の代わりに $G^{(1)},\\ldots,G^{(L)}$ のみが推定・反転されます]]。",
+      },
+    },
     entries: ["vqe-natural-gradient"],
     citations: [
       { title: "Quantum Natural Gradient", authors: "James Stokes, Josh Izaac, Nathan Killoran, Giuseppe Carleo", year: "2019", url: "https://arxiv.org/abs/1909.02108" },
@@ -9399,6 +9649,16 @@ export const LAYER_GRAPH: LayerGraph = {
     // class: a different walk is a drawable difference, so there is nothing here
     // for `sameInternalsAsParent` to be true of.
     steps: ["ansatz-construction"],
+    hops: {
+      "layerwise-training": {
+        name: "grow circuit layers, then retrain in blocks",
+        nameJa: "回路の層を増やしてブロック単位で再訓練",
+        theory:
+          "The ansatz is built layer by layer as $U(\\vec\\theta)=\\prod_{i=1}^{L} l_i(\\vec\\theta_i)$ (Eq. 3), where each layer factors as $l_i(\\vec\\theta_i)=U_i(\\vec\\theta_i)\\,W$ (Eq. 2), with $W$ a fixed qubit-connectivity operator held constant throughout training. [[assumption: the paper states $U_i$'s structure can be arbitrary, so long as layers can be added successively; this paper's own experiments specialize $U_i$ to single-qubit Pauli rotations with $W$ built from CZ gates]]. Growth starts from $s$ initial layers (Eq. 1) and proceeds via two hyperparameters: $p$, how many new layers are appended per step, and $q$, the sliding window of trainable depth — e.g. with $p=2$, $q=4$, two layers are added each step and any layer more than four back from the current one is frozen. [[assumption: every layer's angles $\\vec\\theta_i$ are initialized to zero when added, which the paper states adds degrees of freedom \"without perturbing the current solution\"]]. [[approximation: instead of a joint gradient over the full $L$-layer circuit from the start, phase one takes each step's gradient over only the unfrozen window; phase two drops the permanent freeze and alternates over training a fraction $r$ of parameters as one contiguous partition of layers — e.g. a quarter or a half — until convergence]].",
+        theoryJa:
+          "アンザッツは $U(\\vec\\theta)=\\prod_{i=1}^{L} l_i(\\vec\\theta_i)$（式3）のように層ごとに構築され、各層は $l_i(\\vec\\theta_i)=U_i(\\vec\\theta_i)\\,W$（式2）として分解されます。ここで $W$ は固定された量子ビット接続性を表す演算子で、訓練を通じて一定に保たれます。[[assumption: 論文では、層を逐次的に追加できる限り $U_i$ の構造は任意でよいと述べられていますが、本論文自身の実験では $U_i$ を単一量子ビットのパウリ回転に特殊化し、$W$ はCZゲートから構成しています]]。層の追加は $s$ 個の初期層（式1）から始まり、2つのハイパーパラメータを通じて進行します。$p$ は各ステップで追加される新しい層の数、$q$ は訓練可能な深さのスライディングウィンドウです——例えば $p=2$、$q=4$ の場合、各ステップで2層が追加され、現在の層から4層より前にある層はすべて固定されます。[[assumption: 各層の角度 $\\vec\\theta_i$ は追加時にゼロで初期化され、論文はこれが「現在の解を乱すことなく」自由度を追加すると述べています]]。[[approximation: 最初から全 $L$ 層回路にわたる結合勾配を取る代わりに、フェーズ1では各ステップの勾配を固定されていないウィンドウのみについて取ります。フェーズ2では恒久的な固定を取りやめ、パラメータの一部 $r$ を層の連続した1つの区画として——例えば4分の1や2分の1——収束するまで交互に訓練します]]。",
+      },
+    },
     entries: ["vqe-layerwise-training"],
     citations: [
       { title: "Layerwise learning for quantum neural networks", authors: "Andrea Skolik, Jarrod R. McClean, Masoud Mohseni, Patrick van der Smagt, Martin Leib", year: "2020", url: "https://arxiv.org/abs/2006.14904" },
@@ -9417,6 +9677,16 @@ export const LAYER_GRAPH: LayerGraph = {
     conditions: "Mizukami et al. state what is varied and what follows from it. OO-UCC \"variationally determines the coupled cluster amplitudes and also molecular orbital coefficients\", and \"owing to its fully variational nature, first-order properties are readily available\" — which they cash out immediately: \"this feature allows the optimization of molecular structures in VQE without solving any additional equations\". The resource claim is comparative and unquantified in the abstract: \"the method requires smaller active space and shallower quantum circuit than UCC to achieve the same accuracy\", with no number attached, so none is quoted here. Evidence is simulation, and it is worth naming what was simulated because it is a property calculation rather than a single energy: \"numerical examples of OO-UCC using quantum simulators, which include the geometry optimization of the water and ammonia molecules using analytical first derivatives of the VQE\".",
     conditionsJa: "Mizukami らは、何を変分の対象とするか、そしてそこから何が従うかを述べています。OO-UCC は「結合クラスター振幅に加えて分子軌道係数も変分的に決定する」ものであり、「完全に変分的であることにより、一次の物理量がただちに利用できる」。彼らはその帰結をすぐに現金化します。「この性質により、追加の方程式を解くことなく VQE の中で分子構造を最適化できる」。資源についての主張は比較的なもので、要旨では定量されていません。「同じ精度を得るために、この方法は UCC より小さい活性空間と浅い量子回路で済む」とあるだけで数値は伴わないため、ここでも数値は挙げません。根拠はシミュレーションですが、何をシミュレートしたかは述べる価値があります。単一のエネルギーではなく物性の計算だからです。「量子シミュレータを用いた OO-UCC の数値例であり、VQE の解析的一次微分を用いた水分子およびアンモニア分子の構造最適化を含む」。",
     steps: [],
+    hops: {
+      "orbital-optimized-ansatz": {
+        name: "rotate orbitals via Newton-Raphson on Hk=-g",
+        nameJa: "Hk=-g のニュートン法で軌道を回転",
+        theory:
+          "The route starts from UCCSD, $|\\Psi\\rangle=e^{\\hat A_1+\\hat A_2}|0\\rangle$ with $\\hat A_n=\\hat T_n-\\hat T_n^\\dagger$, and factors it as $|\\Psi'\\rangle=e^{\\hat A_2}e^{\\hat A_1}|0\\rangle$. Because the singles generator $e^{\\hat A_1}$ is identical to the orbital-rotation operator $e^{\\hat\\kappa}$, $\\hat\\kappa=\\sum_{pq}\\kappa_{pq}(\\hat E_{pq}-\\hat E_{qp})$, [[assumption: the singles/orbital part can be optimized on a classical computer from the 1- and 2-electron reduced density matrices VQE already measures, rather than varied on the circuit]], collapsing the ansatz to OO-UCCD, $|\\Psi_{OO-UCCD}\\rangle=e^{\\tilde A_2}|\\tilde 0\\rangle$, $|\\tilde 0\\rangle=e^{\\hat A_1}|0\\rangle$. Orbitals move by a Newton-Raphson step $H\\kappa=-g$ built from the electronic Hessian and gradient $g_{pq}=\\langle\\Psi|[\\hat H,\\hat E_{pq}^-]|\\Psi\\rangle$, alternated with VQE until self-consistent. [[approximation: mapping $e^{\\tilde A_2}$ onto the circuit truncates the Trotter expansion at its first step, $|\\Psi\\rangle=\\prod_\\mu e^{\\tilde A_{2,\\mu}}|\\tilde 0\\rangle$]].",
+        theoryJa:
+          "この手法は UCCSD、$|\\Psi\\rangle=e^{\\hat A_1+\\hat A_2}|0\\rangle$($\\hat A_n=\\hat T_n-\\hat T_n^\\dagger$)から出発し、これを $|\\Psi'\\rangle=e^{\\hat A_2}e^{\\hat A_1}|0\\rangle$ と分解します。シングル励起の生成子 $e^{\\hat A_1}$ は軌道回転演算子 $e^{\\hat\\kappa}$($\\hat\\kappa=\\sum_{pq}\\kappa_{pq}(\\hat E_{pq}-\\hat E_{qp})$)と同一であるため、[[assumption: シングル・軌道の部分は回路上で変分させる代わりに、VQE がすでに測定している1電子・2電子換算密度行列から古典コンピュータ上で最適化できます]]、アンザッツは OO-UCCD、$|\\Psi_{OO-UCCD}\\rangle=e^{\\tilde A_2}|\\tilde 0\\rangle$($|\\tilde 0\\rangle=e^{\\hat A_1}|0\\rangle$)に縮約されます。軌道は、電子的ヘッシアンと勾配 $g_{pq}=\\langle\\Psi|[\\hat H,\\hat E_{pq}^-]|\\Psi\\rangle$ から構成されるニュートン・ラフソンのステップ $H\\kappa=-g$ によって動かされ、自己無撞着になるまで VQE と交互に繰り返されます。[[approximation: $e^{\\tilde A_2}$ を回路にマッピングする際、トロッター展開はその最初のステップ $|\\Psi\\rangle=\\prod_\\mu e^{\\tilde A_{2,\\mu}}|\\tilde 0\\rangle$ で打ち切られます]]。",
+      },
+    },
     entries: ["vqe-orbital-optimized"],
     citations: [
       { title: "Orbital optimized unitary coupled cluster theory for quantum computer", authors: "Wataru Mizukami, Kosuke Mitarai, Yuya O. Nakagawa, Takahiro Yamamoto, Tennin Yan, Yu-ya Ohnishi", year: "2019", url: "https://arxiv.org/abs/1910.11526" },
@@ -9435,6 +9705,16 @@ export const LAYER_GRAPH: LayerGraph = {
     conditions: "Gard et al. put the argument for the family before the family itself: \"the efficiency of this algorithm depends crucially on the ability to prepare multi-qubit trial states ... that either include, or at least closely approximate, the actual energy eigenstates of the problem being simulated while avoiding states that have little overlap with them\", and \"symmetries play a central role in determining the best trial states\". Their circuits \"respect particle number, total spin, spin projection, and time-reversal symmetries\" and \"contain the minimal number of variational parameters needed to fully span the appropriate symmetry subspace dictated by the chemistry problem while avoiding all irrelevant sectors of Hilbert space\" — minimality OVER THE SUBSPACE, which is a stronger claim than a small parameter count. The construction is general rather than tabulated: they \"show how to construct these circuits for arbitrary numbers of orbitals, electrons, and spin quantum numbers\" and \"provide explicit decompositions and gate counts in terms of standard gate sets in each case\". The evidence is simulation and its scope is stated: they \"test our circuits in quantum simulations of the $H_2$ and $LiH$ molecules and find that they outperform standard state preparation methods in terms of both accuracy and circuit depth\".",
     conditionsJa: "Gard らは、この回路族そのものより先に、族を選ぶ論拠を述べています。「このアルゴリズムの効率は、シミュレートされる問題の実際のエネルギー固有状態を含む、あるいは少なくともよく近似する多量子ビット試行状態を、それらとの重なりが小さい状態を避けつつ準備できるかどうかに決定的に依存する」。そして「最良の試行状態を決めるうえで対称性が中心的な役割を果たす」。彼らの回路は「粒子数、全スピン、スピン射影、時間反転の各対称性を尊重」し、「化学の問題が指定する適切な対称性部分空間を完全に張るのに必要な、最小個数の変分パラメータをもつ。同時に、ヒルベルト空間の無関係なセクターをすべて避ける」。これは部分空間上での最小性であり、単にパラメータが少ないというより強い主張です。構成は表ではなく一般的な手続きとして与えられます。「任意の軌道数、電子数、スピン量子数についてこれらの回路を構成する方法を示し」、「それぞれの場合について標準的なゲート集合による明示的な分解とゲート数を与える」。根拠はシミュレーションであり、その範囲も述べられています。「$H_2$ および $LiH$ 分子の量子シミュレーションで回路を検証し、標準的な状態準備法を精度と回路深さの双方で上回ることを見出した」。",
     steps: [],
+    hops: {
+      "symmetry-preserving-ansatz": {
+        name: "cascade A gates across the symmetry subspace",
+        nameJa: "対称部分空間全体にAゲートを連鎖",
+        theory:
+          "Fixing the particle number maps the target state onto the subspace $H_{n,m}=\\mathrm{span}\\{|s_1,\\dots,s_n\\rangle : s_i\\in\\{0,1\\},\\sum_i s_i=m\\}$, of dimension $\\binom{n}{m}$. $X$ gates first place the all-zero reference into this subspace; a cascade of nearest-neighbor two-qubit gates $A(\\theta,\\phi)$, which acts as the identity on $|00\\rangle,|11\\rangle$ and rotates $|01\\rangle\\leftrightarrow|10\\rangle$ by $\\cos\\theta,\\ e^{\\pm i\\phi}\\sin\\theta$, then generates every superposition within $H_{n,m}$ using the minimal $2\\binom{n}{m}-2$ real parameters. [[assumption: the specific layered A-gate arrangement that reaches this minimal, exactly-spanning circuit for general $n,m$ has no analytical proof -- the paper confirms it only through extensive numerical fidelity checks and states it as a conjecture for arbitrarily many orbitals and electrons.]] Setting $\\phi=0$ in every $A$ gate restricts the state to real coefficients; reaching time-reversal symmetry's minimal parameter count, half of $2\\binom{n}{m}-2$, additionally requires fixing one $\\theta$ parameter to zero.",
+        theoryJa:
+          "粒子数を固定すると、目標状態は部分空間 $H_{n,m}=\\mathrm{span}\\{|s_1,\\dots,s_n\\rangle : s_i\\in\\{0,1\\},\\sum_i s_i=m\\}$ 上に写像されます。この部分空間の次元は $\\binom{n}{m}$ です。まず $X$ ゲートによって全ゼロの参照状態をこの部分空間へ配置します。続いて、最近接2量子ビットゲート $A(\\theta,\\phi)$ を連鎖させます。このゲートは $|00\\rangle,|11\\rangle$ には恒等として作用し、$|01\\rangle\\leftrightarrow|10\\rangle$ を $\\cos\\theta,\\ e^{\\pm i\\phi}\\sin\\theta$ によって回転させるもので、最小限の $2\\binom{n}{m}-2$ 個の実パラメータを用いて $H_{n,m}$ 内のあらゆる重ね合わせを生成します。[[assumption: 一般の $n,m$ に対してこの最小かつ厳密に張る回路に到達する具体的な層状A-ゲート配置には解析的な証明がなく、論文はこれを大規模な数値忠実度チェックによってのみ確認し、任意個の軌道と電子に対する予想として述べています]] すべての $A$ ゲートで $\\phi=0$ と設定すると、状態は実係数に制限されます。時間反転対称性の最小パラメータ数、すなわち $2\\binom{n}{m}-2$ の半分に到達するには、さらに1つの $\\theta$ パラメータをゼロに固定する必要があります。",
+      },
+    },
     entries: ["vqe-symmetry-preserving"],
     citations: [
       { title: "Efficient Symmetry-Preserving State Preparation Circuits for the Variational Quantum Eigensolver Algorithm", authors: "Bryan T. Gard, Linghua Zhu, George S. Barron, Nicholas J. Mayhall, Sophia E. Economou, Edwin Barnes", year: "2019", url: "https://arxiv.org/abs/1904.10910" },
@@ -9471,6 +9751,16 @@ export const LAYER_GRAPH: LayerGraph = {
     potentialPath: "Drawing this apart from ADAPT needs the map to represent a SCHEDULE — how many operators a round admits, and therefore how often the gradient measurement is paid — where today a repeat is a count on one hop and nothing expresses \"fewer rounds, more per round\". The paper's own claim is precisely a trade between those two, so the moment the map can say it, this refinement has a drawable difference and stops being folded.",
     potentialPathJa: "これを ADAPT と別に描くには、地図が「スケジュール」を表現できる必要があります。すなわち、1 周が何個の演算子を受け入れ、その結果として勾配測定を何回支払うのか、ということです。今日の地図では、繰り返しは一つのホップ上の回数でしかなく、「周回数は減り、1 周あたりは増える」を言い表す手立てがありません。この論文の主張はまさにその二者間の取引そのものなので、地図がそれを言えるようになった時点で、この精緻化は描画可能な差異をもち、折り畳まれた状態ではなくなります。",
     steps: ["observable-estimation"],
+    hops: {
+      "tetris-adapt-ansatz": {
+        name: "sort by gradient, pack disjoint-support ops",
+        nameJa: "勾配で並べ替え、支持が素な演算子を詰め込む",
+        theory:
+          "Each iteration starts from ADAPT's per-operator gradient, $\\partial E/\\partial\\theta_i|_{\\theta_i=0} = \\langle\\Psi^{(k)}|[H,P_i]|\\Psi^{(k)}\\rangle$, valid under [[assumption: antihermiticity $P_i^\\dagger=-P_i$ of every pool generator]]. TETRIS keeps this one gradient measurement per iteration but replaces the single append with subroutine 4': sort all pool operators by gradient norm, descending, then repeatedly append the next-largest-gradient operator whose qubit support is disjoint from every operator already added this iteration, each new parameter set to zero, [[approximation: continuing by this greedy descending-gradient order rather than jointly choosing the disjoint subset that lowers the energy most]], until every qubit is covered or no disjoint-support operator with nonzero gradient remains.",
+        theoryJa:
+          "各イテレーションは、ADAPTの演算子ごとの勾配$\\partial E/\\partial\\theta_i|_{\\theta_i=0} = \\langle\\Psi^{(k)}|[H,P_i]|\\Psi^{(k)}\\rangle$から始まり、[[assumption: 各プール生成子の反エルミート性$P_i^\\dagger=-P_i$]]の下で成立します。TETRISはこの1回の勾配測定をイテレーションごとに維持しつつ、単一の追加をサブルーチン4'に置き換えます：すべてのプール演算子を勾配ノルムで降順に並べ替え、今回のイテレーションで既に追加された演算子とビット支持が互いに素であるような、次に勾配が大きい演算子を繰り返し追加し、各新パラメータをゼロに設定します。[[approximation: これは、エネルギーを最も下げる互いに素な部分集合を同時に選ぶのではなく、この貪欲な降順勾配の順序で追加を続けることによります]]、すべての量子ビットが覆われるか、勾配が非ゼロで支持が互いに素な演算子が残らなくなるまで続けます。",
+      },
+    },
     entries: ["vqe-tetris-adapt"],
     citations: [
       { title: "TETRIS-ADAPT-VQE: An adaptive algorithm that yields shallower, denser circuit ansätze", authors: "Panagiotis G. Anastasiou, Yanzhu Chen, Nicholas J. Mayhall, Edwin Barnes, Sophia E. Economou", year: "2022", url: "https://arxiv.org/abs/2209.10562" },
@@ -9503,6 +9793,16 @@ export const LAYER_GRAPH: LayerGraph = {
     potentialPath: "Drawing this apart from QCC needs the map to represent a problem that CHANGES between rounds: iQCC folds each round's entanglers into the Hamiltonian by a canonical transformation, so the operator handed to round n+1 is not the one round n was given. Today a method's inputs are fixed for the whole route, and the `hamiltonian-recasting` slot that does exist recasts a problem ONCE on the way into a region rather than repeatedly inside a loop. Give the map a way to say \"the same slot, on a rewritten problem, again\" and this refinement has drawable internals — and so, probably, does every other method whose cost is a growing operator rather than a growing circuit.",
     potentialPathJa: "これを QCC と別に描くには、地図が「周ごとに変化する問題」を表現できる必要があります。iQCC は各周のエンタングラーを正準変換によってハミルトニアンへ畳み込むため、第 n+1 周に渡される演算子は第 n 周が受け取ったものとは別物です。今日の地図では、方式の入力は経路全体を通じて固定であり、既存の `hamiltonian-recasting` の層も、領域へ入る途中で問題を一度だけ書き換えるものであって、ループの内部で繰り返し書き換えるものではありません。「同じ層を、書き換えられた問題の上で、もう一度」と言える手立てを地図に与えれば、この精緻化は描画可能な内部構造をもちます。そしておそらく、回路ではなく演算子が増えることを代償とする他のあらゆる方式についても同じことが言えます。",
     steps: ["observable-estimation"],
+    hops: {
+      "iterative-qcc-ansatz": {
+        name: "dress the Hamiltonian, screen by flip index",
+        nameJa: "ハミルトニアンをドレスしフリップ添字で絞り込む",
+        theory:
+          "At each outer round the previously found entangler is folded into the operator, not appended to the circuit, via the canonical transformation $\\hat H_d^{(k)}=e^{i\\tau_k\\hat P_k/2}\\hat H_d^{(k-1)}e^{-i\\tau_k\\hat P_k/2}$, closing exactly as $\\hat H_d^{(k-1)}+\\sin\\tau_k\\left(-\\frac{i}{2}[\\hat H_d^{(k-1)},\\hat P_k]\\right)+\\frac12(1-\\cos\\tau_k)\\left(\\hat P_k\\hat H_d^{(k-1)}\\hat P_k-\\hat H_d^{(k-1)}\\right)$, a 3-term expression that would triple the operator count each round ($3^{N_g}$ after $N_g$ rounds) if terms stayed independent; since $\\hat P_k\\hat H_d^{(k-1)}\\hat P_k$ adds no new terms, only re-signs old ones, the paper tightens this to $\\sim M(3/2)^{N_g}$. The next $\\hat P_k$ is not found by exhaustive search: [[assumption: the qubit mean-field reference is a common $\\hat z_i$-eigenstate (or is purified to be one), and the Hamiltonian has real coefficients with an even number of $\\hat y$ terms]], so the gradient vanishes unless $\\hat P_i$'s flip indices $F(\\hat P_i)$ fall in one of the $O(M)$ classes the Hamiltonian's terms partition into, shrinking the pool to the \"direct interaction set\" ($O(M2^{n-1})$). [[approximation: the growing dressed Hamiltonian is periodically truncated to its $J$ largest-magnitude coefficients, with the ground-state shift bounded via Weyl's theorem, $\\max_j|\\lambda_j^\\downarrow(\\hat H)-\\lambda_j^\\downarrow(\\hat H_c)|\\le\\|\\hat H-\\hat H_c\\|$]].",
+        theoryJa:
+          "各外側のラウンドでは、直前に見つかったエンタングラーは回路に追加されるのではなく、正準変換 $\\hat H_d^{(k)}=e^{i\\tau_k\\hat P_k/2}\\hat H_d^{(k-1)}e^{-i\\tau_k\\hat P_k/2}$ によって演算子へと畳み込まれ、これは厳密に $\\hat H_d^{(k-1)}+\\sin\\tau_k\\left(-\\frac{i}{2}[\\hat H_d^{(k-1)},\\hat P_k]\\right)+\\frac12(1-\\cos\\tau_k)\\left(\\hat P_k\\hat H_d^{(k-1)}\\hat P_k-\\hat H_d^{(k-1)}\\right)$ という3項の式に閉じます。もし各項が独立のままなら、これは各ラウンドで演算子数を3倍にします($N_g$ ラウンド後には $3^{N_g}$ になります)。しかし $\\hat P_k\\hat H_d^{(k-1)}\\hat P_k$ は新しい項を加えず既存の項の符号を変えるだけなので、論文はこれを $\\sim M(3/2)^{N_g}$ へと引き締めます。次の $\\hat P_k$ は全数探索によって求められるのではありません。[[assumption: 量子ビット平均場参照状態が共通の $\\hat z_i$ 固有状態である(あるいはそうなるよう純粋化されている)こと、そしてハミルトニアンが実係数を持ち $\\hat y$ の項が偶数個であること]]。そのため、$\\hat P_i$ のフリップ添字 $F(\\hat P_i)$ がハミルトニアンの項が分割される $O(M)$ 個のクラスのいずれかに属さない限り勾配はゼロになり、プールは「直接相互作用集合」($O(M2^{n-1})$)へと縮小します。[[approximation: 成長し続けるドレスされたハミルトニアンは、その絶対値最大の $J$ 個の係数へと定期的に切り詰められ、基底状態のシフトはワイルの定理により $\\max_j|\\lambda_j^\\downarrow(\\hat H)-\\lambda_j^\\downarrow(\\hat H_c)|\\le\\|\\hat H-\\hat H_c\\|$ で抑えられます]]。",
+      },
+    },
     entries: ["vqe-iterative-qcc"],
     citations: [
       { title: "Iterative Qubit Coupled Cluster approach with efficient screening of generators", authors: "Ilya G. Ryabinkin, Robert A. Lang, Scott N. Genin, Artur F. Izmaylov", year: "2019", url: "https://arxiv.org/abs/1906.11192" },
@@ -9587,6 +9887,16 @@ export const LAYER_GRAPH: LayerGraph = {
     conditions: "The circuits are specified exactly: *\"Each layer is specified by choosing a uniformly random permutation of the m qubit indices and sampling each U^(t)_{a,b}, acting on qubits a and b, from the Haar measure on SU(4)\"*. The bar is a fixed fraction rather than a fitted curve — *\"The heavy output generation problem is to produce a set of output strings such that more than two-thirds are heavy\"* — and the number is where that bar is last cleared: *\"We define the achievable depth d(m) to be the largest d such that we are confident h_d > 2/3\"*, giving $\\log_2 V_Q = \\arg\\max_m \\min(m, d(m))$. What it is claimed to cover is broad and stated: *\"This metric takes into account all relevant hardware parameters. This includes the performance parameters (coherence, calibration errors, crosstalk, spectator errors, gate fidelity, measurement fidelity, initialization fidelity) as well as the design parameters such as connectivity and gate set.\"*",
     conditionsJa: "回路は厳密に定められています。「各層は、m 個の量子ビット添字の一様ランダムな置換を選び、量子ビット a と b に作用する各 U^(t)_{a,b} を SU(4) 上の Haar 測度から標本抽出することで指定される」。基準は当てはめた曲線ではなく固定された割合です。「重い出力生成問題とは、出力文字列の集合であって、その 3 分の 2 を超えるものが重いようなものを生成することである」。そして数値は、その基準を最後に満たした点で定まります。「達成可能な深さ d(m) を、h_d > 2/3 であると確信できる最大の d と定義する」。これにより $\\log_2 V_Q = \\arg\\max_m \\min(m, d(m))$ が得られます。何を覆うと主張しているかも広く、明示されています。「この指標は関連するすべてのハードウェア・パラメータを考慮する。これには性能パラメータ（コヒーレンス、較正誤差、クロストーク、傍観者誤差、ゲート忠実度、測定忠実度、初期化忠実度）と、接続性やゲート集合といった設計パラメータが含まれる」。",
     steps: [],
+    hops: {
+      "quantum-volume-protocol": {
+        name: "certify heavy outputs, report largest square",
+        nameJa: "ヘビー出力を証明し最大の正方形を報告",
+        theory:
+          "Each depth-$d$ circuit $U$ has ideal output distribution $p_U(x)=|\\langle x|U|0\\rangle|^2$; sorting these probabilities and splitting at the median $p_{med}$ defines the heavy set $H_U=\\{x:p_U(x)>p_{med}\\}$. The heavy-output probability $h_d=\\int_U h_U\\,dU$, with $h_U=\\sum_{x\\in H_U}q_U(x)$ against the device's observed distribution $q_U$, is asymptotically $(1+\\ln 2)/2\\approx 0.85$ for an ideal device and falls to $\\approx 0.5$ under complete depolarization; [[assumption: the protocol adopts the heavy output generation problem's own criterion $h_d>2/3$ as success, a fixed threshold between these two limits rather than one derived here from them]]. Certifying $h_d>2/3$ from finitely many trials replaces this exact statement with [[approximation: a normal-approximation hypothesis test, $\\hat h_d=n_h/(n_c n_s)$ compared against a stricter bound $(n_h-z\\sqrt{n_h(n_s-n_h/n_c)})/(n_c n_s)>2/3$ with $z=2$ (97.5% one-sided) and $n_c\\ge100$, standing in for the exact binomial confidence interval]]. Sweeping width $m$ and the achievable depth $d(m)$ — the largest $d$ with $h_1,\\dots,h_{d(m)}>2/3$ — the protocol reports one figure, $\\log_2 V_Q=\\operatorname*{argmax}_m\\min(m,d(m))$: the largest square ($m=d$) model circuit the device implements successfully on average.",
+        theoryJa:
+          "深さ $d$ の各回路 $U$ は理想的な出力分布 $p_U(x)=|\\langle x|U|0\\rangle|^2$ を持ちます。これらの確率を並べ替えて中央値 $p_{med}$ で分割することで、ヘビー集合 $H_U=\\{x:p_U(x)>p_{med}\\}$ が定義されます。ヘビー出力確率 $h_d=\\int_U h_U\\,dU$ は、デバイスの観測分布 $q_U$ に対する $h_U=\\sum_{x\\in H_U}q_U(x)$ を用いて定義され、理想的なデバイスでは漸近的に $(1+\\ln 2)/2\\approx 0.85$ となり、完全な脱分極の下では $\\approx 0.5$ まで低下します。[[assumption: このプロトコルは、これら2つの極限の間で新たに導出された閾値ではなく、ヘビー出力生成問題自体の基準である $h_d>2/3$ を成功条件として採用しています]]。有限回の試行から $h_d>2/3$ を証明することは、この厳密な主張を[[approximation: 正規近似による仮説検定——$\\hat h_d=n_h/(n_c n_s)$ を、より厳しい境界 $(n_h-z\\sqrt{n_h(n_s-n_h/n_c)})/(n_c n_s)>2/3$（$z=2$、片側97.5%、$n_c\\ge100$）と比較する——に置き換えます。これは厳密な二項信頼区間の代わりを務めます]]。幅 $m$ と達成可能な深さ $d(m)$——$h_1,\\dots,h_{d(m)}>2/3$ を満たす最大の $d$——を掃引し、このプロトコルは1つの値、$\\log_2 V_Q=\\operatorname*{argmax}_m\\min(m,d(m))$ を報告します。これはデバイスが平均して成功裏に実装できる最大の正方形（$m=d$）のモデル回路を表します。",
+      },
+    },
     entries: ["quantum-volume-benchmark"],
     citations: [
       { title: "Validating quantum computers using randomized model circuits", authors: "Andrew W. Cross, Lev S. Bishop, Sarah Sheldon, Paul D. Nation, Jay M. Gambetta", year: "2018", url: "https://arxiv.org/abs/1811.12926" },
@@ -9612,6 +9922,16 @@ export const LAYER_GRAPH: LayerGraph = {
     // they were would be the citation drift ADR-0026 §1 forbids. Recorded here so
     // the slot's justification can be checked without re-reading both papers.
     steps: [],
+    hops: {
+      "clifford-randomized-benchmarking": {
+        name: "fit fidelity decay, read off error rate",
+        nameJa: "忠実度の減衰をフィットし誤り率を読み取る",
+        theory:
+          "Step 4 fits the averaged sequence fidelity $F_{seq}(m,\\psi)=\\mathrm{Tr}[E_\\psi S_m(\\rho_\\psi)]$ to a device figure — a plotted decay curve in $m$ with two candidate models. [[assumption: the zeroth-order curve $F_{seq}^{(0)}(m,\\psi)=A_0p^m+B_0$ holds only when $\\Lambda_{i_j,j}=\\Lambda$ for every gate and time-step, i.e. errors are exactly gate- and time-independent, so averaging over the randomly-chosen Clifford operations $D_{i_j}$ twirls the noise into a single depolarizing channel]]. [[approximation: the first-order curve $F_{seq}^{(1)}(m,\\psi)=A_1p^m+B_1+C_1(m-1)(q-p^2)p^{m-2}$ instead perturbs each $\\Lambda_{i_j,j}$ about the gate-set mean $\\bar\\Lambda$, keeping only the linear term in $\\delta\\Lambda_{i_j,j}$; for the time-independent-noise case of this model the truncation is justified once the spread $\\gamma=\\frac{1}{K}\\sum_i\\|\\Lambda_i-\\bar\\Lambda\\|_{1\\to1}^H$ satisfies $\\gamma\\ll 2/m$, while noise that also varies across time-steps needs the paper's stronger per-step bound on the individual $\\gamma_j$'s instead of this single scalar]]. Both share the decay parameter $p$, read into the plotted average error-rate via $r=1-p-(1-p)/d$.",
+        theoryJa:
+          "ステップ4では、平均化されたシーケンス忠実度 $F_{seq}(m,\\psi)=\\mathrm{Tr}[E_\\psi S_m(\\rho_\\psi)]$ を実機の特性値にフィットさせます — これは $m$ に対する減衰曲線としてプロットされ、2つの候補モデルが用意されています。[[assumption: 0次曲線 $F_{seq}^{(0)}(m,\\psi)=A_0p^m+B_0$ が成り立つのは、すべてのゲートと時間ステップについて $\\Lambda_{i_j,j}=\\Lambda$ が成り立つ場合、すなわち誤差がゲートにも時間にも依存しない場合に限られ、そのためランダムに選ばれたクリフォード演算 $D_{i_j}$ にわたる平均化によってノイズが単一の脱分極チャネルへとツイル化されます]]。[[approximation: 一方、1次曲線 $F_{seq}^{(1)}(m,\\psi)=A_1p^m+B_1+C_1(m-1)(q-p^2)p^{m-2}$ は、各 $\\Lambda_{i_j,j}$ をゲート集合の平均 $\\bar\\Lambda$ のまわりで摂動として扱い、$\\delta\\Lambda_{i_j,j}$ の1次の項のみを残します。この時間非依存ノイズの場合、広がり $\\gamma=\\frac{1}{K}\\sum_i\\|\\Lambda_i-\\bar\\Lambda\\|_{1\\to1}^H$ が $\\gamma\\ll 2/m$ を満たせばこの打ち切りは正当化されますが、時間ステップごとにも変動するノイズについては、この単一のスカラーの代わりに、個々の $\\gamma_j$ に対する論文のより強い各ステップごとの上限が必要になります]]。両モデルとも減衰パラメータ $p$ を共有しており、これは $r=1-p-(1-p)/d$ を通じてプロットされた平均誤り率へと読み替えられます。",
+      },
+    },
     entries: ["randomized-benchmarking-protocol"],
     citations: [
       { title: "Robust randomized benchmarking of quantum processes", authors: "Easwar Magesan, J. M. Gambetta, Joseph Emerson", year: "2010", url: "https://arxiv.org/abs/1009.3639" },
@@ -9676,6 +9996,16 @@ export const LAYER_GRAPH: LayerGraph = {
     // for discrete logarithms for the particular case of elliptic curve groups".
     // Neither is a fourth route and neither gets a node.
     steps: [],
+    hops: {
+      "cyclic-period-finding": {
+        name: "transform, measure, continued-fraction c/q",
+        nameJa: "変換して測定し c/q を連分数展開する",
+        theory:
+          "The oracle leaves the machine in $\\frac{1}{q}\\sum_{a,c}\\exp(2\\pi i ac/q)|c\\rangle|x^a \\bmod n\\rangle$ after the Fourier transform $A_q$ on the first register; measuring returns $c$ concentrated where $|\\{rc\\}_q|\\le r/2$, i.e. $|c/q-d/r|\\le 1/2q$ for some integer $d$. [[assumption: $q$ is fixed as the power of 2 with $n^2\\le q<2n^2$, so at most one fraction $d/r$ with $r<n$ can satisfy that bound]]. A continued-fraction expansion of $c/q$ then recovers $d/r$ in lowest terms exactly, and if $d$ happens to be coprime to $r$ this returns $r$ directly. [[approximation: only a $\\varphi(r)/r$ fraction of the $r$ good outcomes $c$ give a coprime $d$, so each run succeeds with probability at least $\\varphi(r)/3r$, requiring $O(\\log\\log r)$ repeated trials to be confident]].",
+        theoryJa:
+          "オラクルは、最初のレジスタへのフーリエ変換 $A_q$ を適用した後、機械を $\\frac{1}{q}\\sum_{a,c}\\exp(2\\pi i ac/q)|c\\rangle|x^a \\bmod n\\rangle$ という状態に残します。測定すると $c$ は、$|\\{rc\\}_q|\\le r/2$、すなわちある整数 $d$ について $|c/q-d/r|\\le 1/2q$ を満たす値の付近に集中して得られます。[[assumption: $q$ は $n^2\\le q<2n^2$ を満たす2のべき乗に固定されているため、その条件を満たす分数 $d/r$($r<n$)は高々一つしかありません]]。$c/q$ の連分数展開により、$d/r$ を既約分数として正確に復元でき、$d$ が $r$ と互いに素であれば、これがそのまま $r$ を与えます。[[approximation: $r$ 個の良い測定結果 $c$ のうち、互いに素な $d$ を与えるものは $\\varphi(r)/r$ の割合にすぎないため、各試行が成功する確率は少なくとも $\\varphi(r)/3r$ であり、確信を得るには $O(\\log\\log r)$ 回の反復試行が必要です]]。",
+      },
+    },
     entries: ["shor-period-finding", "discrete-logarithm", "quantum-primality-test-order-finding", "elliptic-curve-discrete-log-resources"],
     citations: [
       { title: "Polynomial-Time Algorithms for Prime Factorization and Discrete Logarithms on a Quantum Computer", authors: "Peter W. Shor", year: "1995", url: "https://arxiv.org/abs/quant-ph/9508027" },
@@ -9698,6 +10028,16 @@ export const LAYER_GRAPH: LayerGraph = {
     contested: "Hallgren's later paper calls this a special case of the next method rather than a parallel one: \"Solving Pell's equation is a special case of the more general problem of finding the unit group of a number field.\" The two are kept as separate nodes because the techniques are separably hard rather than nested — the rank-1 construction here does not generalise on its own, and the lattice route needed new machinery for the rounding noise that appears only in higher rank. A reader should hold both facts: mathematically one contains the other, and as algorithms they were solved apart.",
     contestedJa: "Hallgren の後年の論文は、これを並行する手法ではなく次の手法の特別な場合と呼んでいます。「Pell 方程式を解くことは、数体の単数群を求めるというより一般の問題の特別な場合である」。それでも両者を別のノードとして保っているのは、二つの技法が入れ子であるというより、それぞれ別個に難しいからです。ここでの階数 1 の構成はそれ自体では一般化せず、格子の経路は、より高い階数でのみ現れる丸め雑音のために新しい機構を必要としました。読み手は両方の事実を保持すべきです。数学的には一方が他方を含み、アルゴリズムとしては別々に解かれました。",
     steps: [],
+    hops: {
+      "real-period-finding": {
+        name: "sample twice, test convergents of the ratio",
+        nameJa: "2回サンプリングし比の収束分数を検証",
+        theory:
+          "Algorithm 3.1 treats the period $S$ as an irrational quantity that cannot be landed on exactly: [[approximation: the periodic function is replaced by an $\\varepsilon$-pseudo-periodic one, $f(k)=f(k+[iS])$, where $[iS]$ denotes $iS$ rounded down or up]]. Given an upper bound $M$ on $S$, it fixes $q\\ge 3M^2$, Fourier samples $f$ over $\\mathbb{Z}_q$ twice to get integers $c$ and $d$, and takes the continued-fraction expansion of $c/d$; each convergent $k_i/l_i$ approximates the ratio of two integer multiples of $q/S$, so rounding each $k_iq/l_i$ to the nearest integer, testing it against the verification procedure — which also accepts integer multiples of $S$ — and keeping the smallest candidate that passes recovers a value within 1 of $S$. [[assumption: this needs an efficient procedure that verifies whether a candidate is a multiple of $S$, and $f$ injective on the $\\varepsilon$-fraction of offsets where it is pseudo-periodic]], succeeding, for any period $S$ above an absolute constant, with probability $\\Omega(\\varepsilon^2/(\\log M)^4)$.",
+        theoryJa:
+          "アルゴリズム3.1は、周期 $S$ を正確には特定できない無理数量として扱います。[[approximation: 周期関数は $\\varepsilon$-擬周期関数に置き換えられます。ここで $f(k)=f(k+[iS])$ であり、$[iS]$ は $iS$ を切り捨てまたは切り上げた値を表します]]。$S$ の上界 $M$ が与えられると、$q\\ge 3M^2$ を固定し、$\\mathbb{Z}_q$ 上で $f$ を2回フーリエサンプリングして整数 $c$ と $d$ を得て、$c/d$ の連分数展開を取ります。各収束分数 $k_i/l_i$ は $q/S$ の整数倍どうしの比を近似するので、各 $k_iq/l_i$ を最も近い整数に丸め、それを検証手続き――これは $S$ の整数倍も受理します――に照らして検証し、通過した中で最小の候補を残すことで、$S$ の1以内の値が復元されます。[[assumption: これには、ある候補が $S$ の倍数であるかどうかを検証する効率的な手続きと、擬周期的である箇所のうち $\\varepsilon$ の割合のオフセットで $f$ が単射であることが必要です]]、ある絶対定数を上回る任意の周期 $S$ に対して、確率 $\\Omega(\\varepsilon^2/(\\log M)^4)$ で成功します。",
+      },
+    },
     entries: ["pell-equation-regulator", "principal-ideal-problem"],
     citations: [
       { title: "Polynomial-Time Quantum Algorithms for Pell's Equation and the Principal Ideal Problem", authors: "Sean Hallgren", year: "2007", url: "https://doi.org/10.1145/1206035.1206039" },
@@ -9716,6 +10056,16 @@ export const LAYER_GRAPH: LayerGraph = {
     conditions: "Hallgren states the extension and its cost together: \"Most of the success in solving this problem has been for abelian groups, including finite abelian groups, $\\mathbb{Z}$, $\\mathbb{Z}^n$, and $\\mathbb{R}$. In this paper we extend the hidden subgroup problem to work for $\\mathbb{R}^r$.\" The gap between the integer and the real case is not a matter of constants — \"While there is a straightforward solution of the HSP over $\\mathbb{Z}^n$, this does not appear to be the case for $\\mathbb{R}^r$\" — and the limit is stated with its cause rather than as a bound: the method \"only appears to work for a constant number of dimensions because the rounding introduces new noise into the distribution that is not present in the integer lattice case\". That is why the corpus records for both the unit group and the class group say *constant-degree* number field: the constant is the paper's, not ours.",
     conditionsJa: "Hallgren は拡張とその代償を同時に述べています。「この問題の解決の多くはアーベル群について得られてきた。有限アーベル群、$\\mathbb{Z}$、$\\mathbb{Z}^n$、$\\mathbb{R}$ である。本論文では隠れ部分群問題を $\\mathbb{R}^r$ に対して機能するよう拡張する」。整数の場合と実数の場合の隔たりは定数倍の問題ではありません。「$\\mathbb{Z}^n$ 上の HSP には素直な解法があるが、$\\mathbb{R}^r$ についてはそうではないように見える」。そして限界は、単なる上界としてではなく原因とともに述べられます。この手法は「丸めが、整数格子の場合には存在しない新たな雑音を分布に持ち込むため、次元数が定数の場合にしか機能しないように見える」。単数群と類群のどちらの記録も *constant-degree* な数体と述べているのはこのためです。その定数は論文のものであって、こちらのものではありません。",
     steps: [],
+    hops: {
+      "period-lattice-finding": {
+        name: "Fourier sample the oracle, then dualize",
+        nameJa: "オラクルをフーリエサンプリングし双対化する",
+        theory:
+          "Hallgren accesses the hidden lattice $L \\subseteq \\mathbb{R}^r$ only through a function $f$ with $f(x)=f(y)$ iff $x-y \\in L$, a periodic-function oracle over $\\mathbb{R}^r$ rather than $\\mathbb{Z}^n$. Querying the discretized oracle in superposition over a coset of $L$ inside a cube $[0,q)^r$ leaves a state on points $[Nv]$, [[approximation: each coordinate of $v \\in L$ rounded up or down by $[\\cdot]$, not $v$ itself]]; the quantum Fourier transform of that state concentrates on the dual lattice $L^\\perp$. Because sampling this transform over $\\mathbb{Z}_{qN}^r$ directly \"does not appear to be enough to recover the dual lattice,\" the transform is instead computed over a zero-padded domain $\\mathbb{Z}_{qNk}^r$ for constant $k \\geq 8r$; each measurement then lands within $1/q$ of a point of $L^\\perp$ with probability at least $1/(8(nk)^r)$. Repeated sampling yields a spanning set, a basis $B$ is extracted, and [[assumption: $L$ is well-conditioned, i.e. $\\|B\\|\\cdot\\|B^{-1}\\|$ is bounded]], so $B^{-T}$ recovers a basis for $L$ itself.",
+        theoryJa:
+          "Hallgren のアルゴリズムは、隠れた格子 $L \\subseteq \\mathbb{R}^r$ に、$f(x)=f(y)$ が $x-y \\in L$ と同値であるような関数 $f$ を通してのみアクセスします。これは $\\mathbb{Z}^n$ ではなく $\\mathbb{R}^r$ 上の周期関数オラクルです。立方体 $[0,q)^r$ 内にある $L$ の剰余類上で離散化されたオラクルに重ね合わせで問い合わせると、点 $[Nv]$ 上の状態が残ります。[[approximation: これは $v \\in L$ の各座標を $[\\cdot]$ で切り上げまたは切り下げたものであり、$v$ そのものではありません]]。この状態の量子フーリエ変換は、双対格子 $L^\\perp$ に集中します。この変換を $\\mathbb{Z}_{qN}^r$ 上で直接サンプリングしても「双対格子を復元するには十分でないように思われる」ため、代わりに定数 $k \\geq 8r$ に対してゼロパディングされた領域 $\\mathbb{Z}_{qNk}^r$ 上で変換を計算します。各測定はその後、少なくとも $1/(8(nk)^r)$ の確率で $L^\\perp$ のある点から $1/q$ 以内の場所に落ちます。サンプリングを繰り返すと張る集合が得られ、そこから基底 $B$ が抽出されます。[[assumption: $L$ の条件数が良い、すなわち $\\|B\\|\\cdot\\|B^{-1}\\|$ が有界であるとします]]。したがって $B^{-T}$ から $L$ 自体の基底が得られます。",
+      },
+    },
     entries: ["class-group-of-a-number-field", "unit-group-of-a-number-field"],
     citations: [
       { title: "Fast Quantum Algorithms for Computing the Unit Group and Class Group of a Number Field", authors: "Sean Hallgren", year: "2005", url: "https://doi.org/10.1145/1060590.1060660" },
@@ -9764,6 +10114,16 @@ export const LAYER_GRAPH: LayerGraph = {
     contested: "The circuit usually drawn for this method — one coherent register and a single inverse quantum Fourier transform at the end — is NOT the circuit in the paper cited here. Kitaev localizes each power separately and combines the results classically; Dobsicek et al. describe his scheme from the outside as the one \"where the Fourier transform is replaced with a Hadamard transform\". The coherent-register-plus-inverse-QFT formulation is the later one, usually credited to Cleve, Ekert, Macchiavello and Mosca (1998), which this repository's paper register does not yet carry. Recorded rather than quietly fixed, because which paper a method is credited to is the owner's call, not an agent's. Nothing about the slot turns on it: the resource trade against the single-ancilla route is stated by Dobsicek et al. and holds whichever paper this circuit is attributed to.",
     contestedJa: "この手法に対して通常描かれる回路、すなわち一つのコヒーレントなレジスタと末尾の逆量子 Fourier 変換は、ここで引用している論文の回路ではありません。Kitaev は各べき乗を個別に絞り込み、その結果を古典的に統合します。Dobsicek らは外から彼の方式を「Fourier 変換が Hadamard 変換に置き換えられた」ものと表現しています。コヒーレントなレジスタと逆 QFT による定式化は後年のものであり、通常は Cleve、Ekert、Macchiavello、Mosca（1998）に帰されますが、その論文は本リポジトリの論文レジスタにまだ収録されていません。黙って直すのではなく記録しているのは、ある手法をどの論文に帰すかが所有者の判断であってエージェントの判断ではないからです。この層の成立自体はこの点に依存しません。単一補助量子ビット経路との資源の交換は Dobsicek らが述べており、この回路がどちらの論文に帰されようと成り立ちます。",
     steps: [],
+    hops: {
+      "register-phase-estimation": {
+        name: "localize the eigenphase to fixed precision",
+        nameJa: "固有位相を一定精度に絞り込む",
+        theory:
+          "Kitaev's operator $U^{[0,r]}|a,\\xi\\rangle=|a\\rangle\\otimes U^a|\\xi\\rangle$ on an $l$-qubit register ($r=2^l-1$) yields the controlled powers $\\Lambda(U^{2^j})$, $j=0,\\dots,l-1$ (eq. 20, Lemma 7). [[assumption: each $\\Lambda(U^{2^j})$ can be built and applied]] Localizing $2^j\\varphi \\pmod 1$ into one of 8 overlapping width-$1/4$ intervals $[(s-1)/8,(s+1)/8]$ ($s=0,\\dots,7$), spaced $1/8$ apart, with error probability $\\le \\epsilon/l$ each, pins the eigenphase to precision $2^{-l-2}$ with total success probability $\\ge 1-\\epsilon$, using $O(l\\log(l/\\epsilon))+\\mathrm{poly}(l)$ operations (Lemma 10): the $l$-qubit register itself stays fixed -- only the operation-sequence length, how many times $U^{[0,r]}$ is invoked, grows logarithmically in $1/\\epsilon$ and linearly in $l$. [[approximation: the register need not be read out through the exact transform]] Coppersmith's bandwidth-$m$ AFFT reproduces it with each amplitude's phase off by at most $2\\pi L2^{-m}$, using $O((\\log n)(\\log\\log n+\\log(1/\\epsilon)))$ two-qubit gates instead of $O((\\log n)^2)$.",
+        theoryJa:
+          "キタエフの演算子$U^{[0,r]}|a,\\xi\\rangle=|a\\rangle\\otimes U^a|\\xi\\rangle$は、$l$量子ビットのレジスタ（$r=2^l-1$）上で、制御べき乗$\\Lambda(U^{2^j})$（$j=0,\\dots,l-1$）を生成します（式20、補題7）。[[assumption: 各$\\Lambda(U^{2^j})$が構成・適用可能である]] $2^j\\varphi \\pmod 1$を、幅$1/4$で重なり合う8個の区間$[(s-1)/8,(s+1)/8]$（$s=0,\\dots,7$）のいずれかに、間隔$1/8$で局在化させ、各々の誤り確率を$\\le \\epsilon/l$以下に抑えると、固有位相は精度$2^{-l-2}$に、全体の成功確率$\\ge 1-\\epsilon$で確定し、必要な演算数は$O(l\\log(l/\\epsilon))+\\mathrm{poly}(l)$です（補題10）。$l$量子ビットのレジスタ自体は固定されたままで——伸びるのは演算列の長さ、すなわち$U^{[0,r]}$が呼び出される回数だけであり、これは$1/\\epsilon$に対して対数的に、$l$に対して線形に増加します。[[approximation: レジスタは厳密な変換を通じて読み出される必要はありません]] コッパースミスの帯域幅$m$のAFFTはこれを再現し、各振幅の位相のずれは高々$2\\pi L2^{-m}$で、必要な2量子ビットゲート数は$O((\\log n)(\\log\\log n+\\log(1/\\epsilon)))$であり、$O((\\log n)^2)$の代わりとなります。",
+      },
+    },
     entries: ["quantum-phase-estimation", "quantum-fourier-transform"],
     citations: [
       { title: "Quantum measurements and the Abelian Stabilizer Problem", authors: "A. Yu. Kitaev", year: "1995", url: "https://arxiv.org/abs/quant-ph/9511026" },
@@ -9783,6 +10143,16 @@ export const LAYER_GRAPH: LayerGraph = {
     conditions: "Dobsicek et al. state the size claim in the abstract — an iterative phase estimation \"with a single ancillary qubit\" — and make explicit that the qubit count does not grow with the precision: \"The minimal system for implementing the iterative PEA is a two qubit system, where one qubit is a read-out ancilla, and the second qubit represents a physical system.\" The order of the rounds is part of the method rather than an implementation detail: \"first less significant digits are evaluated and then the obtained information improves the quantum part of the search for more significant digits\", carried by \"an extra single qubit Z-rotation that is inserted into the circuit\" whose angle is a function of the bits already measured — $\\omega_k = -2\\pi(0.0x_{k+1}x_{k+2} \\ldots x_m)$, with $\\omega_m = 0$. Nothing quantum passes between rounds; the feedback is a classically computed angle.",
     conditionsJa: "Dobsicek らは規模に関する主張を要旨で述べています。「単一の補助量子ビットによる」反復位相推定です。そして量子ビット数が精度とともに増えないことを明示します。「反復 PEA を実装する最小の系は 2 量子ビット系であり、一方が読み出し用の補助量子ビット、他方が物理系を表す」。周回の順序は実装上の細部ではなく手法の一部です。「まず下位の桁を評価し、得られた情報が上位の桁の探索の量子的部分を改善する」。これは「回路に挿入される追加の単一量子ビット Z 回転」によって運ばれ、その角度はすでに測定されたビットの関数です。すなわち $\\omega_k = -2\\pi(0.0x_{k+1}x_{k+2} \\ldots x_m)$ であり、$\\omega_m = 0$ です。周回のあいだを量子的な情報が渡ることはなく、フィードバックは古典的に計算された角度です。",
     steps: [],
+    hops: {
+      "single-ancilla-phase-estimation": {
+        name: "feed each measured bit back as a rotation",
+        nameJa: "測定した各ビットを回転として帰還させる",
+        theory:
+          "Starting from the ancilla state $\\frac12[(1+e^{i2\\pi\\phi})|0\\rangle+(1-e^{i2\\pi\\phi})|1\\rangle]|\\Psi\\rangle$, built from $\\hat U|\\Psi\\rangle=e^{i2\\pi\\phi}|\\Psi\\rangle$, a single measurement gives $P_0=\\cos^2(\\pi\\phi)$. The iterative scheme runs $k=m,\\ldots,1$ on that one ancilla: Hadamard, controlled-$\\hat U^{2^{k-1}}$, a feedback rotation $R_z(\\omega_k)$ with $\\omega_k=-2\\pi(0.0x_{k+1}x_{k+2}\\ldots x_m)$ built from bits already measured ($\\omega_m=0$), then Hadamard and measurement of bit $x_k$. [[assumption: deterministic extraction, $P_0=\\cos^2[\\pi(0.\\phi_k00\\ldots)]$, requires $\\phi$ to have an exact binary expansion of at most $m$ bits]]. [[approximation: writing the true phase as $\\phi=0.\\phi_1\\ldots\\phi_m+\\delta2^{-m}$ with remainder $0\\le\\delta<1$, each bit is instead correct only with probability $P_k=\\cos^2(\\pi2^{k-m-1}\\delta)$, giving overall success $P(\\delta)=\\prod_kP_k=\\sin^2(\\pi\\delta)/(2^{2m}\\sin^2(\\pi2^{-m}\\delta))$ rather than certainty]].",
+        theoryJa:
+          "アンシラの状態 $\\frac12[(1+e^{i2\\pi\\phi})|0\\rangle+(1-e^{i2\\pi\\phi})|1\\rangle]|\\Psi\\rangle$(これは $\\hat U|\\Psi\\rangle=e^{i2\\pi\\phi}|\\Psi\\rangle$ から作られます)から出発すると、1回の測定によって $P_0=\\cos^2(\\pi\\phi)$ が得られます。反復スキームは、その1つのアンシラ上で $k=m,\\ldots,1$ を実行します。すなわちアダマール、制御付き $\\hat U^{2^{k-1}}$、すでに測定されたビットから作られるフィードバック回転 $R_z(\\omega_k)$($\\omega_k=-2\\pi(0.0x_{k+1}x_{k+2}\\ldots x_m)$、ただし $\\omega_m=0$)、続いてアダマールとビット $x_k$ の測定です。[[assumption: 決定論的な抽出、すなわち $P_0=\\cos^2[\\pi(0.\\phi_k00\\ldots)]$ には、$\\phi$ が高々 $m$ ビットの厳密な二進展開を持つことが要求されます]]。[[approximation: 真の位相を余り $0\\le\\delta<1$ を用いて $\\phi=0.\\phi_1\\ldots\\phi_m+\\delta2^{-m}$ と書くと、各ビットは確率 $P_k=\\cos^2(\\pi2^{k-m-1}\\delta)$ でのみ正しく求まり、確実にではなく、全体としての成功確率は $P(\\delta)=\\prod_kP_k=\\sin^2(\\pi\\delta)/(2^{2m}\\sin^2(\\pi2^{-m}\\delta))$ になります]]。",
+      },
+    },
     entries: ["iterative-phase-estimation"],
     citations: [
       { title: "Arbitrary accuracy iterative phase estimation algorithm as a two qubit benchmark", authors: "M. Dobsicek, G. Johansson, V. S. Shumeiko, G. Wendin", year: "2006", url: "https://arxiv.org/abs/quant-ph/0610214" },
@@ -9807,6 +10177,16 @@ export const LAYER_GRAPH: LayerGraph = {
     conditions: "Lee et al. define the ansatz by the distinction it removes: \"Here the single and double 'excitation' terms do not distinguish between occupied and unoccupied orbitals and they are therefore called 'generalized' singles and doubles (GSD)\", and name the result in the same section — \"We shall term this ansatz UCCGSD\". Its cost is stated beside its sibling's rather than alone: the paper's Table 1 puts UCCGSD at $O(N^4)$ gates and $O(N^3)$ depth against k-UpCCGSD's $O(kN^2)$ and $O(kN)$. The two are separate ansätze in this paper, compared against each other and against UCCSD, which is why `k-upccgsd-ansatz` and this node are separate rather than one node drawn twice.",
     conditionsJa: "Lee らは、このアンザッツを「取り除いた区別」によって定義しています。「ここでは一重および二重の『励起』の項が占有軌道と非占有軌道を区別しない。それゆえこれらは『一般化された』一重・二重励起（GSD）と呼ばれる」。そして同じ節で結果に名前を与えます。「このアンザッツを UCCGSD と呼ぶことにする」。コストは単独ではなく、兄弟手法と並べて述べられています。同論文の Table 1 は、UCCGSD を $O(N^4)$ ゲート・$O(N^3)$ 深さとし、k-UpCCGSD の $O(kN^2)$・$O(kN)$ と対置しています。両者はこの論文の中で互いに、また UCCSD と比較される別々のアンザッツです。`k-upccgsd-ansatz` と本ノードを一つにまとめず別に立てているのは、そのためです。",
     steps: [],
+    hops: {
+      "generalized-excitation-ansatz": {
+        name: "excite any orbital pair, not just occ to virt",
+        nameJa: "占有・非占有を問わず軌道対を励起",
+        theory:
+          "The ansatz keeps UCC's exponential form $|\\psi\\rangle = e^{\\hat T - \\hat T^\\dagger}|\\phi_0\\rangle$, with the anti-Hermitian combination guaranteeing $e^{\\hat T-\\hat T^\\dagger}$ is unitary, but redefines the cluster operator itself: $\\hat T = \\hat T_1 + \\hat T_2 = \\frac12\\sum_{pq} t^q_p \\hat a_q^\\dagger \\hat a_p + \\frac14\\sum_{pqrs} t^{rs}_{pq}\\hat a_r^\\dagger \\hat a_s^\\dagger \\hat a_q \\hat a_p$, where every index $p,q,r,s$ runs over the full set of spin-orbitals rather than being split into occupied indices $i,j$ and virtual indices $a,b$ as in UCCSD's $\\hat T_1=\\sum_{ia}t_i^a \\hat a_a^\\dagger \\hat a_i$. The energy is evaluated variationally, $E=\\langle\\psi|\\hat H|\\psi\\rangle/\\langle\\psi|\\psi\\rangle$, rather than by the projective CC route. [[approximation: on real hardware $e^{\\hat T-\\hat T^\\dagger}$ is not applied exactly but Trotterized into a small number of steps, so the state actually prepared is not identical to the one the amplitudes were optimized for]]",
+        theoryJa:
+          "このアンザッツはUCCの指数形式 $|\\psi\\rangle = e^{\\hat T - \\hat T^\\dagger}|\\phi_0\\rangle$ を保持しており、反エルミートの組み合わせにより $e^{\\hat T-\\hat T^\\dagger}$ がユニタリであることが保証されますが、クラスター演算子自体は再定義されます。$\\hat T = \\hat T_1 + \\hat T_2 = \\frac12\\sum_{pq} t^q_p \\hat a_q^\\dagger \\hat a_p + \\frac14\\sum_{pqrs} t^{rs}_{pq}\\hat a_r^\\dagger \\hat a_s^\\dagger \\hat a_q \\hat a_p$ において、添字 $p,q,r,s$ はいずれもスピン軌道の全集合にわたって走り、UCCSDの $\\hat T_1=\\sum_{ia}t_i^a \\hat a_a^\\dagger \\hat a_i$ のように占有添字 $i,j$ と非占有添字 $a,b$ に分けられることはありません。エネルギーは射影的なCCの手法ではなく、変分的に $E=\\langle\\psi|\\hat H|\\psi\\rangle/\\langle\\psi|\\psi\\rangle$ として評価されます。[[approximation: 実機上では $e^{\\hat T-\\hat T^\\dagger}$ は厳密には適用されず、少数のステップにトロッター分解されるため、実際に準備される状態は振幅が最適化された対象の状態とは一致しません]]",
+      },
+    },
     entries: ["vqe-generalized-excitations"],
     citations: [
       { title: "Generalized Unitary Coupled Cluster Wavefunctions for Quantum Computation", authors: "Joonho Lee, William J. Huggins, Martin Head-Gordon, K. Birgitta Whaley", year: "2018", url: "https://arxiv.org/abs/1810.02327" },
@@ -9828,6 +10208,16 @@ export const LAYER_GRAPH: LayerGraph = {
     refinesMark: "ADAPT",
     refinesMarkJa: "ADAPT",
     steps: ["observable-estimation"],
+    hops: {
+      "batched-adapt-ansatz": {
+        name: "batch-append operators near the top gradient",
+        nameJa: "勾配上位の演算子をまとめて追加",
+        theory:
+          "At iteration $k$ every pool operator $A_i$ is screened by the same gradient used in plain ADAPT-VQE, $\\partial E/\\partial\\theta_i = \\langle\\psi^k|[H,A_i]|\\psi^k\\rangle$, the Hamiltonian-operator commutator evaluated on the current ansatz state. [[approximation: rather than adding only the single largest-gradient operator and re-measuring before the next pick, batched ADAPT-VQE orders the pool by gradient magnitude and appends, in one step, every operator whose gradient falls within a ratio $r$ of the largest — so operators later in that ordering are chosen from a gradient snapshot taken before any operator ahead of them in the same batch has actually been added or its coefficient optimized.]] [[assumption: $r$ is a fixed hyperparameter set once per problem rather than derived from the gradient distribution (the paper uses $r=2$ throughout).]] The resulting batch is appended to the ansatz in that gradient order, then the full parameter set is re-optimized.",
+        theoryJa:
+          "反復 $k$ において、各プールの演算子 $A_i$ は、通常のADAPT-VQEで使われるのと同じ勾配 $\\partial E/\\partial\\theta_i = \\langle\\psi^k|[H,A_i]|\\psi^k\\rangle$ ——現在のアンザッツ状態で評価された、ハミルトニアンと演算子の交換子——によってスクリーニングされます。[[approximation: 最大勾配を持つ演算子を1つだけ追加してから次の選択の前に再測定する代わりに、バッチADAPT-VQEはプールを勾配の大きさで並べ替え、最大値との比が $r$ 以内に収まるすべての演算子を1ステップでまとめて追加します。そのため、この並び順で後方に位置する演算子は、同じバッチ内で自分より前の演算子がまだ実際に追加されておらず、その係数も最適化されていない時点で撮られた勾配のスナップショットに基づいて選ばれることになります。]] [[assumption: $r$ は、勾配分布から導出されるのではなく、問題ごとに一度だけ設定される固定ハイパーパラメータです（本論文では一貫して $r=2$ を用いています）。]] 得られたバッチはその勾配順にアンザッツへ追加され、その後パラメータ全体が再最適化されます。",
+      },
+    },
     entries: ["vqe-batched-adapt"],
     citations: [
       { title: "Variational quantum eigensolver techniques for simulating carbon monoxide oxidation", authors: "M. D. Sapova, A. K. Fedorov", year: "2021", url: "https://arxiv.org/abs/2108.11167" },
@@ -9846,6 +10236,16 @@ export const LAYER_GRAPH: LayerGraph = {
     conditions: "Spall states the saving as a count of measurements, against the finite-difference alternative: \"In contrast to SA algorithms based on finite difference methods, which require 2p (noisy) measurements of L at each iteration, the 'simultaneous perturbation' algorithm here requires only 2q, q ≥ 1, measurements of L at each iteration, where for large p we typically have q ≪ p\" (§I). The mechanism is named in the same paper: \"this estimate differs from the usual finite difference approximation in that only two measurements (instead of 2p) are used. (The name 'simultaneous perturbation'... arises from the fact that all elements of the θ_k vector are being varied simultaneously.)\" (§II). **This citation is a 1992 control-theory paper and predates variational quantum algorithms entirely.** It is cited here for what it contains — the optimizer and its measurement count — and for nothing about quantum circuits; the claim this node makes is a claim about SPSA.",
     conditionsJa: "Spall はこの節約を、有限差分法との対比で測定回数として述べています。「有限差分法にもとづく確率近似アルゴリズムが各反復で L の（雑音を含む）測定を 2p 回必要とするのに対し、ここでの『同時摂動』アルゴリズムは各反復で L の測定を 2q 回（q ≥ 1）しか必要とせず、p が大きい場合には通常 q ≪ p である」（§I）。仕組みも同じ論文の中で名指しされています。「この推定は、2p 回ではなく 2 回の測定しか用いない点で、通常の有限差分近似とは異なる。（『同時摂動』という名は、θ_k ベクトルのすべての成分が同時に変化させられることに由来する。）」（§II）。**この引用は 1992 年の制御理論の論文であり、変分量子アルゴリズムよりも前のものです。** ここで引用しているのは、この論文が含んでいるもの、すなわち最適化手法とその測定回数だけであって、量子回路については何も引用していません。本ノードが述べているのは SPSA についての主張です。",
     steps: [],
+    hops: {
+      "spsa-optimization": {
+        name: "divide the two-read difference by delta",
+        nameJa: "2回の測定値の差をデルタで割る",
+        theory:
+          "At iteration k the estimate advances by the Robbins-Monro recursion $\\hat\\theta_{k+1}=\\hat\\theta_k-a_k\\hat g_k(\\hat\\theta_k)$ (2.1), where $\\hat g_k$ approximates $g(\\theta)=\\partial L/\\partial\\theta$ using only two loss measurements at points perturbed in every coordinate at once: $y_k^{(\\pm)}=L(\\hat\\theta_k\\pm c_k\\Delta_k)+\\epsilon_k^{(\\pm)}$, giving componentwise $\\hat g_{kl}(\\hat\\theta_k)=(y_k^{(+)}-y_k^{(-)})/(2c_k\\Delta_{kl})$, $l=1,\\dots,p$. [[assumption: Lemma 1's bias bound needs the $\\Delta_{ki}$ i.i.d. and symmetric about 0, almost-surely bounded ($|\\Delta_{ki}|\\le\\alpha_0$) with bounded inverse moment $E|\\Delta_{ki}^{-1}|\\le\\alpha_1$ (ruling out uniform or normal perturbations, satisfied by symmetric Bernoulli $\\pm1$), and $L$ with continuous, uniformly bounded third partial derivatives near $\\hat\\theta_k$.]] [[approximation: under these conditions $\\hat g_k$ is a biased estimator of the true gradient, with bias $b_k(\\hat\\theta_k)=O(c_k^2)$ as the gain $c_k\\to0$.]]",
+        theoryJa:
+          "反復kにおいて、推定値はRobbins-Monro再帰式 $\\hat\\theta_{k+1}=\\hat\\theta_k-a_k\\hat g_k(\\hat\\theta_k)$ (2.1)に従って更新されます。ここで $\\hat g_k$ は $g(\\theta)=\\partial L/\\partial\\theta$ を近似しますが、そのために用いるのは、全座標を同時に摂動させた点での2回の損失測定だけです: $y_k^{(\\pm)}=L(\\hat\\theta_k\\pm c_k\\Delta_k)+\\epsilon_k^{(\\pm)}$。これにより成分ごとに $\\hat g_{kl}(\\hat\\theta_k)=(y_k^{(+)}-y_k^{(-)})/(2c_k\\Delta_{kl})$、$l=1,\\dots,p$ が得られます。[[assumption: 補題1のバイアス上界には、$\\Delta_{ki}$ が独立同分布かつ0を中心に対称であり、ほとんど確実に有界($|\\Delta_{ki}|\\le\\alpha_0$)で、有界な逆モーメント $E|\\Delta_{ki}^{-1}|\\le\\alpha_1$ を持つこと(一様分布や正規分布は排除され、対称ベルヌーイ $\\pm1$ はこれを満たします)、そして $L$ が $\\hat\\theta_k$ の近傍で連続かつ一様に有界な3階偏微分を持つことが必要です。]] [[approximation: これらの条件のもとで $\\hat g_k$ は真の勾配の偏った推定量であり、そのバイアスはゲイン $c_k\\to0$ とともに $b_k(\\hat\\theta_k)=O(c_k^2)$ となります。]]",
+      },
+    },
     entries: ["vqe-spsa-optimizer"],
     citations: [
       { title: "Multivariate stochastic approximation using a simultaneous perturbation gradient approximation", authors: "J. C. Spall", year: "1992", url: "https://doi.org/10.1109/9.119632" },
