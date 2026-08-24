@@ -1511,3 +1511,78 @@ def test_history_is_copied_not_aliased():
     built[0]["content"] = "mutated"
 
     assert history[0]["content"] == "original"
+
+
+async def test_the_anthropic_profile_sends_no_sampling_parameters(monkeypatch):
+    """`temperature` / `top_p` / `top_k` must not reach the Messages API.
+
+    Two independent reasons, and either alone is fatal:
+
+    - **The models refuse them.** `models.py` pins `claude-opus-4-8` and
+      `claude-sonnet-5` for this profile. Opus 4.7 and later return 400 for a
+      request carrying `temperature` at all, the default value included; Sonnet 5
+      rejects any non-default value. The 0.0 this codebase asks for everywhere is
+      refused by both.
+    - **The SDK refuses them.** `anthropic` 1.0.0 removed the parameters from
+      `messages.create` / `messages.stream`, and neither takes `**kwargs`, so a
+      call passing one raises `TypeError` before a request is built.
+
+    This guard exists because neither reason was caught by anything. This branch
+    is a fallback — `resolve_provider()` prefers OpenAI/DeepSeek whenever either
+    key is set, and CI and production both set them — so no test and no deploy
+    had ever executed it against the real SDK. It carried `temperature=` from the
+    day it was written and would have raised on the first request that reached
+    it. The bar the fake sets is deliberately stricter than the SDK's: it rejects
+    the parameters by name, so a future edit that reintroduces one fails here
+    rather than on a production fallback nobody is watching.
+    """
+    sent: dict[str, object] = {}
+
+    class Block:
+        type = "text"
+        text = "ok"
+
+    class Usage:
+        input_tokens = 11
+        output_tokens = 7
+
+    class Message:
+        content = [Block()]
+        usage = Usage()
+        model = "claude-opus-4-8"
+
+    class RecordingMessages:
+        async def create(self, **kwargs):
+            sent.update(kwargs)
+            for banned in ("temperature", "top_p", "top_k"):
+                if banned in kwargs:
+                    # Exactly what anthropic>=1.0.0 does: no such parameter, and
+                    # no **kwargs to swallow it.
+                    raise TypeError(f"got an unexpected keyword argument '{banned}'")
+            return Message()
+
+    class RecordingAsyncAnthropic:
+        def __init__(self, **_kwargs):
+            self.messages = RecordingMessages()
+
+    monkeypatch.setitem(
+        sys.modules,
+        "anthropic",
+        SimpleNamespace(AsyncAnthropic=RecordingAsyncAnthropic),
+    )
+
+    from majorana_llm.client import AnthropicLLM
+
+    response = await AnthropicLLM(api_key="test-key").complete(
+        LLMRequest(model="claude-opus-4-8", system="system", user="user", temperature=0.0)
+    )
+
+    assert response.text == "ok"
+    assert "temperature" not in sent
+    assert "top_p" not in sent
+    assert "top_k" not in sent
+    # The parameters that DO still exist must still be sent, or this test would
+    # pass just as well against a call that sends nothing at all.
+    assert sent["model"] == "claude-opus-4-8"
+    assert sent["max_tokens"] > 0
+    assert sent["messages"]
