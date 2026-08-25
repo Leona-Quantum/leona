@@ -428,6 +428,5 @@ def test_the_cross_tenant_ceilings_hold_the_owner_ruled_worst_case():
     # And the per-Qapp ceiling is the tighter of the two, so one published page
     # can never be the whole deployment's hour on its own.
     assert (
-        qapp_routes.QAPP_EXECUTIONS_PER_QAPP_HOUR
-        < qapp_routes.QAPP_EXECUTIONS_PER_DEPLOYMENT_HOUR
+        qapp_routes.QAPP_EXECUTIONS_PER_QAPP_HOUR < qapp_routes.QAPP_EXECUTIONS_PER_DEPLOYMENT_HOUR
     )
