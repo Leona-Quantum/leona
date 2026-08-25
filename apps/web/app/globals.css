@@ -68,8 +68,8 @@ body {
 
 /* The landing composer carries the restrained two-ring treatment from the
  * Neon Glow reference: a crisp accent trace above a wider blurred trace. The
- * gradient turns only when the visitor engages the form, so the hero keeps its
- * calm resting state and the glow reads as affordance instead of ambient noise. */
+ * paired traces orbit continuously, while engagement only increases their
+ * intensity. */
 @property --mj-landing-prompt-glow-angle {
   syntax: "<angle>";
   inherits: false;
@@ -104,9 +104,8 @@ body {
     linear-gradient(var(--text-0) 0 0);
   -webkit-mask-composite: xor;
   mask-composite: exclude;
-  transition:
-    --mj-landing-prompt-glow-angle 2s ease-in-out,
-    opacity var(--dur-hover) var(--ease-out-ui);
+  animation: mj-landing-prompt-glow 6s linear infinite;
+  transition: opacity var(--dur-hover) var(--ease-out-ui);
 }
 .mj-company-site .mj-landing-prompt::before {
   z-index: 1;
@@ -128,12 +127,6 @@ body {
   border-color: color-mix(in srgb, var(--accent) 32%, var(--border-0));
 }
 .mj-company-site .mj-landing-prompt:hover::before,
-.mj-company-site .mj-landing-prompt:hover::after,
-.mj-company-site .mj-landing-prompt:focus-within::before,
-.mj-company-site .mj-landing-prompt:focus-within::after {
-  --mj-landing-prompt-glow-angle: -120deg;
-}
-.mj-company-site .mj-landing-prompt:hover::before,
 .mj-company-site .mj-landing-prompt:focus-within::before {
   opacity: 1;
 }
@@ -141,17 +134,17 @@ body {
 .mj-company-site .mj-landing-prompt:focus-within::after {
   opacity: 0.8;
 }
+@keyframes mj-landing-prompt-glow {
+  to { --mj-landing-prompt-glow-angle: 420deg; }
+}
 @media (prefers-reduced-motion: reduce) {
-  .mj-company-site .mj-landing-prompt,
-  .mj-company-site .mj-landing-prompt::before,
-  .mj-company-site .mj-landing-prompt::after {
+  .mj-company-site .mj-landing-prompt {
     transition: none;
   }
-  .mj-company-site .mj-landing-prompt:hover::before,
-  .mj-company-site .mj-landing-prompt:hover::after,
-  .mj-company-site .mj-landing-prompt:focus-within::before,
-  .mj-company-site .mj-landing-prompt:focus-within::after {
-    --mj-landing-prompt-glow-angle: 60deg;
+  .mj-company-site .mj-landing-prompt::before,
+  .mj-company-site .mj-landing-prompt::after {
+    animation: none;
+    transition: none;
   }
 }
 
