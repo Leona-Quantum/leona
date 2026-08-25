@@ -269,3 +269,67 @@ def test_ui_guard_provably_cannot_catch_concatenated_location_access(name):
 @pytest.mark.parametrize("name", sorted(LEGITIMATE_UI_DOCUMENTS))
 def test_ui_guard_accepts_documents_an_honest_generator_emits(name):
     validate_qapp_ui_document(LEGITIMATE_UI_DOCUMENTS[name])
+
+
+ARRAY_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "angles": {"type": "array", "items": {"type": "number"}, "minimum": 0, "maximum": 1},
+        "gates": {"type": "array", "items": {"type": "string"}, "enum": ["h", "x", "cx"]},
+        "labels": {"type": "array", "items": {"type": "string"}, "maxLength": 4},
+    },
+    "required": [],
+    "additionalProperties": False,
+}
+
+
+def test_array_inputs_are_checked_item_by_item_not_as_a_list():
+    """CodeRabbit's finding on PR 764, and it was real in both directions.
+
+    `enum` was compared against the whole list, so an array property that
+    declared one rejected every valid input with a 422 — the array is never a
+    member of its own item enum. And `minimum`/`maximum`/`maxLength` were gated
+    on the property's `kind`, which is "array", so items received no bound check
+    at all. `normalize_qapp_schema` admits all of these keywords on an array
+    property, so both halves were reachable from ordinary generated output.
+    """
+    # Was refused before the fix: the list is not in the enum, so nothing passed.
+    validate_qapp_inputs(ARRAY_SCHEMA, {"gates": ["h", "cx"]})
+    validate_qapp_inputs(ARRAY_SCHEMA, {"angles": [0.0, 0.5, 1.0]})
+    validate_qapp_inputs(ARRAY_SCHEMA, {"labels": ["ab", "cd"]})
+
+    # Was ACCEPTED before the fix: no bound reached an array's items.
+    with pytest.raises(ValueError, match="not an allowed value"):
+        validate_qapp_inputs(ARRAY_SCHEMA, {"gates": ["h", "rx"]})
+    with pytest.raises(ValueError, match="above its maximum"):
+        validate_qapp_inputs(ARRAY_SCHEMA, {"angles": [0.5, 7.0]})
+    with pytest.raises(ValueError, match="invalid length"):
+        validate_qapp_inputs(ARRAY_SCHEMA, {"labels": ["ab", "far too long"]})
+
+
+def test_scalar_bounds_still_apply_after_the_array_fix():
+    """The control: moving the checks under the item loop must not lose them."""
+    validate_qapp_inputs(SCHEMA, {"qubits": 4})
+    with pytest.raises(ValueError, match="below its minimum"):
+        validate_qapp_inputs(SCHEMA, {"qubits": 1})
+    with pytest.raises(ValueError, match="above its maximum"):
+        validate_qapp_inputs(SCHEMA, {"qubits": 99})
+    with pytest.raises(ValueError, match="invalid length"):
+        validate_qapp_inputs(SCHEMA, {"qubits": 4, "label": "x" * 41})
+
+
+def test_qapp_persistence_bound_matches_the_sandbox_lane():
+    """The repository's restated bound must not drift from the sandbox's own.
+
+    `repos/qapps.py` cannot import `majorana_sandbox` — the import linter's
+    "DB access only inside the repository layer" contract keeps the control
+    plane's layers apart — so the 1-27 lane is restated there as a constant.
+    Restating a number is how two numbers start disagreeing, so this asserts
+    they are the same one.
+    """
+    from majorana_sandbox import DEFAULT_QUBIT_CEILING
+
+    from majorana_api.repos.qapps import QAPP_MAX_QUBITS, QAPP_MIN_QUBITS
+
+    assert QAPP_MAX_QUBITS == DEFAULT_QUBIT_CEILING
+    assert QAPP_MIN_QUBITS == 1

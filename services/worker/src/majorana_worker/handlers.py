@@ -1878,7 +1878,17 @@ async def handle_qapp_execute(
         "failed",
     }:
         return
-    await qapps_repo.mark_execution_running(scope, session, execution_id)
+    # The claim has to be CHECKED, not merely attempted, and it has to answer
+    # "did *I* claim it" rather than "is it claimed". The guard above catches only
+    # the two TERMINAL states, so a job redelivered while the first delivery is
+    # still working arrives here with the row already `running` — and every
+    # weaker test (row returned, row is running, started_at set) is equally true
+    # for the delivery that did claim it and the one that did not. Getting this
+    # wrong starts a SECOND paid sandbox for one execution, alongside the first,
+    # and then races it to `finish_execution`. Cost, not just correctness.
+    if not await qapps_repo.mark_execution_running(scope, session, execution_id):
+        await session.rollback()
+        return
     await session.commit()
     trusted_setup = (
         f"_majorana_namespace['QAPP_INPUTS'] = {execution.inputs!r}\n"

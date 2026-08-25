@@ -218,15 +218,23 @@ def validate_qapp_inputs(schema: dict[str, Any], inputs: dict[str, Any]) -> None
                 raise ValueError(f"Qapp input {name} has an invalid item count")
         if any(not _valid_scalar(item, scalar_kind) for item in values):
             raise ValueError(f"Qapp input {name} has the wrong type")
-        if "enum" in definition and value not in definition["enum"]:
-            raise ValueError(f"Qapp input {name} is not an allowed value")
-        if kind in {"number", "integer"}:
-            if "minimum" in definition and value < definition["minimum"]:
-                raise ValueError(f"Qapp input {name} is below its minimum")
-            if "maximum" in definition and value > definition["maximum"]:
-                raise ValueError(f"Qapp input {name} is above its maximum")
-        if kind == "string":
-            if len(value) < int(definition.get("minLength", 0)) or len(value) > int(
-                definition.get("maxLength", 4000)
-            ):
-                raise ValueError(f"Qapp input {name} has an invalid length")
+        # Every keyword below is a claim about a SCALAR, so it is applied to
+        # `values` — the items for an array, the value itself otherwise — and
+        # never to the array object. Comparing a list against `enum` made an
+        # array property that declares one reject every valid input with a 422,
+        # and gating the bounds on `kind` left array items with no bound check at
+        # all. `normalize_qapp_schema` admits these keywords on array properties,
+        # so both were reachable from ordinary generated output.
+        for item in values:
+            if "enum" in definition and item not in definition["enum"]:
+                raise ValueError(f"Qapp input {name} is not an allowed value")
+            if scalar_kind in {"number", "integer"}:
+                if "minimum" in definition and item < definition["minimum"]:
+                    raise ValueError(f"Qapp input {name} is below its minimum")
+                if "maximum" in definition and item > definition["maximum"]:
+                    raise ValueError(f"Qapp input {name} is above its maximum")
+            if scalar_kind == "string":
+                if len(item) < int(definition.get("minLength", 0)) or len(item) > int(
+                    definition.get("maxLength", 4000)
+                ):
+                    raise ValueError(f"Qapp input {name} has an invalid length")

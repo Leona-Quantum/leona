@@ -85,6 +85,17 @@ async def create_generated(
 ) -> tuple[Qapp, QappVersion]:
     """Persist one generated bundle, idempotently by its originating run."""
     require_write(scope)
+    # The 1-27 bound is declared on the parsed model AND on every response model,
+    # and enforced by neither of them here: this function takes a plain `int` and
+    # the column has no check. An out-of-range row is not a bad card — it is a
+    # 500 for the WHOLE public gallery, because `list_public_qapps` builds a
+    # `PublicQappSummary` per row and one field failing validation fails the
+    # response. Cheaper to refuse the write than to serve a broken list.
+    if not QAPP_MIN_QUBITS <= qubits_estimate <= QAPP_MAX_QUBITS:
+        raise ValueError(
+            f"qubits_estimate must be between {QAPP_MIN_QUBITS} and {QAPP_MAX_QUBITS}, "
+            f"got {qubits_estimate}"
+        )
     existing = (
         await session.execute(
             select(Qapp).where(
@@ -330,6 +341,13 @@ async def create_execution(
     return execution
 
 
+#: The qubit lane this deployment runs (`majorana_sandbox.spec::DEFAULT_QUBIT_CEILING`,
+#: AD-12). Restated here rather than imported because the repository layer must not
+#: depend on the sandbox package; `test_qapp_persistence_bound_matches_the_sandbox_lane`
+#: asserts the two have not drifted.
+QAPP_MIN_QUBITS = 1
+QAPP_MAX_QUBITS = 27
+
 #: Key for the transaction-scoped advisory lock that serialises reservations.
 #: Arbitrary but fixed, and namespaced by the migration that introduced the
 #: counters it protects so a future unrelated advisory lock does not collide.
@@ -436,15 +454,26 @@ async def get_execution_source(
 
 async def mark_execution_running(
     scope: Scope, session: AsyncSession, execution_id: uuid.UUID
-) -> QappExecution:
+) -> bool:
+    """Claim a queued execution. True only if THIS call made the transition.
+
+    Returning the row was not enough for the one caller that matters. A job the
+    queue redelivers while the first delivery is still working finds the row
+    already `running`, and a row is a row whether or not you were the one who
+    claimed it — so the worker could not tell "I claimed it" from "someone else
+    did" and started a second paid sandbox alongside the first. The boolean is
+    the whole answer, and it is decided under the `FOR UPDATE` this already
+    takes, so two deliveries racing here cannot both be told yes.
+    """
     require_write(scope)
     row = await get_execution(scope, session, execution_id, for_update=True)
-    if row.status == QappExecutionStatus.QUEUED.value:
-        row.status = QappExecutionStatus.RUNNING.value
-        row.started_at = touched_now()
-        row.updated_at = row.started_at
-        await session.flush()
-    return row
+    if row.status != QappExecutionStatus.QUEUED.value:
+        return False
+    row.status = QappExecutionStatus.RUNNING.value
+    row.started_at = touched_now()
+    row.updated_at = row.started_at
+    await session.flush()
+    return True
 
 
 async def finish_execution(

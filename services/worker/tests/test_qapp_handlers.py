@@ -1,4 +1,5 @@
 from types import SimpleNamespace
+import datetime as dt
 import uuid
 
 from majorana_contracts import Scope
@@ -207,6 +208,7 @@ async def test_qapp_execution_uses_guarded_sandbox_and_persists_only_protected_r
         id=execution_id,
         qapp_id=qapp_id,
         status="queued",
+        started_at=None,
         inputs={"qubits": 2},
     )
     version = SimpleNamespace(
@@ -228,7 +230,13 @@ async def test_qapp_execution_uses_guarded_sandbox_and_persists_only_protected_r
         return execution, version
 
     async def mark_running(*_args):
+        # Returns True, like the real `mark_execution_running` does when THIS
+        # call made the transition. A fake that returned None hid the redelivery
+        # guard entirely — a stub with a different contract from the function it
+        # stands in for makes the check untestable while looking green.
         execution.status = "running"
+        execution.started_at = dt.datetime(2026, 8, 25, tzinfo=dt.timezone.utc)
+        return True
 
     async def finish(_scope, _session, requested, **fields):
         captured.update(id=requested, **fields)
@@ -276,3 +284,69 @@ async def test_qapp_execution_uses_guarded_sandbox_and_persists_only_protected_r
     # design, so one caller could read another's result.
     assert execution_id.hex in captured["spec"].protected_result_path
     assert captured["sandbox_meta"]["provider"] == "fake"
+
+
+async def test_a_redelivered_execution_does_not_run_the_paid_sandbox_twice(monkeypatch):
+    """CodeRabbit's finding on PR 764: cost, not just correctness.
+
+    The handler's early return covers only `succeeded` and `failed`. A job
+    redelivered while its execution is still `running` fell straight through it,
+    because `mark_execution_running` promotes only a `queued` row and the
+    handler ignored what it returned — so the second delivery started a SECOND
+    paid sandbox for the same execution alongside the first, and then raced it
+    to `finish_execution`.
+    """
+    execution_id = uuid.uuid4()
+    qapp_id = uuid.uuid4()
+    execution = SimpleNamespace(
+        id=execution_id,
+        qapp_id=qapp_id,
+        # Already claimed by the delivery that is still in flight.
+        status="running",
+        started_at=dt.datetime(2026, 8, 25, tzinfo=dt.timezone.utc),
+        inputs={"qubits": 2},
+    )
+    version = SimpleNamespace(
+        id=uuid.uuid4(),
+        qapp_id=qapp_id,
+        quantum_source="RESULT = {}",
+        qubits_estimate=2,
+        fingerprint="a" * 64,
+        output_schema={"type": "object", "properties": {}, "required": []},
+    )
+    runs = []
+
+    async def get_source(*_args):
+        return execution, version
+
+    async def mark_running(*_args):
+        # False: the real function refuses a row that is not queued, and says so.
+        return False
+
+    async def finish(*_args, **_kwargs):
+        runs.append("finished")
+
+    class CountingSandbox:
+        provider = "counting"
+
+        async def _execute(self, spec):
+            runs.append("sandbox")
+            raise AssertionError("a redelivered execution reached the paid sandbox")
+
+    monkeypatch.setattr(handlers.qapps_repo, "get_execution_source", get_source)
+    monkeypatch.setattr(handlers.qapps_repo, "mark_execution_running", mark_running)
+    monkeypatch.setattr(handlers.qapps_repo, "finish_execution", finish)
+
+    session = Session()
+    await handlers.handle_qapp_execute(
+        session,
+        {
+            "execution_id": str(execution_id),
+            "workspace_id": str(uuid.uuid4()),
+            "user_id": str(uuid.uuid4()),
+        },
+        sandbox=CountingSandbox(),
+    )
+
+    assert runs == [], f"the redelivery did work it should have skipped: {runs}"
+    assert session.commits == 0, "a skipped redelivery must not commit a claim it did not make"

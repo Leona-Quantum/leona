@@ -305,6 +305,17 @@ async def delete_committed_tenants(factory, workspace_ids, user_ids) -> None:
             .scalars()
             .all()
         )
+        # By WORKSPACE as well as by qapp, and the two sets genuinely differ. A
+        # public Qapp is executed by a visitor, and `create_execution` stores the
+        # VISITOR's workspace_id and user_id against the OWNER's qapp_id — so a
+        # teardown that filters only on this tenant's qapps leaves behind the
+        # rows this tenant created against somebody else's Qapp, and the
+        # non-cascading workspace and user foreign keys then refuse the workspace
+        # delete. The failure surfaces as a ForeignKeyViolation in an unrelated
+        # suite, which is a bad place to learn it.
+        await session.execute(
+            delete(QappExecution).where(QappExecution.workspace_id.in_(workspace_ids))
+        )
         if qapp_ids:
             await session.execute(delete(QappExecution).where(QappExecution.qapp_id.in_(qapp_ids)))
             # The current-version edge is deferred; deleting the Qapp cascades

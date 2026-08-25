@@ -90,6 +90,18 @@ function bridgeScript(channel: string): string {
     let sequence=0;
     window.qapp=Object.freeze({run(inputs){
       return new Promise((resolve,reject)=>{
+        // Refused HERE, not by silence over there. The host drops any message
+        // that fails isQappExecuteMessage, so a frame that sent an oversized or
+        // malformed payload got no reply at all and its promise never settled --
+        // a Qapp that hangs forever with no error a reader can see. The two
+        // conditions mirror the host's, so the frame learns the same answer.
+        if(!inputs||typeof inputs!=="object"||Array.isArray(inputs)){
+          reject(new Error("Qapp inputs must be an object."));return;
+        }
+        let encoded;
+        try{encoded=new TextEncoder().encode(JSON.stringify(inputs)).byteLength;}
+        catch(error){reject(new Error("Qapp inputs could not be serialised."));return;}
+        if(encoded>16384){reject(new Error("Qapp inputs exceed 16 KB."));return;}
         const requestId=String(++sequence);
         pending.set(requestId,{resolve,reject});
         window.parent.postMessage({channel,type:"qapp.execute",requestId,inputs},"*");
