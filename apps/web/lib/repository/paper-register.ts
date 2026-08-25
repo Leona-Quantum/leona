@@ -34,6 +34,28 @@ import type { PaperRegister } from "./papers.ts";
 
 export const PAPER_REGISTER: PaperRegister = {
   papers: [
+    // `reports` read off the abstract, which is what `reportsBasis` records.
+    // 'We propose a variational algorithm' is its own; 'We use this algorithm to find the ground-state energy ... sp
+    // ecifically molecular hydrogen and lithium hydride' is its own. The abstract says nothing either way about a de
+    // vice.
+    { id: "arxiv:1804.03023", title: "Variational ansatz-based quantum simulation of imaginary time evolution", authors: "Sam McArdle, Tyson Jones, Suguru Endo, Ying Li, Simon Benjamin, Xiao Yuan", year: "2018", url: "https://arxiv.org/abs/1804.03023", reports: { theory: "reported", simulation: "reported", hardware: "unknown" }, reportsBasis: "abstract" },
+    // `reports` read off the abstract, which is what `reportsBasis` records.
+    // 'Here, we propose a stabiliser-like method' is its own; 'Simulations show that our method can significantly be
+    // nefit calculations' is its own. 'suitable for near-term quantum hardware' is a claim about suitability, not a 
+    // run.
+    { id: "arxiv:1807.02467", title: "Error-mitigated digital quantum simulation", authors: "Sam McArdle, Xiao Yuan, Simon Benjamin", year: "2018", url: "https://arxiv.org/abs/1807.02467", reports: { theory: "reported", simulation: "reported", hardware: "absent" }, reportsBasis: "abstract" },
+    // `reports` read off the abstract, which is what `reportsBasis` records.
+    // 'the recently proposed symmetry verification technique' puts the theory in prior work; the contribution is 'th
+    // e experimental estimation of the ground-state energy ... in a circuit QED processor'.
+    { id: "arxiv:1902.11258", title: "Error Mitigation by Symmetry Verification on a Variational Quantum Eigensolver", authors: "R. Sagastizabal, X. Bonet-Monroig, M. Singh, M.A. Rol, C.C. Bultink, X. Fu, C.H. Price, V.P. Ostroukh, N. Muthusubramanian, A. Bruno, M. Beekman, N. Haider, T.E. O'Brien, L. DiCarlo", year: "2019", url: "https://arxiv.org/abs/1902.11258", reports: { theory: "absent", simulation: "unknown", hardware: "reported" }, reportsBasis: "abstract" },
+    // `reports` read off the abstract, which is what `reportsBasis` records.
+    // 'This work presents a novel realization approach' is its own; 'demonstrated with numerical simulations and exp
+    // eriments run on real quantum hardware' names both.
+    { id: "arxiv:2006.06004", title: "Variational Quantum Boltzmann Machines", authors: "Christa Zoufal, Aurélien Lucchi, Stefan Woerner", year: "2020", url: "https://arxiv.org/abs/2006.06004", reports: { theory: "reported", simulation: "reported", hardware: "reported" }, reportsBasis: "abstract" },
+    // `reports` read off the abstract, which is what `reportsBasis` records.
+    // 'we present the numerical calculations on simulated quantum devices' — simulation is the paper's own and the s
+    // ame clause positively excludes hardware.
+    { id: "arxiv:2112.01927", title: "Solving hadron structures using the basis light-front quantization approach on quantum computers", authors: "Wenyang Qian, Robert Basili, Soham Pal, Glenn Luecke, James P. Vary", year: "2021", url: "https://arxiv.org/abs/2112.01927", reports: { theory: "reported", simulation: "reported", hardware: "absent" }, reportsBasis: "abstract" },
     { id: "arxiv:quant-ph/0010005", title: "Exponential Gain in Quantum Computing of Quantum Chaos and Localization", authors: "B. Georgeot, D. L. Shepelyansky", year: "2000", url: "https://arxiv.org/abs/quant-ph/0010005", reports: { theory: "reported", simulation: "unknown", hardware: "absent" }, reportsBasis: "abstract" },
     { id: "arxiv:0705.1180", title: "A PromiseBQP-complete String Rewriting Problem", authors: "Dominik Janzing, Pawel Wocjan", year: "2007", url: "https://arxiv.org/abs/0705.1180", reports: { theory: "reported", simulation: "unknown", hardware: "absent" }, reportsBasis: "abstract" },
     { id: "arxiv:0705.2784", title: "Quantum algorithms for hidden nonlinear structures", authors: "Andrew M. Childs, Leonard J. Schulman, Umesh V. Vazirani", year: "2007", url: "https://arxiv.org/abs/0705.2784", reports: { theory: "reported", simulation: "unknown", hardware: "absent" }, reportsBasis: "abstract" },
