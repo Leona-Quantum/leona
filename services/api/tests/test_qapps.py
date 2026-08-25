@@ -7,6 +7,7 @@ from majorana_contracts import PublicQapp
 
 from majorana_api.auth import qapp_deps
 from majorana_api.qapp_validation import (
+    MAX_NUMERIC_MAGNITUDE,
     normalize_qapp_schema,
     validate_qapp_inputs,
     validate_qapp_ui_document,
@@ -333,3 +334,60 @@ def test_qapp_persistence_bound_matches_the_sandbox_lane():
 
     assert QAPP_MAX_QUBITS == DEFAULT_QUBIT_CEILING
     assert QAPP_MIN_QUBITS == 1
+
+
+NUMERIC_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "loose": {"type": "integer"},
+        "declared": {"type": "integer", "maximum": 10**12},
+    },
+    "required": [],
+    "additionalProperties": False,
+}
+
+
+def test_a_numeric_input_is_bounded_even_when_its_schema_declares_no_maximum():
+    """Strings and arrays had a default bound; numerics did not.
+
+    `maxLength` defaults to 4000 and `maxItems` to 100, so an undeclared bound
+    still bounds. `minimum`/`maximum` were checked only when the schema chose to
+    declare them, and nothing requires a generated schema to. An integer a
+    program uses as a problem size could therefore arrive from a visitor with
+    no ceiling at all — and the qubit preflight cannot catch it, because that
+    checks the version's frozen generation-time estimate, never the value that
+    arrives at execution.
+    """
+    validate_qapp_inputs(NUMERIC_SCHEMA, {"loose": 10})
+    validate_qapp_inputs(NUMERIC_SCHEMA, {"loose": MAX_NUMERIC_MAGNITUDE})
+    with pytest.raises(ValueError, match="above its maximum"):
+        validate_qapp_inputs(NUMERIC_SCHEMA, {"loose": MAX_NUMERIC_MAGNITUDE + 1})
+    with pytest.raises(ValueError, match="below its minimum"):
+        validate_qapp_inputs(NUMERIC_SCHEMA, {"loose": -MAX_NUMERIC_MAGNITUDE - 1})
+    # A schema that needs a wider range says so, and is still honoured.
+    validate_qapp_inputs(NUMERIC_SCHEMA, {"declared": 10**11})
+
+
+WEBRTC_PAYLOADS = {
+    "RTCPeerConnection with a STUN server": (
+        '<script>const p=new RTCPeerConnection({iceServers:[{urls:"stun:evil.test"}]});'
+        'p.createDataChannel("x");</script>'
+    ),
+    "webkit-prefixed constructor": "<script>const p=new webkitRTCPeerConnection({});</script>",
+    "mediaDevices": "<script>navigator.mediaDevices.getUserMedia({video:true});</script>",
+}
+
+
+@pytest.mark.parametrize("name", sorted(WEBRTC_PAYLOADS))
+def test_ui_guard_rejects_webrtc(name):
+    """The one network family no CSP directive reaches.
+
+    `connect-src` does not govern `RTCPeerConnection` in any browser, and
+    Permissions-Policy denying camera and microphone does not stop a data
+    channel or the STUN request that carries bytes to a server of the author's
+    choosing. For fetch and WebSocket this list is defence-in-depth behind a
+    real boundary; for this family it is the only mention anywhere, which is why
+    it is worth a test rather than a line in a docstring.
+    """
+    with pytest.raises(ValueError, match="direct browser communication"):
+        validate_qapp_ui_document(WEBRTC_PAYLOADS[name])
