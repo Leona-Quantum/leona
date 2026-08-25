@@ -2029,8 +2029,8 @@ test("the graph-wide pseudocode count is a floor that only goes up", () => {
     `${methods.length} methods, was 110 — the denominator shrank`,
   );
   assert.ok(
-    withPseudocode.length >= 78,
-    `${withPseudocode.length} of ${methods.length} methods carry pseudocode, was 78`,
+    withPseudocode.length >= 94,
+    `${withPseudocode.length} of ${methods.length} methods carry pseudocode, was 94`,
   );
 
   // Whitespace is authored-looking and reads as filled to every count that does
