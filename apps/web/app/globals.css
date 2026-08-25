@@ -2377,6 +2377,35 @@ html[lang="ja"] .mj-company-hero-title-line {
   padding: 1rem;
 }
 
+/* ai-ops 180 (no hash: check-raw-hex reads a three-digit hash-number as a
+   colour): what happened when the Qapp ran at its LARGEST declared inputs.
+   Sits beside the publish button and never disables it — his ruling was "warn
+   the creator, publish either way", so this must read as information and not as
+   a refusal. The warn tone borrows the same tokens the rest of the app uses for
+   a caution rather than introducing a colour of its own. */
+.qapp-range-smoke {
+  margin: 0 0 1.5rem;
+  padding: .8rem 1rem;
+  border-radius: 8px;
+  border: 1px solid var(--border-0);
+  color: var(--text-2);
+  background: var(--bg-2);
+  font-size: .85rem;
+  line-height: 1.5;
+}
+
+.qapp-range-smoke-warn {
+  /* `--warn` is the token for "lossy / partial", which is exactly what this is:
+     the Qapp works, at part of its declared range. Paired with the "At its
+     largest inputs" lead-in rather than carried by colour alone. */
+  border-color: var(--warn);
+  color: var(--text-1);
+}
+
+.qapp-range-smoke strong {
+  color: var(--text-1);
+}
+
 @media (max-width: 700px) {
   .qapp-page-header,
   .qapp-private-header,

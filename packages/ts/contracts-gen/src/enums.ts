@@ -106,6 +106,14 @@ export const QAPP_EXECUTION_STATUS_VALUES = [
   "failed",
 ] as const;
 
+/** QappRangeSmokeStatus — 4 members. */
+export const QAPP_RANGE_SMOKE_STATUS_VALUES = [
+  "passed",
+  "failed",
+  "not_applicable",
+  "unreachable",
+] as const;
+
 /** QpuEstimateBasis — 2 members. */
 export const QPU_ESTIMATE_BASIS_VALUES = [
   "vendor_rate_card",

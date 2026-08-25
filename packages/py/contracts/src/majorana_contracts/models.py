@@ -13,6 +13,7 @@ from .enums import (
     ExportStatus,
     Framework,
     QappExecutionStatus,
+    QappRangeSmokeStatus,
     QpuEstimateBasis,
     QpuProvider,
     QpuRunStatus,
@@ -805,6 +806,32 @@ class Qapp(_ResourceBase):
     published_at: datetime | None = None
 
 
+class QappRangeSmoke(_ResourceBase):
+    """The second smoke run: the generated program at its LARGEST declared inputs.
+
+    ai-ops#180. Publication requires one successful run against the Qapp's own
+    input schema, and the value chooser that run uses takes the schema default,
+    else the first enum value, else the **minimum** of a number range. So a Qapp
+    declaring `shots 1 to 20000` was published on a 1-shot run, and the first
+    visitor who moved the slider to the top could get a timeout or an
+    out-of-memory instead — a failed run that is still paid for and still counts
+    against the hourly ceilings.
+
+    The owner's ruling, quoted: *"Smoke at both ends but only warn the creator,
+    publish either way."* So this record **never blocks** anything. It is
+    creator-facing information and it is deliberately absent from `PublicQapp`:
+    a visitor is not told that the app they are looking at might fail at its top
+    end, because that is the creator's decision to have published anyway.
+    """
+
+    status: QappRangeSmokeStatus
+    #: Free text, bounded. For `failed` it is the sandbox's own diagnostic; for
+    #: `not_applicable` and `unreachable` it says which of those it is and why.
+    detail: str = Field(default="", max_length=1_200)
+    #: How long the top-end run took, when one happened.
+    duration_ms: int | None = Field(default=None, ge=0)
+
+
 class QappVersion(_ResourceBase):
     id: UUID
     qapp_id: UUID
@@ -818,6 +845,11 @@ class QappVersion(_ResourceBase):
     fingerprint: str
     source_artifact_version_id: UUID | None = None
     created_at: datetime
+    #: `None` on every version generated before ai-ops#180 shipped. That is a
+    #: THIRD thing from `not_applicable` and from `failed`: it means nobody ever
+    #: asked, not that there was nothing to ask. A reader must not render it as
+    #: a pass.
+    range_smoke: QappRangeSmoke | None = None
 
 
 class PublicQapp(_ResourceBase):

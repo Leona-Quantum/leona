@@ -8,7 +8,7 @@ import datetime as dt
 from typing import Any
 
 from fastapi import APIRouter, HTTPException
-from majorana_contracts import Qapp, QappExecution, QappVersion, PublicQapp
+from majorana_contracts import Qapp, QappExecution, QappRangeSmoke, QappVersion, PublicQapp
 from majorana_contracts.enums import Framework, Visibility
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -136,6 +136,11 @@ def _version_resource(row) -> QappVersion:
         fingerprint=row.fingerprint,
         source_artifact_version_id=row.source_artifact_version_id,
         created_at=_required(row.created_at, "created_at"),
+        # NULL on every version generated before ai-ops#180 shipped, and never
+        # backfilled: the answer costs a sandbox and nobody is waiting on it for
+        # a Qapp that already exists. `None` therefore means "nobody asked",
+        # which is a third thing from `not_applicable` and from `failed`.
+        range_smoke=QappRangeSmoke.model_validate(row.range_smoke) if row.range_smoke else None,
     )
 
 
