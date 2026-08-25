@@ -68,6 +68,27 @@ _FORBIDDEN_UI_PATTERNS: tuple[tuple[re.Pattern[str], str], ...] = (
         re.compile(r"http-equiv\s*=\s*['\"]?\s*refresh\b", re.IGNORECASE),
         "refresh navigation",
     ),
+    # Everything above matches markup or an API by NAME, which is exactly what a
+    # document that builds the same call out of pieces does not contain. These
+    # three close the assembly routes that were measured to get past the rules
+    # above — see this module's docstring for the measurement and for why the
+    # list stops where it does.
+    (
+        re.compile(r"\b(?:eval|atob|unescape)\s*\(|\bnew\s+Function\s*\(", re.IGNORECASE),
+        "dynamic code and encoded-string evaluation",
+    ),
+    (
+        re.compile(
+            r"\bcreateElement\s*\(\s*['\"`]\s*"
+            r"(?:a|base|embed|form|frame|iframe|link|meta|object|script)\s*['\"`]",
+            re.IGNORECASE,
+        ),
+        "scripted construction of navigation and embedding elements",
+    ),
+    (
+        re.compile(r"\bhttpEquiv\b", re.IGNORECASE),
+        "refresh navigation",
+    ),
 )
 
 
@@ -77,6 +98,34 @@ def validate_qapp_ui_document(document: str) -> None:
     The iframe sandbox and injected CSP remain the browser security boundary.
     This guard makes the model contract executable too, so straightforward
     prompt-injected output is rejected before it is stored or shown to anyone.
+
+    **It is a filter on straightforward output and nothing more, and the sharp
+    edge is worth stating rather than leaving to be rediscovered.** These are
+    regular expressions over JavaScript source: they match an API by the name it
+    is spelled with, and a document that assembles the same call out of pieces
+    contains no such name. Fifteen navigation payloads were run against this list
+    while it was being written; before the last three patterns above were added,
+    nine of them passed, and after, three still do — `window["loc"+"ation"]`,
+    a destructured `assign`, and `globalThis["location"]`. No addition
+    to this list closes that class, because string concatenation is not a
+    pattern. Adding rules speculatively is not free either: a rejection here
+    sends the generation back for a `ui` repair (`handlers.py`), which is another
+    paid model call, so a rule that fires on idiomatic output costs money on
+    every honest Qapp to inconvenience a hostile one for an afternoon.
+
+    So the division of labour is deliberate, and each layer should be relied on
+    for only its own half:
+
+    - **Egress** — fetch, forms, subresources, nested frames, storage — is
+      closed by `QAPP_FRAME_CSP` and the `sandbox` attribute, which are
+      properties of the browser and not defeatable by how the document is
+      written. That is the boundary.
+    - **Self-navigation** is the one channel no policy can close, and the
+      backstop for it is at runtime, in `qapp-runtime.tsx`: the frame announces
+      itself, and a load event after that announcement unmounts it. That
+      catches every payload above, including the three this list cannot.
+    - **This function** rejects the obvious attempt early, so it never reaches
+      storage or a reader, and so the model contract has teeth.
     """
     if not isinstance(document, str) or not document.strip():
         raise ValueError("Qapp UI document must not be empty")
