@@ -226,6 +226,30 @@ for (const node of graphMod.LAYER_GRAPH.nodes) {
   for (const citation of node.citations ?? []) {
     citations.push({ where: `node:${node.id}`, ...citation });
   }
+  // The FOURTH citation site, and it was outside this audit from the day the
+  // field was first filled. `MethodImplementation.papers` says in its own doc
+  // comment that "every url here must resolve in the paper register, like any
+  // other citation" — and nothing checked it, so the sentence was a wish.
+  //
+  // It never fired, which is why it went unnoticed: measured on `dev` before the
+  // batch that added this loop, all 65 paper references on `implementations`
+  // happened to name papers the register already held, because every one of them
+  // came from the method's own `citations`. The rule held by luck rather than by
+  // enforcement, and the first batch to do a genuine literature search — rather
+  // than re-reading a method's own bibliography — introduced three papers the
+  // register had never seen and passed this lint green.
+  //
+  // That is the same shape as `entry.source` above, one field later: the header
+  // of this file records the two loops covering `entry.literature` and
+  // `node.citations` and NOT `entry.source`, and this is the third time the
+  // answer has been "a citation site nobody added to the loop". Any future field
+  // that holds a `{title, authors, year, url}` belongs here on the day it is
+  // added, not on the day it first disagrees with the register.
+  for (const implementation of node.implementations ?? []) {
+    for (const citation of implementation.papers ?? []) {
+      citations.push({ where: `impl:${node.id}/${implementation.id}`, ...citation });
+    }
+  }
 }
 
 const audit = papers.auditCitations(citations, PAPER_REGISTER);
