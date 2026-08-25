@@ -140,7 +140,16 @@ def _version_resource(row) -> QappVersion:
         # backfilled: the answer costs a sandbox and nobody is waiting on it for
         # a Qapp that already exists. `None` therefore means "nobody asked",
         # which is a third thing from `not_applicable` and from `failed`.
-        range_smoke=QappRangeSmoke.model_validate(row.range_smoke) if row.range_smoke else None,
+        #
+        # `is not None`, NOT truthiness. The whole point of this field is that
+        # NULL is a THIRD value meaning "nobody ever asked", so a stored `{}` —
+        # non-NULL and falsy — must not be quietly reported as that. It is a
+        # corrupt measurement, and `model_validate` raising on it is the correct
+        # outcome: an instrument that cannot tell "absent" from "broken" reports
+        # the same thing in both cases. Caught by CodeRabbit on the PR.
+        range_smoke=(
+            QappRangeSmoke.model_validate(row.range_smoke) if row.range_smoke is not None else None
+        ),
     )
 
 

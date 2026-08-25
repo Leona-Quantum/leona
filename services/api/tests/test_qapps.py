@@ -635,3 +635,54 @@ async def test_only_the_creator_may_publish_and_the_gate_is_never_reached(public
     assert probe.bound == []
     assert publication.qapp.visibility == "private"
     assert publication.audits == []
+
+
+def test_a_stored_range_smoke_is_read_by_presence_not_by_truthiness():
+    """ai-ops 180: NULL means *nobody ever asked*, and only NULL may mean that.
+
+    `_version_resource` used `if row.range_smoke`, which is truthiness. A stored
+    `{}` is non-NULL and falsy, so it came back as `None` — the same value a
+    version nobody measured returns. That collapses "corrupt measurement" into
+    "no measurement", which is precisely the distinction the whole field exists
+    to keep, and it also skipped contract validation on its way past.
+
+    `model_validate` RAISING on a malformed row is the wanted behaviour here, not
+    a regression: an instrument that reports the same thing whether the signal is
+    absent or the instrument is broken cannot be used to conclude anything.
+    """
+    from majorana_api.routes.qapps import _version_resource
+
+    row = SimpleNamespace(
+        id=uuid.uuid4(),
+        qapp_id=uuid.uuid4(),
+        seq=1,
+        framework="qiskit",
+        qubits_estimate=2,
+        ui_document="<div></div>",
+        quantum_source="RESULT = {}",
+        input_schema={"type": "object", "properties": {}, "required": []},
+        output_schema={"type": "object", "properties": {}, "required": []},
+        fingerprint="c" * 64,
+        source_artifact_version_id=None,
+        created_at=dt.datetime(2026, 8, 25, tzinfo=dt.timezone.utc),
+        range_smoke=None,
+    )
+
+    # NULL — nobody asked. The only input allowed to produce `None`.
+    assert _version_resource(row).range_smoke is None
+
+    # A real measurement round-trips.
+    row.range_smoke = {"status": "failed", "detail": "out of memory", "duration_ms": 30_000}
+    assert _version_resource(row).range_smoke.status.value == "failed"
+
+    # A non-NULL row that is not a valid report must NOT read as "nobody asked".
+    # Under truthiness `{}` did exactly that; now it refuses at the boundary.
+    for corrupt in ({}, {"status": "not_a_status"}, {"detail": "no status at all"}):
+        row.range_smoke = corrupt
+        try:
+            resource = _version_resource(row)
+        except Exception:
+            continue
+        assert resource.range_smoke is not None, (
+            f"{corrupt!r} is a non-NULL stored value and was reported as 'nobody asked'"
+        )
