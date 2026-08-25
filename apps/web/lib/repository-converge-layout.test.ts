@@ -1033,7 +1033,13 @@ test("every capability draws a figure — not just the two that converge", () =>
   // **28 since session 15 unit 4**, `device-characterization` — and this one arrived
   // by owner ruling (ai-ops#68) over this lane's own recommendation to keep
   // characterisation protocols off the map. The tripwire fired a fifth time.
-  assert.equal(capabilities.length, 28, "the graph's slot count changed; update these figures");
+  // **30 since W28**, `marked-item-search` and `quantum-walk-search`. Two slots in
+  // one unit because they share an exit state, and a state with one process arriving
+  // and none leaving is a parameter of that process rather than a circle — so
+  // shipping either alone would have drawn a figure the map's own rules refuse. The
+  // tripwire fired a sixth time and both figures were looked at, in both locales,
+  // before this number moved.
+  assert.equal(capabilities.length, 30, "the graph's slot count changed; update these figures");
 
   for (const focus of capabilities) {
     for (const locale of ["en", "ja"] as const) {
@@ -1062,9 +1068,12 @@ test("every capability draws a figure — not just the two that converge", () =>
   // take VQE's three hops, two close the whole stretch themselves off a
   // ground-state ingredient, and the deflation route does both), so there is no
   // one chain every filler walks.
+  // 27 → 29 in W28: both search slots fan, and for the plainest reason yet — the two
+  // methods under each are atomic, so there is no interior for a chain to be drawn
+  // from. The one slot drawing a state chain is still the only one.
   const byGrain = capabilities.map((focus) => diagramFor(focus.id).grain);
   assert.equal(byGrain.filter((grain) => grain === "states").length, 1);
-  assert.equal(byGrain.filter((grain) => grain === "methods").length, 27);
+  assert.equal(byGrain.filter((grain) => grain === "methods").length, 29);
 });
 
 test("`drawableSlots` is the list of slots that actually draw", () => {
@@ -1078,10 +1087,10 @@ test("`drawableSlots` is the list of slots that actually draw", () => {
     .map((focus) => focus.id);
   assert.deepEqual(offered, draws);
   // 22 since W21, 23 since W21-E, 24 since session 15's `phase-estimation`, 27 with
-  // the two PDE slots and 28 with `device-characterization` — the same new slots the
-  // figure test above pins, and the point of asserting the length beside the
-  // deepEqual is that two empty lists are also deep-equal.
-  assert.equal(offered.length, 28);
+  // the two PDE slots, 28 with `device-characterization` and 30 with W28's two search
+  // slots — the same new slots the figure test above pins, and the point of asserting
+  // the length beside the deepEqual is that two empty lists are also deep-equal.
+  assert.equal(offered.length, 30);
 
   // And it is still a strict superset of the convergence claim, which is a
   // different and narrower statement — narrower by one since session 119,
@@ -1997,9 +2006,19 @@ test("a line that opens into something says so, and a line that does not is not 
   // fact about what a region is on this map rather than a coincidence: a new subject
   // area arrives as slots and undecomposed methods, and contributes nothing to open
   // until somebody breaks one apart. `leaves` 75 -> 77.
-  assert.equal(openable + leaves + 1, 108, "the twenty-eight figures draw 108 lines between them");
+  //
+  // Four more in W28 and `openable` is STILL 30 — a fifth region in a row. This one
+  // came closest to breaking it and did not, which is the more useful fact:
+  // `backtracking-tree-walk-search` is the first method in any of these regions with a
+  // non-empty `steps`, and it still draws as a leaf, because `phase-estimation` is an
+  // INGREDIENT it feeds on rather than a stretch its route advances through. That is
+  // the distinction `check-layer-graph` prints as "delegates nothing in sequence —
+  // every step is an ingredient", and this line is where it becomes visible on the
+  // canvas: a delegation that is a feed adds a cross-region edge without adding an
+  // interior. `leaves` 77 -> 81.
+  assert.equal(openable + leaves + 1, 112, "the thirty figures draw 112 lines between them");
   assert.equal(openable, 30, "30 of them open into something the canvas draws");
-  assert.equal(leaves, 77, "77 are leaves — the canvas records nothing finer for them");
+  assert.equal(leaves, 81, "81 are leaves — the canvas records nothing finer for them");
 
 });
 

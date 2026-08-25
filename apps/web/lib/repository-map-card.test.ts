@@ -441,7 +441,13 @@ test("Theory is held on every method, and each hop inside it is empty or filled 
   // the same reason the two phase-estimation ones do — each is a single undivided act.
   // 152 with ai-ops#64's four PDE discretization methods, atomic for that same reason.
   // 154 in unit 4: the two device-characterisation protocols carry one hop each.
-  assert.equal(hops, 154, `${hops} hops, not 154`);
+  // 158 in W28: four search methods. Three carry ONE — each is a single undivided act,
+  // the same reason the phase-estimation and number-theory routes carry one — and
+  // `backtracking-tree-walk-search` carries TWO, because it declares `phase-estimation`
+  // as a step it HANGS. That is the ingredient/segment distinction again: the stub
+  // costs a hop without costing a segment, so the method still draws as a leaf on the
+  // canvas while carrying two keyable stretches here.
+  assert.equal(hops, 158, `${hops} hops, not 158`);
 
   // **A floor, and it must not be zero.** The marked-prose path is the whole of the owner's
   // re-decision, and a rendering path with no instance anywhere has never been drawn. One
@@ -1420,7 +1426,15 @@ test("the unnamed stretch is 56 of 63 methods, one each, and 13 of them follow a
   // 93/15 with ai-ops#64's four PDE methods, same shape again.
   // 95/15 in unit 4. Both benchmarking protocols add a stretch at index 0 and neither
   // delegates, so `trailing` holds at 15 across every new region session 15 landed.
-  assert.equal(withOwn.length, 95);
+  // 99/15 in W28, and `trailing` holds again — but for a reason worth separating from
+  // the four before it. Three of the four search methods delegate to nothing and add a
+  // stretch at index 0, like every new region's methods. The fourth,
+  // `backtracking-tree-walk-search`, DOES delegate — to `phase-estimation` — and still
+  // adds its stretch at index 0 rather than at the end, because it hangs that step as an
+  // ingredient instead of walking through it. So a region can now join another region
+  // and leave `trailing` untouched, which the "new regions do not move it" reading of
+  // the four rows above would not have predicted.
+  assert.equal(withOwn.length, 99);
   assert.equal(trailing.length, 15);
 
   // The three that remain of the four the owner named. Pinned by their states
@@ -1518,7 +1532,7 @@ test("no card draws a state's id where its label belongs", () => {
   // level out. Measured at the commit that fixed this: 99 hops and 95 own cards
   // per locale.
   assert.ok(hops >= 2 * 99, `${hops} hop ends swept across both locales, fewer than the 198 there were`);
-  assert.ok(ownCards >= 2 * 95, `${ownCards} own cards swept across both locales, fewer than the 190 there were`);
+  assert.ok(ownCards >= 2 * 99, `${ownCards} own cards swept across both locales, fewer than the 198 there were`);
 
   // And the two locales genuinely differ. A slug is the same string in both, so
   // this arm alone catches the bug this test was written for.
@@ -1581,7 +1595,7 @@ test("an own: card exists for exactly the methods that have the stretch, and no 
   // 89 in session 15 unit 3, tracking the stretch census above one-for-one as it must.
   // 93 with the four PDE methods, tracking the stretch census one-for-one.
   // 95 in unit 4, tracking the stretch census above one-for-one as it must.
-  assert.equal(built, 95);
+  assert.equal(built, 99);
   // A prefix on nothing, and a prefix on a capability, both resolve to shut
   // rather than to something. `?card=` is user-supplied.
   assert.equal(cardExists(input, ownCardId("not-a-method")), false);
@@ -1645,7 +1659,7 @@ test("an own: card says what its stretch does, or the standing phrase, in both l
     `[own-card census] ${named.size + standing.size} own cards; `
       + `${named.size} say what their stretch does, ${standing.size} still draw the standing phrase`,
   );
-  assert.equal(named.size + standing.size, 95, "the own-card population moved — see the census above it");
+  assert.equal(named.size + standing.size, 99, "the own-card population moved — see the census above it");
   // 14 when complaint (c) was closed on the DRAWN population (leona 725, 726):
   // exactly the stretches the canvas reaches as a lane, and every one of them
   // already carried paper-registered mathematics on its own hop.
@@ -1692,9 +1706,17 @@ test("an own: card says what its stretch does, or the standing phrase, in both l
   // — a method added tomorrow reaches it before anyone writes its hop — and the
   // `standing` branch above still runs, so the day it becomes reachable again
   // this number is what says so.
+  //
+  // **99 with W28's four search methods, and `standing` stayed at 0 — which is the
+  // sentence above being tested rather than repeated.** Four methods were added, and
+  // the surface they would have fallen back on stayed unreached, because every one of
+  // them arrived with its own hop authored and named. That is the region built to the
+  // standard this line describes rather than to the one the graph would have tolerated:
+  // nothing here required a `name`, and a method landing without one is exactly what
+  // `standing.size` exists to catch.
   assert.equal(
     named.size,
-    95,
+    99,
     "the number of own cards that say what their stretch does changed — ratchet it up when you fill one in, never down",
   );
   assert.equal(standing.size, 0, "an own card fell back to the standing phrase — see the note above");

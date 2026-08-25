@@ -1358,6 +1358,24 @@ const HOLLOW_BY_SLOT: ReadonlyMap<string, number> = new Map([
   // three of its own instances. The full argument is the KNOWN_TWINS row in
   // `scripts/check-layer-graph.mjs`; this line is its count.
   ["linear-ode-solve", 2],
+  // A region opening, in the gate's own words. W28's two `marked-item-search` methods
+  // are both atomic — Grover's paper builds its own initial distribution in $O(\\log N)$
+  // steps rather than asking a slot for it, and Ambainis and Montanaro's algorithm is a
+  // sequence of measurements and repairs with no capability under it — so the two draw
+  // the same one-hop picture and nothing on the canvas separates them.
+  //
+  // **What separates them is on the record and is not a step**: the two methods
+  // genuinely differ in what the ORACLE is allowed to be asked, and that is why
+  // `state-discrimination-search` is the only method in this region carrying its own
+  // narrowed `contract`. A contract is not something this figure draws, so the twin
+  // shows up here and the difference does not. Declared rather than absorbed, because
+  // the honest fix is a drawing change and not a corpus one, and nobody has made it.
+  //
+  // `quantum-walk-search`'s pair is deliberately absent for the reason that proves the
+  // gate is reading the picture rather than the slot: `backtracking-tree-walk-search`
+  // hangs a `phase-estimation` stub and `stored-subset-walk-search` hangs none, so the
+  // two figures differ and the gate says nothing about them.
+  ["marked-item-search", 2],
   ["polynomial-approximation", 2],
   // 4 since session 15, and the +2 for ONE new method is the summing rule working rather
   // than two methods rotting. `thc-block-encoding` does not join the existing pair — it
@@ -2709,6 +2727,7 @@ test("every hop the Atlas draws says what happens on it", () => {
     ["hidden-period-finding", 3, 3],
     ["linear-ode-solve", 9, 21],
     ["matrix-function", 2, 7],
+    ["marked-item-search", 2, 2],
     ["nonlinear-linear-embedding", 6, 6],
     ["nonlinear-ode-solve", 4, 10],
     ["observable-estimation", 4, 8],
@@ -2716,6 +2735,7 @@ test("every hop the Atlas draws says what happens on it", () => {
     ["phase-estimation", 2, 2],
     ["polynomial-approximation", 2, 2],
     ["qsp-phase-factors", 4, 4],
+    ["quantum-walk-search", 2, 3],
     ["quantum-linear-solve", 5, 21],
     ["qubit-routing", 3, 3],
     ["spatial-discretization", 2, 2],

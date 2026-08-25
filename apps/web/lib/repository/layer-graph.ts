@@ -14558,5 +14558,392 @@ export const LAYER_GRAPH: LayerGraph = {
       { title: "Even more efficient quantum computations of chemistry through tensor hypercontraction", authors: "Joonho Lee, Dominic W. Berry, Craig Gidney, William J. Huggins, Jarrod R. McClean, Nathan Wiebe, Ryan Babbush", year: "2020", url: "https://arxiv.org/abs/2011.03494" },
     ],
   },
+  {
+    kind: "capability",
+    id: "marked-item-search",
+    label: "Find the item a check accepts",
+    labelJa: "チェックが受理する項目を見つける",
+    summary: "Given a way to test candidates and nothing else — no order on the domain, no structure to exploit — return one candidate the test accepts, in fewer queries than looking at them all.",
+    summaryJa: "候補を検査する手段だけが与えられ、それ以外には何もありません。定義域に順序はなく、利用できる構造もありません。すべてを調べるよりも少ない問い合わせ回数で、その検査が受理する候補を一つ返します。",
+    contract: {
+      from: "marking-oracle",
+      to: "marked-item",
+      takes: "A check evaluable in superposition on any candidate, the size of the domain it ranges over, and the promise that fixes the schedule — Grover assumes exactly one accepted candidate; a method may instead require the check to answer about partial commitments rather than whole candidates.",
+      takesJa: "任意の候補について重ね合わせの上で評価できるチェック、それが動く定義域のサイズ、そしてスケジュールを固定する約束です。Grover は受理される候補がちょうど一つであることを仮定します。手法によっては、チェックが候補全体ではなく部分的な確約について答えることを要求する場合もあります。",
+      returns: "One accepted candidate, with the number of queries spent and the probability the answer is right — or the report, at a stated confidence, that the domain holds none.",
+      returnsJa: "受理された候補一つと、それに費やした問い合わせの回数、そして答えが正しい確率です。あるいは、定められた確信度のもとで、定義域にそのような候補が一つもないという報告です。",
+    },
+    whyALayer: "The methods differ in **what the check is allowed to be asked**, and that is what decides whether the search is fast at all. Grover's check answers about a whole candidate, so the query bill is set by the domain size: $O(\\sqrt{N})$ over $N = 2^{n}$ strings. Ambainis and Montanaro's check answers about a *partial* commitment — a subset $S$ of the positions and a guess for those positions — and that single change carries the same recovery from $O(2^{n/2})$ queries to $O(\\sqrt{n}\\log n)$, an exponential difference. It is bought at the oracle *and* at the technique, and the authors are explicit about the second half: their algorithm \"rests neither on amplitude amplification nor on a quantum walk\". A richer query is what makes a different technique worth reaching for. So a claim that a problem \"reduces to unstructured search\" has said nothing until it says what one query is worth. This is the same shape as the slot below it — `success-amplification`'s methods also differ in what they additionally require, a lower bound on $a$ or a per-branch stopping flag — and it is deliberately a *different slot* from that one: amplification is handed the preparation unitary $A$ and asked to make its good branch reliable, and a search is handed an oracle and has to build $A$ itself.",
+    whyALayerJa: "これらの手法が異なるのは**チェックに何を尋ねることが許されるか**であり、それによって探索がそもそも速いかどうかが決まります。Grover のチェックは候補全体について答えるため、問い合わせの費用は定義域のサイズによって決まります。$N = 2^{n}$ 個の文字列に対して $O(\\sqrt{N})$ です。Ambainis と Montanaro のチェックは*部分的な*確約（位置の部分集合 $S$ と、その位置についての推測）について答えます。この一つの変更だけで、同じ回復が $O(2^{n/2})$ 回の問い合わせから $O(\\sqrt{n}\\log n)$ 回へと変わります。これは指数的な差です。そしてそれは、著者たちが明言している通り、オラクルの側*と*手法の側の両方で買われています。彼らのアルゴリズムは「振幅増幅にも量子ウォークにも依拠していない」のです。問い合わせが豊かになることではじめて、異なる手法が報われるのです。したがって、ある問題が「非構造化探索に帰着する」という主張は、一回の問い合わせが何に値するかを言うまでは何も言っていません。これは、この下にあるスロットと同じ形をしています。`success-amplification` の手法もまた、追加で何を要求するか（$a$ の下界か、枝ごとの停止フラグか）によって異なります。それでいて、そのスロットとは意図的に*異なるスロット*です。増幅は準備ユニタリ $A$ を渡され、その良い枝を信頼できるものにするよう求められるのに対し、探索はオラクルを渡され、$A$ 自体を組み立てなければなりません。",
+    // No `entries` at the capability, and both records sit on the method whose
+    // paper they document. That is not a formality here: an independent read of
+    // the two records against this contract REFUSED `search-with-wildcards` at
+    // the slot, on the ground that its oracle "does not mark individual
+    // candidates in a domain as yes/no; it tests a partial guess against a
+    // hidden object". That reading is right about the slot and is why the
+    // wildcard record hangs off `state-discrimination-search`, whose own
+    // `contract` narrows to exactly that oracle, rather than off this contract,
+    // which does not promise it.
+    //
+    // `string-pattern-matching` was assessed for this slot and is NOT here, and
+    // two readers disagreed about it. Ramesh and Vinay's exit does fit — "find
+    // an occurrence of P as a substring of T or report that P is not a
+    // substring of T". But the record splits its own paper in two: the
+    // worst-case route is Grover plus deterministic sampling, a classical
+    // technique, and the average-case route is a generalisation of Kuperberg's
+    // quantum sieve, which belongs nowhere near this slot. Anchoring it would
+    // make "the Atlas documents this layer" true of one half of its paper and
+    // false of the other, so it stays unanchored until somebody reads the paper
+    // itself and can say which half the record is really about.
+  },
+  {
+    kind: "method",
+    id: "grover-fixed-iteration-search",
+    label: "Fixed-iteration amplitude rotation",
+    labelJa: "反復回数を固定した振幅回転",
+    shortLabel: "Grover search",
+    shortLabelJa: "グローバー探索",
+    summary: "Start from equal amplitude on every candidate, and alternate two operations — flip the sign of the accepted candidate, then reflect every amplitude about their average. Each round moves a fixed amount of amplitude onto the accepted candidate, so the number of rounds is computed from the domain size before the first query rather than discovered while running.",
+    summaryJa: "すべての候補に等しい振幅を置いたところから出発し、二つの操作を交互に繰り返します。受理される候補の符号を反転し、次いですべての振幅をその平均について反転する、という二つです。1 回ごとに受理される候補へ移る振幅の量は決まっているため、繰り返しの回数は、走らせながら見出すのではなく、最初の問い合わせより前に定義域の大きさから計算されます。",
+    realizes: "marked-item-search",
+    conditions: "Grover's paper assumes **exactly one** accepted candidate — \"let there be a unique state, say $S_{\\nu}$, that satisfies the condition $C(S_{\\nu}) = 1$, whereas for all other states $S$, $C(S) = 0$\" — and that the condition is evaluable in unit time. Several accepted candidates is named as an extension and is not carried out here: the paper says the algorithm \"can be easily modified\" for that case and then cites two other papers for both routes, a degeneracy sweep from Boyer, Brassard, Høyer and Tapp and a random perturbation from Mulmuley, Vazirani and Vazirani. The domain is a register of $n$ bits, $N = 2^{n}$, and no order on it is assumed — \"there does not exist any sorting on the database that would aid its selection\". Nothing in this paper says what happens when the iteration count is set wrong; it says only that \"the precise number of repetitions is important\" and points at Boyer, Brassard, Høyer and Tapp for it.",
+    conditionsJa: "Grover の論文は、受理される候補が**ちょうど 1 つ**であることを仮定します。「条件 $C(S_{\\nu}) = 1$ を満たす唯一の状態 $S_{\\nu}$ が存在し、他のすべての状態 $S$ については $C(S) = 0$ であるとする」。また、その条件は単位時間で評価できるものとされます。受理される候補が複数ある場合は拡張として名指しされるにとどまり、ここでは実行されていません。論文はアルゴリズムを「容易に修正できる」と述べたうえで、二つの道筋のそれぞれについて他の論文を引いています。すなわち Boyer, Brassard, Høyer, Tapp による縮退度の走査と、Mulmuley, Vazirani, Vazirani による無作為な摂動です。定義域は $n$ ビットのレジスタであり $N = 2^{n}$ で、その上に順序は仮定されません。「選択の助けとなるような整列は、このデータベースには存在しない」。反復回数を誤って設定したときに何が起こるかについては、この論文は何も述べていません。述べているのは「繰り返しの正確な回数が重要である」ということだけであり、その先は Boyer, Brassard, Høyer, Tapp に委ねられています。",
+    cost: "The paper states the loop as $O(\\sqrt{N})$ repetitions and derives a specific, non-tight bound on it in its own proofs: from the amplitude increment $\\Delta k > 1/(2\\sqrt{N})$ per round, \"there exists a number $M$ less than $\\sqrt{2N}$, such that in $M$ repetitions of the loop in step (ii), $k$ will exceed $1/\\sqrt{2}$\", and $1/\\sqrt{2}$ is exactly the threshold at which \"the probability of the system being in the desired state ... is $k^{2} = 1/2$\". Because $k$ *exceeds* it, what the paper proves is success \"with a probability greater than $1/2$\" — and, of the sampling step itself, \"a probability of at least $1/2$\". Both phrasings are the paper's, in two places, and neither is a certainty. The initial equal superposition costs $O(\\log N)$ steps on top. Against it the paper puts a classical floor of $N/2$ examinations to succeed with probability $1/2$, and a quantum floor of $\\Omega(\\sqrt{N})$ it attributes to Bennett, Bernstein, Brassard and Vazirani, concluding that the algorithm \"is within a small constant factor of the fastest possible quantum mechanical algorithm\" — sharpened, in a different paper it cites rather than in this one, to \"within a few percent\".",
+    costJa: "論文はこの繰り返しを $O(\\sqrt{N})$ 回と述べ、自身の証明の中でそれに対する具体的な、ただし緊密ではない上界を導きます。1 回あたりの振幅の増分 $\\Delta k > 1/(2\\sqrt{N})$ から、「$M$ 回の繰り返しによって $k$ が $1/\\sqrt{2}$ を超えるような、$\\sqrt{2N}$ より小さい数 $M$ が存在する」ことが従います。そして $1/\\sqrt{2}$ は、まさに「系が目的の状態にある確率が ... $k^{2} = 1/2$ となる」しきい値です。$k$ はこれを*超える*ので、論文が証明しているのは「$1/2$ より大きい確率で」成功するということであり、標本抽出の工程そのものについては「少なくとも $1/2$ の確率で」と述べられています。いずれの言い方も論文自身のものであり、二箇所に現れます。そしてどちらも確実性ではありません。これに加えて、初期の一様な重ね合わせに $O(\\log N)$ ステップを要します。論文がこれに対置するのは、確率 $1/2$ で成功するために古典的には $N/2$ 回の検査を要するという下限と、Bennett, Bernstein, Brassard, Vazirani に帰される量子的な下限 $\\Omega(\\sqrt{N})$ であり、そこから「このアルゴリズムは、可能な限り最速の量子力学的アルゴリズムの小さな定数倍の範囲に収まる」と結論しています。これは、この論文ではなく引用先の別の論文において「数パーセントの範囲」まで精密化されています。",
+    steps: [],
+    // The pseudocode is written from `contract`, `conditions` and `cost`, and
+    // from the six lines of section 3 the hop below transcribes. Two things are
+    // deliberately withheld rather than filled: the exact optimal iteration
+    // count, which this paper does not state and explicitly hands to Boyer,
+    // Brassard, Hoyer and Tapp, and any account of what over-rotation does,
+    // which this paper does not discuss at all. A listing that supplied either
+    // would be quoting a paper nobody read.
+    example: {
+      pseudocode: [
+        "given  a domain of N = 2^n states S_1 ... S_N, addressed as n-bit strings",
+        "       a condition C evaluable on any state S in unit time            (Sec. 2)",
+        "       the promise that exactly one state S_nu has C(S_nu) = 1        (Sec. 2)",
+        "",
+        "# no sorting on the domain is assumed -- there is nothing to look the answer",
+        "# up in, which is the whole reason the count of queries is the cost",
+        "",
+        "initialize to equal amplitude 1/sqrt(N) in each of the N states  (Sec. 3, step i)",
+        "",
+        "# this distribution costs O(log N) steps, by Walsh-Hadamard on the n bits",
+        "",
+        "repeat O(sqrt(N)) times:                                        (Sec. 3, step ii)",
+        "    if C(S) = 1: rotate the phase of S by pi radians; else leave S alone",
+        "    apply the diffusion transform D, D_ij = 2/N for i != j,",
+        "                                    D_ii = -1 + 2/N",
+        "",
+        "    # D is the inversion about the average: after it, each amplitude sits as",
+        "    # far below the mean as it sat above, and as far above as it sat below",
+        "",
+        "sample the resulting state                                      (Sec. 3, step iii)",
+        "return the sampled state -- it is S_nu with probability at least 1/2",
+        "",
+        "# the number of repetitions is fixed before the first query, from N alone.",
+        "# This paper proves only that SOME M < sqrt(2N) suffices; it says the precise",
+        "# count 'is important' and cites Boyer, Brassard, Hoyer and Tapp for it, so no",
+        "# exact count is written here",
+        "",
+        "# nor is there anything here about running the loop too long: this paper does",
+        "# not discuss it",
+        "",
+        "# the phase rotation must leave no trace of which state was sensed, or the",
+        "# paths that reach one final state stop being indistinguishable and stop",
+        "# interfering. It is not a classical measurement",
+        "",
+        "# do not read this as covering several accepted candidates. The paper says the",
+        "# algorithm can be modified for that and then cites two other papers for both",
+        "# ways of doing it, rather than doing either",
+      ].join("\n"),
+    },
+    hops: {
+      "grover-fixed-iteration-search": {
+        name: "flip the accepted sign, invert about the average",
+        nameJa: "受理された振幅の符号を反転し、平均について反転する",
+        theory:
+          "One round is two unitaries on the $N$-amplitude vector. The first is the oracle as a phase: \"in case $C(S) = 1$, rotate the phase by $\\pi$ radians; in case $C(S) = 0$, leave the system unaltered\". The second is the diffusion transform, given as a matrix, $D_{ij} = 2/N$ for $i \\neq j$ and $D_{ii} = -1 + 2/N$, which the paper factors two ways. Algebraically $D \\equiv -I + 2P$ with $P_{ij} = 1/N$ for all $i, j$; since $P^{2} = P$ and $P$ sends any vector to the vector of its own average, $D^{2} = I$ and $D$ is unitary, and its action is that \"the amplitude in each state increases (decreases) so that after this operation it is as much below (above) $\\alpha$ as it was above (below) $\\alpha$ before\", $\\alpha$ being the average amplitude. As a circuit $D = WRW$, where $R_{ij} = 0$ for $i \\neq j$, $R_{ii} = 1$ for $i = 0$ and $R_{ii} = -1$ otherwise, and $W_{ij} = 2^{-n/2}(-1)^{i \\cdot j}$ with $i \\cdot j$ the bitwise dot product of the two $n$-bit strings. The progress bound is Theorem 3: with amplitude $k$ on the accepted state, $l > 0$ on each of the other $N - 1$, and $0 < k < 1/\\sqrt{2}$, one round gives $\\Delta k > 1/(2\\sqrt{N})$ and leaves $l > 0$. [[assumption: the phase rotation must leave no trace of the state it sensed — \"so as to ensure that paths leading to the same final state were indistinguishable and could interfere\" — and \"does not involve a classical measurement\"; a step that recorded which state was flipped would destroy the interference the increment depends on.]] Iterating the increment gives the loop length: \"there exists a number $M$ less than $\\sqrt{2N}$, such that in $M$ repetitions of the loop in step (ii), $k$ will exceed $1/\\sqrt{2}$\", and $k = 1/\\sqrt{2}$ is where the sampling probability $k^{2}$ would be exactly $1/2$, so exceeding it puts the measurement above a half. [[assumption: exactly one state satisfies $C$; the bound above is stated for \"the one state that satisfies $C(S) = 1$\" against $N - 1$ others and says nothing about a domain with two.]]",
+        theoryJa: "1 ラウンドは、$N$ 個の振幅から成るベクトルに対する二つのユニタリ変換です。一つ目はオラクルを位相として実装したものです——「$C(S) = 1$ の場合には位相を $\\pi$ ラジアン回転させ、$C(S) = 0$ の場合には系をそのままにする」。二つ目は拡散変換であり、行列として $D_{ij} = 2/N$（$i \\neq j$ の場合）、$D_{ii} = -1 + 2/N$ と与えられ、論文はこれを二通りに分解しています。代数的には $D \\equiv -I + 2P$ であり、ここで $P_{ij} = 1/N$ はすべての $i, j$ について成り立ちます。$P^{2} = P$ であり、$P$ は任意のベクトルをその平均のベクトルへ写すため、$D^{2} = I$ となって $D$ はユニタリであり、その作用は「各状態の振幅は、操作前に $\\alpha$ より上（下）にあった分だけ、操作後には $\\alpha$ より下（上）に来るように増加（減少）する」というものです—— $\\alpha$ は平均振幅を表します。回路としては $D = WRW$ であり、$i \\neq j$ について $R_{ij} = 0$、$i = 0$ について $R_{ii} = 1$、それ以外では $R_{ii} = -1$ です。また $W_{ij} = 2^{-n/2}(-1)^{i \\cdot j}$ であり、$i \\cdot j$ は二つの $n$ ビット文字列のビットごとの内積を表します。進捗についての限界は定理 3 に述べられています。受理される状態の振幅を $k$、他の $N - 1$ 個それぞれの振幅を $l > 0$ とし、$0 < k < 1/\\sqrt{2}$ であるとき、1 ラウンドで $\\Delta k > 1/(2\\sqrt{N})$ が成り立ち、$l > 0$ のままです。[[assumption: 位相回転は、感知した状態の痕跡を一切残してはなりません——「同じ最終状態に至る経路が区別不能となり、干渉できるようにするため」——そして「古典的な測定を伴わない」ものです。どの状態が反転されたかを記録するような手順は、この増分が依拠している干渉を破壊してしまいます。]] この増分を繰り返すことでループの長さが得られます——「$\\sqrt{2N}$ より小さいある数 $M$ が存在し、ステップ (ii) のループを $M$ 回繰り返せば $k$ は $1/\\sqrt{2}$ を超える」。そして $k = 1/\\sqrt{2}$ こそが、サンプリングの確率 $k^{2}$ がちょうど $1/2$ となる点であるため、それを超えることは測定結果が半分を上回ることを意味します。[[assumption: 条件 $C$ を満たす状態がちょうど一つであるということです。上記の限界は「$C(S) = 1$ を満たす一つの状態」を他の $N - 1$ 個と対比して述べられたものであり、二つある領域については何も述べていません。]]",
+      },
+    },
+    entries: ["grover-unstructured-search"],
+    citations: [
+      { title: "A fast quantum mechanical algorithm for database search", authors: "Lov K. Grover", year: "1996", url: "https://arxiv.org/abs/quant-ph/9605043" },
+    ],
+  },
+  {
+    kind: "method",
+    id: "state-discrimination-search",
+    label: "Search by state discrimination",
+    labelJa: "状態識別による探索",
+    summary: "When one query can test a partial guess rather than a whole candidate, the answer is recovered by discriminating quantum states instead of by rotating amplitude. One query turns knowledge of $k$ positions into knowledge of $k + \\Theta(\\sqrt{k})$ of them, and the measurement that does it is the one that minimises the error — though a stage costs more than that one query, because the guess it produces has to be checked and repaired.",
+    summaryJa: "一回の問い合わせで、候補まるごとではなく部分的な推測を検査できるとき、答えは振幅を回転させることによってではなく、量子状態を識別することによって復元されます。一回の問い合わせは、$k$ 個の位置についての知識を、そのうち $k + \\Theta(\\sqrt{k})$ 個についての知識へと変えます。それを担う測定は、誤りを最小にする測定です。もっとも、一つの段に要する費用はその一回の問い合わせにとどまりません。得られた推測を検査し、修復しなければならないからです。",
+    realizes: "marked-item-search",
+    // The slot's check answers about whole candidates. This one has to answer
+    // about partial commitments, which is a genuine narrowing and not a
+    // restatement -- and it is where the entire separation comes from, so
+    // leaving it to the slot's prose would hide the fact the record is about.
+    contract: {
+      from: "marking-oracle",
+      to: "marked-item",
+      takes: "An oracle that accepts a subset $S$ of the $n$ positions together with a guess $y$ for those positions, and answers whether the hidden string agrees with $y$ on every position in $S$ — as the unitary $|S\\rangle|y\\rangle|z\\rangle \\mapsto |S\\rangle|y\\rangle|z \\oplus Q_{x}(S, y)\\rangle$. No promise on the hidden string is required.",
+      takesJa: "$n$ 個の位置のうちの部分集合 $S$ と、それらの位置についての推測 $y$ とを受け取り、隠された文字列が $S$ に属するすべての位置で $y$ と一致するかどうかを答えるオラクル。すなわちユニタリ $|S\\rangle|y\\rangle|z\\rangle \\mapsto |S\\rangle|y\\rangle|z \\oplus Q_{x}(S, y)\\rangle$ です。隠された文字列についての約束は一切必要ありません。",
+      returns: "The hidden $n$-bit string in full — every stage ends on an oracle answer confirming it, so what is uncertain here is the bill and not the answer — together with the expected number of queries spent on the worst-case input.",
+      returnsJa: "隠された $n$ ビットの文字列そのもの。どの段もそれを確認するオラクルの回答で終わるため、ここで不確かなのは費用の側であって答えの側ではありません。あわせて、最悪の入力に対して費やされる問い合わせ回数の期待値を返します。",
+    },
+    conditions: "The oracle must answer about partial commitments: a query is a pair $(S, y)$ with $S \\subseteq [n]$ and $y \\in \\{0,1\\}^{|S|}$, returning $1$ exactly when $x_{S} = y$. The paper puts \"no restriction on Hamming weight\" on the hidden string, so no promise about it is needed — the power is entirely in the query. Its state-discrimination lemma is proved only in the near-complete regime, \"for any $k = n - O(\\sqrt{n})$\", which is why the algorithm climbs in stages that stay inside it rather than attempting the whole string at once. The authors are explicit about what the method is not: \"rather than using amplitude amplification or a quantum walk, our algorithm is ultimately based on the solution to a state discrimination problem.\" The same paper carries a second algorithm, for combinatorial group testing, whose true quantum query complexity it states is open — \"a previous version of this paper claimed an upper bound of $O(\\sqrt{k}\\,\\mathrm{polylog}(k))$ queries, via a reduction to search with wildcards. However, the reduction was incorrect\".",
+    conditionsJa: "オラクルは部分的な確約について答えられなければなりません。すなわち一回の問い合わせは対 $(S, y)$ であり、ここで $S \\subseteq [n]$、$y \\in \\{0,1\\}^{|S|}$ であって、$x_{S} = y$ であるときにかぎり $1$ を返します。論文は隠された文字列に「ハミング重みの制限はない」と置いており、したがってそれについての約束は要りません。力はすべて問い合わせの側にあります。状態識別の補題が証明されているのは、ほぼ完全に既知である領域、すなわち「$k = n - O(\\sqrt{n})$ を満たす任意の場合」に限られます。アルゴリズムが文字列全体を一度に狙わず、その領域の内側にとどまる段を積み重ねて登っていくのは、このためです。著者らは、この手法が何ではないかを明言しています。「振幅増幅や量子ウォークを用いるのではなく、我々のアルゴリズムは最終的に、ある状態識別問題の解に基づいている」。同じ論文はもう一つのアルゴリズム、すなわち組合せ的グループテストのためのものも載せていますが、その真の量子クエリ計算量は未解決であると論文自身が述べています。「本論文の以前の版は、ワイルドカード付き探索への帰着を経由して $O(\\sqrt{k}\\,\\mathrm{polylog}(k))$ 回という上界を主張していた。しかしその帰着は誤りであった」。",
+    cost: "Theorem 1: $O(\\sqrt{n}\\log n)$ queries on average to recover the whole string, against a quantum lower bound of $\\Omega(\\sqrt{n})$ the same theorem proves — a gap of $\\log n$ the paper leaves open, calling its algorithm \"nearly optimal\" rather than optimal. \"On average\" is defined and is not an average over inputs: \"we say that an algorithm 'uses $q$ queries on average' if the expected number of queries it makes on the worst-case input is $q$. We stress that no distribution on the inputs is assumed.\" The classical floor is $\\Omega(n)$ by an information-theoretic argument, and the paper notes that in the standard query model — one position per query — even a quantum algorithm needs $\\Omega(n)$. The bill is assembled per stage: $O(\\sqrt{n})$ queries in stage zero, then $O(\\sqrt{n})$ further stages costing an expected $O(\\log n)$ each. For the paper's second problem, combinatorial group testing, Theorem 2 gives $O(k\\log k)$ queries against a classical $\\Omega(k\\log(n/k))$, with a quantum lower bound of only $\\Omega(\\sqrt{k})$.",
+    costJa: "定理 1 は、文字列全体の復元に平均 $O(\\sqrt{n}\\log n)$ 回の問い合わせを要するとし、同じ定理が証明する量子的な下界 $\\Omega(\\sqrt{n})$ と対置します。両者のあいだには $\\log n$ の隔たりが残り、論文はこれを埋めず、自らのアルゴリズムを「最適」ではなく「ほぼ最適」と呼んでいます。「平均」の意味は定義されており、入力についての平均ではありません。「あるアルゴリズムが『平均 $q$ 回の問い合わせを用いる』とは、最悪の入力に対してそれが行う問い合わせ回数の期待値が $q$ であることをいう。入力上のいかなる分布も仮定しないことを強調しておく」。古典側の下限は情報理論的な議論により $\\Omega(n)$ であり、論文はさらに、標準的なクエリモデル、すなわち一回の問い合わせで一つの位置を尋ねるモデルにおいては、量子アルゴリズムであっても $\\Omega(n)$ 回を要すると述べています。費用は段ごとに積み上がります。第 0 段で $O(\\sqrt{n})$ 回、続く $O(\\sqrt{n})$ 個の段がそれぞれ期待値 $O(\\log n)$ 回です。論文のもう一つの問題である組合せ的グループテストについては、定理 2 が古典的な $\\Omega(k\\log(n/k))$ に対して $O(k\\log k)$ 回を与えており、量子的な下界は $\\Omega(\\sqrt{k})$ にとどまります。",
+    steps: [],
+    example: {
+      pseudocode: [
+        "given  an oracle Q_x(S, y) answering whether the hidden n-bit string x agrees",
+        "       with the guess y on every position in S                    (Sec. 1.2)",
+        "",
+        "# there is no promise on x -- 'no restriction on Hamming weight'. The strength",
+        "# is in the query, which tests a partial guess rather than one position",
+        "",
+        "choose stage sizes n_0 < n_1 < ... < n_l = n with n_{s-1} = ceil(n_s - sqrt(n_s))",
+        "",
+        "# l = O(sqrt(n)) stages, which makes n_0 = O(sqrt(n))",
+        "",
+        "stage 0: query n_0 = O(sqrt(n)) positions directly",
+        "",
+        "for each stage s = 1 ... l:",
+        "    apply the unitary that carries knowledge of n_{s-1} positions to a guess",
+        "        for n_s of them, built from the pretty good measurement    (Sec. 2, 3)",
+        "    verify the guess with one subset query",
+        "    while the query answers no:",
+        "        binary search with ceil(log n_s) substring queries to locate the wrong",
+        "            bits, performed coherently and without measurements, and fix them",
+        "        verify again",
+        "",
+        "    # the expected number of wrong bits after the measurement is O(1), by the",
+        "    # state-discrimination lemma, so a stage costs an expected O(log n)",
+        "",
+        "return x",
+        "",
+        "# the lemma the stage unitary rests on is proved only for k = n - O(sqrt(n)),",
+        "# which is why the algorithm climbs in stages that stay inside that regime",
+        "# rather than attempting the whole string at once",
+        "",
+        "# do not read this as amplitude amplification or as a walk. The authors say",
+        "# outright that it is neither, and that it rests on a state discrimination",
+        "# problem instead",
+      ].join("\n"),
+    },
+    hops: {
+      "state-discrimination-search": {
+        name: "grow the known prefix by discriminating states",
+        nameJa: "状態を識別して、既知の位置を増やす",
+        theory:
+          "The object measured at each stage is a family of states indexed by the hidden string: $|\\psi_{x}^{k}\\rangle := \\frac{1}{\\sqrt{\\binom{n}{k}}} \\sum_{S \\subseteq [n],\\, |S| = k} |S\\rangle |x_{S}\\rangle$, with $|x_{S}\\rangle := \\bigotimes_{i \\in S} |x_{i}\\rangle$. Recovering $x$ from one copy is a state discrimination problem, and it is solved by the pretty good measurement: for a set $\\{|\\varphi_{i}\\rangle\\}$ set $\\rho = \\sum_{i} |\\varphi_{i}\\rangle\\langle\\varphi_{i}|$ and take $|\\mu_{i}\\rangle := \\rho^{-1/2}|\\varphi_{i}\\rangle$, the inverse taken on the support of $\\rho$; this is a POVM because $\\sum_{i} |\\mu_{i}\\rangle\\langle\\mu_{i}| = \\rho^{-1/2}\\left(\\sum_{i}|\\varphi_{i}\\rangle\\langle\\varphi_{i}|\\right)\\rho^{-1/2} = I$, and it outputs $j$ on input $|\\varphi_{i}\\rangle$ with probability exactly $|\\sqrt{G}_{ij}|^{2}$ for $G$ the Gram matrix. Here the Gram matrix depends only on the Hamming distance, $G_{xy} = \\langle\\psi_{x}^{k}|\\psi_{y}^{k}\\rangle = \\binom{n - d(x,y)}{k} \\big/ \\binom{n}{k}$, so it is diagonalised by the Fourier transform over $\\mathbb{Z}_{2}^{n}$ and its eigenvalues are $\\lambda(s) = 2^{n-k}\\binom{n - |s|}{n - k} \\big/ \\binom{n}{k}$, an identity of Delsarte. [[assumption: the measurement is optimal, not merely convenient — the states are geometrically uniform, being generated from $\\sum_{S}|S\\rangle|0\\rangle$ by the abelian group $\\{U_{y}\\}$ with $U_{y}|S\\rangle|x\\rangle = |S\\rangle|x + y_{S}\\rangle$, and for such families the pretty good measurement minimises the average error.]] What the measurement buys is stated as a distance rather than as a success probability: for $k = n - O(\\sqrt{n})$ it outputs $\\tilde{x}$ with expected Hamming distance $d(x, \\tilde{x}) = O(1)$. [[approximation: the measurement alone does not return $x$. What it returns is a guess wrong in $O(1)$ places on average, and it is the verification query and the coherent binary search over $\\lceil\\log n_{s}\\rceil$ substring queries after it that make the stage exact — which is why the query count carries a $\\log n$ the lower bound does not.]] The paper states the gain per query — \"with one query, we can increase the knowledge about the input $x$ from $k$ bits to $k + \\Theta(\\sqrt{k})$ bits\" — and a stage spends that one query plus the repair above it, so $O(\\sqrt{n})$ stages of an expected $O(\\log n)$ queries each reach $n$.",
+        theoryJa: "各段で測定される対象は、隠れた文字列によって添字づけられた状態の族です—— $|\\psi_{x}^{k}\\rangle := \\frac{1}{\\sqrt{\\binom{n}{k}}} \\sum_{S \\subseteq [n],\\, |S| = k} |S\\rangle |x_{S}\\rangle$、ここで $|x_{S}\\rangle := \\bigotimes_{i \\in S} |x_{i}\\rangle$ です。一つのコピーから $x$ を回復することは状態識別問題であり、これは pretty good measurement によって解かれます——集合 $\\{|\\varphi_{i}\\rangle\\}$ に対して $\\rho = \\sum_{i} |\\varphi_{i}\\rangle\\langle\\varphi_{i}|$ とおき、$\\rho$ の台の上で逆を取って $|\\mu_{i}\\rangle := \\rho^{-1/2}|\\varphi_{i}\\rangle$ とします。$\\sum_{i} |\\mu_{i}\\rangle\\langle\\mu_{i}| = \\rho^{-1/2}\\left(\\sum_{i}|\\varphi_{i}\\rangle\\langle\\varphi_{i}|\\right)\\rho^{-1/2} = I$ であるためこれは POVM であり、入力 $|\\varphi_{i}\\rangle$ に対して確率ちょうど $|\\sqrt{G}_{ij}|^{2}$ で $j$ を出力します。ここで $G$ はグラム行列です。グラム行列はハミング距離のみに依存します—— $G_{xy} = \\langle\\psi_{x}^{k}|\\psi_{y}^{k}\\rangle = \\binom{n - d(x,y)}{k} \\big/ \\binom{n}{k}$。そのため $\\mathbb{Z}_{2}^{n}$ 上のフーリエ変換によって対角化され、その固有値は $\\lambda(s) = 2^{n-k}\\binom{n - |s|}{n - k} \\big/ \\binom{n}{k}$ となります。これは Delsarte の恒等式です。[[assumption: この測定が最適であるのは単なる便宜ではありません——これらの状態は幾何学的に一様であり、$\\sum_{S}|S\\rangle|0\\rangle$ からアーベル群 $\\{U_{y}\\}$（$U_{y}|S\\rangle|x\\rangle = |S\\rangle|x + y_{S}\\rangle$ による）によって生成されており、このような族に対しては pretty good measurement が平均誤差を最小化します。]] この測定が得るものは、成功確率としてではなく距離として述べられています—— $k = n - O(\\sqrt{n})$ に対して、期待されるハミング距離が $d(x, \\tilde{x}) = O(1)$ となる $\\tilde{x}$ を出力します。[[approximation: この測定だけでは $x$ は返ってきません。返ってくるのは平均で $O(1)$ 箇所だけ誤った推測であり、その段を正確なものにするのは、その後に行われる検証の問い合わせと $\\lceil\\log n_{s}\\rceil$ 回の部分文字列問い合わせによるコヒーレントな二分探索です——だからこそ問い合わせ回数には、下限にはない $\\log n$ が含まれます。]] 論文は一回の問い合わせあたりの利得を述べています——「一回の問い合わせで、入力 $x$ についての知識を $k$ ビットから $k + \\Theta(\\sqrt{k})$ ビットへと増やすことができる」——そして一つの段はその一回の問い合わせに加えて上述の修復を費やすため、それぞれ期待値として $O(\\log n)$ 回の問い合わせを要する $O(\\sqrt{n})$ 個の段によって $n$ に到達します。",
+      },
+    },
+    // Anchored HERE and not on the slot, for the reason the slot's comment
+    // gives: the record's oracle tests a partial guess, and only this method's
+    // narrowed `contract` promises one that will.
+    entries: ["search-with-wildcards"],
+    citations: [
+      { title: "Quantum algorithms for search with wildcards and combinatorial group testing", authors: "Andris Ambainis, Ashley Montanaro", year: "2012", url: "https://arxiv.org/abs/1210.1148" },
+    ],
+  },
+  {
+    kind: "capability",
+    id: "quantum-walk-search",
+    label: "Walk a graph to the vertex you want",
+    labelJa: "求める頂点までグラフを歩く",
+    summary: "When candidates sit on a graph and the work done at one vertex is still worth something at its neighbour, walk the graph instead of sampling it — and pay per move rather than per candidate.",
+    summaryJa: "候補がグラフの上に載っており、ある頂点で済ませた仕事がその隣接頂点でもなお価値をもつとき、グラフを標本抽出するのではなく歩きます。そして費用は候補ごとではなく移動ごとに支払います。",
+    contract: {
+      from: "search-graph-with-marked-set",
+      to: "marked-item",
+      takes: "A rule naming the neighbours of any vertex, a rule saying whether a vertex is marked, somewhere to start — one named vertex, or a distribution over them — and the size bounds the schedule is computed from: the number of vertices, the depth, the maximum degree, or the size of the subsets a vertex stands for. Which of those a method needs is a property of the walk, not of the slot.",
+      takesJa: "任意の頂点の隣接頂点を名指しする規則、ある頂点が印付きかどうかを述べる規則、出発点（名指しされた一つの頂点、あるいはその上の分布）、そしてスケジュールがそこから計算されるサイズの上限（頂点の数、深さ、最大次数、あるいは頂点が表す部分集合のサイズ）です。そのうちどれを必要とするかは、スロットの性質ではなくウォークの性質です。",
+      returns: "A marked vertex, with the evidence it is marked already in hand from the work stored on it — or the report that the graph holds none, at a stated failure probability.",
+      returnsJa: "印付きの頂点です。それが印付きであることの証拠は、そこに蓄えられた仕事からすでに手元にあります。あるいは、定められた失敗確率のもとで、グラフにそのような頂点が一つもないという報告です。",
+    },
+    whyALayer: "Both routes here inherit a **detector** and have to turn it into a finder, and they do it differently — which is the choice a reader actually makes. Szegedy's quantization of a Markov chain, and Belovs's later reading of it through effective resistance, certify a bit: whether a marked vertex exists. Ambainis converts that into a witness by construction, because the vertex his walk lands on carries the queried values that prove it marked, so measuring it hands over the colliding pair. Montanaro converts it by search, running the detector on subtree after subtree down the tree, which costs him a factor of $O(n)$ for the descent and another $O(\\log n)$ for tightening each detection's confidence, and buys the right to a walk on a graph nobody laid out in advance — he says so against the earlier work directly: \"in prior work it is usually assumed that the input graph is known in advance, and moreover that the initial state of the quantum walk is the stationary distribution of the corresponding random walk\". That the two families are genuinely different, rather than one framework at two settings, is the literature's own verdict rather than this map's: Magniez and Nayak, using Szegedy's route where Ambainis's had not worked, conclude that group commutativity and triangle finding together \"give strong evidence that the walks due to Ambainis are not comparable with the ones due to Szegedy\".",
+    whyALayerJa: "ここにある両方の経路は**検出器**を受け継いでおり、それを発見器へと変える必要があります。そしてその変え方が異なっており、それこそが読み手が実際に行う選択です。Szegedy によるマルコフ連鎖の量子化と、それを実効抵抗を通じて読み直した Belovs の後年の仕事は、印付きの頂点が存在するかどうかという1ビットを確定させます。Ambainis はそれを構成によって証拠へと変えます。彼のウォークが降り立つ頂点は、それが印付きであることを証明する、問い合わせ済みの値を保持しているため、それを測定すれば衝突するペアがそのまま手に入ります。Montanaro はそれを探索によって変えます。木を下りながら部分木の一つ一つに検出器を走らせるのであり、これには下降のための $O(n)$ という係数と、それぞれの検出の確信度を高めるためのさらなる $O(\\log n)$ という係数がかかりますが、その代わりに、誰も事前に敷いていないグラフの上をウォークする権利を買います。彼は先行研究に対してそれを直接そう述べています。「先行研究では通常、入力グラフはあらかじめ知られており、さらに量子ウォークの初期状態は対応する古典的なランダムウォークの定常分布であると仮定されている」。この二つの系列が、一つの枠組みの二つの設定にすぎないのではなく本当に異なっているということは、この地図自身の判定ではなく文献そのものの判定です。Magniez と Nayak は、Ambainis の経路がうまくいかなかったところで Szegedy の経路を用い、群の可換性と三角形発見を合わせて考えると「Ambainis によるウォークは Szegedy によるものと比較可能ではないという強い証拠を与える」と結論づけています。",
+    // No `entries` at the capability: each of the three records this region
+    // anchors is one method's own paper, or a direct generalisation of one
+    // method's construction, so each sits on that method.
+    //
+    // Four records that a subject-area reading files under "quantum walk
+    // search" are deliberately NOT anchored anywhere, and the reason is one
+    // sentence each, read off the records rather than off the titles.
+    // `matrix-product-verification`, `matrix-commutativity-testing` and
+    // `group-commutativity-testing` all decide — "decide whether AB = C",
+    // "decide whether all k of the matrices commute", "decide whether G is
+    // commutative" — and none of the three records names a witness coming back.
+    // That is not a quibble about wording: the construction under all three is
+    // Szegedy's, whose own promise problem is "to find out with great certainty
+    // which of the above two cases holds", a bit and not a vertex. This
+    // contract returns the marked vertex, so a detector does not fill it.
+    // `welded-tree-traversal` is the fourth and fails on the entry as well as
+    // the exit: it goes from one named root to the other, which is a traversal
+    // and has no marked set.
+    //
+    // `subset-sum-quantum-walk` is the honest UNCLEAR. Its walk is Ambainis's,
+    // borrowed wholesale, but its `problem` says "decide whether some subset I
+    // ... satisfies the sum" while its `idea` says "a solution can be found from
+    // any one of its representations", and nothing in the record settles which
+    // of the two the algorithm actually hands back. It stays unanchored until
+    // somebody reads arXiv:1010.2439 and can say.
+  },
+  {
+    kind: "method",
+    id: "stored-subset-walk-search",
+    label: "Walk over subsets that remember their queries",
+    labelJa: "クエリを記憶する部分集合上を歩く",
+    summary: "Make each vertex a subset of the input together with the values already queried for it, so that stepping to a neighbouring subset costs one query rather than a fresh batch. Grover diffusion over which element to add or remove supplies the moves, and a phase flip on subsets that already contain the answer supplies the direction.",
+    summaryJa: "各頂点を、入力の部分集合と、その部分集合についてすでに問い合わせ済みの値の組として表します。そうすることで、隣接する部分集合への一歩は、新たな一括クエリではなく一回のクエリだけで済みます。どの要素を加える、あるいは取り除くかについての Grover 拡散が移動そのものを与え、すでに答えを含んでいる部分集合への位相反転が向きを与えます。",
+    realizes: "quantum-walk-search",
+    conditions: "The vertex has to carry its queried values, and the same subset must always be stored the same way regardless of how it was reached. Ambainis calls this the uniqueness problem and states the consequence of getting it wrong: \"in the original quantum algorithm, we might have $\\alpha|S\\rangle$ interfering with $-\\alpha|S\\rangle$, resulting in $0$ amplitude for $|S\\rangle$. If $\\alpha|S\\rangle - \\alpha|S\\rangle$ becomes $\\alpha|S^{1}\\rangle - \\alpha|S^{2}\\rangle$, there is no interference between $|S^{1}\\rangle$ and $|S^{2}\\rangle$\" — so a data structure that remembers insertion order breaks the algorithm rather than slowing it. The published analysis of the walk assumes at most one solution — \"a promise that there is at most one set of $k$ indices\" — and the general case is reached by a classical wrapper that reruns the walk on random subsets, not by a different walk. The running-time claim, as opposed to the query claim, is conditional: it needs a circuit model \"augmented with gates for random access to a quantum memory\", without which \"simple data structure operations (for example, removing $y$ from $S$) which require $O(\\log N)$ time classically would require $\\Omega(r)$ time quantumly\".",
+    conditionsJa: "頂点はその問い合わせ済みの値を保持していなければならず、同じ部分集合はどのような経路で到達したかによらず常に同じ形で格納されなければなりません。Ambainis はこれを一意性の問題と呼び、それを誤った場合の帰結を次のように述べています。「もとの量子アルゴリズムでは、$\\alpha|S\\rangle$ が $-\\alpha|S\\rangle$ と干渉し、$|S\\rangle$ の振幅が $0$ になることがある。もし $\\alpha|S\\rangle - \\alpha|S\\rangle$ が $\\alpha|S^{1}\\rangle - \\alpha|S^{2}\\rangle$ になってしまうなら、$|S^{1}\\rangle$ と $|S^{2}\\rangle$ の間には干渉が起きない」——したがって、挿入順を記憶するデータ構造は、アルゴリズムを遅くするのではなく壊してしまいます。公表されている歩みの解析は解が高々一つであることを仮定しており——「$k$ 個の添字から成る集合が高々一つしか存在しないという約束」——一般の場合は、異なる歩みによってではなく、ランダムな部分集合上で歩みを繰り返す古典的なラッパーによって扱われます。クエリ数についての主張とは異なり、実行時間についての主張は条件付きです。それには「量子メモリへのランダムアクセス用のゲートで拡張された」回路モデルが必要であり、それがなければ「（たとえば $S$ から $y$ を取り除くといった）単純なデータ構造の操作は、古典的には $O(\\log N)$ 時間で済むところ、量子的には $\\Omega(r)$ 時間を要することになる」とされています。",
+    cost: "$O(N^{2/3})$ queries for element distinctness on $N$ items and $O(N^{k/(k+1)})$ for finding $k$ equal items, which the abstract sets against the previous $O(N^{3/4})$ quantum algorithm of Buhrman et al. and against the $\\Omega(N^{2/3})$ lower bound the paper attributes to Aaronson and Shi. The bill has two terms and not three: \"$r$ for creating the initial state and $O((N/r)^{k/2}\\sqrt{r})$ for the rest of the algorithm\", so the total is $O(\\max(r, N^{k/2}/r^{(k-1)/2}))$ and $r = N^{2/3}$ is where the two meet. Under a memory restriction to $r$ stored numbers the paper reports $O(N/\\sqrt{r})$ queries against a classical $O(N^{2}/r)$. Time is a separate and weaker claim: $O(N^{k/(k+1)}\\log^{c}(N + M))$ steps, and only in a model with random-access gates. The constant is not uniform in $k$ — \"the big-O constant depends on $k$\", with $O(k^{2}N^{k/(k+1)})$ stated for non-constant $k$ and its proof omitted from that version.",
+    costJa: "要素の相異性判定では $N$ 個の項目に対して $O(N^{2/3})$ 回のクエリ、$k$ 個の等しい項目を見つける場合は $O(N^{k/(k+1)})$ 回のクエリを要します。概要はこれを、Buhrman らによる従来の $O(N^{3/4})$ 量子アルゴリズムと、論文が Aaronson と Shi に帰する下界 $\\Omega(N^{2/3})$ の両方と対比させています。費用は三項ではなく二項から成ります——「初期状態を作るための $r$ と、アルゴリズムの残りの部分のための $O((N/r)^{k/2}\\sqrt{r})$」——したがって全体は $O(\\max(r, N^{k/2}/r^{(k-1)/2}))$ となり、両者が釣り合うのは $r = N^{2/3}$ のときです。$r$ 個の数を記憶するというメモリ制限のもとでは、論文は古典的な $O(N^{2}/r)$ に対して $O(N/\\sqrt{r})$ 回のクエリを報告しています。実行時間はこれとは別の、より弱い主張です——$O(N^{k/(k+1)}\\log^{c}(N + M))$ ステップであり、それもランダムアクセスゲートを備えたモデルに限られます。定数は $k$ について一様ではなく——「big-O 定数は $k$ に依存する」——$k$ が定数でない場合には $O(k^{2}N^{k/(k+1)})$ が述べられており、その版ではその証明は省かれています。",
+    steps: [],
+    example: {
+      pseudocode: [
+        "given  oracle access to x_1 ... x_N with values in [M]                (Sec. 3.1)",
+        "       k, the number of equal items to be found",
+        "       r, the subset size; r = N^(2/3) for k = 2",
+        "",
+        "# a vertex is a subset S of the inputs together with the values already",
+        "# queried for it, so a step costs one query and not r of them",
+        "",
+        "generate the uniform superposition over pairs (S, y) with |S| = r, y not in S",
+        "query all x_i for i in S                                     (Sec. 3.2, Alg. 2)",
+        "",
+        "# these r queries are the whole cost of the initial state",
+        "",
+        "repeat t1 = O((N/r)^(k/2)) times:",
+        "    flip the phase of every S that already contains k indices with equal values",
+        "",
+        "    # this check costs no queries: the values for S are already stored",
+        "",
+        "    perform t2 = O(sqrt(r)) steps of the walk, each step being      (Alg. 1)",
+        "        diffuse over y among the elements not in S",
+        "        move to S + {y}, querying x_y and inserting it",
+        "        diffuse over y among the elements of S + {y}",
+        "        erase the value at the new y by querying x_y again, and drop y",
+        "",
+        "measure, and check whether the measured S contains k equal values",
+        "return that S -- its stored values are the witness, or there is none",
+        "",
+        "# the same subset must always be stored the same way, however it was reached.",
+        "# Two spellings of one subset do not interfere, and the algorithm is built out",
+        "# of that interference",
+        "",
+        "# the analysis above assumes at most one solution. The general case runs this",
+        "# on random subsets of the input, classically, and is not a different walk",
+        "",
+        "# do not read the query count as a running time. That needs a model with",
+        "# random access to quantum memory, and the paper says so",
+      ].join("\n"),
+    },
+    hops: {
+      "stored-subset-walk-search": {
+        name: "add an element, query it, diffuse, drop one",
+        nameJa: "要素を加えて問い合わせ、拡散してから一つ落とす",
+        theory:
+          "The graph has \"$\\binom{N}{r} + \\binom{N}{r+1}$ vertices. The vertices $v_{S}$ correspond to sets $S \\subseteq [N]$ of size $r$ and $r + 1$. Two vertices $v_{S}$ and $v_{T}$ are connected by an edge if $T = S \\cup \\{i\\}$ for some $i \\in [N]$. A vertex is marked if $S$ contains $i, j, x_{i} = x_{j}$.\" That marking condition is section 3.1's element-distinctness specialisation, stated there under \"let $r = N^{2/3}$\"; the general one, which Algorithm 2 uses and which the phase flip below carries, asks for $k$ distinct indices with equal values. The walk runs on two spaces: $\\mathcal{H}$ with basis $|S, x, y\\rangle$ for $|S| = r$, $x \\in [M]^{r}$, $y \\in [N] \\setminus S$, and $\\mathcal{H}'$ with $|S| = r + 1$ and $y \\in S$. One step is six operations. Steps 1 and 4 are Grover diffusions on the $y$ register — $|S\\rangle|y\\rangle \\mapsto |S\\rangle\\left(\\left(-1 + \\frac{2}{N-r}\\right)|y\\rangle + \\frac{2}{N-r}\\sum_{y' \\notin S,\\, y' \\neq y}|y'\\rangle\\right)$ going up, and the same form with $N - r$ replaced by $r + 1$ and the sum taken over $y' \\in S$ coming back down. Between them, step 2 adds $y$ to $S$, step 3 queries $x_{y}$ and inserts it, and steps 5 and 6 use the query a second time to erase the value at the new $y$ before removing it — so the move up and the move back each cost one query. [[assumption: \"$x$ will always be equal to $(x_{i_{1}}, \\ldots, x_{i_{r}})$ where $i_{1}, \\ldots, i_{r}$ are elements of $S$ in increasing order\" — the stored values must be in a canonical order, or the same subset reached two ways occupies two basis states and the interference the algorithm is built on does not happen.]] Outside the walk sits the phase flip $|S\\rangle|y\\rangle|x\\rangle \\to -|S\\rangle|y\\rangle|x\\rangle$ on any $S$ holding $k$ indices with equal values, which costs nothing because those values are already stored. The schedule is $t_{1} = O((N/r)^{k/2})$ outer repetitions of one phase flip followed by $t_{2} = O(\\sqrt{r})$ walk steps. [[assumption: the outer count comes from the overlap $\\alpha = \\Omega(r^{k/2}/N^{k/2})$ between the walk's starting state and the marked subspace, which is what a promise of at most one solution buys; a domain with many solutions changes $\\alpha$ and the paper reaches it through a classical wrapper instead.]] The data structure that holds $S$ is where the running time is won or lost, and the paper's hash-table-and-skip-list version is not exact: a bucket can overflow, the branch on which it does is bounded per step at $\\|\\psi_{t}^{bad}\\| = O(1/N^{1.5})$, and the distribution a measurement of the real algorithm returns is shown to differ from the ideal one by $O(1/N^{1/2})$ in variational distance.",
+        theoryJa: "グラフは「$\\binom{N}{r} + \\binom{N}{r+1}$ 個の頂点を持つ。頂点 $v_{S}$ は大きさ $r$ および $r + 1$ の集合 $S \\subseteq [N]$ に対応する。二つの頂点 $v_{S}$ と $v_{T}$ は、ある $i \\in [N]$ について $T = S \\cup \\{i\\}$ であるとき、辺で結ばれる。頂点は $S$ が $i, j, x_{i} = x_{j}$ を満たすとき印付きとなる」ものです。この印付けの条件は第 3.1 節における要素の相異性判定への特殊化であり、そこでは「$r = N^{2/3}$ とする」のもとで述べられています。Algorithm 2 が用い、下の位相反転が担う一般の条件は、値の等しい $k$ 個の相異なる添字を求めるものです。歩みは二つの空間の上で動きます。$|S| = r$、$x \\in [M]^{r}$、$y \\in [N] \\setminus S$ のもとで基底 $|S, x, y\\rangle$ を持つ $\\mathcal{H}$ と、$|S| = r + 1$ かつ $y \\in S$ の $\\mathcal{H}'$ です。一歩は六つの操作から成ります。ステップ 1 と 4 は $y$ レジスタ上の Grover 拡散であり——上りは $|S\\rangle|y\\rangle \\mapsto |S\\rangle\\left(\\left(-1 + \\frac{2}{N-r}\\right)|y\\rangle + \\frac{2}{N-r}\\sum_{y' \\notin S,\\, y' \\neq y}|y'\\rangle\\right)$、下りは $N - r$ を $r + 1$ に置き換え、和を $y' \\in S$ について取った同じ形です。その間に、ステップ 2 は $S$ に $y$ を加え、ステップ 3 は $x_{y}$ を問い合わせて挿入し、ステップ 5 と 6 はその問い合わせをもう一度使って新しい $y$ における値を消去してから取り除きます——したがって上りと下りはそれぞれ一回のクエリを要します。[[assumption: 「$x$ は常に、$S$ の要素を昇順に並べたものとして $i_{1}, \\ldots, i_{r}$ を添字とする $(x_{i_{1}}, \\ldots, x_{i_{r}})$ に等しい」——格納される値は正準な順序でなければならず、そうでなければ同じ部分集合が二通りの経路で到達されたとき二つの異なる基底状態を占めてしまい、このアルゴリズムが依拠する干渉が起きなくなります。]] 歩みの外側には位相反転 $|S\\rangle|y\\rangle|x\\rangle \\to -|S\\rangle|y\\rangle|x\\rangle$ があり、値の等しい $k$ 個の添字を含むあらゆる $S$ に対して働きます。これらの値はすでに格納されているため、この確認はクエリを要しません。スケジュールは、一回の位相反転に続けて $t_{2} = O(\\sqrt{r})$ 回の歩みの一歩を行う、という手続きの $t_{1} = O((N/r)^{k/2})$ 回の外側の反復です。[[assumption: 外側の反復回数は、歩みの初期状態と印付きの部分空間との重なり $\\alpha = \\Omega(r^{k/2}/N^{k/2})$ に由来し、これは解が高々一つであるという約束が買っているものです。解が多数存在する領域では $\\alpha$ が変わり、論文はそこへは古典的なラッパーを通じて到達しています。]] $S$ を保持するデータ構造こそが実行時間の勝敗を決める場所であり、論文のハッシュテーブルとスキップリストによる版は厳密ではありません。バケットは溢れることがあり、それが起きる分岐は各ステップで $\\|\\psi_{t}^{bad}\\| = O(1/N^{1.5})$ に抑えられ、実アルゴリズムの測定が返す分布は、理想的な分布と変分距離にして $O(1/N^{1/2})$ だけ異なることが示されています。",
+      },
+    },
+    // `subset-finding-quantum-walk` is here rather than beside it as a fifth
+    // method, because Childs and Eisenberg rework this construction rather than
+    // competing with it: their walk "runs on a bipartite graph whose vertices
+    // are the size-M and size-(M+1) subsets of D", a phase flip "marks any
+    // subset that already contains a solution", and their own framing makes
+    // element distinctness the case L = 2 of it. A record that generalises a
+    // method is a declaration against that method, per the owner's ai-ops#57.
+    entries: ["element-distinctness", "subset-finding-quantum-walk"],
+    citations: [
+      { title: "Quantum walk algorithm for element distinctness", authors: "Andris Ambainis", year: "2003", url: "https://arxiv.org/abs/quant-ph/0311001" },
+    ],
+  },
+  {
+    kind: "method",
+    id: "backtracking-tree-walk-search",
+    label: "Walk the backtracking tree itself",
+    labelJa: "バックトラック木そのものを歩く",
+    summary: "Take the tree a classical backtracking algorithm would have explored — never built, never known in advance — and walk it from the root. Phase estimation on the walk operator says whether a solution is down there at all; running that test on subtree after subtree turns the answer into the solution.",
+    summaryJa: "古典的なバックトラック法が探索したであろう木を——それは決して構築されず、あらかじめ知られてもいません——根から歩きます。歩みの演算子に対する位相推定は、その先のどこかに解があるかどうかだけを答えます。この検査を部分木から部分木へと次々に走らせることで、その答えが解そのものへと変わります。",
+    realizes: "quantum-walk-search",
+    conditions: "What the algorithm needs is what a backtracking algorithm already has: a predicate $P : D \\to \\{\\text{true}, \\text{false}, \\text{indeterminate}\\}$ over partial assignments $D = ([d] \\cup \\{*\\})^{n}$ and a heuristic $h : D \\to \\{1, \\ldots, n\\}$ \"which returns the next index to branch on from a given partial assignment\". It does not need the tree: \"we do not necessarily know the structure of $T$ in advance\", only the distance of a vertex from the root. That is the break with the earlier walk-search literature and the paper states it as one — \"in prior work it is usually assumed that the input graph is known in advance, and moreover that the initial state of the quantum walk is the stationary distribution of the corresponding random walk\". An upper bound on the number of vertices $T$ is used but need not be known: guesses are doubled from $T = 1$, and a returned vertex is checked before the algorithm terminates, because \"if our guess for $T$ is too low, the correctness proof of Algorithm 2 no longer holds\". Local domain size $d = O(1)$ is assumed throughout, and for the finding half so is bounded degree.",
+    conditionsJa: "このアルゴリズムが必要とするのは、バックトラック法のアルゴリズムがすでに持っているものと同じです。部分的な割り当て $D = ([d] \\cup \\{*\\})^{n}$ の上の述語 $P : D \\to \\{\\text{true}, \\text{false}, \\text{indeterminate}\\}$ と、ヒューリスティック $h : D \\to \\{1, \\ldots, n\\}$——「与えられた部分的割り当てから、次に分岐すべき添字を返す」もの——です。木そのものは必要としません。「$T$ の構造をあらかじめ知っている必要は必ずしもない」のであり、必要なのは頂点の根からの距離だけです。これは従来の歩みによる探索の文献との断絶であり、論文自身がそう述べています。「先行研究では通常、入力グラフがあらかじめ知られていること、さらに量子的な歩みの初期状態が対応する古典的なランダムウォークの定常分布であることが仮定されている」。頂点数の上界 $T$ は用いられますが、あらかじめ知られている必要はありません。推測は $T = 1$ から倍々に増やされ、アルゴリズムが終了する前に、返された頂点が確認されます。なぜなら「$T$ についての推測が低すぎる場合、Algorithm 2 の正しさの証明はもはや成り立たない」からです。局所的な定義域の大きさ $d = O(1)$ は全体を通して仮定されており、発見の側についてはさらに次数の有界性も仮定されています。",
+    cost: "Detection and finding are priced separately and the gap between them is the cost of turning one into the other. Theorem 1 evaluates $P$ and $h$ $O(\\sqrt{Tn}\\log(1/\\delta))$ times each to say whether a solution exists; Theorem 2 evaluates them $O(\\sqrt{T}n^{3/2}\\log n \\log(1/\\delta))$ times each to \"output $x$ such that $P(x)$ is true, or 'not found' if no such $x$ exists\". A promise that the solution is unique buys most of that back — $O(\\sqrt{T}n\\log^{3} n \\log(1/\\delta))$ — through an eigenvector argument rather than through the binary search. Finding all $k$ solutions costs $O(k\\sqrt{T}n^{3/2}\\log n\\log(k/\\delta))$. The speedup claim is scoped, in the paper's own sentence: \"we usually think of $T$ as being exponential in $n$; in this regime this complexity is a near-quadratic speedup over the classical algorithm.\" The bound is instance-dependent, and the paper draws the consequence: \"for instances on which the classical algorithm runs quickly, the quantum algorithm also runs quickly.\" Space is $\\mathrm{poly}(n)$ with $O(1)$ auxiliary operations per use of $P$ and $h$.",
+    costJa: "検出と発見は別々に費用が付けられており、両者の差こそが一方を他方に変える費用です。定理 1 は、解が存在するかどうかを答えるために $P$ と $h$ をそれぞれ $O(\\sqrt{Tn}\\log(1/\\delta))$ 回評価します。定理 2 は「$P(x)$ が真であるような $x$ を出力する、あるいはそのような $x$ が存在しなければ『見つからなかった』と出力する」ために、それらをそれぞれ $O(\\sqrt{T}n^{3/2}\\log n \\log(1/\\delta))$ 回評価します。解が一意であるという約束があれば、そのほとんどを——$O(\\sqrt{T}n\\log^{3} n \\log(1/\\delta))$ まで——二分探索によってではなく固有ベクトルの議論によって取り戻せます。$k$ 個の解をすべて見つける費用は $O(k\\sqrt{T}n^{3/2}\\log n\\log(k/\\delta))$ です。速度向上の主張には範囲があり、論文自身の文で次のように限定されています。「$T$ は通常 $n$ について指数的であると考える。この領域では、この計算量は古典アルゴリズムに対してほぼ二次的な速度向上となる」。この限界は具体例に依存しており、論文はその帰結を「古典アルゴリズムが速く走るような具体例では、量子アルゴリズムもまた速く走る」と述べています。空間は$\\mathrm{poly}(n)$ であり、$P$ と $h$ の一回の使用あたり $O(1)$ 回の補助操作を伴います。",
+    steps: ["phase-estimation"],
+    example: {
+      pseudocode: [
+        "given  a predicate P over partial assignments, returning true, false or",
+        "           indeterminate                                        (Alg. 1)",
+        "       a heuristic h returning the next index to branch on       (Alg. 1)",
+        "       n, the depth bound; a guess T for the number of vertices",
+        "",
+        "# the tree is never built and its structure is not known in advance. All that",
+        "# is needed of a vertex is its neighbours and its distance from the root",
+        "",
+        "detect(subtree, T, delta):                                       (Alg. 2)",
+        "    repeat K = ceil(gamma log(1/delta)) times:",
+        "        run phase estimation on R_B R_A with precision beta/sqrt(T n)",
+        "        accept if the eigenvalue is 1",
+        "    return 'marked vertex exists' if at least 3K/8 accepted, else 'none'",
+        "",
+        "for T = 1, 2, 4, 8, ... doubling until an answer survives its check:",
+        "    if detect(whole tree, T, delta) says none: return 'not found'",
+        "    x = root",
+        "    while x is not marked:",
+        "        y = the first child of x whose subtree detect() says holds one",
+        "        if there is no such child: break",
+        "        x = y",
+        "    if x is marked: return x",
+        "",
+        "# the break is not defensive tidiness. A detection above can be a false",
+        "# positive when T is guessed too low, and then no child confirms anything;",
+        "# leaving the descent is what lets the doubling loop resume",
+        "",
+        "# T is left unchanged when the detector is applied to a subtree. The tree can",
+        "# be very unbalanced, so a subtree may still hold most of the vertices",
+        "",
+        "# the doubling is why no bound on T has to be known in advance. A guess that is",
+        "# too low can make the detector claim a solution where there is none, which is",
+        "# exactly what checking the returned vertex catches",
+        "",
+        "# there are O(n) steps down to a leaf and O(1) subtrees tested at each. That",
+        "# is one of the two factors between detecting and finding; the other is a",
+        "# log n, because O(n^2) detector calls in all must each run at failure",
+        "# probability O(1/n^2)",
+        "",
+        "# do not use this listing for the unique-solution case. That bound comes from",
+        "# an eigenvector argument on the walk, not from this binary search",
+      ].join("\n"),
+    },
+    hops: {
+      "phase-estimation": {
+        theory:
+          "The detector asks phase estimation one question — is the eigenvalue exactly $1$ — and everything it costs is in the precision that question is asked at. Algorithm 2 applies \"phase estimation to the operator $R_{B}R_{A}$ with precision $\\beta/\\sqrt{Tn}$\" and accepts when the eigenvalue is $1$, repeating $K = \\lceil\\gamma\\log(1/\\delta)\\rceil$ times and answering \"marked vertex exists\" when at least $3K/8$ of the runs accept. So the state prepared for it is the root $|r\\rangle$ rather than an eigenvector, and what the estimate reads is how close $|r\\rangle$ is to an eigenvector of eigenvalue one: when a marked vertex exists, $|r\\rangle$ \"is quite close to (a normalised version of) an eigenvector $|\\varphi\\rangle$ of $R_{B}R_{A}$ with eigenvalue 1\" and phase estimation \"returns the eigenvalue 1 with probability at least 1/2\"; when none exists the same estimate \"returns the eigenvalue 1 with probability at most 1/4\". The $3K/8$ threshold sits between those two numbers, which is what makes counting acceptances an answer. [[assumption: the precision $\\beta/\\sqrt{Tn}$ is what fixes the query count, since phase estimation to precision $\\chi$ costs $O(1/\\chi)$ controlled applications of the operator — which is where $O(\\sqrt{Tn})$ comes from and why a tighter bound on $T$ is worth having.]] The whole subroutine is used $O(\\sqrt{Tn}\\log(1/\\delta))$ times, and the paper attributes the result it is a special case of to Belovs. [[assumption: $T$ must be a real upper bound on the vertex count, or \"the correctness proof of Algorithm 2 no longer holds\" and the detector can report a marked vertex where there is none — which is why the caller checks the vertex it is finally handed.]]",
+        theoryJa: "検出器は位相推定に一つの問いだけを尋ねます——固有値がちょうど $1$ であるかどうか——そして、その費用のすべてはこの問いをどれほどの精度で尋ねるかに宿ります。Algorithm 2 は「精度 $\\beta/\\sqrt{Tn}$ で演算子 $R_{B}R_{A}$ に位相推定を適用する」ものであり、固有値が $1$ のとき受理し、これを $K = \\lceil\\gamma\\log(1/\\delta)\\rceil$ 回繰り返して、受理した実行が少なくとも $3K/8$ あったとき「印付きの頂点が存在する」と答えます。したがって、用意される状態は固有ベクトルではなく根 $|r\\rangle$ であり、この推定が読み取るのは $|r\\rangle$ が固有値 1 の固有ベクトルにどれだけ近いかです。印付きの頂点が存在するとき、$|r\\rangle$ は「（規格化した意味で）固有値 1 を持つ $R_{B}R_{A}$ の固有ベクトル $|\\varphi\\rangle$ にかなり近い」ものであり、位相推定は「少なくとも 1/2 の確率で固有値 1 を返す」とされ、存在しないときは同じ推定が「高々 1/4 の確率で固有値 1 を返す」とされます。$3K/8$ というしきい値はこの二つの数の間にあり、これによって受理数を数えることが一つの答えになります。[[assumption: 精度 $\\beta/\\sqrt{Tn}$ がクエリ数を決めているのは、精度 $\\chi$ への位相推定が演算子の制御付き適用を $O(1/\\chi)$ 回要するためです——ここから $O(\\sqrt{Tn})$ が生じ、$T$ のより厳しい上界を持つ価値がある理由もここにあります。]] このサブルーチン全体は $O(\\sqrt{Tn}\\log(1/\\delta))$ 回使われ、論文はこれが特殊な場合にあたる結果を Belovs によるものとしています。[[assumption: $T$ は頂点数の真の上界でなければならず、そうでなければ「Algorithm 2 の正しさの証明はもはや成り立たない」ため、検出器は存在しない印付きの頂点を報告しうる——だからこそ、呼び出し側は最終的に手渡された頂点を確認するのです。]]",
+      },
+      "backtracking-tree-walk-search": {
+        name: "reflect at even depths, then at odd",
+        nameJa: "偶数深さで反射し、次に奇数深さで反射する",
+        theory:
+          "The walk lives on the space spanned by the vertices themselves — \"unlike many discrete-time quantum walk algorithms, it does not use a separate 'coin' space\" — and starts at $|r\\rangle$. Vertices are split by parity of depth: $A$ is the set at even distance from the root, including the root, and $B$ the set at odd distance. At each vertex sits a diffusion operator $D_{x}$ acting on the span of $|x\\rangle$ and its children. If $x$ is marked, $D_{x}$ is the identity — the walk stops there, which is what the eigenvalue-one eigenvector detects. Otherwise $D_{x} = I - 2|\\psi_{x}\\rangle\\langle\\psi_{x}|$ with $|\\psi_{x}\\rangle = \\frac{1}{\\sqrt{d_{x}}}\\left(|x\\rangle + \\sum_{y : x \\to y}|y\\rangle\\right)$, $d_{x}$ being the degree of $x$ in the undirected graph. The root is the exception and carries an extra weight: $|\\psi_{r}\\rangle = \\frac{1}{\\sqrt{1 + d_{r}n}}\\left(|r\\rangle + \\sqrt{n}\\sum_{y : r \\to y}|y\\rangle\\right)$. One step is $R_{B}R_{A}$, where $R_{A} = \\bigoplus_{x \\in A}D_{x}$ and $R_{B} = |r\\rangle\\langle r| + \\bigoplus_{x \\in B}D_{x}$. [[assumption: the root is taken to be unmarked — \"assume for simplicity in what follows that the root is promised not to be marked\" — which is a convenience of the proof rather than a requirement of the method: a marked root is returned before the descent begins.]] [[assumption: every $D_{x}$ \"can be implemented with only local knowledge, i.e. based only on whether $x$ is marked and the neighbourhood structure of $x$\" — this is the property that lets the walk run on a tree nobody has laid out, and it is what the predicate and the branching heuristic supply.]] The paper offers a second reading of the same operator: \"a quantum walk on the graph given by the edges of the tree, where we identify each vertex with the edge from its parent in the tree, and add an additional 'input' edge into the root\" — though it never connects that added edge to the root's extra $\\sqrt{n}$ weight, which appears here as a definition and later only inside the proof, in $|\\varphi\\rangle$ and $|\\eta\\rangle$. Detection alone is Belovs's result specialised to a tree; finding is Montanaro's own extension of it, and the two theorems differ by exactly the two factors it costs: $O(n)$ because \"there are at most $O(n)$ repetitions to reach a leaf and $O(1)$ subtrees are checked at each repetition\", and a further $O(\\log n)$ because the descent makes $O(n^{2})$ uses of the detector in all, so each must be run at failure probability $O(1/n^{2})$ — \"an additional time factor of $O(\\log n)$ per use\". $O(\\sqrt{Tn}\\log(1/\\delta))$ times $n\\log n$ is $O(\\sqrt{T}n^{3/2}\\log n\\log(1/\\delta))$, which is Theorem 2.",
+        theoryJa: "この歩みは頂点そのものが張る空間の上で動きます——「多くの離散時間量子ウォークのアルゴリズムとは異なり、これは独立した『コイン』空間を用いない」——そして $|r\\rangle$ から始まります。頂点は深さの偶奇によって分けられます。$A$ は根を含む、根から偶数距離にある頂点の集合であり、$B$ は奇数距離にある頂点の集合です。各頂点には、$|x\\rangle$ とその子の張る空間に作用する拡散演算子 $D_{x}$ が置かれています。$x$ が印付きであれば $D_{x}$ は恒等演算子です——歩みはそこで止まり、これこそが固有値 1 の固有ベクトルが検出するものです。そうでなければ $D_{x} = I - 2|\\psi_{x}\\rangle\\langle\\psi_{x}|$ であり、$|\\psi_{x}\\rangle = \\frac{1}{\\sqrt{d_{x}}}\\left(|x\\rangle + \\sum_{y : x \\to y}|y\\rangle\\right)$ です。ここで $d_{x}$ は無向グラフにおける $x$ の次数です。根は例外であり、余分な重みを持ちます。$|\\psi_{r}\\rangle = \\frac{1}{\\sqrt{1 + d_{r}n}}\\left(|r\\rangle + \\sqrt{n}\\sum_{y : r \\to y}|y\\rangle\\right)$ です。一歩は $R_{B}R_{A}$ であり、ここで $R_{A} = \\bigoplus_{x \\in A}D_{x}$ かつ $R_{B} = |r\\rangle\\langle r| + \\bigoplus_{x \\in B}D_{x}$ です。[[assumption: 根は印付きでないものとして扱われます——「以下では簡単のため、根は印付きでないことが約束されているものとする」——これは証明の便宜であってこの手法が要求するものではなく、印付きの根は降下が始まる前に返されます。]] [[assumption: あらゆる $D_{x}$ は「$x$ が印付きかどうかと $x$ の近傍構造のみに基づいて、局所的な知識だけから実装できる」——これが、あらかじめ誰も敷いていない木の上でこの歩みを走らせることを可能にする性質であり、述語と分岐のヒューリスティックが供給するものです。]] 論文は同じ演算子について第二の読み方を提示しています。「木の辺で与えられるグラフ上の量子ウォークであり、各頂点をその木における親からの辺と同一視し、根への追加の『入力』辺を加えたもの」——もっとも、その追加された辺と根の余分な重み $\\sqrt{n}$ との関係については、一度も述べられておらず、この重みはここでは定義として現れ、その後は証明の中の $|\\varphi\\rangle$ と $|\\eta\\rangle$ の中にだけ現れます。検出だけであれば Belovs の結果を木に特殊化したものであり、発見は Montanaro 自身によるその拡張です。二つの定理はその費用がちょうど二つの要因だけ異なります。$O(n)$ は「葉に到達するまでの反復は高々 $O(n)$ 回であり、各反復で調べる部分木は $O(1)$ 個である」ためであり、さらなる $O(\\log n)$ は、降下全体で検出器を $O(n^{2})$ 回使うため、それぞれを失敗確率 $O(1/n^{2})$ で走らせなければならないことによります——「一回の使用あたり $O(\\log n)$ という追加の時間係数」です。$O(\\sqrt{Tn}\\log(1/\\delta))$ に $n\\log n$ を掛けたものが $O(\\sqrt{T}n^{3/2}\\log n\\log(1/\\delta))$ であり、これが定理 2です。",
+      },
+    },
+    entries: ["backtracking-quantum-walk-speedup"],
+    citations: [
+      { title: "Quantum walk speedup of backtracking algorithms", authors: "Ashley Montanaro", year: "2015", url: "https://arxiv.org/abs/1509.02374" },
+    ],
+  },
   ],
 };
