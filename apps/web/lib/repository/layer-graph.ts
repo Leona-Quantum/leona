@@ -11159,7 +11159,8 @@ export const LAYER_GRAPH: LayerGraph = {
     // at the CAPABILITY rather than under either method below, because none of
     // them chooses between the two — the ancilla/round trade this slot exists to
     // pose is not a choice any of these four makes, so filing one under
-    // `quantum-phase-estimation` or the iterative route would assert a decision
+    // `register-phase-estimation` or `single-ancilla-phase-estimation` would
+    // assert a decision
     // its paper never took. Capability-level `entries` is an established shape
     // here, not an evasion — this change takes it from 9 of 28 capabilities
     // carrying a non-empty `entries` to 11. Stated as a delta rather than as a
