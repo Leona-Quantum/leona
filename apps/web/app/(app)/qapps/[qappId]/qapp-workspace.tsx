@@ -4,6 +4,7 @@ import type { components } from "@majorana/contracts-gen";
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { QappRuntime } from "../../../../components/qapp-runtime";
+import { rangeSmokeNotice } from "../../../../lib/qapp-range-smoke.ts";
 
 type Qapp = components["schemas"]["Qapp"];
 type QappVersion = components["schemas"]["QappVersion"];
@@ -56,6 +57,7 @@ export function QappWorkspace({ qappId }: { qappId: string }) {
   if (error && !detail) return <div className="qapp-private-empty" role="alert">{error}</div>;
   if (!detail) return <div className="qapp-private-empty" role="status">Loading Qapp…</div>;
   const isPublic = detail.qapp.visibility === "public";
+  const notice = rangeSmokeNotice(detail.version.range_smoke);
   return (
     <main className="qapp-private-page">
       <header className="qapp-private-header">
@@ -72,6 +74,16 @@ export function QappWorkspace({ qappId }: { qappId: string }) {
         </div>
       </header>
       {error ? <p role="alert" className="qapp-private-error">{error}</p> : null}
+      {notice ? (
+        <p
+          className={`qapp-range-smoke qapp-range-smoke-${notice.tone}`}
+          role={notice.tone === "warn" ? "alert" : "status"}
+        >
+          <strong>{notice.tone === "warn" ? "At its largest inputs" : "Checked at both ends"}</strong>
+          {" "}
+          {notice.text}
+        </p>
+      ) : null}
       <QappRuntime slug={detail.qapp.slug} uiDocument={detail.version.ui_document} canExecute />
     </main>
   );
