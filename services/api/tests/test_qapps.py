@@ -430,3 +430,208 @@ def test_the_cross_tenant_ceilings_hold_the_owner_ruled_worst_case():
     assert (
         qapp_routes.QAPP_EXECUTIONS_PER_QAPP_HOUR < qapp_routes.QAPP_EXECUTIONS_PER_DEPLOYMENT_HOUR
     )
+
+
+class _Probe:
+    """A session that answers `set_visibility`'s execution probe by reading the
+    predicate's own bound values, rather than by agreeing with whatever it asks.
+
+    The distinction is the whole point. A stub that simply returns a row on every
+    `execute` passes identically against the real gate and against a gate whose
+    version scoping has been deleted — it would be measuring the harness. This one
+    records the parameters the statement actually binds, so the test below can
+    assert *which* rows the gate is asking for, and a probe that stopped naming
+    `current_version_id` fails even though its outcome is unchanged.
+    """
+
+    def __init__(self, rows: list[tuple[uuid.UUID, uuid.UUID, str]]):
+        self.rows = rows
+        self.bound: list[dict[str, object]] = []
+        self.flushed = 0
+
+    async def execute(self, statement):
+        params = statement.compile().params
+        self.bound.append(params)
+        # A row comes back when it satisfies every predicate the statement actually
+        # BOUND — so a predicate the gate stopped writing stops constraining the
+        # answer, exactly as it would against a real database. Comparing against a
+        # fixed triple instead would make a dropped predicate look like a predicate
+        # that matches nothing, and the stale-version case below would then pass on
+        # a gate that no longer has a version in it.
+        for qapp_id, version_id, status in self.rows:
+            if params.get("qapp_id_1", qapp_id) != qapp_id:
+                continue
+            if params.get("qapp_version_id_1", version_id) != version_id:
+                continue
+            if params.get("status_1", status) != status:
+                continue
+            return SimpleNamespace(scalar_one_or_none=lambda: uuid.uuid4())
+        return SimpleNamespace(scalar_one_or_none=lambda: None)
+
+    async def flush(self):
+        self.flushed += 1
+
+
+def _publishable_qapp(owner_id: uuid.UUID, workspace_id: uuid.UUID):
+    return SimpleNamespace(
+        id=uuid.uuid4(),
+        workspace_id=workspace_id,
+        owner_user_id=owner_id,
+        current_version_id=uuid.uuid4(),
+        visibility="private",
+        published_at=None,
+        updated_at=None,
+    )
+
+
+@pytest.fixture
+def publication(monkeypatch):
+    """`set_visibility` with its two neighbours stubbed and nothing else touched.
+
+    `get_qapp` and `record_audit` are the only two calls that reach beyond the
+    function under test; the gate itself, the stamp pairing and the audit action
+    string all run for real.
+    """
+    from majorana_contracts.enums import Role
+
+    from majorana_api.repos import qapps as repo
+
+    owner_id, workspace_id = uuid.uuid4(), uuid.uuid4()
+    qapp = _publishable_qapp(owner_id, workspace_id)
+    audits: list[str] = []
+
+    async def get_qapp(scope, session, qapp_id):
+        return qapp
+
+    async def record_audit(scope, session, *, action, target_kind, target_id):
+        audits.append(action)
+
+    monkeypatch.setattr(repo, "get_qapp", get_qapp)
+    monkeypatch.setattr(repo, "record_audit", record_audit)
+
+    return SimpleNamespace(
+        repo=repo,
+        qapp=qapp,
+        audits=audits,
+        owner=SimpleNamespace(
+            scope=repo.Scope(user_id=owner_id, workspace_id=workspace_id, role=Role.OWNER)
+        ),
+        stranger=SimpleNamespace(
+            scope=repo.Scope(user_id=uuid.uuid4(), workspace_id=workspace_id, role=Role.OWNER)
+        ),
+    )
+
+
+async def test_publishing_is_refused_until_the_current_version_has_run(publication):
+    """A Qapp reaches `/q/<slug>` only after somebody ran *this* version of it.
+
+    The gate is one `select … limit 1` and it carries three predicates. Only two of
+    them are obvious; the third — that the succeeded execution must belong to
+    `current_version_id` — is the one that keeps a published page from serving code
+    nobody has ever run. Nothing else in the system enforces it: `create_generated`
+    is the only writer of `current_version_id`, so today no second version can exist,
+    and the day one can this assertion is what says the gate already knew.
+
+    Untested before this. The publication path was hand-driven for the first time on
+    2026-08-25 and `set_visibility` had no coverage at all.
+    """
+    probe = _Probe(rows=[])
+
+    with pytest.raises(publication.repo.QappPublicationBlocked) as blocked:
+        await publication.repo.set_visibility(
+            publication.owner.scope, probe, publication.qapp.id, "public"
+        )
+
+    assert "run the current Qapp successfully before publishing it" in str(blocked.value)
+    assert publication.qapp.visibility == "private"
+    assert publication.qapp.published_at is None
+    assert publication.audits == []
+
+    # And the probe asked for the right rows, which is the half an outcome test
+    # cannot see: qapp, THIS version, and a succeeded status.
+    assert len(probe.bound) == 1
+    assert probe.bound[0]["qapp_id_1"] == publication.qapp.id
+    assert probe.bound[0]["qapp_version_id_1"] == publication.qapp.current_version_id
+    assert probe.bound[0]["status_1"] == "succeeded"
+
+
+async def test_a_success_on_an_older_version_does_not_unlock_publication(publication):
+    """The same gate, asked with a succeeded run that belongs to a different version.
+
+    This is the mutation the test above exists to catch, run as its own case: the
+    store holds a succeeded execution for this Qapp, and publication is still
+    refused, because it is not an execution of the version the page would serve.
+    """
+    stale_version = uuid.uuid4()
+    assert stale_version != publication.qapp.current_version_id
+    probe = _Probe(rows=[(publication.qapp.id, stale_version, "succeeded")])
+
+    with pytest.raises(publication.repo.QappPublicationBlocked):
+        await publication.repo.set_visibility(
+            publication.owner.scope, probe, publication.qapp.id, "public"
+        )
+    assert publication.qapp.published_at is None
+
+
+async def test_publishing_stamps_the_pair_the_database_constraint_requires(publication):
+    """`visibility` and `published_at` are set together, never one without the other.
+
+    `ck_qapps_publication_stamp` refuses the row where they disagree, so a bug here
+    surfaces as an integrity error at flush rather than as a wrong page — which is
+    the right failure but a late and confusing one. Asserted at the source instead.
+    """
+    probe = _Probe(rows=[(publication.qapp.id, publication.qapp.current_version_id, "succeeded")])
+
+    result = await publication.repo.set_visibility(
+        publication.owner.scope, probe, publication.qapp.id, "public"
+    )
+
+    assert result.visibility == "public"
+    assert result.published_at is not None
+    assert result.updated_at == result.published_at
+    assert publication.audits == ["qapp.published"]
+    assert probe.flushed == 1
+
+
+async def test_unpublishing_clears_the_stamp_and_never_asks_about_executions(publication):
+    """Going back to private is not gated, and must not be.
+
+    The execution probe exists to stop a page reaching the public gallery unrun.
+    Applying it to the withdrawal would mean a Qapp whose execution history was
+    pruned could never be taken down again, which inverts what the gate is for. The
+    assertion that the probe was not consulted is what pins that.
+    """
+    publication.qapp.visibility = "public"
+    publication.qapp.published_at = dt.datetime.now(dt.timezone.utc)
+    probe = _Probe(rows=[])
+
+    result = await publication.repo.set_visibility(
+        publication.owner.scope, probe, publication.qapp.id, "private"
+    )
+
+    assert result.visibility == "private"
+    assert result.published_at is None
+    assert publication.audits == ["qapp.unpublished"]
+    assert probe.bound == []
+
+
+async def test_only_the_creator_may_publish_and_the_gate_is_never_reached(publication):
+    """Ownership is checked before anything else, including before the probe.
+
+    Two claims in one, and the second is the one worth asserting: a stranger is not
+    merely refused, they never cause the execution lookup to run. Order matters here
+    because `set_visibility` takes a workspace-scoped `get_qapp` — a co-member of the
+    same workspace can read the row, so the owner check is the only thing standing
+    between them and publishing somebody else's page under their own account.
+    """
+    probe = _Probe(rows=[(publication.qapp.id, publication.qapp.current_version_id, "succeeded")])
+
+    with pytest.raises(publication.repo.AuthzError) as refused:
+        await publication.repo.set_visibility(
+            publication.stranger.scope, probe, publication.qapp.id, "public"
+        )
+
+    assert "only the Qapp creator may publish it" in str(refused.value)
+    assert probe.bound == []
+    assert publication.qapp.visibility == "private"
+    assert publication.audits == []
