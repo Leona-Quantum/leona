@@ -49,8 +49,9 @@ export function QappRuntime({
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ inputs }),
         });
-        const initial = await submitted.json() as Execution | { detail?: string };
-        if (!submitted.ok || !("id" in initial)) throw new Error("detail" in initial && initial.detail ? initial.detail : "Execution could not be submitted.");
+        // problem+json: the reason is `title`, not FastAPI's `detail`.
+        const initial = await submitted.json() as Execution | { title?: string };
+        if (!submitted.ok || !("id" in initial)) throw new Error("title" in initial && initial.title ? initial.title : "Execution could not be submitted.");
         let execution = initial;
         for (let attempt = 0; attempt < 150 && !disposed; attempt += 1) {
           if (execution.status === "succeeded" || execution.status === "failed") break;

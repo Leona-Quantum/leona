@@ -37,9 +37,12 @@ export function QappWorkspace({ qappId }: { qappId: string }) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ visibility }),
       });
-      const payload = await response.json() as Qapp | { detail?: string };
+      // The control plane speaks RFC 9457 problem+json, so the human-readable
+      // reason is `title`. FastAPI's `detail` is never on the wire here; reading
+      // it swallows the server's reason and shows the generic fallback instead.
+      const payload = await response.json() as Qapp | { title?: string };
       if (!response.ok || !("id" in payload)) {
-        throw new Error("detail" in payload && payload.detail ? payload.detail : "Visibility could not be changed.");
+        throw new Error("title" in payload && payload.title ? payload.title : "Visibility could not be changed.");
       }
       const qapp = payload;
       setDetail((current) => current ? { ...current, qapp } : current);

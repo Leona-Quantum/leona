@@ -82,8 +82,12 @@ def upgrade() -> None:
         sa.Column("created_by_run_id", postgresql.UUID(as_uuid=True), nullable=False),
         sa.Column("published_at", sa.TIMESTAMP(timezone=True), nullable=True),
         sa.Column("deleted_at", sa.TIMESTAMP(timezone=True), nullable=True),
-        sa.Column("created_at", sa.TIMESTAMP(timezone=True), nullable=False, server_default=sa.func.now()),
-        sa.Column("updated_at", sa.TIMESTAMP(timezone=True), nullable=False, server_default=sa.func.now()),
+        sa.Column(
+            "created_at", sa.TIMESTAMP(timezone=True), nullable=False, server_default=sa.func.now()
+        ),
+        sa.Column(
+            "updated_at", sa.TIMESTAMP(timezone=True), nullable=False, server_default=sa.func.now()
+        ),
         sa.ForeignKeyConstraint(["workspace_id"], ["workspaces.id"]),
         sa.ForeignKeyConstraint(["owner_user_id"], ["users.id"]),
         sa.ForeignKeyConstraint(["created_by_run_id"], ["runs.id"]),
@@ -116,12 +120,24 @@ def upgrade() -> None:
         sa.Column("qubits_estimate", sa.Integer(), nullable=False),
         sa.Column("ui_document", sa.Text(), nullable=False),
         sa.Column("quantum_source", sa.Text(), nullable=False),
-        sa.Column("input_schema", postgresql.JSONB(), nullable=False, server_default=sa.text("'{}'::jsonb")),
-        sa.Column("output_schema", postgresql.JSONB(), nullable=False, server_default=sa.text("'{}'::jsonb")),
+        sa.Column(
+            "input_schema",
+            postgresql.JSONB(),
+            nullable=False,
+            server_default=sa.text("'{}'::jsonb"),
+        ),
+        sa.Column(
+            "output_schema",
+            postgresql.JSONB(),
+            nullable=False,
+            server_default=sa.text("'{}'::jsonb"),
+        ),
         sa.Column("fingerprint", sa.Text(), nullable=False),
         sa.Column("source_artifact_version_id", postgresql.UUID(as_uuid=True), nullable=True),
         sa.Column("generation_prompt", sa.Text(), nullable=False),
-        sa.Column("created_at", sa.TIMESTAMP(timezone=True), nullable=False, server_default=sa.func.now()),
+        sa.Column(
+            "created_at", sa.TIMESTAMP(timezone=True), nullable=False, server_default=sa.func.now()
+        ),
         sa.ForeignKeyConstraint(["qapp_id"], ["qapps.id"], ondelete="CASCADE"),
         sa.ForeignKeyConstraint(["source_artifact_version_id"], ["artifact_versions.id"]),
         sa.UniqueConstraint("qapp_id", "seq", name="uq_qapp_versions_seq"),
@@ -130,10 +146,18 @@ def upgrade() -> None:
         sa.CheckConstraint("seq >= 1", name="ck_qapp_versions_seq"),
         sa.CheckConstraint(_in("framework", _FRAMEWORKS), name="ck_qapp_versions_framework"),
         sa.CheckConstraint("qubits_estimate between 1 and 27", name="ck_qapp_versions_qubits"),
-        sa.CheckConstraint("char_length(ui_document) between 1 and 300000", name="ck_qapp_versions_ui_length"),
-        sa.CheckConstraint("char_length(quantum_source) between 1 and 200000", name="ck_qapp_versions_source_length"),
+        sa.CheckConstraint(
+            "char_length(ui_document) between 1 and 300000", name="ck_qapp_versions_ui_length"
+        ),
+        sa.CheckConstraint(
+            "char_length(quantum_source) between 1 and 200000",
+            name="ck_qapp_versions_source_length",
+        ),
         sa.CheckConstraint("fingerprint ~ '^[0-9a-f]{64}$'", name="ck_qapp_versions_fingerprint"),
-        sa.CheckConstraint("char_length(generation_prompt) between 1 and 20000", name="ck_qapp_versions_prompt_length"),
+        sa.CheckConstraint(
+            "char_length(generation_prompt) between 1 and 20000",
+            name="ck_qapp_versions_prompt_length",
+        ),
     )
     op.create_foreign_key(
         "fk_qapps_current_version",
@@ -159,13 +183,19 @@ def upgrade() -> None:
         sa.Column("sandbox_meta", postgresql.JSONB(), nullable=True),
         sa.Column("started_at", sa.TIMESTAMP(timezone=True), nullable=True),
         sa.Column("finished_at", sa.TIMESTAMP(timezone=True), nullable=True),
-        sa.Column("created_at", sa.TIMESTAMP(timezone=True), nullable=False, server_default=sa.func.now()),
-        sa.Column("updated_at", sa.TIMESTAMP(timezone=True), nullable=False, server_default=sa.func.now()),
+        sa.Column(
+            "created_at", sa.TIMESTAMP(timezone=True), nullable=False, server_default=sa.func.now()
+        ),
+        sa.Column(
+            "updated_at", sa.TIMESTAMP(timezone=True), nullable=False, server_default=sa.func.now()
+        ),
         sa.ForeignKeyConstraint(["workspace_id"], ["workspaces.id"]),
         sa.ForeignKeyConstraint(["user_id"], ["users.id"]),
         sa.ForeignKeyConstraint(["qapp_id"], ["qapps.id"]),
         sa.ForeignKeyConstraint(["qapp_version_id"], ["qapp_versions.id"]),
-        sa.CheckConstraint("status in ('queued','running','succeeded','failed')", name="ck_qapp_executions_status"),
+        sa.CheckConstraint(
+            "status in ('queued','running','succeeded','failed')", name="ck_qapp_executions_status"
+        ),
     )
     op.create_index(
         "ix_qapp_executions_workspace_created",

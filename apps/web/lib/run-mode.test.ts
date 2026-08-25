@@ -20,6 +20,32 @@ test("Qapp documents receive the network-blocking policy before generated head c
   assert.match(document, /window\.qapp=Object\.freeze/);
 });
 
+test("no generated document can place the policy or the bridge where it cannot run", () => {
+  // Each of these passed the server-side document guard and defeated the policy
+  // when the frame builder spliced into the generated document's own `<head>`.
+  // The controls must now precede every byte the model wrote, in all of them.
+  const hostile = [
+    '<!--<head>--><script>1<\/script>',
+    '<script>var s="<head>";<\/script>',
+    '<div data-x="<head>"><script>1<\/script></div>',
+    '<script>1<\/script><head></head><body>x</body>',
+  ];
+  for (const ui of hostile) {
+    const document = qappFrameDocument(ui, "c1");
+    const policy = document.indexOf("Content-Security-Policy");
+    const bridge = document.indexOf("window.qapp=Object.freeze");
+    assert.ok(policy > -1, `policy missing for ${ui}`);
+    assert.ok(bridge > -1, `bridge missing for ${ui}`);
+    // Nothing the model wrote may be parsed before either control.
+    assert.ok(policy < document.indexOf(ui), `policy follows generated markup for ${ui}`);
+    assert.ok(bridge < document.indexOf(ui), `bridge follows generated markup for ${ui}`);
+    // And neither control may sit inside an unterminated comment the model opened.
+    const before = document.slice(0, policy);
+    assert.equal((before.match(/<!--/g) ?? []).length, (before.match(/-->/g) ?? []).length,
+      `policy sits inside a generated comment for ${ui}`);
+  }
+});
+
 test("the Qapp parent bridge accepts only bounded messages for its own channel", () => {
   assert.equal(isQappExecuteMessage({ channel: "c", type: "qapp.execute", requestId: "1", inputs: { n: 2 } }, "c"), true);
   assert.equal(isQappExecuteMessage({ channel: "other", type: "qapp.execute", requestId: "1", inputs: {} }, "c"), false);

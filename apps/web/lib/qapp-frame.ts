@@ -64,12 +64,31 @@ function bridgeScript(channel: string): string {
   })();</script>`;
 }
 
+/**
+ * Wrap a generated document so the policy and the bridge are parsed first.
+ *
+ * This deliberately does NOT look for the generated document's own `<head>` and
+ * splice into it. Splicing means an attacker-controlled string decides where our
+ * policy lands, and a regex cannot tell markup from a comment, a JS string or an
+ * attribute value. All four of these pass the server-side document guard and
+ * each one defeats the policy a different way:
+ *
+ *   `<!--<head>-->`                  the meta and the whole bridge land inside a comment
+ *   `<script>var s="<head>";</script>`  they land inside a JavaScript string literal
+ *   `<div data-x="<head>">`          they land inside an attribute value
+ *   `<script>…</script><head>`       the generated script runs before the policy exists
+ *
+ * Wrapping removes the choice: the controls are always the first thing in the
+ * head of a document we authored, and the generated markup can only follow them.
+ * The parser folds a generated `<!doctype>`, `<html>`, `<head>` or `<body>` that
+ * arrives inside the body — `<title>` and `<style>` are still honoured there — so
+ * an ordinary well-formed generated page renders unchanged.
+ *
+ * The iframe `sandbox` attribute, not this policy, is the security boundary; the
+ * policy is the layer that stops ordinary subresource and fetch egress, and it
+ * cannot do that from inside a comment.
+ */
 export function qappFrameDocument(uiDocument: string, channel: string): string {
   const controls = `<meta http-equiv="Content-Security-Policy" content="${QAPP_FRAME_CSP}"><meta name="referrer" content="no-referrer">${bridgeScript(channel)}`;
-  const head = /<head(?:\s[^>]*)?>/i.exec(uiDocument);
-  if (head?.index !== undefined) {
-    const offset = head.index + head[0].length;
-    return `${uiDocument.slice(0, offset)}${controls}${uiDocument.slice(offset)}`;
-  }
   return `<!doctype html><html><head>${controls}</head><body>${uiDocument}</body></html>`;
 }

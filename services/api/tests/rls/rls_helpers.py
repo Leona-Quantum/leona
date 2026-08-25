@@ -183,7 +183,13 @@ async def _build_tenant(session: AsyncSession, tag: str) -> TenantRows:
             "(id, workspace_id, owner_user_id, slug, title, description, created_by_run_id) "
             "values (:id, :w, :u, :slug, 'RLS Qapp', 'private probe', :r)"
         ),
-        {"id": qapp_id, "w": ws.id, "u": owner.id, "slug": f"rls-qapp-{tag}-{uuid.uuid4().hex[:8]}", "r": run.id},
+        {
+            "id": qapp_id,
+            "w": ws.id,
+            "u": owner.id,
+            "slug": f"rls-qapp-{tag}-{uuid.uuid4().hex[:8]}",
+            "r": run.id,
+        },
     )
     await session.execute(
         text(
@@ -191,7 +197,7 @@ async def _build_tenant(session: AsyncSession, tag: str) -> TenantRows:
             "(id, qapp_id, seq, framework, qubits_estimate, ui_document, quantum_source, "
             "input_schema, output_schema, fingerprint, generation_prompt) values "
             "(:id, :q, 1, 'qiskit', 2, '<html></html>', 'RESULT = {}', "
-            "'{\"type\":\"object\"}'::jsonb, '{\"type\":\"object\"}'::jsonb, :fp, 'probe')"
+            '\'{"type":"object"}\'::jsonb, \'{"type":"object"}\'::jsonb, :fp, \'probe\')'
         ),
         {"id": qapp_version_id, "q": qapp_id, "fp": _hex64(f"qapp-{tag}")},
     )
