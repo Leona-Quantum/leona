@@ -79,9 +79,7 @@ anchors built with `createElement` and given an `href` via `setAttribute`, `meta
 assembled in script, `eval` of an encoded payload. Twelve of fifteen are now blocked. The remaining
 three (`window["loc"+"ation"]` and its kin) are pinned as a test asserting that they pass, because
 these are regular expressions over JavaScript and string concatenation is not a pattern. Nothing
-holds those three; they are the accepted residual risk above. The residual risk that remains after all of this is a
-single one-shot GET to an attacker URL carrying what a viewer typed into that Qapp's own inputs,
-with no page rendered afterwards — accepted, for non-secret UI inputs, under the ruling above.
+holds those three; they are the accepted residual risk stated above.
 
 Quantum source never enters the public Qapp response. The worker reads it from the scoped repository
 and executes it through `majorana_sandbox.run`, preserving static guard, resource preflight,
