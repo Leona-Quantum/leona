@@ -325,9 +325,16 @@ export const DECLARED_SHARED_SOURCES: Readonly<Record<string, readonly string[]>
   // never reaches it. **A negative from a title-shaped search is weaker evidence
   // than this list was treating it as** — the remaining three are worth re-running
   // against what a paper DOES rather than what it is called.
+  //
+  // **`vqe-spin-adapted` left this list by being anchored, not by finding a paper.**
+  // It is now an entry on `ansatz-construction`, so it is no longer unanchored and
+  // this declaration — which is about unanchored records only — no longer covers
+  // it. The share itself is unchanged: all three still cite arXiv:2103.08505, and
+  // the reason above still applies to the two that remain. Anchoring the third is
+  // exactly the "re-run against what a paper DOES" the paragraph above asks for,
+  // done from the record's own side rather than the paper's.
   "https://arxiv.org/abs/2103.08505": [
     "vqe-active-space",
-    "vqe-spin-adapted",
     "vqe-warm-start",
   ],
   // Zoo-parity intake. Shor 1995 is one paper with two algorithms in its own

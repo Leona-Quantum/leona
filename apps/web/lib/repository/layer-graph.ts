@@ -6986,7 +6986,18 @@ export const LAYER_GRAPH: LayerGraph = {
     // under ADR-0026, belonging to `state-preparation`, and none of the three
     // methods there is the Givens-rotation construction. Not authored in this pass
     // because a second extraction needs its own node, not a second cross-link.
-    entries: ["trotter-suzuki-simulation", "hamiltonian-simulation-ising", "correlated-fermion-simulation"],
+    //
+    // `quantum-kicked-rotator-simulation` added this pass, on the same footing as
+    // `hamiltonian-simulation-ising` beside it: a named model whose evolution is
+    // implemented on the device. Its record states the problem as simulating "the
+    // quantum kicked rotator model — used to study quantum chaos, localization and
+    // the Anderson transition — with a quantum algorithm that scales better than
+    // classical simulation of the same model". Worth stating plainly rather than
+    // leaving for someone to notice: the kicked rotator is a driven system, so its
+    // propagator is a periodic product of kick and free steps rather than a single
+    // $e^{-iHt}$. It sits here because this slot already holds model-specific
+    // simulations, not because it matches the contract's closed form exactly.
+    entries: ["trotter-suzuki-simulation", "hamiltonian-simulation-ising", "correlated-fermion-simulation", "quantum-kicked-rotator-simulation"],
   },
   {
     kind: "method",
@@ -8972,6 +8983,37 @@ export const LAYER_GRAPH: LayerGraph = {
     },
     whyALayer: "Four genuinely different families compete for this slot and none of them dominates, because they do not even promise the same kind of thing. A variational search returns a rigorous upper bound on the energy for any trial state it reaches — that much is the variational principle and needs no assumption — but nothing bounds how close to the true minimum it gets, or how many turns it takes to get there. Phase estimation returns an actual eigenvalue to a precision you can prove, and pays for it in coherent circuit depth far beyond what present hardware runs, plus a trial state whose overlap with the ground state is not negligible. Adiabatic preparation trades that depth for a runtime governed by the spectral gap, which is exactly the quantity nobody can bound in general. Imaginary-time methods converge without any optimiser at all, and pay in ancillas or in tomography of local domains. So the choice here is forced by which resource you are short of — depth, shots, coherence, or a proof — rather than settled by theory, and a reader standing on this slot is choosing between incomparable guarantees. That is the condition a layer has to meet. **Three of those four families are drawn here; adiabatic preparation is not, and its absence is a refusal rather than a gap.** W21 declined it a node on relevance: Farhi et al. prepare a ground state, they do not estimate an energy, so the contract does not meet — and stretching a contract to admit a family this paragraph names would be the easier and worse move. Until session 15 only two families were drawn while this paragraph named four, which is this test failing quietly: a justification describing a population the graph does not have is a sentence doing the work of methods that are not there.",
     whyALayerJa: "この層には本質的に異なる四つの系統が競合しており、いずれも他を圧倒しません。そもそも約束している事柄の種類が違うからです。変分的な探索は、到達したどの試行状態についてもエネルギーの厳密な上界を返します。これは変分原理そのものであって仮定を要しません。しかし真の最小値にどれだけ近づけるか、そこに至るまで何回まわるかについては、何も保証がありません。位相推定は固有値そのものを証明可能な精度で返しますが、その代償として現在のハードウェアが実行できる範囲をはるかに超えるコヒーレントな回路深さと、基底状態との重なりが無視できない試行状態を要求します。断熱的な準備はその深さをスペクトルギャップに支配される実行時間と引き換えにしますが、そのギャップこそ一般には誰も評価できない量です。虚時間発展系の方式は最適化器を一切使わずに収束しますが、補助量子ビットや局所領域のトモグラフィという形で代償を払います。つまりここでの選択は、深さ、ショット数、コヒーレンス、証明のうち何が不足しているかによって決まるのであって、理論によって決着がついているわけではありません。この層に立つ読者は、互いに比較できない保証のあいだで選ぶことになります。層が層であるための条件は、まさにこれです。**この四系統のうち三つが本層に描かれています。断熱的な準備は描かれていませんが、それは欠落ではなく拒否です。** W21 は関連性を理由にノードを与えませんでした。Farhi らは基底状態を準備するのであってエネルギーを推定するのではなく、したがって層の入出力が噛み合わないからです。本段落が名を挙げている系統を受け入れるために層の契約を引き伸ばすのは、より容易で、より悪い手です。セッション 15 までは、この段落が四系統を名指す一方で描かれていた系統は二つでした。これはこの試験が静かに失格していた状態です。グラフが持たない構成員について語る正当化は、そこに存在しない手法の仕事を文章が代わりに引き受けているということだからです。",
+    // Four corpus records reach this slot only through here. Each is anchored on
+    // what its own record says it returns, matched against this slot's contract —
+    // *a scalar estimate of the lowest eigenvalue* — and not on the subject its
+    // paper is about, which ADR-0026 permits and which is why two of them are
+    // filed in the corpus under chemistry and one under biology:
+    //
+    // - `coarse-grained-vqe-intermolecular-interactions` — its record states the
+    //   problem as "determine the ground state of weakly-interacting,
+    //   non-covalently bonded molecules". That is this slot verbatim.
+    // - `projection-based-embedding-vqe` — a quantum treatment of a strongly
+    //   correlated fragment embedded in a classical environment; the quantum half
+    //   returns the fragment's ground-state energy.
+    // - `protein-folding-variational` — the record is explicit that the folding
+    //   question is "posed here on the model Hamiltonian the paper defines for a
+    //   chain of N monomers placed on a tetrahedral lattice". The structure is
+    //   read off that Hamiltonian's ground state, so the capability realised is
+    //   this one even though the paper's subject is protein structure.
+    // - `double-bracket-diagonalization` — diagonalising a Hamiltonian returns
+    //   the lowest eigenvalue among the rest, and the record positions itself
+    //   against variational ground-state search by name ("without resorting to
+    //   brute-force optimization of an unstructured variational circuit, which
+    //   runs into barren plateaus"), which is the competition this slot holds.
+    //
+    // Deliberately NOT anchored here, and why, so the next pass does not redo it:
+    // `quantum-adiabatic-evolution` (its record is framed as optimisation over a
+    // problem Hamiltonian and returns a minimising assignment, not a stated-error
+    // energy estimate), `top-eigenvector-estimation` (largest eigenvalue, and the
+    // output is a classical description of a vector), `vqe-active-space` and
+    // `vqe-qubit-tapering` (both reduce the Hamiltonian *before* this slot runs —
+    // they are a missing slot, not this one).
+    entries: ["coarse-grained-vqe-intermolecular-interactions", "projection-based-embedding-vqe", "protein-folding-variational", "double-bracket-diagonalization"],
   },
   {
     kind: "capability",
@@ -9002,6 +9044,24 @@ export const LAYER_GRAPH: LayerGraph = {
     },
     whyALayer: "The ansatz is the one choice that bounds everything after it, and the families answering it fail in different ways rather than in the same way by different amounts. A chemically motivated family is built from excitations out of a reference determinant, so the state you want is in it by construction and the circuit is deep. A hardware-native family is built from the gates the machine actually has, so it is shallow and there is no argument that the state you want is in it at all. An adaptive family refuses to fix the structure in advance and grows it operator by operator from measured gradients, which buys a compact circuit and pays for it in measurements before every step. Expressibility, depth, and measurement overhead are three different currencies, no family is cheap in all three, and which one binds depends on the machine rather than on the molecule — so a reader has a real choice to make here and the literature has not made it for them.",
     whyALayerJa: "アンザッツは、それ以降のすべてを規定してしまう唯一の選択です。しかもこの層に答える各系統は、同じ失敗を程度の差で犯すのではなく、それぞれ別の仕方で失敗します。化学的な動機による系統は、参照配置からの励起によって構成されるため、求める状態が構成上その中に含まれる代わりに回路が深くなります。ハードウェア由来の系統は、装置が実際に備えるゲートから構成されるため浅く済みますが、求める状態がそもそもその中にあるという論拠がありません。適応的な系統は構造を事前に固定することを拒み、測定した勾配にもとづいて演算子を一つずつ足して育てます。これは回路の簡潔さを買う代わりに、各段の前に測定を要します。表現力、深さ、測定回数はそれぞれ別の通貨であり、三つすべてが安い系統は存在せず、どれが律速になるかは分子ではなく装置によって決まります。したがって読者にはここで実際の選択があり、文献はそれを代わりに決めてはくれません。",
+    // Both records return a circuit family with its angles left open, which is what
+    // this slot's contract asks for — not a circuit, but "the set of states the
+    // later optimisation is allowed to search".
+    //
+    // - `adapt-qaoa` — its record states the problem as "find a better
+    //   parameterized ansatz for [QAOA]" and the method as building that ansatz
+    //   "step by step for the specific problem instance". It joins the six
+    //   ADAPT-family builders already standing as methods in this slot.
+    // - `vqe-spin-adapted` — spin-complemented generators are a choice of which
+    //   generators the family is built from, made to keep the search inside a
+    //   target total-spin sector. That is a constraint on the state set, which is
+    //   this slot's output, not on the optimiser that later searches it.
+    //
+    // `vqe-warm-start` is NOT here: initialising the parameters presupposes the
+    // family already chosen, so it belongs after this slot rather than in it, and
+    // it does not meet `parameter-optimization`'s contract either — that slot
+    // returns "the family collapsed to a member", which an initial guess is not.
+    entries: ["adapt-qaoa", "vqe-spin-adapted"],
   },
   {
     kind: "capability",
