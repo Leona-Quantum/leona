@@ -341,6 +341,12 @@ async def create_execution(
     return execution
 
 
+#: How long a `running` Qapp execution may sit before another delivery may
+#: re-claim it. An execution is capped at 120s of sandbox and the job lease at
+#: 120s more, so five minutes is comfortably past any live delivery while still
+#: short enough that a reader is not left staring at a dead one.
+EXECUTION_STALE_AFTER = dt.timedelta(minutes=5)
+
 #: The qubit lane this deployment runs (`majorana_sandbox.spec::DEFAULT_QUBIT_CEILING`,
 #: AD-12). Restated here rather than imported because the repository layer must not
 #: depend on the sandbox package; `test_qapp_persistence_bound_matches_the_sandbox_lane`
@@ -453,9 +459,13 @@ async def get_execution_source(
 
 
 async def mark_execution_running(
-    scope: Scope, session: AsyncSession, execution_id: uuid.UUID
+    scope: Scope,
+    session: AsyncSession,
+    execution_id: uuid.UUID,
+    *,
+    stale_after: dt.timedelta = EXECUTION_STALE_AFTER,
 ) -> bool:
-    """Claim a queued execution. True only if THIS call made the transition.
+    """Claim an execution for THIS delivery. True only if this call claimed it.
 
     Returning the row was not enough for the one caller that matters. A job the
     queue redelivers while the first delivery is still working finds the row
@@ -464,10 +474,31 @@ async def mark_execution_running(
     did" and started a second paid sandbox alongside the first. The boolean is
     the whole answer, and it is decided under the `FOR UPDATE` this already
     takes, so two deliveries racing here cannot both be told yes.
+
+    **`stale_after` is why this is not simply `status == QUEUED`.** Refusing
+    every non-queued row closes the double-spend and opens a worse hole in its
+    place: `recover_stale_jobs` requeues a job only when its LEASE HAS EXPIRED,
+    which means the previous worker died mid-execution. That redelivery would
+    then find `running`, decline, and return normally — the queue would count
+    the job done and the execution would sit in `running` with no result and no
+    error, for ever, while the reader's page polled itself out. Trading a
+    double charge for a permanently stuck row is not a fix.
+
+    So a `running` row is re-claimable once it is older than any execution could
+    legitimately still be. The window is generous on purpose: an execution is
+    capped at 120s of sandbox and a lease at 120s more, so anything past
+    `EXECUTION_STALE_AFTER` is not a live delivery, it is a dead one. Inside the
+    window the answer stays no, which is the case that was costing money.
     """
     require_write(scope)
     row = await get_execution(scope, session, execution_id, for_update=True)
-    if row.status != QappExecutionStatus.QUEUED.value:
+    if row.status == QappExecutionStatus.RUNNING.value:
+        started = row.started_at
+        if started is not None and started.tzinfo is None:
+            started = started.replace(tzinfo=dt.timezone.utc)
+        if started is not None and touched_now() - started < stale_after:
+            return False
+    elif row.status != QappExecutionStatus.QUEUED.value:
         return False
     row.status = QappExecutionStatus.RUNNING.value
     row.started_at = touched_now()

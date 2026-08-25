@@ -350,3 +350,97 @@ async def test_a_redelivered_execution_does_not_run_the_paid_sandbox_twice(monke
 
     assert runs == [], f"the redelivery did work it should have skipped: {runs}"
     assert session.commits == 0, "a skipped redelivery must not commit a claim it did not make"
+
+
+async def _run_redelivery(monkeypatch, *, status, started_at, claimed):
+    """One redelivery against an execution in a given state. Returns what ran."""
+    execution_id = uuid.uuid4()
+    qapp_id = uuid.uuid4()
+    execution = SimpleNamespace(
+        id=execution_id,
+        qapp_id=qapp_id,
+        status=status,
+        started_at=started_at,
+        inputs={"qubits": 2},
+    )
+    version = SimpleNamespace(
+        id=uuid.uuid4(),
+        qapp_id=qapp_id,
+        quantum_source="RESULT = {}",
+        qubits_estimate=2,
+        fingerprint="a" * 64,
+        output_schema={"type": "object", "properties": {}, "required": []},
+    )
+    ran = []
+
+    async def get_source(*_args):
+        return execution, version
+
+    async def mark_running(*_args, **_kwargs):
+        return claimed
+
+    async def finish(*_args, **_kwargs):
+        ran.append("finished")
+
+    async def record_usage(*_args, **_kwargs):
+        return None
+
+    class CountingSandbox:
+        provider = "counting"
+
+        async def _execute(self, spec):
+            ran.append("sandbox")
+            return SandboxResult(
+                ok=True,
+                exit_code=0,
+                duration_ms=1,
+                stdout="",
+                stderr="",
+                provider="counting",
+                protected_result={"result": {}},
+            )
+
+    monkeypatch.setattr(handlers.qapps_repo, "get_execution_source", get_source)
+    monkeypatch.setattr(handlers.qapps_repo, "mark_execution_running", mark_running)
+    monkeypatch.setattr(handlers.qapps_repo, "finish_execution", finish)
+    monkeypatch.setattr(handlers.usage_repo, "record_usage", record_usage)
+
+    await handlers.handle_qapp_execute(
+        Session(),
+        {
+            "execution_id": str(execution_id),
+            "workspace_id": str(uuid.uuid4()),
+            "user_id": str(uuid.uuid4()),
+        },
+        sandbox=CountingSandbox(),
+    )
+    return ran
+
+
+async def test_a_live_redelivery_is_refused_but_a_dead_one_is_re_run(monkeypatch):
+    """Both halves, because fixing one of them alone breaks the other.
+
+    Refusing every non-queued row stops the double charge and creates a worse
+    bug: `recover_stale_jobs` requeues a job only when its LEASE HAS EXPIRED, so
+    the redelivery it produces is the one case where the previous worker really
+    did die mid-execution. Declining that one leaves the execution `running`
+    with no result and no error for ever, while the queue counts the job done.
+
+    `mark_execution_running` decides which it is from the row's age; this asserts
+    the handler acts on that answer in both directions.
+    """
+    fresh = dt.datetime.now(dt.timezone.utc)
+    refused = await _run_redelivery(monkeypatch, status="running", started_at=fresh, claimed=False)
+    assert refused == [], f"a live delivery's work was duplicated: {refused}"
+
+    dead = await _run_redelivery(
+        monkeypatch,
+        status="running",
+        started_at=fresh - dt.timedelta(minutes=30),
+        claimed=True,
+    )
+    assert "sandbox" in dead, (
+        "an execution abandoned by a dead worker was never re-run — it would sit "
+        "in 'running' with no result and no error while the queue counted the job done"
+    )
+    assert "finished" in dead

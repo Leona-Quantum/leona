@@ -7,6 +7,12 @@ import math
 import re
 from typing import Any
 
+#: Ceiling on the magnitude of a numeric input when its schema declares no
+#: `minimum`/`maximum`. Generous — a 27-qubit lane has no legitimate parameter
+#: anywhere near it — and its job is only to stop an undeclared bound meaning
+#: *no* bound. A schema that needs a wider range says so explicitly.
+MAX_NUMERIC_MAGNITUDE = 1_000_000_000
+
 _SCALARS = {"string", "number", "integer", "boolean"}
 _PROPERTY_KEYS = {
     "type",
@@ -39,7 +45,17 @@ _FORBIDDEN_UI_PATTERNS: tuple[tuple[re.Pattern[str], str], ...] = (
     (
         re.compile(
             r"(?:\b(?:fetch|sendBeacon|postMessage|importScripts)\s*\(|"
-            r"\b(?:new\s+)?(?:XMLHttpRequest|WebSocket|EventSource|Worker|SharedWorker)\s*\()",
+            r"\b(?:new\s+)?(?:XMLHttpRequest|WebSocket|EventSource|Worker|SharedWorker)\s*\(|"
+            # WebRTC, which no CSP directive reaches. `connect-src` does not
+            # govern RTCPeerConnection in any browser, and Permissions-Policy
+            # denying camera and microphone does not stop a data channel or the
+            # STUN request that carries bytes to a server of the author's
+            # choosing. So for this one family the pattern list is not
+            # defence-in-depth behind a boundary — it is the only mention
+            # anywhere.
+            r"\b(?:new\s+)?RTC(?:PeerConnection|DataChannel|SessionDescription|IceCandidate)\b|"
+            r"\b(?:webkitRTCPeerConnection|mozRTCPeerConnection)\b|"
+            r"\bnavigator\s*\.\s*mediaDevices\b)",
             re.IGNORECASE,
         ),
         "direct browser communication APIs",
@@ -235,9 +251,17 @@ def validate_qapp_inputs(schema: dict[str, Any], inputs: dict[str, Any]) -> None
             if "enum" in definition and item not in definition["enum"]:
                 raise ValueError(f"Qapp input {name} is not an allowed value")
             if scalar_kind in {"number", "integer"}:
-                if "minimum" in definition and item < definition["minimum"]:
+                # A DEFAULT bound when the schema declares none, exactly as
+                # `maxLength` defaults to 4000 and `maxItems` to 100 above. Those
+                # two had a default and numerics did not, which meant a generated
+                # schema that simply omitted `maximum` — nothing requires one —
+                # accepted any integer a visitor cared to send, including one used
+                # by the program as a problem size. The qubit preflight cannot
+                # catch that: it checks the version's frozen generation-time
+                # estimate, never the value that arrives at execution.
+                if item < definition.get("minimum", -MAX_NUMERIC_MAGNITUDE):
                     raise ValueError(f"Qapp input {name} is below its minimum")
-                if "maximum" in definition and item > definition["maximum"]:
+                if item > definition.get("maximum", MAX_NUMERIC_MAGNITUDE):
                     raise ValueError(f"Qapp input {name} is above its maximum")
             if scalar_kind == "string":
                 if len(item) < int(definition.get("minLength", 0)) or len(item) > int(
