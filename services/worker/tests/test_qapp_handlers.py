@@ -271,4 +271,8 @@ async def test_qapp_execution_uses_guarded_sandbox_and_persists_only_protected_r
     assert captured["error_code"] is None
     assert captured["spec"].qubits_estimate == 2
     assert "QAPP_INPUTS" in captured["spec"].trusted_setup
+    # The result path must name this execution. A constant collides whenever two
+    # executions share a filesystem, and Qapp executions are cross-tenant by
+    # design, so one caller could read another's result.
+    assert execution_id.hex in captured["spec"].protected_result_path
     assert captured["sandbox_meta"]["provider"] == "fake"

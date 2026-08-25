@@ -1892,7 +1892,12 @@ async def handle_qapp_execute(
                 timeout_s=120,
                 qubits_estimate=version.qubits_estimate,
                 trusted_setup=trusted_setup,
-                protected_result_path="/tmp/leona-qapp-result.json",
+                # Unique per execution, like the smoke path above and
+                # `runtime_ports.py`'s ordinary run path. A constant collides
+                # whenever two executions share a filesystem — which the local
+                # provider does, and Qapp executions are cross-tenant by design,
+                # so the constant let one caller read another's result.
+                protected_result_path=f"/tmp/leona-qapp-result-{execution_id.hex}.json",
                 source_fingerprint=version.fingerprint,
                 trusted_observer="# RESULT is captured by the provider-owned wrapper.",
             ),
