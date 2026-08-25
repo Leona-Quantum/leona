@@ -24,13 +24,14 @@ saves the resulting evidence.
   rewrite boundaries on the qubits they touch. This surface does not claim
   hardware routing or device-native optimization.
 - The compression panel can also queue a bounded circuit IR to the Worker for
-  Qiskit, pytket, PennyLane, or PyZX compilation. Studio sends no user source
-  code in this lane, keeps the returned circuit as a preview until the user
-  explicitly applies it, and then regenerates every framework draft. Inputs
-  are limited to 64 qubits and 1,024 built-in operations; PyZX additionally
-  accepts only its smaller Clifford+T-compatible subset. Compiler output is an
-  equivalence claim up to global phase, not verification evidence. Applying it
-  makes prior evidence stale and requires a fresh `Verify & save` run.
+  Qiskit, Cirq, pytket, PennyLane, PyZX, or BQSKit compilation. Studio sends no
+  user source code in this lane, keeps the returned circuit as a preview until
+  the user explicitly applies it, and then regenerates every framework draft.
+  Inputs are limited to 64 qubits and 1,024 built-in operations; PyZX
+  additionally accepts only its smaller Clifford+T-compatible subset. Compiler
+  output is an equivalence claim up to global phase, not verification evidence.
+  Applying it makes prior evidence stale and requires a fresh `Verify & save`
+  run.
 - `Simulate` opens an artifact-owned CPU surface. It executes only the parsed,
   bounded gate model in the browser for saved artifacts, then records the
   source fingerprint, inputs, and sampled result locally. It never starts
