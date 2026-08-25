@@ -1,6 +1,7 @@
 """Role gates fail CLOSED before any statement is issued: viewers cannot write,
 members cannot administer."""
 
+import datetime as dt
 import uuid
 
 import pytest
@@ -13,6 +14,7 @@ from majorana_api.repos import (
     artifacts,
     audit,
     folders,
+    qapps,
     runs,
     usage,
     workspaces,
@@ -66,6 +68,39 @@ VIEWER_BLOCKED_WRITES = [
         tool_call_id="call",
         name="request_plan",
         arguments={},
+    ),
+    lambda s, db: qapps.create_generated(
+        s,
+        db,
+        run_id=uuid.uuid4(),
+        title="Qapp",
+        description="Generated Qapp",
+        framework="qiskit",
+        qubits_estimate=2,
+        ui_document="<html></html>",
+        quantum_source="RESULT = {}",
+        input_schema={"type": "object"},
+        output_schema={"type": "object"},
+        generation_prompt="build an app",
+        source_artifact_version_id=None,
+    ),
+    lambda s, db: qapps.reserve_execution_slot(
+        s,
+        db,
+        since=dt.datetime.now(dt.UTC),
+        limit=60,
+        qapp_id=uuid.uuid4(),
+        qapp_limit=200,
+        deployment_limit=600,
+    ),
+    lambda s, db: qapps.mark_execution_running(s, db, uuid.uuid4()),
+    lambda s, db: qapps.finish_execution(
+        s,
+        db,
+        uuid.uuid4(),
+        result=None,
+        error_code="failed",
+        sandbox_meta=None,
     ),
 ]
 

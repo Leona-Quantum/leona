@@ -415,14 +415,14 @@ async def _enforce_execute_backstop(
     identity: CurrentIdentity,
     settings: Settings,
 ) -> None:
-    if body.mode not in (RunMode.EXECUTE, RunMode.AUTO):
+    if body.mode not in (RunMode.EXECUTE, RunMode.QAPP, RunMode.AUTO):
         return
     since = dt.datetime.now(dt.timezone.utc) - EXECUTE_BACKSTOP_WINDOW
     # Still per WORKSPACE: backs only `EXECUTE_BACKSTOP_LIMIT` below, which
     # ai-ops 86 leaves untouched. Do not read `submitted` out of this dict — the
     # combined EXECUTE+AUTO ceiling is the per-account reservation further down.
     counts = await runs_repo.count_runs_by_mode_since(scope, session, since)
-    executed = counts.get(RunMode.EXECUTE.value, 0)
+    executed = counts.get(RunMode.EXECUTE.value, 0) + counts.get(RunMode.QAPP.value, 0)
 
     # The tier gate runs FIRST, because it is the smaller number and the one the
     # user recognises. A metered account that has spent its week should read
@@ -437,7 +437,7 @@ async def _enforce_execute_backstop(
     user, _workspace = identity
     tier = tier_of(user, settings)
     limits = limits_for(tier)
-    if body.mode == RunMode.EXECUTE:
+    if body.mode in (RunMode.EXECUTE, RunMode.QAPP):
         # Reserved under the account's lock rather than merely counted: two
         # submissions at the boundary used to read the same number and both
         # pass, and this is the gate with provider spend behind it. The worker's
@@ -460,7 +460,7 @@ async def _enforce_execute_backstop(
                 reserved=reached.reserved,
             ) from reached
 
-    if body.mode == RunMode.EXECUTE and executed >= EXECUTE_BACKSTOP_LIMIT:
+    if body.mode in (RunMode.EXECUTE, RunMode.QAPP) and executed >= EXECUTE_BACKSTOP_LIMIT:
         raise _backstop_refusal(
             "execute_backstop_exhausted", executed, EXECUTE_BACKSTOP_LIMIT, held_by="workspace"
         )

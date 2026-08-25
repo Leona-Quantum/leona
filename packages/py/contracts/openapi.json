@@ -3100,6 +3100,414 @@
         "title": "PublicCatalogEntry",
         "type": "object"
       },
+      "PublicQapp": {
+        "additionalProperties": false,
+        "description": "Allowlisted public projection; never exposes executable quantum source.",
+        "properties": {
+          "description": {
+            "title": "Description",
+            "type": "string"
+          },
+          "fingerprint": {
+            "title": "Fingerprint",
+            "type": "string"
+          },
+          "framework": {
+            "$ref": "#/components/schemas/Framework"
+          },
+          "input_schema": {
+            "additionalProperties": true,
+            "title": "Input Schema",
+            "type": "object"
+          },
+          "output_schema": {
+            "additionalProperties": true,
+            "title": "Output Schema",
+            "type": "object"
+          },
+          "published_at": {
+            "format": "date-time",
+            "title": "Published At",
+            "type": "string"
+          },
+          "qubits_estimate": {
+            "maximum": 27,
+            "minimum": 1,
+            "title": "Qubits Estimate",
+            "type": "integer"
+          },
+          "slug": {
+            "title": "Slug",
+            "type": "string"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          },
+          "ui_document": {
+            "title": "Ui Document",
+            "type": "string"
+          },
+          "version": {
+            "minimum": 1,
+            "title": "Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "slug",
+          "title",
+          "description",
+          "framework",
+          "qubits_estimate",
+          "ui_document",
+          "input_schema",
+          "output_schema",
+          "version",
+          "fingerprint",
+          "published_at"
+        ],
+        "title": "PublicQapp",
+        "type": "object"
+      },
+      "Qapp": {
+        "additionalProperties": false,
+        "description": "Owner-facing Qapp resource. Generated UI and quantum source are versioned.",
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "created_by_run_id": {
+            "format": "uuid",
+            "title": "Created By Run Id",
+            "type": "string"
+          },
+          "current_version_id": {
+            "format": "uuid",
+            "title": "Current Version Id",
+            "type": "string"
+          },
+          "description": {
+            "title": "Description",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "owner_user_id": {
+            "format": "uuid",
+            "title": "Owner User Id",
+            "type": "string"
+          },
+          "published_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Published At"
+          },
+          "slug": {
+            "title": "Slug",
+            "type": "string"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          },
+          "visibility": {
+            "$ref": "#/components/schemas/Visibility"
+          },
+          "workspace_id": {
+            "format": "uuid",
+            "title": "Workspace Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "workspace_id",
+          "owner_user_id",
+          "slug",
+          "title",
+          "description",
+          "visibility",
+          "current_version_id",
+          "created_by_run_id",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "Qapp",
+        "type": "object"
+      },
+      "QappExecution": {
+        "additionalProperties": false,
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "error_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Error Code"
+          },
+          "finished_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Finished At"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "inputs": {
+            "additionalProperties": true,
+            "title": "Inputs",
+            "type": "object"
+          },
+          "qapp_id": {
+            "format": "uuid",
+            "title": "Qapp Id",
+            "type": "string"
+          },
+          "qapp_version_id": {
+            "format": "uuid",
+            "title": "Qapp Version Id",
+            "type": "string"
+          },
+          "result": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Result"
+          },
+          "started_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Started At"
+          },
+          "status": {
+            "$ref": "#/components/schemas/QappExecutionStatus"
+          }
+        },
+        "required": [
+          "id",
+          "qapp_id",
+          "qapp_version_id",
+          "status",
+          "inputs",
+          "created_at"
+        ],
+        "title": "QappExecution",
+        "type": "object"
+      },
+      "QappExecutionStatus": {
+        "enum": [
+          "queued",
+          "running",
+          "succeeded",
+          "failed"
+        ],
+        "title": "QappExecutionStatus",
+        "type": "string"
+      },
+      "QappGenerated": {
+        "additionalProperties": false,
+        "properties": {
+          "qapp_id": {
+            "format": "uuid",
+            "title": "Qapp Id",
+            "type": "string"
+          },
+          "run_id": {
+            "format": "uuid",
+            "title": "Run Id",
+            "type": "string"
+          },
+          "seq": {
+            "description": "Unique per run; powers replay and SSE Last-Event-ID",
+            "minimum": 0,
+            "title": "Seq",
+            "type": "integer"
+          },
+          "slug": {
+            "maxLength": 160,
+            "minLength": 1,
+            "title": "Slug",
+            "type": "string"
+          },
+          "title": {
+            "maxLength": 240,
+            "minLength": 1,
+            "title": "Title",
+            "type": "string"
+          },
+          "ts": {
+            "format": "date-time",
+            "title": "Ts",
+            "type": "string"
+          },
+          "type": {
+            "const": "qapp.generated",
+            "default": "qapp.generated",
+            "title": "Type",
+            "type": "string"
+          },
+          "version_id": {
+            "format": "uuid",
+            "title": "Version Id",
+            "type": "string"
+          },
+          "visibility": {
+            "const": "private",
+            "default": "private",
+            "title": "Visibility",
+            "type": "string"
+          }
+        },
+        "required": [
+          "run_id",
+          "seq",
+          "ts",
+          "qapp_id",
+          "version_id",
+          "slug",
+          "title"
+        ],
+        "title": "QappGenerated",
+        "type": "object"
+      },
+      "QappVersion": {
+        "additionalProperties": false,
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "fingerprint": {
+            "title": "Fingerprint",
+            "type": "string"
+          },
+          "framework": {
+            "$ref": "#/components/schemas/Framework"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "input_schema": {
+            "additionalProperties": true,
+            "title": "Input Schema",
+            "type": "object"
+          },
+          "output_schema": {
+            "additionalProperties": true,
+            "title": "Output Schema",
+            "type": "object"
+          },
+          "qapp_id": {
+            "format": "uuid",
+            "title": "Qapp Id",
+            "type": "string"
+          },
+          "quantum_source": {
+            "title": "Quantum Source",
+            "type": "string"
+          },
+          "qubits_estimate": {
+            "maximum": 27,
+            "minimum": 1,
+            "title": "Qubits Estimate",
+            "type": "integer"
+          },
+          "seq": {
+            "minimum": 1,
+            "title": "Seq",
+            "type": "integer"
+          },
+          "source_artifact_version_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Source Artifact Version Id"
+          },
+          "ui_document": {
+            "title": "Ui Document",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "qapp_id",
+          "seq",
+          "framework",
+          "qubits_estimate",
+          "ui_document",
+          "quantum_source",
+          "input_schema",
+          "output_schema",
+          "fingerprint",
+          "created_at"
+        ],
+        "title": "QappVersion",
+        "type": "object"
+      },
       "QasmEmission": {
         "additionalProperties": false,
         "description": "Provenance for optional OpenQASM interchange from a protected sandbox result.\n\n``sandbox_epilogue`` is Majorana's observed serialization of ``FINAL_CIRCUIT``;\n``model_stdout`` is retained only for replaying legacy events.",
@@ -4219,6 +4627,7 @@
             "llm.call": "#/components/schemas/LlmCall",
             "llm.delta": "#/components/schemas/LlmDelta",
             "plan.produced": "#/components/schemas/PlanProduced",
+            "qapp.generated": "#/components/schemas/QappGenerated",
             "research.completed": "#/components/schemas/ResearchCompleted",
             "resource.estimate": "#/components/schemas/ResourceEstimateResult",
             "run.analysis": "#/components/schemas/RunAnalysis",
@@ -4279,6 +4688,9 @@
           },
           {
             "$ref": "#/components/schemas/ConversationTitled"
+          },
+          {
+            "$ref": "#/components/schemas/QappGenerated"
           },
           {
             "$ref": "#/components/schemas/CodeGenerated"
@@ -4441,7 +4853,8 @@
           "chat",
           "execute",
           "ideate",
-          "explain"
+          "explain",
+          "qapp"
         ],
         "title": "RunMode",
         "type": "string"
@@ -6297,7 +6710,7 @@
   "info": {
     "description": "Cross-boundary types only; API paths are owned by services/api.",
     "title": "majorana-contracts",
-    "version": "2.14.0"
+    "version": "2.15.0"
   },
   "openapi": "3.1.0",
   "paths": {}

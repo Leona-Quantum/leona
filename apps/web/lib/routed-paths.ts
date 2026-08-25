@@ -154,6 +154,8 @@ export const ROUTED_SEGMENTS: readonly string[] = [
   // as an unrouted path.
   "llms.txt",
   "open-source",
+  "q",
+  "qapps",
   "repository",
   "run",
   "shared",

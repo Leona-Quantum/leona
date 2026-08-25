@@ -1221,6 +1221,7 @@ def test_grover_plan_and_review_prompts_pin_general_iteration_arithmetic():
 
 def test_json_extraction_accepts_fences_and_never_echoes_bad_output():
     assert extract_json('prefix ```json\\n{"ok": true}\\n``` suffix') == '{"ok": true}'
+    assert extract_json('{"ok": true}"}') == '{"ok": true}'
     secret = "sensitive-model-output"
     with pytest.raises(StageOutputError) as captured:
         extract_json(secret)
@@ -1586,3 +1587,31 @@ async def test_the_anthropic_profile_sends_no_sampling_parameters(monkeypatch):
     assert sent["model"] == "claude-opus-4-8"
     assert sent["max_tokens"] > 0
     assert sent["messages"]
+
+
+def test_extract_json_is_linear_on_json_shaped_text_that_never_closes() -> None:
+    """A JSON-shaped string that never closes must not cost a scan per brace.
+
+    `raw_decode` fails only after reading to the end, so trying every `{` is
+    quadratic: this input took 22s at 700KB before `_MAX_DECODE_ATTEMPTS` existed,
+    and the caller feeds it the model's full untruncated response.
+
+    Asserting on wall-clock is normally a flaky idea. It is sound here only because
+    the gap is three orders of magnitude — milliseconds against tens of seconds —
+    so the budget below can be loose enough to survive a slow machine and still
+    fail outright if the cap is removed.
+    """
+    import time
+
+    payload = '{"a":1,' * 100_000
+    started = time.perf_counter()
+    with pytest.raises(StageOutputError):
+        extract_json(payload)
+    elapsed = time.perf_counter() - started
+    assert elapsed < 5.0, f"extract_json took {elapsed:.1f}s — the attempt cap is gone"
+
+
+def test_extract_json_still_salvages_an_object_after_prose_and_braces() -> None:
+    """The cap must not cost the salvage the rewrite existed to add."""
+    assert extract_json('Note {not json} then: {"ok": 1} trailing') == '{"ok": 1}'
+    assert extract_json('```json\n{"fenced": true}\n```') == '{"fenced": true}'

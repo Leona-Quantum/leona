@@ -223,6 +223,63 @@ class ArtifactVersion(Base):
     created_at: Mapped[dt.datetime | None] = mapped_column(server_default=func.now())
 
 
+class Qapp(Base):
+    __tablename__ = "qapps"
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True)
+    workspace_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("workspaces.id"))
+    owner_user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id"))
+    slug: Mapped[str] = mapped_column(unique=True)
+    title: Mapped[str]
+    description: Mapped[str]
+    visibility: Mapped[str] = mapped_column(server_default="private")
+    current_version_id: Mapped[uuid.UUID | None] = mapped_column(_UUID)
+    created_by_run_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("runs.id"))
+    published_at: Mapped[dt.datetime | None]
+    deleted_at: Mapped[dt.datetime | None]
+    created_at: Mapped[dt.datetime | None] = mapped_column(server_default=func.now())
+    updated_at: Mapped[dt.datetime | None] = mapped_column(server_default=func.now())
+
+
+class QappVersion(Base):
+    __tablename__ = "qapp_versions"
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True)
+    qapp_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("qapps.id", ondelete="CASCADE"))
+    seq: Mapped[int] = mapped_column(Integer)
+    framework: Mapped[str]
+    qubits_estimate: Mapped[int] = mapped_column(Integer)
+    ui_document: Mapped[str]
+    quantum_source: Mapped[str]
+    input_schema: Mapped[dict[str, Any]]
+    output_schema: Mapped[dict[str, Any]]
+    fingerprint: Mapped[str]
+    source_artifact_version_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("artifact_versions.id")
+    )
+    generation_prompt: Mapped[str]
+    created_at: Mapped[dt.datetime | None] = mapped_column(server_default=func.now())
+
+
+class QappExecution(Base):
+    __tablename__ = "qapp_executions"
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True)
+    workspace_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("workspaces.id"))
+    user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id"))
+    qapp_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("qapps.id"))
+    qapp_version_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("qapp_versions.id"))
+    status: Mapped[str] = mapped_column(server_default="queued")
+    inputs: Mapped[dict[str, Any]]
+    result: Mapped[dict[str, Any] | None]
+    error_code: Mapped[str | None]
+    sandbox_meta: Mapped[dict[str, Any] | None]
+    started_at: Mapped[dt.datetime | None]
+    finished_at: Mapped[dt.datetime | None]
+    created_at: Mapped[dt.datetime | None] = mapped_column(server_default=func.now())
+    updated_at: Mapped[dt.datetime | None] = mapped_column(server_default=func.now())
+
+
 class ArtifactSource(Base):
     """Provenance (migration 0015): one pinned source record per version."""
 

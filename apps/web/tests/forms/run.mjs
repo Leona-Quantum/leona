@@ -29,17 +29,12 @@ if (testFiles.length === 0) {
   process.exit(1);
 }
 
-// studio-custom-gate.test.tsx imports `CircuitBuilder` out of
-// studio-workspace.tsx, which also has a MODULE-LEVEL `import { useRouter }
-// from "next/navigation"` for the (untested-here) outer `StudioWorkspace`
-// component. `next/navigation` is Next's own resolution target, not a plain
-// package export Node can follow outside a Next build. CircuitBuilder itself
-// never calls `useRouter()`, so a stub that only throws if actually invoked
-// is both sufficient and a canary: if a future edit makes CircuitBuilder
-// depend on the router, this stub turns that into a loud test failure
-// instead of a silent gap.
-const stubNextNavigation = {
-  name: "stub-next-navigation",
+// Next's client navigation modules are not plain package exports Node can run
+// outside a Next build. Expose router.push through an explicit per-test spy and
+// render Link as the anchor it ultimately owns; route semantics are asserted
+// from the resulting href rather than reimplementing Next's prefetch behavior.
+const stubNextModules = {
+  name: "stub-next-modules",
   setup(build) {
     build.onResolve({ filter: /^next\/navigation$/ }, (args) => ({
       path: args.path,
@@ -47,7 +42,16 @@ const stubNextNavigation = {
     }));
     build.onLoad({ filter: /.*/, namespace: "stub-next-navigation" }, () => ({
       contents:
-        "export function useRouter() { throw new Error('next/navigation is stubbed in tests/forms — this code path was not expected to call useRouter()'); }",
+        "export function useRouter() { return { push(value) { const spy = globalThis.__formTestRouterPush; if (typeof spy !== 'function') throw new Error('next/navigation push called without __formTestRouterPush'); spy(value); } }; }",
+      loader: "js",
+    }));
+    build.onResolve({ filter: /^next\/link$/ }, (args) => ({
+      path: args.path,
+      namespace: "stub-next-link",
+    }));
+    build.onLoad({ filter: /.*/, namespace: "stub-next-link" }, () => ({
+      contents:
+        "import { createElement } from 'react'; export default function Link({ href, children, ...props }) { return createElement('a', { ...props, href: typeof href === 'string' ? href : String(href) }, children); }",
       loader: "js",
     }));
   },
@@ -85,7 +89,7 @@ try {
       // against the component's own hooks.
       external: ["react", "react/*", "react-dom", "react-dom/*", "@testing-library/react", "@testing-library/dom", "jsdom"],
       loader: { ".css": "empty" },
-      plugins: [stubNextNavigation],
+      plugins: [stubNextModules],
       write: false,
       logLevel: "warning",
     });

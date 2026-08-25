@@ -83,6 +83,7 @@ export function RunComposer({
         mode: "応答モード",
         modeAuto: "自動",
         modeExecute: "実行",
+        modeQapp: "Qapp",
         modeIdeate: "考える",
         modeExplain: "解説",
         framework: "回路フレームワーク",
@@ -101,6 +102,7 @@ export function RunComposer({
         mode: "Response mode",
         modeAuto: "Auto",
         modeExecute: "Execute",
+        modeQapp: "Qapp",
         modeIdeate: "Ideate",
         modeExplain: "Explain",
         framework: "Circuit framework",
@@ -231,6 +233,8 @@ export function RunComposer({
                         ? labels.modeAuto
                         : option === "execute"
                           ? labels.modeExecute
+                          : option === "qapp"
+                            ? labels.modeQapp
                           : option === "ideate"
                             ? labels.modeIdeate
                             : labels.modeExplain}

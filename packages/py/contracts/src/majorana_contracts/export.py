@@ -57,6 +57,10 @@ EXPORTED = [
     models.CatalogEntryProfile,
     models.CatalogProfileList,
     models.Run,
+    models.Qapp,
+    models.QappVersion,
+    models.PublicQapp,
+    models.QappExecution,
     models.VerificationRecord,
     models.QpuRunRecord,
 ]

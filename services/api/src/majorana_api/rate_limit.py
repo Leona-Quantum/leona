@@ -201,7 +201,7 @@ EXEMPT_PATHS = frozenset({"/health"})
 #: The ONLY routes this limiter meters — the surface that serves data to a
 #: caller presenting no credential. See the module docstring for why the path,
 #: rather than the `Authorization` header, is what decides.
-LIMITED_PATH_PREFIXES = ("/v1/catalog",)
+LIMITED_PATH_PREFIXES = ("/v1/catalog", "/v1/qapps/public")
 
 #: Auth failures (401s the API actually returned — see `AuthFailureThrottle`
 #: for why 403 does not count) allowed from one address before it is refused

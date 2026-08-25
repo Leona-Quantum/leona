@@ -5,6 +5,7 @@ import { fileURLToPath } from "node:url";
 import {
   CRAWLER_DISALLOWED_PATHS,
   MACHINE_READABLE_PATHS,
+  PUBLIC_DYNAMIC_PATH_PREFIXES,
   PUBLIC_REDIRECT_ALIASES,
   PUBLIC_STATIC_PATHS,
   sitemapPaths,
@@ -83,11 +84,24 @@ test("every top-level app route is published, aliased, or disallowed", () => {
     const path = `/${name}`;
     if (PUBLIC_STATIC_PATHS.some((page) => page === path || page.startsWith(`${path}/`))) return false;
     if (PUBLIC_REDIRECT_ALIASES.includes(path)) return false;
+    if (PUBLIC_DYNAMIC_PATH_PREFIXES.includes(path)) return false;
     // Public, crawlable, and not a page — see MACHINE_READABLE_PATHS.
     if (MACHINE_READABLE_PATHS.includes(path)) return false;
     return !CRAWLER_DISALLOWED_PATHS.some((prefix) => prefix === path || prefix === `${path}/`);
   });
   assert.deepEqual(unaccounted, [], `route segments in none of the three lists: ${unaccounted.join(", ")}`);
+});
+
+test("dynamic public prefixes are public but do not invent sitemap addresses", () => {
+  for (const path of PUBLIC_DYNAMIC_PATH_PREFIXES) {
+    assert.ok(isPublicPath(path), `${path} is classified as public but gated by middleware`);
+    assert.ok(!sitemapPaths(SURFACE).includes(path), `${path} has no concrete page to index`);
+    assert.equal(
+      CRAWLER_DISALLOWED_PATHS.some((prefix) => path === prefix || path.startsWith(prefix)),
+      false,
+      `${path} is public but disallowed by robots.txt`,
+    );
+  }
 });
 
 /**

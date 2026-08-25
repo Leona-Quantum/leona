@@ -25,6 +25,14 @@ class RunMode(StrEnum):
     EXECUTE = "execute"
     IDEATE = "ideate"
     EXPLAIN = "explain"
+    QAPP = "qapp"
+
+
+class QappExecutionStatus(StrEnum):
+    QUEUED = "queued"
+    RUNNING = "running"
+    SUCCEEDED = "succeeded"
+    FAILED = "failed"
 
 
 class RunStatus(StrEnum):

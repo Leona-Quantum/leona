@@ -118,6 +118,10 @@ export function LibraryIcon(props: IconProps) {
   return <Icon {...props}><path d="M3.5 3.5h9v9h-9zM5.5 5.5h5M5.5 8h5M5.5 10.5h3" /></Icon>;
 }
 
+export function QappsIcon(props: IconProps) {
+  return <Icon {...props}><rect x="2.75" y="2.75" width="4.25" height="4.25" rx=".75" /><rect x="9" y="2.75" width="4.25" height="4.25" rx=".75" /><rect x="2.75" y="9" width="4.25" height="4.25" rx=".75" /><path d="M9 11.125h4.25M11.125 9v4.25" /></Icon>;
+}
+
 /**
  * `open` tilts the front face forward, the way a folder pulled open looks.
  *

@@ -7,6 +7,11 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
     surfaceSwitch: string;
     run: string;
     studio: string;
+    qapps: string;
+    myQapps: string;
+    exploreQapps: string;
+    createQapp: string;
+    createQappStudio: string;
     library: string;
     projects: string;
     chats: string;
@@ -448,6 +453,11 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
       surfaceSwitch: "Workspace mode",
       run: "Run",
       studio: "Studio",
+      qapps: "Qapps",
+      myQapps: "My Qapps",
+      exploreQapps: "Explore Qapps",
+      createQapp: "Create Qapp",
+      createQappStudio: "Create from Studio",
       library: "All artifacts",
       projects: "Projects",
       chats: "Chats",
@@ -923,6 +933,11 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
       surfaceSwitch: "ワークスペースモード",
       run: "Run",
       studio: "Studio",
+      qapps: "Qapps",
+      myQapps: "自分のQapp",
+      exploreQapps: "公開Qappを探す",
+      createQapp: "Qappを作る",
+      createQappStudio: "Studioから作る",
       library: "すべての回路・実行記録",
       projects: "プロジェクト",
       chats: "チャット",

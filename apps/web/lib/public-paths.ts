@@ -63,6 +63,7 @@ export const PUBLIC_PATHS: readonly string[] = [
   "/repository",
   "/workspace",
   "/open-source",
+  "/q",
   "/contact",
   "/privacy",
   "/terms",
