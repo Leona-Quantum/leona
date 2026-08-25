@@ -2335,25 +2335,6 @@ html[lang="ja"] .mj-company-hero-title-line {
   background: var(--bg-1);
 }
 
-/* The navigation tripwire's replacement for the frame (qapp-runtime.tsx).
-   Shares .qapp-runtime-frame so the panel does not collapse when the iframe is
-   unmounted, and centres the notice in the space the interface occupied. */
-.qapp-runtime-blocked {
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
-  gap: .6rem;
-  padding: 2rem;
-  text-align: center;
-  color: var(--text-2);
-  background: var(--bg-2);
-}
-
-.qapp-runtime-blocked p:first-child {
-  color: var(--text-1);
-  font-weight: 600;
-}
-
 .qapp-runtime-status {
   display: flex;
   justify-content: space-between;

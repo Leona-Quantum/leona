@@ -31,22 +31,55 @@ iframe sandbox blocks top-level navigation, popups, forms, same-origin state, an
 while CSP blocks ordinary fetch/subresource channels. Current browser CSP does not provide a
 portable `navigate-to` control, so self-navigation cannot be *prevented* by policy.
 
-**Updated 2026-08-25, under the ai-ops#177 ruling.** That channel now has a runtime backstop rather
-than only a generation-time filter. The bridge, which runs first in a document Leona authors and
-before any generated markup, announces itself to the host; a frame `load` event arriving after that
-announcement is by definition a second document, and the host unmounts the frame rather than hiding
-it (`qapp-runtime.tsx`). This does not recall the first request — no design that reacts to a
-navigation can — but it removes the larger half of the risk, which was never the exfiltrated query
-string so much as an attacker-controlled page then rendering inside Leona's chrome, a convincing
-place to ask a viewer for a password.
+**Updated 2026-08-25, under the ai-ops#177 ruling.** A runtime tripwire in the host was built for
+this channel and then **withdrawn before merge**, because it cannot be made correct. It is recorded
+here rather than deleted, so that the next person to have the idea finds the reason and not just the
+absence.
+
+The design: the bridge, which runs first in a document Leona authors, announces itself; a frame
+`load` event arriving after that announcement is a second document, and the host unmounts the frame.
+The flaw is that the host cannot attribute a `load` event to a document. The frame's origin is opaque
+both before and after a navigation, and the WindowProxy identity survives a cross-document navigation,
+so there is nothing to compare. That collapses four orderings into two observations:
+
+| | what the host sees | required |
+|---|---|---|
+| legitimate, announcement delivered before the load event | announcement, then load | keep |
+| legitimate, load event before the announcement is delivered | load, no announcement yet | keep |
+| hostile, navigates after its own document loaded | announcement, then load | tear down |
+| hostile, navigates before its own document loaded | load, no announcement yet | tear down |
+
+Rows 1 and 3 are the same observation, and so are rows 2 and 4. Any rule that tears down a frame that
+navigated before its own load also tears down a legitimate Qapp whose announcement has not arrived —
+and since the bridge posts during parsing while the load event fires after it, the *legitimate*
+ordering is the one that puts the announcement first. The tripwire as written would have torn down
+every working Qapp. A liveness heartbeat is the only shape that escapes the ambiguity, and its false
+positive is a frame whose main thread is busy — a Qapp doing heavy canvas work — which is a worse
+failure than the one being prevented.
+
+Two further consequences were found in review and are part of why this was withdrawn rather than
+patched: resetting the per-document flags during render is not safe under concurrent rendering (a
+discarded render can clear a flag while the committed frame stays mounted), and deferring the
+teardown widens the window in which an in-flight execution result is posted to the frame that has
+already navigated.
+
+Note also that no test in this repository can exercise any version of it: the form suite's jsdom is
+constructed without `runScripts`, so the bridge never executes and every ordering in a test is one the
+test author chose by hand. A control whose correctness turns entirely on task ordering, and whose
+ordering cannot be observed by any check here, does not belong in front of users.
+
+So the residual risk stands as this ADR originally described it, and is accepted under the ruling: a
+one-shot GET to an attacker URL carrying what a viewer typed into that Qapp's own inputs, and an
+attacker-controlled page then rendering inside Leona's chrome. What guards it is the generation-time
+pattern guard below, which is a filter on how a document is written and not a boundary.
 
 The static document guard was also measured rather than assumed, and was found weakest exactly
 where it was the only generation-time control: of fifteen navigation payloads, nine passed it —
 anchors built with `createElement` and given an `href` via `setAttribute`, `meta` refreshes
 assembled in script, `eval` of an encoded payload. Twelve of fifteen are now blocked. The remaining
 three (`window["loc"+"ation"]` and its kin) are pinned as a test asserting that they pass, because
-these are regular expressions over JavaScript and string concatenation is not a pattern; the
-tripwire, not the guard, is what holds them. The residual risk that remains after all of this is a
+these are regular expressions over JavaScript and string concatenation is not a pattern. Nothing
+holds those three; they are the accepted residual risk above. The residual risk that remains after all of this is a
 single one-shot GET to an attacker URL carrying what a viewer typed into that Qapp's own inputs,
 with no page rendered afterwards — accepted, for non-secret UI inputs, under the ruling above.
 

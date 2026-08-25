@@ -120,12 +120,18 @@ def validate_qapp_ui_document(document: str) -> None:
       closed by `QAPP_FRAME_CSP` and the `sandbox` attribute, which are
       properties of the browser and not defeatable by how the document is
       written. That is the boundary.
-    - **Self-navigation** is the one channel no policy can close, and the
-      backstop for it is at runtime, in `qapp-runtime.tsx`: the frame announces
-      itself, and a load event after that announcement unmounts it. That
-      catches every payload above, including the three this list cannot.
+    - **Self-navigation** is the one channel no policy can close, and nothing
+      closes it. A runtime tripwire in the host was built for it and withdrawn
+      before merge — the host cannot attribute a frame `load` event to a
+      document, so "has not announced itself yet" and "never will" are the same
+      observation, and every rule that caught the hostile case also tore down a
+      legitimate Qapp. ADR-0031 records the full argument. The three payloads
+      below are therefore the accepted residual risk, not a gap something else
+      covers.
     - **This function** rejects the obvious attempt early, so it never reaches
-      storage or a reader, and so the model contract has teeth.
+      storage or a reader, and so the model contract has teeth. It is the only
+      thing standing in front of that channel, which is the reason to keep it
+      honest about what it does not catch.
     """
     if not isinstance(document, str) or not document.strip():
         raise ValueError("Qapp UI document must not be empty")

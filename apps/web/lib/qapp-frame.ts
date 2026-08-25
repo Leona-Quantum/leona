@@ -18,11 +18,19 @@
  * URL it chooses — and, worse than the exfiltration, can then render an
  * attacker-controlled page inside Leona's chrome.
  *
- * That is the residual risk ADR-0031 records. It is covered at generation time
- * by the pattern guard and at runtime by the host's navigation tripwire — see
- * `qapp-runtime.tsx`. Neither is this policy's job, and the comment is here so
- * nobody reads the absence as an oversight and "fixes" it with a directive that
- * does nothing.
+ * That is the residual risk ADR-0031 records, and it is accepted there under the
+ * ai-ops#177 ruling. What covers it is the generation-time pattern guard in
+ * `qapp_validation.py`, which is a filter on how a document is WRITTEN and not a
+ * boundary; the comment is here so nobody reads the absence from this list as an
+ * oversight and "fixes" it with a directive that does nothing.
+ *
+ * A runtime tripwire in the host was built for this and then removed, because it
+ * cannot be made correct. The parent cannot attribute a `load` event to a
+ * document — the origin is opaque before and after a navigation, and WindowProxy
+ * identity survives it — so "our document has not announced itself yet" and "this
+ * document will never announce itself" are the same observation. Every rule that
+ * catches a frame navigating before its own load also tears down a legitimate
+ * Qapp whose announcement has not been delivered yet. See ADR-0031.
  */
 export const QAPP_FRAME_CSP = [
   "default-src 'none'",
@@ -45,22 +53,6 @@ export type QappExecuteMessage = {
   requestId: string;
   inputs: Record<string, unknown>;
 };
-
-/**
- * The frame announcing that OUR document is the one running.
- *
- * This exists so the host can tell "the frame loaded" from "the frame loaded
- * *our* document", which is the difference between an ordinary render and the
- * one egress channel neither the sandbox nor the policy can close. See
- * `qapp-runtime.tsx` for what the host does with it.
- */
-export type QappReadyMessage = { channel: string; type: "qapp.ready" };
-
-export function isQappReadyMessage(value: unknown, channel: string): value is QappReadyMessage {
-  if (!value || typeof value !== "object") return false;
-  const candidate = value as Record<string, unknown>;
-  return candidate.channel === channel && candidate.type === "qapp.ready";
-}
 
 export function isQappExecuteMessage(value: unknown, channel: string): value is QappExecuteMessage {
   if (!value || typeof value !== "object") return false;
@@ -107,7 +99,6 @@ function bridgeScript(channel: string): string {
         window.parent.postMessage({channel,type:"qapp.execute",requestId,inputs},"*");
       });
     }});
-    window.parent.postMessage({channel,type:"qapp.ready"},"*");
     window.addEventListener("message",event=>{
       const message=event.data;
       if(!message||message.channel!==channel||message.type!=="qapp.response")return;
