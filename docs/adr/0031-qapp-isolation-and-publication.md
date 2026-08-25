@@ -96,10 +96,17 @@ rolling hour was, on its own, the right shape for a *private* Qapp and no ceilin
 published one: `/q/<slug>` runs under the **visitor's** account, so one public page's reachable
 total was (however many people have signed up) x 60 paid sandbox runs an hour, and the deployment's
 was that again times the number of published Qapps. Two cross-tenant ceilings now sit beside it —
-per-Qapp (200/hour, all accounts together) and deployment-wide (600/hour), the latter being the only
+per-Qapp (100/hour, all accounts together) and deployment-wide (300/hour), the latter being the only
 one of the three whose ceiling does not rise as accounts and Qapps are added, and therefore the only
 one that bounds the bill. All three are environment-overridable so an operator can lower one without
 shipping a deploy, and `0` disables one.
+
+**The two cross-tenant numbers were halved on 2026-08-25** (ai-ops#179, owner ruling: *"Halve both
+to 300 and 100 — worst case ~10 compute-hours/hr, still far above any plausible launch demand"*).
+They shipped at 200 and 600 and were never exercised at either value, so nothing regressed; the
+figure the ruling is sized against is the deployment-wide one, because `ExecutionSpec` caps a
+sandbox at `MAX_TIMEOUT_S = 120`, so 300 runs an hour is at most 300 x 120 s = 10 compute-hours per
+hour. The per-Qapp number is not what bounds the bill and was halved to keep the two in proportion.
 
 These are read through a `SECURITY DEFINER` counter (migration 0056), not a plain `count(*)`, and
 that choice is load-bearing rather than stylistic: `qapp_executions` carries 0055's
