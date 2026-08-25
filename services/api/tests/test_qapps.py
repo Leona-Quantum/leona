@@ -580,9 +580,7 @@ async def test_publishing_stamps_the_pair_the_database_constraint_requires(publi
     surfaces as an integrity error at flush rather than as a wrong page — which is
     the right failure but a late and confusing one. Asserted at the source instead.
     """
-    probe = _Probe(
-        rows=[(publication.qapp.id, publication.qapp.current_version_id, "succeeded")]
-    )
+    probe = _Probe(rows=[(publication.qapp.id, publication.qapp.current_version_id, "succeeded")])
 
     result = await publication.repo.set_visibility(
         publication.owner.scope, probe, publication.qapp.id, "public"
@@ -626,9 +624,7 @@ async def test_only_the_creator_may_publish_and_the_gate_is_never_reached(public
     same workspace can read the row, so the owner check is the only thing standing
     between them and publishing somebody else's page under their own account.
     """
-    probe = _Probe(
-        rows=[(publication.qapp.id, publication.qapp.current_version_id, "succeeded")]
-    )
+    probe = _Probe(rows=[(publication.qapp.id, publication.qapp.current_version_id, "succeeded")])
 
     with pytest.raises(publication.repo.AuthzError) as refused:
         await publication.repo.set_visibility(
