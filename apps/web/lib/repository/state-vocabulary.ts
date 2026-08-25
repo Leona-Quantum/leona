@@ -543,6 +543,90 @@ export const STATE_VOCABULARY: StateVocabulary = {
       specializes: ["observable-value"],
     },
 
+    // --- searching a domain nobody has sorted --------------------------------
+    {
+      id: "marking-oracle",
+      label: "Marking oracle over a domain",
+      labelJa: "定義域上の印付けオラクル",
+      summary:
+        "A check you can run in superposition that answers yes or no about each candidate in a domain of known size, together with whatever promise you hold about how many candidates it says yes to. The promise is not decoration: Grover's own paper assumes exactly one, and the schedule that finds it is fixed before the first query from the domain size alone, so a different promise is a different algorithm rather than a different parameter.",
+      summaryJa: "既知のサイズをもつ定義域の中の各候補についてはい・いいえで答える、重ね合わせの上で実行できるチェックと、そのうち肯定と答える候補がいくつあるかについて保持している約束とから成ります。この約束は単なる飾りではありません。Grover 自身の論文はちょうど一つであることを仮定しており、それを見つけ出すスケジュールは、最初の問い合わせよりも前に、定義域のサイズのみから固定されます。したがって、異なる約束は異なるパラメータではなく、異なるアルゴリズムを意味します。",
+      // **Deliberately not a kind of `flagged-routine`**, and that is the one
+      // decision here a reader is most likely to want argued.
+      //
+      // `flagged-routine` is "a circuit that produces what you want on one branch
+      // and something useless on the others, with a flag telling the two apart" —
+      // the routine is built and you are holding it. A marking oracle is the
+      // opposite half of that object: a way to test candidates, and no routine
+      // producing them. The check that separates the two is the one W27 wrote for
+      // a reader to run on any future candidate — *does the record's own paper
+      // hand you the preparation unitary A already built, or does it build A for
+      // you out of an oracle?* `fixed-point-amplification` lists "the preparation
+      // unitary A and its inverse" among its inputs and carries
+      // `steps: ["state-preparation"]`; Grover's paper builds its own initial
+      // distribution out of the domain in $O(\log N)$ steps and is handed nothing.
+      //
+      // Declaring the `specializes` would have let `stateSatisfies` pass a bare
+      // oracle to `success-amplification` and price the construction of A at
+      // nothing — the same failure `hamiltonian-surrogate`'s comment records
+      // catching, arriving one region later.
+    },
+    {
+      id: "marked-item",
+      label: "A marked item, with its query bill",
+      labelJa: "印の付いた候補と、その問い合わせ費用",
+      summary:
+        "One candidate the check accepts, together with the number of queries it took and the probability the answer is right — or, at a stated confidence, the report that the domain holds none. What is uncertain differs between the routes that arrive here, and the object carries which: Grover samples at the end and is right with probability greater than a half, while the wildcard recovery ends every stage on an oracle answer confirming its guess, so there the bill is the random quantity and the answer is not.",
+      summaryJa: "チェックが受理する候補一つと、それに要した問い合わせの回数、そして答えが正しい確率です。あるいは、定められた確信度のもとで、定義域にそのような候補が一つもないという報告です。何が不確かであるかは、ここに至る経路ごとに異なり、この対象はそのどちらであるかを保持しています。Grover は最後にサンプリングを行い、二分の一より大きい確率で正しい答えを得ます。一方、ワイルドカードによる復元は、どの段でも自分の推測を確認するオラクルの答えで終わるため、そこでは費用の方が確率的な量であり、答えはそうではありません。",
+      // Two processes arrive: `marked-item-search` and `quantum-walk-search`.
+      // That is what makes this one state rather than two, and it is the reason
+      // the two slots were built in the same unit — a search region whose exit
+      // nothing else reaches is a parameter of one process wearing a circle, and
+      // `states.ts`'s admission rule says so in as many words.
+    },
+    {
+      id: "search-graph-with-marked-set",
+      label: "Search graph with a marked set",
+      labelJa: "印付き集合をもつ探索グラフ",
+      summary:
+        "A graph over candidate states given by local rules rather than laid out — from any vertex you can name its neighbours — together with the rule that says which vertices are marked and the size bounds that fix how long a walk has to run. What makes this a different object from a domain plus an oracle is that moving costs less than starting again: the work already done at a vertex is still valid one step away, and a walk is worth running exactly when that is true.",
+      summaryJa: "候補となる状態の上のグラフで、あらかじめ敷かれているのではなく局所的な規則によって与えられます。どの頂点からも、その隣接頂点を名指しできます。それに加えて、どの頂点が印付きであるかを述べる規則と、ウォークをどれだけ走らせる必要があるかを定めるサイズの上限とから成ります。これを定義域とオラクルの組とは異なる対象にしているのは、移動することが最初からやり直すことよりも安く済むという点です。ある頂点ですでに済ませた仕事は、一歩隣でもなお有効であり、ウォークを走らせる価値があるのは、まさにそれが成り立つときです。",
+      // **Not `markov-chain-with-marked-set`**, which is what W26 §2 proposed and
+      // what this note was written from. Two of the three things that name would
+      // promise are absent from the papers the slot is built on.
+      //
+      // Ambainis (arXiv:quant-ph/0311001) never writes "Johnson graph", never
+      // applies the language of Markov chains to his OWN walk, and has no
+      // setup/update/check cost model: he accounts for it as "r queries for the
+      // first step and 1 query to simulate each move", two terms and not three.
+      // The setup/update/check triple is Szegedy's and Magniez–Nayak–Roland–
+      // Santha's vocabulary, and W26 attributed it to Ambainis.
+      //
+      // The middle clause is narrow on purpose, and it was wider and wrong
+      // first. "Markov chains" does occur in that paper — twice, in §1.1's
+      // "Recent developments", saying that Szegedy "generalized our results on
+      // quantum walk for element distinctness to an arbitrary graph with a large
+      // eigenvalue gap and cast them into the language of Markov chains". That
+      // is a description of somebody else's later paper, and it is evidence FOR
+      // the distinction rather than against it: the chain vocabulary arrived
+      // with the generalisation and was not how the construction was posed.
+      // "Spectral gap" does not occur at all.
+      //
+      // Montanaro (arXiv:1509.02374) does not have a chain either, and says so
+      // against exactly this reading: "in prior work it is usually assumed that
+      // the input graph is known in advance, and moreover that the initial state
+      // of the quantum walk is the stationary distribution of the corresponding
+      // random walk". His tree is defined by a predicate and a branching
+      // heuristic, is not known in advance, and the walk starts at the root
+      // rather than at a stationary distribution. A state promising a stationary
+      // distribution and a spectral gap would have made his method undrawable on
+      // the slot it belongs to.
+      //
+      // So the state says what both papers actually hand the walk — local
+      // neighbour rules, a marking rule, and size bounds — and a method that
+      // needs a genuine reversible chain narrows the contract in its own
+      // `contract` field, which is what that field is for.
+    },
     // --- the machine underneath ---------------------------------------------
     {
       id: "physical-qubits",

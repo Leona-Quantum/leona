@@ -524,6 +524,18 @@ export const DECLARED_SLOT_ENTRIES: Readonly<Record<string, EntryDisposition>> =
     reason:
       "A root: the reader arrives declaring which state above the lowest one is wanted, and that declaration is part of the problem rather than something a prior process computes.",
   },
+  "marked-item-search": {
+    supply: "front-door",
+    intent: "settled",
+    reason:
+      "A reader arrives holding a way to test candidates. Nothing here produces a marking oracle, because an oracle is the problem stated rather than a thing computed — the same reading `hidden-period-finding` carries, and for the same reason. Recorded as settled rather than join-wanted on the strength of a distinction this region had to draw anyway: the map DOES contain a slot that takes an already-built routine and makes its good branch reliable, and that is `success-amplification`, an ingredient. What separates the two is exactly whether the preparation unitary A is handed over or built out of an oracle, so declaring a producer here would not be filling a gap — it would be collapsing the split the owner ruled for on ai-ops#71.",
+  },
+  "quantum-walk-search": {
+    supply: "front-door",
+    intent: "join-wanted",
+    reason:
+      "Nothing produces a search graph with a marked set, and here that IS a gap rather than a front door anybody chose. Both methods build their own graph out of something the reader already has — Ambainis out of the input array and its subsets, Montanaro out of a predicate and a branching heuristic — and that construction is a real process the map does not draw. Montanaro's case is the sharper one: the tree is the one a classical backtracking algorithm would have explored, so the missing producer is a step from a constraint satisfaction problem to the search graph its own solver implies, and a reader arriving with a CSP has no way in. Left `join-wanted` rather than manufactured, because the honest producer is a slot with two competing methods and this region has read the papers for neither.",
+  },
 };
 
 export interface EntryAudit {

@@ -344,7 +344,14 @@ export const PAPER_REGISTER: PaperRegister = {
     { id: "arxiv:quant-ph/9508027", title: "Polynomial-Time Algorithms for Prime Factorization and Discrete Logarithms on a Quantum Computer", authors: "Peter W. Shor", year: "1995", url: "https://arxiv.org/abs/quant-ph/9508027", reports: { theory: "reported", simulation: "unknown", hardware: "absent" }, reportsBasis: "full-text" },
     { id: "arxiv:quant-ph/9511026", title: "Quantum measurements and the Abelian Stabilizer Problem", authors: "A. Yu. Kitaev", year: "1995", url: "https://arxiv.org/abs/quant-ph/9511026", reports: { theory: "reported", simulation: "unknown", hardware: "absent" }, reportsBasis: "full-text" },
     { id: "arxiv:quant-ph/9512032", title: "Good Quantum Error-Correcting Codes Exist", authors: "A. R. Calderbank, Peter W. Shor", year: "1995", url: "https://arxiv.org/abs/quant-ph/9512032" },
-    { id: "arxiv:quant-ph/9605043", title: "A fast quantum mechanical algorithm for database search", authors: "Lov K. Grover", year: "1996", url: "https://arxiv.org/abs/quant-ph/9605043" },
+    // Read in FULL for W28, not from the abstract: all eight sections, and pages 1 and
+    // 3-8 additionally rendered at 300dpi because `pdftotext` strips this paper's
+    // radicals and turns $O(\\sqrt{N})$ into "O ( N )". `simulation: "absent"` is a
+    // claim the full-text basis licenses and the abstract basis would not: the paper
+    // runs nothing. Its only figure illustrates inversion about the average, and the
+    // three occurrences of "experiment" are a proposed redesign for the degenerate
+    // case, not a run.
+    { id: "arxiv:quant-ph/9605043", title: "A fast quantum mechanical algorithm for database search", authors: "Lov K. Grover", year: "1996", url: "https://arxiv.org/abs/quant-ph/9605043", reports: { theory: "reported", simulation: "absent", hardware: "absent" }, reportsBasis: "full-text" },
     { id: "arxiv:quant-ph/9607014", title: "A Quantum Algorithm for Finding the Minimum", authors: "Christoph Durr, Peter Hoyer", year: "1996", url: "https://arxiv.org/abs/quant-ph/9607014", reports: { theory: "reported", simulation: "unknown", hardware: "absent" }, reportsBasis: "abstract" },
     { id: "arxiv:quant-ph/9705002", title: "Quantum Algorithm for the Collision Problem", authors: "Gilles Brassard, Peter Hoyer, Alain Tapp", year: "1997", url: "https://arxiv.org/abs/quant-ph/9705002", reports: { theory: "reported", simulation: "unknown", hardware: "absent" }, reportsBasis: "abstract" },
     { id: "arxiv:quant-ph/9805082", title: "Quantum Counting", authors: "Gilles Brassard, Peter Hoyer, Alain Tapp", year: "1998", url: "https://arxiv.org/abs/quant-ph/9805082" },

@@ -374,25 +374,38 @@ test("the authored graph's slot entries are all declared, and no row has gone st
   assert.deepEqual(audit.misclassified, []);
 });
 
-test("the map is seven regions, and fifteen of its twenty-eight slots consume something nothing produces", () => {
+test("the map is eight regions, and seventeen of its thirty slots consume something nothing produces", () => {
   const regions = regionsOf(LAYER_GRAPH);
   assert.deepEqual(
     regions.map((region) => region.nodes.length),
-    // **[107, 13, 5, 4, 3, 3, 3] — seven regions, and the last three arrived from
-    // two different lanes that never met.** The two 3s at indices 5 and 6 are the PDE
+    // **[110, 13, 5, 4, 3, 3, 3, 3] — eight regions, and the last four arrived from
+    // three different lanes that never met.** The two 3s at indices 5 and 6 are the PDE
     // discretization slots (ai-ops#64); the 3 at index 7 is `device-characterization`
     // (ai-ops#68). Ties here break on graph order, not on arrival order, so the
     // device-characterisation region sorts LAST despite its nodes being authored
     // above the number-theory block — which is why the region-pair assertion further
     // down still reads 5 and 6 and did not have to be renumbered.
-    [107, 13, 5, 4, 3, 3, 3],
+    //
+    // **W28's search region is the odd one, and it split across two entries rather
+    // than adding one.** `quantum-walk-search` and its two methods went INTO the 107,
+    // taking it to 110, because `backtracking-tree-walk-search` descends into
+    // `phase-estimation` — a containment edge the paper's own algorithm supplies, not a
+    // join anybody designed. `marked-item-search` and its two atomic methods are the
+    // new 3 at index 8. So one region arrived joined and one arrived standing alone,
+    // and the two halves share an exit state that this relation cannot see.
+    [110, 13, 5, 4, 3, 3, 3, 3],
     "the region shape changed; re-read what joined or split before updating this",
   );
 
   const entries = slotEntries(LAYER_GRAPH, STATE_VOCABULARY);
-  assert.equal(entries.length, 28);
+  assert.equal(entries.length, 30);
   const open = entries.filter((entry) => entry.supply !== "joined");
-  assert.equal(open.length, 15);
+  // 15 -> 17: both W28 slots are front doors. Neither is joined, and that is not a
+  // failure of the region — a marking oracle is the problem stated rather than a thing
+  // computed, the same reading `hidden-period-finding` carries. The search graph is the
+  // one of the two that genuinely wants a producer; see its row in DECLARED_SLOT_ENTRIES
+  // and the join worklist below.
+  assert.equal(open.length, 17);
 
   const bySupply = (supply: string) => open.filter((entry) => entry.supply === supply).length;
   // **`root-supplied` moves 2 -> 3 without anyone editing `error-correction`.** Unit 4's
@@ -406,7 +419,11 @@ test("the map is seven regions, and fifteen of its twenty-eight slots consume so
   // above; `ingredient` 6 -> 5 because `error-correction` LEFT this class rather than
   // because anything stopped being a feed. A total that moved by two while three
   // sub-counts moved is the reason they are asserted separately.
-  assert.equal(bySupply("front-door"), 7);
+  // W28 moves `front-door` 7 -> 9 and touches neither of the other two: both new slots
+  // are entered directly, and no existing slot re-typed, because `marking-oracle`,
+  // `marked-item` and `search-graph-with-marked-set` are all new names nothing else
+  // consumes.
+  assert.equal(bySupply("front-door"), 9);
   assert.equal(bySupply("root-supplied"), 3);
   assert.equal(bySupply("ingredient"), 5);
   assert.equal(bySupply("joined"), 0, "by construction — `open` already excludes them");
@@ -481,11 +498,24 @@ test("every crossing runs between three pairs of regions, and each pair is a dif
   );
 });
 
-test("three slots want a join nobody has recorded, and they are the ones ai-ops#64 names", () => {
+test("four slots want a join nobody has recorded, and three of the four are the ones ai-ops#64 names", () => {
+  // The fourth arrived with the search region and is a different KIND of want, which
+  // is why it is worth the rename rather than a bumped number. ai-ops#64's three are
+  // slots the map cannot be entered at sensibly — a reader with a Hamiltonian cannot
+  // reach VQE, a reader with a device cannot reach error correction. `quantum-walk-search`
+  // can be entered: its two methods each build their own graph out of something the
+  // reader already has. What is missing is that the CONSTRUCTION is a process the map
+  // does not draw. Montanaro's is the sharp case — his tree is the one a classical
+  // backtracking algorithm would have explored, so the absent producer is a step from a
+  // constraint satisfaction problem to the search graph its own solver implies.
+  //
+  // Left open rather than invented, per this file's own standing rule: the honest
+  // producer is a slot with two competing methods, and nobody has read the papers for
+  // either of them.
   const worklist = joinWorklist(slotEntries(LAYER_GRAPH, STATE_VOCABULARY), DECLARED_SLOT_ENTRIES);
   assert.deepEqual(
     worklist.map((entry) => entry.slot).sort(),
-    ["error-correction", "error-mitigation", "ground-state-energy"],
+    ["error-correction", "error-mitigation", "ground-state-energy", "quantum-walk-search"],
   );
   // Each carries a real sentence, not a placeholder — the same bar
   // `check-repository-data.mjs` holds a knownGap detail to.
@@ -494,7 +524,7 @@ test("three slots want a join nobody has recorded, and they are the ones ai-ops#
   }
 });
 
-test("the map is seven regions under containment and four under what a trace walks", () => {
+test("the map is eight regions under containment and five under what a trace walks", () => {
   // ADR-0027's split, asserted on the real graph so it cannot quietly become
   // one relation again. `regionsOf` must stay on containment: if it adopted the
   // walkable set, compilation and algorithms would be one region and the 105
@@ -526,7 +556,17 @@ test("the map is seven regions under containment and four under what a trace wal
     return sizes.sort((a, b) => b - a);
   };
 
-  assert.deepEqual(componentsUnder(layerAdjacency(LAYER_GRAPH)), [107, 13, 5, 4, 3, 3, 3]);
+  // 107 -> 110 and a new 3, on the search region landing (W28). The two are not
+  // symmetric and the asymmetry is the whole content of this line: `quantum-walk-search`
+  // MERGED into the algorithms component rather than standing beside it, because
+  // `backtracking-tree-walk-search` descends into `phase-estimation` — a containment
+  // edge, so the walk relation is not what carried it. `marked-item-search` is the new
+  // 3: both its methods are atomic, so nothing contains and nothing is contained.
+  //
+  // That is the first time a region has arrived already joined under containment, and
+  // it was not designed — the paper's detector IS phase estimation on its own walk
+  // operator, and the edge fell out of reading it.
+  assert.deepEqual(componentsUnder(layerAdjacency(LAYER_GRAPH)), [110, 13, 5, 4, 3, 3, 3, 3]);
   // **[126, 5, 4, 3], and the two lanes that landed here behave OPPOSITELY under the
   // walk — which is the distinction these two lines exist to make visible.** The PDE
   // regions are separate under containment and merge into the 126 under the walk:
@@ -538,5 +578,20 @@ test("the map is seven regions under containment and four under what a trace wal
   // both. That is the stronger statement of the two: the PDE split is a join the walk
   // can see and containment cannot, while these two regions are genuinely disjoint
   // subjects a reader enters directly.
-  assert.deepEqual(componentsUnder(walkableAdjacency(LAYER_GRAPH, STATE_VOCABULARY)), [126, 5, 4, 3]);
+  //
+  // **126 -> 129 and a new 3, and the new 3 is the finding.** The search region's two
+  // halves share their EXIT — both `marked-item-search` and `quantum-walk-search`
+  // produce `marked-item` — and sharing an exit is not something a trace can walk. This
+  // relation is directed: it joins a slot that produces a state to a slot that consumes
+  // it, and nothing on this map consumes a marked item. So `quantum-walk-search` merges
+  // into the algorithms component through its containment edge into `phase-estimation`,
+  // while `marked-item-search` stays a component of its own.
+  //
+  // That shared exit is exactly what `states.ts`'s admission rule asks for and it is
+  // genuinely satisfied — two processes arrive at `marked-item`. What this line records
+  // is the different, weaker fact underneath: a state with arrivals and no departures is
+  // where a reader's route ENDS, and the region is joined to the rest of the map at its
+  // entrance rather than at its exit. Naming a consumer would be the next real piece of
+  // work here, and inventing one would be the dishonest way to make this number smaller.
+  assert.deepEqual(componentsUnder(walkableAdjacency(LAYER_GRAPH, STATE_VOCABULARY)), [129, 5, 4, 3, 3]);
 });
