@@ -19,9 +19,11 @@
  * attacker-controlled page inside Leona's chrome.
  *
  * That is the residual risk ADR-0031 records, and it is accepted there under the
- * ai-ops#177 ruling. What covers it is the generation-time pattern guard in
- * `qapp_validation.py`, which is a filter on how a document is WRITTEN and not a
- * boundary; the comment is here so nobody reads the absence from this list as an
+ * ai-ops issue 177 ruling. (Written out rather than with a hash, because
+ * `check-raw-hex.mjs` reads a three-digit issue reference as a colour literal,
+ * and it is right to — three hex digits is a valid colour.) What covers it is
+ * the generation-time pattern guard in `qapp_validation.py`, which is a filter
+ * on how a document is WRITTEN and not a boundary; the comment is here so nobody reads the absence from this list as an
  * oversight and "fixes" it with a directive that does nothing.
  *
  * A runtime tripwire in the host was built for this and then removed, because it
