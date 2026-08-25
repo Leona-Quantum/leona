@@ -1873,6 +1873,37 @@ async def handle_qapp_execute(
     scope = _scope_from_payload(payload)
     execution_id = uuid.UUID(payload["execution_id"])
     execution, version = await qapps_repo.get_execution_source(scope, session, execution_id)
+    # The sandbox is sized by the **visitor's** tier, not the creator's — the
+    # owner's ruling on ai-ops#181, quoted: *"The visitor's tier — a paying
+    # visitor gets 4096 MB on anyone's Qapp, a free visitor gets 2048 and may
+    # see it fail."*
+    #
+    # `scope` here is the caller of `POST /qapps/{slug}/executions`, which puts
+    # its own `scope.user_id` on the job payload — and a published Qapp at
+    # `/q/<slug>` runs under whoever opened it, not under whoever wrote it. So
+    # this lookup *is* the visitor by construction, and the alternative reading
+    # (the creator's tier) would need `qapp.owner_user_id`, which this path
+    # deliberately does not consult.
+    #
+    # Until now nothing set `memory_mb` at all, so every Qapp execution took the
+    # 2048 default whatever anyone paid — option 3 of #181 by accident rather
+    # than by choice.
+    #
+    # Read BEFORE the `running` claim below, not after: a lookup that raises then
+    # leaves the row unclaimed and the job redeliverable, rather than stranding an
+    # execution in `running` until its lease expires.
+    #
+    # The fallback goes the same way as the ordinary run path (`ai-ops#171`, the
+    # `sandbox_memory_mb` block above): an unresolvable tier falls back to the
+    # FREE-lane default, never to the ceiling. A missing `users` row must not buy
+    # a second vCPU on a cross-tenant path.
+    visitor = await session.get(User, scope.user_id)
+    visitor_limits = (
+        limits_for(tier_of(visitor, EnvTierSources.from_env())) if visitor is not None else None
+    )
+    sandbox_memory_mb = (
+        visitor_limits.sandbox_memory_mb if visitor_limits is not None else DEFAULT_MEMORY_MB
+    )
     if execution.status in {
         "succeeded",
         "failed",
@@ -1900,6 +1931,7 @@ async def handle_qapp_execute(
             ExecutionSpec(
                 code=version.quantum_source,
                 timeout_s=120,
+                memory_mb=sandbox_memory_mb,
                 qubits_estimate=version.qubits_estimate,
                 trusted_setup=trusted_setup,
                 # Unique per execution, like the smoke path above and

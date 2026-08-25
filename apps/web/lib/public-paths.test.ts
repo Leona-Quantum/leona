@@ -108,3 +108,47 @@ test("every public path has a route behind it", () => {
     );
   }
 });
+
+/**
+ * The negative arm for ai-ops 183, and the one that actually catches the
+ * mistake worth catching.
+ *
+ * `/api/qapps/public` is public; `/api/qapps` — the SIGNED-IN list, which
+ * returns every Qapp the caller owns including `quantum_source` — is not, and
+ * must never become so by someone shortening the entry by one segment. The two
+ * differ by seven characters and the wrong one exposes a tenant's generated
+ * source.
+ *
+ * Asserted against BOTH matchers, because they read the same string differently
+ * and this file exists because of that asymmetry. A test that only checked
+ * `isPublicPath` would pass on a list AuthKit gates anyway.
+ */
+test("the public Qapp list is public and the signed-in Qapp list is not", () => {
+  assert.equal(isPublicPath("/api/qapps/public"), true);
+  assert.equal(isUnauthenticatedForAuthKit("/api/qapps/public"), true);
+
+  assert.equal(isPublicPath("/api/qapps"), false);
+  assert.equal(isUnauthenticatedForAuthKit("/api/qapps"), false);
+});
+
+/**
+ * The subtree this entry really publishes, stated as a test rather than left in
+ * a comment.
+ *
+ * `app/api/qapps/public/` has no children, but the sibling dynamic segment
+ * `app/api/qapps/[qappKey]/` matches these two paths as well — measured against
+ * a dev server, where `GET /api/qapps/public/executions` answers 405 (the route
+ * exists and is POST-only) rather than 404. So the middleware stops gating them
+ * the moment this entry lands.
+ *
+ * That is intended and argued for on the entry itself: each of those handlers
+ * calls `getMajoranaAuth({ ensureSignedIn: true })` before it does anything.
+ * This test pins the SCOPE of what was published, so that a future reader sees
+ * the two routes named rather than having to rediscover the precedence rule.
+ */
+test("publishing the public Qapp list also un-gates the two dynamic siblings", () => {
+  for (const path of ["/api/qapps/public/executions", "/api/qapps/public/visibility"]) {
+    assert.equal(isPublicPath(path), true, `${path} is inside the published subtree`);
+    assert.equal(isUnauthenticatedForAuthKit(path), true, `${path} is inside the published subtree`);
+  }
+});

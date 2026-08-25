@@ -12,15 +12,25 @@ from majorana_worker.context import RunContext
 
 
 class Session:
-    def __init__(self):
+    def __init__(self, user=None):
         self.commits = 0
         self.rollbacks = 0
+        # The row `session.get(User, ...)` returns. `None` is the DEFAULT here on
+        # purpose: it is the "owner row is gone" branch, which every test that is
+        # not about tier sizing should take, and which must resolve to the
+        # free-lane default rather than to the ceiling (ai-ops#181, and #171
+        # before it). A fake that handed back a paid account by default would
+        # make every one of these tests assert 4096 without saying so.
+        self.user = user
 
     async def commit(self):
         self.commits += 1
 
     async def rollback(self):
         self.rollbacks += 1
+
+    async def get(self, _model, _pk):
+        return self.user
 
 
 class Sink:
@@ -444,3 +454,120 @@ async def test_a_live_redelivery_is_refused_but_a_dead_one_is_re_run(monkeypatch
         "in 'running' with no result and no error while the queue counted the job done"
     )
     assert "finished" in dead
+
+
+async def _memory_for_visitor(monkeypatch, visitor):
+    """Run one Qapp execution as `visitor` and return the `memory_mb` it asked for."""
+    execution_id = uuid.uuid4()
+    qapp_id = uuid.uuid4()
+    execution = SimpleNamespace(
+        id=execution_id, qapp_id=qapp_id, status="queued", started_at=None, inputs={}
+    )
+    version = SimpleNamespace(
+        id=uuid.uuid4(),
+        qapp_id=qapp_id,
+        quantum_source="RESULT = {'summary': 'ok'}",
+        qubits_estimate=2,
+        fingerprint="b" * 64,
+        output_schema={
+            "type": "object",
+            "properties": {"summary": {"type": "string"}},
+            "required": ["summary"],
+        },
+    )
+    captured = {}
+
+    async def get_source(_scope, _session, _requested):
+        return execution, version
+
+    async def mark_running(*_args):
+        execution.status = "running"
+        return True
+
+    async def finish(*_args, **_kwargs):
+        return None
+
+    async def record_usage(*_args, **_kwargs):
+        return None
+
+    monkeypatch.setattr(handlers.qapps_repo, "get_execution_source", get_source)
+    monkeypatch.setattr(handlers.qapps_repo, "mark_execution_running", mark_running)
+    monkeypatch.setattr(handlers.qapps_repo, "finish_execution", finish)
+    monkeypatch.setattr(handlers.usage_repo, "record_usage", record_usage)
+    # The allowlists are read from the environment by `EnvTierSources.from_env`.
+    # Cleared here so the tier comes from the account row alone and the test does
+    # not pass or fail on whoever's address happens to be exported locally.
+    for name in ("MAJORANA_DEVELOPER_EMAILS", "MAJORANA_TEAM_EMAILS", "MAJORANA_PRO_EMAILS"):
+        monkeypatch.delenv(name, raising=False)
+
+    class CapturingSandbox:
+        provider = "fake"
+
+        async def _execute(self, spec):
+            captured["memory_mb"] = spec.memory_mb
+            return SandboxResult(
+                ok=True,
+                exit_code=0,
+                duration_ms=1,
+                stdout="",
+                stderr="",
+                provider="fake",
+                protected_result={"result": {"summary": "ok"}},
+            )
+
+    await handlers.handle_qapp_execute(
+        Session(user=visitor),
+        {
+            "execution_id": str(execution_id),
+            "workspace_id": str(uuid.uuid4()),
+            "user_id": str(uuid.uuid4()),
+        },
+        sandbox=CapturingSandbox(),
+    )
+    return captured["memory_mb"]
+
+
+async def test_a_paid_visitor_gets_the_paid_sandbox_on_someone_elses_qapp(monkeypatch):
+    """ai-ops#181, the owner's ruling: *"The visitor's tier — a paying visitor
+    gets 4096 MB on anyone's Qapp, a free visitor gets 2048 and may see it fail."*
+
+    The account this reads is the one on the JOB PAYLOAD, which `execute_qapp`
+    fills from the caller's own scope — so on a published Qapp at `/q/<slug>` it
+    is whoever opened the page, not whoever wrote it. Nothing in this path
+    consults `qapp.owner_user_id`, and that is the whole content of the ruling.
+    """
+    assert (
+        await _memory_for_visitor(
+            monkeypatch, SimpleNamespace(email="paying@example.com", plan="pro")
+        )
+        == 4096
+    )
+
+
+async def test_a_free_visitor_gets_the_free_sandbox_on_someone_elses_qapp(monkeypatch):
+    """The other half of the same ruling, and the half that makes it a decision:
+    a free visitor may see a Qapp fail that works for a paying one."""
+    assert (
+        await _memory_for_visitor(monkeypatch, SimpleNamespace(email="free@example.com", plan=None))
+        == 2048
+    )
+
+
+async def test_an_unresolvable_visitor_falls_back_to_the_free_lane_not_the_ceiling(monkeypatch):
+    """The fallback direction, which is the arm with a real failure mode.
+
+    `artifact_limit` treats a missing owner row as *unlimited*, because losing an
+    artifact an account already owns is the worse error. Memory goes the other
+    way and must keep going the other way: this is a CROSS-TENANT path — any
+    signed-in visitor may execute any published Qapp — so an unresolvable tier
+    that fell back to `MAX_MEMORY_MB` would buy a second vCPU against a paid
+    provider for a caller nobody could identify. Asserting `DEFAULT_MEMORY_MB`
+    rather than the literal 2048 is deliberate: it is the same constant the code
+    falls back to, so this test cannot pass by coincidence if the free tier's
+    allowance is ever changed.
+    """
+    from majorana_sandbox import DEFAULT_MEMORY_MB
+
+    memory = await _memory_for_visitor(monkeypatch, None)
+    assert memory == DEFAULT_MEMORY_MB
+    assert memory != 4096
