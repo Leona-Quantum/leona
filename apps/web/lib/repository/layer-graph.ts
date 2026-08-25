@@ -4063,7 +4063,17 @@ export const LAYER_GRAPH: LayerGraph = {
       },
     },
     bypasses: ["polynomial-approximation", "qsp-phase-factors"],
-    entries: ["hhl-linear-systems"],
+    // `hybrid-hhl-portfolio-optimization` sits beside the reference record rather
+    // than at the capability, because it is a variant of THIS route and says so in
+    // its own first line: it adapts "the Harrow-Hassidim-Lloyd (HHL) quantum
+    // linear-systems algorithm", "most of whose components current noisy quantum
+    // hardware cannot reach", and its two modifications — a scaling factor chosen
+    // classically, and a smaller-register phase estimation — both act on the
+    // phase-estimation-and-controlled-rotation structure this method's summary
+    // describes. Portfolio optimization is the demonstration in that paper, not
+    // its subject, so filing it under a finance heading would name the example
+    // and lose the method.
+    entries: ["hhl-linear-systems", "hybrid-hhl-portfolio-optimization"],
     hops: {
       "state-preparation": {
         theory:
@@ -10992,7 +11002,29 @@ export const LAYER_GRAPH: LayerGraph = {
       returns: "The period: an exact integer where the group is finite, or an approximation to the requested precision together with the classical post-processing that turned the measured samples into it.",
       returnsJa: "周期。群が有限であれば正確な整数、そうでなければ要求された精度までの近似値と、測定したサンプルをそれに変換した古典的な後処理を伴います。",
     },
-    entries: [],
+    // Two records placed at the CAPABILITY and deliberately not under any of the
+    // three methods, because the period each one recovers lives in a general
+    // finite ABELIAN group and the routes below are cyclic, real, and lattice.
+    // Filing either under `cyclic-period-finding` would assert the group is
+    // cyclic, which neither paper says.
+    //
+    //   `zeta-function-of-a-curve`  reduces to the order of the divisor class
+    //                               group and gets it by "invoking Watrous's
+    //                               quantum algorithm for the order of a black
+    //                               box abelian group, itself a Shor-type
+    //                               Fourier-sampling method"
+    //   `finite-ring-ideals`        turns on finding "a set of additive
+    //                               generators whose cyclic subgroups decompose
+    //                               (R,+) as a direct product"; its record already
+    //                               carries the family "Hidden-period / factoring"
+    //
+    // `exponential-congruences` was considered and is NOT here. It calls Shor's
+    // algorithm, but as the inner step of a Grover search over a solution box,
+    // and what it returns is whether a congruence has a solution — not a period.
+    // The capability contract above says this slot returns "the period", and a
+    // record that returns something else does not belong to it however much of
+    // its machinery it borrows.
+    entries: ["zeta-function-of-a-curve", "finite-ring-ideals"],
     whyALayer: "The routes here are separated by **what kind of thing the period is allowed to be**, and that is a difference in what is possible rather than in cost. Hallgren states it against Shor directly: the structure behind Pell's equation is \"a group-like subset of the reals modulo an irrational number\", and \"this prevents direct application of Shor's algorithms\" — an irrational period cannot be written down, so the continued-fraction step that finishes the integer route has nothing to finish. Going from one irrational period to a lattice of them costs again, and for a stated reason: the lattice method \"only appears to work for a constant number of dimensions because the rounding introduces new noise into the distribution that is not present in the integer lattice case\". So a claim that a problem \"reduces to period finding\" has said nothing until it says which of the three. The wider family these belong to is the **hidden subgroup problem**, which is deliberately not drawn as a node beside them: it also contains instances with no period interpretation at all — Hallgren names graph isomorphism as one of the \"still unsolved problems\" it covers — so a node for it would be a family standing beside three of its own members.",
     whyALayerJa: "ここに並ぶ経路を分けているのは、**周期がどのような対象でありうるか**であり、これは費用の違いではなく可能かどうかの違いです。Hallgren は Shor に対してそれを直接述べています。Pell 方程式の背後にある構造は「無理数を法とする実数の、群に似た部分集合」であり、「これが Shor のアルゴリズムの直接的な適用を妨げる」。無理数の周期は書き下せないため、整数の経路を締めくくる連分数の工程には締めくくるべきものがありません。一つの無理数の周期から周期の格子へ進むと、さらに費用がかかります。その理由も述べられています。格子の手法は「丸めが、整数格子の場合には存在しない新たな雑音を分布に持ち込むため、次元数が定数の場合にしか機能しないように見える」。したがって、ある問題が「周期発見に帰着する」という主張は、三つのうちどれであるかを言うまでは何も言っていません。これらが属するより広い族は**隠れ部分群問題**ですが、それは意図的にノードとして並置していません。この族には周期としての解釈をもたない事例も含まれ、Hallgren はそれが覆う「未解決の問題」としてグラフ同型性を挙げています。そのためノードを立てれば、族が自らの三つの構成員の隣に並ぶことになります。",
   },
@@ -11123,7 +11155,47 @@ export const LAYER_GRAPH: LayerGraph = {
       returns: "An estimate of the eigenphase to the requested number of bits, with the failure probability it was obtained at, plus the two costs that actually differ between routes: how many ancillas were held at once, and how many sequential rounds were run.",
       returnsJa: "要求した桁数までの固有位相の推定値と、それが得られた際の失敗確率。あわせて、経路ごとに実際に異なる二つの費用、すなわち同時に保持した補助量子ビットの数と、逐次実行した周回数を返します。",
     },
-    entries: [],
+    // Four records whose own text says phase estimation is the instrument, placed
+    // at the CAPABILITY rather than under either method below, because none of
+    // them chooses between the two — the ancilla/round trade this slot exists to
+    // pose is not a choice any of these four makes, so filing one under
+    // `register-phase-estimation` or `single-ancilla-phase-estimation` would
+    // assert a decision
+    // its paper never took. Capability-level `entries` is an established shape
+    // here, not an evasion — this change takes it from 9 of 28 capabilities
+    // carrying a non-empty `entries` to 11. Stated as a delta rather than as a
+    // census on purpose: a bare count in a comment is true on the day it is
+    // written and quietly wrong afterwards, and this very line was already
+    // wrong by the time it was reviewed.
+    //
+    // Each is quoted from its own record rather than inferred:
+    //   `quantum-counting`                        its algorithmFamily is literally
+    //                                             "Quantum counting (QPE + Grover)"
+    //   `gauss-sum-estimation`                    the Gauss sum over sqrt(p^r) "appears as
+    //                                             the eigenvalue", turned into a relative
+    //                                             phase "which standard phase estimation
+    //                                             reads out with O(1/eps) samples" — and note
+    //                                             this record does NOT belong under
+    //                                             `cyclic-period-finding` even though it calls
+    //                                             Shor's discrete log: that is a subroutine
+    //                                             building the state, not the method
+    //   `sparse-matrix-power-diagonal-entries`    "phase estimation applied to the basis state
+    //                                             |j> samples the spectral measure of which the
+    //                                             diagonal entry is the m-th moment"
+    //   `string-rewriting-derivation-counts`      the count "becomes a difference of expectation
+    //                                             values of A^m ... which Hamiltonian simulation
+    //                                             and phase estimation can estimate"
+    //
+    // `quadratically-signed-weight-enumerators` was considered with these and is
+    // NOT here: it is BQP-complete like the two above, but its record states a
+    // signed-sum expansion of circuit amplitudes and never a phase estimation, and
+    // shared complexity class is not shared method.
+    entries: [
+      "quantum-counting",
+      "gauss-sum-estimation",
+      "sparse-matrix-power-diagonal-entries",
+      "string-rewriting-derivation-counts",
+    ],
     whyALayer: "The methods here differ in a resource trade a reader has to make deliberately, and Dobsicek et al. state both sides of it in one sentence: to reach a precision of order $1/2^m$ \"it is possible to run either log m rounds (iterations) with m ancillary qubits or m log(m) rounds with only a single ancilla\". So the choice is ancillas against rounds — hold a whole register coherent and finish quickly, or hold one qubit and pay in sequential measurements with classical feedback between them. Which is cheaper is a property of the machine rather than of the algorithm, and their own motivation says so: \"As long as the number of qubits is a limiting factor, implementations of phase estimation with only a single ancillary qubit will be of foremost importance.\" A cost model that says \"phase estimation\" without saying which of the two has not said what the machine is being asked for.",
     whyALayerJa: "ここに並ぶ手法は、読み手が意識して選ぶべき資源の交換において異なります。Dobsicek らはその両側を一文で述べています。$1/2^m$ 程度の精度に到達するには「m 個の補助量子ビットで log m 周回を実行することも、補助量子ビット 1 個だけで m log(m) 周回を実行することもできる」。つまり選択は補助量子ビットと周回数の交換です。レジスタ全体をコヒーレントに保って短く終えるか、1 量子ビットだけを保ち、その代わりに古典的なフィードバックを挟む逐次測定で支払うか。どちらが安いかはアルゴリズムではなく機械の性質であり、著者ら自身の動機がそう述べています。「量子ビット数が制約である限り、補助量子ビット 1 個だけの位相推定の実装が最重要となる」。どちらであるかを言わずに「位相推定」とだけ書いたコスト見積もりは、機械に何を求めているかを述べていません。",
   },
