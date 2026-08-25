@@ -3000,3 +3000,40 @@ test("the two surfaces agree about a declared implementations absence", () => {
     "the method page falls back to its generic note before checking for a declared reason",
   );
 });
+
+// Seven records that a node reaches only because this pass anchored them, and
+// the slot each was anchored to. The set, not the count, is what is pinned: a
+// count ratchets back to green the moment somebody anchors a different record,
+// and this test exists to catch one of these SEVEN being dropped or moved.
+//
+// Each pairing is argued at the `entries` line it lives on, from the record's
+// own statement of what it returns against that slot's contract. If one of
+// those arguments is later judged wrong, the fix is to move the record and
+// change this table in the same commit — not to delete the assertion.
+const ANCHORED_THIS_PASS: ReadonlyArray<readonly [string, string]> = [
+  ["ground-state-energy", "coarse-grained-vqe-intermolecular-interactions"],
+  ["ground-state-energy", "projection-based-embedding-vqe"],
+  ["ground-state-energy", "protein-folding-variational"],
+  ["ground-state-energy", "double-bracket-diagonalization"],
+  ["ansatz-construction", "adapt-qaoa"],
+  ["ansatz-construction", "vqe-spin-adapted"],
+  ["hamiltonian-simulation", "quantum-kicked-rotator-simulation"],
+];
+
+test("the seven records anchored this pass are still reached, each at its own slot", () => {
+  for (const [nodeId, slug] of ANCHORED_THIS_PASS) {
+    const node = LAYER_GRAPH.nodes.find((one) => one.id === nodeId);
+    assert.ok(node, `${nodeId} is no longer a node in the graph`);
+    assert.ok(
+      (node.entries ?? []).includes(slug),
+      `${slug} is no longer an entry on ${nodeId} — if it moved, move it in ANCHORED_THIS_PASS too`,
+    );
+  }
+  // And the pairing is exclusive: a record anchored twice reads to a visitor as
+  // two different claims about what it is.
+  const slugs = ANCHORED_THIS_PASS.map(([, slug]) => slug);
+  for (const slug of slugs) {
+    const holders = LAYER_GRAPH.nodes.filter((one) => (one.entries ?? []).includes(slug));
+    assert.equal(holders.length, 1, `${slug} is anchored at ${holders.length} nodes, not 1`);
+  }
+});
