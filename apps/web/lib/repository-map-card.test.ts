@@ -1990,11 +1990,18 @@ test("every ingredient is one of the method's own steps, so the two lists partit
 // them — and the denominator is asserted too, so deleting a method cannot make a
 // fraction pass on a smaller region.
 //
-// Ratcheting `example.pseudocode` and nothing else is deliberate. `example.text`
+// Pinning `example.pseudocode` and nothing else is deliberate. `example.text`
 // sits at 3 of 110 and `implementations` at 25, and both are evidence-bound —
 // `text` "needs a run somebody actually did", so pinning either would pin a
 // number that means nothing about work anybody can do. See the honesty taxonomy
 // on `LayerCensus.withPseudocode`.
+//
+// `example.pseudocode` reached 110 of 110 on 2026-08-25 and is the first of the
+// three to close. That is exactly why it can be asserted as a set rather than as
+// a count: the field needs no new information — every listing is writable from
+// the record's own contract and its already-recorded `hops[].theory` — so a
+// method arriving without one is a gap somebody can close, not evidence nobody
+// has.
 
 test("every ansatz-construction method carries a listing, and the region cannot shrink to pass", () => {
   const ansatzMethods = LAYER_GRAPH.nodes.filter(
@@ -2018,20 +2025,25 @@ test("every ansatz-construction method carries a listing, and the region cannot 
   );
 });
 
-test("the graph-wide pseudocode count is a floor that only goes up", () => {
+test("every method carries a listing, and the graph cannot shrink to pass", () => {
   const methods = LAYER_GRAPH.nodes.filter(isMethod);
   const withPseudocode = methods.filter(
     (node) => (node.example?.pseudocode ?? "").trim() !== "",
   );
 
+  // This was a FLOOR — `withPseudocode.length >= N`, ratcheted 78 -> 94 -> … as
+  // batches landed. At 110 of 110 a floor is the weaker of the two available
+  // assertions and the wrong one: it passes on a graph that gains a method with
+  // no listing, which is now the only way this can regress. So it names the
+  // methods instead, and the floor's job survives as the denominator pin below.
   assert.ok(
     methods.length >= 110,
     `${methods.length} methods, was 110 — the denominator shrank`,
   );
-  assert.ok(
-    withPseudocode.length >= 94,
-    `${withPseudocode.length} of ${methods.length} methods carry pseudocode, was 94`,
-  );
+  const missing = methods
+    .filter((node) => (node.example?.pseudocode ?? "").trim() === "")
+    .map((node) => node.id);
+  assert.deepEqual(missing, [], `methods with no listing: ${missing.join(", ")}`);
 
   // Whitespace is authored-looking and reads as filled to every count that does
   // not trim. `LayerCensus.withPseudocode` trims for this reason; so does this.
