@@ -16,7 +16,7 @@ from typing import Any
 
 from majorana_contracts import Scope
 from majorana_contracts.enums import QappExecutionStatus, Visibility
-from sqlalchemy import and_, func, or_, select
+from sqlalchemy import and_, func, or_, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..ids import uuid7
@@ -34,6 +34,28 @@ def _accessible(scope: Scope) -> Any:
 
 class QappPublicationBlocked(RepoError):
     """The current version has not completed one schema-valid sandbox execution."""
+
+
+class QappExecutionCeiling(RepoError):
+    """A spend ceiling refused this execution. ``scope_name`` says which one.
+
+    Three ceilings guard the same paid sandbox, and which one fired changes what
+    the caller should do, so the name travels with the refusal rather than being
+    flattened into one message:
+
+    ``account``     this visitor has run too many Qapps this hour; another
+                    visitor is unaffected.
+    ``qapp``        this *published Qapp* has been run too many times this hour
+                    by everyone put together; the visitor may not have run it at
+                    all. Bounds one popular — or one hostile — public page.
+    ``deployment``  every Qapp on the deployment put together. The last backstop
+                    on total spend, and the only one whose ceiling does not rise
+                    when accounts are added.
+    """
+
+    def __init__(self, scope_name: str) -> None:
+        super().__init__(f"Qapp execution ceiling reached: {scope_name}")
+        self.scope_name = scope_name
 
 
 def _slug(title: str, qapp_id: uuid.UUID) -> str:
@@ -308,15 +330,46 @@ async def create_execution(
     return execution
 
 
+#: Key for the transaction-scoped advisory lock that serialises reservations.
+#: Arbitrary but fixed, and namespaced by the migration that introduced the
+#: counters it protects so a future unrelated advisory lock does not collide.
+_PRESSURE_LOCK_KEY = 0x0055_0056
+
+
 async def reserve_execution_slot(
     scope: Scope,
     session: AsyncSession,
     *,
     since: dt.datetime,
     limit: int,
+    qapp_id: uuid.UUID,
+    qapp_limit: int,
+    deployment_limit: int,
 ) -> int:
-    """Serialize the per-account safety ceiling before a paid sandbox is queued."""
+    """Serialize all three spend ceilings before a paid sandbox is queued.
+
+    The per-account ceiling alone is the right bound for a *private* Qapp, where
+    the only account that can execute one is the account that owns it. It is not
+    a bound at all for a **published** one: `/q/<slug>` is public and runs under
+    the *visitor's* account, so per-account x (however many accounts sign up) is
+    the real ceiling, and nothing caps how many published Qapps exist. The two
+    cross-tenant ceilings are what actually bound spend, and they are read
+    through migration 0056's `SECURITY DEFINER` counter rather than a plain
+    `count(*)` — see that migration for why an ordinary count here would stop
+    bounding anything the day RLS enforcement is switched on.
+
+    One transaction-scoped advisory lock serialises the whole reservation, so
+    two concurrent visitors cannot both read a count one below a ceiling and
+    both be admitted. It is taken *before* the per-account row lock and never in
+    the other order, so the two cannot deadlock against each other.
+
+    A ceiling of `0` disables that one ceiling, matching how `rate_limit.py`
+    spells "off" — an unbounded Qapp surface is recoverable and costs money,
+    while one refusing every real visitor looks like an outage and cannot be
+    diagnosed from the outside.
+    """
     require_write(scope)
+    await session.execute(select(func.pg_advisory_xact_lock(_PRESSURE_LOCK_KEY)))
     await session.execute(select(User.id).where(User.id == scope.user_id).with_for_update())
     used = int(
         (
@@ -330,8 +383,22 @@ async def reserve_execution_slot(
             )
         ).scalar_one()
     )
-    if used >= limit:
-        raise ValueError("Qapp execution safety limit reached")
+    if limit and used >= limit:
+        raise QappExecutionCeiling("account")
+    if qapp_limit or deployment_limit:
+        pressure = (
+            await session.execute(
+                text(
+                    "select qapp_count, global_count "
+                    "from qapp_execution_pressure(:since, :qapp_id)"
+                ),
+                {"since": since, "qapp_id": qapp_id},
+            )
+        ).one()
+        if qapp_limit and int(pressure.qapp_count) >= qapp_limit:
+            raise QappExecutionCeiling("qapp")
+        if deployment_limit and int(pressure.global_count) >= deployment_limit:
+            raise QappExecutionCeiling("deployment")
     return used
 
 

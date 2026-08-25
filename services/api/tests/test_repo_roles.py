@@ -89,6 +89,9 @@ VIEWER_BLOCKED_WRITES = [
         db,
         since=dt.datetime.now(dt.UTC),
         limit=60,
+        qapp_id=uuid.uuid4(),
+        qapp_limit=200,
+        deployment_limit=600,
     ),
     lambda s, db: qapps.mark_execution_running(s, db, uuid.uuid4()),
     lambda s, db: qapps.finish_execution(

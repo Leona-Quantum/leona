@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import uuid
 import datetime as dt
 from typing import Any
@@ -20,7 +21,49 @@ from ..repos import qapps as qapps_repo
 from ..repos import system
 
 router = APIRouter()
-QAPP_EXECUTION_BACKSTOP_PER_HOUR = 60
+
+
+def _ceiling(name: str, default: int) -> int:
+    """Read one spend ceiling from the environment, falling back to `default`.
+
+    Read at import, like every other constant in this module. These are the only
+    numbers standing between a published Qapp and an unbounded sandbox bill, so
+    an operator must be able to move one *without* shipping a deploy: an
+    unparseable or negative value is therefore treated as "not set" rather than
+    crashing the service, because a Qapp surface that is merely uncapped is
+    recoverable and an API that will not boot is not.
+    """
+    raw = os.environ.get(name, "").strip()
+    if not raw:
+        return default
+    try:
+        value = int(raw)
+    except ValueError:
+        return default
+    return value if value >= 0 else default
+
+
+#: Per-ACCOUNT ceiling. Bounds one visitor. This is the only one 0055 shipped,
+#: and on a public Qapp it bounds nothing in aggregate: the page runs under the
+#: *visitor's* account, so the reachable total is this times however many people
+#: have signed up.
+QAPP_EXECUTION_BACKSTOP_PER_HOUR = _ceiling("QAPP_EXECUTIONS_PER_ACCOUNT_HOUR", 60)
+#: Per-QAPP ceiling, counted across every account. Bounds one published page,
+#: whether it is genuinely popular or being driven by a hostile creator's own
+#: UI. 200/hour is well above organic demand at launch and still leaves the
+#: worst case for a single Qapp two orders of magnitude below the unbounded one.
+QAPP_EXECUTIONS_PER_QAPP_HOUR = _ceiling("QAPP_EXECUTIONS_PER_QAPP_HOUR", 200)
+#: Deployment-wide ceiling, counted across every account and every Qapp. The
+#: last backstop on total spend and the only one of the three whose ceiling does
+#: not rise as accounts or Qapps are added — which is what makes it the one that
+#: actually bounds the bill.
+QAPP_EXECUTIONS_PER_DEPLOYMENT_HOUR = _ceiling("QAPP_EXECUTIONS_PER_DEPLOYMENT_HOUR", 600)
+
+_CEILING_MESSAGES = {
+    "account": "You have run too many Qapps this hour; try again later.",
+    "qapp": "This Qapp has reached its hourly execution limit; try again later.",
+    "deployment": "Qapp execution is temporarily at capacity; try again later.",
+}
 
 
 class QappDetail(BaseModel):
@@ -192,7 +235,19 @@ async def execute_qapp(
             session,
             since=dt.datetime.now(dt.timezone.utc) - dt.timedelta(hours=1),
             limit=QAPP_EXECUTION_BACKSTOP_PER_HOUR,
+            qapp_id=qapp.id,
+            qapp_limit=QAPP_EXECUTIONS_PER_QAPP_HOUR,
+            deployment_limit=QAPP_EXECUTIONS_PER_DEPLOYMENT_HOUR,
         )
+    except qapps_repo.QappExecutionCeiling as exc:
+        # Which ceiling fired is not a secret and it is the one thing that tells
+        # a visitor whether waiting will help: `account` clears for them in an
+        # hour, `qapp` and `deployment` are other people's traffic. It does not
+        # disclose a count, only which bucket is full.
+        raise HTTPException(
+            status_code=429,
+            detail=_CEILING_MESSAGES[exc.scope_name],
+        ) from None
     except ValueError:
         raise HTTPException(
             status_code=429,

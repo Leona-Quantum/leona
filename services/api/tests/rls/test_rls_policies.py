@@ -36,6 +36,7 @@ Two data classes:
   see the report to the orchestrator for the same distinction spelled out.
 """
 
+import datetime as dt
 import os
 
 import pytest
@@ -430,4 +431,81 @@ async def test_deliberately_broken_policy_is_caught(dataset):
     assert leaked == 1, (
         "weakening the policy to USING(true) did not surface workspace B's row — "
         "this suite's cross-tenant assertions would not catch a real regression"
+    )
+
+
+async def test_execution_pressure_counter_sees_across_tenants_under_enforcement(
+    db_session_factory,
+    dataset,
+):
+    """0056's spend ceilings must keep counting when RLS enforcement is switched on.
+
+    The two cross-tenant ceilings in `repos/qapps.py::reserve_execution_slot` — how
+    many times THIS published Qapp has been run by everyone, and how many Qapp
+    executions the DEPLOYMENT has served — are by construction questions about
+    other people's rows. `qapp_executions` carries 0055's `tenant_isolation`
+    policy, whose first disjunct is permissive only while `majorana.rls_enforce`
+    is off. It is off in every environment today, so an ordinary `count(*)` there
+    would pass a review, pass CI, and bound spend correctly right up until the
+    day enforcement is turned on — at which point both ceilings would quietly
+    start counting only the caller's own workspace and stop refusing anything.
+    Nothing would error. The ceilings would simply cease to exist.
+
+    So the counts go through a SECURITY DEFINER function, and this is the probe
+    that says so. It runs with enforcement ON — the state that breaks the naive
+    version — and asserts BOTH halves, because either one alone is satisfiable by
+    a broken implementation:
+
+    - the **negative control** first: a plain `count(*)` under the same GUCs must
+      NOT see workspace B's execution. Without it, a test that merely sees rows
+      cannot distinguish "the function is exempt" from "enforcement was never on
+      in the first place", which is exactly how this class of guard gets a green
+      check while guarding nothing.
+    - then the claim: `qapp_execution_pressure` under those same GUCs must see
+      it.
+    """
+    a, b = dataset
+    since = dt.datetime.now(dt.timezone.utc) - dt.timedelta(hours=1)
+    async with db_session_factory() as session:
+        await session.execute(text(f"select set_config('{ENFORCE}', 'on', true)"))
+        await session.execute(
+            text(f"select set_config('{WORKSPACE}', :w, true)"),
+            {"w": str(a.workspace_id)},
+        )
+        # B's qapp id comes from the fixture, not from a query: under
+        # enforcement with A's GUC the row that carries it is precisely what is
+        # invisible, so reading it back would be circular.
+        b_qapp_id = b.qapps
+
+        direct = (
+            await session.execute(
+                text("select count(*) from qapp_executions where id = :id"),
+                {"id": b.qapp_executions},
+            )
+        ).scalar_one()
+
+        pressure = (
+            await session.execute(
+                text(
+                    "select qapp_count, global_count "
+                    "from qapp_execution_pressure(:since, :qapp_id)"
+                ),
+                {"since": since, "qapp_id": b_qapp_id},
+            )
+        ).one()
+        await session.rollback()
+
+    assert direct == 0, (
+        "enforcement was not actually on — workspace B's execution was visible to a "
+        "plain count under workspace A's GUC, so this test cannot tell an exempt "
+        "counter from an unenforced policy and proves nothing"
+    )
+    assert int(pressure.qapp_count) >= 1, (
+        "qapp_execution_pressure could not see workspace B's execution under "
+        "enforcement: the per-qapp spend ceiling would count only the caller's own "
+        "workspace and would never refuse a public Qapp being driven by many accounts"
+    )
+    assert int(pressure.global_count) >= 2, (
+        "qapp_execution_pressure saw fewer than both tenants' executions: the "
+        "deployment-wide ceiling is not counting deployment-wide"
     )

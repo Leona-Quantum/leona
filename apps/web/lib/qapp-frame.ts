@@ -1,3 +1,29 @@
+/**
+ * Egress policy for the generated document.
+ *
+ * Every ordinary channel out of the frame is named here and closed: no fetch,
+ * XHR, WebSocket or beacon (`connect-src 'none'`), no subresource that could
+ * carry bytes in a URL (`img-src` is data:/blob: only; `font-src`, `media-src`,
+ * `object-src` none), no form post (`form-action 'none'`), no nested browsing
+ * context (`frame-src`, `worker-src` none), and no relative-URL rebasing
+ * (`base-uri 'none'`). `default-src 'none'` covers whatever is left.
+ *
+ * ONE channel is deliberately not in this list, because CSP cannot close it:
+ * **the frame navigating itself.** `navigate-to` was removed from the spec and
+ * ships in no browser, and the `sandbox` attribute restricts a frame navigating
+ * its PARENT (which is why `allow-top-navigation` is absent) but never a frame
+ * navigating itself. So a document that gets past
+ * `qapp_validation.py::_FORBIDDEN_UI_PATTERNS` at generation time can still set
+ * its own location and put whatever a viewer typed into the query string of a
+ * URL it chooses — and, worse than the exfiltration, can then render an
+ * attacker-controlled page inside Leona's chrome.
+ *
+ * That is the residual risk ADR-0031 records. It is covered at generation time
+ * by the pattern guard and at runtime by the host's navigation tripwire — see
+ * `qapp-runtime.tsx`. Neither is this policy's job, and the comment is here so
+ * nobody reads the absence as an oversight and "fixes" it with a directive that
+ * does nothing.
+ */
 export const QAPP_FRAME_CSP = [
   "default-src 'none'",
   "script-src 'unsafe-inline'",
@@ -19,6 +45,22 @@ export type QappExecuteMessage = {
   requestId: string;
   inputs: Record<string, unknown>;
 };
+
+/**
+ * The frame announcing that OUR document is the one running.
+ *
+ * This exists so the host can tell "the frame loaded" from "the frame loaded
+ * *our* document", which is the difference between an ordinary render and the
+ * one egress channel neither the sandbox nor the policy can close. See
+ * `qapp-runtime.tsx` for what the host does with it.
+ */
+export type QappReadyMessage = { channel: string; type: "qapp.ready" };
+
+export function isQappReadyMessage(value: unknown, channel: string): value is QappReadyMessage {
+  if (!value || typeof value !== "object") return false;
+  const candidate = value as Record<string, unknown>;
+  return candidate.channel === channel && candidate.type === "qapp.ready";
+}
 
 export function isQappExecuteMessage(value: unknown, channel: string): value is QappExecuteMessage {
   if (!value || typeof value !== "object") return false;
@@ -53,6 +95,7 @@ function bridgeScript(channel: string): string {
         window.parent.postMessage({channel,type:"qapp.execute",requestId,inputs},"*");
       });
     }});
+    window.parent.postMessage({channel,type:"qapp.ready"},"*");
     window.addEventListener("message",event=>{
       const message=event.data;
       if(!message||message.channel!==channel||message.type!=="qapp.response")return;

@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useId, useMemo, useRef, useState } from "react";
-import { isQappExecuteMessage, qappFrameDocument } from "../lib/qapp-frame";
+import { isQappExecuteMessage, isQappReadyMessage, qappFrameDocument } from "../lib/qapp-frame";
 
 type Execution = {
   id: string;
@@ -28,6 +28,30 @@ export function QappRuntime({
   const document = useMemo(() => qappFrameDocument(uiDocument, channel), [uiDocument, channel]);
   const runningRef = useRef(false);
   const [notice, setNotice] = useState<string | null>(null);
+  // The navigation tripwire. `QAPP_FRAME_CSP` closes every egress channel a
+  // policy can close; the one it cannot is the frame navigating ITSELF, because
+  // `navigate-to` ships in no browser and `sandbox` only governs navigating the
+  // parent. A generated document that gets past the server-side pattern guard
+  // can therefore replace itself with an attacker's page — putting whatever the
+  // viewer typed in a URL, and then rendering that page inside Leona's chrome,
+  // which is the worse half: it is a convincing place to ask for a password.
+  //
+  // A plain load counter does not work: browsers may fire a load for the
+  // iframe's initial about:blank before `srcDoc` is parsed, and tearing a
+  // working Qapp down on its own first paint would be a worse bug than the one
+  // being fixed. So the frame identifies itself instead — the bridge, which runs
+  // first in a head WE authored and before any generated markup, posts
+  // `qapp.ready`. The rule is then exact: a load event arriving AFTER we have
+  // heard ready is a second document, and a second document is not ours.
+  //
+  // The frame cannot spoof its way out. Replaying `qapp.ready` from the
+  // attacker page does not help — teardown keys on `ready` having ALREADY been
+  // seen, so another one only re-confirms it. Hanging the navigation forever
+  // suppresses the load event, but then nothing renders and the phishing half
+  // is dead anyway; the first request is gone either way and no design that
+  // reacts to a navigation can recall it.
+  const readyRef = useRef(false);
+  const [navigatedAway, setNavigatedAway] = useState(false);
 
   useEffect(() => {
     let disposed = false;
@@ -77,6 +101,10 @@ export function QappRuntime({
 
     function receive(event: MessageEvent) {
       if (event.source !== frame.current?.contentWindow) return;
+      if (isQappReadyMessage(event.data, channel)) {
+        readyRef.current = true;
+        return;
+      }
       if (!isQappExecuteMessage(event.data, channel)) return;
       void execute(event.data.requestId, event.data.inputs);
     }
@@ -89,14 +117,30 @@ export function QappRuntime({
 
   return (
     <section className="qapp-runtime">
-      <iframe
-        ref={frame}
-        title="Qapp"
-        srcDoc={document}
-        sandbox="allow-scripts"
-        referrerPolicy="no-referrer"
-        className="qapp-runtime-frame"
-      />
+      {navigatedAway ? (
+        // Unmounted, not hidden. Leaving the element in the tree with the
+        // attacker's document still loaded would keep exactly the surface this
+        // is here to remove.
+        <div className="qapp-runtime-frame qapp-runtime-blocked" role="alert">
+          <p>This Qapp&rsquo;s interface tried to navigate away from Leona and was stopped.</p>
+          <p>Nothing you type into a Qapp should ever be a password. Reload the page to try again.</p>
+        </div>
+      ) : (
+        <iframe
+          ref={frame}
+          title="Qapp"
+          srcDoc={document}
+          sandbox="allow-scripts"
+          referrerPolicy="no-referrer"
+          className="qapp-runtime-frame"
+          onLoad={() => {
+            // Ordinary first paint: `ready` has not arrived yet, so this is
+            // either the initial about:blank or our own document. Only a load
+            // that arrives after the bridge has spoken is a second document.
+            if (readyRef.current) setNavigatedAway(true);
+          }}
+        />
+      )}
       <footer className="qapp-runtime-status" aria-live="polite">
         <span>{notice ?? "Quantum execution is isolated; UI network and storage APIs are restricted."}</span>
         {!canExecute && signInPath ? <Link href={signInPath}>Sign in to run →</Link> : null}
