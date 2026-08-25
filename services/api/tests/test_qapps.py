@@ -391,3 +391,42 @@ def test_ui_guard_rejects_webrtc(name):
     """
     with pytest.raises(ValueError, match="direct browser communication"):
         validate_qapp_ui_document(WEBRTC_PAYLOADS[name])
+
+
+def test_the_cross_tenant_ceilings_hold_the_owner_ruled_worst_case():
+    """The two cross-tenant ceilings, and the arithmetic the owner sized them by.
+
+    Pinning the two numbers alone would be a test of a *decision*, and a decision
+    test stops guarding the moment the reason for it moves. The reason here is an
+    arithmetic one and is stated in the ruling itself:
+
+    > *"Halve both to 300 and 100 — worst case ~10 compute-hours/hr, still far
+    > above any plausible launch demand"* — owner, ai-ops#179, 2026-08-25
+
+    ~10 compute-hours per hour is `QAPP_EXECUTIONS_PER_DEPLOYMENT_HOUR` times the
+    longest a sandbox can run. So this asserts the product, not only the factor:
+    raising `MAX_TIMEOUT_S` without revisiting the ceiling fails here, and that is
+    the edit that would otherwise silently multiply the bill the ruling bounded.
+
+    The per-account backstop is deliberately *not* part of that product. It bounds
+    one visitor, and on a published Qapp the reachable total is it times however
+    many people have signed up — which is exactly why the other two exist.
+    """
+    from majorana_sandbox.spec import MAX_TIMEOUT_S
+
+    from majorana_api.routes import qapps as qapp_routes
+
+    assert qapp_routes.QAPP_EXECUTION_BACKSTOP_PER_HOUR == 60
+    assert qapp_routes.QAPP_EXECUTIONS_PER_QAPP_HOUR == 100
+    assert qapp_routes.QAPP_EXECUTIONS_PER_DEPLOYMENT_HOUR == 300
+
+    worst_case_compute_hours = (
+        qapp_routes.QAPP_EXECUTIONS_PER_DEPLOYMENT_HOUR * MAX_TIMEOUT_S
+    ) / 3600
+    assert worst_case_compute_hours == pytest.approx(10.0)
+
+    # And the per-Qapp ceiling is the tighter of the two, so one published page
+    # can never be the whole deployment's hour on its own.
+    assert (
+        qapp_routes.QAPP_EXECUTIONS_PER_QAPP_HOUR < qapp_routes.QAPP_EXECUTIONS_PER_DEPLOYMENT_HOUR
+    )

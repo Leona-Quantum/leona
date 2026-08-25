@@ -50,14 +50,16 @@ def _ceiling(name: str, default: int) -> int:
 QAPP_EXECUTION_BACKSTOP_PER_HOUR = _ceiling("QAPP_EXECUTIONS_PER_ACCOUNT_HOUR", 60)
 #: Per-QAPP ceiling, counted across every account. Bounds one published page,
 #: whether it is genuinely popular or being driven by a hostile creator's own
-#: UI. 200/hour is well above organic demand at launch and still leaves the
-#: worst case for a single Qapp two orders of magnitude below the unbounded one.
-QAPP_EXECUTIONS_PER_QAPP_HOUR = _ceiling("QAPP_EXECUTIONS_PER_QAPP_HOUR", 200)
+#: UI. Halved from 200 to 100 by owner ruling on ai-ops#179 — "worst case ~10
+#: compute-hours/hr, still far above any plausible launch demand".
+QAPP_EXECUTIONS_PER_QAPP_HOUR = _ceiling("QAPP_EXECUTIONS_PER_QAPP_HOUR", 100)
 #: Deployment-wide ceiling, counted across every account and every Qapp. The
 #: last backstop on total spend and the only one of the three whose ceiling does
 #: not rise as accounts or Qapps are added — which is what makes it the one that
-#: actually bounds the bill.
-QAPP_EXECUTIONS_PER_DEPLOYMENT_HOUR = _ceiling("QAPP_EXECUTIONS_PER_DEPLOYMENT_HOUR", 600)
+#: actually bounds the bill. Halved from 600 to 300 by the same ai-ops#179
+#: ruling; at the 2048 MB / 120 s ExecutionSpec default that is the ~10
+#: compute-hours per hour the owner sized the worst case at.
+QAPP_EXECUTIONS_PER_DEPLOYMENT_HOUR = _ceiling("QAPP_EXECUTIONS_PER_DEPLOYMENT_HOUR", 300)
 
 _CEILING_MESSAGES = {
     "account": "You have run too many Qapps this hour; try again later.",
