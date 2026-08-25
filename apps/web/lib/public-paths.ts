@@ -112,6 +112,44 @@ export const PUBLIC_PATHS: readonly string[] = [
   // `/llms.txt`, the handler reads compile-time constants only, and it sets no
   // cookie and touches no session.
   "/llms.txt",
+  // The public Qapp list (ai-ops 183). `/q` above does NOT cover it, for the
+  // same reason `/contact` does not cover `/api/contact`: an entry matches its
+  // own subtree, and `/api/qapps/public` is not under `/q`.
+  //
+  // Everything about this endpoint already says "anonymous". The Next route
+  // calls `fetchControlPlane` with no `ensureSignedIn` and sends no
+  // Authorization header; the FastAPI route behind it takes `PublicQappScope`
+  // (`auth/qapp_deps.py::get_public_qapp_scope`), which is an anonymous RLS
+  // context, not a session; and it answers with `PublicQappSummary`, a
+  // `extra="forbid"` projection of seven scalar fields that carries neither
+  // `quantum_source` nor `workspace_id` nor `owner_user_id` — pinned by
+  // `test_public_qapp_contract_cannot_expose_quantum_source_or_tenant_ids`.
+  // Every part of it was written to be reachable without a session, and it was
+  // gated anyway. Measured on production 2026-08-25: `GET /api/qapps/public`
+  // returned 307 to WorkOS.
+  //
+  // ## The subtree, which is NOT empty — and the filesystem says otherwise
+  //
+  // `app/api/qapps/public/` holds one `route.ts` and no children, so "there is
+  // nothing under it" reads as obviously true and is false. The sibling
+  // **dynamic** segment `app/api/qapps/[qappKey]/` compiles to a pattern that
+  // also matches this path with `qappKey = "public"`, so two routes really do
+  // live under this entry's subtree. Measured against a dev server rather than
+  // reasoned about, because Next's static-beats-dynamic precedence applies per
+  // segment and does not stop a longer dynamic route from matching:
+  //
+  //     GET  /api/qapps/public/executions  -> 405   (route exists; it is POST-only)
+  //     GET  /api/qapps/public/visibility  -> 405   (route exists; it is PATCH-only)
+  //     GET  /api/qapps/public/anything    -> 404   (so it is exactly those two)
+  //
+  // Both of them call `getMajoranaAuth({ ensureSignedIn: true })` as the first
+  // thing in their own handler and forward a Bearer token an anonymous caller
+  // has no way to obtain. Publishing this path therefore removes the middleware
+  // layer in FRONT of those two routes; it does not remove their gate. That is
+  // one layer of defence in depth spent, deliberately, and written down here
+  // rather than discovered later — which is the whole reason this file asks for
+  // an argument per entry instead of a line per entry.
+  "/api/qapps/public",
   ...(isPublicDemoEnabled() ? ["/demo"] : []),
 ];
 
