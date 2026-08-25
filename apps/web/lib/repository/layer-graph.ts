@@ -11161,7 +11161,11 @@ export const LAYER_GRAPH: LayerGraph = {
     // pose is not a choice any of these four makes, so filing one under
     // `quantum-phase-estimation` or the iterative route would assert a decision
     // its paper never took. Capability-level `entries` is an established shape
-    // here, not an evasion: 9 of 28 capabilities carry one.
+    // here, not an evasion — this change takes it from 9 of 28 capabilities
+    // carrying a non-empty `entries` to 11. Stated as a delta rather than as a
+    // census on purpose: a bare count in a comment is true on the day it is
+    // written and quietly wrong afterwards, and this very line was already
+    // wrong by the time it was reviewed.
     //
     // Each is quoted from its own record rather than inferred:
     //   `quantum-counting`                        its algorithmFamily is literally
