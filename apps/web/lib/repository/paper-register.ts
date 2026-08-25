@@ -101,6 +101,20 @@ export const PAPER_REGISTER: PaperRegister = {
     { id: "arxiv:1805.03662", title: "Encoding Electronic Spectra in Quantum Circuits with Linear T Complexity", authors: "Ryan Babbush, Craig Gidney, Dominic W. Berry, Nathan Wiebe, Jarrod McClean, Alexandru Paler, Austin Fowler, Hartmut Neven", year: "2018", url: "https://arxiv.org/abs/1805.03662", reports: { theory: "reported", simulation: "unknown", hardware: "absent" }, reportsBasis: "abstract" },
     { id: "arxiv:1805.04340", title: "Quantum algorithms for electronic structure calculations: particle/hole Hamiltonian and optimized wavefunction expansions", authors: "Panagiotis Kl. Barkoutsos, Jerome F. Gonthier, Igor Sokolov, Nikolaj Moll, Gian Salis, Andreas Fuhrer, Marc Ganzhorn, Daniel J. Egger, Matthias Troyer, Antonio Mezzacapo, Stefan Filipp, Ivano Tavernelli", year: "2018", url: "https://arxiv.org/abs/1805.04340", reports: { theory: "reported", simulation: "reported", hardware: "absent" }, reportsBasis: "abstract" },
     { id: "arxiv:1805.08138", title: "Variational Quantum Computation of Excited States", authors: "Oscar Higgott, Daochen Wang, Stephen Brierley", year: "2018", url: "https://arxiv.org/abs/1805.08138", reports: { theory: "reported", simulation: "reported", hardware: "absent" }, reportsBasis: "abstract" },
+    // `theory: "absent"` is a POSITIVE claim and this is the evidence for it, per
+    // the contract on `SourceCoverageStatus`: the abstract puts the theory in prior
+    // work in so many words — "recent theoretical work has shown that the accuracy
+    // of computation ... can be enhanced through an extrapolation of results from a
+    // collection of varying noisy experiments" — and then states this paper's own
+    // contribution as "Here, we demonstrate this error mitigation protocol on a
+    // superconducting quantum processor". The prior work it names is Temme et al.,
+    // arXiv:1612.02058, which is already registered and carries the theory.
+    //
+    // It was first registered as `theory: "reported"`, which was an assertion with
+    // nothing behind it; caught by CodeRabbit on the PR. `absent` rather than
+    // `unknown` because the abstract answers the question rather than leaving it
+    // open, and `reportsBasis: "abstract"` records that that is how deep the read
+    // went.
     { id: "arxiv:1805.04492", title: "Extending the computational reach of a noisy superconducting quantum processor", authors: "Abhinav Kandala, Kristan Temme, Antonio D. Corcoles, Antonio Mezzacapo, Jerry M. Chow, Jay M. Gambetta", year: "2018", url: "https://arxiv.org/abs/1805.04492", reports: { theory: "reported", simulation: "unknown", hardware: "reported" }, reportsBasis: "abstract" },
     { id: "arxiv:1806.01838", title: "Quantum singular value transformation and beyond: exponential improvements for quantum matrix arithmetics", authors: "András Gilyén, Yuan Su, Guang Hao Low, Nathan Wiebe", year: "2018", url: "https://arxiv.org/abs/1806.01838", reports: { theory: "reported", simulation: "absent", hardware: "absent" }, reportsBasis: "full-text" },
     { id: "arxiv:1806.06893", title: "Quantum Risk Analysis", authors: "Stefan Woerner, Daniel J. Egger", year: "2018", url: "https://arxiv.org/abs/1806.06893", reports: { theory: "reported", simulation: "reported", hardware: "reported" }, reportsBasis: "abstract" },
@@ -399,6 +413,7 @@ export const PAPER_REGISTER: PaperRegister = {
     // nowhere attribute the *terms* to this source, so nothing is misquoted. The
     // physics behind each was checked and holds.
     { id: "doi:10.1017/cbo9780511976667", title: "Quantum Computation and Quantum Information: 10th Anniversary Edition", authors: "Michael A. Nielsen and Isaac L. Chuang", year: "2010", url: "https://doi.org/10.1017/cbo9780511976667", medium: "textbook" },
+    { id: "doi:10.1038/s41586-023-06096-3", title: "Evidence for the utility of quantum computing before fault tolerance", authors: "Youngseok Kim, Andrew Eddins, Sajant Anand, Ken Xuan Wei, Ewout van den Berg, Sami Rosenblatt, Hasan Nayfeh, Yantao Wu, Michael Zaletel, Kristan Temme, Abhinav Kandala", year: "2023", url: "https://doi.org/10.1038/s41586-023-06096-3", reports: { theory: "absent", simulation: "reported", hardware: "reported" }, reportsBasis: "abstract" },
     // Read in full from the publisher PDF the owner supplied on ai-ops#42, not from
     // an abstract — hence `full-text`. Sci Rep 15, 28508 (2025); received 28 March
     // 2025, accepted 15 July 2025. All three reports are the paper's own: the
@@ -406,7 +421,6 @@ export const PAPER_REGISTER: PaperRegister = {
     // superconducting machine of the RIKEN RQC-Fujitsu Collaboration Center.
     // No `medium`: this is a journal article, and that field marks the textbooks
     // the owner's ai-ops#44 ruling admitted as primary sources.
-    { id: "doi:10.1038/s41586-023-06096-3", title: "Evidence for the utility of quantum computing before fault tolerance", authors: "Youngseok Kim, Andrew Eddins, Sajant Anand, Ken Xuan Wei, Ewout van den Berg, Sami Rosenblatt, Hasan Nayfeh, Yantao Wu, Michael Zaletel, Kristan Temme, Abhinav Kandala", year: "2023", url: "https://doi.org/10.1038/s41586-023-06096-3", reports: { theory: "absent", simulation: "reported", hardware: "reported" }, reportsBasis: "abstract" },
     { id: "doi:10.1038/s41598-025-12109-0", title: "Quantum computation for robot posture optimization", authors: "Takuya Otani, Atsuo Takanishi, Nobuyuki Hara, Yutaka Takita, Koichi Kimura", year: "2025", url: "https://doi.org/10.1038/s41598-025-12109-0", reports: { theory: "reported", simulation: "reported", hardware: "reported" }, reportsBasis: "full-text" },
     // `reportsBasis: "abstract"` is the honest depth: the full text is paywalled
     // with no free route found. Verified in a browser rather than by `curl`,
