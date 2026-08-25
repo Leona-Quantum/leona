@@ -3,19 +3,22 @@
 import { useEffect, useRef } from "react";
 
 const CELL_SIZE = 16;
-const DOT_RADIUS = 1;
-const RIPPLE_RADIUS = 58;
-const HOVER_STRENGTH = 0.6;
-const CLICK_STRENGTH = 2.5;
-const DAMPING = 0.97;
-const WAVE_HEIGHT = 14;
+const DOT_RADIUS = 0.85;
+const RIPPLE_RADIUS = 72;
+const HOVER_STRENGTH = 0.2;
+const CLICK_STRENGTH = 1;
+const DAMPING = 0.95;
+const WAVE_HEIGHT = 7;
 const MAX_CELLS = 150;
 const PAD = 20;
 const WAVE_C = Math.SQRT1_2;
 const MUR_K = (WAVE_C - 1) / (WAVE_C + 1);
 const ABSORB_MAX = 0.6;
 const GLOW_BUCKETS = 4;
-const GLOW_FULL = 4;
+const GLOW_FULL = 6;
+const BASE_DOT_OPACITY = 0.16;
+const MAX_GLOW_OPACITY = 0.4;
+const GLOW_RADIUS_EXPANSION = 0.3;
 const TAU = Math.PI * 2;
 
 type Rgb = [number, number, number];
@@ -47,7 +50,7 @@ function readPalette() {
 
   return {
     background,
-    line: rgba(foreground, 0.3),
+    line: rgba(foreground, BASE_DOT_OPACITY),
     glow: foreground,
   };
 }
@@ -305,7 +308,7 @@ export function LiquidGridBackground() {
             GLOW_BUCKETS - 1,
             Math.floor(glowAmount * GLOW_BUCKETS),
           );
-          const litRadius = DOT_RADIUS * (1 + glowAmount * 0.6);
+          const litRadius = DOT_RADIUS * (1 + glowAmount * GLOW_RADIUS_EXPANSION);
           glow[bucket].moveTo(centerX + litRadius, centerY);
           glow[bucket].arc(centerX, centerY, litRadius, 0, TAU);
         }
@@ -314,7 +317,7 @@ export function LiquidGridBackground() {
       context.fillStyle = palette.line;
       context.fill(base);
       for (let index = 0; index < GLOW_BUCKETS; index += 1) {
-        const alpha = (index + 1) / GLOW_BUCKETS;
+        const alpha = ((index + 1) / GLOW_BUCKETS) * MAX_GLOW_OPACITY;
         context.fillStyle = rgba(palette.glow, alpha);
         context.fill(glow[index]);
       }
