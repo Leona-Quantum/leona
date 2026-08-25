@@ -103,3 +103,61 @@ test("a ready message on another channel does not arm the tripwire", async () =>
   await waitFor(() => assert.ok(view.container.querySelector("iframe")));
   assert.equal(view.queryByRole("alert"), null);
 });
+
+
+test("a document that navigates before its ready message is delivered is still caught", async () => {
+  // Sourcery caught this on PR 764 and it was real. A hostile document can set
+  // its own location from an inline script in the same turn the bridge ran. The
+  // bridge's `qapp.ready` is queued for the host at that moment but not yet
+  // DELIVERED, so a tripwire that read the flag straight out of the load handler
+  // saw false and admitted the attacker's document. `load` and `message` are
+  // different task sources with no ordering guarantee, so the handler defers by
+  // one task and reads the flag behind both.
+  //
+  // Settling the frame's own native load FIRST is what makes this test mean
+  // something. jsdom fires exactly one load of its own on a srcDoc iframe,
+  // asynchronously — measured, not assumed — and an earlier version of this test
+  // did not wait for it. That stray load arrived after the ready message and
+  // tripped the teardown on its own, so the test passed even with the deferral
+  // removed: it was reporting the fix while testing the harness.
+  const view = render(<QappRuntime slug="bell" uiDocument={UI} canExecute />);
+  const iframe = view.container.querySelector("iframe") as HTMLIFrameElement;
+  const channel = channelFrom(iframe);
+  await new Promise((resolve) => setTimeout(resolve, 250));
+  assert.equal(view.queryByRole("alert"), null, "torn down before the race was even set up");
+
+  // The race, in one synchronous block: the attacker's document finishes loading
+  // and only THEN is the queued ready message dispatched. Exactly one load.
+  fireEvent.load(iframe);
+  speakAsFrame(iframe, { channel, type: "qapp.ready" });
+
+  await waitFor(() => assert.ok(view.getByRole("alert")));
+  assert.equal(view.container.querySelector("iframe"), null);
+});
+
+test("a second Qapp rendered into the same component is not torn down on arrival", async () => {
+  // Also Sourcery's, also real. `channel` comes from useId and is stable for the
+  // component's life, so a client navigation between two /q/<slug> pages swaps
+  // srcDoc without remounting. With `readyRef` left true from the Qapp that just
+  // left, the arriving Qapp's very first load read as a navigation away.
+  const view = render(<QappRuntime slug="bell" uiDocument={UI} canExecute />);
+  const first = view.container.querySelector("iframe") as HTMLIFrameElement;
+  const channel = channelFrom(first);
+
+  fireEvent.load(first);
+  speakAsFrame(first, { channel, type: "qapp.ready" });
+  await new Promise((resolve) => setTimeout(resolve, 5));
+
+  view.rerender(<QappRuntime slug="ghz" uiDocument="<h1>GHZ</h1><script>/* other */</script>" canExecute />);
+  const second = view.container.querySelector("iframe") as HTMLIFrameElement;
+  assert.ok(second, "the second Qapp never rendered a frame at all");
+  fireEvent.load(second);
+  await new Promise((resolve) => setTimeout(resolve, 5));
+
+  assert.equal(
+    view.queryByRole("alert"),
+    null,
+    "the arriving Qapp was torn down on its own first paint because readyRef survived the one that left",
+  );
+  assert.ok(view.container.querySelector("iframe"), "the arriving Qapp's frame was removed");
+});

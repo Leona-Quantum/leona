@@ -52,6 +52,23 @@ export function QappRuntime({
   // reacts to a navigation can recall it.
   const readyRef = useRef(false);
   const [navigatedAway, setNavigatedAway] = useState(false);
+  // Reset both when the document changes, DURING RENDER rather than in an
+  // effect. `channel` comes from `useId` and so is stable for the life of this
+  // component, which means a different Qapp rendered into the same instance —
+  // a client navigation from one `/q/<slug>` to another — swaps `srcDoc`
+  // without remounting and without re-running the effect below. `readyRef`
+  // would still be true from the Qapp that just left, the new Qapp's very
+  // first load would be read as a navigation away, and a working Qapp would be
+  // torn down on arrival. An effect is too late: it would race the new
+  // document's load event. Adjusting state during render is React's documented
+  // answer to exactly this, and the `key` on the iframe below makes the frame
+  // itself a fresh element rather than one carrying the old document's history.
+  const renderedDocument = useRef(document);
+  if (renderedDocument.current !== document) {
+    renderedDocument.current = document;
+    readyRef.current = false;
+    if (navigatedAway) setNavigatedAway(false);
+  }
 
   useEffect(() => {
     let disposed = false;
@@ -133,11 +150,27 @@ export function QappRuntime({
           sandbox="allow-scripts"
           referrerPolicy="no-referrer"
           className="qapp-runtime-frame"
+          key={document}
           onLoad={() => {
-            // Ordinary first paint: `ready` has not arrived yet, so this is
-            // either the initial about:blank or our own document. Only a load
-            // that arrives after the bridge has spoken is a second document.
-            if (readyRef.current) setNavigatedAway(true);
+            // Deferred by one task, and that is the whole fix for the
+            // synchronous case. A hostile document can navigate itself from an
+            // inline script, in the same turn the bridge ran: the bridge's
+            // `qapp.ready` is already queued for us at that point — a posted
+            // message survives its sender navigating — but it has not been
+            // DELIVERED, so reading `readyRef` here would still see false and
+            // wave the attacker's document through. `load` and `message` are
+            // different task sources with no ordering guarantee between them,
+            // so this cannot be reasoned away. A timeout enqueues a task behind
+            // both of them, and by the time it runs, any `ready` the previous
+            // document sent has been dispatched.
+            //
+            // The rule it then applies is unchanged: `ready` not yet seen means
+            // this is the ordinary first paint — possibly the iframe's initial
+            // about:blank — while a load after the bridge has spoken is a
+            // second document, and a second document is not ours.
+            window.setTimeout(() => {
+              if (readyRef.current) setNavigatedAway(true);
+            }, 0);
           }}
         />
       )}
