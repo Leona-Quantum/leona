@@ -389,8 +389,7 @@ async def reserve_execution_slot(
         pressure = (
             await session.execute(
                 text(
-                    "select qapp_count, global_count "
-                    "from qapp_execution_pressure(:since, :qapp_id)"
+                    "select qapp_count, global_count from qapp_execution_pressure(:since, :qapp_id)"
                 ),
                 {"since": since, "qapp_id": qapp_id},
             )

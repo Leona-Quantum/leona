@@ -81,8 +81,7 @@ $fn$
 
 def upgrade() -> None:
     op.execute(
-        "create index if not exists ix_qapp_executions_created "
-        "on qapp_executions (created_at)"
+        "create index if not exists ix_qapp_executions_created on qapp_executions (created_at)"
     )
     op.execute(
         "create index if not exists ix_qapp_executions_qapp_created "
