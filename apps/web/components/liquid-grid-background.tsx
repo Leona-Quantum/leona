@@ -3,12 +3,12 @@
 import { useEffect, useRef } from "react";
 
 const CELL_SIZE = 16;
-const DOT_RADIUS = 0.85;
+const DOT_RADIUS = 1.05;
 const RIPPLE_RADIUS = 72;
-const HOVER_STRENGTH = 0.2;
+const HOVER_STRENGTH = 0.45;
 const CLICK_STRENGTH = 1;
 const DAMPING = 0.95;
-const WAVE_HEIGHT = 7;
+const WAVE_HEIGHT = 11;
 const MAX_CELLS = 150;
 const PAD = 20;
 const WAVE_C = Math.SQRT1_2;
@@ -16,8 +16,8 @@ const MUR_K = (WAVE_C - 1) / (WAVE_C + 1);
 const ABSORB_MAX = 0.6;
 const GLOW_BUCKETS = 4;
 const GLOW_FULL = 6;
-const BASE_DOT_OPACITY = 0.16;
-const MAX_GLOW_OPACITY = 0.4;
+const BASE_DOT_OPACITY = 0.18;
+const MAX_GLOW_OPACITY = 0.45;
 const GLOW_RADIUS_EXPANSION = 0.3;
 const TAU = Math.PI * 2;
 
