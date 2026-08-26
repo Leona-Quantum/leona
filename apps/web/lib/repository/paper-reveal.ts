@@ -339,8 +339,15 @@ function prune(
  * this slot pass through' but 'which of the ways through it is this one'"* — so
  * this is true of every method whose slot resolves and whose fan names it, and
  * false for a node that is not a method at all.
+ *
+ * **Exported for the test, deliberately, and not as a convenience.** The
+ * invariant worth guarding is *this predicate's answer*, and a test that
+ * re-implements the lane read guards the layout instead — it passes while the
+ * predicate is wrong, which is precisely what happened: the first parity test
+ * written for this did its own `draws ?? nodeId` comparison, and forcing the
+ * predicate back to `nodeId` alone left the whole suite green.
  */
-function drawsOnItsOwnPage(
+export function drawsOnItsOwnPage(
   graph: LayerGraph,
   vocabulary: StateVocabulary,
   nodeId: string,
@@ -357,7 +364,19 @@ function drawsOnItsOwnPage(
   let answer = false;
   if (node && isMethod(node)) {
     const diagram = layoutConvergeForMethod({ graph, vocabulary, method: node, locale: "en" });
-    answer = !diagram.empty && diagram.lanes.some((lane) => lane.nodeId === nodeId);
+    // `lane.draws ?? lane.nodeId`, character for character the same read
+    // `saturatedOccurrences` does one screen up, and NOT `lane.nodeId` alone.
+    // A lane whose subject is a leaf method carries it in `draws` with
+    // `nodeId` null, and the difference is not an edge case: measured over the
+    // graph, **86 of 116 methods match only through `draws`** and 30 match
+    // through both. `nodeId` alone answers false for all 86.
+    //
+    // It would not have shown up today — every node this bucket currently holds
+    // is one of the 30 — which is exactly why it is worth a sentence. The bug
+    // this whole module is fixing was a claim that was true when written and
+    // silently falsified later; a second, narrower reading of "which node does
+    // this lane draw" is how that happens again. Caught by CodeRabbit on PR 795.
+    answer = !diagram.empty && diagram.lanes.some((lane) => (lane.draws ?? lane.nodeId) === nodeId);
   }
   byNode.set(nodeId, answer);
   return answer;

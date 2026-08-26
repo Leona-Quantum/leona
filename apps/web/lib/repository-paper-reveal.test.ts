@@ -1,6 +1,10 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { paperOwnPageMethods, paperRevealFor } from "./repository/paper-reveal.ts";
+import {
+  drawsOnItsOwnPage,
+  paperOwnPageMethods,
+  paperRevealFor,
+} from "./repository/paper-reveal.ts";
 import {
   layoutConverge,
   layoutConvergeForMethod,
@@ -216,7 +220,7 @@ test("every map-citing paper reveals — or is verifiably undrawn, never silentl
         locale: "en",
       });
       assert.ok(
-        !own.empty && own.lanes.some((lane) => lane.nodeId === nodeId),
+        !own.empty && own.lanes.some((lane) => (lane.draws ?? lane.nodeId) === nodeId),
         `${trace.paper}: ${nodeId} is bucketed "ownPage" yet its own page does not draw it — the panel would send the reader nowhere`,
       );
     }
@@ -240,7 +244,7 @@ test("every map-citing paper reveals — or is verifiably undrawn, never silentl
           locale: "en",
         });
         assert.ok(
-          own.empty || !own.lanes.some((lane) => lane.nodeId === nodeId),
+          own.empty || !own.lanes.some((lane) => (lane.draws ?? lane.nodeId) === nodeId),
           `${trace.paper}: ${nodeId} is bucketed "undrawn" yet its own page draws it — it belongs in ownPage`,
         );
       }
@@ -435,4 +439,69 @@ test("unfolding a paper's fold draws its lane and adds no duplicate path (RULING
   console.log(`unfold: ${unfolding} papers re-expand a fold; ${bothKept} keep other lanes beside it`);
   assert.ok(unfolding >= 4, `only ${unfolding} papers unfold — the fold population has gone quiet`);
   assert.ok(bothKept >= 3, `only ${bothKept} unfolding papers still draw another lane — suppression may be over-firing`);
+});
+
+/**
+ * Every method's own page draws that method — the premise `ownPage` rests on,
+ * asserted over the whole graph rather than over the handful the bucket happens
+ * to hold today.
+ *
+ * **This exists because the first version of the predicate was wrong for 86 of
+ * the 116 methods and passed every test anyway.** It read `lane.nodeId`, where
+ * `saturatedOccurrences` one screen up reads `lane.draws ?? lane.nodeId` — and a
+ * lane whose subject is a leaf method carries it in `draws` with `nodeId` null.
+ * Measured at the time: 30 methods match through both, 86 through `draws` alone,
+ * 0 through neither. The six nodes in the bucket are all in the 30, so nothing
+ * failed; a cited method from the other 86 would have fallen into `undrawn` and
+ * the panel would have stated the same falsehood this module exists to remove.
+ *
+ * The population is the point. A test over the current bucket tests the corpus;
+ * this one tests the predicate.
+ */
+test("every method's own page draws it — the premise ownPage rests on", () => {
+  const methods = LAYER_GRAPH.nodes.filter(isMethod);
+  assert.ok(methods.length >= 100, `only ${methods.length} methods — the graph has gone quiet`);
+
+  const undrawnOnOwnPage: string[] = [];
+  let viaDrawsOnly = 0;
+  for (const method of methods) {
+    const own = layoutConvergeForMethod({
+      graph: LAYER_GRAPH,
+      vocabulary: STATE_VOCABULARY,
+      method,
+      locale: "en",
+    });
+    // The PREDICATE, not a re-implementation of it. A test that does its own
+    // `draws ?? nodeId` comparison here guards the layout and not the module —
+    // the first version of this test did exactly that, and forcing the
+    // predicate back to `lane.nodeId` alone left the whole suite green.
+    if (!drawsOnItsOwnPage(LAYER_GRAPH, STATE_VOCABULARY, method.id)) {
+      undrawnOnOwnPage.push(method.id);
+      continue;
+    }
+    const byNodeId = !own.empty && own.lanes.some((lane) => lane.nodeId === method.id);
+    if (!byNodeId) viaDrawsOnly += 1;
+  }
+
+  assert.deepEqual(
+    undrawnOnOwnPage,
+    [],
+    `${undrawnOnOwnPage.length} methods draw no lane of their own on their own page. ` +
+      "`ownPage` promises a reader a figure at /repository/layers/<id> with that method as its " +
+      `subject: ${undrawnOnOwnPage.slice(0, 8).join(", ")}`,
+  );
+
+  // The parity itself, stated as a number so narrowing the read cannot pass
+  // quietly. If this ever reaches zero, either the layout stopped using `draws`
+  // for leaf subjects — in which case say so here — or something is reading only
+  // half of what a lane can carry.
+  assert.ok(
+    viaDrawsOnly > 0,
+    "no method's own page now matches through `lane.draws` alone. Either the layout stopped " +
+      "carrying a leaf subject there, or a read has narrowed to `lane.nodeId` — which is the " +
+      "defect CodeRabbit caught on PR 795, when it was true of 86 of 116 methods.",
+  );
+  console.log(
+    `own-page figures: ${methods.length}/${methods.length} methods draw themselves; ${viaDrawsOnly} match through lane.draws alone`,
+  );
 });
