@@ -48,12 +48,14 @@
  * 404 inside `/repository`, because the sheet's only rule was
  * `prefers-color-scheme`. It reverses for `dark` chosen on a light OS.
  *
- * The resolution below is character-for-character the one in
- * `components/root-document.tsx`'s pre-paint script — saved value if it is one
- * of the two, otherwise the OS — so the two surfaces cannot disagree. It runs in
- * `useEffect` rather than during render for the same reason the locale does, and
- * the frame before it lands still falls back to `prefers-color-scheme`, which is
- * exactly what shipped before. Strictly better, never worse.
+ * What is read here is only the reader's EXPLICIT choice — see `readStoredTheme`
+ * for why this stops short of resolving the OS preference the way
+ * `root-document.tsx`'s script does. A stored `light`/`dark` is stamped onto
+ * `.mj-nf`; anything else leaves the attribute off and the sheet's media query
+ * decides, live. It runs in `useEffect` rather than during render for the same
+ * reason the locale does, and the frame before it lands falls back to
+ * `prefers-color-scheme`, which is exactly what shipped before. Strictly better,
+ * never worse.
  *
  * **The title.** `generateMetadata` on `/q/[slug]` and `/repository/[slug]` runs
  * before the fetch that decides the page does not exist, so it titles the tab
@@ -84,19 +86,29 @@ import {
 } from "../lib/public-locale";
 
 /**
- * The reader's theme, resolved exactly as `root-document.tsx`'s pre-paint script
- * resolves it: a stored `light`/`dark` wins, anything else falls to the OS.
+ * The reader's EXPLICIT theme choice, or `null` if they have not made one.
  *
- * Returns `null` rather than a guess when storage is unreadable — a private
- * window, or a browser set to block site data. `null` leaves the attribute off
- * and the sheet's `prefers-color-scheme` rule decides, which is the same answer
- * the reader got before this function existed.
+ * Only a stored `light`/`dark` is returned. Everything else — no stored value, a
+ * value that is neither, or storage that throws in a private window — is `null`,
+ * and `null` leaves `data-theme` off so the sheet's `prefers-color-scheme` rule
+ * decides. That is the same answer the reader got before this function existed.
+ *
+ * **It deliberately does NOT resolve the OS preference itself**, which the first
+ * version did, mirroring `root-document.tsx`'s pre-paint script. CodeRabbit
+ * caught why that is wrong here: resolving it once at mount FREEZES it into the
+ * attribute, and `data-theme="light"` then blocks the very media rule it was
+ * copying. A reader with no stored choice whose OS flips to dark — at sunset, on
+ * a schedule — would be left on the light palette by the attribute we wrote.
+ * Leaving it unset keeps the media query live, which is strictly better than
+ * copying its answer.
+ *
+ * The explicit case is unaffected and is the whole bug this exists for: a stored
+ * `light` still stamps `data-theme="light"` and still beats a dark OS.
  */
 function readStoredTheme(): Theme | null {
   try {
     const saved = localStorage.getItem(THEME_STORAGE_KEY);
-    if (saved === "light" || saved === "dark") return saved;
-    return matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+    return saved === "light" || saved === "dark" ? saved : null;
   } catch {
     return null;
   }

@@ -188,3 +188,26 @@ test("the standalone 404 introduces no hex colour outside that palette", () => {
     `public/not-found.css uses hex colours that match no token: ${unexpected.join(", ")}`,
   );
 });
+
+test("the standalone 404 does not resolve the OS preference itself", () => {
+  // The regression this pins shipped for one review cycle and reads as correct.
+  //
+  // `components/not-found-standalone.tsx` first mirrored `root-document.tsx`'s
+  // pre-paint script exactly: stored value if it is one of the two, OTHERWISE
+  // resolve `prefers-color-scheme` and use that. On the main site that is right,
+  // because the script re-runs on every load. Here it is wrong, because the
+  // answer is written into `data-theme` — and `data-theme="light"` then BLOCKS
+  // the media rule it just copied. A reader with no stored choice whose OS flips
+  // to dark later would be held on the light palette by an attribute we wrote
+  // from their own OS. Caught by CodeRabbit on the PR that introduced it.
+  //
+  // The sheet's media query is the live signal. The component's only job is to
+  // record an EXPLICIT choice, which is the one thing the media query cannot see.
+  const source = readFileSync(resolve(here, "../components/not-found-standalone.tsx"), "utf8");
+  assert.ok(
+    !/matchMedia/.test(source),
+    "not-found-standalone.tsx calls matchMedia. Resolving the OS preference here freezes it into " +
+      'data-theme, and data-theme="light" blocks the prefers-color-scheme rule in ' +
+      "public/not-found.css. Return null for a missing choice and let the sheet decide.",
+  );
+});

@@ -82,8 +82,11 @@
  * So the OS block is GUARDED with `:not([data-theme="light"])` — otherwise an
  * explicit light choice loses to a dark OS, which is half the bug still shipping
  * — and an explicit dark choice gets its own block, which is the other half.
- * A reader whose storage is unreadable gets no attribute and the OS decides,
- * which is exactly the old behaviour.
+ *
+ * A reader who has chosen NOTHING gets no attribute at all, and this block
+ * decides — live. The component deliberately does not resolve the OS preference
+ * and write the answer down: that would freeze it, and `data-theme="light"`
+ * would then block this rule for a reader whose OS flips to dark later.
  *
  * Both dark blocks are kept in sync with the `prefers-color-scheme: dark` block
  * of tokens.css, and with EACH OTHER, by the test named at the top of this file. */
