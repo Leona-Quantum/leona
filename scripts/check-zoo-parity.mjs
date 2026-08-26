@@ -376,7 +376,18 @@ const SPEEDUP_PROVENANCE_CENSUS = {
   // Worth keeping on the record that this row was never a sourcing gap: the paper
   // had been read for a session, and from the gauge a row held open by a url
   // mapping looked exactly like a row nobody could source
-  reported: 15,
+  //
+  // Batch 13 brings three, each from its own primary source and each quoting the
+  // paper rather than the Zoo:
+  //   electrical-resistance — Wang says his dependence on N is "exponentially
+  //     better than that of known classical algorithms", which is the Zoo's
+  //     "Exponential" in the author's own voice.
+  //   semidefinite-programming — Brandao and Svore claim "a square-root
+  //     unconditional speed-up over any classical method", so the Zoo's
+  //     "Polynomial (with some exceptions)" has the paper behind it.
+  //   tensor-principal-component-analysis — Hastings states "a quartic speedup",
+  //     matching the Zoo's "Polynomial (quartic)" exactly.
+  reported: 18,
   // Read and silent. gibbs-state-sampling was the first: Poulin and Wocjan's
   // abstract makes no comparison to a classical algorithm and the Zoo's
   // "Superpolynomial" is the section heading's. This is the record the owner's
@@ -397,7 +408,13 @@ const SPEEDUP_PROVENANCE_CENSUS = {
   // finding: the SAME author's STOC 2005 paper, read cover to cover, states no
   // classical running time at all, where his J. ACM paper states one in L-notation.
   //   unit-group-of-a-number-field, class-group-of-a-number-field
-  absent: 7,
+  // One more from batch 13, and it is the shape this field was written for:
+  //   graph-collision — Magniez, Santha and Szegedy give a quantum query bound
+  //     and no classical comparison. The Zoo files the row "Polynomial"; §4.2 of
+  //     the paper it cites states no classical cost to be polynomially better
+  //     than. `read` scopes it to the abstract and that section, which is what
+  //     was opened, and not to the whole paper.
+  absent: 8,
   // The worklist. The intake checked the problem statement, the class against the
   // Zoo, the reference metadata and the complexity claim — it never asked whether
   // the paper supports the class. `unknown` says that, rather than pretending.
