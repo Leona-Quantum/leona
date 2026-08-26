@@ -23,12 +23,26 @@ ran it would pass the check. CodeRabbit found it on PR 778 and it was right.
 
 What the digest actually proves is narrower: that the text `run_trusted`
 executes is byte-identical to text some caller registered. It is an integrity
-check, not a provenance check. Provenance is a **convention** — every call site
-in this repository registers a module's own source at import time, which
-`packages/py/sandbox/tests/test_trusted.py` and the single production caller in
-`majorana_frameworks.optimizer_kernel` are the complete list of. A reviewed
-static digest manifest would make provenance mechanical, and that is an open
-suggestion rather than something done here.
+check, not a provenance check.
+
+Provenance is a **convention**, and here is the whole of it, named precisely
+because an earlier version of this paragraph named the wrong file. There is
+exactly ONE production call site: `services/worker/src/majorana_worker/handlers.py`,
+at module level, so it runs at import and never while serving a request. What it
+registers is `kernel_source()` — `majorana_frameworks.optimizers`, which reads
+`Path(__file__).with_name("optimizer_kernel.py")`. The kernel does not register
+itself; the worker registers a file read off its own installed package at
+startup. That distinction is the argument: what makes the text first-party is
+that it comes off disk from a deployment-fixed path, not that some module
+vouched for it. The only other call sites are in
+`packages/py/sandbox/tests/test_trusted.py`.
+
+A reviewed static digest manifest would make provenance mechanical. It is an
+open suggestion (ai-ops#190) rather than something done here, and it is not a
+free win: digesting the live file is what guarantees the digest can never drift
+from the deployed source, and a hand-maintained manifest trades that away for
+closing the bare-string gap. Both properties are worth having and the cheaper
+route to both — take a `Path` and read the file here — is costed in that issue.
 
 What is NOT a convention, and is what actually keeps user text out: the request
 data travels as a JSON *payload* serialized by this module — never as code — so
