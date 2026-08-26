@@ -39,10 +39,10 @@ export const LAYER_GRAPH: LayerGraph = {
       from: "nonlinear-ivp",
       to: "solution-answer",
 
-      takes: "Access oracles for the components of F (for example a linear part F_1, a quadratic part F_2, a forcing term F_0), a preparation unitary for y_in, the evolution time T, and an error tolerance ε.",
-      takesJa: "F の各成分（例えば線形部 F_1、二次部 F_2、強制項 F_0）へのアクセスオラクル、y_in の準備ユニタリ、発展時間 T、誤差許容度 ε。",
-      returns: "A normalized state ε-close to y(T)/||y(T)||, a history state over [0,T], or an estimate of an observable of the solution.",
-      returnsJa: "y(T)/||y(T)|| に ε-近い正規化された状態、[0,T] 上のヒストリー状態、または解の観測量の推定値。",
+      takes: "Access oracles for the components of $F$ (for example a linear part $F_1$, a quadratic part $F_2$, a forcing term $F_0$), a preparation unitary for $y_{\\mathrm{in}}$, the evolution time $T$, and an error tolerance $\\varepsilon$.",
+      takesJa: "$F$ の各成分（例えば線形部 $F_1$、二次部 $F_2$、強制項 $F_0$）へのアクセスオラクル、$y_{\\mathrm{in}}$ の準備ユニタリ、発展時間 $T$、誤差許容度 $\\varepsilon$。",
+      returns: "A normalized state $\\varepsilon$-close to $y(T)/\\lVert y(T)\\rVert$, a history state over $[0,T]$, or an estimate of an observable of the solution.",
+      returnsJa: "$y(T)/\\lVert y(T)\\rVert$ に $\\varepsilon$-近い正規化された状態、$[0,T]$ 上のヒストリー状態、または解の観測量の推定値。",
     },
     // Zoo-parity intake: the catalog's `nonlinear-differential-equations` record —
     // the second of the two regions the map drew with no repository record
@@ -1106,8 +1106,8 @@ export const LAYER_GRAPH: LayerGraph = {
       from: "nonlinear-ivp",
       to: "linear-ivp",
 
-      takes: "F, y_in, T, ε, and a truncation or lift parameter (Carleman truncation level N, a phase-space grid, the level-set dimension, the homotopy order).",
-      takesJa: "F、y_in、T、ε、および打ち切り・持ち上げパラメータ（Carleman の打ち切り水準 N、位相空間の格子、レベルセットの次元、ホモトピーの次数）。",
+      takes: "$F$, $y_{\\mathrm{in}}$, $T$, $\\varepsilon$, and a truncation or lift parameter (Carleman truncation level $N$, a phase-space grid, the level-set dimension, the homotopy order).",
+      takesJa: "$F$、$y_{\\mathrm{in}}$、$T$、$\\varepsilon$、および打ち切り・持ち上げパラメータ（Carleman の打ち切り水準 $N$、位相空間の格子、レベルセットの次元、ホモトピーの次数）。",
       returns: "A linear generator with any inhomogeneity, a lift map, a readout map, and an error bound as a function of the truncation parameter.",
       returnsJa: "線形生成子と非斉次項、持ち上げ写像、読み出し写像、および打ち切りパラメータの関数としての誤差評価。",
     },
@@ -1653,10 +1653,10 @@ export const LAYER_GRAPH: LayerGraph = {
       from: "linear-ivp",
       to: "solution-answer",
 
-      takes: "A block-encoding of A(t) with a normalization α_A ≥ max_t ||A(t)||, preparation unitaries for u_0 and b, the evolution time T, and an error tolerance ε.",
-      takesJa: "α_A ≥ max_t ||A(t)|| を満たす A(t) のブロック符号化、u_0 と b の準備ユニタリ、発展時間 T、誤差許容度 ε。",
-      returns: "A state proportional to u(T), or a history state, together with separately stated matrix-query and initial-state-query complexity.",
-      returnsJa: "u(T) に比例する状態、またはヒストリー状態。あわせて行列クエリ数と初期状態クエリ数を別々に示します。",
+      takes: "A block-encoding of $A(t)$ with a normalization $\\alpha_A \\ge \\max_t \\lVert A(t)\\rVert$, preparation unitaries for $u_0$ and $b$, the evolution time $T$, and an error tolerance $\\varepsilon$.",
+      takesJa: "$\\alpha_A \\ge \\max_t \\lVert A(t)\\rVert$ を満たす $A(t)$ のブロック符号化、$u_0$ と $b$ の準備ユニタリ、発展時間 $T$、誤差許容度 $\\varepsilon$。",
+      returns: "A state proportional to $u(T)$, or a history state, together with separately stated matrix-query and initial-state-query complexity.",
+      returnsJa: "$u(T)$ に比例する状態、またはヒストリー状態。あわせて行列クエリ数と初期状態クエリ数を別々に示します。",
     },
     // Zoo-parity intake: the catalog's `linear-differential-equations` record.
     // This capability has been drawn since W14 with nothing in the repository
@@ -7553,8 +7553,8 @@ export const LAYER_GRAPH: LayerGraph = {
       from: "flagged-routine",
       to: "reliable-routine",
 
-      takes: "The preparation unitary A and its inverse, a reflection about |0⟩, and a reflection marking the good subspace — the Grover operator Q = −A S_0 A^{-1} S_χ must be applicable at arbitrary powers. Individual variants additionally require a lower bound on a, or a per-branch stopping flag.",
-      takesJa: "準備ユニタリ A とその逆、|0⟩ に関する反射、そして良い部分空間に印を付ける反射。すなわち Grover 演算子 Q = −A S_0 A^{-1} S_χ を任意のべき乗で適用できる必要があります。方式によっては、これに加えて a の下界、あるいは分岐ごとの停止フラグが必要です。",
+      takes: "The preparation unitary $A$ and its inverse, a reflection about $\\lvert 0\\rangle$, and a reflection marking the good subspace — the Grover operator $Q = -A S_0 A^{-1} S_\\chi$ must be applicable at arbitrary powers. Individual variants additionally require a lower bound on $a$, or a per-branch stopping flag.",
+      takesJa: "準備ユニタリ $A$ とその逆、$\\lvert 0\\rangle$ に関する反射、そして良い部分空間に印を付ける反射。すなわち Grover 演算子 $Q = -A S_0 A^{-1} S_\\chi$ を任意のべき乗で適用できる必要があります。方式によっては、これに加えて $a$ の下界、あるいは分岐ごとの停止フラグが必要です。",
       returns: "A routine that produces the wanted branch with a stated failure probability, together with the query count and the maximum sequential depth consumed.",
       returnsJa: "目的の分岐を、明示された失敗確率のもとで生成するルーチン。あわせて消費したクエリ数と逐次深さの最大値を返します。",
     },
@@ -10575,10 +10575,10 @@ export const LAYER_GRAPH: LayerGraph = {
       from: "physical-qubits",
       to: "logical-qubits",
 
-      takes: "A physical error rate p and noise model; a target logical error rate P_L; a connectivity constraint; a measurement and feedback cycle time.",
-      takesJa: "物理誤り率 p と雑音モデル、目標の論理誤り率 P_L、結合の制約、測定とフィードバックの周期。",
-      returns: "Logical qubits, together with the code and code distance d that were chosen for them, a physical-qubits-per-logical-qubit figure, and a decoding latency requirement.",
-      returnsJa: "論理量子ビットと、そのために選ばれた符号および符号距離 d、論理量子ビット 1 個あたりの物理量子ビット数、そして復号に許される遅延。",
+      takes: "A physical error rate $p$ and noise model; a target logical error rate $P_L$; a connectivity constraint; a measurement and feedback cycle time.",
+      takesJa: "物理誤り率 $p$ と雑音モデル、目標の論理誤り率 $P_L$、結合の制約、測定とフィードバックの周期。",
+      returns: "Logical qubits, together with the code and code distance $d$ that were chosen for them, a physical-qubits-per-logical-qubit figure, and a decoding latency requirement.",
+      returnsJa: "論理量子ビットと、そのために選ばれた符号および符号距離 $d$、論理量子ビット 1 個あたりの物理量子ビット数、そして復号に許される遅延。",
     },
     whyALayer: "Everything above this layer is written in logical qubits and is indifferent to which code sits underneath; everything below is physics. The competing codes trade threshold against encoding rate against required connectivity. The parameter to watch is the code distance $d$: it is an OUTPUT of this layer, solved for from the physical error rate $p$ and the target logical error rate $P_L$ that the algorithm's total operation count demands. Halve $p$ and $d$ falls; raise the $T$-count and $d$ rises. A distance quoted on its own, or a physical-per-logical ratio quoted without $p$, $P_L$ and $d$ beside it, states nothing.",
     whyALayerJa: "この層より上はすべて論理量子ビットで書かれており、下に敷かれる符号が何であるかに依存しません。下はすべて物理です。競合する符号は、しきい値・符号化率・要求される結合の豊かさを互いに引き換えにします。注意すべき量は符号距離 $d$ です。$d$ はこの層の出力であり、物理誤り率 $p$ と、アルゴリズムの総演算数が要求する論理誤り率 $P_L$ から解いて決まります。$p$ を半分にすれば $d$ は下がり、$T$ 数を増やせば $d$ は上がります。単独で挙げられた距離や、$p$・$P_L$・$d$ を併記しない『論理 1 個あたり物理何個』という比は、何も述べていません。",

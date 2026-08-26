@@ -2499,6 +2499,63 @@ test("a process that reaches a circle two ways is one process arriving", () => {
  * test. `regionClosure`'s `runEvidence` is where those two are watched, and it
  * watches the register rather than the prose.
  */
+test("a contract's mathematics is mathematics, not a literal underscore at a reader", () => {
+  // **A reader met `P_L` on one card and a rendered subscript on the next.**
+  // `contract.takes` / `.returns` render through `MathText` in both locales, so
+  // `$P_L$` draws a subscript and a bare `P_L` draws the underscore. Measured
+  // before this landed: 10 fields across 5 capabilities carried a bare
+  // subscript — `F_1`, `F_2`, `F_0`, `y_in`, `u_0`, `S_0`, `P_L` — while 4 other
+  // contract fields already used `$…$`. It is drift, not a choice: the newer
+  // regions (`state-discrimination-search`, `combinatorial-optimization`) were
+  // authored with maths and the older ODE and error-correction contracts predate
+  // it.
+  //
+  // The subscript half is CLOSED, so it is asserted at zero. The Unicode half is
+  // not, so it is pinned as a worklist — the same shape `check-math.mjs` uses for
+  // its own `U†` list, and for the same reason: converting `‖A(t)‖` to
+  // `\lVert A(t)\rVert` is a re-authoring, and a gate that demanded it would have
+  // blocked the transcription that is safe.
+  const SYMBOLS = "≥≤⟩⟨‖†⊗√≈≠∈∑∏∫αβγδεθλμνπρσφχψωΩΓΔΛΠΣΦΨ";
+  const outsideMath = (value: string): string => value.replace(/\$[^$]*\$/g, "");
+
+  const bareSubscripts: string[] = [];
+  const unicodeOutside = new Set<string>();
+  let fields = 0;
+  for (const node of LAYER_GRAPH.nodes) {
+    if (!isCapability(node)) continue;
+    const contract = node.contract;
+    for (const key of ["takes", "takesJa", "returns", "returnsJa"] as const) {
+      const value = contract[key];
+      if (typeof value !== "string" || value.length === 0) continue;
+      fields += 1;
+      const prose = outsideMath(value);
+      // A letter followed by `_` outside `$…$`. Written to match what a reader
+      // sees rather than what an author meant: the underscore is the tell.
+      if (/(?:^|[^\\\w])[A-Za-z]_\{?[A-Za-z0-9]/.test(prose)) {
+        bareSubscripts.push(`${node.id}.${key}`);
+      }
+      if ([...SYMBOLS].some((symbol) => prose.includes(symbol))) {
+        unicodeOutside.add(`${node.id}.${key}`);
+      }
+    }
+  }
+
+  assert.ok(fields >= 124, `only ${fields} contract fields swept — the sweep has stopped finding them`);
+  assert.deepEqual(
+    bareSubscripts,
+    [],
+    `a contract writes a subscript outside $…$, so a reader sees the underscore: ${bareSubscripts.join(", ")}`,
+  );
+
+  // The worklist, pinned so it can shrink and not grow. 36 of 132 fields across
+  // 13 capabilities when this was written.
+  assert.ok(
+    unicodeOutside.size <= 36,
+    `${unicodeOutside.size} contract fields carry a Unicode maths symbol outside $…$, up from 36. ` +
+      `Write it as LaTeX inside $…$: ${[...unicodeOutside].slice(0, 6).join(", ")}`,
+  );
+});
+
 test("the linear-ODE region does not go backwards on the half that is closed", () => {
   const SLOTS = [
     "linear-ode-solve",
