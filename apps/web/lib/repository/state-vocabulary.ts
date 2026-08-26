@@ -582,7 +582,9 @@ export const STATE_VOCABULARY: StateVocabulary = {
       // That is what makes this one state rather than two, and it is the reason
       // the two slots were built in the same unit — a search region whose exit
       // nothing else reaches is a parameter of one process wearing a circle, and
-      // `states.ts`'s admission rule says so in as many words.
+      // this file's own header says so in as many words. (It said `states.ts`
+      // until 2026-08-26; the rule has always been stated here, above the
+      // vocabulary it governs, and `states.ts` never held it.)
     },
     {
       id: "search-graph-with-marked-set",

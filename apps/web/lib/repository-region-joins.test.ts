@@ -587,7 +587,7 @@ test("the map is eight regions under containment and five under what a trace wal
   // into the algorithms component through its containment edge into `phase-estimation`,
   // while `marked-item-search` stays a component of its own.
   //
-  // That shared exit is exactly what `states.ts`'s admission rule asks for and it is
+  // That shared exit is exactly what `state-vocabulary.ts`'s admission rule asks for and it is
   // genuinely satisfied — two processes arrive at `marked-item`. What this line records
   // is the different, weaker fact underneath: a state with arrivals and no departures is
   // where a reader's route ENDS, and the region is joined to the rest of the map at its
