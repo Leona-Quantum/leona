@@ -16735,13 +16735,16 @@ export const LAYER_GRAPH: LayerGraph = {
     // own `idea` says it takes "from Ambainis's element-distinctness algorithm
     // ... a discrete-time quantum walk on a Johnson graph", replacing the memory
     // structure rather than the walk — a rework of THIS construction, not a
-    // competitor to it. What was open was the exit, and §7 of that reading
-    // settles it: the algorithm prints the subset. Bernstein, Jeffery, Lange and
-    // Meurer write it at every stage — "If there is a collision $\\Sigma(I_1) =
-    // s - \\Sigma(I_2)$, print out $I_1 \\cup I_2$ as a root of $\\Sigma - s$"
-    // in the warm-up, and, of the final combined algorithm, "If $S$ is nonempty,
-    // print its elements and stop." A witness, so this contract's `returns`
-    // is met.
+    // competitor to it. What was open was the exit, and the paper settles it: the
+    // algorithm prints the subset. Bernstein, Jeffery, Lange and Meurer write it
+    // at every stage — §2 Searches, of the warm-up, "If there is a collision
+    // $\\Sigma(I_1) = s - \\Sigma(I_2)$, print out $I_1 \\cup I_2$ as a root of
+    // $\\Sigma - s$"; and §5 Representations, of the final combined algorithm,
+    // "If $S$ is nonempty, print its elements and stop." A witness, so this
+    // contract's `returns` is met. Section numbers are the PAPER's, located by
+    // reading back from each quote to its heading — an earlier draft of this
+    // comment wrote "§7", meaning a section of the scoping note nobody reading
+    // this file can open, and a review bot read it as the paper's and said so.
     entries: ["element-distinctness", "subset-finding-quantum-walk", "subset-sum-quantum-walk"],
     citations: [
       { title: "Quantum walk algorithm for element distinctness", authors: "Andris Ambainis", year: "2003", url: "https://arxiv.org/abs/quant-ph/0311001" },
