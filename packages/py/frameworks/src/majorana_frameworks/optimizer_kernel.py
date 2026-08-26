@@ -715,16 +715,16 @@ def compile_operations(payload: dict) -> dict:
 def _main() -> None:
     """Entry point when this file runs as the sandbox's ``main.py``.
 
-    ``MAJORANA_TRUSTED_PAYLOAD`` (a JSON string) and ``MAJORANA_TRUSTED_RESULT_PATH``
+    ``LEONA_TRUSTED_PAYLOAD`` (a JSON string) and ``LEONA_TRUSTED_RESULT_PATH``
     (a filesystem path string) are module globals the control plane prepends ahead
     of this source before shipping it into the sandbox -- they are not defined
     anywhere in this file itself, only referenced here. Nothing is ever printed to
     stdout: the payload and any traceback stay out of the sandbox's captured
     output, and the only channel back to the control plane is the result file.
     """
-    result_path = MAJORANA_TRUSTED_RESULT_PATH  # noqa: F821
+    result_path = LEONA_TRUSTED_RESULT_PATH  # noqa: F821
     try:
-        payload = json.loads(MAJORANA_TRUSTED_PAYLOAD)  # noqa: F821
+        payload = json.loads(LEONA_TRUSTED_PAYLOAD)  # noqa: F821
         result = compile_operations(payload)
     except Exception as exc:
         result = {"ok": False, "code": "compiler_internal_error", "message": type(exc).__name__}

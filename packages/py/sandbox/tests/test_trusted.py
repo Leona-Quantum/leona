@@ -31,8 +31,8 @@ import json
 
 
 def _main() -> None:
-    with open(MAJORANA_TRUSTED_RESULT_PATH, "w", encoding="utf-8") as handle:
-        handle.write(json.dumps({"ok": True, "seen": json.loads(MAJORANA_TRUSTED_PAYLOAD)}))
+    with open(LEONA_TRUSTED_RESULT_PATH, "w", encoding="utf-8") as handle:
+        handle.write(json.dumps({"ok": True, "seen": json.loads(LEONA_TRUSTED_PAYLOAD)}))
 '''
 
 
@@ -54,7 +54,7 @@ async def test_an_unregistered_program_is_refused_before_a_sandbox_is_created():
 
 async def test_a_registered_program_runs_and_its_payload_arrives_as_data():
     register_trusted_program(_ECHO)
-    path = "/tmp/majorana-trusted-echo.json"
+    path = "/tmp/leona-trusted-echo.json"
     hostile = {
         # Every one of these is a Python metacharacter. They must come back
         # unchanged, which is what proves the payload was never parsed as code.
@@ -133,7 +133,7 @@ async def test_a_trusted_program_that_overruns_is_killed_and_writes_nothing():
 
     spin = "def _main():\n    while True:\n        pass\n"
     register_trusted_program(spin)
-    path = "/tmp/majorana-trusted-spin.json"
+    path = "/tmp/leona-trusted-spin.json"
 
     result = await run_trusted(
         LocalSubprocessSandbox(),

@@ -14,14 +14,28 @@ for a control-plane need out of the untrusted-code budget. The isolation
 boundary is the same either way; only the static pre-check differs, and the
 pre-check is about provenance.
 
-**What keeps user text out of this door.** `run_trusted` refuses any program
-whose SHA-256 is not in `_REGISTERED_PROGRAMS`, and the only way into that set
-is `register_trusted_program`, which callers apply to a module's own source at
-import time. A caller cannot pass a string it received over the wire, because
-it could not have registered the digest. The request data travels as a JSON
-*payload* serialized by this module — never as code — so nothing a user
-controls reaches the composed program except as the right-hand side of one
-string assignment.
+**What keeps user text out of this door, stated more carefully than it was.**
+This paragraph used to claim that "a caller cannot pass a string it received
+over the wire, because it could not have registered the digest." That is false
+and is corrected here rather than left standing: `register_trusted_program`
+accepts any `str`, so a caller that registered request-derived source and then
+ran it would pass the check. CodeRabbit found it on PR 778 and it was right.
+
+What the digest actually proves is narrower: that the text `run_trusted`
+executes is byte-identical to text some caller registered. It is an integrity
+check, not a provenance check. Provenance is a **convention** — every call site
+in this repository registers a module's own source at import time, which
+`packages/py/sandbox/tests/test_trusted.py` and the single production caller in
+`majorana_frameworks.optimizer_kernel` are the complete list of. A reviewed
+static digest manifest would make provenance mechanical, and that is an open
+suggestion rather than something done here.
+
+What is NOT a convention, and is what actually keeps user text out: the request
+data travels as a JSON *payload* serialized by this module — never as code — so
+nothing a user controls reaches the composed program except as the right-hand
+side of one string assignment, written through `repr`. To get user text into
+this door at all, someone would first have to write new code in this repository
+that registers it.
 
 The sandbox's own guarantees are unchanged and are still doing the real work:
 deny-all egress, no credentials in the environment, and a provider-enforced
@@ -71,6 +85,11 @@ def register_trusted_program(source: str) -> str:
     Call this on a module's own source text at import time — never on a string
     assembled from a request. The returned digest is what `run_trusted`
     re-computes and checks.
+
+    **That first sentence is a convention this function cannot enforce.** It
+    takes any `str` and will happily digest request-derived text; the check it
+    backs proves integrity (what runs is what was registered), not provenance
+    (what was registered came from this repository). See the module docstring.
     """
 
     if _FUTURE_IMPORT.search(source):
@@ -121,15 +140,15 @@ def compose_trusted(program: str, *, payload: str, result_path: str, entrypoint:
         raise ValueError(f"trusted entrypoint must be a plain identifier, got {entrypoint!r}")
     composed = (
         f"{program}\n\n"
-        f"MAJORANA_TRUSTED_PAYLOAD = {payload!r}\n"
-        f"MAJORANA_TRUSTED_RESULT_PATH = {result_path!r}\n"
+        f"LEONA_TRUSTED_PAYLOAD = {payload!r}\n"
+        f"LEONA_TRUSTED_RESULT_PATH = {result_path!r}\n"
         f"{entrypoint}()\n"
     )
     # Compiled, not just concatenated. A composition error is otherwise
     # indistinguishable from a compiler failure: the sandbox writes no sidecar
     # either way, and the stderr that says which one it was is inside a machine
     # that has already been destroyed.
-    compile(composed, "<majorana-trusted>", "exec")
+    compile(composed, "<leona-trusted>", "exec")
     return composed
 
 
