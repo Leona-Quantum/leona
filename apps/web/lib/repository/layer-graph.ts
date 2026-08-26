@@ -16626,12 +16626,40 @@ export const LAYER_GRAPH: LayerGraph = {
     // the exit: it goes from one named root to the other, which is a traversal
     // and has no marked set.
     //
-    // `subset-sum-quantum-walk` is the honest UNCLEAR. Its walk is Ambainis's,
-    // borrowed wholesale, but its `problem` says "decide whether some subset I
-    // ... satisfies the sum" while its `idea` says "a solution can be found from
-    // any one of its representations", and nothing in the record settles which
-    // of the two the algorithm actually hands back. It stays unanchored until
-    // somebody reads arXiv:1010.2439 and can say.
+    // `subset-sum-quantum-walk` WAS the honest UNCLEAR and is now settled, in
+    // favour of the finder: it is anchored on `stored-subset-walk-search`, where
+    // the reasoning sits beside the `entries` line it changed. The record's
+    // `problem` said "decide whether some subset I ... satisfies the sum" and
+    // its `idea` said "a solution can be found from any one of its
+    // representations"; the paper prints the subset, so the exit is a witness.
+    //
+    // **The paper this comment used to send the next reader to is not the paper
+    // it named.** It said "somebody reads arXiv:1010.2439 and can say".
+    // arXiv:1010.2439 is "Conservation Law of Utility and Equilibria in Non-Zero
+    // Sum Games" — checked against the arXiv API, not assumed. The intended
+    // Becker-Coron-Joux "Improved Generic Algorithms for Hard Knapsacks" has no
+    // arXiv id at all; it is eprint.iacr.org/2011/474. And it was the wrong
+    // paper to ask for anyway: what settles the exit is the record's OWN source,
+    // Bernstein-Jeffery-Lange-Meurer, doi:10.1007/978-3-642-38616-9_2, readable
+    // at eprint.iacr.org/2013/199. A citation that resolves to a real paper
+    // about something else is worse than a missing one — it reads as checked.
+    //
+    // The other three refusals above are now stronger than "this contract
+    // returns a vertex". The capability that WOULD hold them — "detect whether a
+    // marked vertex exists" — was scoped against the primary papers and cannot
+    // be built: it has one method. Szegedy's quantization is the method;
+    // Belovs's effective-resistance reading is the only candidate second, and
+    // his own abstract calls it a generalisation — "This generalizes the result
+    // by Szegedy that is only applicable if the initial distribution is
+    // stationary" — which is a declaration against that method under the same
+    // ai-ops#57 rule applied one file below. One method is not a slot, so the
+    // three stay unanchored, and not for want of anybody having looked.
+    //
+    // Worth keeping, because it will bite a citation: quant-ph/0401053 is titled
+    // "Spectra of Quantized Walks and a $\\sqrt{\\delta\\varepsilon}$-Rule" on
+    // arXiv and "Quantum Speed-up of Markov Chain Based Algorithms" at FOCS.
+    // Itakura's bibliography carries both, as two entries. The register compares
+    // titles as exact strings.
   },
   {
     kind: "method",
@@ -16701,7 +16729,20 @@ export const LAYER_GRAPH: LayerGraph = {
     // subset that already contains a solution", and their own framing makes
     // element distinctness the case L = 2 of it. A record that generalises a
     // method is a declaration against that method, per the owner's ai-ops#57.
-    entries: ["element-distinctness", "subset-finding-quantum-walk"],
+    //
+    // `subset-sum-quantum-walk` is here on the same rule, and it is here because
+    // somebody finally read the paper the capability's comment asked for. Its
+    // own `idea` says it takes "from Ambainis's element-distinctness algorithm
+    // ... a discrete-time quantum walk on a Johnson graph", replacing the memory
+    // structure rather than the walk — a rework of THIS construction, not a
+    // competitor to it. What was open was the exit, and §7 of that reading
+    // settles it: the algorithm prints the subset. Bernstein, Jeffery, Lange and
+    // Meurer write it at every stage — "If there is a collision $\\Sigma(I_1) =
+    // s - \\Sigma(I_2)$, print out $I_1 \\cup I_2$ as a root of $\\Sigma - s$"
+    // in the warm-up, and, of the final combined algorithm, "If $S$ is nonempty,
+    // print its elements and stop." A witness, so this contract's `returns`
+    // is met.
+    entries: ["element-distinctness", "subset-finding-quantum-walk", "subset-sum-quantum-walk"],
     citations: [
       { title: "Quantum walk algorithm for element distinctness", authors: "Andris Ambainis", year: "2003", url: "https://arxiv.org/abs/quant-ph/0311001" },
     ],
