@@ -35,6 +35,71 @@ import type { PaperRegister } from "./papers.ts";
 export const PAPER_REGISTER: PaperRegister = {
   papers: [
     // `reports` read off the abstract, which is what `reportsBasis` records.
+    // 'We introduce OpenQAOA, a Python open-source multi-backend Software Development Kit' characterises the
+    // work as a tool and the abstract claims no theorem or bound. It describes executing 'on NISQ devices and
+    // simulators' as a CAPABILITY of the SDK rather than reporting a run of its own, so hardware is absent and
+    // simulation is unknown.
+    { id: "arxiv:2210.08695", title: "OpenQAOA -- An SDK for QAOA", authors: "Vishal Sharma, Nur Shahidee Bin Saharan, Shao-Hen Chiew, Ezequiel Ignacio Rodríguez Chiacchio, Leonardo Disilvestro, Tommaso Federico Demarie, Ewan Munro", year: "2022", url: "https://arxiv.org/abs/2210.08695", reports: { theory: "absent", simulation: "unknown", hardware: "absent" }, reportsBasis: "abstract" },
+    // `reports` read off the abstract, which is what `reportsBasis` records.
+    // 'We show how to use this method to decompose an arbitrary isometry' and 'We also discuss the classical
+    // complexity of this method' are its own. 'illustrate its effectiveness ... by applying it to randomly
+    // chosen sparse states' is its own numerics, and the arXiv comment names the raw data behind the figure.
+    // No device.
+    { id: "arxiv:2006.00016", title: "Quantum Circuits for Sparse Isometries", authors: "Emanuel Malvetti, Raban Iten, Roger Colbeck", year: "2020", url: "https://arxiv.org/abs/2006.00016", reports: { theory: "reported", simulation: "reported", hardware: "absent" }, reportsBasis: "abstract" },
+    // `reports` read off the abstract, which is what `reportsBasis` records.
+    // 'we develop an algorithm that converts single-edge and self-loop dynamic CTQWs to the gate model' and
+    // 'requiring fewer CX gates when the target state has a polynomial number of non-zero amplitudes' are its
+    // own. The comparison is stated analytically and the abstract names no numerics, so simulation is unknown.
+    // No device.
+    { id: "arxiv:2405.20273", title: "Efficient Sparse State Preparation via Quantum Walks", authors: "Alvin Gonzales, Rebekah Herrman, Colin Campbell, Igor Gaidai, Ji Liu, Teague Tomesh, Zain H. Saleem", year: "2024", url: "https://arxiv.org/abs/2405.20273", reports: { theory: "reported", simulation: "unknown", hardware: "absent" }, reportsBasis: "abstract" },
+    // `reports` read off the abstract, which is what `reportsBasis` records.
+    // 'We show that the gate complexity is linear in the number of non-zero amplitudes in the state and
+    // quadratic in the number of qubits' is a bound. The abstract states no numerics, so simulation is unknown
+    // rather than absent. No device.
+    { id: "arxiv:2310.19309", title: "A simple quantum algorithm to efficiently prepare sparse states", authors: "Debora Ramacciotti, Andreea-Iulia Lefterovici, Antonio F. Rotundo", year: "2023", url: "https://arxiv.org/abs/2310.19309", reports: { theory: "reported", simulation: "unknown", hardware: "absent" }, reportsBasis: "abstract" },
+    // `reports` read off the abstract, which is what `reportsBasis` records.
+    // 'We derive a classically computable estimate of the resulting overlap with the target state' is its own.
+    // The abstract states no numerics, so simulation is unknown rather than absent. No device.
+    { id: "arxiv:2604.24973", title: "Approximate Sparse State Preparation with the Grover-Rudolph Algorithm", authors: "Debora Ramacciotti, Martin Steinbach, Bence Temesi, Andreea-Iulia Lefterovici, Antonio F. Rotundo", year: "2026", url: "https://arxiv.org/abs/2604.24973", reports: { theory: "reported", simulation: "unknown", hardware: "absent" }, reportsBasis: "abstract" },
+    // `reports` read off the abstract, which is what `reportsBasis` records.
+    // 'algorithms for efficiently approximating a MIN-COMMUTING-PARTITION' is its own; 'we achieve 8-30x
+    // reductions in state preparations' is numerics; 'estimating the ground state energy of deuteron on an IBM
+    // Q 20-qubit machine' names a device.
+    { id: "arxiv:1907.13623", title: "Minimizing State Preparations in Variational Quantum Eigensolver by Partitioning into Commuting Families", authors: "Pranav Gokhale, Olivia Angiuli, Yongshan Ding, Kaiwen Gui, Teague Tomesh, Martin Suchara, Margaret Martonosi, Frederic T. Chong", year: "2019", url: "https://arxiv.org/abs/1907.13623", reports: { theory: "reported", simulation: "reported", hardware: "reported" }, reportsBasis: "abstract" },
+    // `reports` read off the abstract, which is what `reportsBasis` records.
+    // 'we propose using simultaneous perturbation stochastic approximation techniques to approximate the QFIM
+    // at a constant cost', against the stated O(d^2), is its own. 'successfully apply it to prepare
+    // Hamiltonian ground states and train Variational Quantum Boltzmann Machines' describes runs but names
+    // neither numerics nor a device, so simulation is unknown and hardware absent.
+    { id: "arxiv:2103.09232", title: "Simultaneous Perturbation Stochastic Approximation of the Quantum Fisher Information", authors: "Julien Gacon, Christa Zoufal, Giuseppe Carleo, Stefan Woerner", year: "2021", url: "https://arxiv.org/abs/2103.09232", reports: { theory: "reported", simulation: "unknown", hardware: "absent" }, reportsBasis: "abstract" },
+    // `reports` read off the abstract, which is what `reportsBasis` records.
+    // 'We present Qualtran, an open-source library' characterises the work as a tool, and the abstract claims
+    // no theorem or bound of its own. 'we can simulate and test algorithms' and 'tabulate resource
+    // requirements', with the 're-analysis of key algorithms', are its own numerics. No device.
+    { id: "arxiv:2409.04643", title: "Expressing and Analyzing Quantum Algorithms with Qualtran", authors: "Matthew P. Harrigan, Tanuj Khattar, Charles Yuan, Anurudh Peduri, Noureldin Yosri, Fionn D. Malone, Ryan Babbush, Nicholas C. Rubin", year: "2024", url: "https://arxiv.org/abs/2409.04643", reports: { theory: "absent", simulation: "reported", hardware: "absent" }, reportsBasis: "abstract" },
+    // `reports` read off the abstract, which is what `reportsBasis` records.
+    // 'an optimal solution to the epsilon-approximate fractional query problem that requires O(1/delta +
+    // log(1/epsilon)) queries ... where O(1/delta) is a proved lower bound' is a bound. 'identifying in under
+    // a minute of GPU time, a corresponding Q for polynomials of degree on the order of 10^7' is a measured
+    // computation. No device.
+    { id: "arxiv:2308.01501", title: "Generalized Quantum Signal Processing", authors: "Danial Motlagh, Nathan Wiebe", year: "2023", url: "https://arxiv.org/abs/2308.01501", reports: { theory: "reported", simulation: "reported", hardware: "absent" }, reportsBasis: "abstract" },
+    // `reports` read off the abstract, which is what `reportsBasis` records.
+    // 'using at most 2^{n-1} - 1 controlled-NOT gates' and 'We give upper bounds for the one-qubit and
+    // controlled-NOT gate counts' are its own. The abstract states no numerics, and the arXiv comment says
+    // only '8 pages, 10 figures', so simulation is unknown rather than absent. No device.
+    { id: "arxiv:quant-ph/0410066", title: "Quantum circuits with uniformly controlled one-qubit gates", authors: "Ville Bergholm, Juha J. Vartiainen, Mikko Mottonen, Martti M. Salomaa", year: "2004", url: "https://arxiv.org/abs/quant-ph/0410066", reports: { theory: "reported", simulation: "unknown", hardware: "absent" }, reportsBasis: "abstract" },
+    // `reports` read off the abstract, which is what `reportsBasis` records.
+    // 'we propose an algorithm that detects whether a given quantum state can be factored into substates' is
+    // its own construction. 'the experiments show that by increasing the number of qubits, the gap between the
+    // temporal efficiency of the methods increases' is its own benchmark, and those experiments are compile-
+    // and run-time measurements rather than a device.
+    { id: "arxiv:2409.05618", title: "Quantum Multiplexer Simplification for State Preparation", authors: "José A. de Carvalho, Carlos A. Batista, Tiago M. L. de Veras, Israel F. Araujo, Adenilton J. da Silva", year: "2024", url: "https://arxiv.org/abs/2409.05618", reports: { theory: "reported", simulation: "reported", hardware: "absent" }, reportsBasis: "abstract" },
+    // `reports` read off the abstract, which is what `reportsBasis` records.
+    // 'we show a configuration that encodes an N-dimensional state by a quantum circuit with O(sqrt(N)) width
+    // and depth' is its own. 'We show a proof-of-principle on five quantum computers' names devices. The
+    // abstract names no simulation separately from that, so simulation is unknown.
+    { id: "arxiv:2108.10182", title: "Configurable sublinear circuits for quantum state preparation", authors: "Israel F. Araujo, Daniel K. Park, Teresa B. Ludermir, Wilson R. Oliveira, Francesco Petruccione, Adenilton J. da Silva", year: "2021", url: "https://arxiv.org/abs/2108.10182", reports: { theory: "reported", simulation: "unknown", hardware: "reported" }, reportsBasis: "abstract" },
+    // `reports` read off the abstract, which is what `reportsBasis` records.
     // 'We propose a variational algorithm' is its own; 'We use this algorithm to find the ground-state energy ... sp
     // ecifically molecular hydrogen and lithium hydride' is its own. The abstract says nothing either way about a de
     // vice.
