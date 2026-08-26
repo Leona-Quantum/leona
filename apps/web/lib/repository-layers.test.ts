@@ -2660,7 +2660,24 @@ test("the capabilities closed on `implementations` stay closed, as a SET", () =>
     "polynomial-approximation",
     "phase-estimation",
   ];
-  for (const slot of BATCH_10) {
+  // Batch 11 was scoped against SIX regions and closed FOUR. `success-amplification`
+  // and `marked-item-search` are not here because one method in each came back as a
+  // **declared absence** — `variable-time-amplification` and
+  // `state-discrimination-search`, each naming the repositories it searched, the
+  // commits, and the tree sizes it read.
+  //
+  // An absence is the honest answer and it does NOT close this axis, which is
+  // `regionClosure`'s own rule: its `implementations` measure is
+  // `(method.implementations ?? []).length > 0` and consults no absence. So the two
+  // are counted as open here for the same reason the gauge counts them as missing,
+  // and the planned number is not the shipped number.
+  const BATCH_11 = [
+    "quantum-walk-search",
+    "block-encode-matrix",
+    "compile-to-device",
+    "combinatorial-optimization",
+  ];
+  for (const slot of [...BATCH_10, ...BATCH_11]) {
     assert.ok(
       layerNode(LAYER_GRAPH, slot) !== null,
       `${slot} names no capability — renamed, and this ratchet stopped measuring it`,
@@ -2703,20 +2720,20 @@ test("the capabilities closed on `implementations` stay closed, as a SET", () =>
   // absorbed silently, which is what the equality asserts.
   assert.deepEqual(
     [...complete].sort(),
-    [...BATCH_10, ...ALREADY].sort(),
+    [...BATCH_10, ...BATCH_11, ...ALREADY].sort(),
     "the set of capabilities complete on implementations has changed — add the new one to " +
       "ALREADY rather than letting the count absorb it",
   );
 
   assert.ok(
-    complete.size >= 16,
-    `${complete.size} capabilities are complete on implementations, was 16 after batch 10`,
+    complete.size >= 20,
+    `${complete.size} capabilities are complete on implementations, was 20 after batch 11`,
   );
 
   const filled = methods.filter((m) => (m.implementations ?? []).length > 0).length;
   assert.ok(
-    filled >= 71,
-    `${filled} of ${methods.length} methods carry an implementation, was 71 after batch 10`,
+    filled >= 79,
+    `${filled} of ${methods.length} methods carry an implementation, was 79 after batch 11`,
   );
 });
 
