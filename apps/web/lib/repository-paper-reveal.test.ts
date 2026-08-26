@@ -1,9 +1,14 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { paperRevealFor } from "./repository/paper-reveal.ts";
-import { layoutConverge, drawableSlots, CONVERGE_OPEN_MAX } from "./repository/converge-layout.ts";
+import { paperOwnPageMethods, paperRevealFor } from "./repository/paper-reveal.ts";
+import {
+  layoutConverge,
+  layoutConvergeForMethod,
+  drawableSlots,
+  CONVERGE_OPEN_MAX,
+} from "./repository/converge-layout.ts";
 import { LAYER_GRAPH } from "./repository/layer-graph.ts";
-import { layerNode, isCapability, isMethod } from "./repository/layers.ts";
+import { layerNode, isCapability, isMethod, type LayerMethod } from "./repository/layers.ts";
 import { paperTraces } from "./repository/paper-traces.ts";
 import { paperSlug } from "./repository/papers.ts";
 import { STATE_VOCABULARY } from "./repository/state-vocabulary.ts";
@@ -89,17 +94,33 @@ test("every map-citing paper reveals — or is verifiably undrawn, never silentl
   let drawnTotal = 0;
   let foldedTotal = 0;
   let elsewhereTotal = 0;
+  let ownPageTotal = 0;
   let undrawnTotal = 0;
   for (const trace of traces) {
     const reveal = paperRevealFor(LAYER_GRAPH, STATE_VOCABULARY, paperSlug(trace.paper));
     if (reveal === null) {
-      // Null must MEAN undrawable, per the independent index — a paper whose
-      // nodes draw somewhere and still got null is a focus-choice bug.
+      // Null must MEAN "no CAPABILITY FIGURE draws any of this", per the
+      // independent index — a paper whose nodes draw on a figure and still got
+      // null is a focus-choice bug.
+      //
+      // It does NOT mean the cited node is drawn nowhere, and the difference is
+      // the whole reason `ownPage` exists: a method whose slot draws as a state
+      // chain has no lane on any figure and a full drawing on its own page. So
+      // this branch asserts the second fact too — a null reveal whose nodes are
+      // all own-page must hand the paper page something to link, or the reader
+      // is told nothing about a drawing that exists.
       index = index ?? saturatedIndex();
       for (const nodeId of trace.nodes) {
         assert.ok(
           !index.has(nodeId) && !drawableIds.has(nodeId),
-          `${trace.paper}: ${nodeId} draws somewhere, yet the reveal came back null`,
+          `${trace.paper}: ${nodeId} draws on a figure, yet the reveal came back null`,
+        );
+      }
+      const ownPageHere = paperOwnPageMethods(LAYER_GRAPH, STATE_VOCABULARY, paperSlug(trace.paper));
+      for (const nodeId of ownPageHere) {
+        assert.ok(
+          trace.nodes.includes(nodeId),
+          `${trace.paper}: own-page method ${nodeId} is not one of this paper's cited nodes`,
         );
       }
       unrevealed.push(trace.paper);
@@ -109,6 +130,7 @@ test("every map-citing paper reveals — or is verifiably undrawn, never silentl
     drawnTotal += reveal.drawn.length;
     foldedTotal += reveal.folded.length;
     elsewhereTotal += reveal.elsewhere.length;
+    ownPageTotal += reveal.ownPage.length;
     undrawnTotal += reveal.undrawn.length;
 
     // The claim, checked by re-drawing with ONLY the reveal set: every
@@ -144,10 +166,11 @@ test("every map-citing paper reveals — or is verifiably undrawn, never silentl
       reveal.drawn.length +
         reveal.folded.length +
         reveal.elsewhere.length +
+        reveal.ownPage.length +
         reveal.undrawn.length +
         focusCited,
       trace.nodes.length,
-      `${trace.paper}: drawn + folded + elsewhere + undrawn + focus does not account for every cited node`,
+      `${trace.paper}: drawn + folded + elsewhere + ownPage + undrawn + focus does not account for every cited node`,
     );
 
     // The honesty claim behind the panel's "sits elsewhere on the map" (the
@@ -171,14 +194,56 @@ test("every map-citing paper reveals — or is verifiably undrawn, never silentl
         `${trace.paper}: ${nodeId} is bucketed "elsewhere" but draws nowhere on the map — the panel would state a falsehood`,
       );
     }
+    // The `ownPage` bucket's own honesty, and it is TWO claims because the
+    // bucket sits between two others. Each node must (a) draw nothing on any
+    // capability figure — otherwise it is `drawn` or `elsewhere` — and (b)
+    // genuinely draw itself on its own page, which is checked by drawing it,
+    // not by trusting the classification that put it here. Before this bucket
+    // existed all six of these nodes sat in `undrawn` and the panel told the
+    // reader they were "not yet drawn anywhere on the map".
+    index = reveal.ownPage.length > 0 ? (index ?? saturatedIndex()) : index;
+    for (const nodeId of reveal.ownPage) {
+      assert.ok(
+        !index!.has(nodeId) && !drawableIds.has(nodeId),
+        `${trace.paper}: ${nodeId} is bucketed "ownPage" but draws on a figure — it belongs in drawn or elsewhere`,
+      );
+      const node = layerNode(LAYER_GRAPH, nodeId);
+      assert.ok(node !== null && isMethod(node), `${trace.paper}: ${nodeId} is "ownPage" but is not a method`);
+      const own = layoutConvergeForMethod({
+        graph: LAYER_GRAPH,
+        vocabulary: STATE_VOCABULARY,
+        method: node as LayerMethod,
+        locale: "en",
+      });
+      assert.ok(
+        !own.empty && own.lanes.some((lane) => lane.nodeId === nodeId),
+        `${trace.paper}: ${nodeId} is bucketed "ownPage" yet its own page does not draw it — the panel would send the reader nowhere`,
+      );
+    }
+
     // And the mirror: an `undrawn` node really draws nowhere — its own lane,
-    // its own figure, or its fold host's lane would each disqualify it.
+    // its own figure, its own PAGE, or its fold host's lane would each
+    // disqualify it. The own-page arm is the one that was missing: it is what
+    // made this assertion pass for six nodes that had a drawing all along.
     index = reveal.undrawn.length > 0 ? (index ?? saturatedIndex()) : index;
     for (const nodeId of reveal.undrawn) {
       assert.ok(
         !index!.has(nodeId) && !drawableIds.has(nodeId),
         `${trace.paper}: ${nodeId} is bucketed "undrawn" yet draws somewhere — the coverage gap is overstated`,
       );
+      const undrawnNode = layerNode(LAYER_GRAPH, nodeId);
+      if (undrawnNode !== null && isMethod(undrawnNode)) {
+        const own = layoutConvergeForMethod({
+          graph: LAYER_GRAPH,
+          vocabulary: STATE_VOCABULARY,
+          method: undrawnNode,
+          locale: "en",
+        });
+        assert.ok(
+          own.empty || !own.lanes.some((lane) => lane.nodeId === nodeId),
+          `${trace.paper}: ${nodeId} is bucketed "undrawn" yet its own page draws it — it belongs in ownPage`,
+        );
+      }
       const node = layerNode(LAYER_GRAPH, nodeId);
       const host =
         node && isMethod(node) && node.sameInternalsAsParent === true ? (node.refines ?? null) : null;
@@ -213,8 +278,15 @@ test("every map-citing paper reveals — or is verifiably undrawn, never silentl
   // citation when this was written; a structure change may move the number,
   // but zero means the bucket has silently died while its panel copy ships.
   assert.ok(foldedTotal >= 1, "no reveal carries a folded citation — the fold bucket has gone dark");
+  // The same floor for `ownPage`. Six occurrences across five papers when this
+  // was written — the four methods of `nonlinear-ode-solve`, the last
+  // capability whose state chain survives its own methods' bypasses. If a later
+  // change gives those methods a lane on a figure the number legitimately falls
+  // to zero, and this line is where somebody is made to say so out loud rather
+  // than let the bucket die quietly with its panel copy still shipping.
+  assert.ok(ownPageTotal >= 1, "no reveal carries an own-page citation — the bucket has gone dark");
   console.log(
-    `paper reveals: ${revealed}/${traces.length} papers; occurrences drawn ${drawnTotal}, folded into hosts ${foldedTotal}, cited elsewhere ${elsewhereTotal}, drawn nowhere ${undrawnTotal}; verifiably undrawn papers: ${unrevealed.join(", ") || "none"}`,
+    `paper reveals: ${revealed}/${traces.length} papers; occurrences drawn ${drawnTotal}, folded into hosts ${foldedTotal}, cited elsewhere ${elsewhereTotal}, on their own page ${ownPageTotal}, drawn nowhere ${undrawnTotal}; verifiably undrawn papers: ${unrevealed.join(", ") || "none"}`,
   );
 });
 

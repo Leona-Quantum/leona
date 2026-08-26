@@ -23,7 +23,12 @@
 
 import type { LayerGraph } from "./layers.ts";
 import type { StateVocabulary } from "./states.ts";
-import { layoutConverge, drawableSlots, CONVERGE_OPEN_MAX } from "./converge-layout.ts";
+import {
+  layoutConverge,
+  layoutConvergeForMethod,
+  drawableSlots,
+  CONVERGE_OPEN_MAX,
+} from "./converge-layout.ts";
 import { layerNode, isCapability, isMethod } from "./layers.ts";
 import { paperTraces, traceFor, type PaperTrace } from "./paper-traces.ts";
 import { paperIdFromSlug, type PaperId } from "./papers.ts";
@@ -82,10 +87,43 @@ export interface PaperReveal {
    */
   elsewhere: readonly string[];
   /**
+   * Cited methods no capability figure draws, whose OWN page draws them.
+   *
+   * **This bucket exists because `undrawn` was saying something false.** A
+   * capability draws either a state chain or a fan of its methods, and only the
+   * fan gives a method a lane. A method whose slot draws as a chain therefore
+   * appears on no figure the index offers — but `layoutConvergeForMethod`
+   * (`repository-layers.tsx`) draws the fan regardless on the method's own
+   * page, so the method *is* drawn, at `/repository/layers/<id>`, and has been
+   * since that entry point landed. Nothing re-measured `undrawn` afterwards.
+   *
+   * Measured on `dev` 2026-08-26: every one of the six nodes `undrawn` held was
+   * in this class — `carleman-euler-qls-route`, `kvn-simulation-route`,
+   * `level-set-observable-route` and `homotopy-perturbation-route`, the four
+   * methods of `nonlinear-ode-solve`, which is the last capability whose chain
+   * survives its own methods' bypasses. So the panel told readers *"1 cited step
+   * is not yet drawn anywhere on the map"* about four methods each of which has
+   * a figure with itself as the subject lane.
+   *
+   * It is deliberately not folded into `elsewhere`. "Sits elsewhere on the map"
+   * sends a reader to another *figure* to look for a lane; this sends them to a
+   * *page*. Collapsing the two is the same mistake v2 fixed when `elsewhere`
+   * swallowed the folded nodes.
+   *
+   * Membership is **drawn, not inferred**: the check calls the same entry point
+   * the page calls and looks for a lane whose node is this method. A method with
+   * no `realizes`, or one whose fan does not name it, stays in `undrawn`.
+   */
+  ownPage: readonly string[];
+  /**
    * Cited nodes drawn on NO figure at all — the map's own coverage gap,
    * stated instead of mislabeled. The parity workstream (the 53-record
    * audit) is what closes these; the panel names the count so a reader is
    * told the truth rather than sent hunting for a lane that does not exist.
+   *
+   * **Read this with `ownPage`, never alone.** Before that bucket existed this
+   * one held four methods that are drawn on their own pages, and the panel's
+   * sentence was false for all of them.
    */
   undrawn: readonly string[];
   /** Reveal addresses dropped at `CONVERGE_OPEN_MAX`. 0 on today's corpus. */
@@ -105,6 +143,7 @@ export interface PaperReveal {
 type OccurrenceMap = ReadonlyMap<string, readonly string[]>;
 
 const saturationCache = new WeakMap<LayerGraph, Map<string, OccurrenceMap>>();
+const ownPageCache = new WeakMap<LayerGraph, Map<string, boolean>>();
 // Keyed on the graph AND the vocabulary. Production has one of each, so a
 // single-level cache would look correct forever and hand back traces walked
 // under the wrong state relation the first time a caller passed a second
@@ -287,6 +326,90 @@ function prune(
 }
 
 /**
+ * Whether this node is a method whose OWN page draws it — see `PaperReveal.ownPage`.
+ *
+ * Asks by drawing, through the same entry point `repository-layers.tsx` calls for
+ * a method page, and then looks for a lane whose `nodeId` is this method. That
+ * matters more here than the two lines it costs: the premise this replaces
+ * ("a method not on a capability figure is drawn nowhere") was true when it was
+ * written and was quietly falsified by a change in a different file, and an
+ * inferred answer would go stale the same way. A drawn answer cannot.
+ *
+ * `layoutConvergeForMethod` forces the fan — *"not 'what does every route through
+ * this slot pass through' but 'which of the ways through it is this one'"* — so
+ * this is true of every method whose slot resolves and whose fan names it, and
+ * false for a node that is not a method at all.
+ */
+function drawsOnItsOwnPage(
+  graph: LayerGraph,
+  vocabulary: StateVocabulary,
+  nodeId: string,
+): boolean {
+  let byNode = ownPageCache.get(graph);
+  if (!byNode) {
+    byNode = new Map();
+    ownPageCache.set(graph, byNode);
+  }
+  const cached = byNode.get(nodeId);
+  if (cached !== undefined) return cached;
+
+  const node = layerNode(graph, nodeId);
+  let answer = false;
+  if (node && isMethod(node)) {
+    const diagram = layoutConvergeForMethod({ graph, vocabulary, method: node, locale: "en" });
+    answer = !diagram.empty && diagram.lanes.some((lane) => lane.nodeId === nodeId);
+  }
+  byNode.set(nodeId, answer);
+  return answer;
+}
+
+/**
+ * Every cited method of this paper that no capability figure draws but whose own
+ * page does — `PaperReveal.ownPage`, answerable without a reveal.
+ *
+ * Exported because the paper's own page needs it in the case `paperRevealFor`
+ * returns null: a paper whose only citing node is one of these has no map figure
+ * to offer, and before this it was offered nothing at all — no link, no
+ * sentence — while the method it cites had a drawing the whole time.
+ */
+export function paperOwnPageMethods(
+  graph: LayerGraph,
+  vocabulary: StateVocabulary,
+  slugOrId: string,
+): readonly string[] {
+  const paperId = paperIdFromSlug(slugOrId) ?? (slugOrId.includes(":") ? (slugOrId as PaperId) : null);
+  if (paperId === null) return [];
+  const trace = traceFor(tracesOf(graph, vocabulary), paperId);
+  if (trace === null) return [];
+  return trace.nodes.filter(
+    (nodeId) => !drawsOnAnyFigure(graph, vocabulary, nodeId) && drawsOnItsOwnPage(graph, vocabulary, nodeId),
+  );
+}
+
+/**
+ * Does this node draw a lane on ANY capability figure?
+ *
+ * Lifted out of `paperRevealFor`, where it was a closure, so `paperOwnPageMethods`
+ * asks the identical question rather than a second copy of it — the two answers
+ * are read side by side in the panel and a drift between them would show up as a
+ * node counted in both buckets or in neither.
+ *
+ * Every slot's saturation is memoized, so this is a lookup and not a walk. A
+ * drawable slot IS drawn — as its own figure.
+ */
+function drawsOnAnyFigure(
+  graph: LayerGraph,
+  vocabulary: StateVocabulary,
+  nodeId: string,
+): boolean {
+  for (const slot of drawableSlots(graph, vocabulary)) {
+    if (slot.id === nodeId) return true;
+    if (saturatedOccurrences(graph, vocabulary, slot.id).has(nodeId)) return true;
+  }
+  return false;
+}
+
+/**
  * The reveal for one paper, or null when the register does not know the slug /
  * id, or no figure draws any of its citing nodes.
  *
@@ -365,20 +488,10 @@ export function paperRevealFor(
 
   const occurrences = saturatedOccurrences(graph, vocabulary, bestFocus, bestUnfold);
 
-  // Does this node draw a lane on ANY figure? Every slot's saturation is
-  // already memoized by the focus choice above, so this is a lookup, not a
-  // walk. A drawable slot IS drawn — as its own figure.
-  const drawsAnywhere = (nodeId: string): boolean => {
-    for (const slot of drawableSlots(graph, vocabulary)) {
-      if (slot.id === nodeId) return true;
-      if (saturatedOccurrences(graph, vocabulary, slot.id).has(nodeId)) return true;
-    }
-    return false;
-  };
-
   const drawn: RevealedNode[] = [];
   const folded: FoldedNode[] = [];
   const elsewhere: string[] = [];
+  const ownPage: string[] = [];
   const undrawn: string[] = [];
   for (const nodeId of trace.nodes) {
     const list = occurrences.get(nodeId);
@@ -391,8 +504,18 @@ export function paperRevealFor(
     const hostList = host !== null ? occurrences.get(host) : undefined;
     if (host !== null && hostList && hostList.length > 0) {
       folded.push({ nodeId, hostId: host, hostAddress: hostList[0]! });
-    } else if (drawsAnywhere(nodeId) || (host !== null && drawsAnywhere(host))) {
+    } else if (
+      drawsOnAnyFigure(graph, vocabulary, nodeId) ||
+      (host !== null && drawsOnAnyFigure(graph, vocabulary, host))
+    ) {
       elsewhere.push(nodeId);
+    } else if (drawsOnItsOwnPage(graph, vocabulary, nodeId)) {
+      // Tested AFTER `elsewhere`, deliberately. A method drawn on a capability
+      // figure is also drawn on its own page, so the reverse order would move
+      // every fan method out of `elsewhere` and change what the panel says about
+      // nodes that were never in doubt. This bucket is the remainder, and it is
+      // the remainder that `undrawn` was over-claiming.
+      ownPage.push(nodeId);
     } else {
       undrawn.push(nodeId);
     }
@@ -447,6 +570,7 @@ export function paperRevealFor(
     drawn,
     folded,
     elsewhere,
+    ownPage,
     undrawn,
     dropped,
     unfold: bestUnfold ?? null,

@@ -129,7 +129,9 @@ const unrevealed = [];
 let revealing = 0;
 let undrawnTotal = 0;
 let foldedTotal = 0;
+let ownPageTotal = 0;
 const undrawnByPaper = [];
+const ownPageByPaper = [];
 
 for (const trace of traces) {
   const reveal = paperRevealFor(LAYER_GRAPH, STATE_VOCABULARY, paperSlug(trace.paper));
@@ -143,6 +145,10 @@ for (const trace of traces) {
     undrawnTotal += reveal.undrawn.length;
     undrawnByPaper.push({ paper: trace.paper, undrawn: [...reveal.undrawn] });
   }
+  if (reveal.ownPage.length > 0) {
+    ownPageTotal += reveal.ownPage.length;
+    ownPageByPaper.push({ paper: trace.paper, ownPage: [...reveal.ownPage] });
+  }
 }
 
 const gauge = {
@@ -154,7 +160,9 @@ const gauge = {
   unrevealed,
   undrawnTotal,
   foldedTotal,
+  ownPageTotal,
   undrawnByPaper,
+  ownPageByPaper,
 };
 
 if (AS_JSON) {
@@ -168,7 +176,7 @@ if (QUIET) {
   // One line, all three numbers, because the whole point is that they travel
   // together. Even in the terse mode nothing is dropped.
   console.log(
-    `match-gauge: ${gauge.anchored}/${gauge.mapEligible} anchored · ${gauge.revealing}/${gauge.mapCitingPapers} papers reveal · ${gauge.undrawnTotal} undrawn`,
+    `match-gauge: ${gauge.anchored}/${gauge.mapEligible} anchored · ${gauge.revealing}/${gauge.mapCitingPapers} papers reveal · ${gauge.undrawnTotal} undrawn (+${gauge.ownPageTotal} own-page)`,
   );
   process.exit(0);
 }
@@ -189,9 +197,25 @@ console.log(
 console.log(
   `  3. ${gauge.undrawnTotal} cited steps no figure draws, summed over every reveal (${gauge.foldedTotal} more are folded into a drawn lane, which is drawn, not missing)`,
 );
+// Printed BESIDE (3) and never instead of it. These six moved out of `undrawn`
+// on 2026-08-26 without one line of the map changing — they had always been
+// drawn on their own pages, and the bucket that held them was making a claim
+// about the map that had been false since `layoutConvergeForMethod` landed.
+// A reclassification that shrinks a gauge is the exact shape of "progress that
+// looks like progress and is not", so it is stated as its own number rather
+// than folded into the one it improved.
+console.log(
+  `  3b. ${gauge.ownPageTotal} more are drawn on their own method page and on no figure — reclassified, not closed`,
+);
 
 if (gauge.unrevealed.length > 0) {
   console.log(`  papers revealing nothing: ${gauge.unrevealed.join(", ")}`);
+}
+if (ownPageByPaper.length > 0) {
+  console.log("  where (3b) lives:");
+  for (const row of ownPageByPaper) {
+    console.log(`    ${row.paper}: ${row.ownPage.join(", ")}`);
+  }
 }
 if (undrawnByPaper.length > 0) {
   console.log("  where (3) lives:");

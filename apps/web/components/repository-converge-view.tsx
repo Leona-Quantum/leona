@@ -212,6 +212,7 @@ interface ConvergeCopy {
   paperShows: (drawn: number, total: number) => string;
   paperFolded: (n: number) => string;
   paperElsewhere: (n: number) => string;
+  paperOwnPage: (n: number) => string;
   paperUndrawn: (n: number) => string;
   paperRecord: string;
   paperClear: string;
@@ -311,6 +312,10 @@ const COPY: Record<"en" | "ja", ConvergeCopy> = {
         ? "1 cited method is folded into a lane drawn here:"
         : `${n} cited methods are folded into lanes drawn here:`,
     paperElsewhere: (n: number) => `${n} more ${n === 1 ? "sits" : "sit"} elsewhere on the map.`,
+    paperOwnPage: (n: number) =>
+      n === 1
+        ? "1 cited step is drawn on its own page rather than on a figure here:"
+        : `${n} cited steps are drawn on their own pages rather than on a figure here:`,
     paperUndrawn: (n: number) =>
       n === 1
         ? "1 cited step is not yet drawn anywhere on the map."
@@ -396,6 +401,8 @@ const COPY: Record<"en" | "ja", ConvergeCopy> = {
     paperFolded: (n: number) =>
       `引用手法のうち ${n} 件は、ここに描かれたレーンに折りたたまれています:`,
     paperElsewhere: (n: number) => `ほか ${n} 件はマップの別の場所にあります。`,
+    paperOwnPage: (n: number) =>
+      `引用先のうち ${n} 件は、この図ではなくそれぞれ自身のページに描かれています。`,
     paperUndrawn: (n: number) => `引用先のうち ${n} 件は、まだマップ上のどの図にも描かれていません。`,
     paperRecord: "論文レコードを開く",
     paperClear: "マップから論文を外す",
@@ -767,7 +774,13 @@ export function ConvergeView({
     /** Cited methods W17-folded into drawn lanes (v2) — see `FoldedNode`. */
     folded: readonly FoldedNode[];
     elsewhereCount: number;
-    /** Cited nodes no figure draws — the coverage gap, stated (v2). */
+    /**
+     * Cited methods no capability figure draws, whose own page does — see
+     * `PaperReveal.ownPage`. Linked rather than counted, because the honest
+     * thing to tell a reader here is *where* it is drawn.
+     */
+    ownPage: readonly string[];
+    /** Cited nodes no figure draws at all — the coverage gap, stated (v2). */
     undrawnCount: number;
     /**
      * The W17 fold this paper's surface re-expands, or null (W22, RULING
@@ -1328,6 +1341,22 @@ export function ConvergeView({
             {paper.elsewhereCount > 0 ? ` ${copy.paperElsewhere(paper.elsewhereCount)}` : ""}
             {paper.undrawnCount > 0 ? ` ${copy.paperUndrawn(paper.undrawnCount)}` : ""}
           </p>
+          {paper.ownPage.length > 0 ? (
+            <p className="mj-paper-panel-count">
+              {copy.paperOwnPage(paper.ownPage.length)}{" "}
+              {paper.ownPage.map((nodeId, index) => {
+                const ownNode = layerNode(graph, nodeId);
+                return (
+                  <span key={nodeId}>
+                    {index > 0 ? " · " : ""}
+                    <a href={`/repository/layers/${nodeId}`}>
+                      {ownNode ? label(ownNode) : nodeId}
+                    </a>
+                  </span>
+                );
+              })}
+            </p>
+          ) : null}
           {paper.folded.length > 0 ? (
             <p className="mj-paper-panel-count">
               {copy.paperFolded(paper.folded.length)}{" "}
