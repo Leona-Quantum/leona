@@ -79,9 +79,7 @@ import { NOT_FOUND_COPY } from "../lib/public-copy";
 import { siteTitle } from "../lib/public-metadata";
 import { THEME_STORAGE_KEY, type Theme } from "../lib/theme";
 import {
-  LEGACY_PUBLIC_LOCALE_COOKIE,
-  parsePublicLocale,
-  PUBLIC_LOCALE_COOKIE,
+  readPublicLocaleCookie,
   type PublicLocale,
 } from "../lib/public-locale";
 
@@ -114,22 +112,13 @@ function readStoredTheme(): Theme | null {
   }
 }
 
-function readLocaleCookie(): PublicLocale {
-  try {
-    const jar = document.cookie.split("; ");
-    const read = (name: string) => jar.find((c) => c.startsWith(`${name}=`))?.split("=")[1];
-    return parsePublicLocale(read(PUBLIC_LOCALE_COOKIE) ?? read(LEGACY_PUBLIC_LOCALE_COOKIE));
-  } catch {
-    return "en";
-  }
-}
 
 export function NotFoundStandalone() {
   const [locale, setLocale] = useState<PublicLocale>("en");
   const [theme, setTheme] = useState<Theme | null>(null);
 
   useEffect(() => {
-    const next = readLocaleCookie();
+    const next = readPublicLocaleCookie();
     setLocale(next);
     // The document Next synthesised has no `lang` at all. Setting it here is
     // not decoration: it is the only chance this page has to tell a screen

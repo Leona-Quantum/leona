@@ -43,6 +43,35 @@ export function parsePublicLocale(value: string | undefined): PublicLocale {
  * most traffic, and the `dynamicParams = false` line in their source reads as a
  * guarantee it is not giving.
  */
+/**
+ * The reader's locale, read in their own BROWSER.
+ *
+ * Both 404s need this and neither may ask the server. The global 404 is one
+ * CDN-cached response served to every unmatched URL there is, and the in-segment
+ * 404 renders into a document Next synthesises for its error path, where nothing
+ * of ours ran at all. So the cookie is the only signal either page has, and it
+ * can only be read after the page is in front of somebody.
+ *
+ * It lived in `components/not-found-standalone.tsx` as a file-local function
+ * while only that page needed it. Shared rather than copied: the two pages
+ * differ in their markup on purpose and must not differ in which cookie they
+ * believe, and a second copy of a four-line cookie parse is exactly the kind of
+ * thing that goes on agreeing until the cookie name changes.
+ *
+ * Returns `"en"` on anything it cannot read — no cookie, cookies disabled, a
+ * value that is not a locale — which is the same answer the server renders, so
+ * the fallback is never a third behaviour.
+ */
+export function readPublicLocaleCookie(): PublicLocale {
+  try {
+    const jar = document.cookie.split("; ");
+    const read = (name: string) => jar.find((entry) => entry.startsWith(`${name}=`))?.split("=")[1];
+    return parsePublicLocale(read(PUBLIC_LOCALE_COOKIE) ?? read(LEGACY_PUBLIC_LOCALE_COOKIE));
+  } catch {
+    return "en";
+  }
+}
+
 export function isPublicLocale(value: string | undefined): value is PublicLocale {
   return (PUBLIC_LOCALES as readonly (string | undefined)[]).includes(value);
 }
