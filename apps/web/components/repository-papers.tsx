@@ -29,8 +29,9 @@
 // weakest axis ride on the strongest, which is the failure the field exists to
 // avoid.
 import type { PublicLocale } from "../lib/public-locale";
-import { paperRevealFor } from "../lib/repository/paper-reveal";
+import { paperOwnPageMethods, paperRevealFor } from "../lib/repository/paper-reveal";
 import { LAYER_GRAPH } from "../lib/repository/layer-graph";
+import { layerNode } from "../lib/repository/layers";
 import { STATE_VOCABULARY } from "../lib/repository/state-vocabulary";
 import type { PaperIndexCensus, PaperPage } from "../lib/repository/paper-pages";
 import type { TraceShape } from "../lib/repository/paper-traces";
@@ -68,6 +69,8 @@ const COPY = {
     inAtlasNone: "No record in the Atlas cites this paper.",
     shapeHeading: "As a line on the map",
     seeOnMap: "See its pipeline on the map — the branches it crosses open, its steps marked",
+    seeOnOwnPage:
+      "No figure on the map draws this paper's step. It is drawn on its own page:",
     // The four shapes, each said as the fact it is. `point` is by far the
     // commonest and must not read as a failure: one node citing a paper is a
     // normal, complete state of affairs.
@@ -125,6 +128,8 @@ const COPY = {
     inAtlasNone: "アトラスのどの記録もこの論文を引用していません。",
     shapeHeading: "地図の上の線として",
     seeOnMap: "この論文のパイプラインをマップで見る — 通る枝が開き、各工程に印が付きます",
+    seeOnOwnPage:
+      "この論文が引用される工程を描く図は、マップ上にはありません。その工程自身のページに描かれています。",
     shape: {
       point:
         "引用しているノードはひとつです。描くべき線はありません。軌跡とは経路であり、ひとつの引用は地点だからです。",
@@ -219,6 +224,12 @@ function CitationSites({
 export function PaperView({ page, locale }: { page: PaperPage; locale: PublicLocale }) {
   const copy = COPY[locale];
   const { paper, trace } = page;
+  // Derived here rather than inside the JSX so the two branches below read as
+  // the two facts they are: "the map has a figure for this paper" and, when it
+  // does not, "the step it cites is drawn on its own page".
+  const ownPageMethods = paperOwnPageMethods(LAYER_GRAPH, STATE_VOCABULARY, page.slug);
+  const nodeLabel = (node: { label: string; labelJa: string }): string =>
+    locale === "ja" ? node.labelJa : node.label;
   return (
     <article className="mj-layers-node mj-papers-page">
       <nav className="mj-layers-breadcrumb" aria-label={copy.title}>
@@ -271,9 +282,34 @@ export function PaperView({ page, locale }: { page: PaperPage; locale: PublicLoc
               the link only exists when the map genuinely draws something of
               this paper — the one register paper whose cited nodes are all
               folded out of the drawing gets no link rather than a dead one. */}
+          {/* Two different facts, and the second used to render as silence.
+              A reveal means the map has a figure to open at this paper. When it
+              does not, the cited step may still be DRAWN — on its own page,
+              which is where `layoutConvergeForMethod` puts every method whose
+              slot draws as a state chain rather than as a fan. Measured on
+              `dev` 2026-08-26: exactly one register paper is in that position
+              (`arxiv:2406.06323`, cited only on `carleman-euler-qls-route`), and
+              it was offered no link at all while the drawing existed the whole
+              time. Offering the method's page is not a consolation link — it is
+              the figure, with that method as its subject. */}
           {paperRevealFor(LAYER_GRAPH, STATE_VOCABULARY, page.slug) !== null ? (
             <p className="mj-papers-see-map">
               <a href={`/repository/layers?paper=${page.slug}`}>{copy.seeOnMap}</a>
+            </p>
+          ) : ownPageMethods.length > 0 ? (
+            <p className="mj-papers-see-map">
+              {copy.seeOnOwnPage}{" "}
+              {ownPageMethods.map((nodeId, index) => {
+                const ownNode = layerNode(LAYER_GRAPH, nodeId);
+                return (
+                  <span key={nodeId}>
+                    {index > 0 ? " · " : ""}
+                    <a href={`/repository/layers/${nodeId}`}>
+                      {ownNode ? nodeLabel(ownNode) : nodeId}
+                    </a>
+                  </span>
+                );
+              })}
             </p>
           ) : null}
           {page.bridge.length > 0 ? (

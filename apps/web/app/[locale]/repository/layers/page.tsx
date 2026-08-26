@@ -343,6 +343,7 @@ export default async function RepositoryLayersPage({
                 drawnCount: paperReveal.drawn.length,
                 folded: paperReveal.folded,
                 elsewhereCount: paperReveal.elsewhere.length,
+                ownPage: paperReveal.ownPage,
                 undrawnCount: paperReveal.undrawn.length,
                 // W22 / RULING 06de05. Carried whenever `?paper=` resolves, NOT
                 // only on the landing, and that is deliberate: unfolding changes
