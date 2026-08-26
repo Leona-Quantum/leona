@@ -149,7 +149,23 @@ export function NotFoundStandalone() {
       <link rel="stylesheet" href="/not-found.css" precedence="mj-not-found" />
       <div className="mj-nf" lang={locale} data-theme={theme ?? undefined}>
         <div className="mj-nf-inner">
-          <a className="mj-nf-brand" href="/">Leona Quantum</a>
+          {/* The site's own wordmark, not the words in the body face.
+              Measured on production 2026-08-26, `/repository/zzz` against
+              `/repository`: every real page draws `.lq-wordmark`, a CSS mask
+              over `/brand/leona-quantum-wordmark.png`, and this page wrote
+              "Leona Quantum" as text in Instrument Sans 15px/500. A reader who
+              knows the mark met a different one on the error page.
+
+              This is the half of ai-ops issue 189 that needs no gamble. That
+              issue proposed promoting one of Next's PRELOADED CSS CHUNKS to a
+              real stylesheet so the 404 could wear the whole site chrome, and
+              declined itself because chunk names are not a contract and no test
+              here can see one change. None of that applies to a PNG under
+              `public/`: the path is as stable as this stylesheet's own, and
+              `check-static-routes` already owns both. */}
+          <a className="mj-nf-brand" href="/" aria-label={copy.brandHome} title={copy.brandHome}>
+            <span className="mj-nf-wordmark" aria-hidden="true" />
+          </a>
           <p className="mj-nf-overline">{copy.label}</p>
           <h1>{copy.title}</h1>
           <p className="mj-nf-body">{copy.body}</p>

@@ -18,7 +18,7 @@
  * and each has to fail on its own.
  */
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { readFileSync, statSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
@@ -209,5 +209,96 @@ test("the standalone 404 does not resolve the OS preference itself", () => {
     "not-found-standalone.tsx calls matchMedia. Resolving the OS preference here freezes it into " +
       'data-theme, and data-theme="light" blocks the prefers-color-scheme rule in ' +
       "public/not-found.css. Return null for a missing choice and let the sheet decide.",
+  );
+});
+
+/**
+ * The wordmark the 404 draws is the one every other page draws — asset, geometry
+ * and all — and this is the test because **nothing else can see it fail.**
+ *
+ * Measured on production 2026-08-26, `/repository/zzz` against `/repository`:
+ * every real page renders `.lq-wordmark`, a CSS mask over
+ * `/brand/leona-quantum-wordmark.png`, and the 404 wrote the words
+ * "Leona Quantum" as text in Instrument Sans 15px/500. That is the half of
+ * ai-ops issue 189 the map could actually close: the issue proposed promoting one
+ * of Next's preloaded CSS CHUNKS to a real stylesheet and declined itself
+ * because chunk names are not a contract — but a PNG under `public/` is as
+ * stable a path as this stylesheet's own.
+ *
+ * Two failure modes, and the second is the reason a status check is not enough:
+ *
+ * 1. The file moves or is renamed. The mask then resolves to nothing and the
+ *    link renders at its full 152px with NO INK — an invisible brand on a page
+ *    that still returns 200 and still contains every string a text assertion
+ *    would look for. `check-static-routes` does not read this sheet, and a DOM
+ *    check would find the `<span>` present and empty-by-design either way.
+ * 2. The artwork is re-exported at different bounds and only `globals.css` is
+ *    updated. Both sheets carry the same four inset percentages because the
+ *    numbers are the raster's, not a choice; a drift shows up as a mark cropped
+ *    on one surface and not the other, which no test that reads one file sees.
+ *
+ * So this reads BOTH sheets and the file on disk. It is the same shape as the
+ * palette check above — the duplication is forced by the empty `<head>`, so the
+ * copy is pinned to its original rather than trusted.
+ */
+test("the 404 draws the site's own wordmark, from the same asset and the same geometry", () => {
+  const sheet = readFileSync(SHEET, "utf8");
+  const globals = readFileSync(resolve(here, "../app/globals.css"), "utf8");
+
+  const ASSET = "/brand/leona-quantum-wordmark.png";
+  assert.ok(
+    sheet.includes(ASSET),
+    `public/not-found.css no longer masks ${ASSET}. The 404 has fallen back to writing the ` +
+      "wordmark as text, which is a different mark from the one every other page draws.",
+  );
+  assert.ok(
+    globals.includes(ASSET),
+    `app/globals.css no longer masks ${ASSET} — the 404's copy is now pinned to an asset the ` +
+      "site itself has stopped using, which is worse than not copying it at all.",
+  );
+
+  // The asset itself. A mask over a missing file paints nothing and throws
+  // nothing: the link keeps its box and loses its ink.
+  const asset = resolve(here, "..", "public", ASSET.replace(/^\//, ""));
+  const bytes = statSync(asset).size;
+  assert.ok(
+    bytes > 1024,
+    `${ASSET} is ${bytes} bytes — too small to be the artwork. A mask over a missing or empty ` +
+      "file renders an invisible wordmark on a page that still answers 200.",
+  );
+
+  // The geometry, which is the raster's own and must not drift between the two
+  // sheets. `aspect-ratio` first, then the four inset percentages that clip the
+  // transparent room around the artwork.
+  for (const value of ["766 / 174", "-6.397%", "-29.31%", "113.055%", "165.517%"]) {
+    assert.ok(
+      sheet.includes(value),
+      `public/not-found.css no longer carries the wordmark geometry ${value} — the mark will be ` +
+        "cropped or stretched differently from the one on every other page.",
+    );
+    assert.ok(
+      globals.includes(value),
+      `app/globals.css no longer carries the wordmark geometry ${value}. The two sheets have ` +
+        "drifted; the artwork was re-exported and only one of them was updated.",
+    );
+  }
+
+  // `currentColor` is what makes one PNG serve both themes. Painting a fixed
+  // colour here would put a dark mark on the dark surface, and the palette test
+  // above cannot see it — it checks `--nf-*`, and this would not be one.
+  const brandBlock = sheet.slice(sheet.indexOf(".mj-nf-wordmark::before"));
+  assert.ok(
+    /background:\s*currentColor/.test(brandBlock.slice(0, 400)),
+    "the 404's wordmark no longer paints with currentColor. One PNG serves both themes only " +
+      "because the mask takes the link's own colour; a literal here is invisible in one theme.",
+  );
+
+  // And the markup: a masked span has no text, so the link has no accessible
+  // name unless one is given. Losing this is silent to every visual check.
+  const source = readFileSync(resolve(here, "../components/not-found-standalone.tsx"), "utf8");
+  assert.ok(
+    /aria-label=\{copy\.brandHome\}/.test(source),
+    "the 404's wordmark link has lost its aria-label. The mark is a mask on an empty span, so " +
+      "without it a screen reader reads an unnamed link.",
   );
 });
