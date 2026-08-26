@@ -7,7 +7,7 @@ import { fileURLToPath } from "node:url";
 /**
  * A segment that owns a root layout and can `notFound()` must own the boundary too.
  *
- * Since ai-ops#151 there is no `app/layout.tsx`: each top-level segment renders
+ * Since ai-ops issue 151 there is no `app/layout.tsx`: each top-level segment renders
  * its own `<html>` through `RootDocument`. `app/not-found.tsx` therefore sits
  * above every root layout rather than inside one, and Next synthesises a bare
  * `<html><body>` around it — **no `globals.css`, no fonts**. So a `notFound()`
