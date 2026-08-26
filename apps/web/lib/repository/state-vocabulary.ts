@@ -635,8 +635,8 @@ export const STATE_VOCABULARY: StateVocabulary = {
       id: "cost-hamiltonian",
       label: "Cost Hamiltonian, diagonal in the computational basis",
       labelJa: "計算基底で対角なコストハミルトニアン",
-      summary: "An Ising or QUBO operator, diagonal in the computational basis, whose extremal eigenvector is the assignment a combinatorial optimisation problem is asking for. Nothing in this build produces it: the encoding slot that would turn a combinatorial-problem statement into this operator was scoped and then refused, so this is where the region starts, not a state anything hands off.",
-      summaryJa: "計算基底で対角な、Ising または QUBO 演算子であり、その極値固有ベクトルが、組合せ最適化問題が求めている割り当てです。この構築ではこれを生成するものは何もありません。組合せ問題の記述をこの演算子へと変換する符号化のスロットは検討されたのち退けられたため、この状態はこの領域の出発点であり、何かが手渡すものではありません。",
+      summary: "An Ising or QUBO operator, diagonal in the computational basis. Its extremal computational-basis eigenstates are the optimal assignments a combinatorial optimisation problem is asking for — one or more of them, because two assignments tying on the objective is ordinary rather than a special case — and a general vector in that eigenspace is a superposition of them and not an assignment at all, which is why what comes back is measured in the computational basis rather than read off the operator. Nothing in this build produces it: the encoding slot that would turn a combinatorial-problem statement into this operator was scoped and then refused, so this is where the region starts, not a state anything hands off.",
+      summaryJa: "計算基底で対角な、Ising または QUBO 演算子です。その極値に対応する計算基底状態が、組合せ最適化問題の求めている最適な割り当てにあたります。二つの割り当てが目的関数の値で並ぶことは特別な場合ではなく普通に起こりますから、それは一つとは限りません。またその固有空間の一般のベクトルはそれらの重ね合わせであって、割り当てではありません。返ってくるものを演算子から読み取るのではなく計算基底で測定するのは、そのためです。この構築ではこれを生成するものは何もありません。組合せ問題の記述をこの演算子へと変換する符号化のスロットは検討されたのち退けられたため、この状態はこの領域の出発点であり、何かが手渡すものではありません。",
       // **A root, like `nonlinear-ivp` and `pde-problem`: no `specializes`.** The
       // encoding slot that would produce this state (`combinatorial-problem` →
       // `cost-hamiltonian`) was scoped in
