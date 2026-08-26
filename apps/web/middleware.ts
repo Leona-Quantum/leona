@@ -284,22 +284,8 @@ export default async function middleware(request: NextRequest, event: NextFetchE
 // its sign-in page and the tab icon vanished while signed out. The lock is gone;
 // the exclusions are not lock-specific and stay — any auth gate would do the
 // same to a metadata route.
-// `not-found.css` joins that list for a narrower reason than the others, and it
-// is worth stating exactly, because the first version of this comment claimed
-// something false. It does NOT 404 without the exclusion — a `public/` file at
-// an unrouted path is served fine; that was measured against a local production
-// build, and the earlier "it 404s" reading came from a stale `next start` that a
-// `pkill` had failed to kill, not from the middleware.
-//
-// What the exclusion actually buys: an unrouted path falls through to
-// `unauthenticatedFallThrough`, which is a second AuthKit instance that
-// refreshes the session on every request it sees. That is pointless work for a
-// static stylesheet, and AuthKit's refresh can attach `Set-Cookie` — which
-// Vercel will not cache. This file is requested on every in-segment 404 (ai-ops
-// issue 188) and is the only styling that page will ever get, so it should come
-// off the CDN like any other asset rather than through a session refresh.
 export const config = {
   matcher: [
-    "/((?!_next/static|_next/image|favicon.ico|icon.svg|apple-icon.png|manifest.webmanifest|robots.txt|sitemap.xml|not-found.css).*)",
+    "/((?!_next/static|_next/image|favicon.ico|icon.svg|apple-icon.png|manifest.webmanifest|robots.txt|sitemap.xml).*)",
   ],
 };
