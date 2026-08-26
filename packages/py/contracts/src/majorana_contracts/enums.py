@@ -64,6 +64,25 @@ class QappExecutionStatus(StrEnum):
     FAILED = "failed"
 
 
+class QappRangeSmokeStatus(StrEnum):
+    """What happened when a generated Qapp was run at the TOP of its own declared
+    input range (ai-ops#180). Never blocks publication — it is told to the creator."""
+
+    #: It ran and produced a schema-valid result at the declared maxima.
+    PASSED = "passed"
+    #: It ran and failed — timed out, ran out of memory, or raised. The Qapp is
+    #: still publishable; the creator is told.
+    FAILED = "failed"
+    #: The schema declares no upper bound anywhere, so the top of its range is the
+    #: same input set as the bottom and there was nothing new to run. No second
+    #: sandbox was spent.
+    NOT_APPLICABLE = "not_applicable"
+    #: The declared maxima produce an input set the Qapp input contract itself
+    #: rejects — over the 16 KB body cap, in practice. Nothing was run, and that is
+    #: a defect in the schema rather than in the program.
+    UNREACHABLE = "unreachable"
+
+
 class RunStatus(StrEnum):
     QUEUED = "queued"
     RUNNING = "running"

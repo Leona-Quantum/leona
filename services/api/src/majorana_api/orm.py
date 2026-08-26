@@ -258,6 +258,10 @@ class QappVersion(Base):
         ForeignKey("artifact_versions.id")
     )
     generation_prompt: Mapped[str]
+    #: The top-of-range smoke result (migration 0057, ai-ops#180). NULL means
+    #: nobody ever asked — a third value distinct from `not_applicable` and from
+    #: `failed`, and never to be rendered as a pass.
+    range_smoke: Mapped[dict[str, Any] | None]
     created_at: Mapped[dt.datetime | None] = mapped_column(server_default=func.now())
 
 

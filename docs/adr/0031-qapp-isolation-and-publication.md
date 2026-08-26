@@ -122,6 +122,38 @@ whose output satisfies its declared schema. This is an executability gate, not s
 verification, and the UI must not label it as the latter. A future verified-Qapp claim requires a
 separate decision about parameterized verification; a successful smoke execution cannot earn it.
 
+**That gate proves the bottom of the range and only the bottom.** The value chooser generation's
+smoke run uses takes the schema default, else the first enum value, else the **minimum** of a
+number range, so a Qapp declaring `shots 1 to 20000` was declared publishable on a 1-shot run. The
+first visitor to move the slider to the top could get a timeout or an out-of-memory instead — a run
+that is still paid for and still counts against the two cross-tenant ceilings above. Asked as
+ai-ops#180; his ruling, quoted: *"Smoke at both ends but only warn the creator, publish either
+way."*
+
+So a second run happens at the **top** of every bound the schema declares, and its result is
+recorded on the version (`qapp_versions.range_smoke`, migration 0057) and shown to the creator
+beside the publish control. **It gates nothing.** A version that fails at its maximum inputs is
+generated, stored and publishable exactly as before; the person publishing it is told first. That is
+the whole difference between the option he picked and option 1, which would have refused
+publication.
+
+Three properties of that second run are decisions rather than details:
+
+- It runs **once per successful generation**, after the candidate has already passed the low-end
+  gate — not inside the repair loop, which runs per attempt. The low-end run is a gate and drives
+  re-prompting; this one is a measurement of the candidate that already passed. Putting it in the
+  loop would have multiplied every generation's sandbox spend by the attempt count, on the surface
+  whose ceilings had just been halved.
+- It runs at `DEFAULT_MEMORY_MB`, the **free** lane's 2048, and not at the creator's tier. Since
+  ai-ops#181 a Qapp's sandbox is sized by the **visitor** who opens it, so the useful sentence to
+  hand a creator is *"a free visitor at your maximum inputs will see this fail"*. A pass measured at
+  a paid creator's 4096 would be true for them and false for most of the people who open the page.
+- Where the schema declares no upper bound anywhere, the top of its range **is** its bottom, and no
+  second sandbox is spent at all. That is recorded as `not_applicable` rather than skipped silently,
+  because "checked, nothing to check" and "never checked" are different facts. `NULL` is the third:
+  every version generated before 0057 carries it and none is backfilled, so a reader must not render
+  it as a pass.
+
 **Identity:** Qapp slugs are new public addresses for a new resource type. They do not rename or
 migrate any existing published record id, and therefore do not settle the still-open record-id
 rename question in the repository instructions.

@@ -29,7 +29,7 @@ import { paperSlug } from "../../../../lib/repository/papers";
  * whole design of this file's move and is worth stating where it will be read.
  *
  * This page resolves ten search parameters on the server (`?open=`, `?at=`,
- * `?card=`, `?paper=`, `?focus=`, `?inner=`, `?iopen=`, `?about=`, `?section=`,
+ * `?card=`, `?paper=`, `?focus=`, `?inner=`, `?iopen=`, `?about=`, `?sec=`,
  * `?sel=`), on purpose: a shared link lands where its sender was standing, and
  * it does so with JavaScript off. Next is unambiguous that this costs static
  * rendering — "`searchParams` is a Request-time API whose values cannot be known
@@ -315,6 +315,11 @@ export default async function RepositoryLayersPage({
         // `ConvergeView`, which is the only component that knows what sections
         // this card has — validating it here would mean assembling the card
         // twice, and two answers to "is this a section of it" that can disagree.
+        // `SECTION_PARAM` is `"sec"`, not `"section"` — this comment block
+        // said `?section=` until a reader tried it and got the default section
+        // with no error, because an unresolvable value is the same as an absent
+        // one here by design. Nine of the ten names above match their constant;
+        // this was the tenth. Names come from `map-card.ts`, never from here.
         cardSection={one(params, SECTION_PARAM)}
         droppedOpen={openSet.dropped}
         // Resolved on the server so the figure arrives already panned and

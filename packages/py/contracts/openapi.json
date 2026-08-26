@@ -3601,6 +3601,50 @@
         "title": "QappGenerated",
         "type": "object"
       },
+      "QappRangeSmoke": {
+        "additionalProperties": false,
+        "description": "The second smoke run: the generated program at its LARGEST declared inputs.\n\nai-ops#180. Publication requires one successful run against the Qapp's own\ninput schema, and the value chooser that run uses takes the schema default,\nelse the first enum value, else the **minimum** of a number range. So a Qapp\ndeclaring `shots 1 to 20000` was published on a 1-shot run, and the first\nvisitor who moved the slider to the top could get a timeout or an\nout-of-memory instead \u2014 a failed run that is still paid for and still counts\nagainst the hourly ceilings.\n\nThe owner's ruling, quoted: *\"Smoke at both ends but only warn the creator,\npublish either way.\"* So this record **never blocks** anything. It is\ncreator-facing information and it is deliberately absent from `PublicQapp`:\na visitor is not told that the app they are looking at might fail at its top\nend, because that is the creator's decision to have published anyway.",
+        "properties": {
+          "detail": {
+            "default": "",
+            "maxLength": 1200,
+            "title": "Detail",
+            "type": "string"
+          },
+          "duration_ms": {
+            "anyOf": [
+              {
+                "minimum": 0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Duration Ms"
+          },
+          "status": {
+            "$ref": "#/components/schemas/QappRangeSmokeStatus"
+          }
+        },
+        "required": [
+          "status"
+        ],
+        "title": "QappRangeSmoke",
+        "type": "object"
+      },
+      "QappRangeSmokeStatus": {
+        "description": "What happened when a generated Qapp was run at the TOP of its own declared\ninput range (ai-ops#180). Never blocks publication \u2014 it is told to the creator.",
+        "enum": [
+          "passed",
+          "failed",
+          "not_applicable",
+          "unreachable"
+        ],
+        "title": "QappRangeSmokeStatus",
+        "type": "string"
+      },
       "QappVersion": {
         "additionalProperties": false,
         "properties": {
@@ -3645,6 +3689,17 @@
             "minimum": 1,
             "title": "Qubits Estimate",
             "type": "integer"
+          },
+          "range_smoke": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/QappRangeSmoke"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
           },
           "seq": {
             "minimum": 1,

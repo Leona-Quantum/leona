@@ -1874,6 +1874,44 @@ export interface components {
              */
             visibility: "private";
         };
+        /**
+         * QappRangeSmoke
+         * @description The second smoke run: the generated program at its LARGEST declared inputs.
+         *
+         *     ai-ops#180. Publication requires one successful run against the Qapp's own
+         *     input schema, and the value chooser that run uses takes the schema default,
+         *     else the first enum value, else the **minimum** of a number range. So a Qapp
+         *     declaring `shots 1 to 20000` was published on a 1-shot run, and the first
+         *     visitor who moved the slider to the top could get a timeout or an
+         *     out-of-memory instead — a failed run that is still paid for and still counts
+         *     against the hourly ceilings.
+         *
+         *     The owner's ruling, quoted: *"Smoke at both ends but only warn the creator,
+         *     publish either way."* So this record **never blocks** anything. It is
+         *     creator-facing information and it is deliberately absent from `PublicQapp`:
+         *     a visitor is not told that the app they are looking at might fail at its top
+         *     end, because that is the creator's decision to have published anyway.
+         */
+        QappRangeSmoke: {
+            /**
+             * Detail
+             * @default
+             */
+            detail: string;
+            /**
+             * Duration Ms
+             * @default null
+             */
+            duration_ms: number | null;
+            status: components["schemas"]["QappRangeSmokeStatus"];
+        };
+        /**
+         * QappRangeSmokeStatus
+         * @description What happened when a generated Qapp was run at the TOP of its own declared
+         *     input range (ai-ops#180). Never blocks publication — it is told to the creator.
+         * @enum {string}
+         */
+        QappRangeSmokeStatus: "passed" | "failed" | "not_applicable" | "unreachable";
         /** QappVersion */
         QappVersion: {
             /**
@@ -1906,6 +1944,8 @@ export interface components {
             quantum_source: string;
             /** Qubits Estimate */
             qubits_estimate: number;
+            /** @default null */
+            range_smoke: components["schemas"]["QappRangeSmoke"] | null;
             /** Seq */
             seq: number;
             /**

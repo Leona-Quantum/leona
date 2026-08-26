@@ -34,6 +34,28 @@ import type { PaperRegister } from "./papers.ts";
 
 export const PAPER_REGISTER: PaperRegister = {
   papers: [
+    // `reports` read off the abstract, which is what `reportsBasis` records.
+    // 'We propose a variational algorithm' is its own; 'We use this algorithm to find the ground-state energy ... sp
+    // ecifically molecular hydrogen and lithium hydride' is its own. The abstract says nothing either way about a de
+    // vice.
+    { id: "arxiv:1804.03023", title: "Variational ansatz-based quantum simulation of imaginary time evolution", authors: "Sam McArdle, Tyson Jones, Suguru Endo, Ying Li, Simon Benjamin, Xiao Yuan", year: "2018", url: "https://arxiv.org/abs/1804.03023", reports: { theory: "reported", simulation: "reported", hardware: "unknown" }, reportsBasis: "abstract" },
+    // `reports` read off the abstract, which is what `reportsBasis` records.
+    // 'Here, we propose a stabiliser-like method' is its own; 'Simulations show that our method can significantly be
+    // nefit calculations' is its own. 'suitable for near-term quantum hardware' is a claim about suitability, not a 
+    // run.
+    { id: "arxiv:1807.02467", title: "Error-mitigated digital quantum simulation", authors: "Sam McArdle, Xiao Yuan, Simon Benjamin", year: "2018", url: "https://arxiv.org/abs/1807.02467", reports: { theory: "reported", simulation: "reported", hardware: "absent" }, reportsBasis: "abstract" },
+    // `reports` read off the abstract, which is what `reportsBasis` records.
+    // 'the recently proposed symmetry verification technique' puts the theory in prior work; the contribution is 'th
+    // e experimental estimation of the ground-state energy ... in a circuit QED processor'.
+    { id: "arxiv:1902.11258", title: "Error Mitigation by Symmetry Verification on a Variational Quantum Eigensolver", authors: "R. Sagastizabal, X. Bonet-Monroig, M. Singh, M.A. Rol, C.C. Bultink, X. Fu, C.H. Price, V.P. Ostroukh, N. Muthusubramanian, A. Bruno, M. Beekman, N. Haider, T.E. O'Brien, L. DiCarlo", year: "2019", url: "https://arxiv.org/abs/1902.11258", reports: { theory: "absent", simulation: "unknown", hardware: "reported" }, reportsBasis: "abstract" },
+    // `reports` read off the abstract, which is what `reportsBasis` records.
+    // 'This work presents a novel realization approach' is its own; 'demonstrated with numerical simulations and exp
+    // eriments run on real quantum hardware' names both.
+    { id: "arxiv:2006.06004", title: "Variational Quantum Boltzmann Machines", authors: "Christa Zoufal, Aurélien Lucchi, Stefan Woerner", year: "2020", url: "https://arxiv.org/abs/2006.06004", reports: { theory: "reported", simulation: "reported", hardware: "reported" }, reportsBasis: "abstract" },
+    // `reports` read off the abstract, which is what `reportsBasis` records.
+    // 'we present the numerical calculations on simulated quantum devices' — simulation is the paper's own and the s
+    // ame clause positively excludes hardware.
+    { id: "arxiv:2112.01927", title: "Solving hadron structures using the basis light-front quantization approach on quantum computers", authors: "Wenyang Qian, Robert Basili, Soham Pal, Glenn Luecke, James P. Vary", year: "2021", url: "https://arxiv.org/abs/2112.01927", reports: { theory: "reported", simulation: "reported", hardware: "absent" }, reportsBasis: "abstract" },
     { id: "arxiv:quant-ph/0010005", title: "Exponential Gain in Quantum Computing of Quantum Chaos and Localization", authors: "B. Georgeot, D. L. Shepelyansky", year: "2000", url: "https://arxiv.org/abs/quant-ph/0010005", reports: { theory: "reported", simulation: "unknown", hardware: "absent" }, reportsBasis: "abstract" },
     { id: "arxiv:0705.1180", title: "A PromiseBQP-complete String Rewriting Problem", authors: "Dominik Janzing, Pawel Wocjan", year: "2007", url: "https://arxiv.org/abs/0705.1180", reports: { theory: "reported", simulation: "unknown", hardware: "absent" }, reportsBasis: "abstract" },
     { id: "arxiv:0705.2784", title: "Quantum algorithms for hidden nonlinear structures", authors: "Andrew M. Childs, Leonard J. Schulman, Umesh V. Vazirani", year: "2007", url: "https://arxiv.org/abs/0705.2784", reports: { theory: "reported", simulation: "unknown", hardware: "absent" }, reportsBasis: "abstract" },
@@ -101,6 +123,21 @@ export const PAPER_REGISTER: PaperRegister = {
     { id: "arxiv:1805.03662", title: "Encoding Electronic Spectra in Quantum Circuits with Linear T Complexity", authors: "Ryan Babbush, Craig Gidney, Dominic W. Berry, Nathan Wiebe, Jarrod McClean, Alexandru Paler, Austin Fowler, Hartmut Neven", year: "2018", url: "https://arxiv.org/abs/1805.03662", reports: { theory: "reported", simulation: "unknown", hardware: "absent" }, reportsBasis: "abstract" },
     { id: "arxiv:1805.04340", title: "Quantum algorithms for electronic structure calculations: particle/hole Hamiltonian and optimized wavefunction expansions", authors: "Panagiotis Kl. Barkoutsos, Jerome F. Gonthier, Igor Sokolov, Nikolaj Moll, Gian Salis, Andreas Fuhrer, Marc Ganzhorn, Daniel J. Egger, Matthias Troyer, Antonio Mezzacapo, Stefan Filipp, Ivano Tavernelli", year: "2018", url: "https://arxiv.org/abs/1805.04340", reports: { theory: "reported", simulation: "reported", hardware: "absent" }, reportsBasis: "abstract" },
     { id: "arxiv:1805.08138", title: "Variational Quantum Computation of Excited States", authors: "Oscar Higgott, Daochen Wang, Stephen Brierley", year: "2018", url: "https://arxiv.org/abs/1805.08138", reports: { theory: "reported", simulation: "reported", hardware: "absent" }, reportsBasis: "abstract" },
+    // `theory: "absent"` is a POSITIVE claim and this is the evidence for it, per
+    // the contract on `SourceCoverageStatus`: the abstract puts the theory in prior
+    // work in so many words — "recent theoretical work has shown that the accuracy
+    // of computation ... can be enhanced through an extrapolation of results from a
+    // collection of varying noisy experiments" — and then states this paper's own
+    // contribution as "Here, we demonstrate this error mitigation protocol on a
+    // superconducting quantum processor". The prior work it names is Temme et al.,
+    // arXiv:1612.02058, which is already registered and carries the theory.
+    //
+    // It was first registered as `theory: "reported"`, which was an assertion with
+    // nothing behind it; caught by CodeRabbit on the PR. `absent` rather than
+    // `unknown` because the abstract answers the question rather than leaving it
+    // open, and `reportsBasis: "abstract"` records that that is how deep the read
+    // went.
+    { id: "arxiv:1805.04492", title: "Extending the computational reach of a noisy superconducting quantum processor", authors: "Abhinav Kandala, Kristan Temme, Antonio D. Corcoles, Antonio Mezzacapo, Jerry M. Chow, Jay M. Gambetta", year: "2018", url: "https://arxiv.org/abs/1805.04492", reports: { theory: "reported", simulation: "unknown", hardware: "reported" }, reportsBasis: "abstract" },
     { id: "arxiv:1806.01838", title: "Quantum singular value transformation and beyond: exponential improvements for quantum matrix arithmetics", authors: "András Gilyén, Yuan Su, Guang Hao Low, Nathan Wiebe", year: "2018", url: "https://arxiv.org/abs/1806.01838", reports: { theory: "reported", simulation: "absent", hardware: "absent" }, reportsBasis: "full-text" },
     { id: "arxiv:1806.06893", title: "Quantum Risk Analysis", authors: "Stefan Woerner, Daniel J. Egger", year: "2018", url: "https://arxiv.org/abs/1806.06893", reports: { theory: "reported", simulation: "reported", hardware: "reported" }, reportsBasis: "abstract" },
     { id: "arxiv:1806.10236", title: "Product Decomposition of Periodic Functions in Quantum Signal Processing", authors: "Jeongwan Haah", year: "2018", url: "https://arxiv.org/abs/1806.10236", reports: { theory: "reported", simulation: "reported", hardware: "absent" }, reportsBasis: "abstract" },
@@ -289,6 +326,7 @@ export const PAPER_REGISTER: PaperRegister = {
     { id: "arxiv:2411.11598", title: "Carleman-Fourier Linearization of Complex Dynamical Systems: Convergence and Explicit Error Bounds", authors: "Panpan Chen, Nader Motee, Qiyu Sun", year: "2024", url: "https://arxiv.org/abs/2411.11598", reports: { theory: "reported", simulation: "reported", hardware: "absent" }, reportsBasis: "abstract" },
     { id: "arxiv:2504.06948", title: "A quantum algorithm for linear autonomous differential equations via Padé approximation", authors: "Dekuan Dong, Yingzhou Li, Jungong Xue", year: "2025", url: "https://arxiv.org/abs/2504.06948", reports: { theory: "reported", simulation: "reported", hardware: "absent" }, reportsBasis: "full-text" },
     { id: "arxiv:2504.15460", title: "Quantum Simulation-Based Optimization for Cooling System Design", authors: "Leonhard Hölscher, Lukas Müller, Or Samimi, Tamuz Danzig", year: "2025", url: "https://arxiv.org/abs/2504.15460", reports: { theory: "reported", simulation: "reported", hardware: "absent" }, reportsBasis: "abstract" },
+    { id: "arxiv:2604.21333", title: "pygridsynth: A fast numerical tool for ancilla-free Clifford+T synthesis", authors: "Shuntaro Yamamoto, Nobuyuki Yoshioka", year: "2026", url: "https://arxiv.org/abs/2604.21333", reports: { theory: "reported", simulation: "reported", hardware: "absent" }, reportsBasis: "abstract" },
     { id: "arxiv:2512.06488", title: "Efficient quantum algorithm for solving differential equations with Fourier nonlinearity via Koopman linearization", authors: "Judd Katz, Gopikrishnan Muraleedharan, Abhijeet Alase", year: "2025", url: "https://arxiv.org/abs/2512.06488", reports: { theory: "reported", simulation: "unknown", hardware: "absent" }, reportsBasis: "abstract" },
     { id: "arxiv:math/0411623", title: "Quantum computation of zeta functions of curves", authors: "Kiran S. Kedlaya", year: "2004", url: "https://arxiv.org/abs/math/0411623", reports: { theory: "reported", simulation: "unknown", hardware: "absent" }, reportsBasis: "abstract" },
     { id: "arxiv:quant-ph/0001106", title: "Quantum Computation by Adiabatic Evolution", authors: "Edward Farhi, Jeffrey Goldstone, Sam Gutmann, Michael Sipser", year: "2000", url: "https://arxiv.org/abs/quant-ph/0001106" },
@@ -397,6 +435,7 @@ export const PAPER_REGISTER: PaperRegister = {
     // nowhere attribute the *terms* to this source, so nothing is misquoted. The
     // physics behind each was checked and holds.
     { id: "doi:10.1017/cbo9780511976667", title: "Quantum Computation and Quantum Information: 10th Anniversary Edition", authors: "Michael A. Nielsen and Isaac L. Chuang", year: "2010", url: "https://doi.org/10.1017/cbo9780511976667", medium: "textbook" },
+    { id: "doi:10.1038/s41586-023-06096-3", title: "Evidence for the utility of quantum computing before fault tolerance", authors: "Youngseok Kim, Andrew Eddins, Sajant Anand, Ken Xuan Wei, Ewout van den Berg, Sami Rosenblatt, Hasan Nayfeh, Yantao Wu, Michael Zaletel, Kristan Temme, Abhinav Kandala", year: "2023", url: "https://doi.org/10.1038/s41586-023-06096-3", reports: { theory: "absent", simulation: "reported", hardware: "reported" }, reportsBasis: "abstract" },
     // Read in full from the publisher PDF the owner supplied on ai-ops#42, not from
     // an abstract — hence `full-text`. Sci Rep 15, 28508 (2025); received 28 March
     // 2025, accepted 15 July 2025. All three reports are the paper's own: the

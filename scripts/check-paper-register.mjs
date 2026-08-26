@@ -40,6 +40,33 @@
 // text to text — a gate that reached the network would fail on a bad day and
 // pass on a good one, which is the opposite of a gate. Refreshing a row against
 // arXiv is a deliberate edit, not a build step.
+//
+// ## Every site is here because it was NOT here — and that is now the rule
+//
+// The header above records two: `entry.literature` and `node.citations` were
+// covered and `entry.source` was not. Since then:
+//
+//   4. `node.implementations[].papers` — outside this audit from the day the
+//      field was created, and it HELD BY LUCK. Measured on `dev` before leona
+//      779: 65 references, 0 unregistered, because every one had been copied
+//      from the method's own `citations`. The first batch to run a real
+//      literature search cited three papers the register had never seen, and
+//      this lint stayed green. Adding the loop found a defect older than that
+//      batch — arXiv 2408.13687 cited as its full 249-author list under
+//      `citations` and as "Rajeev Acharya, et al." under `implementations`, one
+//      record disagreeing with itself — and caught a fresh citation of arXiv
+//      1512.06860 that had invented two authors.
+//
+//   5. `entry.knownGaps[].citations` — added the same session, found by walking
+//      the corpus and the graph for objects SHAPED like a citation rather than
+//      by waiting for one to be wrong. There is exactly one and it is clean.
+//
+// So, stated once: **a field holding a `{title, authors, year, url}` joins this
+// list on the day it is added, not the day it first disagrees.** Finding the
+// fifth took a recursive walk over `PUBLIC_REPOSITORY_ENTRIES` and
+// `LAYER_GRAPH.nodes` collecting the path of every object with `title` and
+// `url`; re-run that when a field is added rather than trusting that somebody
+// remembered.
 
 import { createRequire } from "node:module";
 import { mkdtempSync, rmSync } from "node:fs";
@@ -221,10 +248,49 @@ for (const entry of corpusMod.PUBLIC_REPOSITORY_ENTRIES) {
   for (const citation of entry.literature ?? []) {
     citations.push({ where: `entry:${entry.slug}`, ...citation });
   }
+  // The FIFTH citation site, found by sweeping for the shape rather than by
+  // waiting for it to disagree — which is the only reason it is here before it
+  // has ever been wrong.
+  //
+  // There is exactly ONE of these in the corpus today (`vqe-ssvqe`, citing
+  // arXiv:1810.09434) and it resolves against the register with zero drift. So
+  // this loop finds nothing, and that is the point: the four sites before it
+  // were each added *after* a defect, and the one added on leona 779 had held by
+  // luck for 65 references. A site with one clean citation is the cheapest
+  // possible moment to close it.
+  for (const gap of entry.knownGaps ?? []) {
+    for (const citation of gap.citations ?? []) {
+      citations.push({ where: `gap:${entry.slug}`, ...citation });
+    }
+  }
 }
 for (const node of graphMod.LAYER_GRAPH.nodes) {
   for (const citation of node.citations ?? []) {
     citations.push({ where: `node:${node.id}`, ...citation });
+  }
+  // The FOURTH citation site, and it was outside this audit from the day the
+  // field was first filled. `MethodImplementation.papers` says in its own doc
+  // comment that "every url here must resolve in the paper register, like any
+  // other citation" — and nothing checked it, so the sentence was a wish.
+  //
+  // It never fired, which is why it went unnoticed: measured on `dev` before the
+  // batch that added this loop, all 65 paper references on `implementations`
+  // happened to name papers the register already held, because every one of them
+  // came from the method's own `citations`. The rule held by luck rather than by
+  // enforcement, and the first batch to do a genuine literature search — rather
+  // than re-reading a method's own bibliography — introduced three papers the
+  // register had never seen and passed this lint green.
+  //
+  // That is the same shape as `entry.source` above, one field later: the header
+  // of this file records the two loops covering `entry.literature` and
+  // `node.citations` and NOT `entry.source`, and this is the third time the
+  // answer has been "a citation site nobody added to the loop". Any future field
+  // that holds a `{title, authors, year, url}` belongs here on the day it is
+  // added, not on the day it first disagrees with the register.
+  for (const implementation of node.implementations ?? []) {
+    for (const citation of implementation.papers ?? []) {
+      citations.push({ where: `impl:${node.id}/${implementation.id}`, ...citation });
+    }
   }
 }
 

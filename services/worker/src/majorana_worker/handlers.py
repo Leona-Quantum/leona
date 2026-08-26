@@ -14,12 +14,13 @@ from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from typing import Any, Awaitable, Callable
 
-from majorana_contracts import CircuitOptimizationRequest, Scope
+from majorana_contracts import CircuitOptimizationRequest, QappRangeSmoke, Scope
 from majorana_contracts.enums import (
     CHAT_USAGE_ROLE,
     EvidenceStrength,
     Framework,
     ImportProvider,
+    QappRangeSmokeStatus,
     QpuRunStatus,
     Role,
     RunMode,
@@ -539,37 +540,206 @@ def _qapp_repair_feedback(exc: ValueError) -> str:
     return feedback[:2_000]
 
 
-def _qapp_smoke_value(schema: dict[str, Any]) -> Any:
-    if "default" in schema:
-        return schema["default"]
+def _qapp_smoke_value(schema: dict[str, Any], *, end: str = "low") -> Any:
+    """One smoke value for one property, at either end of what the schema declares.
+
+    `end="low"` is the original chooser and is unchanged: schema default, else
+    the first enum value, else the MINIMUM of a range. It is what proves the
+    generated program runs at all, and it is what the repair loop drives.
+
+    `end="high"` is ai-ops#180. The owner's ruling, quoted: *"Smoke at both ends
+    but only warn the creator, publish either way."* A Qapp declaring
+    `shots 1 to 20000` was proven at 1 shot and published on it, and the first
+    visitor to move the slider to the top could get a timeout or an
+    out-of-memory instead — a failed run that is still paid for and still counts
+    against 0056's hourly ceilings.
+
+    **`default` does NOT win at the high end**, and that inversion is the whole
+    point: a schema's default is almost always a comfortable value, so honouring
+    it here would re-run the low end under a different name and report a pass.
+
+    Two of these are a *second point*, not a maximum, and saying otherwise would
+    overstate what the run proves:
+
+    - an **enum** has no order the schema declares, so the last member is not
+      necessarily the most expensive one. It is still a different value, and a
+      second value can only find bugs.
+    - a **boolean** has no magnitude either. `True` is the other half of its
+      declared domain.
+
+    Where the schema declares no upper bound at all — an integer with a
+    `minimum` and no `maximum` — there is no top of the range to run, so this
+    returns the low value. `_qapp_smoke_inputs` compares the two sets and skips
+    the second sandbox entirely when they are equal.
+    """
+    if end == "low":
+        if "default" in schema:
+            return schema["default"]
     enum = schema.get("enum")
     if isinstance(enum, list) and enum:
-        return enum[0]
+        return enum[-1] if end == "high" else enum[0]
     value_type = schema.get("type")
     if value_type == "boolean":
-        return False
+        return end == "high"
     if value_type == "integer":
-        return int(schema.get("minimum", 0))
+        bound = schema.get("maximum") if end == "high" else schema.get("minimum")
+        if bound is None:
+            return _qapp_smoke_value(schema, end="low") if end == "high" else 0
+        return int(bound)
     if value_type == "number":
-        return float(schema.get("minimum", 0.0))
+        bound = schema.get("maximum") if end == "high" else schema.get("minimum")
+        if bound is None:
+            return _qapp_smoke_value(schema, end="low") if end == "high" else 0.0
+        return float(bound)
     if value_type == "string":
+        if end == "high":
+            declared = schema.get("maxLength")
+            if declared is None:
+                return _qapp_smoke_value(schema, end="low")
+            return "x" * max(int(declared), 1)
         return "x" * max(int(schema.get("minLength", 0)), 1)
     if value_type == "array":
         item_schema = schema.get("items")
-        item = _qapp_smoke_value(item_schema if isinstance(item_schema, dict) else {})
-        return [item for _ in range(int(schema.get("minItems", 0)))]
+        item = _qapp_smoke_value(item_schema if isinstance(item_schema, dict) else {}, end=end)
+        if end == "high":
+            declared = schema.get("maxItems")
+            # `normalize_qapp_schema` refuses a declared `maxItems` above 100 but
+            # does NOT require one, so an array with no ceiling is normal. Its
+            # top of range is its bottom.
+            if declared is None:
+                return _qapp_smoke_value(schema, end="low")
+            count = int(declared)
+        else:
+            count = int(schema.get("minItems", 0))
+        return [item for _ in range(count)]
     raise ValueError(f"cannot derive a smoke-test value for Qapp input type {value_type!r}")
 
 
-def _qapp_smoke_inputs(schema: dict[str, Any]) -> dict[str, Any]:
+def _qapp_smoke_inputs(schema: dict[str, Any], *, end: str = "low") -> dict[str, Any]:
     properties = schema.get("properties")
     if not isinstance(properties, dict):
         raise ValueError("Qapp input schema has no properties for smoke execution")
     return {
-        name: _qapp_smoke_value(property_schema)
+        name: _qapp_smoke_value(property_schema, end=end)
         for name, property_schema in properties.items()
         if isinstance(property_schema, dict)
     }
+
+
+async def _qapp_range_smoke(
+    sandbox: Sandbox, run_id: uuid.UUID, generated: "_GeneratedQapp"
+) -> QappRangeSmoke:
+    """Run the accepted candidate once more at the TOP of its declared input range.
+
+    ai-ops#180. His ruling, quoted: *"Smoke at both ends but only warn the
+    creator, publish either way."* Nothing here can block a generation and
+    nothing here can block a publication — every path returns a report.
+
+    ## Why it runs HERE and not inside the loop
+
+    The low-end smoke is a *gate*: it drives `repair_kind` and re-prompts, so it
+    runs once per attempt. This one is a *measurement* of the candidate that
+    already passed, so it runs once per successful generation and never more.
+    Putting it in the loop would have multiplied the sandbox spend of every
+    generation by the attempt count, on a surface whose hourly ceilings he had
+    just asked to be halved (ai-ops#179 → leona 768).
+
+    ## Why it runs at the FREE lane's memory
+
+    `DEFAULT_MEMORY_MB` explicitly, not the creator's tier. Since ai-ops#181 a
+    Qapp's sandbox is sized by the **visitor** who runs it, and a free visitor
+    gets 2048. So the useful sentence to hand a creator is *"a free visitor at
+    your maximum inputs will see this fail"*, and running this at a paid
+    creator's 4096 would produce a pass that is true for them and false for most
+    of the people who will open the page.
+    """
+    low = _qapp_smoke_inputs(generated.input_schema, end="low")
+    high = _qapp_smoke_inputs(generated.input_schema, end="high")
+    if high == low:
+        return QappRangeSmoke(
+            status=QappRangeSmokeStatus.NOT_APPLICABLE,
+            detail=(
+                "This Qapp's inputs declare no upper bound, so the top of its range is the "
+                "same input set the publication run already proved. No second run was needed."
+            ),
+        )
+    try:
+        validate_qapp_inputs(generated.input_schema, high)
+    except (TypeError, ValueError) as exc:
+        # The schema declares maxima its own contract will not accept — 16 KB of
+        # inputs, in practice. Nothing was run, and this is a defect in the
+        # schema rather than in the program, so it is reported as its own thing
+        # rather than as a failure of the code.
+        return QappRangeSmoke(
+            status=QappRangeSmokeStatus.UNREACHABLE,
+            detail=(
+                "The largest inputs this Qapp declares are rejected by its own input "
+                f"contract, so they can never be submitted: {exc}"
+            )[:1_200],
+        )
+    try:
+        result = await run_sandbox(
+            sandbox,
+            ExecutionSpec(
+                code=generated.quantum_source,
+                timeout_s=30,
+                memory_mb=DEFAULT_MEMORY_MB,
+                qubits_estimate=generated.qubits_estimate,
+                trusted_setup=(
+                    f"_majorana_namespace['QAPP_INPUTS'] = {high!r}\n"
+                    f"_majorana_namespace['QAPP_MAX_QUBITS'] = {generated.qubits_estimate!r}"
+                ),
+                protected_result_path=f"/tmp/leona-qapp-range-{run_id.hex}.json",
+                source_fingerprint=hashlib.sha256(generated.quantum_source.encode()).hexdigest(),
+                trusted_observer="# RESULT is captured by the provider-owned wrapper.",
+            ),
+        )
+    except Exception as exc:  # pragma: no cover - provider-level failure
+        # A provider that will not start is not evidence about the Qapp. Say that
+        # rather than reporting a failure the creator would read as their bug.
+        log.warning("Qapp range smoke could not run for %s: %s", run_id, type(exc).__name__)
+        return QappRangeSmoke(
+            status=QappRangeSmokeStatus.UNREACHABLE,
+            detail="The sandbox provider was unavailable, so the top of the range was not run.",
+        )
+    if not result.ok:
+        return QappRangeSmoke(
+            status=QappRangeSmokeStatus.FAILED,
+            detail=(
+                "At its largest declared inputs this Qapp did not finish: "
+                + (
+                    result.stderr.strip()[-900:]
+                    or f"the sandbox exited with code {result.exit_code}"
+                )
+            )[:1_200],
+            duration_ms=result.duration_ms,
+        )
+    output = (result.protected_result or {}).get("result")
+    if not isinstance(output, dict):
+        return QappRangeSmoke(
+            status=QappRangeSmokeStatus.FAILED,
+            detail=(
+                "At its largest declared inputs this Qapp ran but assigned no dictionary "
+                "to RESULT, so it produced nothing a visitor could be shown."
+            ),
+            duration_ms=result.duration_ms,
+        )
+    try:
+        validate_qapp_inputs(generated.output_schema, output)
+    except (TypeError, ValueError) as exc:
+        return QappRangeSmoke(
+            status=QappRangeSmokeStatus.FAILED,
+            detail=(
+                "At its largest declared inputs this Qapp produced a result its own output "
+                f"schema rejects: {exc}"
+            )[:1_200],
+            duration_ms=result.duration_ms,
+        )
+    return QappRangeSmoke(
+        status=QappRangeSmokeStatus.PASSED,
+        detail="This Qapp ran and returned a valid result at its largest declared inputs.",
+        duration_ms=result.duration_ms,
+    )
 
 
 async def _handle_qapp_generation(
@@ -788,6 +958,7 @@ async def _handle_qapp_generation(
                 )
         if generated is None:
             raise RuntimeError("Qapp generation completed without a candidate")
+        range_smoke = await _qapp_range_smoke(sandbox, ctx.run_id, generated)
         qapp, version = await qapps_repo.create_generated(
             scope,
             session,
@@ -802,6 +973,7 @@ async def _handle_qapp_generation(
             output_schema=generated.output_schema,
             generation_prompt=ctx.task_prompt,
             source_artifact_version_id=source_artifact_version_id,
+            range_smoke=range_smoke.model_dump(mode="json"),
         )
         await session.commit()
     except Exception:

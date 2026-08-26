@@ -571,3 +571,223 @@ async def test_an_unresolvable_visitor_falls_back_to_the_free_lane_not_the_ceili
     memory = await _memory_for_visitor(monkeypatch, None)
     assert memory == DEFAULT_MEMORY_MB
     assert memory != 4096
+
+
+# --- ai-ops#180: smoke at both ends -----------------------------------------
+#
+# His ruling, quoted: *"Smoke at both ends but only warn the creator, publish
+# either way."* Every test below asserts a REPORT, never a refusal — a version
+# that fails at its top of range is still generated and still publishable, and a
+# test that asserted otherwise would be pinning the option he did not pick.
+
+
+def test_the_low_end_chooser_is_unchanged():
+    """The gate the repair loop drives must keep behaving exactly as it did.
+
+    This is the regression arm for the whole change: `end="low"` is what proves
+    the generated program runs at all, and altering it would alter which
+    candidates are accepted — a much larger blast radius than the warning this
+    issue asked for.
+    """
+    assert handlers._qapp_smoke_value({"type": "integer", "minimum": 1, "maximum": 20_000}) == 1
+    assert handlers._qapp_smoke_value({"type": "integer", "minimum": 1, "default": 1024}) == 1024
+    assert handlers._qapp_smoke_value({"enum": ["a", "b", "c"]}) == "a"
+    assert handlers._qapp_smoke_value({"type": "boolean"}) is False
+    assert handlers._qapp_smoke_value({"type": "string", "minLength": 3}) == "xxx"
+    assert handlers._qapp_smoke_value(
+        {"type": "array", "items": {"type": "integer"}, "minItems": 2, "maxItems": 50}
+    ) == [0, 0]
+
+
+def test_the_high_end_chooser_takes_the_top_of_every_declared_bound():
+    """The issue's own example: `shots 1 to 20000` was published on a 1-shot run."""
+    assert (
+        handlers._qapp_smoke_value({"type": "integer", "minimum": 1, "maximum": 20_000}, end="high")
+        == 20_000
+    )
+    assert (
+        handlers._qapp_smoke_value({"type": "number", "minimum": 0.0, "maximum": 3.5}, end="high")
+        == 3.5
+    )
+    assert handlers._qapp_smoke_value({"type": "string", "maxLength": 4}, end="high") == "xxxx"
+    assert handlers._qapp_smoke_value(
+        {"type": "array", "items": {"type": "integer", "maximum": 9}, "maxItems": 3}, end="high"
+    ) == [9, 9, 9]
+    # A second point rather than a maximum, and the docstring says so: an enum
+    # declares no order and a boolean declares no magnitude.
+    assert handlers._qapp_smoke_value({"enum": ["a", "b", "c"]}, end="high") == "c"
+    assert handlers._qapp_smoke_value({"type": "boolean"}, end="high") is True
+
+
+def test_a_comfortable_default_does_not_win_at_the_high_end():
+    """The inversion that makes the second run worth its sandbox.
+
+    `default` beats everything at the low end. If it also won here, a schema
+    declaring `1 to 20000` with `default: 1024` would run 1024 twice and report
+    a pass at "its largest declared inputs" — a warning that is silent in
+    exactly the case it exists for.
+    """
+    schema = {"type": "integer", "minimum": 1, "maximum": 20_000, "default": 1024}
+    assert handlers._qapp_smoke_value(schema) == 1024
+    assert handlers._qapp_smoke_value(schema, end="high") == 20_000
+
+
+def test_an_unbounded_property_has_no_top_of_range_to_run():
+    """No declared ceiling means the top of the range IS the bottom.
+
+    `normalize_qapp_schema` requires no `maximum`, no `maxLength` and no
+    `maxItems`, so this is the ordinary case and not an edge one. Returning the
+    low value here is what lets `_qapp_range_smoke` skip the second sandbox
+    instead of paying for a duplicate run.
+    """
+    assert handlers._qapp_smoke_value({"type": "integer", "minimum": 7}, end="high") == 7
+    assert handlers._qapp_smoke_value({"type": "string", "minLength": 2}, end="high") == "xx"
+    assert handlers._qapp_smoke_value(
+        {"type": "array", "items": {"type": "integer"}, "minItems": 1}, end="high"
+    ) == [0]
+    assert handlers._qapp_smoke_value({"type": "integer", "default": 512}, end="high") == 512
+
+
+class _RangeSandbox:
+    provider = "fake"
+
+    def __init__(self, *, ok=True, result=None, stderr="", exit_code=0):
+        self.calls = []
+        self._ok = ok
+        self._result = {"summary": "ok"} if result is None else result
+        self._stderr = stderr
+        self._exit_code = exit_code
+
+    async def _execute(self, spec):
+        self.calls.append(spec)
+        return SandboxResult(
+            ok=self._ok,
+            exit_code=self._exit_code,
+            duration_ms=42,
+            stdout="",
+            stderr=self._stderr,
+            provider="fake",
+            protected_result={"result": self._result},
+        )
+
+
+def _candidate(input_schema):
+    return SimpleNamespace(
+        quantum_source="RESULT = {'summary': 'ok'}",
+        qubits_estimate=2,
+        input_schema=input_schema,
+        output_schema={
+            "type": "object",
+            "properties": {"summary": {"type": "string"}},
+            "required": ["summary"],
+        },
+    )
+
+
+async def test_a_qapp_that_survives_its_largest_inputs_is_recorded_as_passed():
+    sandbox = _RangeSandbox()
+    report = await handlers._qapp_range_smoke(
+        sandbox,
+        uuid.uuid4(),
+        _candidate(
+            {
+                "type": "object",
+                "properties": {"shots": {"type": "integer", "minimum": 1, "maximum": 20_000}},
+                "required": ["shots"],
+            }
+        ),
+    )
+    assert report.status.value == "passed"
+    assert report.duration_ms == 42
+    assert len(sandbox.calls) == 1
+    # The inputs the second run actually used are the declared maxima, not the
+    # minima the publication run already proved.
+    assert "20000" in sandbox.calls[0].trusted_setup
+    # The FREE lane's memory, deliberately, not the creator's tier: since
+    # ai-ops#181 a Qapp is sized by the VISITOR who runs it, so the useful
+    # warning is the one a free visitor would see.
+    assert sandbox.calls[0].memory_mb == 2048
+
+
+async def test_a_qapp_that_breaks_at_its_largest_inputs_is_warned_about_not_refused():
+    """The whole ruling in one assertion: the report says `failed` and the
+    function still RETURNS rather than raising. Nothing downstream refuses the
+    generation and nothing refuses the publication."""
+    sandbox = _RangeSandbox(ok=False, stderr="MemoryError: statevector", exit_code=137)
+    report = await handlers._qapp_range_smoke(
+        sandbox,
+        uuid.uuid4(),
+        _candidate(
+            {
+                "type": "object",
+                "properties": {"shots": {"type": "integer", "minimum": 1, "maximum": 20_000}},
+                "required": ["shots"],
+            }
+        ),
+    )
+    assert report.status.value == "failed"
+    assert "MemoryError" in report.detail
+
+
+async def test_a_schema_with_no_declared_ceiling_spends_no_second_sandbox():
+    """`not_applicable` is a measurement, not a skip: it says the top of the
+    range was checked and found to be the bottom. The assertion that matters is
+    that NO sandbox ran — the cost control, on a surface whose hourly ceilings he
+    had just asked to be halved."""
+    sandbox = _RangeSandbox()
+    report = await handlers._qapp_range_smoke(
+        sandbox,
+        uuid.uuid4(),
+        _candidate(
+            {
+                "type": "object",
+                "properties": {"label": {"type": "string", "minLength": 1}},
+                "required": ["label"],
+            }
+        ),
+    )
+    assert report.status.value == "not_applicable"
+    assert sandbox.calls == []
+
+
+async def test_declared_maxima_the_input_contract_itself_rejects_are_reported_as_unreachable():
+    """A schema whose own maxima exceed the 16 KB input cap. Nothing is run,
+    because nothing COULD be — and that is a defect in the schema rather than in
+    the program, so it is not reported as a failure of the code."""
+    sandbox = _RangeSandbox()
+    report = await handlers._qapp_range_smoke(
+        sandbox,
+        uuid.uuid4(),
+        _candidate(
+            {
+                "type": "object",
+                "properties": {
+                    f"field{i}": {"type": "string", "maxLength": 1_000} for i in range(24)
+                },
+                "required": [],
+            }
+        ),
+    )
+    assert report.status.value == "unreachable"
+    assert sandbox.calls == []
+
+
+async def test_a_result_that_fails_its_own_output_schema_at_the_top_end_is_a_failure():
+    """The low-end run validated the output; the high-end run has to as well.
+    A program that returns a valid dict at 1 shot and a malformed one at 20000
+    is exactly the class of defect this issue is about, and a check that only
+    asked `ok` would pass it."""
+    sandbox = _RangeSandbox(result={"summary": 12345})
+    report = await handlers._qapp_range_smoke(
+        sandbox,
+        uuid.uuid4(),
+        _candidate(
+            {
+                "type": "object",
+                "properties": {"shots": {"type": "integer", "minimum": 1, "maximum": 8}},
+                "required": ["shots"],
+            }
+        ),
+    )
+    assert report.status.value == "failed"
+    assert len(sandbox.calls) == 1

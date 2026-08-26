@@ -82,6 +82,7 @@ async def create_generated(
     output_schema: dict[str, Any],
     generation_prompt: str,
     source_artifact_version_id: uuid.UUID | None,
+    range_smoke: dict[str, Any] | None = None,
 ) -> tuple[Qapp, QappVersion]:
     """Persist one generated bundle, idempotently by its originating run."""
     require_write(scope)
@@ -167,6 +168,11 @@ async def create_generated(
         fingerprint=hashlib.sha256(canonical.encode()).hexdigest(),
         source_artifact_version_id=source_artifact_version_id,
         generation_prompt=generation_prompt,
+        # Deliberately OUTSIDE `canonical` above, and so outside the fingerprint.
+        # The fingerprint identifies the bundle a visitor executes — framework,
+        # source, schemas — and two identical bundles must fingerprint the same
+        # whether or not anybody measured their top of range. ai-ops#180.
+        range_smoke=range_smoke,
     )
     session.add(qapp)
     session.add(version)
