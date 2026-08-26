@@ -15,6 +15,15 @@
 // page module drags its whole component tree in, and the thing under test is a
 // string-composition rule, not a render.
 //
+// The template itself is now a NAMED CONSTANT rather than a literal, because
+// `components/not-found-standalone.tsx` has to compose the same title by hand —
+// the document Next synthesises for an in-segment `notFound()` never passes
+// through `generateMetadata`, so no template is applied to it. Two files
+// spelling out "· Leona Quantum" is two places to forget when the brand changes,
+// and it has changed once already. `rootTitle()` below resolves either form, and
+// the guard fails loudly rather than going quiet if it can resolve neither —
+// which is what it did when the literal first became a constant.
+//
 // Six `[locale]` pages (home, contact, pricing, privacy, terms, workspace)
 // no longer declare `export const metadata` directly — their titles moved to
 // `lib/public-page-metadata.ts` so a Japanese branch could be added and
@@ -23,6 +32,7 @@
 // role for that one file that `declaredTitle()` plays for each `page.tsx`.
 import assert from "node:assert/strict";
 import test from "node:test";
+import { siteTitle, TITLE_TEMPLATE } from "./public-metadata.ts";
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -41,7 +51,22 @@ const WEB_ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
  */
 function rootTitle(): { template: string; fallback: string } {
   const source = readFileSync(join(WEB_ROOT, "components", "root-document.tsx"), "utf8");
-  const template = /template:\s*"([^"]+)"/.exec(source)?.[1];
+  const literal = /template:\s*"([^"]+)"/.exec(source)?.[1];
+  const named = /template:\s*([A-Za-z_$][\w$]*)\s*,/.exec(source)?.[1];
+  assert.ok(
+    literal || named,
+    "the root metadata declares a title template that is neither a string literal nor a bare " +
+      "identifier — this guard cannot read it and would otherwise pass on every page silently",
+  );
+  if (named) {
+    assert.equal(
+      named,
+      "TITLE_TEMPLATE",
+      `the root title template is now the identifier ${named}, which this guard cannot resolve. ` +
+        "Import it here beside TITLE_TEMPLATE rather than leaving the guard reading nothing.",
+    );
+  }
+  const template = literal ?? TITLE_TEMPLATE;
   const fallback = /default:\s*"([^"]+)"/.exec(source)?.[1];
   assert.ok(template, "the root metadata no longer declares a title template — this guard is inert");
   assert.ok(fallback, "the root metadata no longer declares a default title");
@@ -150,4 +175,23 @@ test("the home page inherits the standalone default rather than composing one", 
   );
   const { fallback } = rootTitle();
   assert.ok(fallback.length > 0);
+});
+
+
+test("the hand-composed title matches the template every other page is given", () => {
+  // `components/not-found-standalone.tsx` writes `document.title` itself, with
+  // `siteTitle()`, because the error document Next synthesises for an in-segment
+  // `notFound()` is never handed to `generateMetadata` and so never has the
+  // template applied. That makes it the one title in the app composed by a
+  // second mechanism — so the two mechanisms are pinned to each other here
+  // rather than trusted to stay equal.
+  const { template } = rootTitle();
+  for (const page of ["Pricing", "This page does not exist.", "このページは存在しません。"]) {
+    assert.equal(
+      siteTitle(page),
+      template.replace("%s", page),
+      `siteTitle(${JSON.stringify(page)}) no longer agrees with the root title template. ` +
+        "The 404's tab title would read differently from every other page's.",
+    );
+  }
 });

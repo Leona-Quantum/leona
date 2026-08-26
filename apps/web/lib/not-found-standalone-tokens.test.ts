@@ -13,9 +13,9 @@
  *
  * This is deliberately stricter than the Open Graph card's equivalent
  * (`opengraph-tokens.test.ts`). The card is always dark, so it compares against
- * ONE theme. This sheet ships both, keyed on `prefers-color-scheme`, so a
- * drifted light value and a drifted dark value are two different bugs and both
- * have to fail.
+ * ONE theme. This sheet ships THREE blocks — light, the OS dark block, and the
+ * explicitly-chosen dark block — so a drift in any one of them is its own bug
+ * and each has to fail on its own.
  */
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
@@ -33,11 +33,13 @@ const SHEET = resolve(here, "../public/not-found.css");
  * then a dark one under `[data-theme="dark"]` and again under
  * `prefers-color-scheme: dark`. FIRST is the light value, LAST is the dark one.
  *
- * Taking `matches[1]` for dark rather than the last would read the
- * `[data-theme="dark"]` block, which is the right value today and is not the one
- * this sheet can use — this page has no theme script and so no `data-theme`
- * attribute to key on. The last declaration IS the media-query block, which is
- * the only one that applies here, so that is what is compared.
+ * This comment used to justify taking the LAST on the grounds that "this page
+ * has no theme script and so no `data-theme` attribute to key on". That was
+ * false, and a dark 404 shipped to readers who had chosen light — the standalone
+ * component runs in the browser and reads `majorana.theme.v1` itself. Taking the
+ * last still happens to be right, but for a different reason: tokens.css's two
+ * dark blocks carry the same values, so either is the dark palette. If they ever
+ * diverge, this function is where to decide which one a 404 should copy.
  */
 function themeTokens(css: string, name: string): { light: string; dark: string } {
   const matches = [...css.matchAll(new RegExp(`--${name}\\s*:\\s*(#[0-9a-fA-F]{3,8})`, "g"))];
@@ -58,22 +60,45 @@ function nfValue(block: string, name: string): string | undefined {
 }
 
 /**
- * The sheet's two palettes. The dark one lives inside the
- * `@media (prefers-color-scheme: dark)` block; the light one is everything
- * before it.
+ * The sheet's three palettes.
+ *
+ * `dark` is the OS block — `@media (prefers-color-scheme: dark)`, whose selector
+ * must stay guarded with `:not([data-theme="light"])` or a reader who chose light
+ * on a dark OS gets a dark 404, which is the bug this file now pins.
+ * `chosenDark` is the block an explicit `data-theme="dark"` selects, for a reader
+ * who chose dark on a light OS. `light` is everything before either of them.
  */
-function sheetBlocks(): { light: string; dark: string } {
+function sheetBlocks(): { light: string; dark: string; chosenDark: string } {
   const source = readFileSync(SHEET, "utf8");
   const at = source.indexOf("@media (prefers-color-scheme: dark)");
   assert.notEqual(
     at,
     -1,
     "public/not-found.css no longer has a prefers-color-scheme block — a reader in dark mode " +
-      "would get the light palette on a page that has no theme script to correct it.",
+      "who has chosen no theme would get the light palette on a page that has no theme script.",
   );
   const end = source.indexOf("}\n}", at);
   assert.notEqual(end, -1, "could not find the end of the dark block in public/not-found.css");
-  return { light: source.slice(0, at), dark: source.slice(at, end) };
+  const osBlock = source.slice(at, end);
+
+  assert.ok(
+    /\.mj-nf:not\(\[data-theme="light"\]\)/.test(osBlock),
+    'the prefers-color-scheme block in public/not-found.css no longer guards on ' +
+      ':not([data-theme="light"]). Without the guard a reader who chose LIGHT on Leona and ' +
+      "whose OS is dark gets a dark 404 — measured on production; see ai-ops issue 189.",
+  );
+
+  const chosenAt = source.indexOf('.mj-nf[data-theme="dark"]', end);
+  assert.notEqual(
+    chosenAt,
+    -1,
+    'public/not-found.css no longer has a .mj-nf[data-theme="dark"] block. Without it a reader ' +
+      "who chose DARK on Leona and whose OS is light gets a light 404.",
+  );
+  const chosenEnd = source.indexOf("\n}", chosenAt);
+  assert.notEqual(chosenEnd, -1, 'could not find the end of the [data-theme="dark"] block');
+
+  return { light: source.slice(0, at), dark: osBlock, chosenDark: source.slice(chosenAt, chosenEnd) };
 }
 
 // `--nf-*` in public/not-found.css -> the token in tokens.css it copies.
@@ -115,6 +140,23 @@ test("the standalone 404's dark palette still matches tokens.css", () => {
         `${themeTokens(css, token).dark} in tokens.css.`,
     );
   }
+});
+
+test("the standalone 404's two dark blocks cannot disagree with each other", () => {
+  // The OS block and the explicitly-chosen block are the same palette reached by
+  // two different signals. Editing one and not the other produces a 404 whose
+  // colours depend on which of the reader's two settings happened to select it —
+  // a defect no screenshot of a single configuration can see.
+  const { dark, chosenDark } = sheetBlocks();
+  for (const [nf] of PALETTE) {
+    assert.equal(
+      nfValue(chosenDark, nf),
+      nfValue(dark, nf),
+      `--nf-${nf} differs between the prefers-color-scheme block and the ` +
+        '.mj-nf[data-theme="dark"] block of public/not-found.css.',
+    );
+  }
+  assert.equal(nfValue(chosenDark, "on-accent"), nfValue(dark, "on-accent"));
 });
 
 test("the standalone 404 introduces no hex colour outside that palette", () => {

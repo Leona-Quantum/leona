@@ -46,7 +46,7 @@ import { THEME_STORAGE_KEY } from "../lib/theme";
 import { AUTH_HINT_COOKIE, AUTH_HINT_SIGNED_IN } from "../lib/auth-hint";
 import { LEGACY_PUBLIC_LOCALE_COOKIE, PUBLIC_LOCALE_COOKIE } from "../lib/public-locale";
 import { canonicalOrigin } from "../lib/site-origin";
-import { OG_IMAGE, SITE_NAME } from "../lib/public-metadata";
+import { OG_IMAGE, SITE_NAME, TITLE_TEMPLATE } from "../lib/public-metadata";
 import "../app/globals.css";
 
 const themeScript = `(() => {
@@ -131,7 +131,7 @@ export const rootMetadata: Metadata = {
   metadataBase: new URL(canonicalOrigin()),
   title: {
     default: "Leona Quantum · Evidence for quantum work",
-    template: "%s · Leona Quantum",
+    template: TITLE_TEMPLATE,
   },
   description: "Leona Quantum connects public research, private workspaces, and verifiable quantum execution.",
   // `summary_large_image`, not the `summary` X was inferring. Until
