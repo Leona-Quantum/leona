@@ -2677,13 +2677,16 @@ test("the capabilities closed on `implementations` stay closed, as a SET", () =>
     "compile-to-device",
     "combinatorial-optimization",
   ];
-  // Batch 12, and the honest number is ONE. Five methods were published across
-  // four capabilities — `parameter-optimization`, `spatial-discretization`,
-  // `full-discretization` and `hidden-period-finding` — and only the first has
-  // both its open methods filled. The other three each still hold one method
-  // whose entry was drafted and translated but is not in this commit, so they
-  // are counted open here, which is what the gauge does too.
-  const BATCH_12 = ["parameter-optimization"];
+  // Batch 12, over two commits, and the honest number is THREE of four.
+  // `parameter-optimization`, `spatial-discretization` and `full-discretization`
+  // have every method filled. `hidden-period-finding` does NOT and is counted
+  // open here: `real-period-finding`'s entry exists, is translated, and is held
+  // back because its `methods` prose quotes Haskell — where `$` is an operator —
+  // and the corpus reads `$` as a maths delimiter, so the field carries 45 of
+  // them and `check-math` refuses it as an unclosed formula. That is a real
+  // collision between two notations, not a defect in the reading, and it needs a
+  // rewrite of the prose rather than a flag.
+  const BATCH_12 = ["parameter-optimization", "spatial-discretization", "full-discretization"];
   for (const slot of [...BATCH_10, ...BATCH_11, ...BATCH_12]) {
     assert.ok(
       layerNode(LAYER_GRAPH, slot) !== null,
@@ -2733,14 +2736,14 @@ test("the capabilities closed on `implementations` stay closed, as a SET", () =>
   );
 
   assert.ok(
-    complete.size >= 21,
-    `${complete.size} capabilities are complete on implementations, was 21 after batch 12`,
+    complete.size >= 23,
+    `${complete.size} capabilities are complete on implementations, was 23 after batch 12`,
   );
 
   const filled = methods.filter((m) => (m.implementations ?? []).length > 0).length;
   assert.ok(
-    filled >= 84,
-    `${filled} of ${methods.length} methods carry an implementation, was 84 after batch 12`,
+    filled >= 87,
+    `${filled} of ${methods.length} methods carry an implementation, was 87 after batch 12`,
   );
 });
 
