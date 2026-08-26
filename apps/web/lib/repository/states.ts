@@ -66,6 +66,53 @@
 // 3. **Never let a state id collide with a node id.** They share the
 //    `/repository/layers/<id>` namespace on purpose — one address per thing a
 //    reader can name — and `validateLayerGraph` rejects a collision.
+//
+// ## The admission rule, written here because four places already say it is
+//
+// Four places cite *"`states.ts`'s admission rule"* and state it as **two
+// processes arriving, or two leaving**: `state-vocabulary.ts` twice — on
+// `marking-oracle` (*"Two processes leave this state, which is what
+// `states.ts`'s admission rule asks for"*) and on `marked-item` (*"a search
+// region whose exit nothing else reaches is a parameter of one process wearing
+// a circle, and `states.ts`'s admission rule says so in as many words"*) —
+// `repository-region-joins.test.ts`, and `docs/adr/0027-cross-region-joins.md`.
+// **Until this comment, this file did not say it in any words at all.** That is
+// not a cosmetic gap: `plans/atlas-revamp/W27-marked-item-search-scoped.md` §3
+// turned the rule into a *shipping constraint* — Group A's search region was
+// declared unable to ship without Group B, because `marked-item` would
+// otherwise have had one process arriving and none leaving — so a sentence
+// nobody had written down was deciding what shipped and in what unit.
+//
+// It is written here now **with its own measurement beside it**, because the
+// measurement changes what the rule can honestly be asked to do. Counted on
+// 2026-08-26 with this module's own `stateTraffic` — arrivals and departures
+// are a node's *own* contract, which is what that function calls a process —
+// **11 of the 42 states satisfy it and 31 do not.** Among the 31 are
+// `ground-state-problem`, `eigenvalue-problem`, `hidden-period` and
+// `search-graph-with-marked-set`, each with exactly one process at one end and
+// none at the other; `history-state` is touched by no process at all.
+//
+// And nothing enforces it. `validateStateVocabulary` below checks kebab-case,
+// duplicate ids, empty prose and `specializes` hygiene, and has no opinion on a
+// state's degree. `check-layer-graph.mjs` prints arrivals × departures per state
+// and gates on none of it. So:
+//
+// - **This is a bar applied when a new state is authored, not an invariant the
+//   vocabulary satisfies.** A state that fails it is not thereby illegal — 31
+//   of them are load-bearing today. What the failure says is that the state is
+//   doing the job of *a parameter of one process* until a second process
+//   reaches it.
+// - **The honest response to a failure is to name the missing process, never to
+//   invent one.** `repository-region-joins.test.ts` already writes that down
+//   for `marked-item`: *"Naming a consumer would be the next real piece of work
+//   here, and inventing one would be the dishonest way to make this number
+//   smaller."* Manufacturing a slot so a count clears is prohibition 1 above
+//   wearing a different hat.
+// - **Prohibition 1 is the rule underneath, and it is the one that decides.** A
+//   state is the mathematical object being carried; a degree count is a proxy
+//   for that and a coarse one. `pde-problem` clears the count and
+//   `ground-state-problem` fails it, and nobody reading the two thinks the
+//   second is less of an object than the first.
 
 /** A place a reader can be, independent of how they got there. */
 export interface LayerState {
