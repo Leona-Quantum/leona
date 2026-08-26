@@ -2612,6 +2612,114 @@ test("a contract's mathematics is mathematics, not a literal underscore at a rea
   );
 });
 
+test("the capabilities closed on `implementations` stay closed, as a SET", () => {
+  // **Nothing pinned this before.** `check-layer-graph.mjs` has printed the card
+  // depth line — *"116 of 116 methods carry pseudocode · 3 a worked run · 71 an
+  // implementation"* — through nine batches, and no test asserted any of it, so
+  // every one of those counts was free to fall silently. Batch 10 is the first
+  // to close whole capabilities rather than scatter entries, which is what makes
+  // a ratchet worth writing: a total is a number, a closed region is a claim.
+  //
+  // **Asserted as a SET, not a count**, and that is the part that earns its
+  // keep. A count of 16 complete capabilities survives one capability closing
+  // while another quietly opens — the two moves cancel and nothing fails. It
+  // also survives a capability being RENAMED, which reads as one closing and a
+  // different one appearing. The set cannot: a rename fails on the name and a
+  // regression fails on the member.
+  //
+  // The floors underneath are the other half. Without a floor on the method
+  // count, deleting the one method that lacks an implementation "closes" a
+  // capability, and the set grows by going backwards.
+  const methods = LAYER_GRAPH.nodes.filter(isMethod);
+  assert.ok(
+    methods.length >= 116,
+    `only ${methods.length} methods — a capability can be closed on this axis by deleting the ` +
+      "method that lacks an entry, so the denominator is pinned too",
+  );
+
+  const complete = new Set<string>();
+  const partial = new Map<string, string[]>();
+  for (const node of LAYER_GRAPH.nodes) {
+    if (!isCapability(node)) continue;
+    const filled = methodsRealizing(LAYER_GRAPH, node.id);
+    if (filled.length === 0) continue;
+    const without = filled.filter((m) => (m.implementations ?? []).length === 0).map((m) => m.id);
+    if (without.length === 0) complete.add(node.id);
+    else partial.set(node.id, without);
+  }
+
+  // The seven batch 10 closed, named individually so the note and the test say
+  // the same thing. Each went from partial to complete in one batch; if one
+  // reopens, this is where it is said out loud.
+  const BATCH_10 = [
+    "qsp-phase-factors",
+    "matrix-function",
+    "hamiltonian-simulation",
+    "ground-state-energy",
+    "error-correction",
+    "polynomial-approximation",
+    "phase-estimation",
+  ];
+  for (const slot of BATCH_10) {
+    assert.ok(
+      layerNode(LAYER_GRAPH, slot) !== null,
+      `${slot} names no capability — renamed, and this ratchet stopped measuring it`,
+    );
+    assert.ok(
+      complete.has(slot),
+      `${slot} is no longer complete on implementations: ${(partial.get(slot) ?? ["it has no methods at all"]).join(", ")}`,
+    );
+  }
+
+  // And the nine that were already complete before batch 10, so this cannot be
+  // read as a claim about batch 10 alone.
+  //
+  // This list was MEASURED, and the first version of it was not — it was written
+  // from memory of which regions looked finished and named
+  // `excited-state-energy`, which is 3 of 7. The test caught it on its first run,
+  // which is the argument for the shape: a list of names fails on a wrong name,
+  // where a count of sixteen would have been satisfied by any sixteen.
+  const ALREADY = [
+    "linear-ode-solve",
+    "hamiltonian-recasting",
+    "quantum-linear-solve",
+    "state-preparation",
+    "observable-estimation",
+    "qubit-routing",
+    "gate-synthesis",
+    "error-mitigation",
+    "device-characterization",
+  ];
+  for (const slot of ALREADY) {
+    assert.ok(
+      layerNode(LAYER_GRAPH, slot) !== null,
+      `${slot} names no capability — renamed, and this ratchet stopped measuring it`,
+    );
+    assert.ok(complete.has(slot), `${slot} was complete on implementations and no longer is`);
+  }
+
+  // The two lists partition the set as measured. A capability that becomes
+  // complete later is a welcome surprise and must be ADDED here rather than
+  // absorbed silently, which is what the equality asserts.
+  assert.deepEqual(
+    [...complete].sort(),
+    [...BATCH_10, ...ALREADY].sort(),
+    "the set of capabilities complete on implementations has changed — add the new one to " +
+      "ALREADY rather than letting the count absorb it",
+  );
+
+  assert.ok(
+    complete.size >= 16,
+    `${complete.size} capabilities are complete on implementations, was 16 after batch 10`,
+  );
+
+  const filled = methods.filter((m) => (m.implementations ?? []).length > 0).length;
+  assert.ok(
+    filled >= 71,
+    `${filled} of ${methods.length} methods carry an implementation, was 71 after batch 10`,
+  );
+});
+
 test("the linear-ODE region does not go backwards on the half that is closed", () => {
   const SLOTS = [
     "linear-ode-solve",
