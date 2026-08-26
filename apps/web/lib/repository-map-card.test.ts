@@ -79,12 +79,36 @@ const CORPUS: LayerCorpusEntry[] = [
   description: "",
   descriptionJa: "",
   // Exactly one runnable variant each, because in production **every** record
-  // has at least one `codeVariants` entry, measured. Before the
-  // record join this field did not exist and the fixture was representative
-  // without it; now a corpus without it would make the join untestable here and
-  // would understate what production feeds, which is the opposite of the
-  // upper-bound property this fixture exists to keep.
-  runnable: [{ framework: "Qiskit", status: "verified", filename: `${slug}.py` }],
+  // has at least one `codeVariants` entry. Before the record join this field did
+  // not exist and the fixture was representative without it; now a corpus
+  // without it would make the join untestable here and would understate what
+  // production feeds, which is the opposite of the upper-bound property this
+  // fixture exists to keep.
+  //
+  // **"Measured" is now a pointer rather than a word.** The premise is not a
+  // reading somebody took once — it is a build gate:
+  // `scripts/check-repository-data.mjs` fails any record with *"no code variant
+  // with code"*, so a corpus that broke this fixture's assumption could not
+  // ship. Re-measured 2026-08-27 against the committed corpus anyway, because a
+  // premise held up by a comment is held up by nothing: **279 of 279 records
+  // carry a code variant, and all 89 slugs this graph names are among them.**
+  //
+  // **A previous read of the same question said 16 of 185 and it was the
+  // instrument, not the corpus.** `codeVariants` appears as a literal in only
+  // `entries-legacy.ts`, sixteen times; every other record receives the field
+  // from `repository/factory.ts`, so a grep for the field name finds sixteen and
+  // an import of the corpus finds 279. That reading is why batch 11 dropped a
+  // declared absence it had written and recorded the discrepancy as unsettled.
+  // It is settled: the fixture was right.
+  //
+  // `status` is `native` and not `verified`. The corpus publishes exactly two
+  // statuses — `native` on 168 variants and `unsupported` on 173 — and
+  // `verified` on none of them, while `card-content.ts` passes this string
+  // straight through to `origin.status` on the rendered card. A fixture that
+  // manufactures a status production cannot produce is a fixture that renders a
+  // word no reader will ever meet, and this project reserves that particular
+  // word (ADR-0023).
+  runnable: [{ framework: "Qiskit", status: "native", filename: `${slug}.py` }],
   verification: `${slug} checked`,
   provenance: "Curated reference",
 }));
