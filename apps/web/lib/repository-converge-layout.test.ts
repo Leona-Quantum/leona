@@ -1039,7 +1039,14 @@ test("every capability draws a figure — not just the two that converge", () =>
   // shipping either alone would have drawn a figure the map's own rules refuse. The
   // tripwire fired a sixth time and both figures were looked at, in both locales,
   // before this number moved.
-  assert.equal(capabilities.length, 30, "the graph's slot count changed; update these figures");
+  // **31 since W29**, `combinatorial-optimization`. ONE slot, not the two that
+  // document projected: its encoding slot was scoped and then refused against the
+  // paper, so a reader arriving with a scheduling problem still has no way in and
+  // that is recorded rather than papered over. The tripwire fired a seventh time and
+  // the figure was looked at in both locales before this number moved — which is how
+  // the adiabatic method's label was caught being clipped mid-phrase into
+  // "Interpolate slowly from an easy Hamiltonian to…" and shortened.
+  assert.equal(capabilities.length, 31, "the graph's slot count changed; update these figures");
 
   for (const focus of capabilities) {
     for (const locale of ["en", "ja"] as const) {
@@ -1071,9 +1078,14 @@ test("every capability draws a figure — not just the two that converge", () =>
   // 27 → 29 in W28: both search slots fan, and for the plainest reason yet — the two
   // methods under each are atomic, so there is no interior for a chain to be drawn
   // from. The one slot drawing a state chain is still the only one.
+  // 29 → 30 in W29, and it is the same reason a third time. `combinatorial-optimization`
+  // fans because QAOA and adiabatic evolution are both `atomic: true` — each paper
+  // builds its own construction and delegates nothing this map draws, so there is no
+  // interior for a chain. The one slot drawing a state chain is STILL the only one,
+  // which is now three region openings in a row that did not move it.
   const byGrain = capabilities.map((focus) => diagramFor(focus.id).grain);
   assert.equal(byGrain.filter((grain) => grain === "states").length, 1);
-  assert.equal(byGrain.filter((grain) => grain === "methods").length, 29);
+  assert.equal(byGrain.filter((grain) => grain === "methods").length, 30);
 });
 
 test("`drawableSlots` is the list of slots that actually draw", () => {
@@ -1087,10 +1099,11 @@ test("`drawableSlots` is the list of slots that actually draw", () => {
     .map((focus) => focus.id);
   assert.deepEqual(offered, draws);
   // 22 since W21, 23 since W21-E, 24 since session 15's `phase-estimation`, 27 with
-  // the two PDE slots, 28 with `device-characterization` and 30 with W28's two search
-  // slots — the same new slots the figure test above pins, and the point of asserting
-  // the length beside the deepEqual is that two empty lists are also deep-equal.
-  assert.equal(offered.length, 30);
+  // the two PDE slots, 28 with `device-characterization`, 30 with W28's two search
+  // slots and 31 with W29's one — the same new slots the figure test above pins, and
+  // the point of asserting the length beside the deepEqual is that two empty lists
+  // are also deep-equal.
+  assert.equal(offered.length, 31);
 
   // And it is still a strict superset of the convergence claim, which is a
   // different and narrower statement — narrower by one since session 119,
@@ -2016,9 +2029,17 @@ test("a line that opens into something says so, and a line that does not is not 
   // every step is an ingredient", and this line is where it becomes visible on the
   // canvas: a delegation that is a feed adds a cross-region edge without adding an
   // interior. `leaves` 77 -> 81.
-  assert.equal(openable + leaves + 1, 112, "the thirty figures draw 112 lines between them");
+  // **112 -> 114 on W29, and both new lines are leaves.** `leaves` 81 -> 83 while
+  // `openable` does not move: both methods in that region are `atomic: true`, argued
+  // to it from their own papers rather than from the drawing — the alternating ansatz
+  // IS Farhi et al.'s construction and its fixed-p angle-finding is exact classical
+  // preprocessing, not the shot-fed loop `parameter-optimization` models; the
+  // adiabatic paper interpolates continuously and delegates nothing this map draws.
+  // A region that adds only leaves is a region whose interior the papers do not
+  // decompose, which is a statement about the papers and not a gap in the reading.
+  assert.equal(openable + leaves + 1, 114, "the thirty-one figures draw 114 lines between them");
   assert.equal(openable, 30, "30 of them open into something the canvas draws");
-  assert.equal(leaves, 81, "81 are leaves — the canvas records nothing finer for them");
+  assert.equal(leaves, 83, "83 are leaves — the canvas records nothing finer for them");
 
 });
 
