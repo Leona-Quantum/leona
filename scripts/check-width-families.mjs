@@ -275,13 +275,13 @@ const rows = families.foldRows(records, (slug) => groupIndex.get(slug));
 // during the W22 session — 247, 253, 257 and 258 — each correct for a branch state
 // that had already moved by the time it was quoted. Run the checker.
 //
-// Zoo-parity batch 13: 262 → 266. Four literature records published — Graph
-// Collision, Electrical Resistance, Semidefinite Programming and Tensor
-// Principal Component Analysis — and literature records join no width family,
-// so each is its own browse row and the number moves by exactly the count
-// published. Read off this checker after regenerating the manifest, which is
-// the only way this constant is allowed to move.
-const EXPECTED_BROWSE_ROWS = 266;
+// Zoo-parity batch 13: 262 → 267. Five literature records published — Abelian
+// Hidden Subgroup, Graph Collision, Electrical Resistance, Semidefinite
+// Programming and Tensor Principal Component Analysis — and literature records
+// join no width family, so each is its own browse row and the number moves by
+// exactly the count published. Read off this checker after regenerating the
+// manifest, which is the only way this constant is allowed to move.
+const EXPECTED_BROWSE_ROWS = 267;
 if (rows.length !== EXPECTED_BROWSE_ROWS) {
   errors.push(
     `${records.length} records fold to ${rows.length} browse rows, expected ${EXPECTED_BROWSE_ROWS}. `

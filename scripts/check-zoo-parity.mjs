@@ -414,7 +414,12 @@ const SPEEDUP_PROVENANCE_CENSUS = {
   //     the paper it cites states no classical cost to be polynomially better
   //     than. `read` scopes it to the abstract and that section, which is what
   //     was opened, and not to the whole paper.
-  absent: 8,
+  //   abelian-hidden-subgroup — Boneh and Lipton's CRYPTO '95 extended abstract,
+  //     read in full, states no classical cost for the general hidden-linear-
+  //     function problem to be superpolynomially better than. The Zoo files the
+  //     row "Superpolynomial"; the paper the Zoo credits with first formulating
+  //     the algorithm does not say it.
+  absent: 9,
   // The worklist. The intake checked the problem statement, the class against the
   // Zoo, the reference metadata and the complexity claim — it never asked whether
   // the paper supports the class. `unknown` says that, rather than pretending.
