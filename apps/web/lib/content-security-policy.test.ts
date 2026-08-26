@@ -138,7 +138,7 @@ test("the Vercel Toolbar's six origins reach preview and never production", () =
     production,
     "default-src 'self'; script-src 'self' 'unsafe-inline'; script-src-attr 'none'; " +
       "style-src 'self' 'unsafe-inline'; " +
-      "style-src-elem 'self' 'sha256-hl9qK6CxELuy3YEmCQFOW8oFkndsA/kDC9kyF0oQVXw='; " +
+      "style-src-elem 'self' 'sha256-1SpxNHCaVb3/mA8ghPVixDEtdss1k/cptw3ioCotrHg='; " +
       "style-src-attr 'unsafe-inline'; " +
       "img-src 'self' data: blob:; font-src 'self' data:; " +
       "connect-src 'self' https://api.example.test; object-src 'none'; base-uri 'self'; " +
@@ -295,7 +295,7 @@ test("the hashed stylesheet is the one the 404 page actually renders", () => {
   // 2026-08-16 — hashing the live page's <style> body gave this same value, so
   // the derivation matches what a browser computes rather than merely being
   // self-consistent.
-  assert.equal(inlineHash(NOT_FOUND_LOCALE_STYLE), "'sha256-hl9qK6CxELuy3YEmCQFOW8oFkndsA/kDC9kyF0oQVXw='");
+  assert.equal(inlineHash(NOT_FOUND_LOCALE_STYLE), "'sha256-1SpxNHCaVb3/mA8ghPVixDEtdss1k/cptw3ioCotrHg='");
 });
 
 /**
