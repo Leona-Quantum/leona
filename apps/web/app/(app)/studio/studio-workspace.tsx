@@ -1353,6 +1353,15 @@ export function CircuitBuilder({ seed, framework, selectedGate, onSelectGate, on
   // `EventSource` constructed after that point is held by nothing that will
   // ever close it. This ref is how the continuation learns it is too late.
   const mountedRef = useRef(true);
+  // The other way that continuation can be too late, and it is the one a user
+  // actually hits: edit the circuit — or switch compiler, or change level —
+  // while the POST is in flight. The effect below tears down the current run,
+  // but it cannot reach into an awaited `fetch`, so without this the
+  // continuation still opens a stream and stores a result measured against a
+  // circuit that no longer exists, under a `before` the panel then shows
+  // beside the new one. Bumped by that same effect, captured before the
+  // request, compared after it.
+  const externalRunSeqRef = useRef(0);
 
   // A pending confirmation describes one specific pair of a diagram and a
   // source. If either side moves — the code is edited again, the canvas is
@@ -1390,6 +1399,10 @@ export function CircuitBuilder({ seed, framework, selectedGate, onSelectGate, on
   }, []);
 
   useEffect(() => {
+    // Retires every run in flight for the previous circuit/compiler/level, the
+    // awaited ones included — see `externalRunSeqRef`. Closing the stream only
+    // reaches a run that got as far as opening one.
+    externalRunSeqRef.current += 1;
     externalStreamRef.current?.close();
     externalStreamRef.current = null;
     setExternalBusy(false);
@@ -1609,6 +1622,7 @@ export function CircuitBuilder({ seed, framework, selectedGate, onSelectGate, on
       return;
     }
     setExternalBusy(true);
+    const seq = externalRunSeqRef.current;
     try {
       const response = await fetch("/api/runs", {
         method: "POST",
@@ -1624,10 +1638,13 @@ export function CircuitBuilder({ seed, framework, selectedGate, onSelectGate, on
         }),
       });
       const payload = (await response.json()) as unknown;
-      // Unmounted while the POST was in flight. The cleanup that closes the
-      // stream has already run, so anything opened from here is unreachable —
-      // and there is no longer a panel to report an error to either.
-      if (!mountedRef.current) return;
+      // Too late, in either of the two ways. Unmounted: the cleanup that closes
+      // the stream has already run, so anything opened here is unreachable, and
+      // there is no panel to report an error to. Superseded: the circuit,
+      // compiler or level moved while this was in flight, so a result from it
+      // would be measured against something the user is no longer looking at.
+      // Either way, stop before opening a stream.
+      if (!mountedRef.current || externalRunSeqRef.current !== seq) return;
       const submittedRunId = submittedId(payload);
       if (!response.ok || !submittedRunId) {
         throw new Error(refusalSentence(payload) ?? copy.externalFailed);
@@ -1662,6 +1679,9 @@ export function CircuitBuilder({ seed, framework, selectedGate, onSelectGate, on
         externalStreamRef.current = null;
       };
     } catch (cause) {
+      // Same two ways of being too late. A refusal earned by the previous
+      // circuit must not surface as a failure of the one now on screen.
+      if (!mountedRef.current || externalRunSeqRef.current !== seq) return;
       setExternalError(cause instanceof Error ? cause.message : copy.externalFailed);
       setExternalBusy(false);
     }

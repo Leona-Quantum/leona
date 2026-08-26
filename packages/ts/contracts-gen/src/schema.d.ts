@@ -679,6 +679,18 @@ export interface components {
          *     Third-party compiler equivalence is stated honestly as unitary equivalence
          *     up to global phase. It is not a verification verdict and does not inherit
          *     evidence from the source artifact.
+         *
+         *     **What ``equivalence`` scopes over, since a request may contain ``M`` and a
+         *     measured circuit is not a unitary.** ``CircuitOptimizationRequest`` already
+         *     refuses a non-terminal measurement — see
+         *     ``circuit_is_bounded_and_measurements_are_terminal`` — so every accepted
+         *     circuit is a unitary prefix followed by a block of terminal measurements.
+         *     The compiler is handed the prefix and nothing else; the measurement block is
+         *     re-appended verbatim and is not part of any rewrite. So the value claims
+         *     unitary equivalence up to global phase **of the prefix**, and identity of
+         *     the tail, which together is the strongest true statement about the whole
+         *     circuit. A result carrying measurements says so in ``warnings`` as well, in
+         *     a sentence a reader sees.
          */
         CircuitOptimizationResult: {
             after: components["schemas"]["ResourceMetrics"];

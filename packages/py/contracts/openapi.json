@@ -1342,7 +1342,7 @@
       },
       "CircuitOptimizationResult": {
         "additionalProperties": false,
-        "description": "Compiler output carried inside ``compilation.result.compatibility``.\n\nThird-party compiler equivalence is stated honestly as unitary equivalence\nup to global phase. It is not a verification verdict and does not inherit\nevidence from the source artifact.",
+        "description": "Compiler output carried inside ``compilation.result.compatibility``.\n\nThird-party compiler equivalence is stated honestly as unitary equivalence\nup to global phase. It is not a verification verdict and does not inherit\nevidence from the source artifact.\n\n**What ``equivalence`` scopes over, since a request may contain ``M`` and a\nmeasured circuit is not a unitary.** ``CircuitOptimizationRequest`` already\nrefuses a non-terminal measurement \u2014 see\n``circuit_is_bounded_and_measurements_are_terminal`` \u2014 so every accepted\ncircuit is a unitary prefix followed by a block of terminal measurements.\nThe compiler is handed the prefix and nothing else; the measurement block is\nre-appended verbatim and is not part of any rewrite. So the value claims\nunitary equivalence up to global phase **of the prefix**, and identity of\nthe tail, which together is the strongest true statement about the whole\ncircuit. A result carrying measurements says so in ``warnings`` as well, in\na sentence a reader sees.",
         "properties": {
           "after": {
             "$ref": "#/components/schemas/ResourceMetrics"
