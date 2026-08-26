@@ -22,6 +22,18 @@ const ALLOWED = new Set([
   // file still matches it, so a palette change fails there instead of silently
   // shipping an off-brand card.
   "apps/web/app/opengraph-image.tsx",
+  // The stylesheet for the in-segment 404 (ai-ops issue 188). Same shape of
+  // exemption as the card above, and for the same kind of reason: the page it
+  // styles is rendered by Next into a synthesised `<html id="__next_error__">`
+  // whose `<head>` is empty, so the compiled `globals.css` — and therefore
+  // `tokens.css`, and therefore every `--bg-0` this gate exists to enforce — is
+  // not loaded. `var(--bg-0)` there resolves to nothing, not to a colour.
+  //
+  // Checked instead by `apps/web/lib/not-found-standalone-tokens.test.ts`, which
+  // parses BOTH themes out of tokens.css and asserts every literal below still
+  // agrees with it. The exemption buys the file the right to spell the colour;
+  // it does not buy it the right to disagree about which colour.
+  "apps/web/public/not-found.css",
 ]);
 const EXTENSIONS = new Set([".css", ".ts", ".tsx", ".js", ".jsx", ".mjs"]);
 const SKIP_DIRS = new Set(["node_modules", ".next", ".turbo", ".vercel", "dist"]);
