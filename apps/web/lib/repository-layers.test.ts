@@ -2517,9 +2517,16 @@ test("a contract's mathematics is mathematics, not a literal underscore at a rea
   // blocked the transcription that is safe.
   const SYMBOLS = "≥≤⟩⟨‖†⊗√≈≠∈∑∏∫αβγδεθλμνπρσφχψωΩΓΔΛΠΣΦΨ";
   const outsideMath = (value: string): string => value.replace(/\$[^$]*\$/g, "");
+  // The formulas themselves, in order-insensitive form. A contract's two locales
+  // describe the same interface in two languages, so the prose differs by
+  // construction and the mathematics must not: `$\varepsilon$` in English is
+  // `$\varepsilon$` in Japanese.
+  const mathSpans = (value: string): string[] =>
+    [...value.matchAll(/\$([^$]*)\$/g)].map((match) => match[1].trim()).sort();
 
   const bareSubscripts: string[] = [];
   const unicodeOutside = new Set<string>();
+  const localeMathDrift: string[] = [];
   let fields = 0;
   for (const node of LAYER_GRAPH.nodes) {
     if (!isCapability(node)) continue;
@@ -2529,13 +2536,50 @@ test("a contract's mathematics is mathematics, not a literal underscore at a rea
       if (typeof value !== "string" || value.length === 0) continue;
       fields += 1;
       const prose = outsideMath(value);
-      // A letter followed by `_` outside `$…$`. Written to match what a reader
-      // sees rather than what an author meant: the underscore is the tell.
-      if (/(?:^|[^\\\w])[A-Za-z]_\{?[A-Za-z0-9]/.test(prose)) {
+      // A single symbol followed by `_` outside `$…$`. Written to match what a
+      // reader sees rather than what an author meant: the underscore is the tell.
+      //
+      // **Unicode-aware on both halves, and it has to be.** An ASCII-only
+      // `[A-Za-z]` walks straight past `α_0`, and an ASCII-only guard character
+      // walks past `\alpha_0` — the `a` that ends the command is preceded by `h`,
+      // so nothing matches and a reader still meets the raw underscore. Both
+      // shapes are the same defect as `P_L`, and both now count. The guard class
+      // is what keeps `snake_case` prose out: a letter preceded by another letter
+      // is a word, not a symbol, which is why `y_in` was caught and `foo_bar`
+      // never was. Measured at zero for all three shapes when this landed.
+      if (/(?:^|[^\\\p{L}\p{N}_])(?:\\[A-Za-z]+|\p{L})_\{?[\p{L}\p{N}]/u.test(prose)) {
         bareSubscripts.push(`${node.id}.${key}`);
       }
       if ([...SYMBOLS].some((symbol) => prose.includes(symbol))) {
         unicodeOutside.add(`${node.id}.${key}`);
+      }
+    }
+    // **The two sweeps above judge each locale on its own, so a pair can be
+    // individually clean and still disagree.** `takes` and `takesJa` are one
+    // interface written twice; if the English says $\varepsilon$ and the Japanese
+    // says $\epsilon$ — or drops the formula, or carries an extra one — the two
+    // locales document different mathematics and both halves pass every
+    // assertion above. `check-math.mjs` already pairs these fields, but its rule
+    // is only whether `$` appears in both, which cannot see a formula change
+    // inside the delimiters. Compared as a multiset because sentence order is a
+    // translator's choice and the set of formulas is not. 62 pairs, zero drift
+    // when this landed.
+    for (const [en, ja] of [
+      ["takes", "takesJa"],
+      ["returns", "returnsJa"],
+    ] as const) {
+      const english = contract[en];
+      const japanese = contract[ja];
+      if (typeof english !== "string" || typeof japanese !== "string") continue;
+      if (english.trim() === "" || japanese.trim() === "") continue;
+      const left = mathSpans(english);
+      const right = mathSpans(japanese);
+      if (left.join("\u0000") !== right.join("\u0000")) {
+        const onlyEnglish = left.filter((span) => !right.includes(span));
+        const onlyJapanese = right.filter((span) => !left.includes(span));
+        localeMathDrift.push(
+          `${node.id}.${en}: en-only ${JSON.stringify(onlyEnglish)}, ja-only ${JSON.stringify(onlyJapanese)}`,
+        );
       }
     }
   }
@@ -2558,6 +2602,13 @@ test("a contract's mathematics is mathematics, not a literal underscore at a rea
       `character rather than as mathematics. Write it as LaTeX inside $…$ — \\varepsilon, ` +
       `\\lVert…\\rVert, \\ge, \\lvert 0\\rangle — never the character wrapped in dollars, which ` +
       `check-math.mjs counts as its own worklist: ${[...unicodeOutside].slice(0, 6).join(", ")}`,
+  );
+
+  assert.deepEqual(
+    localeMathDrift,
+    [],
+    `a contract's two locales carry different mathematics for the same field, so the ` +
+      `English and Japanese pages document different interfaces: ${localeMathDrift.join(" | ")}`,
   );
 });
 
