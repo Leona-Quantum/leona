@@ -631,6 +631,65 @@ export const STATE_VOCABULARY: StateVocabulary = {
       // needs a genuine reversible chain narrows the contract in its own
       // `contract` field, which is what that field is for.
     },
+    {
+      id: "cost-hamiltonian",
+      label: "Cost Hamiltonian, diagonal in the computational basis",
+      labelJa: "計算基底で対角なコストハミルトニアン",
+      summary: "An Ising or QUBO operator, diagonal in the computational basis. Its extremal computational-basis eigenstates are the optimal assignments a combinatorial optimisation problem is asking for — one or more of them, because two assignments tying on the objective is ordinary rather than a special case — and a general vector in that eigenspace is a superposition of them and not an assignment at all, which is why what comes back is measured in the computational basis rather than read off the operator. Nothing in this build produces it: the encoding slot that would turn a combinatorial-problem statement into this operator was scoped and then refused, so this is where the region starts, not a state anything hands off.",
+      summaryJa: "計算基底で対角な、Ising または QUBO 演算子です。その極値に対応する計算基底状態が、組合せ最適化問題の求めている最適な割り当てにあたります。二つの割り当てが目的関数の値で並ぶことは特別な場合ではなく普通に起こりますから、それは一つとは限りません。またその固有空間の一般のベクトルはそれらの重ね合わせであって、割り当てではありません。返ってくるものを演算子から読み取るのではなく計算基底で測定するのは、そのためです。この構築ではこれを生成するものは何もありません。組合せ問題の記述をこの演算子へと変換する符号化のスロットは検討されたのち退けられたため、この状態はこの領域の出発点であり、何かが手渡すものではありません。",
+      // **A root, like `nonlinear-ivp` and `pde-problem`: no `specializes`.** The
+      // encoding slot that would produce this state (`combinatorial-problem` →
+      // `cost-hamiltonian`) was scoped in
+      // `plans/atlas-revamp/W29-combinatorial-optimization-scoped.md` §2.1 and then
+      // refused — a second reading of Pakhomchik et al. (arXiv:2205.04844), done
+      // the same session, found its own distinct contribution is a *decomposition*
+      // method (§III.C), not a competing encoding technique, so the slot has one
+      // method (Lucas, arXiv:1302.5843) and fails the ≥2-methods rule. Until a
+      // second encoding method is found and the slot is built, nothing in this
+      // graph produces `cost-hamiltonian`, and it is filed as a root for that
+      // reason rather than as an unnoticed gap.
+      //
+      // **Must NOT `specialize` `ground-state-problem`, and must NOT `specialize`
+      // `eigenvalue-problem` either.** `eigenvalue-problem`'s own summary is "the
+      // declaration that what is being asked for is a piece of its spectrum rather
+      // than an evolution under it" — and a combinatorial optimisation asks for the
+      // argmin assignment, not a piece of the spectrum. Declaring the
+      // specialisation would let `stateSatisfies` hand a QAOA or
+      // adiabatic-evolution instance to a ground-state-energy method and return an
+      // *energy* where the reader asked *which assignment* — the same failure
+      // `excited-state-problem`'s own comment records catching one region over
+      // ("carries the opposite declaration... so calling it a specialisation would
+      // let `stateSatisfies` hand one to a ground-state method and call the result
+      // an answer") and the same failure `ground-state-problem`'s own comment
+      // records catching a region before that ("a variational eigensolver returns a
+      // lowest eigenvalue, not the solution of an initial-value problem at time
+      // T"). A sibling under `hamiltonian-access` was the tempting shape here too,
+      // and is refused for the identical reason.
+    },
+    {
+      id: "assignment",
+      label: "Assignment, with the objective value it achieves",
+      labelJa: "割り当てと、それが達成する目的関数値",
+      summary: "A bit string read off the computational basis — a value for every one of the problem's decision variables — together with the value of the objective at that string. One process arrives here; nothing in this graph consumes it yet.",
+      summaryJa: "計算基底から読み取ったビット列であり、問題の決定変数のすべてに対する値を与えます。あわせて、その文字列における目的関数の値を伴います。ここには一つの過程が到達しますが、この図の中でそれを消費するものはまだありません。",
+      // One process arrives here — both methods realising `combinatorial-optimization`
+      // return this — and none leaves. Under the admission rule as
+      // `state-vocabulary.ts`'s own header states it (never as the four files that
+      // cited it wrongly restated it — corrected in leona PR 784), that is
+      // admissible: the rule is a bar applied when a state is newly authored, not
+      // an invariant the vocabulary holds, and the response to a state failing it
+      // is to name the missing consumer, never to invent one. `hidden-period`
+      // above is the same shape for the same reason.
+      //
+      // No `specializes` is declared. `solution-answer`'s own summary offers three
+      // kinds — "a state you can measure, a history over the whole interval, or a
+      // single number" — and an assignment fits none of the three cleanly: it is a
+      // measured bit string paired with the scalar it achieves, which
+      // `observable-value` (an *error-bar* estimate) does not fit either. Forcing
+      // a parent here would be the same mistake `cost-hamiltonian`'s comment above
+      // refuses for the opposite reason: asserting a taxonomic relation no source
+      // states, rather than leaving it unclaimed.
+    },
     // --- the machine underneath ---------------------------------------------
     {
       id: "physical-qubits",

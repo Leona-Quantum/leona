@@ -91,7 +91,13 @@ export const PAPER_REGISTER: PaperRegister = {
     { id: "arxiv:1408.1816", title: "Quantum pattern matching fast on average", authors: "Ashley Montanaro", year: "2014", url: "https://arxiv.org/abs/1408.1816", reports: { theory: "reported", simulation: "unknown", hardware: "absent" }, reportsBasis: "abstract" },
     { id: "arxiv:1405.7479", title: "A quantum algorithm for Viterbi decoding of classical convolutional codes", authors: "Jon R. Grice, David A. Meyer", year: "2014", url: "https://arxiv.org/abs/1405.7479", reports: { theory: "reported", simulation: "unknown", hardware: "absent" }, reportsBasis: "abstract" },
     { id: "arxiv:1409.3305", title: "Fixed-point quantum search with an optimal number of queries", authors: "Theodore J. Yoder, Guang Hao Low, Isaac L. Chuang", year: "2014", url: "https://arxiv.org/abs/1409.3305", reports: { theory: "reported", simulation: "unknown", hardware: "absent" }, reportsBasis: "abstract" },
-    { id: "arxiv:1411.4028", title: "A Quantum Approximate Optimization Algorithm", authors: "Edward Farhi, Jeffrey Goldstone, Sam Gutmann", year: "2014", url: "https://arxiv.org/abs/1411.4028" },
+    // Read in full for W29 (PDF via pdftotext; title, authors and MIT-CTP/4610 checked
+    // against arXiv's own metadata before a line was quoted). `theory: reported` is the
+    // p = 1 3-regular approximation ratio 0.6924 and the depth bound mp + p, both quoted
+    // on the method node. The other two are left `unknown` rather than `absent`: the
+    // sections read were I, II, V and VI, and that is not the whole paper — an absence
+    // claimed from a partial read is the failure this register exists to prevent.
+    { id: "arxiv:1411.4028", title: "A Quantum Approximate Optimization Algorithm", authors: "Edward Farhi, Jeffrey Goldstone, Sam Gutmann", year: "2014", url: "https://arxiv.org/abs/1411.4028", reports: { theory: "reported", simulation: "unknown", hardware: "unknown" }, reportsBasis: "full-text" },
     { id: "arxiv:1412.4687", title: "Simulating Hamiltonian dynamics with a truncated Taylor series", authors: "Dominic W. Berry, Andrew M. Childs, Richard Cleve, Robin Kothari, Rolando D. Somma", year: "2014", url: "https://arxiv.org/abs/1412.4687", reports: { theory: "reported", simulation: "unknown", hardware: "absent" }, reportsBasis: "abstract" },
     { id: "arxiv:1501.01715", title: "Hamiltonian simulation with nearly optimal dependence on all parameters", authors: "Dominic W. Berry, Andrew M. Childs, Robin Kothari", year: "2015", url: "https://arxiv.org/abs/1501.01715", reports: { theory: "reported", simulation: "unknown", hardware: "absent" }, reportsBasis: "abstract" },
     { id: "arxiv:1509.04279", title: "The theory of variational hybrid quantum-classical algorithms", authors: "Jarrod R. McClean, Jonathan Romero, Ryan Babbush, Al\u00e1n Aspuru-Guzik", year: "2015", url: "https://arxiv.org/abs/1509.04279", reports: { theory: "reported", simulation: "reported", hardware: "absent" }, reportsBasis: "abstract" },
@@ -329,7 +335,12 @@ export const PAPER_REGISTER: PaperRegister = {
     { id: "arxiv:2604.21333", title: "pygridsynth: A fast numerical tool for ancilla-free Clifford+T synthesis", authors: "Shuntaro Yamamoto, Nobuyuki Yoshioka", year: "2026", url: "https://arxiv.org/abs/2604.21333", reports: { theory: "reported", simulation: "reported", hardware: "absent" }, reportsBasis: "abstract" },
     { id: "arxiv:2512.06488", title: "Efficient quantum algorithm for solving differential equations with Fourier nonlinearity via Koopman linearization", authors: "Judd Katz, Gopikrishnan Muraleedharan, Abhijeet Alase", year: "2025", url: "https://arxiv.org/abs/2512.06488", reports: { theory: "reported", simulation: "unknown", hardware: "absent" }, reportsBasis: "abstract" },
     { id: "arxiv:math/0411623", title: "Quantum computation of zeta functions of curves", authors: "Kiran S. Kedlaya", year: "2004", url: "https://arxiv.org/abs/math/0411623", reports: { theory: "reported", simulation: "unknown", hardware: "absent" }, reportsBasis: "abstract" },
-    { id: "arxiv:quant-ph/0001106", title: "Quantum Computation by Adiabatic Evolution", authors: "Edward Farhi, Jeffrey Goldstone, Sam Gutmann, Michael Sipser", year: "2000", url: "https://arxiv.org/abs/quant-ph/0001106" },
+    // Read in full for W29, same procedure and same reservation as arXiv:1411.4028
+    // above. `theory: reported` is the runtime statement quoted on the method node —
+    // the time needed depends on the minimum gap, "which we are unable to estimate in
+    // general" — which is a bound stated as a dependency rather than a formula, and the
+    // node says so in those words.
+    { id: "arxiv:quant-ph/0001106", title: "Quantum Computation by Adiabatic Evolution", authors: "Edward Farhi, Jeffrey Goldstone, Sam Gutmann, Michael Sipser", year: "2000", url: "https://arxiv.org/abs/quant-ph/0001106", reports: { theory: "reported", simulation: "unknown", hardware: "unknown" }, reportsBasis: "full-text" },
     { id: "arxiv:quant-ph/0005055", title: "Quantum Amplitude Amplification and Estimation", authors: "Gilles Brassard, Peter Hoyer, Michele Mosca, Alain Tapp", year: "2000", url: "https://arxiv.org/abs/quant-ph/0005055", reports: { theory: "reported", simulation: "unknown", hardware: "absent" }, reportsBasis: "abstract" },
     { id: "arxiv:quant-ph/0005115", title: "Three qubits can be entangled in two inequivalent ways", authors: "W. Dür, G. Vidal, J. I. Cirac", year: "2000", url: "https://arxiv.org/abs/quant-ph/0005115" },
     { id: "arxiv:quant-ph/0010033", title: "Quantum computing via measurements only", authors: "Robert Raussendorf, Hans J. Briegel", year: "2000", url: "https://arxiv.org/abs/quant-ph/0010033" },

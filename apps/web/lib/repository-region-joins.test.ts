@@ -374,7 +374,7 @@ test("the authored graph's slot entries are all declared, and no row has gone st
   assert.deepEqual(audit.misclassified, []);
 });
 
-test("the map is eight regions, and seventeen of its thirty slots consume something nothing produces", () => {
+test("the map is nine regions, and eighteen of its thirty-one slots consume something nothing produces", () => {
   const regions = regionsOf(LAYER_GRAPH);
   assert.deepEqual(
     regions.map((region) => region.nodes.length),
@@ -393,19 +393,31 @@ test("the map is eight regions, and seventeen of its thirty slots consume someth
     // join anybody designed. `marked-item-search` and its two atomic methods are the
     // new 3 at index 8. So one region arrived joined and one arrived standing alone,
     // and the two halves share an exit state that this relation cannot see.
-    [110, 13, 5, 4, 3, 3, 3, 3],
+    //
+    // **W29's combinatorial-optimization region is the new 3 at index 8, and it
+    // arrives standing entirely alone** — unlike W28's, which split across two
+    // entries because one of its methods descended into `phase-estimation`. Both
+    // methods here are `atomic: true`, argued from their own papers rather than
+    // from the drawing, so nothing contains and nothing is contained; and neither
+    // of its states touches anything the rest of the map produces or consumes.
+    // `cost-hamiltonian` is a root because the encoding slot that would produce it
+    // was scoped and refused, and `assignment` has an arrival and no departure.
+    [110, 13, 5, 4, 3, 3, 3, 3, 3],
     "the region shape changed; re-read what joined or split before updating this",
   );
 
   const entries = slotEntries(LAYER_GRAPH, STATE_VOCABULARY);
-  assert.equal(entries.length, 30);
+  assert.equal(entries.length, 31);
   const open = entries.filter((entry) => entry.supply !== "joined");
   // 15 -> 17: both W28 slots are front doors. Neither is joined, and that is not a
   // failure of the region — a marking oracle is the problem stated rather than a thing
   // computed, the same reading `hidden-period-finding` carries. The search graph is the
   // one of the two that genuinely wants a producer; see its row in DECLARED_SLOT_ENTRIES
   // and the join worklist below.
-  assert.equal(open.length, 17);
+  // 17 -> 18: W29's one slot is a front door too, and its row in
+  // DECLARED_SLOT_ENTRIES is `join-wanted` rather than `settled` — the producer is
+  // genuinely missing and was refused with a reason, not judged unnecessary.
+  assert.equal(open.length, 18);
 
   const bySupply = (supply: string) => open.filter((entry) => entry.supply === supply).length;
   // **`root-supplied` moves 2 -> 3 without anyone editing `error-correction`.** Unit 4's
@@ -423,7 +435,10 @@ test("the map is eight regions, and seventeen of its thirty slots consume someth
   // are entered directly, and no existing slot re-typed, because `marking-oracle`,
   // `marked-item` and `search-graph-with-marked-set` are all new names nothing else
   // consumes.
-  assert.equal(bySupply("front-door"), 9);
+  // W29 moves `front-door` 9 -> 10 and touches neither of the other two, for the
+  // same reason W28 did not: `cost-hamiltonian` and `assignment` are new names
+  // nothing else on the map consumes, so no existing slot re-types.
+  assert.equal(bySupply("front-door"), 10);
   assert.equal(bySupply("root-supplied"), 3);
   assert.equal(bySupply("ingredient"), 5);
   assert.equal(bySupply("joined"), 0, "by construction — `open` already excludes them");
@@ -498,7 +513,7 @@ test("every crossing runs between three pairs of regions, and each pair is a dif
   );
 });
 
-test("four slots want a join nobody has recorded, and three of the four are the ones ai-ops#64 names", () => {
+test("five slots want a join nobody has recorded, and three of the five are the ones ai-ops#64 names", () => {
   // The fourth arrived with the search region and is a different KIND of want, which
   // is why it is worth the rename rather than a bumped number. ai-ops#64's three are
   // slots the map cannot be entered at sensibly — a reader with a Hamiltonian cannot
@@ -512,10 +527,30 @@ test("four slots want a join nobody has recorded, and three of the four are the 
   // Left open rather than invented, per this file's own standing rule: the honest
   // producer is a slot with two competing methods, and nobody has read the papers for
   // either of them.
+  //
+  // **The fifth is `combinatorial-optimization`, and it is the first entry here whose
+  // producer was scoped, read for, and then REFUSED rather than never attempted.**
+  // W29 §2.1 proposed exactly that slot — `combinatorial-problem` → `cost-hamiltonian`
+  // — with Lucas (arXiv:1302.5843) and Pakhomchik et al. (arXiv:2205.04844) as its two
+  // methods. Reading the second settled it the other way: its QUBO is ordinary penalty
+  // construction, it cites Lucas once in the introduction and never where the QUBO is
+  // built, and its own distinct contribution is a decomposition over a workflow DAG,
+  // which is a different contract. The corpus's third record in that family is a
+  // minimum vertex cover, an entry in Lucas's own catalogue. One method is not a slot.
+  //
+  // So this row is worth more than a bumped number: it records that the standing rule
+  // was applied against a real candidate and cost this region two of the six records it
+  // was projected to anchor. 84 → 88, not 84 → 90.
   const worklist = joinWorklist(slotEntries(LAYER_GRAPH, STATE_VOCABULARY), DECLARED_SLOT_ENTRIES);
   assert.deepEqual(
     worklist.map((entry) => entry.slot).sort(),
-    ["error-correction", "error-mitigation", "ground-state-energy", "quantum-walk-search"],
+    [
+      "combinatorial-optimization",
+      "error-correction",
+      "error-mitigation",
+      "ground-state-energy",
+      "quantum-walk-search",
+    ],
   );
   // Each carries a real sentence, not a placeholder — the same bar
   // `check-repository-data.mjs` holds a knownGap detail to.
@@ -566,7 +601,7 @@ test("the map is eight regions under containment and five under what a trace wal
   // That is the first time a region has arrived already joined under containment, and
   // it was not designed — the paper's detector IS phase estimation on its own walk
   // operator, and the edge fell out of reading it.
-  assert.deepEqual(componentsUnder(layerAdjacency(LAYER_GRAPH)), [110, 13, 5, 4, 3, 3, 3, 3]);
+  assert.deepEqual(componentsUnder(layerAdjacency(LAYER_GRAPH)), [110, 13, 5, 4, 3, 3, 3, 3, 3]);
   // **[126, 5, 4, 3], and the two lanes that landed here behave OPPOSITELY under the
   // walk — which is the distinction these two lines exist to make visible.** The PDE
   // regions are separate under containment and merge into the 126 under the walk:
@@ -593,5 +628,16 @@ test("the map is eight regions under containment and five under what a trace wal
   // where a reader's route ENDS, and the region is joined to the rest of the map at its
   // entrance rather than at its exit. Naming a consumer would be the next real piece of
   // work here, and inventing one would be the dishonest way to make this number smaller.
-  assert.deepEqual(componentsUnder(walkableAdjacency(LAYER_GRAPH, STATE_VOCABULARY)), [129, 5, 4, 3, 3]);
+  // **W29 adds a 3 under BOTH relations, and that is the honest reading of it.**
+  // W28's search region merged into the 129 under containment and stayed separate
+  // under the walk; this one stays separate under both. Its entry state has no
+  // producer because the encoding slot was refused against the paper, and its exit
+  // state, `assignment`, has an arrival and no departure — nothing on this map
+  // consumes an assignment of decision variables. So a reader reaches this region
+  // by arriving at it and leaves the map when it answers.
+  //
+  // Recorded rather than fixed, and W29 §3 says why: naming a consumer is the next
+  // real piece of work, and inventing one is the prohibited move. The same sentence
+  // the line above already carries for `marked-item`.
+  assert.deepEqual(componentsUnder(walkableAdjacency(LAYER_GRAPH, STATE_VOCABULARY)), [129, 5, 4, 3, 3, 3]);
 });

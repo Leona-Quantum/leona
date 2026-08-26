@@ -530,6 +530,12 @@ export const DECLARED_SLOT_ENTRIES: Readonly<Record<string, EntryDisposition>> =
     reason:
       "A reader arrives holding a way to test candidates. Nothing here produces a marking oracle, because an oracle is the problem stated rather than a thing computed — the same reading `hidden-period-finding` carries, and for the same reason. Recorded as settled rather than join-wanted on the strength of a distinction this region had to draw anyway: the map DOES contain a slot that takes an already-built routine and makes its good branch reliable, and that is `success-amplification`, an ingredient. What separates the two is exactly whether the preparation unitary A is handed over or built out of an oracle, so declaring a producer here would not be filling a gap — it would be collapsing the split the owner ruled for on ai-ops#71.",
   },
+  "combinatorial-optimization": {
+    supply: "front-door",
+    intent: "join-wanted",
+    reason:
+      "Nothing produces a cost Hamiltonian, and here the producer is not missing by oversight — it was scoped and then refused against the paper. W29 \u00a72.1 proposed an encoding slot (`combinatorial-problem` \u2192 `cost-hamiltonian`) with Lucas (arXiv:1302.5843) and Pakhomchik et al. (arXiv:2205.04844) as competing methods. Reading the second one settled it the other way: its QUBO is built from ordinary penalty terms and cites Lucas exactly once, in the introduction, never where the QUBO is built, and its own distinct contribution is a decomposition that consumes a workflow DAG and returns a sequence of smaller QUBOs \u2014 a different contract. The corpus's third record in that family, `quantum-vulnerability-analysis`, is a minimum vertex cover, an entry in Lucas's own catalogue. So the slot has one method and fails the \u22652-methods rule. `join-wanted` rather than `settled` because the gap is real and named: a reader arriving with a scheduling or portfolio problem has no way in, and the honest producer is a slot with a second encoding technique nobody has found yet. Manufacturing it from one paper is the move this region declined.",
+  },
   "quantum-walk-search": {
     supply: "front-door",
     intent: "join-wanted",

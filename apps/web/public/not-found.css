@@ -1,0 +1,187 @@
+/**
+ * The stylesheet for the 404 that Next renders WITHOUT a document.
+ *
+ * ## Why a file in `public/` and not `globals.css`
+ *
+ * ai-ops issue 188. A `notFound()` thrown INSIDE a segment does not render in
+ * any layout of ours. Next builds the response through its error-recovery path
+ * (`getErrorRSCPayload` in `next/dist/server/app-render/app-render.js`, which
+ * literally constructs `createElement('html', { id: '__next_error__' })` with an
+ * EMPTY head), so the served document carries no `lang`, no font classes, no
+ * theme script and no link to the compiled `globals.css`. The not-found body is
+ * not in that HTML at all — it arrives in the RSC flight payload and React
+ * mounts it on the client. Measured on a production build, not inferred.
+ *
+ * That rules out every mechanism which needs the build to know about us:
+ * importing `globals.css` from the boundary emits no link, and an inline
+ * `<style>` element rendered by the boundary never reaches the HTML either.
+ * What DOES work is a stylesheet React can insert itself — `<link rel="stylesheet"
+ * precedence>` — pointed at a URL that is stable without the build manifest.
+ * `public/` is the only place in this app that gives a stable URL.
+ *
+ * ## Why the raw hex, which is normally a CI failure
+ *
+ * `scripts/check-raw-hex.mjs` forbids literal colours everywhere in `apps/web`
+ * except `packages/ts/ui/tokens.css`. This file is the second exemption, for the
+ * same reason `app/opengraph-image.tsx` is the first: `var(--bg-0)` resolves to
+ * nothing here. The custom properties are declared by `tokens.css`, `tokens.css`
+ * reaches a page only through the compiled `globals.css`, and the whole premise
+ * of this file is that the compiled `globals.css` is absent. A token reference
+ * would silently render as no colour at all.
+ *
+ * The exemption is not a licence to drift: `lib/not-found-standalone-tokens.test.ts`
+ * parses both themes out of `tokens.css` and asserts every literal below still
+ * agrees with it. Change a token and that test fails and names this file.
+ *
+ * ## Scope
+ *
+ * Everything is under `.mj-nf`, which only `components/not-found-standalone.tsx`
+ * renders. If this sheet is ever loaded on a page that also has `globals.css`,
+ * it can style nothing that page draws.
+ */
+
+.mj-nf {
+  --nf-bg: #faf9f7;
+  --nf-panel: #f3f1ec;
+  --nf-border: #d8d2c8;
+  --nf-text: #1c1a17;
+  --nf-muted: #5b5449;
+  --nf-accent: #48682e;
+  --nf-accent-press: #405d29;
+  --nf-on-accent: #faf9f7;
+
+  box-sizing: border-box;
+  min-height: 100vh;
+  margin: 0;
+  padding: 10vh 24px 24px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  background: var(--nf-bg);
+  color: var(--nf-text);
+  font-family: "Instrument Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  font-size: 16px;
+  line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* The document this renders into has no theme script, so there is no
+ * `data-theme` to key on — the reader's OS preference is the only signal that
+ * exists here. Kept in sync with the `prefers-color-scheme: dark` block of
+ * tokens.css by the test named at the top of this file. */
+@media (prefers-color-scheme: dark) {
+  .mj-nf {
+    --nf-bg: #131211;
+    --nf-panel: #1b1917;
+    --nf-border: #332f2b;
+    --nf-text: #eceae6;
+    --nf-muted: #a29c93;
+    --nf-accent: #7ba05b;
+    --nf-accent-press: #688a4a;
+    --nf-on-accent: #131211;
+  }
+}
+
+.mj-nf * {
+  box-sizing: border-box;
+}
+
+.mj-nf-inner {
+  width: 100%;
+  max-width: 34rem;
+}
+
+.mj-nf-brand {
+  display: inline-block;
+  margin-bottom: 3rem;
+  color: var(--nf-text);
+  font-size: 0.9375rem;
+  font-weight: 500;
+  letter-spacing: 0.01em;
+  text-decoration: none;
+}
+
+.mj-nf-brand:hover {
+  color: var(--nf-accent);
+}
+
+.mj-nf-overline {
+  margin: 0 0 0.75rem;
+  color: var(--nf-muted);
+  font-size: 0.75rem;
+  font-weight: 500;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.mj-nf h1 {
+  margin: 0 0 1rem;
+  font-size: clamp(1.75rem, 1.2rem + 2vw, 2.5rem);
+  font-weight: 400;
+  line-height: 1.2;
+  letter-spacing: -0.015em;
+}
+
+.mj-nf p.mj-nf-body {
+  margin: 0 0 2rem;
+  max-width: 46ch;
+  color: var(--nf-muted);
+}
+
+.mj-nf-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+}
+
+.mj-nf-actions a {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 2.5rem;
+  padding: 0 1.125rem;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  font-size: 0.9375rem;
+  font-weight: 500;
+  text-decoration: none;
+  transition: background-color 120ms ease, border-color 120ms ease;
+}
+
+/* Qualified with the `a` that `.mj-nf-actions a` above also matches, and that is
+ * not style: the shorthand there sets `border: 1px solid transparent`, and
+ * `.mj-nf-actions a` (0-1-1) outranks a bare `.mj-nf-secondary` (0-1-0). Written
+ * unqualified first, the secondary button rendered with a TRANSPARENT border in
+ * both themes — computed `rgba(0, 0, 0, 0)`, read out of the browser rather than
+ * eyeballed. */
+.mj-nf-actions a.mj-nf-primary {
+  background: var(--nf-accent);
+  color: var(--nf-on-accent);
+}
+
+.mj-nf-actions a.mj-nf-primary:hover {
+  background: var(--nf-accent-press);
+}
+
+.mj-nf-actions a.mj-nf-secondary {
+  border-color: var(--nf-border);
+  background: var(--nf-panel);
+  color: var(--nf-text);
+}
+
+.mj-nf-actions a.mj-nf-secondary:hover {
+  border-color: var(--nf-accent);
+  color: var(--nf-accent);
+}
+
+.mj-nf-actions a:focus-visible,
+.mj-nf-brand:focus-visible {
+  outline: 2px solid var(--nf-accent);
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .mj-nf-actions a {
+    transition: none;
+  }
+}
