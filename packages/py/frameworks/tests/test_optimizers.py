@@ -1,12 +1,16 @@
-import asyncio
+import ast
 import math
 import sys
+from pathlib import Path
 
 import pytest
 from qiskit import QuantumCircuit
 from qiskit.quantum_info import Operator
 
 from majorana_contracts import CircuitOptimizationRequest
+from majorana_contracts.enums import CircuitCompiler, CircuitOptimizationGate
+from majorana_frameworks import optimizer_kernel
+from majorana_frameworks import optimizers
 from majorana_frameworks.optimizers import CircuitOptimizationError, optimize_circuit
 
 
@@ -95,22 +99,68 @@ def test_bqskit_runs_a_bounded_synthesis_pipeline_and_returns_studio_gates():
     }
 
 
-@pytest.mark.asyncio
-async def test_bqskit_can_run_from_the_worker_background_thread():
-    result = await asyncio.to_thread(
-        optimize_circuit,
-        _request(
-            "bqskit",
-            [
-                {"gate": "H", "qubits": [0]},
-                {"gate": "H", "qubits": [0]},
-            ],
-            level=1,
-        ),
-    )
+def test_the_control_plane_half_imports_no_compiler_sdk():
+    """The guarantee ai-ops#186's option A actually bought, pinned.
 
-    assert result.compiler.value == "bqskit"
-    assert result.compiler_version == "1.2.1"
+    `services/api/Dockerfile` builds ONE image and `deploy.yml` runs both
+    `majorana-api` and `majorana-worker` from it, so a single top-level
+    `import qiskit` added to `optimizers.py` would put a compiler stack back
+    into both credentialed processes — silently, and without touching a
+    pyproject, which is where anybody would look. The count that move was made
+    on: 121 packages in that image with the compilers in a runtime extra, 87
+    without, and 87 is exactly what `dev` resolved to before the lane existed.
+
+    Read as source rather than by importing, because an import that succeeds
+    here proves only that this machine's dev group has the SDK — which it does.
+    """
+
+    tree = ast.parse(Path(optimizers.__file__).read_text(encoding="utf-8"))
+    forbidden = {"qiskit", "qiskit_aer", "cirq", "pennylane", "pytket", "pyzx", "bqskit"}
+    imported: list[str] = []
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            imported.extend(alias.name.split(".")[0] for alias in node.names)
+        elif isinstance(node, ast.ImportFrom) and node.module is not None:
+            imported.append(node.module.split(".")[0])
+    assert sorted(set(imported) & forbidden) == []
+
+
+def test_the_sandbox_kernel_imports_only_the_standard_library_at_module_scope():
+    """The kernel is executed in a rootfs where no `majorana_*` package exists.
+
+    A module-scope `from majorana_contracts import ...` would not fail here —
+    this machine has it — it would fail inside the sandbox, on a user's run,
+    as a ModuleNotFoundError with no line of ours in the traceback. So the
+    check is on the text, and it is why the kernel redeclares `Gate` and
+    `Compiler` instead of importing them.
+    """
+
+    tree = ast.parse(Path(optimizer_kernel.__file__).read_text(encoding="utf-8"))
+    module_scope = [node for node in tree.body if isinstance(node, (ast.Import, ast.ImportFrom))]
+    names: list[str] = []
+    for node in module_scope:
+        if isinstance(node, ast.Import):
+            names.extend(alias.name.split(".")[0] for alias in node.names)
+        elif node.module is not None and node.level == 0:
+            names.append(node.module.split(".")[0])
+    assert [name for name in names if name.startswith("majorana")] == []
+    assert [name for name in names if name not in sys.stdlib_module_names] == []
+
+
+def test_the_kernel_redeclares_the_contract_enums_without_drifting():
+    """`Gate` and `Compiler` are copies, and a copy is a thing that drifts.
+
+    Nothing else compares them: the payload crosses a process boundary as
+    strings, so a renamed member would surface as `compiler_failed` on a
+    user's run rather than as a failure here.
+    """
+
+    assert {gate.name: gate.value for gate in optimizer_kernel.Gate} == {
+        gate.name: gate.value for gate in CircuitOptimizationGate
+    }
+    assert {name.name: name.value for name in optimizer_kernel.Compiler} == {
+        name.name: name.value for name in CircuitCompiler
+    }
 
 
 def test_pyzx_runs_its_clifford_t_optimizer_and_lowers_back_to_studio_gates():

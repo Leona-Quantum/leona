@@ -31,7 +31,10 @@ saves the resulting evidence.
   additionally accepts only its smaller Clifford+T-compatible subset. Compiler
   output is an equivalence claim up to global phase, not verification evidence.
   Applying it makes prior evidence stale and requires a fresh `Verify & save`
-  run.
+  run. The compilers execute in the sandbox rootfs, not in the Worker
+  process (ai-ops#186): the Worker holds credentials and the sandbox holds
+  none, and a sandbox timeout can actually stop a compile where cancelling
+  a thread could not.
 - `Simulate` opens an artifact-owned CPU surface. It executes only the parsed,
   bounded gate model in the browser for saved artifacts, then records the
   source fingerprint, inputs, and sampled result locally. It never starts

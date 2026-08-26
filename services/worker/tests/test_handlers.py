@@ -14,7 +14,8 @@ from majorana_agent import (
     SimplePipelineStage,
     SimplePipelineStatus,
 )
-from majorana_contracts import CircuitOptimizationRequest, CircuitOptimizationResult
+from majorana_contracts import CircuitOptimizationRequest
+from majorana_frameworks.optimizers import build_kernel_payload, result_from_kernel
 from majorana_contracts.enums import (
     Framework,
     RunMode,
@@ -25,7 +26,7 @@ from majorana_contracts.enums import (
 )
 from majorana_api import credential_crypto
 from majorana_llm import CHAT_SYSTEM_PROMPT, LLMResponse, request_messages, with_response_locale
-from majorana_sandbox import LocalSubprocessSandbox
+from majorana_sandbox import LocalSubprocessSandbox, SandboxResult, run_trusted
 from majorana_worker import handlers
 from majorana_worker.context import RunContext
 
@@ -160,35 +161,34 @@ async def test_circuit_optimization_job_emits_unverified_compiler_result(monkeyp
     async def get_run(*_args):
         return SimpleNamespace(status="queued", timeout_s=30)
 
-    result = CircuitOptimizationResult.model_validate(
-        {
-            "compiler": "qiskit",
-            "compiler_version": "2.5.2",
-            "optimization_level": 2,
-            "operations": [{"gate": "X", "qubits": [0]}],
-            "before": {
-                "qubits": 1,
-                "depth": 3,
-                "gate_count": 3,
-                "two_qubit_gate_count": 0,
-                "measurement_count": 0,
+    # The double stands where the SANDBOX is, not where the result is. It
+    # returns what the kernel writes into its sidecar — the compiled unitary
+    # prefix and a version, and nothing else — so the metrics, the fingerprints,
+    # the improvement warning and the re-validation of every operation are all
+    # done by the code under test rather than handed to it. The old double
+    # returned a finished `CircuitOptimizationResult` and proved none of that.
+    seen: dict[str, object] = {}
+
+    async def fake_run_trusted(_sandbox, **kwargs):
+        seen.update(kwargs)
+        return SandboxResult(
+            ok=True,
+            exit_code=0,
+            duration_ms=12,
+            stdout="",
+            stderr="",
+            provider="local",
+            protected_result={
+                "ok": True,
+                "version": "2.5.2",
+                "operations": [{"gate": "X", "qubits": [0], "angle_radians": None}],
             },
-            "after": {
-                "qubits": 1,
-                "depth": 1,
-                "gate_count": 1,
-                "two_qubit_gate_count": 0,
-                "measurement_count": 0,
-            },
-            "input_fingerprint": "a" * 64,
-            "output_fingerprint": "b" * 64,
-        }
-    )
+        )
 
     monkeypatch.setattr(handlers.runs_repo, "get_run", get_run)
     monkeypatch.setattr(handlers, "RepoRunStateStore", lambda *_args: store)
     monkeypatch.setattr(handlers, "RepoEventSink", Sink)
-    monkeypatch.setattr(handlers, "optimize_circuit", lambda _request: result)
+    monkeypatch.setattr(handlers, "run_trusted", fake_run_trusted)
 
     await handlers.handle_circuit_optimize(
         object(),
@@ -225,6 +225,215 @@ async def test_circuit_optimization_job_emits_unverified_compiler_result(monkeyp
         == "succeeded"
     )
     assert not any(event.startswith("verification.") for event, _payload in emitted)
+    # What crossed into the sandbox: the declarative circuit, never source code,
+    # and never the terminal measurements — the compiler is handed the unitary
+    # prefix only, which is what makes the result's `equivalence` value true.
+    assert seen["payload"] == {
+        "compiler": "qiskit",
+        "qubit_count": 1,
+        "optimization_level": 2,
+        "operations": [
+            {"gate": "X", "qubits": [0], "angle_radians": None},
+            {"gate": "X", "qubits": [0], "angle_radians": None},
+            {"gate": "X", "qubits": [0], "angle_radians": None},
+        ],
+    }
+    assert seen["program"] is handlers._OPTIMIZER_KERNEL
+
+
+async def test_a_compiler_missing_from_the_sandbox_image_says_so_by_name(monkeypatch):
+    """The window ai-ops#186 option A opens, and the name that closes it.
+
+    `infra/sandbox/Dockerfile`'s `latest` tag is moved by a deliberate human
+    step (docs/runbooks/sandbox-image.md), never by merging. So there is a real
+    interval in which this code is deployed and the image is not, and a
+    compiler is selectable before its SDK is baked in. PR #262 spent a day in
+    exactly that interval and it read to every user as a bare
+    ModuleNotFoundError. The kernel maps ImportError to `compiler_unavailable`;
+    this pins that the code survives the trip and closes the run.
+    """
+
+    run_id = uuid.uuid4()
+    emitted: list[tuple[str, dict]] = []
+    finished: list[tuple] = []
+
+    class Store:
+        async def set_status(self, *_args, **_kwargs):
+            return None
+
+        async def current_status(self):
+            return RunStatus.RUNNING
+
+        async def finish(self, status, payload, **fields):
+            finished.append((status, payload, fields))
+            return status
+
+    class Sink:
+        def __init__(self, *_args):
+            pass
+
+        async def emit(self, event_type, payload, **_kwargs):
+            emitted.append((event_type, payload))
+
+    async def get_run(*_args):
+        return SimpleNamespace(status="queued", timeout_s=30)
+
+    async def fake_run_trusted(_sandbox, **_kwargs):
+        return SandboxResult(
+            ok=False,
+            exit_code=0,
+            duration_ms=40,
+            stdout="",
+            stderr="",
+            provider="vercel",
+            protected_result={
+                "ok": False,
+                "code": "compiler_unavailable",
+                "message": "The bqskit compiler is not installed in this sandbox image.",
+            },
+        )
+
+    monkeypatch.setattr(handlers.runs_repo, "get_run", get_run)
+    monkeypatch.setattr(handlers, "RepoRunStateStore", lambda *_args: Store())
+    monkeypatch.setattr(handlers, "RepoEventSink", Sink)
+    monkeypatch.setattr(handlers, "run_trusted", fake_run_trusted)
+
+    await handlers.handle_circuit_optimize(
+        object(),
+        {
+            "run_id": str(run_id),
+            "user_id": str(uuid.uuid4()),
+            "workspace_id": str(uuid.uuid4()),
+            "circuit_optimization": {
+                "compiler": "bqskit",
+                "qubit_count": 1,
+                "operations": [{"gate": "X", "qubits": [0]}],
+            },
+        },
+    )
+
+    for event_type, payload in emitted:
+        handlers._validated_event_payload(run_id, event_type, payload)
+    assert any(
+        event == "run.error" and payload["code"] == "compiler_unavailable"
+        for event, payload in emitted
+    )
+    assert finished[0][0] is RunStatus.FAILED
+
+
+async def test_a_sandbox_that_wrote_no_sidecar_past_the_deadline_is_a_timeout(monkeypatch):
+    """A compile that overran now ends the machine it was running on.
+
+    The kernel writes its sidecar on every path it controls, including its own
+    internal failures, so an absent one means the process never reached the
+    end. Which of the two ways it did not is decided on the wall clock, because
+    the local double and the Vercel provider signal a kill differently and a
+    user-facing code must not depend on which boundary is configured.
+    """
+
+    run_id = uuid.uuid4()
+    emitted: list[tuple[str, dict]] = []
+    finished: list[tuple] = []
+
+    class Store:
+        async def set_status(self, *_args, **_kwargs):
+            return None
+
+        async def finish(self, status, payload, **fields):
+            finished.append((status, payload, fields))
+            return status
+
+    class Sink:
+        def __init__(self, *_args):
+            pass
+
+        async def emit(self, event_type, payload, **_kwargs):
+            emitted.append((event_type, payload))
+
+    async def get_run(*_args):
+        return SimpleNamespace(status="queued", timeout_s=5)
+
+    async def fake_run_trusted(_sandbox, **kwargs):
+        return SandboxResult(
+            ok=False,
+            exit_code=-9,
+            duration_ms=kwargs["timeout_s"] * 1000,
+            stdout="",
+            stderr="killed: exceeded 5s timeout",
+            provider="local",
+            protected_result=None,
+        )
+
+    monkeypatch.setattr(handlers.runs_repo, "get_run", get_run)
+    monkeypatch.setattr(handlers, "RepoRunStateStore", lambda *_args: Store())
+    monkeypatch.setattr(handlers, "RepoEventSink", Sink)
+    monkeypatch.setattr(handlers, "run_trusted", fake_run_trusted)
+
+    await handlers.handle_circuit_optimize(
+        object(),
+        {
+            "run_id": str(run_id),
+            "user_id": str(uuid.uuid4()),
+            "workspace_id": str(uuid.uuid4()),
+            "circuit_optimization": {
+                "compiler": "qiskit",
+                "qubit_count": 1,
+                "operations": [{"gate": "X", "qubits": [0]}],
+            },
+        },
+    )
+
+    assert any(
+        event == "run.error" and payload["code"] == "compiler_timeout" for event, payload in emitted
+    )
+    assert finished[0][0] is RunStatus.FAILED
+
+
+async def test_the_compiler_kernel_really_runs_inside_a_sandbox_and_lowers_back():
+    """End to end through a real subprocess boundary, not a double.
+
+    Everything else in this file stubs `run_trusted`. This one composes the
+    shipped kernel exactly as production does, ships it into
+    `LocalSubprocessSandbox`, and reads the sidecar back — so it exercises
+    `compose_trusted`, the kernel's own `_main`, the sidecar write, and
+    `result_from_kernel`'s re-validation in one pass. Qiskit rather than one of
+    the slower five, because what is under test here is the seam, not the
+    adapter; `test_optimizers.py` runs all six.
+    """
+
+    request = CircuitOptimizationRequest.model_validate(
+        {
+            "compiler": "qiskit",
+            "qubit_count": 1,
+            "optimization_level": 2,
+            "operations": [
+                {"gate": "X", "qubits": [0]},
+                {"gate": "X", "qubits": [0]},
+                {"gate": "X", "qubits": [0]},
+                {"gate": "M", "qubits": [0]},
+            ],
+        }
+    )
+
+    sandbox_result = await run_trusted(
+        LocalSubprocessSandbox(),
+        program=handlers._OPTIMIZER_KERNEL,
+        payload=build_kernel_payload(request),
+        result_path=f"/tmp/leona-compile-test-{uuid.uuid4().hex}.json",
+        timeout_s=60,
+    )
+
+    assert sandbox_result.ok, sandbox_result.stderr
+    result = result_from_kernel(request, sandbox_result.protected_result)
+    assert result.compiler.value == "qiskit"
+    assert result.after.gate_count == 1
+    # The measurement was never handed to the compiler and came back verbatim,
+    # which is what the `equivalence` value is scoped on.
+    assert result.operations[-1].gate.value == "M"
+    assert result.before.measurement_count == result.after.measurement_count == 1
+    # Nothing is printed to stdout by the kernel: the payload and any traceback
+    # stay out of the sandbox's captured output.
+    assert sandbox_result.stdout == ""
 
 
 async def test_circuit_optimization_refusal_closes_the_run_with_typed_events():

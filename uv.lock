@@ -1539,29 +1539,8 @@ dependencies = [
     { name = "majorana-contracts" },
 ]
 
-[package.optional-dependencies]
-optimizers = [
-    { name = "bqskit" },
-    { name = "cirq-core" },
-    { name = "pennylane" },
-    { name = "pytket" },
-    { name = "qiskit" },
-]
-zx = [
-    { name = "pyzx" },
-]
-
 [package.metadata]
-requires-dist = [
-    { name = "bqskit", marker = "extra == 'optimizers'", specifier = "==1.2.1" },
-    { name = "cirq-core", marker = "extra == 'optimizers'", specifier = ">=1.7,<1.8" },
-    { name = "majorana-contracts", editable = "packages/py/contracts" },
-    { name = "pennylane", marker = "extra == 'optimizers'", specifier = ">=0.45.1,<0.46" },
-    { name = "pytket", marker = "extra == 'optimizers'", specifier = ">=2.18.1,<3" },
-    { name = "pyzx", marker = "extra == 'zx'", specifier = ">=0.10.5,<0.11" },
-    { name = "qiskit", marker = "extra == 'optimizers'", specifier = ">=2.5.2,<3" },
-]
-provides-extras = ["optimizers", "zx"]
+requires-dist = [{ name = "majorana-contracts", editable = "packages/py/contracts" }]
 
 [[package]]
 name = "majorana-llm"
@@ -1680,7 +1659,7 @@ dependencies = [
     { name = "defusedxml" },
     { name = "majorana-agent" },
     { name = "majorana-api" },
-    { name = "majorana-frameworks", extra = ["optimizers"] },
+    { name = "majorana-frameworks" },
     { name = "majorana-llm" },
     { name = "majorana-openqasm" },
     { name = "majorana-qpu", extra = ["ibm"] },
@@ -1694,7 +1673,7 @@ requires-dist = [
     { name = "defusedxml", specifier = ">=0.7.1,<1" },
     { name = "majorana-agent", editable = "packages/py/agent" },
     { name = "majorana-api", editable = "services/api" },
-    { name = "majorana-frameworks", extras = ["optimizers"], editable = "packages/py/frameworks" },
+    { name = "majorana-frameworks", editable = "packages/py/frameworks" },
     { name = "majorana-llm", editable = "packages/py/llm" },
     { name = "majorana-openqasm", editable = "packages/py/openqasm" },
     { name = "majorana-qpu", extras = ["ibm"], editable = "packages/py/qpu" },
@@ -1714,6 +1693,7 @@ dependencies = [
 dev = [
     { name = "amazon-braket-default-simulator" },
     { name = "amazon-braket-sdk" },
+    { name = "bqskit" },
     { name = "cirq-core" },
     { name = "httpx" },
     { name = "import-linter" },
@@ -1722,6 +1702,7 @@ dev = [
     { name = "pytest" },
     { name = "pytest-asyncio" },
     { name = "pytest-xdist" },
+    { name = "pytket" },
     { name = "pyyaml" },
     { name = "pyzx" },
     { name = "qibo" },
@@ -1737,6 +1718,7 @@ requires-dist = [{ name = "majorana-contracts", editable = "packages/py/contract
 dev = [
     { name = "amazon-braket-default-simulator", specifier = "==1.40.1" },
     { name = "amazon-braket-sdk", specifier = "==1.125.0" },
+    { name = "bqskit", specifier = "==1.2.1" },
     { name = "cirq-core", specifier = ">=1.4" },
     { name = "httpx", specifier = ">=0.27" },
     { name = "import-linter", specifier = ">=2.3" },
@@ -1745,6 +1727,7 @@ dev = [
     { name = "pytest", specifier = ">=8" },
     { name = "pytest-asyncio", specifier = ">=1.0" },
     { name = "pytest-xdist", specifier = ">=3.6" },
+    { name = "pytket", specifier = ">=2.18.1,<3" },
     { name = "pyyaml", specifier = ">=6" },
     { name = "pyzx", specifier = ">=0.10.5,<0.11" },
     { name = "qibo", specifier = "==0.3.4" },

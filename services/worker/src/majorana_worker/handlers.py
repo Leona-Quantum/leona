@@ -66,6 +66,8 @@ from majorana_sandbox import (
     Sandbox,
     VercelSandbox,
     check_python_code,
+    register_trusted_program,
+    run_trusted,
     run as run_sandbox,
 )
 from majorana_sandbox.guard import ALLOWED_IMPORTS
@@ -108,7 +110,12 @@ from .agent_llm import MeteredAgentLLM
 from .agent_store import RepoAgentStore
 from .context import EventSink, RunContext
 from .intent import resolve_mode
-from majorana_frameworks.optimizers import CircuitOptimizationError, optimize_circuit
+from majorana_frameworks.optimizers import (
+    CircuitOptimizationError,
+    build_kernel_payload,
+    kernel_source,
+    result_from_kernel,
+)
 from majorana_frameworks.roles import result_was_derived
 
 from .research import research_enabled
@@ -204,6 +211,14 @@ def _record_verification_summary(summary: dict[str, Any]) -> None:
 def _default_llm() -> LLMClient:
     """Production LLM client for the active provider profile (keys read at call time)."""
     return default_llm()
+
+
+#: The compiler kernel's source, read once at import and registered as a trusted
+#: program. Registration is what lets `run_trusted` refuse anything else: a
+#: caller cannot reach that door with a string it did not put through this
+#: function, and this function is only ever applied to a file in this repo.
+_OPTIMIZER_KERNEL = kernel_source()
+register_trusted_program(_OPTIMIZER_KERNEL)
 
 
 def _default_sandbox() -> Sandbox:
@@ -1050,21 +1065,91 @@ async def handle_circuit_optimize(session: AsyncSession, payload: dict[str, Any]
     )
     started = asyncio.get_running_loop().time()
     timeout_s = min(float(run.timeout_s or 60), 60.0)
+    # ai-ops#186, answered *option A*: the compilers run in the sandbox rootfs,
+    # not in this process. The two things that buys, both measured in that issue:
+    #
+    # 1. Six third-party compiler stacks — including PyZX's ipywidgets → ipython →
+    #    pexpect → ptyprocess chain, a PTY spawner — leave the ONE image that
+    #    `deploy.yml` runs both `majorana-api` and `majorana-worker` from. That
+    #    image holds database, WorkOS and provider credentials; the sandbox holds
+    #    none and is created with deny-all egress.
+    #
+    # 2. THE TIMEOUT BECOMES A TIMEOUT. What stood here was
+    #    `asyncio.wait_for(asyncio.to_thread(optimize_circuit, request))`, and
+    #    `wait_for` cancels an awaitable — it cannot interrupt a thread that has
+    #    already started. So `compiler_timeout` was reported to the user while the
+    #    compiler ran on to completion, holding a slot in the loop's DEFAULT
+    #    executor, which is shared with QPU submit (`:2677`), QPU poll (`:2717`)
+    #    and research search. The worker runs `--min-instances == --max-instances`
+    #    with `--no-cpu-throttling`, so it is long-lived and never clears them:
+    #    enough timed-out compiles and QPU submission blocked forever, silently.
+    #    A sandbox timeout destroys the machine the compiler is running on.
+    #
+    # The whole request is a validated, closed, declarative circuit — never source
+    # code — so nothing a user wrote is executed at either end of this call.
+    result_path = f"/tmp/leona-compile-{run_id.hex}.json"
     try:
-        result = await asyncio.wait_for(
-            asyncio.to_thread(optimize_circuit, request),
-            timeout=timeout_s,
+        sandbox_result = await run_trusted(
+            _default_sandbox(),
+            program=_OPTIMIZER_KERNEL,
+            payload=build_kernel_payload(request),
+            result_path=result_path,
+            timeout_s=max(1, int(timeout_s)),
+            memory_mb=DEFAULT_MEMORY_MB,
         )
-    except TimeoutError:
+    except Exception as exc:
+        # A provider that will not start, or a machine destroyed mid-compile.
+        # Which one it was is decided on the wall clock rather than on an
+        # exception type, because the two providers raise differently and a
+        # user-facing code must not depend on which boundary is configured.
+        log.warning(
+            "circuit optimization %s could not run in the sandbox: %s", run_id, type(exc).__name__
+        )
+        elapsed = asyncio.get_running_loop().time() - started
         await _finish_circuit_optimization_failure(
             store,
             sink,
             request,
-            code="compiler_timeout",
-            message=f"{request.compiler.value} exceeded the {int(timeout_s)} second limit.",
+            code="compiler_timeout" if elapsed >= timeout_s else "compiler_internal_error",
+            message=(
+                f"{request.compiler.value} exceeded the {int(timeout_s)} second limit."
+                if elapsed >= timeout_s
+                else f"{request.compiler.value} could not be run ({type(exc).__name__})."
+            ),
             started=started,
         )
         return
+
+    kernel_result = sandbox_result.protected_result
+    if kernel_result is None:
+        # The kernel writes its sidecar on every path it controls, including its
+        # own internal failures, so an absent one means the process did not reach
+        # the end: killed on the wall clock, or an image that cannot run it.
+        elapsed = asyncio.get_running_loop().time() - started
+        timed_out = elapsed >= timeout_s or sandbox_result.duration_ms >= timeout_s * 1000
+        log.warning(
+            "circuit optimization %s returned no sidecar (exit %s, %sms): %s",
+            run_id,
+            sandbox_result.exit_code,
+            sandbox_result.duration_ms,
+            sandbox_result.stderr[-400:],
+        )
+        await _finish_circuit_optimization_failure(
+            store,
+            sink,
+            request,
+            code="compiler_timeout" if timed_out else "compiler_internal_error",
+            message=(
+                f"{request.compiler.value} exceeded the {int(timeout_s)} second limit."
+                if timed_out
+                else f"{request.compiler.value} failed internally in the sandbox."
+            ),
+            started=started,
+        )
+        return
+
+    try:
+        result = result_from_kernel(request, kernel_result)
     except CircuitOptimizationError as exc:
         await _finish_circuit_optimization_failure(
             store,

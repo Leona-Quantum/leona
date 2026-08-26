@@ -16,6 +16,39 @@ were live and inert for a day: the image was not rebuilt, so every run in one of
 the three new frameworks failed with `ModuleNotFoundError` inside the sandbox.
 A merged Dockerfile change is not a shipped Dockerfile change.
 
+## THE STUDIO COMPILER LANE NOW DEPENDS ON THIS IMAGE — promote before you merge
+
+Added by ai-ops#186, answered *option A*. `infra/sandbox/Dockerfile` gained
+`pytket`, `pyzx` and `bqskit`, and Studio's circuit-compression lane runs
+`majorana_frameworks/optimizer_kernel.py` inside this rootfs through
+`majorana_sandbox.run_trusted` — so those six compilers stopped being installed
+in the api+worker image entirely. Measured with one method
+(`uv export --no-dev --all-packages`): 121 packages in that credentialed image
+with the compilers in a runtime extra, **87 without — which is exactly what
+`dev` resolved to before the lane existed.** The lane now adds nothing to the
+process that holds the credentials.
+
+**What that buys you also buys an ordering hazard, and it is #262's.** A merge
+does not move `latest`; step 5 below does. So a PR that lands the compiler lane
+before the image is promoted ships a feature whose SDKs are not there. Three
+things bound how bad that is, in decreasing order of how much you should rely on
+them:
+
+1. **Do the promotion first.** The Dockerfile change and the code change ride in
+   one PR, and `sandbox-image.yml`'s `build` job compiles a real circuit through
+   all six compilers inside the image that PR produces — so a green check is
+   evidence the image *would* work, not that the published one does. Promote the
+   dated tag before merging the code, not after.
+2. The kernel maps `ImportError` to **`compiler_unavailable`** and the worker
+   surfaces it as a typed refusal — "The bqskit compiler is not installed in this
+   sandbox image." That is a legible failure, not a working feature.
+3. Nothing else in the product regresses: the lane is a separate run kind, and
+   the execution lane's frameworks were already in this image.
+
+Step 4's verification should now run a compile as well as a Bell pair. The
+command is in `sandbox-image.yml`'s "every Studio compiler compiles a real
+circuit" step; point it at the dated tag instead of `majorana-runner:ci`.
+
 ## What the image is, and where it is referenced
 
 | | |

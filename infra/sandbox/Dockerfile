@@ -75,6 +75,35 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 # refresh that changed no version at all, because trivy's database updates daily
 # AND — as here — because the base image can start *declaring* what it always
 # contained. Check what the scanner is reading before believing the diff.
+# ## The Studio compiler lane lives here now (ai-ops#186, owner ruling: option A)
+#
+# `pytket`, `pyzx` and `bqskit` are not here for generated code. They are the
+# three compilers Studio's circuit-compression lane needs that this image did
+# not already carry (qiskit, cirq-core and pennylane were here for the
+# execution lane). The lane ships its own kernel —
+# `majorana_frameworks/optimizer_kernel.py` — into this rootfs as source and
+# runs it through `majorana_sandbox.run_trusted`.
+#
+# The measurement that moved them, from ai-ops#186: installing all six into
+# `services/api/Dockerfile` took that image from 129 packages to 151, and 21 of
+# the 22 added existed only because PyZX declares `ipywidgets` — ipython, jedi,
+# prompt-toolkit, and pexpect + ptyprocess, which spawn PTYs. That image is the
+# ONE image `deploy.yml` runs both `majorana-api` and `majorana-worker` from,
+# so a notebook stack landed in both processes that hold database, WorkOS and
+# provider credentials.
+#
+# That stack is still installed — it arrives with pyzx and cannot be dropped
+# without breaking `import pyzx` — but it is installed HERE, and here is the
+# rootfs with deny-all egress and an empty environment, where the credentials
+# it could reach do not exist. Moving a supply-chain surface out of a
+# credentialed process and into an isolated one with nothing to steal is
+# exactly what option A buys; it is not a claim that the surface is gone.
+#
+# Versions are pinned to what this image's existing qiskit 2.5.0 resolves
+# against. `bqskit` and `pyzx` both hand their output back through Qiskit
+# (`bqskit.ext.qiskit`, `qasm2.loads`), so a qiskit bump here is a compiler
+# change, not just a simulator change — the `build` job below compiles a real
+# circuit through all six for that reason, rather than importing them.
 RUN python -m pip install --no-cache-dir --only-binary=:all: \
     "setuptools==81.0.0" \
     "qiskit==2.5.0" \
@@ -87,6 +116,9 @@ RUN python -m pip install --no-cache-dir --only-binary=:all: \
     "qibo==0.3.4" \
     "qulacs==0.6.14" \
     "gast==0.7.0" \
+    "pytket==2.18.1" \
+    "pyzx==0.10.5" \
+    "bqskit==1.2.1" \
  && python -m pip uninstall --yes pip \
  && rm -rf /usr/local/lib/python3.13/ensurepip \
            /usr/local/lib/python3.13/site-packages/pip \
