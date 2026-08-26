@@ -2499,6 +2499,119 @@ test("a process that reaches a circle two ways is one process arriving", () => {
  * test. `regionClosure`'s `runEvidence` is where those two are watched, and it
  * watches the register rather than the prose.
  */
+test("a contract's mathematics is mathematics, not a literal underscore at a reader", () => {
+  // **A reader met `P_L` on one card and a rendered subscript on the next.**
+  // `contract.takes` / `.returns` render through `MathText` in both locales, so
+  // `$P_L$` draws a subscript and a bare `P_L` draws the underscore. Measured
+  // before this landed: 10 fields across 5 capabilities carried a bare
+  // subscript — `F_1`, `F_2`, `F_0`, `y_in`, `u_0`, `S_0`, `P_L` — while 4 other
+  // contract fields already used `$…$`. It is drift, not a choice: the newer
+  // regions (`state-discrimination-search`, `combinatorial-optimization`) were
+  // authored with maths and the older ODE and error-correction contracts predate
+  // it.
+  //
+  // The subscript half is CLOSED, so it is asserted at zero. The Unicode half is
+  // not, so it is pinned as a worklist — the same shape `check-math.mjs` uses for
+  // its own `U†` list, and for the same reason: converting `‖A(t)‖` to
+  // `\lVert A(t)\rVert` is a re-authoring, and a gate that demanded it would have
+  // blocked the transcription that is safe.
+  const SYMBOLS = "≥≤⟩⟨‖†⊗√≈≠∈∑∏∫αβγδεθλμνπρσφχψωΩΓΔΛΠΣΦΨ";
+  const outsideMath = (value: string): string => value.replace(/\$[^$]*\$/g, "");
+  // The formulas themselves, in order-insensitive form. A contract's two locales
+  // describe the same interface in two languages, so the prose differs by
+  // construction and the mathematics must not: `$\varepsilon$` in English is
+  // `$\varepsilon$` in Japanese.
+  const mathSpans = (value: string): string[] =>
+    [...value.matchAll(/\$([^$]*)\$/g)].map((match) => match[1].trim()).sort();
+
+  const bareSubscripts: string[] = [];
+  const unicodeOutside = new Set<string>();
+  const localeMathDrift: string[] = [];
+  let fields = 0;
+  for (const node of LAYER_GRAPH.nodes) {
+    if (!isCapability(node)) continue;
+    const contract = node.contract;
+    for (const key of ["takes", "takesJa", "returns", "returnsJa"] as const) {
+      const value = contract[key];
+      if (typeof value !== "string" || value.length === 0) continue;
+      fields += 1;
+      const prose = outsideMath(value);
+      // A single symbol followed by `_` outside `$…$`. Written to match what a
+      // reader sees rather than what an author meant: the underscore is the tell.
+      //
+      // **Unicode-aware on both halves, and it has to be.** An ASCII-only
+      // `[A-Za-z]` walks straight past `α_0`, and an ASCII-only guard character
+      // walks past `\alpha_0` — the `a` that ends the command is preceded by `h`,
+      // so nothing matches and a reader still meets the raw underscore. Both
+      // shapes are the same defect as `P_L`, and both now count. The guard class
+      // is what keeps `snake_case` prose out: a letter preceded by another letter
+      // is a word, not a symbol, which is why `y_in` was caught and `foo_bar`
+      // never was. Measured at zero for all three shapes when this landed.
+      if (/(?:^|[^\\\p{L}\p{N}_])(?:\\[A-Za-z]+|\p{L})_\{?[\p{L}\p{N}]/u.test(prose)) {
+        bareSubscripts.push(`${node.id}.${key}`);
+      }
+      if ([...SYMBOLS].some((symbol) => prose.includes(symbol))) {
+        unicodeOutside.add(`${node.id}.${key}`);
+      }
+    }
+    // **The two sweeps above judge each locale on its own, so a pair can be
+    // individually clean and still disagree.** `takes` and `takesJa` are one
+    // interface written twice; if the English says $\varepsilon$ and the Japanese
+    // says $\epsilon$ — or drops the formula, or carries an extra one — the two
+    // locales document different mathematics and both halves pass every
+    // assertion above. `check-math.mjs` already pairs these fields, but its rule
+    // is only whether `$` appears in both, which cannot see a formula change
+    // inside the delimiters. Compared as a multiset because sentence order is a
+    // translator's choice and the set of formulas is not. 62 pairs, zero drift
+    // when this landed.
+    for (const [en, ja] of [
+      ["takes", "takesJa"],
+      ["returns", "returnsJa"],
+    ] as const) {
+      const english = contract[en];
+      const japanese = contract[ja];
+      if (typeof english !== "string" || typeof japanese !== "string") continue;
+      if (english.trim() === "" || japanese.trim() === "") continue;
+      const left = mathSpans(english);
+      const right = mathSpans(japanese);
+      if (left.join("\u0000") !== right.join("\u0000")) {
+        const onlyEnglish = left.filter((span) => !right.includes(span));
+        const onlyJapanese = right.filter((span) => !left.includes(span));
+        localeMathDrift.push(
+          `${node.id}.${en}: en-only ${JSON.stringify(onlyEnglish)}, ja-only ${JSON.stringify(onlyJapanese)}`,
+        );
+      }
+    }
+  }
+
+  assert.ok(fields >= 124, `only ${fields} contract fields swept — the sweep has stopped finding them`);
+  assert.deepEqual(
+    bareSubscripts,
+    [],
+    `a contract writes a subscript outside $…$, so a reader sees the underscore: ${bareSubscripts.join(", ")}`,
+  );
+
+  // **Both halves are closed**, so both are asserted at zero rather than one being
+  // pinned as a worklist. The first version of this test pinned the Unicode half at
+  // 36 of 124 and said so out loud; the same change then closed it across 13 more
+  // capabilities, and a pin left at 36 would have quietly permitted 36 to come back.
+  assert.deepEqual(
+    [...unicodeOutside].sort(),
+    [],
+    `a contract writes a Unicode maths symbol outside $…$, so it reaches a reader as a ` +
+      `character rather than as mathematics. Write it as LaTeX inside $…$ — \\varepsilon, ` +
+      `\\lVert…\\rVert, \\ge, \\lvert 0\\rangle — never the character wrapped in dollars, which ` +
+      `check-math.mjs counts as its own worklist: ${[...unicodeOutside].slice(0, 6).join(", ")}`,
+  );
+
+  assert.deepEqual(
+    localeMathDrift,
+    [],
+    `a contract's two locales carry different mathematics for the same field, so the ` +
+      `English and Japanese pages document different interfaces: ${localeMathDrift.join(" | ")}`,
+  );
+});
+
 test("the linear-ODE region does not go backwards on the half that is closed", () => {
   const SLOTS = [
     "linear-ode-solve",
