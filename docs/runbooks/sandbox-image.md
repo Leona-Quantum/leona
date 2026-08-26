@@ -55,9 +55,12 @@ check on every PR touching the Dockerfile, against `majorana-runner:ci`.
 repo on disk, so it bind-mounts `optimizer_kernel.py` into a local container with
 `docker run -v`. Step 4 runs against a REMOTE Vercel Sandbox, which has no
 bind-mount, so it concatenates the kernel's source into the `-c` argument instead.
-Same kernel, same payload shape, same six compilers, two transports. If you change
-one, change the other — and the thing to keep identical is the *kernel* being
-exercised, not the wrapper around it.
+Same kernel, same seven operations, same `qubit_count` and `optimization_level`,
+same six compilers — two transports. They were NOT the same until CodeRabbit
+caught it on leona#789: this runbook used a three-qubit circuit with no `RZ`
+while CI used a two-qubit Clifford+T one, and the prose claimed they matched.
+They now do, and the counts below were re-measured against the aligned payload
+rather than carried over. If you change one, change the other.
 
 ## What the image is, and where it is referenced
 
@@ -158,10 +161,20 @@ same file with a payload and run it — which is what the snippet below does:
 
 ```bash
 python3 - <<'COMPOSE' > /tmp/kernelcheck.b64
-import base64, pathlib
+import base64, math, pathlib
 kernel = pathlib.Path("packages/py/frameworks/src/majorana_frameworks/optimizer_kernel.py").read_text()
-ops = [{"gate": g, "qubits": q, "angle_radians": None} for g, q in
-       [("H", [0]), ("CX", [0, 1]), ("CX", [1, 2]), ("T", [2]), ("T", [2]), ("H", [0]), ("H", [0])]]
+# The SAME seven operations sandbox-image.yml uses, so the two checks are
+# comparable run for run. Clifford+T only and small: PyZX refuses non-pi/4
+# rotations and BQSKit is capped at 8 qubits / 128 operations.
+ops = [
+    {"gate": "H",  "qubits": [0],    "angle_radians": None},
+    {"gate": "CX", "qubits": [0, 1], "angle_radians": None},
+    {"gate": "T",  "qubits": [1],    "angle_radians": None},
+    {"gate": "T",  "qubits": [1],    "angle_radians": None},
+    {"gate": "RZ", "qubits": [1],    "angle_radians": math.pi / 4},
+    {"gate": "CX", "qubits": [0, 1], "angle_radians": None},
+    {"gate": "H",  "qubits": [0],    "angle_radians": None},
+]
 driver = """
 import json as _json
 _r = {}
@@ -172,7 +185,7 @@ for _c in ["qiskit", "cirq", "pennylane", "pytket", "pyzx", "bqskit"]:
               "n_ops": len(_o.get("operations", [])) if _o.get("ok") else None}
 print("KERNEL_RESULT " + _json.dumps(_r))
 """
-payload = {"qubit_count": 3, "optimization_level": 2, "operations": ops}
+payload = {"qubit_count": 2, "optimization_level": 2, "operations": ops}
 composed = kernel + "\n\n_PAYLOAD = " + repr(payload) + "\n" + driver
 compile(composed, "<verify>", "exec")
 print(base64.b64encode(composed.encode()).decode())
@@ -190,18 +203,19 @@ first image carrying the Studio compiler lane — it returned:
 
 | compiler | version | operations returned |
 |---|---|---|
-| qiskit | 2.5.0 | 4 |
-| cirq | 1.6.1 | 18 |
-| pennylane | 0.43.1 | 5 |
-| pytket | 2.18.1 | 6 |
-| pyzx | 0.10.5 | 7 |
-| bqskit | 1.2.1 | 12 |
+| qiskit | 2.5.0 | 5 |
+| cirq | 1.6.1 | 6 |
+| pennylane | 0.43.1 | 7 |
+| pytket | 2.18.1 | 7 |
+| pyzx | 0.10.5 | 5 |
+| bqskit | 1.2.1 | 17 |
 
 **This is the same check `.github/workflows/sandbox-image.yml` runs on every PR
 that touches the Dockerfile**, against `majorana-runner:ci`, by bind-mounting the
 kernel into a local container. Here the sandbox is remote and there is no
-bind-mount, so the source is concatenated into `-c` instead. Keep the two agreeing
-on the kernel and the payload; the transport is allowed to differ.
+bind-mount, so the source is concatenated into `-c` instead. The kernel and the
+payload are identical on purpose; only the transport differs, and only because it
+has to.
 
 **A `compiler_unavailable` code here is the #262 failure**, caught one step before
 it ships: `compile_operations` maps `ImportError` to that code by name, so a
