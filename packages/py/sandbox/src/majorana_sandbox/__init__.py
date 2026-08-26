@@ -11,7 +11,13 @@ step 2 — archived; the live stage map is plans/roadmap/00-INDEX.md):
      NOT a security boundary, cannot deny network).
 
 Always execute via `base.run(sandbox, spec)`, which applies the guard + preflight
-before touching a provider."""
+before touching a provider.
+
+One deliberate second door: `trusted.run_trusted` executes a program THIS repo
+authored and registered by digest, in the same boundary, without the
+generated-code import allowlist — because that allowlist describes what a model
+may import, not what we may. See trusted.py's docstring for what keeps user text
+out of it."""
 
 from majorana_sandbox.base import GuardRejection, Sandbox, run
 from majorana_sandbox.guard import GuardResult, check_python_code
@@ -24,6 +30,15 @@ from majorana_sandbox.spec import (
     QubitCeilingExceeded,
     SandboxResult,
     preflight,
+)
+from majorana_sandbox.trusted import (
+    MAX_PAYLOAD_BYTES,
+    TrustedPayloadTooLarge,
+    TrustedProgramRejected,
+    compose_trusted,
+    is_registered,
+    register_trusted_program,
+    run_trusted,
 )
 from majorana_sandbox.vercel import DENY_ALL_EGRESS, SandboxProviderError, VercelSandbox
 
@@ -44,4 +59,11 @@ __all__ = [
     "VercelSandbox",
     "DENY_ALL_EGRESS",
     "SandboxProviderError",
+    "register_trusted_program",
+    "is_registered",
+    "compose_trusted",
+    "run_trusted",
+    "TrustedProgramRejected",
+    "TrustedPayloadTooLarge",
+    "MAX_PAYLOAD_BYTES",
 ]

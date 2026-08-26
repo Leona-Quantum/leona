@@ -5,6 +5,30 @@ description = "Framework-native circuit source and optional OpenQASM interchange
 requires-python = ">=3.12"
 dependencies = ["majorana-contracts"]
 
+# NO `optimizers` EXTRA, and that absence is the answer to ai-ops#186.
+#
+# There was one, listing the six compiler SDKs, and `services/worker` required
+# it. `services/api/Dockerfile` builds ONE image with `uv sync --all-packages`,
+# and `deploy.yml` runs BOTH `majorana-api` and `majorana-worker` from it with
+# different `--command`s, so that extra put six compiler stacks — including
+# PyZX's ipywidgets → ipython → pexpect → ptyprocess chain, a PTY spawner —
+# into both processes that hold database, WorkOS and provider credentials.
+# Measured on that tree: 151 packages installed against 129 without PyZX, and
+# 21 of the 22 added existed only for the notebook stack.
+#
+# The owner's answer was option A: the compilers execute in `infra/sandbox`'s
+# rootfs instead, which holds no credentials and is created with deny-all
+# egress. `optimizer_kernel.py` is shipped there as source and run through
+# `majorana_sandbox.run_trusted`; the SDKs are pinned in
+# `infra/sandbox/Dockerfile` and proved by `sandbox-image.yml`, which compiles
+# a real circuit through all six inside that image on every PR that touches it.
+#
+# The SDKs are still needed to TEST the adapters, so they are in the root dev
+# group — the same place, and for the same reason, `cirq-core` and `pennylane`
+# already were. `--no-dev` in the Dockerfile is what keeps them out of
+# production. Re-adding an extra here that `services/` depends on would undo
+# the ruling silently, so do not; add to the sandbox image instead.
+
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"

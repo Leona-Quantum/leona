@@ -58,6 +58,33 @@ export const BASELINE_KIND_VALUES = [
   "none",
 ] as const;
 
+/** CircuitCompiler — 6 members. */
+export const CIRCUIT_COMPILER_VALUES = [
+  "qiskit",
+  "cirq",
+  "pytket",
+  "pennylane",
+  "pyzx",
+  "bqskit",
+] as const;
+
+/** CircuitOptimizationGate — 13 members. */
+export const CIRCUIT_OPTIMIZATION_GATE_VALUES = [
+  "H",
+  "X",
+  "Y",
+  "Z",
+  "S",
+  "T",
+  "RX",
+  "RY",
+  "RZ",
+  "CX",
+  "CZ",
+  "SWAP",
+  "M",
+] as const;
+
 /** EvidenceStrength — 2 members. */
 export const EVIDENCE_STRENGTH_VALUES = [
   "physical",

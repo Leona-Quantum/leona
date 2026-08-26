@@ -42,6 +42,14 @@ import { artifactExportManifest } from "../../../lib/artifact-export";
 import { restoreRefusalLosses, versionPageFromResource, type ArtifactVersionSummary, type RestoreLoss, type VersionOrigin } from "../../../lib/artifact-versions";
 import { studioVerificationDisplayState } from "../../../lib/verification-display";
 import { DEFAULT_STUDIO_PANEL, STUDIO_PANELS, type StudioPanel } from "../../../lib/studio-panels";
+import { circuitStepSignature, compressCircuit, type CircuitCompressionStrategy } from "../../../lib/studio-compression";
+import {
+  builderStepsFromExternalResult,
+  circuitOptimizationRequest,
+  externalOptimizationResultFromEvent,
+  type CircuitOptimizationResult,
+  type ExternalCircuitCompiler,
+} from "../../../lib/studio-external-compression";
 import { PanelTabs, panelRegion } from "../../../components/panel-tabs";
 
 // Tab order is the working order: you write code, you run it, you look at what
@@ -1314,8 +1322,8 @@ function StudioDots() {
 
 const ANGLE_OPTIONS = ["pi/8", "pi/4", "pi/2", "pi", "3*pi/2", "2*pi"];
 
-// Exported only for tests/forms/studio-custom-gate.test.tsx (ai-ops issue 123) —
-// the custom-gate <form> inside it had never been submitted by any check.
+// Exported for the focused CircuitBuilder form tests. The custom-gate <form>
+// inside it had never been submitted by any check before ai-ops issue 123.
 // Not part of the module's public surface otherwise; StudioWorkspace is.
 export function CircuitBuilder({ seed, framework, selectedGate, onSelectGate, onApply, onCircuitChange, hidden, popout, onTogglePopout, region, copy, syncState, onRebuildFromCode, sourceCode }: { seed: BuilderSeed; framework: StudioFramework; selectedGate: string; onSelectGate: (gate: string) => void; onApply: (codes: BuilderCodeVariants) => void; onCircuitChange?: (circuit: { qubitCount: number; steps: BuilderStep[]; customGates: CustomGateDefinition[] }) => void; hidden: boolean; popout: boolean; onTogglePopout: () => void; region?: Record<string, string>; copy: StudioCopy; syncState: CircuitSyncState; onRebuildFromCode: () => void; sourceCode: string }) {
   const [qubitCount, setQubitCount] = useState(seed.qubitCount);
@@ -1328,14 +1336,108 @@ export function CircuitBuilder({ seed, framework, selectedGate, onSelectGate, on
   const [customGateName, setCustomGateName] = useState("");
   const [builderMessage, setBuilderMessage] = useState<string | null>(null);
   const [applyConfirmPending, setApplyConfirmPending] = useState(false);
+  const [compressionStrategy, setCompressionStrategy] = useState<CircuitCompressionStrategy>("balanced");
+  const [optimizationMode, setOptimizationMode] = useState<"local" | "compiler">("compiler");
+  const [compressionConfirmPending, setCompressionConfirmPending] = useState(false);
+  const [compressionSnapshot, setCompressionSnapshot] = useState<{ before: BuilderStep[]; afterSignature: string } | null>(null);
+  const [externalCompiler, setExternalCompiler] = useState<ExternalCircuitCompiler>("qiskit");
+  const [externalLevel, setExternalLevel] = useState(2);
+  const [externalBusy, setExternalBusy] = useState(false);
+  const [externalRunId, setExternalRunId] = useState<string | null>(null);
+  const [externalResult, setExternalResult] = useState<CircuitOptimizationResult | null>(null);
+  const [externalError, setExternalError] = useState<string | null>(null);
+  const [externalConfirmPending, setExternalConfirmPending] = useState(false);
+  const externalStreamRef = useRef<EventSource | null>(null);
+  // `runExternalCompression` awaits a POST before it opens its stream, so the
+  // unmount cleanup below can run while that request is still in flight. An
+  // `EventSource` constructed after that point is held by nothing that will
+  // ever close it. This ref is how the continuation learns it is too late.
+  const mountedRef = useRef(true);
+  // The other way that continuation can be too late, and it is the one a user
+  // actually hits: edit the circuit — or switch compiler, or change level —
+  // while the POST is in flight. The effect below tears down the current run,
+  // but it cannot reach into an awaited `fetch`, so without this the
+  // continuation still opens a stream and stores a result measured against a
+  // circuit that no longer exists, under a `before` the panel then shows
+  // beside the new one. Bumped by that same effect, captured before the
+  // request, compared after it.
+  const externalRunSeqRef = useRef(0);
 
   // A pending confirmation describes one specific pair of a diagram and a
   // source. If either side moves — the code is edited again, the canvas is
   // changed, or the two come back into agreement — the armed button would be
   // consenting to something the user was never shown, so disarm it.
+  //
+  // **`externalCompiler` and `externalLevel` are in here because the choice of
+  // compiler moves one side of that pair.** They were in the dep array of the
+  // effect below, which clears the RESULT, and not in this one, which disarms
+  // the CONSENT — so the two halves of the same fact were kept by different
+  // lists. Arm the external apply on one compiler, switch compilers, run the
+  // new one, and the guard in `applyExternalCompression` sees a pending
+  // confirmation that was granted against a different compiler's output: one
+  // click then runs `setSteps` and `onApply`, overwriting edited source with a
+  // result the user was never asked about. Disarming here is the safe
+  // direction — the worst it costs is a second click.
   useEffect(() => {
     setApplyConfirmPending(false);
-  }, [syncState.kind, sourceCode, steps, qubitCount, customGates]);
+    setCompressionConfirmPending(false);
+    setExternalConfirmPending(false);
+  }, [
+    syncState.kind,
+    sourceCode,
+    steps,
+    qubitCount,
+    customGates,
+    compressionStrategy,
+    externalCompiler,
+    externalLevel,
+  ]);
+
+  useEffect(() => () => {
+    mountedRef.current = false;
+    externalStreamRef.current?.close();
+  }, []);
+
+  useEffect(() => {
+    // Retires every run in flight for the previous circuit/compiler/level, the
+    // awaited ones included — see `externalRunSeqRef`. Closing the stream only
+    // reaches a run that got as far as opening one.
+    externalRunSeqRef.current += 1;
+    externalStreamRef.current?.close();
+    externalStreamRef.current = null;
+    setExternalBusy(false);
+    setExternalResult(null);
+    setExternalError(null);
+    setExternalRunId(null);
+  }, [steps, qubitCount, externalCompiler, externalLevel]);
+
+  const compression = useMemo(
+    () => compressCircuit(steps, compressionStrategy),
+    [steps, compressionStrategy],
+  );
+  const externalCompiledSteps = useMemo(
+    () => externalResult ? builderStepsFromExternalResult(externalResult) : null,
+    [externalResult],
+  );
+  const canUndoCompression = Boolean(
+    compressionSnapshot
+    && compressionSnapshot.afterSignature === circuitStepSignature(steps)
+    && syncState.kind === "in_sync",
+  );
+  const compressionOptions: { value: CircuitCompressionStrategy; label: string; description: string }[] = [
+    { value: "balanced", label: copy.compressionBalanced, description: copy.compressionBalancedDescription },
+    { value: "inverse_cancellation", label: copy.compressionInverse, description: copy.compressionInverseDescription },
+    { value: "rotation_folding", label: copy.compressionRotations, description: copy.compressionRotationsDescription },
+    { value: "pattern_rewrite", label: copy.compressionPatterns, description: copy.compressionPatternsDescription },
+  ];
+  const externalCompilerOptions: { value: ExternalCircuitCompiler; label: string; description: string; recommended?: boolean }[] = [
+    { value: "qiskit", label: copy.externalQiskit, description: copy.externalQiskitDescription, recommended: true },
+    { value: "cirq", label: copy.externalCirq, description: copy.externalCirqDescription },
+    { value: "pytket", label: copy.externalPytket, description: copy.externalPytketDescription },
+    { value: "pennylane", label: copy.externalPennyLane, description: copy.externalPennyLaneDescription },
+    { value: "pyzx", label: copy.externalPyZX, description: copy.externalPyZXDescription },
+    { value: "bqskit", label: copy.externalBqskit, description: copy.externalBqskitDescription },
+  ];
 
   const onCircuitChangeRef = useRef(onCircuitChange);
   onCircuitChangeRef.current = onCircuitChange;
@@ -1469,6 +1571,146 @@ export function CircuitBuilder({ seed, framework, selectedGate, onSelectGate, on
     }
   }
 
+  function applyCompression() {
+    if (!compression.changed) return;
+    if (syncState.kind !== "in_sync" && !compressionConfirmPending) {
+      setCompressionConfirmPending(true);
+      setBuilderMessage(copy.compressionOverwrite);
+      return;
+    }
+    // Keep a distinct array even when `steps` is still the original seed. The
+    // builder deliberately suppresses persistence for the untouched seed by
+    // reference identity; an undo is a real edit and must not be mistaken for
+    // that untouched mount state.
+    const before = [...steps];
+    const compressed = compression.steps;
+    setSteps(compressed);
+    setSelectedStepIds([]);
+    setPendingQubits([]);
+    setCompressionConfirmPending(false);
+    setApplyConfirmPending(false);
+    setCompressionSnapshot({ before, afterSignature: circuitStepSignature(compressed) });
+    onApply(generateBuilderCode(compressed, qubitCount, customGates));
+    setBuilderMessage(copy.compressionApplied(
+      compression.removedOperations,
+      compression.before.depth,
+      compression.after.depth,
+    ));
+  }
+
+  function undoCompression() {
+    if (!compressionSnapshot || !canUndoCompression) return;
+    const restored = compressionSnapshot.before;
+    setSteps(restored);
+    setSelectedStepIds([]);
+    setPendingQubits([]);
+    setCompressionSnapshot(null);
+    onApply(generateBuilderCode(restored, qubitCount, customGates));
+    setBuilderMessage(copy.compressionUndone);
+  }
+
+  async function runExternalCompression() {
+    externalStreamRef.current?.close();
+    setExternalResult(null);
+    setExternalError(null);
+    setExternalRunId(null);
+    let request;
+    try {
+      request = circuitOptimizationRequest(externalCompiler, qubitCount, steps, externalLevel);
+    } catch (cause) {
+      setExternalError(cause instanceof Error ? cause.message : copy.externalFailed);
+      return;
+    }
+    setExternalBusy(true);
+    const seq = externalRunSeqRef.current;
+    try {
+      const response = await fetch("/api/runs", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Idempotency-Key": crypto.randomUUID(),
+        },
+        body: JSON.stringify({
+          task_prompt: `Compile the bounded Studio circuit with ${externalCompiler}.`,
+          mode: "execute",
+          framework: "qiskit",
+          circuit_optimization: request,
+        }),
+      });
+      const payload = (await response.json()) as unknown;
+      // Too late, in either of the two ways. Unmounted: the cleanup that closes
+      // the stream has already run, so anything opened here is unreachable, and
+      // there is no panel to report an error to. Superseded: the circuit,
+      // compiler or level moved while this was in flight, so a result from it
+      // would be measured against something the user is no longer looking at.
+      // Either way, stop before opening a stream.
+      if (!mountedRef.current || externalRunSeqRef.current !== seq) return;
+      const submittedRunId = submittedId(payload);
+      if (!response.ok || !submittedRunId) {
+        throw new Error(refusalSentence(payload) ?? copy.externalFailed);
+      }
+      setExternalRunId(submittedRunId);
+      const stream = new EventSource(`/api/runs/${encodeURIComponent(submittedRunId)}/events/stream`);
+      externalStreamRef.current = stream;
+      stream.addEventListener("compilation.result", (event) => {
+        const wire = parseCompilerEvent(event);
+        const result = externalOptimizationResultFromEvent(wire);
+        if (result) {
+          setExternalResult(result);
+          setExternalError(null);
+        } else {
+          setExternalError(compilerEventReason(wire) ?? copy.externalFailed);
+        }
+        setExternalBusy(false);
+        stream.close();
+        externalStreamRef.current = null;
+      });
+      stream.addEventListener("run.error", (event) => {
+        const wire = parseCompilerEvent(event);
+        setExternalError(compilerEventReason(wire) ?? copy.externalFailed);
+        setExternalBusy(false);
+        stream.close();
+        externalStreamRef.current = null;
+      });
+      stream.onerror = () => {
+        setExternalError(copy.externalConnectionLost);
+        setExternalBusy(false);
+        stream.close();
+        externalStreamRef.current = null;
+      };
+    } catch (cause) {
+      // Same two ways of being too late. A refusal earned by the previous
+      // circuit must not surface as a failure of the one now on screen.
+      if (!mountedRef.current || externalRunSeqRef.current !== seq) return;
+      setExternalError(cause instanceof Error ? cause.message : copy.externalFailed);
+      setExternalBusy(false);
+    }
+  }
+
+  function applyExternalCompression() {
+    if (!externalResult || !externalCompiledSteps) return;
+    const compiled = externalCompiledSteps;
+    if (circuitStepSignature(compiled) === circuitStepSignature(steps)) return;
+    if (syncState.kind !== "in_sync" && !externalConfirmPending) {
+      setExternalConfirmPending(true);
+      setBuilderMessage(copy.compressionOverwrite);
+      return;
+    }
+    const before = [...steps];
+    setSteps(compiled);
+    setSelectedStepIds([]);
+    setPendingQubits([]);
+    setExternalConfirmPending(false);
+    setApplyConfirmPending(false);
+    setCompressionSnapshot({ before, afterSignature: circuitStepSignature(compiled) });
+    onApply(generateBuilderCode(compiled, qubitCount, customGates));
+    setBuilderMessage(copy.externalApplied(
+      externalCompilerName(externalResult.compiler),
+      externalResult.before.gate_count ?? 0,
+      externalResult.after.gate_count ?? 0,
+    ));
+  }
+
 
   return (
     <StudioPanelSurface
@@ -1478,7 +1720,7 @@ export function CircuitBuilder({ seed, framework, selectedGate, onSelectGate, on
       heading={copy.generatedPreview}
       meta={(
         <span className="mj-mono-muted">
-          {frameworkLabel(framework)} · {qubitCount}q · {seed.operationCount} ops
+          {frameworkLabel(framework)} · {qubitCount}q · {seed.readOnly ? seed.operationCount : steps.length} ops
           {seed.readOnly ? ` · ${copy.readOnly}` : ""}
         </span>
       )}
@@ -1553,6 +1795,166 @@ export function CircuitBuilder({ seed, framework, selectedGate, onSelectGate, on
         }}
       />
 
+      {seed.readOnly ? null : (
+        <section className="mj-studio-optimizer" aria-labelledby="studio-optimizer-heading">
+          <header className="mj-studio-optimizer-head">
+            <div>
+              <h3 id="studio-optimizer-heading">{copy.compression}</h3>
+              <p>{copy.compressionIntro}</p>
+            </div>
+          </header>
+
+          <ol className="mj-studio-optimizer-steps" aria-label={copy.optimizationWorkflowLabel}>
+            {[copy.optimizationStepChoose, copy.optimizationStepCompare, copy.optimizationStepApply].map((label, index) => (
+              <li key={label}><span>{index + 1}</span>{label}</li>
+            ))}
+          </ol>
+
+          <div className="mj-studio-optimizer-tabs" role="tablist" aria-label={copy.compression}>
+            <button
+              id="studio-optimizer-local-tab"
+              type="button"
+              role="tab"
+              aria-selected={optimizationMode === "local"}
+              aria-controls="studio-optimizer-local-panel"
+              onClick={() => setOptimizationMode("local")}
+            >
+              <span><strong>{copy.optimizationLocal}</strong><small>{copy.optimizationLocalDescription}</small></span>
+            </button>
+            <button
+              id="studio-optimizer-compiler-tab"
+              type="button"
+              role="tab"
+              aria-selected={optimizationMode === "compiler"}
+              aria-controls="studio-optimizer-compiler-panel"
+              onClick={() => setOptimizationMode("compiler")}
+            >
+              <span><strong>{copy.optimizationExternal}</strong><small>{copy.optimizationExternalDescription}</small></span>
+              <b aria-hidden="true">6</b>
+            </button>
+          </div>
+
+          {optimizationMode === "local" ? (
+            <div id="studio-optimizer-local-panel" className="mj-studio-optimizer-panel" role="tabpanel" aria-labelledby="studio-optimizer-local-tab">
+              <fieldset className="mj-studio-compression-strategies">
+                <legend className="mj-section-label">{copy.compressionStrategy}</legend>
+                <div>
+                  {compressionOptions.map((option) => (
+                    <label key={option.value} data-selected={compressionStrategy === option.value ? "true" : undefined}>
+                      <input
+                        type="radio"
+                        name="studio-compression-strategy"
+                        value={option.value}
+                        checked={compressionStrategy === option.value}
+                        onChange={() => setCompressionStrategy(option.value)}
+                      />
+                      <span><strong>{option.label}</strong><small>{option.description}</small></span>
+                    </label>
+                  ))}
+                </div>
+              </fieldset>
+
+              <dl className="mj-studio-compression-metrics" aria-live="polite">
+                <CompressionMetric label={copy.compressionOperations} before={compression.before.operations} after={compression.after.operations} />
+                <CompressionMetric label={copy.compressionDepth} before={compression.before.depth} after={compression.after.depth} />
+                <CompressionMetric label={copy.compressionTwoQubit} before={compression.before.twoQubitOperations} after={compression.after.twoQubitOperations} />
+              </dl>
+
+              <p className="mj-studio-compression-boundary">{copy.compressionBoundary}</p>
+              {!compression.changed ? <p className="mj-studio-compression-empty" role="status">{copy.compressionNoChange}</p> : null}
+              <div className="mj-studio-compression-actions">
+                <button className="mj-primary-button" type="button" onClick={applyCompression} disabled={!compression.changed}>
+                  {compressionConfirmPending ? copy.compressionConfirmApply : copy.compressionApply}
+                </button>
+                {compressionConfirmPending ? (
+                  <button className="mj-secondary-button" type="button" onClick={() => { setCompressionConfirmPending(false); setBuilderMessage(null); }}>{copy.cancel}</button>
+                ) : null}
+                {canUndoCompression ? <button className="mj-secondary-button" type="button" onClick={undoCompression}>{copy.compressionUndo}</button> : null}
+              </div>
+            </div>
+          ) : (
+            <div id="studio-optimizer-compiler-panel" className="mj-studio-optimizer-panel" role="tabpanel" aria-labelledby="studio-optimizer-compiler-tab">
+              <div className="mj-studio-external-compression-head">
+                <div>
+                  <h4>{copy.externalCompilation}</h4>
+                  <p>{copy.externalIntro}</p>
+                </div>
+                <label>
+                  <span>{copy.externalLevel}</span>
+                  <select value={externalLevel} onChange={(event) => setExternalLevel(Number(event.target.value))} disabled={externalBusy}>
+                    {[1, 2, 3].map((level) => <option key={level} value={level}>{copy.externalLevelOption(level)}</option>)}
+                  </select>
+                  <small>{copy.externalLevelHelp}</small>
+                </label>
+              </div>
+              <fieldset className="mj-studio-compression-strategies mj-studio-compiler-grid">
+                <legend className="mj-section-label">{copy.externalCompiler}</legend>
+                <div>
+                  {externalCompilerOptions.map((option) => (
+                    <label key={option.value} data-selected={externalCompiler === option.value ? "true" : undefined}>
+                      <input
+                        type="radio"
+                        name="studio-external-compiler"
+                        value={option.value}
+                        checked={externalCompiler === option.value}
+                        disabled={externalBusy}
+                        onChange={() => setExternalCompiler(option.value)}
+                      />
+                      <span>
+                        <span className="mj-studio-compiler-name">
+                          <strong>{option.label}</strong>
+                          {option.recommended ? <em>{copy.externalRecommended}</em> : null}
+                        </span>
+                        <small>{option.description}</small>
+                      </span>
+                      <i aria-hidden="true">✓</i>
+                    </label>
+                  ))}
+                </div>
+              </fieldset>
+              <p className="mj-studio-compression-boundary">{copy.externalBoundary}</p>
+              <div className="mj-studio-compression-actions">
+                <button className="mj-primary-button" type="button" disabled={externalBusy || !steps.length} onClick={() => void runExternalCompression()}>
+                  {externalBusy ? copy.externalRunning : copy.externalRunSelected(externalCompilerName(externalCompiler))}
+                </button>
+                {externalRunId ? <a href={`/run/${externalRunId}`}>{copy.externalOpenRun} →</a> : null}
+              </div>
+              {externalError ? <p className="mj-studio-external-error" role="alert">{externalError}</p> : null}
+              {externalResult ? (
+                <div className="mj-studio-external-result" role="status">
+                  <div className="mj-studio-external-result-head">
+                    <strong>{copy.externalPreview(externalCompilerName(externalResult.compiler), externalResult.compiler_version)}</strong>
+                    <span className="mj-mono-muted">{externalResult.before.gate_count ?? 0} → {externalResult.after.gate_count ?? 0} gates</span>
+                  </div>
+                  <dl className="mj-studio-compression-metrics">
+                    <CompressionMetric label={copy.compressionOperations} before={externalResult.before.gate_count ?? 0} after={externalResult.after.gate_count ?? 0} />
+                    <CompressionMetric label={copy.compressionDepth} before={externalResult.before.depth ?? 0} after={externalResult.after.depth ?? 0} />
+                    <CompressionMetric label={copy.compressionTwoQubit} before={externalResult.before.two_qubit_gate_count ?? 0} after={externalResult.after.two_qubit_gate_count ?? 0} />
+                  </dl>
+                  <p>{copy.externalUnverified}</p>
+                  {(externalResult.warnings ?? []).length ? (
+                    <ul>{(externalResult.warnings ?? []).map((warning) => <li key={warning}>{warning}</li>)}</ul>
+                  ) : null}
+                  <div className="mj-studio-compression-actions">
+                    <button
+                      className="mj-primary-button"
+                      type="button"
+                      disabled={externalCompiledSteps === null || circuitStepSignature(externalCompiledSteps) === circuitStepSignature(steps)}
+                      onClick={applyExternalCompression}
+                    >
+                      {externalConfirmPending ? copy.externalConfirmApply : copy.externalApply}
+                    </button>
+                    {externalConfirmPending ? (
+                      <button className="mj-secondary-button" type="button" onClick={() => { setExternalConfirmPending(false); setBuilderMessage(null); }}>{copy.cancel}</button>
+                    ) : null}
+                  </div>
+                </div>
+              ) : null}
+            </div>
+          )}
+        </section>
+      )}
+
       {seed.readOnly ? null : <div className="mj-builder-controls">
         <button className="mj-secondary-button" type="button" onClick={() => changeQubitCount(1)} disabled={qubitCount >= MAX_VIEWABLE_QUBITS}>{copy.addQubit}</button>
         <button className="mj-secondary-button" type="button" onClick={() => changeQubitCount(-1)} disabled={qubitCount <= 1}>{copy.removeQubit}</button>
@@ -1612,6 +2014,42 @@ export function CircuitBuilder({ seed, framework, selectedGate, onSelectGate, on
       </div>
     </StudioPanelSurface>
   );
+}
+
+function CompressionMetric({ label, before, after }: { label: string; before: number; after: number }) {
+  return (
+    <div data-improved={after < before ? "true" : undefined}>
+      <dt>{label}</dt>
+      <dd><span>{before}</span><span aria-hidden="true">→</span><strong>{after}</strong></dd>
+    </div>
+  );
+}
+
+function parseCompilerEvent(event: Event): unknown {
+  const data = (event as MessageEvent).data;
+  if (typeof data !== "string") return null;
+  try {
+    return JSON.parse(data) as unknown;
+  } catch {
+    return null;
+  }
+}
+
+function compilerEventReason(value: unknown): string | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const record = value as Record<string, unknown>;
+  if (typeof record.reason === "string") return record.reason;
+  if (typeof record.message === "string") return record.message;
+  return null;
+}
+
+function externalCompilerName(compiler: ExternalCircuitCompiler): string {
+  if (compiler === "qiskit") return "Qiskit";
+  if (compiler === "cirq") return "Cirq";
+  if (compiler === "pytket") return "pytket";
+  if (compiler === "pennylane") return "PennyLane";
+  if (compiler === "pyzx") return "PyZX";
+  return "BQSKit";
 }
 
 /**

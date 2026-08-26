@@ -56,6 +56,8 @@ EXPORTED = [
     # profile is a property of the circuit, not of an assumption set.
     models.CatalogEntryProfile,
     models.CatalogProfileList,
+    models.CircuitOptimizationRequest,
+    models.CircuitOptimizationResult,
     models.Run,
     models.Qapp,
     models.QappVersion,

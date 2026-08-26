@@ -39,6 +39,29 @@ def test_run_request_accepts_only_supported_response_locales():
         runs.CreateRunRequest(task_prompt="Bell", response_locale="fr")
 
 
+def test_circuit_optimization_request_is_code_free_and_explicitly_execute():
+    optimization = {
+        "compiler": "qiskit",
+        "qubit_count": 1,
+        "operations": [{"gate": "H", "qubits": [0]}],
+    }
+    accepted = runs.CreateRunRequest(
+        task_prompt="Compile this Studio circuit",
+        mode="execute",
+        circuit_optimization=optimization,
+    )
+    assert accepted.circuit_optimization is not None
+    with pytest.raises(ValidationError, match="requires mode=execute"):
+        runs.CreateRunRequest(task_prompt="Compile", circuit_optimization=optimization)
+    with pytest.raises(ValidationError, match="not source_code"):
+        runs.CreateRunRequest(
+            task_prompt="Compile",
+            mode="execute",
+            source_code="print('not accepted')",
+            circuit_optimization=optimization,
+        )
+
+
 async def test_edited_source_creates_explicitly_unverified_immutable_draft(scope, monkeypatch):
     base_id = uuid.uuid4()
     artifact_id = uuid.uuid4()
@@ -156,3 +179,58 @@ async def test_run_and_job_are_bound_to_the_new_draft_version(scope, monkeypatch
     assert captured["run"]["artifact_version_id"] == draft_id
     assert captured["job"]["payload"]["source_code"] == "edited source"
     assert captured["job"]["payload"]["response_locale"] == "en"
+
+
+async def test_circuit_optimization_enqueues_worker_job_without_creating_a_draft(
+    scope, monkeypatch
+):
+    run_id = uuid.uuid4()
+    captured = {}
+    body = runs.CreateRunRequest(
+        task_prompt="Compile this Studio circuit with pytket",
+        mode="execute",
+        framework="qiskit",
+        circuit_optimization={
+            "compiler": "pytket",
+            "qubit_count": 2,
+            "operations": [
+                {"gate": "H", "qubits": [0]},
+                {"gate": "CX", "qubits": [0, 1]},
+            ],
+        },
+    )
+
+    async def no_gate(*_args, **_kwargs):
+        return None
+
+    async def create_run(_scope, _session, **values):
+        captured["run"] = values
+        return SimpleNamespace(id=run_id)
+
+    async def append_event(*_args, **_kwargs):
+        return None
+
+    async def enqueue_job(_session, **values):
+        captured["job"] = values
+
+    async def no_queue(*_args, **_kwargs):
+        return {}
+
+    async def draft_must_not_run(*_args, **_kwargs):
+        raise AssertionError("optimization preview must not persist a source draft")
+
+    monkeypatch.setattr(runs, "_enforce_execute_backstop", no_gate)
+    monkeypatch.setattr(runs, "_create_stale_source_draft", draft_must_not_run)
+    monkeypatch.setattr(runs.runs_repo, "create_run", create_run)
+    monkeypatch.setattr(runs.runs_repo, "append_run_event", append_event)
+    monkeypatch.setattr(runs.runs_repo, "queue_positions", no_queue)
+    monkeypatch.setattr(runs.system, "enqueue_job", enqueue_job)
+    monkeypatch.setattr(runs, "_to_resource", lambda row, queue_position=None: row.id)
+
+    result = await runs.create_run(body, scope, object(), object(), object())
+
+    assert result == run_id
+    assert captured["run"]["artifact_version_id"] is None
+    assert captured["job"]["kind"] == "circuit.optimize"
+    assert captured["job"]["payload"]["circuit_optimization"]["compiler"] == "pytket"
+    assert "source_code" not in captured["job"]["payload"]

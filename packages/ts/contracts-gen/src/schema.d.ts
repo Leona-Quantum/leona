@@ -627,6 +627,95 @@ export interface components {
             type: "chat.error";
         };
         /**
+         * CircuitCompiler
+         * @description Trusted third-party compiler selected for a bounded Studio IR job.
+         * @enum {string}
+         */
+        CircuitCompiler: "qiskit" | "cirq" | "pytket" | "pennylane" | "pyzx" | "bqskit";
+        /**
+         * CircuitOptimizationGate
+         * @description Gate subset that Studio can round-trip through every framework draft.
+         * @enum {string}
+         */
+        CircuitOptimizationGate: "H" | "X" | "Y" | "Z" | "S" | "T" | "RX" | "RY" | "RZ" | "CX" | "CZ" | "SWAP" | "M";
+        /**
+         * CircuitOptimizationOperation
+         * @description One operation in the bounded, code-free Studio compiler interchange.
+         */
+        CircuitOptimizationOperation: {
+            /**
+             * Angle Radians
+             * @default null
+             */
+            angle_radians: number | null;
+            gate: components["schemas"]["CircuitOptimizationGate"];
+            /** Qubits */
+            qubits: number[];
+        };
+        /**
+         * CircuitOptimizationRequest
+         * @description Declarative Studio circuit accepted by the trusted Worker compiler lane.
+         *
+         *     This is intentionally not source code. The worker constructs SDK circuit
+         *     objects from this closed gate set, so selecting a compiler never executes a
+         *     user-supplied import, expression, custom gate, or Python statement.
+         */
+        CircuitOptimizationRequest: {
+            compiler: components["schemas"]["CircuitCompiler"];
+            /** Operations */
+            operations: components["schemas"]["CircuitOptimizationOperation"][];
+            /**
+             * Optimization Level
+             * @default 2
+             */
+            optimization_level: number;
+            /** Qubit Count */
+            qubit_count: number;
+        };
+        /**
+         * CircuitOptimizationResult
+         * @description Compiler output carried inside ``compilation.result.compatibility``.
+         *
+         *     Third-party compiler equivalence is stated honestly as unitary equivalence
+         *     up to global phase. It is not a verification verdict and does not inherit
+         *     evidence from the source artifact.
+         *
+         *     **What ``equivalence`` scopes over, since a request may contain ``M`` and a
+         *     measured circuit is not a unitary.** ``CircuitOptimizationRequest`` already
+         *     refuses a non-terminal measurement — see
+         *     ``circuit_is_bounded_and_measurements_are_terminal`` — so every accepted
+         *     circuit is a unitary prefix followed by a block of terminal measurements.
+         *     The compiler is handed the prefix and nothing else; the measurement block is
+         *     re-appended verbatim and is not part of any rewrite. So the value claims
+         *     unitary equivalence up to global phase **of the prefix**, and identity of
+         *     the tail, which together is the strongest true statement about the whole
+         *     circuit. A result carrying measurements says so in ``warnings`` as well, in
+         *     a sentence a reader sees.
+         */
+        CircuitOptimizationResult: {
+            after: components["schemas"]["ResourceMetrics"];
+            before: components["schemas"]["ResourceMetrics"];
+            compiler: components["schemas"]["CircuitCompiler"];
+            /** Compiler Version */
+            compiler_version: string;
+            /**
+             * Equivalence
+             * @default unitary_up_to_global_phase
+             * @constant
+             */
+            equivalence: "unitary_up_to_global_phase";
+            /** Input Fingerprint */
+            input_fingerprint: string;
+            /** Operations */
+            operations?: components["schemas"]["CircuitOptimizationOperation"][];
+            /** Optimization Level */
+            optimization_level: number;
+            /** Output Fingerprint */
+            output_fingerprint: string;
+            /** Warnings */
+            warnings?: string[];
+        };
+        /**
          * CodeDistanceSummary
          * @description Layer 2's working, not just its answer.
          */

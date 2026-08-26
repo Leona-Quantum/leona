@@ -14,7 +14,7 @@ from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from typing import Any, Awaitable, Callable
 
-from majorana_contracts import QappRangeSmoke, Scope
+from majorana_contracts import CircuitOptimizationRequest, QappRangeSmoke, Scope
 from majorana_contracts.enums import (
     CHAT_USAGE_ROLE,
     EvidenceStrength,
@@ -66,6 +66,8 @@ from majorana_sandbox import (
     Sandbox,
     VercelSandbox,
     check_python_code,
+    register_trusted_program,
+    run_trusted,
     run as run_sandbox,
 )
 from majorana_sandbox.guard import ALLOWED_IMPORTS
@@ -81,6 +83,7 @@ from majorana_api.catalog_import_sources import ImportSource
 from majorana_api.db import AsyncSession
 from majorana_api.jobs import (
     CATALOG_IMPORT_JOB_KIND,
+    CIRCUIT_OPTIMIZE_JOB_KIND,
     QAPP_EXECUTE_JOB_KIND,
     QPU_RUN_JOB_KIND,
     RUN_EXECUTE_JOB_KIND,
@@ -107,6 +110,12 @@ from .agent_llm import MeteredAgentLLM
 from .agent_store import RepoAgentStore
 from .context import EventSink, RunContext
 from .intent import resolve_mode
+from majorana_frameworks.optimizers import (
+    CircuitOptimizationError,
+    build_kernel_payload,
+    kernel_source,
+    result_from_kernel,
+)
 from majorana_frameworks.roles import result_was_derived
 
 from .research import research_enabled
@@ -202,6 +211,14 @@ def _record_verification_summary(summary: dict[str, Any]) -> None:
 def _default_llm() -> LLMClient:
     """Production LLM client for the active provider profile (keys read at call time)."""
     return default_llm()
+
+
+#: The compiler kernel's source, read once at import and registered as a trusted
+#: program. Registration is what lets `run_trusted` refuse anything else: a
+#: caller cannot reach that door with a string it did not put through this
+#: function, and this function is only ever applied to a file in this repo.
+_OPTIMIZER_KERNEL = kernel_source()
+register_trusted_program(_OPTIMIZER_KERNEL)
 
 
 def _default_sandbox() -> Sandbox:
@@ -1019,6 +1036,227 @@ async def _handle_qapp_generation(
     return await store.finish(
         RunStatus.SUCCEEDED,
         {"status": RunStatus.SUCCEEDED, "reason_code": "qapp_generated"},
+    )
+
+
+async def handle_circuit_optimize(session: AsyncSession, payload: dict[str, Any]) -> None:
+    """Compile Studio's closed circuit IR without invoking an LLM or user code.
+
+    The durable Run row and its existing ``compilation.result`` event provide
+    queueing, cancellation, replay, and dead-letter recovery. The compiler
+    result is explicitly unverified and is returned for Studio comparison; it
+    never creates an artifact version or inherits evidence from one.
+    """
+
+    scope = _scope_from_payload(payload)
+    run_id = uuid.UUID(payload["run_id"])
+    run = await runs_repo.get_run(scope, session, run_id)
+    store = RepoRunStateStore(scope, session, run_id)
+    if RunStatus(run.status) is not RunStatus.QUEUED:
+        return
+    request = CircuitOptimizationRequest.model_validate(payload["circuit_optimization"])
+    sink = RepoEventSink(scope, session, run_id)
+    await store.set_status(RunStatus.RUNNING, started_at_now=True)
+    await sink.emit("run.started", {}, event_id=uuid.uuid5(run_id, "run.started"))
+    await sink.emit(
+        "stage.started",
+        {"stage": Stage.COMPILE},
+        event_id=uuid.uuid5(run_id, "stage.started:compile"),
+    )
+    started = asyncio.get_running_loop().time()
+    timeout_s = min(float(run.timeout_s or 60), 60.0)
+    # ai-ops#186, answered *option A*: the compilers run in the sandbox rootfs,
+    # not in this process. The two things that buys, both measured in that issue:
+    #
+    # 1. Six third-party compiler stacks — including PyZX's ipywidgets → ipython →
+    #    pexpect → ptyprocess chain, a PTY spawner — leave the ONE image that
+    #    `deploy.yml` runs both `majorana-api` and `majorana-worker` from. That
+    #    image holds database, WorkOS and provider credentials; the sandbox holds
+    #    none and is created with deny-all egress.
+    #
+    # 2. THE TIMEOUT BECOMES A TIMEOUT. What stood here was
+    #    `asyncio.wait_for(asyncio.to_thread(optimize_circuit, request))`, and
+    #    `wait_for` cancels an awaitable — it cannot interrupt a thread that has
+    #    already started. So `compiler_timeout` was reported to the user while the
+    #    compiler ran on to completion, holding a slot in the loop's DEFAULT
+    #    executor, which is shared with QPU submit (`:2677`), QPU poll (`:2717`)
+    #    and research search. The worker runs `--min-instances == --max-instances`
+    #    with `--no-cpu-throttling`, so it is long-lived and never clears them:
+    #    enough timed-out compiles and QPU submission blocked forever, silently.
+    #    A sandbox timeout destroys the machine the compiler is running on.
+    #
+    # The whole request is a validated, closed, declarative circuit — never source
+    # code — so nothing a user wrote is executed at either end of this call.
+    #
+    # No `qubits_estimate` is passed, on purpose. The 27-qubit lane ceiling in
+    # `spec.preflight` bounds a STATEVECTOR — 2^27 amplitudes at 16 bytes is
+    # exactly the 2 GiB this lane asks for — and a compiler builds no state
+    # vector. The request's own bounds are what apply here: 64 qubits and 1024
+    # operations, refused by `CircuitOptimizationRequest` before a run row
+    # exists, with BQSKit and PyZX narrowing further inside the kernel. Passing
+    # an estimate would refuse a 28-qubit compile that costs nothing to do.
+    result_path = f"/tmp/leona-compile-{run_id.hex}.json"
+    try:
+        sandbox_result = await run_trusted(
+            _default_sandbox(),
+            program=_OPTIMIZER_KERNEL,
+            payload=build_kernel_payload(request),
+            result_path=result_path,
+            timeout_s=max(1, int(timeout_s)),
+            memory_mb=DEFAULT_MEMORY_MB,
+        )
+    except Exception as exc:
+        # A provider that will not start, or a machine destroyed mid-compile.
+        # Which one it was is decided on the wall clock rather than on an
+        # exception type, because the two providers raise differently and a
+        # user-facing code must not depend on which boundary is configured.
+        log.warning(
+            "circuit optimization %s could not run in the sandbox: %s", run_id, type(exc).__name__
+        )
+        elapsed = asyncio.get_running_loop().time() - started
+        await _finish_circuit_optimization_failure(
+            store,
+            sink,
+            request,
+            code="compiler_timeout" if elapsed >= timeout_s else "compiler_internal_error",
+            message=(
+                f"{request.compiler.value} exceeded the {int(timeout_s)} second limit."
+                if elapsed >= timeout_s
+                else f"{request.compiler.value} could not be run ({type(exc).__name__})."
+            ),
+            started=started,
+        )
+        return
+
+    kernel_result = sandbox_result.protected_result
+    if kernel_result is None:
+        # The kernel writes its sidecar on every path it controls, including its
+        # own internal failures, so an absent one means the process did not reach
+        # the end: killed on the wall clock, or an image that cannot run it.
+        elapsed = asyncio.get_running_loop().time() - started
+        timed_out = elapsed >= timeout_s or sandbox_result.duration_ms >= timeout_s * 1000
+        log.warning(
+            "circuit optimization %s returned no sidecar (exit %s, %sms): %s",
+            run_id,
+            sandbox_result.exit_code,
+            sandbox_result.duration_ms,
+            sandbox_result.stderr[-400:],
+        )
+        await _finish_circuit_optimization_failure(
+            store,
+            sink,
+            request,
+            code="compiler_timeout" if timed_out else "compiler_internal_error",
+            message=(
+                f"{request.compiler.value} exceeded the {int(timeout_s)} second limit."
+                if timed_out
+                else f"{request.compiler.value} failed internally in the sandbox."
+            ),
+            started=started,
+        )
+        return
+
+    try:
+        result = result_from_kernel(request, kernel_result)
+    except CircuitOptimizationError as exc:
+        await _finish_circuit_optimization_failure(
+            store,
+            sink,
+            request,
+            code=exc.code,
+            message=str(exc),
+            started=started,
+        )
+        return
+    except Exception as exc:
+        log.exception("circuit optimization %s failed", run_id)
+        await _finish_circuit_optimization_failure(
+            store,
+            sink,
+            request,
+            code="compiler_internal_error",
+            message=f"{request.compiler.value} failed internally ({type(exc).__name__}).",
+            started=started,
+        )
+        return
+
+    if await store.current_status() is RunStatus.CANCELLED:
+        return
+    changed = result.input_fingerprint != result.output_fingerprint
+    reduced = any(
+        after is not None and before is not None and after < before
+        for before, after in (
+            (result.before.gate_count, result.after.gate_count),
+            (result.before.depth, result.after.depth),
+            (result.before.two_qubit_gate_count, result.after.two_qubit_gate_count),
+        )
+    )
+    await sink.emit(
+        "compilation.result",
+        {
+            "accepted": True,
+            "mode": "compressed" if reduced else "transpiled" if changed else "unchanged",
+            "target": request.compiler.value,
+            "source_fingerprint": result.input_fingerprint,
+            "compiled_fingerprint": result.output_fingerprint,
+            "before": result.before.model_dump(mode="json"),
+            "after": result.after.model_dump(mode="json"),
+            "compatibility": {"circuit_optimization": result.model_dump(mode="json")},
+            "reason": (
+                "Third-party compiler output; unitary equivalence is up to global phase "
+                "and was not independently verified."
+            ),
+        },
+    )
+    duration_ms = int((asyncio.get_running_loop().time() - started) * 1000)
+    await sink.emit(
+        "stage.finished", {"stage": Stage.COMPILE, "ok": True, "duration_ms": duration_ms}
+    )
+    await store.finish(
+        RunStatus.SUCCEEDED,
+        {
+            "status": RunStatus.SUCCEEDED,
+            "reason_code": "circuit_optimization_completed",
+            "residual_risks": (
+                "Compiler output was not independently verified. Applying it creates an edited "
+                "Studio draft that must be verified again before use as evidence."
+            ),
+        },
+        residual_risks=(
+            "Compiler output was not independently verified. Applying it requires fresh verification."
+        ),
+    )
+
+
+async def _finish_circuit_optimization_failure(
+    store: RepoRunStateStore,
+    sink: RepoEventSink,
+    request: CircuitOptimizationRequest,
+    *,
+    code: str,
+    message: str,
+    started: float,
+) -> None:
+    duration_ms = int((asyncio.get_running_loop().time() - started) * 1000)
+    await sink.emit(
+        "compilation.result",
+        {
+            "accepted": False,
+            "mode": "rejected",
+            "target": request.compiler.value,
+            "compatibility": {},
+            "reason": message,
+        },
+    )
+    await sink.emit(
+        "stage.finished",
+        {"stage": Stage.COMPILE, "ok": False, "duration_ms": duration_ms},
+    )
+    await sink.emit("run.error", {"stage": Stage.COMPILE, "code": code, "message": message})
+    await store.finish(
+        RunStatus.FAILED,
+        {"status": RunStatus.FAILED, "reason_code": code, "residual_risks": message},
+        residual_risks=message,
     )
 
 
@@ -2658,6 +2896,7 @@ async def handle_qpu_run_dead_letter(
 HANDLERS: dict[str, JobHandler] = {
     RUN_EXECUTE_JOB_KIND: handle_run_execute,
     QAPP_EXECUTE_JOB_KIND: handle_qapp_execute,
+    CIRCUIT_OPTIMIZE_JOB_KIND: handle_circuit_optimize,
     CATALOG_IMPORT_JOB_KIND: handle_catalog_import,
     QPU_RUN_JOB_KIND: handle_qpu_run,
 }
@@ -2665,5 +2904,6 @@ HANDLERS: dict[str, JobHandler] = {
 DEAD_LETTER_HANDLERS: dict[str, DeadLetterHandler] = {
     RUN_EXECUTE_JOB_KIND: handle_run_dead_letter,
     QAPP_EXECUTE_JOB_KIND: handle_qapp_execute_dead_letter,
+    CIRCUIT_OPTIMIZE_JOB_KIND: handle_run_dead_letter,
     QPU_RUN_JOB_KIND: handle_qpu_run_dead_letter,
 }

@@ -35,6 +35,10 @@ on:
     paths:
       - "infra/sandbox/**"
       - ".github/workflows/sandbox-image.yml"
+      # The compiler kernel is executed by the `build` job below, inside the
+      # image this workflow produces. A change to it is a change to what this
+      # rootfs has to be able to run, so it has to re-run the check.
+      - "packages/py/frameworks/src/majorana_frameworks/optimizer_kernel.py"
   schedule:
     # Weekly, Monday 04:00 UTC — an hour after the gitleaks full-history scan in
     # security.yml so the two long jobs do not contend for runners.
@@ -121,6 +125,57 @@ jobs:
       # --network none above is the point: the production sandbox is created with an
       # explicit deny-all egress policy and cannot install anything at runtime, so a
       # package that is missing from the rootfs must fail here rather than there.
+      #
+      # The second check below is the Studio compiler lane (ai-ops#186, option A).
+      # It runs THE SHIPPED KERNEL, mounted read-only out of the tree, rather than
+      # a hand-written snippet — so what CI proves is that the exact source the
+      # worker sends into a sandbox compiles a real circuit in the exact rootfs
+      # this Dockerfile produces. An import check would not have caught the thing
+      # that actually breaks here: bqskit and pyzx both hand their output back
+      # through Qiskit, so a version skew between the image's qiskit and either of
+      # them is a lowering failure, not an ImportError.
+      - name: every Studio compiler compiles a real circuit
+        run: |
+          docker run --rm --network none \
+            -v "$PWD/packages/py/frameworks/src/majorana_frameworks/optimizer_kernel.py:/tmp/kernel.py:ro" \
+            majorana-runner:ci python -c "
+          import importlib.util, json, math, sys
+
+          spec = importlib.util.spec_from_file_location('optimizer_kernel', '/tmp/kernel.py')
+          kernel = importlib.util.module_from_spec(spec)
+          spec.loader.exec_module(kernel)
+
+          # Clifford+T only, and small: PyZX refuses non-pi/4 rotations and BQSKit
+          # is capped at 8 qubits / 128 operations. One circuit all six accept is
+          # what makes a single failure legible.
+          operations = [
+              {'gate': 'H', 'qubits': [0], 'angle_radians': None},
+              {'gate': 'CX', 'qubits': [0, 1], 'angle_radians': None},
+              {'gate': 'T', 'qubits': [1], 'angle_radians': None},
+              {'gate': 'T', 'qubits': [1], 'angle_radians': None},
+              {'gate': 'RZ', 'qubits': [1], 'angle_radians': math.pi / 4},
+              {'gate': 'CX', 'qubits': [0, 1], 'angle_radians': None},
+              {'gate': 'H', 'qubits': [0], 'angle_radians': None},
+          ]
+
+          failures = []
+          for name in ('qiskit', 'cirq', 'pytket', 'pennylane', 'pyzx', 'bqskit'):
+              result = kernel.compile_operations({
+                  'compiler': name,
+                  'qubit_count': 2,
+                  'optimization_level': 2,
+                  'operations': operations,
+              })
+              if not result.get('ok'):
+                  failures.append((name, result.get('code'), result.get('message')))
+                  continue
+              print(name, 'ok', result['version'], len(result['operations']), 'operations')
+          if failures:
+              for name, code, message in failures:
+                  print('FAILED', name, code, message, file=sys.stderr)
+              sys.exit(1)
+          print('all six Studio compilers compiled in the sandbox rootfs')
+          "
       - name: report the size, because it is a cost nobody sees
         run: |
           echo "image size: $(docker image inspect majorana-runner:ci --format '{{.Size}}') bytes"

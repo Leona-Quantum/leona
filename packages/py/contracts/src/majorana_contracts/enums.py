@@ -16,6 +16,35 @@ class Framework(StrEnum):
     QULACS = "qulacs"
 
 
+class CircuitCompiler(StrEnum):
+    """Trusted third-party compiler selected for a bounded Studio IR job."""
+
+    QISKIT = "qiskit"
+    CIRQ = "cirq"
+    PYTKET = "pytket"
+    PENNYLANE = "pennylane"
+    PYZX = "pyzx"
+    BQSKIT = "bqskit"
+
+
+class CircuitOptimizationGate(StrEnum):
+    """Gate subset that Studio can round-trip through every framework draft."""
+
+    H = "H"
+    X = "X"
+    Y = "Y"
+    Z = "Z"
+    S = "S"
+    T = "T"
+    RX = "RX"
+    RY = "RY"
+    RZ = "RZ"
+    CX = "CX"
+    CZ = "CZ"
+    SWAP = "SWAP"
+    MEASURE = "M"
+
+
 class RunMode(StrEnum):
     # AUTO is a *request*, never an outcome: the worker resolves it to one of the
     # modes below from the user's intent before dispatching, and rewrites the run

@@ -16,6 +16,39 @@ were live and inert for a day: the image was not rebuilt, so every run in one of
 the three new frameworks failed with `ModuleNotFoundError` inside the sandbox.
 A merged Dockerfile change is not a shipped Dockerfile change.
 
+## THE STUDIO COMPILER LANE NOW DEPENDS ON THIS IMAGE — promote before you merge
+
+Added by ai-ops#186, answered *option A*. `infra/sandbox/Dockerfile` gained
+`pytket`, `pyzx` and `bqskit`, and Studio's circuit-compression lane runs
+`majorana_frameworks/optimizer_kernel.py` inside this rootfs through
+`majorana_sandbox.run_trusted` — so those six compilers stopped being installed
+in the api+worker image entirely. Measured with one method
+(`uv export --no-dev --all-packages`): 121 packages in that credentialed image
+with the compilers in a runtime extra, **87 without — which is exactly what
+`dev` resolved to before the lane existed.** The lane now adds nothing to the
+process that holds the credentials.
+
+**What that buys you also buys an ordering hazard, and it is #262's.** A merge
+does not move `latest`; step 5 below does. So a PR that lands the compiler lane
+before the image is promoted ships a feature whose SDKs are not there. Three
+things bound how bad that is, in decreasing order of how much you should rely on
+them:
+
+1. **Do the promotion first.** The Dockerfile change and the code change ride in
+   one PR, and `sandbox-image.yml`'s `build` job compiles a real circuit through
+   all six compilers inside the image that PR produces — so a green check is
+   evidence the image *would* work, not that the published one does. Promote the
+   dated tag before merging the code, not after.
+2. The kernel maps `ImportError` to **`compiler_unavailable`** and the worker
+   surfaces it as a typed refusal — "The bqskit compiler is not installed in this
+   sandbox image." That is a legible failure, not a working feature.
+3. Nothing else in the product regresses: the lane is a separate run kind, and
+   the execution lane's frameworks were already in this image.
+
+Step 4's verification should now run a compile as well as a Bell pair. The
+command is in `sandbox-image.yml`'s "every Studio compiler compiles a real
+circuit" step; point it at the dated tag instead of `majorana-runner:ci`.
+
 ## What the image is, and where it is referenced
 
 | | |
@@ -105,7 +138,67 @@ do not budget from that range.
 
 This is the step that would have caught #262. Run it against the **dated tag**,
 before promoting, and with the production network policy — `deny-all` also proves
-the packages are baked into the rootfs rather than being fetched at runtime:
+the packages are baked into the rootfs rather than being fetched at runtime.
+
+**Run the KERNEL, not an import list.** An import proves a wheel unpacked; it does
+not prove the lane works, and for the compiler lane the difference is not
+theoretical. `majorana_frameworks/optimizer_kernel.py` is shipped into this rootfs
+as source by `majorana_sandbox.run_trusted`, so the honest check is to compose that
+same file with a payload and run it — which is what the snippet below does:
+
+```bash
+python3 - <<'COMPOSE' > /tmp/kernelcheck.b64
+import base64, pathlib
+kernel = pathlib.Path("packages/py/frameworks/src/majorana_frameworks/optimizer_kernel.py").read_text()
+ops = [{"gate": g, "qubits": q, "angle_radians": None} for g, q in
+       [("H", [0]), ("CX", [0, 1]), ("CX", [1, 2]), ("T", [2]), ("T", [2]), ("H", [0]), ("H", [0])]]
+driver = """
+import json as _json
+_r = {}
+for _c in ["qiskit", "cirq", "pennylane", "pytket", "pyzx", "bqskit"]:
+    _p = dict(_PAYLOAD); _p["compiler"] = _c
+    _o = compile_operations(_p)
+    _r[_c] = {"ok": _o.get("ok"), "code": _o.get("code"), "version": _o.get("version"),
+              "n_ops": len(_o.get("operations", [])) if _o.get("ok") else None}
+print("KERNEL_RESULT " + _json.dumps(_r))
+"""
+payload = {"qubit_count": 3, "optimization_level": 2, "operations": ops}
+composed = kernel + "\n\n_PAYLOAD = " + repr(payload) + "\n" + driver
+compile(composed, "<verify>", "exec")
+print(base64.b64encode(composed.encode()).decode())
+COMPOSE
+
+B64=$(cat /tmp/kernelcheck.b64)
+npx -y vercel@58.7.1 sandbox run --image "majorana-runner:$TAG" \
+  --network-policy deny-all --rm \
+  --project prj_AtHnlVhlFc1mFNyAb3RvlET2NtBh --scope majoranaq \
+  -- python -c "import base64;exec(base64.b64decode('$B64'))"
+```
+
+Every one of the six must report `"ok": true`. On the 2026-08-26 rebuild — the
+first image carrying the Studio compiler lane — it returned:
+
+| compiler | version | operations returned |
+|---|---|---|
+| qiskit | 2.5.0 | 4 |
+| cirq | 1.6.1 | 18 |
+| pennylane | 0.43.1 | 5 |
+| pytket | 2.18.1 | 6 |
+| pyzx | 0.10.5 | 7 |
+| bqskit | 1.2.1 | 12 |
+
+**A `compiler_unavailable` code here is the #262 failure**, caught one step before
+it ships: `compile_operations` maps `ImportError` to that code by name, so a
+compiler missing from the rootfs says so instead of reading as an adapter bug.
+
+**One trap this step already caught, and it was in the CHECK, not the image.** A
+first draft of this verification drove cirq through `cirq.contrib.qasm_import`,
+which needs `ply` — not installed — and reported a failure that does not exist.
+The kernel's `_cirq_compile` builds its circuit natively from the declarative
+payload and never touches that parser. Exercise the lane the way the lane runs;
+a check that invents its own path can only fail for its own reasons.
+
+Then the execution lane, which the compiler lane must not have displaced:
 
 ```bash
 npx -y vercel@58.7.1 sandbox run --image "majorana-runner:$TAG" \
@@ -114,11 +207,11 @@ npx -y vercel@58.7.1 sandbox run --image "majorana-runner:$TAG" \
   -- python -c "import qiskit, qiskit_aer, pennylane, cirq, braket, numba, qibo, qulacs; print('ok')"
 ```
 
-An import is the floor, not the bar — import the module *and* run something. The
-2026-08-06 rebuild ran a Bell pair on all three new frameworks: Braket
-`{'00': 51, '11': 49}`, Qibo `{'00': 57, '11': 43}`, Qulacs
-`[0.5, 0.0, 0.0, 0.5]`. `qulacs` in particular imports fine and would still fail
-on a bad wheel/ABI pairing at first use.
+An import is the floor there too. The 2026-08-06 rebuild ran a Bell pair on all
+three then-new frameworks and 2026-08-26 re-ran the same three: Braket
+`{'11': 52, '00': 48}`, Qibo `{'00': 45, '11': 55}`, Qulacs
+`[0.5, 0.0, 0.0, 0.5]`, and `numba.njit` returning 42. `qulacs` in particular
+imports fine and would still fail on a bad wheel/ABI pairing at first use.
 
 ### 5. Promote to `latest`
 
@@ -156,8 +249,12 @@ docker buildx imagetools create \
 
 `vercel vcr image ls majorana-runner …` lists every image with its digest and age;
 the pre-#262 index was `sha256:6f1c0578ac2c895c1f007d3b981504b4379502161212d9876a5774210bb149d7`
-(214.4 MB, published 2026-07-14). **Never delete the previous image** — the
-digest is the rollback.
+(214.4 MB, published 2026-07-14). The index `latest` pointed at before the
+**2026-08-26** compiler-lane promotion was `156dd3dfdb85` (tag `2026-08-15`,
+314.3 MB) — that is the rollback for the compiler lane specifically, and rolling
+to it removes `pytket`, `pyzx` and `bqskit`, so Studio's compiler lane starts
+answering `compiler_unavailable` rather than failing silently.
+**Never delete the previous image** — the digest is the rollback.
 
 ## The base image is pinned by digest, deliberately
 

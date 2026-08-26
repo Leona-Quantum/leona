@@ -9,6 +9,8 @@ from uuid import UUID
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from .enums import (
+    CircuitCompiler,
+    CircuitOptimizationGate,
     EvidenceStrength,
     ExportStatus,
     Framework,
@@ -734,6 +736,61 @@ class CatalogProfileList(_ResourceBase):
     profiles: list[CatalogEntryProfile] = Field(default_factory=list)
 
 
+class CircuitOptimizationOperation(_ResourceBase):
+    """One operation in the bounded, code-free Studio compiler interchange."""
+
+    gate: CircuitOptimizationGate
+    qubits: list[int] = Field(min_length=1, max_length=2)
+    angle_radians: float | None = Field(default=None, allow_inf_nan=False)
+
+    @model_validator(mode="after")
+    def gate_shape_matches_arity(self) -> Self:
+        two_qubit = self.gate in {
+            CircuitOptimizationGate.CX,
+            CircuitOptimizationGate.CZ,
+            CircuitOptimizationGate.SWAP,
+        }
+        expected = 2 if two_qubit else 1
+        if len(self.qubits) != expected:
+            raise ValueError(f"{self.gate.value} requires {expected} qubit(s)")
+        if len(set(self.qubits)) != len(self.qubits) or any(qubit < 0 for qubit in self.qubits):
+            raise ValueError("operation qubits must be distinct non-negative integers")
+        rotation = self.gate in {
+            CircuitOptimizationGate.RX,
+            CircuitOptimizationGate.RY,
+            CircuitOptimizationGate.RZ,
+        }
+        if rotation != (self.angle_radians is not None):
+            raise ValueError("only RX, RY, and RZ require angle_radians")
+        return self
+
+
+class CircuitOptimizationRequest(_ResourceBase):
+    """Declarative Studio circuit accepted by the trusted Worker compiler lane.
+
+    This is intentionally not source code. The worker constructs SDK circuit
+    objects from this closed gate set, so selecting a compiler never executes a
+    user-supplied import, expression, custom gate, or Python statement.
+    """
+
+    compiler: CircuitCompiler
+    qubit_count: int = Field(ge=1, le=64)
+    operations: list[CircuitOptimizationOperation] = Field(min_length=1, max_length=1024)
+    optimization_level: int = Field(default=2, ge=1, le=3)
+
+    @model_validator(mode="after")
+    def circuit_is_bounded_and_measurements_are_terminal(self) -> Self:
+        measurement_seen = False
+        for operation in self.operations:
+            if any(qubit >= self.qubit_count for qubit in operation.qubits):
+                raise ValueError("operation references a qubit outside qubit_count")
+            if operation.gate is CircuitOptimizationGate.MEASURE:
+                measurement_seen = True
+            elif measurement_seen:
+                raise ValueError("measurement operations must be terminal")
+        return self
+
+
 class ResourceMetrics(_ResourceBase):
     """Comparable circuit-resource measurements for selected-framework source."""
 
@@ -743,6 +800,38 @@ class ResourceMetrics(_ResourceBase):
     two_qubit_gate_count: int | None = Field(default=None, ge=0)
     measurement_count: int | None = Field(default=None, ge=0)
     estimated_runtime_ms: int | None = Field(default=None, ge=0)
+
+
+class CircuitOptimizationResult(_ResourceBase):
+    """Compiler output carried inside ``compilation.result.compatibility``.
+
+    Third-party compiler equivalence is stated honestly as unitary equivalence
+    up to global phase. It is not a verification verdict and does not inherit
+    evidence from the source artifact.
+
+    **What ``equivalence`` scopes over, since a request may contain ``M`` and a
+    measured circuit is not a unitary.** ``CircuitOptimizationRequest`` already
+    refuses a non-terminal measurement — see
+    ``circuit_is_bounded_and_measurements_are_terminal`` — so every accepted
+    circuit is a unitary prefix followed by a block of terminal measurements.
+    The compiler is handed the prefix and nothing else; the measurement block is
+    re-appended verbatim and is not part of any rewrite. So the value claims
+    unitary equivalence up to global phase **of the prefix**, and identity of
+    the tail, which together is the strongest true statement about the whole
+    circuit. A result carrying measurements says so in ``warnings`` as well, in
+    a sentence a reader sees.
+    """
+
+    compiler: CircuitCompiler
+    compiler_version: str = Field(min_length=1, max_length=120)
+    optimization_level: int = Field(ge=1, le=3)
+    operations: list[CircuitOptimizationOperation] = Field(default_factory=list, max_length=4096)
+    before: ResourceMetrics
+    after: ResourceMetrics
+    input_fingerprint: str = Field(pattern=r"^[0-9a-f]{64}$")
+    output_fingerprint: str = Field(pattern=r"^[0-9a-f]{64}$")
+    equivalence: Literal["unitary_up_to_global_phase"] = "unitary_up_to_global_phase"
+    warnings: list[str] = Field(default_factory=list, max_length=20)
 
 
 class Run(_ResourceBase):
