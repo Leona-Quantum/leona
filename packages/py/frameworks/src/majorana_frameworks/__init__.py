@@ -14,6 +14,7 @@ from majorana_frameworks.program import (
     InterchangeExtraction,
     extract_interchange_qasm,
 )
+
 # `optimize_circuit` runs the compiler kernel IN THIS PROCESS and is a test/dev
 # entry point only — production ships `optimizer_kernel` into the sandbox
 # (ai-ops#186 option A). Nothing under `services/` imports it, and nothing
