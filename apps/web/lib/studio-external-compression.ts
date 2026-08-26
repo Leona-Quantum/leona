@@ -1,5 +1,5 @@
 import type { components } from "@majorana/contracts-gen";
-import { CIRCUIT_COMPILER_VALUES } from "@majorana/contracts-gen/enums";
+import { CIRCUIT_COMPILER_VALUES, CIRCUIT_OPTIMIZATION_GATE_VALUES } from "@majorana/contracts-gen/enums";
 import { createBuilderStepId, type BuilderStep } from "./studio-builder.ts";
 
 type Schemas = components["schemas"];
@@ -104,13 +104,51 @@ function isCompiler(value: unknown): value is ExternalCircuitCompiler {
   return typeof value === "string" && (EXTERNAL_CIRCUIT_COMPILERS as readonly string[]).includes(value);
 }
 
+/**
+ * The returned operation, checked as strictly as the request that asked for it.
+ *
+ * The REQUEST side is already tight — `CircuitOptimizationRequest` is a closed
+ * 13-value gate enum with a qubit-range validator, a terminal-measurement
+ * validator and an explicit refusal of `source_code`. This is the other
+ * direction, and it used to accept `typeof value.gate === "string"`: any string
+ * at all, any number of qubits, the same qubit twice, and an angle on a gate
+ * that takes none.
+ *
+ * That matters because of where the value goes next. `builderStepsFromExternalResult`
+ * turns each of these into a `BuilderStep` and hands it to Studio's builder, so a
+ * malformed operation does not fail here — it lands in the reader's circuit as a
+ * step the builder's own contract says cannot exist. The compiler is our own
+ * worker rather than a visitor, which is why this is a contract check and not a
+ * trust boundary; but a compiler bug, a version skew, or a half-written SSE frame
+ * all produce the same shape, and this is the last place any of them can be seen.
+ *
+ * `CIRCUIT_OPTIMIZATION_GATE_VALUES` is the generated enum — the same 13 members
+ * the request validator uses — so the two directions cannot drift apart when a
+ * gate is added.
+ */
 function isOperation(value: unknown): boolean {
-  return record(value)
-    && typeof value.gate === "string"
-    && Array.isArray(value.qubits)
-    && value.qubits.every((qubit) => Number.isInteger(qubit) && qubit >= 0)
-    && (value.angle_radians === null || (typeof value.angle_radians === "number" && Number.isFinite(value.angle_radians)));
+  if (!record(value)) return false;
+  if (typeof value.gate !== "string") return false;
+  if (!(CIRCUIT_OPTIMIZATION_GATE_VALUES as readonly string[]).includes(value.gate)) return false;
+  if (!Array.isArray(value.qubits)) return false;
+  if (!value.qubits.every((qubit) => Number.isInteger(qubit) && qubit >= 0)) return false;
+  // One or two, and never the same wire twice — a two-qubit gate on (3, 3) is
+  // not a circuit, and `SWAP`/`CX`/`CZ` on one wire is the same claim.
+  const arity = TWO_QUBIT_GATES.has(value.gate) ? 2 : 1;
+  if (value.qubits.length !== arity) return false;
+  if (new Set(value.qubits).size !== value.qubits.length) return false;
+  // An angle belongs to exactly the three rotations and to nothing else. A
+  // non-rotation carrying one would be silently dropped by
+  // `builderStepsFromExternalResult`, which reads `param` only where the builder
+  // expects it — so the operation would render as a DIFFERENT gate than the
+  // compiler returned.
+  const rotation = ROTATION_GATES.has(value.gate);
+  if (rotation) return typeof value.angle_radians === "number" && Number.isFinite(value.angle_radians);
+  return value.angle_radians === null || value.angle_radians === undefined;
 }
+
+const TWO_QUBIT_GATES: ReadonlySet<string> = new Set(["CX", "CZ", "SWAP"]);
+const ROTATION_GATES: ReadonlySet<string> = new Set(["RX", "RY", "RZ"]);
 
 function isMetrics(value: unknown): boolean {
   return record(value)
