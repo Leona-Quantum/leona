@@ -2677,7 +2677,14 @@ test("the capabilities closed on `implementations` stay closed, as a SET", () =>
     "compile-to-device",
     "combinatorial-optimization",
   ];
-  for (const slot of [...BATCH_10, ...BATCH_11]) {
+  // Batch 12, and the honest number is ONE. Five methods were published across
+  // four capabilities — `parameter-optimization`, `spatial-discretization`,
+  // `full-discretization` and `hidden-period-finding` — and only the first has
+  // both its open methods filled. The other three each still hold one method
+  // whose entry was drafted and translated but is not in this commit, so they
+  // are counted open here, which is what the gauge does too.
+  const BATCH_12 = ["parameter-optimization"];
+  for (const slot of [...BATCH_10, ...BATCH_11, ...BATCH_12]) {
     assert.ok(
       layerNode(LAYER_GRAPH, slot) !== null,
       `${slot} names no capability — renamed, and this ratchet stopped measuring it`,
@@ -2720,20 +2727,20 @@ test("the capabilities closed on `implementations` stay closed, as a SET", () =>
   // absorbed silently, which is what the equality asserts.
   assert.deepEqual(
     [...complete].sort(),
-    [...BATCH_10, ...BATCH_11, ...ALREADY].sort(),
+    [...BATCH_10, ...BATCH_11, ...BATCH_12, ...ALREADY].sort(),
     "the set of capabilities complete on implementations has changed — add the new one to " +
       "ALREADY rather than letting the count absorb it",
   );
 
   assert.ok(
-    complete.size >= 20,
-    `${complete.size} capabilities are complete on implementations, was 20 after batch 11`,
+    complete.size >= 21,
+    `${complete.size} capabilities are complete on implementations, was 21 after batch 12`,
   );
 
   const filled = methods.filter((m) => (m.implementations ?? []).length > 0).length;
   assert.ok(
-    filled >= 79,
-    `${filled} of ${methods.length} methods carry an implementation, was 79 after batch 11`,
+    filled >= 84,
+    `${filled} of ${methods.length} methods carry an implementation, was 84 after batch 12`,
   );
 });
 
