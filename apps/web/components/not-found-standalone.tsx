@@ -35,6 +35,36 @@
  * is deterministic and a reader with no cookie, or with cookies disabled, gets
  * English — the same fallback the server would have chosen.
  *
+ * **The theme.** Same shape as the locale, and it was got wrong the same way.
+ * `public/not-found.css` used to say the reader's OS preference was "the only
+ * signal that exists here", and `lib/not-found-standalone-tokens.test.ts` said
+ * "this page has no theme script and so no `data-theme` attribute to key on."
+ * Both were false for the same reason the locale paragraph above is true: this
+ * subtree runs in the browser, so `localStorage` is readable, and the site's own
+ * choice lives in `majorana.theme.v1`.
+ *
+ * Measured on production before it was changed: a reader with `light` chosen on
+ * Leona and a dark OS got `data-theme="light"` on every real page and a DARK
+ * 404 inside `/repository`, because the sheet's only rule was
+ * `prefers-color-scheme`. It reverses for `dark` chosen on a light OS.
+ *
+ * What is read here is only the reader's EXPLICIT choice — see `readStoredTheme`
+ * for why this stops short of resolving the OS preference the way
+ * `root-document.tsx`'s script does. A stored `light`/`dark` is stamped onto
+ * `.mj-nf`; anything else leaves the attribute off and the sheet's media query
+ * decides, live. It runs in `useEffect` rather than during render for the same
+ * reason the locale does, and the frame before it lands falls back to
+ * `prefers-color-scheme`, which is exactly what shipped before. Strictly better,
+ * never worse.
+ *
+ * **The title.** `generateMetadata` on `/q/[slug]` and `/repository/[slug]` runs
+ * before the fetch that decides the page does not exist, so it titles the tab
+ * after the thing that is missing: `zzz — Qapp · Leona Quantum`. Measured on
+ * production. It reaches no crawler — the served error document carries the site
+ * fallback and `robots: noindex`, checked with `curl` — so this is the reader's
+ * tab, history entry and bookmark, and it is fixed here rather than in each
+ * segment's metadata because one effect covers every in-segment 404 at once.
+ *
  * **The stylesheet.** `<link rel="stylesheet" precedence>` is a React 19 hoisted
  * element: React inserts it into `<head>` itself and blocks the reveal until it
  * loads, so there is no flash of unstyled text even though the head starts empty.
@@ -46,12 +76,43 @@
  */
 import { useEffect, useState } from "react";
 import { NOT_FOUND_COPY } from "../lib/public-copy";
+import { siteTitle } from "../lib/public-metadata";
+import { THEME_STORAGE_KEY, type Theme } from "../lib/theme";
 import {
   LEGACY_PUBLIC_LOCALE_COOKIE,
   parsePublicLocale,
   PUBLIC_LOCALE_COOKIE,
   type PublicLocale,
 } from "../lib/public-locale";
+
+/**
+ * The reader's EXPLICIT theme choice, or `null` if they have not made one.
+ *
+ * Only a stored `light`/`dark` is returned. Everything else — no stored value, a
+ * value that is neither, or storage that throws in a private window — is `null`,
+ * and `null` leaves `data-theme` off so the sheet's `prefers-color-scheme` rule
+ * decides. That is the same answer the reader got before this function existed.
+ *
+ * **It deliberately does NOT resolve the OS preference itself**, which the first
+ * version did, mirroring `root-document.tsx`'s pre-paint script. CodeRabbit
+ * caught why that is wrong here: resolving it once at mount FREEZES it into the
+ * attribute, and `data-theme="light"` then blocks the very media rule it was
+ * copying. A reader with no stored choice whose OS flips to dark — at sunset, on
+ * a schedule — would be left on the light palette by the attribute we wrote.
+ * Leaving it unset keeps the media query live, which is strictly better than
+ * copying its answer.
+ *
+ * The explicit case is unaffected and is the whole bug this exists for: a stored
+ * `light` still stamps `data-theme="light"` and still beats a dark OS.
+ */
+function readStoredTheme(): Theme | null {
+  try {
+    const saved = localStorage.getItem(THEME_STORAGE_KEY);
+    return saved === "light" || saved === "dark" ? saved : null;
+  } catch {
+    return null;
+  }
+}
 
 function readLocaleCookie(): PublicLocale {
   try {
@@ -65,6 +126,7 @@ function readLocaleCookie(): PublicLocale {
 
 export function NotFoundStandalone() {
   const [locale, setLocale] = useState<PublicLocale>("en");
+  const [theme, setTheme] = useState<Theme | null>(null);
 
   useEffect(() => {
     const next = readLocaleCookie();
@@ -73,6 +135,11 @@ export function NotFoundStandalone() {
     // not decoration: it is the only chance this page has to tell a screen
     // reader which language the text below is in.
     document.documentElement.lang = next;
+    setTheme(readStoredTheme());
+    // The tab still says whatever the segment's `generateMetadata` guessed
+    // before it knew the page was missing. Overwrite it with what the reader is
+    // actually looking at, in the language they are reading it in.
+    document.title = siteTitle(NOT_FOUND_COPY[next].title);
   }, []);
 
   const copy = NOT_FOUND_COPY[locale];
@@ -80,7 +147,7 @@ export function NotFoundStandalone() {
   return (
     <>
       <link rel="stylesheet" href="/not-found.css" precedence="mj-not-found" />
-      <div className="mj-nf" lang={locale}>
+      <div className="mj-nf" lang={locale} data-theme={theme ?? undefined}>
         <div className="mj-nf-inner">
           <a className="mj-nf-brand" href="/">Leona Quantum</a>
           <p className="mj-nf-overline">{copy.label}</p>

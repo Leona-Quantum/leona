@@ -65,12 +65,33 @@
   -webkit-font-smoothing: antialiased;
 }
 
-/* The document this renders into has no theme script, so there is no
- * `data-theme` to key on — the reader's OS preference is the only signal that
- * exists here. Kept in sync with the `prefers-color-scheme: dark` block of
- * tokens.css by the test named at the top of this file. */
+/* Three blocks, not one, and the reason is a bug that shipped.
+ *
+ * This comment used to say: "The document this renders into has no theme script,
+ * so there is no `data-theme` to key on — the reader's OS preference is the only
+ * signal that exists here." The first clause is true and the conclusion does not
+ * follow. `components/not-found-standalone.tsx` runs in the browser — it already
+ * reads the locale cookie there — so the site's own stored choice,
+ * `majorana.theme.v1`, is just as readable. It now writes the answer onto
+ * `.mj-nf` as `data-theme`.
+ *
+ * Measured on production before the fix: a reader with `light` chosen on Leona
+ * and a dark OS got `data-theme="light"` on every real page and a DARK 404
+ * inside `/repository`. It reverses for `dark` chosen on a light OS.
+ *
+ * So the OS block is GUARDED with `:not([data-theme="light"])` — otherwise an
+ * explicit light choice loses to a dark OS, which is half the bug still shipping
+ * — and an explicit dark choice gets its own block, which is the other half.
+ *
+ * A reader who has chosen NOTHING gets no attribute at all, and this block
+ * decides — live. The component deliberately does not resolve the OS preference
+ * and write the answer down: that would freeze it, and `data-theme="light"`
+ * would then block this rule for a reader whose OS flips to dark later.
+ *
+ * Both dark blocks are kept in sync with the `prefers-color-scheme: dark` block
+ * of tokens.css, and with EACH OTHER, by the test named at the top of this file. */
 @media (prefers-color-scheme: dark) {
-  .mj-nf {
+  .mj-nf:not([data-theme="light"]) {
     --nf-bg: #131211;
     --nf-panel: #1b1917;
     --nf-border: #332f2b;
@@ -80,6 +101,17 @@
     --nf-accent-press: #688a4a;
     --nf-on-accent: #131211;
   }
+}
+
+.mj-nf[data-theme="dark"] {
+  --nf-bg: #131211;
+  --nf-panel: #1b1917;
+  --nf-border: #332f2b;
+  --nf-text: #eceae6;
+  --nf-muted: #a29c93;
+  --nf-accent: #7ba05b;
+  --nf-accent-press: #688a4a;
+  --nf-on-accent: #131211;
 }
 
 .mj-nf * {

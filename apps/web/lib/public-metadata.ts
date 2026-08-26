@@ -30,6 +30,24 @@ import type { Metadata } from "next";
 export const SITE_NAME = "Leona Quantum";
 
 /**
+ * How a page's own name is joined to the site's.
+ *
+ * A function rather than a second literal: `root-document.tsx` declares Next's
+ * `title.template` and `components/not-found-standalone.tsx` writes
+ * `document.title` by hand, because the document it renders into is synthesised
+ * by Next's error path and never passes through `generateMetadata` at all. Two
+ * places spelling out `"· Leona Quantum"` is two places to forget when the name
+ * changes — and it has changed once already (ai-ops#70).
+ */
+export const TITLE_SEPARATOR = " · ";
+export const TITLE_TEMPLATE = `%s${TITLE_SEPARATOR}${SITE_NAME}`;
+
+/** One page's full document title, joined the way `TITLE_TEMPLATE` joins it. */
+export function siteTitle(page: string): string {
+  return `${page}${TITLE_SEPARATOR}${SITE_NAME}`;
+}
+
+/**
  * The card image every public page shares, stated explicitly rather than left
  * to Next's file convention.
  *
