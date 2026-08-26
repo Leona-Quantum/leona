@@ -1545,8 +1545,10 @@ optimizers = [
     { name = "cirq-core" },
     { name = "pennylane" },
     { name = "pytket" },
-    { name = "pyzx" },
     { name = "qiskit" },
+]
+zx = [
+    { name = "pyzx" },
 ]
 
 [package.metadata]
@@ -1556,10 +1558,10 @@ requires-dist = [
     { name = "majorana-contracts", editable = "packages/py/contracts" },
     { name = "pennylane", marker = "extra == 'optimizers'", specifier = ">=0.45.1,<0.46" },
     { name = "pytket", marker = "extra == 'optimizers'", specifier = ">=2.18.1,<3" },
-    { name = "pyzx", marker = "extra == 'optimizers'", specifier = ">=0.10.5,<0.11" },
+    { name = "pyzx", marker = "extra == 'zx'", specifier = ">=0.10.5,<0.11" },
     { name = "qiskit", marker = "extra == 'optimizers'", specifier = ">=2.5.2,<3" },
 ]
-provides-extras = ["optimizers"]
+provides-extras = ["optimizers", "zx"]
 
 [[package]]
 name = "majorana-llm"
@@ -1721,6 +1723,7 @@ dev = [
     { name = "pytest-asyncio" },
     { name = "pytest-xdist" },
     { name = "pyyaml" },
+    { name = "pyzx" },
     { name = "qibo" },
     { name = "qiskit-aer" },
     { name = "qulacs" },
@@ -1743,6 +1746,7 @@ dev = [
     { name = "pytest-asyncio", specifier = ">=1.0" },
     { name = "pytest-xdist", specifier = ">=3.6" },
     { name = "pyyaml", specifier = ">=6" },
+    { name = "pyzx", specifier = ">=0.10.5,<0.11" },
     { name = "qibo", specifier = "==0.3.4" },
     { name = "qiskit-aer", specifier = "==0.17.2" },
     { name = "qulacs", specifier = "==0.6.14" },

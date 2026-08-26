@@ -176,3 +176,69 @@ def test_the_ceiling_sits_far_above_every_shipped_tier():
     """
     assert runs.EXECUTE_BACKSTOP_LIMIT >= 100
     assert runs.EXECUTE_BACKSTOP_WINDOW == dt.timedelta(days=7)
+
+
+def _compiler_request() -> runs.CreateRunRequest:
+    """The code-free compiler preview the Studio submits.
+
+    It is `mode=EXECUTE` with a `circuit_optimization` body and no source, and
+    it skips the TIER gate on purpose — no LLM tokens are spent on it, so
+    charging it against the account's weekly agent-token allowance would be
+    wrong. `test_run_tier_allowance.py` pins that skip.
+    """
+    return runs.CreateRunRequest(
+        task_prompt="Compile the bounded Studio circuit with qiskit.",
+        framework=Framework.QISKIT,
+        mode=RunMode.EXECUTE,
+        circuit_optimization={
+            "compiler": "qiskit",
+            "qubit_count": 1,
+            "operations": [{"gate": "H", "qubits": [0]}],
+        },
+    )
+
+
+async def test_compiler_preview_under_the_ceiling_is_admitted(scope, monkeypatch):
+    monkeypatch.setattr(
+        runs.runs_repo,
+        "count_runs_by_mode_since",
+        _counter({RunMode.EXECUTE.value: runs.EXECUTE_BACKSTOP_LIMIT - 1}),
+    )
+    # No exception is the assertion, same as the plain EXECUTE case above.
+    await runs._enforce_execute_backstop(
+        _compiler_request(), scope, object(), _identity(), _settings()
+    )
+
+
+async def test_compiler_preview_still_meets_the_execute_ceiling(scope, monkeypatch):
+    """Skipping the tier gate must not skip the abuse backstop.
+
+    ## Why this test is in THIS file and not beside the skip it guards
+
+    The skip is pinned in `test_run_tier_allowance.py`, and that file cannot
+    hold this assertion: its autouse `_no_backstop` fixture zeroes BOTH
+    backstops for every test in it, so a regression that gated
+    `EXECUTE_BACKSTOP_LIMIT` on `circuit_optimization is None` — exactly the
+    one-line change that produced the tier skip — would pass there in silence.
+    A test that cannot fail is not evidence, and the skip was shipped with the
+    positive half pinned and the negative half unpinned.
+
+    The distinction being defended: the tier gate meters **LLM spend**, which a
+    code-free compile does not incur, while this ceiling bounds **submission
+    volume** from a token holder, which a code-free compile incurs exactly as
+    much as any other run. The first is a reason to skip; the second is not.
+    """
+    monkeypatch.setattr(
+        runs.runs_repo,
+        "count_runs_by_mode_since",
+        _counter({RunMode.EXECUTE.value: runs.EXECUTE_BACKSTOP_LIMIT}),
+    )
+
+    with pytest.raises(HTTPException) as caught:
+        await runs._enforce_execute_backstop(
+            _compiler_request(), scope, object(), _identity(), _settings()
+        )
+
+    assert caught.value.status_code == 429
+    assert caught.value.detail["reason"] == "execute_backstop_exhausted"
+    assert caught.value.detail["limit"] == runs.EXECUTE_BACKSTOP_LIMIT

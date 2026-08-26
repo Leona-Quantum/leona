@@ -1,5 +1,6 @@
 import asyncio
 import math
+import sys
 
 import pytest
 from qiskit import QuantumCircuit
@@ -216,3 +217,27 @@ def test_bqskit_refuses_circuits_beyond_its_synthesis_budget():
         optimize_circuit(request)
 
     assert raised.value.code == "bqskit_budget_exceeded"
+
+
+def test_pyzx_says_so_plainly_when_the_extra_is_not_installed(monkeypatch):
+    """PyZX is the one compiler a deployed image may legitimately not have.
+
+    It lives in `majorana-frameworks`'s `zx` extra rather than `optimizers`,
+    because it declares `ipywidgets` and so drags ipython, pexpect and
+    ptyprocess into the single image `services/api/Dockerfile` builds and
+    `deploy.yml` runs both the api and the worker from. Measured: `uv sync
+    --all-packages --frozen --no-dev` installs 151 packages with pyzx in
+    `optimizers` and 129 with it out, and 21 of the 22 removed are that stack.
+
+    So the adapter has to survive its own absence with a sentence a caller can
+    act on. Without the guard the failure is a bare `ModuleNotFoundError`
+    escaping `optimize_circuit`, which is a 500 rather than a refusal — and the
+    difference only ever shows up in production, because every test environment
+    installs the extra through the root dev group.
+    """
+    monkeypatch.setitem(sys.modules, "pyzx", None)
+
+    with pytest.raises(CircuitOptimizationError) as raised:
+        optimize_circuit(_request("pyzx", [{"gate": "H", "qubits": [0]}]))
+
+    assert raised.value.code == "compiler_unavailable"

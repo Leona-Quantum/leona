@@ -313,7 +313,19 @@ def _pyzx_compile(
     level: int,
 ) -> tuple[list[CircuitOptimizationOperation], str]:
     del level  # PyZX exposes one full Clifford+T pipeline at this boundary.
-    import pyzx
+    try:
+        import pyzx
+    except ImportError as missing:
+        # Deliberate, not a packaging accident: PyZX lives in the `zx` extra
+        # rather than in `optimizers`, because it declares `ipywidgets` and so
+        # drags ipython/pexpect/ptyprocess into the one image the api and the
+        # worker both run from. A deployment that has not installed the extra
+        # must say so in a sentence a caller can act on, not fail on an
+        # ImportError traceback.
+        raise CircuitOptimizationError(
+            "compiler_unavailable",
+            "The PyZX compiler is not installed in this deployment.",
+        ) from missing
     from qiskit import qasm2
     from qiskit.transpiler import generate_preset_pass_manager
 

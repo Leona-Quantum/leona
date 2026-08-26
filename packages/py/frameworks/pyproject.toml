@@ -6,12 +6,26 @@ requires-python = ">=3.12"
 dependencies = ["majorana-contracts"]
 
 [project.optional-dependencies]
+# The compilers a deployed service installs. `services/api/Dockerfile` builds
+# ONE image with `uv sync --all-packages`, and `deploy.yml` runs both the api
+# and the worker from it with different `--command`s — so whatever lands here
+# lands in both credentialed processes, not just in the one that compiles.
 optimizers = [
     "bqskit==1.2.1",
     "cirq-core>=1.7,<1.8",
     "qiskit>=2.5.2,<3",
     "pennylane>=0.45.1,<0.46",
     "pytket>=2.18.1,<3",
+]
+
+# PyZX is separated because of what it drags, not because of what it is. It
+# declares `ipywidgets` as a hard dependency for its notebook drawing, and
+# `ipywidgets -> ipython -> pexpect -> ptyprocess` puts an interactive-Python
+# stack including a PTY spawner into the image above. `_pyzx_compile` uses
+# `pyzx.Circuit.from_qasm` and `pyzx.optimize.full_optimize` and touches none
+# of it. Nothing in `services/` requires this extra; the frameworks package's
+# own tests do, and `uv sync --all-packages` in CI installs it for them.
+zx = [
     "pyzx>=0.10.5,<0.11",
 ]
 

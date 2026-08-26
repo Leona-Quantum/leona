@@ -1348,18 +1348,46 @@ export function CircuitBuilder({ seed, framework, selectedGate, onSelectGate, on
   const [externalError, setExternalError] = useState<string | null>(null);
   const [externalConfirmPending, setExternalConfirmPending] = useState(false);
   const externalStreamRef = useRef<EventSource | null>(null);
+  // `runExternalCompression` awaits a POST before it opens its stream, so the
+  // unmount cleanup below can run while that request is still in flight. An
+  // `EventSource` constructed after that point is held by nothing that will
+  // ever close it. This ref is how the continuation learns it is too late.
+  const mountedRef = useRef(true);
 
   // A pending confirmation describes one specific pair of a diagram and a
   // source. If either side moves — the code is edited again, the canvas is
   // changed, or the two come back into agreement — the armed button would be
   // consenting to something the user was never shown, so disarm it.
+  //
+  // **`externalCompiler` and `externalLevel` are in here because the choice of
+  // compiler moves one side of that pair.** They were in the dep array of the
+  // effect below, which clears the RESULT, and not in this one, which disarms
+  // the CONSENT — so the two halves of the same fact were kept by different
+  // lists. Arm the external apply on one compiler, switch compilers, run the
+  // new one, and the guard in `applyExternalCompression` sees a pending
+  // confirmation that was granted against a different compiler's output: one
+  // click then runs `setSteps` and `onApply`, overwriting edited source with a
+  // result the user was never asked about. Disarming here is the safe
+  // direction — the worst it costs is a second click.
   useEffect(() => {
     setApplyConfirmPending(false);
     setCompressionConfirmPending(false);
     setExternalConfirmPending(false);
-  }, [syncState.kind, sourceCode, steps, qubitCount, customGates, compressionStrategy]);
+  }, [
+    syncState.kind,
+    sourceCode,
+    steps,
+    qubitCount,
+    customGates,
+    compressionStrategy,
+    externalCompiler,
+    externalLevel,
+  ]);
 
-  useEffect(() => () => externalStreamRef.current?.close(), []);
+  useEffect(() => () => {
+    mountedRef.current = false;
+    externalStreamRef.current?.close();
+  }, []);
 
   useEffect(() => {
     externalStreamRef.current?.close();
@@ -1596,6 +1624,10 @@ export function CircuitBuilder({ seed, framework, selectedGate, onSelectGate, on
         }),
       });
       const payload = (await response.json()) as unknown;
+      // Unmounted while the POST was in flight. The cleanup that closes the
+      // stream has already run, so anything opened from here is unreachable —
+      // and there is no longer a panel to report an error to either.
+      if (!mountedRef.current) return;
       const submittedRunId = submittedId(payload);
       if (!response.ok || !submittedRunId) {
         throw new Error(refusalSentence(payload) ?? copy.externalFailed);

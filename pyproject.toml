@@ -47,6 +47,21 @@ dev = [
     # Qibo stays on its in-process NumPy backend; optional Qibolab hardware
     # backends are not installed inside the network-locked sandbox.
     "qibo==0.3.4",
+    # PyZX is a TEST-ONLY dependency and deliberately not a runtime one. It is in
+    # `majorana-frameworks`'s `zx` extra rather than its `optimizers` extra,
+    # because it declares `ipywidgets` and so pulls ipython, pexpect and
+    # ptyprocess — a PTY spawner — into the single image `services/api/Dockerfile`
+    # builds and `deploy.yml` runs BOTH the api and the worker from. Measured on
+    # this tree: `uv sync --all-packages --frozen --no-dev` installs 151 packages
+    # with pyzx in `optimizers` and 129 with it here, and 21 of the 22 removed are
+    # that notebook stack. `_pyzx_compile` calls `Circuit.from_qasm` and
+    # `optimize.full_optimize` and touches none of it.
+    #
+    # It is listed HERE for the same reason cirq-core and pennylane are above: so
+    # the tests that exercise the adapter actually RUN rather than skip against a
+    # package CI does not install. `--no-dev` in the Dockerfile is what keeps it
+    # out of production.
+    "pyzx>=0.10.5,<0.11",
     # Qulacs supplies the research-oriented high-performance local simulator.
     # Pin it so the worker's local double and the production image execute the
     # same native extension and circuit API.
