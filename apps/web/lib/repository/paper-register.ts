@@ -480,6 +480,29 @@ export const PAPER_REGISTER: PaperRegister = {
     { id: "arxiv:2203.10236", title: "Explicit Quantum Circuits for Block Encodings of Certain Sparse Matrices", authors: "Daan Camps, Lin Lin, Roel Van Beeumen, Chao Yang", year: "2022", url: "https://arxiv.org/abs/2203.10236", reports: { theory: "reported", simulation: "unknown", hardware: "absent" }, reportsBasis: "abstract" },
     { id: "arxiv:2302.02459", title: "A High Performance Compiler for Very Large Scale Surface Code Computations", authors: "George Watkins, Hoang Minh Nguyen, Keelan Watkins, Steven Pearce, Hoi-Kwan Lau, Alexandru Paler", year: "2023", url: "https://arxiv.org/abs/2302.02459", reports: { theory: "reported", simulation: "reported", hardware: "absent" }, reportsBasis: "abstract" },
     { id: "arxiv:2402.10060", title: "Quantum Backtracking in Qrisp Applied to Sudoku Problems", authors: "Raphael Seidel, René Zander, Matic Petrič, Niklas Steinmann, David Q. Liu, Nikolay Tcholtchev, Manfred Hauswirth", year: "2024", url: "https://arxiv.org/abs/2402.10060", reports: { theory: "reported", simulation: "reported", hardware: "absent" }, reportsBasis: "abstract" },
+    // Zoo-parity batch 13 (entries-zoo-parity.ts): the five result-shaped Zoo rows
+    // this catalog was missing — Abelian Hidden Subgroup, Graph Collision,
+    // Electrical Resistance, Semidefinite Programming, Tensor Principal Component
+    // Analysis — and the prior work each row's own bibliography names. Every title,
+    // author list and v1 year below was fetched from the arXiv API rather than
+    // copied from the drafter's citation, which caught one: a draft wrote
+    // "Fernando G.S.L. Brandao" where arXiv writes "Fernando G. S. L. Brandao".
+    { id: "arxiv:1112.5855", title: "Improving Quantum Query Complexity of Boolean Matrix Multiplication Using Graph Collision", authors: "Stacey Jeffery, Robin Kothari, Frédéric Magniez", year: "2011", url: "https://arxiv.org/abs/1112.5855" },
+    { id: "arxiv:1205.1534", title: "Learning-Graph-Based Quantum Algorithm for k-distinctness", authors: "Aleksandrs Belovs", year: "2012", url: "https://arxiv.org/abs/1205.1534" },
+    { id: "arxiv:1305.1021", title: "Parameterized Quantum Query Complexity of Graph Collision", authors: "Andris Ambainis, Kaspars Balodis, Jānis Iraids, Raitis Ozols, Juris Smotrovs", year: "2013", url: "https://arxiv.org/abs/1305.1021" },
+    { id: "arxiv:1311.1851", title: "Efficient Quantum Algorithms for Analyzing Large Sparse Electrical Networks", authors: "Guoming Wang", year: "2013", url: "https://arxiv.org/abs/1311.1851" },
+    { id: "arxiv:1411.1076", title: "A statistical model for tensor PCA", authors: "Andrea Montanari, Emile Richard", year: "2014", url: "https://arxiv.org/abs/1411.1076" },
+    { id: "arxiv:1507.00432", title: "Approximate Span Programs", authors: "Tsuyoshi Ito, Stacey Jeffery", year: "2015", url: "https://arxiv.org/abs/1507.00432" },
+    { id: "arxiv:1603.02940", title: "Quantum algorithms for Gibbs sampling and hitting-time estimation", authors: "Anirban Narayan Chowdhury, Rolando D. Somma", year: "2016", url: "https://arxiv.org/abs/1603.02940" },
+    { id: "arxiv:1609.05537", title: "Quantum Speed-ups for Semidefinite Programming", authors: "Fernando G. S. L. Brandao, Krysta Svore", year: "2016", url: "https://arxiv.org/abs/1609.05537" },
+    { id: "arxiv:1705.01843", title: "Quantum SDP-Solvers: Better upper and lower bounds", authors: "Joran van Apeldoorn, András Gilyén, Sander Gribling, Ronald de Wolf", year: "2017", url: "https://arxiv.org/abs/1705.01843" },
+    { id: "arxiv:1710.02581", title: "Quantum SDP Solvers: Large Speed-ups, Optimality, and Applications to Quantum Learning", authors: "Fernando G. S. L. Brandão, Amir Kalev, Tongyang Li, Cedric Yen-Yu Lin, Krysta M. Svore, Xiaodi Wu", year: "2017", url: "https://arxiv.org/abs/1710.02581" },
+    { id: "arxiv:1904.03858", title: "The Kikuchi Hierarchy and Tensor PCA", authors: "Alexander S. Wein, Ahmed El Alaoui, Cristopher Moore", year: "2019", url: "https://arxiv.org/abs/1904.03858" },
+    { id: "arxiv:1907.12724", title: "Classical and Quantum Algorithms for Tensor Principal Component Analysis", authors: "M. B. Hastings", year: "2019", url: "https://arxiv.org/abs/1907.12724" },
+    { id: "arxiv:1204.1527", title: "A quantum query algorithm for the graph collision problem", authors: "Dmitry Gavinsky, Tsuyoshi Ito", year: "2012", url: "https://arxiv.org/abs/1204.1527" },
+    { id: "arxiv:quant-ph/0310134", title: "Quantum Algorithms for the Triangle Problem", authors: "Frederic Magniez, Miklos Santha, Mario Szegedy", year: "2003", url: "https://arxiv.org/abs/quant-ph/0310134" },
+    { id: "arxiv:quant-ph/0011065", title: "Sharp Quantum vs. Classical Query Complexity Separations", authors: "J. Niel de Beaudrap, Richard Cleve, John Watrous", year: "2000", url: "https://arxiv.org/abs/quant-ph/0011065" },
+    { id: "arxiv:quant-ph/9903071", title: "The Hidden Subgroup Problem and Eigenvalue Estimation on a Quantum Computer", authors: "Michele Mosca, Artur Ekert", year: "1999", url: "https://arxiv.org/abs/quant-ph/9903071" },
     { id: "doi:10.1007/bf01331938", title: "Über das Paulische Äquivalenzverbot", authors: "P. Jordan, E. Wigner", year: "1928", url: "https://doi.org/10.1007/bf01331938" },
     { id: "doi:10.1007/978-3-642-38616-9_2", title: "Quantum algorithms for the subset-sum problem", authors: "Daniel J. Bernstein, Stacey Jeffery, Tanja Lange, Alexander Meurer", year: "2013", url: "https://doi.org/10.1007/978-3-642-38616-9_2", reports: { theory: "reported", simulation: "reported", hardware: "absent" }, reportsBasis: "full-text" },
     { id: "doi:10.1016/0003-4916(70)90270-8", title: "The one-dimensional Ising model with a transverse field", authors: "P. Pfeuty", year: "1970", url: "https://doi.org/10.1016/0003-4916(70)90270-8" },
@@ -560,5 +583,9 @@ export const PAPER_REGISTER: PaperRegister = {
     { id: "doi:10.1145/1206035.1206039", title: "Polynomial-Time Quantum Algorithms for Pell's Equation and the Principal Ideal Problem", authors: "Sean Hallgren", year: "2007", url: "https://doi.org/10.1145/1206035.1206039", reports: { theory: "reported", simulation: "unknown", hardware: "absent" }, reportsBasis: "full-text" },
     { id: "doi:10.1145/3168822", title: "Qubit allocation", authors: "Siraichi, Santos, Collange, Pereira", year: "2018", url: "https://doi.org/10.1145/3168822" },
     { id: "doi:10.5281/zenodo.20054981", title: "Amplitude Amplification Algorithms", authors: "Mithilesh Kumar, Yusuf Tahir, Varun Daiya", year: "2026", url: "https://doi.org/10.5281/zenodo.20054981" },
+    // Crossref, not the drafter: title, both authors and the 1995 year read from
+    // api.crossref.org/works/10.1007/3-540-44750-4_34, which also names the venue
+    // (LNCS, Advances in Cryptology — CRYPTO '95). No arXiv id exists for it.
+    { id: "doi:10.1007/3-540-44750-4_34", title: "Quantum Cryptanalysis of Hidden Linear Functions", authors: "Dan Boneh, Richard J. Lipton", year: "1995", url: "https://doi.org/10.1007/3-540-44750-4_34" },
   ],
 };

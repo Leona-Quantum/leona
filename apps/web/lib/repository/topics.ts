@@ -471,6 +471,24 @@ const FAMILY_RULES: readonly TopicRule[] = [
   { family: "Markov-chain sampling", topics: ["algorithm-reference", "optimization"] },
   { family: "Quantum sampling algorithm", topics: ["algorithm-reference", "state-preparation"] },
   { family: "Optimization · decoded interferometry", topics: ["algorithm-reference", "optimization"] },
+  // Zoo-parity batch 13. Two more families, same rule as the six above: new
+  // family strings over existing topic ids, so the facet vocabulary and its
+  // tests are untouched. Both were arrived at by reading all of FAMILY_RULES
+  // first and finding no existing member that fits without asserting a
+  // mechanism the papers do not use — the four Optimization families each bind
+  // to one (time-dependent Hamiltonian, decoded interferometry, Ising encoding,
+  // variational kinematics), and an SDP solver by Gibbs sampling and amplitude
+  // amplification uses none of them.
+  { family: "Optimization · semidefinite programming", topics: ["algorithm-reference", "optimization"] },
+  // **The first family here carrying only its role, and deliberately.** The
+  // obvious second topic is `machine-learning`, whose definition in
+  // PUBLIC_REPOSITORY_TOPICS reads "Classification and regression over encoded
+  // classical data" — and spiked-tensor recovery is neither: it is unsupervised
+  // denoising. The label fits and the definition does not, so the record carries
+  // its role plus whatever facets its own tags earn through REFINEMENT_RULES,
+  // and the question of whether the domain facet should stretch is raised for
+  // the owner rather than settled by a paste.
+  { family: "Statistical inference · spiked tensor", topics: ["algorithm-reference"] },
   // Classiq-parity intake (entries-classiq-parity.ts). Three more families, same rule as
   // above: new family strings over existing topic ids, so the facet vocabulary and its
   // tests do not move. Benchmarking protocols and image processing are subject areas the
