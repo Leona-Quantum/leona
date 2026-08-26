@@ -35,10 +35,13 @@ from majorana_sandbox.trusted import (
     MAX_PAYLOAD_BYTES,
     TrustedPayloadTooLarge,
     TrustedProgramRejected,
+    TrustedRegistrySealed,
     compose_trusted,
     is_registered,
     register_trusted_program,
     run_trusted,
+    seal_trusted_registry,
+    trusted_registry_is_sealed,
 )
 from majorana_sandbox.vercel import DENY_ALL_EGRESS, SandboxProviderError, VercelSandbox
 
@@ -63,7 +66,10 @@ __all__ = [
     "is_registered",
     "compose_trusted",
     "run_trusted",
+    "seal_trusted_registry",
+    "trusted_registry_is_sealed",
     "TrustedProgramRejected",
     "TrustedPayloadTooLarge",
+    "TrustedRegistrySealed",
     "MAX_PAYLOAD_BYTES",
 ]

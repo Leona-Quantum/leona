@@ -74,8 +74,23 @@ class CircuitOptimizationError(ValueError):
         self.code = code
 
 
+def kernel_path() -> Path:
+    """The file the sandbox-side compiler kernel lives in.
+
+    Handed to `register_trusted_program`, which reads it itself. The worker used
+    to pass `kernel_source()` and that is what made the recorded digest a
+    statement about a string rather than about a file (ai-ops#190).
+    """
+
+    return _KERNEL_PATH
+
+
 def kernel_source() -> str:
-    """The text of the sandbox-side compiler kernel."""
+    """The text of the sandbox-side compiler kernel.
+
+    Still needed at the other end: `run_trusted` is handed the program text and
+    checks its digest against the registry.
+    """
 
     return _KERNEL_PATH.read_text(encoding="utf-8")
 
