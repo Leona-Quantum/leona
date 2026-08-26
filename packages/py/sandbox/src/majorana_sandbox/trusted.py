@@ -14,42 +14,60 @@ for a control-plane need out of the untrusted-code budget. The isolation
 boundary is the same either way; only the static pre-check differs, and the
 pre-check is about provenance.
 
-**What keeps user text out of this door, stated more carefully than it was.**
-This paragraph used to claim that "a caller cannot pass a string it received
-over the wire, because it could not have registered the digest." That is false
-and is corrected here rather than left standing: `register_trusted_program`
-accepts any `str`, so a caller that registered request-derived source and then
-ran it would pass the check. CodeRabbit found it on PR 778 and it was right.
+**What keeps user text out of this door, and what part of it is mechanical.**
+This paragraph twice said more than it could support, so it now says exactly
+what the code enforces and stops there.
 
-What the digest actually proves is narrower: that the text `run_trusted`
-executes is byte-identical to text some caller registered. It is an integrity
-check, not a provenance check.
+The first version claimed "a caller cannot pass a string it received over the
+wire, because it could not have registered the digest." That was false while
+`register_trusted_program` took a `str`: a caller that registered
+request-derived source and then ran it would pass the check. CodeRabbit found it
+on PR 778 and it was right. The second version corrected the claim to
+integrity-not-provenance and left the gap open, recorded as ai-ops#190.
 
-Provenance is a **convention**, and here is the whole of it, named precisely
-because an earlier version of this paragraph named the wrong file. There is
-exactly ONE production call site: `services/worker/src/majorana_worker/handlers.py`,
-at module level, so it runs at import and never while serving a request. What it
-registers is `kernel_source()` — `majorana_frameworks.optimizers`, which reads
+**The gap is now closed by construction, and this is how.**
+`register_trusted_program` takes a `pathlib.Path`, not a `str`. It reads the
+file itself. There is no application-callable path in this package that accepts
+raw source text and records it as runnable, so registering a string received
+over the wire is not something a caller can do wrongly — it is something the
+signature refuses. Passing a `str` raises `TrustedProgramRejected` rather than
+being coerced, because a silent coercion would re-open the door under a new
+name.
+
+**And the registry seals.** `seal_trusted_registry()` is called by the worker's
+process entrypoint (`majorana_worker.__main__.main`) once startup registration
+is done. After that, `register_trusted_program` raises
+`TrustedRegistrySealed`. So even code that wrote attacker-controlled text to a
+file and passed its path could not register it while a request is being served:
+by then, nothing can register anything.
+
+Two things this deliberately does NOT claim:
+
+1. **A path is still named by the caller.** What the digest proves is that the
+   text executed came off disk, at a path some caller named, before the seal.
+   In the deployed worker that is a file in an installed first-party package;
+   this module cannot verify that on its own and does not pretend to.
+2. **Sealing is a call, not a language guarantee.** A process that never calls
+   `seal_trusted_registry()` — every test process, for one — keeps an open
+   registry. `trusted_registry_is_sealed()` exists so a caller can assert it
+   rather than assume it.
+
+Reading the live file, rather than a hand-maintained digest manifest, is
+deliberate: it is what guarantees the digest can never drift from the deployed
+source. A manifest would close the same gap and trade that property away.
+
+The one production call site is
+`services/worker/src/majorana_worker/handlers.py`, at module level, so it runs
+at import and never while serving a request. What it registers is
+`kernel_path()` — `majorana_frameworks.optimizers`, i.e.
 `Path(__file__).with_name("optimizer_kernel.py")`. The kernel does not register
-itself; the worker registers a file read off its own installed package at
-startup. That distinction is the argument: what makes the text first-party is
-that it comes off disk from a deployment-fixed path, not that some module
-vouched for it. The only other call sites are in
-`packages/py/sandbox/tests/test_trusted.py`.
+itself; the worker names a file inside its own installed package. The only
+other call sites are in `packages/py/sandbox/tests/test_trusted.py`.
 
-A reviewed static digest manifest would make provenance mechanical. It is an
-open suggestion (ai-ops#190) rather than something done here, and it is not a
-free win: digesting the live file is what guarantees the digest can never drift
-from the deployed source, and a hand-maintained manifest trades that away for
-closing the bare-string gap. Both properties are worth having and the cheaper
-route to both — take a `Path` and read the file here — is costed in that issue.
-
-What is NOT a convention, and is what actually keeps user text out: the request
+Independently of all of it, and still doing the heaviest lifting: the request
 data travels as a JSON *payload* serialized by this module — never as code — so
 nothing a user controls reaches the composed program except as the right-hand
-side of one string assignment, written through `repr`. To get user text into
-this door at all, someone would first have to write new code in this repository
-that registers it.
+side of one string assignment, written through `repr`.
 
 The sandbox's own guarantees are unchanged and are still doing the real work:
 deny-all egress, no credentials in the environment, and a provider-enforced
@@ -61,6 +79,7 @@ from __future__ import annotations
 import hashlib
 import json
 import re
+from pathlib import Path
 from typing import Any
 
 from majorana_sandbox.base import Sandbox
@@ -79,6 +98,12 @@ MAX_PAYLOAD_BYTES = 262_144
 
 _REGISTERED_PROGRAMS: set[str] = set()
 
+#: Whether registration is closed. Flipped once, by the worker's process
+#: entrypoint, after startup registration and before the first poll cycle. It is
+#: module state rather than a parameter because the property being asserted is
+#: about the *process*, not about any one call.
+_SEALED = False
+
 #: Matches a `__future__` import anywhere, including one indented inside a
 #: string — deliberately over-broad. A false refusal costs one comment rewrite;
 #: a miss costs a SyntaxError that only appears inside a sandbox.
@@ -93,18 +118,74 @@ class TrustedPayloadTooLarge(ValueError):
     """The serialized payload exceeded `MAX_PAYLOAD_BYTES`."""
 
 
-def register_trusted_program(source: str) -> str:
-    """Record a control-plane program as runnable and return its digest.
+class TrustedRegistrySealed(RuntimeError):
+    """Registration was attempted after `seal_trusted_registry`."""
 
-    Call this on a module's own source text at import time — never on a string
-    assembled from a request. The returned digest is what `run_trusted`
-    re-computes and checks.
 
-    **That first sentence is a convention this function cannot enforce.** It
-    takes any `str` and will happily digest request-derived text; the check it
-    backs proves integrity (what runs is what was registered), not provenance
-    (what was registered came from this repository). See the module docstring.
+def seal_trusted_registry() -> None:
+    """Close registration for the rest of this process.
+
+    Called by the worker's entrypoint once startup registration is done, so that
+    a request-time registration is impossible rather than merely unconventional.
+    Idempotent: sealing an already-sealed registry is not an error, because the
+    property a caller wants afterwards is "closed", not "closed by me".
     """
+
+    global _SEALED
+    _SEALED = True
+
+
+def trusted_registry_is_sealed() -> bool:
+    """Whether registration is closed. Assert it rather than assuming it."""
+
+    return _SEALED
+
+
+def _reset_trusted_registry_for_tests() -> None:
+    """Empty the registry and unseal it.
+
+    Underscored and named for its only legitimate caller. A test suite has to be
+    able to register repeatedly, and one that sealed the registry would poison
+    every test that ran after it in the same process — module state outlives a
+    test function.
+    """
+
+    global _SEALED
+    _REGISTERED_PROGRAMS.clear()
+    _SEALED = False
+
+
+def register_trusted_program(source: Path) -> str:
+    """Read a first-party program off disk and record it as runnable.
+
+    Takes a `pathlib.Path` and reads it here. That is the whole provenance
+    argument and it is why the parameter is not a `str`: there is no
+    application-callable path in this package that turns caller-supplied *text*
+    into a registered program, so registering something that arrived over the
+    wire is not a mistake a caller can make. It was one while this took a `str`
+    — CodeRabbit found it on PR 778 (ai-ops#190) and it was right.
+
+    Refuses a `str` loudly instead of coercing it. A coercion would restore the
+    exact gap this signature exists to close, and it would do it silently.
+
+    Refuses to register at all once `seal_trusted_registry` has been called.
+
+    The returned digest is what `run_trusted` re-computes and checks.
+    """
+
+    if _SEALED:
+        raise TrustedRegistrySealed(
+            "the trusted-program registry is sealed for this process; "
+            "registration happens at startup, never while serving a request"
+        )
+    if not isinstance(source, Path):
+        raise TrustedProgramRejected(
+            "register_trusted_program takes a pathlib.Path and reads the file "
+            f"itself, not {type(source).__name__} source text: reading it here "
+            "is what makes the recorded digest a statement about a file on "
+            "disk rather than about a string some caller assembled"
+        )
+    source = source.read_text(encoding="utf-8")
 
     if _FUTURE_IMPORT.search(source):
         # A `__future__` import is legal only as the first statement of the

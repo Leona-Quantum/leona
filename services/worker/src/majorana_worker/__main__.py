@@ -20,6 +20,7 @@ from typing import Any
 from majorana_api.db import engine_from_env, session_factory
 from majorana_api.observability import init_telemetry
 from majorana_api.repos import system
+from majorana_sandbox import seal_trusted_registry
 from opentelemetry import metrics
 
 from .errors import RetryableJobError
@@ -664,6 +665,14 @@ async def run_forever() -> None:
 def main() -> None:
     logging.basicConfig(level=logging.INFO)
     init_telemetry("majorana-worker")
+    # Close the trusted-program registry before the first poll cycle. Everything
+    # this worker may run has been registered by now — `handlers` does it at
+    # import, off a file inside its own installed package — so a registration
+    # from here on could only come from request-shaped work, and there is no
+    # legitimate one. Sealing here rather than at module scope is deliberate:
+    # importing `handlers` must stay side-effect-free for tests, and a seal that
+    # fired on import would poison every test process that touched it.
+    seal_trusted_registry()
     asyncio.run(run_forever())
 
 

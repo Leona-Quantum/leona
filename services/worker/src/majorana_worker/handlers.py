@@ -113,6 +113,7 @@ from .intent import resolve_mode
 from majorana_frameworks.optimizers import (
     CircuitOptimizationError,
     build_kernel_payload,
+    kernel_path,
     kernel_source,
     result_from_kernel,
 )
@@ -213,12 +214,18 @@ def _default_llm() -> LLMClient:
     return default_llm()
 
 
-#: The compiler kernel's source, read once at import and registered as a trusted
-#: program. Registration is what lets `run_trusted` refuse anything else: a
-#: caller cannot reach that door with a string it did not put through this
-#: function, and this function is only ever applied to a file in this repo.
+#: The compiler kernel's source, read once at import, and its file registered as
+#: a trusted program. Registration is what lets `run_trusted` refuse anything
+#: else. Note which of the two is registered: `register_trusted_program` is
+#: handed the PATH and reads it itself, so the digest it records is a statement
+#: about a file inside this installed package rather than about a string this
+#: module assembled (ai-ops#190). The text is kept because `run_trusted` is
+#: handed the program and re-checks that digest.
+#:
+#: This runs at import, which is before the worker seals the registry in
+#: `majorana_worker.__main__.main`. Nothing may register after that.
 _OPTIMIZER_KERNEL = kernel_source()
-register_trusted_program(_OPTIMIZER_KERNEL)
+register_trusted_program(kernel_path())
 
 
 def _default_sandbox() -> Sandbox:
