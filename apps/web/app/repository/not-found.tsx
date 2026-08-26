@@ -18,7 +18,7 @@ import { NotFoundBody } from "../../components/not-found-body";
  * `global-not-found.tsx` fixed the first row — a URL matching no segment at
  * all — and only that row. Every row below it is a `notFound()` thrown from
  * INSIDE this segment, which falls through to `app/not-found.tsx`; that file
- * sits at the app root, where since ai-ops#151 there is no root layout, so Next
+ * sits at the app root, where since ai-ops issue 151 there is no root layout, so Next
  * synthesises a bare `<html><body>` around it and no CSS is emitted. That file's
  * own comment says it answers a `notFound()` "where a root layout does exist" —
  * true of the segment, not of the boundary, and the difference is the bug.
