@@ -2547,12 +2547,17 @@ test("a contract's mathematics is mathematics, not a literal underscore at a rea
     `a contract writes a subscript outside $…$, so a reader sees the underscore: ${bareSubscripts.join(", ")}`,
   );
 
-  // The worklist, pinned so it can shrink and not grow. 36 of 132 fields across
-  // 13 capabilities when this was written.
-  assert.ok(
-    unicodeOutside.size <= 36,
-    `${unicodeOutside.size} contract fields carry a Unicode maths symbol outside $…$, up from 36. ` +
-      `Write it as LaTeX inside $…$: ${[...unicodeOutside].slice(0, 6).join(", ")}`,
+  // **Both halves are closed**, so both are asserted at zero rather than one being
+  // pinned as a worklist. The first version of this test pinned the Unicode half at
+  // 36 of 124 and said so out loud; the same change then closed it across 13 more
+  // capabilities, and a pin left at 36 would have quietly permitted 36 to come back.
+  assert.deepEqual(
+    [...unicodeOutside].sort(),
+    [],
+    `a contract writes a Unicode maths symbol outside $…$, so it reaches a reader as a ` +
+      `character rather than as mathematics. Write it as LaTeX inside $…$ — \\varepsilon, ` +
+      `\\lVert…\\rVert, \\ge, \\lvert 0\\rangle — never the character wrapped in dollars, which ` +
+      `check-math.mjs counts as its own worklist: ${[...unicodeOutside].slice(0, 6).join(", ")}`,
   );
 });
 
