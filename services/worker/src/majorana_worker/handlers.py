@@ -1087,6 +1087,14 @@ async def handle_circuit_optimize(session: AsyncSession, payload: dict[str, Any]
     #
     # The whole request is a validated, closed, declarative circuit — never source
     # code — so nothing a user wrote is executed at either end of this call.
+    #
+    # No `qubits_estimate` is passed, on purpose. The 27-qubit lane ceiling in
+    # `spec.preflight` bounds a STATEVECTOR — 2^27 amplitudes at 16 bytes is
+    # exactly the 2 GiB this lane asks for — and a compiler builds no state
+    # vector. The request's own bounds are what apply here: 64 qubits and 1024
+    # operations, refused by `CircuitOptimizationRequest` before a run row
+    # exists, with BQSKit and PyZX narrowing further inside the kernel. Passing
+    # an estimate would refuse a 28-qubit compile that costs nothing to do.
     result_path = f"/tmp/leona-compile-{run_id.hex}.json"
     try:
         sandbox_result = await run_trusted(
