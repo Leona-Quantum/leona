@@ -66,6 +66,88 @@ body {
   isolation: isolate;
 }
 
+/* The landing composer carries the restrained two-ring treatment from the
+ * Neon Glow reference: a crisp accent trace above a wider blurred trace. The
+ * paired traces orbit continuously, while engagement only increases their
+ * intensity. */
+@property --mj-landing-prompt-glow-angle {
+  syntax: "<angle>";
+  inherits: false;
+  initial-value: 60deg;
+}
+.mj-company-site .mj-landing-prompt {
+  position: relative;
+  isolation: isolate;
+  border-color: color-mix(in srgb, var(--accent) 14%, var(--border-0));
+  transition: border-color var(--dur-hover) var(--ease-out-ui);
+}
+.mj-company-site .mj-landing-prompt::before,
+.mj-company-site .mj-landing-prompt::after {
+  --mj-landing-prompt-glow-angle: 60deg;
+  content: "";
+  position: absolute;
+  pointer-events: none;
+  background: conic-gradient(
+    from var(--mj-landing-prompt-glow-angle),
+    transparent 0 18%,
+    color-mix(in srgb, var(--accent) 78%, transparent) 24%,
+    var(--accent) 29%,
+    transparent 40% 58%,
+    color-mix(in srgb, var(--accent-press) 78%, transparent) 67%,
+    transparent 78% 100%
+  );
+  -webkit-mask:
+    linear-gradient(var(--text-0) 0 0) content-box,
+    linear-gradient(var(--text-0) 0 0);
+  mask:
+    linear-gradient(var(--text-0) 0 0) content-box,
+    linear-gradient(var(--text-0) 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+  animation: mj-landing-prompt-glow 6s linear infinite;
+  transition: opacity var(--dur-hover) var(--ease-out-ui);
+}
+.mj-company-site .mj-landing-prompt::before {
+  z-index: 1;
+  inset: calc(-1 * var(--border-hairline));
+  padding: var(--border-hairline);
+  border-radius: inherit;
+  opacity: 0.78;
+}
+.mj-company-site .mj-landing-prompt::after {
+  z-index: -1;
+  inset: calc(-1 * var(--sp-1));
+  padding: var(--sp-1);
+  border-radius: calc(var(--radius-card) + var(--sp-2) + var(--sp-1));
+  filter: blur(var(--sp-1));
+  opacity: 0.52;
+}
+.mj-company-site .mj-landing-prompt:hover,
+.mj-company-site .mj-landing-prompt:focus-within {
+  border-color: color-mix(in srgb, var(--accent) 32%, var(--border-0));
+}
+.mj-company-site .mj-landing-prompt:hover::before,
+.mj-company-site .mj-landing-prompt:focus-within::before {
+  opacity: 1;
+}
+.mj-company-site .mj-landing-prompt:hover::after,
+.mj-company-site .mj-landing-prompt:focus-within::after {
+  opacity: 0.8;
+}
+@keyframes mj-landing-prompt-glow {
+  to { --mj-landing-prompt-glow-angle: 420deg; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .mj-company-site .mj-landing-prompt {
+    transition: none;
+  }
+  .mj-company-site .mj-landing-prompt::before,
+  .mj-company-site .mj-landing-prompt::after {
+    animation: none;
+    transition: none;
+  }
+}
+
 /* Run-home hero — the constellation mark and greeting are the only heading;
  * explanatory copy was retired per owner direction 2026-07-17. App-surface
  * motion lives here, keeping the vendored UI package within its allowlist. */
