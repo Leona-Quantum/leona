@@ -123,14 +123,48 @@
   max-width: 34rem;
 }
 
+/* The wordmark, drawn the way every other page on the site draws it.
+   `globals.css`'s `.lq-wordmark` is the original and this is a copy of its
+   geometry, which is the one thing here that is duplicated rather than shared:
+   the error document Next synthesises has an empty head, so this sheet is the
+   only CSS this page has, and importing the app's stylesheet is exactly the
+   chunk gamble ai-ops issue 189 declined. The numbers below are the artwork's,
+   not chosen — the source raster is 766 x 174 with transparent room around it,
+   and the inset percentages clip that raster to its visible bounds. If the
+   artwork is ever re-exported, both files move together or neither does, and
+   `not-found-standalone-tokens.test.ts` reads both to say so.
+
+   `currentColor` is what makes one PNG serve both themes: the mask paints the
+   link's own colour, so the mark is dark on the light surface and light on the
+   dark one without a second export. That is also why the hover colour still
+   lands — it is inherited through `color`, not painted here. */
 .mj-nf-brand {
+  position: relative;
   display: inline-block;
   margin-bottom: 3rem;
   color: var(--nf-text);
-  font-size: 0.9375rem;
-  font-weight: 500;
-  letter-spacing: 0.01em;
   text-decoration: none;
+}
+
+.mj-nf-wordmark {
+  position: relative;
+  display: block;
+  width: 152px;
+  aspect-ratio: 766 / 174;
+  overflow: hidden;
+  color: inherit;
+}
+
+.mj-nf-wordmark::before {
+  content: "";
+  position: absolute;
+  left: -6.397%;
+  top: -29.31%;
+  width: 113.055%;
+  height: 165.517%;
+  background: currentColor;
+  -webkit-mask: url("/brand/leona-quantum-wordmark.png") center / 100% 100% no-repeat;
+  mask: url("/brand/leona-quantum-wordmark.png") center / 100% 100% no-repeat;
 }
 
 .mj-nf-brand:hover {

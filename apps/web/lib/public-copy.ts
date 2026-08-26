@@ -735,6 +735,17 @@ export const NOT_FOUND_COPY: Record<PublicLocale, {
   body: string;
   home: string;
   repository: string;
+  /**
+   * The accessible name of the wordmark link, which has no text of its own.
+   *
+   * Deliberately the same string as `PUBLIC_COPY.brandHome`, not a second
+   * wording of it — the two links do the same thing and a screen reader meets
+   * them one navigation apart. It is duplicated rather than imported because
+   * this copy object is the only one the standalone 404 may reach: the error
+   * document Next synthesises has an empty head, so this component is bundled
+   * on its own and pulling in the public-site copy would pull the public site.
+   */
+  brandHome: string;
 }> = {
   en: {
     label: "404",
@@ -742,6 +753,7 @@ export const NOT_FOUND_COPY: Record<PublicLocale, {
     body: "The address you followed does not match anything on Leona Quantum. It may have been mistyped, or the page may have moved since it was linked.",
     home: "Return home",
     repository: "Browse the Atlas",
+    brandHome: "Leona Quantum home",
   },
   ja: {
     label: "404",
@@ -749,5 +761,6 @@ export const NOT_FOUND_COPY: Record<PublicLocale, {
     body: "お探しのアドレスに一致するページはありません。入力に誤りがあるか、リンクされた後にページが移動した可能性があります。",
     home: "ホームに戻る",
     repository: "Atlasを見る",
+    brandHome: "Leona Quantum ホーム",
   },
 };
