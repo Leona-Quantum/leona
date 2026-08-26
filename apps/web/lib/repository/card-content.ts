@@ -924,6 +924,18 @@ function implementationsOf(
   // checked first for that reason: a record that supplies a runnable variant has
   // filled the section by another route, so a reason saying "no cited paper
   // implements this" would be true and beside the point.
+  //
+  // **What that costs, measured 2026-08-27, because a batch paid it before
+  // anyone had counted.** Every one of the 279 corpus records carries a code
+  // variant — `check-repository-data.mjs` refuses one that does not — so for any
+  // method whose `entries` names a record, `joined` is non-empty and a declared
+  // `implementations` absence can never reach a reader. That is **65 of the 116
+  // methods**, and 23 of the 37 still open on the field. On those, the only way
+  // to fill the section is an authored entry; writing an absence is work the
+  // page will not show. Batch 11 wrote a careful one for
+  // `state-discrimination-search` and dropped it after a test refused it — the
+  // test was right, and it was right about production too, which was the half
+  // that had been left open.
   if (entries.length === 0) {
     return missing("none-recorded", absenceOf(method, "implementations", ja));
   }

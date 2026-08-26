@@ -227,6 +227,11 @@ for (const entry of entries) {
   // executable code. It still has to CARRY its text; the requirement is that
   // every entry publishes something, not that everything is a circuit.
   const reference = variants.filter((v) => v.language === "text" && nonEmpty(v.code));
+  // **This line is load-bearing somewhere else and says so nowhere.**
+  // `repository-map-card.test.ts` builds its corpus fixture giving every record
+  // exactly one runnable variant, on the premise that production does too — and
+  // this is what makes that premise true rather than hopeful. Weakening it to a
+  // warning would silently turn that fixture from an upper bound into a fiction.
   if (!native.length && !reference.length) fail(slug, "no code variant with code");
   if (native.length && reference.length) {
     fail(slug, "an entry is a runnable circuit or a reference record, never both");
