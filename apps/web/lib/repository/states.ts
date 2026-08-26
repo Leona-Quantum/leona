@@ -71,7 +71,7 @@
 //
 // Four places cite *"`states.ts`'s admission rule"* and state it as **two
 // processes arriving, or two leaving**: `state-vocabulary.ts` twice — on
-// `marking-oracle` and on `marked-item` (*"says so in as many words"*) —
+// `pde-problem` and on `marked-item` (*"says so in as many words"*) —
 // `repository-region-joins.test.ts`, and `docs/adr/0027-cross-region-joins.md`.
 // **They name the wrong file.** The rule is real and it is stated, in
 // `state-vocabulary.ts`'s own header, above the vocabulary it governs:
