@@ -66,6 +66,55 @@
 // 3. **Never let a state id collide with a node id.** They share the
 //    `/repository/layers/<id>` namespace on purpose — one address per thing a
 //    reader can name — and `validateLayerGraph` rejects a collision.
+//
+// ## The admission rule lives in `state-vocabulary.ts`, and what is added here
+//
+// Four places cite *"`states.ts`'s admission rule"* and state it as **two
+// processes arriving, or two leaving**: `state-vocabulary.ts` twice — on
+// `pde-problem` and on `marked-item` (*"says so in as many words"*) —
+// `repository-region-joins.test.ts`, and `docs/adr/0027-cross-region-joins.md`.
+// **They name the wrong file.** The rule is real and it is stated, in
+// `state-vocabulary.ts`'s own header, above the vocabulary it governs:
+//
+// > *"The test of whether a state belongs here is the one `whyALayer` applies to
+// > a slot: can you name **two different processes that arrive at it** or **two
+// > that leave it**? A noun that appears on exactly one edge, in one direction,
+// > is a parameter of that process and belongs in its contract prose."*
+//
+// Those four citations are corrected in place to name it. **This file does not
+// restate it**, and the first attempt at this comment did — one rule with two
+// writers is the duplication the rest of this module argues against, and it
+// would have drifted the first time either was edited.
+//
+// ## What this comment adds, which was genuinely missing: the count
+//
+// The rule reads as an invariant and is not one. Measured on 2026-08-26 with
+// `stateTraffic` in `layers.ts` — arrivals and departures are a node's *own*
+// contract, which is what that function calls a process — **11 of the 42 states
+// satisfy it and 31 do not.** Among the 31 are `ground-state-problem`,
+// `eigenvalue-problem`, `hidden-period` and `search-graph-with-marked-set`, each
+// with exactly one process at one end and none at the other; `history-state` is
+// touched by no process at all. Nothing enforces it either: `validateStateVocabulary`
+// below checks kebab-case, duplicate ids, empty prose and `specializes` hygiene
+// and has no opinion on degree, and `check-layer-graph.mjs` prints arrivals ×
+// departures per state and gates on none of it.
+//
+// So it is **a bar applied when a new state is authored, not a property the
+// vocabulary has**, and three things follow:
+//
+// - **A state that fails it is not thereby illegal.** Thirty-one are
+//   load-bearing today. The failure says the state is doing the job of *a
+//   parameter of one process* until a second process reaches it.
+// - **The response to a failure is to name the missing process, never to invent
+//   one.** `repository-region-joins.test.ts` already writes that down for
+//   `marked-item`: *"Naming a consumer would be the next real piece of work
+//   here, and inventing one would be the dishonest way to make this number
+//   smaller."* Manufacturing a slot so a count clears is prohibition 1 above
+//   wearing a different hat.
+// - **`plans/atlas-revamp/W27-marked-item-search-scoped.md` §3 read it as
+//   binding and made it a shipping constraint** — Group A of the search region
+//   was declared unable to ship without Group B. On the count above that
+//   sequencing was stricter than the vocabulary's own practice.
 
 /** A place a reader can be, independent of how they got there. */
 export interface LayerState {

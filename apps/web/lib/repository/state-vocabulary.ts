@@ -39,8 +39,10 @@ export const STATE_VOCABULARY: StateVocabulary = {
         "A linear PDE on a continuous spatial domain, with the initial or boundary conditions that pin its solution — the problem as it is posed, before any grid exists. It is the one object here with infinitely many degrees of freedom, and that is what makes the first step real work rather than bookkeeping: replacing the continuum with finitely many numbers costs an error nobody can avoid, and that error is the first term in every budget downstream.",
       summaryJa:
         "連続な空間領域の上の線形偏微分方程式と、その解を定める初期条件あるいは境界条件。すなわち、格子を導入する前の、提示されたままの問題です。ここに登場する対象のうち、自由度が無限であるのはこれだけであり、そのために最初の一歩は帳簿づけではなく実質的な作業になります。連続体を有限個の数値で置き換えるには誰にも避けられない誤差が伴い、その誤差こそ、下流のあらゆる見積もりにおける最初の項だからです。",
-      // **Two processes leave this state, which is what `states.ts`'s admission
-      // test asks for**, and one paper states both by itself rather than the two
+      // **Two processes leave this state, which is what this file's own
+      // admission test asks for** (stated in the header above; it said
+      // `states.ts` until 2026-08-26, which never held the rule), and one paper
+      // states both by itself rather than the two
       // being lined up from separate sources. Linden, Montanaro and Shao
       // (arXiv:2004.06516) discretise space *and* time by FTCS into a single
       // block system over all timesteps (§I A, Eq. 38), and give the alternative
@@ -582,7 +584,9 @@ export const STATE_VOCABULARY: StateVocabulary = {
       // That is what makes this one state rather than two, and it is the reason
       // the two slots were built in the same unit — a search region whose exit
       // nothing else reaches is a parameter of one process wearing a circle, and
-      // `states.ts`'s admission rule says so in as many words.
+      // this file's own header says so in as many words. (It said `states.ts`
+      // until 2026-08-26; the rule has always been stated here, above the
+      // vocabulary it governs, and `states.ts` never held it.)
     },
     {
       id: "search-graph-with-marked-set",

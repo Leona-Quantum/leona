@@ -113,7 +113,7 @@ observable-value`: one input, already in the vocabulary, and `stateSatisfies` su
 because a `runnable-evolution` satisfies `evolution-circuit` and `prepared-state` at once.
 
 So a two-input process is **category (b), a missing process** — whose entry state may also need
-authoring. That is ordinary vocabulary growth under `states.ts`'s existing admission rule (two
+authoring. That is ordinary vocabulary growth under `state-vocabulary.ts`'s existing admission rule (two
 processes arriving, or two leaving), and it changes nothing about what an edge is: still one
 contract, still `stateSatisfies`, still directional.
 
