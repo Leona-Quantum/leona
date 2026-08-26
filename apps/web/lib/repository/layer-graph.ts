@@ -16552,5 +16552,261 @@ export const LAYER_GRAPH: LayerGraph = {
       { title: "Quantum walk speedup of backtracking algorithms", authors: "Ashley Montanaro", year: "2015", url: "https://arxiv.org/abs/1509.02374" },
     ],
   },
+  // === the combinatorial-optimization region ==================================
+  //
+  // Scoped in plans/atlas-revamp/W29-combinatorial-optimization-scoped.md.
+  //
+  // ONE slot, not the two that document first proposed. The encoding slot
+  // (`combinatorial-problem` -> `cost-hamiltonian`) was refused against the
+  // paper rather than deferred: Pakhomchik et al. (arXiv:2205.04844) build
+  // their QUBO with ordinary penalty terms and cite Lucas exactly once, in the
+  // introduction, never where the QUBO is built. Their distinct contribution is
+  // a DECOMPOSITION (section III.C) that consumes a workflow DAG and returns a
+  // sequence of smaller QUBOs, and the authors scope it themselves to "any
+  // other exact or heuristic discrete optimisation tool or formulation,
+  // including LP, QUBO, HOBO, etc." -- a different contract, not a competing
+  // encoding. The corpus's third record in that family,
+  // `quantum-vulnerability-analysis`, is a minimum vertex cover, which is an
+  // entry in Lucas's own catalogue. So that slot has one method, fails the
+  // >=2-methods rule, and is not built. Four records anchor here, not six.
+  {
+    kind: "capability",
+    id: "combinatorial-optimization",
+    label: "Search a cost Hamiltonian for the assignment it minimises",
+    labelJa: "コストハミルトニアンから、それを最小化する割り当てを探す",
+    summary: "A cost function over discrete assignments, rewritten as an operator diagonal in the computational basis, is searched for the assignment at or near its minimum — by alternating short unitaries at a fixed, chosen depth, or by interpolating continuously toward the operator's own ground state. Both routes read the same operator; what they promise about the assignment they hand back is where they differ.",
+    summaryJa: "離散的な割り当てにわたるコスト関数を、計算基底で対角な演算子として書き直したうえで、その最小またはそれに近い割り当てを探索します。あらかじめ選んだ一定の深さで短いユニタリを交互に適用する経路と、その演算子自身の基底状態へ向けて連続的に補間する経路とがあります。両者は同じ演算子を読み取りますが、返す割り当てについて何を約束するかという点で違いが生じます。",
+    contract: {
+      from: "cost-hamiltonian",
+      to: "assignment",
+      takes: "An Ising or QUBO operator, diagonal in the computational basis, whose extremal eigenvector encodes the problem's solution — given, for QAOA, as a sum of clause terms $C(z) = \\sum_{\\alpha=1}^{m} C_\\alpha(z)$ over $n$ bits and $m$ clauses; given, for adiabatic evolution, as the final Hamiltonian $H_P$ of an interpolation whose starting point $H_B$ has an easily-constructed ground state. Neither method is told how the operator was built, or by which encoding.",
+      takesJa: "計算基底で対角なIsingまたはQUBO演算子であり、その極値固有ベクトルが問題の解を符号化しています。QAOAの場合はこれを、$n$ビットと$m$個の節にわたるクローズ項の和 $C(z) = \\sum_{\\alpha=1}^{m} C_\\alpha(z)$ として与えます。断熱発展の場合はこれを、基底状態が容易に構成できる出発点 $H_B$ からの補間の終点である最終ハミルトニアン $H_P$ として与えます。どちらの方式も、この演算子がどのように、どの符号化によって作られたかは知らされていません。",
+      returns: "A bit string $z$ read off the computational basis — the assignment — together with the objective value it achieves, or, for the adiabatic route, the stated promise that this string is (with fidelity approaching 1, for a long enough evolution time) the true minimiser. Neither route returns an energy with an error bar; both return a string.",
+      returnsJa: "計算基底で読み取ったビット列 $z$、すなわち割り当てと、それが達成する目的関数値です。断熱発展の経路では、発展時間を十分に長くとれば、この文字列が（1に近づく忠実度で）真の最小化点であるという主張が明示的に伴います。どちらの経路も誤差付きのエネルギーを返すのではなく、文字列を返します。",
+    },
+    whyALayer: "Both routes here read the same object — an operator diagonal in the computational basis whose lowest state is the problem's answer — and hand back the same kind of thing: a bit string, not an energy. What separates them is what that string is guaranteed to be, and the boundary is drawn by the authors of one route against the other, in their own paper: \"We are focused on finding a good approximate solution to an optimization problem whereas the Quantum Adiabatic Algorithm, QAA, is designed to find the optimal solution and will do so if the run time is long enough.\" The two constructions sit close enough that one is literally a Trotterization of the other, in the same paragraph: \"A Trotterized approximation to the evolution consists of an alternation of the operators U(C, γ) and U(B, β).\" So the choice a reader makes here is not between two different objects — it is between a guarantee bought with more circuit depth (adiabatic evolution, at a cost its own authors state they cannot bound in general) and a guarantee given up for a fixed, shallow circuit (QAOA, at a ratio its authors can state exactly, for one problem, at one depth).",
+    whyALayerJa: "ここにある両方の経路は、同じ対象——計算基底で対角であり、その最下位の状態が問題の答えとなる演算子——を読み取り、同じ種類のもの、すなわちエネルギーではなくビット列を返します。両者を分けるのは、そのビット列が何であると保証されるかという点であり、その境界は一方の経路の著者たち自身が、もう一方に対して自分の論文の中で引いています。「われわれは最適化問題に対する良い近似解を見つけることに主眼を置いているのに対し、量子断熱アルゴリズム（QAA）は最適解を見つけるように設計されており、実行時間が十分に長ければそれを達成する。」二つの構成は、一方がもう一方を文字通りトロッター分解したものと言えるほど近く、同じ段落でこう述べられています。「発展に対するトロッター近似は、演算子 U(C, γ) と U(B, β) の交互適用から成る。」したがって、読者がここで行う選択は、二つの異なる対象の間の選択ではありません。より深い回路と引き換えに得られる保証（断熱発展。その著者たち自身が一般には見積もれないと述べている費用がかかります）と、固定された浅い回路と引き換えに手放される保証（QAOA。その著者たちは、一つの問題について、一つの深さについてなら、その比率を正確に述べられます）との間の選択です。",
+    // No `entries` at the capability: each of this region's two primary-source
+    // records (`qaoa-combinatorial-optimization`, `quantum-adiabatic-evolution`)
+    // is anchored on its own method's `entries` array, alongside the runs that
+    // document it — see the comment there. Nothing at the capability level is
+    // evidence FOR the slot as a whole rather than for one specific route
+    // through it.
+    //
+    // Nine records that a title or a `family` read admits into this region are
+    // deliberately NOT anchored here, and the reason is one sentence each, quoted
+    // off the record rather than off the title
+    // (`plans/atlas-revamp/W29-combinatorial-optimization-scoped.md` §4, extended
+    // by three more once §2.1's encoding slot was cancelled — see the comment on
+    // `cost-hamiltonian` in `state-vocabulary.ts`).
+    //
+    // Contract mismatch — the entry or the exit named here is not this slot's:
+    // - `quantum-portfolio-optimization` — its own `problem` field: "Given
+    //   quantum access to a historical record of asset returns, determine the
+    //   optimal risk-return tradeoff curve of a portfolio and provide a way to
+    //   sample from the optimal portfolio." `family: "Quantum linear algebra"` —
+    //   this is HHL-shaped (poly(log N) against poly(N)), not a search over a
+    //   cost Hamiltonian for an assignment.
+    // - `quantum-simulated-annealing` — its own `problem` field: "Sample from
+    //   the final limiting distribution πₙ of a slowly varying sequence of
+    //   Markov chains, where πₙ is chosen to concentrate on good solutions of a
+    //   combinatorial optimization problem." The exit is a sample from a
+    //   distribution, not an assignment paired with the objective value it
+    //   achieves.
+    // - `zero-sum-game-equilibria` — its own `problem` field: "Given oracle
+    //   access to the m × n payoff matrix of a zero-sum game with bounded
+    //   entries, compute a classical representation of an ε-approximate Nash
+    //   equilibrium of that game." No cost Hamiltonian anywhere in the
+    //   construction; its own `idea` field runs the result through Gibbs
+    //   sampling instead.
+    // - `quantum-forward-kinematics-inverse-solve` — the corpus has already
+    //   argued this refusal, in a comment directly above the record in
+    //   `entries-classiq-parity.ts`: "The paper's method has no cost Hamiltonian
+    //   and no mixer. It says only that it is 'based on variational optimization
+    //   methods similar to' VQE and QAOA, and that similarity is not a
+    //   citation."
+    //
+    // Uses this capability's method rather than competing with it:
+    // - `cooling-systems-optimization` — its own `idea` field describes QuSO as
+    //   treating "simulations as subproblems within a larger optimization
+    //   problem", and its own `complexityBasis` quotes the abstract: "This does
+    //   not yield a speedup for a single simulation instance, but it enables
+    //   potential advantages arising from the subsequent QAOA-based search over
+    //   configurations." The QAOA depth it spends is a cost paid downstream of a
+    //   different contract, not a competing assignment search.
+    // - `qaoa-in-qaoa` — its own `idea` field: "a divide-and-conquer heuristic
+    //   that solves large-scale MaxCut problems by splitting the graph into many
+    //   subgraph problems that can be solved in parallel, each still handled by
+    //   QAOA" — a method whose own step is the very slot it would realise. Its
+    //   own `complexityBasis` quotes the abstract's finding against it: "For the
+    //   considered graphs, the best choice for the sub-graphs does not
+    //   significantly improve results and is still outperformed by GW."
+    //
+    // Encoding, not search — belongs upstream of this slot, at the now-cancelled
+    // §2.1 (see `cost-hamiltonian`'s own comment in `state-vocabulary.ts`):
+    // - `ising-formulations-np-problems` — its own `idea` field: "the author
+    //   writes that the work may be useful in designing adiabatic quantum
+    //   optimization algorithms, which makes the formulation the input such an
+    //   algorithm consumes rather than an algorithm in its own right."
+    // - `workflow-scheduling-qubo` — its own `idea` field: the contribution is
+    //   that the authors "develop a novel QUBO formulation to represent the
+    //   scheduling problem" and "show how the resulting QUBO's complexity
+    //   depends on the input problem" — an encoding, whose only candidate
+    //   second contribution (a decomposition method, §III.C of arXiv:2205.04844)
+    //   the team lead read this session and found does not compete with Lucas
+    //   on this slot's contract either.
+    // - `quantum-vulnerability-analysis` — its own `idea` field: the paper
+    //   prioritises patches "by expressing the connectivity of various
+    //   vulnerabilities on a network as a QUBO and solving it with quantum
+    //   annealing" — an application of a QUBO encoding (min-vertex-cover) that
+    //   is already inside Lucas's own catalogue, not a second encoding
+    //   technique and not a second search method.
+    //
+    // Two records ARE placed as further `entries` of the QAOA method
+    // (`qaoa-cost-mixer-alternation`), alongside that method's own
+    // primary-source record, rather than as competitors — see the comment on
+    // its `entries` below.
+  },
+  {
+    kind: "method",
+    id: "qaoa-cost-mixer-alternation",
+    label: "Alternate a cost unitary with a mixer, p times",
+    labelJa: "コストユニタリと混合ユニタリを p 回交互に適用する",
+    realizes: "combinatorial-optimization",
+    summary: "Read the objective as a sum of clause terms and turn each term into a small diagonal unitary; alternate p rounds of that cost unitary with a transverse-field mixer, starting from the uniform superposition, and measure. The circuit depth is fixed by p before anything is optimised, and the paper proves exactly one number about what comes back — for p = 1 on 3-regular graphs, a cut at least 0.6924 of the optimal one — stated as an approximation ratio, not a running time and not a comparison with any classical algorithm.",
+    summaryJa: "目的関数を節ごとの項の和として読み、各項を小さな対角ユニタリへと変換します。一様重ね合わせから出発し、そのコストユニタリと横磁場ミキサーを p 回交互に適用してから測定します。回路の深さは、何かを最適化するより前に p によって固定されます。論文が証明しているのは、返ってくるものについてのただ一つの数値だけです——p = 1 で3正則グラフの場合、最適カットの少なくとも0.6924倍のカットが得られるという、近似比としての主張であり、実行時間でも、いかなる古典アルゴリズムとの比較でもありません。",
+    conditions: "The objective is specified by $n$ bits and $m$ clauses, $C(z) = \\sum_{\\alpha=1}^{m} C_\\alpha(z)$, read \"as an operator which is diagonal in the computational basis\" (§I), with each $C_\\alpha$ depending \"on only a few of the $n$ bits\" (§I). The one stated performance guarantee is scoped to a single instance family: \"for $p = 1$, on 3-regular graphs the quantum algorithm always finds a cut that is at least 0.6924 times the size of the optimal cut\" (Abstract). Efficient classical angle-finding for fixed $p$ needs a further promise the paper states as a hypothesis rather than a general property: \"if $p$ does not grow with $n$ and each bit is involved in no more than a fixed number of clauses, then there is an efficient classical calculation that determines the angles that maximize $F_p$\" (§I). Outside that bounded-degree, fixed-$p$ regime the paper falls back to a grid search over $[0,2\\pi]^p \\times [0,\\pi]^p$ (§I), and for $p$ growing with $n$ it states only that \"a different strategy is proposed\" (Abstract), without detailing one in the sections read for this record.",
+    conditionsJa: "目的関数は $n$ ビットと $m$ 個の節によって指定され、$C(z) = \\sum_{\\alpha=1}^{m} C_\\alpha(z)$ として与えられ、「計算基底で対角な演算子」（§I）として読まれます。各 $C_\\alpha$ は「$n$ ビットのうちごく一部にのみ依存」します（§I）。論文が述べる唯一の性能保証は、単一の問題例族に限定されています。「$p = 1$ で、3正則グラフの上では、量子アルゴリズムは常に最適カットの少なくとも0.6924倍のカットを見つける」（要旨）。固定された $p$ に対して効率的な古典的角度探索を行うには、さらなる約束が必要であり、論文はそれを一般的な性質としてではなく仮定として述べています。「$p$ が $n$ とともに増大せず、かつ各ビットが高々一定個の節にしか関与しない場合には、$F_p$ を最大化する角度を定める効率的な古典計算が存在する」（§I）。この、次数が有界で $p$ が固定された領域の外では、論文は $[0,2\\pi]^p \\times [0,\\pi]^p$ 上のグリッド探索に頼ります（§I）。$p$ が $n$ とともに増大する場合については、要旨は「別の方策が提案される」と述べるのみで、本記録が読んだ範囲の節ではその詳細は示されていません。",
+    cost: "Circuit depth is \"at most $mp + p$\" (§I), independent of any classical optimisation cost, because the angles are found before the quantum computer runs at all. Measurement cost is stated with an explicit probability bound: \"an outcome of at least $F_p(\\gamma, \\beta) - 1$ will be obtained with probability $1 - 1/m$ with order $m \\log m$ repetitions\" (§II). No running time is stated for the algorithm as a whole, and no comparison against any classical algorithm is made anywhere in the sections read here: the 0.6924 figure is an approximation ratio for one instance family at $p = 1$, not a speedup.",
+    costJa: "回路の深さは「高々 $mp + p$」です（§I）。角度はそもそも量子計算機を動かす前に決められるため、これはいかなる古典的な最適化の費用とも独立です。測定に要する費用は、明示的な確率の保証とともに述べられています。「$F_p(\\gamma, \\beta) - 1$ 以上の結果が、確率 $1 - 1/m$ で、$m \\log m$ 程度の反復のもとで得られる」（§II）。アルゴリズム全体としての実行時間は述べられておらず、ここで読んだ範囲のどの節にも、いかなる古典アルゴリズムとの比較もありません。0.6924という数値は、$p = 1$における一つの問題例族についての近似比であり、高速化ではありません。",
+    steps: [],
+    atomic: true,
+    example: {
+      pseudocode: [
+        "given  C(z) = sum_{alpha=1}^{m} C_alpha(z), a sum of m clause terms over n bits   (Sec. I, Eq. 1)",
+        "       C read as an operator diagonal in the computational basis",
+        "       p >= 1, the number of rounds",
+        "",
+        "U(C, gamma) = product over clauses of exp(-i * gamma * C_alpha)          (Eq. 2)",
+        "                                          # gamma restricted to [0, 2*pi) -- C has integer eigenvalues",
+        "B = sum_j sigma_j^x                                                      (Eq. 3)",
+        "U(B, beta)  = product over qubits of exp(-i * beta * sigma_j^x)          (Eq. 4)",
+        "                                          # beta restricted to [0, pi)",
+        "",
+        "|s> = uniform superposition over all 2^n computational basis states      (Eq. 5)",
+        "",
+        "# angle-finding is classical work, done before the quantum computer runs at all",
+        "if p is fixed (independent of n) and each bit sits in at most a fixed number of clauses:",
+        "    (gamma*, beta*) = angles from an efficient classical calculation         (Sec. II)",
+        "else if p is fixed, without that bounded-degree promise:",
+        "    (gamma*, beta*) = angles from a grid search over [0,2pi]^p x [0,pi]^p    (Sec. I)",
+        "else:                                            # p grows with n",
+        "    # \"a different strategy is proposed\" -- not detailed in the sections read here",
+        "",
+        "|gamma*, beta*> = U(B, beta*_p) U(C, gamma*_p) ... U(B, beta*_1) U(C, gamma*_1) |s>   (Eq. 6)",
+        "# produced by a circuit of depth at most m*p + p, without using any structure of the instance",
+        "",
+        "repeat on the order of m * log(m) times:",
+        "    measure |gamma*, beta*> in the computational basis -> z",
+        "    evaluate C(z)",
+        "return the best z seen",
+        "",
+        "# with probability 1 - 1/m, at least one repetition sees C(z) >= Fp(gamma*, beta*) - 1",
+        "# for p = 1 on 3-regular graphs this construction is guaranteed a cut >= 0.6924 of optimal;",
+        "# no bound is stated at any other p or graph family, and no classical comparison is made",
+      ].join("\n"),
+    },
+    hops: {
+      "qaoa-cost-mixer-alternation": {
+        name: "alternate U(C,γ) and U(B,β), p times, from the uniform superposition",
+        nameJa: "一様重ね合わせから、U(C,γ) と U(B,β) を p 回交互に適用する",
+        theory: "The objective is \"specified by $n$ bits and $m$ clauses\" as $C(z) = \\sum_{\\alpha=1}^{m} C_\\alpha(z)$, \"view[ed]... as an operator which is diagonal in the computational basis\" (§I). Two unitaries alternate: $U(C,\\gamma) = e^{-i\\gamma C} = \\prod_\\alpha e^{-i\\gamma C_\\alpha}$, with $\\gamma$ restricted to $[0,2\\pi]$ \"because $C$ has integer eigenvalues\", and $U(B,\\beta) = e^{-i\\beta B} = \\prod_j e^{-i\\beta\\sigma_j^x}$ where $B = \\sum_j \\sigma_j^x$ and $\\beta \\in [0,\\pi]$. From the uniform superposition $|s\\rangle$, $p$ rounds give $|\\gamma,\\beta\\rangle = U(B,\\beta_p)U(C,\\gamma_p)\\cdots U(B,\\beta_1)U(C,\\gamma_1)|s\\rangle$, produced \"by a quantum circuit of depth at most $mp+p$\" without exploiting any structure of the instance. Measuring in the computational basis gives a string $z$; \"enough repetitions will produce a string $z$ with $C(z)$ very near or greater than $F_p(\\gamma,\\beta)$\", and precisely, \"an outcome of at least $F_p(\\gamma,\\beta) - 1$ will be obtained with probability $1 - 1/m$ with order $m\\log m$ repetitions.\" Finding good angles is classical work, done before the quantum computer runs at all: for fixed $p$, one option is \"a fine grid on the compact set $[0,2\\pi]^p \\times [0,\\pi]^p$\"; the paper then supersedes it — [[assumption: an efficient classical calculation of the maximising angles exists only \"if $p$ does not grow with $n$ and each bit is involved in no more than a fixed number of clauses\" — a bounded-degree, fixed-depth promise the record does not assume holds for every instance this slot's contract admits.]] For $p$ growing with $n$, \"a different strategy is proposed\" and is not detailed in the sections read for this record. The one stated guarantee on the string returned is instance-specific: [[assumption: \"for $p=1$, on 3-regular graphs the quantum algorithm always finds a cut that is at least 0.6924 times the size of the optimal cut\" — a ratio proved for one problem, one value of $p$, one graph family, not a property of the construction in general.]] The abstract states no running time for the algorithm as a whole and no comparison against any classical algorithm.",
+        theoryJa: "目的関数は「$n$ ビットと $m$ 個の節によって指定され」、$C(z) = \\sum_{\\alpha=1}^{m} C_\\alpha(z)$ として、「計算基底で対角な演算子とみなされ」ます（§I）。二つのユニタリが交互に適用されます。$U(C,\\gamma) = e^{-i\\gamma C} = \\prod_\\alpha e^{-i\\gamma C_\\alpha}$ であり、$\\gamma$ は「$C$ が整数固有値をもつため」 $[0,2\\pi]$ に制限されます。そして $U(B,\\beta) = e^{-i\\beta B} = \\prod_j e^{-i\\beta\\sigma_j^x}$ であり、$B = \\sum_j \\sigma_j^x$、$\\beta \\in [0,\\pi]$ です。一様重ね合わせ $|s\\rangle$ から出発し、$p$ 回の反復により $|\\gamma,\\beta\\rangle = U(B,\\beta_p)U(C,\\gamma_p)\\cdots U(B,\\beta_1)U(C,\\gamma_1)|s\\rangle$ が得られ、これは問題例の構造をいっさい利用せずに「深さ高々 $mp+p$ の量子回路によって作られ」ます。計算基底で測定すると文字列 $z$ が得られます。「十分な回数の反復を行えば、$C(z)$ が $F_p(\\gamma,\\beta)$ に非常に近い、あるいはそれ以上である文字列 $z$ が得られる」とされ、より正確には「$F_p(\\gamma,\\beta) - 1$ 以上の結果が、確率 $1 - 1/m$ で、$m\\log m$ 程度の反復のもとで得られる」とされています。良い角度を見つけることは、量子計算機がそもそも動く前に行われる古典的な作業です。$p$ が固定されている場合の一つの方法は「コンパクト集合 $[0,2\\pi]^p \\times [0,\\pi]^p$ 上の細かいグリッド」ですが、論文はこれをさらに超えていきます——[[assumption: 最大化する角度を求める効率的な古典計算が存在するのは、「$p$ が $n$ とともに増大せず、かつ各ビットが高々一定個の節にしか関与しない」場合に限られます。これは次数が有界で深さが固定されているという約束であり、本記録は、このスロットの契約が許容するあらゆる問題例についてこれが成り立つとは仮定していません。]] $p$ が $n$ とともに増大する場合については「別の方策が提案される」とされていますが、本記録が読んだ節ではその詳細は示されていません。返される文字列について述べられている唯一の保証は、特定の問題例に限られたものです。[[assumption: 「$p=1$ で、3正則グラフの上では、量子アルゴリズムは常に最適カットの少なくとも0.6924倍のカットを見つける」——これは一つの問題、一つの $p$ の値、一つのグラフ族についてのみ証明された比率であり、この構成一般の性質ではありません。]] 要旨は、アルゴリズム全体としての実行時間についても、いかなる古典アルゴリズムとの比較についても、何も述べていません。",
+      },
+    },
+    // `qaoa-combinatorial-optimization` — this method's own primary-source
+    // record, already fully authored in `entries-algorithms.ts`. Anchored here,
+    // in `entries`, rather than reused as this node's own id — see "Id choices"
+    // at the top of this draft for why the id is `qaoa-cost-mixer-alternation`
+    // instead.
+    // `qaoa-maxcut-ring` — a verified run: TVD 0.0088 against the reference
+    // simulator, seed 42, 4096 shots, OpenQASM 3 retained; its own `source`
+    // shares arXiv:1411.4028 with this method — it is a p=1 five-node instance
+    // of this construction, not a second technique (its own `code` comment in
+    // `entries-algorithms.ts` draws exactly that line: "Distinct from
+    // `qaoa-maxcut-ring`... That record is one circuit; this one is the
+    // algorithm.").
+    // `low-autocorrelation-binary-sequences-problem` — Shaydulin et al.'s
+    // evidence about this method's *scaling*, not a second technique: its own
+    // `idea` field states the finding as "the runtime of QAOA with fixed
+    // parameters scales better than branch-and-bound solvers", and its own
+    // `complexityBasis` records the paper's own qualifier on all of it —
+    // "evidence for the utility of QAOA... evidence, in the abstract's own
+    // word, not a proof" — which this record does not upgrade.
+    entries: ["qaoa-combinatorial-optimization", "qaoa-maxcut-ring", "low-autocorrelation-binary-sequences-problem"],
+    citations: [
+      { title: "A Quantum Approximate Optimization Algorithm", authors: "Edward Farhi, Jeffrey Goldstone, Sam Gutmann", year: "2014", url: "https://arxiv.org/abs/1411.4028" },
+    ],
+  },
+  {
+    kind: "method",
+    id: "adiabatic-hamiltonian-interpolation",
+    label: "Interpolate slowly to the problem Hamiltonian",
+    labelJa: "問題のハミルトニアンへゆっくり補間する",
+    realizes: "combinatorial-optimization",
+    summary: "Build a time-dependent Hamiltonian H(t) that starts at an initial Hamiltonian whose ground state is trivial to prepare and ends at the final Hamiltonian encoding the problem, interpolate between them over a time T, and let the state track the instantaneous ground state along the whole path. The adiabatic theorem proves this works whenever the gap above the ground state never closes and T is long enough — and the same paper states, in the same breath, that outside a few symmetric special cases it cannot say how long that is.",
+    summaryJa: "初期ハミルトニアンから最終ハミルトニアンへと補間する、時間に依存したハミルトニアン H(t) を構成します。初期ハミルトニアンの基底状態は自明に準備でき、最終ハミルトニアンは問題を符号化しています。両者の間を時間 T にわたって補間し、その経路の全体にわたって瞬間基底状態を状態に追跡させます。断熱定理は、基底状態より上のギャップが決して閉じず、かつ T が十分に長ければ、これがうまくいくことを証明しています。そして同じ論文は同じ箇所で、いくつかの対称な特別な場合を除けば、その T がどれほどかを述べることはできないとも述べています。",
+    conditions: "The Hamiltonian is built directly from the instance: $H(t) = H_{C_1}(t) + \\cdots + H_{C_M}(t)$, \"where each $H_{C_a}$ depends only on clause $C_a$ and acts only on the bits in $C_a$\" (§1). The initial Hamiltonian's ground state must be one \"that is easy to construct\" (Abstract), and the interpolation must stay slow enough over the whole path: the adiabatic theorem's guarantee needs the gap $E_1(s) - E_0(s)$ \"strictly greater than zero for all $0 \\le s \\le 1$\" (§2.1). The paper states this is the typical case rather than something proved for every instance: \"typically $g_{\\min}$ is not zero\" (§2.6).",
+    conditionsJa: "ハミルトニアンは問題例から直接構成されます。$H(t) = H_{C_1}(t) + \\cdots + H_{C_M}(t)$ であり、「各 $H_{C_a}$ は節 $C_a$ にのみ依存し、$C_a$ に含まれるビットにのみ作用する」とされています（§1）。初期ハミルトニアンの基底状態は「容易に構成できる」ものでなければならず（要旨）、補間は経路全体にわたって十分にゆっくりでなければなりません。断熱定理の保証には、ギャップ $E_1(s) - E_0(s)$ が「すべての $0 \\le s \\le 1$ について厳密に正である」ことが必要です（§2.1）。論文は、これがあらゆる問題例について証明された性質ではなく、典型的な場合であると述べています。「典型的には $g_{\\min}$ はゼロではない」（§2.6）。",
+    cost: "\"The time required depends on the minimum energy difference between the two lowest states of the interpolating Hamiltonian. We are unable to estimate this gap in general\" (Abstract). Where the gap can be bounded, the theorem gives $T \\gg E/g_{\\min}^2$ (§2.1, rendered from Eqs. 2.8–2.9 for legibility); the paper proves this for \"special symmetric cases of the satisfiability problem\", every one of which is \"easily seen to be classically solvable in polynomial time\" by other means, offered only as \"a small bit of evidence\" about harder cases (§6). Realised as a gate-model circuit, cost tracks $T$ directly: \"the number of factors in the product is proportional to $T^2$ times a polynomial in $n$\" (§5) — so wherever $T$ is unbounded, so is this.",
+    costJa: "「必要な時間は、補間するハミルトニアンの最低二つの状態の間の最小エネルギー差に依存する。われわれは一般にこのギャップを見積もることができない」（要旨）。ギャップに上界を与えられる場合には、定理は $T \\gg E/g_{\\min}^2$ を与えます（§2.1、式2.8〜2.9を読みやすさのために書き改めたもの）。論文はこれを「充足可能性問題のいくつかの対称な特別な場合」について証明していますが、そのいずれもが「他の方法によって古典的に多項式時間で容易に解けることが分かる」ものであり、より難しい場合についての「わずかな証拠」としてのみ提示されています（§6）。ゲートモデル回路として実現した場合、費用は T に直接連動します。「積の因子の個数は $T^2$ と $n$ の多項式の積に比例する」（§5）——したがって T が一般に有界でないところでは、これも有界ではありません。",
+    steps: [],
+    atomic: true,
+    example: {
+      pseudocode: [
+        "given  an n-bit satisfiability formula C_1 AND C_2 AND ... AND C_M          (Eq. 1.1)",
+        "       H_B, built per-bit and weighted by each bit's clause degree          (Eq. 2.22)",
+        "       H_P, whose ground state encodes the satisfying assignment",
+        "",
+        "H(t) = (1 - t/T) * H_B + (t/T) * H_P     for t in [0, T]                    (Eq. 2.23)",
+        "     # equivalently H~(s) = (1-s)*H_B + s*H_P,  s = t/T in [0,1]             (Eq. 2.24)",
+        "",
+        "prepare |psi(0)> = ground state of H(0) = H_B          # easy, by construction",
+        "evolve |psi(t)> under  i * d/dt |psi(t)> = H(t) |psi(t)>,  t: 0 -> T        (Eq. 2.1)",
+        "",
+        "g_min = min over s in [0,1] of ( E_1(s) - E_0(s) )                          (Eq. 2.7)",
+        "# adiabatic theorem: if the gap is > 0 for every s in [0,1], then for",
+        "# T much greater than E / g_min^2, |psi(T)> is close to the ground state of H_P",
+        "#   (E is the largest matrix element of dH~/ds between the two lowest",
+        "#    instantaneous eigenstates, over the whole path -- Eq. 2.9)",
+        "",
+        "measure |psi(T)> in the computational basis -> the assignment z",
+        "",
+        "# \"The time required depends on the minimum energy difference between the two",
+        "#  lowest states of the interpolating Hamiltonian. We are unable to estimate",
+        "#  this gap in general.\" -- for three special symmetric cases the paper proves T",
+        "#  is polynomial in n; those cases are also classically easy, so the authors call",
+        "#  them only \"a small bit of evidence\" the method may run fast on harder cases",
+      ].join("\n"),
+    },
+    hops: {
+      "adiabatic-hamiltonian-interpolation": {
+        name: "interpolate H(t) between H_B and H_P, tracking the instantaneous ground state",
+        nameJa: "H_B と H_P の間で H(t) を補間し、瞬間基底状態を追跡する",
+        theory: "The Hamiltonian is built directly from the problem: for an $n$-bit instance $C_1 \\wedge \\cdots \\wedge C_M$, $H(t) = H_{C_1}(t) + \\cdots + H_{C_M}(t)$, \"where each $H_{C_a}$ depends only on clause $C_a$ and acts only on the bits in $C_a$\" (§1, Eq. 1.2), and \"the Hamiltonian that governs the system's evolution is constructed directly from the clauses of the formula\" (§6). For the satisfiability construction the two endpoints are $H_B$, built per-bit and weighted by each bit's clause degree so that \"its ground state is easy to construct\" (§2.4, Eq. 2.22), and $H_P$, whose ground state \"encodes the satisfying assignment\" (Abstract). The path is $H(t) = (1-t/T)H_B + (t/T)H_P$ (Eq. 2.23), equivalently $\\tilde H(s) = (1-s)H_B + sH_P$ for $s = t/T \\in [0,1]$ (Eq. 2.24). Starting at the ground state of $H(0) = H_B$ and evolving under $i\\frac{d}{dt}|\\psi(t)\\rangle = H(t)|\\psi(t)\\rangle$ (Eq. 2.1), the adiabatic theorem says that \"if the gap between the two lowest levels, $E_1(s) - E_0(s)$, is strictly greater than zero for all $0 \\le s \\le 1$\", then the overlap with the target ground state approaches 1 as $T \\to \\infty$ (Eq. 2.6). Writing $g_{\\min} = \\min_{0 \\le s \\le 1}[E_1(s) - E_0(s)]$ (Eq. 2.7), \"a closer look at the adiabatic theorem tells us that taking $T \\gg E/g_{\\min}^2$\" — where $E$ is the largest matrix element of $d\\tilde H/ds$ between the two lowest instantaneous eigenstates over the whole path (rendered here from Eq. 2.9 for legibility) — can make the final overlap \"arbitrarily close to 1\" (Eq. 2.10). [[assumption: the guarantee needs $g_{\\min}$ nonzero over the whole interval, and the paper is explicit that this is the typical case rather than a proved one — \"typically $g_{\\min}$ is not zero\" (§2.6) — so a degenerate or closing gap sits outside what Eq. (2.6) certifies.]] Measuring $|\\psi(T)\\rangle$ in the computational basis returns the assignment. [[assumption: how large $T$ needs to be is not bounded in general — \"the time required depends on the minimum energy difference between the two lowest states of the interpolating Hamiltonian. We are unable to estimate this gap in general\" (Abstract; restated at §1, \"we are unable to estimate the required running time $T$ in general\", and at §6, \"though we are unable to determine, in general, the required running time\"). Three special symmetric cases are proved polynomial, and the paper's own reading of that result is modest: \"even though these cases are easily seen to be classically solvable in polynomial time, our algorithm operates in an entirely different way from the classical one, and these examples may provide a small bit of evidence that our algorithm may run quickly on other, more interesting cases\" (§6).]] Realised as a gate-model circuit, \"the number of factors in the product is proportional to $T^2$ times a polynomial in $n$\" (§5), so a bound on circuit cost is exactly as available as a bound on $T$ itself — which is to say, not available in general.",
+        theoryJa: "ハミルトニアンは問題から直接構成されます。$n$ ビットの問題例 $C_1 \\wedge \\cdots \\wedge C_M$ に対して、$H(t) = H_{C_1}(t) + \\cdots + H_{C_M}(t)$ であり、「各 $H_{C_a}$ は節 $C_a$ にのみ依存し、$C_a$ に含まれるビットにのみ作用する」とされ（§1、式1.2）、「系の発展を支配するハミルトニアンは、その式の節から直接構成される」とされています（§6）。充足可能性の構成では、二つの端点は次の通りです。$H_B$ はビットごとに構成され、各ビットの節次数によって重みづけられており、「その基底状態は容易に構成できる」ようになっています（§2.4、式2.22）。$H_P$ はその基底状態が「充足する割り当てを符号化する」ものです（要旨）。経路は $H(t) = (1-t/T)H_B + (t/T)H_P$（式2.23）、すなわち $s = t/T \\in [0,1]$ として $\\tilde H(s) = (1-s)H_B + sH_P$（式2.24）です。$H(0) = H_B$ の基底状態から出発し、$i\\frac{d}{dt}|\\psi(t)\\rangle = H(t)|\\psi(t)\\rangle$（式2.1）に従って発展させると、断熱定理は「最低二準位の間のギャップ $E_1(s) - E_0(s)$ が、すべての $0 \\le s \\le 1$ について厳密に正であれば」、目標の基底状態との重なりは $T \\to \\infty$ で1に近づくと述べています（式2.6）。$g_{\\min} = \\min_{0 \\le s \\le 1}[E_1(s) - E_0(s)]$ と書くと（式2.7）、「断熱定理をより詳しく調べると、$T \\gg E/g_{\\min}^2$ ととることで」——ここで $E$ は、経路全体にわたる最低二つの瞬間固有状態の間の $d\\tilde H/ds$ の行列要素の最大値です（読みやすさのため式2.9を書き改めています）——最終的な重なりを「1にいくらでも近づけることができる」とされています（式2.10）。[[assumption: この保証には区間全体で $g_{\\min}$ が非ゼロであることが必要であり、論文はこれが証明された事実ではなく典型的な場合であると明言しています。「典型的には $g_{\\min}$ はゼロではない」（§2.6)——したがって、退化した、あるいは閉じてしまうギャップは、式（2.6）が保証する範囲の外にあります。]] $|\\psi(T)\\rangle$ を計算基底で測定すると割り当てが得られます。[[assumption: T がどれほど大きい必要があるかは、一般には有界ではありません。「必要な時間は、補間するハミルトニアンの最低二つの状態の間の最小エネルギー差に依存する。われわれは一般にこのギャップを見積もることができない」（要旨。§1で「われわれは一般に必要な実行時間 T を見積もることができない」、§6で「一般には必要な実行時間を決定できないが」と繰り返し述べられています）。三つの対称な特別な場合について多項式時間であることが証明されていますが、論文自身によるその結果の読み方は控えめです。「これらの場合が古典的にも多項式時間で容易に解けることは分かっているにもかかわらず、われわれのアルゴリズムは古典的なものとはまったく異なる仕方で動作しており、これらの例は、われわれのアルゴリズムが他のより興味深い場合にも速く動作しうるという、わずかな証拠を与えるかもしれない」（§6）。]] ゲートモデル回路として実現すると、「積の因子の個数は $T^2$ と $n$ の多項式の積に比例する」ため（§5）、回路費用の上界は T 自身の上界とちょうど同じだけしか手に入りません——すなわち、一般には手に入りません。",
+      },
+    },
+    // `quantum-adiabatic-evolution` — this method's own primary-source record,
+    // already fully authored in `entries-algorithms.ts`; anchored here in
+    // `entries` rather than reused as this node's own id (see "Id choices" at
+    // the top of this draft). No record read this session documents a further
+    // run of this method specifically, as distinct from citing it in
+    // `relatedSlugs`, so nothing else is added here.
+    entries: ["quantum-adiabatic-evolution"],
+    citations: [
+      { title: "Quantum Computation by Adiabatic Evolution", authors: "Edward Farhi, Jeffrey Goldstone, Sam Gutmann, Michael Sipser", year: "2000", url: "https://arxiv.org/abs/quant-ph/0001106" },
+    ],
+  },
   ],
 };

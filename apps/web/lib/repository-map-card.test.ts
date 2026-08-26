@@ -447,7 +447,11 @@ test("Theory is held on every method, and each hop inside it is empty or filled 
   // as a step it HANGS. That is the ingredient/segment distinction again: the stub
   // costs a hop without costing a segment, so the method still draws as a leaf on the
   // canvas while carrying two keyable stretches here.
-  assert.equal(hops, 158, `${hops} hops, not 158`);
+  // 160 in W29: two methods, one hop each. Both are `atomic: true` and each is a
+  // single undivided act — the alternation IS Farhi et al.'s construction and the
+  // adiabatic interpolation is one continuous evolution — so neither hangs a stub the
+  // way `backtracking-tree-walk-search` hangs `phase-estimation`.
+  assert.equal(hops, 160, `${hops} hops, not 160`);
 
   // **A floor, and it must not be zero.** The marked-prose path is the whole of the owner's
   // re-decision, and a rendering path with no instance anywhere has never been drawn. One
@@ -1434,7 +1438,10 @@ test("the unnamed stretch is 56 of 63 methods, one each, and 13 of them follow a
   // ingredient instead of walking through it. So a region can now join another region
   // and leave `trailing` untouched, which the "new regions do not move it" reading of
   // the four rows above would not have predicted.
-  assert.equal(withOwn.length, 99);
+  // 101/15 in W29, and `trailing` holds a sixth time. Both methods delegate to
+  // nothing and add their stretch at index 0, the plainest version of the shape:
+  // there is no step for the stretch to trail.
+  assert.equal(withOwn.length, 101);
   assert.equal(trailing.length, 15);
 
   // The three that remain of the four the owner named. Pinned by their states
@@ -1595,7 +1602,8 @@ test("an own: card exists for exactly the methods that have the stretch, and no 
   // 89 in session 15 unit 3, tracking the stretch census above one-for-one as it must.
   // 93 with the four PDE methods, tracking the stretch census one-for-one.
   // 95 in unit 4, tracking the stretch census above one-for-one as it must.
-  assert.equal(built, 99);
+  // 99 in W28 and 101 in W29, tracking it one-for-one both times.
+  assert.equal(built, 101);
   // A prefix on nothing, and a prefix on a capability, both resolve to shut
   // rather than to something. `?card=` is user-supplied.
   assert.equal(cardExists(input, ownCardId("not-a-method")), false);
@@ -1659,7 +1667,7 @@ test("an own: card says what its stretch does, or the standing phrase, in both l
     `[own-card census] ${named.size + standing.size} own cards; `
       + `${named.size} say what their stretch does, ${standing.size} still draw the standing phrase`,
   );
-  assert.equal(named.size + standing.size, 99, "the own-card population moved — see the census above it");
+  assert.equal(named.size + standing.size, 101, "the own-card population moved — see the census above it");
   // 14 when complaint (c) was closed on the DRAWN population (leona 725, 726):
   // exactly the stretches the canvas reaches as a lane, and every one of them
   // already carried paper-registered mathematics on its own hop.
@@ -1714,9 +1722,14 @@ test("an own: card says what its stretch does, or the standing phrase, in both l
   // standard this line describes rather than to the one the graph would have tolerated:
   // nothing here required a `name`, and a method landing without one is exactly what
   // `standing.size` exists to catch.
+  // **101 with W29's two, and `standing` stayed at 0 a second time.** Same statement
+  // as the paragraph above, one region later: both methods arrived with their own hop
+  // authored and named — "alternate U(C,γ) and U(B,β), p times, from the uniform
+  // superposition" and "interpolate H(t) between H_B and H_P, tracking the
+  // instantaneous ground state" — so the fallback surface is still unreached.
   assert.equal(
     named.size,
-    99,
+    101,
     "the number of own cards that say what their stretch does changed — ratchet it up when you fill one in, never down",
   );
   assert.equal(standing.size, 0, "an own card fell back to the standing phrase — see the note above");

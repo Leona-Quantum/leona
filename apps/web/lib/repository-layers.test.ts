@@ -1376,6 +1376,23 @@ const HOLLOW_BY_SLOT: ReadonlyMap<string, number> = new Map([
   // hangs a `phase-estimation` stub and `stored-subset-walk-search` hangs none, so the
   // two figures differ and the gate says nothing about them.
   ["marked-item-search", 2],
+  // A region opening, and the same shape as the row above for a different reason.
+  // W29's two methods are both `atomic: true` and both were argued to it from their
+  // own papers rather than from the drawing: Farhi et al.'s alternating ansatz IS the
+  // 2014 paper's construction, its angle-finding for fixed p is exact classical
+  // preprocessing rather than the shot-fed loop `parameter-optimization` models
+  // (which that record's own caveat calls "later work by other authors"), and its
+  // measurement bound is the paper's own. The adiabatic paper interpolates a
+  // Hamiltonian continuously and delegates nothing the map draws. So the two hang the
+  // same one-hop picture and the canvas cannot separate them.
+  //
+  // **What separates them is a guarantee, which is not a thing this figure draws.**
+  // §VI of arXiv:1411.4028 states the difference in the authors' own words —
+  // approximate against optimal, with the alternation called "a Trotterized
+  // approximation to the evolution" — and a guarantee difference is what `cost` and
+  // `conditions` carry. Declared rather than absorbed, for the reason the row above
+  // gives: the honest fix is a drawing change and nobody has made it.
+  ["combinatorial-optimization", 2],
   ["polynomial-approximation", 2],
   // 4 since session 15, and the +2 for ONE new method is the summing rule working rather
   // than two methods rotting. `thc-block-encoding` does not join the existing pair — it
@@ -2728,6 +2745,12 @@ test("every hop the Atlas draws says what happens on it", () => {
     ["linear-ode-solve", 9, 21],
     ["matrix-function", 2, 7],
     ["marked-item-search", 2, 2],
+    // W29: two methods, two drawn stretches — one own hop each, which is the shape
+    // `atomic: true` produces and the same pair the hollow-twin row above declares.
+    // The four RECORDS this region anchors are not this number: three sit on the
+    // QAOA node (its own paper, `qaoa-maxcut-ring` sharing arXiv:1411.4028, and
+    // `low-autocorrelation-binary-sequences-problem`) and one on the adiabatic node.
+    ["combinatorial-optimization", 2, 2],
     ["nonlinear-linear-embedding", 6, 6],
     ["nonlinear-ode-solve", 4, 10],
     ["observable-estimation", 4, 8],
