@@ -78,7 +78,7 @@ test("every page under [locale] is accounted for by one list or the other", () =
   // A page list that came back empty would pass every assertion below without
   // checking anything — the exact shape of failure this repository keeps
   // finding in its own gates. The count is asserted first, and it now spans two
-  // lists: the six exact marketing routes plus whatever the Atlas prefix
+  // lists: the seven exact marketing routes plus whatever the Atlas prefix
   // subtrees serve, which `routed-paths.test.ts` checks against disk in both
   // directions.
   const pages = pageFiles();

@@ -17,7 +17,7 @@ grown since — treat an entry that says "pending" as a floor, not a fact.
 /                        landing (public)
 /repository              public Atlas catalog — searchable, classification + verification
 /repository/[slug]       public catalog entry (public, read-only)
-/pricing /contact /privacy /terms /open-source   public marketing + legal
+/about /pricing /contact /privacy /terms /open-source   public marketing + legal
 /run                     agent home (composer; mode selection)
 /run/[taskId]            live conversation + activity for one run (resumable, SSE)
 /studio                  circuit workspace — editor, preview, inspector, output, versions
