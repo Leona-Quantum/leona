@@ -19,7 +19,7 @@ dev = [
     # (--fix alone touches 200 files), not something to bundle into a dependency
     # patch bump. Track separately; re-open this pin once that sweep lands.
     "ruff>=0.14,<0.16",
-    "import-linter>=2.3",
+    "import-linter>=2.14",
     "httpx>=0.27",
     "pyyaml>=6",
     # Needed so the framework-parity tests actually RUN rather than skip. Two

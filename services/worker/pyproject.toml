@@ -16,7 +16,7 @@ dependencies = [
     # (handlers._qpu_credential_for). It arrives through majorana-api today, but
     # this service imports `cryptography` in its own right, and a dependency you
     # import is a dependency you declare.
-    "cryptography>=43",
+    "cryptography>=50.0.1",
     # research.py parses the arXiv API's Atom response. Declared for the same
     # reason cryptography is: this service imports it directly.
     "defusedxml>=0.7.1,<1",
