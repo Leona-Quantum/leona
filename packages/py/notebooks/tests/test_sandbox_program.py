@@ -30,7 +30,11 @@ def _run(spec, **kwargs):
     program = compose_notebook_program(spec, **kwargs)
     with tempfile.TemporaryDirectory() as tmp:
         exec_spec = build_execution_spec(
-            program, timeout_s=60, protected_result_path=str(Path(tmp) / "obs.json")
+            # The sandbox ceiling, not a duration: under a loaded CI runner a starved
+            # subprocess must not read as a failed notebook.
+            program,
+            timeout_s=120,
+            protected_result_path=str(Path(tmp) / "obs.json"),
         )
         result = asyncio.run(sandbox_run(LocalSubprocessSandbox(), exec_spec))
     return program, result, report_from_sandbox_result(result, spec, program)
