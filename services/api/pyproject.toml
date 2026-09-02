@@ -9,6 +9,10 @@ dependencies = [
     "majorana-estimation",
     "majorana-openqasm",
     "majorana-qpu",
+    # Notebook templates/kinds (leona_notebooks.templates) and .ipynb <-> spec
+    # conversion (leona_notebooks.ipynb) for routes/notebooks.py. The worker,
+    # not the API, owns generation, revision and sandbox execution.
+    "leona-notebooks",
     "alembic>=1.19.1",
     "sqlalchemy[asyncio]>=2.0.52",
     "psycopg[binary]>=3.3.4",
@@ -34,6 +38,7 @@ majorana-contracts = { workspace = true }
 majorana-estimation = { workspace = true }
 majorana-openqasm = { workspace = true }
 majorana-qpu = { workspace = true }
+leona-notebooks = { workspace = true }
 
 [build-system]
 requires = ["hatchling"]

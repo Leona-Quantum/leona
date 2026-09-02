@@ -284,6 +284,59 @@ class QappExecution(Base):
     updated_at: Mapped[dt.datetime | None] = mapped_column(server_default=func.now())
 
 
+class Notebook(Base):
+    __tablename__ = "notebooks"
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True)
+    workspace_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("workspaces.id"))
+    owner_user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id"))
+    slug: Mapped[str]
+    title: Mapped[str]
+    kind: Mapped[str]
+    summary: Mapped[str] = mapped_column(server_default="")
+    visibility: Mapped[str] = mapped_column(server_default="private")
+    language: Mapped[str] = mapped_column(server_default="en")
+    framework: Mapped[dict[str, Any]] = mapped_column(server_default=text("'{}'::jsonb"))
+    current_version_id: Mapped[uuid.UUID | None] = mapped_column(_UUID)
+    deleted_at: Mapped[dt.datetime | None]
+    created_at: Mapped[dt.datetime | None] = mapped_column(server_default=func.now())
+    updated_at: Mapped[dt.datetime | None] = mapped_column(server_default=func.now())
+
+
+class NotebookVersion(Base):
+    __tablename__ = "notebook_versions"
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True)
+    notebook_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("notebooks.id", ondelete="CASCADE"))
+    seq: Mapped[int] = mapped_column(Integer)
+    status: Mapped[str] = mapped_column(server_default="queued")
+    created_by: Mapped[str]
+    message: Mapped[str] = mapped_column(server_default="")
+    request: Mapped[dict[str, Any]] = mapped_column(server_default=text("'{}'::jsonb"))
+    spec: Mapped[dict[str, Any] | None]
+    source: Mapped[str | None]
+    ipynb: Mapped[dict[str, Any] | None]
+    report: Mapped[dict[str, Any] | None]
+    review: Mapped[dict[str, Any] | None]
+    error: Mapped[str] = mapped_column(server_default="")
+    run_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("runs.id"))
+    created_at: Mapped[dt.datetime | None] = mapped_column(server_default=func.now())
+    finished_at: Mapped[dt.datetime | None]
+
+
+class NotebookTurn(Base):
+    __tablename__ = "notebook_turns"
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True)
+    notebook_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("notebooks.id", ondelete="CASCADE"))
+    seq: Mapped[int] = mapped_column(Integer)
+    role: Mapped[str]
+    content: Mapped[str]
+    version_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("notebook_versions.id"))
+    run_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("runs.id"))
+    created_at: Mapped[dt.datetime | None] = mapped_column(server_default=func.now())
+
+
 class ArtifactSource(Base):
     """Provenance (migration 0015): one pinned source record per version."""
 
