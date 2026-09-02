@@ -1,0 +1,8 @@
+# Pip fallback for environments where `uv` cannot be installed. Prefer
+# `uv sync --locked` (see pyproject.toml and uv.lock) when you can use it.
+#
+# This file matches the base dependencies in pyproject.toml, pinned loosely.
+qiskit>=2.5,<2.6
+numpy>=1.26
+matplotlib>=3.8
+pylatexenc>=2.10

@@ -1,0 +1,8 @@
+# Pip fallback for the `notebooks` extra. Install alongside requirements.txt:
+#
+#   python -m pip install -r requirements.txt -r requirements-notebooks.txt
+#
+jupyterlab>=4.0
+ipykernel>=6.29
+nbformat>=5.9
+nbclient>=0.10
