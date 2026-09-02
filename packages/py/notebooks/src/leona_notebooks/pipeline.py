@@ -101,7 +101,7 @@ class NotebookPorts(Protocol):
         """Returns `.nb.py` text."""
         ...
 
-    async def execute(self, spec: NotebookSpec) -> ExecutionReport: ...
+    async def run_notebook(self, spec: NotebookSpec) -> ExecutionReport: ...
 
     async def repair(self, spec: NotebookSpec, context: RepairContext) -> str:
         """Returns `.nb.py` text of the corrected cell(s), with `id=` markers."""
@@ -194,7 +194,7 @@ async def _execute_and_repair(
     ports: NotebookPorts, spec: NotebookSpec, budget: PipelineBudget, attempts: list[Attempt]
 ) -> tuple[NotebookSpec, ExecutionReport]:
     await ports.observe("notebook.execute", "started")
-    report = await ports.execute(spec)
+    report = await ports.run_notebook(spec)
     await ports.observe("notebook.execute", "finished" if report.ok else "failed", report.note)
     attempts.append(Attempt("notebook.execute", report.ok, report.note))
     repairs = 0
@@ -216,7 +216,7 @@ async def _execute_and_repair(
         attempts.append(Attempt("notebook.repair", True, context.cell_id))
         await ports.observe("notebook.repair", "finished", context.cell_id)
         await ports.observe("notebook.execute", "started")
-        report = await ports.execute(spec)
+        report = await ports.run_notebook(spec)
         await ports.observe("notebook.execute", "finished" if report.ok else "failed", report.note)
         attempts.append(Attempt("notebook.execute", report.ok, report.note))
     return spec, report

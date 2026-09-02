@@ -59,7 +59,7 @@ class ScriptedPorts:
         self.calls.append(f"draft(feedback={'yes' if feedback else 'no'})")
         return self.drafts.pop(0)
 
-    async def execute(self, spec: NotebookSpec) -> ExecutionReport:
+    async def run_notebook(self, spec: NotebookSpec) -> ExecutionReport:
         self.calls.append("execute")
         cells = []
         stopped = False

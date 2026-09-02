@@ -23,7 +23,6 @@ from leona_notebooks import from_ipynb, to_ipynb
 from leona_notebooks.source import render_source
 from leona_notebooks.templates import KIND_DESCRIPTIONS, STARTER_BRIEFS, structure_for
 from majorana_contracts.enums import Framework, RunMode
-from pydantic import ConfigDict
 
 from ..auth.deps import CurrentIdentity, CurrentScope, DbSession, get_settings
 from ..jobs import NOTEBOOK_GENERATE_JOB_KIND, NOTEBOOK_REVISE_JOB_KIND
@@ -64,21 +63,6 @@ class ImportNotebookRequest(RequestModel, contracts.ImportNotebookRequest):
 class UpdateNotebookRequest(RequestModel, contracts.UpdateNotebookRequest):
     pass
 
-
-class ImportNotebookResponse(RequestModel):
-    """Not in `majorana_contracts`: unlike every other create-shaped response here,
-    a plain (non-executing) import creates no run, so `run_id` cannot be the
-    required field it is on `CreateNotebookResponse`. Flagged in the lane report
-    as an open question — whether the TS client wants this in contracts too."""
-
-    model_config = ConfigDict(extra="forbid")
-
-    notebook: contracts.Notebook
-    version: contracts.NotebookVersionSummary
-    run_id: uuid.UUID | None = None
-
-
-# ----------------------------------------------------------------------------- helpers
 
 _SLUG_STRIP_RE = re.compile(r"[^a-z0-9]+")
 
@@ -594,14 +578,14 @@ async def rerun_notebook(
 # ------------------------------------------------------------------------------ import
 
 
-@router.post("/notebooks/import", response_model=ImportNotebookResponse, status_code=201)
+@router.post("/notebooks/import", response_model=contracts.ImportNotebookResponse, status_code=201)
 async def import_notebook(
     body: ImportNotebookRequest,
     scope: CurrentScope,
     session: DbSession,
     identity: CurrentIdentity,
     settings: Annotated[Settings, Depends(get_settings)],
-) -> ImportNotebookResponse:
+) -> contracts.ImportNotebookResponse:
     try:
         spec = from_ipynb(body.ipynb, slug=None)
     except Exception as exc:  # pydantic ValidationError or a malformed upload
@@ -683,7 +667,7 @@ async def import_notebook(
         run_id = run.id
 
     latest, current = await _latest_and_current(scope, session, notebook)
-    return ImportNotebookResponse(
+    return contracts.ImportNotebookResponse(
         notebook=_to_resource_exact(notebook, latest, current),
         version=notebooks_repo.version_to_resource(version, full=False),
         run_id=run_id,

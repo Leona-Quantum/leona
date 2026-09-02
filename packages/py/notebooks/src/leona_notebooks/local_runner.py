@@ -89,18 +89,17 @@ def execute_with_nbclient(
     cell not tagged `raises-exception`.
     """
     import nbformat
-    from nbclient import NotebookClient
+    from nbclient import execute as run_through_kernel
 
     notebook = nbformat.from_dict(to_ipynb(spec, build=build, include_outputs=False))
     started = time.perf_counter()
-    client = NotebookClient(
+    run_through_kernel(
         notebook,
+        cwd=str(cwd or os.getcwd()),
         timeout=timeout_s,
         kernel_name=kernel_name,
         allow_errors=allow_errors,
-        resources={"metadata": {"path": str(cwd or os.getcwd())}},
     )
-    client.execute()
     executed = nbformat.to_dict(notebook) if hasattr(nbformat, "to_dict") else dict(notebook)
     duration_ms = int((time.perf_counter() - started) * 1000)
 

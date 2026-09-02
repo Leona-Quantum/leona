@@ -447,7 +447,7 @@ class ProductionNotebookPorts(NotebookPorts):
 
     # -- execute ----------------------------------------------------------
 
-    async def execute(self, spec: NotebookSpec) -> ExecutionReport:
+    async def run_notebook(self, spec: NotebookSpec) -> ExecutionReport:
         try:
             program = compose_notebook_program(spec)
         except NotebookGuardError as exc:
@@ -819,7 +819,7 @@ async def handle_notebook_revise(
         base_spec = NotebookSpec.model_validate(base.spec)
 
         if kind == "rerun":
-            report = await ports.execute(base_spec)
+            report = await ports.run_notebook(base_spec)
             review = None
             if report.ok:
                 try:
