@@ -14,6 +14,10 @@ dependencies = [
     "numpy",
     "matplotlib",
     "pylatexenc",
+    # The certification track imports OpenQASM 3 as well as exporting it, and
+    # `qiskit.qasm3.loads` is gated behind this optional package — without it the
+    # import direction raises MissingOptionalLibraryError rather than teaching it.
+    "qiskit-qasm3-import>=0.6,<0.7",
 ]
 
 [project.optional-dependencies]

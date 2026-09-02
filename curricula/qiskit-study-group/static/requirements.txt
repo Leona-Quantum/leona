@@ -6,3 +6,4 @@ qiskit>=2.5,<2.6
 numpy>=1.26
 matplotlib>=3.8
 pylatexenc>=2.10
+qiskit-qasm3-import>=0.6,<0.7
