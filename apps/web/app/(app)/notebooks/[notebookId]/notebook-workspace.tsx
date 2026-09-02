@@ -360,10 +360,10 @@ export function NotebookWorkspace({ notebookId, locale = "en" }: { notebookId: s
   }
 
   if (notebookError && !notebook) {
-    return <div className="mj-notebook-workspace-empty" role="alert">{notebookError}</div>;
+    return <div className="mj-notebook-workspace-empty mj-library-empty" role="alert"><strong>{notebookError}</strong></div>;
   }
   if (!notebook) {
-    return <div className="mj-notebook-workspace-empty" role="status">{copy.loading}</div>;
+    return <div className="mj-notebook-workspace-empty mj-library-empty" role="status"><strong>{copy.loading}</strong></div>;
   }
 
   const pill = notebookStatusPill(notebook.latest_status);
@@ -376,7 +376,7 @@ export function NotebookWorkspace({ notebookId, locale = "en" }: { notebookId: s
       <header className="mj-notebook-workspace-header">
         <div className="mj-notebook-workspace-title">
           {editingTitle ? (
-            <form onSubmit={(event) => { event.preventDefault(); void saveTitle(); }}>
+            <form className="mj-notebook-title-edit-form" onSubmit={(event) => { event.preventDefault(); void saveTitle(); }}>
               <input
                 value={titleDraft}
                 onChange={(event) => setTitleDraft(event.target.value)}
@@ -399,13 +399,13 @@ export function NotebookWorkspace({ notebookId, locale = "en" }: { notebookId: s
             </h1>
           )}
           <div className="mj-notebook-workspace-meta">
-            <span>{copy.kindOption[notebook.kind]}</span>
+            <span className="mj-notebook-kind-badge">{copy.kindOption[notebook.kind]}</span>
             <span className={`mj-notebook-status-pill mj-notebook-status-pill--${pill}`}>{copy.statusPill[pill]}</span>
           </div>
         </div>
         <div className="mj-notebook-workspace-actions">
           {versions.length > 0 ? (
-            <label className="mj-notebook-version-picker">
+            <label className="mj-notebook-version-picker mj-filter-select">
               <span className="sr-only">{copy.versionPickerLabel}</span>
               <select
                 value={selectedSeq ?? ""}
@@ -499,10 +499,12 @@ export function NotebookWorkspace({ notebookId, locale = "en" }: { notebookId: s
           <h2>{copy.chatLabel}</h2>
           {turnsError ? <p role="alert">{turnsError}</p> : null}
           {turns.length === 0 ? <p className="mj-notebook-chat-empty">{copy.chatEmpty}</p> : null}
-          <div className="mj-notebook-chat-turns">
+          <div className="mj-chat-thread mj-notebook-chat-thread">
             {turns.map((turn) => (
-              <div key={turn.id} className="mj-notebook-chat-turn" data-role={turn.role}>
-                {turn.role === "nala" ? <ChatMarkdown source={turn.content} /> : <p>{turn.content}</p>}
+              <div key={turn.id} className="mj-chat-turn">
+                <div className={`mj-chat-message ${turn.role === "user" ? "mj-chat-message--user" : "mj-chat-message--assistant"}`}>
+                  {turn.role === "nala" ? <ChatMarkdown source={turn.content} /> : <p>{turn.content}</p>}
+                </div>
               </div>
             ))}
           </div>

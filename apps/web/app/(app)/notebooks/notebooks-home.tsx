@@ -3,7 +3,7 @@
 import type { components } from "@majorana/contracts-gen";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import type { ChangeEvent, FormEvent } from "react";
+import type { ChangeEvent, FormEvent, ReactNode } from "react";
 import { useEffect, useMemo, useState } from "react";
 import { SearchIcon } from "../../../components/icons";
 import { refusalSentence } from "../../../lib/api-error";
@@ -17,6 +17,8 @@ type NotebookTemplates = components["schemas"]["NotebookTemplates"];
 type NotebookKind = components["schemas"]["NotebookKind"];
 type AudienceLevel = components["schemas"]["Audience"]["level"];
 type MathLevel = components["schemas"]["Style"]["math_level"];
+type CreateNotebookResponse = components["schemas"]["CreateNotebookResponse"];
+type ImportNotebookResponse = components["schemas"]["ImportNotebookResponse"];
 
 const KIND_OPTIONS: NotebookKind[] = [
   "lesson", "lab", "challenge", "solution", "walkthrough",
@@ -24,17 +26,65 @@ const KIND_OPTIONS: NotebookKind[] = [
 ];
 const LEVEL_OPTIONS: AudienceLevel[] = ["newcomer", "engineer", "student", "researcher"];
 const MATH_OPTIONS: MathLevel[] = ["none", "minimal", "full"];
+const LANGUAGE_OPTIONS: Array<"en" | "ja"> = ["en", "ja"];
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
 }
 
-/** The one field this page reads off a create/import response: the new notebook's id. */
-function createdNotebookId(payload: unknown): string | null {
-  if (!isRecord(payload)) return null;
+/**
+ * The one field this page reads off a create/import response: the new
+ * notebook's id. `CreateNotebookResponse` and `ImportNotebookResponse` both
+ * carry `{ notebook, version, run_id }` (the latter's `run_id` is nullable —
+ * set only when `execute` asked for an immediate re-run), so one reader
+ * covers both without caring which endpoint answered.
+ */
+function createdNotebookId(payload: CreateNotebookResponse | ImportNotebookResponse | Record<string, unknown> | null): string | null {
+  if (!payload || !isRecord(payload)) return null;
   const notebook = payload.notebook;
   if (!isRecord(notebook)) return null;
   return typeof notebook.id === "string" && notebook.id ? notebook.id : null;
+}
+
+/** A row of mutually-exclusive toggle pills — the composer's preference chips. */
+function PillToggle<T extends string>({
+  legend,
+  options,
+  value,
+  onChange,
+  labelFor,
+}: {
+  legend: string;
+  options: readonly T[];
+  value: T;
+  onChange: (value: T) => void;
+  labelFor: (option: T) => string;
+}) {
+  return (
+    <fieldset className="mj-notebooks-pill-group">
+      <legend className="sr-only">{legend}</legend>
+      {options.map((option) => (
+        <button
+          key={option}
+          type="button"
+          className="mj-notebooks-pill"
+          aria-pressed={value === option}
+          onClick={() => onChange(option)}
+        >
+          {labelFor(option)}
+        </button>
+      ))}
+    </fieldset>
+  );
+}
+
+function ComposerField({ label, children }: { label: string; children: ReactNode }) {
+  return (
+    <div className="mj-notebooks-field">
+      <span className="mj-notebooks-field-label">{label}</span>
+      {children}
+    </div>
+  );
 }
 
 export function NotebooksHome({ locale = "en", seedSlug = "" }: { locale?: PublicLocale; seedSlug?: string }) {
@@ -91,7 +141,7 @@ export function NotebooksHome({ locale = "en", seedSlug = "" }: { locale?: Publi
   useEffect(() => {
     let active = true;
     // Starters are a convenience, not load-bearing: the composer works with a
-    // typed brief alone, so a failed fetch here degrades to "no starter chips"
+    // typed brief alone, so a failed fetch here degrades to "no starter cards"
     // rather than an error banner over an otherwise-working page.
     fetch("/api/notebook-templates", { cache: "no-store" })
       .then((response) => (response.ok ? (response.json() as Promise<NotebookTemplates>) : null))
@@ -149,7 +199,7 @@ export function NotebooksHome({ locale = "en", seedSlug = "" }: { locale?: Publi
           response_locale: locale,
         }),
       });
-      const payload = (await response.json()) as unknown;
+      const payload = (await response.json()) as CreateNotebookResponse | Record<string, unknown>;
       const notebookId = createdNotebookId(payload);
       if (!response.ok || !notebookId) {
         throw new Error(refusalSentence(payload) ?? copy.createFailed);
@@ -180,11 +230,15 @@ export function NotebooksHome({ locale = "en", seedSlug = "" }: { locale?: Publi
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ ipynb, title: file.name.replace(/\.ipynb$/i, "") || null, execute: true }),
       });
-      const payload = (await response.json()) as unknown;
+      const payload = (await response.json()) as ImportNotebookResponse | Record<string, unknown>;
       const notebookId = createdNotebookId(payload);
       if (!response.ok || !notebookId) {
         throw new Error(refusalSentence(payload) ?? copy.importFailed);
       }
+      // `payload.run_id` (nullable on ImportNotebookResponse) is not read here:
+      // this page only ever routes to the new notebook, and the workspace page
+      // itself detects an in-flight run off the notebook's own latest_status /
+      // latest_run_id rather than trusting a value threaded through a redirect.
       router.push(`/notebooks/${encodeURIComponent(notebookId)}`);
     } catch (cause) {
       setSubmitError(cause instanceof Error ? cause.message : copy.importFailed);
@@ -227,7 +281,8 @@ export function NotebooksHome({ locale = "en", seedSlug = "" }: { locale?: Publi
                     className="mj-notebooks-starter-chip"
                     onClick={() => applyStarter(starter.brief, starter.kind)}
                   >
-                    {starter.title}
+                    <strong>{starter.title}</strong>
+                    <span className="mj-mono-muted">{copy.kindOption[starter.kind]}</span>
                   </button>
                 ))}
               </div>
@@ -235,50 +290,60 @@ export function NotebooksHome({ locale = "en", seedSlug = "" }: { locale?: Publi
           ) : null}
 
           <div className="mj-notebooks-fields">
-            <label>
-              <span>{copy.kindLabel}</span>
-              <select value={kind} onChange={(event) => setKind(event.target.value as NotebookKind)}>
+            <ComposerField label={copy.kindLabel}>
+              <select
+                className="mj-notebooks-select"
+                value={kind}
+                onChange={(event) => setKind(event.target.value as NotebookKind)}
+              >
                 {KIND_OPTIONS.map((option) => (
                   <option key={option} value={option}>{copy.kindOption[option]}</option>
                 ))}
               </select>
-            </label>
-            <label>
-              <span>{copy.audienceLevelLabel}</span>
-              <select value={level} onChange={(event) => setLevel(event.target.value as AudienceLevel)}>
-                {LEVEL_OPTIONS.map((option) => (
-                  <option key={option} value={option}>{copy.audienceLevelOption[option]}</option>
-                ))}
-              </select>
-            </label>
-            <label className="mj-notebooks-checkbox">
-              <input type="checkbox" checked={analogies} onChange={(event) => setAnalogies(event.target.checked)} />
-              <span>{copy.analogiesLabel}</span>
-            </label>
-            <label>
-              <span>{copy.mathLevelLabel}</span>
-              <select value={mathLevel} onChange={(event) => setMathLevel(event.target.value as MathLevel)}>
-                {MATH_OPTIONS.map((option) => (
-                  <option key={option} value={option}>{copy.mathLevelOption[option]}</option>
-                ))}
-              </select>
-            </label>
-            <label>
-              <span>{copy.languageLabel}</span>
-              <select value={language} onChange={(event) => setLanguage(event.target.value as "en" | "ja")}>
-                <option value="en">{copy.languageOption.en}</option>
-                <option value="ja">{copy.languageOption.ja}</option>
-              </select>
-            </label>
-            <label>
-              <span>{copy.frameworkLabel}</span>
-              {/* Qiskit only: see the comment on the submit body above. A disabled
-                  select states the constraint instead of offering a choice that
+            </ComposerField>
+            <ComposerField label={copy.audienceLevelLabel}>
+              <PillToggle
+                legend={copy.audienceLevelLabel}
+                options={LEVEL_OPTIONS}
+                value={level}
+                onChange={setLevel}
+                labelFor={(option) => copy.audienceLevelOption[option]}
+              />
+            </ComposerField>
+            <ComposerField label={copy.mathLevelLabel}>
+              <PillToggle
+                legend={copy.mathLevelLabel}
+                options={MATH_OPTIONS}
+                value={mathLevel}
+                onChange={setMathLevel}
+                labelFor={(option) => copy.mathLevelOption[option]}
+              />
+            </ComposerField>
+            <ComposerField label={copy.languageLabel}>
+              <PillToggle
+                legend={copy.languageLabel}
+                options={LANGUAGE_OPTIONS}
+                value={language}
+                onChange={setLanguage}
+                labelFor={(option) => copy.languageOption[option]}
+              />
+            </ComposerField>
+            <ComposerField label={copy.analogiesLabel}>
+              <button
+                type="button"
+                className="mj-notebooks-pill"
+                aria-pressed={analogies}
+                onClick={() => setAnalogies((current) => !current)}
+              >
+                {copy.analogiesLabel}
+              </button>
+            </ComposerField>
+            <ComposerField label={copy.frameworkLabel}>
+              {/* Qiskit only: see the comment on the submit body above. A fixed
+                  badge states the constraint instead of offering a choice that
                   would fail once submitted. */}
-              <select value="qiskit" disabled>
-                <option value="qiskit">Qiskit</option>
-              </select>
-            </label>
+              <span className="mj-notebooks-pill mj-notebooks-pill--fixed">Qiskit</span>
+            </ComposerField>
           </div>
 
           <label className="mj-notebooks-seed">
@@ -343,7 +408,7 @@ function NotebookCard({ notebook, locale }: { notebook: Notebook; locale: Public
   return (
     <article className="mj-notebook-card">
       <div className="mj-notebook-card-meta">
-        <span>{copy.kindOption[notebook.kind]}</span>
+        <span className="mj-notebook-kind-badge">{copy.kindOption[notebook.kind]}</span>
         <span className={`mj-notebook-status-pill mj-notebook-status-pill--${pill}`}>{copy.statusPill[pill]}</span>
         <time dateTime={notebook.updated_at}>{copy.updated} {formatDate(notebook.updated_at, locale)}</time>
       </div>

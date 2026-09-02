@@ -63,7 +63,7 @@ function NotebookCellCard({
         {cell.role ? <span className="mj-notebook-cell-role">{cell.role}</span> : null}
         <span className="mj-notebook-cell-pill" data-status={cell.status}>{copy.cellStatus[cell.status]}</span>
         {onCellAction ? (
-          <div className="mj-notebook-cell-actions">
+          <div className="mj-notebook-cell-actions mj-library-row-actions">
             <button type="button" onClick={() => onCellAction(cell.id, "explain")}>{copy.actionExplain}</button>
             <button type="button" onClick={() => onCellAction(cell.id, "simplify")}>{copy.actionSimplify}</button>
             <button type="button" onClick={() => onCellAction(cell.id, "figure")}>{copy.actionAddFigure}</button>
@@ -72,9 +72,15 @@ function NotebookCellCard({
         ) : null}
       </div>
       {cell.kind === "markdown" ? (
-        <ChatMarkdown source={cell.source} />
+        // Reuses the chat thread's own typography (headings, code, lists,
+        // links) rather than restating it: `.mj-chat-message` is styled once,
+        // in styles.css, and every renderer of model/author markdown —
+        // Nala's replies and a notebook's markdown cells alike — wraps in it.
+        <div className="mj-chat-message mj-chat-message--assistant">
+          <ChatMarkdown source={cell.source} />
+        </div>
       ) : (
-        <pre className="mj-notebook-cell-code">
+        <pre className="mj-notebook-cell-code mj-code-body">
           <SyntaxHighlightedCode code={cell.source} language={framework} />
         </pre>
       )}
