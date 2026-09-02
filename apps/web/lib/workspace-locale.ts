@@ -17,6 +17,7 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
     run: string;
     studio: string;
     qapps: string;
+    notebooks: string;
     myQapps: string;
     exploreQapps: string;
     createQapp: string;
@@ -603,6 +604,7 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
       run: "Run",
       studio: "Studio",
       qapps: "Qapps",
+      notebooks: "Notebooks",
       myQapps: "My Qapps",
       exploreQapps: "Explore Qapps",
       createQapp: "Create Qapp",
@@ -1245,6 +1247,7 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
       run: "Run",
       studio: "Studio",
       qapps: "Qapps",
+      notebooks: "ノートブック",
       myQapps: "自分のQapp",
       exploreQapps: "公開Qappを探す",
       createQapp: "Qappを作る",
