@@ -1,5 +1,14 @@
+import type { components } from "@majorana/contracts-gen";
 import type { AccountTier } from "./account-tier";
 import type { PublicLocale } from "./public-locale";
+
+type NotebookKind = components["schemas"]["NotebookKind"];
+type NotebookAudienceLevel = components["schemas"]["Audience"]["level"];
+type NotebookMathLevel = components["schemas"]["Style"]["math_level"];
+type NotebookStatusPillCopyKey = "queued" | "generating" | "ready" | "failed";
+type NotebookCellStatusCopyKey = "ok" | "error" | "skipped" | "not_run";
+type NotebookReviewVerdict = components["schemas"]["NotebookReview"]["verdict"];
+type NotebookFindingSeverity = components["schemas"]["ReviewFinding"]["severity"];
 
 export const WORKSPACE_COPY: Record<PublicLocale, {
   surfaces: { brandedRun: string; preview: string };
@@ -506,6 +515,85 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
     applyOverwritesEditedCode: string;
     applyOverwritesUnrepresentableCode: string;
     confirmApply: string;
+  };
+  notebooks: {
+    title: string;
+    lede: string;
+    newNotebook: string;
+    briefLabel: string;
+    briefPlaceholder: string;
+    create: string;
+    creating: string;
+    createFailed: string;
+    kindLabel: string;
+    kindOption: Record<NotebookKind, string>;
+    startersLabel: string;
+    audienceLevelLabel: string;
+    audienceLevelOption: Record<NotebookAudienceLevel, string>;
+    analogiesLabel: string;
+    mathLevelLabel: string;
+    mathLevelOption: Record<NotebookMathLevel, string>;
+    languageLabel: string;
+    languageOption: Record<"en" | "ja", string>;
+    frameworkLabel: string;
+    seedAtlasLabel: string;
+    seedAtlasPlaceholder: string;
+    importLabel: string;
+    importHint: string;
+    importFailed: string;
+
+    listLoading: string;
+    listLoadFailed: string;
+    listEmpty: string;
+    search: string;
+    searchPlaceholder: string;
+    noMatch: string;
+    updated: string;
+    statusPill: Record<NotebookStatusPillCopyKey, string>;
+    open: string;
+
+    backToNotebooks: string;
+    loading: string;
+    loadFailed: string;
+    titleEditFailed: string;
+    saveTitle: string;
+    versionPickerLabel: string;
+    versionLabel: (seq: number) => string;
+    download: string;
+    downloadFailed: string;
+    runAgain: string;
+    running: string;
+    runAgainFailed: string;
+    versionFailedHeadline: string;
+    versionFailedHint: string;
+
+    reviewLabel: string;
+    reviewVerdict: Record<NotebookReviewVerdict, string>;
+    reviewFindingsLabel: string;
+    reviewSeverity: Record<NotebookFindingSeverity, string>;
+    reviewNotEstablishedLabel: string;
+
+    chatLabel: string;
+    chatPlaceholder: string;
+    chatSend: string;
+    chatSending: string;
+    chatEmpty: string;
+    chatLoadFailed: string;
+    chatSendFailed: string;
+    progressLabel: string;
+
+    cellStatus: Record<NotebookCellStatusCopyKey, string>;
+    cellStdout: string;
+    cellStderr: string;
+    cellTruncated: string;
+    cellErrorLabel: string;
+
+    actionExplain: string;
+    actionSimplify: string;
+    actionAddFigure: string;
+    actionExercise: string;
+
+    teachMeInNotebook: string;
   };
 }> = {
   en: {
@@ -1048,6 +1136,107 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
       applyOverwritesUnrepresentableCode: "The Code tab holds source this editor cannot draw. Applying replaces it with the diagram, and the diagram cannot reproduce it. Continue?",
       confirmApply: "Replace the code",
     },
+  notebooks: {
+    title: "Notebooks",
+    lede: "Ask Nala for a Jupyter lesson, then keep talking to change it. Every turn runs in the sandbox before you see it.",
+    newNotebook: "New notebook",
+    briefLabel: "What do you want to learn or teach?",
+    briefPlaceholder: "e.g. Teach a Python engineer the Bell state and why it can't be simulated classically, with a coin-flip analogy and a checkpoint that would fail if the code were wrong.",
+    create: "Create notebook",
+    creating: "Starting…",
+    createFailed: "The notebook could not be started.",
+    kindLabel: "Kind",
+    kindOption: {
+      lesson: "Lesson",
+      lab: "Lab",
+      challenge: "Challenge",
+      solution: "Solution",
+      walkthrough: "Walkthrough",
+      demo: "Demo",
+      quiz: "Quiz",
+      hardware: "Hardware",
+      benchmark: "Benchmark",
+      project: "Project",
+      scratch: "Scratch",
+    },
+    startersLabel: "Or start from a brief",
+    audienceLevelLabel: "Level",
+    audienceLevelOption: {
+      newcomer: "Newcomer",
+      engineer: "Engineer",
+      student: "Student",
+      researcher: "Researcher",
+    },
+    analogiesLabel: "Use analogies",
+    mathLevelLabel: "Math",
+    mathLevelOption: { none: "None", minimal: "Light", full: "Full" },
+    languageLabel: "Language",
+    languageOption: { en: "English", ja: "日本語" },
+    frameworkLabel: "Framework",
+    seedAtlasLabel: "Seed from an Atlas record",
+    seedAtlasPlaceholder: "Atlas record slug",
+    importLabel: "Import .ipynb",
+    importHint: "Upload an existing notebook to keep editing it with Nala.",
+    importFailed: "The notebook could not be imported.",
+
+    listLoading: "Loading notebooks…",
+    listLoadFailed: "Notebooks could not be loaded.",
+    listEmpty: "You have not created a notebook yet.",
+    search: "Search notebooks",
+    searchPlaceholder: "Search by title",
+    noMatch: "No notebooks match this search.",
+    updated: "Updated",
+    statusPill: {
+      queued: "Queued",
+      generating: "Generating…",
+      ready: "Ready",
+      failed: "Failed",
+    },
+    open: "Open notebook",
+
+    backToNotebooks: "Back to Notebooks",
+    loading: "Loading notebook…",
+    loadFailed: "This notebook could not be loaded.",
+    titleEditFailed: "The title could not be saved.",
+    saveTitle: "Save",
+    versionPickerLabel: "Version",
+    versionLabel: (seq) => `Version ${seq}`,
+    download: "Download .ipynb",
+    downloadFailed: "The notebook could not be downloaded.",
+    runAgain: "Run again",
+    running: "Running…",
+    runAgainFailed: "The notebook could not be re-run.",
+    versionFailedHeadline: "This version did not finish generating.",
+    versionFailedHint: "Ask Nala below to fix it, or run it again.",
+
+    reviewLabel: "Review",
+    reviewVerdict: { ready: "Ready", "needs-attention": "Needs attention" },
+    reviewFindingsLabel: "Findings",
+    reviewSeverity: { blocker: "Blocker", "should-fix": "Should fix", nit: "Nit" },
+    reviewNotEstablishedLabel: "What this notebook does not establish",
+
+    chatLabel: "Talk to Nala",
+    chatPlaceholder: "Ask Nala to change this notebook…",
+    chatSend: "Send",
+    chatSending: "Sending…",
+    chatEmpty: "Tell Nala what to change — a cell, an analogy, the difficulty, the language.",
+    chatLoadFailed: "The conversation could not be loaded.",
+    chatSendFailed: "The message could not be sent.",
+    progressLabel: "Working",
+
+    cellStatus: { ok: "Passed", error: "Error", skipped: "Skipped", not_run: "Not run yet" },
+    cellStdout: "Output",
+    cellStderr: "Error output",
+    cellTruncated: "Some output was cut to fit the evidence budget.",
+    cellErrorLabel: "Error",
+
+    actionExplain: "Explain this cell",
+    actionSimplify: "Simplify",
+    actionAddFigure: "Add a figure here",
+    actionExercise: "Turn this into an exercise",
+
+    teachMeInNotebook: "Teach me this in a notebook",
+  },
   },
   ja: {
     surfaces: { brandedRun: "Leona Run", preview: "公開プレビュー" },
@@ -1583,6 +1772,107 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
       applyOverwritesUnrepresentableCode: "コードタブには、このエディタで描けないソースがあります。適用するとそのコードは図で置き換えられ、図から元に戻すことはできません。続行しますか？",
       confirmApply: "コードを置き換える",
     },
+  notebooks: {
+    title: "ノートブック",
+    lede: "Nalaに依頼してJupyterレッスンを作成し、対話しながら編集できます。各バージョンは表示前にサンドボックスで実行されています。",
+    newNotebook: "新しいノートブック",
+    briefLabel: "何を学びたい、または教えたいですか？",
+    briefPlaceholder: "例：Pythonエンジニアにベル状態と、それが古典的にシミュレートできない理由を、コイン投げのたとえと、コードが間違っていれば失敗するチェックポイント付きで教えてください。",
+    create: "ノートブックを作成",
+    creating: "開始しています…",
+    createFailed: "ノートブックを開始できませんでした。",
+    kindLabel: "種類",
+    kindOption: {
+      lesson: "レッスン",
+      lab: "ラボ",
+      challenge: "チャレンジ",
+      solution: "解答",
+      walkthrough: "ウォークスルー",
+      demo: "デモ",
+      quiz: "クイズ",
+      hardware: "ハードウェア",
+      benchmark: "ベンチマーク",
+      project: "プロジェクト",
+      scratch: "メモ",
+    },
+    startersLabel: "またはお題から始める",
+    audienceLevelLabel: "レベル",
+    audienceLevelOption: {
+      newcomer: "初心者",
+      engineer: "エンジニア",
+      student: "学生",
+      researcher: "研究者",
+    },
+    analogiesLabel: "たとえ話を使う",
+    mathLevelLabel: "数式の量",
+    mathLevelOption: { none: "なし", minimal: "最小限", full: "しっかり" },
+    languageLabel: "言語",
+    languageOption: { en: "English", ja: "日本語" },
+    frameworkLabel: "フレームワーク",
+    seedAtlasLabel: "Atlasの記録から始める",
+    seedAtlasPlaceholder: "Atlas記録のスラッグ",
+    importLabel: ".ipynbをインポート",
+    importHint: "既存のノートブックをアップロードすると、Nalaと一緒に編集を続けられます。",
+    importFailed: "ノートブックをインポートできませんでした。",
+
+    listLoading: "ノートブックを読み込んでいます…",
+    listLoadFailed: "ノートブックを読み込めませんでした。",
+    listEmpty: "まだノートブックを作成していません。",
+    search: "ノートブックを検索",
+    searchPlaceholder: "タイトルで検索",
+    noMatch: "検索条件に一致するノートブックはありません。",
+    updated: "更新",
+    statusPill: {
+      queued: "待機中",
+      generating: "生成中…",
+      ready: "準備完了",
+      failed: "失敗",
+    },
+    open: "ノートブックを開く",
+
+    backToNotebooks: "ノートブック一覧に戻る",
+    loading: "ノートブックを読み込んでいます…",
+    loadFailed: "このノートブックを読み込めませんでした。",
+    titleEditFailed: "タイトルを保存できませんでした。",
+    saveTitle: "保存",
+    versionPickerLabel: "バージョン",
+    versionLabel: (seq) => `バージョン ${seq}`,
+    download: ".ipynbをダウンロード",
+    downloadFailed: "ノートブックをダウンロードできませんでした。",
+    runAgain: "再実行",
+    running: "実行中…",
+    runAgainFailed: "ノートブックを再実行できませんでした。",
+    versionFailedHeadline: "このバージョンの生成は完了しませんでした。",
+    versionFailedHint: "下のNalaに修正を依頼するか、もう一度実行してください。",
+
+    reviewLabel: "レビュー",
+    reviewVerdict: { ready: "準備完了", "needs-attention": "要確認" },
+    reviewFindingsLabel: "指摘事項",
+    reviewSeverity: { blocker: "重大", "should-fix": "要修正", nit: "軽微" },
+    reviewNotEstablishedLabel: "このノートブックが示していないこと",
+
+    chatLabel: "Nalaに相談する",
+    chatPlaceholder: "Nalaにこのノートブックの変更を依頼してください…",
+    chatSend: "送信",
+    chatSending: "送信しています…",
+    chatEmpty: "セルの内容、たとえ話、難易度、言語など、変更したい点をNalaに伝えてください。",
+    chatLoadFailed: "会話を読み込めませんでした。",
+    chatSendFailed: "メッセージを送信できませんでした。",
+    progressLabel: "処理中",
+
+    cellStatus: { ok: "成功", error: "エラー", skipped: "スキップ", not_run: "未実行" },
+    cellStdout: "出力",
+    cellStderr: "エラー出力",
+    cellTruncated: "一部の出力は容量の上限により省略されています。",
+    cellErrorLabel: "エラー",
+
+    actionExplain: "このセルを説明する",
+    actionSimplify: "やさしくする",
+    actionAddFigure: "ここに図を追加",
+    actionExercise: "演習問題にする",
+
+    teachMeInNotebook: "ノートブックで学ぶ",
+  },
   },
 };
 

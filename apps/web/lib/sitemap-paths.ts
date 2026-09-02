@@ -101,6 +101,7 @@ export const CRAWLER_DISALLOWED_PATHS: readonly string[] = [
   "/dev/",
   "/lab",
   "/library",
+  "/notebooks",
   "/qapps",
   "/run",
   "/shared/",
