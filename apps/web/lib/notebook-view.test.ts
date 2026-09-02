@@ -1,0 +1,126 @@
+import assert from "node:assert/strict";
+import test from "node:test";
+
+import {
+  classifyCellOutput,
+  notebookCellViews,
+  notebookStatusPill,
+  type NotebookCellView,
+} from "./notebook-view.ts";
+
+test("a PNG output becomes an <img>-ready data URI, never raw text", () => {
+  const view = classifyCellOutput({ mime: "image/png", data: "iVBORw0KG==", truncated: false, original_bytes: null });
+  assert.equal(view.kind, "image");
+  assert.equal((view as { src: string }).src, "data:image/png;base64,iVBORw0KG==");
+});
+
+test("text/html is classified as text, never as a renderable-HTML kind", () => {
+  // The whole point of this classification: nothing downstream can reach for
+  // dangerouslySetInnerHTML on a "kind: html" value that does not exist here.
+  const view = classifyCellOutput({ mime: "text/html", data: "<b>hi</b>", truncated: false, original_bytes: null });
+  assert.equal(view.kind, "text");
+  assert.equal((view as { text: string }).text, "<b>hi</b>");
+});
+
+test("cell views join the spec by id, not by array position", () => {
+  const cells = [
+    { id: "c02", kind: "code" as const, role: null, source: "print(2)", tags: [], execute: true, stub: null, timeout_s: null },
+    { id: "c01", kind: "code" as const, role: null, source: "print(1)", tags: [], execute: true, stub: null, timeout_s: null },
+  ];
+  const report = {
+    notebook_slug: "s",
+    ok: true,
+    runner: "sandbox" as const,
+    duration_ms: 0,
+    environment: {},
+    dropped_bytes: 0,
+    note: "",
+    cells: [
+      { id: "c01", status: "ok" as const, stdout: "1\n", stderr: "", outputs: [], error: null, duration_ms: 5, execution_count: 1, note: "" },
+    ],
+  };
+  const views = notebookCellViews(cells, report);
+  const c01 = views.find((view) => view.id === "c01") as NotebookCellView;
+  const c02 = views.find((view) => view.id === "c02") as NotebookCellView;
+  assert.equal(c01.status, "ok");
+  assert.equal(c01.stdout, "1\n");
+  // c02 has no matching result: it must not silently borrow c01's.
+  assert.equal(c02.status, "not_run");
+  assert.equal(c02.stdout, "");
+});
+
+test("a cell with execute:false defaults to skipped, not not_run", () => {
+  const cells = [{ id: "hw", kind: "code" as const, role: null, source: "submit()", tags: [], execute: false, stub: null, timeout_s: null }];
+  const [view] = notebookCellViews(cells, null);
+  assert.equal(view.status, "skipped");
+});
+
+test("a markdown cell with no result also defaults to skipped", () => {
+  const cells = [{ id: "m1", kind: "markdown" as const, role: null, source: "# hi", tags: [], execute: true, stub: null, timeout_s: null }];
+  const [view] = notebookCellViews(cells, null);
+  assert.equal(view.status, "skipped");
+});
+
+test("an error result surfaces ename/evalue verbatim", () => {
+  const cells = [{ id: "c1", kind: "code" as const, role: null, source: "1/0", tags: [], execute: true, stub: null, timeout_s: null }];
+  const report = {
+    notebook_slug: "s",
+    ok: false,
+    runner: "sandbox" as const,
+    duration_ms: 0,
+    environment: {},
+    dropped_bytes: 0,
+    note: "",
+    cells: [
+      {
+        id: "c1",
+        status: "error" as const,
+        stdout: "",
+        stderr: "",
+        outputs: [],
+        error: { ename: "ZeroDivisionError", evalue: "division by zero", traceback: [] },
+        duration_ms: 1,
+        execution_count: 1,
+        note: "",
+      },
+    ],
+  };
+  const [view] = notebookCellViews(cells, report);
+  assert.equal(view.status, "error");
+  assert.deepEqual(view.error, { ename: "ZeroDivisionError", evalue: "division by zero" });
+});
+
+test("a truncated output marks the cell view truncated", () => {
+  const cells = [{ id: "c1", kind: "code" as const, role: null, source: "big()", tags: [], execute: true, stub: null, timeout_s: null }];
+  const report = {
+    notebook_slug: "s",
+    ok: true,
+    runner: "sandbox" as const,
+    duration_ms: 0,
+    environment: {},
+    dropped_bytes: 100,
+    note: "",
+    cells: [
+      {
+        id: "c1",
+        status: "ok" as const,
+        stdout: "",
+        stderr: "",
+        outputs: [{ mime: "text/plain" as const, data: "...", truncated: true, original_bytes: 99999 }],
+        error: null,
+        duration_ms: 1,
+        execution_count: 1,
+        note: "",
+      },
+    ],
+  };
+  const [view] = notebookCellViews(cells, report);
+  assert.equal(view.truncated, true);
+});
+
+test("notebookStatusPill maps running to generating and passes the rest through", () => {
+  assert.equal(notebookStatusPill("running"), "generating");
+  assert.equal(notebookStatusPill("queued"), "queued");
+  assert.equal(notebookStatusPill("ready"), "ready");
+  assert.equal(notebookStatusPill("failed"), "failed");
+});
