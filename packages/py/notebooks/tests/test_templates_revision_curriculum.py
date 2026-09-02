@@ -243,3 +243,18 @@ def test_curriculum_build_emits_stubbed_challenge_and_separate_solution(tmp_path
     spec = load_curriculum(src)
     assert spec.units[0].directory == "week01_x"
     assert [b for b, _ in builds_for(parse_source(LESSON), Path("w/lab.nb.py"), spec)] == ["full"]
+
+
+def test_build_never_copies_an_environment(tmp_path: Path) -> None:
+    src = tmp_path / "src"
+    (src / "static" / ".venv" / "bin").mkdir(parents=True)
+    (src / "static" / ".venv" / "bin" / "python").write_text("binary", encoding="utf-8")
+    (src / "static" / "README.md").write_text("# r\n", encoding="utf-8")
+    (src / "week01_x" / "__pycache__").mkdir(parents=True)
+    (src / "week01_x" / "__pycache__" / "x.pyc").write_text("", encoding="utf-8")
+    (src / "week01_x" / "README.md").write_text("# w\n", encoding="utf-8")
+    (src / "curriculum.yaml").write_text("slug: demo\ntitle: D\n", encoding="utf-8")
+    manifest = build_curriculum(src, tmp_path / "out")
+    copied = {str(p.relative_to(manifest.out_dir)) for p in manifest.copied}
+    assert copied == {"README.md", "week01_x/README.md"}
+    assert not (tmp_path / "out" / ".venv").exists()

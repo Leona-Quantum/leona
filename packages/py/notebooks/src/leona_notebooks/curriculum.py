@@ -36,6 +36,24 @@ from leona_notebooks.templates import check_structure
 
 SOURCE_SUFFIX = ".nb.py"
 
+#: Never copied into a build: environments, caches and checkpoints an author left behind.
+SKIPPED_DIRS: frozenset[str] = frozenset(
+    {
+        ".venv",
+        ".venv.nosync",
+        "__pycache__",
+        ".ipynb_checkpoints",
+        ".pytest_cache",
+        ".ruff_cache",
+        ".git",
+    }
+)
+
+
+def _skipped(relative: Path) -> bool:
+    return any(part in SKIPPED_DIRS for part in relative.parts)
+
+
 #: Kinds whose in-place build hides answers and whose full build lands under `solutions/`.
 HIDDEN_ANSWER_KINDS: frozenset[NotebookKind] = frozenset(
     {NotebookKind.CHALLENGE, NotebookKind.QUIZ}
@@ -119,7 +137,9 @@ def load_curriculum(source_dir: str | Path) -> CurriculumSpec:
 def notebook_sources(source_dir: str | Path) -> list[Path]:
     root = Path(source_dir)
     return sorted(
-        p for p in root.rglob(f"*{SOURCE_SUFFIX}") if "static" not in p.relative_to(root).parts
+        p
+        for p in root.rglob(f"*{SOURCE_SUFFIX}")
+        if "static" not in p.relative_to(root).parts and not _skipped(p.relative_to(root))
     )
 
 
@@ -162,7 +182,7 @@ def build_curriculum(
     static = source_root / "static"
     if static.is_dir():
         for item in sorted(static.rglob("*")):
-            if item.is_file():
+            if item.is_file() and not _skipped(item.relative_to(static)):
                 target = out_root / item.relative_to(static)
                 target.parent.mkdir(parents=True, exist_ok=True)
                 shutil.copy2(item, target)
@@ -171,6 +191,8 @@ def build_curriculum(
     for item in sorted(source_root.rglob("*")):
         rel = item.relative_to(source_root)
         if not item.is_file() or rel.parts[0] == "static" or item.name == "curriculum.yaml":
+            continue
+        if _skipped(rel):
             continue
         if item.name.endswith(SOURCE_SUFFIX):
             continue
