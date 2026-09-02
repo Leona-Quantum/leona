@@ -2829,6 +2829,37 @@
         "title": "ImportNotebookRequest",
         "type": "object"
       },
+      "ImportNotebookResponse": {
+        "additionalProperties": false,
+        "description": "Import creates a NEW notebook whose first version is the upload; `run_id` is set\nonly when `execute` asked for a re-run (queued as version 2).",
+        "properties": {
+          "notebook": {
+            "$ref": "#/components/schemas/Notebook"
+          },
+          "run_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Run Id"
+          },
+          "version": {
+            "$ref": "#/components/schemas/NotebookVersionSummary"
+          }
+        },
+        "required": [
+          "notebook",
+          "version"
+        ],
+        "title": "ImportNotebookResponse",
+        "type": "object"
+      },
       "IndexedPauliTerm": {
         "additionalProperties": false,
         "description": "One real Pauli term written only on the qubits where it acts.\n\nAn empty factor list is the identity term. The worker, rather than the model,\npads every other qubit with identity before dense evaluation. This removes a\ntranscription step that is especially error-prone for sparse operators.",

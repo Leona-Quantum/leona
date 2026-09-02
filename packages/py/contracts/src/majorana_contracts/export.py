@@ -76,6 +76,7 @@ EXPORTED = [
     notebooks.CreateNotebookTurnRequest,
     notebooks.CreateNotebookTurnResponse,
     notebooks.ImportNotebookRequest,
+    notebooks.ImportNotebookResponse,
     notebooks.RerunNotebookResponse,
     notebooks.UpdateNotebookRequest,
     models.VerificationRecord,

@@ -1403,6 +1403,20 @@ export interface components {
             title: string | null;
         };
         /**
+         * ImportNotebookResponse
+         * @description Import creates a NEW notebook whose first version is the upload; `run_id` is set
+         *     only when `execute` asked for a re-run (queued as version 2).
+         */
+        ImportNotebookResponse: {
+            notebook: components["schemas"]["Notebook"];
+            /**
+             * Run Id
+             * @default null
+             */
+            run_id: string | null;
+            version: components["schemas"]["NotebookVersionSummary"];
+        };
+        /**
          * IndexedPauliTerm
          * @description One real Pauli term written only on the qubits where it acts.
          *

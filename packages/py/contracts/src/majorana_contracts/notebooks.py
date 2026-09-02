@@ -468,6 +468,15 @@ class ImportNotebookRequest(_ResourceBase):
     execute: bool = True
 
 
+class ImportNotebookResponse(_ResourceBase):
+    """Import creates a NEW notebook whose first version is the upload; `run_id` is set
+    only when `execute` asked for a re-run (queued as version 2)."""
+
+    notebook: Notebook
+    version: NotebookVersionSummary
+    run_id: UUID | None = None
+
+
 class RerunNotebookResponse(_ResourceBase):
     version: NotebookVersionSummary
     run_id: UUID
