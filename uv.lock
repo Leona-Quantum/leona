@@ -1808,6 +1808,7 @@ source = { editable = "services/worker" }
 dependencies = [
     { name = "cryptography" },
     { name = "defusedxml" },
+    { name = "leona-notebooks" },
     { name = "majorana-agent" },
     { name = "majorana-api" },
     { name = "majorana-frameworks" },
@@ -1822,6 +1823,7 @@ dependencies = [
 requires-dist = [
     { name = "cryptography", specifier = ">=43" },
     { name = "defusedxml", specifier = ">=0.7.1,<1" },
+    { name = "leona-notebooks", editable = "packages/py/notebooks" },
     { name = "majorana-agent", editable = "packages/py/agent" },
     { name = "majorana-api", editable = "services/api" },
     { name = "majorana-frameworks", editable = "packages/py/frameworks" },

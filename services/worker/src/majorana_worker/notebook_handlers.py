@@ -21,21 +21,13 @@ each method so this module imports cleanly today; tests inject
 `MemoryNotebookStore` instead. `RepoNotebookStore` is UNTESTED against the real
 module — say so wherever this lands.
 
-**`observe()` is synchronous by contract** (`leona_notebooks.pipeline.NotebookPorts`,
-not this lane's file to change — it is called without `await` throughout
-`pipeline.py`), but the run's event stream is only reachable through an async,
-session-backed sink, and `AsyncSession` is not safe for concurrent use from two
-coroutines. A fire-and-forget `asyncio.create_task` from inside `observe()`
-would race the handler's own session calls whenever two stage transitions fire
-back-to-back with no intervening `await` (e.g. execute "finished" immediately
-followed by repair "started" — the exact shape `_execute_and_repair` produces).
-So `observe()` only buffers; `flush_events()` drains the buffer from the
-handler at a safe point (after `generate`/`revise` returns, before the handler
-touches `session` again). The cost: a notebook run's stage events land as one
-batch once the pipeline call completes, not incrementally as they happen. This
-is a deliberate, flagged simplification, not a silent shortcut — see the
-handoff for the alternative (making `observe()` async, which is pipeline.py's
-call, not this file's).
+**`observe()` is awaited by the pipeline** (`leona_notebooks.pipeline.NotebookPorts`
+declares it as a coroutine), so each stage transition is written to the run's event
+stream as it happens, on the handler's own `AsyncSession`, with nothing else using
+that session concurrently. A synchronous fire-and-forget `asyncio.create_task` would
+have raced the handler's session between two back-to-back transitions (execute
+"finished" immediately followed by repair "started"), which is why the port is async
+rather than sync-plus-buffer.
 """
 
 from __future__ import annotations
@@ -43,7 +35,6 @@ from __future__ import annotations
 import logging
 import time
 import uuid
-from dataclasses import dataclass
 from typing import Any, Literal, Protocol
 
 from pydantic import ValidationError
@@ -310,14 +301,6 @@ class RepoNotebookStore:
 # --------------------------------------------------------------------------- ports
 
 
-@dataclass
-class _PendingEvent:
-    stage_name: str
-    status: Literal["started", "finished", "failed"]
-    detail: str
-    duration_ms: int
-
-
 class ProductionNotebookPorts(NotebookPorts):
     """`NotebookPorts` backed by real LLM calls and the real sandbox."""
 
@@ -335,7 +318,6 @@ class ProductionNotebookPorts(NotebookPorts):
         self._sink = sink
         self._response_locale = normalize_response_locale(response_locale)
         self._sandbox_memory_mb = sandbox_memory_mb
-        self._pending: list[_PendingEvent] = []
         self._started_at: dict[str, float] = {}
         #: Total sandbox seconds this generation/revision spent, across every
         #: `execute()` call (the initial run and every repair rerun) — summed
@@ -492,50 +474,34 @@ class ProductionNotebookPorts(NotebookPorts):
         )
         return report_from_sandbox_result(result, spec, program)
 
-    # -- observe: buffered, drained by flush_events() ----------------------
+    # -- observe: live, on the handler's session -----------------------------
 
-    def observe(
+    async def observe(
         self, stage: str, status: Literal["started", "finished", "failed"], detail: str = ""
     ) -> None:
-        # "Never raises" (NotebookPorts.observe docstring): buffering a tuple
-        # cannot fail for the inputs the pipeline ever passes, but the pipeline
-        # must never see an exception from progress reporting regardless.
+        """Write the stage transition to the run's event stream now. The pipeline
+        awaits this, so the write happens on the handler's own session with nothing
+        else using it — the reason `NotebookPorts.observe` is a coroutine."""
         try:
             now = time.monotonic()
+            mapped = _STAGE_MAP.get(stage, Stage.GENERATE)
             if status == "started":
                 self._started_at[stage] = now
-                self._pending.append(_PendingEvent(stage, status, detail, 0))
+                await self._sink.emit("stage.started", {"stage": mapped.value})
                 return
             duration_ms = int(max(now - self._started_at.pop(stage, now), 0.0) * 1000)
-            self._pending.append(_PendingEvent(stage, status, detail, duration_ms))
-        except Exception:
-            log.exception("notebook observe() failed to buffer stage=%s status=%s", stage, status)
-
-    async def flush_events(self) -> None:
-        """Drain buffered stage events onto the run's event stream. Call this
-        from the handler at a point where nothing else is using `session`
-        concurrently — see the module docstring for why `observe()` cannot do
-        this itself."""
-        pending, self._pending = self._pending, []
-        for event in pending:
-            mapped = _STAGE_MAP.get(event.stage_name, Stage.GENERATE)
-            if event.status == "started":
-                await self._sink.emit("stage.started", {"stage": mapped.value})
-                continue
-            ok = event.status == "finished"
+            ok = status == "finished"
             await self._sink.emit(
                 "stage.finished",
-                {"stage": mapped.value, "ok": ok, "duration_ms": event.duration_ms},
+                {"stage": mapped.value, "ok": ok, "duration_ms": duration_ms},
             )
-            if not ok and event.detail:
+            if not ok and detail:
                 await self._sink.emit(
                     "run.error",
-                    {
-                        "stage": mapped.value,
-                        "code": event.stage_name,
-                        "message": event.detail[:2000],
-                    },
+                    {"stage": mapped.value, "code": stage, "message": detail[:2000]},
                 )
+        except Exception:
+            log.exception("notebook observe() failed for stage=%s status=%s", stage, status)
 
 
 # --------------------------------------------------------------------------- shared handler plumbing
@@ -776,7 +742,6 @@ async def handle_notebook_generate(
             slug=payload.get("slug"),
         )
         outcome = await generate(ports, gen_request)
-        await ports.flush_events()
         await _record_sandbox_usage(session, scope, run_id, ports)
         await _save_outcome(
             notebook_store=notebook_store,
@@ -792,7 +757,6 @@ async def handle_notebook_generate(
             failure_reason_code="notebook_generation_failed",
         )
     except Exception as exc:
-        await ports.flush_events()
         log.exception("notebook.generate run %s failed", run_id)
         await _fail_run(
             notebook_store=notebook_store,
@@ -870,7 +834,6 @@ async def handle_notebook_revise(
                 summary="re-executed" if report.ok else "",
                 error="" if report.ok else (report.note or "the notebook did not execute cleanly"),
             )
-            await ports.flush_events()
             await _record_sandbox_usage(session, scope, run_id, ports)
             await _save_outcome(
                 notebook_store=notebook_store,
@@ -904,7 +867,6 @@ async def handle_notebook_revise(
             spec=base_spec, message=message, history=history, response_locale=response_locale
         )
         outcome = await revise(ports, rev_request)
-        await ports.flush_events()
         await _record_sandbox_usage(session, scope, run_id, ports)
 
         if outcome.status == "ready" and outcome.spec is None:
@@ -954,7 +916,6 @@ async def handle_notebook_revise(
             failure_reason_code="notebook_revision_failed",
         )
     except Exception as exc:
-        await ports.flush_events()
         log.exception("notebook.revise run %s failed", run_id)
         await _fail_run(
             notebook_store=notebook_store,

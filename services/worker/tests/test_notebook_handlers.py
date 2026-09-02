@@ -137,7 +137,7 @@ class Session:
 
 
 class FakeEventSink:
-    """Records every emitted event; `flush_events()` drains through this."""
+    """Records every emitted event; the ports write to it live."""
 
     def __init__(self, scope, session, run_id):
         self.events: list[tuple[str, dict]] = []

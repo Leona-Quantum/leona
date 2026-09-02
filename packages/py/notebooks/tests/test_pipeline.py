@@ -100,7 +100,7 @@ class ScriptedPorts:
         assert self.revision is not None
         return self.revision
 
-    def observe(self, stage, status, detail="") -> None:
+    async def observe(self, stage, status, detail="") -> None:
         self.events.append((stage, status, detail))
 
 

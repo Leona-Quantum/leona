@@ -111,10 +111,11 @@ class NotebookPorts(Protocol):
 
     async def revise(self, request: RevisionRequest) -> RevisionPlan: ...
 
-    def observe(
+    async def observe(
         self, stage: Stage, status: Literal["started", "finished", "failed"], detail: str = ""
     ) -> None:
-        """Progress, for the run's event stream. Never raises."""
+        """Progress, for the run's event stream — awaited so an implementation can write
+        to the run's events live, on the handler's own session. Never raises."""
         ...
 
 
@@ -192,9 +193,9 @@ def render_cells(cells: list[Cell], *, include_ids: bool = True) -> str:
 async def _execute_and_repair(
     ports: NotebookPorts, spec: NotebookSpec, budget: PipelineBudget, attempts: list[Attempt]
 ) -> tuple[NotebookSpec, ExecutionReport]:
-    ports.observe("notebook.execute", "started")
+    await ports.observe("notebook.execute", "started")
     report = await ports.execute(spec)
-    ports.observe("notebook.execute", "finished" if report.ok else "failed", report.note)
+    await ports.observe("notebook.execute", "finished" if report.ok else "failed", report.note)
     attempts.append(Attempt("notebook.execute", report.ok, report.note))
     repairs = 0
     while not report.ok and repairs < budget.max_repairs:
@@ -202,19 +203,21 @@ async def _execute_and_repair(
         if context is None:
             break  # not a cell error (the sandbox itself failed): nothing to repair
         repairs += 1
-        ports.observe("notebook.repair", "started", f"{context.cell_id}: {context.error_name}")
+        await ports.observe(
+            "notebook.repair", "started", f"{context.cell_id}: {context.error_name}"
+        )
         try:
             text = await ports.repair(spec, context)
             spec = _apply_repair(spec, context.cell_id, text)
         except (SourceParseError, RevisionError, ValueError, _StageFailed) as exc:
             attempts.append(Attempt("notebook.repair", False, str(exc)))
-            ports.observe("notebook.repair", "failed", str(exc))
+            await ports.observe("notebook.repair", "failed", str(exc))
             continue
         attempts.append(Attempt("notebook.repair", True, context.cell_id))
-        ports.observe("notebook.repair", "finished", context.cell_id)
-        ports.observe("notebook.execute", "started")
+        await ports.observe("notebook.repair", "finished", context.cell_id)
+        await ports.observe("notebook.execute", "started")
         report = await ports.execute(spec)
-        ports.observe("notebook.execute", "finished" if report.ok else "failed", report.note)
+        await ports.observe("notebook.execute", "finished" if report.ok else "failed", report.note)
         attempts.append(Attempt("notebook.execute", report.ok, report.note))
     return spec, report
 
@@ -245,22 +248,22 @@ async def generate(
     attempts: list[Attempt] = []
     outline: NotebookOutline | None = None
     try:
-        ports.observe("notebook.outline", "started")
+        await ports.observe("notebook.outline", "started")
         outline = await ports.outline(request)
-        ports.observe("notebook.outline", "finished", outline.title)
+        await ports.observe("notebook.outline", "finished", outline.title)
         attempts.append(Attempt("notebook.outline", True, outline.title))
 
         spec: NotebookSpec | None = None
         feedback: str | None = None
         for _ in range(budget.max_draft_attempts):
-            ports.observe("notebook.draft", "started")
+            await ports.observe("notebook.draft", "started")
             text = await ports.draft(request, outline, feedback)
             try:
                 candidate = parse_source(text, slug=request.slug)
             except (SourceParseError, ValueError) as exc:
                 feedback = f"The draft did not parse as notebook source: {exc}"
                 attempts.append(Attempt("notebook.draft", False, feedback))
-                ports.observe("notebook.draft", "failed", feedback)
+                await ports.observe("notebook.draft", "failed", feedback)
                 continue
             candidate = candidate.model_copy(
                 update={
@@ -274,12 +277,12 @@ async def generate(
             if problems:
                 feedback = "The draft misses these requirements:\n- " + "\n- ".join(problems)
                 attempts.append(Attempt("notebook.draft", False, feedback))
-                ports.observe("notebook.draft", "failed", "; ".join(problems)[:300])
+                await ports.observe("notebook.draft", "failed", "; ".join(problems)[:300])
                 spec = spec or candidate  # keep the best so far rather than nothing
                 continue
             spec = candidate
             attempts.append(Attempt("notebook.draft", True, f"{len(spec.cells)} cells"))
-            ports.observe("notebook.draft", "finished", f"{len(spec.cells)} cells")
+            await ports.observe("notebook.draft", "finished", f"{len(spec.cells)} cells")
             break
         if spec is None:
             raise _StageFailed("notebook.draft", feedback or "no draft parsed")
@@ -288,14 +291,14 @@ async def generate(
 
         review: NotebookReview | None = None
         if budget.review and report.ok:
-            ports.observe("notebook.review", "started")
+            await ports.observe("notebook.review", "started")
             try:
                 review = await ports.review(spec, report)
-                ports.observe("notebook.review", "finished", review.verdict)
+                await ports.observe("notebook.review", "finished", review.verdict)
                 attempts.append(Attempt("notebook.review", True, review.verdict))
             except Exception as exc:  # noqa: BLE001 - advisory: never fails the notebook
                 attempts.append(Attempt("notebook.review", False, str(exc)))
-                ports.observe("notebook.review", "failed", str(exc))
+                await ports.observe("notebook.review", "failed", str(exc))
 
         status: Literal["ready", "failed"] = "ready" if report.ok else "failed"
         error = "" if report.ok else _describe_failure(report)
@@ -310,7 +313,7 @@ async def generate(
             error=error,
         )
     except _StageFailed as exc:
-        ports.observe(exc.stage, "failed", exc.detail)
+        await ports.observe(exc.stage, "failed", exc.detail)
         return PipelineOutcome(
             status="failed",
             spec=None,
@@ -326,10 +329,10 @@ async def revise(
 ) -> PipelineOutcome:
     budget = budget or PipelineBudget()
     attempts: list[Attempt] = []
-    ports.observe("notebook.revise", "started")
+    await ports.observe("notebook.revise", "started")
     plan = await ports.revise(request)
     if not plan.ops:
-        ports.observe("notebook.revise", "finished", "no edit")
+        await ports.observe("notebook.revise", "finished", "no edit")
         return PipelineOutcome(
             status="ready",
             spec=None,
@@ -341,7 +344,7 @@ async def revise(
     try:
         spec = apply_revision(request.spec, plan)
     except RevisionError as exc:
-        ports.observe("notebook.revise", "failed", str(exc))
+        await ports.observe("notebook.revise", "failed", str(exc))
         return PipelineOutcome(
             status="failed",
             spec=None,
@@ -351,7 +354,7 @@ async def revise(
             error=f"notebook.revise: {exc}",
         )
     attempts.append(Attempt("notebook.revise", True, f"{len(plan.ops)} op(s)"))
-    ports.observe("notebook.revise", "finished", plan.summary or f"{len(plan.ops)} op(s)")
+    await ports.observe("notebook.revise", "finished", plan.summary or f"{len(plan.ops)} op(s)")
     spec, report = await _execute_and_repair(ports, spec, budget, attempts)
     review: NotebookReview | None = None
     if budget.review and report.ok:
