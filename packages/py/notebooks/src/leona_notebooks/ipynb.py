@@ -7,7 +7,8 @@ into standard `tags` so a jupytext or nbgrader user sees the same roles.
 Three builds of one spec:
 
 - `full` — every cell (a lesson, a lab, a solution notebook).
-- `challenge` — `role=solution` code becomes its stub, solution/answer markdown is dropped.
+- `challenge` — `role=solution` code becomes its stub, solution/answer markdown is dropped
+  (used for `challenge` and `quiz` kinds).
 - `solution` — same as full; named so a caller's intent is legible.
 """
 

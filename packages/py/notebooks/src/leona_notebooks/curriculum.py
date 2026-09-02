@@ -36,6 +36,11 @@ from leona_notebooks.templates import check_structure
 
 SOURCE_SUFFIX = ".nb.py"
 
+#: Kinds whose in-place build hides answers and whose full build lands under `solutions/`.
+HIDDEN_ANSWER_KINDS: frozenset[NotebookKind] = frozenset(
+    {NotebookKind.CHALLENGE, NotebookKind.QUIZ}
+)
+
 
 class CurriculumUnit(BaseModel):
     model_config = ConfigDict(extra="forbid")
@@ -126,11 +131,11 @@ def _write_notebook(path: Path, notebook: dict[str, Any]) -> None:
 def builds_for(
     spec: NotebookSpec, relative: Path, curriculum: CurriculumSpec
 ) -> list[tuple[str, Path]]:
-    """Which builds a source produces and where. A challenge yields the stubbed
-    notebook in place and the solution under `solutions/<same dir>/`."""
+    """Which builds a source produces and where. A challenge or quiz yields the
+    answer-free notebook in place and the solution under `solutions/<same dir>/`."""
     stem = relative.name[: -len(SOURCE_SUFFIX)]
     in_place = relative.parent / f"{stem}.ipynb"
-    if spec.kind == NotebookKind.CHALLENGE:
+    if spec.kind in HIDDEN_ANSWER_KINDS:
         solution = Path(curriculum.solutions_dir) / relative.parent / f"{stem}_solution.ipynb"
         return [("challenge", in_place), ("solution", solution)]
     return [("full", in_place)]

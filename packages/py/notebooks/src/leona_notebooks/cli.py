@@ -113,11 +113,13 @@ def cmd_validate(args: argparse.Namespace) -> int:
         for problem in problems:
             print(f"✗ {source}: structure: {problem}")
         failures += len(problems)
-        to_ipynb(spec, build="challenge" if spec.kind.value == "challenge" else "full")
+        to_ipynb(spec, build="challenge" if spec.kind.value in {"challenge", "quiz"} else "full")
         if args.execute:
             from leona_notebooks.local_runner import execute_with_nbclient
 
-            builds = ["challenge", "solution"] if spec.kind.value == "challenge" else ["full"]
+            builds = (
+                ["challenge", "solution"] if spec.kind.value in {"challenge", "quiz"} else ["full"]
+            )
             for build in builds:
                 _, report = execute_with_nbclient(
                     spec, build=build, timeout_s=args.timeout, cwd=source.parent
