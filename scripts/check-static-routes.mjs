@@ -63,7 +63,7 @@ const LOCALES = ["en", "ja"];
  * list against the filesystem — this one only has to name what must CACHE, and
  * every entry becomes one prerendered route per locale.
  */
-const LOCALE_ROUTES = ["", "/contact", "/pricing", "/privacy", "/terms", "/workspace"];
+const LOCALE_ROUTES = ["", "/about", "/contact", "/pricing", "/privacy", "/terms", "/workspace"];
 
 /**
  * Atlas routes that prerender, which is NOT the same set as the Atlas routes
