@@ -245,6 +245,19 @@ def test_curriculum_build_emits_stubbed_challenge_and_separate_solution(tmp_path
     assert [b for b, _ in builds_for(parse_source(LESSON), Path("w/lab.nb.py"), spec)] == ["full"]
 
 
+def test_authoring_metadata_stays_out_of_the_build(tmp_path: Path) -> None:
+    src = tmp_path / "src"
+    src.mkdir()
+    (src / "curriculum.yaml").write_text("slug: demo\ntitle: D\n", encoding="utf-8")
+    (src / "AUTHORING.md").write_text("# rules for agents\n", encoding="utf-8")
+    (src / "BRIEF-from-quanmatic.md").write_text("# their README\n", encoding="utf-8")
+    (src / "README.md").write_text("# the course\n", encoding="utf-8")
+    manifest = build_curriculum(src, tmp_path / "out")
+    copied = {str(p.relative_to(manifest.out_dir)) for p in manifest.copied}
+    assert copied == {"README.md"}
+    assert not (tmp_path / "out" / "AUTHORING.md").exists()
+
+
 def test_build_never_copies_an_environment(tmp_path: Path) -> None:
     src = tmp_path / "src"
     (src / "static" / ".venv" / "bin").mkdir(parents=True)

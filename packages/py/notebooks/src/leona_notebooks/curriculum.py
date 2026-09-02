@@ -85,6 +85,12 @@ class CurriculumSpec(BaseModel):
     units: list[CurriculumUnit] = Field(default_factory=list)
     #: Extra directories built like units but outside the week track (certification, bonus).
     extras: list[str] = Field(default_factory=list)
+    #: Files at the source root that describe HOW to author the curriculum rather than
+    #: forming part of it. They stay out of the build: an authoring guide or the
+    #: original brief shipped to the reader is confusing at best and internal at worst.
+    source_only: list[str] = Field(
+        default_factory=lambda: ["AUTHORING.md", "BRIEF-from-quanmatic.md"]
+    )
     solutions_dir: str = "solutions"
     checklist_name: str = "SELF_EVALUATION.md"
 
@@ -191,6 +197,8 @@ def build_curriculum(
     for item in sorted(source_root.rglob("*")):
         rel = item.relative_to(source_root)
         if not item.is_file() or rel.parts[0] == "static" or item.name == "curriculum.yaml":
+            continue
+        if rel.as_posix() in set(curriculum.source_only):
             continue
         if _skipped(rel):
             continue
