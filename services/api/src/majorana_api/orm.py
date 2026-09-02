@@ -332,7 +332,9 @@ class NotebookTurn(Base):
     seq: Mapped[int] = mapped_column(Integer)
     role: Mapped[str]
     content: Mapped[str]
-    version_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("notebook_versions.id"))
+    version_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("notebook_versions.id", ondelete="SET NULL")
+    )
     run_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("runs.id"))
     created_at: Mapped[dt.datetime | None] = mapped_column(server_default=func.now())
 
