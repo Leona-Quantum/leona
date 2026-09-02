@@ -40,6 +40,7 @@ from .routes.artifacts import router as artifacts_router
 from .routes.billing import router as billing_router
 from .routes.catalog import router as catalog_router
 from .routes.me import router as me_router
+from .routes.notebooks import router as notebooks_router
 from .routes.qpu import router as qpu_router
 from .routes.qapps import router as qapps_router
 from .routes.runs import router as runs_router
@@ -515,6 +516,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(catalog_router, prefix="/v1")
     app.include_router(qpu_router, prefix="/v1")
     app.include_router(qapps_router, prefix="/v1")
+    app.include_router(notebooks_router, prefix="/v1")
     app.include_router(billing_router, prefix="/v1")
     app.include_router(usage_router, prefix="/v1")
     _wire_observability(app)
