@@ -165,7 +165,9 @@ def upgrade() -> None:
             "created_at", sa.TIMESTAMP(timezone=True), nullable=False, server_default=sa.func.now()
         ),
         sa.ForeignKeyConstraint(["notebook_id"], ["notebooks.id"], ondelete="CASCADE"),
-        sa.ForeignKeyConstraint(["version_id"], ["notebook_versions.id"]),
+        # A turn points at the version it produced or asked for; the pointer must not
+        # keep a version alive, so deleting a version clears it rather than failing.
+        sa.ForeignKeyConstraint(["version_id"], ["notebook_versions.id"], ondelete="SET NULL"),
         sa.ForeignKeyConstraint(["run_id"], ["runs.id"]),
         sa.UniqueConstraint("notebook_id", "seq", name="uq_notebook_turns_seq"),
         sa.CheckConstraint("seq >= 1", name="ck_notebook_turns_seq"),
