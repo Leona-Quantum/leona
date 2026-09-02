@@ -17,6 +17,8 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from majorana_contracts.notebooks import NotebookReview
+
 from leona_notebooks.spec import Audience, CellRole, Framework, NotebookKind, Reference, Seed, Style
 from leona_notebooks.templates import KIND_DESCRIPTIONS, structure_for
 
@@ -317,26 +319,8 @@ def render_revise_user_prompt(
 # --------------------------------------------------------------------------- review stage
 
 
-class ReviewFinding(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    cell_id: str | None = None
-    severity: Literal["blocker", "should-fix", "nit"]
-    category: Literal["accuracy", "pedagogy", "code", "structure", "safety", "style"]
-    finding: str
-    suggestion: str = ""
-
-
-class NotebookReview(BaseModel):
-    """Advisory, like the execute pipeline's alignment review: it never blocks a save,
-    it tells the reader what a second pair of eyes saw."""
-
-    model_config = ConfigDict(extra="forbid")
-
-    verdict: Literal["ready", "needs-attention"]
-    findings: list[ReviewFinding] = Field(default_factory=list)
-    what_this_notebook_does_not_establish: list[str] = Field(default_factory=list)
-
+# `ReviewFinding` and `NotebookReview` are contracts (`majorana_contracts.notebooks`):
+# the API returns them to the reader, so their definition lives at the boundary.
 
 REVIEW_SYSTEM_PROMPT = """\
 You review a teaching notebook that has already executed. Return JSON only (`NotebookReview`).

@@ -1522,6 +1522,7 @@ name = "leona-notebooks"
 version = "0.1.0"
 source = { editable = "packages/py/notebooks" }
 dependencies = [
+    { name = "majorana-contracts" },
     { name = "majorana-sandbox" },
     { name = "nbformat" },
     { name = "pydantic" },
@@ -1537,6 +1538,7 @@ execute = [
 [package.metadata]
 requires-dist = [
     { name = "ipykernel", marker = "extra == 'execute'", specifier = ">=6.29,<7" },
+    { name = "majorana-contracts", editable = "packages/py/contracts" },
     { name = "majorana-sandbox", editable = "packages/py/sandbox" },
     { name = "nbclient", marker = "extra == 'execute'", specifier = ">=0.10,<1" },
     { name = "nbformat", specifier = ">=5.10,<6" },

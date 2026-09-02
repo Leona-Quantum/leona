@@ -263,6 +263,19 @@ export interface components {
             /** Version */
             version: number;
         };
+        /** Audience */
+        Audience: {
+            /** Assumes */
+            assumes?: string[];
+            /**
+             * Level
+             * @default engineer
+             * @enum {string}
+             */
+            level: "newcomer" | "engineer" | "student" | "researcher";
+            /** Not Assumed */
+            not_assumed?: string[];
+        };
         /**
          * BaselineKind
          * @enum {string}
@@ -522,6 +535,113 @@ export interface components {
              */
             upstream_ref: string | null;
         };
+        /** Cell */
+        Cell: {
+            /**
+             * Execute
+             * @default true
+             */
+            execute: boolean;
+            /** Id */
+            id: string;
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "markdown" | "code";
+            /** @default null */
+            role: components["schemas"]["CellRole"] | null;
+            /**
+             * Source
+             * @default
+             */
+            source: string;
+            /**
+             * Stub
+             * @default null
+             */
+            stub: string | null;
+            /** Tags */
+            tags?: string[];
+            /**
+             * Timeout S
+             * @default null
+             */
+            timeout_s: number | null;
+        };
+        /** CellError */
+        CellError: {
+            /** Ename */
+            ename: string;
+            /** Evalue */
+            evalue: string;
+            /** Traceback */
+            traceback?: string[];
+        };
+        /** CellOutput */
+        CellOutput: {
+            /** Data */
+            data: string;
+            /**
+             * Mime
+             * @enum {string}
+             */
+            mime: "text/plain" | "text/html" | "text/latex" | "text/markdown" | "image/png" | "image/svg+xml";
+            /**
+             * Original Bytes
+             * @default null
+             */
+            original_bytes: number | null;
+            /**
+             * Truncated
+             * @default false
+             */
+            truncated: boolean;
+        };
+        /** CellResult */
+        CellResult: {
+            /**
+             * Duration Ms
+             * @default 0
+             */
+            duration_ms: number;
+            /** @default null */
+            error: components["schemas"]["CellError"] | null;
+            /**
+             * Execution Count
+             * @default null
+             */
+            execution_count: number | null;
+            /** Id */
+            id: string;
+            /**
+             * Note
+             * @default
+             */
+            note: string;
+            /** Outputs */
+            outputs?: components["schemas"]["CellOutput"][];
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "ok" | "error" | "skipped" | "not_run";
+            /**
+             * Stderr
+             * @default
+             */
+            stderr: string;
+            /**
+             * Stdout
+             * @default
+             */
+            stdout: string;
+        };
+        /**
+         * CellRole
+         * @enum {string}
+         */
+        CellRole: "setup" | "objective" | "concept" | "predict" | "run" | "observe" | "explain" | "modify" | "checkpoint" | "figure" | "exercise" | "hint" | "solution" | "question" | "answer" | "summary" | "references" | "note";
         /** ChatCompleted */
         ChatCompleted: {
             /**
@@ -1003,6 +1123,57 @@ export interface components {
             footprint: components["schemas"]["FootprintSummary"];
             runtime: components["schemas"]["RuntimeSummary"];
         };
+        /** CreateNotebookRequest */
+        CreateNotebookRequest: {
+            /** @default null */
+            audience: components["schemas"]["Audience"] | null;
+            /** Brief */
+            brief: string;
+            /** @default null */
+            framework: components["schemas"]["NotebookFramework"] | null;
+            /** @default null */
+            kind: components["schemas"]["NotebookKind"] | null;
+            /**
+             * Response Locale
+             * @default en
+             * @enum {string}
+             */
+            response_locale: "en" | "ja";
+            /** Seeds */
+            seeds?: components["schemas"]["Seed"][];
+            /** @default null */
+            style: components["schemas"]["Style"] | null;
+            /**
+             * Title
+             * @default null
+             */
+            title: string | null;
+        };
+        /** CreateNotebookResponse */
+        CreateNotebookResponse: {
+            notebook: components["schemas"]["Notebook"];
+            /**
+             * Run Id
+             * Format: uuid
+             */
+            run_id: string;
+            version: components["schemas"]["NotebookVersionSummary"];
+        };
+        /** CreateNotebookTurnRequest */
+        CreateNotebookTurnRequest: {
+            /** Message */
+            message: string;
+        };
+        /** CreateNotebookTurnResponse */
+        CreateNotebookTurnResponse: {
+            /**
+             * Run Id
+             * Format: uuid
+             */
+            run_id: string;
+            turn: components["schemas"]["NotebookTurn"];
+            version: components["schemas"]["NotebookVersionSummary"];
+        };
         /**
          * EvidenceStrength
          * @description What a passing run's verdict was actually proved by.
@@ -1122,6 +1293,39 @@ export interface components {
             /** Phase Integer Result Key */
             phase_integer_result_key: string;
         };
+        /** ExecutionReport */
+        ExecutionReport: {
+            /** Cells */
+            cells?: components["schemas"]["CellResult"][];
+            /**
+             * Dropped Bytes
+             * @default 0
+             */
+            dropped_bytes: number;
+            /**
+             * Duration Ms
+             * @default 0
+             */
+            duration_ms: number;
+            /** Environment */
+            environment?: {
+                [key: string]: string;
+            };
+            /**
+             * Note
+             * @default
+             */
+            note: string;
+            /** Notebook Slug */
+            notebook_slug: string;
+            /** Ok */
+            ok: boolean;
+            /**
+             * Runner
+             * @enum {string}
+             */
+            runner: "sandbox" | "nbclient" | "inprocess";
+        };
         /** ExportClassified */
         ExportClassified: {
             /** Qasm Available */
@@ -1178,6 +1382,26 @@ export interface components {
          * @enum {string}
          */
         Framework: "qiskit" | "pennylane" | "cirq" | "braket" | "qibo" | "qulacs";
+        /**
+         * ImportNotebookRequest
+         * @description An existing `.ipynb` becomes a notebook the reader can then edit with Nala.
+         */
+        ImportNotebookRequest: {
+            /**
+             * Execute
+             * @default true
+             */
+            execute: boolean;
+            /** Ipynb */
+            ipynb: {
+                [key: string]: unknown;
+            };
+            /**
+             * Title
+             * @default null
+             */
+            title: string | null;
+        };
         /**
          * IndexedPauliTerm
          * @description One real Pauli term written only on the qubits where it acts.
@@ -1415,6 +1639,374 @@ export interface components {
          * @enum {string}
          */
         MeasurementPolicy: "none" | "only_if_requested" | "measure_all" | "specified" | "not_applicable";
+        /**
+         * Notebook
+         * @description Owner-facing notebook resource. Content lives in versions.
+         */
+        Notebook: {
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /**
+             * Current Version Id
+             * @default null
+             */
+            current_version_id: string | null;
+            /**
+             * Current Version Seq
+             * @default null
+             */
+            current_version_seq: number | null;
+            /**
+             * Deleted At
+             * @default null
+             */
+            deleted_at: string | null;
+            framework?: components["schemas"]["NotebookFramework"];
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            kind: components["schemas"]["NotebookKind"];
+            /**
+             * Language
+             * @default en
+             * @enum {string}
+             */
+            language: "en" | "ja";
+            /**
+             * Latest Run Id
+             * @default null
+             */
+            latest_run_id: string | null;
+            latest_status: components["schemas"]["NotebookVersionStatus"];
+            /**
+             * Owner User Id
+             * Format: uuid
+             */
+            owner_user_id: string;
+            /** Slug */
+            slug: string;
+            /**
+             * Summary
+             * @default
+             */
+            summary: string;
+            /** Title */
+            title: string;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+            /**
+             * Version Count
+             * @default 0
+             */
+            version_count: number;
+            /** @default private */
+            visibility: components["schemas"]["Visibility"];
+            /**
+             * Workspace Id
+             * Format: uuid
+             */
+            workspace_id: string;
+        };
+        /** NotebookFramework */
+        NotebookFramework: {
+            /**
+             * Execution
+             * @default local-statevector
+             * @enum {string}
+             */
+            execution: "local-statevector" | "aer" | "ibm-runtime";
+            /**
+             * Name
+             * @default qiskit
+             * @enum {string}
+             */
+            name: "qiskit" | "pennylane" | "cirq" | "braket" | "cudaq";
+            /**
+             * Version
+             * @default >=2.5,<2.6
+             */
+            version: string;
+        };
+        /**
+         * NotebookKind
+         * @description What shape a notebook takes. Each kind is a checkable structure contract.
+         * @enum {string}
+         */
+        NotebookKind: "lesson" | "lab" | "challenge" | "solution" | "walkthrough" | "demo" | "quiz" | "hardware" | "benchmark" | "project" | "scratch";
+        /** NotebookList */
+        NotebookList: {
+            /** Items */
+            items: components["schemas"]["Notebook"][];
+            /**
+             * Next Cursor
+             * @default null
+             */
+            next_cursor: string | null;
+        };
+        /**
+         * NotebookReview
+         * @description Advisory, like the execute pipeline's alignment review: never blocks a save.
+         */
+        NotebookReview: {
+            /** Findings */
+            findings?: components["schemas"]["ReviewFinding"][];
+            /**
+             * Verdict
+             * @enum {string}
+             */
+            verdict: "ready" | "needs-attention";
+            /** What This Notebook Does Not Establish */
+            what_this_notebook_does_not_establish?: string[];
+        };
+        /** NotebookSpec */
+        NotebookSpec: {
+            audience?: components["schemas"]["Audience"];
+            /**
+             * Brief
+             * @default
+             */
+            brief: string;
+            /** Cells */
+            cells?: components["schemas"]["Cell"][];
+            /**
+             * Duration Minutes
+             * @default null
+             */
+            duration_minutes: number | null;
+            /** Extra */
+            extra?: {
+                [key: string]: unknown;
+            };
+            framework?: components["schemas"]["NotebookFramework"];
+            /** @default lesson */
+            kind: components["schemas"]["NotebookKind"];
+            /** Objectives */
+            objectives?: string[];
+            /** Prerequisites */
+            prerequisites?: string[];
+            /** References */
+            references?: components["schemas"]["Reference"][];
+            /**
+             * Schema Version
+             * @default 1
+             * @constant
+             */
+            schema_version: 1;
+            /** Seeds */
+            seeds?: components["schemas"]["Seed"][];
+            /** Slug */
+            slug: string;
+            style?: components["schemas"]["Style"];
+            /**
+             * Summary
+             * @default
+             */
+            summary: string;
+            /** Title */
+            title: string;
+        };
+        /** NotebookStarter */
+        NotebookStarter: {
+            /** Brief */
+            brief: string;
+            /** Id */
+            id: string;
+            kind: components["schemas"]["NotebookKind"];
+            /** Title */
+            title: string;
+        };
+        /** NotebookTemplateKind */
+        NotebookTemplateKind: {
+            /** Description */
+            description: string;
+            id: components["schemas"]["NotebookKind"];
+            /** Structure */
+            structure: string[];
+        };
+        /** NotebookTemplates */
+        NotebookTemplates: {
+            /** Kinds */
+            kinds: components["schemas"]["NotebookTemplateKind"][];
+            /** Starters */
+            starters: components["schemas"]["NotebookStarter"][];
+        };
+        /** NotebookTurn */
+        NotebookTurn: {
+            /** Content */
+            content: string;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Notebook Id
+             * Format: uuid
+             */
+            notebook_id: string;
+            role: components["schemas"]["NotebookTurnRole"];
+            /**
+             * Run Id
+             * @default null
+             */
+            run_id: string | null;
+            /** Seq */
+            seq: number;
+            /**
+             * Version Seq
+             * @default null
+             */
+            version_seq: number | null;
+        };
+        /** NotebookTurnList */
+        NotebookTurnList: {
+            /** Items */
+            items: components["schemas"]["NotebookTurn"][];
+        };
+        /**
+         * NotebookTurnRole
+         * @enum {string}
+         */
+        NotebookTurnRole: "user" | "nala";
+        /**
+         * NotebookVersion
+         * @description One immutable revision: the spec, its source, the executed `.ipynb`, the run
+         *     report and the advisory review. `ipynb` is present once a run has finished.
+         */
+        NotebookVersion: {
+            /**
+             * Cell Count
+             * @default 0
+             */
+            cell_count: number;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            created_by: components["schemas"]["NotebookVersionAuthor"];
+            /**
+             * Error
+             * @default
+             */
+            error: string;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Ipynb
+             * @default null
+             */
+            ipynb: {
+                [key: string]: unknown;
+            } | null;
+            /**
+             * Message
+             * @default
+             */
+            message: string;
+            /**
+             * Notebook Id
+             * Format: uuid
+             */
+            notebook_id: string;
+            /**
+             * Ok
+             * @default null
+             */
+            ok: boolean | null;
+            /** @default null */
+            report: components["schemas"]["ExecutionReport"] | null;
+            /** @default null */
+            review: components["schemas"]["NotebookReview"] | null;
+            /**
+             * Run Id
+             * @default null
+             */
+            run_id: string | null;
+            /** Seq */
+            seq: number;
+            /**
+             * Source
+             * @default
+             */
+            source: string;
+            /** @default null */
+            spec: components["schemas"]["NotebookSpec"] | null;
+            status: components["schemas"]["NotebookVersionStatus"];
+        };
+        /**
+         * NotebookVersionAuthor
+         * @enum {string}
+         */
+        NotebookVersionAuthor: "user" | "nala";
+        /** NotebookVersionList */
+        NotebookVersionList: {
+            /** Items */
+            items: components["schemas"]["NotebookVersionSummary"][];
+        };
+        /**
+         * NotebookVersionStatus
+         * @enum {string}
+         */
+        NotebookVersionStatus: "queued" | "running" | "ready" | "failed";
+        /** NotebookVersionSummary */
+        NotebookVersionSummary: {
+            /**
+             * Cell Count
+             * @default 0
+             */
+            cell_count: number;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            created_by: components["schemas"]["NotebookVersionAuthor"];
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Message
+             * @default
+             */
+            message: string;
+            /**
+             * Notebook Id
+             * Format: uuid
+             */
+            notebook_id: string;
+            /**
+             * Ok
+             * @default null
+             */
+            ok: boolean | null;
+            /**
+             * Run Id
+             * @default null
+             */
+            run_id: string | null;
+            /** Seq */
+            seq: number;
+            status: components["schemas"]["NotebookVersionStatus"];
+        };
         /**
          * Optimizer
          * @enum {string}
@@ -2094,6 +2686,31 @@ export interface components {
          * @enum {string}
          */
         QpuRunStatus: "queued" | "running" | "done" | "error" | "cancelled";
+        /** Reference */
+        Reference: {
+            /**
+             * Authors
+             * @default
+             */
+            authors: string;
+            /**
+             * Note
+             * @default
+             */
+            note: string;
+            /** Title */
+            title: string;
+            /**
+             * Url
+             * @default
+             */
+            url: string;
+            /**
+             * Year
+             * @default null
+             */
+            year: number | null;
+        };
         /**
          * ReferenceProblem
          * @description The combinatorial instance the `brute_force` check enumerates.
@@ -2131,6 +2748,15 @@ export interface components {
              * @description maxcut: the weighted edge list; the objective is the MAXIMUM total weight of edges whose endpoints fall on opposite sides. qubo: the coefficients of sum(w_ij * x_i * x_j); the objective is the MINIMUM. Duplicate index pairs add their weights.
              */
             terms: components["schemas"]["ProblemTerm"][];
+        };
+        /** RerunNotebookResponse */
+        RerunNotebookResponse: {
+            /**
+             * Run Id
+             * Format: uuid
+             */
+            run_id: string;
+            version: components["schemas"]["NotebookVersionSummary"];
         };
         /**
          * ResearchCitation
@@ -2275,6 +2901,31 @@ export interface components {
          * @enum {string}
          */
         RetryTarget: "code_generation" | "planning" | "simulation" | "verification" | "none";
+        /** ReviewFinding */
+        ReviewFinding: {
+            /**
+             * Category
+             * @enum {string}
+             */
+            category: "accuracy" | "pedagogy" | "code" | "structure" | "safety" | "style";
+            /**
+             * Cell Id
+             * @default null
+             */
+            cell_id: string | null;
+            /** Finding */
+            finding: string;
+            /**
+             * Severity
+             * @enum {string}
+             */
+            severity: "blocker" | "should-fix" | "nit";
+            /**
+             * Suggestion
+             * @default
+             */
+            suggestion: string;
+        };
         /**
          * Role
          * @enum {string}
@@ -2609,7 +3260,7 @@ export interface components {
          * RunMode
          * @enum {string}
          */
-        RunMode: "auto" | "chat" | "execute" | "ideate" | "explain" | "qapp";
+        RunMode: "auto" | "chat" | "execute" | "ideate" | "explain" | "qapp" | "notebook";
         /**
          * RunModeResolved
          * @description How a run's requested mode became the mode it actually ran in.
@@ -2868,6 +3519,27 @@ export interface components {
             type: "screen.result";
             /** Typecheck Ok */
             typecheck_ok: boolean;
+        };
+        /**
+         * Seed
+         * @description Where content came from — provenance a reader can follow.
+         */
+        Seed: {
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "atlas-record" | "paper" | "artifact" | "upload" | "brief" | "curriculum";
+            /**
+             * Note
+             * @default
+             */
+            note: string;
+            /**
+             * Ref
+             * @default
+             */
+            ref: string;
         };
         /**
          * SemanticReviewDecision
@@ -3163,6 +3835,45 @@ export interface components {
             /** Verifier Version */
             verifier_version: string;
         };
+        /** Style */
+        Style: {
+            /**
+             * Analogies
+             * @default true
+             */
+            analogies: boolean;
+            /** Analogy Domains */
+            analogy_domains?: string[];
+            /**
+             * Code Comments
+             * @default light
+             * @enum {string}
+             */
+            code_comments: "light" | "heavy";
+            /**
+             * Language
+             * @default en
+             * @enum {string}
+             */
+            language: "en" | "ja";
+            /**
+             * Math Level
+             * @default minimal
+             * @enum {string}
+             */
+            math_level: "none" | "minimal" | "full";
+            /**
+             * Tone
+             * @default plain
+             * @enum {string}
+             */
+            tone: "plain" | "friendly" | "formal";
+            /**
+             * Visualizations
+             * @default true
+             */
+            visualizations: boolean;
+        };
         /** SuccessCriteria */
         SuccessCriteria: {
             /**
@@ -3189,6 +3900,19 @@ export interface components {
          * @enum {string}
          */
         TopLevelExecution: "required" | "demo_only" | "forbidden";
+        /** UpdateNotebookRequest */
+        UpdateNotebookRequest: {
+            /**
+             * Summary
+             * @default null
+             */
+            summary: string | null;
+            /**
+             * Title
+             * @default null
+             */
+            title: string | null;
+        };
         /**
          * VerificationCheckSummary
          * @description Bounded public projection of one trusted verification check.

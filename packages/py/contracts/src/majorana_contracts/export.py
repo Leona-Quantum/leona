@@ -13,7 +13,7 @@ from pathlib import Path
 from pydantic import RootModel
 from pydantic.json_schema import models_json_schema
 
-from . import CONTRACTS_VERSION, events, models, plan, scope
+from . import CONTRACTS_VERSION, events, models, notebooks, plan, scope
 
 DEFAULT_OUT = Path(__file__).resolve().parents[2] / "openapi.json"
 
@@ -63,6 +63,21 @@ EXPORTED = [
     models.QappVersion,
     models.PublicQapp,
     models.QappExecution,
+    notebooks.Notebook,
+    notebooks.NotebookVersion,
+    notebooks.NotebookVersionSummary,
+    notebooks.NotebookTurn,
+    notebooks.NotebookList,
+    notebooks.NotebookVersionList,
+    notebooks.NotebookTurnList,
+    notebooks.NotebookTemplates,
+    notebooks.CreateNotebookRequest,
+    notebooks.CreateNotebookResponse,
+    notebooks.CreateNotebookTurnRequest,
+    notebooks.CreateNotebookTurnResponse,
+    notebooks.ImportNotebookRequest,
+    notebooks.RerunNotebookResponse,
+    notebooks.UpdateNotebookRequest,
     models.VerificationRecord,
     models.QpuRunRecord,
 ]

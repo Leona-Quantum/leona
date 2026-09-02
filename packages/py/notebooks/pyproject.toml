@@ -7,6 +7,7 @@ dependencies = [
     "pydantic>=2.8",
     "nbformat>=5.10,<6",
     "pyyaml>=6,<7",
+    "majorana-contracts",
     "majorana-sandbox",
 ]
 
@@ -27,4 +28,5 @@ build-backend = "hatchling.build"
 packages = ["src/leona_notebooks"]
 
 [tool.uv.sources]
+majorana-contracts = { workspace = true }
 majorana-sandbox = { workspace = true }

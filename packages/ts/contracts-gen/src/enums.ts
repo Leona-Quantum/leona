@@ -58,6 +58,28 @@ export const BASELINE_KIND_VALUES = [
   "none",
 ] as const;
 
+/** CellRole — 18 members. */
+export const CELL_ROLE_VALUES = [
+  "setup",
+  "objective",
+  "concept",
+  "predict",
+  "run",
+  "observe",
+  "explain",
+  "modify",
+  "checkpoint",
+  "figure",
+  "exercise",
+  "hint",
+  "solution",
+  "question",
+  "answer",
+  "summary",
+  "references",
+  "note",
+] as const;
+
 /** CircuitCompiler — 6 members. */
 export const CIRCUIT_COMPILER_VALUES = [
   "qiskit",
@@ -116,6 +138,41 @@ export const MEASUREMENT_POLICY_VALUES = [
   "measure_all",
   "specified",
   "not_applicable",
+] as const;
+
+/** NotebookKind — 11 members. */
+export const NOTEBOOK_KIND_VALUES = [
+  "lesson",
+  "lab",
+  "challenge",
+  "solution",
+  "walkthrough",
+  "demo",
+  "quiz",
+  "hardware",
+  "benchmark",
+  "project",
+  "scratch",
+] as const;
+
+/** NotebookTurnRole — 2 members. */
+export const NOTEBOOK_TURN_ROLE_VALUES = [
+  "user",
+  "nala",
+] as const;
+
+/** NotebookVersionAuthor — 2 members. */
+export const NOTEBOOK_VERSION_AUTHOR_VALUES = [
+  "user",
+  "nala",
+] as const;
+
+/** NotebookVersionStatus — 4 members. */
+export const NOTEBOOK_VERSION_STATUS_VALUES = [
+  "queued",
+  "running",
+  "ready",
+  "failed",
 ] as const;
 
 /** Optimizer — 3 members. */
@@ -187,7 +244,7 @@ export const ROLE_VALUES = [
   "viewer",
 ] as const;
 
-/** RunMode — 6 members. */
+/** RunMode — 7 members. */
 export const RUN_MODE_VALUES = [
   "auto",
   "chat",
@@ -195,6 +252,7 @@ export const RUN_MODE_VALUES = [
   "ideate",
   "explain",
   "qapp",
+  "notebook",
 ] as const;
 
 /** RunStatus — 5 members. */

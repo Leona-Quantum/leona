@@ -10,3 +10,8 @@ CATALOG_IMPORT_JOB_KIND = "catalog.import"
 # unknown kind, and fails closed instead.
 QPU_RUN_JOB_KIND = "qpu.run"
 QAPP_EXECUTE_JOB_KIND = "qapp.execute"
+# The notebook lane (leona_notebooks): one job generates a notebook version from a
+# brief, the other revises the current version from a chat turn. Both carry a
+# run_id whose mode is `notebook`, so quota and the event stream come from runs.
+NOTEBOOK_GENERATE_JOB_KIND = "notebook.generate"
+NOTEBOOK_REVISE_JOB_KIND = "notebook.revise"

@@ -63,6 +63,12 @@ class RevisionError(ValueError):
 _EXPLICIT_ID = re.compile(r"^# %%.*?\bid=(?P<id>\"[^\"]*\"|[^\s]+)", re.M)
 
 
+def explicit_ids(text: str) -> set[str]:
+    """Cell ids written explicitly in percent-format text (`# %% id=c07 ...`), as
+    opposed to the positional ones `parse_source` assigns to id-less cells."""
+    return {match.group("id").strip('"') for match in _EXPLICIT_ID.finditer(text)}
+
+
 def _parse_cells(text: str, spec: NotebookSpec) -> list[Cell]:
     """Parse percent-format cells (no header needed). A cell that names an EXISTING id
     explicitly (`# %% id=c07`) keeps it — that is how a repair replaces the right cell;
@@ -70,7 +76,7 @@ def _parse_cells(text: str, spec: NotebookSpec) -> list[Cell]:
     from leona_notebooks.source import parse_source
 
     body = text if text.lstrip().startswith("# %%") else "# %%\n" + text
-    explicit = {match.group("id").strip('"') for match in _EXPLICIT_ID.finditer(body)}
+    explicit = explicit_ids(body)
     fragment = parse_source(f"# ---\n# title: fragment\n# ---\n{body}")
     used = {cell.id for cell in spec.cells}
     out: list[Cell] = []

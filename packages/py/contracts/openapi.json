@@ -569,6 +569,38 @@
         "title": "AssumptionSetSummary",
         "type": "object"
       },
+      "Audience": {
+        "additionalProperties": false,
+        "properties": {
+          "assumes": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Assumes",
+            "type": "array"
+          },
+          "level": {
+            "default": "engineer",
+            "enum": [
+              "newcomer",
+              "engineer",
+              "student",
+              "researcher"
+            ],
+            "title": "Level",
+            "type": "string"
+          },
+          "not_assumed": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Not Assumed",
+            "type": "array"
+          }
+        },
+        "title": "Audience",
+        "type": "object"
+      },
       "BaselineKind": {
         "enum": [
           "maxcut",
@@ -1047,6 +1079,253 @@
         },
         "title": "CatalogProvenance",
         "type": "object"
+      },
+      "Cell": {
+        "additionalProperties": false,
+        "properties": {
+          "execute": {
+            "default": true,
+            "title": "Execute",
+            "type": "boolean"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "kind": {
+            "enum": [
+              "markdown",
+              "code"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "role": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CellRole"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          },
+          "source": {
+            "default": "",
+            "title": "Source",
+            "type": "string"
+          },
+          "stub": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Stub"
+          },
+          "tags": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Tags",
+            "type": "array"
+          },
+          "timeout_s": {
+            "anyOf": [
+              {
+                "maximum": 600,
+                "minimum": 1,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Timeout S"
+          }
+        },
+        "required": [
+          "id",
+          "kind"
+        ],
+        "title": "Cell",
+        "type": "object"
+      },
+      "CellError": {
+        "additionalProperties": false,
+        "properties": {
+          "ename": {
+            "title": "Ename",
+            "type": "string"
+          },
+          "evalue": {
+            "title": "Evalue",
+            "type": "string"
+          },
+          "traceback": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Traceback",
+            "type": "array"
+          }
+        },
+        "required": [
+          "ename",
+          "evalue"
+        ],
+        "title": "CellError",
+        "type": "object"
+      },
+      "CellOutput": {
+        "additionalProperties": false,
+        "properties": {
+          "data": {
+            "title": "Data",
+            "type": "string"
+          },
+          "mime": {
+            "enum": [
+              "text/plain",
+              "text/html",
+              "text/latex",
+              "text/markdown",
+              "image/png",
+              "image/svg+xml"
+            ],
+            "title": "Mime",
+            "type": "string"
+          },
+          "original_bytes": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Original Bytes"
+          },
+          "truncated": {
+            "default": false,
+            "title": "Truncated",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "mime",
+          "data"
+        ],
+        "title": "CellOutput",
+        "type": "object"
+      },
+      "CellResult": {
+        "additionalProperties": false,
+        "properties": {
+          "duration_ms": {
+            "default": 0,
+            "minimum": 0,
+            "title": "Duration Ms",
+            "type": "integer"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CellError"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          },
+          "execution_count": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Execution Count"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "note": {
+            "default": "",
+            "title": "Note",
+            "type": "string"
+          },
+          "outputs": {
+            "items": {
+              "$ref": "#/components/schemas/CellOutput"
+            },
+            "title": "Outputs",
+            "type": "array"
+          },
+          "status": {
+            "enum": [
+              "ok",
+              "error",
+              "skipped",
+              "not_run"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "stderr": {
+            "default": "",
+            "title": "Stderr",
+            "type": "string"
+          },
+          "stdout": {
+            "default": "",
+            "title": "Stdout",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "status"
+        ],
+        "title": "CellResult",
+        "type": "object"
+      },
+      "CellRole": {
+        "enum": [
+          "setup",
+          "objective",
+          "concept",
+          "predict",
+          "run",
+          "observe",
+          "explain",
+          "modify",
+          "checkpoint",
+          "figure",
+          "exercise",
+          "hint",
+          "solution",
+          "question",
+          "answer",
+          "summary",
+          "references",
+          "note"
+        ],
+        "title": "CellRole",
+        "type": "string"
       },
       "ChatCompleted": {
         "additionalProperties": false,
@@ -1941,6 +2220,158 @@
         "title": "CostOnSmallestMachine",
         "type": "object"
       },
+      "CreateNotebookRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "audience": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Audience"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          },
+          "brief": {
+            "maxLength": 8000,
+            "minLength": 1,
+            "title": "Brief",
+            "type": "string"
+          },
+          "framework": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/NotebookFramework"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          },
+          "kind": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/NotebookKind"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          },
+          "response_locale": {
+            "default": "en",
+            "enum": [
+              "en",
+              "ja"
+            ],
+            "title": "Response Locale",
+            "type": "string"
+          },
+          "seeds": {
+            "items": {
+              "$ref": "#/components/schemas/Seed"
+            },
+            "maxItems": 8,
+            "title": "Seeds",
+            "type": "array"
+          },
+          "style": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Style"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          },
+          "title": {
+            "anyOf": [
+              {
+                "maxLength": 200,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Title"
+          }
+        },
+        "required": [
+          "brief"
+        ],
+        "title": "CreateNotebookRequest",
+        "type": "object"
+      },
+      "CreateNotebookResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "notebook": {
+            "$ref": "#/components/schemas/Notebook"
+          },
+          "run_id": {
+            "format": "uuid",
+            "title": "Run Id",
+            "type": "string"
+          },
+          "version": {
+            "$ref": "#/components/schemas/NotebookVersionSummary"
+          }
+        },
+        "required": [
+          "notebook",
+          "version",
+          "run_id"
+        ],
+        "title": "CreateNotebookResponse",
+        "type": "object"
+      },
+      "CreateNotebookTurnRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "message": {
+            "maxLength": 8000,
+            "minLength": 1,
+            "title": "Message",
+            "type": "string"
+          }
+        },
+        "required": [
+          "message"
+        ],
+        "title": "CreateNotebookTurnRequest",
+        "type": "object"
+      },
+      "CreateNotebookTurnResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "run_id": {
+            "format": "uuid",
+            "title": "Run Id",
+            "type": "string"
+          },
+          "turn": {
+            "$ref": "#/components/schemas/NotebookTurn"
+          },
+          "version": {
+            "$ref": "#/components/schemas/NotebookVersionSummary"
+          }
+        },
+        "required": [
+          "turn",
+          "version",
+          "run_id"
+        ],
+        "title": "CreateNotebookTurnResponse",
+        "type": "object"
+      },
       "EvidenceStrength": {
         "description": "What a passing run's verdict was actually proved by.\n\nDeliberately *not* a fourth VerifierDecision value. A run whose only check was\n`return_contract` \u2014 \"does the result dict have a `counts` key?\" \u2014 is a real pass:\nnothing it claimed was contradicted. It is just not the same claim as a run whose\nreported distribution was compared against the circuit's Born distribution to\n1.8e-16, and until 2026-07-20 both printed the single word \"Verified\".\n\nThis grades the checks, not final sufficiency. Verification v2 refuses a final\nPASS when the check set is structural-only or lacks a dedicated property check;\na physical grade may likewise describe one limited passing claim while the final\ndecision remains INCONCLUSIVE because another required claim is unsupported.",
         "enum": [
@@ -2192,6 +2623,66 @@
         "title": "ExactPhaseEstimationReference",
         "type": "object"
       },
+      "ExecutionReport": {
+        "additionalProperties": false,
+        "properties": {
+          "cells": {
+            "items": {
+              "$ref": "#/components/schemas/CellResult"
+            },
+            "title": "Cells",
+            "type": "array"
+          },
+          "dropped_bytes": {
+            "default": 0,
+            "minimum": 0,
+            "title": "Dropped Bytes",
+            "type": "integer"
+          },
+          "duration_ms": {
+            "default": 0,
+            "minimum": 0,
+            "title": "Duration Ms",
+            "type": "integer"
+          },
+          "environment": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "title": "Environment",
+            "type": "object"
+          },
+          "note": {
+            "default": "",
+            "title": "Note",
+            "type": "string"
+          },
+          "notebook_slug": {
+            "title": "Notebook Slug",
+            "type": "string"
+          },
+          "ok": {
+            "title": "Ok",
+            "type": "boolean"
+          },
+          "runner": {
+            "enum": [
+              "sandbox",
+              "nbclient",
+              "inprocess"
+            ],
+            "title": "Runner",
+            "type": "string"
+          }
+        },
+        "required": [
+          "notebook_slug",
+          "ok",
+          "runner"
+        ],
+        "title": "ExecutionReport",
+        "type": "object"
+      },
       "ExportClassified": {
         "additionalProperties": false,
         "properties": {
@@ -2303,6 +2794,40 @@
         ],
         "title": "Framework",
         "type": "string"
+      },
+      "ImportNotebookRequest": {
+        "additionalProperties": false,
+        "description": "An existing `.ipynb` becomes a notebook the reader can then edit with Nala.",
+        "properties": {
+          "execute": {
+            "default": true,
+            "title": "Execute",
+            "type": "boolean"
+          },
+          "ipynb": {
+            "additionalProperties": true,
+            "title": "Ipynb",
+            "type": "object"
+          },
+          "title": {
+            "anyOf": [
+              {
+                "maxLength": 200,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Title"
+          }
+        },
+        "required": [
+          "ipynb"
+        ],
+        "title": "ImportNotebookRequest",
+        "type": "object"
       },
       "IndexedPauliTerm": {
         "additionalProperties": false,
@@ -2791,6 +3316,776 @@
         ],
         "title": "MeasurementPolicy",
         "type": "string"
+      },
+      "Notebook": {
+        "additionalProperties": false,
+        "description": "Owner-facing notebook resource. Content lives in versions.",
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "current_version_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Current Version Id"
+          },
+          "current_version_seq": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Current Version Seq"
+          },
+          "deleted_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Deleted At"
+          },
+          "framework": {
+            "$ref": "#/components/schemas/NotebookFramework"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/NotebookKind"
+          },
+          "language": {
+            "default": "en",
+            "enum": [
+              "en",
+              "ja"
+            ],
+            "title": "Language",
+            "type": "string"
+          },
+          "latest_run_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Latest Run Id"
+          },
+          "latest_status": {
+            "$ref": "#/components/schemas/NotebookVersionStatus"
+          },
+          "owner_user_id": {
+            "format": "uuid",
+            "title": "Owner User Id",
+            "type": "string"
+          },
+          "slug": {
+            "title": "Slug",
+            "type": "string"
+          },
+          "summary": {
+            "default": "",
+            "title": "Summary",
+            "type": "string"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          },
+          "version_count": {
+            "default": 0,
+            "minimum": 0,
+            "title": "Version Count",
+            "type": "integer"
+          },
+          "visibility": {
+            "$ref": "#/components/schemas/Visibility",
+            "default": "private"
+          },
+          "workspace_id": {
+            "format": "uuid",
+            "title": "Workspace Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "workspace_id",
+          "owner_user_id",
+          "slug",
+          "title",
+          "kind",
+          "latest_status",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "Notebook",
+        "type": "object"
+      },
+      "NotebookFramework": {
+        "additionalProperties": false,
+        "properties": {
+          "execution": {
+            "default": "local-statevector",
+            "enum": [
+              "local-statevector",
+              "aer",
+              "ibm-runtime"
+            ],
+            "title": "Execution",
+            "type": "string"
+          },
+          "name": {
+            "default": "qiskit",
+            "enum": [
+              "qiskit",
+              "pennylane",
+              "cirq",
+              "braket",
+              "cudaq"
+            ],
+            "title": "Name",
+            "type": "string"
+          },
+          "version": {
+            "default": ">=2.5,<2.6",
+            "title": "Version",
+            "type": "string"
+          }
+        },
+        "title": "NotebookFramework",
+        "type": "object"
+      },
+      "NotebookKind": {
+        "description": "What shape a notebook takes. Each kind is a checkable structure contract.",
+        "enum": [
+          "lesson",
+          "lab",
+          "challenge",
+          "solution",
+          "walkthrough",
+          "demo",
+          "quiz",
+          "hardware",
+          "benchmark",
+          "project",
+          "scratch"
+        ],
+        "title": "NotebookKind",
+        "type": "string"
+      },
+      "NotebookList": {
+        "additionalProperties": false,
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/Notebook"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Next Cursor"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "title": "NotebookList",
+        "type": "object"
+      },
+      "NotebookReview": {
+        "additionalProperties": false,
+        "description": "Advisory, like the execute pipeline's alignment review: never blocks a save.",
+        "properties": {
+          "findings": {
+            "items": {
+              "$ref": "#/components/schemas/ReviewFinding"
+            },
+            "title": "Findings",
+            "type": "array"
+          },
+          "verdict": {
+            "enum": [
+              "ready",
+              "needs-attention"
+            ],
+            "title": "Verdict",
+            "type": "string"
+          },
+          "what_this_notebook_does_not_establish": {
+            "items": {
+              "type": "string"
+            },
+            "title": "What This Notebook Does Not Establish",
+            "type": "array"
+          }
+        },
+        "required": [
+          "verdict"
+        ],
+        "title": "NotebookReview",
+        "type": "object"
+      },
+      "NotebookSpec": {
+        "additionalProperties": false,
+        "properties": {
+          "audience": {
+            "$ref": "#/components/schemas/Audience"
+          },
+          "brief": {
+            "default": "",
+            "title": "Brief",
+            "type": "string"
+          },
+          "cells": {
+            "items": {
+              "$ref": "#/components/schemas/Cell"
+            },
+            "title": "Cells",
+            "type": "array"
+          },
+          "duration_minutes": {
+            "anyOf": [
+              {
+                "maximum": 600,
+                "minimum": 1,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Duration Minutes"
+          },
+          "extra": {
+            "additionalProperties": true,
+            "title": "Extra",
+            "type": "object"
+          },
+          "framework": {
+            "$ref": "#/components/schemas/NotebookFramework"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/NotebookKind",
+            "default": "lesson"
+          },
+          "objectives": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Objectives",
+            "type": "array"
+          },
+          "prerequisites": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Prerequisites",
+            "type": "array"
+          },
+          "references": {
+            "items": {
+              "$ref": "#/components/schemas/Reference"
+            },
+            "title": "References",
+            "type": "array"
+          },
+          "schema_version": {
+            "const": 1,
+            "default": 1,
+            "title": "Schema Version",
+            "type": "integer"
+          },
+          "seeds": {
+            "items": {
+              "$ref": "#/components/schemas/Seed"
+            },
+            "title": "Seeds",
+            "type": "array"
+          },
+          "slug": {
+            "title": "Slug",
+            "type": "string"
+          },
+          "style": {
+            "$ref": "#/components/schemas/Style"
+          },
+          "summary": {
+            "default": "",
+            "title": "Summary",
+            "type": "string"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "slug",
+          "title"
+        ],
+        "title": "NotebookSpec",
+        "type": "object"
+      },
+      "NotebookStarter": {
+        "additionalProperties": false,
+        "properties": {
+          "brief": {
+            "title": "Brief",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/NotebookKind"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "kind",
+          "title",
+          "brief"
+        ],
+        "title": "NotebookStarter",
+        "type": "object"
+      },
+      "NotebookTemplateKind": {
+        "additionalProperties": false,
+        "properties": {
+          "description": {
+            "title": "Description",
+            "type": "string"
+          },
+          "id": {
+            "$ref": "#/components/schemas/NotebookKind"
+          },
+          "structure": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Structure",
+            "type": "array"
+          }
+        },
+        "required": [
+          "id",
+          "description",
+          "structure"
+        ],
+        "title": "NotebookTemplateKind",
+        "type": "object"
+      },
+      "NotebookTemplates": {
+        "additionalProperties": false,
+        "properties": {
+          "kinds": {
+            "items": {
+              "$ref": "#/components/schemas/NotebookTemplateKind"
+            },
+            "title": "Kinds",
+            "type": "array"
+          },
+          "starters": {
+            "items": {
+              "$ref": "#/components/schemas/NotebookStarter"
+            },
+            "title": "Starters",
+            "type": "array"
+          }
+        },
+        "required": [
+          "kinds",
+          "starters"
+        ],
+        "title": "NotebookTemplates",
+        "type": "object"
+      },
+      "NotebookTurn": {
+        "additionalProperties": false,
+        "properties": {
+          "content": {
+            "title": "Content",
+            "type": "string"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "notebook_id": {
+            "format": "uuid",
+            "title": "Notebook Id",
+            "type": "string"
+          },
+          "role": {
+            "$ref": "#/components/schemas/NotebookTurnRole"
+          },
+          "run_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Run Id"
+          },
+          "seq": {
+            "minimum": 1,
+            "title": "Seq",
+            "type": "integer"
+          },
+          "version_seq": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Version Seq"
+          }
+        },
+        "required": [
+          "id",
+          "notebook_id",
+          "seq",
+          "role",
+          "content",
+          "created_at"
+        ],
+        "title": "NotebookTurn",
+        "type": "object"
+      },
+      "NotebookTurnList": {
+        "additionalProperties": false,
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/NotebookTurn"
+            },
+            "title": "Items",
+            "type": "array"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "title": "NotebookTurnList",
+        "type": "object"
+      },
+      "NotebookTurnRole": {
+        "enum": [
+          "user",
+          "nala"
+        ],
+        "title": "NotebookTurnRole",
+        "type": "string"
+      },
+      "NotebookVersion": {
+        "additionalProperties": false,
+        "description": "One immutable revision: the spec, its source, the executed `.ipynb`, the run\nreport and the advisory review. `ipynb` is present once a run has finished.",
+        "properties": {
+          "cell_count": {
+            "default": 0,
+            "minimum": 0,
+            "title": "Cell Count",
+            "type": "integer"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "created_by": {
+            "$ref": "#/components/schemas/NotebookVersionAuthor"
+          },
+          "error": {
+            "default": "",
+            "title": "Error",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "ipynb": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Ipynb"
+          },
+          "message": {
+            "default": "",
+            "title": "Message",
+            "type": "string"
+          },
+          "notebook_id": {
+            "format": "uuid",
+            "title": "Notebook Id",
+            "type": "string"
+          },
+          "ok": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Ok"
+          },
+          "report": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ExecutionReport"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          },
+          "review": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/NotebookReview"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          },
+          "run_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Run Id"
+          },
+          "seq": {
+            "minimum": 1,
+            "title": "Seq",
+            "type": "integer"
+          },
+          "source": {
+            "default": "",
+            "title": "Source",
+            "type": "string"
+          },
+          "spec": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/NotebookSpec"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          },
+          "status": {
+            "$ref": "#/components/schemas/NotebookVersionStatus"
+          }
+        },
+        "required": [
+          "id",
+          "notebook_id",
+          "seq",
+          "status",
+          "created_by",
+          "created_at"
+        ],
+        "title": "NotebookVersion",
+        "type": "object"
+      },
+      "NotebookVersionAuthor": {
+        "enum": [
+          "user",
+          "nala"
+        ],
+        "title": "NotebookVersionAuthor",
+        "type": "string"
+      },
+      "NotebookVersionList": {
+        "additionalProperties": false,
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/NotebookVersionSummary"
+            },
+            "title": "Items",
+            "type": "array"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "title": "NotebookVersionList",
+        "type": "object"
+      },
+      "NotebookVersionStatus": {
+        "enum": [
+          "queued",
+          "running",
+          "ready",
+          "failed"
+        ],
+        "title": "NotebookVersionStatus",
+        "type": "string"
+      },
+      "NotebookVersionSummary": {
+        "additionalProperties": false,
+        "properties": {
+          "cell_count": {
+            "default": 0,
+            "minimum": 0,
+            "title": "Cell Count",
+            "type": "integer"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "created_by": {
+            "$ref": "#/components/schemas/NotebookVersionAuthor"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "message": {
+            "default": "",
+            "title": "Message",
+            "type": "string"
+          },
+          "notebook_id": {
+            "format": "uuid",
+            "title": "Notebook Id",
+            "type": "string"
+          },
+          "ok": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Ok"
+          },
+          "run_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Run Id"
+          },
+          "seq": {
+            "minimum": 1,
+            "title": "Seq",
+            "type": "integer"
+          },
+          "status": {
+            "$ref": "#/components/schemas/NotebookVersionStatus"
+          }
+        },
+        "required": [
+          "id",
+          "notebook_id",
+          "seq",
+          "status",
+          "created_by",
+          "created_at"
+        ],
+        "title": "NotebookVersionSummary",
+        "type": "object"
       },
       "Optimizer": {
         "enum": [
@@ -3975,6 +5270,47 @@
         "title": "QpuRunStatus",
         "type": "string"
       },
+      "Reference": {
+        "additionalProperties": false,
+        "properties": {
+          "authors": {
+            "default": "",
+            "title": "Authors",
+            "type": "string"
+          },
+          "note": {
+            "default": "",
+            "title": "Note",
+            "type": "string"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          },
+          "url": {
+            "default": "",
+            "title": "Url",
+            "type": "string"
+          },
+          "year": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Year"
+          }
+        },
+        "required": [
+          "title"
+        ],
+        "title": "Reference",
+        "type": "object"
+      },
       "ReferenceProblem": {
         "additionalProperties": false,
         "description": "The combinatorial instance the `brute_force` check enumerates.",
@@ -4043,6 +5379,25 @@
           "terms"
         ],
         "title": "ReferenceProblem",
+        "type": "object"
+      },
+      "RerunNotebookResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "run_id": {
+            "format": "uuid",
+            "title": "Run Id",
+            "type": "string"
+          },
+          "version": {
+            "$ref": "#/components/schemas/NotebookVersionSummary"
+          }
+        },
+        "required": [
+          "version",
+          "run_id"
+        ],
+        "title": "RerunNotebookResponse",
         "type": "object"
       },
       "ResearchCitation": {
@@ -4305,6 +5660,60 @@
         ],
         "title": "RetryTarget",
         "type": "string"
+      },
+      "ReviewFinding": {
+        "additionalProperties": false,
+        "properties": {
+          "category": {
+            "enum": [
+              "accuracy",
+              "pedagogy",
+              "code",
+              "structure",
+              "safety",
+              "style"
+            ],
+            "title": "Category",
+            "type": "string"
+          },
+          "cell_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Cell Id"
+          },
+          "finding": {
+            "title": "Finding",
+            "type": "string"
+          },
+          "severity": {
+            "enum": [
+              "blocker",
+              "should-fix",
+              "nit"
+            ],
+            "title": "Severity",
+            "type": "string"
+          },
+          "suggestion": {
+            "default": "",
+            "title": "Suggestion",
+            "type": "string"
+          }
+        },
+        "required": [
+          "severity",
+          "category",
+          "finding"
+        ],
+        "title": "ReviewFinding",
+        "type": "object"
       },
       "Role": {
         "enum": [
@@ -5086,7 +6495,8 @@
           "execute",
           "ideate",
           "explain",
-          "qapp"
+          "qapp",
+          "notebook"
         ],
         "title": "RunMode",
         "type": "string"
@@ -5536,6 +6946,39 @@
           "typecheck_ok"
         ],
         "title": "ScreenResult",
+        "type": "object"
+      },
+      "Seed": {
+        "additionalProperties": false,
+        "description": "Where content came from \u2014 provenance a reader can follow.",
+        "properties": {
+          "kind": {
+            "enum": [
+              "atlas-record",
+              "paper",
+              "artifact",
+              "upload",
+              "brief",
+              "curriculum"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "note": {
+            "default": "",
+            "title": "Note",
+            "type": "string"
+          },
+          "ref": {
+            "default": "",
+            "title": "Ref",
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind"
+        ],
+        "title": "Seed",
         "type": "object"
       },
       "SemanticReviewDecision": {
@@ -6069,6 +7512,68 @@
         "title": "StrictVerificationRecorded",
         "type": "object"
       },
+      "Style": {
+        "additionalProperties": false,
+        "properties": {
+          "analogies": {
+            "default": true,
+            "title": "Analogies",
+            "type": "boolean"
+          },
+          "analogy_domains": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Analogy Domains",
+            "type": "array"
+          },
+          "code_comments": {
+            "default": "light",
+            "enum": [
+              "light",
+              "heavy"
+            ],
+            "title": "Code Comments",
+            "type": "string"
+          },
+          "language": {
+            "default": "en",
+            "enum": [
+              "en",
+              "ja"
+            ],
+            "title": "Language",
+            "type": "string"
+          },
+          "math_level": {
+            "default": "minimal",
+            "enum": [
+              "none",
+              "minimal",
+              "full"
+            ],
+            "title": "Math Level",
+            "type": "string"
+          },
+          "tone": {
+            "default": "plain",
+            "enum": [
+              "plain",
+              "friendly",
+              "formal"
+            ],
+            "title": "Tone",
+            "type": "string"
+          },
+          "visualizations": {
+            "default": true,
+            "title": "Visualizations",
+            "type": "boolean"
+          }
+        },
+        "title": "Style",
+        "type": "object"
+      },
       "SuccessCriteria": {
         "additionalProperties": false,
         "properties": {
@@ -6123,6 +7628,40 @@
         ],
         "title": "TopLevelExecution",
         "type": "string"
+      },
+      "UpdateNotebookRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "summary": {
+            "anyOf": [
+              {
+                "maxLength": 2000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Summary"
+          },
+          "title": {
+            "anyOf": [
+              {
+                "maxLength": 200,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Title"
+          }
+        },
+        "title": "UpdateNotebookRequest",
+        "type": "object"
       },
       "VerificationCheckSummary": {
         "additionalProperties": false,
@@ -6942,7 +8481,7 @@
   "info": {
     "description": "Cross-boundary types only; API paths are owned by services/api.",
     "title": "majorana-contracts",
-    "version": "2.17.0"
+    "version": "2.18.0"
   },
   "openapi": "3.1.0",
   "paths": {}
