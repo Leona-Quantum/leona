@@ -14847,13 +14847,19 @@ html:not([data-auth="in"]) .mj-auth-slot[data-auth-slot="in"] {
   align-items: center;
   gap: var(--sp-2);
 }
+.mj-notebook-progress-strip {
+  margin: 0;
+  color: var(--text-2);
+  font-size: var(--fs-12);
+}
 .mj-notebook-workspace-actions {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   gap: var(--sp-2);
 }
-.mj-notebook-version-picker select {
+.mj-notebook-version-picker select,
+.mj-notebook-compare-picker select {
   min-height: 30px;
   padding: 0 var(--sp-6) 0 var(--sp-3);
   border: 0;
@@ -14975,6 +14981,40 @@ html:not([data-auth="in"]) .mj-auth-slot[data-auth-slot="in"] {
 .mj-notebook-cell-actions {
   margin-left: auto;
 }
+.mj-notebook-cell-attempt {
+  display: grid;
+  gap: var(--sp-2);
+  margin-top: var(--sp-3);
+  padding: var(--sp-3);
+  border: 1px solid var(--border-0);
+  border-radius: var(--radius-control);
+  background: var(--bg-0);
+}
+.mj-notebook-cell-attempt textarea {
+  box-sizing: border-box;
+  width: 100%;
+  resize: vertical;
+  padding: var(--sp-2) var(--sp-3);
+  border: 1px solid var(--border-0);
+  border-radius: var(--radius-control);
+  outline: 0;
+  color: var(--text-0);
+  background: var(--bg-1);
+  font: inherit;
+  font-family: var(--font-mono);
+  font-size: var(--fs-12);
+  line-height: 1.5;
+}
+.mj-notebook-cell-attempt textarea:focus-visible {
+  border-color: var(--accent);
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.mj-notebook-cell-attempt-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--sp-2);
+}
 .mj-notebook-cell-outputs {
   display: grid;
   gap: var(--sp-2);
@@ -15028,17 +15068,21 @@ html:not([data-auth="in"]) .mj-auth-slot[data-auth-slot="in"] {
   font-size: var(--fs-12);
 }
 
-/* -- the review panel -- */
+/* -- the review panel (a <details>, so "Nala's review" collapses) -- */
 .mj-notebook-review {
   padding: var(--sp-4);
   border: 1px solid var(--border-0);
   border-radius: var(--radius-card);
   background: var(--bg-1);
 }
-.mj-notebook-review h2 {
-  margin: 0 0 var(--sp-3);
+.mj-notebook-review summary {
+  margin: 0;
   font-size: var(--fs-16);
   font-weight: 500;
+  cursor: pointer;
+}
+.mj-notebook-review[open] summary {
+  margin-bottom: var(--sp-3);
 }
 .mj-notebook-review h3 {
   margin: var(--sp-4) 0 var(--sp-2);
@@ -15058,6 +15102,168 @@ html:not([data-auth="in"]) .mj-auth-slot[data-auth-slot="in"] {
   color: var(--text-1);
   font-size: var(--fs-13);
   line-height: 1.5;
+}
+.mj-notebook-review-none {
+  margin: 0;
+  color: var(--text-2);
+  font-size: var(--fs-13);
+}
+.mj-notebook-review-body {
+  display: grid;
+  gap: var(--sp-2);
+}
+.mj-notebook-review-findings {
+  list-style: none;
+  padding-left: 0;
+}
+.mj-notebook-review-findings li {
+  display: grid;
+  grid-template-columns: auto auto auto 1fr;
+  align-items: baseline;
+  gap: var(--sp-2);
+}
+.mj-notebook-review-findings li p {
+  grid-column: 1 / -1;
+  margin: 0;
+}
+.mj-notebook-review-suggestion {
+  color: var(--text-2);
+}
+.mj-notebook-review-pill {
+  padding: 0 var(--sp-2);
+  border-radius: var(--radius-control);
+  font-size: var(--fs-12);
+  font-weight: 500;
+  white-space: nowrap;
+}
+.mj-notebook-review-pill--blocker {
+  color: var(--err);
+  background: color-mix(in srgb, var(--err) 14%, var(--bg-0));
+}
+.mj-notebook-review-pill--should-fix {
+  color: var(--warn);
+  background: color-mix(in srgb, var(--warn) 14%, var(--bg-0));
+}
+.mj-notebook-review-pill--nit {
+  color: var(--text-2);
+  background: var(--bg-2);
+}
+.mj-notebook-review-category {
+  color: var(--text-2);
+  font-size: var(--fs-12);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+/* -- "Compare with previous" (lib/notebook-diff.ts) -- */
+.mj-notebook-diff-view {
+  display: grid;
+  gap: var(--sp-4);
+}
+.mj-notebook-diff-header {
+  width: 100%;
+  border-collapse: collapse;
+  overflow: hidden;
+  border: 1px solid var(--border-0);
+  border-radius: var(--radius-card);
+  background: var(--bg-1);
+  font-size: var(--fs-13);
+}
+.mj-notebook-diff-header th,
+.mj-notebook-diff-header td {
+  padding: var(--sp-2) var(--sp-3);
+  border-bottom: 1px solid var(--border-0);
+  text-align: left;
+  vertical-align: top;
+}
+.mj-notebook-diff-header tr:last-child th,
+.mj-notebook-diff-header tr:last-child td {
+  border-bottom: 0;
+}
+.mj-notebook-diff-header th {
+  width: 1%;
+  color: var(--text-1);
+  font-weight: 500;
+  white-space: nowrap;
+}
+.mj-notebook-diff-cells {
+  display: grid;
+  gap: var(--sp-2);
+}
+.mj-notebook-diff-cell {
+  min-width: 0;
+  border: 1px solid var(--border-0);
+  border-radius: var(--radius-card);
+  background: var(--bg-1);
+}
+.mj-notebook-diff-cell--collapsed {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--sp-2) var(--sp-4);
+  color: var(--text-2);
+  font-size: var(--fs-12);
+}
+.mj-notebook-diff-cell[data-status="changed"],
+.mj-notebook-diff-cell[data-status="added"] {
+  border-left: 3px solid var(--ok);
+}
+.mj-notebook-diff-cell[data-status="removed"] {
+  border-left: 3px solid var(--err);
+}
+.mj-notebook-diff-cell-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-2);
+  padding: var(--sp-2) var(--sp-4);
+  border-bottom: 1px solid var(--border-0);
+}
+.mj-notebook-diff-status {
+  color: var(--text-2);
+  font-size: var(--fs-12);
+}
+.mj-notebook-diff-lines {
+  margin: 0;
+  overflow-x: auto;
+  font-family: var(--font-mono);
+  font-size: var(--fs-12);
+  line-height: 1.6;
+}
+.mj-notebook-diff-line {
+  padding: 0 var(--sp-4);
+  white-space: pre-wrap;
+}
+.mj-notebook-diff-gutter {
+  display: inline-block;
+  width: 1.4em;
+  color: var(--text-2);
+  user-select: none;
+}
+.mj-notebook-diff-line--add {
+  color: var(--text-0);
+  background: color-mix(in srgb, var(--ok) 12%, transparent);
+}
+.mj-notebook-diff-line--add .mj-notebook-diff-gutter {
+  color: var(--ok);
+}
+.mj-notebook-diff-line--remove {
+  color: var(--text-0);
+  background: color-mix(in srgb, var(--err) 12%, transparent);
+}
+.mj-notebook-diff-line--remove .mj-notebook-diff-gutter {
+  color: var(--err);
+}
+.mj-notebook-diff-line--context {
+  color: var(--text-1);
+}
+/* The header table's before/after cells reuse the line coloring without the
+   code-diff layout — no gutter, no monospace, just the "removed / added"
+   tint so a title or summary change reads the same way a cell change does. */
+.mj-notebook-diff-header .mj-notebook-diff-line {
+  padding: 0;
+  font-family: inherit;
+  white-space: pre-wrap;
 }
 
 /* -- the chat rail -- */
