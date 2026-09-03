@@ -75,7 +75,7 @@ wheels = [
 
 [[package]]
 name = "amazon-braket-sdk"
-version = "1.125.0"
+version = "1.126.1"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "amazon-braket-default-simulator" },
@@ -92,9 +92,9 @@ dependencies = [
     { name = "oqpy" },
     { name = "sympy" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/06/31/7f131fa7046a9bab21e927d055f72ddc0cfb059e36380e444f67bd0487f3/amazon_braket_sdk-1.125.0.tar.gz", hash = "sha256:7851f1e39c19b326c557b722208fcd948b8a962de8f5578f3ccded65f1e8cd23", size = 274453, upload-time = "2026-08-03T16:13:22.74Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/1c/35/6f31d4943c011e749f6d6333b305eddf7ed9c1844d76009d4c394cb7256c/amazon_braket_sdk-1.126.1.tar.gz", hash = "sha256:d7ba7dd4dc386e0eada1a0254757d0aac8c1e572856e874a37e1e3a2fcf32c4a", size = 279480, upload-time = "2026-08-28T17:14:47.218Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/4d/db/0e47a2370202e688564f4ee1d116d2990a57bfcc59b961459e15dfde05e1/amazon_braket_sdk-1.125.0-py3-none-any.whl", hash = "sha256:58cbd0aa36d660cadcc5bb45f1b2fb75b771fed895e1753ab54945112da6ed52", size = 402147, upload-time = "2026-08-03T16:13:20.525Z" },
+    { url = "https://files.pythonhosted.org/packages/2b/dc/fb61c8bc092bc7c847a099819d84d3272b5be60b7022806a73e8b05131e2/amazon_braket_sdk-1.126.1-py3-none-any.whl", hash = "sha256:845ff4c1f19bbc412e5df1499c83709b6cbad6ea0155f2e499f40f498a73994e", size = 402277, upload-time = "2026-08-28T17:14:45.801Z" },
 ]
 
 [[package]]
@@ -1875,7 +1875,7 @@ requires-dist = [{ name = "majorana-contracts", editable = "packages/py/contract
 [package.metadata.requires-dev]
 dev = [
     { name = "amazon-braket-default-simulator", specifier = "==1.40.1" },
-    { name = "amazon-braket-sdk", specifier = "==1.125.0" },
+    { name = "amazon-braket-sdk", specifier = "==1.126.1" },
     { name = "bqskit", specifier = "==1.2.1" },
     { name = "cirq-core", specifier = ">=1.4" },
     { name = "httpx", specifier = ">=0.27" },
