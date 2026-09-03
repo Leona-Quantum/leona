@@ -127,5 +127,20 @@ id = "generic-api-key"
     #    low-entropy, `.vN`-suffixed identifier under this repo's own fixed
     #    `majorana.` namespace — never a value any provider issues.
     '''(?i)["']majorana\.[a-z0-9-]+\.v[0-9]+["']''',
+
+    # 7. The mutation fixture in `curricula/qiskit-study-group/check_build.py`,
+    #    which is a test OF the credential check. One scenario, "a credential in
+    #    a cell", writes `token = "abcdef0123456789abcdef"` into a throwaway copy
+    #    of the curriculum tree and asserts the build checker rejects it. The
+    #    fixture has to look like a credential or the test proves nothing — the
+    #    same situation as entry 5, and the same reason it is safe to allowlist.
+    #
+    #    Anchored on the literal `abcdef0123456789`: the sixteen hex digits in
+    #    strict ascending order. That sequence is what a human types when they
+    #    want something credential-shaped and are not thinking; a real key cannot
+    #    contain it and still be a real key. Paste an actual token into this same
+    #    constant and the gate still fails, which is the property every entry in
+    #    this file has to keep.
+    '''abcdef0123456789''',
   ]
 

@@ -100,6 +100,26 @@ majorana-contracts = { workspace = true }
 [tool.ruff]
 line-length = 100
 
+# `curricula/**/*.nb.py` are notebook CELL SOURCES, not modules. The pipeline
+# compiles them to .ipynb, where each cell is entered separately and the
+# namespace is built up as a reader works down the page — so three default rules
+# fire on correct, deliberate teaching code:
+#
+#   E402  an import inside a later cell. Teaching material introduces a library
+#         at the point it is first needed, which is the whole pedagogy.
+#   F401  an import a cell does not use. A setup cell imports what the LEARNER
+#         will need in the cell they are about to write.
+#   F821  an undefined name. `display` is injected into every notebook namespace
+#         by IPython and exists in no module.
+#
+# Not silenced blindly: the real check on these files is EXECUTION, which is a
+# strictly stronger instrument than ruff for this class — an undefined name in
+# an executed notebook is a NameError. `scripts/validate_notebooks.py --execute`
+# runs all 35 through a real kernel, and check_build.py mutation-tests that
+# checker. Syntax errors (E9) and everything else still apply here.
+[tool.ruff.lint.per-file-ignores]
+"curricula/**/*.nb.py" = ["E402", "F401", "F821"]
+
 [tool.pytest.ini_options]
 testpaths = ["services", "packages/py", "evals/harness"]
 asyncio_mode = "auto"
