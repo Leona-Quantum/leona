@@ -16,19 +16,35 @@ packages:
   - "apps/*"
   - "packages/ts/*"
 overrides:
-  # GHSA-7p8r-x3mc-p8w7 (CVSS 7.5): a backslash is accepted as an authority
-  # introducer, so `https:\\evil.test\path` parses with a host an origin check
-  # would not expect — host confusion. Patched at 3.1.5 on the 3.x line; the pin
-  # was already at 3.1.4 for an earlier advisory, so this is a patch bump.
-  # Traced before pinning rather than assumed: the only dependent is ajv@8.20.0,
-  # reached through schema-utils (webpack loader-option validation) and
-  # ajv-formats/ajv-keywords. That is build tooling — no runtime request path
-  # here parses a URL through it, because request-body validation is pydantic in
-  # the Python API and generated TS types in the web app, neither of which uses
-  # ajv. Upgraded anyway: it is a one-line patch bump with no consumer-visible
-  # change, and "build-time only" is an argument for not panicking, not an
-  # argument for keeping a known-vulnerable URL parser on the tree.
-  fast-uri: 3.1.5
+  # THIRD advisory round on this package, and the pin has now walked
+  # 3.1.4 -> 3.1.5 -> 3.1.6. Four advisories published against 3.1.5, all CVSS
+  # 7.5 and all first patched at 3.1.6 on the 3.x line:
+  #
+  #   GHSA-f65p-4m7j-42xc  SSRF via malformed IPv6 normalization
+  #   GHSA-fph4-wmhf-6fwf  SSRF via repeated hostname percent-decoding
+  #   GHSA-jqff-g426-hqxp  host confusion via percent-encoded scheme normalization
+  #   GHSA-5jgf-p345-68v8  host confusion via skipped IDN canonicalization on
+  #                        scheme-relative references
+  #
+  # Same family as the GHSA-7p8r-x3mc-p8w7 backslash-authority bug the 3.1.5 pin
+  # answered: every one of them is a parse that yields a host an origin check
+  # would not expect. The dependency trace is unchanged and was re-run rather
+  # than carried over — the only dependent is still ajv@8.20.0, reached through
+  # schema-utils (webpack loader-option validation) and ajv-formats/ajv-keywords.
+  # That is build tooling: no runtime request path here parses a URL through it,
+  # because request-body validation is pydantic in the Python API and generated
+  # TS types in the web app, and neither uses ajv.
+  #
+  # 3.1.7 is the current 3.x head and is also outside every vulnerable range.
+  # 3.1.6 is taken instead because it is the exact version the four advisories
+  # name as first-patched, which is the smallest change that can be justified
+  # line by line — the standard the rest of this file is written to.
+  #
+  # That this is the third round is the thing worth reading: a URL parser that
+  # keeps yielding host-confusion bugs is a standing hazard, not a run of bad
+  # luck. It stays acceptable only while the trace above holds. If ajv ever
+  # reaches a request path, this pin stops being a build-tooling footnote.
+  fast-uri: 3.1.6
   # Not an advisory — a platform constraint, and the only pin here that is not
   # about a CVE.
   #
