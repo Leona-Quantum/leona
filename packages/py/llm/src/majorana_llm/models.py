@@ -53,6 +53,12 @@ _DEFAULTS: dict[str, dict[str, str]] = {
         "notebook_repair": "deepseek-v4-pro",
         "notebook_revise": "deepseek-v4-pro",
         "notebook_review": "deepseek-v4-pro",
+        # The course lane (leona_notebooks.courses): planning a whole course and
+        # rewriting that plan from a chat turn. Both are planner-shaped work over a
+        # small JSON object, so they take the same model as "generate" rather than a
+        # cheaper one — a bad plan costs eight notebook generations, not one.
+        "course_plan": "deepseek-v4-pro",
+        "course_revise": "deepseek-v4-pro",
     },
     "anthropic": {
         "chat": "claude-sonnet-5",
@@ -68,6 +74,8 @@ _DEFAULTS: dict[str, dict[str, str]] = {
         "notebook_repair": "claude-sonnet-5",
         "notebook_revise": "claude-sonnet-5",
         "notebook_review": "claude-opus-4-8",
+        "course_plan": "claude-opus-4-8",
+        "course_revise": "claude-sonnet-5",
     },
 }
 

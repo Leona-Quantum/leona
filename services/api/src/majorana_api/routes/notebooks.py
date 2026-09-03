@@ -20,6 +20,7 @@ import majorana_contracts as contracts
 from fastapi import APIRouter, Depends, Header, HTTPException
 from fastapi.responses import JSONResponse
 from leona_notebooks import from_ipynb, to_ipynb
+from leona_notebooks.courses import COURSE_STARTERS
 from leona_notebooks.source import render_source
 from leona_notebooks.templates import KIND_DESCRIPTIONS, STARTER_BRIEFS, structure_for
 from majorana_contracts.enums import Framework, RunMode
@@ -167,6 +168,56 @@ async def _gate_notebook_run(
     await _enforce_execute_backstop(probe, scope, session, identity, settings)
 
 
+async def create_notebook_and_enqueue(
+    scope: CurrentScope,
+    session: DbSession,
+    *,
+    request: contracts.CreateNotebookRequest,
+    run_id: uuid.UUID,
+) -> tuple[NotebookRow, NotebookVersionRow]:
+    """Create the notebook + its queued first version and dispatch the generation.
+
+    Everything `POST /v1/notebooks` does after the run exists, factored out because
+    `POST /v1/courses/{id}/generate` does exactly the same thing once per module.
+    Duplicating it would mean two places that decide what a notebook's slug looks
+    like, what its job payload contains and which fields the worker can rely on —
+    and the worker validates that payload's `request` as a `CreateNotebookRequest`,
+    so a second producer drifting from this one fails at run time, in the worker,
+    on the reader's course.
+
+    The caller owns the run: it applies `_gate_notebook_run` and creates the `runs`
+    row, because a course dispatches several and each must be gated on its own.
+    """
+    notebook, version = await notebooks_repo.create_notebook(
+        scope,
+        session,
+        slug=_slug(request.title or request.brief),
+        title=_default_title(request),
+        kind=(request.kind or contracts.NotebookKind.LESSON).value,
+        summary="",
+        language=request.response_locale,
+        framework=(request.framework or contracts.NotebookFramework()).model_dump(mode="json"),
+        request=request.model_dump(mode="json"),
+        run_id=run_id,
+    )
+    await system.enqueue_job(
+        session,
+        kind=NOTEBOOK_GENERATE_JOB_KIND,
+        payload={
+            "run_id": str(run_id),
+            "notebook_id": str(notebook.id),
+            "version_id": str(version.id),
+            "user_id": str(scope.user_id),
+            "workspace_id": str(scope.workspace_id),
+            "kind": "generate",
+            "request": request.model_dump(mode="json"),
+            "response_locale": request.response_locale,
+        },
+        run_id=run_id,
+    )
+    return notebook, version
+
+
 # -------------------------------------------------------------------------- templates
 
 
@@ -187,7 +238,18 @@ async def notebook_templates(scope: CurrentScope) -> contracts.NotebookTemplates
         )
         for starter in STARTER_BRIEFS
     ]
-    return contracts.NotebookTemplates(kinds=kinds, starters=starters)
+    course_starters = [
+        contracts.NotebookStarter(
+            id=starter["id"],
+            kind=contracts.NotebookKind(starter["kind"]),
+            title=starter["title"],
+            brief=starter["brief"],
+        )
+        for starter in COURSE_STARTERS
+    ]
+    return contracts.NotebookTemplates(
+        kinds=kinds, starters=starters, course_starters=course_starters
+    )
 
 
 # ---------------------------------------------------------------------------- create
@@ -257,33 +319,8 @@ async def create_notebook(
         scope, session, run.id, type="run.queued", payload={"mode": str(RunMode.NOTEBOOK)}
     )
 
-    notebook, version = await notebooks_repo.create_notebook(
-        scope,
-        session,
-        slug=_slug(body.title or body.brief),
-        title=_default_title(body),
-        kind=(body.kind or contracts.NotebookKind.LESSON).value,
-        summary="",
-        language=body.response_locale,
-        framework=(body.framework or contracts.NotebookFramework()).model_dump(mode="json"),
-        request=body.model_dump(mode="json"),
-        run_id=run.id,
-    )
-
-    await system.enqueue_job(
-        session,
-        kind=NOTEBOOK_GENERATE_JOB_KIND,
-        payload={
-            "run_id": str(run.id),
-            "notebook_id": str(notebook.id),
-            "version_id": str(version.id),
-            "user_id": str(scope.user_id),
-            "workspace_id": str(scope.workspace_id),
-            "kind": "generate",
-            "request": body.model_dump(mode="json"),
-            "response_locale": body.response_locale,
-        },
-        run_id=run.id,
+    notebook, version = await create_notebook_and_enqueue(
+        scope, session, request=body, run_id=run.id
     )
 
     return contracts.CreateNotebookResponse(

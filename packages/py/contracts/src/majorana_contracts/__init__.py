@@ -90,6 +90,26 @@ from .events import (
     VerificationResult,
     run_event_adapter,
 )
+from .courses import (
+    Course,
+    CourseList,
+    CourseModule,
+    CourseModulePatch,
+    CourseModuleStatus,
+    CoursePlan,
+    CourseStatus,
+    CourseSummary,
+    CourseTurn,
+    CourseTurnList,
+    CreateCourseRequest,
+    CreateCourseResponse,
+    CreateCourseTurnRequest,
+    CreateCourseTurnResponse,
+    GenerateCourseRequest,
+    GenerateCourseResponse,
+    PlannedModule,
+    UpdateCourseRequest,
+)
 from .notebooks import (
     Audience,
     Cell,
@@ -301,7 +321,13 @@ from .lifecycle import (
 # 2.18.0: Notebook resources — the notebook spec with role-carrying cells, the
 # per-cell execution report, the advisory review, versions and chat turns, plus
 # the `notebook` run mode. Additive: existing clients never select the new mode.
-CONTRACTS_VERSION = "2.18.0"
+# 2.19.0: Course resources — an ordered plan of notebooks generated from one
+# prompt: the plan the planner returns (CoursePlan/PlannedModule), the stored
+# course with its modules, and the create/update/generate/turn bodies. Additive:
+# `NotebookTemplates.course_starters` defaults to empty, so a client built
+# against 2.18.0 keeps working unchanged, and a course run reuses `mode=notebook`
+# rather than adding a run mode.
+CONTRACTS_VERSION = "2.19.0"
 
 __all__ = [
     "CONTRACTS_VERSION",
@@ -376,6 +402,23 @@ __all__ = [
     "PlanProduced",
     "Qapp",
     "Audience",
+    "Course",
+    "CourseList",
+    "CourseModule",
+    "CourseModulePatch",
+    "CourseModuleStatus",
+    "CoursePlan",
+    "CourseStatus",
+    "CourseSummary",
+    "CourseTurn",
+    "CourseTurnList",
+    "CreateCourseRequest",
+    "CreateCourseResponse",
+    "CreateCourseTurnRequest",
+    "CreateCourseTurnResponse",
+    "GenerateCourseRequest",
+    "GenerateCourseResponse",
+    "PlannedModule",
     "Cell",
     "CellError",
     "CellOutput",
@@ -410,6 +453,7 @@ __all__ = [
     "ReviewFinding",
     "Seed",
     "Style",
+    "UpdateCourseRequest",
     "UpdateNotebookRequest",
     "QappExecution",
     "QappExecutionStatus",

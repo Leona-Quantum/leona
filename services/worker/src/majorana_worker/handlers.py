@@ -84,6 +84,8 @@ from majorana_api.db import AsyncSession
 from majorana_api.jobs import (
     CATALOG_IMPORT_JOB_KIND,
     CIRCUIT_OPTIMIZE_JOB_KIND,
+    COURSE_PLAN_JOB_KIND,
+    COURSE_REVISE_JOB_KIND,
     NOTEBOOK_GENERATE_JOB_KIND,
     NOTEBOOK_REVISE_JOB_KIND,
     QAPP_EXECUTE_JOB_KIND,
@@ -112,6 +114,11 @@ from .agent_llm import MeteredAgentLLM
 from .agent_store import RepoAgentStore
 from .context import EventSink, RunContext
 from .intent import resolve_mode
+from .course_handlers import (
+    handle_course_dead_letter,
+    handle_course_plan,
+    handle_course_revise,
+)
 from .notebook_handlers import (
     handle_notebook_dead_letter,
     handle_notebook_generate,
@@ -2915,6 +2922,8 @@ HANDLERS: dict[str, JobHandler] = {
     QPU_RUN_JOB_KIND: handle_qpu_run,
     NOTEBOOK_GENERATE_JOB_KIND: handle_notebook_generate,
     NOTEBOOK_REVISE_JOB_KIND: handle_notebook_revise,
+    COURSE_PLAN_JOB_KIND: handle_course_plan,
+    COURSE_REVISE_JOB_KIND: handle_course_revise,
 }
 
 DEAD_LETTER_HANDLERS: dict[str, DeadLetterHandler] = {
@@ -2924,4 +2933,6 @@ DEAD_LETTER_HANDLERS: dict[str, DeadLetterHandler] = {
     QPU_RUN_JOB_KIND: handle_qpu_run_dead_letter,
     NOTEBOOK_GENERATE_JOB_KIND: handle_notebook_dead_letter,
     NOTEBOOK_REVISE_JOB_KIND: handle_notebook_dead_letter,
+    COURSE_PLAN_JOB_KIND: handle_course_dead_letter,
+    COURSE_REVISE_JOB_KIND: handle_course_dead_letter,
 }

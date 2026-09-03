@@ -428,6 +428,13 @@ class NotebookStarter(_ResourceBase):
 class NotebookTemplates(_ResourceBase):
     kinds: list[NotebookTemplateKind]
     starters: list[NotebookStarter]
+    #: Starter briefs for a whole COURSE (`majorana_contracts.courses`) rather than
+    #: one notebook — the composer offers both from this single endpoint. Defaults
+    #: to empty so a client built against contracts 2.18.0, which has never heard of
+    #: courses, keeps parsing this response unchanged. A course starter's `kind` is
+    #: the notebook kind its modules mostly are, a hint for the card, not a promise:
+    #: the planner picks each module's kind for itself.
+    course_starters: list[NotebookStarter] = Field(default_factory=list)
 
 
 # --------------------------------------------------------------------------- requests
