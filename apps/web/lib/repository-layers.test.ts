@@ -2730,11 +2730,15 @@ test("the capabilities closed on `implementations` stay closed, as a SET", () =>
   // what "closed" should mean, not a defect to patch. The research is preserved
   // in the batch directory under `final-withheld/`.
   //
-  // `ansatz-construction` is 12 of 13. `symmetry-preserving-ansatz` is the one
-  // gap, and it is a mechanical one rather than a research one: its draft exists
-  // and its refuting agent stalled out, so no entry was ever revised. Filling it
-  // closes that region.
-  const BATCH_13 = ["excited-state-energy"];
+  // `ansatz-construction` closed on a second pass. Its one gap was
+  // `symmetry-preserving-ansatz`, whose refuting agent stalled on all six
+  // attempts in the batch run; re-running just that method's refute/revise/
+  // translate stages against a time-boxed brief produced three entries, and the
+  // refutation was substantive rather than a formality — it caught an entry
+  // claiming Qristal commits no energy when `vqeeCalculator`'s README does, and
+  // an entry crediting `initializeParamList` with laying A blocks that
+  // `constructCircuit` never emits.
+  const BATCH_13 = ["excited-state-energy", "ansatz-construction"];
   for (const slot of [...BATCH_10, ...BATCH_11, ...BATCH_12, ...BATCH_13]) {
     assert.ok(
       layerNode(LAYER_GRAPH, slot) !== null,
@@ -2784,14 +2788,14 @@ test("the capabilities closed on `implementations` stay closed, as a SET", () =>
   );
 
   assert.ok(
-    complete.size >= 25,
-    `${complete.size} capabilities are complete on implementations, was 25 after batch 13`,
+    complete.size >= 26,
+    `${complete.size} capabilities are complete on implementations, was 26 after batch 13`,
   );
 
   const filled = methods.filter((m) => (m.implementations ?? []).length > 0).length;
   assert.ok(
-    filled >= 100,
-    `${filled} of ${methods.length} methods carry an implementation, was 100 after batch 13`,
+    filled >= 101,
+    `${filled} of ${methods.length} methods carry an implementation, was 101 after batch 13`,
   );
 });
 
