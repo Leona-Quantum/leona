@@ -519,6 +519,102 @@ async def test_provider_exception_ends_failed_with_an_error_and_the_run_failed(_
     assert store.turns and store.turns[0].role == "nala"
 
 
+# --------------------------------------------------------------------------- notebook seed
+
+
+async def test_notebook_seed_passes_the_source_notebooks_title_and_source_as_material(
+    _fake_run_plumbing,
+):
+    """ "Quiz me on this notebook" (Lane E): a `kind: "notebook"` seed loads that
+    OTHER notebook's current version from the store, scope-checked the same way
+    every other repository call is, and feeds its stored `.nb.py` source —
+    title included, since the source's own YAML header carries it — to the
+    outline stage as seed material."""
+    run_id, notebook_id, version_id = uuid.uuid4(), uuid.uuid4(), uuid.uuid4()
+    source_notebook_id, source_version_id = uuid.uuid4(), uuid.uuid4()
+    store = MemoryNotebookStore()
+    store.seed_version(notebook_id, version_id)
+    store.seed_version(
+        source_notebook_id,
+        source_version_id,
+        seq=1,
+        status="ready",
+        spec=parse_source(LESSON).model_dump(mode="json"),
+        source=LESSON,
+    )
+    session = Session()
+    llm = QueueLLM([OUTLINE_JSON, LESSON, REVIEW_JSON])
+
+    await nh.handle_notebook_generate(
+        session,
+        _payload(
+            run_id=run_id,
+            notebook_id=notebook_id,
+            version_id=version_id,
+            request={
+                "brief": "A short quiz (6-8 questions) on the ideas in this notebook",
+                "kind": "quiz",
+                "seeds": [{"kind": "notebook", "ref": str(source_notebook_id)}],
+            },
+        ),
+        llm=llm,
+        sandbox=FakeSandbox(),
+        store=store,
+    )
+
+    version = store.versions[version_id]
+    assert version.status == "ready", version.error
+    outline_prompt = llm.requests[0].user
+    assert "Quantum coin" in outline_prompt, "the source notebook's title must reach the model"
+    assert "The quiz covers ONLY what this notebook teaches:" in outline_prompt
+
+
+async def test_notebook_seed_with_a_foreign_or_missing_id_fails_the_run_with_seed_not_found(
+    _fake_run_plumbing, monkeypatch
+):
+    captured: dict = {}
+
+    class CapturingRunStore(FakeRunStore):
+        async def finish(self, status, payload, **fields):
+            captured.update(payload)
+            return await super().finish(status, payload, **fields)
+
+    monkeypatch.setattr(handlers, "RepoRunStateStore", CapturingRunStore)
+
+    run_id, notebook_id, version_id = uuid.uuid4(), uuid.uuid4(), uuid.uuid4()
+    store = MemoryNotebookStore()
+    store.seed_version(notebook_id, version_id)
+    session = Session()
+
+    await nh.handle_notebook_generate(
+        session,
+        _payload(
+            run_id=run_id,
+            notebook_id=notebook_id,
+            version_id=version_id,
+            request={
+                "brief": "A short quiz on the ideas in this notebook",
+                "kind": "quiz",
+                # Not registered in the store at all — stands in for both a
+                # missing id and a foreign-workspace one: the real repository
+                # layer raises NotFoundError for either, the in-memory fake
+                # here just returns None, and _seed_material_for treats both
+                # the same way.
+                "seeds": [{"kind": "notebook", "ref": str(uuid.uuid4())}],
+            },
+        ),
+        llm=QueueLLM([]),
+        sandbox=FakeSandbox(),
+        store=store,
+    )
+
+    version = store.versions[version_id]
+    assert version.status == "failed"
+    assert "not found" in version.error
+    assert captured.get("reason_code") == "seed_not_found"
+    assert store.turns and "couldn't finish" in store.turns[0].content
+
+
 # --------------------------------------------------------------------------- revise
 
 

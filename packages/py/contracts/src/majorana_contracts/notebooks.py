@@ -111,9 +111,9 @@ class Seed(_Model):
     `content` is only meaningful for `kind="circuit"`: the reader's own pasted
     Qiskit Python or OpenQASM 3 text, validated and described by
     `leona_notebooks.circuits` before it reaches a prompt. `kind="notebook"`
-    (`ref=<notebook id>`) is reserved for the learner lane's notebook-as-seed
-    flow; only the enum value is added here, fetching is out of this lane's
-    scope."""
+    (`ref=<notebook id>`) is another notebook in the same workspace, resolved to
+    its current version by the worker's `_seed_material_for` — the
+    quiz-from-notebook flow."""
 
     kind: Literal[
         "atlas-record", "paper", "artifact", "upload", "brief", "curriculum", "circuit", "notebook"

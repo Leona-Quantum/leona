@@ -553,12 +553,23 @@ async def _record_sandbox_usage(
         log.exception("notebook run %s finished but sandbox usage metering failed", run_id)
 
 
+class SeedNotFoundError(Exception):
+    """A `notebook`-kind seed's `ref` did not resolve to a readable current
+    version. Raised instead of the soft skip-and-log the other seed kinds get
+    (below) because a quiz built with no seed material is not "a slightly
+    thinner quiz" — it is a quiz on the wrong thing, silently. Caught in
+    `handle_notebook_generate` and mapped to reason_code `seed_not_found`."""
+
+
 async def _seed_material_for(
-    scope: Scope, session: AsyncSession, request: CreateNotebookRequest | CreateCourseRequest
+    scope: Scope,
+    session: AsyncSession,
+    request: CreateNotebookRequest | CreateCourseRequest,
+    notebook_store: NotebookStore | None = None,
 ) -> tuple[str, str | None]:
-    """Seed material text and the verbatim run cell, from every `atlas-record` and
-    `circuit` seed on the request. The other seed kinds (`paper`, `artifact`,
-    `upload`, `curriculum`, `notebook`) are passed through to the outline/draft
+    """Seed material text and the verbatim run cell, from every `atlas-record`,
+    `circuit` and `notebook` seed on the request. The other seed kinds (`paper`,
+    `artifact`, `upload`, `curriculum`) are passed through to the outline/draft
     prompts as bare `Seed` objects with no fetched material — building their own
     fetch paths is out of this lane's scope (see the handoff).
 
@@ -567,6 +578,17 @@ async def _seed_material_for(
     Atlas seeds once, for the planner, rather than re-resolving them per module.
     The union is spelled out rather than left to duck typing so that adding a
     field this function needs breaks at the annotation, not in the worker.
+
+    A `notebook` seed ("Quiz me on this notebook") loads that OTHER notebook's
+    current version through `notebook_store`, with the same `scope` this run
+    itself carries, so the repository layer's own workspace filter is what makes
+    this "same workspace only": a foreign or missing id comes back not-found from
+    that layer (a real store raises, the in-memory test fake returns `None` —
+    both are treated the same way here) and is raised onward as
+    `SeedNotFoundError` rather than silently skipped. The `.nb.py` source stored
+    on that version becomes the seed material verbatim, prefaced so the model
+    knows to stay inside it. A caller that passes no store (the course planner)
+    cannot resolve notebook seeds; one on its request is a `SeedNotFoundError`.
 
     Precedence when both an `atlas-record` and a `circuit` seed are present: the
     circuit wins the first `run` cell — it is the reader's own text, asked for by
@@ -590,6 +612,27 @@ async def _seed_material_for(
             parts.append(render_circuit_seed_material(material))
             if circuit_run_cell is None:
                 circuit_run_cell = material.run_cell_source
+            continue
+        if seed.kind == "notebook":
+            if not seed.ref:
+                raise SeedNotFoundError("notebook seed has no ref")
+            try:
+                seed_notebook_id = uuid.UUID(seed.ref)
+            except ValueError as exc:
+                raise SeedNotFoundError(
+                    f"notebook seed ref {seed.ref!r} is not a notebook id"
+                ) from exc
+            if notebook_store is None:
+                raise SeedNotFoundError(
+                    "notebook seeds cannot be resolved without a notebook store"
+                )
+            try:
+                base = await notebook_store.get_current_version(scope, session, seed_notebook_id)
+            except Exception as exc:  # noqa: BLE001 - any store failure reads as "not found" here
+                raise SeedNotFoundError(f"notebook seed {seed.ref!r} not found: {exc}") from exc
+            if base is None or not getattr(base, "source", ""):
+                raise SeedNotFoundError(f"notebook seed {seed.ref!r} not found")
+            parts.append("The quiz covers ONLY what this notebook teaches:\n\n" + base.source)
             continue
         if seed.kind != "atlas-record" or not seed.ref:
             continue
@@ -768,7 +811,9 @@ async def handle_notebook_generate(
     )
     try:
         create_request = CreateNotebookRequest.model_validate(payload.get("request") or {})
-        seed_material, seed_run_cell = await _seed_material_for(scope, session, create_request)
+        seed_material, seed_run_cell = await _seed_material_for(
+            scope, session, create_request, notebook_store
+        )
         gen_request = GenerationRequest(
             brief=create_request.brief,
             kind_hint=create_request.kind.value if create_request.kind else None,
@@ -809,6 +854,20 @@ async def handle_notebook_generate(
             sink=sink,
             error=str(exc),
             reason_code="circuit_seed_rejected",
+        )
+    except SeedNotFoundError as exc:
+        log.warning("notebook.generate run %s: seed not found: %s", run_id, exc)
+        await _fail_run(
+            notebook_store=notebook_store,
+            scope=scope,
+            session=session,
+            notebook_id=notebook_id,
+            version_id=version_id,
+            run_id=run_id,
+            run_store=run_store,
+            sink=sink,
+            error=f"notebook generation failed: {exc}",
+            reason_code="seed_not_found",
         )
     except Exception as exc:
         log.exception("notebook.generate run %s failed", run_id)

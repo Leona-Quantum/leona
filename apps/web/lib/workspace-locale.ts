@@ -1,5 +1,7 @@
 import type { components } from "@majorana/contracts-gen";
 import type { AccountTier } from "./account-tier";
+import type { NotebookDiffCellStatus, NotebookDiffHeaderField } from "./notebook-diff";
+import type { NotebookMastery } from "./notebook-mastery";
 import type { PublicLocale } from "./public-locale";
 
 type NotebookKind = components["schemas"]["NotebookKind"];
@@ -9,6 +11,8 @@ type NotebookStatusPillCopyKey = "queued" | "generating" | "ready" | "failed";
 type NotebookCellStatusCopyKey = "ok" | "error" | "skipped" | "not_run";
 type NotebookReviewVerdict = components["schemas"]["NotebookReview"]["verdict"];
 type NotebookFindingSeverity = components["schemas"]["ReviewFinding"]["severity"];
+type NotebookFindingCategory = components["schemas"]["ReviewFinding"]["category"];
+type NotebookDiffHeaderFieldKey = NotebookDiffHeaderField["field"];
 
 export const WORKSPACE_COPY: Record<PublicLocale, {
   surfaces: { brandedRun: string; preview: string };
@@ -574,7 +578,21 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
     reviewVerdict: Record<NotebookReviewVerdict, string>;
     reviewFindingsLabel: string;
     reviewSeverity: Record<NotebookFindingSeverity, string>;
+    reviewCategory: Record<NotebookFindingCategory, string>;
     reviewNotEstablishedLabel: string;
+    reviewNoReview: string;
+
+    compareToggle: string;
+    comparePickerLabel: string;
+    diffStatus: Record<NotebookDiffCellStatus, string>;
+    diffHeaderField: Record<NotebookDiffHeaderFieldKey, string>;
+    diffLoading: string;
+    diffLoadFailed: string;
+
+    progressSummary: (mastery: NotebookMastery) => string;
+
+    quizButtonLabel: string;
+    quizButtonFailed: string;
 
     chatLabel: string;
     chatPlaceholder: string;
@@ -595,6 +613,11 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
     actionSimplify: string;
     actionAddFigure: string;
     actionExercise: string;
+    actionExplainError: string;
+    actionCheckAttempt: string;
+    actionCheckAttemptCancel: string;
+    checkAttemptPlaceholder: string;
+    checkAttemptSubmit: string;
 
     teachMeInNotebook: string;
   };
@@ -1215,11 +1238,56 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
     versionFailedHeadline: "This version did not finish generating.",
     versionFailedHint: "Ask Nala below to fix it, or run it again.",
 
-    reviewLabel: "Review",
+    reviewLabel: "Nala's review",
     reviewVerdict: { ready: "Ready", "needs-attention": "Needs attention" },
     reviewFindingsLabel: "Findings",
     reviewSeverity: { blocker: "Blocker", "should-fix": "Should fix", nit: "Nit" },
+    reviewCategory: {
+      accuracy: "Accuracy",
+      pedagogy: "Pedagogy",
+      code: "Code",
+      structure: "Structure",
+      safety: "Safety",
+      style: "Style",
+    },
     reviewNotEstablishedLabel: "What this notebook does not establish",
+    reviewNoReview: "This version has no review — it was imported or re-run without one.",
+
+    compareToggle: "Compare with previous",
+    comparePickerLabel: "Compare against",
+    diffStatus: {
+      added: "Added",
+      removed: "Removed",
+      changed: "Changed",
+      unchanged: "Unchanged",
+      moved: "Moved",
+    },
+    diffHeaderField: {
+      title: "Title",
+      summary: "Summary",
+      objectives: "Objectives",
+      duration_minutes: "Duration (minutes)",
+    },
+    diffLoading: "Loading the comparison…",
+    diffLoadFailed: "That version could not be loaded for comparison.",
+
+    progressSummary: (mastery) => {
+      const parts: string[] = [];
+      if (mastery.checkpointsTotal > 0) {
+        const noun = mastery.checkpointsTotal === 1 ? "checkpoint" : "checkpoints";
+        parts.push(`${mastery.checkpointsPassed} of ${mastery.checkpointsTotal} ${noun} pass`);
+      }
+      if (mastery.cellsErrored > 0) {
+        parts.push(`${mastery.cellsErrored} cell${mastery.cellsErrored === 1 ? "" : "s"} errored`);
+      }
+      if (mastery.exercisesTotal > 0) {
+        parts.push(`${mastery.exercisesTotal} exercise${mastery.exercisesTotal === 1 ? "" : "s"}`);
+      }
+      return parts.join(" · ");
+    },
+
+    quizButtonLabel: "Quiz me on this notebook",
+    quizButtonFailed: "The quiz could not be started.",
 
     chatLabel: "Talk to Nala",
     chatPlaceholder: "Ask Nala to change this notebook…",
@@ -1240,6 +1308,11 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
     actionSimplify: "Simplify",
     actionAddFigure: "Add a figure here",
     actionExercise: "Turn this into an exercise",
+    actionExplainError: "Explain this error",
+    actionCheckAttempt: "Check my attempt",
+    actionCheckAttemptCancel: "Cancel",
+    checkAttemptPlaceholder: "Paste or write your attempt at this cell…",
+    checkAttemptSubmit: "Ask Nala to check it",
 
     teachMeInNotebook: "Teach me this in a notebook",
   },
@@ -1854,11 +1927,55 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
     versionFailedHeadline: "このバージョンの生成は完了しませんでした。",
     versionFailedHint: "下のNalaに修正を依頼するか、もう一度実行してください。",
 
-    reviewLabel: "レビュー",
+    reviewLabel: "Nalaのレビュー",
     reviewVerdict: { ready: "準備完了", "needs-attention": "要確認" },
     reviewFindingsLabel: "指摘事項",
     reviewSeverity: { blocker: "重大", "should-fix": "要修正", nit: "軽微" },
+    reviewCategory: {
+      accuracy: "正確性",
+      pedagogy: "教え方",
+      code: "コード",
+      structure: "構成",
+      safety: "安全性",
+      style: "スタイル",
+    },
     reviewNotEstablishedLabel: "このノートブックが示していないこと",
+    reviewNoReview: "このバージョンにはレビューがありません（インポートまたはレビューなしの再実行）。",
+
+    compareToggle: "前のバージョンと比較",
+    comparePickerLabel: "比較対象",
+    diffStatus: {
+      added: "追加",
+      removed: "削除",
+      changed: "変更",
+      unchanged: "変更なし",
+      moved: "移動",
+    },
+    diffHeaderField: {
+      title: "タイトル",
+      summary: "概要",
+      objectives: "学習目標",
+      duration_minutes: "所要時間（分）",
+    },
+    diffLoading: "比較を読み込んでいます…",
+    diffLoadFailed: "比較用のバージョンを読み込めませんでした。",
+
+    progressSummary: (mastery) => {
+      const parts: string[] = [];
+      if (mastery.checkpointsTotal > 0) {
+        parts.push(`チェックポイント ${mastery.checkpointsPassed}/${mastery.checkpointsTotal} 合格`);
+      }
+      if (mastery.cellsErrored > 0) {
+        parts.push(`エラー ${mastery.cellsErrored}セル`);
+      }
+      if (mastery.exercisesTotal > 0) {
+        parts.push(`演習 ${mastery.exercisesTotal}問`);
+      }
+      return parts.join(" ・ ");
+    },
+
+    quizButtonLabel: "このノートブックでクイズを作る",
+    quizButtonFailed: "クイズを開始できませんでした。",
 
     chatLabel: "Nalaに相談する",
     chatPlaceholder: "Nalaにこのノートブックの変更を依頼してください…",
@@ -1879,6 +1996,11 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
     actionSimplify: "やさしくする",
     actionAddFigure: "ここに図を追加",
     actionExercise: "演習問題にする",
+    actionExplainError: "このエラーを説明する",
+    actionCheckAttempt: "自分の解答を確認する",
+    actionCheckAttemptCancel: "キャンセル",
+    checkAttemptPlaceholder: "このセルへの解答を貼り付けるか入力してください…",
+    checkAttemptSubmit: "Nalaに確認してもらう",
 
     teachMeInNotebook: "ノートブックで学ぶ",
   },

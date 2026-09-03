@@ -2,13 +2,18 @@
 
 import type { components } from "@majorana/contracts-gen";
 import { StageRail, type RailStage } from "@majorana/ui";
+import { useRouter } from "next/navigation";
 import type { FormEvent } from "react";
 import { useEffect, useRef, useState } from "react";
 import { ChatMarkdown } from "../../../../components/chat-markdown";
+import { NotebookDiffView } from "../../../../components/notebook-diff-view";
+import { NotebookReviewPanel } from "../../../../components/notebook-review-panel";
 import { NotebookView, type NotebookCellActionKind } from "../../../../components/notebook-view";
 import { refusalSentence } from "../../../../lib/api-error";
+import { diffNotebookVersions } from "../../../../lib/notebook-diff";
 import { notebookExportFilename } from "../../../../lib/notebook-export";
-import { notebookCellViews, notebookStatusPill } from "../../../../lib/notebook-view";
+import { hasMasteryToShow, notebookMastery } from "../../../../lib/notebook-mastery";
+import { errorTracebackText, notebookCellViews, notebookStatusPill } from "../../../../lib/notebook-view";
 import {
   notebookProgressFromEvents,
   type NotebookProgressEvent,
@@ -69,6 +74,7 @@ const RUNNING_STATUSES = new Set(["queued", "running"]);
 
 export function NotebookWorkspace({ notebookId, locale = "en" }: { notebookId: string; locale?: PublicLocale }) {
   const copy = WORKSPACE_COPY[locale].notebooks;
+  const router = useRouter();
 
   const [notebook, setNotebook] = useState<Notebook | null>(null);
   const [notebookError, setNotebookError] = useState<string | null>(null);
@@ -96,6 +102,15 @@ export function NotebookWorkspace({ notebookId, locale = "en" }: { notebookId: s
 
   const [downloading, setDownloading] = useState(false);
   const [rerunning, setRerunning] = useState(false);
+  const [quizzing, setQuizzing] = useState(false);
+
+  // "Compare with previous" (task 1): `null` compareSeq means "the nearest
+  // earlier version" — computed below from `versions` — the same "follow
+  // unless pinned" pattern `pinnedSeq` uses for the main version picker.
+  const [compareMode, setCompareMode] = useState(false);
+  const [compareSeq, setCompareSeq] = useState<number | null>(null);
+  const [compareVersion, setCompareVersion] = useState<NotebookVersion | null>(null);
+  const [compareError, setCompareError] = useState<string | null>(null);
 
   const reloadSeq = useRef(0);
 
@@ -195,6 +210,42 @@ export function NotebookWorkspace({ notebookId, locale = "en" }: { notebookId: s
     };
   }, [notebookId, selectedSeq, copy.loadFailed]);
 
+  // Versions strictly earlier than the one on screen — what the "compare
+  // against" picker offers, and where the default (no explicit pin) comes
+  // from: the nearest earlier version, i.e. "previous".
+  const earlierVersions = versions.filter((item) => selectedSeq !== null && item.seq < selectedSeq);
+  const defaultCompareSeq =
+    earlierVersions.length > 0 ? Math.max(...earlierVersions.map((item) => item.seq)) : null;
+  const effectiveCompareSeq = compareSeq ?? defaultCompareSeq;
+
+  useEffect(() => {
+    if (!compareMode || effectiveCompareSeq === null) {
+      setCompareVersion(null);
+      return;
+    }
+    let active = true;
+    fetch(`/api/notebooks/${encodeURIComponent(notebookId)}/versions/${effectiveCompareSeq}`, { cache: "no-store" })
+      .then(async (response) => {
+        const payload = (await response.json()) as unknown;
+        if (!response.ok || !isRecord(payload) || typeof payload.seq !== "number") {
+          throw new Error(refusalSentence(payload) ?? copy.diffLoadFailed);
+        }
+        return payload as unknown as NotebookVersion;
+      })
+      .then((loaded) => {
+        if (active) {
+          setCompareVersion(loaded);
+          setCompareError(null);
+        }
+      })
+      .catch((cause) => {
+        if (active) setCompareError(cause instanceof Error ? cause.message : copy.diffLoadFailed);
+      });
+    return () => {
+      active = false;
+    };
+  }, [notebookId, compareMode, effectiveCompareSeq, copy.diffLoadFailed]);
+
   // Follow the active run's SSE stream (copied from live-run.tsx's reader —
   // see that file for the reconnect/backoff reasoning this intentionally
   // keeps simple for a secondary surface).
@@ -281,14 +332,72 @@ export function NotebookWorkspace({ notebookId, locale = "en" }: { notebookId: s
     void sendTurn(message);
   }
 
-  function cellAction(cellId: string, action: NotebookCellActionKind) {
-    const templates: Record<NotebookCellActionKind, string> = {
+  function cellAction(cellId: string, action: NotebookCellActionKind, detail?: string) {
+    if (action === "explainError") {
+      // `cells` (below) is this render's join of the pinned version's spec
+      // against its report — the same lookup the card itself used to decide
+      // whether to show this action at all.
+      const cell = cells.find((item) => item.id === cellId);
+      const traceback = errorTracebackText(cell?.error ?? null);
+      void sendTurn(
+        `Cell \`${cellId}\` failed with:\n\`\`\`\n${traceback}\n\`\`\`\nExplain what went wrong and fix the cell.`,
+      );
+      return;
+    }
+    if (action === "checkAttempt") {
+      const attempt = detail ?? "";
+      void sendTurn(
+        `Here is my attempt at cell \`${cellId}\`:\n\`\`\`python\n${attempt}\n\`\`\`\nGrade it against the intended solution, say what is right, what is wrong, and give one hint before the full fix. Do not change the notebook.`,
+      );
+      return;
+    }
+    const templates: Record<"explain" | "simplify" | "figure" | "exercise", string> = {
       explain: `Explain cell ${cellId} in simpler terms.`,
       simplify: `Simplify cell ${cellId}.`,
       figure: `Add a figure after cell ${cellId}.`,
       exercise: `Turn cell ${cellId} into an exercise.`,
     };
     void sendTurn(templates[action]);
+  }
+
+  /** Workspace-level, not per-cell: creates a NEW notebook seeded from this
+   * one (worker-side resolution in `_seed_material_for`, `kind: "notebook"`)
+   * and navigates to it once queued. */
+  async function quizMe() {
+    if (!notebook || quizzing) return;
+    setQuizzing(true);
+    setActionError(null);
+    try {
+      // `Seed.kind: "notebook"` is landing in the generated TS contracts via
+      // Lane D, in parallel with this lane — until it reaches
+      // `@majorana/contracts-gen`, this is a local, unchecked literal rather
+      // than a typed `Seed`.
+      const seeds = [{ kind: "notebook" as const, ref: notebookId, note: "" }];
+      const response = await fetch("/api/notebooks", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "Idempotency-Key": crypto.randomUUID() },
+        body: JSON.stringify({
+          brief:
+            "A short quiz (6–8 questions, mixed multiple-choice and predict-the-output) on the ideas in this notebook, with answers hidden in solution cells",
+          kind: "quiz",
+          framework: notebook.framework,
+          seeds,
+          response_locale: locale,
+        }),
+      });
+      const payload = (await response.json()) as unknown;
+      const newNotebookId =
+        isRecord(payload) && isRecord(payload.notebook) && typeof payload.notebook.id === "string"
+          ? payload.notebook.id
+          : null;
+      if (!response.ok || !newNotebookId) {
+        throw new Error(refusalSentence(payload) ?? copy.quizButtonFailed);
+      }
+      router.push(`/notebooks/${encodeURIComponent(newNotebookId)}`);
+    } catch (cause) {
+      setActionError(cause instanceof Error ? cause.message : copy.quizButtonFailed);
+      setQuizzing(false);
+    }
   }
 
   async function saveTitle() {
@@ -370,6 +479,11 @@ export function NotebookWorkspace({ notebookId, locale = "en" }: { notebookId: s
   const isGenerating = RUNNING_STATUSES.has(notebook.latest_status);
   const cells = notebookCellViews(version?.spec?.cells, version?.report);
   const stages = notebookProgressFromEvents(progressEvents as NotebookProgressEvent[]);
+  const mastery = notebookMastery(version?.spec?.cells, version?.report);
+  const diff =
+    compareMode && version?.spec && compareVersion?.spec
+      ? diffNotebookVersions(compareVersion.spec, version.spec)
+      : null;
 
   return (
     <main className="mj-notebook-workspace">
@@ -402,6 +516,9 @@ export function NotebookWorkspace({ notebookId, locale = "en" }: { notebookId: s
             <span className="mj-notebook-kind-badge">{copy.kindOption[notebook.kind]}</span>
             <span className={`mj-notebook-status-pill mj-notebook-status-pill--${pill}`}>{copy.statusPill[pill]}</span>
           </div>
+          {hasMasteryToShow(mastery) ? (
+            <p className="mj-notebook-progress-strip">{copy.progressSummary(mastery)}</p>
+          ) : null}
         </div>
         <div className="mj-notebook-workspace-actions">
           {versions.length > 0 ? (
@@ -416,6 +533,31 @@ export function NotebookWorkspace({ notebookId, locale = "en" }: { notebookId: s
                 ))}
               </select>
             </label>
+          ) : null}
+          {earlierVersions.length > 0 ? (
+            <>
+              <button
+                className="mj-secondary-button"
+                type="button"
+                aria-pressed={compareMode}
+                onClick={() => setCompareMode((current) => !current)}
+              >
+                {copy.compareToggle}
+              </button>
+              {compareMode ? (
+                <label className="mj-notebook-compare-picker mj-filter-select">
+                  <span className="sr-only">{copy.comparePickerLabel}</span>
+                  <select
+                    value={effectiveCompareSeq ?? ""}
+                    onChange={(event) => setCompareSeq(Number(event.target.value))}
+                  >
+                    {earlierVersions.map((item) => (
+                      <option key={item.id} value={item.seq}>{copy.versionLabel(item.seq)}</option>
+                    ))}
+                  </select>
+                </label>
+              ) : null}
+            </>
           ) : null}
           <button
             className="mj-secondary-button"
@@ -432,6 +574,14 @@ export function NotebookWorkspace({ notebookId, locale = "en" }: { notebookId: s
             onClick={() => void runAgain()}
           >
             {rerunning || isGenerating ? copy.running : copy.runAgain}
+          </button>
+          <button
+            className="mj-secondary-button"
+            type="button"
+            disabled={quizzing || !version?.spec}
+            onClick={() => void quizMe()}
+          >
+            {quizzing ? copy.creating : copy.quizButtonLabel}
           </button>
         </div>
       </header>
@@ -455,7 +605,14 @@ export function NotebookWorkspace({ notebookId, locale = "en" }: { notebookId: s
             </div>
           ) : null}
           {versionError ? <p role="alert" className="mj-notebook-workspace-error">{versionError}</p> : null}
-          {version ? (
+          {compareError ? <p role="alert" className="mj-notebook-workspace-error">{compareError}</p> : null}
+          {compareMode ? (
+            diff && version?.spec && compareVersion?.spec ? (
+              <NotebookDiffView diff={diff} older={compareVersion.spec} newer={version.spec} locale={locale} />
+            ) : (
+              <p className="mj-notebook-workspace-empty-notebook">{copy.diffLoading}</p>
+            )
+          ) : version ? (
             <NotebookView
               cells={cells}
               locale={locale}
@@ -465,34 +622,7 @@ export function NotebookWorkspace({ notebookId, locale = "en" }: { notebookId: s
           ) : !isGenerating ? (
             <p className="mj-notebook-workspace-empty-notebook">{copy.loadFailed}</p>
           ) : null}
-          {version?.review ? (
-            <section className="mj-notebook-review">
-              <h2>{copy.reviewLabel} — {copy.reviewVerdict[version.review.verdict]}</h2>
-              {version.review.findings && version.review.findings.length > 0 ? (
-                <div>
-                  <h3>{copy.reviewFindingsLabel}</h3>
-                  <ul>
-                    {version.review.findings.map((finding, index) => (
-                      <li key={index}>
-                        <strong>{copy.reviewSeverity[finding.severity]}</strong>
-                        {finding.cell_id ? ` (${finding.cell_id})` : ""}: {finding.finding}
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              ) : null}
-              {version.review.what_this_notebook_does_not_establish && version.review.what_this_notebook_does_not_establish.length > 0 ? (
-                <div>
-                  <h3>{copy.reviewNotEstablishedLabel}</h3>
-                  <ul>
-                    {version.review.what_this_notebook_does_not_establish.map((item, index) => (
-                      <li key={index}>{item}</li>
-                    ))}
-                  </ul>
-                </div>
-              ) : null}
-            </section>
-          ) : null}
+          {!compareMode && version ? <NotebookReviewPanel review={version.review} locale={locale} /> : null}
         </section>
 
         <aside className="mj-notebook-workspace-chat" aria-label={copy.chatLabel}>

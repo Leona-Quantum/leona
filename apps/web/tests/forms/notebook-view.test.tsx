@@ -1,7 +1,7 @@
 import "./dom-env.ts";
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { render } from "@testing-library/react";
+import { render, within } from "@testing-library/react";
 import { NotebookView } from "../../components/notebook-view.tsx";
 import { notebookCellViews } from "../../lib/notebook-view.ts";
 
@@ -124,4 +124,20 @@ test("text/html output is shown as literal text, never as rendered markup", () =
   // ...and there is no actual <strong> element produced by that output — if there
   // were, this component would have interpreted the HTML instead of showing it.
   assert.equal(view.container.querySelector(".mj-notebook-cell-output-text strong"), null);
+});
+
+test("the \"Explain this error\" action appears only on the cell whose output actually errored", () => {
+  const cells = notebookCellViews(spec.cells, report);
+  const view = render(<NotebookView cells={cells} locale="en" framework="qiskit" onCellAction={() => {}} />);
+  const articles = view.container.querySelectorAll(".mj-notebook-cell");
+  assert.equal(articles.length, 3);
+
+  const [markdownCell, okCell, errorCell] = Array.from(articles) as HTMLElement[];
+  assert.equal(markdownCell.dataset.kind, "markdown");
+  assert.equal(okCell.dataset.status, "ok");
+  assert.equal(errorCell.dataset.status, "error");
+
+  assert.equal(within(markdownCell).queryByText("Explain this error"), null);
+  assert.equal(within(okCell).queryByText("Explain this error"), null);
+  assert.ok(within(errorCell).getByText("Explain this error"));
 });
