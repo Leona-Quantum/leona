@@ -2704,7 +2704,38 @@ test("the capabilities closed on `implementations` stay closed, as a SET", () =>
     "full-discretization",
     "hidden-period-finding",
   ];
-  for (const slot of [...BATCH_10, ...BATCH_11, ...BATCH_12]) {
+  // Batch 13, and the honest number is ONE of the three regions it worked on.
+  //
+  // `excited-state-energy` is complete: all seven methods carry an entry.
+  //
+  // `marked-item-search` is NOT here, and the reason is worth reading before
+  // anyone writes another absence. Batch 13 researched
+  // `state-discrimination-search` properly and concluded, correctly, that
+  // Ambainis and Montanaro's wildcard search has no public implementation: both
+  // authors' accounts, MQT Bench, QASMBench, Qiskit, Cirq, PennyLane, Classiq
+  // and the Algorithm Zoo entry were each opened and named. The declared absence
+  // was written — and then WITHHELD, because the page cannot show it.
+  //
+  // `card-content.ts`'s `implementationsOf` checks the record JOIN before the
+  // absence, and every one of the 279 corpus records carries a code variant. So
+  // for any method whose `entries` names a record — 65 of the 116 — `joined` is
+  // non-empty, the section is `held`, and a declared `implementations` absence
+  // reaches nobody. That file records batch 11 hitting this on THIS EXACT
+  // METHOD and dropping its absence for the same reason.
+  //
+  // Two instruments disagree about it and both are behaving as written:
+  // `--closure` reports `marked-item-search` implementations as "1/2 ✓ (every
+  // gap accounted for)" while the card refuses to render the account. Flagged
+  // rather than resolved here — which of the two is right is a decision about
+  // what "closed" should mean, not a defect to patch. The research is preserved
+  // in the batch directory under `final-withheld/`.
+  //
+  // `ansatz-construction` is 12 of 13. `symmetry-preserving-ansatz` is the one
+  // gap, and it is a mechanical one rather than a research one: its draft exists
+  // and its refuting agent stalled out, so no entry was ever revised. Filling it
+  // closes that region.
+  const BATCH_13 = ["excited-state-energy"];
+  for (const slot of [...BATCH_10, ...BATCH_11, ...BATCH_12, ...BATCH_13]) {
     assert.ok(
       layerNode(LAYER_GRAPH, slot) !== null,
       `${slot} names no capability — renamed, and this ratchet stopped measuring it`,
@@ -2747,20 +2778,20 @@ test("the capabilities closed on `implementations` stay closed, as a SET", () =>
   // absorbed silently, which is what the equality asserts.
   assert.deepEqual(
     [...complete].sort(),
-    [...BATCH_10, ...BATCH_11, ...BATCH_12, ...ALREADY].sort(),
+    [...BATCH_10, ...BATCH_11, ...BATCH_12, ...BATCH_13, ...ALREADY].sort(),
     "the set of capabilities complete on implementations has changed — add the new one to " +
       "ALREADY rather than letting the count absorb it",
   );
 
   assert.ok(
-    complete.size >= 24,
-    `${complete.size} capabilities are complete on implementations, was 24 after batch 12`,
+    complete.size >= 25,
+    `${complete.size} capabilities are complete on implementations, was 25 after batch 13`,
   );
 
   const filled = methods.filter((m) => (m.implementations ?? []).length > 0).length;
   assert.ok(
-    filled >= 88,
-    `${filled} of ${methods.length} methods carry an implementation, was 88 after batch 12`,
+    filled >= 100,
+    `${filled} of ${methods.length} methods carry an implementation, was 100 after batch 13`,
   );
 });
 
