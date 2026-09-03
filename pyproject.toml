@@ -41,7 +41,7 @@ dev = [
     # local subprocess double and production sandbox on the same tested SDK. Pin
     # the simulator and its otherwise-unbounded numba dependency too: retaining
     # an old lock selected numba 0.53.1, which cannot install on Python 3.12.
-    "amazon-braket-sdk==1.125.0",
+    "amazon-braket-sdk==1.126.1",
     "amazon-braket-default-simulator==1.40.1",
     "numba==0.67.0",
     # Qibo stays on its in-process NumPy backend; optional Qibolab hardware
