@@ -24,7 +24,7 @@ import ast
 import json
 import re
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
 from uuid import uuid4
 
@@ -56,6 +56,12 @@ class NotebookGuardError(ValueError):
         super().__init__(f"notebook blocked by the Python safety guard — {summary}")
 
 
+class UnknownCellError(ValueError):
+    """`run_until` names a cell this notebook does not have. Raised during
+    composition — before an `ExecutionSpec` is built and therefore before any
+    sandbox dispatch — so a bad id costs nothing and cannot half-run a notebook."""
+
+
 @dataclass(frozen=True)
 class NotebookProgram:
     code: str
@@ -65,6 +71,11 @@ class NotebookProgram:
     cell_ids: tuple[str, ...]
     #: Cells the program will *not* run, with the reason (execute=false, a cell magic).
     skipped: dict[str, str]
+    #: Code cells left out because they sit after `run_until`, with the reason. Distinct
+    #: from `skipped`: a skipped cell is one the product never runs at all, while these
+    #: are cells the reader deliberately stopped short of, and the report says `not_run`
+    #: for them WITHOUT that counting as the run having fallen over.
+    not_run: dict[str, str] = field(default_factory=dict)
 
 
 # --------------------------------------------------------------------------- source prep
@@ -279,24 +290,50 @@ def _default_guard(source: str) -> list[str]:
     return [] if result.ok else list(result.violations)
 
 
+#: The reason recorded against every code cell after `run_until`.
+RUN_UNTIL_NOTE = "after the cell you ran to"
+
+
 def compose_notebook_program(
     spec: NotebookSpec,
     *,
     guard: Callable[[str], list[str]] | None = None,
+    run_until: str | None = None,
     image_budget_bytes: int = DEFAULT_IMAGE_BUDGET_BYTES,
     text_cap_bytes: int = DEFAULT_TEXT_CAP_BYTES,
     repr_cap_bytes: int = DEFAULT_REPR_CAP_BYTES,
 ) -> NotebookProgram:
     """Build the sandbox program for a notebook. Raises `NotebookGuardError` if any
-    executable cell fails the static guard (`majorana_sandbox.guard` by default)."""
+    executable cell fails the static guard (`majorana_sandbox.guard` by default).
+
+    `run_until` is a cell id: cells at or before it are composed, everything after is
+    left out and reported `not_run`. **Cells after the cut are not guard-checked**, and
+    that is the deliberate choice rather than an oversight — the guard exists to stop
+    code reaching the sandbox, so it has to run on exactly what is composed into the
+    program and nothing else. Guarding the tail as well would refuse a reader's
+    "run the first two cells" because cell nine, which is not going to run, imports
+    `subprocess`. Those cells are guarded on the next composition that includes them,
+    which is the one where their content can actually execute. An unknown `run_until`
+    raises `UnknownCellError` here, before any `ExecutionSpec` exists.
+    """
     if image_budget_bytes >= MAX_OUTPUT_BYTES:
         raise ValueError("image budget must leave room in the evidence sidecar")
+    cut = len(spec.cells) - 1
+    if run_until is not None:
+        try:
+            cut = spec.index_of(run_until)
+        except KeyError:
+            raise UnknownCellError(f"run_until: this notebook has no cell {run_until!r}") from None
     check = guard or _default_guard
     violations: dict[str, list[str]] = {}
     prepared: list[tuple[Cell, str]] = []
     skipped: dict[str, str] = {}
-    for cell in spec.cells:
+    not_run: dict[str, str] = {}
+    for index, cell in enumerate(spec.cells):
         if not cell.is_code:
+            continue
+        if index > cut:
+            not_run[cell.id] = RUN_UNTIL_NOTE
             continue
         source, reason = prepare_cell_source(cell)
         if reason is not None:
@@ -337,6 +374,7 @@ def compose_notebook_program(
         trusted_observer=_OBSERVER,
         cell_ids=tuple(cell.id for cell, _ in prepared),
         skipped=skipped,
+        not_run=not_run,
     )
 
 
@@ -406,6 +444,12 @@ def report_from_observation(
             continue
         if cell.id in program.skipped:
             results.append(CellResult(id=cell.id, status="skipped", note=program.skipped[cell.id]))
+            continue
+        if cell.id in program.not_run:
+            # Deliberately short of this cell (`run_until`). `reached_end` is left
+            # alone: the run did everything it was asked to, so `ok` still means
+            # "what ran, ran cleanly" rather than being pulled false by the tail.
+            results.append(CellResult(id=cell.id, status="not_run", note=program.not_run[cell.id]))
             continue
         raw = recorded.get(cell.id)
         if raw is None:
