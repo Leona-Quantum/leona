@@ -132,14 +132,18 @@ def check(root: Path) -> list[str]:
         cells = _cells(challenge)
         leaked_roles = sorted({role for _, role in cells if role in answer_bearing})
         if leaked_roles:
-            fail.append(f"{challenge.relative_to(root)}: answer-bearing cells survived: {leaked_roles}")
+            fail.append(
+                f"{challenge.relative_to(root)}: answer-bearing cells survived: {leaked_roles}"
+            )
         solution = root / "solutions" / challenge.parent.name / f"{challenge.stem}_solution.ipynb"
         if solution.exists():
             answers = {text for text, role in _cells(solution) if role in answer_bearing}
             shown = {text for text, _ in cells}
             leaked = sorted(text[:60] for text in answers & shown)
             if leaked:
-                fail.append(f"{challenge.relative_to(root)}: solution text appears verbatim: {leaked}")
+                fail.append(
+                    f"{challenge.relative_to(root)}: solution text appears verbatim: {leaked}"
+                )
 
     for notebook in _notebooks(root):
         cells = _cells(notebook)
