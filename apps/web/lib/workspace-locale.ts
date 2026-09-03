@@ -539,6 +539,8 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
     frameworkLabel: string;
     seedAtlasLabel: string;
     seedAtlasPlaceholder: string;
+    seedCircuitLabel: string;
+    seedCircuitPlaceholder: string;
     importLabel: string;
     importHint: string;
     importFailed: string;
@@ -1177,6 +1179,8 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
     frameworkLabel: "Framework",
     seedAtlasLabel: "Seed from an Atlas record",
     seedAtlasPlaceholder: "Atlas record slug",
+    seedCircuitLabel: "Start from a circuit",
+    seedCircuitPlaceholder: "Paste Qiskit code or OpenQASM 3",
     importLabel: "Import .ipynb",
     importHint: "Upload an existing notebook to keep editing it with Nala.",
     importFailed: "The notebook could not be imported.",
@@ -1814,6 +1818,8 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
     frameworkLabel: "フレームワーク",
     seedAtlasLabel: "Atlasの記録から始める",
     seedAtlasPlaceholder: "Atlas記録のスラッグ",
+    seedCircuitLabel: "回路から始める",
+    seedCircuitPlaceholder: "QiskitのコードまたはOpenQASM 3を貼り付け",
     importLabel: ".ipynbをインポート",
     importHint: "既存のノートブックをアップロードすると、Nalaと一緒に編集を続けられます。",
     importFailed: "ノートブックをインポートできませんでした。",

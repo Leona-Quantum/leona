@@ -7,6 +7,16 @@
     leona-notebooks import notebook.ipynb -o notebook.nb.py
     leona-notebooks structure lesson.nb.py           # the kind's requirements this source fails
 
+Against the live control plane (same LEONA_API_URL / LEONA_API_TOKEN as `%nala` in
+Jupyter — see `leona_notebooks.jupyter`; a reader without Jupyter open still gets these):
+
+    leona-notebooks new "<brief>" [--kind K] [--level L] [--no-analogies] [--math M]
+                                   [--lang en|ja] [-o file.ipynb]
+    leona-notebooks pull <notebook_id> [--version N] [-o file.ipynb]
+    leona-notebooks push <file.ipynb> [--title T]
+    leona-notebooks push <file.ipynb> --to <notebook_id> [--message M] [--no-run]
+    leona-notebooks status <notebook_id>
+
 Exit status is 1 on any failure, so a CI step can run it bare.
 """
 
@@ -14,6 +24,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import shlex
 import sys
 from pathlib import Path
 
@@ -176,6 +187,70 @@ def cmd_structure(args: argparse.Namespace) -> int:
     return 0 if not problems else 1
 
 
+# --------------------------------------------------------------------------- against the control plane
+#
+# These four share `leona_notebooks.jupyter.Client` and its `run_line` command
+# parsing with the `%nala` Jupyter magic — a reader without Jupyter open still gets
+# `new`/`pull`/`push`/`status`, and the two surfaces cannot drift apart because a
+# CLI invocation is rebuilt into the exact `%nala ...` line and handed to the same
+# function. `Client.from_env()` reads `LEONA_API_URL` / `LEONA_API_TOKEN`; nothing
+# here accepts a token as an argument.
+
+
+def _run_nala_line(parts: list[str]) -> int:
+    from leona_notebooks.jupyter import Client, NalaError, run_line
+
+    try:
+        print(run_line(shlex.join(parts), client=Client.from_env()))
+        return 0
+    except NalaError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 1
+
+
+def cmd_new(args: argparse.Namespace) -> int:
+    parts = ["new", args.brief]
+    if args.kind:
+        parts += ["--kind", args.kind]
+    if args.level:
+        parts += ["--level", args.level]
+    if args.no_analogies:
+        parts += ["--no-analogies"]
+    if args.math:
+        parts += ["--math", args.math]
+    if args.lang:
+        parts += ["--lang", args.lang]
+    if args.output:
+        parts += ["-o", args.output]
+    return _run_nala_line(parts)
+
+
+def cmd_pull(args: argparse.Namespace) -> int:
+    parts = ["pull", args.notebook_id]
+    if args.version is not None:
+        parts += ["--version", str(args.version)]
+    if args.output:
+        parts += ["-o", args.output]
+    return _run_nala_line(parts)
+
+
+def cmd_push(args: argparse.Namespace) -> int:
+    parts = ["push", args.file]
+    if args.to:
+        parts += ["--to", args.to]
+    if args.message:
+        parts += ["--message", args.message]
+    if args.no_run:
+        parts += ["--no-run"]
+    if args.title:
+        parts += ["--title", args.title]
+    return _run_nala_line(parts)
+
+
+def cmd_status(args: argparse.Namespace) -> int:
+    return _run_nala_line(["status", args.notebook_id])
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="leona-notebooks",
@@ -222,6 +297,34 @@ def build_parser() -> argparse.ArgumentParser:
     p = sub.add_parser("structure")
     p.add_argument("source")
     p.set_defaults(func=cmd_structure)
+
+    p = sub.add_parser("new", help="ask Nala to build a notebook from a brief")
+    p.add_argument("brief")
+    p.add_argument("--kind")
+    p.add_argument("--level", choices=["newcomer", "engineer", "student", "researcher"])
+    p.add_argument("--no-analogies", action="store_true")
+    p.add_argument("--math", choices=["none", "minimal", "full"])
+    p.add_argument("--lang", choices=["en", "ja"])
+    p.add_argument("-o", "--output")
+    p.set_defaults(func=cmd_new)
+
+    p = sub.add_parser("pull", help="save a Leona notebook next to you")
+    p.add_argument("notebook_id")
+    p.add_argument("--version", type=int)
+    p.add_argument("-o", "--output")
+    p.set_defaults(func=cmd_pull)
+
+    p = sub.add_parser("push", help="import a notebook, or push a new version with --to")
+    p.add_argument("file")
+    p.add_argument("--to", help="an existing notebook id — push a new version instead of importing")
+    p.add_argument("--message")
+    p.add_argument("--no-run", action="store_true")
+    p.add_argument("--title", help="only used without --to (the imported notebook's title)")
+    p.set_defaults(func=cmd_push)
+
+    p = sub.add_parser("status", help="latest version's status and cell counts")
+    p.add_argument("notebook_id")
+    p.set_defaults(func=cmd_status)
     return parser
 
 

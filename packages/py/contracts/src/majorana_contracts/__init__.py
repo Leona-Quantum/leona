@@ -327,6 +327,12 @@ from .lifecycle import (
 # `NotebookTemplates.course_starters` defaults to empty, so a client built
 # against 2.18.0 keeps working unchanged, and a course run reuses `mode=notebook`
 # rather than adding a run mode.
+#
+# 2.19.0: Seed gains kind="circuit" (a reader's own pasted Qiskit/OpenQASM 3 text,
+# carried in the new `content` field) and kind="notebook" (reserved for the
+# learner lane's notebook-as-seed flow — the enum value only; no fetch path
+# ships here). Additive: `content` defaults to "" and every existing Seed kind
+# keeps its meaning, so a v1 payload with no `content` still validates.
 CONTRACTS_VERSION = "2.19.0"
 
 __all__ = [

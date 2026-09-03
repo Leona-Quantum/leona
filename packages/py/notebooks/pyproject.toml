@@ -9,6 +9,18 @@ dependencies = [
     "pyyaml>=6,<7",
     "majorana-contracts",
     "majorana-sandbox",
+    # `leona_notebooks.circuits` parses a reader's pasted OpenQASM 3 circuit
+    # seed with `qiskit.qasm3.loads` OUTSIDE the sandbox (parsing, not
+    # execution — see AGENTS.md). Both packages were, until now, only
+    # transitively available here (via majorana-openqasm/majorana-qpu in the
+    # worker, or the root workspace's dev group in this checkout) — v1 was
+    # bitten by exactly this gap: the curriculum repo it built had qiskit
+    # transitively in THIS venv but not in its own standalone lockfile.
+    # `qiskit.qasm3.loads` itself needs the separate `qiskit-qasm3-import`
+    # package (antlr4-based parser); it is not bundled with qiskit core.
+    # Pinned to match packages/py/openqasm/pyproject.toml exactly.
+    "qiskit>=2.5.2,<3",
+    "qiskit-qasm3-import>=0.6,<0.7",
 ]
 
 [project.optional-dependencies]

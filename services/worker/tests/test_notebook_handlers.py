@@ -28,6 +28,10 @@ from majorana_llm import LLMResponse
 from majorana_sandbox import SandboxResult
 from majorana_sandbox.local import LocalSubprocessSandbox
 
+from majorana_contracts import Scope
+from majorana_contracts.enums import Role
+from majorana_contracts.notebooks import CreateNotebookRequest
+
 from leona_notebooks.source import parse_source
 from leona_notebooks.spec import NotebookSpec
 
@@ -94,6 +98,34 @@ GUARD_VIOLATING_DRAFT = """\
 import os
 os.system("echo hi")
 """
+
+CIRCUIT_SEED_PYTHON = """\
+from qiskit import QuantumCircuit
+
+qc = QuantumCircuit(2, 2)
+qc.h(0)
+qc.cx(0, 1)
+qc.measure([0, 1], [0, 1])
+"""
+
+CIRCUIT_SEED_REJECTED_PYTHON = """\
+import os
+
+os.system("echo hi")
+"""
+
+ATLAS_RECORD = {
+    "slug": "qft",
+    "title": "QFT",
+    "category": "algorithm",
+    "algorithmFamily": "fourier",
+    "codeVariants": [
+        {
+            "framework": "qiskit",
+            "code": "from qiskit import QuantumCircuit\nFINAL_CIRCUIT = QuantumCircuit(2)\n",
+        }
+    ],
+}
 
 OUTLINE_JSON = json.dumps(
     {
@@ -564,3 +596,76 @@ async def test_generate_through_the_real_local_subprocess_sandbox(_fake_run_plum
     # the spec round-trips through NotebookSpec cleanly.
     NotebookSpec.model_validate(version.spec)
     assert version.report["ok"] is True
+
+
+# --------------------------------------------------------------------------- circuit seeds
+
+
+async def test_circuit_seed_rejected_by_the_guard_fails_fast_with_its_own_reason_code(
+    _fake_run_plumbing,
+):
+    """A `kind=circuit` seed the sandbox guard refuses must fail the run BEFORE
+    any LLM call — `QueueLLM([])` raises `IndexError` if `.complete()` is ever
+    reached, so this also proves the outline stage never ran."""
+    run_id, notebook_id, version_id = uuid.uuid4(), uuid.uuid4(), uuid.uuid4()
+    store = MemoryNotebookStore()
+    store.seed_version(notebook_id, version_id)
+    session = Session()
+
+    await nh.handle_notebook_generate(
+        session,
+        _payload(
+            run_id=run_id,
+            notebook_id=notebook_id,
+            version_id=version_id,
+            request={
+                "brief": "build a lesson around this circuit",
+                "seeds": [
+                    {
+                        "kind": "circuit",
+                        "ref": "",
+                        "note": "",
+                        "content": CIRCUIT_SEED_REJECTED_PYTHON,
+                    }
+                ],
+            },
+        ),
+        llm=QueueLLM([]),
+        sandbox=FakeSandbox(),
+        store=store,
+    )
+
+    version = store.versions[version_id]
+    assert version.status == "failed"
+    assert version.error.startswith("the circuit you pasted was rejected:")
+    assert "os" in version.error
+    # Not the generic catch-all wording — proves the dedicated except branch fired.
+    assert "notebook generation failed" not in version.error
+
+
+async def test_circuit_seed_material_and_run_cell_precedence_over_atlas_record(
+    _fake_run_plumbing, monkeypatch
+):
+    """When a request carries both an `atlas-record` and a `circuit` seed, the
+    circuit — the reader's own pasted code — wins the first `run` cell."""
+
+    async def fake_entry(scope, session, slug, *, authority):
+        return SimpleNamespace(record=ATLAS_RECORD, slug=slug)
+
+    monkeypatch.setattr(nh.catalog_repo, "get_public_catalog_entry", fake_entry)
+
+    request = CreateNotebookRequest.model_validate(
+        {
+            "brief": "build a lesson around this circuit",
+            "seeds": [
+                {"kind": "atlas-record", "ref": "qft", "note": ""},
+                {"kind": "circuit", "ref": "", "note": "", "content": CIRCUIT_SEED_PYTHON},
+            ],
+        }
+    )
+    scope = Scope(user_id=uuid.uuid4(), workspace_id=uuid.uuid4(), role=Role.MEMBER)
+    material, run_cell = await nh._seed_material_for(scope, Session(), request)
+
+    assert run_cell == CIRCUIT_SEED_PYTHON
+    assert "READER-SUPPLIED CIRCUIT" in material
+    assert "ATLAS RECORD" in material

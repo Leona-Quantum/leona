@@ -57,6 +57,7 @@ from majorana_sandbox import run as run_sandbox
 from majorana_sandbox.spec import DEFAULT_MEMORY_MB
 
 from leona_notebooks.atlas import seed_from_record
+from leona_notebooks.circuits import validate_circuit_seed
 from leona_notebooks.execution import CellResult, ExecutionReport
 from leona_notebooks.ipynb import to_ipynb
 from leona_notebooks.pipeline import (
@@ -76,6 +77,7 @@ from leona_notebooks.prompts import (
     NotebookOutline,
     RepairContext,
     execution_summary_text,
+    render_circuit_seed_material,
     render_draft_user_prompt,
     render_outline_user_prompt,
     render_repair_user_prompt,
@@ -126,6 +128,18 @@ _STAGE_MAP: dict[str, Stage] = {
     "notebook.revise": Stage.GENERATE,
     "notebook.save": Stage.SAVE,
 }
+
+
+class CircuitSeedRejected(ValueError):
+    """A `kind="circuit"` seed failed `leona_notebooks.circuits.validate_circuit_seed`
+    (OpenQASM 3 that would not parse, or Python the sandbox guard refused).
+    `findings` is shown to the reader so they know what to fix; caught specifically
+    in `handle_notebook_generate` and reported as `circuit_seed_rejected` rather than
+    falling into the generic `notebook_generation_failed` catch-all."""
+
+    def __init__(self, findings: list[str]) -> None:
+        self.findings = findings
+        super().__init__("the circuit you pasted was rejected: " + "; ".join(findings))
 
 
 def _scope_from_payload(payload: dict[str, Any]) -> Scope:
@@ -542,22 +556,41 @@ async def _record_sandbox_usage(
 async def _seed_material_for(
     scope: Scope, session: AsyncSession, request: CreateNotebookRequest | CreateCourseRequest
 ) -> tuple[str, str | None]:
-    """Seed material text and the verbatim run cell, from every `atlas-record`
-    seed on the request.
+    """Seed material text and the verbatim run cell, from every `atlas-record` and
+    `circuit` seed on the request. The other seed kinds (`paper`, `artifact`,
+    `upload`, `curriculum`, `notebook`) are passed through to the outline/draft
+    prompts as bare `Seed` objects with no fetched material — building their own
+    fetch paths is out of this lane's scope (see the handoff).
 
     Takes a course request as well as a notebook one — the two carry `seeds` and
     `framework` with identical meaning, and the course lane resolves the reader's
     Atlas seeds once, for the planner, rather than re-resolving them per module.
     The union is spelled out rather than left to duck typing so that adding a
-    field this function needs breaks at the annotation, not in the worker. Only `atlas-record` seeds are resolved here; the
-    other seed kinds (`paper`, `artifact`, `upload`, `curriculum`) are passed
-    through to the outline/draft prompts as bare `Seed` objects with no
-    fetched material — building their own fetch paths is out of this lane's
-    scope (see the handoff)."""
+    field this function needs breaks at the annotation, not in the worker.
+
+    Precedence when both an `atlas-record` and a `circuit` seed are present: the
+    circuit wins the first `run` cell — it is the reader's own text, asked for by
+    name, where the Atlas record is one more piece of the request's own context.
+
+    Raises `CircuitSeedRejected` if a `circuit` seed's content fails validation
+    (OpenQASM 3 that will not parse, or Python the sandbox guard refuses); this
+    fails the whole run before an LLM call is ever made, rather than shipping a
+    notebook built around code the reader will not be able to run."""
     parts: list[str] = []
-    run_cell: str | None = None
+    atlas_run_cell: str | None = None
+    circuit_run_cell: str | None = None
     framework_name = request.framework.name if request.framework else "qiskit"
     for seed in request.seeds:
+        if seed.kind == "circuit":
+            if not seed.content.strip():
+                continue
+            material = validate_circuit_seed(seed.content)
+            if isinstance(material, list):
+                raise CircuitSeedRejected(material)
+            parts.append(render_circuit_seed_material(material))
+            if circuit_run_cell is None:
+                circuit_run_cell = material.run_cell_source
+            continue
         if seed.kind != "atlas-record" or not seed.ref:
             continue
         entry = await catalog_repo.get_public_catalog_entry(
@@ -571,9 +604,9 @@ async def _seed_material_for(
             log.warning("notebook seed %r could not be resolved: %s", seed.ref, exc)
             continue
         parts.append(material)
-        if run_cell is None:
-            run_cell = cell
-    return "\n\n---\n\n".join(parts), run_cell
+        if atlas_run_cell is None:
+            atlas_run_cell = cell
+    return "\n\n---\n\n".join(parts), circuit_run_cell or atlas_run_cell
 
 
 async def _save_outcome(
@@ -762,6 +795,20 @@ async def handle_notebook_generate(
             run_store=run_store,
             success_reason_code="notebook_generated",
             failure_reason_code="notebook_generation_failed",
+        )
+    except CircuitSeedRejected as exc:
+        log.warning("notebook.generate run %s: circuit seed rejected: %s", run_id, exc.findings)
+        await _fail_run(
+            notebook_store=notebook_store,
+            scope=scope,
+            session=session,
+            notebook_id=notebook_id,
+            version_id=version_id,
+            run_id=run_id,
+            run_store=run_store,
+            sink=sink,
+            error=str(exc),
+            reason_code="circuit_seed_rejected",
         )
     except Exception as exc:
         log.exception("notebook.generate run %s failed", run_id)

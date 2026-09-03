@@ -106,11 +106,21 @@ class Reference(_Model):
 
 
 class Seed(_Model):
-    """Where content came from — provenance a reader can follow."""
+    """Where content came from — provenance a reader can follow.
 
-    kind: Literal["atlas-record", "paper", "artifact", "upload", "brief", "curriculum"]
+    `content` is only meaningful for `kind="circuit"`: the reader's own pasted
+    Qiskit Python or OpenQASM 3 text, validated and described by
+    `leona_notebooks.circuits` before it reaches a prompt. `kind="notebook"`
+    (`ref=<notebook id>`) is reserved for the learner lane's notebook-as-seed
+    flow; only the enum value is added here, fetching is out of this lane's
+    scope."""
+
+    kind: Literal[
+        "atlas-record", "paper", "artifact", "upload", "brief", "curriculum", "circuit", "notebook"
+    ]
     ref: str = ""
     note: str = ""
+    content: str = Field(default="", max_length=20_000)
 
 
 class Cell(_Model):

@@ -346,6 +346,21 @@ def render_review_user_prompt(
     )
 
 
+# --------------------------------------------------------------------------- circuit seed material
+
+
+def render_circuit_seed_material(material: Any) -> str:
+    """Seed-material text for a `kind="circuit"` seed (`leona_notebooks.circuits`'s
+    `CircuitSeedMaterial`), in the same "quote it, cite it" register as
+    `leona_notebooks.atlas.seed_from_record`'s ATLAS RECORD block. `material` is typed
+    `Any` to avoid an import cycle (`circuits.py` does not depend on `prompts.py`)."""
+    return (
+        "READER-SUPPLIED CIRCUIT: the reader pasted this circuit themselves. The lesson "
+        "must use it as its central demonstration — run it first, unchanged, then explain "
+        f"and modify it.\n{material.description_text}"
+    )
+
+
 def execution_summary_text(report_cells: list[dict[str, Any]]) -> str:
     """A compact, model-readable digest of an ExecutionReport (`report.model_dump()['cells']`)."""
     lines = []
