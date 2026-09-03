@@ -26,12 +26,7 @@ from typing import Any, Protocol
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from majorana_contracts import Scope
-from majorana_contracts.courses import (
-    CoursePlan,
-    CourseStatus,
-    CreateCourseRequest,
-    PlannedModule,
-)
+from majorana_contracts.courses import CoursePlan, CourseStatus, CreateCourseRequest
 from majorana_contracts.enums import Role, RunStatus, Stage
 from majorana_llm import (
     LLMClient,
@@ -44,9 +39,10 @@ from majorana_llm import (
 )
 
 from leona_notebooks.courses import check_plan, plan_prompt, revise_plan_prompt
-from leona_notebooks.spec import Audience, Framework, NotebookKind, Style
+from leona_notebooks.spec import Audience, Framework, Style
 
 from majorana_api.db import AsyncSession
+from majorana_api.repos.courses import plan_from_modules
 
 from .notebook_handlers import _seed_material_for, _strip_fences
 
@@ -283,29 +279,6 @@ async def _ask_twice(
     raise PlanRefused(last_failures)
 
 
-def _plan_from_modules(course: Any, modules: list[Any]) -> CoursePlan:
-    """The plan as the reader currently sees it, from the stored module rows."""
-    return CoursePlan.model_construct(
-        title=getattr(course, "title", "") or "Course",
-        summary=getattr(course, "summary", "") or "",
-        modules=[
-            PlannedModule(
-                slug=module.slug,
-                title=module.title,
-                topic=getattr(module, "topic", "") or "",
-                key_concepts=list(getattr(module, "key_concepts", None) or []),
-                objectives=list(getattr(module, "objectives", None) or []),
-                deliverable=getattr(module, "deliverable", "") or "",
-                kind=NotebookKind(module.kind),
-                duration_minutes=getattr(module, "duration_minutes", None),
-                prerequisites=list(getattr(module, "prerequisites", None) or []),
-                brief=getattr(module, "brief", "") or "",
-            )
-            for module in modules
-        ],
-    )
-
-
 def _course_preferences(course: Any) -> tuple[Audience, Style, Framework]:
     return (
         Audience.model_validate(getattr(course, "audience", None) or {}),
@@ -494,7 +467,9 @@ async def handle_course_revise(
         # already renamed. `model_construct` because a hand reorder can leave a
         # prerequisite pointing forward, and refusing to let the reader FIX that in
         # chat would be exactly the wrong answer.
-        current = _plan_from_modules(course, modules)
+        # One implementation, shared with `GET /courses/{id}/export.zip` — see its
+        # docstring for why the rows and not the `courses.plan` column.
+        current = plan_from_modules(course, modules)
         _audience, _style, framework = _course_preferences(course)
         message = str((payload.get("request") or {}).get("message", ""))
 

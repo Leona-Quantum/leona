@@ -275,6 +275,43 @@ async def replace_modules(
     return ordered
 
 
+def plan_from_modules(course: Any, modules: list[Any]) -> CoursePlan:
+    """The plan as the reader currently sees it, rebuilt from the stored rows.
+
+    NOT `CoursePlan.model_validate(course.plan)`. That column is what the planner
+    last returned; a hand edit through `PATCH /courses/{id}` moves the rows and
+    leaves it untouched. Two callers need this and must not disagree: the export
+    route renders the zip from it, and the worker's revise handler sends it to the
+    model as "the current plan" — if those two diverged, a reader would download a
+    course that did not match the one they had just been editing in chat.
+
+    `model_construct`, so no validator runs: a hand reorder can legitimately leave
+    a prerequisite pointing forward, and refusing to export or revise a course the
+    reader can see on screen would be the wrong answer to that. `getattr` on the
+    optional fields because the worker drives this through a store double whose
+    rows are not ORM instances.
+    """
+    return CoursePlan.model_construct(
+        title=getattr(course, "title", "") or "Course",
+        summary=getattr(course, "summary", "") or "",
+        modules=[
+            PlannedModule(
+                slug=module.slug,
+                title=module.title,
+                topic=getattr(module, "topic", "") or "",
+                key_concepts=list(getattr(module, "key_concepts", None) or []),
+                objectives=list(getattr(module, "objectives", None) or []),
+                deliverable=getattr(module, "deliverable", "") or "",
+                kind=contracts.NotebookKind(module.kind),
+                duration_minutes=getattr(module, "duration_minutes", None),
+                prerequisites=list(getattr(module, "prerequisites", None) or []),
+                brief=getattr(module, "brief", "") or "",
+            )
+            for module in modules
+        ],
+    )
+
+
 async def attach_module_notebook(
     scope: Scope,
     session: AsyncSession,

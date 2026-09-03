@@ -305,3 +305,23 @@ def test_course_starters_are_well_formed_and_cover_the_four_asks():
         assert set(starter) == {"id", "kind", "title", "brief"}
         assert NotebookKind(starter["kind"])
         assert len(starter["brief"]) > 80, starter["id"]
+
+
+def test_check_plan_catches_a_kind_that_is_not_a_notebook_kind():
+    """The one branch a validated plan can never reach: pydantic coerces `kind`,
+    so only `model_construct` on the MODULE itself produces it. Driven here so
+    the branch is exercised rather than merely present."""
+    broken = PlannedModule.model_construct(
+        slug="week-01",
+        title="Week 1",
+        topic="",
+        key_concepts=[],
+        objectives=["Do it"],
+        deliverable="",
+        kind="not-a-kind",
+        duration_minutes=None,
+        prerequisites=[],
+        brief="Teach it.",
+    )
+    plan = CoursePlan.model_construct(title="T", summary="", modules=[broken])
+    assert any("unknown kind" in failure for failure in check_plan(plan))

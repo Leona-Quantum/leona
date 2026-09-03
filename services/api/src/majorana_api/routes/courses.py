@@ -20,7 +20,6 @@ from typing import Annotated
 import majorana_contracts as contracts
 from fastapi import APIRouter, Depends, Header, HTTPException, Response
 from leona_notebooks.courses import export_course_zip
-from majorana_contracts.courses import CoursePlan, PlannedModule
 from majorana_contracts.enums import RunMode
 from starlette.concurrency import run_in_threadpool
 
@@ -87,36 +86,6 @@ async def _resource(
     modules: list[CourseModuleRow] | None = None,
 ) -> contracts.Course:
     return await courses_repo.course_to_resource(scope, session, course, modules)
-
-
-def _plan_from_modules(course: CourseRow, modules: list[CourseModuleRow]) -> CoursePlan:
-    """The plan as it stands NOW, rebuilt from the stored module rows.
-
-    Not `CoursePlan.model_validate(course.plan)`: that column is what the planner
-    last returned, and a reader may have renamed the course or reordered modules
-    since. `model_construct` because a hand reorder can legitimately leave a
-    prerequisite pointing forward, and refusing to export a course the reader can
-    see on screen would be the wrong answer to that.
-    """
-    return CoursePlan.model_construct(
-        title=course.title,
-        summary=course.summary,
-        modules=[
-            PlannedModule(
-                slug=module.slug,
-                title=module.title,
-                topic=module.topic,
-                key_concepts=list(module.key_concepts or []),
-                objectives=list(module.objectives or []),
-                deliverable=module.deliverable,
-                kind=contracts.NotebookKind(module.kind),
-                duration_minutes=module.duration_minutes,
-                prerequisites=list(module.prerequisites or []),
-                brief=module.brief,
-            )
-            for module in modules
-        ],
-    )
 
 
 def _module_brief(course: CourseRow, modules: list[CourseModuleRow], index: int) -> str:
@@ -463,7 +432,7 @@ async def export_course(course_id: uuid.UUID, scope: CurrentScope, session: DbSe
             )
         specs[module.slug] = contracts.NotebookSpec.model_validate(version.spec)
 
-    plan = _plan_from_modules(course, modules)
+    plan = courses_repo.plan_from_modules(course, modules)
     # `export_course_zip` compiles every notebook and builds an archive — CPU work
     # with no await in it, so it runs off the event loop rather than stalling every
     # other request on this worker for the duration.
