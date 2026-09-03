@@ -127,5 +127,47 @@ id = "generic-api-key"
     #    low-entropy, `.vN`-suffixed identifier under this repo's own fixed
     #    `majorana.` namespace — never a value any provider issues.
     '''(?i)["']majorana\.[a-z0-9-]+\.v[0-9]+["']''',
+
+    # 7. The mutation fixture in `curricula/qiskit-study-group/check_build.py`,
+    #    which is a test OF the credential check. One scenario, "a credential in
+    #    a cell", writes `token = "abcdef0123456789abcdef"` into a throwaway copy
+    #    of the curriculum tree and asserts the build checker rejects it. The
+    #    fixture has to look like a credential or the test proves nothing — the
+    #    same situation as entry 5, and the same reason it is safe to allowlist.
+    #
+    #    Anchored on the literal `abcdef0123456789`: the sixteen hex digits in
+    #    strict ascending order. That sequence is what a human types when they
+    #    want something credential-shaped and are not thinking; a real key cannot
+    #    contain it and still be a real key. Paste an actual token into this same
+    #    constant and the gate still fails, which is the property every entry in
+    #    this file has to keep.
+    #
+    #    WHY THIS ENTRY IS ON `dev` BEFORE THE FILE IT NAMES IS. If you grep for
+    #    that path here you will not find it — it lives on `feature/notebooks`
+    #    (PR 819), unmerged. This entry is still needed on `dev`, because of how
+    #    the gate runs under the merge queue:
+    #
+    #      * On a `pull_request` event the scan is a RANGE — `determine-range`
+    #        sets RANGE_BASE/RANGE_HEAD and only that PR's own commits are read.
+    #      * On a `merge_group` event both are empty, so the `--log-opts` branch
+    #        is skipped and bare `gitleaks detect` runs. Its default is the whole
+    #        git log, and `actions/checkout` here uses `fetch-depth: 0`, so the
+    #        scan reads EVERY REF IN THE REPOSITORY — not the trial ref's own
+    #        ancestry.
+    #
+    #    So one secret-shaped fixture on any open branch fails `security` for
+    #    every OTHER pull request the moment it enters the queue, while each of
+    #    them stays green on its own branch. That happened on 2026-09-03: 805,
+    #    818 and 820 were all green, all queued, and all failed their trial runs
+    #    on commit a53a41b8, which is not an ancestor of `dev` and belongs to a
+    #    PR none of them touches. The queue was deadlocked — the allowlist that
+    #    fixes it existed only on the branch carrying the fixture.
+    #
+    #    The narrow fix is this entry. The structural one is to give the
+    #    `merge_group` case a real range (the trial ref against its base) instead
+    #    of letting it fall through to an all-refs scan, so an unmerged branch
+    #    can never gate an unrelated PR again. That is a change to
+    #    `.github/workflows/security.yml`, which is an owner-reviewed path.
+    '''abcdef0123456789''',
   ]
 
