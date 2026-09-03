@@ -243,6 +243,51 @@ three then-new frameworks and 2026-08-26 re-ran the same three: Braket
 `[0.5, 0.0, 0.0, 0.5]`, and `numba.njit` returning 42. `qulacs` in particular
 imports fine and would still fail on a bad wheel/ABI pairing at first use.
 
+### 4b. Verify the figure lane in the same sandbox (ai-ops#239)
+
+Same discipline as step 4, for the same reason: an import proves a wheel
+unpacked, and the two figure packages fail in opposite directions, neither of
+which an import sees.
+
+- **matplotlib fails soft.** With no writable `MPLCONFIGDIR` it does not raise —
+  it falls back to a temp cache dir and logs onto the stderr of the generated
+  code, so the defect reaches a reader as noise attached to their lesson.
+- **Qiskit fails hard.** Without `pylatexenc`, `draw("mpl")` raises
+  `MissingOptionalLibraryError`. The lesson cell that draws a circuit produces a
+  traceback, not a worse diagram.
+
+This is the remote-sandbox twin of the workflow's "figures actually render"
+step. Run it against the **dated tag**, before promoting:
+
+```bash
+npx -y vercel@58.7.1 sandbox run --image "majorana-runner:$TAG" \
+  --network-policy deny-all --rm \
+  --project prj_AtHnlVhlFc1mFNyAb3RvlET2NtBh --scope majoranaq \
+  -- python -c "
+import os, matplotlib
+assert matplotlib.get_backend().lower() == 'agg', matplotlib.get_backend()
+assert matplotlib.get_cachedir() == '/opt/mplconfig', matplotlib.get_cachedir()
+assert any(f.startswith('fontlist-') for f in os.listdir('/opt/mplconfig')), 'font cache did not survive the layer'
+from qiskit.utils import optionals
+assert optionals.HAS_MATPLOTLIB and optionals.HAS_PYLATEX, 'qiskit cannot see one of them'
+from qiskit import QuantumCircuit
+from qiskit.visualization import plot_histogram
+plot_histogram({'00': 52, '11': 48}).savefig('/tmp/h.png')
+qc = QuantumCircuit(2); qc.h(0); qc.cx(0, 1); qc.rz(0.25, 1)
+qc.draw('mpl').savefig('/tmp/c.png')
+for path in ('/tmp/h.png', '/tmp/c.png'):
+    blob = open(path, 'rb').read()
+    assert blob[:8] == b'\x89PNG\r\n\x1a\n' and len(blob) > 4096, (path, len(blob))
+    print('FIGURE_OK', path, len(blob))
+"
+```
+
+Two `FIGURE_OK` lines is the pass. The `/opt/mplconfig` assertions are not
+housekeeping: that directory is created and warmed at build time precisely so
+the first import inside a sandbox is fast and silent, and a rebuild that drops
+either the `ENV` or the warm would still render figures — just noisily, and
+seconds slower, on every lesson.
+
 ### 5. Promote to `latest`
 
 Copy the manifest rather than rebuilding, so `latest` and the dated tag are

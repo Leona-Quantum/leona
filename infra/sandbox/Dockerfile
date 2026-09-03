@@ -20,6 +20,25 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PIP_DISABLE_PIP_VERSION_CHECK=1
 
+# Both of these exist so that `import matplotlib.pyplot` inside a sandbox is
+# silent, and neither is cosmetic.
+#
+# MPLBACKEND: there is no display here and no display is ever coming, so the
+# backend is decided at build time rather than left to matplotlib's autodetect.
+# Agg is the headless raster backend and the one that writes a PNG.
+#
+# MPLCONFIGDIR: matplotlib wants a writable cache directory at import and
+# defaults to $HOME/.config/matplotlib. When it cannot write there it does not
+# fail — it falls back to a temp dir and emits a UserWarning on **stderr**.
+# In this image that stderr belongs to generated code whose output a reader
+# sees, so a permissions detail would surface inside the product as a warning
+# attached to their lesson. The directory is created with mode 777 in the RUN
+# below because the USER question above is unsettled: the probe says this runs
+# as root today, and a mode that only works for root would break quietly on the
+# day that changes.
+ENV MPLBACKEND=Agg \
+    MPLCONFIGDIR=/opt/mplconfig
+
 # Two HIGH findings that `container_scan` (trivy, HIGH+CRITICAL) reports against
 # this image:
 #
@@ -104,6 +123,33 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 # (`bqskit.ext.qiskit`, `qasm2.loads`), so a qiskit bump here is a compiler
 # change, not just a simulator change — the `build` job below compiles a real
 # circuit through all six for that reason, rather than importing them.
+# ## The figure lane (ai-ops#239, owner ruling: "Yes, add them")
+#
+# Notebook lessons draw histograms and circuit diagrams. Neither package was
+# here, so every figure a lesson asked for was missing inside the product —
+# and missing in the one way that is hardest to notice from outside, because
+# the notebook still ran and still produced a result.
+#
+# `matplotlib` is the renderer. `pylatexenc` is what Qiskit imports to typeset
+# gate labels in `QuantumCircuit.draw("mpl")`; without it Qiskit does not fail,
+# it silently degrades the labels, which is again a defect that looks like
+# working software.
+#
+# **`pylatexenc==2.11` is load-bearing and is not simply "the latest".** This
+# install runs `--only-binary=:all:`, and 2.11 is the FIRST release in the
+# entire 2.x line to publish a wheel — 2.10, 2.9 and every earlier stable are
+# sdist-only on PyPI, checked against the index rather than assumed. Pinning
+# the version most people would reach for therefore fails the build outright
+# with "no binary distribution available". The 3.0aNN alphas do ship wheels;
+# they are alphas of a rewritten API and are not what Qiskit expects.
+#
+# matplotlib pulls in pillow, fonttools, contourpy, kiwisolver, cycler,
+# pyparsing and python-dateutil. That is a real widening of the dependency
+# surface reachable by generated code, and pillow in particular is an image
+# codec. The same argument the compiler lane makes above applies and is worth
+# stating rather than implying: the widening is HERE, in the rootfs with
+# deny-all egress and an empty environment, and not in the credentialed API
+# image. That is a containment claim, not a claim that the surface is small.
 RUN python -m pip install --no-cache-dir --only-binary=:all: \
     "setuptools==81.0.0" \
     "qiskit==2.5.0" \
@@ -119,11 +165,17 @@ RUN python -m pip install --no-cache-dir --only-binary=:all: \
     "pytket==2.18.1" \
     "pyzx==0.10.5" \
     "bqskit==1.2.1" \
+    "matplotlib==3.11.1" \
+    "pylatexenc==2.11" \
  && python -m pip uninstall --yes pip \
  && rm -rf /usr/local/lib/python3.13/ensurepip \
            /usr/local/lib/python3.13/site-packages/pip \
            /usr/local/lib/python3.13/site-packages/pip-*.dist-info \
-           /usr/local/bin/pip /usr/local/bin/pip3 /usr/local/bin/pip3.13
+           /usr/local/bin/pip /usr/local/bin/pip3 /usr/local/bin/pip3.13 \
+ && mkdir -p "$MPLCONFIGDIR" \
+ && chmod 777 "$MPLCONFIGDIR" \
+ && python -c "import matplotlib.pyplot as plt; plt.subplots()" \
+ && chmod -R a+rwX "$MPLCONFIGDIR"
 
 # Chained into the RUN above rather than written as its own layer, on purpose: a
 # `rm` in a later layer hides the files from the merged filesystem but leaves
