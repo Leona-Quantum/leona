@@ -15,6 +15,7 @@ import test from "node:test";
 
 import { canonicalMetadata, OG_IMAGE } from "./public-metadata.ts";
 import {
+  aboutMetadataCopy,
   contactMetadataCopy,
   homeMetadataCopy,
   pricingMetadataCopy,
@@ -22,6 +23,7 @@ import {
   termsMetadataCopy,
   workspaceMetadataCopy,
 } from "./public-page-metadata.ts";
+import { ABOUT_COPY } from "./about-copy.ts";
 import { CONTACT_COPY, HOME_COPY, PRICING_COPY, PRIVACY_COPY, TERMS_COPY, WORKSPACE_LANDING_COPY } from "./public-copy.ts";
 import { PUBLIC_SHELL_COPY } from "./public-locale.ts";
 
@@ -72,6 +74,24 @@ test("home: english inherits the root layout's title, japanese states its own", 
   assertTitleDoesNotDoubleTheBrand(ja.title, "home (ja)");
   assertShareCardSurvives(en, "/");
   assertShareCardSurvives(ja, "/");
+});
+
+test("about: locale actually selects ABOUT_COPY.ja / the japanese nav label", () => {
+  const en = aboutMetadataCopy("en");
+  const ja = aboutMetadataCopy("ja");
+  assert.equal(en.title, "About");
+  assert.equal(
+    en.description,
+    "Meet the team building Leona Quantum and the mission behind its next-generation quantum operating system.",
+  );
+  assert.equal(ja.title, PUBLIC_SHELL_COPY.ja.nav.about);
+  assert.equal(ja.description, ABOUT_COPY.ja.hero.body);
+  assert.ok(JAPANESE_CHARACTER.test(ja.title ?? "") && JAPANESE_CHARACTER.test(ja.description ?? ""));
+  assert.notEqual(ja.title, en.title);
+  assert.notEqual(ja.description, en.description);
+  assertTitleDoesNotDoubleTheBrand(ja.title, "about (ja)");
+  assertShareCardSurvives(en, "/about");
+  assertShareCardSurvives(ja, "/about");
 });
 
 test("contact: locale actually selects CONTACT_COPY.ja, not just some Japanese text", () => {
