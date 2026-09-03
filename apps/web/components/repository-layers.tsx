@@ -1589,15 +1589,24 @@ function MethodView({
               {node.implementations.map((implementation) => (
                 <li key={implementation.id}>
                   {/* Through `MathText`, like every other corpus string on this
-                      page. It was a bare text child until 2026-09-02, and the
-                      defect that finds is invisible in a unit test and invisible
-                      in the HTML: `$\mathbb{Q}(\sqrt{\Delta})$` printed as
-                      those literal characters in the heading while the SAME
-                      LaTeX, in the `about` field two lines below it, typeset
-                      correctly. Thirteen of the corpus's 190 implementation
-                      labels carry `$…$`. Caught by reading a live card as
-                      prose. `MathText` renders a fragment with no wrapper, so
-                      the `<h3>` keeps its own element and class. */}
+                      page. It was a bare text child until 2026-09-02, and
+                      `$\mathbb{Q}(\sqrt{\Delta})$` printed as those literal
+                      characters in the heading while the SAME LaTeX, in the
+                      `about` field two lines below it, typeset correctly.
+                      Thirteen of the corpus's 190 implementation labels carry
+                      `$…$`.
+
+                      The reason it survived: nothing that LOOKS for a string can
+                      see it. The dollars and backslashes are right there in the
+                      served HTML — it is a text node, not a missing one — so a
+                      grep for the label finds it whether or not it typeset, and
+                      a unit test asserting on the label's text passes on both
+                      forms equally. What separates them is the RENDERED text,
+                      which is how this was actually caught: reading a live card
+                      as prose after its merge.
+
+                      `MathText` renders a fragment with no wrapper, so the
+                      `<h3>` keeps its own element and class. */}
                   <h3><MathText source={(isJa ? implementation.labelJa : implementation.label) ?? ""} /></h3>
                   {/* Zero papers is a real value — the owner's "implementations
                       that aren't papers but proven to be run" — so the list is
