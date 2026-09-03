@@ -112,6 +112,8 @@ from .courses import (
 )
 from .notebooks import (
     Audience,
+    AuthorNotebookVersionRequest,
+    AuthorNotebookVersionResponse,
     Cell,
     CellError,
     CellOutput,
@@ -333,6 +335,13 @@ from .lifecycle import (
 # learner lane's notebook-as-seed flow — the enum value only; no fetch path
 # ships here). Additive: `content` defaults to "" and every existing Seed kind
 # keeps its meaning, so a v1 payload with no `content` still validates.
+# 2.19.0: AuthorNotebookVersionRequest/Response — a notebook version the READER
+# wrote, from the in-browser editor (spec), a text editor (source) or Jupyter
+# (ipynb), executed by the same sandbox path Nala's builds use. Plus
+# NotebookReview.warnings and its NotebookVersion.warnings mirror: the structure
+# check becomes advisory output on a user's edit instead of a constraint that
+# refuses it. Additive — every field defaults, and a client that never posts to
+# /notebooks/{id}/versions sees no change.
 CONTRACTS_VERSION = "2.19.0"
 
 __all__ = [
@@ -425,6 +434,8 @@ __all__ = [
     "GenerateCourseRequest",
     "GenerateCourseResponse",
     "PlannedModule",
+    "AuthorNotebookVersionRequest",
+    "AuthorNotebookVersionResponse",
     "Cell",
     "CellError",
     "CellOutput",

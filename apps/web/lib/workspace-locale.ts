@@ -619,6 +619,34 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
     checkAttemptPlaceholder: string;
     checkAttemptSubmit: string;
 
+    edit: string;
+    editExit: string;
+    editHint: string;
+    editCellSourceLabel: (cellId: string) => string;
+    editKindLabel: string;
+    editKindOption: Record<"markdown" | "code", string>;
+    editRoleLabel: string;
+    editRoleNone: string;
+    editExecuteLabel: string;
+    editRaisesLabel: string;
+    editAddMarkdown: string;
+    editAddCode: string;
+    editDelete: string;
+    editMoveUp: string;
+    editMoveDown: string;
+    editEmpty: string;
+    saveAndRun: string;
+    saveWithoutRunning: string;
+    runToHere: string;
+    discard: string;
+    discardConfirm: string;
+    saving: string;
+    saveFailed: string;
+    unsavedWarning: string;
+    structureNotesLabel: string;
+    structureNotesHint: string;
+    cellNotRunBadge: string;
+
     teachMeInNotebook: string;
   };
 }> = {
@@ -1314,6 +1342,34 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
     checkAttemptPlaceholder: "Paste or write your attempt at this cell…",
     checkAttemptSubmit: "Ask Nala to check it",
 
+    edit: "Edit",
+    editExit: "Done editing",
+    editHint: "Change any cell, then run it. Every save becomes a new version.",
+    editCellSourceLabel: (cellId) => `Source of cell ${cellId}`,
+    editKindLabel: "Cell type",
+    editKindOption: { markdown: "Text", code: "Code" },
+    editRoleLabel: "Role",
+    editRoleNone: "No role",
+    editExecuteLabel: "Run this cell",
+    editRaisesLabel: "Expected to raise",
+    editAddMarkdown: "Add text below",
+    editAddCode: "Add code below",
+    editDelete: "Delete cell",
+    editMoveUp: "Move up",
+    editMoveDown: "Move down",
+    editEmpty: "This notebook has no cells yet. Add one below.",
+    saveAndRun: "Save & run",
+    saveWithoutRunning: "Save without running",
+    runToHere: "Run to here",
+    discard: "Discard changes",
+    discardConfirm: "Discard your changes to this notebook?",
+    saving: "Saving…",
+    saveFailed: "Your changes could not be saved.",
+    unsavedWarning: "You have unsaved changes to this notebook.",
+    structureNotesLabel: "Nala's structure notes",
+    structureNotesHint: "Suggestions only — your version was saved as you wrote it.",
+    cellNotRunBadge: "Not run",
+
     teachMeInNotebook: "Teach me this in a notebook",
   },
   },
@@ -2001,6 +2057,34 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
     actionCheckAttemptCancel: "キャンセル",
     checkAttemptPlaceholder: "このセルへの解答を貼り付けるか入力してください…",
     checkAttemptSubmit: "Nalaに確認してもらう",
+
+    edit: "編集",
+    editExit: "編集を終える",
+    editHint: "どのセルでも編集して実行できます。保存するたびに新しいバージョンになります。",
+    editCellSourceLabel: (cellId) => `セル ${cellId} の内容`,
+    editKindLabel: "セルの種類",
+    editKindOption: { markdown: "テキスト", code: "コード" },
+    editRoleLabel: "役割",
+    editRoleNone: "指定なし",
+    editExecuteLabel: "このセルを実行する",
+    editRaisesLabel: "例外が起きる想定",
+    editAddMarkdown: "下にテキストを追加",
+    editAddCode: "下にコードを追加",
+    editDelete: "セルを削除",
+    editMoveUp: "上へ移動",
+    editMoveDown: "下へ移動",
+    editEmpty: "このノートブックにはまだセルがありません。下から追加してください。",
+    saveAndRun: "保存して実行",
+    saveWithoutRunning: "実行せずに保存",
+    runToHere: "ここまで実行",
+    discard: "変更を破棄",
+    discardConfirm: "このノートブックの変更を破棄しますか？",
+    saving: "保存しています…",
+    saveFailed: "変更を保存できませんでした。",
+    unsavedWarning: "このノートブックに未保存の変更があります。",
+    structureNotesLabel: "Nalaからの構成メモ",
+    structureNotesHint: "提案のみです。バージョンは書かれたとおりに保存されています。",
+    cellNotRunBadge: "未実行",
 
     teachMeInNotebook: "ノートブックで学ぶ",
   },

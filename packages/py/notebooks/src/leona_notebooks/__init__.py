@@ -6,18 +6,27 @@ Public surface (stable):
 - `parse_source` / `render_source` — the `.nb.py` percent-format authoring form (`source`).
 - `to_ipynb` / `from_ipynb` — nbformat conversion, with outputs from a report (`ipynb`).
 - `compose_notebook_program` / `report_from_sandbox_result` — execution inside the
-  existing sandbox with per-cell capture (`sandbox_program`).
+  existing sandbox with per-cell capture (`sandbox_program`), optionally stopping at a
+  cell (`run_until`).
+- `spec_from_author_request` / `advisory_structure` — a version the reader wrote, from
+  the editor, `.nb.py` text or an `.ipynb` (`authoring`).
 - `ExecutionReport` — what a run produced, cell by cell (`execution`).
 - `RevisionPlan` / `apply_revision` — chat-driven edits as explicit operations (`revision`).
 - `CurriculumSpec` / `build_curriculum` — many notebooks as one course (`curriculum`).
 """
 
+from leona_notebooks.authoring import (
+    AuthoringInputError,
+    advisory_structure,
+    spec_from_author_request,
+)
 from leona_notebooks.execution import CellError, CellOutput, CellResult, ExecutionReport
 from leona_notebooks.ipynb import from_ipynb, to_ipynb
 from leona_notebooks.revision import RevisionOp, RevisionPlan, apply_revision
 from leona_notebooks.sandbox_program import (
     NotebookGuardError,
     NotebookProgram,
+    UnknownCellError,
     compose_notebook_program,
     report_from_sandbox_result,
 )
@@ -36,6 +45,7 @@ from leona_notebooks.spec import (
 
 __all__ = [
     "Audience",
+    "AuthoringInputError",
     "Cell",
     "CellError",
     "CellOutput",
@@ -53,11 +63,14 @@ __all__ = [
     "Seed",
     "SourceParseError",
     "Style",
+    "UnknownCellError",
+    "advisory_structure",
     "apply_revision",
     "compose_notebook_program",
     "from_ipynb",
     "parse_source",
     "render_source",
     "report_from_sandbox_result",
+    "spec_from_author_request",
     "to_ipynb",
 ]

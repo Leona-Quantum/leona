@@ -601,6 +601,100 @@
         "title": "Audience",
         "type": "object"
       },
+      "AuthorNotebookVersionRequest": {
+        "additionalProperties": false,
+        "description": "A version the reader wrote themselves.\n\nThree equivalent ways in, because the same notebook is edited from three places\nand all three must land as one kind of row: `spec` from the in-browser editor,\n`source` from a text editor (the `.nb.py` percent form), `ipynb` from Jupyter\n(`%nala push`). Exactly one of the three \u2014 two inputs is a 400, not a silent\nprecedence rule, because a client sending both has a bug the server cannot\nresolve in the reader's favour.\n\nA user-authored version is executed by the same sandbox path Nala's builds use,\nso the version history stays the single truth about what this notebook is.",
+        "properties": {
+          "execute": {
+            "default": true,
+            "title": "Execute",
+            "type": "boolean"
+          },
+          "ipynb": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Ipynb"
+          },
+          "message": {
+            "default": "",
+            "maxLength": 500,
+            "title": "Message",
+            "type": "string"
+          },
+          "run_until": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Run Until"
+          },
+          "source": {
+            "anyOf": [
+              {
+                "maxLength": 400000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Source"
+          },
+          "spec": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/NotebookSpec"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          }
+        },
+        "title": "AuthorNotebookVersionRequest",
+        "type": "object"
+      },
+      "AuthorNotebookVersionResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "run_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Run Id"
+          },
+          "version": {
+            "$ref": "#/components/schemas/NotebookVersionSummary"
+          }
+        },
+        "required": [
+          "version"
+        ],
+        "title": "AuthorNotebookVersionResponse",
+        "type": "object"
+      },
       "BaselineKind": {
         "enum": [
           "maxcut",
@@ -4287,6 +4381,13 @@
             "title": "Verdict",
             "type": "string"
           },
+          "warnings": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Warnings",
+            "type": "array"
+          },
           "what_this_notebook_does_not_establish": {
             "items": {
               "type": "string"
@@ -4702,6 +4803,13 @@
           },
           "status": {
             "$ref": "#/components/schemas/NotebookVersionStatus"
+          },
+          "warnings": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Warnings",
+            "type": "array"
           }
         },
         "required": [
@@ -7765,7 +7873,7 @@
       },
       "Seed": {
         "additionalProperties": false,
-        "description": "Where content came from \u2014 provenance a reader can follow.\n\n`content` is only meaningful for `kind=\"circuit\"`: the reader's own pasted\nQiskit Python or OpenQASM 3 text, validated and described by\n`leona_notebooks.circuits` before it reaches a prompt. `kind=\"notebook\"`\n(`ref=<notebook id>`) is reserved for the learner lane's notebook-as-seed\nflow; only the enum value is added here, fetching is out of this lane's\nscope.",
+        "description": "Where content came from \u2014 provenance a reader can follow.\n\n`content` is only meaningful for `kind=\"circuit\"`: the reader's own pasted\nQiskit Python or OpenQASM 3 text, validated and described by\n`leona_notebooks.circuits` before it reaches a prompt. `kind=\"notebook\"`\n(`ref=<notebook id>`) is another notebook in the same workspace, resolved to\nits current version by the worker's `_seed_material_for` \u2014 the\nquiz-from-notebook flow.",
         "properties": {
           "content": {
             "default": "",

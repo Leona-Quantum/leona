@@ -59,6 +59,7 @@ from majorana_sandbox.spec import DEFAULT_MEMORY_MB
 from leona_notebooks.atlas import seed_from_record
 from leona_notebooks.circuits import validate_circuit_seed
 from leona_notebooks.execution import CellResult, ExecutionReport
+from leona_notebooks.authoring import advisory_structure, spec_from_author_request
 from leona_notebooks.ipynb import to_ipynb
 from leona_notebooks.pipeline import (
     GenerationRequest,
@@ -462,9 +463,14 @@ class ProductionNotebookPorts(NotebookPorts):
 
     # -- execute ----------------------------------------------------------
 
-    async def run_notebook(self, spec: NotebookSpec) -> ExecutionReport:
+    async def run_notebook(
+        self, spec: NotebookSpec, *, run_until: str | None = None
+    ) -> ExecutionReport:
+        """`run_until` is the editor's "Run to here": cells after that id are left out
+        of the program and come back `not_run`. Optional with a default so this still
+        satisfies `NotebookPorts.run_notebook(spec)`, which every other caller uses."""
         try:
-            program = compose_notebook_program(spec)
+            program = compose_notebook_program(spec, run_until=run_until)
         except NotebookGuardError as exc:
             return ExecutionReport(
                 notebook_slug=spec.slug,
@@ -715,6 +721,112 @@ async def _save_outcome(
     )
 
 
+#: What the chat rail says after a reader's own edit ran. Not model output — there is
+#: no LLM call on this path at all — so the two locales are written here rather than
+#: left to a prompt. Keyed the way `normalize_response_locale` returns.
+_AUTHORED_TURN: dict[str, dict[str, str]] = {
+    "en": {
+        "ok": "Ran your edit: {ran} of {total} code cells ran cleanly.",
+        "partial": "Ran your edit: {ran} of {total} code cells ran, and {failed} raised.",
+        "stopped": "Ran your edit up to {run_until}: {ran} code cells ran, {not_run} left for later.",
+        "nothing": "I could not run your edit: {note}",
+    },
+    "ja": {
+        "ok": "編集を実行しました: コードセル {total} 個のうち {ran} 個が正常に実行されました。",
+        "partial": "編集を実行しました: コードセル {total} 個のうち {ran} 個が実行され、{failed} 個で例外が発生しました。",
+        "stopped": "{run_until} まで編集を実行しました: コードセル {ran} 個を実行し、{not_run} 個は未実行です。",
+        "nothing": "編集を実行できませんでした: {note}",
+    },
+}
+
+
+def _authored_turn(report: ExecutionReport, *, run_until: str | None, locale: str) -> str:
+    strings = _AUTHORED_TURN.get(locale, _AUTHORED_TURN["en"])
+    total = len(report.cells)
+    ran = report.executed_count()
+    failed = len(report.failing_cells())
+    not_run = sum(1 for cell in report.cells if cell.status == "not_run")
+    if ran == 0 and not report.ok:
+        return strings["nothing"].format(note=report.note or "the sandbox produced no evidence")
+    if run_until:
+        return strings["stopped"].format(ran=ran, not_run=not_run, run_until=run_until)
+    if failed:
+        return strings["partial"].format(ran=ran, total=total, failed=failed)
+    return strings["ok"].format(ran=ran, total=total)
+
+
+async def _handle_author(
+    *,
+    notebook_store: NotebookStore,
+    scope: Scope,
+    session: AsyncSession,
+    notebook_id: uuid.UUID,
+    version_id: uuid.UUID,
+    run_id: uuid.UUID,
+    payload: dict[str, Any],
+    ports: ProductionNotebookPorts,
+    sink: Any,
+    run_store: Any,
+    response_locale: str,
+) -> None:
+    """A version the READER wrote. No LLM call anywhere on this path — the reader
+    already said what the notebook should be, so there is nothing to ask a model.
+
+    **A cell that raised is a result, not a failed run.** Someone editing a notebook is
+    frequently running code they expect to break; marking the version `failed` would
+    hide the traceback they are trying to read behind an error banner and would leave
+    `current_version_id` pointing at their previous edit. So the version is `ready`,
+    the report carries the failing cell marked `error`, and the run finishes SUCCEEDED
+    with `reason_code: notebook_authored`. `_save_outcome` needed no flag for this: it
+    keys off `PipelineOutcome.status` alone and never inspects the report, so passing
+    `status="ready"` beside a report with a failing cell is already the shape it wants.
+
+    The one thing that IS a failure: nothing ran at all — the guard refused every cell,
+    or the sandbox came back with no evidence. Then there is no result to show and the
+    version is `failed` with the report's own note as the error.
+    """
+    raw_request = payload.get("request") or {}
+    spec_payload = raw_request.get("spec")
+    if not isinstance(spec_payload, dict):
+        raise ValueError("an author job must carry the resolved spec in request.spec")
+    # Through the same entry point the route used, so a producer that queues this job
+    # without going through the route (another lane's `%nala push`) gets the identical
+    # normalisation rather than a second, drifting one. `payload["slug"]` is the
+    # notebook's own: an edit may not move the notebook's address by rewriting the
+    # front matter of the source it came from.
+    authored = spec_from_author_request(spec=spec_payload, slug=payload.get("slug") or None)
+    run_until = payload.get("run_until") or None
+
+    report = await ports.run_notebook(authored, run_until=run_until)
+    await _record_sandbox_usage(session, scope, run_id, ports)
+
+    warnings = advisory_structure(authored)
+    review = NotebookReview(verdict="needs-attention", warnings=warnings) if warnings else None
+    ran_nothing = report.executed_count() == 0 and not report.ok
+    outcome = PipelineOutcome(
+        status="failed" if ran_nothing else "ready",
+        spec=authored,
+        report=report,
+        review=review,
+        summary=raw_request.get("message") or "",
+        error=(report.note or "the notebook did not run") if ran_nothing else "",
+    )
+    await _save_outcome(
+        notebook_store=notebook_store,
+        scope=scope,
+        session=session,
+        notebook_id=notebook_id,
+        version_id=version_id,
+        run_id=run_id,
+        outcome=outcome,
+        sink=sink,
+        run_store=run_store,
+        turn_content=_authored_turn(report, run_until=run_until, locale=response_locale),
+        success_reason_code="notebook_authored",
+        failure_reason_code="notebook_author_failed",
+    )
+
+
 async def _fail_run(
     *,
     notebook_store: NotebookStore,
@@ -921,6 +1033,26 @@ async def handle_notebook_revise(
         sandbox_memory_mb=await _resolve_sandbox_memory_mb(session, scope),
     )
     try:
+        # BEFORE the base-version lookup on purpose: an authored version carries its
+        # whole spec, so it needs no base — and requiring one would refuse the first
+        # thing a reader does to a notebook whose only generation failed, and the
+        # first `%nala push` into an empty notebook.
+        if kind == "author":
+            await _handle_author(
+                notebook_store=notebook_store,
+                scope=scope,
+                session=session,
+                notebook_id=notebook_id,
+                version_id=version_id,
+                run_id=run_id,
+                payload=payload,
+                ports=ports,
+                sink=sink,
+                run_store=run_store,
+                response_locale=response_locale,
+            )
+            return
+
         base_version_id = payload.get("base_version_id")
         base = (
             await notebook_store.get_version(scope, session, uuid.UUID(base_version_id))
