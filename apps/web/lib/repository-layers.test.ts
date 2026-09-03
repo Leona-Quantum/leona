@@ -2677,17 +2677,65 @@ test("the capabilities closed on `implementations` stay closed, as a SET", () =>
     "compile-to-device",
     "combinatorial-optimization",
   ];
-  // Batch 12, over two commits, and the honest number is THREE of four.
-  // `parameter-optimization`, `spatial-discretization` and `full-discretization`
-  // have every method filled. `hidden-period-finding` does NOT and is counted
-  // open here: `real-period-finding`'s entry exists, is translated, and is held
+  // Batch 12, over three commits, and the number is now FOUR of four.
+  // `hidden-period-finding` was the one left open, and this note used to say why
+  // in a way that sent the next reader at the wrong instrument, so the correction
+  // is worth more than the fix: it said `real-period-finding`'s entry was held
   // back because its `methods` prose quotes Haskell — where `$` is an operator —
-  // and the corpus reads `$` as a maths delimiter, so the field carries 45 of
-  // them and `check-math` refuses it as an unclosed formula. That is a real
-  // collision between two notations, not a defect in the reading, and it needs a
-  // rewrite of the prose rather than a flag.
-  const BATCH_12 = ["parameter-optimization", "spatial-discretization", "full-discretization"];
-  for (const slot of [...BATCH_10, ...BATCH_11, ...BATCH_12]) {
+  // and `check-math` therefore read the field as an unclosed formula. **That was
+  // not the blocker.** The payload already escapes every Haskell `$` as `\$`,
+  // and `mathSegments` in `apps/web/lib/math-text.ts` handles `\$` as a literal
+  // dollar by design, so `check-math` passes the entry unchanged — verified by
+  // running it, and the replica used to check the payload before insertion was
+  // mutation-tested against an unescaped `$`, a `[[` mark and a bad command to
+  // confirm it could go red at all.
+  //
+  // The real blocker was `check-paper-register`: the entry cites Quipper
+  // (arXiv:1304.3390) and ScaffCC (arXiv:1507.01902) as its artefact papers, and
+  // neither was in the register, so `implementations[].papers` was refused. Both
+  // rows are now added with title, author string and v1 year fetched from the
+  // arXiv API rather than retyped. The lesson is the general one: a reason
+  // written into a comment is a claim like any other, and this one cost a week
+  // of a finished, translated entry sitting unshipped behind a gate that was
+  // never the one failing.
+  const BATCH_12 = [
+    "parameter-optimization",
+    "spatial-discretization",
+    "full-discretization",
+    "hidden-period-finding",
+  ];
+  // Batch 13, and the honest number is ONE of the three regions it worked on.
+  //
+  // `excited-state-energy` is complete: all seven methods carry an entry.
+  //
+  // `marked-item-search` is NOT here, and the reason is worth reading before
+  // anyone writes another absence. Batch 13 researched
+  // `state-discrimination-search` properly and concluded, correctly, that
+  // Ambainis and Montanaro's wildcard search has no public implementation: both
+  // authors' accounts, MQT Bench, QASMBench, Qiskit, Cirq, PennyLane, Classiq
+  // and the Algorithm Zoo entry were each opened and named. The declared absence
+  // was written — and then WITHHELD, because the page cannot show it.
+  //
+  // `card-content.ts`'s `implementationsOf` checks the record JOIN before the
+  // absence, and every one of the 279 corpus records carries a code variant. So
+  // for any method whose `entries` names a record — 65 of the 116 — `joined` is
+  // non-empty, the section is `held`, and a declared `implementations` absence
+  // reaches nobody. That file records batch 11 hitting this on THIS EXACT
+  // METHOD and dropping its absence for the same reason.
+  //
+  // Two instruments disagree about it and both are behaving as written:
+  // `--closure` reports `marked-item-search` implementations as "1/2 ✓ (every
+  // gap accounted for)" while the card refuses to render the account. Flagged
+  // rather than resolved here — which of the two is right is a decision about
+  // what "closed" should mean, not a defect to patch. The research is preserved
+  // in the batch directory under `final-withheld/`.
+  //
+  // `ansatz-construction` is 12 of 13. `symmetry-preserving-ansatz` is the one
+  // gap, and it is a mechanical one rather than a research one: its draft exists
+  // and its refuting agent stalled out, so no entry was ever revised. Filling it
+  // closes that region.
+  const BATCH_13 = ["excited-state-energy"];
+  for (const slot of [...BATCH_10, ...BATCH_11, ...BATCH_12, ...BATCH_13]) {
     assert.ok(
       layerNode(LAYER_GRAPH, slot) !== null,
       `${slot} names no capability — renamed, and this ratchet stopped measuring it`,
@@ -2730,20 +2778,20 @@ test("the capabilities closed on `implementations` stay closed, as a SET", () =>
   // absorbed silently, which is what the equality asserts.
   assert.deepEqual(
     [...complete].sort(),
-    [...BATCH_10, ...BATCH_11, ...BATCH_12, ...ALREADY].sort(),
+    [...BATCH_10, ...BATCH_11, ...BATCH_12, ...BATCH_13, ...ALREADY].sort(),
     "the set of capabilities complete on implementations has changed — add the new one to " +
       "ALREADY rather than letting the count absorb it",
   );
 
   assert.ok(
-    complete.size >= 23,
-    `${complete.size} capabilities are complete on implementations, was 23 after batch 12`,
+    complete.size >= 25,
+    `${complete.size} capabilities are complete on implementations, was 25 after batch 13`,
   );
 
   const filled = methods.filter((m) => (m.implementations ?? []).length > 0).length;
   assert.ok(
-    filled >= 87,
-    `${filled} of ${methods.length} methods carry an implementation, was 87 after batch 12`,
+    filled >= 100,
+    `${filled} of ${methods.length} methods carry an implementation, was 100 after batch 13`,
   );
 });
 
