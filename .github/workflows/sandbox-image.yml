@@ -178,8 +178,11 @@ jobs:
           "
       # The figure lane (ai-ops#239). The two packages fail in opposite ways, and
       # an import check would catch neither, so each assertion below is chosen to
-      # go red on exactly one thing. Both behaviours were checked against qiskit
-      # 2.5.1 and matplotlib rather than assumed:
+      # go red on exactly one thing. Both behaviours were established by running
+      # them rather than reasoned about — locally against qiskit 2.5.1, which is
+      # what happened to be installed there. The image pins qiskit 2.5.0, so it
+      # is this step running inside the image, and not that local session, that
+      # makes the claim binding for the version actually shipped:
       #
       #   * matplotlib fails SOFT. With no writable MPLCONFIGDIR it does not
       #     raise — it falls back to a temp cache dir and logs onto the stderr of

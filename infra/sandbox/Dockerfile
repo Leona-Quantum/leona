@@ -125,15 +125,15 @@ ENV MPLBACKEND=Agg \
 # circuit through all six for that reason, rather than importing them.
 # ## The figure lane (ai-ops#239, owner ruling: "Yes, add them")
 #
-# Notebook lessons draw histograms and circuit diagrams. Neither package was
-# here, so every figure a lesson asked for was missing inside the product —
-# and missing in the one way that is hardest to notice from outside, because
-# the notebook still ran and still produced a result.
+# Notebook lessons draw histograms and circuit diagrams, and the circuit half
+# was broken inside the product.
 #
 # `matplotlib` is the renderer. `pylatexenc` is what Qiskit imports to typeset
-# gate labels in `QuantumCircuit.draw("mpl")`; without it Qiskit does not fail,
-# it silently degrades the labels, which is again a defect that looks like
-# working software.
+# gate labels in `QuantumCircuit.draw("mpl")`, and without it that call raises
+# `MissingOptionalLibraryError` — checked, not assumed. It does NOT degrade to
+# untypeset labels, so the symptom is a traceback in a reader's lesson rather
+# than a worse diagram. Anyone reading a production traceback from this path
+# should treat it as a missing package, not as expected degraded rendering.
 #
 # **`pylatexenc==2.11` is load-bearing and is not simply "the latest".** This
 # install runs `--only-binary=:all:`, and 2.11 is the FIRST release in the
