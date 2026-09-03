@@ -1123,6 +1123,346 @@ export interface components {
             footprint: components["schemas"]["FootprintSummary"];
             runtime: components["schemas"]["RuntimeSummary"];
         };
+        /**
+         * Course
+         * @description Owner-facing course resource, modules included — a course is small enough
+         *     that splitting the modules behind a second request would only cost a round
+         *     trip (a plan is capped at 16 modules).
+         */
+        Course: {
+            audience?: components["schemas"]["Audience"];
+            /**
+             * Brief
+             * @default
+             */
+            brief: string;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            framework?: components["schemas"]["NotebookFramework"];
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Kind
+             * @default course
+             * @constant
+             */
+            kind: "course";
+            /**
+             * Language
+             * @default en
+             * @enum {string}
+             */
+            language: "en" | "ja";
+            /**
+             * Module Count
+             * @default 0
+             */
+            module_count: number;
+            /** Modules */
+            modules?: components["schemas"]["CourseModule"][];
+            /**
+             * Plan Run Id
+             * @default null
+             */
+            plan_run_id: string | null;
+            /**
+             * Ready Count
+             * @default 0
+             */
+            ready_count: number;
+            /** Slug */
+            slug: string;
+            status: components["schemas"]["CourseStatus"];
+            style?: components["schemas"]["Style"];
+            /**
+             * Summary
+             * @default
+             */
+            summary: string;
+            /** Title */
+            title: string;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+        };
+        /** CourseList */
+        CourseList: {
+            /** Items */
+            items?: components["schemas"]["CourseSummary"][];
+            /**
+             * Next Cursor
+             * @default null
+             */
+            next_cursor: string | null;
+        };
+        /**
+         * CourseModule
+         * @description A stored module: the plan's content, plus where its notebook got to.
+         */
+        CourseModule: {
+            /**
+             * Brief
+             * @default
+             */
+            brief: string;
+            /**
+             * Deliverable
+             * @default
+             */
+            deliverable: string;
+            /**
+             * Duration Minutes
+             * @default null
+             */
+            duration_minutes: number | null;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Key Concepts */
+            key_concepts?: string[];
+            /** @default lesson */
+            kind: components["schemas"]["NotebookKind"];
+            /**
+             * Notebook Id
+             * @default null
+             */
+            notebook_id: string | null;
+            /**
+             * Notebook Version Seq
+             * @default null
+             */
+            notebook_version_seq: number | null;
+            /** Objectives */
+            objectives?: string[];
+            /** Prerequisites */
+            prerequisites?: string[];
+            /** Seq */
+            seq: number;
+            /** Slug */
+            slug: string;
+            /** @default planned */
+            status: components["schemas"]["CourseModuleStatus"];
+            /** Title */
+            title: string;
+            /**
+             * Topic
+             * @default
+             */
+            topic: string;
+        };
+        /**
+         * CourseModulePatch
+         * @description A hand edit to one planned module. Refused once the module has a notebook:
+         *     the notebook was generated FROM these fields, so changing them afterwards
+         *     would leave the module describing something the notebook does not teach.
+         */
+        CourseModulePatch: {
+            /**
+             * Brief
+             * @default null
+             */
+            brief: string | null;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** @default null */
+            kind: components["schemas"]["NotebookKind"] | null;
+            /**
+             * Objectives
+             * @default null
+             */
+            objectives: string[] | null;
+            /**
+             * Seq
+             * @default null
+             */
+            seq: number | null;
+            /**
+             * Title
+             * @default null
+             */
+            title: string | null;
+        };
+        /**
+         * CourseModuleStatus
+         * @description Derived, never stored: read from the module's notebook's latest version.
+         *
+         *     A module with no notebook is `planned`; otherwise the notebook version's
+         *     status (`queued`/`running`/`ready`/`failed`) is the module's status.
+         * @enum {string}
+         */
+        CourseModuleStatus: "planned" | "queued" | "running" | "ready" | "failed";
+        /**
+         * CoursePlan
+         * @description The whole plan: what the course is, and its modules in teaching order.
+         *
+         *     The validator refuses two shapes that could never be generated: a duplicate
+         *     slug (two modules would collide in the export tree and in `replace_modules`)
+         *     and a prerequisite pointing at a later module or at nothing (the preface the
+         *     generate route writes would then describe a notebook that does not exist yet).
+         */
+        CoursePlan: {
+            /** Modules */
+            modules: components["schemas"]["PlannedModule"][];
+            /**
+             * Summary
+             * @default
+             */
+            summary: string;
+            /** Title */
+            title: string;
+        };
+        /**
+         * CourseStatus
+         * @description Where a course is between "asked for" and "every module runs".
+         * @enum {string}
+         */
+        CourseStatus: "planning" | "planned" | "generating" | "ready" | "failed";
+        /**
+         * CourseSummary
+         * @description A course as a list row: no modules, so a list of courses is one query.
+         */
+        CourseSummary: {
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Language
+             * @default en
+             * @enum {string}
+             */
+            language: "en" | "ja";
+            /**
+             * Module Count
+             * @default 0
+             */
+            module_count: number;
+            /**
+             * Ready Count
+             * @default 0
+             */
+            ready_count: number;
+            /** Slug */
+            slug: string;
+            status: components["schemas"]["CourseStatus"];
+            /**
+             * Summary
+             * @default
+             */
+            summary: string;
+            /** Title */
+            title: string;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+        };
+        /**
+         * CourseTurn
+         * @description One turn of the chat that revises the PLAN (not a notebook's content).
+         */
+        CourseTurn: {
+            /** Content */
+            content: string;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Role
+             * @enum {string}
+             */
+            role: "user" | "nala";
+            /** Seq */
+            seq: number;
+        };
+        /** CourseTurnList */
+        CourseTurnList: {
+            /** Items */
+            items?: components["schemas"]["CourseTurn"][];
+        };
+        /** CreateCourseRequest */
+        CreateCourseRequest: {
+            /** @default null */
+            audience: components["schemas"]["Audience"] | null;
+            /** Brief */
+            brief: string;
+            /** @default null */
+            framework: components["schemas"]["NotebookFramework"] | null;
+            /**
+             * Module Count
+             * @default null
+             */
+            module_count: number | null;
+            /**
+             * Response Locale
+             * @default en
+             * @enum {string}
+             */
+            response_locale: "en" | "ja";
+            /** Seeds */
+            seeds?: components["schemas"]["Seed"][];
+            /** @default null */
+            style: components["schemas"]["Style"] | null;
+            /**
+             * Title
+             * @default null
+             */
+            title: string | null;
+        };
+        /** CreateCourseResponse */
+        CreateCourseResponse: {
+            course: components["schemas"]["Course"];
+            /**
+             * Run Id
+             * Format: uuid
+             */
+            run_id: string;
+        };
+        /**
+         * CreateCourseTurnRequest
+         * @description Chat that edits the PLAN: "add a module on transpilation after week 3",
+         *     "make module 2 a lab", "drop the last one".
+         */
+        CreateCourseTurnRequest: {
+            /** Message */
+            message: string;
+        };
+        /** CreateCourseTurnResponse */
+        CreateCourseTurnResponse: {
+            /**
+             * Run Id
+             * Format: uuid
+             */
+            run_id: string;
+            turn: components["schemas"]["CourseTurn"];
+        };
         /** CreateNotebookRequest */
         CreateNotebookRequest: {
             /** @default null */
@@ -1382,6 +1722,24 @@ export interface components {
          * @enum {string}
          */
         Framework: "qiskit" | "pennylane" | "cirq" | "braket" | "qibo" | "qulacs";
+        /**
+         * GenerateCourseRequest
+         * @description Which modules to turn into notebooks. `None` means every module that does
+         *     not have one yet — the ordinary "build my course" button.
+         */
+        GenerateCourseRequest: {
+            /**
+             * Module Ids
+             * @default null
+             */
+            module_ids: string[] | null;
+        };
+        /** GenerateCourseResponse */
+        GenerateCourseResponse: {
+            course: components["schemas"]["Course"];
+            /** Run Ids */
+            run_ids?: string[];
+        };
         /**
          * ImportNotebookRequest
          * @description An existing `.ipynb` becomes a notebook the reader can then edit with Nala.
@@ -1847,6 +2205,8 @@ export interface components {
         };
         /** NotebookTemplates */
         NotebookTemplates: {
+            /** Course Starters */
+            course_starters?: components["schemas"]["NotebookStarter"][];
             /** Kinds */
             kinds: components["schemas"]["NotebookTemplateKind"][];
             /** Starters */
@@ -2147,6 +2507,49 @@ export interface components {
              * @enum {string}
              */
             type: "plan.produced";
+        };
+        /**
+         * PlannedModule
+         * @description One module as the planner writes it — the brief that will become a notebook.
+         *
+         *     `brief` is the load-bearing field: it is handed to `notebook.generate` on its
+         *     own, so it must be self-contained and must say what the earlier modules
+         *     established. `prerequisites` names earlier modules by slug and is what makes
+         *     "earlier" checkable.
+         */
+        PlannedModule: {
+            /**
+             * Brief
+             * @default
+             */
+            brief: string;
+            /**
+             * Deliverable
+             * @default
+             */
+            deliverable: string;
+            /**
+             * Duration Minutes
+             * @default null
+             */
+            duration_minutes: number | null;
+            /** Key Concepts */
+            key_concepts?: string[];
+            /** @default lesson */
+            kind: components["schemas"]["NotebookKind"];
+            /** Objectives */
+            objectives?: string[];
+            /** Prerequisites */
+            prerequisites?: string[];
+            /** Slug */
+            slug: string;
+            /** Title */
+            title: string;
+            /**
+             * Topic
+             * @default
+             */
+            topic: string;
         };
         /**
          * ProblemTerm
@@ -3914,6 +4317,24 @@ export interface components {
          * @enum {string}
          */
         TopLevelExecution: "required" | "demo_only" | "forbidden";
+        /** UpdateCourseRequest */
+        UpdateCourseRequest: {
+            /**
+             * Modules
+             * @default null
+             */
+            modules: components["schemas"]["CourseModulePatch"][] | null;
+            /**
+             * Summary
+             * @default null
+             */
+            summary: string | null;
+            /**
+             * Title
+             * @default null
+             */
+            title: string | null;
+        };
         /** UpdateNotebookRequest */
         UpdateNotebookRequest: {
             /**
