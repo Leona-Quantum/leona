@@ -478,16 +478,21 @@ def version_to_resource(
     )
     if not full:
         return contracts.NotebookVersionSummary(**fields)
+    review = (
+        contracts.NotebookReview.model_validate(version.review)
+        if isinstance(version.review, dict)
+        else None
+    )
     return contracts.NotebookVersion(
         **fields,
         spec=contracts.NotebookSpec.model_validate(spec) if spec is not None else None,
         source=version.source or "",
         ipynb=version.ipynb,
         report=contracts.ExecutionReport.model_validate(report) if report is not None else None,
-        review=(
-            contracts.NotebookReview.model_validate(version.review)
-            if version.review is not None
-            else None
-        ),
+        review=review,
+        # Mirrored out of the review blob rather than stored twice: `warnings` is where
+        # the advisory structure check lands (there is no column of its own), and a
+        # client rendering "what is wrong with my edit" should not have to know that.
+        warnings=list(review.warnings) if review is not None else [],
         error=version.error,
     )

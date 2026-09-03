@@ -441,3 +441,248 @@ async def test_templates_returns_every_notebook_kind(client):
     assert len(body["starters"]) > 0
     for starter in body["starters"]:
         assert starter["kind"] in kind_ids
+
+
+# -------------------------------------------------------------- author (the editor)
+
+SPEC_FIXTURE = {
+    "schema_version": 1,
+    "slug": "ignored-the-notebooks-own-slug-wins",
+    "title": "Edited by the reader",
+    "kind": "lesson",
+    "cells": [
+        {"id": "c01", "kind": "markdown", "role": "objective", "source": "# Hi"},
+        {"id": "c02", "kind": "code", "role": "run", "source": "print('one')"},
+        {"id": "c03", "kind": "code", "role": "run", "source": "print('two')"},
+    ],
+}
+
+SOURCE_FIXTURE = "# ---\n# title: From a text editor\n# ---\n# %% id=c01\nprint('one')\n"
+
+
+@pytest.fixture
+def author_state(monkeypatch):
+    """A ready notebook with one version, plus recording fakes for everything the
+    author route writes. Returns the dict the assertions read."""
+    notebook = _notebook_row()
+    v1 = _version_row(notebook_id=notebook.id, seq=1, status="ready", created_by="nala")
+    notebook.current_version_id = v1.id
+    state: dict = {"notebook": notebook, "versions": [v1], "jobs": [], "runs": []}
+
+    async def fake_get_notebook(_scope, _session, _notebook_id):
+        return state["notebook"]
+
+    async def fake_list_versions(_scope, _session, _notebook_id):
+        return state["versions"]
+
+    async def fake_create_version(_scope, _session, _notebook_id, **kwargs):
+        version = _version_row(
+            notebook_id=state["notebook"].id,
+            seq=len(state["versions"]) + 1,
+            created_by=kwargs["created_by"],
+            message=kwargs["message"],
+            request=kwargs["request"],
+            run_id=kwargs["run_id"],
+        )
+        state["create_version_kwargs"] = kwargs
+        state["versions"].append(version)
+        return version
+
+    async def fake_set_version_result(_scope, _session, version_id, **kwargs):
+        version = next(v for v in state["versions"] if v.id == version_id)
+        state["result_kwargs"] = kwargs
+        version.status = kwargs["status"]
+        version.spec = kwargs["spec"]
+        version.source = kwargs["source"]
+        version.ipynb = kwargs["ipynb"]
+        version.review = kwargs["review"]
+        return version
+
+    async def fake_create_run(_scope, _session, **kwargs):
+        run = SimpleNamespace(id=uuid_module.uuid4())
+        state["runs"].append(kwargs)
+        return run
+
+    async def fake_append_run_event(*_a, **_k):
+        return None
+
+    async def fake_enqueue_job(_session, *, kind, payload, run_id=None, **_kwargs):
+        state["jobs"].append({"kind": kind, "payload": payload})
+        return SimpleNamespace(id=uuid_module.uuid4())
+
+    monkeypatch.setattr(notebooks_repo, "get_notebook", fake_get_notebook)
+    monkeypatch.setattr(notebooks_repo, "list_versions", fake_list_versions)
+    monkeypatch.setattr(notebooks_repo, "create_version", fake_create_version)
+    monkeypatch.setattr(notebooks_repo, "set_version_result", fake_set_version_result)
+    monkeypatch.setattr(runs_repo, "create_run", fake_create_run)
+    monkeypatch.setattr(runs_repo, "append_run_event", fake_append_run_event)
+    monkeypatch.setattr(system_repo, "enqueue_job", fake_enqueue_job)
+    return state
+
+
+async def test_author_from_a_spec_enqueues_an_author_job_carrying_the_spec(client, author_state):
+    async with client as c:
+        response = await c.post(
+            f"/v1/notebooks/{author_state['notebook'].id}/versions",
+            json={"spec": SPEC_FIXTURE, "message": "moved a cell"},
+        )
+
+    assert response.status_code == 201, response.text
+    body = response.json()
+    assert body["run_id"] is not None
+    assert body["version"]["created_by"] == "user"
+    assert body["version"]["message"] == "moved a cell"
+
+    job = author_state["jobs"][0]
+    assert job["kind"] == NOTEBOOK_REVISE_JOB_KIND
+    assert job["payload"]["kind"] == "author"
+    assert job["payload"]["run_until"] is None
+    # The resolved spec travels, not the raw input — and the notebook's own slug wins
+    # over whatever the submitted spec claimed.
+    assert job["payload"]["request"]["spec"]["slug"] == author_state["notebook"].slug
+    assert [cell["id"] for cell in job["payload"]["request"]["spec"]["cells"]] == [
+        "c01",
+        "c02",
+        "c03",
+    ]
+
+
+async def test_author_from_source_parses_before_queueing(client, author_state):
+    async with client as c:
+        response = await c.post(
+            f"/v1/notebooks/{author_state['notebook'].id}/versions",
+            json={"source": SOURCE_FIXTURE},
+        )
+
+    assert response.status_code == 201, response.text
+    spec = author_state["jobs"][0]["payload"]["request"]["spec"]
+    assert spec["title"] == "From a text editor"
+    assert spec["cells"][0]["source"].strip() == "print('one')"
+
+
+async def test_author_from_ipynb_parses_before_queueing(client, author_state):
+    ipynb = {
+        "cells": [
+            {"cell_type": "markdown", "metadata": {}, "source": "# Pushed from Jupyter\n"},
+            {
+                "cell_type": "code",
+                "metadata": {},
+                "source": "print('hi')\n",
+                "outputs": [],
+                "execution_count": None,
+            },
+        ],
+        "metadata": {},
+        "nbformat": 4,
+        "nbformat_minor": 5,
+    }
+    async with client as c:
+        response = await c.post(
+            f"/v1/notebooks/{author_state['notebook'].id}/versions",
+            json={"ipynb": ipynb, "message": "from jupyter"},
+        )
+
+    assert response.status_code == 201, response.text
+    spec = author_state["jobs"][0]["payload"]["request"]["spec"]
+    assert any(cell["source"].strip() == "print('hi')" for cell in spec["cells"])
+
+
+async def test_author_with_run_until_passes_the_cell_id_to_the_job(client, author_state):
+    async with client as c:
+        response = await c.post(
+            f"/v1/notebooks/{author_state['notebook'].id}/versions",
+            json={"spec": SPEC_FIXTURE, "run_until": "c02"},
+        )
+
+    assert response.status_code == 201, response.text
+    assert author_state["jobs"][0]["payload"]["run_until"] == "c02"
+
+
+async def test_author_with_an_unknown_run_until_is_400_and_queues_nothing(client, author_state):
+    async with client as c:
+        response = await c.post(
+            f"/v1/notebooks/{author_state['notebook'].id}/versions",
+            json={"spec": SPEC_FIXTURE, "run_until": "c99"},
+        )
+
+    assert response.status_code == 400, response.text
+    assert response.json()["reason"] == "notebook_unknown_cell"
+    assert author_state["jobs"] == []
+
+
+async def test_author_with_two_inputs_is_400(client, author_state):
+    async with client as c:
+        response = await c.post(
+            f"/v1/notebooks/{author_state['notebook'].id}/versions",
+            json={"spec": SPEC_FIXTURE, "source": SOURCE_FIXTURE},
+        )
+
+    assert response.status_code == 400, response.text
+    body = response.json()
+    assert body["reason"] == "notebook_authoring_input"
+    assert "spec, source" in body["title"]
+    assert author_state["jobs"] == []
+
+
+async def test_author_with_no_input_is_400(client, author_state):
+    async with client as c:
+        response = await c.post(
+            f"/v1/notebooks/{author_state['notebook'].id}/versions", json={"message": "nothing"}
+        )
+
+    assert response.status_code == 400, response.text
+    assert response.json()["reason"] == "notebook_authoring_input"
+
+
+async def test_author_with_unparseable_source_is_400_carrying_the_parse_error(client, author_state):
+    async with client as c:
+        response = await c.post(
+            f"/v1/notebooks/{author_state['notebook'].id}/versions",
+            json={"source": "# %% role=not-a-role\nx = 1\n"},
+        )
+
+    assert response.status_code == 400, response.text
+    body = response.json()
+    assert body["reason"] == "notebook_authoring_input"
+    # The parser's own complaint reaches the reader — not a generic sentence. `title`
+    # is the field the web renders to a person (`app.py`'s HTTPException handler).
+    assert body["title"] != "could not read this notebook source: "
+    assert "could not read this notebook source" in body["title"]
+    assert author_state["jobs"] == []
+
+
+async def test_author_without_execute_saves_a_ready_version_and_queues_no_job(client, author_state):
+    async with client as c:
+        response = await c.post(
+            f"/v1/notebooks/{author_state['notebook'].id}/versions",
+            json={"spec": SPEC_FIXTURE, "execute": False, "message": "draft"},
+        )
+
+    assert response.status_code == 201, response.text
+    body = response.json()
+    assert body["run_id"] is None
+    assert body["version"]["status"] == "ready"
+    assert author_state["jobs"] == []
+    assert author_state["runs"] == []
+    result = author_state["result_kwargs"]
+    assert result["status"] == "ready"
+    assert result["report"] is None
+    assert result["source"].startswith("# ---")
+    assert result["ipynb"]["nbformat"] == 4
+    # A structure-incomplete edit is saved anyway, with the failures as warnings.
+    assert result["review"] is not None
+    assert result["review"]["warnings"]
+    assert result["review"]["verdict"] == "needs-attention"
+
+
+async def test_author_while_a_version_is_in_flight_is_409(client, author_state):
+    author_state["versions"].append(
+        _version_row(notebook_id=author_state["notebook"].id, seq=2, status="running")
+    )
+    async with client as c:
+        response = await c.post(
+            f"/v1/notebooks/{author_state['notebook'].id}/versions", json={"spec": SPEC_FIXTURE}
+        )
+
+    assert response.status_code == 409, response.text
+    assert author_state["jobs"] == []

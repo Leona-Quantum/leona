@@ -521,26 +521,15 @@ class AuthorNotebookVersionRequest(_ResourceBase):
     #: rest as `not_run`. `None` runs the whole notebook.
     run_until: str | None = None
 
-    @field_validator("run_until")
-    @classmethod
-    def _run_until_shape(cls, value: str | None) -> str | None:
-        if value is not None and not _CELL_ID_RE.match(value):
-            raise ValueError(f"run_until {value!r} must match {_CELL_ID_RE.pattern}")
-        return value
-
-    @model_validator(mode="after")
-    def _exactly_one_input(self) -> AuthorNotebookVersionRequest:
-        given = [
-            name
-            for name, v in (("spec", self.spec), ("source", self.source), ("ipynb", self.ipynb))
-            if v is not None
-        ]
-        if len(given) != 1:
-            raise ValueError(
-                "exactly one of spec, source or ipynb is required, got "
-                + (", ".join(given) if given else "none")
-            )
-        return self
+    # The exactly-one rule and the `run_until` shape are deliberately NOT enforced by
+    # validators here, though both are properties of the request: `services/api` maps a
+    # pydantic failure to a bare `422 validation failed` with no message (`app.py`'s
+    # RequestValidationError handler), and every way this request can be wrong — two
+    # inputs, source that will not parse, a `run_until` naming no cell — is one the
+    # reader has to be told about in words before they can fix it. The route enforces
+    # all three and answers 400 problem+json carrying the real message;
+    # `leona_notebooks.authoring.spec_from_author_request` is the single implementation
+    # the route and the worker both call.
 
 
 class AuthorNotebookVersionResponse(_ResourceBase):
