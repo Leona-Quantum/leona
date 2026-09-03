@@ -2,7 +2,16 @@
 #
 #   python -m pip install -r requirements.txt -r requirements-notebooks.txt
 #
-jupyterlab>=4.0
-ipykernel>=6.29
-nbformat>=5.9
-nbclient>=0.10
+# Same rule as requirements.txt: the floors are what uv.lock actually resolves,
+# because a resolver is free to take the floor and whatever this file permits is
+# an environment a learner can end up in. `nbconvert` and `idna` are named even
+# though nothing here asks for them directly — jupyterlab pulls both, and with
+# only `jupyterlab>=4.0` stated the fallback resolved to nbconvert 7.17.1's
+# predecessor 7.9.2, carrying a CVSS 8.5 advisory plus two more. Naming a
+# transitive dependency is the only way a reader can audit it.
+jupyterlab>=4.6
+ipykernel>=7.3
+nbformat>=5.11
+nbclient>=0.11
+nbconvert>=7.17.1
+idna>=3.19
