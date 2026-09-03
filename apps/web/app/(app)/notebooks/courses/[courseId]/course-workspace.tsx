@@ -294,7 +294,7 @@ export function CourseWorkspace({ courseId, locale = "en" }: { courseId: string;
   }
 
   const progress = courseProgress(course);
-  const orderedModules = [...course.modules].sort((a, b) => a.seq - b.seq);
+  const orderedModules = [...(course.modules ?? [])].sort((a, b) => a.seq - b.seq);
   const generateAllDisabled = generatingAll || planRunActive || progress.ready === progress.total;
 
   return (
