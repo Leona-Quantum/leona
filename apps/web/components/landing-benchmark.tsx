@@ -41,7 +41,7 @@ export function LandingBenchmark({ copy }: { copy: HomeBenchmarkCopy }) {
               </div>
             </div>
 
-            <div className="mj-company-benchmark-chart" aria-label={copy.chartAria}>
+            <div className="mj-company-benchmark-chart" role="group" aria-label={copy.chartAria}>
               <div className="mj-company-benchmark-chart-head">
                 <span>{copy.chartLabel}</span>
                 <span>PASS@1 / %</span>
@@ -142,14 +142,18 @@ export function LandingBenchmark({ copy }: { copy: HomeBenchmarkCopy }) {
                       <span>PASS@1</span>
                     </div>
 
-                    <div
-                      className="mj-company-cross-benchmark-leader"
-                      role="meter"
-                      aria-label={`${leader.model} · ${framework.name}: ${leader.score.toFixed(1)}%`}
-                      aria-valuemax={100}
-                      aria-valuemin={0}
-                      aria-valuenow={leader.score}
-                    >
+                    {/* Deliberately NOT `role="meter"`. This block draws no
+                        track — it is a bordered text card (`globals.css`,
+                        `.mj-company-cross-benchmark-leader`) — and `meter` is one
+                        of the roles ARIA gives presentational children, so a
+                        conforming screen reader would discard the subtree and
+                        announce only the role's own name. That subtree is where
+                        `internalLabel` lives, and it is the ONLY per-card marker
+                        separating Leona's self-reported number from the three
+                        cited comparators beside it. The two real gauges in this
+                        file keep the role, on an empty track, with their text as
+                        siblings. */}
+                    <div className="mj-company-cross-benchmark-leader">
                       <div>
                         <strong>{leader.model}</strong>
                         <span>{crossFramework.internalLabel}</span>
