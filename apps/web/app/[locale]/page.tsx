@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { CircuitBand } from "../../components/circuit-band";
 import { LandingDemoVideo } from "../../components/landing-demo-video";
+import { LandingBenchmark } from "../../components/landing-benchmark";
 import { LeonaWordmark } from "../../components/leona-wordmark";
 import { LandingPrompt } from "../../components/landing-prompt";
 import { PublicSite } from "../../components/public-site";
@@ -154,6 +155,8 @@ export default async function Home({ params }: { params: Promise<{ locale: strin
       <Reveal>
         <CircuitBand />
       </Reveal>
+
+      <LandingBenchmark copy={copy.benchmark} />
 
       <section className="mj-company-section mj-company-product-band" aria-labelledby="surfaces-heading">
         <Reveal>
