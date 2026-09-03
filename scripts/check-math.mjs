@@ -334,7 +334,13 @@ for (const node of LAYER_GRAPH.nodes) {
   const repetition = node.repetition ?? {};
   nested.push([`repetition`, ["note", repetition.note], ["noteJa", repetition.noteJa]]);
   for (const implementation of node.implementations ?? []) {
-    for (const field of ["about", "methods", "data", "code", "results"]) {
+    // `label` is in this list because the PAGE typesets it. It was not, while
+    // the renderer printed it as a bare text child — so thirteen labels carried
+    // `$…$` that no gate compiled and no reader ever saw typeset. Adding the
+    // render without adding the check would have left the same hole pointing
+    // the other way: a broken formula in a label would now render red to a
+    // reader with nothing failing the build.
+    for (const field of ["label", "about", "methods", "data", "code", "results"]) {
       nested.push([
         `implementations[${implementation.id}]`,
         [field, implementation[field]],
