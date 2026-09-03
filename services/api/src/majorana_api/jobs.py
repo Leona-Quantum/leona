@@ -15,3 +15,10 @@ QAPP_EXECUTE_JOB_KIND = "qapp.execute"
 # run_id whose mode is `notebook`, so quota and the event stream come from runs.
 NOTEBOOK_GENERATE_JOB_KIND = "notebook.generate"
 NOTEBOOK_REVISE_JOB_KIND = "notebook.revise"
+# The course lane (leona_notebooks.courses): one job writes the plan from the
+# reader's brief, the other rewrites it from a chat turn. Both carry a run_id whose
+# mode is `notebook` — a course adds no run mode, it reuses the notebook lane's
+# quota counters, abuse backstop and event stream. Generating a module's notebook
+# is an ordinary `notebook.generate` job, dispatched by POST /courses/{id}/generate.
+COURSE_PLAN_JOB_KIND = "course.plan"
+COURSE_REVISE_JOB_KIND = "course.revise"
