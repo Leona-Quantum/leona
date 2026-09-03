@@ -602,5 +602,26 @@ export const PAPER_REGISTER: PaperRegister = {
     // api.crossref.org/works/10.1007/3-540-44750-4_34, which also names the venue
     // (LNCS, Advances in Cryptology — CRYPTO '95). No arXiv id exists for it.
     { id: "doi:10.1007/3-540-44750-4_34", title: "Quantum Cryptanalysis of Hidden Linear Functions", authors: "Dan Boneh, Richard J. Lipton", year: "1995", url: "https://doi.org/10.1007/3-540-44750-4_34" },
+    // The two artefact papers behind `real-period-finding`'s implementations.
+    // Title, author string and v1 year fetched from the arXiv API on 2026-09-02
+    // and copied, not retyped — a previous batch added two real people who are
+    // not on a paper by retyping one, and this file compares exact strings.
+    //
+    // `reports` read off each abstract, which is what `reportsBasis` records.
+    // Quipper: the abstract introduces "a scalable, expressive, functional,
+    // higher-order quantum programming language" and claims no theorem or bound,
+    // so theory is absent; it says the language "is not dependent on any
+    // particular model of quantum hardware", so hardware is absent. "can generate
+    // quantum gate representations using trillions of gates" is a capability of
+    // the tool rather than stated numerics, so simulation is unknown — which is
+    // this axis's floor, never absent.
+    { id: "arxiv:1304.3390", title: "Quipper: A Scalable Quantum Programming Language", authors: "Alexander S. Green, Peter LeFanu Lumsdaine, Neil J. Ross, Peter Selinger, Benoît Valiron", year: "2013", url: "https://arxiv.org/abs/1304.3390", reports: { theory: "absent", simulation: "unknown", hardware: "absent" }, reportsBasis: "abstract" },
+    // ScaffCC: "a scalable compilation and analysis framework based on LLVM,
+    // which can be used for compiling quantum computing applications at the
+    // logical level" — a tool, no theorem claimed and nothing run on a device.
+    // Its "elaborate discussion of timing analysis for critical path estimation"
+    // is compiler analysis rather than quantum numerics, and the abstract prints
+    // no figures, so simulation stays unknown.
+    { id: "arxiv:1507.01902", title: "ScaffCC: Scalable Compilation and Analysis of Quantum Programs", authors: "Ali JavadiAbhari, Shruti Patil, Daniel Kudrow, Jeff Heckey, Alexey Lvov, Frederic T. Chong, Margaret Martonosi", year: "2015", url: "https://arxiv.org/abs/1507.01902", reports: { theory: "absent", simulation: "unknown", hardware: "absent" }, reportsBasis: "abstract" },
   ],
 };

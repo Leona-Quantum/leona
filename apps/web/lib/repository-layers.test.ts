@@ -2677,16 +2677,33 @@ test("the capabilities closed on `implementations` stay closed, as a SET", () =>
     "compile-to-device",
     "combinatorial-optimization",
   ];
-  // Batch 12, over two commits, and the honest number is THREE of four.
-  // `parameter-optimization`, `spatial-discretization` and `full-discretization`
-  // have every method filled. `hidden-period-finding` does NOT and is counted
-  // open here: `real-period-finding`'s entry exists, is translated, and is held
+  // Batch 12, over three commits, and the number is now FOUR of four.
+  // `hidden-period-finding` was the one left open, and this note used to say why
+  // in a way that sent the next reader at the wrong instrument, so the correction
+  // is worth more than the fix: it said `real-period-finding`'s entry was held
   // back because its `methods` prose quotes Haskell — where `$` is an operator —
-  // and the corpus reads `$` as a maths delimiter, so the field carries 45 of
-  // them and `check-math` refuses it as an unclosed formula. That is a real
-  // collision between two notations, not a defect in the reading, and it needs a
-  // rewrite of the prose rather than a flag.
-  const BATCH_12 = ["parameter-optimization", "spatial-discretization", "full-discretization"];
+  // and `check-math` therefore read the field as an unclosed formula. **That was
+  // not the blocker.** The payload already escapes every Haskell `$` as `\$`,
+  // and `mathSegments` in `apps/web/lib/math-text.ts` handles `\$` as a literal
+  // dollar by design, so `check-math` passes the entry unchanged — verified by
+  // running it, and the replica used to check the payload before insertion was
+  // mutation-tested against an unescaped `$`, a `[[` mark and a bad command to
+  // confirm it could go red at all.
+  //
+  // The real blocker was `check-paper-register`: the entry cites Quipper
+  // (arXiv:1304.3390) and ScaffCC (arXiv:1507.01902) as its artefact papers, and
+  // neither was in the register, so `implementations[].papers` was refused. Both
+  // rows are now added with title, author string and v1 year fetched from the
+  // arXiv API rather than retyped. The lesson is the general one: a reason
+  // written into a comment is a claim like any other, and this one cost a week
+  // of a finished, translated entry sitting unshipped behind a gate that was
+  // never the one failing.
+  const BATCH_12 = [
+    "parameter-optimization",
+    "spatial-discretization",
+    "full-discretization",
+    "hidden-period-finding",
+  ];
   for (const slot of [...BATCH_10, ...BATCH_11, ...BATCH_12]) {
     assert.ok(
       layerNode(LAYER_GRAPH, slot) !== null,
@@ -2736,14 +2753,14 @@ test("the capabilities closed on `implementations` stay closed, as a SET", () =>
   );
 
   assert.ok(
-    complete.size >= 23,
-    `${complete.size} capabilities are complete on implementations, was 23 after batch 12`,
+    complete.size >= 24,
+    `${complete.size} capabilities are complete on implementations, was 24 after batch 12`,
   );
 
   const filled = methods.filter((m) => (m.implementations ?? []).length > 0).length;
   assert.ok(
-    filled >= 87,
-    `${filled} of ${methods.length} methods carry an implementation, was 87 after batch 12`,
+    filled >= 88,
+    `${filled} of ${methods.length} methods carry an implementation, was 88 after batch 12`,
   );
 });
 
