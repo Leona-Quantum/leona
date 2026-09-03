@@ -143,13 +143,28 @@ ENV MPLBACKEND=Agg \
 # with "no binary distribution available". The 3.0aNN alphas do ship wheels;
 # they are alphas of a rewritten API and are not what Qiskit expects.
 #
-# matplotlib pulls in pillow, fonttools, contourpy, kiwisolver, cycler,
-# pyparsing and python-dateutil. That is a real widening of the dependency
-# surface reachable by generated code, and pillow in particular is an image
-# codec. The same argument the compiler lane makes above applies and is worth
-# stating rather than implying: the widening is HERE, in the rootfs with
-# deny-all egress and an empty environment, and not in the credentialed API
-# image. That is a containment claim, not a claim that the surface is small.
+# ## matplotlib was ALREADY here, by accident. That is why it is pinned now.
+#
+# ai-ops#239 says "the image has neither package". Measured against the build
+# log rather than believed: it had matplotlib 3.11.1, and pillow, fonttools,
+# contourpy, kiwisolver, cycler, pyparsing and python-dateutil with it. They
+# arrive transitively down the pyzx -> ipywidgets -> ipython chain the compiler
+# lane note above describes — `matplotlib-inline` in the install list is the
+# fingerprint. So histograms already rendered; only the circuit drawer was
+# broken, because that is the half that needs pylatexenc.
+#
+# Naming matplotlib explicitly therefore adds nothing to the image and removes
+# a real fragility: the figure lane was depending on a package that no line in
+# this file asked for, held in place only by an optional dependency of a
+# CIRCUIT COMPILER. Anything that loosened pyzx's extras would have taken every
+# figure in the product with it, silently, and no diff here would have said so.
+#
+# The dependency surface consequently barely moves — pylatexenc is the one
+# genuinely new package, and the image grows about 3 MB, most of it that plus a
+# fonttools and kiwisolver patch bump. The containment argument from the
+# compiler lane above still holds and is worth stating rather than implying:
+# this widening is HERE, in the rootfs with deny-all egress and an empty
+# environment, not in the credentialed API image.
 RUN python -m pip install --no-cache-dir --only-binary=:all: \
     "setuptools==81.0.0" \
     "qiskit==2.5.0" \
