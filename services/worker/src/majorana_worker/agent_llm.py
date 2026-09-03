@@ -35,6 +35,10 @@ _ROLE_STAGE = {
     "notebook_repair": Stage.GENERATE,
     "notebook_revise": Stage.GENERATE,
     "notebook_review": Stage.VERIFY,
+    # The course lane (leona_notebooks.courses / majorana_worker.course_handlers):
+    # both roles write a plan, so both classify as PLAN.
+    "course_plan": Stage.PLAN,
+    "course_revise": Stage.PLAN,
 }
 
 _LIVE_DELTA_CHARS = 160

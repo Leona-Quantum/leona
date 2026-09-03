@@ -41,6 +41,7 @@ from pydantic import ValidationError
 
 from majorana_contracts import Scope
 from majorana_contracts.enums import Role, RunStatus, Stage, UsageKind
+from majorana_contracts.courses import CreateCourseRequest
 from majorana_contracts.notebooks import CreateNotebookRequest, NotebookReview
 from majorana_llm import (
     LLMClient,
@@ -539,10 +540,16 @@ async def _record_sandbox_usage(
 
 
 async def _seed_material_for(
-    scope: Scope, session: AsyncSession, request: CreateNotebookRequest
+    scope: Scope, session: AsyncSession, request: CreateNotebookRequest | CreateCourseRequest
 ) -> tuple[str, str | None]:
     """Seed material text and the verbatim run cell, from every `atlas-record`
-    seed on the request. Only `atlas-record` seeds are resolved here; the
+    seed on the request.
+
+    Takes a course request as well as a notebook one — the two carry `seeds` and
+    `framework` with identical meaning, and the course lane resolves the reader's
+    Atlas seeds once, for the planner, rather than re-resolving them per module.
+    The union is spelled out rather than left to duck typing so that adding a
+    field this function needs breaks at the annotation, not in the worker. Only `atlas-record` seeds are resolved here; the
     other seed kinds (`paper`, `artifact`, `upload`, `curriculum`) are passed
     through to the outline/draft prompts as bare `Seed` objects with no
     fetched material — building their own fetch paths is out of this lane's
