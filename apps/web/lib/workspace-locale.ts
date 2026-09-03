@@ -9,6 +9,10 @@ type NotebookStatusPillCopyKey = "queued" | "generating" | "ready" | "failed";
 type NotebookCellStatusCopyKey = "ok" | "error" | "skipped" | "not_run";
 type NotebookReviewVerdict = components["schemas"]["NotebookReview"]["verdict"];
 type NotebookFindingSeverity = components["schemas"]["ReviewFinding"]["severity"];
+// Courses (`lib/course-types.ts` — local until Lane A's contracts-gen lands).
+type CourseStatusCopyKey = "planning" | "planned" | "generating" | "ready" | "failed";
+type CourseModuleStatusCopyKey = "planned" | "queued" | "generating" | "ready" | "failed";
+type CourseModuleCountCopyKey = "auto" | "4" | "8" | "12";
 
 export const WORKSPACE_COPY: Record<PublicLocale, {
   surfaces: { brandedRun: string; preview: string };
@@ -595,6 +599,73 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
     actionExercise: string;
 
     teachMeInNotebook: string;
+  };
+  courses: {
+    title: string;
+    lede: string;
+    coursesTab: string;
+
+    planLabel: string;
+    briefLabel: string;
+    briefPlaceholder: string;
+    moduleCountLabel: string;
+    moduleCountOption: Record<CourseModuleCountCopyKey, string>;
+    startersLabel: string;
+    create: string;
+    creating: string;
+    createFailed: string;
+
+    listLoading: string;
+    listLoadFailed: string;
+    listEmpty: string;
+    search: string;
+    searchPlaceholder: string;
+    noMatch: string;
+    updated: string;
+    statusPill: Record<CourseStatusCopyKey, string>;
+    progress: (ready: number, total: number) => string;
+    open: string;
+
+    backToCourses: string;
+    loading: string;
+    loadFailed: string;
+    titleEditFailed: string;
+    saveTitle: string;
+
+    generateAll: string;
+    generatingAll: string;
+    generateAllFailed: string;
+    downloadRepo: string;
+    downloadingRepo: string;
+    downloadRepoFailed: string;
+    downloadRepoDisabledHint: string;
+
+    moduleStatusPill: Record<CourseModuleStatusCopyKey, string>;
+    moduleSeqLabel: (seq: number) => string;
+    topicLabel: string;
+    keyConceptsLabel: string;
+    objectivesLabel: string;
+    deliverableLabel: string;
+    durationLabel: (minutes: number) => string;
+    durationUnknown: string;
+    prerequisitesLabel: string;
+    prerequisiteUnresolved: (slug: string) => string;
+    generateModule: string;
+    generatingModule: string;
+    generateModuleFailed: string;
+    openNotebook: string;
+    moveUp: string;
+    moveDown: string;
+    reorderFailed: string;
+
+    chatLabel: string;
+    chatPlaceholder: string;
+    chatSend: string;
+    chatSending: string;
+    chatEmpty: string;
+    chatLoadFailed: string;
+    chatSendFailed: string;
+    progressLabel: string;
   };
 }> = {
   en: {
@@ -1239,6 +1310,73 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
 
     teachMeInNotebook: "Teach me this in a notebook",
   },
+  courses: {
+    title: "Courses",
+    lede: "Ask Nala to plan a whole course from one brief, then generate each module as a notebook and follow along.",
+    coursesTab: "Courses",
+
+    planLabel: "Plan a course",
+    briefLabel: "What should this course teach?",
+    briefPlaceholder: "e.g. Take a Python engineer from classical bits to Shor's algorithm in about 8 modules, hands-on each time.",
+    moduleCountLabel: "Modules",
+    moduleCountOption: { auto: "Auto", "4": "4", "8": "8", "12": "12" },
+    startersLabel: "Or start from a brief",
+    create: "Plan course",
+    creating: "Planning…",
+    createFailed: "The course could not be planned.",
+
+    listLoading: "Loading courses…",
+    listLoadFailed: "Courses could not be loaded.",
+    listEmpty: "You have not planned a course yet.",
+    search: "Search courses",
+    searchPlaceholder: "Search by title",
+    noMatch: "No courses match this search.",
+    updated: "Updated",
+    statusPill: { planning: "Planning…", planned: "Planned", generating: "Generating…", ready: "Ready", failed: "Failed" },
+    progress: (ready, total) => `${ready} of ${total} modules ready`,
+    open: "Open course",
+
+    backToCourses: "Back to Courses",
+    loading: "Loading course…",
+    loadFailed: "This course could not be loaded.",
+    titleEditFailed: "The title could not be saved.",
+    saveTitle: "Save",
+
+    generateAll: "Generate all",
+    generatingAll: "Generating…",
+    generateAllFailed: "The modules could not be started.",
+    downloadRepo: "Download as repository (.zip)",
+    downloadingRepo: "Downloading…",
+    downloadRepoFailed: "The course could not be downloaded.",
+    downloadRepoDisabledHint: "Available once every module is ready.",
+
+    moduleStatusPill: { planned: "Planned", queued: "Queued", generating: "Generating…", ready: "Ready", failed: "Failed" },
+    moduleSeqLabel: (seq) => `Module ${seq}`,
+    topicLabel: "Topic",
+    keyConceptsLabel: "Key concepts",
+    objectivesLabel: "Objectives",
+    deliverableLabel: "Deliverable",
+    durationLabel: (minutes) => `${minutes} min`,
+    durationUnknown: "Duration not set",
+    prerequisitesLabel: "Prerequisites",
+    prerequisiteUnresolved: (slug) => `${slug} (not in this course)`,
+    generateModule: "Generate this module",
+    generatingModule: "Generating…",
+    generateModuleFailed: "This module could not be started.",
+    openNotebook: "Open notebook",
+    moveUp: "Move earlier",
+    moveDown: "Move later",
+    reorderFailed: "The module order could not be saved.",
+
+    chatLabel: "Talk to Nala",
+    chatPlaceholder: "Ask Nala to change this course…",
+    chatSend: "Send",
+    chatSending: "Sending…",
+    chatEmpty: "Tell Nala what to change — a module's scope, its order, the difficulty.",
+    chatLoadFailed: "The conversation could not be loaded.",
+    chatSendFailed: "The message could not be sent.",
+    progressLabel: "Working",
+  },
   },
   ja: {
     surfaces: { brandedRun: "Leona Run", preview: "公開プレビュー" },
@@ -1875,6 +2013,73 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
     actionExercise: "演習問題にする",
 
     teachMeInNotebook: "ノートブックで学ぶ",
+  },
+  courses: {
+    title: "コース",
+    lede: "Nalaに依頼して一つの依頼文からコース全体を計画し、各モジュールをノートブックとして生成しながら進められます。",
+    coursesTab: "コース",
+
+    planLabel: "コースを計画する",
+    briefLabel: "このコースで何を教えたいですか？",
+    briefPlaceholder: "例：Pythonエンジニアを古典ビットからショアのアルゴリズムまで、8モジュール程度で、毎回手を動かしながら導いてください。",
+    moduleCountLabel: "モジュール数",
+    moduleCountOption: { auto: "自動", "4": "4", "8": "8", "12": "12" },
+    startersLabel: "またはお題から始める",
+    create: "コースを計画",
+    creating: "計画しています…",
+    createFailed: "コースを計画できませんでした。",
+
+    listLoading: "コースを読み込んでいます…",
+    listLoadFailed: "コースを読み込めませんでした。",
+    listEmpty: "まだコースを作成していません。",
+    search: "コースを検索",
+    searchPlaceholder: "タイトルで検索",
+    noMatch: "検索条件に一致するコースはありません。",
+    updated: "更新",
+    statusPill: { planning: "計画中…", planned: "計画済み", generating: "生成中…", ready: "準備完了", failed: "失敗" },
+    progress: (ready, total) => `${total}モジュール中${ready}件が準備完了`,
+    open: "コースを開く",
+
+    backToCourses: "コース一覧に戻る",
+    loading: "コースを読み込んでいます…",
+    loadFailed: "このコースを読み込めませんでした。",
+    titleEditFailed: "タイトルを保存できませんでした。",
+    saveTitle: "保存",
+
+    generateAll: "すべて生成",
+    generatingAll: "生成しています…",
+    generateAllFailed: "モジュールを開始できませんでした。",
+    downloadRepo: "リポジトリとしてダウンロード（.zip）",
+    downloadingRepo: "ダウンロードしています…",
+    downloadRepoFailed: "コースをダウンロードできませんでした。",
+    downloadRepoDisabledHint: "すべてのモジュールが準備完了になると利用できます。",
+
+    moduleStatusPill: { planned: "計画済み", queued: "待機中", generating: "生成中…", ready: "準備完了", failed: "失敗" },
+    moduleSeqLabel: (seq) => `モジュール ${seq}`,
+    topicLabel: "トピック",
+    keyConceptsLabel: "主要な概念",
+    objectivesLabel: "到達目標",
+    deliverableLabel: "成果物",
+    durationLabel: (minutes) => `${minutes}分`,
+    durationUnknown: "所要時間未設定",
+    prerequisitesLabel: "前提モジュール",
+    prerequisiteUnresolved: (slug) => `${slug}（このコースにはありません）`,
+    generateModule: "このモジュールを生成",
+    generatingModule: "生成しています…",
+    generateModuleFailed: "このモジュールを開始できませんでした。",
+    openNotebook: "ノートブックを開く",
+    moveUp: "上へ移動",
+    moveDown: "下へ移動",
+    reorderFailed: "モジュールの順序を保存できませんでした。",
+
+    chatLabel: "Nalaに相談する",
+    chatPlaceholder: "Nalaにこのコースの変更を依頼してください…",
+    chatSend: "送信",
+    chatSending: "送信しています…",
+    chatEmpty: "モジュールの範囲、順序、難易度など、変更したい点をNalaに伝えてください。",
+    chatLoadFailed: "会話を読み込めませんでした。",
+    chatSendFailed: "メッセージを送信できませんでした。",
+    progressLabel: "処理中",
   },
   },
 };

@@ -135,7 +135,6 @@ export function NotebookWorkspace({ notebookId, locale = "en" }: { notebookId: s
     setPinnedSeq(null);
     setTurns([]);
     setFollowedRunId(null);
-    setProgressEvents([]);
     loadNotebook();
     loadVersions();
     loadTurns();
