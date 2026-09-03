@@ -5,8 +5,18 @@ import { StageRail, type RailStage } from "@majorana/ui";
 import type { FormEvent } from "react";
 import { useEffect, useRef, useState } from "react";
 import { ChatMarkdown } from "../../../../components/chat-markdown";
+import { NotebookEditor } from "../../../../components/notebook-editor";
 import { NotebookView, type NotebookCellActionKind } from "../../../../components/notebook-view";
 import { refusalSentence } from "../../../../lib/api-error";
+import {
+  applyCellEdit,
+  cellsAreDirty,
+  deleteCell,
+  insertCellAfter,
+  moveCell,
+  specWithCells,
+  type CellEdit,
+} from "../../../../lib/notebook-editing";
 import { notebookExportFilename } from "../../../../lib/notebook-export";
 import { notebookCellViews, notebookStatusPill } from "../../../../lib/notebook-view";
 import {
@@ -21,6 +31,7 @@ type Notebook = components["schemas"]["Notebook"];
 type NotebookVersion = components["schemas"]["NotebookVersion"];
 type NotebookVersionSummary = components["schemas"]["NotebookVersionSummary"];
 type NotebookTurn = components["schemas"]["NotebookTurn"];
+type Cell = components["schemas"]["Cell"];
 
 /** The one shape this page reads off the run-events SSE stream. Anything else
  * that stream carries (Run's own rich event vocabulary) is irrelevant here —
@@ -97,6 +108,17 @@ export function NotebookWorkspace({ notebookId, locale = "en" }: { notebookId: s
   const [downloading, setDownloading] = useState(false);
   const [rerunning, setRerunning] = useState(false);
 
+  // The editor's draft. `null` means "not editing" — distinct from an empty array,
+  // which is a notebook the reader has deleted every cell from and is about to save.
+  const [draftCells, setDraftCells] = useState<Cell[] | null>(null);
+  const [focusedCellId, setFocusedCellId] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+  // The version an in-flight save is writing. Pinned once its run finishes, rather
+  // than immediately: a queued version has no spec to render, and if the run FAILS the
+  // notebook's `current_version_id` never moves — so following "current" would show
+  // the reader their previous version and hide the failure they need to see.
+  const authoredSeq = useRef<number | null>(null);
+
   const reloadSeq = useRef(0);
 
   function loadNotebook() {
@@ -159,6 +181,8 @@ export function NotebookWorkspace({ notebookId, locale = "en" }: { notebookId: s
     setTurns([]);
     setFollowedRunId(null);
     setProgressEvents([]);
+    setDraftCells(null);
+    setFocusedCellId(null);
     loadNotebook();
     loadVersions();
     loadTurns();
@@ -230,6 +254,10 @@ export function NotebookWorkspace({ notebookId, locale = "en" }: { notebookId: s
               loadNotebook();
               loadVersions();
               loadTurns();
+              if (authoredSeq.current !== null) {
+                setPinnedSeq(authoredSeq.current);
+                authoredSeq.current = null;
+              }
             }
           }
         }
@@ -275,6 +303,106 @@ export function NotebookWorkspace({ notebookId, locale = "en" }: { notebookId: s
       setSending(false);
     }
   }
+
+  // ------------------------------------------------------------------ editing
+
+  const editing = draftCells !== null;
+  const originalCells = (version?.spec?.cells ?? []) as Cell[];
+  const dirty = editing && cellsAreDirty(originalCells, draftCells ?? []);
+
+  function startEditing() {
+    setDraftCells(originalCells.map((cell) => ({ ...cell })));
+    setFocusedCellId(null);
+    setActionError(null);
+  }
+
+  function stopEditing() {
+    setDraftCells(null);
+    setFocusedCellId(null);
+  }
+
+  function discardEdits() {
+    if (dirty && !window.confirm(copy.discardConfirm)) return;
+    stopEditing();
+  }
+
+  function editCell(cellId: string, edit: CellEdit) {
+    setDraftCells((current) => (current === null ? current : applyCellEdit(current, cellId, edit)));
+  }
+
+  function insertCell(afterId: string | null, kind: Cell["kind"]) {
+    setDraftCells((current) => {
+      if (current === null) return current;
+      const { cells: next, id } = insertCellAfter(current, afterId, kind);
+      setFocusedCellId(id);
+      return next;
+    });
+  }
+
+  function removeCell(cellId: string) {
+    setDraftCells((current) => (current === null ? current : deleteCell(current, cellId)));
+    setFocusedCellId((current) => (current === cellId ? null : current));
+  }
+
+  function shiftCell(cellId: string, direction: "up" | "down") {
+    setDraftCells((current) => (current === null ? current : moveCell(current, cellId, direction)));
+  }
+
+  /** Save the draft as a new user-authored version. `runUntil` is "Run to here". */
+  async function saveDraft({ execute, runUntil }: { execute: boolean; runUntil?: string | null }) {
+    const spec = version?.spec;
+    if (!spec || draftCells === null || saving) return;
+    setSaving(true);
+    setActionError(null);
+    try {
+      const response = await fetch(`/api/notebooks/${encodeURIComponent(notebookId)}/versions`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          spec: specWithCells(spec, draftCells),
+          message: "",
+          execute,
+          run_until: runUntil ?? null,
+        }),
+      });
+      const payload = (await response.json()) as unknown;
+      if (!response.ok || !isRecord(payload) || !isRecord(payload.version)) {
+        // `title` is what the API's problem+json puts the sentence in — the parse
+        // error from a source edit, or the reason two inputs were refused.
+        throw new Error(refusalSentence(payload) ?? copy.saveFailed);
+      }
+      const created = payload.version as unknown as NotebookVersionSummary;
+      const runId = typeof payload.run_id === "string" ? payload.run_id : null;
+      stopEditing();
+      loadNotebook();
+      loadVersions();
+      loadTurns();
+      if (runId) {
+        authoredSeq.current = created.seq;
+        setFollowedRunId(runId);
+      } else {
+        // No run to wait for: the version is already `ready`, so show it now.
+        setPinnedSeq(created.seq);
+      }
+    } catch (cause) {
+      setActionError(cause instanceof Error ? cause.message : copy.saveFailed);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  // The browser's own guard. It fires only on a real unload (tab close, reload,
+  // external link) — an in-app route change does not reach it, which is why
+  // `discardEdits` asks separately rather than relying on this.
+  useEffect(() => {
+    if (!dirty) return;
+    function warn(event: BeforeUnloadEvent) {
+      event.preventDefault();
+      event.returnValue = "";
+    }
+    window.addEventListener("beforeunload", warn);
+    return () => window.removeEventListener("beforeunload", warn);
+  }, [dirty]);
 
   function submitMessage(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -370,6 +498,18 @@ export function NotebookWorkspace({ notebookId, locale = "en" }: { notebookId: s
   const isGenerating = RUNNING_STATUSES.has(notebook.latest_status);
   const cells = notebookCellViews(version?.spec?.cells, version?.report);
   const stages = notebookProgressFromEvents(progressEvents as NotebookProgressEvent[]);
+  // Editing is offered only on the newest version, and only when nothing is running:
+  // an edit is saved as the NEXT version, so branching from an older one would
+  // silently discard everything after it, and `_assert_not_in_flight` would refuse a
+  // save made while a run is going anyway — better not to offer the button.
+  const latestSeq = versions.length > 0 ? versions[versions.length - 1].seq : null;
+  const canEdit =
+    !isGenerating &&
+    version !== null &&
+    version.status === "ready" &&
+    version.spec !== null &&
+    latestSeq !== null &&
+    version.seq === latestSeq;
 
   return (
     <main className="mj-notebook-workspace">
@@ -433,6 +573,16 @@ export function NotebookWorkspace({ notebookId, locale = "en" }: { notebookId: s
           >
             {rerunning || isGenerating ? copy.running : copy.runAgain}
           </button>
+          {canEdit || editing ? (
+            <button
+              className="mj-secondary-button"
+              type="button"
+              disabled={saving}
+              onClick={() => (editing ? discardEdits() : startEditing())}
+            >
+              {editing ? copy.editExit : copy.edit}
+            </button>
+          ) : null}
         </div>
       </header>
 
@@ -455,7 +605,48 @@ export function NotebookWorkspace({ notebookId, locale = "en" }: { notebookId: s
             </div>
           ) : null}
           {versionError ? <p role="alert" className="mj-notebook-workspace-error">{versionError}</p> : null}
-          {version ? (
+          {editing && draftCells !== null ? (
+            <>
+              <NotebookEditor
+                cells={draftCells}
+                locale={locale}
+                focusedCellId={focusedCellId}
+                busy={saving}
+                onEdit={editCell}
+                onInsert={insertCell}
+                onDelete={removeCell}
+                onMove={shiftCell}
+                onFocusCell={setFocusedCellId}
+                onRunToHere={(cellId) => void saveDraft({ execute: true, runUntil: cellId })}
+              />
+              <div className="mj-notebook-edit-bar" role="group" aria-label={copy.edit}>
+                <button
+                  className="mj-primary-button"
+                  type="button"
+                  disabled={saving}
+                  onClick={() => void saveDraft({ execute: true })}
+                >
+                  {saving ? copy.saving : copy.saveAndRun}
+                </button>
+                <button
+                  className="mj-secondary-button"
+                  type="button"
+                  disabled={saving}
+                  onClick={() => void saveDraft({ execute: false })}
+                >
+                  {copy.saveWithoutRunning}
+                </button>
+                <button
+                  className="mj-secondary-button"
+                  type="button"
+                  disabled={saving}
+                  onClick={() => discardEdits()}
+                >
+                  {copy.discard}
+                </button>
+              </div>
+            </>
+          ) : version ? (
             <NotebookView
               cells={cells}
               locale={locale}
@@ -464,6 +655,17 @@ export function NotebookWorkspace({ notebookId, locale = "en" }: { notebookId: s
             />
           ) : !isGenerating ? (
             <p className="mj-notebook-workspace-empty-notebook">{copy.loadFailed}</p>
+          ) : null}
+          {!editing && version?.warnings && version.warnings.length > 0 ? (
+            <section className="mj-notebook-structure-notes" aria-label={copy.structureNotesLabel}>
+              <h2>{copy.structureNotesLabel}</h2>
+              <p className="mj-notebook-structure-notes-hint">{copy.structureNotesHint}</p>
+              <ul>
+                {version.warnings.map((warning, index) => (
+                  <li key={index}>{warning}</li>
+                ))}
+              </ul>
+            </section>
           ) : null}
           {version?.review ? (
             <section className="mj-notebook-review">

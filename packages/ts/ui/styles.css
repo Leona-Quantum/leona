@@ -15060,6 +15060,132 @@ html:not([data-auth="in"]) .mj-auth-slot[data-auth-slot="in"] {
   line-height: 1.5;
 }
 
+/* -- the in-house editor -- */
+.mj-notebook-edit {
+  display: grid;
+  gap: var(--sp-3);
+}
+.mj-notebook-edit-hint,
+.mj-notebook-edit-empty {
+  margin: 0;
+  color: var(--text-2);
+  font-size: var(--fs-13);
+}
+.mj-notebook-edit-cell {
+  display: grid;
+  gap: var(--sp-2);
+  padding: var(--sp-3);
+  border: 1px solid var(--border-0);
+  border-radius: var(--radius-card);
+  background: var(--bg-1);
+}
+.mj-notebook-edit-cell[data-focused="true"] {
+  border-color: var(--accent);
+}
+.mj-notebook-edit-cell-head {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-2);
+  align-items: center;
+}
+.mj-notebook-edit-cell-id {
+  color: var(--text-2);
+  font-family: var(--font-mono);
+  font-size: var(--fs-12);
+}
+.mj-notebook-edit-field select {
+  padding: var(--sp-1) var(--sp-2);
+  border: 1px solid var(--border-0);
+  border-radius: var(--radius-control);
+  background: var(--bg-0);
+  color: var(--text-0);
+  font-size: var(--fs-12);
+}
+.mj-notebook-edit-toggle {
+  display: inline-flex;
+  gap: var(--sp-1);
+  align-items: center;
+  color: var(--text-2);
+  font-size: var(--fs-12);
+}
+.mj-notebook-edit-source {
+  display: block;
+}
+.mj-notebook-edit-textarea {
+  display: block;
+  width: 100%;
+  min-height: calc(var(--sp-4) * 3);
+  padding: var(--sp-3);
+  border: 1px solid var(--border-0);
+  border-radius: var(--radius-control);
+  background: var(--bg-0);
+  color: var(--text-0);
+  font-family: var(--font-mono);
+  font-size: var(--fs-13);
+  line-height: 1.6;
+  /* The textarea's own height is set from its scrollHeight on every keystroke
+     (`notebook-editor.tsx`), so it must never grow its own scrollbar or the
+     measurement fights the resize handle. */
+  overflow: hidden;
+  resize: none;
+}
+.mj-notebook-edit-textarea:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+.mj-notebook-edit-cell-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-2);
+}
+.mj-notebook-edit-run-to-here {
+  margin-left: auto;
+}
+.mj-notebook-edit-add {
+  display: flex;
+  gap: var(--sp-2);
+}
+.mj-notebook-edit-bar {
+  position: sticky;
+  bottom: 0;
+  z-index: 1;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-2);
+  margin-top: var(--sp-3);
+  padding: var(--sp-3);
+  border: 1px solid var(--border-0);
+  border-radius: var(--radius-card);
+  background: var(--bg-1);
+}
+.mj-notebook-structure-notes {
+  padding: var(--sp-4);
+  border: 1px solid var(--border-0);
+  border-radius: var(--radius-card);
+  background: var(--bg-1);
+}
+.mj-notebook-structure-notes h2 {
+  margin: 0 0 var(--sp-2);
+  font-size: var(--fs-16);
+  font-weight: 500;
+}
+.mj-notebook-structure-notes-hint {
+  margin: 0 0 var(--sp-3);
+  color: var(--text-2);
+  font-size: var(--fs-12);
+}
+.mj-notebook-structure-notes ul {
+  display: grid;
+  gap: var(--sp-2);
+  margin: 0;
+  padding-left: var(--sp-5);
+}
+.mj-notebook-structure-notes li {
+  color: var(--text-1);
+  font-size: var(--fs-13);
+  line-height: 1.5;
+}
+
 /* -- the chat rail -- */
 .mj-notebook-workspace-chat {
   min-width: 0;
