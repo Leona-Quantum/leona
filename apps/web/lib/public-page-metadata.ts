@@ -15,7 +15,7 @@ import { CONTACT_COPY, HOME_COPY, PRICING_COPY, PRIVACY_COPY, TERMS_COPY, WORKSP
 /**
  * `title`/`description` for the seven `[locale]` marketing pages that, until
  * now, declared a static `export const metadata` with no locale branch at
- * all — home, contact, pricing, privacy, terms, workspace.
+ * all — home, about, contact, pricing, privacy, terms, workspace.
  *
  * Measured on production: with the Japanese locale active, `<h1>` and the
  * rest of the page body render correctly in Japanese (they read from

@@ -28,6 +28,11 @@ type AboutCopy = {
     label: string;
     title: string;
     body: string;
+    /** Accessible name for a founder's focus-tag list, composed as
+     *  `${member.name} — ${focusLabel}`. It exists because the label used to be
+     *  the hardcoded English word "focus", which a Japanese screen-reader user
+     *  heard read out in English beside a Japanese name. */
+    focusLabel: string;
     members: Array<{
       number: string;
       name: string;
@@ -93,6 +98,7 @@ export const ABOUT_COPY: Record<PublicLocale, AboutCopy> = {
       label: "04 / TEAM",
       title: "Different disciplines. One system.",
       body: "Leona Quantum was founded by three builders working across computer science, physical informatics, quantum machine learning, robotics, and AI for science.",
+      focusLabel: "Focus areas",
       members: [
         {
           number: "01",
@@ -163,7 +169,7 @@ export const ABOUT_COPY: Record<PublicLocale, AboutCopy> = {
     build: {
       label: "02 / WHAT WE BUILD",
       title: "問いから、\n検証できる量子回路へ。",
-      body: "Leonaは、量子開発のループを分断しません。AIによる設計と実装、シミュレーション、結果の検証、レポジトリーへの保存までをつなぎ、一度きりの実験を再利用できる知識へ変えていきます。",
+      body: "Leonaは、量子開発のループを分断しません。AIによる設計と実装、シミュレーション、結果の検証、リポジトリへの保存までをつなぎ、一度きりの実験を再利用できる知識へ変えていきます。",
       steps: [
         { number: "01", title: "問いを伝える", body: "解きたい課題と条件を、自然言語で入力します。" },
         { number: "02", title: "設計し、実行する", body: "AIが計画を量子コードへ落とし込み、対応する環境で実行します。" },
@@ -184,6 +190,7 @@ export const ABOUT_COPY: Record<PublicLocale, AboutCopy> = {
       label: "04 / TEAM",
       title: "異なる専門性を、\nひとつのシステムに。",
       body: "Leona Quantumは、情報工学、物理情報工学、量子機械学習、ロボティクス、生命科学AIなど、異なる領域で研究と開発に取り組んできた3人によって立ち上げられました。",
+      focusLabel: "注力領域",
       members: [
         {
           number: "01",

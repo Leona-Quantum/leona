@@ -94,10 +94,10 @@ export default async function AboutPage({
             <p>{copy.build.body}</p>
           </div>
         </Reveal>
-        <div className="mj-about-flow" role="list">
+        <div className="mj-about-flow">
           {copy.build.steps.map((step, index) => (
             <Reveal delay={index * 80} key={step.number}>
-              <article className="mj-about-flow-step" role="listitem">
+              <article className="mj-about-flow-step">
                 <div className="mj-about-flow-step-head">
                   <span>{step.number}</span>
                   <span className="mj-about-flow-dot" aria-hidden="true" />
@@ -152,7 +152,7 @@ export default async function AboutPage({
                 </div>
                 <p className="mj-about-person-affiliation">{member.affiliation}</p>
                 <p className="mj-about-person-bio">{member.bio}</p>
-                <ul className="mj-about-person-focus" aria-label={`${member.name} focus`}>
+                <ul className="mj-about-person-focus" aria-label={`${member.name} — ${copy.team.focusLabel}`}>
                   {member.focus.map((focus) => <li key={focus}>{focus}</li>)}
                 </ul>
               </article>
