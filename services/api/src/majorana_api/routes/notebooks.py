@@ -727,6 +727,7 @@ async def author_notebook_version(
             "user_id": str(scope.user_id),
             "workspace_id": str(scope.workspace_id),
             "kind": "author",
+            "slug": notebook.slug,
             # The resolved spec, not `body.source`/`body.ipynb`: the worker must never
             # be the place a reader's syntax error is discovered, because there the
             # only thing it can produce is a failed run.

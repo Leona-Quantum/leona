@@ -564,3 +564,232 @@ async def test_generate_through_the_real_local_subprocess_sandbox(_fake_run_plum
     # the spec round-trips through NotebookSpec cleanly.
     NotebookSpec.model_validate(version.spec)
     assert version.report["ok"] is True
+
+
+# ------------------------------------------------------------- author (the editor)
+
+AUTHORED = """\
+# ---
+# title: My own edit
+# kind: scratch
+# ---
+
+# %% id=c01
+x = 21
+print("first")
+
+# %% id=c02
+print("second", x * 2)
+
+# %% id=c03
+print("third")
+"""
+
+
+@pytest.fixture
+def run_stores(monkeypatch, _fake_run_plumbing):
+    """Every `RepoRunStateStore` the handler builds, so a test can read how the run was
+    finished. Depends on `_fake_run_plumbing`, which patches the same name, so this
+    patch is the one that wins."""
+    built: list[FakeRunStore] = []
+
+    class RecordingRunStore(FakeRunStore):
+        def __init__(self, scope, session, run_id):
+            super().__init__(scope, session, run_id)
+            built.append(self)
+
+    monkeypatch.setattr(handlers, "RepoRunStateStore", RecordingRunStore)
+    return built
+
+
+def _author_payload(
+    *, run_id, notebook_id, version_id, source=AUTHORED, run_until=None, slug="my-own-edit"
+):
+    spec = parse_source(source, slug=slug)
+    payload = _payload(
+        run_id=run_id,
+        notebook_id=notebook_id,
+        version_id=version_id,
+        kind="author",
+        request={"spec": spec.model_dump(mode="json"), "message": "my edit"},
+    )
+    payload["slug"] = slug
+    payload["run_until"] = run_until
+    return payload
+
+
+async def test_author_runs_the_readers_spec_in_the_real_sandbox_and_saves_it_ready(
+    _fake_run_plumbing,
+):
+    """The whole point of the lane: the reader's own cells, executed by the same
+    sandbox path Nala's builds use, with no LLM anywhere."""
+    usage_calls = _fake_run_plumbing
+    run_id, notebook_id, version_id = uuid.uuid4(), uuid.uuid4(), uuid.uuid4()
+    store = MemoryNotebookStore()
+    store.seed_version(notebook_id, version_id)
+    session = Session()
+
+    await nh.handle_notebook_revise(
+        session,
+        _author_payload(run_id=run_id, notebook_id=notebook_id, version_id=version_id),
+        # An empty queue: any LLM call at all on this path raises IndexError, so this
+        # is the assertion that the author branch never reaches a model.
+        llm=QueueLLM([]),
+        sandbox=LocalSubprocessSandbox(),
+        store=store,
+    )
+
+    version = store.versions[version_id]
+    assert version.status == "ready", version.error
+    NotebookSpec.model_validate(version.spec)
+    assert version.report["ok"] is True
+    by_id = {cell["id"]: cell for cell in version.report["cells"]}
+    assert by_id["c01"]["stdout"] == "first\n"
+    assert by_id["c02"]["stdout"] == "second 42\n"
+    assert by_id["c03"]["status"] == "ok"
+    assert version.ipynb is not None
+    assert usage_calls, "a sandbox dispatch must be metered"
+    # The chat rail says what happened, without a model having said it.
+    assert store.turns[-1].role == "nala"
+    assert "3" in store.turns[-1].content
+
+
+async def test_author_with_a_failing_cell_is_still_a_ready_version_and_a_succeeded_run(
+    run_stores,
+):
+    """A cell that raised is a result the reader asked to see, not a failed run — the
+    version stays `ready` (so it becomes what the notebook shows) and the run finishes
+    SUCCEEDED with `notebook_authored`."""
+    run_id, notebook_id, version_id = uuid.uuid4(), uuid.uuid4(), uuid.uuid4()
+    store = MemoryNotebookStore()
+    store.seed_version(notebook_id, version_id)
+    session = Session()
+    source = (
+        "# ---\n# title: Broken on purpose\n# kind: scratch\n# ---\n"
+        "# %% id=c01\nprint('ran')\n"
+        "# %% id=c02\nraise ValueError('boom')\n"
+    )
+
+    await nh.handle_notebook_revise(
+        session,
+        _author_payload(
+            run_id=run_id, notebook_id=notebook_id, version_id=version_id, source=source
+        ),
+        llm=QueueLLM([]),
+        sandbox=LocalSubprocessSandbox(),
+        store=store,
+    )
+
+    version = store.versions[version_id]
+    assert version.status == "ready", version.error
+    assert version.error == ""
+    by_id = {cell["id"]: cell for cell in version.report["cells"]}
+    assert by_id["c01"]["status"] == "ok"
+    assert by_id["c02"]["status"] == "error"
+    assert by_id["c02"]["error"]["ename"] == "ValueError"
+    # The report itself is honest that the notebook did not run clean...
+    assert version.report["ok"] is False
+    # ...and the RUN still succeeded, because showing the traceback is the deliverable.
+    assert run_stores[0].status is RunStatus.SUCCEEDED
+    assert run_stores[0].finished["reason_code"] == "notebook_authored"
+
+
+async def test_author_with_run_until_stops_and_reports_the_rest_not_run(run_stores):
+    run_id, notebook_id, version_id = uuid.uuid4(), uuid.uuid4(), uuid.uuid4()
+    store = MemoryNotebookStore()
+    store.seed_version(notebook_id, version_id)
+    session = Session()
+
+    await nh.handle_notebook_revise(
+        session,
+        _author_payload(
+            run_id=run_id, notebook_id=notebook_id, version_id=version_id, run_until="c02"
+        ),
+        llm=QueueLLM([]),
+        sandbox=LocalSubprocessSandbox(),
+        store=store,
+    )
+
+    version = store.versions[version_id]
+    assert version.status == "ready", version.error
+    by_id = {cell["id"]: cell for cell in version.report["cells"]}
+    assert by_id["c01"]["status"] == "ok" and by_id["c02"]["status"] == "ok"
+    assert by_id["c03"]["status"] == "not_run"
+    # Stopping where the reader asked is a clean run, not a truncated one.
+    assert version.report["ok"] is True
+    assert run_stores[0].status is RunStatus.SUCCEEDED
+    assert "c02" in store.turns[-1].content
+
+
+async def test_author_records_structure_warnings_without_refusing_the_save(_fake_run_plumbing):
+    """A scratch notebook has no structure rules to fail, so this uses a `lesson`,
+    which has several — and the save still lands `ready`."""
+    run_id, notebook_id, version_id = uuid.uuid4(), uuid.uuid4(), uuid.uuid4()
+    store = MemoryNotebookStore()
+    store.seed_version(notebook_id, version_id)
+    session = Session()
+    source = "# ---\n# title: Bare lesson\n# kind: lesson\n# ---\n# %% id=c01\nprint('hi')\n"
+
+    await nh.handle_notebook_revise(
+        session,
+        _author_payload(
+            run_id=run_id, notebook_id=notebook_id, version_id=version_id, source=source
+        ),
+        llm=QueueLLM([]),
+        sandbox=LocalSubprocessSandbox(),
+        store=store,
+    )
+
+    version = store.versions[version_id]
+    assert version.status == "ready", version.error
+    assert version.review is not None
+    assert version.review["warnings"], "a bare lesson fails several structure rules"
+    assert version.review["verdict"] == "needs-attention"
+    assert version.review["findings"] == []
+
+
+async def test_author_whose_cells_the_guard_refuses_ends_failed(run_stores):
+    """Nothing ran, so there is no result to show: this one IS a failure."""
+    run_id, notebook_id, version_id = uuid.uuid4(), uuid.uuid4(), uuid.uuid4()
+    store = MemoryNotebookStore()
+    store.seed_version(notebook_id, version_id)
+    session = Session()
+
+    await nh.handle_notebook_revise(
+        session,
+        _author_payload(
+            run_id=run_id,
+            notebook_id=notebook_id,
+            version_id=version_id,
+            source=GUARD_VIOLATING_DRAFT,
+        ),
+        llm=QueueLLM([]),
+        sandbox=LocalSubprocessSandbox(),
+        store=store,
+    )
+
+    version = store.versions[version_id]
+    assert version.status == "failed"
+    assert version.error
+    assert run_stores[0].status is RunStatus.FAILED
+    assert run_stores[0].finished["reason_code"] == "notebook_author_failed"
+
+
+async def test_author_needs_no_base_version(_fake_run_plumbing):
+    """The store holds only the queued version being written — no ready base at all.
+    An authored spec is self-contained, so this must still run."""
+    run_id, notebook_id, version_id = uuid.uuid4(), uuid.uuid4(), uuid.uuid4()
+    store = MemoryNotebookStore()
+    store.seed_version(notebook_id, version_id)
+    session = Session()
+    assert await store.get_current_version(None, None, notebook_id) is None
+
+    await nh.handle_notebook_revise(
+        session,
+        _author_payload(run_id=run_id, notebook_id=notebook_id, version_id=version_id),
+        llm=QueueLLM([]),
+        sandbox=LocalSubprocessSandbox(),
+        store=store,
+    )
+
+    assert store.versions[version_id].status == "ready"
