@@ -142,13 +142,21 @@ id = "generic-api-key"
     #    and it is wrong in the direction this file cares about. `regexTarget` is
     #    "match" above, so a regex of just `abcdef0123456789` suppresses ANY
     #    `generic-api-key` finding whose matched text contains that run anywhere.
-    #    Sourcery flagged it on PR 821 and the scenario is real, not theoretical
-    #    -- demonstrated with gitleaks 8.30.1 before this line was rewritten:
+    #    Sourcery flagged it on PR 821 and the scenario is real, not theoretical.
+    #    Demonstrated with gitleaks 8.30.1 before this line was rewritten, using
+    #    a generic `api_key = "..."` assignment whose value is ~40 random
+    #    characters with the sixteen-hex-digit run buried in the middle -- the
+    #    exact literal is deliberately NOT reproduced here, because pasting a
+    #    credential-shaped string into this comment makes `semgrep`'s
+    #    `detected-generic-api-key` rule fail the PR, which is how the first
+    #    version of this comment was caught. That value is:
     #
-    #      api_key = "Zx9Kq7abcdef0123456789QmT4pZ1yHn8KcW3jL6dA0sEu"
+    #      caught      by dev's config with no entry 7 at all
+    #      SUPPRESSED  by the bare-substring version of entry 7
+    #      caught      by the anchored version below
     #
-    #    is caught by the config without any entry 7, and SILENTLY SUPPRESSED by
-    #    the substring version. The anchored version below still catches it.
+    #    which is the whole finding: the substring form let a genuine credential
+    #    through.
     #    Whitespace around the `=` is tolerated so an edit to the fixture's
     #    formatting does not re-break the gate, but the value must be the fixture
     #    value entire -- paste a real token into that same constant and the gate
