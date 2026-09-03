@@ -277,6 +277,60 @@ export interface components {
             not_assumed?: string[];
         };
         /**
+         * AuthorNotebookVersionRequest
+         * @description A version the reader wrote themselves.
+         *
+         *     Three equivalent ways in, because the same notebook is edited from three places
+         *     and all three must land as one kind of row: `spec` from the in-browser editor,
+         *     `source` from a text editor (the `.nb.py` percent form), `ipynb` from Jupyter
+         *     (`%nala push`). Exactly one of the three — two inputs is a 400, not a silent
+         *     precedence rule, because a client sending both has a bug the server cannot
+         *     resolve in the reader's favour.
+         *
+         *     A user-authored version is executed by the same sandbox path Nala's builds use,
+         *     so the version history stays the single truth about what this notebook is.
+         */
+        AuthorNotebookVersionRequest: {
+            /**
+             * Execute
+             * @default true
+             */
+            execute: boolean;
+            /**
+             * Ipynb
+             * @default null
+             */
+            ipynb: {
+                [key: string]: unknown;
+            } | null;
+            /**
+             * Message
+             * @default
+             */
+            message: string;
+            /**
+             * Run Until
+             * @default null
+             */
+            run_until: string | null;
+            /**
+             * Source
+             * @default null
+             */
+            source: string | null;
+            /** @default null */
+            spec: components["schemas"]["NotebookSpec"] | null;
+        };
+        /** AuthorNotebookVersionResponse */
+        AuthorNotebookVersionResponse: {
+            /**
+             * Run Id
+             * @default null
+             */
+            run_id: string | null;
+            version: components["schemas"]["NotebookVersionSummary"];
+        };
+        /**
          * BaselineKind
          * @enum {string}
          */
@@ -1777,6 +1831,8 @@ export interface components {
              * @enum {string}
              */
             verdict: "ready" | "needs-attention";
+            /** Warnings */
+            warnings?: string[];
             /** What This Notebook Does Not Establish */
             what_this_notebook_does_not_establish?: string[];
         };
@@ -1963,6 +2019,8 @@ export interface components {
             /** @default null */
             spec: components["schemas"]["NotebookSpec"] | null;
             status: components["schemas"]["NotebookVersionStatus"];
+            /** Warnings */
+            warnings?: string[];
         };
         /**
          * NotebookVersionAuthor

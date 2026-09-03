@@ -92,6 +92,8 @@ from .events import (
 )
 from .notebooks import (
     Audience,
+    AuthorNotebookVersionRequest,
+    AuthorNotebookVersionResponse,
     Cell,
     CellError,
     CellOutput,
@@ -301,7 +303,14 @@ from .lifecycle import (
 # 2.18.0: Notebook resources — the notebook spec with role-carrying cells, the
 # per-cell execution report, the advisory review, versions and chat turns, plus
 # the `notebook` run mode. Additive: existing clients never select the new mode.
-CONTRACTS_VERSION = "2.18.0"
+# 2.19.0: AuthorNotebookVersionRequest/Response — a notebook version the READER
+# wrote, from the in-browser editor (spec), a text editor (source) or Jupyter
+# (ipynb), executed by the same sandbox path Nala's builds use. Plus
+# NotebookReview.warnings and its NotebookVersion.warnings mirror: the structure
+# check becomes advisory output on a user's edit instead of a constraint that
+# refuses it. Additive — every field defaults, and a client that never posts to
+# /notebooks/{id}/versions sees no change.
+CONTRACTS_VERSION = "2.19.0"
 
 __all__ = [
     "CONTRACTS_VERSION",
@@ -376,6 +385,8 @@ __all__ = [
     "PlanProduced",
     "Qapp",
     "Audience",
+    "AuthorNotebookVersionRequest",
+    "AuthorNotebookVersionResponse",
     "Cell",
     "CellError",
     "CellOutput",

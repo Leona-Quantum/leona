@@ -311,6 +311,13 @@ class NotebookReview(_Model):
     verdict: Literal["ready", "needs-attention"]
     findings: list[ReviewFinding] = Field(default_factory=list)
     what_this_notebook_does_not_establish: list[str] = Field(default_factory=list)
+    #: Structure requirements the spec does not satisfy (`templates.check_structure`),
+    #: recorded so a reader's own edit is *reported on* rather than refused. Nala's
+    #: own builds run the same check as a prompt constraint; a user-authored version
+    #: runs it here and keeps going. Carried in this model rather than on a column of
+    #: its own because `notebook_versions.review` is already the JSONB the advisory
+    #: layer is stored in — see `NotebookVersion.warnings`, which mirrors this out.
+    warnings: list[str] = Field(default_factory=list)
 
 
 # --------------------------------------------------------------------------- resources
@@ -385,6 +392,11 @@ class NotebookVersion(NotebookVersionSummary):
     report: ExecutionReport | None = None
     review: NotebookReview | None = None
     error: str = ""
+    #: Advisory structure notes for THIS version, mirrored out of `review.warnings` so
+    #: a client that renders the notes never has to know they are stored inside the
+    #: review blob. Never a reason a version was refused: a user-authored version with
+    #: warnings is `ready`, and the warnings render beside it.
+    warnings: list[str] = Field(default_factory=list)
 
 
 class NotebookTurn(_ResourceBase):
@@ -480,6 +492,62 @@ class ImportNotebookResponse(_ResourceBase):
 class RerunNotebookResponse(_ResourceBase):
     version: NotebookVersionSummary
     run_id: UUID
+
+
+class AuthorNotebookVersionRequest(_ResourceBase):
+    """A version the reader wrote themselves.
+
+    Three equivalent ways in, because the same notebook is edited from three places
+    and all three must land as one kind of row: `spec` from the in-browser editor,
+    `source` from a text editor (the `.nb.py` percent form), `ipynb` from Jupyter
+    (`%nala push`). Exactly one of the three — two inputs is a 400, not a silent
+    precedence rule, because a client sending both has a bug the server cannot
+    resolve in the reader's favour.
+
+    A user-authored version is executed by the same sandbox path Nala's builds use,
+    so the version history stays the single truth about what this notebook is.
+    """
+
+    spec: NotebookSpec | None = None
+    #: The `.nb.py` percent-format authoring text (`leona_notebooks.source`).
+    source: str | None = Field(default=None, max_length=400_000)
+    ipynb: dict[str, Any] | None = None
+    #: The line this edit gets in the version history.
+    message: str = Field(default="", max_length=500)
+    #: `False` saves the version as `ready` with no report and no run — a draft the
+    #: reader has not asked to execute yet.
+    execute: bool = True
+    #: A cell id: execute cells up to and including it ("Run to here"), reporting the
+    #: rest as `not_run`. `None` runs the whole notebook.
+    run_until: str | None = None
+
+    @field_validator("run_until")
+    @classmethod
+    def _run_until_shape(cls, value: str | None) -> str | None:
+        if value is not None and not _CELL_ID_RE.match(value):
+            raise ValueError(f"run_until {value!r} must match {_CELL_ID_RE.pattern}")
+        return value
+
+    @model_validator(mode="after")
+    def _exactly_one_input(self) -> AuthorNotebookVersionRequest:
+        given = [
+            name
+            for name, v in (("spec", self.spec), ("source", self.source), ("ipynb", self.ipynb))
+            if v is not None
+        ]
+        if len(given) != 1:
+            raise ValueError(
+                "exactly one of spec, source or ipynb is required, got "
+                + (", ".join(given) if given else "none")
+            )
+        return self
+
+
+class AuthorNotebookVersionResponse(_ResourceBase):
+    version: NotebookVersionSummary
+    #: `None` when `execute=false` — the version is saved `ready` with no report and
+    #: there is no run to follow.
+    run_id: UUID | None = None
 
 
 class UpdateNotebookRequest(_ResourceBase):

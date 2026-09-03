@@ -78,6 +78,8 @@ EXPORTED = [
     notebooks.ImportNotebookRequest,
     notebooks.ImportNotebookResponse,
     notebooks.RerunNotebookResponse,
+    notebooks.AuthorNotebookVersionRequest,
+    notebooks.AuthorNotebookVersionResponse,
     notebooks.UpdateNotebookRequest,
     models.VerificationRecord,
     models.QpuRunRecord,
