@@ -3,6 +3,7 @@ import test from "node:test";
 
 import {
   classifyCellOutput,
+  errorTracebackText,
   notebookCellViews,
   notebookStatusPill,
   type NotebookCellView,
@@ -78,7 +79,7 @@ test("an error result surfaces ename/evalue verbatim", () => {
         stdout: "",
         stderr: "",
         outputs: [],
-        error: { ename: "ZeroDivisionError", evalue: "division by zero", traceback: [] },
+        error: { ename: "ZeroDivisionError", evalue: "division by zero", traceback: ["Traceback...", "ZeroDivisionError: division by zero"] },
         duration_ms: 1,
         execution_count: 1,
         note: "",
@@ -87,7 +88,25 @@ test("an error result surfaces ename/evalue verbatim", () => {
   };
   const [view] = notebookCellViews(cells, report);
   assert.equal(view.status, "error");
-  assert.deepEqual(view.error, { ename: "ZeroDivisionError", evalue: "division by zero" });
+  assert.deepEqual(view.error, {
+    ename: "ZeroDivisionError",
+    evalue: "division by zero",
+    traceback: ["Traceback...", "ZeroDivisionError: division by zero"],
+  });
+});
+
+test("errorTracebackText prefers the real traceback, joined by newline", () => {
+  const text = errorTracebackText({ ename: "E", evalue: "v", traceback: ["line1", "line2"] });
+  assert.equal(text, "line1\nline2");
+});
+
+test("errorTracebackText falls back to ename: evalue when there is no traceback", () => {
+  const text = errorTracebackText({ ename: "NotebookGuardError", evalue: "disallowed import", traceback: [] });
+  assert.equal(text, "NotebookGuardError: disallowed import");
+});
+
+test("errorTracebackText on no error is the empty string", () => {
+  assert.equal(errorTracebackText(null), "");
 });
 
 test("a truncated output marks the cell view truncated", () => {

@@ -49,7 +49,7 @@ export interface NotebookCellView {
   stdout: string;
   stderr: string;
   outputs: NotebookOutputView[];
-  error: { ename: string; evalue: string } | null;
+  error: { ename: string; evalue: string; traceback: string[] } | null;
   /** Any output on this cell was cut for the sandbox's evidence budget. */
   truncated: boolean;
   durationMs: number | null;
@@ -92,11 +92,26 @@ export function notebookCellViews(
       stdout: result?.stdout ?? "",
       stderr: result?.stderr ?? "",
       outputs,
-      error: result?.error ? { ename: result.error.ename, evalue: result.error.evalue } : null,
+      error: result?.error
+        ? { ename: result.error.ename, evalue: result.error.evalue, traceback: result.error.traceback ?? [] }
+        : null,
       truncated: outputs.some((output) => output.truncated),
       durationMs: result ? result.duration_ms : null,
     };
   });
+}
+
+/**
+ * The text the "Explain this error" cell action (`components/notebook-view.tsx`)
+ * quotes back to Nala. Prefers the real traceback the sandbox captured; a
+ * cell error with no traceback lines (seen from `NotebookGuardError` and a
+ * couple of other non-Python failure paths) falls back to `ename: evalue`
+ * rather than sending an empty fenced block.
+ */
+export function errorTracebackText(error: NotebookCellView["error"]): string {
+  if (!error) return "";
+  if (error.traceback.length > 0) return error.traceback.join("\n");
+  return `${error.ename}: ${error.evalue}`;
 }
 
 /**

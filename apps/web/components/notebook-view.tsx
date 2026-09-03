@@ -1,12 +1,28 @@
 "use client";
 
 import { SyntaxHighlightedCode } from "@majorana/ui";
+import { useState } from "react";
 import { ChatMarkdown } from "./chat-markdown";
 import type { NotebookCellStatus, NotebookCellView } from "../lib/notebook-view";
 import type { PublicLocale } from "../lib/public-locale";
 import { WORKSPACE_COPY } from "../lib/workspace-locale";
 
-export type NotebookCellActionKind = "explain" | "simplify" | "figure" | "exercise";
+export type NotebookCellActionKind =
+  | "explain"
+  | "simplify"
+  | "figure"
+  | "exercise"
+  // Learner actions (Lane E): "explainError" needs no reader input and fires
+  // immediately; "checkAttempt" opens the inline textarea below before it
+  // fires — see `onCellAction`'s `detail` parameter.
+  | "explainError"
+  | "checkAttempt";
+
+/** Roles the "Check my attempt" action shows on — exactly the roles a reader
+ * writes their own code against: a stand-alone exercise, a challenge's own
+ * solution cell (grading an alternate attempt), and a checkpoint (the
+ * assertion that says whether earlier work was right). */
+const CHECKABLE_ROLES = new Set(["exercise", "solution", "checkpoint"]);
 
 type NotebookCopy = (typeof WORKSPACE_COPY)[PublicLocale]["notebooks"];
 
@@ -27,7 +43,9 @@ export function NotebookView({
   cells: NotebookCellView[];
   locale?: PublicLocale;
   framework?: string;
-  onCellAction?: (cellId: string, action: NotebookCellActionKind) => void;
+  /** `detail` carries the reader's free-text attempt for `"checkAttempt"`;
+   * every other action kind calls this with `detail` omitted. */
+  onCellAction?: (cellId: string, action: NotebookCellActionKind, detail?: string) => void;
 }) {
   const copy = WORKSPACE_COPY[locale].notebooks;
   if (!cells.length) return null;
@@ -55,8 +73,20 @@ function NotebookCellCard({
   cell: NotebookCellView;
   copy: NotebookCopy;
   framework: string;
-  onCellAction?: (cellId: string, action: NotebookCellActionKind) => void;
+  onCellAction?: (cellId: string, action: NotebookCellActionKind, detail?: string) => void;
 }) {
+  const [attemptOpen, setAttemptOpen] = useState(false);
+  const [attemptText, setAttemptText] = useState("");
+  const showExplainError = cell.error !== null;
+  const showCheckAttempt = cell.role !== null && CHECKABLE_ROLES.has(cell.role);
+
+  function submitAttempt() {
+    if (!onCellAction || !attemptText.trim()) return;
+    onCellAction(cell.id, "checkAttempt", attemptText);
+    setAttemptOpen(false);
+    setAttemptText("");
+  }
+
   return (
     <article className="mj-notebook-cell" data-kind={cell.kind} data-status={cell.status}>
       <div className="mj-notebook-cell-head">
@@ -68,6 +98,16 @@ function NotebookCellCard({
             <button type="button" onClick={() => onCellAction(cell.id, "simplify")}>{copy.actionSimplify}</button>
             <button type="button" onClick={() => onCellAction(cell.id, "figure")}>{copy.actionAddFigure}</button>
             <button type="button" onClick={() => onCellAction(cell.id, "exercise")}>{copy.actionExercise}</button>
+            {showExplainError ? (
+              <button type="button" onClick={() => onCellAction(cell.id, "explainError")}>
+                {copy.actionExplainError}
+              </button>
+            ) : null}
+            {showCheckAttempt ? (
+              <button type="button" aria-pressed={attemptOpen} onClick={() => setAttemptOpen((open) => !open)}>
+                {copy.actionCheckAttempt}
+              </button>
+            ) : null}
           </div>
         ) : null}
       </div>
@@ -85,6 +125,40 @@ function NotebookCellCard({
         </pre>
       )}
       {cell.kind === "code" ? <NotebookCellOutputs cell={cell} copy={copy} /> : null}
+      {showCheckAttempt && attemptOpen ? (
+        <div className="mj-notebook-cell-attempt">
+          <label>
+            <span className="sr-only">{copy.actionCheckAttempt}</span>
+            <textarea
+              value={attemptText}
+              onChange={(event) => setAttemptText(event.target.value)}
+              placeholder={copy.checkAttemptPlaceholder}
+              rows={4}
+              autoFocus
+            />
+          </label>
+          <div className="mj-notebook-cell-attempt-actions">
+            <button
+              type="button"
+              className="mj-secondary-button"
+              onClick={() => {
+                setAttemptOpen(false);
+                setAttemptText("");
+              }}
+            >
+              {copy.actionCheckAttemptCancel}
+            </button>
+            <button
+              type="button"
+              className="mj-primary-button"
+              disabled={!attemptText.trim()}
+              onClick={submitAttempt}
+            >
+              {copy.checkAttemptSubmit}
+            </button>
+          </div>
+        </div>
+      ) : null}
     </article>
   );
 }
