@@ -30,6 +30,7 @@ import {
   type NotebookProgressStage,
 } from "../../../../lib/notebook-progress";
 import type { PublicLocale } from "../../../../lib/public-locale";
+import { useRunProgress } from "../../../../lib/use-run-progress";
 import { WORKSPACE_COPY } from "../../../../lib/workspace-locale";
 
 type Notebook = components["schemas"]["Notebook"];
@@ -37,29 +38,6 @@ type NotebookVersion = components["schemas"]["NotebookVersion"];
 type NotebookVersionSummary = components["schemas"]["NotebookVersionSummary"];
 type NotebookTurn = components["schemas"]["NotebookTurn"];
 type Cell = components["schemas"]["Cell"];
-
-/** The one shape this page reads off the run-events SSE stream. Anything else
- * that stream carries (Run's own rich event vocabulary) is irrelevant here —
- * see lib/notebook-progress.ts for why this stays generic rather than naming
- * the pipeline's own stage ids. */
-type WireEvent = {
-  type: string;
-  stage?: string | null;
-  status?: string;
-  duration_ms?: number;
-};
-
-function parseSseBlock(block: string): { id: string | null; data: string } | null {
-  const lines = block.split("\n");
-  if (lines.some((line) => line.startsWith(":"))) return null;
-  const idLine = lines.find((line) => line.startsWith("id:"));
-  const data = lines
-    .filter((line) => line.startsWith("data:"))
-    .map((line) => line.slice("data:".length).trimStart())
-    .join("\n");
-  if (!data) return null;
-  return { id: idLine ? idLine.slice("id:".length).trim() : null, data };
-}
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
@@ -101,7 +79,6 @@ export function NotebookWorkspace({ notebookId, locale = "en" }: { notebookId: s
   const [turnsError, setTurnsError] = useState<string | null>(null);
 
   const [followedRunId, setFollowedRunId] = useState<string | null>(null);
-  const [progressEvents, setProgressEvents] = useState<WireEvent[]>([]);
 
   const [titleDraft, setTitleDraft] = useState("");
   const [editingTitle, setEditingTitle] = useState(false);
@@ -195,7 +172,6 @@ export function NotebookWorkspace({ notebookId, locale = "en" }: { notebookId: s
     setPinnedSeq(null);
     setTurns([]);
     setFollowedRunId(null);
-    setProgressEvents([]);
     setDraftCells(null);
     setFocusedCellId(null);
     loadNotebook();
@@ -270,59 +246,20 @@ export function NotebookWorkspace({ notebookId, locale = "en" }: { notebookId: s
     };
   }, [notebookId, compareMode, effectiveCompareSeq, copy.diffLoadFailed]);
 
-  // Follow the active run's SSE stream (copied from live-run.tsx's reader —
-  // see that file for the reconnect/backoff reasoning this intentionally
-  // keeps simple for a secondary surface).
-  useEffect(() => {
-    if (!followedRunId) return;
-    const controller = new AbortController();
-    setProgressEvents([]);
-
-    async function consume() {
-      try {
-        const response = await fetch(`/api/runs/${encodeURIComponent(followedRunId as string)}/events/stream`, {
-          cache: "no-store",
-          signal: controller.signal,
-        });
-        if (!response.ok || !response.body) return;
-        const reader = response.body.getReader();
-        const decoder = new TextDecoder();
-        let buffer = "";
-        let terminal = false;
-        while (!terminal) {
-          const { done, value } = await reader.read();
-          if (done) break;
-          buffer += decoder.decode(value, { stream: true }).replaceAll("\r\n", "\n");
-          const blocks = buffer.split("\n\n");
-          buffer = blocks.pop() ?? "";
-          for (const block of blocks) {
-            const parsed = parseSseBlock(block);
-            if (!parsed) continue;
-            const event = JSON.parse(parsed.data) as WireEvent;
-            setProgressEvents((current) => [...current, event]);
-            if (event.type === "run.finished" || event.type === "run.error") {
-              terminal = true;
-              loadNotebook();
-              loadVersions();
-              loadTurns();
-              if (authoredSeq.current !== null) {
-                setPinnedSeq(authoredSeq.current);
-                authoredSeq.current = null;
-              }
-            }
-          }
-        }
-      } catch {
-        // A dropped connection here just stops the live activity list from
-        // updating; the notebook itself is unaffected, and the next poll of
-        // this page (or a manual refresh) picks up the finished state.
-      }
+  // Follow the active run's SSE stream. The reader itself lives in
+  // `lib/use-run-progress.ts` (extracted from what used to be inline here) so
+  // the courses workspace's per-module and per-plan-run rails can reuse the
+  // exact same connect/parse/reconnect-free logic instead of a second copy.
+  const progressEvents = useRunProgress(followedRunId, () => {
+    loadNotebook();
+    loadVersions();
+    loadTurns();
+    // A save from the editor pins the version it produced once its run is over.
+    if (authoredSeq.current !== null) {
+      setPinnedSeq(authoredSeq.current);
+      authoredSeq.current = null;
     }
-
-    void consume();
-    return () => controller.abort();
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- loadNotebook/loadVersions/loadTurns close over notebookId only
-  }, [followedRunId]);
+  });
 
   async function sendTurn(text: string) {
     const trimmed = text.trim();

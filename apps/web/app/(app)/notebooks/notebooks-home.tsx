@@ -262,6 +262,9 @@ export function NotebooksHome({ locale = "en", seedSlug = "" }: { locale?: Publi
             <h1>{copy.title}</h1>
             <p>{copy.lede}</p>
           </div>
+          <Link className="mj-secondary-button" href="/notebooks/courses">
+            {WORKSPACE_COPY[locale].courses.coursesTab}
+          </Link>
         </header>
 
         <form className="mj-notebooks-composer" onSubmit={(event) => void submit(event)}>

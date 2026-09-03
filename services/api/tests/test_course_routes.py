@@ -467,6 +467,9 @@ async def test_generate_dispatches_one_notebook_run_per_module_with_a_course_pre
                 "kind": "curriculum",
                 "ref": f"{course.slug}/{'week-01' if request is first else 'week-02'}",
                 "note": "Qiskit study group",
+                # `content` arrived with the circuit seed (lane D); a curriculum seed
+                # carries none, and the dump still spells the default out.
+                "content": "",
             }
         ]
     assert [kwargs["kind"] for kwargs in created] == ["lesson", "lesson"]
