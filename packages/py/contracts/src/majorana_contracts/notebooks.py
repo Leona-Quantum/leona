@@ -108,7 +108,12 @@ class Reference(_Model):
 class Seed(_Model):
     """Where content came from — provenance a reader can follow."""
 
-    kind: Literal["atlas-record", "paper", "artifact", "upload", "brief", "curriculum"]
+    #: `"notebook"` (Lane E, nb2-learner): another notebook in the same workspace,
+    #: resolved to its current version by the worker's `_seed_material_for` — the
+    #: quiz-from-notebook flow. Lane D is adding `"circuit"` and a `content` field
+    #: to this same literal/model in parallel; a merge conflict here is expected
+    #: and trivial to resolve (both additions, not a semantic clash).
+    kind: Literal["atlas-record", "paper", "artifact", "upload", "brief", "curriculum", "notebook"]
     ref: str = ""
     note: str = ""
 
