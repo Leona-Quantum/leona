@@ -49,6 +49,7 @@ into a circuit, run in a guarded simulator, and kept.
 ## Public pages
 
 - [Home](${origin}/): what the product does.
+- [About](${origin}/about): the mission and team behind Leona Quantum.
 - [Quantum Atlas](${origin}/repository): the corpus, searchable. Start here for
   anything about a specific algorithm.
 - [The Map](${origin}/repository/layers): the same corpus drawn as one connected

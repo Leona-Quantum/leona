@@ -25,6 +25,7 @@
  */
 export const PUBLIC_STATIC_PATHS: readonly string[] = [
   "/",
+  "/about",
   "/pricing",
   "/workspace",
   "/contact",

@@ -20,6 +20,25 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PIP_DISABLE_PIP_VERSION_CHECK=1
 
+# Both of these exist so that `import matplotlib.pyplot` inside a sandbox is
+# silent, and neither is cosmetic.
+#
+# MPLBACKEND: there is no display here and no display is ever coming, so the
+# backend is decided at build time rather than left to matplotlib's autodetect.
+# Agg is the headless raster backend and the one that writes a PNG.
+#
+# MPLCONFIGDIR: matplotlib wants a writable cache directory at import and
+# defaults to $HOME/.config/matplotlib. When it cannot write there it does not
+# fail — it falls back to a temp dir and emits a UserWarning on **stderr**.
+# In this image that stderr belongs to generated code whose output a reader
+# sees, so a permissions detail would surface inside the product as a warning
+# attached to their lesson. The directory is created with mode 777 in the RUN
+# below because the USER question above is unsettled: the probe says this runs
+# as root today, and a mode that only works for root would break quietly on the
+# day that changes.
+ENV MPLBACKEND=Agg \
+    MPLCONFIGDIR=/opt/mplconfig
+
 # Two HIGH findings that `container_scan` (trivy, HIGH+CRITICAL) reports against
 # this image:
 #
@@ -104,6 +123,48 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 # (`bqskit.ext.qiskit`, `qasm2.loads`), so a qiskit bump here is a compiler
 # change, not just a simulator change — the `build` job below compiles a real
 # circuit through all six for that reason, rather than importing them.
+# ## The figure lane (ai-ops#239, owner ruling: "Yes, add them")
+#
+# Notebook lessons draw histograms and circuit diagrams, and the circuit half
+# was broken inside the product.
+#
+# `matplotlib` is the renderer. `pylatexenc` is what Qiskit imports to typeset
+# gate labels in `QuantumCircuit.draw("mpl")`, and without it that call raises
+# `MissingOptionalLibraryError` — checked, not assumed. It does NOT degrade to
+# untypeset labels, so the symptom is a traceback in a reader's lesson rather
+# than a worse diagram. Anyone reading a production traceback from this path
+# should treat it as a missing package, not as expected degraded rendering.
+#
+# **`pylatexenc==2.11` is load-bearing and is not simply "the latest".** This
+# install runs `--only-binary=:all:`, and 2.11 is the FIRST release in the
+# entire 2.x line to publish a wheel — 2.10, 2.9 and every earlier stable are
+# sdist-only on PyPI, checked against the index rather than assumed. Pinning
+# the version most people would reach for therefore fails the build outright
+# with "no binary distribution available". The 3.0aNN alphas do ship wheels;
+# they are alphas of a rewritten API and are not what Qiskit expects.
+#
+# ## matplotlib was ALREADY here, by accident. That is why it is pinned now.
+#
+# ai-ops#239 says "the image has neither package". Measured against the build
+# log rather than believed: it had matplotlib 3.11.1, and pillow, fonttools,
+# contourpy, kiwisolver, cycler, pyparsing and python-dateutil with it. They
+# arrive transitively down the pyzx -> ipywidgets -> ipython chain the compiler
+# lane note above describes — `matplotlib-inline` in the install list is the
+# fingerprint. So histograms already rendered; only the circuit drawer was
+# broken, because that is the half that needs pylatexenc.
+#
+# Naming matplotlib explicitly therefore adds nothing to the image and removes
+# a real fragility: the figure lane was depending on a package that no line in
+# this file asked for, held in place only by an optional dependency of a
+# CIRCUIT COMPILER. Anything that loosened pyzx's extras would have taken every
+# figure in the product with it, silently, and no diff here would have said so.
+#
+# The dependency surface consequently barely moves — pylatexenc is the one
+# genuinely new package, and the image grows about 3 MB, most of it that plus a
+# fonttools and kiwisolver patch bump. The containment argument from the
+# compiler lane above still holds and is worth stating rather than implying:
+# this widening is HERE, in the rootfs with deny-all egress and an empty
+# environment, not in the credentialed API image.
 RUN python -m pip install --no-cache-dir --only-binary=:all: \
     "setuptools==81.0.0" \
     "qiskit==2.5.0" \
@@ -119,11 +180,17 @@ RUN python -m pip install --no-cache-dir --only-binary=:all: \
     "pytket==2.18.1" \
     "pyzx==0.10.5" \
     "bqskit==1.2.1" \
+    "matplotlib==3.11.1" \
+    "pylatexenc==2.11" \
  && python -m pip uninstall --yes pip \
  && rm -rf /usr/local/lib/python3.13/ensurepip \
            /usr/local/lib/python3.13/site-packages/pip \
            /usr/local/lib/python3.13/site-packages/pip-*.dist-info \
-           /usr/local/bin/pip /usr/local/bin/pip3 /usr/local/bin/pip3.13
+           /usr/local/bin/pip /usr/local/bin/pip3 /usr/local/bin/pip3.13 \
+ && mkdir -p "$MPLCONFIGDIR" \
+ && chmod 777 "$MPLCONFIGDIR" \
+ && python -c "import matplotlib.pyplot as plt; plt.subplots()" \
+ && chmod -R a+rwX "$MPLCONFIGDIR"
 
 # Chained into the RUN above rather than written as its own layer, on purpose: a
 # `rm` in a later layer hides the files from the merged filesystem but leaves
