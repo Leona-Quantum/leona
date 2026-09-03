@@ -6981,8 +6981,14 @@
       },
       "Seed": {
         "additionalProperties": false,
-        "description": "Where content came from \u2014 provenance a reader can follow.",
+        "description": "Where content came from \u2014 provenance a reader can follow.\n\n`content` is only meaningful for `kind=\"circuit\"`: the reader's own pasted\nQiskit Python or OpenQASM 3 text, validated and described by\n`leona_notebooks.circuits` before it reaches a prompt. `kind=\"notebook\"`\n(`ref=<notebook id>`) is reserved for the learner lane's notebook-as-seed\nflow; only the enum value is added here, fetching is out of this lane's\nscope.",
         "properties": {
+          "content": {
+            "default": "",
+            "maxLength": 20000,
+            "title": "Content",
+            "type": "string"
+          },
           "kind": {
             "enum": [
               "atlas-record",
@@ -6990,7 +6996,9 @@
               "artifact",
               "upload",
               "brief",
-              "curriculum"
+              "curriculum",
+              "circuit",
+              "notebook"
             ],
             "title": "Kind",
             "type": "string"
@@ -8512,7 +8520,7 @@
   "info": {
     "description": "Cross-boundary types only; API paths are owned by services/api.",
     "title": "majorana-contracts",
-    "version": "2.18.0"
+    "version": "2.19.0"
   },
   "openapi": "3.1.0",
   "paths": {}

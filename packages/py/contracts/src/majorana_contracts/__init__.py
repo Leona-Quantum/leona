@@ -301,7 +301,12 @@ from .lifecycle import (
 # 2.18.0: Notebook resources — the notebook spec with role-carrying cells, the
 # per-cell execution report, the advisory review, versions and chat turns, plus
 # the `notebook` run mode. Additive: existing clients never select the new mode.
-CONTRACTS_VERSION = "2.18.0"
+# 2.19.0: Seed gains kind="circuit" (a reader's own pasted Qiskit/OpenQASM 3 text,
+# carried in the new `content` field) and kind="notebook" (reserved for the
+# learner lane's notebook-as-seed flow — the enum value only; no fetch path
+# ships here). Additive: `content` defaults to "" and every existing Seed kind
+# keeps its meaning, so a v1 payload with no `content` still validates.
+CONTRACTS_VERSION = "2.19.0"
 
 __all__ = [
     "CONTRACTS_VERSION",

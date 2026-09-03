@@ -3537,13 +3537,25 @@ export interface components {
         /**
          * Seed
          * @description Where content came from — provenance a reader can follow.
+         *
+         *     `content` is only meaningful for `kind="circuit"`: the reader's own pasted
+         *     Qiskit Python or OpenQASM 3 text, validated and described by
+         *     `leona_notebooks.circuits` before it reaches a prompt. `kind="notebook"`
+         *     (`ref=<notebook id>`) is reserved for the learner lane's notebook-as-seed
+         *     flow; only the enum value is added here, fetching is out of this lane's
+         *     scope.
          */
         Seed: {
+            /**
+             * Content
+             * @default
+             */
+            content: string;
             /**
              * Kind
              * @enum {string}
              */
-            kind: "atlas-record" | "paper" | "artifact" | "upload" | "brief" | "curriculum";
+            kind: "atlas-record" | "paper" | "artifact" | "upload" | "brief" | "curriculum" | "circuit" | "notebook";
             /**
              * Note
              * @default
