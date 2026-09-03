@@ -14,7 +14,6 @@ ask for eight notebooks past a limit that stops at one.
 
 from __future__ import annotations
 
-import re
 import uuid
 from typing import Annotated
 
@@ -75,8 +74,6 @@ class CreateCourseTurnRequest(RequestModel, contracts.CreateCourseTurnRequest):
 #: and a module's own brief may already be 4000, so the preface cannot be unbounded.
 _PREFACE_BUDGET = 1_800
 _BRIEF_CEILING = 8_000
-
-_SLUG_STRIP_RE = re.compile(r"[^a-z0-9]+")
 
 
 def _default_title(body: contracts.CreateCourseRequest) -> str:
