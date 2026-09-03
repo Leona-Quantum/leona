@@ -42,6 +42,7 @@ import type { CSSProperties, ReactNode } from "react";
 import type { Metadata } from "next";
 import { Analytics } from "@vercel/analytics/next";
 import { Instrument_Sans, Instrument_Serif, JetBrains_Mono } from "next/font/google";
+import Script from "next/script";
 import { THEME_STORAGE_KEY } from "../lib/theme";
 import { AUTH_HINT_COOKIE, AUTH_HINT_SIGNED_IN } from "../lib/auth-hint";
 import { LEGACY_PUBLIC_LOCALE_COOKIE, PUBLIC_LOCALE_COOKIE } from "../lib/public-locale";
@@ -200,9 +201,21 @@ export function RootDocument({ lang, children }: { lang: string; children: React
       }
     >
       <head>
-        <script dangerouslySetInnerHTML={{ __html: themeScript }} />
-        <script dangerouslySetInnerHTML={{ __html: localeScript }} />
-        <script dangerouslySetInnerHTML={{ __html: authHintScript }} />
+        <Script
+          id="leona-theme"
+          strategy="beforeInteractive"
+          dangerouslySetInnerHTML={{ __html: themeScript }}
+        />
+        <Script
+          id="leona-locale"
+          strategy="beforeInteractive"
+          dangerouslySetInnerHTML={{ __html: localeScript }}
+        />
+        <Script
+          id="leona-auth-hint"
+          strategy="beforeInteractive"
+          dangerouslySetInnerHTML={{ __html: authHintScript }}
+        />
         {/* A JSON-LD data block. Browsers never execute `application/ld+json`,
             so it carries none of the risk the three bootstrap scripts above are
             weighed against. Rendered as a TEXT CHILD, deliberately, rather than
