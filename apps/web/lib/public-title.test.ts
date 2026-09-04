@@ -24,7 +24,7 @@
 // the guard fails loudly rather than going quiet if it can resolve neither —
 // which is what it did when the literal first became a constant.
 //
-// Six `[locale]` pages (home, contact, pricing, privacy, terms, workspace)
+// Seven `[locale]` pages (home, about, contact, pricing, privacy, terms, workspace)
 // no longer declare `export const metadata` directly — their titles moved to
 // `lib/public-page-metadata.ts` so a Japanese branch could be added and
 // exercised by `node --test` (see that file's header). This file's scan
@@ -98,7 +98,7 @@ function declaredTitle(file: string): string | null {
 
 /**
  * Every literal `title: "..."` in `lib/public-page-metadata.ts` — the
- * English branch of each of the six pages named above. A plain global scan is
+ * English branch of each of the seven pages named above. A plain global scan is
  * enough (no block-extraction needed, unlike `declaredTitle()`): each page's
  * Japanese branch there is a reference into a copy table (`CONTACT_COPY.ja
  * .overline`, …), never a string literal, so this regex cannot see it and

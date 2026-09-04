@@ -59,6 +59,7 @@ export const PUBLIC_PATHS: readonly string[] = [
   // reader clicks to get one. Its subtree must be reachable for a stronger
   // reason: a page that explains why sign-in failed cannot require sign-in.
   "/auth/sign-in",
+  "/about",
   "/pricing",
   "/repository",
   "/workspace",

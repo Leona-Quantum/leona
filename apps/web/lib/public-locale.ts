@@ -77,7 +77,7 @@ export function isPublicLocale(value: string | undefined): value is PublicLocale
 }
 
 export const PUBLIC_SHELL_COPY: Record<PublicLocale, {
-  nav: { product: string; pricing: string; repository: string; workspace: string; contact: string };
+  nav: { product: string; about: string; pricing: string; repository: string; workspace: string; contact: string };
   footer: {
     promise: string;
     explore: string;
@@ -108,7 +108,7 @@ export const PUBLIC_SHELL_COPY: Record<PublicLocale, {
     // fifth of the surfaces under it said something else again — the owner's
     // ruling is that there is one name. The article is dropped here and only
     // here: a nav bar reads as a list of destinations, not of sentences.
-    nav: { product: "Product", pricing: "Pricing", repository: "Quantum Atlas", workspace: "Workspace", contact: "Contact" },
+    nav: { product: "Product", about: "About", pricing: "Pricing", repository: "Quantum Atlas", workspace: "Workspace", contact: "Contact" },
     footer: {
       promise: "Generate, run, and use quantum circuits on one platform.",
       explore: "Explore",
@@ -126,7 +126,7 @@ export const PUBLIC_SHELL_COPY: Record<PublicLocale, {
     // 量子アトラス, not the Latin "Atlas" it said before: the page's own title,
     // its heading and the folder breadcrumb are all 量子アトラス, so the nav was
     // the one surface introducing a second name in this locale.
-    nav: { product: "プロダクト", pricing: "料金", repository: "量子アトラス", workspace: "ワークスペース", contact: "お問い合わせ" },
+    nav: { product: "プロダクト", about: "私たちについて", pricing: "料金", repository: "量子アトラス", workspace: "ワークスペース", contact: "お問い合わせ" },
     footer: {
       promise: "量子回路の生成・実行・活用を、ひとつのプラットフォームで",
       explore: "公開研究を見る",

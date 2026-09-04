@@ -176,6 +176,87 @@ jobs:
               sys.exit(1)
           print('all six Studio compilers compiled in the sandbox rootfs')
           "
+      # The figure lane (ai-ops#239). The two packages fail in opposite ways, and
+      # an import check would catch neither, so each assertion below is chosen to
+      # go red on exactly one thing. Both behaviours were established by running
+      # them rather than reasoned about — locally against qiskit 2.5.1, which is
+      # what happened to be installed there. The image pins qiskit 2.5.0, so it
+      # is this step running inside the image, and not that local session, that
+      # makes the claim binding for the version actually shipped:
+      #
+      #   * matplotlib fails SOFT. With no writable MPLCONFIGDIR it does not
+      #     raise — it falls back to a temp cache dir and logs onto the stderr of
+      #     the generated code, so the defect reaches a reader as noise attached
+      #     to their lesson. `get_cachedir()` is what tells those two apart; an
+      #     import succeeds either way.
+      #   * Qiskit fails HARD. Without pylatexenc, `draw("mpl")` raises
+      #     MissingOptionalLibraryError — verified, it does not degrade to
+      #     untypeset labels. So the lesson cell that draws a circuit does not
+      #     produce a worse diagram, it produces a traceback. That is the shape
+      #     of what ai-ops#239 called "figures missing inside the product".
+      #
+      # `HAS_PYLATEX` is Qiskit's own name for pylatexenc, and it tests the 2.x
+      # API symbols (`latex2text.LatexNodes2Text`, `latexencode.utf8tolatex`) —
+      # which is the reason the Dockerfile pins 2.11 rather than a 3.0 alpha.
+      #
+      # One ordering detail, because it looks like a bug when you run this by
+      # hand: the `fontlist-*.json` assertion deliberately reads the cache
+      # directory BEFORE anything imports pyplot. matplotlib writes that file on
+      # the first pyplot import, so on a bare machine the directory is empty
+      # there and the check goes red — correctly. Inside this image it is already
+      # populated, because the Dockerfile warms it at build time, and that is
+      # precisely what the assertion is proving still survives in the layer.
+      - name: figures actually render, headless and offline
+        run: |
+          docker run --rm --network none majorana-runner:ci python -c "
+          import os
+
+          import matplotlib
+
+          assert matplotlib.get_backend().lower() == 'agg', matplotlib.get_backend()
+
+          # Red if MPLCONFIGDIR is unset, unwritable, or silently fell back.
+          cachedir = matplotlib.get_cachedir()
+          assert cachedir == os.environ['MPLCONFIGDIR'] == '/opt/mplconfig', cachedir
+
+          # Red if the build-time font-cache warm did not persist into the image,
+          # which is what makes the first import inside a sandbox fast and quiet.
+          cached = os.listdir(cachedir)
+          assert any(f.startswith('fontlist-') for f in cached), cached
+
+          from qiskit.utils import optionals
+
+          assert optionals.HAS_MATPLOTLIB, 'qiskit cannot see matplotlib'
+          assert optionals.HAS_PYLATEX, 'qiskit cannot see pylatexenc'
+
+          # Red on a 3.0 alpha, where this 2.x entry point moved.
+          from pylatexenc.latexencode import utf8tolatex
+
+          assert 'theta' in utf8tolatex('\u03b8'), utf8tolatex('\u03b8')
+
+          from qiskit import QuantumCircuit
+          from qiskit.visualization import plot_histogram
+
+          # A histogram of real counts and a drawn circuit are the two figures a
+          # notebook lesson asks for. Both are written and read back, because a
+          # renderer that returns a Figure object and writes a zero-byte file is
+          # the shape of failure that an in-memory check misses.
+          plot_histogram({'00': 52, '11': 48}).savefig('/tmp/run/histogram.png')
+
+          qc = QuantumCircuit(2)
+          qc.h(0)
+          qc.cx(0, 1)
+          qc.rz(0.25, 1)
+          qc.draw('mpl').savefig('/tmp/run/circuit.png')
+
+          for path in ('/tmp/run/histogram.png', '/tmp/run/circuit.png'):
+              blob = open(path, 'rb').read()
+              assert blob[:8] == b'\x89PNG\r\n\x1a\n', (path, blob[:8])
+              assert len(blob) > 4096, (path, len(blob))
+              print(path, len(blob), 'bytes')
+
+          print('histogram and circuit figures render in the sandbox rootfs')
+          "
       - name: report the size, because it is a cost nobody sees
         run: |
           echo "image size: $(docker image inspect majorana-runner:ci --format '{{.Size}}') bytes"
