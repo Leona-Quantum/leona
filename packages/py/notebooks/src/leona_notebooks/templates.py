@@ -8,6 +8,7 @@ both a sentence in the prompt and a predicate here.
 
 from __future__ import annotations
 
+import ast
 from dataclasses import dataclass
 
 from leona_notebooks.spec import LEARNING_LOOP, CellRole, NotebookKind, NotebookSpec
@@ -56,16 +57,84 @@ def _has_code(spec: NotebookSpec) -> bool:
     return any(cell.is_code for cell in spec.cells)
 
 
+#: Providers whose client objects submit work to real hardware. Kept as import roots
+#: rather than class names: a reader can alias the class (`IBMProvider as P`) but the
+#: import root has to appear for the module to be reachable at all.
+_HARDWARE_IMPORT_ROOTS = frozenset(
+    {
+        "qiskit_ibm_runtime",
+        "qiskit_ibm_provider",
+        "qiskit_ionq",
+        "braket",
+        "azure",
+        "qbraid",
+        "pennylane_ionq",
+        "pennylane_qiskit",
+    }
+)
+#: Free-text tokens for the paths an import root does not catch — a credential write,
+#: or the runtime service reached through an already-imported module.
+_HARDWARE_TOKENS = ("save_account", "QiskitRuntimeService", "AwsDevice", "AwsQuantumTask")
+
+
+def _asserts_something(source: str) -> bool:
+    """Whether `source` contains a real `assert` STATEMENT.
+
+    Not `"assert" in source`, which was the rule until this was written and which
+    passes on `# assert this later`, on `print("we assert nothing")`, and on a variable
+    called `assertion_count` — all three verified passing. A checkpoint is the cell that
+    decides whether the reader got it right, so a substring is not enough to establish
+    that it decides anything.
+
+    Unparseable source counts as NOT asserting: a checkpoint that cannot be parsed
+    cannot be shown to check anything, and failing open here would restore exactly the
+    hole this replaces.
+    """
+    try:
+        tree = ast.parse(source)
+    except SyntaxError:
+        return False
+    return any(isinstance(node, ast.Assert) for node in ast.walk(tree))
+
+
 def _checkpoints_assert(spec: NotebookSpec) -> bool:
     checkpoints = [cell for cell in spec.cells if cell.role == CellRole.CHECKPOINT and cell.is_code]
-    return bool(checkpoints) and all("assert" in cell.source for cell in checkpoints)
+    return bool(checkpoints) and all(_asserts_something(cell.source) for cell in checkpoints)
+
+
+def _reaches_hardware(source: str) -> bool:
+    """Whether `source` reaches a real-QPU client, by import root or by token.
+
+    The sandbox already refuses every one of these (`majorana_sandbox.guard`), and
+    production egress is deny-all — so this rule is NOT what stops a job being
+    submitted from the product. It matters for the notebook once it LEAVES: an
+    exported `.ipynb` runs on the reader's own machine, with their own credentials
+    and no guard, and `execute=True` is what says "run this on open". Until this was
+    widened the rule matched two spellings of one vendor, so a Braket, IonQ, Azure or
+    older-IBM cell exported cleanly with `execute=True`.
+    """
+    if any(token in source for token in _HARDWARE_TOKENS):
+        return True
+    try:
+        tree = ast.parse(source)
+    except SyntaxError:
+        # Unparseable: fall back to the token scan above rather than claiming safety.
+        return False
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            names = [alias.name for alias in node.names]
+        elif isinstance(node, ast.ImportFrom):
+            names = [node.module or ""]
+        else:
+            continue
+        if any((name.split(".")[0] in _HARDWARE_IMPORT_ROOTS) for name in names):
+            return True
+    return False
 
 
 def _hardware_cells_do_not_auto_execute(spec: NotebookSpec) -> bool:
     return all(
-        not cell.execute
-        for cell in spec.cells
-        if cell.is_code and ("QiskitRuntimeService" in cell.source or "save_account" in cell.source)
+        not cell.execute for cell in spec.cells if cell.is_code and _reaches_hardware(cell.source)
     )
 
 

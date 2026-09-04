@@ -7,6 +7,7 @@ from majorana_contracts.notebooks import (
     Cell,
     CellRole,
     ChoiceAnswer,
+    NotebookKind,
     NotebookSpec,
     NumericAnswer,
     RubricAnswer,
@@ -262,3 +263,80 @@ def test_the_leak_detector_goes_red_on_an_unredacted_spec():
         ],
     )
     assert spec.leaks_answer_key() == ["q"]
+
+
+# ------------------------------------------------------- structure rules that were weaker
+# than their names. Both were verified passing on the cases below before being fixed, so
+# these are regression arms, not speculation.
+
+
+@pytest.mark.parametrize(
+    ("source", "asserts"),
+    [
+        ("assert counts['00'] > 400", True),
+        ("def f():\n    assert True", True),
+        ("# assert this holds\nprint(counts)", False),
+        ("print('we assert nothing here')", False),
+        ("assertion_count = 3", False),
+        ("this is not python(", False),
+    ],
+)
+def test_a_checkpoint_needs_a_real_assert_statement_not_the_word(source: str, asserts: bool):
+    from leona_notebooks.templates import _checkpoints_assert
+
+    spec = NotebookSpec(
+        slug="s",
+        title="T",
+        kind=NotebookKind.LAB,
+        cells=[Cell(id="c1", kind="code", role=CellRole.CHECKPOINT, source=source)],
+    )
+    assert _checkpoints_assert(spec) is asserts
+
+
+@pytest.mark.parametrize(
+    ("source", "reaches_hardware"),
+    [
+        ("from qiskit_ibm_runtime import QiskitRuntimeService\nQiskitRuntimeService()", True),
+        ("from qiskit_ibm_provider import IBMProvider\nIBMProvider()", True),
+        ("from braket.aws import AwsDevice\nAwsDevice('arn').run(c)", True),
+        ("import qiskit_ionq\nqiskit_ionq.IonQProvider('K')", True),
+        ("from azure.quantum import Workspace\nWorkspace()", True),
+        ("service.save_account(token='x')", True),
+        ("import numpy as np\nnp.zeros(3)", False),
+        ("from qiskit import QuantumCircuit\nQuantumCircuit(2)", False),
+    ],
+)
+def test_hardware_cells_are_recognised_across_providers(source: str, reaches_hardware: bool):
+    """`execute=True` is what makes an EXPORTED notebook fire a job on the reader's own
+    machine, where there is no sandbox guard and no deny-all egress."""
+    from leona_notebooks.templates import _hardware_cells_do_not_auto_execute
+
+    spec = NotebookSpec(
+        slug="s",
+        title="T",
+        kind=NotebookKind.LAB,
+        cells=[Cell(id="c1", kind="code", role=CellRole.RUN, source=source, execute=True)],
+    )
+    assert _hardware_cells_do_not_auto_execute(spec) is not reaches_hardware
+
+
+def test_a_hardware_cell_marked_execute_false_is_accepted():
+    """The rule must be satisfiable — flagging every hardware cell would be as useless
+    as flagging none, since a hardware notebook is a supported kind."""
+    from leona_notebooks.templates import _hardware_cells_do_not_auto_execute
+
+    spec = NotebookSpec(
+        slug="s",
+        title="T",
+        kind=NotebookKind.LAB,
+        cells=[
+            Cell(
+                id="c1",
+                kind="code",
+                role=CellRole.RUN,
+                source="from braket.aws import AwsDevice",
+                execute=False,
+            )
+        ],
+    )
+    assert _hardware_cells_do_not_auto_execute(spec) is True
