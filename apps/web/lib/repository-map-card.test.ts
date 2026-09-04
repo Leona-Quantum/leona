@@ -2084,6 +2084,67 @@ test("every ansatz-construction method carries a listing, and the region cannot 
   );
 });
 
+// ---------------------------------------------------------------------------
+// The `example.text` ratchet, for `ansatz-construction` only.
+//
+// The note above says pinning `example.text` would pin "a number that means
+// nothing about work anybody can do", and for the graph as a whole that is still
+// exactly right: the field needs a run somebody actually performed, so a global
+// count measures the literature rather than the desk.
+//
+// It stops being right for a region where every method's own cited paper turns
+// out to report one. `ansatz-construction` is the first such region — all
+// thirteen methods were read against their primary papers on 2026-09-04 and all
+// thirteen had a run to write up, so within this region the field behaves the way
+// `example.pseudocode` does: a method arriving without one is a gap somebody can
+// close, not evidence nobody has. That is the condition that makes a set
+// assertion honest here and dishonest globally, and it is why this test names the
+// region in its title rather than counting the graph.
+//
+// If a fourteenth method joins this region and its papers report no run, the
+// right change is an exemption naming it and saying which papers were read — not
+// deleting this test, and not a floor, which would pass on a region that gained a
+// method with nothing written.
+test("every ansatz-construction method carries a worked run, and the region cannot shrink to pass", () => {
+  const ansatzMethods = LAYER_GRAPH.nodes.filter(
+    (node): node is LayerMethod => isMethod(node) && node.realizes === "ansatz-construction",
+  );
+
+  assert.ok(
+    ansatzMethods.length >= 13,
+    `ansatz-construction has ${ansatzMethods.length} methods, was 13 — a slot was renamed or removed`,
+  );
+
+  const missing = ansatzMethods
+    .filter((node) => (node.example?.text ?? "").trim() === "")
+    .map((node) => node.id);
+  assert.deepEqual(
+    missing,
+    [],
+    `ansatz-construction methods with no worked run: ${missing.join(", ")}`,
+  );
+
+  // `text` without `run` is unwritable by the schema's own argument — a negative
+  // account is what `run` exists to prevent — so the two are asserted together.
+  // Checked here as well as in the type because a payload inserted by script can
+  // satisfy the type and still carry an empty `at`.
+  for (const node of ansatzMethods) {
+    const run = node.example?.run;
+    assert.ok(run, `${node.id} has example.text with no example.run`);
+    assert.ok(
+      (run?.at ?? "").trim() !== "",
+      `${node.id}'s run names no place inside its paper`,
+    );
+    // The localised half is the one that silently goes missing: nothing renders
+    // it in the English-language tests, so an entry can ship complete to one
+    // reader and blank to another.
+    assert.ok(
+      (node.example?.textJa ?? "").trim() !== "",
+      `${node.id} has example.text but no textJa — the ja card would be blank`,
+    );
+  }
+});
+
 test("every method carries a listing, and the graph cannot shrink to pass", () => {
   const methods = LAYER_GRAPH.nodes.filter(isMethod);
   const withPseudocode = methods.filter(
