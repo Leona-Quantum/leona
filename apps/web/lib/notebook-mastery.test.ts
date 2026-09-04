@@ -9,7 +9,7 @@ type CellRole =
   | "summary" | "references" | "note";
 
 function cell(id: string, role: CellRole | null, kind: "markdown" | "code" = "code") {
-  return { id, kind, role, source: "", tags: [] as string[], execute: true, stub: null as string | null, timeout_s: null as number | null };
+  return { id, kind, role, source: "", tags: [] as string[], execute: true, stub: null as string | null, check: null as string | null, answer: null, answer_prompt: null, timeout_s: null as number | null };
 }
 
 function result(id: string, status: "ok" | "error" | "skipped" | "not_run") {

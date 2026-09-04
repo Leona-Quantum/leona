@@ -23,6 +23,9 @@ function cell(id: string, overrides: Partial<Cell> = {}): Cell {
     tags: [],
     execute: true,
     stub: null,
+    check: null,
+    answer: null,
+    answer_prompt: null,
     timeout_s: null,
     ...overrides,
   } as Cell;

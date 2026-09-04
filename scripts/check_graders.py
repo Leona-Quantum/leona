@@ -1,0 +1,170 @@
+#!/usr/bin/env python3
+"""CI gate: every notebook grader must be able to fail, and must pass the answer.
+
+A `Cell.check` is the assertion that decides whether a reader got an exercise right.
+Two ways it can be worthless, and neither shows up as an error anywhere else:
+
+* it passes against the STUB — the unfilled placeholder the reader starts from. Then
+  the exercise is marked correct before anyone attempts it, and the notebook reports
+  itself complete on open. This is the failure that shipped in the first draft of
+  `spec_with_graders` and was caught only by running it: an `assert double(3) == 6`
+  is a perfectly good assertion, and it still grades nothing if the thing it runs
+  against is already the solution.
+* it fails against the author's own SOURCE. Then the exercise cannot be passed at all,
+  and every reader is told they are wrong for writing the intended answer.
+
+So each grader is run twice, and both arms must come out the expected way. A grader
+that cannot be seen going red is not evidence, which is the same rule the rest of this
+repo's checkers are held to — `--self-test` below is that rule applied to this script.
+
+Usage:
+  python scripts/check_graders.py [PATH ...]   # .json specs, or dirs to walk
+  python scripts/check_graders.py --self-test  # prove the two arms actually discriminate
+"""
+
+from __future__ import annotations
+
+import json
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "packages/py/notebooks/src"))
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "packages/py/contracts/src"))
+
+from majorana_contracts.notebooks import Cell, NotebookSpec  # noqa: E402
+from leona_notebooks.grading import (  # noqa: E402
+    GradedAttempt,
+    grades_from_report,
+    spec_with_graders,
+)
+from leona_notebooks.local_runner import execute_in_local_sandbox  # noqa: E402
+
+
+def _grade(spec: NotebookSpec, cell_id: str, code: str) -> str:
+    attempt = GradedAttempt(code={cell_id: code}, answers={})
+    report = execute_in_local_sandbox(spec_with_graders(spec, attempt))
+    grade = grades_from_report(spec, report, attempt).by_id().get(cell_id)
+    return grade.status if grade else "missing"
+
+
+def audit(spec: NotebookSpec) -> list[str]:
+    """Failures in `spec`'s graders, as reader-facing lines."""
+    problems: list[str] = []
+    for cell in spec.cells:
+        if cell.check is None:
+            continue
+        stub = cell.stub or ""
+        on_stub = _grade(spec, cell.id, stub)
+        if on_stub == "passed":
+            problems.append(
+                f"  {spec.slug}/{cell.id}: the check PASSES against the stub — it grades nothing, "
+                f"and the reader is marked correct before attempting it"
+            )
+        on_source = _grade(spec, cell.id, cell.source)
+        if on_source != "passed":
+            problems.append(
+                f"  {spec.slug}/{cell.id}: the check does not pass against the cell's own "
+                f"solution (got {on_source!r}) — the exercise cannot be completed"
+            )
+    return problems
+
+
+def _self_test() -> int:
+    """Both arms must discriminate. A checker whose arms cannot go red proves nothing."""
+    honest = NotebookSpec(
+        slug="self-test-honest",
+        title="Honest grader",
+        cells=[
+            Cell(
+                id="ex",
+                kind="code",
+                source="def f(x):\n    return x + 1",
+                stub="def f(x):\n    ...",
+                check="assert f(1) == 2",
+            )
+        ],
+    )
+    # Passes on the stub: `...` makes f return None, and the check only asserts it exists.
+    vacuous = NotebookSpec(
+        slug="self-test-vacuous",
+        title="Grader that cannot fail",
+        cells=[
+            Cell(
+                id="ex",
+                kind="code",
+                source="def f(x):\n    return x + 1",
+                stub="def f(x):\n    ...",
+                check="assert callable(f)",
+            )
+        ],
+    )
+    # Fails on the author's own solution.
+    impossible = NotebookSpec(
+        slug="self-test-impossible",
+        title="Grader nobody can pass",
+        cells=[
+            Cell(
+                id="ex",
+                kind="code",
+                source="def f(x):\n    return x + 1",
+                stub="def f(x):\n    ...",
+                check="assert f(1) == 99",
+            )
+        ],
+    )
+    failures: list[str] = []
+    if audit(honest):
+        failures.append("an honest grader was reported as a problem")
+    if not any("grades nothing" in p for p in audit(vacuous)):
+        failures.append("a grader that passes on the stub was NOT caught")
+    if not any("cannot be completed" in p for p in audit(impossible)):
+        failures.append("a grader that fails on its own solution was NOT caught")
+    if failures:
+        print("grader self-test FAILED:")
+        for line in failures:
+            print(f"  {line}")
+        return 1
+    print("check_graders self-test passed (honest accepted; vacuous and impossible both caught)")
+    return 0
+
+
+def _specs(paths: list[str]) -> list[tuple[Path, NotebookSpec]]:
+    out: list[tuple[Path, NotebookSpec]] = []
+    for raw in paths:
+        p = Path(raw)
+        files = sorted(p.rglob("*.json")) if p.is_dir() else [p]
+        for f in files:
+            try:
+                data = json.loads(f.read_text(encoding="utf-8"))
+            except (json.JSONDecodeError, OSError):
+                continue
+            if not (isinstance(data, dict) and "cells" in data and "slug" in data):
+                continue
+            try:
+                out.append((f, NotebookSpec.model_validate(data)))
+            except ValueError as exc:
+                print(f"  {f}: not a valid notebook spec — {exc}")
+    return out
+
+
+def main(argv: list[str]) -> int:
+    if "--self-test" in argv:
+        return _self_test()
+    targets = [a for a in argv if not a.startswith("-")] or ["packages/py/notebooks/tests"]
+    specs = _specs(targets)
+    problems: list[str] = []
+    for _, spec in specs:
+        problems.extend(audit(spec))
+    if problems:
+        print("Graders that do not grade:")
+        print("\n".join(problems))
+        return 1
+    graded = sum(1 for _, s in specs for c in s.cells if c.check is not None)
+    print(
+        f"check_graders: clean ({graded} grader(s) across {len(specs)} spec(s), both arms checked)"
+    )
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))

@@ -81,6 +81,8 @@ EXPORTED = [
     notebooks.AuthorNotebookVersionRequest,
     notebooks.AuthorNotebookVersionResponse,
     notebooks.UpdateNotebookRequest,
+    notebooks.GradeReport,
+    notebooks.CellGrade,
     courses.Course,
     courses.CourseSummary,
     courses.CourseModule,

@@ -22,6 +22,39 @@
         "title": "Algorithm",
         "type": "string"
       },
+      "AnswerPrompt": {
+        "additionalProperties": false,
+        "description": "What a reader is shown of a question \u2014 everything the key holds EXCEPT the answer.\n\nGrading is server-side for exactly this reason. If the correct option travelled\nto the browser so the page could mark its own quiz, the quiz would be an honour\nsystem with a scoreboard: anyone can read the payload. So `for_learner()` drops\n`Cell.answer` entirely and leaves this in its place, and\n`NotebookSpec.leaks_answer_key()` is the assertion that it did.",
+        "properties": {
+          "kind": {
+            "enum": [
+              "choice",
+              "numeric",
+              "text",
+              "rubric"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "options": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Options",
+            "type": "array"
+          },
+          "unit": {
+            "default": "",
+            "title": "Unit",
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind"
+        ],
+        "title": "AnswerPrompt",
+        "type": "object"
+      },
       "Artifact": {
         "additionalProperties": false,
         "properties": {
@@ -1177,6 +1210,63 @@
       "Cell": {
         "additionalProperties": false,
         "properties": {
+          "answer": {
+            "anyOf": [
+              {
+                "discriminator": {
+                  "mapping": {
+                    "choice": "#/components/schemas/ChoiceAnswer",
+                    "numeric": "#/components/schemas/NumericAnswer",
+                    "rubric": "#/components/schemas/RubricAnswer",
+                    "text": "#/components/schemas/TextAnswer"
+                  },
+                  "propertyName": "kind"
+                },
+                "oneOf": [
+                  {
+                    "$ref": "#/components/schemas/ChoiceAnswer"
+                  },
+                  {
+                    "$ref": "#/components/schemas/NumericAnswer"
+                  },
+                  {
+                    "$ref": "#/components/schemas/TextAnswer"
+                  },
+                  {
+                    "$ref": "#/components/schemas/RubricAnswer"
+                  }
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Answer"
+          },
+          "answer_prompt": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AnswerPrompt"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          },
+          "check": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Check"
+          },
           "execute": {
             "default": true,
             "title": "Execute",
@@ -1275,6 +1365,56 @@
           "evalue"
         ],
         "title": "CellError",
+        "type": "object"
+      },
+      "CellGrade": {
+        "additionalProperties": false,
+        "description": "The verdict on ONE graded cell.\n\n`unattempted` is a first-class status rather than a failure: a reader who has\nnot reached a cell has not got it wrong, and collapsing the two would make a\nprogress bar drop as a notebook grows. `ungradable` is the honest outcome when\nthe grader itself could not run \u2014 a sandbox timeout, a malformed key \u2014 and it\nis never counted as either a pass or a fail.",
+        "properties": {
+          "detail": {
+            "default": "",
+            "title": "Detail",
+            "type": "string"
+          },
+          "graded_by": {
+            "enum": [
+              "deterministic",
+              "model"
+            ],
+            "title": "Graded By",
+            "type": "string"
+          },
+          "hint": {
+            "default": "",
+            "title": "Hint",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "message": {
+            "default": "",
+            "title": "Message",
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "passed",
+              "failed",
+              "unattempted",
+              "ungradable"
+            ],
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "status",
+          "graded_by"
+        ],
+        "title": "CellGrade",
         "type": "object"
       },
       "CellOutput": {
@@ -1604,6 +1744,43 @@
           "message"
         ],
         "title": "ChatError",
+        "type": "object"
+      },
+      "ChoiceAnswer": {
+        "additionalProperties": false,
+        "description": "One right option among several. `correct` indexes `options`.",
+        "properties": {
+          "correct": {
+            "minimum": 0,
+            "title": "Correct",
+            "type": "integer"
+          },
+          "explanation": {
+            "default": "",
+            "title": "Explanation",
+            "type": "string"
+          },
+          "kind": {
+            "const": "choice",
+            "default": "choice",
+            "title": "Kind",
+            "type": "string"
+          },
+          "options": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 8,
+            "minItems": 2,
+            "title": "Options",
+            "type": "array"
+          }
+        },
+        "required": [
+          "options",
+          "correct"
+        ],
+        "title": "ChoiceAnswer",
         "type": "object"
       },
       "CircuitCompiler": {
@@ -3591,6 +3768,28 @@
         "title": "GenerateCourseResponse",
         "type": "object"
       },
+      "GradeReport": {
+        "additionalProperties": false,
+        "description": "Grades for one attempt at one notebook version.",
+        "properties": {
+          "cells": {
+            "items": {
+              "$ref": "#/components/schemas/CellGrade"
+            },
+            "title": "Cells",
+            "type": "array"
+          },
+          "notebook_slug": {
+            "title": "Notebook Slug",
+            "type": "string"
+          }
+        },
+        "required": [
+          "notebook_slug"
+        ],
+        "title": "GradeReport",
+        "type": "object"
+      },
       "ImportNotebookRequest": {
         "additionalProperties": false,
         "description": "An existing `.ipynb` becomes a notebook the reader can then edit with Nala.",
@@ -4933,6 +5132,43 @@
           "created_at"
         ],
         "title": "NotebookVersionSummary",
+        "type": "object"
+      },
+      "NumericAnswer": {
+        "additionalProperties": false,
+        "description": "A number, compared with an ABSOLUTE tolerance.\n\n`tolerance` defaults to 0.0, which means exact equality \u2014 deliberate, so an\nauthor who omits it gets a grader that is strict rather than one that is\nsilently generous. A physical answer almost always wants a tolerance set.",
+        "properties": {
+          "explanation": {
+            "default": "",
+            "title": "Explanation",
+            "type": "string"
+          },
+          "kind": {
+            "const": "numeric",
+            "default": "numeric",
+            "title": "Kind",
+            "type": "string"
+          },
+          "tolerance": {
+            "default": 0.0,
+            "minimum": 0.0,
+            "title": "Tolerance",
+            "type": "number"
+          },
+          "unit": {
+            "default": "",
+            "title": "Unit",
+            "type": "string"
+          },
+          "value": {
+            "title": "Value",
+            "type": "number"
+          }
+        },
+        "required": [
+          "value"
+        ],
+        "title": "NumericAnswer",
         "type": "object"
       },
       "Optimizer": {
@@ -6647,6 +6883,33 @@
         ],
         "title": "Role",
         "type": "string"
+      },
+      "RubricAnswer": {
+        "additionalProperties": false,
+        "description": "Open-ended: graded by the model against `rubric`, never deterministically.\n\nThe rubric is what the grader is told to look for, so it must be specific\nenough that two readers agree on the verdict. Carried separately from the\nother three so that a grade's provenance is legible: anything graded here\nreports `graded_by=\"model\"` and is reproducible only to the extent the model is.",
+        "properties": {
+          "explanation": {
+            "default": "",
+            "title": "Explanation",
+            "type": "string"
+          },
+          "kind": {
+            "const": "rubric",
+            "default": "rubric",
+            "title": "Kind",
+            "type": "string"
+          },
+          "rubric": {
+            "minLength": 1,
+            "title": "Rubric",
+            "type": "string"
+          }
+        },
+        "required": [
+          "rubric"
+        ],
+        "title": "RubricAnswer",
+        "type": "object"
       },
       "Run": {
         "additionalProperties": false,
@@ -8551,6 +8814,37 @@
         "title": "SuccessCriteria",
         "type": "object"
       },
+      "TextAnswer": {
+        "additionalProperties": false,
+        "description": "Accepts any of `accept`, compared case-insensitively on collapsed whitespace.\n\nThis is for answers with a small closed set of right spellings (\"Hadamard\",\n\"the Hadamard gate\"). Anything open-ended belongs in `RubricAnswer`, which is\ngraded by the model \u2014 putting it here would silently mark a correct answer\nwrong for being phrased differently.",
+        "properties": {
+          "accept": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 16,
+            "minItems": 1,
+            "title": "Accept",
+            "type": "array"
+          },
+          "explanation": {
+            "default": "",
+            "title": "Explanation",
+            "type": "string"
+          },
+          "kind": {
+            "const": "text",
+            "default": "text",
+            "title": "Kind",
+            "type": "string"
+          }
+        },
+        "required": [
+          "accept"
+        ],
+        "title": "TextAnswer",
+        "type": "object"
+      },
       "TopLevelExecution": {
         "enum": [
           "required",
@@ -9461,7 +9755,7 @@
   "info": {
     "description": "Cross-boundary types only; API paths are owned by services/api.",
     "title": "majorana-contracts",
-    "version": "2.19.0"
+    "version": "2.20.0"
   },
   "openapi": "3.1.0",
   "paths": {}

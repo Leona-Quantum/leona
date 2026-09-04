@@ -14,6 +14,9 @@ function cell(id: string, source: string, overrides: Record<string, unknown> = {
     tags: [] as string[],
     execute: true,
     stub: null,
+    check: null,
+    answer: null,
+    answer_prompt: null,
     timeout_s: null,
     ...overrides,
   };

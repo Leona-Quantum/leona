@@ -111,19 +111,23 @@ from .courses import (
     UpdateCourseRequest,
 )
 from .notebooks import (
+    AnswerPrompt,
     Audience,
     AuthorNotebookVersionRequest,
     AuthorNotebookVersionResponse,
     Cell,
     CellError,
+    CellGrade,
     CellOutput,
     CellResult,
     CellRole,
+    ChoiceAnswer,
     CreateNotebookRequest,
     CreateNotebookResponse,
     CreateNotebookTurnRequest,
     CreateNotebookTurnResponse,
     ExecutionReport,
+    GradeReport,
     ImportNotebookRequest,
     ImportNotebookResponse,
     Notebook,
@@ -143,11 +147,14 @@ from .notebooks import (
     NotebookVersionList,
     NotebookVersionStatus,
     NotebookVersionSummary,
+    NumericAnswer,
     Reference,
     RerunNotebookResponse,
     ReviewFinding,
+    RubricAnswer,
     Seed,
     Style,
+    TextAnswer,
     UpdateNotebookRequest,
 )
 from .models import (
@@ -342,9 +349,16 @@ from .lifecycle import (
 # check becomes advisory output on a user's edit instead of a constraint that
 # refuses it. Additive — every field defaults, and a client that never posts to
 # /notebooks/{id}/versions sees no change.
-CONTRACTS_VERSION = "2.19.0"
+CONTRACTS_VERSION = "2.20.0"
 
 __all__ = [
+    "TextAnswer",
+    "RubricAnswer",
+    "NumericAnswer",
+    "GradeReport",
+    "ChoiceAnswer",
+    "CellGrade",
+    "AnswerPrompt",
     "CONTRACTS_VERSION",
     "Algorithm",
     "Artifact",

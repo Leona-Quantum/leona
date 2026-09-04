@@ -102,6 +102,9 @@ export function insertCellAfter(
     tags: [],
     execute: true,
     stub: null,
+    check: null,
+    answer: null,
+    answer_prompt: null,
     timeout_s: null,
   };
   const index = afterId === null ? -1 : cells.findIndex((cell) => cell.id === afterId);

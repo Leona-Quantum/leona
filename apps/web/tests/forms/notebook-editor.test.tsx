@@ -46,9 +46,9 @@ const SPEC = {
   brief: "",
   extra: {},
   cells: [
-    { id: "c01", kind: "markdown" as const, role: "objective" as const, source: "# Bell state", tags: [], execute: true, stub: null, timeout_s: null },
-    { id: "c02", kind: "code" as const, role: "run" as const, source: "print('first')", tags: [], execute: true, stub: null, timeout_s: null },
-    { id: "c03", kind: "code" as const, role: "run" as const, source: "print('second')", tags: [], execute: true, stub: null, timeout_s: null },
+    { id: "c01", kind: "markdown" as const, role: "objective" as const, source: "# Bell state", tags: [], execute: true, stub: null, check: null, answer: null, answer_prompt: null, timeout_s: null },
+    { id: "c02", kind: "code" as const, role: "run" as const, source: "print('first')", tags: [], execute: true, stub: null, check: null, answer: null, answer_prompt: null, timeout_s: null },
+    { id: "c03", kind: "code" as const, role: "run" as const, source: "print('second')", tags: [], execute: true, stub: null, check: null, answer: null, answer_prompt: null, timeout_s: null },
   ],
 };
 

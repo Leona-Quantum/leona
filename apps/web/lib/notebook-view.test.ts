@@ -25,8 +25,8 @@ test("text/html is classified as text, never as a renderable-HTML kind", () => {
 
 test("cell views join the spec by id, not by array position", () => {
   const cells = [
-    { id: "c02", kind: "code" as const, role: null, source: "print(2)", tags: [], execute: true, stub: null, timeout_s: null },
-    { id: "c01", kind: "code" as const, role: null, source: "print(1)", tags: [], execute: true, stub: null, timeout_s: null },
+    { id: "c02", kind: "code" as const, role: null, source: "print(2)", tags: [], execute: true, stub: null, check: null, answer: null, answer_prompt: null, timeout_s: null },
+    { id: "c01", kind: "code" as const, role: null, source: "print(1)", tags: [], execute: true, stub: null, check: null, answer: null, answer_prompt: null, timeout_s: null },
   ];
   const report = {
     notebook_slug: "s",
@@ -51,19 +51,19 @@ test("cell views join the spec by id, not by array position", () => {
 });
 
 test("a cell with execute:false defaults to skipped, not not_run", () => {
-  const cells = [{ id: "hw", kind: "code" as const, role: null, source: "submit()", tags: [], execute: false, stub: null, timeout_s: null }];
+  const cells = [{ id: "hw", kind: "code" as const, role: null, source: "submit()", tags: [], execute: false, stub: null, check: null, answer: null, answer_prompt: null, timeout_s: null }];
   const [view] = notebookCellViews(cells, null);
   assert.equal(view.status, "skipped");
 });
 
 test("a markdown cell with no result also defaults to skipped", () => {
-  const cells = [{ id: "m1", kind: "markdown" as const, role: null, source: "# hi", tags: [], execute: true, stub: null, timeout_s: null }];
+  const cells = [{ id: "m1", kind: "markdown" as const, role: null, source: "# hi", tags: [], execute: true, stub: null, check: null, answer: null, answer_prompt: null, timeout_s: null }];
   const [view] = notebookCellViews(cells, null);
   assert.equal(view.status, "skipped");
 });
 
 test("an error result surfaces ename/evalue verbatim", () => {
-  const cells = [{ id: "c1", kind: "code" as const, role: null, source: "1/0", tags: [], execute: true, stub: null, timeout_s: null }];
+  const cells = [{ id: "c1", kind: "code" as const, role: null, source: "1/0", tags: [], execute: true, stub: null, check: null, answer: null, answer_prompt: null, timeout_s: null }];
   const report = {
     notebook_slug: "s",
     ok: false,
@@ -110,7 +110,7 @@ test("errorTracebackText on no error is the empty string", () => {
 });
 
 test("a truncated output marks the cell view truncated", () => {
-  const cells = [{ id: "c1", kind: "code" as const, role: null, source: "big()", tags: [], execute: true, stub: null, timeout_s: null }];
+  const cells = [{ id: "c1", kind: "code" as const, role: null, source: "big()", tags: [], execute: true, stub: null, check: null, answer: null, answer_prompt: null, timeout_s: null }];
   const report = {
     notebook_slug: "s",
     ok: true,
