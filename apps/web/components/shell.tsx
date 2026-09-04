@@ -81,7 +81,7 @@ const SIDEBAR_STORAGE_KEY = "majorana.sidebar-collapsed.v1";
 // PR's own commits). The marker has to sit on the flagged line itself.
 const RECENTS_POSITION_KEY = "majorana.recents-position.v1"; // gitleaks:allow
 type RecentsPosition = "above" | "below";
-type WorkspaceSurface = "run" | "studio" | "qapps";
+type WorkspaceSurface = "run" | "studio" | "qapps" | "notebooks";
 type DeleteTarget =
   | { kind: "chat"; item: ChatSummary }
   | { kind: "artifact"; item: LibraryArtifact };
@@ -285,7 +285,9 @@ export function Shell({
     ? "studio"
     : pathname.startsWith("/qapps")
       ? "qapps"
-      : "run";
+      : pathname.startsWith("/notebooks")
+        ? "notebooks"
+        : "run";
   const activeNavSurface = NAV_SURFACES.find(
     (surface) => pathname === surface.href || pathname.startsWith(`${surface.href}/`),
   );
@@ -925,6 +927,12 @@ function WorkspaceSidebar({
           <a className={surface === "qapps" ? "is-active" : ""} href="/qapps" aria-current={surface === "qapps" ? "page" : undefined} aria-label={copy.qapps} title={copy.qapps}>
             <QappsIcon size={15} />
             <span className="mj-sidebar-copy">{copy.qapps}</span>
+          </a>
+        ) : null}
+        {!demoMode ? (
+          <a className={surface === "notebooks" ? "is-active" : ""} href="/notebooks" aria-current={surface === "notebooks" ? "page" : undefined} aria-label={copy.notebooks} title={copy.notebooks}>
+            <LibraryIcon size={15} />
+            <span className="mj-sidebar-copy">{copy.notebooks}</span>
           </a>
         ) : null}
       </nav>

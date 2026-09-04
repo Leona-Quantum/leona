@@ -1,0 +1,22 @@
+# Pip fallback for environments where `uv` cannot be installed. Prefer
+# `uv sync --locked` (see pyproject.toml and uv.lock) when you can use it.
+#
+# This file matches the base dependencies in pyproject.toml. The floors are not
+# decorative: a fallback file is resolved fresh on the learner's machine, so
+# whatever a resolver can legally pick here IS a supported environment for this
+# course, and an auditor reading this file has to be able to see that.
+#
+# `pillow` is named even though nothing here imports it — matplotlib pulls it.
+# With only `matplotlib>=3.8` stated, a resolver is free to take the floor, and
+# osv-scanner does exactly that: it resolved this file to pillow 9.5.0, which
+# carries seven advisories up to CVSS 9.3. Nobody was shipped that version —
+# uv.lock pins 12.3.0 and that is what `uv sync --locked` installs — but the
+# fallback path could not say so, and a route that cannot be audited is a route
+# nobody should be sent down. The floors below are the versions the lockfile
+# actually resolves, so both routes now describe the same environment.
+qiskit>=2.5,<2.6
+numpy>=2.0
+matplotlib>=3.11
+pillow>=12.3
+pylatexenc>=2.11
+qiskit-qasm3-import>=0.6,<0.7

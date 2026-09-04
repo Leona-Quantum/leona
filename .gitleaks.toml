@@ -162,10 +162,12 @@ id = "generic-api-key"
     #    value entire -- paste a real token into that same constant and the gate
     #    still fails, which is the property every entry in this file has to keep.
     #
-    #    WHY THIS ENTRY IS ON `dev` BEFORE THE FILE IT NAMES IS. If you grep for
-    #    that path here you will not find it — it lives on `feature/notebooks`
-    #    (PR 819), unmerged. This entry is still needed on `dev`, because of how
-    #    the gate runs under the merge queue:
+    #    WHY THIS ENTRY IS WIDER IN SCOPE THAN THE ONE FILE IT NAMES. It was
+    #    written onto `dev` while the file it names still lived only on
+    #    `feature/notebooks` (PR 819) — that PR has since merged, so the path
+    #    does resolve here now. The entry was needed on `dev` ahead of the file,
+    #    and is still needed independently of it, because of how the gate runs
+    #    under the merge queue:
     #
     #      * On a `pull_request` event the scan is a RANGE — `determine-range`
     #        sets RANGE_BASE/RANGE_HEAD and only that PR's own commits are read.

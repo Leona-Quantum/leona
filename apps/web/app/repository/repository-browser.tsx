@@ -18,7 +18,7 @@ import type { PublicLocale } from "../../lib/public-locale";
 import { VerificationTierBadge } from "../../components/repository-verification";
 import { StarIcon } from "../../components/icons";
 import { loadStarredRepositorySlugs, toggleRepositoryStar } from "../../lib/repository-stars";
-import { RepositoryExportAction } from "./repository-export";
+import { RepositoryExportAction, RepositoryNotebookAction } from "./repository-export";
 import type { RepositoryEstimateSummary } from "../../lib/repository/estimate";
 import { isProfileOrder, PROFILE_ORDERS, type BrowseOrder } from "../../lib/repository/browse-order";
 import { DEFAULT_ROW_LIMIT, type RowLimit } from "../../lib/repository/browse-page";
@@ -685,6 +685,7 @@ export function RepositoryBrowser({
               {starredSlugs.has(entry.slug) ? copy.unstar : copy.star}
             </button>
             <RepositoryExportAction slug={entry.slug} title={title} isSignedIn={isSignedIn} signInHref={signInHref} locale={locale} />
+            <RepositoryNotebookAction slug={entry.slug} locale={locale} />
             <a className="mj-text-link" href={`/repository/${entry.slug}`}>{copy.view} ↗</a>
           </div>
         </div>

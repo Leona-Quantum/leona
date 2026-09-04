@@ -14450,3 +14450,703 @@ html:not([data-auth="in"]) .mj-auth-slot[data-auth-slot="in"] {
   color: var(--text-2);
   font-size: var(--fs-12);
 }
+
+/* ---------- Notebooks ---------- */
+
+/* -- page shell (list) -- */
+.mj-notebooks-page {
+  min-height: 0;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+.mj-notebooks-scroll {
+  min-height: 0;
+  flex: 1 1 auto;
+  overflow-y: auto;
+  overscroll-behavior-y: contain;
+  padding: var(--sp-8) var(--sp-12) var(--sp-12);
+}
+.mj-notebooks-hero {
+  margin-bottom: var(--sp-6);
+}
+.mj-notebooks-hero h1 {
+  margin: var(--sp-2) 0;
+  font-size: var(--fs-28);
+  font-weight: 500;
+}
+.mj-notebooks-hero p:last-child {
+  max-width: 640px;
+  margin: 0;
+  color: var(--text-1);
+  line-height: 1.6;
+}
+
+/* -- composer panel -- */
+.mj-notebooks-composer {
+  display: grid;
+  gap: var(--sp-5);
+  margin-bottom: var(--sp-8);
+  padding: var(--sp-6);
+  border: 1px solid var(--border-0);
+  border-radius: var(--radius-card);
+  background: var(--bg-1);
+}
+.mj-notebooks-brief {
+  display: grid;
+  gap: var(--sp-2);
+}
+.mj-notebooks-brief > span {
+  color: var(--text-1);
+  font-size: var(--fs-12);
+  font-weight: 500;
+}
+.mj-notebooks-brief textarea {
+  box-sizing: border-box;
+  width: 100%;
+  resize: vertical;
+  padding: var(--sp-3);
+  border: 1px solid var(--border-0);
+  border-radius: var(--radius-control);
+  outline: 0;
+  color: var(--text-0);
+  background: var(--bg-0);
+  font: inherit;
+  font-size: var(--fs-13);
+  line-height: 1.55;
+}
+.mj-notebooks-brief textarea:focus-visible {
+  border-color: var(--accent);
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.mj-notebooks-brief textarea::placeholder {
+  color: var(--text-2);
+}
+
+.mj-notebooks-starters {
+  display: grid;
+  gap: var(--sp-2);
+}
+.mj-notebooks-starter-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: var(--sp-2);
+}
+.mj-notebooks-starter-chip {
+  display: grid;
+  gap: var(--sp-1);
+  padding: var(--sp-3);
+  border: 1px solid var(--border-0);
+  border-radius: var(--radius-control);
+  color: var(--text-1);
+  background: var(--bg-0);
+  text-align: left;
+  font: inherit;
+  cursor: pointer;
+}
+.mj-notebooks-starter-chip:hover,
+.mj-notebooks-starter-chip:focus-visible {
+  border-color: var(--accent);
+  background: var(--bg-2);
+}
+.mj-notebooks-starter-chip strong {
+  overflow: hidden;
+  color: var(--text-0);
+  font-size: var(--fs-13);
+  font-weight: 500;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mj-notebooks-fields {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: var(--sp-4);
+}
+.mj-notebooks-field {
+  display: grid;
+  gap: var(--sp-2);
+  min-width: 0;
+}
+.mj-notebooks-field-label {
+  color: var(--text-1);
+  font-size: var(--fs-12);
+  font-weight: 500;
+}
+.mj-notebooks-select {
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 32px;
+  padding: 0 var(--sp-3);
+  border: 1px solid var(--border-0);
+  border-radius: var(--radius-control);
+  color: var(--text-0);
+  background: var(--bg-0);
+  font: inherit;
+  font-size: var(--fs-13);
+  cursor: pointer;
+}
+.mj-notebooks-select:focus-visible {
+  border-color: var(--accent);
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.mj-notebooks-pill-group {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-1);
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+.mj-notebooks-pill {
+  display: inline-flex;
+  align-items: center;
+  min-height: 30px;
+  padding: 0 var(--sp-3);
+  border: 1px solid var(--border-0);
+  border-radius: 999px;
+  color: var(--text-1);
+  background: var(--bg-0);
+  font: inherit;
+  font-size: var(--fs-12);
+  font-weight: 500;
+  cursor: pointer;
+}
+.mj-notebooks-pill:hover {
+  border-color: var(--text-1);
+  color: var(--text-0);
+}
+.mj-notebooks-pill[aria-pressed="true"] {
+  border-color: var(--accent);
+  color: var(--bg-0);
+  background: var(--accent);
+}
+.mj-notebooks-pill--fixed {
+  cursor: default;
+  border-color: var(--accent);
+  color: var(--bg-0);
+  background: var(--accent);
+}
+
+.mj-notebooks-seed {
+  display: grid;
+  gap: var(--sp-2);
+  max-width: 360px;
+}
+.mj-notebooks-seed > span {
+  color: var(--text-1);
+  font-size: var(--fs-12);
+  font-weight: 500;
+}
+.mj-notebooks-seed input {
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 32px;
+  padding: 0 var(--sp-3);
+  border: 1px solid var(--border-0);
+  border-radius: var(--radius-control);
+  outline: 0;
+  color: var(--text-0);
+  background: var(--bg-0);
+  font: inherit;
+  font-size: var(--fs-13);
+}
+.mj-notebooks-seed input:focus-visible {
+  border-color: var(--accent);
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.mj-notebooks-seed input::placeholder {
+  color: var(--text-2);
+}
+
+.mj-notebooks-error {
+  margin: 0;
+  color: var(--err);
+  font-size: var(--fs-13);
+}
+.mj-notebooks-composer-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sp-3);
+}
+.mj-notebooks-import {
+  cursor: pointer;
+}
+.mj-notebooks-import-hint {
+  margin: 0;
+  color: var(--text-2);
+  font-size: var(--fs-12);
+}
+
+/* -- notebook list grid -- */
+.mj-notebooks-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(280px, 100%), 1fr));
+  gap: var(--sp-4);
+}
+.mj-notebook-card {
+  display: grid;
+  grid-template-rows: auto 1fr auto;
+  gap: var(--sp-3);
+  min-width: 0;
+  padding: var(--sp-5);
+  border: 1px solid var(--border-0);
+  border-radius: var(--radius-card);
+  background: var(--bg-1);
+}
+.mj-notebook-card:hover {
+  background: var(--bg-2);
+}
+.mj-notebook-card-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sp-2);
+  color: var(--text-2);
+  font-size: var(--fs-12);
+}
+.mj-notebook-card-meta time {
+  margin-left: auto;
+}
+.mj-notebook-card-copy {
+  min-width: 0;
+}
+.mj-notebook-card-copy h2 {
+  margin: 0 0 var(--sp-2);
+  overflow-wrap: anywhere;
+  font-size: var(--fs-16);
+  font-weight: 500;
+}
+.mj-notebook-card-copy h2 a {
+  color: var(--text-0);
+  text-decoration: none;
+}
+.mj-notebook-card-copy h2 a:hover {
+  text-decoration: underline;
+}
+.mj-notebook-card-copy p {
+  display: -webkit-box;
+  overflow: hidden;
+  margin: 0;
+  color: var(--text-1);
+  line-height: 1.55;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+}
+.mj-notebook-card-actions {
+  display: flex;
+  justify-content: flex-end;
+}
+.mj-notebook-card-actions a {
+  text-decoration: none;
+}
+
+/* -- kind badge + status pill, shared by the list card and the workspace header -- */
+.mj-notebook-kind-badge {
+  padding: var(--sp-1) var(--sp-2);
+  border: 1px solid var(--border-0);
+  border-radius: var(--radius-control);
+  color: var(--text-1);
+  font-family: var(--font-mono);
+  font-size: var(--fs-12);
+}
+.mj-notebook-status-pill {
+  padding: var(--sp-1) var(--sp-2);
+  border: 1px solid var(--border-0);
+  border-radius: var(--radius-control);
+  color: var(--text-1);
+  font-size: var(--fs-12);
+  font-weight: 500;
+  white-space: nowrap;
+}
+.mj-notebook-status-pill--queued {
+  border-color: var(--border-0);
+  color: var(--text-1);
+}
+.mj-notebook-status-pill--generating {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+.mj-notebook-status-pill--ready {
+  border-color: var(--ok);
+  color: var(--ok);
+}
+.mj-notebook-status-pill--failed {
+  border-color: var(--err);
+  color: var(--err);
+}
+
+/* -- workspace -- */
+.mj-notebook-workspace {
+  min-height: 0;
+  height: 100%;
+  overflow-y: auto;
+  padding: var(--sp-8) var(--sp-12) var(--sp-12);
+}
+.mj-notebook-workspace-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--sp-4);
+  margin-bottom: var(--sp-6);
+}
+.mj-notebook-workspace-title {
+  display: grid;
+  gap: var(--sp-2);
+  min-width: 0;
+}
+.mj-notebook-workspace-title h1 {
+  margin: 0;
+  font-size: var(--fs-20);
+  font-weight: 500;
+  line-height: 1.3;
+}
+.mj-notebook-title-edit {
+  padding: 0;
+  border: 0;
+  color: var(--text-0);
+  background: transparent;
+  font: inherit;
+  font-size: inherit;
+  font-weight: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.mj-notebook-title-edit:hover,
+.mj-notebook-title-edit:focus-visible {
+  color: var(--accent);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.mj-notebook-title-edit-form {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+}
+.mj-notebook-title-edit-form input {
+  min-width: 0;
+  flex: 1 1 320px;
+  padding: var(--sp-1) var(--sp-2);
+  border: 1px solid var(--accent);
+  border-radius: var(--radius-control);
+  outline: 0;
+  color: var(--text-0);
+  background: var(--bg-0);
+  font: inherit;
+  font-size: var(--fs-20);
+  font-weight: 500;
+}
+.mj-notebook-workspace-meta {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+}
+.mj-notebook-workspace-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sp-2);
+}
+.mj-notebook-version-picker select {
+  min-height: 30px;
+  padding: 0 var(--sp-6) 0 var(--sp-3);
+  border: 0;
+  color: var(--text-1);
+  background: transparent;
+  font: inherit;
+  font-size: var(--fs-12);
+  cursor: pointer;
+}
+
+.mj-notebook-workspace-error {
+  margin: 0 0 var(--sp-4);
+  color: var(--err);
+  font-size: var(--fs-13);
+}
+
+.mj-notebook-progress {
+  margin-bottom: var(--sp-6);
+  border: 1px solid var(--border-0);
+  border-radius: var(--radius-card);
+  background: var(--bg-1);
+  overflow: hidden;
+}
+.mj-notebook-progress .mj-rail {
+  width: 100%;
+  border-right: 0;
+  padding: var(--sp-2) 0;
+}
+
+.mj-notebook-workspace-body {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 340px;
+  align-items: start;
+  gap: var(--sp-6);
+}
+@media (max-width: 900px) {
+  .mj-notebook-workspace-body {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+.mj-notebook-workspace-notebook {
+  min-width: 0;
+  display: grid;
+  gap: var(--sp-6);
+}
+.mj-notebook-workspace-empty-notebook {
+  color: var(--text-2);
+  font-size: var(--fs-13);
+}
+.mj-notebook-version-failed {
+  display: grid;
+  gap: var(--sp-2);
+  padding: var(--sp-4);
+  border: 1px solid var(--err);
+  border-radius: var(--radius-card);
+  color: var(--text-0);
+  background: color-mix(in srgb, var(--err) 10%, var(--bg-1));
+}
+.mj-notebook-version-failed p {
+  margin: 0;
+  font-size: var(--fs-13);
+  line-height: 1.5;
+}
+
+/* -- the notebook body: markdown + code cells -- */
+.mj-notebook-view {
+  display: grid;
+  gap: var(--sp-4);
+}
+.mj-notebook-cell {
+  min-width: 0;
+  padding: var(--sp-4) var(--sp-4) var(--sp-4) var(--sp-5);
+  border: 1px solid var(--border-0);
+  border-left: 3px solid var(--accent);
+  border-radius: var(--radius-card);
+  background: var(--bg-1);
+}
+.mj-notebook-cell[data-kind="markdown"] {
+  border-left-color: var(--border-0);
+}
+.mj-notebook-cell-code {
+  /* Reuses .mj-code-body's font/padding — this class exists so a cell-specific
+     override (e.g. a max-height for very long generated cells) has somewhere
+     to attach without touching the shared code-pane rule. */
+  margin: 0;
+}
+.mj-notebook-cell-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sp-2);
+  margin-bottom: var(--sp-3);
+}
+.mj-notebook-cell-role {
+  padding: var(--sp-1) var(--sp-2);
+  border: 1px solid var(--border-0);
+  border-radius: var(--radius-control);
+  color: var(--text-1);
+  background: var(--bg-2);
+  font-family: var(--font-mono);
+  font-size: var(--fs-12);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.mj-notebook-cell-pill {
+  color: var(--text-2);
+  font-size: var(--fs-12);
+}
+.mj-notebook-cell-pill[data-status="ok"] {
+  color: var(--ok);
+}
+.mj-notebook-cell-pill[data-status="error"] {
+  color: var(--err);
+}
+.mj-notebook-cell-pill[data-status="skipped"],
+.mj-notebook-cell-pill[data-status="not_run"] {
+  color: var(--text-2);
+}
+.mj-notebook-cell-actions {
+  margin-left: auto;
+}
+.mj-notebook-cell-outputs {
+  display: grid;
+  gap: var(--sp-2);
+  margin-top: var(--sp-3);
+}
+.mj-notebook-cell-stdout,
+.mj-notebook-cell-stderr,
+.mj-notebook-cell-output-text {
+  margin: 0;
+  overflow-x: auto;
+  padding: var(--sp-3);
+  border: 1px solid var(--border-0);
+  border-radius: var(--radius-control);
+  background: var(--bg-0);
+  color: var(--text-1);
+  font-family: var(--font-mono);
+  font-size: var(--fs-12);
+  line-height: 1.5;
+  white-space: pre-wrap;
+}
+.mj-notebook-cell-stdout {
+  color: var(--text-0);
+}
+.mj-notebook-cell-stderr {
+  color: var(--warn);
+}
+.mj-notebook-cell-figure {
+  display: block;
+  max-width: 100%;
+  height: auto;
+  border: 1px solid var(--border-0);
+  border-radius: var(--radius-control);
+  background: var(--bg-0);
+}
+.mj-notebook-cell-error {
+  margin: 0;
+  overflow-x: auto;
+  padding: var(--sp-3);
+  border: 1px solid var(--err);
+  border-radius: var(--radius-control);
+  color: var(--err);
+  background: color-mix(in srgb, var(--err) 10%, var(--bg-0));
+  font-family: var(--font-mono);
+  font-size: var(--fs-12);
+  line-height: 1.5;
+  white-space: pre-wrap;
+}
+.mj-notebook-cell-truncated-note {
+  margin: 0;
+  color: var(--text-2);
+  font-size: var(--fs-12);
+}
+
+/* -- the review panel -- */
+.mj-notebook-review {
+  padding: var(--sp-4);
+  border: 1px solid var(--border-0);
+  border-radius: var(--radius-card);
+  background: var(--bg-1);
+}
+.mj-notebook-review h2 {
+  margin: 0 0 var(--sp-3);
+  font-size: var(--fs-16);
+  font-weight: 500;
+}
+.mj-notebook-review h3 {
+  margin: var(--sp-4) 0 var(--sp-2);
+  color: var(--text-1);
+  font-size: var(--fs-12);
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+.mj-notebook-review ul {
+  display: grid;
+  gap: var(--sp-2);
+  margin: 0;
+  padding-left: var(--sp-5);
+}
+.mj-notebook-review li {
+  color: var(--text-1);
+  font-size: var(--fs-13);
+  line-height: 1.5;
+}
+
+/* -- the chat rail -- */
+.mj-notebook-workspace-chat {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+  align-self: start;
+  padding: var(--sp-4);
+  border: 1px solid var(--border-0);
+  border-radius: var(--radius-card);
+  background: var(--bg-1);
+}
+@media (min-width: 901px) {
+  .mj-notebook-workspace-chat {
+    position: sticky;
+    top: var(--sp-4);
+    max-height: calc(100vh - var(--sp-16));
+  }
+}
+.mj-notebook-workspace-chat h2 {
+  margin: 0;
+  font-size: var(--fs-14);
+  font-weight: 500;
+}
+.mj-notebook-chat-empty {
+  margin: 0;
+  color: var(--text-2);
+  font-size: var(--fs-12);
+  line-height: 1.5;
+}
+.mj-notebook-chat-thread {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  gap: var(--sp-4);
+  padding-bottom: 0;
+}
+.mj-notebook-chat-thread .mj-chat-message--user,
+.mj-notebook-chat-thread .mj-chat-message--assistant {
+  width: 100%;
+  font-size: var(--fs-13);
+}
+.mj-notebook-chat-progress {
+  margin: 0;
+  color: var(--accent);
+  font-size: var(--fs-12);
+}
+.mj-notebook-chat-composer {
+  display: grid;
+  gap: var(--sp-2);
+}
+.mj-notebook-chat-composer textarea {
+  box-sizing: border-box;
+  width: 100%;
+  resize: vertical;
+  padding: var(--sp-2) var(--sp-3);
+  border: 1px solid var(--border-0);
+  border-radius: var(--radius-control);
+  outline: 0;
+  color: var(--text-0);
+  background: var(--bg-0);
+  font: inherit;
+  font-size: var(--fs-13);
+  line-height: 1.5;
+}
+.mj-notebook-chat-composer textarea:focus-visible {
+  border-color: var(--accent);
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.mj-notebook-chat-composer button {
+  justify-self: end;
+}
+
+@media (max-width: 720px) {
+  .mj-notebooks-scroll,
+  .mj-notebook-workspace {
+    padding: var(--sp-6) var(--sp-4) var(--sp-8);
+  }
+}
+
+/* Loading/error branch before the notebook workspace itself has data to lay out. */
+.mj-notebook-workspace-empty {
+  min-height: 0;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--sp-12);
+}
