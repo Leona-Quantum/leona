@@ -43,6 +43,16 @@ _DEFAULTS: dict[str, dict[str, str]] = {
         "verify": "deepseek-v4-pro",
         "analyze": "deepseek-v4-pro",
         "writeback": "deepseek-v4-pro",  # library metadata + explanations
+        # The notebook lane (leona_notebooks): outline/draft/repair/revise are
+        # generation-shaped work, same model as "generate"; review is a
+        # verification pass, same model as "verify". No owner spend decision
+        # has picked a different provider for these yet — plans/notebooks/
+        # 00-notebooks-surface.md §7 Q4 raises it as open.
+        "notebook_outline": "deepseek-v4-pro",
+        "notebook_draft": "deepseek-v4-pro",
+        "notebook_repair": "deepseek-v4-pro",
+        "notebook_revise": "deepseek-v4-pro",
+        "notebook_review": "deepseek-v4-pro",
     },
     "anthropic": {
         "chat": "claude-sonnet-5",
@@ -53,6 +63,11 @@ _DEFAULTS: dict[str, dict[str, str]] = {
         "verify": "claude-opus-4-8",
         "analyze": "claude-opus-4-8",
         "writeback": "claude-haiku-4-5-20251001",
+        "notebook_outline": "claude-sonnet-5",
+        "notebook_draft": "claude-sonnet-5",
+        "notebook_repair": "claude-sonnet-5",
+        "notebook_revise": "claude-sonnet-5",
+        "notebook_review": "claude-opus-4-8",
     },
 }
 

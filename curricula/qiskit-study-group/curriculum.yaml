@@ -1,0 +1,82 @@
+slug: qiskit-study-group
+title: Qiskit 2.x Study Group
+description: >-
+  A code-first curriculum for software engineers who know Python and are new to
+  quantum computing. Learners build, run, modify, and debug small circuits before
+  adding the minimum mathematics needed to explain what they observed. Builds
+  practical Qiskit 2.x skill and a foundation toward the IBM Certified Quantum
+  Computation using Qiskit v2.X Developer – Associate certification (not affiliated
+  with IBM; every practice question is original).
+audience: Software engineers comfortable with Python and Jupyter; no physics, linear algebra or Dirac notation assumed.
+framework: qiskit
+framework_version: ">=2.5,<2.6"
+python: ">=3.11"
+solutions_dir: solutions
+checklist_name: SELF_EVALUATION.md
+units:
+  - id: week00
+    directory: week00_setup
+    title: Setup
+    topic: Environment, circuit, local sampling
+    key_concepts: [environment, QuantumCircuit, StatevectorSampler, shots]
+    deliverable: Verified Qiskit install
+    order: 0
+  - id: week01
+    directory: week01_qubits_circuits
+    title: Qubits and circuits
+    topic: X, H, measurement, shots
+    key_concepts: [qubit, X gate, H gate, measurement, shots, sampling noise]
+    deliverable: Quantum coin
+    order: 1
+  - id: week02
+    directory: week02_entanglement
+    title: Multiple qubits
+    topic: CX, Bell state, correlation
+    key_concepts: [CX gate, Bell state, correlation, bitstring order]
+    deliverable: Correlated bit generator
+    order: 2
+  - id: week03
+    directory: week03_quantum_gates
+    title: Gates and state
+    topic: Phase, rotations, statevector
+    key_concepts: [phase, RX/RY/RZ, Statevector, Bloch sphere, unitary]
+    deliverable: Gate prediction experiments
+    order: 3
+  - id: week04
+    directory: week04_transpilation
+    title: Transpilation
+    topic: Target, basis, routing, ISA
+    key_concepts: [Target, basis gates, coupling map, routing, ISA circuit, preset pass manager]
+    deliverable: Target-compatible circuit
+    order: 4
+  - id: week05
+    directory: week05_primitives
+    title: Primitives
+    topic: SamplerV2, EstimatorV2, observables
+    key_concepts: [SamplerV2, EstimatorV2, SparsePauliOp, PUB, result objects]
+    deliverable: Primitive selection exercise
+    order: 5
+  - id: week06
+    directory: week06_grover
+    title: Grover search
+    topic: Oracle, phase marking, interference
+    key_concepts: [oracle, phase kickback, diffusion, amplitude amplification]
+    deliverable: Two-qubit Grover circuit
+    order: 6
+  - id: week07
+    directory: week07_variational
+    title: Hybrid algorithms
+    topic: Parameters, objective, optimizer
+    key_concepts: [Parameter, objective function, classical optimizer, VQE]
+    deliverable: One-qubit variational solver
+    order: 7
+  - id: week08
+    directory: week08_project
+    title: Mini project
+    topic: Integration, explanation, demo
+    key_concepts: [integration, explanation, demonstration]
+    deliverable: Team demo
+    order: 8
+extras:
+  - bonus_ibm_quantum_hardware
+  - certification

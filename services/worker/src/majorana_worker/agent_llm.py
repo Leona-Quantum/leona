@@ -26,6 +26,15 @@ _ROLE_STAGE = {
     "intent_alignment": Stage.VERIFY,
     "explain_result": Stage.ANALYZE,
     "research_triage": Stage.PLAN,
+    # The notebook lane (leona_notebooks / majorana_worker.notebook_handlers).
+    # Mirrors `_STAGE_MAP` in notebook_handlers.py — same reasoning: no
+    # `Stage` member names a notebook stage, so each request's `schema_name`
+    # (== its LLM role) is classified onto the closest existing one.
+    "notebook_outline": Stage.PLAN,
+    "notebook_draft": Stage.GENERATE,
+    "notebook_repair": Stage.GENERATE,
+    "notebook_revise": Stage.GENERATE,
+    "notebook_review": Stage.VERIFY,
 }
 
 _LIVE_DELTA_CHARS = 160

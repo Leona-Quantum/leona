@@ -12,6 +12,9 @@ dependencies = [
     "majorana-openqasm",
     "majorana-qpu[ibm]",
     "majorana-verification",
+    # The notebook lane (notebook.generate / notebook.revise): the pipeline core,
+    # prompts and the sandbox cell runner.
+    "leona-notebooks",
     # The worker decrypts the submitting user's provider credential itself
     # (handlers._qpu_credential_for). It arrives through majorana-api today, but
     # this service imports `cryptography` in its own right, and a dependency you
@@ -26,6 +29,7 @@ dependencies = [
 majorana-worker = "majorana_worker.__main__:main"
 
 [tool.uv.sources]
+leona-notebooks = { workspace = true }
 majorana-api = { workspace = true }
 majorana-agent = { workspace = true }
 majorana-llm = { workspace = true }

@@ -105,7 +105,8 @@ untrusted generated code runs only in ephemeral network-locked sandboxes
 
 - `apps/web` — Next.js App Router UI (Vercel)
 - `services/api`, `services/worker` — FastAPI control plane + job runner (Cloud Run)
-- `packages/py/*` — agent, contracts, estimation, frameworks, llm, openqasm, qpu, sandbox,
+- `packages/py/*` — agent, contracts, estimation, frameworks, llm, notebooks (leona-notebooks: the
+  notebook lane's pure core), openqasm, qpu, sandbox,
   verification
 - `packages/ts/*` — ui (vendored components), ui-visual (render/diff harness),
   contracts-gen (GENERATED — never hand-edit)

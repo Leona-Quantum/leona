@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { SignInLink } from "../../components/sign-in-link";
 import type { PublicLocale } from "../../lib/public-locale";
+import { WORKSPACE_COPY } from "../../lib/workspace-locale";
 
 const COPY: Record<PublicLocale, {
   adding: string;
@@ -129,5 +130,21 @@ export function RepositoryExportAction({
         </div>
       ) : null}
     </>
+  );
+}
+
+/**
+ * Sibling to `RepositoryExportAction`: opens `/notebooks` seeded from this
+ * Atlas record. A plain link, not a dialog — unlike "Add to Studio", a
+ * signed-out visitor following it lands on `/notebooks`, which sits under
+ * `app/(app)/` and is auth-gated by that layout the ordinary way, so there is
+ * nothing bespoke to build here for the signed-out case.
+ */
+export function RepositoryNotebookAction({ slug, locale = "en" }: { slug: string; locale?: PublicLocale }) {
+  const label = WORKSPACE_COPY[locale].notebooks.teachMeInNotebook;
+  return (
+    <a className="mj-text-link" href={`/notebooks?seed=${encodeURIComponent(`atlas-record:${slug}`)}`}>
+      {label}
+    </a>
   );
 }
