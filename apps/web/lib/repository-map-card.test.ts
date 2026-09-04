@@ -2104,7 +2104,22 @@ test("every ansatz-construction method carries a listing, and the region cannot 
 // If a fourteenth method joins this region and its papers report no run, the
 // right change is an exemption naming it and saying which papers were read — not
 // deleting this test, and not a floor, which would pass on a region that gained a
-// method with nothing written.
+// method with nothing written. That exemption is `NO_RUN_IN_CITED_PAPERS` below,
+// and it is empty today because all thirteen reads found a run.
+//
+// Sourcery caught that the previous version of this comment PROMISED that
+// mechanism without providing one, which made the documented policy unreachable:
+// the only way to add such a method would have been to weaken or delete the test.
+// A policy with no mechanism is worse than no policy, because it reads as covered.
+//
+// The set is a named exemption, not an escape hatch. Two guards keep it honest:
+// every id in it must actually be in the region (a stale or misspelled entry is a
+// silent no-op that outlives the method it named), and the denominator below
+// counts the WHOLE region, so exempting a method never shrinks what is measured.
+const NO_RUN_IN_CITED_PAPERS: ReadonlyArray<{ id: string; papersRead: string }> = [
+  // { id: "some-method", papersRead: "arXiv:… §4 and arXiv:… §2 — neither reports a run" },
+];
+
 test("every ansatz-construction method carries a worked run, and the region cannot shrink to pass", () => {
   const ansatzMethods = LAYER_GRAPH.nodes.filter(
     (node): node is LayerMethod => isMethod(node) && node.realizes === "ansatz-construction",
@@ -2115,8 +2130,25 @@ test("every ansatz-construction method carries a worked run, and the region cann
     `ansatz-construction has ${ansatzMethods.length} methods, was 13 — a slot was renamed or removed`,
   );
 
+  // An exemption for a method that is not in the region exempts nothing and hides
+  // that it exempts nothing. Checked before it is used.
+  const regionIds = new Set(ansatzMethods.map((node) => node.id));
+  for (const { id } of NO_RUN_IN_CITED_PAPERS) {
+    assert.ok(
+      regionIds.has(id),
+      `${id} is exempted from the worked-run assertion but is not in ansatz-construction — a stale exemption`,
+    );
+  }
+  for (const { id, papersRead } of NO_RUN_IN_CITED_PAPERS) {
+    assert.ok(
+      papersRead.trim() !== "",
+      `${id} is exempted without naming the papers that were read — that is the whole cost of the exemption`,
+    );
+  }
+
+  const exempt = new Set(NO_RUN_IN_CITED_PAPERS.map((entry) => entry.id));
   const missing = ansatzMethods
-    .filter((node) => (node.example?.text ?? "").trim() === "")
+    .filter((node) => !exempt.has(node.id) && (node.example?.text ?? "").trim() === "")
     .map((node) => node.id);
   assert.deepEqual(
     missing,
@@ -2129,6 +2161,7 @@ test("every ansatz-construction method carries a worked run, and the region cann
   // Checked here as well as in the type because a payload inserted by script can
   // satisfy the type and still carry an empty `at`.
   for (const node of ansatzMethods) {
+    if (exempt.has(node.id)) continue;
     const run = node.example?.run;
     assert.ok(run, `${node.id} has example.text with no example.run`);
     assert.ok(
