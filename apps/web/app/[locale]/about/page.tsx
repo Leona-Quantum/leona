@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import Image from "next/image";
 import { LeonaWordmark } from "../../../components/leona-wordmark";
 import { LiquidGridBackground } from "../../../components/liquid-grid-background";
 import { PublicSite } from "../../../components/public-site";
@@ -7,9 +8,18 @@ import { ABOUT_COPY } from "../../../lib/about-copy";
 import { parsePublicLocale, PUBLIC_LOCALES } from "../../../lib/public-locale";
 import { canonicalMetadata } from "../../../lib/public-metadata";
 import { aboutMetadataCopy } from "../../../lib/public-page-metadata";
+import eshaanPortrait from "./images/eshaan.webp";
+import ruiSuzukiPortrait from "./images/rui-suzuki.webp";
+import watanabePortrait from "./images/watanabe.webp";
 
 export const revalidate = 300;
 export const dynamicParams = false;
+
+const TEAM_PORTRAITS = {
+  "01": ruiSuzukiPortrait,
+  "02": watanabePortrait,
+  "03": eshaanPortrait,
+} as const;
 
 export function generateStaticParams() {
   return PUBLIC_LOCALES.map((locale) => ({ locale }));
@@ -72,6 +82,47 @@ export default async function AboutPage({
         </div>
       </section>
 
+      <section className="mj-about-section mj-about-team" aria-labelledby="about-team-heading">
+        <Reveal>
+          <div className="mj-about-team-heading">
+            <p className="mj-section-label">{copy.team.label}</p>
+            <h2 id="about-team-heading">{copy.team.title}</h2>
+            <p>{copy.team.body}</p>
+          </div>
+        </Reveal>
+        <div className="mj-about-team-grid">
+          {copy.team.members.map((member, index) => (
+            <Reveal delay={index * 90} key={member.name}>
+              <article className="mj-about-person-card">
+                <div className="mj-about-person-portrait">
+                  <Image
+                    alt={copy.team.portraitAlt.replace("{name}", member.name)}
+                    placeholder="blur"
+                    sizes="(max-width: 980px) calc(100vw - 48px), 368px"
+                    src={TEAM_PORTRAITS[member.number]}
+                  />
+                </div>
+                <div className="mj-about-person-content">
+                  <div className="mj-about-person-topline">
+                    <span>{member.number}</span>
+                    <span>{member.role}</span>
+                  </div>
+                  <div className="mj-about-person-name">
+                    <h3>{member.name}</h3>
+                    {member.romanName ? <span>{member.romanName}</span> : null}
+                  </div>
+                  <p className="mj-about-person-affiliation">{member.affiliation}</p>
+                  <p className="mj-about-person-bio">{member.bio}</p>
+                  <ul className="mj-about-person-focus" aria-label={`${member.name} — ${copy.team.focusLabel}`}>
+                    {member.focus.map((focus) => <li key={focus}>{focus}</li>)}
+                  </ul>
+                </div>
+              </article>
+            </Reveal>
+          ))}
+        </div>
+      </section>
+
       <Reveal>
         <section className="mj-about-section mj-about-manifesto" aria-labelledby="about-why-heading">
           <div className="mj-about-section-marker">
@@ -129,57 +180,6 @@ export default async function AboutPage({
           </ul>
         </section>
       </Reveal>
-
-      <section className="mj-about-section mj-about-team" aria-labelledby="about-team-heading">
-        <Reveal>
-          <div className="mj-about-team-heading">
-            <p className="mj-section-label">{copy.team.label}</p>
-            <h2 id="about-team-heading">{copy.team.title}</h2>
-            <p>{copy.team.body}</p>
-          </div>
-        </Reveal>
-        <div className="mj-about-team-grid">
-          {copy.team.members.map((member, index) => (
-            <Reveal delay={index * 90} key={member.name}>
-              <article className="mj-about-person-card">
-                <div className="mj-about-person-topline">
-                  <span>{member.number}</span>
-                  <span>{member.role}</span>
-                </div>
-                <div className="mj-about-person-name">
-                  <h3>{member.name}</h3>
-                  {member.romanName ? <span>{member.romanName}</span> : null}
-                </div>
-                <p className="mj-about-person-affiliation">{member.affiliation}</p>
-                <p className="mj-about-person-bio">{member.bio}</p>
-                <ul className="mj-about-person-focus" aria-label={`${member.name} — ${copy.team.focusLabel}`}>
-                  {member.focus.map((focus) => <li key={focus}>{focus}</li>)}
-                </ul>
-              </article>
-            </Reveal>
-          ))}
-        </div>
-      </section>
-
-      <section className="mj-about-section mj-about-support" aria-labelledby="about-support-heading">
-        <Reveal>
-          <div className="mj-about-support-heading">
-            <p className="mj-section-label">{copy.support.label}</p>
-            <h2 id="about-support-heading">{copy.support.title}</h2>
-          </div>
-        </Reveal>
-        <div className="mj-about-support-grid">
-          {copy.support.items.map((item, index) => (
-            <Reveal delay={index * 90} key={item.title}>
-              <article className="mj-about-support-card">
-                <span>{item.eyebrow}</span>
-                <h3>{item.title}</h3>
-                <p>{item.body}</p>
-              </article>
-            </Reveal>
-          ))}
-        </div>
-      </section>
 
       <Reveal>
         <section className="mj-company-final-cta mj-about-cta" aria-labelledby="about-cta-heading">
