@@ -44,6 +44,7 @@
  */
 export const LOCALE_ROUTES: readonly string[] = [
   "/",
+  "/about",
   "/contact",
   "/pricing",
   "/privacy",

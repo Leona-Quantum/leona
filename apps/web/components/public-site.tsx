@@ -84,6 +84,7 @@ export async function PublicSite({
   const copy = PUBLIC_SHELL_COPY[resolvedLocale];
   const publicNav = [
     { href: "/", label: copy.nav.product },
+    { href: "/about", label: copy.nav.about },
     { href: "/pricing", label: copy.nav.pricing },
     { href: "/repository", label: copy.nav.repository },
     { href: "/workspace", label: copy.nav.workspace },
@@ -193,6 +194,7 @@ export async function PublicSite({
             </div>
             <div>
               <span>{copy.footer.company}</span>
+              <a href="/about">{copy.nav.about}</a>
               <a href="/contact">{copy.footer.contact}</a>
             </div>
             <div>

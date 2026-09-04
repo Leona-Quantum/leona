@@ -135,12 +135,66 @@ id = "generic-api-key"
     #    fixture has to look like a credential or the test proves nothing — the
     #    same situation as entry 5, and the same reason it is safe to allowlist.
     #
-    #    Anchored on the literal `abcdef0123456789`: the sixteen hex digits in
-    #    strict ascending order. That sequence is what a human types when they
-    #    want something credential-shaped and are not thinking; a real key cannot
-    #    contain it and still be a real key. Paste an actual token into this same
-    #    constant and the gate still fails, which is the property every entry in
-    #    this file has to keep.
-    '''abcdef0123456789''',
+    #    Anchored on the WHOLE match -- the `token = "..."` assignment together
+    #    with the complete fixture value -- not on the bare hex run inside it.
+    #
+    #    The bare-substring version of this entry was written first and is wrong,
+    #    and it is wrong in the direction this file cares about. `regexTarget` is
+    #    "match" above, so a regex of just `abcdef0123456789` suppresses ANY
+    #    `generic-api-key` finding whose matched text contains that run anywhere.
+    #    Sourcery flagged it on PR 821 and the scenario is real, not theoretical.
+    #    Demonstrated with gitleaks 8.30.1 before this line was rewritten, using
+    #    a generic `api_key = "..."` assignment whose value is ~40 random
+    #    characters with the sixteen-hex-digit run buried in the middle -- the
+    #    exact literal is deliberately NOT reproduced here, because pasting a
+    #    credential-shaped string into this comment makes `semgrep`'s
+    #    `detected-generic-api-key` rule fail the PR, which is how the first
+    #    version of this comment was caught. That value is:
+    #
+    #      caught      by dev's config with no entry 7 at all
+    #      SUPPRESSED  by the bare-substring version of entry 7
+    #      caught      by the anchored version below
+    #
+    #    which is the whole finding: the substring form let a genuine credential
+    #    through.
+    #    Whitespace around the `=` is tolerated so an edit to the fixture's
+    #    formatting does not re-break the gate, but the value must be the fixture
+    #    value entire -- paste a real token into that same constant and the gate
+    #    still fails, which is the property every entry in this file has to keep.
+    #
+    #    WHY THIS ENTRY OUTLIVED THE INCIDENT THAT PRODUCED IT. It was written
+    #    onto `dev` while the file it names still lived only on
+    #    `feature/notebooks` (PR 819) — that PR has since merged, so the path
+    #    resolves here now. Which events read the fixture, after the change in
+    #    the same commit as this comment:
+    #
+    #      * `pull_request` — a RANGE. `determine-range` sets
+    #        RANGE_BASE/RANGE_HEAD and only that PR's own commits are read. So
+    #        this entry matters to a PR only when the PR touches that file.
+    #      * `merge_group` — a RANGE, since this commit. `base_sha..head_sha`:
+    #        exactly what the merge would add to the base.
+    #      * `schedule` / `workflow_dispatch` — deliberately NO range. That is
+    #        the weekly full-history sweep, it reads the fixture every time, and
+    #        it is the reason this entry is permanent rather than transitional.
+    #
+    #    The middle line is the one that changed, and the incident is why. Before
+    #    it, `merge_group` left both values empty, the `--log-opts` branch was
+    #    skipped, and bare `gitleaks detect` ran — whose default is the whole git
+    #    log, against a `fetch-depth: 0` checkout, so the scan read EVERY REF IN
+    #    THE REPOSITORY rather than the trial ref's own ancestry. One
+    #    secret-shaped fixture on any open branch therefore failed `security` for
+    #    every OTHER pull request the moment it entered the queue, while each of
+    #    them stayed green on its own branch. That happened on 2026-09-03: 805,
+    #    818 and 820 were all green, all queued, and all failed their trial runs
+    #    on commit a53a41b8, which is not an ancestor of `dev` and belongs to a
+    #    PR none of them touches. The queue was deadlocked, and the allowlist
+    #    that fixed it existed only on the branch carrying the fixture.
+    #
+    #    This entry was the narrow fix. The structural one is the `merge_group`
+    #    range in `.github/workflows/security.yml`, which is what makes the
+    #    second bullet above true — an unmerged branch can no longer gate an
+    #    unrelated PR. Both are kept: the range stops the cross-branch failure,
+    #    and this entry is what the weekly full-history sweep needs.
+    '''(?i)token\s*=\s*"abcdef0123456789abcdef"''',
   ]
 

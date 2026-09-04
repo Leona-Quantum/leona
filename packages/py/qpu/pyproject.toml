@@ -4,7 +4,7 @@ version = "0.1.0"
 description = "QPU provider interface: rate cards, deterministic estimates, and flag-gated submission"
 requires-python = ">=3.12"
 dependencies = [
-    "pydantic>=2.8",
+    "pydantic>=2.13.5",
 ]
 
 # qiskit-ibm-runtime is deliberately NOT a base dependency: the IBM adapter

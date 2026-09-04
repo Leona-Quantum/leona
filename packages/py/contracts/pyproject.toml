@@ -3,7 +3,7 @@ name = "majorana-contracts"
 version = "0.1.0"
 description = "Source of truth for every cross-boundary type (RunEvent, Plan, Artifact, Run, VerificationRecord, Scope)"
 requires-python = ">=3.12"
-dependencies = ["pydantic>=2.8"]
+dependencies = ["pydantic>=2.13.5"]
 
 [build-system]
 requires = ["hatchling"]

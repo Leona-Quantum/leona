@@ -266,8 +266,12 @@ jobs:
         run: uv run pytest services/api/tests/authz -q
       # RLS suite (ai-ops#143; docs/adr/0028-rls-defense-in-depth.md).
       #
-      # Everything above this step — migrations, seed, the authz suite — runs as
-      # `pg`, the CI Postgres superuser. A superuser bypasses row-level security
+      # Migrations and the seed above run as `pg`, the CI Postgres superuser, because
+      # DDL needs the owner. The authz suite and the live suites do NOT any more — they
+      # connect as `majorana_api`, same as this one (ai-ops#150); this comment said
+      # "everything above ... runs as pg" and stopped being true when they were flipped.
+      #
+      # A superuser bypasses row-level security
       # unconditionally, so running the RLS suite the same way would report every
       # policy in db/migrations/versions/0053 as working while proving nothing
       # (see 0052's own note on testing a privilege change as a superuser, and

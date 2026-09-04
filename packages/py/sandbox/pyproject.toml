@@ -3,7 +3,7 @@ name = "majorana-sandbox"
 version = "0.1.0"
 description = "Ephemeral execution sandbox for untrusted generated code — deny-all egress, caps, static guard"
 requires-python = ">=3.12"
-dependencies = ["pydantic>=2.8", "majorana-contracts"]
+dependencies = ["pydantic>=2.13.5", "majorana-contracts"]
 
 [project.optional-dependencies]
 # The real Vercel Sandbox provider. Kept optional so the guard + local test

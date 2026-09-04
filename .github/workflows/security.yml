@@ -186,6 +186,41 @@ jobs:
           : "${last:?no commits returned for this PR}"
           echo "base=${first}" >> "$GITHUB_OUTPUT"
           echo "head=${last}" >> "$GITHUB_OUTPUT"
+      # merge_group runs used to fall through to NO range at all, which is not the
+      # same thing as the schedule path even though the code could not tell them
+      # apart. `gitleaks detect` with no --log-opts scans the whole git log, and
+      # this job checks out with `fetch-depth: 0`, so the scan read EVERY REF IN
+      # THE REPOSITORY -- including branches that are not being merged and are not
+      # ancestors of the trial ref.
+      #
+      # That is not theoretical. On 2026-09-03 it failed PRs 805, 818 and 820 in
+      # the queue on commit a53a41b8, which belongs to PR 819 and is not an
+      # ancestor of dev. Each of the three was green on its own branch, because on
+      # `pull_request` the range above scopes them correctly. One secret-shaped
+      # test fixture on one unmerged branch gated every other PR in the repo, and
+      # the only way out was PR 821.
+      #
+      # The right range for a merge_group is exactly what this merge would add to
+      # the base: base_sha..head_sha. Unlike the PR case there is no `^` -- base_sha
+      # IS the base commit, not the first commit of the change.
+      #
+      # `--no-merges` without `--first-parent`: dev's history is linear (the queue
+      # squashes -- every commit on dev has one parent, checked), so on today's
+      # topology the two are identical. Dropping --first-parent is the safe side of
+      # that equivalence: if the strategy ever changes to a real merge, first-parent
+      # would walk past the merged-in commits and scan none of them, which is a
+      # fail-open in the one job whose whole purpose is not to fail open.
+      - name: determine merge-group commit range
+        if: github.event_name == 'merge_group'
+        id: mgrange
+        env:
+          MG_BASE: ${{ github.event.merge_group.base_sha }}
+          MG_HEAD: ${{ github.event.merge_group.head_sha }}
+        run: |
+          : "${MG_BASE:?merge_group.base_sha is empty -- refusing to fall back to a full-history scan, which reads unrelated branches}"
+          : "${MG_HEAD:?merge_group.head_sha is empty -- refusing to fall back to a full-history scan, which reads unrelated branches}"
+          echo "base=${MG_BASE}" >> "$GITHUB_OUTPUT"
+          echo "head=${MG_HEAD}" >> "$GITHUB_OUTPUT"
       # No PR comments/SARIF upload, matching this file's stated convention for
       # osv/semgrep (see file header): the gate is the exit code, findings are in
       # the job log. `--redact` keeps the matched secret value itself out of the
@@ -193,13 +228,30 @@ jobs:
       - name: scan
         env:
           EVENT_NAME: ${{ github.event_name }}
-          RANGE_BASE: ${{ steps.range.outputs.base }}
-          RANGE_HEAD: ${{ steps.range.outputs.head }}
+          RANGE_BASE: ${{ steps.range.outputs.base || steps.mgrange.outputs.base }}
+          RANGE_HEAD: ${{ steps.range.outputs.head || steps.mgrange.outputs.head }}
         run: |
           args=(detect --redact -v --exit-code=2 --report-format=json --report-path=gitleaks-report.json --log-level=info --config .gitleaks.toml --no-banner)
-          if [ "$EVENT_NAME" = "pull_request" ]; then
+          # `schedule` and `workflow_dispatch` deliberately get NO range: that is the
+          # weekly full-history sweep. `pull_request` and `merge_group` both get one,
+          # and both go through the same resolve-and-count guard below -- the whole
+          # point being that a range which cannot be resolved has to fail loudly
+          # rather than silently widen back to every ref.
+          #
+          # The two differ only in whether the base commit is itself in scope. A PR's
+          # range starts at its FIRST commit, so it needs `^` to include that commit.
+          # merge_group's base_sha is the commit being merged ONTO and must not be
+          # rescanned, so it takes no `^`.
+          if [ "$EVENT_NAME" = "pull_request" ] || [ "$EVENT_NAME" = "merge_group" ]; then
             : "${RANGE_BASE:?RANGE_BASE is empty -- the determine-range step should have set this}"
             : "${RANGE_HEAD:?RANGE_HEAD is empty -- the determine-range step should have set this}"
+            if [ "$EVENT_NAME" = "merge_group" ]; then
+              range_spec="${RANGE_BASE}..${RANGE_HEAD}"
+              log_opts="--no-merges ${range_spec}"
+            else
+              range_spec="${RANGE_BASE}^..${RANGE_HEAD}"
+              log_opts="--no-merges --first-parent ${range_spec}"
+            fi
             # gitleaks fails open on an unresolvable range: if `${RANGE_BASE}^` has
             # no parent in this checkout (found empirically while testing this
             # change), the internal `git log` call errors, gitleaks logs the git
@@ -207,15 +259,16 @@ jobs:
             # exits 0. Verifying the range resolves to something ourselves, before
             # handing it to gitleaks, is what turns that silent pass into a loud
             # failure instead.
-            range_count=$(git rev-list --count --no-merges --first-parent "${RANGE_BASE}^..${RANGE_HEAD}") || {
-              echo "::error::the PR commit range ${RANGE_BASE}^..${RANGE_HEAD} does not resolve in this checkout. Refusing to scan an unresolvable range as though it were clean -- that is exactly the fail-open this job exists to avoid. Check fetch-depth on the checkout step above."
+            range_count=$(git rev-list --count ${log_opts}) || {
+              echo "::error::the ${EVENT_NAME} commit range ${range_spec} does not resolve in this checkout. Refusing to scan an unresolvable range as though it were clean -- that is exactly the fail-open this job exists to avoid. Check fetch-depth on the checkout step above."
               exit 1
             }
             if [ "$range_count" -eq 0 ]; then
-              echo "::error::the PR commit range ${RANGE_BASE}^..${RANGE_HEAD} resolves to 0 commits, which should not happen for a PR with at least one commit. Refusing to treat this as a clean scan."
+              echo "::error::the ${EVENT_NAME} commit range ${range_spec} resolves to 0 commits, which should not happen for a change with at least one commit. Refusing to treat this as a clean scan."
               exit 1
             fi
-            args+=(--log-opts="--no-merges --first-parent ${RANGE_BASE}^..${RANGE_HEAD}")
+            echo "scanning ${range_count} commit(s) in ${range_spec}"
+            args+=(--log-opts="${log_opts}")
           fi
           echo "gitleaks cmd: ./gitleaks ${args[*]}"
           set +e
@@ -479,14 +532,34 @@ jobs:
         # merge_group's `base_ref` is a full ref ("refs/heads/dev"). The `#refs/heads/`
         # strip is a no-op on the former and correct on the latter, so one line handles
         # both events instead of branching on event_name a second time.
+        #
+        # BASE, and why merge_group cannot use the branch NAME. The queue BATCHES:
+        # the trial ref for the third PR is built on top of the first two, while
+        # `origin/dev` has not yet advanced to include them. Diffing against the
+        # branch name therefore attributes the whole batch to whichever PR is under
+        # test. Measured 2026-09-03: PR 820, a dependency bump touching four
+        # package/lockfile paths, was rejected for "changing"
+        # .github/workflows/sandbox-image.yml -- which belongs to PR 818, merged
+        # moments earlier in the same batch. The demand it printed could not be
+        # satisfied either, because the change was never 820's to declare.
+        #
+        # merge_group.base_sha is the immutable commit the trial is built on, so it
+        # is the only base that answers "what does THIS change touch".
         env:
           PR_BODY: ${{ github.event.pull_request.body }}
-          BASE_REF: ${{ github.event.pull_request.base.ref || github.event.merge_group.base_ref }}
+          BASE_REF: ${{ github.event.pull_request.base.ref }}
+          MG_BASE_SHA: ${{ github.event.merge_group.base_sha }}
         run: |
           node scripts/check-blast-radius.mjs --self-test
-          base_ref="${BASE_REF#refs/heads/}"
-          if [ -f pr-body.txt ]; then
-            node scripts/check-blast-radius.mjs --base "origin/${base_ref}" --body-file pr-body.txt
+          if [ -n "$MG_BASE_SHA" ]; then
+            base="$MG_BASE_SHA"
           else
-            node scripts/check-blast-radius.mjs --base "origin/${base_ref}"
+            : "${BASE_REF:?neither pull_request.base.ref nor merge_group.base_sha is set -- refusing to guess a diff base}"
+            base="origin/${BASE_REF#refs/heads/}"
+          fi
+          echo "blast-radius base: ${base}"
+          if [ -f pr-body.txt ]; then
+            node scripts/check-blast-radius.mjs --base "$base" --body-file pr-body.txt
+          else
+            node scripts/check-blast-radius.mjs --base "$base"
           fi

@@ -4,7 +4,7 @@ version = "0.1.0"
 description = "Optional OpenQASM interchange normalization and inspection"
 requires-python = ">=3.12"
 dependencies = [
-    "pydantic>=2.8",
+    "pydantic>=2.13.5",
     "qiskit>=2.5.2,<3",
     "qiskit-qasm3-import>=0.6,<0.7",
     "majorana-contracts",
