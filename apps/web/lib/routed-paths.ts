@@ -44,6 +44,7 @@
  */
 export const LOCALE_ROUTES: readonly string[] = [
   "/",
+  "/about",
   "/contact",
   "/pricing",
   "/privacy",
@@ -153,6 +154,7 @@ export const ROUTED_SEGMENTS: readonly string[] = [
   // needs the auth gate. Being listed is what stops the middleware treating it
   // as an unrouted path.
   "llms.txt",
+  "notebooks",
   "open-source",
   "q",
   "qapps",

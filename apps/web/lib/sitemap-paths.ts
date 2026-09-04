@@ -25,6 +25,7 @@
  */
 export const PUBLIC_STATIC_PATHS: readonly string[] = [
   "/",
+  "/about",
   "/pricing",
   "/workspace",
   "/contact",
@@ -101,6 +102,7 @@ export const CRAWLER_DISALLOWED_PATHS: readonly string[] = [
   "/dev/",
   "/lab",
   "/library",
+  "/notebooks",
   "/qapps",
   "/run",
   "/shared/",

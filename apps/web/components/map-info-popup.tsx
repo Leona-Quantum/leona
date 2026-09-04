@@ -411,6 +411,7 @@ export function MapInfoPopup({
 
   const siteLinks: { href: string; label: string }[] = [
     { href: "/", label: shell.nav.product },
+    { href: "/about", label: shell.nav.about },
     { href: "/repository", label: shell.nav.repository },
     { href: "/workspace", label: shell.nav.workspace },
     { href: "/pricing", label: shell.nav.pricing },

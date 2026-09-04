@@ -101,8 +101,15 @@ async def list_runs(
 
 #: Modes that can consume execution budget at admission time. AUTO belongs here
 #: even though it is not itself an execution: it is the *default* mode on
-#: CreateRunRequest, and the worker may resolve it to EXECUTE.
-BACKSTOP_COUNTED_MODES = (RunMode.EXECUTE.value, RunMode.QAPP.value, RunMode.AUTO.value)
+#: CreateRunRequest, and the worker may resolve it to EXECUTE. NOTEBOOK is
+#: explicit-only, like QAPP — a notebook generation/revision spends a sandbox
+#: run exactly the way an execute run does.
+BACKSTOP_COUNTED_MODES = (
+    RunMode.EXECUTE.value,
+    RunMode.QAPP.value,
+    RunMode.NOTEBOOK.value,
+    RunMode.AUTO.value,
+)
 
 
 async def count_runs_by_mode_since(
@@ -430,7 +437,7 @@ def _spends_the_weekly_allowance(scope: Scope, since: dt.datetime):
     """
     return (
         Run.user_id == scope.user_id,
-        Run.mode.in_((RunMode.EXECUTE.value, RunMode.QAPP.value)),
+        Run.mode.in_((RunMode.EXECUTE.value, RunMode.QAPP.value, RunMode.NOTEBOOK.value)),
         Run.created_at >= since,
     )
 

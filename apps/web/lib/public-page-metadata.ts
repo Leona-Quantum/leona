@@ -9,12 +9,13 @@ import type { PublicLocale } from "./public-locale";
 // A type-only import (`PublicLocale` above) does not need this: it is erased
 // entirely before Node ever tries to resolve it.
 import { PUBLIC_SHELL_COPY } from "./public-locale.ts";
+import { ABOUT_COPY } from "./about-copy.ts";
 import { CONTACT_COPY, HOME_COPY, PRICING_COPY, PRIVACY_COPY, TERMS_COPY, WORKSPACE_LANDING_COPY } from "./public-copy.ts";
 
 /**
- * `title`/`description` for the six `[locale]` marketing pages that, until
+ * `title`/`description` for the seven `[locale]` marketing pages that, until
  * now, declared a static `export const metadata` with no locale branch at
- * all — home, contact, pricing, privacy, terms, workspace.
+ * all — home, about, contact, pricing, privacy, terms, workspace.
  *
  * Measured on production: with the Japanese locale active, `<h1>` and the
  * rest of the page body render correctly in Japanese (they read from
@@ -89,6 +90,15 @@ export function homeMetadataCopy(locale: PublicLocale): Pick<Metadata, "title" |
   // Quantum"` template — a literal `title: "Leona Quantum"` here would
   // compose to "Leona Quantum · Leona Quantum" in a reader's tab.
   return { description: "Generate, run, and use quantum circuits with AI in one platform." };
+}
+
+export function aboutMetadataCopy(locale: PublicLocale): Pick<Metadata, "title" | "description"> {
+  return locale === "ja"
+    ? { title: PUBLIC_SHELL_COPY.ja.nav.about, description: ABOUT_COPY.ja.hero.body }
+    : {
+        title: "About",
+        description: "Meet the team building Leona Quantum and the mission behind its next-generation quantum operating system.",
+      };
 }
 
 export function contactMetadataCopy(locale: PublicLocale): Pick<Metadata, "title" | "description"> {

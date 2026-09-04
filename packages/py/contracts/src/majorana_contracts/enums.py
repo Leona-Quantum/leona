@@ -55,6 +55,9 @@ class RunMode(StrEnum):
     IDEATE = "ideate"
     EXPLAIN = "explain"
     QAPP = "qapp"
+    # A run that produces a notebook version (leona_notebooks pipeline) instead of an
+    # artifact. Client-selected, never inferred by the intent router.
+    NOTEBOOK = "notebook"
 
 
 class QappExecutionStatus(StrEnum):

@@ -127,5 +127,69 @@ id = "generic-api-key"
     #    low-entropy, `.vN`-suffixed identifier under this repo's own fixed
     #    `majorana.` namespace — never a value any provider issues.
     '''(?i)["']majorana\.[a-z0-9-]+\.v[0-9]+["']''',
+
+    # 7. The mutation fixture in `curricula/qiskit-study-group/check_build.py`,
+    #    which is a test OF the credential check. One scenario, "a credential in
+    #    a cell", writes `token = "abcdef0123456789abcdef"` into a throwaway copy
+    #    of the curriculum tree and asserts the build checker rejects it. The
+    #    fixture has to look like a credential or the test proves nothing — the
+    #    same situation as entry 5, and the same reason it is safe to allowlist.
+    #
+    #    Anchored on the WHOLE match -- the `token = "..."` assignment together
+    #    with the complete fixture value -- not on the bare hex run inside it.
+    #
+    #    The bare-substring version of this entry was written first and is wrong,
+    #    and it is wrong in the direction this file cares about. `regexTarget` is
+    #    "match" above, so a regex of just `abcdef0123456789` suppresses ANY
+    #    `generic-api-key` finding whose matched text contains that run anywhere.
+    #    Sourcery flagged it on PR 821 and the scenario is real, not theoretical.
+    #    Demonstrated with gitleaks 8.30.1 before this line was rewritten, using
+    #    a generic `api_key = "..."` assignment whose value is ~40 random
+    #    characters with the sixteen-hex-digit run buried in the middle -- the
+    #    exact literal is deliberately NOT reproduced here, because pasting a
+    #    credential-shaped string into this comment makes `semgrep`'s
+    #    `detected-generic-api-key` rule fail the PR, which is how the first
+    #    version of this comment was caught. That value is:
+    #
+    #      caught      by dev's config with no entry 7 at all
+    #      SUPPRESSED  by the bare-substring version of entry 7
+    #      caught      by the anchored version below
+    #
+    #    which is the whole finding: the substring form let a genuine credential
+    #    through.
+    #    Whitespace around the `=` is tolerated so an edit to the fixture's
+    #    formatting does not re-break the gate, but the value must be the fixture
+    #    value entire -- paste a real token into that same constant and the gate
+    #    still fails, which is the property every entry in this file has to keep.
+    #
+    #    WHY THIS ENTRY IS WIDER IN SCOPE THAN THE ONE FILE IT NAMES. It was
+    #    written onto `dev` while the file it names still lived only on
+    #    `feature/notebooks` (PR 819) — that PR has since merged, so the path
+    #    does resolve here now. The entry was needed on `dev` ahead of the file,
+    #    and is still needed independently of it, because of how the gate runs
+    #    under the merge queue:
+    #
+    #      * On a `pull_request` event the scan is a RANGE — `determine-range`
+    #        sets RANGE_BASE/RANGE_HEAD and only that PR's own commits are read.
+    #      * On a `merge_group` event both are empty, so the `--log-opts` branch
+    #        is skipped and bare `gitleaks detect` runs. Its default is the whole
+    #        git log, and `actions/checkout` here uses `fetch-depth: 0`, so the
+    #        scan reads EVERY REF IN THE REPOSITORY — not the trial ref's own
+    #        ancestry.
+    #
+    #    So one secret-shaped fixture on any open branch fails `security` for
+    #    every OTHER pull request the moment it enters the queue, while each of
+    #    them stays green on its own branch. That happened on 2026-09-03: 805,
+    #    818 and 820 were all green, all queued, and all failed their trial runs
+    #    on commit a53a41b8, which is not an ancestor of `dev` and belongs to a
+    #    PR none of them touches. The queue was deadlocked — the allowlist that
+    #    fixes it existed only on the branch carrying the fixture.
+    #
+    #    The narrow fix is this entry. The structural one is to give the
+    #    `merge_group` case a real range (the trial ref against its base) instead
+    #    of letting it fall through to an all-refs scan, so an unmerged branch
+    #    can never gate an unrelated PR again. That is a change to
+    #    `.github/workflows/security.yml`, which is an owner-reviewed path.
+    '''(?i)token\s*=\s*"abcdef0123456789abcdef"''',
   ]
 

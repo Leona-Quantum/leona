@@ -22,6 +22,13 @@ dev = [
     "import-linter>=2.14",
     "httpx>=0.27",
     "pyyaml>=6",
+    # The notebook lane's validator runs compiled notebooks through a real Jupyter
+    # kernel (the reader's experience); the product itself runs cells in the sandbox
+    # with no kernel. pylatexenc is what `QuantumCircuit.draw("mpl")` needs and what
+    # the sandbox guard already allowlists, so local runs match the promise.
+    "nbclient>=0.10,<1",
+    "ipykernel>=6.29,<7",
+    "pylatexenc>=2.10,<3",
     # Needed so the framework-parity tests actually RUN rather than skip. Two
     # defects that cost a full candidate budget each — Cirq's QASM header and its
     # multi-qubit measurement operations — were invisible because every Cirq test
@@ -41,7 +48,7 @@ dev = [
     # local subprocess double and production sandbox on the same tested SDK. Pin
     # the simulator and its otherwise-unbounded numba dependency too: retaining
     # an old lock selected numba 0.53.1, which cannot install on Python 3.12.
-    "amazon-braket-sdk==1.125.0",
+    "amazon-braket-sdk==1.126.1",
     "amazon-braket-default-simulator==1.40.1",
     "numba==0.67.0",
     # Qibo stays on its in-process NumPy backend; optional Qibolab hardware
@@ -92,6 +99,36 @@ majorana-contracts = { workspace = true }
 
 [tool.ruff]
 line-length = 100
+
+# `curricula/**/*.nb.py` are notebook CELL SOURCES, not modules. The pipeline
+# compiles them to .ipynb, where each cell is entered separately and the
+# namespace is built up as a reader works down the page — so three default rules
+# fire on correct, deliberate teaching code:
+#
+#   E402  an import inside a later cell. Teaching material introduces a library
+#         at the point it is first needed, which is the whole pedagogy.
+#   F401  an import a cell does not use. A setup cell imports what the LEARNER
+#         will need in the cell they are about to write.
+#   F821  an undefined name. `display` is injected into every notebook namespace
+#         by IPython and exists in no module.
+#
+# Not silenced blindly: the real check on these files is EXECUTION, which is a
+# strictly stronger instrument than ruff for this class — an undefined name in
+# an executed notebook is a NameError. `scripts/validate_notebooks.py --execute`
+# runs all 35 through a real kernel, and check_build.py mutation-tests that
+# checker. Syntax errors (E9) and everything else still apply here.
+[tool.ruff.lint.per-file-ignores]
+"curricula/**/*.nb.py" = ["E402", "F401", "F821"]
+
+# The formatter is a separate gate from the linter and needs the same exemption
+# for the same reason. Its only change to these files is PEP 8's "two blank
+# lines before a top-level def" — which, in a `.nb.py`, inserts a blank line
+# immediately before a `# %%` cell marker, i.e. into the tail of the MARKDOWN
+# cell above it. That is module formatting applied to a file that is not a
+# module: 143 such lines across 20 files, every one of them cosmetic, and every
+# one of them a change to the compiled .ipynb a reader opens.
+[tool.ruff.format]
+exclude = ["curricula/**/*.nb.py"]
 
 [tool.pytest.ini_options]
 testpaths = ["services", "packages/py", "evals/harness"]
