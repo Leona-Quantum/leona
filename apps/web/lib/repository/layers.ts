@@ -739,8 +739,20 @@ export interface MethodExampleRun {
   /**
    * What was actually run. `simulation` is a classical numerical computation,
    * `hardware` a quantum device, `analytic` a worked instance carried through by
-   * hand. All three of today's runs are `simulation`, and saying so is the point:
-   * a reader must not read "worked example" as "this ran on a quantum computer".
+   * hand.
+   *
+   * This field exists because a reader must not take "worked example" to mean
+   * "this ran on a quantum computer". That was easy to state while every recorded
+   * run was a simulation, and the comment used to say so; the `ansatz-construction`
+   * batch added two `hardware` runs, so the distinction is now load-bearing rather
+   * than hypothetical, and each card's prose is required to name the kind in its
+   * first clause as well.
+   *
+   * Do not restate the current mix here. A count in a doc comment goes stale
+   * silently in exactly one direction — nobody revisits it when adding a record —
+   * and the previous version of this sentence was made false by the first batch
+   * that exercised the case it was written for. `check-layer-graph.mjs --closure`
+   * reports the live figures.
    */
   kind: "simulation" | "hardware" | "analytic";
 }
