@@ -14,6 +14,7 @@ type CellRole = components["schemas"]["CellRole"];
 type CellOutput = components["schemas"]["CellOutput"];
 type CellResult = components["schemas"]["CellResult"];
 type ExecutionReport = components["schemas"]["ExecutionReport"];
+type AnswerPrompt = components["schemas"]["AnswerPrompt"];
 type NotebookVersionStatus = components["schemas"]["NotebookVersionStatus"];
 
 export type NotebookCellStatus = "ok" | "error" | "skipped" | "not_run";
@@ -63,6 +64,42 @@ export interface NotebookCellView {
    * is where this is going, and the reason no code below ever reads `check` itself.
    */
   graded: boolean;
+  /**
+   * What the reader is shown of a question: the kind of input to draw, the options for
+   * a `choice`, the unit for a `numeric`. Never the answer.
+   *
+   * Derived by `answerPromptOf`, which builds it from `answer_prompt` when the payload
+   * carries one and REDACTS `answer` when it does not. The workspace is served the
+   * authored spec today — the answer key really is in the browser's payload, filed as
+   * ai-ops issue 260 — so this is the boundary that decides what gets DRAWN, and it exists
+   * as a separate field precisely so no renderer ever reaches into `cell.answer`.
+   */
+  answerPrompt: AnswerPrompt | null;
+}
+
+/**
+ * The reader-safe half of a question cell, from whichever half the payload carries.
+ *
+ * Field-by-field rather than a spread: a spread of `answer` would carry `correct`,
+ * `accept` and `value` into the props of a component whose whole job is to render its
+ * props, and the leak would be one careless `JSON.stringify` away. Listing the three
+ * safe fields means a new key kind cannot smuggle a fourth.
+ */
+export function answerPromptOf(cell: Cell): AnswerPrompt | null {
+  if (cell.answer_prompt) {
+    return {
+      kind: cell.answer_prompt.kind,
+      options: cell.answer_prompt.options ?? [],
+      unit: cell.answer_prompt.unit ?? "",
+    };
+  }
+  if (!cell.answer) return null;
+  const key = cell.answer;
+  return {
+    kind: key.kind,
+    options: key.kind === "choice" ? key.options : [],
+    unit: key.kind === "numeric" ? (key.unit ?? "") : "",
+  };
 }
 
 function resultFor(results: Map<string, CellResult>, cellId: string): CellResult | undefined {
@@ -107,7 +144,8 @@ export function notebookCellViews(
         : null,
       truncated: outputs.some((output) => output.truncated),
       durationMs: result ? result.duration_ms : null,
-      graded: cell.check != null || cell.answer != null,
+      graded: cell.check != null || cell.answer != null || cell.answer_prompt != null,
+      answerPrompt: answerPromptOf(cell),
     };
   });
 }

@@ -105,6 +105,20 @@ start. Assert on a VALUE the exercise is about (`assert double(3) == 6`), and gi
 a message saying what was expected. A grader that fails either test is stripped before the
 reader sees it, and the exercise ships ungraded, so a weak check costs the exercise its
 feedback rather than passing quietly.
+A `role=question` MARKDOWN cell may carry `answer={...}` (a JSON object) — the reader gets an
+input box under it and a real verdict, and the key never reaches their browser. Four kinds:
+  answer={"kind":"choice","options":["...","..."],"correct":0,"explanation":"why"}
+  answer={"kind":"numeric","value":0.5,"tolerance":0.01,"unit":"probability","explanation":"why"}
+  answer={"kind":"text","accept":["Hadamard","the Hadamard gate"],"explanation":"why"}
+  answer={"kind":"rubric","rubric":"what a good answer must mention"}
+Prefer `choice` and `numeric`: they are decided in Python, so the reader can argue with the
+verdict and lose. Use `text` ONLY when the right answers are a short closed set of spellings —
+anything open-ended is `rubric`, which is graded by a model and says so. Three ways a key is
+thrown away before a reader meets it, each because it grades something other than knowing the
+answer: a `numeric` whose `tolerance` is at least `|value|`, because then typing 0 is correct;
+a `text` whose accepted answer is printed in the question's own visible text; two `choice`
+options that read the same, because the reader who picks the other one is marked wrong. Write
+the question so the answer is NOT in it, and set a tolerance that a wrong method would miss.
 Use `tags=["raises-exception"]` only on a cell that is meant to fail. Markdown may use $...$ for maths.
 Do not number cells; do not add ids. Never write an API token, email address or file path into a cell.
 """

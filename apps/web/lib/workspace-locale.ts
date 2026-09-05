@@ -628,6 +628,16 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
      * runs the author's assertion against the reader's code, and a reader is owed
      * the difference before they press it. */
     checkAttemptGrade: string;
+    /** A `role=question` cell's own input. Separate from the code-attempt strings
+     * above because the reader is answering a question, not submitting code, and
+     * "Paste or write your attempt" is wrong for a multiple choice. */
+    answerLegend: string;
+    answerTextPlaceholder: string;
+    answerNumericPlaceholder: string;
+    answerRubricPlaceholder: string;
+    answerSubmit: string;
+    answerClear: string;
+    answerModelGraded: string;
     gradePending: string;
     gradeVerdict: Record<"passed" | "failed" | "unattempted" | "ungradable", string>;
     gradeByCheck: string;
@@ -1429,6 +1439,13 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
     checkAttemptPlaceholder: "Paste or write your attempt at this cell…",
     checkAttemptSubmit: "Ask Nala to check it",
     checkAttemptGrade: "Check my answer",
+    answerLegend: "Your answer",
+    answerTextPlaceholder: "Type your answer…",
+    answerNumericPlaceholder: "A number",
+    answerRubricPlaceholder: "Write your answer in a sentence or two…",
+    answerSubmit: "Check my answer",
+    answerClear: "Clear",
+    answerModelGraded: "Nala grades this one, so the verdict is a judgement rather than a test.",
     gradePending: "Running your code…",
     gradeVerdict: {
       passed: "Correct.",
@@ -2231,6 +2248,13 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
     checkAttemptPlaceholder: "このセルへの解答を貼り付けるか入力してください…",
     checkAttemptSubmit: "Nalaに確認してもらう",
     checkAttemptGrade: "解答を採点する",
+    answerLegend: "あなたの解答",
+    answerTextPlaceholder: "解答を入力してください…",
+    answerNumericPlaceholder: "数値",
+    answerRubricPlaceholder: "1〜2文で解答を書いてください…",
+    answerSubmit: "解答を確認する",
+    answerClear: "消去",
+    answerModelGraded: "この問題は Nala が採点します。テストではなく判断による評価です。",
     gradePending: "コードを実行しています…",
     gradeVerdict: {
       passed: "正解です。",

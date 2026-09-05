@@ -493,3 +493,73 @@ async def test_a_revise_turn_that_only_edits_PROSE_still_spends_nothing() -> Non
     assert outcome.graders is None
     assert ports.calls.count("execute") == 1
     assert outcome.spec.cell_by_id("ex1").check == "assert double(3) == 6"
+
+
+# --------------------------------------------------- the answer-key audit, in the lane
+#
+# `answer_audit` has its own unit tests. What these prove is the WIRING — that generate
+# and revise actually call it and act on what it says. A perfectly correct audit nothing
+# calls is exactly the state question cells were already in: engine built, unreachable.
+
+# Inserted BEFORE the summary cell, not appended: `check_structure` requires the
+# notebook to end with `summary` or `references`, so questions tacked on the end make
+# the draft fail structure and never reach the audit at all.
+_SUMMARY_CELL = "# %% [markdown] role=summary"
+_QUESTIONS = (
+    "# %% [markdown] role=question "
+    'answer={"kind":"numeric","value":0.5,"tolerance":0.01,"unit":"probability"}\n'
+    "# What is the chance of measuring 1?\n\n"
+    "# %% [markdown] role=question "
+    'answer={"kind":"numeric","value":0.5,"tolerance":0.9}\n'
+    "# A key that accepts 0, so it grades nothing.\n\n"
+)
+assert LESSON.count(_SUMMARY_CELL) == 1
+QUESTION_LESSON = LESSON.replace(_SUMMARY_CELL, _QUESTIONS + _SUMMARY_CELL)
+
+
+async def test_generate_reads_the_answer_keys_and_strips_the_one_that_grades_nothing() -> None:
+    ports = ScriptedPorts(drafts=[QUESTION_LESSON])
+    outcome = await generate(ports, GenerationRequest(brief="teach me a coin"))
+    assert outcome.status == "ready"
+    assert outcome.answers is not None
+    assert [v.verdict for v in outcome.answers.verdicts] == ["sound", "cannot-fail"]
+    kept = [cell.id for cell in outcome.spec.cells if cell.answer is not None]
+    assert len(kept) == 1
+    # The question survives; only its verdict goes.
+    assert (
+        sum(1 for c in outcome.spec.cells if c.role is not None and c.role.value == "question") == 2
+    )
+    assert any(
+        stage == "notebook.answers" and status == "failed" for stage, status, _ in ports.events
+    )
+
+
+async def test_a_notebook_with_no_questions_reports_no_answer_audit_at_all() -> None:
+    # `None`, not an empty audit: "there were no questions" and "the keys were checked
+    # and were fine" are different facts, and a caller reporting "answer keys checked"
+    # off a falsy value would conflate them — the same distinction `graders` carries.
+    ports = ScriptedPorts(drafts=[LESSON])
+    outcome = await generate(ports, GenerationRequest(brief="teach me a coin"))
+    assert outcome.answers is None
+    assert not any(stage == "notebook.answers" for stage, _, _ in ports.events)
+
+
+async def test_the_answer_audit_runs_even_when_the_notebook_does_not_execute() -> None:
+    # Unlike the grader audit, which is gated on `report.ok`. A question is markdown: a
+    # broken code cell says nothing about whether its answer key can fail, and a reader
+    # who gets the failed notebook still meets the question.
+    one_bad_key = (
+        "# %% [markdown] role=question "
+        'answer={"kind":"numeric","value":0.5,"tolerance":0.9}\n'
+        "# A key that accepts 0.\n\n"
+    )
+    broken = BROKEN_LESSON.replace(_SUMMARY_CELL, one_bad_key + _SUMMARY_CELL)
+    still_broken = "# %% id=c05 role=run\nundefined_name\n"
+    ports = ScriptedPorts(drafts=[broken], repairs=[still_broken] * 5)
+    outcome = await generate(
+        ports, GenerationRequest(brief="teach me a coin"), PipelineBudget(max_repairs=1)
+    )
+    assert outcome.status == "failed"
+    assert outcome.answers is not None
+    assert [v.verdict for v in outcome.answers.verdicts] == ["cannot-fail"]
+    assert all(cell.answer is None for cell in outcome.spec.cells)

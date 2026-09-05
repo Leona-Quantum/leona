@@ -131,3 +131,89 @@ def test_the_ipynb_export_never_carries_a_check() -> None:
         blob = json.dumps(to_ipynb(spec, build=build))
         assert "double(3) should be 6" not in blob, f"the {build} build leaked the grader"
         assert "check" not in json.loads(blob)["cells"][0]["metadata"]["leona"]
+
+
+# --------------------------------------------------------------------- answer keys
+#
+# `answer` reaches the format last, after `Cell.answer`, `deterministic_grade`,
+# `AnswerPrompt` redaction and `leaks_answer_key` were all in place — so until these
+# tests existed the model could not write a gradable question even though every part
+# that grades one was built and tested. Same shape as the gap `check` closed one release
+# earlier, which is why the round trip is asserted here and not left to the pipeline.
+
+
+def _one_cell(marker: str, body: str = "# Which gate?") -> object:
+    text = "# ---\n# slug: q\n# title: Q\n# ---\n\n" + marker + "\n" + body + "\n"
+    return parse_source(text).cells[0]
+
+
+def test_a_choice_answer_key_parses_off_the_cell_marker() -> None:
+    cell = _one_cell(
+        "# %% [markdown] role=question "
+        'answer={"kind":"choice","options":["Hadamard","Pauli-X"],"correct":0}'
+    )
+    assert cell.answer is not None
+    assert cell.answer.kind == "choice"
+    assert cell.answer.correct == 0
+    assert cell.answer.options == ["Hadamard", "Pauli-X"]
+
+
+def test_an_answer_key_survives_braces_inside_its_own_strings() -> None:
+    # The reason the value scanner replaced a regex. `\ket{0}` and `\frac{1}{2}` are what
+    # a quantum notebook's explanations are made of, and the old `\{[^}]*\}` branch
+    # stopped at the first `}` — inside the LaTeX — and reported a JSON error about a
+    # string the author had terminated correctly.
+    cell = _one_cell(
+        "# %% [markdown] role=question "
+        'answer={"kind":"text","accept":["Hadamard"],'
+        '"explanation":"It maps $\\\\ket{0}$ to $\\\\frac{1}{\\\\sqrt2}(\\\\ket0+\\\\ket1)$."}'
+    )
+    assert cell.answer is not None
+    assert "\\frac{1}{\\sqrt2}" in cell.answer.explanation
+    assert cell.answer.accept == ["Hadamard"]
+
+
+def test_an_answer_key_round_trips_through_render_source() -> None:
+    # An attribute that parses but does not render is a silent deletion on the first
+    # revise turn, because the repair and revise lanes send cells back through this
+    # format. `check` carries the same note for the same reason.
+    text = (
+        "# ---\n# slug: q\n# title: Q\n# ---\n\n"
+        "# %% [markdown] id=c01 role=question "
+        'answer={"kind":"numeric","value":0.5,"tolerance":0.01,"unit":"probability",'
+        '"explanation":"Half the time, by $|\\\\alpha|^2$."}\n'
+        "# What is the chance of measuring 1?\n"
+    )
+    spec = parse_source(text)
+    again = parse_source(render_source(spec, include_ids=True))
+    assert [c.answer for c in again.cells] == [c.answer for c in spec.cells]
+    assert again.cells[0].answer.unit == "probability"
+
+
+def test_an_unbalanced_answer_key_is_refused_rather_than_truncated() -> None:
+    # The failure direction that matters: a value scanner that returned the truncated
+    # token would hand `{"kind":"choice","options":["a"` to json.loads, and the error
+    # would name a problem the author does not have.
+    with pytest.raises(SourceParseError, match="unbalanced"):
+        _one_cell('# %% [markdown] role=question answer={"kind":"choice","options":["a"')
+
+
+def test_a_cell_with_no_answer_renders_no_answer_attribute() -> None:
+    text = "# ---\n# slug: q\n# title: Q\n# ---\n\n# %% role=run\nprint(1)\n"
+    assert "answer=" not in render_source(parse_source(text))
+
+
+def test_an_unmatched_brace_inside_a_string_does_not_end_the_value() -> None:
+    # This is the case the scanner's string-shielding exists for, and the LaTeX test
+    # above does NOT cover it: `\ket{0}` and `\frac{1}{2}` are BALANCED, so a scanner
+    # that counted braces without knowing about strings would still land in the right
+    # place. Only an unmatched brace inside a string separates the two, and it is legal
+    # JSON, so the parser owes it a correct reading rather than a truncated one.
+    cell = _one_cell(
+        "# %% [markdown] role=question "
+        'answer={"kind":"text","accept":["ket"],'
+        '"explanation":"a lone } is fine inside a string"}'
+    )
+    assert cell.answer is not None
+    assert cell.answer.explanation == "a lone } is fine inside a string"
+    assert cell.answer.accept == ["ket"]

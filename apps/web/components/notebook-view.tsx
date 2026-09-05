@@ -17,12 +17,21 @@ export type NotebookCellActionKind =
   // immediately; "checkAttempt" opens the inline textarea below before it
   // fires — see `onCellAction`'s `detail` parameter.
   | "explainError"
-  | "checkAttempt";
+  | "checkAttempt"
+  // A `role=question` cell. Distinct from "checkAttempt" because the two go to
+  // DIFFERENT halves of the same request: a code attempt is `code[cellId]`, an
+  // answer is `answers[cellId]`, and the server grades them by different routes.
+  // One action kind carrying both would have to guess from the cell's role, which
+  // is the guess `graded` already exists to avoid making twice.
+  | "answerQuestion";
 
 /** One cell's verdict, straight off the generated contract rather than restated
  * here: the browser renders a verdict, it never decides one, so the only thing it
  * needs is the server's own shape. */
 export type NotebookCellGrade = components["schemas"]["CellGrade"];
+
+/** The redacted half of a question's answer key — see `answerPromptOf`. */
+type AnswerPrompt = components["schemas"]["AnswerPrompt"];
 
 /** Roles the "Check my attempt" action shows on — exactly the roles a reader
  * writes their own code against: a stand-alone exercise, a challenge's own
@@ -168,6 +177,18 @@ function NotebookCellCard({
           </p>
         </div>
       ) : null}
+      {/* Below the verdict, not above it: after a wrong answer the reader wants to see
+          why before trying again, and an input rendered first pushes the explanation
+          off the bottom of a long cell. */}
+      {cell.answerPrompt && onCellAction ? (
+        <NotebookAnswerInput
+          cellId={cell.id}
+          prompt={cell.answerPrompt}
+          copy={copy}
+          locked={locked || grading}
+          onSubmit={(response) => onCellAction(cell.id, "answerQuestion", response)}
+        />
+      ) : null}
       {showCheckAttempt && attemptOpen ? (
         <div className="mj-notebook-cell-attempt">
           <label>
@@ -203,6 +224,122 @@ function NotebookCellCard({
         </div>
       ) : null}
     </article>
+  );
+}
+
+/**
+ * The input a `role=question` cell gets, and the only place a reader's answer is
+ * composed. One component per kind because the shapes have nothing in common: a
+ * choice submits an INDEX, a numeric submits a number as typed (the server owns the
+ * tolerance), text and rubric submit prose.
+ *
+ * `prompt` is `NotebookCellView.answerPrompt`, which is the redacted half by
+ * construction — see `answerPromptOf`. Nothing here receives the answer key, so
+ * nothing here can render it, and that is the property to preserve if this file is
+ * ever refactored to take the cell whole.
+ */
+function NotebookAnswerInput({
+  cellId,
+  prompt,
+  copy,
+  locked,
+  onSubmit,
+}: {
+  cellId: string;
+  prompt: AnswerPrompt;
+  copy: NotebookCopy;
+  locked?: boolean;
+  onSubmit: (response: string) => void;
+}) {
+  const [value, setValue] = useState("");
+  const answered = value.trim().length > 0;
+  const name = `mj-answer-${cellId}`;
+
+  function submit() {
+    if (!answered || locked) return;
+    onSubmit(value);
+  }
+
+  return (
+    <div className="mj-notebook-cell-answer" data-kind={prompt.kind}>
+      <fieldset>
+        <legend>{copy.answerLegend}</legend>
+        {prompt.kind === "choice" ? (
+          <ul className="mj-notebook-answer-options">
+            {(prompt.options ?? []).map((option, index) => (
+              <li key={`${name}-${index}`}>
+                <label>
+                  <input
+                    type="radio"
+                    name={name}
+                    // The INDEX, not the text. `deterministic_grade` compares
+                    // `int(response)` against the key's `correct`, so sending the
+                    // option's words would be graded as an unreadable option number
+                    // and every reader would be told they were wrong.
+                    value={String(index)}
+                    checked={value === String(index)}
+                    onChange={() => setValue(String(index))}
+                  />
+                  <span>{option}</span>
+                </label>
+              </li>
+            ))}
+          </ul>
+        ) : prompt.kind === "numeric" ? (
+          <label className="mj-notebook-answer-numeric">
+            <span className="sr-only">{copy.answerLegend}</span>
+            <input
+              type="number"
+              inputMode="decimal"
+              step="any"
+              value={value}
+              placeholder={copy.answerNumericPlaceholder}
+              onChange={(event) => setValue(event.target.value)}
+            />
+            {prompt.unit ? <span className="mj-notebook-answer-unit">{prompt.unit}</span> : null}
+          </label>
+        ) : prompt.kind === "text" ? (
+          <label>
+            <span className="sr-only">{copy.answerLegend}</span>
+            <input
+              type="text"
+              value={value}
+              placeholder={copy.answerTextPlaceholder}
+              onChange={(event) => setValue(event.target.value)}
+            />
+          </label>
+        ) : (
+          <label>
+            <span className="sr-only">{copy.answerLegend}</span>
+            <textarea
+              value={value}
+              rows={3}
+              placeholder={copy.answerRubricPlaceholder}
+              onChange={(event) => setValue(event.target.value)}
+            />
+          </label>
+        )}
+      </fieldset>
+      {/* Said before the reader answers, not after the verdict arrives. Which kind of
+          grader is behind a question changes how much weight its verdict deserves, and
+          that is worth knowing while deciding how much care to spend on the answer. */}
+      {prompt.kind === "rubric" ? (
+        <p className="mj-notebook-answer-note">{copy.answerModelGraded}</p>
+      ) : null}
+      <div className="mj-notebook-cell-attempt-actions">
+        <button type="button" className="mj-secondary-button" onClick={() => setValue("")}>
+          {copy.answerClear}
+        </button>
+        <button
+          type="button"
+          className="mj-primary-button"
+          disabled={!answered || locked}
+          onClick={submit}
+        >
+          {copy.answerSubmit}
+        </button>
+      </div>
+    </div>
   );
 }
 
