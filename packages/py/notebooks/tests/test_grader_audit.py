@@ -201,15 +201,15 @@ async def test_demotion_leaves_an_inconclusive_grader_alone() -> None:
     inconclusive = type(audit)(
         verdicts=[
             type(audit.verdicts[0])(
-                cell_id="ex1", on_blank="unattempted", on_answer="unattempted",
+                cell_id="ex1",
+                on_blank="unattempted",
+                on_answer="unattempted",
                 verdict="inconclusive",
             )
         ],
         runs=2,
     )
     unchanged = demote_unsound_graders(spec, inconclusive)
-    assert {c.id: c.check for c in unchanged.cells} == {
-        c.id: c.check for c in spec.cells
-    }
+    assert {c.id: c.check for c in unchanged.cells} == {c.id: c.check for c in spec.cells}
     assert inconclusive.ok, "an unproved grader is not a proved defect"
     assert "1 never ran" in inconclusive.summary()

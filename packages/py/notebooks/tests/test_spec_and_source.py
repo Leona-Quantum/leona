@@ -95,7 +95,7 @@ GRADED = (
     "# ---\n# title: T\n# kind: lesson\n# summary: s\n# objectives:\n#   - o\n"
     "# duration_minutes: 10\n# ---\n\n"
     '# %% id=ex1 role=solution stub="def double(x):\\n    ..." '
-    'check="assert double(3) == 6, \'double(3) should be 6\'"\n'
+    "check=\"assert double(3) == 6, 'double(3) should be 6'\"\n"
     "def double(x):\n    return 2 * x\n"
 )
 

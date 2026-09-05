@@ -63,9 +63,7 @@ _KV_TOKEN = re.compile(
 #: attribute — `render_source` emits it — because the repair and revise turns send cells
 #: back through this format, and an attribute that parses but does not render is a
 #: silent deletion on the first edit of a graded cell.
-_CELL_HEADER_FIELDS = frozenset(
-    {"id", "role", "tags", "execute", "stub", "check", "timeout_s"}
-)
+_CELL_HEADER_FIELDS = frozenset({"id", "role", "tags", "execute", "stub", "check", "timeout_s"})
 
 
 class SourceParseError(ValueError):

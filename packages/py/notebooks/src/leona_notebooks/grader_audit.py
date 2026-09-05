@@ -167,9 +167,7 @@ def verdicts_from_grades(
         else:
             verdict = "sound"
         out.append(
-            GraderVerdict(
-                cell_id=cell.id, on_blank=on_blank, on_answer=on_answer, verdict=verdict
-            )
+            GraderVerdict(cell_id=cell.id, on_blank=on_blank, on_answer=on_answer, verdict=verdict)
         )
     return out
 
@@ -188,16 +186,12 @@ async def audit_graders(spec: NotebookSpec, run: RunNotebook) -> GraderAudit:
     # attempt supplies no code, which is precisely the state a reader opens in.
     blank_attempt = GradedAttempt(code={}, answers={})
     blank_report = await run(spec_with_graders(spec, blank_attempt))
-    blank = {
-        g.id: g.status
-        for g in grades_from_report(spec, blank_report, blank_attempt).cells
-    }
+    blank = {g.id: g.status for g in grades_from_report(spec, blank_report, blank_attempt).cells}
 
     answer_attempt = GradedAttempt(code={c.id: c.source for c in graded}, answers={})
     answer_report = await run(spec_with_graders(spec, answer_attempt))
     answered = {
-        g.id: g.status
-        for g in grades_from_report(spec, answer_report, answer_attempt).cells
+        g.id: g.status for g in grades_from_report(spec, answer_report, answer_attempt).cells
     }
 
     return GraderAudit(verdicts=verdicts_from_grades(spec, blank, answered), runs=2)
