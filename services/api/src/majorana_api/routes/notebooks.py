@@ -653,15 +653,35 @@ async def grade_notebook_attempt(
         f"Grade an attempt at notebook {notebook.slug}", scope, session, identity, settings
     )
 
-    run = await runs_repo.create_run(
-        scope,
-        session,
-        task_prompt=f"Grade an attempt at notebook {notebook.slug}",
-        mode=RunMode.NOTEBOOK,
-        framework=_run_framework(contracts.NotebookFramework.model_validate(notebook.framework)),
-        idempotency_key=idempotency_key,
-        idempotency_request_hash=request_hash,
-    )
+    try:
+        run = await runs_repo.create_run(
+            scope,
+            session,
+            task_prompt=f"Grade an attempt at notebook {notebook.slug}",
+            mode=RunMode.NOTEBOOK,
+            framework=_run_framework(
+                contracts.NotebookFramework.model_validate(notebook.framework)
+            ),
+            idempotency_key=idempotency_key,
+            idempotency_request_hash=request_hash,
+        )
+    except runs_repo.IdempotencyKeyInFlight:
+        # Two retries can both pass the lookup above before either run is committed.
+        # Without this the loser raises out as a generic 500 and the workspace reports
+        # that grading FAILED — for an attempt that was accepted and is running, which
+        # is the worst of the three possible answers. `POST /v1/courses` handles the
+        # same race the same way; I copied the lookup from it and not the catch.
+        # Greptile, PR 832.
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "error": (
+                    "A grading run with this Idempotency-Key is being created by "
+                    "another request. Retry to receive it."
+                ),
+                "reason": "idempotency_key_in_flight",
+            },
+        ) from None
     await runs_repo.append_run_event(
         scope, session, run.id, type="run.queued", payload={"mode": str(RunMode.NOTEBOOK)}
     )

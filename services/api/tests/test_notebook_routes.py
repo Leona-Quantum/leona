@@ -881,3 +881,29 @@ async def test_reusing_a_key_for_a_DIFFERENT_attempt_is_refused(client, graded_s
 
     assert clash.status_code == 409, clash.text
     assert len(graded_state["jobs"]) == 1
+
+
+async def test_a_concurrent_retry_is_409_not_500(client, graded_state, monkeypatch):
+    """Two retries can both pass the replay lookup before either run is committed. The
+    loser must be told to retry, not told grading failed for an attempt that is
+    running — a 500 here is the worst of the three possible answers."""
+
+    async def fake_find(_scope, _session, _key):
+        return None
+
+    async def racing_create(*_a, **_k):
+        raise runs_repo.IdempotencyKeyInFlight()
+
+    monkeypatch.setattr(runs_repo, "find_run_by_idempotency_key", fake_find)
+    monkeypatch.setattr(runs_repo, "create_run", racing_create)
+
+    async with client as c:
+        response = await c.post(
+            f"/v1/notebooks/{graded_state['notebook'].id}/attempts",
+            json={"code": {"ex1": "x = 1"}},
+            headers={"Idempotency-Key": "k-race"},
+        )
+
+    assert response.status_code == 409, response.text
+    assert response.json()["reason"] == "idempotency_key_in_flight"
+    assert graded_state["jobs"] == []
