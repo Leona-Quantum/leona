@@ -183,3 +183,19 @@ test("a cell with a hidden check is marked graded; a plain cell is not", () => {
     ],
   );
 });
+
+test("an attempt key is stable for a retry and different for a different attempt", async () => {
+  // The property the Idempotency-Key rests on: a retry reproduces the body, so it
+  // must reproduce the key with nothing remembered between calls. A random key per
+  // call would satisfy "different attempts differ" and give a retry no protection at
+  // all, which is what this pair of assertions exists to tell apart.
+  const { attemptKey } = await import("./attempt-key.ts");
+  const body = JSON.stringify({ code: { ex1: "def double(x):\n    return 2 * x" } });
+  const a = await attemptKey("nb-1", 3, body);
+  const b = await attemptKey("nb-1", 3, body);
+  assert.equal(a, b, "the same submission must produce the same key");
+  assert.ok(a.length > 0);
+  assert.notEqual(a, await attemptKey("nb-1", 3, JSON.stringify({ code: { ex1: "other" } })));
+  assert.notEqual(a, await attemptKey("nb-2", 3, body), "a different notebook is a different attempt");
+  assert.notEqual(a, await attemptKey("nb-1", 4, body), "a re-generated notebook is a different attempt");
+});

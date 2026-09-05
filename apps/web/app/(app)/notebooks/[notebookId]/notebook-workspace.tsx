@@ -25,6 +25,7 @@ import {
   specWithCells,
   type CellEdit,
 } from "../../../../lib/notebook-editing";
+import { attemptKey } from "../../../../lib/attempt-key";
 import { notebookExportFilename } from "../../../../lib/notebook-export";
 import { gradeSummary, hasGradesToShow, passRate } from "../../../../lib/notebook-grades";
 import { hasMasteryToShow, notebookMastery } from "../../../../lib/notebook-mastery";
@@ -318,11 +319,28 @@ export function NotebookWorkspace({ notebookId, locale = "en" }: { notebookId: s
   async function gradeAttempt(cellId: string, attempt: string) {
     setActionError(null);
     setGradingCellIds(new Set([cellId]));
+    const body = JSON.stringify({ code: { [cellId]: attempt }, answers: {} });
     try {
+      const key = await attemptKey(notebookId, version?.seq ?? 0, body);
       const response = await fetch(`/api/notebooks/${encodeURIComponent(notebookId)}/attempts`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ code: { [cellId]: attempt }, answers: {} }),
+        headers: {
+          "Content-Type": "application/json",
+          // Grading costs a sandbox run, so a retry must not buy a second one. The
+          // server has taken this header since the route existed; nothing sent one,
+          // which made the protection real and unreachable at the same time.
+          //
+          // DERIVED from the submission rather than random, because the case it has to
+          // survive is a retry of THIS request — a dropped 202, a double-press — and a
+          // retry reproduces the body, so it reproduces the key without anything
+          // needing to be remembered between attempts. The version is in it so the
+          // same answer against a re-generated notebook is a new attempt, not a replay
+          // of a verdict about different cells.
+          // Omitted rather than sent empty when the digest is unavailable: an empty
+          // header is a key the server has to decide is not one.
+          ...(key ? { "Idempotency-Key": key } : {}),
+        },
+        body,
       });
       const payload = (await response.json()) as unknown;
       if (!response.ok || !isRecord(payload)) {

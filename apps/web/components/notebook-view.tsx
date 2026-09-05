@@ -72,6 +72,13 @@ export function NotebookView({
           onCellAction={onCellAction}
           grade={grades?.[cell.id]}
           grading={gradingCellIds?.has(cell.id) ?? false}
+          // Any attempt in flight locks EVERY graded cell's submit, not just its own.
+          // The workspace follows one run at a time, so starting a second attempt
+          // replaces the followed run and aborts the first one's stream — the first
+          // cell would sit on "Running your code…" and its finished verdict would
+          // never arrive. Greptile caught it on PR 832. One at a time is also the
+          // honest reading of a single sandbox dispatch per attempt.
+          locked={(gradingCellIds?.size ?? 0) > 0}
         />
       ))}
     </div>
@@ -85,6 +92,7 @@ function NotebookCellCard({
   onCellAction,
   grade,
   grading,
+  locked,
 }: {
   cell: NotebookCellView;
   copy: NotebookCopy;
@@ -92,6 +100,7 @@ function NotebookCellCard({
   onCellAction?: (cellId: string, action: NotebookCellActionKind, detail?: string) => void;
   grade?: NotebookCellGrade;
   grading?: boolean;
+  locked?: boolean;
 }) {
   const [attemptOpen, setAttemptOpen] = useState(false);
   const [attemptText, setAttemptText] = useState("");
@@ -185,7 +194,7 @@ function NotebookCellCard({
             <button
               type="button"
               className="mj-primary-button"
-              disabled={!attemptText.trim() || grading}
+              disabled={!attemptText.trim() || locked}
               onClick={submitAttempt}
             >
               {cell.graded ? copy.checkAttemptGrade : copy.checkAttemptSubmit}
