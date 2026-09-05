@@ -605,6 +605,7 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
     chatEmpty: string;
     chatLoadFailed: string;
     chatSendFailed: string;
+    runStreamLost: string;
     progressLabel: string;
 
     cellStatus: Record<NotebookCellStatusCopyKey, string>;
@@ -1395,6 +1396,7 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
     chatEmpty: "Tell Nala what to change — a cell, an analogy, the difficulty, the language.",
     chatLoadFailed: "The conversation could not be loaded.",
     chatSendFailed: "The message could not be sent.",
+    runStreamLost: "The live view of this run dropped out. Reload the page to see how it finished.",
     progressLabel: "Working",
 
     cellStatus: { ok: "Passed", error: "Error", skipped: "Skipped", not_run: "Not run yet" },
@@ -2178,6 +2180,7 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
     chatEmpty: "セルの内容、たとえ話、難易度、言語など、変更したい点をNalaに伝えてください。",
     chatLoadFailed: "会話を読み込めませんでした。",
     chatSendFailed: "メッセージを送信できませんでした。",
+    runStreamLost: "この実行のライブ表示が切断されました。結果を確認するにはページを再読み込みしてください。",
     progressLabel: "処理中",
 
     cellStatus: { ok: "成功", error: "エラー", skipped: "スキップ", not_run: "未実行" },

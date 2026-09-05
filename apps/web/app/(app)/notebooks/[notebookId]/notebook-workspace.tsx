@@ -31,6 +31,7 @@ import {
 } from "../../../../lib/notebook-progress";
 import type { PublicLocale } from "../../../../lib/public-locale";
 import { useRunProgress } from "../../../../lib/use-run-progress";
+import { authoredPinAfterRun, type AuthoredVersion } from "../../../../lib/run-stream-outcome";
 import { WORKSPACE_COPY } from "../../../../lib/workspace-locale";
 
 type Notebook = components["schemas"]["Notebook"];
@@ -105,11 +106,17 @@ export function NotebookWorkspace({ notebookId, locale = "en" }: { notebookId: s
   const [draftCells, setDraftCells] = useState<Cell[] | null>(null);
   const [focusedCellId, setFocusedCellId] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
-  // The version an in-flight save is writing. Pinned once its run finishes, rather
-  // than immediately: a queued version has no spec to render, and if the run FAILS the
-  // notebook's `current_version_id` never moves — so following "current" would show
-  // the reader their previous version and hide the failure they need to see.
-  const authoredSeq = useRef<number | null>(null);
+  // The version an in-flight save is writing, AND the run writing it. Pinned once
+  // that run finishes, rather than immediately: a queued version has no spec to
+  // render, and if the run FAILS the notebook's `current_version_id` never moves —
+  // so following "current" would show the reader their previous version and hide the
+  // failure they need to see.
+  //
+  // Keyed to the run because "once the run finishes" used to mean "once ANY run
+  // finishes": if this run's stream was lost or superseded, the pin sat pending and
+  // the next run to end applied it, selecting a version that had nothing to do with
+  // what the reader had just done. `lib/run-stream-outcome.ts` owns that rule.
+  const authored = useRef<AuthoredVersion | null>(null);
 
   const reloadSeq = useRef(0);
 
@@ -250,15 +257,17 @@ export function NotebookWorkspace({ notebookId, locale = "en" }: { notebookId: s
   // `lib/use-run-progress.ts` (extracted from what used to be inline here) so
   // the courses workspace's per-module and per-plan-run rails can reuse the
   // exact same connect/parse/reconnect-free logic instead of a second copy.
-  const progressEvents = useRunProgress(followedRunId, () => {
+  const progressEvents = useRunProgress(followedRunId, (outcome, streamRunId) => {
+    // The server is the truth about what the run did, whichever way the stream
+    // ended — so reload either way, and let the decision below say what may be
+    // concluded about the version this editor session authored.
     loadNotebook();
     loadVersions();
     loadTurns();
-    // A save from the editor pins the version it produced once its run is over.
-    if (authoredSeq.current !== null) {
-      setPinnedSeq(authoredSeq.current);
-      authoredSeq.current = null;
-    }
+    const decision = authoredPinAfterRun(authored.current, streamRunId, outcome);
+    if (decision.pin !== null) setPinnedSeq(decision.pin);
+    if (decision.clear) authored.current = null;
+    if (decision.warn) setActionError(copy.runStreamLost);
   });
 
   async function sendTurn(text: string) {
@@ -366,7 +375,7 @@ export function NotebookWorkspace({ notebookId, locale = "en" }: { notebookId: s
       loadVersions();
       loadTurns();
       if (runId) {
-        authoredSeq.current = created.seq;
+        authored.current = { runId, seq: created.seq };
         setFollowedRunId(runId);
       } else {
         // No run to wait for: the version is already `ready`, so show it now.
