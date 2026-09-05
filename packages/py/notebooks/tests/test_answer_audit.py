@@ -253,3 +253,31 @@ def test_an_answer_that_is_not_a_word_is_still_caught_when_printed() -> None:
         source="What state does the register hold after a reset?",
     )
     assert _verdict(clean) == "sound"
+
+
+def test_a_punctuation_answer_printed_against_a_word_is_still_a_leak() -> None:
+    # `\ket{0}s` — the answer on the page with a plural `s` run onto it. An unconditional
+    # `(?!\w)` asks whether a word character follows `}`, which is not a boundary
+    # question, and answering it calls this key sound while the answer sits in the
+    # question. Greptile, PR 833, immediately after the `gateway` fix introduced it.
+    cell = _question(
+        "plural",
+        {"kind": "text", "accept": ["\\ket{0}"]},
+        source="The register holds two \\ket{0}s. Write that state.",
+    )
+    assert _verdict(cell) == "cannot-fail"
+
+
+def test_the_boundary_guard_applies_per_side_not_to_the_whole_needle() -> None:
+    # An answer that is a word at one end and punctuation at the other. The left side
+    # must be guarded (so `xket{0}` is not a match) and the right must not (so a `}`
+    # followed by a letter still is). A single rule for both sides gets one of these
+    # wrong whichever way it is set, which is exactly how the two Greptile findings
+    # arrived one after the other.
+    mixed = {"kind": "text", "accept": ["ket{0}"]}
+    assert _verdict(_question("a", mixed, source="It holds ket{0}s now. Which state?")) == (
+        "cannot-fail"
+    )
+    assert _verdict(_question("b", mixed, source="It holds bracket{0} now. Which state?")) == (
+        "sound"
+    )

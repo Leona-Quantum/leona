@@ -182,17 +182,31 @@ def _judge_numeric(cell: Cell, key) -> AnswerVerdict:  # noqa: ANN001
 def _reads_in(needle: str, haystack: str) -> bool:
     """Whether `needle` appears in `haystack` as something a reader would READ as it.
 
-    A plain substring test is wrong in the expensive direction. Grading compares whole
+    A plain substring test is wrong in the expensive direction: grading compares whole
     normalised responses, so an accepted answer of "gate" is not given away by a question
-    mentioning a "gateway" — but `"gate" in "gateway"` is true, and the key would be
-    stripped from a perfectly good question. Greptile caught that on PR 833, and it is
-    the same false-strip direction `_LEAK_MIN_LENGTH` already exists to stay out of.
+    mentioning a "gateway" — yet `"gate" in "gateway"` is true and the key would be
+    stripped from a perfectly good question. That is the false-strip direction
+    `_LEAK_MIN_LENGTH` already exists to stay out of.
 
-    Word-boundary lookarounds rather than `\b`, because an accepted answer may begin or
-    end with a non-word character (`|0>`, `+`), and `\b`'s meaning flips with the
-    character on each side of it.
+    So each side gets a word-boundary guard — but **only when that side of the needle is
+    itself a word character**, which is the whole subtlety and it bites in both
+    directions:
+
+    * `\\b` cannot express this. It needs a word character on the inside of the boundary,
+      so `\\b\\\\ket{0}\\b` matches nothing at all and every punctuation-bearing answer
+      goes unchecked.
+    * An unconditional `(?<!\\w)…(?!\\w)` cannot either. Asking whether a word character
+      follows `}` is not a boundary question, and answering it rejects a real leak:
+      `\\ket{0}` printed as `\\ket{0}s` is the answer on the page, and the unconditional
+      lookahead calls the key sound. Greptile caught both of these on PR 833, one after
+      the other.
+
+    A guard is only meaningful where the adjacent needle character could run together
+    with its neighbour. Punctuation cannot, so it is left unguarded and matched plainly.
     """
-    return re.search(rf"(?<!\w){re.escape(needle)}(?!\w)", haystack) is not None
+    left = r"(?<!\w)" if needle[:1].isalnum() or needle[:1] == "_" else ""
+    right = r"(?!\w)" if needle[-1:].isalnum() or needle[-1:] == "_" else ""
+    return re.search(left + re.escape(needle) + right, haystack) is not None
 
 
 def _judge_text(cell: Cell, key) -> AnswerVerdict:  # noqa: ANN001
