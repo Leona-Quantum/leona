@@ -1267,6 +1267,7 @@ async def test_the_verdict_event_survives_the_PRODUCTION_sink_validation(monkeyp
     from majorana_contracts.events import run_event_adapter
 
     validated: list[str] = []
+    sinks_seen: list[tuple[str, dict]] = []
 
     class ValidatingSink(FakeEventSink):
         async def emit(self, type, payload, *, event_id=None):
@@ -1280,9 +1281,28 @@ async def test_the_verdict_event_survives_the_PRODUCTION_sink_validation(monkeyp
                 }
             )
             validated.append(type)
+            sinks_seen.append((type, payload))
             await super().emit(type, payload, event_id=event_id)
 
+    # The run STORE is a second double, and it was permissive in the same way: it takes
+    # a `finish` payload without validating it, so a malformed `run.finished` passed
+    # here too. Both are validated now.
+    class ValidatingRunStore(FakeRunStore):
+        async def finish(self, status, payload, **fields):
+            run_event_adapter.validate_python(
+                {
+                    "run_id": uuid.uuid4(),
+                    "seq": 0,
+                    "ts": "1970-01-01T00:00:00Z",
+                    "type": "run.finished",
+                    **payload,
+                }
+            )
+            validated.append("run.finished")
+            return await super().finish(status, payload, **fields)
+
     monkeypatch.setattr(handlers, "RepoEventSink", ValidatingSink)
+    monkeypatch.setattr(handlers, "RepoRunStateStore", ValidatingRunStore)
     run_id, notebook_id, version_id = uuid.uuid4(), uuid.uuid4(), uuid.uuid4()
 
     await nh.handle_notebook_grade(
@@ -1298,3 +1318,11 @@ async def test_the_verdict_event_survives_the_PRODUCTION_sink_validation(monkeyp
     )
 
     assert "notebook.grades" in validated, "the verdict never reached the sink"
+    # And the run must have CLOSED cleanly. Without this the handler's own
+    # `except Exception` swallows a rejected event: the first version of this test
+    # asserted only the line above and passed while `run.finished` was malformed and
+    # every successful grade was being persisted as FAILED.
+    assert "run.finished" in validated, "the run never closed with a valid event"
+    assert not any(kind == "run.error" for kind, _ in sinks_seen), (
+        "a successful grade emitted run.error — an event was rejected and swallowed"
+    )

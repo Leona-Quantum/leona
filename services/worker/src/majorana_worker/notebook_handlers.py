@@ -1271,9 +1271,15 @@ async def handle_notebook_grade(
             },
         )
         await ports.observe("notebook.execute", "finished" if report.ok else "failed", report.note)
-        await run_store.set_status(RunStatus.SUCCEEDED, finished_at_now=True)
-        await session.commit()
-        await sink.emit("run.finished", {"ok": True})
+        # `run_store.finish`, not `set_status` + a hand-built `run.finished`. Every other
+        # handler in this module closes a run this way, and I did not: the payload I
+        # wrote — `{"ok": True}` — is not the `RunFinished` shape, which requires
+        # `status` and forbids extras, so the production sink would have REJECTED it.
+        # A successful grade would then have fallen into the exception handler below and
+        # persisted the run as FAILED, after the reader had already been sent a correct
+        # verdict. `finish` also writes the event and the status together, which the two
+        # separate calls did not. Greptile, PR 832.
+        await run_store.finish(RunStatus.SUCCEEDED, {"status": RunStatus.SUCCEEDED})
     except Exception as exc:  # noqa: BLE001 - one reader's attempt, never the notebook
         log.exception("notebook.grade run %s failed", run_id)
         try:
@@ -1286,9 +1292,10 @@ async def handle_notebook_grade(
                     "message": str(exc)[:2000],
                 },
             )
-            await run_store.set_status(RunStatus.FAILED, finished_at_now=True)
-            await session.commit()
-            await sink.emit("run.finished", {"ok": False})
+            await run_store.finish(
+                RunStatus.FAILED,
+                {"status": RunStatus.FAILED, "reason_code": "grade_failed"},
+            )
         except Exception:
             log.exception("notebook.grade run %s: could not close the run", run_id)
     finally:
