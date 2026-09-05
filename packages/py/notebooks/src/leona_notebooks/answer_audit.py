@@ -45,6 +45,7 @@ false pass is a reader told they are right when they are not.
 from __future__ import annotations
 
 import math
+import re
 from dataclasses import dataclass
 from typing import Literal
 
@@ -178,6 +179,22 @@ def _judge_numeric(cell: Cell, key) -> AnswerVerdict:  # noqa: ANN001
     return AnswerVerdict(cell_id=cell.id, kind="numeric", verdict="sound")
 
 
+def _reads_in(needle: str, haystack: str) -> bool:
+    """Whether `needle` appears in `haystack` as something a reader would READ as it.
+
+    A plain substring test is wrong in the expensive direction. Grading compares whole
+    normalised responses, so an accepted answer of "gate" is not given away by a question
+    mentioning a "gateway" — but `"gate" in "gateway"` is true, and the key would be
+    stripped from a perfectly good question. Greptile caught that on PR 833, and it is
+    the same false-strip direction `_LEAK_MIN_LENGTH` already exists to stay out of.
+
+    Word-boundary lookarounds rather than `\b`, because an accepted answer may begin or
+    end with a non-word character (`|0>`, `+`), and `\b`'s meaning flips with the
+    character on each side of it.
+    """
+    return re.search(rf"(?<!\w){re.escape(needle)}(?!\w)", haystack) is not None
+
+
 def _judge_text(cell: Cell, key) -> AnswerVerdict:  # noqa: ANN001
     accepted = [normalize_response(candidate) for candidate in key.accept]
     if not any(accepted):
@@ -196,7 +213,7 @@ def _judge_text(cell: Cell, key) -> AnswerVerdict:  # noqa: ANN001
     # nothing: the answer is above the input box.
     visible = normalize_response(cell.source)
     for candidate, normalized in zip(key.accept, accepted, strict=True):
-        if len(normalized) >= _LEAK_MIN_LENGTH and normalized in visible:
+        if len(normalized) >= _LEAK_MIN_LENGTH and _reads_in(normalized, visible):
             return AnswerVerdict(
                 cell_id=cell.id,
                 kind="text",

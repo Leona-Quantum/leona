@@ -183,3 +183,73 @@ def test_every_unsound_verdict_carries_a_reason(verdict_kind: str) -> None:
     audit = audit_answers(_spec(cells[verdict_kind]))
     assert audit.verdicts[0].verdict == verdict_kind
     assert audit.verdicts[0].reason
+
+
+def test_an_accepted_answer_inside_a_longer_word_is_not_a_leak() -> None:
+    # "gate" occurs in "gateway" and a reader cannot read the answer out of it. A plain
+    # substring test strips this perfectly good key. Greptile, PR 833 — and it is the
+    # same false-strip direction the length floor above exists for, which is why the
+    # floor alone was not enough.
+    source = "Does the gateway protocol change which operation is applied?"
+    assert "gate" in source.casefold()
+    cell = _question("word", {"kind": "text", "accept": ["gate"]}, source=source)
+    assert _verdict(cell) == "sound"
+
+
+def test_an_accepted_answer_standing_as_its_own_word_is_still_a_leak() -> None:
+    # The control for the test above. Without it, matching nothing at all would pass.
+    cell = _question(
+        "leaky",
+        {"kind": "text", "accept": ["gate"]},
+        source="The gate above is the one being asked about. What is it?",
+    )
+    assert _verdict(cell) == "cannot-fail"
+
+
+def test_a_leak_is_caught_next_to_punctuation_not_only_next_to_spaces() -> None:
+    # Word boundaries, not space-delimited splitting: "Hadamard." and "(Hadamard)" are
+    # both the answer printed in the question.
+    for source in [
+        "The answer is Hadamard. Which gate was that?",
+        "Consider (Hadamard) — which gate is being described?",
+    ]:
+        cell = _question("p", {"kind": "text", "accept": ["Hadamard"]}, source=source)
+        assert _verdict(cell) == "cannot-fail", source
+
+
+def test_a_multi_word_accepted_answer_is_matched_as_a_whole_phrase() -> None:
+    cell = _question(
+        "phrase",
+        {"kind": "text", "accept": ["the Hadamard gate"]},
+        source="We used the Hadamard gate above. Name it.",
+    )
+    assert _verdict(cell) == "cannot-fail"
+
+
+def test_an_answer_that_is_not_a_word_is_still_caught_when_printed() -> None:
+    # This is what separates the lookaround form from `\b`, and without it the helper's
+    # docstring reason for choosing one is an untested claim: `\b` needs a word character
+    # on the inside of the boundary, so `\b\\ket{0}\b` does not match `\ket{0}` sitting
+    # between spaces, and the leak goes unreported. Dirac notation is an ordinary answer
+    # in this product, so the difference is not academic.
+    #
+    # `\ket{0}` and not `|0>`: the latter is three characters and never reaches the
+    # matcher at all, because `_LEAK_MIN_LENGTH` stops it first. That is a real gap — a
+    # short answer made of punctuation is not leak-checked — and it is left open
+    # deliberately, because the alternative (exempting punctuation from the floor) would
+    # strip a key accepting "+" from any question containing "1 + 1". The heuristic's
+    # stated bias is toward under-stripping; this is one of the places it pays for that.
+    #
+    # Both directions, because a matcher that always fires would pass the first alone.
+    leaked = _question(
+        "ket",
+        {"kind": "text", "accept": ["\\ket{0}"]},
+        source="After the reset the register holds \\ket{0} — write that state.",
+    )
+    assert _verdict(leaked) == "cannot-fail"
+    clean = _question(
+        "ket-ok",
+        {"kind": "text", "accept": ["\\ket{0}"]},
+        source="What state does the register hold after a reset?",
+    )
+    assert _verdict(clean) == "sound"
