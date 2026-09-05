@@ -25,7 +25,6 @@ import {
   specWithCells,
   type CellEdit,
 } from "../../../../lib/notebook-editing";
-import { attemptKey } from "../../../../lib/attempt-key";
 import { notebookExportFilename } from "../../../../lib/notebook-export";
 import { gradeSummary, hasGradesToShow, passRate } from "../../../../lib/notebook-grades";
 import { hasMasteryToShow, notebookMastery } from "../../../../lib/notebook-mastery";
@@ -300,10 +299,21 @@ export function NotebookWorkspace({ notebookId, locale = "en" }: { notebookId: s
   // reloads the general callback does on every terminal event apply to it, and it has
   // no business making the header read "generating".
   const [gradingRunId, setGradingRunId] = useState<string | null>(null);
-  const gradingEvents = useRunProgress(gradingRunId, (outcome) => {
+  /** Which attempt each grading run belongs to, and which attempt is current.
+   *
+   * A finished run's stream stays open until it reports, and the reader can start the
+   * next attempt in the meantime — the lock is taken the moment they press the button,
+   * a whole POST round-trip before the new run id exists. In that window the OLD
+   * stream reporting `lost` would clear the NEW attempt's lock and announce its
+   * failure. Comparing run ids does not close it, because the new attempt has no run
+   * id yet; a monotonic attempt number does. Greptile caught it on PR 832. */
+  const attemptSeq = useRef(0);
+  const runAttempt = useRef(new Map<string, number>());
+  const gradingEvents = useRunProgress(gradingRunId, (outcome, streamRunId) => {
     // A LOST stream produces no terminal event, so the effect below cannot see it and
     // the lock would be held forever. Disjoint from that path by construction:
     // `useRunProgress` reports "lost" only when no terminal event ever arrived.
+    if (runAttempt.current.get(streamRunId) !== attemptSeq.current) return;
     if (outcome === "lost" && gradingCellIds.size > 0) {
       setGradingCellIds(new Set());
       setActionError(copy.gradeFailed);
@@ -373,10 +383,24 @@ export function NotebookWorkspace({ notebookId, locale = "en" }: { notebookId: s
    */
   async function gradeAttempt(cellId: string, attempt: string) {
     setActionError(null);
+    const mine = (attemptSeq.current += 1);
     setGradingCellIds(new Set([cellId]));
     const body = JSON.stringify({ code: { [cellId]: attempt }, answers: {} });
     try {
-      const key = await attemptKey(notebookId, version?.seq ?? 0, body);
+      // A fresh key per PRESS, not per request body.
+      //
+      // Derived-from-the-body was wrong and the failure is unrecoverable: a grading run
+      // that dies before emitting a verdict stores its error under that key, and
+      // resubmitting the same answer replays the failure forever — the reader's only
+      // escape is to change an answer that may have been right. Greptile caught it on
+      // PR 832; deriving it optimised for a deliberate double-press, which the attempt
+      // lock already prevents, at the cost of making a transient sandbox failure
+      // permanent for that exact answer.
+      //
+      // Generated ONCE here rather than inside the fetch, which is what makes it a
+      // retry key at all: a network-level replay of this POST reuses the header it was
+      // built with, so the duplicate is caught, while a new press starts a new run.
+      const key = crypto.randomUUID();
       const response = await fetch(`/api/notebooks/${encodeURIComponent(notebookId)}/attempts`, {
         method: "POST",
         headers: {
@@ -403,6 +427,7 @@ export function NotebookWorkspace({ notebookId, locale = "en" }: { notebookId: s
       }
       const runId = typeof payload.run_id === "string" ? payload.run_id : null;
       if (!runId) throw new Error(copy.gradeFailed);
+      runAttempt.current.set(runId, mine);
       setGradingRunId(runId);
     } catch (cause) {
       setGradingCellIds(new Set());
