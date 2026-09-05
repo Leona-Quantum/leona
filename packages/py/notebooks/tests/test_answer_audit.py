@@ -10,11 +10,18 @@ that must survive it.
 from __future__ import annotations
 
 import math
+from collections import Counter
 
 import pytest
 from majorana_contracts.notebooks import Cell, CellRole, NotebookSpec
 
-from leona_notebooks.answer_audit import audit_answers, demote_unsound_answers
+from leona_notebooks.answer_audit import (
+    GUESSABLE_MAX_SHARE,
+    GUESSABLE_MIN_QUESTIONS,
+    audit_answers,
+    demote_unsound_answers,
+    guessability,
+)
 
 
 def _spec(*cells: Cell) -> NotebookSpec:
@@ -281,3 +288,109 @@ def test_the_boundary_guard_applies_per_side_not_to_the_whole_needle() -> None:
     assert _verdict(_question("b", mixed, source="It holds bracket{0} now. Which state?")) == (
         "sound"
     )
+
+
+# ------------------------------------------------------- guessability, a SET property
+#
+# Invisible to every test above. Each key in the certification mock exam was individually
+# sound — four distinct options, a real correct answer — and 21 of its 25 answers were
+# option B, so answering B throughout scored 84% against a pass mark near 70%. A per-cell
+# audit cannot see that by construction, which is the whole reason this measure exists.
+
+
+def _quiz(positions: list[int]) -> NotebookSpec:
+    return _spec(
+        *[
+            _question(
+                f"q{i}",
+                {"kind": "choice", "options": ["w", "x", "y", "z"], "correct": c},
+                source=f"Question {i}?",
+            )
+            for i, c in enumerate(positions)
+        ]
+    )
+
+
+def test_a_quiz_answerable_by_one_repeated_option_is_measured_as_such() -> None:
+    index, hits, share = guessability(_quiz([1] * 12 + [0, 2, 3, 0]))
+    assert (index, hits) == (1, 12)
+    assert share == 0.75
+
+
+def test_an_evenly_spread_quiz_measures_at_the_chance_floor() -> None:
+    index, hits, share = guessability(_quiz([0, 1, 2, 3] * 4))
+    assert hits == 4
+    assert share == 0.25
+    assert share <= GUESSABLE_MAX_SHARE
+
+
+def test_too_few_questions_to_say_anything_returns_None() -> None:
+    # `None`, not a share of 1.0. Four questions that happen to share a position are
+    # ordinary luck, and reporting them as a defect would strip the measure of any
+    # authority by the third false alarm.
+    assert guessability(_quiz([1, 1, 1, 1])) is None
+    assert guessability(_quiz([1] * (GUESSABLE_MIN_QUESTIONS - 1))) is None
+    assert guessability(_quiz([1] * GUESSABLE_MIN_QUESTIONS)) is not None
+
+
+def test_only_choice_questions_count_toward_guessability() -> None:
+    # A numeric or rubric answer has no position to guess, so mixing them in would
+    # dilute the share and let a guessable set of choices hide inside a long notebook.
+    mixed = _spec(
+        *[
+            _question(f"c{i}", {"kind": "choice", "options": ["w", "x", "y", "z"], "correct": 1})
+            for i in range(GUESSABLE_MIN_QUESTIONS)
+        ],
+        *[
+            _question(f"n{i}", {"kind": "numeric", "value": float(i + 1), "tolerance": 0.1})
+            for i in range(20)
+        ],
+    )
+    index, hits, share = guessability(mixed)
+    assert (index, hits, share) == (1, GUESSABLE_MIN_QUESTIONS, 1.0)
+
+
+def test_guessability_thresholds_are_the_measured_ones() -> None:
+    """The two constants are simulation results, so the simulation is the test.
+
+    Without this, `GUESSABLE_MIN_QUESTIONS` and `GUESSABLE_MAX_SHARE` are two numbers a
+    later edit can move to whatever makes a failing build pass, and the docstring claiming
+    they were measured stays there looking authoritative. Rerunning the simulation costs
+    milliseconds and it is the only thing that keeps the claim true.
+    """
+    import random
+
+    def false_positive_rate(n: int, threshold: float, trials: int = 20_000) -> float:
+        rng = random.Random(20260905)
+        over = 0
+        for _ in range(trials):
+            counts = Counter(rng.randrange(4) for _ in range(n))
+            if max(counts.values()) / n > threshold:
+                over += 1
+        return over / trials
+
+    # The claim in the constants' comments: at the minimum size, a well-shuffled quiz
+    # trips the threshold rarely, and the rate falls as the quiz grows.
+    at_minimum = false_positive_rate(GUESSABLE_MIN_QUESTIONS, GUESSABLE_MAX_SHARE)
+    assert at_minimum < 0.08, at_minimum
+    assert false_positive_rate(32, GUESSABLE_MAX_SHARE) < at_minimum
+
+    # And the reason the threshold is not 0.40, which reads like the obvious choice: at
+    # small sizes it fires on well-shuffled quizzes more often than not.
+    assert false_positive_rate(8, 0.40) > 0.30
+
+    # THE OTHER DIRECTION, and without it this test is one-sided: a low false-positive
+    # rate is also what a threshold of 0.99 has, and that threshold catches nothing.
+    # Loosening the constant to 0.90 passed every assertion above — the rate at n=12 is
+    # 5e-05 rather than 0, so even the strict comparison held. What a threshold must also
+    # be is tight enough to catch the defects actually observed, so those are the test:
+    # the two certification quizzes as they stood, at 19 of 32 and 21 of 25.
+    for hits, total in [(19, 32), (21, 25)]:
+        spread = [1] * hits + [(i % 3) for i in range(total - hits)]
+        assert len(spread) == total
+        measured = guessability(_quiz(spread))
+        assert measured is not None
+        assert measured[2] > GUESSABLE_MAX_SHARE, (
+            f"{hits}/{total} = {measured[2]:.0%} does not trip a threshold of "
+            f"{GUESSABLE_MAX_SHARE:.0%} — the shipped defect would pass"
+        )

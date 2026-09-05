@@ -59,13 +59,18 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "packages/py/not
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "packages/py/contracts/src"))
 
 from majorana_contracts.notebooks import Cell, NotebookSpec  # noqa: E402
-from leona_notebooks.answer_audit import audit_answers  # noqa: E402
+from leona_notebooks.answer_audit import (  # noqa: E402
+    GUESSABLE_MAX_SHARE,
+    audit_answers,
+    guessability,
+)
 from leona_notebooks.grading import (  # noqa: E402
     GradedAttempt,
     grades_from_report,
     spec_with_graders,
 )
 from leona_notebooks.local_runner import execute_in_local_sandbox  # noqa: E402
+from leona_notebooks.source import parse_source  # noqa: E402
 
 
 def _grade(spec: NotebookSpec, cell_id: str, code: str) -> str:
@@ -77,7 +82,19 @@ def _grade(spec: NotebookSpec, cell_id: str, code: str) -> str:
 
 def audit_keys(spec: NotebookSpec) -> list[str]:
     """Failures in `spec`'s ANSWER keys, as reader-facing lines. Executes nothing."""
-    return [f"  {spec.slug}/{verdict.describe()}" for verdict in audit_answers(spec).unsound]
+    problems = [f"  {spec.slug}/{verdict.describe()}" for verdict in audit_answers(spec).unsound]
+    # Set-level, and invisible to the loop above: every key in both certification quizzes
+    # was individually sound while 21 of 25 answers in the mock exam were option B.
+    guess = guessability(spec)
+    if guess is not None:
+        index, hits, share = guess
+        if share > GUESSABLE_MAX_SHARE:
+            problems.append(
+                f"  {spec.slug}: answering option {chr(ord('A') + index)} to every question "
+                f"scores {hits} of the choice questions ({share:.0%}) — reshuffle the "
+                f"options; the answers are right, their POSITIONS are not"
+            )
+    return problems
 
 
 def audit(spec: NotebookSpec) -> list[str]:
@@ -156,6 +173,28 @@ def _self_test() -> int:
             cells=[Cell(id="q", kind="markdown", role="question", source=source, answer=answer)],
         )
 
+    def _quiz(slug: str, positions: list[int]) -> NotebookSpec:
+        return NotebookSpec(
+            slug=slug,
+            title=slug,
+            cells=[
+                Cell(
+                    id=f"q{i}",
+                    kind="markdown",
+                    role="question",
+                    source=f"Question {i}?",
+                    answer={"kind": "choice", "options": ["w", "x", "y", "z"], "correct": c},
+                )
+                for i, c in enumerate(positions)
+            ],
+        )
+
+    # 16 evenly spread, which must survive; and 16 where 12 share one position, which is
+    # 75%. Every key in the second is individually sound, so only the set-level check sees
+    # it — the arm that would otherwise be added and never exercised.
+    balanced_quiz = _quiz("self-test-quiz-balanced", [0, 1, 2, 3] * 4)
+    guessable_quiz = _quiz("self-test-quiz-guessable", [1] * 12 + [0, 2, 3, 0])
+
     sound_key = _question(
         "self-test-key-sound", {"kind": "numeric", "value": 2.0, "tolerance": 0.1}
     )
@@ -175,6 +214,10 @@ def _self_test() -> int:
         failures.append("a tolerance that accepts 0 was NOT caught")
     if not any("cannot-fail" in p for p in audit_keys(leaked_key)):
         failures.append("an answer printed in its own question was NOT caught")
+    if audit_keys(balanced_quiz):
+        failures.append("an evenly spread quiz was reported as a problem")
+    if not any("to every question" in p for p in audit_keys(guessable_quiz)):
+        failures.append("a quiz answerable by one repeated option was NOT caught")
     if not any("grades nothing" in p for p in audit(vacuous)):
         failures.append("a grader that passes on the stub was NOT caught")
     if not any("cannot be completed" in p for p in audit(impossible)):
@@ -191,17 +234,31 @@ def _self_test() -> int:
         return 1
     print(
         "check_graders self-test passed (honest grader and sound key accepted; "
-        "vacuous, impossible, lazy-tolerance and leaked-answer all caught)"
+        "vacuous, impossible, lazy-tolerance, leaked-answer and one-key-passes all caught)"
     )
     return 0
 
 
 def _specs(paths: list[str]) -> list[tuple[Path, NotebookSpec]]:
+    """Every committed spec under `paths`, in both forms it is committed in.
+
+    `.nb.py` is here because it is where the notebooks a reader actually works through
+    live — the whole `curricula/` tree — and reading only `.json` meant this gate covered
+    one fixture. It reported `0 answer key(s) read` while 57 keys sat in the certification
+    quizzes, which is the shape of green this script was written to stop: a count of zero
+    over a directory the checker could not see into reads exactly like a clean audit.
+    """
     out: list[tuple[Path, NotebookSpec]] = []
     for raw in paths:
         p = Path(raw)
-        files = sorted(p.rglob("*.json")) if p.is_dir() else [p]
+        files = sorted([*p.rglob("*.json"), *p.rglob("*.nb.py")]) if p.is_dir() else [p]
         for f in files:
+            if f.name.endswith(".nb.py"):
+                try:
+                    out.append((f, parse_source(f.read_text(encoding="utf-8"))))
+                except (OSError, ValueError) as exc:
+                    print(f"  {f}: not a parseable notebook source — {exc}")
+                continue
             try:
                 data = json.loads(f.read_text(encoding="utf-8"))
             except (json.JSONDecodeError, OSError):

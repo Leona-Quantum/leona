@@ -46,6 +46,7 @@ from __future__ import annotations
 
 import math
 import re
+from collections import Counter
 from dataclasses import dataclass
 from typing import Literal
 
@@ -60,8 +61,11 @@ from leona_notebooks.grading import normalize_response
 __all__ = [
     "AnswerAudit",
     "AnswerVerdict",
+    "GUESSABLE_MAX_SHARE",
+    "GUESSABLE_MIN_QUESTIONS",
     "audit_answers",
     "demote_unsound_answers",
+    "guessability",
 ]
 
 AnswerVerdictKind = Literal["sound", "cannot-fail", "cannot-pass", "ambiguous", "inconclusive"]
@@ -177,6 +181,44 @@ def _judge_numeric(cell: Cell, key) -> AnswerVerdict:  # noqa: ANN001
             ),
         )
     return AnswerVerdict(cell_id=cell.id, kind="numeric", verdict="sound")
+
+
+#: A quiz needs at least this many `choice` questions before its answer positions carry any
+#: information. Below it, an uneven spread is ordinary luck: with four options, the chance
+#: that some single index is correct for more than half the questions is 45% at n=4 and 11%
+#: at n=8. Measured, not assumed — `test_guessability_thresholds_are_the_measured_ones`
+#: holds these two numbers against a simulation, so a later edit to either cannot quietly
+#: turn the guard into a coin flip.
+GUESSABLE_MIN_QUESTIONS = 12
+
+#: Above this share, one repeated answer is doing the work knowledge should. At the minimum
+#: size above, a well-shuffled quiz trips this 5.7% of the time and much less as it grows —
+#: a false positive costs a reshuffle, and the failure it catches told a learner they had
+#: passed a certification mock exam for pressing one key 25 times.
+GUESSABLE_MAX_SHARE = 0.50
+
+
+def guessability(spec: NotebookSpec) -> tuple[int, int, float] | None:
+    """`(index, hits, share)` for the best single-index guess across the spec's `choice`
+    questions, or `None` when there are too few to say anything.
+
+    A cell-by-cell audit cannot see this. Every key in both certification quizzes was
+    individually sound — distinct options, a real correct answer — while 21 of 25 in the
+    mock exam were option B, so answering B to everything scored 84% against a pass mark
+    near 70%. The defect is a property of the SET, and it fails in the same direction as
+    every other defect this module catches: it marks a reader correct without knowledge,
+    and nobody reports being told they are right.
+    """
+    positions = [
+        cell.answer.correct
+        for cell in spec.cells
+        if cell.answer is not None and cell.answer.kind == "choice"
+    ]
+    if len(positions) < GUESSABLE_MIN_QUESTIONS:
+        return None
+    counts = Counter(positions)
+    index, hits = max(counts.items(), key=lambda kv: (kv[1], -kv[0]))
+    return index, hits, hits / len(positions)
 
 
 def _reads_in(needle: str, haystack: str) -> bool:

@@ -69,7 +69,7 @@ from qiskit.visualization import plot_histogram
 # %% [markdown] role=note
 # ## Circuit construction (3 questions)
 
-# %% [markdown] role=question
+# %% [markdown] role=question answer={"kind":"choice","options":["`3 3`","`0 3`","raises `TypeError`","`3 0`"],"correct":3}
 # ### Question 1 — Area: Circuit construction
 #
 # ```python
@@ -79,17 +79,17 @@ from qiskit.visualization import plot_histogram
 # What does this print?
 #
 # A) `3 3`
-# B) `3 0`
-# C) `0 3`
-# D) raises `TypeError`
+# B) `0 3`
+# C) raises `TypeError`
+# D) `3 0`
 
 # %% role=answer
 qc = QuantumCircuit(3)
 print(qc.num_qubits, qc.num_clbits)
 assert (qc.num_qubits, qc.num_clbits) == (3, 0)
-print("Correct answer: B) 3 0")
+print("Correct answer: D) 3 0")
 
-# %% [markdown] role=question
+# %% [markdown] role=question answer={"kind":"choice","options":["`{\"00\": 1000}`","`{\"10\": 1000}`","`{\"01\": 1000}`","`{\"11\": 1000}`"],"correct":1}
 # ### Question 2 — Area: Circuit construction
 #
 # ```python
@@ -101,8 +101,8 @@ print("Correct answer: B) 3 0")
 # Sample this 1000 times with `StatevectorSampler(seed=1)`. What are the counts?
 #
 # A) `{"00": 1000}`
-# B) `{"01": 1000}`
-# C) `{"10": 1000}`
+# B) `{"10": 1000}`
+# C) `{"01": 1000}`
 # D) `{"11": 1000}`
 
 # %% role=answer
@@ -113,9 +113,9 @@ qc.measure_all()
 counts = StatevectorSampler(seed=1).run([qc], shots=1000).result()[0].data.meas.get_counts()
 print(counts)
 assert counts == {"10": 1000}
-print("Correct answer: C) {'10': 1000}")
+print("Correct answer: B) {'10': 1000}")
 
-# %% [markdown] role=question
+# %% [markdown] role=question answer={"kind":"choice","options":["Yes — `qc.parameters` is empty afterward too","No — `assign_parameters` returns a new circuit; `qc` still has its unbound `Parameter` unless you pass `inplace=True`","It depends on whether `theta` appears once or more than once in the circuit","`assign_parameters` has no `inplace` option at all"],"correct":1}
 # ### Question 3 — Area: Circuit construction
 #
 # ```python
@@ -143,29 +143,29 @@ print("Correct answer: B) assign_parameters returns a new circuit by default; qc
 # %% [markdown] role=note
 # ## Visualization (3 questions)
 
-# %% [markdown] role=question
+# %% [markdown] role=question answer={"kind":"choice","options":["`from qiskit.tools.visualization import plot_histogram`","`from qiskit import plot_histogram`","`from qiskit.result import plot_histogram`","`from qiskit.visualization import plot_histogram`"],"correct":3}
 # ### Question 4 — Area: Visualization
 #
 # Which import gives you `plot_histogram` in Qiskit 2.5?
 #
 # A) `from qiskit.tools.visualization import plot_histogram`
-# B) `from qiskit.visualization import plot_histogram`
-# C) `from qiskit import plot_histogram`
-# D) `from qiskit.result import plot_histogram`
+# B) `from qiskit import plot_histogram`
+# C) `from qiskit.result import plot_histogram`
+# D) `from qiskit.visualization import plot_histogram`
 
 # %% role=answer
 from qiskit.visualization import plot_histogram as ph
 assert callable(ph)
-print("Correct answer: B) from qiskit.visualization import plot_histogram")
+print("Correct answer: D) from qiskit.visualization import plot_histogram")
 
-# %% [markdown] role=question
+# %% [markdown] role=question answer={"kind":"choice","options":["numpy and scipy","matplotlib only","matplotlib and pylatexenc","pillow and matplotlib"],"correct":2}
 # ### Question 5 — Area: Visualization
 #
 # `qc.draw("text")` needs nothing beyond qiskit itself. What two extra packages does `qc.draw("mpl")` need that `"text"` does not?
 #
 # A) numpy and scipy
-# B) matplotlib and pylatexenc
-# C) matplotlib only
+# B) matplotlib only
+# C) matplotlib and pylatexenc
 # D) pillow and matplotlib
 
 # %% role=answer
@@ -175,9 +175,9 @@ matplotlib_ok = importlib.util.find_spec("matplotlib") is not None
 pylatexenc_ok = importlib.util.find_spec("pylatexenc") is not None
 print("matplotlib available:", matplotlib_ok, "| pylatexenc available:", pylatexenc_ok)
 assert matplotlib_ok and pylatexenc_ok
-print("Correct answer: B) matplotlib and pylatexenc")
+print("Correct answer: C) matplotlib and pylatexenc")
 
-# %% [markdown] role=question
+# %% [markdown] role=question answer={"kind":"choice","options":["The 3 most frequent outcomes as their own bars, plus every remaining outcome collapsed into one bar labeled `\"rest\"`","Only the 3 most frequent outcomes, each its own bar, nothing else","All 7 outcomes; `number_to_keep` only changes bar width","`ValueError`, because 3 is fewer than the number of distinct outcomes"],"correct":0}
 # ### Question 6 — Area: Visualization
 #
 # ```python
@@ -186,8 +186,8 @@ print("Correct answer: B) matplotlib and pylatexenc")
 # ```
 # What do the bars in `fig` show?
 #
-# A) Only the 3 most frequent outcomes, each its own bar, nothing else
-# B) The 3 most frequent outcomes as their own bars, plus every remaining outcome collapsed into one bar labeled `"rest"`
+# A) The 3 most frequent outcomes as their own bars, plus every remaining outcome collapsed into one bar labeled `"rest"`
+# B) Only the 3 most frequent outcomes, each its own bar, nothing else
 # C) All 7 outcomes; `number_to_keep` only changes bar width
 # D) `ValueError`, because 3 is fewer than the number of distinct outcomes
 
@@ -197,12 +197,12 @@ fig = plot_histogram(counts, number_to_keep=3)
 labels = [t.get_text() for t in fig.axes[0].get_xticklabels()]
 print(labels)
 assert labels == ["000", "001", "010", "rest"]
-print('Correct answer: B) 3 named bars plus one "rest" bar for everything else')
+print('Correct answer: A) 3 named bars plus one "rest" bar for everything else')
 
 # %% [markdown] role=note
 # ## Transpilation (3 questions)
 
-# %% [markdown] role=question
+# %% [markdown] role=question answer={"kind":"choice","options":["A list mapping each logical qubit index to the physical qubit it was placed on","The final gate count for each qubit","The backend's coupling map","The list of qubits left idle"],"correct":0}
 # ### Question 7 — Area: Transpilation
 #
 # ```python
@@ -215,8 +215,8 @@ print('Correct answer: B) 3 named bars plus one "rest" bar for everything else')
 # ```
 # What does `placement` represent?
 #
-# A) The final gate count for each qubit
-# B) A list mapping each logical qubit index to the physical qubit it was placed on
+# A) A list mapping each logical qubit index to the physical qubit it was placed on
+# B) The final gate count for each qubit
 # C) The backend's coupling map
 # D) The list of qubits left idle
 
@@ -232,9 +232,9 @@ placement = isa.layout.initial_index_layout()
 print(placement)
 assert len(placement) >= qc.num_qubits
 assert all(isinstance(p, int) for p in placement[: qc.num_qubits])
-print("Correct answer: B) a list mapping each logical qubit index to its physical qubit")
+print("Correct answer: A) a list mapping each logical qubit index to its physical qubit")
 
-# %% [markdown] role=question
+# %% [markdown] role=question answer={"kind":"choice","options":["It raises `ValueError: Invalid optimization level 4`","It runs; levels above 3 are silently clamped to 3","It raises `TypeError` — `optimization_level` must be a string","It runs at the backend's own default, ignoring the 4"],"correct":0}
 # ### Question 8 — Area: Transpilation
 #
 # ```python
@@ -243,8 +243,8 @@ print("Correct answer: B) a list mapping each logical qubit index to its physica
 # ```
 # What happens?
 #
-# A) It runs; levels above 3 are silently clamped to 3
-# B) It raises `ValueError: Invalid optimization level 4`
+# A) It raises `ValueError: Invalid optimization level 4`
+# B) It runs; levels above 3 are silently clamped to 3
 # C) It raises `TypeError` — `optimization_level` must be a string
 # D) It runs at the backend's own default, ignoring the 4
 
@@ -257,9 +257,9 @@ except ValueError as exc:
     raised = str(exc)
 print("raised:", raised)
 assert raised is not None and "4" in raised
-print("Correct answer: B) ValueError: Invalid optimization level 4")
+print("Correct answer: A) ValueError: Invalid optimization level 4")
 
-# %% [markdown] role=question
+# %% [markdown] role=question answer={"kind":"choice","options":["`isa_again` comes out with the same operation counts as `isa` — an already-compatible circuit passes through unchanged in substance","It raises — a pass manager refuses a circuit that's already transpiled","Every gate gets translated a second time, roughly doubling the gate count","The coupling-map constraint is dropped the second time"],"correct":0}
 # ### Question 9 — Area: Transpilation
 #
 # ```python
@@ -272,8 +272,8 @@ print("Correct answer: B) ValueError: Invalid optimization level 4")
 # ```
 # `isa` is already a valid ISA circuit for this backend. What happens when you run it through the same pass manager a second time?
 #
-# A) It raises — a pass manager refuses a circuit that's already transpiled
-# B) `isa_again` comes out with the same operation counts as `isa` — an already-compatible circuit passes through unchanged in substance
+# A) `isa_again` comes out with the same operation counts as `isa` — an already-compatible circuit passes through unchanged in substance
+# B) It raises — a pass manager refuses a circuit that's already transpiled
 # C) Every gate gets translated a second time, roughly doubling the gate count
 # D) The coupling-map constraint is dropped the second time
 
@@ -288,12 +288,12 @@ isa = pm.run(qc)
 isa_again = pm.run(isa)
 print(isa.count_ops(), isa_again.count_ops())
 assert isa.count_ops() == isa_again.count_ops()
-print("Correct answer: B) the same operation counts come out both times")
+print("Correct answer: A) the same operation counts come out both times")
 
 # %% [markdown] role=note
 # ## Primitives (PUBs) (3 questions)
 
-# %% [markdown] role=question
+# %% [markdown] role=question answer={"kind":"choice","options":["`None` — an exact statevector expectation value, no simulated shot noise","`0.0`","`0.01`","It's required; omitting it raises `TypeError`"],"correct":0}
 # ### Question 10 — Area: Primitives (PUBs)
 #
 # ```python
@@ -301,9 +301,9 @@ print("Correct answer: B) the same operation counts come out both times")
 # ```
 # What is the default value of `precision` when you call `.run()` without passing it?
 #
-# A) `0.0`
-# B) `0.01`
-# C) `None` — an exact statevector expectation value, no simulated shot noise
+# A) `None` — an exact statevector expectation value, no simulated shot noise
+# B) `0.0`
+# C) `0.01`
 # D) It's required; omitting it raises `TypeError`
 
 # %% role=answer
@@ -311,16 +311,16 @@ import inspect
 default_precision = inspect.signature(StatevectorEstimator.run).parameters["precision"].default
 print("default precision:", default_precision)
 assert default_precision is None
-print("Correct answer: C) None — exact, no simulated shot noise")
+print("Correct answer: A) None — exact, no simulated shot noise")
 
-# %% [markdown] role=question
+# %% [markdown] role=question answer={"kind":"choice","options":["`tolerance`","`shots`, same as Sampler","`precision`, a keyword-only argument to `.run()`","There is no such knob; Estimator is always exact"],"correct":2}
 # ### Question 11 — Area: Primitives (PUBs)
 #
 # Sampler PUBs can carry a per-PUB `shots` override. Estimator PUBs have no `shots` field at all. What's Estimator's equivalent knob for simulated precision?
 #
-# A) `precision`, a keyword-only argument to `.run()`
-# B) `tolerance`
-# C) `shots`, same as Sampler
+# A) `tolerance`
+# B) `shots`, same as Sampler
+# C) `precision`, a keyword-only argument to `.run()`
 # D) There is no such knob; Estimator is always exact
 
 # %% role=answer
@@ -328,9 +328,9 @@ import inspect
 sig = inspect.signature(StatevectorEstimator.run)
 assert "precision" in sig.parameters
 assert "shots" not in sig.parameters
-print("Correct answer: A) precision")
+print("Correct answer: C) precision")
 
-# %% [markdown] role=question
+# %% [markdown] role=question answer={"kind":"choice","options":["It works exactly like `sampler.run([qc], shots=100)`","It silently runs 0 shots","It raises `TypeError: unhashable type`","It raises `ValueError`, with a message suggesting you wrap the circuit in `[]`"],"correct":3}
 # ### Question 12 — Area: Primitives (PUBs)
 #
 # ```python
@@ -340,9 +340,9 @@ print("Correct answer: A) precision")
 # `qc` was passed directly, not wrapped in a list. What happens?
 #
 # A) It works exactly like `sampler.run([qc], shots=100)`
-# B) It raises `ValueError`, with a message suggesting you wrap the circuit in `[]`
-# C) It silently runs 0 shots
-# D) It raises `TypeError: unhashable type`
+# B) It silently runs 0 shots
+# C) It raises `TypeError: unhashable type`
+# D) It raises `ValueError`, with a message suggesting you wrap the circuit in `[]`
 
 # %% role=answer
 qc = QuantumCircuit(1)
@@ -356,12 +356,12 @@ except ValueError as exc:
     raised = str(exc)
 print("raised:", raised)
 assert raised is not None and "[" in raised
-print("Correct answer: B) ValueError suggesting you wrap the circuit in []")
+print("Correct answer: D) ValueError suggesting you wrap the circuit in []")
 
 # %% [markdown] role=note
 # ## V2 result objects (3 questions)
 
-# %% [markdown] role=question
+# %% [markdown] role=question answer={"kind":"choice","options":["1","200","3","600"],"correct":2}
 # ### Question 13 — Area: V2 result objects
 #
 # ```python
@@ -370,8 +370,8 @@ print("Correct answer: B) ValueError suggesting you wrap the circuit in []")
 # What is `len(result)`?
 #
 # A) 1
-# B) 3
-# C) 200
+# B) 200
+# C) 3
 # D) 600
 
 # %% role=answer
@@ -385,9 +385,9 @@ qc1, qc2, qc3 = make(), make(), make()
 result = StatevectorSampler(seed=1).run([qc1, qc2, qc3], shots=200).result()
 print("len:", len(result))
 assert len(result) == 3
-print("Correct answer: B) 3")
+print("Correct answer: C) 3")
 
-# %% [markdown] role=question
+# %% [markdown] role=question answer={"kind":"choice","options":["`\"num_shots\"`","`\"count\"`","`\"shots\"`","It isn't in `metadata` at all — you have to `sum()` the counts yourself"],"correct":2}
 # ### Question 14 — Area: V2 result objects
 #
 # ```python
@@ -397,8 +397,8 @@ print("Correct answer: B) 3")
 # Which key in `result[0].metadata` tells you how many shots that PUB actually ran?
 #
 # A) `"num_shots"`
-# B) `"shots"`
-# C) `"count"`
+# B) `"count"`
+# C) `"shots"`
 # D) It isn't in `metadata` at all — you have to `sum()` the counts yourself
 
 # %% role=answer
@@ -408,9 +408,9 @@ qc.measure_all()
 result = StatevectorSampler(seed=1).run([qc], shots=200).result()
 print(result[0].metadata)
 assert result[0].metadata["shots"] == 200
-print('Correct answer: B) "shots"')
+print('Correct answer: C) "shots"')
 
-# %% [markdown] role=question
+# %% [markdown] role=question answer={"kind":"choice","options":["`result[0].data.meas.get_counts()` — `measure()` always names the register `meas`","`result[0].data.b.get_counts()` — each register's results live under its own name on `.data`","`result[0].data.get_counts(\"b\")`","They're unavailable separately; only a combined 2-bit string is readable"],"correct":1}
 # ### Question 15 — Area: V2 result objects
 #
 # ```python
@@ -448,7 +448,7 @@ print("Correct answer: B) result[0].data.b.get_counts()")
 # %% [markdown] role=note
 # ## Observables (3 questions)
 
-# %% [markdown] role=question
+# %% [markdown] role=question answer={"kind":"choice","options":["`1`","`2`","`4`","It raises — scalar multiplication isn't supported"],"correct":1}
 # ### Question 16 — Area: Observables
 #
 # ```python
@@ -467,7 +467,7 @@ print(op)
 assert op.coeffs[0] == 2
 print("Correct answer: B) 2")
 
-# %% [markdown] role=question
+# %% [markdown] role=question answer={"kind":"choice","options":["It raises `QiskitError` — an invalid Pauli string label","It's silently treated as `I`","It silently creates a zero operator","It raises `TypeError`"],"correct":0}
 # ### Question 17 — Area: Observables
 #
 # ```python
@@ -475,8 +475,8 @@ print("Correct answer: B) 2")
 # ```
 # `A` is not one of `I`, `X`, `Y`, `Z`. What happens?
 #
-# A) It's silently treated as `I`
-# B) It raises `QiskitError` — an invalid Pauli string label
+# A) It raises `QiskitError` — an invalid Pauli string label
+# B) It's silently treated as `I`
 # C) It silently creates a zero operator
 # D) It raises `TypeError`
 
@@ -490,9 +490,9 @@ except QiskitError as exc:
     raised = str(exc)
 print("raised:", raised)
 assert raised is not None
-print("Correct answer: B) QiskitError — invalid Pauli string label")
+print("Correct answer: A) QiskitError — invalid Pauli string label")
 
-# %% [markdown] role=question
+# %% [markdown] role=question answer={"kind":"choice","options":["`['IZI', 'IIX']` — the original two qubits keep their positions; the new qubit is padded with `I`","`['ZII', 'IXI']`","It raises — `num_qubits` must equal the operator's current width when `layout` is `None`","`['ZI', 'IX', 'III']` — a third all-identity term is appended"],"correct":0}
 # ### Question 18 — Area: Observables
 #
 # ```python
@@ -518,7 +518,7 @@ print("Correct answer: A) ['IZI', 'IIX']")
 # %% [markdown] role=note
 # ## OpenQASM 3 (3 questions)
 
-# %% [markdown] role=question
+# %% [markdown] role=question answer={"kind":"choice","options":["`creg meas[2];`","`classical meas: bit[2];`","`bit[2] meas;`","There is no such line — OpenQASM 3 has no classical bit type"],"correct":2}
 # ### Question 19 — Area: OpenQASM 3
 #
 # ```python
@@ -531,8 +531,8 @@ print("Correct answer: A) ['IZI', 'IIX']")
 # Which line in `text` declares the classical results container?
 #
 # A) `creg meas[2];`
-# B) `bit[2] meas;`
-# C) `classical meas: bit[2];`
+# B) `classical meas: bit[2];`
+# C) `bit[2] meas;`
 # D) There is no such line — OpenQASM 3 has no classical bit type
 
 # %% role=answer
@@ -543,9 +543,9 @@ qc.measure_all()
 text = qasm3.dumps(qc)
 print(text)
 assert "bit[2] meas;" in text
-print("Correct answer: B) bit[2] meas;")
+print("Correct answer: C) bit[2] meas;")
 
-# %% [markdown] role=question
+# %% [markdown] role=question answer={"kind":"choice","options":["Yes — dumping raises unless every gate is in a hardware basis","No, but the angle gets silently rounded to the nearest basis rotation","No — OpenQASM 3 can represent arbitrary gates like `ry` directly; no transpilation is required to export it","Only single-qubit gates can be dumped without transpiling first"],"correct":2}
 # ### Question 20 — Area: OpenQASM 3
 #
 # ```python
@@ -559,8 +559,8 @@ print("Correct answer: B) bit[2] meas;")
 # `ry` is not in `GenericBackendV2`'s basis (`cx, id, rz, sx, x`). Does `qasm3.dumps` require the circuit to be transpiled to some fixed basis first?
 #
 # A) Yes — dumping raises unless every gate is in a hardware basis
-# B) No — OpenQASM 3 can represent arbitrary gates like `ry` directly; no transpilation is required to export it
-# C) No, but the angle gets silently rounded to the nearest basis rotation
+# B) No, but the angle gets silently rounded to the nearest basis rotation
+# C) No — OpenQASM 3 can represent arbitrary gates like `ry` directly; no transpilation is required to export it
 # D) Only single-qubit gates can be dumped without transpiling first
 
 # %% role=answer
@@ -572,9 +572,9 @@ bound = qc.assign_parameters({theta: 0.7})
 text = qasm3.dumps(bound)
 print(text)
 assert "ry(0.7)" in text
-print("Correct answer: B) no transpilation is required to export it")
+print("Correct answer: C) no transpilation is required to export it")
 
-# %% [markdown] role=question
+# %% [markdown] role=question answer={"kind":"choice","options":["It returns an empty `QuantumCircuit`","It silently returns `None`","It raises a parsing error","It prints a `UserWarning` and continues"],"correct":2}
 # ### Question 21 — Area: OpenQASM 3
 #
 # ```python
@@ -583,8 +583,8 @@ print("Correct answer: B) no transpilation is required to export it")
 # What happens?
 #
 # A) It returns an empty `QuantumCircuit`
-# B) It raises a parsing error
-# C) It silently returns `None`
+# B) It silently returns `None`
+# C) It raises a parsing error
 # D) It prints a `UserWarning` and continues
 
 # %% role=answer
@@ -595,12 +595,12 @@ except Exception as exc:
     raised = type(exc).__name__
 print("raised:", raised)
 assert raised is not None and "Pars" in raised
-print("Correct answer: B) it raises a parsing error")
+print("Correct answer: C) it raises a parsing error")
 
 # %% [markdown] role=note
 # ## Debugging (4 questions)
 
-# %% [markdown] role=question
+# %% [markdown] role=question answer={"kind":"choice","options":["It runs, and the extra qubit is silently dropped","It raises `TranspilerError` — the circuit needs more qubits than the device has","It raises `IndexError` at the `h(0)` line, before transpilation even starts","It runs, and Qiskit automatically resizes the backend to 6 qubits"],"correct":1}
 # ### Question 22 — Area: Debugging
 #
 # ```python
@@ -633,7 +633,7 @@ print("raised:", raised)
 assert raised is not None
 print("Correct answer: B) TranspilerError — not enough qubits on the device")
 
-# %% [markdown] role=question
+# %% [markdown] role=question answer={"kind":"choice","options":["`zeros` is `0` — `get_counts()` always includes every possible outcome, even at zero","`zeros` is `None`","`TypeError`, because dict keys must be looked up with `.get()`","`KeyError: '0'` — a `get_counts()` dict only has keys for outcomes that actually appeared; use `counts.get(\"0\", 0)` to read one safely"],"correct":3}
 # ### Question 23 — Area: Debugging
 #
 # ```python
@@ -647,9 +647,9 @@ print("Correct answer: B) TranspilerError — not enough qubits on the device")
 # What happens on the last line?
 #
 # A) `zeros` is `0` — `get_counts()` always includes every possible outcome, even at zero
-# B) `KeyError: '0'` — a `get_counts()` dict only has keys for outcomes that actually appeared; use `counts.get("0", 0)` to read one safely
-# C) `zeros` is `None`
-# D) `TypeError`, because dict keys must be looked up with `.get()`
+# B) `zeros` is `None`
+# C) `TypeError`, because dict keys must be looked up with `.get()`
+# D) `KeyError: '0'` — a `get_counts()` dict only has keys for outcomes that actually appeared; use `counts.get("0", 0)` to read one safely
 
 # %% role=answer
 qc = QuantumCircuit(1)
@@ -665,9 +665,9 @@ except KeyError:
     raised = True
 assert raised
 assert counts.get("0", 0) == 0
-print('Correct answer: B) KeyError; counts.get("0", 0) is the safe read')
+print('Correct answer: D) KeyError; counts.get("0", 0) is the safe read')
 
-# %% [markdown] role=question
+# %% [markdown] role=question answer={"kind":"choice","options":["The observable is truncated to `\"ZZ\"` and it runs","The circuit is silently padded to 3 qubits with an idle wire","It raises `ValueError` — the qubit counts of the circuit and the observable don't match","It runs and returns `evs` for whichever 2 of the 3 `Z`s happen to line up"],"correct":2}
 # ### Question 24 — Area: Debugging
 #
 # ```python
@@ -679,8 +679,8 @@ print('Correct answer: B) KeyError; counts.get("0", 0) is the safe read')
 # `qc` has 2 qubits; the observable `"ZZZ"` has 3. What happens?
 #
 # A) The observable is truncated to `"ZZ"` and it runs
-# B) It raises `ValueError` — the qubit counts of the circuit and the observable don't match
-# C) The circuit is silently padded to 3 qubits with an idle wire
+# B) The circuit is silently padded to 3 qubits with an idle wire
+# C) It raises `ValueError` — the qubit counts of the circuit and the observable don't match
 # D) It runs and returns `evs` for whichever 2 of the 3 `Z`s happen to line up
 
 # %% role=answer
@@ -694,9 +694,9 @@ except ValueError as exc:
     raised = str(exc)
 print("raised:", raised)
 assert raised is not None and "qubits" in raised
-print("Correct answer: B) ValueError — qubit-count mismatch")
+print("Correct answer: C) ValueError — qubit-count mismatch")
 
-# %% [markdown] role=question
+# %% [markdown] role=question answer={"kind":"choice","options":["It works — `Estimator` accepts `shots` as an alias for `precision`","It's silently ignored and the call runs with default precision","It raises `ValueError`, but still returns a (wrong) result","It raises `TypeError`: `run()` got an unexpected keyword argument `'shots'`"],"correct":3}
 # ### Question 25 — Area: Debugging
 #
 # ```python
@@ -708,9 +708,9 @@ print("Correct answer: B) ValueError — qubit-count mismatch")
 # A learner used to `Sampler` passes `shots=` to an `Estimator.run()` call by habit. What happens?
 #
 # A) It works — `Estimator` accepts `shots` as an alias for `precision`
-# B) It raises `TypeError`: `run()` got an unexpected keyword argument `'shots'`
-# C) It's silently ignored and the call runs with default precision
-# D) It raises `ValueError`, but still returns a (wrong) result
+# B) It's silently ignored and the call runs with default precision
+# C) It raises `ValueError`, but still returns a (wrong) result
+# D) It raises `TypeError`: `run()` got an unexpected keyword argument `'shots'`
 
 # %% role=answer
 qc = QuantumCircuit(2)
@@ -723,7 +723,7 @@ except TypeError as exc:
     raised = str(exc)
 print("raised:", raised)
 assert raised is not None and "shots" in raised
-print("Correct answer: B) TypeError: unexpected keyword argument 'shots'")
+print("Correct answer: D) TypeError: unexpected keyword argument 'shots'")
 
 # %% [markdown] role=summary
 # ## Scoring this mock exam
