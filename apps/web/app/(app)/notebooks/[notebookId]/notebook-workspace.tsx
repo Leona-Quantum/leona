@@ -334,8 +334,13 @@ export function NotebookWorkspace({ notebookId, locale = "en" }: { notebookId: s
     // the lock would be held forever. Disjoint from that path by construction:
     // `useRunProgress` reports "lost" only when no terminal event ever arrived.
     if (runAttempt.current.get(streamRunId) !== attemptSeq.current) return;
+    // The lock is released and the reader is told, but the KEY IS KEPT. A lost stream
+    // is not an observed outcome — the run may still be executing — so this is exactly
+    // the case the key exists for, and dropping it would buy a second sandbox run for
+    // a submission already accepted. My own rule two commits earlier said "dropped the
+    // moment an outcome is observed", and I then applied it to a path where nothing is
+    // observed. Greptile caught it on PR 832.
     if (outcome === "lost" && gradingCellIds.size > 0) {
-      if (inflightKey.current) pendingKeys.current.delete(inflightKey.current);
       setGradingCellIds(new Set());
       setActionError(copy.gradeFailed);
     }
