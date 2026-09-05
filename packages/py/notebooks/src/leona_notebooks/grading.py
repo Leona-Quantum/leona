@@ -39,6 +39,7 @@ __all__ = [
     "check_cell_id",
     "deterministic_grade",
     "grades_from_report",
+    "normalize_response",
     "grader_ids",
     "spec_with_graders",
 ]
@@ -218,8 +219,8 @@ def deterministic_grade(cell: Cell, response: str) -> CellGrade | None:
         )
 
     if key.kind == "text":
-        got = _normalize(response)
-        ok = any(got == _normalize(candidate) for candidate in key.accept)
+        got = normalize_response(response)
+        ok = any(got == normalize_response(candidate) for candidate in key.accept)
         return CellGrade(
             id=cell.id,
             status="passed" if ok else "failed",
@@ -230,7 +231,13 @@ def deterministic_grade(cell: Cell, response: str) -> CellGrade | None:
     return None  # rubric: the model grades it
 
 
-def _normalize(text: str) -> str:
+def normalize_response(text: str) -> str:
+    """Collapse whitespace and fold case — how a `text` answer is compared.
+
+    Public because `answer_audit` judges keys against the SAME normalisation the grade
+    is decided by. Two copies of this rule would let an audit clear a key the grader
+    then rejects, and neither copy would look wrong on its own.
+    """
     return _WHITESPACE.sub(" ", text.strip()).casefold()
 
 

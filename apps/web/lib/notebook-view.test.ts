@@ -6,6 +6,7 @@ import {
   errorTracebackText,
   notebookCellViews,
   notebookStatusPill,
+  answerPromptOf,
   type NotebookCellView,
 } from "./notebook-view.ts";
 
@@ -184,3 +185,67 @@ test("a cell with a hidden check is marked graded; a plain cell is not", () => {
   );
 });
 
+
+// --------------------------------------------------- the answer-key redaction
+//
+// These test `answerPromptOf` DIRECTLY, and they have to. The rendering tests in
+// `tests/forms/notebook-view.test.tsx` assert that no answer appears in the DOM, and
+// they keep passing when this function is replaced by `{...cell.answer}` — because the
+// renderer only ever reads three fields, so the secret ones simply never get drawn.
+// Verified by mutation: spreading the whole key left all 57 form tests green. What that
+// mutation breaks is the CONTRACT other code is entitled to rely on — that a value of
+// this type carries nothing a reader must not see — and only an assertion about the
+// object's own shape can see it break.
+
+const questionCell = (answer: unknown) => ({
+  id: "q1",
+  kind: "markdown" as const,
+  role: "question" as const,
+  source: "Which gate?",
+  tags: [],
+  execute: true,
+  stub: null,
+  check: null,
+  answer,
+  answer_prompt: null,
+  timeout_s: null,
+});
+
+test("the derived answer prompt carries exactly kind, options and unit — nothing else", () => {
+  const prompt = answerPromptOf(
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- a spec cell fixture
+    questionCell({ kind: "choice", options: ["H", "X"], correct: 1, explanation: "because H" }) as any,
+  );
+  assert.deepEqual(Object.keys(prompt ?? {}).sort(), ["kind", "options", "unit"]);
+  assert.deepEqual(prompt, { kind: "choice", options: ["H", "X"], unit: "" });
+});
+
+test("a text key's accepted spellings never reach the derived prompt", () => {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- a spec cell fixture
+  const prompt = answerPromptOf(questionCell({ kind: "text", accept: ["Hadamard"], explanation: "" }) as any);
+  assert.deepEqual(prompt, { kind: "text", options: [], unit: "" });
+  assert.equal(JSON.stringify(prompt).includes("Hadamard"), false);
+});
+
+test("a numeric key's value never reaches the derived prompt, but its unit does", () => {
+  const prompt = answerPromptOf(
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- a spec cell fixture
+    questionCell({ kind: "numeric", value: 0.5, tolerance: 0.01, unit: "probability", explanation: "" }) as any,
+  );
+  assert.deepEqual(prompt, { kind: "numeric", options: [], unit: "probability" });
+  assert.equal(JSON.stringify(prompt).includes("0.5"), false);
+});
+
+test("a rubric key's rubric never reaches the derived prompt", () => {
+  const prompt = answerPromptOf(
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- a spec cell fixture
+    questionCell({ kind: "rubric", rubric: "Mentions interference.", explanation: "" }) as any,
+  );
+  assert.deepEqual(prompt, { kind: "rubric", options: [], unit: "" });
+  assert.equal(JSON.stringify(prompt).includes("interference"), false);
+});
+
+test("a cell with no answer key derives no prompt", () => {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- a spec cell fixture
+  assert.equal(answerPromptOf(questionCell(null) as any), null);
+});

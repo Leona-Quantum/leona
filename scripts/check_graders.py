@@ -34,6 +34,15 @@ fails either one. Owner ruling ai-ops#258. The two share `spec_with_graders` and
 something adjacent to it; they differ only in what they do about a defect, because a
 fixture can fail CI and a reader's notebook cannot.
 
+**Answer keys too, since 2026-09-05.** A `role=question` cell's `answer` decides a
+verdict exactly as a `check` does, and the same two failure directions exist in it: a
+numeric tolerance that accepts 0 marks a reader correct for typing nothing, a text key
+whose answer is printed in the question gives itself away. Those are decidable by
+READING the key, so `leona_notebooks.answer_audit` judges them without executing
+anything, and this gate calls it on the committed specs. The count is reported even when
+it is zero — no committed fixture carries a question yet, and a line saying so is what
+stops the next reader assuming this arm has been exercising something.
+
 Usage:
   python scripts/check_graders.py [PATH ...]   # .json specs, or dirs to walk
   python scripts/check_graders.py --self-test  # prove the two arms actually discriminate
@@ -50,6 +59,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "packages/py/not
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "packages/py/contracts/src"))
 
 from majorana_contracts.notebooks import Cell, NotebookSpec  # noqa: E402
+from leona_notebooks.answer_audit import audit_answers  # noqa: E402
 from leona_notebooks.grading import (  # noqa: E402
     GradedAttempt,
     grades_from_report,
@@ -63,6 +73,11 @@ def _grade(spec: NotebookSpec, cell_id: str, code: str) -> str:
     report = execute_in_local_sandbox(spec_with_graders(spec, attempt))
     grade = grades_from_report(spec, report, attempt).by_id().get(cell_id)
     return grade.status if grade else "missing"
+
+
+def audit_keys(spec: NotebookSpec) -> list[str]:
+    """Failures in `spec`'s ANSWER keys, as reader-facing lines. Executes nothing."""
+    return [f"  {spec.slug}/{verdict.describe()}" for verdict in audit_answers(spec).unsound]
 
 
 def audit(spec: NotebookSpec) -> list[str]:
@@ -130,9 +145,36 @@ def _self_test() -> int:
             )
         ],
     )
+
+    # The answer-key arm. Same discipline: a sound key must survive, and each defect
+    # must be caught, or `audit_keys` is a call this script makes and learns nothing
+    # from. Cheap enough to prove here because nothing executes.
+    def _question(slug: str, answer: dict, source: str = "Which gate?") -> NotebookSpec:
+        return NotebookSpec(
+            slug=slug,
+            title=slug,
+            cells=[Cell(id="q", kind="markdown", role="question", source=source, answer=answer)],
+        )
+
+    sound_key = _question(
+        "self-test-key-sound", {"kind": "numeric", "value": 2.0, "tolerance": 0.1}
+    )
+    lazy_key = _question("self-test-key-lazy", {"kind": "numeric", "value": 2.0, "tolerance": 3.0})
+    leaked_key = _question(
+        "self-test-key-leaked",
+        {"kind": "text", "accept": ["Hadamard"]},
+        source="The Hadamard gate. Which gate was that?",
+    )
+
     failures: list[str] = []
     if audit(honest):
         failures.append("an honest grader was reported as a problem")
+    if audit_keys(sound_key):
+        failures.append("a sound answer key was reported as a problem")
+    if not any("cannot-fail" in p for p in audit_keys(lazy_key)):
+        failures.append("a tolerance that accepts 0 was NOT caught")
+    if not any("cannot-fail" in p for p in audit_keys(leaked_key)):
+        failures.append("an answer printed in its own question was NOT caught")
     if not any("grades nothing" in p for p in audit(vacuous)):
         failures.append("a grader that passes on the stub was NOT caught")
     if not any("cannot be completed" in p for p in audit(impossible)):
@@ -147,7 +189,10 @@ def _self_test() -> int:
         for line in failures:
             print(f"  {line}")
         return 1
-    print("check_graders self-test passed (honest accepted; vacuous and impossible both caught)")
+    print(
+        "check_graders self-test passed (honest grader and sound key accepted; "
+        "vacuous, impossible, lazy-tolerance and leaked-answer all caught)"
+    )
     return 0
 
 
@@ -186,13 +231,16 @@ def main(argv: list[str]) -> int:
     problems: list[str] = []
     for _, spec in specs:
         problems.extend(audit(spec))
+        problems.extend(audit_keys(spec))
     if problems:
         print("Graders that do not grade:")
         print("\n".join(problems))
         return 1
     graded = sum(1 for _, s in specs for c in s.cells if c.check is not None)
+    keyed = sum(1 for _, s in specs for c in s.cells if c.answer is not None)
     print(
-        f"check_graders: clean ({graded} grader(s) across {len(specs)} spec(s), both arms checked)"
+        f"check_graders: clean ({graded} grader(s), both arms checked, and {keyed} answer "
+        f"key(s) read, across {len(specs)} spec(s))"
     )
     return 0
 

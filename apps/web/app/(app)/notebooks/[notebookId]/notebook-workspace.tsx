@@ -434,12 +434,27 @@ export function NotebookWorkspace({ notebookId, locale = "en" }: { notebookId: s
    * an assertion that either raised or did not, the other is a model's opinion — so
    * the button says which one the reader is about to get.
    */
-  async function gradeAttempt(cellId: string, attempt: string) {
+  /**
+   * `as` decides WHICH half of the attempt the submission lands in, and the two are
+   * not interchangeable: `code` is substituted into the cell and run in the sandbox,
+   * `answers` is compared against the cell's answer key in Python without executing
+   * anything. Sending a question's answer as `code` would have the sandbox try to
+   * execute the word "Hadamard".
+   */
+  async function gradeAttempt(cellId: string, attempt: string, as: "code" | "answer" = "code") {
     setActionError(null);
     const mine = (attemptSeq.current += 1);
-    const submission = `${cellId}\u0000${attempt}`;
+    // The kind is part of the submission identity. Without it, answering a question
+    // "2" and then submitting the code "2" against the same cell would hash to one
+    // submission and reuse the first attempt's idempotency key — and the server would
+    // answer 409, or worse hand back the earlier verdict for a different attempt.
+    const submission = `${cellId}\u0000${as}\u0000${attempt}`;
     setGradingCellIds(new Set([cellId]));
-    const body = JSON.stringify({ code: { [cellId]: attempt }, answers: {} });
+    const body = JSON.stringify(
+      as === "answer"
+        ? { code: {}, answers: { [cellId]: attempt } }
+        : { code: { [cellId]: attempt }, answers: {} },
+    );
     try {
       // Reused for THIS submission until its outcome is known — see `pendingKeys`.
       const key = pendingKeys.current.get(submission) ?? crypto.randomUUID();
@@ -636,6 +651,13 @@ export function NotebookWorkspace({ notebookId, locale = "en" }: { notebookId: s
       void sendTurn(
         `Cell \`${cellId}\` failed with:\n\`\`\`\n${traceback}\n\`\`\`\nExplain what went wrong and fix the cell.`,
       );
+      return;
+    }
+    if (action === "answerQuestion") {
+      // No Nala fallback here, unlike `checkAttempt` below. A question cell reaches
+      // this branch only because it HAS an answer prompt, and a prompt exists only
+      // where the server holds a key — so there is no ungraded case to fall back for.
+      void gradeAttempt(cellId, detail ?? "", "answer");
       return;
     }
     if (action === "checkAttempt") {

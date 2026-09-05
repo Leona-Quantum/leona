@@ -43,19 +43,16 @@ from leona_notebooks.spec import NotebookSpec
 
 _CELL_MARK = re.compile(r"^# %%(?P<rest>.*)$")
 _HEADER_FENCE = re.compile(r"^# ---\s*$")
-_KV_TOKEN = re.compile(
-    r"""
-    (?P<key>[A-Za-z_][A-Za-z0-9_-]*)
-    =
-    (?P<value>
-        "(?:[^"\\]|\\.)*"          # "quoted"
-      | \[[^\]]*\]                 # [json list]
-      | \{[^}]*\}                  # {json object}
-      | [^\s]+                     # bare
-    )
-    """,
-    re.VERBOSE,
-)
+#: Matches the KEY and the `=` only. The VALUE is scanned by `_scan_value`, because a
+#: JSON value cannot be matched by a regex without nesting support, and the way it fails
+#: without one is silent. The branch this replaced was `\{[^}]*\}`, which stopped at the
+#: FIRST `}` — so an answer key whose explanation says `$\ket{0}$`, which in a quantum
+#: notebook is the common case and not an edge case, parsed as a truncated object and
+#: raised a JSON error naming a problem the author did not have.
+_KV_KEY = re.compile(r"(?P<key>[A-Za-z_][A-Za-z0-9_-]*)=")
+
+#: The nesting delimiters `_scan_value` balances, and what closes each.
+_CLOSERS = {"[": "]", "{": "}"}
 #: `check` is here because a grader the model cannot WRITE is a grader no reader ever
 #: meets: `Cell.check` and the whole grading engine shipped before this format could
 #: carry one, so every generated notebook had zero graded exercises while the contract,
@@ -63,11 +60,72 @@ _KV_TOKEN = re.compile(
 #: attribute — `render_source` emits it — because the repair and revise turns send cells
 #: back through this format, and an attribute that parses but does not render is a
 #: silent deletion on the first edit of a graded cell.
-_CELL_HEADER_FIELDS = frozenset({"id", "role", "tags", "execute", "stub", "check", "timeout_s"})
+#: `answer` is here for the same reason `check` is, one layer over: `Cell.answer`, the
+#: deterministic grader for `choice`/`numeric`/`text`, its redaction into `AnswerPrompt`
+#: and the `leaks_answer_key` assertion ALL shipped before this format could carry an
+#: answer key — so the model could not write a gradable question even though everything
+#: that grades one was in place and tested. Same silent shape as the grader gap: nothing
+#: was red, there were simply no question cells in existence to be graded.
+_CELL_HEADER_FIELDS = frozenset(
+    {"id", "role", "tags", "execute", "stub", "check", "answer", "timeout_s"}
+)
 
 
 class SourceParseError(ValueError):
     """The text is not a well-formed notebook source. The message names the line."""
+
+
+def _scan_value(text: str, start: int, line_no: int) -> tuple[str, int]:
+    """Return the raw value token beginning at `text[start]`, and the index after it.
+
+    Three shapes, and the reason they cannot share a regex is that two of them nest:
+
+    * a JSON string — quoting and backslash escapes respected;
+    * a JSON array or object — scanned to its BALANCED closer, with delimiters inside
+      string literals ignored, so an explanation containing `$\\ket{0}$` reads as part
+      of one value rather than ending it at the brace in the LaTeX;
+    * anything else — a bare token, ending at the next space.
+
+    An unterminated string or an unbalanced bracket raises rather than returning a
+    truncated token: a value that silently loses its tail parses as valid JSON often
+    enough to reach a reader, and `{"kind": "choice", "options": ["a"` does not.
+    """
+    opener = text[start]
+    if opener == '"':
+        pos = start + 1
+        while pos < len(text):
+            if text[pos] == "\\":
+                pos += 2
+                continue
+            if text[pos] == '"':
+                return text[start : pos + 1], pos + 1
+            pos += 1
+        raise SourceParseError(f"line {line_no}: unterminated string value")
+    if opener in _CLOSERS:
+        depth = 0
+        in_string = False
+        pos = start
+        while pos < len(text):
+            char = text[pos]
+            if in_string:
+                if char == "\\":
+                    pos += 2
+                    continue
+                if char == '"':
+                    in_string = False
+            elif char == '"':
+                in_string = True
+            elif char in _CLOSERS:
+                depth += 1
+            elif char in set(_CLOSERS.values()):
+                depth -= 1
+                if depth == 0:
+                    return text[start : pos + 1], pos + 1
+            pos += 1
+        raise SourceParseError(f"line {line_no}: unbalanced {opener!r} in attribute value")
+    end = text.find(" ", start)
+    end = len(text) if end == -1 else end
+    return text[start:end], end
 
 
 def _parse_value(raw: str) -> Any:
@@ -103,11 +161,10 @@ def _parse_cell_marker(rest: str, line_no: int) -> tuple[str, dict[str, Any]]:
         if remaining[pos].isspace():
             pos += 1
             continue
-        match = _KV_TOKEN.match(remaining, pos)
-        if match:
-            key = match.group("key")
-            attrs[key] = _parse_value(match.group("value"))
-            pos = match.end()
+        match = _KV_KEY.match(remaining, pos)
+        if match and match.end() < len(remaining) and not remaining[match.end()].isspace():
+            raw, pos = _scan_value(remaining, match.end(), line_no)
+            attrs[match.group("key")] = _parse_value(raw)
             continue
         # Not a key=value pair: a title word (ignored, jupytext-compatible).
         end = remaining.find(" ", pos)
@@ -218,6 +275,7 @@ def parse_source(text: str, *, slug: str | None = None) -> NotebookSpec:
                 "execute": bool(attrs.pop("execute", True)),
                 "stub": attrs.pop("stub", None),
                 "check": attrs.pop("check", None),
+                "answer": attrs.pop("answer", None),
                 "timeout_s": attrs.pop("timeout_s", None),
             }
         )
@@ -312,6 +370,18 @@ def render_source(spec: NotebookSpec, *, include_ids: bool = True) -> str:
             attrs.append(f"stub={json.dumps(cell.stub, ensure_ascii=False)}")
         if cell.check is not None:
             attrs.append(f"check={json.dumps(cell.check, ensure_ascii=False)}")
+        if cell.answer is not None:
+            # `exclude_defaults` would drop `kind`, which is the discriminator the
+            # union is resolved by, so the round trip would fail to re-parse. Dumped
+            # whole, on one line, because the marker is one line by construction.
+            attrs.append(
+                "answer="
+                + json.dumps(
+                    cell.answer.model_dump(mode="json"),
+                    ensure_ascii=False,
+                    separators=(",", ":"),
+                )
+            )
         if cell.timeout_s is not None:
             attrs.append(f"timeout_s={cell.timeout_s}")
         if attrs:

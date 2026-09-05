@@ -18,6 +18,7 @@ from dataclasses import dataclass, field
 from typing import Literal, Protocol
 
 from leona_notebooks.execution import ExecutionReport
+from leona_notebooks.answer_audit import AnswerAudit, audit_answers, demote_unsound_answers
 from leona_notebooks.grader_audit import GraderAudit, audit_graders, demote_unsound_graders
 from leona_notebooks.prompts import NotebookOutline, NotebookReview, RepairContext
 from leona_notebooks.revision import RevisionError, RevisionPlan, apply_revision
@@ -31,6 +32,7 @@ Stage = Literal[
     "notebook.execute",
     "notebook.repair",
     "notebook.graders",
+    "notebook.answers",
     "notebook.review",
     "notebook.revise",
     "notebook.save",
@@ -85,6 +87,10 @@ class PipelineOutcome:
     #: which is not the same as an audit that found nothing, and a caller reporting
     #: "graders checked" off a falsy value would conflate the two.
     graders: GraderAudit | None = None
+    #: What reading the answer keys showed. `None` only when the notebook has no
+    #: question cells at all — unlike `graders`, this audit runs nothing and so has no
+    #: "could not be performed" state to distinguish.
+    answers: AnswerAudit | None = None
     reply: str = ""
     summary: str = ""
     attempts: list[Attempt] = field(default_factory=list)
@@ -263,6 +269,38 @@ async def _audit_graders(
     return spec, audit
 
 
+async def _audit_answers(
+    ports: NotebookPorts, spec: NotebookSpec, attempts: list[Attempt]
+) -> tuple[NotebookSpec, AnswerAudit | None]:
+    """Read every generated answer key and drop the ones proved worthless.
+
+    The same ruling as `_audit_graders` (ai-ops#258), applied to the other half of a
+    graded notebook. Three things differ, and all three follow from the audit being
+    static:
+
+    * **It costs nothing.** No sandbox run, no model call. So it is not gated on the
+      notebook executing — a question cell is markdown, and a notebook whose code failed
+      still ships its questions to a reader.
+    * **It always runs on the revise lane too.** `_audit_graders` is gated on a check
+      having moved because re-proving one costs two sandbox runs; re-reading an answer
+      key costs a dictionary lookup, so the gate would be more expensive than the work.
+    * **It has no "could not run" state.** Reading a dataclass does not fail the way
+      executing a notebook does, so `None` here means "no question cells", never "the
+      check did not happen".
+    """
+    audit = audit_answers(spec)
+    if not audit.verdicts:
+        return spec, None
+    if audit.unsound:
+        spec = demote_unsound_answers(spec, audit)
+    detail = audit.summary()
+    attempts.append(Attempt("notebook.answers", audit.ok, detail))
+    await ports.observe("notebook.answers", "finished" if audit.ok else "failed", detail)
+    for verdict in audit.unsound + audit.inconclusive:
+        await ports.observe("notebook.answers", "finished", verdict.describe())
+    return spec, audit
+
+
 def _ensure_seed_run_cell(spec: NotebookSpec, seed_run_cell: str | None) -> NotebookSpec:
     """A walkthrough must run the seed's code verbatim. If the draft paraphrased it, put
     the verbatim cell in front of the first run cell."""
@@ -330,6 +368,11 @@ async def generate(
 
         spec, report = await _execute_and_repair(ports, spec, budget, attempts)
 
+        # Before the `report.ok` gate: an answer key is data, so it is judged whether
+        # or not the notebook's code ran, and a reader who gets a broken notebook must
+        # still not get a question that marks them right for typing nothing.
+        spec, answers = await _audit_answers(ports, spec, attempts)
+
         graders: GraderAudit | None = None
         if report.ok:
             # Only on a notebook that runs. Auditing graders inside a notebook that
@@ -357,6 +400,7 @@ async def generate(
             review=review,
             outline=outline,
             graders=graders,
+            answers=answers,
             summary=f"generated from brief: {request.brief[:80]}",
             attempts=attempts,
             error=error,
@@ -413,6 +457,10 @@ async def revise(
     # already proved.
     if report.ok and _grader_proof_is_stale(request.spec, spec):
         spec, graders = await _audit_graders(ports, spec, attempts)
+    # Unconditional, unlike the grader audit above: a revise turn can write or weaken an
+    # answer key as easily as a grader, and re-reading one is cheaper than deciding
+    # whether it moved.
+    spec, answers = await _audit_answers(ports, spec, attempts)
     review: NotebookReview | None = None
     if budget.review and report.ok:
         try:
@@ -425,6 +473,7 @@ async def revise(
         report=report,
         review=review,
         graders=graders,
+        answers=answers,
         reply=plan.reply,
         summary=plan.summary or "edited in chat",
         attempts=attempts,

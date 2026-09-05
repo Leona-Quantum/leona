@@ -1,7 +1,8 @@
 import "./dom-env.ts";
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { render, within } from "@testing-library/react";
+import type { components } from "@majorana/contracts-gen";
+import { fireEvent, render, within } from "@testing-library/react";
 import { NotebookView } from "../../components/notebook-view.tsx";
 import { notebookCellViews } from "../../lib/notebook-view.ts";
 
@@ -140,4 +141,130 @@ test("the \"Explain this error\" action appears only on the cell whose output ac
   assert.equal(within(markdownCell).queryByText("Explain this error"), null);
   assert.equal(within(okCell).queryByText("Explain this error"), null);
   assert.ok(within(errorCell).getByText("Explain this error"));
+});
+
+// --------------------------------------------------------------- question cells
+//
+// Everything below is the browser half of graded QUESTIONS. The server could grade
+// one before any of this existed — `deterministic_grade`, `AnswerPrompt` redaction and
+// the `answers` half of the attempt route were all built and tested — and no reader
+// could ever reach it, because nothing drew an input. These tests are the assertion
+// that the input exists, submits the right thing, and never draws the answer.
+
+type SpecCell = components["schemas"]["Cell"];
+
+function questionCell(id: string, answer: SpecCell["answer"], source = "Which gate?"): SpecCell {
+  return {
+    id,
+    kind: "markdown" as const,
+    role: "question" as const,
+    source,
+    tags: [],
+    execute: true,
+    stub: null,
+    check: null,
+    answer,
+    answer_prompt: null,
+    timeout_s: null,
+  };
+}
+
+test("a choice question draws one radio per option and submits the option's INDEX", () => {
+  // The index, not the text: `deterministic_grade` does `int(response)` and compares
+  // against the key's `correct`, so submitting "Pauli-X" would be read as an
+  // unparseable option number and the reader marked wrong for a right answer.
+  const cells = notebookCellViews(
+    [questionCell("q1", { kind: "choice", options: ["Hadamard", "Pauli-X"], correct: 1, explanation: "" })],
+    null,
+  );
+  const sent: Array<[string, string, string | undefined]> = [];
+  const view = render(
+    <NotebookView
+      cells={cells}
+      locale="en"
+      framework="qiskit"
+      onCellAction={(cellId, action, detail) => sent.push([cellId, action, detail])}
+    />,
+  );
+  const radios = view.container.querySelectorAll<HTMLInputElement>('input[type="radio"]');
+  assert.equal(radios.length, 2);
+  assert.ok(view.getByText("Hadamard"));
+  fireEvent.click(radios[1]);
+  fireEvent.click(view.getByRole("button", { name: "Check my answer" }));
+  assert.deepEqual(sent, [["q1", "answerQuestion", "1"]]);
+});
+
+test("a choice question never renders which option is correct", () => {
+  // The workspace is served the AUTHORED spec today, so the key really is in the
+  // payload (ai-ops issue 260). That makes this the boundary that matters: the renderer must
+  // not draw what it was handed. A `data-*` attribute or a stray title would leak it
+  // just as effectively as visible text, so the whole subtree's HTML is searched.
+  const cells = notebookCellViews(
+    [questionCell("q1", { kind: "choice", options: ["Hadamard", "Pauli-X"], correct: 1, explanation: "because H" })],
+    null,
+  );
+  const view = render(<NotebookView cells={cells} locale="en" framework="qiskit" onCellAction={() => {}} />);
+  const answerBlock = view.container.querySelector(".mj-notebook-cell-answer");
+  assert.ok(answerBlock);
+  assert.equal(/correct/i.test(answerBlock.outerHTML), false);
+  assert.equal(answerBlock.outerHTML.includes("because H"), false);
+});
+
+test("a text question never renders its accepted spellings", () => {
+  const cells = notebookCellViews(
+    [questionCell("q1", { kind: "text", accept: ["Hadamard", "the Hadamard gate"], explanation: "" })],
+    null,
+  );
+  const view = render(<NotebookView cells={cells} locale="en" framework="qiskit" onCellAction={() => {}} />);
+  const answerBlock = view.container.querySelector(".mj-notebook-cell-answer");
+  assert.ok(answerBlock);
+  assert.equal(answerBlock.outerHTML.includes("Hadamard"), false);
+  assert.equal(answerBlock.querySelectorAll('input[type="text"]').length, 1);
+});
+
+test("a numeric question shows its unit and never its value", () => {
+  const cells = notebookCellViews(
+    [questionCell("q1", { kind: "numeric", value: 0.5, tolerance: 0.01, unit: "probability", explanation: "" })],
+    null,
+  );
+  const view = render(<NotebookView cells={cells} locale="en" framework="qiskit" onCellAction={() => {}} />);
+  const answerBlock = view.container.querySelector(".mj-notebook-cell-answer");
+  assert.ok(answerBlock);
+  assert.ok(within(answerBlock as HTMLElement).getByText("probability"));
+  assert.equal(answerBlock.outerHTML.includes("0.5"), false);
+  assert.equal(answerBlock.querySelectorAll('input[type="number"]').length, 1);
+});
+
+test("a rubric question says the model grades it, before the reader answers", () => {
+  const cells = notebookCellViews(
+    [questionCell("q1", { kind: "rubric", rubric: "Mentions interference.", explanation: "" })],
+    null,
+  );
+  const view = render(<NotebookView cells={cells} locale="en" framework="qiskit" onCellAction={() => {}} />);
+  const answerBlock = view.container.querySelector(".mj-notebook-cell-answer") as HTMLElement;
+  assert.ok(answerBlock);
+  assert.ok(within(answerBlock).getByText(/Nala grades this one/));
+  // And the rubric itself — which tells the reader exactly what to write — stays out.
+  assert.equal(answerBlock.outerHTML.includes("Mentions interference"), false);
+});
+
+test("a cell with no answer key draws no answer input at all", () => {
+  const cells = notebookCellViews(spec.cells, report);
+  const view = render(<NotebookView cells={cells} locale="en" framework="qiskit" onCellAction={() => {}} />);
+  assert.equal(view.container.querySelector(".mj-notebook-cell-answer"), null);
+});
+
+test("submitting is refused until the reader has actually answered", () => {
+  const cells = notebookCellViews(
+    [questionCell("q1", { kind: "text", accept: ["Hadamard"], explanation: "" })],
+    null,
+  );
+  const sent: string[] = [];
+  const view = render(
+    <NotebookView cells={cells} locale="en" framework="qiskit" onCellAction={(id) => sent.push(id)} />,
+  );
+  const submit = view.getByRole("button", { name: "Check my answer" }) as HTMLButtonElement;
+  assert.equal(submit.disabled, true);
+  fireEvent.click(submit);
+  assert.deepEqual(sent, []);
 });
