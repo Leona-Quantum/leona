@@ -69,3 +69,22 @@ def test_committed_openapi_json_is_current():
     assert DEFAULT_OUT.read_text() == render(), (
         "openapi.json is stale — run: uv run python -m majorana_contracts.export"
     )
+
+
+def test_a_grade_attempt_is_bounded_on_both_axes():
+    """Both bounds on the model, so every caller inherits them and no route has to
+    remember. Tested here rather than through the API because the route's own
+    unknown-cell check answers 422 for made-up ids first — a control answered by a
+    different rule proves nothing about the one under test."""
+    import pytest
+    from majorana_contracts import GradeAttemptRequest
+
+    assert GradeAttemptRequest(code={"a": "x" * 32_000}).code["a"]
+    with pytest.raises(ValueError, match="over 32000 characters"):
+        GradeAttemptRequest(code={"a": "x" * 32_001})
+    with pytest.raises(ValueError):
+        GradeAttemptRequest(code={f"c{i:03d}": "x" for i in range(65)})
+    with pytest.raises(ValueError):
+        GradeAttemptRequest(answers={f"c{i:03d}": "x" for i in range(65)})
+    # And the honest case is accepted, so the bounds are not simply refusing everything.
+    assert len(GradeAttemptRequest(code={f"c{i:03d}": "x" for i in range(64)}).code) == 64

@@ -994,3 +994,210 @@ async def test_author_needs_no_base_version(_fake_run_plumbing):
     )
 
     assert store.versions[version_id].status == "ready"
+
+
+# --------------------------------------------------------------------------- grade
+
+# Built as a dict rather than parsed from `.nb.py`: `check` reaches a spec through the
+# authored/import path today, and the format's own support for it is a separate change.
+# A fixture that needed that change would make this suite depend on it for no reason.
+GRADED_SPEC = {
+    "schema_version": 1,
+    "slug": "doubling",
+    "title": "Doubling",
+    "kind": "lesson",
+    "cells": [
+        {"id": "c01", "kind": "markdown", "role": "objective", "source": "## Your turn"},
+        {
+            "id": "ex1",
+            "kind": "code",
+            "role": "solution",
+            "source": "def double(x):\n    return 2 * x",
+            "stub": "def double(x):\n    ...",
+            "check": "assert double(3) == 6",
+        },
+        {"id": "c03", "kind": "markdown", "role": "summary", "source": "Done."},
+    ],
+}
+
+
+def _grade_payload(*, run_id, notebook_id, version_id, code=None, answers=None):
+    return {
+        "run_id": str(run_id),
+        "notebook_id": str(notebook_id),
+        "version_id": str(version_id),
+        "user_id": str(uuid.uuid4()),
+        "workspace_id": str(uuid.uuid4()),
+        "attempt": {"code": code or {}, "answers": answers or {}},
+        "response_locale": "en",
+    }
+
+
+def _graded_store(notebook_id, version_id):
+    store = MemoryNotebookStore()
+    store.seed_version(notebook_id, version_id, status="ready")
+    store.versions[version_id].spec = NotebookSpec.model_validate(GRADED_SPEC).model_dump(
+        mode="json"
+    )
+    return store
+
+
+def _grades_event(sink_events):
+    return next(payload for kind, payload in sink_events if kind == "notebook.grades")
+
+
+async def test_a_right_attempt_is_graded_passed_without_a_model(monkeypatch):
+    """End to end through the REAL local sandbox: the reader's own code is what runs,
+    and the verdict comes from the author's assertion rather than from an LLM."""
+    sinks: list[FakeEventSink] = []
+
+    class Recording(FakeEventSink):
+        def __init__(self, scope, session, run_id):
+            super().__init__(scope, session, run_id)
+            sinks.append(self)
+
+    monkeypatch.setattr(handlers, "RepoEventSink", Recording)
+    run_id, notebook_id, version_id = uuid.uuid4(), uuid.uuid4(), uuid.uuid4()
+    store = _graded_store(notebook_id, version_id)
+    session = Session()
+
+    await nh.handle_notebook_grade(
+        session,
+        _grade_payload(
+            run_id=run_id,
+            notebook_id=notebook_id,
+            version_id=version_id,
+            code={"ex1": "def double(x):\n    return x + x"},
+        ),
+        llm=RaisingLLM(AssertionError("no model may be consulted to grade an exercise")),
+        sandbox=LocalSubprocessSandbox(),
+        store=store,
+    )
+
+    grades = _grades_event(sinks[0].events)["grades"]
+    assert [(g["id"], g["status"], g["graded_by"]) for g in grades["cells"]] == [
+        ("ex1", "passed", "deterministic")
+    ]
+    # An attempt is not an edit: the version is untouched, still `ready`, still the
+    # author's own source.
+    assert store.versions[version_id].status == "ready"
+    assert "x + x" not in json.dumps(store.versions[version_id].spec)
+
+
+async def test_a_wrong_attempt_is_graded_failed_and_carries_the_assertion(monkeypatch):
+    """The other arm. A grader that reported `passed` for everything would pass the
+    test above perfectly."""
+    sinks: list[FakeEventSink] = []
+
+    class Recording(FakeEventSink):
+        def __init__(self, scope, session, run_id):
+            super().__init__(scope, session, run_id)
+            sinks.append(self)
+
+    monkeypatch.setattr(handlers, "RepoEventSink", Recording)
+    run_id, notebook_id, version_id = uuid.uuid4(), uuid.uuid4(), uuid.uuid4()
+    session = Session()
+
+    await nh.handle_notebook_grade(
+        session,
+        _grade_payload(
+            run_id=run_id,
+            notebook_id=notebook_id,
+            version_id=version_id,
+            code={"ex1": "def double(x):\n    return x + 1"},
+        ),
+        sandbox=LocalSubprocessSandbox(),
+        store=_graded_store(notebook_id, version_id),
+    )
+
+    payload = _grades_event(sinks[0].events)
+    [grade] = payload["grades"]["cells"]
+    assert grade["status"] == "failed"
+    assert grade["graded_by"] == "deterministic"
+    # The reader sees the condition, not a generic "incorrect".
+    assert "AssertionError" in grade["detail"]
+    assert payload["passed"] == 0 and payload["failed"] == 1
+
+
+async def test_an_unattempted_exercise_is_unattempted_not_wrong(monkeypatch):
+    """A reader who has not written anything has not got it wrong — the stub runs, the
+    check fails against it, and that is `failed` only if they submitted the stub. Here
+    they submitted nothing at all, so the stub is what runs and the honest reading is
+    still 'not right yet' rather than a pass."""
+    sinks: list[FakeEventSink] = []
+
+    class Recording(FakeEventSink):
+        def __init__(self, scope, session, run_id):
+            super().__init__(scope, session, run_id)
+            sinks.append(self)
+
+    monkeypatch.setattr(handlers, "RepoEventSink", Recording)
+    run_id, notebook_id, version_id = uuid.uuid4(), uuid.uuid4(), uuid.uuid4()
+
+    await nh.handle_notebook_grade(
+        Session(),
+        _grade_payload(run_id=run_id, notebook_id=notebook_id, version_id=version_id),
+        sandbox=LocalSubprocessSandbox(),
+        store=_graded_store(notebook_id, version_id),
+    )
+
+    [grade] = _grades_event(sinks[0].events)["grades"]["cells"]
+    assert grade["status"] != "passed", "the stub must never grade as correct"
+
+
+async def test_a_grading_failure_closes_the_run_and_leaves_the_notebook_alone(monkeypatch):
+    """A sandbox that will not start must not mark a good notebook broken."""
+    sinks: list[FakeEventSink] = []
+
+    class Recording(FakeEventSink):
+        def __init__(self, scope, session, run_id):
+            super().__init__(scope, session, run_id)
+            sinks.append(self)
+
+    stores: list[FakeRunStore] = []
+
+    class RecordingRunStore(FakeRunStore):
+        def __init__(self, scope, session, run_id):
+            super().__init__(scope, session, run_id)
+            stores.append(self)
+
+    monkeypatch.setattr(handlers, "RepoEventSink", Recording)
+    monkeypatch.setattr(handlers, "RepoRunStateStore", RecordingRunStore)
+
+    class Exploding:
+        provider = "fake"
+
+        async def _execute(self, spec):
+            raise RuntimeError("sandbox provider is down")
+
+    run_id, notebook_id, version_id = uuid.uuid4(), uuid.uuid4(), uuid.uuid4()
+    store = _graded_store(notebook_id, version_id)
+
+    await nh.handle_notebook_grade(
+        Session(),
+        _grade_payload(run_id=run_id, notebook_id=notebook_id, version_id=version_id),
+        sandbox=Exploding(),
+        store=store,
+    )
+
+    assert stores[0].status is RunStatus.FAILED
+    assert store.versions[version_id].status == "ready", "the notebook is not the casualty"
+    assert not any(kind == "notebook.grades" for kind, _ in sinks[0].events)
+
+
+async def test_grading_meters_its_sandbox_seconds(_fake_run_plumbing):
+    """Grading spends sandbox time, so it is metered like every other dispatch —
+    otherwise an attempt is a way to buy execution outside the quota."""
+    usage_calls = _fake_run_plumbing
+    run_id, notebook_id, version_id = uuid.uuid4(), uuid.uuid4(), uuid.uuid4()
+
+    await nh.handle_notebook_grade(
+        Session(),
+        _grade_payload(run_id=run_id, notebook_id=notebook_id, version_id=version_id),
+        sandbox=LocalSubprocessSandbox(),
+        store=_graded_store(notebook_id, version_id),
+    )
+
+    assert [c["kind"] for c in usage_calls] == [nh.UsageKind.SANDBOX_SECONDS]
+    assert usage_calls[0]["quantity"] > 0
+    assert usage_calls[0]["meta"]["lane"] == "notebook"

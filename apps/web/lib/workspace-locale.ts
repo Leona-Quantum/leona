@@ -623,6 +623,20 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
     actionCheckAttemptCancel: string;
     checkAttemptPlaceholder: string;
     checkAttemptSubmit: string;
+    /** The submit label on a cell that has a real grader behind it. Deliberately
+     * different from `checkAttemptSubmit`: one asks a model's opinion, the other
+     * runs the author's assertion against the reader's code, and a reader is owed
+     * the difference before they press it. */
+    checkAttemptGrade: string;
+    gradePending: string;
+    gradeVerdict: Record<"passed" | "failed" | "unattempted" | "ungradable", string>;
+    gradeByCheck: string;
+    gradeByModel: string;
+    gradeFailed: string;
+    gradeNotGraded: string;
+    gradeSummaryLabel: string;
+    gradeSummary: (passed: number, attempted: number) => string;
+    gradeUngradable: (count: number) => string;
 
     edit: string;
     editExit: string;
@@ -1414,6 +1428,24 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
     actionCheckAttemptCancel: "Cancel",
     checkAttemptPlaceholder: "Paste or write your attempt at this cell…",
     checkAttemptSubmit: "Ask Nala to check it",
+    checkAttemptGrade: "Check my answer",
+    gradePending: "Running your code…",
+    gradeVerdict: {
+      passed: "Correct.",
+      failed: "Not right yet.",
+      unattempted: "Not graded yet — this cell has not run.",
+      ungradable: "This one needs Nala to grade it.",
+    },
+    gradeByCheck: "Checked by running the exercise's own test.",
+    gradeByModel: "Nala's judgement, not a test — it can be wrong.",
+    gradeFailed: "Could not check that answer. Try again in a moment.",
+    gradeNotGraded: "This notebook has no exercises with a test behind them.",
+    gradeSummaryLabel: "Your progress on the graded exercises",
+    gradeSummary: (passed, attempted) => `${passed} of ${attempted} attempted exercises correct`,
+    gradeUngradable: (count) =>
+      count === 1
+        ? "1 exercise could not be checked — it is not counted either way."
+        : `${count} exercises could not be checked — they are not counted either way.`,
 
     edit: "Edit",
     editExit: "Done editing",
@@ -2198,6 +2230,21 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
     actionCheckAttemptCancel: "キャンセル",
     checkAttemptPlaceholder: "このセルへの解答を貼り付けるか入力してください…",
     checkAttemptSubmit: "Nalaに確認してもらう",
+    checkAttemptGrade: "解答を採点する",
+    gradePending: "コードを実行しています…",
+    gradeVerdict: {
+      passed: "正解です。",
+      failed: "まだ正解ではありません。",
+      unattempted: "未採点です。このセルはまだ実行されていません。",
+      ungradable: "これはNalaによる採点が必要です。",
+    },
+    gradeByCheck: "演習に付属するテストを実行して確認しました。",
+    gradeByModel: "テストではなくNalaの判断です。誤ることがあります。",
+    gradeFailed: "採点できませんでした。少し時間をおいて再度お試しください。",
+    gradeNotGraded: "このノートブックには、テスト付きの演習がありません。",
+    gradeSummaryLabel: "採点付き演習の進捗",
+    gradeSummary: (passed, attempted) => `解答した ${attempted} 問中 ${passed} 問が正解です`,
+    gradeUngradable: (count) => `${count} 問は採点できませんでした。どちらにも数えていません。`,
 
     edit: "編集",
     editExit: "編集を終える",

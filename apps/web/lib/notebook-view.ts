@@ -53,6 +53,16 @@ export interface NotebookCellView {
   /** Any output on this cell was cut for the sandbox's evidence budget. */
   truncated: boolean;
   durationMs: number | null;
+  /**
+   * Whether this cell produces a real verdict — a hidden assertion or an answer key
+   * on the server. It decides which of two entirely different things "check my
+   * attempt" does: post the attempt for a deterministic grade, or ask Nala's opinion.
+   *
+   * Derived from the presence of the key rather than from its contents, so it keeps
+   * working when the payload a reader receives stops carrying the key at all — which
+   * is where this is going, and the reason no code below ever reads `check` itself.
+   */
+  graded: boolean;
 }
 
 function resultFor(results: Map<string, CellResult>, cellId: string): CellResult | undefined {
@@ -97,6 +107,7 @@ export function notebookCellViews(
         : null,
       truncated: outputs.some((output) => output.truncated),
       durationMs: result ? result.duration_ms : null,
+      graded: cell.check != null || cell.answer != null,
     };
   });
 }

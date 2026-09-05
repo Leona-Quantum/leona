@@ -15020,6 +15020,64 @@ html:not([data-auth="in"]) .mj-auth-slot[data-auth-slot="in"] {
   justify-content: flex-end;
   gap: var(--sp-2);
 }
+.mj-notebook-grade-summary {
+  display: grid;
+  gap: var(--sp-1);
+  margin-bottom: var(--sp-4);
+  padding: var(--sp-3);
+  border: 1px solid var(--border-0);
+  border-radius: var(--radius-control);
+  background: var(--bg-0);
+}
+.mj-notebook-grade-summary > p {
+  margin: 0;
+}
+.mj-notebook-grade-summary > p + p {
+  color: var(--text-2);
+  font-size: var(--fs-13, 0.8125rem);
+}
+/* The verdict on one graded exercise. Colour is never the only signal — the
+   verdict line says "Correct." or "Not right yet." in words, so a reader who
+   cannot tell the two borders apart reads the same thing everyone else does. */
+.mj-notebook-cell-grade {
+  display: grid;
+  gap: var(--sp-2);
+  margin-top: var(--sp-3);
+  padding: var(--sp-3);
+  border: 1px solid var(--border-0);
+  border-left: 3px solid var(--border-0);
+  border-radius: var(--radius-control);
+  background: var(--bg-0);
+}
+.mj-notebook-cell-grade[data-status="passed"] {
+  border-left-color: var(--ok, var(--accent));
+}
+.mj-notebook-cell-grade[data-status="failed"] {
+  border-left-color: var(--danger, var(--accent));
+}
+.mj-notebook-cell-grade[data-status="grading"] {
+  color: var(--text-2);
+}
+.mj-notebook-cell-grade > p {
+  margin: 0;
+}
+.mj-notebook-cell-grade-verdict {
+  font-weight: 500;
+}
+.mj-notebook-cell-grade-hint {
+  color: var(--text-1);
+}
+.mj-notebook-cell-grade-by {
+  color: var(--text-2);
+  font-size: var(--fs-13, 0.8125rem);
+}
+.mj-notebook-cell-grade pre {
+  overflow-x: auto;
+  margin: 0;
+  padding: var(--sp-2) var(--sp-3);
+  border-radius: var(--radius-control);
+  background: var(--bg-1);
+}
 .mj-notebook-cell-outputs {
   display: grid;
   gap: var(--sp-2);

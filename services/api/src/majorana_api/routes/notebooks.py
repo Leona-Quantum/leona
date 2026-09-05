@@ -31,7 +31,11 @@ from leona_notebooks.templates import KIND_DESCRIPTIONS, STARTER_BRIEFS, structu
 from majorana_contracts.enums import Framework, RunMode
 
 from ..auth.deps import CurrentIdentity, CurrentScope, DbSession, get_settings
-from ..jobs import NOTEBOOK_GENERATE_JOB_KIND, NOTEBOOK_REVISE_JOB_KIND
+from ..jobs import (
+    NOTEBOOK_GENERATE_JOB_KIND,
+    NOTEBOOK_GRADE_JOB_KIND,
+    NOTEBOOK_REVISE_JOB_KIND,
+)
 from ..orm import Notebook as NotebookRow
 from ..orm import NotebookVersion as NotebookVersionRow
 from ..repos import notebooks as notebooks_repo
@@ -528,6 +532,115 @@ async def create_notebook_turn(
         version=notebooks_repo.version_to_resource(version, full=False),
         run_id=run.id,
     )
+
+
+@router.post(
+    "/notebooks/{notebook_id}/attempts",
+    response_model=contracts.GradeAttemptResponse,
+    status_code=202,
+)
+async def grade_notebook_attempt(
+    notebook_id: uuid.UUID,
+    body: contracts.GradeAttemptRequest,
+    scope: CurrentScope,
+    session: DbSession,
+    identity: CurrentIdentity,
+    settings: Annotated[Settings, Depends(get_settings)],
+) -> contracts.GradeAttemptResponse:
+    """Grade one reader's attempt at this notebook's current version.
+
+    ## Why this is a route rather than something the browser does
+
+    The assertion that decides an exercise, and the key that decides a question, are
+    the two things a reader must never receive — a grader in the client is a grader
+    the client can read, and then the notebook grades itself. So the reader's work
+    comes here, the answer key is joined to it on the server, and only verdicts go
+    back. `leaks_answer_key()` is the assertion that the join went the right way.
+
+    ## Why it is not the chat model
+
+    Until this route the workspace's "check my attempt" button sent the reader's code
+    to Nala as a message asking it to grade against the intended solution. A model's
+    verdict is not reproducible, cannot be argued with, and — on the evidence of every
+    grading defect found in this codebase — errs toward telling the reader they were
+    right. `assert len(counts) == 2` ends an argument that "the model thought your
+    answer was incomplete" starts.
+
+    ## Why it costs a run
+
+    Grading executes the reader's own code in the sandbox. That is the same dispatch
+    a re-run is, with the same abuse backstop, the same tier caps and the same
+    deny-all egress — `_gate_notebook_run` is applied here exactly as it is on
+    `POST /notebooks/{id}/run`, so an attempt cannot be a way around the quota that
+    running the notebook would have cost. Nothing new reaches the sandbox: the derived
+    spec is the notebook's own cells with the reader's source substituted in.
+
+    No notebook version is created. An attempt is not an edit, and the verdicts arrive
+    on the run's event stream as `notebook.grades`.
+    """
+    notebook = await notebooks_repo.get_notebook(scope, session, notebook_id)
+    latest, current = await _latest_and_current(scope, session, notebook)
+    if current is None:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "error": "This notebook has no ready version yet.",
+                "reason": "notebook_not_ready",
+            },
+        )
+    _assert_not_in_flight(notebook, latest)
+
+    spec = contracts.NotebookSpec.model_validate(current.spec or {})
+    graded = spec.graded_cells()
+    if not graded:
+        # 409 rather than an empty 202: a client that got a run id back for a notebook
+        # with nothing to grade would wait for verdicts that are never coming, and the
+        # honest reading of "no graded cells" is that this request cannot be answered.
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "error": "This notebook has no graded exercises.",
+                "reason": "notebook_not_graded",
+            },
+        )
+    unknown = sorted((set(body.code) | set(body.answers)) - {cell.id for cell in spec.cells})
+    if unknown:
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "error": f"No such cell(s) in this notebook version: {', '.join(unknown)}.",
+                "reason": "unknown_cell",
+            },
+        )
+
+    await _gate_notebook_run(
+        f"Grade an attempt at notebook {notebook.slug}", scope, session, identity, settings
+    )
+
+    run = await runs_repo.create_run(
+        scope,
+        session,
+        task_prompt=f"Grade an attempt at notebook {notebook.slug}",
+        mode=RunMode.NOTEBOOK,
+        framework=_run_framework(contracts.NotebookFramework.model_validate(notebook.framework)),
+    )
+    await runs_repo.append_run_event(
+        scope, session, run.id, type="run.queued", payload={"mode": str(RunMode.NOTEBOOK)}
+    )
+    await system.enqueue_job(
+        session,
+        kind=NOTEBOOK_GRADE_JOB_KIND,
+        payload={
+            "run_id": str(run.id),
+            "notebook_id": str(notebook_id),
+            "version_id": str(current.id),
+            "user_id": str(scope.user_id),
+            "workspace_id": str(scope.workspace_id),
+            "attempt": {"code": dict(body.code), "answers": dict(body.answers)},
+        },
+        run_id=run.id,
+    )
+    return contracts.GradeAttemptResponse(run_id=run.id, graded_cells=len(graded))
 
 
 @router.get("/notebooks/{notebook_id}/turns", response_model=contracts.NotebookTurnList)

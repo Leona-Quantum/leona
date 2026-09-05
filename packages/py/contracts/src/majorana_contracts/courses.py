@@ -53,8 +53,12 @@ class _Model(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
-class _ResourceBase(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+#: Imported rather than redeclared. `test_every_public_resource_model_reaches_the_export`
+#: finds unexported models by testing `issubclass(value, models._ResourceBase)` — so a
+#: module with its own identically-configured base is INVISIBLE to it, and this module's
+#: entire family of request/response models was. Two of them slipped past the guard the
+#: day it was checked. One base, one guard that can see everything under it.
+from .models import _ResourceBase  # noqa: E402
 
 
 # --------------------------------------------------------------------------- status

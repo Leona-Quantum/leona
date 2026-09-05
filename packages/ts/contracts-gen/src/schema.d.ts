@@ -1890,6 +1890,46 @@ export interface components {
             run_ids?: string[];
         };
         /**
+         * GradeAttemptRequest
+         * @description One reader's attempt at the graded cells of a notebook version.
+         *
+         *     Only the reader's own work travels: `code` is what they wrote in each exercise
+         *     cell, `answers` what they typed for each question. The assertions and the answer
+         *     key stay on the server and are joined to this on arrival, which is the whole
+         *     reason grading is a request rather than something the browser can do — a grader
+         *     the client holds is a grader the client can read.
+         *
+         *     Bounded on both axes because it is an unauthenticated-shaped payload from the
+         *     reader's keyboard: 64 cells, 32 KB per cell. A notebook with more graded cells
+         *     than that is not a lesson.
+         */
+        GradeAttemptRequest: {
+            /** Answers */
+            answers?: {
+                [key: string]: string;
+            };
+            /** Code */
+            code?: {
+                [key: string]: string;
+            };
+        };
+        /**
+         * GradeAttemptResponse
+         * @description The grading run. Verdicts arrive on the run's event stream as
+         *     `notebook.grades`, the same channel every other notebook result uses — grading
+         *     executes the reader's code in the sandbox, so it takes as long as a run takes and
+         *     cannot be answered inline.
+         */
+        GradeAttemptResponse: {
+            /** Graded Cells */
+            graded_cells: number;
+            /**
+             * Run Id
+             * Format: uuid
+             */
+            run_id: string;
+        };
+        /**
          * GradeReport
          * @description Grades for one attempt at one notebook version.
          */

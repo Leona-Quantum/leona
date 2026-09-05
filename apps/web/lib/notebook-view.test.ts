@@ -143,3 +143,43 @@ test("notebookStatusPill maps running to generating and passes the rest through"
   assert.equal(notebookStatusPill("ready"), "ready");
   assert.equal(notebookStatusPill("failed"), "failed");
 });
+
+test("a cell with a hidden check is marked graded; a plain cell is not", () => {
+  // `graded` is what decides whether "check my attempt" runs the exercise's own
+  // test or asks Nala's opinion, so it has to be read off the cell rather than
+  // guessed from the role — a `role=checkpoint` cell has no grader of its own.
+  const base = {
+    kind: "code" as const,
+    role: null,
+    source: "x = 1",
+    tags: [],
+    execute: true,
+    stub: null,
+    check: null,
+    answer: null,
+    answer_prompt: null,
+    timeout_s: null,
+  };
+  const views = notebookCellViews(
+    [
+      { ...base, id: "plain" },
+      { ...base, id: "exercise", stub: "def f(): ...", check: "assert f() == 1" },
+      {
+        ...base,
+        id: "question",
+        kind: "markdown" as const,
+        role: "question" as const,
+        answer: { kind: "choice" as const, options: ["a", "b"], correct: "a" },
+      },
+    ] as never,
+    null,
+  );
+  assert.deepEqual(
+    views.map((view) => [view.id, view.graded]),
+    [
+      ["plain", false],
+      ["exercise", true],
+      ["question", true],
+    ],
+  );
+});

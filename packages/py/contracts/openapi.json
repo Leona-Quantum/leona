@@ -3768,6 +3768,51 @@
         "title": "GenerateCourseResponse",
         "type": "object"
       },
+      "GradeAttemptRequest": {
+        "additionalProperties": false,
+        "description": "One reader's attempt at the graded cells of a notebook version.\n\nOnly the reader's own work travels: `code` is what they wrote in each exercise\ncell, `answers` what they typed for each question. The assertions and the answer\nkey stay on the server and are joined to this on arrival, which is the whole\nreason grading is a request rather than something the browser can do \u2014 a grader\nthe client holds is a grader the client can read.\n\nBounded on both axes because it is an unauthenticated-shaped payload from the\nreader's keyboard: 64 cells, 32 KB per cell. A notebook with more graded cells\nthan that is not a lesson.",
+        "properties": {
+          "answers": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "maxProperties": 64,
+            "title": "Answers",
+            "type": "object"
+          },
+          "code": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "maxProperties": 64,
+            "title": "Code",
+            "type": "object"
+          }
+        },
+        "title": "GradeAttemptRequest",
+        "type": "object"
+      },
+      "GradeAttemptResponse": {
+        "additionalProperties": false,
+        "description": "The grading run. Verdicts arrive on the run's event stream as\n`notebook.grades`, the same channel every other notebook result uses \u2014 grading\nexecutes the reader's code in the sandbox, so it takes as long as a run takes and\ncannot be answered inline.",
+        "properties": {
+          "graded_cells": {
+            "title": "Graded Cells",
+            "type": "integer"
+          },
+          "run_id": {
+            "format": "uuid",
+            "title": "Run Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "run_id",
+          "graded_cells"
+        ],
+        "title": "GradeAttemptResponse",
+        "type": "object"
+      },
       "GradeReport": {
         "additionalProperties": false,
         "description": "Grades for one attempt at one notebook version.",

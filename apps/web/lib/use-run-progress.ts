@@ -31,6 +31,15 @@ export interface RunProgressEvent {
   stage?: string | null;
   status?: string;
   duration_ms?: number;
+  /**
+   * Everything else the event carried. A run event is serialized as its envelope
+   * columns with `payload` spread over them (`routes/runs._event_json`), so a
+   * consumer that needs a lane-specific field — `notebook.grades` carries the
+   * verdicts — reads it here rather than by widening this shared type once per lane.
+   * Unknown on purpose: it is server data, narrowed by whoever knows what they asked
+   * for, and never trusted into the DOM by this module.
+   */
+  [key: string]: unknown;
 }
 
 function parseSseBlock(block: string): { id: string | null; data: string } | null {

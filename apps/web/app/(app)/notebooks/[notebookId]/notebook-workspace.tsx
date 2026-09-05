@@ -8,7 +8,11 @@ import { useEffect, useRef, useState } from "react";
 import { ChatMarkdown } from "../../../../components/chat-markdown";
 import { NotebookDiffView } from "../../../../components/notebook-diff-view";
 import { NotebookReviewPanel } from "../../../../components/notebook-review-panel";
-import { NotebookView, type NotebookCellActionKind } from "../../../../components/notebook-view";
+import {
+  NotebookView,
+  type NotebookCellActionKind,
+  type NotebookCellGrade,
+} from "../../../../components/notebook-view";
 import { refusalSentence } from "../../../../lib/api-error";
 import { diffNotebookVersions } from "../../../../lib/notebook-diff";
 import { NotebookEditor } from "../../../../components/notebook-editor";
@@ -22,6 +26,7 @@ import {
   type CellEdit,
 } from "../../../../lib/notebook-editing";
 import { notebookExportFilename } from "../../../../lib/notebook-export";
+import { gradeSummary, hasGradesToShow, passRate } from "../../../../lib/notebook-grades";
 import { hasMasteryToShow, notebookMastery } from "../../../../lib/notebook-mastery";
 import { errorTracebackText, notebookCellViews, notebookStatusPill } from "../../../../lib/notebook-view";
 import {
@@ -39,6 +44,7 @@ type NotebookVersion = components["schemas"]["NotebookVersion"];
 type NotebookVersionSummary = components["schemas"]["NotebookVersionSummary"];
 type NotebookTurn = components["schemas"]["NotebookTurn"];
 type Cell = components["schemas"]["Cell"];
+type GradeReport = components["schemas"]["GradeReport"];
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
@@ -80,6 +86,13 @@ export function NotebookWorkspace({ notebookId, locale = "en" }: { notebookId: s
   const [turnsError, setTurnsError] = useState<string | null>(null);
 
   const [followedRunId, setFollowedRunId] = useState<string | null>(null);
+  /** Verdicts from the last graded attempt, by cell id. */
+  const [grades, setGrades] = useState<Record<string, NotebookCellGrade>>({});
+  /** The same verdicts as one report, for the summary strip above the notebook. */
+  const [gradeReport, setGradeReport] = useState<GradeReport | null>(null);
+  /** Cells whose attempt is in the sandbox right now — one at a time, because the
+   * reader submits one cell at a time and a second attempt supersedes the first. */
+  const [gradingCellIds, setGradingCellIds] = useState<ReadonlySet<string>>(new Set());
 
   const [titleDraft, setTitleDraft] = useState("");
   const [editingTitle, setEditingTitle] = useState(false);
@@ -179,6 +192,9 @@ export function NotebookWorkspace({ notebookId, locale = "en" }: { notebookId: s
     setPinnedSeq(null);
     setTurns([]);
     setFollowedRunId(null);
+    setGrades({});
+    setGradeReport(null);
+    setGradingCellIds(new Set());
     setDraftCells(null);
     setFocusedCellId(null);
     loadNotebook();
@@ -269,6 +285,69 @@ export function NotebookWorkspace({ notebookId, locale = "en" }: { notebookId: s
     if (decision.clear) authored.current = null;
     if (decision.warn) setActionError(copy.runStreamLost);
   });
+
+  // Verdicts arrive on the SAME stream the rest of the run does, as
+  // `notebook.grades`. Read from the event list rather than from the terminal
+  // callback: the callback fires once the run has ENDED, and by then the grades
+  // event is already in `progressEvents` — waiting for the end would also mean
+  // showing nothing if the stream drops after the verdicts but before `run.finished`.
+  useEffect(() => {
+    const event = [...progressEvents].reverse().find((item) => item.type === "notebook.grades");
+    if (!event) return;
+    const report = isRecord(event.grades) ? (event.grades as GradeReport) : null;
+    if (!report) return;
+    const next: Record<string, NotebookCellGrade> = {};
+    for (const grade of report.cells ?? []) next[grade.id] = grade;
+    setGrades((current) => ({ ...current, ...next }));
+    setGradeReport(report);
+    setGradingCellIds(new Set());
+  }, [progressEvents]);
+
+  /**
+   * Send one reader's attempt to be graded by the exercise's own test.
+   *
+   * The alternative this replaces is still here for cells with no test behind them:
+   * `cellAction` falls back to asking Nala. The difference is not cosmetic — one is
+   * an assertion that either raised or did not, the other is a model's opinion — so
+   * the button says which one the reader is about to get.
+   */
+  async function gradeAttempt(cellId: string, attempt: string) {
+    setActionError(null);
+    setGradingCellIds(new Set([cellId]));
+    try {
+      const response = await fetch(`/api/notebooks/${encodeURIComponent(notebookId)}/attempts`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ code: { [cellId]: attempt }, answers: {} }),
+      });
+      const payload = (await response.json()) as unknown;
+      if (!response.ok || !isRecord(payload)) {
+        throw new Error(refusalSentence(payload) ?? copy.gradeFailed);
+      }
+      const runId = typeof payload.run_id === "string" ? payload.run_id : null;
+      if (!runId) throw new Error(copy.gradeFailed);
+      setFollowedRunId(runId);
+    } catch (cause) {
+      setGradingCellIds(new Set());
+      setActionError(cause instanceof Error ? cause.message : copy.gradeFailed);
+    }
+  }
+
+  // The strip above the notebook: what has been GRADED, which is a different
+  // question from what ran. `lib/notebook-grades.ts` owns the counting rule that
+  // makes it honest — `ungradable` cells stay out of the denominator, because a
+  // grader that could not run has established nothing about the reader.
+  const summary = gradeSummary(gradeReport);
+  const rate = passRate(summary);
+  const gradeSummaryStrip = hasGradesToShow(summary) ? (
+    <section className="mj-notebook-grade-summary" aria-label={copy.gradeSummaryLabel}>
+      <p>
+        {copy.gradeSummary(summary.passed, summary.passed + summary.failed)}
+        {rate !== null ? ` · ${Math.round(rate * 100)}%` : ""}
+      </p>
+      {summary.ungradable > 0 ? <p>{copy.gradeUngradable(summary.ungradable)}</p> : null}
+    </section>
+  ) : null;
 
   async function sendTurn(text: string) {
     const trimmed = text.trim();
@@ -420,6 +499,16 @@ export function NotebookWorkspace({ notebookId, locale = "en" }: { notebookId: s
     }
     if (action === "checkAttempt") {
       const attempt = detail ?? "";
+      // A cell with a test behind it gets the test, not an opinion. Nala's judgement
+      // stays the answer for every other kind of cell — a checkpoint the reader wants
+      // discussed, an exercise with no grader — but where a real verdict exists it
+      // wins, because a model saying "looks right" to a wrong answer is the failure
+      // this whole path was built to remove.
+      const graded = cells.find((item) => item.id === cellId)?.graded ?? false;
+      if (graded) {
+        void gradeAttempt(cellId, attempt);
+        return;
+      }
       void sendTurn(
         `Here is my attempt at cell \`${cellId}\`:\n\`\`\`python\n${attempt}\n\`\`\`\nGrade it against the intended solution, say what is right, what is wrong, and give one hint before the full fix. Do not change the notebook.`,
       );
@@ -750,12 +839,17 @@ export function NotebookWorkspace({ notebookId, locale = "en" }: { notebookId: s
               <p className="mj-notebook-workspace-empty-notebook">{copy.diffLoading}</p>
             )
           ) : version ? (
+            <>
+            {gradeSummaryStrip}
             <NotebookView
               cells={cells}
               locale={locale}
               framework={notebook.framework?.name ?? "qiskit"}
               onCellAction={cellAction}
+              grades={grades}
+              gradingCellIds={gradingCellIds}
             />
+            </>
           ) : !isGenerating ? (
             <p className="mj-notebook-workspace-empty-notebook">{copy.loadFailed}</p>
           ) : null}

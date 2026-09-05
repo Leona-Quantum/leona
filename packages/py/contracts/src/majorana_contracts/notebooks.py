@@ -588,8 +588,12 @@ class NotebookTurnRole(StrEnum):
     NALA = "nala"
 
 
-class _ResourceBase(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+#: Imported rather than redeclared. `test_every_public_resource_model_reaches_the_export`
+#: finds unexported models by testing `issubclass(value, models._ResourceBase)` — so a
+#: module with its own identically-configured base is INVISIBLE to it, and this module's
+#: entire family of request/response models was. Two of them slipped past the guard the
+#: day it was checked. One base, one guard that can see everything under it.
+from .models import _ResourceBase  # noqa: E402
 
 
 class Notebook(_ResourceBase):
@@ -725,6 +729,44 @@ class CreateNotebookTurnResponse(_ResourceBase):
     turn: NotebookTurn
     version: NotebookVersionSummary
     run_id: UUID
+
+
+class GradeAttemptRequest(_ResourceBase):
+    """One reader's attempt at the graded cells of a notebook version.
+
+    Only the reader's own work travels: `code` is what they wrote in each exercise
+    cell, `answers` what they typed for each question. The assertions and the answer
+    key stay on the server and are joined to this on arrival, which is the whole
+    reason grading is a request rather than something the browser can do — a grader
+    the client holds is a grader the client can read.
+
+    Bounded on both axes because it is an unauthenticated-shaped payload from the
+    reader's keyboard: 64 cells, 32 KB per cell. A notebook with more graded cells
+    than that is not a lesson.
+    """
+
+    code: dict[str, str] = Field(default_factory=dict, max_length=64)
+    answers: dict[str, str] = Field(default_factory=dict, max_length=64)
+
+    @model_validator(mode="after")
+    def _bounded(self) -> GradeAttemptRequest:
+        for name, mapping in (("code", self.code), ("answers", self.answers)):
+            for cell_id, value in mapping.items():
+                if len(value) > 32_000:
+                    raise ValueError(f"{name}[{cell_id}] is over 32000 characters")
+        return self
+
+
+class GradeAttemptResponse(_ResourceBase):
+    """The grading run. Verdicts arrive on the run's event stream as
+    `notebook.grades`, the same channel every other notebook result uses — grading
+    executes the reader's code in the sandbox, so it takes as long as a run takes and
+    cannot be answered inline."""
+
+    run_id: UUID
+    #: How many cells this attempt will be graded on, so a client can render the
+    #: right number of pending rows instead of guessing from its own copy of the spec.
+    graded_cells: int
 
 
 class ImportNotebookRequest(_ResourceBase):
