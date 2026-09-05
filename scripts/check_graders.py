@@ -227,6 +227,18 @@ def _self_test() -> int:
     with tempfile.TemporaryDirectory() as empty:
         if main([empty]) == 0:
             failures.append("an audit that discovered ZERO specs reported success")
+
+    # The fourth: a notebook that is FOUND and cannot be read must fail the run, even
+    # when other specs alongside it are fine. Printing and skipping leaves the audit
+    # non-empty and it reports clean over a file nobody checked — the empty-directory
+    # bug reached by a different road. Proven with a real unreadable file beside a real
+    # readable one, because the interesting case is precisely the mixed directory.
+    with tempfile.TemporaryDirectory() as mixed:
+        good = Path(mixed) / "ok.json"
+        good.write_text(honest.model_dump_json(), encoding="utf-8")
+        (Path(mixed) / "broken.nb.py").write_text("# %% role=nonsense\nnope\n", encoding="utf-8")
+        if main([mixed]) == 0:
+            failures.append("an unreadable notebook beside a readable one reported success")
     if failures:
         print("grader self-test FAILED:")
         for line in failures:
@@ -239,6 +251,19 @@ def _self_test() -> int:
     return 0
 
 
+class UnreadableSpecs(Exception):
+    """One or more discovered notebooks could not be read.
+
+    An exception rather than a printed line, because the caller must not be able to carry
+    on: a file that was found and skipped is a file the gate did not check, and the other
+    specs keep the run non-empty so it reports clean anyway.
+    """
+
+    def __init__(self, lines: list[str]) -> None:
+        super().__init__("\n".join(lines))
+        self.lines = lines
+
+
 def _specs(paths: list[str]) -> list[tuple[Path, NotebookSpec]]:
     """Every committed spec under `paths`, in both forms it is committed in.
 
@@ -249,6 +274,7 @@ def _specs(paths: list[str]) -> list[tuple[Path, NotebookSpec]]:
     over a directory the checker could not see into reads exactly like a clean audit.
     """
     out: list[tuple[Path, NotebookSpec]] = []
+    unreadable: list[str] = []
     for raw in paths:
         p = Path(raw)
         files = sorted([*p.rglob("*.json"), *p.rglob("*.nb.py")]) if p.is_dir() else [p]
@@ -257,7 +283,12 @@ def _specs(paths: list[str]) -> list[tuple[Path, NotebookSpec]]:
                 try:
                     out.append((f, parse_source(f.read_text(encoding="utf-8"))))
                 except (OSError, ValueError) as exc:
-                    print(f"  {f}: not a parseable notebook source — {exc}")
+                    # FAILS the gate rather than printing and moving on. A dropped file
+                    # leaves the other specs to keep the audit non-empty, so the run still
+                    # reports clean over a notebook nobody checked — the same shape as the
+                    # empty-directory bug this script was written for, reached by a
+                    # different road. Greptile, PR 834.
+                    unreadable.append(f"  {f}: not a parseable notebook source — {exc}")
                 continue
             try:
                 data = json.loads(f.read_text(encoding="utf-8"))
@@ -268,7 +299,9 @@ def _specs(paths: list[str]) -> list[tuple[Path, NotebookSpec]]:
             try:
                 out.append((f, NotebookSpec.model_validate(data)))
             except ValueError as exc:
-                print(f"  {f}: not a valid notebook spec — {exc}")
+                unreadable.append(f"  {f}: not a valid notebook spec — {exc}")
+    if unreadable:
+        raise UnreadableSpecs(unreadable)
     return out
 
 
@@ -276,7 +309,13 @@ def main(argv: list[str]) -> int:
     if "--self-test" in argv:
         return _self_test()
     targets = [a for a in argv if not a.startswith("-")] or ["packages/py/notebooks/fixtures"]
-    specs = _specs(targets)
+    try:
+        specs = _specs(targets)
+    except UnreadableSpecs as exc:
+        print("Notebooks that could not be read, so were NOT checked:")
+        for line in exc.lines:
+            print(line)
+        return 1
     if not specs:
         print(
             "check_graders: NO notebook specs found under "
