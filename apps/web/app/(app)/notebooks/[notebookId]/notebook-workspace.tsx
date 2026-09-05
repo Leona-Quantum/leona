@@ -360,7 +360,16 @@ export function NotebookWorkspace({ notebookId, locale = "en" }: { notebookId: s
     if (gradingRunId === null || runAttempt.current.get(gradingRunId) !== attemptSeq.current) {
       return;
     }
-    const event = [...gradingEvents].reverse().find((item) => item.type === "notebook.grades");
+    // Every event carries the run it came from (`routes/runs._event_json` spreads the
+    // envelope over the payload), and that is what the verdict must be tied to — not to
+    // whichever run `gradingRunId` currently names. `useRunProgress` clears its buffer
+    // inside its own effect, which runs before this one but whose state update lands a
+    // render later, so for exactly one pass the id is the NEW run's and the events are
+    // the OLD run's. The ownership guard above passes, and without this filter the
+    // previous verdict is shown as this attempt's and the new submission's pending key
+    // is dropped before its outcome is known. Greptile, PR 832.
+    const mine = gradingEvents.filter((item) => item.run_id === gradingRunId);
+    const event = [...mine].reverse().find((item) => item.type === "notebook.grades");
     if (event) {
       const report = isRecord(event.grades) ? (event.grades as GradeReport) : null;
       if (!report) return;
@@ -405,7 +414,7 @@ export function NotebookWorkspace({ notebookId, locale = "en" }: { notebookId: s
     // choice: `useRunProgress` calls its callback in the same tick it appends the
     // event, so the callback runs BEFORE this effect sees the grades. A callback
     // asking "did a verdict arrive?" would answer no on a perfectly good run.
-    const ended = gradingEvents.some(
+    const ended = mine.some(
       (item) => item.type === "run.finished" || item.type === "run.error",
     );
     // Guarded on `size > 0`, so unlike the verdict path above this cannot re-enter: the
