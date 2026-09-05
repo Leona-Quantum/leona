@@ -309,6 +309,18 @@ export function NotebookWorkspace({ notebookId, locale = "en" }: { notebookId: s
       setGrades((current) => ({ ...current, ...next }));
       setGradeReport(report);
       setGradingCellIds(new Set());
+      // A delivered verdict SUPERSEDES a grading-failure message, and this is the
+      // only place that can be decided. Grades can arrive and the stream then drop
+      // before any terminal event, so the lost-stream callback fires afterwards and
+      // announces a failure over a verdict the reader is already looking at. Guarding
+      // that callback on "is the lock still held" does not fix it — whether the lock
+      // is clear by then depends on React having flushed this effect first, which is
+      // exactly the ordering that cannot be relied on. Greptile caught it on PR 832.
+      //
+      // Clearing here instead is race-free in the direction that matters: this effect
+      // always runs after the grades land, whatever order the two paths ran in.
+      // Narrowed to `gradeFailed` so a real error from some other action survives.
+      setActionError((current) => (current === copy.gradeFailed ? null : current));
       // Why nothing could be graded, when that is the answer. Without this a guard
       // refusal reads as "not graded yet", which tells the reader their code was fine
       // and something else went wrong.
