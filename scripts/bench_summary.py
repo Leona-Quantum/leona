@@ -90,9 +90,7 @@ def _self_test() -> int:
         )
         dead = Path(tmp) / "report-local.json"
         dead.write_text(
-            json.dumps(
-                {"cases": [{"run_status": "failed", "verifier_decision": None}] * 3}
-            ),
+            json.dumps({"cases": [{"run_status": "failed", "verifier_decision": None}] * 3}),
             encoding="utf-8",
         )
         good_line, dead_line = describe(good), describe(dead)
