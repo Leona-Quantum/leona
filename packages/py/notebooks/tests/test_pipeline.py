@@ -237,3 +237,148 @@ async def test_repair_returning_nothing_counts_as_a_failed_repair(bad: str) -> N
     outcome = await generate(ports, GenerationRequest(brief="b"))
     assert outcome.status == "failed"
     assert all(not a.ok for a in outcome.attempts if a.stage == "notebook.repair")
+
+
+# --- the grader audit stage (ai-ops#258) ------------------------------------------
+
+# The exercise goes BEFORE the closing summary — `check_structure` requires a notebook
+# to end on summary/references, and a draft that fails structure is redrafted rather
+# than audited, which would test nothing.
+_EXERCISE = """
+# %% [markdown] role=objective
+# ## Your turn
+
+# %% id=ex1 role=solution stub="def double(x):\\n    ..." check={check}
+def double(x):
+    return 2 * x
+
+# %% [markdown] role=summary
+"""
+
+GRADED_LESSON_VACUOUS = LESSON.replace(
+    "\n# %% [markdown] role=summary\n", _EXERCISE.format(check='"assert callable(double)"')
+)
+GRADED_LESSON_HONEST = LESSON.replace(
+    "\n# %% [markdown] role=summary\n", _EXERCISE.format(check='"assert double(3) == 6"')
+)
+
+
+@dataclass
+class ExecutingPorts(ScriptedPorts):
+    """`run_notebook` that really executes the cells, so a grader's verdict is the one
+    running it would give rather than one the test scripted. Without this the audit
+    would be tested against a fake that agrees with it by construction."""
+
+    async def run_notebook(self, spec: NotebookSpec) -> ExecutionReport:
+        self.calls.append("execute")
+        namespace: dict[str, object] = {}
+        cells, stopped = [], False
+        for cell in spec.cells:
+            if not cell.is_code:
+                continue
+            if stopped:
+                cells.append(CellResult(id=cell.id, status="not_run"))
+                continue
+            try:
+                exec(cell.source, namespace)  # noqa: S102 - a test's own sandbox
+            except Exception as exc:  # noqa: BLE001
+                cells.append(
+                    CellResult(
+                        id=cell.id,
+                        status="error",
+                        error=CellError(ename=type(exc).__name__, evalue=str(exc)),
+                    )
+                )
+                # A grader raising is a failed GRADE, not a broken notebook — the same
+                # rule `spec_with_graders` encodes with the `raises-exception` tag.
+                stopped = not cell.may_raise
+            else:
+                cells.append(CellResult(id=cell.id, status="ok"))
+        return ExecutionReport(
+            notebook_slug=spec.slug, ok=not stopped, runner="inprocess", cells=cells
+        )
+
+
+async def test_a_generated_grader_that_cannot_fail_is_stripped_before_the_reader() -> None:
+    ports = ExecutingPorts(drafts=[GRADED_LESSON_VACUOUS])
+    outcome = await generate(ports, GenerationRequest(brief="b"))
+    assert outcome.status == "ready", outcome.error
+    assert outcome.graders is not None
+    assert [v.verdict for v in outcome.graders.verdicts] == ["cannot-fail"]
+    # The exercise survives; only the verdict that would have been wrong goes.
+    cell = outcome.spec.cell_by_id("ex1")
+    assert cell.check is None
+    assert cell.stub is not None and cell.source.strip().startswith("def double")
+    assert ports.calls.count("execute") == 3, "one run, then the audit's two"
+    assert ("notebook.graders", "failed", "0/1 graders sound, 1 unsound") in ports.events
+
+
+async def test_a_sound_generated_grader_survives_the_audit() -> None:
+    """The other arm. A gate that strips every grader passes the test above perfectly."""
+    ports = ExecutingPorts(drafts=[GRADED_LESSON_HONEST])
+    outcome = await generate(ports, GenerationRequest(brief="b"))
+    assert outcome.status == "ready", outcome.error
+    assert outcome.graders is not None and outcome.graders.ok
+    assert [v.verdict for v in outcome.graders.verdicts] == ["sound"]
+    assert outcome.spec.cell_by_id("ex1").check == "assert double(3) == 6"
+    assert ports.calls.count("execute") == 3
+
+
+async def test_a_notebook_with_no_grader_spends_no_audit_run() -> None:
+    ports = ExecutingPorts(drafts=[LESSON])
+    outcome = await generate(ports, GenerationRequest(brief="b"))
+    assert outcome.status == "ready", outcome.error
+    assert outcome.graders is None, "no audit ran, which is not the same as one that passed"
+    assert ports.calls.count("execute") == 1
+    assert not any(e[0] == "notebook.graders" for e in ports.events)
+
+
+async def test_a_revise_turn_that_rewrites_a_grader_is_audited() -> None:
+    """The lane the gate would otherwise miss: a reader asks for a harder exercise, the
+    model rewrites the hidden assertion, and nothing had proved the new one."""
+    spec = parse_source(GRADED_LESSON_HONEST, slug="graded")
+    ports = ExecutingPorts(
+        drafts=[],
+        revision=RevisionPlan(
+            reply="made it harder",
+            summary="harder",
+            ops=[
+                RevisionOp(
+                    op="replace",
+                    cell_id="ex1",
+                    cells_source=(
+                        '# %% id=ex1 role=solution stub="def double(x):\\n    ..." '
+                        'check="assert callable(double)"\ndef double(x):\n    return 2 * x\n'
+                    ),
+                )
+            ],
+        ),
+    )
+    outcome = await revise(ports, RevisionRequest(spec=spec, message="harder please"))
+    assert outcome.status == "ready", outcome.error
+    assert outcome.graders is not None
+    assert [v.verdict for v in outcome.graders.verdicts] == ["cannot-fail"]
+    assert outcome.spec.cell_by_id("ex1").check is None
+
+
+async def test_a_revise_turn_that_touches_no_grader_spends_nothing() -> None:
+    spec = parse_source(GRADED_LESSON_HONEST, slug="graded")
+    ports = ExecutingPorts(
+        drafts=[],
+        revision=RevisionPlan(
+            reply="ok",
+            summary="prose",
+            ops=[
+                RevisionOp(
+                    op="replace",
+                    cell_id="c02",
+                    cells_source="# %% id=c02 role=setup\nimport qiskit\n",
+                )
+            ],
+        ),
+    )
+    outcome = await revise(ports, RevisionRequest(spec=spec, message="tidy the setup"))
+    assert outcome.status == "ready", outcome.error
+    assert outcome.graders is None
+    assert ports.calls.count("execute") == 1
+    assert outcome.spec.cell_by_id("ex1").check == "assert double(3) == 6"

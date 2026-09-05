@@ -97,6 +97,14 @@ Rules: every cell starts with a `# %%` marker line; markdown cells say `[markdow
 exercise hint solution question answer summary references note. Add `execute=false` to any cell that
 needs credentials or the network. A `role=solution` code cell also carries `stub="<learner placeholder>"`
 (a JSON string) that leaves every name later checkpoints read defined (e.g. `answer = None`).
+It may also carry `check="<hidden assertion>"` (a JSON string) — the grader. The reader never
+sees it; it runs in their namespace straight after their cell, and it must satisfy BOTH of:
+it FAILS against the stub, and it PASSES against your own solution. `assert callable(f)` is
+not a grader — it is true of the stub as well, and it marks the reader correct before they
+start. Assert on a VALUE the exercise is about (`assert double(3) == 6`), and give the assert
+a message saying what was expected. A grader that fails either test is stripped before the
+reader sees it, and the exercise ships ungraded, so a weak check costs the exercise its
+feedback rather than passing quietly.
 Use `tags=["raises-exception"]` only on a cell that is meant to fail. Markdown may use $...$ for maths.
 Do not number cells; do not add ids. Never write an API token, email address or file path into a cell.
 """

@@ -1,7 +1,7 @@
 """The notebook pipeline, with its side effects behind a Protocol.
 
     brief (+ seeds) → outline → draft → parse → structure check → execute
-                    → repair (bounded) → review (advisory) → save
+                    → repair (bounded) → grader audit → review (advisory) → save
 
 The order is owned here, not by the model. `NotebookPorts` is what the worker implements
 with real LLM calls, the real sandbox and the repository layer; tests implement it with
@@ -18,6 +18,7 @@ from dataclasses import dataclass, field
 from typing import Literal, Protocol
 
 from leona_notebooks.execution import ExecutionReport
+from leona_notebooks.grader_audit import GraderAudit, audit_graders, demote_unsound_graders
 from leona_notebooks.prompts import NotebookOutline, NotebookReview, RepairContext
 from leona_notebooks.revision import RevisionError, RevisionPlan, apply_revision
 from leona_notebooks.source import SourceParseError, parse_source, render_source
@@ -29,6 +30,7 @@ Stage = Literal[
     "notebook.draft",
     "notebook.execute",
     "notebook.repair",
+    "notebook.graders",
     "notebook.review",
     "notebook.revise",
     "notebook.save",
@@ -79,6 +81,10 @@ class PipelineOutcome:
     report: ExecutionReport | None
     review: NotebookReview | None = None
     outline: NotebookOutline | None = None
+    #: What the two grader runs showed. `None` when the audit did not run at all —
+    #: which is not the same as an audit that found nothing, and a caller reporting
+    #: "graders checked" off a falsy value would conflate the two.
+    graders: GraderAudit | None = None
     reply: str = ""
     summary: str = ""
     attempts: list[Attempt] = field(default_factory=list)
@@ -222,6 +228,41 @@ async def _execute_and_repair(
     return spec, report
 
 
+async def _audit_graders(
+    ports: NotebookPorts, spec: NotebookSpec, attempts: list[Attempt]
+) -> tuple[NotebookSpec, GraderAudit | None]:
+    """Prove every generated grader can fail and can be passed, and drop the ones that
+    cannot (owner ruling ai-ops#258).
+
+    Two sandbox runs, flat, and none at all for a notebook with no graded code cell.
+    A defective grader demotes its own cell to an ungraded exercise rather than failing
+    the notebook: the reader still gets the lesson, and does not get a verdict that is
+    wrong in the direction nobody complains about.
+
+    The audit is advisory about ITS OWN failure and load-bearing about what it proves.
+    If the audit cannot run — the sandbox is down, an execution raises — the notebook
+    still ships, and `graders` stays `None` so the outcome says the check did not
+    happen instead of implying it passed.
+    """
+    if not any(cell.check is not None for cell in spec.cells):
+        return spec, None
+    await ports.observe("notebook.graders", "started")
+    try:
+        audit = await audit_graders(spec, ports.run_notebook)
+    except Exception as exc:  # noqa: BLE001 - never fails the notebook, never lies about it
+        attempts.append(Attempt("notebook.graders", False, str(exc)))
+        await ports.observe("notebook.graders", "failed", str(exc))
+        return spec, None
+    if audit.unsound:
+        spec = demote_unsound_graders(spec, audit)
+    detail = audit.summary()
+    attempts.append(Attempt("notebook.graders", audit.ok, detail))
+    await ports.observe("notebook.graders", "finished" if audit.ok else "failed", detail)
+    for verdict in audit.unsound + audit.inconclusive:
+        await ports.observe("notebook.graders", "finished", verdict.describe())
+    return spec, audit
+
+
 def _ensure_seed_run_cell(spec: NotebookSpec, seed_run_cell: str | None) -> NotebookSpec:
     """A walkthrough must run the seed's code verbatim. If the draft paraphrased it, put
     the verbatim cell in front of the first run cell."""
@@ -289,6 +330,13 @@ async def generate(
 
         spec, report = await _execute_and_repair(ports, spec, budget, attempts)
 
+        graders: GraderAudit | None = None
+        if report.ok:
+            # Only on a notebook that runs. Auditing graders inside a notebook that
+            # already fails would report every one of them `inconclusive`, spend two
+            # sandbox runs saying so, and bury the real error under the noise.
+            spec, graders = await _audit_graders(ports, spec, attempts)
+
         review: NotebookReview | None = None
         if budget.review and report.ok:
             await ports.observe("notebook.review", "started")
@@ -308,6 +356,7 @@ async def generate(
             report=report,
             review=review,
             outline=outline,
+            graders=graders,
             summary=f"generated from brief: {request.brief[:80]}",
             attempts=attempts,
             error=error,
@@ -356,6 +405,14 @@ async def revise(
     attempts.append(Attempt("notebook.revise", True, f"{len(plan.ops)} op(s)"))
     await ports.observe("notebook.revise", "finished", plan.summary or f"{len(plan.ops)} op(s)")
     spec, report = await _execute_and_repair(ports, spec, budget, attempts)
+    graders: GraderAudit | None = None
+    # A revise turn can write a grader as easily as `generate` can — "make exercise 2
+    # harder" rewrites the hidden assertion — so this lane needs the same proof. It only
+    # needs it when a check actually moved, though: auditing an edit that touched none
+    # of them would spend two sandbox runs per chat message to re-prove what generation
+    # already proved.
+    if report.ok and _checks_changed(request.spec, spec):
+        spec, graders = await _audit_graders(ports, spec, attempts)
     review: NotebookReview | None = None
     if budget.review and report.ok:
         try:
@@ -367,11 +424,24 @@ async def revise(
         spec=spec,
         report=report,
         review=review,
+        graders=graders,
         reply=plan.reply,
         summary=plan.summary or "edited in chat",
         attempts=attempts,
         error="" if report.ok else _describe_failure(report),
     )
+
+
+def _checks_changed(before: NotebookSpec, after: NotebookSpec) -> bool:
+    """Whether any grader was added or rewritten between two specs.
+
+    Keyed by cell id and comparing the check text, so a reordered notebook does not read
+    as a changed grader and a rewritten assertion under an unchanged id does. A REMOVED
+    check needs no audit — there is no grader left to be wrong.
+    """
+    old = {c.id: c.check for c in before.cells if c.check is not None}
+    new = {c.id: c.check for c in after.cells if c.check is not None}
+    return any(old.get(cell_id) != check for cell_id, check in new.items())
 
 
 def _describe_failure(report: ExecutionReport) -> str:
