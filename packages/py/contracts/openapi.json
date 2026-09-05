@@ -4558,6 +4558,76 @@
         "title": "NotebookFramework",
         "type": "object"
       },
+      "NotebookGrades": {
+        "additionalProperties": false,
+        "description": "The verdicts for one reader's attempt at a notebook's graded cells.\n\nA run event rather than a response body because grading executes the reader's code\nin the sandbox: the route answers 202 with a run id and the verdicts arrive on that\nrun's stream, like every other notebook result.\n\nRegistered HERE and not only emitted, which is the whole point of this union:\n`RepoEventSink` validates every event against it before persisting, so an event type\nthat is not in this list is REJECTED at emit time \u2014 the run reports an error and the\nreader never receives a verdict. A fake sink in a test accepts anything and cannot\nshow that.",
+        "properties": {
+          "attempted": {
+            "minimum": 0,
+            "title": "Attempted",
+            "type": "integer"
+          },
+          "failed": {
+            "minimum": 0,
+            "title": "Failed",
+            "type": "integer"
+          },
+          "grades": {
+            "additionalProperties": true,
+            "title": "Grades",
+            "type": "object"
+          },
+          "note": {
+            "default": "",
+            "title": "Note",
+            "type": "string"
+          },
+          "passed": {
+            "minimum": 0,
+            "title": "Passed",
+            "type": "integer"
+          },
+          "run_id": {
+            "format": "uuid",
+            "title": "Run Id",
+            "type": "string"
+          },
+          "seq": {
+            "description": "Unique per run; powers replay and SSE Last-Event-ID",
+            "minimum": 0,
+            "title": "Seq",
+            "type": "integer"
+          },
+          "ts": {
+            "format": "date-time",
+            "title": "Ts",
+            "type": "string"
+          },
+          "type": {
+            "const": "notebook.grades",
+            "default": "notebook.grades",
+            "title": "Type",
+            "type": "string"
+          },
+          "version_id": {
+            "format": "uuid",
+            "title": "Version Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "run_id",
+          "seq",
+          "ts",
+          "version_id",
+          "grades",
+          "passed",
+          "failed",
+          "attempted"
+        ],
+        "title": "NotebookGrades",
+        "type": "object"
+      },
       "NotebookKind": {
         "description": "What shape a notebook takes. Each kind is a checkable structure contract.",
         "enum": [
@@ -7498,6 +7568,7 @@
             "export.classified": "#/components/schemas/ExportClassified",
             "llm.call": "#/components/schemas/LlmCall",
             "llm.delta": "#/components/schemas/LlmDelta",
+            "notebook.grades": "#/components/schemas/NotebookGrades",
             "plan.produced": "#/components/schemas/PlanProduced",
             "qapp.generated": "#/components/schemas/QappGenerated",
             "research.completed": "#/components/schemas/ResearchCompleted",
@@ -7563,6 +7634,9 @@
           },
           {
             "$ref": "#/components/schemas/QappGenerated"
+          },
+          {
+            "$ref": "#/components/schemas/NotebookGrades"
           },
           {
             "$ref": "#/components/schemas/CodeGenerated"

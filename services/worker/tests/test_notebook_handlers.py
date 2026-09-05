@@ -1250,3 +1250,51 @@ async def test_the_verdict_is_emitted_before_anything_terminal(monkeypatch):
     # "not graded yet".
     payload = _grades_event(sinks[0].events)
     assert "guard" in payload["note"].lower()
+
+
+async def test_the_verdict_event_survives_the_PRODUCTION_sink_validation(monkeypatch):
+    """Every other test in this lane uses `FakeEventSink`, which accepts anything.
+
+    The production sink validates each event against the contracts union before
+    persisting it, so an event type that is not registered there is REJECTED at emit
+    time: the run reports an error and the reader never receives a verdict. `FakeEventSink`
+    cannot show that — it is blind to the failure by construction, which is why this
+    shipped review-ready and was caught by a reviewer reading the sink rather than by a
+    test. Greptile, PR 832.
+
+    So this one drives the emitted payloads through the REAL validator.
+    """
+    from majorana_contracts.events import run_event_adapter
+
+    validated: list[str] = []
+
+    class ValidatingSink(FakeEventSink):
+        async def emit(self, type, payload, *, event_id=None):
+            run_event_adapter.validate_python(
+                {
+                    "run_id": uuid.uuid4(),
+                    "seq": 0,
+                    "ts": "1970-01-01T00:00:00Z",
+                    "type": type,
+                    **payload,
+                }
+            )
+            validated.append(type)
+            await super().emit(type, payload, event_id=event_id)
+
+    monkeypatch.setattr(handlers, "RepoEventSink", ValidatingSink)
+    run_id, notebook_id, version_id = uuid.uuid4(), uuid.uuid4(), uuid.uuid4()
+
+    await nh.handle_notebook_grade(
+        Session(),
+        _grade_payload(
+            run_id=run_id,
+            notebook_id=notebook_id,
+            version_id=version_id,
+            code={"ex1": "def double(x):\n    return 2 * x"},
+        ),
+        sandbox=LocalSubprocessSandbox(),
+        store=_graded_store(notebook_id, version_id),
+    )
+
+    assert "notebook.grades" in validated, "the verdict never reached the sink"

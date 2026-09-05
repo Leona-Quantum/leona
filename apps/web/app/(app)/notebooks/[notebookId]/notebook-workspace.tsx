@@ -371,7 +371,11 @@ export function NotebookWorkspace({ notebookId, locale = "en" }: { notebookId: s
       if (inflightKey.current) pendingKeys.current.delete(inflightKey.current);
       setGrades((current) => ({ ...current, ...next }));
       setGradeReport(report);
-      setGradingCellIds(new Set());
+      // Identity-stable, and not a style point: `gradingCellIds` is a dependency of
+      // this effect and the verdict stays in `gradingEvents` forever, so installing a
+      // fresh empty Set each pass changes the dependency, re-runs the effect, and the
+      // render loop only ends at React's maximum-update-depth error. Greptile, PR 832.
+      setGradingCellIds((current) => (current.size === 0 ? current : new Set()));
       // A delivered verdict SUPERSEDES a grading-failure message, and this is the
       // only place that can be decided. Grades can arrive and the stream then drop
       // before any terminal event, so the lost-stream callback fires afterwards and
@@ -404,6 +408,8 @@ export function NotebookWorkspace({ notebookId, locale = "en" }: { notebookId: s
     const ended = gradingEvents.some(
       (item) => item.type === "run.finished" || item.type === "run.error",
     );
+    // Guarded on `size > 0`, so unlike the verdict path above this cannot re-enter: the
+    // set it installs fails the guard on the next pass.
     if (ended && gradingCellIds.size > 0) {
       if (inflightKey.current) pendingKeys.current.delete(inflightKey.current);
       setGradingCellIds(new Set());
