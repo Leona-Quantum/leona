@@ -56,7 +56,14 @@ _KV_TOKEN = re.compile(
     """,
     re.VERBOSE,
 )
-_CELL_HEADER_FIELDS = frozenset({"id", "role", "tags", "execute", "stub", "timeout_s"})
+#: `check` is here because a grader the model cannot WRITE is a grader no reader ever
+#: meets: `Cell.check` and the whole grading engine shipped before this format could
+#: carry one, so every generated notebook had zero graded exercises while the contract,
+#: the grader and its CI gate all read as if it had them. It round-trips like any other
+#: attribute — `render_source` emits it — because the repair and revise turns send cells
+#: back through this format, and an attribute that parses but does not render is a
+#: silent deletion on the first edit of a graded cell.
+_CELL_HEADER_FIELDS = frozenset({"id", "role", "tags", "execute", "stub", "check", "timeout_s"})
 
 
 class SourceParseError(ValueError):
@@ -210,6 +217,7 @@ def parse_source(text: str, *, slug: str | None = None) -> NotebookSpec:
                 "tags": [str(tag) for tag in tags],
                 "execute": bool(attrs.pop("execute", True)),
                 "stub": attrs.pop("stub", None),
+                "check": attrs.pop("check", None),
                 "timeout_s": attrs.pop("timeout_s", None),
             }
         )
@@ -302,6 +310,8 @@ def render_source(spec: NotebookSpec, *, include_ids: bool = True) -> str:
             attrs.append("execute=false")
         if cell.stub is not None:
             attrs.append(f"stub={json.dumps(cell.stub, ensure_ascii=False)}")
+        if cell.check is not None:
+            attrs.append(f"check={json.dumps(cell.check, ensure_ascii=False)}")
         if cell.timeout_s is not None:
             attrs.append(f"timeout_s={cell.timeout_s}")
         if attrs:

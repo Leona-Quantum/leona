@@ -219,10 +219,14 @@ class Cell(_Model):
     #: assert on whatever that cell defined. Never sent to the browser and never
     #: written into an exported `.ipynb` — see `NotebookSpec.for_learner()`.
     #:
-    #: A grader that cannot fail is not a grader: `scripts/check_graders.py`
-    #: runs every one of these against the cell's own `stub` and requires it to
-    #: FAIL there, and against `source` and requires it to PASS. A `check` whose
-    #: assertions pass on the unfilled placeholder is rejected in CI.
+    #: A grader that cannot fail is not a grader, and both routes a check can arrive
+    #: by are held to that. `scripts/check_graders.py` gates the ones committed to this
+    #: repository; `leona_notebooks.grader_audit` gates the ones the model writes at
+    #: request time, from two runs of the whole notebook — one with every exercise
+    #: blank, where each check must FAIL, one with the author's own source in place,
+    #: where each must PASS. A generated check that fails either arm has its `check`
+    #: stripped before the notebook reaches a reader (owner ruling ai-ops#258), so a
+    #: cell arriving from the pipeline with `check` set has been proved, not assumed.
     check: str | None = None
     #: Structured answer key for a `role=question` cell. `choice`, `numeric` and
     #: `text` grade deterministically; `rubric` is graded by the model.

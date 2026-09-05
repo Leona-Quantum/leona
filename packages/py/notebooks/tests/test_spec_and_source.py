@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import json
+
 import pytest
 from pydantic import ValidationError
 
@@ -85,3 +87,47 @@ def test_next_cell_id_never_collides() -> None:
 def test_markdown_lines_without_prefix_are_tolerated() -> None:
     spec = parse_source("# ---\n# title: T\n# ---\n# %% [markdown]\n# ok\nforgot the prefix\n")
     assert spec.cells[0].source == "ok\nforgot the prefix\n"
+
+
+# --- the grader round-trip (ai-ops#258) --------------------------------------------
+
+GRADED = (
+    "# ---\n# title: T\n# kind: lesson\n# summary: s\n# objectives:\n#   - o\n"
+    "# duration_minutes: 10\n# ---\n\n"
+    '# %% id=ex1 role=solution stub="def double(x):\\n    ..." '
+    "check=\"assert double(3) == 6, 'double(3) should be 6'\"\n"
+    "def double(x):\n    return 2 * x\n"
+)
+
+
+def test_a_check_parses_out_of_the_source_format() -> None:
+    """Before this, `check` was a rejected attribute — so a model could not write a
+    graded exercise at all, and every generated notebook had zero graders while the
+    contract, the engine and the CI gate all read as though it had them."""
+    spec = parse_source(GRADED, slug="graded")
+    cell = spec.cell_by_id("ex1")
+    assert cell.check == "assert double(3) == 6, 'double(3) should be 6'"
+    assert cell.stub == "def double(x):\n    ..."
+
+
+def test_a_check_survives_the_round_trip() -> None:
+    """`parse_source(render_source(s)) == s` is the property the repair and revise turns
+    lean on: they send a cell back through this format. An attribute that parses but does
+    not render deletes the grader on the first edit of a graded cell."""
+    spec = parse_source(GRADED, slug="graded")
+    again = parse_source(render_source(spec), slug="graded")
+    assert again.cell_by_id("ex1").check == spec.cell_by_id("ex1").check
+    assert again == spec
+
+
+def test_the_ipynb_export_never_carries_a_check() -> None:
+    """The stated invariant on `Cell.check`, asserted rather than trusted. It holds by
+    construction today — `to_ipynb` copies a fixed set of metadata keys — and this is
+    what turns "by construction" into something that fails if the construction changes."""
+    from leona_notebooks.ipynb import to_ipynb
+
+    spec = parse_source(GRADED, slug="graded")
+    for build in ("full", "challenge", "solution"):
+        blob = json.dumps(to_ipynb(spec, build=build))
+        assert "double(3) should be 6" not in blob, f"the {build} build leaked the grader"
+        assert "check" not in json.loads(blob)["cells"][0]["metadata"]["leona"]
