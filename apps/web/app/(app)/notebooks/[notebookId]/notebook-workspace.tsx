@@ -281,6 +281,13 @@ export function NotebookWorkspace({ notebookId, locale = "en" }: { notebookId: s
     loadNotebook();
     loadVersions();
     loadTurns();
+    // A LOST stream produces no terminal event, so the effect above cannot see it and
+    // the lock would be held forever. Disjoint from that path by construction:
+    // `useRunProgress` reports "lost" only when no terminal event ever arrived.
+    if (outcome === "lost" && gradingCellIds.size > 0) {
+      setGradingCellIds(new Set());
+      setActionError(copy.gradeFailed);
+    }
     const decision = authoredPinAfterRun(authored.current, streamRunId, outcome);
     if (decision.pin !== null) setPinnedSeq(decision.pin);
     if (decision.clear) authored.current = null;
@@ -294,19 +301,39 @@ export function NotebookWorkspace({ notebookId, locale = "en" }: { notebookId: s
   // showing nothing if the stream drops after the verdicts but before `run.finished`.
   useEffect(() => {
     const event = [...progressEvents].reverse().find((item) => item.type === "notebook.grades");
-    if (!event) return;
-    const report = isRecord(event.grades) ? (event.grades as GradeReport) : null;
-    if (!report) return;
-    const next: Record<string, NotebookCellGrade> = {};
-    for (const grade of report.cells ?? []) next[grade.id] = grade;
-    setGrades((current) => ({ ...current, ...next }));
-    setGradeReport(report);
-    setGradingCellIds(new Set());
-    // Why nothing could be graded, when that is the answer. Without this a guard
-    // refusal reads as "not graded yet", which tells the reader their code was fine
-    // and something else went wrong.
-    if (typeof event.note === "string" && event.note) setActionError(event.note);
-  }, [progressEvents]);
+    if (event) {
+      const report = isRecord(event.grades) ? (event.grades as GradeReport) : null;
+      if (!report) return;
+      const next: Record<string, NotebookCellGrade> = {};
+      for (const grade of report.cells ?? []) next[grade.id] = grade;
+      setGrades((current) => ({ ...current, ...next }));
+      setGradeReport(report);
+      setGradingCellIds(new Set());
+      // Why nothing could be graded, when that is the answer. Without this a guard
+      // refusal reads as "not graded yet", which tells the reader their code was fine
+      // and something else went wrong.
+      if (typeof event.note === "string" && event.note) setActionError(event.note);
+      return;
+    }
+    // The run ended and no verdict came. Releasing the lock is the whole point: it
+    // gates EVERY graded cell's submit, so leaving it held after a failed run makes
+    // the notebook's grading permanently dead until a reload, and the submitted cell
+    // sits on "Running your code…" forever. Greptile caught it on PR 832 — it is the
+    // cost of the lock added for the previous finding, which is the shape a fix that
+    // introduces its own failure usually has.
+    //
+    // Decided HERE rather than in the terminal callback, and that is not a style
+    // choice: `useRunProgress` calls its callback in the same tick it appends the
+    // event, so the callback runs BEFORE this effect sees the grades. A callback
+    // asking "did a verdict arrive?" would answer no on a perfectly good run.
+    const ended = progressEvents.some(
+      (item) => item.type === "run.finished" || item.type === "run.error",
+    );
+    if (ended && gradingCellIds.size > 0) {
+      setGradingCellIds(new Set());
+      setActionError(copy.gradeFailed);
+    }
+  }, [progressEvents, gradingCellIds, copy.gradeFailed]);
 
   /**
    * Send one reader's attempt to be graded by the exercise's own test.
