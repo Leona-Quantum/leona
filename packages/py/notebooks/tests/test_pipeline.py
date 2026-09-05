@@ -361,29 +361,6 @@ async def test_a_revise_turn_that_rewrites_a_grader_is_audited() -> None:
     assert outcome.spec.cell_by_id("ex1").check is None
 
 
-async def test_a_revise_turn_that_touches_no_grader_spends_nothing() -> None:
-    spec = parse_source(GRADED_LESSON_HONEST, slug="graded")
-    ports = ExecutingPorts(
-        drafts=[],
-        revision=RevisionPlan(
-            reply="ok",
-            summary="prose",
-            ops=[
-                RevisionOp(
-                    op="replace",
-                    cell_id="c02",
-                    cells_source="# %% id=c02 role=setup\nimport qiskit\n",
-                )
-            ],
-        ),
-    )
-    outcome = await revise(ports, RevisionRequest(spec=spec, message="tidy the setup"))
-    assert outcome.status == "ready", outcome.error
-    assert outcome.graders is None
-    assert ports.calls.count("execute") == 1
-    assert outcome.spec.cell_by_id("ex1").check == "assert double(3) == 6"
-
-
 async def test_a_revise_turn_that_only_weakens_the_stub_is_still_audited() -> None:
     """The edit that invalidates a proof without touching the assertion.
 
@@ -443,3 +420,76 @@ async def test_a_revise_turn_that_only_rewrites_the_solution_is_still_audited() 
     assert outcome.status == "ready", outcome.error
     assert outcome.graders is not None
     assert [v.verdict for v in outcome.graders.verdicts] == ["cannot-pass"]
+
+
+UPSTREAM_DEPENDENT = LESSON.replace(
+    "\n# %% [markdown] role=summary\n",
+    """
+# %% id=const role=setup
+EXPECTED = 6
+
+# %% [markdown] role=objective
+# ## Your turn
+
+# %% id=ex1 role=solution stub="def double(x):\\n    ..." check="assert double(3) == EXPECTED"
+def double(x):
+    return 2 * x
+
+# %% [markdown] role=summary
+""",
+)
+
+
+async def test_a_revise_turn_that_edits_an_UPSTREAM_cell_is_still_audited() -> None:
+    """The third layer, and the least obvious: both audit arms run the whole notebook in
+    one namespace, so a grader is proved against the state the cells above it leave
+    behind. Here `EXPECTED` moves and the check — byte-identical, on a cell nobody
+    touched — stops passing against the author's own solution. Greptile, PR 830."""
+    spec = parse_source(UPSTREAM_DEPENDENT, slug="graded")
+    ports = ExecutingPorts(
+        drafts=[],
+        revision=RevisionPlan(
+            reply="changed the constant",
+            summary="constant",
+            ops=[
+                RevisionOp(
+                    op="replace",
+                    cell_id="const",
+                    cells_source="# %% id=const role=setup\nEXPECTED = 7\n",
+                )
+            ],
+        ),
+    )
+    outcome = await revise(ports, RevisionRequest(spec=spec, message="change the constant"))
+    assert outcome.status == "ready", outcome.error
+    assert outcome.graders is not None, "an upstream code edit must re-audit"
+    assert [v.verdict for v in outcome.graders.verdicts] == ["cannot-pass"]
+    assert outcome.spec.cell_by_id("ex1").check is None
+
+
+async def test_a_revise_turn_that_only_edits_PROSE_still_spends_nothing() -> None:
+    """The other side of the same rule. Markdown does not run, so it cannot move a
+    grader's proof — and prose edits are most revise turns. A predicate that audited
+    every revision would be correct and would also make the feature too expensive to
+    keep."""
+    spec = parse_source(GRADED_LESSON_HONEST, slug="graded")
+    markdown = next(c for c in spec.cells if c.kind == "markdown")
+    ports = ExecutingPorts(
+        drafts=[],
+        revision=RevisionPlan(
+            reply="reworded",
+            summary="prose",
+            ops=[
+                RevisionOp(
+                    op="replace",
+                    cell_id=markdown.id,
+                    cells_source=f"# %% [markdown] id={markdown.id} role=objective\n# ## A clearer heading\n",
+                )
+            ],
+        ),
+    )
+    outcome = await revise(ports, RevisionRequest(spec=spec, message="reword the heading"))
+    assert outcome.status == "ready", outcome.error
+    assert outcome.graders is None
+    assert ports.calls.count("execute") == 1
+    assert outcome.spec.cell_by_id("ex1").check == "assert double(3) == 6"

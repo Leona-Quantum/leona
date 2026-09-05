@@ -411,7 +411,7 @@ async def revise(
     # needs it when a check actually moved, though: auditing an edit that touched none
     # of them would spend two sandbox runs per chat message to re-prove what generation
     # already proved.
-    if report.ok and _checks_changed(request.spec, spec):
+    if report.ok and _grader_proof_is_stale(request.spec, spec):
         spec, graders = await _audit_graders(ports, spec, attempts)
     review: NotebookReview | None = None
     if budget.review and report.ok:
@@ -432,25 +432,46 @@ async def revise(
     )
 
 
-def _checks_changed(before: NotebookSpec, after: NotebookSpec) -> bool:
-    """Whether any grader's PROOF was invalidated between two specs.
+def _grader_proof_is_stale(before: NotebookSpec, after: NotebookSpec) -> bool:
+    """Whether a revision invalidated what the audit proved about this notebook.
 
-    Not just the check text. The audit's two arms are the check run against the STUB
-    and against the SOURCE, so all three decide the verdict and any of the three moving
-    makes the old proof stale — "make the stub closer to the answer" leaves the
-    assertion untouched and can turn a sound grader vacuous, and "rewrite the solution"
-    can make one its own answer no longer passes. Comparing only the check would skip
-    the audit on exactly those edits, which are the ones a reader actually asks for.
+    Both audit arms execute the WHOLE notebook in one ordered namespace, so a grader's
+    proof is a statement about the executed program, not about the graded cell. Three
+    layers of that, and each was found by taking the layer above seriously:
 
-    Keyed by cell id, so a reordered notebook does not read as a changed grader. A
-    REMOVED check needs no audit — there is no grader left to be wrong.
+    1. the check text — the obvious one;
+    2. the graded cell's `stub` and `source`, which are what the two arms substitute in.
+       "Make the stub closer to the answer" leaves the assertion byte-identical and
+       turns a sound grader vacuous;
+    3. **every other cell that runs.** `assert double(3) == expected` is proved against
+       whatever `expected` was when the audit ran; editing, deleting, inserting or
+       reordering an upstream cell can make the same assertion accept a blank exercise
+       or reject the authored solution, without the graded cell changing at all.
+
+    So the comparison is the ordered executed shape of the notebook. Markdown is not in
+    it — prose edits, which are most revise turns, cost nothing — and neither is a
+    notebook with no grader at all, which returns before any of this. What it does cost
+    is two sandbox runs on any revise turn that moves runnable code in a graded
+    notebook, and that is the honest price of the guarantee: the alternative is a
+    verdict that was true of a notebook the reader is no longer reading.
+
+    Both findings are Greptile's, on PR 830.
     """
+    if not any(cell.check is not None for cell in after.cells):
+        return False
 
-    def graders(spec: NotebookSpec) -> dict[str, tuple[str, str | None, str]]:
-        return {c.id: (c.check or "", c.stub, c.source) for c in spec.cells if c.check is not None}
+    def executed(
+        spec: NotebookSpec,
+    ) -> list[tuple[str, str, str | None, str | None, tuple[str, ...]]]:
+        # ORDERED, and including the id: reordering two cells changes what a later one
+        # sees, and a list keyed by id would report a reorder as no change at all.
+        return [
+            (cell.id, cell.source, cell.stub, cell.check, tuple(cell.tags))
+            for cell in spec.cells
+            if cell.runs_in_sandbox
+        ]
 
-    old, new = graders(before), graders(after)
-    return any(old.get(cell_id) != grader for cell_id, grader in new.items())
+    return executed(before) != executed(after)
 
 
 def _describe_failure(report: ExecutionReport) -> str:
