@@ -153,6 +153,22 @@ jobs:
           -q
       - name: openapi.json is current
         run: uv run python -m majorana_contracts.export --check
+      # A notebook grader that passes against the unfilled stub marks every reader
+      # correct before they start, and a grader that fails against the author's own
+      # solution can never be passed. Both are silent — the notebook runs, the tests
+      # are green, and the grade is meaningless — so each grader is run against BOTH
+      # and required to come out the expected way. `--self-test` first, for the same
+      # reason the static-route checker has one: a gate nobody has seen go red is not
+      # yet evidence.
+      # The audited path is `fixtures/`, NOT `tests/`: the tests directory holds no
+      # `.json` at all, so this step used to print "clean (0 grader(s) across 0 spec(s),
+      # both arms checked)" and pass on every run — a green check named "graders can
+      # actually fail" that checked nothing. The script now refuses an empty discovery,
+      # so emptying `fixtures/` turns this red instead of turning it off.
+      - name: notebook graders can actually fail
+        run: |
+          uv run python scripts/check_graders.py --self-test
+          uv run python scripts/check_graders.py packages/py/notebooks/fixtures
       # Authz invariant (02-architecture §4): DB access only via the repository layer
       - name: import-linter
         run: uv run lint-imports

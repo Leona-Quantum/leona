@@ -12,6 +12,30 @@ export interface components {
          * @enum {string}
          */
         Algorithm: "VQE" | "QAOA" | "Grover" | "Bell" | "GHZ" | "QFT" | "QPE" | "AmplitudeEstimation" | "StatePreparation" | "CircuitSynthesis" | "GateDecomposition" | "Transpilation" | "Simulation" | "ErrorCorrection" | "other";
+        /**
+         * AnswerPrompt
+         * @description What a reader is shown of a question — everything the key holds EXCEPT the answer.
+         *
+         *     Grading is server-side for exactly this reason. If the correct option travelled
+         *     to the browser so the page could mark its own quiz, the quiz would be an honour
+         *     system with a scoreboard: anyone can read the payload. So `for_learner()` drops
+         *     `Cell.answer` entirely and leaves this in its place, and
+         *     `NotebookSpec.leaks_answer_key()` is the assertion that it did.
+         */
+        AnswerPrompt: {
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "choice" | "numeric" | "text" | "rubric";
+            /** Options */
+            options?: string[];
+            /**
+             * Unit
+             * @default
+             */
+            unit: string;
+        };
         /** Artifact */
         Artifact: {
             /**
@@ -592,6 +616,18 @@ export interface components {
         /** Cell */
         Cell: {
             /**
+             * Answer
+             * @default null
+             */
+            answer: (components["schemas"]["ChoiceAnswer"] | components["schemas"]["NumericAnswer"] | components["schemas"]["TextAnswer"] | components["schemas"]["RubricAnswer"]) | null;
+            /** @default null */
+            answer_prompt: components["schemas"]["AnswerPrompt"] | null;
+            /**
+             * Check
+             * @default null
+             */
+            check: string | null;
+            /**
              * Execute
              * @default true
              */
@@ -631,6 +667,45 @@ export interface components {
             evalue: string;
             /** Traceback */
             traceback?: string[];
+        };
+        /**
+         * CellGrade
+         * @description The verdict on ONE graded cell.
+         *
+         *     `unattempted` is a first-class status rather than a failure: a reader who has
+         *     not reached a cell has not got it wrong, and collapsing the two would make a
+         *     progress bar drop as a notebook grows. `ungradable` is the honest outcome when
+         *     the grader itself could not run — a sandbox timeout, a malformed key — and it
+         *     is never counted as either a pass or a fail.
+         */
+        CellGrade: {
+            /**
+             * Detail
+             * @default
+             */
+            detail: string;
+            /**
+             * Graded By
+             * @enum {string}
+             */
+            graded_by: "deterministic" | "model";
+            /**
+             * Hint
+             * @default
+             */
+            hint: string;
+            /** Id */
+            id: string;
+            /**
+             * Message
+             * @default
+             */
+            message: string;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "passed" | "failed" | "unattempted" | "ungradable";
         };
         /** CellOutput */
         CellOutput: {
@@ -799,6 +874,26 @@ export interface components {
              * @enum {string}
              */
             type: "chat.error";
+        };
+        /**
+         * ChoiceAnswer
+         * @description One right option among several. `correct` indexes `options`.
+         */
+        ChoiceAnswer: {
+            /** Correct */
+            correct: number;
+            /**
+             * Explanation
+             * @default
+             */
+            explanation: string;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            kind: "choice";
+            /** Options */
+            options: string[];
         };
         /**
          * CircuitCompiler
@@ -1795,6 +1890,16 @@ export interface components {
             run_ids?: string[];
         };
         /**
+         * GradeReport
+         * @description Grades for one attempt at one notebook version.
+         */
+        GradeReport: {
+            /** Cells */
+            cells?: components["schemas"]["CellGrade"][];
+            /** Notebook Slug */
+            notebook_slug: string;
+        };
+        /**
          * ImportNotebookRequest
          * @description An existing `.ipynb` becomes a notebook the reader can then edit with Nala.
          */
@@ -2438,6 +2543,38 @@ export interface components {
             /** Seq */
             seq: number;
             status: components["schemas"]["NotebookVersionStatus"];
+        };
+        /**
+         * NumericAnswer
+         * @description A number, compared with an ABSOLUTE tolerance.
+         *
+         *     `tolerance` defaults to 0.0, which means exact equality — deliberate, so an
+         *     author who omits it gets a grader that is strict rather than one that is
+         *     silently generous. A physical answer almost always wants a tolerance set.
+         */
+        NumericAnswer: {
+            /**
+             * Explanation
+             * @default
+             */
+            explanation: string;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            kind: "numeric";
+            /**
+             * Tolerance
+             * @default 0
+             */
+            tolerance: number;
+            /**
+             * Unit
+             * @default
+             */
+            unit: string;
+            /** Value */
+            value: number;
         };
         /**
          * Optimizer
@@ -3406,6 +3543,29 @@ export interface components {
          * @enum {string}
          */
         Role: "owner" | "admin" | "member" | "viewer";
+        /**
+         * RubricAnswer
+         * @description Open-ended: graded by the model against `rubric`, never deterministically.
+         *
+         *     The rubric is what the grader is told to look for, so it must be specific
+         *     enough that two readers agree on the verdict. Carried separately from the
+         *     other three so that a grade's provenance is legible: anything graded here
+         *     reports `graded_by="model"` and is reproducible only to the extent the model is.
+         */
+        RubricAnswer: {
+            /**
+             * Explanation
+             * @default
+             */
+            explanation: string;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            kind: "rubric";
+            /** Rubric */
+            rubric: string;
+        };
         /** Run */
         Run: {
             /**
@@ -4381,6 +4541,29 @@ export interface components {
              * @description Key extracted from the run's result dict, e.g. ground_state_energy_Ha
              */
             primary_metric: string;
+        };
+        /**
+         * TextAnswer
+         * @description Accepts any of `accept`, compared case-insensitively on collapsed whitespace.
+         *
+         *     This is for answers with a small closed set of right spellings ("Hadamard",
+         *     "the Hadamard gate"). Anything open-ended belongs in `RubricAnswer`, which is
+         *     graded by the model — putting it here would silently mark a correct answer
+         *     wrong for being phrased differently.
+         */
+        TextAnswer: {
+            /** Accept */
+            accept: string[];
+            /**
+             * Explanation
+             * @default
+             */
+            explanation: string;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            kind: "text";
         };
         /**
          * TopLevelExecution

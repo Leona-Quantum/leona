@@ -1,0 +1,33 @@
+{
+  "slug": "superposition-first-steps",
+  "title": "Your first superposition",
+  "kind": "lesson",
+  "cells": [
+    {
+      "id": "intro",
+      "kind": "markdown",
+      "role": "objective",
+      "source": "# Your first superposition\n\nA qubit that starts in $|0\\rangle$ and passes through a Hadamard gate is equally likely to be measured as 0 or 1. Below you will build that circuit yourself and check it."
+    },
+    {
+      "id": "setup",
+      "kind": "code",
+      "role": "setup",
+      "source": "from qiskit import QuantumCircuit\nfrom qiskit.quantum_info import Statevector"
+    },
+    {
+      "id": "build-the-hadamard-circuit",
+      "kind": "code",
+      "role": "solution",
+      "source": "qc = QuantumCircuit(1)\nqc.h(0)\nstate = Statevector.from_instruction(qc)",
+      "stub": "qc = QuantumCircuit(1)\n# Put the qubit into an equal superposition, then\n# build its statevector as `state`.\n",
+      "check": "import math\nassert 'state' in dir(), 'define `state` from your circuit'\nprobs = Statevector(state).probabilities_dict()\nassert set(probs) == {'0', '1'}, f'expected both outcomes, got {sorted(probs)}'\nassert math.isclose(probs['0'], 0.5, abs_tol=1e-9), f\"|0> should have probability 0.5, got {probs['0']}\""
+    },
+    {
+      "id": "outro",
+      "kind": "markdown",
+      "role": "summary",
+      "source": "Both outcomes came out at 0.5. That is superposition — not the qubit secretly being 0 or 1, but a state that only resolves when measured."
+    }
+  ]
+}

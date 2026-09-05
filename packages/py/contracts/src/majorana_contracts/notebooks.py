@@ -18,7 +18,7 @@ from __future__ import annotations
 import re
 from datetime import datetime
 from enum import StrEnum
-from typing import Any, Literal
+from typing import Annotated, Any, Literal
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
@@ -123,6 +123,86 @@ class Seed(_Model):
     content: str = Field(default="", max_length=20_000)
 
 
+class AnswerPrompt(_Model):
+    """What a reader is shown of a question — everything the key holds EXCEPT the answer.
+
+    Grading is server-side for exactly this reason. If the correct option travelled
+    to the browser so the page could mark its own quiz, the quiz would be an honour
+    system with a scoreboard: anyone can read the payload. So `for_learner()` drops
+    `Cell.answer` entirely and leaves this in its place, and
+    `NotebookSpec.leaks_answer_key()` is the assertion that it did.
+    """
+
+    kind: Literal["choice", "numeric", "text", "rubric"]
+    #: `choice` only — the options in author order, with no marker on the right one.
+    options: list[str] = Field(default_factory=list)
+    #: `numeric` only — shown beside the input so the reader knows what to answer in.
+    unit: str = ""
+
+
+class ChoiceAnswer(_Model):
+    """One right option among several. `correct` indexes `options`."""
+
+    kind: Literal["choice"] = "choice"
+    options: list[str] = Field(min_length=2, max_length=8)
+    correct: int = Field(ge=0)
+    explanation: str = ""
+
+    @model_validator(mode="after")
+    def _correct_in_range(self) -> ChoiceAnswer:
+        if self.correct >= len(self.options):
+            raise ValueError(f"correct index {self.correct} is outside {len(self.options)} options")
+        return self
+
+
+class NumericAnswer(_Model):
+    """A number, compared with an ABSOLUTE tolerance.
+
+    `tolerance` defaults to 0.0, which means exact equality — deliberate, so an
+    author who omits it gets a grader that is strict rather than one that is
+    silently generous. A physical answer almost always wants a tolerance set.
+    """
+
+    kind: Literal["numeric"] = "numeric"
+    value: float
+    tolerance: float = Field(default=0.0, ge=0.0)
+    unit: str = ""
+    explanation: str = ""
+
+
+class TextAnswer(_Model):
+    """Accepts any of `accept`, compared case-insensitively on collapsed whitespace.
+
+    This is for answers with a small closed set of right spellings ("Hadamard",
+    "the Hadamard gate"). Anything open-ended belongs in `RubricAnswer`, which is
+    graded by the model — putting it here would silently mark a correct answer
+    wrong for being phrased differently.
+    """
+
+    kind: Literal["text"] = "text"
+    accept: list[str] = Field(min_length=1, max_length=16)
+    explanation: str = ""
+
+
+class RubricAnswer(_Model):
+    """Open-ended: graded by the model against `rubric`, never deterministically.
+
+    The rubric is what the grader is told to look for, so it must be specific
+    enough that two readers agree on the verdict. Carried separately from the
+    other three so that a grade's provenance is legible: anything graded here
+    reports `graded_by="model"` and is reproducible only to the extent the model is.
+    """
+
+    kind: Literal["rubric"] = "rubric"
+    rubric: str = Field(min_length=1)
+    explanation: str = ""
+
+
+AnswerKey = Annotated[
+    ChoiceAnswer | NumericAnswer | TextAnswer | RubricAnswer, Field(discriminator="kind")
+]
+
+
 class Cell(_Model):
     id: str
     kind: Literal["markdown", "code"]
@@ -134,6 +214,22 @@ class Cell(_Model):
     execute: bool = True
     #: For `role=solution` code cells: the learner-facing placeholder in the challenge build.
     stub: str | None = None
+    #: Hidden grader for a code cell the reader fills in. Runs in the sandbox
+    #: immediately after the reader's own cell, in the SAME namespace, so it can
+    #: assert on whatever that cell defined. Never sent to the browser and never
+    #: written into an exported `.ipynb` — see `NotebookSpec.for_learner()`.
+    #:
+    #: A grader that cannot fail is not a grader: `scripts/check_graders.py`
+    #: runs every one of these against the cell's own `stub` and requires it to
+    #: FAIL there, and against `source` and requires it to PASS. A `check` whose
+    #: assertions pass on the unfilled placeholder is rejected in CI.
+    check: str | None = None
+    #: Structured answer key for a `role=question` cell. `choice`, `numeric` and
+    #: `text` grade deterministically; `rubric` is graded by the model.
+    answer: AnswerKey | None = None
+    #: The redacted half of `answer`, and the ONLY half a reader's browser receives.
+    #: Set by `for_learner()`; an authored spec leaves it `None`.
+    answer_prompt: AnswerPrompt | None = None
     #: Advisory per-cell budget for a kernel-based validator; the sandbox has one budget.
     timeout_s: int | None = Field(default=None, ge=1, le=600)
 
@@ -149,6 +245,41 @@ class Cell(_Model):
         if self.stub is not None and self.kind != "code":
             raise ValueError(f"cell {self.id}: only code cells carry a stub")
         return self
+
+    @model_validator(mode="after")
+    def _check_only_on_code(self) -> Cell:
+        if self.check is not None and self.kind != "code":
+            raise ValueError(f"cell {self.id}: only code cells carry a check")
+        return self
+
+    @model_validator(mode="after")
+    def _check_needs_a_stub(self) -> Cell:
+        """A grader with nothing to grade is an authoring mistake, not a strict build.
+
+        The check runs against what the reader wrote in place of `stub`. Without a
+        stub there is no reader-authored cell for it to grade, so it would only ever
+        run against the model's own solution and pass every time — a green tick that
+        measures nothing.
+        """
+        if self.check is not None and not (self.stub or "").strip():
+            raise ValueError(f"cell {self.id}: a check needs a stub for the reader to fill in")
+        return self
+
+    @model_validator(mode="after")
+    def _answer_only_on_question(self) -> Cell:
+        if self.answer is not None and self.role != CellRole.QUESTION:
+            raise ValueError(f"cell {self.id}: only role=question cells carry an answer key")
+        return self
+
+    @property
+    def is_graded(self) -> bool:
+        """Whether this cell can produce a grade at all — the two ways differ.
+
+        A code cell is graded by running `check`; a question cell by comparing the
+        reader's response to `answer`. A cell with neither is content, and counting
+        it as an ungraded exercise is what makes a progress figure honest.
+        """
+        return self.check is not None or self.answer is not None
 
     @property
     def is_code(self) -> bool:
@@ -239,6 +370,58 @@ class NotebookSpec(_Model):
                 return candidate
             index += 1
 
+    def for_learner(self) -> NotebookSpec:
+        """The build a reader receives: no graders, no answer keys, stubs in place.
+
+        Three redactions, and each one is the difference between a graded notebook
+        and a notebook that merely looks graded:
+
+        * `check` is dropped — it holds the assertions, and often the answer with them.
+        * `answer` is replaced by `answer_prompt`, which carries the options but not
+          which one is right.
+        * a `solution` cell's `source` is replaced by its `stub`, so the reader gets
+          the placeholder to fill in rather than the finished code.
+
+        Returns a copy; the authored spec is never mutated.
+        """
+        cells: list[Cell] = []
+        for cell in self.cells:
+            data = cell.model_dump()
+            data["check"] = None
+            if cell.answer is not None:
+                data["answer"] = None
+                data["answer_prompt"] = AnswerPrompt(
+                    kind=cell.answer.kind,
+                    options=list(getattr(cell.answer, "options", []) or []),
+                    unit=getattr(cell.answer, "unit", "") or "",
+                ).model_dump()
+            if cell.role == CellRole.SOLUTION and cell.stub is not None:
+                data["source"] = cell.stub
+            cells.append(Cell.model_validate(data))
+        return self.model_copy(update={"cells": cells})
+
+    def leaks_answer_key(self) -> list[str]:
+        """Cell ids in this spec that still carry something a reader must not see.
+
+        Written to be called ON a learner build, as the assertion that `for_learner()`
+        did its job — a redaction nothing checks is a redaction that silently stops
+        happening the first time a field is added to `Cell`.
+        """
+        leaked: list[str] = []
+        for cell in self.cells:
+            if cell.check is not None or cell.answer is not None:
+                leaked.append(cell.id)
+            elif (
+                cell.role == CellRole.SOLUTION
+                and cell.stub is not None
+                and cell.source != cell.stub
+            ):
+                leaked.append(cell.id)
+        return leaked
+
+    def graded_cells(self) -> list[Cell]:
+        return [cell for cell in self.cells if cell.is_graded]
+
 
 # --------------------------------------------------------------------------- what a run produced
 
@@ -305,6 +488,61 @@ class ExecutionReport(_Model):
 
     def executed_count(self) -> int:
         return sum(1 for cell in self.cells if cell.status in {"ok", "error"})
+
+
+class CellGrade(_Model):
+    """The verdict on ONE graded cell.
+
+    `unattempted` is a first-class status rather than a failure: a reader who has
+    not reached a cell has not got it wrong, and collapsing the two would make a
+    progress bar drop as a notebook grows. `ungradable` is the honest outcome when
+    the grader itself could not run — a sandbox timeout, a malformed key — and it
+    is never counted as either a pass or a fail.
+    """
+
+    id: str
+    status: Literal["passed", "failed", "unattempted", "ungradable"]
+    graded_by: Literal["deterministic", "model"]
+    #: Reader-facing, and written to be read after a wrong answer: what was expected,
+    #: not merely that it was wrong.
+    message: str = ""
+    #: One step toward the answer, never the answer itself.
+    hint: str = ""
+    #: For a code cell: the assertion text that failed, so the reader sees the
+    #: actual condition rather than a generic "incorrect".
+    detail: str = ""
+
+
+class GradeReport(_Model):
+    """Grades for one attempt at one notebook version."""
+
+    notebook_slug: str
+    cells: list[CellGrade] = Field(default_factory=list)
+
+    def by_id(self) -> dict[str, CellGrade]:
+        return {grade.id: grade for grade in self.cells}
+
+    @property
+    def passed(self) -> int:
+        return sum(1 for grade in self.cells if grade.status == "passed")
+
+    @property
+    def failed(self) -> int:
+        return sum(1 for grade in self.cells if grade.status == "failed")
+
+    @property
+    def attempted(self) -> int:
+        return sum(1 for grade in self.cells if grade.status in {"passed", "failed"})
+
+    @property
+    def gradable(self) -> int:
+        """Cells that could be graded at all — the denominator a score must use.
+
+        Deliberately excludes `ungradable`: scoring 8/10 when two graders crashed
+        reports a worse result than the reader earned, and scoring 8/8 hides that
+        two never ran. Callers show `attempted`/`gradable` and surface the rest.
+        """
+        return sum(1 for grade in self.cells if grade.status != "ungradable")
 
 
 class ReviewFinding(_Model):
