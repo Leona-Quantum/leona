@@ -169,6 +169,15 @@ jobs:
         run: |
           uv run python scripts/check_graders.py --self-test
           uv run python scripts/check_graders.py packages/py/notebooks/fixtures
+      # The nightly's two reporters, self-tested HERE rather than only inside `bench.yml`:
+      # that workflow runs once a night and is `workflow_dispatch` otherwise, so a broken
+      # reporter would be found by the run it was supposed to report on. Both arms of each
+      # matter — `check_bench_signal` must accept a real measurement and refuse a dead
+      # harness, and `bench_summary` must not render a dead lane as a score of 0%.
+      - name: the nightly's own reporters can go red
+        run: |
+          uv run python scripts/check_bench_signal.py --self-test
+          uv run python scripts/bench_summary.py --self-test
       # Authz invariant (02-architecture §4): DB access only via the repository layer
       - name: import-linter
         run: uv run lint-imports
