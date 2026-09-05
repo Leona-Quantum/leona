@@ -309,12 +309,33 @@ export function NotebookWorkspace({ notebookId, locale = "en" }: { notebookId: s
    * id yet; a monotonic attempt number does. Greptile caught it on PR 832. */
   const attemptSeq = useRef(0);
   const runAttempt = useRef(new Map<string, number>());
+  /**
+   * Idempotency keys for submissions whose OUTCOME WE NEVER LEARNED, keyed by the
+   * submission itself.
+   *
+   * Two requirements pull opposite ways and both are real. A lost 202 must not be
+   * charged twice, so pressing again has to send the key the accepted request carried
+   * — a fresh UUID per press cannot. A run that FAILED must be retryable, so the key
+   * must not be permanent — a hash of the body is, and replays the stored failure
+   * forever. Greptile caught both, one round apart.
+   *
+   * The tie-break is what we know: a key lives only while the attempt's outcome is
+   * unknown, and is dropped the moment one is observed — verdict or failure alike. So
+   * a lost response replays the original run (the server hands back its id, we follow
+   * it, and learn the outcome we missed), and an observed failure starts a fresh run
+   * on the next press. The failure case costs one extra press and never becomes
+   * permanent, which is the trade the other two designs each got wrong in one
+   * direction.
+   */
+  const pendingKeys = useRef(new Map<string, string>());
+  const inflightKey = useRef<string | null>(null);
   const gradingEvents = useRunProgress(gradingRunId, (outcome, streamRunId) => {
     // A LOST stream produces no terminal event, so the effect below cannot see it and
     // the lock would be held forever. Disjoint from that path by construction:
     // `useRunProgress` reports "lost" only when no terminal event ever arrived.
     if (runAttempt.current.get(streamRunId) !== attemptSeq.current) return;
     if (outcome === "lost" && gradingCellIds.size > 0) {
+      if (inflightKey.current) pendingKeys.current.delete(inflightKey.current);
       setGradingCellIds(new Set());
       setActionError(copy.gradeFailed);
     }
@@ -326,12 +347,23 @@ export function NotebookWorkspace({ notebookId, locale = "en" }: { notebookId: s
   // event is already in `progressEvents` — waiting for the end would also mean
   // showing nothing if the stream drops after the verdicts but before `run.finished`.
   useEffect(() => {
+    // The same window the callback guards, and the OTHER consumer of it. While a new
+    // attempt's POST is in flight `gradingRunId` still points at the previous run, so
+    // this effect would read that run's events: showing its verdict as the new
+    // attempt's, or reporting the still-running attempt as failed. Guarding one
+    // consumer and not the other left half the race open. Greptile, PR 832.
+    if (gradingRunId === null || runAttempt.current.get(gradingRunId) !== attemptSeq.current) {
+      return;
+    }
     const event = [...gradingEvents].reverse().find((item) => item.type === "notebook.grades");
     if (event) {
       const report = isRecord(event.grades) ? (event.grades as GradeReport) : null;
       if (!report) return;
       const next: Record<string, NotebookCellGrade> = {};
       for (const grade of report.cells ?? []) next[grade.id] = grade;
+      // Outcome observed: this submission is settled, so its key is forgotten and a
+      // later press of the same answer starts a genuinely new run.
+      if (inflightKey.current) pendingKeys.current.delete(inflightKey.current);
       setGrades((current) => ({ ...current, ...next }));
       setGradeReport(report);
       setGradingCellIds(new Set());
@@ -368,10 +400,11 @@ export function NotebookWorkspace({ notebookId, locale = "en" }: { notebookId: s
       (item) => item.type === "run.finished" || item.type === "run.error",
     );
     if (ended && gradingCellIds.size > 0) {
+      if (inflightKey.current) pendingKeys.current.delete(inflightKey.current);
       setGradingCellIds(new Set());
       setActionError(copy.gradeFailed);
     }
-  }, [gradingEvents, gradingCellIds, copy.gradeFailed]);
+  }, [gradingEvents, gradingRunId, gradingCellIds, copy.gradeFailed]);
 
   /**
    * Send one reader's attempt to be graded by the exercise's own test.
@@ -384,23 +417,14 @@ export function NotebookWorkspace({ notebookId, locale = "en" }: { notebookId: s
   async function gradeAttempt(cellId: string, attempt: string) {
     setActionError(null);
     const mine = (attemptSeq.current += 1);
+    const submission = `${cellId}\u0000${attempt}`;
     setGradingCellIds(new Set([cellId]));
     const body = JSON.stringify({ code: { [cellId]: attempt }, answers: {} });
     try {
-      // A fresh key per PRESS, not per request body.
-      //
-      // Derived-from-the-body was wrong and the failure is unrecoverable: a grading run
-      // that dies before emitting a verdict stores its error under that key, and
-      // resubmitting the same answer replays the failure forever — the reader's only
-      // escape is to change an answer that may have been right. Greptile caught it on
-      // PR 832; deriving it optimised for a deliberate double-press, which the attempt
-      // lock already prevents, at the cost of making a transient sandbox failure
-      // permanent for that exact answer.
-      //
-      // Generated ONCE here rather than inside the fetch, which is what makes it a
-      // retry key at all: a network-level replay of this POST reuses the header it was
-      // built with, so the duplicate is caught, while a new press starts a new run.
-      const key = crypto.randomUUID();
+      // Reused for THIS submission until its outcome is known — see `pendingKeys`.
+      const key = pendingKeys.current.get(submission) ?? crypto.randomUUID();
+      pendingKeys.current.set(submission, key);
+      inflightKey.current = submission;
       const response = await fetch(`/api/notebooks/${encodeURIComponent(notebookId)}/attempts`, {
         method: "POST",
         headers: {
@@ -408,16 +432,7 @@ export function NotebookWorkspace({ notebookId, locale = "en" }: { notebookId: s
           // Grading costs a sandbox run, so a retry must not buy a second one. The
           // server has taken this header since the route existed; nothing sent one,
           // which made the protection real and unreachable at the same time.
-          //
-          // DERIVED from the submission rather than random, because the case it has to
-          // survive is a retry of THIS request — a dropped 202, a double-press — and a
-          // retry reproduces the body, so it reproduces the key without anything
-          // needing to be remembered between attempts. The version is in it so the
-          // same answer against a re-generated notebook is a new attempt, not a replay
-          // of a verdict about different cells.
-          // Omitted rather than sent empty when the digest is unavailable: an empty
-          // header is a key the server has to decide is not one.
-          ...(key ? { "Idempotency-Key": key } : {}),
+          "Idempotency-Key": key,
         },
         body,
       });
@@ -430,6 +445,10 @@ export function NotebookWorkspace({ notebookId, locale = "en" }: { notebookId: s
       runAttempt.current.set(runId, mine);
       setGradingRunId(runId);
     } catch (cause) {
+      // Deliberately NOT clearing the key here. A thrown fetch is the ambiguous case
+      // this whole mechanism exists for: the server may have accepted the attempt and
+      // only the response was lost, so the next press must carry the same key. It is
+      // dropped once an outcome is actually observed, which a replay will deliver.
       setGradingCellIds(new Set());
       setActionError(cause instanceof Error ? cause.message : copy.gradeFailed);
     }
