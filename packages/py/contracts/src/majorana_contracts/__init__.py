@@ -349,6 +349,13 @@ from .lifecycle import (
 # check becomes advisory output on a user's edit instead of a constraint that
 # refuses it. Additive — every field defaults, and a client that never posts to
 # /notebooks/{id}/versions sees no change.
+# 2.20.0: Grading. Cell gains `check` (an assertion the author writes, run against the
+# reader's own code to decide the exercise) and `answer` (a choice/numeric/text key, or a
+# rubric the model grades), plus CellGrade / GradeReport and the request-response pair
+# that carries an attempt. Additive: both new Cell fields default to None, so every
+# 2.19.0 payload still validates and an ungraded notebook behaves exactly as before.
+# The answer key never leaves the server — `for_learner()` strips it and
+# `leaks_answer_key()` asserts that it did.
 CONTRACTS_VERSION = "2.20.0"
 
 __all__ = [

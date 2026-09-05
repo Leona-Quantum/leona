@@ -39,6 +39,7 @@ __all__ = [
     "check_cell_id",
     "deterministic_grade",
     "grades_from_report",
+    "grader_ids",
     "spec_with_graders",
 ]
 
@@ -78,6 +79,37 @@ def check_cell_id(cell_id: str, taken: set[str] | None = None) -> str:
     raise ValueError(f"cannot derive a unique check id for {cell_id!r}")
 
 
+def grader_ids(spec: NotebookSpec) -> dict[str, str]:
+    """`{graded cell id: the id of the cell that grades it}` for one spec.
+
+    Allocated in ONE place because it is allocated twice: once when the graders are
+    inserted and once when the results are read back. Those two used to derive the id
+    independently, and they disagreed — the writer passed a `taken` set that GREW as
+    graders were added, the reader passed one that could only ever hold authored cell
+    ids, so the reader's collision resolution never fired. Two checked cells whose ids
+    share the first 29 characters (`implement-the-oracle-for-case-1` and `…-2`, which
+    is exactly how a model numbers a pair of exercises) therefore got distinct grader
+    ids on write and the SAME id on read: the second cell read the first one's result,
+    and an unattempted or wrong exercise was reported as passed whenever the one above
+    it passed.
+
+    `check_cell_id` already documented that collisions "are resolved against `taken`
+    rather than assumed away". The property was real; only one of its two call sites
+    supplied a `taken` that could show a collision. Deriving the mapping once removes
+    the possibility of the two sides disagreeing at all, rather than fixing the reader
+    to match the writer and leaving a second copy of the rule to drift.
+    """
+    taken = {cell.id for cell in spec.cells}
+    out: dict[str, str] = {}
+    for cell in spec.cells:
+        if cell.check is None:
+            continue
+        gid = check_cell_id(cell.id, taken)
+        taken.add(gid)
+        out[cell.id] = gid
+    return out
+
+
 def spec_with_graders(spec: NotebookSpec, attempt: GradedAttempt) -> NotebookSpec:
     """`spec` with the reader's code substituted in and each check inserted after it.
 
@@ -87,7 +119,7 @@ def spec_with_graders(spec: NotebookSpec, attempt: GradedAttempt) -> NotebookSpe
     which is the correct reading of "not done" and the same thing
     `scripts/check_graders.py` asserts at authoring time.
     """
-    taken = {cell.id for cell in spec.cells}
+    ids = grader_ids(spec)
     cells: list[Cell] = []
     for cell in spec.cells:
         data = cell.model_dump()
@@ -101,8 +133,7 @@ def spec_with_graders(spec: NotebookSpec, attempt: GradedAttempt) -> NotebookSpe
         cells.append(Cell.model_validate(data))
         if cell.check is None:
             continue
-        gid = check_cell_id(cell.id, taken)
-        taken.add(gid)
+        gid = ids[cell.id]
         cells.append(
             Cell(
                 id=gid,
@@ -211,13 +242,12 @@ def grades_from_report(
     `spec` is the AUTHORED spec — the one that still holds the checks and answer keys.
     """
     results = report.by_id()
-    taken = {cell.id for cell in spec.cells}
+    ids = grader_ids(spec)
     grades: list[CellGrade] = []
 
     for cell in spec.cells:
         if cell.check is not None:
-            gid = check_cell_id(cell.id, taken - {cell.id})
-            result = results.get(gid)
+            result = results.get(ids[cell.id])
             if result is None or result.status in {"not_run", "skipped"}:
                 # The grader never ran — the reader stopped short, or the cell was
                 # skipped. Neither is a wrong answer, and calling it one would mark a

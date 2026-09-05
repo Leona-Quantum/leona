@@ -92,6 +92,48 @@ def test_check_cell_ids_stay_valid_and_unique_for_long_ids():
     assert check_cell_id(long_id, {gid}) != gid
 
 
+def test_two_exercises_with_a_shared_29_character_prefix_are_graded_separately():
+    """The unit test above proves `check_cell_id` resolves a collision. It does not
+    prove the two SIDES agree, and they did not: the writer allocated against a `taken`
+    set that grew as graders were inserted, the reader against one that could only hold
+    authored ids, so the reader's resolution never fired. The second cell then read the
+    FIRST one's result — and a model numbering a pair of exercises produces exactly
+    these ids.
+    """
+    a, b = "implement-the-oracle-for-case1", "implement-the-oracle-for-case2"
+    assert a[:29] == b[:29] and len(a) > 29, "the fixture must actually collide"
+    spec = NotebookSpec(
+        slug="collide",
+        title="Collide",
+        cells=[
+            Cell(
+                id=a,
+                kind="code",
+                role=CellRole.SOLUTION,
+                source="one = 1",
+                stub="one = 0",
+                check="assert one == 1, 'case1'",
+            ),
+            Cell(
+                id=b,
+                kind="code",
+                role=CellRole.SOLUTION,
+                source="two = 2",
+                stub="two = 0",
+                check="assert two == 2, 'case2'",
+            ),
+        ],
+    )
+    derived = spec_with_graders(spec, GradedAttempt(code={}, answers={}))
+    check_ids = [c.id for c in derived.cells if "leona-grader" in c.tags]
+    assert len(set(check_ids)) == 2, f"graders share an id: {check_ids}"
+
+    # First right, second untouched. The second must NOT inherit the first's pass.
+    grades = _grade_code(spec, {a: "one = 1"})
+    assert grades[a].status == "passed"
+    assert grades[b].status == "failed", "an unattempted exercise read the cell above's grade"
+
+
 # --------------------------------------------------------------------------- questions
 
 
