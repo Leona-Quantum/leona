@@ -601,6 +601,100 @@
         "title": "Audience",
         "type": "object"
       },
+      "AuthorNotebookVersionRequest": {
+        "additionalProperties": false,
+        "description": "A version the reader wrote themselves.\n\nThree equivalent ways in, because the same notebook is edited from three places\nand all three must land as one kind of row: `spec` from the in-browser editor,\n`source` from a text editor (the `.nb.py` percent form), `ipynb` from Jupyter\n(`%nala push`). Exactly one of the three \u2014 two inputs is a 400, not a silent\nprecedence rule, because a client sending both has a bug the server cannot\nresolve in the reader's favour.\n\nA user-authored version is executed by the same sandbox path Nala's builds use,\nso the version history stays the single truth about what this notebook is.",
+        "properties": {
+          "execute": {
+            "default": true,
+            "title": "Execute",
+            "type": "boolean"
+          },
+          "ipynb": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Ipynb"
+          },
+          "message": {
+            "default": "",
+            "maxLength": 500,
+            "title": "Message",
+            "type": "string"
+          },
+          "run_until": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Run Until"
+          },
+          "source": {
+            "anyOf": [
+              {
+                "maxLength": 400000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Source"
+          },
+          "spec": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/NotebookSpec"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          }
+        },
+        "title": "AuthorNotebookVersionRequest",
+        "type": "object"
+      },
+      "AuthorNotebookVersionResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "run_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Run Id"
+          },
+          "version": {
+            "$ref": "#/components/schemas/NotebookVersionSummary"
+          }
+        },
+        "required": [
+          "version"
+        ],
+        "title": "AuthorNotebookVersionResponse",
+        "type": "object"
+      },
       "BaselineKind": {
         "enum": [
           "maxcut",
@@ -2220,6 +2314,663 @@
         "title": "CostOnSmallestMachine",
         "type": "object"
       },
+      "Course": {
+        "additionalProperties": false,
+        "description": "Owner-facing course resource, modules included \u2014 a course is small enough\nthat splitting the modules behind a second request would only cost a round\ntrip (a plan is capped at 16 modules).",
+        "properties": {
+          "audience": {
+            "$ref": "#/components/schemas/Audience"
+          },
+          "brief": {
+            "default": "",
+            "title": "Brief",
+            "type": "string"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "framework": {
+            "$ref": "#/components/schemas/NotebookFramework"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "kind": {
+            "const": "course",
+            "default": "course",
+            "title": "Kind",
+            "type": "string"
+          },
+          "language": {
+            "default": "en",
+            "enum": [
+              "en",
+              "ja"
+            ],
+            "title": "Language",
+            "type": "string"
+          },
+          "module_count": {
+            "default": 0,
+            "minimum": 0,
+            "title": "Module Count",
+            "type": "integer"
+          },
+          "modules": {
+            "items": {
+              "$ref": "#/components/schemas/CourseModule"
+            },
+            "title": "Modules",
+            "type": "array"
+          },
+          "plan_run_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Plan Run Id"
+          },
+          "ready_count": {
+            "default": 0,
+            "minimum": 0,
+            "title": "Ready Count",
+            "type": "integer"
+          },
+          "slug": {
+            "title": "Slug",
+            "type": "string"
+          },
+          "status": {
+            "$ref": "#/components/schemas/CourseStatus"
+          },
+          "style": {
+            "$ref": "#/components/schemas/Style"
+          },
+          "summary": {
+            "default": "",
+            "title": "Summary",
+            "type": "string"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "slug",
+          "title",
+          "status",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "Course",
+        "type": "object"
+      },
+      "CourseList": {
+        "additionalProperties": false,
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/CourseSummary"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Next Cursor"
+          }
+        },
+        "title": "CourseList",
+        "type": "object"
+      },
+      "CourseModule": {
+        "additionalProperties": false,
+        "description": "A stored module: the plan's content, plus where its notebook got to.",
+        "properties": {
+          "brief": {
+            "default": "",
+            "title": "Brief",
+            "type": "string"
+          },
+          "deliverable": {
+            "default": "",
+            "title": "Deliverable",
+            "type": "string"
+          },
+          "duration_minutes": {
+            "anyOf": [
+              {
+                "maximum": 600,
+                "minimum": 1,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Duration Minutes"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "key_concepts": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Key Concepts",
+            "type": "array"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/NotebookKind",
+            "default": "lesson"
+          },
+          "notebook_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Notebook Id"
+          },
+          "notebook_version_seq": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Notebook Version Seq"
+          },
+          "objectives": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Objectives",
+            "type": "array"
+          },
+          "prerequisites": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Prerequisites",
+            "type": "array"
+          },
+          "seq": {
+            "minimum": 1,
+            "title": "Seq",
+            "type": "integer"
+          },
+          "slug": {
+            "title": "Slug",
+            "type": "string"
+          },
+          "status": {
+            "$ref": "#/components/schemas/CourseModuleStatus",
+            "default": "planned"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          },
+          "topic": {
+            "default": "",
+            "title": "Topic",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "seq",
+          "slug",
+          "title"
+        ],
+        "title": "CourseModule",
+        "type": "object"
+      },
+      "CourseModulePatch": {
+        "additionalProperties": false,
+        "description": "A hand edit to one planned module. Refused once the module has a notebook:\nthe notebook was generated FROM these fields, so changing them afterwards\nwould leave the module describing something the notebook does not teach.",
+        "properties": {
+          "brief": {
+            "anyOf": [
+              {
+                "maxLength": 4000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Brief"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "kind": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/NotebookKind"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          },
+          "objectives": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Objectives"
+          },
+          "seq": {
+            "anyOf": [
+              {
+                "minimum": 1,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Seq"
+          },
+          "title": {
+            "anyOf": [
+              {
+                "maxLength": 240,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Title"
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "title": "CourseModulePatch",
+        "type": "object"
+      },
+      "CourseModuleStatus": {
+        "description": "Derived, never stored: read from the module's notebook's latest version.\n\nA module with no notebook is `planned`; otherwise the notebook version's\nstatus (`queued`/`running`/`ready`/`failed`) is the module's status.",
+        "enum": [
+          "planned",
+          "queued",
+          "running",
+          "ready",
+          "failed"
+        ],
+        "title": "CourseModuleStatus",
+        "type": "string"
+      },
+      "CoursePlan": {
+        "additionalProperties": false,
+        "description": "The whole plan: what the course is, and its modules in teaching order.\n\nThe validator refuses two shapes that could never be generated: a duplicate\nslug (two modules would collide in the export tree and in `replace_modules`)\nand a prerequisite pointing at a later module or at nothing (the preface the\ngenerate route writes would then describe a notebook that does not exist yet).",
+        "properties": {
+          "modules": {
+            "items": {
+              "$ref": "#/components/schemas/PlannedModule"
+            },
+            "maxItems": 16,
+            "minItems": 1,
+            "title": "Modules",
+            "type": "array"
+          },
+          "summary": {
+            "default": "",
+            "title": "Summary",
+            "type": "string"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "title",
+          "modules"
+        ],
+        "title": "CoursePlan",
+        "type": "object"
+      },
+      "CourseStatus": {
+        "description": "Where a course is between \"asked for\" and \"every module runs\".",
+        "enum": [
+          "planning",
+          "planned",
+          "generating",
+          "ready",
+          "failed"
+        ],
+        "title": "CourseStatus",
+        "type": "string"
+      },
+      "CourseSummary": {
+        "additionalProperties": false,
+        "description": "A course as a list row: no modules, so a list of courses is one query.",
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "language": {
+            "default": "en",
+            "enum": [
+              "en",
+              "ja"
+            ],
+            "title": "Language",
+            "type": "string"
+          },
+          "module_count": {
+            "default": 0,
+            "minimum": 0,
+            "title": "Module Count",
+            "type": "integer"
+          },
+          "ready_count": {
+            "default": 0,
+            "minimum": 0,
+            "title": "Ready Count",
+            "type": "integer"
+          },
+          "slug": {
+            "title": "Slug",
+            "type": "string"
+          },
+          "status": {
+            "$ref": "#/components/schemas/CourseStatus"
+          },
+          "summary": {
+            "default": "",
+            "title": "Summary",
+            "type": "string"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "slug",
+          "title",
+          "status",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "CourseSummary",
+        "type": "object"
+      },
+      "CourseTurn": {
+        "additionalProperties": false,
+        "description": "One turn of the chat that revises the PLAN (not a notebook's content).",
+        "properties": {
+          "content": {
+            "title": "Content",
+            "type": "string"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "role": {
+            "enum": [
+              "user",
+              "nala"
+            ],
+            "title": "Role",
+            "type": "string"
+          },
+          "seq": {
+            "minimum": 1,
+            "title": "Seq",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "seq",
+          "role",
+          "content",
+          "created_at"
+        ],
+        "title": "CourseTurn",
+        "type": "object"
+      },
+      "CourseTurnList": {
+        "additionalProperties": false,
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/CourseTurn"
+            },
+            "title": "Items",
+            "type": "array"
+          }
+        },
+        "title": "CourseTurnList",
+        "type": "object"
+      },
+      "CreateCourseRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "audience": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Audience"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          },
+          "brief": {
+            "maxLength": 8000,
+            "minLength": 1,
+            "title": "Brief",
+            "type": "string"
+          },
+          "framework": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/NotebookFramework"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          },
+          "module_count": {
+            "anyOf": [
+              {
+                "maximum": 16,
+                "minimum": 2,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Module Count"
+          },
+          "response_locale": {
+            "default": "en",
+            "enum": [
+              "en",
+              "ja"
+            ],
+            "title": "Response Locale",
+            "type": "string"
+          },
+          "seeds": {
+            "items": {
+              "$ref": "#/components/schemas/Seed"
+            },
+            "maxItems": 8,
+            "title": "Seeds",
+            "type": "array"
+          },
+          "style": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Style"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          },
+          "title": {
+            "anyOf": [
+              {
+                "maxLength": 200,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Title"
+          }
+        },
+        "required": [
+          "brief"
+        ],
+        "title": "CreateCourseRequest",
+        "type": "object"
+      },
+      "CreateCourseResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "course": {
+            "$ref": "#/components/schemas/Course"
+          },
+          "run_id": {
+            "format": "uuid",
+            "title": "Run Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "course",
+          "run_id"
+        ],
+        "title": "CreateCourseResponse",
+        "type": "object"
+      },
+      "CreateCourseTurnRequest": {
+        "additionalProperties": false,
+        "description": "Chat that edits the PLAN: \"add a module on transpilation after week 3\",\n\"make module 2 a lab\", \"drop the last one\".",
+        "properties": {
+          "message": {
+            "maxLength": 8000,
+            "minLength": 1,
+            "title": "Message",
+            "type": "string"
+          }
+        },
+        "required": [
+          "message"
+        ],
+        "title": "CreateCourseTurnRequest",
+        "type": "object"
+      },
+      "CreateCourseTurnResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "run_id": {
+            "format": "uuid",
+            "title": "Run Id",
+            "type": "string"
+          },
+          "turn": {
+            "$ref": "#/components/schemas/CourseTurn"
+          }
+        },
+        "required": [
+          "turn",
+          "run_id"
+        ],
+        "title": "CreateCourseTurnResponse",
+        "type": "object"
+      },
       "CreateNotebookRequest": {
         "additionalProperties": false,
         "properties": {
@@ -2794,6 +3545,51 @@
         ],
         "title": "Framework",
         "type": "string"
+      },
+      "GenerateCourseRequest": {
+        "additionalProperties": false,
+        "description": "Which modules to turn into notebooks. `None` means every module that does\nnot have one yet \u2014 the ordinary \"build my course\" button.",
+        "properties": {
+          "module_ids": {
+            "anyOf": [
+              {
+                "items": {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Module Ids"
+          }
+        },
+        "title": "GenerateCourseRequest",
+        "type": "object"
+      },
+      "GenerateCourseResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "course": {
+            "$ref": "#/components/schemas/Course"
+          },
+          "run_ids": {
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "title": "Run Ids",
+            "type": "array"
+          }
+        },
+        "required": [
+          "course"
+        ],
+        "title": "GenerateCourseResponse",
+        "type": "object"
       },
       "ImportNotebookRequest": {
         "additionalProperties": false,
@@ -3585,6 +4381,13 @@
             "title": "Verdict",
             "type": "string"
           },
+          "warnings": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Warnings",
+            "type": "array"
+          },
           "what_this_notebook_does_not_establish": {
             "items": {
               "type": "string"
@@ -3758,6 +4561,13 @@
       "NotebookTemplates": {
         "additionalProperties": false,
         "properties": {
+          "course_starters": {
+            "items": {
+              "$ref": "#/components/schemas/NotebookStarter"
+            },
+            "title": "Course Starters",
+            "type": "array"
+          },
           "kinds": {
             "items": {
               "$ref": "#/components/schemas/NotebookTemplateKind"
@@ -3993,6 +4803,13 @@
           },
           "status": {
             "$ref": "#/components/schemas/NotebookVersionStatus"
+          },
+          "warnings": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Warnings",
+            "type": "array"
           }
         },
         "required": [
@@ -4382,6 +5199,81 @@
           "plan"
         ],
         "title": "PlanProduced",
+        "type": "object"
+      },
+      "PlannedModule": {
+        "additionalProperties": false,
+        "description": "One module as the planner writes it \u2014 the brief that will become a notebook.\n\n`brief` is the load-bearing field: it is handed to `notebook.generate` on its\nown, so it must be self-contained and must say what the earlier modules\nestablished. `prerequisites` names earlier modules by slug and is what makes\n\"earlier\" checkable.",
+        "properties": {
+          "brief": {
+            "default": "",
+            "maxLength": 4000,
+            "title": "Brief",
+            "type": "string"
+          },
+          "deliverable": {
+            "default": "",
+            "title": "Deliverable",
+            "type": "string"
+          },
+          "duration_minutes": {
+            "anyOf": [
+              {
+                "maximum": 600,
+                "minimum": 1,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Duration Minutes"
+          },
+          "key_concepts": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Key Concepts",
+            "type": "array"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/NotebookKind",
+            "default": "lesson"
+          },
+          "objectives": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Objectives",
+            "type": "array"
+          },
+          "prerequisites": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Prerequisites",
+            "type": "array"
+          },
+          "slug": {
+            "title": "Slug",
+            "type": "string"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          },
+          "topic": {
+            "default": "",
+            "title": "Topic",
+            "type": "string"
+          }
+        },
+        "required": [
+          "slug",
+          "title"
+        ],
+        "title": "PlannedModule",
         "type": "object"
       },
       "ProblemTerm": {
@@ -6981,8 +7873,14 @@
       },
       "Seed": {
         "additionalProperties": false,
-        "description": "Where content came from \u2014 provenance a reader can follow.",
+        "description": "Where content came from \u2014 provenance a reader can follow.\n\n`content` is only meaningful for `kind=\"circuit\"`: the reader's own pasted\nQiskit Python or OpenQASM 3 text, validated and described by\n`leona_notebooks.circuits` before it reaches a prompt. `kind=\"notebook\"`\n(`ref=<notebook id>`) is another notebook in the same workspace, resolved to\nits current version by the worker's `_seed_material_for` \u2014 the\nquiz-from-notebook flow.",
         "properties": {
+          "content": {
+            "default": "",
+            "maxLength": 20000,
+            "title": "Content",
+            "type": "string"
+          },
           "kind": {
             "enum": [
               "atlas-record",
@@ -6990,7 +7888,9 @@
               "artifact",
               "upload",
               "brief",
-              "curriculum"
+              "curriculum",
+              "circuit",
+              "notebook"
             ],
             "title": "Kind",
             "type": "string"
@@ -7659,6 +8559,55 @@
         ],
         "title": "TopLevelExecution",
         "type": "string"
+      },
+      "UpdateCourseRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "modules": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/CourseModulePatch"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Modules"
+          },
+          "summary": {
+            "anyOf": [
+              {
+                "maxLength": 2000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Summary"
+          },
+          "title": {
+            "anyOf": [
+              {
+                "maxLength": 200,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Title"
+          }
+        },
+        "title": "UpdateCourseRequest",
+        "type": "object"
       },
       "UpdateNotebookRequest": {
         "additionalProperties": false,
@@ -8512,7 +9461,7 @@
   "info": {
     "description": "Cross-boundary types only; API paths are owned by services/api.",
     "title": "majorana-contracts",
-    "version": "2.18.0"
+    "version": "2.19.0"
   },
   "openapi": "3.1.0",
   "paths": {}

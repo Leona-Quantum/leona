@@ -106,11 +106,21 @@ class Reference(_Model):
 
 
 class Seed(_Model):
-    """Where content came from — provenance a reader can follow."""
+    """Where content came from — provenance a reader can follow.
 
-    kind: Literal["atlas-record", "paper", "artifact", "upload", "brief", "curriculum"]
+    `content` is only meaningful for `kind="circuit"`: the reader's own pasted
+    Qiskit Python or OpenQASM 3 text, validated and described by
+    `leona_notebooks.circuits` before it reaches a prompt. `kind="notebook"`
+    (`ref=<notebook id>`) is another notebook in the same workspace, resolved to
+    its current version by the worker's `_seed_material_for` — the
+    quiz-from-notebook flow."""
+
+    kind: Literal[
+        "atlas-record", "paper", "artifact", "upload", "brief", "curriculum", "circuit", "notebook"
+    ]
     ref: str = ""
     note: str = ""
+    content: str = Field(default="", max_length=20_000)
 
 
 class Cell(_Model):
@@ -311,6 +321,13 @@ class NotebookReview(_Model):
     verdict: Literal["ready", "needs-attention"]
     findings: list[ReviewFinding] = Field(default_factory=list)
     what_this_notebook_does_not_establish: list[str] = Field(default_factory=list)
+    #: Structure requirements the spec does not satisfy (`templates.check_structure`),
+    #: recorded so a reader's own edit is *reported on* rather than refused. Nala's
+    #: own builds run the same check as a prompt constraint; a user-authored version
+    #: runs it here and keeps going. Carried in this model rather than on a column of
+    #: its own because `notebook_versions.review` is already the JSONB the advisory
+    #: layer is stored in — see `NotebookVersion.warnings`, which mirrors this out.
+    warnings: list[str] = Field(default_factory=list)
 
 
 # --------------------------------------------------------------------------- resources
@@ -385,6 +402,11 @@ class NotebookVersion(NotebookVersionSummary):
     report: ExecutionReport | None = None
     review: NotebookReview | None = None
     error: str = ""
+    #: Advisory structure notes for THIS version, mirrored out of `review.warnings` so
+    #: a client that renders the notes never has to know they are stored inside the
+    #: review blob. Never a reason a version was refused: a user-authored version with
+    #: warnings is `ready`, and the warnings render beside it.
+    warnings: list[str] = Field(default_factory=list)
 
 
 class NotebookTurn(_ResourceBase):
@@ -428,6 +450,13 @@ class NotebookStarter(_ResourceBase):
 class NotebookTemplates(_ResourceBase):
     kinds: list[NotebookTemplateKind]
     starters: list[NotebookStarter]
+    #: Starter briefs for a whole COURSE (`majorana_contracts.courses`) rather than
+    #: one notebook — the composer offers both from this single endpoint. Defaults
+    #: to empty so a client built against contracts 2.18.0, which has never heard of
+    #: courses, keeps parsing this response unchanged. A course starter's `kind` is
+    #: the notebook kind its modules mostly are, a hint for the card, not a promise:
+    #: the planner picks each module's kind for itself.
+    course_starters: list[NotebookStarter] = Field(default_factory=list)
 
 
 # --------------------------------------------------------------------------- requests
@@ -480,6 +509,51 @@ class ImportNotebookResponse(_ResourceBase):
 class RerunNotebookResponse(_ResourceBase):
     version: NotebookVersionSummary
     run_id: UUID
+
+
+class AuthorNotebookVersionRequest(_ResourceBase):
+    """A version the reader wrote themselves.
+
+    Three equivalent ways in, because the same notebook is edited from three places
+    and all three must land as one kind of row: `spec` from the in-browser editor,
+    `source` from a text editor (the `.nb.py` percent form), `ipynb` from Jupyter
+    (`%nala push`). Exactly one of the three — two inputs is a 400, not a silent
+    precedence rule, because a client sending both has a bug the server cannot
+    resolve in the reader's favour.
+
+    A user-authored version is executed by the same sandbox path Nala's builds use,
+    so the version history stays the single truth about what this notebook is.
+    """
+
+    spec: NotebookSpec | None = None
+    #: The `.nb.py` percent-format authoring text (`leona_notebooks.source`).
+    source: str | None = Field(default=None, max_length=400_000)
+    ipynb: dict[str, Any] | None = None
+    #: The line this edit gets in the version history.
+    message: str = Field(default="", max_length=500)
+    #: `False` saves the version as `ready` with no report and no run — a draft the
+    #: reader has not asked to execute yet.
+    execute: bool = True
+    #: A cell id: execute cells up to and including it ("Run to here"), reporting the
+    #: rest as `not_run`. `None` runs the whole notebook.
+    run_until: str | None = None
+
+    # The exactly-one rule and the `run_until` shape are deliberately NOT enforced by
+    # validators here, though both are properties of the request: `services/api` maps a
+    # pydantic failure to a bare `422 validation failed` with no message (`app.py`'s
+    # RequestValidationError handler), and every way this request can be wrong — two
+    # inputs, source that will not parse, a `run_until` naming no cell — is one the
+    # reader has to be told about in words before they can fix it. The route enforces
+    # all three and answers 400 problem+json carrying the real message;
+    # `leona_notebooks.authoring.spec_from_author_request` is the single implementation
+    # the route and the worker both call.
+
+
+class AuthorNotebookVersionResponse(_ResourceBase):
+    version: NotebookVersionSummary
+    #: `None` when `execute=false` — the version is saved `ready` with no report and
+    #: there is no run to follow.
+    run_id: UUID | None = None
 
 
 class UpdateNotebookRequest(_ResourceBase):

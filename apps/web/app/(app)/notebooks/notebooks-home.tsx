@@ -105,6 +105,7 @@ export function NotebooksHome({ locale = "en", seedSlug = "" }: { locale?: Publi
   const [mathLevel, setMathLevel] = useState<MathLevel>("minimal");
   const [language, setLanguage] = useState<"en" | "ja">(locale);
   const [atlasSlug, setAtlasSlug] = useState(seedSlug);
+  const [circuitText, setCircuitText] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [importing, setImporting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
@@ -172,9 +173,14 @@ export function NotebooksHome({ locale = "en", seedSlug = "" }: { locale?: Publi
     setSubmitting(true);
     setSubmitError(null);
     try {
-      const seeds = atlasSlug.trim()
-        ? [{ kind: "atlas-record" as const, ref: atlasSlug.trim(), note: "" }]
-        : [];
+      const seeds = [
+        ...(atlasSlug.trim()
+          ? [{ kind: "atlas-record" as const, ref: atlasSlug.trim(), note: "" }]
+          : []),
+        ...(circuitText.trim()
+          ? [{ kind: "circuit" as const, content: circuitText.trim(), note: "" }]
+          : []),
+      ];
       const response = await fetch("/api/notebooks", {
         method: "POST",
         headers: { "Content-Type": "application/json", "Idempotency-Key": crypto.randomUUID() },
@@ -256,6 +262,9 @@ export function NotebooksHome({ locale = "en", seedSlug = "" }: { locale?: Publi
             <h1>{copy.title}</h1>
             <p>{copy.lede}</p>
           </div>
+          <Link className="mj-secondary-button" href="/notebooks/courses">
+            {WORKSPACE_COPY[locale].courses.coursesTab}
+          </Link>
         </header>
 
         <form className="mj-notebooks-composer" onSubmit={(event) => void submit(event)}>
@@ -353,6 +362,17 @@ export function NotebooksHome({ locale = "en", seedSlug = "" }: { locale?: Publi
               value={atlasSlug}
               onChange={(event) => setAtlasSlug(event.target.value)}
               placeholder={copy.seedAtlasPlaceholder}
+            />
+          </label>
+
+          <label className="mj-notebooks-seed">
+            <span>{copy.seedCircuitLabel}</span>
+            <textarea
+              className="mj-notebooks-seed-circuit"
+              value={circuitText}
+              onChange={(event) => setCircuitText(event.target.value)}
+              placeholder={copy.seedCircuitPlaceholder}
+              rows={5}
             />
           </label>
 

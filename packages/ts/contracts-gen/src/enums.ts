@@ -107,6 +107,24 @@ export const CIRCUIT_OPTIMIZATION_GATE_VALUES = [
   "M",
 ] as const;
 
+/** CourseModuleStatus — 5 members. */
+export const COURSE_MODULE_STATUS_VALUES = [
+  "planned",
+  "queued",
+  "running",
+  "ready",
+  "failed",
+] as const;
+
+/** CourseStatus — 5 members. */
+export const COURSE_STATUS_VALUES = [
+  "planning",
+  "planned",
+  "generating",
+  "ready",
+  "failed",
+] as const;
+
 /** EvidenceStrength — 2 members. */
 export const EVIDENCE_STRENGTH_VALUES = [
   "physical",

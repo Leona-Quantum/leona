@@ -90,8 +90,30 @@ from .events import (
     VerificationResult,
     run_event_adapter,
 )
+from .courses import (
+    Course,
+    CourseList,
+    CourseModule,
+    CourseModulePatch,
+    CourseModuleStatus,
+    CoursePlan,
+    CourseStatus,
+    CourseSummary,
+    CourseTurn,
+    CourseTurnList,
+    CreateCourseRequest,
+    CreateCourseResponse,
+    CreateCourseTurnRequest,
+    CreateCourseTurnResponse,
+    GenerateCourseRequest,
+    GenerateCourseResponse,
+    PlannedModule,
+    UpdateCourseRequest,
+)
 from .notebooks import (
     Audience,
+    AuthorNotebookVersionRequest,
+    AuthorNotebookVersionResponse,
     Cell,
     CellError,
     CellOutput,
@@ -301,7 +323,26 @@ from .lifecycle import (
 # 2.18.0: Notebook resources — the notebook spec with role-carrying cells, the
 # per-cell execution report, the advisory review, versions and chat turns, plus
 # the `notebook` run mode. Additive: existing clients never select the new mode.
-CONTRACTS_VERSION = "2.18.0"
+# 2.19.0: Course resources — an ordered plan of notebooks generated from one
+# prompt: the plan the planner returns (CoursePlan/PlannedModule), the stored
+# course with its modules, and the create/update/generate/turn bodies. Additive:
+# `NotebookTemplates.course_starters` defaults to empty, so a client built
+# against 2.18.0 keeps working unchanged, and a course run reuses `mode=notebook`
+# rather than adding a run mode.
+#
+# 2.19.0: Seed gains kind="circuit" (a reader's own pasted Qiskit/OpenQASM 3 text,
+# carried in the new `content` field) and kind="notebook" (reserved for the
+# learner lane's notebook-as-seed flow — the enum value only; no fetch path
+# ships here). Additive: `content` defaults to "" and every existing Seed kind
+# keeps its meaning, so a v1 payload with no `content` still validates.
+# 2.19.0: AuthorNotebookVersionRequest/Response — a notebook version the READER
+# wrote, from the in-browser editor (spec), a text editor (source) or Jupyter
+# (ipynb), executed by the same sandbox path Nala's builds use. Plus
+# NotebookReview.warnings and its NotebookVersion.warnings mirror: the structure
+# check becomes advisory output on a user's edit instead of a constraint that
+# refuses it. Additive — every field defaults, and a client that never posts to
+# /notebooks/{id}/versions sees no change.
+CONTRACTS_VERSION = "2.19.0"
 
 __all__ = [
     "CONTRACTS_VERSION",
@@ -376,6 +417,25 @@ __all__ = [
     "PlanProduced",
     "Qapp",
     "Audience",
+    "Course",
+    "CourseList",
+    "CourseModule",
+    "CourseModulePatch",
+    "CourseModuleStatus",
+    "CoursePlan",
+    "CourseStatus",
+    "CourseSummary",
+    "CourseTurn",
+    "CourseTurnList",
+    "CreateCourseRequest",
+    "CreateCourseResponse",
+    "CreateCourseTurnRequest",
+    "CreateCourseTurnResponse",
+    "GenerateCourseRequest",
+    "GenerateCourseResponse",
+    "PlannedModule",
+    "AuthorNotebookVersionRequest",
+    "AuthorNotebookVersionResponse",
     "Cell",
     "CellError",
     "CellOutput",
@@ -410,6 +470,7 @@ __all__ = [
     "ReviewFinding",
     "Seed",
     "Style",
+    "UpdateCourseRequest",
     "UpdateNotebookRequest",
     "QappExecution",
     "QappExecutionStatus",

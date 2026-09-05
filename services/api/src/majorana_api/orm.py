@@ -339,6 +339,76 @@ class NotebookTurn(Base):
     created_at: Mapped[dt.datetime | None] = mapped_column(server_default=func.now())
 
 
+class Course(Base):
+    """Migration 0059. An ordered plan of notebooks generated from one prompt.
+
+    `plan` holds the planner's own JSON verbatim; `course_modules` is the
+    queryable projection of it. There is no versions table — the durable
+    artefacts a course produces are notebooks, which have one already.
+    """
+
+    __tablename__ = "courses"
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True)
+    workspace_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("workspaces.id"))
+    owner_user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id"))
+    slug: Mapped[str]
+    title: Mapped[str]
+    summary: Mapped[str] = mapped_column(server_default="")
+    brief: Mapped[str] = mapped_column(server_default="")
+    audience: Mapped[dict[str, Any]] = mapped_column(server_default=text("'{}'::jsonb"))
+    style: Mapped[dict[str, Any]] = mapped_column(server_default=text("'{}'::jsonb"))
+    framework: Mapped[dict[str, Any]] = mapped_column(server_default=text("'{}'::jsonb"))
+    language: Mapped[str] = mapped_column(server_default="en")
+    status: Mapped[str] = mapped_column(server_default="planning")
+    plan_run_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("runs.id"))
+    plan: Mapped[dict[str, Any] | None]
+    deleted_at: Mapped[dt.datetime | None]
+    created_at: Mapped[dt.datetime | None] = mapped_column(server_default=func.now())
+    updated_at: Mapped[dt.datetime | None] = mapped_column(server_default=func.now())
+
+
+class CourseModule(Base):
+    __tablename__ = "course_modules"
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True)
+    course_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("courses.id", ondelete="CASCADE"))
+    seq: Mapped[int] = mapped_column(Integer)
+    slug: Mapped[str]
+    title: Mapped[str]
+    topic: Mapped[str] = mapped_column(server_default="")
+    key_concepts: Mapped[list[str]] = mapped_column(JSONB, server_default=text("'[]'::jsonb"))
+    objectives: Mapped[list[str]] = mapped_column(JSONB, server_default=text("'[]'::jsonb"))
+    deliverable: Mapped[str] = mapped_column(server_default="")
+    kind: Mapped[str] = mapped_column(server_default="lesson")
+    duration_minutes: Mapped[int | None] = mapped_column(Integer)
+    prerequisites: Mapped[list[str]] = mapped_column(JSONB, server_default=text("'[]'::jsonb"))
+    brief: Mapped[str] = mapped_column(server_default="")
+    # SET NULL, never CASCADE: deleting the notebook strips the module back to
+    # `planned` (migration 0059), it never deletes the module.
+    notebook_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("notebooks.id", ondelete="SET NULL")
+    )
+    created_at: Mapped[dt.datetime | None] = mapped_column(server_default=func.now())
+    updated_at: Mapped[dt.datetime | None] = mapped_column(server_default=func.now())
+
+
+class CourseTurn(Base):
+    """The chat that revises the PLAN. Unlike `notebook_turns` there is no
+    `version_id`: a plan revision rewrites the modules in place, so there is no
+    version row for a turn to point at."""
+
+    __tablename__ = "course_turns"
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True)
+    course_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("courses.id", ondelete="CASCADE"))
+    seq: Mapped[int] = mapped_column(Integer)
+    role: Mapped[str]
+    content: Mapped[str]
+    run_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("runs.id"))
+    created_at: Mapped[dt.datetime | None] = mapped_column(server_default=func.now())
+
+
 class ArtifactSource(Base):
     """Provenance (migration 0015): one pinned source record per version."""
 

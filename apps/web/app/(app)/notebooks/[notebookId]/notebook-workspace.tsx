@@ -2,48 +2,43 @@
 
 import type { components } from "@majorana/contracts-gen";
 import { StageRail, type RailStage } from "@majorana/ui";
+import { useRouter } from "next/navigation";
 import type { FormEvent } from "react";
 import { useEffect, useRef, useState } from "react";
 import { ChatMarkdown } from "../../../../components/chat-markdown";
+import { NotebookDiffView } from "../../../../components/notebook-diff-view";
+import { NotebookReviewPanel } from "../../../../components/notebook-review-panel";
 import { NotebookView, type NotebookCellActionKind } from "../../../../components/notebook-view";
 import { refusalSentence } from "../../../../lib/api-error";
+import { diffNotebookVersions } from "../../../../lib/notebook-diff";
+import { NotebookEditor } from "../../../../components/notebook-editor";
+import {
+  applyCellEdit,
+  cellsAreDirty,
+  deleteCell,
+  insertCellAfter,
+  moveCell,
+  specWithCells,
+  type CellEdit,
+} from "../../../../lib/notebook-editing";
 import { notebookExportFilename } from "../../../../lib/notebook-export";
-import { notebookCellViews, notebookStatusPill } from "../../../../lib/notebook-view";
+import { hasMasteryToShow, notebookMastery } from "../../../../lib/notebook-mastery";
+import { errorTracebackText, notebookCellViews, notebookStatusPill } from "../../../../lib/notebook-view";
 import {
   notebookProgressFromEvents,
   type NotebookProgressEvent,
   type NotebookProgressStage,
 } from "../../../../lib/notebook-progress";
 import type { PublicLocale } from "../../../../lib/public-locale";
+import { useRunProgress } from "../../../../lib/use-run-progress";
+import { authoredPinAfterRun, type AuthoredVersion } from "../../../../lib/run-stream-outcome";
 import { WORKSPACE_COPY } from "../../../../lib/workspace-locale";
 
 type Notebook = components["schemas"]["Notebook"];
 type NotebookVersion = components["schemas"]["NotebookVersion"];
 type NotebookVersionSummary = components["schemas"]["NotebookVersionSummary"];
 type NotebookTurn = components["schemas"]["NotebookTurn"];
-
-/** The one shape this page reads off the run-events SSE stream. Anything else
- * that stream carries (Run's own rich event vocabulary) is irrelevant here —
- * see lib/notebook-progress.ts for why this stays generic rather than naming
- * the pipeline's own stage ids. */
-type WireEvent = {
-  type: string;
-  stage?: string | null;
-  status?: string;
-  duration_ms?: number;
-};
-
-function parseSseBlock(block: string): { id: string | null; data: string } | null {
-  const lines = block.split("\n");
-  if (lines.some((line) => line.startsWith(":"))) return null;
-  const idLine = lines.find((line) => line.startsWith("id:"));
-  const data = lines
-    .filter((line) => line.startsWith("data:"))
-    .map((line) => line.slice("data:".length).trimStart())
-    .join("\n");
-  if (!data) return null;
-  return { id: idLine ? idLine.slice("id:".length).trim() : null, data };
-}
+type Cell = components["schemas"]["Cell"];
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
@@ -69,6 +64,7 @@ const RUNNING_STATUSES = new Set(["queued", "running"]);
 
 export function NotebookWorkspace({ notebookId, locale = "en" }: { notebookId: string; locale?: PublicLocale }) {
   const copy = WORKSPACE_COPY[locale].notebooks;
+  const router = useRouter();
 
   const [notebook, setNotebook] = useState<Notebook | null>(null);
   const [notebookError, setNotebookError] = useState<string | null>(null);
@@ -84,7 +80,6 @@ export function NotebookWorkspace({ notebookId, locale = "en" }: { notebookId: s
   const [turnsError, setTurnsError] = useState<string | null>(null);
 
   const [followedRunId, setFollowedRunId] = useState<string | null>(null);
-  const [progressEvents, setProgressEvents] = useState<WireEvent[]>([]);
 
   const [titleDraft, setTitleDraft] = useState("");
   const [editingTitle, setEditingTitle] = useState(false);
@@ -96,6 +91,32 @@ export function NotebookWorkspace({ notebookId, locale = "en" }: { notebookId: s
 
   const [downloading, setDownloading] = useState(false);
   const [rerunning, setRerunning] = useState(false);
+  const [quizzing, setQuizzing] = useState(false);
+
+  // "Compare with previous" (task 1): `null` compareSeq means "the nearest
+  // earlier version" — computed below from `versions` — the same "follow
+  // unless pinned" pattern `pinnedSeq` uses for the main version picker.
+  const [compareMode, setCompareMode] = useState(false);
+  const [compareSeq, setCompareSeq] = useState<number | null>(null);
+  const [compareVersion, setCompareVersion] = useState<NotebookVersion | null>(null);
+  const [compareError, setCompareError] = useState<string | null>(null);
+
+  // The editor's draft. `null` means "not editing" — distinct from an empty array,
+  // which is a notebook the reader has deleted every cell from and is about to save.
+  const [draftCells, setDraftCells] = useState<Cell[] | null>(null);
+  const [focusedCellId, setFocusedCellId] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+  // The version an in-flight save is writing, AND the run writing it. Pinned once
+  // that run finishes, rather than immediately: a queued version has no spec to
+  // render, and if the run FAILS the notebook's `current_version_id` never moves —
+  // so following "current" would show the reader their previous version and hide the
+  // failure they need to see.
+  //
+  // Keyed to the run because "once the run finishes" used to mean "once ANY run
+  // finishes": if this run's stream was lost or superseded, the pin sat pending and
+  // the next run to end applied it, selecting a version that had nothing to do with
+  // what the reader had just done. `lib/run-stream-outcome.ts` owns that rule.
+  const authored = useRef<AuthoredVersion | null>(null);
 
   const reloadSeq = useRef(0);
 
@@ -158,7 +179,8 @@ export function NotebookWorkspace({ notebookId, locale = "en" }: { notebookId: s
     setPinnedSeq(null);
     setTurns([]);
     setFollowedRunId(null);
-    setProgressEvents([]);
+    setDraftCells(null);
+    setFocusedCellId(null);
     loadNotebook();
     loadVersions();
     loadTurns();
@@ -195,55 +217,58 @@ export function NotebookWorkspace({ notebookId, locale = "en" }: { notebookId: s
     };
   }, [notebookId, selectedSeq, copy.loadFailed]);
 
-  // Follow the active run's SSE stream (copied from live-run.tsx's reader —
-  // see that file for the reconnect/backoff reasoning this intentionally
-  // keeps simple for a secondary surface).
+  // Versions strictly earlier than the one on screen — what the "compare
+  // against" picker offers, and where the default (no explicit pin) comes
+  // from: the nearest earlier version, i.e. "previous".
+  const earlierVersions = versions.filter((item) => selectedSeq !== null && item.seq < selectedSeq);
+  const defaultCompareSeq =
+    earlierVersions.length > 0 ? Math.max(...earlierVersions.map((item) => item.seq)) : null;
+  const effectiveCompareSeq = compareSeq ?? defaultCompareSeq;
+
   useEffect(() => {
-    if (!followedRunId) return;
-    const controller = new AbortController();
-    setProgressEvents([]);
-
-    async function consume() {
-      try {
-        const response = await fetch(`/api/runs/${encodeURIComponent(followedRunId as string)}/events/stream`, {
-          cache: "no-store",
-          signal: controller.signal,
-        });
-        if (!response.ok || !response.body) return;
-        const reader = response.body.getReader();
-        const decoder = new TextDecoder();
-        let buffer = "";
-        let terminal = false;
-        while (!terminal) {
-          const { done, value } = await reader.read();
-          if (done) break;
-          buffer += decoder.decode(value, { stream: true }).replaceAll("\r\n", "\n");
-          const blocks = buffer.split("\n\n");
-          buffer = blocks.pop() ?? "";
-          for (const block of blocks) {
-            const parsed = parseSseBlock(block);
-            if (!parsed) continue;
-            const event = JSON.parse(parsed.data) as WireEvent;
-            setProgressEvents((current) => [...current, event]);
-            if (event.type === "run.finished" || event.type === "run.error") {
-              terminal = true;
-              loadNotebook();
-              loadVersions();
-              loadTurns();
-            }
-          }
-        }
-      } catch {
-        // A dropped connection here just stops the live activity list from
-        // updating; the notebook itself is unaffected, and the next poll of
-        // this page (or a manual refresh) picks up the finished state.
-      }
+    if (!compareMode || effectiveCompareSeq === null) {
+      setCompareVersion(null);
+      return;
     }
+    let active = true;
+    fetch(`/api/notebooks/${encodeURIComponent(notebookId)}/versions/${effectiveCompareSeq}`, { cache: "no-store" })
+      .then(async (response) => {
+        const payload = (await response.json()) as unknown;
+        if (!response.ok || !isRecord(payload) || typeof payload.seq !== "number") {
+          throw new Error(refusalSentence(payload) ?? copy.diffLoadFailed);
+        }
+        return payload as unknown as NotebookVersion;
+      })
+      .then((loaded) => {
+        if (active) {
+          setCompareVersion(loaded);
+          setCompareError(null);
+        }
+      })
+      .catch((cause) => {
+        if (active) setCompareError(cause instanceof Error ? cause.message : copy.diffLoadFailed);
+      });
+    return () => {
+      active = false;
+    };
+  }, [notebookId, compareMode, effectiveCompareSeq, copy.diffLoadFailed]);
 
-    void consume();
-    return () => controller.abort();
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- loadNotebook/loadVersions/loadTurns close over notebookId only
-  }, [followedRunId]);
+  // Follow the active run's SSE stream. The reader itself lives in
+  // `lib/use-run-progress.ts` (extracted from what used to be inline here) so
+  // the courses workspace's per-module and per-plan-run rails can reuse the
+  // exact same connect/parse/reconnect-free logic instead of a second copy.
+  const progressEvents = useRunProgress(followedRunId, (outcome, streamRunId) => {
+    // The server is the truth about what the run did, whichever way the stream
+    // ended — so reload either way, and let the decision below say what may be
+    // concluded about the version this editor session authored.
+    loadNotebook();
+    loadVersions();
+    loadTurns();
+    const decision = authoredPinAfterRun(authored.current, streamRunId, outcome);
+    if (decision.pin !== null) setPinnedSeq(decision.pin);
+    if (decision.clear) authored.current = null;
+    if (decision.warn) setActionError(copy.runStreamLost);
+  });
 
   async function sendTurn(text: string) {
     const trimmed = text.trim();
@@ -276,19 +301,177 @@ export function NotebookWorkspace({ notebookId, locale = "en" }: { notebookId: s
     }
   }
 
+  // ------------------------------------------------------------------ editing
+
+  const editing = draftCells !== null;
+  const originalCells = (version?.spec?.cells ?? []) as Cell[];
+  const dirty = editing && cellsAreDirty(originalCells, draftCells ?? []);
+
+  function startEditing() {
+    setDraftCells(originalCells.map((cell) => ({ ...cell })));
+    setFocusedCellId(null);
+    setActionError(null);
+  }
+
+  function stopEditing() {
+    setDraftCells(null);
+    setFocusedCellId(null);
+  }
+
+  function discardEdits() {
+    if (dirty && !window.confirm(copy.discardConfirm)) return;
+    stopEditing();
+  }
+
+  function editCell(cellId: string, edit: CellEdit) {
+    setDraftCells((current) => (current === null ? current : applyCellEdit(current, cellId, edit)));
+  }
+
+  function insertCell(afterId: string | null, kind: Cell["kind"]) {
+    setDraftCells((current) => {
+      if (current === null) return current;
+      const { cells: next, id } = insertCellAfter(current, afterId, kind);
+      setFocusedCellId(id);
+      return next;
+    });
+  }
+
+  function removeCell(cellId: string) {
+    setDraftCells((current) => (current === null ? current : deleteCell(current, cellId)));
+    setFocusedCellId((current) => (current === cellId ? null : current));
+  }
+
+  function shiftCell(cellId: string, direction: "up" | "down") {
+    setDraftCells((current) => (current === null ? current : moveCell(current, cellId, direction)));
+  }
+
+  /** Save the draft as a new user-authored version. `runUntil` is "Run to here". */
+  async function saveDraft({ execute, runUntil }: { execute: boolean; runUntil?: string | null }) {
+    const spec = version?.spec;
+    if (!spec || draftCells === null || saving) return;
+    setSaving(true);
+    setActionError(null);
+    try {
+      const response = await fetch(`/api/notebooks/${encodeURIComponent(notebookId)}/versions`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          spec: specWithCells(spec, draftCells),
+          message: "",
+          execute,
+          run_until: runUntil ?? null,
+        }),
+      });
+      const payload = (await response.json()) as unknown;
+      if (!response.ok || !isRecord(payload) || !isRecord(payload.version)) {
+        // `title` is what the API's problem+json puts the sentence in — the parse
+        // error from a source edit, or the reason two inputs were refused.
+        throw new Error(refusalSentence(payload) ?? copy.saveFailed);
+      }
+      const created = payload.version as unknown as NotebookVersionSummary;
+      const runId = typeof payload.run_id === "string" ? payload.run_id : null;
+      stopEditing();
+      loadNotebook();
+      loadVersions();
+      loadTurns();
+      if (runId) {
+        authored.current = { runId, seq: created.seq };
+        setFollowedRunId(runId);
+      } else {
+        // No run to wait for: the version is already `ready`, so show it now.
+        setPinnedSeq(created.seq);
+      }
+    } catch (cause) {
+      setActionError(cause instanceof Error ? cause.message : copy.saveFailed);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  // The browser's own guard. It fires only on a real unload (tab close, reload,
+  // external link) — an in-app route change does not reach it, which is why
+  // `discardEdits` asks separately rather than relying on this.
+  useEffect(() => {
+    if (!dirty) return;
+    function warn(event: BeforeUnloadEvent) {
+      event.preventDefault();
+      event.returnValue = "";
+    }
+    window.addEventListener("beforeunload", warn);
+    return () => window.removeEventListener("beforeunload", warn);
+  }, [dirty]);
+
   function submitMessage(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     void sendTurn(message);
   }
 
-  function cellAction(cellId: string, action: NotebookCellActionKind) {
-    const templates: Record<NotebookCellActionKind, string> = {
+  function cellAction(cellId: string, action: NotebookCellActionKind, detail?: string) {
+    if (action === "explainError") {
+      // `cells` (below) is this render's join of the pinned version's spec
+      // against its report — the same lookup the card itself used to decide
+      // whether to show this action at all.
+      const cell = cells.find((item) => item.id === cellId);
+      const traceback = errorTracebackText(cell?.error ?? null);
+      void sendTurn(
+        `Cell \`${cellId}\` failed with:\n\`\`\`\n${traceback}\n\`\`\`\nExplain what went wrong and fix the cell.`,
+      );
+      return;
+    }
+    if (action === "checkAttempt") {
+      const attempt = detail ?? "";
+      void sendTurn(
+        `Here is my attempt at cell \`${cellId}\`:\n\`\`\`python\n${attempt}\n\`\`\`\nGrade it against the intended solution, say what is right, what is wrong, and give one hint before the full fix. Do not change the notebook.`,
+      );
+      return;
+    }
+    const templates: Record<"explain" | "simplify" | "figure" | "exercise", string> = {
       explain: `Explain cell ${cellId} in simpler terms.`,
       simplify: `Simplify cell ${cellId}.`,
       figure: `Add a figure after cell ${cellId}.`,
       exercise: `Turn cell ${cellId} into an exercise.`,
     };
     void sendTurn(templates[action]);
+  }
+
+  /** Workspace-level, not per-cell: creates a NEW notebook seeded from this
+   * one (worker-side resolution in `_seed_material_for`, `kind: "notebook"`)
+   * and navigates to it once queued. */
+  async function quizMe() {
+    if (!notebook || quizzing) return;
+    setQuizzing(true);
+    setActionError(null);
+    try {
+      // `Seed.kind: "notebook"` is landing in the generated TS contracts via
+      // Lane D, in parallel with this lane — until it reaches
+      // `@majorana/contracts-gen`, this is a local, unchecked literal rather
+      // than a typed `Seed`.
+      const seeds = [{ kind: "notebook" as const, ref: notebookId, note: "" }];
+      const response = await fetch("/api/notebooks", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "Idempotency-Key": crypto.randomUUID() },
+        body: JSON.stringify({
+          brief:
+            "A short quiz (6–8 questions, mixed multiple-choice and predict-the-output) on the ideas in this notebook, with answers hidden in solution cells",
+          kind: "quiz",
+          framework: notebook.framework,
+          seeds,
+          response_locale: locale,
+        }),
+      });
+      const payload = (await response.json()) as unknown;
+      const newNotebookId =
+        isRecord(payload) && isRecord(payload.notebook) && typeof payload.notebook.id === "string"
+          ? payload.notebook.id
+          : null;
+      if (!response.ok || !newNotebookId) {
+        throw new Error(refusalSentence(payload) ?? copy.quizButtonFailed);
+      }
+      router.push(`/notebooks/${encodeURIComponent(newNotebookId)}`);
+    } catch (cause) {
+      setActionError(cause instanceof Error ? cause.message : copy.quizButtonFailed);
+      setQuizzing(false);
+    }
   }
 
   async function saveTitle() {
@@ -370,6 +553,23 @@ export function NotebookWorkspace({ notebookId, locale = "en" }: { notebookId: s
   const isGenerating = RUNNING_STATUSES.has(notebook.latest_status);
   const cells = notebookCellViews(version?.spec?.cells, version?.report);
   const stages = notebookProgressFromEvents(progressEvents as NotebookProgressEvent[]);
+  const mastery = notebookMastery(version?.spec?.cells, version?.report);
+  const diff =
+    compareMode && version?.spec && compareVersion?.spec
+      ? diffNotebookVersions(compareVersion.spec, version.spec)
+      : null;
+  // Editing is offered only on the newest version, and only when nothing is running:
+  // an edit is saved as the NEXT version, so branching from an older one would
+  // silently discard everything after it, and `_assert_not_in_flight` would refuse a
+  // save made while a run is going anyway — better not to offer the button.
+  const latestSeq = versions.length > 0 ? versions[versions.length - 1].seq : null;
+  const canEdit =
+    !isGenerating &&
+    version !== null &&
+    version.status === "ready" &&
+    version.spec !== null &&
+    latestSeq !== null &&
+    version.seq === latestSeq;
 
   return (
     <main className="mj-notebook-workspace">
@@ -402,6 +602,9 @@ export function NotebookWorkspace({ notebookId, locale = "en" }: { notebookId: s
             <span className="mj-notebook-kind-badge">{copy.kindOption[notebook.kind]}</span>
             <span className={`mj-notebook-status-pill mj-notebook-status-pill--${pill}`}>{copy.statusPill[pill]}</span>
           </div>
+          {hasMasteryToShow(mastery) ? (
+            <p className="mj-notebook-progress-strip">{copy.progressSummary(mastery)}</p>
+          ) : null}
         </div>
         <div className="mj-notebook-workspace-actions">
           {versions.length > 0 ? (
@@ -416,6 +619,31 @@ export function NotebookWorkspace({ notebookId, locale = "en" }: { notebookId: s
                 ))}
               </select>
             </label>
+          ) : null}
+          {earlierVersions.length > 0 ? (
+            <>
+              <button
+                className="mj-secondary-button"
+                type="button"
+                aria-pressed={compareMode}
+                onClick={() => setCompareMode((current) => !current)}
+              >
+                {copy.compareToggle}
+              </button>
+              {compareMode ? (
+                <label className="mj-notebook-compare-picker mj-filter-select">
+                  <span className="sr-only">{copy.comparePickerLabel}</span>
+                  <select
+                    value={effectiveCompareSeq ?? ""}
+                    onChange={(event) => setCompareSeq(Number(event.target.value))}
+                  >
+                    {earlierVersions.map((item) => (
+                      <option key={item.id} value={item.seq}>{copy.versionLabel(item.seq)}</option>
+                    ))}
+                  </select>
+                </label>
+              ) : null}
+            </>
           ) : null}
           <button
             className="mj-secondary-button"
@@ -433,6 +661,24 @@ export function NotebookWorkspace({ notebookId, locale = "en" }: { notebookId: s
           >
             {rerunning || isGenerating ? copy.running : copy.runAgain}
           </button>
+          <button
+            className="mj-secondary-button"
+            type="button"
+            disabled={quizzing || !version?.spec}
+            onClick={() => void quizMe()}
+          >
+            {quizzing ? copy.creating : copy.quizButtonLabel}
+          </button>
+          {canEdit || editing ? (
+            <button
+              className="mj-secondary-button"
+              type="button"
+              disabled={saving}
+              onClick={() => (editing ? discardEdits() : startEditing())}
+            >
+              {editing ? copy.editExit : copy.edit}
+            </button>
+          ) : null}
         </div>
       </header>
 
@@ -455,7 +701,55 @@ export function NotebookWorkspace({ notebookId, locale = "en" }: { notebookId: s
             </div>
           ) : null}
           {versionError ? <p role="alert" className="mj-notebook-workspace-error">{versionError}</p> : null}
-          {version ? (
+          {compareError ? <p role="alert" className="mj-notebook-workspace-error">{compareError}</p> : null}
+          {editing && draftCells !== null ? (
+            <>
+              <NotebookEditor
+                cells={draftCells}
+                locale={locale}
+                focusedCellId={focusedCellId}
+                busy={saving}
+                onEdit={editCell}
+                onInsert={insertCell}
+                onDelete={removeCell}
+                onMove={shiftCell}
+                onFocusCell={setFocusedCellId}
+                onRunToHere={(cellId) => void saveDraft({ execute: true, runUntil: cellId })}
+              />
+              <div className="mj-notebook-edit-bar" role="group" aria-label={copy.edit}>
+                <button
+                  className="mj-primary-button"
+                  type="button"
+                  disabled={saving}
+                  onClick={() => void saveDraft({ execute: true })}
+                >
+                  {saving ? copy.saving : copy.saveAndRun}
+                </button>
+                <button
+                  className="mj-secondary-button"
+                  type="button"
+                  disabled={saving}
+                  onClick={() => void saveDraft({ execute: false })}
+                >
+                  {copy.saveWithoutRunning}
+                </button>
+                <button
+                  className="mj-secondary-button"
+                  type="button"
+                  disabled={saving}
+                  onClick={() => discardEdits()}
+                >
+                  {copy.discard}
+                </button>
+              </div>
+            </>
+          ) : compareMode ? (
+            diff && version?.spec && compareVersion?.spec ? (
+              <NotebookDiffView diff={diff} older={compareVersion.spec} newer={version.spec} locale={locale} />
+            ) : (
+              <p className="mj-notebook-workspace-empty-notebook">{copy.diffLoading}</p>
+            )
+          ) : version ? (
             <NotebookView
               cells={cells}
               locale={locale}
@@ -465,34 +759,18 @@ export function NotebookWorkspace({ notebookId, locale = "en" }: { notebookId: s
           ) : !isGenerating ? (
             <p className="mj-notebook-workspace-empty-notebook">{copy.loadFailed}</p>
           ) : null}
-          {version?.review ? (
-            <section className="mj-notebook-review">
-              <h2>{copy.reviewLabel} — {copy.reviewVerdict[version.review.verdict]}</h2>
-              {version.review.findings && version.review.findings.length > 0 ? (
-                <div>
-                  <h3>{copy.reviewFindingsLabel}</h3>
-                  <ul>
-                    {version.review.findings.map((finding, index) => (
-                      <li key={index}>
-                        <strong>{copy.reviewSeverity[finding.severity]}</strong>
-                        {finding.cell_id ? ` (${finding.cell_id})` : ""}: {finding.finding}
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              ) : null}
-              {version.review.what_this_notebook_does_not_establish && version.review.what_this_notebook_does_not_establish.length > 0 ? (
-                <div>
-                  <h3>{copy.reviewNotEstablishedLabel}</h3>
-                  <ul>
-                    {version.review.what_this_notebook_does_not_establish.map((item, index) => (
-                      <li key={index}>{item}</li>
-                    ))}
-                  </ul>
-                </div>
-              ) : null}
+          {!editing && version?.warnings && version.warnings.length > 0 ? (
+            <section className="mj-notebook-structure-notes" aria-label={copy.structureNotesLabel}>
+              <h2>{copy.structureNotesLabel}</h2>
+              <p className="mj-notebook-structure-notes-hint">{copy.structureNotesHint}</p>
+              <ul>
+                {version.warnings.map((warning, index) => (
+                  <li key={index}>{warning}</li>
+                ))}
+              </ul>
             </section>
           ) : null}
+          {!compareMode && version ? <NotebookReviewPanel review={version.review} locale={locale} /> : null}
         </section>
 
         <aside className="mj-notebook-workspace-chat" aria-label={copy.chatLabel}>

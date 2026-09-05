@@ -20,6 +20,12 @@ import majorana_contracts as contracts
 from fastapi import APIRouter, Depends, Header, HTTPException
 from fastapi.responses import JSONResponse
 from leona_notebooks import from_ipynb, to_ipynb
+from leona_notebooks.courses import COURSE_STARTERS
+from leona_notebooks.authoring import (
+    AuthoringInputError,
+    advisory_structure,
+    spec_from_author_request,
+)
 from leona_notebooks.source import render_source
 from leona_notebooks.templates import KIND_DESCRIPTIONS, STARTER_BRIEFS, structure_for
 from majorana_contracts.enums import Framework, RunMode
@@ -57,6 +63,10 @@ class CreateNotebookTurnRequest(RequestModel, contracts.CreateNotebookTurnReques
 
 
 class ImportNotebookRequest(RequestModel, contracts.ImportNotebookRequest):
+    pass
+
+
+class AuthorNotebookVersionRequest(RequestModel, contracts.AuthorNotebookVersionRequest):
     pass
 
 
@@ -167,6 +177,56 @@ async def _gate_notebook_run(
     await _enforce_execute_backstop(probe, scope, session, identity, settings)
 
 
+async def create_notebook_and_enqueue(
+    scope: CurrentScope,
+    session: DbSession,
+    *,
+    request: contracts.CreateNotebookRequest,
+    run_id: uuid.UUID,
+) -> tuple[NotebookRow, NotebookVersionRow]:
+    """Create the notebook + its queued first version and dispatch the generation.
+
+    Everything `POST /v1/notebooks` does after the run exists, factored out because
+    `POST /v1/courses/{id}/generate` does exactly the same thing once per module.
+    Duplicating it would mean two places that decide what a notebook's slug looks
+    like, what its job payload contains and which fields the worker can rely on —
+    and the worker validates that payload's `request` as a `CreateNotebookRequest`,
+    so a second producer drifting from this one fails at run time, in the worker,
+    on the reader's course.
+
+    The caller owns the run: it applies `_gate_notebook_run` and creates the `runs`
+    row, because a course dispatches several and each must be gated on its own.
+    """
+    notebook, version = await notebooks_repo.create_notebook(
+        scope,
+        session,
+        slug=_slug(request.title or request.brief),
+        title=_default_title(request),
+        kind=(request.kind or contracts.NotebookKind.LESSON).value,
+        summary="",
+        language=request.response_locale,
+        framework=(request.framework or contracts.NotebookFramework()).model_dump(mode="json"),
+        request=request.model_dump(mode="json"),
+        run_id=run_id,
+    )
+    await system.enqueue_job(
+        session,
+        kind=NOTEBOOK_GENERATE_JOB_KIND,
+        payload={
+            "run_id": str(run_id),
+            "notebook_id": str(notebook.id),
+            "version_id": str(version.id),
+            "user_id": str(scope.user_id),
+            "workspace_id": str(scope.workspace_id),
+            "kind": "generate",
+            "request": request.model_dump(mode="json"),
+            "response_locale": request.response_locale,
+        },
+        run_id=run_id,
+    )
+    return notebook, version
+
+
 # -------------------------------------------------------------------------- templates
 
 
@@ -187,7 +247,18 @@ async def notebook_templates(scope: CurrentScope) -> contracts.NotebookTemplates
         )
         for starter in STARTER_BRIEFS
     ]
-    return contracts.NotebookTemplates(kinds=kinds, starters=starters)
+    course_starters = [
+        contracts.NotebookStarter(
+            id=starter["id"],
+            kind=contracts.NotebookKind(starter["kind"]),
+            title=starter["title"],
+            brief=starter["brief"],
+        )
+        for starter in COURSE_STARTERS
+    ]
+    return contracts.NotebookTemplates(
+        kinds=kinds, starters=starters, course_starters=course_starters
+    )
 
 
 # ---------------------------------------------------------------------------- create
@@ -257,33 +328,8 @@ async def create_notebook(
         scope, session, run.id, type="run.queued", payload={"mode": str(RunMode.NOTEBOOK)}
     )
 
-    notebook, version = await notebooks_repo.create_notebook(
-        scope,
-        session,
-        slug=_slug(body.title or body.brief),
-        title=_default_title(body),
-        kind=(body.kind or contracts.NotebookKind.LESSON).value,
-        summary="",
-        language=body.response_locale,
-        framework=(body.framework or contracts.NotebookFramework()).model_dump(mode="json"),
-        request=body.model_dump(mode="json"),
-        run_id=run.id,
-    )
-
-    await system.enqueue_job(
-        session,
-        kind=NOTEBOOK_GENERATE_JOB_KIND,
-        payload={
-            "run_id": str(run.id),
-            "notebook_id": str(notebook.id),
-            "version_id": str(version.id),
-            "user_id": str(scope.user_id),
-            "workspace_id": str(scope.workspace_id),
-            "kind": "generate",
-            "request": body.model_dump(mode="json"),
-            "response_locale": body.response_locale,
-        },
-        run_id=run.id,
+    notebook, version = await create_notebook_and_enqueue(
+        scope, session, request=body, run_id=run.id
     )
 
     return contracts.CreateNotebookResponse(
@@ -572,6 +618,179 @@ async def rerun_notebook(
     )
     return contracts.RerunNotebookResponse(
         version=notebooks_repo.version_to_resource(version, full=False), run_id=run.id
+    )
+
+
+# ------------------------------------------------------------- author (the editor)
+
+
+def _authored_spec(
+    body: contracts.AuthorNotebookVersionRequest, notebook: NotebookRow
+) -> contracts.NotebookSpec:
+    """The reader's submission as a spec, or a 400 that says what was wrong with it.
+
+    400 rather than 422 on purpose: these are failures the reader can act on — they
+    sent two editors' worth of content, or their `.nb.py` has a bad line — and the
+    app's `RequestValidationError` handler answers a message-free "validation failed",
+    which an editor cannot show anyone. The `reason` codes are stable so the web can
+    branch without parsing prose.
+    """
+    try:
+        spec = spec_from_author_request(
+            spec=body.spec,
+            source=body.source,
+            ipynb=body.ipynb,
+            slug=notebook.slug,
+        )
+    except AuthoringInputError as exc:
+        raise HTTPException(
+            status_code=400,
+            detail={"error": str(exc), "reason": "notebook_authoring_input"},
+        ) from None
+    if body.run_until is not None and not any(cell.id == body.run_until for cell in spec.cells):
+        # Caught here rather than left to `compose_notebook_program` in the worker: a
+        # job that can only ever fail should not be queued, and the reader finds out
+        # now instead of after a run they will be billed a sandbox dispatch for.
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "error": f"run_until: this notebook has no cell {body.run_until!r}",
+                "reason": "notebook_unknown_cell",
+            },
+        )
+    return spec
+
+
+@router.post(
+    "/notebooks/{notebook_id}/versions",
+    response_model=contracts.AuthorNotebookVersionResponse,
+    status_code=201,
+)
+async def author_notebook_version(
+    notebook_id: uuid.UUID,
+    body: AuthorNotebookVersionRequest,
+    scope: CurrentScope,
+    session: DbSession,
+    identity: CurrentIdentity,
+    settings: Annotated[Settings, Depends(get_settings)],
+) -> contracts.AuthorNotebookVersionResponse:
+    """A version the READER wrote — from the in-browser editor, a text editor, or
+    Jupyter — saved as `created_by=user` and executed by the same sandbox path Nala's
+    own builds use, so the version history stays the one truth about this notebook.
+
+    Two shapes, one row either way:
+
+    - `execute=true` (the default) queues `notebook.revise` with `kind: "author"` and
+      answers with the run to follow. The job carries the resolved **spec**, never the
+      raw source — parsing happened here, where a failure can still be a 400.
+    - `execute=false` writes the version `ready` immediately with spec, rendered source
+      and compiled `.ipynb`, no report and no run. That is a draft the reader saved,
+      not a run that produced nothing.
+
+    The structure check is advisory in both: `advisory_structure` warnings are recorded
+    against the version and never refuse the save (`leona_notebooks.authoring`).
+    """
+    notebook = await notebooks_repo.get_notebook(scope, session, notebook_id)
+    latest, _current = await _latest_and_current(scope, session, notebook)
+    _assert_not_in_flight(notebook, latest)
+
+    spec = _authored_spec(body, notebook)
+    request_record = {
+        "author": True,
+        "message": body.message,
+        "execute": body.execute,
+        "run_until": body.run_until,
+        "input": "spec"
+        if body.spec is not None
+        else ("source" if body.source is not None else "ipynb"),
+    }
+
+    if not body.execute:
+        version = await notebooks_repo.create_version(
+            scope,
+            session,
+            notebook_id,
+            created_by=contracts.NotebookVersionAuthor.USER.value,
+            message=body.message,
+            request=request_record,
+            run_id=None,
+        )
+        version = await notebooks_repo.set_version_result(
+            scope,
+            session,
+            version.id,
+            status=contracts.NotebookVersionStatus.READY.value,
+            spec=spec.model_dump(mode="json"),
+            source=render_source(spec),
+            ipynb=to_ipynb(spec),
+            report=None,
+            review=_advisory_review(spec),
+            error="",
+            message=body.message,
+        )
+        return contracts.AuthorNotebookVersionResponse(
+            version=notebooks_repo.version_to_resource(version, full=False), run_id=None
+        )
+
+    await _gate_notebook_run(
+        body.message or f"Run notebook {notebook.slug}", scope, session, identity, settings
+    )
+    run = await runs_repo.create_run(
+        scope,
+        session,
+        task_prompt=body.message or f"Run notebook {notebook.slug}",
+        mode=RunMode.NOTEBOOK,
+        framework=_run_framework(spec.framework),
+    )
+    await runs_repo.append_run_event(
+        scope, session, run.id, type="run.queued", payload={"mode": str(RunMode.NOTEBOOK)}
+    )
+    version = await notebooks_repo.create_version(
+        scope,
+        session,
+        notebook_id,
+        created_by=contracts.NotebookVersionAuthor.USER.value,
+        message=body.message,
+        request=request_record,
+        run_id=run.id,
+    )
+    await system.enqueue_job(
+        session,
+        kind=NOTEBOOK_REVISE_JOB_KIND,
+        payload={
+            "run_id": str(run.id),
+            "notebook_id": str(notebook_id),
+            "version_id": str(version.id),
+            "user_id": str(scope.user_id),
+            "workspace_id": str(scope.workspace_id),
+            "kind": "author",
+            "slug": notebook.slug,
+            # The resolved spec, not `body.source`/`body.ipynb`: the worker must never
+            # be the place a reader's syntax error is discovered, because there the
+            # only thing it can produce is a failed run.
+            "request": {"spec": spec.model_dump(mode="json"), "message": body.message},
+            "run_until": body.run_until,
+            "response_locale": notebook.language,
+        },
+        run_id=run.id,
+    )
+    return contracts.AuthorNotebookVersionResponse(
+        version=notebooks_repo.version_to_resource(version, full=False), run_id=run.id
+    )
+
+
+def _advisory_review(spec: contracts.NotebookSpec) -> dict[str, Any] | None:
+    """The structure check as a stored advisory review, or `None` when it found
+    nothing. Not an LLM review — the `author` path makes no model call at all — but the
+    same *kind* of object: a verdict plus notes that never block a save. It goes in the
+    `review` JSONB because that is where the advisory layer already lives; there is no
+    `notebook_versions.warnings` column and adding one is a migration this lane has no
+    reason to spend."""
+    warnings = advisory_structure(spec)
+    if not warnings:
+        return None
+    return contracts.NotebookReview(verdict="needs-attention", warnings=warnings).model_dump(
+        mode="json"
     )
 
 

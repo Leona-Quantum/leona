@@ -1,5 +1,7 @@
 import type { components } from "@majorana/contracts-gen";
 import type { AccountTier } from "./account-tier";
+import type { NotebookDiffCellStatus, NotebookDiffHeaderField } from "./notebook-diff";
+import type { NotebookMastery } from "./notebook-mastery";
 import type { PublicLocale } from "./public-locale";
 
 type NotebookKind = components["schemas"]["NotebookKind"];
@@ -9,6 +11,12 @@ type NotebookStatusPillCopyKey = "queued" | "generating" | "ready" | "failed";
 type NotebookCellStatusCopyKey = "ok" | "error" | "skipped" | "not_run";
 type NotebookReviewVerdict = components["schemas"]["NotebookReview"]["verdict"];
 type NotebookFindingSeverity = components["schemas"]["ReviewFinding"]["severity"];
+type NotebookFindingCategory = components["schemas"]["ReviewFinding"]["category"];
+type NotebookDiffHeaderFieldKey = NotebookDiffHeaderField["field"];
+// Courses (`lib/course-types.ts` — local until Lane A's contracts-gen lands).
+type CourseStatusCopyKey = "planning" | "planned" | "generating" | "ready" | "failed";
+type CourseModuleStatusCopyKey = "planned" | "queued" | "generating" | "ready" | "failed";
+type CourseModuleCountCopyKey = "auto" | "4" | "8" | "12";
 
 export const WORKSPACE_COPY: Record<PublicLocale, {
   surfaces: { brandedRun: string; preview: string };
@@ -539,6 +547,8 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
     frameworkLabel: string;
     seedAtlasLabel: string;
     seedAtlasPlaceholder: string;
+    seedCircuitLabel: string;
+    seedCircuitPlaceholder: string;
     importLabel: string;
     importHint: string;
     importFailed: string;
@@ -572,7 +582,21 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
     reviewVerdict: Record<NotebookReviewVerdict, string>;
     reviewFindingsLabel: string;
     reviewSeverity: Record<NotebookFindingSeverity, string>;
+    reviewCategory: Record<NotebookFindingCategory, string>;
     reviewNotEstablishedLabel: string;
+    reviewNoReview: string;
+
+    compareToggle: string;
+    comparePickerLabel: string;
+    diffStatus: Record<NotebookDiffCellStatus, string>;
+    diffHeaderField: Record<NotebookDiffHeaderFieldKey, string>;
+    diffLoading: string;
+    diffLoadFailed: string;
+
+    progressSummary: (mastery: NotebookMastery) => string;
+
+    quizButtonLabel: string;
+    quizButtonFailed: string;
 
     chatLabel: string;
     chatPlaceholder: string;
@@ -581,6 +605,7 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
     chatEmpty: string;
     chatLoadFailed: string;
     chatSendFailed: string;
+    runStreamLost: string;
     progressLabel: string;
 
     cellStatus: Record<NotebookCellStatusCopyKey, string>;
@@ -593,8 +618,108 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
     actionSimplify: string;
     actionAddFigure: string;
     actionExercise: string;
+    actionExplainError: string;
+    actionCheckAttempt: string;
+    actionCheckAttemptCancel: string;
+    checkAttemptPlaceholder: string;
+    checkAttemptSubmit: string;
+
+    edit: string;
+    editExit: string;
+    editHint: string;
+    editCellSourceLabel: (cellId: string) => string;
+    editKindLabel: string;
+    editKindOption: Record<"markdown" | "code", string>;
+    editRoleLabel: string;
+    editRoleNone: string;
+    editExecuteLabel: string;
+    editRaisesLabel: string;
+    editAddMarkdown: string;
+    editAddCode: string;
+    editDelete: string;
+    editMoveUp: string;
+    editMoveDown: string;
+    editEmpty: string;
+    saveAndRun: string;
+    saveWithoutRunning: string;
+    runToHere: string;
+    discard: string;
+    discardConfirm: string;
+    saving: string;
+    saveFailed: string;
+    unsavedWarning: string;
+    structureNotesLabel: string;
+    structureNotesHint: string;
+    cellNotRunBadge: string;
 
     teachMeInNotebook: string;
+  };
+  courses: {
+    title: string;
+    lede: string;
+    coursesTab: string;
+
+    planLabel: string;
+    briefLabel: string;
+    briefPlaceholder: string;
+    moduleCountLabel: string;
+    moduleCountOption: Record<CourseModuleCountCopyKey, string>;
+    startersLabel: string;
+    create: string;
+    creating: string;
+    createFailed: string;
+
+    listLoading: string;
+    listLoadFailed: string;
+    listEmpty: string;
+    search: string;
+    searchPlaceholder: string;
+    noMatch: string;
+    updated: string;
+    statusPill: Record<CourseStatusCopyKey, string>;
+    progress: (ready: number, total: number) => string;
+    open: string;
+
+    backToCourses: string;
+    loading: string;
+    loadFailed: string;
+    titleEditFailed: string;
+    saveTitle: string;
+
+    generateAll: string;
+    generatingAll: string;
+    generateAllFailed: string;
+    downloadRepo: string;
+    downloadingRepo: string;
+    downloadRepoFailed: string;
+    downloadRepoDisabledHint: string;
+
+    moduleStatusPill: Record<CourseModuleStatusCopyKey, string>;
+    moduleSeqLabel: (seq: number) => string;
+    topicLabel: string;
+    keyConceptsLabel: string;
+    objectivesLabel: string;
+    deliverableLabel: string;
+    durationLabel: (minutes: number) => string;
+    durationUnknown: string;
+    prerequisitesLabel: string;
+    prerequisiteUnresolved: (slug: string) => string;
+    generateModule: string;
+    generatingModule: string;
+    generateModuleFailed: string;
+    openNotebook: string;
+    moveUp: string;
+    moveDown: string;
+    reorderFailed: string;
+
+    chatLabel: string;
+    chatPlaceholder: string;
+    chatSend: string;
+    chatSending: string;
+    chatEmpty: string;
+    chatLoadFailed: string;
+    chatSendFailed: string;
+    progressLabel: string;
   };
 }> = {
   en: {
@@ -1177,6 +1302,8 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
     frameworkLabel: "Framework",
     seedAtlasLabel: "Seed from an Atlas record",
     seedAtlasPlaceholder: "Atlas record slug",
+    seedCircuitLabel: "Start from a circuit",
+    seedCircuitPlaceholder: "Paste Qiskit code or OpenQASM 3",
     importLabel: "Import .ipynb",
     importHint: "Upload an existing notebook to keep editing it with Nala.",
     importFailed: "The notebook could not be imported.",
@@ -1211,11 +1338,56 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
     versionFailedHeadline: "This version did not finish generating.",
     versionFailedHint: "Ask Nala below to fix it, or run it again.",
 
-    reviewLabel: "Review",
+    reviewLabel: "Nala's review",
     reviewVerdict: { ready: "Ready", "needs-attention": "Needs attention" },
     reviewFindingsLabel: "Findings",
     reviewSeverity: { blocker: "Blocker", "should-fix": "Should fix", nit: "Nit" },
+    reviewCategory: {
+      accuracy: "Accuracy",
+      pedagogy: "Pedagogy",
+      code: "Code",
+      structure: "Structure",
+      safety: "Safety",
+      style: "Style",
+    },
     reviewNotEstablishedLabel: "What this notebook does not establish",
+    reviewNoReview: "This version has no review — it was imported or re-run without one.",
+
+    compareToggle: "Compare with previous",
+    comparePickerLabel: "Compare against",
+    diffStatus: {
+      added: "Added",
+      removed: "Removed",
+      changed: "Changed",
+      unchanged: "Unchanged",
+      moved: "Moved",
+    },
+    diffHeaderField: {
+      title: "Title",
+      summary: "Summary",
+      objectives: "Objectives",
+      duration_minutes: "Duration (minutes)",
+    },
+    diffLoading: "Loading the comparison…",
+    diffLoadFailed: "That version could not be loaded for comparison.",
+
+    progressSummary: (mastery) => {
+      const parts: string[] = [];
+      if (mastery.checkpointsTotal > 0) {
+        const noun = mastery.checkpointsTotal === 1 ? "checkpoint" : "checkpoints";
+        parts.push(`${mastery.checkpointsPassed} of ${mastery.checkpointsTotal} ${noun} pass`);
+      }
+      if (mastery.cellsErrored > 0) {
+        parts.push(`${mastery.cellsErrored} cell${mastery.cellsErrored === 1 ? "" : "s"} errored`);
+      }
+      if (mastery.exercisesTotal > 0) {
+        parts.push(`${mastery.exercisesTotal} exercise${mastery.exercisesTotal === 1 ? "" : "s"}`);
+      }
+      return parts.join(" · ");
+    },
+
+    quizButtonLabel: "Quiz me on this notebook",
+    quizButtonFailed: "The quiz could not be started.",
 
     chatLabel: "Talk to Nala",
     chatPlaceholder: "Ask Nala to change this notebook…",
@@ -1224,6 +1396,7 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
     chatEmpty: "Tell Nala what to change — a cell, an analogy, the difficulty, the language.",
     chatLoadFailed: "The conversation could not be loaded.",
     chatSendFailed: "The message could not be sent.",
+    runStreamLost: "The live view of this run dropped out. Reload the page to see how it finished.",
     progressLabel: "Working",
 
     cellStatus: { ok: "Passed", error: "Error", skipped: "Skipped", not_run: "Not run yet" },
@@ -1236,8 +1409,108 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
     actionSimplify: "Simplify",
     actionAddFigure: "Add a figure here",
     actionExercise: "Turn this into an exercise",
+    actionExplainError: "Explain this error",
+    actionCheckAttempt: "Check my attempt",
+    actionCheckAttemptCancel: "Cancel",
+    checkAttemptPlaceholder: "Paste or write your attempt at this cell…",
+    checkAttemptSubmit: "Ask Nala to check it",
+
+    edit: "Edit",
+    editExit: "Done editing",
+    editHint: "Change any cell, then run it. Every save becomes a new version.",
+    editCellSourceLabel: (cellId) => `Source of cell ${cellId}`,
+    editKindLabel: "Cell type",
+    editKindOption: { markdown: "Text", code: "Code" },
+    editRoleLabel: "Role",
+    editRoleNone: "No role",
+    editExecuteLabel: "Run this cell",
+    editRaisesLabel: "Expected to raise",
+    editAddMarkdown: "Add text below",
+    editAddCode: "Add code below",
+    editDelete: "Delete cell",
+    editMoveUp: "Move up",
+    editMoveDown: "Move down",
+    editEmpty: "This notebook has no cells yet. Add one below.",
+    saveAndRun: "Save & run",
+    saveWithoutRunning: "Save without running",
+    runToHere: "Run to here",
+    discard: "Discard changes",
+    discardConfirm: "Discard your changes to this notebook?",
+    saving: "Saving…",
+    saveFailed: "Your changes could not be saved.",
+    unsavedWarning: "You have unsaved changes to this notebook.",
+    structureNotesLabel: "Nala's structure notes",
+    structureNotesHint: "Suggestions only — your version was saved as you wrote it.",
+    cellNotRunBadge: "Not run",
 
     teachMeInNotebook: "Teach me this in a notebook",
+  },
+  courses: {
+    title: "Courses",
+    lede: "Ask Nala to plan a whole course from one brief, then generate each module as a notebook and follow along.",
+    coursesTab: "Courses",
+
+    planLabel: "Plan a course",
+    briefLabel: "What should this course teach?",
+    briefPlaceholder: "e.g. Take a Python engineer from classical bits to Shor's algorithm in about 8 modules, hands-on each time.",
+    moduleCountLabel: "Modules",
+    moduleCountOption: { auto: "Auto", "4": "4", "8": "8", "12": "12" },
+    startersLabel: "Or start from a brief",
+    create: "Plan course",
+    creating: "Planning…",
+    createFailed: "The course could not be planned.",
+
+    listLoading: "Loading courses…",
+    listLoadFailed: "Courses could not be loaded.",
+    listEmpty: "You have not planned a course yet.",
+    search: "Search courses",
+    searchPlaceholder: "Search by title",
+    noMatch: "No courses match this search.",
+    updated: "Updated",
+    statusPill: { planning: "Planning…", planned: "Planned", generating: "Generating…", ready: "Ready", failed: "Failed" },
+    progress: (ready, total) => `${ready} of ${total} modules ready`,
+    open: "Open course",
+
+    backToCourses: "Back to Courses",
+    loading: "Loading course…",
+    loadFailed: "This course could not be loaded.",
+    titleEditFailed: "The title could not be saved.",
+    saveTitle: "Save",
+
+    generateAll: "Generate all",
+    generatingAll: "Generating…",
+    generateAllFailed: "The modules could not be started.",
+    downloadRepo: "Download as repository (.zip)",
+    downloadingRepo: "Downloading…",
+    downloadRepoFailed: "The course could not be downloaded.",
+    downloadRepoDisabledHint: "Available once every module is ready.",
+
+    moduleStatusPill: { planned: "Planned", queued: "Queued", generating: "Generating…", ready: "Ready", failed: "Failed" },
+    moduleSeqLabel: (seq) => `Module ${seq}`,
+    topicLabel: "Topic",
+    keyConceptsLabel: "Key concepts",
+    objectivesLabel: "Objectives",
+    deliverableLabel: "Deliverable",
+    durationLabel: (minutes) => `${minutes} min`,
+    durationUnknown: "Duration not set",
+    prerequisitesLabel: "Prerequisites",
+    prerequisiteUnresolved: (slug) => `${slug} (not in this course)`,
+    generateModule: "Generate this module",
+    generatingModule: "Generating…",
+    generateModuleFailed: "This module could not be started.",
+    openNotebook: "Open notebook",
+    moveUp: "Move earlier",
+    moveDown: "Move later",
+    reorderFailed: "The module order could not be saved.",
+
+    chatLabel: "Talk to Nala",
+    chatPlaceholder: "Ask Nala to change this course…",
+    chatSend: "Send",
+    chatSending: "Sending…",
+    chatEmpty: "Tell Nala what to change — a module's scope, its order, the difficulty.",
+    chatLoadFailed: "The conversation could not be loaded.",
+    chatSendFailed: "The message could not be sent.",
+    progressLabel: "Working",
   },
   },
   ja: {
@@ -1814,6 +2087,8 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
     frameworkLabel: "フレームワーク",
     seedAtlasLabel: "Atlasの記録から始める",
     seedAtlasPlaceholder: "Atlas記録のスラッグ",
+    seedCircuitLabel: "回路から始める",
+    seedCircuitPlaceholder: "QiskitのコードまたはOpenQASM 3を貼り付け",
     importLabel: ".ipynbをインポート",
     importHint: "既存のノートブックをアップロードすると、Nalaと一緒に編集を続けられます。",
     importFailed: "ノートブックをインポートできませんでした。",
@@ -1848,11 +2123,55 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
     versionFailedHeadline: "このバージョンの生成は完了しませんでした。",
     versionFailedHint: "下のNalaに修正を依頼するか、もう一度実行してください。",
 
-    reviewLabel: "レビュー",
+    reviewLabel: "Nalaのレビュー",
     reviewVerdict: { ready: "準備完了", "needs-attention": "要確認" },
     reviewFindingsLabel: "指摘事項",
     reviewSeverity: { blocker: "重大", "should-fix": "要修正", nit: "軽微" },
+    reviewCategory: {
+      accuracy: "正確性",
+      pedagogy: "教え方",
+      code: "コード",
+      structure: "構成",
+      safety: "安全性",
+      style: "スタイル",
+    },
     reviewNotEstablishedLabel: "このノートブックが示していないこと",
+    reviewNoReview: "このバージョンにはレビューがありません（インポートまたはレビューなしの再実行）。",
+
+    compareToggle: "前のバージョンと比較",
+    comparePickerLabel: "比較対象",
+    diffStatus: {
+      added: "追加",
+      removed: "削除",
+      changed: "変更",
+      unchanged: "変更なし",
+      moved: "移動",
+    },
+    diffHeaderField: {
+      title: "タイトル",
+      summary: "概要",
+      objectives: "学習目標",
+      duration_minutes: "所要時間（分）",
+    },
+    diffLoading: "比較を読み込んでいます…",
+    diffLoadFailed: "比較用のバージョンを読み込めませんでした。",
+
+    progressSummary: (mastery) => {
+      const parts: string[] = [];
+      if (mastery.checkpointsTotal > 0) {
+        parts.push(`チェックポイント ${mastery.checkpointsPassed}/${mastery.checkpointsTotal} 合格`);
+      }
+      if (mastery.cellsErrored > 0) {
+        parts.push(`エラー ${mastery.cellsErrored}セル`);
+      }
+      if (mastery.exercisesTotal > 0) {
+        parts.push(`演習 ${mastery.exercisesTotal}問`);
+      }
+      return parts.join(" ・ ");
+    },
+
+    quizButtonLabel: "このノートブックでクイズを作る",
+    quizButtonFailed: "クイズを開始できませんでした。",
 
     chatLabel: "Nalaに相談する",
     chatPlaceholder: "Nalaにこのノートブックの変更を依頼してください…",
@@ -1861,6 +2180,7 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
     chatEmpty: "セルの内容、たとえ話、難易度、言語など、変更したい点をNalaに伝えてください。",
     chatLoadFailed: "会話を読み込めませんでした。",
     chatSendFailed: "メッセージを送信できませんでした。",
+    runStreamLost: "この実行のライブ表示が切断されました。結果を確認するにはページを再読み込みしてください。",
     progressLabel: "処理中",
 
     cellStatus: { ok: "成功", error: "エラー", skipped: "スキップ", not_run: "未実行" },
@@ -1873,8 +2193,108 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
     actionSimplify: "やさしくする",
     actionAddFigure: "ここに図を追加",
     actionExercise: "演習問題にする",
+    actionExplainError: "このエラーを説明する",
+    actionCheckAttempt: "自分の解答を確認する",
+    actionCheckAttemptCancel: "キャンセル",
+    checkAttemptPlaceholder: "このセルへの解答を貼り付けるか入力してください…",
+    checkAttemptSubmit: "Nalaに確認してもらう",
+
+    edit: "編集",
+    editExit: "編集を終える",
+    editHint: "どのセルでも編集して実行できます。保存するたびに新しいバージョンになります。",
+    editCellSourceLabel: (cellId) => `セル ${cellId} の内容`,
+    editKindLabel: "セルの種類",
+    editKindOption: { markdown: "テキスト", code: "コード" },
+    editRoleLabel: "役割",
+    editRoleNone: "指定なし",
+    editExecuteLabel: "このセルを実行する",
+    editRaisesLabel: "例外が起きる想定",
+    editAddMarkdown: "下にテキストを追加",
+    editAddCode: "下にコードを追加",
+    editDelete: "セルを削除",
+    editMoveUp: "上へ移動",
+    editMoveDown: "下へ移動",
+    editEmpty: "このノートブックにはまだセルがありません。下から追加してください。",
+    saveAndRun: "保存して実行",
+    saveWithoutRunning: "実行せずに保存",
+    runToHere: "ここまで実行",
+    discard: "変更を破棄",
+    discardConfirm: "このノートブックの変更を破棄しますか？",
+    saving: "保存しています…",
+    saveFailed: "変更を保存できませんでした。",
+    unsavedWarning: "このノートブックに未保存の変更があります。",
+    structureNotesLabel: "Nalaからの構成メモ",
+    structureNotesHint: "提案のみです。バージョンは書かれたとおりに保存されています。",
+    cellNotRunBadge: "未実行",
 
     teachMeInNotebook: "ノートブックで学ぶ",
+  },
+  courses: {
+    title: "コース",
+    lede: "Nalaに依頼して一つの依頼文からコース全体を計画し、各モジュールをノートブックとして生成しながら進められます。",
+    coursesTab: "コース",
+
+    planLabel: "コースを計画する",
+    briefLabel: "このコースで何を教えたいですか？",
+    briefPlaceholder: "例：Pythonエンジニアを古典ビットからショアのアルゴリズムまで、8モジュール程度で、毎回手を動かしながら導いてください。",
+    moduleCountLabel: "モジュール数",
+    moduleCountOption: { auto: "自動", "4": "4", "8": "8", "12": "12" },
+    startersLabel: "またはお題から始める",
+    create: "コースを計画",
+    creating: "計画しています…",
+    createFailed: "コースを計画できませんでした。",
+
+    listLoading: "コースを読み込んでいます…",
+    listLoadFailed: "コースを読み込めませんでした。",
+    listEmpty: "まだコースを作成していません。",
+    search: "コースを検索",
+    searchPlaceholder: "タイトルで検索",
+    noMatch: "検索条件に一致するコースはありません。",
+    updated: "更新",
+    statusPill: { planning: "計画中…", planned: "計画済み", generating: "生成中…", ready: "準備完了", failed: "失敗" },
+    progress: (ready, total) => `${total}モジュール中${ready}件が準備完了`,
+    open: "コースを開く",
+
+    backToCourses: "コース一覧に戻る",
+    loading: "コースを読み込んでいます…",
+    loadFailed: "このコースを読み込めませんでした。",
+    titleEditFailed: "タイトルを保存できませんでした。",
+    saveTitle: "保存",
+
+    generateAll: "すべて生成",
+    generatingAll: "生成しています…",
+    generateAllFailed: "モジュールを開始できませんでした。",
+    downloadRepo: "リポジトリとしてダウンロード（.zip）",
+    downloadingRepo: "ダウンロードしています…",
+    downloadRepoFailed: "コースをダウンロードできませんでした。",
+    downloadRepoDisabledHint: "すべてのモジュールが準備完了になると利用できます。",
+
+    moduleStatusPill: { planned: "計画済み", queued: "待機中", generating: "生成中…", ready: "準備完了", failed: "失敗" },
+    moduleSeqLabel: (seq) => `モジュール ${seq}`,
+    topicLabel: "トピック",
+    keyConceptsLabel: "主要な概念",
+    objectivesLabel: "到達目標",
+    deliverableLabel: "成果物",
+    durationLabel: (minutes) => `${minutes}分`,
+    durationUnknown: "所要時間未設定",
+    prerequisitesLabel: "前提モジュール",
+    prerequisiteUnresolved: (slug) => `${slug}（このコースにはありません）`,
+    generateModule: "このモジュールを生成",
+    generatingModule: "生成しています…",
+    generateModuleFailed: "このモジュールを開始できませんでした。",
+    openNotebook: "ノートブックを開く",
+    moveUp: "上へ移動",
+    moveDown: "下へ移動",
+    reorderFailed: "モジュールの順序を保存できませんでした。",
+
+    chatLabel: "Nalaに相談する",
+    chatPlaceholder: "Nalaにこのコースの変更を依頼してください…",
+    chatSend: "送信",
+    chatSending: "送信しています…",
+    chatEmpty: "モジュールの範囲、順序、難易度など、変更したい点をNalaに伝えてください。",
+    chatLoadFailed: "会話を読み込めませんでした。",
+    chatSendFailed: "メッセージを送信できませんでした。",
+    progressLabel: "処理中",
   },
   },
 };

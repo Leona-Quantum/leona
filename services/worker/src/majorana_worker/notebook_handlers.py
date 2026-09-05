@@ -41,6 +41,7 @@ from pydantic import ValidationError
 
 from majorana_contracts import Scope
 from majorana_contracts.enums import Role, RunStatus, Stage, UsageKind
+from majorana_contracts.courses import CreateCourseRequest
 from majorana_contracts.notebooks import CreateNotebookRequest, NotebookReview
 from majorana_llm import (
     LLMClient,
@@ -56,7 +57,9 @@ from majorana_sandbox import run as run_sandbox
 from majorana_sandbox.spec import DEFAULT_MEMORY_MB
 
 from leona_notebooks.atlas import seed_from_record
+from leona_notebooks.circuits import validate_circuit_seed
 from leona_notebooks.execution import CellResult, ExecutionReport
+from leona_notebooks.authoring import advisory_structure, spec_from_author_request
 from leona_notebooks.ipynb import to_ipynb
 from leona_notebooks.pipeline import (
     GenerationRequest,
@@ -75,6 +78,7 @@ from leona_notebooks.prompts import (
     NotebookOutline,
     RepairContext,
     execution_summary_text,
+    render_circuit_seed_material,
     render_draft_user_prompt,
     render_outline_user_prompt,
     render_repair_user_prompt,
@@ -125,6 +129,18 @@ _STAGE_MAP: dict[str, Stage] = {
     "notebook.revise": Stage.GENERATE,
     "notebook.save": Stage.SAVE,
 }
+
+
+class CircuitSeedRejected(ValueError):
+    """A `kind="circuit"` seed failed `leona_notebooks.circuits.validate_circuit_seed`
+    (OpenQASM 3 that would not parse, or Python the sandbox guard refused).
+    `findings` is shown to the reader so they know what to fix; caught specifically
+    in `handle_notebook_generate` and reported as `circuit_seed_rejected` rather than
+    falling into the generic `notebook_generation_failed` catch-all."""
+
+    def __init__(self, findings: list[str]) -> None:
+        self.findings = findings
+        super().__init__("the circuit you pasted was rejected: " + "; ".join(findings))
 
 
 def _scope_from_payload(payload: dict[str, Any]) -> Scope:
@@ -447,9 +463,14 @@ class ProductionNotebookPorts(NotebookPorts):
 
     # -- execute ----------------------------------------------------------
 
-    async def run_notebook(self, spec: NotebookSpec) -> ExecutionReport:
+    async def run_notebook(
+        self, spec: NotebookSpec, *, run_until: str | None = None
+    ) -> ExecutionReport:
+        """`run_until` is the editor's "Run to here": cells after that id are left out
+        of the program and come back `not_run`. Optional with a default so this still
+        satisfies `NotebookPorts.run_notebook(spec)`, which every other caller uses."""
         try:
-            program = compose_notebook_program(spec)
+            program = compose_notebook_program(spec, run_until=run_until)
         except NotebookGuardError as exc:
             return ExecutionReport(
                 notebook_slug=spec.slug,
@@ -538,19 +559,87 @@ async def _record_sandbox_usage(
         log.exception("notebook run %s finished but sandbox usage metering failed", run_id)
 
 
+class SeedNotFoundError(Exception):
+    """A `notebook`-kind seed's `ref` did not resolve to a readable current
+    version. Raised instead of the soft skip-and-log the other seed kinds get
+    (below) because a quiz built with no seed material is not "a slightly
+    thinner quiz" — it is a quiz on the wrong thing, silently. Caught in
+    `handle_notebook_generate` and mapped to reason_code `seed_not_found`."""
+
+
 async def _seed_material_for(
-    scope: Scope, session: AsyncSession, request: CreateNotebookRequest
+    scope: Scope,
+    session: AsyncSession,
+    request: CreateNotebookRequest | CreateCourseRequest,
+    notebook_store: NotebookStore | None = None,
 ) -> tuple[str, str | None]:
-    """Seed material text and the verbatim run cell, from every `atlas-record`
-    seed on the request. Only `atlas-record` seeds are resolved here; the
-    other seed kinds (`paper`, `artifact`, `upload`, `curriculum`) are passed
-    through to the outline/draft prompts as bare `Seed` objects with no
-    fetched material — building their own fetch paths is out of this lane's
-    scope (see the handoff)."""
+    """Seed material text and the verbatim run cell, from every `atlas-record`,
+    `circuit` and `notebook` seed on the request. The other seed kinds (`paper`,
+    `artifact`, `upload`, `curriculum`) are passed through to the outline/draft
+    prompts as bare `Seed` objects with no fetched material — building their own
+    fetch paths is out of this lane's scope (see the handoff).
+
+    Takes a course request as well as a notebook one — the two carry `seeds` and
+    `framework` with identical meaning, and the course lane resolves the reader's
+    Atlas seeds once, for the planner, rather than re-resolving them per module.
+    The union is spelled out rather than left to duck typing so that adding a
+    field this function needs breaks at the annotation, not in the worker.
+
+    A `notebook` seed ("Quiz me on this notebook") loads that OTHER notebook's
+    current version through `notebook_store`, with the same `scope` this run
+    itself carries, so the repository layer's own workspace filter is what makes
+    this "same workspace only": a foreign or missing id comes back not-found from
+    that layer (a real store raises, the in-memory test fake returns `None` —
+    both are treated the same way here) and is raised onward as
+    `SeedNotFoundError` rather than silently skipped. The `.nb.py` source stored
+    on that version becomes the seed material verbatim, prefaced so the model
+    knows to stay inside it. A caller that passes no store (the course planner)
+    cannot resolve notebook seeds; one on its request is a `SeedNotFoundError`.
+
+    Precedence when both an `atlas-record` and a `circuit` seed are present: the
+    circuit wins the first `run` cell — it is the reader's own text, asked for by
+    name, where the Atlas record is one more piece of the request's own context.
+
+    Raises `CircuitSeedRejected` if a `circuit` seed's content fails validation
+    (OpenQASM 3 that will not parse, or Python the sandbox guard refuses); this
+    fails the whole run before an LLM call is ever made, rather than shipping a
+    notebook built around code the reader will not be able to run."""
     parts: list[str] = []
-    run_cell: str | None = None
+    atlas_run_cell: str | None = None
+    circuit_run_cell: str | None = None
     framework_name = request.framework.name if request.framework else "qiskit"
     for seed in request.seeds:
+        if seed.kind == "circuit":
+            if not seed.content.strip():
+                continue
+            material = validate_circuit_seed(seed.content)
+            if isinstance(material, list):
+                raise CircuitSeedRejected(material)
+            parts.append(render_circuit_seed_material(material))
+            if circuit_run_cell is None:
+                circuit_run_cell = material.run_cell_source
+            continue
+        if seed.kind == "notebook":
+            if not seed.ref:
+                raise SeedNotFoundError("notebook seed has no ref")
+            try:
+                seed_notebook_id = uuid.UUID(seed.ref)
+            except ValueError as exc:
+                raise SeedNotFoundError(
+                    f"notebook seed ref {seed.ref!r} is not a notebook id"
+                ) from exc
+            if notebook_store is None:
+                raise SeedNotFoundError(
+                    "notebook seeds cannot be resolved without a notebook store"
+                )
+            try:
+                base = await notebook_store.get_current_version(scope, session, seed_notebook_id)
+            except Exception as exc:  # noqa: BLE001 - any store failure reads as "not found" here
+                raise SeedNotFoundError(f"notebook seed {seed.ref!r} not found: {exc}") from exc
+            if base is None or not getattr(base, "source", ""):
+                raise SeedNotFoundError(f"notebook seed {seed.ref!r} not found")
+            parts.append("The quiz covers ONLY what this notebook teaches:\n\n" + base.source)
+            continue
         if seed.kind != "atlas-record" or not seed.ref:
             continue
         entry = await catalog_repo.get_public_catalog_entry(
@@ -564,9 +653,9 @@ async def _seed_material_for(
             log.warning("notebook seed %r could not be resolved: %s", seed.ref, exc)
             continue
         parts.append(material)
-        if run_cell is None:
-            run_cell = cell
-    return "\n\n---\n\n".join(parts), run_cell
+        if atlas_run_cell is None:
+            atlas_run_cell = cell
+    return "\n\n---\n\n".join(parts), circuit_run_cell or atlas_run_cell
 
 
 async def _save_outcome(
@@ -629,6 +718,112 @@ async def _save_outcome(
             "status": final_status,
             "reason_code": success_reason_code if ready else failure_reason_code,
         },
+    )
+
+
+#: What the chat rail says after a reader's own edit ran. Not model output — there is
+#: no LLM call on this path at all — so the two locales are written here rather than
+#: left to a prompt. Keyed the way `normalize_response_locale` returns.
+_AUTHORED_TURN: dict[str, dict[str, str]] = {
+    "en": {
+        "ok": "Ran your edit: {ran} of {total} code cells ran cleanly.",
+        "partial": "Ran your edit: {ran} of {total} code cells ran, and {failed} raised.",
+        "stopped": "Ran your edit up to {run_until}: {ran} code cells ran, {not_run} left for later.",
+        "nothing": "I could not run your edit: {note}",
+    },
+    "ja": {
+        "ok": "編集を実行しました: コードセル {total} 個のうち {ran} 個が正常に実行されました。",
+        "partial": "編集を実行しました: コードセル {total} 個のうち {ran} 個が実行され、{failed} 個で例外が発生しました。",
+        "stopped": "{run_until} まで編集を実行しました: コードセル {ran} 個を実行し、{not_run} 個は未実行です。",
+        "nothing": "編集を実行できませんでした: {note}",
+    },
+}
+
+
+def _authored_turn(report: ExecutionReport, *, run_until: str | None, locale: str) -> str:
+    strings = _AUTHORED_TURN.get(locale, _AUTHORED_TURN["en"])
+    total = len(report.cells)
+    ran = report.executed_count()
+    failed = len(report.failing_cells())
+    not_run = sum(1 for cell in report.cells if cell.status == "not_run")
+    if ran == 0 and not report.ok:
+        return strings["nothing"].format(note=report.note or "the sandbox produced no evidence")
+    if run_until:
+        return strings["stopped"].format(ran=ran, not_run=not_run, run_until=run_until)
+    if failed:
+        return strings["partial"].format(ran=ran, total=total, failed=failed)
+    return strings["ok"].format(ran=ran, total=total)
+
+
+async def _handle_author(
+    *,
+    notebook_store: NotebookStore,
+    scope: Scope,
+    session: AsyncSession,
+    notebook_id: uuid.UUID,
+    version_id: uuid.UUID,
+    run_id: uuid.UUID,
+    payload: dict[str, Any],
+    ports: ProductionNotebookPorts,
+    sink: Any,
+    run_store: Any,
+    response_locale: str,
+) -> None:
+    """A version the READER wrote. No LLM call anywhere on this path — the reader
+    already said what the notebook should be, so there is nothing to ask a model.
+
+    **A cell that raised is a result, not a failed run.** Someone editing a notebook is
+    frequently running code they expect to break; marking the version `failed` would
+    hide the traceback they are trying to read behind an error banner and would leave
+    `current_version_id` pointing at their previous edit. So the version is `ready`,
+    the report carries the failing cell marked `error`, and the run finishes SUCCEEDED
+    with `reason_code: notebook_authored`. `_save_outcome` needed no flag for this: it
+    keys off `PipelineOutcome.status` alone and never inspects the report, so passing
+    `status="ready"` beside a report with a failing cell is already the shape it wants.
+
+    The one thing that IS a failure: nothing ran at all — the guard refused every cell,
+    or the sandbox came back with no evidence. Then there is no result to show and the
+    version is `failed` with the report's own note as the error.
+    """
+    raw_request = payload.get("request") or {}
+    spec_payload = raw_request.get("spec")
+    if not isinstance(spec_payload, dict):
+        raise ValueError("an author job must carry the resolved spec in request.spec")
+    # Through the same entry point the route used, so a producer that queues this job
+    # without going through the route (another lane's `%nala push`) gets the identical
+    # normalisation rather than a second, drifting one. `payload["slug"]` is the
+    # notebook's own: an edit may not move the notebook's address by rewriting the
+    # front matter of the source it came from.
+    authored = spec_from_author_request(spec=spec_payload, slug=payload.get("slug") or None)
+    run_until = payload.get("run_until") or None
+
+    report = await ports.run_notebook(authored, run_until=run_until)
+    await _record_sandbox_usage(session, scope, run_id, ports)
+
+    warnings = advisory_structure(authored)
+    review = NotebookReview(verdict="needs-attention", warnings=warnings) if warnings else None
+    ran_nothing = report.executed_count() == 0 and not report.ok
+    outcome = PipelineOutcome(
+        status="failed" if ran_nothing else "ready",
+        spec=authored,
+        report=report,
+        review=review,
+        summary=raw_request.get("message") or "",
+        error=(report.note or "the notebook did not run") if ran_nothing else "",
+    )
+    await _save_outcome(
+        notebook_store=notebook_store,
+        scope=scope,
+        session=session,
+        notebook_id=notebook_id,
+        version_id=version_id,
+        run_id=run_id,
+        outcome=outcome,
+        sink=sink,
+        run_store=run_store,
+        turn_content=_authored_turn(report, run_until=run_until, locale=response_locale),
+        success_reason_code="notebook_authored",
+        failure_reason_code="notebook_author_failed",
     )
 
 
@@ -728,7 +923,9 @@ async def handle_notebook_generate(
     )
     try:
         create_request = CreateNotebookRequest.model_validate(payload.get("request") or {})
-        seed_material, seed_run_cell = await _seed_material_for(scope, session, create_request)
+        seed_material, seed_run_cell = await _seed_material_for(
+            scope, session, create_request, notebook_store
+        )
         gen_request = GenerationRequest(
             brief=create_request.brief,
             kind_hint=create_request.kind.value if create_request.kind else None,
@@ -755,6 +952,34 @@ async def handle_notebook_generate(
             run_store=run_store,
             success_reason_code="notebook_generated",
             failure_reason_code="notebook_generation_failed",
+        )
+    except CircuitSeedRejected as exc:
+        log.warning("notebook.generate run %s: circuit seed rejected: %s", run_id, exc.findings)
+        await _fail_run(
+            notebook_store=notebook_store,
+            scope=scope,
+            session=session,
+            notebook_id=notebook_id,
+            version_id=version_id,
+            run_id=run_id,
+            run_store=run_store,
+            sink=sink,
+            error=str(exc),
+            reason_code="circuit_seed_rejected",
+        )
+    except SeedNotFoundError as exc:
+        log.warning("notebook.generate run %s: seed not found: %s", run_id, exc)
+        await _fail_run(
+            notebook_store=notebook_store,
+            scope=scope,
+            session=session,
+            notebook_id=notebook_id,
+            version_id=version_id,
+            run_id=run_id,
+            run_store=run_store,
+            sink=sink,
+            error=f"notebook generation failed: {exc}",
+            reason_code="seed_not_found",
         )
     except Exception as exc:
         log.exception("notebook.generate run %s failed", run_id)
@@ -808,6 +1033,26 @@ async def handle_notebook_revise(
         sandbox_memory_mb=await _resolve_sandbox_memory_mb(session, scope),
     )
     try:
+        # BEFORE the base-version lookup on purpose: an authored version carries its
+        # whole spec, so it needs no base — and requiring one would refuse the first
+        # thing a reader does to a notebook whose only generation failed, and the
+        # first `%nala push` into an empty notebook.
+        if kind == "author":
+            await _handle_author(
+                notebook_store=notebook_store,
+                scope=scope,
+                session=session,
+                notebook_id=notebook_id,
+                version_id=version_id,
+                run_id=run_id,
+                payload=payload,
+                ports=ports,
+                sink=sink,
+                run_store=run_store,
+                response_locale=response_locale,
+            )
+            return
+
         base_version_id = payload.get("base_version_id")
         base = (
             await notebook_store.get_version(scope, session, uuid.UUID(base_version_id))
