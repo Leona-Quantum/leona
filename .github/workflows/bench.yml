@@ -97,11 +97,29 @@ jobs:
         with:
           name: eval-report
           path: evals/report.json
+      # Records the guard's EXIT CODE rather than the step's pass/fail, because the
+      # two are not the same question. `3` means the report was read and holds no
+      # measurement; `0` means it does; anything else means the guard itself could not
+      # run. Only `3` may start the fallback: a crashed reporter that started a second
+      # provider-backed corpus run would spend real money and then blame the Vercel
+      # lane for its own failure. Greptile caught that on PR 831 — which is fitting,
+      # since failing to tell a dead instrument from a real zero is the defect this
+      # whole guard exists for.
+      #
+      # The `--self-test` that used to be chained here has moved to `ci`, so this step
+      # asks exactly one question. If the step is killed before writing the output, the
+      # value is empty, the fallback is skipped and the job fails — the safe direction.
       - if: ${{ env.skip != 'true' }}
         name: the report is a measurement, not a dead harness
         id: signal
         continue-on-error: true
-        run: uv run python scripts/check_bench_signal.py --self-test && uv run python scripts/check_bench_signal.py evals/report.json
+        run: |
+          set +e
+          uv run python scripts/check_bench_signal.py evals/report.json
+          code=$?
+          set -e
+          echo "code=$code" >> "$GITHUB_OUTPUT"
+          exit "$code"
 
       # The second lane, on the owner's ai-ops#257 answer ("if you could do both").
       #
@@ -122,7 +140,7 @@ jobs:
       # isolation boundary a user actually gets. The report's own `note` records
       # `sandbox=local`, and the job summary says so in as many words, because a figure
       # whose boundary is unstated is the thing that gets quoted six months later.
-      - if: ${{ env.skip != 'true' && steps.signal.outcome == 'failure' }}
+      - if: ${{ env.skip != 'true' && steps.signal.outputs.code == '3' }}
         name: fallback lane — measure on the local sandbox, without a Vercel credential
         continue-on-error: true
         env:
@@ -135,7 +153,7 @@ jobs:
             --corpus evals/corpus --out evals/report-local.json --sandbox local
           uv run python scripts/check_bench_signal.py evals/report-local.json
 
-      - if: ${{ env.skip != 'true' && steps.signal.outcome == 'failure' }}
+      - if: ${{ env.skip != 'true' && steps.signal.outputs.code == '3' }}
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: eval-report-local
@@ -147,10 +165,18 @@ jobs:
 
       # Last, so the summary above is written whichever way this goes. The job's verdict
       # is the PRIMARY lane's and nothing else.
-      - if: ${{ env.skip != 'true' && steps.signal.outcome == 'failure' }}
-        name: the primary lane measured nothing
+      # Fails on ANY non-zero code, and says which of the two happened. A guard that
+      # could not run is a worse state than a nightly that measured nothing, not a
+      # milder one, so it must never pass quietly for want of a matching branch.
+      - if: ${{ env.skip != 'true' && steps.signal.outputs.code != '0' }}
+        name: the primary lane did not produce a measurement
         run: |
-          echo "The Vercel-sandbox lane produced no measurement. See the step above for why."
-          echo "A fallback local-sandbox number may exist in the eval-report-local artifact;"
-          echo "it does not test the isolation boundary users get, and does not clear this."
+          if [ "${{ steps.signal.outputs.code }}" = "3" ]; then
+            echo "The Vercel-sandbox lane produced no measurement. See the guard's step for why."
+            echo "A fallback local-sandbox number may exist in the eval-report-local artifact;"
+            echo "it does not test the isolation boundary users get, and does not clear this."
+          else
+            echo "The signal guard itself did not run (exit '${{ steps.signal.outputs.code }}')."
+            echo "Nothing is known about the night's quality either way, and no fallback ran."
+          fi
           exit 1

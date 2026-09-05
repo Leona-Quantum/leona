@@ -33,6 +33,19 @@ that a bad model cannot trigger and a broken harness always does.
 Neither condition looks at the pass rate, so a genuinely bad night stays green and
 stays visible in the report, exactly as before.
 
+## Exit codes, and why there are three rather than two
+
+`0` a measurement · `3` a report that was READ and holds no signal · `1` anything else
+(the report could not be read, an import failed, the interpreter never started).
+
+A caller that only knows zero-versus-non-zero cannot tell "the nightly measured
+nothing" from "this script did not run", and one such caller already existed: the
+workflow's fallback lane fires on the first and must not fire on the second — a broken
+reporter would otherwise spend a second provider-backed corpus run and then blame the
+Vercel lane for it. Caught by Greptile on PR 831, which is fitting, because failing to
+separate a dead instrument from a real zero is the exact defect this script was written
+for. Any script whose result gates an expensive branch owes its caller that distinction.
+
 Usage:
   python scripts/check_bench_signal.py evals/report.json
   python scripts/check_bench_signal.py --self-test
@@ -44,6 +57,11 @@ import json
 import sys
 from collections import Counter
 from pathlib import Path
+
+#: A report was read and holds no quality signal. Distinct from `1` — which means this
+#: script could not do its job at all — because a caller branching on the difference
+#: exists. See the module docstring.
+NO_SIGNAL = 3
 
 
 def signal(report: dict) -> list[str]:
@@ -110,6 +128,37 @@ def _self_test() -> int:
     if not signal(empty):
         failures.append("an empty report was NOT caught")
 
+    # The exit codes a caller branches on, proved apart rather than assumed. A
+    # fallback lane that fires on the wrong one spends a real corpus run and then
+    # misattributes the failure, which is what this separation exists to prevent.
+    import tempfile
+
+    with tempfile.TemporaryDirectory() as tmp:
+        good = Path(tmp) / "good.json"
+        good.write_text(json.dumps(healthy), encoding="utf-8")
+        if main([str(good)]) != 0:
+            failures.append("a real measurement did not exit 0")
+        bad = Path(tmp) / "bad.json"
+        bad.write_text(json.dumps(dead_sandbox), encoding="utf-8")
+        no_signal = main([str(bad)])
+        unreadable = main([str(Path(tmp) / "absent.json")])
+        # LITERAL 3, not `NO_SIGNAL`. Asserting against the symbol compares the
+        # constant to itself, so collapsing NO_SIGNAL back to 1 — the exact regression
+        # this check exists to prevent — leaves the self-test green. Seen: that
+        # mutation passed on the first draft of this block.
+        if no_signal != 3:
+            failures.append(f"a dead-instrument report exited {no_signal}, not 3")
+        if unreadable != 1:
+            failures.append(f"an unreadable report exited {unreadable}, not 1")
+        # And the two must not be the same number, whatever those numbers are: the
+        # caller branches on the difference, and a caller that cannot see one spends a
+        # second corpus run on a failure that is not the one it is reacting to.
+        if no_signal == unreadable:
+            failures.append(
+                f"'measured nothing' and 'could not run' both exit {no_signal} — "
+                "indistinguishable to any caller"
+            )
+
     if failures:
         print("check_bench_signal self-test FAILED:")
         for line in failures:
@@ -135,6 +184,7 @@ def main(argv: list[str]) -> int:
         try:
             report = json.loads(path.read_text(encoding="utf-8"))
         except (OSError, json.JSONDecodeError) as exc:
+            # 1, not NO_SIGNAL: an unreadable report says nothing about the night.
             print(f"check_bench_signal: cannot read {path} — {exc}")
             status = 1
             continue
@@ -147,7 +197,7 @@ def main(argv: list[str]) -> int:
                 "  This is an instrument failure, not a bad score. Fix the harness "
                 "(most likely a provider credential) before reading any number from it."
             )
-            status = 1
+            status = status or NO_SIGNAL
         else:
             executed = sum(1 for c in report["cases"] if c.get("run_status") == "succeeded")
             judged = sum(1 for c in report["cases"] if c.get("verifier_decision") is not None)
