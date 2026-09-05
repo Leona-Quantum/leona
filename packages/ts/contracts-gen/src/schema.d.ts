@@ -1890,6 +1890,46 @@ export interface components {
             run_ids?: string[];
         };
         /**
+         * GradeAttemptRequest
+         * @description One reader's attempt at the graded cells of a notebook version.
+         *
+         *     Only the reader's own work travels: `code` is what they wrote in each exercise
+         *     cell, `answers` what they typed for each question. The assertions and the answer
+         *     key stay on the server and are joined to this on arrival, which is the whole
+         *     reason grading is a request rather than something the browser can do — a grader
+         *     the client holds is a grader the client can read.
+         *
+         *     Bounded on both axes because it is an unauthenticated-shaped payload from the
+         *     reader's keyboard: 64 cells, 32 KB per cell. A notebook with more graded cells
+         *     than that is not a lesson.
+         */
+        GradeAttemptRequest: {
+            /** Answers */
+            answers?: {
+                [key: string]: string;
+            };
+            /** Code */
+            code?: {
+                [key: string]: string;
+            };
+        };
+        /**
+         * GradeAttemptResponse
+         * @description The grading run. Verdicts arrive on the run's event stream as
+         *     `notebook.grades`, the same channel every other notebook result uses — grading
+         *     executes the reader's code in the sandbox, so it takes as long as a run takes and
+         *     cannot be answered inline.
+         */
+        GradeAttemptResponse: {
+            /** Graded Cells */
+            graded_cells: number;
+            /**
+             * Run Id
+             * Format: uuid
+             */
+            run_id: string;
+        };
+        /**
          * GradeReport
          * @description Grades for one attempt at one notebook version.
          */
@@ -2265,6 +2305,62 @@ export interface components {
              * @default >=2.5,<2.6
              */
             version: string;
+        };
+        /**
+         * NotebookGrades
+         * @description The verdicts for one reader's attempt at a notebook's graded cells.
+         *
+         *     A run event rather than a response body because grading executes the reader's code
+         *     in the sandbox: the route answers 202 with a run id and the verdicts arrive on that
+         *     run's stream, like every other notebook result.
+         *
+         *     Registered HERE and not only emitted, which is the whole point of this union:
+         *     `RepoEventSink` validates every event against it before persisting, so an event type
+         *     that is not in this list is REJECTED at emit time — the run reports an error and the
+         *     reader never receives a verdict. A fake sink in a test accepts anything and cannot
+         *     show that.
+         */
+        NotebookGrades: {
+            /** Attempted */
+            attempted: number;
+            /** Failed */
+            failed: number;
+            /** Grades */
+            grades: {
+                [key: string]: unknown;
+            };
+            /**
+             * Note
+             * @default
+             */
+            note: string;
+            /** Passed */
+            passed: number;
+            /**
+             * Run Id
+             * Format: uuid
+             */
+            run_id: string;
+            /**
+             * Seq
+             * @description Unique per run; powers replay and SSE Last-Event-ID
+             */
+            seq: number;
+            /**
+             * Ts
+             * Format: date-time
+             */
+            ts: string;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "notebook.grades";
+            /**
+             * Version Id
+             * Format: uuid
+             */
+            version_id: string;
         };
         /**
          * NotebookKind
@@ -3849,7 +3945,7 @@ export interface components {
          * RunEvent
          * @description Discriminated union of all run event types (class name sets the schema id).
          */
-        RunEvent: components["schemas"]["RunQueued"] | components["schemas"]["RunStarted"] | components["schemas"]["RunModeResolved"] | components["schemas"]["StageStarted"] | components["schemas"]["StageFinished"] | components["schemas"]["PlanProduced"] | components["schemas"]["ResearchCompleted"] | components["schemas"]["LlmCall"] | components["schemas"]["LlmDelta"] | components["schemas"]["ChatDelta"] | components["schemas"]["ChatCompleted"] | components["schemas"]["ChatError"] | components["schemas"]["ConversationTitled"] | components["schemas"]["QappGenerated"] | components["schemas"]["CodeGenerated"] | components["schemas"]["ScreenResult"] | components["schemas"]["ResourceEstimateResult"] | components["schemas"]["CompilationResult"] | components["schemas"]["CodeFinalized"] | components["schemas"]["SandboxResult"] | components["schemas"]["VerificationResult"] | components["schemas"]["SemanticReviewRecorded"] | components["schemas"]["StrictVerificationRecorded"] | components["schemas"]["BaselineResult"] | components["schemas"]["ExportClassified"] | components["schemas"]["ArtifactSaved"] | components["schemas"]["RunAnalysis"] | components["schemas"]["RunDiagnosed"] | components["schemas"]["RunRestarted"] | components["schemas"]["RunBestEffort"] | components["schemas"]["RunErrorEvent"] | components["schemas"]["RunFinished"];
+        RunEvent: components["schemas"]["RunQueued"] | components["schemas"]["RunStarted"] | components["schemas"]["RunModeResolved"] | components["schemas"]["StageStarted"] | components["schemas"]["StageFinished"] | components["schemas"]["PlanProduced"] | components["schemas"]["ResearchCompleted"] | components["schemas"]["LlmCall"] | components["schemas"]["LlmDelta"] | components["schemas"]["ChatDelta"] | components["schemas"]["ChatCompleted"] | components["schemas"]["ChatError"] | components["schemas"]["ConversationTitled"] | components["schemas"]["QappGenerated"] | components["schemas"]["NotebookGrades"] | components["schemas"]["CodeGenerated"] | components["schemas"]["ScreenResult"] | components["schemas"]["ResourceEstimateResult"] | components["schemas"]["CompilationResult"] | components["schemas"]["CodeFinalized"] | components["schemas"]["SandboxResult"] | components["schemas"]["VerificationResult"] | components["schemas"]["SemanticReviewRecorded"] | components["schemas"]["StrictVerificationRecorded"] | components["schemas"]["BaselineResult"] | components["schemas"]["ExportClassified"] | components["schemas"]["ArtifactSaved"] | components["schemas"]["RunAnalysis"] | components["schemas"]["RunDiagnosed"] | components["schemas"]["RunRestarted"] | components["schemas"]["RunBestEffort"] | components["schemas"]["RunErrorEvent"] | components["schemas"]["RunFinished"];
         /** RunFinished */
         RunFinished: {
             /** @default null */

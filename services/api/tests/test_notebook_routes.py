@@ -19,7 +19,11 @@ from majorana_contracts import NotebookKind
 
 from majorana_api.app import create_app
 from majorana_api.auth import deps as auth_deps
-from majorana_api.jobs import NOTEBOOK_GENERATE_JOB_KIND, NOTEBOOK_REVISE_JOB_KIND
+from majorana_api.jobs import (
+    NOTEBOOK_GENERATE_JOB_KIND,
+    NOTEBOOK_GRADE_JOB_KIND,
+    NOTEBOOK_REVISE_JOB_KIND,
+)
 from majorana_api.orm import Notebook as NotebookRow
 from majorana_api.orm import NotebookVersion as NotebookVersionRow
 from majorana_api.orm import User, Workspace
@@ -686,3 +690,220 @@ async def test_author_while_a_version_is_in_flight_is_409(client, author_state):
 
     assert response.status_code == 409, response.text
     assert author_state["jobs"] == []
+
+
+# ------------------------------------------------------------------- grading an attempt
+
+GRADED_SPEC_FIXTURE = {
+    "schema_version": 1,
+    "slug": "graded",
+    "title": "Graded",
+    "kind": "lesson",
+    "cells": [
+        {"id": "c01", "kind": "markdown", "role": "objective", "source": "# Hi"},
+        {
+            "id": "ex1",
+            "kind": "code",
+            "role": "solution",
+            "source": "def double(x):\n    return 2 * x",
+            "stub": "def double(x):\n    ...",
+            "check": "assert double(3) == 6",
+        },
+    ],
+}
+
+
+@pytest.fixture
+def graded_state(author_state):
+    """`author_state`'s plumbing, with the current version holding a graded cell."""
+    author_state["versions"][0].spec = GRADED_SPEC_FIXTURE
+    return author_state
+
+
+async def test_an_attempt_enqueues_a_grade_job_carrying_only_the_readers_work(client, graded_state):
+    async with client as c:
+        response = await c.post(
+            f"/v1/notebooks/{graded_state['notebook'].id}/attempts",
+            json={"code": {"ex1": "def double(x):\n    return x + x"}, "answers": {}},
+        )
+
+    assert response.status_code == 202, response.text
+    body = response.json()
+    assert body["run_id"] is not None
+    assert body["graded_cells"] == 1
+
+    job = graded_state["jobs"][0]
+    assert job["kind"] == NOTEBOOK_GRADE_JOB_KIND
+    assert job["payload"]["attempt"]["code"] == {"ex1": "def double(x):\n    return x + x"}
+    # The assertion stays on the server. A job payload carrying the check would put the
+    # answer one queue-row away from the thing it is hidden from.
+    assert "check" not in str(job["payload"])
+    # An attempt is not an edit: no version is created for it.
+    assert len(graded_state["versions"]) == 1
+
+
+async def test_an_attempt_costs_a_run_the_same_way_a_rerun_does(client, graded_state):
+    async with client as c:
+        response = await c.post(
+            f"/v1/notebooks/{graded_state['notebook'].id}/attempts",
+            json={"code": {"ex1": "x = 1"}, "answers": {}},
+        )
+
+    assert response.status_code == 202, response.text
+    # Grading executes the reader's code in the sandbox, so it goes through the same
+    # run row, mode and framework a re-run does — an attempt must not be a way to buy
+    # sandbox time outside the quota.
+    assert len(graded_state["runs"]) == 1
+    assert str(graded_state["runs"][0]["mode"]) == "notebook"
+
+
+async def test_a_notebook_with_no_graded_cell_refuses_rather_than_queueing_nothing(
+    client, author_state
+):
+    """A 202 here would hand back a run id for verdicts that are never coming."""
+    author_state["versions"][0].spec = SPEC_FIXTURE
+    async with client as c:
+        response = await c.post(
+            f"/v1/notebooks/{author_state['notebook'].id}/attempts", json={"code": {}}
+        )
+
+    assert response.status_code == 409, response.text
+    assert response.json()["reason"] == "notebook_not_graded"
+    assert author_state["jobs"] == []
+
+
+async def test_an_attempt_naming_a_cell_the_version_does_not_have_is_refused(client, graded_state):
+    async with client as c:
+        response = await c.post(
+            f"/v1/notebooks/{graded_state['notebook'].id}/attempts",
+            json={"code": {"ex1": "ok", "not-a-cell": "x = 1"}},
+        )
+
+    assert response.status_code == 422, response.text
+    assert response.json()["reason"] == "unknown_cell"
+    assert graded_state["jobs"] == []
+
+
+async def test_an_oversized_cell_body_is_refused_by_the_contract(client, graded_state):
+    """The per-cell size bound, isolated: `ex1` is a real cell of this version, so a
+    422 here can only be the length rule.
+
+    The cell-COUNT bound is deliberately not tested through this route. Sixty-five
+    made-up ids are also sixty-five ids the version does not have, so the route's
+    `unknown_cell` check answers 422 first and the assertion passes whether or not
+    the count bound exists at all — a control answered by a different rule than the
+    one under test. It is tested against the model itself instead, in
+    `packages/py/contracts/tests`."""
+    async with client as c:
+        response = await c.post(
+            f"/v1/notebooks/{graded_state['notebook'].id}/attempts",
+            json={"code": {"ex1": "x" * 32_001}},
+        )
+
+    assert response.status_code == 422, response.text
+    assert graded_state["jobs"] == []
+
+
+async def test_a_retried_attempt_under_one_key_costs_one_run(client, graded_state, monkeypatch):
+    """A dropped 202 is the ordinary case — the run is queued and the client never
+    learned its id. Without a key the retry buys a second sandbox run and starts a
+    competing grading stream against the same cell."""
+    seen: dict[str, SimpleNamespace] = {}
+
+    async def fake_find(_scope, _session, key):
+        return seen.get(key)
+
+    original_create = runs_repo.create_run
+
+    async def fake_create(_scope, _session, **kwargs):
+        run = await original_create(_scope, _session, **kwargs)
+        if kwargs.get("idempotency_key"):
+            run.idempotency_key = kwargs["idempotency_key"]
+            run.idempotency_request_hash = kwargs.get("idempotency_request_hash")
+            seen[kwargs["idempotency_key"]] = run
+        return run
+
+    monkeypatch.setattr(runs_repo, "find_run_by_idempotency_key", fake_find)
+    monkeypatch.setattr(runs_repo, "create_run", fake_create)
+
+    body = {"code": {"ex1": "def double(x):\n    return x + x"}, "answers": {}}
+    async with client as c:
+        first = await c.post(
+            f"/v1/notebooks/{graded_state['notebook'].id}/attempts",
+            json=body,
+            headers={"Idempotency-Key": "k-1"},
+        )
+        second = await c.post(
+            f"/v1/notebooks/{graded_state['notebook'].id}/attempts",
+            json=body,
+            headers={"Idempotency-Key": "k-1"},
+        )
+
+    assert first.status_code == 202 and second.status_code == 202, second.text
+    assert first.json()["run_id"] == second.json()["run_id"]
+    # One run, one job. The replay must not reach the queue at all.
+    assert len(graded_state["runs"]) == 1
+    assert len(graded_state["jobs"]) == 1
+
+
+async def test_reusing_a_key_for_a_DIFFERENT_attempt_is_refused(client, graded_state, monkeypatch):
+    """The other arm, and the one that matters: returning the stored run for a
+    different body hands the reader a verdict on code they did not submit."""
+    seen: dict[str, SimpleNamespace] = {}
+
+    async def fake_find(_scope, _session, key):
+        return seen.get(key)
+
+    original_create = runs_repo.create_run
+
+    async def fake_create(_scope, _session, **kwargs):
+        run = await original_create(_scope, _session, **kwargs)
+        if kwargs.get("idempotency_key"):
+            run.idempotency_key = kwargs["idempotency_key"]
+            run.idempotency_request_hash = kwargs.get("idempotency_request_hash")
+            seen[kwargs["idempotency_key"]] = run
+        return run
+
+    monkeypatch.setattr(runs_repo, "find_run_by_idempotency_key", fake_find)
+    monkeypatch.setattr(runs_repo, "create_run", fake_create)
+
+    async with client as c:
+        await c.post(
+            f"/v1/notebooks/{graded_state['notebook'].id}/attempts",
+            json={"code": {"ex1": "first answer"}},
+            headers={"Idempotency-Key": "k-2"},
+        )
+        clash = await c.post(
+            f"/v1/notebooks/{graded_state['notebook'].id}/attempts",
+            json={"code": {"ex1": "a completely different answer"}},
+            headers={"Idempotency-Key": "k-2"},
+        )
+
+    assert clash.status_code == 409, clash.text
+    assert len(graded_state["jobs"]) == 1
+
+
+async def test_a_concurrent_retry_is_409_not_500(client, graded_state, monkeypatch):
+    """Two retries can both pass the replay lookup before either run is committed. The
+    loser must be told to retry, not told grading failed for an attempt that is
+    running — a 500 here is the worst of the three possible answers."""
+
+    async def fake_find(_scope, _session, _key):
+        return None
+
+    async def racing_create(*_a, **_k):
+        raise runs_repo.IdempotencyKeyInFlight()
+
+    monkeypatch.setattr(runs_repo, "find_run_by_idempotency_key", fake_find)
+    monkeypatch.setattr(runs_repo, "create_run", racing_create)
+
+    async with client as c:
+        response = await c.post(
+            f"/v1/notebooks/{graded_state['notebook'].id}/attempts",
+            json={"code": {"ex1": "x = 1"}},
+            headers={"Idempotency-Key": "k-race"},
+        )
+
+    assert response.status_code == 409, response.text
+    assert response.json()["reason"] == "idempotency_key_in_flight"
+    assert graded_state["jobs"] == []

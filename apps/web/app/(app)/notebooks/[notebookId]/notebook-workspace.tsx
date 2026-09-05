@@ -8,7 +8,11 @@ import { useEffect, useRef, useState } from "react";
 import { ChatMarkdown } from "../../../../components/chat-markdown";
 import { NotebookDiffView } from "../../../../components/notebook-diff-view";
 import { NotebookReviewPanel } from "../../../../components/notebook-review-panel";
-import { NotebookView, type NotebookCellActionKind } from "../../../../components/notebook-view";
+import {
+  NotebookView,
+  type NotebookCellActionKind,
+  type NotebookCellGrade,
+} from "../../../../components/notebook-view";
 import { refusalSentence } from "../../../../lib/api-error";
 import { diffNotebookVersions } from "../../../../lib/notebook-diff";
 import { NotebookEditor } from "../../../../components/notebook-editor";
@@ -22,6 +26,7 @@ import {
   type CellEdit,
 } from "../../../../lib/notebook-editing";
 import { notebookExportFilename } from "../../../../lib/notebook-export";
+import { gradeSummary, hasGradesToShow, passRate } from "../../../../lib/notebook-grades";
 import { hasMasteryToShow, notebookMastery } from "../../../../lib/notebook-mastery";
 import { errorTracebackText, notebookCellViews, notebookStatusPill } from "../../../../lib/notebook-view";
 import {
@@ -39,6 +44,7 @@ type NotebookVersion = components["schemas"]["NotebookVersion"];
 type NotebookVersionSummary = components["schemas"]["NotebookVersionSummary"];
 type NotebookTurn = components["schemas"]["NotebookTurn"];
 type Cell = components["schemas"]["Cell"];
+type GradeReport = components["schemas"]["GradeReport"];
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
@@ -80,6 +86,13 @@ export function NotebookWorkspace({ notebookId, locale = "en" }: { notebookId: s
   const [turnsError, setTurnsError] = useState<string | null>(null);
 
   const [followedRunId, setFollowedRunId] = useState<string | null>(null);
+  /** Verdicts from the last graded attempt, by cell id. */
+  const [grades, setGrades] = useState<Record<string, NotebookCellGrade>>({});
+  /** The same verdicts as one report, for the summary strip above the notebook. */
+  const [gradeReport, setGradeReport] = useState<GradeReport | null>(null);
+  /** Cells whose attempt is in the sandbox right now — one at a time, because the
+   * reader submits one cell at a time and a second attempt supersedes the first. */
+  const [gradingCellIds, setGradingCellIds] = useState<ReadonlySet<string>>(new Set());
 
   const [titleDraft, setTitleDraft] = useState("");
   const [editingTitle, setEditingTitle] = useState(false);
@@ -179,6 +192,10 @@ export function NotebookWorkspace({ notebookId, locale = "en" }: { notebookId: s
     setPinnedSeq(null);
     setTurns([]);
     setFollowedRunId(null);
+    setGrades({});
+    setGradeReport(null);
+    setGradingCellIds(new Set());
+    setGradingRunId(null);
     setDraftCells(null);
     setFocusedCellId(null);
     loadNotebook();
@@ -269,6 +286,209 @@ export function NotebookWorkspace({ notebookId, locale = "en" }: { notebookId: s
     if (decision.clear) authored.current = null;
     if (decision.warn) setActionError(copy.runStreamLost);
   });
+
+  // Grading follows its OWN stream, not `followedRunId`.
+  //
+  // `followedRunId` is written by every run-starting action in this workspace — a chat
+  // turn, Quiz me, an authored version, a re-run — so a single slot means any of them
+  // aborts a grading stream in flight and the sandbox's completed verdict is dropped on
+  // the floor. The attempt lock could not cover that: it disables the attempt buttons,
+  // and none of those actions is an attempt button. Greptile caught it on PR 832.
+  //
+  // Two slots is also the honest model. A grading run writes no version, so none of the
+  // reloads the general callback does on every terminal event apply to it, and it has
+  // no business making the header read "generating".
+  const [gradingRunId, setGradingRunId] = useState<string | null>(null);
+  /** Which attempt each grading run belongs to, and which attempt is current.
+   *
+   * A finished run's stream stays open until it reports, and the reader can start the
+   * next attempt in the meantime — the lock is taken the moment they press the button,
+   * a whole POST round-trip before the new run id exists. In that window the OLD
+   * stream reporting `lost` would clear the NEW attempt's lock and announce its
+   * failure. Comparing run ids does not close it, because the new attempt has no run
+   * id yet; a monotonic attempt number does. Greptile caught it on PR 832. */
+  const attemptSeq = useRef(0);
+  const runAttempt = useRef(new Map<string, number>());
+  /**
+   * Idempotency keys for submissions whose OUTCOME WE NEVER LEARNED, keyed by the
+   * submission itself.
+   *
+   * Two requirements pull opposite ways and both are real. A lost 202 must not be
+   * charged twice, so pressing again has to send the key the accepted request carried
+   * — a fresh UUID per press cannot. A run that FAILED must be retryable, so the key
+   * must not be permanent — a hash of the body is, and replays the stored failure
+   * forever. Greptile caught both, one round apart.
+   *
+   * The tie-break is what we know: a key lives only while the attempt's outcome is
+   * unknown, and is dropped the moment one is observed — verdict or failure alike. So
+   * a lost response replays the original run (the server hands back its id, we follow
+   * it, and learn the outcome we missed), and an observed failure starts a fresh run
+   * on the next press. The failure case costs one extra press and never becomes
+   * permanent, which is the trade the other two designs each got wrong in one
+   * direction.
+   */
+  const pendingKeys = useRef(new Map<string, string>());
+  const inflightKey = useRef<string | null>(null);
+  const gradingEvents = useRunProgress(gradingRunId, (outcome, streamRunId) => {
+    // A LOST stream produces no terminal event, so the effect below cannot see it and
+    // the lock would be held forever. Disjoint from that path by construction:
+    // `useRunProgress` reports "lost" only when no terminal event ever arrived.
+    if (runAttempt.current.get(streamRunId) !== attemptSeq.current) return;
+    // The lock is released and the reader is told, but the KEY IS KEPT. A lost stream
+    // is not an observed outcome — the run may still be executing — so this is exactly
+    // the case the key exists for, and dropping it would buy a second sandbox run for
+    // a submission already accepted. My own rule two commits earlier said "dropped the
+    // moment an outcome is observed", and I then applied it to a path where nothing is
+    // observed. Greptile caught it on PR 832.
+    if (outcome === "lost" && gradingCellIds.size > 0) {
+      setGradingCellIds(new Set());
+      setActionError(copy.gradeFailed);
+    }
+  });
+
+  // Verdicts arrive on the SAME stream the rest of the run does, as
+  // `notebook.grades`. Read from the event list rather than from the terminal
+  // callback: the callback fires once the run has ENDED, and by then the grades
+  // event is already in `progressEvents` — waiting for the end would also mean
+  // showing nothing if the stream drops after the verdicts but before `run.finished`.
+  useEffect(() => {
+    // The same window the callback guards, and the OTHER consumer of it. While a new
+    // attempt's POST is in flight `gradingRunId` still points at the previous run, so
+    // this effect would read that run's events: showing its verdict as the new
+    // attempt's, or reporting the still-running attempt as failed. Guarding one
+    // consumer and not the other left half the race open. Greptile, PR 832.
+    if (gradingRunId === null || runAttempt.current.get(gradingRunId) !== attemptSeq.current) {
+      return;
+    }
+    // Every event carries the run it came from (`routes/runs._event_json` spreads the
+    // envelope over the payload), and that is what the verdict must be tied to — not to
+    // whichever run `gradingRunId` currently names. `useRunProgress` clears its buffer
+    // inside its own effect, which runs before this one but whose state update lands a
+    // render later, so for exactly one pass the id is the NEW run's and the events are
+    // the OLD run's. The ownership guard above passes, and without this filter the
+    // previous verdict is shown as this attempt's and the new submission's pending key
+    // is dropped before its outcome is known. Greptile, PR 832.
+    const mine = gradingEvents.filter((item) => item.run_id === gradingRunId);
+    const event = [...mine].reverse().find((item) => item.type === "notebook.grades");
+    if (event) {
+      const report = isRecord(event.grades) ? (event.grades as GradeReport) : null;
+      if (!report) return;
+      const next: Record<string, NotebookCellGrade> = {};
+      for (const grade of report.cells ?? []) next[grade.id] = grade;
+      // Outcome observed: this submission is settled, so its key is forgotten and a
+      // later press of the same answer starts a genuinely new run.
+      if (inflightKey.current) pendingKeys.current.delete(inflightKey.current);
+      setGrades((current) => ({ ...current, ...next }));
+      setGradeReport(report);
+      // Identity-stable, and not a style point: `gradingCellIds` is a dependency of
+      // this effect and the verdict stays in `gradingEvents` forever, so installing a
+      // fresh empty Set each pass changes the dependency, re-runs the effect, and the
+      // render loop only ends at React's maximum-update-depth error. Greptile, PR 832.
+      setGradingCellIds((current) => (current.size === 0 ? current : new Set()));
+      // A delivered verdict SUPERSEDES a grading-failure message, and this is the
+      // only place that can be decided. Grades can arrive and the stream then drop
+      // before any terminal event, so the lost-stream callback fires afterwards and
+      // announces a failure over a verdict the reader is already looking at. Guarding
+      // that callback on "is the lock still held" does not fix it — whether the lock
+      // is clear by then depends on React having flushed this effect first, which is
+      // exactly the ordering that cannot be relied on. Greptile caught it on PR 832.
+      //
+      // Clearing here instead is race-free in the direction that matters: this effect
+      // always runs after the grades land, whatever order the two paths ran in.
+      // Narrowed to `gradeFailed` so a real error from some other action survives.
+      setActionError((current) => (current === copy.gradeFailed ? null : current));
+      // Why nothing could be graded, when that is the answer. Without this a guard
+      // refusal reads as "not graded yet", which tells the reader their code was fine
+      // and something else went wrong.
+      if (typeof event.note === "string" && event.note) setActionError(event.note);
+      return;
+    }
+    // The run ended and no verdict came. Releasing the lock is the whole point: it
+    // gates EVERY graded cell's submit, so leaving it held after a failed run makes
+    // the notebook's grading permanently dead until a reload, and the submitted cell
+    // sits on "Running your code…" forever. Greptile caught it on PR 832 — it is the
+    // cost of the lock added for the previous finding, which is the shape a fix that
+    // introduces its own failure usually has.
+    //
+    // Decided HERE rather than in the terminal callback, and that is not a style
+    // choice: `useRunProgress` calls its callback in the same tick it appends the
+    // event, so the callback runs BEFORE this effect sees the grades. A callback
+    // asking "did a verdict arrive?" would answer no on a perfectly good run.
+    const ended = mine.some(
+      (item) => item.type === "run.finished" || item.type === "run.error",
+    );
+    // Guarded on `size > 0`, so unlike the verdict path above this cannot re-enter: the
+    // set it installs fails the guard on the next pass.
+    if (ended && gradingCellIds.size > 0) {
+      if (inflightKey.current) pendingKeys.current.delete(inflightKey.current);
+      setGradingCellIds(new Set());
+      setActionError(copy.gradeFailed);
+    }
+  }, [gradingEvents, gradingRunId, gradingCellIds, copy.gradeFailed]);
+
+  /**
+   * Send one reader's attempt to be graded by the exercise's own test.
+   *
+   * The alternative this replaces is still here for cells with no test behind them:
+   * `cellAction` falls back to asking Nala. The difference is not cosmetic — one is
+   * an assertion that either raised or did not, the other is a model's opinion — so
+   * the button says which one the reader is about to get.
+   */
+  async function gradeAttempt(cellId: string, attempt: string) {
+    setActionError(null);
+    const mine = (attemptSeq.current += 1);
+    const submission = `${cellId}\u0000${attempt}`;
+    setGradingCellIds(new Set([cellId]));
+    const body = JSON.stringify({ code: { [cellId]: attempt }, answers: {} });
+    try {
+      // Reused for THIS submission until its outcome is known — see `pendingKeys`.
+      const key = pendingKeys.current.get(submission) ?? crypto.randomUUID();
+      pendingKeys.current.set(submission, key);
+      inflightKey.current = submission;
+      const response = await fetch(`/api/notebooks/${encodeURIComponent(notebookId)}/attempts`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          // Grading costs a sandbox run, so a retry must not buy a second one. The
+          // server has taken this header since the route existed; nothing sent one,
+          // which made the protection real and unreachable at the same time.
+          "Idempotency-Key": key,
+        },
+        body,
+      });
+      const payload = (await response.json()) as unknown;
+      if (!response.ok || !isRecord(payload)) {
+        throw new Error(refusalSentence(payload) ?? copy.gradeFailed);
+      }
+      const runId = typeof payload.run_id === "string" ? payload.run_id : null;
+      if (!runId) throw new Error(copy.gradeFailed);
+      runAttempt.current.set(runId, mine);
+      setGradingRunId(runId);
+    } catch (cause) {
+      // Deliberately NOT clearing the key here. A thrown fetch is the ambiguous case
+      // this whole mechanism exists for: the server may have accepted the attempt and
+      // only the response was lost, so the next press must carry the same key. It is
+      // dropped once an outcome is actually observed, which a replay will deliver.
+      setGradingCellIds(new Set());
+      setActionError(cause instanceof Error ? cause.message : copy.gradeFailed);
+    }
+  }
+
+  // The strip above the notebook: what has been GRADED, which is a different
+  // question from what ran. `lib/notebook-grades.ts` owns the counting rule that
+  // makes it honest — `ungradable` cells stay out of the denominator, because a
+  // grader that could not run has established nothing about the reader.
+  const summary = gradeSummary(gradeReport);
+  const rate = passRate(summary);
+  const gradeSummaryStrip = hasGradesToShow(summary) ? (
+    <section className="mj-notebook-grade-summary" aria-label={copy.gradeSummaryLabel}>
+      <p>
+        {copy.gradeSummary(summary.passed, summary.passed + summary.failed)}
+        {rate !== null ? ` · ${Math.round(rate * 100)}%` : ""}
+      </p>
+      {summary.ungradable > 0 ? <p>{copy.gradeUngradable(summary.ungradable)}</p> : null}
+    </section>
+  ) : null;
 
   async function sendTurn(text: string) {
     const trimmed = text.trim();
@@ -420,6 +640,16 @@ export function NotebookWorkspace({ notebookId, locale = "en" }: { notebookId: s
     }
     if (action === "checkAttempt") {
       const attempt = detail ?? "";
+      // A cell with a test behind it gets the test, not an opinion. Nala's judgement
+      // stays the answer for every other kind of cell — a checkpoint the reader wants
+      // discussed, an exercise with no grader — but where a real verdict exists it
+      // wins, because a model saying "looks right" to a wrong answer is the failure
+      // this whole path was built to remove.
+      const graded = cells.find((item) => item.id === cellId)?.graded ?? false;
+      if (graded) {
+        void gradeAttempt(cellId, attempt);
+        return;
+      }
       void sendTurn(
         `Here is my attempt at cell \`${cellId}\`:\n\`\`\`python\n${attempt}\n\`\`\`\nGrade it against the intended solution, say what is right, what is wrong, and give one hint before the full fix. Do not change the notebook.`,
       );
@@ -750,12 +980,17 @@ export function NotebookWorkspace({ notebookId, locale = "en" }: { notebookId: s
               <p className="mj-notebook-workspace-empty-notebook">{copy.diffLoading}</p>
             )
           ) : version ? (
+            <>
+            {gradeSummaryStrip}
             <NotebookView
               cells={cells}
               locale={locale}
               framework={notebook.framework?.name ?? "qiskit"}
               onCellAction={cellAction}
+              grades={grades}
+              gradingCellIds={gradingCellIds}
             />
+            </>
           ) : !isGenerating ? (
             <p className="mj-notebook-workspace-empty-notebook">{copy.loadFailed}</p>
           ) : null}

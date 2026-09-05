@@ -12,6 +12,8 @@ row and hands the job off.
 
 from __future__ import annotations
 
+import hashlib
+import json
 import re
 import uuid
 from typing import Annotated, Any
@@ -31,7 +33,11 @@ from leona_notebooks.templates import KIND_DESCRIPTIONS, STARTER_BRIEFS, structu
 from majorana_contracts.enums import Framework, RunMode
 
 from ..auth.deps import CurrentIdentity, CurrentScope, DbSession, get_settings
-from ..jobs import NOTEBOOK_GENERATE_JOB_KIND, NOTEBOOK_REVISE_JOB_KIND
+from ..jobs import (
+    NOTEBOOK_GENERATE_JOB_KIND,
+    NOTEBOOK_GRADE_JOB_KIND,
+    NOTEBOOK_REVISE_JOB_KIND,
+)
 from ..orm import Notebook as NotebookRow
 from ..orm import NotebookVersion as NotebookVersionRow
 from ..repos import notebooks as notebooks_repo
@@ -157,6 +163,22 @@ def _assert_not_in_flight(notebook: NotebookRow, latest: NotebookVersionRow) -> 
                 "reason": "notebook_version_in_flight",
             },
         )
+
+
+def _attempt_request_hash(notebook_id: uuid.UUID, body: contracts.GradeAttemptRequest) -> str:
+    """Fingerprint one submitted attempt, the notebook included.
+
+    `model_dump(mode="json")` over the whole body for the same reason
+    `routes.runs._idempotency_request_hash` does it: a field added to
+    `GradeAttemptRequest` later is covered without anyone remembering, and the failure
+    mode of forgetting — two different attempts hashing the same — is silent.
+
+    The notebook id is in the digest because the key's uniqueness is per WORKSPACE, not
+    per notebook: an identical answer submitted to two notebooks under one key would
+    otherwise replay the first notebook's verdict onto the second.
+    """
+    payload = {"notebook_id": str(notebook_id), **body.model_dump(mode="json")}
+    return hashlib.sha256(json.dumps(payload, sort_keys=True).encode()).hexdigest()
 
 
 async def _gate_notebook_run(
@@ -528,6 +550,155 @@ async def create_notebook_turn(
         version=notebooks_repo.version_to_resource(version, full=False),
         run_id=run.id,
     )
+
+
+@router.post(
+    "/notebooks/{notebook_id}/attempts",
+    response_model=contracts.GradeAttemptResponse,
+    status_code=202,
+)
+async def grade_notebook_attempt(
+    notebook_id: uuid.UUID,
+    body: contracts.GradeAttemptRequest,
+    scope: CurrentScope,
+    session: DbSession,
+    identity: CurrentIdentity,
+    settings: Annotated[Settings, Depends(get_settings)],
+    idempotency_key: Annotated[str | None, Header(alias="Idempotency-Key")] = None,
+) -> contracts.GradeAttemptResponse:
+    """Grade one reader's attempt at this notebook's current version.
+
+    ## Why this is a route rather than something the browser does
+
+    The assertion that decides an exercise, and the key that decides a question, are
+    the two things a reader must never receive — a grader in the client is a grader
+    the client can read, and then the notebook grades itself. So the reader's work
+    comes here, the answer key is joined to it on the server, and only verdicts go
+    back. `leaks_answer_key()` is the assertion that the join went the right way.
+
+    ## Why it is not the chat model
+
+    Until this route the workspace's "check my attempt" button sent the reader's code
+    to Nala as a message asking it to grade against the intended solution. A model's
+    verdict is not reproducible, cannot be argued with, and — on the evidence of every
+    grading defect found in this codebase — errs toward telling the reader they were
+    right. `assert len(counts) == 2` ends an argument that "the model thought your
+    answer was incomplete" starts.
+
+    ## Why it costs a run, and why it takes an Idempotency-Key
+
+    Grading executes the reader's own code in the sandbox. That is the same dispatch
+    a re-run is, with the same abuse backstop, the same tier caps and the same
+    deny-all egress — `_gate_notebook_run` is applied here exactly as it is on
+    `POST /notebooks/{id}/run`, so an attempt cannot be a way around the quota that
+    running the notebook would have cost. Nothing new reaches the sandbox: the derived
+    spec is the notebook's own cells with the reader's source substituted in.
+
+    Because it costs, a retry must not charge twice. A dropped 202 is the ordinary
+    case — the run is already queued and the client never learned its id — and without
+    a key the retry buys a second sandbox run and starts a competing grading stream
+    against the same cell. Same mechanism as `POST /v1/runs` and `POST /v1/courses`:
+    the key is stored on the run, a replay returns the original run id, and a reused
+    key describing a DIFFERENT attempt is 409 rather than being handed a verdict on
+    code it did not submit.
+
+    No notebook version is created. An attempt is not an edit, and the verdicts arrive
+    on the run's event stream as `notebook.grades`.
+    """
+    notebook = await notebooks_repo.get_notebook(scope, session, notebook_id)
+    latest, current = await _latest_and_current(scope, session, notebook)
+    if current is None:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "error": "This notebook has no ready version yet.",
+                "reason": "notebook_not_ready",
+            },
+        )
+    _assert_not_in_flight(notebook, latest)
+
+    spec = contracts.NotebookSpec.model_validate(current.spec or {})
+    graded = spec.graded_cells()
+    if not graded:
+        # 409 rather than an empty 202: a client that got a run id back for a notebook
+        # with nothing to grade would wait for verdicts that are never coming, and the
+        # honest reading of "no graded cells" is that this request cannot be answered.
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "error": "This notebook has no graded exercises.",
+                "reason": "notebook_not_graded",
+            },
+        )
+    unknown = sorted((set(body.code) | set(body.answers)) - {cell.id for cell in spec.cells})
+    if unknown:
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "error": f"No such cell(s) in this notebook version: {', '.join(unknown)}.",
+                "reason": "unknown_cell",
+            },
+        )
+
+    # BEFORE the gate and before the run is created: a replay must cost neither a
+    # quota decrement nor a second row.
+    request_hash = _attempt_request_hash(notebook_id, body) if idempotency_key else None
+    if idempotency_key:
+        existing = await runs_repo.find_run_by_idempotency_key(scope, session, idempotency_key)
+        if existing is not None:
+            _assert_same_request(existing, request_hash)
+            return contracts.GradeAttemptResponse(run_id=existing.id, graded_cells=len(graded))
+
+    await _gate_notebook_run(
+        f"Grade an attempt at notebook {notebook.slug}", scope, session, identity, settings
+    )
+
+    try:
+        run = await runs_repo.create_run(
+            scope,
+            session,
+            task_prompt=f"Grade an attempt at notebook {notebook.slug}",
+            mode=RunMode.NOTEBOOK,
+            framework=_run_framework(
+                contracts.NotebookFramework.model_validate(notebook.framework)
+            ),
+            idempotency_key=idempotency_key,
+            idempotency_request_hash=request_hash,
+        )
+    except runs_repo.IdempotencyKeyInFlight:
+        # Two retries can both pass the lookup above before either run is committed.
+        # Without this the loser raises out as a generic 500 and the workspace reports
+        # that grading FAILED — for an attempt that was accepted and is running, which
+        # is the worst of the three possible answers. `POST /v1/courses` handles the
+        # same race the same way; I copied the lookup from it and not the catch.
+        # Greptile, PR 832.
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "error": (
+                    "A grading run with this Idempotency-Key is being created by "
+                    "another request. Retry to receive it."
+                ),
+                "reason": "idempotency_key_in_flight",
+            },
+        ) from None
+    await runs_repo.append_run_event(
+        scope, session, run.id, type="run.queued", payload={"mode": str(RunMode.NOTEBOOK)}
+    )
+    await system.enqueue_job(
+        session,
+        kind=NOTEBOOK_GRADE_JOB_KIND,
+        payload={
+            "run_id": str(run.id),
+            "notebook_id": str(notebook_id),
+            "version_id": str(current.id),
+            "user_id": str(scope.user_id),
+            "workspace_id": str(scope.workspace_id),
+            "attempt": {"code": dict(body.code), "answers": dict(body.answers)},
+        },
+        run_id=run.id,
+    )
+    return contracts.GradeAttemptResponse(run_id=run.id, graded_cells=len(graded))
 
 
 @router.get("/notebooks/{notebook_id}/turns", response_model=contracts.NotebookTurnList)

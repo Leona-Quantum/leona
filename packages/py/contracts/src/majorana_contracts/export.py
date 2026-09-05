@@ -83,6 +83,8 @@ EXPORTED = [
     notebooks.UpdateNotebookRequest,
     notebooks.GradeReport,
     notebooks.CellGrade,
+    notebooks.GradeAttemptRequest,
+    notebooks.GradeAttemptResponse,
     courses.Course,
     courses.CourseSummary,
     courses.CourseModule,

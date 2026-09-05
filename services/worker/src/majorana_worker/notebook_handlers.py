@@ -59,6 +59,7 @@ from majorana_sandbox.spec import DEFAULT_MEMORY_MB
 from leona_notebooks.atlas import seed_from_record
 from leona_notebooks.circuits import validate_circuit_seed
 from leona_notebooks.execution import CellResult, ExecutionReport
+from leona_notebooks.grading import GradedAttempt, grades_from_report, spec_with_graders
 from leona_notebooks.authoring import advisory_structure, spec_from_author_request
 from leona_notebooks.ipynb import to_ipynb
 from leona_notebooks.pipeline import (
@@ -1174,6 +1175,131 @@ async def handle_notebook_revise(
             error=f"notebook revision failed: {exc}",
             reason_code="notebook_revision_failed",
         )
+
+
+async def handle_notebook_grade(
+    session: AsyncSession,
+    payload: dict[str, Any],
+    *,
+    llm: LLMClient | None = None,
+    sandbox: Sandbox | None = None,
+    store: NotebookStore | None = None,
+) -> None:
+    """Grade one reader's attempt at a notebook version, and emit the verdicts.
+
+    The whole lane in four moves: take the AUTHORED spec (the only copy that still
+    holds the assertions), substitute the reader's own source into each graded cell
+    and insert each check after it, run that once in the sandbox, and read the
+    verdicts back out. `spec_with_graders` and `grades_from_report` are the same pair
+    `scripts/check_graders.py` and the generation-time audit use, so a reader's grade
+    is decided by exactly the code those two prove can fail.
+
+    **No notebook version is written and none is touched.** An attempt is not an edit
+    — the derived spec never leaves this function, and the reader's code is executed
+    without ever being stored as the notebook's. That is why this handler takes the
+    version id but never calls `set_version_running` or `set_version_result`: the
+    version rows are the notebook's history, and one reader trying an exercise is not
+    a moment in it.
+
+    **No model is in the path.** Every verdict this emits is `graded_by:
+    deterministic` — an assertion that raised or did not, a choice that matched or did
+    not. The model-graded `rubric` kind comes back `ungradable` rather than being
+    quietly sent to an LLM: an honest gap is better than a verdict whose reproducibility
+    depends on a model's mood, and the reader can see which is which.
+
+    The failure path is deliberately not `_fail_run`: that closes a notebook VERSION as
+    failed, which here would mark a perfectly good notebook broken because someone's
+    attempt timed out.
+    """
+    from .handlers import RepoEventSink, RepoRunStateStore, _default_sandbox
+
+    scope = _scope_from_payload(payload)
+    run_id = uuid.UUID(payload["run_id"])
+    version_id = uuid.UUID(payload["version_id"])
+    notebook_store = store or RepoNotebookStore()
+
+    run_store = RepoRunStateStore(scope, session, run_id)
+    sink = RepoEventSink(scope, session, run_id)
+    if await run_store.current_status() is not RunStatus.QUEUED:
+        return
+    await run_store.set_status(RunStatus.RUNNING, started_at_now=True)
+    await session.commit()
+    await sink.emit("run.started", {})
+
+    ports = ProductionNotebookPorts(
+        llm=llm or default_llm(),
+        sandbox=sandbox or _default_sandbox(),
+        sink=sink,
+        response_locale=normalize_response_locale(payload.get("response_locale")),
+        sandbox_memory_mb=await _resolve_sandbox_memory_mb(session, scope),
+    )
+    try:
+        version = await notebook_store.get_version(scope, session, version_id)
+        spec = NotebookSpec.model_validate(getattr(version, "spec", None) or {})
+        raw = payload.get("attempt") or {}
+        attempt = GradedAttempt(
+            code={str(k): str(v) for k, v in (raw.get("code") or {}).items()},
+            answers={str(k): str(v) for k, v in (raw.get("answers") or {}).items()},
+        )
+        await ports.observe("notebook.execute", "started")
+        report = await ports.run_notebook(spec_with_graders(spec, attempt))
+        # ORDER, and it is the whole of the fix: the verdicts are emitted BEFORE any
+        # event a consumer treats as terminal.
+        #
+        # `observe(..., "failed")` emits `run.error`, and `useRunProgress` — like every
+        # other consumer of a run stream — stops reading at one. Emitting it first
+        # would end the stream on the way to the reader's own verdict, leaving the cell
+        # on "Running your code…" forever, and it would have looked like a flake
+        # because whether the browser saw the grades at all depends on the two events
+        # landing in the same chunk. Greptile caught it on PR 832.
+        #
+        # The failure is still reported, just after the grades rather than instead of
+        # them: a guard-refused attempt is something the reader needs told, and
+        # suppressing it to fix the ordering would have traded one silence for another.
+        grades = grades_from_report(spec, report, attempt)
+        await sink.emit(
+            "notebook.grades",
+            {
+                "version_id": str(version_id),
+                "grades": grades.model_dump(mode="json"),
+                "passed": grades.passed,
+                "failed": grades.failed,
+                "attempted": grades.attempted,
+                # Why nothing could be graded, when that is the answer — a guard
+                # refusal, a sandbox note. Empty on an ordinary wrong answer.
+                "note": report.note if not report.ok else "",
+            },
+        )
+        await ports.observe("notebook.execute", "finished" if report.ok else "failed", report.note)
+        # `run_store.finish`, not `set_status` + a hand-built `run.finished`. Every other
+        # handler in this module closes a run this way, and I did not: the payload I
+        # wrote — `{"ok": True}` — is not the `RunFinished` shape, which requires
+        # `status` and forbids extras, so the production sink would have REJECTED it.
+        # A successful grade would then have fallen into the exception handler below and
+        # persisted the run as FAILED, after the reader had already been sent a correct
+        # verdict. `finish` also writes the event and the status together, which the two
+        # separate calls did not. Greptile, PR 832.
+        await run_store.finish(RunStatus.SUCCEEDED, {"status": RunStatus.SUCCEEDED})
+    except Exception as exc:  # noqa: BLE001 - one reader's attempt, never the notebook
+        log.exception("notebook.grade run %s failed", run_id)
+        try:
+            await session.rollback()
+            await sink.emit(
+                "run.error",
+                {
+                    "stage": Stage.FINAL_EXECUTE.value,
+                    "code": "grade_failed",
+                    "message": str(exc)[:2000],
+                },
+            )
+            await run_store.finish(
+                RunStatus.FAILED,
+                {"status": RunStatus.FAILED, "reason_code": "grade_failed"},
+            )
+        except Exception:
+            log.exception("notebook.grade run %s: could not close the run", run_id)
+    finally:
+        await _record_sandbox_usage(session, scope, run_id, ports)
 
 
 async def handle_notebook_dead_letter(

@@ -3768,6 +3768,51 @@
         "title": "GenerateCourseResponse",
         "type": "object"
       },
+      "GradeAttemptRequest": {
+        "additionalProperties": false,
+        "description": "One reader's attempt at the graded cells of a notebook version.\n\nOnly the reader's own work travels: `code` is what they wrote in each exercise\ncell, `answers` what they typed for each question. The assertions and the answer\nkey stay on the server and are joined to this on arrival, which is the whole\nreason grading is a request rather than something the browser can do \u2014 a grader\nthe client holds is a grader the client can read.\n\nBounded on both axes because it is an unauthenticated-shaped payload from the\nreader's keyboard: 64 cells, 32 KB per cell. A notebook with more graded cells\nthan that is not a lesson.",
+        "properties": {
+          "answers": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "maxProperties": 64,
+            "title": "Answers",
+            "type": "object"
+          },
+          "code": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "maxProperties": 64,
+            "title": "Code",
+            "type": "object"
+          }
+        },
+        "title": "GradeAttemptRequest",
+        "type": "object"
+      },
+      "GradeAttemptResponse": {
+        "additionalProperties": false,
+        "description": "The grading run. Verdicts arrive on the run's event stream as\n`notebook.grades`, the same channel every other notebook result uses \u2014 grading\nexecutes the reader's code in the sandbox, so it takes as long as a run takes and\ncannot be answered inline.",
+        "properties": {
+          "graded_cells": {
+            "title": "Graded Cells",
+            "type": "integer"
+          },
+          "run_id": {
+            "format": "uuid",
+            "title": "Run Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "run_id",
+          "graded_cells"
+        ],
+        "title": "GradeAttemptResponse",
+        "type": "object"
+      },
       "GradeReport": {
         "additionalProperties": false,
         "description": "Grades for one attempt at one notebook version.",
@@ -4511,6 +4556,76 @@
           }
         },
         "title": "NotebookFramework",
+        "type": "object"
+      },
+      "NotebookGrades": {
+        "additionalProperties": false,
+        "description": "The verdicts for one reader's attempt at a notebook's graded cells.\n\nA run event rather than a response body because grading executes the reader's code\nin the sandbox: the route answers 202 with a run id and the verdicts arrive on that\nrun's stream, like every other notebook result.\n\nRegistered HERE and not only emitted, which is the whole point of this union:\n`RepoEventSink` validates every event against it before persisting, so an event type\nthat is not in this list is REJECTED at emit time \u2014 the run reports an error and the\nreader never receives a verdict. A fake sink in a test accepts anything and cannot\nshow that.",
+        "properties": {
+          "attempted": {
+            "minimum": 0,
+            "title": "Attempted",
+            "type": "integer"
+          },
+          "failed": {
+            "minimum": 0,
+            "title": "Failed",
+            "type": "integer"
+          },
+          "grades": {
+            "additionalProperties": true,
+            "title": "Grades",
+            "type": "object"
+          },
+          "note": {
+            "default": "",
+            "title": "Note",
+            "type": "string"
+          },
+          "passed": {
+            "minimum": 0,
+            "title": "Passed",
+            "type": "integer"
+          },
+          "run_id": {
+            "format": "uuid",
+            "title": "Run Id",
+            "type": "string"
+          },
+          "seq": {
+            "description": "Unique per run; powers replay and SSE Last-Event-ID",
+            "minimum": 0,
+            "title": "Seq",
+            "type": "integer"
+          },
+          "ts": {
+            "format": "date-time",
+            "title": "Ts",
+            "type": "string"
+          },
+          "type": {
+            "const": "notebook.grades",
+            "default": "notebook.grades",
+            "title": "Type",
+            "type": "string"
+          },
+          "version_id": {
+            "format": "uuid",
+            "title": "Version Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "run_id",
+          "seq",
+          "ts",
+          "version_id",
+          "grades",
+          "passed",
+          "failed",
+          "attempted"
+        ],
+        "title": "NotebookGrades",
         "type": "object"
       },
       "NotebookKind": {
@@ -7453,6 +7568,7 @@
             "export.classified": "#/components/schemas/ExportClassified",
             "llm.call": "#/components/schemas/LlmCall",
             "llm.delta": "#/components/schemas/LlmDelta",
+            "notebook.grades": "#/components/schemas/NotebookGrades",
             "plan.produced": "#/components/schemas/PlanProduced",
             "qapp.generated": "#/components/schemas/QappGenerated",
             "research.completed": "#/components/schemas/ResearchCompleted",
@@ -7518,6 +7634,9 @@
           },
           {
             "$ref": "#/components/schemas/QappGenerated"
+          },
+          {
+            "$ref": "#/components/schemas/NotebookGrades"
           },
           {
             "$ref": "#/components/schemas/CodeGenerated"

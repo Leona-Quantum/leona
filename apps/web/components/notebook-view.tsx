@@ -1,5 +1,6 @@
 "use client";
 
+import type { components } from "@majorana/contracts-gen";
 import { SyntaxHighlightedCode } from "@majorana/ui";
 import { useState } from "react";
 import { ChatMarkdown } from "./chat-markdown";
@@ -17,6 +18,11 @@ export type NotebookCellActionKind =
   // fires — see `onCellAction`'s `detail` parameter.
   | "explainError"
   | "checkAttempt";
+
+/** One cell's verdict, straight off the generated contract rather than restated
+ * here: the browser renders a verdict, it never decides one, so the only thing it
+ * needs is the server's own shape. */
+export type NotebookCellGrade = components["schemas"]["CellGrade"];
 
 /** Roles the "Check my attempt" action shows on — exactly the roles a reader
  * writes their own code against: a stand-alone exercise, a challenge's own
@@ -39,6 +45,8 @@ export function NotebookView({
   locale = "en",
   framework = "qiskit",
   onCellAction,
+  grades,
+  gradingCellIds,
 }: {
   cells: NotebookCellView[];
   locale?: PublicLocale;
@@ -46,6 +54,10 @@ export function NotebookView({
   /** `detail` carries the reader's free-text attempt for `"checkAttempt"`;
    * every other action kind calls this with `detail` omitted. */
   onCellAction?: (cellId: string, action: NotebookCellActionKind, detail?: string) => void;
+  /** Verdicts by cell id, from the last graded attempt. */
+  grades?: Record<string, NotebookCellGrade>;
+  /** Cells whose attempt is in the sandbox right now. */
+  gradingCellIds?: ReadonlySet<string>;
 }) {
   const copy = WORKSPACE_COPY[locale].notebooks;
   if (!cells.length) return null;
@@ -58,6 +70,15 @@ export function NotebookView({
           copy={copy}
           framework={framework}
           onCellAction={onCellAction}
+          grade={grades?.[cell.id]}
+          grading={gradingCellIds?.has(cell.id) ?? false}
+          // Any attempt in flight locks EVERY graded cell's submit, not just its own.
+          // The workspace follows one run at a time, so starting a second attempt
+          // replaces the followed run and aborts the first one's stream — the first
+          // cell would sit on "Running your code…" and its finished verdict would
+          // never arrive. Greptile caught it on PR 832. One at a time is also the
+          // honest reading of a single sandbox dispatch per attempt.
+          locked={(gradingCellIds?.size ?? 0) > 0}
         />
       ))}
     </div>
@@ -69,11 +90,17 @@ function NotebookCellCard({
   copy,
   framework,
   onCellAction,
+  grade,
+  grading,
+  locked,
 }: {
   cell: NotebookCellView;
   copy: NotebookCopy;
   framework: string;
   onCellAction?: (cellId: string, action: NotebookCellActionKind, detail?: string) => void;
+  grade?: NotebookCellGrade;
+  grading?: boolean;
+  locked?: boolean;
 }) {
   const [attemptOpen, setAttemptOpen] = useState(false);
   const [attemptText, setAttemptText] = useState("");
@@ -125,6 +152,22 @@ function NotebookCellCard({
         </pre>
       )}
       {cell.kind === "code" ? <NotebookCellOutputs cell={cell} copy={copy} /> : null}
+      {grading ? <p className="mj-notebook-cell-grade" data-status="grading">{copy.gradePending}</p> : null}
+      {!grading && grade ? (
+        <div className="mj-notebook-cell-grade" data-status={grade.status}>
+          <p className="mj-notebook-cell-grade-verdict">{copy.gradeVerdict[grade.status]}</p>
+          {grade.message ? <p>{grade.message}</p> : null}
+          {/* The failed assertion, verbatim. "Your code did not satisfy
+              `assert len(counts) == 2`" ends an argument that "the model thought
+              your answer was incomplete" starts, which is the whole reason this
+              path exists instead of asking Nala. */}
+          {grade.detail ? <pre className="mj-code-body">{grade.detail}</pre> : null}
+          {grade.hint ? <p className="mj-notebook-cell-grade-hint">{grade.hint}</p> : null}
+          <p className="mj-notebook-cell-grade-by">
+            {grade.graded_by === "deterministic" ? copy.gradeByCheck : copy.gradeByModel}
+          </p>
+        </div>
+      ) : null}
       {showCheckAttempt && attemptOpen ? (
         <div className="mj-notebook-cell-attempt">
           <label>
@@ -151,10 +194,10 @@ function NotebookCellCard({
             <button
               type="button"
               className="mj-primary-button"
-              disabled={!attemptText.trim()}
+              disabled={!attemptText.trim() || locked}
               onClick={submitAttempt}
             >
-              {copy.checkAttemptSubmit}
+              {cell.graded ? copy.checkAttemptGrade : copy.checkAttemptSubmit}
             </button>
           </div>
         </div>

@@ -87,6 +87,7 @@ from majorana_api.jobs import (
     COURSE_PLAN_JOB_KIND,
     COURSE_REVISE_JOB_KIND,
     NOTEBOOK_GENERATE_JOB_KIND,
+    NOTEBOOK_GRADE_JOB_KIND,
     NOTEBOOK_REVISE_JOB_KIND,
     QAPP_EXECUTE_JOB_KIND,
     QPU_RUN_JOB_KIND,
@@ -122,6 +123,7 @@ from .course_handlers import (
 from .notebook_handlers import (
     handle_notebook_dead_letter,
     handle_notebook_generate,
+    handle_notebook_grade,
     handle_notebook_revise,
 )
 from majorana_frameworks.optimizers import (
@@ -2921,6 +2923,7 @@ HANDLERS: dict[str, JobHandler] = {
     CATALOG_IMPORT_JOB_KIND: handle_catalog_import,
     QPU_RUN_JOB_KIND: handle_qpu_run,
     NOTEBOOK_GENERATE_JOB_KIND: handle_notebook_generate,
+    NOTEBOOK_GRADE_JOB_KIND: handle_notebook_grade,
     NOTEBOOK_REVISE_JOB_KIND: handle_notebook_revise,
     COURSE_PLAN_JOB_KIND: handle_course_plan,
     COURSE_REVISE_JOB_KIND: handle_course_revise,
@@ -2933,6 +2936,11 @@ DEAD_LETTER_HANDLERS: dict[str, DeadLetterHandler] = {
     QPU_RUN_JOB_KIND: handle_qpu_run_dead_letter,
     NOTEBOOK_GENERATE_JOB_KIND: handle_notebook_dead_letter,
     NOTEBOOK_REVISE_JOB_KIND: handle_notebook_dead_letter,
+    # `handle_run_dead_letter`, NOT `handle_notebook_dead_letter`: a grading job holds
+    # a version id but never writes to it, so the notebook one would close a perfectly
+    # good version as FAILED because one reader's attempt lost its lease. Only the run
+    # needs closing here.
+    NOTEBOOK_GRADE_JOB_KIND: handle_run_dead_letter,
     COURSE_PLAN_JOB_KIND: handle_course_dead_letter,
     COURSE_REVISE_JOB_KIND: handle_course_dead_letter,
 }

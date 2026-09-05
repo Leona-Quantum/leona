@@ -176,6 +176,34 @@ class QappGenerated(_EventBase):
     visibility: Literal["private"] = "private"
 
 
+class NotebookGrades(_EventBase):
+    """The verdicts for one reader's attempt at a notebook's graded cells.
+
+    A run event rather than a response body because grading executes the reader's code
+    in the sandbox: the route answers 202 with a run id and the verdicts arrive on that
+    run's stream, like every other notebook result.
+
+    Registered HERE and not only emitted, which is the whole point of this union:
+    `RepoEventSink` validates every event against it before persisting, so an event type
+    that is not in this list is REJECTED at emit time — the run reports an error and the
+    reader never receives a verdict. A fake sink in a test accepts anything and cannot
+    show that.
+    """
+
+    type: Literal["notebook.grades"] = "notebook.grades"
+    version_id: UUID
+    #: The full `GradeReport`, carried as-is so a client renders per-cell verdicts
+    #: without a second fetch. Typed loosely here because `notebooks.py` owns its shape
+    #: and importing it would make this module depend on the notebook contracts.
+    grades: dict[str, Any]
+    passed: int = Field(ge=0)
+    failed: int = Field(ge=0)
+    attempted: int = Field(ge=0)
+    #: Why nothing could be graded, when that is the answer — a guard refusal, a
+    #: sandbox note. Empty on an ordinary wrong answer.
+    note: str = ""
+
+
 class CodeGenerated(_EventBase):
     type: Literal["code.generated"] = "code.generated"
     language: str
@@ -454,6 +482,7 @@ RunEvent = Annotated[
     | ChatError
     | ConversationTitled
     | QappGenerated
+    | NotebookGrades
     | CodeGenerated
     | ScreenResult
     | ResourceEstimateResult
