@@ -196,6 +196,7 @@ export function NotebookWorkspace({ notebookId, locale = "en" }: { notebookId: s
     setGrades({});
     setGradeReport(null);
     setGradingCellIds(new Set());
+    setGradingRunId(null);
     setDraftCells(null);
     setFocusedCellId(null);
     loadNotebook();
@@ -281,17 +282,32 @@ export function NotebookWorkspace({ notebookId, locale = "en" }: { notebookId: s
     loadNotebook();
     loadVersions();
     loadTurns();
-    // A LOST stream produces no terminal event, so the effect above cannot see it and
+    const decision = authoredPinAfterRun(authored.current, streamRunId, outcome);
+    if (decision.pin !== null) setPinnedSeq(decision.pin);
+    if (decision.clear) authored.current = null;
+    if (decision.warn) setActionError(copy.runStreamLost);
+  });
+
+  // Grading follows its OWN stream, not `followedRunId`.
+  //
+  // `followedRunId` is written by every run-starting action in this workspace — a chat
+  // turn, Quiz me, an authored version, a re-run — so a single slot means any of them
+  // aborts a grading stream in flight and the sandbox's completed verdict is dropped on
+  // the floor. The attempt lock could not cover that: it disables the attempt buttons,
+  // and none of those actions is an attempt button. Greptile caught it on PR 832.
+  //
+  // Two slots is also the honest model. A grading run writes no version, so none of the
+  // reloads the general callback does on every terminal event apply to it, and it has
+  // no business making the header read "generating".
+  const [gradingRunId, setGradingRunId] = useState<string | null>(null);
+  const gradingEvents = useRunProgress(gradingRunId, (outcome) => {
+    // A LOST stream produces no terminal event, so the effect below cannot see it and
     // the lock would be held forever. Disjoint from that path by construction:
     // `useRunProgress` reports "lost" only when no terminal event ever arrived.
     if (outcome === "lost" && gradingCellIds.size > 0) {
       setGradingCellIds(new Set());
       setActionError(copy.gradeFailed);
     }
-    const decision = authoredPinAfterRun(authored.current, streamRunId, outcome);
-    if (decision.pin !== null) setPinnedSeq(decision.pin);
-    if (decision.clear) authored.current = null;
-    if (decision.warn) setActionError(copy.runStreamLost);
   });
 
   // Verdicts arrive on the SAME stream the rest of the run does, as
@@ -300,7 +316,7 @@ export function NotebookWorkspace({ notebookId, locale = "en" }: { notebookId: s
   // event is already in `progressEvents` — waiting for the end would also mean
   // showing nothing if the stream drops after the verdicts but before `run.finished`.
   useEffect(() => {
-    const event = [...progressEvents].reverse().find((item) => item.type === "notebook.grades");
+    const event = [...gradingEvents].reverse().find((item) => item.type === "notebook.grades");
     if (event) {
       const report = isRecord(event.grades) ? (event.grades as GradeReport) : null;
       if (!report) return;
@@ -338,14 +354,14 @@ export function NotebookWorkspace({ notebookId, locale = "en" }: { notebookId: s
     // choice: `useRunProgress` calls its callback in the same tick it appends the
     // event, so the callback runs BEFORE this effect sees the grades. A callback
     // asking "did a verdict arrive?" would answer no on a perfectly good run.
-    const ended = progressEvents.some(
+    const ended = gradingEvents.some(
       (item) => item.type === "run.finished" || item.type === "run.error",
     );
     if (ended && gradingCellIds.size > 0) {
       setGradingCellIds(new Set());
       setActionError(copy.gradeFailed);
     }
-  }, [progressEvents, gradingCellIds, copy.gradeFailed]);
+  }, [gradingEvents, gradingCellIds, copy.gradeFailed]);
 
   /**
    * Send one reader's attempt to be graded by the exercise's own test.
@@ -387,7 +403,7 @@ export function NotebookWorkspace({ notebookId, locale = "en" }: { notebookId: s
       }
       const runId = typeof payload.run_id === "string" ? payload.run_id : null;
       if (!runId) throw new Error(copy.gradeFailed);
-      setFollowedRunId(runId);
+      setGradingRunId(runId);
     } catch (cause) {
       setGradingCellIds(new Set());
       setActionError(cause instanceof Error ? cause.message : copy.gradeFailed);
