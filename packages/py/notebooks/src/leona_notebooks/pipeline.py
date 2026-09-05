@@ -433,15 +433,24 @@ async def revise(
 
 
 def _checks_changed(before: NotebookSpec, after: NotebookSpec) -> bool:
-    """Whether any grader was added or rewritten between two specs.
+    """Whether any grader's PROOF was invalidated between two specs.
 
-    Keyed by cell id and comparing the check text, so a reordered notebook does not read
-    as a changed grader and a rewritten assertion under an unchanged id does. A REMOVED
-    check needs no audit — there is no grader left to be wrong.
+    Not just the check text. The audit's two arms are the check run against the STUB
+    and against the SOURCE, so all three decide the verdict and any of the three moving
+    makes the old proof stale — "make the stub closer to the answer" leaves the
+    assertion untouched and can turn a sound grader vacuous, and "rewrite the solution"
+    can make one its own answer no longer passes. Comparing only the check would skip
+    the audit on exactly those edits, which are the ones a reader actually asks for.
+
+    Keyed by cell id, so a reordered notebook does not read as a changed grader. A
+    REMOVED check needs no audit — there is no grader left to be wrong.
     """
-    old = {c.id: c.check for c in before.cells if c.check is not None}
-    new = {c.id: c.check for c in after.cells if c.check is not None}
-    return any(old.get(cell_id) != check for cell_id, check in new.items())
+
+    def graders(spec: NotebookSpec) -> dict[str, tuple[str, str | None, str]]:
+        return {c.id: (c.check or "", c.stub, c.source) for c in spec.cells if c.check is not None}
+
+    old, new = graders(before), graders(after)
+    return any(old.get(cell_id) != grader for cell_id, grader in new.items())
 
 
 def _describe_failure(report: ExecutionReport) -> str:

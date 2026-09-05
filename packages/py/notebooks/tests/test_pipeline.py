@@ -382,3 +382,64 @@ async def test_a_revise_turn_that_touches_no_grader_spends_nothing() -> None:
     assert outcome.graders is None
     assert ports.calls.count("execute") == 1
     assert outcome.spec.cell_by_id("ex1").check == "assert double(3) == 6"
+
+
+async def test_a_revise_turn_that_only_weakens_the_stub_is_still_audited() -> None:
+    """The edit that invalidates a proof without touching the assertion.
+
+    "Make the stub closer to the answer" leaves `check` byte-identical and turns a
+    sound grader vacuous — the check now passes against the placeholder, so the reader
+    is marked correct before starting. Keying the audit on the check text alone would
+    skip exactly this case. Greptile caught it on PR 830.
+    """
+    spec = parse_source(GRADED_LESSON_HONEST, slug="graded")
+    ports = ExecutingPorts(
+        drafts=[],
+        revision=RevisionPlan(
+            reply="easier now",
+            summary="softer stub",
+            ops=[
+                RevisionOp(
+                    op="replace",
+                    cell_id="ex1",
+                    cells_source=(
+                        # Same check, and a stub that already satisfies it.
+                        '# %% id=ex1 role=solution stub="def double(x):\\n    return 2 * x" '
+                        'check="assert double(3) == 6"\ndef double(x):\n    return 2 * x\n'
+                    ),
+                )
+            ],
+        ),
+    )
+    outcome = await revise(ports, RevisionRequest(spec=spec, message="make it easier"))
+    assert outcome.status == "ready", outcome.error
+    assert outcome.graders is not None, "the audit must run when the stub moved"
+    assert [v.verdict for v in outcome.graders.verdicts] == ["cannot-fail"]
+    assert outcome.spec.cell_by_id("ex1").check is None
+
+
+async def test_a_revise_turn_that_only_rewrites_the_solution_is_still_audited() -> None:
+    """The mirror case: the author's own answer changes under an unchanged check, and
+    the check can no longer pass against it."""
+    spec = parse_source(GRADED_LESSON_HONEST, slug="graded")
+    ports = ExecutingPorts(
+        drafts=[],
+        revision=RevisionPlan(
+            reply="different approach",
+            summary="new solution",
+            ops=[
+                RevisionOp(
+                    op="replace",
+                    cell_id="ex1",
+                    cells_source=(
+                        '# %% id=ex1 role=solution stub="def double(x):\\n    ..." '
+                        'check="assert double(3) == 6"\ndef double(x):\n    return x + 1\n'
+                    ),
+                )
+            ],
+        ),
+    )
+    outcome = await revise(ports, RevisionRequest(spec=spec, message="rewrite it"))
+    assert outcome.status == "ready", outcome.error
+    assert outcome.graders is not None
+    assert [v.verdict for v in outcome.graders.verdicts] == ["cannot-pass"]
