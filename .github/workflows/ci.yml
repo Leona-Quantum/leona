@@ -168,7 +168,16 @@ jobs:
       - name: notebook graders can actually fail
         run: |
           uv run python scripts/check_graders.py --self-test
-          uv run python scripts/check_graders.py packages/py/notebooks/fixtures
+          # `curricula/` too, not just the one JSON fixture: the notebooks a reader
+          # actually works through are `.nb.py` under there, and the gate read past
+          # them entirely — reporting `0 answer key(s)` while 57 sat in the
+          # certification quizzes.
+          uv run python scripts/check_graders.py packages/py/notebooks/fixtures curricula
+          # The readable ANSWER_KEY.md against the notebooks it claims to mirror. It
+          # asserted it could not drift and nothing checked that, so reordering the
+          # quiz options silently made it wrong for a reader self-scoring against it.
+          uv run python scripts/check_answer_key.py --self-test
+          uv run python scripts/check_answer_key.py
       # The nightly's two reporters, self-tested HERE rather than only inside `bench.yml`:
       # that workflow runs once a night and is `workflow_dispatch` otherwise, so a broken
       # reporter would be found by the run it was supposed to report on. Both arms of each
