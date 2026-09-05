@@ -301,6 +301,10 @@ export function NotebookWorkspace({ notebookId, locale = "en" }: { notebookId: s
     setGrades((current) => ({ ...current, ...next }));
     setGradeReport(report);
     setGradingCellIds(new Set());
+    // Why nothing could be graded, when that is the answer. Without this a guard
+    // refusal reads as "not graded yet", which tells the reader their code was fine
+    // and something else went wrong.
+    if (typeof event.note === "string" && event.note) setActionError(event.note);
   }, [progressEvents]);
 
   /**

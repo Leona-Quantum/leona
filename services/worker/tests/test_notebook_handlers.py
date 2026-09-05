@@ -1201,3 +1201,52 @@ async def test_grading_meters_its_sandbox_seconds(_fake_run_plumbing):
     assert [c["kind"] for c in usage_calls] == [nh.UsageKind.SANDBOX_SECONDS]
     assert usage_calls[0]["quantity"] > 0
     assert usage_calls[0]["meta"]["lane"] == "notebook"
+
+
+async def test_the_verdict_is_emitted_before_anything_terminal(monkeypatch):
+    """`run.error` is TERMINAL to every consumer of a run stream, so emitting it before
+    the verdicts would stop the browser reading on the way to the reader's own result —
+    the cell stays on "Running your code…" forever. Greptile, PR 832.
+
+    The attempt here is code the safety guard refuses, which is the case that actually
+    produces one: `observe(..., "failed")` only emits `run.error` when it has a detail
+    to carry, and an ordinary wrong answer leaves `report.note` empty. The first version
+    of this test used a wrong answer and passed with the bug restored.
+
+    The assertion is on ORDER, not on the absence of the event. Suppressing `run.error`
+    would fix the race and lose the one thing the reader needs told — that their code
+    was refused rather than marked wrong.
+    """
+    sinks: list[FakeEventSink] = []
+
+    class Recording(FakeEventSink):
+        def __init__(self, scope, session, run_id):
+            super().__init__(scope, session, run_id)
+            sinks.append(self)
+
+    monkeypatch.setattr(handlers, "RepoEventSink", Recording)
+    run_id, notebook_id, version_id = uuid.uuid4(), uuid.uuid4(), uuid.uuid4()
+
+    await nh.handle_notebook_grade(
+        Session(),
+        _grade_payload(
+            run_id=run_id,
+            notebook_id=notebook_id,
+            version_id=version_id,
+            code={"ex1": "import os\nos.system('echo hi')"},
+        ),
+        sandbox=LocalSubprocessSandbox(),
+        store=_graded_store(notebook_id, version_id),
+    )
+
+    kinds = [kind for kind, _ in sinks[0].events]
+    assert "notebook.grades" in kinds, "the reader must still get a verdict"
+    assert "run.error" in kinds, "and must still be told their code was refused"
+    terminal = min(i for i, k in enumerate(kinds) if k in {"run.error", "run.finished"})
+    assert kinds.index("notebook.grades") < terminal, (
+        f"the verdict must precede every terminal event; got {kinds}"
+    )
+    # And the reason travels with the verdict, so a refusal does not read as
+    # "not graded yet".
+    payload = _grades_event(sinks[0].events)
+    assert "guard" in payload["note"].lower()

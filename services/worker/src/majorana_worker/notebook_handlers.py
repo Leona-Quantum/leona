@@ -1243,7 +1243,19 @@ async def handle_notebook_grade(
         )
         await ports.observe("notebook.execute", "started")
         report = await ports.run_notebook(spec_with_graders(spec, attempt))
-        await ports.observe("notebook.execute", "finished" if report.ok else "failed", report.note)
+        # ORDER, and it is the whole of the fix: the verdicts are emitted BEFORE any
+        # event a consumer treats as terminal.
+        #
+        # `observe(..., "failed")` emits `run.error`, and `useRunProgress` — like every
+        # other consumer of a run stream — stops reading at one. Emitting it first
+        # would end the stream on the way to the reader's own verdict, leaving the cell
+        # on "Running your code…" forever, and it would have looked like a flake
+        # because whether the browser saw the grades at all depends on the two events
+        # landing in the same chunk. Greptile caught it on PR 832.
+        #
+        # The failure is still reported, just after the grades rather than instead of
+        # them: a guard-refused attempt is something the reader needs told, and
+        # suppressing it to fix the ordering would have traded one silence for another.
         grades = grades_from_report(spec, report, attempt)
         await sink.emit(
             "notebook.grades",
@@ -1253,8 +1265,12 @@ async def handle_notebook_grade(
                 "passed": grades.passed,
                 "failed": grades.failed,
                 "attempted": grades.attempted,
+                # Why nothing could be graded, when that is the answer — a guard
+                # refusal, a sandbox note. Empty on an ordinary wrong answer.
+                "note": report.note if not report.ok else "",
             },
         )
+        await ports.observe("notebook.execute", "finished" if report.ok else "failed", report.note)
         await run_store.set_status(RunStatus.SUCCEEDED, finished_at_now=True)
         await session.commit()
         await sink.emit("run.finished", {"ok": True})

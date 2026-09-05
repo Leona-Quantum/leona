@@ -12,6 +12,8 @@ row and hands the job off.
 
 from __future__ import annotations
 
+import hashlib
+import json
 import re
 import uuid
 from typing import Annotated, Any
@@ -161,6 +163,22 @@ def _assert_not_in_flight(notebook: NotebookRow, latest: NotebookVersionRow) -> 
                 "reason": "notebook_version_in_flight",
             },
         )
+
+
+def _attempt_request_hash(notebook_id: uuid.UUID, body: contracts.GradeAttemptRequest) -> str:
+    """Fingerprint one submitted attempt, the notebook included.
+
+    `model_dump(mode="json")` over the whole body for the same reason
+    `routes.runs._idempotency_request_hash` does it: a field added to
+    `GradeAttemptRequest` later is covered without anyone remembering, and the failure
+    mode of forgetting — two different attempts hashing the same — is silent.
+
+    The notebook id is in the digest because the key's uniqueness is per WORKSPACE, not
+    per notebook: an identical answer submitted to two notebooks under one key would
+    otherwise replay the first notebook's verdict onto the second.
+    """
+    payload = {"notebook_id": str(notebook_id), **body.model_dump(mode="json")}
+    return hashlib.sha256(json.dumps(payload, sort_keys=True).encode()).hexdigest()
 
 
 async def _gate_notebook_run(
@@ -546,6 +564,7 @@ async def grade_notebook_attempt(
     session: DbSession,
     identity: CurrentIdentity,
     settings: Annotated[Settings, Depends(get_settings)],
+    idempotency_key: Annotated[str | None, Header(alias="Idempotency-Key")] = None,
 ) -> contracts.GradeAttemptResponse:
     """Grade one reader's attempt at this notebook's current version.
 
@@ -566,7 +585,7 @@ async def grade_notebook_attempt(
     right. `assert len(counts) == 2` ends an argument that "the model thought your
     answer was incomplete" starts.
 
-    ## Why it costs a run
+    ## Why it costs a run, and why it takes an Idempotency-Key
 
     Grading executes the reader's own code in the sandbox. That is the same dispatch
     a re-run is, with the same abuse backstop, the same tier caps and the same
@@ -574,6 +593,14 @@ async def grade_notebook_attempt(
     `POST /notebooks/{id}/run`, so an attempt cannot be a way around the quota that
     running the notebook would have cost. Nothing new reaches the sandbox: the derived
     spec is the notebook's own cells with the reader's source substituted in.
+
+    Because it costs, a retry must not charge twice. A dropped 202 is the ordinary
+    case — the run is already queued and the client never learned its id — and without
+    a key the retry buys a second sandbox run and starts a competing grading stream
+    against the same cell. Same mechanism as `POST /v1/runs` and `POST /v1/courses`:
+    the key is stored on the run, a replay returns the original run id, and a reused
+    key describing a DIFFERENT attempt is 409 rather than being handed a verdict on
+    code it did not submit.
 
     No notebook version is created. An attempt is not an edit, and the verdicts arrive
     on the run's event stream as `notebook.grades`.
@@ -613,6 +640,15 @@ async def grade_notebook_attempt(
             },
         )
 
+    # BEFORE the gate and before the run is created: a replay must cost neither a
+    # quota decrement nor a second row.
+    request_hash = _attempt_request_hash(notebook_id, body) if idempotency_key else None
+    if idempotency_key:
+        existing = await runs_repo.find_run_by_idempotency_key(scope, session, idempotency_key)
+        if existing is not None:
+            _assert_same_request(existing, request_hash)
+            return contracts.GradeAttemptResponse(run_id=existing.id, graded_cells=len(graded))
+
     await _gate_notebook_run(
         f"Grade an attempt at notebook {notebook.slug}", scope, session, identity, settings
     )
@@ -623,6 +659,8 @@ async def grade_notebook_attempt(
         task_prompt=f"Grade an attempt at notebook {notebook.slug}",
         mode=RunMode.NOTEBOOK,
         framework=_run_framework(contracts.NotebookFramework.model_validate(notebook.framework)),
+        idempotency_key=idempotency_key,
+        idempotency_request_hash=request_hash,
     )
     await runs_repo.append_run_event(
         scope, session, run.id, type="run.queued", payload={"mode": str(RunMode.NOTEBOOK)}

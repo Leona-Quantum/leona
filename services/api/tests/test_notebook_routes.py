@@ -802,3 +802,82 @@ async def test_an_oversized_cell_body_is_refused_by_the_contract(client, graded_
 
     assert response.status_code == 422, response.text
     assert graded_state["jobs"] == []
+
+
+async def test_a_retried_attempt_under_one_key_costs_one_run(client, graded_state, monkeypatch):
+    """A dropped 202 is the ordinary case — the run is queued and the client never
+    learned its id. Without a key the retry buys a second sandbox run and starts a
+    competing grading stream against the same cell."""
+    seen: dict[str, SimpleNamespace] = {}
+
+    async def fake_find(_scope, _session, key):
+        return seen.get(key)
+
+    original_create = runs_repo.create_run
+
+    async def fake_create(_scope, _session, **kwargs):
+        run = await original_create(_scope, _session, **kwargs)
+        if kwargs.get("idempotency_key"):
+            run.idempotency_key = kwargs["idempotency_key"]
+            run.idempotency_request_hash = kwargs.get("idempotency_request_hash")
+            seen[kwargs["idempotency_key"]] = run
+        return run
+
+    monkeypatch.setattr(runs_repo, "find_run_by_idempotency_key", fake_find)
+    monkeypatch.setattr(runs_repo, "create_run", fake_create)
+
+    body = {"code": {"ex1": "def double(x):\n    return x + x"}, "answers": {}}
+    async with client as c:
+        first = await c.post(
+            f"/v1/notebooks/{graded_state['notebook'].id}/attempts",
+            json=body,
+            headers={"Idempotency-Key": "k-1"},
+        )
+        second = await c.post(
+            f"/v1/notebooks/{graded_state['notebook'].id}/attempts",
+            json=body,
+            headers={"Idempotency-Key": "k-1"},
+        )
+
+    assert first.status_code == 202 and second.status_code == 202, second.text
+    assert first.json()["run_id"] == second.json()["run_id"]
+    # One run, one job. The replay must not reach the queue at all.
+    assert len(graded_state["runs"]) == 1
+    assert len(graded_state["jobs"]) == 1
+
+
+async def test_reusing_a_key_for_a_DIFFERENT_attempt_is_refused(client, graded_state, monkeypatch):
+    """The other arm, and the one that matters: returning the stored run for a
+    different body hands the reader a verdict on code they did not submit."""
+    seen: dict[str, SimpleNamespace] = {}
+
+    async def fake_find(_scope, _session, key):
+        return seen.get(key)
+
+    original_create = runs_repo.create_run
+
+    async def fake_create(_scope, _session, **kwargs):
+        run = await original_create(_scope, _session, **kwargs)
+        if kwargs.get("idempotency_key"):
+            run.idempotency_key = kwargs["idempotency_key"]
+            run.idempotency_request_hash = kwargs.get("idempotency_request_hash")
+            seen[kwargs["idempotency_key"]] = run
+        return run
+
+    monkeypatch.setattr(runs_repo, "find_run_by_idempotency_key", fake_find)
+    monkeypatch.setattr(runs_repo, "create_run", fake_create)
+
+    async with client as c:
+        await c.post(
+            f"/v1/notebooks/{graded_state['notebook'].id}/attempts",
+            json={"code": {"ex1": "first answer"}},
+            headers={"Idempotency-Key": "k-2"},
+        )
+        clash = await c.post(
+            f"/v1/notebooks/{graded_state['notebook'].id}/attempts",
+            json={"code": {"ex1": "a completely different answer"}},
+            headers={"Idempotency-Key": "k-2"},
+        )
+
+    assert clash.status_code == 409, clash.text
+    assert len(graded_state["jobs"]) == 1
