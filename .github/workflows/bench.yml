@@ -80,8 +80,23 @@ jobs:
           uv run --package majorana-evals python -m majorana_evals \
             --corpus evals/corpus --out evals/report.json
           cat evals/report.json
+      # A zero here means one of two entirely different things, and this workflow
+      # could not tell them apart: the model had a bad night, or nothing ran at all.
+      # It reported `success` on every run from 2026-07-27 onward while passing 0 of
+      # 31 cases each time — every case dying at `sandbox_provider_failed` because
+      # the VERCEL_TOKEN secret is rejected 403. Six weeks of green over an
+      # instrument that measured nothing. This step fails only when the report
+      # contains no quality signal AT ALL (nothing executed, or nothing judged); a
+      # genuinely bad pass rate still passes, because the >=60% target is a
+      # calibration goal and never a merge gate.
+      #
+      # AFTER the upload, deliberately: a failing guard must not suppress the
+      # artifact, which is the only evidence of WHY the run measured nothing.
       - if: ${{ env.skip != 'true' }}
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: eval-report
           path: evals/report.json
+      - if: ${{ env.skip != 'true' }}
+        name: the report is a measurement, not a dead harness
+        run: uv run python scripts/check_bench_signal.py --self-test && uv run python scripts/check_bench_signal.py evals/report.json
