@@ -703,8 +703,7 @@ html[lang="ja"] .mj-about-cta h2 {
 }
 .mj-about-prose p,
 .mj-about-build-heading > p:last-child,
-.mj-about-team-heading > p:last-child,
-.mj-about-support-card p {
+.mj-about-team-heading > p:last-child {
   margin: 0;
   color: var(--text-1);
   font-size: var(--fs-16);
@@ -712,8 +711,7 @@ html[lang="ja"] .mj-about-cta h2 {
   text-wrap: pretty;
 }
 .mj-about-build-heading,
-.mj-about-team-heading,
-.mj-about-support-heading {
+.mj-about-team-heading {
   display: grid;
   max-width: 820px;
   gap: var(--sp-5);
@@ -729,8 +727,7 @@ html[lang="ja"] .mj-about-cta h2 {
   margin-top: var(--sp-10);
 }
 .mj-about-flow > .mj-reveal,
-.mj-about-team-grid > .mj-reveal,
-.mj-about-support-grid > .mj-reveal {
+.mj-about-team-grid > .mj-reveal {
   height: 100%;
 }
 .mj-about-flow-step {
@@ -821,10 +818,11 @@ html[lang="ja"] .mj-about-cta h2 {
 .mj-about-person-card {
   display: flex;
   height: 100%;
-  min-height: 430px;
+  min-height: 0;
   flex-direction: column;
+  overflow: hidden;
   box-sizing: border-box;
-  padding: var(--sp-6);
+  padding: 0;
   border: 1px solid var(--border-0);
   border-radius: var(--radius-card);
   background: color-mix(in srgb, var(--bg-1) 90%, transparent);
@@ -833,6 +831,25 @@ html[lang="ja"] .mj-about-cta h2 {
     transform var(--dur-hover) var(--ease-out-ui),
     border-color var(--dur-hover) var(--ease-out-ui),
     box-shadow var(--dur-hover) var(--ease-out-ui);
+}
+.mj-about-person-portrait {
+  aspect-ratio: 4 / 5;
+  overflow: hidden;
+  border-bottom: 1px solid var(--border-0);
+  background: var(--bg-1);
+}
+.mj-about-person-portrait img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: center 30%;
+}
+.mj-about-person-content {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  padding: var(--sp-6);
 }
 .mj-about-person-card:hover {
   border-color: color-mix(in srgb, var(--accent) 48%, var(--border-0));
@@ -858,10 +875,12 @@ html[lang="ja"] .mj-about-cta h2 {
 .mj-about-person-name h3 {
   margin: 0;
   font-family: var(--font-display);
-  font-size: clamp(2rem, 3.2vw, 3.35rem);
+  font-size: clamp(1.8rem, 2.65vw, 3rem);
   font-weight: 400;
   letter-spacing: -0.025em;
-  line-height: 1;
+  line-height: 1.06;
+  overflow-wrap: anywhere;
+  text-wrap: balance;
 }
 .mj-about-person-name > span {
   color: var(--text-2);
@@ -898,37 +917,6 @@ html[lang="ja"] .mj-about-cta h2 {
   font-size: var(--fs-12);
 }
 
-.mj-about-support {
-  display: grid;
-  grid-template-columns: minmax(0, 0.8fr) minmax(0, 1.2fr);
-  gap: var(--sp-12);
-}
-.mj-about-support-grid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: var(--sp-4);
-}
-.mj-about-support-card {
-  height: 100%;
-  min-height: 240px;
-  box-sizing: border-box;
-  padding: var(--sp-6);
-  border-top: 1px solid color-mix(in srgb, var(--accent) 62%, var(--border-0));
-  background: color-mix(in srgb, var(--bg-1) 82%, transparent);
-}
-.mj-about-support-card > span {
-  color: var(--accent);
-  font-family: var(--font-mono);
-  font-size: var(--fs-12);
-  letter-spacing: 0.08em;
-}
-.mj-about-support-card h3 {
-  margin: var(--sp-12) 0 var(--sp-4);
-  font-family: var(--font-display);
-  font-size: var(--fs-display-3);
-  font-weight: 400;
-  line-height: 1;
-}
 .mj-about-cta {
   position: relative;
   overflow: hidden;
@@ -964,8 +952,7 @@ html[lang="ja"] .mj-about-cta h2 {
     justify-self: start;
   }
   .mj-about-section-copy,
-  .mj-about-direction,
-  .mj-about-support {
+  .mj-about-direction {
     grid-template-columns: minmax(0, 1fr);
   }
   .mj-about-flow {
@@ -975,7 +962,14 @@ html[lang="ja"] .mj-about-cta h2 {
     grid-template-columns: minmax(0, 1fr);
   }
   .mj-about-person-card {
-    min-height: 0;
+    display: grid;
+    grid-template-columns: minmax(220px, 0.8fr) minmax(0, 1.2fr);
+  }
+  .mj-about-person-portrait {
+    min-height: 100%;
+    aspect-ratio: auto;
+    border-right: 1px solid var(--border-0);
+    border-bottom: 0;
   }
   .mj-about-person-affiliation {
     min-height: 0;
@@ -1019,8 +1013,7 @@ html[lang="ja"] .mj-about-cta h2 {
     grid-template-columns: minmax(0, 1fr);
     gap: var(--sp-8);
   }
-  .mj-about-flow,
-  .mj-about-support-grid {
+  .mj-about-flow {
     grid-template-columns: minmax(0, 1fr);
   }
   .mj-about-flow-step {
@@ -1031,13 +1024,19 @@ html[lang="ja"] .mj-about-cta h2 {
     padding-inline: var(--sp-5);
   }
   .mj-about-person-card {
+    display: flex;
+  }
+  .mj-about-person-portrait {
+    min-height: 0;
+    aspect-ratio: 4 / 5;
+    border-right: 0;
+    border-bottom: 1px solid var(--border-0);
+  }
+  .mj-about-person-content {
     padding: var(--sp-5);
   }
   .mj-about-person-name {
     margin-top: var(--sp-10);
-  }
-  .mj-about-support-card {
-    min-height: 210px;
   }
   .mj-about-cta {
     margin-top: var(--sp-12);
