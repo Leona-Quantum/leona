@@ -113,7 +113,7 @@ const apiListViewFields = () => pythonFrozenset("LIST_VIEW_RECORD_FIELDS", 20);
  * `project_record_for_list_view` as the API actually performs it, mirrored here.
  *
  * The intersection alone is NOT what production sends, and testing the
- * intersection was a real gap: two fields are projected a level deeper than the
+ * intersection was a real gap: three fields are projected a level deeper than the
  * allowlist reaches, and a record that survives the outer trim can still be
  * rejected by the inner one. Every inner allowlist is read out of the same
  * Python source as the outer one rather than restated, so this mirror cannot
@@ -138,17 +138,9 @@ function projectForListView(record) {
       (row) => row && typeof row === "object" && resourceLabels.has(row.label),
     );
   }
-  if (projected.visualization && typeof projected.visualization === "object") {
-    // Reads a SECOND field of the record — `category` — and reads it off the
-    // source rather than the projection, exactly as the Python does.
-    const vizKeys =
-      record.category === "gates"
-        ? pythonFrozenset("LIST_VIEW_GATE_VISUALIZATION_FIELDS", 2)
-        : pythonFrozenset("LIST_VIEW_VISUALIZATION_FIELDS", 1);
-    projected.visualization = Object.fromEntries(
-      Object.entries(projected.visualization).filter(([key]) => vizKeys.has(key)),
-    );
-  }
+  // `visualization` is not projected a level down: the API sends it whole, since
+  // browse cards and map-node pages draw it (catalog_read_model.py, the note above
+  // LIST_VIEW_PORTABLE_CIRCUIT_FIELDS).
   if (projected.portableCircuit && typeof projected.portableCircuit === "object") {
     const circuitKeys = pythonFrozenset("LIST_VIEW_PORTABLE_CIRCUIT_FIELDS", 2);
     projected.portableCircuit = Object.fromEntries(
@@ -259,47 +251,113 @@ test("the resource projection preserves every browse card's qubit chip", () => {
 });
 
 /**
- * The gate sidebar still has a circuit to draw, and nothing else carries one.
+ * Every record's `visualization` reaches the browse list whole.
  *
- * `visualization.operations` is 138,156 of the field's 171,410 bytes and the
- * browse list draws exactly one circuit: `selectedGateEntry`
- * (`repository-browser.tsx:1053`, drawn at `:1562`), on a tab whose entries are
- * `category === "gates" ? ordered : []`. So the projection keeps `operations`
- * for that category and drops it everywhere else — and both halves of that
- * sentence are worth asserting, because the failure modes are opposite: a gate
- * without operations draws an empty circuit, and a non-gate with them is 138 KB
- * nobody reads.
+ * Browse cards draw a thumbnail from `operations`, and a map node's page draws
+ * the circuit and outcome bars of the record it names, both from this payload.
+ * The field used to keep `operations` for gates only; the tests below build the
+ * same claim from rows production actually served.
  */
-test("every gate keeps a drawable circuit and nothing else carries one", () => {
-  let gates = 0;
-  let others = 0;
+test("every record's visualization reaches the browse list whole", () => {
+  let withVisualization = 0;
   for (const item of manifest.items) {
     const full = JSON.parse(item.source_blob);
-    const projected = projectForListView(full);
-    if (!projected.visualization) continue;
-    if (full.category === "gates") {
-      gates += 1;
-      assert.deepEqual(
-        projected.visualization.operations,
-        full.visualization.operations,
-        `${item.upstream_identity} is a gate whose circuit was projected away`,
-      );
-    } else {
-      others += 1;
-      assert.equal(
-        "operations" in projected.visualization,
-        false,
-        `${item.upstream_identity} is not a gate and still carries operations`,
-      );
-    }
-    // Every record keeps its register: `deriveInterface` reads its length, and a
-    // record whose width silently became 0 reclassifies rather than blanks.
-    assert.deepEqual(projected.visualization.wires, full.visualization.wires);
-    assert.equal("outcomes" in projected.visualization, false);
+    if (!full.visualization) continue;
+    withVisualization += 1;
+    assert.deepEqual(
+      projectForListView(full).visualization,
+      full.visualization,
+      `${item.upstream_identity} lost part of its visualization on the browse list`,
+    );
   }
-  // Neither branch may be empty, or half this test is vacuous.
-  assert.ok(gates > 0, "no gate-category record in the manifest — the category value moved");
-  assert.ok(others > 0, "every record is a gate, so the drop branch was never exercised");
+  assert.ok(withVisualization > 250, `only ${withVisualization} records carry a visualization`);
+});
+
+// --- The Atlas draws circuits from the LIST payload ---------------------------
+//
+// Since UX pass 6 (PR 872) the browse cards draw each record's circuit as a
+// thumbnail and a method page leads with the circuit of the record it names,
+// both read off `getRepositoryListEntries()`. Production then showed neither:
+// the list projection kept `operations` for gates only, and local development
+// never saw it because it reads the static corpus, which carries everything.
+// The fixture is three rows of the real `?view=list` response and the detail
+// endpoint's circuits for the two non-gates, copied verbatim on 2026-09-12.
+
+const { hasAtlasCircuit } = await loadModule("apps/web/lib/repository/atlas-circuit-layout.ts");
+const productionListView = JSON.parse(
+  readFileSync(join(root, "scripts/catalog-bootstrap/fixtures/production-list-view-2026-09-12.json"), "utf8"),
+);
+
+function manifestRecord(slug) {
+  const item = manifest.items.find((candidate) => candidate.upstream_identity === slug);
+  assert.ok(item, `${slug} is not in the pinned manifest`);
+  return JSON.parse(item.source_blob);
+}
+
+// The negative control. Without it, a `hasAtlasCircuit` that answered true for
+// everything would make the two tests below pass and prove nothing.
+test("the rows production served draw nothing except the gate", () => {
+  const drawable = Object.fromEntries(
+    productionListView.listRows.map((row) => {
+      const parsed = parseCatalogListRecord(row.record);
+      assert.notEqual(parsed, null, `${row.slug} was rejected by the list guard`);
+      return [row.slug, hasAtlasCircuit(parsed.visualization)];
+    }),
+  );
+  assert.deepEqual(drawable, {
+    "ghz-state-pennylane": false,
+    "vqe-hardware-efficient-ansatz": false,
+    "controlled-x-gate": true,
+  });
+});
+
+test("a non-gate's own record projects to the circuit its detail page draws", () => {
+  for (const [slug, detail] of Object.entries(productionListView.detailVisualization)) {
+    const full = manifestRecord(slug);
+    // The pinned manifest is what production serves: same circuit as the detail endpoint.
+    assert.deepEqual(full.visualization.operations, detail.operations, `${slug}: manifest and production disagree`);
+    const parsed = parseCatalogListRecord(projectForListView(full));
+    assert.notEqual(parsed, null);
+    assert.deepEqual(
+      parsed.visualization.operations,
+      detail.operations,
+      `${slug}: the list projection drops the circuit the Atlas draws`,
+    );
+    assert.deepEqual(
+      parsed.visualization.outcomes,
+      detail.outcomes,
+      `${slug}: the list projection drops the outcome bars a method page draws`,
+    );
+    assert.equal(hasAtlasCircuit(parsed.visualization), true, `${slug}: no thumbnail and no method-page circuit`);
+  }
+});
+
+test("every record whose page draws a circuit keeps one on the browse list", () => {
+  const lost = [];
+  let drawn = 0;
+  let nonGates = 0;
+  for (const item of manifest.items) {
+    const full = JSON.parse(item.source_blob);
+    if (!hasAtlasCircuit(full.visualization)) continue;
+    drawn += 1;
+    if (full.category !== "gates") nonGates += 1;
+    const parsed = parseCatalogListRecord(projectForListView(full));
+    if (
+      parsed === null ||
+      !hasAtlasCircuit(parsed.visualization) ||
+      JSON.stringify(parsed.visualization.outcomes) !== JSON.stringify(full.visualization.outcomes ?? [])
+    ) {
+      lost.push(item.upstream_identity);
+    }
+  }
+  // Floors, so an empty loop cannot pass: the corpus draws 284 circuits, 255 of them non-gates.
+  assert.ok(drawn > 250 && nonGates > 200, `only ${drawn} drawable records (${nonGates} non-gates)`);
+  assert.equal(
+    lost.length,
+    0,
+    `${lost.length} of ${drawn} records draw a circuit on their own page and none on the browse list ` +
+      `or a method page, e.g. ${lost.slice(0, 5).join(", ")}`,
+  );
 });
 
 test("the list guard rejects a corrupted closed-vocabulary field", () => {
