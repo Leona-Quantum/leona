@@ -686,7 +686,9 @@ export function TourRuntime({ locale: localeProp, surface, initialCommand = null
         return;
       }
       if (event.key !== "ArrowRight" && event.key !== "ArrowLeft") return;
-      if (isEditable(focus) || (focus instanceof HTMLElement && focus.closest("[role=\"tablist\"], [role=\"toolbar\"], [role=\"radiogroup\"], [role=\"menu\"]"))) return;
+      // Only from the guide's card or with nothing focused: the Studio diagram and
+      // other controls use arrow keys for themselves.
+      if (isEditable(focus) || !(inLayer || focus === document.body || focus === null)) return;
       if (event.key === "ArrowLeft" && a.step > 0) {
         event.preventDefault();
         back();

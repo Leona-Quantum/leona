@@ -43,7 +43,7 @@ export function PlayheadPanel({
   const position = moment === 0 ? copy.playheadStart : copy.playheadAfter(Math.min(moment, count), count);
 
   return (
-    <section className="mj-playhead" aria-labelledby="studio-playhead-title">
+    <section className="mj-playhead" aria-labelledby="studio-playhead-title" data-tour="studio-playhead">
       <header className="mj-playhead-head">
         <h3 id="studio-playhead-title">{copy.playheadTitle}</h3>
         <span className="mj-playhead-position" aria-live="polite">{position}</span>

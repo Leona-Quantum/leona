@@ -77,12 +77,16 @@ const build: TourTrack = {
     { id: "code", target: "studio-tab-code", placement: "bottom", on: "/studio", go: "/studio?new=1", expect: { kind: "click", match: "studio-tab-code" } },
     { id: "convert", target: "studio-framework", placement: "bottom", on: "/studio", go: "/studio?new=1", expect: { kind: "value", match: "^cirq$" }, fill: "cirq" },
     { id: "visual", target: "studio-tab-visual", placement: "bottom", on: "/studio", go: "/studio?new=1", expect: { kind: "click", match: "studio-tab-visual" } },
+    { id: "playhead", target: "studio-playhead", placement: "top", on: "/studio", go: "/studio?new=1" },
+    { id: "split", target: "studio-split", placement: "bottom", on: "/studio", go: "/studio?new=1", expect: { kind: "click", match: "studio-split" } },
     { id: "compress", target: "studio-compress", placement: "top", on: "/studio", go: "/studio?new=1" },
     { id: "simulation", target: "studio-tab-simulation", placement: "bottom", on: "/studio", go: "/studio?new=1", expect: { kind: "click", match: "studio-tab-simulation" } },
     { id: "lanes", target: "studio-simulation-panel", placement: "top", on: "/studio", go: "/studio?new=1" },
+    { id: "cpu-run", target: "studio-cpu-run", placement: "bottom", on: "/studio", go: "/studio?new=1" },
     { id: "qpu", target: "studio-qpu", placement: "top", on: "/studio", go: "/studio?new=1", needs: "api" },
     { id: "summary", target: "studio-tab-summary", placement: "bottom", on: "/studio", go: "/studio?new=1", expect: { kind: "click", match: "studio-tab-summary" } },
     { id: "export", target: "studio-download-export", placement: "bottom", on: "/studio", go: "/studio?new=1", needs: "api" },
+    { id: "shortcuts", target: "studio-shortcuts", placement: "bottom", on: "/studio", go: "/studio?new=1" },
     { id: "save", target: "studio-verify-save", placement: "bottom", on: "/studio", go: "/studio?new=1" },
   ],
 };
@@ -144,7 +148,8 @@ const shows: TourTrack[] = [
   ]),
   show("show-visual", "/studio", "/studio?new=1", [
     { id: "visual", copyKey: "build.visual", target: "studio-tab-visual", placement: "bottom", expect: { kind: "click", match: "studio-tab-visual" } },
-    { id: "compress", copyKey: "build.compress", target: "studio-compress", placement: "top" },
+    { id: "playhead", copyKey: "build.playhead", target: "studio-playhead", placement: "top" },
+    { id: "split", copyKey: "build.split", target: "studio-split", placement: "bottom", expect: { kind: "click", match: "studio-split" } },
   ]),
   show("show-simulate", "/studio", "/studio?new=1", [
     { id: "simulation", copyKey: "build.simulation", target: "studio-tab-simulation", placement: "bottom", expect: { kind: "click", match: "studio-tab-simulation" } },

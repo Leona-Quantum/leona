@@ -10,7 +10,7 @@ import type { TourShowId } from "./types.ts";
  */
 const KEYWORDS: Record<TourShowId, { en: readonly string[]; ja: readonly string[] }> = {
   "show-cirq": { en: ["cirq", "convert", "translate", "pennylane", "pytket", "framework of the code", "other framework"], ja: ["cirq", "変換", "書き換え", "pennylane"] },
-  "show-visual": { en: ["visual", "diagram", "draw", "gate", "builder", "compress", "fewer gates", "depth"], ja: ["ビジュアル", "図", "ゲート", "圧縮", "深さ"] },
+  "show-visual": { en: ["visual", "diagram", "draw", "gate", "builder", "playhead", "probabilit", "beside", "side by side", "split"], ja: ["ビジュアル", "回路図", "ゲート", "確率", "横に", "並べ"] },
   "show-simulate": { en: ["simulat", "cpu", "sandbox", "shots", "run the circuit"], ja: ["シミュレーション", "シミュレート", "cpu", "サンドボックス", "ショット"] },
   "show-export": { en: ["export", "qasm", "openqasm", "download", "version", "evidence"], ja: ["エクスポート", "qasm", "ダウンロード", "バージョン", "証拠"] },
   "show-mode": { en: ["mode", "execute", "ideate", "explain mode", "auto"], ja: ["モード", "実行", "アイデア", "説明モード"] },
