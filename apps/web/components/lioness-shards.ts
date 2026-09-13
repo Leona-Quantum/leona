@@ -9,13 +9,18 @@
 // One hand edit on top of the generator output (2026-09-12, owner): the far fore leg
 // (rig group 5) is shifted up by 0.040 in y, closing most of the gap between its top and
 // the belly; its foot was already lifted mid-stride. Re-apply after regenerating.
+// A second hand edit (2026-09-12, owner: "some pieces of the body move with it"): shards 58
+// and 59, two pieces at the top of the far hind thigh, were labelled tail (group 2) and so
+// swung with every flick, tearing off the leg. They share no edge with the tail and sit
+// between the hind leg and the rump; they are group 3 now. The tail is one edge-connected
+// strip welded to the body along a single edge (`lib/lioness-rig.test.ts` holds this).
 export const LIONESS_SHARD_ASPECT = 2.0672;
 /** Index of the shard drawn brightest: the eye. */
 export const LIONESS_EYE_SHARD = 212;
 /** Rig group per shard: 0 body, 1 head, 2 tail, 3 hind leg (far), 4 hind leg (near), 5 fore leg (far), 6 fore leg (near, upper), 7 fore leg (near, paw; moves with 6). */
 export const LIONESS_SHARD_GROUPS: ReadonlyArray<number> = [
   2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 3, 2, 3, 3, 2, 3, 3, 2, 3, 2, 3, 3, 3, 3, 2, 3,
-  2, 3, 3, 3, 0, 2, 3, 3, 3, 2, 0, 3, 3, 3, 0, 3, 3, 3, 2, 2, 3, 3, 0, 0, 0, 0, 0, 3, 0, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+  2, 3, 3, 3, 0, 2, 3, 3, 3, 2, 0, 3, 3, 3, 0, 3, 3, 3, 3, 3, 3, 3, 0, 0, 0, 0, 0, 3, 0, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
   0, 0, 0, 4, 4, 4, 4, 4, 4, 4, 4, 0, 4, 0, 4, 4, 4, 0, 4, 4, 4, 0, 0, 4, 4, 4, 4, 0, 4, 4, 4, 4, 4, 4, 4, 4, 0, 4, 4, 0,
   4, 0, 4, 4, 4, 4, 4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 5, 5, 5, 5, 5, 5, 0, 5, 5, 5, 5, 0, 0, 5, 5, 5, 5, 5, 5, 5, 5, 0,
   5, 5, 0, 0, 5, 5, 5, 5, 0, 0, 0, 0, 0, 6, 0, 6, 6, 6, 0, 0, 6, 6, 0, 0, 1, 1, 1, 6, 6, 6, 6, 7, 6, 1, 6, 6, 6, 1, 7, 7,
