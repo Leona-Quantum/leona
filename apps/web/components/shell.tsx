@@ -67,6 +67,8 @@ import { archiveArtifact, artifactFromResource, daysUntilArtifactDeletion, delet
 import { verificationFromResource } from "../lib/verification-record";
 import { WORKSPACE_PINS_EVENT, isPinned, setPinned, togglePinned } from "../lib/workspace-pins";
 import { ThemeToggle } from "./theme-toggle";
+import { TourGate } from "./tour/tour-gate";
+import { TourHelpButton } from "./tour/tour-help-button";
 import type { PublicLocale } from "../lib/public-locale";
 import { PROJECT_SHARE_COPY, WORKSPACE_COPY, ACCOUNT_COPY } from "../lib/workspace-locale";
 
@@ -364,6 +366,7 @@ export function Shell({
       currentPath={pathname}
       headerRight={
         <>
+          {demoMode ? null : <TourHelpButton locale={locale} />}
           <ThemeToggle locale={locale} />
           {headerRight}
         </>
@@ -470,6 +473,9 @@ export function Shell({
       locale={locale}
     >
       {children}
+      {/* Guided tours (ai-ops 298). In the shell, not the page, so a tour survives
+          route changes and the Settings popout; it loads only when needed. */}
+      {demoMode ? null : <TourGate locale={locale} surface="workspace" />}
       {archiveNotice ? (
         <ArchiveNotice
           // The key is load-bearing, not decoration: archiving a second chat

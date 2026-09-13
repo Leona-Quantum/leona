@@ -38,6 +38,8 @@ export type TourStep = {
   /** Where "Take me there" goes when the reader is somewhere else. Defaults to the track's `go`. */
   go?: string;
   expect?: TourExpect;
+  /** The control people confuse with this one; clicking it gets the step's own `wrong` line. */
+  wrongTarget?: string;
   /** Nala's reaction on the Run page when this step succeeds (the tilt on a miss is automatic). */
   nala?: { corner: "tl" | "tr" | "bl" | "br"; reaction: "flick" | "nod" | "none" };
   /** The step needs the workspace online; offline it says so and skips, never fakes. */

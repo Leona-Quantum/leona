@@ -42,7 +42,7 @@ const firstLight: TourTrack = {
   go: "/run",
   steps: [
     { id: "hello", placement: "bottom" },
-    { id: "starter", target: "run-starter-bell", placement: "top", expect: { kind: "click", match: "run-starter-bell" }, remembersPrompt: true, nala: { corner: "tr", reaction: "flick" } },
+    { id: "starter", target: "run-starter-bell", placement: "top", expect: { kind: "click", match: "run-starter-bell" }, wrongTarget: "run-starter", remembersPrompt: true, nala: { corner: "tr", reaction: "flick" } },
     { id: "prompt", target: "run-prompt", placement: "top" },
     { id: "run", target: "run-submit", placement: "top", expect: { kind: "route", match: "/run/*" }, needs: "api", checksPrompt: true },
     { id: "watch", target: "run-activity", placement: "right", on: "/run/*", expect: { kind: "wait", match: "run-final-output" }, needs: "api" },
@@ -65,7 +65,7 @@ const build: TourTrack = {
   on: "/run",
   go: "/run",
   steps: [
-    { id: "mode", target: "run-mode", placement: "top", expect: { kind: "value", match: "^execute$" }, fill: "execute" },
+    { id: "mode", target: "run-mode", placement: "top", expect: { kind: "value", match: "^execute$" }, fill: "execute", wrongTarget: "run-framework" },
     { id: "framework", target: "run-framework", placement: "top" },
     { id: "prompt", target: "run-prompt", placement: "top", expect: { kind: "value", match: "\\S{12,}" } },
     { id: "run", target: "run-submit", placement: "top", expect: { kind: "route", match: "/run/*" }, needs: "api", checksPrompt: true },

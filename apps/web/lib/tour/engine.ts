@@ -185,6 +185,22 @@ export function clickOutcome(step: TourStep, where: "target" | "scrim" | "tour")
   return step.expect && step.expect.kind !== "wait" ? "miss" : "ignore";
 }
 
+/**
+ * The correction for a miss, most specific first: the step's own line when the
+ * reader hit the control it is usually confused with; otherwise the name of what
+ * they did hit; otherwise a plain "not that one". The step's `wrong` line is
+ * never used for some other control, where it would be untrue.
+ */
+export function correctionFor(
+  step: TourStep,
+  clicked: string | null,
+  words: { wrong?: string; targets: Record<string, string>; notQuite: (thing: string) => string; generic: string },
+): string {
+  if (clicked && step.wrongTarget && clicked === step.wrongTarget && words.wrong) return words.wrong;
+  if (clicked && clicked !== step.target && words.targets[clicked]) return words.notQuite(words.targets[clicked]!);
+  return words.generic;
+}
+
 export function offersHelp(misses: number, nudged: boolean): boolean {
   return misses >= MISSES_BEFORE_HELP || nudged;
 }

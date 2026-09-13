@@ -98,6 +98,11 @@ export const DEVICE_STORAGE_KEYS = [
   // holds only the visitor's own typed words; see lib/landing-prompt-handoff.ts
   // for why it is localStorage rather than sessionStorage and what that costs.
   "majorana.landing-prompt-handoff.v1",
+  // Guided tours progress (lib/tour/engine.ts): which tour and step, what is
+  // finished, whether the first-visit prompt was answered. Ids only, no content.
+  // Device-level because the Read tour runs on the Atlas, where no account scope
+  // exists; carrying it across devices would need a profile field (an API change).
+  "majorana.tour.v1",
 ] as const;
 
 /** Records the scope that adopted the pre-scoping (unscoped) data, once. */

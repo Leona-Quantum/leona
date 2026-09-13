@@ -6,6 +6,7 @@ import {
   TOUR_STORAGE_KEY,
   classifyPrompt,
   clickOutcome,
+  correctionFor,
   emptyProgress,
   finishTour,
   formatTourHash,
@@ -85,6 +86,15 @@ test("a click on the dimmed page is a miss only when the step waits for an actio
   assert.equal(clickOutcome(clickStep, "tour"), "ignore");
   assert.equal(clickOutcome(readingStep, "scrim"), "ignore");
   assert.equal(clickOutcome(waitStep, "scrim"), "ignore", "nothing to get wrong while a run is working");
+});
+
+test("a correction names what was clicked, and a step's own line is used only for its look-alike", () => {
+  const mode = build.steps.find((step) => step.id === "mode")!;
+  const words = { wrong: "That's the framework picker.", targets: { "run-framework": "framework picker", "run-attach": "attach button" }, notQuite: (thing: string) => `That's the ${thing}.`, generic: "Not that one." };
+  assert.equal(correctionFor(mode, "run-framework", words), "That's the framework picker.");
+  assert.equal(correctionFor(mode, "run-attach", words), "That's the attach button.", "the framework line would be untrue here");
+  assert.equal(correctionFor(mode, null, words), "Not that one.");
+  assert.equal(correctionFor(mode, "run-mode", words), "Not that one.", "the target itself is never 'not that one' by name");
 });
 
 test("Do it for me is offered after two misses or an idle nudge", () => {
