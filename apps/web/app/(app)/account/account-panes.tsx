@@ -151,6 +151,7 @@ export function AccountPanes({
                   type="button"
                   aria-current={pane.id === active ? "true" : undefined}
                   onClick={() => select(pane.id)}
+                  data-tour={`settings-${pane.id}`}
                 >
                   {pane.label}
                 </button>

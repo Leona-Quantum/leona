@@ -204,6 +204,7 @@ export function RunComposer({
             placeholder={ghost ? "" : basePlaceholder(locale)}
             aria-label={labels.task}
             aria-describedby={helpId}
+            data-tour="run-prompt"
             rows={1}
           />
         </div>
@@ -215,6 +216,7 @@ export function RunComposer({
               type="button"
               aria-label={labels.attach}
               title={labels.attach}
+              data-tour="run-attach"
               onClick={() => {
                 if (onFiles) fileInputRef.current?.click();
                 else onAttach?.();
@@ -237,7 +239,7 @@ export function RunComposer({
               />
             ) : null}
             {mode && onModeChange ? (
-              <label className="mj-composer-select">
+              <label className="mj-composer-select" data-tour="run-mode">
                 <span className="sr-only">{labels.mode}</span>
                 <select
                   aria-label={labels.mode}
@@ -262,7 +264,7 @@ export function RunComposer({
               </label>
             ) : null}
             {framework && onFrameworkChange ? (
-              <label className="mj-composer-select">
+              <label className="mj-composer-select" data-tour="run-framework">
                 <span className="sr-only">{labels.framework}</span>
                 <select
                   aria-label={labels.framework}
@@ -295,7 +297,7 @@ export function RunComposer({
             ) : (
               <>
                 {!pending ? <kbd className="mj-command-hint">⌘/Ctrl ↵</kbd> : null}
-                <button className="mj-primary-button" type="submit" disabled={pending || disabled || readingAttachments || !value.trim()}>
+                <button className="mj-primary-button" type="submit" disabled={pending || disabled || readingAttachments || !value.trim()} data-tour="run-submit">
                   {pending ? labels.pending : labels.send}
                 </button>
               </>

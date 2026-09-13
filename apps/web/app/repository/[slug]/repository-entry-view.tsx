@@ -610,7 +610,7 @@ export function RepositoryEntryView({
             they are a different kind of claim, and 217 of the corpus's 307 are
             worn by exactly one record. */}
         {topics.length > 0 ? (
-          <div className="mj-repository-topics" aria-label={ja ? "トピック" : "Topics"}>
+          <div className="mj-repository-topics" aria-label={ja ? "トピック" : "Topics"} data-tour="atlas-entry-topics">
             {topics.map((topic) => (
               <a
                 key={topic.id}
@@ -624,7 +624,7 @@ export function RepositoryEntryView({
           </div>
         ) : null}
         <p className="mj-card-onward">
-          {mapHref !== null ? <a href={mapHref}>{copy.openMap}</a> : null}
+          {mapHref !== null ? <a href={mapHref} data-tour="atlas-entry-map">{copy.openMap}</a> : null}
           <button
             className={`mj-star-toggle${starred ? " is-starred" : ""}`}
             type="button"
@@ -735,7 +735,7 @@ export function RepositoryEntryView({
         </section>
         <section className="mj-repository-aside-card">
           <p className="mj-section-label">{copy.source}</p>
-          <a className="mj-repository-source-title" href={entry.source.url} target="_blank" rel="noreferrer">
+          <a className="mj-repository-source-title" href={entry.source.url} target="_blank" rel="noreferrer" data-tour="atlas-entry-source">
             {entry.source.title} ↗
           </a>
           <dl className="mj-repository-detail-dl">

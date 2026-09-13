@@ -42,6 +42,7 @@ export function PanelTabs({
           type="button"
           role="tab"
           id={`${idPrefix}-tab-${panel}`}
+          data-tour={`${idPrefix}-tab-${panel}`}
           aria-selected={panel === active}
           aria-controls={`${idPrefix}-panel-${panel}`}
           tabIndex={panel === active ? 0 : -1}

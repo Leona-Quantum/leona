@@ -139,7 +139,7 @@ export function QappGallery({ view, locale = "en" }: { view: QappGalleryView; lo
           </div>
           <div className="mj-qapps-create-actions">
             <Link className="mj-secondary-button" href="/studio?new=1">{copy.createStudio}</Link>
-            <Link className="mj-primary-button" href="/run?mode=qapp">{copy.createRun}</Link>
+            <Link className="mj-primary-button" href="/run?mode=qapp" data-tour="qapps-create-run">{copy.createRun}</Link>
           </div>
         </header>
 

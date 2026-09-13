@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 import { RootDocument, rootMetadata } from "../../components/root-document";
 import { getPublicLocale } from "../../lib/public-locale-server";
+import { TourGate } from "../../components/tour/tour-gate";
 
 /**
  * The root layout for the Atlas, and the second half of ai-ops issue 151.
@@ -23,5 +24,6 @@ import { getPublicLocale } from "../../lib/public-locale-server";
 export const metadata = rootMetadata;
 
 export default async function RepositoryRootLayout({ children }: { children: ReactNode }) {
-  return <RootDocument lang={await getPublicLocale()} forcedTheme="dark">{children}</RootDocument>;
+  // The tour gate renders nothing unless a guided tour is running (the Read track).
+  return <RootDocument lang={await getPublicLocale()} forcedTheme="dark">{children}<TourGate surface="atlas" /></RootDocument>;
 }

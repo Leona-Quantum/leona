@@ -846,7 +846,7 @@ export function StudioWorkspace({ artifactId, newDraft = false, locale = "en", l
                       </li>
                     ) : null}
                     <li>
-                      <button type="button" className="mj-studio-meta-run" data-state={cpuRunState} onClick={openSimulation}>
+                      <button type="button" className="mj-studio-meta-run" data-state={cpuRunState} onClick={openSimulation} data-tour="studio-cpu-run">
                         <span className="mj-studio-meta-dot" aria-hidden="true" />
                         {cpuRunState === "none"
                           ? copy.metaNoCpuRun
@@ -926,7 +926,7 @@ export function StudioWorkspace({ artifactId, newDraft = false, locale = "en", l
                       </div>
                     </form>
                   </details>
-                  {artifact ? <button className="mj-secondary-button" type="button" onClick={downloadDraft}>{copy.downloadExport}</button> : null}
+                  {artifact ? <button className="mj-secondary-button" type="button" onClick={downloadDraft} data-tour="studio-download-export">{copy.downloadExport}</button> : null}
                   {!artifact ? (
                     <button
                       className="mj-secondary-button"
@@ -937,9 +937,10 @@ export function StudioWorkspace({ artifactId, newDraft = false, locale = "en", l
                       {busy === "bring" ? copy.bringingYourOwn : copy.bringYourOwn}
                     </button>
                   ) : null}
-                  <button className="mj-primary-button" type="button" disabled={!code.trim() || busy !== null || !isExecutableCircuitFramework(framework) || !isExecutableCircuitFramework(sourceFramework)} onClick={() => void startRun()}>{busy === "save" ? copy.starting : copy.verifySave}</button>
+                  <button className="mj-primary-button" type="button" disabled={!code.trim() || busy !== null || !isExecutableCircuitFramework(framework) || !isExecutableCircuitFramework(sourceFramework)} onClick={() => void startRun()} data-tour="studio-verify-save">{busy === "save" ? copy.starting : copy.verifySave}</button>
                   <button
                     className="mj-icon-button mj-studio-shortcuts-button"
+                    data-tour="studio-shortcuts"
                     type="button"
                     aria-label={copy.shortcutsOpen}
                     title={`${copy.shortcutsOpen} · ?`}
@@ -964,6 +965,7 @@ export function StudioWorkspace({ artifactId, newDraft = false, locale = "en", l
                   {panel === "visual" ? (
                     <button
                       className={`mj-studio-split-toggle${split ? " is-active" : ""}`}
+                      data-tour="studio-split"
                       type="button"
                       aria-pressed={split}
                       aria-keyshortcuts="\"
@@ -1844,7 +1846,7 @@ export function CircuitBuilder({ seed, framework, selectedGate, onSelectGate, on
           whole compression section, ~800px from the wires it acted on. */}
       {seed.readOnly ? null : (
         <div className="mj-studio-canvas-toolbar">
-          <div className="mj-builder-palette" role="toolbar" aria-label={copy.palette}>
+          <div className="mj-builder-palette" role="toolbar" aria-label={copy.palette} data-tour="studio-builder">
             {PALETTE_GROUPS.map((group) => (
               <div className="mj-builder-palette-group" role="group" aria-label={copy.paletteGroups[group.id]} key={group.id}>
                 <span className="mj-builder-palette-label" aria-hidden="true">{copy.paletteGroups[group.id]}</span>
@@ -1999,7 +2001,7 @@ export function CircuitBuilder({ seed, framework, selectedGate, onSelectGate, on
       </div>
 
       {seed.readOnly ? null : (
-        <section className="mj-studio-optimizer" aria-labelledby="studio-optimizer-heading">
+        <section className="mj-studio-optimizer" aria-labelledby="studio-optimizer-heading" data-tour="studio-compress">
           <header className="mj-studio-optimizer-head">
             <div>
               <h3 id="studio-optimizer-heading">{copy.compression}</h3>
@@ -2240,7 +2242,7 @@ function CodeEditor({
               the code it retargets, which is why the conversions read as absent
               (Owner Inbox 2026-07-31). All ten are offered here; the seven that
               cannot be executed say so in the option itself. */}
-          <label className="mj-studio-framework-select">
+          <label className="mj-studio-framework-select" data-tour="studio-framework">
             <span className="sr-only">{locale === "ja" ? "フレームワーク" : "Framework"}</span>
             <select value={framework} onChange={(event) => onFrameworkChange(event.target.value as StudioFramework)}>
               {FRAMEWORK_OPTIONS.map((option) => <option value={option.value} key={option.value}>{option.label}</option>)}
@@ -2407,7 +2409,7 @@ function SimulationPanel({
     ))
     : [];
   return (
-    <section className="mj-studio-surface mj-studio-simulation-panel" aria-label={copy.simulation} {...panelRegion("studio", "simulation")}>
+    <section className="mj-studio-surface mj-studio-simulation-panel" data-tour="studio-simulation-panel" aria-label={copy.simulation} {...panelRegion("studio", "simulation")}>
       <div className="mj-studio-surface-head">
         <div>
           <h2>{copy.simulation}</h2>
@@ -2685,7 +2687,7 @@ function QpuLane({ artifact, shots, copy }: { artifact: LibraryArtifact | null; 
   }, [qpuRun]);
 
   return (
-    <div className="mj-qpu-lane">
+    <div className="mj-qpu-lane" data-tour="studio-qpu">
       {/* Was a permanently disabled button, sitting directly above the device
           picker and submit control that DO work — so the lane read as switched
           off while its real flow was live underneath. It was only ever a label;

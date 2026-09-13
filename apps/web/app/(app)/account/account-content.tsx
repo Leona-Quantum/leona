@@ -11,9 +11,10 @@ import { AccentPicker } from "../../../components/accent-picker";
 import { LanguageToggle } from "../../../components/language-toggle";
 import { ThemeToggle } from "../../../components/theme-toggle";
 import { getPublicLocale } from "../../../lib/public-locale-server";
-import { ACCOUNT_COPY, SHARING_COPY, WORKSPACE_COPY } from "../../../lib/workspace-locale";
+import { ACCOUNT_COPY, SHARING_COPY, TOURS_COPY, WORKSPACE_COPY } from "../../../lib/workspace-locale";
 import { ACCOUNT_TITLE_ID } from "./account-title-id";
 import { AccountPanes } from "./account-panes";
+import { GuidedToursPane } from "../../../components/tour/guided-tours-pane";
 
 /**
  * The settings body, rendered identically by the full page and by the modal.
@@ -76,6 +77,12 @@ export async function AccountContent() {
           </div>
         </section>
       ),
+    },
+    {
+      // Settings → Guided tours (TUTORIAL.md): restart or resume any tour.
+      id: "tours",
+      label: TOURS_COPY[locale].settings.label,
+      panel: <GuidedToursPane locale={locale} />,
     },
     {
       id: "identity",
