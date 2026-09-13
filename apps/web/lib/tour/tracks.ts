@@ -53,7 +53,7 @@ const firstLight: TourTrack = {
     { id: "visual", target: "studio-tab-visual", placement: "bottom", on: "/studio", go: "/studio?new=1", expect: { kind: "click", match: "studio-tab-visual" } },
     { id: "gates", target: "studio-builder", placement: "top", on: "/studio", go: "/studio?new=1" },
     { id: "notebooks", target: "rail-notebooks", placement: "right", on: "@workspace", expect: { kind: "route", match: "/notebooks" } },
-    { id: "brief", target: "notebooks-brief", placement: "bottom", on: "/notebooks", go: "/notebooks", expect: { kind: "value", match: "\\S{3,}" } },
+    { id: "brief", target: "notebooks-brief", placement: "bottom", on: "/notebooks", go: "/notebooks", expect: { kind: "value", match: "^(?:\\s*\\S){3}" } },
     { id: "level", target: "notebooks-options", placement: "top", on: "/notebooks", go: "/notebooks", expect: { kind: "click", match: "notebooks-options" } },
     { id: "create", target: "notebooks-create", placement: "top", on: "/notebooks", go: "/notebooks", expect: { kind: "route", match: "/notebooks/*" }, needs: "api" },
     { id: "atlas", target: "rail-atlas", placement: "right", on: "@workspace" },
@@ -69,7 +69,7 @@ const build: TourTrack = {
   steps: [
     { id: "mode", target: "run-mode", placement: "top", expect: { kind: "value", match: "^execute$" }, fill: "execute", wrongTarget: "run-framework" },
     { id: "framework", target: "run-framework", placement: "top" },
-    { id: "prompt", target: "run-prompt", placement: "top", expect: { kind: "value", match: "\\S{12,}" } },
+    { id: "prompt", target: "run-prompt", placement: "top", expect: { kind: "value", match: "^(?:\\s*\\S){12}" } },
     { id: "run", target: "run-submit", placement: "top", expect: { kind: "route", match: "/run/*" }, needs: "api", checksPrompt: true },
     { id: "plan", target: "run-activity", placement: "right", on: "/run/*", expect: { kind: "wait", match: "run-final-output" }, needs: "api" },
     { id: "result", target: "run-final-output", placement: "top", on: "/run/*", needs: "api" },
@@ -94,7 +94,7 @@ const teach: TourTrack = {
   on: "/notebooks",
   go: "/notebooks",
   steps: [
-    { id: "brief", target: "notebooks-brief", placement: "bottom", expect: { kind: "value", match: "\\S{3,}" } },
+    { id: "brief", target: "notebooks-brief", placement: "bottom", expect: { kind: "value", match: "^(?:\\s*\\S){3}" } },
     { id: "starters", target: "notebooks-starters", placement: "top", needs: "api" },
     { id: "options", target: "notebooks-options", placement: "top", expect: { kind: "click", match: "notebooks-options" } },
     { id: "fields", target: "notebooks-fields", placement: "top" },
@@ -115,7 +115,7 @@ const read: TourTrack = {
   on: "/repository",
   go: "/repository",
   steps: [
-    { id: "search", target: "atlas-search", placement: "bottom", expect: { kind: "value", match: "\\S{2,}" } },
+    { id: "search", target: "atlas-search", placement: "bottom", expect: { kind: "value", match: "^(?:\\s*\\S){2}" } },
     { id: "filters", target: "atlas-filters", placement: "bottom" },
     { id: "entry", target: "atlas-entry-link", placement: "top", expect: { kind: "route", match: "/repository/*" } },
     { id: "topics", target: "atlas-entry-topics", placement: "bottom", on: "/repository/*" },
@@ -173,7 +173,7 @@ const shows: TourTrack[] = [
     { id: "preferences", copyKey: "around.preferences", target: "settings-preferences", placement: "right", on: "/account", go: "/account" },
   ]),
   show("show-lesson", "@workspace", "/notebooks", [
-    { id: "brief", copyKey: "teach.brief", target: "notebooks-brief", placement: "bottom", on: "/notebooks", expect: { kind: "value", match: "\\S{3,}" } },
+    { id: "brief", copyKey: "teach.brief", target: "notebooks-brief", placement: "bottom", on: "/notebooks", expect: { kind: "value", match: "^(?:\\s*\\S){3}" } },
     { id: "options", copyKey: "teach.options", target: "notebooks-options", placement: "top", on: "/notebooks", expect: { kind: "click", match: "notebooks-options" } },
     { id: "create", copyKey: "teach.create", target: "notebooks-create", placement: "top", on: "/notebooks", expect: { kind: "route", match: "/notebooks/*" }, needs: "api" },
   ]),
@@ -181,7 +181,7 @@ const shows: TourTrack[] = [
     { id: "make", copyKey: "teach.make", target: "qapps-create-run", placement: "bottom" },
   ]),
   show("show-atlas", "/repository", "/repository", [
-    { id: "search", copyKey: "read.search", target: "atlas-search", placement: "bottom", expect: { kind: "value", match: "\\S{2,}" } },
+    { id: "search", copyKey: "read.search", target: "atlas-search", placement: "bottom", expect: { kind: "value", match: "^(?:\\s*\\S){2}" } },
     { id: "filters", copyKey: "read.filters", target: "atlas-filters", placement: "bottom" },
   ]),
 ];

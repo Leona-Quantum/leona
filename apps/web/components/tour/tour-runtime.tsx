@@ -209,6 +209,24 @@ export function TourRuntime({ locale: localeProp, surface, initialCommand = null
   const [cursor, setCursor] = useState({ x: 0, y: 0, visible: false, pressing: false });
   const [orb, setOrb] = useState({ x: -60, y: -60, trail: 0 });
   const [missFlash, setMissFlash] = useState(false);
+  // The page must be hydrated before the tour changes attributes on it. Hydration
+  // yields to the event loop, and React tags a node before it commits, so a tour
+  // that begins on a full page load (the Atlas) made siblings inert mid-hydration
+  // and React reported a mismatch it does not patch (headless walk, dev log).
+  // The spotlight and card draw at once; only inert and aria-describedby wait.
+  const [settled, setSettled] = useState(false);
+  useEffect(() => {
+    let timer = 0;
+    const arm = () => {
+      timer = window.setTimeout(() => setSettled(true), 1500);
+    };
+    if (document.readyState === "complete") arm();
+    else window.addEventListener("load", arm, { once: true });
+    return () => {
+      window.clearTimeout(timer);
+      window.removeEventListener("load", arm);
+    };
+  }, []);
 
   const layerRef = useRef<HTMLDivElement>(null);
   const cardRef = useRef<HTMLDivElement>(null);
@@ -635,7 +653,7 @@ export function TourRuntime({ locale: localeProp, surface, initialCommand = null
   // waits for an action, focus goes to the control and the rest of the page is inert.
   const waitsForAction = running && ui.phase === "waiting" && !chooserOpen;
   useEffect(() => {
-    if (!running || !target) return;
+    if (!running || !target || !settled) return;
     const control = controlIn(target) ?? target;
     const undoDescribe = describeWith(control, TOUR_CARD_BODY_ID);
     if (!waitsForAction) return undoDescribe;
@@ -646,7 +664,7 @@ export function TourRuntime({ locale: localeProp, surface, initialCommand = null
       undoInert();
       undoDescribe();
     };
-  }, [running, target, waitsForAction]);
+  }, [running, target, waitsForAction, settled]);
 
   // Escape skips the step; arrow keys move, unless a field or a tab bar owns them.
   useEffect(() => {

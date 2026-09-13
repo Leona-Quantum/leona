@@ -73,8 +73,21 @@ test("route patterns: exact, one-or-more segments, prefix, workspace, locale", (
 test("values match by pattern, and a broken pattern fails closed", () => {
   assert.equal(valueMatches("^cirq$", "cirq"), true);
   assert.equal(valueMatches("^cirq$", "qiskit"), false);
-  assert.equal(valueMatches("\\S{3,}", "  ab "), false);
   assert.equal(valueMatches("(", "anything"), false);
+});
+
+test("a length rule counts characters across words, not one unbroken run (found by the headless walk)", () => {
+  const prompt = build.steps.find((step) => step.id === "prompt")!.expect!.match;
+  assert.equal(valueMatches(prompt, "Find the ground state energy of H2 with VQE"), true, "ordinary words must pass");
+  assert.equal(valueMatches(prompt, "  short one  "), false, "eight non-space characters is not twelve");
+  const brief = firstLight.steps.find((step) => step.id === "brief")!.expect!.match;
+  assert.equal(valueMatches(brief, "a b c"), true);
+  assert.equal(valueMatches(brief, "  ab "), false);
+  for (const tour of ALL_TOURS) {
+    for (const step of tour.steps) {
+      if (step.expect?.kind === "value") assert.doesNotMatch(step.expect.match, /\\S\{\d+,\}/, `${tour.id}.${step.id} uses a run-length rule`);
+    }
+  }
 });
 
 test("a click on the dimmed page is a miss only when the step waits for an action", () => {
