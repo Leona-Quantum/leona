@@ -324,7 +324,7 @@ function ExampleStrip({ copy, locale, onPick }: { copy: (typeof WORKSPACE_COPY)[
     <section className="mj-run-home-examples" aria-label={copy.examplesTitle}>
       <div className="mj-nala-starters">
         {starters.map((example, index) => (
-          <button className="mj-nala-starter" key={example.title} type="button" onClick={() => onPick(example.prompt)}>
+          <button className="mj-nala-starter" key={example.title} type="button" onClick={() => onPick(example.prompt)} data-tour={index === 0 ? "run-starter-bell" : undefined}>
             <svg viewBox="0 0 32 32" aria-hidden="true" fill="none">
               {index === 0 ? <><path d="M16 16c-4-9-12-9-12 0s8 9 12 0 12-9 12 0-8 9-12 0Z" /><circle cx="9" cy="16" r="2" /><circle cx="23" cy="16" r="2" /></> : index === 1 ? <><path d="M7 7v18m0-18h18M7 16h12M7 25h18" /><circle cx="7" cy="7" r="2" /><circle cx="25" cy="7" r="2" /><circle cx="19" cy="16" r="2" /><circle cx="25" cy="25" r="2" /></> : <><path d="M3 9h26M3 23h26M11 9v14M23 9v14" /><circle cx="11" cy="9" r="3" /><rect x="19" y="19" width="8" height="8" rx="1" /></>}
             </svg>

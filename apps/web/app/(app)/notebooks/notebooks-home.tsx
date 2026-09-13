@@ -338,7 +338,7 @@ export function NotebooksHome({ locale = "en", seedSlug = "" }: { locale?: Publi
             <h1>{copy.title}</h1>
             <p>{copy.lede}</p>
           </div>
-          <Link className="mj-secondary-button" href="/notebooks/courses">
+          <Link className="mj-secondary-button" href="/notebooks/courses" data-tour="notebooks-courses">
             {WORKSPACE_COPY[locale].courses.coursesTab}
           </Link>
         </header>
@@ -346,7 +346,7 @@ export function NotebooksHome({ locale = "en", seedSlug = "" }: { locale?: Publi
         <form className="mj-notebooks-composer" onSubmit={(event) => void submit(event)} aria-busy={busy}>
           <fieldset className="mj-notebooks-composer-content" disabled={busy}>
             <legend className="sr-only">{copy.create}</legend>
-          <label className="mj-notebooks-brief">
+          <label className="mj-notebooks-brief" data-tour="notebooks-brief">
             <span>{copy.briefLabel}</span>
             <textarea
               value={brief}
@@ -358,7 +358,7 @@ export function NotebooksHome({ locale = "en", seedSlug = "" }: { locale?: Publi
           </label>
 
           {templates && templates.starters.length > 0 ? (
-            <div className="mj-notebooks-starters">
+            <div className="mj-notebooks-starters" data-tour="notebooks-starters">
               <h2 className="mj-notebooks-starters-label">{copy.startersLabel}</h2>
               <div className="mj-notebooks-starter-list">
                 {visibleStarters.map((starter) => (
@@ -391,12 +391,12 @@ export function NotebooksHome({ locale = "en", seedSlug = "" }: { locale?: Publi
             </div>
           ) : null}
 
-          <details className="mj-notebooks-disclosure">
+          <details className="mj-notebooks-disclosure" data-tour="notebooks-options">
             <summary>
               <span>{locale === "ja" ? "ノートブックの設定" : "Notebook options"}</span>
               <span className="mj-notebooks-option-summary">{copy.kindOption[kind]} · {copy.languageOption[language]}</span>
             </summary>
-          <div className="mj-notebooks-fields">
+          <div className="mj-notebooks-fields" data-tour="notebooks-fields">
             <ComposerField label={copy.kindLabel}>
               <select
                 className="mj-notebooks-select"
@@ -483,7 +483,7 @@ export function NotebooksHome({ locale = "en", seedSlug = "" }: { locale?: Publi
           {submitError ? <p role="alert" className="mj-notebooks-error">{submitError}</p> : null}
 
           <div className="mj-notebooks-composer-actions">
-            <button className="mj-primary-button" type="submit" disabled={busy || !brief.trim()}>
+            <button className="mj-primary-button" type="submit" disabled={busy || !brief.trim()} data-tour="notebooks-create">
               {submitting ? copy.creating : copy.create}
             </button>
             <button type="button" className="mj-secondary-button mj-notebooks-import" disabled={busy} onClick={() => importInput.current?.click()}>

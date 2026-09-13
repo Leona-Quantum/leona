@@ -674,7 +674,7 @@ export function RepositoryBrowser({
           <span>{familyLabel(entry.algorithmFamily, locale)}</span>
           {renderCostChip(entry.slug)}
         </div>
-        <h3><a href={`/repository/${entry.slug}`}>{title}</a></h3>
+        <h3><a href={`/repository/${entry.slug}`} data-tour="atlas-entry-link">{title}</a></h3>
         <p>{description}</p>
         <div className="mj-repo-card-foot">
           <div className="mj-repo-card-links">
@@ -988,7 +988,7 @@ export function RepositoryBrowser({
             this route address the *data* a reader is looking at, and whether
             a menu happens to be unfolded is not that. The chips above carry
             the part of this that is data. */}
-        <div className="mj-facet-bar" role="group" aria-label={copy.filters}>
+        <div className="mj-facet-bar" role="group" aria-label={copy.filters} data-tour="atlas-filters">
           {facetMenu({
             key: "topic",
             label: copy.topic,
@@ -1209,6 +1209,7 @@ export function RepositoryBrowser({
             // names for one thing agree. There is no <form> on this page, so
             // `name` changes no submission behaviour.
             id="repository-search"
+            data-tour="atlas-search"
             name="q"
             value={query}
             onChange={(event) => {
@@ -1364,7 +1365,7 @@ export function RepositoryBrowser({
               return (
                 <article className="mj-gate-detail-card">
                   <div className="mj-gate-card-head">
-                    <h3><a href={`/repository/${entry.slug}`}>{title}</a></h3>
+                    <h3><a href={`/repository/${entry.slug}`} data-tour="atlas-entry-link">{title}</a></h3>
                     <VerificationTierBadge methods={entryVerificationMethods(entry)} locale={locale} />
                   </div>
                   <p className="mj-gate-card-family">{familyLabel(entry.algorithmFamily, locale)}</p>
