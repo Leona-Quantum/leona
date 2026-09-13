@@ -4,17 +4,25 @@
  * owner relaying readers: *"the circuit example should stand out more rather
  * than text information"*).
  *
- * Pure, so a test can hold it to the two rules that matter:
+ * Pure, so a test can hold it to the rules that matter:
  *
  * 1. **One column per operation, in the record's own order.** Operations are
  *    not packed into shared moments. Packing would be a claim that two steps
  *    commute and can run side by side, and a record written as
- *    `prepare → measure → update` says nothing of the kind. The drawing shows
- *    the list the record holds, left to right.
- * 2. **Nothing is added.** An operation naming a wire the record does not draw
- *    keeps its column only for the wires that exist; one naming none of them is
- *    not drawn and is counted in `skipped`, so a caller can say so rather than
- *    draw a box on no wire. A thumbnail past its cap reports `hidden`.
+ *    `prepare → measure → update` says nothing of the kind.
+ * 2. **One box per step, and it carries the step's name.** An operation on
+ *    wires that are not adjacent is drawn the way a circuit diagram draws a
+ *    gate across them: one box from its first wire to its last, with every wire
+ *    in between that it does not act on listed in `passes`, so the figure draws
+ *    that wire across the box, dimmed. The earlier shape — a box per touched
+ *    wire, with the name on the first — drew 86 of the corpus's 1,520
+ *    operations with an empty box on their other wires, which reads as a
+ *    rendering bug. Not a control dot either: a dot means "control", and the
+ *    corpus has `Swap (reversal)` on non-adjacent wires, which is no such thing.
+ * 3. **Nothing is added.** An operation naming no wire the record draws is not
+ *    drawn and is counted in `skipped`; one with a blank name is not drawn and
+ *    is counted in `unnamed`, rather than drawn as a box with nothing in it. A
+ *    thumbnail past its cap reports `hidden`.
  */
 
 export type AtlasCircuitTone = "accent" | "ok" | "warn" | "neutral";
@@ -32,20 +40,32 @@ export interface AtlasCircuitSource {
 
 export type AtlasCircuitDensity = "hero" | "thumb";
 
+export interface AtlasCircuitBox {
+  readonly x: number;
+  readonly y: number;
+  readonly width: number;
+  readonly height: number;
+}
+
 export interface AtlasCircuitStep {
   /** Position in the record's own operation list, so a caption can name it. */
   readonly index: number;
+  /** The record's own name for it, never blank — a blank one is not drawn. */
   readonly label: string;
   readonly tone: AtlasCircuitTone;
   /** The wires it acts on that the record draws — unique, ascending. */
   readonly wires: readonly number[];
-  /** True when those wires are adjacent, so one box can span them. */
-  readonly contiguous: boolean;
-  readonly x: number;
-  readonly width: number;
+  /** Wires strictly between its first and last that it does not act on; drawn across the box, dimmed. */
+  readonly passes: readonly number[];
+  /** The one box this step draws, spanning its first wire to its last. */
+  readonly box: AtlasCircuitBox;
   readonly center: number;
-  readonly top: number;
-  readonly bottom: number;
+  /**
+   * Where the name goes: the box's middle, or — when a skipped wire crosses the
+   * box — its first wire, so the name never sits on the wire passing behind it
+   * and hides the one mark that says the step does not act there.
+   */
+  readonly labelY: number;
 }
 
 export interface AtlasCircuitLayout {
@@ -58,6 +78,8 @@ export interface AtlasCircuitLayout {
   readonly steps: readonly AtlasCircuitStep[];
   /** Operations that name no drawn wire, and so have no column. */
   readonly skipped: number;
+  /** Operations whose name is blank, and so have no column. */
+  readonly unnamed: number;
   /** Thumbnail only: drawable steps past the cap. Always 0 for a hero. */
   readonly hidden: number;
 }
@@ -117,31 +139,39 @@ export function layoutAtlasCircuit(
     : THUMB.padX;
   const wireY = source.wires.map((_, index) => padY + boxHalf + index * rowGap);
 
-  const drawable = source.operations
+  const onWires = source.operations
     .map((operation, index) => ({ operation, index, wires: drawableWires(operation.qubits, wireCount) }))
     .filter((candidate) => candidate.wires.length > 0);
-  const skipped = source.operations.length - drawable.length;
+  const skipped = source.operations.length - onWires.length;
+  const drawable = onWires.filter((candidate) => candidate.operation.label.trim() !== "");
+  const unnamed = onWires.length - drawable.length;
   const shown = hero ? drawable : drawable.slice(0, THUMB.cap);
   const hidden = drawable.length - shown.length;
 
   let cursor = labelWidth + (hero ? gap : 0);
   const steps: AtlasCircuitStep[] = shown.map(({ operation, index, wires }) => {
-    const width = hero ? Math.max(HERO.opMin, glyphs(operation.label) * HERO.opCharWidth + HERO.opPad) : THUMB.opWidth;
+    const label = operation.label.trim();
+    const width = hero ? Math.max(HERO.opMin, glyphs(label) * HERO.opCharWidth + HERO.opPad) : THUMB.opWidth;
     const x = cursor;
     cursor += width + gap;
     const first = wires[0];
     const last = wires[wires.length - 1];
+    const touched = new Set(wires);
+    const passes: number[] = [];
+    for (let wire = first + 1; wire < last; wire += 1) {
+      if (!touched.has(wire)) passes.push(wire);
+    }
+    const top = wireY[first] - boxHalf;
+    const bottom = wireY[last] + boxHalf;
     return {
       index,
-      label: operation.label,
+      label,
       tone: operation.tone,
       wires,
-      contiguous: last - first === wires.length - 1,
-      x,
-      width,
+      passes,
+      box: { x, y: top, width, height: bottom - top },
       center: x + width / 2,
-      top: wireY[first] - boxHalf,
-      bottom: wireY[last] + boxHalf,
+      labelY: passes.length === 0 ? (top + bottom) / 2 : wireY[first],
     };
   });
 
@@ -150,11 +180,13 @@ export function layoutAtlasCircuit(
     ? Math.max(contentEnd + HERO.padRight, labelWidth + 160)
     : contentEnd + THUMB.padX + (hidden > 0 ? THUMB.ellipsis : 0);
   const height = wireCount > 0 ? wireY[wireCount - 1] + boxHalf + padY : padY * 2 + boxHalf * 2;
-  return { density, width, height, labelWidth, wireY, steps, skipped, hidden };
+  return { density, width, height, labelWidth, wireY, steps, skipped, unnamed, hidden };
 }
 
 /** Whether a record's drawing has anything to draw at all. */
 export function hasAtlasCircuit(source: AtlasCircuitSource | undefined | null): source is AtlasCircuitSource {
   if (!source || source.wires.length === 0) return false;
-  return source.operations.some((operation) => drawableWires(operation.qubits, source.wires.length).length > 0);
+  return source.operations.some(
+    (operation) => operation.label.trim() !== "" && drawableWires(operation.qubits, source.wires.length).length > 0,
+  );
 }

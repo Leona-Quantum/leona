@@ -132,7 +132,8 @@
   transition: fill var(--dur-hover) var(--ease-out-ui), opacity var(--dur-hover) var(--ease-out-ui);
 }
 .mj-atlas-op text { fill: var(--text-0); font-family: var(--font-mono); font-size: 13px; pointer-events: none; }
-.mj-atlas-op-link { stroke: var(--op-tone); stroke-width: 1.5; }
+/* A wire the step spans but does not act on, drawn across its box so it reads as passing behind. */
+.mj-atlas-op-pass { stroke: var(--text-1); stroke-width: 1.5; stroke-dasharray: 3 4; opacity: 0.7; pointer-events: none; }
 .mj-atlas-op:hover rect { fill: color-mix(in srgb, var(--op-tone) 18%, var(--bg-2)); }
 .mj-atlas-op[data-state="on"] rect { fill: color-mix(in srgb, var(--op-tone) 30%, var(--bg-2)); stroke-width: 2.5; }
 .mj-atlas-op[data-state="ahead"] { opacity: 0.42; }
@@ -273,8 +274,8 @@
 .mj-atlas-thumb { display: block; width: 100%; height: 100%; }
 .mj-atlas-thumb-wire { stroke: var(--border-0); stroke-width: 1; vector-effect: non-scaling-stroke; }
 .mj-atlas-thumb-op { --op-tone: var(--text-2); }
-rect.mj-atlas-thumb-op, .mj-atlas-thumb-op rect { fill: color-mix(in srgb, var(--op-tone) 32%, var(--bg-1)); stroke: var(--op-tone); stroke-width: 1; vector-effect: non-scaling-stroke; }
-.mj-atlas-thumb-op line { stroke: var(--op-tone); stroke-width: 1; vector-effect: non-scaling-stroke; }
+.mj-atlas-thumb-op rect { fill: color-mix(in srgb, var(--op-tone) 32%, var(--bg-1)); stroke: var(--op-tone); stroke-width: 1; vector-effect: non-scaling-stroke; }
+.mj-atlas-thumb-pass { stroke: var(--text-1); stroke-width: 1; opacity: 0.85; vector-effect: non-scaling-stroke; }
 .mj-atlas-thumb-more { fill: var(--text-2); }
 @media (max-width: 820px) {
   .mj-atlas-figure:has(> .mj-atlas-figure-aside) { grid-template-columns: minmax(0, 1fr); }

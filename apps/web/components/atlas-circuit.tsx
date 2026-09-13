@@ -49,6 +49,8 @@ const COPY = {
     whole: "Whole diagram",
     skipped: (n: number) =>
       `${n} ${n === 1 ? "operation names a wire" : "operations name wires"} this drawing does not have, so ${n === 1 ? "it is" : "they are"} not shown.`,
+    unnamed: (n: number) =>
+      `${n} ${n === 1 ? "operation has" : "operations have"} no name in the record, so ${n === 1 ? "it is" : "they are"} not shown.`,
   },
   ja: {
     figure: (title: string) => `${title}の回路またはワークフロー図`,
@@ -64,6 +66,7 @@ const COPY = {
     scrub: "図をステップごとに見る",
     whole: "図の全体",
     skipped: (n: number) => `${n} 件の操作は、この図にないワイヤーを指しているため表示していません。`,
+    unnamed: (n: number) => `${n} 件の操作は、項目に名前が記されていないため表示していません。`,
   },
 } as const;
 
@@ -139,7 +142,7 @@ export function AtlasCircuitFigure({
     followRef.current = false;
     const step = layout.steps[pinned];
     const left = stage.scrollLeft;
-    if (step.x < left + 24 || step.x + step.width > left + stage.clientWidth - 24) {
+    if (step.box.x < left + 24 || step.box.x + step.box.width > left + stage.clientWidth - 24) {
       stage.scrollTo({
         left: Math.max(0, step.center - stage.clientWidth / 2),
         behavior: prefersReducedMotion() ? "auto" : "smooth",
@@ -206,36 +209,33 @@ export function AtlasCircuitFigure({
             </g>
             {layout.steps.map((step, position) => {
               const state = shown === null ? undefined : position === shown ? "on" : position < shown ? "past" : "ahead";
-              const last = step.wires[step.wires.length - 1];
-              const half = step.bottom - layout.wireY[last];
-              const labelY = step.contiguous ? (step.top + step.bottom) / 2 : layout.wireY[step.wires[0]];
+              // One box per step, from its first wire to its last, named. A
+              // wire in between that the step does not act on is drawn across
+              // the box, dimmed — the circuit-diagram convention for a gate on
+              // non-adjacent wires — so no box is ever drawn without a name.
               return (
                 <g
                   key={step.index}
                   className="mj-atlas-op"
                   data-tone={step.tone}
                   data-state={state}
+                  data-wires={step.wires.join(" ")}
                   onMouseEnter={() => setHover(position)}
                   onClick={() => go(position)}
                 >
                   <title>{stepCaption(step, position, total, source.wires, locale)}</title>
-                  {step.contiguous ? (
-                    <rect x={step.x} y={step.top} width={step.width} height={step.bottom - step.top} rx={9} />
-                  ) : (
-                    <>
-                      <line
-                        className="mj-atlas-op-link"
-                        x1={step.center}
-                        x2={step.center}
-                        y1={layout.wireY[step.wires[0]]}
-                        y2={layout.wireY[last]}
-                      />
-                      {step.wires.map((wire) => (
-                        <rect key={wire} x={step.x} y={layout.wireY[wire] - half} width={step.width} height={half * 2} rx={9} />
-                      ))}
-                    </>
-                  )}
-                  <text x={step.center} y={labelY} textAnchor="middle" dominantBaseline="central">
+                  <rect x={step.box.x} y={step.box.y} width={step.box.width} height={step.box.height} rx={9} />
+                  {step.passes.map((wire) => (
+                    <line
+                      key={wire}
+                      className="mj-atlas-op-pass"
+                      x1={step.box.x}
+                      x2={step.box.x + step.box.width}
+                      y1={layout.wireY[wire]}
+                      y2={layout.wireY[wire]}
+                    />
+                  ))}
+                  <text x={step.center} y={step.labelY} textAnchor="middle" dominantBaseline="central">
                     {step.label}
                   </text>
                 </g>
@@ -279,10 +279,11 @@ export function AtlasCircuitFigure({
         <p className="mj-atlas-live" aria-live="polite">
           {live}
         </p>
-        {caption || layout.skipped > 0 ? (
+        {caption || layout.skipped > 0 || layout.unnamed > 0 ? (
           <figcaption className="mj-atlas-figcaption">
             {caption}
             {layout.skipped > 0 ? <span className="mj-atlas-skipped"> {copy.skipped(layout.skipped)}</span> : null}
+            {layout.unnamed > 0 ? <span className="mj-atlas-skipped"> {copy.unnamed(layout.unnamed)}</span> : null}
           </figcaption>
         ) : null}
       </div>
@@ -330,7 +331,7 @@ export function AtlasOutcomeBars({
 export function AtlasCircuitThumb({ source }: { source: AtlasCircuitSource }): React.ReactElement | null {
   const layout = layoutAtlasCircuit(source, "thumb");
   if (layout.steps.length === 0) return null;
-  const lastStep = layout.steps[layout.steps.length - 1];
+  const lastBox = layout.steps[layout.steps.length - 1].box;
   const midY = layout.height / 2;
   return (
     <svg
@@ -343,23 +344,25 @@ export function AtlasCircuitThumb({ source }: { source: AtlasCircuitSource }): R
       {layout.wireY.map((y, index) => (
         <line key={index} className="mj-atlas-thumb-wire" x1={2} x2={layout.width - 2} y1={y} y2={y} />
       ))}
-      {layout.steps.map((step) => {
-        const last = step.wires[step.wires.length - 1];
-        const half = step.bottom - layout.wireY[last];
-        return step.contiguous ? (
-          <rect key={step.index} className="mj-atlas-thumb-op" data-tone={step.tone} x={step.x} y={step.top} width={step.width} height={step.bottom - step.top} rx={2.5} />
-        ) : (
-          <g key={step.index} className="mj-atlas-thumb-op" data-tone={step.tone}>
-            <line x1={step.center} x2={step.center} y1={layout.wireY[step.wires[0]]} y2={layout.wireY[last]} />
-            {step.wires.map((wire) => (
-              <rect key={wire} x={step.x} y={layout.wireY[wire] - half} width={step.width} height={half * 2} rx={2.5} />
-            ))}
-          </g>
-        );
-      })}
+      {layout.steps.map((step) => (
+        // Same rule as the hero: one box per step, the skipped wire across it.
+        <g key={step.index} className="mj-atlas-thumb-op" data-tone={step.tone}>
+          <rect x={step.box.x} y={step.box.y} width={step.box.width} height={step.box.height} rx={2.5} />
+          {step.passes.map((wire) => (
+            <line
+              key={wire}
+              className="mj-atlas-thumb-pass"
+              x1={step.box.x}
+              x2={step.box.x + step.box.width}
+              y1={layout.wireY[wire]}
+              y2={layout.wireY[wire]}
+            />
+          ))}
+        </g>
+      ))}
       {layout.hidden > 0
         ? [0, 1, 2].map((dot) => (
-            <circle key={dot} className="mj-atlas-thumb-more" cx={lastStep.x + lastStep.width + 6 + dot * 4} cy={midY} r={1.2} />
+            <circle key={dot} className="mj-atlas-thumb-more" cx={lastBox.x + lastBox.width + 6 + dot * 4} cy={midY} r={1.2} />
           ))
         : null}
     </svg>
