@@ -26,6 +26,8 @@ import type { ResolvedBrowseParams } from "../../lib/repository/browse-params";
 import type { RepositoryBrowseView, BrowseRow } from "../../lib/repository/browse-view";
 import { PIPELINE_STANCES, type InterfaceStance } from "../../lib/repository/interface";
 import { TOPICS_BY_ID, type TopicId } from "../../lib/repository/topics";
+import { AtlasCircuitThumb } from "../../components/atlas-circuit";
+import { hasAtlasCircuit } from "../../lib/repository/atlas-circuit-layout";
 
 const COPY = {
   en: {
@@ -659,6 +661,13 @@ export function RepositoryBrowser({
     const description = locale === "ja" ? entry.descriptionJa : entry.description;
     return (
       <article className="mj-repo-card">
+        {/* The record's own drawing at card size (UX pass 6). Decorative and
+            unlabelled, so the title stays the one name and the one link. */}
+        {hasAtlasCircuit(entry.visualization) ? (
+          <div className="mj-atlas-thumb-slot">
+            <AtlasCircuitThumb source={entry.visualization} />
+          </div>
+        ) : null}
         {extraHead}
         <div className="mj-repo-card-top">
           <VerificationTierBadge methods={entryVerificationMethods(entry)} locale={locale} />

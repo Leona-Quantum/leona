@@ -32,6 +32,9 @@ import type {
   SourceCoverageStatus,
 } from "../../../lib/repository/types";
 import { RepositoryExportAction } from "../repository-export";
+import { AtlasCircuitFigure, AtlasOutcomeBars } from "../../../components/atlas-circuit";
+import { AtlasGlance, type AtlasGlanceItem } from "../../../components/atlas-glance";
+import { hasAtlasCircuit } from "../../../lib/repository/atlas-circuit-layout";
 
 const COPY = {
   en: {
@@ -92,6 +95,13 @@ const COPY = {
     contributor: "Contributor",
     reviewedBy: "Reviewed by",
     license: "License",
+    // UX pass 6: the figure and the strip under it.
+    glance: "At a glance",
+    steps: "Steps",
+    wires: "Wires",
+    papers: "Papers",
+    onWires: "on",
+    sourceReports: "Source reports",
   },
   ja: {
     back: "← Atlas",
@@ -151,6 +161,12 @@ const COPY = {
     contributor: "投稿者",
     reviewedBy: "確認者",
     license: "ライセンス",
+    glance: "概要",
+    steps: "ステップ",
+    wires: "ワイヤー",
+    papers: "論文",
+    onWires: "対象：",
+    sourceReports: "出典の記載",
   },
 } as const;
 type RepositoryCopy = (typeof COPY)[keyof typeof COPY];
@@ -385,6 +401,31 @@ export function RepositoryEntryView({
 
   const facts = [...entry.resources, ...entry.metadata];
   const industry = ja ? entry.industryUseCasesJa ?? entry.industryUseCases : entry.industryUseCases;
+  // UX pass 6: the drawing leads the page, and a strip under it says what the
+  // record holds. Every tile is a field of this record read as it is — the step
+  // and wire counts are the lengths of its own lists, the resource rows are its
+  // own labels and values — and a field it does not carry gives no tile.
+  const drawing = entry.visualization;
+  const hasDrawing = hasAtlasCircuit(drawing);
+  const reported = [
+    entry.sourceCoverage?.simulation === "reported" ? copy.coverageSimulation : null,
+    entry.sourceCoverage?.hardware === "reported" ? copy.coverageHardware : null,
+  ].filter((axis): axis is NonNullable<typeof axis> => axis !== null);
+  const glance: AtlasGlanceItem[] = [
+    ...(hasDrawing
+      ? [
+          { key: "steps", label: copy.steps, value: String(drawing.operations.length) },
+          { key: "wires", label: copy.wires, value: String(drawing.wires.length) },
+        ]
+      : []),
+    ...entry.resources.map((row) => ({ key: `resource-${row.label}`, label: dataLabel(row.label, locale), value: row.value })),
+    ...(reported.length > 0
+      ? [{ key: "source-reports", label: copy.sourceReports, value: reported.join(ja ? "・" : ", "), tone: "ok" as const }]
+      : []),
+    ...(entry.literature?.length
+      ? [{ key: "papers", label: copy.papers, value: String(entry.literature.length), href: "#mj-record-references" }]
+      : []),
+  ];
 
   function body(id: RecordSectionId): ReactNode {
     switch (id) {
@@ -409,7 +450,23 @@ export function RepositoryEntryView({
       case "example":
         return (
           <>
-            <CircuitDiagram entry={entry} locale={locale} />
+            {/* The drawing leads the page now, above these sections, so this
+                section lists its steps in words instead of drawing it twice —
+                the reading a screen reader, a copy-paste and a crawler get. */}
+            <ol className="mj-atlas-steplist">
+              {entry.visualization.operations.map((operation, index) => (
+                <li key={`${operation.label}-${index}`}>
+                  <code>{operation.label}</code>{" "}
+                  <span>
+                    {copy.onWires}{" "}
+                    {operation.qubits
+                      .map((qubit) => entry.visualization.wires[qubit])
+                      .filter((wire): wire is string => wire !== undefined)
+                      .join(ja ? "、" : ", ")}
+                  </span>
+                </li>
+              ))}
+            </ol>
             {entry.visualization.outcomes.length > 0 ? (
               <div className="mj-repository-outcomes" aria-label={copy.outcomes}>
                 {entry.visualization.outcomes.map((outcome) => (
@@ -581,6 +638,24 @@ export function RepositoryEntryView({
           <RepositoryExportAction slug={entry.slug} title={title} isSignedIn={isSignedIn} signInHref={signInHref} locale={locale} />
         </p>
 
+        {hasDrawing || glance.length > 0 ? (
+          <section className="mj-atlas-hero" aria-label={copy.glance}>
+            {hasDrawing ? (
+              <AtlasCircuitFigure
+                source={drawing}
+                title={title}
+                locale={locale}
+                aside={
+                  drawing.outcomes.length > 0 ? (
+                    <AtlasOutcomeBars outcomes={drawing.outcomes} label={copy.outcomes} />
+                  ) : undefined
+                }
+              />
+            ) : null}
+            <AtlasGlance items={glance} label={copy.glance} />
+          </section>
+        ) : null}
+
         <div className="mj-card-sections">
           <AtlasSectionNav
             prefix="mj-record"
@@ -610,7 +685,7 @@ export function RepositoryEntryView({
                 card — the owner's *"it isn't needed for papers to be their
                 own section"*. */}
             {entry.literature?.length ? (
-              <section className="mj-card-references">
+              <section className="mj-card-references" id="mj-record-references">
                 <h2>{chrome.references}</h2>
                 <ul className="mj-card-list">
                   {entry.literature.map((citation) => (
@@ -877,50 +952,4 @@ function defaultClassicalComparison(entry: PublicRepositoryEntry): PublicReposit
     practicalRead: "Compare fidelity, samples, gate depth, noise, memory, and the cost of preparing and reading the state.",
     practicalReadJa: "忠実度、サンプル数、ゲート深さ、ノイズ、メモリ、状態の準備・読み出しコストを比較します。",
   };
-}
-
-/**
- * Moment-aligned circuit rendering: each operation occupies its own column so
- * multi-qubit gates line up vertically, with a connector spanning the involved
- * wires — a readable approximation of a standard circuit diagram without a
- * drawing library.
- */
-function CircuitDiagram({ entry, locale }: { entry: PublicRepositoryEntry; locale: PublicLocale }) {
-  const { wires, operations } = entry.visualization;
-  return (
-    <div
-      className="mj-repo-circuit"
-      role="img"
-      aria-label={`${locale === "ja" ? entry.titleJa : entry.title}${locale === "ja" ? "の回路またはワークフロー図" : " circuit or workflow diagram"}`}
-      // A wide circuit scrolls sideways on a phone, so the region must take
-      // keyboard focus for the scroll to be reachable (axe:
-      // scrollable-region-focusable, caught on the 390px production sweep).
-      tabIndex={0}
-    >
-      {wires.map((wire, wireIndex) => (
-        <div className="mj-repo-circuit-row" key={wire}>
-          <span className="mj-repo-circuit-wire">{wire}</span>
-          <div className="mj-repo-circuit-track">
-            {operations.map((operation, opIndex) => {
-              const involved = operation.qubits.includes(wireIndex);
-              const spanMin = Math.min(...operation.qubits);
-              const spanMax = Math.max(...operation.qubits);
-              const insideSpan = wireIndex > spanMin && wireIndex < spanMax;
-              return (
-                <span
-                  className="mj-repo-circuit-cell"
-                  data-connector={!involved && insideSpan ? "true" : undefined}
-                  key={`${operation.label}-${opIndex}`}
-                >
-                  {involved ? (
-                    <span className="mj-repo-circuit-op" data-tone={operation.tone}>{operation.label}</span>
-                  ) : null}
-                </span>
-              );
-            })}
-          </div>
-        </div>
-      ))}
-    </div>
-  );
 }
