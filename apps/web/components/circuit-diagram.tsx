@@ -208,7 +208,7 @@ export function CircuitDiagram({
             const minQubit = Math.min(...step.qubits);
             const maxQubit = Math.max(...step.qubits);
             return (
-              <g {...shared} className={`${className} mj-circuit-custom-gate`} key={step.id}>
+              <g key={step.id} {...shared} className={`${className} mj-circuit-custom-gate`}>
                 {onInspect ? null : <title>{label}</title>}
                 <line className="mj-circuit-control" x1={x} y1={yFor(minQubit)} x2={x} y2={yFor(maxQubit)} />
                 {step.qubits.map((qubit, qubitIndex) => ({ qubit, qubitIndex }))
@@ -225,7 +225,7 @@ export function CircuitDiagram({
           if (step.gate === "CX" || step.gate === "CZ" || step.gate === "SWAP") {
             const [control, target] = step.qubits;
             return (
-              <g {...shared} key={step.id}>
+              <g key={step.id} {...shared}>
                 {title}
                 {/* A wide transparent hit area, so the thin connector is easy to hover. */}
                 <rect className="mj-circuit-hit" x={x - 17} y={Math.min(yFor(control), yFor(target)) - 17} width="34" height={Math.abs(yFor(target) - yFor(control)) + 34} rx="7" />
@@ -253,7 +253,9 @@ export function CircuitDiagram({
           }
           const y = yFor(step.qubits[0]);
           return (
-            <g {...shared} key={step.id}>
+            // `key` before the spread: after it, the JSX transform falls back to
+            // createElement and React warns that these static children need keys.
+            <g key={step.id} {...shared}>
               {title}
               <rect x={x - 17} y={y - 17} width="34" height="34" rx="7" />
               {step.gate === "M" ? (

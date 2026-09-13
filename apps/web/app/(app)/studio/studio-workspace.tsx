@@ -54,6 +54,7 @@ import { PanelTabs, panelRegion } from "../../../components/panel-tabs";
 import { circuitMoments } from "../../../lib/circuit-moments";
 import { gateFamily, type GateFamily } from "../../../lib/gate-inspector";
 import { gateShortcutKey, isTypingTarget, studioShortcut } from "../../../lib/studio-shortcuts";
+import { insertBeforeTrailingMeasurements } from "../../../lib/studio-placement";
 import { GateInspectorCard } from "./studio-gate-inspector";
 import { PlayheadPanel } from "./studio-playhead";
 import { ShortcutSheet } from "./studio-shortcut-sheet";
@@ -338,12 +339,14 @@ export function StudioWorkspace({ artifactId, newDraft = false, locale = "en", l
   // edit replaces generated text with generated text. Hand-edited or stored
   // native source never qualifies and keeps the explicit Apply and its
   // confirmation.
+  // It also requires the structural check to agree, so "Live" is never shown
+  // beside a banner saying the diagram no longer matches.
   const liveSync = useMemo(() => {
-    if (!splitOn || builderSeed.readOnly) return false;
+    if (!splitOn || builderSeed.readOnly || canvasSync.kind !== "in_sync") return false;
     const generated = generateBuilderCode(canvasCircuit.steps, canvasCircuit.qubitCount, canvasCircuit.customGates);
     const current: BuilderCodeVariants = { ...drafts, [framework]: code };
     return CIRCUIT_FRAMEWORKS.every(({ key }) => current[key] === generated[key]);
-  }, [splitOn, builderSeed.readOnly, canvasCircuit, drafts, framework, code]);
+  }, [splitOn, builderSeed.readOnly, canvasSync.kind, canvasCircuit, drafts, framework, code]);
 
   // Tab, sheet, split and run keys. Gate keys belong to the builder, which
   // listens for them itself while it is on screen. See lib/studio-shortcuts.
@@ -1512,9 +1515,13 @@ export function CircuitBuilder({ seed, framework, selectedGate, onSelectGate, on
   }
 
   function undoLast() {
-    const removed = steps[steps.length - 1];
-    setSteps((current) => current.slice(0, -1));
-    if (removed) setSelectedStepIds((current) => current.filter((id) => id !== removed.id));
+    const present = new Set(steps.map((step) => step.id));
+    const placed = placedRef.current.filter((id) => present.has(id));
+    const targetId = placed.length ? placed[placed.length - 1] : steps[steps.length - 1]?.id;
+    if (!targetId) return;
+    placedRef.current = placed.filter((id) => id !== targetId);
+    setSteps((current) => current.filter((step) => step.id !== targetId));
+    setSelectedStepIds((current) => current.filter((id) => id !== targetId));
     setPendingQubits([]);
   }
 
@@ -1560,12 +1567,22 @@ export function CircuitBuilder({ seed, framework, selectedGate, onSelectGate, on
       const nextStep: BuilderStep = armed === "CUSTOM" && armedCustom
         ? { id: createBuilderStepId(), gate: "CUSTOM", customGateId: armedCustom.id, qubits: nextQubits }
         : { id: createBuilderStepId(), gate: armed, qubits: nextQubits };
-      setSteps((current) => [...current, nextStep]);
+      place(nextStep);
       setPendingQubits([]);
       return;
     }
-    setSteps((current) => [...current, { id: createBuilderStepId(), gate: armed, qubits: [qubit], ...(ROTATION_GATES.includes(armed as (typeof ROTATION_GATES)[number]) ? { param: angle } : {}) }]);
+    place({ id: createBuilderStepId(), gate: armed, qubits: [qubit], ...(ROTATION_GATES.includes(armed as (typeof ROTATION_GATES)[number]) ? { param: angle } : {}) });
     setBuilderMessage(null);
+  }
+
+  // Ids in the order they were placed. A placement can land in front of
+  // trailing measurements (lib/studio-placement), so "the last step in the
+  // list" is no longer "the gate just placed" — Undo reads this instead.
+  const placedRef = useRef<string[]>([]);
+
+  function place(step: BuilderStep) {
+    placedRef.current = [...placedRef.current, step.id];
+    setSteps((current) => insertBeforeTrailingMeasurements(current, step));
   }
 
   function changeQubitCount(delta: number) {

@@ -954,7 +954,8 @@
     width: 100%;
     margin-top: var(--sp-2);
   }
-  .mj-builder-controls-spacer {
+  .mj-builder-controls-spacer,
+  .mj-builder-controls-divider {
     display: none;
   }
   .mj-studio-tabbar-tools {
