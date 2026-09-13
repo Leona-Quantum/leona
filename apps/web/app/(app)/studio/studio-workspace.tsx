@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode, type UIEvent } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent, type ReactNode, type UIEvent } from "react";
 import { useRouter } from "next/navigation";
 import { SyntaxHighlightedCode, VerificationSummaryPanel, verificationHeadline } from "@majorana/ui";
 import { CopyIcon, SearchIcon } from "../../../components/icons";
@@ -22,13 +22,13 @@ import {
   type ProjectFilter,
 } from "../../../lib/studio-discovery";
 import type { PublicLocale } from "../../../lib/public-locale";
-import { BUILDER_GATES, builderStepLabel, createBuilderStepId, generateBuilderCode, ROTATION_GATES, TWO_QUBIT_GATES, type BuilderCodeVariants, type BuilderGate, type BuilderStep, type CustomGateDefinition } from "../../../lib/studio-builder";
+import { BUILDER_GATES, builderStepLabel, createBuilderStepId, generateBuilderCode, ROTATION_GATES, TWO_QUBIT_GATES, type BuilderCodeVariants, type BuilderGate, type BuilderStep, type BuiltinBuilderGate, type CustomGateDefinition } from "../../../lib/studio-builder";
 import { loadStoredCircuit, saveStoredCircuit } from "../../../lib/studio-circuits";
 import { circuitSyncState, type CircuitSyncState } from "../../../lib/studio-sync";
 import { looksLikeOpenQasm3, parseCircuitSource, parseInterchangeCircuit, reconstructInterchangeCircuit } from "../../../lib/circuit-conversion";
 import { circuitIRDiagram, circuitIRFromMetadata, validateCircuitIR, type CircuitIRReadOnlyReason } from "../../../lib/circuit-ir";
 import { canvasSeedCandidates, draftSourceFramework, studioDraftBundle, type StudioDraftBundle } from "../../../lib/studio-drafts";
-import { CircuitDiagram } from "../../../components/circuit-diagram";
+import { CircuitDiagram, type CircuitDiagramInspection } from "../../../components/circuit-diagram";
 import { MAX_VIEWABLE_QUBITS, MAX_VIEWABLE_STEPS } from "../../../lib/studio-parse";
 import { CIRCUIT_FRAMEWORKS, circuitFramework, circuitFrameworkOrNull, isExecutableCircuitFramework, type CircuitFrameworkKey } from "../../../lib/circuit-frameworks";
 import { MAX_CPU_SEED, MAX_CPU_SHOTS, cpuSimulationEligibility, loadCpuSimulationRecords, runCpuSimulation, saveCpuSimulationRecord, sourceFingerprint, type CpuSimulationEligibility, type CpuSimulationLimits, type CpuSimulationRecord } from "../../../lib/studio-simulation";
@@ -42,7 +42,7 @@ import { artifactExportManifest } from "../../../lib/artifact-export";
 import { restoreRefusalLosses, versionPageFromResource, type ArtifactVersionSummary, type RestoreLoss, type VersionOrigin } from "../../../lib/artifact-versions";
 import { studioVerificationDisplayState } from "../../../lib/verification-display";
 import { DEFAULT_STUDIO_PANEL, STUDIO_PANELS, type StudioPanel } from "../../../lib/studio-panels";
-import { circuitStepSignature, compressCircuit, type CircuitCompressionStrategy } from "../../../lib/studio-compression";
+import { circuitCompressionMetrics, circuitStepSignature, compressCircuit, type CircuitCompressionStrategy } from "../../../lib/studio-compression";
 import {
   builderStepsFromExternalResult,
   circuitOptimizationRequest,
@@ -51,6 +51,13 @@ import {
   type ExternalCircuitCompiler,
 } from "../../../lib/studio-external-compression";
 import { PanelTabs, panelRegion } from "../../../components/panel-tabs";
+import { circuitMoments } from "../../../lib/circuit-moments";
+import { gateFamily, type GateFamily } from "../../../lib/gate-inspector";
+import { gateShortcutKey, isTypingTarget, studioShortcut } from "../../../lib/studio-shortcuts";
+import { insertBeforeTrailingMeasurements } from "../../../lib/studio-placement";
+import { GateInspectorCard } from "./studio-gate-inspector";
+import { PlayheadPanel } from "./studio-playhead";
+import { ShortcutSheet } from "./studio-shortcut-sheet";
 
 // Tab order is the working order: you write code, you run it, you look at what
 // you wrote, and then you read what the run said about it (Owner Inbox
@@ -156,6 +163,10 @@ export function StudioWorkspace({ artifactId, newDraft = false, locale = "en", l
   const [rerunPending, setRerunPending] = useState(false);
   const [copied, setCopied] = useState(false);
   const [popout, setPopout] = useState<StudioPopout | null>(null);
+  /** Code beside the diagram, on the Visual tab (UX pass 6). */
+  const [split, setSplit] = useState(false);
+  const [shortcutsOpen, setShortcutsOpen] = useState(false);
+  const closeShortcuts = useCallback(() => setShortcutsOpen(false), []);
 
   /** Changing tab always closes a popout.
    *
@@ -309,6 +320,61 @@ export function StudioWorkspace({ artifactId, newDraft = false, locale = "en", l
     framework: sourceFramework,
     qasm: artifact?.code === code ? artifact.qasm : null,
   }, limits), [artifact?.id, artifact?.code, artifact?.qasm, code, sourceFramework, limits]);
+
+  // The header's one line about the circuit, and whether the newest CPU record
+  // still describes the code on screen — the same fingerprint test the lane uses.
+  const canvasMetrics = useMemo(() => circuitCompressionMetrics(canvasCircuit.steps), [canvasCircuit.steps]);
+  const latestRecord = simulationRecords[0] ?? null;
+  const cpuRunState: "none" | "current" | "stale" = !latestRecord
+    ? "none"
+    : cpuEligibility.eligible
+      && latestRecord.sourceFingerprint === cpuEligibility.sourceFingerprint
+      && latestRecord.interchangeFingerprint === cpuEligibility.interchangeFingerprint
+      ? "current"
+      : "stale";
+  const splitOn = split && panel === "visual";
+
+  // Live sync is offered only when nothing can be lost: every framework draft is
+  // byte-for-byte what the current diagram generates, so regenerating after an
+  // edit replaces generated text with generated text. Hand-edited or stored
+  // native source never qualifies and keeps the explicit Apply and its
+  // confirmation.
+  // It also requires the structural check to agree, so "Live" is never shown
+  // beside a banner saying the diagram no longer matches.
+  const liveSync = useMemo(() => {
+    if (!splitOn || builderSeed.readOnly || canvasSync.kind !== "in_sync") return false;
+    const generated = generateBuilderCode(canvasCircuit.steps, canvasCircuit.qubitCount, canvasCircuit.customGates);
+    const current: BuilderCodeVariants = { ...drafts, [framework]: code };
+    return CIRCUIT_FRAMEWORKS.every(({ key }) => current[key] === generated[key]);
+  }, [splitOn, builderSeed.readOnly, canvasSync.kind, canvasCircuit, drafts, framework, code]);
+
+  // Tab, sheet, split and run keys. Gate keys belong to the builder, which
+  // listens for them itself while it is on screen. See lib/studio-shortcuts.
+  const panelRef = useRef(panel);
+  panelRef.current = panel;
+  const shortcutsOpenRef = useRef(shortcutsOpen);
+  shortcutsOpenRef.current = shortcutsOpen;
+  const runCpuRef = useRef<() => void>(() => undefined);
+  runCpuRef.current = () => startCpuSimulation();
+  useEffect(() => {
+    if (!showEditor) return;
+    const onKey = (event: globalThis.KeyboardEvent) => {
+      if (event.defaultPrevented || shortcutsOpenRef.current) return;
+      const shortcut = studioShortcut(event, { panel: panelRef.current, typing: isTypingTarget(event.target), visualShown: false });
+      if (!shortcut) return;
+      if (shortcut.kind === "panel") selectPanel(shortcut.panel);
+      else if (shortcut.kind === "sheet") setShortcutsOpen(true);
+      else if (shortcut.kind === "split") {
+        const onVisual = panelRef.current === "visual";
+        selectPanel("visual");
+        setSplit((current) => (onVisual ? !current : true));
+      } else if (shortcut.kind === "run-cpu") runCpuRef.current();
+      else return;
+      event.preventDefault();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [showEditor]);
 
   // The full evidence panel used to sit above the tabs on every draft, so the
   // most prominent block on a brand-new circuit was a grey box explaining that
@@ -763,9 +829,33 @@ export function StudioWorkspace({ artifactId, newDraft = false, locale = "en", l
             <section className="mj-studio-main">
               <div className="mj-studio-main-head">
                 <div className="mj-studio-title-block">
-                  <label className="mj-section-label" htmlFor="studio-title">{copy.workingCircuit}</label>
-                  <input id="studio-title" className="mj-studio-title-input" value={title} onChange={(event) => setTitle(event.target.value)} />
-                  <p>{artifact ? copy.editingVersion(artifact.currentVersionId ? artifact.currentVersionId.slice(0, 8) : (locale === "ja" ? "下書き" : "draft"), artifact.framework) : copy.newDraft}</p>
+                  <label className="sr-only" htmlFor="studio-title">{copy.workingCircuit}</label>
+                  <input id="studio-title" className="mj-studio-title-input" value={title} onChange={(event) => setTitle(event.target.value)} spellCheck={false} />
+                  {/* One line about the circuit (UX pass 6): framework, version,
+                      shape, and whether the newest CPU run still describes this
+                      code. It replaced "Editing version 019f7f2f · qiskit". The
+                      shape is only printed while the diagram matches the code —
+                      an undrawable artifact is not "2 qubits · 0 operations". */}
+                  <ul className="mj-studio-meta">
+                    <li className="mj-studio-meta-framework">{frameworkLabel(sourceFramework)}</li>
+                    <li>{artifact?.currentVersionId ? copy.metaSavedVersion(artifact.currentVersionId.slice(0, 8)) : copy.newDraft}</li>
+                    {canvasSync.kind === "in_sync" ? (
+                      <li>
+                        {copy.metaQubits(canvasCircuit.qubitCount)} · {copy.metaOperations(builderSeed.readOnly ? builderSeed.operationCount : canvasMetrics.operations)}
+                        {builderSeed.readOnly ? null : ` · ${copy.metaDepth(canvasMetrics.depth)}`}
+                      </li>
+                    ) : null}
+                    <li>
+                      <button type="button" className="mj-studio-meta-run" data-state={cpuRunState} onClick={openSimulation}>
+                        <span className="mj-studio-meta-dot" aria-hidden="true" />
+                        {cpuRunState === "none"
+                          ? copy.metaNoCpuRun
+                          : cpuRunState === "current" && latestRecord
+                            ? copy.metaCpuRun(relativeTime(latestRecord.createdAt, locale, copy))
+                            : copy.metaCpuRunStale}
+                      </button>
+                    </li>
+                  </ul>
                 </div>
                 {/* Simulate and Copy code used to sit here as full-size buttons
                     beside a tab bar that already contained both — three ways to
@@ -794,6 +884,48 @@ export function StudioWorkspace({ artifactId, newDraft = false, locale = "en", l
                       inert={panel === "summary"}
                     />
                   </span>
+                  {/* The Qapp request was a full-width disclosure between this
+                      header and the tabs, drawing a second rule 30px above the
+                      tab strip. It is a popover off the action row now. */}
+                  <details
+                    className="leona-studio-qapp-disclosure"
+                    onKeyDown={(event) => {
+                      if (event.key === "Escape") event.currentTarget.open = false;
+                    }}
+                  >
+                    <summary className="mj-secondary-button">{copy.qappTitle}</summary>
+                    <form
+                      className="mj-studio-qapp-request"
+                      onSubmit={(event) => {
+                        event.preventDefault();
+                        void startQapp();
+                      }}
+                    >
+                      <label className="mj-studio-qapp-field" htmlFor="studio-qapp-prompt">
+                        <span>{copy.qappPrompt}</span>
+                        <textarea
+                          id="studio-qapp-prompt"
+                          value={qappPrompt}
+                          onChange={(event) => setQappPrompt(event.target.value)}
+                          disabled={busy !== null}
+                          placeholder={copy.qappPlaceholder}
+                        />
+                      </label>
+                      <div className="mj-studio-qapp-submit">
+                        <p id="studio-qapp-help">
+                          {copy.qappHelp}
+                        </p>
+                        <button
+                          className="mj-secondary-button"
+                          type="submit"
+                          aria-describedby="studio-qapp-help"
+                          disabled={!code.trim() || busy !== null || !isExecutableCircuitFramework(sourceFramework)}
+                        >
+                          {busy === "qapp" ? locale === "ja" ? "Qappを生成中…" : "Creating Qapp…" : locale === "ja" ? "Qappにする" : "Create Qapp"}
+                        </button>
+                      </div>
+                    </form>
+                  </details>
                   {artifact ? <button className="mj-secondary-button" type="button" onClick={downloadDraft}>{copy.downloadExport}</button> : null}
                   {!artifact ? (
                     <button
@@ -806,52 +938,43 @@ export function StudioWorkspace({ artifactId, newDraft = false, locale = "en", l
                     </button>
                   ) : null}
                   <button className="mj-primary-button" type="button" disabled={!code.trim() || busy !== null || !isExecutableCircuitFramework(framework) || !isExecutableCircuitFramework(sourceFramework)} onClick={() => void startRun()}>{busy === "save" ? copy.starting : copy.verifySave}</button>
+                  <button
+                    className="mj-icon-button mj-studio-shortcuts-button"
+                    type="button"
+                    aria-label={copy.shortcutsOpen}
+                    title={`${copy.shortcutsOpen} · ?`}
+                    aria-keyshortcuts="?"
+                    onClick={() => setShortcutsOpen(true)}
+                  >
+                    <span aria-hidden="true">⌘</span>
+                  </button>
                 </div>
               </div>
 
-              <details className="leona-studio-qapp-disclosure">
-                <summary>{copy.qappTitle}</summary>
-              <form
-                className="mj-studio-qapp-request"
-                onSubmit={(event) => {
-                  event.preventDefault();
-                  void startQapp();
-                }}
-              >
-                <label className="mj-studio-qapp-field" htmlFor="studio-qapp-prompt">
-                  <span>{copy.qappPrompt}</span>
-                  <textarea
-                    id="studio-qapp-prompt"
-                    value={qappPrompt}
-                    onChange={(event) => setQappPrompt(event.target.value)}
-                    disabled={busy !== null}
-                    placeholder={copy.qappPlaceholder}
-                  />
-                </label>
-                <div className="mj-studio-qapp-submit">
-                  <p id="studio-qapp-help">
-                    {copy.qappHelp}
-                  </p>
-                  <button
-                    className="mj-secondary-button"
-                    type="submit"
-                    aria-describedby="studio-qapp-help"
-                    disabled={!code.trim() || busy !== null || !isExecutableCircuitFramework(sourceFramework)}
-                  >
-                    {busy === "qapp" ? locale === "ja" ? "Qappを生成中…" : "Creating Qapp…" : locale === "ja" ? "Qappにする" : "Create Qapp"}
-                  </button>
+              <div className="mj-studio-tabbar">
+                <PanelTabs
+                  panels={STUDIO_PANELS}
+                  active={panel}
+                  onSelect={selectPanel}
+                  label={copy.view}
+                  labelFor={(item) => (item === "code" ? copy.code : item === "simulation" ? copy.simulation : item === "visual" ? copy.visual : copy.summary)}
+                  idPrefix="studio"
+                />
+                <div className="mj-studio-tabbar-tools">
+                  {panel === "visual" ? (
+                    <button
+                      className={`mj-studio-split-toggle${split ? " is-active" : ""}`}
+                      type="button"
+                      aria-pressed={split}
+                      aria-keyshortcuts="\"
+                      title={`${copy.shortcutRows.split} · \\`}
+                      onClick={() => setSplit((current) => !current)}
+                    >
+                      {copy.splitShow}
+                    </button>
+                  ) : null}
                 </div>
-              </form>
-              </details>
-
-              <PanelTabs
-                panels={STUDIO_PANELS}
-                active={panel}
-                onSelect={selectPanel}
-                label={copy.view}
-                labelFor={(item) => (item === "code" ? copy.code : item === "simulation" ? copy.simulation : item === "visual" ? copy.visual : copy.summary)}
-                idPrefix="studio"
-              />
+              </div>
 
               {artifactId && !newDraft && artifactHydration !== "ready" ? (
                 <div className="mj-studio-empty" role={artifactHydration === "error" ? "alert" : "status"}>
@@ -859,9 +982,41 @@ export function StudioWorkspace({ artifactId, newDraft = false, locale = "en", l
                   {artifactHydration === "error" ? <button className="mj-secondary-button" type="button" onClick={() => setLoadAttempt((value) => value + 1)}>{locale === "ja" ? "再試行" : "Retry"}</button> : null}
                 </div>
               ) : (
-                <>
+                <div className={`mj-studio-panels${splitOn ? " is-split" : ""}`}>
+                  {/* Before the builder in the tree so the split view reads code
+                      then diagram. A null slot here in the other tabs keeps the
+                      builder's position stable, so it never remounts on a tab
+                      change and loses its selection or playhead. */}
+                  {panel === "code" || splitOn ? (
+                    <CodeEditor
+                      code={code}
+                      framework={framework}
+                      sourceFramework={sourceFramework}
+                      onChange={(next) => { setCode(next); setVerificationStale(Boolean(artifact)); }}
+                      onCopy={() => void copyCode()}
+                      copied={copied}
+                      onFrameworkChange={changeFramework}
+                      note={draftNotes[framework] ?? null}
+                      popout={popout === "code"}
+                      region={splitOn ? undefined : panelRegion("studio", "code")}
+                      onTogglePopout={() => setPopout((current) => (current === "code" ? null : "code"))}
+                      copy={copy}
+                      locale={locale}
+                    />
+                  ) : null}
                   <CircuitBuilder
                     key={builderSeed.key}
+                    liveSync={liveSync}
+                    keyboardActive={!shortcutsOpen}
+                    onLiveApply={(codes) => {
+                      if (codes[framework] === code) return;
+                      setDrafts(codes);
+                      setDraftNotes({});
+                      setDraftFallbacks({});
+                      setCode(codes[framework]);
+                      setVerificationStale(Boolean(artifact));
+                      setMessage(copy.codeFollowedDiagram);
+                    }}
                     seed={builderSeed}
                     framework={framework}
                     selectedGate={selectedGate}
@@ -894,23 +1049,6 @@ export function StudioWorkspace({ artifactId, newDraft = false, locale = "en", l
                       setMessage(copy.appliedToCode);
                     }}
                   />
-                  {panel === "code" ? (
-                    <CodeEditor
-                      code={code}
-                      framework={framework}
-                      sourceFramework={sourceFramework}
-                      onChange={(next) => { setCode(next); setVerificationStale(Boolean(artifact)); }}
-                      onCopy={() => void copyCode()}
-                      copied={copied}
-                      onFrameworkChange={changeFramework}
-                      note={draftNotes[framework] ?? null}
-                      popout={popout === "code"}
-                      region={panelRegion("studio", "code")}
-                      onTogglePopout={() => setPopout((current) => (current === "code" ? null : "code"))}
-                      copy={copy}
-                      locale={locale}
-                    />
-                  ) : null}
                   {panel === "simulation" ? (
                     <SimulationPanel
                       artifact={artifact}
@@ -932,6 +1070,7 @@ export function StudioWorkspace({ artifactId, newDraft = false, locale = "en", l
                       }
                       sandboxBusy={busy !== null}
                       copy={copy}
+                      locale={locale}
                     />
                   ) : null}
                   {panel === "summary" ? (
@@ -953,10 +1092,10 @@ export function StudioWorkspace({ artifactId, newDraft = false, locale = "en", l
                       }}
                     />
                   ) : null}
-                </>
+                </div>
               )}
 
-              <footer className="mj-studio-footer" aria-live="polite">
+              <footer className="mj-studio-footer" aria-live="polite" data-tone={message ? "message" : undefined}>
                 {artifactSyncError ? <span role="alert">{copy.remoteSyncUnavailable}</span> : null}
                 <span>{message ?? copy.footer}</span>
                 {runId ? <a href={`/run/${runId}`}>{copy.openRun} →</a> : null}
@@ -1103,11 +1242,33 @@ export function StudioWorkspace({ artifactId, newDraft = false, locale = "en", l
           </section>
         )}
       </div>
+      {showEditor && shortcutsOpen ? <ShortcutSheet onClose={closeShortcuts} copy={copy} /> : null}
     </div>
   );
 }
 
 type StudioCopy = (typeof WORKSPACE_COPY)[PublicLocale]["studio"];
+
+/** "just now", "3 minutes ago", "昨日" — for the header's CPU run line. */
+function relativeTime(iso: string, locale: PublicLocale, copy: StudioCopy): string {
+  const then = Date.parse(iso);
+  if (!Number.isFinite(then)) return "";
+  const seconds = Math.round((Date.now() - then) / 1000);
+  if (seconds < 45) return copy.justNow;
+  const format = new Intl.RelativeTimeFormat(locale === "ja" ? "ja" : "en", { numeric: "auto" });
+  const minutes = Math.round(seconds / 60);
+  if (minutes < 60) return format.format(-minutes, "minute");
+  const hours = Math.round(minutes / 60);
+  if (hours < 24) return format.format(-hours, "hour");
+  return format.format(-Math.round(hours / 24), "day");
+}
+
+/** A record's time as a reader wants it; the ISO string stays in `dateTime`. */
+function formatRecordTime(iso: string, locale: PublicLocale): string {
+  const date = new Date(iso);
+  if (Number.isNaN(date.valueOf())) return iso;
+  return date.toLocaleString(locale === "ja" ? "ja-JP" : "en-US", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
+}
 
 /**
  * The header's one-line verdict, and the way into the evidence behind it.
@@ -1188,10 +1349,16 @@ function StudioStatusPill({ status, locale }: { status: LibraryArtifact["status"
 
 const ANGLE_OPTIONS = ["pi/8", "pi/4", "pi/2", "pi", "3*pi/2", "2*pi"];
 
+/** The palette in four labelled groups, derived from the gate list so a new gate
+ * cannot silently fall out of the palette. */
+const PALETTE_GROUPS: Array<{ id: "oneQubit" | "rotations" | "twoQubit" | "measure"; family: GateFamily; gates: BuiltinBuilderGate[] }> = (
+  [["oneQubit", "clifford"], ["rotations", "rotation"], ["twoQubit", "entangler"], ["measure", "measure"]] as const
+).map(([id, family]) => ({ id, family, gates: BUILDER_GATES.filter((gate) => gateFamily(gate) === family) }));
+
 // Exported for the focused CircuitBuilder form tests. The custom-gate <form>
 // inside it had never been submitted by any check before ai-ops issue 123.
 // Not part of the module's public surface otherwise; StudioWorkspace is.
-export function CircuitBuilder({ seed, framework, selectedGate, onSelectGate, onApply, onCircuitChange, hidden, popout, onTogglePopout, region, copy, syncState, onRebuildFromCode, sourceCode }: { seed: BuilderSeed; framework: StudioFramework; selectedGate: string; onSelectGate: (gate: string) => void; onApply: (codes: BuilderCodeVariants) => void; onCircuitChange?: (circuit: { qubitCount: number; steps: BuilderStep[]; customGates: CustomGateDefinition[] }) => void; hidden: boolean; popout: boolean; onTogglePopout: () => void; region?: Record<string, string>; copy: StudioCopy; syncState: CircuitSyncState; onRebuildFromCode: () => void; sourceCode: string }) {
+export function CircuitBuilder({ seed, framework, selectedGate, onSelectGate, onApply, onCircuitChange, hidden, popout, onTogglePopout, region, copy, syncState, onRebuildFromCode, sourceCode, liveSync = false, onLiveApply, keyboardActive = true }: { seed: BuilderSeed; framework: StudioFramework; selectedGate: string; onSelectGate: (gate: string) => void; onApply: (codes: BuilderCodeVariants) => void; onCircuitChange?: (circuit: { qubitCount: number; steps: BuilderStep[]; customGates: CustomGateDefinition[] }) => void; hidden: boolean; popout: boolean; onTogglePopout: () => void; region?: Record<string, string>; copy: StudioCopy; syncState: CircuitSyncState; onRebuildFromCode: () => void; sourceCode: string; liveSync?: boolean; onLiveApply?: (codes: BuilderCodeVariants) => void; keyboardActive?: boolean }) {
   const [qubitCount, setQubitCount] = useState(seed.qubitCount);
   const [steps, setSteps] = useState<BuilderStep[]>(seed.steps);
   const [pendingQubits, setPendingQubits] = useState<number[]>([]);
@@ -1227,6 +1394,10 @@ export function CircuitBuilder({ seed, framework, selectedGate, onSelectGate, on
   // beside the new one. Bumped by that same effect, captured before the
   // request, compared after it.
   const externalRunSeqRef = useRef(0);
+  /** The gate under the pointer or focus, explained in a card (UX pass 6). */
+  const [inspection, setInspection] = useState<CircuitDiagramInspection | null>(null);
+  /** "end" follows the circuit as gates are placed; a number pins a moment. */
+  const [playhead, setPlayhead] = useState<number | "end">("end");
 
   // A pending confirmation describes one specific pair of a diagram and a
   // source. If either side moves — the code is edited again, the canvas is
@@ -1306,6 +1477,12 @@ export function CircuitBuilder({ seed, framework, selectedGate, onSelectGate, on
 
   const onCircuitChangeRef = useRef(onCircuitChange);
   onCircuitChangeRef.current = onCircuitChange;
+  // Read at the moment of the edit, so it is the eligibility of the circuit
+  // BEFORE the edit: the parent has not re-rendered with the new canvas yet.
+  const liveSyncRef = useRef(liveSync);
+  liveSyncRef.current = liveSync;
+  const onLiveApplyRef = useRef(onLiveApply);
+  onLiveApplyRef.current = onLiveApply;
   useEffect(() => {
     if (seed.readOnly) return;
     // The untouched seed is not re-persisted; only user edits are reported.
@@ -1313,6 +1490,7 @@ export function CircuitBuilder({ seed, framework, selectedGate, onSelectGate, on
     // StrictMode's double-invoked mount effect still sees the seed values.
     if (qubitCount === seed.qubitCount && steps === seed.steps && customGates === seed.customGates) return;
     onCircuitChangeRef.current?.({ qubitCount, steps, customGates });
+    if (liveSyncRef.current) onLiveApplyRef.current?.(generateBuilderCode(steps, qubitCount, customGates));
   }, [qubitCount, steps, customGates, seed]);
 
   const armedCustomId = selectedGate.startsWith("custom:") ? selectedGate.slice("custom:".length) : null;
@@ -1320,6 +1498,60 @@ export function CircuitBuilder({ seed, framework, selectedGate, onSelectGate, on
   const armed: BuilderGate = (BUILDER_GATES as string[]).includes(selectedGate) ? selectedGate as BuilderGate : armedCustom ? "CUSTOM" : "H";
   const requiredQubits = armedCustom?.qubitCount ?? (TWO_QUBIT_GATES.includes(armed as (typeof TWO_QUBIT_GATES)[number]) ? 2 : 1);
   const selectedLabel = armed === "CUSTOM" ? armedCustom?.name ?? "Custom gate" : armed;
+  const moments = useMemo(() => circuitMoments(qubitCount, steps), [qubitCount, steps]);
+  const playheadMoment = playhead === "end" ? moments.count : Math.min(playhead, moments.count);
+  const rotationArmed = ROTATION_GATES.includes(armed as (typeof ROTATION_GATES)[number]);
+
+  // A card describing a gate that was just deleted, or a tab that just closed,
+  // would float over whatever is on screen now.
+  useEffect(() => {
+    setInspection(null);
+  }, [steps, hidden]);
+
+  function armGate(gate: string) {
+    onSelectGate(gate);
+    setPendingQubits([]);
+    setBuilderMessage(null);
+  }
+
+  function undoLast() {
+    const present = new Set(steps.map((step) => step.id));
+    const placed = placedRef.current.filter((id) => present.has(id));
+    const targetId = placed.length ? placed[placed.length - 1] : steps[steps.length - 1]?.id;
+    if (!targetId) return;
+    placedRef.current = placed.filter((id) => id !== targetId);
+    setSteps((current) => current.filter((step) => step.id !== targetId));
+    setSelectedStepIds((current) => current.filter((id) => id !== targetId));
+    setPendingQubits([]);
+  }
+
+  function stepPlayhead(delta: -1 | 1) {
+    const next = playheadMoment + delta;
+    setPlayhead(next >= moments.count ? "end" : Math.max(0, next));
+  }
+
+  // Gate, undo, delete and playhead keys, only while this diagram is on screen
+  // and the shortcut sheet is closed. A focused gate's own Delete handler runs
+  // first and prevents default, so a key is never applied twice.
+  const keyboardRef = useRef({ armGate, undoLast, deleteSelected, stepPlayhead, hasSelection: false, active: false });
+  keyboardRef.current = { armGate, undoLast, deleteSelected, stepPlayhead, hasSelection: selectedStepIds.length > 0, active: keyboardActive && !hidden };
+  useEffect(() => {
+    if (seed.readOnly) return;
+    const onKey = (event: globalThis.KeyboardEvent) => {
+      const keyboard = keyboardRef.current;
+      if (!keyboard.active || event.defaultPrevented) return;
+      const shortcut = studioShortcut(event, { panel: "visual", typing: isTypingTarget(event.target), visualShown: true });
+      if (!shortcut) return;
+      if (shortcut.kind === "gate") keyboard.armGate(shortcut.gate);
+      else if (shortcut.kind === "undo") keyboard.undoLast();
+      else if (shortcut.kind === "step") keyboard.stepPlayhead(shortcut.delta);
+      else if (shortcut.kind === "delete" && keyboard.hasSelection) keyboard.deleteSelected();
+      else return;
+      event.preventDefault();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [seed.readOnly]);
 
   function placeOnQubit(qubit: number) {
     if (requiredQubits > 1) {
@@ -1335,12 +1567,22 @@ export function CircuitBuilder({ seed, framework, selectedGate, onSelectGate, on
       const nextStep: BuilderStep = armed === "CUSTOM" && armedCustom
         ? { id: createBuilderStepId(), gate: "CUSTOM", customGateId: armedCustom.id, qubits: nextQubits }
         : { id: createBuilderStepId(), gate: armed, qubits: nextQubits };
-      setSteps((current) => [...current, nextStep]);
+      place(nextStep);
       setPendingQubits([]);
       return;
     }
-    setSteps((current) => [...current, { id: createBuilderStepId(), gate: armed, qubits: [qubit], ...(ROTATION_GATES.includes(armed as (typeof ROTATION_GATES)[number]) ? { param: angle } : {}) }]);
+    place({ id: createBuilderStepId(), gate: armed, qubits: [qubit], ...(ROTATION_GATES.includes(armed as (typeof ROTATION_GATES)[number]) ? { param: angle } : {}) });
     setBuilderMessage(null);
+  }
+
+  // Ids in the order they were placed. A placement can land in front of
+  // trailing measurements (lib/studio-placement), so "the last step in the
+  // list" is no longer "the gate just placed" — Undo reads this instead.
+  const placedRef = useRef<string[]>([]);
+
+  function place(step: BuilderStep) {
+    placedRef.current = [...placedRef.current, step.id];
+    setSteps((current) => insertBeforeTrailingMeasurements(current, step));
   }
 
   function changeQubitCount(delta: number) {
@@ -1583,10 +1825,13 @@ export function CircuitBuilder({ seed, framework, selectedGate, onSelectGate, on
       label={copy.canvasLabel}
       heading={copy.generatedPreview}
       meta={(
-        <span className="mj-mono-muted">
-          {frameworkLabel(framework)} · {qubitCount}q · {seed.readOnly ? seed.operationCount : steps.length} ops
-          {seed.readOnly ? ` · ${copy.readOnly}` : ""}
-        </span>
+        <>
+          {liveSync ? <span className="mj-studio-live-pill" title={copy.liveSyncHint}>{copy.liveSync}</span> : null}
+          <span className="mj-mono-muted">
+            {frameworkLabel(framework)} · {qubitCount}q · {seed.readOnly ? seed.operationCount : steps.length} ops
+            {seed.readOnly ? ` · ${copy.readOnly}` : ""}
+          </span>
+        </>
       )}
       popout={popout}
       onTogglePopout={onTogglePopout}
@@ -1594,21 +1839,82 @@ export function CircuitBuilder({ seed, framework, selectedGate, onSelectGate, on
       hidden={hidden}
       region={region}
     >
-      {seed.readOnly ? null : <div className="mj-builder-palette" role="toolbar" aria-label={copy.palette}>
-        {BUILDER_GATES.map((gate) => (
-          <button key={gate} type="button" className={`mj-builder-gate${armed === gate ? " is-active" : ""}`} aria-pressed={armed === gate} onClick={() => { onSelectGate(gate); setPendingQubits([]); setBuilderMessage(null); }}>
-            {gate}
-          </button>
-        ))}
-        {ROTATION_GATES.includes(armed as (typeof ROTATION_GATES)[number]) ? (
-          <label className="mj-builder-angle">
-            <span>{copy.angleLabel}</span>
-            <select value={angle} onChange={(event) => setAngle(event.target.value)}>
-              {ANGLE_OPTIONS.map((option) => <option key={option} value={option}>{option.replace("pi", "π").replace("*", "")}</option>)}
-            </select>
-          </label>
-        ) : null}
-      </div>}
+      {/* One toolbar above the diagram: the palette in labelled groups, then
+          the edits you make while building. The edit row used to sit below the
+          whole compression section, ~800px from the wires it acted on. */}
+      {seed.readOnly ? null : (
+        <div className="mj-studio-canvas-toolbar">
+          <div className="mj-builder-palette" role="toolbar" aria-label={copy.palette}>
+            {PALETTE_GROUPS.map((group) => (
+              <div className="mj-builder-palette-group" role="group" aria-label={copy.paletteGroups[group.id]} key={group.id}>
+                <span className="mj-builder-palette-label" aria-hidden="true">{copy.paletteGroups[group.id]}</span>
+                <div className="mj-builder-palette-gates">
+                  {group.gates.map((gate) => {
+                    const key = gateShortcutKey(gate);
+                    return (
+                      <button
+                        key={gate}
+                        type="button"
+                        className={`mj-builder-gate${armed === gate ? " is-active" : ""}`}
+                        data-family={group.family}
+                        aria-pressed={armed === gate}
+                        aria-keyshortcuts={key ?? undefined}
+                        title={`${copy.gateNames[gate] ?? gate}${key ? ` · ${key}` : ""}`}
+                        onClick={() => armGate(gate)}
+                      >
+                        {gate}
+                      </button>
+                    );
+                  })}
+                  {group.id === "rotations" ? (
+                    <label className="mj-builder-angle" data-armed={rotationArmed ? "true" : undefined}>
+                      <span className="sr-only">{copy.angleLabel}</span>
+                      <select value={angle} onChange={(event) => setAngle(event.target.value)} disabled={!rotationArmed} title={copy.angleLabel}>
+                        {ANGLE_OPTIONS.map((option) => <option key={option} value={option}>{option.replace("pi", "π").replace("*", "")}</option>)}
+                      </select>
+                    </label>
+                  ) : null}
+                </div>
+              </div>
+            ))}
+          </div>
+          <div className="mj-builder-controls">
+            <button className="mj-secondary-button" type="button" onClick={undoLast} disabled={!steps.length} title={`${copy.undo} · ⌘/Ctrl Z`}>{copy.undo}</button>
+            <button className="mj-secondary-button" type="button" onClick={deleteSelected} disabled={!selectedStepIds.length}>{copy.deleteSelected}</button>
+            {selectedStepIds.length >= 2 ? <button className="mj-secondary-button" type="button" onClick={() => setShowCustomGateForm(true)}>{copy.groupSelected}</button> : null}
+            <button className="mj-secondary-button" type="button" onClick={() => { setSteps([]); setSelectedStepIds([]); setPendingQubits([]); setBuilderMessage(null); }} disabled={!steps.length}>{copy.clearAll}</button>
+            <span className="mj-builder-controls-divider" aria-hidden="true" />
+            <button className="mj-secondary-button" type="button" onClick={() => changeQubitCount(-1)} disabled={qubitCount <= 1}>{copy.removeQubit}</button>
+            <button className="mj-secondary-button" type="button" onClick={() => changeQubitCount(1)} disabled={qubitCount >= MAX_VIEWABLE_QUBITS}>{copy.addQubit}</button>
+            <span className="mj-builder-controls-spacer" aria-hidden="true" />
+            <button
+              className="mj-primary-button"
+              type="button"
+              onClick={() => {
+                // Applying replaces the Code tab. Confirm whenever the source is
+                // not already this diagram — both when it has moved on since the
+                // diagram was drawn, and when it is source the builder cannot
+                // draw at all. The second case is the more destructive of the
+                // two: unrepresentable code is by definition code no diagram can
+                // reproduce, so overwriting it cannot be undone from the canvas.
+                if (syncState.kind !== "in_sync" && !applyConfirmPending) {
+                  setApplyConfirmPending(true);
+                  setBuilderMessage(syncState.kind === "diverged" ? copy.applyOverwritesEditedCode : copy.applyOverwritesUnrepresentableCode);
+                  return;
+                }
+                setApplyConfirmPending(false);
+                onApply(generateBuilderCode(steps, qubitCount, customGates));
+              }}
+              disabled={!steps.length}
+            >
+              {applyConfirmPending ? copy.confirmApply : copy.applyToCode}
+            </button>
+            {applyConfirmPending ? (
+              <button className="mj-secondary-button" type="button" onClick={() => { setApplyConfirmPending(false); setBuilderMessage(null); }}>{copy.cancel}</button>
+            ) : null}
+          </div>
+        </div>
+      )}
 
       {!seed.readOnly && customGates.length ? (
         <div className="mj-builder-custom-gates" aria-label={copy.customGates}>
@@ -1644,20 +1950,53 @@ export function CircuitBuilder({ seed, framework, selectedGate, onSelectGate, on
         </div>
       )}
 
-      <CircuitDiagram
-        qubitCount={qubitCount}
-        steps={steps}
-        customGates={customGates}
-        ariaLabel={copy.circuitAria(frameworkLabel(framework))}
-        interaction={seed.readOnly ? undefined : {
-          selectedStepIds,
-          pendingQubits,
-          selectedLabel,
-          onPlaceOnQubit: placeOnQubit,
-          onSelectStep: selectStep,
-          onStepKeyDown: handleStepKeyDown,
-        }}
-      />
+      {!seed.readOnly && showCustomGateForm ? (
+        <form className="mj-builder-custom-form" onSubmit={(event) => { event.preventDefault(); createCustomGate(); }}>
+          <label>
+            <span>{copy.customGates}</span>
+            <input autoFocus value={customGateName} onChange={(event) => setCustomGateName(event.target.value)} placeholder={copy.customGatePlaceholder} />
+          </label>
+          <button className="mj-primary-button" type="submit">{copy.createCustomGate}</button>
+          <button className="mj-secondary-button" type="button" onClick={() => setShowCustomGateForm(false)}>{copy.cancelCustomGate}</button>
+        </form>
+      ) : null}
+
+      <div className={`mj-circuit-workbench${seed.readOnly ? " is-readonly" : ""}`}>
+        <CircuitDiagram
+          qubitCount={qubitCount}
+          steps={steps}
+          customGates={customGates}
+          ariaLabel={copy.circuitAria(frameworkLabel(framework))}
+          interaction={seed.readOnly ? undefined : {
+            selectedStepIds,
+            pendingQubits,
+            selectedLabel,
+            onPlaceOnQubit: placeOnQubit,
+            onSelectStep: selectStep,
+            onStepKeyDown: handleStepKeyDown,
+          }}
+          playhead={seed.readOnly ? null : playheadMoment}
+          onInspect={setInspection}
+        />
+        {seed.readOnly ? null : (
+          <PlayheadPanel
+            qubitCount={qubitCount}
+            steps={steps}
+            customGates={customGates}
+            columns={moments.columns}
+            count={moments.count}
+            moment={playheadMoment}
+            onMoment={setPlayhead}
+            copy={copy}
+          />
+        )}
+      </div>
+      {inspection && !hidden ? <GateInspectorCard inspection={inspection} customGates={customGates} copy={copy} /> : null}
+
+      <div className="mj-studio-canvas-footer" aria-live="polite">
+        <span>{seed.readOnly ? copy.readOnlyHint : builderMessage ?? (pendingQubits.length ? copy.pickTarget : selectedStepIds.length ? copy.selectedCount(selectedStepIds.length) : steps.length ? copy.builderHint : copy.builderEmpty)}</span>
+        <span className="mj-mono-muted">{steps.length ? (steps.length <= 40 ? steps.map((step) => builderStepLabel(step, customGates)).join(" → ") : `${steps.slice(0, 20).map((step) => builderStepLabel(step, customGates)).join(" → ")} → … (${steps.length} ops)`) : "—"}</span>
+      </div>
 
       {seed.readOnly ? null : (
         <section className="mj-studio-optimizer" aria-labelledby="studio-optimizer-heading">
@@ -1791,63 +2130,6 @@ export function CircuitBuilder({ seed, framework, selectedGate, onSelectGate, on
         </section>
       )}
 
-      {seed.readOnly ? null : <div className="mj-builder-controls">
-        <button className="mj-secondary-button" type="button" onClick={() => changeQubitCount(1)} disabled={qubitCount >= MAX_VIEWABLE_QUBITS}>{copy.addQubit}</button>
-        <button className="mj-secondary-button" type="button" onClick={() => changeQubitCount(-1)} disabled={qubitCount <= 1}>{copy.removeQubit}</button>
-        <button className="mj-secondary-button" type="button" onClick={() => { const removed = steps[steps.length - 1]; setSteps((current) => current.slice(0, -1)); if (removed) setSelectedStepIds((current) => current.filter((id) => id !== removed.id)); setPendingQubits([]); }} disabled={!steps.length}>{copy.undo}</button>
-        <button className="mj-secondary-button" type="button" onClick={() => { setSteps([]); setSelectedStepIds([]); setPendingQubits([]); setBuilderMessage(null); }} disabled={!steps.length}>{copy.clearAll}</button>
-        <button className="mj-secondary-button" type="button" onClick={deleteSelected} disabled={!selectedStepIds.length}>{copy.deleteSelected}</button>
-        {selectedStepIds.length >= 2 ? <button className="mj-secondary-button" type="button" onClick={() => setShowCustomGateForm(true)}>{copy.groupSelected}</button> : null}
-        <button
-          className="mj-primary-button"
-          type="button"
-          onClick={() => {
-            // Applying replaces the Code tab. Confirm whenever the source is
-            // not already this diagram — both when it has moved on since the
-            // diagram was drawn, and when it is source the builder cannot
-            // draw at all. The second case is the more destructive of the
-            // two: unrepresentable code is by definition code no diagram can
-            // reproduce, so overwriting it cannot be undone from the canvas.
-            if (syncState.kind !== "in_sync" && !applyConfirmPending) {
-              setApplyConfirmPending(true);
-              setBuilderMessage(syncState.kind === "diverged" ? copy.applyOverwritesEditedCode : copy.applyOverwritesUnrepresentableCode);
-              return;
-            }
-            setApplyConfirmPending(false);
-            onApply(generateBuilderCode(steps, qubitCount, customGates));
-          }}
-          disabled={!steps.length}
-        >
-          {applyConfirmPending ? copy.confirmApply : copy.applyToCode}
-        </button>
-        {applyConfirmPending ? (
-          <button className="mj-secondary-button" type="button" onClick={() => { setApplyConfirmPending(false); setBuilderMessage(null); }}>{copy.cancel}</button>
-        ) : null}
-      </div>}
-
-      {!seed.readOnly && showCustomGateForm ? (
-        <form className="mj-builder-custom-form" onSubmit={(event) => { event.preventDefault(); createCustomGate(); }}>
-          <label>
-            <span>{copy.customGates}</span>
-            <input autoFocus value={customGateName} onChange={(event) => setCustomGateName(event.target.value)} placeholder={copy.customGatePlaceholder} />
-          </label>
-          <button className="mj-primary-button" type="submit">{copy.createCustomGate}</button>
-          <button className="mj-secondary-button" type="button" onClick={() => setShowCustomGateForm(false)}>{copy.cancelCustomGate}</button>
-        </form>
-      ) : null}
-
-      {/* The gate's description was the inspector's headline card, one panel
-          away from the palette it described. Folded away by default because it
-          is reference material, not state. */}
-      {seed.readOnly ? null : <details className="mj-sim-details mj-studio-gate-note">
-        <summary>{copy.selectedGate}: {selectedGate.startsWith("custom:") ? copy.customGateLabel : selectedGate}</summary>
-        <p>{selectedGate.startsWith("custom:") ? copy.customGateInspector : copy.gateDescriptions[selectedGate] ?? copy.gateDescriptions.H}</p>
-      </details>}
-
-      <div className="mj-studio-canvas-footer" aria-live="polite">
-        <span>{seed.readOnly ? copy.readOnlyHint : builderMessage ?? (pendingQubits.length ? copy.pickTarget : selectedStepIds.length ? copy.selectedCount(selectedStepIds.length) : steps.length ? copy.builderHint : copy.builderEmpty)}</span>
-        <span className="mj-mono-muted">{steps.length ? (steps.length <= 40 ? steps.map((step) => builderStepLabel(step, customGates)).join(" → ") : `${steps.slice(0, 20).map((step) => builderStepLabel(step, customGates)).join(" → ")} → … (${steps.length} ops)`) : "—"}</span>
-      </div>
     </StudioPanelSurface>
   );
 }
@@ -2099,6 +2381,7 @@ function SimulationPanel({
   onRunInSandbox,
   sandboxBusy,
   copy,
+  locale,
 }: {
   artifact: LibraryArtifact | null;
   eligibility: CpuSimulationEligibility;
@@ -2115,6 +2398,7 @@ function SimulationPanel({
   onRunInSandbox: (() => void) | null;
   sandboxBusy: boolean;
   copy: StudioCopy;
+  locale: PublicLocale;
 }) {
   const currentRecords = eligibility.eligible
     ? records.filter((record) => (
@@ -2164,7 +2448,7 @@ function SimulationPanel({
         <div className="mj-studio-lane">
           <div className="mj-studio-lane-head">
             <span className="mj-studio-lane-title">{copy.cpuLane}</span>
-            <span className="mj-mono-muted">{eligibility.eligible ? copy.cpuEligible : copy.cpuUnavailableShort}</span>
+            <span className="mj-studio-lane-status" data-tone={eligibility.eligible ? "ok" : "warn"}>{eligibility.eligible ? copy.laneReady : copy.cpuUnavailableShort}</span>
           </div>
         <p className="mj-studio-simulation-boundary">{copy.simulationBoundary}</p>
 
@@ -2183,7 +2467,7 @@ function SimulationPanel({
             // loudest object on the tab was a control for the weakest of the
             // three lanes.
             <div className="mj-studio-lane-action">
-              <button className="mj-primary-button" type="button" disabled={busy} onClick={onRun}>
+              <button className="mj-primary-button" type="button" disabled={busy} onClick={onRun} title="⌘/Ctrl ↵">
                 {busy ? copy.starting : currentRecords.length ? copy.rerunCpuSimulation : copy.runCpuSimulation}
               </button>
             </div>
@@ -2211,10 +2495,6 @@ function SimulationPanel({
         )}
         </div>
 
-        <div className="mj-studio-lane">
-          <QpuLane artifact={artifact} shots={shots} copy={copy} />
-        </div>
-
         {/* A heading, a count of zero and a sentence saying the count is zero
             took a whole band of the tab to say one thing three times. With no
             records the section is the sentence; the heading and the counter
@@ -2223,23 +2503,32 @@ function SimulationPanel({
           {records.length ? (
             <>
               <div className="mj-studio-simulation-records-head"><span className="mj-section-label">{copy.simulationResults}</span><span className="mj-mono-muted">{records.length}</span></div>
-              {records.map((record) => <SimulationRecordCard record={record} family={artifact?.family ?? null} copy={copy} key={record.id} />)}
+              {records.map((record, index) => <SimulationRecordCard record={record} family={artifact?.family ?? null} copy={copy} locale={locale} latest={index === 0} key={record.id} />)}
             </>
           ) : (
             <p className="mj-studio-empty">{copy.simulationNoRecords}</p>
           )}
         </section>
+
+        {/* After the CPU records, not between the run button and its result:
+            you run, then you read, then you consider hardware (UX pass 6). */}
+        <div className="mj-studio-lane">
+          <QpuLane artifact={artifact} shots={shots} copy={copy} />
+        </div>
       </div>
     </section>
   );
 }
 
-function SimulationRecordCard({ record, family, copy }: { record: CpuSimulationRecord; family: string | null; copy: StudioCopy }) {
+function SimulationRecordCard({ record, family, copy, locale, latest = false }: { record: CpuSimulationRecord; family: string | null; copy: StudioCopy; locale: PublicLocale; latest?: boolean }) {
   const data = simulationChartData(record.counts, record.shots);
   const reading = data ? simulationReading(family, data) : null;
   return (
-    <article className="mj-studio-simulation-record">
-      <div className="mj-studio-simulation-record-head"><strong>{copy.simulationRecord}</strong><span className="mj-mono-muted">{record.createdAt}</span></div>
+    <article className="mj-studio-simulation-record" data-latest={latest ? "true" : undefined}>
+      <div className="mj-studio-simulation-record-head">
+        <strong>{copy.simulationRecord}{latest ? <span className="mj-studio-record-badge">{copy.latestRecord}</span> : null}</strong>
+        <time className="mj-mono-muted" dateTime={record.createdAt} title={record.createdAt}>{formatRecordTime(record.createdAt, locale)}</time>
+      </div>
       {data ? (
         <>
           <div className="mj-sim-headline">
@@ -2474,8 +2763,10 @@ function SimulationDistribution({ data, copy }: { data: SimulationChartData; cop
     <div className="mj-sim-chart">
       <span className="mj-section-label">{copy.simulationDistribution}</span>
       <div className="mj-sim-chart-rows">
-        {data.bars.map((bar) => (
+        {data.bars.map((bar, index) => (
           <div
+            // The stagger index for the bars' entrance (ux-studio.css).
+            style={{ "--i": index } as CSSProperties}
             className={bar.peak ? "mj-sim-chart-row is-peak" : "mj-sim-chart-row"}
             title={`|${bar.bitstring}⟩ · ${bar.count.toLocaleString("en-US")} / ${totalShots.toLocaleString("en-US")} · ${formatShare(bar.share, "en-US")}`}
             key={bar.bitstring}
@@ -2796,8 +3087,8 @@ function VersionHistory({
             <div>
               <span className="mj-studio-version-meta">
                 <strong>{copy.versionLabel(row.seq)}</strong>
-                {row.isCurrent ? <span className="mj-mono-muted">{copy.versionCurrentBadge}</span> : null}
-                <span className="mj-mono-muted">{originLabel(row.origin, copy)}</span>
+                {row.isCurrent ? <span className="mj-studio-version-badge">{copy.versionCurrentBadge}</span> : null}
+                <span className="mj-studio-version-origin">{originLabel(row.origin, copy)}</span>
               </span>
               <p>
                 {held.length ? `${copy.versionHolds}: ${held.join(" · ")}` : copy.versionHoldsNothing}
