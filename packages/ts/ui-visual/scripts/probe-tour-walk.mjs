@@ -356,6 +356,18 @@ const scenarios = {
         await waitStepChange(page, "build.2");
         await page.waitForTimeout(300);
       },
+      "build.10": async (now) => {
+        check("build: the playhead step points at the Probabilities panel", now.phase === "reading" && (await page.locator("[data-tour=\"studio-playhead\"]").count()) > 0, now.phase);
+        await page.waitForTimeout(900);
+        await shot(page, "16-build-playhead");
+        await clickCard(page, EN.card.next);
+        await waitStepChange(page, now.step);
+      },
+      "build.11": async (now) => {
+        await perform(page, now.step);
+        await waitStepChange(page, now.step);
+        check("build: Code beside diagram turns the split view on", (await page.locator(".mj-studio-panels.is-split").count()) === 1);
+      },
       "build.7": async (now) => {
         check("build: typing your own prompt is acknowledged on the next card", now.lines.includes(EN.status.ownValue), now.lines.join(" | "));
         await perform(page, now.step);
