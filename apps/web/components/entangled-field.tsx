@@ -162,11 +162,25 @@ export function EntangledField() {
       const vertex = compile(gl, gl.VERTEX_SHADER, VERTEX);
       const fragment = compile(gl, gl.FRAGMENT_SHADER, FRAGMENT);
       const program = gl.createProgram();
-      if (!vertex || !fragment || !program) return;
+      // A shader that fails to compile or link ends the effect here. Release what was
+      // created and drop the context, so a dead context doesn't stay on the canvas.
+      const abandon = () => {
+        if (vertex) gl.deleteShader(vertex);
+        if (fragment) gl.deleteShader(fragment);
+        if (program) gl.deleteProgram(program);
+        gl.getExtension("WEBGL_lose_context")?.loseContext();
+      };
+      if (!vertex || !fragment || !program) {
+        abandon();
+        return;
+      }
       gl.attachShader(program, vertex);
       gl.attachShader(program, fragment);
       gl.linkProgram(program);
-      if (!gl.getProgramParameter(program, gl.LINK_STATUS)) return;
+      if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
+        abandon();
+        return;
+      }
       gl.useProgram(program);
 
       const buffer = gl.createBuffer();

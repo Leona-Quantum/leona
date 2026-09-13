@@ -23,5 +23,5 @@ import { getPublicLocale } from "../../lib/public-locale-server";
 export const metadata = rootMetadata;
 
 export default async function RepositoryRootLayout({ children }: { children: ReactNode }) {
-  return <RootDocument lang={await getPublicLocale()}>{children}</RootDocument>;
+  return <RootDocument lang={await getPublicLocale()} forcedTheme="dark">{children}</RootDocument>;
 }
