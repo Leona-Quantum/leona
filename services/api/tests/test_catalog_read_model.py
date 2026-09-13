@@ -7,6 +7,9 @@ not a catalog record must degrade to record=None rather than fabricating one.
 
 import datetime as dt
 import json
+from pathlib import Path
+
+import pytest
 
 from majorana_api.catalog_read_model import (
     LIST_VIEW_RECORD_FIELDS,
@@ -267,69 +270,82 @@ def test_metadata_is_no_longer_on_the_browse_list():
     }
 
 
-def test_the_list_view_keeps_the_register_and_drops_the_circuit():
-    """`visualization` is 16.0% of the list payload; `operations` is 81% of that.
+def test_the_list_view_sends_the_whole_visualization():
+    """Browse thumbnails and map-node pages draw circuits from this view.
 
-    Every record needs `wires` — `deriveInterface` reads its length as the
-    record's stated register width. Nothing on the browse list reads `outcomes`.
+    `wires` is the register width `deriveInterface` reads, `operations` is the
+    drawing and `outcomes` a node page's outcome bars, so nothing in it is dropped.
     """
+    visualization = {
+        "wires": ["q0", "q1"],
+        "operations": [{"label": "H", "qubits": [0], "tone": "accent"}],
+        "outcomes": [{"label": "0", "probability": 0.5}],
+    }
     projected = project_record_for_list_view(
-        {
-            "slug": "x",
-            "category": "algorithms",
-            "visualization": {
-                "wires": ["q0", "q1"],
-                "operations": [{"label": "H", "qubits": [0]}],
-                "outcomes": [{"label": "0", "probability": 0.5}],
-            },
-        }
+        {"slug": "x", "category": "algorithms", "visualization": visualization}
     )
-    assert projected["visualization"] == {"wires": ["q0", "q1"]}
+    assert projected["visualization"] == visualization
 
 
-def test_a_gate_keeps_its_circuit_because_the_sidebar_draws_it():
-    """The one place the browse list draws a circuit.
+def test_a_gate_is_no_longer_a_special_case():
+    """Gates kept `operations` alone while the gate sidebar was the only drawing.
 
-    `gateEntries` is `category === "gates" ? ordered : []`
-    (repository-browser.tsx:660-663) and the sidebar draws `selectedGateEntry`
-    at :1562. Gates are 29 of 369 records and their circuits are small, so
-    keeping this costs 1,822 bytes — measured, against dropping it everywhere.
-    An on-demand fetch would trade those bytes for a round trip, a loading state
-    and an error path on a pane that cannot currently fail.
+    They now get the same whole field as every other record, `outcomes` included.
     """
-    projected = project_record_for_list_view(
-        {
-            "slug": "x",
-            "category": "gates",
-            "visualization": {
-                "wires": ["q0"],
-                "operations": [{"label": "H", "qubits": [0]}],
-                "outcomes": [{"label": "0", "probability": 0.5}],
-            },
-        }
-    )
-    assert projected["visualization"] == {
+    visualization = {
         "wires": ["q0"],
         "operations": [{"label": "H", "qubits": [0]}],
+        "outcomes": [{"label": "0", "probability": 0.5}],
     }
-    # `outcomes` goes even for a gate: the gate pane does not read it either.
-    assert "outcomes" not in projected["visualization"]
+    projected = project_record_for_list_view(
+        {"slug": "x", "category": "gates", "visualization": visualization}
+    )
+    assert projected["visualization"] == visualization
 
 
-def test_the_category_is_read_off_the_source_record():
-    """The only projection here that depends on a second field.
+# Copied verbatim from production on 2026-09-12 and shared with the web-side
+# validator, so the two languages test one payload rather than two retypings of
+# it. `listRows` are rows of `?view=list` as served; `detailVisualization` is the
+# same records' `visualization` from the detail endpoint.
+_PRODUCTION_LIST_VIEW = json.loads(
+    (
+        Path(__file__).resolve().parents[3]
+        / "scripts/catalog-bootstrap/fixtures/production-list-view-2026-09-12.json"
+    ).read_text(encoding="utf-8")
+)
 
-    Reading it off the projected dict would couple this to `category` staying on
-    the allowlist, and the coupling would be silent: every gate would quietly
-    lose its circuit the day `category` left.
+
+@pytest.mark.parametrize("slug", ["ghz-state-pennylane", "vqe-hardware-efficient-ansatz"])
+def test_a_non_gate_keeps_its_circuit_because_the_atlas_draws_it_from_the_list(slug):
+    """The browse thumbnails and the method-page circuit are drawn from this view.
+
+    Production served both of these rows as `{"wires": [...]}` and nothing else,
+    so neither drew — while the static corpus, which local development reads,
+    drew both. `outcomes` rides along with the circuit: a method page draws its
+    outcome bars from it (24 of the 76 node pages that lead with a circuit,
+    measured 2026-09-12), so the list's `visualization` is the detail page's.
     """
-    record = {
-        "slug": "x",
-        "category": "gates",
-        "visualization": {"wires": ["q0"], "operations": [{"label": "H"}]},
-        "classicalComparison": {"baseline": "O(N)"},
-    }
-    assert "operations" in project_record_for_list_view(record)["visualization"]
+    served = next(row for row in _PRODUCTION_LIST_VIEW["listRows"] if row["slug"] == slug)
+    detail = _PRODUCTION_LIST_VIEW["detailVisualization"][slug]
+    assert served["record"]["visualization"] == {"wires": detail["wires"]}
+    projected = project_record_for_list_view({**served["record"], "visualization": detail})
+    assert projected["visualization"] == detail
+
+
+def test_the_circuit_does_not_depend_on_the_category():
+    """The projection used to read `category` to decide who kept a circuit.
+
+    A record with no category, or one this build does not know, keeps it too.
+    """
+    for record in (
+        {"slug": "x", "visualization": {"wires": ["q0"], "operations": [{"label": "H"}]}},
+        {
+            "slug": "x",
+            "category": "not-a-category",
+            "visualization": {"wires": ["q0"], "operations": [{"label": "H"}]},
+        },
+    ):
+        assert "operations" in project_record_for_list_view(record)["visualization"]
 
 
 def test_a_malformed_visualization_is_passed_through_rather_than_repaired():
