@@ -2,19 +2,20 @@
 
 import { useLayoutEffect } from "react";
 import { usePathname } from "next/navigation";
-import { ACCENT_STORAGE_KEY, applyAccent, applyTheme, resolveAccent, resolveTheme, THEME_STORAGE_KEY } from "../lib/theme";
+import { ACCENT_STORAGE_KEY, applyAccent, applyTheme, resolveAccent, resolveTheme, THEME_STORAGE_KEY, type Theme } from "../lib/theme";
 
 /**
  * Locale navigation replaces the root HTML attributes without rerunning Next
  * Script, so the theme and the workspace accent are re-resolved here on every
  * path change, on a storage change from another tab, on page restore, and when
- * the OS scheme flips.
+ * the OS scheme flips. `forcedTheme` is the document's own theme when its layout
+ * fixes one (the public site is dark); a saved choice never overrides it.
  */
-export function ThemeController({ locale }: { locale: string }) {
+export function ThemeController({ locale, forcedTheme }: { locale: string; forcedTheme?: Theme }) {
   const pathname = usePathname();
   useLayoutEffect(() => {
     const sync = () => {
-      applyTheme(resolveTheme(pathname));
+      applyTheme(resolveTheme(pathname, forcedTheme));
       applyAccent(resolveAccent(pathname));
     };
     sync();
@@ -30,6 +31,6 @@ export function ThemeController({ locale }: { locale: string }) {
       window.removeEventListener("pageshow", sync);
       media.removeEventListener("change", sync);
     };
-  }, [locale, pathname]);
+  }, [locale, pathname, forcedTheme]);
   return null;
 }

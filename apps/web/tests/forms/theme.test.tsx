@@ -49,17 +49,37 @@ test("a theme change from another tab updates the page and controls", () => {
 });
 
 
-test("a saved theme is kept on public pages too, and nothing is written back", () => {
+test("the public website is dark whatever was saved, and the saved choice is kept for the workspace", () => {
   installMedia();
   window.localStorage.setItem(THEME_STORAGE_KEY, "light");
   const view = render(<ThemeController locale="en" />);
-  assert.equal(document.documentElement.dataset.theme, "light");
-  for (const path of ["/", "/workspace", "/repository", "/repository/layers", "/about", "/pricing", "/contact", "/ja/about", "/run", "/events/qiskit-fall-fest-2026"]) {
+  assert.equal(document.documentElement.dataset.theme, "light", "/run keeps the saved light");
+  for (const path of ["/", "/workspace", "/repository", "/repository/layers", "/about", "/pricing", "/contact", "/privacy", "/terms", "/ja/about"]) {
+    window.history.replaceState(null, "", path);
+    view.rerender(<ThemeController locale="en" />);
+    assert.equal(document.documentElement.dataset.theme, "dark", path);
+    assert.equal(window.localStorage.getItem(THEME_STORAGE_KEY), "light", `${path} leaves the saved choice alone`);
+  }
+  for (const path of ["/run", "/account"]) {
     window.history.replaceState(null, "", path);
     view.rerender(<ThemeController locale="en" />);
     assert.equal(document.documentElement.dataset.theme, "light", path);
-    assert.equal(window.localStorage.getItem(THEME_STORAGE_KEY), "light");
   }
+});
+
+test("a document's forced theme beats a saved one, survives restore and other tabs, and is never written", () => {
+  installMedia();
+  window.history.replaceState(null, "", "/welcome");
+  window.localStorage.setItem(THEME_STORAGE_KEY, "light");
+  render(<ThemeController locale="en" forcedTheme="dark" />);
+  assert.equal(document.documentElement.dataset.theme, "dark");
+  act(() => { window.dispatchEvent(new window.Event("pageshow")); });
+  assert.equal(document.documentElement.dataset.theme, "dark", "after pageshow");
+  act(() => {
+    window.dispatchEvent(new window.StorageEvent("storage", { key: THEME_STORAGE_KEY, newValue: "light" }));
+  });
+  assert.equal(document.documentElement.dataset.theme, "dark", "after a change from another tab");
+  assert.equal(window.localStorage.getItem(THEME_STORAGE_KEY), "light");
 });
 
 test("with nothing saved, public pages open dark and the workspace follows the OS", () => {

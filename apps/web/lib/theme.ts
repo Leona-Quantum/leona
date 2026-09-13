@@ -7,10 +7,12 @@ export type Accent = "moss" | "plum";
 export const ACCENTS: ReadonlyArray<Accent> = ["moss", "plum"];
 
 /**
- * Public pages open dark until the visitor chooses otherwise. Before 2026-09-12
- * they were pinned dark outright; now the light/dark control is back in the
- * public header, so a saved choice wins here too and this list only decides
- * the default for someone who has never picked.
+ * The public website is dark, with no choice (owner, 2026-09-12: "website: only dark
+ * theme, no togglable option"). These paths render dark whatever a visitor saved. The
+ * saved value is left in storage, untouched, because the signed-in workspace still
+ * reads it. The purely public root layouts also pass `forcedTheme="dark"` to
+ * `RootDocument`, so their served HTML is dark before any script runs; this list
+ * covers the public pages under a root that does not force it (the Atlas).
  */
 export const DARK_PUBLIC_PATHS = ["/", "/workspace", "/repository", "/about", "/pricing", "/contact", "/privacy", "/terms"];
 
@@ -49,9 +51,12 @@ export function preferredTheme(): Theme {
   return savedTheme() ?? (window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
 }
 
-/** What the page at `pathname` should show: the saved choice, else dark on public pages, else the OS. */
-export function resolveTheme(pathname: string): Theme {
-  return savedTheme() ?? (isDarkPublicPath(pathname) ? "dark" : preferredTheme());
+/**
+ * What the page at `pathname` should show: the document's forced theme if its layout
+ * set one, else dark on the public site, else the saved choice, else the OS.
+ */
+export function resolveTheme(pathname: string, forcedTheme?: Theme): Theme {
+  return forcedTheme ?? (isDarkPublicPath(pathname) ? "dark" : preferredTheme());
 }
 
 export function preferredAccent(): Accent {

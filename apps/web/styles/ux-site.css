@@ -42,12 +42,11 @@
 .lq-public-auth { flex: 0 0 auto; }
 .mj-public-site .mj-public-nav-primary { min-height: var(--header-control-h); padding-block: 0; padding-inline: var(--sp-3); font-size: var(--fs-13); }
 .mj-public-site .mj-public-nav-signout { display: inline-flex; align-items: center; min-height: var(--header-control-h); }
-/* The toggle groups carry 2px of padding and a 1px border of their own; the buttons give
-   that back so the group, not the button, is the 48px control. */
-.lq-public-preferences :is(.mj-theme-toggle, .mj-language-toggle) { padding: 0; }
-.lq-public-preferences .mj-theme-toggle button,
+/* The language toggle carries 2px of padding and a 1px border of its own; its buttons give
+   that back so the group, not the button, is the header control. The theme toggle left the
+   public header on 2026-09-12: the website is dark only. */
+.lq-public-preferences .mj-language-toggle { padding: 0; }
 .lq-public-preferences .mj-language-toggle button { min-width: var(--header-control-h); min-height: calc(var(--header-control-h) - 2 * var(--border-hairline)); }
-.lq-public-preferences .mj-theme-toggle span { display: none; }
 .mj-public-site :where(a, button, input, textarea, select, summary):focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: var(--sp-1);
