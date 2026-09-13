@@ -845,15 +845,27 @@ function hopNoteOf(
  */
 export function exampleRunNote(run: MethodExampleRun | undefined, ja: boolean): string | null {
   if (run === undefined) return null;
-  const kind = {
-    simulation: { en: "Classical simulation", ja: "古典計算機によるシミュレーション" },
-    hardware: { en: "Run on quantum hardware", ja: "量子ハードウェア上での実行" },
-    analytic: { en: "Worked analytic instance", ja: "解析的に追った具体例" },
-  }[run.kind];
   // The arXiv id rather than the url: the url is already a link on the card's
   // citation list, and a bare address inside a one-line note is chrome.
   const paper = run.paper.replace(/^https?:\/\/arxiv\.org\/abs\//, "arXiv:");
-  return ja ? `${kind.ja}・${paper} ${run.at}` : `${kind.en} · ${run.at} of ${paper}`;
+  const kind = exampleRunKindLabel(run.kind, ja);
+  return ja ? `${kind}・${paper} ${run.at}` : `${kind} · ${run.at} of ${paper}`;
+}
+
+const EXAMPLE_RUN_KIND_LABELS = {
+  simulation: { en: "Classical simulation", ja: "古典計算機によるシミュレーション" },
+  hardware: { en: "Run on quantum hardware", ja: "量子ハードウェア上での実行" },
+  analytic: { en: "Worked analytic instance", ja: "解析的に追った具体例" },
+} as const;
+
+/**
+ * The first half of `exampleRunNote` on its own — what kind of run it was — for
+ * the method page's at-a-glance tile. Split out rather than copied, for the
+ * reason the note above gives: one field, one set of words, every surface.
+ */
+export function exampleRunKindLabel(kind: MethodExampleRun["kind"], ja: boolean): string {
+  const label = EXAMPLE_RUN_KIND_LABELS[kind];
+  return ja ? label.ja : label.en;
 }
 
 function exampleOf(method: LayerMethod, ja: boolean): CardValue<CardExample> {
