@@ -4,10 +4,33 @@
    Everything is scoped under .mj-tour-* so it cannot leak into the product.
    ========================================================================== */
 
+/* The veil over the page, for the step overlay and for the chooser. The chooser is
+   portaled outside the overlay, so it declares the variable itself rather than
+   inheriting it. The owner asked for "darkening the website" with the page still
+   visible behind. Light: the ground (--bg-0) is warm paper, and a paper-coloured
+   veil would lighten the page, so the veil is the ink (--text-0). Dark: the ground
+   itself, a little heavier. Both tokens are declared at :root; the lab palette's
+   --lab-bg, used here before, is scoped to [data-surface="lab"] and made the fill
+   invalid (opaque black). lib/tour/targets.test.ts checks the scoping, and the
+   headless walk measures the colour and the pixels behind it. */
+.mj-tour-layer,
+.mj-tour-chooser-backdrop {
+  --mj-tour-scrim: color-mix(in srgb, var(--text-0) 55%, transparent);
+}
+
+:root[data-theme="dark"] .mj-tour-layer,
+:root[data-theme="dark"] .mj-tour-chooser-backdrop {
+  --mj-tour-scrim: color-mix(in srgb, var(--bg-0) 66%, transparent);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme]) .mj-tour-layer,
+  :root:not([data-theme]) .mj-tour-chooser-backdrop {
+    --mj-tour-scrim: color-mix(in srgb, var(--bg-0) 66%, transparent);
+  }
+}
+
 .mj-tour-layer {
-  /* The dimmed page. Darkening in both themes, per the owner ("darkening the
-     website"): built on the lab ground, which is near-black whatever the theme. */
-  --mj-tour-scrim: color-mix(in srgb, var(--lab-bg) 62%, transparent);
   --mj-tour-glow: color-mix(in srgb, var(--accent) 42%, transparent);
   --mj-tour-z: 2147482000;
   position: fixed;
@@ -429,7 +452,7 @@
   display: grid;
   place-items: center;
   padding: var(--sp-4);
-  background: var(--mj-tour-scrim, color-mix(in srgb, var(--lab-bg) 62%, transparent));
+  background: var(--mj-tour-scrim);
   font-family: var(--font-ui);
 }
 

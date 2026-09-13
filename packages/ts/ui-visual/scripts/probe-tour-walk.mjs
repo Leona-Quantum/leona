@@ -19,6 +19,7 @@ import { chromium } from "@playwright/test";
 import { mkdirSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { inflateSync } from "node:zlib";
 import { TOURS_COPY } from "../../../../apps/web/lib/workspace-locale.ts";
 import { stepCopyKey, tourById } from "../../../../apps/web/lib/tour/tracks.ts";
 
@@ -50,6 +51,14 @@ async function open(browser, options = {}) {
     reducedMotion: options.reducedMotion ?? "no-preference",
   });
   if (options.cookies) await context.addCookies(options.cookies.map((cookie) => ({ url: BASE, ...cookie })));
+  if (options.theme) {
+    // The saved theme the inline head script reads before first paint (lib/theme.ts).
+    await context.addInitScript((theme) => {
+      try {
+        localStorage.setItem("majorana.theme.v1", theme);
+      } catch {}
+    }, options.theme);
+  }
   await context.addInitScript((seed) => {
     const log = (key, value) => {
       try {
@@ -239,6 +248,101 @@ async function walk(page, tourId, hooks = {}) {
 
 async function shot(page, name) {
   await page.screenshot({ path: join(SHOTS, `${name}.png`), type: "png" });
+}
+
+/** Decode an 8-bit, non-interlaced RGB or RGBA PNG, which is what Chromium screenshots are. */
+function decodePng(buffer) {
+  if (buffer.readUInt32BE(0) !== 0x89504e47) throw new Error("not a PNG");
+  let offset = 8;
+  let width = 0;
+  let height = 0;
+  let bitDepth = 0;
+  let colorType = 0;
+  let interlace = 0;
+  const idat = [];
+  while (offset < buffer.length) {
+    const length = buffer.readUInt32BE(offset);
+    const type = buffer.toString("ascii", offset + 4, offset + 8);
+    const data = buffer.subarray(offset + 8, offset + 8 + length);
+    if (type === "IHDR") {
+      width = data.readUInt32BE(0);
+      height = data.readUInt32BE(4);
+      bitDepth = data[8];
+      colorType = data[9];
+      interlace = data[12];
+    } else if (type === "IDAT") idat.push(data);
+    else if (type === "IEND") break;
+    offset += 12 + length;
+  }
+  if (bitDepth !== 8 || (colorType !== 2 && colorType !== 6) || interlace !== 0) {
+    throw new Error(`unsupported PNG: depth ${bitDepth}, colour type ${colorType}, interlace ${interlace}`);
+  }
+  const bpp = colorType === 6 ? 4 : 3;
+  const raw = inflateSync(Buffer.concat(idat));
+  const stride = width * bpp;
+  const pixels = Buffer.alloc(height * stride);
+  for (let y = 0; y < height; y += 1) {
+    const start = y * (stride + 1);
+    const filter = raw[start];
+    for (let x = 0; x < stride; x += 1) {
+      const a = x >= bpp ? pixels[y * stride + x - bpp] : 0;
+      const b = y > 0 ? pixels[(y - 1) * stride + x] : 0;
+      const c = x >= bpp && y > 0 ? pixels[(y - 1) * stride + x - bpp] : 0;
+      let value = raw[start + 1 + x];
+      if (filter === 1) value += a;
+      else if (filter === 2) value += b;
+      else if (filter === 3) value += Math.floor((a + b) / 2);
+      else if (filter === 4) {
+        const p = a + b - c;
+        const pa = Math.abs(p - a);
+        const pb = Math.abs(p - b);
+        const pc = Math.abs(p - c);
+        value += pa <= pb && pa <= pc ? a : pb <= pc ? b : c;
+      } else if (filter !== 0) throw new Error(`bad PNG filter ${filter}`);
+      pixels[y * stride + x] = value & 0xff;
+    }
+  }
+  return { width, height, bpp, pixels };
+}
+
+/** Mean and spread of luma over an image. Spread is how much content is still legible. */
+function lumaStats(image) {
+  const values = [];
+  for (let index = 0; index < image.pixels.length; index += image.bpp) {
+    values.push(0.2126 * image.pixels[index] + 0.7152 * image.pixels[index + 1] + 0.0722 * image.pixels[index + 2]);
+  }
+  const mean = values.reduce((sum, value) => sum + value, 0) / values.length;
+  const sd = Math.sqrt(values.reduce((sum, value) => sum + (value - mean) ** 2, 0) / values.length);
+  return { mean: Math.round(mean * 10) / 10, sd: Math.round(sd * 10) / 10 };
+}
+
+async function sampleBox(page, box) {
+  const clip = { x: Math.round(box.x), y: Math.round(box.y), width: Math.max(4, Math.round(box.width)), height: Math.max(4, Math.round(box.height)) };
+  return lumaStats(decodePng(await page.screenshot({ clip, type: "png", animations: "disabled" })));
+}
+
+/** `rgb()`, `rgba()` or `color(srgb … / a)`, as getComputedStyle writes them. */
+function parseColor(text) {
+  const numbers = (text.match(/-?\d*\.?\d+(?:e-?\d+)?/gi) ?? []).map(Number);
+  if (/^color\(srgb/.test(text)) return { r: numbers[0] * 255, g: numbers[1] * 255, b: numbers[2] * 255, a: text.includes("/") ? numbers[3] : 1 };
+  if (/^rgba?\(/.test(text)) return { r: numbers[0], g: numbers[1], b: numbers[2], a: numbers.length > 3 ? numbers[3] : 1 };
+  return null;
+}
+
+function boxesOverlap(a, b) {
+  return !(a.x + a.width <= b.x || b.x + b.width <= a.x || a.y + a.height <= b.y || b.y + b.height <= a.y);
+}
+
+/**
+ * The veil must darken the page and leave it readable. Asserted three ways: the
+ * computed colour is translucent and not opaque black, the pixels behind it got
+ * darker, and they kept some of their contrast (an opaque veil leaves none).
+ */
+function checkVeil(label, colorText, before, after) {
+  const color = parseColor(colorText ?? "");
+  check(`${label}: colour is translucent, not opaque black`, Boolean(color) && color.a > 0.2 && color.a < 1 && colorText !== "rgb(0, 0, 0)", colorText);
+  check(`${label}: the page behind is darker`, after.mean < before.mean - 3, `luma mean ${before.mean} → ${after.mean}`);
+  check(`${label}: the page behind is still readable`, after.sd > 2 && after.sd > before.sd * 0.15 && after.sd < before.sd, `luma spread ${before.sd} → ${after.sd}`);
 }
 
 const scenarios = {
@@ -480,6 +584,74 @@ const scenarios = {
     check("reduced motion: the orb neither breathes nor travels", motion.orb === "none" && /^0s/.test(motion.travel), JSON.stringify(motion));
     await shot(page, "14-reduced-motion-ja");
     await context.close();
+  },
+
+  async scrim_dims_the_page(browser) {
+    // Positive control for the pixel reader: a flat, known colour decodes as itself.
+    {
+      const { context, page } = await open(browser);
+      await page.setContent("<div style=\"margin:0;width:60px;height:60px;background:rgb(40, 160, 90)\"></div>");
+      const image = lumaStats(decodePng(await page.screenshot({ clip: { x: 20, y: 20, width: 20, height: 20 }, type: "png" })));
+      const expected = 0.2126 * 40 + 0.7152 * 160 + 0.0722 * 90;
+      check("pixel reader: a known colour decodes as itself", Math.abs(image.mean - expected) < 1.5 && image.sd < 1, `mean ${image.mean}, expected ${expected.toFixed(1)}, spread ${image.sd}`);
+      await context.close();
+    }
+    for (const theme of ["light", "dark"]) {
+      const { context, page } = await open(browser, { theme, reducedMotion: "reduce" });
+      await page.goto(`${BASE}/run`);
+      await waitFor(page, () => document.querySelectorAll("[data-tour=\"run-starter\"]").length > 0);
+      await page.waitForTimeout(2500);
+      const starter = await page.locator("[data-tour=\"run-starter\"]").first().boundingBox();
+      const starterBefore = await sampleBox(page, starter);
+      await page.evaluate(() => window.dispatchEvent(new CustomEvent("leona:tour", { detail: { action: "start", tour: "around", fromStart: true } })));
+      await waitFor(page, () => document.querySelector("[data-tour-layer]")?.dataset.phase === "reading");
+      await page.waitForTimeout(900);
+      const layer = await page.evaluate(() => {
+        const fill = document.querySelector(".mj-tour-scrim-fill");
+        const card = document.querySelector("[data-tour-card]")?.getBoundingClientRect();
+        const ring = document.querySelector(".mj-tour-ring")?.getBoundingClientRect();
+        const box = (rect) => (rect ? { x: rect.left, y: rect.top, width: rect.width, height: rect.height } : null);
+        return {
+          theme: document.documentElement.dataset.theme,
+          ground: getComputedStyle(document.body).backgroundColor,
+          scrimVariable: getComputedStyle(document.querySelector("[data-tour-layer]")).getPropertyValue("--mj-tour-scrim").trim(),
+          fill: fill ? getComputedStyle(fill).fill : null,
+          card: box(card),
+          hole: box(ring),
+        };
+      });
+      const stack = await page.evaluate(({ x, y }) => document.elementsFromPoint(x, y).slice(0, 4).map((node) => `${node.tagName.toLowerCase()}${node.getAttribute("class") ? `.${String(node.getAttribute("class")).trim().split(/\s+/).join(".")}` : ""}`), { x: starter.x + starter.width / 2, y: starter.y + starter.height / 2 });
+      const starterAfter = await sampleBox(page, starter);
+      console.log(`  ${theme} layer: ${JSON.stringify({ ...layer, stack })}`);
+      await shot(page, `17-scrim-${theme}`);
+      check(`scrim ${theme}: the theme is applied`, layer.theme === theme, `${layer.theme}, ground ${layer.ground}`);
+      check(`scrim ${theme}: the sampled control sits behind the veil, clear of the card and the spotlight`, (!layer.card || !boxesOverlap(starter, layer.card)) && (!layer.hole || !boxesOverlap(starter, layer.hole)), JSON.stringify({ starter, card: layer.card, hole: layer.hole }));
+      checkVeil(`scrim ${theme}`, layer.fill, starterBefore, starterAfter);
+
+      await page.evaluate(() => window.dispatchEvent(new CustomEvent("leona:tour", { detail: { action: "leave" } })));
+      await waitFor(page, () => !document.querySelector("[data-tour-layer]"));
+      await page.waitForTimeout(500);
+      const rail = await page.locator("[data-tour=\"rail-notebooks\"]").first().boundingBox();
+      const railBefore = await sampleBox(page, rail);
+      await page.locator("[data-tour=\"tour-help\"]").click();
+      await waitFor(page, () => Boolean(document.querySelector(".mj-tour-chooser-backdrop")));
+      await page.waitForTimeout(500);
+      const chooser = await page.evaluate(() => {
+        const node = document.querySelector(".mj-tour-chooser-backdrop");
+        const dialog = document.querySelector(".mj-tour-chooser").getBoundingClientRect();
+        return {
+          background: getComputedStyle(node).backgroundColor,
+          scrimVariable: getComputedStyle(node).getPropertyValue("--mj-tour-scrim").trim(),
+          dialog: { x: dialog.left, y: dialog.top, width: dialog.width, height: dialog.height },
+        };
+      });
+      const railAfter = await sampleBox(page, rail);
+      console.log(`  ${theme} chooser: ${JSON.stringify(chooser)}`);
+      await shot(page, `18-chooser-${theme}`);
+      check(`chooser ${theme}: the sampled rail link sits outside the dialog`, !boxesOverlap(rail, chooser.dialog), JSON.stringify({ rail, dialog: chooser.dialog }));
+      checkVeil(`chooser backdrop ${theme}`, chooser.background, railBefore, railAfter);
+      await context.close();
+    }
   },
 
   async phone_width(browser) {

@@ -134,6 +134,40 @@ test("every control a correction can name has a name in both languages", () => {
   assert.deepEqual(problems, []);
 });
 
+test("every design token the tour stylesheet uses is declared at the document root", () => {
+  // check-token-vars counts a token as defined if ANY selector declares it. The
+  // tour's veil was built on --lab-bg, which exists only under [data-surface="lab"],
+  // so on every page the tour runs on the colour-mix was invalid and the SVG fill
+  // fell back to opaque black. Only a declaration on a bare :root selector (with
+  // attribute or :not() qualifiers, and inside @media) reaches the tour's layer.
+  const strip = (css: string) => css.replace(/\/\*[\s\S]*?\*\//g, "");
+  const tokens = strip(readFileSync(join(WEB_ROOT, "../../packages/ts/ui/tokens.css"), "utf8"));
+  const rootScoped = new Set<string>();
+  const selectors: string[] = [];
+  let buffer = "";
+  for (const char of tokens) {
+    if (char === "{") {
+      selectors.push(buffer.trim());
+      buffer = "";
+    } else if (char === "}") {
+      const selector = selectors.pop() ?? "";
+      if (selector.split(",").some((part) => /^:root(?:\[[^\]]*\]|:not\([^()]*\))*$/.test(part.trim()))) {
+        for (const match of buffer.matchAll(/(--[\w-]+)\s*:/g)) rootScoped.add(match[1]!);
+      }
+      buffer = "";
+    } else {
+      buffer += char;
+    }
+  }
+  assert.ok(rootScoped.has("--bg-0") && rootScoped.has("--text-0"), "positive control: the ground and ink tokens are root-scoped");
+  assert.equal(rootScoped.has("--lab-bg"), false, "negative control: the lab palette is scoped to [data-surface=\"lab\"]");
+
+  const tourCss = strip(read("components/tour/tour.css"));
+  const used = [...tourCss.matchAll(/var\(\s*(--[\w-]+)\s*\)/g)].map((match) => match[1]!).filter((name) => !name.startsWith("--mj-tour-"));
+  assert.ok(used.length > 20, `read only ${used.length} token references from tour.css`);
+  assert.deepEqual([...new Set(used.filter((name) => !rootScoped.has(name)))], []);
+});
+
 test("every track and Show-me has its words, and every Show-me has keywords in both languages", () => {
   for (const locale of ["en", "ja"] as const) {
     for (const id of TOUR_TRACK_IDS) assert.ok(TOURS_COPY[locale].tracks[id].title, `${locale} ${id}`);
