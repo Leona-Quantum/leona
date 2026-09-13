@@ -9,7 +9,7 @@ import { paneForHash } from "./account-pane-selection.ts";
 const HERE = dirname(fileURLToPath(import.meta.url));
 
 // The rail's ids, in the order account-content.tsx declares them.
-const PANES = ["preferences", "identity", "usage", "workspaces", "archived", "qpu", "billing"] as const;
+const PANES = ["preferences", "tours", "identity", "usage", "workspaces", "archived", "qpu", "billing"] as const;
 
 describe("which settings pane a fragment asks for", () => {
   it("resolves the two entry points that existed before the rail did", () => {
