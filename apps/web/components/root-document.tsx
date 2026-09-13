@@ -57,6 +57,7 @@ import "../styles/ux-nala.css";
 import "../styles/ux-workspace.css";
 import "../styles/ux-atlas.css";
 import "../styles/ux-polish.css";
+import "../styles/ux-studio.css";
 import "../styles/ux-luminous.css";
 
 // Mirrors resolveTheme/resolveAccent in lib/theme.ts, inlined so the first paint is

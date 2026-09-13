@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo } from "react";
+import { useMemo, type CSSProperties } from "react";
 import type { BuilderStep, CustomGateDefinition } from "../../../lib/studio-builder";
 import { formatShare } from "../../../lib/simulation-visual";
 import { MAX_LIVE_PROBABILITY_QUBITS, playheadReading } from "../../../lib/studio-playhead";
@@ -76,7 +76,9 @@ export function PlayheadPanel({
       </div>
       {reading.kind === "ok" ? (
         <>
-          <ol className="mj-playhead-bars">
+          {/* Every row is its own grid, so the bitstring column is sized from the
+              register width rather than from its content: rows line up. */}
+          <ol className="mj-playhead-bars" style={{ "--playhead-bits": `${Math.max(3, qubitCount + 1)}ch` } as CSSProperties}>
             {reading.bars.map((bar) => (
               <li key={bar.bitstring}>
                 <code>{bar.bitstring}</code>
@@ -88,11 +90,12 @@ export function PlayheadPanel({
             ))}
             {reading.otherStates ? (
               <li className="is-other">
-                <code>…</code>
+                <code title={copy.simulationOtherBar(reading.otherStates)}>+{reading.otherStates}</code>
+                <span className="sr-only">{copy.simulationOtherBar(reading.otherStates)}</span>
                 <span className="mj-playhead-track" aria-hidden="true">
                   <span className="mj-playhead-fill" style={{ transform: `scaleX(${reading.otherProbability})` }} />
                 </span>
-                <span className="mj-playhead-value">{copy.simulationOtherBar(reading.otherStates)}</span>
+                <span className="mj-playhead-value">{formatShare(reading.otherProbability, "en-US")}</span>
               </li>
             ) : null}
           </ol>

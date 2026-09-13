@@ -1,0 +1,976 @@
+/* ── Studio, UX pass 6 (2026-09-12) ─────────────────────────────────────────
+   Users asked for the Studio to be brushed up "a lot". This sheet carries the
+   circuit header, the grouped palette, the moment-packed diagram with its gate
+   inspector and playhead, code beside the diagram, the simulation lanes and the
+   keyboard sheet. It loads last (components/root-document.tsx), so it settles
+   the Studio cascade over packages/ts/ui/styles.css and the pass-5 blocks in
+   app/globals.css. Every colour is a token; motion stops under
+   prefers-reduced-motion. */
+
+/* ── Header ─────────────────────────────────────────────────────────────── */
+.mj-studio-main-head {
+  align-items: flex-start;
+  gap: var(--sp-4);
+  margin-bottom: var(--sp-3);
+}
+/* The title block had no flex-grow, so the input's `min(100%, 560px)` resolved
+   against its own intrinsic 20-character width and clipped every real title
+   ("GHZ-style entangler with p"). */
+.mj-studio-title-block {
+  flex: 1 1 360px;
+  display: grid;
+  gap: var(--sp-2);
+  min-width: 0;
+}
+.mj-studio-title-input {
+  width: calc(100% + var(--sp-2));
+  max-width: 760px;
+  margin-left: calc(-1 * var(--sp-2));
+  padding: 2px var(--sp-2);
+  border-radius: var(--radius-control);
+  line-height: 1.3;
+  text-overflow: ellipsis;
+  transition: background-color var(--dur-hover) var(--ease-out-ui), box-shadow var(--dur-hover) var(--ease-out-ui);
+}
+.mj-studio-title-input:hover {
+  background: var(--bg-1);
+}
+.mj-studio-title-input:focus-visible {
+  background: var(--bg-1);
+  box-shadow: inset 0 0 0 1px var(--accent);
+}
+.mj-studio-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sp-1) var(--sp-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  color: var(--text-2);
+  font-size: var(--fs-12);
+  font-variant-numeric: tabular-nums;
+}
+.mj-studio-meta > li {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-2);
+  min-height: 22px;
+}
+.mj-studio-meta > li + li::before {
+  width: 3px;
+  height: 3px;
+  border-radius: 50%;
+  background: var(--text-2);
+  content: "";
+}
+.mj-studio-meta-framework {
+  padding: 0 var(--sp-2);
+  border: 1px solid var(--border-0);
+  border-radius: 999px;
+  color: var(--text-0);
+  font-family: var(--font-mono);
+}
+.mj-studio-meta-run {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: 0;
+  border: 0;
+  color: inherit;
+  background: transparent;
+  font: inherit;
+  cursor: pointer;
+}
+.mj-studio-meta-run:hover {
+  color: var(--text-0);
+}
+.mj-studio-meta-run:focus-visible {
+  border-radius: var(--radius-control);
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.mj-studio-meta-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--text-2);
+}
+.mj-studio-meta-run[data-state="current"] .mj-studio-meta-dot {
+  background: var(--ok);
+}
+.mj-studio-meta-run[data-state="stale"] .mj-studio-meta-dot {
+  background: var(--warn);
+}
+.mj-studio-actions {
+  align-items: center;
+}
+.mj-studio-shortcuts-button {
+  border-color: var(--border-0);
+  font-size: var(--fs-14);
+}
+
+/* The Qapp request, as a popover off the action row. */
+.mj-studio-actions > .leona-studio-qapp-disclosure {
+  position: relative;
+  padding: 0;
+  border: 0;
+}
+.mj-studio-actions > .leona-studio-qapp-disclosure > summary {
+  padding: 0 var(--sp-3);
+  color: var(--text-0);
+  font-size: var(--fs-13);
+  line-height: 1;
+  list-style: none;
+}
+.mj-studio-actions > .leona-studio-qapp-disclosure > summary::-webkit-details-marker {
+  display: none;
+}
+.mj-studio-actions > .leona-studio-qapp-disclosure[open] > summary {
+  border-color: var(--accent);
+}
+.mj-studio-actions > .leona-studio-qapp-disclosure > .mj-studio-qapp-request {
+  position: absolute;
+  top: calc(100% + var(--sp-2));
+  right: 0;
+  z-index: 30;
+  width: min(460px, calc(100vw - var(--sp-8)));
+  margin: 0;
+  grid-template-columns: minmax(0, 1fr);
+  align-items: stretch;
+  box-shadow: var(--shadow-popover);
+}
+.mj-studio-actions .mj-studio-qapp-submit {
+  justify-items: start;
+}
+.mj-studio-actions .mj-studio-qapp-submit p {
+  max-width: none;
+  text-align: left;
+}
+
+/* ── Tab bar ────────────────────────────────────────────────────────────── */
+.mj-studio-tabbar {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: var(--sp-4);
+  margin-bottom: var(--sp-4);
+  border-bottom: 1px solid var(--border-0);
+}
+.mj-studio-tabbar > .mj-studio-tabs {
+  margin-bottom: -1px;
+  border-bottom: 0;
+}
+.mj-studio-tabbar-tools {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  padding-bottom: var(--sp-2);
+}
+.mj-studio-split-toggle {
+  min-height: 28px;
+  padding: 0 var(--sp-3);
+  border: 1px solid var(--border-0);
+  border-radius: 999px;
+  color: var(--text-1);
+  background: transparent;
+  font: inherit;
+  font-size: var(--fs-12);
+  cursor: pointer;
+}
+.mj-studio-split-toggle:hover {
+  color: var(--text-0);
+}
+.mj-studio-split-toggle:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.mj-studio-split-toggle.is-active {
+  border-color: var(--accent);
+  color: var(--text-0);
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+}
+
+/* ── Panels and the split view ──────────────────────────────────────────── */
+.mj-studio-panels {
+  display: grid;
+  gap: var(--sp-4);
+}
+/* Every Studio panel is hidden with the attribute, and an author `display`
+   would silently beat it. */
+.mj-studio-panels > [hidden] {
+  display: none !important;
+}
+.mj-studio-panels.is-split {
+  grid-template-columns: minmax(0, 5fr) minmax(0, 7fr);
+  align-items: start;
+}
+.mj-studio-panels.is-split > .mj-studio-code-panel {
+  position: sticky;
+  top: 0;
+}
+.mj-studio-surface-head {
+  min-height: 52px;
+  padding: var(--sp-3) var(--sp-4);
+}
+
+/* ── Visual: toolbar ────────────────────────────────────────────────────── */
+/* The canvas was padded, so its head floated as a grey band inside the card
+   while the other three tabs' heads ran edge to edge. */
+.mj-studio-canvas {
+  padding: 0;
+}
+.mj-studio-canvas-toolbar {
+  display: grid;
+  gap: var(--sp-3);
+  padding: var(--sp-3) var(--sp-4);
+  border-bottom: 1px solid var(--border-0);
+  background: var(--bg-1);
+}
+.mj-studio-canvas-toolbar .mj-builder-palette {
+  align-items: flex-end;
+  gap: var(--sp-2) var(--sp-4);
+  padding: 0;
+}
+.mj-builder-palette-group {
+  display: grid;
+  gap: var(--sp-1);
+}
+.mj-builder-palette-label {
+  color: var(--text-2);
+  font-size: var(--fs-12);
+  line-height: 1.2;
+}
+.mj-builder-palette-gates {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 2px;
+  border: 1px solid var(--border-0);
+  border-radius: calc(var(--radius-control) + 2px);
+  background: var(--bg-0);
+}
+.mj-builder-palette-gates > .mj-builder-gate {
+  min-width: 34px;
+  min-height: 28px;
+  border-color: transparent;
+  color: var(--text-0);
+  background: transparent;
+  font-weight: 500;
+  transition: background-color var(--dur-hover) var(--ease-out-ui), color var(--dur-hover) var(--ease-out-ui);
+}
+.mj-builder-palette-gates > .mj-builder-gate[data-family="clifford"],
+.mj-builder-palette-gates > .mj-builder-gate[data-family="entangler"] {
+  box-shadow: inset 0 -2px 0 color-mix(in srgb, var(--accent) 45%, transparent);
+}
+.mj-builder-palette-gates > .mj-builder-gate[data-family="rotation"] {
+  box-shadow: inset 0 -2px 0 color-mix(in srgb, var(--accent-2) 60%, transparent);
+}
+.mj-builder-palette-gates > .mj-builder-gate[data-family="measure"] {
+  box-shadow: inset 0 -2px 0 color-mix(in srgb, var(--text-2) 50%, transparent);
+}
+.mj-builder-palette-gates > .mj-builder-gate:hover {
+  background: var(--bg-2);
+}
+.mj-builder-palette-gates > .mj-builder-gate:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+.mj-builder-palette-gates > .mj-builder-gate.is-active {
+  border-color: var(--accent);
+  color: var(--bg-0);
+  background: var(--accent);
+  box-shadow: none;
+}
+.mj-builder-palette-gates > .mj-builder-angle {
+  margin: 0 0 0 var(--sp-1);
+}
+.mj-builder-palette-gates > .mj-builder-angle select {
+  min-height: 26px;
+  padding: 0 var(--sp-1);
+  font-family: var(--font-mono);
+}
+.mj-builder-palette-gates > .mj-builder-angle select:disabled {
+  opacity: 0.5;
+}
+.mj-studio-canvas-toolbar .mj-builder-controls {
+  align-items: center;
+  gap: var(--sp-2);
+  padding-top: 0;
+}
+.mj-studio-canvas-toolbar .mj-builder-controls > button {
+  min-height: 28px;
+  font-size: var(--fs-12);
+}
+.mj-builder-controls-divider {
+  width: 1px;
+  height: 18px;
+  background: var(--border-0);
+}
+.mj-builder-controls-spacer {
+  flex: 1 1 auto;
+}
+.mj-studio-canvas > .mj-builder-custom-gates,
+.mj-studio-canvas > .mj-builder-custom-form {
+  margin: 0;
+  padding: var(--sp-3) var(--sp-4);
+  border-bottom: 1px solid var(--border-0);
+}
+.mj-studio-canvas > .mj-studio-optimizer {
+  margin: var(--sp-4);
+}
+.mj-studio-live-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 22px;
+  padding: 0 var(--sp-2);
+  border: 1px solid color-mix(in srgb, var(--ok) 45%, var(--border-0));
+  border-radius: 999px;
+  color: var(--ok);
+  font-size: var(--fs-12);
+}
+.mj-studio-live-pill::before {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+  content: "";
+  animation: mj-studio-live-pulse 1.8s ease-in-out infinite;
+}
+@keyframes mj-studio-live-pulse {
+  50% { opacity: 0.35; }
+}
+
+/* ── Visual: diagram and playhead ───────────────────────────────────────── */
+.mj-circuit-workbench {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(240px, 300px);
+  border-bottom: 1px solid var(--border-0);
+}
+.mj-circuit-workbench.is-readonly {
+  grid-template-columns: minmax(0, 1fr);
+}
+.mj-circuit-workbench > .mj-circuit-stage {
+  min-height: 300px;
+  padding: var(--sp-5) var(--sp-4);
+  border-right: 1px solid var(--border-0);
+  background-color: var(--bg-0);
+  background-image: radial-gradient(color-mix(in srgb, var(--text-2) 16%, transparent) 1px, transparent 1px);
+  background-size: 16px 16px;
+}
+.mj-circuit-workbench.is-readonly > .mj-circuit-stage {
+  border-right: 0;
+}
+.mj-studio-panels.is-split .mj-circuit-workbench {
+  grid-template-columns: minmax(0, 1fr);
+}
+.mj-studio-panels.is-split .mj-circuit-workbench > .mj-circuit-stage {
+  border-right: 0;
+  border-bottom: 1px solid var(--border-0);
+}
+.mj-circuit-wire {
+  stroke: color-mix(in srgb, var(--text-2) 55%, transparent);
+  stroke-width: 1.5;
+}
+.mj-circuit-label {
+  fill: var(--text-2);
+}
+.mj-circuit-gate {
+  transition: opacity 180ms var(--ease-out-ui);
+}
+.mj-circuit-gate[data-family="clifford"] rect {
+  fill: color-mix(in srgb, var(--accent) 12%, var(--bg-1));
+  stroke: color-mix(in srgb, var(--accent) 55%, var(--border-0));
+}
+.mj-circuit-gate[data-family="rotation"] rect {
+  fill: color-mix(in srgb, var(--accent-2) 14%, var(--bg-1));
+  stroke: color-mix(in srgb, var(--accent-2) 60%, var(--border-0));
+}
+.mj-circuit-gate[data-family="measure"] rect {
+  fill: var(--bg-2);
+  stroke: color-mix(in srgb, var(--text-2) 60%, var(--border-0));
+}
+.mj-circuit-gate[data-family="custom"] rect {
+  fill: color-mix(in srgb, var(--accent-2) 10%, var(--bg-1));
+  stroke: color-mix(in srgb, var(--accent-2) 60%, var(--border-0));
+  stroke-dasharray: 4 2;
+}
+.mj-circuit-gate[data-family] .mj-circuit-hit {
+  fill: transparent;
+  stroke: transparent;
+}
+.mj-circuit-gate[data-family]:hover rect,
+.mj-circuit-gate[data-family]:focus-visible rect,
+.mj-circuit-gate[data-family].is-selected rect {
+  stroke: var(--accent);
+  stroke-width: 2;
+}
+.mj-circuit-gate[data-family].is-selected rect:not(.mj-circuit-hit) {
+  fill: color-mix(in srgb, var(--accent) 24%, var(--bg-1));
+}
+.mj-circuit-gate[data-family]:focus-visible {
+  outline: none;
+}
+.mj-circuit-gate .mj-circuit-meter {
+  fill: none;
+  stroke: var(--text-1);
+  stroke-width: 1.6;
+  stroke-linecap: round;
+}
+.mj-circuit-param {
+  fill: var(--text-2);
+  font-size: 11px;
+}
+.mj-circuit-gate.is-future {
+  opacity: 0.32;
+}
+.mj-circuit-tick {
+  fill: var(--text-2);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  text-anchor: middle;
+}
+.mj-circuit-playhead line {
+  stroke: var(--accent);
+  stroke-width: 1.5;
+  stroke-dasharray: 4 3;
+}
+.mj-circuit-playhead path {
+  fill: var(--accent);
+}
+
+.mj-playhead {
+  display: grid;
+  align-content: start;
+  gap: var(--sp-3);
+  min-width: 0;
+  padding: var(--sp-4);
+  background: var(--bg-1);
+}
+.mj-playhead-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--sp-2);
+}
+.mj-playhead-head h3 {
+  margin: 0;
+  color: var(--text-0);
+  font-size: var(--fs-13);
+  font-weight: 500;
+}
+.mj-playhead-position {
+  color: var(--text-2);
+  font-size: var(--fs-12);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+.mj-playhead-transport {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+.mj-playhead-transport .mj-icon-button {
+  width: 28px;
+  height: 28px;
+  font-size: var(--fs-12);
+}
+.mj-playhead-transport .mj-icon-button:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+.mj-playhead-transport .mj-icon-button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+.mj-playhead-slider {
+  flex: 1 1 auto;
+  min-width: 60px;
+  margin: 0 var(--sp-1);
+  accent-color: var(--accent);
+}
+.mj-playhead-bars {
+  display: grid;
+  gap: var(--sp-1);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.mj-playhead-bars > li {
+  display: grid;
+  grid-template-columns: var(--playhead-bits, 6ch) minmax(40px, 1fr) 6.5ch;
+  align-items: center;
+  gap: var(--sp-2);
+  min-height: 20px;
+}
+.mj-playhead-bars code {
+  overflow: hidden;
+  color: var(--text-1);
+  font-family: var(--font-mono);
+  font-size: var(--fs-12);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.mj-playhead-track {
+  position: relative;
+  height: 8px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--text-2) 16%, transparent);
+}
+.mj-playhead-fill {
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: var(--accent);
+  transform-origin: left center;
+  transition: transform 260ms var(--ease-out-ui);
+  animation: mj-playhead-bar-in 360ms var(--ease-out-ui) both;
+}
+.mj-playhead-bars > li.is-other .mj-playhead-fill {
+  background: var(--text-2);
+}
+@keyframes mj-playhead-bar-in {
+  from { transform: scaleX(0); }
+}
+.mj-playhead-value {
+  color: var(--text-0);
+  font-size: var(--fs-12);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+  white-space: nowrap;
+}
+.mj-playhead-order,
+.mj-playhead-boundary,
+.mj-playhead-note {
+  margin: 0;
+  color: var(--text-2);
+  font-size: var(--fs-12);
+  line-height: 1.45;
+}
+.mj-playhead-note {
+  color: var(--text-1);
+}
+
+/* ── Visual: gate inspector ─────────────────────────────────────────────── */
+.mj-gate-inspector {
+  position: fixed;
+  z-index: 95;
+  width: max-content;
+  max-width: min(320px, calc(100vw - var(--sp-6)));
+  padding: var(--sp-3);
+  border: 1px solid var(--border-0);
+  border-radius: var(--radius-card);
+  color: var(--text-1);
+  background: var(--bg-1);
+  box-shadow: var(--shadow-popover);
+  font-size: var(--fs-12);
+  line-height: 1.45;
+  pointer-events: none;
+  transform: translateX(-50%);
+  animation: mj-gate-inspector-in 140ms var(--ease-out-ui) both;
+}
+.mj-gate-inspector[data-placement="above"] {
+  transform: translate(-50%, -100%);
+}
+@keyframes mj-gate-inspector-in {
+  from { opacity: 0; }
+}
+.mj-gate-inspector-head {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  margin-bottom: var(--sp-2);
+}
+.mj-gate-inspector-symbol {
+  display: inline-grid;
+  place-items: center;
+  min-width: 34px;
+  height: 34px;
+  padding: 0 var(--sp-1);
+  box-sizing: border-box;
+  border: 1.5px solid var(--border-0);
+  border-radius: 7px;
+  color: var(--text-0);
+  background: var(--bg-2);
+  font-family: var(--font-mono);
+  font-size: var(--fs-13);
+  font-weight: 600;
+}
+.mj-gate-inspector[data-family="clifford"] .mj-gate-inspector-symbol,
+.mj-gate-inspector[data-family="entangler"] .mj-gate-inspector-symbol {
+  border-color: color-mix(in srgb, var(--accent) 55%, var(--border-0));
+  background: color-mix(in srgb, var(--accent) 12%, var(--bg-1));
+}
+.mj-gate-inspector[data-family="rotation"] .mj-gate-inspector-symbol,
+.mj-gate-inspector[data-family="custom"] .mj-gate-inspector-symbol {
+  border-color: color-mix(in srgb, var(--accent-2) 60%, var(--border-0));
+  background: color-mix(in srgb, var(--accent-2) 14%, var(--bg-1));
+}
+.mj-gate-inspector-head strong {
+  display: block;
+  color: var(--text-0);
+  font-size: var(--fs-13);
+  font-weight: 600;
+}
+.mj-gate-inspector-head div > span {
+  color: var(--text-2);
+  font-family: var(--font-mono);
+}
+.mj-gate-inspector p {
+  margin: 0 0 var(--sp-2);
+}
+.mj-gate-inspector-angle {
+  display: flex;
+  align-items: baseline;
+  gap: var(--sp-2);
+}
+.mj-gate-inspector-angle span {
+  color: var(--text-2);
+}
+.mj-gate-inspector code {
+  color: var(--text-0);
+  font-family: var(--font-mono);
+}
+.mj-gate-inspector-matrix {
+  margin: var(--sp-2) 0 0;
+  padding-top: var(--sp-2);
+  border-top: 1px solid var(--border-0);
+}
+.mj-gate-inspector-matrix figcaption {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: var(--sp-1) var(--sp-3);
+  margin-bottom: var(--sp-2);
+  color: var(--text-2);
+}
+.mj-gate-inspector-matrix small {
+  font-family: var(--font-mono);
+  font-size: var(--fs-12);
+}
+/* Square brackets drawn with the grid's own edges, so the matrix reads as one. */
+.mj-gate-inspector-grid {
+  position: relative;
+  display: grid;
+  grid-template-columns: repeat(2, auto);
+  justify-content: start;
+  gap: 2px var(--sp-3);
+  width: max-content;
+  padding: var(--sp-1) var(--sp-3);
+  color: var(--text-0);
+  font-family: var(--font-mono);
+  font-size: var(--fs-12);
+  font-variant-numeric: tabular-nums;
+}
+.mj-gate-inspector-grid[data-size="4"] {
+  grid-template-columns: repeat(4, auto);
+}
+.mj-gate-inspector-grid::before,
+.mj-gate-inspector-grid::after {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 5px;
+  border: 1.5px solid var(--text-2);
+  content: "";
+}
+.mj-gate-inspector-grid::before {
+  left: 0;
+  border-right: 0;
+}
+.mj-gate-inspector-grid::after {
+  right: 0;
+  border-left: 0;
+}
+.mj-gate-inspector-grid > span {
+  text-align: center;
+}
+.mj-gate-inspector-grid > span[data-zero] {
+  color: var(--text-2);
+}
+.mj-gate-inspector-note {
+  color: var(--text-1);
+}
+
+/* ── Simulation ─────────────────────────────────────────────────────────── */
+.mj-studio-lane-head {
+  align-items: center;
+}
+.mj-studio-lane-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 22px;
+  padding: 0 var(--sp-2);
+  border-radius: 999px;
+  color: var(--text-1);
+  background: var(--bg-2);
+  font-size: var(--fs-12);
+}
+.mj-studio-lane-status::before {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--text-2);
+  content: "";
+}
+.mj-studio-lane-status[data-tone="ok"]::before {
+  background: var(--ok);
+}
+.mj-studio-lane-status[data-tone="warn"]::before {
+  background: var(--warn);
+}
+.mj-studio-record-badge {
+  display: inline-flex;
+  align-items: center;
+  margin-left: var(--sp-2);
+  padding: 0 var(--sp-2);
+  border-radius: 999px;
+  color: var(--text-0);
+  background: color-mix(in srgb, var(--accent) 16%, transparent);
+  font-size: var(--fs-12);
+  font-weight: 500;
+  vertical-align: 1px;
+}
+.mj-studio-simulation-record .mj-sim-chart-rows {
+  gap: var(--sp-1);
+}
+.mj-studio-simulation-record .mj-sim-chart-track {
+  height: 14px;
+  border: 0;
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--text-2) 14%, transparent);
+}
+.mj-studio-simulation-record .mj-sim-chart-fill {
+  transform-origin: left center;
+  animation: mj-studio-bar-in 620ms var(--ease-out-ui) both;
+  animation-delay: calc(var(--i, 0) * 45ms);
+}
+.mj-studio-simulation-record .mj-sim-chart-row:not(.is-peak):not(.is-other) .mj-sim-chart-fill {
+  background: color-mix(in srgb, var(--accent) 40%, var(--bg-2));
+}
+@keyframes mj-studio-bar-in {
+  from { transform: scaleX(0); }
+  to { transform: scaleX(1); }
+}
+/* A disabled hardware button was a full-width accent bar at 55% opacity: the
+   loudest object on the tab, and it did nothing. */
+.mj-qpu-flow > .mj-primary-button {
+  justify-self: start;
+}
+.mj-qpu-flow > .mj-primary-button:disabled {
+  border-color: var(--border-0);
+  color: var(--text-2);
+  background: var(--bg-1);
+  opacity: 1;
+  cursor: not-allowed;
+}
+.mj-qpu-flow .mj-studio-field select {
+  max-width: 360px;
+}
+
+/* ── Summary ────────────────────────────────────────────────────────────── */
+.mj-studio-version-meta {
+  align-items: center;
+}
+.mj-studio-version-badge {
+  display: inline-flex;
+  align-items: center;
+  min-height: 20px;
+  padding: 0 var(--sp-2);
+  border: 1px solid color-mix(in srgb, var(--ok) 50%, var(--border-0));
+  border-radius: 999px;
+  color: var(--ok);
+  font-size: var(--fs-12);
+}
+.mj-studio-version-origin {
+  color: var(--text-2);
+  font-size: var(--fs-12);
+}
+
+/* ── Status bar ─────────────────────────────────────────────────────────── */
+/* Messages ("CPU simulation recorded…") printed as loose text under the card,
+   often below the fold. Pinned to the bottom of the scroller now. */
+.mj-studio-main > .mj-studio-footer {
+  position: sticky;
+  bottom: 0;
+  z-index: 5;
+  justify-content: flex-start;
+  gap: var(--sp-3);
+  min-height: 40px;
+  margin: var(--sp-4) calc(-1 * var(--sp-6)) 0;
+  padding: var(--sp-2) var(--sp-6);
+  border-top: 1px solid var(--border-0);
+  color: var(--text-2);
+  background: color-mix(in srgb, var(--bg-0) 92%, transparent);
+  backdrop-filter: blur(6px);
+}
+.mj-studio-main > .mj-studio-footer[data-tone="message"] {
+  color: var(--text-0);
+}
+.mj-studio-main > .mj-studio-footer[data-tone="message"]::before {
+  flex: 0 0 auto;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--accent);
+  content: "";
+}
+.mj-studio-main > .mj-studio-footer > a {
+  margin-left: auto;
+}
+
+/* ── Keyboard sheet ─────────────────────────────────────────────────────── */
+.mj-shortcut-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 120;
+  display: grid;
+  place-items: center;
+  padding: var(--sp-4);
+  background: color-mix(in srgb, var(--bg-0) 55%, transparent);
+  backdrop-filter: blur(3px);
+  animation: mj-shortcut-fade 140ms var(--ease-out-ui) both;
+}
+@keyframes mj-shortcut-fade {
+  from { opacity: 0; }
+}
+.mj-shortcut-sheet {
+  width: min(760px, 100%);
+  max-height: calc(100dvh - var(--sp-8));
+  overflow-y: auto;
+  padding: var(--sp-5);
+  border: 1px solid var(--border-0);
+  border-radius: var(--radius-card);
+  background: var(--bg-1);
+  box-shadow: var(--shadow-popover);
+}
+.mj-shortcut-sheet-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: var(--sp-4);
+}
+.mj-shortcut-sheet-head h2 {
+  margin: 0;
+  color: var(--text-0);
+  font-size: var(--fs-16);
+  font-weight: 600;
+}
+.mj-shortcut-groups {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+  gap: var(--sp-5);
+}
+.mj-shortcut-group h3 {
+  margin: 0 0 var(--sp-3);
+  color: var(--text-2);
+  font-size: var(--fs-12);
+  font-weight: 500;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+.mj-shortcut-group dl {
+  display: grid;
+  gap: var(--sp-2);
+  margin: 0;
+}
+.mj-shortcut-group dl > div {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-3);
+}
+.mj-shortcut-group dt {
+  color: var(--text-1);
+  font-size: var(--fs-13);
+}
+.mj-shortcut-group dd {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 3px;
+  margin: 0;
+}
+.mj-shortcut-sheet kbd {
+  display: inline-grid;
+  place-items: center;
+  min-width: 22px;
+  height: 22px;
+  padding: 0 5px;
+  box-sizing: border-box;
+  border: 1px solid var(--border-0);
+  border-bottom-width: 2px;
+  border-radius: 5px;
+  color: var(--text-0);
+  background: var(--bg-0);
+  font-family: var(--font-mono);
+  font-size: var(--fs-12);
+  line-height: 1;
+}
+
+/* ── Responsive ─────────────────────────────────────────────────────────── */
+@media (max-width: 1180px) {
+  .mj-studio-panels.is-split {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .mj-studio-panels.is-split > .mj-studio-code-panel {
+    position: static;
+  }
+}
+@media (max-width: 1100px) {
+  .mj-circuit-workbench {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .mj-circuit-workbench > .mj-circuit-stage {
+    border-right: 0;
+    border-bottom: 1px solid var(--border-0);
+  }
+}
+@media (max-width: 900px) {
+  /* The base sheet stacked every surface head into a column, which spent a
+     grey band on a one-word title. */
+  .mj-studio-surface-head {
+    flex-direction: row;
+    flex-wrap: wrap;
+    align-items: center;
+  }
+  .mj-studio-main > .mj-studio-footer {
+    flex-direction: row;
+    align-items: center;
+    margin: var(--sp-4) calc(-1 * var(--sp-4)) 0;
+    padding: var(--sp-2) var(--sp-4);
+  }
+}
+@media (max-width: 720px) {
+  .mj-studio-actions > .leona-studio-qapp-disclosure[open] {
+    flex-basis: 100%;
+    order: 10;
+  }
+  .mj-studio-actions > .leona-studio-qapp-disclosure > .mj-studio-qapp-request {
+    position: static;
+    width: 100%;
+    margin-top: var(--sp-2);
+  }
+  .mj-builder-controls-spacer {
+    display: none;
+  }
+  .mj-studio-tabbar-tools {
+    display: none;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .mj-studio-title-input,
+  .mj-builder-palette-gates > .mj-builder-gate,
+  .mj-circuit-gate,
+  .mj-playhead-fill,
+  .mj-gate-inspector,
+  .mj-shortcut-backdrop,
+  .mj-studio-simulation-record .mj-sim-chart-fill,
+  .mj-studio-live-pill::before {
+    animation: none;
+    transition: none;
+  }
+}
