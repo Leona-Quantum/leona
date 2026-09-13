@@ -8,8 +8,11 @@ import { RootDocument, rootMetadata } from "../../components/root-document";
 // `lang="en"` is what this segment served before and what it serves now. It is
 // not a `[locale]` route and it does not read the locale cookie, so there is no
 // localised copy here for the attribute to be wrong about.
+//
+// Dark, because its pages wear the public site's chrome and the website is dark
+// only (owner, 2026-09-12).
 export const metadata = rootMetadata;
 
 export default function AuthRootLayout({ children }: { children: ReactNode }) {
-  return <RootDocument lang="en">{children}</RootDocument>;
+  return <RootDocument lang="en" forcedTheme="dark">{children}</RootDocument>;
 }

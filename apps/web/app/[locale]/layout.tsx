@@ -18,6 +18,9 @@ import { parsePublicLocale } from "../../lib/public-locale";
  *
  * `parsePublicLocale` rather than the raw segment, so an unexpected path cannot
  * put arbitrary text in an attribute the whole document is read through.
+ *
+ * `forcedTheme="dark"`: the public website is dark only (owner, 2026-09-12). A
+ * constant, so the served HTML is dark for every visitor and stays cacheable.
  */
 export const metadata = rootMetadata;
 
@@ -29,5 +32,5 @@ export default async function LocaleRootLayout({
   params: Promise<{ locale: string }>;
 }) {
   const { locale } = await params;
-  return <RootDocument lang={parsePublicLocale(locale)}>{children}</RootDocument>;
+  return <RootDocument lang={parsePublicLocale(locale)} forcedTheme="dark">{children}</RootDocument>;
 }

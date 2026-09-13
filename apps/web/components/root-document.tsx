@@ -43,7 +43,7 @@ import type { Metadata } from "next";
 import { Analytics } from "@vercel/analytics/next";
 import { Instrument_Sans, Instrument_Serif, JetBrains_Mono } from "next/font/google";
 import Script from "next/script";
-import { DARK_PUBLIC_PATHS, ACCENT_STORAGE_KEY, THEME_STORAGE_KEY } from "../lib/theme";
+import { DARK_PUBLIC_PATHS, ACCENT_STORAGE_KEY, THEME_STORAGE_KEY, type Theme } from "../lib/theme";
 import { ThemeController } from "./theme-controller";
 import { SIDEBAR_STORAGE_KEY } from "../lib/sidebar-layout";
 import { AUTH_HINT_COOKIE, AUTH_HINT_SIGNED_IN } from "../lib/auth-hint";
@@ -57,25 +57,29 @@ import "../styles/ux-nala.css";
 import "../styles/ux-workspace.css";
 import "../styles/ux-atlas.css";
 import "../styles/ux-polish.css";
+import "../styles/ux-luminous.css";
 
-// Mirrors resolveTheme/resolveAccent in lib/theme.ts, inlined so the first paint
-// already carries the visitor's choice: a saved theme wins everywhere, public pages
-// open dark otherwise, the workspace follows the OS; the accent choice applies only
-// off the public site (theme.test.tsx pins both against the library).
-const themeScript = `(() => {
+// Mirrors resolveTheme/resolveAccent in lib/theme.ts, inlined so the first paint is
+// already right: a layout's forced theme wins; the public website is dark (a saved
+// choice is ignored there but never cleared); the workspace takes the saved choice,
+// then the OS. The accent choice applies only off the public site. Each storage read
+// is guarded on its own, so a browser that blocks storage still gets the theme.
+// `'unsafe-inline'` covers this script in `script-src` (no hash pins its body), so it
+// may differ per layout.
+const themeScript = (forcedTheme?: Theme) => `(() => {
+  const root = document.documentElement;
+  const read = (key) => { try { return localStorage.getItem(key); } catch { return null; } };
   try {
-    const saved = localStorage.getItem(${JSON.stringify(THEME_STORAGE_KEY)});
     const path = location.pathname.replace(/^\\/(en|ja)(?=\\/|$)/, "").replace(/\\/$/, "") || "/";
-    const darkByDefault = ${JSON.stringify(DARK_PUBLIC_PATHS)}.includes(path) || path.startsWith("/repository/");
-    const publicSite = darkByDefault || path === "/events" || path.startsWith("/events/");
-    const theme = saved === "light" || saved === "dark"
-      ? saved
-      : darkByDefault ? "dark" : matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
-    document.documentElement.dataset.theme = theme;
-    const accent = localStorage.getItem(${JSON.stringify(ACCENT_STORAGE_KEY)});
-    if (!publicSite && accent === "plum") document.documentElement.dataset.accent = "plum";
-    else delete document.documentElement.dataset.accent;
-    document.documentElement.dataset.sidebarCollapsed = localStorage.getItem(${JSON.stringify(SIDEBAR_STORAGE_KEY)}) === "true" ? "true" : "false";
+    const publicDark = ${JSON.stringify(DARK_PUBLIC_PATHS)}.includes(path) || path.startsWith("/repository/");
+    const publicSite = publicDark || path === "/events" || path.startsWith("/events/");
+    const saved = read(${JSON.stringify(THEME_STORAGE_KEY)});
+    root.dataset.theme = ${JSON.stringify(forcedTheme ?? null)} ?? (publicDark ? "dark"
+      : saved === "light" || saved === "dark" ? saved
+      : matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
+    if (!publicSite && read(${JSON.stringify(ACCENT_STORAGE_KEY)}) === "plum") root.dataset.accent = "plum";
+    else delete root.dataset.accent;
+    root.dataset.sidebarCollapsed = read(${JSON.stringify(SIDEBAR_STORAGE_KEY)}) === "true" ? "true" : "false";
   } catch {}
 })();`;
 
@@ -205,10 +209,18 @@ function structuredData(origin: string) {
 }
 
 
-export function RootDocument({ lang, children }: { lang: string; children: ReactNode }) {
+/**
+ * `forcedTheme` fixes the document's theme for every visitor. It is written into the
+ * served `<html data-theme>` (no flash, and right even with scripts off), into the
+ * bootstrap script and into the controller, and a saved choice never overrides it.
+ * The public root layouts pass `"dark"` (owner, 2026-09-12: the website is dark
+ * only). It is a constant per layout, so public pages stay static.
+ */
+export function RootDocument({ lang, children, forcedTheme }: { lang: string; children: ReactNode; forcedTheme?: Theme }) {
   return (
     <html
       lang={lang}
+      data-theme={forcedTheme}
       suppressHydrationWarning
       className={`${instrumentSans.variable} ${instrumentSerif.variable} ${jetbrainsMono.variable}`}
       style={
@@ -223,7 +235,7 @@ export function RootDocument({ lang, children }: { lang: string; children: React
         <Script
           id="leona-theme"
           strategy="beforeInteractive"
-          dangerouslySetInnerHTML={{ __html: themeScript }}
+          dangerouslySetInnerHTML={{ __html: themeScript(forcedTheme) }}
         />
         <Script
           id="leona-locale"
@@ -251,7 +263,7 @@ export function RootDocument({ lang, children }: { lang: string; children: React
         </script>
       </head>
       <body>
-        <ThemeController locale={lang} />
+        <ThemeController locale={lang} forcedTheme={forcedTheme} />
         {children}
         {/* Vercel Web Analytics: cookie-free pageview beacon (ai-ops#92). The
             script no-ops when the project's Analytics feature is off, so this

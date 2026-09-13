@@ -48,14 +48,13 @@
  * 404 inside `/repository`, because the sheet's only rule was
  * `prefers-color-scheme`. It reverses for `dark` chosen on a light OS.
  *
- * What is read here is only the reader's EXPLICIT choice — see `readStoredTheme`
- * for why this stops short of resolving the OS preference the way
- * `root-document.tsx`'s script does. A stored `light`/`dark` is stamped onto
- * `.mj-nf`; anything else leaves the attribute off and the sheet's media query
- * decides, live. It runs in `useEffect` rather than during render for the same
- * reason the locale does, and the frame before it lands falls back to
- * `prefers-color-scheme`, which is exactly what shipped before. Strictly better,
- * never worse.
+ * **Since 2026-09-12 the public website is dark only** (owner: "website: only dark
+ * theme, no togglable option"), and a 404 is part of the website. So `.mj-nf` is
+ * stamped `data-theme="dark"` outright and no stored choice is read. The attribute
+ * is in the first render, so there is no frame on the OS palette either. The sheet
+ * keeps its light and OS blocks: `lib/not-found-standalone-tokens.test.ts` still
+ * pins all three against tokens.css, and the history above is why the OS block is
+ * guarded. Do not resolve `prefers-color-scheme` here if this ever changes back.
  *
  * **The title.** `generateMetadata` on `/q/[slug]` and `/repository/[slug]` runs
  * before the fetch that decides the page does not exist, so it titles the tab
@@ -77,45 +76,13 @@
 import { useEffect, useState } from "react";
 import { NOT_FOUND_COPY } from "../lib/public-copy";
 import { siteTitle } from "../lib/public-metadata";
-import { THEME_STORAGE_KEY, type Theme } from "../lib/theme";
 import {
   readPublicLocaleCookie,
   type PublicLocale,
 } from "../lib/public-locale";
 
-/**
- * The reader's EXPLICIT theme choice, or `null` if they have not made one.
- *
- * Only a stored `light`/`dark` is returned. Everything else — no stored value, a
- * value that is neither, or storage that throws in a private window — is `null`,
- * and `null` leaves `data-theme` off so the sheet's `prefers-color-scheme` rule
- * decides. That is the same answer the reader got before this function existed.
- *
- * **It deliberately does NOT resolve the OS preference itself**, which the first
- * version did, mirroring `root-document.tsx`'s pre-paint script. CodeRabbit
- * caught why that is wrong here: resolving it once at mount FREEZES it into the
- * attribute, and `data-theme="light"` then blocks the very media rule it was
- * copying. A reader with no stored choice whose OS flips to dark — at sunset, on
- * a schedule — would be left on the light palette by the attribute we wrote.
- * Leaving it unset keeps the media query live, which is strictly better than
- * copying its answer.
- *
- * The explicit case is unaffected and is the whole bug this exists for: a stored
- * `light` still stamps `data-theme="light"` and still beats a dark OS.
- */
-function readStoredTheme(): Theme | null {
-  try {
-    const saved = localStorage.getItem(THEME_STORAGE_KEY);
-    return saved === "light" || saved === "dark" ? saved : null;
-  } catch {
-    return null;
-  }
-}
-
-
 export function NotFoundStandalone() {
   const [locale, setLocale] = useState<PublicLocale>("en");
-  const [theme, setTheme] = useState<Theme | null>(null);
 
   useEffect(() => {
     const next = readPublicLocaleCookie();
@@ -124,7 +91,6 @@ export function NotFoundStandalone() {
     // not decoration: it is the only chance this page has to tell a screen
     // reader which language the text below is in.
     document.documentElement.lang = next;
-    setTheme(readStoredTheme());
     // The tab still says whatever the segment's `generateMetadata` guessed
     // before it knew the page was missing. Overwrite it with what the reader is
     // actually looking at, in the language they are reading it in.
@@ -136,7 +102,7 @@ export function NotFoundStandalone() {
   return (
     <>
       <link rel="stylesheet" href="/not-found.css" precedence="mj-not-found" />
-      <div className="mj-nf" lang={locale} data-theme={theme ?? undefined}>
+      <div className="mj-nf" lang={locale} data-theme="dark">
         <div className="mj-nf-inner">
           {/* The site's own wordmark, not the words in the body face.
               Measured on production 2026-08-26, `/repository/zzz` against
