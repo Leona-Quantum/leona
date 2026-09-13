@@ -55,7 +55,7 @@ const COPY = {
     overview: (steps: number, wires: number) =>
       `${wires} 本のワイヤーにまたがる ${steps} ステップです。ステップにカーソルを合わせるか、再生で順番に見られます。`,
     step: (n: number, total: number) => `ステップ ${n} / ${total}`,
-    on: "対象:",
+    on: "対象：",
     previous: "前のステップ",
     next: "次のステップ",
     play: "再生",

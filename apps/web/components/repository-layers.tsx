@@ -332,7 +332,7 @@ const COPY = {
     glancePseudocode: "Pseudocode",
     glanceCost: "Cost",
     glanceCostStated: "Stated in the source",
-    glanceCostReason: "Not stated, and why",
+    glanceCostReason: "Not stated (reason given)",
     glanceAlternatives: "Other ways to fill this slot",
     glanceContested: "Claim contested",
     railLabel: "Sections of this page",
@@ -2025,7 +2025,9 @@ export function LayerNodeView({
               locale={locale}
               caption={
                 <>
-                  {copy.heroFromRecord} <a href={`/repository/${lead.slug}`}>{recordTitle(lead)}</a>
+                  {copy.heroFromRecord}
+                  {locale === "ja" ? "" : " "}
+                  <a href={`/repository/${lead.slug}`}>{recordTitle(lead)}</a>
                   {alsoDrawn.length > 0 ? (
                     <>
                       {locale === "ja" ? "。" : " · "}

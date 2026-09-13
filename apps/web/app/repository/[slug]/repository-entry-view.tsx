@@ -165,7 +165,7 @@ const COPY = {
     steps: "ステップ",
     wires: "ワイヤー",
     papers: "論文",
-    onWires: "対象:",
+    onWires: "対象：",
     sourceReports: "出典の記載",
   },
 } as const;
