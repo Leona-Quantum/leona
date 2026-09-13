@@ -514,6 +514,49 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
     applyOverwritesEditedCode: string;
     applyOverwritesUnrepresentableCode: string;
     confirmApply: string;
+    // UX pass 6 (2026-09-12): the circuit header, gate inspector, playhead,
+    // code-beside-diagram view and the keyboard sheet.
+    metaQubits: (count: number) => string;
+    metaOperations: (count: number) => string;
+    metaDepth: (depth: number) => string;
+    metaSavedVersion: (id: string) => string;
+    metaCpuRun: (when: string) => string;
+    metaCpuRunStale: string;
+    metaNoCpuRun: string;
+    justNow: string;
+    shortcutsOpen: string;
+    shortcutsTitle: string;
+    shortcutsClose: string;
+    shortcutGroups: Record<"general" | "visual" | "simulation", string>;
+    shortcutRows: Record<string, string>;
+    paletteGroups: Record<"oneQubit" | "rotations" | "twoQubit" | "measure", string>;
+    gateNames: Record<string, string>;
+    inspectorActsOn: (qubits: string) => string;
+    inspectorAngle: string;
+    inspectorMatrix: string;
+    inspectorBasis: (first: string, second: string) => string;
+    inspectorNoMatrixMeasure: string;
+    inspectorNoMatrixCustom: (qubits: number) => string;
+    inspectorNoMatrixAngle: string;
+    inspectorMoment: (moment: number) => string;
+    playheadTitle: string;
+    playheadAfter: (moment: number, total: number) => string;
+    playheadStart: string;
+    playheadBoundary: string;
+    playheadStepBack: string;
+    playheadStepForward: string;
+    playheadToStart: string;
+    playheadToEnd: string;
+    playheadSlider: string;
+    playheadBitOrder: (highest: number) => string;
+    playheadUnavailable: (reason: string, limit: number) => string;
+    splitShow: string;
+    splitHide: string;
+    liveSync: string;
+    liveSyncHint: string;
+    codeFollowedDiagram: string;
+    laneReady: string;
+    latestRecord: string;
   };
   notebooks: {
     title: string;
@@ -1269,6 +1312,79 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
       applyOverwritesEditedCode: "The Code tab has changed since this diagram was drawn. Applying replaces that code with the diagram. Continue?",
       applyOverwritesUnrepresentableCode: "The Code tab holds source this editor cannot draw. Applying replaces it with the diagram, and the diagram cannot reproduce it. Continue?",
       confirmApply: "Replace the code",
+      metaQubits: (count) => (count === 1 ? "1 qubit" : `${count} qubits`),
+      metaOperations: (count) => (count === 1 ? "1 operation" : `${count} operations`),
+      metaDepth: (depth) => `depth ${depth}`,
+      metaSavedVersion: (id) => `Saved version ${id}`,
+      metaCpuRun: (when) => `CPU run ${when}`,
+      metaCpuRunStale: "CPU run is for earlier code",
+      metaNoCpuRun: "No CPU run yet",
+      justNow: "just now",
+      shortcutsOpen: "Keyboard shortcuts",
+      shortcutsTitle: "Keyboard shortcuts",
+      shortcutsClose: "Close",
+      shortcutGroups: { general: "Anywhere in Studio", visual: "Visual", simulation: "Simulation" },
+      shortcutRows: {
+        tabs: "Switch tab",
+        split: "Show the code beside the diagram",
+        sheet: "Show this list",
+        escape: "Close this list or a full-screen panel",
+        oneQubit: "Pick a one-qubit gate",
+        rotations: "Pick RX, RY or RZ",
+        twoQubit: "Pick CX, CZ or SWAP",
+        measure: "Pick measurement",
+        undo: "Remove the last gate",
+        delete: "Delete the selected gates",
+        step: "Move the playhead one moment",
+        runCpu: "Run the CPU simulation",
+      },
+      paletteGroups: { oneQubit: "One-qubit", rotations: "Rotations", twoQubit: "Two-qubit", measure: "Measure" },
+      gateNames: {
+        H: "Hadamard",
+        X: "Pauli-X",
+        Y: "Pauli-Y",
+        Z: "Pauli-Z",
+        S: "S phase",
+        T: "T phase",
+        RX: "X rotation",
+        RY: "Y rotation",
+        RZ: "Z rotation",
+        CX: "Controlled-X (CNOT)",
+        CZ: "Controlled-Z",
+        SWAP: "Swap",
+        M: "Measurement",
+      },
+      inspectorActsOn: (qubits) => `on ${qubits}`,
+      inspectorAngle: "Angle",
+      inspectorMatrix: "Matrix",
+      inspectorBasis: (first, second) => `Basis |${first} ${second}⟩: 00, 01, 10, 11`,
+      inspectorNoMatrixMeasure: "Not a unitary. Reads each qubit out as 0 or 1.",
+      inspectorNoMatrixCustom: (qubits) => `Custom gate on ${qubits} qubits. Its matrix is the product of its steps.`,
+      inspectorNoMatrixAngle: "This angle can't be evaluated here, so no matrix is shown.",
+      inspectorMoment: (moment) => `Moment ${moment}`,
+      playheadTitle: "Probabilities",
+      playheadAfter: (moment, total) => `After moment ${moment} of ${total}`,
+      playheadStart: "Before the first gate",
+      playheadBoundary: "Ideal and noiseless, computed in your browser. Not a run and not verification.",
+      playheadStepBack: "Back one moment",
+      playheadStepForward: "Forward one moment",
+      playheadToStart: "Go to the start",
+      playheadToEnd: "Go to the end",
+      playheadSlider: "Playhead position",
+      playheadBitOrder: (highest) => `Bits read q${highest} … q0`,
+      playheadUnavailable: (reason, limit) => ({
+        too_wide: `Live probabilities stop at ${limit} qubits.`,
+        opaque_custom: "An opaque custom gate has no steps to apply, so live probabilities are off.",
+        mid_circuit_measurement: "A gate follows a measurement on the same qubit, so live probabilities are off from here.",
+        angle: "An angle here is outside what the browser simulator reads, so live probabilities are off.",
+      }[reason] ?? "Live probabilities are unavailable for this circuit."),
+      splitShow: "Code beside diagram",
+      splitHide: "Diagram only",
+      liveSync: "Live",
+      liveSyncHint: "The code is exactly what the diagram generates, so it updates as you place gates.",
+      codeFollowedDiagram: "Code updated from the diagram.",
+      laneReady: "Ready",
+      latestRecord: "Latest",
     },
   notebooks: {
     title: "Notebooks",
@@ -2074,6 +2190,79 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
       applyOverwritesEditedCode: "この図を描いたあとにコードタブが変更されています。適用するとそのコードは図の内容で置き換えられます。続行しますか？",
       applyOverwritesUnrepresentableCode: "コードタブには、このエディタで描けないソースがあります。適用するとそのコードは図で置き換えられ、図から元に戻すことはできません。続行しますか？",
       confirmApply: "コードを置き換える",
+      metaQubits: (count) => `${count}量子ビット`,
+      metaOperations: (count) => `${count}操作`,
+      metaDepth: (depth) => `深さ${depth}`,
+      metaSavedVersion: (id) => `保存済みバージョン ${id}`,
+      metaCpuRun: (when) => `CPUシミュレーション ${when}`,
+      metaCpuRunStale: "CPU結果は以前のコードのものです",
+      metaNoCpuRun: "CPUシミュレーション未実行",
+      justNow: "たった今",
+      shortcutsOpen: "キーボードショートカット",
+      shortcutsTitle: "キーボードショートカット",
+      shortcutsClose: "閉じる",
+      shortcutGroups: { general: "Studio全体", visual: "ビジュアル", simulation: "シミュレーション" },
+      shortcutRows: {
+        tabs: "タブを切り替える",
+        split: "図の横にコードを表示",
+        sheet: "この一覧を表示",
+        escape: "この一覧や全画面パネルを閉じる",
+        oneQubit: "1量子ビットゲートを選ぶ",
+        rotations: "RX・RY・RZを選ぶ",
+        twoQubit: "CX・CZ・SWAPを選ぶ",
+        measure: "測定を選ぶ",
+        undo: "最後のゲートを取り消す",
+        delete: "選択したゲートを削除",
+        step: "再生位置を1モーメント動かす",
+        runCpu: "CPUシミュレーションを実行",
+      },
+      paletteGroups: { oneQubit: "1量子ビット", rotations: "回転", twoQubit: "2量子ビット", measure: "測定" },
+      gateNames: {
+        H: "アダマール",
+        X: "パウリX",
+        Y: "パウリY",
+        Z: "パウリZ",
+        S: "S位相",
+        T: "T位相",
+        RX: "X軸回転",
+        RY: "Y軸回転",
+        RZ: "Z軸回転",
+        CX: "制御X（CNOT）",
+        CZ: "制御Z",
+        SWAP: "SWAP",
+        M: "測定",
+      },
+      inspectorActsOn: (qubits) => `対象: ${qubits}`,
+      inspectorAngle: "角度",
+      inspectorMatrix: "行列",
+      inspectorBasis: (first, second) => `基底 |${first} ${second}⟩: 00, 01, 10, 11`,
+      inspectorNoMatrixMeasure: "ユニタリではありません。各量子ビットを0か1として読み出します。",
+      inspectorNoMatrixCustom: (qubits) => `${qubits}量子ビットのカスタムゲートです。行列は内部ステップの積です。`,
+      inspectorNoMatrixAngle: "この角度はここでは評価できないため、行列を表示しません。",
+      inspectorMoment: (moment) => `モーメント ${moment}`,
+      playheadTitle: "確率",
+      playheadAfter: (moment, total) => `モーメント ${moment}/${total} の後`,
+      playheadStart: "最初のゲートの前",
+      playheadBoundary: "ノイズなしの理想値で、ブラウザ内で計算しています。実行でも検証でもありません。",
+      playheadStepBack: "1モーメント戻る",
+      playheadStepForward: "1モーメント進む",
+      playheadToStart: "最初へ",
+      playheadToEnd: "最後へ",
+      playheadSlider: "再生位置",
+      playheadBitOrder: (highest) => `ビット順 q${highest} … q0`,
+      playheadUnavailable: (reason, limit) => ({
+        too_wide: `ライブ確率は${limit}量子ビットまでです。`,
+        opaque_custom: "中身を持たないカスタムゲートがあるため、ライブ確率は表示できません。",
+        mid_circuit_measurement: "測定のあとに同じ量子ビットへゲートがあるため、ここから先のライブ確率は表示できません。",
+        angle: "ブラウザのシミュレータが読めない角度があるため、ライブ確率は表示できません。",
+      }[reason] ?? "この回路ではライブ確率を表示できません。"),
+      splitShow: "図の横にコード",
+      splitHide: "図のみ",
+      liveSync: "連動中",
+      liveSyncHint: "コードは図から生成したものと同一なので、ゲートを置くたびに更新されます。",
+      codeFollowedDiagram: "図に合わせてコードを更新しました。",
+      laneReady: "実行可能",
+      latestRecord: "最新",
     },
   notebooks: {
     title: "ノートブック",

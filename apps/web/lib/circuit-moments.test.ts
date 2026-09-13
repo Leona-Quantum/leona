@@ -23,6 +23,8 @@ test("a two-qubit gate blocks the wires its connector crosses", () => {
   // CX(q0, q2) is drawn as a line over q1, so a q1 gate cannot share its column.
   const moments = circuitMoments(3, [on(0, 2), on(1)]);
   assert.deepEqual(moments.columns, [0, 1]);
+  // And the other order: a gate already on q1 pushes CX(q0, q2) to the next column.
+  assert.deepEqual(circuitMoments(3, [on(1), on(0, 2)]).columns, [0, 1]);
 });
 
 test("the GHZ-with-phase fixture packs into five moments, not eight", () => {

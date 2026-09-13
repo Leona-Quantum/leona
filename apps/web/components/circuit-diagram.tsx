@@ -1,8 +1,10 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState, type KeyboardEvent, type MouseEvent, type UIEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type FocusEvent, type KeyboardEvent, type MouseEvent, type PointerEvent, type UIEvent } from "react";
 import { builderStepLabel, type BuilderStep, type CustomGateDefinition } from "../lib/studio-builder";
 import { formatGateParam } from "../lib/gate-param-label";
+import { circuitMoments } from "../lib/circuit-moments";
+import { gateFamily } from "../lib/gate-inspector";
 import {
   CIRCUIT_COLUMN_WIDTH,
   CIRCUIT_LEFT_PAD,
@@ -26,7 +28,10 @@ import {
  * still passing handlers — the shape makes the invalid combination
  * unrepresentable instead. With `interaction` omitted, no gate slot, no
  * selection target, and no keyboard affordance is rendered at all; they are not
- * merely disabled. */
+ * merely disabled.
+ *
+ * Columns are moments (lib/circuit-moments), not one column per operation, so
+ * parallel gates line up the way they execute (UX pass 6). */
 
 export interface CircuitDiagramInteraction {
   selectedStepIds: string[];
@@ -38,11 +43,21 @@ export interface CircuitDiagramInteraction {
   onStepKeyDown: (stepId: string, event: KeyboardEvent<SVGGElement>) => void;
 }
 
+/** What a hovered or focused gate reports, so a caller can explain it. */
+export interface CircuitDiagramInspection {
+  step: BuilderStep;
+  index: number;
+  /** Zero-based moment the gate is drawn in. */
+  column: number;
+  /** The gate's box in viewport coordinates, for placing a popover beside it. */
+  rect: DOMRect;
+}
+
 /** Geometry is exported so a caller can size a scroll container to the diagram
  * it is about to draw without re-deriving these constants. */
-export function circuitDiagramSize(qubitCount: number, stepCount: number): { width: number; height: number } {
+export function circuitDiagramSize(qubitCount: number, columnCount: number): { width: number; height: number } {
   return {
-    width: Math.max(560, CIRCUIT_LEFT_PAD + (stepCount + 2) * CIRCUIT_COLUMN_WIDTH + 40),
+    width: Math.max(560, CIRCUIT_LEFT_PAD + (columnCount + 2) * CIRCUIT_COLUMN_WIDTH + 40),
     height: CIRCUIT_TOP_PAD + qubitCount * CIRCUIT_ROW_HEIGHT + 10,
   };
 }
@@ -53,14 +68,20 @@ export function CircuitDiagram({
   customGates,
   ariaLabel,
   interaction,
+  playhead = null,
+  onInspect,
 }: {
   qubitCount: number;
   steps: BuilderStep[];
   customGates: CustomGateDefinition[];
   ariaLabel: string;
   interaction?: CircuitDiagramInteraction;
+  /** Moment boundary to draw a playhead at; gates at or past it are dimmed. */
+  playhead?: number | null;
+  onInspect?: (target: CircuitDiagramInspection | null) => void;
 }) {
-  const { width, height } = circuitDiagramSize(qubitCount, steps.length);
+  const moments = useMemo(() => circuitMoments(qubitCount, steps), [qubitCount, steps]);
+  const { width, height } = circuitDiagramSize(qubitCount, moments.count);
   const readOnly = !interaction;
   const stageRef = useRef<HTMLDivElement>(null);
   const [viewport, setViewport] = useState<CircuitDiagramViewport>({ left: 0, top: 0, width: 1024, height: 640 });
@@ -81,22 +102,37 @@ export function CircuitDiagram({
   }, []);
 
   const visible = useMemo(
-    () => circuitDiagramWindow(qubitCount, steps.length, viewport),
-    [qubitCount, steps.length, viewport],
+    () => circuitDiagramWindow(qubitCount, moments.count, viewport),
+    [qubitCount, moments.count, viewport],
   );
   const visibleQubits = useMemo(
     () => Array.from({ length: visible.qubitEnd - visible.qubitStart }, (_, index) => visible.qubitStart + index),
     [visible.qubitEnd, visible.qubitStart],
   );
-  const visibleSteps = useMemo(
-    () => steps.slice(visible.stepStart, visible.stepEnd).map((step, offset) => ({ step, index: visible.stepStart + offset })),
-    [steps, visible.stepEnd, visible.stepStart],
-  );
+  // The window is in columns now; a step is drawn when its moment is on screen.
+  const visibleSteps = useMemo(() => {
+    const drawn: Array<{ step: BuilderStep; index: number; column: number }> = [];
+    for (let index = 0; index < steps.length; index += 1) {
+      const column = moments.columns[index];
+      if (column >= visible.stepStart && column < visible.stepEnd) drawn.push({ step: steps[index], index, column });
+    }
+    return drawn;
+  }, [steps, moments.columns, visible.stepStart, visible.stepEnd]);
 
   function handleScroll(event: UIEvent<HTMLDivElement>) {
     const stage = event.currentTarget;
     setViewport({ left: stage.scrollLeft, top: stage.scrollTop, width: stage.clientWidth, height: stage.clientHeight });
+    // A popover anchored to a gate that just scrolled away would point at nothing.
+    onInspect?.(null);
   }
+
+  const columnX = (column: number) => CIRCUIT_LEFT_PAD + column * CIRCUIT_COLUMN_WIDTH;
+  const yFor = (q: number) => CIRCUIT_TOP_PAD + q * CIRCUIT_ROW_HEIGHT;
+  const playheadMoment = typeof playhead === "number" ? playhead : null;
+  const showPlayhead = playheadMoment !== null;
+  const ticks = showPlayhead
+    ? Array.from({ length: Math.max(0, Math.min(visible.stepEnd, moments.count) - visible.stepStart) }, (_, offset) => visible.stepStart + offset)
+    : [];
 
   return (
     <div ref={stageRef} onScroll={handleScroll} className={`mj-circuit-stage${readOnly ? " mj-circuit-stage--readonly" : ""}`}>
@@ -107,13 +143,18 @@ export function CircuitDiagram({
         aria-label={ariaLabel}
         style={{ width, height, maxWidth: "none" }}
       >
+        {ticks.map((column) => (
+          <text key={`tick-${column}`} className="mj-circuit-tick" x={columnX(column)} y={10} aria-hidden="true">{column + 1}</text>
+        ))}
         {visibleQubits.map((q) => {
-          const y = CIRCUIT_TOP_PAD + q * CIRCUIT_ROW_HEIGHT;
+          const y = yFor(q);
+          const slotColumn = moments.frontier[q] ?? 0;
+          const slotVisible = interaction && slotColumn >= visible.stepStart && slotColumn <= visible.stepEnd;
           return (
             <g key={q}>
               <text className="mj-circuit-label" x="18" y={y + 5}>q{q}</text>
               <line className="mj-circuit-wire" x1={CIRCUIT_LEFT_PAD - 16} y1={y} x2={width - 24} y2={y} />
-              {interaction && visible.stepEnd === steps.length ? (
+              {slotVisible ? (
                 <g
                   className={`mj-circuit-gate mj-builder-slot${interaction.pendingQubits.includes(q) ? " is-selected" : ""}`}
                   role="button"
@@ -122,23 +163,24 @@ export function CircuitDiagram({
                   onClick={() => interaction.onPlaceOnQubit(q)}
                   onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); interaction.onPlaceOnQubit(q); } }}
                 >
-                  <rect x={CIRCUIT_LEFT_PAD + steps.length * CIRCUIT_COLUMN_WIDTH - 17} y={y - 17} width="34" height="34" rx="7" strokeDasharray="4 3" fill="transparent" />
-                  <text x={CIRCUIT_LEFT_PAD + steps.length * CIRCUIT_COLUMN_WIDTH} y={y + 5}>+</text>
+                  <rect x={columnX(slotColumn) - 17} y={y - 17} width="34" height="34" rx="7" strokeDasharray="4 3" fill="transparent" />
+                  <text x={columnX(slotColumn)} y={y + 5}>+</text>
                 </g>
               ) : null}
             </g>
           );
         })}
-        {visibleSteps.map(({ step, index }) => {
+        {visibleSteps.map(({ step, index, column }) => {
           const { min: minStepQubit, max: maxStepQubit } = step.qubits.reduce(
             (bounds, qubit) => ({ min: Math.min(bounds.min, qubit), max: Math.max(bounds.max, qubit) }),
             { min: Number.POSITIVE_INFINITY, max: Number.NEGATIVE_INFINITY },
           );
           if (maxStepQubit < visible.qubitStart || minStepQubit >= visible.qubitEnd) return null;
-          const x = CIRCUIT_LEFT_PAD + index * CIRCUIT_COLUMN_WIDTH;
-          const yFor = (q: number) => CIRCUIT_TOP_PAD + q * CIRCUIT_ROW_HEIGHT;
+          const x = columnX(column);
           const selected = interaction ? interaction.selectedStepIds.includes(step.id) : false;
+          const future = playheadMoment !== null && column >= playheadMoment;
           const label = builderStepLabel(step, customGates);
+          const className = `mj-circuit-gate${selected ? " is-selected" : ""}${future ? " is-future" : ""}`;
           const selectProps = interaction
             ? {
                 role: "button" as const,
@@ -148,14 +190,26 @@ export function CircuitDiagram({
                 onKeyDown: (event: KeyboardEvent<SVGGElement>) => interaction.onStepKeyDown(step.id, event),
               }
             : ({} as Record<string, never>);
+          const report = (element: SVGGElement) => onInspect?.({ step, index, column, rect: element.getBoundingClientRect() });
+          const inspectProps = onInspect
+            ? {
+                onPointerEnter: (event: PointerEvent<SVGGElement>) => report(event.currentTarget),
+                onPointerLeave: () => onInspect(null),
+                onFocus: (event: FocusEvent<SVGGElement>) => report(event.currentTarget),
+                onBlur: () => onInspect(null),
+              }
+            : {};
+          const shared = { className, "data-family": gateFamily(step.gate), ...selectProps, ...inspectProps };
+          // A native tooltip only where nothing richer explains the gate.
+          const title = onInspect ? null : <title>{label}</title>;
 
           if (step.gate === "CUSTOM") {
             const custom = customGates.find((gate) => gate.id === step.customGateId);
             const minQubit = Math.min(...step.qubits);
             const maxQubit = Math.max(...step.qubits);
             return (
-              <g className={`mj-circuit-gate mj-circuit-custom-gate${selected ? " is-selected" : ""}`} key={step.id} {...selectProps}>
-                <title>{label}</title>
+              <g {...shared} className={`${className} mj-circuit-custom-gate`} key={step.id}>
+                {onInspect ? null : <title>{label}</title>}
                 <line className="mj-circuit-control" x1={x} y1={yFor(minQubit)} x2={x} y2={yFor(maxQubit)} />
                 {step.qubits.map((qubit, qubitIndex) => ({ qubit, qubitIndex }))
                   .filter(({ qubit }) => qubit >= visible.qubitStart && qubit < visible.qubitEnd)
@@ -171,7 +225,10 @@ export function CircuitDiagram({
           if (step.gate === "CX" || step.gate === "CZ" || step.gate === "SWAP") {
             const [control, target] = step.qubits;
             return (
-              <g className={`mj-circuit-gate${selected ? " is-selected" : ""}`} key={step.id} {...selectProps}>
+              <g {...shared} key={step.id}>
+                {title}
+                {/* A wide transparent hit area, so the thin connector is easy to hover. */}
+                <rect className="mj-circuit-hit" x={x - 17} y={Math.min(yFor(control), yFor(target)) - 17} width="34" height={Math.abs(yFor(target) - yFor(control)) + 34} rx="7" />
                 <line className="mj-circuit-control" x1={x} y1={yFor(control)} x2={x} y2={yFor(target)} />
                 {step.gate === "SWAP" ? (
                   <>
@@ -196,13 +253,23 @@ export function CircuitDiagram({
           }
           const y = yFor(step.qubits[0]);
           return (
-            <g className={`mj-circuit-gate${selected ? " is-selected" : ""}`} key={step.id} {...selectProps}>
+            <g {...shared} key={step.id}>
+              {title}
               <rect x={x - 17} y={y - 17} width="34" height="34" rx="7" />
-              <text x={x} y={y + 5}>{step.gate === "M" ? "M" : step.gate}</text>
+              {step.gate === "M" ? (
+                // A meter, the way measurement is drawn in every textbook,
+                // rather than a letter that reads like one more gate.
+                <>
+                  <path className="mj-circuit-meter" d={`M${x - 10} ${y + 6}a10 10 0 0 1 20 0`} />
+                  <path className="mj-circuit-meter" d={`M${x} ${y + 6}l7 -11`} />
+                </>
+              ) : (
+                <text x={x} y={y + 5}>{step.gate}</text>
+              )}
               {step.param ? (
                 // The full angle stays in the code and in the tooltip; only the
                 // drawn label is bounded. See lib/gate-param-label.
-                <text className="mj-circuit-label" x={x} y={y + 30}>
+                <text className="mj-circuit-label mj-circuit-param" x={x} y={y + 30}>
                   <title>{step.param}</title>
                   {formatGateParam(step.param)}
                 </text>
@@ -210,6 +277,12 @@ export function CircuitDiagram({
             </g>
           );
         })}
+        {playheadMoment !== null ? (
+          <g className="mj-circuit-playhead" aria-hidden="true">
+            <line x1={columnX(playheadMoment) - CIRCUIT_COLUMN_WIDTH / 2} x2={columnX(playheadMoment) - CIRCUIT_COLUMN_WIDTH / 2} y1={14} y2={height - 4} />
+            <path d={`M${columnX(playheadMoment) - CIRCUIT_COLUMN_WIDTH / 2 - 5} 13h10l-5 6z`} />
+          </g>
+        ) : null}
       </svg>
     </div>
   );

@@ -104,10 +104,10 @@ export const STUDIO_SHORTCUT_ROWS: readonly ShortcutRow[] = [
   { id: "rotations", group: "visual", keys: ["⇧X", "⇧Y", "⇧Z"] },
   { id: "twoQubit", group: "visual", keys: ["C", "⇧C", "W"] },
   { id: "measure", group: "visual", keys: ["M"] },
-  { id: "undo", group: "visual", keys: ["⌘Z"] },
+  { id: "undo", group: "visual", keys: ["⌘/Ctrl", "Z"] },
   { id: "delete", group: "visual", keys: ["⌫"] },
   { id: "step", group: "visual", keys: ["[", "]"] },
-  { id: "runCpu", group: "simulation", keys: ["⌘↵"] },
+  { id: "runCpu", group: "simulation", keys: ["⌘/Ctrl", "↵"] },
 ];
 
 /** The key that arms a gate, for a palette tooltip and `aria-keyshortcuts`. */
