@@ -13,11 +13,23 @@ export function inertByPage(node: Element): boolean {
   return false;
 }
 
-/** The first visible, reachable element whose `data-tour` attribute is the given name. */
-export function findTarget(name: string): HTMLElement | null {
+/**
+ * Whether React has hydrated this node yet. A tour that starts on a full page
+ * load can run before a streamed segment hydrates; touching server HTML then
+ * (making its siblings inert) is a hydration mismatch React will not patch, and
+ * a click on it does nothing. React's per-node keys are internal, so callers
+ * fall back to accepting any node after a few seconds rather than wait forever.
+ */
+function ownedByReact(node: Element): boolean {
+  return Object.keys(node).some((key) => key.startsWith("__reactFiber$") || key.startsWith("__reactProps$"));
+}
+
+/** The first visible, reachable, hydrated element whose `data-tour` attribute is the given name. */
+export function findTarget(name: string, acceptUnhydrated = false): HTMLElement | null {
   const nodes = document.querySelectorAll<HTMLElement>(`[data-tour="${CSS.escape(name)}"]`);
   for (const node of Array.from(nodes)) {
     if (node.closest("[hidden]") || inertByPage(node)) continue;
+    if (!acceptUnhydrated && !ownedByReact(node)) continue;
     const rect = node.getBoundingClientRect();
     if (rect.width < 2 || rect.height < 2) continue;
     if (getComputedStyle(node).visibility === "hidden") continue;

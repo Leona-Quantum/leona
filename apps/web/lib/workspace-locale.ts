@@ -3836,7 +3836,7 @@ export const TOURS_COPY: Record<PublicLocale, ToursCopy> = {
     helpButton: "Guided tours and help",
     invite: {
       label: "Guided tour",
-      line: "New here? Take a three-minute look around.",
+      line: "New here? A three-minute look around?",
       start: "Start",
       choose: "Choose a track",
       notNow: "Not now",
@@ -3846,7 +3846,7 @@ export const TOURS_COPY: Record<PublicLocale, ToursCopy> = {
       lede: "Each tour runs on the real workspace. Leave at any step and pick up where you stopped.",
       tracks: "Tours",
       showMe: "Show me",
-      showMeLede: "Thirty seconds on one thing.",
+      showMeLede: "Each one takes about thirty seconds.",
       start: "Start",
       resume: "Resume",
       restart: "Start again",
@@ -3856,11 +3856,11 @@ export const TOURS_COPY: Record<PublicLocale, ToursCopy> = {
       close: "Close",
     },
     tracks: {
-      around: { title: "Around the workspace", forWhom: "For everyone. Where things are.", keeps: "Nothing to keep. You will know your way around." },
+      around: { title: "Around the workspace", forWhom: "For everyone: where things are.", keeps: "Nothing to keep, but you will know your way around." },
       "first-light": { title: "First light", forWhom: "New to quantum computing.", keeps: "A saved Bell-state circuit and a beginner lesson." },
       build: { title: "Build", forWhom: "You want to develop algorithms.", keeps: "A versioned circuit and a hardware cost estimate." },
       teach: { title: "Teach", forWhom: "You teach a class or a course.", keeps: "A lesson, a course plan and a shared project." },
-      read: { title: "Read", forWhom: "You want to explore the Atlas.", keeps: "An Atlas entry you know how to read." },
+      read: { title: "Read", forWhom: "You want to explore the Atlas.", keeps: "Nothing to keep, but you will know how to read an entry." },
     },
     shows: {
       "show-cirq": "Convert code to Cirq",
@@ -4012,7 +4012,7 @@ export const TOURS_COPY: Record<PublicLocale, ToursCopy> = {
       "around.preferences": { title: "Preferences", action: "Theme, accent colour and language are here." },
       "around.tours": { title: "Guided tours", action: "Restart any tour here, or from the ? at the top of the page. Open it to finish." },
 
-      "first-light.hello": { title: "First light", action: "Two qubits, one circuit and a real result, in about six minutes. No maths needed." },
+      "first-light.hello": { title: "First light", action: "You build a circuit on two qubits and see a real result. It takes about six minutes and needs no maths." },
       "first-light.starter": { title: "A Bell state", action: "The simplest thing two qubits can do together. Press Build a Bell state.", wrong: "That one is for later. Build a Bell state is the first button in the row." },
       "first-light.prompt": { title: "Your prompt", action: "It says what to build and how to check it. You can change it before it runs." },
       "first-light.run": { title: "Run it", action: "Press Send. Nala plans the circuit, writes the code and checks the result." },
@@ -4066,7 +4066,7 @@ export const TOURS_COPY: Record<PublicLocale, ToursCopy> = {
       "read.views": { title: "Three views", action: "The map, the papers, and the sources behind speedup claims. Open the map." },
       "read.layers": { title: "The layer map", action: "Methods arranged by what they build on. Each card traces its pathway and cost back to papers." },
       "read.llms": { title: "For your own tools", action: "leonaqt.com/llms.txt describes the Atlas in plain text, for a language model to read." },
-      "read.run": { title: "Take it to Run", action: "Found a starting point? Ask Nala in Run to build it. That's the end of Read." },
+      "read.run": { title: "Take it to Run", action: "When you find a starting point, ask Nala in Run to build it. That's the end of Read." },
 
       "show-mode.mode": { title: "Response mode", action: "Auto lets Nala decide from your message. Execute always writes and runs code. Learn and Explain answer in words without running anything. Qapp builds an interactive page." },
       "show-attach.attach": { title: "Attach files", action: "Add code or notes to your message. Nala reads them along with what you type." },
@@ -4087,7 +4087,7 @@ export const TOURS_COPY: Record<PublicLocale, ToursCopy> = {
       lede: "ツアーは実際のワークスペースで進みます。どのステップでも中断でき、続きから再開できます。",
       tracks: "ツアー",
       showMe: "操作を見る",
-      showMeLede: "1つの操作を30秒で。",
+      showMeLede: "どれも30秒ほどで終わります。",
       start: "始める",
       resume: "続きから",
       restart: "最初から",
@@ -4101,7 +4101,7 @@ export const TOURS_COPY: Record<PublicLocale, ToursCopy> = {
       "first-light": { title: "はじめての量子", forWhom: "量子コンピューティングが初めての方へ。", keeps: "保存したBell状態の回路と、初心者向けのレッスン。" },
       build: { title: "開発", forWhom: "アルゴリズムを開発したい方へ。", keeps: "バージョン管理された回路と、ハードウェアの費用見積もり。" },
       teach: { title: "教える", forWhom: "授業や講座を担当する方へ。", keeps: "レッスン、コースの計画、共有プロジェクト。" },
-      read: { title: "読む", forWhom: "アトラスを調べたい方へ。", keeps: "読み方がわかったアトラスの項目。" },
+      read: { title: "読む", forWhom: "アトラスを調べたい方へ。", keeps: "保存するものはありませんが、項目の読み方がわかります。" },
     },
     shows: {
       "show-cirq": "コードをCirqに変換",
@@ -4253,7 +4253,7 @@ export const TOURS_COPY: Record<PublicLocale, ToursCopy> = {
       "around.preferences": { title: "表示設定", action: "テーマ、アクセントカラー、言語はここで変えられます。" },
       "around.tours": { title: "ガイドツアー", action: "ツアーはここ、またはページ上部の「?」からいつでもやり直せます。開いたら終了です。" },
 
-      "first-light.hello": { title: "はじめての量子", action: "2つの量子ビット、1つの回路、そして本物の結果まで。約6分、数式は使いません。" },
+      "first-light.hello": { title: "はじめての量子", action: "2つの量子ビットで回路を作り、本物の結果を見ます。約6分で、数式は使いません。" },
       "first-light.starter": { title: "Bell状態", action: "2つの量子ビットが一緒にできる、いちばんシンプルな動きです。「Bell状態を作る」を押してください。", wrong: "それは後で使います。「Bell状態を作る」は並びの最初のボタンです。" },
       "first-light.prompt": { title: "プロンプト", action: "何を作り、どう確認するかが書かれています。実行する前に書き換えてもかまいません。" },
       "first-light.run": { title: "実行する", action: "「送信」を押してください。Nalaが回路を計画し、コードを書き、結果を確認します。" },
@@ -4307,7 +4307,7 @@ export const TOURS_COPY: Record<PublicLocale, ToursCopy> = {
       "read.views": { title: "3つの表示", action: "地図、論文、速度向上の出典です。地図を開いてください。" },
       "read.layers": { title: "レイヤーの地図", action: "手法を、何をもとにしているかで並べています。各カードは経路と費用を論文までたどります。" },
       "read.llms": { title: "自分のツールで使う", action: "leonaqt.com/llms.txt は、言語モデルが読めるようにアトラスをテキストで説明しています。" },
-      "read.run": { title: "Runへ", action: "出発点が見つかったら、RunでNalaに作ってもらいましょう。「読む」はここまでです。" },
+      "read.run": { title: "Runへ", action: "出発点が見つかったら、RunでNalaに作ってもらいます。「読む」はここまでです。" },
 
       "show-mode.mode": { title: "応答モード", action: "「自動」はメッセージからNalaが判断します。「実行」は必ずコードを書いて実行します。「学ぶ」と「解説」は何も実行せず文章で答えます。「Qapp」は操作できるページを作ります。" },
       "show-attach.attach": { title: "ファイルを添付", action: "コードやメモをメッセージに添えられます。Nalaは入力した文と一緒に読みます。" },

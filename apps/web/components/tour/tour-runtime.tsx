@@ -420,7 +420,9 @@ export function TourRuntime({ locale: localeProp, surface, initialCommand = null
   }, [progress, update]);
 
   // Keep the fragment in step, without ever taking one another feature owns.
+  // Not before the link has been read, or it would erase `#tour=…` unread.
   useEffect(() => {
+    if (!progress || !hashRead.current) return;
     const current = window.location.hash;
     if (running && active) {
       const next = formatTourHash(active.track, active.step);
@@ -430,13 +432,16 @@ export function TourRuntime({ locale: localeProp, surface, initialCommand = null
     } else if (/^#tour=/.test(current)) {
       window.history.replaceState(window.history.state, "", `${window.location.pathname}${window.location.search}`);
     }
-  }, [running, active?.track, active?.step, pathname]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [running, active?.track, active?.step, pathname, progress === null]);
 
   // ---- the step on screen ---------------------------------------------------
 
   useLayoutEffect(() => {
-    setUi((current) => (current.key === stepKey ? current : freshUi(stepKey, notice.current)));
+    // Read before clearing: the updater below runs later, during render.
+    const carried = notice.current;
     notice.current = {};
+    setUi((current) => (current.key === stepKey ? current : freshUi(stepKey, carried)));
     completing.current = null;
     setTarget(null);
     setRect(null);
@@ -477,7 +482,8 @@ export function TourRuntime({ locale: localeProp, surface, initialCommand = null
     setUi((current) => (current.key === key && ["away", "wandered", "offline"].includes(current.phase) ? { ...current, phase: "locating" } : current));
     const look = () => {
       if (cancelled) return;
-      const found = findTarget(step.target!);
+      // Hydrated controls only for the first five seconds (see findTarget).
+      const found = findTarget(step.target!, tries >= 20);
       if (found) {
         setTarget((current) => (current === found ? current : found));
         setUi((current) => (current.key !== key || ["waiting", "reading", "satisfied", "success"].includes(current.phase) ? current : { ...current, phase: initialPhase(step, found) }));
@@ -799,7 +805,19 @@ export function TourRuntime({ locale: localeProp, surface, initialCommand = null
     const path = scrimPath(viewport.width, viewport.height, hole);
 
     layer = (
-      <div className="mj-tour-layer" ref={layerRef} data-tour-layer="" data-phase={ui.phase} data-step={stepKey}>
+      <div
+        className="mj-tour-layer"
+        ref={layerRef}
+        data-tour-layer=""
+        data-phase={ui.phase}
+        data-step={stepKey}
+        // A press on the guide is not a press "outside" the page's own menus. The
+        // shell closes the account drawer on any window pointerdown outside it,
+        // which shut the drawer under the Usage and Settings steps (headless walk).
+        // React has already dispatched this at the document; stopping it here only
+        // keeps it from reaching window listeners.
+        onPointerDown={(event) => event.nativeEvent.stopPropagation()}
+      >
         {dim ? (
           <svg className="mj-tour-scrim" width={viewport.width} height={viewport.height} aria-hidden="true" focusable="false">
             <path className="mj-tour-scrim-fill mj-tour-scrim-hole" d={path} fillRule="evenodd" style={{ d: `path("${path}")` } as CSSProperties} />

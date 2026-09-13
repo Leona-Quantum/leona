@@ -24,8 +24,10 @@ const around: TourTrack = {
     { id: "qapps", target: "rail-qapps", placement: "right", expect: { kind: "route", match: "/qapps" } },
     { id: "atlas", target: "rail-atlas", placement: "right" },
     { id: "run", target: "rail-run", placement: "right", expect: { kind: "route", match: "/run" } },
+    // New chat before Search: typing in the search box swaps the chat list for
+    // results, and the New chat link goes with it (found by the headless walk).
+    { id: "new-chat", target: "sidebar-new-chat", placement: "right", on: "/run", go: "/run" },
     { id: "search", target: "sidebar-search", placement: "right", on: "/run|/studio", go: "/run", expect: { kind: "value", match: "\\S" } },
-    { id: "new-chat", target: "sidebar-new-chat", placement: "right", on: "/run|/studio" , go: "/run" },
     { id: "account", target: "account-menu", placement: "right", expect: { kind: "click", match: "account-menu" } },
     { id: "usage", target: "menu-usage", placement: "right" },
     { id: "settings", target: "menu-settings", placement: "right", expect: { kind: "route", match: "/account" } },
