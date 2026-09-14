@@ -68,6 +68,7 @@ import { verificationFromResource } from "../lib/verification-record";
 import { WORKSPACE_PINS_EVENT, isPinned, setPinned, togglePinned } from "../lib/workspace-pins";
 import { ThemeToggle } from "./theme-toggle";
 import { TourGate } from "./tour/tour-gate";
+import { WORKSPACE_SIDEBAR_EVENT } from "../lib/tour/events.ts";
 import { TourHelpButton } from "./tour/tour-help-button";
 import type { PublicLocale } from "../lib/public-locale";
 import { PROJECT_SHARE_COPY, WORKSPACE_COPY, ACCOUNT_COPY } from "../lib/workspace-locale";
@@ -155,6 +156,17 @@ export function Shell({
   useEffect(() => {
     if (window.innerWidth <= 720) setSidebarCollapsed(true);
   }, [pathname]);
+
+  // A guided tour step can point at the rail or the sidebar, which on a phone sit in
+  // the collapsed drawer. The tour asks for the drawer; only phone width opens it, and
+  // the next route change closes it again as it always does.
+  useEffect(() => {
+    function openForTour() {
+      if (window.innerWidth <= 720) setSidebarCollapsed(false);
+    }
+    window.addEventListener(WORKSPACE_SIDEBAR_EVENT, openForTour);
+    return () => window.removeEventListener(WORKSPACE_SIDEBAR_EVENT, openForTour);
+  }, []);
 
   useEffect(() => {
     if (sidebarCollapsed || !isMobile || !sidebarReady) return;
