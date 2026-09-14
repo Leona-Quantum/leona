@@ -12,11 +12,11 @@
 
 @EshMis に、マイグレーション・デプロイ変更のレビューと、以下の初期設定の実施または担当者の割り当てをお願いします。別の方が担当する場合は、このPRに担当者を記載してください。
 
-詳細手順： [apps/news/RUNBOOK.md](https://github.com/EshMis/majorana/blob/feature/leona-news-integration/apps/news/RUNBOOK.md)。以下のチェック欄は、実際の作業完了後に更新してください。
+詳細手順： [apps/news/RUNBOOK.md](https://github.com/Leona-Quantum/leona/blob/feature/leona-news-integration/apps/news/RUNBOOK.md)。以下のチェック欄は、実際の作業完了後に更新してください。
 
 ### 1. Vercel：ニュース用プロジェクト
 
-- [ ] 既存チームに `leona-news` プロジェクトを作成し、同じ `EshMis/majorana` リポジトリへ接続する。
+- [ ] 既存チームに `leona-news` プロジェクトを作成し、同じ `Leona-Quantum/leona` リポジトリへ接続する。
 - [ ] Root Directory=`apps/news`、Framework=Other、Node.js=24.x、Production Branch=`dev` を設定する。
 - [ ] Build Command=`node build-vercel.mjs`。Install Commandは `apps/news/vercel.json` の設定を使い、Output Directoryの手動上書きは無効にする。
 - [ ] VercelのProduction環境に `LEONA_NEWS_API_URL=<既存の本番APIのHTTPS origin>`、`SITE_URL=https://news.leonaquantum.com` を登録する。API URLに `/v1/news` は付けない。
@@ -71,8 +71,8 @@ UI確認画像は決定的なテストデータによるものです。実ニュ
 
 | Desktop | Mobile |
 |---|---|
-| ![Desktop](https://github.com/EshMis/majorana/blob/feature/leona-news-integration/apps/news/screenshots/live-article-desktop.png?raw=true) | ![Mobile](https://github.com/EshMis/majorana/blob/feature/leona-news-integration/apps/news/screenshots/live-article-mobile.png?raw=true) |
+| ![Desktop](https://github.com/Leona-Quantum/leona/blob/feature/leona-news-integration/apps/news/screenshots/live-article-desktop.png?raw=true) | ![Mobile](https://github.com/Leona-Quantum/leona/blob/feature/leona-news-integration/apps/news/screenshots/live-article-mobile.png?raw=true) |
 
-[編集画面](https://github.com/EshMis/majorana/blob/feature/leona-news-integration/apps/news/screenshots/editor-review.png)
+[編集画面](https://github.com/Leona-Quantum/leona/blob/feature/leona-news-integration/apps/news/screenshots/editor-review.png)
 
 `dev` は本番です。このPRのpush/作成は依頼済みですが、merge・本番設定変更はオーナーのリリース承認に従ってください。VercelとAPI/Workerは独立して更新されるため、前の画面からのAPI互換性を維持します。コードを戻す際にニュース用テーブルを削除する必要はありません。migrationのdowngradeはニュースデータを削除するため、バックアップとレビューが必要です。
