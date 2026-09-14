@@ -80,7 +80,7 @@ test("a length rule counts characters across words, not one unbroken run (found 
   const prompt = build.steps.find((step) => step.id === "prompt")!.expect!.match;
   assert.equal(valueMatches(prompt, "Find the ground state energy of H2 with VQE"), true, "ordinary words must pass");
   assert.equal(valueMatches(prompt, "  short one  "), false, "eight non-space characters is not twelve");
-  const brief = firstLight.steps.find((step) => step.id === "brief")!.expect!.match;
+  const brief = tourById("teach")!.steps.find((step) => step.id === "brief")!.expect!.match;
   assert.equal(valueMatches(brief, "a b c"), true);
   assert.equal(valueMatches(brief, "  ab "), false);
   for (const tour of ALL_TOURS) {
@@ -92,7 +92,7 @@ test("a length rule counts characters across words, not one unbroken run (found 
 
 test("a click on the dimmed page is a miss only when the step waits for an action", () => {
   const clickStep = build.steps.find((step) => step.id === "code")!;
-  const readingStep = build.steps.find((step) => step.id === "framework")!;
+  const readingStep = build.steps.find((step) => step.id === "result")!;
   const waitStep = build.steps.find((step) => step.id === "plan")!;
   assert.equal(clickOutcome(clickStep, "target"), "match");
   assert.equal(clickOutcome(clickStep, "scrim"), "miss");
@@ -119,7 +119,7 @@ test("Do it for me is offered after two misses or an idle nudge", () => {
 });
 
 test("offline, steps that need the API are skipped and counted, never silently", () => {
-  const runIndex = firstLight.steps.findIndex((step) => step.id === "prompt");
+  const runIndex = firstLight.steps.findIndex((step) => step.id === "starter");
   const offline = nextRunnableStep(firstLight, runIndex, false);
   assert.equal(firstLight.steps[offline.index]!.id, "visual");
   assert.equal(offline.skipped, 4, "run, watch, answer, saved");

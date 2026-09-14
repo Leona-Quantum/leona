@@ -19,6 +19,8 @@ type Props = {
   copy: ToursCopy;
   locale: PublicLocale;
   cardRef: RefObject<HTMLDivElement | null>;
+  /** Still finding its control with nowhere to wait: laid out and measured, not shown. */
+  concealed?: boolean;
   stepKey: string;
   tourName: string;
   tourId: string;
@@ -45,7 +47,7 @@ type Props = {
  * is also what the highlighted control's `aria-describedby` points at.
  */
 export function TourCard(props: Props) {
-  const { copy, words, stepKey, reduced, cardRef } = props;
+  const { copy, words, stepKey, reduced, cardRef, concealed = false } = props;
   const [typed, setTyped] = useState(reduced ? words.action.length : 0);
   const primaryRef = useRef<HTMLButtonElement>(null);
 
@@ -56,6 +58,8 @@ export function TourCard(props: Props) {
       return;
     }
     setTyped(0);
+    // Typing starts when the card can be seen, not while it waits for its control.
+    if (concealed) return;
     let count = 0;
     const timer = window.setInterval(() => {
       count = Math.min(total, count + 2);
@@ -63,7 +67,7 @@ export function TourCard(props: Props) {
       if (count >= total) window.clearInterval(timer);
     }, 16);
     return () => window.clearInterval(timer);
-  }, [stepKey, words.action, reduced]);
+  }, [stepKey, words.action, reduced, concealed]);
 
   useEffect(() => {
     if (props.focusPrimary) primaryRef.current?.focus({ preventScroll: true });
@@ -82,6 +86,8 @@ export function TourCard(props: Props) {
       aria-label={copy.card.label}
       style={{ left: props.position.left, top: props.position.top, ["--mj-tour-origin" as string]: props.origin }}
       data-tour-card=""
+      data-concealed={concealed ? "true" : undefined}
+      aria-hidden={concealed ? true : undefined}
     >
       <div key={stepKey} className="mj-tour-card-body">
         <p className="mj-tour-kicker">
@@ -92,6 +98,9 @@ export function TourCard(props: Props) {
         <p className="mj-tour-line" aria-hidden="true">
           {words.action.slice(0, typed)}
           {typing ? <span className="mj-tour-caret" /> : null}
+          {/* The untyped rest is laid out but unseen, so the card is its final size from
+              the first letter and a card placed above its control does not climb. */}
+          {typing ? <span className="mj-tour-line-rest">{words.action.slice(typed)}</span> : null}
         </p>
         <p className="mj-tour-sr" id={TOUR_CARD_BODY_ID} aria-live="polite">
           {words.title}. {words.action}

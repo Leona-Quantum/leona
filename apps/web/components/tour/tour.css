@@ -52,15 +52,30 @@
   fill: var(--mj-tour-scrim);
 }
 
-.mj-tour-scrim-hole {
-  transition: x 420ms var(--ease-converge), y 420ms var(--ease-converge), width 420ms var(--ease-converge), height 420ms var(--ease-converge);
-}
-
 .mj-tour-ring {
   fill: none;
   stroke: var(--accent);
   stroke-width: 2;
+}
+
+/* Motion only while the overlay moves to something new: the runtime sets data-glide
+   for a moment after the step or its control changes. Following a control that
+   scrolls or resizes is immediate, because a transition restarted on every scroll
+   frame trails the control instead of sitting on it. */
+.mj-tour-layer[data-glide="true"] .mj-tour-scrim-hole {
+  transition: d 420ms var(--ease-converge);
+}
+
+.mj-tour-layer[data-glide="true"] .mj-tour-ring {
   transition: x 420ms var(--ease-converge), y 420ms var(--ease-converge), width 420ms var(--ease-converge), height 420ms var(--ease-converge);
+}
+
+.mj-tour-layer[data-glide="true"] .mj-tour-orb {
+  transition: transform 700ms var(--ease-converge);
+}
+
+.mj-tour-layer[data-glide="true"] .mj-tour-card {
+  transition: left 420ms var(--ease-converge), top 420ms var(--ease-converge);
 }
 
 .mj-tour-ring[data-state="miss"] {
@@ -87,7 +102,6 @@
   top: -11px;
   width: 22px;
   height: 22px;
-  transition: transform 900ms var(--ease-converge);
   pointer-events: none;
   will-change: transform;
 }
@@ -184,7 +198,11 @@
   pointer-events: auto;
   transform-origin: var(--mj-tour-origin, 50% 0%);
   animation: mj-tour-emerge 280ms var(--ease-converge) both;
-  transition: left 420ms var(--ease-converge), top 420ms var(--ease-converge);
+}
+
+.mj-tour-card[data-concealed="true"] {
+  visibility: hidden;
+  animation: none;
 }
 
 .mj-tour-card:focus-visible {
@@ -229,9 +247,15 @@
   width: 0.45em;
   height: 1em;
   margin-left: 1px;
+  /* Takes no room in the line, so the text wraps the same typed or not. */
+  margin-right: calc(-0.45em - 1px);
   vertical-align: -0.12em;
   background: var(--accent);
   animation: mj-tour-caret 900ms steps(2, start) infinite;
+}
+
+.mj-tour-line-rest {
+  visibility: hidden;
 }
 
 .mj-tour-status {
@@ -669,11 +693,8 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .mj-tour-orb,
   .mj-tour-cursor,
-  .mj-tour-card,
-  .mj-tour-scrim-hole,
-  .mj-tour-ring {
+  .mj-tour-layer[data-glide="true"] :is(.mj-tour-orb, .mj-tour-card, .mj-tour-scrim-hole, .mj-tour-ring) {
     transition: none;
   }
 
