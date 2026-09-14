@@ -471,8 +471,12 @@ jobs:
           worker_secrets="SENTRY_DSN=SENTRY_DSN:latest"
           worker_plain_env="SENTRY_DSN"
           if [ -n "${{ steps.news.outputs.openai_secret }}" ]; then
-            worker_secrets+=",OPENAI_API_KEY=${{ steps.news.outputs.openai_secret }}"
-            worker_plain_env+=",OPENAI_API_KEY"
+            # A DIFFERENT env var name than the core product's OPENAI_API_KEY
+            # (majorana_llm.client/models) on purpose — binding this onto the same
+            # name would silently replace the core product's OpenAI key
+            # process-wide the moment news is enabled.
+            worker_secrets+=",LEONA_NEWS_OPENAI_API_KEY=${{ steps.news.outputs.openai_secret }}"
+            worker_plain_env+=",LEONA_NEWS_OPENAI_API_KEY"
           fi
           gcloud run deploy majorana-worker --project "$GCP_PROJECT" --region "$GCP_REGION" \
             --image "$IMAGE_REPO:${{ steps.tag.outputs.tag }}" \

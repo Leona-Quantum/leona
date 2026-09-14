@@ -54,7 +54,7 @@ def response_payload(text, *, search=False, status="completed"):
 
 @pytest.mark.asyncio
 async def test_provider_request_shapes_and_citations(monkeypatch):
-    monkeypatch.setenv("OPENAI_API_KEY", "test-not-real")
+    monkeypatch.setenv("LEONA_NEWS_OPENAI_API_KEY", "test-not-real")
     monkeypatch.setenv("LEONA_NEWS_MODEL", "test-model")
     monkeypatch.setenv("LEONA_NEWS_IMAGE_MODEL", "test-image")
     seen = []
@@ -112,7 +112,7 @@ async def test_provider_request_shapes_and_citations(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_incomplete_response_fails_closed(monkeypatch):
-    monkeypatch.setenv("OPENAI_API_KEY", "test-not-real")
+    monkeypatch.setenv("LEONA_NEWS_OPENAI_API_KEY", "test-not-real")
     monkeypatch.setenv("LEONA_NEWS_MODEL", "test-model")
     editor = OpenAIEditor()
     await editor.close()

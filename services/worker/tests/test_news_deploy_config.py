@@ -30,10 +30,13 @@ def test_enabled_release_requires_workspace_and_pinned_secret():
     with pytest.raises(ValueError):
         render(config, "")
     config["workspace_id"] = "01900000-0000-7000-8000-000000000001"
-    for secret in ("", "OPENAI_API_KEY:latest", "KEY:1,$(id)", "KEY:1\nx=1"):
+    for secret in ("", "LEONA_NEWS_OPENAI_API_KEY:latest", "KEY:1,$(id)", "KEY:1\nx=1"):
         with pytest.raises(ValueError):
             render(config, secret)
-    assert render(config, "OPENAI_API_KEY:1")["openai_secret"] == "OPENAI_API_KEY:1"
+    assert (
+        render(config, "LEONA_NEWS_OPENAI_API_KEY:1")["openai_secret"]
+        == "LEONA_NEWS_OPENAI_API_KEY:1"
+    )
 
 
 @pytest.mark.parametrize(
@@ -50,4 +53,4 @@ def test_rejects_malformed_release_settings(change):
     config = settings()
     config.update(change)
     with pytest.raises(ValueError):
-        render(config, "OPENAI_API_KEY:1")
+        render(config, "LEONA_NEWS_OPENAI_API_KEY:1")

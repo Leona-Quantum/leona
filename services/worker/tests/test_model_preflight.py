@@ -31,6 +31,73 @@ def _pin(monkeypatch, report):
     monkeypatch.setattr("majorana_llm.preflight.check_with_timeout", fake_check)
 
 
+def _pin_news_model(monkeypatch, role: RoleModel):
+    async def fake_check_model_served(*args, **kwargs):
+        return role
+
+    monkeypatch.setattr("majorana_llm.preflight.check_model_served", fake_check_model_served)
+
+
+async def test_an_unsupported_news_model_fails_the_same_gate(monkeypatch, capsys):
+    """LEONA_NEWS_MODEL bypasses model_for(), so it must not bypass this gate too."""
+    _pin(monkeypatch, HEALTHY)
+    _pin_news_model(monkeypatch, RoleModel("news_text", "gpt-4-retired", ModelStatus.UNSUPPORTED))
+    monkeypatch.setenv("LEONA_NEWS_ENABLED", "true")
+    monkeypatch.setenv("LEONA_NEWS_MODEL", "gpt-4-retired")
+
+    await worker_main._preflight_models()
+
+    entry = json.loads(capsys.readouterr().out.strip())
+    assert entry["severity"] == "ERROR"
+    assert {"role": "news_text", "model": "gpt-4-retired"} in entry["unsupported"]
+
+
+async def test_a_supported_news_model_stays_quiet(monkeypatch, capsys):
+    _pin(monkeypatch, HEALTHY)
+    _pin_news_model(monkeypatch, RoleModel("news_text", "gpt-5.5", ModelStatus.SUPPORTED))
+    monkeypatch.setenv("LEONA_NEWS_ENABLED", "true")
+    monkeypatch.setenv("LEONA_NEWS_MODEL", "gpt-5.5")
+
+    await worker_main._preflight_models()
+
+    assert capsys.readouterr().out.strip() == ""
+
+
+async def test_news_disabled_never_checks_the_news_model(monkeypatch, capsys):
+    """No LEONA_NEWS_ENABLED must mean no call, not merely no alarm."""
+    _pin(monkeypatch, HEALTHY)
+    called = False
+
+    async def fail_if_called(*args, **kwargs):
+        nonlocal called
+        called = True
+        raise AssertionError("check_model_served must not run when news is disabled")
+
+    monkeypatch.setattr("majorana_llm.preflight.check_model_served", fail_if_called)
+    monkeypatch.delenv("LEONA_NEWS_ENABLED", raising=False)
+    monkeypatch.setenv("LEONA_NEWS_MODEL", "gpt-5.5")
+
+    await worker_main._preflight_models()
+
+    assert called is False
+    assert capsys.readouterr().out.strip() == ""
+
+
+async def test_a_broken_news_preflight_never_takes_the_worker_down(monkeypatch, capsys):
+    _pin(monkeypatch, HEALTHY)
+    monkeypatch.setenv("LEONA_NEWS_ENABLED", "true")
+    monkeypatch.setenv("LEONA_NEWS_MODEL", "gpt-5.5")
+
+    async def explode(*args, **kwargs):
+        raise RuntimeError("provider SDK exploded")
+
+    monkeypatch.setattr("majorana_llm.preflight.check_model_served", explode)
+
+    await worker_main._preflight_models()  # must not raise
+
+    assert capsys.readouterr().out.strip() == ""
+
+
 async def test_unsupported_models_raise_a_structured_error_the_deploy_gate_can_read(
     monkeypatch, capsys
 ):
