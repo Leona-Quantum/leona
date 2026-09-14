@@ -209,6 +209,13 @@ export function TourRuntime({ locale: localeProp, surface, initialCommand = null
   const [cursor, setCursor] = useState({ x: 0, y: 0, visible: false, pressing: false });
   const [orb, setOrb] = useState({ x: -60, y: -60, trail: 0 });
   const [missFlash, setMissFlash] = useState(false);
+  // The overlay glides only when it moves to something new (a step or a control).
+  // Following a control that scrolls or resizes is immediate: a CSS transition
+  // restarted on every scroll frame left the spotlight trailing the control by
+  // hundreds of pixels (probe-tour-motion.mjs, scroll-follow).
+  const [glide, setGlide] = useState(false);
+  const glideTimer = useRef(0);
+  const placedOnce = useRef(false);
   // The page must be hydrated before the tour changes attributes on it. Hydration
   // yields to the event loop, and React tags a node before it commits, so a tour
   // that begins on a full page load (the Atlas) made siblings inert mid-hydration
@@ -236,6 +243,13 @@ export function TourRuntime({ locale: localeProp, surface, initialCommand = null
   const didItKey = useRef<string | null>(null);
   const hashRead = useRef(false);
   const initialDone = useRef(false);
+  // Where the card last sat beside something, so a step still finding its control
+  // holds the card and the veil where they were.
+  const lastPlacement = useRef<{ position: { left: number; top: number }; side: TourPlacement | "floating" | "centre" } | null>(null);
+  // Until when the tour itself is navigating to a step's page. The pages it passes
+  // through are not the reader wandering off.
+  const travelling = useRef(0);
+  const [travelTick, setTravelTick] = useState(0);
 
   const active = progress?.active ?? null;
   const tour = active ? tourById(active.track) : null;
@@ -247,10 +261,33 @@ export function TourRuntime({ locale: localeProp, surface, initialCommand = null
   const live = useRef({ tour, step, active, ui, target, pathname, online, running, orb });
   live.current = { tour, step, active, ui, target, pathname, online, running, orb };
 
+  useEffect(() => {
+    if (running) return;
+    placedOnce.current = false;
+    lastPlacement.current = null;
+  }, [running]);
+  useEffect(() => () => window.clearTimeout(glideTimer.current), []);
+
   // ---- progress transitions -------------------------------------------------
 
   function go(url: string) {
+    travelling.current = Date.now() + 10_000;
     router.push(url);
+  }
+
+  /**
+   * When the tour moves on by itself (Next, Skip, Back, or the reader doing the
+   * step's action where it lives), it takes the reader to the next step's page
+   * instead of stopping on a "Next stop" card that needs its own click. It does
+   * not when the reader's action already took them somewhere else — a notebook
+   * they just created is not a page to be pulled away from.
+   */
+  function followTo(t: TourTrack, from: TourStep, index: number) {
+    const next = t.steps[index];
+    if (!next) return;
+    const here = window.location.pathname;
+    if (routeMatches(stepRoute(t, next), here) || !routeMatches(stepRoute(t, from), here) || !canGo(t, next)) return;
+    go(stepGo(t, next));
   }
 
   function begin(id: TourId, fromStart: boolean) {
@@ -298,6 +335,7 @@ export function TourRuntime({ locale: localeProp, surface, initialCommand = null
       return;
     }
     update((current) => moveTo(current, t, next.index));
+    followTo(t, t.steps[from]!, next.index);
   }
 
   function complete(outcome: Outcome) {
@@ -327,6 +365,7 @@ export function TourRuntime({ locale: localeProp, surface, initialCommand = null
     let index = a.step - 1;
     while (index > 0 && live.current.online === "offline" && t.steps[index]!.needs === "api") index -= 1;
     update((current) => moveTo(current, t, index));
+    followTo(t, t.steps[a.step]!, index);
   }
 
   function checkPrompt() {
@@ -463,6 +502,11 @@ export function TourRuntime({ locale: localeProp, surface, initialCommand = null
     completing.current = null;
     setTarget(null);
     setRect(null);
+    if (placedOnce.current) {
+      setGlide(true);
+      window.clearTimeout(glideTimer.current);
+      glideTimer.current = window.setTimeout(() => setGlide(false), 900);
+    }
   }, [stepKey]);
 
   // Where is the step, and is its control on screen?
@@ -475,11 +519,20 @@ export function TourRuntime({ locale: localeProp, surface, initialCommand = null
         return;
       }
       setTarget(null);
+      // On its way to this step's page: say nothing about where the reader is
+      // until it arrives, or plainly failed to.
+      const travel = travelling.current - Date.now();
+      if (travel > 0) {
+        setUi((current) => (current.key !== key || current.phase === "success" ? current : { ...current, phase: "locating" }));
+        const timer = window.setTimeout(() => setTravelTick((tick) => tick + 1), travel + 50);
+        return () => window.clearTimeout(timer);
+      }
       setUi((current) => (current.key !== key || current.phase === "success"
         ? current
         : { ...current, phase: ["waiting", "reading", "satisfied", "hidden", "wandered"].includes(current.phase) ? "wandered" : "away" }));
       return;
     }
+    travelling.current = 0;
     if (step.expect?.kind === "route" && routeMatches(step.expect.match, pathname)) {
       complete("done");
       return;
@@ -519,7 +572,7 @@ export function TourRuntime({ locale: localeProp, surface, initialCommand = null
       window.clearTimeout(timer);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [running, stepKey, pathname, online]);
+  }, [running, stepKey, pathname, online, travelTick]);
 
   // Follow the control as the page scrolls, resizes or re-renders it.
   useEffect(() => {
@@ -527,6 +580,12 @@ export function TourRuntime({ locale: localeProp, surface, initialCommand = null
       setRect(null);
       return;
     }
+    if (placedOnce.current) {
+      setGlide(true);
+      window.clearTimeout(glideTimer.current);
+      glideTimer.current = window.setTimeout(() => setGlide(false), 900);
+    }
+    placedOnce.current = true;
     let frame = 0;
     const lost = () => {
       const s = live.current.step;
@@ -557,7 +616,8 @@ export function TourRuntime({ locale: localeProp, surface, initialCommand = null
       if (document.visibilityState === "hidden") measure();
       else if (!frame) frame = window.requestAnimationFrame(measure);
     };
-    target.scrollIntoView({ block: "nearest", inline: "nearest", behavior: prefersReducedMotion() ? "auto" : "smooth" });
+    // Instant: a smooth scroll moves the control out from under a spotlight still gliding to it.
+    target.scrollIntoView({ block: "nearest", inline: "nearest", behavior: "auto" });
     measure();
     const observer = new ResizeObserver(schedule);
     observer.observe(target);
@@ -717,7 +777,14 @@ export function TourRuntime({ locale: localeProp, surface, initialCommand = null
   const showsHole = running && Boolean(rect) && ["waiting", "reading", "satisfied", "success"].includes(ui.phase);
   const hole = showsHole && rect ? holeFor(rect, viewport) : null;
   const centred = running && ui.phase === "reading" && !step?.target;
-  const dim = running && (hole !== null || centred);
+  // Between steps, and while the tour travels to a page, the step is "locating".
+  // The card holds where it last pointed and the veil stays, instead of the page
+  // flashing undimmed and the card dropping to the corner and back. With nowhere
+  // to hold (a tour's first step), the card waits unseen until its control is found.
+  const locating = running && ui.phase === "locating" && !hole && !centred;
+  const held = locating ? lastPlacement.current : null;
+  const concealed = locating && !held && step?.expect?.kind !== "wait";
+  const dim = running && (hole !== null || centred || held !== null);
 
   let side: TourPlacement | "floating" | "centre" = "floating";
   let position = { left: Math.max(12, viewport.width - cardSize.width - 24), top: Math.max(12, viewport.height - cardSize.height - 24) };
@@ -728,7 +795,11 @@ export function TourRuntime({ locale: localeProp, surface, initialCommand = null
   } else if (centred) {
     position = centreCard(cardSize, viewport);
     side = "centre";
+  } else if (held) {
+    position = held.position;
+    side = held.side;
   }
+  if (hole || centred) lastPlacement.current = { position, side };
   const anchor = orbAnchor({ ...position, width: cardSize.width, height: cardSize.height }, side);
 
   useEffect(() => {
@@ -831,6 +902,7 @@ export function TourRuntime({ locale: localeProp, surface, initialCommand = null
         data-tour-layer=""
         data-phase={ui.phase}
         data-step={stepKey}
+        data-glide={glide ? "true" : undefined}
         // A press on the guide is not a press "outside" the page's own menus. The
         // shell closes the account drawer on any window pointerdown outside it,
         // which shut the drawer under the Usage and Settings steps (headless walk).
@@ -859,7 +931,7 @@ export function TourRuntime({ locale: localeProp, surface, initialCommand = null
         {bands.map((band, index) => (
           <div key={index} className="mj-tour-block" style={band} onPointerDown={onScrimPointerDown} aria-hidden="true" />
         ))}
-        <GuideOrb x={orb.x} y={orb.y} state={ui.phase === "success" ? "success" : missFlash ? "miss" : "speaking"} trail={orb.trail} />
+        {concealed ? null : <GuideOrb x={orb.x} y={orb.y} state={ui.phase === "success" ? "success" : missFlash ? "miss" : "speaking"} trail={orb.trail} />}
         {cursor.visible ? (
           <div className="mj-tour-cursor" data-pressing={cursor.pressing ? "true" : "false"} style={{ transform: `translate3d(${cursor.x}px, ${cursor.y}px, 0)` }} aria-hidden="true" />
         ) : null}
@@ -867,6 +939,7 @@ export function TourRuntime({ locale: localeProp, surface, initialCommand = null
           copy={copy}
           locale={locale}
           cardRef={cardRef}
+          concealed={concealed}
           stepKey={stepKey}
           tourName={tourTitle(copy, tour)}
           tourId={tour.id}

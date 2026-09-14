@@ -372,9 +372,17 @@ const scenarios = {
     await page.keyboard.press("ArrowRight");
     await waitStepChange(page, "around.0");
     check("ArrowRight moves on from a reading step", (await state(page)).step === "around.1");
-    const inert = await page.evaluate(() => [...document.body.querySelectorAll("[inert]")].length);
-    check("a waiting step makes the rest of the page inert", inert > 0, `${inert} inert elements`);
-    const result = await walk(page, "around");
+    const result = await walk(page, "around", {
+      // The account menu step waits for a click, so the rest of the page is inert.
+      "around.3": async (now) => {
+        await waitFor(page, () => document.querySelector("[data-tour-layer]")?.dataset.phase === "waiting");
+        await page.waitForTimeout(300);
+        const inert = await page.evaluate(() => [...document.body.querySelectorAll("[inert]")].length);
+        check("a waiting step makes the rest of the page inert", inert > 0, `${inert} inert elements`);
+        await perform(page, now.step);
+        await waitStepChange(page, now.step);
+      },
+    });
     const around = tourById("around");
     // around.0 was passed with ArrowRight above, before the walk started counting.
     check("around: every step visited, none hidden", result.seen.length + 1 === around.steps.length && !result.hidden.length, `${result.seen.length + 1}/${around.steps.length} ${result.hidden.length ? `hidden: ${result.hidden}` : ""}`);
@@ -416,7 +424,7 @@ const scenarios = {
         const prompt = await page.locator("[data-tour=\"run-prompt\"]").first().inputValue();
         check("Do it for me pressed the real starter (prompt filled)", /Bell/i.test(prompt), prompt.slice(0, 60));
       },
-      "first-light.7": async (now) => {
+      "first-light.6": async (now) => {
         check("offline: API steps skipped with a notice, never faked", now.lines.some((line) => line === EN.status.offlineSkipped(4)), now.lines.join(" | "));
         await shot(page, "07-offline-skip");
         if (now.phase === "away") await clickCard(page, EN.card.takeMeThere);
@@ -455,24 +463,12 @@ const scenarios = {
         const mode = await page.locator("[data-tour=\"run-mode\"] select").first().inputValue();
         check("build: Do it for me set the mode to Execute", mode === "execute", mode);
       },
-      "build.2": async () => {
+      "build.1": async () => {
         await page.locator("[data-tour=\"run-prompt\"]").first().fill("Find the ground state energy of H2 with VQE");
-        await waitStepChange(page, "build.2");
+        await waitStepChange(page, "build.1");
         await page.waitForTimeout(300);
       },
-      "build.10": async (now) => {
-        check("build: the playhead step points at the Probabilities panel", now.phase === "reading" && (await page.locator("[data-tour=\"studio-playhead\"]").count()) > 0, now.phase);
-        await page.waitForTimeout(900);
-        await shot(page, "16-build-playhead");
-        await clickCard(page, EN.card.next);
-        await waitStepChange(page, now.step);
-      },
-      "build.11": async (now) => {
-        await perform(page, now.step);
-        await waitStepChange(page, now.step);
-        check("build: Code beside diagram turns the split view on", (await page.locator(".mj-studio-panels.is-split").count()) === 1);
-      },
-      "build.7": async (now) => {
+      "build.6": async (now) => {
         check("build: typing your own prompt is acknowledged on the next card", now.lines.includes(EN.status.ownValue), now.lines.join(" | "));
         await perform(page, now.step);
         await waitStepChange(page, now.step, 60_000);
@@ -540,15 +536,17 @@ const scenarios = {
     const { context, page } = await open(browser, { online: { runId: "tour-own-run" } });
     await page.goto(`${BASE}/run#tour=first-light.2`);
     await walk(page, "first-light", {
+      // Press the Bell starter, so the tour remembers the prompt it filled in...
+      "first-light.1": async () => {
+        await perform(page, "first-light.1");
+        await waitStepChange(page, "first-light.1");
+      },
+      // ...then write a different one before sending.
       "first-light.2": async () => {
         await page.locator("[data-tour=\"run-prompt\"]").first().fill("Make a three-qubit GHZ state and show the counts");
-        await clickCard(page, EN.card.next);
-        await waitStepChange(page, "first-light.2");
-      },
-      "first-light.3": async () => {
-        await perform(page, "first-light.3");
+        await perform(page, "first-light.2");
         await waitFor(page, () => location.pathname === "/run/tour-own-run", null, 30_000);
-        await waitFor(page, () => document.querySelector("[data-tour-layer]")?.dataset.step === "first-light.4", null, 30_000);
+        await waitFor(page, () => document.querySelector("[data-tour-layer]")?.dataset.step === "first-light.3", null, 30_000);
         const now = await state(page);
         check("own prompt: the guide acknowledges it and carries on", now.lines.includes(EN.status.ownPrompt), now.lines.join(" | "));
         await shot(page, "13-own-prompt-mocked");
@@ -560,16 +558,16 @@ const scenarios = {
 
   async idle_nudge(browser) {
     const { context, page } = await open(browser, { clock: true });
-    await page.goto(`${BASE}/run#tour=around.2`);
+    await page.goto(`${BASE}/run#tour=around.4`);
     await waitFor(page, () => document.querySelector("[data-tour-layer]")?.dataset.phase === "waiting");
     await page.clock.fastForward(21_000);
     await page.waitForTimeout(300);
     const now = await state(page);
     check("idle: a nudge after twenty quiet seconds, with Do it for me", now.lines.includes(EN.status.nudge) && now.buttons.includes(EN.card.doItForMe), now.lines.join(" | "));
     await page.keyboard.press("Escape");
-    await waitStepChange(page, "around.1");
+    await waitStepChange(page, "around.3");
     const sent = await signals(page);
-    check("Escape skips the step", sent.some((signal) => signal.event === "step_skipped" && signal.step === "studio"));
+    check("Escape skips the step", sent.some((signal) => signal.event === "step_skipped" && signal.step === "account"));
     await context.close();
   },
 
@@ -578,7 +576,7 @@ const scenarios = {
     await page.goto(`${BASE}/run#tour=build.2`);
     await waitFor(page, () => Boolean(document.querySelector("[data-tour-card] .mj-tour-line")?.textContent));
     const now = await state(page);
-    const expected = TOURS_COPY.ja.steps["build.framework"].action;
+    const expected = TOURS_COPY.ja.steps["build.prompt"].action;
     check("reduced motion: the line is there at once, no typing", now.line === expected, now.line);
     const motion = await page.evaluate(() => ({ orb: getComputedStyle(document.querySelector(".mj-tour-orb-core")).animationName, travel: getComputedStyle(document.querySelector(".mj-tour-orb")).transitionDuration }));
     check("reduced motion: the orb neither breathes nor travels", motion.orb === "none" && /^0s/.test(motion.travel), JSON.stringify(motion));

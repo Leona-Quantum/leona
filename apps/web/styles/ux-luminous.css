@@ -19,38 +19,48 @@
     var(--bg-0);
 }
 
-/* The cover. `EntangledField` draws two qubits and the field lines between them; it
-   fades in once WebGL has drawn. Under it, the static glow below marks the same two
-   points, so a visitor without WebGL still gets the composition. The dot lattice
-   stays as the plot's paper, quieter. */
-.lq-site-home .lq-site-hero .lq-entangled-field {
-  position: absolute;
-  inset: 0;
-  z-index: -1;
-  width: 100%;
-  height: 100%;
-  pointer-events: none;
-  opacity: 0;
-  transition: opacity 1600ms var(--ease-out-ui);
-  /* Fades on all four sides, so no line ends at the frame's edge. */
-  -webkit-mask-image:
-    linear-gradient(90deg, transparent, var(--text-0) 10%, var(--text-0) 90%, transparent),
-    linear-gradient(transparent, var(--text-0) 14%, var(--text-0) 86%, transparent);
-  -webkit-mask-composite: source-in;
-  mask-image:
-    linear-gradient(90deg, transparent, var(--text-0) 10%, var(--text-0) 90%, transparent),
-    linear-gradient(transparent, var(--text-0) 14%, var(--text-0) 86%, transparent);
-  mask-composite: intersect;
-}
-.lq-site-home .lq-site-hero .lq-entangled-field[data-lit="true"] { opacity: 1; }
+/* The cover (owner, 2026-09-14). The two-qubit field-line drawing that used to sit
+   here read as fireworks, so it is gone, along with the two point glows that marked
+   its qubits. What is left is quiet: the dot lattice as paper, one indigo bloom
+   behind the headline, and a single hairline horizon of light below the prompt, like
+   the rim of a planet against the dark. CSS only, nothing animates. */
 .lq-site-home .lq-site-hero .lq-liquid-grid-background { opacity: .3; }
 .lq-site-home .lq-site-hero::before {
   inset: 0;
   height: auto;
-  background:
-    radial-gradient(circle at 15% 56%, color-mix(in oklab, var(--accent) 24%, transparent), transparent 16%),
-    radial-gradient(circle at 85% 56%, color-mix(in oklab, var(--accent-2-glow) 26%, transparent), transparent 16%),
-    radial-gradient(ellipse 50% 45% at 50% 46%, color-mix(in oklab, var(--accent-2-tint) 70%, transparent), transparent);
+  background: radial-gradient(ellipse 50% 45% at 50% 44%, color-mix(in oklab, var(--accent-2-tint) 70%, transparent), transparent);
+}
+.lq-site-home .lq-site-hero .lq-site-hero-horizon {
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  /* The ellipse's edge sits at 100%: a sharp rim, then a soft bloom rising off it. */
+  background: radial-gradient(
+    ellipse 78% 64% at 50% 158%,
+    transparent 98.9%,
+    color-mix(in oklab, var(--accent-2-glow) 80%, var(--text-0)) 99.5%,
+    color-mix(in oklab, var(--accent-2-glow) 30%, transparent) 101%,
+    color-mix(in oklab, var(--accent-2-tint) 55%, transparent) 106%,
+    transparent 124%
+  );
+  /* Brightest at the centre, gone before either edge. */
+  -webkit-mask-image: linear-gradient(90deg, transparent 8%, var(--text-0) 38%, var(--text-0) 62%, transparent 92%);
+  mask-image: linear-gradient(90deg, transparent 8%, var(--text-0) 38%, var(--text-0) 62%, transparent 92%);
+}
+/* On a phone the cover is narrow and the prompt sits near its foot: a wider, flatter
+   arc, set lower, so the rim reads as a horizon rather than a bowl. */
+@media (max-width: 640px) {
+  .lq-site-home .lq-site-hero .lq-site-hero-horizon {
+    background: radial-gradient(
+      ellipse 150% 70% at 50% 163%,
+      transparent 98.9%,
+      color-mix(in oklab, var(--accent-2-glow) 70%, var(--text-0)) 99.5%,
+      color-mix(in oklab, var(--accent-2-glow) 25%, transparent) 101%,
+      color-mix(in oklab, var(--accent-2-tint) 45%, transparent) 105%,
+      transparent 116%
+    );
+  }
 }
 
 /* Glass. Cards pick up light at the rim, brightest at the top-left in the plum glow and
@@ -125,7 +135,6 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .lq-site-home .lq-site-hero .lq-entangled-field { transition: none; }
   .mj-public-site :is(.mj-primary-button, .mj-public-nav-primary) { transition: none; }
   .mj-public-site :is(.lq-flow-node, .lq-flow-panel, .lq-workspace-node, .lq-bench-group, .mj-company-final-cta)::before { transition: none; }
 }
