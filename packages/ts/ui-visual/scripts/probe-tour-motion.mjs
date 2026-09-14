@@ -20,6 +20,8 @@ const BASE = argValue("--base") ?? "http://localhost:3100";
 const ONLY = argValue("--only")?.split(",") ?? null;
 // Hides the laid-out rest of a typing line, restoring the bug typing-growth exists to catch.
 const MUTATE_TYPING = process.argv.includes("--mutate-typing");
+// Swallows the tour's request to open the phone drawer, restoring the bug phone-around catches.
+const MUTATE_DRAWER = process.argv.includes("--mutate-drawer");
 const VIEWPORT = { width: 1280, height: 800 };
 const DISMISSED = { version: 1, active: null, completed: [], furthest: {}, invite: "dismissed" };
 
@@ -29,8 +31,8 @@ function check(name, ok, detail = "") {
   console.log(`${ok ? "PASS" : "FAIL"} ${name}${detail ? ` — ${detail}` : ""}`);
 }
 
-async function open(browser, seed = DISMISSED) {
-  const context = await browser.newContext({ viewport: VIEWPORT, deviceScaleFactor: 1 });
+async function open(browser, seed = DISMISSED, contextOptions = {}) {
+  const context = await browser.newContext({ viewport: VIEWPORT, deviceScaleFactor: 1, ...contextOptions });
   await context.addInitScript((value) => {
     try {
       if (!sessionStorage.getItem("__seeded")) {
@@ -163,6 +165,32 @@ const scenarios = {
     const worst = Math.max(0, ...offsets);
     printChanges(samples);
     check("scroll-follow: the ring stays on the control while the page scrolls", worst <= 6, `worst vertical gap ${worst}px over ${offsets.length} samples`);
+    await context.close();
+  },
+
+  // On a phone the rail and sidebar sit in a collapsed drawer. Their steps must open it,
+  // not report "That control isn't on screen at this window size" one after another.
+  async "phone-around"(browser) {
+    const seed = { ...DISMISSED, active: { track: "around", step: 0, paused: false, resume: null } };
+    const { context, page } = await open(browser, seed, { viewport: { width: 375, height: 812 }, isMobile: true, hasTouch: true });
+    if (MUTATE_DRAWER) {
+      await context.addInitScript(() => window.addEventListener("leona:workspace-sidebar", (event) => event.stopImmediatePropagation(), { capture: true }));
+    }
+    await page.goto(`${BASE}/run`, { waitUntil: "domcontentloaded", timeout: 120_000 });
+    const seen = [];
+    for (let index = 0; index < 5; index += 1) {
+      await waitLayer(page, (key) => {
+        const layer = document.querySelector("[data-tour-layer]");
+        return layer?.getAttribute("data-step") === key && ["reading", "waiting", "satisfied", "hidden"].includes(layer.getAttribute("data-phase") ?? "");
+      }, `around.${index}`, 30_000);
+      const now = await page.evaluate(snapshot, null);
+      seen.push(`${now.step}:${now.phase}`);
+      if (now.phase === "hidden") break;
+      if (now.phase === "waiting") await page.locator("[data-tour=\"account-menu\"]").first().click();
+      else await page.locator("[data-tour-card] [data-primary=\"true\"]").click();
+    }
+    console.log(`  ${seen.join("  ")}`);
+    check("phone-around: rail and sidebar steps open the drawer instead of going hidden", seen.length === 5 && !seen.some((entry) => entry.endsWith(":hidden")), seen.join(", "));
     await context.close();
   },
 

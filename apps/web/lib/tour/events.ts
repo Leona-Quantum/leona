@@ -8,6 +8,12 @@ import type { TourId } from "./types.ts";
 export const TOUR_COMMAND_EVENT = "leona:tour";
 /** Fired after progress is written, so a Settings list can re-read it. */
 export const TOUR_PROGRESS_EVENT = "leona:tour-progress";
+/**
+ * Asks the workspace shell to open its navigation drawer. On a phone the rail and the
+ * sidebar sit in a collapsed drawer, so a step pointing at one of them would otherwise
+ * report its control as not on screen. The shell opens the drawer only at phone width.
+ */
+export const WORKSPACE_SIDEBAR_EVENT = "leona:workspace-sidebar";
 
 export type TourCommand =
   | { action: "start"; tour: TourId; fromStart?: boolean }

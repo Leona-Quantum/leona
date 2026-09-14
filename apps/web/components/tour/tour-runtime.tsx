@@ -27,7 +27,7 @@ import {
   tourStatus,
   valueMatches,
 } from "../../lib/tour/engine.ts";
-import { TOUR_COMMAND_EVENT, type TourCommand } from "../../lib/tour/events.ts";
+import { TOUR_COMMAND_EVENT, WORKSPACE_SIDEBAR_EVENT, type TourCommand } from "../../lib/tour/events.ts";
 import { centreCard, holeFor, orbAnchor, placeCard, type Rect } from "../../lib/tour/geometry.ts";
 import { tourSignal } from "../../lib/tour/signal.ts";
 import { stepCopyKey, stepGo, stepRoute, tourById } from "../../lib/tour/tracks.ts";
@@ -550,6 +550,7 @@ export function TourRuntime({ locale: localeProp, surface, initialCommand = null
     let cancelled = false;
     let tries = 0;
     let timer = 0;
+    let askedForDrawer = false;
     setUi((current) => (current.key === key && ["away", "wandered", "offline"].includes(current.phase) ? { ...current, phase: "locating" } : current));
     const look = () => {
       if (cancelled) return;
@@ -559,6 +560,12 @@ export function TourRuntime({ locale: localeProp, surface, initialCommand = null
         setTarget((current) => (current === found ? current : found));
         setUi((current) => (current.key !== key || ["waiting", "reading", "satisfied", "success"].includes(current.phase) ? current : { ...current, phase: initialPhase(step, found) }));
         return;
+      }
+      // On a phone the rail and the sidebar live in a collapsed drawer. Ask the shell to
+      // open it, once for this step, instead of telling the reader the control is gone.
+      if (!askedForDrawer && document.querySelector(`#workspace-navigation [data-tour="${CSS.escape(step.target!)}"]`)) {
+        askedForDrawer = true;
+        window.dispatchEvent(new CustomEvent(WORKSPACE_SIDEBAR_EVENT));
       }
       tries += 1;
       if (tries === 16 && step.expect?.kind !== "wait") {
