@@ -514,6 +514,49 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
     applyOverwritesEditedCode: string;
     applyOverwritesUnrepresentableCode: string;
     confirmApply: string;
+    // UX pass 6 (2026-09-12): the circuit header, gate inspector, playhead,
+    // code-beside-diagram view and the keyboard sheet.
+    metaQubits: (count: number) => string;
+    metaOperations: (count: number) => string;
+    metaDepth: (depth: number) => string;
+    metaSavedVersion: (id: string) => string;
+    metaCpuRun: (when: string) => string;
+    metaCpuRunStale: string;
+    metaNoCpuRun: string;
+    justNow: string;
+    shortcutsOpen: string;
+    shortcutsTitle: string;
+    shortcutsClose: string;
+    shortcutGroups: Record<"general" | "visual" | "simulation", string>;
+    shortcutRows: Record<string, string>;
+    paletteGroups: Record<"oneQubit" | "rotations" | "twoQubit" | "measure", string>;
+    gateNames: Record<string, string>;
+    inspectorActsOn: (qubits: string) => string;
+    inspectorAngle: string;
+    inspectorMatrix: string;
+    inspectorBasis: (first: string, second: string) => string;
+    inspectorNoMatrixMeasure: string;
+    inspectorNoMatrixCustom: (qubits: number) => string;
+    inspectorNoMatrixAngle: string;
+    inspectorMoment: (moment: number) => string;
+    playheadTitle: string;
+    playheadAfter: (moment: number, total: number) => string;
+    playheadStart: string;
+    playheadBoundary: string;
+    playheadStepBack: string;
+    playheadStepForward: string;
+    playheadToStart: string;
+    playheadToEnd: string;
+    playheadSlider: string;
+    playheadBitOrder: (highest: number) => string;
+    playheadUnavailable: (reason: string, limit: number) => string;
+    splitShow: string;
+    splitHide: string;
+    liveSync: string;
+    liveSyncHint: string;
+    codeFollowedDiagram: string;
+    laneReady: string;
+    latestRecord: string;
   };
   notebooks: {
     title: string;
@@ -1269,6 +1312,79 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
       applyOverwritesEditedCode: "The Code tab has changed since this diagram was drawn. Applying replaces that code with the diagram. Continue?",
       applyOverwritesUnrepresentableCode: "The Code tab holds source this editor cannot draw. Applying replaces it with the diagram, and the diagram cannot reproduce it. Continue?",
       confirmApply: "Replace the code",
+      metaQubits: (count) => (count === 1 ? "1 qubit" : `${count} qubits`),
+      metaOperations: (count) => (count === 1 ? "1 operation" : `${count} operations`),
+      metaDepth: (depth) => `depth ${depth}`,
+      metaSavedVersion: (id) => `Saved version ${id}`,
+      metaCpuRun: (when) => `CPU run ${when}`,
+      metaCpuRunStale: "Last CPU run used older code",
+      metaNoCpuRun: "No CPU run yet",
+      justNow: "just now",
+      shortcutsOpen: "Keyboard shortcuts",
+      shortcutsTitle: "Keyboard shortcuts",
+      shortcutsClose: "Close",
+      shortcutGroups: { general: "Anywhere in Studio", visual: "Visual", simulation: "Simulation" },
+      shortcutRows: {
+        tabs: "Switch tab",
+        split: "Show the code beside the diagram",
+        sheet: "Show this list",
+        escape: "Close this list or a full-screen panel",
+        oneQubit: "Pick a one-qubit gate",
+        rotations: "Pick RX, RY or RZ",
+        twoQubit: "Pick CX, CZ or SWAP",
+        measure: "Pick measurement",
+        undo: "Remove the last gate",
+        delete: "Delete the selected gates",
+        step: "Move the playhead one moment",
+        runCpu: "Run the CPU simulation",
+      },
+      paletteGroups: { oneQubit: "One-qubit", rotations: "Rotations", twoQubit: "Two-qubit", measure: "Measure" },
+      gateNames: {
+        H: "Hadamard",
+        X: "Pauli-X",
+        Y: "Pauli-Y",
+        Z: "Pauli-Z",
+        S: "S phase",
+        T: "T phase",
+        RX: "X rotation",
+        RY: "Y rotation",
+        RZ: "Z rotation",
+        CX: "Controlled-X (CNOT)",
+        CZ: "Controlled-Z",
+        SWAP: "Swap",
+        M: "Measurement",
+      },
+      inspectorActsOn: (qubits) => `on ${qubits}`,
+      inspectorAngle: "Angle",
+      inspectorMatrix: "Matrix",
+      inspectorBasis: (first, second) => `Basis |${first} ${second}⟩: 00, 01, 10, 11`,
+      inspectorNoMatrixMeasure: "Measurement is not unitary, so there is no matrix to show.",
+      inspectorNoMatrixCustom: (qubits) => `Custom gate on ${qubits} qubits. Its matrix is the product of its steps.`,
+      inspectorNoMatrixAngle: "Studio can't read this angle, so there is no matrix to show.",
+      inspectorMoment: (moment) => `Moment ${moment}`,
+      playheadTitle: "Probabilities",
+      playheadAfter: (moment, total) => `After moment ${moment} of ${total}`,
+      playheadStart: "Before the first gate",
+      playheadBoundary: "These are ideal, noiseless values computed in your browser. They are not a run or a verification.",
+      playheadStepBack: "Back one moment",
+      playheadStepForward: "Forward one moment",
+      playheadToStart: "Go to the start",
+      playheadToEnd: "Go to the end",
+      playheadSlider: "Playhead position",
+      playheadBitOrder: (highest) => `Bits read q${highest} … q0`,
+      playheadUnavailable: (reason, limit) => ({
+        too_wide: `Live probabilities stop at ${limit} qubits.`,
+        opaque_custom: "An opaque custom gate has no steps to apply, so live probabilities are off.",
+        mid_circuit_measurement: "A gate follows a measurement on the same qubit, so live probabilities are off from here.",
+        angle: "The browser simulator can't read one of these angles, so live probabilities are off.",
+      }[reason] ?? "Live probabilities are unavailable for this circuit."),
+      splitShow: "Code beside diagram",
+      splitHide: "Diagram only",
+      liveSync: "Live",
+      liveSyncHint: "The code is exactly what the diagram generates, so it updates as you place gates.",
+      codeFollowedDiagram: "Code updated from the diagram.",
+      laneReady: "Ready",
+      latestRecord: "Latest",
     },
   notebooks: {
     title: "Notebooks",
@@ -2074,6 +2190,79 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
       applyOverwritesEditedCode: "この図を描いたあとにコードタブが変更されています。適用するとそのコードは図の内容で置き換えられます。続行しますか？",
       applyOverwritesUnrepresentableCode: "コードタブには、このエディタで描けないソースがあります。適用するとそのコードは図で置き換えられ、図から元に戻すことはできません。続行しますか？",
       confirmApply: "コードを置き換える",
+      metaQubits: (count) => `${count}量子ビット`,
+      metaOperations: (count) => `${count}操作`,
+      metaDepth: (depth) => `深さ${depth}`,
+      metaSavedVersion: (id) => `保存済みバージョン ${id}`,
+      metaCpuRun: (when) => `CPUシミュレーション ${when}`,
+      metaCpuRunStale: "CPU結果は以前のコードのものです",
+      metaNoCpuRun: "CPUシミュレーション未実行",
+      justNow: "たった今",
+      shortcutsOpen: "キーボードショートカット",
+      shortcutsTitle: "キーボードショートカット",
+      shortcutsClose: "閉じる",
+      shortcutGroups: { general: "Studio全体", visual: "ビジュアル", simulation: "シミュレーション" },
+      shortcutRows: {
+        tabs: "タブを切り替える",
+        split: "図の横にコードを表示",
+        sheet: "この一覧を表示",
+        escape: "この一覧や全画面パネルを閉じる",
+        oneQubit: "1量子ビットゲートを選ぶ",
+        rotations: "RX・RY・RZを選ぶ",
+        twoQubit: "CX・CZ・SWAPを選ぶ",
+        measure: "測定を選ぶ",
+        undo: "最後のゲートを取り消す",
+        delete: "選択したゲートを削除",
+        step: "再生位置を1モーメント動かす",
+        runCpu: "CPUシミュレーションを実行",
+      },
+      paletteGroups: { oneQubit: "1量子ビット", rotations: "回転", twoQubit: "2量子ビット", measure: "測定" },
+      gateNames: {
+        H: "アダマール",
+        X: "パウリX",
+        Y: "パウリY",
+        Z: "パウリZ",
+        S: "S位相",
+        T: "T位相",
+        RX: "X軸回転",
+        RY: "Y軸回転",
+        RZ: "Z軸回転",
+        CX: "制御X（CNOT）",
+        CZ: "制御Z",
+        SWAP: "SWAP",
+        M: "測定",
+      },
+      inspectorActsOn: (qubits) => `対象: ${qubits}`,
+      inspectorAngle: "角度",
+      inspectorMatrix: "行列",
+      inspectorBasis: (first, second) => `基底 |${first} ${second}⟩: 00, 01, 10, 11`,
+      inspectorNoMatrixMeasure: "測定はユニタリではないため、表示する行列はありません。",
+      inspectorNoMatrixCustom: (qubits) => `${qubits}量子ビットのカスタムゲートです。行列は内部ステップの積です。`,
+      inspectorNoMatrixAngle: "この角度はここでは評価できないため、行列を表示しません。",
+      inspectorMoment: (moment) => `モーメント ${moment}`,
+      playheadTitle: "確率",
+      playheadAfter: (moment, total) => `モーメント ${moment}/${total} の後`,
+      playheadStart: "最初のゲートの前",
+      playheadBoundary: "ノイズなしの理想値で、ブラウザ内で計算しています。実行でも検証でもありません。",
+      playheadStepBack: "1モーメント戻る",
+      playheadStepForward: "1モーメント進む",
+      playheadToStart: "最初へ",
+      playheadToEnd: "最後へ",
+      playheadSlider: "再生位置",
+      playheadBitOrder: (highest) => `ビット順 q${highest} … q0`,
+      playheadUnavailable: (reason, limit) => ({
+        too_wide: `ライブ確率は${limit}量子ビットまでです。`,
+        opaque_custom: "中身を持たないカスタムゲートがあるため、ライブ確率は表示できません。",
+        mid_circuit_measurement: "測定のあとに同じ量子ビットへゲートがあるため、ここから先のライブ確率は表示できません。",
+        angle: "ブラウザのシミュレータが読めない角度があるため、ライブ確率は表示できません。",
+      }[reason] ?? "この回路ではライブ確率を表示できません。"),
+      splitShow: "図の横にコード",
+      splitHide: "図のみ",
+      liveSync: "連動中",
+      liveSyncHint: "コードは図から生成したものと同一なので、ゲートを置くたびに更新されます。",
+      codeFollowedDiagram: "図に合わせてコードを更新しました。",
+      laneReady: "実行可能",
+      latestRecord: "最新",
     },
   notebooks: {
     title: "ノートブック",
@@ -2372,6 +2561,10 @@ export const ACCOUNT_COPY: Record<PublicLocale, {
   preferences: string;
   language: string;
   languageHelp: string;
+  theme: string;
+  themeHelp: string;
+  accent: string;
+  accentHelp: string;
   identity: string;
   /** The Profile pane's label and heading. */
   profile: string;
@@ -2586,6 +2779,10 @@ export const ACCOUNT_COPY: Record<PublicLocale, {
     preferences: "Preferences",
     language: "Language",
     languageHelp: "Choose the language used for shared navigation and account settings.",
+    theme: "Theme",
+    themeHelp: "Light or dark, for the workspace and the public site alike.",
+    accent: "Colour",
+    accentHelp: "The one colour the workspace uses for links, buttons and the lioness.",
     identity: "Identity",
     profile: "Profile",
     retry: "Try again",
@@ -2784,6 +2981,10 @@ export const ACCOUNT_COPY: Record<PublicLocale, {
     preferences: "表示設定",
     language: "言語",
     languageHelp: "共通ナビゲーションとアカウント設定で使用する言語を選択します。",
+    theme: "テーマ",
+    themeHelp: "ライトかダークか。ワークスペースと公開サイトの両方に適用されます。",
+    accent: "カラー",
+    accentHelp: "リンク、ボタン、ライオネスに使うワークスペースの基調色です。",
     identity: "本人情報",
     profile: "プロフィール",
     retry: "再試行",
@@ -3530,5 +3731,602 @@ export const PROJECT_SHARE_COPY: Record<PublicLocale, {
     leaveFailed: "このプロジェクトから抜けられませんでした。",
     leaveHelp:
       "これらの回路にはアクセスできなくなります。あなたが追加した回路はプロジェクトに残り、所有者が再度共有することもできます。",
+  },
+};
+
+// ---- Guided tours (TUTORIAL.md, ai-ops 298) --------------------------------
+// Every word the tour guide says, English and Japanese side by side. Step copy
+// is keyed `track.step`; lib/tour/targets.test.ts fails if a step lacks either
+// language. Kept at the end of the file so parallel edits above do not collide.
+import type { TourShowId, TourTrackId } from "./tour/types";
+
+export type TourStepCopy = {
+  title: string;
+  action: string;
+  /** Said when the reader clicks the step's `wrongTarget` instead. */
+  wrong?: string;
+  /** What "Do it for me" types into the field. */
+  fill?: string;
+};
+
+export type TourPlaceKey = "run" | "studio" | "notebooks" | "courses" | "qapps" | "atlas" | "settings" | "workspace";
+
+export type ToursCopy = {
+  name: string;
+  helpButton: string;
+  invite: { label: string; line: string; start: string; choose: string; notNow: string };
+  chooser: {
+    title: string;
+    lede: string;
+    tracks: string;
+    showMe: string;
+    showMeLede: string;
+    start: string;
+    resume: string;
+    restart: string;
+    done: string;
+    progress: (step: number, total: number) => string;
+    minutes: (count: number) => string;
+    close: string;
+  };
+  tracks: Record<TourTrackId, { title: string; forWhom: string; keeps: string }>;
+  shows: Record<TourShowId, string>;
+  card: {
+    label: string;
+    stepOf: (step: number, total: number) => string;
+    back: string;
+    next: string;
+    finish: string;
+    skipTour: string;
+    skipStep: string;
+    doItForMe: string;
+    takeMeThere: string;
+    backToTour: string;
+    pause: string;
+    resume: string;
+    paused: string;
+    close: string;
+    finished: (title: string) => string;
+    chooseAnother: string;
+    skipAhead: string;
+    ask: string;
+    hideAsk: string;
+  };
+  status: {
+    success: string;
+    notQuite: (thing: string) => string;
+    notQuiteGeneric: string;
+    nudge: string;
+    ownPrompt: string;
+    ownValue: string;
+    wandered: (place: string) => string;
+    away: (place: string) => string;
+    hidden: string;
+    offline: string;
+    offlineSkipped: (count: number) => string;
+    doing: string;
+    working: string;
+  };
+  places: Record<TourPlaceKey, string>;
+  targets: Record<string, string>;
+  ask: {
+    label: string;
+    placeholder: string;
+    submit: string;
+    match: (title: string) => string;
+    showMe: string;
+    noMatch: string;
+    askNala: string;
+    cost: string;
+    asking: string;
+    answered: string;
+    openAnswer: string;
+    notReady: string;
+    offline: string;
+    failed: string;
+    context: (tour: string, step: string, question: string) => string;
+  };
+  settings: { label: string; lede: string; perDevice: string; showMe: string; inviteAgain: string; inviteAgainDone: string };
+  steps: Record<string, TourStepCopy>;
+};
+
+export const TOURS_COPY: Record<PublicLocale, ToursCopy> = {
+  en: {
+    name: "Guided tours",
+    helpButton: "Guided tours and help",
+    invite: {
+      label: "Guided tour",
+      line: "New here? A three-minute look around?",
+      start: "Start",
+      choose: "Choose a track",
+      notNow: "Not now",
+    },
+    chooser: {
+      title: "Guided tours",
+      lede: "Each tour runs on the real workspace. Leave at any step and pick up where you stopped.",
+      tracks: "Tours",
+      showMe: "Show me",
+      showMeLede: "Each one takes about thirty seconds.",
+      start: "Start",
+      resume: "Resume",
+      restart: "Start again",
+      done: "Done",
+      progress: (step, total) => `Step ${step} of ${total}`,
+      minutes: (count) => `${count} min`,
+      close: "Close",
+    },
+    tracks: {
+      around: { title: "Around the workspace", forWhom: "For everyone: where things are.", keeps: "Nothing to keep, but you will know your way around." },
+      "first-light": { title: "First light", forWhom: "New to quantum computing.", keeps: "A saved Bell-state circuit and a beginner lesson." },
+      build: { title: "Build", forWhom: "You want to develop algorithms.", keeps: "A versioned circuit and a hardware cost estimate." },
+      teach: { title: "Teach", forWhom: "You teach a class or a course.", keeps: "A lesson, a course plan and a shared project." },
+      read: { title: "Read", forWhom: "You want to explore the Atlas.", keeps: "Nothing to keep, but you will know how to read an entry." },
+    },
+    shows: {
+      "show-cirq": "Convert code to Cirq",
+      "show-visual": "Edit a circuit visually",
+      "show-simulate": "Simulate a circuit",
+      "show-export": "Export OpenQASM",
+      "show-mode": "Choose how Nala answers",
+      "show-framework": "Pick a framework",
+      "show-attach": "Attach a file",
+      "show-usage": "Check usage and limits",
+      "show-theme": "Change theme or language",
+      "show-lesson": "Make a lesson",
+      "show-qapp": "Make a Qapp",
+      "show-atlas": "Search the Atlas",
+    },
+    card: {
+      label: "Tour guide",
+      stepOf: (step, total) => `${step} of ${total}`,
+      back: "Back",
+      next: "Next",
+      finish: "Finish",
+      skipTour: "Skip tour",
+      skipStep: "Skip this step",
+      doItForMe: "Do it for me",
+      takeMeThere: "Take me there",
+      backToTour: "Back to the tour",
+      pause: "Pause here",
+      resume: "Resume",
+      paused: "Tour paused",
+      close: "Close",
+      finished: (title) => `That's the end of ${title}.`,
+      chooseAnother: "Choose another",
+      skipAhead: "Skip ahead",
+      ask: "Ask a question",
+      hideAsk: "Hide",
+    },
+    status: {
+      success: "That's it.",
+      notQuite: (thing) => `That's the ${thing}. Try the highlighted one.`,
+      notQuiteGeneric: "Not that one. Try the highlighted control.",
+      nudge: "Take your time. When you're ready, it's the highlighted control.",
+      ownPrompt: "You wrote your own prompt. Good, the tour will follow yours.",
+      ownValue: "You typed your own. That works too.",
+      wandered: (place) => `You're on ${place} now. Go back to the tour, or pause here?`,
+      away: (place) => `Next stop: ${place}.`,
+      hidden: "That control isn't on screen at this window size. You can skip this step.",
+      offline: "This step needs the workspace online, so it's skipped here.",
+      offlineSkipped: (count) => (count === 1 ? "Skipped one step that needs the workspace online." : `Skipped ${count} steps that need the workspace online.`),
+      doing: "Doing it for you.",
+      working: "Waiting for it to appear.",
+    },
+    places: {
+      run: "Run",
+      studio: "Studio",
+      notebooks: "Notebooks",
+      courses: "Courses",
+      qapps: "Qapps",
+      atlas: "the Atlas",
+      settings: "Settings",
+      workspace: "another page",
+    },
+    targets: {
+      "rail-run": "Run link",
+      "rail-studio": "Studio link",
+      "rail-notebooks": "Notebooks link",
+      "rail-qapps": "Qapps link",
+      "rail-atlas": "Atlas link",
+      "sidebar-search": "search box",
+      "sidebar-new-chat": "New chat button",
+      "sidebar-projects": "projects list",
+      "account-menu": "account menu",
+      "menu-usage": "usage link",
+      "menu-settings": "Settings link",
+      "tour-help": "help button",
+      "run-starter-bell": "Bell state starter",
+      "run-starter": "other starter",
+      "run-prompt": "message box",
+      "run-mode": "response mode picker",
+      "run-framework": "framework picker",
+      "run-submit": "Send button",
+      "run-attach": "attach button",
+      "run-activity": "run's progress",
+      "run-final-output": "result",
+      "run-artifact-link": "Studio link",
+      "studio-tab-code": "Code tab",
+      "studio-tab-visual": "Visual tab",
+      "studio-tab-simulation": "Simulation tab",
+      "studio-tab-summary": "Summary tab",
+      "studio-framework": "framework picker",
+      "studio-builder": "gate palette",
+      "studio-compress": "compression panel",
+      "studio-simulation-panel": "simulation panel",
+      "studio-qpu": "hardware lane",
+      "studio-download-export": "Download export button",
+      "studio-verify-save": "Verify & save button",
+      "studio-split": "Code beside diagram button",
+      "studio-playhead": "probabilities panel",
+      "studio-cpu-run": "last CPU run line",
+      "studio-shortcuts": "shortcuts button",
+      "notebooks-brief": "brief box",
+      "notebooks-starters": "ready-made briefs",
+      "notebooks-options": "Notebook options",
+      "notebooks-fields": "notebook settings",
+      "notebooks-create": "Create notebook button",
+      "notebooks-courses": "Courses link",
+      "courses-composer": "course planner",
+      "qapps-create-run": "Create in Run button",
+      "atlas-search": "search box",
+      "atlas-filters": "filter menus",
+      "atlas-entry-link": "entry",
+      "atlas-entry-topics": "topics",
+      "atlas-entry-source": "source link",
+      "atlas-entry-map": "map link",
+      "atlas-views": "Atlas views",
+    },
+    ask: {
+      label: "Ask about this page",
+      placeholder: "For example: how do I export OpenQASM?",
+      submit: "Ask",
+      match: (title) => `There's a short walkthrough for that: ${title}.`,
+      showMe: "Show me",
+      noMatch: "There's no walkthrough for that yet.",
+      askNala: "Ask Nala",
+      cost: "Starts a chat with Nala in Run. It counts toward your plan's usage.",
+      asking: "Nala is answering…",
+      answered: "Nala says:",
+      openAnswer: "Open the full answer",
+      notReady: "The answer is still being written. It will be in your chats.",
+      offline: "Asking Nala needs the workspace online.",
+      failed: "Nala couldn't answer that just now.",
+      context: (tour, step, question) => `I'm on the guided tour "${tour}", at the step "${step}". In a few sentences: ${question}`,
+    },
+    settings: {
+      label: "Guided tours",
+      lede: "A guide walks you through the workspace. Tours use the real product, and you can stop at any step.",
+      perDevice: "Progress is saved in this browser.",
+      showMe: "Show me",
+      inviteAgain: "Show the welcome prompt again",
+      inviteAgainDone: "It will appear the next time you open Run.",
+    },
+    steps: {
+      "around.rail": { title: "The rail", action: "Everything in the workspace is one click from here. Run is where you ask Nala for code." },
+      "around.studio": { title: "Studio", action: "Saved circuits open here to edit, simulate and export. Open Studio." },
+      "around.notebooks": { title: "Notebooks", action: "Lessons, labs and quizzes, written from your work. Open Notebooks." },
+      "around.qapps": { title: "Qapps", action: "A Qapp is a small interactive page built from a circuit. Open Qapps." },
+      "around.atlas": { title: "The Atlas", action: "A map of published quantum methods, each traced to its papers. The Read tour covers it." },
+      "around.run": { title: "Back to Run", action: "Open Run again." },
+      "around.search": { title: "Search", action: "Finds chats and saved circuits by name. Type a word.", fill: "Bell" },
+      "around.new-chat": { title: "New chat", action: "Starts a fresh conversation. Recent chats and folders are listed below it." },
+      "around.account": { title: "Your account", action: "Open the menu at the bottom of the rail." },
+      "around.usage": { title: "Usage and limits", action: "Shows how much of your plan is left and when it resets." },
+      "around.settings": { title: "Settings", action: "Open Settings." },
+      "around.preferences": { title: "Preferences", action: "Theme, accent colour and language are here." },
+      "around.tours": { title: "Guided tours", action: "Restart any tour here, or from the ? at the top of the page. Open it to finish." },
+
+      "first-light.hello": { title: "First light", action: "You build a circuit on two qubits and see a real result. It takes about six minutes and needs no maths." },
+      "first-light.starter": { title: "A Bell state", action: "The simplest thing two qubits can do together. Press Build a Bell state.", wrong: "That one is for later. Build a Bell state is the first button in the row." },
+      "first-light.prompt": { title: "Your prompt", action: "It says what to build and how to check it. You can change it before it runs." },
+      "first-light.run": { title: "Run it", action: "Press Send. Nala plans the circuit, writes the code and checks the result." },
+      "first-light.watch": { title: "Watch it work", action: "Each line is a stage: plan, code, checks. It usually takes under a minute." },
+      "first-light.answer": { title: "The result", action: "A Bell state measures as 00 or 11, about half the time each, and almost never 01 or 10. That pairing is entanglement." },
+      "first-light.saved": { title: "Keep it", action: "Keep the result if it asks, then open it in Studio." },
+      "first-light.visual": { title: "See the circuit", action: "Open the Visual tab. It draws the circuit as gates on wires." },
+      "first-light.gates": { title: "Two gates", action: "A Bell state needs two. H puts the first qubit into an even mix of 0 and 1. CNOT ties the second qubit to it, so the two always agree." },
+      "first-light.notebooks": { title: "Keep a lesson", action: "Notebooks can write this up as a short lesson. Open Notebooks." },
+      "first-light.brief": { title: "What to learn", action: "Type a topic. For example: Bell states for a complete beginner.", fill: "Bell states for a complete beginner" },
+      "first-light.level": { title: "Pitch it", action: "Open Notebook options and set the audience to Newcomer." },
+      "first-light.create": { title: "Make the lesson", action: "Press Create notebook. Nala writes the lesson and keeps it in Notebooks." },
+      "first-light.atlas": { title: "Where next", action: "The Atlas has the Bell state and the methods built on it. That's the end of First light." },
+
+      "build.mode": { title: "Response mode", action: "Execute writes code and runs it. Auto lets Nala decide from your message. Choose Execute.", wrong: "That's the framework picker. Response mode is the one to its left." },
+      "build.framework": { title: "Circuit framework", action: "The library the code is written in. Qiskit is the default; Cirq, PennyLane and others are in the list." },
+      "build.prompt": { title: "Describe the algorithm", action: "Say what to solve and how to check it. For example: QAOA for MaxCut on a 5-node ring, compared with the exact answer.", fill: "Use QAOA to solve MaxCut on a 5-node ring and compare it with an exact classical baseline." },
+      "build.run": { title: "Run it", action: "Press Send. The plan comes first, then the code." },
+      "build.plan": { title: "Plan and contract", action: "The plan names the algorithm and why it was chosen. The contract says what the result has to show to count." },
+      "build.result": { title: "RESULT", action: "What the code measured, checked against the contract. The mark shows whether it passed." },
+      "build.studio": { title: "Open in Studio", action: "Each run's circuit is saved with its versions. Keep it if asked, then open it in Studio." },
+      "build.code": { title: "Code", action: "Open the Code tab. Keys 1 to 4 switch between the four tabs." },
+      "build.convert": { title: "Convert to Cirq", action: "Choose Cirq here. Studio rewrites the circuit in Cirq." },
+      "build.visual": { title: "Visual builder", action: "Open the Visual tab. The palette above the diagram groups gates by kind: pick a gate, then click a wire to place it." },
+      "build.playhead": { title: "Probabilities", action: "The playhead steps through the circuit one moment at a time and shows the probabilities after each. The [ and ] keys move it too." },
+      "build.split": { title: "Code beside diagram", action: "Turn this on to edit the code with the diagram next to it." },
+      "build.compress": { title: "Compress", action: "Pick a strategy and apply it. The counts show gates and depth before and after." },
+      "build.simulation": { title: "Simulation", action: "Open the Simulation tab." },
+      "build.lanes": { title: "Where it runs", action: "The CPU lane simulates in this browser, within your plan's qubit limit, and verifies nothing. Running the code for real happens in an isolated sandbox." },
+      "build.cpu-run": { title: "Last CPU run", action: "The line under the title says when the CPU lane last ran, and whether that result still matches the code." },
+      "build.qpu": { title: "Hardware estimate", action: "Choose a device to see what this circuit would cost on real hardware. The estimate is free." },
+      "build.summary": { title: "Summary", action: "Open the Summary tab. The evidence and every saved version are here." },
+      "build.export": { title: "Export", action: "Download export gives you the code, with OpenQASM where the circuit has it." },
+      "build.shortcuts": { title: "Keyboard shortcuts", action: "Press ? or this button to see every Studio shortcut." },
+      "build.save": { title: "Verify & save", action: "Checks the code in the sandbox and saves a new version. That's the end of Build." },
+
+      "teach.brief": { title: "What to teach", action: "Describe the lesson. For example: Grover's search for first-year undergraduates.", fill: "Grover's search for first-year undergraduates" },
+      "teach.starters": { title: "Ready-made briefs", action: "Press one to fill in the box." },
+      "teach.options": { title: "Kind and level", action: "Open Notebook options." },
+      "teach.fields": { title: "Lesson, lab or quiz", action: "Kind sets the format. Audience and Math set the level. Language can be English or Japanese." },
+      "teach.create": { title: "Create", action: "Press Create notebook. Exercises in the notebook check answers on their own." },
+      "teach.courses": { title: "Courses", action: "A course puts lessons and quizzes in order. Open Courses." },
+      "teach.course": { title: "Plan a course", action: "Describe the course and Nala proposes the modules. You review them before anything is written." },
+      "teach.share": { title: "Share with a class", action: "Projects in Studio can be shared. Open Studio." },
+      "teach.projects": { title: "Projects", action: "Group circuits into a project, then share it from the project's menu." },
+      "teach.qapps": { title: "A classroom demo", action: "A Qapp turns a circuit into a page students can use. Open Qapps." },
+      "teach.make": { title: "Make one", action: "Start from Run, or from a circuit in Studio. That's the end of Teach." },
+
+      "read.search": { title: "Search the Atlas", action: "Search by method, problem or paper. Try: phase estimation.", fill: "phase estimation" },
+      "read.filters": { title: "Narrow it down", action: "These menus filter by topic and more. The address changes with them, so a filtered view can be shared." },
+      "read.entry": { title: "Open an entry", action: "Pick any entry in the list." },
+      "read.topics": { title: "Topics", action: "Each topic links to everything else on that subject." },
+      "read.source": { title: "Source", action: "Every entry names the paper it comes from." },
+      "read.map": { title: "On the map", action: "Open on the map shows where this method sits among the others." },
+      "read.views": { title: "Three views", action: "The map, the papers, and the sources behind speedup claims. Open the map." },
+      "read.layers": { title: "The layer map", action: "Methods arranged by what they build on. Each card traces its pathway and cost back to papers." },
+      "read.llms": { title: "For your own tools", action: "leonaqt.com/llms.txt describes the Atlas in plain text, for a language model to read." },
+      "read.run": { title: "Take it to Run", action: "When you find a starting point, ask Nala in Run to build it. That's the end of Read." },
+
+      "show-mode.mode": { title: "Response mode", action: "Auto lets Nala decide from your message. Execute always writes and runs code. Learn and Explain answer in words without running anything. Qapp builds an interactive page." },
+      "show-attach.attach": { title: "Attach files", action: "Add code or notes to your message. Nala reads them along with what you type." },
+    },
+  },
+  ja: {
+    name: "ガイドツアー",
+    helpButton: "ガイドツアーとヘルプ",
+    invite: {
+      label: "ガイドツアー",
+      line: "はじめてですか？3分でワークスペースをご案内します。",
+      start: "始める",
+      choose: "ツアーを選ぶ",
+      notNow: "今はしない",
+    },
+    chooser: {
+      title: "ガイドツアー",
+      lede: "ツアーは実際のワークスペースで進みます。どのステップでも中断でき、続きから再開できます。",
+      tracks: "ツアー",
+      showMe: "操作を見る",
+      showMeLede: "どれも30秒ほどで終わります。",
+      start: "始める",
+      resume: "続きから",
+      restart: "最初から",
+      done: "完了",
+      progress: (step, total) => `ステップ ${step}/${total}`,
+      minutes: (count) => `${count}分`,
+      close: "閉じる",
+    },
+    tracks: {
+      around: { title: "ワークスペース案内", forWhom: "すべての方へ。どこに何があるか。", keeps: "保存するものはありません。迷わず操作できるようになります。" },
+      "first-light": { title: "はじめての量子", forWhom: "量子コンピューティングが初めての方へ。", keeps: "保存したBell状態の回路と、初心者向けのレッスン。" },
+      build: { title: "開発", forWhom: "アルゴリズムを開発したい方へ。", keeps: "バージョン管理された回路と、ハードウェアの費用見積もり。" },
+      teach: { title: "教える", forWhom: "授業や講座を担当する方へ。", keeps: "レッスン、コースの計画、共有プロジェクト。" },
+      read: { title: "読む", forWhom: "アトラスを調べたい方へ。", keeps: "保存するものはありませんが、項目の読み方がわかります。" },
+    },
+    shows: {
+      "show-cirq": "コードをCirqに変換",
+      "show-visual": "回路を図で編集",
+      "show-simulate": "回路をシミュレーション",
+      "show-export": "OpenQASMを書き出す",
+      "show-mode": "Nalaの応答方法を選ぶ",
+      "show-framework": "フレームワークを選ぶ",
+      "show-attach": "ファイルを添付",
+      "show-usage": "使用状況と上限を確認",
+      "show-theme": "テーマや言語を変更",
+      "show-lesson": "レッスンを作る",
+      "show-qapp": "Qappを作る",
+      "show-atlas": "アトラスを検索",
+    },
+    card: {
+      label: "ツアーガイド",
+      stepOf: (step, total) => `${step}/${total}`,
+      back: "戻る",
+      next: "次へ",
+      finish: "完了",
+      skipTour: "ツアーを終了",
+      skipStep: "このステップを飛ばす",
+      doItForMe: "代わりに操作する",
+      takeMeThere: "移動する",
+      backToTour: "ツアーに戻る",
+      pause: "ここで一時停止",
+      resume: "再開",
+      paused: "ツアーを一時停止中",
+      close: "閉じる",
+      finished: (title) => `「${title}」はここまでです。`,
+      chooseAnother: "別のツアーを選ぶ",
+      skipAhead: "先へ進む",
+      ask: "質問する",
+      hideAsk: "閉じる",
+    },
+    status: {
+      success: "できました。",
+      notQuite: (thing) => `それは${thing}です。光っている部分を操作してください。`,
+      notQuiteGeneric: "そこではありません。光っている部分を操作してください。",
+      nudge: "ゆっくりで大丈夫です。準備ができたら、光っている部分を操作してください。",
+      ownPrompt: "ご自身でプロンプトを書きましたね。ツアーはその内容で進めます。",
+      ownValue: "ご自身の入力でも大丈夫です。",
+      wandered: (place) => `今は${place}にいます。ツアーに戻りますか？それともここで一時停止しますか？`,
+      away: (place) => `次は${place}です。`,
+      hidden: "この画面幅ではその操作が表示されていません。このステップは飛ばせます。",
+      offline: "このステップにはワークスペースへの接続が必要なため、ここでは飛ばします。",
+      offlineSkipped: (count) => `ワークスペースへの接続が必要な${count}つのステップを飛ばしました。`,
+      doing: "代わりに操作しています。",
+      working: "表示されるのを待っています。",
+    },
+    places: {
+      run: "Run",
+      studio: "Studio",
+      notebooks: "ノートブック",
+      courses: "コース",
+      qapps: "Qapps",
+      atlas: "アトラス",
+      settings: "設定",
+      workspace: "別のページ",
+    },
+    targets: {
+      "rail-run": "Runのリンク",
+      "rail-studio": "Studioのリンク",
+      "rail-notebooks": "ノートブックのリンク",
+      "rail-qapps": "Qappsのリンク",
+      "rail-atlas": "アトラスのリンク",
+      "sidebar-search": "検索欄",
+      "sidebar-new-chat": "新しいチャットのボタン",
+      "sidebar-projects": "プロジェクト一覧",
+      "account-menu": "アカウントメニュー",
+      "menu-usage": "使用状況のリンク",
+      "menu-settings": "設定のリンク",
+      "tour-help": "ヘルプボタン",
+      "run-starter-bell": "Bell状態のボタン",
+      "run-starter": "別のボタン",
+      "run-prompt": "入力欄",
+      "run-mode": "応答モードの選択",
+      "run-framework": "回路フレームワークの選択",
+      "run-submit": "送信ボタン",
+      "run-attach": "添付ボタン",
+      "run-activity": "実行の進み具合",
+      "run-final-output": "結果",
+      "run-artifact-link": "Studioへのリンク",
+      "studio-tab-code": "「コード」タブ",
+      "studio-tab-visual": "「回路図」タブ",
+      "studio-tab-simulation": "「シミュレーション」タブ",
+      "studio-tab-summary": "「概要」タブ",
+      "studio-framework": "フレームワークの選択",
+      "studio-builder": "ゲートの一覧",
+      "studio-compress": "圧縮パネル",
+      "studio-simulation-panel": "シミュレーションパネル",
+      "studio-qpu": "ハードウェアの欄",
+      "studio-download-export": "「エクスポートをダウンロード」ボタン",
+      "studio-verify-save": "「検証して保存」ボタン",
+      "studio-split": "「図の横にコード」ボタン",
+      "studio-playhead": "確率のパネル",
+      "studio-cpu-run": "CPUシミュレーションの行",
+      "studio-shortcuts": "ショートカットのボタン",
+      "notebooks-brief": "内容の入力欄",
+      "notebooks-starters": "用意された内容",
+      "notebooks-options": "ノートブックの設定",
+      "notebooks-fields": "ノートブックの設定項目",
+      "notebooks-create": "「ノートブックを作成」ボタン",
+      "notebooks-courses": "コースのリンク",
+      "courses-composer": "コースの計画欄",
+      "qapps-create-run": "「Runで作る」ボタン",
+      "atlas-search": "検索欄",
+      "atlas-filters": "絞り込みメニュー",
+      "atlas-entry-link": "項目",
+      "atlas-entry-topics": "トピック",
+      "atlas-entry-source": "出典のリンク",
+      "atlas-entry-map": "地図のリンク",
+      "atlas-views": "アトラスの表示",
+    },
+    ask: {
+      label: "このページについて質問",
+      placeholder: "例：OpenQASMを書き出すには？",
+      submit: "質問",
+      match: (title) => `その操作には短い案内があります：${title}`,
+      showMe: "見せて",
+      noMatch: "その質問に合う案内はまだありません。",
+      askNala: "Nalaに聞く",
+      cost: "RunでNalaとのチャットを始めます。プランの使用量に含まれます。",
+      asking: "Nalaが回答しています…",
+      answered: "Nalaの回答：",
+      openAnswer: "回答をすべて見る",
+      notReady: "回答はまだ作成中です。チャット一覧に表示されます。",
+      offline: "Nalaに聞くには、ワークスペースへの接続が必要です。",
+      failed: "今はその質問に回答できませんでした。",
+      context: (tour, step, question) => `ガイドツアー「${tour}」のステップ「${step}」を見ています。数文で答えてください：${question}`,
+    },
+    settings: {
+      label: "ガイドツアー",
+      lede: "ガイドがワークスペースを案内します。ツアーは実際の画面で進み、どのステップでも中断できます。",
+      perDevice: "進み具合はこのブラウザに保存されます。",
+      showMe: "操作を見る",
+      inviteAgain: "ようこそ案内をもう一度表示",
+      inviteAgainDone: "次にRunを開いたときに表示されます。",
+    },
+    steps: {
+      "around.rail": { title: "レール", action: "ワークスペースのすべてに、ここから移動できます。RunはNalaにコードを頼む場所です。" },
+      "around.studio": { title: "Studio", action: "保存した回路を開いて、編集、シミュレーション、エクスポートができます。Studioを開いてください。" },
+      "around.notebooks": { title: "ノートブック", action: "作業からレッスン、ラボ、クイズを作ります。ノートブックを開いてください。" },
+      "around.qapps": { title: "Qapps", action: "Qappは、回路から作る小さな操作用のページです。Qappsを開いてください。" },
+      "around.atlas": { title: "アトラス", action: "公開された量子手法の地図で、どれも論文までたどれます。詳しくは「読む」ツアーで案内します。" },
+      "around.run": { title: "Runに戻る", action: "もう一度Runを開いてください。" },
+      "around.search": { title: "検索", action: "チャットや保存した回路を名前で探せます。何か入力してみてください。", fill: "Bell" },
+      "around.new-chat": { title: "新しいチャット", action: "新しい会話を始めます。最近のチャットやフォルダはこの下に並びます。" },
+      "around.account": { title: "アカウント", action: "レールの一番下にあるメニューを開いてください。" },
+      "around.usage": { title: "使用状況と上限", action: "プランの残りと、次にリセットされる時期がわかります。" },
+      "around.settings": { title: "設定", action: "設定を開いてください。" },
+      "around.preferences": { title: "表示設定", action: "テーマ、アクセントカラー、言語はここで変えられます。" },
+      "around.tours": { title: "ガイドツアー", action: "ツアーはここ、またはページ上部の「?」からいつでもやり直せます。開いたら終了です。" },
+
+      "first-light.hello": { title: "はじめての量子", action: "2つの量子ビットで回路を作り、本物の結果を見ます。約6分で、数式は使いません。" },
+      "first-light.starter": { title: "Bell状態", action: "2つの量子ビットが一緒にできる、いちばんシンプルな動きです。「Bell状態を作る」を押してください。", wrong: "それは後で使います。「Bell状態を作る」は並びの最初のボタンです。" },
+      "first-light.prompt": { title: "プロンプト", action: "何を作り、どう確認するかが書かれています。実行する前に書き換えてもかまいません。" },
+      "first-light.run": { title: "実行する", action: "「送信」を押してください。Nalaが回路を計画し、コードを書き、結果を確認します。" },
+      "first-light.watch": { title: "進み具合", action: "1行が1つの段階です。計画、コード、確認。たいてい1分以内に終わります。" },
+      "first-light.answer": { title: "結果", action: "Bell状態を測ると、00と11がほぼ半分ずつ出て、01や10はほとんど出ません。この結びつきがエンタングルメントです。" },
+      "first-light.saved": { title: "保存する", action: "保存を求められたら保存し、Studioで開いてください。" },
+      "first-light.visual": { title: "回路を見る", action: "「回路図」タブを開いてください。回路を線とゲートで描きます。" },
+      "first-light.gates": { title: "2つのゲート", action: "Bell状態に必要なのは2つです。Hで1つ目の量子ビットを0と1が半々の状態にし、CNOTで2つ目を1つ目に結びつけます。だから2つはいつも同じ値になります。" },
+      "first-light.notebooks": { title: "レッスンにする", action: "ノートブックで、これを短いレッスンにできます。ノートブックを開いてください。" },
+      "first-light.brief": { title: "学ぶ内容", action: "テーマを入力してください。例：まったくの初心者向けのBell状態", fill: "まったくの初心者向けのBell状態" },
+      "first-light.level": { title: "レベルを合わせる", action: "「ノートブックの設定」を開き、対象を「初心者」にしてください。" },
+      "first-light.create": { title: "レッスンを作る", action: "「ノートブックを作成」を押してください。Nalaがレッスンを書き、ノートブックに残します。" },
+      "first-light.atlas": { title: "次は", action: "アトラスにはBell状態と、それをもとにした手法が載っています。「はじめての量子」はここまでです。" },
+
+      "build.mode": { title: "応答モード", action: "「実行」はコードを書いて実行します。「自動」はメッセージからNalaが判断します。「実行」を選んでください。", wrong: "それは回路フレームワークの選択です。応答モードはその左です。" },
+      "build.framework": { title: "回路フレームワーク", action: "コードを書くライブラリです。標準はQiskitで、CirqやPennyLaneなども選べます。" },
+      "build.prompt": { title: "アルゴリズムを説明", action: "何を解き、どう確認するかを書いてください。例：5ノードのリングのMaxCutをQAOAで解き、厳密解と比べる", fill: "QAOAで5ノードのリングのMaxCutを解き、古典的な厳密解と比較してください。" },
+      "build.run": { title: "実行する", action: "「送信」を押してください。まず計画、次にコードが出てきます。" },
+      "build.plan": { title: "計画と契約", action: "計画は、使うアルゴリズムと選んだ理由を示します。契約は、結果が何を示せば正しいと言えるかを決めます。" },
+      "build.result": { title: "RESULT", action: "コードが測った値を、契約に照らして確認したものです。印で合否がわかります。" },
+      "build.studio": { title: "Studioで開く", action: "実行した回路はバージョンつきで保存されます。保存を求められたら保存し、Studioで開いてください。" },
+      "build.code": { title: "コード", action: "「コード」タブを開いてください。1から4のキーで4つのタブを切り替えられます。" },
+      "build.convert": { title: "Cirqに変換", action: "ここでCirqを選ぶと、Studioが回路をCirqのコードに書き換えます。" },
+      "build.visual": { title: "回路図", action: "「回路図」タブを開いてください。図の上のパレットはゲートを種類ごとにまとめています。ゲートを選び、ワイヤをクリックして配置します。" },
+      "build.playhead": { title: "確率", action: "再生位置で回路を1ステップずつ進め、各時点の確率を確認できます。[ と ] のキーでも動かせます。" },
+      "build.split": { title: "図の横にコード", action: "オンにすると、回路図を横に表示したままコードを編集できます。" },
+      "build.compress": { title: "圧縮", action: "方法を選んで適用します。ゲート数と深さの前後が表示されます。" },
+      "build.simulation": { title: "シミュレーション", action: "「シミュレーション」タブを開いてください。" },
+      "build.lanes": { title: "どこで動くか", action: "CPUシミュレーションはこのブラウザ内で、プランの量子ビット数の範囲で動き、検証はしません。コードの本番の実行は、隔離されたサンドボックスで行います。" },
+      "build.cpu-run": { title: "最後のCPUシミュレーション", action: "タイトルの下の行に、CPUシミュレーションを最後に実行した時期と、その結果が今のコードと合っているかが表示されます。" },
+      "build.qpu": { title: "ハードウェアの見積もり", action: "デバイスを選ぶと、この回路を実機で動かした場合の費用がわかります。見積もりは無料です。" },
+      "build.summary": { title: "概要", action: "「概要」タブを開いてください。証拠と、保存したすべてのバージョンがあります。" },
+      "build.export": { title: "エクスポート", action: "「エクスポートをダウンロード」でコードを書き出します。回路が対応していればOpenQASMも含まれます。" },
+      "build.shortcuts": { title: "キーボードショートカット", action: "?キーかこのボタンで、Studioのショートカットをすべて確認できます。" },
+      "build.save": { title: "検証して保存", action: "サンドボックスでコードを確認し、新しいバージョンとして保存します。「開発」はここまでです。" },
+
+      "teach.brief": { title: "教える内容", action: "レッスンの内容を書いてください。例：大学1年生向けのGroverの探索", fill: "大学1年生向けのGroverの探索" },
+      "teach.starters": { title: "用意された内容", action: "押すと入力欄に入ります。" },
+      "teach.options": { title: "形式とレベル", action: "「ノートブックの設定」を開いてください。" },
+      "teach.fields": { title: "レッスン、ラボ、クイズ", action: "種類で形式を、対象と数学でレベルを決めます。言語は英語か日本語です。" },
+      "teach.create": { title: "作成", action: "「ノートブックを作成」を押してください。ノートブックの演習は、答えを自動で確認します。" },
+      "teach.courses": { title: "コース", action: "コースはレッスンとクイズを順番に並べます。コースを開いてください。" },
+      "teach.course": { title: "コースを計画", action: "コースの内容を書くと、Nalaが単元を提案します。作成の前に確認できます。" },
+      "teach.share": { title: "クラスと共有", action: "Studioのプロジェクトは共有できます。Studioを開いてください。" },
+      "teach.projects": { title: "プロジェクト", action: "回路をプロジェクトにまとめ、プロジェクトのメニューから共有します。" },
+      "teach.qapps": { title: "授業のデモ", action: "Qappは回路を、学生が操作できるページにします。Qappsを開いてください。" },
+      "teach.make": { title: "作ってみる", action: "Runから、またはStudioの回路から作れます。「教える」はここまでです。" },
+
+      "read.search": { title: "アトラスを検索", action: "手法、問題、論文で検索できます。例：位相推定", fill: "位相推定" },
+      "read.filters": { title: "絞り込む", action: "トピックなどで絞り込めます。アドレスも一緒に変わるので、絞り込んだ表示をそのまま共有できます。" },
+      "read.entry": { title: "項目を開く", action: "一覧からどれか1つ選んでください。" },
+      "read.topics": { title: "トピック", action: "トピックから、同じテーマのほかの項目に移れます。" },
+      "read.source": { title: "出典", action: "どの項目にも、元になった論文が書かれています。" },
+      "read.map": { title: "地図で見る", action: "「地図で開く」で、この手法がほかの手法の中のどこにあるかがわかります。" },
+      "read.views": { title: "3つの表示", action: "地図、論文、速度向上の出典です。地図を開いてください。" },
+      "read.layers": { title: "レイヤーの地図", action: "手法を、何をもとにしているかで並べています。各カードは経路と費用を論文までたどります。" },
+      "read.llms": { title: "自分のツールで使う", action: "leonaqt.com/llms.txt は、言語モデルが読めるようにアトラスをテキストで説明しています。" },
+      "read.run": { title: "Runへ", action: "出発点が見つかったら、RunでNalaに作ってもらいます。「読む」はここまでです。" },
+
+      "show-mode.mode": { title: "応答モード", action: "「自動」はメッセージからNalaが判断します。「実行」は必ずコードを書いて実行します。「学ぶ」と「解説」は何も実行せず文章で答えます。「Qapp」は操作できるページを作ります。" },
+      "show-attach.attach": { title: "ファイルを添付", action: "コードやメモをメッセージに添えられます。Nalaは入力した文と一緒に読みます。" },
+    },
   },
 };

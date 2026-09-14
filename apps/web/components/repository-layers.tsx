@@ -62,7 +62,7 @@ import { LOOP_CLOSURE_COPY } from "../lib/repository/loop-closure-copy";
 import { THEORY_MARK_COPY } from "../lib/repository/theory-mark-copy";
 import { THEORY_MARKS, type TheorySpan } from "../lib/repository/theory-marks";
 import { IDENTITY, type Viewport } from "../lib/repository/canvas-viewport";
-import { absenceOf, cardFor, exampleRunNote } from "../lib/repository/card-content";
+import { absenceOf, cardFor, exampleRunKindLabel, exampleRunNote } from "../lib/repository/card-content";
 import { PAPER_REGISTER } from "../lib/repository/paper-register";
 import { paperTraces } from "../lib/repository/paper-traces";
 import { indexPapers, paperIdFromUrl, paperSlug } from "../lib/repository/papers";
@@ -82,6 +82,11 @@ import {
   type StateVocabulary,
 } from "../lib/repository/states";
 import { MathText } from "./math-text";
+import { AtlasCircuitFigure, AtlasOutcomeBars } from "./atlas-circuit";
+import { AtlasFold } from "./atlas-fold";
+import { AtlasFoldRail } from "./atlas-fold-rail";
+import { AtlasGlance, type AtlasGlanceItem } from "./atlas-glance";
+import type { AtlasCircuitSource } from "../lib/repository/atlas-circuit-layout";
 import { ConvergeCanvas } from "./repository-converge-map";
 import { CanvasContinuity } from "./canvas-continuity";
 import { InfiniteCanvas } from "./infinite-canvas";
@@ -316,6 +321,23 @@ const COPY = {
     zoomLabel: "Size",
     zoomFit: "Fit",
     zoomPercent: (n: number) => `${n}%`,
+    // UX pass 6 — the drawing a method page leads with, the strip under it,
+    // and the folds. Every value these label is read off the node or the
+    // record it names; a missing field drops its tile rather than printing one.
+    heroFromRecord: "Drawn from the Atlas record",
+    heroAlsoIn: "also drawn in",
+    heroOutcomes: "Expected outcomes, as the record states them",
+    glanceLabel: "At a glance",
+    glanceRun: "Worked example",
+    glancePseudocode: "Pseudocode",
+    glanceCost: "Cost",
+    glanceCostStated: "Stated in the source",
+    glanceCostReason: "Not stated (reason given)",
+    glanceAlternatives: "Other ways to fill this slot",
+    glanceContested: "Claim contested",
+    railLabel: "Sections of this page",
+    railOpenAll: "Open all",
+    railCloseAll: "Close all",
   },
   ja: {
     // 地図 rather than マップ: the map's own about box (`map-info-popup.tsx`)
@@ -475,6 +497,20 @@ const COPY = {
     zoomLabel: "表示倍率",
     zoomFit: "全体表示",
     zoomPercent: (n: number) => `${n}%`,
+    heroFromRecord: "Atlas の項目から描いた図：",
+    heroAlsoIn: "ほかに描かれている項目：",
+    heroOutcomes: "項目に記された期待される出力",
+    glanceLabel: "概要",
+    glanceRun: "具体例",
+    glancePseudocode: "疑似コード",
+    glanceCost: "計算量",
+    glanceCostStated: "出典に記載あり",
+    glanceCostReason: "記載なし（理由あり）",
+    glanceAlternatives: "同じ枠を埋める別のやり方",
+    glanceContested: "主張に争点あり",
+    railLabel: "このページのセクション",
+    railOpenAll: "すべて開く",
+    railCloseAll: "すべて閉じる",
   },
 } as const;
 
@@ -786,13 +822,21 @@ function EmptyNote({ children }: { children: string }) {
  * `unread` is printed rather than omitted — an absence that renders as silence
  * reads as "nothing to say", which is the one thing it does not mean.
  */
-function Citations({ node, copy, locale }: { node: LayerNode; copy: LayersCopy; locale: PublicLocale }) {
+function Citations({
+  node,
+  copy,
+  headless = false,
+}: {
+  node: LayerNode;
+  copy: LayersCopy;
+  locale: PublicLocale;
+  /** Without the section and its heading, for a caller that draws its own — the method page's folds. */
+  headless?: boolean;
+}) {
   const citations = node.citations ?? [];
   if (citations.length === 0) return null;
   const register = indexPapers(PAPER_REGISTER);
-  return (
-    <section className="mj-layers-section" aria-labelledby={`sources-${node.id}`}>
-      <h2 id={`sources-${node.id}`}>{copy.citationsHeading}</h2>
+  const list = (
       <ul className="mj-layers-sources">
         {citations.map((citation) => {
           // A citation whose url the register cannot key on already fails
@@ -836,6 +880,12 @@ function Citations({ node, copy, locale }: { node: LayerNode; copy: LayersCopy; 
           );
         })}
       </ul>
+  );
+  if (headless) return list;
+  return (
+    <section className="mj-layers-section" aria-labelledby={`sources-${node.id}`}>
+      <h2 id={`sources-${node.id}`}>{copy.citationsHeading}</h2>
+      {list}
     </section>
   );
 }
@@ -845,17 +895,19 @@ function AtlasRecords({
   corpus,
   locale,
   copy,
+  headless = false,
 }: {
   node: LayerNode;
   corpus: readonly LayerCorpusEntry[];
   locale: PublicLocale;
   copy: LayersCopy;
+  /** Without the section and its heading, for a caller that draws its own — the method page's folds. */
+  headless?: boolean;
 }) {
   const bySlug = new Map(corpus.map((entry) => [entry.slug, entry]));
   const slugs = entriesFor(node, new Set(bySlug.keys()));
-  return (
-    <section className="mj-layers-section" aria-labelledby={`atlas-${node.id}`}>
-      <h2 id={`atlas-${node.id}`}>{copy.atlasHeading}</h2>
+  const body = (
+    <>
       {slugs.length === 0 ? (
         <EmptyNote>{copy.atlasNone}</EmptyNote>
       ) : (
@@ -880,6 +932,13 @@ function AtlasRecords({
           })}
         </ul>
       )}
+    </>
+  );
+  if (headless) return body;
+  return (
+    <section className="mj-layers-section" aria-labelledby={`atlas-${node.id}`}>
+      <h2 id={`atlas-${node.id}`}>{copy.atlasHeading}</h2>
+      {body}
     </section>
   );
 }
@@ -1332,18 +1391,20 @@ function RequiresSection({
   node,
   locale,
   copy,
+  headless = false,
 }: {
   card: ReturnType<typeof cardFor>;
   node: LayerMethod;
   locale: PublicLocale;
   copy: LayersCopy;
+  /** Without the section and its heading, for a caller that draws its own — the method page's folds. */
+  headless?: boolean;
 }) {
   const ingredients = card !== null && card.kind === "method" && card.ingredients.held
     ? card.ingredients.value
     : [];
-  return (
-    <section className="mj-layers-section" aria-labelledby={`requires-${node.id}`}>
-      <h2 id={`requires-${node.id}`}>{copy.requiresHeading}</h2>
+  const body = (
+    <>
       {ingredients.length === 0 ? (
         <EmptyNote>{copy.requiresNone}</EmptyNote>
       ) : (
@@ -1387,6 +1448,13 @@ function RequiresSection({
           </ul>
         </>
       )}
+    </>
+  );
+  if (headless) return body;
+  return (
+    <section className="mj-layers-section" aria-labelledby={`requires-${node.id}`}>
+      <h2 id={`requires-${node.id}`}>{copy.requiresHeading}</h2>
+      {body}
     </section>
   );
 }
@@ -1428,11 +1496,39 @@ function MethodView({
       : [],
   );
   const chainSteps = node.steps.filter((stepId) => !ingredientIds.has(stepId));
+  // UX pass 6: the write-up folds into native `<details>`, one per section,
+  // under a sticky rail of their names. The counts on a fold are the lengths of
+  // the lists inside it — nothing else — and a fold with no list has none.
+  const citationCount = (node.citations ?? []).length;
+  const recordCount = entriesFor(node, new Set(corpus.map((entry) => entry.slug))).length;
+  const railItems = [
+    { id: "sec-fills", label: copy.fillsHeading },
+    { id: "sec-conditions", label: copy.conditionsHeading },
+    { id: "sec-requires", label: copy.requiresHeading },
+    { id: "sec-example", label: copy.exampleHeading },
+    { id: "sec-cost", label: copy.costHeading },
+    { id: "sec-implementations", label: copy.implementationsHeading },
+    ...(node.contested ? [{ id: "sec-contested", label: copy.contestedHeading }] : []),
+    { id: "sec-needs", label: copy.needsHeading },
+    ...(skipped.length > 0 ? [{ id: "sec-skips", label: copy.makesUnnecessaryHeading }] : []),
+    { id: "sec-siblings", label: copy.siblingsHeading },
+    { id: "sec-atlas", label: copy.atlasHeading },
+    ...(citationCount > 0 ? [{ id: "sec-sources", label: copy.citationsHeading }] : []),
+  ];
 
   return (
-    <>
-      <section className="mj-layers-section">
-        <h2>{copy.fillsHeading}</h2>
+    <div className="mj-atlas-folds" data-atlas-folds="">
+      <AtlasFoldRail
+        items={railItems}
+        label={copy.railLabel}
+        openAllLabel={copy.railOpenAll}
+        closeAllLabel={copy.railCloseAll}
+      />
+      {/* Open by default: the short sections a reader needs to place the
+          method. Shut by default: the long ones — the listing, the write-ups,
+          the lists of neighbours and papers — whose names and counts are in
+          the rail and on the fold, one click away and in the HTML either way. */}
+      <AtlasFold id="sec-fills" title={copy.fillsHeading} open>
         {capability ? (
           <ul className="mj-layers-list">
             <NodeLink graph={graph} node={capability} locale={locale} copy={copy} />
@@ -1443,16 +1539,15 @@ function MethodView({
             {copy.refinesLabel} <a href={href(parent.id)}>{label(parent, locale)}</a>
           </p>
         ) : null}
-      </section>
+      </AtlasFold>
 
-      <section className="mj-layers-section">
-        <h2>{copy.conditionsHeading}</h2>
+      <AtlasFold id="sec-conditions" title={copy.conditionsHeading} open>
         {node.conditions ? (
           <p><MathText source={(isJa ? node.conditionsJa : node.conditions) ?? ""} /></p>
         ) : (
           <EmptyNote>{copy.conditionsNone}</EmptyNote>
         )}
-      </section>
+      </AtlasFold>
 
       {/* **Before Example, because the owner's order puts Requires before it**
           — his seven were Input, Theory, Output, Requires, Example,
@@ -1464,7 +1559,9 @@ function MethodView({
           capability is a slot rather than a procedure, so it has no route and
           therefore nothing alongside one. */}
       {isMethod(node) ? (
-        <RequiresSection card={card} node={node} locale={locale} copy={copy} />
+        <AtlasFold id="sec-requires" title={copy.requiresHeading} count={ingredientIds.size || undefined} open>
+          <RequiresSection card={card} node={node} locale={locale} copy={copy} headless />
+        </AtlasFold>
       ) : null}
 
       {/* **Before Cost, because the owner's order puts Example before
@@ -1477,8 +1574,7 @@ function MethodView({
           is nothing to work an example of, and `LayerMethod.example` is typed
           on the method for that reason. */}
       {isMethod(node) ? (
-        <section className="mj-layers-section">
-          <h2>{copy.exampleHeading}</h2>
+        <AtlasFold id="sec-example" title={copy.exampleHeading}>
           {node.example?.text || node.example?.pseudocode ? (
             <>
               {node.example.text ? (
@@ -1532,11 +1628,10 @@ function MethodView({
           ) : (
             <EmptyNote>{copy.exampleNone}</EmptyNote>
           )}
-        </section>
+        </AtlasFold>
       ) : null}
 
-      <section className="mj-layers-section">
-        <h2>{copy.costHeading}</h2>
+      <AtlasFold id="sec-cost" title={copy.costHeading} open>
         {node.cost ? (
           <p>
             <MathText source={(isJa ? node.costJa : node.cost) ?? ""} />
@@ -1562,7 +1657,7 @@ function MethodView({
         ) : (
           <EmptyNote>{copy.costNone}</EmptyNote>
         )}
-      </section>
+      </AtlasFold>
 
       {/* **After Cost, which closes the owner's seven on this page**: his order
           is Input, Theory, Output, Requires, Example, Performance,
@@ -1582,8 +1677,11 @@ function MethodView({
           is a slot rather than a procedure, and `LayerMethod.implementations` is
           typed on the method. */}
       {isMethod(node) ? (
-        <section className="mj-layers-section">
-          <h2>{copy.implementationsHeading}</h2>
+        <AtlasFold
+          id="sec-implementations"
+          title={copy.implementationsHeading}
+          count={node.implementations?.length || undefined}
+        >
           {node.implementations?.length ? (
             <ul className="mj-card-list mj-card-implementations">
               {node.implementations.map((implementation) => (
@@ -1670,18 +1768,21 @@ function MethodView({
           ) : (
             <EmptyNote>{copy.implementationsNone}</EmptyNote>
           )}
-        </section>
+        </AtlasFold>
       ) : null}
 
       {node.contested ? (
-        <section className="mj-layers-section mj-layers-section--contested">
-          <h2>{copy.contestedHeading}</h2>
+        <AtlasFold id="sec-contested" title={copy.contestedHeading} variant="contested" open>
           <p><MathText source={(isJa ? node.contestedJa : node.contested) ?? ""} /></p>
-        </section>
+        </AtlasFold>
       ) : null}
 
-      <section className="mj-layers-section" aria-labelledby={`needs-${node.id}`}>
-        <h2 id={`needs-${node.id}`}>{copy.needsHeading}</h2>
+      <AtlasFold
+        id="sec-needs"
+        title={copy.needsHeading}
+        count={outlook === "decomposed" && chainSteps.length > 0 ? chainSteps.length : undefined}
+        open
+      >
         {/* **The steps that move the route along, and only those.** The
             ingredients are drawn under *Requires* above, and listing them in
             both places would put one step in two lists that answer different
@@ -1733,18 +1834,17 @@ function MethodView({
         ) : (
           <EmptyNote>{outlook === "atomic" ? copy.needsNone : copy.needsUndecomposed}</EmptyNote>
         )}
-      </section>
+      </AtlasFold>
 
       {skipped.length > 0 ? (
-        <section className="mj-layers-section" aria-labelledby={`skips-${node.id}`}>
-          <h2 id={`skips-${node.id}`}>{copy.makesUnnecessaryHeading}</h2>
+        <AtlasFold id="sec-skips" title={copy.makesUnnecessaryHeading} count={skipped.length} open>
           <p>{copy.skipLead}</p>
           <ul className="mj-layers-list">
             {skipped.map((target) => (
               <NodeLink key={target.id} graph={graph} node={target} locale={locale} copy={copy} />
             ))}
           </ul>
-        </section>
+        </AtlasFold>
       ) : null}
 
       {/* Two lists, and they are a partition of the siblings — disjoint, and
@@ -1752,8 +1852,11 @@ function MethodView({
           "and N more" was false on the record that motivated the interface
           panel, and the fix agreed then was to pin the property rather than the
           wording. Each list therefore stands alone or is absent. */}
-      <section className="mj-layers-section" aria-labelledby={`siblings-${node.id}`}>
-        <h2 id={`siblings-${node.id}`}>{copy.siblingsHeading}</h2>
+      <AtlasFold
+        id="sec-siblings"
+        title={copy.siblingsHeading}
+        count={alternatives.length + refinements.length || undefined}
+      >
         {alternatives.length === 0 && refinements.length === 0 ? (
           <EmptyNote>{copy.siblingsNone}</EmptyNote>
         ) : null}
@@ -1777,12 +1880,83 @@ function MethodView({
             </ul>
           </>
         ) : null}
-      </section>
+      </AtlasFold>
 
-      <AtlasRecords node={node} corpus={corpus} locale={locale} copy={copy} />
-      <Citations node={node} copy={copy} locale={locale} />
-    </>
+      <AtlasFold id="sec-atlas" title={copy.atlasHeading} count={recordCount || undefined}>
+        <AtlasRecords node={node} corpus={corpus} locale={locale} copy={copy} headless />
+      </AtlasFold>
+      {citationCount > 0 ? (
+        <AtlasFold id="sec-sources" title={copy.citationsHeading} count={citationCount}>
+          <Citations node={node} copy={copy} locale={locale} headless />
+        </AtlasFold>
+      ) : null}
+    </div>
   );
+}
+
+/**
+ * One Atlas record's drawing, as a node page receives it: the record's own
+ * wires, operations and outcomes, and its name — nothing derived. The page
+ * builds the list from the records this node names (`entriesFor`), in that
+ * order, keeping only those with something to draw.
+ */
+export interface LayerRecordDrawing {
+  readonly slug: string;
+  readonly title: string;
+  readonly titleJa: string;
+  readonly drawing: AtlasCircuitSource & {
+    readonly outcomes: readonly { label: string; probability: number }[];
+  };
+}
+
+const NO_DRAWINGS: readonly LayerRecordDrawing[] = [];
+
+/**
+ * The strip under a method's figure. Each tile is one field of the node, and a
+ * field the node does not carry gives no tile: a method with no cost recorded
+ * and no reason for it shows no cost tile, rather than a tile saying nothing.
+ */
+function methodGlance(
+  graph: LayerGraph,
+  node: LayerMethod,
+  corpus: readonly LayerCorpusEntry[],
+  locale: PublicLocale,
+  copy: LayersCopy,
+): AtlasGlanceItem[] {
+  const isJa = locale === "ja";
+  const items: AtlasGlanceItem[] = [];
+  // `run` is required with `text` and read only with it, the card's rule.
+  const run = node.example?.text ? node.example.run : undefined;
+  if (run) {
+    items.push({ key: "run", label: copy.glanceRun, value: exampleRunKindLabel(run.kind, isJa), href: "#sec-example", tone: "accent" });
+  } else if (node.example?.pseudocode) {
+    items.push({ key: "pseudocode", label: copy.glanceRun, value: copy.glancePseudocode, href: "#sec-example" });
+  }
+  if (node.cost) {
+    items.push({ key: "cost", label: copy.glanceCost, value: copy.glanceCostStated, href: "#sec-cost" });
+  } else if (absenceOf(node, "cost", isJa)) {
+    items.push({ key: "cost", label: copy.glanceCost, value: copy.glanceCostReason, href: "#sec-cost" });
+  }
+  const implementations = node.implementations?.length ?? 0;
+  if (implementations > 0) {
+    items.push({ key: "implementations", label: copy.implementationsHeading, value: String(implementations), href: "#sec-implementations" });
+  }
+  const siblings = alternativesTo(graph, node).length + refinementsOf(graph, node).length;
+  if (siblings > 0) {
+    items.push({ key: "siblings", label: copy.glanceAlternatives, value: String(siblings), href: "#sec-siblings" });
+  }
+  const records = entriesFor(node, new Set(corpus.map((entry) => entry.slug))).length;
+  if (records > 0) {
+    items.push({ key: "records", label: copy.atlasHeading, value: String(records), href: "#sec-atlas" });
+  }
+  const papers = node.citations?.length ?? 0;
+  if (papers > 0) {
+    items.push({ key: "sources", label: copy.citationsHeading, value: String(papers), href: "#sec-sources" });
+  }
+  if (node.contested) {
+    items.push({ key: "contested", label: copy.glanceContested, href: "#sec-contested", tone: "warn" });
+  }
+  return items;
 }
 
 export function LayerNodeView({
@@ -1794,7 +1968,10 @@ export function LayerNodeView({
   open,
   droppedOpen = 0,
   at = null,
+  circuits = NO_DRAWINGS,
 }: {
+  /** The drawings of the records this node names, first one leads the page. */
+  circuits?: readonly LayerRecordDrawing[];
   graph: LayerGraph;
   node: LayerNode;
   corpus: readonly LayerCorpusEntry[];
@@ -1813,6 +1990,9 @@ export function LayerNodeView({
 }) {
   const copy = copyFor(locale);
   const depth = layerDepths(graph).get(isCapability(node) ? node.id : node.realizes);
+  const [lead, ...alsoDrawn] = circuits;
+  const glance = isMethod(node) ? methodGlance(graph, node, corpus, locale, copy) : [];
+  const recordTitle = (record: LayerRecordDrawing) => (locale === "ja" ? record.titleJa : record.title);
   return (
     <article className="mj-layers-node">
       <nav className="mj-layers-crumbs" aria-label={copy.indexHeading}>
@@ -1832,6 +2012,46 @@ export function LayerNodeView({
         </p>
         <ContractPiece graph={graph} node={node} locale={locale} copy={copy} />
       </header>
+      {/* UX pass 6: the drawing first. Readers said the Atlas was a wall of
+          text and the circuit should stand out, so the page leads with the
+          drawing of the record this node names — captioned as that record's,
+          because it is — and the strip of what the write-up below holds. */}
+      {lead || glance.length > 0 ? (
+        <section className="mj-atlas-hero" aria-label={copy.glanceLabel}>
+          {lead ? (
+            <AtlasCircuitFigure
+              source={lead.drawing}
+              title={recordTitle(lead)}
+              locale={locale}
+              caption={
+                <>
+                  {copy.heroFromRecord}
+                  {locale === "ja" ? "" : " "}
+                  <a href={`/repository/${lead.slug}`}>{recordTitle(lead)}</a>
+                  {alsoDrawn.length > 0 ? (
+                    <>
+                      {locale === "ja" ? "。" : " · "}
+                      {copy.heroAlsoIn}{" "}
+                      {alsoDrawn.map((record, index) => (
+                        <span key={record.slug}>
+                          {index > 0 ? (locale === "ja" ? "、" : ", ") : null}
+                          <a href={`/repository/${record.slug}`}>{recordTitle(record)}</a>
+                        </span>
+                      ))}
+                    </>
+                  ) : null}
+                </>
+              }
+              aside={
+                lead.drawing.outcomes.length > 0 ? (
+                  <AtlasOutcomeBars outcomes={lead.drawing.outcomes} label={copy.heroOutcomes} />
+                ) : undefined
+              }
+            />
+          ) : null}
+          <AtlasGlance items={glance} label={copy.glanceLabel} />
+        </section>
+      ) : null}
       {/* Before the prose, not after it. A reader who clicked a name on the map
           came here to see this one thing drawn; the write-up is what they read
           once they have found it. */}

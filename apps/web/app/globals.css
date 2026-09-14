@@ -69,7 +69,9 @@ body {
 /* The landing composer carries the restrained two-ring treatment from the
  * Neon Glow reference: a crisp accent trace above a wider blurred trace. The
  * paired traces orbit continuously, while engagement only increases their
- * intensity. */
+ * intensity. Removed in PR 868 and put back the same day (2026-09-12): the box
+ * the owner wanted gone was the textarea's own focus outline, which
+ * styles/ux-site.css now suppresses inside this form, not the rings. */
 @property --mj-landing-prompt-glow-angle {
   syntax: "<angle>";
   inherits: false;
@@ -270,24 +272,24 @@ body {
   }
 }
 
-/* Run home hero: the lioness assembles from pieces here (components/lioness-field.tsx,
- * back by owner request 2026-09-10 after the orbit mark). Centred; brightens and
- * lifts slightly while the composer is engaged. */
+/* Run home hero: the lioness (components/lioness-field.tsx, back by owner request
+ * 2026-09-10 after the orbit mark; a little smaller since 2026-09-12). The span only
+ * holds her standing spot in the layout; she is drawn on one canvas laid over the
+ * whole centred block. She answers the pointer (a tail flick, a lifted head), but the
+ * canvas takes no pointer events — the hover is read from the page — and it sits above
+ * the composer's border, below its menus. */
 .mj-run-hero-lioness {
   position: relative;
   display: block;
-  width: min(100%, calc(var(--sp-16) * 5));
-  height: calc(var(--sp-16) * 2.5);
+  width: min(100%, calc(var(--sp-16) * 4.25));
+  height: calc(var(--sp-16) * 2.125);
   margin: 0 auto var(--sp-2);
-  opacity: 0.92;
-  transition: opacity 320ms ease, transform 320ms ease;
 }
-.mj-run-hero-lioness.is-engaged {
-  opacity: 1;
-  transform: translateY(-2px);
-}
-@media (prefers-reduced-motion: reduce) {
-  .mj-run-hero-lioness { transition: none; }
+.mj-run-lioness-canvas {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  pointer-events: none;
 }
 
 /* Studio — the superposition-dots companion on the discovery search bar, and
@@ -2729,6 +2731,11 @@ html[lang="ja"] .mj-company-hero-title-line {
   font-variant-numeric: tabular-nums;
   overflow-wrap: anywhere;
 }
+/* The contract details close the Summary; inset like the sections above them
+   rather than flush against the card's edge (2026-09-12). */
+.mj-studio-version-panel > .mj-sim-details {
+  padding: var(--sp-4);
+}
 /* Holds the verdict chip's width open on the one tab that does not show it, so
    the action row does not reflow on a tab change. `visibility` rather than
    `display`: the box stays, the element leaves hit testing and the tab order. */
@@ -2791,6 +2798,12 @@ html[lang="ja"] .mj-company-hero-title-line {
    heading, a zero counter and a band of its own. */
 .mj-studio-simulation-records[data-empty="true"] {
   padding-top: var(--sp-1);
+}
+/* The fallback box is two sentences and a button; they sit one step apart
+   instead of the sentences touching and the button hanging below (2026-09-12). */
+.mj-studio-simulation-unavailable {
+  display: grid;
+  gap: var(--sp-2);
 }
 
 /* ── 6. Shared project page ───────────────────────────────────────────────

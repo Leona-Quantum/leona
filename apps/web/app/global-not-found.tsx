@@ -56,9 +56,10 @@ export const metadata = {
   title: { absolute: siteTitle(NOT_FOUND_COPY.en.title) },
 };
 
+// Dark: a 404 is part of the public website, which is dark only (owner, 2026-09-12).
 export default function GlobalNotFound() {
   return (
-    <RootDocument lang="en">
+    <RootDocument lang="en" forcedTheme="dark">
       <NotFoundBody />
     </RootDocument>
   );

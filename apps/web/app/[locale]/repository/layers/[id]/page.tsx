@@ -12,13 +12,14 @@ import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { canonicalMetadata } from "../../../../../lib/public-metadata";
 import { PublicSite } from "../../../../../components/public-site";
-import { LayerNodeView, LayerStateView } from "../../../../../components/repository-layers";
+import { LayerNodeView, LayerStateView, type LayerRecordDrawing } from "../../../../../components/repository-layers";
 import { IDENTITY, formatViewport, parseViewport } from "../../../../../lib/repository/canvas-viewport";
 import { resolveOpenIds } from "../../../../../lib/repository/converge-layout";
 import { isPublicLocale, parsePublicLocale, PUBLIC_LOCALES } from "../../../../../lib/public-locale";
 import { getRepositoryListEntries } from "../../../../../lib/repository-source";
 import { LAYER_GRAPH } from "../../../../../lib/repository/layer-graph";
-import { isCapability, layerCorpusEntry, layerNode, type LayerCorpusEntry } from "../../../../../lib/repository/layers";
+import { entriesFor, isCapability, layerCorpusEntry, layerNode, type LayerCorpusEntry } from "../../../../../lib/repository/layers";
+import { hasAtlasCircuit } from "../../../../../lib/repository/atlas-circuit-layout";
 import { entryVerificationMethods } from "../../../../../lib/repository/entry-verification";
 import { STATE_VOCABULARY } from "../../../../../lib/repository/state-vocabulary";
 import { layerState } from "../../../../../lib/repository/states";
@@ -133,6 +134,30 @@ export default async function RepositoryLayerNodePage({
   const corpus: LayerCorpusEntry[] = entries.map((entry) =>
     layerCorpusEntry({ ...entry, verificationMethods: entryVerificationMethods(entry) }),
   );
+  // UX pass 6: the drawings the page leads with. The records this node names,
+  // in the order it names them (`entriesFor`, the same join "In the Atlas"
+  // lists), each passed as its own wires, operations and outcomes — read off the
+  // listing fetched above, so it costs no request and derives nothing. A record
+  // with nothing to draw is left out rather than drawn empty.
+  const bySlug = new Map(entries.map((entry) => [entry.slug, entry]));
+  const circuits: LayerRecordDrawing[] = node
+    ? entriesFor(node, new Set(bySlug.keys())).flatMap((slug) => {
+        const entry = bySlug.get(slug);
+        if (!entry || !hasAtlasCircuit(entry.visualization)) return [];
+        return [
+          {
+            slug,
+            title: entry.title,
+            titleJa: entry.titleJa,
+            drawing: {
+              wires: entry.visualization.wires,
+              operations: entry.visualization.operations,
+              outcomes: entry.visualization.outcomes ?? [],
+            },
+          },
+        ];
+      })
+    : [];
 
   // **Both halves of what the parser returns, because the count is the point.**
   // `resolveOpenIds` says of itself that "the count over the cap is reported
@@ -180,6 +205,7 @@ export default async function RepositoryLayerNodePage({
           // across every click. The overview does this too; the node page did
           // not, which is the half of the rule that was missing.
           at={canonicalViewport(query.at)}
+          circuits={circuits}
         />
       ) : state ? (
         <LayerStateView

@@ -89,7 +89,7 @@ export type CpuSimulationRequest = {
   id?: string;
 };
 
-type ComplexMatrix = readonly [number, number, number, number, number, number, number, number];
+export type ComplexMatrix = readonly [number, number, number, number, number, number, number, number];
 
 export function sourceFingerprint(source: string): string {
   // FNV-1a is not a security primitive. It is a compact, stable provenance
@@ -199,6 +199,41 @@ export function runCpuSimulation(
     seed,
     counts,
   };
+}
+
+export type SingleQubitUnitaryGate = "H" | "X" | "Y" | "Z" | "S" | "T" | "RX" | "RY" | "RZ";
+
+/**
+ * The 2×2 unitary this kernel applies for a one-qubit gate, as
+ * [re00, im00, re01, im01, re10, im10, re11, im11]. Exported so Studio's gate
+ * inspector prints the matrix that actually runs, not a second copy of it.
+ */
+export function singleQubitUnitary(gate: SingleQubitUnitaryGate, theta = 0): ComplexMatrix {
+  switch (gate) {
+    case "H": return HADAMARD;
+    case "X": return PAULI_X;
+    case "Y": return PAULI_Y;
+    case "Z": return PAULI_Z;
+    case "S": return PHASE_S;
+    case "T": return PHASE_T;
+    case "RX": return rotationX(theta);
+    case "RY": return rotationY(theta);
+    case "RZ": return rotationZ(theta);
+  }
+}
+
+/**
+ * Ideal outcome probabilities, |amplitude|² per basis index, from the same kernel
+ * the CPU lane samples. Measurements are terminal here exactly as they are there.
+ * Throws where the kernel does: custom gates, and angles outside its syntax.
+ */
+export function idealProbabilities(circuit: ParsedBuilderCircuit): Float64Array {
+  const state = executeCircuit(circuit);
+  const probabilities = new Float64Array(state.real.length);
+  for (let index = 0; index < probabilities.length; index += 1) {
+    probabilities[index] = state.real[index] ** 2 + state.imaginary[index] ** 2;
+  }
+  return probabilities;
 }
 
 export function loadCpuSimulationRecords(artifactId: string): CpuSimulationRecord[] {
@@ -332,7 +367,8 @@ function sampleCounts(state: { real: Float64Array; imaginary: Float64Array }, qu
   return Object.fromEntries(Object.entries(counts).sort(([left], [right]) => left.localeCompare(right)));
 }
 
-function bitstringFor(index: number, qubitCount: number): string {
+/** Basis index → bitstring, highest qubit first (q(n-1) … q0), as every record prints it. */
+export function bitstringFor(index: number, qubitCount: number): string {
   let result = "";
   for (let qubit = qubitCount - 1; qubit >= 0; qubit -= 1) result += (index & (1 << qubit)) === 0 ? "0" : "1";
   return result;

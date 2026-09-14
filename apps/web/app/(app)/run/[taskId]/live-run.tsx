@@ -997,7 +997,7 @@ export const CompletedAssistant = memo(function CompletedAssistant({
       && /(?:missing|required|not provided|not specified|未指定|不足|必要|欠け)/i.test(event.reason ?? ""),
   );
   return (
-    <div className={`mj-chat-message mj-chat-message--assistant${activity || result || outcome ? " mj-chat-message--run" : ""}`}>
+    <div className={`mj-chat-message mj-chat-message--assistant${activity || result || outcome ? " mj-chat-message--run" : ""}`} data-tour={activity ? "run-activity" : undefined}>
       {chatFallbackNotice(turn.events) ? <ChatFallbackNotice locale={locale} /> : null}
       {activity ? <RunActivityBlock activity={activity} events={turn.events} locale={locale} /> : null}
       {result ? (
@@ -1094,7 +1094,7 @@ function AssistantMessage({
   // null until the reader expresses a preference; see the <details> below.
   const [thoughtOpen, setThoughtOpen] = useState<boolean | null>(null);
   return (
-    <div className={`mj-chat-message mj-chat-message--assistant${activity ? " mj-chat-message--run" : ""}`}>
+    <div className={`mj-chat-message mj-chat-message--assistant${activity ? " mj-chat-message--run" : ""}`} data-tour={activity ? "run-activity" : undefined}>
       {chatFallbackNotice(events) ? <ChatFallbackNotice locale={locale} /> : null}
       {reasoning ? (
         // Open while it is the only thing there is to read, and folded away by
@@ -1159,6 +1159,7 @@ function FinalOutput({
         className="mj-run-final-output"
         aria-label={heading}
         data-run-final-output={runId ?? undefined}
+        data-tour="run-final-output"
         open={open}
         onToggle={(event) => setOpen(event.currentTarget.open)}
       >
@@ -1948,7 +1949,7 @@ function ArtifactKeep({ artifactId, locale }: { artifactId: string; locale: Publ
 
   if (kept) {
     return (
-      <Link className="mj-secondary-button" href={`/studio?artifact=${encodeURIComponent(artifactId)}`}>
+      <Link className="mj-secondary-button" href={`/studio?artifact=${encodeURIComponent(artifactId)}`} data-tour="run-artifact-link">
         {locale === "ja" ? "Studioで表示" : "View in Studio"} →
       </Link>
     );
@@ -1972,7 +1973,7 @@ function ArtifactKeep({ artifactId, locale }: { artifactId: string; locale: Publ
   }
 
   return (
-    <span className="mj-run-keep">
+    <span className="mj-run-keep" data-tour="run-artifact-link">
       <button className="mj-secondary-button" type="button" disabled={keeping} onClick={keep}>
         {keeping ? locale === "ja" ? "保存中…" : "Keeping…" : locale === "ja" ? "この結果を保存" : "Keep this result"}
       </button>

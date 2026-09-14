@@ -13,12 +13,12 @@
   scrollbar-width: thin;
   scrollbar-color: var(--border-0) transparent;
   scroll-padding-inline: var(--sp-3);
-  /* A shorter bar with taller controls (owner, 2026-09-10): the same 8px above and below,
-     where the bottom used to carry 20px, and every control in the row at --sp-12 (48px)
-     rather than the 44px marketing CTA height. The variable is scoped to the header so the
-     hero and pricing buttons keep --control-h-cta. */
-  --header-control-h: var(--sp-12);
-  padding: var(--sp-2) var(--sp-1);
+  /* A shorter bar with smaller controls (owner, 2026-09-12; it was 8px + 48px + 8px after
+     the 2026-09-10 pass): 4px above and below and every control in the row at 36px, so the
+     bar is 45px with its hairline. The variable is scoped to the header so the hero and
+     pricing buttons keep --control-h-cta. */
+  --header-control-h: calc(var(--sp-8) + var(--sp-1));
+  padding: var(--sp-1) var(--sp-1);
   border-bottom: var(--border-hairline) solid var(--border-0);
 }
 .mj-public-header .mj-public-brand { display: inline-flex; align-items: center; flex: 0 0 auto; min-height: var(--header-control-h); }
@@ -40,18 +40,20 @@
   padding: 0 var(--sp-2);
 }
 .lq-public-auth { flex: 0 0 auto; }
-.mj-public-site .mj-public-nav-primary { min-height: var(--header-control-h); }
+.mj-public-site .mj-public-nav-primary { min-height: var(--header-control-h); padding-block: 0; padding-inline: var(--sp-3); font-size: var(--fs-13); }
 .mj-public-site .mj-public-nav-signout { display: inline-flex; align-items: center; min-height: var(--header-control-h); }
-/* The toggle groups carry 2px of padding and a 1px border of their own; the buttons give
-   that back so the group, not the button, is the 48px control. */
-.lq-public-preferences :is(.mj-theme-toggle, .mj-language-toggle) { padding: 0; }
-.lq-public-preferences .mj-theme-toggle button,
+/* The language toggle carries 2px of padding and a 1px border of its own; its buttons give
+   that back so the group, not the button, is the header control. The theme toggle left the
+   public header on 2026-09-12: the website is dark only. */
+.lq-public-preferences .mj-language-toggle { padding: 0; }
 .lq-public-preferences .mj-language-toggle button { min-width: var(--header-control-h); min-height: calc(var(--header-control-h) - 2 * var(--border-hairline)); }
-.lq-public-preferences .mj-theme-toggle span { display: none; }
 .mj-public-site :where(a, button, input, textarea, select, summary):focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: var(--sp-1);
 }
+/* Inside the landing composer the accent rings and border (globals.css) are the focus
+   indicator; the textarea draws no second box around the typed words (owner, 2026-09-12). */
+.mj-public-site .mj-landing-prompt textarea:focus-visible { outline: none; }
 .mj-public-site .mj-reveal { opacity: 1; transform: none; transition: none; }
 .mj-public-site :is(.mj-primary-button, .mj-secondary-button) { transition: transform var(--dur-hover) var(--ease-out-ui); }
 .mj-public-site :is(.mj-primary-button, .mj-secondary-button):active { transform: translateY(1px); }
@@ -257,3 +259,73 @@
   .mj-public-site .mj-company-final-cta .mj-public-actions { width: 100%; }
   .mj-public-site .mj-company-final-cta .mj-public-actions a { flex: 1 1 auto; }
 }
+/* About, where we are going (owner, 2026-09-12): a heading and lede, six numbered
+   ambitions in two columns with plum indices, and a closing line, in place of two
+   long paragraphs under a bare label. */
+.lq-about-vision { margin-top: var(--sp-16); }
+.lq-about-vision .lq-site-section-heading > p:last-child { max-width: 64ch; color: var(--text-1); font-size: var(--fs-16); line-height: 1.6; text-wrap: pretty; }
+.lq-about-vision-list { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: var(--sp-6) var(--sp-8); margin: var(--sp-8) 0 0; padding: 0; list-style: none; }
+.lq-about-vision-list li { display: grid; grid-template-columns: auto minmax(0, 1fr); column-gap: var(--sp-3); align-items: baseline; }
+.lq-about-vision-index { grid-row: 1 / span 2; color: var(--accent-2); font-family: var(--font-mono); font-size: var(--fs-12); }
+.lq-about-vision-list h3 { margin: 0 0 var(--sp-2); font-size: var(--fs-16); font-weight: 500; }
+.lq-about-vision-list p { grid-column: 2; margin: 0; color: var(--text-1); font-size: var(--fs-14); line-height: 1.6; text-wrap: pretty; }
+.lq-about-vision-close { max-width: 60ch; margin: var(--sp-8) 0 0; color: var(--text-1); text-wrap: pretty; }
+/* Plum highlights across the public site (owner, 2026-09-12): the second hue lives in
+   the small things — kickers, the active nav item, plain-link hovers, a wash behind the
+   cover — so the page reads as less monochrome without moving the moss primary. */
+.mj-public-site .mj-section-label { color: var(--accent-2); }
+.mj-public-site .mj-public-nav a[aria-current="page"] { box-shadow: inset 0 -2px 0 var(--accent-2); }
+.mj-public-site :is(p, li, dd, figcaption) > a:not([class]):hover { color: var(--accent-2); }
+.lq-site-home .lq-site-hero::before {
+  content: "";
+  position: absolute;
+  inset: -20% 10% auto;
+  z-index: -1;
+  height: 70%;
+  pointer-events: none;
+  background: radial-gradient(ellipse at 50% 30%, color-mix(in srgb, var(--accent-2-tint) 70%, transparent), transparent 62%);
+}
+.lq-site-home .lq-site-principles article { border-left-color: var(--accent-2); }
+.mj-public-site .lq-site-frameworks span { color: var(--accent-2); }
+/* Purple and green as equals (owner, 2026-09-12). The light plum now sits at the moss's
+   own lightness, and the two hues meet wherever the page splits: each section opens on a
+   short rule that runs moss into plum ahead of its plum kicker; the footer's top rule runs
+   moss into plum and fades instead of reading as grey (the home's sections carry no
+   hairline of their own since the polish pass, so the kicker rule is their split); the
+   cover carries a moss glow at its foot under the plum wash; a moss button wears a plum
+   halo while hovered; and selected text sits on the plum tint. Longhands, because a later
+   `border:` shorthand would reset a `border-image` set here. */
+.mj-public-site {
+  --lq-duo: linear-gradient(90deg, var(--accent), var(--accent-2));
+  --lq-duo-fade: linear-gradient(90deg, var(--accent) 0, var(--accent-2) 55%, transparent 100%);
+}
+.mj-public-site .lq-site-section-heading .mj-section-label::before {
+  content: "";
+  display: inline-block;
+  width: var(--sp-5);
+  height: 2px;
+  margin-right: var(--sp-2);
+  vertical-align: middle;
+  border-radius: 1px;
+  background: var(--lq-duo);
+}
+.mj-public-site .mj-public-footer {
+  border-image-source: var(--lq-duo-fade);
+  border-image-slice: 1;
+}
+.lq-site-home .lq-site-hero::after {
+  content: "";
+  position: absolute;
+  inset: auto 18% -12%;
+  z-index: -1;
+  height: 42%;
+  pointer-events: none;
+  background: radial-gradient(ellipse at 50% 100%, color-mix(in srgb, var(--accent) 18%, transparent), transparent 64%);
+}
+.mj-public-site .mj-primary-button:hover { box-shadow: 0 0 0 3px var(--accent-2-tint); }
+.mj-public-site ::selection { background: var(--accent-2-tint); color: var(--text-0); }
+/* Line breaks that do not strand a word (owner, 2026-09-12): headings balance their
+   lines and running text avoids a one-word last line, across the public site. Both are
+   no-ops in engines without the property. */
+.mj-public-site :is(h1, h2, h3) { text-wrap: balance; }
+.mj-public-site :is(p, li, dd, figcaption) { text-wrap: pretty; }

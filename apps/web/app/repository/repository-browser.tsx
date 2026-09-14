@@ -26,6 +26,8 @@ import type { ResolvedBrowseParams } from "../../lib/repository/browse-params";
 import type { RepositoryBrowseView, BrowseRow } from "../../lib/repository/browse-view";
 import { PIPELINE_STANCES, type InterfaceStance } from "../../lib/repository/interface";
 import { TOPICS_BY_ID, type TopicId } from "../../lib/repository/topics";
+import { AtlasCircuitThumb } from "../../components/atlas-circuit";
+import { hasAtlasCircuit } from "../../lib/repository/atlas-circuit-layout";
 
 const COPY = {
   en: {
@@ -54,24 +56,17 @@ const COPY = {
     facetDomainCount: "{n} of {total} entries",
     entry: "entry",
     entries: "entries",
-    // Shown only when folding actually removed a row, so the ordinary case
-    // stays the short sentence it was.
-    countFolded: "{rows} entries · {records} records, sized variants folded",
-    countFoldedTitle:
-      "Sized and curated variants of the same circuit are folded into one entry. Every variant is still its own page, and the widths are listed on the card.",
     // The cap, stated as two numbers rather than as "more below". A reader who
     // cannot see how much is held back cannot tell a short list from a filtered
     // one, and those mean opposite things about the catalogue.
     showingOf: "Showing {shown} of {total}",
     showMore: "Show more",
     showAll: "Show all {total}",
-    // The rail. Its summary has to say two things at once — that there is more
-    // behind it, and whether anything behind it is currently doing something —
-    // because a collapsed control that is silently filtering the page is the
-    // one failure a disclosure can introduce that a dropdown cannot.
-    refine: "Refine",
-    refineActive: "{n} active",
-    refineNone: "Topic · interface · order",
+    // The three menus (owner, 2026-09-12: the old "Refine" disclosure read as a
+    // wall). Each summary shows its family and the current pick, and the chips
+    // above still name every active filter, so a closed menu never filters the
+    // page silently.
+    filters: "Filters",
     activeFilters: "Filtering by",
     removeFilter: "Remove",
     clearAll: "Clear all",
@@ -136,6 +131,7 @@ const COPY = {
   ja: {
     search: "Atlasを検索",
     placeholder: "アルゴリズム、フレームワーク、タグを検索",
+    filters: "絞り込み",
     topic: "トピック",
     allTopics: "すべてのトピック",
     stance: "入力 / 出力",
@@ -163,15 +159,9 @@ const COPY = {
     facetDomainCount: "{total}件中{n}件",
     entry: "件",
     entries: "件",
-    countFolded: "{rows}件 · レコード{records}件（サイズ違いのバリアントを統合）",
-    countFoldedTitle:
-      "同じ回路のサイズ違い・厳選されたバリアントは1件にまとめています。各バリアントは個別のページとして残り、対応する量子ビット数はカードに表示されます。",
     showingOf: "{total}件中{shown}件を表示",
     showMore: "さらに表示",
     showAll: "全{total}件を表示",
-    refine: "絞り込み",
-    refineActive: "{n}件適用中",
-    refineNone: "トピック・入出力・並び順",
     activeFilters: "適用中の条件",
     removeFilter: "解除",
     clearAll: "すべて解除",
@@ -671,13 +661,20 @@ export function RepositoryBrowser({
     const description = locale === "ja" ? entry.descriptionJa : entry.description;
     return (
       <article className="mj-repo-card">
+        {/* The record's own drawing at card size (UX pass 6). Decorative and
+            unlabelled, so the title stays the one name and the one link. */}
+        {hasAtlasCircuit(entry.visualization) ? (
+          <div className="mj-atlas-thumb-slot">
+            <AtlasCircuitThumb source={entry.visualization} />
+          </div>
+        ) : null}
         {extraHead}
         <div className="mj-repo-card-top">
           <VerificationTierBadge methods={entryVerificationMethods(entry)} locale={locale} />
           <span>{familyLabel(entry.algorithmFamily, locale)}</span>
           {renderCostChip(entry.slug)}
         </div>
-        <h3><a href={`/repository/${entry.slug}`}>{title}</a></h3>
+        <h3><a href={`/repository/${entry.slug}`} data-tour="atlas-entry-link">{title}</a></h3>
         <p>{description}</p>
         <div className="mj-repo-card-foot">
           <div className="mj-repo-card-links">
@@ -917,6 +914,7 @@ export function RepositoryBrowser({
             return;
           }
           event.preventDefault();
+          event.currentTarget.closest("details")?.removeAttribute("open");
           navigate(args.href);
         }}
       >
@@ -924,6 +922,23 @@ export function RepositoryBrowser({
       </a>
     );
   }
+
+  // A menu that is open folds when the reader clicks elsewhere or presses
+  // Escape — native <details> does neither on its own.
+  useEffect(() => {
+    const close = (event: Event) => {
+      const menus = document.querySelectorAll<HTMLDetailsElement>("details.mj-facet-menu[open]");
+      for (const menu of menus) {
+        if (event instanceof KeyboardEvent ? event.key === "Escape" : !menu.contains(event.target as Node)) menu.open = false;
+      }
+    };
+    document.addEventListener("pointerdown", close);
+    document.addEventListener("keydown", close);
+    return () => {
+      document.removeEventListener("pointerdown", close);
+      document.removeEventListener("keydown", close);
+    };
+  }, []);
 
   function renderFacetRail() {
     return (
@@ -966,161 +981,208 @@ export function RepositoryBrowser({
           </div>
         ) : null}
 
-        {/* A native <details>, so opening the rail needs no JavaScript and no
-            state. Its open-ness is deliberately NOT a URL param: the params on
-            this route address the *data* a reader is looking at, and whether a
-            control panel happens to be unfolded is not that. The chips above
-            carry the part of this that is data. */}
-        <details className="mj-facet-disclosure">
-          <summary>
-            <span className="mj-facet-summary-label">{copy.refine}</span>
-            <span className="mj-facet-summary-state">
-              {activeFilters.length
-                ? copy.refineActive.replace("{n}", String(activeFilters.length))
-                : copy.refineNone}
-            </span>
-          </summary>
-          <div className="mj-facet-groups">
-            {/* Topic, by facet. The domain heading carries how much of the
-                corpus is domain-tagged at all, because a domain list read
-                without that number looks like a taxonomy of the catalogue
-                rather than of a slice of it. */}
-            {view.facets.topicGroups.map((group, groupIndex) => (
-              <section className="mj-facet-group" key={group.facet}>
-                <h4>
-                  {copy[`facet_${group.facet}`]}
-                  {group.facet === "domain" ? (
-                    <span className="mj-facet-group-note">
-                      {copy.facetDomainCount
-                        .replace("{n}", String(view.facets.entriesWithDomain))
-                        .replace("{total}", String(view.facets.totalEntries))}
-                    </span>
-                  ) : null}
-                </h4>
-                <div className="mj-facet-options">
-                  {/* Once, in the first group — not once per facet. The three
-                      facets are three views of ONE selection, so three "All
-                      topics" rows would read as three separate filters to
-                      clear, and clearing any one of them clears all three. */}
-                  {groupIndex === 0
-                    ? facetOption({
-                        key: "topic-all",
-                        label: copy.allTopics,
-                        active: params.topic === "",
-                        href: browseHref({ topic: "" }),
-                      })
-                    : null}
-                  {group.options.map((option) =>
-                    facetOption({
-                      key: option.id,
-                      // `option.label` rather than `topicOptionLabel`, which
-                      // bakes the count into the string for a `<select>` that
-                      // can only hold text. The rail has a slot for the number,
-                      // so putting it in the label too would print it twice.
-                      label: option.label,
-                      count: option.count,
-                      active: params.topic === option.id,
-                      href: browseHref({ topic: option.id }),
-                    }),
-                  )}
-                </div>
-              </section>
-            ))}
-
-            {/* Takes / returns. Two groups, and the second is the complement of
-                the first rather than a second list — a stance in neither would
-                vanish from the control entirely, which is invisible. */}
-            {(["pipeline", "not"] as const).map((group) => {
-              const inGroup = view.facets.stanceOptions.filter(
-                (option) => PIPELINE_STANCES.has(option.stance) === (group === "pipeline"),
-              );
-              if (inGroup.length === 0) return null;
-              return (
-                <section className="mj-facet-group" key={`stance-${group}`}>
-                  <h4>
-                    {group === "pipeline" ? copy.stanceGroupPipeline : copy.stanceGroupNot}
-                    {group === "pipeline" ? (
-                      <span className="mj-facet-group-note">
-                        {copy.stanceConnectable
-                          .replace("{n}", String(view.facets.connectableEntries))
-                          .replace("{total}", String(view.facets.totalEntries))
-                          .replace("{met}", String(view.facets.meetingEntries))}
-                      </span>
+        {/* Three native <details> menus (owner, 2026-09-12; they replace one
+            "Refine" disclosure whose open state was a wall of options). Each
+            summary names its family and the current pick; the panel floats
+            below it. Open-ness is deliberately NOT a URL param: the params on
+            this route address the *data* a reader is looking at, and whether
+            a menu happens to be unfolded is not that. The chips above carry
+            the part of this that is data. */}
+        <div className="mj-facet-bar" role="group" aria-label={copy.filters} data-tour="atlas-filters">
+          {facetMenu({
+            key: "topic",
+            label: copy.topic,
+            value: view.facets.topicGroups.flatMap((group) => group.options).find((option) => option.id === params.topic)?.label ?? copy.allTopics,
+            wide: true,
+            children: (
+              <div className="mj-facet-groups">
+                {/* Topic, by facet. The domain heading carries how much of the
+                    corpus is domain-tagged at all, because a domain list read
+                    without that number looks like a taxonomy of the catalogue
+                    rather than of a slice of it. */}
+                {view.facets.topicGroups.map((group, groupIndex) => (
+                  <section className="mj-facet-group" key={group.facet}>
+                    <h4>
+                      {copy[`facet_${group.facet}`]}
+                      {group.facet === "domain" ? (
+                        <span className="mj-facet-group-note">
+                          {copy.facetDomainCount
+                            .replace("{n}", String(view.facets.entriesWithDomain))
+                            .replace("{total}", String(view.facets.totalEntries))}
+                        </span>
+                      ) : null}
+                    </h4>
+                    <div className="mj-facet-options">
+                      {/* Once, in the first group — not once per facet. The three
+                          facets are three views of ONE selection, so three "All
+                          topics" rows would read as three separate filters to
+                          clear, and clearing any one of them clears all three. */}
+                      {groupIndex === 0
+                        ? facetOption({
+                            key: "topic-all",
+                            label: copy.allTopics,
+                            active: params.topic === "",
+                            href: browseHref({ topic: "" }),
+                          })
+                        : null}
+                      {group.options.map((option) =>
+                        facetOption({
+                          key: option.id,
+                          // `option.label` rather than `topicOptionLabel`, which
+                          // bakes the count into the string for a `<select>` that
+                          // can only hold text. The rail has a slot for the number,
+                          // so putting it in the label too would print it twice.
+                          label: option.label,
+                          count: option.count,
+                          active: params.topic === option.id,
+                          href: browseHref({ topic: option.id }),
+                        }),
+                      )}
+                    </div>
+                  </section>
+                ))}
+              </div>
+            ),
+          })}
+          {facetMenu({
+            key: "stance",
+            label: copy.stance,
+            value: params.stance ? copy[`stance_${params.stance}`] : copy.allStances,
+            children: (
+              <div className="mj-facet-groups">
+                {/* Takes / returns. Two groups, and the second is the complement of
+                    the first rather than a second list — a stance in neither would
+                    vanish from the control entirely, which is invisible. */}
+                {(["pipeline", "not"] as const).map((group) => {
+                  const inGroup = view.facets.stanceOptions.filter(
+                    (option) => PIPELINE_STANCES.has(option.stance) === (group === "pipeline"),
+                  );
+                  if (inGroup.length === 0) return null;
+                  return (
+                    <section className="mj-facet-group" key={`stance-${group}`}>
+                      <h4>
+                        {group === "pipeline" ? copy.stanceGroupPipeline : copy.stanceGroupNot}
+                        {group === "pipeline" ? (
+                          <span className="mj-facet-group-note">
+                            {copy.stanceConnectable
+                              .replace("{n}", String(view.facets.connectableEntries))
+                              .replace("{total}", String(view.facets.totalEntries))
+                              .replace("{met}", String(view.facets.meetingEntries))}
+                          </span>
+                        ) : null}
+                      </h4>
+                      <div className="mj-facet-options">
+                        {group === "pipeline"
+                          ? facetOption({
+                              key: "stance-any",
+                              label: copy.allStances,
+                              active: params.stance === "",
+                              href: browseHref({ stance: "" }),
+                            })
+                          : null}
+                        {inGroup.map((option) =>
+                          facetOption({
+                            key: option.stance,
+                            label: copy[`stance_${option.stance}`],
+                            count: option.count,
+                            active: params.stance === option.stance,
+                            href: browseHref({ stance: option.stance }),
+                          }),
+                        )}
+                      </div>
+                    </section>
+                  );
+                })}
+              </div>
+            ),
+          })}
+          {view.canOrderByCost || view.canOrderByStructure
+            ? facetMenu({
+                key: "order",
+                label: copy.sort,
+                value: params.order === "catalog" ? copy.sortDefault : copy[ORDER_COPY_KEY[params.order]],
+                children: (
+                  <div className="mj-facet-groups">
+                    {/* Order, and the circuit-only filter beside it because both read
+                        the derived listings and both disappear together when the
+                        catalog API is off. An ordering option that ranks nothing is
+                        worse than an absent one: it looks like the corpus has no
+                        structure rather than like the API is off. */}
+                    {view.canOrderByCost || view.canOrderByStructure ? (
+                      <section className="mj-facet-group" key="order">
+                        <h4>{copy.sort}</h4>
+                        <div className="mj-facet-options">
+                          {facetOption({
+                            key: "catalog",
+                            label: copy.sortDefault,
+                            active: params.order === "catalog",
+                            href: browseHref({ order: "catalog" }),
+                          })}
+                          {(view.canOrderByCost ? (["cost-asc", "cost-desc"] as const) : []).map((value) =>
+                            facetOption({
+                              key: value,
+                              label: copy[ORDER_COPY_KEY[value]],
+                              active: params.order === value,
+                              href: browseHref({ order: value }),
+                            }),
+                          )}
+                          {(view.canOrderByStructure ? PROFILE_ORDERS : []).map((value) =>
+                            facetOption({
+                              key: value,
+                              label: copy[ORDER_COPY_KEY[value]],
+                              active: params.order === value,
+                              href: browseHref({ order: value }),
+                            }),
+                          )}
+                          {view.canOrderByStructure
+                            ? facetOption({
+                                key: "circuit-only",
+                                label: copy.circuitOnly,
+                                active: params.circuitOnly,
+                                href: browseHref({ circuitOnly: !params.circuitOnly }),
+                              })
+                            : null}
+                        </div>
+                      </section>
                     ) : null}
-                  </h4>
-                  <div className="mj-facet-options">
-                    {group === "pipeline"
-                      ? facetOption({
-                          key: "stance-any",
-                          label: copy.allStances,
-                          active: params.stance === "",
-                          href: browseHref({ stance: "" }),
-                        })
-                      : null}
-                    {inGroup.map((option) =>
-                      facetOption({
-                        key: option.stance,
-                        label: copy[`stance_${option.stance}`],
-                        count: option.count,
-                        active: params.stance === option.stance,
-                        href: browseHref({ stance: option.stance }),
-                      }),
-                    )}
                   </div>
-                </section>
-              );
-            })}
-
-            {/* Order, and the circuit-only filter beside it because both read
-                the derived listings and both disappear together when the
-                catalog API is off. An ordering option that ranks nothing is
-                worse than an absent one: it looks like the corpus has no
-                structure rather than like the API is off. */}
-            {view.canOrderByCost || view.canOrderByStructure ? (
-              <section className="mj-facet-group" key="order">
-                <h4>{copy.sort}</h4>
-                <div className="mj-facet-options">
-                  {facetOption({
-                    key: "catalog",
-                    label: copy.sortDefault,
-                    active: params.order === "catalog",
-                    href: browseHref({ order: "catalog" }),
-                  })}
-                  {(view.canOrderByCost ? (["cost-asc", "cost-desc"] as const) : []).map((value) =>
-                    facetOption({
-                      key: value,
-                      label: copy[ORDER_COPY_KEY[value]],
-                      active: params.order === value,
-                      href: browseHref({ order: value }),
-                    }),
-                  )}
-                  {(view.canOrderByStructure ? PROFILE_ORDERS : []).map((value) =>
-                    facetOption({
-                      key: value,
-                      label: copy[ORDER_COPY_KEY[value]],
-                      active: params.order === value,
-                      href: browseHref({ order: value }),
-                    }),
-                  )}
-                  {view.canOrderByStructure
-                    ? facetOption({
-                        key: "circuit-only",
-                        label: copy.circuitOnly,
-                        active: params.circuitOnly,
-                        href: browseHref({ circuitOnly: !params.circuitOnly }),
-                      })
-                    : null}
-                </div>
-              </section>
-            ) : null}
-          </div>
-        </details>
+                ),
+              })
+            : null}
+        </div>
       </div>
+    );
+  }
+
+  /** One filter family as a menu: the family name, the current pick, and a floating panel of options. */
+  function facetMenu(args: { key: string; label: string; value: string; wide?: boolean; children: ReactNode }) {
+    return (
+      <details
+        className={`mj-facet-menu${args.wide ? " mj-facet-menu--wide" : ""}`}
+        key={args.key}
+        onToggle={(event) => {
+          // One menu at a time: opening this one folds its siblings.
+          const menu = event.currentTarget;
+          if (!menu.open) return;
+          for (const other of menu.parentElement?.querySelectorAll<HTMLDetailsElement>("details[open]") ?? []) {
+            if (other !== menu) other.open = false;
+          }
+        }}
+      >
+        <summary>
+          <span className="mj-facet-menu-label">{args.label}</span>
+          <span className="mj-facet-menu-value">{args.value}</span>
+        </summary>
+        <div className="mj-facet-menu-panel">{args.children}</div>
+      </details>
     );
   }
 
   return (
     <div className="mj-repository-browser" aria-busy={isPending || undefined}>
+      {/* Above the search since 2026-09-12 (owner): the key to the badges reads
+          before the list it decodes. */}
+      <div className="mj-repository-legend-slot">{legend}</div>
       <div className="mj-repository-controls">
         <label>
           <span>{copy.search}</span>
@@ -1147,6 +1209,7 @@ export function RepositoryBrowser({
             // names for one thing agree. There is no <form> on this page, so
             // `name` changes no submission behaviour.
             id="repository-search"
+            data-tour="atlas-search"
             name="q"
             value={query}
             onChange={(event) => {
@@ -1248,27 +1311,6 @@ export function RepositoryBrowser({
         ))}
       </nav>
 
-      {legend}
-
-      {/* Two numbers only when they differ. On a filtered view that folded
-          nothing — a single width, or a category with no families in it — the
-          second clause would be "176 entries · 176 records", which is noise
-          that teaches a reader the two can disagree at exactly the moment they
-          do not. */}
-      <p
-        className="mj-repository-result-count"
-        aria-live="polite"
-        title={view.shownRowCount !== view.structureFilteredCount ? copy.countFoldedTitle : undefined}
-      >
-        {view.shownRowCount !== view.structureFilteredCount
-          ? copy.countFolded
-              .replace("{rows}", String(view.shownRowCount))
-              .replace("{records}", String(view.structureFilteredCount))
-          : locale === "ja"
-            ? `${view.structureFilteredCount}${copy.entries}`
-            : `${view.structureFilteredCount} public ${view.structureFilteredCount === 1 ? copy.entry : copy.entries}`}
-      </p>
-      <p className="mj-repository-star-note">{copy.starNote}</p>
       <p className="mj-repository-search-status" role="status" aria-live="polite">
         {isPending ? locale === "ja" ? "検索結果を更新中…" : "Updating results…" : ""}
       </p>
@@ -1323,7 +1365,7 @@ export function RepositoryBrowser({
               return (
                 <article className="mj-gate-detail-card">
                   <div className="mj-gate-card-head">
-                    <h3><a href={`/repository/${entry.slug}`}>{title}</a></h3>
+                    <h3><a href={`/repository/${entry.slug}`} data-tour="atlas-entry-link">{title}</a></h3>
                     <VerificationTierBadge methods={entryVerificationMethods(entry)} locale={locale} />
                   </div>
                   <p className="mj-gate-card-family">{familyLabel(entry.algorithmFamily, locale)}</p>
@@ -1471,6 +1513,9 @@ export function RepositoryBrowser({
           </div>
         </div>
       ) : null}
+      {/* After the entries (owner, 2026-09-12): a footnote about stars, not a
+          preface to the list. */}
+      <p className="mj-repository-star-note">{copy.starNote}</p>
     </div>
   );
 }

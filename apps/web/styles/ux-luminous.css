@@ -1,0 +1,131 @@
+/* =============================================================================
+ * UX pass 6, theme (2026-09-12): the luminous public site.
+ *
+ * Owner: the website is dark only; take ideas from originkit.dev; the purple can be
+ * darker and cooler; "be creative and new". These rules take that library's mood
+ * (light on a near-black ground, restrained, one hue per effect) and do their own
+ * thing with it, quantum-flavoured. No code from the library.
+ *
+ * The public site is always dark now, so everything here is written for a dark
+ * ground, reads tokens only, and is scoped to `.mj-public-site`. It lives in its
+ * own file so the shared sheets stay easy to merge. Motion stops under
+ * prefers-reduced-motion at the end of the file.
+ * ========================================================================== */
+
+/* A bloom of indigo light at the top of every public page, behind the header. */
+.mj-public-site {
+  background:
+    radial-gradient(ellipse 72% 460px at 50% -160px, color-mix(in oklab, var(--accent-2-tint) 80%, transparent), transparent 74%),
+    var(--bg-0);
+}
+
+/* The cover. `EntangledField` draws two qubits and the field lines between them; it
+   fades in once WebGL has drawn. Under it, the static glow below marks the same two
+   points, so a visitor without WebGL still gets the composition. The dot lattice
+   stays as the plot's paper, quieter. */
+.lq-site-home .lq-site-hero .lq-entangled-field {
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 1600ms var(--ease-out-ui);
+  /* Fades on all four sides, so no line ends at the frame's edge. */
+  -webkit-mask-image:
+    linear-gradient(90deg, transparent, var(--text-0) 10%, var(--text-0) 90%, transparent),
+    linear-gradient(transparent, var(--text-0) 14%, var(--text-0) 86%, transparent);
+  -webkit-mask-composite: source-in;
+  mask-image:
+    linear-gradient(90deg, transparent, var(--text-0) 10%, var(--text-0) 90%, transparent),
+    linear-gradient(transparent, var(--text-0) 14%, var(--text-0) 86%, transparent);
+  mask-composite: intersect;
+}
+.lq-site-home .lq-site-hero .lq-entangled-field[data-lit="true"] { opacity: 1; }
+.lq-site-home .lq-site-hero .lq-liquid-grid-background { opacity: .3; }
+.lq-site-home .lq-site-hero::before {
+  inset: 0;
+  height: auto;
+  background:
+    radial-gradient(circle at 15% 56%, color-mix(in oklab, var(--accent) 24%, transparent), transparent 16%),
+    radial-gradient(circle at 85% 56%, color-mix(in oklab, var(--accent-2-glow) 26%, transparent), transparent 16%),
+    radial-gradient(ellipse 50% 45% at 50% 46%, color-mix(in oklab, var(--accent-2-tint) 70%, transparent), transparent);
+}
+
+/* Glass. Cards pick up light at the rim, brightest at the top-left in the plum glow and
+   fading to moss at the far corner, with a faint sheen across the top of the face.
+   Only the image layer and a pseudo-element are set, so the borders, hover states and
+   selected states in ux-polish.css still apply. */
+.mj-public-site :is(.lq-flow-node, .lq-flow-panel, .lq-workspace-node, .lq-bench-group, .mj-company-final-cta) {
+  position: relative;
+  background-image: linear-gradient(180deg, color-mix(in oklab, var(--text-0) 4%, transparent), transparent 46%);
+  box-shadow: inset 0 1px 0 color-mix(in oklab, var(--text-0) 8%, transparent);
+}
+.mj-public-site :is(.lq-flow-node, .lq-flow-panel, .lq-workspace-node, .lq-bench-group, .mj-company-final-cta)::before {
+  content: "";
+  position: absolute;
+  inset: calc(-1 * var(--border-hairline));
+  padding: var(--border-hairline);
+  border-radius: inherit;
+  pointer-events: none;
+  background: linear-gradient(140deg, color-mix(in oklab, var(--accent-2-glow) 60%, transparent), transparent 34%, transparent 72%, color-mix(in oklab, var(--accent) 40%, transparent));
+  -webkit-mask: linear-gradient(var(--text-0) 0 0) content-box, linear-gradient(var(--text-0) 0 0);
+  -webkit-mask-composite: xor;
+  mask: linear-gradient(var(--text-0) 0 0) content-box, linear-gradient(var(--text-0) 0 0);
+  mask-composite: exclude;
+  opacity: .5;
+  transition: opacity var(--dur-hover) var(--ease-out-ui);
+}
+.mj-public-site :is(.lq-flow-node, .lq-workspace-node):is(:hover, [aria-selected="true"])::before { opacity: 1; }
+/* The selected stage's glyph glows like a lit instrument. */
+.mj-public-site .lq-flow-node[aria-selected="true"] .lq-product-glyph {
+  filter: drop-shadow(0 0 6px color-mix(in oklab, var(--accent) 55%, transparent));
+}
+
+/* A light bloom behind the moss buttons, moss close in and plum further out, which
+   swells on hover. */
+.mj-public-site :is(.mj-primary-button, .mj-public-nav-primary) {
+  box-shadow:
+    0 0 0 var(--border-hairline) color-mix(in oklab, var(--accent) 45%, transparent),
+    0 10px 28px -12px color-mix(in oklab, var(--accent) 60%, transparent),
+    0 0 40px -12px color-mix(in oklab, var(--accent-2-glow) 45%, transparent);
+  transition:
+    background-color var(--dur-hover) var(--ease-out-ui),
+    color var(--dur-hover) var(--ease-out-ui),
+    box-shadow var(--dur-hover) var(--ease-out-ui),
+    transform var(--dur-press) var(--ease-out-ui);
+}
+.mj-public-site :is(.mj-primary-button, .mj-public-nav-primary):hover {
+  box-shadow:
+    0 0 0 var(--border-hairline) color-mix(in oklab, var(--accent) 70%, transparent),
+    0 12px 34px -10px color-mix(in oklab, var(--accent) 75%, transparent),
+    0 0 64px -8px color-mix(in oklab, var(--accent-2-glow) 60%, transparent);
+}
+
+/* Light rules between the home's sections: a beam, brightest where moss meets plum
+   at the centre, with a soft halo. They sit in the gap above each section. */
+.lq-site-home :is(.lq-flow-section, .lq-site-evidence, .lq-bench) { position: relative; }
+.lq-site-home :is(.lq-flow-section, .lq-site-evidence, .lq-bench)::before {
+  content: "";
+  position: absolute;
+  top: calc(-1 * var(--sp-8));
+  left: 50%;
+  width: min(100%, 760px);
+  height: var(--border-hairline);
+  transform: translateX(-50%);
+  pointer-events: none;
+  background: linear-gradient(90deg, transparent, color-mix(in oklab, var(--accent-2-glow) 45%, transparent) 28%, color-mix(in oklab, var(--accent) 70%, var(--accent-2-glow)) 50%, color-mix(in oklab, var(--accent-2-glow) 45%, transparent) 72%, transparent);
+  box-shadow: 0 0 16px 1px color-mix(in oklab, var(--accent-2-glow) 22%, transparent);
+}
+
+/* Benchmarks: LeonaQ's bars glow like a phosphor trace; the reported models stay flat. */
+.mj-public-site .lq-bench-group li[data-featured] .lq-bench-bar i {
+  box-shadow: 0 0 10px color-mix(in oklab, var(--accent) 60%, transparent);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .lq-site-home .lq-site-hero .lq-entangled-field { transition: none; }
+  .mj-public-site :is(.mj-primary-button, .mj-public-nav-primary) { transition: none; }
+  .mj-public-site :is(.lq-flow-node, .lq-flow-panel, .lq-workspace-node, .lq-bench-group, .mj-company-final-cta)::before { transition: none; }
+}

@@ -2,12 +2,13 @@ import type { HomeBenchmarkCopy } from "../lib/public-copy";
 import { Reveal } from "./reveal";
 
 /**
- * The benchmark section as one dot plot. Every number comes from
- * `HOME_COPY.benchmark`; nothing here is computed from a measurement of its
- * own. LeonaQ is the filled marker with its value; the models the sources
- * report are outlined markers and are listed with their values under each row,
- * so the plot is readable as text, and the same rows sit in a table behind a
- * disclosure for anyone who wants the numbers in one place.
+ * The benchmark section as grouped bars, one group per benchmark. Every number
+ * comes from `HOME_COPY.benchmark`; nothing here is computed from a measurement
+ * of its own. In each group LeonaQ's bar is filled in the accent and the models
+ * the sources report follow in plum, longest first, each with its value at the
+ * end. The list markup carries model and value as text, so a screen reader
+ * hears every figure once and the bars are decoration over it. Simplified from
+ * a dot plot with a separate table on owner direction (2026-09-12).
  */
 export function LandingBenchmark({ copy }: { copy: HomeBenchmarkCopy }) {
   const format = (score: number) => `${score.toFixed(1)}%`;
@@ -21,78 +22,43 @@ export function LandingBenchmark({ copy }: { copy: HomeBenchmarkCopy }) {
         </div>
       </Reveal>
       <Reveal delay={90}>
-        <figure className="lq-bench-figure">
-          <div className="lq-bench-legend" aria-hidden="true">
-            <span><i className="lq-bench-dot lq-bench-dot--leona" />{copy.leonaLabel}</span>
-            <span><i className="lq-bench-dot" />{copy.reportedLabel}</span>
-          </div>
-          <div className="lq-bench-rows">
-            {copy.rows.map((row) => {
-              const leona = row.scores.find((score) => score.featured);
-              const reported = row.scores.filter((score) => !score.featured);
-              return (
-                <div className="lq-bench-row" key={row.name}>
-                  <div className="lq-bench-name">
-                    <strong>{row.name}</strong>
-                    {row.detail ? <span>{row.detail}</span> : null}
-                  </div>
-                  <div className="lq-bench-plot">
-                    {/* The plot is decorative: the line under it and the table carry the same
-                        numbers as text, so a screen reader hears each figure once. */}
-                    <div className="lq-bench-track" aria-hidden="true">
-                      {reported.map((score) => (
-                        <span className="lq-bench-dot" key={score.model} style={{ left: `${score.score}%` }} title={`${score.model}: ${format(score.score)}`} />
-                      ))}
-                      {leona ? (
-                        <span className="lq-bench-dot lq-bench-dot--leona" style={{ left: `${leona.score}%` }} title={`${leona.model}: ${format(leona.score)}`}>
-                          <b>{format(leona.score)}</b>
-                        </span>
-                      ) : null}
-                    </div>
-                    <p className="lq-bench-reported">
-                      {leona ? <><b>{leona.model} {format(leona.score)}</b> · </> : null}
-                      {reported.map((score, index) => (
-                        <span key={score.model}>{index ? " · " : ""}{score.model} {format(score.score)}</span>
-                      ))}
-                    </p>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-          <div className="lq-bench-axis" aria-hidden="true">
-            <div><em>{copy.axisLabel}</em></div>
-            <div><span>0</span><span>25</span><span>50</span><span>75</span><span>100</span></div>
-          </div>
-          <figcaption>
-            <p>{copy.note}</p>
-            <p className="lq-bench-sources">
-              <span>{copy.sourcesLabel}</span>
-              {copy.sources.map((source) => (
-                <a href={source.href} key={source.href} rel="noreferrer" target="_blank">{source.label} ↗</a>
-              ))}
-            </p>
-          </figcaption>
-        </figure>
+        <p className="lq-bench-legend">
+          <span><i className="is-leona" aria-hidden="true" />{copy.leonaLabel}</span>
+          <span><i aria-hidden="true" />{copy.reportedLabel}</span>
+        </p>
+        <div className="lq-bench-groups">
+          {copy.rows.map((row) => {
+            // LeonaQ first, then the reported models from the highest down.
+            const scores = [...row.scores].sort(
+              (a, b) => Number(Boolean(b.featured)) - Number(Boolean(a.featured)) || b.score - a.score,
+            );
+            return (
+              <figure className="lq-bench-group" key={row.name}>
+                <figcaption>
+                  <strong>{row.name}</strong>
+                  {row.detail ? <span>{row.detail}</span> : null}
+                </figcaption>
+                <ul>
+                  {scores.map((score) => (
+                    <li key={score.model} data-featured={score.featured ? "" : undefined}>
+                      <span className="lq-bench-model" title={score.detail ? `${score.model} · ${score.detail}` : score.model}>{score.model}</span>
+                      <span className="lq-bench-bar" aria-hidden="true"><i style={{ width: `${score.score}%` }} /></span>
+                      <span className="lq-bench-value">{format(score.score)}</span>
+                    </li>
+                  ))}
+                </ul>
+              </figure>
+            );
+          })}
+        </div>
+        <p className="lq-bench-note">{copy.note}</p>
+        <p className="lq-bench-sources">
+          <span>{copy.sourcesLabel}</span>
+          {copy.sources.map((source) => (
+            <a href={source.href} key={source.href} rel="noreferrer" target="_blank">{source.label} ↗</a>
+          ))}
+        </p>
       </Reveal>
-      <details className="lq-bench-table">
-        <summary>{copy.tableLabel}</summary>
-        <table>
-          <thead>
-            <tr><th>{copy.tableHeaders.benchmark}</th><th>{copy.tableHeaders.model}</th><th>{copy.tableHeaders.score}</th><th>{copy.tableHeaders.source}</th></tr>
-          </thead>
-          <tbody>
-            {copy.rows.flatMap((row) => row.scores.map((score) => (
-              <tr key={`${row.name}-${score.model}`} data-featured={score.featured ? "" : undefined}>
-                <td>{row.name}</td>
-                <td>{score.model}{score.detail ? <> <span className="lq-fig-muted">{score.detail}</span></> : null}</td>
-                <td>{format(score.score)}</td>
-                <td>{score.badge}</td>
-              </tr>
-            )))}
-          </tbody>
-        </table>
-      </details>
     </section>
   );
 }

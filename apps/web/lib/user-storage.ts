@@ -81,6 +81,9 @@ export const SCOPED_STORAGE_KEYS = [
  */
 export const DEVICE_STORAGE_KEYS = [
   "majorana.theme.v1",
+  // The workspace accent (moss or plum, owner 2026-09-12): a device preference
+  // on the same terms as the theme, read by the same inline script.
+  "majorana.accent.v1",
   "majorana.sidebar-collapsed.v1",
   // Whether recent chats sit above or below the folders. A layout choice about
   // this rail on this screen, exactly like the collapse state above it —
@@ -95,6 +98,11 @@ export const DEVICE_STORAGE_KEYS = [
   // holds only the visitor's own typed words; see lib/landing-prompt-handoff.ts
   // for why it is localStorage rather than sessionStorage and what that costs.
   "majorana.landing-prompt-handoff.v1",
+  // Guided tours progress (lib/tour/engine.ts): which tour and step, what is
+  // finished, whether the first-visit prompt was answered. Ids only, no content.
+  // Device-level because the Read tour runs on the Atlas, where no account scope
+  // exists; carrying it across devices would need a profile field (an API change).
+  "majorana.tour.v1",
 ] as const;
 
 /** Records the scope that adopted the pre-scoping (unscoped) data, once. */

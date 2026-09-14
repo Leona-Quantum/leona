@@ -67,6 +67,8 @@ import { archiveArtifact, artifactFromResource, daysUntilArtifactDeletion, delet
 import { verificationFromResource } from "../lib/verification-record";
 import { WORKSPACE_PINS_EVENT, isPinned, setPinned, togglePinned } from "../lib/workspace-pins";
 import { ThemeToggle } from "./theme-toggle";
+import { TourGate } from "./tour/tour-gate";
+import { TourHelpButton } from "./tour/tour-help-button";
 import type { PublicLocale } from "../lib/public-locale";
 import { PROJECT_SHARE_COPY, WORKSPACE_COPY, ACCOUNT_COPY } from "../lib/workspace-locale";
 
@@ -364,6 +366,7 @@ export function Shell({
       currentPath={pathname}
       headerRight={
         <>
+          {demoMode ? null : <TourHelpButton locale={locale} />}
           <ThemeToggle locale={locale} />
           {headerRight}
         </>
@@ -470,6 +473,9 @@ export function Shell({
       locale={locale}
     >
       {children}
+      {/* Guided tours (ai-ops 298). In the shell, not the page, so a tour survives
+          route changes and the Settings popout; it loads only when needed. */}
+      {demoMode ? null : <TourGate locale={locale} surface="workspace" />}
       {archiveNotice ? (
         <ArchiveNotice
           // The key is load-bearing, not decoration: archiving a second chat
@@ -994,35 +1000,35 @@ function WorkspaceSidebar({
       </div>
 
       <nav className="mj-sidebar-surface-switch" aria-label={copy.surfaceSwitch} data-two={demoMode ? "true" : undefined}>
-        <Link prefetch={false} className={surface === "run" ? "is-active" : ""} href={runHref} aria-current={surface === "run" ? "page" : undefined} aria-label={copy.run} title={copy.run}>
+        <Link prefetch={false} className={surface === "run" ? "is-active" : ""} href={runHref} aria-current={surface === "run" ? "page" : undefined} aria-label={copy.run} title={copy.run} data-tour="rail-run">
           <PlayIcon size={15} />
           <span className="mj-sidebar-copy">{copy.run}</span>
         </Link>
-        <Link prefetch={false} className={surface === "studio" ? "is-active" : ""} href={studioHref} aria-current={surface === "studio" ? "page" : undefined} aria-label={copy.studio} title={copy.studio}>
+        <Link prefetch={false} className={surface === "studio" ? "is-active" : ""} href={studioHref} aria-current={surface === "studio" ? "page" : undefined} aria-label={copy.studio} title={copy.studio} data-tour="rail-studio">
           <StudioIcon size={15} />
           <span className="mj-sidebar-copy">{copy.studio}</span>
         </Link>
         {!demoMode ? (
-          <Link prefetch={false} className={surface === "qapps" ? "is-active" : ""} href="/qapps" aria-current={surface === "qapps" ? "page" : undefined} aria-label={copy.qapps} title={copy.qapps}>
+          <Link prefetch={false} className={surface === "qapps" ? "is-active" : ""} href="/qapps" aria-current={surface === "qapps" ? "page" : undefined} aria-label={copy.qapps} title={copy.qapps} data-tour="rail-qapps">
             <QappsIcon size={15} />
             <span className="mj-sidebar-copy">{copy.qapps}</span>
           </Link>
         ) : null}
         {!demoMode ? (
-          <Link prefetch={false} className={surface === "notebooks" ? "is-active" : ""} href="/notebooks" aria-current={surface === "notebooks" ? "page" : undefined} aria-label={copy.notebooks} title={copy.notebooks}>
+          <Link prefetch={false} className={surface === "notebooks" ? "is-active" : ""} href="/notebooks" aria-current={surface === "notebooks" ? "page" : undefined} aria-label={copy.notebooks} title={copy.notebooks} data-tour="rail-notebooks">
             <LibraryIcon size={15} />
             <span className="mj-sidebar-copy">{copy.notebooks}</span>
           </Link>
         ) : null}
       </nav>
 
-      <Link className="mj-sidebar-atlas" href="/repository" prefetch={false} title={copy.openAtlas}>
+      <Link className="mj-sidebar-atlas" href="/repository" prefetch={false} title={copy.openAtlas} data-tour="rail-atlas">
         <LibraryIcon size={16} />
         <span className="mj-sidebar-copy">{copy.atlas}</span>
       </Link>
 
       {!collapsed && (surface === "run" || surface === "studio") ? (
-        <label className="mj-sidebar-search">
+        <label className="mj-sidebar-search" data-tour="sidebar-search">
           <SearchIcon size={16} />
           <input type="search" value={search} onChange={(event) => setSearch(event.target.value)} placeholder={locale === "ja" ? "ワークスペースを検索" : "Search workspace"} aria-label={locale === "ja" ? "チャットと保存した回路を検索" : "Search chats and saved circuits"} />
         </label>
@@ -1036,7 +1042,7 @@ function WorkspaceSidebar({
         </div>
       ) : surface === "run" ? (
         <div className="mj-sidebar-scroll">
-          <a className="mj-sidebar-new" href={runHref} aria-label={copy.newChat} title={copy.newChat}>
+          <a className="mj-sidebar-new" href={runHref} aria-label={copy.newChat} title={copy.newChat} data-tour="sidebar-new-chat">
             <PlusIcon size={16} />
             <span className="mj-sidebar-copy">{copy.newChat}</span>
           </a>
@@ -1188,6 +1194,7 @@ function WorkspaceSidebar({
               button there is a form that accepts a name and produces nothing. */}
           <SidebarSectionHeader
             label={copy.projects}
+            tour="sidebar-projects"
             status={projectSyncState === "error" ? copy.localOnly : undefined}
             actionLabel={demoMode ? undefined : copy.createProject}
             onAction={demoMode ? undefined : () => setCreatingProject(true)}
@@ -1300,7 +1307,7 @@ function WorkspaceSidebar({
                       2026-09-10). The bar draws the metered allowance the plan is
                       actually refused on — tokens where the plan meters them,
                       otherwise runs. */}
-                  <Link role="menuitem" className="mj-sidebar-usage" href="/account#usage">
+                  <Link role="menuitem" className="mj-sidebar-usage" href="/account#usage" data-tour="menu-usage">
                     <span className="mj-sidebar-menu-line"><GaugeIcon size={16} />{copy.usageLimits}</span>
                     {railMeter ? (
                       <span className="mj-sidebar-usage-meter">
@@ -1314,7 +1321,7 @@ function WorkspaceSidebar({
                       </span>
                     ) : null}
                   </Link>
-                  <Link role="menuitem" href="/account"><span className="mj-sidebar-menu-line"><SettingsIcon size={16} />{copy.settings}</span></Link>
+                  <Link role="menuitem" href="/account" data-tour="menu-settings"><span className="mj-sidebar-menu-line"><SettingsIcon size={16} />{copy.settings}</span></Link>
                   {/* Stays an anchor. /auth/sign-out is a route handler that
                       clears the session and redirects; there is no page for a
                       client-side navigation to render. */}
@@ -1330,7 +1337,7 @@ function WorkspaceSidebar({
                 subtree, where .focus() silently does nothing. This button is
                 the drawer's own toggle, and the same place Escape already
                 returns focus to, so it is the honest next-best answer. */}
-            <button className="mj-sidebar-user" type="button" data-modal-return-focus="" aria-label={copy.accountMenu} aria-expanded={userMenuOpen} onClick={() => setUserMenuOpen((value) => !value)}>
+            <button className="mj-sidebar-user" type="button" data-modal-return-focus="" data-tour="account-menu" aria-label={copy.accountMenu} aria-expanded={userMenuOpen} onClick={() => setUserMenuOpen((value) => !value)}>
               <span className="mj-avatar">{sidebarInitial}</span>
               <span className="mj-sidebar-user-copy mj-sidebar-copy">
                 <strong>{sidebarGreeting}</strong>
@@ -1600,9 +1607,9 @@ function FolderRow({
   );
 }
 
-function SidebarSectionHeader({ label, status, actionLabel, onAction }: { label: string; status?: string; actionLabel?: string; onAction?: () => void }) {
+function SidebarSectionHeader({ label, status, actionLabel, onAction, tour }: { label: string; status?: string; actionLabel?: string; onAction?: () => void; tour?: string }) {
   return (
-    <div className="mj-sidebar-section-heading">
+    <div className="mj-sidebar-section-heading" data-tour={tour}>
       <span className="mj-sidebar-section-label mj-sidebar-copy">{label}</span>
       <span className="mj-sidebar-section-status mj-sidebar-copy">{status}</span>
       {onAction ? <button className="mj-sidebar-folder-add" type="button" aria-label={actionLabel} title={actionLabel} onClick={onAction}>+</button> : null}

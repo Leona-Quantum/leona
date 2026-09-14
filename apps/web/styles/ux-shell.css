@@ -60,6 +60,9 @@
   outline: 2px solid var(--accent);
   outline-offset: 3px;
 }
+/* Inside the composer the form's border turning accent (ux-nala.css) is the focus
+   indicator; the textarea draws no second box around the typed words (owner, 2026-09-12). */
+.mj-shell--workspace .mj-composer .mj-composer-input:focus-visible { outline: none; }
 .mj-shell--workspace :is(button, a) { -webkit-tap-highlight-color: transparent; }
 .mj-shell--workspace :is(button, input, select, textarea) { font-family: var(--font-ui); }
 .mj-shell--workspace button:disabled { cursor: not-allowed; }

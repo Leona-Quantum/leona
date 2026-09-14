@@ -18,6 +18,7 @@ const SURFACE = {
   entrySlugs: ["bell-state", "grover-unstructured-search"],
   layerIds: ["algorithms", "state-preparation"],
   paperSlugs: ["arxiv-cond~mat_0010440"],
+  folderPaths: [["algorithms"], ["algorithms", "search"], ["algorithms", "search", "amplitude-amplification"]],
 };
 
 /** Directory names under a route folder that are real URL segments. */
@@ -45,7 +46,9 @@ test("the sitemap carries the fixed public pages and every dynamic address", () 
   assert.ok(paths.includes("/repository/bell-state"));
   assert.ok(paths.includes("/repository/layers/algorithms"));
   assert.ok(paths.includes("/repository/papers/arxiv-cond~mat_0010440"));
-  assert.equal(paths.length, PUBLIC_STATIC_PATHS.length + 5);
+  assert.ok(paths.includes("/repository/folders/algorithms"));
+  assert.ok(paths.includes("/repository/folders/algorithms/search/amplitude-amplification"));
+  assert.equal(paths.length, PUBLIC_STATIC_PATHS.length + 8);
 });
 
 test("a paper slug's unreserved characters survive unescaped", () => {
@@ -53,14 +56,14 @@ test("a paper slug's unreserved characters survive unescaped", () => {
   // byte-for-byte or `paperIdFromSlug` cannot invert what the sitemap published.
   // `%7E` would still resolve, but the address in the sitemap would stop
   // matching the address every page links to, which is what a sitemap is for.
-  const paths = sitemapPaths({ entrySlugs: [], layerIds: [], paperSlugs: ["arxiv-cond~mat_0010440"] });
+  const paths = sitemapPaths({ entrySlugs: [], layerIds: [], paperSlugs: ["arxiv-cond~mat_0010440"], folderPaths: [] });
   assert.ok(paths.includes("/repository/papers/arxiv-cond~mat_0010440"));
 });
 
 test("one address is listed once", () => {
   // A node id and a state id share /repository/layers/<id>; validateLayerGraph
   // refuses a collision, but this file does not get to rely on that.
-  const paths = sitemapPaths({ entrySlugs: [], layerIds: ["algorithms", "algorithms"], paperSlugs: [] });
+  const paths = sitemapPaths({ entrySlugs: [], layerIds: ["algorithms", "algorithms"], paperSlugs: [], folderPaths: [] });
   assert.equal(paths.filter((path) => path === "/repository/layers/algorithms").length, 1);
 });
 

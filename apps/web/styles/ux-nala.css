@@ -1,5 +1,6 @@
 /* Nala experience. Imported after the shared UI styles by the app document. */
 .mj-run-home-content--centered {
+  position: relative;
   width: min(100%, var(--composer-max));
   padding-block: var(--sp-8);
 }

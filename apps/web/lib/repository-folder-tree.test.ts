@@ -15,6 +15,7 @@ import test from "node:test";
 
 import {
   buildFolderTree,
+  folderPaths,
   folderSegment,
   resolveFolderPath,
   type FolderNode,
@@ -240,4 +241,29 @@ test("folderSegment is lossy in the ways the collision check assumes", () => {
   // The two the collision test relies on, spelled out here so that test cannot pass
   // for the wrong reason.
   assert.equal(folderSegment("Block encoding · LCU"), folderSegment("Block encoding / LCU"));
+});
+
+test("folderPaths names every folder once, and every path it names resolves", () => {
+  const tree = buildFolderTree(CORPUS);
+  const paths = folderPaths(tree);
+
+  // One path per node, counted independently of folderPaths' own walk.
+  const count = (nodes: readonly FolderNode[]): number =>
+    nodes.reduce((total, node) => total + 1 + count(node.children), 0);
+  assert.equal(paths.length, count(tree.root));
+  assert.equal(new Set(paths.map((path) => path.join("/"))).size, paths.length, "no path twice");
+
+  // Every level is reached, not just the categories.
+  assert.deepEqual([...new Set(paths.map((path) => path.length))].sort(), [1, 2, 3]);
+
+  // The property the sitemap relies on: a published folder is never a 404.
+  for (const path of paths) {
+    assert.notEqual(resolveFolderPath(tree, CORPUS, path), null, `${path.join("/")} does not resolve`);
+  }
+  // And the check above can fail: a path the tree does not hold is refused.
+  assert.equal(resolveFolderPath(tree, CORPUS, ["algorithms", "made-up"]), null);
+});
+
+test("an empty tree has no folder addresses", () => {
+  assert.deepEqual(folderPaths(buildFolderTree([])), []);
 });

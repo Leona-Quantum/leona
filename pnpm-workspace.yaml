@@ -40,8 +40,8 @@ packages:
 # as of the pinned 11.10.0 — checked in a scratch workspace by bumping the
 # catalog entry and watching the override line in the lockfile follow it.
 catalog:
-  jose: 6.2.10
-  katex: 0.18.4
+  jose: 6.2.12
+  katex: 0.18.7
 
 overrides:
   # THIRD advisory round on this package, and the pin has now walked

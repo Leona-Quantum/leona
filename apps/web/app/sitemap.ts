@@ -10,7 +10,8 @@
  * page's `generateStaticParams` make — so the sitemap cannot claim a record the
  * site does not serve, or miss one it does. Layer ids come from the layer graph
  * and the state vocabulary (which share that route), paper slugs from the paper
- * register. A hand-written list would have been wrong the first time the corpus
+ * register, folder addresses from the folder tree built over that same list. A
+ * hand-written list would have been wrong the first time the corpus
  * grew, which on this project is measured in days.
  *
  * **No `lastModified`.** A `<lastmod>` of "now" on every URL is not a date, it
@@ -22,6 +23,7 @@
  */
 import type { MetadataRoute } from "next";
 import { getRepositoryListEntries } from "../lib/repository-source";
+import { buildFolderTree, folderPaths } from "../lib/repository/folder-tree";
 import { LAYER_GRAPH } from "../lib/repository/layer-graph";
 import { PAPER_REGISTER } from "../lib/repository/paper-register";
 import { paperSlug } from "../lib/repository/papers";
@@ -46,6 +48,9 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
       ...STATE_VOCABULARY.states.map((state) => state.id),
     ],
     paperSlugs: PAPER_REGISTER.papers.map((paper) => paperSlug(paper.id)),
+    // The same tree the folders page builds from the same list, so a folder is
+    // published exactly when its address resolves.
+    folderPaths: folderPaths(buildFolderTree(entries)),
   });
   // The root is `origin`, not `origin + "/"` — both resolve, but only one of
   // them is the URL every other page links to.

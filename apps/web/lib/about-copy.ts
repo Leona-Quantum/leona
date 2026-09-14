@@ -18,10 +18,18 @@ type AboutCopy = {
     body: string;
     steps: Array<{ number: string; title: string; body: string }>;
   };
-  /** The company's ambition, read after the people (owner, 2026-09-10). */
+  /**
+   * The company's ambition, read after the people (owner, 2026-09-10) and
+   * rewritten to reach past the workspace (owner, 2026-09-12): a heading, a
+   * lede, six numbered ambitions drawn from the Atlas north star and the
+   * staged roadmap, and a closing line.
+   */
   vision: {
     label: string;
-    paragraphs: string[];
+    title: string;
+    lede: string;
+    items: Array<{ title: string; body: string }>;
+    close: string;
   };
   team: {
     label: string;
@@ -75,10 +83,35 @@ export const ABOUT_COPY: Record<PublicLocale, AboutCopy> = {
     },
     vision: {
       label: "Where we are going",
-      paragraphs: [
-        "Leona Quantum started with three researchers who kept running into the same wall. Quantum computing is full of ideas that are hard to get from a paper onto a machine, and harder still to check once they are there. We are building the workspace that closes that gap: a question becomes a circuit, the circuit runs, and the result comes back with its evidence attached.",
-        "Our ambition is a platform that gets better with every run it makes. Each verified circuit and each paper tied to its method in the Atlas teaches the system a little more about how quantum work is done, and so does every lesson someone finishes. A chemist and a hardware engineer should reach the same tools and trust the same answers, and the record of how those answers were produced should stay open.",
+      title: "Beyond the workspace.",
+      lede: "The workspace is the first thing we built. The system we are building toward reads the literature for you, keeps an honest record of what has actually been shown, and gets a working, checked implementation into your hands faster than you could manage alone.",
+      items: [
+        {
+          title: "An Atlas that keeps growing",
+          body: "Thousands of papers, each method traced from input to output with its cost and its source. Nothing enters without a citation, and when the literature does not fit the map, the map changes.",
+        },
+        {
+          title: "Cost you can follow end to end",
+          body: "Resource estimates composed along a whole pathway rather than one gate at a time, so two routes to the same answer can be compared before anyone writes code.",
+        },
+        {
+          title: "From a pathway to your Studio",
+          body: "Pick a route through the Atlas, or let the assistant suggest one, and open it as a working assembly with its assumptions, interfaces and evidence carried along. Export it, or keep extending it there.",
+        },
+        {
+          title: "An assistant that has read the code",
+          body: "Models trained on real implementations that can propose a workflow, write the circuit, and say which hardware could run it. Each suggestion carries the sources it came from, so you can open them.",
+        },
+        {
+          title: "Real machines, honestly reported",
+          body: "Runs on quantum hardware next to the simulation, a lane for the large statevector jobs, circuit compression and annealing, each with its evidence attached the same way.",
+        },
+        {
+          title: "A system that improves itself",
+          body: "It should be able to say what it does not yet know, go and read for it, and restructure when a paper does not fit. Every one of those loops stays behind a human gate, because a well-formed wrong answer breaks no rule.",
+        },
       ],
+      close: "Each step rests on the one before it, and nothing reaches the record without a source.",
     },
     team: {
       label: "Our team",
@@ -145,10 +178,35 @@ export const ABOUT_COPY: Record<PublicLocale, AboutCopy> = {
     },
     vision: {
       label: "目指す場所",
-      paragraphs: [
-        "Leona Quantumは、同じ壁に何度もぶつかってきた3人の研究者から始まりました。量子コンピューティングには、論文から実機へ運ぶのが難しいアイデアがあふれていて、運んだあとに確かめるのはさらに難しいものです。その隔たりを埋めるワークスペースを作っています。問いが回路になり、回路が動き、結果が検証記録とともに返ってくる場所です。",
-        "私たちが目指すのは、実行のたびに良くなっていくプラットフォームです。検証済みの回路とAtlasで手法に結びついた論文のひとつひとつが、量子の仕事がどう進むのかをシステムに教えていき、誰かが修了した教材もそれに加わります。化学者もハードウェアの技術者も同じ道具にたどり着いて、同じ答えを信頼できるように。そして、その答えがどう作られたかの記録は、開かれたままにしておきます。",
+      title: "ワークスペースの先へ。",
+      lede: "ワークスペースは、私たちが最初に作ったものです。目指しているのは、文献を代わりに読み、実際に示されたことだけを正直に記録し、動作を確認した実装をひとりで進めるより早く手元に届けるシステムです。",
+      items: [
+        {
+          title: "育ち続けるアトラス",
+          body: "数千本の論文から、各手法を入力から出力まで、コストと出典つきでたどれるようにします。出典のないものは収録せず、文献が地図に収まらないときは地図の側を変えます。",
+        },
+        {
+          title: "経路全体で追えるコスト",
+          body: "ゲート単位ではなく経路全体でリソース見積もりを合成し、同じ答えに至る二つの経路をコードを書く前に比べられるようにします。",
+        },
+        {
+          title: "経路からスタジオへ",
+          body: "アトラスで経路を選ぶか、アシスタントに提案させて、前提・入出力・根拠を引き継いだ作業用の組み立てとして開きます。書き出すことも、そのまま広げていくこともできます。",
+        },
+        {
+          title: "コードを読んだアシスタント",
+          body: "実際の実装で学習したモデルが、ワークフローを提案し、回路を書き、どのハードウェアで動くかを示します。提案にはもとになった出典が添えられ、その場で開いて確かめられます。",
+        },
+        {
+          title: "実機での結果を正直に",
+          body: "シミュレーションと並べて量子ハードウェアで実行し、大規模な状態ベクトル計算のレーン、回路圧縮、アニーリングにも同じ形で根拠を添えます。",
+        },
+        {
+          title: "自ら良くなるシステム",
+          body: "まだ知らないことを自分で言えて、そのために文献を読みに行き、論文が収まらなければ構造を変える。そのどの循環も人の承認を通します。形の整った誤答は、どの規則にも引っかからないからです。",
+        },
       ],
+      close: "各段階は前の段階の上に立ち、出典のないものは記録に入りません。",
     },
     team: {
       label: "チーム",

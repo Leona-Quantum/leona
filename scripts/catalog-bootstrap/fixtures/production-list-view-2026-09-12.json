@@ -1,0 +1,295 @@
+{
+  "_about": "Copied verbatim from production on 2026-09-12. `listRows` are three rows of GET https://majorana-api-nikekeixtq-uw.a.run.app/v1/catalog/entries?view=list as served (525,528 bytes, 284 rows); `detailVisualization` is `record.visualization` from GET /v1/catalog/entries/<slug> for the two non-gate rows. Not edited: the list rows show the projection that shipped, where only gates kept `operations`.",
+  "listRows": [
+    {
+      "slug": "ghz-state-pennylane",
+      "execution_state": "template_only",
+      "updated_at": "2026-07-19T09:50:58.156595Z",
+      "provenance": {
+        "import_provider": "catalog_bootstrap",
+        "upstream_ref": "d7b52ee71423334b1a542e5ad4594e399c81a13b",
+        "upstream_identity": "ghz-state-pennylane",
+        "source_blob_sha256": "6b5520a3744245bda3c544ecdfbc10e3eb2098b2ae83da1481f23fe6202131d2"
+      },
+      "record": {
+        "algorithmFamily": "GHZ / entanglement",
+        "category": "basic-circuits",
+        "categoryLabel": "Basic circuits",
+        "categoryLabelJa": "基本回路",
+        "codeVariants": [
+          {
+            "framework": "PennyLane",
+            "status": "native"
+          },
+          {
+            "framework": "Qiskit",
+            "status": "native"
+          }
+        ],
+        "description": "A reusable GHZ state preparation circuit with simulator-only evidence.",
+        "descriptionJa": "シミュレータで検証した範囲を明示した、再利用可能なGHZ状態準備回路です。",
+        "exportStatus": "Native PennyLane and Qiskit · OpenQASM conversion classified",
+        "framework": "PennyLane",
+        "provenance": "Framework example",
+        "resources": [
+          {
+            "label": "Qubits",
+            "value": "4"
+          }
+        ],
+        "slug": "ghz-state-pennylane",
+        "sourceCoverage": {
+          "hardware": "unknown",
+          "simulation": "unknown",
+          "theory": "unknown"
+        },
+        "status": "verified_caveats",
+        "tags": [
+          "state preparation",
+          "pennylane",
+          "simulator",
+          "entanglement"
+        ],
+        "title": "GHZ state preparation",
+        "titleJa": "GHZ状態の準備",
+        "topics": [
+          "state",
+          "state-preparation"
+        ],
+        "updatedAt": "2026-07-09",
+        "verification": "Structural checks passed · simulator-only caveat",
+        "verificationMethods": [
+          "exact_simulation",
+          "invariant_checks"
+        ],
+        "visualization": {
+          "wires": [
+            "q[0]",
+            "q[1]",
+            "q[2]",
+            "q[3]"
+          ]
+        }
+      }
+    },
+    {
+      "slug": "vqe-hardware-efficient-ansatz",
+      "execution_state": "template_only",
+      "updated_at": "2026-07-19T09:54:46.102511Z",
+      "provenance": {
+        "import_provider": "catalog_bootstrap",
+        "upstream_ref": "d7b52ee71423334b1a542e5ad4594e399c81a13b",
+        "upstream_identity": "vqe-hardware-efficient-ansatz",
+        "source_blob_sha256": "3542145b8d3243df1f8575acd9ec76bc2c21cfbc27fd2576aea4b82548e75be8"
+      },
+      "record": {
+        "algorithmFamily": "Variational quantum eigensolver",
+        "category": "algorithms",
+        "categoryLabel": "Algorithms",
+        "categoryLabelJa": "アルゴリズム",
+        "codeVariants": [
+          {
+            "framework": "Qiskit",
+            "status": "unsupported"
+          }
+        ],
+        "description": "Alternating native one-qubit rotations and entanglers reduce compilation overhead but can change trainability.",
+        "descriptionJa": "ネイティブ1量子ビット回転とエンタングラーを交互に使い、コンパイル負荷を抑える一方で学習性に影響します.",
+        "exportStatus": "Reference only · no fabricated framework conversion",
+        "framework": "Qiskit",
+        "provenance": "Leona Quantum VQE literature expansion",
+        "resources": [],
+        "slug": "vqe-hardware-efficient-ansatz",
+        "sourceCoverage": {
+          "hardware": "unknown",
+          "simulation": "unknown",
+          "theory": "unknown"
+        },
+        "status": "verified_caveats",
+        "tags": [
+          "VQE",
+          "variational algorithm",
+          "hardware-efficient vqe ansatz"
+        ],
+        "title": "Hardware-efficient VQE ansatz",
+        "titleJa": "ハードウェア効率型VQEアンサッツ",
+        "topics": [
+          "algorithm-reference",
+          "variational"
+        ],
+        "updatedAt": "2026-07-18",
+        "verification": "Literature-backed method record; algorithmic scope and evidence boundary reviewed, with no benchmark run claimed.",
+        "verificationMethods": [
+          "research_paper"
+        ],
+        "visualization": {
+          "wires": [
+            "hybrid objective",
+            "quantum circuit",
+            "classical update"
+          ]
+        }
+      }
+    },
+    {
+      "slug": "controlled-x-gate",
+      "execution_state": "template_only",
+      "updated_at": "2026-07-19T09:50:40.440882Z",
+      "provenance": {
+        "import_provider": "catalog_bootstrap",
+        "upstream_ref": "d7b52ee71423334b1a542e5ad4594e399c81a13b",
+        "upstream_identity": "controlled-x-gate",
+        "source_blob_sha256": "50b636828b1f2c8c4c2a4b7e060375dd7d6fa3c3b080620275e1c9bdc93c93f2"
+      },
+      "record": {
+        "algorithmFamily": "Controlled gate",
+        "category": "gates",
+        "categoryLabel": "Gates",
+        "categoryLabelJa": "ゲート",
+        "codeVariants": [
+          {
+            "framework": "OpenQASM 3.0",
+            "status": "native"
+          }
+        ],
+        "description": "The canonical two-qubit controlled operation used to create correlation and entanglement.",
+        "descriptionJa": "相関とエンタングルメントを作る、代表的な2量子ビット制御演算です。",
+        "exportStatus": "Native OpenQASM 3 · direct framework snippets available",
+        "framework": "OpenQASM 3.0",
+        "provenance": "Curated reference",
+        "resources": [
+          {
+            "label": "Qubits",
+            "value": "2"
+          }
+        ],
+        "slug": "controlled-x-gate",
+        "sourceCoverage": {
+          "hardware": "unknown",
+          "simulation": "unknown",
+          "theory": "unknown"
+        },
+        "status": "verified",
+        "tags": [
+          "controlled gate",
+          "entanglement",
+          "two qubit"
+        ],
+        "title": "Controlled-X gate",
+        "titleJa": "制御Xゲート",
+        "topics": [
+          "gate-primitive"
+        ],
+        "updatedAt": "2026-07-15",
+        "verification": "Truth-table and entangling action check",
+        "verificationMethods": [
+          "truth_table",
+          "construction",
+          "research_paper"
+        ],
+        "visualization": {
+          "operations": [
+            {
+              "label": "CX",
+              "qubits": [
+                0,
+                1
+              ],
+              "tone": "ok"
+            }
+          ],
+          "wires": [
+            "q[0]",
+            "q[1]"
+          ]
+        }
+      }
+    }
+  ],
+  "detailVisualization": {
+    "ghz-state-pennylane": {
+      "operations": [
+        {
+          "label": "H",
+          "qubits": [
+            0
+          ],
+          "tone": "accent"
+        },
+        {
+          "label": "CX",
+          "qubits": [
+            0,
+            1
+          ],
+          "tone": "ok"
+        },
+        {
+          "label": "CX",
+          "qubits": [
+            0,
+            2
+          ],
+          "tone": "ok"
+        },
+        {
+          "label": "CX",
+          "qubits": [
+            0,
+            3
+          ],
+          "tone": "ok"
+        }
+      ],
+      "outcomes": [
+        {
+          "label": "0000",
+          "probability": 0.5
+        },
+        {
+          "label": "1111",
+          "probability": 0.5
+        }
+      ],
+      "wires": [
+        "q[0]",
+        "q[1]",
+        "q[2]",
+        "q[3]"
+      ]
+    },
+    "vqe-hardware-efficient-ansatz": {
+      "operations": [
+        {
+          "label": "prepare",
+          "qubits": [
+            1
+          ],
+          "tone": "accent"
+        },
+        {
+          "label": "measure H",
+          "qubits": [
+            0,
+            1
+          ],
+          "tone": "warn"
+        },
+        {
+          "label": "update θ",
+          "qubits": [
+            0,
+            2
+          ],
+          "tone": "ok"
+        }
+      ],
+      "outcomes": [],
+      "wires": [
+        "hybrid objective",
+        "quantum circuit",
+        "classical update"
+      ]
+    }
+  }
+}

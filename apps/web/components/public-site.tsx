@@ -47,7 +47,9 @@ export async function PublicSite({
    * comes from a cookie read on the server, so both still apply. A surface
    * asking for `"none"` supplies its own language control —
    * `/repository/layers` puts it in the information box's footer.
-   * The public website uses a fixed dark theme throughout.
+   * The public website is dark with no theme control (owner, 2026-09-12: "website:
+   * only dark theme, no togglable option"); the signed-in workspace keeps its own
+   * light/dark setting.
    *
    * `"static"` is the full chrome with no per-visitor part IN THE SERVER
    * RENDER: it never calls `getMajoranaAuth()`, which reaches a Dynamic API and

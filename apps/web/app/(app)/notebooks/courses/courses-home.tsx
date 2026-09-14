@@ -229,7 +229,7 @@ export function CoursesHome({ locale = "en" }: { locale?: PublicLocale }) {
           </Link>
         </header>
 
-        <form className="mj-course-composer" onSubmit={(event) => void submit(event)} aria-busy={submitting}>
+        <form className="mj-course-composer" onSubmit={(event) => void submit(event)} aria-busy={submitting} data-tour="courses-composer">
           <fieldset className="mj-notebooks-composer-content" disabled={submitting}>
             <legend className="sr-only">{coursesCopy.planLabel}</legend>
           <label className="mj-notebooks-brief">

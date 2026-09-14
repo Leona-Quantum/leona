@@ -5,12 +5,9 @@ export type HomeBenchmarkCopy = {
   label: string;
   title: string;
   body: string;
-  /** The x axis, e.g. "pass@1, %". Every score is a percentage on 0–100. */
-  axisLabel: string;
+  /** The two bar colours, named: LeonaQ (our evaluation) and the models the sources report. */
   leonaLabel: string;
   reportedLabel: string;
-  tableLabel: string;
-  tableHeaders: { benchmark: string; model: string; score: string; source: string };
   /**
    * One row per benchmark (or per framework of a multi-framework benchmark).
    * Exactly one score per row is `featured` — LeonaQ, our own evaluation; the
@@ -200,12 +197,9 @@ export const HOME_COPY: Record<PublicLocale, {
     benchmark: {
       label: "Benchmarks",
       title: "Measured on code that has to run.",
-      body: "LeonaQ's pass@1 on two execution-based benchmarks, next to the results their papers report for other models.",
-      axisLabel: "pass@1, %",
+      body: "The share of tasks each model solved on its first attempt (pass@1), on two benchmarks that run the generated code. A longer bar means more tasks solved.",
       leonaLabel: "LeonaQ, our evaluation",
       reportedLabel: "Reported in the source",
-      tableLabel: "The same numbers as a table",
-      tableHeaders: { benchmark: "Benchmark", model: "Model", score: "pass@1", source: "Source" },
       rows: [
         {
           name: "Qiskit HumanEval",
@@ -388,12 +382,9 @@ export const HOME_COPY: Record<PublicLocale, {
     benchmark: {
       label: "ベンチマーク",
       title: "動くコードで、モデルの実力を測る。",
-      body: "2つのベンチマークで、最初に生成したコードが実行テストに合格する割合（pass@1）を評価しました。LeonaQの評価結果と、他モデルの公表値を掲載しています。",
-      axisLabel: "pass@1（%）",
+      body: "生成したコードを実際に実行する2つのベンチマークで、最初の生成がテストに合格した割合（pass@1）です。棒が長いほど、解けた課題が多いことを表します。",
       leonaLabel: "LeonaQ（社内評価）",
       reportedLabel: "出典の公表値",
-      tableLabel: "評価結果を表で見る",
-      tableHeaders: { benchmark: "ベンチマーク", model: "モデル", score: "pass@1", source: "出典" },
       rows: [
         {
           name: "Qiskit HumanEval",

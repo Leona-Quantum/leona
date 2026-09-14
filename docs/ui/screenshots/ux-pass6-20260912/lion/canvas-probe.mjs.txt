@@ -1,0 +1,163 @@
+// Probe: render LionessField headless, record every triangle actually drawn to the
+// canvas (moveTo/lineTo/fill), and measure which shards move, how far, and whether
+// any shared mesh vertex splits (a crack / root gap).
+//
+// usage: node probe.mjs <label> [bundle.js]
+import { createRequire } from "node:module";
+import { readFileSync, writeFileSync } from "node:fs";
+
+const require = createRequire("/Users/Eshaan/Developer/majorana-wt-ux6-lion/node_modules/.pnpm/playwright@1.63.0/node_modules/playwright/package.json");
+const { chromium } = require("playwright");
+
+const here = new URL(".", import.meta.url).pathname;
+const label = process.argv[2] ?? "run";
+const bundle = process.argv[3] ?? `${here}bundle.js`;
+const { groups, tris } = JSON.parse(readFileSync(`${here}shards.json`, "utf8"));
+const ASPECT = 2.0672;
+const TAIL_FIXED = groups.map((g, i) => g === 2 && i !== 58 && i !== 59);
+const HEAD_REGION = tris.map((t) => (t[0] + t[2] + t[4]) / 3 > 0.74 && (t[1] + t[3] + t[5]) / 3 < 0.5);
+
+writeFileSync(
+  `${here}harness.html`,
+  `<!doctype html><html><head><meta charset="utf-8"><style>:root{--accent:olivedrab;--bg-0:white;--text-0:black}body{margin:0;background:white}</style></head><body><div id="root"></div><script src="${bundle}"></script></body></html>`,
+);
+
+const INIT = `(() => {
+  const P = CanvasRenderingContext2D.prototype;
+  const L = (window.__lion = { frames: [], record: false });
+  let cur = null, path = [];
+  const oc = P.clearRect; P.clearRect = function (...a) { cur = L.record ? { t: performance.now(), tris: [] } : null; if (cur) L.frames.push(cur); return oc.apply(this, a); };
+  const ob = P.beginPath; P.beginPath = function () { path = []; return ob.call(this); };
+  const om = P.moveTo; P.moveTo = function (x, y) { path.push(x, y); return om.call(this, x, y); };
+  const ol = P.lineTo; P.lineTo = function (x, y) { path.push(x, y); return ol.call(this, x, y); };
+  const of = P.fill; P.fill = function (...a) { if (cur) cur.tris.push(path.slice()); return of.apply(this, a); };
+})();`;
+
+// The letterbox the component computes for an 820x400 parent with no standRef.
+const BOX = { w: 820, h: 400 };
+let w = BOX.w * 0.96;
+let h = w / ASPECT;
+if (h > BOX.h * 0.96) { h = BOX.h * 0.96; w = h * ASPECT; }
+const spot = { x: (BOX.w - w) / 2, y: (BOX.h - h) / 2, w, h: w / ASPECT };
+const rest = tris.map((t) => [0, 1, 2].flatMap((v) => [spot.x + t[v * 2] * spot.w, spot.y + t[v * 2 + 1] * spot.h]));
+const vkey = (x, y) => `${x.toFixed(4)},${y.toFixed(4)}`;
+const sharedVerts = new Map(); // rest vertex -> [[shard, v], ...]
+tris.forEach((t, i) => [0, 1, 2].forEach((v) => {
+  const k = vkey(t[v * 2], t[v * 2 + 1]);
+  if (!sharedVerts.has(k)) sharedVerts.set(k, []);
+  sharedVerts.get(k).push([i, v]);
+}));
+const rootVerts = [...sharedVerts.entries()].filter(([, users]) => users.some(([i]) => TAIL_FIXED[i]) && users.some(([i]) => !TAIL_FIXED[i]));
+
+function analyse(frames, name) {
+  const full = frames.filter((f) => f.tris.length === tris.length);
+  const maxDisp = new Array(tris.length).fill(0);
+  let maxCrack = 0, maxRootGap = 0, crackAt = "";
+  for (const f of full) {
+    f.tris.forEach((p, i) => {
+      for (let k = 0; k < 6; k += 2) maxDisp[i] = Math.max(maxDisp[i], Math.hypot(p[k] - rest[i][k], p[k + 1] - rest[i][k + 1]));
+    });
+    for (const [key, users] of sharedVerts) {
+      if (users.length < 2) continue;
+      const pts = users.map(([i, v]) => [f.tris[i][v * 2], f.tris[i][v * 2 + 1]]);
+      let spread = 0;
+      for (const a of pts) for (const b of pts) spread = Math.max(spread, Math.hypot(a[0] - b[0], a[1] - b[1]));
+      if (spread > maxCrack) { maxCrack = spread; crackAt = `${key} shards ${users.map(([i]) => i).join("/")}`; }
+      if (rootVerts.some(([rk]) => rk === key)) maxRootGap = Math.max(maxRootGap, spread);
+    }
+  }
+  const moved = maxDisp.map((d, i) => [i, d]).filter(([, d]) => d > 1e-6);
+  const nonTail = moved.filter(([i]) => !TAIL_FIXED[i]);
+  const nonTailNonHead = nonTail.filter(([i]) => !HEAD_REGION[i]);
+  const tailDisp = maxDisp.filter((_, i) => TAIL_FIXED[i]);
+  const tipDisp = Math.max(...[0, 1, 2, 3, 4, 5, 6, 7, 9, 12].map((i) => maxDisp[i]));
+  const r = (x) => Math.round(x * 1000) / 1000;
+  return {
+    phase: name,
+    frames: frames.length,
+    fullFrames: full.length,
+    spanMs: full.length ? r(full[full.length - 1].t - full[0].t) : 0,
+    movedShards: moved.map(([i]) => i),
+    movedNonTail: nonTail.map(([i, d]) => [i, groups[i], r(d)]),
+    maxDispNonTailPx: r(Math.max(0, ...nonTail.map(([, d]) => d))),
+    maxDispNonTailNonHeadPx: nonTailNonHead.length ? Math.max(...nonTailNonHead.map(([, d]) => d)) : 0,
+    maxDispTailPx: r(Math.max(...tailDisp)),
+    maxDispTailTipPx: r(tipDisp),
+    maxVertexSplitPx: r(maxCrack),
+    worstSplitAt: crackAt,
+    maxTailRootGapPx: maxRootGap,
+    figureWidthPx: r(spot.w),
+  };
+}
+
+function sample(frames, n) {
+  const full = frames.filter((f) => f.tris.length === tris.length);
+  if (!full.length) return [];
+  const t0 = full[0].t, t1 = full[full.length - 1].t;
+  const out = [];
+  for (let k = 0; k < n; k += 1) {
+    const target = t0 + ((t1 - t0) * k) / Math.max(1, n - 1);
+    out.push(full.reduce((best, f) => (Math.abs(f.t - target) < Math.abs(best.t - target) ? f : best)));
+  }
+  return out.map((f) => ({ t: f.t - t0, tris: f.tris.map((p) => p.map((v) => Math.round(v * 100) / 100)) }));
+}
+
+const browser = await chromium.launch();
+const results = { label, spot, rootVerts: rootVerts.map(([k, u]) => [k, u.map(([i]) => i)]), phases: [] };
+const samples = {};
+async function phase(page, name, ms, before) {
+  await page.evaluate(() => { window.__lion.frames.length = 0; window.__lion.record = true; });
+  if (before) await before();
+  await page.waitForTimeout(ms);
+  const frames = await page.evaluate(() => { window.__lion.record = false; return window.__lion.frames; });
+  results.phases.push(analyse(frames, name));
+  samples[name] = sample(frames, 24);
+}
+
+{
+  const context = await browser.newContext({ viewport: { width: 900, height: 480 }, deviceScaleFactor: 1 });
+  const page = await context.newPage();
+  await page.addInitScript(INIT);
+  await page.goto(`file://${here}harness.html`);
+  await page.waitForTimeout(3200);
+  await page.mouse.move(890, 470);
+  await phase(page, "idle-3s", 3000);
+  // Hover at neck height: the head-tilt target is zero there, so what moves is the tail.
+  await phase(page, "hover-neck-height-3s", 3000, () => page.mouse.move(spot.x + 0.5 * spot.w, spot.y + 0.3 * spot.h));
+  await page.mouse.move(890, 470);
+  await page.waitForTimeout(3500);
+  // Hover high over the body: the head tilts too.
+  await phase(page, "hover-high-3s", 3000, () => page.mouse.move(spot.x + 0.5 * spot.w, spot.y + 0.02 * spot.h));
+  await page.mouse.move(890, 470);
+  await page.waitForTimeout(3500);
+  // The cue API (no-op on code that has no listener).
+  await phase(page, "cue-flick-3s", 3000, () => page.evaluate(() => window.dispatchEvent(new CustomEvent("leona:nala", { detail: { cue: "flick" } }))));
+  await page.waitForTimeout(500);
+  await phase(page, "cue-tilt-2s", 2000, () => page.evaluate(() => window.dispatchEvent(new CustomEvent("leona:nala", { detail: { cue: "tilt" } }))));
+  await page.waitForTimeout(500);
+  await phase(page, "cue-nod-2s", 2000, () => page.evaluate(() => window.dispatchEvent(new CustomEvent("leona:nala", { detail: { cue: "nod" } }))));
+  await page.screenshot({ path: `${here}${label}-page.png`, clip: { x: 0, y: 0, width: 820, height: 400 } });
+  results.consoleErrors = [];
+  await context.close();
+}
+{
+  const context = await browser.newContext({ viewport: { width: 900, height: 480 }, deviceScaleFactor: 1, reducedMotion: "reduce" });
+  const page = await context.newPage();
+  await page.addInitScript(INIT);
+  await page.addInitScript(() => { window.__lion && (window.__lion.record = true); });
+  await page.goto(`file://${here}harness.html`);
+  await page.waitForTimeout(1500);
+  await page.mouse.move(spot.x + 0.5 * spot.w, spot.y + 0.3 * spot.h);
+  await page.evaluate(() => window.dispatchEvent(new CustomEvent("leona:nala", { detail: { cue: "flick" } })));
+  await page.waitForTimeout(1500);
+  const frames = await page.evaluate(() => window.__lion.frames);
+  const a = analyse(frames, "reduced-motion-3s");
+  a.drawCalls = frames.length;
+  results.phases.push(a);
+  await context.close();
+}
+await browser.close();
+
+writeFileSync(`${here}${label}-results.json`, JSON.stringify(results, null, 1));
+writeFileSync(`${here}${label}-samples.json`, JSON.stringify(samples));
+for (const p of results.phases) console.log(JSON.stringify(p));

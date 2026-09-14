@@ -1,0 +1,367 @@
+{
+ "label": "baseline",
+ "spot": {
+  "x": 16.400000000000034,
+  "y": 9.597523219814263,
+  "w": 787.1999999999999,
+  "h": 380.8049535603715
+ },
+ "rootVerts": [
+  [
+   "0.1377,0.4308",
+   [
+    33,
+    38,
+    44,
+    49
+   ]
+  ],
+  [
+   "0.1855,0.3874",
+   [
+    44,
+    49,
+    50,
+    54,
+    64,
+    65,
+    72,
+    74
+   ]
+  ]
+ ],
+ "phases": [
+  {
+   "phase": "idle-3s",
+   "frames": 180,
+   "fullFrames": 180,
+   "spanMs": 2984.2,
+   "movedShards": [],
+   "movedNonTail": [],
+   "maxDispNonTailPx": 0,
+   "maxDispNonTailNonHeadPx": 0,
+   "maxDispTailPx": 0,
+   "maxDispTailTipPx": 0,
+   "maxVertexSplitPx": 0,
+   "worstSplitAt": "0.0268,0.6917 shards 0/1/2/4/6",
+   "maxTailRootGapPx": 0,
+   "figureWidthPx": 787.2
+  },
+  {
+   "phase": "hover-neck-height-3s",
+   "frames": 181,
+   "fullFrames": 181,
+   "spanMs": 2997.5,
+   "movedShards": [
+    0,
+    1,
+    2,
+    3,
+    4,
+    5,
+    6,
+    7,
+    8,
+    9,
+    10,
+    11,
+    12,
+    13,
+    14,
+    15,
+    16,
+    17,
+    18,
+    19,
+    20,
+    21,
+    22,
+    23,
+    25,
+    28,
+    31,
+    33,
+    38,
+    40,
+    45,
+    49,
+    58,
+    59
+   ],
+   "movedNonTail": [
+    [
+     58,
+     2,
+     46.014
+    ],
+    [
+     59,
+     2,
+     43.609
+    ]
+   ],
+   "maxDispNonTailPx": 46.014,
+   "maxDispNonTailNonHeadPx": 46.014479252858116,
+   "maxDispTailPx": 90.542,
+   "maxDispTailTipPx": 90.542,
+   "maxVertexSplitPx": 46.014,
+   "worstSplitAt": "0.1683,0.6047 shards 55/58/61",
+   "maxTailRootGapPx": 26.758694970461608,
+   "figureWidthPx": 787.2
+  },
+  {
+   "phase": "hover-high-3s",
+   "frames": 181,
+   "fullFrames": 181,
+   "spanMs": 2999.4,
+   "movedShards": [
+    0,
+    1,
+    2,
+    3,
+    4,
+    5,
+    6,
+    7,
+    8,
+    9,
+    10,
+    11,
+    12,
+    13,
+    14,
+    15,
+    16,
+    17,
+    18,
+    19,
+    20,
+    21,
+    22,
+    23,
+    25,
+    28,
+    31,
+    33,
+    38,
+    40,
+    45,
+    49,
+    58,
+    59,
+    184,
+    185,
+    186,
+    193,
+    197,
+    203,
+    204,
+    206,
+    212,
+    213,
+    214,
+    215,
+    220,
+    221,
+    223,
+    224,
+    228,
+    229,
+    231,
+    232,
+    233
+   ],
+   "movedNonTail": [
+    [
+     58,
+     2,
+     44.396
+    ],
+    [
+     59,
+     2,
+     42.076
+    ],
+    [
+     184,
+     1,
+     1.882
+    ],
+    [
+     185,
+     1,
+     2.403
+    ],
+    [
+     186,
+     1,
+     2.249
+    ],
+    [
+     193,
+     1,
+     2.388
+    ],
+    [
+     197,
+     1,
+     1.336
+    ],
+    [
+     203,
+     1,
+     2.52
+    ],
+    [
+     204,
+     1,
+     1.912
+    ],
+    [
+     206,
+     1,
+     2.755
+    ],
+    [
+     212,
+     1,
+     2.611
+    ],
+    [
+     213,
+     1,
+     2.611
+    ],
+    [
+     214,
+     1,
+     3.369
+    ],
+    [
+     215,
+     1,
+     3.369
+    ],
+    [
+     220,
+     1,
+     3.369
+    ],
+    [
+     221,
+     1,
+     2.751
+    ],
+    [
+     223,
+     1,
+     3.293
+    ],
+    [
+     224,
+     1,
+     3.293
+    ],
+    [
+     228,
+     1,
+     3.401
+    ],
+    [
+     229,
+     1,
+     3.635
+    ],
+    [
+     231,
+     1,
+     3.635
+    ],
+    [
+     232,
+     1,
+     3.635
+    ],
+    [
+     233,
+     1,
+     3.819
+    ]
+   ],
+   "maxDispNonTailPx": 44.396,
+   "maxDispNonTailNonHeadPx": 44.396302394861685,
+   "maxDispTailPx": 87.358,
+   "maxDispTailTipPx": 87.358,
+   "maxVertexSplitPx": 44.396,
+   "worstSplitAt": "0.1683,0.6047 shards 55/58/61",
+   "maxTailRootGapPx": 25.81768027998898,
+   "figureWidthPx": 787.2
+  },
+  {
+   "phase": "cue-flick-3s",
+   "frames": 180,
+   "fullFrames": 180,
+   "spanMs": 2983.4,
+   "movedShards": [],
+   "movedNonTail": [],
+   "maxDispNonTailPx": 0,
+   "maxDispNonTailNonHeadPx": 0,
+   "maxDispTailPx": 0,
+   "maxDispTailTipPx": 0,
+   "maxVertexSplitPx": 0,
+   "worstSplitAt": "0.0268,0.6917 shards 0/1/2/4/6",
+   "maxTailRootGapPx": 0,
+   "figureWidthPx": 787.2
+  },
+  {
+   "phase": "cue-tilt-2s",
+   "frames": 120,
+   "fullFrames": 120,
+   "spanMs": 1983.2,
+   "movedShards": [],
+   "movedNonTail": [],
+   "maxDispNonTailPx": 0,
+   "maxDispNonTailNonHeadPx": 0,
+   "maxDispTailPx": 0,
+   "maxDispTailTipPx": 0,
+   "maxVertexSplitPx": 0,
+   "worstSplitAt": "0.0268,0.6917 shards 0/1/2/4/6",
+   "maxTailRootGapPx": 0,
+   "figureWidthPx": 787.2
+  },
+  {
+   "phase": "cue-nod-2s",
+   "frames": 121,
+   "fullFrames": 121,
+   "spanMs": 1999.9,
+   "movedShards": [],
+   "movedNonTail": [],
+   "maxDispNonTailPx": 0,
+   "maxDispNonTailNonHeadPx": 0,
+   "maxDispTailPx": 0,
+   "maxDispTailTipPx": 0,
+   "maxVertexSplitPx": 0,
+   "worstSplitAt": "0.0268,0.6917 shards 0/1/2/4/6",
+   "maxTailRootGapPx": 0,
+   "figureWidthPx": 787.2
+  },
+  {
+   "phase": "reduced-motion-3s",
+   "frames": 3,
+   "fullFrames": 3,
+   "spanMs": 11,
+   "movedShards": [],
+   "movedNonTail": [],
+   "maxDispNonTailPx": 0,
+   "maxDispNonTailNonHeadPx": 0,
+   "maxDispTailPx": 0,
+   "maxDispTailTipPx": 0,
+   "maxVertexSplitPx": 0,
+   "worstSplitAt": "0.0268,0.6917 shards 0/1/2/4/6",
+   "maxTailRootGapPx": 0,
+   "figureWidthPx": 787.2,
+   "drawCalls": 3
+  }
+ ],
+ "consoleErrors": []
+}

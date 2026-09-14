@@ -19,7 +19,7 @@ export function AboutTheAtlas({ locale }: { locale: PublicLocale }) {
   return (
     <section className="mj-atlas-overview" aria-label={copy.label}>
       <p>{copy.description}</p>
-      <nav aria-label={copy.navigation}>
+      <nav aria-label={copy.navigation} data-tour="atlas-views">
         <a href="/repository/layers">{copy.map}</a>
         <a href="/repository/papers">{copy.papers}</a>
         <a href="/repository/claims">{copy.claims}</a>

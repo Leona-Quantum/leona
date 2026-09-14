@@ -7,11 +7,14 @@ import { BillingPanel } from "./billing-panel";
 import { QpuCredentials } from "./qpu-credentials";
 import { UsageNow } from "./usage-now";
 import { WorkspacesPane } from "./workspaces-pane";
+import { AccentPicker } from "../../../components/accent-picker";
 import { LanguageToggle } from "../../../components/language-toggle";
+import { ThemeToggle } from "../../../components/theme-toggle";
 import { getPublicLocale } from "../../../lib/public-locale-server";
-import { ACCOUNT_COPY, SHARING_COPY, WORKSPACE_COPY } from "../../../lib/workspace-locale";
+import { ACCOUNT_COPY, SHARING_COPY, TOURS_COPY, WORKSPACE_COPY } from "../../../lib/workspace-locale";
 import { ACCOUNT_TITLE_ID } from "./account-title-id";
 import { AccountPanes } from "./account-panes";
+import { GuidedToursPane } from "../../../components/tour/guided-tours-pane";
 
 /**
  * The settings body, rendered identically by the full page and by the modal.
@@ -54,10 +57,32 @@ export async function AccountContent() {
               <strong>{copy.language}</strong>
               <p>{copy.languageHelp}</p>
             </div>
-            <LanguageToggle locale={locale} label={copy.language} />
+            <LanguageToggle locale={locale} label={copy.language} mode="refresh" />
+          </div>
+          {/* Theme and colour (owner, 2026-09-12): the same light/dark control the
+              rail and the public header carry, and the workspace's accent. */}
+          <div className="mj-language-preference">
+            <div>
+              <strong>{copy.theme}</strong>
+              <p>{copy.themeHelp}</p>
+            </div>
+            <ThemeToggle locale={locale} />
+          </div>
+          <div className="mj-language-preference">
+            <div>
+              <strong>{copy.accent}</strong>
+              <p>{copy.accentHelp}</p>
+            </div>
+            <AccentPicker locale={locale} />
           </div>
         </section>
       ),
+    },
+    {
+      // Settings → Guided tours (TUTORIAL.md): restart or resume any tour.
+      id: "tours",
+      label: TOURS_COPY[locale].settings.label,
+      panel: <GuidedToursPane locale={locale} />,
     },
     {
       id: "identity",

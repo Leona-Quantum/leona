@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { EntangledField } from "../../components/entangled-field";
 import { HowItWorks } from "../../components/how-it-works";
 import { LiquidGridBackground } from "../../components/liquid-grid-background";
 import type { Metadata } from "next";
@@ -62,7 +63,7 @@ export default async function Home({ params }: { params: Promise<{ locale: strin
     <PublicSite activePath="/" className="mj-company-site lq-site-home" locale={locale} chrome="static">
       <section className="lq-site-hero" aria-labelledby="home-heading">
         <LiquidGridBackground />
-        <div className="lq-hero-orbits" aria-hidden="true"><i /><i /><i /></div>
+        <EntangledField />
         <div className="lq-site-hero-copy">
           <h1 id="home-heading">{copy.hero.title.split("\n").map((line) => <span key={line}>{line}</span>)}</h1>
           <p>{copy.hero.lede}</p>

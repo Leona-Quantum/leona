@@ -84,8 +84,21 @@ export default async function AboutPage({
 
       <Reveal>
         <section className="lq-about-vision" aria-labelledby="about-vision-heading">
-          <p className="mj-section-label" id="about-vision-heading">{copy.vision.label}</p>
-          {copy.vision.paragraphs.map((paragraph) => <p key={paragraph.slice(0, 24)}>{paragraph}</p>)}
+          <div className="lq-site-section-heading">
+            <p className="mj-section-label">{copy.vision.label}</p>
+            <h2 id="about-vision-heading">{copy.vision.title}</h2>
+            <p>{copy.vision.lede}</p>
+          </div>
+          <ol className="lq-about-vision-list">
+            {copy.vision.items.map((item, index) => (
+              <li key={item.title}>
+                <span className="lq-about-vision-index" aria-hidden="true">{String(index + 1).padStart(2, "0")}</span>
+                <h3>{item.title}</h3>
+                <p>{item.body}</p>
+              </li>
+            ))}
+          </ol>
+          <p className="lq-about-vision-close">{copy.vision.close}</p>
         </section>
       </Reveal>
 

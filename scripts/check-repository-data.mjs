@@ -767,11 +767,23 @@ if (!ENTRY_FILE) {
         + `(${tree.unreachable.slice(0, 5).join(", ")}${tree.unreachable.length > 5 ? ", …" : ""})`,
     );
   }
+  // The sitemap publishes `folderPaths(tree)` (app/sitemap.ts), so a path it names that
+  // `resolveFolderPath` refuses is a 404 handed to every crawler. The unit test pins
+  // the rule on fixtures; this runs it over the real corpus.
+  const published = treeMod.folderPaths(tree);
+  const dead = published.filter((path) => treeMod.resolveFolderPath(tree, entries, path) === null);
+  if (published.length === 0) {
+    errors.push("folder tree: folderPaths() named no folders, so the sitemap publishes none");
+  }
+  for (const path of dead.slice(0, 10)) {
+    errors.push(`folder tree: the sitemap would publish /repository/folders/${path.join("/")}, which 404s`);
+  }
   if (!QUIET) {
     const families = tree.root.reduce((total, node) => total + node.children.length, 0);
     console.log(
       `\nfolder tree: ${tree.placed}/${entries.length} records reachable · ${tree.root.length} categories · `
-        + `${families} families · ${tree.root.map((n) => `${n.segment}:${n.children.length}`).join(", ")}`,
+        + `${families} families · ${tree.root.map((n) => `${n.segment}:${n.children.length}`).join(", ")}`
+        + ` · ${published.length} folder addresses published, ${dead.length} unresolvable`,
     );
   }
 }

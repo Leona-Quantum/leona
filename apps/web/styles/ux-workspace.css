@@ -125,3 +125,26 @@
   .mj-notebook-workspace textarea,
   .mj-course-workspace textarea { font-size: var(--fs-16); }
 }
+/* The workspace colour picker in Preferences (owner, 2026-09-12): two swatches, the
+   chosen one ringed in the current accent. */
+.mj-accent-picker { display: inline-flex; gap: var(--sp-2); }
+.mj-accent-picker button {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-2);
+  min-height: var(--sp-8);
+  padding: 0 var(--sp-3) 0 var(--sp-2);
+  border: var(--border-hairline) solid var(--border-0);
+  border-radius: var(--radius-control);
+  background: var(--bg-0);
+  color: var(--text-1);
+  font: inherit;
+  font-size: var(--fs-13);
+  cursor: pointer;
+}
+.mj-accent-picker button:hover { color: var(--text-0); border-color: var(--text-2); }
+.mj-accent-picker button[aria-checked="true"] { color: var(--text-0); border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
+.mj-accent-picker i { width: var(--sp-4); height: var(--sp-4); border-radius: 50%; }
+.mj-accent-picker [data-accent-option="moss"] i { background: var(--accent-moss); }
+.mj-accent-picker [data-accent-option="plum"] i { background: var(--accent-plum); }
+.mj-language-preference-panel .mj-language-preference + .mj-language-preference { margin-top: var(--sp-4); padding-top: var(--sp-4); border-top: var(--border-hairline) solid var(--border-0); }

@@ -122,6 +122,12 @@ export interface PublicSurface {
   layerIds: readonly string[];
   /** Paper register slugs, already through `paperSlug()`. */
   paperSlugs: readonly string[];
+  /**
+   * Folder addresses below `/repository/folders`, as segment lists —
+   * `folderPaths(buildFolderTree(entries))`, so the sitemap publishes the
+   * folders the page itself resolves and no others.
+   */
+  folderPaths: readonly (readonly string[])[];
 }
 
 /**
@@ -148,6 +154,7 @@ export function sitemapPaths(surface: PublicSurface): string[] {
     ...surface.entrySlugs.map((slug) => `/repository/${segment(slug)}`),
     ...surface.layerIds.map((id) => `/repository/layers/${segment(id)}`),
     ...surface.paperSlugs.map((slug) => `/repository/papers/${segment(slug)}`),
+    ...surface.folderPaths.map((path) => `/repository/folders/${path.map(segment).join("/")}`),
   ];
   return [...new Set(paths)];
 }

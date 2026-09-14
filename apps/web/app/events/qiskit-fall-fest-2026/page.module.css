@@ -144,7 +144,10 @@
 }
 .speakerDay {
   display: grid;
-  grid-row: span 3;
+  /* --speaker-rows is set inline from speakers.tsx: 1 date row plus the longer
+     day's speaker count, so adding or removing a speaker keeps both columns'
+     rows aligned without a matching edit to this hard-coded span. */
+  grid-row: span var(--speaker-rows, 3);
   grid-template-rows: subgrid;
 }
 .speakerDate {

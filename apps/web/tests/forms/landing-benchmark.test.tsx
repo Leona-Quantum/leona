@@ -21,20 +21,22 @@ test("the benchmark numbers are the same in both languages", () => {
   }
 });
 
-test("every score reaches the reader twice as text — the row line and the table — and once as a marker", () => {
+test("every score reaches the reader once as text, with a bar behind it, LeonaQ first in each group", () => {
   const view = render(<LandingBenchmark copy={HOME_COPY.en.benchmark} />);
-  const rows = view.container.querySelectorAll(".lq-bench-row");
-  assert.equal(rows.length, HOME_COPY.en.benchmark.rows.length);
-  for (const row of HOME_COPY.en.benchmark.rows) {
+  const groups = view.container.querySelectorAll(".lq-bench-group");
+  assert.equal(groups.length, HOME_COPY.en.benchmark.rows.length);
+  HOME_COPY.en.benchmark.rows.forEach((row, index) => {
+    const items = Array.from(groups[index]!.querySelectorAll("li"));
+    assert.equal(items.length, row.scores.length, `${row.name}: one line per score`);
+    assert.ok(items[0]!.hasAttribute("data-featured"), `${row.name}: LeonaQ leads the group`);
     for (const score of row.scores) {
-      const text = `${score.model} ${score.score.toFixed(1)}%`;
-      const inLines = Array.from(view.container.querySelectorAll(".lq-bench-reported")).filter((line) => line.textContent?.includes(text)).length;
-      assert.equal(inLines, 1, `${row.name}: "${text}" appears once under its row`);
+      const line = items.find((item) => item.querySelector(".lq-bench-model")?.textContent === score.model)!;
+      assert.ok(line, `${row.name}: ${score.model} has a line`);
+      assert.equal(line.querySelector(".lq-bench-value")?.textContent, `${score.score.toFixed(1)}%`);
+      assert.equal((line.querySelector(".lq-bench-bar i") as HTMLElement).style.width, `${score.score}%`, `${row.name}: ${score.model}'s bar is its score`);
     }
-  }
-  const cells = Array.from(view.container.querySelectorAll("tbody td:nth-child(3)")).map((cell) => cell.textContent);
-  assert.equal(cells.length, HOME_COPY.en.benchmark.rows.reduce((sum, row) => sum + row.scores.length, 0));
-  assert.equal(view.container.querySelectorAll(".lq-bench-track .lq-bench-dot").length, cells.length);
-  assert.equal(view.container.querySelectorAll(".lq-bench-dot--leona b").length, HOME_COPY.en.benchmark.rows.length);
-  assert.equal(view.container.querySelectorAll("figcaption a").length, HOME_COPY.en.benchmark.sources.length);
+    const reported = items.slice(1).map((item) => Number.parseFloat(item.querySelector(".lq-bench-value")!.textContent!));
+    assert.deepEqual(reported, [...reported].sort((a, b) => b - a), `${row.name}: reported models run highest first`);
+  });
+  assert.equal(view.container.querySelectorAll(".lq-bench-sources a").length, HOME_COPY.en.benchmark.sources.length);
 });

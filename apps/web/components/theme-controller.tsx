@@ -2,16 +2,26 @@
 
 import { useLayoutEffect } from "react";
 import { usePathname } from "next/navigation";
-import { applyTheme, isDarkPublicPath, preferredTheme, THEME_STORAGE_KEY } from "../lib/theme";
+import { ACCENT_STORAGE_KEY, applyAccent, applyTheme, resolveAccent, resolveTheme, THEME_STORAGE_KEY, type Theme } from "../lib/theme";
 
-/** Locale navigation replaces the root HTML attributes without rerunning Next Script. */
-export function ThemeController({ locale, forcedTheme }: { locale: string; forcedTheme?: "light" | "dark" }) {
+/**
+ * Locale navigation replaces the root HTML attributes without rerunning Next
+ * Script, so the theme and the workspace accent are re-resolved here on every
+ * path change, on a storage change from another tab, on page restore, and when
+ * the OS scheme flips. `forcedTheme` is the document's own theme when its layout
+ * fixes one (the public site is dark; the Qiskit Fall Fest event is light); a
+ * saved choice never overrides it.
+ */
+export function ThemeController({ locale, forcedTheme }: { locale: string; forcedTheme?: Theme }) {
   const pathname = usePathname();
   useLayoutEffect(() => {
-    const sync = () => applyTheme(forcedTheme ?? (isDarkPublicPath(pathname) ? "dark" : preferredTheme()));
+    const sync = () => {
+      applyTheme(resolveTheme(pathname, forcedTheme));
+      applyAccent(resolveAccent(pathname));
+    };
     sync();
     const onStorage = (event: StorageEvent) => {
-      if (event.key === THEME_STORAGE_KEY || event.key === null) sync();
+      if (event.key === THEME_STORAGE_KEY || event.key === ACCENT_STORAGE_KEY || event.key === null) sync();
     };
     const media = window.matchMedia("(prefers-color-scheme: dark)");
     window.addEventListener("storage", onStorage);

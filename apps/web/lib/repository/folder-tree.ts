@@ -329,6 +329,31 @@ export function resolveFolderPath(
   };
 }
 
+/**
+ * Every folder address below the root, as segment lists, parent before child.
+ *
+ * Read straight off the built tree, so it names exactly the paths `resolveFolderPath`
+ * answers and nothing it would 404. The sitemap is the caller: every one of these is
+ * a server-rendered page with its own canonical address, and before this existed the
+ * sitemap published only `/repository/folders` itself, so a crawler could reach a
+ * folder only by following links down from the root.
+ *
+ * Default scheme only. `?scheme=method` is a filter over these same addresses, not an
+ * address of its own (see the page), so it adds nothing to publish.
+ */
+export function folderPaths(tree: FolderTree): string[][] {
+  const paths: string[][] = [];
+  const walk = (nodes: readonly FolderNode[], prefix: readonly string[]) => {
+    for (const node of nodes) {
+      const path = [...prefix, node.segment];
+      paths.push(path);
+      walk(node.children, path);
+    }
+  };
+  walk(tree.root, []);
+  return paths;
+}
+
 // ---------------------------------------------------------------------------
 // The second scheme: kind of algorithm → kind of record → family (ai-ops#45)
 // ---------------------------------------------------------------------------

@@ -128,44 +128,31 @@
 /* Benchmarks: one dot plot on a shared pass@1 axis. LeonaQ is the filled accent marker
    with its value; the reported comparators are outlined markers, listed with their values
    under each row so identity never rides on position alone. */
+/* Benchmarks as grouped bars (owner, 2026-09-12): one card per benchmark, LeonaQ's
+   bar in the accent, the reported models in plum, the value at the end of each. */
 .lq-bench { margin-top: var(--sp-16); }
-.lq-bench .lq-site-section-heading > p:not(.mj-section-label) { max-width: 60ch; margin: var(--sp-2) 0 0; color: var(--text-1); font-size: var(--fs-16); line-height: 1.7; }
-.lq-bench-figure { margin: 0; padding: var(--sp-8) var(--sp-8) var(--sp-6); border: 1px solid var(--border-0); border-radius: var(--radius-card); background: var(--bg-1); }
-.lq-bench-legend { display: flex; flex-wrap: wrap; gap: var(--sp-6); margin-bottom: var(--sp-6); color: var(--text-1); font-size: var(--fs-13); }
+.lq-bench .lq-site-section-heading > p:not(.mj-section-label) { max-width: 60ch; margin: var(--sp-2) 0 0; color: var(--text-1); font-size: var(--fs-16); line-height: 1.6; text-wrap: pretty; }
+.lq-bench-legend { display: flex; flex-wrap: wrap; gap: var(--sp-6); margin: 0 0 var(--sp-5); color: var(--text-1); font-size: var(--fs-13); }
 .lq-bench-legend span { display: inline-flex; align-items: center; gap: var(--sp-2); }
-.lq-bench-rows { display: grid; gap: var(--sp-6); }
-.lq-bench-row { display: grid; grid-template-columns: minmax(0, .28fr) minmax(0, .72fr); gap: var(--sp-6); align-items: start; }
-.lq-bench-name { display: grid; gap: var(--sp-1); padding-top: var(--sp-2); }
-.lq-bench-name strong { font-size: var(--fs-14); font-weight: 500; }
-.lq-bench-name span { color: var(--text-2); font-size: var(--fs-12); }
-.lq-bench-plot { min-width: 0; }
-.lq-bench-track { position: relative; height: var(--sp-10); margin: 0 var(--sp-2); background: linear-gradient(to right, var(--border-0) var(--border-hairline), transparent var(--border-hairline)) 0 0 / 25% 100% repeat-x, linear-gradient(to right, transparent, transparent calc(100% - var(--border-hairline)), var(--border-0) calc(100% - var(--border-hairline))); }
-.lq-bench-track::after { content: ""; position: absolute; left: 0; right: 0; top: 50%; border-top: var(--border-hairline) solid var(--border-0); }
-.lq-bench-dot { position: absolute; z-index: 1; top: 50%; box-sizing: border-box; width: var(--sp-3); height: var(--sp-3); border: var(--border-hairline) solid var(--text-1); border-radius: 50%; background: var(--bg-0); transform: translate(-50%, -50%); }
-.lq-bench-dot--leona { z-index: 2; width: var(--sp-4); height: var(--sp-4); border-color: var(--accent); background: var(--accent); }
-.lq-bench-dot--leona b { position: absolute; bottom: calc(100% + var(--sp-1)); left: 50%; transform: translateX(-50%); color: var(--accent); font: 500 var(--fs-13) var(--font-mono); white-space: nowrap; }
-.lq-bench-legend .lq-bench-dot { position: static; transform: none; }
-.lq-bench-reported { margin: var(--sp-1) var(--sp-2) 0; color: var(--text-1); font-size: var(--fs-12); line-height: 1.6; }
-.lq-bench-reported b { color: var(--text-0); font-weight: 500; }
-.lq-bench-axis { display: grid; grid-template-columns: minmax(0, .28fr) minmax(0, .72fr); gap: var(--sp-6); margin-top: var(--sp-2); }
-.lq-bench-axis > div { position: relative; display: flex; justify-content: space-between; margin: 0 var(--sp-2); color: var(--text-2); font: var(--fs-12) var(--font-mono); }
-.lq-bench-axis > div span { transform: translateX(-50%); }
-.lq-bench-axis > div span:first-child { transform: none; }
-.lq-bench-axis > div span:last-child { transform: none; }
-.lq-bench-axis em { color: var(--text-2); font-size: var(--fs-12); font-style: normal; }
-.lq-bench-axis > div:first-child { justify-content: flex-end; margin: 0; }
-.lq-bench-figure figcaption { margin-top: var(--sp-6); padding-top: var(--sp-5); border-top: var(--border-hairline) solid var(--border-0); color: var(--text-1); font-size: var(--fs-13); line-height: 1.65; }
-.lq-bench-figure figcaption p { max-width: 80ch; margin: 0; }
-.lq-bench-sources { display: flex; flex-wrap: wrap; gap: var(--sp-2) var(--sp-4); margin-top: var(--sp-3) !important; }
+.lq-bench-legend i { display: inline-block; width: var(--sp-4); height: var(--sp-2); border-radius: 2px; background: var(--accent-2); }
+.lq-bench-legend i.is-leona { background: var(--accent); }
+.lq-bench-groups { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--sp-6); }
+.lq-bench-group { margin: 0; padding: var(--sp-5); border: var(--border-hairline) solid var(--border-0); border-radius: var(--radius-card); background: var(--bg-1); }
+.lq-bench-group figcaption { display: grid; gap: 2px; margin-bottom: var(--sp-4); }
+.lq-bench-group figcaption strong { font-size: var(--fs-14); font-weight: 500; }
+.lq-bench-group figcaption span { color: var(--text-2); font-size: var(--fs-12); }
+.lq-bench-group ul { display: grid; gap: var(--sp-2); margin: 0; padding: 0; list-style: none; }
+.lq-bench-group li { display: grid; grid-template-columns: minmax(0, 16ch) minmax(0, 1fr) auto; align-items: center; gap: var(--sp-3); color: var(--text-1); font-size: var(--fs-12); }
+.lq-bench-group li[data-featured] { color: var(--text-0); font-weight: 500; }
+.lq-bench-model { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.lq-bench-bar { display: block; height: var(--sp-3); overflow: hidden; border-radius: 2px; background: var(--bg-2); }
+.lq-bench-bar i { display: block; height: 100%; border-radius: 2px; background: var(--accent-2); opacity: .8; }
+.lq-bench-group li[data-featured] .lq-bench-bar i { background: var(--accent); opacity: 1; }
+.lq-bench-value { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+.lq-bench-note { max-width: 80ch; margin: var(--sp-6) 0 0; color: var(--text-1); font-size: var(--fs-13); line-height: 1.6; text-wrap: pretty; }
+.lq-bench-sources { display: flex; flex-wrap: wrap; gap: var(--sp-2) var(--sp-4); margin: var(--sp-3) 0 0; font-size: var(--fs-13); }
 .lq-bench-sources > span { color: var(--text-2); font: var(--fs-12) var(--font-mono); text-transform: uppercase; letter-spacing: .04em; }
 .lq-bench-sources a { color: var(--accent); }
-.lq-bench-table { margin-top: var(--sp-4); }
-.lq-bench-table summary { cursor: pointer; color: var(--text-1); font-size: var(--fs-13); }
-.lq-bench-table table { width: 100%; margin-top: var(--sp-3); border-collapse: collapse; font-size: var(--fs-13); }
-.lq-bench-table th, .lq-bench-table td { padding: var(--sp-2) var(--sp-3); border-bottom: var(--border-hairline) solid var(--border-0); text-align: left; }
-.lq-bench-table th { color: var(--text-2); font-weight: 500; }
-.lq-bench-table td:nth-child(3) { font-family: var(--font-mono); }
-.lq-bench-table tr[data-featured] td { color: var(--accent); font-weight: 500; }
 
 /* Product: a connected map of the workspace, then a readable tool index. */
 .lq-workspace-intro { display: grid; grid-template-columns: .8fr 1.2fr; gap: var(--sp-16); align-items: center; padding-block: var(--sp-16); }
@@ -194,10 +181,8 @@
 .mj-about-site .mj-about-team { padding-block: var(--sp-12); }
 .mj-about-site .mj-about-team-heading { display: block; margin-bottom: var(--sp-10); }
 .mj-about-team-heading h1 { margin-bottom: 0; }
-/* The vision, after the people: a serif opening paragraph, then a plain one. */
-.lq-about-vision { max-width: 72ch; margin: var(--sp-16) auto var(--sp-4); }
-.lq-about-vision > p:not(.mj-section-label) { margin: var(--sp-4) 0 0; color: var(--text-1); font-size: var(--fs-16); line-height: 1.75; }
-.lq-about-vision > p:nth-of-type(2) { color: var(--text-0); font: 400 var(--fs-display-3)/1.45 var(--font-display); }
+/* The vision, after the people, is laid out in ux-site.css since 2026-09-12 (a heading,
+   a lede and six numbered ambitions); the two-paragraph rules that stood here are gone. */
 .mj-about-site .mj-about-team-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--sp-8); align-items: start; }
 .mj-about-site .mj-about-person-card { display: block; padding: 0; border: 0; }
 .mj-about-site .mj-about-person-portrait { width: 100%; height: auto; aspect-ratio: 4 / 4.5; border-radius: var(--radius-card); margin-bottom: var(--sp-6); }
@@ -245,9 +230,8 @@
 @media (max-width: 720px) {
   .lq-site-home .lq-site-hero { min-height: 0; padding: var(--sp-10) 0; margin-bottom: var(--sp-8); }
   .lq-site-home .lq-site-hero-copy > p:not(.mj-section-label) { font-size: var(--fs-16); }
-  .lq-bench-row, .lq-bench-axis { grid-template-columns: 1fr; gap: var(--sp-2); }
-  .lq-bench-axis > div:first-child { display: none; }
-  .lq-bench-figure { padding: var(--sp-5) var(--sp-4); }
+  .lq-bench-groups { grid-template-columns: minmax(0, 1fr); }
+  .lq-bench-group { padding: var(--sp-4); }
   
   .lq-flow-panel, .lq-workspace-intro, .lq-contact-split, .lq-workspace-loop { grid-template-columns: 1fr; gap: var(--sp-6); }
   .lq-about-vision { margin-top: var(--sp-12); }
