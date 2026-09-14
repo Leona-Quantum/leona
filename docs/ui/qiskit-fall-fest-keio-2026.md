@@ -1,16 +1,19 @@
 # Qiskit Fall Fest 2026 at Keio
 
-Route: `/events/qiskit-fall-fest-2026`. Japanese and English, anonymous,
-server-rendered event information. The header uses the shared language switcher
-and locale cookie, including its English default. Page copy, document language,
-and metadata follow the selected language; the page renders per request rather
-than sharing a locale-independent cached render. `copy.ts` holds the English
-translations of the owner-supplied Japanese copy.
+Route: `/events/qiskit-fall-fest-2026`. Anonymous, server-rendered Japanese
+information on a fixed light theme. Each visit starts in Japanese regardless of
+the main site's locale cookie. The event header switches Japanese/English in
+page state without changing that cookie; reloading restores Japanese. Document
+language follows the visible content, while canonical metadata stays Japanese.
+`copy.ts` holds the English translations of the owner-supplied Japanese copy.
+The light theme is set on the server and maintained without overwriting the
+visitor's saved theme for other surfaces.
 
 Both days' four planned speakers appear directly after the hero, before the
 overview and timetable. Company names, supplied speaker names, provisional talk
 titles, and day assignments remain visible without operating the day selector.
-The small client component switches only the timetable. Speaker names retain
+The day selector switches only the timetable. On desktop, shared grid rows keep
+the two speaker columns and their dividing lines aligned; mobile stacks the days. Speaker names retain
 their supplied Japanese spelling in both languages.
 The owner supplied the content and authorized the design, registration activation,
 and production merge in this conversation on 2026-09-08.

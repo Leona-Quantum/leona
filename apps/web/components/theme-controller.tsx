@@ -9,7 +9,8 @@ import { ACCENT_STORAGE_KEY, applyAccent, applyTheme, resolveAccent, resolveThem
  * Script, so the theme and the workspace accent are re-resolved here on every
  * path change, on a storage change from another tab, on page restore, and when
  * the OS scheme flips. `forcedTheme` is the document's own theme when its layout
- * fixes one (the public site is dark); a saved choice never overrides it.
+ * fixes one (the public site is dark; the Qiskit Fall Fest event is light); a
+ * saved choice never overrides it.
  */
 export function ThemeController({ locale, forcedTheme }: { locale: string; forcedTheme?: Theme }) {
   const pathname = usePathname();

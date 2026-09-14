@@ -4,7 +4,7 @@ version = "0.1.0"
 description = "Eval corpus loader + harness: runs the pipeline over corpus cases and scores them"
 requires-python = ">=3.12"
 dependencies = [
-    "numpy>=2.5.2",
+    "numpy>=2.5.3",
     "pydantic>=2.13.5",
     "pyyaml>=6",
     "majorana-contracts",
@@ -23,7 +23,7 @@ dependencies = [
 # is the last resort — LaTeX source and ar5iv HTML cover everything after 2007.
 # pypdf rather than PyMuPDF: PyMuPDF is AGPL, and every engine tested loses the same
 # glyphs, so the choice is licence and install weight, not extraction quality.
-pdf = ["pypdf>=6.17.0"]
+pdf = ["pypdf>=6.18.1"]
 
 [build-system]
 requires = ["hatchling"]

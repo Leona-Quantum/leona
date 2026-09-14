@@ -67,6 +67,17 @@ test("the public website is dark whatever was saved, and the saved choice is kep
   }
 });
 
+test("a fixed light event document ignores saved dark mode without overwriting it", () => {
+  installMedia();
+  window.history.replaceState(null, "", "/events/qiskit-fall-fest-2026");
+  window.localStorage.setItem(THEME_STORAGE_KEY, "dark");
+  render(<ThemeController locale="ja" forcedTheme="light" />);
+  assert.equal(document.documentElement.dataset.theme, "light");
+  act(() => { window.dispatchEvent(new window.Event("pageshow")); });
+  assert.equal(document.documentElement.dataset.theme, "light");
+  assert.equal(window.localStorage.getItem(THEME_STORAGE_KEY), "dark");
+});
+
 test("a document's forced theme beats a saved one, survives restore and other tabs, and is never written", () => {
   installMedia();
   window.history.replaceState(null, "", "/welcome");

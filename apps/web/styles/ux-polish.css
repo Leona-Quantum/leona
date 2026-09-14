@@ -16,13 +16,13 @@
 .lq-product-glyph :is(circle, rect) { fill: var(--bg-0); }
 .lq-product-glyph text { fill: var(--accent); stroke: none; font: 12px var(--font-mono); }
 
-/* Home: a cover, a worked circuit, then distinct product and evidence sections. */
-.lq-site-home .lq-public-preferences .mj-language-toggle {
+/* Keep language controls quiet across public headers and the Atlas info panel. */
+.mj-public-site :is(.lq-public-preferences, .mj-map-info-settings) .mj-language-toggle {
   border: 0;
   background: transparent;
   gap: 0;
 }
-.lq-site-home .lq-public-preferences .mj-language-toggle button {
+.mj-public-site :is(.lq-public-preferences, .mj-map-info-settings) .mj-language-toggle button {
   min-width: var(--sp-8);
   min-height: var(--sp-8);
   padding-inline: var(--sp-2);
@@ -30,14 +30,15 @@
   background: transparent;
   color: var(--text-1);
 }
-.lq-site-home .lq-public-preferences .mj-language-toggle button[aria-pressed="true"] {
+.mj-public-site :is(.lq-public-preferences, .mj-map-info-settings) .mj-language-toggle button[aria-pressed="true"] {
   color: var(--text-0);
   text-decoration: underline;
   text-underline-offset: var(--sp-1);
 }
-.lq-site-home .lq-public-preferences .mj-language-toggle button:hover {
+.mj-public-site :is(.lq-public-preferences, .mj-map-info-settings) .mj-language-toggle button:hover {
   color: var(--text-0);
 }
+/* Home: a cover, a worked circuit, then distinct product and evidence sections. */
 .lq-site-home .lq-site-hero { position: relative; display: grid; grid-template-columns: 1fr; isolation: isolate; padding: var(--sp-16) var(--sp-6); margin-block: var(--sp-4) var(--sp-12); min-height: 440px; overflow: hidden; }
 .lq-site-hero .lq-liquid-grid-background { position: absolute; inset: 0; z-index: -2; width: 100%; height: 100%; opacity: .5; mask-image: linear-gradient(transparent, black 20%, black 80%, transparent); }
 .lq-site-home .lq-site-hero-copy { width: min(100%, 740px); margin-inline: auto; text-align: center; }
