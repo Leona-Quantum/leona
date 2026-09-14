@@ -20,7 +20,7 @@ dependencies = [
     # database sessions until the response body finishes (FastAPI >=0.121).
     "fastapi>=0.121",
     "uvicorn>=0.52.4",
-    "pyjwt[crypto]>=2.13.0",
+    "pyjwt[crypto]>=2.14.0",
     # Fernet, for provider credentials encrypted at rest
     # (majorana_api.credential_crypto, migration 0045). Explicit rather than
     # relied on through pyjwt[crypto]: a transitive dependency is not a
