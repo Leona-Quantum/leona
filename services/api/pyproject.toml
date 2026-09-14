@@ -13,6 +13,7 @@ dependencies = [
     # conversion (leona_notebooks.ipynb) for routes/notebooks.py. The worker,
     # not the API, owns generation, revision and sandbox execution.
     "leona-notebooks",
+    "pillow>=12.3.0",
     "alembic>=1.19.2",
     "sqlalchemy[asyncio]>=2.0.52",
     "psycopg[binary]>=3.3.5",

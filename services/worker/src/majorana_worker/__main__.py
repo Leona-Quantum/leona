@@ -319,6 +319,8 @@ async def _execute_with_heartbeat(
 
     async def execute() -> None:
         async with factory() as session:
+            if handler is HANDLERS.get("news.collect"):
+                session.info["news_job_lease"] = (job_id, lease_token)
             await handler(session, payload)
 
     handler_task = asyncio.create_task(execute())
@@ -576,11 +578,24 @@ async def run_forever() -> None:
     dead_letter_sweep = Sweep(DEAD_LETTER_INTERVAL_S)
     reap_sweep = Sweep(REAP_INTERVAL_S)
     queue_metrics_sweep = Sweep(QUEUE_METRICS_INTERVAL_S)
+    news_schedule_sweep = Sweep(60.0)
 
     try:
         while not stop.is_set():
             delay = POLL_INTERVAL_S
             try:
+                if os.getenv("LEONA_NEWS_SCHEDULE_ENABLED") == "true" and news_schedule_sweep.due(
+                    loop.time()
+                ):
+                    from .news_pipeline import schedule_news
+
+                    try:
+                        async with asyncio.timeout(5.0):
+                            await schedule_news(factory)
+                    except Exception:
+                        log.exception("news scheduling failed; existing jobs will continue")
+                    finally:
+                        news_schedule_sweep.done(loop.time(), productive=False)
                 if recover_sweep.due(loop.time()):
                     async with factory() as session:
                         recovery = await system.recover_stale_jobs(session)

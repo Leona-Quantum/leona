@@ -1,0 +1,17 @@
+{
+  "name": "@leona/news",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "dev": "node --watch --env-file-if-exists=.env server.mjs",
+    "start": "node --env-file-if-exists=.env server.mjs",
+    "build": "node --check server.mjs && node --check render.mjs && node --check live.mjs && node --check live-server.mjs && node --check content/articles.mjs && node --check public/editor.js",
+    "lint": "node --check server.mjs && node --check render.mjs && node --check live.mjs && node --check live-server.mjs && node --check content/articles.mjs && node --check public/editor.js && node --check build-vercel.mjs && node --check vercel-handler.mjs",
+    "test": "node --test server.test.mjs live.test.mjs vercel.test.mjs",
+    "build:vercel": "node build-vercel.mjs"
+  }
+}

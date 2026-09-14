@@ -5,6 +5,7 @@ version = "0.0.0"
 requires-python = ">=3.12"
 dependencies = [
     "majorana-api",
+    "openai>=3.0.0",
     "majorana-agent",
     "majorana-llm",
     "majorana-sandbox[vercel]",
