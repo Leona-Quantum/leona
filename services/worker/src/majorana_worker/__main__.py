@@ -267,7 +267,9 @@ async def _preflight_models() -> None:
             from majorana_llm.preflight import check_model_served
 
             async with asyncio.timeout(20.0):
-                news_role = await check_model_served("news_text", news_model)
+                news_role = await check_model_served(
+                    "news_text", news_model, api_key_env="LEONA_NEWS_OPENAI_API_KEY"
+                )
         except asyncio.CancelledError:
             raise
         except Exception:

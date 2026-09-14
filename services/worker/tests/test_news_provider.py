@@ -129,3 +129,26 @@ async def test_incomplete_response_fails_closed(monkeypatch):
     with pytest.raises(ValueError, match="incomplete"):
         await editor.research("Find news")
     await editor.close()
+
+
+@pytest.mark.asyncio
+async def test_news_key_is_independent_of_core_key(monkeypatch):
+    monkeypatch.setenv("OPENAI_API_KEY", "core-test-key")
+    monkeypatch.setenv("LEONA_NEWS_OPENAI_API_KEY", "news-test-key")
+    monkeypatch.setenv("LEONA_NEWS_MODEL", "test-model")
+    editor = OpenAIEditor()
+    try:
+        assert editor.client.api_key == "news-test-key"
+        import os
+
+        assert os.environ["OPENAI_API_KEY"] == "core-test-key"
+    finally:
+        await editor.close()
+
+
+def test_missing_news_key_never_falls_back_to_core(monkeypatch):
+    monkeypatch.setenv("OPENAI_API_KEY", "core-test-key")
+    monkeypatch.delenv("LEONA_NEWS_OPENAI_API_KEY", raising=False)
+    monkeypatch.setenv("LEONA_NEWS_MODEL", "test-model")
+    with pytest.raises(KeyError, match="LEONA_NEWS_OPENAI_API_KEY"):
+        OpenAIEditor()

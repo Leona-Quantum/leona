@@ -54,3 +54,38 @@ def test_rejects_malformed_release_settings(change):
     config.update(change)
     with pytest.raises(ValueError):
         render(config, "LEONA_NEWS_OPENAI_API_KEY:1")
+
+
+@pytest.mark.parametrize("secret", ["", "news-test-secret:7"])
+def test_worker_deploy_preserves_core_key(tmp_path, secret):
+    """Execute the real deploy shell with gcloud replaced by an argument recorder."""
+    import os
+    import re
+    import subprocess
+
+    import yaml
+
+    workflow = yaml.safe_load((ROOT / ".github/workflows/deploy.yml").read_text())
+    step = next(s for s in workflow["jobs"]["deploy"]["steps"] if s.get("name") == "deploy worker")
+    script = step["run"].replace("${{ steps.news.outputs.openai_secret }}", secret)
+    script = re.sub(r"\$\{\{.*?\}\}", "test-value", script)
+    capture = tmp_path / "arguments"
+    recorder = r"""gcloud() {
+      printf '%s\0' "$@" >> "$NEWS_TEST_CAPTURE"
+      if [ "$2" = services ]; then printf '%s\n' test-revision; fi
+    }
+"""
+    env = dict(os.environ, NEWS_TEST_CAPTURE=str(capture), GITHUB_OUTPUT=str(tmp_path / "output"))
+    subprocess.run(
+        ["bash", "-e", "-c", recorder + script], env=env, check=True, capture_output=True
+    )
+    arguments = capture.read_bytes().decode().split("\0")
+    bindings = arguments[arguments.index("--update-secrets") + 1].split(",")
+    removed = arguments[arguments.index("--remove-env-vars") + 1].split(",")
+    assert "OPENAI_API_KEY" not in removed
+    assert all(binding.split("=", 1)[0] != "OPENAI_API_KEY" for binding in bindings)
+    assert "SENTRY_DSN=SENTRY_DSN:latest" in bindings
+    if secret:
+        assert f"LEONA_NEWS_OPENAI_API_KEY={secret}" in bindings
+    else:
+        assert not any(binding.startswith("LEONA_NEWS_OPENAI_API_KEY=") for binding in bindings)

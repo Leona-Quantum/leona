@@ -166,3 +166,18 @@ def test_only_unsupported_counts_as_an_offender(status):
     report = _report(RoleModel("plan", "some-model", status))
 
     assert report.unsupported == ()
+
+
+async def test_news_preflight_uses_news_key_not_core_key(monkeypatch):
+    _pin(monkeypatch, HEALTHY)
+    monkeypatch.setenv("LEONA_NEWS_ENABLED", "true")
+    monkeypatch.setenv("LEONA_NEWS_MODEL", "test-news-model")
+    calls = []
+
+    async def check(role, model, *, api_key_env="OPENAI_API_KEY"):
+        calls.append((role, model, api_key_env))
+        return RoleModel(role, model, ModelStatus.SUPPORTED)
+
+    monkeypatch.setattr("majorana_llm.preflight.check_model_served", check)
+    await worker_main._preflight_models()
+    assert calls == [("news_text", "test-news-model", "LEONA_NEWS_OPENAI_API_KEY")]
