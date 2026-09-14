@@ -5,7 +5,7 @@ description = "Verification primitives: exact/statistical equivalence, return-co
 requires-python = ">=3.12"
 dependencies = [
     "pydantic>=2.13.5",
-    "numpy>=2.5.2",
+    "numpy>=2.5.3",
     "scipy>=1.18.1",
     "majorana-contracts",
     "majorana-openqasm",
