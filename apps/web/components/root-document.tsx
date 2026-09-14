@@ -215,7 +215,9 @@ function structuredData(origin: string) {
  * served `<html data-theme>` (no flash, and right even with scripts off), into the
  * bootstrap script and into the controller, and a saved choice never overrides it.
  * The public root layouts pass `"dark"` (owner, 2026-09-12: the website is dark
- * only). It is a constant per layout, so public pages stay static.
+ * only); the Qiskit Fall Fest event layout passes `"light"` instead, so it stays
+ * readable regardless of the visitor's saved or OS theme. It is a constant per
+ * layout, so public pages stay static.
  */
 export function RootDocument({ lang, children, forcedTheme }: { lang: string; children: ReactNode; forcedTheme?: Theme }) {
   return (
