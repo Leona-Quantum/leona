@@ -4009,7 +4009,7 @@ export const TOURS_COPY: Record<PublicLocale, ToursCopy> = {
       "around.usage": { title: "Usage and limits", action: "Shows how much of your plan is left and when it resets." },
       "around.settings": { title: "Settings", action: "Open Settings." },
       "around.preferences": { title: "Preferences", action: "Theme, accent colour and language are here." },
-      "around.tours": { title: "Guided tours", action: "Restart any tour here, or from the ? at the top of the page. Theme and language are under Preferences. That's the end of the tour." },
+      "around.tours": { title: "Guided tours", action: "Restart any tour here, or from the ? at the top of the page. Theme and language are under Preferences." },
 
       "first-light.hello": { title: "First light", action: "You build a circuit on two qubits and see a real result. It takes about four minutes and needs no maths." },
       "first-light.starter": { title: "A Bell state", action: "The simplest thing two qubits can do together. Press Build a Bell state.", wrong: "That one is for later. Build a Bell state is the first button in the row." },
@@ -4018,7 +4018,7 @@ export const TOURS_COPY: Record<PublicLocale, ToursCopy> = {
       "first-light.answer": { title: "The result", action: "A Bell state measures as 00 or 11, about half the time each, and almost never 01 or 10. That pairing is entanglement." },
       "first-light.saved": { title: "Keep it", action: "Keep the result if it asks, then open it in Studio." },
       "first-light.visual": { title: "See the circuit", action: "Open the Visual tab. It draws the circuit as gates on wires." },
-      "first-light.gates": { title: "Two gates", action: "A Bell state needs two. H puts the first qubit into an even mix of 0 and 1. CNOT ties the second qubit to it, so the two always agree. That's the end of First light." },
+      "first-light.gates": { title: "Two gates", action: "A Bell state needs two. H puts the first qubit into an even mix of 0 and 1. CNOT ties the second qubit to it, so the two always agree." },
 
       "build.mode": { title: "Response mode", action: "Execute writes code and runs it. Auto lets Nala decide from your message. Choose Execute.", wrong: "That's the framework picker. Response mode is the one to its left." },
       "build.framework": { title: "Circuit framework", action: "The library the code is written in. Qiskit is the default; Cirq, PennyLane and others are in the list." },
@@ -4035,7 +4035,7 @@ export const TOURS_COPY: Record<PublicLocale, ToursCopy> = {
       "build.simulation": { title: "Simulation", action: "Open the Simulation tab. The CPU lane simulates in this browser, within your plan's qubit limit. Running the code for real happens in an isolated sandbox." },
       "build.summary": { title: "Summary", action: "Open the Summary tab. The evidence and every saved version are here." },
       "build.export": { title: "Export", action: "Download export gives you the code, with OpenQASM where the circuit has it." },
-      "build.save": { title: "Verify & save", action: "Checks the code in the sandbox and saves a new version. That's the end of Build." },
+      "build.save": { title: "Verify & save", action: "Checks the code in the sandbox and saves a new version." },
 
       "teach.brief": { title: "What to teach", action: "Describe the lesson. For example: Grover's search for first-year undergraduates.", fill: "Grover's search for first-year undergraduates" },
       "teach.options": { title: "Kind and level", action: "Open Notebook options." },
@@ -4043,14 +4043,14 @@ export const TOURS_COPY: Record<PublicLocale, ToursCopy> = {
       "teach.create": { title: "Create", action: "Press Create notebook. Exercises in the notebook check answers on their own." },
       "teach.courses": { title: "Courses", action: "A course puts lessons and quizzes in order. Open Courses." },
       "teach.course": { title: "Plan a course", action: "Describe the course and Nala proposes the modules. You review them before anything is written." },
-      "teach.qapps": { title: "A classroom demo", action: "A Qapp turns a circuit into a page students can use. Make one from Run, or from a circuit in Studio. That's the end of Teach." },
-      "teach.make": { title: "Make one", action: "Start from Run, or from a circuit in Studio. That's the end of Teach." },
+      "teach.qapps": { title: "A classroom demo", action: "A Qapp turns a circuit into a page students can use. Make one from Run, or from a circuit in Studio." },
+      "teach.make": { title: "Make one", action: "Start from Run, or from a circuit in Studio." },
 
       "read.search": { title: "Search the Atlas", action: "Search by method, problem or paper. Try: phase estimation.", fill: "phase estimation" },
       "read.filters": { title: "Narrow it down", action: "These menus filter by topic and more. The address changes with them, so a filtered view can be shared." },
       "read.entry": { title: "Open an entry", action: "Pick any entry in the list." },
       "read.source": { title: "Source", action: "Every entry names the paper it comes from. Its topics link to everything else on the same subject." },
-      "read.map": { title: "On the map", action: "Open on the map shows where this method sits among the others. That's the end of Read." },
+      "read.map": { title: "On the map", action: "Open on the map shows where this method sits among the others." },
 
       "show-mode.mode": { title: "Response mode", action: "Auto lets Nala decide from your message. Execute always writes and runs code. Learn and Explain answer in words without running anything. Qapp builds an interactive page." },
       "show-attach.attach": { title: "Attach files", action: "Add code or notes to your message. Nala reads them along with what you type." },
@@ -4234,7 +4234,7 @@ export const TOURS_COPY: Record<PublicLocale, ToursCopy> = {
       "around.usage": { title: "使用状況と上限", action: "プランの残りと、次にリセットされる時期がわかります。" },
       "around.settings": { title: "設定", action: "設定を開いてください。" },
       "around.preferences": { title: "表示設定", action: "テーマ、アクセントカラー、言語はここで変えられます。" },
-      "around.tours": { title: "ガイドツアー", action: "ツアーはここ、またはページ上部の「?」からいつでもやり直せます。テーマと言語は「表示設定」にあります。ツアーはここまでです。" },
+      "around.tours": { title: "ガイドツアー", action: "ツアーはここ、またはページ上部の「?」からいつでもやり直せます。テーマと言語は「表示設定」にあります。" },
 
       "first-light.hello": { title: "はじめての量子", action: "2つの量子ビットで回路を作り、本物の結果を見ます。約4分で、数式は使いません。" },
       "first-light.starter": { title: "Bell状態", action: "2つの量子ビットが一緒にできる、いちばんシンプルな動きです。「Bell状態を作る」を押してください。", wrong: "それは後で使います。「Bell状態を作る」は並びの最初のボタンです。" },
@@ -4243,7 +4243,7 @@ export const TOURS_COPY: Record<PublicLocale, ToursCopy> = {
       "first-light.answer": { title: "結果", action: "Bell状態を測ると、00と11がほぼ半分ずつ出て、01や10はほとんど出ません。この結びつきがエンタングルメントです。" },
       "first-light.saved": { title: "保存する", action: "保存を求められたら保存し、Studioで開いてください。" },
       "first-light.visual": { title: "回路を見る", action: "「回路図」タブを開いてください。回路を線とゲートで描きます。" },
-      "first-light.gates": { title: "2つのゲート", action: "Bell状態に必要なのは2つです。Hで1つ目の量子ビットを0と1が半々の状態にし、CNOTで2つ目を1つ目に結びつけます。だから2つはいつも同じ値になります。「はじめての量子」はここまでです。" },
+      "first-light.gates": { title: "2つのゲート", action: "Bell状態に必要なのは2つです。Hで1つ目の量子ビットを0と1が半々の状態にし、CNOTで2つ目を1つ目に結びつけます。だから2つはいつも同じ値になります。" },
 
       "build.mode": { title: "応答モード", action: "「実行」はコードを書いて実行します。「自動」はメッセージからNalaが判断します。「実行」を選んでください。", wrong: "それは回路フレームワークの選択です。応答モードはその左です。" },
       "build.framework": { title: "回路フレームワーク", action: "コードを書くライブラリです。標準はQiskitで、CirqやPennyLaneなども選べます。" },
@@ -4260,7 +4260,7 @@ export const TOURS_COPY: Record<PublicLocale, ToursCopy> = {
       "build.simulation": { title: "シミュレーション", action: "「シミュレーション」タブを開いてください。CPUシミュレーションはこのブラウザ内で、プランの量子ビット数の範囲で動きます。コードを実際に動かすのは、隔離されたサンドボックスです。" },
       "build.summary": { title: "概要", action: "「概要」タブを開いてください。証拠と、保存したすべてのバージョンがあります。" },
       "build.export": { title: "エクスポート", action: "「エクスポートをダウンロード」でコードを書き出します。回路が対応していればOpenQASMも含まれます。" },
-      "build.save": { title: "検証して保存", action: "サンドボックスでコードを確認し、新しいバージョンとして保存します。「開発」はここまでです。" },
+      "build.save": { title: "検証して保存", action: "サンドボックスでコードを確認し、新しいバージョンとして保存します。" },
 
       "teach.brief": { title: "教える内容", action: "レッスンの内容を書いてください。例：大学1年生向けのGroverの探索", fill: "大学1年生向けのGroverの探索" },
       "teach.options": { title: "形式とレベル", action: "「ノートブックの設定」を開いてください。" },
@@ -4268,14 +4268,14 @@ export const TOURS_COPY: Record<PublicLocale, ToursCopy> = {
       "teach.create": { title: "作成", action: "「ノートブックを作成」を押してください。ノートブックの演習は、答えを自動で確認します。" },
       "teach.courses": { title: "コース", action: "コースはレッスンとクイズを順番に並べます。コースを開いてください。" },
       "teach.course": { title: "コースを計画", action: "コースの内容を書くと、Nalaが単元を提案します。作成の前に確認できます。" },
-      "teach.qapps": { title: "授業のデモ", action: "Qappは回路を、学生が操作できるページにします。Runから、またはStudioの回路から作れます。「教える」はここまでです。" },
-      "teach.make": { title: "作ってみる", action: "Runから、またはStudioの回路から作れます。「教える」はここまでです。" },
+      "teach.qapps": { title: "授業のデモ", action: "Qappは回路を、学生が操作できるページにします。Runから、またはStudioの回路から作れます。" },
+      "teach.make": { title: "作ってみる", action: "Runから、またはStudioの回路から作れます。" },
 
       "read.search": { title: "アトラスを検索", action: "手法、問題、論文で検索できます。例：位相推定", fill: "位相推定" },
       "read.filters": { title: "絞り込む", action: "トピックなどで絞り込めます。アドレスも一緒に変わるので、絞り込んだ表示をそのまま共有できます。" },
       "read.entry": { title: "項目を開く", action: "一覧からどれか1つ選んでください。" },
       "read.source": { title: "出典", action: "どの項目にも、元になった論文が書かれています。トピックから、同じテーマのほかの項目に移れます。" },
-      "read.map": { title: "地図で見る", action: "「地図で開く」で、この手法がほかの手法の中のどこにあるかがわかります。「読む」はここまでです。" },
+      "read.map": { title: "地図で見る", action: "「地図で開く」で、この手法がほかの手法の中のどこにあるかがわかります。" },
 
       "show-mode.mode": { title: "応答モード", action: "「自動」はメッセージからNalaが判断します。「実行」は必ずコードを書いて実行します。「学ぶ」と「解説」は何も実行せず文章で答えます。「Qapp」は操作できるページを作ります。" },
       "show-attach.attach": { title: "ファイルを添付", action: "コードやメモをメッセージに添えられます。Nalaは入力した文と一緒に読みます。" },
