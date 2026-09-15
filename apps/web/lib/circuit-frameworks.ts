@@ -42,6 +42,14 @@ export function circuitFrameworkOrNull(value: string | null | undefined): Circui
   if (normalized === "openqasm30" || normalized === "openqasm3" || normalized === "qasm3") {
     return CIRCUIT_FRAMEWORKS.find((framework) => framework.key === "openqasm3")!;
   }
+  // OpenQASM 2.0 has no tab or emitter of its own — it is import-only, recognized
+  // by content (`looksLikeOpenQasm2` in circuit-conversion.ts) — but an artifact's
+  // declared framework or a stored variant name can still say "OpenQASM 2.0". It
+  // resolves onto the same key a QASM 3 source uses, so a QASM 2 candidate reaches
+  // `parseCircuitSource`, which sniffs the header and dispatches to the QASM 2 reader.
+  if (normalized === "openqasm20" || normalized === "openqasm2" || normalized === "qasm2") {
+    return CIRCUIT_FRAMEWORKS.find((framework) => framework.key === "openqasm3")!;
+  }
   // Qmod is the language; Classiq is the vendor whose SDK carries it. Records
   // and prompts use both names interchangeably, and resolving only one of them
   // would silently drop the framework on the other spelling.

@@ -497,6 +497,41 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
     deleteCustomGate: (name: string) => string;
     customGateCreated: (name: string) => string;
     customGateCannotGroup: string;
+    closeBlock: (name: string) => string;
+    blockOpaqueNote: string;
+    editBlock: string;
+    editBlockTitle: (name: string) => string;
+    editBlockUses: (count: number) => string;
+    editBlockSave: string;
+    editBlockCancel: string;
+    editBlockCycleError: string;
+    ungroupBlock: string;
+    ungrouped: (name: string) => string;
+    blockSaved: (name: string, uses: number) => string;
+    blocksPanelOpen: string;
+    blocksPanelTitle: string;
+    blockCategoryLabel: Record<"state-preparation" | "transforms" | "oracles" | "arithmetic" | "simulation" | "variational", string>;
+    insertAtQubit: string;
+    insertBlock: string;
+    blockInserted: (name: string) => string;
+    blockTooNarrow: (required: number, available: number) => string;
+    addQubitsForBlock: string;
+    galleryOpen: string;
+    galleryTitle: string;
+    exampleQubits: (count: number) => string;
+    loadExample: string;
+    unsavedChangesConfirm: string;
+    exampleNotFound: string;
+    expectationValue: (value: number) => string;
+    askTitle: string;
+    askPlaceholder: string;
+    askSubmit: string;
+    askCancel: string;
+    askStageLabel: Record<"planned" | "coded" | "sandboxed" | "verified" | "saved", string>;
+    askChangeSummary: (added: Array<{ gate: string; count: number }>, removed: Array<{ gate: string; count: number }>) => string;
+    askGoBack: string;
+    askDisconnected: string;
+    askOpenRun: string;
     hideInspector: string;
     showInspector: string;
     circuitRestored: string;
@@ -1301,6 +1336,53 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
       deleteCustomGate: (name) => `Delete custom gate ${name}`,
       customGateCreated: (name) => `${name} is ready in the gate palette.`,
       customGateCannotGroup: "Select two or more unitary gates to create a custom gate.",
+      closeBlock: (name) => `Close ${name}`,
+      blockOpaqueNote: "This operation cannot be opened.",
+      editBlock: "Edit block",
+      editBlockTitle: (name) => `Edit ${name}`,
+      editBlockUses: (count) => count === 1 ? "Changes 1 use of this block." : `Changes ${count} uses of this block.`,
+      editBlockSave: "Save",
+      editBlockCancel: "Cancel",
+      editBlockCycleError: "That would make this block contain itself. Remove the block first.",
+      ungroupBlock: "Ungroup",
+      ungrouped: (name) => `${name} was ungrouped.`,
+      blockSaved: (name, uses) => uses === 1 ? `Saved ${name}. 1 use updated.` : `Saved ${name}. ${uses} uses updated.`,
+      blocksPanelOpen: "Insert block",
+      blocksPanelTitle: "Block library",
+      blockCategoryLabel: {
+        "state-preparation": "State preparation",
+        transforms: "Transforms",
+        oracles: "Oracles",
+        arithmetic: "Arithmetic",
+        simulation: "Simulation",
+        variational: "Variational",
+      },
+      insertAtQubit: "Insert at qubit",
+      insertBlock: "Insert",
+      blockInserted: (name) => `${name} added to the circuit.`,
+      blockTooNarrow: (required, available) => `This block needs ${required} qubit${required === 1 ? "" : "s"}; only ${available} ${available === 1 ? "is" : "are"} free at this position.`,
+      addQubitsForBlock: "Add qubits",
+      galleryOpen: "Examples",
+      galleryTitle: "Start from a known circuit",
+      exampleQubits: (count) => `${count} qubit${count === 1 ? "" : "s"}`,
+      loadExample: "Load",
+      unsavedChangesConfirm: "This replaces the current draft. Continue?",
+      exampleNotFound: "That example was not found. Starting a new circuit instead.",
+      expectationValue: (value) => `⟨H⟩ = ${value.toFixed(4)}`,
+      askTitle: "Ask Leona",
+      askPlaceholder: "Describe the change, for example: add a Hadamard on qubit 0",
+      askSubmit: "Ask",
+      askCancel: "Cancel",
+      askStageLabel: { planned: "Planning", coded: "Writing code", sandboxed: "Running", verified: "Verifying", saved: "Saving" },
+      askChangeSummary: (added, removed) => {
+        const parts: string[] = [];
+        if (added.length) parts.push(`added ${added.map((entry) => `${entry.count} ${entry.gate}`).join(", ")}`);
+        if (removed.length) parts.push(`removed ${removed.map((entry) => `${entry.count} ${entry.gate}`).join(", ")}`);
+        return parts.length ? `${parts.join("; ")}.` : "No gates changed.";
+      },
+      askGoBack: "Go back to the previous version",
+      askDisconnected: "The connection closed before the run finished. It may still complete.",
+      askOpenRun: "Open the run to see its result.",
       hideInspector: "Hide inspector",
       showInspector: "Inspector",
       circuitRestored: "Circuit loaded from the saved artifact. Edits stay in this draft until you verify & save.",
@@ -2191,6 +2273,53 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
       deleteCustomGate: (name) => `カスタムゲート${name}を削除`,
       customGateCreated: (name) => `${name}をパレットに追加しました。`,
       customGateCannotGroup: "カスタムゲートには、2つ以上の単一ゲートを選択してください。",
+      closeBlock: (name) => `${name}を閉じる`,
+      blockOpaqueNote: "この操作は開けません。",
+      editBlock: "ブロックを編集",
+      editBlockTitle: (name) => `${name}を編集`,
+      editBlockUses: (count) => `このブロックの使用${count}件が変わります。`,
+      editBlockSave: "保存",
+      editBlockCancel: "キャンセル",
+      editBlockCycleError: "このブロックが自分自身を含むことになります。先にそのブロックを削除してください。",
+      ungroupBlock: "グループ解除",
+      ungrouped: (name) => `${name}のグループを解除しました。`,
+      blockSaved: (name, uses) => `${name}を保存しました。使用${uses}件を更新しました。`,
+      blocksPanelOpen: "ブロックを挿入",
+      blocksPanelTitle: "ブロックライブラリ",
+      blockCategoryLabel: {
+        "state-preparation": "状態準備",
+        transforms: "変換",
+        oracles: "オラクル",
+        arithmetic: "算術",
+        simulation: "シミュレーション",
+        variational: "変分",
+      },
+      insertAtQubit: "挿入する量子ビット",
+      insertBlock: "挿入",
+      blockInserted: (name) => `${name}を回路に追加しました。`,
+      blockTooNarrow: (required, available) => `このブロックには${required}量子ビット必要ですが、この位置には${available}量子ビットしか空きがありません。`,
+      addQubitsForBlock: "量子ビットを追加",
+      galleryOpen: "サンプル回路",
+      galleryTitle: "既知の回路から始める",
+      exampleQubits: (count) => `${count}量子ビット`,
+      loadExample: "読み込む",
+      unsavedChangesConfirm: "現在の編集内容が置き換わります。続けますか？",
+      exampleNotFound: "そのサンプルは見つかりませんでした。新しい回路を開始します。",
+      expectationValue: (value) => `⟨H⟩ = ${value.toFixed(4)}`,
+      askTitle: "Leonaに依頼",
+      askPlaceholder: "変更内容を記入してください。例：量子ビット0にアダマールを追加",
+      askSubmit: "依頼する",
+      askCancel: "キャンセル",
+      askStageLabel: { planned: "計画中", coded: "コード生成中", sandboxed: "実行中", verified: "検証中", saved: "保存中" },
+      askChangeSummary: (added, removed) => {
+        const parts: string[] = [];
+        if (added.length) parts.push(`追加: ${added.map((entry) => `${entry.gate}×${entry.count}`).join("、")}`);
+        if (removed.length) parts.push(`削除: ${removed.map((entry) => `${entry.gate}×${entry.count}`).join("、")}`);
+        return parts.length ? `${parts.join("、")}。` : "ゲートの変更はありません。";
+      },
+      askGoBack: "前のバージョンに戻す",
+      askDisconnected: "実行が完了する前に接続が切れました。処理は継続している可能性があります。",
+      askOpenRun: "実行結果を見る",
       hideInspector: "詳細を隠す",
       showInspector: "回路の詳細",
       circuitRestored: "保存済み回路を読み込みました。検証して保存するまで、編集はこの下書きにのみ反映されます。",

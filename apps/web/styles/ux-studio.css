@@ -348,7 +348,8 @@
   grid-template-columns: minmax(0, 1fr) minmax(240px, 300px);
   border-bottom: 1px solid var(--border-0);
 }
-.mj-circuit-workbench.is-readonly {
+.mj-circuit-workbench.is-readonly,
+.mj-circuit-workbench.mj-circuit-workbench--solo {
   grid-template-columns: minmax(0, 1fr);
 }
 .mj-circuit-workbench > .mj-circuit-stage {
@@ -424,6 +425,48 @@
 }
 .mj-circuit-gate.is-future {
   opacity: 0.32;
+}
+.mj-circuit-gate--nested rect:not(.mj-circuit-hit) {
+  stroke-width: 1;
+}
+/* An open block's bracket: a labelled box behind its inline children. Nesting
+   depth widens the border slightly so a block-inside-a-block is legible. */
+.mj-circuit-bracket-box {
+  fill: color-mix(in srgb, var(--accent-2) 5%, transparent);
+  stroke: color-mix(in srgb, var(--accent-2) 45%, var(--border-0));
+  stroke-dasharray: 4 3;
+  stroke-width: 1.25;
+}
+.mj-circuit-bracket[data-depth="0"] .mj-circuit-bracket-box {
+  stroke-width: 1.5;
+}
+.mj-circuit-bracket-chip {
+  cursor: pointer;
+}
+.mj-circuit-bracket-chip rect {
+  fill: color-mix(in srgb, var(--accent-2) 16%, var(--bg-1));
+  stroke: color-mix(in srgb, var(--accent-2) 55%, var(--border-0));
+}
+.mj-circuit-bracket-chip:hover rect,
+.mj-circuit-bracket-chip:focus-visible rect {
+  stroke: var(--accent);
+  stroke-width: 1.5;
+}
+.mj-circuit-bracket-chip:focus-visible {
+  outline: none;
+}
+.mj-circuit-bracket-name {
+  fill: var(--text-1);
+  font-size: 11px;
+}
+.mj-circuit-bracket-close {
+  fill: var(--text-2);
+  font-size: 13px;
+  text-anchor: end;
+}
+.mj-circuit-bracket-chip:hover .mj-circuit-bracket-close,
+.mj-circuit-bracket-chip:focus-visible .mj-circuit-bracket-close {
+  fill: var(--accent);
 }
 .mj-circuit-tick {
   fill: var(--text-2);
@@ -825,6 +868,43 @@
   margin-left: auto;
 }
 
+/* ── Block editor ───────────────────────────────────────────────────────── */
+.mj-edit-block-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 120;
+  display: grid;
+  place-items: center;
+  padding: var(--sp-4);
+  background: color-mix(in srgb, var(--bg-0) 55%, transparent);
+  backdrop-filter: blur(3px);
+  animation: mj-shortcut-fade 140ms var(--ease-out-ui) both;
+}
+.mj-edit-block-panel {
+  display: grid;
+  gap: var(--sp-3);
+  width: min(760px, 100%);
+  max-height: calc(100dvh - var(--sp-8));
+  overflow-y: auto;
+  padding: var(--sp-5);
+  border: 1px solid var(--border-0);
+  border-radius: var(--radius-card);
+  background: var(--bg-1);
+  box-shadow: var(--shadow-popover);
+}
+.mj-edit-block-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--sp-3);
+}
+.mj-edit-block-head h3 {
+  margin: 0;
+  color: var(--text-0);
+  font-size: var(--fs-16);
+  font-weight: 600;
+}
+
 /* ── Keyboard sheet ─────────────────────────────────────────────────────── */
 .mj-shortcut-backdrop {
   position: fixed;
@@ -973,8 +1053,172 @@
   .mj-gate-inspector,
   .mj-shortcut-backdrop,
   .mj-studio-simulation-record .mj-sim-chart-fill,
-  .mj-studio-live-pill::before {
+  .mj-studio-live-pill::before,
+  .mj-example-notes-list li,
+  .mj-edit-block-overlay {
     animation: none;
     transition: none;
   }
+}
+
+/* ── Block library, example gallery, notes panel, Ask Leona ───────────────── */
+.mj-blocks-list {
+  display: grid;
+  gap: var(--sp-4);
+  max-height: 60vh;
+  overflow-y: auto;
+}
+.mj-blocks-category h4 {
+  margin: 0 0 var(--sp-2);
+  color: var(--text-2);
+  font-size: var(--fs-12);
+  font-weight: 500;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+.mj-block-card {
+  border: 1px solid var(--border-0);
+  border-radius: var(--radius-card);
+  margin-bottom: var(--sp-2);
+  overflow: hidden;
+}
+.mj-block-card-head {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--sp-1);
+  width: 100%;
+  padding: var(--sp-3);
+  border: 0;
+  background: var(--bg-1);
+  color: var(--text-0);
+  text-align: left;
+  cursor: pointer;
+}
+.mj-block-card-head span {
+  color: var(--text-2);
+  font-size: var(--fs-12);
+}
+.mj-block-card-body {
+  display: grid;
+  gap: var(--sp-3);
+  padding: var(--sp-3);
+  border-top: 1px solid var(--border-0);
+}
+.mj-block-param {
+  display: grid;
+  gap: var(--sp-1);
+  font-size: var(--fs-12);
+  color: var(--text-2);
+}
+.mj-block-param input {
+  padding: var(--sp-2);
+  border: 1px solid var(--border-0);
+  border-radius: var(--radius-control);
+  background: var(--bg-0);
+  color: var(--text-0);
+}
+
+.mj-example-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: var(--sp-3);
+  max-height: 65vh;
+  overflow-y: auto;
+}
+.mj-example-card {
+  display: grid;
+  gap: var(--sp-2);
+  padding: var(--sp-3);
+  border: 1px solid var(--border-0);
+  border-radius: var(--radius-card);
+  background: var(--bg-1);
+}
+.mj-example-card h4 {
+  margin: 0;
+  color: var(--text-0);
+  font-size: var(--fs-14);
+}
+.mj-example-card p {
+  margin: 0;
+  color: var(--text-2);
+  font-size: var(--fs-12);
+}
+
+.mj-example-notes {
+  padding: var(--sp-4);
+  border-top: 1px solid var(--border-0);
+}
+.mj-example-notes-list {
+  display: grid;
+  gap: var(--sp-2);
+  margin: var(--sp-2) 0;
+  padding: 0;
+  list-style: none;
+}
+.mj-example-notes-list li {
+  padding: var(--sp-2) var(--sp-3);
+  border-radius: var(--radius-control);
+  color: var(--text-2);
+  font-size: var(--fs-12);
+  transition: background-color 160ms var(--ease-out-ui), color 160ms var(--ease-out-ui);
+}
+.mj-example-notes-list li.is-current {
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  color: var(--text-0);
+  font-weight: 500;
+}
+.mj-example-readout {
+  padding: var(--sp-3);
+  border-radius: var(--radius-control);
+  background: color-mix(in srgb, var(--accent-2) 10%, transparent);
+  color: var(--text-0);
+  font-size: var(--fs-12);
+}
+
+.mj-ask-leona {
+  display: grid;
+  gap: var(--sp-2);
+  padding: var(--sp-3) 0;
+  border-bottom: 1px solid var(--border-0);
+}
+.mj-ask-leona h3 {
+  margin: 0;
+  color: var(--text-2);
+  font-size: var(--fs-12);
+  font-weight: 500;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.mj-ask-leona-form {
+  display: flex;
+  gap: var(--sp-2);
+}
+.mj-ask-leona-form input {
+  flex: 1;
+  padding: var(--sp-2) var(--sp-3);
+  border: 1px solid var(--border-0);
+  border-radius: var(--radius-control);
+  background: var(--bg-0);
+  color: var(--text-0);
+}
+.mj-ask-leona-stages {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.mj-ask-leona-stages li {
+  padding: var(--sp-1) var(--sp-2);
+  border: 1px solid var(--border-0);
+  border-radius: var(--radius-pill, 999px);
+  color: var(--text-2);
+  font-size: var(--fs-12);
+  transition: color 160ms var(--ease-out-ui), border-color 160ms var(--ease-out-ui);
+}
+.mj-ask-leona-stages li.is-done {
+  border-color: color-mix(in srgb, var(--accent) 55%, var(--border-0));
+  color: var(--text-0);
 }

@@ -216,6 +216,70 @@ function cirqDefinition(gate: CustomGateDefinition, customGates: CustomGateDefin
   ];
 }
 
+/**
+ * Whether saving `newSteps` as the body of `definitionId` would make that
+ * block (directly or through another block it calls) contain itself. Checked
+ * at save time, before a block-edit panel is allowed to write the new
+ * definition — a definition already on disk is never re-checked against its
+ * own unedited body, only a proposed replacement.
+ */
+export function customGateDefinitionHasCycle(
+  definitionId: string,
+  newSteps: BuilderStep[],
+  customGates: CustomGateDefinition[],
+): boolean {
+  const byId = new Map(customGates.map((gate) => [gate.id, gate]));
+  const visit = (steps: BuilderStep[], visited: ReadonlySet<string>): boolean => {
+    for (const step of steps) {
+      if (step.gate !== "CUSTOM" || !step.customGateId) continue;
+      if (step.customGateId === definitionId) return true;
+      if (visited.has(step.customGateId)) continue;
+      const nested = byId.get(step.customGateId);
+      if (nested && visit(nested.steps, new Set(visited).add(step.customGateId))) return true;
+    }
+    return false;
+  };
+  return visit(newSteps, new Set());
+}
+
+/** How many places instantiate this block — the top-level canvas plus every
+ * other definition's own steps. Saving a block's definition changes all of
+ * them; a block-edit panel shows this count before Save commits. */
+export function customGateUsageCount(
+  definitionId: string,
+  steps: BuilderStep[],
+  customGates: CustomGateDefinition[],
+): number {
+  const uses = (list: BuilderStep[]) => list.filter((step) => step.gate === "CUSTOM" && step.customGateId === definitionId).length;
+  return uses(steps) + customGates.reduce((sum, gate) => sum + (gate.id === definitionId ? 0 : uses(gate.steps)), 0);
+}
+
+/**
+ * Replace one CUSTOM step with its definition's own steps, in place, one
+ * level — a nested block inside the definition stays a CUSTOM step rather
+ * than being flattened further. Returns null instead of guessing when the
+ * step is missing, is not a CUSTOM step, or its definition is opaque or empty
+ * (an opaque block has no steps to ungroup into).
+ */
+export function ungroupCustomGateStep(
+  steps: BuilderStep[],
+  stepId: string,
+  customGates: CustomGateDefinition[],
+): BuilderStep[] | null {
+  const index = steps.findIndex((step) => step.id === stepId);
+  if (index === -1) return null;
+  const target = steps[index];
+  if (target.gate !== "CUSTOM" || !target.customGateId) return null;
+  const definition = customGates.find((gate) => gate.id === target.customGateId);
+  if (!definition || definition.opaque || !definition.steps.length) return null;
+  const replacement = definition.steps.map((child) => ({
+    ...child,
+    id: createBuilderStepId(`${target.id}-ungrouped`),
+    qubits: child.qubits.map((qubit) => target.qubits[qubit]),
+  }));
+  return [...steps.slice(0, index), ...replacement, ...steps.slice(index + 1)];
+}
+
 export function flattenBuilderSteps(
   steps: BuilderStep[],
   customGates: CustomGateDefinition[],

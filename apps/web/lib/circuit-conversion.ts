@@ -52,6 +52,11 @@ export function parseCircuitSource(
 ): ParsedBuilderCircuit | null {
   const key = circuitFramework(framework).key;
   if (key !== "qiskit" && key !== "pennylane" && key !== "cirq" && key !== "openqasm3") return null;
+  // OpenQASM 2.0 has no tab or emitter of its own — it is import-only — so a
+  // pasted or opened QASM 2 source is recognized by content under the same
+  // "OpenQASM 3.0" tab a QASM 3 source would use (see `circuitFrameworkOrNull`,
+  // which also resolves the "OpenQASM 2.0" framework label onto this same key).
+  if (key === "openqasm3" && looksLikeOpenQasm2(code)) return parseBuilderCircuit(code, "openqasm2", maxQubits);
   return parseBuilderCircuit(code, key, maxQubits);
 }
 
@@ -121,6 +126,13 @@ export function allCircuitConversions(
 
 export function looksLikeOpenQasm3(value: string): boolean {
   return /^\s*OPENQASM\s+3(?:\.0)?\s*;/i.test(value);
+}
+
+/** The format most published circuits actually ship in. Import-only: there is
+ * no OpenQASM 2 tab or emitter, so a pasted or opened source is recognized by
+ * this header and routed to `parseOpenQasm2` under the OpenQASM 3 slot. */
+export function looksLikeOpenQasm2(value: string): boolean {
+  return /^\s*OPENQASM\s+2(?:\.0)?\s*;/i.test(value);
 }
 
 type StandardGate = Exclude<BuilderStep["gate"], "CUSTOM" | "M">;

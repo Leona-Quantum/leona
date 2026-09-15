@@ -3,6 +3,7 @@ import test from "node:test";
 
 import { generateBuilderCode, type BuilderStep } from "./studio-builder.ts";
 import { parseBuilderCircuit } from "./studio-parse.ts";
+import { circuitSignature } from "./studio-sync.ts";
 
 const steps: BuilderStep[] = [
   { id: "s1", gate: "H", qubits: [0] },
@@ -147,4 +148,185 @@ c = measure q;`;
   assert.equal(parseBuilderCircuit(missingBits, "openqasm3"), null);
   assert.equal(parseBuilderCircuit(mismatchedBits, "openqasm3"), null);
   assert.equal(parseBuilderCircuit(outOfRange, "openqasm3"), null);
+});
+
+// The format most published circuits actually ship in. These are the four
+// listings the brief asks for: a Bell pair, a textbook 3-qubit QFT written
+// with cu1/swap, a Toffoli, and a 2-qubit Grover iteration in the H-X-CZ-X-H
+// diffuser form every textbook uses.
+const OPENQASM2_BELL = `OPENQASM 2.0;
+include "qelib1.inc";
+qreg q[2];
+creg c[2];
+h q[0];
+cx q[0],q[1];
+measure q[0] -> c[0];
+measure q[1] -> c[1];`;
+
+const OPENQASM2_QFT3 = `OPENQASM 2.0;
+include "qelib1.inc";
+qreg q[3];
+creg c[3];
+h q[0];
+cu1(pi/2) q[1],q[0];
+cu1(pi/4) q[2],q[0];
+h q[1];
+cu1(pi/2) q[2],q[1];
+h q[2];
+swap q[0],q[2];
+measure q[0] -> c[0];
+measure q[1] -> c[1];
+measure q[2] -> c[2];`;
+
+const OPENQASM2_TOFFOLI = `OPENQASM 2.0;
+include "qelib1.inc";
+qreg q[3];
+creg c[3];
+ccx q[0],q[1],q[2];
+measure q[0] -> c[0];
+measure q[1] -> c[1];
+measure q[2] -> c[2];`;
+
+const OPENQASM2_GROVER2 = `OPENQASM 2.0;
+include "qelib1.inc";
+qreg q[2];
+creg c[2];
+h q[0];
+h q[1];
+cz q[0],q[1];
+h q[0];
+h q[1];
+x q[0];
+x q[1];
+cz q[0],q[1];
+x q[0];
+x q[1];
+h q[0];
+h q[1];
+measure q[0] -> c[0];
+measure q[1] -> c[1];`;
+
+test("OpenQASM 2.0 parses the four required textbook listings", () => {
+  const bell = parseBuilderCircuit(OPENQASM2_BELL, "openqasm2");
+  assert.ok(bell);
+  assert.equal(bell.qubitCount, 2);
+  assert.deepEqual(shape(bell.steps), [
+    { gate: "H", qubits: [0] },
+    { gate: "CX", qubits: [0, 1] },
+    { gate: "M", qubits: [0] },
+    { gate: "M", qubits: [1] },
+  ]);
+
+  const qft3 = parseBuilderCircuit(OPENQASM2_QFT3, "openqasm2");
+  assert.ok(qft3);
+  assert.equal(qft3.qubitCount, 3);
+  assert.deepEqual(shape(qft3.steps), [
+    { gate: "H", qubits: [0] },
+    { gate: "CP", qubits: [1, 0], param: "pi/2" },
+    { gate: "CP", qubits: [2, 0], param: "pi/4" },
+    { gate: "H", qubits: [1] },
+    { gate: "CP", qubits: [2, 1], param: "pi/2" },
+    { gate: "H", qubits: [2] },
+    { gate: "SWAP", qubits: [0, 2] },
+    { gate: "M", qubits: [0] },
+    { gate: "M", qubits: [1] },
+    { gate: "M", qubits: [2] },
+  ]);
+
+  const toffoli = parseBuilderCircuit(OPENQASM2_TOFFOLI, "openqasm2");
+  assert.ok(toffoli);
+  assert.equal(toffoli.qubitCount, 3);
+  assert.deepEqual(shape(toffoli.steps), [
+    { gate: "CCX", qubits: [0, 1, 2] },
+    { gate: "M", qubits: [0] },
+    { gate: "M", qubits: [1] },
+    { gate: "M", qubits: [2] },
+  ]);
+
+  const grover2 = parseBuilderCircuit(OPENQASM2_GROVER2, "openqasm2");
+  assert.ok(grover2);
+  assert.equal(grover2.qubitCount, 2);
+  assert.deepEqual(shape(grover2.steps), [
+    { gate: "H", qubits: [0] },
+    { gate: "H", qubits: [1] },
+    { gate: "CZ", qubits: [0, 1] },
+    { gate: "H", qubits: [0] },
+    { gate: "H", qubits: [1] },
+    { gate: "X", qubits: [0] },
+    { gate: "X", qubits: [1] },
+    { gate: "CZ", qubits: [0, 1] },
+    { gate: "X", qubits: [0] },
+    { gate: "X", qubits: [1] },
+    { gate: "H", qubits: [0] },
+    { gate: "H", qubits: [1] },
+    { gate: "M", qubits: [0] },
+    { gate: "M", qubits: [1] },
+  ]);
+});
+
+test("OpenQASM 2.0 round-trips through the OpenQASM 3 emitter with the same structural signature", () => {
+  for (const source of [OPENQASM2_BELL, OPENQASM2_QFT3, OPENQASM2_TOFFOLI, OPENQASM2_GROVER2]) {
+    const parsed = parseBuilderCircuit(source, "openqasm2");
+    assert.ok(parsed, source);
+    const generated = generateBuilderCode(parsed.steps, parsed.qubitCount).openqasm3;
+    const reparsed = parseBuilderCircuit(generated, "openqasm3");
+    assert.ok(reparsed, generated);
+    assert.equal(
+      circuitSignature({ qubitCount: reparsed.qubitCount, steps: reparsed.steps }),
+      circuitSignature({ qubitCount: parsed.qubitCount, steps: parsed.steps }),
+      source,
+    );
+  }
+});
+
+test("OpenQASM 2.0 stays fail-closed on a gate definition, `if`, `reset`, u2/u3, and a second register", () => {
+  const withGateDefinition = `OPENQASM 2.0;
+include "qelib1.inc";
+qreg q[1];
+gate foo a { h a; }
+foo q[0];`;
+  assert.equal(parseBuilderCircuit(withGateDefinition, "openqasm2"), null);
+
+  const withIf = `OPENQASM 2.0;
+include "qelib1.inc";
+qreg q[1];
+creg c[1];
+h q[0];
+if(c==1) x q[0];`;
+  assert.equal(parseBuilderCircuit(withIf, "openqasm2"), null);
+
+  const withReset = `OPENQASM 2.0;
+include "qelib1.inc";
+qreg q[1];
+h q[0];
+reset q[0];`;
+  assert.equal(parseBuilderCircuit(withReset, "openqasm2"), null);
+
+  const withU3 = `OPENQASM 2.0;
+include "qelib1.inc";
+qreg q[1];
+u3(pi/2, 0, pi) q[0];`;
+  assert.equal(parseBuilderCircuit(withU3, "openqasm2"), null);
+
+  const withU2 = `OPENQASM 2.0;
+include "qelib1.inc";
+qreg q[1];
+u2(0, pi) q[0];`;
+  assert.equal(parseBuilderCircuit(withU2, "openqasm2"), null);
+
+  const secondQreg = `OPENQASM 2.0;
+include "qelib1.inc";
+qreg q[1];
+qreg r[1];
+h q[0];`;
+  assert.equal(parseBuilderCircuit(secondQreg, "openqasm2"), null);
+
+  const partialMeasurement = `OPENQASM 2.0;
+include "qelib1.inc";
+qreg q[2];
+creg c[2];
+h q[0];
+h q[1];
+measure q[0] -> c[0];`;
+  assert.equal(parseBuilderCircuit(partialMeasurement, "openqasm2"), null);
 });

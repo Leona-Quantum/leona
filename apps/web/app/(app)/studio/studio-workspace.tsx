@@ -22,7 +22,17 @@ import {
   type ProjectFilter,
 } from "../../../lib/studio-discovery";
 import type { PublicLocale } from "../../../lib/public-locale";
-import { ANGLE_GATES, BUILDER_GATES, builderGateArity, builderStepLabel, createBuilderStepId, generateBuilderCode, type BuilderCodeVariants, type BuilderGate, type BuilderStep, type BuiltinBuilderGate, type CustomGateDefinition } from "../../../lib/studio-builder";
+import { ANGLE_GATES, BUILDER_GATES, builderGateArity, builderStepLabel, createBuilderStepId, customGateUsageCount, generateBuilderCode, ungroupCustomGateStep, type BuilderCodeVariants, type BuilderGate, type BuilderStep, type BuiltinBuilderGate, type CustomGateDefinition } from "../../../lib/studio-builder";
+import { popStudioHistory, pushStudioHistory, type StudioHistorySnapshot } from "../../../lib/studio-history";
+import { EditBlockPanel } from "./studio-edit-block-panel";
+import { BLOCK_TEMPLATES, instantiateBlock, validateBlockParams, type BlockParams, type BlockTemplate } from "../../../lib/circuit-blocks";
+import { BlocksPanel } from "./studio-blocks-panel";
+import { workedExample, type WorkedExample } from "../../../lib/worked-examples";
+import { cloneWorkedExampleDraft } from "../../../lib/studio-example-draft";
+import { ExampleGallery } from "./studio-example-gallery";
+import { ExampleNotesPanel } from "./studio-example-notes-panel";
+import { circuitChangeSummary, type CircuitChangeSummary } from "../../../lib/circuit-change-summary";
+import { AskLeonaBox } from "./studio-ask-leona";
 import { loadStoredCircuit, saveStoredCircuit } from "../../../lib/studio-circuits";
 import { circuitSyncState, type CircuitSyncState } from "../../../lib/studio-sync";
 import { looksLikeOpenQasm3, parseCircuitSource, parseInterchangeCircuit, reconstructInterchangeCircuit } from "../../../lib/circuit-conversion";
@@ -130,11 +140,22 @@ const STARTER_SEED: Omit<BuilderSeed, "key"> = {
   operationCount: STARTER_STEPS.length,
 };
 
-export function StudioWorkspace({ artifactId, newDraft = false, locale = "en", limits = TIER_LIMITS.free }: { artifactId?: string; newDraft?: boolean; locale?: PublicLocale; limits?: CpuSimulationLimits }) {
+export function StudioWorkspace({ artifactId, newDraft = false, exampleId, locale = "en", limits = TIER_LIMITS.free }: { artifactId?: string; newDraft?: boolean; exampleId?: string; locale?: PublicLocale; limits?: CpuSimulationLimits }) {
   const copy = WORKSPACE_COPY[locale].studio;
   const [artifacts, setArtifacts] = useState<LibraryArtifact[]>([]);
   const [artifact, setArtifact] = useState<LibraryArtifact | null>(null);
-  const [showEditor, setShowEditor] = useState(Boolean(artifactId || newDraft));
+  const [showEditor, setShowEditor] = useState(Boolean(artifactId || newDraft || exampleId));
+  const [activeExample, setActiveExample] = useState<WorkedExample | null>(null);
+  const [showGallery, setShowGallery] = useState(false);
+  const [askChangeSummary, setAskChangeSummary] = useState<CircuitChangeSummary | null>(null);
+  const [askBackup, setAskBackup] = useState<{
+    artifact: LibraryArtifact | null;
+    builderSeed: BuilderSeed;
+    title: string;
+    drafts: BuilderCodeVariants;
+    framework: StudioFramework;
+    activeExample: WorkedExample | null;
+  } | null>(null);
   const [query, setQuery] = useState("");
   // The workspace's projects, read from the mirror the sidebar hydrates rather
   // than fetched again here. `hydrateArtifactProjects` ends in
@@ -270,11 +291,24 @@ export function StudioWorkspace({ artifactId, newDraft = false, locale = "en", l
             setMessage(copy.selectedUnavailable);
           }
         });
+    } else if (exampleId) {
+      const example = workedExample(exampleId);
+      if (example) applyExample(example);
+      else {
+        // An unknown id gives a normal new draft plus a short notice, rather
+        // than an empty page with no explanation.
+        setArtifactHydration("ready");
+        setShowEditor(true);
+        seedCounter.current += 1;
+        seedBuilder({ key: `draft-${seedCounter.current}`, ...STARTER_SEED });
+        setMessage(copy.exampleNotFound);
+      }
     }
     return () => {
       active = false;
     };
-  }, [artifactId, copy, loadAttempt]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- applyExample is stable by construction (module-scope helpers only)
+  }, [artifactId, exampleId, copy, loadAttempt]);
 
   useEffect(() => {
     setSimulationRecords(artifact ? loadCpuSimulationRecords(artifact.id) : []);
@@ -545,6 +579,95 @@ export function StudioWorkspace({ artifactId, newDraft = false, locale = "en", l
   function seedBuilder(seed: BuilderSeed) {
     setBuilderSeed(seed);
     setCanvasCircuit({ qubitCount: seed.qubitCount, steps: seed.steps, customGates: seed.customGates });
+  }
+
+  /** Load a worked example as a fresh, editable draft — the "start from a
+   * known circuit" gallery and `?example=` both go through this. Ids are
+   * cloned (cloneWorkedExampleDraft) since the registry's are deterministic,
+   * which is right for a static list and wrong for a live draft. */
+  function applyExample(example: WorkedExample) {
+    setArtifactHydration("ready");
+    setShowEditor(true);
+    setArtifact(null);
+    setTitle(locale === "ja" ? example.title.ja : example.title.en);
+    const draft = cloneWorkedExampleDraft(example);
+    const generated = generateBuilderCode(draft.steps, draft.qubitCount, draft.customGates);
+    setDrafts(generated);
+    setDraftNotes({});
+    setDraftFallbacks({});
+    setFramework("qiskit");
+    setCode(generated.qiskit);
+    selectPanel("visual");
+    setRunId(null);
+    setVerificationStale(false);
+    // The canvas draws `draft.steps` (fresh, cloned ids), not `example.steps`
+    // (the registry's deterministic ones) — the notes panel must compare
+    // against the same ids the diagram and playhead use, so it carries the
+    // draft's remapped notes, not the example's original ones.
+    setActiveExample({ ...example, notes: draft.notes });
+    setAskChangeSummary(null);
+    setAskBackup(null);
+    seedCounter.current += 1;
+    seedBuilder({
+      key: `example-${example.id}-${seedCounter.current}`,
+      artifactIdentity: null,
+      qubitCount: draft.qubitCount,
+      steps: draft.steps,
+      customGates: draft.customGates,
+      readOnly: false,
+      readOnlyReasons: [],
+      operationCount: draft.steps.length,
+    });
+    setMessage(null);
+  }
+
+  /** The gallery's own entry point: confirms before replacing a draft that
+   * already has something drawn on it. A fresh `?example=` mount has nothing
+   * to lose and calls `applyExample` directly instead of this. */
+  function requestLoadExample(example: WorkedExample) {
+    if (canvasCircuit.steps.length > 0 && !window.confirm(copy.unsavedChangesConfirm)) return;
+    applyExample(example);
+    setShowGallery(false);
+  }
+
+  /** Ask Leona saved a revised version: load it in place (no navigation),
+   * keeping a one-shot backup of everything about to be replaced so "go
+   * back" can restore it, and diff the circuit that was open against the one
+   * the new version parses to for the "gates added/removed" summary. */
+  async function handleAskSaved(artifactId: string) {
+    const backup = { artifact, builderSeed, title, drafts, framework, activeExample };
+    const beforeSteps = canvasCircuit.steps;
+    try {
+      const loaded = await loadArtifact(artifactId);
+      if (!loaded) {
+        setMessage(copy.selectedUnavailable);
+        return;
+      }
+      setAskBackup(backup);
+      applyArtifact(loaded);
+      setActiveExample(null);
+      const afterFramework = normalizeFramework(loaded.framework) ?? framework;
+      const afterParsed = loaded.code ? parseCircuitSource(loaded.code, afterFramework) : null;
+      setAskChangeSummary(afterParsed ? circuitChangeSummary(beforeSteps, afterParsed.steps) : null);
+    } catch {
+      setMessage(copy.selectedUnavailable);
+    }
+  }
+
+  /** The one-shot undo for handleAskSaved — restores exactly what that
+   * captured, then clears the backup so a second "go back" has nothing left
+   * to do (matching "one undo step" rather than a multi-level history). */
+  function handleAskGoBack() {
+    if (!askBackup) return;
+    setArtifact(askBackup.artifact);
+    setTitle(askBackup.title);
+    setDrafts(askBackup.drafts);
+    setFramework(askBackup.framework);
+    setCode(askBackup.drafts[askBackup.framework]);
+    setActiveExample(askBackup.activeExample);
+    seedBuilder(askBackup.builderSeed);
+    setAskBackup(null);
+    setAskChangeSummary(null);
   }
 
   /** Redraw the canvas from whatever the Code tab currently holds. */
@@ -926,6 +1049,7 @@ export function StudioWorkspace({ artifactId, newDraft = false, locale = "en", l
                       </div>
                     </form>
                   </details>
+                  <button className="mj-secondary-button" type="button" onClick={() => setShowGallery(true)}>{copy.galleryOpen}</button>
                   {artifact ? <button className="mj-secondary-button" type="button" onClick={downloadDraft} data-tour="studio-download-export">{copy.downloadExport}</button> : null}
                   {!artifact ? (
                     <button
@@ -951,6 +1075,17 @@ export function StudioWorkspace({ artifactId, newDraft = false, locale = "en", l
                   </button>
                 </div>
               </div>
+
+              <AskLeonaBox
+                code={code}
+                framework={sourceFramework}
+                artifactVersionId={artifact?.currentVersionId}
+                onSaved={(id) => void handleAskSaved(id)}
+                changeSummary={askChangeSummary}
+                canGoBack={askBackup !== null}
+                onGoBack={handleAskGoBack}
+                copy={copy}
+              />
 
               <div className="mj-studio-tabbar">
                 <PanelTabs
@@ -1050,6 +1185,8 @@ export function StudioWorkspace({ artifactId, newDraft = false, locale = "en", l
                       setVerificationStale(Boolean(artifact));
                       setMessage(copy.appliedToCode);
                     }}
+                    activeExample={activeExample}
+                    locale={locale}
                   />
                   {panel === "simulation" ? (
                     <SimulationPanel
@@ -1245,6 +1382,9 @@ export function StudioWorkspace({ artifactId, newDraft = false, locale = "en", l
         )}
       </div>
       {showEditor && shortcutsOpen ? <ShortcutSheet onClose={closeShortcuts} copy={copy} /> : null}
+      {showGallery ? (
+        <ExampleGallery locale={locale} onLoad={requestLoadExample} onClose={() => setShowGallery(false)} copy={copy} />
+      ) : null}
     </div>
   );
 }
@@ -1349,18 +1489,20 @@ function StudioStatusPill({ status, locale }: { status: LibraryArtifact["status"
 }
 
 
-const ANGLE_OPTIONS = ["pi/8", "pi/4", "pi/2", "pi", "3*pi/2", "2*pi"];
+// Exported so the block-edit panel (studio-edit-block-panel.tsx) can offer
+// the same angle choices and gate groupings, rather than a second hand-kept copy.
+export const ANGLE_OPTIONS = ["pi/8", "pi/4", "pi/2", "pi", "3*pi/2", "2*pi"];
 
 /** CP, RZZ and CCX are `entangler`-family by `gateFamily` (for diagram/CSS
  * purposes), but dumping them into "twoQubit" would both mislabel CCX (three
  * wires, not two) and make "Pick CX, CZ or SWAP" a lie. They get their own
  * compact overflow group instead; SDG/TDG (still `clifford`) and P (still
  * `rotation`) fold into their existing, still-accurate groups automatically. */
-const MORE_PALETTE_GATES: BuiltinBuilderGate[] = ["CP", "RZZ", "CCX"];
+export const MORE_PALETTE_GATES: BuiltinBuilderGate[] = ["CP", "RZZ", "CCX"];
 
 /** The palette in five labelled groups, derived from the gate list so a new
  * gate cannot silently fall out of the palette. */
-const PALETTE_GROUPS: Array<{ id: "oneQubit" | "rotations" | "twoQubit" | "measure" | "more"; family: GateFamily | null; gates: BuiltinBuilderGate[] }> = [
+export const PALETTE_GROUPS: Array<{ id: "oneQubit" | "rotations" | "twoQubit" | "measure" | "more"; family: GateFamily | null; gates: BuiltinBuilderGate[] }> = [
   ...(
     [["oneQubit", "clifford"], ["rotations", "rotation"], ["twoQubit", "entangler"], ["measure", "measure"]] as const
   ).map(([id, family]) => ({
@@ -1374,13 +1516,20 @@ const PALETTE_GROUPS: Array<{ id: "oneQubit" | "rotations" | "twoQubit" | "measu
 // Exported for the focused CircuitBuilder form tests. The custom-gate <form>
 // inside it had never been submitted by any check before ai-ops issue 123.
 // Not part of the module's public surface otherwise; StudioWorkspace is.
-export function CircuitBuilder({ seed, framework, selectedGate, onSelectGate, onApply, onCircuitChange, hidden, popout, onTogglePopout, region, copy, syncState, onRebuildFromCode, sourceCode, liveSync = false, onLiveApply, keyboardActive = true }: { seed: BuilderSeed; framework: StudioFramework; selectedGate: string; onSelectGate: (gate: string) => void; onApply: (codes: BuilderCodeVariants) => void; onCircuitChange?: (circuit: { qubitCount: number; steps: BuilderStep[]; customGates: CustomGateDefinition[] }) => void; hidden: boolean; popout: boolean; onTogglePopout: () => void; region?: Record<string, string>; copy: StudioCopy; syncState: CircuitSyncState; onRebuildFromCode: () => void; sourceCode: string; liveSync?: boolean; onLiveApply?: (codes: BuilderCodeVariants) => void; keyboardActive?: boolean }) {
+export function CircuitBuilder({ seed, framework, selectedGate, onSelectGate, onApply, onCircuitChange, hidden, popout, onTogglePopout, region, copy, syncState, onRebuildFromCode, sourceCode, liveSync = false, onLiveApply, keyboardActive = true, activeExample = null, locale = "en" }: { seed: BuilderSeed; framework: StudioFramework; selectedGate: string; onSelectGate: (gate: string) => void; onApply: (codes: BuilderCodeVariants) => void; onCircuitChange?: (circuit: { qubitCount: number; steps: BuilderStep[]; customGates: CustomGateDefinition[] }) => void; hidden: boolean; popout: boolean; onTogglePopout: () => void; region?: Record<string, string>; copy: StudioCopy; syncState: CircuitSyncState; onRebuildFromCode: () => void; sourceCode: string; liveSync?: boolean; onLiveApply?: (codes: BuilderCodeVariants) => void; keyboardActive?: boolean; activeExample?: WorkedExample | null; locale?: PublicLocale }) {
   const [qubitCount, setQubitCount] = useState(seed.qubitCount);
   const [steps, setSteps] = useState<BuilderStep[]>(seed.steps);
   const [pendingQubits, setPendingQubits] = useState<number[]>([]);
   const [angle, setAngle] = useState("pi/2");
   const [selectedStepIds, setSelectedStepIds] = useState<string[]>([]);
   const [customGates, setCustomGates] = useState<CustomGateDefinition[]>(seed.customGates);
+  const [history, setHistory] = useState<StudioHistorySnapshot[]>([]);
+  // View state only: which block instances are drawn open. Never touches
+  // `steps`/`customGates`, so code generation, sync signatures, simulation
+  // and saved drafts are unchanged by opening or closing a block.
+  const [openStepIds, setOpenStepIds] = useState<ReadonlySet<string>>(new Set());
+  const [editingBlockId, setEditingBlockId] = useState<string | null>(null);
+  const [showBlocksPanel, setShowBlocksPanel] = useState(false);
   const [showCustomGateForm, setShowCustomGateForm] = useState(false);
   const [customGateName, setCustomGateName] = useState("");
   const [builderMessage, setBuilderMessage] = useState<string | null>(null);
@@ -1535,14 +1684,23 @@ export function CircuitBuilder({ seed, framework, selectedGate, onSelectGate, on
   }
 
   function undoLast() {
-    const present = new Set(steps.map((step) => step.id));
-    const placed = placedRef.current.filter((id) => present.has(id));
-    const targetId = placed.length ? placed[placed.length - 1] : steps[steps.length - 1]?.id;
-    if (!targetId) return;
-    placedRef.current = placed.filter((id) => id !== targetId);
-    setSteps((current) => current.filter((step) => step.id !== targetId));
-    setSelectedStepIds((current) => current.filter((id) => id !== targetId));
+    const popped = popStudioHistory(history);
+    if (!popped) return;
+    setHistory(popped.past);
+    setQubitCount(popped.snapshot.qubitCount);
+    setSteps(popped.snapshot.steps);
+    setCustomGates(popped.snapshot.customGates);
+    setSelectedStepIds([]);
     setPendingQubits([]);
+  }
+
+  /** Snapshot the current state onto the undo stack, immediately before a
+   * mutation that should be undoable — a gate placement, creating a custom
+   * gate, saving an edited block definition, or ungrouping an instance. See
+   * lib/studio-history.ts for why this replaced the old placed-step-id-only
+   * mechanism, and why a delete does not push here. */
+  function pushHistory() {
+    setHistory((current) => pushStudioHistory(current, { qubitCount, steps, customGates }));
   }
 
   function stepPlayhead(delta: -1 | 1) {
@@ -1554,7 +1712,11 @@ export function CircuitBuilder({ seed, framework, selectedGate, onSelectGate, on
   // and the shortcut sheet is closed. A focused gate's own Delete handler runs
   // first and prevents default, so a key is never applied twice.
   const keyboardRef = useRef({ armGate, undoLast, deleteSelected, stepPlayhead, hasSelection: false, active: false });
-  keyboardRef.current = { armGate, undoLast, deleteSelected, stepPlayhead, hasSelection: selectedStepIds.length > 0, active: keyboardActive && !hidden };
+  // Suspended while the block-edit panel is open — it is a separate overlay
+  // with its own focused-element handlers, and this listener is global
+  // (window-level), so both firing on the same keypress would edit the
+  // canvas underneath while the user believes they are only editing the block.
+  keyboardRef.current = { armGate, undoLast, deleteSelected, stepPlayhead, hasSelection: selectedStepIds.length > 0, active: keyboardActive && !hidden && !editingBlockId };
   useEffect(() => {
     if (seed.readOnly) return;
     const onKey = (event: globalThis.KeyboardEvent) => {
@@ -1596,13 +1758,8 @@ export function CircuitBuilder({ seed, framework, selectedGate, onSelectGate, on
     setBuilderMessage(null);
   }
 
-  // Ids in the order they were placed. A placement can land in front of
-  // trailing measurements (lib/studio-placement), so "the last step in the
-  // list" is no longer "the gate just placed" — Undo reads this instead.
-  const placedRef = useRef<string[]>([]);
-
   function place(step: BuilderStep) {
-    placedRef.current = [...placedRef.current, step.id];
+    pushHistory();
     setSteps((current) => insertBeforeTrailingMeasurements(current, step));
   }
 
@@ -1671,6 +1828,7 @@ export function CircuitBuilder({ seed, framework, selectedGate, onSelectGate, on
       inserted = true;
       return [groupedStep];
     });
+    pushHistory();
     setCustomGates((current) => [...current, definition]);
     setSteps(nextSteps);
     setSelectedStepIds([groupedStep.id]);
@@ -1687,6 +1845,80 @@ export function CircuitBuilder({ seed, framework, selectedGate, onSelectGate, on
     setSelectedStepIds((current) => current.filter((stepId) => steps.some((step) => step.id === stepId && step.customGateId !== id)));
     if (selectedGate === `custom:${id}`) onSelectGate("H");
     setPendingQubits([]);
+  }
+
+  /** Toggle one block instance open or closed, by its view-path id — pure
+   * view state, see the `openStepIds` declaration above. */
+  function toggleOpenStep(viewId: string) {
+    setOpenStepIds((current) => {
+      const next = new Set(current);
+      if (next.has(viewId)) next.delete(viewId);
+      else next.add(viewId);
+      return next;
+    });
+  }
+
+  const singleSelectedCustomStep = selectedStepIds.length === 1
+    ? steps.find((step) => step.id === selectedStepIds[0] && step.gate === "CUSTOM")
+    : undefined;
+  const editingDefinition = singleSelectedCustomStep
+    ? customGates.find((gate) => gate.id === singleSelectedCustomStep.customGateId) ?? null
+    : null;
+
+  /** Save updates the definition, so every instance changes — reflected in
+   * `copy.editBlockUses` inside the panel before this ever runs. Routed
+   * through the same history stack as a placement, so it is one ⌘Z away. */
+  function saveEditedBlock(definitionId: string, newSteps: BuilderStep[]) {
+    pushHistory();
+    setCustomGates((current) => current.map((gate) => gate.id === definitionId ? { ...gate, steps: newSteps } : gate));
+    setEditingBlockId(null);
+    const name = customGates.find((gate) => gate.id === definitionId)?.name ?? "";
+    setBuilderMessage(copy.blockSaved(name, customGateUsageCount(definitionId, steps, customGates)));
+  }
+
+  function ungroupSelected() {
+    if (!singleSelectedCustomStep) return;
+    const result = ungroupCustomGateStep(steps, singleSelectedCustomStep.id, customGates);
+    if (!result) return;
+    pushHistory();
+    setSteps(result);
+    setSelectedStepIds([]);
+    setOpenStepIds((current) => {
+      if (!current.has(singleSelectedCustomStep.id)) return current;
+      const next = new Set(current);
+      next.delete(singleSelectedCustomStep.id);
+      return next;
+    });
+    const name = editingDefinition?.name ?? "";
+    setBuilderMessage(copy.ungrouped(name));
+  }
+
+  /** Insert a block from the library at `startQubit`, through the same
+   * `instantiateBlock` every nested block in circuit-blocks.ts already uses
+   * for id-safe composition, as one undo step. The panel already refused a
+   * register too narrow to hold it; this is the one place that actually
+   * writes the new step, so it re-checks rather than trusting the caller. */
+  function insertBlock(template: BlockTemplate, params: BlockParams, startQubit: number, requiredQubits: number) {
+    if (startQubit + requiredQubits > qubitCount) return;
+    const qubits = Array.from({ length: requiredQubits }, (_, index) => startQubit + index);
+    let built: ReturnType<BlockTemplate["build"]>;
+    try {
+      built = template.build(params);
+    } catch {
+      return;
+    }
+    const instance = instantiateBlock(built, qubits, createBuilderStepId(`block-${template.key}`));
+    pushHistory();
+    setCustomGates((current) => [...current, ...instance.customGates]);
+    setSteps((current) => insertBeforeTrailingMeasurements(current, instance.step));
+    setShowBlocksPanel(false);
+    setSelectedStepIds([instance.step.id]);
+    setBuilderMessage(copy.blockInserted(template.name));
+  }
+
+  function growQubitsForBlock(by: number) {
+    if (by <= 0) return;
+    changeQubitCount(by);
   }
 
   function handleStepKeyDown(stepId: string, event: KeyboardEvent<SVGGElement>) {
@@ -1904,9 +2136,16 @@ export function CircuitBuilder({ seed, framework, selectedGate, onSelectGate, on
             ))}
           </div>
           <div className="mj-builder-controls">
-            <button className="mj-secondary-button" type="button" onClick={undoLast} disabled={!steps.length} title={`${copy.undo} · ⌘/Ctrl Z`}>{copy.undo}</button>
+            <button className="mj-secondary-button" type="button" onClick={undoLast} disabled={!history.length} title={`${copy.undo} · ⌘/Ctrl Z`}>{copy.undo}</button>
             <button className="mj-secondary-button" type="button" onClick={deleteSelected} disabled={!selectedStepIds.length}>{copy.deleteSelected}</button>
             {selectedStepIds.length >= 2 ? <button className="mj-secondary-button" type="button" onClick={() => setShowCustomGateForm(true)}>{copy.groupSelected}</button> : null}
+            {singleSelectedCustomStep && editingDefinition && !editingDefinition.opaque ? (
+              <button className="mj-secondary-button" type="button" onClick={() => setEditingBlockId(singleSelectedCustomStep.customGateId ?? null)}>{copy.editBlock}</button>
+            ) : null}
+            {singleSelectedCustomStep && editingDefinition && !editingDefinition.opaque ? (
+              <button className="mj-secondary-button" type="button" onClick={ungroupSelected}>{copy.ungroupBlock}</button>
+            ) : null}
+            <button className="mj-secondary-button" type="button" onClick={() => setShowBlocksPanel(true)}>{copy.blocksPanelOpen}</button>
             <button className="mj-secondary-button" type="button" onClick={() => { setSteps([]); setSelectedStepIds([]); setPendingQubits([]); setBuilderMessage(null); }} disabled={!steps.length}>{copy.clearAll}</button>
             <span className="mj-builder-controls-divider" aria-hidden="true" />
             <button className="mj-secondary-button" type="button" onClick={() => changeQubitCount(-1)} disabled={qubitCount <= 1}>{copy.removeQubit}</button>
@@ -1999,6 +2238,9 @@ export function CircuitBuilder({ seed, framework, selectedGate, onSelectGate, on
             onPlaceOnQubit: placeOnQubit,
             onSelectStep: selectStep,
             onStepKeyDown: handleStepKeyDown,
+            openStepIds,
+            onToggleOpen: toggleOpenStep,
+            closeBlockLabel: copy.closeBlock,
           }}
           playhead={seed.readOnly ? null : playheadMoment}
           onInspect={setInspection}
@@ -2016,7 +2258,42 @@ export function CircuitBuilder({ seed, framework, selectedGate, onSelectGate, on
           />
         )}
       </div>
+      {!seed.readOnly && activeExample ? (
+        <ExampleNotesPanel
+          example={activeExample}
+          steps={steps}
+          columns={moments.columns}
+          qubitCount={qubitCount}
+          customGates={customGates}
+          moment={playheadMoment}
+          atEnd={playheadMoment >= moments.count}
+          locale={locale}
+          copy={copy}
+        />
+      ) : null}
       {inspection && !hidden ? <GateInspectorCard inspection={inspection} customGates={customGates} copy={copy} /> : null}
+      {showBlocksPanel ? (
+        <BlocksPanel
+          qubitCount={qubitCount}
+          onInsert={insertBlock}
+          onGrowQubits={growQubitsForBlock}
+          onClose={() => setShowBlocksPanel(false)}
+          copy={copy}
+        />
+      ) : null}
+      {editingBlockId ? (() => {
+        const definition = customGates.find((gate) => gate.id === editingBlockId);
+        return definition ? (
+          <EditBlockPanel
+            definition={definition}
+            topLevelSteps={steps}
+            customGates={customGates}
+            copy={copy}
+            onSave={(newSteps) => saveEditedBlock(definition.id, newSteps)}
+            onCancel={() => setEditingBlockId(null)}
+          />
+        ) : null;
+      })() : null}
 
       <div className="mj-studio-canvas-footer" aria-live="polite">
         <span>{seed.readOnly ? copy.readOnlyHint : builderMessage ?? (pendingQubits.length ? copy.pickTarget : selectedStepIds.length ? copy.selectedCount(selectedStepIds.length) : steps.length ? copy.builderHint : copy.builderEmpty)}</span>
