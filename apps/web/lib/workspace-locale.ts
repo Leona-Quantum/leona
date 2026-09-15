@@ -530,6 +530,8 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
     askStageLabel: Record<"planned" | "coded" | "sandboxed" | "verified" | "saved", string>;
     askChangeSummary: (added: Array<{ gate: string; count: number }>, removed: Array<{ gate: string; count: number }>) => string;
     askGoBack: string;
+    askDisconnected: string;
+    askOpenRun: string;
     hideInspector: string;
     showInspector: string;
     circuitRestored: string;
@@ -1379,6 +1381,8 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
         return parts.length ? `${parts.join("; ")}.` : "No gates changed.";
       },
       askGoBack: "Go back to the previous version",
+      askDisconnected: "The connection closed before the run finished. It may still complete.",
+      askOpenRun: "Open the run to see its result.",
       hideInspector: "Hide inspector",
       showInspector: "Inspector",
       circuitRestored: "Circuit loaded from the saved artifact. Edits stay in this draft until you verify & save.",
@@ -2314,6 +2318,8 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
         return parts.length ? `${parts.join("、")}。` : "ゲートの変更はありません。";
       },
       askGoBack: "前のバージョンに戻す",
+      askDisconnected: "実行が完了する前に接続が切れました。処理は継続している可能性があります。",
+      askOpenRun: "実行結果を見る",
       hideInspector: "詳細を隠す",
       showInspector: "回路の詳細",
       circuitRestored: "保存済み回路を読み込みました。検証して保存するまで、編集はこの下書きにのみ反映されます。",

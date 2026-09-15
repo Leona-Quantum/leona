@@ -66,3 +66,38 @@ test("errorMessage is only ever set once the run has actually failed", () => {
   const running = reviseFollowState([{ type: "plan.produced" }]);
   assert.equal(running.errorMessage, null);
 });
+
+test("the stream ending with no run.finished, no chat.error and no run.error is disconnected, not failed", () => {
+  const events: ReviseWireEvent[] = [
+    { type: "plan.produced" },
+    { type: "code.generated" },
+    { type: "sandbox.result" },
+  ];
+  const state = reviseFollowState(events, true);
+  assert.equal(state.status, "disconnected");
+  assert.deepEqual(state.reachedStages, ["planned", "coded", "sandboxed"]);
+  assert.equal(state.errorMessage, null);
+});
+
+test("the same events with the stream still open are running, not disconnected", () => {
+  const events: ReviseWireEvent[] = [{ type: "plan.produced" }, { type: "code.generated" }, { type: "sandbox.result" }];
+  const state = reviseFollowState(events, false);
+  assert.equal(state.status, "running");
+});
+
+test("no events at all plus a closed stream is disconnected", () => {
+  const state = reviseFollowState([], true);
+  assert.equal(state.status, "disconnected");
+  assert.deepEqual(state.reachedStages, []);
+  assert.equal(state.artifactId, null);
+});
+
+test("a closed stream does not override a real terminal outcome seen before it closed", () => {
+  const succeeded: ReviseWireEvent[] = [{ type: "artifact.saved", artifact_id: "art-9" }, { type: "run.finished", status: "succeeded" }];
+  assert.equal(reviseFollowState(succeeded, true).status, "succeeded");
+
+  const failed: ReviseWireEvent[] = [{ type: "chat.error", message: "nope" }];
+  const failedState = reviseFollowState(failed, true);
+  assert.equal(failedState.status, "failed");
+  assert.equal(failedState.errorMessage, "nope");
+});

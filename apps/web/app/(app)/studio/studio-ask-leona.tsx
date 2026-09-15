@@ -51,6 +51,14 @@ export function AskLeonaBox({
   const [busy, setBusy] = useState(false);
   const [events, setEvents] = useState<ReviseWireEvent[]>([]);
   const [error, setError] = useState<string | null>(null);
+  // Set when the SSE stream ended (cleanly or by a thrown network error)
+  // without ever seeing run.finished/chat.error/run.error — a dropped
+  // connection, a platform request timeout on a long run, or a proxy closing
+  // an idle stream. The run itself may still be going on the server, so this
+  // is deliberately a distinct, milder state from `error`: it names the run
+  // page as where to check, rather than claiming a failure this box never
+  // actually observed.
+  const [disconnectedRunId, setDisconnectedRunId] = useState<string | null>(null);
   const abortRef = useRef<AbortController | null>(null);
 
   const follow = reviseFollowState(events);
@@ -62,6 +70,7 @@ export function AskLeonaBox({
     setBusy(true);
     setError(null);
     setEvents([]);
+    setDisconnectedRunId(null);
     const controller = new AbortController();
     abortRef.current = controller;
     try {
@@ -81,6 +90,9 @@ export function AskLeonaBox({
       const payload = (await response.json()) as unknown;
       const runId = submittedId(payload);
       if (!response.ok || !runId) throw new Error(refusalSentence(payload) ?? copy.submissionFailed);
+      // followRun never throws past this point — any failure while FOLLOWING
+      // (as opposed to submitting) is a connection problem, not a submission
+      // refusal, and it sets its own state rather than landing in this catch.
       await followRun(runId, controller.signal);
     } catch (cause) {
       if (controller.signal.aborted) return;
@@ -90,40 +102,51 @@ export function AskLeonaBox({
   }
 
   async function followRun(runId: string, signal: AbortSignal) {
-    const response = await fetch(`/api/runs/${encodeURIComponent(runId)}/events/stream`, { cache: "no-store", signal });
-    if (!response.ok || !response.body) throw new Error(copy.submissionFailed);
-    const reader = response.body.getReader();
-    const decoder = new TextDecoder();
-    let buffer = "";
     let collected: ReviseWireEvent[] = [];
-    for (;;) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      buffer += decoder.decode(value, { stream: true });
-      const { blocks, remainder } = splitSseBuffer(buffer);
-      buffer = remainder;
-      for (const block of blocks) {
-        const parsed = parseSseBlock(block);
-        if (!parsed) continue;
-        let decoded: ReviseWireEvent;
-        try {
-          decoded = JSON.parse(parsed.data) as ReviseWireEvent;
-        } catch {
-          continue; // A malformed event is skipped, not fatal to the rest of the stream.
-        }
-        collected = [...collected, decoded];
-        setEvents(collected);
-        if (decoded.type === "run.finished") {
-          const state = reviseFollowState(collected);
-          setBusy(false);
-          if (state.status === "succeeded" && state.artifactId) onSaved(state.artifactId);
-          else if (state.status === "failed") setError(state.errorMessage ?? copy.submissionFailed);
-          await reader.cancel();
-          return;
+    try {
+      const response = await fetch(`/api/runs/${encodeURIComponent(runId)}/events/stream`, { cache: "no-store", signal });
+      if (!response.ok || !response.body) throw new Error("stream unavailable");
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
+      for (;;) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        const { blocks, remainder } = splitSseBuffer(buffer);
+        buffer = remainder;
+        for (const block of blocks) {
+          const parsed = parseSseBlock(block);
+          if (!parsed) continue;
+          let decoded: ReviseWireEvent;
+          try {
+            decoded = JSON.parse(parsed.data) as ReviseWireEvent;
+          } catch {
+            continue; // A malformed event is skipped, not fatal to the rest of the stream.
+          }
+          collected = [...collected, decoded];
+          setEvents(collected);
+          if (decoded.type === "run.finished") {
+            const state = reviseFollowState(collected);
+            setBusy(false);
+            if (state.status === "succeeded" && state.artifactId) onSaved(state.artifactId);
+            else if (state.status === "failed") setError(state.errorMessage ?? copy.submissionFailed);
+            await reader.cancel();
+            return;
+          }
         }
       }
+      // The stream ended (`done`) without a run.finished event.
+      const state = reviseFollowState(collected, true);
+      setBusy(false);
+      if (state.status === "disconnected") setDisconnectedRunId(runId);
+    } catch (cause) {
+      if (signal.aborted) return;
+      // A network error while following is not a submission refusal — the
+      // run was already accepted (we have a runId) and may still be running.
+      setBusy(false);
+      setDisconnectedRunId(runId);
     }
-    setBusy(false);
   }
 
   function cancel() {
@@ -159,6 +182,11 @@ export function AskLeonaBox({
         </ol>
       ) : null}
       {error ? <p className="mj-circuit-sync mj-circuit-sync--unrepresentable" role="alert">{error}</p> : null}
+      {disconnectedRunId ? (
+        <p className="mj-circuit-sync mj-circuit-sync--unrepresentable" role="status">
+          {copy.askDisconnected} <a href={`/run/${encodeURIComponent(disconnectedRunId)}`}>{copy.askOpenRun}</a>
+        </p>
+      ) : null}
       {changeSummary && !changeSummary.unchanged ? (
         <p className="mj-mono-muted">{copy.askChangeSummary(changeSummary.added, changeSummary.removed)}</p>
       ) : null}

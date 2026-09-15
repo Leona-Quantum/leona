@@ -31,17 +31,29 @@ export interface ReviseWireEvent {
   message?: string;
 }
 
+export type ReviseFollowStatus = "running" | "succeeded" | "failed" | "disconnected";
+
 export interface ReviseFollowState {
-  status: "running" | "succeeded" | "failed";
+  status: ReviseFollowStatus;
   /** Stages reached so far, in `REVISE_STAGE_ORDER`. */
   reachedStages: ReviseStageKey[];
   /** The artifact `artifact.saved` reported, or null before it arrives. */
   artifactId: string | null;
-  /** Set once the run is known to have failed; null while running or on success. */
+  /** Set once the run is known to have failed; null while running, disconnected, or on success. */
   errorMessage: string | null;
 }
 
-export function reviseFollowState(events: readonly ReviseWireEvent[]): ReviseFollowState {
+/**
+ * @param streamEnded The SSE stream itself is over (`reader.read()` returned
+ *   `done`, or the fetch/read threw) — distinct from "no run.finished yet
+ *   because the run is still going". Only changes the outcome when nothing
+ *   terminal (`run.finished`, `chat.error`, `run.error`) was ever seen: a
+ *   dropped connection, a platform request timeout on a long run, or a proxy
+ *   closing an idle stream all end the stream without telling this box
+ *   anything about the run itself, which the run may still finish on the
+ *   server after — "disconnected", not "failed".
+ */
+export function reviseFollowState(events: readonly ReviseWireEvent[], streamEnded = false): ReviseFollowState {
   const reachedStages = REVISE_STAGE_ORDER.filter((stage) =>
     events.some((event) => event.type === REVISE_STAGE_EVENT_TYPE[stage]));
 
@@ -54,11 +66,13 @@ export function reviseFollowState(events: readonly ReviseWireEvent[]): ReviseFol
   const errorMessage = errorEvent?.message
     ?? (finished && finished.status !== "succeeded" ? finished.message ?? null : null);
 
-  const status: ReviseFollowState["status"] = finished
+  const status: ReviseFollowStatus = finished
     ? (finished.status === "succeeded" && !errorEvent ? "succeeded" : "failed")
     : errorEvent
       ? "failed"
-      : "running";
+      : streamEnded
+        ? "disconnected"
+        : "running";
 
   return { status, reachedStages, artifactId, errorMessage: status === "failed" ? errorMessage ?? null : null };
 }
