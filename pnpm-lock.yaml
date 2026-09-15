@@ -33,6 +33,8 @@ importers:
         specifier: ^2.10.12
         version: 2.10.12
 
+  apps/news: {}
+
   apps/web:
     dependencies:
       '@majorana/contracts-gen':

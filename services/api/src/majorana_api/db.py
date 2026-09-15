@@ -38,8 +38,11 @@ from dataclasses import dataclass
 from typing import Any
 
 from opentelemetry import metrics
+from psycopg import OperationalError as _PsycopgOperationalError
 from sqlalchemy import event
 from sqlalchemy.engine import make_url
+from sqlalchemy.exc import DBAPIError
+from sqlalchemy.exc import OperationalError as _SAOperationalError
 from sqlalchemy.exc import TimeoutError as SQLAlchemyTimeoutError
 from sqlalchemy.ext.asyncio import (
     AsyncEngine,
@@ -55,6 +58,42 @@ from sqlalchemy.ext.asyncio import (
 #: is `TimeoutError`, which shadows the builtin and reads, wherever it is
 #: caught, as though a network call timed out rather than a queue filled up.
 PoolTimeout = SQLAlchemyTimeoutError
+
+#: Exception types worth inspecting for a transient database failure. Deliberately
+#: broad — `DBAPIError` also covers `IntegrityError` and `ProgrammingError`, which
+#: are NOT transient — so a caller must still narrow with `is_retryable_db_error`
+#: before deciding to retry; this tuple only says which exceptions to look at.
+#:
+#: Re-exported (with `is_retryable_db_error` below) for callers outside this
+#: package — e.g. `majorana_worker.errors` — that cannot import psycopg or
+#: sqlalchemy directly: this is the only module that constructs engines, so the
+#: driver-level exception types belong here, next to the pool they come from,
+#: same as `PoolTimeout` above.
+DB_ERROR_TYPES = (DBAPIError, _PsycopgOperationalError)
+
+
+def is_retryable_db_error(exc: BaseException) -> bool:
+    """True for a database failure a retry may resolve: a dropped or
+    admin-terminated connection, a statement timeout, a pool checkout that hit
+    the wire mid-commit. False for an integrity, programming, or data error —
+    a retry returns the identical failure for those, so they must stay permanent.
+
+    The `postgresql+psycopg` dialect (this module) wraps driver failures at both
+    execution and connect time into SQLAlchemy's own hierarchy, so
+    `sqlalchemy.exc.OperationalError` alone catches nearly every real case.
+    `DBAPIError.connection_invalidated` and the raw psycopg `OperationalError`
+    are checked directly for the narrower path where the driver exception is
+    observed before SQLAlchemy finishes wrapping it (e.g. a pool-level connect
+    failure).
+    """
+    if isinstance(exc, _SAOperationalError):
+        return True
+    if isinstance(exc, DBAPIError) and exc.connection_invalidated:
+        return True
+    if isinstance(exc, _PsycopgOperationalError):
+        return True
+    return False
+
 
 _meter = metrics.get_meter("majorana.database")
 _connections = _meter.create_counter(

@@ -12,6 +12,7 @@ from majorana_llm.preflight import (
     PreflightReport,
     RoleModel,
     check_configured_models,
+    check_model_served,
     configured_models,
 )
 
@@ -150,6 +151,63 @@ def test_log_payload_names_the_offenders_and_carries_no_secret():
     assert payload["unsupported"] == [{"role": "plan", "model": "deepseek-reasoner"}]
     assert payload["checked"] == {"plan": "deepseek-reasoner", "chat": "deepseek-v4-pro"}
     assert "key" not in repr(payload).lower()
+
+
+@pytest.mark.asyncio
+async def test_check_model_served_reports_unsupported_against_the_real_catalog(monkeypatch):
+    """A caller (news_pipeline.OpenAIEditor) that never goes through model_for()."""
+    _serve(monkeypatch, {"gpt-5"})
+
+    role = await check_model_served("news_text", "gpt-4-legacy-retired")
+
+    assert role == RoleModel("news_text", "gpt-4-legacy-retired", ModelStatus.UNSUPPORTED)
+
+
+@pytest.mark.asyncio
+async def test_check_model_served_passes_a_model_the_catalog_lists(monkeypatch):
+    _serve(monkeypatch, {"gpt-5"})
+
+    role = await check_model_served("news_text", "gpt-5")
+
+    assert role == RoleModel("news_text", "gpt-5", ModelStatus.SUPPORTED)
+
+
+@pytest.mark.asyncio
+async def test_check_model_served_is_unknown_without_a_key_never_unsupported(monkeypatch):
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    calls = _serve(monkeypatch, {"gpt-5"})
+
+    role = await check_model_served("news_text", "gpt-5")
+
+    assert role == RoleModel("news_text", "gpt-5", ModelStatus.UNKNOWN, "credentials_missing")
+    assert calls == [], "must not call an endpoint it has no key for"
+
+
+@pytest.mark.asyncio
+async def test_check_model_served_is_unknown_when_the_catalog_is_unreachable(monkeypatch):
+    _serve(monkeypatch, None)
+
+    role = await check_model_served("news_text", "gpt-5")
+
+    assert role == RoleModel("news_text", "gpt-5", ModelStatus.UNKNOWN, "model_list_unavailable")
+
+
+@pytest.mark.asyncio
+async def test_check_model_served_honors_a_different_key_env(monkeypatch):
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    monkeypatch.setenv("LEONA_NEWS_OPENAI_API_KEY", "news-only-key")
+    seen = []
+
+    async def fake_openai(base_url, api_key):
+        seen.append((base_url, api_key))
+        return frozenset({"gpt-5"})
+
+    monkeypatch.setattr(preflight, "_openai_served_models", fake_openai)
+
+    role = await check_model_served("news_text", "gpt-5", api_key_env="LEONA_NEWS_OPENAI_API_KEY")
+
+    assert role.status is ModelStatus.SUPPORTED
+    assert seen == [(None, "news-only-key")]
 
 
 @pytest.mark.asyncio

@@ -179,6 +179,30 @@ async def check_configured_models(
     return PreflightReport(provider=provider, roles=tuple(results))
 
 
+async def check_model_served(
+    role: str, model: str, *, api_key_env: str = "OPENAI_API_KEY"
+) -> RoleModel:
+    """Check one model straight against the OpenAI catalog, bypassing model_for()/
+    resolve_provider() entirely.
+
+    For a caller that sends a fixed model id directly to the OpenAI API under its
+    own env var — e.g. the news pipeline's LEONA_NEWS_MODEL, which
+    `check_configured_models` never sees because it only resolves
+    `PRODUCTION_ROLES` through the tiered LLM client — rather than inventing a
+    second, parallel checking path for it. Same UNKNOWN-unless-proven contract as
+    `check_configured_models`: an unreachable endpoint or a missing key is never
+    reported as UNSUPPORTED.
+    """
+    api_key = os.environ.get(api_key_env)
+    if not api_key:
+        return RoleModel(role, model, ModelStatus.UNKNOWN, "credentials_missing")
+    served = await _openai_served_models(None, api_key)
+    if served is None:
+        return RoleModel(role, model, ModelStatus.UNKNOWN, "model_list_unavailable")
+    status = ModelStatus.SUPPORTED if model in served else ModelStatus.UNSUPPORTED
+    return RoleModel(role, model, status)
+
+
 async def check_with_timeout(
     timeout_s: float = 20.0,
     roles: tuple[str, ...] = PRODUCTION_ROLES,

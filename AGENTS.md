@@ -104,6 +104,7 @@ untrusted generated code runs only in ephemeral network-locked sandboxes
 ## Layout
 
 - `apps/web` — Next.js App Router UI (Vercel)
+- `apps/news` — Leona Quantum News renderer and local editorial UI (Node.js)
 - `services/api`, `services/worker` — FastAPI control plane + job runner (Cloud Run)
 - `packages/py/*` — agent, contracts, estimation, frameworks, llm, notebooks (leona-notebooks: the
   notebook lane's pure core), openqasm, qpu, sandbox,

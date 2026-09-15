@@ -84,6 +84,12 @@ jobs:
           echo "::warning::api + worker were NOT deployed. Deploy by hand (docs/runbooks/deploys.md)"
           echo "::warning::or complete the one-time setup in that runbook (owner action)."
 
+      - name: validate news configuration
+        id: news
+        env:
+          LEONA_NEWS_OPENAI_SECRET_VERSION: ${{ vars.LEONA_NEWS_OPENAI_SECRET_VERSION }}
+        run: python3 scripts/news-deploy-config.py
+
       - name: tag
         if: steps.creds.outputs.have == 'true'
         id: tag
@@ -313,7 +319,7 @@ jobs:
             --cpu "$API_CPU" --memory "${API_MEMORY_MI}Mi" --concurrency "$API_CONCURRENCY" \
             --timeout "$API_REQUEST_TIMEOUT_S" \
             --cpu-boost \
-            --update-env-vars "MAJORANA_SERVICE=api,MAJORANA_ENV=production,MAJORANA_RELEASE=${{ steps.tag.outputs.tag }}" \
+            --update-env-vars "MAJORANA_SERVICE=api,MAJORANA_ENV=production,MAJORANA_RELEASE=${{ steps.tag.outputs.tag }},${{ steps.news.outputs.api_env }}" \
             --remove-env-vars SENTRY_DSN \
             --update-secrets SENTRY_DSN=SENTRY_DSN:latest \
             --no-traffic --tag verify
@@ -394,6 +400,16 @@ jobs:
           }
           echo "dark revision healthy: $count catalog entries, publicly cacheable, verdict alive"
 
+      - name: smoke-test news publication boundary
+        if: steps.creds.outputs.have == 'true'
+        run: |
+          expected=$(python3 -c 'import json; c=json.load(open("infra/news.json")); print(200 if c["public"] else 404)')
+          code=$(curl --max-time 30 -sS -o /tmp/leona-news-smoke.json -w '%{http_code}' "${{ steps.api.outputs.url }}/v1/news/articles?limit=1")
+          test "$code" = "$expected" || { echo "news returned $code, expected $expected"; exit 1; }
+          if [ "$expected" = "200" ]; then
+            jq -e '.items | type == "array"' /tmp/leona-news-smoke.json >/dev/null
+          fi
+
       - name: shift api traffic
         if: steps.creds.outputs.have == 'true'
         run: |
@@ -452,13 +468,23 @@ jobs:
           # MAJORANA_ENV, MAJORANA_RELEASE and SENTRY_DSN: same reasoning as the
           # api deploy step above (ai-ops#97) — declared here instead of being
           # live-service state nobody wrote down.
+          worker_secrets="SENTRY_DSN=SENTRY_DSN:latest"
+          worker_plain_env="SENTRY_DSN"
+          if [ -n "${{ steps.news.outputs.openai_secret }}" ]; then
+            # A DIFFERENT env var name than the core product's OPENAI_API_KEY
+            # (majorana_llm.client/models) on purpose — binding this onto the same
+            # name would silently replace the core product's OpenAI key
+            # process-wide the moment news is enabled.
+            worker_secrets+=",LEONA_NEWS_OPENAI_API_KEY=${{ steps.news.outputs.openai_secret }}"
+            worker_plain_env+=",LEONA_NEWS_OPENAI_API_KEY"
+          fi
           gcloud run deploy majorana-worker --project "$GCP_PROJECT" --region "$GCP_REGION" \
             --image "$IMAGE_REPO:${{ steps.tag.outputs.tag }}" \
             --command majorana-worker \
             --set-cloudsql-instances "$CLOUDSQL_INSTANCE" \
-            --update-env-vars "MAJORANA_SERVICE=worker,MAJORANA_ENV=production,MAJORANA_RELEASE=${{ steps.tag.outputs.tag }},DB_POOL_SIZE=$WORKER_POOL_SIZE,DB_MAX_OVERFLOW=$WORKER_MAX_OVERFLOW" \
-            --remove-env-vars SENTRY_DSN \
-            --update-secrets SENTRY_DSN=SENTRY_DSN:latest \
+            --update-env-vars "MAJORANA_SERVICE=worker,MAJORANA_ENV=production,MAJORANA_RELEASE=${{ steps.tag.outputs.tag }},DB_POOL_SIZE=$WORKER_POOL_SIZE,DB_MAX_OVERFLOW=$WORKER_MAX_OVERFLOW,${{ steps.news.outputs.worker_env }}" \
+            --remove-env-vars "$worker_plain_env" \
+            --update-secrets "$worker_secrets" \
             --min-instances "$WORKER_INSTANCES" --max-instances "$WORKER_INSTANCES" --no-cpu-throttling
           rev=$(gcloud run services describe majorana-worker \
             --project "$GCP_PROJECT" --region "$GCP_REGION" \

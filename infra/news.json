@@ -1,0 +1,13 @@
+{
+  "enabled": false,
+  "public": false,
+  "workspace_id": null,
+  "editor_user_id": null,
+  "schedule_enabled": false,
+  "auto_publish": false,
+  "arxiv_enabled": false,
+  "daily_batch_limit": 3,
+  "interval_hours": 8,
+  "model": "gpt-5.5",
+  "image_model": "gpt-image-2.5-flare"
+}

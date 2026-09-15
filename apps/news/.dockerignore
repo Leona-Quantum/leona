@@ -1,0 +1,5 @@
+.env
+.env.*
+artifacts
+node_modules
+*.test.mjs

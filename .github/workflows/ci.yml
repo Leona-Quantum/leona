@@ -39,6 +39,10 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm turbo run lint typecheck test
+      - name: news deployment configuration
+        run: python3 scripts/news-deploy-config.py
+        env:
+          LEONA_NEWS_OPENAI_SECRET_VERSION: ${{ vars.LEONA_NEWS_OPENAI_SECRET_VERSION }}
       - name: contracts-gen is current
         run: |
           pnpm --filter @majorana/contracts-gen gen
@@ -276,6 +280,14 @@ jobs:
             uv run --package majorana-api alembic -c db/alembic.ini upgrade head
           '
           uv run --package majorana-api python db/seeds/seed.py
+      - name: news persistence and worker integration
+        env:
+          DATABASE_URL_DIRECT: postgresql+psycopg://pg:pg@localhost:5432/leona_news_test
+          LEONA_NEWS_TEST_DATABASE_URL: postgresql+psycopg://pg:pg@localhost:5432/leona_news_test
+        run: |
+          PGPASSWORD=pg psql -h localhost -U pg -d postgres -c 'CREATE DATABASE leona_news_test'
+          uv run --frozen alembic -c db/alembic.ini upgrade head
+          uv run --frozen pytest services/api/tests/test_newsroom.py services/worker/tests/test_news_provider.py -q
       # A third database, separate from the migration gate's so the seed rows
       # stay out of these suites, and separate from majorana_live below because
       # that one must NOT have the catalog authority (see its comment).

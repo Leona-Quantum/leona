@@ -8,6 +8,7 @@ active job before Cloud Run scale-down.
 
 import asyncio
 import contextlib
+import dataclasses
 import datetime as dt
 import json
 import logging
@@ -246,14 +247,43 @@ async def _preflight_models() -> None:
     except Exception:
         log.warning("model preflight did not complete", exc_info=True)
         return
+    # LEONA_NEWS_MODEL bypasses model_for()/resolve_provider() entirely — the news
+    # pipeline (news_pipeline.OpenAIEditor) sends it straight to the OpenAI
+    # Responses API under its own env var — so check_with_timeout() above, which
+    # only resolves PRODUCTION_ROLES through the tiered LLM client, never sees it.
+    # Checked against the same OpenAI catalog and folded into the one report so an
+    # unsupported news model fails this gate exactly like an unsupported
+    # MAJORANA_MODEL_* override, rather than surfacing only when a collection job
+    # first runs.
+    #
+    # LEONA_NEWS_IMAGE_MODEL is deliberately NOT checked here: nothing in this
+    # module establishes that OpenAI's /v1/models listing (what
+    # `check_model_served` queries) enumerates image-generation model ids the
+    # same way it does chat/response models, and asserting that without proof
+    # would be inventing a check rather than reusing one.
+    news_model = os.environ.get("LEONA_NEWS_MODEL")
+    if os.getenv("LEONA_NEWS_ENABLED") == "true" and news_model:
+        try:
+            from majorana_llm.preflight import check_model_served
+
+            async with asyncio.timeout(20.0):
+                news_role = await check_model_served(
+                    "news_text", news_model, api_key_env="LEONA_NEWS_OPENAI_API_KEY"
+                )
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            log.warning("news model preflight did not complete", exc_info=True)
+        else:
+            report = dataclasses.replace(report, roles=report.roles + (news_role,))
     if report.unsupported:
         named = ", ".join(f"{role.role}={role.model}" for role in report.unsupported)
         _structured_log(
             "ERROR",
             f"configured models are not served by {report.provider}: {named}. "
             "Every run reaching these stages will fail. Compare the "
-            "MAJORANA_MODEL_* overrides on this service against the defaults in "
-            "majorana_llm.models.",
+            "MAJORANA_MODEL_* overrides on this service (or LEONA_NEWS_MODEL, for "
+            "role news_text) against the defaults in majorana_llm.models.",
             **report.as_log_payload(),
         )
     elif report.proven:
@@ -319,6 +349,8 @@ async def _execute_with_heartbeat(
 
     async def execute() -> None:
         async with factory() as session:
+            if handler is HANDLERS.get("news.collect"):
+                session.info["news_job_lease"] = (job_id, lease_token)
             await handler(session, payload)
 
     handler_task = asyncio.create_task(execute())
@@ -576,11 +608,24 @@ async def run_forever() -> None:
     dead_letter_sweep = Sweep(DEAD_LETTER_INTERVAL_S)
     reap_sweep = Sweep(REAP_INTERVAL_S)
     queue_metrics_sweep = Sweep(QUEUE_METRICS_INTERVAL_S)
+    news_schedule_sweep = Sweep(60.0)
 
     try:
         while not stop.is_set():
             delay = POLL_INTERVAL_S
             try:
+                if os.getenv("LEONA_NEWS_SCHEDULE_ENABLED") == "true" and news_schedule_sweep.due(
+                    loop.time()
+                ):
+                    from .news_pipeline import schedule_news
+
+                    try:
+                        async with asyncio.timeout(5.0):
+                            await schedule_news(factory)
+                    except Exception:
+                        log.exception("news scheduling failed; existing jobs will continue")
+                    finally:
+                        news_schedule_sweep.done(loop.time(), productive=False)
                 if recover_sweep.due(loop.time()):
                     async with factory() as session:
                         recovery = await system.recover_stale_jobs(session)

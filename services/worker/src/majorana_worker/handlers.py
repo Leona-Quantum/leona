@@ -137,6 +137,7 @@ from majorana_frameworks.optimizers import (
 )
 from majorana_frameworks.roles import result_was_derived
 
+from .news_pipeline import handle_news_collect, handle_news_dead_letter
 from .research import research_enabled
 from .runtime_ports import SandboxCandidateExecutor, TrustedOpenQASMConverter
 from .simple_events import SimpleEventObserver
@@ -2996,6 +2997,7 @@ async def handle_qpu_run_dead_letter(
 
 
 HANDLERS: dict[str, JobHandler] = {
+    "news.collect": handle_news_collect,
     RUN_EXECUTE_JOB_KIND: handle_run_execute,
     QAPP_EXECUTE_JOB_KIND: handle_qapp_execute,
     CIRCUIT_OPTIMIZE_JOB_KIND: handle_circuit_optimize,
@@ -3009,6 +3011,7 @@ HANDLERS: dict[str, JobHandler] = {
 }
 
 DEAD_LETTER_HANDLERS: dict[str, DeadLetterHandler] = {
+    "news.collect": handle_news_dead_letter,
     RUN_EXECUTE_JOB_KIND: handle_run_dead_letter,
     QAPP_EXECUTE_JOB_KIND: handle_qapp_execute_dead_letter,
     CIRCUIT_OPTIMIZE_JOB_KIND: handle_run_dead_letter,
