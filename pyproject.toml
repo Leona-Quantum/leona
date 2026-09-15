@@ -156,6 +156,14 @@ ignore_imports = [
     "majorana_api.db -> sqlalchemy",
     "majorana_api.orm -> sqlalchemy",
     "majorana_api.repos.* -> sqlalchemy",
+    # majorana_api.db is also where driver-level (psycopg) exception types get
+    # classified and re-exported under semantic names (PoolTimeout,
+    # DB_ERROR_TYPES/is_retryable_db_error) for callers — app.py,
+    # majorana_worker.errors — that this contract otherwise correctly forbids
+    # from importing psycopg themselves. Matches the sqlalchemy exemptions
+    # above; the doc comment on [tool.importlinter] already names db/orm
+    # modules as intended psycopg importers, this line just completes it.
+    "majorana_api.db -> psycopg",
 ]
 
 [[tool.importlinter.contracts]]
