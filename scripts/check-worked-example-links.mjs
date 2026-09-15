@@ -24,13 +24,10 @@
 // `WORKED_EXAMPLES` export ONLY IF that file exists (it does, as of the Atlas
 // worked-example figure lane) — its absence is reported as a skip, not a
 // failure, so this script still runs on a branch that predates it. Given the
-// file, an exampleId it does not carry is a WARNING, not an error: 14 of the
-// 21 examples the map points at are checked in and 7
-// (quantum-walk-cycle-4, shor-order-finding-15, amplitude-estimation-3,
-// hidden-shift-4, superdense-coding, w-state-3, simon-2) are still being
-// written on a sibling lane, so their links are expected to be unresolved
-// right now. This becomes a hard error once WORKED_EXAMPLES carries all of
-// them — flip the two branches below when that lands.
+// file, an exampleId it does not carry is a HARD ERROR: all 21 examples the
+// map points at landed (2026-09-15), so nothing should be pointing at one
+// that does not exist. This was a warning while 7 of the 21 were still being
+// written on a sibling lane; that window has closed.
 //
 // Usage: node scripts/check-worked-example-links.mjs [--quiet]
 
@@ -134,8 +131,6 @@ if (examplesMod) {
 const errors = [];
 let totalLinks = 0;
 const seenPairs = new Set();
-/** exampleId -> number of links waiting on it (not yet in WORKED_EXAMPLES). */
-const unresolvedExampleIds = new Map();
 
 for (const [slug, links] of Object.entries(rawMap)) {
   if (!Array.isArray(links)) {
@@ -164,12 +159,8 @@ for (const [slug, links] of Object.entries(rawMap)) {
       const pairKey = `${slug}::${link.exampleId}`;
       if (seenPairs.has(pairKey)) errors.push(`${where}: duplicate (slug, exampleId) pair`);
       seenPairs.add(pairKey);
-      // A WARNING, not an error: the checker distinguishes an id that will
-      // never resolve from one whose example just has not landed yet, only by
-      // this comment and by re-reading it after WORKED_EXAMPLES grows — there
-      // is no third state on the wire. See the module doc comment.
       if (exampleIds && !exampleIds.has(link.exampleId)) {
-        unresolvedExampleIds.set(link.exampleId, (unresolvedExampleIds.get(link.exampleId) ?? 0) + 1);
+        errors.push(`${where}: exampleId is not in WORKED_EXAMPLES`);
       }
     }
 
@@ -187,21 +178,10 @@ if (!QUIET) {
   console.log(`worked-example links: ${Object.keys(rawMap).length} records, ${totalLinks} links`);
   console.log(
     exampleIds
-      ? `exampleId cross-check: enabled (${exampleIds.size} ids in WORKED_EXAMPLES)`
-      : "exampleId cross-check: SKIPPED — apps/web/lib/worked-examples.ts does not exist yet (stage 2). " +
+      ? `exampleId cross-check: enabled, hard (${exampleIds.size} ids in WORKED_EXAMPLES)`
+      : "exampleId cross-check: SKIPPED — apps/web/lib/worked-examples.ts does not exist yet. " +
           "This becomes a hard check once it lands.",
   );
-}
-
-if (unresolvedExampleIds.size > 0) {
-  const waitingLinks = [...unresolvedExampleIds.values()].reduce((sum, count) => sum + count, 0);
-  console.warn(
-    `⚠ ${unresolvedExampleIds.size} exampleId(s) not yet in WORKED_EXAMPLES, ${waitingLinks} link(s) waiting on ` +
-      "them (becomes an error once the remaining examples land):",
-  );
-  for (const [id, count] of [...unresolvedExampleIds.entries()].sort(([a], [b]) => a.localeCompare(b))) {
-    console.warn(`  ${id}: ${count} link(s)`);
-  }
 }
 
 if (errors.length) {
