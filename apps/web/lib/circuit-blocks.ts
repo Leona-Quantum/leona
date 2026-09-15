@@ -58,6 +58,7 @@ const h = (q: number): GateSpec => ({ gate: "H", qubits: [q] });
 const x = (q: number): GateSpec => ({ gate: "X", qubits: [q] });
 const z = (q: number): GateSpec => ({ gate: "Z", qubits: [q] });
 const cx = (c: number, t: number): GateSpec => ({ gate: "CX", qubits: [c, t] });
+const cz = (c: number, t: number): GateSpec => ({ gate: "CZ", qubits: [c, t] });
 const ccx = (a: number, b: number, t: number): GateSpec => ({ gate: "CCX", qubits: [a, b, t] });
 const swapGate = (a: number, b: number): GateSpec => ({ gate: "SWAP", qubits: [a, b] });
 const rx = (q: number, theta: string): GateSpec => ({ gate: "RX", qubits: [q], param: theta });
@@ -267,6 +268,44 @@ const GHZ: BlockTemplate = {
     const n = asInt(p, "n");
     const steps: GateSpec[] = [h(0), ...Array.from({ length: n - 1 }, (_, i) => cx(i, i + 1))];
     return leafBlock(`ghz-${n}`, `GHZ(${n})`, n, steps);
+  },
+};
+
+/**
+ * The 3-qubit W state (|001> + |010> + |100>) / sqrt(3), built from
+ * controlled-RY (itself RY + CX, the standard identity CRY(phi) =
+ * RY(phi/2);CX;RY(-phi/2);CX) and CCX. No SWAP, no ancilla.
+ *
+ * Staircase construction: RY(theta0) on q0 puts exactly 1/3 of the
+ * population on q0=1 (theta0 = 2*arcsin(1/sqrt(3))) — that branch is already
+ * the |100> term and needs nothing further. In the remaining q0=0 branch
+ * (2/3 of the population), an anti-controlled CRY(pi/2) on q1 (control q0,
+ * built by sandwiching the controlled-RY in X(q0)...X(q0) so it fires on
+ * q0=0 instead of q0=1) splits it evenly again; finally q2 is set to 1
+ * exactly when BOTH q0=0 and q1=0, via a CCX also sandwiched in X(q0)...
+ * X(q1)...X(q1)...X(q0) to flip the anti-controls back. The plain
+ * X(control)-sandwich trick alone only anti-controls a gate that already
+ * takes that qubit as an explicit control (a first attempt at this
+ * unconditionally executed X(q1);CX(q1,q2);X(q1) sandwiched in X(q0) alone —
+ * that does not gate it on q0 at all, and gave {101,010,100} instead of the
+ * required {001,010,100}, caught immediately by testing against the
+ * simulator rather than trusting the construction).
+ */
+const W_STATE_3: BlockTemplate = {
+  key: "w_state_3",
+  name: "W state (3 qubits)",
+  category: "state-preparation",
+  summary: "Prepares the 3-qubit W state (|001> + |010> + |100>) / sqrt(3) from controlled-RY (RY and CX) and CCX.",
+  params: [],
+  qubitCount: () => 3,
+  build: () => {
+    const theta0 = String(2 * Math.asin(1 / Math.sqrt(3)));
+    const steps: GateSpec[] = [
+      ry(0, theta0),
+      x(0), ry(1, "pi/4"), cx(0, 1), ry(1, "-pi/4"), cx(0, 1), x(0),
+      x(0), x(1), ccx(0, 1, 2), x(1), x(0),
+    ];
+    return leafBlock("w-state-3", "W state (3 qubits)", 3, steps);
   },
 };
 
@@ -555,6 +594,157 @@ const QAOA_MAXCUT_LAYER: BlockTemplate = {
   },
 };
 
+/**
+ * One step of a discrete-time quantum walk on a 4-cycle: qubit 0 is the
+ * coin, qubits 1-2 are the position (b0 = LSB, b1 = MSB). A Hadamard coin
+ * flip, then a shift by +1 mod 4 when the coin is |1>, or -1 mod 4 when the
+ * coin is |0> (both amplitudes present at once when the coin is in
+ * superposition, as it is after the Hadamard).
+ *
+ * +1 mod 4 on (b1,b0) is CX(b0,b1) then X(b0) — a standard 2-bit increment:
+ * XOR the carry into b1 first (while b0 still holds its pre-increment
+ * value), then flip b0. Controlled on the coin: CCX(coin,b0,b1) then
+ * CX(coin,b0). -1 mod 4 is the exact inverse (X(b0) then CX(b0,b1)); since
+ * this gate set has no "anti-control", the -1 branch is built by
+ * temporarily flipping the coin (X(coin) ... X(coin)) so "coin was
+ * originally 0" reads as "coin is now 1" for the CX/CCX pair in between.
+ * No ancilla; verified against the simulator for both the classical
+ * (coin fixed) and Hadamard-coin cases in the test.
+ */
+const QUANTUM_WALK_STEP_CYCLE4: BlockTemplate = {
+  key: "quantum_walk_step_cycle4",
+  name: "Quantum walk step (4-cycle)",
+  category: "simulation",
+  summary: "One step of a discrete-time quantum walk on a 4-cycle: a Hadamard coin flip, then a shift by +1 or -1 mod 4 controlled by the coin.",
+  params: [],
+  qubitCount: () => 3,
+  build: () => {
+    const coin = 0;
+    const b0 = 1;
+    const b1 = 2;
+    const steps: GateSpec[] = [
+      h(coin),
+      // +1 mod 4, controlled on coin=1.
+      ccx(coin, b0, b1),
+      cx(coin, b0),
+      // -1 mod 4, controlled on coin=0 (coin flipped around this pair, then restored).
+      { gate: "X", qubits: [coin] },
+      cx(coin, b0),
+      ccx(coin, b0, b1),
+      { gate: "X", qubits: [coin] },
+    ];
+    return leafBlock("quantum-walk-step-cycle4", "Quantum walk step (4-cycle)", 3, steps);
+  },
+};
+
+/** CSWAP(control, t1, t2) = CX(t1,t2); CCX(control,t2,t1); CX(t1,t2) — the
+ * same Fredkin-via-Toffoli identity `swap_test` and circuit-conversion.ts's
+ * own cswap interchange decomposition already use. */
+function cswapSteps(control: number, t1: number, t2: number): GateSpec[] {
+  return [cx(t1, t2), ccx(control, t2, t1), cx(t1, t2)];
+}
+
+/**
+ * Controlled multiplication by 7, mod 15, on a 4-qubit register (qubit 0 is
+ * the control; qubits 1-4 are the register, bit 0 = LSB). Verified against
+ * the simulator on the full order-4 orbit {1, 7, 4, 13} this Shor
+ * order-finding example actually visits: SWAP(w0,w1); SWAP(w1,w2);
+ * SWAP(w2,w3); then X on all four — a cyclic rotation of the four bits
+ * followed by a full complement, controlled throughout. Off-orbit inputs are
+ * mapped to *some* other value (this remains a valid permutation, so it is
+ * still reversible), but that mapping is not meant to be meaningful; only
+ * the orbit the algorithm actually reaches is checked.
+ */
+const CONTROLLED_MULT_7_MOD_15: BlockTemplate = {
+  key: "controlled_mult_7_mod_15",
+  name: "Controlled x7 mod 15",
+  category: "arithmetic",
+  summary: "Multiplies a 4-qubit register by 7 mod 15, controlled by one qubit, from controlled swaps and CX.",
+  params: [],
+  qubitCount: () => 5,
+  build: () => {
+    const control = 0;
+    const w = [1, 2, 3, 4];
+    const steps: GateSpec[] = [
+      ...cswapSteps(control, w[0], w[1]),
+      ...cswapSteps(control, w[1], w[2]),
+      ...cswapSteps(control, w[2], w[3]),
+      cx(control, w[0]), cx(control, w[1]), cx(control, w[2]), cx(control, w[3]),
+    ];
+    return leafBlock("controlled-mult-7-mod-15", "Controlled x7 mod 15", 5, steps);
+  },
+};
+
+/**
+ * Controlled multiplication by 4, mod 15: the x7-mod-15 block applied
+ * twice, since 7^2 = 49 = 4 (mod 15) exactly. Nests two instances of
+ * CONTROLLED_MULT_7_MOD_15 rather than re-deriving a second swap pattern,
+ * so its correctness on the algorithm's orbit follows from x7's own.
+ */
+const CONTROLLED_MULT_4_MOD_15: BlockTemplate = {
+  key: "controlled_mult_4_mod_15",
+  name: "Controlled x4 mod 15",
+  category: "arithmetic",
+  summary: "Multiplies a 4-qubit register by 4 mod 15, controlled by one qubit: x7 mod 15 applied twice, since 7 squared is 49 = 4 (mod 15).",
+  params: [],
+  qubitCount: () => 5,
+  build: () => {
+    const qubits = [0, 1, 2, 3, 4];
+    const first = instantiateBlock(CONTROLLED_MULT_7_MOD_15.build({}), qubits, "a");
+    const second = instantiateBlock(CONTROLLED_MULT_7_MOD_15.build({}), qubits, "b");
+    return {
+      root: { id: "controlled-mult-4-mod-15", name: "Controlled x4 mod 15", qubitCount: 5, steps: [first.step, second.step] },
+      definitions: [...first.customGates, ...second.customGates],
+    };
+  },
+};
+
+/**
+ * Controlled powers of the canonical amplitude-estimation Grover operator
+ * Q = A Z A^{-1} Z, for the one-qubit Bernoulli state preparation
+ * A = RY(2*theta) (A|0> = cos(theta)|0> + sin(theta)|1>, estimating
+ * a = sin^2(theta)). One counting qubit per power, exactly like
+ * `controlled_phase_powers` for ordinary QPE.
+ *
+ * S_chi (mark |1>) is exactly Z. S_0 (reflect about |0>) is taken as
+ * +Z = 2|0><0| - I, not the other common convention I - 2|0><0| = -Z: the
+ * sign was resolved empirically, not assumed — with S_0 = -Z, the measured
+ * phase came out shifted by exactly 1/2 (peaks at 3/8 and 5/8 instead of the
+ * expected 1/8 and 7/8 for theta = pi/8), confirming the +Z convention is
+ * the one under which A|0>'s two branches land at +-theta/pi exactly, which
+ * is the whole point of a "peaks are exact" example.
+ *
+ * Controlled-A(2*theta) is CRY(2*theta) = RY(theta);CX;RY(-theta);CX (the
+ * standard controlled-rotation identity — note theta itself, not 2*theta,
+ * is the half-angle used inside); controlled-Z(target) is CZ directly.
+ */
+const AMPLITUDE_ESTIMATION_POWERS: BlockTemplate = {
+  key: "amplitude_estimation_powers",
+  name: "Amplitude estimation controlled powers",
+  category: "oracles",
+  summary: "Applies controlled powers of the amplitude-estimation Grover operator Q = A Z A^{-1} Z for A = RY(2*theta), one power per counting qubit.",
+  params: [intParam("t", "Counting qubits", 1, 8, 3), angleParam("theta", "Rotation angle theta (a = sin^2(theta))", "pi/8")],
+  qubitCount: (p) => asInt(p, "t") + 1,
+  build: (p) => {
+    const t = asInt(p, "t");
+    const theta = asAngle(p, "theta");
+    const negTheta = negateAngle(theta);
+    const target = t;
+    const steps: GateSpec[] = [];
+    for (let k = 0; k < t; k += 1) {
+      for (let repeat = 0; repeat < 1 << k; repeat += 1) {
+        steps.push(
+          ry(target, theta), cx(k, target), ry(target, negTheta), cx(k, target),
+          cz(k, target),
+          ry(target, negTheta), cx(k, target), ry(target, theta), cx(k, target),
+          cz(k, target),
+        );
+      }
+    }
+    return leafBlock(`amplitude-estimation-powers-${t}`, `Amplitude estimation powers(${t})`, t + 1, steps);
+  },
+};
+
 const SWAP_TEST: BlockTemplate = {
   key: "swap_test",
   name: "Swap test",
@@ -598,6 +788,11 @@ export const BLOCK_TEMPLATES: readonly BlockTemplate[] = [
   HARDWARE_EFFICIENT_LAYER,
   QAOA_MAXCUT_LAYER,
   SWAP_TEST,
+  QUANTUM_WALK_STEP_CYCLE4,
+  CONTROLLED_MULT_7_MOD_15,
+  CONTROLLED_MULT_4_MOD_15,
+  AMPLITUDE_ESTIMATION_POWERS,
+  W_STATE_3,
 ];
 
 export function blockTemplate(key: string): BlockTemplate | undefined {

@@ -105,6 +105,14 @@ test("ghz spreads equally over |0...0> and |1...1> only, for several n", () => {
   }
 });
 
+test("w_state_3 gives equal weight to exactly |001>, |010> and |100>, and nothing else", () => {
+  const { probabilities } = simulateBlock(blockTemplate("w_state_3")!, {});
+  for (const target of [0b001, 0b010, 0b100]) assert.ok(Math.abs(probabilities[target] - 1 / 3) < EPSILON, `index ${target}`);
+  for (const other of [0b000, 0b011, 0b101, 0b110, 0b111]) assert.ok(probabilities[other] < EPSILON, `index ${other} must be exactly zero`);
+  const total = probabilities.reduce((a, b) => a + b, 0);
+  assert.ok(Math.abs(total - 1) < EPSILON);
+});
+
 test("hadamard_layer gives a flat distribution over every basis state", () => {
   const n = 4;
   const { probabilities } = simulateBlock(blockTemplate("hadamard_layer")!, { n });
@@ -380,6 +388,163 @@ test("swap test on |+> vs |0> gives ancilla 0 with probability 0.75", () => {
   let ancillaZero = 0;
   for (let index = 0; index < probabilities.length; index += 1) if ((index & 1) === 0) ancillaZero += probabilities[index];
   assert.ok(Math.abs(ancillaZero - 0.75) < 1e-9, `expected 0.75, got ${ancillaZero}`);
+});
+
+// ---------------------------------------------------------------------------
+// quantum_walk_step_cycle4
+
+test("quantum_walk_step_cycle4: the shift is exactly +1/-1 mod 4 for a classical coin, tested on the raw gates the block wraps", () => {
+  // The block's own first gate is H(coin), so testing "a classical, fixed
+  // coin" against the block's public build() is impossible without bypassing
+  // that H — this test instead pins the shift sub-circuit directly (the same
+  // 6 gates build() emits after its H), which is what the block-level
+  // Hadamard-coin tests below build on top of.
+  const coin = 0;
+  const b0 = 1;
+  const b1 = 2;
+  const shiftGates: BuilderStep["gate"][] = ["CCX", "CX", "X", "CX", "CCX", "X"];
+  const shiftQubits = [[coin, b0, b1], [coin, b0], [coin], [coin, b0], [coin, b0, b1], [coin]];
+  function shiftSteps(): BuilderStep[] {
+    return shiftGates.map((gate, i) => ({ id: createBuilderStepId(), gate, qubits: shiftQubits[i] }));
+  }
+
+  // Coin fixed at |1>: each application increments position by 1 mod 4.
+  for (const repeats of [1, 2, 3, 4]) {
+    const prep: BuilderStep[] = [{ id: createBuilderStepId(), gate: "X", qubits: [coin] }];
+    const steps = [...prep, ...Array.from({ length: repeats }, shiftSteps).flat()];
+    const probabilities = idealProbabilities({ qubitCount: 3, steps });
+    const peak = peakIndex(probabilities);
+    assert.ok(Math.abs(probabilities[peak] - 1) < EPSILON, `repeats=${repeats}: expected a deterministic outcome`);
+    assert.equal(peak >> 1, repeats % 4, `repeats=${repeats}: expected position ${repeats % 4}, got ${peak >> 1}`);
+  }
+
+  // Coin fixed at |0>: each application decrements position by 1 mod 4.
+  for (const repeats of [1, 2, 3, 4]) {
+    const steps = Array.from({ length: repeats }, shiftSteps).flat();
+    const probabilities = idealProbabilities({ qubitCount: 3, steps });
+    const peak = peakIndex(probabilities);
+    assert.ok(Math.abs(probabilities[peak] - 1) < EPSILON, `repeats=${repeats}: expected a deterministic outcome`);
+    assert.equal(peak >> 1, (4 - (repeats % 4)) % 4, `repeats=${repeats}: expected position ${(4 - (repeats % 4)) % 4}, got ${peak >> 1}`);
+  }
+});
+
+test("quantum_walk_step_cycle4: the actual Hadamard-coin walk matches the simulator's own output at 1 and 3 steps", () => {
+  const template = blockTemplate("quantum_walk_step_cycle4")!;
+  const built = template.build({});
+
+  function runSteps(repeats: number): Float64Array {
+    const steps = Array.from({ length: repeats }, (_, i) => instantiateBlock(built, [0, 1, 2], `w${i}`));
+    const flat = flattenBuilderSteps(steps.map((s) => s.step), steps.flatMap((s) => s.customGates));
+    return idealProbabilities({ qubitCount: 3, steps: flat });
+  }
+
+  // 1 step from |000>: the coin's Hadamard, then a shift, spreads position
+  // to +1 and -1 (=3) with equal probability, entangled with the coin.
+  const one = runSteps(1);
+  assert.ok(Math.abs(one[0b011] - 0.5) < EPSILON, `expected 0.5 at position 1 / coin 1, got ${one[0b011]}`);
+  assert.ok(Math.abs(one[0b110] - 0.5) < EPSILON, `expected 0.5 at position 3 / coin 0, got ${one[0b110]}`);
+
+  // 3 steps: constructive interference on this small cycle collapses the
+  // position to a single value (3) with probability 1, split evenly across
+  // the two coin outcomes — a real, checked feature of this exact walk, not
+  // an approximation.
+  const three = runSteps(3);
+  assert.ok(Math.abs(three[0b110] - 0.5) < EPSILON, `expected 0.5 at "110", got ${three[0b110]}`);
+  assert.ok(Math.abs(three[0b111] - 0.5) < EPSILON, `expected 0.5 at "111", got ${three[0b111]}`);
+  let total = 0;
+  for (const p of three) total += p;
+  assert.ok(Math.abs(total - 1) < EPSILON);
+});
+
+// ---------------------------------------------------------------------------
+// controlled_mult_7_mod_15 / controlled_mult_4_mod_15
+
+test("controlled_mult_7_mod_15 maps the order-4 orbit {1,7,4,13} exactly, when the control is |1>", () => {
+  const template = blockTemplate("controlled_mult_7_mod_15")!;
+  const built = template.build({});
+  const expected: Record<number, number> = { 1: 7, 7: 4, 4: 13, 13: 1 };
+  for (const [from, to] of Object.entries(expected)) {
+    const x = Number(from);
+    const instance = instantiateBlock(built, [0, 1, 2, 3, 4], `m${x}`);
+    const prep: BuilderStep[] = [{ id: createBuilderStepId(), gate: "X", qubits: [0] }]; // control = 1
+    for (let bit = 0; bit < 4; bit += 1) if (x & (1 << bit)) prep.push({ id: createBuilderStepId(), gate: "X", qubits: [1 + bit] });
+    const flat = flattenBuilderSteps([...prep, instance.step], instance.customGates);
+    const probabilities = idealProbabilities({ qubitCount: 5, steps: flat });
+    const peak = peakIndex(probabilities);
+    const outputRegister = (peak >> 1) & 0b1111; // bits 1-4
+    assert.ok(Math.abs(probabilities[peak] - 1) < EPSILON, `x=${x}: expected a deterministic outcome`);
+    assert.equal(outputRegister, to, `x=${x}: expected x7 mod 15 = ${to}, got ${outputRegister}`);
+    assert.equal(peak & 1, 1, `x=${x}: control qubit must be unchanged`);
+  }
+});
+
+test("controlled_mult_7_mod_15 does nothing when the control is |0>", () => {
+  const template = blockTemplate("controlled_mult_7_mod_15")!;
+  const built = template.build({});
+  const instance = instantiateBlock(built, [0, 1, 2, 3, 4], "m");
+  const prep: BuilderStep[] = [{ id: createBuilderStepId(), gate: "X", qubits: [1] }]; // register = 1, control = 0
+  const flat = flattenBuilderSteps([...prep, instance.step], instance.customGates);
+  const probabilities = idealProbabilities({ qubitCount: 5, steps: flat });
+  assert.ok(Math.abs(probabilities[0b00010] - 1) < EPSILON, "register must be untouched when the control is |0>");
+});
+
+test("controlled_mult_4_mod_15 maps the order-4 orbit exactly, matching x7 applied twice", () => {
+  const template = blockTemplate("controlled_mult_4_mod_15")!;
+  const built = template.build({});
+  const expected: Record<number, number> = { 1: 4, 7: 13, 4: 1, 13: 7 };
+  for (const [from, to] of Object.entries(expected)) {
+    const x = Number(from);
+    const instance = instantiateBlock(built, [0, 1, 2, 3, 4], `m${x}`);
+    const prep: BuilderStep[] = [{ id: createBuilderStepId(), gate: "X", qubits: [0] }];
+    for (let bit = 0; bit < 4; bit += 1) if (x & (1 << bit)) prep.push({ id: createBuilderStepId(), gate: "X", qubits: [1 + bit] });
+    const flat = flattenBuilderSteps([...prep, instance.step], instance.customGates);
+    const probabilities = idealProbabilities({ qubitCount: 5, steps: flat });
+    const peak = peakIndex(probabilities);
+    const outputRegister = (peak >> 1) & 0b1111;
+    assert.ok(Math.abs(probabilities[peak] - 1) < EPSILON, `x=${x}: expected a deterministic outcome`);
+    assert.equal(outputRegister, to, `x=${x}: expected x4 mod 15 = ${to}, got ${outputRegister}`);
+  }
+});
+
+// ---------------------------------------------------------------------------
+// amplitude_estimation_powers
+
+test("amplitude_estimation_powers: a=0 (theta=0) leaves the target at |0>, deterministically", () => {
+  const template = blockTemplate("amplitude_estimation_powers")!;
+  const built = template.build({ t: 2, theta: "0" });
+  const instance = instantiateBlock(built, [0, 1, 2], "qae");
+  const prep = [{ id: createBuilderStepId(), gate: "H" as const, qubits: [0] }, { id: createBuilderStepId(), gate: "H" as const, qubits: [1] }];
+  const flat = flattenBuilderSteps([...prep, instance.step], instance.customGates);
+  const probabilities = idealProbabilities({ qubitCount: 3, steps: flat });
+  let targetOne = 0;
+  for (let index = 0; index < probabilities.length; index += 1) if ((index & 0b100) !== 0) targetOne += probabilities[index];
+  assert.ok(targetOne < EPSILON, `expected the target to stay |0> when theta=0, got P(target=1)=${targetOne}`);
+});
+
+test("amplitude_estimation_powers feeding a QPE-style readout gives the exact theta/pi peaks for theta=pi/8", () => {
+  // Full worked-example-shaped circuit: RY(2*theta) state prep, Hadamard the
+  // counting register, this block's controlled powers, inverse QFT. The
+  // counting register must read theta/pi = 1/8 and its mirror 1 - 1/8 = 7/8
+  // (i.e. 001 and 111 for t=3), each with probability 1/2 — the module
+  // comment on AMPLITUDE_ESTIMATION_POWERS documents how the S_0 sign was
+  // resolved empirically against exactly this check.
+  const t = 3;
+  const target = t;
+  const template = blockTemplate("amplitude_estimation_powers")!;
+  const built = template.build({ t, theta: "pi/8" });
+  const instance = instantiateBlock(built, [0, 1, 2, target], "qae");
+  const iqftBuilt = blockTemplate("qft_inverse")!.build({ n: t });
+  const iqft = instantiateBlock(iqftBuilt, [0, 1, 2], "iqft");
+  const prep = [
+    { id: createBuilderStepId(), gate: "RY" as const, qubits: [target], param: "pi/4" },
+    ...[0, 1, 2].map((q) => ({ id: createBuilderStepId(), gate: "H" as const, qubits: [q] })),
+  ];
+  const flat = flattenBuilderSteps([...prep, instance.step, iqft.step], [...instance.customGates, ...iqft.customGates]);
+  const probabilities = idealProbabilities({ qubitCount: t + 1, steps: flat });
+  const marginal = new Float64Array(1 << t);
+  for (let index = 0; index < probabilities.length; index += 1) marginal[index & ((1 << t) - 1)] += probabilities[index];
+  assert.ok(Math.abs(marginal[0b001] - 0.5) < EPSILON, `expected P(counting=001)=0.5, got ${marginal[0b001]}`);
+  assert.ok(Math.abs(marginal[0b111] - 0.5) < EPSILON, `expected P(counting=111)=0.5, got ${marginal[0b111]}`);
 });
 
 // ---------------------------------------------------------------------------
