@@ -600,7 +600,11 @@ export function StudioWorkspace({ artifactId, newDraft = false, exampleId, local
     selectPanel("visual");
     setRunId(null);
     setVerificationStale(false);
-    setActiveExample(example);
+    // The canvas draws `draft.steps` (fresh, cloned ids), not `example.steps`
+    // (the registry's deterministic ones) — the notes panel must compare
+    // against the same ids the diagram and playhead use, so it carries the
+    // draft's remapped notes, not the example's original ones.
+    setActiveExample({ ...example, notes: draft.notes });
     setAskChangeSummary(null);
     setAskBackup(null);
     seedCounter.current += 1;
