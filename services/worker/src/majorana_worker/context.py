@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Protocol
+from typing import Any, Literal, Protocol
 
 from majorana_contracts.enums import Framework, RunMode
 from majorana_llm import ResponseLocale
@@ -30,6 +30,15 @@ class RunContext:
     needs_user_inputs: bool = False
     conversation_id: Any | None = None
     source_code: str | None = None
+    # "verify" reproduces every run's behavior from before this field existed:
+    # `source_code`, when present, is returned byte-for-byte by the first
+    # generation attempt. "revise" is the explicit, opt-in signal that
+    # `source_code` is a starting point to change per `task_prompt` rather
+    # than a program to preserve unchanged — see `ProductionSimplePipelinePorts`
+    # in `simple_ports.py`. A job payload persisted before this field existed
+    # has no key for it; `handle_run_execute` reads it with `.get(..., "verify")`
+    # so an old, replayed payload deserializes to today's only behavior.
+    source_intent: Literal["verify", "revise"] = "verify"
     source_framework: Framework | None = None
     parent_artifact_id: Any | None = None
     #: Short model-written name for this conversation, settled before dispatch.

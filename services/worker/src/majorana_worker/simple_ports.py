@@ -105,6 +105,8 @@ from majorana_llm import (
     SIMPLE_PLAN_SYSTEM_PROMPT,
     RESEARCH_TRIAGE_SYSTEM_PROMPT,
     SIMPLE_REVIEW_SYSTEM_PROMPT,
+    SOURCE_REVISION_GENERATION_DIRECTIVE,
+    SOURCE_REVISION_PLAN_DIRECTIVE,
     StageOutputError,
     extract_json,
     conversation_request_messages,
@@ -132,6 +134,14 @@ log = logging.getLogger("majorana_worker.simple_ports")
 # unaffected: every candidate is stored as its own immutable revision, and the
 # durable LLM-call inbox replays the recorded response rather than re-sampling.
 _REPAIR_TEMPERATURE = 0.4
+
+#: Same bound `_outcome_explanation_evidence` (handlers.py) applies to a
+#: candidate's source before a second model call: enough for the planner to
+#: read the existing program's actual structure, not so much that one
+#: oversized submission dominates the planning request. `source_code` is
+#: already capped at 100,000 characters by `CreateRunRequest`, well above
+#: this preview.
+_SOURCE_REVISION_PREVIEW_CHARS = 20_000
 
 
 def _prior_user_requests(
@@ -3472,6 +3482,7 @@ class ProductionSimplePipelinePorts:
         requested_shots: int | None = None,
         requested_seed: int | None = None,
         initial_source: str | None = None,
+        revise_source: bool = False,
         rollback: Callable[[], Awaitable[None]] | None = None,
         research_sink: ResearchEventSink | None = None,
         research_client: ArxivResearchClient | None = None,
@@ -3500,6 +3511,13 @@ class ProductionSimplePipelinePorts:
             else None
         )
         self._initial_source = initial_source
+        # Opt-in only: default False reproduces the pipeline's behavior from
+        # before this parameter existed. True (`source_intent="revise"`, see
+        # `CreateRunRequest`) makes `plan` include `_initial_source` in the
+        # planner payload and makes `generate`'s first attempt call the model
+        # instead of returning `_initial_source` verbatim — see both methods
+        # for the invariant this deliberately does not touch when False.
+        self._revise_source = revise_source
         self._rollback = rollback
         self._research_sink = research_sink
         self._research_client = research_client or ArxivResearchClient()
@@ -4391,6 +4409,19 @@ class ProductionSimplePipelinePorts:
             "previous_plan": previous.plan.model_dump(mode="json") if previous else None,
             "repair_feedback": asdict(feedback) if feedback else None,
             "repair_contract": _plan_repair_contract(feedback),
+            # Opt-in only (`source_intent="revise"`): the planner otherwise
+            # never sees `_initial_source` at all, on every path, replan
+            # included — see `_revise_source` in `__init__`. Bounded the same
+            # way `_outcome_explanation_evidence` (handlers.py) bounds a
+            # candidate's source before a second model call.
+            "source_to_revise": (
+                {
+                    "code": self._initial_source[:_SOURCE_REVISION_PREVIEW_CHARS],
+                    "truncated": len(self._initial_source) > _SOURCE_REVISION_PREVIEW_CHARS,
+                }
+                if self._revise_source and self._initial_source
+                else None
+            ),
             "external_research": (
                 {
                     "query": research.query,
@@ -4407,17 +4438,18 @@ class ProductionSimplePipelinePorts:
         }
         raw_plan_output: str | None = None
         user_text = json.dumps(user, default=str, sort_keys=True)
+        plan_system = SIMPLE_PLAN_SYSTEM_PROMPT
+        if self._revise_source and self._initial_source:
+            plan_system = f"{plan_system}\n\n{SOURCE_REVISION_PLAN_DIRECTIVE}"
+        if self._allow_ai_assumptions:
+            plan_system = f"{plan_system}\n\n{AI_ASSUMPTION_MODE_DIRECTIVE}"
         try:
             response = await self._llm.complete(
                 LLMRequest(
                     model=model_for("plan"),
                     system=with_response_locale(
                         with_execution_conversation_context(
-                            (
-                                f"{SIMPLE_PLAN_SYSTEM_PROMPT}\n\n{AI_ASSUMPTION_MODE_DIRECTIVE}"
-                                if self._allow_ai_assumptions
-                                else SIMPLE_PLAN_SYSTEM_PROMPT
-                            ),
+                            plan_system,
                             has_history=bool(self._conversation_messages),
                         ),
                         self._response_locale,
@@ -4599,8 +4631,22 @@ class ProductionSimplePipelinePorts:
                 exception=exc,
             )
 
+        # `previous is None and feedback is None` names "the first attempt,
+        # nothing has failed yet" — the same test the verbatim branch below
+        # uses. `_revise_source` (opt-in, `source_intent="revise"`) is what
+        # decides what that first attempt DOES with `_initial_source`: return
+        # it unread (verify — the invariant `plan`'s ~4959-era comment
+        # protects: a "verify and save" run must simulate the exact bytes
+        # supplied, not a model's reinterpretation of them), or hand it to the
+        # model as the program to change (revise). The reviewer downstream
+        # never compares a candidate against `_initial_source` directly — it
+        # reasons only from `plan` and `task_prompt` — so relaxing the
+        # verbatim guard here for `revise` does not touch anything that
+        # assumes the earlier invariant elsewhere in the pipeline.
+        is_first_attempt = previous is None and feedback is None
+        revising_first_attempt = is_first_attempt and self._revise_source and self._initial_source
         source: str
-        if previous is None and feedback is None and self._initial_source:
+        if is_first_attempt and self._initial_source and not self._revise_source:
             source = self._initial_source
         else:
             user = {
@@ -4623,7 +4669,17 @@ class ProductionSimplePipelinePorts:
                 # CandidateRevision already enforces the source-size ceiling. Repairs
                 # need the complete program: keeping only the tail can remove imports,
                 # helper definitions, and the exact code a traceback references.
-                "previous_source": previous.source if previous else None,
+                # On a revise run's first attempt there is no `previous`
+                # candidate yet — `_initial_source` (already bounded to
+                # 100,000 characters by `CreateRunRequest`) IS the program to
+                # start from, so it fills the same field a repair would use.
+                "previous_source": (
+                    previous.source
+                    if previous is not None
+                    else self._initial_source
+                    if revising_first_attempt
+                    else None
+                ),
                 "previous_execution": await self._previous_execution(run_id, previous),
                 "repair_feedback": asdict(feedback) if feedback else None,
                 "known_reference": known_reference_for_task(
@@ -4642,6 +4698,18 @@ class ProductionSimplePipelinePorts:
                     algorithm=plan.plan.algorithm.value,
                     problem_summary=plan.plan.problem_summary,
                 )
+                if revising_first_attempt:
+                    # SIMPLE_GENERATION_SYSTEM_PROMPT's own repair guidance
+                    # ("use previous source... only to identify the smallest
+                    # code correction") is exactly wrong here: this
+                    # `previous_source` is the user's own program, not a
+                    # rejected candidate, and the task may ask for a
+                    # substantial change ("replace the CX ladder with a
+                    # QFT"), not a minimal fix. This directive overrides that
+                    # framing for this one call.
+                    generation_system = (
+                        f"{generation_system}\n\n{SOURCE_REVISION_GENERATION_DIRECTIVE}"
+                    )
                 if self._allow_ai_assumptions:
                     generation_system = f"{generation_system}\n\n{AI_ASSUMPTION_MODE_DIRECTIVE}"
                 response = await self._llm.complete(
@@ -4963,6 +5031,12 @@ class ProductionSimplePipelinePorts:
                 # invariant or resetting the candidate on replan — both changes to
                 # the shared pipeline contract, and neither belongs in a change
                 # that has already grown this far.
+                #
+                # `source_intent="revise"` (`_revise_source`) does not touch this
+                # corner: a revise run's first `generate` attempt never takes the
+                # `_initial_source` verbatim branch at all — see `generate` — so
+                # there is no user-supplied circuit sitting here unread by a
+                # model in the first place.
                 retry_target=(
                     SimpleRetryTarget.NONE if not diagnostics else SimpleRetryTarget.GENERATION
                 ),
