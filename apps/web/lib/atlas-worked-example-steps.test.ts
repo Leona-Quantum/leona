@@ -11,6 +11,8 @@ import {
   stepLabel,
   workedExampleDrawing,
   workedExampleReading,
+  workedExampleSignInHref,
+  workedExampleStudioHref,
 } from "./atlas-worked-example-steps.ts";
 
 // A tiny 3-qubit fixture: H on q0, a placed 2-qubit "block" on q1/q2 (X then
@@ -171,4 +173,29 @@ test("formatSignificant: 3 significant figures with the proper minus sign, match
   assert.equal(formatSignificant(1 / Math.sqrt(2)), "0.707");
   assert.equal(formatSignificant(0), "0.00");
   assert.equal(formatSignificant(-0), "0.00", "negative zero must not print as -0.00");
+});
+
+test("workedExampleStudioHref: a signed-in reader goes straight to this example in Studio", () => {
+  assert.equal(workedExampleStudioHref("grover-3q-101"), "/studio?example=grover-3q-101");
+  // An id that needs escaping round-trips through the query string.
+  const odd = "a b&c=d";
+  const parsed = new URL(workedExampleStudioHref(odd), "https://leonaqt.test");
+  assert.equal(parsed.pathname, "/studio");
+  assert.equal(parsed.searchParams.get("example"), odd);
+});
+
+// Asserts on where the link GOES, decoded, rather than on a substring: the bug
+// this guards against rendered a real sign-in link to the wrong place, which a
+// presence check would have passed.
+test("workedExampleSignInHref: a signed-out reader signs in and comes back to this example, not /run", () => {
+  for (const id of ["grover-3q-101", "vqe-2q-transverse-ising", "a b&c=d"]) {
+    const href = workedExampleSignInHref(id);
+    const url = new URL(href, "https://leonaqt.test");
+    assert.equal(url.pathname, "/auth/sign-in", href);
+    const returnTo = url.searchParams.get("returnTo");
+    assert.notEqual(returnTo, "/run", `returnTo fell back to /run for ${id}`);
+    assert.equal(returnTo, workedExampleStudioHref(id), `returnTo must be exactly the Studio link for ${id}`);
+    // And the Studio link it returns to opens the same example.
+    assert.equal(new URL(returnTo ?? "", "https://leonaqt.test").searchParams.get("example"), id);
+  }
 });
