@@ -1,3 +1,5 @@
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import type { NextConfig } from "next";
 import {
   contentSecurityPolicy,
@@ -134,6 +136,31 @@ const nextConfig: NextConfig = {
   // restart. Unset everywhere except a second local server, so CI and Vercel
   // build to the usual directory.
   distDir: process.env.NEXT_DIST_DIR || ".next",
+  // Cloud Run spike (ai-ops gcp-migration-20260912 PLAN.md, "Hosting and
+  // build" row): `output: "standalone"` traces the server's actual runtime
+  // dependencies into `.next/standalone`, so a Docker image can ship a
+  // minimal `node_modules` instead of the whole workspace. Opt-in on
+  // NEXT_OUTPUT=standalone — a var set only by apps/web/Dockerfile's build
+  // stage — so Vercel's build, CI, and a plain local `next build`/`next dev`
+  // are byte-for-byte what they were before this key existed: Vercel has its
+  // own deployment artifact format and does not read `output` at all, but an
+  // untested `undefined` vs. explicitly-omitted distinction is not a risk
+  // worth taking on the platform that currently serves production.
+  ...(process.env.NEXT_OUTPUT === "standalone"
+    ? {
+        output: "standalone" as const,
+        // pnpm workspace root, two levels up from apps/web (where
+        // pnpm-workspace.yaml and pnpm-lock.yaml live). apps/web depends on
+        // @majorana/ui and @majorana/contracts-gen as `workspace:*`, both
+        // resolved through the pnpm virtual store at the workspace root, not
+        // under apps/web/node_modules — so file tracing has to be told the
+        // root explicitly. Without this, Next infers the nearest lockfile
+        // itself and its own docs warn that inference can pick the wrong
+        // directory in a monorepo, silently leaving workspace packages out
+        // of `.next/standalone`.
+        outputFileTracingRoot: join(dirname(fileURLToPath(import.meta.url)), "..", ".."),
+      }
+    : {}),
   // Security headers baseline (05-security.md §1 platform+edge). The CSP above
   // documents exactly which classes it stops and which it does not.
   async headers() {
