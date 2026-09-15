@@ -20,6 +20,7 @@ import { getRepositoryListEntries } from "../../../../../lib/repository-source";
 import { LAYER_GRAPH } from "../../../../../lib/repository/layer-graph";
 import { entriesFor, isCapability, layerCorpusEntry, layerNode, type LayerCorpusEntry } from "../../../../../lib/repository/layers";
 import { hasAtlasCircuit } from "../../../../../lib/repository/atlas-circuit-layout";
+import { isPlaceholderDiagram } from "../../../../../lib/repository/placeholder-diagrams";
 import { entryVerificationMethods } from "../../../../../lib/repository/entry-verification";
 import { STATE_VOCABULARY } from "../../../../../lib/repository/state-vocabulary";
 import { layerState } from "../../../../../lib/repository/states";
@@ -138,12 +139,14 @@ export default async function RepositoryLayerNodePage({
   // in the order it names them (`entriesFor`, the same join "In the Atlas"
   // lists), each passed as its own wires, operations and outcomes — read off the
   // listing fetched above, so it costs no request and derives nothing. A record
-  // with nothing to draw is left out rather than drawn empty.
+  // with nothing to draw is left out rather than drawn empty — and so is a
+  // record whose drawing is one of the corpus's three stock placeholder
+  // diagrams (§ isPlaceholderDiagram), which is not a drawing of that record.
   const bySlug = new Map(entries.map((entry) => [entry.slug, entry]));
   const circuits: LayerRecordDrawing[] = node
     ? entriesFor(node, new Set(bySlug.keys())).flatMap((slug) => {
         const entry = bySlug.get(slug);
-        if (!entry || !hasAtlasCircuit(entry.visualization)) return [];
+        if (!entry || !hasAtlasCircuit(entry.visualization) || isPlaceholderDiagram(entry.visualization)) return [];
         return [
           {
             slug,

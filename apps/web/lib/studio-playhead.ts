@@ -1,5 +1,12 @@
 import { flattenBuilderSteps, type BuilderStep, type CustomGateDefinition } from "./studio-builder.ts";
-import { bitstringFor, idealProbabilities } from "./studio-simulation.ts";
+// From the pure kernel directly, not from studio-simulation.ts: this module
+// is reachable from the public Atlas worked-example figure
+// (atlas-worked-example.tsx) as well as Studio's own (authenticated) Visual
+// tab, and studio-simulation.ts's other imports (account-tier.ts,
+// user-storage.ts) must not reach the public bundle. Same functions, same
+// behavior — studio-simulation.ts re-exports both unchanged. See
+// statevector-kernel.ts's doc comment.
+import { bitstringFor, idealProbabilities } from "./statevector-kernel.ts";
 
 /**
  * The Visual tab's playhead: ideal outcome probabilities after a chosen moment.

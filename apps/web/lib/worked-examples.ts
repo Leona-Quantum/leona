@@ -3,8 +3,18 @@ import {
   instantiateBlock,
   type BlockParams,
 } from "./circuit-blocks.ts";
-import { flattenBuilderSteps, createBuilderStepId, type BuilderStep, type CustomGateDefinition } from "./studio-builder.ts";
-import { idealProbabilities, idealStatevector } from "./studio-simulation.ts";
+import { createBuilderStepId, type BuilderStep, type CustomGateDefinition } from "./studio-builder.ts";
+// From the pure kernel directly, not from studio-simulation.ts: this module
+// is reachable from the public, unauthenticated Atlas record page (via
+// atlas-worked-example.tsx), and studio-simulation.ts also imports
+// account-tier.ts / user-storage.ts, which must not reach that bundle. Same
+// functions, same behavior — studio-simulation.ts re-exports both unchanged.
+// `expectationValue` and `PauliTerm` now live there too (moved out of this
+// file, same reason) and are re-exported below unchanged. See
+// statevector-kernel.ts's doc comment.
+import { expectationValue, idealProbabilities, idealStatevector, type PauliTerm } from "./statevector-kernel.ts";
+
+export { expectationValue, type PauliTerm };
 
 /**
  * Concrete, checked worked examples built from circuit-blocks.ts — one
@@ -24,10 +34,6 @@ export type WorkedExampleCheck =
   | { kind: "distribution"; probabilities: Record<string, number>; tolerance: number }
   | { kind: "expectation"; value: number; tolerance: number };
 
-/** One letter per qubit, I/X/Y/Z, same bitstring-reading convention as above
- * (character 0 = the highest-numbered qubit). */
-export type PauliTerm = { coefficient: number; pauli: string };
-
 export type WorkedExample = {
   id: string;
   algorithm: string;
@@ -43,68 +49,6 @@ export type WorkedExample = {
   blocks: string[];
   observable?: PauliTerm[];
 };
-
-// ---------------------------------------------------------------------------
-// expectationValue — a pure helper over the simulator's raw statevector, so a
-// UI can show live energy without a measurement-basis circuit.
-
-function applyPauliLetterInPlace(real: Float64Array, imaginary: Float64Array, qubit: number, letter: "X" | "Y" | "Z") {
-  const mask = 1 << qubit;
-  for (let index = 0; index < real.length; index += 1) {
-    if ((index & mask) !== 0) continue;
-    const paired = index | mask;
-    if (letter === "Z") {
-      real[paired] = -real[paired];
-      imaginary[paired] = -imaginary[paired];
-      continue;
-    }
-    const re0 = real[index];
-    const im0 = imaginary[index];
-    const re1 = real[paired];
-    const im1 = imaginary[paired];
-    if (letter === "X") {
-      real[index] = re1; imaginary[index] = im1;
-      real[paired] = re0; imaginary[paired] = im0;
-    } else {
-      // Y = [[0,-i],[i,0]]: new0 = -i*old1, new1 = i*old0.
-      real[index] = im1; imaginary[index] = -re1;
-      real[paired] = -im0; imaginary[paired] = re0;
-    }
-  }
-}
-
-function pauliExpectation(state: { real: Float64Array; imaginary: Float64Array }, qubitCount: number, pauli: string): number {
-  if (pauli.length !== qubitCount) throw new Error(`pauli string length ${pauli.length} does not match qubitCount ${qubitCount}`);
-  const dim = state.real.length;
-  const outReal = Float64Array.from(state.real);
-  const outImaginary = Float64Array.from(state.imaginary);
-  for (let charIndex = 0; charIndex < pauli.length; charIndex += 1) {
-    const letter = pauli[charIndex].toUpperCase();
-    if (letter === "I") continue;
-    if (letter !== "X" && letter !== "Y" && letter !== "Z") throw new Error(`invalid Pauli letter: ${pauli[charIndex]}`);
-    const qubit = qubitCount - 1 - charIndex;
-    applyPauliLetterInPlace(outReal, outImaginary, qubit, letter);
-  }
-  let expectation = 0;
-  for (let index = 0; index < dim; index += 1) {
-    expectation += state.real[index] * outReal[index] + state.imaginary[index] * outImaginary[index];
-  }
-  return expectation;
-}
-
-/** <psi|H|psi> for the state `steps`/`customGates` produce, H = sum of the
- * given Pauli terms. No measurement-basis circuit needed — reads the raw
- * statevector directly. */
-export function expectationValue(
-  steps: BuilderStep[],
-  customGates: CustomGateDefinition[],
-  qubitCount: number,
-  observable: PauliTerm[],
-): number {
-  const flat = flattenBuilderSteps(steps, customGates);
-  const state = idealStatevector({ qubitCount, steps: flat });
-  return observable.reduce((total, term) => total + term.coefficient * pauliExpectation(state, qubitCount, term.pauli), 0);
-}
 
 // ---------------------------------------------------------------------------
 // Small builders shared across examples
