@@ -23,17 +23,18 @@ test("a slug with no worked-example links at all resolves to nothing", () => {
   assert.deepEqual(resolved.components, []);
 });
 
-test("a real record whose first link is an unresolved exampleId also resolves to nothing yet", () => {
-  // abelian-hidden-subgroup's two links point at shor-order-finding-15 and
-  // simon-2 — both among the 7 examples still being written on a sibling
-  // lane (see check-worked-example-links.mjs's warning) — so as of today
-  // neither resolves.
-  const links = WORKED_EXAMPLE_LINKS["abelian-hidden-subgroup"];
-  assert.ok(links && links.length === 2, "fixture assumption: abelian-hidden-subgroup has 2 links today");
-  const resolved = resolveWorkedExamples("abelian-hidden-subgroup");
-  assert.equal(resolved.hero, null);
-  assert.deepEqual(resolved.components, []);
-});
+// A real record whose first link points at an exampleId not yet in
+// WORKED_EXAMPLES used to be demonstrable with live data (abelian-hidden-subgroup,
+// while shor-order-finding-15 and simon-2 were still being written). All 21
+// examples the map points at landed 2026-09-15, and
+// check-worked-example-links.mjs turned the exampleId cross-check into a
+// hard error the same day — so a committed link that does not resolve is now
+// provably absent from the corpus, not merely absent today. The skip branch
+// in resolveWorkedExamples() that used to cover (an unresolved link is
+// dropped rather than crashing) is dead in practice, but still real
+// defensive code; every other test below exercises resolveWorkedExamples()
+// against links that DO resolve, and "a slug with no links at all resolves
+// to nothing" above covers the same return shape ({hero: null, components: []}).
 
 test("a real record whose first resolvable link is instance gets a hero", () => {
   // bell-state-qiskit -> bell-pair, relation instance, and bell-pair is one

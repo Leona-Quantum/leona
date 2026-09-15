@@ -2,24 +2,45 @@
  * Record -> worked-example links (stage 1 of the Atlas worked-example figure).
  *
  * Stage 2 (a sibling branch) adds `apps/web/lib/worked-examples.ts`, exporting
- * `WORKED_EXAMPLES`, and a record page will draw the linked example instead of
+ * `WORKED_EXAMPLES`, and a record page draws the linked example instead of
  * the hero circuit. This file only carries the verified link data and the
- * lookup — nothing here draws anything yet.
+ * lookup — nothing here draws anything.
  *
- * The data below is the verified map at
+ * The base map (99 links over 84 records) is the verified map at
  * `~/Developer/ai-ops/desk/leona/plans/studio-atlas-usefulness-20260915/atlas-example-map.json`,
- * copied in unchanged (99 links over 84 records). Each `evidence` string is a
- * verbatim substring of `record[field]` — `scripts/check-worked-example-links.mjs`
- * asserts that against the live corpus, so this file is data, not a claim: the
- * claim is checked, not trusted. `field` supports one level of nesting with a
- * dot (`"verificationDetails.caveat"`), and a `tags` field is checked against
- * the array's own entries rather than a joined string.
+ * copied in unchanged. Each `evidence` string is a verbatim substring of
+ * `record[field]` — `scripts/check-worked-example-links.mjs` asserts that
+ * against the live corpus, so this file is data, not a claim: the claim is
+ * checked, not trusted. `field` supports one level of nesting with a dot
+ * (`"verificationDetails.caveat"`), and a `tags` field is checked against the
+ * array's own entries rather than a joined string.
  *
- * The method that produced this map, and its traps (gate cards naming an
- * algorithm in the wrong direction, `shor-code-error-correction` not being
- * Shor's algorithm, `search-with-wildcards` negating the phrases it contains)
- * are in `atlas-example-map.md` beside the JSON. Records affected by those
- * traps are already excluded from the map below.
+ * The base map's method, and its traps (gate cards naming an algorithm in the
+ * wrong direction, `shor-code-error-correction` not being Shor's algorithm,
+ * `search-with-wildcards` negating the phrases it contains) are in
+ * `atlas-example-map.md` beside the JSON. Records affected by those traps are
+ * already excluded from the map below.
+ *
+ * 2026-09-15, second pass (87 links added, 186 total over 170 records): the
+ * base map scored zero honest links for the VQE cluster (`atlas-example-map.md`
+ * §(c) ranked it the single highest-value gap once `vqe-2q-transverse-ising`
+ * existed). Added by the same rule as the base map, applied to two exact
+ * record sets rather than a keyword sweep over the whole corpus:
+ *   - the 37 VQE-method records (wires `hybrid objective / quantum circuit /
+ *     classical update` — the third generic placeholder), `instance`,
+ *     `field: "algorithmFamily"`, evidence `"Variational quantum
+ *     eigensolver"` (every one of the 37 carries that field verbatim);
+ *   - the 50 operator records tagged `"VQE operator"` (wires `definition /
+ *     mapping / measurement`), `component`, `field: "explanation"`, evidence
+ *     `"To use this record in VQE"` (the fixed clause every `operatorEntry`
+ *     carries — the record is a component VQE uses, the correct direction).
+ * `operator-trotter-product` already carried one link (instance, to
+ * ising-trotter-4) and gained this as its second, within the 2-link cap.
+ * Excluded on purpose: `projection-based-embedding-vqe` and
+ * `coarse-grained-vqe-intermolecular-interactions` share the
+ * `algorithmFamily` label but carry the Zoo/Classiq-parity placeholder, not
+ * the VQE-method one — outside the 37 this pass was scoped to; flagged in the
+ * session report rather than linked without being asked.
  */
 
 export type WorkedExampleRelation = "instance" | "component";
@@ -494,6 +515,12 @@ export const WORKED_EXAMPLE_LINKS: Readonly<Record<string, readonly WorkedExampl
    "relation": "instance",
    "field": "title",
    "evidence": "Trotter product"
+  },
+  {
+   "exampleId": "vqe-2q-transverse-ising",
+   "relation": "component",
+   "field": "explanation",
+   "evidence": "To use this record in VQE"
   }
  ],
  "option-pricing-amplitude-estimation": [
@@ -800,6 +827,694 @@ export const WORKED_EXAMPLE_LINKS: Readonly<Record<string, readonly WorkedExampl
    "relation": "component",
    "field": "introduction",
    "evidence": "Shor-type Fourier-sampling method"
+  }
+ ],
+ "vqe-objective-loop": [
+  {
+   "exampleId": "vqe-2q-transverse-ising",
+   "relation": "instance",
+   "field": "algorithmFamily",
+   "evidence": "Variational quantum eigensolver"
+  }
+ ],
+ "vqe-hardware-efficient-ansatz": [
+  {
+   "exampleId": "vqe-2q-transverse-ising",
+   "relation": "instance",
+   "field": "algorithmFamily",
+   "evidence": "Variational quantum eigensolver"
+  }
+ ],
+ "vqe-uccsd-ansatz": [
+  {
+   "exampleId": "vqe-2q-transverse-ising",
+   "relation": "instance",
+   "field": "algorithmFamily",
+   "evidence": "Variational quantum eigensolver"
+  }
+ ],
+ "vqe-generalized-excitations": [
+  {
+   "exampleId": "vqe-2q-transverse-ising",
+   "relation": "instance",
+   "field": "algorithmFamily",
+   "evidence": "Variational quantum eigensolver"
+  }
+ ],
+ "vqe-k-upccgsd": [
+  {
+   "exampleId": "vqe-2q-transverse-ising",
+   "relation": "instance",
+   "field": "algorithmFamily",
+   "evidence": "Variational quantum eigensolver"
+  }
+ ],
+ "vqe-adapt": [
+  {
+   "exampleId": "vqe-2q-transverse-ising",
+   "relation": "instance",
+   "field": "algorithmFamily",
+   "evidence": "Variational quantum eigensolver"
+  }
+ ],
+ "vqe-qubit-adapt": [
+  {
+   "exampleId": "vqe-2q-transverse-ising",
+   "relation": "instance",
+   "field": "algorithmFamily",
+   "evidence": "Variational quantum eigensolver"
+  }
+ ],
+ "vqe-batched-adapt": [
+  {
+   "exampleId": "vqe-2q-transverse-ising",
+   "relation": "instance",
+   "field": "algorithmFamily",
+   "evidence": "Variational quantum eigensolver"
+  }
+ ],
+ "vqe-tetris-adapt": [
+  {
+   "exampleId": "vqe-2q-transverse-ising",
+   "relation": "instance",
+   "field": "algorithmFamily",
+   "evidence": "Variational quantum eigensolver"
+  }
+ ],
+ "vqe-qcc": [
+  {
+   "exampleId": "vqe-2q-transverse-ising",
+   "relation": "instance",
+   "field": "algorithmFamily",
+   "evidence": "Variational quantum eigensolver"
+  }
+ ],
+ "vqe-iterative-qcc": [
+  {
+   "exampleId": "vqe-2q-transverse-ising",
+   "relation": "instance",
+   "field": "algorithmFamily",
+   "evidence": "Variational quantum eigensolver"
+  }
+ ],
+ "vqe-symmetry-preserving": [
+  {
+   "exampleId": "vqe-2q-transverse-ising",
+   "relation": "instance",
+   "field": "algorithmFamily",
+   "evidence": "Variational quantum eigensolver"
+  }
+ ],
+ "vqe-particle-conserving": [
+  {
+   "exampleId": "vqe-2q-transverse-ising",
+   "relation": "instance",
+   "field": "algorithmFamily",
+   "evidence": "Variational quantum eigensolver"
+  }
+ ],
+ "vqe-spin-adapted": [
+  {
+   "exampleId": "vqe-2q-transverse-ising",
+   "relation": "instance",
+   "field": "algorithmFamily",
+   "evidence": "Variational quantum eigensolver"
+  }
+ ],
+ "vqe-orbital-optimized": [
+  {
+   "exampleId": "vqe-2q-transverse-ising",
+   "relation": "instance",
+   "field": "algorithmFamily",
+   "evidence": "Variational quantum eigensolver"
+  }
+ ],
+ "vqe-vqd": [
+  {
+   "exampleId": "vqe-2q-transverse-ising",
+   "relation": "instance",
+   "field": "algorithmFamily",
+   "evidence": "Variational quantum eigensolver"
+  }
+ ],
+ "vqe-ssvqe": [
+  {
+   "exampleId": "vqe-2q-transverse-ising",
+   "relation": "instance",
+   "field": "algorithmFamily",
+   "evidence": "Variational quantum eigensolver"
+  }
+ ],
+ "vqe-mc-vqe": [
+  {
+   "exampleId": "vqe-2q-transverse-ising",
+   "relation": "instance",
+   "field": "algorithmFamily",
+   "evidence": "Variational quantum eigensolver"
+  }
+ ],
+ "vqe-folded-spectrum": [
+  {
+   "exampleId": "vqe-2q-transverse-ising",
+   "relation": "instance",
+   "field": "algorithmFamily",
+   "evidence": "Variational quantum eigensolver"
+  }
+ ],
+ "vqe-penalty-excited-state": [
+  {
+   "exampleId": "vqe-2q-transverse-ising",
+   "relation": "instance",
+   "field": "algorithmFamily",
+   "evidence": "Variational quantum eigensolver"
+  }
+ ],
+ "vqe-quantum-subspace-expansion": [
+  {
+   "exampleId": "vqe-2q-transverse-ising",
+   "relation": "instance",
+   "field": "algorithmFamily",
+   "evidence": "Variational quantum eigensolver"
+  }
+ ],
+ "vqe-qeom": [
+  {
+   "exampleId": "vqe-2q-transverse-ising",
+   "relation": "instance",
+   "field": "algorithmFamily",
+   "evidence": "Variational quantum eigensolver"
+  }
+ ],
+ "vqe-variance-objective": [
+  {
+   "exampleId": "vqe-2q-transverse-ising",
+   "relation": "instance",
+   "field": "algorithmFamily",
+   "evidence": "Variational quantum eigensolver"
+  }
+ ],
+ "vqe-cvar": [
+  {
+   "exampleId": "vqe-2q-transverse-ising",
+   "relation": "instance",
+   "field": "algorithmFamily",
+   "evidence": "Variational quantum eigensolver"
+  }
+ ],
+ "vqe-imaginary-time": [
+  {
+   "exampleId": "vqe-2q-transverse-ising",
+   "relation": "instance",
+   "field": "algorithmFamily",
+   "evidence": "Variational quantum eigensolver"
+  }
+ ],
+ "vqe-natural-gradient": [
+  {
+   "exampleId": "vqe-2q-transverse-ising",
+   "relation": "instance",
+   "field": "algorithmFamily",
+   "evidence": "Variational quantum eigensolver"
+  }
+ ],
+ "vqe-spsa-optimizer": [
+  {
+   "exampleId": "vqe-2q-transverse-ising",
+   "relation": "instance",
+   "field": "algorithmFamily",
+   "evidence": "Variational quantum eigensolver"
+  }
+ ],
+ "vqe-gradient-based": [
+  {
+   "exampleId": "vqe-2q-transverse-ising",
+   "relation": "instance",
+   "field": "algorithmFamily",
+   "evidence": "Variational quantum eigensolver"
+  }
+ ],
+ "vqe-layerwise-training": [
+  {
+   "exampleId": "vqe-2q-transverse-ising",
+   "relation": "instance",
+   "field": "algorithmFamily",
+   "evidence": "Variational quantum eigensolver"
+  }
+ ],
+ "vqe-warm-start": [
+  {
+   "exampleId": "vqe-2q-transverse-ising",
+   "relation": "instance",
+   "field": "algorithmFamily",
+   "evidence": "Variational quantum eigensolver"
+  }
+ ],
+ "vqe-active-space": [
+  {
+   "exampleId": "vqe-2q-transverse-ising",
+   "relation": "instance",
+   "field": "algorithmFamily",
+   "evidence": "Variational quantum eigensolver"
+  }
+ ],
+ "vqe-qubit-tapering": [
+  {
+   "exampleId": "vqe-2q-transverse-ising",
+   "relation": "instance",
+   "field": "algorithmFamily",
+   "evidence": "Variational quantum eigensolver"
+  }
+ ],
+ "vqe-measurement-grouping": [
+  {
+   "exampleId": "vqe-2q-transverse-ising",
+   "relation": "instance",
+   "field": "algorithmFamily",
+   "evidence": "Variational quantum eigensolver"
+  }
+ ],
+ "vqe-classical-shadows": [
+  {
+   "exampleId": "vqe-2q-transverse-ising",
+   "relation": "instance",
+   "field": "algorithmFamily",
+   "evidence": "Variational quantum eigensolver"
+  }
+ ],
+ "vqe-symmetry-verification": [
+  {
+   "exampleId": "vqe-2q-transverse-ising",
+   "relation": "instance",
+   "field": "algorithmFamily",
+   "evidence": "Variational quantum eigensolver"
+  }
+ ],
+ "vqe-zero-noise-extrapolation": [
+  {
+   "exampleId": "vqe-2q-transverse-ising",
+   "relation": "instance",
+   "field": "algorithmFamily",
+   "evidence": "Variational quantum eigensolver"
+  }
+ ],
+ "vqe-readout-mitigation": [
+  {
+   "exampleId": "vqe-2q-transverse-ising",
+   "relation": "instance",
+   "field": "algorithmFamily",
+   "evidence": "Variational quantum eigensolver"
+  }
+ ],
+ "operator-pauli-string": [
+  {
+   "exampleId": "vqe-2q-transverse-ising",
+   "relation": "component",
+   "field": "explanation",
+   "evidence": "To use this record in VQE"
+  }
+ ],
+ "operator-weighted-pauli-sum": [
+  {
+   "exampleId": "vqe-2q-transverse-ising",
+   "relation": "component",
+   "field": "explanation",
+   "evidence": "To use this record in VQE"
+  }
+ ],
+ "operator-electronic-structure": [
+  {
+   "exampleId": "vqe-2q-transverse-ising",
+   "relation": "component",
+   "field": "explanation",
+   "evidence": "To use this record in VQE"
+  }
+ ],
+ "operator-one-body-fermion": [
+  {
+   "exampleId": "vqe-2q-transverse-ising",
+   "relation": "component",
+   "field": "explanation",
+   "evidence": "To use this record in VQE"
+  }
+ ],
+ "operator-two-body-fermion": [
+  {
+   "exampleId": "vqe-2q-transverse-ising",
+   "relation": "component",
+   "field": "explanation",
+   "evidence": "To use this record in VQE"
+  }
+ ],
+ "operator-creation": [
+  {
+   "exampleId": "vqe-2q-transverse-ising",
+   "relation": "component",
+   "field": "explanation",
+   "evidence": "To use this record in VQE"
+  }
+ ],
+ "operator-annihilation": [
+  {
+   "exampleId": "vqe-2q-transverse-ising",
+   "relation": "component",
+   "field": "explanation",
+   "evidence": "To use this record in VQE"
+  }
+ ],
+ "operator-number": [
+  {
+   "exampleId": "vqe-2q-transverse-ising",
+   "relation": "component",
+   "field": "explanation",
+   "evidence": "To use this record in VQE"
+  }
+ ],
+ "operator-total-particle-number": [
+  {
+   "exampleId": "vqe-2q-transverse-ising",
+   "relation": "component",
+   "field": "explanation",
+   "evidence": "To use this record in VQE"
+  }
+ ],
+ "operator-fermionic-hopping": [
+  {
+   "exampleId": "vqe-2q-transverse-ising",
+   "relation": "component",
+   "field": "explanation",
+   "evidence": "To use this record in VQE"
+  }
+ ],
+ "operator-pairing": [
+  {
+   "exampleId": "vqe-2q-transverse-ising",
+   "relation": "component",
+   "field": "explanation",
+   "evidence": "To use this record in VQE"
+  }
+ ],
+ "operator-coulomb": [
+  {
+   "exampleId": "vqe-2q-transverse-ising",
+   "relation": "component",
+   "field": "explanation",
+   "evidence": "To use this record in VQE"
+  }
+ ],
+ "operator-fermi-hubbard": [
+  {
+   "exampleId": "vqe-2q-transverse-ising",
+   "relation": "component",
+   "field": "explanation",
+   "evidence": "To use this record in VQE"
+  }
+ ],
+ "operator-bose-hubbard": [
+  {
+   "exampleId": "vqe-2q-transverse-ising",
+   "relation": "component",
+   "field": "explanation",
+   "evidence": "To use this record in VQE"
+  }
+ ],
+ "operator-ising-cost": [
+  {
+   "exampleId": "vqe-2q-transverse-ising",
+   "relation": "component",
+   "field": "explanation",
+   "evidence": "To use this record in VQE"
+  }
+ ],
+ "operator-transverse-field-ising": [
+  {
+   "exampleId": "vqe-2q-transverse-ising",
+   "relation": "component",
+   "field": "explanation",
+   "evidence": "To use this record in VQE"
+  }
+ ],
+ "operator-xy-model": [
+  {
+   "exampleId": "vqe-2q-transverse-ising",
+   "relation": "component",
+   "field": "explanation",
+   "evidence": "To use this record in VQE"
+  }
+ ],
+ "operator-heisenberg": [
+  {
+   "exampleId": "vqe-2q-transverse-ising",
+   "relation": "component",
+   "field": "explanation",
+   "evidence": "To use this record in VQE"
+  }
+ ],
+ "operator-xyz-model": [
+  {
+   "exampleId": "vqe-2q-transverse-ising",
+   "relation": "component",
+   "field": "explanation",
+   "evidence": "To use this record in VQE"
+  }
+ ],
+ "operator-kitaev-chain": [
+  {
+   "exampleId": "vqe-2q-transverse-ising",
+   "relation": "component",
+   "field": "explanation",
+   "evidence": "To use this record in VQE"
+  }
+ ],
+ "operator-maxcut-cost": [
+  {
+   "exampleId": "vqe-2q-transverse-ising",
+   "relation": "component",
+   "field": "explanation",
+   "evidence": "To use this record in VQE"
+  }
+ ],
+ "operator-qubo": [
+  {
+   "exampleId": "vqe-2q-transverse-ising",
+   "relation": "component",
+   "field": "explanation",
+   "evidence": "To use this record in VQE"
+  }
+ ],
+ "operator-constraint-penalty": [
+  {
+   "exampleId": "vqe-2q-transverse-ising",
+   "relation": "component",
+   "field": "explanation",
+   "evidence": "To use this record in VQE"
+  }
+ ],
+ "operator-dipole": [
+  {
+   "exampleId": "vqe-2q-transverse-ising",
+   "relation": "component",
+   "field": "explanation",
+   "evidence": "To use this record in VQE"
+  }
+ ],
+ "operator-density": [
+  {
+   "exampleId": "vqe-2q-transverse-ising",
+   "relation": "component",
+   "field": "explanation",
+   "evidence": "To use this record in VQE"
+  }
+ ],
+ "operator-spin-x-total": [
+  {
+   "exampleId": "vqe-2q-transverse-ising",
+   "relation": "component",
+   "field": "explanation",
+   "evidence": "To use this record in VQE"
+  }
+ ],
+ "operator-spin-y-total": [
+  {
+   "exampleId": "vqe-2q-transverse-ising",
+   "relation": "component",
+   "field": "explanation",
+   "evidence": "To use this record in VQE"
+  }
+ ],
+ "operator-spin-z-total": [
+  {
+   "exampleId": "vqe-2q-transverse-ising",
+   "relation": "component",
+   "field": "explanation",
+   "evidence": "To use this record in VQE"
+  }
+ ],
+ "operator-total-spin-squared": [
+  {
+   "exampleId": "vqe-2q-transverse-ising",
+   "relation": "component",
+   "field": "explanation",
+   "evidence": "To use this record in VQE"
+  }
+ ],
+ "operator-fermion-parity": [
+  {
+   "exampleId": "vqe-2q-transverse-ising",
+   "relation": "component",
+   "field": "explanation",
+   "evidence": "To use this record in VQE"
+  }
+ ],
+ "operator-jordan-wigner-creation": [
+  {
+   "exampleId": "vqe-2q-transverse-ising",
+   "relation": "component",
+   "field": "explanation",
+   "evidence": "To use this record in VQE"
+  }
+ ],
+ "operator-jordan-wigner-number": [
+  {
+   "exampleId": "vqe-2q-transverse-ising",
+   "relation": "component",
+   "field": "explanation",
+   "evidence": "To use this record in VQE"
+  }
+ ],
+ "operator-jordan-wigner-hopping": [
+  {
+   "exampleId": "vqe-2q-transverse-ising",
+   "relation": "component",
+   "field": "explanation",
+   "evidence": "To use this record in VQE"
+  }
+ ],
+ "operator-parity-mapping": [
+  {
+   "exampleId": "vqe-2q-transverse-ising",
+   "relation": "component",
+   "field": "explanation",
+   "evidence": "To use this record in VQE"
+  }
+ ],
+ "operator-bravyi-kitaev-mapping": [
+  {
+   "exampleId": "vqe-2q-transverse-ising",
+   "relation": "component",
+   "field": "explanation",
+   "evidence": "To use this record in VQE"
+  }
+ ],
+ "operator-z2-symmetry-generator": [
+  {
+   "exampleId": "vqe-2q-transverse-ising",
+   "relation": "component",
+   "field": "explanation",
+   "evidence": "To use this record in VQE"
+  }
+ ],
+ "operator-reference-projector": [
+  {
+   "exampleId": "vqe-2q-transverse-ising",
+   "relation": "component",
+   "field": "explanation",
+   "evidence": "To use this record in VQE"
+  }
+ ],
+ "operator-deflation-projector": [
+  {
+   "exampleId": "vqe-2q-transverse-ising",
+   "relation": "component",
+   "field": "explanation",
+   "evidence": "To use this record in VQE"
+  }
+ ],
+ "operator-shifted-hamiltonian-square": [
+  {
+   "exampleId": "vqe-2q-transverse-ising",
+   "relation": "component",
+   "field": "explanation",
+   "evidence": "To use this record in VQE"
+  }
+ ],
+ "operator-hamiltonian-variance": [
+  {
+   "exampleId": "vqe-2q-transverse-ising",
+   "relation": "component",
+   "field": "explanation",
+   "evidence": "To use this record in VQE"
+  }
+ ],
+ "operator-energy-gradient-commutator": [
+  {
+   "exampleId": "vqe-2q-transverse-ising",
+   "relation": "component",
+   "field": "explanation",
+   "evidence": "To use this record in VQE"
+  }
+ ],
+ "operator-anti-hermitian-excitation": [
+  {
+   "exampleId": "vqe-2q-transverse-ising",
+   "relation": "component",
+   "field": "explanation",
+   "evidence": "To use this record in VQE"
+  }
+ ],
+ "operator-ucc-singles-pool": [
+  {
+   "exampleId": "vqe-2q-transverse-ising",
+   "relation": "component",
+   "field": "explanation",
+   "evidence": "To use this record in VQE"
+  }
+ ],
+ "operator-ucc-doubles-pool": [
+  {
+   "exampleId": "vqe-2q-transverse-ising",
+   "relation": "component",
+   "field": "explanation",
+   "evidence": "To use this record in VQE"
+  }
+ ],
+ "operator-qubit-adapt-pool": [
+  {
+   "exampleId": "vqe-2q-transverse-ising",
+   "relation": "component",
+   "field": "explanation",
+   "evidence": "To use this record in VQE"
+  }
+ ],
+ "operator-pauli-time-evolution": [
+  {
+   "exampleId": "vqe-2q-transverse-ising",
+   "relation": "component",
+   "field": "explanation",
+   "evidence": "To use this record in VQE"
+  }
+ ],
+ "operator-commuting-group": [
+  {
+   "exampleId": "vqe-2q-transverse-ising",
+   "relation": "component",
+   "field": "explanation",
+   "evidence": "To use this record in VQE"
+  }
+ ],
+ "operator-one-rdm": [
+  {
+   "exampleId": "vqe-2q-transverse-ising",
+   "relation": "component",
+   "field": "explanation",
+   "evidence": "To use this record in VQE"
+  }
+ ],
+ "operator-two-rdm": [
+  {
+   "exampleId": "vqe-2q-transverse-ising",
+   "relation": "component",
+   "field": "explanation",
+   "evidence": "To use this record in VQE"
   }
  ]
 };

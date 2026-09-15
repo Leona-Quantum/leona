@@ -28,9 +28,13 @@ test("every record has at least one link and at most two", () => {
   }
 });
 
-test("the map matches the verified count — 84 records, 99 links", () => {
+test("the map matches the verified count — 170 records, 186 links", () => {
+  // 84 records / 99 links from the base map (atlas-example-map.json), plus
+  // the 2026-09-15 VQE pass: 37 VQE-method records (instance) + 50 VQE
+  // operator records (component) = 87 new links, 86 new records
+  // (operator-trotter-product already carried a link and gained a second).
   const slugs = Object.keys(WORKED_EXAMPLE_LINKS);
   const total = slugs.reduce((sum, slug) => sum + WORKED_EXAMPLE_LINKS[slug].length, 0);
-  assert.equal(slugs.length, 84);
-  assert.equal(total, 99);
+  assert.equal(slugs.length, 170);
+  assert.equal(total, 186);
 });
