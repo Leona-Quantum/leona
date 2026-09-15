@@ -1,5 +1,6 @@
 import { parseGateAngle } from "./gate-angle.ts";
 import type { ParsedBuilderCircuit } from "./studio-parse.ts";
+import { flattenBuilderSteps, type BuilderStep, type CustomGateDefinition } from "./studio-builder.ts";
 
 /**
  * The pure statevector kernel behind Studio's bounded browser simulator —
@@ -295,3 +296,73 @@ const PHASE_S: ComplexMatrix = [1, 0, 0, 0, 0, 0, 0, 1];
 const PHASE_T: ComplexMatrix = [1, 0, 0, 0, 0, 0, Math.SQRT1_2, Math.SQRT1_2];
 const PHASE_SDG: ComplexMatrix = [1, 0, 0, 0, 0, 0, 0, -1];
 const PHASE_TDG: ComplexMatrix = [1, 0, 0, 0, 0, 0, Math.SQRT1_2, -Math.SQRT1_2];
+
+// ---------------------------------------------------------------------------
+// expectationValue — a pure helper over this kernel's raw statevector, moved
+// here from worked-examples.ts (Atlas worked-example figure lane, 2026-09-15)
+// for the same reason as everything else in this file: it must be reachable
+// from a public client component without importing worked-examples.ts's own
+// WORKED_EXAMPLES data (all 14 examples' full step lists and bilingual
+// prose) along with it. worked-examples.ts re-exports it unchanged.
+
+/** One letter per qubit, I/X/Y/Z. Character 0 is the highest-numbered qubit,
+ * the same bitstring-reading convention `bitstringFor` uses. */
+export type PauliTerm = { coefficient: number; pauli: string };
+
+function applyPauliLetterInPlace(real: Float64Array, imaginary: Float64Array, qubit: number, letter: "X" | "Y" | "Z") {
+  const mask = 1 << qubit;
+  for (let index = 0; index < real.length; index += 1) {
+    if ((index & mask) !== 0) continue;
+    const paired = index | mask;
+    if (letter === "Z") {
+      real[paired] = -real[paired];
+      imaginary[paired] = -imaginary[paired];
+      continue;
+    }
+    const re0 = real[index];
+    const im0 = imaginary[index];
+    const re1 = real[paired];
+    const im1 = imaginary[paired];
+    if (letter === "X") {
+      real[index] = re1; imaginary[index] = im1;
+      real[paired] = re0; imaginary[paired] = im0;
+    } else {
+      // Y = [[0,-i],[i,0]]: new0 = -i*old1, new1 = i*old0.
+      real[index] = im1; imaginary[index] = -re1;
+      real[paired] = -im0; imaginary[paired] = re0;
+    }
+  }
+}
+
+function pauliExpectation(state: { real: Float64Array; imaginary: Float64Array }, qubitCount: number, pauli: string): number {
+  if (pauli.length !== qubitCount) throw new Error(`pauli string length ${pauli.length} does not match qubitCount ${qubitCount}`);
+  const dim = state.real.length;
+  const outReal = Float64Array.from(state.real);
+  const outImaginary = Float64Array.from(state.imaginary);
+  for (let charIndex = 0; charIndex < pauli.length; charIndex += 1) {
+    const letter = pauli[charIndex].toUpperCase();
+    if (letter === "I") continue;
+    if (letter !== "X" && letter !== "Y" && letter !== "Z") throw new Error(`invalid Pauli letter: ${pauli[charIndex]}`);
+    const qubit = qubitCount - 1 - charIndex;
+    applyPauliLetterInPlace(outReal, outImaginary, qubit, letter);
+  }
+  let expectation = 0;
+  for (let index = 0; index < dim; index += 1) {
+    expectation += state.real[index] * outReal[index] + state.imaginary[index] * outImaginary[index];
+  }
+  return expectation;
+}
+
+/** <psi|H|psi> for the state `steps`/`customGates` produce, H = sum of the
+ * given Pauli terms. No measurement-basis circuit needed — reads the raw
+ * statevector directly. */
+export function expectationValue(
+  steps: BuilderStep[],
+  customGates: CustomGateDefinition[],
+  qubitCount: number,
+  observable: PauliTerm[],
+): number {
+  const flat = flattenBuilderSteps(steps, customGates);
+  const state = idealStatevector({ qubitCount, steps: flat });
+  return observable.reduce((total, term) => total + term.coefficient * pauliExpectation(state, qubitCount, term.pauli), 0);
+}
