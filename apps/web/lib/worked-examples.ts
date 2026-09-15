@@ -582,6 +582,34 @@ function vqeTransverseIsing(): WorkedExample {
 }
 
 // ---------------------------------------------------------------------------
+// 15. quantum-walk-cycle-4
+
+function quantumWalkCycle4(): WorkedExample {
+  const step1 = place("quantum_walk_step_cycle4", {}, [0, 1, 2], "walk1");
+  const step2 = place("quantum_walk_step_cycle4", {}, [0, 1, 2], "walk2");
+  const step3 = place("quantum_walk_step_cycle4", {}, [0, 1, 2], "walk3");
+  const steps = [step1.step, step2.step, step3.step];
+  return {
+    id: "quantum-walk-cycle-4",
+    algorithm: "Discrete-time quantum walk",
+    title: { en: "A discrete-time quantum walk on a 4-cycle", ja: "4サイクル上の離散時間量子ウォーク" },
+    instance: { en: "One coin qubit, two position qubits (4 positions on a cycle), 3 steps starting at position 0.", ja: "コイン用の量子ビット1個、位置用の量子ビット2個（サイクル上の4つの位置）で、位置0から3ステップ進めます。" },
+    qubitCount: 3,
+    steps,
+    customGates: [...step1.customGates, ...step2.customGates, ...step3.customGates],
+    notes: [
+      note(step1.step.id, "Flips the coin with a Hadamard, then shifts the position by +1 if the coin is |1⟩ or -1 mod 4 if the coin is |0⟩; with the coin in superposition, both shifts happen at once, entangling coin and position.", "コインをアダマールゲートで重ね合わせにし、コインが|1⟩なら位置を+1、|0⟩なら4を法として-1だけ移動します。コインが重ね合わせのときは両方の移動が同時に起こり、コインと位置がもつれます。"),
+      note(step2.step.id, "The same coin flip and shift, applied again.", "同じコインの反転と移動を再度適用します。"),
+      note(step3.step.id, "The same coin flip and shift, a third time.", "同じコインの反転と移動を3回目に適用します。"),
+    ],
+    check: { kind: "distribution", probabilities: { "110": 0.5, "111": 0.5 }, tolerance: 1e-6 },
+    readout: { en: "The position always reads 3, for either value of the coin: constructive interference on this small cycle concentrates the walk onto a single position after exactly 3 steps.", ja: "コインの値にかかわらず、位置は常に3と読み取られます。この小さなサイクル上では、ちょうど3ステップ後に建設的干渉によってウォークが単一の位置に集中します。" },
+    keywords: ["quantum walk", "discrete-time quantum walk"],
+    blocks: ["quantum_walk_step_cycle4"],
+  };
+}
+
+// ---------------------------------------------------------------------------
 
 // angle = 3*pi/4 = 2*pi*3/8: exact 3-bit phase, counting register reads 011
 // (=3) with probability 1 (verified against the simulator's raw output).
@@ -623,6 +651,7 @@ export const WORKED_EXAMPLES: readonly WorkedExample[] = [
   swapTestPlusZero(),
   teleportationDeferred(),
   vqeTransverseIsing(),
+  quantumWalkCycle4(),
 ];
 
 export function workedExample(id: string): WorkedExample | undefined {

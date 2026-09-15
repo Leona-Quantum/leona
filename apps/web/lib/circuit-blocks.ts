@@ -555,6 +555,49 @@ const QAOA_MAXCUT_LAYER: BlockTemplate = {
   },
 };
 
+/**
+ * One step of a discrete-time quantum walk on a 4-cycle: qubit 0 is the
+ * coin, qubits 1-2 are the position (b0 = LSB, b1 = MSB). A Hadamard coin
+ * flip, then a shift by +1 mod 4 when the coin is |1>, or -1 mod 4 when the
+ * coin is |0> (both amplitudes present at once when the coin is in
+ * superposition, as it is after the Hadamard).
+ *
+ * +1 mod 4 on (b1,b0) is CX(b0,b1) then X(b0) — a standard 2-bit increment:
+ * XOR the carry into b1 first (while b0 still holds its pre-increment
+ * value), then flip b0. Controlled on the coin: CCX(coin,b0,b1) then
+ * CX(coin,b0). -1 mod 4 is the exact inverse (X(b0) then CX(b0,b1)); since
+ * this gate set has no "anti-control", the -1 branch is built by
+ * temporarily flipping the coin (X(coin) ... X(coin)) so "coin was
+ * originally 0" reads as "coin is now 1" for the CX/CCX pair in between.
+ * No ancilla; verified against the simulator for both the classical
+ * (coin fixed) and Hadamard-coin cases in the test.
+ */
+const QUANTUM_WALK_STEP_CYCLE4: BlockTemplate = {
+  key: "quantum_walk_step_cycle4",
+  name: "Quantum walk step (4-cycle)",
+  category: "simulation",
+  summary: "One step of a discrete-time quantum walk on a 4-cycle: a Hadamard coin flip, then a shift by +1 or -1 mod 4 controlled by the coin.",
+  params: [],
+  qubitCount: () => 3,
+  build: () => {
+    const coin = 0;
+    const b0 = 1;
+    const b1 = 2;
+    const steps: GateSpec[] = [
+      h(coin),
+      // +1 mod 4, controlled on coin=1.
+      ccx(coin, b0, b1),
+      cx(coin, b0),
+      // -1 mod 4, controlled on coin=0 (coin flipped around this pair, then restored).
+      { gate: "X", qubits: [coin] },
+      cx(coin, b0),
+      ccx(coin, b0, b1),
+      { gate: "X", qubits: [coin] },
+    ];
+    return leafBlock("quantum-walk-step-cycle4", "Quantum walk step (4-cycle)", 3, steps);
+  },
+};
+
 const SWAP_TEST: BlockTemplate = {
   key: "swap_test",
   name: "Swap test",
@@ -598,6 +641,7 @@ export const BLOCK_TEMPLATES: readonly BlockTemplate[] = [
   HARDWARE_EFFICIENT_LAYER,
   QAOA_MAXCUT_LAYER,
   SWAP_TEST,
+  QUANTUM_WALK_STEP_CYCLE4,
 ];
 
 export function blockTemplate(key: string): BlockTemplate | undefined {
