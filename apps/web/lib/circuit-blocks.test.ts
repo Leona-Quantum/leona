@@ -79,7 +79,8 @@ test("validateBlockParams catches an out-of-range int, a bad angle, a malformed 
   assert.match(validateBlockParams(trotter, { n: 4, J: "not-an-angle", h: "1", dt: "0.1" }) ?? "", /angle/);
 
   const qaoa = blockTemplate("qaoa_maxcut_layer")!;
-  assert.match(validateBlockParams(qaoa, { edges: [[0, "x"]], gamma: "pi/4", beta: "pi/8" }) ?? "", /pairs/);
+  const edgesWithBadEntry = { edges: [[0, "x"]], gamma: "pi/4", beta: "pi/8" } as unknown as BlockParams;
+  assert.match(validateBlockParams(qaoa, edgesWithBadEntry) ?? "", /pairs/);
   assert.equal(validateBlockParams(qaoa, { edges: [[0, 1], [1, 2]], gamma: "pi/4", beta: "pi/8" }), null);
 });
 

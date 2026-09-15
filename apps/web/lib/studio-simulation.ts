@@ -227,6 +227,20 @@ export function singleQubitUnitary(gate: SingleQubitUnitaryGate, theta = 0): Com
 }
 
 /**
+ * The ideal statevector itself, from the same kernel the CPU lane samples —
+ * real and imaginary parts, one entry per basis index. Exported (rather than
+ * kept as `executeCircuit`, private) for callers that need genuine amplitude
+ * information and not just |amplitude|² — worked-examples.ts's
+ * `expectationValue`, for an observable with an X or Y term, is the reason
+ * this exists: those are off-diagonal, so a probability distribution alone
+ * cannot recover ⟨psi|H|psi⟩. Throws where the kernel does: custom gates, and
+ * angles outside its syntax.
+ */
+export function idealStatevector(circuit: ParsedBuilderCircuit): { real: Float64Array; imaginary: Float64Array } {
+  return executeCircuit(circuit);
+}
+
+/**
  * Ideal outcome probabilities, |amplitude|² per basis index, from the same kernel
  * the CPU lane samples. Measurements are terminal here exactly as they are there.
  * Throws where the kernel does: custom gates, and angles outside its syntax.
