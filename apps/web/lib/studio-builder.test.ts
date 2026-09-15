@@ -1,7 +1,14 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { generateBuilderCode, type CustomGateDefinition, type BuilderStep } from "./studio-builder.ts";
+import {
+  customGateDefinitionHasCycle,
+  customGateUsageCount,
+  generateBuilderCode,
+  ungroupCustomGateStep,
+  type CustomGateDefinition,
+  type BuilderStep,
+} from "./studio-builder.ts";
 
 const customGate: CustomGateDefinition = {
   id: "custom-abc123",
@@ -263,4 +270,78 @@ test("an unmeasured circuit binds FINAL_CIRCUIT too", () => {
   assert.match(code.pyquil, /^FINAL_CIRCUIT = program$/m);
   assert.match(code.qibo, /^FINAL_CIRCUIT = circuit$/m);
   assert.match(code.qulacs, /^FINAL_CIRCUIT = circuit$/m);
+});
+
+test("a block cannot be saved to contain itself, directly or through another block", () => {
+  assert.equal(customGateDefinitionHasCycle("g1", [{ id: "a", gate: "H", qubits: [0] }], []), false);
+  // Direct: g1's proposed body calls g1.
+  assert.equal(
+    customGateDefinitionHasCycle("g1", [{ id: "a", gate: "CUSTOM", customGateId: "g1", qubits: [0] }], []),
+    true,
+  );
+  // Indirect: g1's proposed body calls g2, whose saved body calls g1.
+  const g2: CustomGateDefinition = { id: "g2", name: "g2", qubitCount: 1, steps: [{ id: "b", gate: "CUSTOM", customGateId: "g1", qubits: [0] }] };
+  assert.equal(
+    customGateDefinitionHasCycle("g1", [{ id: "a", gate: "CUSTOM", customGateId: "g2", qubits: [0] }], [g2]),
+    true,
+  );
+  // Unrelated: g1's proposed body calls g2, which does not call back into g1.
+  const g3: CustomGateDefinition = { id: "g3", name: "g3", qubitCount: 1, steps: [{ id: "c", gate: "X", qubits: [0] }] };
+  assert.equal(
+    customGateDefinitionHasCycle("g1", [{ id: "a", gate: "CUSTOM", customGateId: "g3", qubits: [0] }], [g3]),
+    false,
+  );
+});
+
+test("customGateUsageCount counts the canvas and every other definition's own steps", () => {
+  const inner: CustomGateDefinition = { id: "inner", name: "Inner", qubitCount: 1, steps: [{ id: "x", gate: "X", qubits: [0] }] };
+  const outer: CustomGateDefinition = {
+    id: "outer",
+    name: "Outer",
+    qubitCount: 1,
+    steps: [
+      { id: "a", gate: "CUSTOM", customGateId: "inner", qubits: [0] },
+      { id: "b", gate: "CUSTOM", customGateId: "inner", qubits: [0] },
+    ],
+  };
+  const canvas: BuilderStep[] = [{ id: "c1", gate: "CUSTOM", customGateId: "inner", qubits: [0] }];
+  assert.equal(customGateUsageCount("inner", canvas, [inner, outer]), 3);
+  assert.equal(customGateUsageCount("outer", canvas, [inner, outer]), 0);
+  assert.equal(customGateUsageCount("missing", canvas, [inner, outer]), 0);
+});
+
+test("ungrouping replaces one instance with its own definition's steps, remapped, one level only", () => {
+  const nested: CustomGateDefinition = { id: "inner", name: "Inner", qubitCount: 1, steps: [{ id: "x", gate: "X", qubits: [0] }] };
+  const outer: CustomGateDefinition = {
+    id: "outer",
+    name: "Outer",
+    qubitCount: 2,
+    steps: [
+      { id: "a", gate: "H", qubits: [0] },
+      { id: "b", gate: "CUSTOM", customGateId: "inner", qubits: [1] },
+    ],
+  };
+  const canvas: BuilderStep[] = [
+    { id: "before", gate: "H", qubits: [2] },
+    { id: "target", gate: "CUSTOM", customGateId: "outer", qubits: [3, 4] },
+    { id: "after", gate: "M", qubits: [3] },
+  ];
+  const ungrouped = ungroupCustomGateStep(canvas, "target", [outer, nested]);
+  assert.ok(ungrouped);
+  assert.equal(ungrouped.length, 4);
+  assert.equal(ungrouped[0].id, "before");
+  // outer's local qubit 0 -> global 3, local 1 -> global 4.
+  assert.deepEqual({ gate: ungrouped[1].gate, qubits: ungrouped[1].qubits }, { gate: "H", qubits: [3] });
+  // The nested block stays a CUSTOM step — ungroup is one level, not a full flatten.
+  assert.deepEqual({ gate: ungrouped[2].gate, qubits: ungrouped[2].qubits, customGateId: ungrouped[2].customGateId }, { gate: "CUSTOM", qubits: [4], customGateId: "inner" });
+  assert.equal(ungrouped[3].id, "after");
+  // Replacement steps get fresh ids, distinct from both the original definition's and each other's.
+  assert.notEqual(ungrouped[1].id, "a");
+  assert.notEqual(ungrouped[1].id, ungrouped[2].id);
+
+  assert.equal(ungroupCustomGateStep(canvas, "missing", [outer, nested]), null);
+  assert.equal(ungroupCustomGateStep(canvas, "before", [outer, nested]), null); // not a CUSTOM step
+  const opaqueCanvas: BuilderStep[] = [{ id: "op", gate: "CUSTOM", customGateId: "opaque-gate", qubits: [0] }];
+  const opaqueGate: CustomGateDefinition = { id: "opaque-gate", name: "SDK op", qubitCount: 1, steps: [{ id: "z", gate: "X", qubits: [0] }], opaque: true };
+  assert.equal(ungroupCustomGateStep(opaqueCanvas, "op", [opaqueGate]), null);
 });
