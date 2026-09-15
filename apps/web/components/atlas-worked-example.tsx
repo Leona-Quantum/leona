@@ -32,6 +32,8 @@ import type { PublicLocale } from "../lib/public-locale";
 import type { WorkedExample } from "../lib/worked-examples";
 import { layoutAtlasCircuit } from "../lib/repository/atlas-circuit-layout";
 import {
+  formatSignificant,
+  observableLabel,
   openedStepGates,
   stepLabel,
   workedExampleDrawing,
@@ -56,7 +58,7 @@ const COPY = {
     onWires: "on",
     probabilityLabel: "Probability of each outcome after this step",
     otherStates: (n: number) => `${n} more ${n === 1 ? "outcome" : "outcomes"}`,
-    expectationLabel: "⟨H⟩ after this step",
+    expectationLabel: (symbol: string) => `⟨${symbol}⟩ after this step`,
     readoutLabel: "Readout",
     openInStudio: "Open in Studio",
     openingSignIn: "Opening sign in…",
@@ -78,7 +80,7 @@ const COPY = {
     onWires: "対象：",
     probabilityLabel: "このステップ後の各結果の確率",
     otherStates: (n: number) => `他 ${n} 件`,
-    expectationLabel: "このステップ後の ⟨H⟩",
+    expectationLabel: (symbol: string) => `このステップ後の ⟨${symbol}⟩`,
     readoutLabel: "読み出し結果",
     openInStudio: "Studioで開く",
     openingSignIn: "サインインを開いています…",
@@ -155,6 +157,9 @@ export function AtlasWorkedExampleFigure({
 
   const noteByStepId = new Map(example.notes.map((entry) => [entry.stepId, entry.text]));
   const reading = workedExampleReading(example.steps, example.customGates, example.qubitCount, currentStep, example.observable);
+  // Computed once from the observable itself, not per step: which symbol to
+  // show (⟨Z₂⟩, ⟨H⟩...) does not depend on where the reader currently is.
+  const label = example.observable && example.observable.length > 0 ? observableLabel(example.observable) : null;
   const atEnd = !playing && currentStep >= total - 1;
   const title = locale === "ja" ? example.title.ja : example.title.en;
 
@@ -265,14 +270,18 @@ export function AtlasWorkedExampleFigure({
               ]}
             />
           ) : null}
-          {reading.kind === "expectation" ? (
+          {reading.kind === "expectation" && label ? (
             <p className="mj-worked-example-expectation">
-              <span className="mj-atlas-outcomes-label">{copy.expectationLabel}</span>
-              <strong>{reading.value.toFixed(5)}</strong>
+              <span className="mj-atlas-outcomes-label">
+                {copy.expectationLabel(label.kind === "term" ? label.symbol : "H")}
+              </span>
+              <strong>{formatSignificant(reading.value)}</strong>
             </p>
           ) : null}
         </div>
       </figure>
+
+      {label && label.kind === "hamiltonian" ? <p className="mj-worked-example-hamiltonian">{label.formula}</p> : null}
 
       <ol className="mj-worked-example-notes">
         {example.steps.map((step, index) => {

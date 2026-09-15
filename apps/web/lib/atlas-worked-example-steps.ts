@@ -58,6 +58,104 @@ export function openedStepGates(
   return flat.map((gate) => ({ id: gate.id, label: stepLabel(gate, []), qubits: gate.qubits }));
 }
 
+// ---------------------------------------------------------------------------
+// Observable labelling and number formatting.
+//
+// Fixed after a review of a live screenshot: quantum-teleportation's
+// observable is Z on the target qubit (checking the teleported state), and
+// labelling that reading "⟨H⟩" claimed it was an energy, which it is not.
+// The label now comes from the observable itself — a single unit-coefficient
+// Pauli term prints as that term (e.g. "⟨Z₂⟩"); anything else (several terms,
+// or one term with a coefficient other than 1) is a genuine Hamiltonian and
+// prints as "⟨H⟩", with the formula rendered once below the figure.
+
+const SUBSCRIPT_DIGITS: Record<string, string> = {
+  "0": "₀", "1": "₁", "2": "₂", "3": "₃", "4": "₄",
+  "5": "₅", "6": "₆", "7": "₇", "8": "₈", "9": "₉",
+};
+
+function subscript(n: number): string {
+  return String(n).split("").map((digit) => SUBSCRIPT_DIGITS[digit] ?? digit).join("");
+}
+
+/**
+ * The non-identity (qubit, letter) factors of one Pauli string, ascending by
+ * qubit index — same highest-qubit-first character convention the kernel's
+ * own `pauliExpectation` reads a string with (character 0 = the highest
+ * qubit), just resolved to qubit indices and sorted for display rather than
+ * applied to a statevector.
+ */
+function pauliFactors(pauli: string): Array<{ qubit: number; letter: string }> {
+  const qubitCount = pauli.length;
+  const factors: Array<{ qubit: number; letter: string }> = [];
+  for (let charIndex = 0; charIndex < pauli.length; charIndex += 1) {
+    const letter = pauli[charIndex].toUpperCase();
+    if (letter === "I") continue;
+    factors.push({ qubit: qubitCount - 1 - charIndex, letter });
+  }
+  factors.sort((a, b) => a.qubit - b.qubit);
+  return factors;
+}
+
+/**
+ * A Pauli string's own symbol, identity factors omitted — "Z₀Z₁" for "ZZ",
+ * "Z₂" for "ZII" (3 qubits), and "I" for an all-identity string (nothing
+ * left to show once identity is omitted, so the identity itself is shown
+ * rather than an empty pair of angle brackets).
+ */
+export function pauliTermSymbol(pauli: string): string {
+  const factors = pauliFactors(pauli);
+  if (factors.length === 0) return "I";
+  return factors.map(({ qubit, letter }) => `${letter}${subscript(qubit)}`).join("");
+}
+
+/**
+ * "H = Z₀Z₁ + 0.5 X₁ + 0.5 X₀" — one term per entry, in the observable's own
+ * array order (not re-sorted: reordering a Hamiltonian an author wrote down
+ * in a particular order would be a second claim about it this file has no
+ * standing to make). Coefficient magnitudes print as authored (0.5, not
+ * 0.500) — the 3-significant-figure rule is for the live computed value
+ * (`formatSignificant`), not for a formula's own symbolic coefficients.
+ */
+export function hamiltonianFormula(observable: readonly PauliTerm[]): string {
+  const body = observable
+    .map((term, index) => {
+      const symbol = pauliTermSymbol(term.pauli);
+      const magnitude = Math.abs(term.coefficient);
+      const text = magnitude === 1 ? symbol : `${magnitude} ${symbol}`;
+      const negative = term.coefficient < 0;
+      if (index === 0) return negative ? `−${text}` : text;
+      return negative ? ` − ${text}` : ` + ${text}`;
+    })
+    .join("");
+  return `H = ${body}`;
+}
+
+export type ObservableLabel =
+  /** A single term with coefficient 1 — the observable itself, e.g. "Z₂". */
+  | { kind: "term"; symbol: string }
+  /** Several terms, or one term whose coefficient isn't 1 — a genuine sum, shown as ⟨H⟩. */
+  | { kind: "hamiltonian"; formula: string };
+
+export function observableLabel(observable: readonly PauliTerm[]): ObservableLabel {
+  if (observable.length === 1 && observable[0].coefficient === 1) {
+    return { kind: "term", symbol: pauliTermSymbol(observable[0].pauli) };
+  }
+  return { kind: "hamiltonian", formula: hamiltonianFormula(observable) };
+}
+
+/**
+ * 3 significant figures and the proper minus sign (U+2212, not a hyphen) —
+ * `1.00`, `−1.41`, `0.707`, matching how a reader expects a physics
+ * quantity printed, not `toString()`'s float noise.
+ */
+export function formatSignificant(value: number, digits = 3): string {
+  if (!Number.isFinite(value)) return String(value);
+  if (value === 0) return (0).toPrecision(digits); // guards -0 -> "-0.00"
+  const magnitude = Math.abs(value).toPrecision(digits);
+  return value < 0 ? `−${magnitude}` : magnitude;
+}
+
 export type WorkedExampleReading =
   | { kind: "probabilities"; reading: PlayheadReading }
   | { kind: "expectation"; value: number };
