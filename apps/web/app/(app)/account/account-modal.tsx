@@ -141,6 +141,9 @@ export function AccountModal({ locale, children }: { locale: PublicLocale; child
     <div
       className="mj-account-modal-backdrop"
       role="presentation"
+      // How the guided tour tells Settings is open, so it can close it before pointing
+      // at the page underneath (components/tour/tour-dom.ts, routeModal).
+      data-route-modal=""
       // mousedown, not click: a drag that STARTS inside the dialog (selecting an
       // email address, say) and ends over the backdrop fires `click` on the
       // backdrop, and would dismiss a panel the person was reading.

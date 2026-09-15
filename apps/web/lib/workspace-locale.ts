@@ -3802,6 +3802,7 @@ export type ToursCopy = {
     wandered: (place: string) => string;
     away: (place: string) => string;
     hidden: string;
+    covered: string;
     offline: string;
     offlineSkipped: (count: number) => string;
     doing: string;
@@ -3907,6 +3908,7 @@ export const TOURS_COPY: Record<PublicLocale, ToursCopy> = {
       wandered: (place) => `You're on ${place} now. Go back to the tour, or pause here?`,
       away: (place) => `Next stop: ${place}.`,
       hidden: "That control isn't on screen at this window size. You can skip this step.",
+      covered: "Something is open on top of this step. Close it to carry on.",
       offline: "This step needs the workspace online, so it's skipped here.",
       offlineSkipped: (count) => (count === 1 ? "Skipped one step that needs the workspace online." : `Skipped ${count} steps that need the workspace online.`),
       doing: "Doing it for you.",
@@ -4132,6 +4134,7 @@ export const TOURS_COPY: Record<PublicLocale, ToursCopy> = {
       wandered: (place) => `今は${place}にいます。ツアーに戻りますか？それともここで一時停止しますか？`,
       away: (place) => `次は${place}です。`,
       hidden: "この画面幅ではその操作が表示されていません。このステップは飛ばせます。",
+      covered: "このステップの上に別の画面が開いています。閉じると続けられます。",
       offline: "このステップにはワークスペースへの接続が必要なため、ここでは飛ばします。",
       offlineSkipped: (count) => `ワークスペースへの接続が必要な${count}つのステップを飛ばしました。`,
       doing: "代わりに操作しています。",

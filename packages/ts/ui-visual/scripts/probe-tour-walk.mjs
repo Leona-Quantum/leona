@@ -2,7 +2,8 @@
 //
 // Clicks through every step of every track on a real dev server, including a
 // wrong click, "Do it for me", an idle nudge, a reader's own prompt, Ask, the
-// Settings row, reduced motion, Japanese and a phone-width viewport. Headless
+// Settings row, Settings as a popout over the page, reduced motion, Japanese and a
+// phone-width viewport. Headless
 // Chromium because the in-app browser pane reports the document as hidden and
 // every animation there is paused.
 //
@@ -345,6 +346,34 @@ function checkVeil(label, colorText, before, after) {
   check(`${label}: the page behind is still readable`, after.sd > 2 && after.sd > before.sd * 0.15 && after.sd < before.sd, `luma spread ${before.sd} → ${after.sd}`);
 }
 
+/**
+ * Whether the step's control is really what a press in the spotlight reaches: the
+ * topmost element at its centre (ignoring the tour's own layer) is the control, no
+ * Settings popout is open, and the ring is drawn. A spotlight drawn over a control
+ * that something else covers passed every other check here (owner, 2026-09-14).
+ */
+async function uncovered(page, name) {
+  return page.evaluate((target) => {
+    const layer = document.querySelector("[data-tour-layer]");
+    const node = [...document.querySelectorAll(`[data-tour="${target}"]`)].find((element) => element.getBoundingClientRect().width > 1);
+    const modal = Boolean(document.querySelector("[data-route-modal]"));
+    const ring = Boolean(layer?.querySelector(".mj-tour-ring"));
+    if (!node || !layer) return { ok: false, layer: Boolean(layer), node: Boolean(node), modal, ring, path: location.pathname };
+    const box = node.getBoundingClientRect();
+    const top = document.elementsFromPoint(box.left + box.width / 2, box.top + box.height / 2).find((element) => !layer.contains(element));
+    const onControl = Boolean(top && (top === node || node.contains(top)));
+    return { ok: onControl && !modal && ring, onControl, top: top ? `${top.tagName.toLowerCase()}.${String(top.className).slice(0, 40)}` : null, modal, ring, path: location.pathname };
+  }, name);
+}
+
+/** Settings the way a reader opens it: from the account menu, which Next turns into a popout over the page. */
+async function openSettingsPopout(page, from) {
+  await page.goto(`${BASE}${from}`);
+  await page.locator("[data-tour=\"account-menu\"]").filter({ visible: true }).first().click();
+  await page.locator("[data-tour=\"menu-settings\"]").filter({ visible: true }).first().click();
+  await waitFor(page, () => Boolean(document.querySelector("[data-route-modal]")), null, 30_000);
+}
+
 const scenarios = {
   async invite_and_around(browser) {
     const { context, page } = await open(browser, { seed: null });
@@ -391,7 +420,7 @@ const scenarios = {
     const inertAfter = await page.evaluate(() => [...document.body.querySelectorAll("[inert]")].filter((node) => !node.closest(".mj-sidebar-user-drawer") && !node.matches(".mj-sidebar-user-drawer")).length);
     check("no inert left behind after the tour", inertAfter === 0, `${inertAfter}`);
     const sent = await signals(page);
-    check("analytics: tour_done fired for around", sent.some((signal) => signal.event === "tour_done" && signal.tour === "around"), `${sent.length} signals`);
+    check("signal: tour_done fired for around", sent.some((signal) => signal.event === "tour_done" && signal.tour === "around"), `${sent.length} signals`);
     await context.close();
   },
 
@@ -491,6 +520,75 @@ const scenarios = {
     const result = await walk(page, "teach");
     const track = tourById("teach");
     check("teach: started from Settings, walked to the end", result.finished, `seen ${result.seen.length}/${track.steps.length}, offline ${result.offline}, hidden ${result.hidden}`);
+    await context.close();
+  },
+
+  // `page.goto("/account")` above loads Settings as a full page. A reader opens it from
+  // the account menu, where it is a popout over the page they were on, and a tour
+  // started from there used to run on the page underneath with Settings still on top.
+  async start_from_settings_popout(browser) {
+    const { context, page } = await open(browser);
+    const startFromTours = async (title) => {
+      await page.locator("[data-route-modal] [data-tour=\"settings-tours\"]").first().click();
+      await waitFor(page, () => Boolean(document.querySelector("[data-route-modal] .mj-tour-settings")), null, 20_000);
+      await page.locator("[data-route-modal] .mj-tour-settings .mj-tour-track", { hasText: title }).locator("button").first().click();
+    };
+
+    // Around begins on any workspace page, so nothing navigates: only closing Settings uncovers the rail.
+    await openSettingsPopout(page, "/run");
+    await startFromTours(EN.tracks.around.title);
+    await waitFor(page, () => !document.querySelector("[data-route-modal]") && Boolean(document.querySelector("[data-tour-layer] .mj-tour-ring")), null, 20_000);
+    const around = await uncovered(page, "rail-run");
+    check("settings popout: Around started from it closes Settings, then points at the rail", around.ok && around.path === "/run", JSON.stringify(around));
+    await shot(page, "19-around-from-settings-popout");
+    await clickCard(page, EN.card.skipTour);
+
+    // Build begins on Run; from Settings open over Studio it has to close Settings and then travel.
+    await openSettingsPopout(page, "/studio?new=1");
+    await startFromTours(EN.tracks.build.title);
+    await waitFor(page, () => location.pathname === "/run" && !document.querySelector("[data-route-modal]") && Boolean(document.querySelector("[data-tour-layer] .mj-tour-ring")), null, 30_000);
+    const build = await uncovered(page, "run-mode");
+    check("settings popout over Studio: Build closes Settings, goes to Run and points at the mode", build.ok, JSON.stringify(build));
+    await clickCard(page, EN.card.skipTour);
+
+    // Reached by a link, the Usage step finds the account menu shut and has it opened.
+    await page.goto(`${BASE}/run#tour=around.5`);
+    await waitFor(page, () => document.querySelector("[data-tour-layer]")?.dataset.step === "around.4" && Boolean(document.querySelector("[data-tour-layer] .mj-tour-ring")), null, 30_000);
+    const usage = await uncovered(page, "menu-usage");
+    check("a Usage step reached by link opens the account menu and points at Usage", usage.ok, JSON.stringify(usage));
+
+    // The reader presses the spotlighted Usage link, which opens Settings over it. That is
+    // the reader's doing, so Settings stays; the spotlight withdraws and the card says so.
+    await page.locator("[data-tour=\"menu-usage\"]").filter({ visible: true }).first().click();
+    await waitFor(page, () => Boolean(document.querySelector("[data-route-modal]")) && !document.querySelector("[data-tour-layer] .mj-tour-ring"), null, 20_000);
+    const blocked = await state(page);
+    const inert = await page.evaluate(() => Boolean(document.querySelector("[data-route-modal]")?.closest("[inert]")));
+    check("Settings opened over a step: no spotlight through it, the card names it, Settings is usable", blocked.lines.some((line) => line.includes(EN.places.settings)) && blocked.primary?.label === EN.card.backToTour && !inert, JSON.stringify({ lines: blocked.lines, primary: blocked.primary, inert }));
+    await shot(page, "20-settings-over-a-step");
+    await clickCard(page, EN.card.backToTour);
+    await waitFor(page, () => !document.querySelector("[data-route-modal]") && Boolean(document.querySelector("[data-tour-layer] .mj-tour-ring")), null, 20_000);
+    const back = await uncovered(page, "menu-usage");
+    check("Back to the tour closes Settings and the spotlight returns to Usage", back.ok && back.path === "/run", JSON.stringify(back));
+    await context.close();
+  },
+
+  // On a phone the rail step opens the navigation drawer. Back to a step on the page
+  // used to leave that drawer over the control the step pointed at.
+  async phone_back_out_of_the_drawer(browser) {
+    const { context, page } = await open(browser, { viewport: { width: 375, height: 812 } });
+    const drawerShown = () => page.evaluate(() => {
+      const sidebar = document.querySelector(".mj-shell-sidebar");
+      return Boolean(sidebar) && getComputedStyle(sidebar).display !== "none";
+    });
+    await page.goto(`${BASE}/notebooks/courses#tour=teach.7`);
+    await waitFor(page, () => document.querySelector("[data-tour-layer]")?.dataset.step === "teach.6" && Boolean(document.querySelector("[data-tour-layer] .mj-tour-ring")), null, 30_000);
+    check("phone: the rail step opens the drawer", await drawerShown());
+    await clickCard(page, EN.card.back);
+    await waitFor(page, () => document.querySelector("[data-tour-layer]")?.dataset.step === "teach.5", null, 15_000);
+    await waitFor(page, () => Boolean(document.querySelector("[data-tour-layer] .mj-tour-ring")) || document.querySelector("[data-tour-layer]")?.dataset.phase === "hidden", null, 15_000);
+    const course = await uncovered(page, "courses-composer");
+    check("phone: Back to a page step closes the drawer and points at the composer", course.ok && !(await drawerShown()), JSON.stringify(course));
+    await shot(page, "21-phone-back-out-of-drawer");
     await context.close();
   },
 

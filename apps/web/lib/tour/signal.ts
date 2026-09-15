@@ -1,18 +1,14 @@
-import { track } from "@vercel/analytics";
-
 /**
  * Where people finish, skip or ask for help (TUTORIAL.md, "Measuring it").
  *
- * The plan said "through the existing pageview signal". That signal is the
- * middleware's server log of public pageviews; a client event cannot reach it
- * without a new route, and a new route is an external-boundary change this work
- * is not allowed to make. So these go through the one client analytics surface
- * the site already loads, Vercel Web Analytics (`<Analytics />` in
- * root-document.tsx), as a single custom event name.
+ * Each call fires one window event: which tour, which step and what happened. No
+ * prompt text, no question text, no identifier. The Playwright walk reads it.
  *
- * What is sent is only which tour, which step and what happened. No prompt text,
- * no question text, no identifier. Every call also fires a window event, which
- * is what the Playwright walk reads.
+ * Nothing leaves the browser. These used to go on to Vercel Web Analytics as a custom
+ * event, until the owner switched that product off for cost (ai-ops 308); after that
+ * its script 404'd on every page and the events reached nobody. Where they should go
+ * instead is the owner's call (ai-ops 303), and a listener on this event is where a
+ * destination would attach.
  */
 export const TOUR_SIGNAL_EVENT = "leona:tour-signal";
 
@@ -25,9 +21,4 @@ export type TourSignal = {
 export function tourSignal(signal: TourSignal): void {
   if (typeof window === "undefined") return;
   window.dispatchEvent(new CustomEvent<TourSignal>(TOUR_SIGNAL_EVENT, { detail: signal }));
-  try {
-    track("guided_tour", { event: signal.event, tour: signal.tour, step: signal.step ?? "" });
-  } catch {
-    // Analytics must never be the reason a tour step fails.
-  }
 }
