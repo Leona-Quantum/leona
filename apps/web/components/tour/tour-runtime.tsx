@@ -27,7 +27,7 @@ import {
   tourStatus,
   valueMatches,
 } from "../../lib/tour/engine.ts";
-import { TOUR_COMMAND_EVENT, WORKSPACE_SIDEBAR_EVENT, type TourCommand } from "../../lib/tour/events.ts";
+import { TOUR_COMMAND_EVENT, WORKSPACE_ACCOUNT_MENU_EVENT, WORKSPACE_SIDEBAR_EVENT, type TourCommand } from "../../lib/tour/events.ts";
 import { centreCard, holeFor, orbAnchor, placeCard, type Rect } from "../../lib/tour/geometry.ts";
 import { tourSignal } from "../../lib/tour/signal.ts";
 import { stepCopyKey, stepGo, stepRoute, tourById } from "../../lib/tour/tracks.ts";
@@ -37,7 +37,10 @@ import { GuideOrb } from "./guide-orb";
 import { TOUR_CARD_BODY_ID, TourCard, type TourCardButton, type TourStatusLine } from "./tour-card";
 import { TourChooser } from "./tour-chooser";
 import {
+  behindPhoneDrawer,
   controlIn,
+  coverOver,
+  type CoverKind,
   describeWith,
   fieldIn,
   fieldValue,
@@ -47,6 +50,7 @@ import {
   isEditable,
   prefersReducedMotion,
   pressTarget,
+  routeModal,
   typeInto,
   wait,
 } from "./tour-dom";
@@ -209,6 +213,9 @@ export function TourRuntime({ locale: localeProp, surface, initialCommand = null
   const [cursor, setCursor] = useState({ x: 0, y: 0, visible: false, pressing: false });
   const [orb, setOrb] = useState({ x: -60, y: -60, trail: 0 });
   const [missFlash, setMissFlash] = useState(false);
+  // What the page has open on top of the step's control, if anything. While it is
+  // there the spotlight is withdrawn and the card says what is in the way.
+  const [covered, setCovered] = useState<CoverKind | null>(null);
   // The overlay glides only when it moves to something new (a step or a control).
   // Following a control that scrolls or resizes is immediate: a CSS transition
   // restarted on every scroll frame left the spotlight trailing the control by
@@ -250,6 +257,12 @@ export function TourRuntime({ locale: localeProp, surface, initialCommand = null
   // through are not the reader wandering off.
   const travelling = useRef(0);
   const [travelTick, setTravelTick] = useState(0);
+  // Settings closing (one history step back), so nothing presses Back twice.
+  const closing = useRef<Promise<void> | null>(null);
+  // The step whose covers the tour has already dealt with. The tour closes what is on
+  // top of a control once, when it brings the reader to that step; something the reader
+  // opens after that is theirs, and stays.
+  const coverHandled = useRef("");
 
   const active = progress?.active ?? null;
   const tour = active ? tourById(active.track) : null;
@@ -272,7 +285,41 @@ export function TourRuntime({ locale: localeProp, surface, initialCommand = null
 
   function go(url: string) {
     travelling.current = Date.now() + 10_000;
+    // The @modal slot keeps what it rendered across a client-side navigation, so a push
+    // while Settings is open changes the page behind the popout and leaves Settings on
+    // top: the tour ran on controls the reader could not see. Close it first, then go.
+    if (routeModal() && !routeMatches("/account", url)) {
+      void closeSettings().then(() => {
+        if (`${window.location.pathname}${window.location.search}` !== url) router.push(url);
+      });
+      return;
+    }
     router.push(url);
+  }
+
+  /** Settings closes the way its own close button does: one step back in history. */
+  function closeSettings(): Promise<void> {
+    if (closing.current) return closing.current;
+    if (!routeModal()) return Promise.resolve();
+    router.back();
+    const started = Date.now();
+    const done = new Promise<void>((resolve) => {
+      const poll = () => {
+        if (routeModal() && Date.now() - started < 2000) {
+          window.setTimeout(poll, 50);
+          return;
+        }
+        closing.current = null;
+        resolve();
+      };
+      window.setTimeout(poll, 50);
+    });
+    closing.current = done;
+    return done;
+  }
+
+  function closeDrawer() {
+    window.dispatchEvent(new CustomEvent(WORKSPACE_SIDEBAR_EVENT, { detail: { open: false } }));
   }
 
   /**
@@ -296,6 +343,7 @@ export function TourRuntime({ locale: localeProp, surface, initialCommand = null
     setChooserOpen(false);
     setFinishedTour(null);
     setInviteVisible(false);
+    coverHandled.current = "";
     const updated = update((current) => {
       const returnTo = next.kind === "show" && current.active && current.active.track !== next.id ? current.active : null;
       if (next.kind === "show") return startTour(current, next, { returnTo });
@@ -442,6 +490,7 @@ export function TourRuntime({ locale: localeProp, surface, initialCommand = null
         begin(command.tour, Boolean(command.fromStart));
         return;
       case "resume":
+        coverHandled.current = "";
         update((current) => setPaused(current, false));
         return;
       case "leave":
@@ -551,14 +600,46 @@ export function TourRuntime({ locale: localeProp, surface, initialCommand = null
     let tries = 0;
     let timer = 0;
     let askedForDrawer = false;
+    let askedForMenu = false;
     setUi((current) => (current.key === key && ["away", "wandered", "offline"].includes(current.phase) ? { ...current, phase: "locating" } : current));
     const look = () => {
       if (cancelled) return;
       // Hydrated controls only for the first five seconds (see findTarget).
       const found = findTarget(step.target!, tries >= 20);
       if (found) {
+        // Something the page opened is on top of the control. Arriving at the step, that
+        // is the tour's own doing — a tour started from inside Settings, Back from the
+        // step inside Settings, a drawer an earlier step opened on a phone — so the tour
+        // closes it, once. Opened by the reader after that, it stays (see `covered`).
+        if (coverHandled.current !== key) {
+          coverHandled.current = key;
+          const cover = coverOver(found, layerRef.current);
+          if (cover === "settings") {
+            void closeSettings();
+            timer = window.setTimeout(look, 120);
+            return;
+          }
+          if (cover === "navigation") {
+            closeDrawer();
+            timer = window.setTimeout(look, 250);
+            return;
+          }
+        }
+        if (closing.current) {
+          timer = window.setTimeout(look, 120);
+          return;
+        }
         setTarget((current) => (current === found ? current : found));
         setUi((current) => (current.key !== key || ["waiting", "reading", "satisfied", "success"].includes(current.phase) ? current : { ...current, phase: initialPhase(step, found) }));
+        return;
+      }
+      // The other side of the same drawer: a step on the page, reached with the drawer an
+      // earlier step opened still open (Back from a rail step), finds its control inert
+      // behind it. Close the drawer, once, as for anything else the tour left on top.
+      if (coverHandled.current !== key && behindPhoneDrawer(step.target!)) {
+        coverHandled.current = key;
+        closeDrawer();
+        timer = window.setTimeout(look, 250);
         return;
       }
       // On a phone the rail and the sidebar live in a collapsed drawer. Ask the shell to
@@ -566,6 +647,12 @@ export function TourRuntime({ locale: localeProp, surface, initialCommand = null
       if (!askedForDrawer && document.querySelector(`#workspace-navigation [data-tour="${CSS.escape(step.target!)}"]`)) {
         askedForDrawer = true;
         window.dispatchEvent(new CustomEvent(WORKSPACE_SIDEBAR_EVENT));
+      }
+      // Usage and Settings live in the account menu, which may be shut when the reader
+      // reaches their step by any way other than opening it (a resume, a link, Back).
+      if (!askedForMenu && document.querySelector(`.mj-sidebar-user-drawer [data-tour="${CSS.escape(step.target!)}"]`)) {
+        askedForMenu = true;
+        window.dispatchEvent(new CustomEvent(WORKSPACE_ACCOUNT_MENU_EVENT));
       }
       tries += 1;
       if (tries === 16 && step.expect?.kind !== "wait") {
@@ -585,6 +672,7 @@ export function TourRuntime({ locale: localeProp, surface, initialCommand = null
   useEffect(() => {
     if (!target) {
       setRect(null);
+      setCovered(null);
       return;
     }
     if (placedOnce.current) {
@@ -618,6 +706,8 @@ export function TourRuntime({ locale: localeProp, surface, initialCommand = null
         && Math.abs(previous.height - box.height) < 0.5
         ? previous
         : { left: box.left, top: box.top, width: box.width, height: box.height }));
+      const cover = coverOver(target, layerRef.current);
+      setCovered((previous) => (previous === cover ? previous : cover));
     };
     const schedule = () => {
       if (document.visibilityState === "hidden") measure();
@@ -718,7 +808,9 @@ export function TourRuntime({ locale: localeProp, surface, initialCommand = null
 
   // Keyboard and screen readers: the card describes the control; while a step
   // waits for an action, focus goes to the control and the rest of the page is inert.
-  const waitsForAction = running && ui.phase === "waiting" && !chooserOpen;
+  // Never while something covers the control: making the rest of the page inert would
+  // shut the reader inside whatever is open on top of it, Settings included.
+  const waitsForAction = running && ui.phase === "waiting" && !chooserOpen && !covered;
   useEffect(() => {
     if (!running || !target || !settled) return;
     const control = controlIn(target) ?? target;
@@ -781,7 +873,7 @@ export function TourRuntime({ locale: localeProp, surface, initialCommand = null
 
   // ---- geometry --------------------------------------------------------------
 
-  const showsHole = running && Boolean(rect) && ["waiting", "reading", "satisfied", "success"].includes(ui.phase);
+  const showsHole = running && Boolean(rect) && !covered && ["waiting", "reading", "satisfied", "success"].includes(ui.phase);
   const hole = showsHole && rect ? holeFor(rect, viewport) : null;
   const centred = running && ui.phase === "reading" && !step?.target;
   // Between steps, and while the tour travels to a page, the step is "locating".
@@ -847,6 +939,8 @@ export function TourRuntime({ locale: localeProp, surface, initialCommand = null
     else if (ui.doing) status.push({ text: copy.status.doing, tone: "info" });
     else if (ui.missLine) status.push({ text: ui.missLine, tone: "warn" });
     else if (ui.nudged && ui.phase === "waiting") status.push({ text: copy.status.nudge, tone: "info" });
+    const blocked = covered !== null && ["waiting", "reading", "satisfied"].includes(ui.phase);
+    if (blocked) status.push({ text: covered === "settings" ? copy.status.wandered(copy.places.settings) : copy.status.covered, tone: "info" });
     if (ui.phase === "away") status.push({ text: copy.status.away(copy.places[placeFor(stepGo(tour, step))]), tone: "info" });
     if (ui.phase === "wandered") status.push({ text: copy.status.wandered(copy.places[placeFor(pathname)]), tone: "info" });
     if (ui.phase === "hidden") status.push({ text: copy.status.hidden, tone: "warn" });
@@ -858,7 +952,15 @@ export function TourRuntime({ locale: localeProp, surface, initialCommand = null
 
     let primary: TourCardButton | null = null;
     const secondary: TourCardButton[] = [];
-    switch (ui.phase) {
+    if (blocked && covered === "settings") {
+      primary = { label: copy.card.backToTour, onClick: () => void closeSettings() };
+      secondary.push({ label: copy.card.pause, onClick: () => update((current) => setPaused(current, true)) });
+    } else if (blocked && covered === "navigation") {
+      primary = { label: copy.card.backToTour, onClick: closeDrawer };
+      secondary.push(skipStep);
+    } else if (blocked) {
+      secondary.push(skipStep);
+    } else switch (ui.phase) {
       case "reading":
       case "satisfied":
         primary = { label: nextLabel, onClick: () => complete("done") };
@@ -998,6 +1100,7 @@ export function TourRuntime({ locale: localeProp, surface, initialCommand = null
                 className="mj-tour-button"
                 data-primary="true"
                 onClick={() => {
+                  coverHandled.current = "";
                   update((current) => setPaused(current, false));
                   if (!routeMatches(stepRoute(tour, step), pathname) && canGo(tour, step)) go(stepGo(tour, step));
                 }}

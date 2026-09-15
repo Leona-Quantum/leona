@@ -40,7 +40,6 @@
  */
 import type { CSSProperties, ReactNode } from "react";
 import type { Metadata } from "next";
-import { Analytics } from "@vercel/analytics/next";
 import { Instrument_Sans, Instrument_Serif, JetBrains_Mono } from "next/font/google";
 import Script from "next/script";
 import { DARK_PUBLIC_PATHS, ACCENT_STORAGE_KEY, THEME_STORAGE_KEY, type Theme } from "../lib/theme";
@@ -268,10 +267,6 @@ export function RootDocument({ lang, children, forcedTheme }: { lang: string; ch
       <body>
         <ThemeController locale={lang} forcedTheme={forcedTheme} />
         {children}
-        {/* Vercel Web Analytics: cookie-free pageview beacon (ai-ops#92). The
-            script no-ops when the project's Analytics feature is off, so this
-            is safe to render unconditionally rather than env-gating it. */}
-        <Analytics />
       </body>
     </html>
   );

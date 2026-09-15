@@ -38,6 +38,66 @@ export function findTarget(name: string, acceptUnhydrated = false): HTMLElement 
   return null;
 }
 
+/**
+ * Settings: the /account route, which an in-app navigation opens as a popout over the
+ * page (app/(app)/@modal). The popout marks itself `data-route-modal`.
+ */
+export function routeModal(): HTMLElement | null {
+  return document.querySelector<HTMLElement>("[data-route-modal]");
+}
+
+/** What the page can open on top of a step's control: dialogs, menus, the phone drawer. */
+const OVERLAY = [
+  "[data-route-modal]",
+  "[role=\"dialog\"]",
+  "[role=\"alertdialog\"]",
+  "[aria-modal=\"true\"]",
+  "[role=\"menu\"]",
+  ".mj-shell-sidebar",
+  ".mj-sidebar-backdrop",
+].join(", ");
+
+export type CoverKind = "settings" | "navigation" | "other";
+
+/**
+ * Whether something the page opened sits on top of the control, and what.
+ *
+ * A spotlight over a covered control points at whatever is in front of it, and a press
+ * in the hole lands on that instead (owner, 2026-09-14: a tour started from Settings ran
+ * "on buttons that are behind it"). Settings is found by presence, not by hit-testing:
+ * it covers the whole viewport, and an element the tour has made `inert` is skipped by
+ * `elementsFromPoint`, so a hit test could miss it. Anything else is whatever is topmost
+ * at the control's centre, and only an overlay counts — a sticky header over the edge
+ * of a control is not a reason to stop the tour.
+ */
+export function coverOver(target: Element, layer: Element | null): CoverKind | null {
+  const modal = routeModal();
+  if (modal && !modal.contains(target)) return "settings";
+  const box = target.getBoundingClientRect();
+  const x = Math.min(Math.max(box.left + box.width / 2, 1), window.innerWidth - 1);
+  const y = Math.min(Math.max(box.top + box.height / 2, 1), window.innerHeight - 1);
+  for (const element of document.elementsFromPoint(x, y)) {
+    if (layer?.contains(element) || inertByPage(element)) continue;
+    if (element === target || target.contains(element) || element.contains(target)) return null;
+    const overlay = element.closest(OVERLAY);
+    if (!overlay || overlay.contains(target)) return null;
+    // By the element hit, not the overlay: the open drawer is itself a modal dialog.
+    return element.closest("#workspace-navigation, .mj-shell-sidebar, .mj-sidebar-backdrop") ? "navigation" : "other";
+  }
+  return null;
+}
+
+/**
+ * Whether the step's control is on the page behind an open phone navigation drawer.
+ * The open drawer is modal, so the page behind it is `inert` and `findTarget` skips the
+ * control altogether: from the tour's side it is "not found", never "covered".
+ */
+export function behindPhoneDrawer(name: string): boolean {
+  const navigation = document.getElementById("workspace-navigation");
+  if (!navigation || window.innerWidth > 720 || navigation.getClientRects().length === 0) return false;
+  return Array.from(document.querySelectorAll(`[data-tour="${CSS.escape(name)}"]`)).some((node) => !navigation.contains(node) && inertByPage(node));
+}
+
 /** The nearest `data-tour` name at or above an element, for "That's the framework picker". */
 export function tourNameOf(element: Element | null): string | null {
   return element?.closest<HTMLElement>("[data-tour]")?.dataset.tour ?? null;
