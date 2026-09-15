@@ -4,6 +4,7 @@ import {
   errorReportingOrigin,
 } from "./lib/content-security-policy";
 import { permissionsPolicy } from "./lib/permissions-policy";
+import { deployEnv } from "./lib/deploy-env";
 
 /**
  * Content-Security-Policy (05-security.md §1 platform+edge).
@@ -88,16 +89,25 @@ const CONTROL_PLANE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000"
  * `VERCEL_ENV !== "production"`, so it fails CLOSED. An unset or unexpected
  * `VERCEL_ENV` — a self-hosted build, a container build, a platform rename —
  * then yields the tight policy instead of silently widening production's.
+ *
+ * Reads through `deployEnv()` (lib/deploy-env.ts), which checks
+ * `LEONA_DEPLOY_ENV` first and falls back to `VERCEL_ENV` — on Vercel,
+ * `LEONA_DEPLOY_ENV` is never set, so this is exactly `VERCEL_ENV`,
+ * unchanged. On Cloud Run there is no toolbar to admit either way (nothing
+ * ships `vercel.live`), so `LEONA_DEPLOY_ENV=preview`/`development` widening
+ * this allowlist there is inert, not a new exposure — the CSP is stricter
+ * than what actually runs.
  */
+const resolvedDeployEnv = deployEnv();
 const vercelToolbar =
-  process.env.VERCEL_ENV === "preview" ||
+  resolvedDeployEnv === "preview" ||
   // `vercel dev` sets VERCEL_ENV="development"; a plain `next dev` sets it to
   // nothing at all. Both are a local server on a laptop, so both are listed —
   // without the first, which of the two commands you happened to start decided
   // whether the toolbar worked. Raised by CodeRabbit on PR 651, numbered without
   // a hash because `check-raw-hex` reads a three-digit hash-number as a colour.
-  process.env.VERCEL_ENV === "development" ||
-  (process.env.VERCEL_ENV === undefined && process.env.NODE_ENV === "development");
+  resolvedDeployEnv === "development" ||
+  (resolvedDeployEnv === undefined && process.env.NODE_ENV === "development");
 
 const csp = contentSecurityPolicy({
   controlPlane: CONTROL_PLANE,
