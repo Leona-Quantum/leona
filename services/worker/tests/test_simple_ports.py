@@ -385,6 +385,114 @@ def _ports(*, observer=None, rollback=None):
     return ports, llm, executor, reviewer, converter, saver, observer
 
 
+def _source_revision_ports(
+    llm: "QueueLLM", *, revise_source: bool
+) -> ProductionSimplePipelinePorts:
+    return ProductionSimplePipelinePorts(
+        store=MemoryAgentStore(),
+        observer=Observer(),
+        llm=llm,
+        executor=Executor(),
+        reviewer=Reviewer(),
+        converter=Converter(),
+        saver=Saver(),
+        task_prompt="Add a second CX gate to this circuit",
+        framework=Framework.QISKIT,
+        requested_shots=100,
+        requested_seed=7,
+        initial_source=_SOURCE,
+        revise_source=revise_source,
+    )
+
+
+async def test_verify_first_attempt_returns_initial_source_verbatim_without_a_model_call():
+    """`source_intent="verify"` (the default, `revise_source=False`) must keep
+    every caller's byte-for-byte behavior from before `source_intent` existed:
+    the planner never sees `_initial_source`, and the first `generate` attempt
+    returns it untouched rather than asking a model to reproduce it."""
+    run_id = uuid4()
+    # Only ONE response queued. If `generate` incorrectly called the model on
+    # a plain verify run, `QueueLLM.complete` would raise `IndexError` popping
+    # from an empty list — a failure that cannot be mistaken for a pass.
+    llm = QueueLLM([json.dumps(_plan_payload())])
+    ports = _source_revision_ports(llm, revise_source=False)
+
+    plan_result = await ports.plan(run_id, None, None)
+    assert plan_result.failure is None
+    plan_request = json.loads(llm.requests[0].user)
+    assert plan_request["source_to_revise"] is None
+
+    generate_result = await ports.generate(run_id, plan_result.value, None, None)
+    assert generate_result.failure is None
+    assert len(llm.requests) == 1
+    assert (
+        generate_result.value.source
+        == FrameworkProgram(Framework.QISKIT, _SOURCE).normalized_source
+    )
+
+
+async def test_revise_first_attempt_sends_the_source_to_plan_and_generate_and_does_not_echo_it():
+    """`source_intent="revise"` (`revise_source=True`) must do the opposite:
+    the planner payload carries the source to change, and the first `generate`
+    attempt calls the model with it as `previous_source` rather than returning
+    it unread — the gap this feature closes."""
+    run_id = uuid4()
+    revised_source = _SOURCE.replace(
+        "FINAL_CIRCUIT.cx(0, 1)",
+        "FINAL_CIRCUIT.cx(0, 1)\nFINAL_CIRCUIT.cx(1, 0)",
+    )
+    llm = QueueLLM([json.dumps(_plan_payload()), json.dumps({"source": revised_source})])
+    ports = _source_revision_ports(llm, revise_source=True)
+
+    plan_result = await ports.plan(run_id, None, None)
+    assert plan_result.failure is None
+    plan_request = json.loads(llm.requests[0].user)
+    assert plan_request["source_to_revise"] == {"code": _SOURCE, "truncated": False}
+
+    generate_result = await ports.generate(run_id, plan_result.value, None, None)
+    assert generate_result.failure is None
+    assert len(llm.requests) == 2, "generate must call the model rather than echo the source"
+    generate_request = json.loads(llm.requests[1].user)
+    assert generate_request["previous_source"] == _SOURCE
+    assert generate_request["repair_feedback"] is None
+    assert "revision, not a rewrite" in llm.requests[1].system
+    expected = FrameworkProgram(Framework.QISKIT, revised_source).normalized_source
+    assert generate_result.value.source == expected
+    assert (
+        generate_result.value.source
+        != FrameworkProgram(Framework.QISKIT, _SOURCE).normalized_source
+    )
+
+
+async def test_revise_without_initial_source_behaves_as_ordinary_generation():
+    """`source_intent="revise"` with no `source_code` at all (the field is
+    meaningless without one) must not crash or dead-end — it behaves exactly
+    like a task-only build, the same as if `revise_source` were False."""
+    run_id = uuid4()
+    llm = QueueLLM([json.dumps(_plan_payload()), json.dumps({"source": _SOURCE})])
+    ports = ProductionSimplePipelinePorts(
+        store=MemoryAgentStore(),
+        observer=Observer(),
+        llm=llm,
+        executor=Executor(),
+        reviewer=Reviewer(),
+        converter=Converter(),
+        saver=Saver(),
+        task_prompt="prepare a two-qubit Bell state",
+        framework=Framework.QISKIT,
+        requested_shots=100,
+        requested_seed=7,
+        initial_source=None,
+        revise_source=True,
+    )
+
+    plan_result = await ports.plan(run_id, None, None)
+    assert plan_result.failure is None
+    generate_result = await ports.generate(run_id, plan_result.value, None, None)
+    assert generate_result.failure is None
+    assert len(llm.requests) == 2
+
+
 async def test_plan_and_generation_receive_referential_conversation_context():
     history = [
         {
