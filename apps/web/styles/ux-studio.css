@@ -348,7 +348,8 @@
   grid-template-columns: minmax(0, 1fr) minmax(240px, 300px);
   border-bottom: 1px solid var(--border-0);
 }
-.mj-circuit-workbench.is-readonly {
+.mj-circuit-workbench.is-readonly,
+.mj-circuit-workbench.mj-circuit-workbench--solo {
   grid-template-columns: minmax(0, 1fr);
 }
 .mj-circuit-workbench > .mj-circuit-stage {
@@ -424,6 +425,48 @@
 }
 .mj-circuit-gate.is-future {
   opacity: 0.32;
+}
+.mj-circuit-gate--nested rect:not(.mj-circuit-hit) {
+  stroke-width: 1;
+}
+/* An open block's bracket: a labelled box behind its inline children. Nesting
+   depth widens the border slightly so a block-inside-a-block is legible. */
+.mj-circuit-bracket-box {
+  fill: color-mix(in srgb, var(--accent-2) 5%, transparent);
+  stroke: color-mix(in srgb, var(--accent-2) 45%, var(--border-0));
+  stroke-dasharray: 4 3;
+  stroke-width: 1.25;
+}
+.mj-circuit-bracket[data-depth="0"] .mj-circuit-bracket-box {
+  stroke-width: 1.5;
+}
+.mj-circuit-bracket-chip {
+  cursor: pointer;
+}
+.mj-circuit-bracket-chip rect {
+  fill: color-mix(in srgb, var(--accent-2) 16%, var(--bg-1));
+  stroke: color-mix(in srgb, var(--accent-2) 55%, var(--border-0));
+}
+.mj-circuit-bracket-chip:hover rect,
+.mj-circuit-bracket-chip:focus-visible rect {
+  stroke: var(--accent);
+  stroke-width: 1.5;
+}
+.mj-circuit-bracket-chip:focus-visible {
+  outline: none;
+}
+.mj-circuit-bracket-name {
+  fill: var(--text-1);
+  font-size: 11px;
+}
+.mj-circuit-bracket-close {
+  fill: var(--text-2);
+  font-size: 13px;
+  text-anchor: end;
+}
+.mj-circuit-bracket-chip:hover .mj-circuit-bracket-close,
+.mj-circuit-bracket-chip:focus-visible .mj-circuit-bracket-close {
+  fill: var(--accent);
 }
 .mj-circuit-tick {
   fill: var(--text-2);
@@ -823,6 +866,43 @@
 }
 .mj-studio-main > .mj-studio-footer > a {
   margin-left: auto;
+}
+
+/* ── Block editor ───────────────────────────────────────────────────────── */
+.mj-edit-block-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 120;
+  display: grid;
+  place-items: center;
+  padding: var(--sp-4);
+  background: color-mix(in srgb, var(--bg-0) 55%, transparent);
+  backdrop-filter: blur(3px);
+  animation: mj-shortcut-fade 140ms var(--ease-out-ui) both;
+}
+.mj-edit-block-panel {
+  display: grid;
+  gap: var(--sp-3);
+  width: min(760px, 100%);
+  max-height: calc(100dvh - var(--sp-8));
+  overflow-y: auto;
+  padding: var(--sp-5);
+  border: 1px solid var(--border-0);
+  border-radius: var(--radius-card);
+  background: var(--bg-1);
+  box-shadow: var(--shadow-popover);
+}
+.mj-edit-block-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--sp-3);
+}
+.mj-edit-block-head h3 {
+  margin: 0;
+  color: var(--text-0);
+  font-size: var(--fs-16);
+  font-weight: 600;
 }
 
 /* ── Keyboard sheet ─────────────────────────────────────────────────────── */

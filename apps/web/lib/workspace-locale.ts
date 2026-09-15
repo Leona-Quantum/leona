@@ -497,6 +497,17 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
     deleteCustomGate: (name: string) => string;
     customGateCreated: (name: string) => string;
     customGateCannotGroup: string;
+    closeBlock: (name: string) => string;
+    blockOpaqueNote: string;
+    editBlock: string;
+    editBlockTitle: (name: string) => string;
+    editBlockUses: (count: number) => string;
+    editBlockSave: string;
+    editBlockCancel: string;
+    editBlockCycleError: string;
+    ungroupBlock: string;
+    ungrouped: (name: string) => string;
+    blockSaved: (name: string, uses: number) => string;
     hideInspector: string;
     showInspector: string;
     circuitRestored: string;
@@ -1301,6 +1312,17 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
       deleteCustomGate: (name) => `Delete custom gate ${name}`,
       customGateCreated: (name) => `${name} is ready in the gate palette.`,
       customGateCannotGroup: "Select two or more unitary gates to create a custom gate.",
+      closeBlock: (name) => `Close ${name}`,
+      blockOpaqueNote: "This operation cannot be opened.",
+      editBlock: "Edit block",
+      editBlockTitle: (name) => `Edit ${name}`,
+      editBlockUses: (count) => count === 1 ? "Changes 1 use of this block." : `Changes ${count} uses of this block.`,
+      editBlockSave: "Save",
+      editBlockCancel: "Cancel",
+      editBlockCycleError: "That would make this block contain itself. Remove the block first.",
+      ungroupBlock: "Ungroup",
+      ungrouped: (name) => `${name} was ungrouped.`,
+      blockSaved: (name, uses) => uses === 1 ? `Saved ${name}. 1 use updated.` : `Saved ${name}. ${uses} uses updated.`,
       hideInspector: "Hide inspector",
       showInspector: "Inspector",
       circuitRestored: "Circuit loaded from the saved artifact. Edits stay in this draft until you verify & save.",
@@ -2191,6 +2213,17 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
       deleteCustomGate: (name) => `カスタムゲート${name}を削除`,
       customGateCreated: (name) => `${name}をパレットに追加しました。`,
       customGateCannotGroup: "カスタムゲートには、2つ以上の単一ゲートを選択してください。",
+      closeBlock: (name) => `${name}を閉じる`,
+      blockOpaqueNote: "この操作は開けません。",
+      editBlock: "ブロックを編集",
+      editBlockTitle: (name) => `${name}を編集`,
+      editBlockUses: (count) => `このブロックの使用${count}件が変わります。`,
+      editBlockSave: "保存",
+      editBlockCancel: "キャンセル",
+      editBlockCycleError: "このブロックが自分自身を含むことになります。先にそのブロックを削除してください。",
+      ungroupBlock: "グループ解除",
+      ungrouped: (name) => `${name}のグループを解除しました。`,
+      blockSaved: (name, uses) => `${name}を保存しました。使用${uses}件を更新しました。`,
       hideInspector: "詳細を隠す",
       showInspector: "回路の詳細",
       circuitRestored: "保存済み回路を読み込みました。検証して保存するまで、編集はこの下書きにのみ反映されます。",
