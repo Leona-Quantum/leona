@@ -2,6 +2,7 @@ import { flattenBuilderSteps, type BuilderStep, type CustomGateDefinition } from
 import { expectationValue, type PauliTerm } from "./statevector-kernel.ts";
 import { playheadReading, type PlayheadReading } from "./studio-playhead.ts";
 import type { AtlasCircuitOperation, AtlasCircuitSource } from "./repository/atlas-circuit-layout.ts";
+import { majoranaSignInPath } from "./sign-in.ts";
 
 /**
  * The pure view model behind the Atlas worked-example figure
@@ -186,4 +187,26 @@ export function workedExampleReading(
     moment: currentStep + 1,
   });
   return { kind: "probabilities", reading };
+}
+
+/** Where "Open in Studio" takes a signed-in reader: this example, loaded as a new draft. */
+export function workedExampleStudioHref(exampleId: string): string {
+  return `/studio?example=${encodeURIComponent(exampleId)}`;
+}
+
+/**
+ * Where "Open in Studio" takes a signed-out reader: sign-in, then back to THIS
+ * example in Studio.
+ *
+ * The record page builds one sign-in link for the whole page with the default
+ * returnTo `/run`, and the first version of the worked-example figure reused it,
+ * so a signed-out reader who clicked "Open in Studio" and signed in landed on the
+ * run page with the example gone. Found on production on 2026-09-15 by an
+ * anonymous fetch of a record page; every screenshot of the feature had been
+ * taken with local dev auth, which only renders the signed-in branch.
+ * `majoranaSignInPath` runs the path through `safeReturnTo`, which keeps a
+ * same-origin path's query string.
+ */
+export function workedExampleSignInHref(exampleId: string): string {
+  return majoranaSignInPath(workedExampleStudioHref(exampleId));
 }

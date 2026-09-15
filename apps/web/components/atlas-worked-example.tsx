@@ -38,6 +38,8 @@ import {
   stepLabel,
   workedExampleDrawing,
   workedExampleReading,
+  workedExampleSignInHref,
+  workedExampleStudioHref,
 } from "../lib/atlas-worked-example-steps";
 import { AtlasOutcomeBars } from "./atlas-circuit";
 import { SignInLink } from "./sign-in-link";
@@ -326,12 +328,17 @@ export function AtlasWorkedExampleFigure({
         {locale === "ja" ? example.readout.ja : example.readout.en}
       </p>
 
+      {/* `signInHref` is only the page's "sign-in is available" signal here. Its
+          own returnTo is the page default (/run), so using it as the link sent a
+          signed-out reader to the run page after sign-in instead of this example
+          in Studio. Found on production 2026-09-15 by an anonymous fetch; the
+          feature's screenshots had all been taken signed in. */}
       {isSignedIn ? (
-        <a className="mj-primary-button mj-worked-example-studio" href={`/studio?example=${encodeURIComponent(example.id)}`}>
+        <a className="mj-primary-button mj-worked-example-studio" href={workedExampleStudioHref(example.id)}>
           {copy.openInStudio}
         </a>
       ) : signInHref ? (
-        <SignInLink className="mj-primary-button mj-worked-example-studio" href={signInHref} pendingLabel={copy.openingSignIn}>
+        <SignInLink className="mj-primary-button mj-worked-example-studio" href={workedExampleSignInHref(example.id)} pendingLabel={copy.openingSignIn}>
           {copy.openInStudio}
         </SignInLink>
       ) : (
@@ -384,9 +391,9 @@ export function AtlasWorkedExampleComponentNote({
       <span className="mj-atlas-outcomes-label">{label}</span>
       {": "}
       {isSignedIn ? (
-        <a href={`/studio?example=${encodeURIComponent(exampleId)}`}>{title}</a>
+        <a href={workedExampleStudioHref(exampleId)}>{title}</a>
       ) : signInHref ? (
-        <SignInLink href={signInHref} pendingLabel={openingSignIn}>{title}</SignInLink>
+        <SignInLink href={workedExampleSignInHref(exampleId)} pendingLabel={openingSignIn}>{title}</SignInLink>
       ) : (
         title
       )}
