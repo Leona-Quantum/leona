@@ -99,6 +99,18 @@ class CreateRunRequest(RequestModel):
     shots: int | None = Field(default=None, ge=1, le=20_000)
     timeout_s: int | None = Field(default=None, ge=1, le=600)
     source_code: str | None = Field(default=None, max_length=100_000)
+    # Explicit, optional signal for what `source_code` IS, not just that it is
+    # present. "verify" is the default and reproduces every caller's behavior
+    # from before this field existed: the planner never sees the source, and
+    # the first generation attempt returns it byte-for-byte — the bytes a
+    # "verify and save" run promises to preserve. "revise" tells the pipeline
+    # the source is a starting point to change per `task_prompt`, not a
+    # program to echo back: the planner sees it and the first generation
+    # attempt calls the model instead of returning it verbatim. Meaningless
+    # without `source_code` — a "revise" naming no source is not refused,
+    # since there is nothing to revise, and behaves as ordinary generation
+    # from the task alone.
+    source_intent: Literal["verify", "revise"] = "verify"
     conversation_id: uuid.UUID | None = None
     # Controls user-facing natural language only. Code, identifiers, enum values,
     # RESULT keys, and verification contracts remain locale-neutral.
@@ -595,6 +607,7 @@ async def create_run(
             "user_id": str(scope.user_id),
             "response_locale": body.response_locale,
             "allow_ai_assumptions": body.allow_ai_assumptions,
+            "source_intent": body.source_intent,
             **({"source_code": body.source_code} if body.source_code is not None else {}),
             **(
                 {"circuit_optimization": body.circuit_optimization.model_dump(mode="json")}
