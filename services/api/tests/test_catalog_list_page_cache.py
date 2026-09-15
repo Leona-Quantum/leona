@@ -13,7 +13,9 @@ test_catalog_cache_control.py, so no database is needed.
 
 import asyncio
 import datetime as dt
+import json
 import uuid
+from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
 import pytest
@@ -70,18 +72,60 @@ def _entry(slug: str) -> PublicCatalogEntry:
     )
 
 
-async def _call(authority: CatalogAuthority, **params) -> tuple[list[PublicCatalogEntry], Response]:
-    response = Response()
-    entries = await catalog_routes.list_catalog_entries(
+async def _call(authority: CatalogAuthority, **params) -> tuple[list[SimpleNamespace], Response]:
+    """Call the route directly. Returns the page's rows (each with a `slug`) and the
+    RETURNED response, whose headers are what a client receives."""
+    injected = Response()
+    returned = await catalog_routes.list_catalog_entries(
         scope=authority.public_scope(),
         session=None,
         settings=Settings(**SETTINGS_KWARGS, catalog_authority=authority),
-        response=response,
+        response=injected,
         view=params.get("view", "full"),
         limit=params.get("limit", 100),
         offset=params.get("offset", 0),
     )
-    return entries, response
+    assert isinstance(returned, Response)
+    assert returned.headers["cache-control"] == injected.headers["cache-control"]
+    return [SimpleNamespace(slug=row["slug"]) for row in json.loads(returned.body)], returned
+
+
+async def test_over_http_the_cached_bytes_decode_to_what_fastapi_would_have_sent(monkeypatch):
+    """The bytes cache must be invisible to a client: same JSON, same public
+    caching headers, and the rate-limit middleware still strips the caller-trust
+    verdict from a publicly cacheable response."""
+    import httpx
+    from pydantic import TypeAdapter
+
+    from majorana_api.app import create_app
+    from majorana_api.auth import deps as auth_deps
+    from majorana_api.rate_limit import CALLER_TRUST_HEADER
+
+    entries = [_entry("alpha"), _entry("beta")]
+    monkeypatch.setattr(catalog_repo, "count_public_catalog_entries", AsyncMock(return_value=2))
+    monkeypatch.setattr(
+        catalog_repo, "list_public_catalog_entries", AsyncMock(return_value=entries)
+    )
+    authority = _authority()
+    app = create_app(Settings(**SETTINGS_KWARGS, catalog_authority=authority))
+    app.dependency_overrides[auth_deps.get_session] = lambda: object()
+    expected = TypeAdapter(list[PublicCatalogEntry]).dump_python(
+        entries, mode="json", by_alias=True
+    )
+
+    transport = httpx.ASGITransport(app=app, raise_app_exceptions=False)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        miss = await client.get("/v1/catalog/entries?limit=100&offset=0")
+        hit = await client.get("/v1/catalog/entries?limit=100&offset=0")
+
+    for response in (miss, hit):
+        assert response.status_code == 200
+        assert response.headers["content-type"].startswith("application/json")
+        assert response.json() == expected
+        assert response.headers[catalog_routes.CATALOG_TOTAL_HEADER] == "2"
+        assert response.headers["cache-control"].startswith("public, max-age=")
+        assert CALLER_TRUST_HEADER not in response.headers
+    assert miss.content == hit.content
 
 
 def _double_repo(monkeypatch, total: int = 2, entries=None):

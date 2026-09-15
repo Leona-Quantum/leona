@@ -23,6 +23,7 @@ from majorana_contracts import (
     PublicCatalogEntry,
 )
 from majorana_estimation import BUILTIN_ASSUMPTION_SETS
+from pydantic import TypeAdapter
 
 from ..auth.catalog_deps import PublicCatalogScope
 from ..auth.deps import DbSession, get_settings
@@ -271,6 +272,10 @@ _LIST_PAGE_CACHE = _PageCache(
     CATALOG_LIST_PAGE_CACHE_TTL_SECONDS, CATALOG_LIST_PAGE_CACHE_MAX_ENTRIES
 )
 
+#: Serializes a page once, when it is loaded, so a cache hit returns bytes.
+#: Built once at import: constructing a TypeAdapter compiles a schema.
+_ENTRY_LIST_ADAPTER = TypeAdapter(list[PublicCatalogEntry])
+
 
 @router.get("/catalog/entries", response_model=list[PublicCatalogEntry])
 async def list_catalog_entries(
@@ -295,7 +300,7 @@ async def list_catalog_entries(
     clamped_limit = min(max(limit, 1), CATALOG_ENTRIES_MAX_LIMIT)
     clamped_offset = max(offset, 0)
 
-    async def load() -> tuple[int, list[PublicCatalogEntry]]:
+    async def load() -> tuple[int, bytes]:
         total = await catalog_repo.count_public_catalog_entries(
             scope, session, authority=settings.catalog_authority
         )
@@ -311,12 +316,29 @@ async def list_catalog_entries(
                 entry.model_copy(update={"record": project_record_for_list_view(entry.record)})
                 for entry in entries
             ]
-        return total, entries
+        return total, _ENTRY_LIST_ADAPTER.dump_json(entries, by_alias=True)
 
     key = (settings.catalog_authority.workspace_id, view, clamped_limit, clamped_offset)
-    total, entries = await _LIST_PAGE_CACHE.get_or_load(key, load)  # type: ignore[misc]
+    total, body = await _LIST_PAGE_CACHE.get_or_load(key, load)  # type: ignore[misc]
     response.headers[CATALOG_TOTAL_HEADER] = str(total)
-    return entries
+    # The cached value is the finished JSON, returned as-is. After the page cache
+    # took the database out of the hot path (2026-09-15), the four API instances
+    # were still pinned at 100% by FastAPI re-validating and re-encoding the same
+    # hundred records on every cache hit, and Cloud Run kept refusing a quarter of
+    # all requests. A `Response` returned from a handler skips `response_model`
+    # processing, so the headers set on the injected `response` above would be
+    # dropped; they are copied onto the one actually returned. `response_model`
+    # stays on the decorator for the OpenAPI schema, and
+    # test_catalog_list_page_cache.py pins that the body decodes to exactly what
+    # FastAPI's own serialization produced.
+    return Response(
+        content=body,
+        media_type="application/json",
+        headers={
+            "Cache-Control": response.headers["Cache-Control"],
+            CATALOG_TOTAL_HEADER: str(total),
+        },
+    )
 
 
 @router.get("/catalog/estimates", response_model=CatalogEstimateList)
