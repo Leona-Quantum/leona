@@ -878,6 +878,7 @@ export const WORKED_EXAMPLES: readonly WorkedExample[] = [
   amplitudeEstimation3(),
   hiddenShift4(),
   superdenseCoding(),
+  wState3(),
 ];
 
 export function workedExample(id: string): WorkedExample | undefined {

@@ -271,6 +271,44 @@ const GHZ: BlockTemplate = {
   },
 };
 
+/**
+ * The 3-qubit W state (|001> + |010> + |100>) / sqrt(3), built from
+ * controlled-RY (itself RY + CX, the standard identity CRY(phi) =
+ * RY(phi/2);CX;RY(-phi/2);CX) and CCX. No SWAP, no ancilla.
+ *
+ * Staircase construction: RY(theta0) on q0 puts exactly 1/3 of the
+ * population on q0=1 (theta0 = 2*arcsin(1/sqrt(3))) — that branch is already
+ * the |100> term and needs nothing further. In the remaining q0=0 branch
+ * (2/3 of the population), an anti-controlled CRY(pi/2) on q1 (control q0,
+ * built by sandwiching the controlled-RY in X(q0)...X(q0) so it fires on
+ * q0=0 instead of q0=1) splits it evenly again; finally q2 is set to 1
+ * exactly when BOTH q0=0 and q1=0, via a CCX also sandwiched in X(q0)...
+ * X(q1)...X(q1)...X(q0) to flip the anti-controls back. The plain
+ * X(control)-sandwich trick alone only anti-controls a gate that already
+ * takes that qubit as an explicit control (a first attempt at this
+ * unconditionally executed X(q1);CX(q1,q2);X(q1) sandwiched in X(q0) alone —
+ * that does not gate it on q0 at all, and gave {101,010,100} instead of the
+ * required {001,010,100}, caught immediately by testing against the
+ * simulator rather than trusting the construction).
+ */
+const W_STATE_3: BlockTemplate = {
+  key: "w_state_3",
+  name: "W state (3 qubits)",
+  category: "state-preparation",
+  summary: "Prepares the 3-qubit W state (|001> + |010> + |100>) / sqrt(3) from controlled-RY (RY and CX) and CCX.",
+  params: [],
+  qubitCount: () => 3,
+  build: () => {
+    const theta0 = String(2 * Math.asin(1 / Math.sqrt(3)));
+    const steps: GateSpec[] = [
+      ry(0, theta0),
+      x(0), ry(1, "pi/4"), cx(0, 1), ry(1, "-pi/4"), cx(0, 1), x(0),
+      x(0), x(1), ccx(0, 1, 2), x(1), x(0),
+    ];
+    return leafBlock("w-state-3", "W state (3 qubits)", 3, steps);
+  },
+};
+
 const HADAMARD_LAYER: BlockTemplate = {
   key: "hadamard_layer",
   name: "Hadamard layer",
@@ -754,6 +792,7 @@ export const BLOCK_TEMPLATES: readonly BlockTemplate[] = [
   CONTROLLED_MULT_7_MOD_15,
   CONTROLLED_MULT_4_MOD_15,
   AMPLITUDE_ESTIMATION_POWERS,
+  W_STATE_3,
 ];
 
 export function blockTemplate(key: string): BlockTemplate | undefined {

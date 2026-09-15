@@ -105,6 +105,14 @@ test("ghz spreads equally over |0...0> and |1...1> only, for several n", () => {
   }
 });
 
+test("w_state_3 gives equal weight to exactly |001>, |010> and |100>, and nothing else", () => {
+  const { probabilities } = simulateBlock(blockTemplate("w_state_3")!, {});
+  for (const target of [0b001, 0b010, 0b100]) assert.ok(Math.abs(probabilities[target] - 1 / 3) < EPSILON, `index ${target}`);
+  for (const other of [0b000, 0b011, 0b101, 0b110, 0b111]) assert.ok(probabilities[other] < EPSILON, `index ${other} must be exactly zero`);
+  const total = probabilities.reduce((a, b) => a + b, 0);
+  assert.ok(Math.abs(total - 1) < EPSILON);
+});
+
 test("hadamard_layer gives a flat distribution over every basis state", () => {
   const n = 4;
   const { probabilities } = simulateBlock(blockTemplate("hadamard_layer")!, { n });
