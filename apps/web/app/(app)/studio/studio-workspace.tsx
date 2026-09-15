@@ -22,7 +22,7 @@ import {
   type ProjectFilter,
 } from "../../../lib/studio-discovery";
 import type { PublicLocale } from "../../../lib/public-locale";
-import { BUILDER_GATES, builderStepLabel, createBuilderStepId, generateBuilderCode, ROTATION_GATES, TWO_QUBIT_GATES, type BuilderCodeVariants, type BuilderGate, type BuilderStep, type BuiltinBuilderGate, type CustomGateDefinition } from "../../../lib/studio-builder";
+import { ANGLE_GATES, BUILDER_GATES, builderGateArity, builderStepLabel, createBuilderStepId, generateBuilderCode, type BuilderCodeVariants, type BuilderGate, type BuilderStep, type BuiltinBuilderGate, type CustomGateDefinition } from "../../../lib/studio-builder";
 import { loadStoredCircuit, saveStoredCircuit } from "../../../lib/studio-circuits";
 import { circuitSyncState, type CircuitSyncState } from "../../../lib/studio-sync";
 import { looksLikeOpenQasm3, parseCircuitSource, parseInterchangeCircuit, reconstructInterchangeCircuit } from "../../../lib/circuit-conversion";
@@ -1351,11 +1351,25 @@ function StudioStatusPill({ status, locale }: { status: LibraryArtifact["status"
 
 const ANGLE_OPTIONS = ["pi/8", "pi/4", "pi/2", "pi", "3*pi/2", "2*pi"];
 
-/** The palette in four labelled groups, derived from the gate list so a new gate
- * cannot silently fall out of the palette. */
-const PALETTE_GROUPS: Array<{ id: "oneQubit" | "rotations" | "twoQubit" | "measure"; family: GateFamily; gates: BuiltinBuilderGate[] }> = (
-  [["oneQubit", "clifford"], ["rotations", "rotation"], ["twoQubit", "entangler"], ["measure", "measure"]] as const
-).map(([id, family]) => ({ id, family, gates: BUILDER_GATES.filter((gate) => gateFamily(gate) === family) }));
+/** CP, RZZ and CCX are `entangler`-family by `gateFamily` (for diagram/CSS
+ * purposes), but dumping them into "twoQubit" would both mislabel CCX (three
+ * wires, not two) and make "Pick CX, CZ or SWAP" a lie. They get their own
+ * compact overflow group instead; SDG/TDG (still `clifford`) and P (still
+ * `rotation`) fold into their existing, still-accurate groups automatically. */
+const MORE_PALETTE_GATES: BuiltinBuilderGate[] = ["CP", "RZZ", "CCX"];
+
+/** The palette in five labelled groups, derived from the gate list so a new
+ * gate cannot silently fall out of the palette. */
+const PALETTE_GROUPS: Array<{ id: "oneQubit" | "rotations" | "twoQubit" | "measure" | "more"; family: GateFamily | null; gates: BuiltinBuilderGate[] }> = [
+  ...(
+    [["oneQubit", "clifford"], ["rotations", "rotation"], ["twoQubit", "entangler"], ["measure", "measure"]] as const
+  ).map(([id, family]) => ({
+    id,
+    family,
+    gates: BUILDER_GATES.filter((gate) => gateFamily(gate) === family && !MORE_PALETTE_GATES.includes(gate)),
+  })),
+  { id: "more" as const, family: null, gates: MORE_PALETTE_GATES },
+];
 
 // Exported for the focused CircuitBuilder form tests. The custom-gate <form>
 // inside it had never been submitted by any check before ai-ops issue 123.
@@ -1498,11 +1512,15 @@ export function CircuitBuilder({ seed, framework, selectedGate, onSelectGate, on
   const armedCustomId = selectedGate.startsWith("custom:") ? selectedGate.slice("custom:".length) : null;
   const armedCustom = armedCustomId ? customGates.find((gate) => gate.id === armedCustomId) ?? null : null;
   const armed: BuilderGate = (BUILDER_GATES as string[]).includes(selectedGate) ? selectedGate as BuilderGate : armedCustom ? "CUSTOM" : "H";
-  const requiredQubits = armedCustom?.qubitCount ?? (TWO_QUBIT_GATES.includes(armed as (typeof TWO_QUBIT_GATES)[number]) ? 2 : 1);
+  const requiredQubits = armedCustom?.qubitCount ?? builderGateArity(armed as BuiltinBuilderGate);
   const selectedLabel = armed === "CUSTOM" ? armedCustom?.name ?? "Custom gate" : armed;
   const moments = useMemo(() => circuitMoments(qubitCount, steps), [qubitCount, steps]);
   const playheadMoment = playhead === "end" ? moments.count : Math.min(playhead, moments.count);
-  const rotationArmed = ROTATION_GATES.includes(armed as (typeof ROTATION_GATES)[number]);
+  const rotationArmed = ANGLE_GATES.includes(armed as (typeof ANGLE_GATES)[number]);
+  // Which palette row shows the shared angle picker: CP/RZZ live in "more",
+  // everything else that takes an angle lives in "rotations". Defaults to
+  // "rotations" when nothing angle-carrying is armed, matching prior behavior.
+  const angleGroupId: "rotations" | "more" = MORE_PALETTE_GATES.includes(armed as BuiltinBuilderGate) ? "more" : "rotations";
 
   // A card describing a gate that was just deleted, or a tab that just closed,
   // would float over whatever is on screen now.
@@ -1568,12 +1586,13 @@ export function CircuitBuilder({ seed, framework, selectedGate, onSelectGate, on
       }
       const nextStep: BuilderStep = armed === "CUSTOM" && armedCustom
         ? { id: createBuilderStepId(), gate: "CUSTOM", customGateId: armedCustom.id, qubits: nextQubits }
-        : { id: createBuilderStepId(), gate: armed, qubits: nextQubits };
+        // CP and RZZ are multi-qubit but still angle-carrying, unlike CX/CZ/SWAP/CCX.
+        : { id: createBuilderStepId(), gate: armed, qubits: nextQubits, ...(ANGLE_GATES.includes(armed as (typeof ANGLE_GATES)[number]) ? { param: angle } : {}) };
       place(nextStep);
       setPendingQubits([]);
       return;
     }
-    place({ id: createBuilderStepId(), gate: armed, qubits: [qubit], ...(ROTATION_GATES.includes(armed as (typeof ROTATION_GATES)[number]) ? { param: angle } : {}) });
+    place({ id: createBuilderStepId(), gate: armed, qubits: [qubit], ...(ANGLE_GATES.includes(armed as (typeof ANGLE_GATES)[number]) ? { param: angle } : {}) });
     setBuilderMessage(null);
   }
 
@@ -1868,7 +1887,11 @@ export function CircuitBuilder({ seed, framework, selectedGate, onSelectGate, on
                       </button>
                     );
                   })}
-                  {group.id === "rotations" ? (
+                  {group.id === angleGroupId ? (
+                    // CP and RZZ need the same angle input rotations do, but
+                    // live in "more" (so that group's label stays accurate for
+                    // CX/CZ/SWAP). Rather than duplicating the control in both
+                    // rows, it follows whichever group the armed gate is in.
                     <label className="mj-builder-angle" data-armed={rotationArmed ? "true" : undefined}>
                       <span className="sr-only">{copy.angleLabel}</span>
                       <select value={angle} onChange={(event) => setAngle(event.target.value)} disabled={!rotationArmed} title={copy.angleLabel}>
