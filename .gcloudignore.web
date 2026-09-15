@@ -1,0 +1,64 @@
+# Upload only what apps/web/Dockerfile actually COPYs, via
+#   gcloud builds submit --config cloudbuild.web.yaml --ignore-file=.gcloudignore.web .
+# Companion to the root .gcloudignore, which is written for the API image
+# only (it excludes apps/ entirely). Without this file, a plain
+# `gcloud builds submit` from repo root uploads the whole tree, including
+# every node_modules and .next across the monorepo.
+#
+# Re-including a path nested under an excluded directory does not work in
+# gitignore syntax ("it is not possible to re-include a file if a parent
+# directory of that file is excluded") — `/*` then `!apps/web/` alone
+# silently drops everything under apps/, contents included. Verified: an
+# earlier version of this file written that way passed
+# `gcloud meta list-files-for-upload` with only the 4 top-level files
+# listed below and none of apps/web's own source. So each directory level is
+# un-ignored explicitly, shallowest first, before narrowing back down.
+/*
+!package.json
+!pnpm-lock.yaml
+!pnpm-workspace.yaml
+!cloudbuild.web.yaml
+
+!apps/
+apps/*
+!apps/web/
+!apps/news/
+apps/news/*
+!apps/news/package.json
+
+!packages/
+packages/*
+!packages/ts/
+packages/ts/*
+!packages/ts/ui/
+!packages/ts/contracts-gen/
+!packages/ts/ui-visual/
+packages/ts/ui-visual/*
+!packages/ts/ui-visual/package.json
+# packages/py/ stays excluded: `packages/*` above only un-ignores packages/ts.
+
+# Build artefacts and caches — never needed as input, and node_modules alone
+# is the bulk of what the root .gcloudignore exists to keep out of the API
+# upload too. These apply INSIDE the now-included apps/web and packages/ts
+# trees; excluding within an included directory is the ordinary case and
+# does not hit the re-inclusion trap above.
+**/node_modules/
+**/.next/
+**/.next-*/
+**/.turbo/
+**/.vercel/
+**/dist/
+**/__pycache__/
+**/.venv/
+**/.venv.nosync/
+**/.pytest_cache/
+**/.ruff_cache/
+
+# Secrets and local-only files. `apps/web/.gitignore` already keeps these out
+# of git, but this is a separate upload path with its own rules — repeated
+# here rather than assumed, per 05-security.md's supply-chain stance on
+# never letting a credential ride along with a build context.
+.env*
+**/.env*
+tsconfig.tsbuildinfo
+**/tsconfig.tsbuildinfo

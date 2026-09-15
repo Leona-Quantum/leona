@@ -451,6 +451,24 @@ Never invent measured results, claim an assumed value was supplied by the user, 
 an explicit user requirement. This mode does not authorize execution of unsupported work.
 """
 
+SOURCE_REVISION_PLAN_DIRECTIVE = """The request asks for a change to an existing program,
+supplied as source_to_revise. Ground problem_summary and every planning choice in that
+program's actual structure — qubit count, gates, algorithm, and framework — and describe
+what the task asks for as a change TO it, not a plan for an unrelated circuit that merely
+satisfies the same words. Preserve any part of the existing design the task does not ask
+to change. If source_to_revise.truncated is true, plan from the qubit count, algorithm,
+and structure visible in the given prefix; do not invent content past it.
+"""
+
+SOURCE_REVISION_GENERATION_DIRECTIVE = """previous_source here is the user's own existing
+program, not a rejected candidate: repair_feedback is absent because nothing has failed
+yet. Start from it and apply exactly the change task and Plan describe, preserving every
+part of the source the task does not ask to change — framework, unrelated gates,
+parameter names, and structure. This is a revision, not a rewrite: do not regenerate the
+circuit from scratch, and do not limit the change to "the smallest correction" the way a
+repair would — apply the requested change in full.
+"""
+
 # The one place the Plan states something a check can disagree with. Everything else
 # the planner writes is either consumed by generation or compared against a number the
 # same model produced, so it cannot catch a coherent misconception — see

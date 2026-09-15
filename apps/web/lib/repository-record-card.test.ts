@@ -148,6 +148,33 @@ test("declared gaps are held, and an unreviewed record says nobody has looked", 
   assert.equal(declared.find((section) => section.id === "contested")!.held, true);
 });
 
+test("a stock placeholder diagram is a gap in Example, with the record's own reason", () => {
+  // The exact Zoo-parity/Classiq-parity signature (entries-zoo-parity.ts /
+  // entries-classiq-parity.ts), reproduced by wires and op labels alone — the
+  // qubits and tones below are incidental to the match, not part of it.
+  const placeholder = recordSections(
+    input({
+      entry: fixture({
+        wires: ["problem", "algorithm", "readout"],
+        operations: [
+          { label: "encode", qubits: [0], tone: "neutral" },
+          { label: "transform", qubits: [0, 1], tone: "accent" },
+          { label: "measure", qubits: [1, 2], tone: "warn" },
+        ],
+        outcomes: [],
+      }),
+    }),
+  );
+  const example = placeholder.find((section) => section.id === "example")!;
+  assert.equal(example.held, false);
+  assert.equal(example.reason, WORDS.notCircuit);
+
+  // The fixture's own real circuit (one wire, one gate, a real outcome) still
+  // holds — a placeholder match is exact, and this is not one.
+  const real = recordSections(input());
+  assert.equal(real.find((section) => section.id === "example")!.held, true);
+});
+
 test("the record page reads and writes the card's section parameter", () => {
   assert.equal(parseRecordSection("theory"), "theory");
   assert.equal(parseRecordSection("refinements"), null, "a card-only section is not a record section");

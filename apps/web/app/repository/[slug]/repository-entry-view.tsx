@@ -35,6 +35,12 @@ import { RepositoryExportAction } from "../repository-export";
 import { AtlasCircuitFigure, AtlasOutcomeBars } from "../../../components/atlas-circuit";
 import { AtlasGlance, type AtlasGlanceItem } from "../../../components/atlas-glance";
 import { hasAtlasCircuit } from "../../../lib/repository/atlas-circuit-layout";
+import { isPlaceholderDiagram } from "../../../lib/repository/placeholder-diagrams";
+import { AtlasWorkedExampleComponentNote, AtlasWorkedExampleFigure } from "../../../components/atlas-worked-example";
+// Type-only: this component never imports worked-examples.ts's value exports
+// (WORKED_EXAMPLES/workedExample), only the shape of the one resolved example
+// the server already picked. See worked-example-resolution.ts's doc comment.
+import type { LocalizedText, WorkedExample } from "../../../lib/worked-examples";
 
 const COPY = {
   en: {
@@ -278,11 +284,30 @@ export function RepositoryEntryView({
   hasLayers = false,
   mapHref = null,
   section = null,
+  workedExample = null,
+  workedExampleComponents = [],
 }: {
   entry: PublicRepositoryEntry;
   locale: PublicLocale;
   isSignedIn: boolean;
   signInHref: string | null;
+  /**
+   * The worked example this record's first resolvable link names, when its
+   * relation is `"instance"` — resolved server-side (worked-example-resolution.ts)
+   * and passed down as plain data, never re-derived here. Replaces the plain
+   * circuit hero; null on every record with no resolvable instance link (most
+   * of them — 84 of the then-284 records have any link at all, and a link's
+   * example may not exist yet).
+   */
+  workedExample?: WorkedExample | null;
+  /**
+   * Every resolvable `"component"`- or `"used-in"`-relation link, in the
+   * record's own order — never an instance of the record itself, and never
+   * the full figure. `"component"` is this record's method using the
+   * example; `"used-in"` is the reverse, the example's algorithm using this
+   * record. Each gets its own note wording (atlas-worked-example.tsx).
+   */
+  workedExampleComponents?: readonly { exampleId: string; title: LocalizedText; relation: "component" | "used-in" }[];
   /**
    * The cost panel, rendered on the server and passed in as a slot.
    *
@@ -406,7 +431,11 @@ export function RepositoryEntryView({
   // and wire counts are the lengths of its own lists, the resource rows are its
   // own labels and values — and a field it does not carry gives no tile.
   const drawing = entry.visualization;
-  const hasDrawing = hasAtlasCircuit(drawing);
+  // A stock placeholder diagram (§ isPlaceholderDiagram) is not a drawing of
+  // this record — it is the schema's default, identical across 177 unrelated
+  // records — so it draws nothing here: no hero figure, no steps/wires glance
+  // tiles. The "example" section makes the matching call in `record-card.ts`.
+  const hasDrawing = hasAtlasCircuit(drawing) && !isPlaceholderDiagram(drawing);
   const reported = [
     entry.sourceCoverage?.simulation === "reported" ? copy.coverageSimulation : null,
     entry.sourceCoverage?.hardware === "reported" ? copy.coverageHardware : null,
@@ -638,9 +667,16 @@ export function RepositoryEntryView({
           <RepositoryExportAction slug={entry.slug} title={title} isSignedIn={isSignedIn} signInHref={signInHref} locale={locale} />
         </p>
 
-        {hasDrawing || glance.length > 0 ? (
+        {workedExample || hasDrawing || glance.length > 0 ? (
           <section className="mj-atlas-hero" aria-label={copy.glance}>
-            {hasDrawing ? (
+            {workedExample ? (
+              // A worked example of the record itself, in place of the plain
+              // circuit drawing — whether that drawing exists or is a
+              // placeholder. The glance strip (resources, papers, source
+              // reports) below is unrelated to which drawing this is, and
+              // stays either way.
+              <AtlasWorkedExampleFigure example={workedExample} locale={locale} isSignedIn={isSignedIn} signInHref={signInHref} />
+            ) : hasDrawing ? (
               <AtlasCircuitFigure
                 source={drawing}
                 title={title}
@@ -655,6 +691,18 @@ export function RepositoryEntryView({
             <AtlasGlance items={glance} label={copy.glance} />
           </section>
         ) : null}
+
+        {workedExampleComponents.map((component) => (
+          <AtlasWorkedExampleComponentNote
+            key={component.exampleId}
+            title={ja ? component.title.ja : component.title.en}
+            exampleId={component.exampleId}
+            relation={component.relation}
+            locale={locale}
+            isSignedIn={isSignedIn}
+            signInHref={signInHref}
+          />
+        ))}
 
         <div className="mj-card-sections">
           <AtlasSectionNav

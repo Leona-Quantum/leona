@@ -32,6 +32,7 @@
 import type { CardGap, CardSectionId } from "./card-content.ts";
 import { knownGapsState } from "./coverage.ts";
 import { parseCardSection, withCardSection } from "./map-card.ts";
+import { isPlaceholderDiagram } from "./placeholder-diagrams.ts";
 import type { PublicRepositoryEntry } from "./types.ts";
 
 export type RecordSectionId = Extract<
@@ -114,7 +115,14 @@ export function recordSections(input: RecordCardInput): readonly RecordSectionSt
       case "requires":
         return entry.resources.length + entry.metadata.length === 0 ? GAP(id) : HELD(id);
       case "example":
-        return drawing.wires.length + drawing.operations.length + drawing.outcomes.length === 0 ? GAP(id) : HELD(id);
+        if (drawing.wires.length + drawing.operations.length + drawing.outcomes.length === 0) return GAP(id);
+        // One of the corpus's three stock placeholder diagrams (§ isPlaceholderDiagram)
+        // is not a circuit for this record — it is the schema's default, repeated
+        // identically across 177 unrelated records. Held would draw it as if it
+        // were this record's own worked example, which is the thing this gate exists
+        // to stop; a record's own reason for the gap is the same one the
+        // Implementations section already gives for a non-circuit record.
+        return isPlaceholderDiagram(drawing) ? GAP(id, input.words.notCircuit) : HELD(id);
       // The comparison is always drawn (the record's own, or the category's
       // standing one), so this section is never a gap; the two server panels
       // join it when the server found them.

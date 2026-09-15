@@ -290,3 +290,34 @@
   .mj-atlas-playhead, .mj-atlas-op rect, .mj-atlas-fold-summary::before, .mj-atlas-thumb-slot { transition: none; }
 }
 /* ===== end Atlas visual pass ================================================ */
+
+/* ===== Worked-example figure (Atlas worked-example lane, 2026-09-15) =======
+   The concrete-example hero that replaces the plain circuit drawing when a
+   record's first resolvable worked-example link is "instance". Shares the
+   .mj-atlas-figure/.mj-atlas-stage/.mj-atlas-op/.mj-atlas-controls/
+   .mj-atlas-outcomes rules above — reduced-motion handling included — and
+   adds only what those do not already carry: the disclaimer, title and
+   instance sentence above the drawing, the per-step notes list below it, and
+   the readout / Open-in-Studio row at the end. ============================ */
+.mj-worked-example { display: grid; gap: var(--sp-3); }
+.mj-worked-example-disclaimer { margin: 0; color: var(--text-2); font-size: var(--fs-12); }
+.mj-worked-example-title { margin: 0; }
+.mj-worked-example-instance { margin: 0; color: var(--text-1); }
+.mj-worked-example-reading { display: grid; align-content: start; gap: var(--sp-2); }
+.mj-worked-example-expectation { display: grid; gap: var(--sp-1); margin: 0; }
+.mj-worked-example-expectation strong { color: var(--text-0); font-family: var(--font-mono); font-size: var(--fs-16); font-variant-numeric: tabular-nums; }
+.mj-worked-example-hamiltonian { margin: 0; color: var(--text-2); font-family: var(--font-mono); font-size: var(--fs-13); }
+.mj-worked-example-notes { display: grid; gap: var(--sp-3); margin: 0; padding: 0; list-style: none; }
+.mj-worked-example-note { padding: var(--sp-3); border: var(--border-hairline) solid var(--border-0); border-radius: var(--radius-control); }
+.mj-worked-example-note[data-current] { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 6%, transparent); }
+.mj-worked-example-note-step { display: block; margin: 0 0 var(--sp-1); padding: 0; border: 0; background: none; color: var(--text-0); font-size: var(--fs-14); text-align: left; cursor: pointer; }
+.mj-worked-example-note-step:hover, .mj-worked-example-note-step:focus-visible { color: var(--accent); }
+.mj-worked-example-note p { margin: 0; color: var(--text-1); font-size: var(--fs-13); line-height: 1.5; }
+.mj-worked-example-block-toggle { margin-top: var(--sp-2); padding: 0; border: 0; background: none; color: var(--text-2); font-size: var(--fs-12); text-decoration: underline; cursor: pointer; }
+.mj-worked-example-block-toggle:hover, .mj-worked-example-block-toggle:focus-visible { color: var(--accent); }
+.mj-worked-example-block-gates { margin: var(--sp-2) 0 0; padding: 0 0 0 var(--sp-4); color: var(--text-2); font-size: var(--fs-12); font-family: var(--font-mono); }
+.mj-worked-example-readout { margin: 0; padding: var(--sp-3); border: var(--border-hairline) solid var(--border-0); border-radius: var(--radius-control); background: var(--bg-1); color: var(--text-0); }
+.mj-worked-example-signin-note { margin: 0; color: var(--text-2); font-size: var(--fs-13); }
+.mj-worked-example-component-note { margin: var(--sp-3) 0; padding: var(--sp-3); border: 1px dashed var(--border-0); border-radius: var(--radius-control); font-size: var(--fs-13); }
+.mj-worked-example-component-note a { color: var(--accent); }
+/* ===== end worked-example figure ============================================ */

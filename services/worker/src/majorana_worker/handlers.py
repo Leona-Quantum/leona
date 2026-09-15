@@ -394,6 +394,10 @@ async def handle_run_execute(
         allow_ai_assumptions=bool(payload.get("allow_ai_assumptions", False)),
         conversation_id=run.conversation_id,
         source_code=payload.get("source_code"),
+        # Old, replayed job payloads predate this key entirely and must
+        # deserialize to today's only behavior, not to a value that never had
+        # a chance to mean anything to them.
+        source_intent=payload.get("source_intent") or "verify",
         source_framework=Framework(run.framework),
         parent_artifact_id=parent_artifact_id,
     )
@@ -1792,6 +1796,7 @@ async def _handle_agent_execution(
         requested_shots=ctx.shots,
         requested_seed=ctx.seed,
         initial_source=ctx.source_code,
+        revise_source=ctx.source_intent == "revise",
         allow_ai_assumptions=ctx.allow_ai_assumptions,
         rollback=session.rollback,
         research_sink=_research_sink_for(ctx),
