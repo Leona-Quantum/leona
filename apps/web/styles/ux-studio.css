@@ -667,6 +667,9 @@
 .mj-gate-inspector-grid[data-size="4"] {
   grid-template-columns: repeat(4, auto);
 }
+.mj-gate-inspector-grid[data-size="8"] {
+  grid-template-columns: repeat(8, auto);
+}
 .mj-gate-inspector-grid::before,
 .mj-gate-inspector-grid::after {
   position: absolute;

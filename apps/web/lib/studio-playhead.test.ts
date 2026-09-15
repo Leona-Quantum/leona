@@ -70,7 +70,20 @@ test("bars keep the most likely states and total the rest", () => {
 });
 
 test("an angle outside the kernel's syntax is declined, not guessed", () => {
-  assert.deepEqual(read(1, [{ id: "r", gate: "RX", qubits: [0], param: "-pi/2" }], 1), { kind: "unavailable", reason: "angle" });
+  // "pi/0" is explicitly invalid per parseGateAngle's own zero-denominator
+  // check (gate-angle.ts) — genuinely outside the grammar, unlike the case
+  // below.
+  assert.deepEqual(read(1, [{ id: "r", gate: "RX", qubits: [0], param: "pi/0" }], 1), { kind: "unavailable", reason: "angle" });
+});
+
+test("a negative angle is read, not declined — studio-simulation.ts's angle() bug fix (block-library stage)", () => {
+  // Previously this file's `angle()` had no `-?` at all, not even for a plain
+  // decimal, so `-pi/2` — a value `BuilderStep.param`'s own grammar
+  // (parseGateAngle) always accepted — was wrongly reported as unparseable.
+  // This is the regression test for that fix, not for a change in what this
+  // panel promises: still noiseless, still local, never a run or a record.
+  const reading = read(1, [{ id: "r", gate: "RX", qubits: [0], param: "-pi/2" }], 1);
+  assert.equal(reading.kind, "ok");
 });
 
 test("stepsBeforeMoment keeps array order", () => {

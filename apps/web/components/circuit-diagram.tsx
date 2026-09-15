@@ -222,6 +222,62 @@ export function CircuitDiagram({
               </g>
             );
           }
+          if (step.gate === "CP") {
+            const [control, target] = step.qubits;
+            const top = Math.min(yFor(control), yFor(target));
+            const bottom = Math.max(yFor(control), yFor(target));
+            return (
+              <g key={step.id} {...shared}>
+                {title}
+                <rect className="mj-circuit-hit" x={x - 17} y={top - 17} width="34" height={bottom - top + 34} rx="7" />
+                <line className="mj-circuit-control" x1={x} y1={yFor(control)} x2={x} y2={yFor(target)} />
+                <circle className="mj-circuit-control-dot" cx={x} cy={yFor(control)} r="6" />
+                <circle className="mj-circuit-control-dot" cx={x} cy={yFor(target)} r="6" />
+                {step.param ? (
+                  <text className="mj-circuit-label mj-circuit-param" x={x} y={bottom + 30}>
+                    <title>{step.param}</title>
+                    {formatGateParam(step.param)}
+                  </text>
+                ) : null}
+              </g>
+            );
+          }
+          if (step.gate === "CCX") {
+            const [controlA, controlB, target] = step.qubits;
+            const touchedY = step.qubits.map(yFor);
+            const top = Math.min(...touchedY);
+            const bottom = Math.max(...touchedY);
+            return (
+              <g key={step.id} {...shared}>
+                {title}
+                <rect className="mj-circuit-hit" x={x - 17} y={top - 17} width="34" height={bottom - top + 34} rx="7" />
+                <line className="mj-circuit-control" x1={x} y1={top} x2={x} y2={bottom} />
+                <circle className="mj-circuit-control-dot" cx={x} cy={yFor(controlA)} r="6" />
+                <circle className="mj-circuit-control-dot" cx={x} cy={yFor(controlB)} r="6" />
+                <circle className="mj-circuit-target" cx={x} cy={yFor(target)} r="13" />
+                <path d={`M${x} ${yFor(target) - 9}v18M${x - 9} ${yFor(target)}h18`} />
+              </g>
+            );
+          }
+          if (step.gate === "RZZ") {
+            const [first, second] = step.qubits;
+            const top = Math.min(yFor(first), yFor(second));
+            const bottom = Math.max(yFor(first), yFor(second));
+            return (
+              <g key={step.id} {...shared}>
+                {title}
+                <rect className="mj-circuit-hit" x={x - 17} y={top - 17} width="34" height={bottom - top + 34} rx="7" />
+                <rect x={x - 17} y={top - 17} width="34" height={bottom - top + 34} rx="7" />
+                <text x={x} y={(top + bottom) / 2 + 5}>RZZ</text>
+                {step.param ? (
+                  <text className="mj-circuit-label mj-circuit-param" x={x} y={bottom + 30}>
+                    <title>{step.param}</title>
+                    {formatGateParam(step.param)}
+                  </text>
+                ) : null}
+              </g>
+            );
+          }
           if (step.gate === "CX" || step.gate === "CZ" || step.gate === "SWAP") {
             const [control, target] = step.qubits;
             return (
@@ -266,7 +322,9 @@ export function CircuitDiagram({
                   <path className="mj-circuit-meter" d={`M${x} ${y + 6}l7 -11`} />
                 </>
               ) : (
-                <text x={x} y={y + 5}>{step.gate}</text>
+                <text x={x} y={y + 5}>
+                  {step.gate === "SDG" ? "S†" : step.gate === "TDG" ? "T†" : step.gate}
+                </text>
               )}
               {step.param ? (
                 // The full angle stays in the code and in the tooltip; only the

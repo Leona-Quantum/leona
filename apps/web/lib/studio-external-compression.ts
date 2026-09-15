@@ -12,9 +12,9 @@ export const EXTERNAL_COMPILER_MAX_QUBITS = 64;
 export const EXTERNAL_COMPILER_MAX_OPERATIONS = 1024;
 
 export class ExternalCompressionInputError extends Error {
-  readonly code: "empty" | "custom_gate" | "angle" | "budget";
+  readonly code: "empty" | "custom_gate" | "angle" | "budget" | "unsupported_gate";
 
-  constructor(code: "empty" | "custom_gate" | "angle" | "budget", message: string) {
+  constructor(code: "empty" | "custom_gate" | "angle" | "budget" | "unsupported_gate", message: string) {
     super(message);
     this.code = code;
   }
@@ -42,6 +42,20 @@ export function circuitOptimizationRequest(
         throw new ExternalCompressionInputError(
           "custom_gate",
           "External compilers cannot accept Studio custom gates until they are expanded.",
+        );
+      }
+      // The Worker compiler contract (`CircuitOptimizationGate`) is a closed
+      // 13-member enum — H, X, Y, Z, S, T, RX, RY, RZ, CX, CZ, SWAP, M — that
+      // predates SDG/TDG/P/CP/RZZ/CCX. Sending one through would either be
+      // silently rejected server-side or, worse, sent with its angle dropped
+      // (P/CP/RZZ) since only RX/RY/RZ are treated as angle-carrying below.
+      // Fail closed here instead, the same way a custom gate already does.
+      // `isSupportedExternalGate` is a type predicate, not a bare boolean check,
+      // so this also narrows `step.gate` for the object literal below.
+      if (!isSupportedExternalGate(step.gate)) {
+        throw new ExternalCompressionInputError(
+          "unsupported_gate",
+          `External compilers do not yet support ${step.gate}.`,
         );
       }
       const rotation = step.gate === "RX" || step.gate === "RY" || step.gate === "RZ";
@@ -149,6 +163,13 @@ function isOperation(value: unknown): boolean {
 
 const TWO_QUBIT_GATES: ReadonlySet<string> = new Set(["CX", "CZ", "SWAP"]);
 const ROTATION_GATES: ReadonlySet<string> = new Set(["RX", "RY", "RZ"]);
+
+type SupportedExternalGate = (typeof CIRCUIT_OPTIMIZATION_GATE_VALUES)[number];
+const SUPPORTED_EXTERNAL_GATES: ReadonlySet<string> = new Set(CIRCUIT_OPTIMIZATION_GATE_VALUES as readonly string[]);
+
+function isSupportedExternalGate(gate: BuilderStep["gate"]): gate is SupportedExternalGate {
+  return SUPPORTED_EXTERNAL_GATES.has(gate);
+}
 
 function isMetrics(value: unknown): boolean {
   return record(value)
