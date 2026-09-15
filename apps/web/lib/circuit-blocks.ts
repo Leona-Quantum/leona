@@ -58,6 +58,7 @@ const h = (q: number): GateSpec => ({ gate: "H", qubits: [q] });
 const x = (q: number): GateSpec => ({ gate: "X", qubits: [q] });
 const z = (q: number): GateSpec => ({ gate: "Z", qubits: [q] });
 const cx = (c: number, t: number): GateSpec => ({ gate: "CX", qubits: [c, t] });
+const cz = (c: number, t: number): GateSpec => ({ gate: "CZ", qubits: [c, t] });
 const ccx = (a: number, b: number, t: number): GateSpec => ({ gate: "CCX", qubits: [a, b, t] });
 const swapGate = (a: number, b: number): GateSpec => ({ gate: "SWAP", qubits: [a, b] });
 const rx = (q: number, theta: string): GateSpec => ({ gate: "RX", qubits: [q], param: theta });
@@ -660,6 +661,52 @@ const CONTROLLED_MULT_4_MOD_15: BlockTemplate = {
   },
 };
 
+/**
+ * Controlled powers of the canonical amplitude-estimation Grover operator
+ * Q = A Z A^{-1} Z, for the one-qubit Bernoulli state preparation
+ * A = RY(2*theta) (A|0> = cos(theta)|0> + sin(theta)|1>, estimating
+ * a = sin^2(theta)). One counting qubit per power, exactly like
+ * `controlled_phase_powers` for ordinary QPE.
+ *
+ * S_chi (mark |1>) is exactly Z. S_0 (reflect about |0>) is taken as
+ * +Z = 2|0><0| - I, not the other common convention I - 2|0><0| = -Z: the
+ * sign was resolved empirically, not assumed — with S_0 = -Z, the measured
+ * phase came out shifted by exactly 1/2 (peaks at 3/8 and 5/8 instead of the
+ * expected 1/8 and 7/8 for theta = pi/8), confirming the +Z convention is
+ * the one under which A|0>'s two branches land at +-theta/pi exactly, which
+ * is the whole point of a "peaks are exact" example.
+ *
+ * Controlled-A(2*theta) is CRY(2*theta) = RY(theta);CX;RY(-theta);CX (the
+ * standard controlled-rotation identity — note theta itself, not 2*theta,
+ * is the half-angle used inside); controlled-Z(target) is CZ directly.
+ */
+const AMPLITUDE_ESTIMATION_POWERS: BlockTemplate = {
+  key: "amplitude_estimation_powers",
+  name: "Amplitude estimation controlled powers",
+  category: "oracles",
+  summary: "Applies controlled powers of the amplitude-estimation Grover operator Q = A Z A^{-1} Z for A = RY(2*theta), one power per counting qubit.",
+  params: [intParam("t", "Counting qubits", 1, 8, 3), angleParam("theta", "Rotation angle theta (a = sin^2(theta))", "pi/8")],
+  qubitCount: (p) => asInt(p, "t") + 1,
+  build: (p) => {
+    const t = asInt(p, "t");
+    const theta = asAngle(p, "theta");
+    const negTheta = negateAngle(theta);
+    const target = t;
+    const steps: GateSpec[] = [];
+    for (let k = 0; k < t; k += 1) {
+      for (let repeat = 0; repeat < 1 << k; repeat += 1) {
+        steps.push(
+          ry(target, theta), cx(k, target), ry(target, negTheta), cx(k, target),
+          cz(k, target),
+          ry(target, negTheta), cx(k, target), ry(target, theta), cx(k, target),
+          cz(k, target),
+        );
+      }
+    }
+    return leafBlock(`amplitude-estimation-powers-${t}`, `Amplitude estimation powers(${t})`, t + 1, steps);
+  },
+};
+
 const SWAP_TEST: BlockTemplate = {
   key: "swap_test",
   name: "Swap test",
@@ -706,6 +753,7 @@ export const BLOCK_TEMPLATES: readonly BlockTemplate[] = [
   QUANTUM_WALK_STEP_CYCLE4,
   CONTROLLED_MULT_7_MOD_15,
   CONTROLLED_MULT_4_MOD_15,
+  AMPLITUDE_ESTIMATION_POWERS,
 ];
 
 export function blockTemplate(key: string): BlockTemplate | undefined {

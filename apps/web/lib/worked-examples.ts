@@ -653,6 +653,41 @@ function shorOrderFinding15(): WorkedExample {
 }
 
 // ---------------------------------------------------------------------------
+// 17. amplitude-estimation-3
+
+function amplitudeEstimation3(): WorkedExample {
+  const t = 3;
+  const target = t;
+  const counting = [0, 1, 2];
+  const prepA = rawStep("RY", [target], "pi/4"); // A|0> = RY(pi/4)|0>, theta = pi/8
+  const hCounting = place("hadamard_layer", { n: 3 }, counting, "h-counting");
+  const powers = place("amplitude_estimation_powers", { t, theta: "pi/8" }, [...counting, target], "qae-powers");
+  const inverseQft = place("qft_inverse", { n: 3 }, counting, "iqft");
+  const steps = [prepA, hCounting.step, powers.step, inverseQft.step];
+  return {
+    id: "amplitude-estimation-3",
+    algorithm: "Quantum Amplitude Estimation",
+    title: { en: "Canonical amplitude estimation", ja: "標準的な振幅推定" },
+    instance: { en: "3 counting qubits estimating a = sin²(θ) for the one-qubit state A|0⟩ = RY(π/4)|0⟩, θ = π/8.", ja: "3個のカウント量子ビットで、1量子ビットの状態A|0⟩ = RY(π/4)|0⟩に対して a = sin²(θ)（θ = π/8）を推定します。" },
+    qubitCount: t + 1,
+    steps,
+    customGates: [...hCounting.customGates, ...powers.customGates, ...inverseQft.customGates],
+    notes: [
+      note(prepA.id, "Prepares the target qubit as A|0⟩ = cos(θ)|0⟩ + sin(θ)|1⟩; the quantity being estimated is a = sin²(θ), the probability that measuring this qubit alone would give |1⟩.", "対象の量子ビットをA|0⟩ = cos(θ)|0⟩ + sin(θ)|1⟩に準備します。推定する量は a = sin²(θ) で、この量子ビットだけを測定したときに|1⟩が得られる確率です。"),
+      note(hCounting.step.id, "Spreads the 3 counting qubits into an equal superposition of all 8 values.", "3個のカウント量子ビットを8通りの値すべての等しい重ね合わせに広げます。"),
+      note(powers.step.id, "Applies controlled powers of the Grover operator Q = A Z A⁻¹ Z, one power per counting qubit: phase estimation of Q, using A|0⟩ in place of a single eigenstate.", "グローバー演算子 Q = A Z A⁻¹ Z の制御べき乗を、カウント量子ビット1個につき1回ずつ適用します。単一の固有状態の代わりにA|0⟩を使ったQの位相推定です。"),
+      note(inverseQft.step.id, "An inverse QFT on the counting register reads the phase into a 3-bit estimate.", "カウントレジスタへの逆QFTが位相を3ビットの推定値として読み出します。"),
+    ],
+    check: { kind: "support", bitstrings: ["0001", "0111", "1001", "1111"] },
+    readout: {
+      en: "The counting register reads 001 or 111, each equally likely: these are θ/π = 1/8 and its mirror 1 − 1/8 = 7/8, both exact in 3 bits by construction. Either one gives a = sin²(π/8) = (2 − √2) / 4 exactly, the standard amplitude-estimation formula a = sin²(πλ) applied to the smaller of the two readings.", ja: "カウントレジスタは001か111のどちらかを等しい確率で読み取ります。これらは θ/π = 1/8 とその鏡像 1 − 1/8 = 7/8 で、構成上どちらも3ビットで正確に表せます。どちらの結果からも a = sin²(π/8) = (2 − √2) / 4 が正確に得られます。これは標準の振幅推定の式 a = sin²(πλ) を2つの読み取り値のうち小さい方に適用したものです。",
+    },
+    keywords: ["amplitude estimation", "phase estimation", "grover operator"],
+    blocks: ["hadamard_layer", "amplitude_estimation_powers", "qft_inverse"],
+  };
+}
+
+// ---------------------------------------------------------------------------
 
 // angle = 3*pi/4 = 2*pi*3/8: exact 3-bit phase, counting register reads 011
 // (=3) with probability 1 (verified against the simulator's raw output).
@@ -696,6 +731,7 @@ export const WORKED_EXAMPLES: readonly WorkedExample[] = [
   vqeTransverseIsing(),
   quantumWalkCycle4(),
   shorOrderFinding15(),
+  amplitudeEstimation3(),
 ];
 
 export function workedExample(id: string): WorkedExample | undefined {

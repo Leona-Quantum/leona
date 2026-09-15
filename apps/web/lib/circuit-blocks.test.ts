@@ -499,6 +499,47 @@ test("controlled_mult_4_mod_15 maps the order-4 orbit exactly, matching x7 appli
 });
 
 // ---------------------------------------------------------------------------
+// amplitude_estimation_powers
+
+test("amplitude_estimation_powers: a=0 (theta=0) leaves the target at |0>, deterministically", () => {
+  const template = blockTemplate("amplitude_estimation_powers")!;
+  const built = template.build({ t: 2, theta: "0" });
+  const instance = instantiateBlock(built, [0, 1, 2], "qae");
+  const prep = [{ id: createBuilderStepId(), gate: "H" as const, qubits: [0] }, { id: createBuilderStepId(), gate: "H" as const, qubits: [1] }];
+  const flat = flattenBuilderSteps([...prep, instance.step], instance.customGates);
+  const probabilities = idealProbabilities({ qubitCount: 3, steps: flat });
+  let targetOne = 0;
+  for (let index = 0; index < probabilities.length; index += 1) if ((index & 0b100) !== 0) targetOne += probabilities[index];
+  assert.ok(targetOne < EPSILON, `expected the target to stay |0> when theta=0, got P(target=1)=${targetOne}`);
+});
+
+test("amplitude_estimation_powers feeding a QPE-style readout gives the exact theta/pi peaks for theta=pi/8", () => {
+  // Full worked-example-shaped circuit: RY(2*theta) state prep, Hadamard the
+  // counting register, this block's controlled powers, inverse QFT. The
+  // counting register must read theta/pi = 1/8 and its mirror 1 - 1/8 = 7/8
+  // (i.e. 001 and 111 for t=3), each with probability 1/2 — the module
+  // comment on AMPLITUDE_ESTIMATION_POWERS documents how the S_0 sign was
+  // resolved empirically against exactly this check.
+  const t = 3;
+  const target = t;
+  const template = blockTemplate("amplitude_estimation_powers")!;
+  const built = template.build({ t, theta: "pi/8" });
+  const instance = instantiateBlock(built, [0, 1, 2, target], "qae");
+  const iqftBuilt = blockTemplate("qft_inverse")!.build({ n: t });
+  const iqft = instantiateBlock(iqftBuilt, [0, 1, 2], "iqft");
+  const prep = [
+    { id: createBuilderStepId(), gate: "RY" as const, qubits: [target], param: "pi/4" },
+    ...[0, 1, 2].map((q) => ({ id: createBuilderStepId(), gate: "H" as const, qubits: [q] })),
+  ];
+  const flat = flattenBuilderSteps([...prep, instance.step, iqft.step], [...instance.customGates, ...iqft.customGates]);
+  const probabilities = idealProbabilities({ qubitCount: t + 1, steps: flat });
+  const marginal = new Float64Array(1 << t);
+  for (let index = 0; index < probabilities.length; index += 1) marginal[index & ((1 << t) - 1)] += probabilities[index];
+  assert.ok(Math.abs(marginal[0b001] - 0.5) < EPSILON, `expected P(counting=001)=0.5, got ${marginal[0b001]}`);
+  assert.ok(Math.abs(marginal[0b111] - 0.5) < EPSILON, `expected P(counting=111)=0.5, got ${marginal[0b111]}`);
+});
+
+// ---------------------------------------------------------------------------
 // ising_trotter_step / hardware_efficient_layer / qaoa_maxcut_layer: smoke +
 // exact small-case checks
 
