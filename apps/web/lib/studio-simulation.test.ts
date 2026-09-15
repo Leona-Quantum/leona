@@ -1,7 +1,116 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { cpuSimulationEligibility, runCpuSimulation, sourceFingerprint } from "./studio-simulation.ts";
+import { cpuSimulationEligibility, idealProbabilities, runCpuSimulation, sourceFingerprint } from "./studio-simulation.ts";
 import { TIER_LIMITS } from "./account-tier.ts";
+import { createBuilderStepId, type BuilderStep } from "./studio-builder.ts";
+
+/** `idealProbabilities` on a hand-built circuit — the matrix-action tests
+ * below don't need a source string, so they build steps directly. */
+function probabilitiesOf(qubitCount: number, steps: Array<Omit<BuilderStep, "id">>): Float64Array {
+  return idealProbabilities({ qubitCount, steps: steps.map((step) => ({ id: createBuilderStepId(), ...step })) });
+}
+
+const EPSILON = 1e-9;
+
+function peak(probabilities: Float64Array): { index: number; probability: number } {
+  let best = 0;
+  for (let index = 1; index < probabilities.length; index += 1) {
+    if (probabilities[index] > probabilities[best]) best = index;
+  }
+  return { index: best, probability: probabilities[best] };
+}
+
+/** A deterministic outcome, within the kernel's own floating-point noise —
+ * `deepEqual` against a clean {index, probability: 1} is a coin flip on trig
+ * rounding (observed: 1.0000000000000004), so index and probability are
+ * asserted separately with an explicit tolerance on the latter. */
+function assertPeak(probabilities: Float64Array, expectedIndex: number, message: string) {
+  const found = peak(probabilities);
+  assert.equal(found.index, expectedIndex, message);
+  assert.ok(Math.abs(found.probability - 1) < EPSILON, `${message}: expected probability ~1, got ${found.probability}`);
+}
+
+test("SDG.S = I: S then SDG returns |+> to |0> exactly", () => {
+  const probabilities = probabilitiesOf(1, [
+    { gate: "H", qubits: [0] },
+    { gate: "S", qubits: [0] },
+    { gate: "SDG", qubits: [0] },
+    { gate: "H", qubits: [0] },
+  ]);
+  assert.ok(Math.abs(probabilities[0] - 1) < EPSILON, `expected |0> with probability 1, got ${probabilities[0]}`);
+  assert.ok(Math.abs(probabilities[1]) < EPSILON);
+});
+
+test("TDG.T = I: T then TDG returns |+> to |0> exactly", () => {
+  const probabilities = probabilitiesOf(1, [
+    { gate: "H", qubits: [0] },
+    { gate: "T", qubits: [0] },
+    { gate: "TDG", qubits: [0] },
+    { gate: "H", qubits: [0] },
+  ]);
+  assert.ok(Math.abs(probabilities[0] - 1) < EPSILON, `expected |0> with probability 1, got ${probabilities[0]}`);
+});
+
+test("P(theta) kicks back onto a superposed control the standard way: P(pi/2)|+> -> H gives 1/2, P(pi)|+> -> H gives 1", () => {
+  // H, P(theta), H is the textbook phase-kickback sandwich: the resulting
+  // P(measure=1) is (1 - cos(theta)) / 2. Checked at two angles rather than
+  // one so a sign error in the phase (cos(-theta) = cos(theta) would hide at
+  // theta = pi but not elsewhere) cannot pass by accident.
+  const half = probabilitiesOf(1, [{ gate: "H", qubits: [0] }, { gate: "P", qubits: [0], param: "pi/2" }, { gate: "H", qubits: [0] }]);
+  assert.ok(Math.abs(half[1] - 0.5) < EPSILON, `expected P(1)=0.5 at theta=pi/2, got ${half[1]}`);
+  const full = probabilitiesOf(1, [{ gate: "H", qubits: [0] }, { gate: "P", qubits: [0], param: "pi" }, { gate: "H", qubits: [0] }]);
+  assert.ok(Math.abs(full[1] - 1) < EPSILON, `expected P(1)=1 at theta=pi, got ${full[1]}`);
+});
+
+test("CP applies its phase only when the control is |1>, never when it is |0>", () => {
+  // With the control at |1>, CP(pi) on a |+> target is exactly CZ: H,X,CP(pi),H
+  // deterministically flips the target to |1>. With the control left at |0>,
+  // the same sequence must leave the target at |0> — CP(pi) does nothing.
+  const controlOn = probabilitiesOf(2, [
+    { gate: "X", qubits: [0] },
+    { gate: "H", qubits: [1] },
+    { gate: "CP", qubits: [0, 1], param: "pi" },
+    { gate: "H", qubits: [1] },
+  ]);
+  assertPeak(controlOn, 0b11, "control=1: target must flip to |1>");
+
+  const controlOff = probabilitiesOf(2, [
+    { gate: "H", qubits: [1] },
+    { gate: "CP", qubits: [0, 1], param: "pi" },
+    { gate: "H", qubits: [1] },
+  ]);
+  assertPeak(controlOff, 0b00, "control=0: CP must be inert");
+});
+
+test("RZZ phases every basis state by parity, not just |11>: it acts even with the first qubit at |0>", () => {
+  // Unlike CP above, RZZ(theta) = exp(-i*theta/2 Z#Z) phases |00>/|11> by
+  // e^{-i theta/2} and |01>/|10> by e^{+i theta/2} regardless of whether
+  // either qubit is a "control" — so the same H,RZZ(pi),H sandwich flips the
+  // second qubit with the FIRST qubit left at |0>, which CP never does.
+  const probabilities = probabilitiesOf(2, [
+    { gate: "H", qubits: [1] },
+    { gate: "RZZ", qubits: [0, 1], param: "pi" },
+    { gate: "H", qubits: [1] },
+  ]);
+  // Basis index = q0 + 2*q1 (bit `n` of the index is qubit n's state — see
+  // `bitstringFor`). q0 stays |0>, q1 flips to |1>: index = 0 + 2*1 = 2.
+  assertPeak(probabilities, 2, "RZZ(pi) must flip q1 even though q0 is |0>");
+});
+
+test("CCX truth table: the target flips iff both controls are |1>, and only then", () => {
+  // Prepare every one of the 8 three-qubit basis states via X gates, apply
+  // CCX(0,1,2), and check the output lands EXACTLY on the Toffoli truth
+  // table's prediction with probability 1 — not merely "something changed".
+  for (let input = 0; input < 8; input += 1) {
+    const [q0, q1, q2] = [input & 1, (input >> 1) & 1, (input >> 2) & 1];
+    const prep: Array<Omit<BuilderStep, "id">> = [q0, q1, q2]
+      .flatMap((bit, qubit) => (bit ? [{ gate: "X" as const, qubits: [qubit] }] : []));
+    const probabilities = probabilitiesOf(3, [...prep, { gate: "CCX", qubits: [0, 1, 2] }]);
+    const expectedQ2 = (q0 === 1 && q1 === 1) ? 1 - q2 : q2;
+    const expectedIndex = q0 | (q1 << 1) | (expectedQ2 << 2);
+    assertPeak(probabilities, expectedIndex, `CCX on input ${input.toString(2).padStart(3, "0")}`);
+  }
+});
 
 const BELL_SOURCE = [
   "from qiskit import QuantumCircuit",

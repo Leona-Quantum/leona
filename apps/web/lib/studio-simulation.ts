@@ -201,7 +201,7 @@ export function runCpuSimulation(
   };
 }
 
-export type SingleQubitUnitaryGate = "H" | "X" | "Y" | "Z" | "S" | "T" | "RX" | "RY" | "RZ";
+export type SingleQubitUnitaryGate = "H" | "X" | "Y" | "Z" | "S" | "T" | "SDG" | "TDG" | "RX" | "RY" | "RZ" | "P";
 
 /**
  * The 2×2 unitary this kernel applies for a one-qubit gate, as
@@ -216,9 +216,12 @@ export function singleQubitUnitary(gate: SingleQubitUnitaryGate, theta = 0): Com
     case "Z": return PAULI_Z;
     case "S": return PHASE_S;
     case "T": return PHASE_T;
+    case "SDG": return PHASE_SDG;
+    case "TDG": return PHASE_TDG;
     case "RX": return rotationX(theta);
     case "RY": return rotationY(theta);
     case "RZ": return rotationZ(theta);
+    case "P": return phaseGate(theta);
   }
 }
 
@@ -267,7 +270,7 @@ function executeCircuit(circuit: ParsedBuilderCircuit): { real: Float64Array; im
   real[0] = 1;
 
   for (const step of circuit.steps) {
-    const [first, second] = step.qubits;
+    const [first, second, third] = step.qubits;
     switch (step.gate) {
       case "H": applySingleQubit(real, imaginary, first, HADAMARD); break;
       case "X": applySingleQubit(real, imaginary, first, PAULI_X); break;
@@ -275,12 +278,18 @@ function executeCircuit(circuit: ParsedBuilderCircuit): { real: Float64Array; im
       case "Z": applySingleQubit(real, imaginary, first, PAULI_Z); break;
       case "S": applySingleQubit(real, imaginary, first, PHASE_S); break;
       case "T": applySingleQubit(real, imaginary, first, PHASE_T); break;
+      case "SDG": applySingleQubit(real, imaginary, first, PHASE_SDG); break;
+      case "TDG": applySingleQubit(real, imaginary, first, PHASE_TDG); break;
       case "RX": applySingleQubit(real, imaginary, first, rotationX(angle(step.param))); break;
       case "RY": applySingleQubit(real, imaginary, first, rotationY(angle(step.param))); break;
       case "RZ": applySingleQubit(real, imaginary, first, rotationZ(angle(step.param))); break;
+      case "P": applySingleQubit(real, imaginary, first, phaseGate(angle(step.param))); break;
       case "CX": applyControlledX(real, imaginary, first, second); break;
       case "CZ": applyControlledZ(real, imaginary, first, second); break;
       case "SWAP": applySwap(real, imaginary, first, second); break;
+      case "CP": applyControlledPhase(real, imaginary, first, second, angle(step.param)); break;
+      case "RZZ": applyRzz(real, imaginary, first, second, angle(step.param)); break;
+      case "CCX": applyToffoli(real, imaginary, first, second, third); break;
       // Builder parsers only emit terminal measurements. Sampling happens after
       // the unitary evolution, so measurement is represented in the record.
       case "M": break;
@@ -325,6 +334,56 @@ function applyControlledZ(real: Float64Array, imaginary: Float64Array, control: 
       real[index] = -real[index];
       imaginary[index] = -imaginary[index];
     }
+  }
+}
+
+/** CP(θ)|11⟩ = e^{iθ}|11⟩; every other basis amplitude is untouched. */
+function applyControlledPhase(real: Float64Array, imaginary: Float64Array, control: number, target: number, theta: number) {
+  const mask = (1 << control) | (1 << target);
+  const cosine = Math.cos(theta);
+  const sine = Math.sin(theta);
+  for (let index = 0; index < real.length; index += 1) {
+    if ((index & mask) !== mask) continue;
+    const re = real[index];
+    const im = imaginary[index];
+    real[index] = re * cosine - im * sine;
+    imaginary[index] = re * sine + im * cosine;
+  }
+}
+
+/**
+ * RZZ(θ) = exp(-iθ/2 Z⊗Z). Z⊗Z's eigenvalue on a basis state is +1 when the
+ * two wires' bits agree (00 or 11) and -1 when they differ (01 or 10), so the
+ * phase applied is e^{-iθ/2} or e^{+iθ/2} respectively — every amplitude gets
+ * a phase, unlike CP above, which touches only |11⟩.
+ */
+function applyRzz(real: Float64Array, imaginary: Float64Array, first: number, second: number, theta: number) {
+  const firstMask = 1 << first;
+  const secondMask = 1 << second;
+  const halfTheta = theta / 2;
+  const agreeCosine = Math.cos(halfTheta);
+  const agreeSine = -Math.sin(halfTheta);
+  const disagreeCosine = Math.cos(halfTheta);
+  const disagreeSine = Math.sin(halfTheta);
+  for (let index = 0; index < real.length; index += 1) {
+    const agree = Boolean(index & firstMask) === Boolean(index & secondMask);
+    const cosine = agree ? agreeCosine : disagreeCosine;
+    const sine = agree ? agreeSine : disagreeSine;
+    const re = real[index];
+    const im = imaginary[index];
+    real[index] = re * cosine - im * sine;
+    imaginary[index] = re * sine + im * cosine;
+  }
+}
+
+/** Toffoli: flips `target` when both `controlA` and `controlB` are set. */
+function applyToffoli(real: Float64Array, imaginary: Float64Array, controlA: number, controlB: number, target: number) {
+  const controlMask = (1 << controlA) | (1 << controlB);
+  const targetMask = 1 << target;
+  for (let index = 0; index < real.length; index += 1) {
+    if ((index & controlMask) !== controlMask || (index & targetMask) !== 0) continue;
+    const paired = index | targetMask;
+    swapAmplitude(real, imaginary, index, paired);
   }
 }
 
@@ -401,12 +460,19 @@ function rotationZ(theta: number): ComplexMatrix {
   return [cosine, -sine, 0, 0, 0, 0, cosine, sine];
 }
 
+/** P(θ) = diag(1, e^{iθ}) — a fixed diagonal phase, not a Pauli-axis rotation. */
+function phaseGate(theta: number): ComplexMatrix {
+  return [1, 0, 0, 0, 0, 0, Math.cos(theta), Math.sin(theta)];
+}
+
 const HADAMARD: ComplexMatrix = [Math.SQRT1_2, 0, Math.SQRT1_2, 0, Math.SQRT1_2, 0, -Math.SQRT1_2, 0];
 const PAULI_X: ComplexMatrix = [0, 0, 1, 0, 1, 0, 0, 0];
 const PAULI_Y: ComplexMatrix = [0, 0, 0, -1, 0, 1, 0, 0];
 const PAULI_Z: ComplexMatrix = [1, 0, 0, 0, 0, 0, -1, 0];
 const PHASE_S: ComplexMatrix = [1, 0, 0, 0, 0, 0, 0, 1];
 const PHASE_T: ComplexMatrix = [1, 0, 0, 0, 0, 0, Math.SQRT1_2, Math.SQRT1_2];
+const PHASE_SDG: ComplexMatrix = [1, 0, 0, 0, 0, 0, 0, -1];
+const PHASE_TDG: ComplexMatrix = [1, 0, 0, 0, 0, 0, Math.SQRT1_2, -Math.SQRT1_2];
 
 function browserSeed(): number {
   return Math.floor(Math.random() * (MAX_CPU_SEED + 1));
