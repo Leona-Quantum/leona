@@ -610,6 +610,49 @@ function quantumWalkCycle4(): WorkedExample {
 }
 
 // ---------------------------------------------------------------------------
+// 16. shor-order-finding-15 (a=7, N=15, order r=4)
+
+const SHOR_COUNTING_OUTCOMES = ["000", "010", "100", "110"];
+const SHOR_ORBIT = ["0001", "0100", "0111", "1101"]; // {1, 4, 7, 13}
+
+function shorOrderFinding15(): WorkedExample {
+  const counting = [0, 1, 2];
+  const work = [3, 4, 5, 6];
+  const prepWork = rawStep("X", [work[0]]); // work register starts at |1>
+  const hCounting = place("hadamard_layer", { n: 3 }, counting, "h-counting");
+  const mult7 = place("controlled_mult_7_mod_15", {}, [counting[0], ...work], "mult7");
+  const mult4 = place("controlled_mult_4_mod_15", {}, [counting[1], ...work], "mult4");
+  const inverseQft = place("qft_inverse", { n: 3 }, counting, "iqft");
+  const steps = [prepWork, hCounting.step, mult7.step, mult4.step, inverseQft.step];
+  return {
+    id: "shor-order-finding-15",
+    algorithm: "Shor's algorithm (order-finding)",
+    title: { en: "Order-finding for 7 mod 15", ja: "15を法とする7の位数発見" },
+    instance: { en: "3 counting qubits, 4 work qubits, finding the order of 7 modulo 15 (the order is 4: 7⁴ mod 15 = 1).", ja: "カウント用の量子ビット3個、作業用の量子ビット4個で、15を法とする7の位数を求めます（位数は4で、7⁴ mod 15 = 1です）。" },
+    qubitCount: 7,
+    steps,
+    customGates: [...hCounting.customGates, ...mult7.customGates, ...mult4.customGates, ...inverseQft.customGates],
+    notes: [
+      note(prepWork.id, "Prepares the work register as |0001⟩ = 1.", "作業レジスタを|0001⟩ = 1に準備します。"),
+      note(hCounting.step.id, "Spreads the 3 counting qubits into an equal superposition of all 8 values.", "3個のカウント量子ビットを8通りの値すべての等しい重ね合わせに広げます。"),
+      note(mult7.step.id, "Multiplies the work register by 7 mod 15, controlled by the first counting qubit: the k=0 controlled power of the order-finding unitary.", "最初のカウント量子ビットを制御として、作業レジスタに15を法として7を掛けます。位数発見ユニタリのk=0の制御べき乗です。"),
+      note(mult4.step.id, "Multiplies the work register by 4 mod 15 (7 squared, mod 15), controlled by the second counting qubit: the k=1 controlled power. The k=2 power would multiply by 7⁴ mod 15 = 1, so it is the identity and is left out entirely.", "2番目のカウント量子ビットを制御として、作業レジスタに15を法として4（7の2乗を15で割った余り）を掛けます。k=1の制御べき乗です。k=2のべき乗は15を法として7⁴ = 1を掛けることになり恒等変換となるため、完全に省略します。"),
+      note(inverseQft.step.id, "An inverse QFT on the counting register reads the phase found by the controlled multiplications into a 3-bit estimate.", "カウントレジスタへの逆QFTが、制御された乗算によって見つかった位相を3ビットの推定値として読み出します。"),
+    ],
+    // Character order follows this file's own convention (character 0 = the
+    // highest-numbered qubit): work is qubits 3-6, counting is qubits 0-2,
+    // so the work register's 4 characters come first, then counting's 3.
+    check: { kind: "support", bitstrings: SHOR_ORBIT.flatMap((workBits) => SHOR_COUNTING_OUTCOMES.map((countingBits) => workBits + countingBits)) },
+    readout: {
+      en: "The counting register reads 000, 010, 100 or 110, each equally likely, corresponding to the four powers k = 0, 1, 2, 3 of the order r = 4; the work register ends entangled with the counting outcome, holding one of 1, 7, 4 or 13. Repeating this and applying the continued-fractions step of the full algorithm to a nonzero outcome recovers the order r = 4 exactly.",
+      ja: "カウントレジスタは000、010、100、110のいずれかを等しい確率で読み取り、これらは位数r = 4の4つのべき乗k = 0, 1, 2, 3に対応します。作業レジスタはカウント結果ともつれた状態になり、1、7、4、13のいずれかを保持します。これを繰り返し、0でない結果に完全なアルゴリズムの連分数展開のステップを適用すると、位数r = 4が正確に復元されます。",
+    },
+    keywords: ["shor's algorithm", "order finding", "phase estimation"],
+    blocks: ["hadamard_layer", "controlled_mult_7_mod_15", "controlled_mult_4_mod_15", "qft_inverse"],
+  };
+}
+
+// ---------------------------------------------------------------------------
 
 // angle = 3*pi/4 = 2*pi*3/8: exact 3-bit phase, counting register reads 011
 // (=3) with probability 1 (verified against the simulator's raw output).
@@ -652,6 +695,7 @@ export const WORKED_EXAMPLES: readonly WorkedExample[] = [
   teleportationDeferred(),
   vqeTransverseIsing(),
   quantumWalkCycle4(),
+  shorOrderFinding15(),
 ];
 
 export function workedExample(id: string): WorkedExample | undefined {

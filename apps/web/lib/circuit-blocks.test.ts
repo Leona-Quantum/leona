@@ -449,6 +449,56 @@ test("quantum_walk_step_cycle4: the actual Hadamard-coin walk matches the simula
 });
 
 // ---------------------------------------------------------------------------
+// controlled_mult_7_mod_15 / controlled_mult_4_mod_15
+
+test("controlled_mult_7_mod_15 maps the order-4 orbit {1,7,4,13} exactly, when the control is |1>", () => {
+  const template = blockTemplate("controlled_mult_7_mod_15")!;
+  const built = template.build({});
+  const expected: Record<number, number> = { 1: 7, 7: 4, 4: 13, 13: 1 };
+  for (const [from, to] of Object.entries(expected)) {
+    const x = Number(from);
+    const instance = instantiateBlock(built, [0, 1, 2, 3, 4], `m${x}`);
+    const prep: BuilderStep[] = [{ id: createBuilderStepId(), gate: "X", qubits: [0] }]; // control = 1
+    for (let bit = 0; bit < 4; bit += 1) if (x & (1 << bit)) prep.push({ id: createBuilderStepId(), gate: "X", qubits: [1 + bit] });
+    const flat = flattenBuilderSteps([...prep, instance.step], instance.customGates);
+    const probabilities = idealProbabilities({ qubitCount: 5, steps: flat });
+    const peak = peakIndex(probabilities);
+    const outputRegister = (peak >> 1) & 0b1111; // bits 1-4
+    assert.ok(Math.abs(probabilities[peak] - 1) < EPSILON, `x=${x}: expected a deterministic outcome`);
+    assert.equal(outputRegister, to, `x=${x}: expected x7 mod 15 = ${to}, got ${outputRegister}`);
+    assert.equal(peak & 1, 1, `x=${x}: control qubit must be unchanged`);
+  }
+});
+
+test("controlled_mult_7_mod_15 does nothing when the control is |0>", () => {
+  const template = blockTemplate("controlled_mult_7_mod_15")!;
+  const built = template.build({});
+  const instance = instantiateBlock(built, [0, 1, 2, 3, 4], "m");
+  const prep: BuilderStep[] = [{ id: createBuilderStepId(), gate: "X", qubits: [1] }]; // register = 1, control = 0
+  const flat = flattenBuilderSteps([...prep, instance.step], instance.customGates);
+  const probabilities = idealProbabilities({ qubitCount: 5, steps: flat });
+  assert.ok(Math.abs(probabilities[0b00010] - 1) < EPSILON, "register must be untouched when the control is |0>");
+});
+
+test("controlled_mult_4_mod_15 maps the order-4 orbit exactly, matching x7 applied twice", () => {
+  const template = blockTemplate("controlled_mult_4_mod_15")!;
+  const built = template.build({});
+  const expected: Record<number, number> = { 1: 4, 7: 13, 4: 1, 13: 7 };
+  for (const [from, to] of Object.entries(expected)) {
+    const x = Number(from);
+    const instance = instantiateBlock(built, [0, 1, 2, 3, 4], `m${x}`);
+    const prep: BuilderStep[] = [{ id: createBuilderStepId(), gate: "X", qubits: [0] }];
+    for (let bit = 0; bit < 4; bit += 1) if (x & (1 << bit)) prep.push({ id: createBuilderStepId(), gate: "X", qubits: [1 + bit] });
+    const flat = flattenBuilderSteps([...prep, instance.step], instance.customGates);
+    const probabilities = idealProbabilities({ qubitCount: 5, steps: flat });
+    const peak = peakIndex(probabilities);
+    const outputRegister = (peak >> 1) & 0b1111;
+    assert.ok(Math.abs(probabilities[peak] - 1) < EPSILON, `x=${x}: expected a deterministic outcome`);
+    assert.equal(outputRegister, to, `x=${x}: expected x4 mod 15 = ${to}, got ${outputRegister}`);
+  }
+});
+
+// ---------------------------------------------------------------------------
 // ising_trotter_step / hardware_efficient_layer / qaoa_maxcut_layer: smoke +
 // exact small-case checks
 

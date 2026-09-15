@@ -598,6 +598,68 @@ const QUANTUM_WALK_STEP_CYCLE4: BlockTemplate = {
   },
 };
 
+/** CSWAP(control, t1, t2) = CX(t1,t2); CCX(control,t2,t1); CX(t1,t2) — the
+ * same Fredkin-via-Toffoli identity `swap_test` and circuit-conversion.ts's
+ * own cswap interchange decomposition already use. */
+function cswapSteps(control: number, t1: number, t2: number): GateSpec[] {
+  return [cx(t1, t2), ccx(control, t2, t1), cx(t1, t2)];
+}
+
+/**
+ * Controlled multiplication by 7, mod 15, on a 4-qubit register (qubit 0 is
+ * the control; qubits 1-4 are the register, bit 0 = LSB). Verified against
+ * the simulator on the full order-4 orbit {1, 7, 4, 13} this Shor
+ * order-finding example actually visits: SWAP(w0,w1); SWAP(w1,w2);
+ * SWAP(w2,w3); then X on all four — a cyclic rotation of the four bits
+ * followed by a full complement, controlled throughout. Off-orbit inputs are
+ * mapped to *some* other value (this remains a valid permutation, so it is
+ * still reversible), but that mapping is not meant to be meaningful; only
+ * the orbit the algorithm actually reaches is checked.
+ */
+const CONTROLLED_MULT_7_MOD_15: BlockTemplate = {
+  key: "controlled_mult_7_mod_15",
+  name: "Controlled x7 mod 15",
+  category: "arithmetic",
+  summary: "Multiplies a 4-qubit register by 7 mod 15, controlled by one qubit, from controlled swaps and CX.",
+  params: [],
+  qubitCount: () => 5,
+  build: () => {
+    const control = 0;
+    const w = [1, 2, 3, 4];
+    const steps: GateSpec[] = [
+      ...cswapSteps(control, w[0], w[1]),
+      ...cswapSteps(control, w[1], w[2]),
+      ...cswapSteps(control, w[2], w[3]),
+      cx(control, w[0]), cx(control, w[1]), cx(control, w[2]), cx(control, w[3]),
+    ];
+    return leafBlock("controlled-mult-7-mod-15", "Controlled x7 mod 15", 5, steps);
+  },
+};
+
+/**
+ * Controlled multiplication by 4, mod 15: the x7-mod-15 block applied
+ * twice, since 7^2 = 49 = 4 (mod 15) exactly. Nests two instances of
+ * CONTROLLED_MULT_7_MOD_15 rather than re-deriving a second swap pattern,
+ * so its correctness on the algorithm's orbit follows from x7's own.
+ */
+const CONTROLLED_MULT_4_MOD_15: BlockTemplate = {
+  key: "controlled_mult_4_mod_15",
+  name: "Controlled x4 mod 15",
+  category: "arithmetic",
+  summary: "Multiplies a 4-qubit register by 4 mod 15, controlled by one qubit: x7 mod 15 applied twice, since 7 squared is 49 = 4 (mod 15).",
+  params: [],
+  qubitCount: () => 5,
+  build: () => {
+    const qubits = [0, 1, 2, 3, 4];
+    const first = instantiateBlock(CONTROLLED_MULT_7_MOD_15.build({}), qubits, "a");
+    const second = instantiateBlock(CONTROLLED_MULT_7_MOD_15.build({}), qubits, "b");
+    return {
+      root: { id: "controlled-mult-4-mod-15", name: "Controlled x4 mod 15", qubitCount: 5, steps: [first.step, second.step] },
+      definitions: [...first.customGates, ...second.customGates],
+    };
+  },
+};
+
 const SWAP_TEST: BlockTemplate = {
   key: "swap_test",
   name: "Swap test",
@@ -642,6 +704,8 @@ export const BLOCK_TEMPLATES: readonly BlockTemplate[] = [
   QAOA_MAXCUT_LAYER,
   SWAP_TEST,
   QUANTUM_WALK_STEP_CYCLE4,
+  CONTROLLED_MULT_7_MOD_15,
+  CONTROLLED_MULT_4_MOD_15,
 ];
 
 export function blockTemplate(key: string): BlockTemplate | undefined {
