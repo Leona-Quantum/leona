@@ -4409,19 +4409,6 @@ class ProductionSimplePipelinePorts:
             "previous_plan": previous.plan.model_dump(mode="json") if previous else None,
             "repair_feedback": asdict(feedback) if feedback else None,
             "repair_contract": _plan_repair_contract(feedback),
-            # Opt-in only (`source_intent="revise"`): the planner otherwise
-            # never sees `_initial_source` at all, on every path, replan
-            # included — see `_revise_source` in `__init__`. Bounded the same
-            # way `_outcome_explanation_evidence` (handlers.py) bounds a
-            # candidate's source before a second model call.
-            "source_to_revise": (
-                {
-                    "code": self._initial_source[:_SOURCE_REVISION_PREVIEW_CHARS],
-                    "truncated": len(self._initial_source) > _SOURCE_REVISION_PREVIEW_CHARS,
-                }
-                if self._revise_source and self._initial_source
-                else None
-            ),
             "external_research": (
                 {
                     "query": research.query,
@@ -4436,6 +4423,17 @@ class ProductionSimplePipelinePorts:
                 else None
             ),
         }
+        # Opt-in only (`source_intent="revise"`): the planner otherwise never sees
+        # `_initial_source` at all, on every path, replan included — see
+        # `_revise_source` in `__init__`. The key is added only when revising, so a
+        # verify run's planner payload stays byte-for-byte what it was before this
+        # field existed. Bounded the same way `_outcome_explanation_evidence`
+        # (handlers.py) bounds a candidate's source before a second model call.
+        if self._revise_source and self._initial_source:
+            user["source_to_revise"] = {
+                "code": self._initial_source[:_SOURCE_REVISION_PREVIEW_CHARS],
+                "truncated": len(self._initial_source) > _SOURCE_REVISION_PREVIEW_CHARS,
+            }
         raw_plan_output: str | None = None
         user_text = json.dumps(user, default=str, sort_keys=True)
         plan_system = SIMPLE_PLAN_SYSTEM_PROMPT

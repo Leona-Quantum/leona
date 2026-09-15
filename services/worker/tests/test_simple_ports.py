@@ -420,7 +420,9 @@ async def test_verify_first_attempt_returns_initial_source_verbatim_without_a_mo
     plan_result = await ports.plan(run_id, None, None)
     assert plan_result.failure is None
     plan_request = json.loads(llm.requests[0].user)
-    assert plan_request["source_to_revise"] is None
+    # Absent, not null: a verify run's planner payload must be byte-for-byte what
+    # it was before `source_intent` existed.
+    assert "source_to_revise" not in plan_request
 
     generate_result = await ports.generate(run_id, plan_result.value, None, None)
     assert generate_result.failure is None
