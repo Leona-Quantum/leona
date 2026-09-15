@@ -34,10 +34,23 @@ SETTINGS_KWARGS = dict(
 
 
 @pytest.fixture(autouse=True)
-def _empty_cache():
-    catalog_routes._LIST_PAGE_CACHE.clear()
-    yield
-    catalog_routes._LIST_PAGE_CACHE.clear()
+def _empty_cache(monkeypatch):
+    """A fresh cache with the PRODUCTION ttl for each test here.
+
+    conftest.py turns the page cache off for every other test in the suite,
+    because the live-database tests write catalog rows and read the listing back
+    inside one process and one test. This module is where the cache itself is
+    under test, so it installs the real one. It is module-level, so it runs after
+    conftest's fixture and wins.
+    """
+    monkeypatch.setattr(
+        catalog_routes,
+        "_LIST_PAGE_CACHE",
+        catalog_routes._PageCache(
+            catalog_routes.CATALOG_LIST_PAGE_CACHE_TTL_SECONDS,
+            catalog_routes.CATALOG_LIST_PAGE_CACHE_MAX_ENTRIES,
+        ),
+    )
 
 
 def _authority() -> CatalogAuthority:
