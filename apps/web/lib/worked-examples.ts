@@ -4,7 +4,13 @@ import {
   type BlockParams,
 } from "./circuit-blocks.ts";
 import { flattenBuilderSteps, createBuilderStepId, type BuilderStep, type CustomGateDefinition } from "./studio-builder.ts";
-import { idealProbabilities, idealStatevector } from "./studio-simulation.ts";
+// From the pure kernel directly, not from studio-simulation.ts: this module
+// is reachable from the public, unauthenticated Atlas record page (via
+// atlas-worked-example.tsx), and studio-simulation.ts also imports
+// account-tier.ts / user-storage.ts, which must not reach that bundle. Same
+// functions, same behavior — studio-simulation.ts re-exports both unchanged.
+// See statevector-kernel.ts's doc comment.
+import { idealProbabilities, idealStatevector } from "./statevector-kernel.ts";
 
 /**
  * Concrete, checked worked examples built from circuit-blocks.ts — one
