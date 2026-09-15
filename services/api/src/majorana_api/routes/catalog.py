@@ -8,7 +8,10 @@ over HTTP: publication is an attributable human action run through the operator
 CLI (catalog_admin), not a request handler.
 """
 
+import asyncio
 import logging
+import time
+from collections.abc import Awaitable, Callable, Hashable
 from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
@@ -181,6 +184,94 @@ async def _whole_published_corpus(scope, session, settings, *, derivation: str):
     return entries
 
 
+#: How long one page of `GET /catalog/entries` is served from this process's
+#: memory before the database is asked again.
+#:
+#: ## Why this exists: 2026-09-15
+#:
+#: From about 08:40 UTC that day the listing was requested at roughly 250 a second
+#: (Node user agent, AWS egress addresses). Every request ran a count and a
+#: full-record page query, Cloud SQL sat at 100% CPU, p50 latency went from ~40 ms
+#: to ~900 ms, and Cloud Run turned away 80% of ALL API traffic with 429 "Rate
+#: exceeded" — `/health` included — because the four instances' 64 request slots
+#: were full of catalog reads waiting on the database. Adding instances would only
+#: have added database load. The rows change only when an operator runs the
+#: publication CLI, so the same pages were being rebuilt thousands of times a
+#: minute.
+#:
+#: ## Why 30 seconds is safe
+#:
+#: Every response here is already marked `public, max-age=300` for shared caches
+#: (`CATALOG_CACHE_MAX_AGE_SECONDS`), and the site's renderer revalidates on the
+#: same 300-second window. A process-local copy at most 30 seconds old cannot make
+#: anyone's view staler than the window already accepted. The key carries the
+#: catalog workspace from server settings and nothing from the caller, which is the
+#: same property `_set_public_cache_control` relies on.
+CATALOG_LIST_PAGE_CACHE_TTL_SECONDS = 30.0
+
+#: Distinct pages held at once. The site walks three pages per view; the bound only
+#: matters against a caller inventing offsets, which then evicts oldest-first
+#: instead of growing without limit.
+CATALOG_LIST_PAGE_CACHE_MAX_ENTRIES = 64
+
+#: Indirection so tests can move the clock.
+_now: Callable[[], float] = time.monotonic
+
+
+class _PageCache:
+    """A small TTL cache where concurrent misses on one key share one load.
+
+    Without the per-key lock, a cold key under the load that motivated this cache
+    lets every waiting request start its own database read at once, which is the
+    stampede itself. The lock is dropped once the value is stored, so the lock
+    table cannot grow with the key space either. A load that raises stores nothing.
+    """
+
+    def __init__(self, ttl_seconds: float, max_entries: int) -> None:
+        self._ttl = ttl_seconds
+        self._max_entries = max_entries
+        self._values: dict[Hashable, tuple[float, object]] = {}
+        self._locks: dict[Hashable, asyncio.Lock] = {}
+
+    def _fresh(self, key: Hashable) -> tuple[bool, object]:
+        item = self._values.get(key)
+        if item is None:
+            return False, None
+        expires_at, value = item
+        if _now() >= expires_at:
+            del self._values[key]
+            return False, None
+        return True, value
+
+    async def get_or_load(self, key: Hashable, load: Callable[[], Awaitable[object]]) -> object:
+        hit, value = self._fresh(key)
+        if hit:
+            return value
+        lock = self._locks.setdefault(key, asyncio.Lock())
+        try:
+            async with lock:
+                hit, value = self._fresh(key)
+                if hit:
+                    return value
+                value = await load()
+                while len(self._values) >= self._max_entries:
+                    self._values.pop(next(iter(self._values)))
+                self._values[key] = (_now() + self._ttl, value)
+                return value
+        finally:
+            if self._locks.get(key) is lock and not lock.locked():
+                del self._locks[key]
+
+    def clear(self) -> None:
+        self._values.clear()
+        self._locks.clear()
+
+
+_LIST_PAGE_CACHE = _PageCache(
+    CATALOG_LIST_PAGE_CACHE_TTL_SECONDS, CATALOG_LIST_PAGE_CACHE_MAX_ENTRIES
+)
+
+
 @router.get("/catalog/entries", response_model=list[PublicCatalogEntry])
 async def list_catalog_entries(
     scope: PublicCatalogScope,
@@ -196,24 +287,35 @@ async def list_catalog_entries(
     `limit` is clamped rather than rejected: this is an anonymous browse
     endpoint, and refusing a caller who asked for too much would turn a
     harmless mistake into an error page on the public site.
+
+    Served from `_LIST_PAGE_CACHE` for up to `CATALOG_LIST_PAGE_CACHE_TTL_SECONDS`;
+    see that constant for the incident that made it necessary.
     """
     _set_public_cache_control(response)
-    total = await catalog_repo.count_public_catalog_entries(
-        scope, session, authority=settings.catalog_authority
-    )
+    clamped_limit = min(max(limit, 1), CATALOG_ENTRIES_MAX_LIMIT)
+    clamped_offset = max(offset, 0)
+
+    async def load() -> tuple[int, list[PublicCatalogEntry]]:
+        total = await catalog_repo.count_public_catalog_entries(
+            scope, session, authority=settings.catalog_authority
+        )
+        entries = await catalog_repo.list_public_catalog_entries(
+            scope,
+            session,
+            authority=settings.catalog_authority,
+            limit=clamped_limit,
+            offset=clamped_offset,
+        )
+        if view == "list":
+            entries = [
+                entry.model_copy(update={"record": project_record_for_list_view(entry.record)})
+                for entry in entries
+            ]
+        return total, entries
+
+    key = (settings.catalog_authority.workspace_id, view, clamped_limit, clamped_offset)
+    total, entries = await _LIST_PAGE_CACHE.get_or_load(key, load)  # type: ignore[misc]
     response.headers[CATALOG_TOTAL_HEADER] = str(total)
-    entries = await catalog_repo.list_public_catalog_entries(
-        scope,
-        session,
-        authority=settings.catalog_authority,
-        limit=min(max(limit, 1), CATALOG_ENTRIES_MAX_LIMIT),
-        offset=max(offset, 0),
-    )
-    if view == "list":
-        return [
-            entry.model_copy(update={"record": project_record_for_list_view(entry.record)})
-            for entry in entries
-        ]
     return entries
 
 
