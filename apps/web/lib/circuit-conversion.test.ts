@@ -1,11 +1,13 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { CIRCUIT_FRAMEWORKS } from "./circuit-frameworks.ts";
+import { CIRCUIT_FRAMEWORKS, circuitFrameworkOrNull } from "./circuit-frameworks.ts";
 import {
   allCircuitConversionResults,
   convertCircuitSource,
   generatePortableCircuitCode,
+  looksLikeOpenQasm2,
+  parseCircuitSource,
   parseInterchangeCircuit,
   reconstructInterchangeCircuit,
 } from "./circuit-conversion.ts";
@@ -365,4 +367,23 @@ test("an explicit maxQubits override still narrows the viewer below the default 
   // the old 24-wire behavior can still ask for it.
   assert.equal(reconstructInterchangeCircuit(ghzQasm(26), { maxQubits: 24 }).kind, "too_large");
   assert.equal(parseInterchangeCircuit(ghzQasm(26), 24), null);
+});
+
+test("OpenQASM 2.0 is recognized by content under the OpenQASM 3 tab, since it has no tab of its own", () => {
+  const bell = 'OPENQASM 2.0;\ninclude "qelib1.inc";\nqreg q[2];\ncreg c[2];\nh q[0];\ncx q[0],q[1];\nmeasure q[0] -> c[0];\nmeasure q[1] -> c[1];';
+  assert.equal(looksLikeOpenQasm2(bell), true);
+  assert.equal(looksLikeOpenQasm2("OPENQASM 3.0;\ninclude \"stdgates.inc\";"), false);
+
+  const parsed = parseCircuitSource(bell, "openqasm3");
+  assert.ok(parsed);
+  assert.equal(parsed.qubitCount, 2);
+  assert.deepEqual(parsed.steps.map((step) => step.gate), ["H", "CX", "M", "M"]);
+
+  // An artifact or stored variant that names the framework "OpenQASM 2.0" (or
+  // "qasm2") resolves onto the same key a QASM 3 source uses, so it still
+  // reaches this same sniff-and-dispatch path rather than being dropped as an
+  // unrecognized framework label.
+  assert.equal(circuitFrameworkOrNull("OpenQASM 2.0")?.key, "openqasm3");
+  assert.equal(circuitFrameworkOrNull("qasm2")?.key, "openqasm3");
+  assert.ok(parseCircuitSource(bell, "OpenQASM 2.0"));
 });
