@@ -452,12 +452,21 @@ function angle(raw: string | undefined): number {
   if (cleaned === null) throw new Error("Rotation angle is outside the bounded simulation syntax.");
   const negative = cleaned.startsWith("-");
   const body = negative ? cleaned.slice(1) : cleaned;
-  const magnitude = /^\d+(?:\.\d+)?(?:e[+-]?\d+)?$/i.test(body)
-    ? Number(body)
-    : (() => {
-        const match = /^(?:(\d+(?:\.\d+)?)\*)?pi(?:\/(\d+(?:\.\d+)?))?$/i.exec(body)!;
-        return (match[1] ? Number(match[1]) : 1) * Math.PI / (match[2] ? Number(match[2]) : 1);
-      })();
+  // Mirrors GATE_ANGLE's own decimal alternative exactly (gate-angle.ts):
+  // `\d+(?:\.\d+)?|\.\d+`, so a leading-dot decimal like ".5" or ".5e-3" —
+  // which parseGateAngle already accepts — takes this branch too, rather
+  // than falling into the pi-branch below and hitting a non-null assertion
+  // on a regex that was never going to match it.
+  if (/^(?:\d+(?:\.\d+)?|\.\d+)(?:e[+-]?\d+)?$/i.test(body)) {
+    const magnitude = Number(body);
+    return negative ? -magnitude : magnitude;
+  }
+  const match = /^(?:(\d+(?:\.\d+)?)\*)?pi(?:\/(\d+(?:\.\d+)?))?$/i.exec(body);
+  // Reachable only if parseGateAngle's grammar and this function's ever
+  // drift apart — fails with the same bounded-syntax error a caller already
+  // handles, rather than crashing on a null match.
+  if (!match) throw new Error("Rotation angle is outside the bounded simulation syntax.");
+  const magnitude = (match[1] ? Number(match[1]) : 1) * Math.PI / (match[2] ? Number(match[2]) : 1);
   return negative ? -magnitude : magnitude;
 }
 

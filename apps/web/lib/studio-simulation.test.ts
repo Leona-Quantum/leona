@@ -3,6 +3,7 @@ import test from "node:test";
 import { cpuSimulationEligibility, idealProbabilities, runCpuSimulation, sourceFingerprint } from "./studio-simulation.ts";
 import { TIER_LIMITS } from "./account-tier.ts";
 import { createBuilderStepId, type BuilderStep } from "./studio-builder.ts";
+import { parseGateAngle } from "./gate-angle.ts";
 
 /** `idealProbabilities` on a hand-built circuit — the matrix-action tests
  * below don't need a source string, so they build steps directly. */
@@ -110,6 +111,51 @@ test("CCX truth table: the target flips iff both controls are |1>, and only then
     const expectedIndex = q0 | (q1 << 1) | (expectedQ2 << 2);
     assertPeak(probabilities, expectedIndex, `CCX on input ${input.toString(2).padStart(3, "0")}`);
   }
+});
+
+/**
+ * Binds the kernel's private `angle()` (exercised indirectly through an RX
+ * step — it has no export of its own) to `parseGateAngle`, the single source
+ * of truth for this grammar, instead of to a handful of hand-picked examples.
+ * The Stage 2 bug this guards against: `angle()`'s own decimal regex lacked
+ * the leading-dot alternative (".5", "-.25", ".5e-3") that GATE_ANGLE (and so
+ * parseGateAngle) has always accepted, so those inputs fell into the pi
+ * branch and threw a TypeError on a null match instead of computing a
+ * number. Iterating the grammar's own shapes — not just the fix's own
+ * example — is what would have caught it.
+ */
+test("angle() accepts a string iff parseGateAngle does, for every shape GATE_ANGLE describes", () => {
+  const cases = [
+    "0", "1", "42", "3.5", ".5", "-.25", "1.5e3", ".5e-3", "-2.25e2",
+    "pi", "-pi", "pi/2", "-pi/2", "3*pi/2", "-3*pi/2", "3*pi", "1.5*pi/4",
+    "pi/0", // explicitly rejected: zero denominator
+    ".5*pi", // rejected: coefficient must start with a digit, not a dot
+    "abc", "", "2pi", "pi/2/3", "++1",
+  ];
+  for (const raw of cases) {
+    const accepted = parseGateAngle(raw) !== null;
+    const probeCircuit = { qubitCount: 1, steps: [{ id: createBuilderStepId(), gate: "RX" as const, qubits: [0], param: raw }] };
+    if (accepted) {
+      const probabilities = idealProbabilities(probeCircuit);
+      assert.ok(probabilities.every((p) => Number.isFinite(p)), `angle() should compute a finite number for ${JSON.stringify(raw)}`);
+    } else {
+      assert.throws(() => idealProbabilities(probeCircuit), /outside the bounded simulation syntax|missing its angle/, `angle() should throw for ${JSON.stringify(raw)}`);
+    }
+  }
+});
+
+test("angle() computes the exact value for a leading-dot decimal and a negative pi-fraction", () => {
+  const valueOf = (param: string) => {
+    const probabilities = idealProbabilities({ qubitCount: 1, steps: [{ id: createBuilderStepId(), gate: "RX", qubits: [0], param }] });
+    // RX(theta)|0> has P(1) = sin^2(theta/2); invert (theta in [0, 2*pi)) to
+    // recover theta and confirm angle() read the exact value, not just "some"
+    // finite number.
+    return probabilities[1];
+  };
+  assert.ok(Math.abs(valueOf(".5") - Math.sin(0.25) ** 2) < 1e-12);
+  assert.ok(Math.abs(valueOf("-.25") - Math.sin(-0.125) ** 2) < 1e-12);
+  assert.ok(Math.abs(valueOf(".5e-3") - Math.sin(0.00025) ** 2) < 1e-12);
+  assert.ok(Math.abs(valueOf("-pi/4") - Math.sin(-Math.PI / 8) ** 2) < 1e-12);
 });
 
 const BELL_SOURCE = [
