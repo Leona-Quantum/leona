@@ -31,9 +31,8 @@
  *     `field: "algorithmFamily"`, evidence `"Variational quantum
  *     eigensolver"` (every one of the 37 carries that field verbatim);
  *   - the 50 operator records tagged `"VQE operator"` (wires `definition /
- *     mapping / measurement`), `component`, `field: "explanation"`, evidence
- *     `"To use this record in VQE"` (the fixed clause every `operatorEntry`
- *     carries — the record is a component VQE uses, the correct direction).
+ *     mapping / measurement`), `used-in` (see the third-pass note below),
+ *     `field: "explanation"`, evidence `"To use this record in VQE"`.
  * `operator-trotter-product` already carried one link (instance, to
  * ising-trotter-4) and gained this as its second, within the 2-link cap.
  * Excluded on purpose: `projection-based-embedding-vqe` and
@@ -41,12 +40,42 @@
  * `algorithmFamily` label but carry the Zoo/Classiq-parity placeholder, not
  * the VQE-method one — outside the 37 this pass was scoped to; flagged in the
  * session report rather than linked without being asked.
+ *
+ * 2026-09-15, third pass — a direction fix, not new links: the 50 VQE
+ * operator links above were first written as `component`, on the reasoning
+ * "the operator is used by VQE, so VQE is a component of what this record
+ * documents." That is backwards. `component` means the RECORD's own method
+ * uses the example as a subroutine (matching the figure's own words,
+ * "Worked example of a part THIS METHOD uses") — an operator record's method
+ * is "specify / map / group," and it does not use VQE at all; VQE uses the
+ * operator. This is exactly the gate-card trap `atlas-example-map.md` §(d)
+ * already named ("this gate is used by Grover" is not a Grover component
+ * link) — caught here on the record-under-scrutiny side rather than the
+ * example side. Fixed by adding a third relation, `used-in`: the example
+ * uses THIS record, not the reverse. All 50 VQE operator links moved from
+ * `component` to `used-in`. A same-shape sweep of the rest of the 186 links
+ * found one more: `tensor-hypercontraction-block-encoding`'s own text says
+ * its block encoding is "cheap enough to support phase estimation" and is
+ * "combined with phase estimation" by the consuming algorithm — the record
+ * is the thing phase estimation uses, not a record whose own method uses
+ * phase estimation — moved to `used-in` against `qpe-3-exact`. Every other
+ * `component` link was read in full and the direction holds: the record's
+ * own text says ITS method uses, applies, combines, invokes, or extends the
+ * named technique.
  */
 
-export type WorkedExampleRelation = "instance" | "component";
+export type WorkedExampleRelation = "instance" | "component" | "used-in";
 
 export interface WorkedExampleLink {
   readonly exampleId: string;
+  /**
+   * `"instance"` — this record IS what the example demonstrates.
+   * `"component"` — this record's OWN method uses the example as a subroutine.
+   * `"used-in"` — the reverse: the example's algorithm uses THIS record (an
+   * operator, a building block) as one of its own components. Never
+   * replaces the hero; gets its own note wording naming the example as the
+   * user, not the used.
+   */
   readonly relation: WorkedExampleRelation;
   /** A record field name, or a dotted one-level path (e.g. `"verificationDetails.caveat"`). */
   readonly field: string;
@@ -518,7 +547,7 @@ export const WORKED_EXAMPLE_LINKS: Readonly<Record<string, readonly WorkedExampl
   },
   {
    "exampleId": "vqe-2q-transverse-ising",
-   "relation": "component",
+   "relation": "used-in",
    "field": "explanation",
    "evidence": "To use this record in VQE"
   }
@@ -768,7 +797,7 @@ export const WORKED_EXAMPLE_LINKS: Readonly<Record<string, readonly WorkedExampl
  "tensor-hypercontraction-block-encoding": [
   {
    "exampleId": "qpe-3-exact",
-   "relation": "component",
+   "relation": "used-in",
    "field": "introduction",
    "evidence": "phase estimation"
   }
@@ -1128,7 +1157,7 @@ export const WORKED_EXAMPLE_LINKS: Readonly<Record<string, readonly WorkedExampl
  "operator-pauli-string": [
   {
    "exampleId": "vqe-2q-transverse-ising",
-   "relation": "component",
+   "relation": "used-in",
    "field": "explanation",
    "evidence": "To use this record in VQE"
   }
@@ -1136,7 +1165,7 @@ export const WORKED_EXAMPLE_LINKS: Readonly<Record<string, readonly WorkedExampl
  "operator-weighted-pauli-sum": [
   {
    "exampleId": "vqe-2q-transverse-ising",
-   "relation": "component",
+   "relation": "used-in",
    "field": "explanation",
    "evidence": "To use this record in VQE"
   }
@@ -1144,7 +1173,7 @@ export const WORKED_EXAMPLE_LINKS: Readonly<Record<string, readonly WorkedExampl
  "operator-electronic-structure": [
   {
    "exampleId": "vqe-2q-transverse-ising",
-   "relation": "component",
+   "relation": "used-in",
    "field": "explanation",
    "evidence": "To use this record in VQE"
   }
@@ -1152,7 +1181,7 @@ export const WORKED_EXAMPLE_LINKS: Readonly<Record<string, readonly WorkedExampl
  "operator-one-body-fermion": [
   {
    "exampleId": "vqe-2q-transverse-ising",
-   "relation": "component",
+   "relation": "used-in",
    "field": "explanation",
    "evidence": "To use this record in VQE"
   }
@@ -1160,7 +1189,7 @@ export const WORKED_EXAMPLE_LINKS: Readonly<Record<string, readonly WorkedExampl
  "operator-two-body-fermion": [
   {
    "exampleId": "vqe-2q-transverse-ising",
-   "relation": "component",
+   "relation": "used-in",
    "field": "explanation",
    "evidence": "To use this record in VQE"
   }
@@ -1168,7 +1197,7 @@ export const WORKED_EXAMPLE_LINKS: Readonly<Record<string, readonly WorkedExampl
  "operator-creation": [
   {
    "exampleId": "vqe-2q-transverse-ising",
-   "relation": "component",
+   "relation": "used-in",
    "field": "explanation",
    "evidence": "To use this record in VQE"
   }
@@ -1176,7 +1205,7 @@ export const WORKED_EXAMPLE_LINKS: Readonly<Record<string, readonly WorkedExampl
  "operator-annihilation": [
   {
    "exampleId": "vqe-2q-transverse-ising",
-   "relation": "component",
+   "relation": "used-in",
    "field": "explanation",
    "evidence": "To use this record in VQE"
   }
@@ -1184,7 +1213,7 @@ export const WORKED_EXAMPLE_LINKS: Readonly<Record<string, readonly WorkedExampl
  "operator-number": [
   {
    "exampleId": "vqe-2q-transverse-ising",
-   "relation": "component",
+   "relation": "used-in",
    "field": "explanation",
    "evidence": "To use this record in VQE"
   }
@@ -1192,7 +1221,7 @@ export const WORKED_EXAMPLE_LINKS: Readonly<Record<string, readonly WorkedExampl
  "operator-total-particle-number": [
   {
    "exampleId": "vqe-2q-transverse-ising",
-   "relation": "component",
+   "relation": "used-in",
    "field": "explanation",
    "evidence": "To use this record in VQE"
   }
@@ -1200,7 +1229,7 @@ export const WORKED_EXAMPLE_LINKS: Readonly<Record<string, readonly WorkedExampl
  "operator-fermionic-hopping": [
   {
    "exampleId": "vqe-2q-transverse-ising",
-   "relation": "component",
+   "relation": "used-in",
    "field": "explanation",
    "evidence": "To use this record in VQE"
   }
@@ -1208,7 +1237,7 @@ export const WORKED_EXAMPLE_LINKS: Readonly<Record<string, readonly WorkedExampl
  "operator-pairing": [
   {
    "exampleId": "vqe-2q-transverse-ising",
-   "relation": "component",
+   "relation": "used-in",
    "field": "explanation",
    "evidence": "To use this record in VQE"
   }
@@ -1216,7 +1245,7 @@ export const WORKED_EXAMPLE_LINKS: Readonly<Record<string, readonly WorkedExampl
  "operator-coulomb": [
   {
    "exampleId": "vqe-2q-transverse-ising",
-   "relation": "component",
+   "relation": "used-in",
    "field": "explanation",
    "evidence": "To use this record in VQE"
   }
@@ -1224,7 +1253,7 @@ export const WORKED_EXAMPLE_LINKS: Readonly<Record<string, readonly WorkedExampl
  "operator-fermi-hubbard": [
   {
    "exampleId": "vqe-2q-transverse-ising",
-   "relation": "component",
+   "relation": "used-in",
    "field": "explanation",
    "evidence": "To use this record in VQE"
   }
@@ -1232,7 +1261,7 @@ export const WORKED_EXAMPLE_LINKS: Readonly<Record<string, readonly WorkedExampl
  "operator-bose-hubbard": [
   {
    "exampleId": "vqe-2q-transverse-ising",
-   "relation": "component",
+   "relation": "used-in",
    "field": "explanation",
    "evidence": "To use this record in VQE"
   }
@@ -1240,7 +1269,7 @@ export const WORKED_EXAMPLE_LINKS: Readonly<Record<string, readonly WorkedExampl
  "operator-ising-cost": [
   {
    "exampleId": "vqe-2q-transverse-ising",
-   "relation": "component",
+   "relation": "used-in",
    "field": "explanation",
    "evidence": "To use this record in VQE"
   }
@@ -1248,7 +1277,7 @@ export const WORKED_EXAMPLE_LINKS: Readonly<Record<string, readonly WorkedExampl
  "operator-transverse-field-ising": [
   {
    "exampleId": "vqe-2q-transverse-ising",
-   "relation": "component",
+   "relation": "used-in",
    "field": "explanation",
    "evidence": "To use this record in VQE"
   }
@@ -1256,7 +1285,7 @@ export const WORKED_EXAMPLE_LINKS: Readonly<Record<string, readonly WorkedExampl
  "operator-xy-model": [
   {
    "exampleId": "vqe-2q-transverse-ising",
-   "relation": "component",
+   "relation": "used-in",
    "field": "explanation",
    "evidence": "To use this record in VQE"
   }
@@ -1264,7 +1293,7 @@ export const WORKED_EXAMPLE_LINKS: Readonly<Record<string, readonly WorkedExampl
  "operator-heisenberg": [
   {
    "exampleId": "vqe-2q-transverse-ising",
-   "relation": "component",
+   "relation": "used-in",
    "field": "explanation",
    "evidence": "To use this record in VQE"
   }
@@ -1272,7 +1301,7 @@ export const WORKED_EXAMPLE_LINKS: Readonly<Record<string, readonly WorkedExampl
  "operator-xyz-model": [
   {
    "exampleId": "vqe-2q-transverse-ising",
-   "relation": "component",
+   "relation": "used-in",
    "field": "explanation",
    "evidence": "To use this record in VQE"
   }
@@ -1280,7 +1309,7 @@ export const WORKED_EXAMPLE_LINKS: Readonly<Record<string, readonly WorkedExampl
  "operator-kitaev-chain": [
   {
    "exampleId": "vqe-2q-transverse-ising",
-   "relation": "component",
+   "relation": "used-in",
    "field": "explanation",
    "evidence": "To use this record in VQE"
   }
@@ -1288,7 +1317,7 @@ export const WORKED_EXAMPLE_LINKS: Readonly<Record<string, readonly WorkedExampl
  "operator-maxcut-cost": [
   {
    "exampleId": "vqe-2q-transverse-ising",
-   "relation": "component",
+   "relation": "used-in",
    "field": "explanation",
    "evidence": "To use this record in VQE"
   }
@@ -1296,7 +1325,7 @@ export const WORKED_EXAMPLE_LINKS: Readonly<Record<string, readonly WorkedExampl
  "operator-qubo": [
   {
    "exampleId": "vqe-2q-transverse-ising",
-   "relation": "component",
+   "relation": "used-in",
    "field": "explanation",
    "evidence": "To use this record in VQE"
   }
@@ -1304,7 +1333,7 @@ export const WORKED_EXAMPLE_LINKS: Readonly<Record<string, readonly WorkedExampl
  "operator-constraint-penalty": [
   {
    "exampleId": "vqe-2q-transverse-ising",
-   "relation": "component",
+   "relation": "used-in",
    "field": "explanation",
    "evidence": "To use this record in VQE"
   }
@@ -1312,7 +1341,7 @@ export const WORKED_EXAMPLE_LINKS: Readonly<Record<string, readonly WorkedExampl
  "operator-dipole": [
   {
    "exampleId": "vqe-2q-transverse-ising",
-   "relation": "component",
+   "relation": "used-in",
    "field": "explanation",
    "evidence": "To use this record in VQE"
   }
@@ -1320,7 +1349,7 @@ export const WORKED_EXAMPLE_LINKS: Readonly<Record<string, readonly WorkedExampl
  "operator-density": [
   {
    "exampleId": "vqe-2q-transverse-ising",
-   "relation": "component",
+   "relation": "used-in",
    "field": "explanation",
    "evidence": "To use this record in VQE"
   }
@@ -1328,7 +1357,7 @@ export const WORKED_EXAMPLE_LINKS: Readonly<Record<string, readonly WorkedExampl
  "operator-spin-x-total": [
   {
    "exampleId": "vqe-2q-transverse-ising",
-   "relation": "component",
+   "relation": "used-in",
    "field": "explanation",
    "evidence": "To use this record in VQE"
   }
@@ -1336,7 +1365,7 @@ export const WORKED_EXAMPLE_LINKS: Readonly<Record<string, readonly WorkedExampl
  "operator-spin-y-total": [
   {
    "exampleId": "vqe-2q-transverse-ising",
-   "relation": "component",
+   "relation": "used-in",
    "field": "explanation",
    "evidence": "To use this record in VQE"
   }
@@ -1344,7 +1373,7 @@ export const WORKED_EXAMPLE_LINKS: Readonly<Record<string, readonly WorkedExampl
  "operator-spin-z-total": [
   {
    "exampleId": "vqe-2q-transverse-ising",
-   "relation": "component",
+   "relation": "used-in",
    "field": "explanation",
    "evidence": "To use this record in VQE"
   }
@@ -1352,7 +1381,7 @@ export const WORKED_EXAMPLE_LINKS: Readonly<Record<string, readonly WorkedExampl
  "operator-total-spin-squared": [
   {
    "exampleId": "vqe-2q-transverse-ising",
-   "relation": "component",
+   "relation": "used-in",
    "field": "explanation",
    "evidence": "To use this record in VQE"
   }
@@ -1360,7 +1389,7 @@ export const WORKED_EXAMPLE_LINKS: Readonly<Record<string, readonly WorkedExampl
  "operator-fermion-parity": [
   {
    "exampleId": "vqe-2q-transverse-ising",
-   "relation": "component",
+   "relation": "used-in",
    "field": "explanation",
    "evidence": "To use this record in VQE"
   }
@@ -1368,7 +1397,7 @@ export const WORKED_EXAMPLE_LINKS: Readonly<Record<string, readonly WorkedExampl
  "operator-jordan-wigner-creation": [
   {
    "exampleId": "vqe-2q-transverse-ising",
-   "relation": "component",
+   "relation": "used-in",
    "field": "explanation",
    "evidence": "To use this record in VQE"
   }
@@ -1376,7 +1405,7 @@ export const WORKED_EXAMPLE_LINKS: Readonly<Record<string, readonly WorkedExampl
  "operator-jordan-wigner-number": [
   {
    "exampleId": "vqe-2q-transverse-ising",
-   "relation": "component",
+   "relation": "used-in",
    "field": "explanation",
    "evidence": "To use this record in VQE"
   }
@@ -1384,7 +1413,7 @@ export const WORKED_EXAMPLE_LINKS: Readonly<Record<string, readonly WorkedExampl
  "operator-jordan-wigner-hopping": [
   {
    "exampleId": "vqe-2q-transverse-ising",
-   "relation": "component",
+   "relation": "used-in",
    "field": "explanation",
    "evidence": "To use this record in VQE"
   }
@@ -1392,7 +1421,7 @@ export const WORKED_EXAMPLE_LINKS: Readonly<Record<string, readonly WorkedExampl
  "operator-parity-mapping": [
   {
    "exampleId": "vqe-2q-transverse-ising",
-   "relation": "component",
+   "relation": "used-in",
    "field": "explanation",
    "evidence": "To use this record in VQE"
   }
@@ -1400,7 +1429,7 @@ export const WORKED_EXAMPLE_LINKS: Readonly<Record<string, readonly WorkedExampl
  "operator-bravyi-kitaev-mapping": [
   {
    "exampleId": "vqe-2q-transverse-ising",
-   "relation": "component",
+   "relation": "used-in",
    "field": "explanation",
    "evidence": "To use this record in VQE"
   }
@@ -1408,7 +1437,7 @@ export const WORKED_EXAMPLE_LINKS: Readonly<Record<string, readonly WorkedExampl
  "operator-z2-symmetry-generator": [
   {
    "exampleId": "vqe-2q-transverse-ising",
-   "relation": "component",
+   "relation": "used-in",
    "field": "explanation",
    "evidence": "To use this record in VQE"
   }
@@ -1416,7 +1445,7 @@ export const WORKED_EXAMPLE_LINKS: Readonly<Record<string, readonly WorkedExampl
  "operator-reference-projector": [
   {
    "exampleId": "vqe-2q-transverse-ising",
-   "relation": "component",
+   "relation": "used-in",
    "field": "explanation",
    "evidence": "To use this record in VQE"
   }
@@ -1424,7 +1453,7 @@ export const WORKED_EXAMPLE_LINKS: Readonly<Record<string, readonly WorkedExampl
  "operator-deflation-projector": [
   {
    "exampleId": "vqe-2q-transverse-ising",
-   "relation": "component",
+   "relation": "used-in",
    "field": "explanation",
    "evidence": "To use this record in VQE"
   }
@@ -1432,7 +1461,7 @@ export const WORKED_EXAMPLE_LINKS: Readonly<Record<string, readonly WorkedExampl
  "operator-shifted-hamiltonian-square": [
   {
    "exampleId": "vqe-2q-transverse-ising",
-   "relation": "component",
+   "relation": "used-in",
    "field": "explanation",
    "evidence": "To use this record in VQE"
   }
@@ -1440,7 +1469,7 @@ export const WORKED_EXAMPLE_LINKS: Readonly<Record<string, readonly WorkedExampl
  "operator-hamiltonian-variance": [
   {
    "exampleId": "vqe-2q-transverse-ising",
-   "relation": "component",
+   "relation": "used-in",
    "field": "explanation",
    "evidence": "To use this record in VQE"
   }
@@ -1448,7 +1477,7 @@ export const WORKED_EXAMPLE_LINKS: Readonly<Record<string, readonly WorkedExampl
  "operator-energy-gradient-commutator": [
   {
    "exampleId": "vqe-2q-transverse-ising",
-   "relation": "component",
+   "relation": "used-in",
    "field": "explanation",
    "evidence": "To use this record in VQE"
   }
@@ -1456,7 +1485,7 @@ export const WORKED_EXAMPLE_LINKS: Readonly<Record<string, readonly WorkedExampl
  "operator-anti-hermitian-excitation": [
   {
    "exampleId": "vqe-2q-transverse-ising",
-   "relation": "component",
+   "relation": "used-in",
    "field": "explanation",
    "evidence": "To use this record in VQE"
   }
@@ -1464,7 +1493,7 @@ export const WORKED_EXAMPLE_LINKS: Readonly<Record<string, readonly WorkedExampl
  "operator-ucc-singles-pool": [
   {
    "exampleId": "vqe-2q-transverse-ising",
-   "relation": "component",
+   "relation": "used-in",
    "field": "explanation",
    "evidence": "To use this record in VQE"
   }
@@ -1472,7 +1501,7 @@ export const WORKED_EXAMPLE_LINKS: Readonly<Record<string, readonly WorkedExampl
  "operator-ucc-doubles-pool": [
   {
    "exampleId": "vqe-2q-transverse-ising",
-   "relation": "component",
+   "relation": "used-in",
    "field": "explanation",
    "evidence": "To use this record in VQE"
   }
@@ -1480,7 +1509,7 @@ export const WORKED_EXAMPLE_LINKS: Readonly<Record<string, readonly WorkedExampl
  "operator-qubit-adapt-pool": [
   {
    "exampleId": "vqe-2q-transverse-ising",
-   "relation": "component",
+   "relation": "used-in",
    "field": "explanation",
    "evidence": "To use this record in VQE"
   }
@@ -1488,7 +1517,7 @@ export const WORKED_EXAMPLE_LINKS: Readonly<Record<string, readonly WorkedExampl
  "operator-pauli-time-evolution": [
   {
    "exampleId": "vqe-2q-transverse-ising",
-   "relation": "component",
+   "relation": "used-in",
    "field": "explanation",
    "evidence": "To use this record in VQE"
   }
@@ -1496,7 +1525,7 @@ export const WORKED_EXAMPLE_LINKS: Readonly<Record<string, readonly WorkedExampl
  "operator-commuting-group": [
   {
    "exampleId": "vqe-2q-transverse-ising",
-   "relation": "component",
+   "relation": "used-in",
    "field": "explanation",
    "evidence": "To use this record in VQE"
   }
@@ -1504,7 +1533,7 @@ export const WORKED_EXAMPLE_LINKS: Readonly<Record<string, readonly WorkedExampl
  "operator-one-rdm": [
   {
    "exampleId": "vqe-2q-transverse-ising",
-   "relation": "component",
+   "relation": "used-in",
    "field": "explanation",
    "evidence": "To use this record in VQE"
   }
@@ -1512,7 +1541,7 @@ export const WORKED_EXAMPLE_LINKS: Readonly<Record<string, readonly WorkedExampl
  "operator-two-rdm": [
   {
    "exampleId": "vqe-2q-transverse-ising",
-   "relation": "component",
+   "relation": "used-in",
    "field": "explanation",
    "evidence": "To use this record in VQE"
   }

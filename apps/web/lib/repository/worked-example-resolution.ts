@@ -14,20 +14,21 @@ import { workedExample, type WorkedExample } from "../worked-examples.ts";
  * panels already use, and for the same reason.
  *
  * Resolution rule, in order:
- * 1. A link's `exampleId` "resolves" when `workedExample()` finds it. Not
- *    every link resolves yet — 7 of the 21 examples the map points at are
- *    still being written on a sibling lane (see
- *    `check-worked-example-links.mjs`'s warning), and an unresolved link is
- *    silently skipped here rather than surfaced as a gap; the record's
- *    hero/example section falls back to what stage 1 already draws.
+ * 1. A link's `exampleId` "resolves" when `workedExample()` finds it. Every
+ *    link in the committed map resolves now (all 21 examples landed,
+ *    2026-09-15, and `check-worked-example-links.mjs` makes an unresolved id
+ *    a hard error) — the skip below is defensive, not load-bearing.
  * 2. The record's hero is replaced only when its FIRST resolvable link has
  *    relation `"instance"` — a worked example that instantiates the record
- *    itself, not a component it merely uses.
- * 3. Every resolvable link with relation `"component"` gets a small
- *    "worked example of a part this method uses" block, wherever it falls —
- *    a first-position `"component"` link (no hero replacement) and, in
- *    principle, a second link after an `"instance"` first link both surface
- *    this way.
+ *    itself, not one it merely uses or is used by.
+ * 3. Every resolvable link with relation `"component"` or `"used-in"` gets a
+ *    small note, wherever it falls — a first-position such link (no hero
+ *    replacement) and, in principle, a second link after an `"instance"`
+ *    first link both surface this way. `component` and `used-in` are
+ *    opposite directions (this record uses the example / the example uses
+ *    this record) and get different wording in the UI (atlas-worked-example.tsx),
+ *    but both are "not the hero, still worth a link" — this function keeps
+ *    them in one list and lets the relation on each pair decide the wording.
  */
 
 export interface ResolvedWorkedExampleComponent {
@@ -38,7 +39,7 @@ export interface ResolvedWorkedExampleComponent {
 export interface ResolvedWorkedExamples {
   /** The example that replaces the hero, or null when none applies. */
   readonly hero: WorkedExample | null;
-  /** Every resolvable component-relation link, in the record's own order. */
+  /** Every resolvable component- or used-in-relation link, in the record's own order. */
   readonly components: readonly ResolvedWorkedExampleComponent[];
 }
 
@@ -55,6 +56,6 @@ export function resolveWorkedExamples(slug: string): ResolvedWorkedExamples {
   if (resolved.length === 0) return NONE;
   const first = resolved[0];
   const hero = first.link.relation === "instance" ? first.example : null;
-  const components = resolved.filter((pair) => pair.link.relation === "component");
+  const components = resolved.filter((pair) => pair.link.relation === "component" || pair.link.relation === "used-in");
   return { hero, components };
 }

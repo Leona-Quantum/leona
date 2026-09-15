@@ -301,11 +301,13 @@ export function RepositoryEntryView({
    */
   workedExample?: WorkedExample | null;
   /**
-   * Every resolvable `"component"`-relation link, in the record's own order —
-   * a worked example of a part this record uses, not an instance of the
-   * record itself. Each gets a small note, never the full figure.
+   * Every resolvable `"component"`- or `"used-in"`-relation link, in the
+   * record's own order — never an instance of the record itself, and never
+   * the full figure. `"component"` is this record's method using the
+   * example; `"used-in"` is the reverse, the example's algorithm using this
+   * record. Each gets its own note wording (atlas-worked-example.tsx).
    */
-  workedExampleComponents?: readonly { exampleId: string; title: LocalizedText }[];
+  workedExampleComponents?: readonly { exampleId: string; title: LocalizedText; relation: "component" | "used-in" }[];
   /**
    * The cost panel, rendered on the server and passed in as a slot.
    *
@@ -695,6 +697,7 @@ export function RepositoryEntryView({
             key={component.exampleId}
             title={ja ? component.title.ja : component.title.en}
             exampleId={component.exampleId}
+            relation={component.relation}
             locale={locale}
             isSignedIn={isSignedIn}
             signInHref={signInHref}

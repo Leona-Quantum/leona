@@ -342,32 +342,47 @@ export function AtlasWorkedExampleFigure({
 }
 
 /**
- * The small "worked example of a part this method uses" block for a
- * `"component"`-relation link — never the full figure. Links straight to
- * Studio (sign-in gated the same way the figure's own "Open in Studio" is),
- * not back to `/repository/<slug>?example=<id>` on the current page: nothing
- * reads that query param today, and a link that does nothing is worse than
- * one that opens the example somewhere it actually runs.
+ * The small note block for a `"component"`- or `"used-in"`-relation link —
+ * never the full figure. The two relations are opposite directions and get
+ * different wording:
+ *   - `"component"`: this record's own method uses the example as a
+ *     subroutine — "Worked example of a part this method uses."
+ *   - `"used-in"`: the reverse — the example's algorithm uses this record
+ *     (an operator, a building block) — "See this in a worked example,"
+ *     naming the example as the one doing the using.
+ * Links straight to Studio (sign-in gated the same way the figure's own
+ * "Open in Studio" is), not back to `/repository/<slug>?example=<id>` on the
+ * current page: nothing reads that query param today, and a link that does
+ * nothing is worse than one that opens the example somewhere it actually runs.
  */
 export function AtlasWorkedExampleComponentNote({
   title,
   exampleId,
+  relation,
   locale,
   isSignedIn,
   signInHref,
 }: {
   title: string;
   exampleId: string;
+  relation: "component" | "used-in";
   locale: PublicLocale;
   isSignedIn: boolean;
   signInHref: string | null;
 }): React.ReactElement {
-  const label = locale === "ja" ? "この手法が使う一部分の実例" : "Worked example of a part this method uses";
+  const label =
+    relation === "used-in"
+      ? locale === "ja"
+        ? "次の具体例で使われています"
+        : "See this in a worked example"
+      : locale === "ja"
+        ? "この手法が使う一部分の実例"
+        : "Worked example of a part this method uses";
   const openingSignIn = COPY[locale].openingSignIn;
   return (
     <p className="mj-worked-example-component-note">
       <span className="mj-atlas-outcomes-label">{label}</span>
-      {" "}
+      {": "}
       {isSignedIn ? (
         <a href={`/studio?example=${encodeURIComponent(exampleId)}`}>{title}</a>
       ) : signInHref ? (

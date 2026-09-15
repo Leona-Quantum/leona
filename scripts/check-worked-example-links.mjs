@@ -17,7 +17,7 @@
 //     and where the resolved value is a string array (only `tags` today),
 //     `evidence` must be a substring of at least one of its elements;
 //   * at most 2 links per record;
-//   * `relation` is `"instance"` or `"component"`;
+//   * `relation` is `"instance"`, `"component"`, or `"used-in"`;
 //   * no duplicate (slug, exampleId) pair.
 //
 // `exampleId` existence is checked against `apps/web/lib/worked-examples.ts`'s
@@ -42,7 +42,7 @@ const require = createRequire(join(root, "packages/ts/ui-visual/package.json"));
 const esbuild = require("esbuild");
 const QUIET = process.argv.includes("--quiet");
 
-const RELATIONS = new Set(["instance", "component"]);
+const RELATIONS = new Set(["instance", "component", "used-in"]);
 const MAX_LINKS_PER_RECORD = 2;
 const WORKED_EXAMPLES_PATH = join(root, "apps/web/lib/worked-examples.ts");
 
@@ -150,7 +150,7 @@ for (const [slug, links] of Object.entries(rawMap)) {
     const where = `${slug} -> ${link?.exampleId ?? "<missing exampleId>"}`;
 
     if (!RELATIONS.has(link?.relation)) {
-      errors.push(`${where}: relation must be "instance" or "component", got ${JSON.stringify(link?.relation)}`);
+      errors.push(`${where}: relation must be "instance", "component", or "used-in", got ${JSON.stringify(link?.relation)}`);
     }
 
     if (typeof link?.exampleId !== "string" || link.exampleId.length === 0) {

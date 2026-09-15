@@ -60,6 +60,20 @@ test("a real record whose first resolvable link is component gets no hero, but a
   );
 });
 
+test("a real record whose only link is used-in gets no hero, but a note naming the example as the user", () => {
+  // operator-pauli-string -> vqe-2q-transverse-ising, relation used-in: the
+  // record is a Pauli-string observable (method "specify / map / group"),
+  // and it is vqe-2q-transverse-ising's own algorithm that uses it, not the
+  // reverse — the direction fix this test locks in.
+  const links = WORKED_EXAMPLE_LINKS["operator-pauli-string"];
+  assert.ok(links && links.length === 1 && links[0].relation === "used-in", "fixture assumption: one used-in link");
+  const resolved = resolveWorkedExamples("operator-pauli-string");
+  assert.equal(resolved.hero, null);
+  assert.equal(resolved.components.length, 1);
+  assert.equal(resolved.components[0].example.id, "vqe-2q-transverse-ising");
+  assert.equal(resolved.components[0].link.relation, "used-in");
+});
+
 test("first-instance choice: only the FIRST resolvable link decides the hero, not any later one", () => {
   // ghz-state-pennylane: first link is ghz-4 (instance), second is bell-pair
   // (component, introduction-only mention) — the hero must be ghz-4, and

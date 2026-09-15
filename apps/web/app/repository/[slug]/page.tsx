@@ -155,6 +155,9 @@ export default async function RepositoryEntryPage({
   const workedExampleComponents = workedExamples.components.map(({ link, example }) => ({
     exampleId: link.exampleId,
     title: example.title,
+    // "component" | "used-in" only — a hero-relation ("instance") link never
+    // reaches .components (see resolveWorkedExamples).
+    relation: link.relation as "component" | "used-in",
   }));
 
   const corpusEntry = layerCorpusEntry({ ...entry, verificationMethods: entryVerificationMethods(entry) });
