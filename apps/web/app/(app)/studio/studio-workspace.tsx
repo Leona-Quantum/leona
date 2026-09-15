@@ -25,6 +25,14 @@ import type { PublicLocale } from "../../../lib/public-locale";
 import { ANGLE_GATES, BUILDER_GATES, builderGateArity, builderStepLabel, createBuilderStepId, customGateUsageCount, generateBuilderCode, ungroupCustomGateStep, type BuilderCodeVariants, type BuilderGate, type BuilderStep, type BuiltinBuilderGate, type CustomGateDefinition } from "../../../lib/studio-builder";
 import { popStudioHistory, pushStudioHistory, type StudioHistorySnapshot } from "../../../lib/studio-history";
 import { EditBlockPanel } from "./studio-edit-block-panel";
+import { BLOCK_TEMPLATES, instantiateBlock, validateBlockParams, type BlockParams, type BlockTemplate } from "../../../lib/circuit-blocks";
+import { BlocksPanel } from "./studio-blocks-panel";
+import { workedExample, type WorkedExample } from "../../../lib/worked-examples";
+import { cloneWorkedExampleDraft } from "../../../lib/studio-example-draft";
+import { ExampleGallery } from "./studio-example-gallery";
+import { ExampleNotesPanel } from "./studio-example-notes-panel";
+import { circuitChangeSummary, type CircuitChangeSummary } from "../../../lib/circuit-change-summary";
+import { AskLeonaBox } from "./studio-ask-leona";
 import { loadStoredCircuit, saveStoredCircuit } from "../../../lib/studio-circuits";
 import { circuitSyncState, type CircuitSyncState } from "../../../lib/studio-sync";
 import { looksLikeOpenQasm3, parseCircuitSource, parseInterchangeCircuit, reconstructInterchangeCircuit } from "../../../lib/circuit-conversion";
@@ -132,11 +140,22 @@ const STARTER_SEED: Omit<BuilderSeed, "key"> = {
   operationCount: STARTER_STEPS.length,
 };
 
-export function StudioWorkspace({ artifactId, newDraft = false, locale = "en", limits = TIER_LIMITS.free }: { artifactId?: string; newDraft?: boolean; locale?: PublicLocale; limits?: CpuSimulationLimits }) {
+export function StudioWorkspace({ artifactId, newDraft = false, exampleId, locale = "en", limits = TIER_LIMITS.free }: { artifactId?: string; newDraft?: boolean; exampleId?: string; locale?: PublicLocale; limits?: CpuSimulationLimits }) {
   const copy = WORKSPACE_COPY[locale].studio;
   const [artifacts, setArtifacts] = useState<LibraryArtifact[]>([]);
   const [artifact, setArtifact] = useState<LibraryArtifact | null>(null);
-  const [showEditor, setShowEditor] = useState(Boolean(artifactId || newDraft));
+  const [showEditor, setShowEditor] = useState(Boolean(artifactId || newDraft || exampleId));
+  const [activeExample, setActiveExample] = useState<WorkedExample | null>(null);
+  const [showGallery, setShowGallery] = useState(false);
+  const [askChangeSummary, setAskChangeSummary] = useState<CircuitChangeSummary | null>(null);
+  const [askBackup, setAskBackup] = useState<{
+    artifact: LibraryArtifact | null;
+    builderSeed: BuilderSeed;
+    title: string;
+    drafts: BuilderCodeVariants;
+    framework: StudioFramework;
+    activeExample: WorkedExample | null;
+  } | null>(null);
   const [query, setQuery] = useState("");
   // The workspace's projects, read from the mirror the sidebar hydrates rather
   // than fetched again here. `hydrateArtifactProjects` ends in
@@ -272,11 +291,24 @@ export function StudioWorkspace({ artifactId, newDraft = false, locale = "en", l
             setMessage(copy.selectedUnavailable);
           }
         });
+    } else if (exampleId) {
+      const example = workedExample(exampleId);
+      if (example) applyExample(example);
+      else {
+        // An unknown id gives a normal new draft plus a short notice, rather
+        // than an empty page with no explanation.
+        setArtifactHydration("ready");
+        setShowEditor(true);
+        seedCounter.current += 1;
+        seedBuilder({ key: `draft-${seedCounter.current}`, ...STARTER_SEED });
+        setMessage(copy.exampleNotFound);
+      }
     }
     return () => {
       active = false;
     };
-  }, [artifactId, copy, loadAttempt]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- applyExample is stable by construction (module-scope helpers only)
+  }, [artifactId, exampleId, copy, loadAttempt]);
 
   useEffect(() => {
     setSimulationRecords(artifact ? loadCpuSimulationRecords(artifact.id) : []);
@@ -547,6 +579,91 @@ export function StudioWorkspace({ artifactId, newDraft = false, locale = "en", l
   function seedBuilder(seed: BuilderSeed) {
     setBuilderSeed(seed);
     setCanvasCircuit({ qubitCount: seed.qubitCount, steps: seed.steps, customGates: seed.customGates });
+  }
+
+  /** Load a worked example as a fresh, editable draft — the "start from a
+   * known circuit" gallery and `?example=` both go through this. Ids are
+   * cloned (cloneWorkedExampleDraft) since the registry's are deterministic,
+   * which is right for a static list and wrong for a live draft. */
+  function applyExample(example: WorkedExample) {
+    setArtifactHydration("ready");
+    setShowEditor(true);
+    setArtifact(null);
+    setTitle(locale === "ja" ? example.title.ja : example.title.en);
+    const draft = cloneWorkedExampleDraft(example);
+    const generated = generateBuilderCode(draft.steps, draft.qubitCount, draft.customGates);
+    setDrafts(generated);
+    setDraftNotes({});
+    setDraftFallbacks({});
+    setFramework("qiskit");
+    setCode(generated.qiskit);
+    selectPanel("visual");
+    setRunId(null);
+    setVerificationStale(false);
+    setActiveExample(example);
+    setAskChangeSummary(null);
+    setAskBackup(null);
+    seedCounter.current += 1;
+    seedBuilder({
+      key: `example-${example.id}-${seedCounter.current}`,
+      artifactIdentity: null,
+      qubitCount: draft.qubitCount,
+      steps: draft.steps,
+      customGates: draft.customGates,
+      readOnly: false,
+      readOnlyReasons: [],
+      operationCount: draft.steps.length,
+    });
+    setMessage(null);
+  }
+
+  /** The gallery's own entry point: confirms before replacing a draft that
+   * already has something drawn on it. A fresh `?example=` mount has nothing
+   * to lose and calls `applyExample` directly instead of this. */
+  function requestLoadExample(example: WorkedExample) {
+    if (canvasCircuit.steps.length > 0 && !window.confirm(copy.unsavedChangesConfirm)) return;
+    applyExample(example);
+    setShowGallery(false);
+  }
+
+  /** Ask Leona saved a revised version: load it in place (no navigation),
+   * keeping a one-shot backup of everything about to be replaced so "go
+   * back" can restore it, and diff the circuit that was open against the one
+   * the new version parses to for the "gates added/removed" summary. */
+  async function handleAskSaved(artifactId: string) {
+    const backup = { artifact, builderSeed, title, drafts, framework, activeExample };
+    const beforeSteps = canvasCircuit.steps;
+    try {
+      const loaded = await loadArtifact(artifactId);
+      if (!loaded) {
+        setMessage(copy.selectedUnavailable);
+        return;
+      }
+      setAskBackup(backup);
+      applyArtifact(loaded);
+      setActiveExample(null);
+      const afterFramework = normalizeFramework(loaded.framework) ?? framework;
+      const afterParsed = loaded.code ? parseCircuitSource(loaded.code, afterFramework) : null;
+      setAskChangeSummary(afterParsed ? circuitChangeSummary(beforeSteps, afterParsed.steps) : null);
+    } catch {
+      setMessage(copy.selectedUnavailable);
+    }
+  }
+
+  /** The one-shot undo for handleAskSaved — restores exactly what that
+   * captured, then clears the backup so a second "go back" has nothing left
+   * to do (matching "one undo step" rather than a multi-level history). */
+  function handleAskGoBack() {
+    if (!askBackup) return;
+    setArtifact(askBackup.artifact);
+    setTitle(askBackup.title);
+    setDrafts(askBackup.drafts);
+    setFramework(askBackup.framework);
+    setCode(askBackup.drafts[askBackup.framework]);
+    setActiveExample(askBackup.activeExample);
+    seedBuilder(askBackup.builderSeed);
+    setAskBackup(null);
+    setAskChangeSummary(null);
   }
 
   /** Redraw the canvas from whatever the Code tab currently holds. */
@@ -928,6 +1045,7 @@ export function StudioWorkspace({ artifactId, newDraft = false, locale = "en", l
                       </div>
                     </form>
                   </details>
+                  <button className="mj-secondary-button" type="button" onClick={() => setShowGallery(true)}>{copy.galleryOpen}</button>
                   {artifact ? <button className="mj-secondary-button" type="button" onClick={downloadDraft} data-tour="studio-download-export">{copy.downloadExport}</button> : null}
                   {!artifact ? (
                     <button
@@ -953,6 +1071,17 @@ export function StudioWorkspace({ artifactId, newDraft = false, locale = "en", l
                   </button>
                 </div>
               </div>
+
+              <AskLeonaBox
+                code={code}
+                framework={sourceFramework}
+                artifactVersionId={artifact?.currentVersionId}
+                onSaved={(id) => void handleAskSaved(id)}
+                changeSummary={askChangeSummary}
+                canGoBack={askBackup !== null}
+                onGoBack={handleAskGoBack}
+                copy={copy}
+              />
 
               <div className="mj-studio-tabbar">
                 <PanelTabs
@@ -1052,6 +1181,8 @@ export function StudioWorkspace({ artifactId, newDraft = false, locale = "en", l
                       setVerificationStale(Boolean(artifact));
                       setMessage(copy.appliedToCode);
                     }}
+                    activeExample={activeExample}
+                    locale={locale}
                   />
                   {panel === "simulation" ? (
                     <SimulationPanel
@@ -1247,6 +1378,9 @@ export function StudioWorkspace({ artifactId, newDraft = false, locale = "en", l
         )}
       </div>
       {showEditor && shortcutsOpen ? <ShortcutSheet onClose={closeShortcuts} copy={copy} /> : null}
+      {showGallery ? (
+        <ExampleGallery locale={locale} onLoad={requestLoadExample} onClose={() => setShowGallery(false)} copy={copy} />
+      ) : null}
     </div>
   );
 }
@@ -1378,7 +1512,7 @@ export const PALETTE_GROUPS: Array<{ id: "oneQubit" | "rotations" | "twoQubit" |
 // Exported for the focused CircuitBuilder form tests. The custom-gate <form>
 // inside it had never been submitted by any check before ai-ops issue 123.
 // Not part of the module's public surface otherwise; StudioWorkspace is.
-export function CircuitBuilder({ seed, framework, selectedGate, onSelectGate, onApply, onCircuitChange, hidden, popout, onTogglePopout, region, copy, syncState, onRebuildFromCode, sourceCode, liveSync = false, onLiveApply, keyboardActive = true }: { seed: BuilderSeed; framework: StudioFramework; selectedGate: string; onSelectGate: (gate: string) => void; onApply: (codes: BuilderCodeVariants) => void; onCircuitChange?: (circuit: { qubitCount: number; steps: BuilderStep[]; customGates: CustomGateDefinition[] }) => void; hidden: boolean; popout: boolean; onTogglePopout: () => void; region?: Record<string, string>; copy: StudioCopy; syncState: CircuitSyncState; onRebuildFromCode: () => void; sourceCode: string; liveSync?: boolean; onLiveApply?: (codes: BuilderCodeVariants) => void; keyboardActive?: boolean }) {
+export function CircuitBuilder({ seed, framework, selectedGate, onSelectGate, onApply, onCircuitChange, hidden, popout, onTogglePopout, region, copy, syncState, onRebuildFromCode, sourceCode, liveSync = false, onLiveApply, keyboardActive = true, activeExample = null, locale = "en" }: { seed: BuilderSeed; framework: StudioFramework; selectedGate: string; onSelectGate: (gate: string) => void; onApply: (codes: BuilderCodeVariants) => void; onCircuitChange?: (circuit: { qubitCount: number; steps: BuilderStep[]; customGates: CustomGateDefinition[] }) => void; hidden: boolean; popout: boolean; onTogglePopout: () => void; region?: Record<string, string>; copy: StudioCopy; syncState: CircuitSyncState; onRebuildFromCode: () => void; sourceCode: string; liveSync?: boolean; onLiveApply?: (codes: BuilderCodeVariants) => void; keyboardActive?: boolean; activeExample?: WorkedExample | null; locale?: PublicLocale }) {
   const [qubitCount, setQubitCount] = useState(seed.qubitCount);
   const [steps, setSteps] = useState<BuilderStep[]>(seed.steps);
   const [pendingQubits, setPendingQubits] = useState<number[]>([]);
@@ -1391,6 +1525,7 @@ export function CircuitBuilder({ seed, framework, selectedGate, onSelectGate, on
   // and saved drafts are unchanged by opening or closing a block.
   const [openStepIds, setOpenStepIds] = useState<ReadonlySet<string>>(new Set());
   const [editingBlockId, setEditingBlockId] = useState<string | null>(null);
+  const [showBlocksPanel, setShowBlocksPanel] = useState(false);
   const [showCustomGateForm, setShowCustomGateForm] = useState(false);
   const [customGateName, setCustomGateName] = useState("");
   const [builderMessage, setBuilderMessage] = useState<string | null>(null);
@@ -1754,6 +1889,34 @@ export function CircuitBuilder({ seed, framework, selectedGate, onSelectGate, on
     setBuilderMessage(copy.ungrouped(name));
   }
 
+  /** Insert a block from the library at `startQubit`, through the same
+   * `instantiateBlock` every nested block in circuit-blocks.ts already uses
+   * for id-safe composition, as one undo step. The panel already refused a
+   * register too narrow to hold it; this is the one place that actually
+   * writes the new step, so it re-checks rather than trusting the caller. */
+  function insertBlock(template: BlockTemplate, params: BlockParams, startQubit: number, requiredQubits: number) {
+    if (startQubit + requiredQubits > qubitCount) return;
+    const qubits = Array.from({ length: requiredQubits }, (_, index) => startQubit + index);
+    let built: ReturnType<BlockTemplate["build"]>;
+    try {
+      built = template.build(params);
+    } catch {
+      return;
+    }
+    const instance = instantiateBlock(built, qubits, createBuilderStepId(`block-${template.key}`));
+    pushHistory();
+    setCustomGates((current) => [...current, ...instance.customGates]);
+    setSteps((current) => insertBeforeTrailingMeasurements(current, instance.step));
+    setShowBlocksPanel(false);
+    setSelectedStepIds([instance.step.id]);
+    setBuilderMessage(copy.blockInserted(template.name));
+  }
+
+  function growQubitsForBlock(by: number) {
+    if (by <= 0) return;
+    changeQubitCount(by);
+  }
+
   function handleStepKeyDown(stepId: string, event: KeyboardEvent<SVGGElement>) {
     if (event.key === "Delete" || event.key === "Backspace") {
       event.preventDefault();
@@ -1978,6 +2141,7 @@ export function CircuitBuilder({ seed, framework, selectedGate, onSelectGate, on
             {singleSelectedCustomStep && editingDefinition && !editingDefinition.opaque ? (
               <button className="mj-secondary-button" type="button" onClick={ungroupSelected}>{copy.ungroupBlock}</button>
             ) : null}
+            <button className="mj-secondary-button" type="button" onClick={() => setShowBlocksPanel(true)}>{copy.blocksPanelOpen}</button>
             <button className="mj-secondary-button" type="button" onClick={() => { setSteps([]); setSelectedStepIds([]); setPendingQubits([]); setBuilderMessage(null); }} disabled={!steps.length}>{copy.clearAll}</button>
             <span className="mj-builder-controls-divider" aria-hidden="true" />
             <button className="mj-secondary-button" type="button" onClick={() => changeQubitCount(-1)} disabled={qubitCount <= 1}>{copy.removeQubit}</button>
@@ -2090,7 +2254,29 @@ export function CircuitBuilder({ seed, framework, selectedGate, onSelectGate, on
           />
         )}
       </div>
+      {!seed.readOnly && activeExample ? (
+        <ExampleNotesPanel
+          example={activeExample}
+          steps={steps}
+          columns={moments.columns}
+          qubitCount={qubitCount}
+          customGates={customGates}
+          moment={playheadMoment}
+          atEnd={playheadMoment >= moments.count}
+          locale={locale}
+          copy={copy}
+        />
+      ) : null}
       {inspection && !hidden ? <GateInspectorCard inspection={inspection} customGates={customGates} copy={copy} /> : null}
+      {showBlocksPanel ? (
+        <BlocksPanel
+          qubitCount={qubitCount}
+          onInsert={insertBlock}
+          onGrowQubits={growQubitsForBlock}
+          onClose={() => setShowBlocksPanel(false)}
+          copy={copy}
+        />
+      ) : null}
       {editingBlockId ? (() => {
         const definition = customGates.find((gate) => gate.id === editingBlockId);
         return definition ? (
