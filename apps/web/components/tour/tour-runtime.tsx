@@ -37,6 +37,7 @@ import { GuideOrb } from "./guide-orb";
 import { TOUR_CARD_BODY_ID, TourCard, type TourCardButton, type TourStatusLine } from "./tour-card";
 import { TourChooser } from "./tour-chooser";
 import {
+  behindPhoneDrawer,
   controlIn,
   coverOver,
   type CoverKind,
@@ -630,6 +631,15 @@ export function TourRuntime({ locale: localeProp, surface, initialCommand = null
         }
         setTarget((current) => (current === found ? current : found));
         setUi((current) => (current.key !== key || ["waiting", "reading", "satisfied", "success"].includes(current.phase) ? current : { ...current, phase: initialPhase(step, found) }));
+        return;
+      }
+      // The other side of the same drawer: a step on the page, reached with the drawer an
+      // earlier step opened still open (Back from a rail step), finds its control inert
+      // behind it. Close the drawer, once, as for anything else the tour left on top.
+      if (coverHandled.current !== key && behindPhoneDrawer(step.target!)) {
+        coverHandled.current = key;
+        closeDrawer();
+        timer = window.setTimeout(look, 250);
         return;
       }
       // On a phone the rail and the sidebar live in a collapsed drawer. Ask the shell to

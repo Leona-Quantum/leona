@@ -81,9 +81,21 @@ export function coverOver(target: Element, layer: Element | null): CoverKind | n
     if (element === target || target.contains(element) || element.contains(target)) return null;
     const overlay = element.closest(OVERLAY);
     if (!overlay || overlay.contains(target)) return null;
-    return overlay.matches(".mj-shell-sidebar, .mj-sidebar-backdrop") ? "navigation" : "other";
+    // By the element hit, not the overlay: the open drawer is itself a modal dialog.
+    return element.closest("#workspace-navigation, .mj-shell-sidebar, .mj-sidebar-backdrop") ? "navigation" : "other";
   }
   return null;
+}
+
+/**
+ * Whether the step's control is on the page behind an open phone navigation drawer.
+ * The open drawer is modal, so the page behind it is `inert` and `findTarget` skips the
+ * control altogether: from the tour's side it is "not found", never "covered".
+ */
+export function behindPhoneDrawer(name: string): boolean {
+  const navigation = document.getElementById("workspace-navigation");
+  if (!navigation || window.innerWidth > 720 || navigation.getClientRects().length === 0) return false;
+  return Array.from(document.querySelectorAll(`[data-tour="${CSS.escape(name)}"]`)).some((node) => !navigation.contains(node) && inertByPage(node));
 }
 
 /** The nearest `data-tour` name at or above an element, for "That's the framework picker". */

@@ -552,6 +552,9 @@ const scenarios = {
     await clickCard(page, EN.card.skipTour);
 
     // Reached by a link, the Usage step finds the account menu shut and has it opened.
+    // A document load first: from /run, a goto that changes only the fragment is a
+    // same-document navigation, and the tour reads `#tour=` once per load.
+    await page.goto("about:blank");
     await page.goto(`${BASE}/run#tour=around.5`);
     await waitFor(page, () => document.querySelector("[data-tour-layer]")?.dataset.step === "around.4" && Boolean(document.querySelector("[data-tour-layer] .mj-tour-ring")), null, 30_000);
     const usage = await uncovered(page, "menu-usage");
