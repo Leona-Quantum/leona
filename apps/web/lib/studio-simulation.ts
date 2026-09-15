@@ -1,4 +1,5 @@
 import { circuitFramework, isExecutableCircuitFramework, type CircuitFrameworkKey, type ExecutableCircuitFrameworkKey } from "./circuit-frameworks.ts";
+import { parseGateAngle } from "./gate-angle.ts";
 import { allCircuitConversionResults, parseCircuitSource } from "./circuit-conversion.ts";
 import { MAX_PARSABLE_QUBITS, type ParsedBuilderCircuit } from "./studio-parse.ts";
 import { TIER_LIMITS, type TierLimits } from "./account-tier.ts";
@@ -433,13 +434,31 @@ export function bitstringFor(index: number, qubitCount: number): string {
   return result;
 }
 
+/**
+ * Bug fix, block-library stage: this used to have no `-?` at all — not even
+ * for a plain decimal — so a negative angle (needed by, say, an inverse QFT's
+ * negated CP, or a Z-parity gadget's even-subset term) threw "outside the
+ * bounded simulation syntax" despite `BuilderStep.param`'s own grammar
+ * (`parseGateAngle`, from gate-angle.ts) explicitly allowing a leading minus.
+ * Nothing in this repo's Studio UI ever generated a negative symbolic angle
+ * before now (`ANGLE_OPTIONS` in studio-workspace.tsx has no negative
+ * presets), so the gap went uncaught. Delegates the *validation* to
+ * `parseGateAngle` — the single source of truth for this grammar — and only
+ * computes the radian value here.
+ */
 function angle(raw: string | undefined): number {
   if (!raw) throw new Error("Rotation gate is missing its angle.");
-  const value = raw.trim().replaceAll(/\s+/g, "");
-  if (/^\d+(?:\.\d+)?$/.test(value)) return Number(value);
-  const match = /^(?:(\d+(?:\.\d+)?)\*)?pi(?:\/(\d+(?:\.\d+)?))?$/.exec(value);
-  if (!match) throw new Error("Rotation angle is outside the bounded simulation syntax.");
-  return (match[1] ? Number(match[1]) : 1) * Math.PI / (match[2] ? Number(match[2]) : 1);
+  const cleaned = parseGateAngle(raw);
+  if (cleaned === null) throw new Error("Rotation angle is outside the bounded simulation syntax.");
+  const negative = cleaned.startsWith("-");
+  const body = negative ? cleaned.slice(1) : cleaned;
+  const magnitude = /^\d+(?:\.\d+)?(?:e[+-]?\d+)?$/i.test(body)
+    ? Number(body)
+    : (() => {
+        const match = /^(?:(\d+(?:\.\d+)?)\*)?pi(?:\/(\d+(?:\.\d+)?))?$/i.exec(body)!;
+        return (match[1] ? Number(match[1]) : 1) * Math.PI / (match[2] ? Number(match[2]) : 1);
+      })();
+  return negative ? -magnitude : magnitude;
 }
 
 function rotationX(theta: number): ComplexMatrix {
