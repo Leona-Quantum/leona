@@ -35,6 +35,7 @@ import { RepositoryExportAction } from "../repository-export";
 import { AtlasCircuitFigure, AtlasOutcomeBars } from "../../../components/atlas-circuit";
 import { AtlasGlance, type AtlasGlanceItem } from "../../../components/atlas-glance";
 import { hasAtlasCircuit } from "../../../lib/repository/atlas-circuit-layout";
+import { isPlaceholderDiagram } from "../../../lib/repository/placeholder-diagrams";
 
 const COPY = {
   en: {
@@ -406,7 +407,11 @@ export function RepositoryEntryView({
   // and wire counts are the lengths of its own lists, the resource rows are its
   // own labels and values — and a field it does not carry gives no tile.
   const drawing = entry.visualization;
-  const hasDrawing = hasAtlasCircuit(drawing);
+  // A stock placeholder diagram (§ isPlaceholderDiagram) is not a drawing of
+  // this record — it is the schema's default, identical across 177 unrelated
+  // records — so it draws nothing here: no hero figure, no steps/wires glance
+  // tiles. The "example" section makes the matching call in `record-card.ts`.
+  const hasDrawing = hasAtlasCircuit(drawing) && !isPlaceholderDiagram(drawing);
   const reported = [
     entry.sourceCoverage?.simulation === "reported" ? copy.coverageSimulation : null,
     entry.sourceCoverage?.hardware === "reported" ? copy.coverageHardware : null,
