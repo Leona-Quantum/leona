@@ -216,6 +216,11 @@ export function CircuitDiagram({
           const top = yFor(minQubit) - 24;
           const bottom = yFor(maxQubit) + 24;
           const chipWidth = Math.min(right - left, 168);
+          // Above the box when there is room; clamped to a small margin from
+          // the canvas edge for a block that touches wire 0, where "above the
+          // box" would otherwise draw off the top of the SVG (observed via a
+          // rendered screenshot, not just the layout math — see the report).
+          const chipY = Math.max(2, top - 20);
           const closeLabel = interaction?.closeBlockLabel?.(bracket.name) ?? `Close ${bracket.name}`;
           return (
             <g key={bracket.bracketId} className="mj-circuit-bracket" data-depth={bracket.depth}>
@@ -231,12 +236,12 @@ export function CircuitDiagram({
                     if (event.key === "Enter" || event.key === " ") { event.preventDefault(); interaction.onToggleOpen?.(bracket.bracketId); }
                   }}
                 >
-                  <rect x={left} y={top - 20} width={chipWidth} height="18" rx="4" />
-                  <text className="mj-circuit-bracket-name" x={left + 8} y={top - 7}>{bracket.name.slice(0, 20)}</text>
-                  <text className="mj-circuit-bracket-close" x={left + chipWidth - 12} y={top - 6} aria-hidden="true">×</text>
+                  <rect x={left} y={chipY} width={chipWidth} height="18" rx="4" />
+                  <text className="mj-circuit-bracket-name" x={left + 8} y={chipY + 13}>{bracket.name.slice(0, 20)}</text>
+                  <text className="mj-circuit-bracket-close" x={left + chipWidth - 12} y={chipY + 14} aria-hidden="true">×</text>
                 </g>
               ) : (
-                <text className="mj-circuit-bracket-name" x={left + 8} y={top - 7}>{bracket.name.slice(0, 20)}</text>
+                <text className="mj-circuit-bracket-name" x={left + 8} y={chipY + 13}>{bracket.name.slice(0, 20)}</text>
               )}
             </g>
           );
