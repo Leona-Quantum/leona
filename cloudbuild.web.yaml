@@ -1,0 +1,32 @@
+# Builds the web image (apps/web/Dockerfile, repo-root context). Cloud Run
+# spike (ai-ops gcp-migration-20260912 PLAN.md) — mirrors cloudbuild.api.yaml.
+# Not wired into any workflow yet; the lead runs this by hand:
+#   gcloud builds submit --config cloudbuild.web.yaml \
+#     --ignore-file=.gcloudignore.web \
+#     --substitutions=_TAG=<sha7> .
+#
+# Build ARGs (LEONA_DEPLOY_ENV, NEXT_PUBLIC_*, …) are not passed here — Cloud
+# Build's `--substitutions` only fills this file's own ${_VAR} placeholders,
+# it does not forward to `docker build --build-arg`. The lead adds
+# `--build-arg NAME=value` args to the `docker build` step below, or a
+# second `_BUILD_ARGS` substitution consumed by the step, once the exact set
+# needed for the spike (docs/runbooks/web-cloud-run.md) is decided.
+steps:
+  - name: gcr.io/cloud-builders/docker
+    args:
+      - build
+      - -f
+      - apps/web/Dockerfile
+      - -t
+      - us-west1-docker.pkg.dev/majorana-core/majorana/web:${_TAG}
+      - .
+images:
+  - us-west1-docker.pkg.dev/majorana-core/majorana/web:${_TAG}
+options:
+  machineType: E2_HIGHCPU_8
+  logging: CLOUD_LOGGING_ONLY
+# Longer than the API's 1800s: a Next build (typecheck + compile + the
+# marketing pages' generateStaticParams over the Atlas corpus) is heavier
+# than the API's Python build, and this has not been timed yet — 3000s
+# leaves headroom for a first run. Tighten once a real build duration exists.
+timeout: 3000s
