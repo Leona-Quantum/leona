@@ -68,6 +68,7 @@ import { chooseRepositoryRecord } from "./catalog-record-choice";
 import type { PublicRepositoryEntry, PublicRepositoryListEntry } from "./repository/types";
 import { reportCallerTrust, withTrustedCallerHeader } from "./trusted-caller";
 import { CATALOG_REVALIDATE_SECONDS } from "./catalog-revalidate";
+import { catalogCooldown, isOverloadStatus, parseRetryAfterSeconds } from "./catalog-cooldown";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 
@@ -82,8 +83,23 @@ const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
  * visit to an unknown /repository/<slug> would write an error line that reads
  * like an API outage, which is exactly the noise that makes a real outage hard
  * to spot. Every other status, on every caller, still logs.
+ *
+ * After the API refuses us (429 or 5xx) or the request throws, this returns null
+ * WITHOUT fetching until the cooldown in lib/catalog-cooldown.ts runs out. Null is
+ * what a failed fetch already returns, so callers fall back exactly as they do on
+ * a failure. It exists because a refused page is never written to Next's Data
+ * Cache, so without it every render re-walked every page against an API that was
+ * already refusing it (the 2026-09-15 storm).
  */
 async function fetchCatalogPage(url: string, expected404 = false): Promise<CatalogPage | null> {
+  if (catalogCooldown.shouldSkip()) {
+    if (catalogCooldown.shouldLogSkip()) {
+      console.error(
+        `[repository-source] catalog API refused recently; serving the fallback without fetching for ${Math.ceil(catalogCooldown.remainingMs() / 1000)}s`,
+      );
+    }
+    return null;
+  }
   try {
     const upstream = await fetch(url, {
       // Identifies this as our own renderer so the API meters it in its own
@@ -100,11 +116,16 @@ async function fetchCatalogPage(url: string, expected404 = false): Promise<Catal
       if (!(expected404 && upstream.status === 404)) {
         console.error(`[repository-source] catalog fetch failed: HTTP ${upstream.status} (${url})`);
       }
+      if (isOverloadStatus(upstream.status)) {
+        catalogCooldown.recordFailure(parseRetryAfterSeconds(upstream.headers.get("retry-after"), Date.now()));
+      }
       return null;
     }
+    catalogCooldown.recordSuccess();
     return { payload: await upstream.json(), total: parseCatalogTotal(upstream.headers) };
   } catch (error) {
     console.error(`[repository-source] catalog fetch threw (${url}):`, error);
+    catalogCooldown.recordFailure();
     return null;
   }
 }
