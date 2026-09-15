@@ -66,6 +66,10 @@ export interface CircuitIRDiagram {
   operationCount: number;
 }
 
+// Qiskit's own `Instruction.name` for each — the lowercase strings a
+// server-observed circuit actually reports — so a run using any of these six
+// gates draws as a native, editable step rather than falling back to an
+// opaque custom-gate box.
 const BUILTIN_GATES: Record<string, BuiltinBuilderGate> = {
   h: "H",
   x: "X",
@@ -73,16 +77,23 @@ const BUILTIN_GATES: Record<string, BuiltinBuilderGate> = {
   z: "Z",
   s: "S",
   t: "T",
+  sdg: "SDG",
+  tdg: "TDG",
   rx: "RX",
   ry: "RY",
   rz: "RZ",
+  p: "P",
   cx: "CX",
   cz: "CZ",
   swap: "SWAP",
+  cp: "CP",
+  rzz: "RZZ",
+  ccx: "CCX",
 };
 
-const ROTATIONS = new Set(["rx", "ry", "rz"]);
-const TWO_QUBIT = new Set(["cx", "cz", "swap"]);
+const ROTATIONS = new Set(["rx", "ry", "rz", "p"]);
+const TWO_QUBIT = new Set(["cx", "cz", "swap", "cp", "rzz"]);
+const THREE_QUBIT = new Set(["ccx"]);
 
 export function parseCircuitIR(value: unknown): CircuitIR | null {
   const raw = plainRecord(value);
@@ -207,7 +218,7 @@ export function circuitIRDiagram(circuit: CircuitIR): CircuitIRDiagram {
     }
 
     const gate = BUILTIN_GATES[operation.name];
-    const expectedQubits = TWO_QUBIT.has(operation.name) ? 2 : 1;
+    const expectedQubits = THREE_QUBIT.has(operation.name) ? 3 : TWO_QUBIT.has(operation.name) ? 2 : 1;
     const angle = ROTATIONS.has(operation.name) ? parseGateAngle(operation.parameters[0]) : null;
     const losslessBuiltin = Boolean(
       operation.editable
