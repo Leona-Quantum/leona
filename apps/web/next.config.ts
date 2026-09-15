@@ -1,5 +1,4 @@
-import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
+import { resolve } from "node:path";
 import type { NextConfig } from "next";
 import {
   contentSecurityPolicy,
@@ -158,7 +157,26 @@ const nextConfig: NextConfig = {
         // itself and its own docs warn that inference can pick the wrong
         // directory in a monorepo, silently leaving workspace packages out
         // of `.next/standalone`.
-        outputFileTracingRoot: join(dirname(fileURLToPath(import.meta.url)), "..", ".."),
+        //
+        // `path.resolve(process.cwd(), "..", "..")`, not
+        // `fileURLToPath(import.meta.url)`: this file is loaded through
+        // Next's own config loader, which transpiles next.config.ts to
+        // CommonJS via SWC on the legacy path (module: "commonjs" —
+        // node_modules/next/dist/build/next-config-ts/transpile-config.js) and
+        // only uses a native ESM `import()` when an internal flag enables
+        // Node's TS-stripping loader. `import.meta` is unconditionally valid
+        // ESM syntax; whether it survives that CJS transpile intact is a
+        // question about the *build* platform's Next/Node combination, not
+        // this repo's, and it would change nothing about `process.cwd()`,
+        // which both module targets support identically. Measured, not
+        // assumed: `pnpm --filter @majorana/web exec pwd` and vercel.json's
+        // own `buildCommand` (`pnpm --filter @majorana/web build`) both run
+        // with apps/web as the working directory, on Vercel and in
+        // apps/web/Dockerfile alike — pnpm's `--filter` sets cwd to the
+        // selected package before invoking its script, which is why this
+        // resolves against `process.cwd()` rather than this module's own
+        // location.
+        outputFileTracingRoot: resolve(process.cwd(), "..", ".."),
       }
     : {}),
   // Security headers baseline (05-security.md §1 platform+edge). The CSP above
