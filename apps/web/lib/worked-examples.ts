@@ -688,6 +688,150 @@ function amplitudeEstimation3(): WorkedExample {
 }
 
 // ---------------------------------------------------------------------------
+// 18. hidden-shift-4
+
+function hiddenShift4(): WorkedExample {
+  const shift = "0110";
+  const n = 4;
+  const zerosBefore = [0, 1]; // CZ(0,1)
+  const zerosAfter = [2, 3]; // CZ(2,3)
+  const hAll1 = place("hadamard_layer", { n }, [0, 1, 2, 3], "h1");
+  const shiftIn = Array.from({ length: n }, (_, q) => q).filter((q) => shift[n - 1 - q] === "1").map((q) => rawStep("X", [q]));
+  const gOracleCz = [rawStep("CZ", zerosBefore), rawStep("CZ", zerosAfter)];
+  const shiftOut = shiftIn.map((s) => rawStep("X", s.qubits));
+  const hAll2 = place("hadamard_layer", { n }, [0, 1, 2, 3], "h2");
+  const fOracleCz = [rawStep("CZ", zerosBefore), rawStep("CZ", zerosAfter)];
+  const hAll3 = place("hadamard_layer", { n }, [0, 1, 2, 3], "h3");
+  const steps = [
+    hAll1.step,
+    ...shiftIn,
+    ...gOracleCz,
+    ...shiftOut,
+    hAll2.step,
+    ...fOracleCz,
+    hAll3.step,
+  ];
+  return {
+    id: "hidden-shift-4",
+    algorithm: "Hidden shift",
+    title: { en: "Hidden shift for a bent function", ja: "ベント関数の隠れシフト" },
+    instance: { en: "4 qubits, f(x) = x₀x₁ ⊕ x₂x₃ (a bent, self-dual function), hidden shift s = 0110.", ja: "4量子ビット、f(x) = x₀x₁ ⊕ x₂x₃（ベント関数で自己双対）、隠れシフト s = 0110。" },
+    qubitCount: n,
+    steps,
+    customGates: [...hAll1.customGates, ...hAll2.customGates, ...hAll3.customGates],
+    notes: [
+      note(hAll1.step.id, "Spreads all four qubits into an equal superposition.", "4つの量子ビットすべてを等しい重ね合わせに広げます。"),
+      note(shiftIn[0].id, "Flips qubit 1, the first step of shifting the input by s = 0110 before applying f.", "量子ビット1を反転します。fを適用する前に入力をs = 0110だけシフトする最初のステップです。"),
+      note(shiftIn[1].id, "Flips qubit 2, completing the shift by s.", "量子ビット2を反転し、sによるシフトを完了します。"),
+      note(gOracleCz[0].id, "Applies CZ(0,1), the x₀x₁ term of f, now acting on the shifted input.", "CZ(0,1)を適用します。シフトされた入力に作用する、fのx₀x₁の項です。"),
+      note(gOracleCz[1].id, "Applies CZ(2,3), the x₂x₃ term of f, completing the oracle for g(x) = f(x ⊕ s).", "CZ(2,3)を適用します。fのx₂x₃の項で、g(x) = f(x ⊕ s)のオラクルを完成させます。"),
+      note(shiftOut[0].id, "Undoes the shift on qubit 1.", "量子ビット1のシフトを打ち消します。"),
+      note(shiftOut[1].id, "Undoes the shift on qubit 2.", "量子ビット2のシフトを打ち消します。"),
+      note(hAll2.step.id, "A second Hadamard layer on all four qubits.", "4つの量子ビットすべてへの2回目のアダマール層です。"),
+      note(fOracleCz[0].id, "Applies CZ(0,1) again, this time as the oracle for f itself (unshifted): since f is self-dual, the same two-CZ pattern is its own Fourier dual.", "再びCZ(0,1)を適用します。今度はf自体（シフトなし）のオラクルとしてです。fは自己双対なので、同じ2つのCZのパターンがそれ自身のフーリエ双対になります。"),
+      note(fOracleCz[1].id, "Applies CZ(2,3) again, completing the f oracle.", "再びCZ(2,3)を適用し、fのオラクルを完成させます。"),
+      note(hAll3.step.id, "A third Hadamard layer reads the shift directly into the computational basis.", "3回目のアダマール層がシフトを直接計算基底に読み出します。"),
+    ],
+    check: { kind: "peak", bitstring: shift, minProbability: 0.999 },
+    readout: { en: "The register reads 0110, the hidden shift, exactly: a bent function's perfect duality makes the hidden-shift algorithm deterministic.", ja: "レジスタは隠れシフトである0110を正確に読み取ります。ベント関数の完全な双対性により、隠れシフトアルゴリズムは確定的になります。" },
+    keywords: ["hidden shift", "bent function"],
+    blocks: ["hadamard_layer"],
+  };
+}
+
+// ---------------------------------------------------------------------------
+// 19. superdense-coding
+
+function superdenseCoding(): WorkedExample {
+  const alice = 0;
+  const bob = 1;
+  const bellH = rawStep("H", [alice]);
+  const bellCx = rawStep("CX", [alice, bob]);
+  const encode = rawStep("X", [alice]); // sends the message "10" in this circuit's own encoding (see the notes)
+  const decodeCx = rawStep("CX", [alice, bob]);
+  const decodeH = rawStep("H", [alice]);
+  const steps = [bellH, bellCx, encode, decodeCx, decodeH];
+  return {
+    id: "superdense-coding",
+    algorithm: "Superdense coding",
+    title: { en: "Superdense coding sends two classical bits", ja: "超高密度符号化による2ビットの送信" },
+    instance: { en: "2 qubits sharing a Bell pair; Alice sends the 2-bit message 10 to Bob by acting on her qubit alone.", ja: "2つの量子ビットがベル対を共有します。アリスは自分の量子ビットだけに作用させて、2ビットのメッセージ10をボブに送ります。" },
+    qubitCount: 2,
+    steps,
+    customGates: [],
+    notes: [
+      note(bellH.id, "Starts a Bell pair: Alice and Bob each hold one half.", "ベル対を開始します。アリスとボブがそれぞれ半分ずつ持ちます。"),
+      note(bellCx.id, "Completes the Bell pair.", "ベル対を完成させます。"),
+      note(encode.id, "Alice applies X to her own qubit. In this circuit, X alone encodes the message 10 (X sets the first bit, Z would set the second; neither is applied for the second bit here).", "アリスは自分の量子ビットにXを適用します。この回路ではXだけでメッセージ10を符号化します（Xは1番目のビットを設定し、Zは2番目のビットを設定しますが、ここでは2番目のビットには何も適用しません）。"),
+      note(decodeCx.id, "Bob receives Alice's qubit and applies CX, the first half of the Bell-basis decode.", "ボブはアリスの量子ビットを受け取り、CXを適用します。ベル基底での復号の前半です。"),
+      note(decodeH.id, "Bob applies H, completing the decode.", "ボブはHを適用し、復号を完了します。"),
+    ],
+    check: { kind: "peak", bitstring: "10", minProbability: 0.999 },
+    readout: { en: "Measuring both qubits gives 10, the message, recovered from a single qubit sent over the channel because it started out entangled with the qubit Bob already held.", ja: "両方の量子ビットを測定するとメッセージである10が得られます。ボブがすでに持っていた量子ビットと最初からもつれていたため、通信路で送られたのは1つの量子ビットだけでした。" },
+    keywords: ["superdense coding", "entanglement"],
+    blocks: [],
+  };
+}
+
+// ---------------------------------------------------------------------------
+// 20. w-state-3
+
+function wState3(): WorkedExample {
+  const built = place("w_state_3", {}, [0, 1, 2], "w");
+  const steps = [built.step];
+  return {
+    id: "w-state-3",
+    algorithm: "W state",
+    title: { en: "The 3-qubit W state", ja: "3量子ビットW状態" },
+    instance: { en: "3 qubits, preparing (|001⟩ + |010⟩ + |100⟩) / √3.", ja: "3量子ビットで (|001⟩ + |010⟩ + |100⟩) / √3 を準備します。" },
+    qubitCount: 3,
+    steps,
+    customGates: built.customGates,
+    notes: [
+      note(built.step.id, "A staircase of controlled-RY rotations (each built from RY and CX) and a CCX spreads a single excitation evenly across all three qubits, so that exactly one of them reads |1⟩ at a time, with equal probability for each.", "controlled-RY回転（それぞれRYとCXから構成）とCCXの階段状の並びが、単一の励起を3つの量子ビットすべてに均等に広げます。その結果、常にそのうちのちょうど1つだけが|1⟩を示し、どの量子ビットも等しい確率になります。"),
+    ],
+    check: { kind: "support", bitstrings: ["001", "010", "100"] },
+    readout: { en: "Measuring gives 001, 010 or 100, each equally likely, and never 000, 011, 101, 110 or 111: exactly one qubit reads |1⟩.", ja: "測定すると001、010、100のいずれかが等しい確率で得られ、000、011、101、110、111になることはありません。ちょうど1つの量子ビットだけが|1⟩を示します。" },
+    keywords: ["w state", "entanglement"],
+    blocks: ["w_state_3"],
+  };
+}
+
+// ---------------------------------------------------------------------------
+// 21. simon-2
+
+function simon2(): WorkedExample {
+  const q0 = 0;
+  const q1 = 1;
+  const ancilla = 2;
+  const hIn = [rawStep("H", [q0]), rawStep("H", [q1])];
+  const oracle = [rawStep("CX", [q0, ancilla]), rawStep("CX", [q1, ancilla])];
+  const hOut = [rawStep("H", [q0]), rawStep("H", [q1])];
+  const steps = [...hIn, ...oracle, ...hOut];
+  return {
+    id: "simon-2",
+    algorithm: "Simon's algorithm",
+    title: { en: "Simon's algorithm with secret 11", ja: "秘密11に対するサイモンのアルゴリズム" },
+    instance: { en: "2 input qubits, 1 ancilla, oracle f(x) = x₀ ⊕ x₁ (satisfies f(x) = f(x ⊕ s) for the secret s = 11).", ja: "入力用の量子ビット2個、補助量子ビット1個、オラクルf(x) = x₀ ⊕ x₁（秘密s = 11に対してf(x) = f(x ⊕ s)を満たします）。" },
+    qubitCount: 3,
+    steps,
+    customGates: [],
+    notes: [
+      note(hIn[0].id, "Spreads qubit 0 into superposition.", "量子ビット0を重ね合わせに広げます。"),
+      note(hIn[1].id, "Spreads qubit 1 into superposition.", "量子ビット1を重ね合わせに広げます。"),
+      note(oracle[0].id, "CXs qubit 0 onto the ancilla.", "量子ビット0を補助量子ビットへCXします。"),
+      note(oracle[1].id, "CXs qubit 1 onto the ancilla, so the ancilla ends up holding x₀ ⊕ x₁: the oracle for f.", "量子ビット1を補助量子ビットへCXします。これにより補助量子ビットはx₀ ⊕ x₁を保持することになり、fのオラクルとなります。"),
+      note(hOut[0].id, "A second Hadamard on qubit 0.", "量子ビット0への2回目のアダマールです。"),
+      note(hOut[1].id, "A second Hadamard on qubit 1, completing the readout register.", "量子ビット1への2回目のアダマールで、読み出しレジスタを完成させます。"),
+    ],
+    check: { kind: "support", bitstrings: ["000", "011", "100", "111"] },
+    readout: { en: "The two input qubits read 00 or 11, each equally likely, regardless of the ancilla: both satisfy y · s = 0 for the secret s = 11, exactly as Simon's algorithm predicts for any single run.", ja: "2つの入力量子ビットは、補助量子ビットにかかわらず00か11のどちらかを等しい確率で読み取ります。どちらも秘密s = 11に対してy · s = 0を満たしており、サイモンのアルゴリズムが1回の実行について予測するとおりです。" },
+    keywords: ["simon's algorithm", "oracle"],
+    blocks: [],
+  };
+}
+
+// ---------------------------------------------------------------------------
 
 // angle = 3*pi/4 = 2*pi*3/8: exact 3-bit phase, counting register reads 011
 // (=3) with probability 1 (verified against the simulator's raw output).
@@ -732,6 +876,7 @@ export const WORKED_EXAMPLES: readonly WorkedExample[] = [
   quantumWalkCycle4(),
   shorOrderFinding15(),
   amplitudeEstimation3(),
+  hiddenShift4(),
 ];
 
 export function workedExample(id: string): WorkedExample | undefined {
