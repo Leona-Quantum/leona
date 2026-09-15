@@ -13,41 +13,45 @@ Vercel, unchanged — nothing in this branch touches `apps/web/middleware.ts` or
 
 This document assumes the reader has `roles/run.admin` (or the deploy service
 account's permissions) on `majorana-core` and is running commands from the repo
-root. Nothing here has been run — every command is what the lead runs next, not a
-transcript.
+root.
+
+**Status, 2026-09-15:** nothing here has produced an image yet. One build was submitted
+from session 7b5934b8 and cancelled while still queued (it carried a placeholder commit
+SHA); the resubmission was refused by that session's permission classifier. The first
+real build is therefore still to run, by the owner or by a session with a permission rule
+for `gcloud builds submit` and `gcloud run deploy` on `majorana-core`.
 
 ## Build and deploy
 
 ```bash
-# Build (mutating — not run by this spike's author, per the task's hard limits).
-gcloud builds submit --config cloudbuild.web.yaml \
+# Build. Build args (deploy env, control-plane URL, release SHA) come from the
+# substitutions block at the top of cloudbuild.web.yaml; override one with
+# e.g. `_API_URL=...` if needed.
+gcloud builds submit --project=majorana-core --region=us-west1 \
+  --config cloudbuild.web.yaml \
   --ignore-file=.gcloudignore.web \
-  --substitutions=_TAG=$(git rev-parse --short=7 HEAD) \
+  --substitutions=_TAG=$(git rev-parse --short=8 HEAD),_SHA=$(git rev-parse HEAD) \
   .
 ```
 
-`cloudbuild.web.yaml` does not pass `--build-arg` to `docker build` yet — it only
-fills the file's own `${_TAG}` placeholder. Add the build args the spike needs
-(`LEONA_DEPLOY_ENV`, `NEXT_PUBLIC_API_URL`, …, from the table below) to that file's
-`docker build` step before the first real submit; see the comment at the top of
-`cloudbuild.web.yaml`.
-
 ```bash
-# Deploy (mutating). Everything below the image line matters: no traffic
-# allowed in without a token, and cold start is acceptable for a spike that is
-# not carrying real traffic.
+# Deploy. No traffic without a Google identity token, and cold start is fine for a
+# spike carrying no real traffic. LEONA_DEPLOY_ENV is set again at RUNTIME because
+# server code (lib/lab-direction.ts, lib/public-demo.ts) reads it per request, not
+# only at build time. NEXT_PUBLIC_* values are NOT runtime settings: they were
+# inlined by the build above, so changing one means rebuilding.
 gcloud run deploy majorana-web \
   --project=majorana-core \
   --region=us-west1 \
-  --image=us-west1-docker.pkg.dev/majorana-core/majorana/web:$(git rev-parse --short=7 HEAD) \
+  --image=us-west1-docker.pkg.dev/majorana-core/majorana/web:$(git rev-parse --short=8 HEAD) \
   --no-allow-unauthenticated \
   --min-instances=0 \
+  --max-instances=2 \
   --port=8080 \
-  --set-env-vars="LEONA_DEPLOY_ENV=preview,NODE_ENV=production" \
-  --set-env-vars="NEXT_PUBLIC_API_URL=https://majorana-api-639400385957.us-west1.run.app"
-  # WORKOS_*, SENTRY_DSN, etc. from Secret Manager once the lead decides which
-  # of them the spike actually needs live — see the env table below for what
-  # each one gates.
+  --set-env-vars="LEONA_DEPLOY_ENV=production"
+  # No WORKOS_*, no SENTRY_DSN: the public pages render without them (see the env
+  # table below), and sign-in cannot complete on a run.app host until its redirect
+  # URI is registered in WorkOS, which is an owner step.
 ```
 
 ## Reaching it

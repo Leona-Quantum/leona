@@ -1,22 +1,43 @@
 # Builds the web image (apps/web/Dockerfile, repo-root context). Cloud Run
 # spike (ai-ops gcp-migration-20260912 PLAN.md) — mirrors cloudbuild.api.yaml.
-# Not wired into any workflow yet; the lead runs this by hand:
+# Not wired into any workflow yet; run by hand (docs/runbooks/web-cloud-run.md):
 #   gcloud builds submit --config cloudbuild.web.yaml \
 #     --ignore-file=.gcloudignore.web \
-#     --substitutions=_TAG=<sha7> .
+#     --substitutions=_TAG=$(git rev-parse --short=8 HEAD),_SHA=$(git rev-parse HEAD) .
 #
-# Build ARGs (LEONA_DEPLOY_ENV, NEXT_PUBLIC_*, …) are not passed here — Cloud
-# Build's `--substitutions` only fills this file's own ${_VAR} placeholders,
-# it does not forward to `docker build --build-arg`. The lead adds
-# `--build-arg NAME=value` args to the `docker build` step below, or a
-# second `_BUILD_ARGS` substitution consumed by the step, once the exact set
-# needed for the spike (docs/runbooks/web-cloud-run.md) is decided.
+# `--substitutions` fills only this file's own ${_VAR} placeholders; it does not
+# reach `docker build`. So every value next.config.ts reads at build time is
+# forwarded below as an explicit --build-arg. They are build args and not Cloud
+# Run env vars because NEXT_PUBLIC_* is inlined into the bundle and the CSP
+# headers are baked into routes-manifest.json during `next build`.
+#
+# Defaults match production as it is served today: the CSP on leonaqt.com names
+# https://majorana-api-nikekeixtq-uw.a.run.app as the control plane (read
+# 2026-09-15), and LEONA_DEPLOY_ENV=production keeps the preview-only
+# allowances (Vercel Toolbar CSP, /lab, the public demo) off.
+# NEXT_PUBLIC_SENTRY_DSN is deliberately not forwarded: a spike should not send
+# its errors into production's Sentry project.
+substitutions:
+  _SHA: unset
+  _DEPLOY_ENV: production
+  _API_URL: https://majorana-api-nikekeixtq-uw.a.run.app
+  _PUBLIC_ENV: spike
 steps:
   - name: gcr.io/cloud-builders/docker
     args:
       - build
       - -f
       - apps/web/Dockerfile
+      - --build-arg
+      - LEONA_DEPLOY_ENV=${_DEPLOY_ENV}
+      - --build-arg
+      - LEONA_GIT_COMMIT_SHA=${_SHA}
+      - --build-arg
+      - NEXT_PUBLIC_LEONA_GIT_COMMIT_SHA=${_SHA}
+      - --build-arg
+      - NEXT_PUBLIC_API_URL=${_API_URL}
+      - --build-arg
+      - NEXT_PUBLIC_MAJORANA_ENV=${_PUBLIC_ENV}
       - -t
       - us-west1-docker.pkg.dev/majorana-core/majorana/web:${_TAG}
       - .
