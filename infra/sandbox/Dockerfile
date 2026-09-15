@@ -8,10 +8,10 @@
 # sandbox than the one that was reviewed and scanned, and nothing in the repo,
 # the diff, or the weekly container scan would say so.
 #
-# The digest below is `3.13-slim-bookworm` as of 2026-08-15. Updating it is a
+# The digest below is `3.13-slim-bookworm` as of 2026-09-14. Updating it is a
 # deliberate edit with a reviewable diff, which is the entire point; the tag is
 # kept alongside so the next person knows which line to re-resolve.
-FROM python:3.13-slim-bookworm@sha256:00faa2debb87529f9f0764e9491d8ba400a3678976616c3bd7cb193745ac20d1
+FROM python:3.13-slim-bookworm@sha256:ed86c82274b3c69b52fb5820f358f0bd7df0b603332063cb5c6e32bd220c3e6e
 
 # This image is the Vercel Sandbox root filesystem for generated quantum code.
 # Keep it dependency-complete because production sandboxes are created with the
