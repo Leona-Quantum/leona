@@ -23,6 +23,7 @@ import { deriveInterface, neighboursOf, type EntryInterface } from "../../../lib
 import { resolveEntryPort, type BrowseSearchParams } from "../../../lib/repository/browse-params";
 import { SECTION_PARAM, withCard } from "../../../lib/repository/map-card";
 import { parseRecordSection } from "../../../lib/repository/record-card";
+import { resolveWorkedExamples } from "../../../lib/repository/worked-example-resolution";
 import { RepositoryEntryView } from "./repository-entry-view";
 
 export async function generateStaticParams() {
@@ -145,6 +146,17 @@ export default async function RepositoryEntryPage({
     entries.map((candidate) => [candidate.slug, locale === "ja" ? candidate.titleJa : candidate.title]),
   );
 
+  // Resolved server-side and passed down as plain data, not imported into the
+  // client entry view: worked-examples.ts carries all 14 (soon 21) examples'
+  // full step lists and prose, and a client import would ship every one of
+  // them to every record page's visitor rather than just this record's own.
+  // See worked-example-resolution.ts's doc comment.
+  const workedExamples = resolveWorkedExamples(entry.slug);
+  const workedExampleComponents = workedExamples.components.map(({ link, example }) => ({
+    exampleId: link.exampleId,
+    title: example.title,
+  }));
+
   const corpusEntry = layerCorpusEntry({ ...entry, verificationMethods: entryVerificationMethods(entry) });
   // The section `?sec=` names, resolved against the record's own list the way
   // the card resolves its own; `?port=` still lands a reader on the end it
@@ -177,6 +189,8 @@ export default async function RepositoryEntryPage({
         section={section}
         hasLayers={hasLayers}
         mapHref={mapHref}
+        workedExample={workedExamples.hero}
+        workedExampleComponents={workedExampleComponents}
         estimate={
           // Decided here, not by testing the element: a React element is truthy
           // whatever it renders, so passing one unconditionally gives an empty
