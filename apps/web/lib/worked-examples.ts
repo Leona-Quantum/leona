@@ -879,6 +879,7 @@ export const WORKED_EXAMPLES: readonly WorkedExample[] = [
   hiddenShift4(),
   superdenseCoding(),
   wState3(),
+  simon2(),
 ];
 
 export function workedExample(id: string): WorkedExample | undefined {
