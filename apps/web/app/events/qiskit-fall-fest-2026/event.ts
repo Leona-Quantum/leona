@@ -6,7 +6,7 @@ export const event = {
   title: "Qiskit Fall Fest 2026 @ Keio",
   path: "/events/qiskit-fall-fest-2026",
   registrationUrl: "https://forms.gle/Fir3TT1umiuWGnGu9" as string | null,
-  contactEmail: "admin@leonaquantum.com",
+  contactEmail: "rei.watanabe@keio.jp",
   venueDetails: null as string | null,
   venueMapUrl: null as string | null,
   organizers: ["慶應義塾大学", "IBM Quantum"],
