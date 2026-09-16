@@ -140,6 +140,20 @@ jobs:
             --substitutions=_TAG="${{ steps.tag.outputs.tag }}",_SHA="${{ github.sha }}" \
             --project "$GCP_PROJECT" --region "$GCP_REGION" .
 
+      # ## MAJORANA_PUBLIC_CATALOG_API, found by comparing the two stacks
+      #
+      # Production sets it; the first Cloud Run deploys did not, because it is
+      # stored write-only in Vercel and reads back empty. With it off, entry pages
+      # render from the committed corpus instead of the API's catalog, and every
+      # benchmark entry silently loses its "Circuit structure" and "Fault-tolerant
+      # cost" sections — a page that returns 200, renders, and is missing content
+      # nobody would think to count. Found by diffing heading counts against
+      # production (`scripts/compare-web-stacks.mjs`), not by reading a config.
+      #
+      # Note that --set-env-vars REPLACES the whole set, so a value added by hand
+      # with `gcloud run services update` is wiped by the next deploy. That is why
+      # it belongs here rather than on the service.
+      #
       # ## Two secrets, and the one that is NOT the obvious one
       #
       # SENTRY_DSN comes from WEB_SENTRY_DSN, not from the secret called
@@ -172,7 +186,7 @@ jobs:
             --port 8080 \
             --min-instances "$WEB_MIN_INSTANCES" \
             --max-instances "$WEB_MAX_INSTANCES" \
-            --set-env-vars "LEONA_DEPLOY_ENV=production,LEONA_XFF_TRUSTED_HOPS=${WEB_XFF_TRUSTED_HOPS},LEONA_GIT_COMMIT_SHA=${{ github.sha }},MAJORANA_ENV=production" \
+            --set-env-vars "LEONA_DEPLOY_ENV=production,LEONA_XFF_TRUSTED_HOPS=${WEB_XFF_TRUSTED_HOPS},LEONA_GIT_COMMIT_SHA=${{ github.sha }},MAJORANA_ENV=production,MAJORANA_PUBLIC_CATALOG_API=true" \
             --set-secrets "SENTRY_DSN=WEB_SENTRY_DSN:latest,MAJORANA_TRUSTED_CALLER_TOKEN=TRUSTED_CALLER_TOKEN:latest" \
             --no-traffic --tag verify
 
