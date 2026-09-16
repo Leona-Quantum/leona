@@ -9,7 +9,7 @@ language follows the visible content, while canonical metadata stays Japanese.
 The light theme is set on the server and maintained without overwriting the
 visitor's saved theme for other surfaces.
 
-Both days' four planned speakers appear directly after the hero, before the
+Both days' five planned speakers appear directly after the hero, before the
 overview and timetable. Company names, supplied speaker names, provisional talk
 titles, and day assignments remain visible without operating the day selector.
 The day selector switches only the timetable. On desktop, shared grid rows keep
@@ -21,7 +21,7 @@ and production merge in this conversation on 2026-09-08.
 ## Content and registration
 
 October 17–18, 2026; Keio AIC; in person; beginners welcome; planned capacity 40–50.
-Attendance is free, as stated in the owner-supplied registration form. The four
+Attendance is free, as stated in the owner-supplied registration form. The five
 speakers are marked planned and the supplied talk title provisional. Campus,
 room, map, session times, and detailed PC preparation remain explicitly pending.
 The Code of Conduct is final at the owner's request. Contact and conduct reports:

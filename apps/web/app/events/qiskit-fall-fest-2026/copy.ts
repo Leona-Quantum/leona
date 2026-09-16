@@ -114,6 +114,7 @@ const english = {
   "量子ビット数制約下における部分グローバー適応探索手法": "Adaptive partial Grover search under qubit-count constraints",
   "登壇予定 / 仮題": "Planned appearance / Provisional title",
   "講演内容調整中": "Talk details to be announced",
+  "講演内容：調整中": "Talk details: to be announced",
   "登壇予定": "Planned appearance",
   "講演で知識を深め、チームでの実験・実装を進めます。最後に、取り組んだ内容と結果を発表します。": "Broaden your perspective through talks, continue your project, and present your experiments and results.",
   "量子計算の研究や応用をテーマにした講演を通して、学びを深めます。": "Deepen your understanding through talks on quantum computing research and applications.",
@@ -125,8 +126,8 @@ const english = {
   "各チームが3分間で取り組みを発表し、その後2分間の質疑応答を行います。": "Each team presents its work for three minutes, followed by two minutes of Q&A.",
   "講評・表彰・閉会": "Feedback, awards, and closing",
   "各チームの成果に対する講評と表彰を行い、2日間を振り返ります。閉会後には交流の時間を設ける予定です。": "Receive feedback and awards, and reflect on the two days. Time for networking is planned after the closing session.",
-  "教授": "Professor",
-  "先生": "Guest speaker",
+  "慶應義塾大学教授": "Professor, Keio University",
+  "Bio2Q 特任教授": "Project Professor, Bio2Q",
   "量子アニーリングについて": "Quantum annealing",
   "登壇予定 / 内容調整中": "Planned appearance / Details being finalized",
   "量子機械学習について": "Quantum machine learning",
@@ -135,7 +136,7 @@ const english = {
   "途中で昼食と休憩の時間を設けます。開始・終了時刻や各プログラムの順序、所要時間は調整中です。": "Lunch and breaks are included. Start and finish times, session order, and durations are being finalized.",
   "登壇者・講演内容は変更になる場合があります。確定次第、このページでお知らせします。": "Speakers and talk details are subject to change. Updates will be published on this page.",
   "登壇予定の講演者": "Meet the speakers",
-  "研究や産業応用に携わる4名が、2日間にわたって講演する予定です。": "Four planned speakers across two days, sharing perspectives from research and industry.",
+  "研究や産業応用に携わる5名が、2日間にわたって講演する予定です。": "Five planned speakers across two days, sharing perspectives from research and industry.",
   "講演者": "Speakers",
   "言語": "Language"
 } as const;
