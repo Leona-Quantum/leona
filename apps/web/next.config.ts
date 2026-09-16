@@ -224,6 +224,36 @@ const nextConfig: NextConfig = {
       // reads the standard header and declines. `Vercel-CDN-Cache-Control` is
       // consumed at the edge and never reaches the client.
       //
+      // ## Both header names, because the edge is changing underneath this
+      //
+      // `Vercel-CDN-Cache-Control` is read by exactly one CDN. The GCP migration
+      // (ai-ops gcp-migration-20260912) puts Cloudflare in front of Cloud Run
+      // instead, where that header is an unrecognised string that passes through
+      // inert — and the failure is silent in the worst direction: the site keeps
+      // working and every Atlas page renders on every request, which is the load
+      // shape behind the 2026-09-15 outage. `CDN-Cache-Control` is the IETF
+      // targeted-cache-control header that Cloudflare does read.
+      //
+      // Both are set rather than one replacing the other, because production
+      // runs on both stacks through the cutover and its 30-day rollback window.
+      // Vercel's own precedence is `Vercel-CDN-Cache-Control` before
+      // `CDN-Cache-Control` before `Cache-Control`, so adding the second name
+      // changes nothing about what Vercel does today; it only means the same
+      // intent survives the switch. Drop the Vercel name when Vercel is retired,
+      // not before.
+      //
+      // ## The header is half of it, and the missing half is not in this repo
+      //
+      // A `no-store` `Cache-Control` still reaches the client here (see below),
+      // and Cloudflare does not cache HTML at all by default regardless of what
+      // any cache header says — it needs a Cache Rule naming these paths. So
+      // this header alone does NOT make the Atlas cached on Cloudflare, and a
+      // reader who checks only that this file is correct would conclude it is.
+      // The paired Cache Rule lives in the Cloudflare dashboard and is recorded
+      // in `docs/runbooks/web-cloud-run.md`; the check that settles whether it
+      // works is a repeat request measured against `cf-cache-status: HIT`, the
+      // same way `x-vercel-cache: HIT` settles it today.
+      //
       // ## Why 300
       //
       // The same number as CATALOG_REVALIDATE_SECONDS, which is what the corpus
@@ -241,7 +271,10 @@ const nextConfig: NextConfig = {
       ...["/repository/layers", "/:locale(en|ja)/repository/layers"].flatMap((base) =>
         [base, `${base}/:path*`].map((source) => ({
           source,
-          headers: [{ key: "Vercel-CDN-Cache-Control", value: "max-age=300" }],
+          headers: [
+            { key: "Vercel-CDN-Cache-Control", value: "max-age=300" },
+            { key: "CDN-Cache-Control", value: "max-age=300" },
+          ],
         })),
       ),
       // The Atlas browse index, same mechanism, exact path ONLY — no `:path*`.
@@ -254,7 +287,10 @@ const nextConfig: NextConfig = {
       // matter what the route protection says.
       ...["/repository", "/:locale(en|ja)/repository"].map((source) => ({
         source,
-        headers: [{ key: "Vercel-CDN-Cache-Control", value: "max-age=300" }],
+        headers: [
+          { key: "Vercel-CDN-Cache-Control", value: "max-age=300" },
+          { key: "CDN-Cache-Control", value: "max-age=300" },
+        ],
       })),
       // The landing page's demo video and the wordmark, which are the first
       // binary assets this app has ever served.
@@ -289,6 +325,7 @@ const nextConfig: NextConfig = {
         headers: [
           { key: "Cache-Control", value: "public, max-age=604800" },
           { key: "Vercel-CDN-Cache-Control", value: "max-age=31536000" },
+          { key: "CDN-Cache-Control", value: "max-age=31536000" },
         ],
       })),
       {
