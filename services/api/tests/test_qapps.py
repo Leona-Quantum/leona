@@ -52,8 +52,9 @@ def test_qapp_input_schema_is_bounded_and_enforced():
         validate_qapp_inputs(SCHEMA, {"qubits": 4, "surprise": True})
 
 
-def test_qapp_schema_rejects_nested_objects_and_unbounded_arrays():
-    with pytest.raises(ValueError, match="unsupported type"):
+def test_qapp_schema_rejects_deep_nesting_and_unbounded_arrays():
+    # A bare object with no value schema is unbounded, and says what it needs instead.
+    with pytest.raises(ValueError, match="map of scalar values"):
         normalize_qapp_schema({"type": "object", "properties": {"nested": {"type": "object"}}})
     with pytest.raises(ValueError, match="100-item"):
         normalize_qapp_schema(
@@ -68,8 +69,19 @@ def test_qapp_schema_rejects_nested_objects_and_unbounded_arrays():
                 },
             }
         )
-
-    with pytest.raises(ValueError, match="additionalProperties"):
+    # A map of maps, and a map of arrays: one level is the whole allowance.
+    for values in (
+        {"type": "object", "additionalProperties": {"type": "integer"}},
+        {"type": "array"},
+    ):
+        with pytest.raises(ValueError, match="map of scalar values"):
+            normalize_qapp_schema(
+                {
+                    "type": "object",
+                    "properties": {"deep": {"type": "object", "additionalProperties": values}},
+                }
+            )
+    with pytest.raises(ValueError, match="100-entry"):
         normalize_qapp_schema(
             {
                 "type": "object",
@@ -77,9 +89,96 @@ def test_qapp_schema_rejects_nested_objects_and_unbounded_arrays():
                     "counts": {
                         "type": "object",
                         "additionalProperties": {"type": "integer"},
+                        "maxProperties": 101,
                     }
                 },
             }
+        )
+    # A record whose field is itself an object is nesting two deep.
+    with pytest.raises(ValueError, match="unsupported type"):
+        normalize_qapp_schema(
+            {
+                "type": "object",
+                "properties": {
+                    "rows": {
+                        "type": "array",
+                        "items": {"type": "object", "properties": {"inner": {"type": "object"}}},
+                    }
+                },
+            }
+        )
+
+
+COUNTS_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "counts": {
+            "type": "object",
+            "title": "Measurement counts",
+            "additionalProperties": {"type": "integer", "minimum": 0},
+            "maxProperties": 64,
+        },
+        "rows": {
+            "type": "array",
+            "maxItems": 8,
+            "items": {
+                "type": "object",
+                "properties": {
+                    "state": {"type": "string", "maxLength": 8},
+                    "count": {"type": "integer"},
+                },
+                "required": ["state", "count"],
+            },
+        },
+    },
+    "required": ["counts"],
+}
+
+
+def test_a_measurement_histogram_is_an_accepted_output_shape():
+    """The shape that burned twelve paid attempts on 2026-09-16: a model kept describing
+    `counts` as an object because a histogram IS one, and the subset refused it every
+    time. A map of scalars and a table of flat rows are now both in the subset."""
+    normalized = normalize_qapp_schema(COUNTS_SCHEMA)
+    assert normalized["properties"]["counts"]["additionalProperties"] == {
+        "type": "integer",
+        "minimum": 0,
+    }
+    rows = normalized["properties"]["rows"]["items"]
+    assert rows["additionalProperties"] is False
+    assert set(rows["properties"]) == {"state", "count"}
+    validate_qapp_inputs(
+        COUNTS_SCHEMA,
+        {"counts": {"00": 512, "11": 488}, "rows": [{"state": "00", "count": 512}]},
+    )
+
+
+def test_map_and_record_values_are_checked_leaf_by_leaf():
+    with pytest.raises(ValueError, match="wrong type"):
+        validate_qapp_inputs(COUNTS_SCHEMA, {"counts": {"00": "many"}})
+    with pytest.raises(ValueError, match="below its minimum"):
+        validate_qapp_inputs(COUNTS_SCHEMA, {"counts": {"00": -1}})
+    with pytest.raises(ValueError, match="must be an object"):
+        validate_qapp_inputs(COUNTS_SCHEMA, {"counts": [["00", 512]]})
+    with pytest.raises(ValueError, match="too many entries"):
+        validate_qapp_inputs(COUNTS_SCHEMA, {"counts": {f"{i:07b}": 1 for i in range(65)}})
+    with pytest.raises(ValueError, match="invalid key"):
+        validate_qapp_inputs(COUNTS_SCHEMA, {"counts": {"": 1}})
+    with pytest.raises(ValueError, match="rows must be objects"):
+        validate_qapp_inputs(COUNTS_SCHEMA, {"counts": {}, "rows": [["00", 512]]})
+    with pytest.raises(ValueError, match="undeclared"):
+        validate_qapp_inputs(
+            COUNTS_SCHEMA, {"counts": {}, "rows": [{"state": "00", "count": 1, "x": 1}]}
+        )
+    with pytest.raises(ValueError, match="missing required"):
+        validate_qapp_inputs(COUNTS_SCHEMA, {"counts": {}, "rows": [{"state": "00"}]})
+    with pytest.raises(ValueError, match="invalid length"):
+        validate_qapp_inputs(
+            COUNTS_SCHEMA, {"counts": {}, "rows": [{"state": "0" * 9, "count": 1}]}
+        )
+    with pytest.raises(ValueError, match="invalid item count"):
+        validate_qapp_inputs(
+            COUNTS_SCHEMA, {"counts": {}, "rows": [{"state": "0", "count": 1}] * 9}
         )
 
 

@@ -3293,8 +3293,13 @@ hard contracts:
   assigns a JSON-serializable dict to RESULT. It never performs network, filesystem,
   subprocess, dynamic-code, environment, credential, or package-install operations.
 - input_schema and output_schema use JSON Schema type=object. They have at most 24
-  properties. Properties are string, number, integer, boolean, or arrays of those
-  scalar types (at most 100 items). Set additionalProperties=false.
+  properties, each in one of four shapes: a scalar (string, number, integer, boolean);
+  an array of one scalar type (maxItems at most 100); a map of scalars, written as
+  type=object with additionalProperties naming a scalar type, which is how measurement
+  counts such as {"00": 512, "11": 488} are described (maxProperties at most 100); or
+  an array of flat records, whose items are type=object with scalar-typed properties.
+  Nothing nests deeper than that. Set additionalProperties=false on both top-level
+  schemas, and make RESULT match output_schema exactly.
 - qubits_estimate is a conservative maximum for every valid input the schema permits,
   from 1 through 27. Bound any input that controls problem size so the program can
   never exceed that maximum. The source must also enforce those bounds before it

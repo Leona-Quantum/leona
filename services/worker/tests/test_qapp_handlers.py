@@ -1058,3 +1058,195 @@ async def test_a_usability_finding_on_the_LAST_attempt_still_publishes(monkeypat
     assert captured["fields"]["ui_document"].startswith("<!doctype html>")
     assert "window.qapp.run({})" in captured["fields"]["ui_document"]
     assert session.commits == 1
+
+
+# ------------------------------------------------------------ the counts histogram, 2026-09-16
+
+
+HISTOGRAM_BUNDLE = """{
+  "title": "Bell counts",
+  "description": "Measure a Bell pair and show the histogram",
+  "ui_document": "<!doctype html><html><head></head><body><label for=shots>Shots</label><input id=shots type=number value=256><button>Run</button><output id=out></output><script>button.onclick=async()=>{try{out.textContent=JSON.stringify(await window.qapp.run({shots:Number(shots.value)}))}catch(e){out.textContent='failed: '+e.message}}</script></body></html>",
+  "quantum_source": "RESULT = {'counts': {'00': 128, '11': 128}}",
+  "input_schema": {
+    "type": "object",
+    "properties": {"shots": {"type": "integer", "minimum": 1, "maximum": 4096}},
+    "required": ["shots"]
+  },
+  "output_schema": {
+    "type": "object",
+    "properties": {"counts": {"type": "object", "additionalProperties": {"type": "integer"}, "maxProperties": 64}},
+    "required": ["counts"]
+  },
+  "qubits_estimate": 2
+}"""
+
+
+def _generation_context(sink):
+    return RunContext(
+        run_id=uuid.uuid4(),
+        task_prompt="Show me Bell-state counts",
+        mode=RunMode.QAPP,
+        framework=Framework.QISKIT,
+        seed=None,
+        shots=None,
+        timeout_s=None,
+        sink=sink,
+        source_code=None,
+    )
+
+
+def test_every_schema_shape_rejection_names_the_accepted_shapes():
+    """Before 2026-09-16 the hint fired on two of these six messages. The one it did not
+    cover — "must be an array of scalar values" — was answered with the same schema
+    twelve times in a row in production, one paid call each."""
+    for message in (
+        "Qapp property counts must be an array of scalar values or of flat records",
+        "Qapp property counts must be a map of scalar values: an object schema whose "
+        "additionalProperties names one scalar type",
+        "Qapp property counts uses unsupported schema keywords: patternProperties",
+        "Qapp property counts has an unsupported type",
+        "Qapp property rows records must declare 1-24 scalar properties",
+        "Qapp property rows records may not allow additional properties",
+    ):
+        feedback = handlers._qapp_repair_feedback(ValueError(message))
+        assert "Accepted property shapes" in feedback, message
+        assert '{"00": 512, "11": 488}' in feedback, message
+
+
+def test_smoke_values_exist_for_maps_and_record_arrays():
+    counts = {
+        "type": "object",
+        "additionalProperties": {"type": "integer", "maximum": 9},
+        "maxProperties": 3,
+    }
+    assert handlers._qapp_smoke_value(counts) == {}
+    assert handlers._qapp_smoke_value(counts, end="high") == {"k0": 9, "k1": 9, "k2": 9}
+    # No declared ceiling: the top of the range is the bottom, as for arrays.
+    assert (
+        handlers._qapp_smoke_value(
+            {"type": "object", "additionalProperties": {"type": "integer"}}, end="high"
+        )
+        == {}
+    )
+
+    rows = {
+        "type": "array",
+        "minItems": 1,
+        "maxItems": 2,
+        "items": {
+            "type": "object",
+            "properties": {
+                "state": {"type": "string", "minLength": 2, "maxLength": 4},
+                "count": {"type": "integer", "minimum": 0, "maximum": 7},
+            },
+        },
+    }
+    assert handlers._qapp_smoke_value(rows) == [{"state": "xx", "count": 0}]
+    assert handlers._qapp_smoke_value(rows, end="high") == [{"state": "xxxx", "count": 7}] * 2
+
+
+async def test_a_histogram_result_is_generated_in_one_attempt(monkeypatch):
+    """The end-to-end arm: normalise, smoke, validate the output against a map schema,
+    and persist — with the exact shape that was refused twelve times on 2026-09-16."""
+    sink = Sink()
+    store = Store()
+    session = Session()
+    captured = {}
+
+    class FakeMeteredLLM:
+        def __init__(self, **_kwargs):
+            self.requests = []
+
+        async def complete(self, request):
+            self.requests.append(request)
+            captured["requests"] = self.requests
+            return LLMResponse(
+                text=HISTOGRAM_BUNDLE, model=request.model, input_tokens=1, output_tokens=1
+            )
+
+    async def create_generated(_scope, _session, **fields):
+        captured["fields"] = fields
+        return (
+            SimpleNamespace(id=uuid.uuid4(), slug="bell-counts-1", title=fields["title"]),
+            SimpleNamespace(id=uuid.uuid4()),
+        )
+
+    async def smoke_run(_sandbox, _spec):
+        return SandboxResult(
+            ok=True,
+            exit_code=0,
+            duration_ms=5,
+            stdout="",
+            stderr="",
+            provider="test",
+            protected_result={"result": {"counts": {"00": 128, "11": 128}}},
+        )
+
+    monkeypatch.setattr(handlers, "MeteredAgentLLM", FakeMeteredLLM)
+    monkeypatch.setattr(handlers.qapps_repo, "create_generated", create_generated)
+    monkeypatch.setattr(handlers, "run_sandbox", smoke_run)
+
+    result = await handlers._handle_qapp_generation(
+        _generation_context(sink),
+        store,
+        scope=Scope(user_id=uuid.uuid4(), workspace_id=uuid.uuid4(), role=Role.MEMBER),
+        session=session,
+        llm=SimpleNamespace(),
+        sandbox=SimpleNamespace(provider="test"),
+        source_artifact_version_id=None,
+    )
+
+    assert result is RunStatus.SUCCEEDED
+    assert len(captured["requests"]) == 1
+    assert "Accepted property shapes" in captured["requests"][0].user
+    assert captured["fields"]["output_schema"]["properties"]["counts"]["additionalProperties"] == {
+        "type": "integer"
+    }
+
+
+async def test_the_same_rejection_three_times_stops_paying_for_more(monkeypatch):
+    """Twelve attempts at nine seconds and one paid call each, all rejected for the same
+    reason word for word: that was one generation on 2026-09-16. Three identical
+    rejections in a row now end it, and the person is told which contract failed
+    rather than that the app was unsafe."""
+    sink = Sink()
+    store = Store()
+    session = Session()
+    requests = []
+    unbounded = HISTOGRAM_BUNDLE.replace(
+        '{"type": "object", "additionalProperties": {"type": "integer"}, "maxProperties": 64}',
+        '{"type": "object"}',
+    )
+    assert unbounded != HISTOGRAM_BUNDLE
+
+    class FakeMeteredLLM:
+        def __init__(self, **_kwargs):
+            pass
+
+        async def complete(self, request):
+            requests.append(request)
+            return LLMResponse(text=unbounded, model=request.model, input_tokens=1, output_tokens=1)
+
+    async def never_persist(*_args, **_kwargs):
+        raise AssertionError("a rejected candidate must never be persisted")
+
+    monkeypatch.setattr(handlers, "MeteredAgentLLM", FakeMeteredLLM)
+    monkeypatch.setattr(handlers.qapps_repo, "create_generated", never_persist)
+
+    result = await handlers._handle_qapp_generation(
+        _generation_context(sink),
+        store,
+        scope=Scope(user_id=uuid.uuid4(), workspace_id=uuid.uuid4(), role=Role.MEMBER),
+        session=session,
+        llm=SimpleNamespace(),
+        sandbox=SimpleNamespace(provider="test"),
+        source_artifact_version_id=None,
+    )
+
+    assert result is RunStatus.FAILED
+    assert len(requests) == handlers._QAPP_IDENTICAL_REJECTIONS
+    assert store.finished == {"status": RunStatus.FAILED, "reason_code": "qapp_generation_failed"}
+    errors = [payload for event_type, payload, _id in sink.events if event_type == "run.error"]
+    assert errors and "inputs or results could not be described" in errors[0]["message"]
+    assert "safely" not in errors[0]["message"]
