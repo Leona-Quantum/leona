@@ -134,6 +134,69 @@ export function sweepExpired(store: RateLimitStore, now: number): void {
 }
 
 /**
+ * How many trailing `x-forwarded-for` entries were appended by infrastructure we
+ * run, sitting to the RIGHT of the address that actually connected to it.
+ *
+ * `null` means "not configured", which is the Vercel topology and local
+ * development: this file's Vercel branch answers first there and this number is
+ * never consulted. Behind Google's external Application Load Balancer it is `1`
+ * — the load balancer appends the connecting client's address and then its own,
+ * so the peer is the second entry from the right. On a bare Cloud Run URL with
+ * no load balancer in front it is `0`, because Google's front end appends only
+ * the connecting address.
+ *
+ * It is a configured number rather than a guess for the same reason the Vercel
+ * branch above exists at all: the entries to the left of the peer are whatever
+ * the caller sent, and any rule that infers the boundary from the list's own
+ * contents can be moved by the caller sending more of them.
+ */
+function trustedProxyHops(): number | null {
+  const raw = process.env.LEONA_XFF_TRUSTED_HOPS?.trim();
+  if (!raw) return null;
+  const parsed = Number.parseInt(raw, 10);
+  if (!Number.isInteger(parsed) || parsed < 0) return null;
+  return parsed;
+}
+
+/**
+ * The address Google's infrastructure itself observed connecting, or `null` when
+ * this deployment is not behind it (or the header does not have enough entries
+ * to contain one).
+ *
+ * ## Why this is not simply the first entry
+ *
+ * Google's load balancer does not overwrite `x-forwarded-for` the way Vercel's
+ * edge overwrites its own header. It PRESERVES whatever arrived and appends to
+ * it, so a caller who sends `x-forwarded-for: 1.2.3.4` is served back a header
+ * reading `1.2.3.4, <their real address>, <the load balancer>`. The first entry
+ * is therefore caller-written — exactly the forgeable value the Vercel branch
+ * above was written to stop using — while the entry Google wrote sits a fixed
+ * distance from the RIGHT end, because appending cannot be affected by anything
+ * the caller puts on the left.
+ *
+ * ## Too few entries means the request did not come through the load balancer
+ *
+ * Returning `null` here sends the caller to the `"unknown"` bucket rather than
+ * to the last-resort branch. That is deliberate and it is the conservative
+ * direction: every such request shares one bucket and is throttled together,
+ * which costs a direct-to-`run.app` caller and cannot be used to escape metering
+ * by writing a header. The permanent fix is at the ingress rather than here —
+ * the Cloud Run service takes `--ingress=internal-and-cloud-load-balancing`, so
+ * the load balancer is the only route in and this branch should never fire in
+ * production.
+ */
+function googlePeerAddress(value: string | null | undefined): string | null {
+  const hops = trustedProxyHops();
+  if (hops === null) return null;
+  const entries = (value ?? "")
+    .split(",")
+    .map((entry) => entry.trim())
+    .filter((entry) => entry.length > 0);
+  const peer = entries[entries.length - 1 - hops];
+  return peer ?? null;
+}
+
+/**
  * The address to meter, from the request's headers.
  *
  * ## The platform header first, and why that is not a detail
@@ -228,5 +291,13 @@ export function contactAddress(headers: Headers): string {
   const cloudflare = headers.get("cf-connecting-ip")?.trim();
   if (cloudflare && platform && isCloudflareEdgeAddress(platform)) return cloudflare;
   if (platform) return platform;
+
+  const peer = googlePeerAddress(headers.get("x-forwarded-for"));
+  if (peer !== null) {
+    if (cloudflare && isCloudflareEdgeAddress(peer)) return cloudflare;
+    return peer;
+  }
+  if (trustedProxyHops() !== null) return "unknown";
+
   return firstEntry(headers.get("x-forwarded-for")) || "unknown";
 }
