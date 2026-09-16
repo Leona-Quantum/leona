@@ -71,8 +71,32 @@ ISR, Fast Data Transfer and Edge Requests were all $0 inside their allowances.
 `scripts/check-vercel-ignore-build.mjs` is what keeps it honest.
 
 Measured from Vercel's deployment API over the seven days to 2026-09-16: **190
-deployments, 142 of them previews**, 130 of the 184 wall-clock build minutes.
-Nothing consumes a preview — `verify-web-cache.yml` is the only workflow that
-reacts to a Vercel deployment and it gates on `environment == 'Production'`.
-Previews are now skipped by default; `LEONA_VERCEL_PREVIEWS=1` on the project, or
-`[preview]` in a commit message, still builds one.
+deployments, 145 of them previews** (the preview count firmed up to 145 on a
+fuller page of the same window), against 184 wall-clock build minutes. Nothing
+consumes a preview — `verify-web-cache.yml` is the only workflow that reacts to
+a Vercel deployment and it gates on `environment == 'Production'`.
+
+**The headline number is not the saving, and the split is what matters.** Those
+145 previews came from **109 distinct branches**, so only **36** were a second
+or later push to a branch that already had a deployment — about 28 build minutes
+of the 184. The other 109 were each a branch's first deployment, and a first
+deployment appears to build whatever the ignore step says: `4707b57c` and the
+`pr-904` merge-queue ref were both first deployments and both built, while
+`16706cb7`, a second push to the same branch, was cancelled by the ignore step
+under identical code. The most likely reason is structural rather than a bug —
+"skip" means "reuse the previous deployment", and a first deployment has none to
+reuse. This is inference from three deployments, not a documented rule; treat it
+as the working explanation and not as settled.
+
+So the two mechanisms do different halves of the job and neither replaces the
+other:
+
+* `scripts/vercel-ignore-build.sh` skips previews from the second push onward.
+  `LEONA_VERCEL_PREVIEWS=1` on the project, or `[preview]` in a commit message,
+  still builds one.
+* `apps/web/vercel.json` sets `git.deploymentEnabled` to refuse
+  `gh-readonly-queue/*` outright, which is the only thing that reaches a first
+  deployment. **56 of the 145** were merge-queue refs — transient branches
+  GitHub creates to trial a merge and deletes minutes later, whose preview URL
+  nobody has ever opened. Ordinary feature branches keep their first preview,
+  which is the one a person might actually look at.
