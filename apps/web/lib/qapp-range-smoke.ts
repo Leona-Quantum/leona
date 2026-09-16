@@ -1,4 +1,5 @@
 import type { components } from "@majorana/contracts-gen";
+import type { PublicLocale } from "./public-locale";
 
 type QappVersion = components["schemas"]["QappVersion"];
 export type RangeSmoke = NonNullable<QappVersion["range_smoke"]>;
@@ -45,6 +46,7 @@ export type RangeSmokeNotice = { tone: "warn" | "ok"; text: string };
  */
 export function rangeSmokeNotice(
   smoke: RangeSmoke | null | undefined,
+  locale: PublicLocale = "en",
 ): RangeSmokeNotice | null {
   if (!smoke) return null;
   switch (smoke.status) {
@@ -52,8 +54,10 @@ export function rangeSmokeNotice(
       return {
         tone: "warn",
         text:
-          "This Qapp works at its smallest inputs but not at its largest. A visitor who turns "
-          + "every control up may see it fail — and a failed run still costs them an execution. "
+          (locale === "ja"
+            ? "このQappは最小の入力では動作しますが、最大の入力では動作しません。すべてのコントロールを最大にした訪問者は失敗を目にする可能性があり、失敗した実行も回数として数えられます。 "
+            : "This Qapp works at its smallest inputs but not at its largest. A visitor who turns "
+              + "every control up may see it fail — and a failed run still costs them an execution. ")
           + smoke.detail,
       };
     case "unreachable":

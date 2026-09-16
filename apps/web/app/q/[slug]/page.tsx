@@ -5,6 +5,8 @@ import { cache } from "react";
 import { QappRuntime } from "../../../components/qapp-runtime";
 import { getMajoranaAuth } from "../../../lib/auth";
 import { controlPlaneUrl, fetchControlPlane } from "../../../lib/control-plane";
+import { qappCopy } from "../../../lib/qapp-copy";
+import { getPublicLocale } from "../../../lib/public-locale-server";
 
 type PublicQapp = components["schemas"]["PublicQapp"];
 
@@ -35,19 +37,20 @@ export async function generateMetadata({ params }: { params: Promise<{ slug: str
 
 export default async function PublicQappPage({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;
-  const [qapp, auth] = await Promise.all([loadPublicQapp(slug), getMajoranaAuth()]);
+  const [qapp, auth, locale] = await Promise.all([loadPublicQapp(slug), getMajoranaAuth(), getPublicLocale()]);
   if (!qapp) notFound();
+  const copy = qappCopy(locale).public;
   const returnTo = `/q/${encodeURIComponent(qapp.slug)}`;
   return (
     <main className="qapp-page">
       <header className="qapp-page-header">
-        <Link className="qapp-brand" href="/">Leona Quantum</Link>
-        <span className="qapp-public-badge">Public Qapp</span>
+        <Link className="qapp-brand" href="/">{copy.brand}</Link>
+        <span className="qapp-public-badge">{copy.badge}</span>
         <span className="qapp-page-spacer" />
-        <Link href="/run?mode=qapp">Build your own</Link>
+        <Link href="/run?mode=qapp">{copy.buildYourOwn}</Link>
       </header>
       <section className="qapp-page-intro">
-        <p className="qapp-kicker">Qapp · {qapp.framework} · up to {qapp.qubits_estimate} qubits</p>
+        <p className="qapp-kicker">{copy.kicker(qapp.framework, qapp.qubits_estimate)}</p>
         <h1>{qapp.title}</h1>
         <p>{qapp.description}</p>
       </section>
@@ -56,6 +59,7 @@ export default async function PublicQappPage({ params }: { params: Promise<{ slu
         uiDocument={qapp.ui_document}
         canExecute={Boolean(auth.user)}
         signInPath={`/auth/sign-in?returnTo=${encodeURIComponent(returnTo)}`}
+        locale={locale}
       />
     </main>
   );
