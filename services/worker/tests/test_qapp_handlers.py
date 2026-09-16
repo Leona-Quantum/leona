@@ -1245,7 +1245,10 @@ async def test_the_same_rejection_three_times_stops_paying_for_more(monkeypatch)
     )
 
     assert result is RunStatus.FAILED
-    assert len(requests) == handlers._QAPP_IDENTICAL_REJECTIONS
+    # A literal, not the module constant: a threshold that silently drifted back to the
+    # full budget would otherwise pass this line by definition.
+    assert len(requests) == 3
+    assert len(requests) < handlers._QAPP_GENERATION_ATTEMPTS
     assert store.finished == {"status": RunStatus.FAILED, "reason_code": "qapp_generation_failed"}
     errors = [payload for event_type, payload, _id in sink.events if event_type == "run.error"]
     assert errors and "inputs or results could not be described" in errors[0]["message"]
