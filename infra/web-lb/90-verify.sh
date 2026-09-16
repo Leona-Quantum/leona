@@ -77,5 +77,42 @@ else
   note WARN "not serving yet (./40-serve.sh, after the certificate is ACTIVE)"
 fi
 
+# ---------------------------------------------------------------------------
+# The one setting that has to move at the same moment the load balancer does.
+#
+# WEB_XFF_TRUSTED_HOPS says how many x-forwarded-for entries Google appends to
+# the right of the address that connected. On a bare Cloud Run URL that is 0;
+# behind the load balancer it is 1, because the load balancer appends the peer
+# and then itself. Getting it wrong does not error — too low meters visitors by a
+# value the caller wrote, too high meters everyone as one bucket.
+#
+# infra/fleet.env says to change it "in the same commit that creates the load
+# balancer". A sentence in a file is not a checker, and this is precisely the
+# shape of rule that gets read, agreed with, and then not done — so the fact that
+# forwarding rules now exist is checked against the number the deploy actually
+# ships.
+# ---------------------------------------------------------------------------
+echo "== the forwarding-hop count matches the topology"
+fleet="$(dirname "$0")/../fleet.env"
+hops=$(grep -E '^WEB_XFF_TRUSTED_HOPS=[0-9]+$' "$fleet" 2>/dev/null | cut -d= -f2)
+serving_via_lb=no
+exists compute forwarding-rules describe majorana-web-fr-443 --global && serving_via_lb=yes
+live=$(g run services describe "$SERVICE" --region "$REGION" \
+  --format='value(spec.template.spec.containers[0].env.filter("name:LEONA_XFF_TRUSTED_HOPS").extract("value"))' 2>/dev/null | tr -d "[]'" )
+if [ -z "$hops" ]; then
+  note FAIL "WEB_XFF_TRUSTED_HOPS is missing from ${fleet} or is not a plain integer"
+elif [ "$serving_via_lb" = yes ] && [ "$hops" != "1" ]; then
+  note FAIL "the load balancer is serving but WEB_XFF_TRUSTED_HOPS is ${hops} — it must be 1, or the rate limiter meters a value the caller writes"
+elif [ "$serving_via_lb" = no ] && [ "$hops" != "0" ]; then
+  note FAIL "no forwarding rule exists but WEB_XFF_TRUSTED_HOPS is ${hops} — it must be 0 until the load balancer is in front, or every visitor shares one bucket"
+else
+  note OK "WEB_XFF_TRUSTED_HOPS=${hops} matches the topology (load balancer serving: ${serving_via_lb})"
+fi
+if [ -n "$live" ] && [ "$live" != "$hops" ]; then
+  note FAIL "the running service has LEONA_XFF_TRUSTED_HOPS=${live} but fleet.env says ${hops} — the deploy has not caught up"
+elif [ -n "$live" ]; then
+  note OK "the running service agrees: LEONA_XFF_TRUSTED_HOPS=${live}"
+fi
+
 echo
 [ "$fail" -eq 0 ] && echo "all checks passed" || { echo "FAILURES above"; exit 1; }

@@ -225,3 +225,26 @@ LEONA_LIVE_ORIGIN=https://leonaqt.com node scripts/check-live-repository-cache.m
 
 It warns rather than fails on a cold edge, deliberately: nothing should be gated
 on a check that runs after the deploy it is checking.
+
+## The gap this move opens and does not close: stale chunks
+
+Vercel keeps a previous deployment's assets reachable after a new one ships, so a
+tab someone opened five minutes ago can still fetch the JavaScript chunk it was
+built against. Cloud Run has no equivalent: `/_next/static` is served out of the
+container, and once traffic shifts to a new revision the old chunk paths 404. The
+visitor sees a chunk-load error on their next navigation, and a reload fixes it —
+so it is invisible to every check here and shows up only as an occasional report
+of "the site broke for a second".
+
+It is a real regression against Vercel and it is **not** fixed anywhere in this
+move. PLAN.md's answer is a Cloud Storage bucket holding each build's
+`/_next/static` for a week, with the load balancer routing that prefix to the
+bucket rather than to Cloud Run. That is the thing to build; it is not built.
+
+Two reasons it is not urgent, and one reason not to forget it: deploys are
+infrequent enough that the window is small, the failure recovers on reload, and
+Vercel is still serving, so nobody is exposed to it yet. It becomes real on the
+day DNS moves — so it belongs in the parallel-running week's checklist, not after
+the switch. The cheap interim mitigation, if the week shows it biting, is raising
+Cloud Run's minimum instances and shifting traffic gradually rather than at once,
+which narrows the window without building the bucket.
