@@ -57,22 +57,78 @@ cdn=$(g compute backend-services describe "$BACKEND_NAME" --global --format='val
 case "$cdn" in True|true) note FAIL "Cloud CDN is enabled; that is a second cache in front of Cloudflare's";; *) note OK "Cloud CDN off";; esac
 
 echo "== certificate"
-state=$(g certificate-manager certificates describe majorana-web-cert --location=global --format='value(managed.state)' 2>/dev/null || true)
-case "$state" in
-  ACTIVE) note OK "certificate ACTIVE";;
-  "")     note WARN "certificate not created yet (./30-certificate.sh)";;
-  *)      note WARN "certificate ${state} — the DNS records from ./30-certificate.sh may not be in place";;
+read -r cert_name cert_state <<EOF
+$(serving_certificate)
+EOF
+case "$cert_state" in
+  ACTIVE)       note OK   "certificate ${cert_name} ACTIVE (Google-managed)";;
+  SELF_MANAGED) note OK   "certificate ${cert_name} in place (Cloudflare Origin, ai-ops 325)";;
+  ABSENT)       note WARN "no certificate attached to the map yet (./30-certificate.sh or ./31-origin-certificate.sh)";;
+  *)            note WARN "certificate ${cert_name} is ${cert_state} — not servable";;
 esac
 
 echo "== serving"
 if exists compute forwarding-rules describe majorana-web-fr-443 --global; then
   note OK "forwarding rule on :443"
   IP=$(g compute addresses describe "$IP_NAME" --global --format='value(address)')
-  code=$(curl -sS -o /dev/null -w '%{http_code}' --max-time 20 --resolve "leonaqt.com:443:${IP}" https://leonaqt.com/ || echo 000)
+
+  # What the load balancer PRESENTS, read from the handshake rather than from the
+  # Certificate Manager resource. The two can disagree — a map entry updated
+  # while the proxy still serves the previous certificate — and the one a visitor
+  # meets is this one, so this is the reading that counts.
+  presented=$(openssl s_client -connect "${IP}:443" -servername leonaqt.com </dev/null 2>/dev/null \
+    | openssl x509 -noout -issuer 2>/dev/null || true)
+  presented_lc=$(printf '%s' "$presented" | tr '[:upper:]' '[:lower:]')
+  is_origin=no
+  case "$presented_lc" in *cloudflare*origin*) is_origin=yes;; esac
+
+  # An Origin Certificate is trusted by Cloudflare and by nothing else, so the
+  # honest probe from this machine has to skip verification — and then assert the
+  # issuer separately, which is a stronger check than the trust store would have
+  # made: it says WHICH certificate, not merely that some public CA vouched for
+  # one.
+  insecure=""; [ "$is_origin" = yes ] && insecure="-k"
+  # shellcheck disable=SC2086
+  code=$(curl -sS $insecure -o /dev/null -w '%{http_code}' --max-time 20 \
+    --resolve "leonaqt.com:443:${IP}" https://leonaqt.com/ || echo 000)
   # A 403 here is the origin lock doing its job: this machine is not Cloudflare.
   case "$code" in 403) note OK  "load balancer answers, origin lock refuses a non-Cloudflare caller (403)";;
                   200) note WARN "load balancer answered 200 to a direct caller — the origin lock is not refusing";;
                   *)   note FAIL "load balancer returned ${code}";; esac
+
+  if [ "$cert_state" = SELF_MANAGED ] && [ "$is_origin" != yes ]; then
+    note FAIL "the map says Cloudflare Origin but the handshake presents: ${presented:-<no certificate>}"
+  elif [ "$cert_state" = ACTIVE ] && [ "$is_origin" = yes ]; then
+    note FAIL "the map says Google-managed but the handshake presents a Cloudflare Origin certificate"
+  elif [ -n "$presented" ]; then
+    note OK "presents ${presented#issuer=}"
+  fi
+
+  # ---------------------------------------------------------------------------
+  # The failure this whole section exists to catch (ai-ops 325).
+  #
+  # An Origin Certificate is correct only where every request arrives through
+  # Cloudflare. If leonaqt.com is pointed at this load balancer with the orange
+  # cloud OFF, the address a visitor resolves is Google's, their browser is
+  # handed a certificate signed by an authority it has never heard of, and the
+  # site is a full-page TLS warning for everyone at once. Nothing on our side
+  # errors, because our side is working exactly as configured.
+  #
+  # Read from DNS rather than from Cloudflare's API: what a visitor resolves is
+  # the question, and a proxied name answers as a Cloudflare address, never as
+  # the origin's.
+  # ---------------------------------------------------------------------------
+  if [ "$is_origin" = yes ]; then
+    echo "== leonaqt.com is proxied, which an Origin Certificate requires"
+    resolved=$(dig +short leonaqt.com A 2>/dev/null | grep -E '^[0-9]' | head -3 | tr '\n' ' ')
+    if [ -z "$resolved" ]; then
+      note WARN "leonaqt.com does not resolve to an A record from here"
+    elif printf '%s' "$resolved" | grep -q "$IP"; then
+      note FAIL "leonaqt.com resolves straight to the load balancer (${resolved}) while it serves an Origin Certificate — every visitor gets a certificate warning. Turn the orange cloud ON for @ and www."
+    else
+      note OK "leonaqt.com resolves to ${resolved}(not the origin), so it is proxied or still on Vercel"
+    fi
+  fi
 else
   note WARN "not serving yet (./40-serve.sh, after the certificate is ACTIVE)"
 fi
