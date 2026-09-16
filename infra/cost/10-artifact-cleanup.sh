@@ -19,14 +19,21 @@
 #
 # ## What is actually at risk
 #
-# Only a rollback. A running Cloud Run revision has its image; deleting the
-# image does not stop it. What breaks is starting a revision whose image is
-# gone - which is what a rollback does. So the keep window has to be wider than
-# the rollback window anyone would actually use, and 30 days plus the newest 40
-# is far wider than the same-day rollbacks this project does.
+# A rollback, and one case this paragraph originally missed. A running Cloud Run
+# revision has its image, so deleting the image does not stop it; what breaks is
+# STARTING a revision whose image is gone. A rollback does that. So does an
+# ordinary first request to a service that has scaled to zero, because nothing is
+# running and nothing holds the image - and `majorana-api-vqe-test` is exactly
+# that: it serves 100% of its traffic from a revision whose image is 51 days old,
+# well outside this policy's keep window. The category "only a rollback" was the
+# right intuition for a warm service and wrong for a cold one, which is why
+# 05-in-use-images.sh now reads the live services rather than reasoning about
+# them, and why --enforce below runs it first.
 #
 #   ./10-artifact-cleanup.sh              # set the policy in DRY RUN (deletes nothing)
 #   ./10-artifact-cleanup.sh --enforce    # let it actually delete
+#
+# --enforce refuses unless ./05-in-use-images.sh --check passes.
 #
 # Dry run is not a formality here. Artifact Registry logs what the policy WOULD
 # remove, so a day in dry run turns "it should free most of 88 GB" into a number
@@ -75,6 +82,19 @@ repo_state() {
 }
 step "repository before"
 repo_state
+
+# The gate, before the policy stops being a dry run. It reads what the live
+# services are actually running rather than reasoning about what they ought to
+# be, because the thing that goes wrong here is a service nobody has thought
+# about in seven weeks.
+if [ "$ENFORCE" = 1 ]; then
+  step "no live revision needs an image this policy would delete"
+  if ! "$(dirname "$0")/05-in-use-images.sh" --check; then
+    echo >&2
+    echo "refusing to enforce: see above. Nothing was changed." >&2
+    exit 1
+  fi
+fi
 
 step "applying policy (keep newest ${KEEP_COUNT}, keep anything under ${KEEP_DAYS}d, delete the rest)"
 if [ "$ENFORCE" = 1 ]; then
