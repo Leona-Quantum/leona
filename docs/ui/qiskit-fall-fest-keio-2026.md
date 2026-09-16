@@ -25,7 +25,7 @@ Attendance is free, as stated in the owner-supplied registration form. The four
 speakers are marked planned and the supplied talk title provisional. Campus,
 room, map, session times, and detailed PC preparation remain explicitly pending.
 The Code of Conduct is final at the owner's request. Contact and conduct reports:
-`admin@leonaquantum.com`.
+`rei.watanabe@keio.jp`.
 
 Keio University and IBM Quantum co-organize. Leona Quantum, Quanmatic, and Blueqat
 support the event. The host and supporter artwork is grouped separately.
@@ -62,7 +62,8 @@ Asset provenance (official source artwork, not redrawn):
 - IBM: supplied `IBM_Quantum/Raster/RGB/IBM_Quantum_logotype_pos_RGB.png`;
   the header derivative trims transparent outer canvas only.
 - Keio: https://www.keio.ac.jp/logos/keio-ja.svg
-- Quanmatic: https://www.quanmatic.com/wp-content/themes/quanmatic/images/common/logo.svg
+- Quanmatic: owner-supplied `Quanmatic Black Transparent (1).png`, copied unchanged
+  to `/events/qiskit-fall-fest-2026/quanmatic.png`; CSS frames its transparent padding.
 - Blueqat: https://blueqat.co.jp/assets/images/logo.png
 - Leona: existing `/brand/leona-quantum-wordmark.png` through `LeonaWordmark`.
 
