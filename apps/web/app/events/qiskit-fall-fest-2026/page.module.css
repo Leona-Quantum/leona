@@ -922,7 +922,7 @@
 }
 .schedule li {
   display: grid;
-  grid-template-columns: 100px minmax(0, 1fr);
+  grid-template-columns: 130px minmax(0, 1fr);
   gap: var(--sp-6);
   padding: var(--sp-6) 0;
   border-bottom: 1px solid var(--qff-line);

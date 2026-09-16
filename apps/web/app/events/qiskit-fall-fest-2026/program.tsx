@@ -36,17 +36,17 @@ export function Program({ locale }: { locale: PublicLocale }) {
         <p className={s.dayIntro}>{day.description}</p>
         <ol className={s.schedule} aria-label={t("当日の流れ")}>
           {day.schedule.map((session) => (
-            <li key={session.title}>
+            <li key={`${session.period}-${session.title}`}>
               <p className={s.sessionPeriod}>{session.period}</p>
               <div>
                 <h4>{session.title}</h4>
-                <p>{session.description}</p>
+                {session.description && <p>{session.description}</p>}
               </div>
             </li>
           ))}
         </ol>
         <p className={s.programNote}>
-          {t("途中で昼食と休憩の時間を設けます。開始・終了時刻や各プログラムの順序、所要時間は調整中です。")}
+          {t("スケジュールは変更になる場合があります。")}
         </p>
       </div>
     </div>
