@@ -876,7 +876,7 @@
 /* Frame the logo within the supplied square image's transparent padding. */
 .partnerQuanmatic img {
   position: absolute;
-  width: 128%;
+  width: 126%;
   max-width: none;
   top: 50%;
   left: 50%;
