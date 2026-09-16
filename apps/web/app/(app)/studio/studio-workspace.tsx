@@ -29,6 +29,7 @@ import { BLOCK_TEMPLATES, instantiateBlock, validateBlockParams, type BlockParam
 import { BlocksPanel } from "./studio-blocks-panel";
 import { workedExample, type WorkedExample } from "../../../lib/worked-examples";
 import { cloneWorkedExampleDraft } from "../../../lib/studio-example-draft";
+import { importedArtifactHref } from "../../../lib/atlas-studio-import";
 import { ExampleGallery } from "./studio-example-gallery";
 import { ExampleNotesPanel } from "./studio-example-notes-panel";
 import { circuitChangeSummary, type CircuitChangeSummary } from "../../../lib/circuit-change-summary";
@@ -140,11 +141,11 @@ const STARTER_SEED: Omit<BuilderSeed, "key"> = {
   operationCount: STARTER_STEPS.length,
 };
 
-export function StudioWorkspace({ artifactId, newDraft = false, exampleId, locale = "en", limits = TIER_LIMITS.free }: { artifactId?: string; newDraft?: boolean; exampleId?: string; locale?: PublicLocale; limits?: CpuSimulationLimits }) {
+export function StudioWorkspace({ artifactId, newDraft = false, exampleId, atlasSlug, locale = "en", limits = TIER_LIMITS.free }: { artifactId?: string; newDraft?: boolean; exampleId?: string; atlasSlug?: string; locale?: PublicLocale; limits?: CpuSimulationLimits }) {
   const copy = WORKSPACE_COPY[locale].studio;
   const [artifacts, setArtifacts] = useState<LibraryArtifact[]>([]);
   const [artifact, setArtifact] = useState<LibraryArtifact | null>(null);
-  const [showEditor, setShowEditor] = useState(Boolean(artifactId || newDraft || exampleId));
+  const [showEditor, setShowEditor] = useState(Boolean(artifactId || newDraft || exampleId || atlasSlug));
   const [activeExample, setActiveExample] = useState<WorkedExample | null>(null);
   const [showGallery, setShowGallery] = useState(false);
   const [askChangeSummary, setAskChangeSummary] = useState<CircuitChangeSummary | null>(null);
@@ -203,7 +204,7 @@ export function StudioWorkspace({ artifactId, newDraft = false, exampleId, local
   // a number state would have to encode that as 0, which is a valid seed.
   const [shots, setShots] = useState(String(DEFAULT_RUN_SHOTS));
   const [seed, setSeed] = useState("");
-  const [artifactHydration, setArtifactHydration] = useState<ArtifactHydration>(() => artifactId && !newDraft ? "loading" : "ready");
+  const [artifactHydration, setArtifactHydration] = useState<ArtifactHydration>(() => (artifactId || atlasSlug) && !newDraft ? "loading" : "ready");
   const [artifactSyncError, setArtifactSyncError] = useState(false);
   const [artifactsLoading, setArtifactsLoading] = useState(true);
   const [loadAttempt, setLoadAttempt] = useState(0);
@@ -250,7 +251,7 @@ export function StudioWorkspace({ artifactId, newDraft = false, exampleId, local
     setArtifacts(loadLibraryArtifacts());
     setArtifactSyncError(false);
     setArtifactsLoading(true);
-    setArtifactHydration(artifactId && !newDraft ? "loading" : "ready");
+    setArtifactHydration((artifactId || atlasSlug) && !newDraft ? "loading" : "ready");
     // Paged, not a single fetch: an un-paged read returns the route's default
     // of 50 rows and is indistinguishable from a workspace that holds 50. Studio
     // is now the only surface over these rows, so a truncated list here is the
@@ -291,6 +292,27 @@ export function StudioWorkspace({ artifactId, newDraft = false, exampleId, local
             setMessage(copy.selectedUnavailable);
           }
         });
+    } else if (atlasSlug) {
+      // A signed-out "Add to Studio" click, honoured after sign-in: the record
+      // page sent the reader here rather than to the page-wide sign-in return
+      // (/run). The import is the same POST the signed-in button makes; on
+      // success the URL becomes the new artifact's, so a reload or a shared
+      // link never imports twice. `replace`, not `push`: Back should leave
+      // Studio, not re-run the import.
+      void fetch(`/api/repository/${encodeURIComponent(atlasSlug)}/export`, { method: "POST", cache: "no-store" })
+        .then(async (response) => {
+          const payload = (await response.json()) as { id?: string; error?: string };
+          if (!response.ok || typeof payload.id !== "string") throw new Error(payload.error ?? copy.atlasImportFailed);
+          return payload.id;
+        })
+        .then((id) => {
+          if (active) router.replace(importedArtifactHref(id));
+        })
+        .catch((cause: unknown) => {
+          if (!active) return;
+          setArtifactHydration("error");
+          setMessage(cause instanceof Error && cause.message ? cause.message : copy.atlasImportFailed);
+        });
     } else if (exampleId) {
       const example = workedExample(exampleId);
       if (example) applyExample(example);
@@ -308,7 +330,7 @@ export function StudioWorkspace({ artifactId, newDraft = false, exampleId, local
       active = false;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps -- applyExample is stable by construction (module-scope helpers only)
-  }, [artifactId, exampleId, copy, loadAttempt]);
+  }, [artifactId, exampleId, atlasSlug, copy, loadAttempt]);
 
   useEffect(() => {
     setSimulationRecords(artifact ? loadCpuSimulationRecords(artifact.id) : []);
@@ -1113,9 +1135,11 @@ export function StudioWorkspace({ artifactId, newDraft = false, exampleId, local
                 </div>
               </div>
 
-              {artifactId && !newDraft && artifactHydration !== "ready" ? (
+              {(artifactId || atlasSlug) && !newDraft && artifactHydration !== "ready" ? (
                 <div className="mj-studio-empty" role={artifactHydration === "error" ? "alert" : "status"}>
-                  {artifactHydration === "loading" ? copy.loadingArtifacts : copy.selectedUnavailable}
+                  {artifactHydration === "loading"
+                    ? atlasSlug ? copy.atlasImporting : copy.loadingArtifacts
+                    : atlasSlug ? copy.atlasImportFailed : copy.selectedUnavailable}
                   {artifactHydration === "error" ? <button className="mj-secondary-button" type="button" onClick={() => setLoadAttempt((value) => value + 1)}>{locale === "ja" ? "再試行" : "Retry"}</button> : null}
                 </div>
               ) : (
