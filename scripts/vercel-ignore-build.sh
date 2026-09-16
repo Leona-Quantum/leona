@@ -50,6 +50,42 @@ set -uo pipefail
 build() { echo "BUILD: $1"; exit 1; }
 skip()  { echo "SKIP: $1";  exit 0; }
 
+# ## Preview deployments are skipped by default
+#
+# Measured from Vercel's own deployment API over the seven days to 2026-09-16:
+# 190 deployments on this project, of which **142 were previews** — 130 of the
+# 184 wall-clock build minutes. Nothing consumes a preview.
+# `verify-web-cache.yml` is the only workflow that reacts to a Vercel
+# deployment at all and it gates on `deployment.environment == 'Production'`;
+# no other workflow reads a preview URL.
+#
+# The path rules below cannot get at this, and not by oversight. This repo
+# keeps ~34 worktrees, one branch each, and a branch's FIRST deployment has no
+# `VERCEL_GIT_PREVIOUS_SHA` — which the "fail open" rule is obliged to BUILD,
+# because an unknown change set must never be skipped. So the diff-based rules
+# are structurally unable to stop the preview builds that cost the most.
+#
+# Previews stay available on demand, two ways, both checked before the diff is
+# computed because neither depends on it:
+#
+#   * set `LEONA_VERCEL_PREVIEWS=1` in the Vercel project's environment, or
+#   * put `[preview]` anywhere in the commit message.
+#
+# Production is untouched. `VERCEL_ENV` is `production` for the `dev` branch,
+# and — this is the part that has to stay true — any value this script does
+# not recognise falls through to the path rules rather than skipping. The test
+# for `preview` is positive and exact, so an empty or unexpected `VERCEL_ENV`
+# builds, exactly as it did before this block existed.
+if [ "${VERCEL_ENV:-}" = "preview" ]; then
+  if [ "${LEONA_VERCEL_PREVIEWS:-}" = "1" ]; then
+    : # opted in for the whole project — fall through to the path rules
+  elif grep -qiF '[preview]' <<<"${VERCEL_GIT_COMMIT_MESSAGE:-}"; then
+    : # opted in for this commit — fall through to the path rules
+  else
+    skip "preview deployment, and nothing consumes previews (set LEONA_VERCEL_PREVIEWS=1, or put [preview] in the commit message, to build one)"
+  fi
+fi
+
 # Vercel runs this from the project's Root Directory, which is `apps/web`, not
 # the repository root. Every path pattern below is repo-root-relative, and
 # `git diff --name-only` only prints repo-root-relative paths when it is not
