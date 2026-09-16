@@ -3,7 +3,9 @@
 # Attach the certificate, open the ports, and put Cloud Run behind the load
 # balancer. This is the step that starts costing money (a forwarding rule is
 # about $18 a month) and the step that makes the site reachable, so it refuses
-# to run until the certificate is actually ACTIVE.
+# to run until the certificate the map points at is one a visitor can be served:
+# a Google-managed certificate that reports ACTIVE, or a Cloudflare Origin
+# Certificate with the origin lock attached (ai-ops 325).
 #
 # It does NOT move any DNS. After this, leonaqt.com still resolves wherever it
 # resolved before; the load balancer serves the same site at its own address,
@@ -11,14 +13,7 @@
 set -euo pipefail
 cd "$(dirname "$0")" && . ./common.sh
 
-state=$(g certificate-manager certificates describe majorana-web-cert --location=global \
-  --format='value(managed.state)' 2>/dev/null || true)
-if [ "$state" != "ACTIVE" ]; then
-  echo "certificate majorana-web-cert is ${state:-absent}, not ACTIVE." >&2
-  echo "Run ./30-certificate.sh and add the DNS records it prints." >&2
-  exit 1
-fi
-echo "certificate ACTIVE"
+require_servable_certificate
 
 step "HTTPS proxy ${PROXY_NAME}"
 if exists compute target-https-proxies describe "$PROXY_NAME"; then have "$PROXY_NAME"; else
@@ -69,8 +64,15 @@ echo "   public via the load balancer"
 cat <<TXT
 
 Serving at https://${IP}/ (SNI must be a name on the certificate).
-Check it without moving any DNS:
+Check it without moving any DNS — ./90-verify.sh does this and rather more:
   curl -sS -o /dev/null -w '%{http_code}\\n' --resolve leonaqt.com:443:${IP} https://leonaqt.com/
+
+If the certificate is a Cloudflare Origin one, that curl fails to verify and
+returns 000 — correctly, because this machine is not Cloudflare and has no
+business trusting it. Add -k to see the HTTP status, and read the issuer
+separately rather than trusting the handshake:
+  openssl s_client -connect ${IP}:443 -servername leonaqt.com </dev/null 2>/dev/null \\
+    | openssl x509 -noout -issuer
 
 The bare run.app URL should now refuse:
   curl -sS -o /dev/null -w '%{http_code}\\n' \$(gcloud run services describe ${SERVICE} \\

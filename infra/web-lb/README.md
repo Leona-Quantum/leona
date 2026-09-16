@@ -37,15 +37,33 @@ around the edge protections. That is an origin lock, not a rule set.
 |---|---|---|
 | 1 | `10-origin-lock.sh` | nothing — creates the Cloud Armor policy from Cloudflare's published ranges |
 | 2 | `20-load-balancer.sh` | step 1 |
-| 3 | `30-certificate.sh` | step 2; **prints a DNS record somebody has to add** |
-| — | *the CNAME from step 3 goes into the zone* | **owner, or a Cloudflare API token** |
-| 4 | `40-serve.sh` | the certificate reporting ACTIVE |
-| — | *point `leonaqt.com` at the printed IP* | **owner** |
+| 3 | `31-origin-certificate.sh` | step 2, and a Cloudflare Origin Certificate + key |
+| 4 | `40-serve.sh` | a servable certificate, and the origin lock attached |
+| — | *point `leonaqt.com` at the printed IP, **proxied*** | **the collaborator who holds Cloudflare** |
+| — | `90-verify.sh` | reads it all back, including from the TLS handshake |
 
-Steps 3 and 4 are split at the DNS record because a Google-managed certificate
-authorised by DNS can be issued **before** any traffic moves. That is the whole
-reason to do it this way: at cutover the certificate is already valid, so
-switching the record is a switch and not a TLS outage.
+`test-gates.sh` drives step 4's refusals with no cloud behind it; run it after touching
+`common.sh`.
+
+## Which certificate, and why 30 is no longer the path
+
+`30-certificate.sh` asks Google to issue a certificate, proving control with a CNAME at
+`_acme-challenge.leonaqt.com`. **That name is taken**: Cloudflare put its own validation
+record there when it took the domain on, and a name holds one CNAME. The owner ruled on
+**ai-ops 325** to stop needing Google's certificate rather than displace Cloudflare's — so
+`31-origin-certificate.sh` is the live path and `30-certificate.sh` is kept for the case
+where the domain ever leaves Cloudflare.
+
+The trade is one sentence: a Cloudflare Origin Certificate is trusted by Cloudflare **and by
+nothing else**, so the DNS record must be proxied (orange cloud) at the same moment it points
+here, or every visitor gets a full-page certificate warning. `90-verify.sh` checks for
+exactly that. The whole procedure, including what the owner and the collaborator each do, is
+`docs/runbooks/cloudflare-origin-certificate.md`.
+
+Nothing here waits on DNS any more, which was the point of ai-ops 325: an Origin
+Certificate is valid the moment Cloudflare issues it, so the load balancer is
+already serving a good certificate days before any record moves, and the cutover
+is a switch rather than a TLS outage.
 
 ## The one ordering that is not cosmetic
 
