@@ -4,6 +4,7 @@ Called by 10-artifact-cleanup.sh. It is a file rather than a `python3 -c`
 because the line needs both shell quoting and an f-string's quotes, and one of
 them always wins.
 """
+
 import json
 import sys
 

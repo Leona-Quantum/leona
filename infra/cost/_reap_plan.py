@@ -9,6 +9,7 @@ times. A revision can be old and still serving - `latestRevision: true` routing
 does not mean the newest revision by name is the one taking requests, and a
 pinned rollback is exactly the case where the two disagree.
 """
+
 import json
 import sys
 
@@ -16,7 +17,9 @@ svc_path, revs_path, keep = sys.argv[1], sys.argv[2], int(sys.argv[3])
 svc = json.load(open(svc_path))
 revs = json.load(open(revs_path)).get("revisions", [])
 
-serving = {t["revision"].split("/")[-1] for t in svc.get("trafficStatuses", []) if t.get("revision")}
+serving = {
+    t["revision"].split("/")[-1] for t in svc.get("trafficStatuses", []) if t.get("revision")
+}
 serving |= {t["revision"].split("/")[-1] for t in svc.get("traffic", []) if t.get("revision")}
 latest = (svc.get("latestReadyRevision") or "").split("/")[-1]
 if latest:
