@@ -2,7 +2,9 @@
 
 import Link from "next/link";
 import { useEffect, useId, useMemo, useRef, useState } from "react";
+import { qappCopy } from "../lib/qapp-copy";
 import { executionErrorSentence } from "../lib/qapp-execution-copy";
+import type { PublicLocale } from "../lib/public-locale";
 import { isQappExecuteMessage, qappFrameDocument } from "../lib/qapp-frame";
 
 type Execution = {
@@ -19,12 +21,15 @@ export function QappRuntime({
   uiDocument,
   canExecute,
   signInPath,
+  locale = "en",
 }: {
   slug: string;
   uiDocument: string;
   canExecute: boolean;
   signInPath?: string;
+  locale?: PublicLocale;
 }) {
+  const copy = qappCopy(locale).runtime;
   const frame = useRef<HTMLIFrameElement>(null);
   const reactId = useId();
   const channel = `leona-qapp-${reactId.replace(/[^a-z0-9-]/gi, "")}`;
@@ -44,16 +49,16 @@ export function QappRuntime({
     setNotice(null);
     async function execute(requestId: string, inputs: Record<string, unknown>) {
       if (runningRef.current) {
-        frame.current?.contentWindow?.postMessage({ channel, type: "qapp.response", requestId, ok: false, error: "Another execution is already running." }, "*");
+        frame.current?.contentWindow?.postMessage({ channel, type: "qapp.response", requestId, ok: false, error: copy.busy }, "*");
         return;
       }
       if (!canExecute) {
-        setNotice("Sign in to run this Qapp.");
-        frame.current?.contentWindow?.postMessage({ channel, type: "qapp.response", requestId, ok: false, error: "Sign in to execute this Qapp." }, "*");
+        setNotice(copy.signInToRun);
+        frame.current?.contentWindow?.postMessage({ channel, type: "qapp.response", requestId, ok: false, error: copy.signInToExecute }, "*");
         return;
       }
       runningRef.current = true;
-      setNotice("Submitting execution…");
+      setNotice(copy.submitting);
       try {
         const submitted = await fetch(`/api/qapps/${encodeURIComponent(slug)}/executions`, {
           method: "POST",
@@ -62,12 +67,12 @@ export function QappRuntime({
           signal: controller.signal,
         });
         const initial = await submitted.json() as Execution | { title?: string };
-        if (!submitted.ok || !("id" in initial)) throw new Error("title" in initial && initial.title ? initial.title : "Execution could not be submitted.");
+        if (!submitted.ok || !("id" in initial)) throw new Error("title" in initial && initial.title ? initial.title : copy.submitFailed);
         if (!disposed) setPending({ execution: initial, requestId });
       } catch (error) {
         if (disposed) return;
         runningRef.current = false;
-        const message = error instanceof Error ? error.message : "Execution could not be submitted.";
+        const message = error instanceof Error ? error.message : copy.submitFailed;
         frame.current?.contentWindow?.postMessage({ channel, type: "qapp.response", requestId, ok: false, error: message }, "*");
         setNotice(message);
       }
@@ -83,7 +88,7 @@ export function QappRuntime({
       controller.abort();
       window.removeEventListener("message", receive);
     };
-  }, [canExecute, channel, slug]);
+  }, [canExecute, channel, slug, copy]);
 
   useEffect(() => {
     if (!pending) return;
@@ -100,9 +105,9 @@ export function QappRuntime({
         // The machine code stays on the execution row; what reaches the
         // generated interface and the status line is a sentence. A visitor was
         // shown "qapp_program_failed" beside the button they had just pressed.
-        const failure = ok ? null : executionErrorSentence(execution.error_code);
+        const failure = ok ? null : executionErrorSentence(execution.error_code, locale);
         frame.current?.contentWindow?.postMessage({ channel, type: "qapp.response", requestId, ok, ...(ok ? { result: execution.result ?? {} } : { error: failure }) }, "*");
-        setNotice(ok ? "Execution complete." : failure);
+        setNotice(ok ? copy.complete : failure);
         runningRef.current = false;
         setPending(null);
         return;
@@ -110,11 +115,11 @@ export function QappRuntime({
       if (checks >= MAX_STATUS_CHECKS) {
         // A polling limit is not an execution result. Keep its identity and
         // submission lock so the next attempt only resumes status checks.
-        setNotice("Automatic updates paused. The execution may still be running.");
+        setNotice(copy.paused);
         setMonitorError(true);
         return;
       }
-      setNotice(execution.status === "queued" ? "Queued. Waiting for execution to start." : checks >= 48 ? "Still running. Results will appear here when ready." : "Running. Results will appear here.");
+      setNotice(execution.status === "queued" ? copy.queued : checks >= 48 ? copy.stillRunning : copy.running);
       timer = setTimeout(() => { void check(); }, checks < 30 ? 1000 : 2500);
     }
     async function check() {
@@ -128,7 +133,7 @@ export function QappRuntime({
         if (disposed) return;
         // A failed status request says nothing about the job outcome. Keep its
         // identity and the submission lock so Retry never starts a second run.
-        setNotice("Connection interrupted. The execution may still be running.");
+        setNotice(copy.interrupted);
         setMonitorError(true);
       }
     }
@@ -139,15 +144,15 @@ export function QappRuntime({
       controller.abort();
       clearTimeout(timer);
     };
-  }, [pending, monitorAttempt, channel]);
+  }, [pending, monitorAttempt, channel, copy, locale]);
 
   return (
     <section className="qapp-runtime">
-      <iframe ref={frame} title="Qapp" srcDoc={frameDocument} sandbox="allow-scripts" referrerPolicy="no-referrer" className="qapp-runtime-frame" />
+      <iframe ref={frame} title={copy.frameTitle} srcDoc={frameDocument} sandbox="allow-scripts" referrerPolicy="no-referrer" className="qapp-runtime-frame" />
       <footer className="qapp-runtime-status" aria-live="polite">
-        <span>{notice ?? (canExecute ? "Choose inputs in the Qapp to run it." : "Sign in to run this Qapp.")}</span>
-        {monitorError ? <button className="mj-secondary-button" type="button" onClick={() => setMonitorAttempt((value) => value + 1)}>Retry status</button> : null}
-        {!canExecute && signInPath ? <Link href={signInPath}>Sign in to run</Link> : null}
+        <span>{notice ?? (canExecute ? copy.chooseInputs : copy.signInToRun)}</span>
+        {monitorError ? <button className="mj-secondary-button" type="button" onClick={() => setMonitorAttempt((value) => value + 1)}>{copy.retryStatus}</button> : null}
+        {!canExecute && signInPath ? <Link href={signInPath}>{copy.signInLink}</Link> : null}
       </footer>
     </section>
   );

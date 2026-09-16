@@ -13,14 +13,24 @@
  * (`node --test`, which cannot parse JSX) covers it — the same reason
  * `qapp-range-smoke.ts` is here.
  */
-const EXECUTION_ERROR_COPY: Record<string, string> = {
-  qapp_program_failed: "The quantum program stopped with an error before it produced a result.",
-  qapp_result_missing: "The quantum program finished without producing a result.",
-  qapp_execution_failed: "The run could not be completed. Try again in a moment.",
-  job_dead_letter: "The run was abandoned after repeated failures. Try again later.",
+import type { PublicLocale } from "./public-locale";
+
+const EXECUTION_ERROR_COPY: Record<PublicLocale, Record<string, string>> = {
+  en: {
+    qapp_program_failed: "The quantum program stopped with an error before it produced a result.",
+    qapp_result_missing: "The quantum program finished without producing a result.",
+    qapp_execution_failed: "The run could not be completed. Try again in a moment.",
+    job_dead_letter: "The run was abandoned after repeated failures. Try again later.",
+  },
+  ja: {
+    qapp_program_failed: "量子プログラムは結果を出す前にエラーで停止しました。",
+    qapp_result_missing: "量子プログラムは結果を出さずに終了しました。",
+    qapp_execution_failed: "実行を完了できませんでした。しばらくしてからもう一度お試しください。",
+    job_dead_letter: "繰り返し失敗したため、実行は中止されました。後でもう一度お試しください。",
+  },
 };
 
-export function executionErrorSentence(code: string | null | undefined): string {
-  if (!code) return "Execution failed.";
-  return EXECUTION_ERROR_COPY[code] ?? `Execution failed (${code}).`;
+export function executionErrorSentence(code: string | null | undefined, locale: PublicLocale = "en"): string {
+  if (!code) return locale === "ja" ? "実行に失敗しました。" : "Execution failed.";
+  return EXECUTION_ERROR_COPY[locale][code] ?? (locale === "ja" ? `実行に失敗しました (${code})。` : `Execution failed (${code}).`);
 }
