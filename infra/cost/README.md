@@ -30,15 +30,31 @@ rather than quoting this table.
 2026-09-16 (~8 GB/week), no cleanup policy, nothing ever pulls the old ones.
 `10-artifact-cleanup.sh` sets one; it is in **dry run** as of 2026-09-16, so
 Artifact Registry logs what it would delete and deletes nothing. Read that log
-before `--enforce`.
+before `--enforce`. `05-in-use-images.sh` is the gate on that: it reads which
+images the live Cloud Run services still need and refuses the enforce if one of
+them falls outside the keep window. Three do today, all of them older than 30
+days, and one is the revision serving 100% of `majorana-api-vqe-test`'s traffic
+on a service that scales to zero.
 
-**Cloud Run revisions.** 1452 active against a project quota of **4000**
-(`ActiveRevisionsPerProject`, read from the project's own quota service — the
-ceiling is per project, not per service). Two services gain one per deploy and
-this project deploys on every push to `dev`, so the quota arrives in roughly
-three months, and **deploys fail when it does**. An idle revision bills nothing,
-so the bill will never warn you. `20-revision-reaper.sh` removes the ones no
-traffic can reach, keeping the newest 50 of each service plus anything serving.
+**Cloud Run revisions.** 1455 active against a quota of **4000**
+(`ActiveRevisionsPerProject`, read from the Cloud Quotas API — `gcloud services
+quota list` does not exist in gcloud 575. The ceiling is per project and
+dimensioned by region, which for this project, deploying only to `us-west1`,
+comes to the same thing). Two services gain one per deploy. `20-revision-reaper.sh`
+removes the ones no traffic can reach, keeping the newest 50 of each service plus
+anything serving or latest-ready: 1340 removable, about 115 kept. An idle
+revision bills nothing, so the bill will never warn you and **deploys fail when
+the quota arrives**.
+
+*When* it arrives depends entirely on which growth rate you believe, and the
+honest answer is a spread rather than a date. Counted from the revisions' own
+`createTime`, the last 7 days ran at 12.6/day, the last 30 at 10.5/day, and the
+all-time average since 2026-07-10 at 21.1/day. Against 2545 of headroom those
+give roughly April 2027, May 2027 and January 2027. An earlier version of this
+file said "roughly three months", which corresponds to about 28.6/day — faster
+than any of the three measured windows. Treat the recent rate as the planning
+number and re-measure rather than trusting this paragraph: what actually moves it
+is how often `dev` is pushed.
 
 ## What is not in here, because it is the owner's call
 
