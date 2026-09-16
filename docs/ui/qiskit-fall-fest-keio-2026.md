@@ -23,7 +23,7 @@ and production merge in this conversation on 2026-09-08.
 October 17–18, 2026; Keio AIC; in person; beginners welcome; planned capacity 40–50.
 Attendance is free, as stated in the owner-supplied registration form. The five
 speakers are marked planned and the supplied talk title provisional. Campus,
-room, map, session times, and detailed PC preparation remain explicitly pending.
+room, map, and detailed PC preparation remain explicitly pending.
 The Code of Conduct is final at the owner's request. Contact and conduct reports:
 `rei.watanabe@keio.jp`.
 
@@ -76,19 +76,19 @@ The publication branch is `feature/qiskit-fall-fest-keio-publish`, based on curr
 checkout are preserved and excluded from this change.
 
 
-## Expanded program from the owner-supplied plan
+## Timed program supplied by the owner
 
-Source: `QFF-Keio.docx - Google ドキュメント.pdf`, pages 1–2, supplied locally.
-The private planning PDF is not published. Day one now describes Quantum/Qiskit
-101, lectures, SQD instruction and paired hands-on work, team formation, and the
-start of the mini hackathon. Day two describes lectures, mentored implementation,
-Notebook submission, presentations, and feedback/awards. A shared brief covers
-4–5-person teams and the two candidate courses: SQD experiments and optimization.
-The planned talk topics are quantum annealing and quantum machine learning.
+The owner's latest schedule supersedes the broad-period program from the earlier
+planning PDF. October 17 has 15 entries from check-in at 09:30 to the 18:00
+checkpoint close: Quanmatic and Blueqat talks, Qiskit 101, SQD hands-on work,
+challenge briefing, team formation, and the hackathon.
 
-The source explicitly says timings are provisional; the page uses broad day
-periods and marks the program planned rather than publishing exact clock times.
-The red annotation on page 1 disagrees with the speaker table and detailed agenda
-about day assignments. Clarification was requested; the existing published
-assignments are retained until confirmed. Host/contact/conduct facts continue to
-follow the owner's newer explicit instructions, not the older planning draft.
+October 18 has 11 entries, beginning at 09:30 with 小山 尚彦, followed by
+IBM Quantum's 渡邉 毅 at 09:55 and 田中 宗 at 10:20. The speaker section follows
+these updated day assignments and presentation order. The final submission
+deadline is 17:00 for the notebook, project URL, and presentation slides.
+Presentations and Q&A run 17:05–17:45: up to 10 teams, four minutes each.
+Judging, awards, closing, and the group photo finish at 18:00.
+
+Blank detail cells in the supplied schedule remain blank. Times are displayed in
+both language versions, and the page retains a notice that the schedule may change.

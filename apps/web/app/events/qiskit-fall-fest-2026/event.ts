@@ -25,43 +25,82 @@ export const days = [
       "基礎講義とハンズオンで学び、チームで最初の実験に取り組みます。",
     schedule: [
       {
-        period: "午前",
-        title: "Quantum／Qiskit 101 — 基礎講義",
-        description:
-          "受付・環境確認のあと、量子ビット・ゲート・測定の基礎を学び、Qiskitで最初の量子回路を動かします。",
+        period: "09:30–10:00",
+        title: "受付・環境確認",
+        description: "IBM Quantum、Qiskit、Google Colab等を確認",
       },
       {
-        period: "午前・午後",
-        title: "講演・質疑応答",
-        description:
-          "研究や産業での活用事例を紹介する講演です。講演後には、登壇者に質問できる時間を設けます。",
+        period: "10:00–10:15",
+        title: "開会",
+        description: "イベント趣旨と2日間の流れを説明",
       },
       {
-        period: "午後",
-        title: "SQD入門・ハンズオン",
-        description:
-          "入門講義のあと、原則2人1組でノートブックを使った実習に取り組みます。",
+        period: "10:15–10:55",
+        title: "Quanmatic講演",
+        description: "齋藤善仁氏",
       },
       {
-        period: "午後",
-        title: "課題の説明・チーム分け",
-        description:
-          "課題、提出形式、審査基準を確認。4〜5名のチームを組み、役割を分担します。",
+        period: "10:55–11:05",
+        title: "質疑応答",
+        description: "",
       },
       {
-        period: "夕方",
-        title: "ミニハッカソン — 制作スタート",
-        description:
-          "課題を選び、基本となるコードを実行します。実験の計画を立て、進んだところや疑問点を整理して翌日に備えます。",
+        period: "11:05–11:15",
+        title: "休憩",
+        description: "",
+      },
+      {
+        period: "11:15–11:55",
+        title: "Blueqat講演",
+        description: "湊雄一郎氏",
+      },
+      {
+        period: "11:55–12:05",
+        title: "質疑応答",
+        description: "",
+      },
+      {
+        period: "12:05–13:05",
+        title: "昼食",
+        description: "",
+      },
+      {
+        period: "13:05–14:05",
+        title: "Qiskit 101",
+        description: "QiskitとIBM Quantumの基本操作",
+      },
+      {
+        period: "14:05–15:15",
+        title: "SQDハンズオン",
+        description: "",
+      },
+      {
+        period: "15:15–15:25",
+        title: "休憩",
+        description: "",
+      },
+      {
+        period: "15:25–15:45",
+        title: "課題・審査基準説明",
+        description: "課題、提出物、評価項目を説明",
+      },
+      {
+        period: "15:45–16:00",
+        title: "チーム編成",
+        description: "テーマ選択、役割分担",
+      },
+      {
+        period: "16:00–17:50",
+        title: "ハッカソン",
+        description: "",
+      },
+      {
+        period: "17:50–18:00",
+        title: "チェックポイント",
+        description: "進捗と質問事項をフォームで提出",
       },
     ],
     speakers: [
-      {
-        name: "渡邉 毅",
-        affiliation: "IBM Quantum",
-        title: "講演内容：調整中",
-        note: "登壇予定",
-      },
       {
         name: "齋藤 善仁",
         affiliation: "Quanmatic",
@@ -85,47 +124,78 @@ export const days = [
       "講演で知識を深め、チームでの実験・実装を進めます。最後に、取り組んだ内容と結果を発表します。",
     schedule: [
       {
-        period: "午前",
-        title: "講演・質疑応答",
-        description:
-          "量子計算の研究や応用をテーマにした講演を通して、学びを深めます。",
+        period: "09:30–09:55",
+        title: "小山尚彦先生 講演・質疑",
+        description: "",
       },
       {
-        period: "午前・午後",
-        title: "ミニハッカソン — 実験・実装",
-        description:
-          "メンターに相談しながら、チームで実験や実装を進めます。条件による結果の違いを比較し、グラフなどにまとめます。",
+        period: "09:55–10:20",
+        title: "IBM Quantum渡邉毅氏講演・質疑",
+        description: "",
       },
       {
-        period: "午後",
-        title: "ノートブックの提出・発表準備",
-        description:
-          "実行結果と考察をノートブックにまとめて提出します。発表資料はスライド3枚以内で準備します。",
+        period: "10:20–10:45",
+        title: "田中宗先生 講演・質疑",
+        description: "",
       },
       {
-        period: "夕方",
-        title: "成果発表",
-        description:
-          "各チームが3分間で取り組みを発表し、その後2分間の質疑応答を行います。",
+        period: "10:45–11:00",
+        title: "休憩",
+        description: "",
       },
       {
-        period: "夕方",
-        title: "講評・表彰・閉会",
-        description:
-          "各チームの成果に対する講評と表彰を行い、2日間を振り返ります。閉会後には交流の時間を設ける予定です。",
+        period: "11:00–12:30",
+        title: "ハッカソン",
+        description: "",
+      },
+      {
+        period: "12:30–13:15",
+        title: "昼食",
+        description: "希望チームは作業継続可能",
+      },
+      {
+        period: "13:15–17:00",
+        title: "ハッカソン",
+        description: "",
+      },
+      {
+        period: "17:00",
+        title: "最終提出締切",
+        description: "Notebook、成果物URL、発表用スライドを提出",
+      },
+      {
+        period: "17:00–17:05",
+        title: "提出確認",
+        description: "リンクの閲覧可否のみ確認",
+      },
+      {
+        period: "17:05–17:45",
+        title: "チーム発表・質疑",
+        description: "最大10チーム、各4分",
+      },
+      {
+        period: "17:45–18:00",
+        title: "審査・表彰・閉会・記念撮影",
+        description: "採点集計、受賞発表、短い講評、撮影をまとめて実施",
       },
     ],
     speakers: [
       {
-        name: "田中 宗",
-        affiliation: "慶應義塾大学教授",
-        title: "量子アニーリングについて",
-        note: "登壇予定 / 内容調整中",
-      },
-      {
         name: "小山 尚彦",
         affiliation: "Bio2Q 特任教授",
         title: "量子機械学習について",
+        note: "登壇予定 / 内容調整中",
+      },
+      {
+        name: "渡邉 毅",
+        affiliation: "IBM Quantum",
+        title: "講演内容：調整中",
+        note: "登壇予定",
+      },
+      {
+        name: "田中 宗",
+        affiliation: "慶應義塾大学教授",
+        title: "量子アニーリングについて",
         note: "登壇予定 / 内容調整中",
       },
     ],
@@ -139,9 +209,9 @@ export function getEventDays(locale: PublicLocale) {
     weekday: t(day.weekday),
     description: t(day.description),
     schedule: day.schedule.map((session) => ({
-      period: t(session.period),
+      period: session.period,
       title: t(session.title),
-      description: t(session.description),
+      description: session.description ? t(session.description) : "",
     })),
     speakers: day.speakers.map((speaker) => ({
       ...speaker,
