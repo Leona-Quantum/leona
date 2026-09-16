@@ -41,7 +41,43 @@ const SITE_ORIGIN = process.env.LEONA_LIVE_ORIGIN ?? "https://leonaqt.com";
 const CHECKED_PATHS = ["/repository/layers"];
 const ATTEMPTS = 5;
 const RETRY_DELAY_MS = 1500;
-const CACHED_VALUES = new Set(["HIT", "PRERENDER"]);
+// HIT and PRERENDER are Vercel's. REVALIDATED, UPDATING and STALE are
+// Cloudflare's and all three mean the edge is holding the page — it served from
+// its own copy, whether or not it also checked freshness. Cloudflare's EXPIRED
+// and DYNAMIC are deliberately absent: EXPIRED went to the origin for the body,
+// and DYNAMIC means the page was never considered cacheable at all, which is
+// exactly what an Atlas page looks like when the Cache Rule is missing. Those
+// two must read as "not cached", because they are the failure this check exists
+// to see.
+const CACHED_VALUES = new Set(["HIT", "PRERENDER", "REVALIDATED", "UPDATING", "STALE"]);
+
+/**
+ * Which header names an edge cache's verdict, in the order they are consulted.
+ *
+ * `x-vercel-cache` is Vercel's. `cf-cache-status` is Cloudflare's, and it becomes
+ * the one that matters once the site is served from Cloud Run behind Cloudflare
+ * (GCP migration, ai-ops `gcp-migration-20260912`). Both are read rather than one
+ * replacing the other, because production runs on both stacks through the cutover
+ * and its 30-day rollback window — and because the alternative is a check that
+ * reads a header nobody sets and reports `(none)` on a perfectly healthy cache,
+ * which is the same reading it gives for a cache that has genuinely stopped
+ * working. An instrument that cannot tell those two apart is worse than no
+ * instrument, because this one is wired to a workflow.
+ *
+ * Cloudflare's vocabulary is not Vercel's: it says `DYNAMIC` for "not cacheable
+ * at all", which is what an uncached Atlas page looks like when the Cache Rule
+ * is missing, and `EXPIRED`/`REVALIDATED` for a served-then-refreshed hit. Only
+ * the values that mean "this response came from the edge" count as cached.
+ */
+const CACHE_HEADERS = ["x-vercel-cache", "cf-cache-status"];
+
+function readCacheHeader(headers) {
+  for (const name of CACHE_HEADERS) {
+    const value = headers.get(name);
+    if (value) return { name, value: value.trim().toUpperCase() };
+  }
+  return { name: null, value: null };
+}
 
 /**
  * Pure classifier: one path's attempts in, one verdict out. No network here, so
@@ -62,12 +98,13 @@ export function classify(observations) {
   const cachedHit = observations.some((o) => o.status === 200 && CACHED_VALUES.has(o.cacheHeader ?? ""));
   if (cachedHit) {
     const n = observations.findIndex((o) => o.status === 200 && CACHED_VALUES.has(o.cacheHeader ?? "")) + 1;
-    return { verdict: "pass", reason: `attempt ${n}/${observations.length} returned x-vercel-cache: ${observations[n - 1].cacheHeader}` };
+    const hit = observations[n - 1];
+    return { verdict: "pass", reason: `attempt ${n}/${observations.length} returned ${hit.cacheHeaderName ?? "a cache header"}: ${hit.cacheHeader}` };
   }
   const seen = observations.map((o) => (o.status === 200 ? (o.cacheHeader ?? "(no header)") : `HTTP ${o.status}`));
   return {
     verdict: "warn",
-    reason: `${observations.length} attempts, none reached HIT or PRERENDER (saw: ${seen.join(", ")}) — likely a cold edge, not necessarily a regression`,
+    reason: `${observations.length} attempts, none came from the edge (saw: ${seen.join(", ")}) — likely a cold edge, not necessarily a regression`,
   };
 }
 
@@ -77,6 +114,37 @@ function selfTest() {
       name: "HIT on the second attempt passes",
       observations: [{ status: 200, cacheHeader: "MISS" }, { status: 200, cacheHeader: "HIT" }],
       verdict: "pass",
+    },
+    {
+      // Cloudflare's own vocabulary, which the site reads once it is served from
+      // Cloud Run behind Cloudflare rather than from Vercel. Without these cases
+      // the new header names are added and never exercised, which is the shape of
+      // change that passes review and fails in production.
+      name: "Cloudflare HIT passes",
+      observations: [{ status: 200, cacheHeader: "MISS", cacheHeaderName: "cf-cache-status" }, { status: 200, cacheHeader: "HIT", cacheHeaderName: "cf-cache-status" }],
+      verdict: "pass",
+    },
+    {
+      name: "Cloudflare STALE counts as served from the edge",
+      observations: [{ status: 200, cacheHeader: "STALE", cacheHeaderName: "cf-cache-status" }],
+      verdict: "pass",
+    },
+    {
+      // The one that matters: DYNAMIC is what an Atlas page returns when no Cache
+      // Rule names it, i.e. exactly the regression this check exists to see. It
+      // must NOT read as cached however many times it is observed.
+      name: "Cloudflare DYNAMIC never passes, however many attempts",
+      observations: [
+        { status: 200, cacheHeader: "DYNAMIC", cacheHeaderName: "cf-cache-status" },
+        { status: 200, cacheHeader: "DYNAMIC", cacheHeaderName: "cf-cache-status" },
+        { status: 200, cacheHeader: "DYNAMIC", cacheHeaderName: "cf-cache-status" },
+      ],
+      verdict: "warn",
+    },
+    {
+      name: "Cloudflare EXPIRED went to the origin, so it is not a hit",
+      observations: [{ status: 200, cacheHeader: "EXPIRED", cacheHeaderName: "cf-cache-status" }],
+      verdict: "warn",
     },
     {
       name: "PRERENDER counts the same as HIT",
@@ -110,7 +178,26 @@ function selfTest() {
     },
   ];
 
-  let failed = 0;
+  // readCacheHeader is the only new code the `classify` cases above cannot
+  // reach, because they hand classify its observations directly and never go
+  // through `probe`. Untested, the whole Cloudflare addition would be a constant
+  // list nothing consults.
+  const headerCases = [
+    { name: "reads Vercel's header", headers: { "x-vercel-cache": "HIT" }, expect: ["x-vercel-cache", "HIT"] },
+    { name: "reads Cloudflare's header", headers: { "cf-cache-status": "hit" }, expect: ["cf-cache-status", "HIT"] },
+    { name: "Vercel wins when both are present", headers: { "x-vercel-cache": "MISS", "cf-cache-status": "HIT" }, expect: ["x-vercel-cache", "MISS"] },
+    { name: "neither present reads as no header", headers: {}, expect: [null, null] },
+  ];
+  let headerFailed = 0;
+  for (const { name, headers, expect } of headerCases) {
+    const got = readCacheHeader(new Headers(headers));
+    if (got.name !== expect[0] || got.value !== expect[1]) {
+      console.error(`check-live-repository-cache: SELF-TEST FAILED — ${name}: expected ${JSON.stringify(expect)}, got ${JSON.stringify([got.name, got.value])}`);
+      headerFailed += 1;
+    }
+  }
+
+  let failed = headerFailed;
   for (const { name, observations, verdict } of cases) {
     const got = classify(observations);
     if (got.verdict !== verdict) {
@@ -119,13 +206,14 @@ function selfTest() {
     }
   }
   if (failed > 0) process.exit(1);
-  console.log(`check-live-repository-cache: self-test ok (${cases.length} cases, pass/warn/fail all exercised)`);
+  console.log(`check-live-repository-cache: self-test ok (${cases.length} classify cases + ${headerCases.length} header cases, pass/warn/fail all exercised)`);
 }
 
 async function probe(url) {
   try {
     const res = await fetch(url, { redirect: "manual" });
-    return { status: res.status, cacheHeader: res.headers.get("x-vercel-cache") };
+    const { name, value } = readCacheHeader(res.headers);
+    return { status: res.status, cacheHeader: value, cacheHeaderName: name };
   } catch (err) {
     // A network failure is not a 200, so it folds into the same "non-200" bucket
     // `classify` already handles — no separate branch needed for it.
@@ -146,7 +234,7 @@ async function checkPath(path) {
     const observation = await probe(url);
     observations.push(observation);
     console.log(
-      `check-live-repository-cache: ${path} attempt ${attempt}/${ATTEMPTS} — status ${observation.status}, x-vercel-cache: ${observation.cacheHeader ?? "(none)"}`,
+      `check-live-repository-cache: ${path} attempt ${attempt}/${ATTEMPTS} — status ${observation.status}, ${observation.cacheHeaderName ?? "no cache header"}: ${observation.cacheHeader ?? "(none)"}`,
     );
     const runningVerdict = classify(observations);
     if (runningVerdict.verdict === "pass") break;

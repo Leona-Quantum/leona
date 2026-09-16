@@ -125,6 +125,13 @@ jobs:
       # NEXT_PUBLIC_* and the CSP are baked into the bundle by `next build`, so
       # they are build args in cloudbuild.web.yaml rather than service settings.
       # Changing one of those means a rebuild, not a `run services update`.
+      #
+      # That split is why the browser-side Sentry DSN is still absent: it is a
+      # NEXT_PUBLIC_ value, so switching it on means a build arg and therefore a
+      # rebuild, and it would start reporting from a service no visitor reaches.
+      # The server-side DSN below is a runtime setting and costs nothing to have
+      # early. Add the client one in the commit that puts the load balancer in
+      # front, not before.
       - name: build image
         if: steps.creds.outputs.have == 'true'
         run: |
@@ -133,6 +140,23 @@ jobs:
             --substitutions=_TAG="${{ steps.tag.outputs.tag }}",_SHA="${{ github.sha }}" \
             --project "$GCP_PROJECT" --region "$GCP_REGION" .
 
+      # ## Two secrets, and the one that is NOT the obvious one
+      #
+      # SENTRY_DSN comes from WEB_SENTRY_DSN, not from the secret called
+      # SENTRY_DSN. They are different Sentry projects: the one named SENTRY_DSN
+      # holds the PYTHON dsn the api and worker use (Sentry project
+      # ...8593979392), and the website's own is ...1999164416. Reusing the
+      # obvious name would have sent every website error into the api's project —
+      # no failure, no warning, just errors filed under the wrong service.
+      # Confirmed by hashing both against leona-secrets/observability.env rather
+      # than by reading the names.
+      #
+      # MAJORANA_TRUSTED_CALLER_TOKEN is what stops this renderer's server-side
+      # catalog fetches being metered on the shared anonymous bucket. PLAN.md
+      # listed a fixed egress IP via Cloud NAT as the answer to that and graded it
+      # "hard (subtle)"; the token already exists and identifies the caller
+      # directly, so the NAT is not needed for this.
+      #
       # --no-traffic --tag verify: the revision is reachable at its own hostname
       # and serves nobody until the shift step below. LEONA_DEPLOY_ENV is set at
       # RUNTIME as well as at build time because lib/lab-direction.ts and
@@ -148,7 +172,8 @@ jobs:
             --port 8080 \
             --min-instances "$WEB_MIN_INSTANCES" \
             --max-instances "$WEB_MAX_INSTANCES" \
-            --set-env-vars "LEONA_DEPLOY_ENV=production,LEONA_XFF_TRUSTED_HOPS=${WEB_XFF_TRUSTED_HOPS},LEONA_GIT_COMMIT_SHA=${{ github.sha }}" \
+            --set-env-vars "LEONA_DEPLOY_ENV=production,LEONA_XFF_TRUSTED_HOPS=${WEB_XFF_TRUSTED_HOPS},LEONA_GIT_COMMIT_SHA=${{ github.sha }},MAJORANA_ENV=production" \
+            --set-secrets "SENTRY_DSN=WEB_SENTRY_DSN:latest,MAJORANA_TRUSTED_CALLER_TOKEN=TRUSTED_CALLER_TOKEN:latest" \
             --no-traffic --tag verify
 
           previous=$(gcloud run services describe "$SERVICE" \

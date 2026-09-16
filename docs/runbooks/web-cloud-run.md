@@ -15,11 +15,25 @@ This document assumes the reader has `roles/run.admin` (or the deploy service
 account's permissions) on `majorana-core` and is running commands from the repo
 root.
 
-**Status, 2026-09-15:** nothing here has produced an image yet. One build was submitted
-from session 7b5934b8 and cancelled while still queued (it carried a placeholder commit
-SHA); the resubmission was refused by that session's permission classifier. The first
-real build is therefore still to run, by the owner or by a session with a permission rule
-for `gcloud builds submit` and `gcloud run deploy` on `majorana-core`.
+**Status, 2026-09-16: this is no longer hand-run, and the spike is no longer a spike.**
+ai-ops 316 was answered "allow agent sessions to run `gcloud builds submit` and
+`gcloud run deploy` in `majorana-core`", and both were run. The first image built in
+2 minutes 26 seconds (Cloud Build `3b9548b4`), `majorana-web` serves every public page
+privately, and the deploy is now wired into `.github/workflows/deploy-web.yml`, which
+fires on every push to `dev`: build, deploy with no traffic, smoke-test the dark
+revision, shift, read back that the shifted revision is the one serving. The commands
+below still work by hand and are still the right thing to reach for when debugging a
+single revision; they are no longer how a deploy happens.
+
+Two settings the workflow adds that these hand-run commands do not:
+`LEONA_XFF_TRUSTED_HOPS` (from `infra/fleet.env`, and **it changes to 1 in the same
+commit that creates the load balancer**), and `SENTRY_DSN` from the `WEB_SENTRY_DSN`
+secret — **not** from the secret called `SENTRY_DSN`, which is the api's Python DSN in a
+different Sentry project.
+
+The front door in front of this service — load balancer, fixed address, origin lock,
+certificate — is `infra/web-lb/`, with its own README. It is built but not serving; it
+is waiting on two DNS records (ai-ops 320).
 
 ## Build and deploy
 
@@ -171,3 +185,43 @@ preview-per-PR automation, no deploy-integrity workflow. Those are phase 2 in
 PLAN.md. This spike's only job is proving the standalone build runs correctly on
 Cloud Run at all, from a hand-built image, reachable only by an authenticated
 operator.
+
+## The Cloudflare Cache Rule, which is not in this repository
+
+`next.config.ts` sets `CDN-Cache-Control: max-age=300` on `/repository`,
+`/repository/layers*`, and a year on `/media/*` and `/brand/*`. That header is
+necessary and **not sufficient**, and the gap is the kind that reads as done:
+the file is correct, the tests pass, and the Atlas is uncached.
+
+Cloudflare does not cache HTML at all by default — it caches by file extension,
+and a page has none. It needs a **Cache Rule** naming those paths, set to
+*Eligible for cache*, respecting origin cache control. Until one exists,
+`CDN-Cache-Control` is a header Cloudflare reads and then declines to act on,
+because the response was never a cache candidate.
+
+Two more things the rule has to get right, both of which have already caused a
+production incident here:
+
+- **The locale cookie has to be in the cache key**, or one visitor's Japanese
+  page is served to the next English reader. `leona.locale.v2` is the cookie
+  (`apps/web/lib/public-locale.ts`); `majorana.locale.v1` is the legacy one the
+  middleware still honours, so it belongs in the key too.
+- **`/repository/<slug>` must NOT be covered.** `/repository/layers` deliberately
+  includes its subtree because every child there is equally public;
+  `/repository` deliberately does not, because its own children are the
+  personalised entry pages. A rule written as `/repository*` caches them anyway,
+  silently, at the edge, whatever the route protection says. Write the rule as
+  the exact path `/repository` plus the prefix `/repository/layers`.
+
+**What settles whether it works**, once it exists: a repeat request reaching
+`cf-cache-status: HIT`, the same way `x-vercel-cache: HIT` settles it on Vercel
+today. `scripts/check-live-repository-cache.mjs` reads both headers and knows
+Cloudflare's vocabulary — in particular that `DYNAMIC` means "never considered
+cacheable", which is exactly what a missing Cache Rule produces:
+
+```bash
+LEONA_LIVE_ORIGIN=https://leonaqt.com node scripts/check-live-repository-cache.mjs
+```
+
+It warns rather than fails on a cold edge, deliberately: nothing should be gated
+on a check that runs after the deploy it is checking.
