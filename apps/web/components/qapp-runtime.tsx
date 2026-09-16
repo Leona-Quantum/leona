@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useId, useMemo, useRef, useState } from "react";
+import { executionErrorSentence } from "../lib/qapp-execution-copy";
 import { isQappExecuteMessage, qappFrameDocument } from "../lib/qapp-frame";
 
 type Execution = {
@@ -96,8 +97,12 @@ export function QappRuntime({
       if (disposed) return;
       if (execution.status === "succeeded" || execution.status === "failed") {
         const ok = execution.status === "succeeded";
-        frame.current?.contentWindow?.postMessage({ channel, type: "qapp.response", requestId, ok, ...(ok ? { result: execution.result ?? {} } : { error: execution.error_code ?? "Execution failed." }) }, "*");
-        setNotice(ok ? "Execution complete." : execution.error_code ?? "Execution failed.");
+        // The machine code stays on the execution row; what reaches the
+        // generated interface and the status line is a sentence. A visitor was
+        // shown "qapp_program_failed" beside the button they had just pressed.
+        const failure = ok ? null : executionErrorSentence(execution.error_code);
+        frame.current?.contentWindow?.postMessage({ channel, type: "qapp.response", requestId, ok, ...(ok ? { result: execution.result ?? {} } : { error: failure }) }, "*");
+        setNotice(ok ? "Execution complete." : failure);
         runningRef.current = false;
         setPending(null);
         return;
