@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { SignInLink } from "../../components/sign-in-link";
+import { atlasStudioSignInHref, importedArtifactHref } from "../../lib/atlas-studio-import";
 import type { PublicLocale } from "../../lib/public-locale";
 import { WORKSPACE_COPY } from "../../lib/workspace-locale";
 
@@ -89,7 +90,7 @@ export function RepositoryExportAction({
       if (!response.ok || typeof payload.id !== "string") {
         throw new Error(payload.error ?? copy.error);
       }
-      window.location.assign(`/studio?artifact=${encodeURIComponent(payload.id)}`);
+      window.location.assign(importedArtifactHref(payload.id));
     } catch (cause) {
       setStatus(cause instanceof Error ? cause.message : copy.error);
       setExporting(false);
@@ -118,8 +119,14 @@ export function RepositoryExportAction({
               {title} {copy.body}
             </p>
             <p className="mj-repository-dialog-note">{copy.starBoundary}</p>
+            {/* `signInHref` is only the page's "sign-in is available" signal here.
+                Its own returnTo is the page default (/run), so using it as the
+                link sent a signed-out reader to the run page after sign-in with
+                nothing added. The import link returns them to Studio, which
+                performs the export itself on arrival. Same defect and same fix
+                as PR 896's "Open in Studio". */}
             {signInHref ? (
-              <SignInLink className="mj-primary-button" href={signInHref} pendingLabel={copy.openingSignIn}>
+              <SignInLink className="mj-primary-button" href={atlasStudioSignInHref(slug)} pendingLabel={copy.openingSignIn}>
                 {copy.signIn}
               </SignInLink>
             ) : (

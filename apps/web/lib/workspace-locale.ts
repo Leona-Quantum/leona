@@ -522,6 +522,8 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
     loadExample: string;
     unsavedChangesConfirm: string;
     exampleNotFound: string;
+    atlasImporting: string;
+    atlasImportFailed: string;
     expectationValue: (value: number) => string;
     askTitle: string;
     askPlaceholder: string;
@@ -1368,6 +1370,8 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
       loadExample: "Load",
       unsavedChangesConfirm: "This replaces the current draft. Continue?",
       exampleNotFound: "That example was not found. Starting a new circuit instead.",
+      atlasImporting: "Adding this Atlas entry to your Studio…",
+      atlasImportFailed: "This Atlas entry could not be added to your Studio.",
       expectationValue: (value) => `⟨H⟩ = ${value.toFixed(4)}`,
       askTitle: "Ask Leona",
       askPlaceholder: "Describe the change, for example: add a Hadamard on qubit 0",
@@ -2305,6 +2309,8 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
       loadExample: "読み込む",
       unsavedChangesConfirm: "現在の編集内容が置き換わります。続けますか？",
       exampleNotFound: "そのサンプルは見つかりませんでした。新しい回路を開始します。",
+      atlasImporting: "このAtlasの項目をStudioに追加しています…",
+      atlasImportFailed: "このAtlasの項目をStudioに追加できませんでした。",
       expectationValue: (value) => `⟨H⟩ = ${value.toFixed(4)}`,
       askTitle: "Leonaに依頼",
       askPlaceholder: "変更内容を記入してください。例：量子ビット0にアダマールを追加",
