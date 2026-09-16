@@ -412,10 +412,6 @@
   line-height: 1.5;
   font-weight: 500;
 }
-.speaker h4 small {
-  font-size: var(--qff-small);
-  margin-left: var(--sp-2);
-}
 .talkTitle {
   font-size: var(--qff-body);
   line-height: 1.8;

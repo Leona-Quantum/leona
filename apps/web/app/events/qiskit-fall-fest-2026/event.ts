@@ -57,6 +57,12 @@ export const days = [
     ],
     speakers: [
       {
+        name: "渡邉 毅",
+        affiliation: "IBM Quantum",
+        title: "講演内容：調整中",
+        note: "登壇予定",
+      },
+      {
         name: "齋藤 善仁",
         affiliation: "Quanmatic",
         title: "量子ビット数制約下における部分グローバー適応探索手法",
@@ -112,13 +118,13 @@ export const days = [
     speakers: [
       {
         name: "田中 宗",
-        affiliation: "教授",
+        affiliation: "慶應義塾大学教授",
         title: "量子アニーリングについて",
         note: "登壇予定 / 内容調整中",
       },
       {
         name: "小山 尚彦",
-        affiliation: "先生",
+        affiliation: "Bio2Q 特任教授",
         title: "量子機械学習について",
         note: "登壇予定 / 内容調整中",
       },
@@ -139,7 +145,7 @@ export function getEventDays(locale: PublicLocale) {
     })),
     speakers: day.speakers.map((speaker) => ({
       ...speaker,
-      affiliation: speaker.affiliation === "教授" || speaker.affiliation === "先生"
+      affiliation: speaker.affiliation === "慶應義塾大学教授" || speaker.affiliation === "Bio2Q 特任教授"
         ? t(speaker.affiliation)
         : speaker.affiliation,
       title: t(speaker.title),
