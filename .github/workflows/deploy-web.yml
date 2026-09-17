@@ -324,6 +324,32 @@ jobs:
             echo "ok  / with leona.locale.v2=ja -> lang=\"ja\""
           fi
           rm -f "$ja"
+          # Sign-in, asserted because of how it failed on 2026-09-17: with the
+          # WorkOS settings mounted, the five probes above split — the three
+          # prerendered pages were 200 and everything that runs the AuthKit
+          # middleware was 500, because NEXT_PUBLIC_WORKOS_REDIRECT_URI is inlined
+          # at BUILD time and the image had been built without it. A redirect to
+          # WorkOS carrying our client id is the smallest thing that proves the
+          # build argument, the four runtime values and the secret mounts at once.
+          if [ "$WEB_SIGN_IN" = "1" ]; then
+            loc=$(curl -sS --max-time 45 -o /dev/null -w '%{http_code} %{redirect_url}' \
+              -H "Authorization: Bearer ${TOKEN}" "${URL}/auth/sign-in")
+            case "$loc" in
+              "307 https://api.workos.com/"*"client_id=${WORKOS_CLIENT_ID}"*"redirect_uri=https%3A%2F%2Fleonaqt.com%2Fauth%2Fcallback"*)
+                echo "ok  /auth/sign-in -> WorkOS, with production's client id and callback" ;;
+              *) echo "::error::/auth/sign-in did not redirect to WorkOS as production does: ${loc%%\?*}"
+                 fail=1 ;;
+            esac
+          fi
+          # The contact form's only working path today is the mailto fallback
+          # (ai-ops 146 is open); unset, the form offers nothing and says nothing.
+          contact=$(curl -sS --max-time 45 -H "Authorization: Bearer ${TOKEN}" "${URL}/api/contact")
+          if jq -e '(.configured == true) or ((.mailto // "") | startswith("mailto:"))' <<<"$contact" >/dev/null 2>&1; then
+            echo "ok  /api/contact offers a way through"
+          else
+            echo "::error::/api/contact is neither configured nor offering a mailto fallback"
+            fail=1
+          fi
           [ "$fail" -eq 0 ] || exit 1
 
       # No --allow-unauthenticated flag in either direction: see the header. What
