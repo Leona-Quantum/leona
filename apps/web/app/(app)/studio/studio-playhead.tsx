@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, type CSSProperties } from "react";
+import { useId, useMemo, type CSSProperties } from "react";
 import type { BuilderStep, CustomGateDefinition } from "../../../lib/studio-builder";
 import { formatShare } from "../../../lib/simulation-visual";
 import { MAX_LIVE_PROBABILITY_QUBITS, momentEffect, playheadReading } from "../../../lib/studio-playhead";
@@ -59,6 +59,24 @@ export function PlayheadPanel({
   copy: StudioCopy;
   locale: PublicLocale;
 }) {
+  // React generates the id, so two panels on one page cannot collide. It was a
+  // hard-coded string until the library and the fixtures page began rendering
+  // their own: three panels then shared `id="studio-playhead-title"`, and each
+  // one's `aria-labelledby` resolved to the FIRST heading on the page rather
+  // than its own. A screen-reader user would have heard the same panel named
+  // three times. Reported by Sourcery on PR 920 as a nitpick; it is a real
+  // accessibility defect and the fix belongs here, not in the caller that
+  // happened to expose it.
+  const titleId = useId();
+
+  // `data-tour` below stays UNCONDITIONAL, deliberately. Studio, the library
+  // and the dev fixtures page each render this panel, but on different routes,
+  // so a tour step resolving that attribute is never ambiguous. Making it
+  // opt-in was tried and reverted: it would have put the anchor behind a prop
+  // that `lib/tour/targets.test.ts` cannot see — that guard is a source grep by
+  // its own documented design, so it cannot tell "emitted" from "emitted only
+  // when a caller asks for it", and dropping the prop at the one call site that
+  // matters would have left the guard green with the tour pointing at nothing.
   const reading = useMemo(
     () => playheadReading({ qubitCount, steps, customGates, columns, moment }),
     [qubitCount, steps, customGates, columns, moment],
@@ -79,9 +97,9 @@ export function PlayheadPanel({
   const position = moment === 0 ? copy.playheadStart : copy.playheadAfter(Math.min(moment, count), count);
 
   return (
-    <section className="mj-playhead" aria-labelledby="studio-playhead-title" data-tour="studio-playhead">
+    <section className="mj-playhead" aria-labelledby={titleId} data-tour="studio-playhead">
       <header className="mj-playhead-head">
-        <h3 id="studio-playhead-title">{copy.playheadTitle}</h3>
+        <h3 id={titleId}>{copy.playheadTitle}</h3>
         <span className="mj-playhead-position" aria-live="polite">{position}</span>
       </header>
       <div className="mj-playhead-transport">
