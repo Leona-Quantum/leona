@@ -231,13 +231,16 @@ test("nothing served from [locale] is also claimed as a routed segment", () => {
   // `/repository` is the one deliberate exception. Unlike the other entries —
   // each of which moved WHOLESALE to app/[locale]/, leaving nothing behind for
   // ROUTED_SEGMENTS to legitimately claim — "repository" still has to stay a
-  // ROUTED_SEGMENT for everything below the exact root: `/repository/<slug>`,
-  // `/repository/papers`, `/repository/folders` are all still served from
-  // app/repository/ and still need the auth gate. Only the bare `/repository`
-  // path is answered by the rewrite; isRoutedPath("/repository") is never
-  // consulted for it in practice, and its result would still be `true` if it
-  // were — the two are not in conflict, they are both true about different
-  // things, which is why this is a skip and not a second exception list.
+  // ROUTED_SEGMENT for what is left below the exact root: `/repository/<slug>`,
+  // the entry pages, which call `getMajoranaAuth()` per record and stay
+  // personalized in app/repository/ and still need the auth gate.
+  // `/repository/papers` and `/repository/folders` moved out from under that
+  // gate (PR 1, atlas-entry-caching-20260917) onto LOCALE_PREFIX_ROUTES — see
+  // that constant's own header for why. Only the bare `/repository` path is
+  // answered by the rewrite; isRoutedPath("/repository") is never consulted
+  // for it in practice, and its result would still be `true` if it were — the
+  // two are not in conflict, they are both true about different things, which
+  // is why this is a skip and not a second exception list.
   for (const route of LOCALE_ROUTES) {
     if (route === "/" || route === "/repository") continue;
     assert.equal(

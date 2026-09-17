@@ -10,33 +10,57 @@
 // tree no crawler reads and no reader without JS ever sees. Every folder here is an
 // `<a href>` to a real address, which is the same rule `browse-params.ts` states for
 // the Atlas deep links.
+//
+// Served from the CDN, and NOT by being prerendered — the `layers`/`layers/[id]`
+// split, not the `claims`/`papers` one. This page resolves `?scheme=` on the server
+// so a shared "method view" link lands already switched, with JavaScript off — and
+// reading `searchParams` opts any page out of static rendering unconditionally, so
+// the `revalidate` + `dynamicParams = false` recipe that prerenders `papers` cannot
+// reach this route at any price. What CAN reach it is the edge cache in FRONT of the
+// render: `next.config.ts` attaches `Vercel-CDN-Cache-Control` / `CDN-Cache-Control`
+// to this path (mirroring the `/repository/layers` entry, same 300s), and moving under
+// `[locale]` is what makes that cache SAFE rather than merely fast — cookies are not
+// part of Vercel's cache key, so serving this from a cookie-read layout would have
+// handed a Japanese reader the English tree and called it a hit. See the long note in
+// `../layers/page.tsx` for the measurement.
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
-import { canonicalMetadata } from "../../../../lib/public-metadata";
-import { PublicSite } from "../../../../components/public-site";
-import { FolderView } from "../../../../components/repository-folders";
-import { getPublicLocale } from "../../../../lib/public-locale-server";
-import { getRepositoryListEntries } from "../../../../lib/repository-source";
+import { canonicalMetadata } from "../../../../../lib/public-metadata";
+import { PublicSite } from "../../../../../components/public-site";
+import { FolderView } from "../../../../../components/repository-folders";
+import { isPublicLocale, parsePublicLocale } from "../../../../../lib/public-locale";
+import { getRepositoryListEntries } from "../../../../../lib/repository-source";
 import {
   buildFolderTree,
   buildMethodFolderTree,
   resolveFolderPath,
   resolveMethodFolderPath,
-} from "../../../../lib/repository/folder-tree";
-import { parseFolderScheme } from "../../../../components/repository-folders";
+} from "../../../../../lib/repository/folder-tree";
+import { parseFolderScheme } from "../../../../../components/repository-folders";
 
 /**
- * Localised, for the reason every other public Atlas route is: a static English export
- * gives a Japanese reader an English title on this page and a Japanese one on the entry
- * it links to, and the inconsistency is the tell. The page reads the locale cookie
- * anyway, so it costs nothing.
+ * `dynamicParams = false` does NOT cover this page — it restricts params only on a
+ * route that prerenders, and this one reads `searchParams` and therefore never does
+ * (see the file header). So every locale is "outside the prerendered set" and Next
+ * renders it regardless; the page has to refuse an unknown one itself, which the body
+ * below does. Required anyway, and asserted literally by `public-revalidate.test.ts`,
+ * because every page under `[locale]` carries it whether or not it is the mechanism
+ * doing the work.
+ */
+export const dynamicParams = false;
+
+/**
+ * Localised, for the reason every other public Atlas route is: a static English
+ * export gives a Japanese reader an English title on this page and a Japanese one on
+ * the entry it links to, and the inconsistency is the tell.
  */
 export async function generateMetadata({
   params,
 }: {
-  params: Promise<{ path?: string[] }>;
+  params: Promise<{ locale: string; path?: string[] }>;
 }): Promise<Metadata> {
-  const [{ path }, locale] = await Promise.all([params, getPublicLocale()]);
+  const { path, locale: rawLocale } = await params;
+  const locale = parsePublicLocale(rawLocale);
   // Same derivation the page body below uses for `segments` — so the canonical
   // address always names the folder this render resolved, not a re-guess of it.
   const segments = (path ?? []).map(decodeURIComponent);
@@ -61,15 +85,16 @@ export default async function RepositoryFoldersPage({
   params,
   searchParams,
 }: {
-  params: Promise<{ path?: string[] }>;
+  params: Promise<{ locale: string; path?: string[] }>;
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
-  const [{ path }, query, locale, entries] = await Promise.all([
-    params,
-    searchParams,
-    getPublicLocale(),
-    getRepositoryListEntries(),
-  ]);
+  const [{ path, locale: rawLocale }, query] = await Promise.all([params, searchParams]);
+  // Before anything else, and not covered by `dynamicParams = false` — see the
+  // doc comment above. Without this, `/zz/repository/folders` served the English
+  // tree with a 200. See `isPublicLocale`.
+  if (!isPublicLocale(rawLocale)) notFound();
+  const locale = parsePublicLocale(rawLocale);
+  const entries = await getRepositoryListEntries();
   // **Exactly one tree is built per request.** ai-ops#45's second acceptance
   // condition is that load times must not spike, and building both so the
   // switcher could count the other one would double the work on every render
@@ -96,6 +121,10 @@ export default async function RepositoryFoldersPage({
       activePath="/repository"
       className="mj-repository-site mj-layers-site"
       locale={locale}
+      // See the same note on `../layers/page.tsx`: `"full"` (the default) would
+      // call `getMajoranaAuth()`, which throws on a request that never reached
+      // AuthKit's middleware because the locale rewrite answered first.
+      chrome="static"
       showLanguageToggle
     >
       <FolderView

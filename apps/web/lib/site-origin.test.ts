@@ -208,20 +208,23 @@ const CANONICAL_PAGE_SOURCES: Record<string, string> = {
   "/contact": "app/[locale]/contact/page.tsx",
   "/privacy": "app/[locale]/privacy/page.tsx",
   "/terms": "app/[locale]/terms/page.tsx",
-  "/repository/folders": "app/repository/folders/[[...path]]/page.tsx",
-  // Under `[locale]` since the Atlas caching change: these three carry no
+  // Under `[locale]` since the Atlas caching change: these six carry no
   // per-visitor read during their server render, so they moved to where the
   // locale is a path segment and the CDN can hold them. Their canonical
   // address is unchanged, which is the whole point of `canonicalMetadata`
-  // taking the clean path. `/repository` is the newest of the three — it
-  // still has a per-entry personalized control (the "Add to Studio" button),
-  // which is why it moved later than its two siblings: that control had to
-  // learn to resolve sign-in state client-side (`/api/auth/session`) before
-  // the page itself could stop calling `getMajoranaAuth()` server-side.
+  // taking the clean path. `/repository` was the first of the six to move —
+  // it still has a per-entry personalized control (the "Add to Studio"
+  // button), which is why it moved before `papers`/`folders` did: that
+  // control had to learn to resolve sign-in state client-side
+  // (`/api/auth/session`) before the page itself could stop calling
+  // `getMajoranaAuth()` server-side. `papers` and `folders` never had that
+  // control, so their own move (PR 1, atlas-entry-caching-20260917) needed
+  // only the locale-cookie half of the same fix.
   "/repository": "app/[locale]/repository/(browse)/page.tsx",
   "/repository/layers": "app/[locale]/repository/layers/page.tsx",
   "/repository/claims": "app/[locale]/repository/claims/page.tsx",
-  "/repository/papers": "app/repository/papers/page.tsx",
+  "/repository/papers": "app/[locale]/repository/papers/page.tsx",
+  "/repository/folders": "app/[locale]/repository/folders/[[...path]]/page.tsx",
 };
 
 function pageSource(relative: string): string {

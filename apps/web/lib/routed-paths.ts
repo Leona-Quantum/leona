@@ -109,14 +109,27 @@ export const LOCALE_ROUTES: readonly string[] = [
  *
  * `/repository`'s first segment, "repository", therefore now does three
  * different things depending on the exact path: `LOCALE_ROUTES` rewrites the
- * bare path, `LOCALE_PREFIX_ROUTES` rewrites two named subtrees below it, and
- * `ROUTED_SEGMENTS` still routes everything else (`/repository/<slug>`,
- * `/repository/papers`, `/repository/folders`) through `app/repository/` as
- * before. `routed-paths.test.ts` checks all three against the filesystem.
+ * bare path, `LOCALE_PREFIX_ROUTES` rewrites four named subtrees below it, and
+ * `ROUTED_SEGMENTS` still routes everything else (`/repository/<slug>`, the
+ * entry pages, which stay personalized) through `app/repository/` as before.
+ * `routed-paths.test.ts` checks all three against the filesystem.
+ *
+ * ## `/repository/papers` and `/repository/folders` joined this list too
+ *
+ * Both read only the locale cookie and (for `folders`) `?scheme=`; neither
+ * calls `getMajoranaAuth()`, so both moved on the same `layers`/`claims`
+ * pattern (atlas-entry-caching-20260917 PLAN.md, PR 1). `papers` and
+ * `papers/[id]` read no `searchParams`, so — unlike `layers` — they actually
+ * prerender (`revalidate` + `dynamicParams = false`, the `claims` recipe).
+ * `folders` reads `?scheme=`, so it stays on the `layers` half: CDN-cached in
+ * front of a per-request render, never prerendered. See the header comment on
+ * each moved page for which half it is on.
  */
 export const LOCALE_PREFIX_ROUTES: readonly string[] = [
   "/repository/claims",
+  "/repository/folders",
   "/repository/layers",
+  "/repository/papers",
 ];
 
 /**
