@@ -9,7 +9,14 @@
 # only `jupyterlab>=4.0` stated the fallback resolved to nbconvert 7.17.1's
 # predecessor 7.9.2, carrying a CVSS 8.5 advisory plus two more. Naming a
 # transitive dependency is the only way a reader can audit it.
-jupyterlab>=4.6
+#
+# The same rule bit jupyterlab itself on 2026-09-17. The floor read `>=4.6`
+# while uv.lock resolved 4.6.3, and two advisories published that day —
+# GHSA-gx64-gj6p-pc4c (CVSS 7.5) and GHSA-pppj-hq3g-57pj (CVSS 8.6), both XSS,
+# both patched in 4.6.2 — cover exactly 4.6.0 and 4.6.1. Nobody was running a
+# vulnerable version; the FLOOR permitted one, which is what this file is for
+# and what the scanner reads. Raised to what the lock resolves.
+jupyterlab>=4.6.3
 ipykernel>=7.3
 nbformat>=5.11
 nbclient>=0.11

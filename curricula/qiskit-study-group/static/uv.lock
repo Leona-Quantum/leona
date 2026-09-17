@@ -2605,7 +2605,7 @@ notebooks = [
 [package.metadata]
 requires-dist = [
     { name = "ipykernel", marker = "extra == 'notebooks'" },
-    { name = "jupyterlab", marker = "extra == 'notebooks'" },
+    { name = "jupyterlab", marker = "extra == 'notebooks'", specifier = ">=4.6.3" },
     { name = "matplotlib" },
     { name = "nbclient", marker = "extra == 'notebooks'" },
     { name = "nbformat", marker = "extra == 'notebooks'" },
