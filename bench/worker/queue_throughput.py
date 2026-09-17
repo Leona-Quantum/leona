@@ -179,6 +179,9 @@ class _InMemoryQueue:
 class _Session:
     def __init__(self, queue: _InMemoryQueue) -> None:
         self._queue = queue
+        # Mirrors the real `AsyncSession.info` dict: `_execute_with_heartbeat`
+        # stamps `job_attempt` onto it unconditionally before every handler runs.
+        self.info: dict[str, Any] = {}
 
     async def commit(self) -> None:
         self._queue.commit_count += 1

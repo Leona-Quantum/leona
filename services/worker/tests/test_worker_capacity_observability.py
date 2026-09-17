@@ -157,7 +157,7 @@ async def test_lease_loss_while_retrying_is_counted_not_raised(monkeypatch):
     monkeypatch.setattr(worker_main, "HANDLERS", {"demo": handler})
     monkeypatch.setattr(system, "retry_job", _lease_lost)
 
-    async def execute(_factory, *, job_id, lease_token, handler, payload):
+    async def execute(_factory, *, job_id, lease_token, handler, payload, attempts=1):
         raise worker_main.RetryableJobError("transient")
 
     monkeypatch.setattr(worker_main, "_execute_with_heartbeat", execute)

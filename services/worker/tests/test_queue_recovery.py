@@ -9,6 +9,9 @@ from majorana_worker import __main__ as worker_main
 
 
 class _Session:
+    def __init__(self):
+        self.info: dict = {}
+
     async def commit(self):
         return None
 
