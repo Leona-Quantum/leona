@@ -41,7 +41,7 @@ import {
   workedExampleSignInHref,
   workedExampleStudioHref,
 } from "../lib/atlas-worked-example-steps";
-import { stepEffect, type StepEffect } from "../lib/atlas-step-effect";
+import { openedStepEffects, stepEffect, type StepEffect } from "../lib/atlas-step-effect";
 import { describeStepEffect, phasePanelCopy, phaseRow, shouldShowPhases } from "../lib/atlas-step-effect-copy";
 import type { WorkedExampleSummary } from "../lib/atlas-worked-example-summary";
 import { AtlasOutcomeBars } from "./atlas-circuit";
@@ -361,6 +361,14 @@ export function AtlasWorkedExampleFigure({
           const note = noteByStepId.get(step.id);
           const opened = openedStep === index;
           const gates = step.gate === "CUSTOM" ? openedStepGates(step, example.customGates) : [];
+          const innerEffects = opened
+            ? openedStepEffects({
+                steps: example.steps,
+                customGates: example.customGates,
+                qubitCount: example.qubitCount,
+                index,
+              })
+            : [];
           return (
             <li key={step.id} className="mj-worked-example-note" data-current={index === currentStep || undefined}>
               <button type="button" className="mj-worked-example-note-step" onClick={() => go(index)}>
@@ -389,13 +397,24 @@ export function AtlasWorkedExampleFigure({
                     {opened ? copy.collapse : copy.expand}
                   </button>
                   {opened ? (
-                    <ul className="mj-worked-example-block-gates">
-                      {gates.map((gate, gateIndex) => (
-                        <li key={`${gate.id}-${gateIndex}`}>
-                          <code>{gate.label}</code> {copy.onWires} {gate.qubits.map((qubit) => drawing.wires[qubit]).join(", ")}
-                        </li>
-                      ))}
-                    </ul>
+                    <ol className="mj-worked-example-block-gates">
+                      {gates.map((gate, gateIndex) => {
+                        // Computed only for the block a reader actually opened —
+                        // one prefix run per inner gate, and a QFT block has
+                        // enough of them that doing this for every block of
+                        // every example up front would be work nobody asked for.
+                        const innerText = describeStepEffect(
+                          innerEffects[gateIndex] ?? { kind: "unavailable", reason: "angle" },
+                          locale,
+                        );
+                        return (
+                          <li key={`${gate.id}-${gateIndex}`}>
+                            <code>{gate.label}</code> {copy.onWires} {gate.qubits.map((qubit) => drawing.wires[qubit]).join(", ")}
+                            {innerText ? <p className="mj-worked-example-block-effect">{innerText}</p> : null}
+                          </li>
+                        );
+                      })}
+                    </ol>
                   ) : null}
                 </>
               ) : null}

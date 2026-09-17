@@ -40,7 +40,40 @@ export function stepLabel(step: BuilderStep, customGates: readonly CustomGateDef
     const definition = customGates.find((gate) => gate.id === step.customGateId);
     return definition?.name ?? "Block";
   }
-  return step.param ? `${step.gate}(${step.param})` : step.gate;
+  return step.param ? `${step.gate}(${formatGateAngle(step.param)})` : step.gate;
+}
+
+/**
+ * An angle as a reader would write it, when it is a plain number.
+ *
+ * An authored param is already symbolic — "pi/2", "5*pi/4", "2*J*dt" — and is
+ * returned untouched. A GENERATED one is not: the blocks that build a ladder of
+ * rotations compute their angles in radians, so opening QPE's controlled-power
+ * block listed `CP(2.356194490192345)`, `CP(4.71238898038469)`,
+ * `CP(9.42477796076938)`. Those are 3π/4, 3π/2 and 3π — a doubling ladder,
+ * which is the entire point of the block, and completely unreadable as printed.
+ *
+ * Only exact multiples of π/16 are rewritten. Anything else keeps a plain
+ * 4-significant-figure decimal rather than being forced into a fraction it is
+ * not: a wrong-looking fraction is worse than an honest decimal.
+ */
+export function formatGateAngle(param: string): string {
+  const value = Number(param);
+  if (!Number.isFinite(value) || param.trim() === "") return param;
+  if (value === 0) return "0";
+  const sixteenths = Math.round((value / Math.PI) * 16);
+  if (sixteenths !== 0 && Math.abs((value / Math.PI) * 16 - sixteenths) < 1e-9) {
+    const divisor = greatestCommonDivisor(Math.abs(sixteenths), 16);
+    const top = sixteenths / divisor;
+    const bottom = 16 / divisor;
+    const numerator = top === 1 ? "π" : top === -1 ? "−π" : `${top}π`;
+    return bottom === 1 ? numerator : `${numerator}/${bottom}`;
+  }
+  return String(Number(value.toPrecision(4)));
+}
+
+function greatestCommonDivisor(a: number, b: number): number {
+  return b === 0 ? a : greatestCommonDivisor(b, a % b);
 }
 
 /**

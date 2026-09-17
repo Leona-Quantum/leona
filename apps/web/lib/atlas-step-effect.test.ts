@@ -4,6 +4,7 @@ import test from "node:test";
 import {
   MAX_EFFECT_QUBITS,
   isProduct,
+  openedStepEffects,
   readEffect,
   reducedPurity,
   stepEffect,
@@ -215,4 +216,54 @@ test("the corpus's own phase-kickback steps are read as phase changes", () => {
     assert.equal(effect.kind === "ok" ? effect.change : null, "phase", `${id} step ${index + 1}`);
     assert.ok(effect.kind === "ok" && effect.distinctPhases === 2, `${id} should carry two relative phases`);
   }
+});
+
+test("opening QPE's controlled-power block narrates the phase arriving one rotation at a time", () => {
+  // The case this exists for. From outside, the whole block reads as a single
+  // phase-only step; opening it should show where each phase came from, with
+  // numbers that agree with the top-level reading rather than describing the
+  // block as if the circuit started at it.
+  const qpe = WORKED_EXAMPLES.find((example) => example.id === "qpe-3-exact");
+  assert.ok(qpe, "qpe-3-exact is missing from WORKED_EXAMPLES");
+  const blockIndex = qpe.steps.findIndex((step) => step.gate === "CUSTOM" && stepLabelIncludes(qpe, step, "Controlled phase powers"));
+  assert.ok(blockIndex >= 0, "the controlled-power block is not where this test expects it");
+
+  const inner = openedStepEffects({
+    steps: qpe.steps,
+    customGates: qpe.customGates,
+    qubitCount: qpe.qubitCount,
+    index: blockIndex,
+  });
+  assert.ok(inner.length > 1, `expected several gates inside the block, got ${inner.length}`);
+  for (const [position, effect] of inner.entries()) {
+    assert.equal(effect.kind, "ok", `inner gate ${position + 1} did not read`);
+    assert.ok(describeStepEffect(effect, "en"), `inner gate ${position + 1} has no sentence`);
+  }
+  // Every gate in this ladder is a controlled phase: none of them moves any
+  // probability, which is exactly what the block's own top-level reading says.
+  assert.ok(
+    inner.every((effect) => effect.kind === "ok" && (effect.change === "phase" || effect.change === "none")),
+    "a controlled-phase ladder must read as phase-only all the way down",
+  );
+  // The last inner gate must leave the state the whole block leaves.
+  const whole = stepEffect({ steps: qpe.steps, customGates: qpe.customGates, qubitCount: qpe.qubitCount, index: blockIndex });
+  assert.equal(whole.kind, "ok");
+  const last = inner[inner.length - 1];
+  assert.ok(whole.kind === "ok" && last.kind === "ok");
+  assert.deepEqual(
+    last.phases.map((amplitude) => [amplitude.bitstring, amplitude.phaseTurns.toFixed(9)]),
+    whole.phases.map((amplitude) => [amplitude.bitstring, amplitude.phaseTurns.toFixed(9)]),
+    "the last gate inside the block must land on the state the block as a whole lands on",
+  );
+});
+
+function stepLabelIncludes(example: { customGates: readonly { id: string; name: string }[] }, step: BuilderStep, text: string): boolean {
+  const definition = example.customGates.find((gate) => gate.id === step.customGateId);
+  return Boolean(definition?.name.includes(text));
+}
+
+test("openedStepEffects returns nothing for a step that is not a block", () => {
+  const steps: BuilderStep[] = [{ id: "h", gate: "H", qubits: [0] }];
+  assert.deepEqual(openedStepEffects({ steps, customGates: [], qubitCount: 1, index: 0 }), []);
+  assert.deepEqual(openedStepEffects({ steps, customGates: [], qubitCount: 1, index: 5 }), []);
 });

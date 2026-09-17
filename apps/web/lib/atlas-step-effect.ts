@@ -210,6 +210,73 @@ export function stepEffect({
   return readEffect(before, after, qubitCount);
 }
 
+/**
+ * The same reading, one entry per gate INSIDE a block step that a reader has
+ * opened.
+ *
+ * Opening a block listed its gates and nothing else — `H on q0`, `CX on q0,
+ * q1` — which is the step label problem one level down: the list restates the
+ * drawing. It matters most on exactly the examples where a block is doing the
+ * work, because those are the ones where the top-level step is a single box:
+ * QPE's controlled-power ladder reads as one phase-only step from outside, and
+ * a reader who opens it to find out HOW wants to see the phase arrive one
+ * controlled rotation at a time.
+ *
+ * Each entry is the effect of that inner gate in the context of the whole
+ * circuit — the prefix is every step before the block plus the block's own
+ * gates up to and including this one — so the numbers agree with the
+ * top-level reading rather than describing the block in isolation.
+ *
+ * Returns an empty array for a step that is not a block, and declines as a
+ * whole (every entry `unavailable`) wherever `stepEffect` declines.
+ */
+export function openedStepEffects({
+  steps,
+  customGates,
+  qubitCount,
+  index,
+}: {
+  steps: readonly BuilderStep[];
+  customGates: readonly CustomGateDefinition[];
+  qubitCount: number;
+  index: number;
+}): StepEffect[] {
+  const step = steps[index];
+  if (!step || step.gate !== "CUSTOM") return [];
+  if (qubitCount > MAX_EFFECT_QUBITS) return [];
+  const definitions = new Map(customGates.map((gate) => [gate.id, gate]));
+  const definition = definitions.get(step.customGateId ?? "");
+  if (!definition || definition.opaque === true) return [];
+
+  const before = flattenBuilderSteps([...steps.slice(0, index)], [...customGates]);
+  const inner = flattenBuilderSteps([step], [...customGates]);
+  if (inner.length === 0) return [];
+
+  const out: StepEffect[] = [];
+  for (let position = 0; position < inner.length; position += 1) {
+    const flatBefore = [...before, ...inner.slice(0, position)];
+    const flatAfter = [...before, ...inner.slice(0, position + 1)];
+    if (flatAfter.some((gate) => gate.gate === "M")) {
+      // A measurement inside a block would need the collapsed branch, which a
+      // single statevector does not carry — the same refusal stepEffect makes.
+      out.push({ kind: "unavailable", reason: "mid_circuit_measurement" });
+      continue;
+    }
+    try {
+      out.push(
+        readEffect(
+          idealStatevector({ qubitCount, steps: flatBefore }),
+          idealStatevector({ qubitCount, steps: flatAfter }),
+          qubitCount,
+        ),
+      );
+    } catch {
+      out.push({ kind: "unavailable", reason: "angle" });
+    }
+  }
+  return out;
+}
+
 /** The reading itself, separated from running the circuits so it can be tested against hand-built states. */
 export function readEffect(
   before: { real: Float64Array; imaginary: Float64Array },
