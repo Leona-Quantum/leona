@@ -37,10 +37,11 @@ import { AtlasGlance, type AtlasGlanceItem } from "../../../components/atlas-gla
 import { hasAtlasCircuit } from "../../../lib/repository/atlas-circuit-layout";
 import { isPlaceholderDiagram } from "../../../lib/repository/placeholder-diagrams";
 import { AtlasWorkedExampleComponentNote, AtlasWorkedExampleFigure } from "../../../components/atlas-worked-example";
+import type { WorkedExampleSummary } from "../../../lib/atlas-worked-example-summary";
 // Type-only: this component never imports worked-examples.ts's value exports
 // (WORKED_EXAMPLES/workedExample), only the shape of the one resolved example
 // the server already picked. See worked-example-resolution.ts's doc comment.
-import type { LocalizedText, WorkedExample } from "../../../lib/worked-examples";
+import type { WorkedExample } from "../../../lib/worked-examples";
 
 const COPY = {
   en: {
@@ -307,7 +308,7 @@ export function RepositoryEntryView({
    * example; `"used-in"` is the reverse, the example's algorithm using this
    * record. Each gets its own note wording (atlas-worked-example.tsx).
    */
-  workedExampleComponents?: readonly { exampleId: string; title: LocalizedText; relation: "component" | "used-in" }[];
+  workedExampleComponents?: readonly WorkedExampleSummary[];
   /**
    * The cost panel, rendered on the server and passed in as a slot.
    *
@@ -695,9 +696,7 @@ export function RepositoryEntryView({
         {workedExampleComponents.map((component) => (
           <AtlasWorkedExampleComponentNote
             key={component.exampleId}
-            title={ja ? component.title.ja : component.title.en}
-            exampleId={component.exampleId}
-            relation={component.relation}
+            summary={component}
             locale={locale}
             isSignedIn={isSignedIn}
             signInHref={signInHref}

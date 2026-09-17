@@ -24,6 +24,7 @@ import { resolveEntryPort, type BrowseSearchParams } from "../../../lib/reposito
 import { SECTION_PARAM, withCard } from "../../../lib/repository/map-card";
 import { parseRecordSection } from "../../../lib/repository/record-card";
 import { resolveWorkedExamples } from "../../../lib/repository/worked-example-resolution";
+import { workedExampleSummary } from "../../../lib/atlas-worked-example-summary";
 import { RepositoryEntryView } from "./repository-entry-view";
 
 export async function generateStaticParams() {
@@ -152,13 +153,15 @@ export default async function RepositoryEntryPage({
   // them to every record page's visitor rather than just this record's own.
   // See worked-example-resolution.ts's doc comment.
   const workedExamples = resolveWorkedExamples(entry.slug);
-  const workedExampleComponents = workedExamples.components.map(({ link, example }) => ({
-    exampleId: link.exampleId,
-    title: example.title,
-    // "component" | "used-in" only — a hero-relation ("instance") link never
-    // reaches .components (see resolveWorkedExamples).
-    relation: link.relation as "component" | "used-in",
-  }));
+  // A full summary, not a title: the note draws the example's own circuit,
+  // final outcomes and readout, and quotes the phrase on THIS record the link
+  // was built from. `workedExampleSummary` collapses the WorkedExample to a
+  // serializable object here so the examples module still never crosses into
+  // the client bundle. "component" | "used-in" only — a hero-relation
+  // ("instance") link never reaches .components (see resolveWorkedExamples).
+  const workedExampleComponents = workedExamples.components.map(({ link, example }) =>
+    workedExampleSummary(example, link),
+  );
 
   const corpusEntry = layerCorpusEntry({ ...entry, verificationMethods: entryVerificationMethods(entry) });
   // The section `?sec=` names, resolved against the record's own list the way

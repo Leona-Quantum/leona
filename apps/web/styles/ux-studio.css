@@ -596,6 +596,47 @@
   color: var(--text-1);
 }
 
+/* ── Visual: amplitude/phase panel and the per-moment reading ──────────────
+   The bars above are blind to phase: a P, a CZ, a controlled-phase or a Grover
+   oracle leaves them pixel-identical. These two blocks are what tells a builder
+   that the moment they just scrubbed past did something. */
+.mj-playhead-phases { display: grid; gap: var(--sp-1); margin-top: var(--sp-2); }
+.mj-playhead-phases h4 { margin: 0; color: var(--text-2); font-size: var(--fs-12); font-weight: 500; }
+.mj-playhead-phase-rows { display: grid; gap: 2px; margin: 0; padding: 0; list-style: none; }
+.mj-playhead-phase-rows > li {
+  display: grid;
+  grid-template-columns: var(--playhead-bits, 6ch) 16px 6.5ch;
+  align-items: center;
+  gap: var(--sp-2);
+  min-height: 18px;
+}
+.mj-playhead-phase-rows code {
+  overflow: hidden;
+  color: var(--text-1);
+  font-family: var(--font-mono);
+  font-size: var(--fs-12);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.mj-playhead-phase-dial { display: inline-flex; width: 16px; height: 16px; }
+.mj-playhead-phase-dial svg { width: 16px; height: 16px; }
+.mj-playhead-phase-rim { fill: none; stroke: color-mix(in srgb, var(--text-2) 30%, transparent); stroke-width: 1; }
+.mj-playhead-phase-hand { stroke: color-mix(in srgb, var(--accent) 45%, transparent); stroke-width: 1; }
+.mj-playhead-phase-point { fill: var(--accent); }
+
+.mj-playhead-effect {
+  margin: var(--sp-2) 0 0;
+  padding-left: var(--sp-2);
+  border-left: 2px solid var(--border-0);
+  color: var(--text-2);
+  font-size: var(--fs-12);
+  line-height: 1.45;
+}
+/* A moment whose whole content is phase is the one a builder is most likely to
+   read as "nothing happened", so it is the one the accent marks. */
+.mj-playhead-effect[data-change="phase"] { border-left-color: var(--accent); color: var(--text-1); }
+.mj-playhead-effect-label { display: block; color: var(--text-2); font-size: var(--fs-12); }
+
 /* ── Visual: gate inspector ─────────────────────────────────────────────── */
 .mj-gate-inspector {
   position: fixed;

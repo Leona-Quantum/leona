@@ -3,7 +3,9 @@ import { test } from "node:test";
 
 import { circuitMoments } from "./circuit-moments.ts";
 import type { BuilderStep, CustomGateDefinition } from "./studio-builder.ts";
-import { MAX_LIVE_PROBABILITY_QUBITS, playheadReading, stepsBeforeMoment } from "./studio-playhead.ts";
+import { MAX_LIVE_PROBABILITY_QUBITS, momentEffect, playheadReading, stepsBeforeMoment } from "./studio-playhead.ts";
+import { describeStepEffect } from "./atlas-step-effect-copy.ts";
+import { WORKED_EXAMPLES } from "./worked-examples.ts";
 
 const BELL: BuilderStep[] = [
   { id: "h", gate: "H", qubits: [0] },
@@ -88,4 +90,90 @@ test("a negative angle is read, not declined — studio-simulation.ts's angle() 
 
 test("stepsBeforeMoment keeps array order", () => {
   assert.deepEqual(stepsBeforeMoment(["a", "b", "c"], [1, 0, 2], 2), ["a", "b"]);
+});
+
+test("equal probabilities list in counting order, not in float order", () => {
+  // The real case, not a constructed one: three Hadamards alone reach exactly
+  // equal amplitudes, so they cannot show this bug. It takes a gate whose
+  // decomposition carries rounding — the Grover example's phase oracle, whose
+  // multi-controlled Z leaves the eight amplitudes differing at the 17th
+  // significant figure. Sorted by a bare subtraction the live figure listed
+  // them 100, 111, 011, 101, 000, 001, 110, 010: an order with no meaning,
+  // which a reader looking for one bitstring has to search rather than index
+  // into. The states stay equally likely, so only the ordering is at issue.
+  const grover = WORKED_EXAMPLES.find((example) => example.id === "grover-3q-101");
+  assert.ok(grover, "grover-3q-101 is missing from WORKED_EXAMPLES");
+  const throughOracle = grover.steps.slice(0, 2);
+  const reading = playheadReading({
+    qubitCount: grover.qubitCount,
+    steps: throughOracle,
+    customGates: grover.customGates,
+    columns: throughOracle.map((_, index) => index),
+    moment: throughOracle.length,
+  });
+  assert.equal(reading.kind, "ok");
+  if (reading.kind !== "ok") return;
+  assert.deepEqual(
+    reading.bars.map((bar) => bar.bitstring),
+    ["000", "001", "010", "011", "100", "101", "110", "111"],
+  );
+  // The premise: they really are all the same probability, so ordering them by
+  // probability is meaningless and the tie-break is the whole answer.
+  for (const bar of reading.bars) assert.ok(Math.abs(bar.probability - 0.125) < 1e-12);
+});
+
+test("momentEffect reports a phase-only moment the bars cannot show", () => {
+  // H then CZ on two qubits. After the Hadamards every outcome is 25%; the CZ
+  // flips the sign of |11> and moves no probability at all, so the bars are
+  // identical before and after and a builder scrubbing across it sees nothing.
+  const steps: BuilderStep[] = [
+    { id: "h0", gate: "H", qubits: [0] },
+    { id: "h1", gate: "H", qubits: [1] },
+    { id: "cz", gate: "CZ", qubits: [0, 1] },
+  ];
+  const columns = [0, 0, 1];
+  const before = playheadReading({ qubitCount: 2, steps, customGates: [], columns, moment: 1 });
+  const after = playheadReading({ qubitCount: 2, steps, customGates: [], columns, moment: 2 });
+  assert.equal(before.kind, "ok");
+  assert.equal(after.kind, "ok");
+  if (before.kind !== "ok" || after.kind !== "ok") return;
+  // The premise: the bars really are the same, so the CZ is invisible to them.
+  assert.deepEqual(
+    before.bars.map((bar) => [bar.bitstring, bar.probability.toFixed(6)]),
+    after.bars.map((bar) => [bar.bitstring, bar.probability.toFixed(6)]),
+  );
+
+  const effect = momentEffect({ qubitCount: 2, steps, customGates: [], columns, moment: 2 });
+  assert.ok(effect, "the CZ moment must produce a reading");
+  assert.equal(effect.change, "phase");
+  assert.equal(effect.distinctPhases, 2);
+  assert.match(describeStepEffect(effect, "en") ?? "", /probabilities do not move/);
+});
+
+test("momentEffect declines where it has nothing to say, rather than saying nothing changed", () => {
+  const steps: BuilderStep[] = [
+    { id: "h0", gate: "H", qubits: [0] },
+    { id: "h1", gate: "H", qubits: [1] },
+  ];
+  const columns = [0, 1];
+  // Before the first gate there is no preceding moment to report on.
+  assert.equal(momentEffect({ qubitCount: 2, steps, customGates: [], columns, moment: 0 }), null);
+  // Past the kernel's own ceiling, where the bars decline too.
+  assert.equal(
+    momentEffect({ qubitCount: MAX_LIVE_PROBABILITY_QUBITS + 1, steps, customGates: [], columns, moment: 1 }),
+    null,
+  );
+  // An empty column holds no gate: "nothing changed" would be true and useless.
+  assert.equal(momentEffect({ qubitCount: 2, steps, customGates: [], columns: [0, 5], moment: 3 }), null);
+});
+
+test("momentEffect reports the real state on the moment a gate entangles", () => {
+  const steps: BuilderStep[] = [
+    { id: "h0", gate: "H", qubits: [0] },
+    { id: "cx", gate: "CX", qubits: [0, 1] },
+  ];
+  const effect = momentEffect({ qubitCount: 2, steps, customGates: [], columns: [0, 1], moment: 2 });
+  assert.ok(effect);
+  assert.equal(effect.entangles, true);
+  assert.match(describeStepEffect(effect, "en") ?? "", /entangles the qubits/);
 });

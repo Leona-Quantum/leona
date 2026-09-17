@@ -2279,6 +2279,7 @@ export function CircuitBuilder({ seed, framework, selectedGate, onSelectGate, on
             moment={playheadMoment}
             onMoment={setPlayhead}
             copy={copy}
+            locale={locale}
           />
         )}
       </div>

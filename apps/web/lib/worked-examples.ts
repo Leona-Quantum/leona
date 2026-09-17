@@ -96,20 +96,33 @@ function bellPair(): WorkedExample {
 // 2. ghz-4
 
 function ghz4(): WorkedExample {
-  const built = place("ghz", { n: 4 }, [0, 1, 2, 3], "ghz");
+  // The `ghz` block, unrolled into its own four gates as four top-level steps.
+  // Placed as one block this example was a single opaque box labelled GHZ(4):
+  // one step, one note, and a walkthrough with nothing to walk through. The
+  // gate sequence and the final state are identical — `leafBlock` for `ghz`
+  // is exactly h(0) then the CX chain — but each link of the chain is now its
+  // own step, and each one's derived effect shows the entanglement reaching
+  // one more qubit.
+  const h0 = rawStep("H", [0]);
+  const chain = [rawStep("CX", [0, 1]), rawStep("CX", [1, 2]), rawStep("CX", [2, 3])];
   return {
     id: "ghz-4",
     algorithm: "GHZ state",
     title: { en: "A 4-qubit GHZ state", ja: "4量子ビットGHZ状態" },
     instance: { en: "4 qubits, preparing (|0000⟩ + |1111⟩) / √2.", ja: "4量子ビットで (|0000⟩ + |1111⟩) / √2 を準備します。" },
     qubitCount: 4,
-    steps: [built.step],
-    customGates: built.customGates,
-    notes: [note(built.step.id, "A Hadamard on qubit 0 followed by a CX chain entangles all four qubits together.", "量子ビット0へのアダマールゲートに続くCXの連鎖が、4つの量子ビットすべてをもつれさせます。")],
+    steps: [h0, ...chain],
+    customGates: [],
+    notes: [
+      note(h0.id, "Puts qubit 0 into an equal superposition of |0⟩ and |1⟩. The other three are still plain |0⟩.", "量子ビット0を|0⟩と|1⟩の等しい重ね合わせにします。他の3つはまだ単なる|0⟩です。"),
+      note(chain[0].id, "Copies qubit 0's value onto qubit 1 — not by reading it, which would destroy the superposition, but by making the pair agree in both branches at once.", "量子ビット0の値を量子ビット1へ写します。読み取るのではなく（読み取れば重ね合わせが壊れます）、2つの分岐の両方で同時に一致させることで行います。"),
+      note(chain[1].id, "The same again onto qubit 2: the agreement extends down the chain one qubit at a time.", "量子ビット2へも同様に。一致が鎖に沿って1量子ビットずつ広がります。"),
+      note(chain[2].id, "And onto qubit 3, closing the chain. All four now agree in both branches, which is what makes this a GHZ state rather than four separate superpositions.", "そして量子ビット3へ。鎖が閉じます。4つすべてが両方の分岐で一致し、これが4つの独立した重ね合わせではなくGHZ状態である理由です。"),
+    ],
     check: { kind: "support", bitstrings: ["0000", "1111"] },
     readout: { en: "Measuring all four qubits always gives 0000 or 1111, each about half the time.", ja: "4つの量子ビットすべてを測定すると常に0000か1111が得られ、それぞれ約半分の確率です。" },
     keywords: ["ghz state", "entanglement"],
-    blocks: ["ghz"],
+    blocks: [],
   };
 }
 
@@ -192,9 +205,18 @@ function bernsteinVazirani1011(): WorkedExample {
 function grover3q101(): WorkedExample {
   const n = 3;
   const hAll = place("hadamard_layer", { n }, [0, 1, 2], "h-all");
-  const iteration1 = place("grover_iteration", { bitstring: "101" }, [0, 1, 2], "iter1");
-  const iteration2 = place("grover_iteration", { bitstring: "101" }, [0, 1, 2], "iter2");
-  const steps = [hAll.step, iteration1.step, iteration2.step];
+  // Each Grover iteration split into its two halves rather than placed as one
+  // `grover_iteration` block. The two do completely different things and the
+  // difference is the algorithm: the oracle moves no probability at all — it
+  // only flips a sign — and the diffuser turns that sign into amplitude. As a
+  // single box per iteration the figure showed one number going up and gave a
+  // reader no way to see which half did it, or that half of Grover is a step
+  // the probability bars cannot show.
+  const oracle1 = place("phase_oracle", { bitstring: "101" }, [0, 1, 2], "oracle1");
+  const diffuser1 = place("grover_diffuser", { n }, [0, 1, 2], "diffuser1");
+  const oracle2 = place("phase_oracle", { bitstring: "101" }, [0, 1, 2], "oracle2");
+  const diffuser2 = place("grover_diffuser", { n }, [0, 1, 2], "diffuser2");
+  const steps = [hAll.step, oracle1.step, diffuser1.step, oracle2.step, diffuser2.step];
   return {
     id: "grover-3q-101",
     algorithm: "Grover search",
@@ -202,16 +224,24 @@ function grover3q101(): WorkedExample {
     instance: { en: "3 qubits, searching for |101⟩ among 8 states, with 2 Grover iterations.", ja: "3量子ビット、8状態の中から|101⟩を2回のグローバー反復で探索します。" },
     qubitCount: n,
     steps,
-    customGates: [...hAll.customGates, ...iteration1.customGates, ...iteration2.customGates],
+    customGates: [
+      ...hAll.customGates,
+      ...oracle1.customGates,
+      ...diffuser1.customGates,
+      ...oracle2.customGates,
+      ...diffuser2.customGates,
+    ],
     notes: [
-      note(hAll.step.id, "Spreads the state into an equal superposition of all 8 three-qubit strings.", "状態を8通りの3量子ビット文字列すべての等しい重ね合わせに広げます。"),
-      note(iteration1.step.id, "First Grover iteration: the oracle flips the sign of |101⟩ and leaves the other seven states alone, then the diffuser reflects about the average, boosting |101⟩'s amplitude.", "最初のグローバー反復：オラクルが|101⟩の符号を反転し、他の7状態はそのままにします。その後、拡散変換が平均に関して反射し、|101⟩の振幅を増幅します。"),
-      note(iteration2.step.id, "Second Grover iteration: the same oracle and diffuser, boosting |101⟩'s amplitude again. 2 iterations is close to the optimal number for 8 states.", "2回目のグローバー反復：同じオラクルと拡散変換により、|101⟩の振幅をさらに増幅します。8状態に対しては2回の反復がほぼ最適な回数です。"),
+      note(hAll.step.id, "Spreads the state into an equal superposition of all 8 three-qubit strings. Every answer is equally likely, including the right one.", "状態を8通りの3量子ビット文字列すべての等しい重ね合わせに広げます。正解を含め、どの答えも等しく起こりえます。"),
+      note(oracle1.step.id, "The oracle marks |101⟩ by flipping its sign, and leaves the other seven states exactly as they were. Measuring now would be no better than guessing — the mark is a phase, and a phase is not an outcome.", "オラクルは|101⟩の符号を反転させて印をつけ、他の7状態はそのままにします。ここで測定しても当てずっぽうと変わりません。印は位相であり、位相は測定結果ではないからです。"),
+      note(diffuser1.step.id, "The diffuser reflects every amplitude about their average. The marked state sits below the average because its sign was flipped, so reflecting pushes it up and pulls the other seven down. This is where the phase becomes probability.", "拡散変換はすべての振幅を平均に関して反射させます。印のついた状態は符号が反転しているため平均より下にあり、反射によって押し上げられ、他の7つは引き下げられます。位相が確率に変わるのがここです。"),
+      note(oracle2.step.id, "The same oracle again, flipping the sign of |101⟩ — now the largest amplitude rather than one of eight equal ones.", "同じオラクルをもう一度適用し、|101⟩の符号を反転させます。今度は8つの等しい振幅のひとつではなく、最大の振幅です。"),
+      note(diffuser2.step.id, "And the same reflection again. Two iterations is close to the optimal number for 8 states: a third would overshoot and start pushing the answer back down.", "そして同じ反射をもう一度。8状態に対して2回の反復はほぼ最適な回数です。3回目は行き過ぎて、答えを再び押し下げ始めます。"),
     ],
     check: { kind: "peak", bitstring: "101", minProbability: 0.9 },
     readout: { en: "Measuring gives 101, the marked state, with high probability.", ja: "測定すると高い確率でマークされた状態である101が得られます。" },
     keywords: ["grover", "amplitude amplification"],
-    blocks: ["hadamard_layer", "grover_iteration"],
+    blocks: ["hadamard_layer", "phase_oracle", "grover_diffuser"],
   };
 }
 
@@ -242,7 +272,7 @@ function qft4qRoundtrip(): WorkedExample {
     check: { kind: "peak", bitstring: "0101", minProbability: 0.999 },
     readout: { en: "The register reads 0101 again, exactly: the QFT and its inverse cancel, the way any unitary and its adjoint do.", ja: "レジスタは再び正確に0101と読み取られます。QFTとその逆変換は、ユニタリ演算とその随伴演算がそうであるように打ち消し合います。" },
     keywords: ["quantum fourier transform", "qft"],
-    blocks: ["qft", "qft_inverse"],
+    blocks: ["qft", "fourier_add_constant", "qft_inverse"],
   };
 }
 
@@ -270,8 +300,25 @@ function qpePhaseExample(
 ): WorkedExample {
   const t = 3;
   const target = t;
-  const example = place("qpe_phase", { t, angle }, [0, 1, 2, target], "qpe");
-  const steps = [example.step];
+  const counting = [0, 1, 2];
+  // The `qpe_phase` block's own four stages, placed as four top-level steps
+  // instead of the single box the block draws as. Same gates, same final
+  // state — `QPE_PHASE.build` is exactly this sequence — but phase estimation
+  // stops being one rectangle labelled "QPE phase(3)" with one sentence under
+  // it, which is what it was: the most-referenced example in the corpus and
+  // the least legible.
+  //
+  // It is worth four steps specifically because the third one is invisible to
+  // the probability bars. The controlled powers write the phase into the
+  // counting register without moving a single outcome probability, and the
+  // inverse QFT then turns that phase into the answer. Split like this, the
+  // figure's derived per-step reading says exactly that; as one box it could
+  // not say anything at all.
+  const prepare = rawStep("X", [target]);
+  const hadamards = place("hadamard_layer", { n: t }, counting, `${id}-h`);
+  const powers = place("controlled_phase_powers", { t, angle }, [...counting, target], `${id}-cpp`);
+  const inverseQft = place("qft_inverse", { n: t }, counting, `${id}-iqft`);
+  const steps = [prepare, hadamards.step, powers.step, inverseQft.step];
   return {
     id,
     algorithm: "Quantum Phase Estimation",
@@ -279,18 +326,33 @@ function qpePhaseExample(
     instance: { en: instanceEn, ja: instanceJa },
     qubitCount: t + 1,
     steps,
-    customGates: example.customGates,
+    customGates: [...hadamards.customGates, ...powers.customGates, ...inverseQft.customGates],
     notes: [
       note(
-        example.step.id,
-        `Prepares the target in the P(${angle}) eigenstate |1⟩, Hadamards the 3 counting qubits, applies controlled powers of P(${angle}), then an inverse QFT to read the phase into the counting register.`,
-        `対象量子ビットをP(${angle})の固有状態|1⟩に準備し、3個のカウント量子ビットにアダマールを適用し、P(${angle})の制御べき乗を適用した後、逆QFTで位相をカウントレジスタに読み出します。`,
+        prepare.id,
+        `Puts the target qubit into |1⟩, which is an eigenstate of P(${angle}): applying the gate to it multiplies it by a phase and changes nothing else. That is the whole requirement QPE places on its input.`,
+        `対象量子ビットを|1⟩にします。これはP(${angle})の固有状態です。このゲートを適用しても位相が掛かるだけで、他には何も変わりません。QPEが入力に要求するのはこれだけです。`,
+      ),
+      note(
+        hadamards.step.id,
+        "Spreads the 3 counting qubits over all 8 values they can hold at once. Each one will later ask about a different power of the phase.",
+        "3個のカウント量子ビットを、取りうる8通りの値すべてに同時に広げます。それぞれが後で位相の異なるべき乗について問い合わせます。",
+      ),
+      note(
+        powers.step.id,
+        `Counting qubit k applies P(${angle}) to the target 2^k times, controlled on itself. The target never changes — it is an eigenstate — so the phase it would have picked up is kicked back onto the control instead. This is the step that writes the answer into the register.`,
+        `カウント量子ビットkは、自身を制御として対象にP(${angle})を2^k回適用します。対象は固有状態なので変化せず、対象が受けるはずだった位相が制御側へ跳ね返ります。答えをレジスタに書き込むのがこのステップです。`,
+      ),
+      note(
+        inverseQft.step.id,
+        "The inverse Fourier transform reads that phase pattern back out as a binary number. Phase in, bits out.",
+        "逆フーリエ変換が、その位相のパターンを2進数として読み出します。位相を入れて、ビットを取り出します。",
       ),
     ],
     check,
     readout: { en: readoutEn, ja: readoutJa },
     keywords: ["phase estimation"],
-    blocks: ["qpe_phase"],
+    blocks: ["hadamard_layer", "controlled_phase_powers", "qft_inverse"],
   };
 }
 
@@ -302,8 +364,17 @@ function draperAdder5Plus3(): WorkedExample {
   const a = 3;
   // |5> = 0101: qubit2=1, qubit0=1.
   const prep = [rawStep("X", [0]), rawStep("X", [2])];
-  const adder = place("draper_add_constant", { n, a }, [0, 1, 2, 3], "adder");
-  const steps = [...prep, adder.step];
+  // The adder's three stages as three steps rather than one `draper_add_constant`
+  // box. The point of the Draper adder is WHERE the arithmetic happens — the
+  // register is transformed into the Fourier basis, the addition is a set of
+  // single-qubit phase rotations there, and the register is transformed back —
+  // and a single box labelled "Draper add 3 (mod 16)" showed none of that. Split
+  // like this the middle step reads as pure phase, which is the claim the record
+  // makes: no ancilla, no carry chain, the carries are already in the phases.
+  const toFourier = place("qft", { n }, [0, 1, 2, 3], "draper-qft");
+  const rotations = place("fourier_add_constant", { n, a }, [0, 1, 2, 3], "draper-add");
+  const fromFourier = place("qft_inverse", { n }, [0, 1, 2, 3], "draper-iqft");
+  const steps = [...prep, toFourier.step, rotations.step, fromFourier.step];
   return {
     id: "draper-adder-5-plus-3",
     algorithm: "Draper adder",
@@ -311,16 +382,18 @@ function draperAdder5Plus3(): WorkedExample {
     instance: { en: "4 qubits, adding the constant 3 to the input 5, giving 8 mod 16.", ja: "4量子ビットで、入力5に定数3を加算し、16を法として8を得ます。" },
     qubitCount: n,
     steps,
-    customGates: adder.customGates,
+    customGates: [...toFourier.customGates, ...rotations.customGates, ...fromFourier.customGates],
     notes: [
       note(prep[0].id, "Prepares qubit 0 as |1⟩.", "量子ビット0を|1⟩に準備します。"),
       note(prep[1].id, "Prepares qubit 2 as |1⟩, so the register reads |0101⟩ = 5.", "量子ビット2を|1⟩に準備し、レジスタが|0101⟩ = 5になるようにします。"),
-      note(adder.step.id, "QFTs the register, applies a phase rotation per qubit proportional to the constant 3, then inverse-QFTs: arithmetic done entirely in the Fourier basis, no ancilla.", "レジスタにQFTを適用し、定数3に比例した位相回転を各量子ビットに適用した後、逆QFTを適用します。補助量子ビットを使わず、フーリエ基底のみで演算を行います。"),
+      note(toFourier.step.id, "Transforms the register into the Fourier basis. The number 5 is no longer one outcome — it is a pattern of phases spread evenly over all 16.", "レジスタをフーリエ基底へ変換します。数5はもはや1つの測定結果ではなく、16通り全体に均等に広がった位相のパターンです。"),
+      note(rotations.step.id, "Four single-qubit phase rotations, each twice the angle of the one below it because each qubit is worth twice as much in the binary number. Together they add 3 to whatever number the phases encode — with no ancilla and no carry chain, because in this basis the carries are already in the phases. Open the block to see the four angles.", "4つの単一量子ビット位相回転です。2進数において各量子ビットの重みが2倍ずつ大きくなるため、角度もひとつ下の2倍になっています。これらが合わさって、位相が符号化している数に3を加えます。補助量子ビットも桁上げの連鎖もありません。この基底では桁上げがすでに位相の中にあるからです。ブロックを開くと4つの角度が見られます。"),
+      note(fromFourier.step.id, "Transforms back out of the Fourier basis, turning the shifted phase pattern into the answer as an ordinary binary number.", "フーリエ基底から戻す変換を行い、ずれた位相のパターンを通常の2進数としての答えに変えます。"),
     ],
     check: { kind: "peak", bitstring: "1000", minProbability: 0.999 },
     readout: { en: "The register reads 1000 = 8: 5 + 3, exactly.", ja: "レジスタは1000 = 8と読み取られます：5 + 3が正確に得られます。" },
     keywords: ["draper adder", "quantum arithmetic", "quantum fourier transform"],
-    blocks: ["draper_add_constant"],
+    blocks: ["qft", "fourier_add_constant", "qft_inverse"],
   };
 }
 
