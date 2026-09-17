@@ -3,6 +3,7 @@ import test from "node:test";
 
 import type { BuilderStep, CustomGateDefinition } from "./studio-builder.ts";
 import {
+  formatGateAngle,
   formatSignificant,
   hamiltonianFormula,
   observableLabel,
@@ -198,4 +199,27 @@ test("workedExampleSignInHref: a signed-out reader signs in and comes back to th
     // And the Studio link it returns to opens the same example.
     assert.equal(new URL(returnTo ?? "", "https://leonaqt.test").searchParams.get("example"), id);
   }
+});
+
+test("a generated angle prints as a multiple of pi; an authored one is left alone", () => {
+  // The three angles that made QPE's controlled-power ladder unreadable.
+  assert.equal(formatGateAngle(String((3 * Math.PI) / 4)), "3π/4");
+  assert.equal(formatGateAngle(String((3 * Math.PI) / 2)), "3π/2");
+  assert.equal(formatGateAngle(String(3 * Math.PI)), "3π");
+  assert.equal(formatGateAngle(String(Math.PI)), "π");
+  assert.equal(formatGateAngle(String(-Math.PI / 4)), "−π/4");
+  assert.equal(formatGateAngle("0"), "0");
+  // Authored params are already symbolic and must survive untouched — these are
+  // what every hand-written example uses.
+  for (const authored of ["pi/2", "5*pi/4", "2*J*dt", "-pi/4", "2*pi/3"]) {
+    assert.equal(formatGateAngle(authored), authored);
+  }
+  // Not a multiple of pi/16: an honest decimal beats a fraction it is not.
+  assert.equal(formatGateAngle("1.23456789"), "1.235");
+});
+
+test("stepLabel puts the formatted angle on the box", () => {
+  assert.equal(stepLabel({ id: "a", gate: "CP", qubits: [0, 1], param: String((3 * Math.PI) / 4) }, []), "CP(3π/4)");
+  assert.equal(stepLabel({ id: "b", gate: "RY", qubits: [0], param: "pi/3" }, []), "RY(pi/3)");
+  assert.equal(stepLabel({ id: "c", gate: "H", qubits: [0] }, []), "H");
 });

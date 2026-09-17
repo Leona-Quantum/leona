@@ -315,7 +315,16 @@
 .mj-worked-example-note p { margin: 0; color: var(--text-1); font-size: var(--fs-13); line-height: 1.5; }
 .mj-worked-example-block-toggle { margin-top: var(--sp-2); padding: 0; border: 0; background: none; color: var(--text-2); font-size: var(--fs-12); text-decoration: underline; cursor: pointer; }
 .mj-worked-example-block-toggle:hover, .mj-worked-example-block-toggle:focus-visible { color: var(--accent); }
-.mj-worked-example-block-gates { margin: var(--sp-2) 0 0; padding: 0 0 0 var(--sp-4); color: var(--text-2); font-size: var(--fs-12); font-family: var(--font-mono); }
+.mj-worked-example-block-gates { display: grid; gap: var(--sp-2); margin: var(--sp-2) 0 0; padding: 0 0 0 var(--sp-4); color: var(--text-2); font-size: var(--fs-12); font-family: var(--font-mono); }
+/* The derived reading for one gate inside an opened block. Sans, not mono:
+   the gate label above it is mono because it is a symbol, and this is prose. */
+.mj-worked-example-block-effect {
+  margin: 2px 0 0;
+  color: var(--text-2);
+  font-family: var(--font-ui);
+  font-size: var(--fs-12);
+  line-height: 1.5;
+}
 .mj-worked-example-readout { margin: 0; padding: var(--sp-3); border: var(--border-hairline) solid var(--border-0); border-radius: var(--radius-control); background: var(--bg-1); color: var(--text-0); }
 .mj-worked-example-signin-note { margin: 0; color: var(--text-2); font-size: var(--fs-13); }
 .mj-worked-example-component-note { margin: var(--sp-3) 0; padding: var(--sp-3); border: 1px dashed var(--border-0); border-radius: var(--radius-control); font-size: var(--fs-13); }
