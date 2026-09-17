@@ -3,7 +3,6 @@ import test from "node:test";
 
 import type { BuilderStep, CustomGateDefinition } from "./studio-builder.ts";
 import {
-  formatGateAngle,
   formatSignificant,
   hamiltonianFormula,
   observableLabel,
@@ -15,6 +14,7 @@ import {
   workedExampleSignInHref,
   workedExampleStudioHref,
 } from "./atlas-worked-example-steps.ts";
+import { formatGateParam } from "./gate-param-label.ts";
 
 // A tiny 3-qubit fixture: H on q0, a placed 2-qubit "block" on q1/q2 (X then
 // CX, so its own inner qubit 0 maps to the outer q1 and inner qubit 1 to the
@@ -42,13 +42,17 @@ test("workedExampleDrawing: one box per top-level step, block name from its own 
   assert.equal(drawing.operations.length, 3);
   assert.deepEqual(drawing.operations[0], { label: "H", qubits: [0], tone: "neutral" });
   assert.deepEqual(drawing.operations[1], { label: "Demo block(2)", qubits: [1, 2], tone: "accent" });
-  assert.deepEqual(drawing.operations[2], { label: "RY(pi/3)", qubits: [0], tone: "neutral" });
+  // "RY(π/3)", not "RY(pi/3)": the label now goes through the one shared angle
+  // formatter (gate-param-label.ts), the same one circuit-diagram.tsx uses.
+  // This assertion previously pinned the raw form, which is what let the two
+  // surfaces draw the same step differently.
+  assert.deepEqual(drawing.operations[2], { label: "RY(π/3)", qubits: [0], tone: "neutral" });
 });
 
 test("stepLabel: a raw gate's mnemonic (with its angle), a block's own name, and a safe fallback", () => {
   assert.equal(stepLabel(STEPS[0], [BLOCK]), "H");
   assert.equal(stepLabel(STEPS[1], [BLOCK]), "Demo block(2)");
-  assert.equal(stepLabel(STEPS[2], [BLOCK]), "RY(pi/3)");
+  assert.equal(stepLabel(STEPS[2], [BLOCK]), "RY(π/3)"); // shared formatter — see above
   // A CUSTOM step whose definition is not in the list passed — degrades to a
   // safe placeholder instead of throwing.
   assert.equal(stepLabel(STEPS[1], []), "Block");
@@ -201,25 +205,22 @@ test("workedExampleSignInHref: a signed-out reader signs in and comes back to th
   }
 });
 
-test("a generated angle prints as a multiple of pi; an authored one is left alone", () => {
-  // The three angles that made QPE's controlled-power ladder unreadable.
-  assert.equal(formatGateAngle(String((3 * Math.PI) / 4)), "3π/4");
-  assert.equal(formatGateAngle(String((3 * Math.PI) / 2)), "3π/2");
-  assert.equal(formatGateAngle(String(3 * Math.PI)), "3π");
-  assert.equal(formatGateAngle(String(Math.PI)), "π");
-  assert.equal(formatGateAngle(String(-Math.PI / 4)), "−π/4");
-  assert.equal(formatGateAngle("0"), "0");
-  // Authored params are already symbolic and must survive untouched — these are
-  // what every hand-written example uses.
-  for (const authored of ["pi/2", "5*pi/4", "2*J*dt", "-pi/4", "2*pi/3"]) {
-    assert.equal(formatGateAngle(authored), authored);
-  }
-  // Not a multiple of pi/16: an honest decimal beats a fraction it is not.
-  assert.equal(formatGateAngle("1.23456789"), "1.235");
-});
-
-test("stepLabel puts the formatted angle on the box", () => {
+test("stepLabel draws its angle through the ONE shared formatter", () => {
+  // The generated ladder that made QPE's controlled-power block unreadable.
   assert.equal(stepLabel({ id: "a", gate: "CP", qubits: [0, 1], param: String((3 * Math.PI) / 4) }, []), "CP(3π/4)");
-  assert.equal(stepLabel({ id: "b", gate: "RY", qubits: [0], param: "pi/3" }, []), "RY(pi/3)");
+  // An authored symbolic angle, drawn the way Studio's diagram draws it. This
+  // asserts π and not "pi": a second formatter here printed the raw `pi/3`
+  // while circuit-diagram.tsx printed `π/3` for the same step, and the two
+  // surfaces disagreed about the same circuit.
+  assert.equal(stepLabel({ id: "b", gate: "RY", qubits: [0], param: "pi/3" }, []), "RY(π/3)");
   assert.equal(stepLabel({ id: "c", gate: "H", qubits: [0] }, []), "H");
+  // Both surfaces must agree, character for character, on every angle the
+  // corpus actually uses — which is the property a second formatter broke.
+  for (const param of ["pi/2", "5*pi/4", "2*J*dt", "-pi/4", "2*pi/3", String(Math.PI), "1.23456789"]) {
+    assert.equal(
+      stepLabel({ id: "x", gate: "RZ", qubits: [0], param }, []),
+      `RZ(${formatGateParam(param)})`,
+      `the Atlas label and the shared formatter disagree on ${param}`,
+    );
+  }
 });
