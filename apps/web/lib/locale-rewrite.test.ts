@@ -56,6 +56,22 @@ test("a nested path keeps every segment", () => {
   assert.equal(target.search, "?at=0,0,2");
 });
 
+test("a folders catch-all path keeps its scheme switch", () => {
+  // `/repository/folders` joined the prefix rewrite in the same PR that added
+  // `?scheme=` to this function's coverage — an optional catch-all, so the
+  // multi-segment case AND the query string both have to survive together, or
+  // a shared "method view" deep link would silently land on the default
+  // scheme instead of the one it named.
+  const target = localeRewriteTarget(
+    `${BASE}/repository/folders/algorithm-families/qaoa?scheme=method`,
+    "/repository/folders/algorithm-families/qaoa",
+    "ja",
+  );
+  assert.equal(target.pathname, "/ja/repository/folders/algorithm-families/qaoa");
+  assert.equal(target.search, "?scheme=method");
+  assert.equal(target.searchParams.get("scheme"), "method");
+});
+
 test("the host is never changed, whatever the path looks like", () => {
   // The rewrite runs BEFORE the auth gate, so it is reachable by anyone with a
   // single GET. Assigning to `url.pathname` cannot replace the authority, but

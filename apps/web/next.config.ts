@@ -277,6 +277,28 @@ const nextConfig: NextConfig = {
           ],
         })),
       ),
+      // `/repository/folders` — same mechanism as `/repository/layers` above,
+      // for the same reason: it resolves `?scheme=` on the server, so reading
+      // `searchParams` opts it out of static rendering the same way, and the
+      // long note above this block is the account for both routes, not just
+      // the first. `:path*` is included because every folder below the root
+      // (`/repository/folders/<kind>/<family>/...`) is equally public — see
+      // `lib/routed-paths.ts`'s `LOCALE_PREFIX_ROUTES` for the same reasoning
+      // applied to the middleware rewrite that has to reach it first.
+      //
+      // `/repository/papers` is deliberately NOT here: it and `/repository/
+      // papers/[id]` read no `searchParams`, so they prerender outright (the
+      // `claims` recipe) and reach the CDN through Next's own static output —
+      // the same reason `/repository/claims` carries no header entry either.
+      ...["/repository/folders", "/:locale(en|ja)/repository/folders"].flatMap((base) =>
+        [base, `${base}/:path*`].map((source) => ({
+          source,
+          headers: [
+            { key: "Vercel-CDN-Cache-Control", value: "max-age=300" },
+            { key: "CDN-Cache-Control", value: "max-age=300" },
+          ],
+        })),
+      ),
       // The Atlas browse index, same mechanism, exact path ONLY — no `:path*`.
       // `/repository/layers` above deliberately covers its subtree
       // (`/repository/layers/<id>`) because every child there is equally
