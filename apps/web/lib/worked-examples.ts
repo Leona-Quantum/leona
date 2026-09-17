@@ -875,6 +875,300 @@ const QPE_INEXACT = qpePhaseExample(
   "カウントレジスタは依然として011 = 3（angle/(2π) = 1/3 ≈ 3/8に対する3ビットでの最良近似）でピークを迎えますが、その確率は1にはかなり届きません。残りの確率は近傍の推定値に広がり、正確に表現できない位相に対するQPE理論の予測どおりです。",
 );
 
+// ---------------------------------------------------------------------------
+// Gate demonstrations.
+//
+// The 29 gate records are the Atlas's most basic components and were its least
+// informative pages: a single labelled box and a bar chart. For a whole family
+// of them that bar chart is the same picture — Z, S, T, S†, T†, P, RZ, CZ and
+// CP applied to a superposition move no probability at all, so the outcome
+// bars for the T gate, the Z gate and doing nothing are identical. A reader
+// looking at the T-gate page could not tell it apart from the S-gate page by
+// anything the page drew.
+//
+// Each of these is the smallest circuit in which the gate does something, plus
+// whatever preparation that takes. The per-step reading and the phase panel
+// (atlas-step-effect.ts) then say what happened — and for the phase family they
+// say the thing the bars cannot: the probabilities did not move, the state did,
+// and here is by how much.
+//
+// `check` is the same contract the algorithm examples use, so a gate whose
+// demonstration stops doing what it claims fails the suite rather than quietly
+// drawing something else.
+
+/** H, then the gate — the smallest circuit in which a phase gate is visible at all. */
+function phaseGateDemo({
+  id,
+  slug,
+  gate,
+  param,
+  algorithm,
+  titleEn,
+  titleJa,
+  angleEn,
+  angleJa,
+  aboutEn,
+  aboutJa,
+}: {
+  id: string;
+  slug: string;
+  gate: BuilderStep["gate"];
+  param?: string;
+  algorithm: string;
+  titleEn: string;
+  titleJa: string;
+  /** The bare angle it puts on |1⟩ — "π", "π/4". Goes inside a sentence. */
+  angleEn: string;
+  angleJa: string;
+  /**
+   * One complete sentence about this gate specifically, printed after the
+   * angle rather than spliced into it. An earlier version interpolated the
+   * commentary where the angle goes, and a gate whose blurb carried a clause
+   * came out as "...by a phase of π/4 — half of S, and the gate that takes a
+   * Clifford circuit out of classical reach, and leaves |0⟩ alone."
+   */
+  aboutEn: string;
+  aboutJa: string;
+}): WorkedExample {
+  const prepare = rawStep("H", [0]);
+  const apply = rawStep(gate, [0], param);
+  return {
+    id,
+    algorithm,
+    title: { en: titleEn, ja: titleJa },
+    instance: {
+      en: `One qubit, put into |+⟩ = (|0⟩ + |1⟩)/√2 first, because on |0⟩ or |1⟩ alone this gate changes nothing a measurement or another gate can ever detect.`,
+      ja: `1量子ビットを、まず |+⟩ = (|0⟩ + |1⟩)/√2 にします。|0⟩ や |1⟩ のままではこのゲートは、測定でも他のゲートでも決して検出できない変化しか起こさないからです。`,
+    },
+    qubitCount: 1,
+    steps: [prepare, apply],
+    customGates: [],
+    notes: [
+      note(
+        prepare.id,
+        "Puts the qubit into an equal superposition. Without this there is no second amplitude for the gate's phase to be measured against, and a phase on the whole state is not observable.",
+        "量子ビットを等しい重ね合わせにします。これがないと、ゲートの位相を比較する相手となる2つ目の振幅が存在せず、状態全体にかかる位相は観測できません。",
+      ),
+      note(
+        apply.id,
+        `Multiplies the |1⟩ half of the state by a phase of ${angleEn}, and leaves |0⟩ alone. ${aboutEn} The two outcomes stay equally likely — the difference is carried entirely in the phase between them, which is what the panel beside the bars shows.`,
+        `状態のうち |1⟩ の側に ${angleJa} の位相を掛け、|0⟩ はそのままにします。${aboutJa} 2つの測定結果は等確率のままで、違いはすべて両者のあいだの位相に入ります。棒グラフの隣のパネルが示しているのがそれです。`,
+      ),
+    ],
+    check: { kind: "distribution", probabilities: { "0": 0.5, "1": 0.5 }, tolerance: 1e-9 },
+    readout: {
+      en: `Measuring gives 0 or 1, each half the time — exactly as it did before the gate. A single measurement of this qubit cannot detect this gate at all. Its effect becomes visible only when the phase is turned back into probability by a later interference step, which is what every algorithm that uses it does.`,
+      ja: `測定すると0か1が半々で得られます。ゲートを適用する前とまったく同じです。この量子ビットを1回測定しても、このゲートの効果は検出できません。効果が見えるのは、後の干渉のステップで位相が確率に戻されたときだけで、このゲートを使うアルゴリズムはどれもそれを行っています。`,
+    },
+    keywords: [slug.replace(/-/g, " ")],
+    blocks: [],
+  };
+}
+
+const Z_GATE = phaseGateDemo({ id: "gate-z-on-plus", slug: "pauli-z", gate: "Z", algorithm: "Pauli Z", titleEn: "Z, the half-turn of phase", titleJa: "Z：半回転の位相", angleEn: "π", angleJa: "π", aboutEn: "That is a sign flip: the largest phase there is, and the point past which turning further starts coming back.", aboutJa: "これは符号の反転です。位相としては最大で、これ以上回すと戻り始める点です。" });
+const S_GATE = phaseGateDemo({ id: "gate-s-on-plus", slug: "s phase", gate: "S", algorithm: "S gate", titleEn: "S, a quarter turn of phase", titleJa: "S：位相の四分の一回転", angleEn: "π/2", angleJa: "π/2", aboutEn: "That is half of what Z does, so applying S twice is exactly Z.", aboutJa: "これはZの半分なので、Sを2回適用するとちょうどZになります。" });
+const T_GATE = phaseGateDemo({ id: "gate-t-on-plus", slug: "t phase", gate: "T", algorithm: "T gate", titleEn: "T, an eighth turn of phase", titleJa: "T：位相の八分の一回転", angleEn: "π/4", angleJa: "π/4", aboutEn: "That is half of S again. T is also the gate that takes a Clifford circuit out of classical reach, which is why fault-tolerant cost is counted in T gates.", aboutJa: "これはさらにSの半分です。Tはクリフォード回路を古典計算の手の届かない領域へ運ぶゲートでもあり、誤り耐性のコストがTゲート数で数えられるのはそのためです。" });
+const SDG_GATE = phaseGateDemo({ id: "gate-sdg-on-plus", slug: "s dagger", gate: "SDG", algorithm: "S-dagger gate", titleEn: "S†, S turned the other way", titleJa: "S†：Sを逆向きにしたもの", angleEn: "−π/2, which the panel prints as 3π/2", angleJa: "−π/2（パネルには3π/2と表示されます）", aboutEn: "It is the same angle reached from the other side, and it is exactly what undoes an S applied earlier.", aboutJa: "反対側から到達した同じ角度であり、先に適用したSをちょうど打ち消します。" });
+const TDG_GATE = phaseGateDemo({ id: "gate-tdg-on-plus", slug: "t dagger", gate: "TDG", algorithm: "T-dagger gate", titleEn: "T†, T turned the other way", titleJa: "T†：Tを逆向きにしたもの", angleEn: "−π/4, printed as 7π/4", angleJa: "−π/4（7π/4と表示されます）", aboutEn: "It is what undoes a T applied earlier, and it costs a fault-tolerant circuit exactly as much as a T does.", aboutJa: "先に適用したTを打ち消すものであり、誤り耐性回路においてTとまったく同じコストがかかります。" });
+const P_GATE = phaseGateDemo({ id: "gate-p-on-plus", slug: "phase gate p", gate: "P", param: "2*pi/5", algorithm: "Phase gate", titleEn: "P(θ), phase by any angle you like", titleJa: "P(θ)：好きな角度の位相", angleEn: "2π/5", angleJa: "2π/5", aboutEn: "P takes any angle at all; Z, S and T are simply the three of them that earned their own names.", aboutJa: "Pは任意の角度を取ります。Z・S・Tは、そのうち名前を持つに至った3つというだけです。" });
+const RZ_GATE = phaseGateDemo({ id: "gate-rz-on-plus", slug: "rz rotation", gate: "RZ", param: "pi/2", algorithm: "RZ rotation", titleEn: "RZ(θ), a rotation that only moves phase", titleJa: "RZ(θ)：位相だけを動かす回転", angleEn: "π/2 at this angle", angleJa: "この角度では π/2", aboutEn: "RZ splits the angle between the two halves rather than putting all of it on |1⟩, so it differs from P by a phase on the whole state — which is to say, by nothing any measurement can find.", aboutJa: "RZは角度を両側で分け合い、すべてを |1⟩ に載せません。そのためPとは状態全体の位相だけが異なります。つまり、どの測定でも見つけられない違いだけです。" });
+
+/** A rotation on |0⟩ — the pair that shows RX and RY are not the same gate. */
+function rotationDemo({ id, gate, algorithm, titleEn, titleJa, phaseNoteEn, phaseNoteJa }: {
+  id: string; gate: BuilderStep["gate"]; algorithm: string; titleEn: string; titleJa: string; phaseNoteEn: string; phaseNoteJa: string;
+}): WorkedExample {
+  const apply = rawStep(gate, [0], "pi/3");
+  return {
+    id,
+    algorithm,
+    title: { en: titleEn, ja: titleJa },
+    instance: { en: "One qubit starting at |0⟩, rotated by π/3 — a third of a half-turn, so the qubit ends up part way between |0⟩ and |1⟩ rather than at either.", ja: "|0⟩ から始まる1量子ビットを π/3 回転させます。半回転の3分の1なので、量子ビットは |0⟩ と |1⟩ のどちらでもなく、その途中で終わります。" },
+    qubitCount: 1,
+    steps: [apply],
+    customGates: [],
+    notes: [note(apply.id, `Rotates the qubit by π/3, leaving it 75% likely to read 0 and 25% to read 1 — cos²(π/6) and sin²(π/6). ${phaseNoteEn}`, `量子ビットを π/3 回転させ、0 と読まれる確率 75%、1 と読まれる確率 25% にします。cos²(π/6) と sin²(π/6) です。${phaseNoteJa}`)],
+    check: { kind: "distribution", probabilities: { "0": 0.75, "1": 0.25 }, tolerance: 1e-9 },
+    readout: { en: "Measuring gives 0 about three times in four. RX and RY at the same angle give exactly these probabilities, so a bar chart cannot tell them apart — the phase panel can.", ja: "測定するとおよそ4回に3回は0になります。RXとRYは同じ角度では確率がまったく同じなので、棒グラフでは区別できません。位相パネルなら区別できます。" },
+    keywords: [algorithm.toLowerCase()],
+    blocks: [],
+  };
+}
+
+const RX_GATE = rotationDemo({ id: "gate-rx-on-zero", gate: "RX", algorithm: "RX rotation", titleEn: "RX(π/3) on |0⟩", titleJa: "|0⟩ への RX(π/3)", phaseNoteEn: "It also leaves a quarter turn of phase between the two halves — the panel prints it as 3π/2, the same angle reached from the other side — and that phase is the whole difference between RX and RY.", phaseNoteJa: "さらに両側のあいだに四分の一回転の位相を残します。パネルには3π/2、すなわち反対側から到達した同じ角度として表示されます。この位相がRXとRYの違いのすべてです。" });
+const RY_GATE = rotationDemo({ id: "gate-ry-on-zero", gate: "RY", algorithm: "RY rotation", titleEn: "RY(π/3) on |0⟩", titleJa: "|0⟩ への RY(π/3)", phaseNoteEn: "Both amplitudes stay real and in phase, which is why RY is the rotation people reach for when they want probabilities and nothing else.", phaseNoteJa: "どちらの振幅も実数で同位相のままです。確率だけを動かしたいときにRYが選ばれるのはこのためです。" });
+
+function hadamardDemo(): WorkedExample {
+  const apply = rawStep("H", [0]);
+  return {
+    id: "gate-h-on-zero",
+    algorithm: "Hadamard",
+    title: { en: "H turns a definite bit into an even superposition", ja: "H：確定したビットを等しい重ね合わせに変える" },
+    instance: { en: "One qubit starting at |0⟩, a state that reads 0 with certainty.", ja: "|0⟩ から始まる1量子ビット。確実に0と読まれる状態です。" },
+    qubitCount: 1,
+    steps: [apply],
+    customGates: [],
+    notes: [note(apply.id, "Splits the single certainty into two equal halves. Applying H a second time would put it back — H is its own inverse, so this is a change of basis rather than a loss of information.", "ひとつの確定した状態を等しい2つに分けます。Hをもう一度適用すると元に戻ります。Hは自分自身の逆なので、これは情報の消失ではなく基底の変換です。")],
+    check: { kind: "distribution", probabilities: { "0": 0.5, "1": 0.5 }, tolerance: 1e-9 },
+    readout: { en: "Measuring gives 0 or 1, each half the time. Almost every algorithm in the Atlas starts with a layer of these.", ja: "測定すると0か1が半々で得られます。Atlasのほとんどすべてのアルゴリズムは、この層から始まります。" },
+    keywords: ["hadamard"],
+    blocks: [],
+  };
+}
+
+function pauliYDemo(): WorkedExample {
+  const apply = rawStep("Y", [0]);
+  return {
+    id: "gate-y-on-zero",
+    algorithm: "Pauli Y",
+    title: { en: "Y flips the bit and turns the phase", ja: "Y：ビットを反転し、位相も回す" },
+    instance: { en: "One qubit starting at |0⟩. Y is the gate that does what X does and a phase as well.", ja: "|0⟩ から始まる1量子ビット。YはXがすることに加えて、位相も動かすゲートです。" },
+    qubitCount: 1,
+    steps: [apply],
+    customGates: [],
+    notes: [note(apply.id, "Takes |0⟩ to i|1⟩. The bit flips exactly as X would flip it, and the amplitude picks up a quarter turn of phase on the way. On this state that phase is global and unobservable; inside a larger circuit, where |0⟩ has amplitude too, it is what separates Y from X.", "|0⟩ を i|1⟩ にします。ビットはXと同じように反転し、その途中で振幅が四分の一回転の位相を受け取ります。この状態ではその位相は全体位相で観測できませんが、|0⟩ にも振幅がある大きな回路の中では、これがYとXを分けるものになります。")],
+    check: { kind: "peak", bitstring: "1", minProbability: 0.999 },
+    readout: { en: "Measuring always gives 1. By this measurement alone Y is indistinguishable from X — the difference lives in a phase, and a phase needs something to be measured against.", ja: "測定すると必ず1になります。この測定だけではYとXは区別できません。違いは位相にあり、位相には比較の相手が必要です。" },
+    keywords: ["pauli y"],
+    blocks: [],
+  };
+}
+
+function cxDemo(): WorkedExample {
+  const prepare = rawStep("H", [0]);
+  const apply = rawStep("CX", [0, 1]);
+  return {
+    id: "gate-cx-on-plus-zero",
+    algorithm: "Controlled-X",
+    title: { en: "CX on a superposed control is what makes entanglement", ja: "重ね合わせた制御へのCXがもつれを作る" },
+    instance: { en: "Two qubits: qubit 0 put into |+⟩, qubit 1 left at |0⟩. On a control that is definitely 0 or definitely 1, CX is just a conditional NOT; on a control in superposition it is something a classical circuit has no version of.", ja: "2量子ビット：量子ビット0を |+⟩ にし、量子ビット1は |0⟩ のままにします。制御が0か1に確定しているならCXは条件付きNOTにすぎませんが、制御が重ね合わせにあるとき、古典回路には対応するものがありません。" },
+    qubitCount: 2,
+    steps: [prepare, apply],
+    customGates: [],
+    notes: [
+      note(prepare.id, "Puts the control into an equal superposition of 0 and 1. Qubit 1 is untouched and still reads 0 with certainty; at this point each qubit still has a state of its own.", "制御を0と1の等しい重ね合わせにします。量子ビット1は手つかずで、確実に0と読まれます。この時点では各量子ビットがまだそれぞれの状態を持っています。"),
+      note(apply.id, "Flips qubit 1 in the branch where qubit 0 is 1, and leaves it alone in the branch where qubit 0 is 0 — both at once. Neither qubit has a state of its own after this; only the pair does.", "量子ビット0が1である分岐では量子ビット1を反転し、0である分岐ではそのままにします。その両方を同時に行います。この後はどちらの量子ビットも単独の状態を持たず、対としてのみ状態を持ちます。"),
+    ],
+    check: { kind: "support", bitstrings: ["00", "11"] },
+    readout: { en: "Measuring gives 00 or 11, each half the time, and never 01 or 10: the two qubits always agree, without either of them having been a definite value beforehand. This two-gate circuit is the Bell pair, and it is the smallest entangled state there is.", ja: "測定すると00か11が半々で得られ、01や10にはなりません。どちらの量子ビットも事前に確定した値ではなかったのに、2つは常に一致します。この2ゲートの回路がベル対であり、もっとも小さいもつれ状態です。" },
+    keywords: ["controlled-x", "cnot"],
+    blocks: [],
+  };
+}
+
+function czDemo(): WorkedExample {
+  const prepare = [rawStep("H", [0]), rawStep("H", [1])];
+  const apply = rawStep("CZ", [0, 1]);
+  return {
+    id: "gate-cz-on-plus-plus",
+    algorithm: "Controlled-Z",
+    title: { en: "CZ entangles without moving any probability", ja: "CZ：確率をまったく動かさずにもつれさせる" },
+    instance: { en: "Two qubits, both put into |+⟩, so all four outcomes are equally likely before the gate.", ja: "2量子ビットをどちらも |+⟩ にします。ゲートの前は4つの測定結果がすべて等確率です。" },
+    qubitCount: 2,
+    steps: [...prepare, apply],
+    customGates: [],
+    notes: [
+      note(prepare[0].id, "Qubit 0 into an equal superposition.", "量子ビット0を等しい重ね合わせにします。"),
+      note(prepare[1].id, "Qubit 1 as well, so all four two-bit outcomes are equally likely.", "量子ビット1も同様にし、4通りの測定結果をすべて等確率にします。"),
+      note(apply.id, "Flips the sign of the one branch where both qubits are 1, and leaves the other three alone. Not one outcome changes probability, and the two qubits are entangled afterwards — which is why a bar chart is the wrong instrument for this gate.", "両方の量子ビットが1である分岐だけ符号を反転し、他の3つはそのままにします。どの測定結果も確率は変わらず、その後2つの量子ビットはもつれています。この種のゲートに棒グラフが向かない理由がこれです。"),
+    ],
+    check: { kind: "distribution", probabilities: { "00": 0.25, "01": 0.25, "10": 0.25, "11": 0.25 }, tolerance: 1e-9 },
+    readout: { en: "All four outcomes stay equally likely, before and after. CZ is symmetric in its two qubits — unlike CX there is no telling which one was the control — and it is the gate that builds graph states and cluster states.", ja: "4つの測定結果は前後とも等確率のままです。CZは2つの量子ビットについて対称で、CXと違ってどちらが制御だったか区別できません。グラフ状態やクラスター状態を作るのはこのゲートです。" },
+    keywords: ["controlled-z"],
+    blocks: [],
+  };
+}
+
+function cpDemo(): WorkedExample {
+  const prepare = [rawStep("H", [0]), rawStep("H", [1])];
+  const apply = rawStep("CP", [0, 1], "pi/2");
+  return {
+    id: "gate-cp-on-plus-plus",
+    algorithm: "Controlled phase",
+    title: { en: "CP(θ), the gate the Fourier transform is built from", ja: "CP(θ)：フーリエ変換を組み立てているゲート" },
+    instance: { en: "Two qubits, both put into |+⟩, then a controlled phase of π/2 — a quarter turn, applied only where both qubits are 1.", ja: "2量子ビットをどちらも |+⟩ にし、π/2 の制御位相を適用します。四分の一回転を、両方の量子ビットが1のときにだけ適用します。" },
+    qubitCount: 2,
+    steps: [...prepare, apply],
+    customGates: [],
+    notes: [
+      note(prepare[0].id, "Qubit 0 into an equal superposition.", "量子ビット0を等しい重ね合わせにします。"),
+      note(prepare[1].id, "Qubit 1 as well.", "量子ビット1も同様にします。"),
+      note(apply.id, "Turns the phase of the |11⟩ branch by π/2 and leaves the other three where they are. CZ is this gate at θ = π; the QFT is a ladder of these at halving angles, which is where its phases come from.", "|11⟩ の分岐の位相を π/2 回し、他の3つはそのままにします。CZは θ = π のときのこのゲートです。QFTは角度を半分ずつにしたこのゲートの階段であり、QFTの位相はそこから来ています。"),
+    ],
+    check: { kind: "distribution", probabilities: { "00": 0.25, "01": 0.25, "10": 0.25, "11": 0.25 }, tolerance: 1e-9 },
+    readout: { en: "Every outcome keeps the probability it had. The whole content of this gate is the angle it puts on one branch out of four, and that angle is what the inverse QFT later reads back out as a number.", ja: "どの測定結果も確率は変わりません。このゲートの内容は、4つのうち1つの分岐に載せる角度がすべてです。その角度こそ、後で逆QFTが数として読み出すものです。" },
+    keywords: ["controlled phase"],
+    blocks: [],
+  };
+}
+
+function swapDemo(): WorkedExample {
+  const prepare = rawStep("X", [0]);
+  const apply = rawStep("SWAP", [0, 1]);
+  return {
+    id: "gate-swap-on-01",
+    algorithm: "SWAP",
+    title: { en: "SWAP exchanges two qubits", ja: "SWAP：2つの量子ビットを入れ替える" },
+    instance: { en: "Two qubits, with qubit 0 set to |1⟩ and qubit 1 left at |0⟩, so there is something to exchange.", ja: "2量子ビットで、量子ビット0を |1⟩、量子ビット1を |0⟩ にします。入れ替える対象があるようにするためです。" },
+    qubitCount: 2,
+    steps: [prepare, apply],
+    customGates: [],
+    notes: [
+      note(prepare.id, "Sets qubit 0 to |1⟩. Read the outcome right to left: character 0 of the bitstring is the highest-numbered qubit, so this reads 01.", "量子ビット0を |1⟩ にします。測定結果は右から左へ読みます。ビット列の先頭の文字が最大番号の量子ビットなので、これは01と読まれます。"),
+      note(apply.id, "Exchanges the two qubits entirely. On hardware this is rarely a gate of its own — it is three CXs, and moving a qubit across a chip is the main cost a router is trying to avoid.", "2つの量子ビットをそっくり入れ替えます。実機ではこれ自体が1つのゲートであることはまれで、3つのCXになります。チップ上で量子ビットを移動させることこそ、ルータが避けようとしている主なコストです。"),
+    ],
+    check: { kind: "peak", bitstring: "10", minProbability: 0.999 },
+    readout: { en: "The register reads 10: what qubit 0 held is now on qubit 1. Nothing is in superposition on either side of this gate, which is exactly why the whole state simply moves from one outcome to another.", ja: "レジスタは10と読まれます。量子ビット0が持っていたものが量子ビット1に移りました。このゲートの前後どちらも重ね合わせではなく、だからこそ状態はひとつの測定結果から別の測定結果へそのまま移ります。" },
+    keywords: ["swap"],
+    blocks: [],
+  };
+}
+
+function toffoliDemo(): WorkedExample {
+  const prepare = [rawStep("X", [0]), rawStep("X", [1])];
+  const apply = rawStep("CCX", [0, 1, 2]);
+  return {
+    id: "gate-ccx-on-11",
+    algorithm: "Toffoli",
+    title: { en: "The Toffoli gate computes an AND", ja: "トフォリゲートはANDを計算する" },
+    instance: { en: "Three qubits, with both controls set to |1⟩ — the one case out of four in which the target flips.", ja: "3量子ビットで、2つの制御をどちらも |1⟩ にします。4通りのうち、対象が反転する唯一の場合です。" },
+    qubitCount: 3,
+    steps: [...prepare, apply],
+    customGates: [],
+    notes: [
+      note(prepare[0].id, "First control to |1⟩.", "1つ目の制御を |1⟩ にします。"),
+      note(prepare[1].id, "Second control to |1⟩, so both are now set.", "2つ目の制御を |1⟩ にします。これで両方が立ちました。"),
+      note(apply.id, "Flips the target only because both controls are 1 — the target ends up holding their AND. This is why Toffoli is universal for classical reversible computation: anything a classical circuit can compute, a circuit of these can compute reversibly.", "両方の制御が1であるときにだけ対象を反転します。対象は2つのANDを保持することになります。トフォリが古典可逆計算に対して万能である理由がこれです。古典回路が計算できることは何でも、このゲートの回路が可逆に計算できます。"),
+    ],
+    check: { kind: "peak", bitstring: "111", minProbability: 0.999 },
+    readout: { en: "The register reads 111. Change either control to 0 and the target stays 0 — the gate is an AND, written so that it can be undone by applying it again.", ja: "レジスタは111と読まれます。どちらかの制御を0にすれば対象は0のままです。このゲートはANDであり、もう一度適用すれば元に戻せる形で書かれています。" },
+    keywords: ["toffoli", "ccx"],
+    blocks: [],
+  };
+}
+
+function rzzDemo(): WorkedExample {
+  const prepare = [rawStep("H", [0]), rawStep("H", [1])];
+  const apply = rawStep("RZZ", [0, 1], "pi/2");
+  return {
+    id: "gate-rzz-on-plus-plus",
+    algorithm: "RZZ interaction",
+    title: { en: "RZZ(θ), the two-qubit interaction Ising models are made of", ja: "RZZ(θ)：イジング模型を構成する2量子ビット相互作用" },
+    instance: { en: "Two qubits, both put into |+⟩, then coupled by RZZ(π/2).", ja: "2量子ビットをどちらも |+⟩ にし、RZZ(π/2) で結合します。" },
+    qubitCount: 2,
+    steps: [...prepare, apply],
+    customGates: [],
+    notes: [
+      note(prepare[0].id, "Qubit 0 into an equal superposition.", "量子ビット0を等しい重ね合わせにします。"),
+      note(prepare[1].id, "Qubit 1 as well.", "量子ビット1も同様にします。"),
+      note(apply.id, "Turns the phase one way where the two qubits agree and the other way where they disagree. No probability moves. This is one term of an Ising Hamiltonian evolved for a short time, and a chain of these is what a Trotter step is made of.", "2つの量子ビットが一致している場合と一致していない場合とで、位相を逆向きに回します。確率は動きません。これはイジング・ハミルトニアンの1項を短時間だけ時間発展させたものであり、これを鎖状に並べたものがトロッターステップです。"),
+    ],
+    check: { kind: "distribution", probabilities: { "00": 0.25, "01": 0.25, "10": 0.25, "11": 0.25 }, tolerance: 1e-9 },
+    readout: { en: "All four outcomes stay equally likely. The gate's whole effect is a phase that depends on whether the two qubits agree — which is exactly what a coupling term in an Ising model is, and why this gate appears in every Trotter step and every QAOA cost layer in the Atlas.", ja: "4つの測定結果は等確率のままです。このゲートの効果は、2つの量子ビットが一致しているかどうかで決まる位相がすべてです。それはイジング模型の結合項そのものであり、Atlasのすべてのトロッターステップ、すべてのQAOAコスト層にこのゲートが現れる理由です。" },
+    keywords: ["rzz", "ising"],
+    blocks: [],
+  };
+}
+
 export const WORKED_EXAMPLES: readonly WorkedExample[] = [
   bellPair(),
   ghz4(),
@@ -897,6 +1191,24 @@ export const WORKED_EXAMPLES: readonly WorkedExample[] = [
   superdenseCoding(),
   wState3(),
   simon2(),
+  // Gate demonstrations — see the block comment above `phaseGateDemo`.
+  hadamardDemo(),
+  pauliYDemo(),
+  Z_GATE,
+  S_GATE,
+  T_GATE,
+  SDG_GATE,
+  TDG_GATE,
+  P_GATE,
+  RZ_GATE,
+  RX_GATE,
+  RY_GATE,
+  cxDemo(),
+  czDemo(),
+  cpDemo(),
+  swapDemo(),
+  toffoliDemo(),
+  rzzDemo(),
 ];
 
 export function workedExample(id: string): WorkedExample | undefined {

@@ -104,6 +104,30 @@
  * `coarse-grained-vqe-intermolecular-interactions`, are linked here — not by
  * the `algorithmFamily` label that pass declined to use on them, but by a
  * sentence in each record's own prose saying its method IS a VQE.
+ *
+ * 2026-09-17, FIFTH pass (17 links over 17 gate records, 214 total over 196):
+ * the gate cards. Every one of the 29 gate records drew a single labelled box
+ * and a bar chart, and for a whole family of them that bar chart is the SAME
+ * PICTURE — Z, S, T, S-dagger, T-dagger, P, RZ, CZ and CP applied to a
+ * superposition move no probability at all. The T-gate page, the S-gate page
+ * and a page for doing nothing were, as drawn, indistinguishable.
+ *
+ * Each of these 17 records is now an `instance` link to a demonstration
+ * written for it: the smallest circuit in which that gate does something, plus
+ * whatever preparation that takes (a Hadamard first, for the phase family,
+ * because on |0⟩ alone a phase gate's effect is global and unobservable).
+ * The derived per-step reading and the phase panel then say what happened, and
+ * for the phase family they say the thing the bars cannot.
+ *
+ * `evidence` here is provenance rather than justification: an `instance` link
+ * replaces the hero and never renders the note that quotes it. It is still a
+ * verbatim substring of the record's `description`, checked like every other.
+ *
+ * The 12 gate records NOT linked are the ones outside the builder's gate set
+ * (CY, CH, iSWAP, CSWAP, SX, ECR, DCX, CCZ, CRZ, RXX, U3) plus the identity
+ * gate, which has no builder gate at all. They need a decomposition first, and
+ * a demonstration of a gate through its decomposition is a demonstration of
+ * something else.
  */
 
 
@@ -1663,6 +1687,142 @@ export const WORKED_EXAMPLE_LINKS: Readonly<Record<string, readonly WorkedExampl
    "relation": "component",
    "field": "description",
    "evidence": "using Hamiltonian simulation and quantum linear system algorithms as subroutines"
+  }
+ ],
+ "hadamard-gate": [
+  {
+   "exampleId": "gate-h-on-zero",
+   "relation": "instance",
+   "field": "description",
+   "evidence": "putting a qubit into an equal superposition"
+  }
+ ],
+ "pauli-y-gate": [
+  {
+   "exampleId": "gate-y-on-zero",
+   "relation": "instance",
+   "field": "description",
+   "evidence": "combines a bit flip with a phase rotation"
+  }
+ ],
+ "pauli-z-gate": [
+  {
+   "exampleId": "gate-z-on-plus",
+   "relation": "instance",
+   "field": "description",
+   "evidence": "invisible to a basis measurement until interference is introduced"
+  }
+ ],
+ "s-phase-gate": [
+  {
+   "exampleId": "gate-s-on-plus",
+   "relation": "instance",
+   "field": "description",
+   "evidence": "quarter-turn phase gate that exposes the difference between global and relative phase"
+  }
+ ],
+ "t-phase-gate": [
+  {
+   "exampleId": "gate-t-on-plus",
+   "relation": "instance",
+   "field": "description",
+   "evidence": "non-Clifford phase gate"
+  }
+ ],
+ "s-dagger-gate": [
+  {
+   "exampleId": "gate-sdg-on-plus",
+   "relation": "instance",
+   "field": "description",
+   "evidence": "applying a -π/2 phase to |1⟩"
+  }
+ ],
+ "t-dagger-gate": [
+  {
+   "exampleId": "gate-tdg-on-plus",
+   "relation": "instance",
+   "field": "description",
+   "evidence": "applying a -π/4 phase to |1⟩"
+  }
+ ],
+ "phase-gate-p": [
+  {
+   "exampleId": "gate-p-on-plus",
+   "relation": "instance",
+   "field": "description",
+   "evidence": "unifying S, T, and Z as special cases"
+  }
+ ],
+ "rz-rotation-gate": [
+  {
+   "exampleId": "gate-rz-on-plus",
+   "relation": "instance",
+   "field": "description",
+   "evidence": "adds a relative phase between |0⟩ and |1⟩"
+  }
+ ],
+ "rx-rotation-gate": [
+  {
+   "exampleId": "gate-rx-on-zero",
+   "relation": "instance",
+   "field": "description",
+   "evidence": "rotation about the Bloch-sphere X axis"
+  }
+ ],
+ "ry-rotation-gate": [
+  {
+   "exampleId": "gate-ry-on-zero",
+   "relation": "instance",
+   "field": "description",
+   "evidence": "rotation about the Bloch-sphere Y axis"
+  }
+ ],
+ "controlled-x-gate": [
+  {
+   "exampleId": "gate-cx-on-plus-zero",
+   "relation": "instance",
+   "field": "description",
+   "evidence": "used to create correlation and entanglement"
+  }
+ ],
+ "controlled-z-gate": [
+  {
+   "exampleId": "gate-cz-on-plus-plus",
+   "relation": "instance",
+   "field": "description",
+   "evidence": "applies a -1 phase exactly when both qubits are |1⟩"
+  }
+ ],
+ "controlled-phase-gate": [
+  {
+   "exampleId": "gate-cp-on-plus-plus",
+   "relation": "instance",
+   "field": "description",
+   "evidence": "applies e^{iλ} exactly when both qubits are |1⟩"
+  }
+ ],
+ "swap-gate": [
+  {
+   "exampleId": "gate-swap-on-01",
+   "relation": "instance",
+   "field": "description",
+   "evidence": "exchanges two qubit states"
+  }
+ ],
+ "toffoli-ccx-gate": [
+  {
+   "exampleId": "gate-ccx-on-11",
+   "relation": "instance",
+   "field": "description",
+   "evidence": "implements reversible classical AND/NAND logic"
+  }
+ ],
+ "rzz-interaction-gate": [
+  {
+   "exampleId": "gate-rzz-on-plus-plus",
+   "relation": "instance",
+   "field": "description",
+   "evidence": "evolution under the Ising ZZ coupling"
   }
  ],
  "operator-two-rdm": [
