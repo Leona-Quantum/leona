@@ -49,6 +49,20 @@ Two visits to the dashboard. Nothing here changes what a visitor sees.
    redirect to HTTPS, so the two make an infinite redirect). Not plain *Full* (that accepts
    any certificate from the origin, which throws away the reason for doing this at all).
 
+**Between the visits — one rehearsal record (five minutes, any time, no visitor impact).**
+
+Add `gcp-preview` as an **A** record to the load balancer's address, **Proxied**. The
+certificate is a wildcard and `infra/web-lb/32-rehearsal-hostname.sh` gives the load balancer
+a matching entry, so this one record carries real requests through Cloudflare's edge, Full
+(strict), the origin lock and Cloud Run on a name no visitor uses. Then
+`PREVIEW_HOST=gcp-preview.leonaqt.com infra/web-lb/80-cutover-preflight.sh` ends in GO or
+NO-GO. Pages name `https://leonaqt.com/...` as canonical, so the extra host does not
+compete in search; delete the record after the cutover.
+
+What the collaborator was actually sent, as one PDF, is
+`~/Developer/ai-ops/desk/leona/handoffs/leonaqt-cloudflare-collaborator-brief-20260917.pdf`.
+Where it and this file disagree, the PDF is what he acted on.
+
 **Visit 2 — the cutover (about five minutes, on a date Eshaan names).**
 
 Do not do this until Eshaan confirms the certificate is installed on the load balancer and
@@ -58,10 +72,22 @@ the checks pass. Then, in one sitting:
    cloud to **Proxied** (orange).
 8. **DNS** → the `www` record: same address, also **Proxied** (orange).
    Eshaan will give the address; it is the load balancer's global IP.
-9. **Security → WAF → Rate limiting rules**: add a rule matching URI path *starts with*
-   `/repository`, at whatever Cloudflare's default suggestion is for requests per minute per
-   IP, action Block. This is ai-ops 318.
-10. **Security → Bots**: turn **Bot Fight Mode** on. Also ai-ops 318.
+9. **Security → WAF → Rate limiting rules**: one rule, which is all a Free plan allows, and
+   the zone is on Free (the collaborator confirmed it 2026-09-17). Expression
+   `(starts_with(http.request.uri.path, "/repository") and not cf.client.bot)`, same IP,
+   **60 requests per 10 seconds**, action Block for 10 seconds — on Free the period and the
+   block are both fixed at 10 s and the only fields a rule may test are the path and
+   "verified bot". This is ai-ops 318. Verified bots are exempt on the collaborator's
+   suggestion, relayed by the owner, so a search engine is never rate-limited off the Atlas.
+   The trade is written down because nobody found out what sent the 15 September traffic: if
+   it was a verified crawler, this rule lets it through, and the cache rule is what absorbs it.
+10. **Security → Bots**: turn **Bot Fight Mode** on, **last**, and note the time. Also ai-ops
+    318. It cannot be skipped for chosen paths or addresses, and Cloudflare says it may
+    challenge legitimate automated traffic — which describes `web-deploy-watch`,
+    `verify-web-cache` and the bench, all of which probe leonaqt.com from GitHub's runners.
+    Knowing when it went on is how a challenged monitor is told from a real fault. If it
+    blocks them or a search engine, it goes off again and the rate limit stays; the owner's
+    options on 318 allowed for exactly that.
 11. Tell Eshaan it is done. Undo for any of these is the same screen and takes under a
     minute; step 7 and 8 reverse by putting the old address back.
 
@@ -132,6 +158,9 @@ gcloud certificate-manager dns-authorizations delete majorana-web-auth-www-leona
 
 ## What this does not cover
 
+- Replacing the certificate. Its private key reached us through a GitHub issue; the owner
+  ruled on 2026-09-17, in session, "no need for new certificate. it is okay as it is". Do not
+  re-raise it.
 - Cloudflare's cache rules for the Atlas pages. ai-ops 141 puts the CDN at Cloudflare, and
   the current cache design was measured against Vercel's rules, not Cloudflare's. It has to
   be re-measured after the switch; `verify-web-cache` is the instrument.
