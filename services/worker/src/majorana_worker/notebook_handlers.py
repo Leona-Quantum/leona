@@ -545,11 +545,12 @@ async def _record_sandbox_usage(
 ) -> None:
     """Record this ATTEMPT's sandbox seconds, not this run's.
 
-    The worker retries a failed job on the same `run_id` — via
-    `RetryableJobError` -> `system.retry_job()`, or via the lease-expiry path
-    in `system.recover_stale_jobs()` when a worker dies mid-run — and a
-    retried attempt legitimately burns a different number of sandbox
-    seconds. Keying the idempotency id on `run_id` alone meant the second
+    A notebook job is re-run on the same `run_id` when its lease expires —
+    `system.recover_stale_jobs()` requeues the same job row after a worker is
+    killed or restarted mid-run. (Nothing in this module raises
+    `RetryableJobError`, so `system.retry_job()` is not the path here, though
+    it reuses the row the same way.) The re-run legitimately burns a
+    different number of sandbox seconds. Keying the idempotency id on `run_id` alone meant the second
     attempt's insert hit `ON CONFLICT DO NOTHING` against the first
     attempt's row, the content compare below in `usage_repo.record_usage`
     disagreed, and the resulting `ValueError` was caught and only logged —
