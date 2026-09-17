@@ -343,14 +343,24 @@ async def _execute_with_heartbeat(
     lease_token,
     handler,
     payload: dict[str, Any],
+    attempts: int = 1,
 ) -> None:
-    """Run one handler while a separate DB session maintains its fenced lease."""
+    """Run one handler while a separate DB session maintains its fenced lease.
+
+    `attempts` is the 1-based count `claim_job` already stamped onto this job
+    row before dispatch (services/api/src/majorana_api/repos/system.py
+    `claim_job`'s `next_attempt`), threaded through `session.info` the same
+    way `news_job_lease` is: a handler that cares reads it off the session it
+    was already given, so no handler's own signature — and no other job
+    kind's `payload` contract — has to change to carry it.
+    """
     stop = asyncio.Event()
 
     async def execute() -> None:
         async with factory() as session:
             if handler is HANDLERS.get("news.collect"):
                 session.info["news_job_lease"] = (job_id, lease_token)
+            session.info["job_attempt"] = attempts
             await handler(session, payload)
 
     handler_task = asyncio.create_task(execute())
@@ -422,6 +432,7 @@ async def _process_claimed_job(
                     lease_token=lease_token,
                     handler=handler,
                     payload=payload,
+                    attempts=attempts,
                 )
                 async with factory() as session:
                     await system.finish_job(

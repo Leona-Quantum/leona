@@ -543,16 +543,50 @@ async def _resolve_sandbox_memory_mb(session: AsyncSession, scope: Scope) -> int
 async def _record_sandbox_usage(
     session: AsyncSession, scope: Scope, run_id: uuid.UUID, ports: ProductionNotebookPorts
 ) -> None:
+    """Record this ATTEMPT's sandbox seconds, not this run's.
+
+    The worker retries a failed job on the same `run_id` — via
+    `RetryableJobError` -> `system.retry_job()`, or via the lease-expiry path
+    in `system.recover_stale_jobs()` when a worker dies mid-run — and a
+    retried attempt legitimately burns a different number of sandbox
+    seconds. Keying the idempotency id on `run_id` alone meant the second
+    attempt's insert hit `ON CONFLICT DO NOTHING` against the first
+    attempt's row, the content compare below in `usage_repo.record_usage`
+    disagreed, and the resulting `ValueError` was caught and only logged —
+    so that attempt's seconds were silently never recorded (observed in
+    production 2026-09-16). Every attempt really consumed sandbox time, so
+    dropping one loses true cost; keeping all of them loses nothing, since
+    `meta["attempt"]` lets any later summing choose to count only the
+    successful attempt if that ever becomes the policy.
+
+    `attempt` is the 1-based count `system.claim_job()` already stamps onto
+    the job row before this handler runs, threaded here via
+    `session.info["job_attempt"]` (set in `__main__._execute_with_heartbeat`,
+    the same mechanism `news_job_lease` uses to hand a handler per-job
+    context without changing every handler's — or every job kind's
+    `payload` contract's — shape). A session with nothing set there (a
+    handler invoked directly, as in older tests) defaults to attempt 1,
+    which is also correct: a brand-new run's first attempt cannot collide
+    with anything, because it has a brand-new `run_id`.
+
+    A true duplicate delivery of the SAME attempt (the sink retries the
+    commit, say) still carries the same quantity, so the ON CONFLICT DO
+    NOTHING + content-match path below returns the existing row rather than
+    raising — idempotency within an attempt is unchanged. Same attempt,
+    different quantity is still the real bug signal it was before, and
+    still only logged, never raised into the run.
+    """
     if ports.sandbox_seconds_used <= 0:
         return
+    attempt = session.info.get("job_attempt", 1)
     try:
         await usage_repo.record_usage(
             scope,
             session,
             kind=UsageKind.SANDBOX_SECONDS,
             quantity=ports.sandbox_seconds_used,
-            meta={"run_id": str(run_id), "lane": "notebook"},
-            event_id=uuid.uuid5(run_id, "usage:sandbox"),
+            meta={"run_id": str(run_id), "lane": "notebook", "attempt": attempt},
+            event_id=uuid.uuid5(run_id, f"usage:sandbox:{attempt}"),
         )
         await session.commit()
     except Exception:
