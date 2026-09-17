@@ -119,8 +119,15 @@ const COMPONENT_COPY = {
   ja: {
     component: "この手法が使う部分を、実例でたどる",
     usedIn: "この項目が、ある具体例の中で使われている例",
-    because: "このページには",
-    becauseTail: "とあります。その具体的で実行できる例がこちらです。",
+    // The evidence phrase is a verbatim substring of an ENGLISH field
+    // (description / explanation / introduction), because that is what
+    // check-worked-example-links.mjs validates it against. So the Japanese
+    // page must not say "このページには…とあります" — this page, in Japanese,
+    // does not say that; it says the Japanese equivalent. The phrase is
+    // attributed to the English text instead, which is true and keeps the
+    // grounding that made this note worth reading.
+    because: "この項目の英語版の記述にある",
+    becauseTail: "について、具体的で実行できる例がこちらです。",
     outcomes: "最終的な測定結果",
     phaseStep: "この例には、位相だけを変えるステップがあります。測定結果の確率は動きませんが、状態は変わっています。",
     openPart: "この部分をStudioで開く",
