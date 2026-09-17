@@ -70,6 +70,13 @@ gcloud run deploy majorana-web \
 
 ## Reaching it
 
+> **Since 2026-09-17 this works on `majorana-web-verify`, not on `majorana-web`.** Once
+> `infra/web-lb/40-serve.sh` has run, `majorana-web` accepts traffic from the load balancer
+> only: every run.app URL it has answers 404 to a request from outside, identity token or
+> not, and the load balancer answers 403 to anything that is not Cloudflare. The twin is the
+> same image with the same settings and stays IAM-gated, so substitute its name below. See
+> `infra/web-lb/07-verify-twin.sh` for why it exists.
+
 ```bash
 URL=$(gcloud run services describe majorana-web --project=majorana-core \
   --region=us-west1 --format='value(status.url)')
