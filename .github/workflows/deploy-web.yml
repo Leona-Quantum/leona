@@ -11,21 +11,42 @@
 #
 # ## The shape is deploy.yml's, on purpose
 #
-# Dark revision -> smoke-test the dark revision -> shift traffic, the same
+# Smoke-test before anybody is served -> deploy dark -> shift traffic, the same
 # sequence the api has used since July, because the failure it prevents is the
 # same one: a revision that builds, deploys, and cannot serve. A web deploy that
 # only checked "did a deployment record appear" is exactly what was in place on
 # 2026-08-14 when a silent Vercel failure went unnoticed, and what
 # web-deploy-watch.yml exists to catch after the fact.
 #
-# ## Reaching a private service from CI
+# ## Why the smoke test runs on a twin, not on majorana-web
 #
-# majorana-web takes no unauthenticated traffic. `verify---majorana-web-*.run.app`
-# — the dark revision's own URL — is a different host from the service URL, so an
-# identity token minted for one is rejected by the other. The service carries the
-# custom audience `majorana-web` so a single token opens both; `id_token_audience`
-# below is that string and not a URL for that reason. Confirmed 2026-09-16 with a
-# real request to each host, not inferred.
+# It used to probe a dark revision of `majorana-web` at its tagged run.app URL.
+# That stops being possible the moment the load balancer goes in front
+# (infra/web-lb/40-serve.sh): ingress becomes `internal-and-cloud-load-balancing`,
+# ingress belongs to the SERVICE rather than to a revision or a tag, and every
+# run.app URL the service has then refuses a GitHub runner, token or no token.
+# The load balancer is no way in either — the origin lock refuses anything that
+# is not Cloudflare, which is its job. Left alone, the first deploy after the
+# load balancer went live would have failed its smoke test, never shifted, and
+# frozen the website at the revision then serving.
+#
+# So the image is deployed first to `majorana-web-verify`: private, IAM-gated,
+# scaled to zero, the same identity, and the SAME settings — composed once below
+# and handed to both deploys, because two copies of "what production is
+# configured with" is a rule that gets broken with both copies in plain sight.
+# infra/web-lb/07-verify-twin.sh creates it and explains the rest.
+#
+# ## The flag this workflow must never pass to majorana-web
+#
+# `--no-allow-unauthenticated`. On an existing service gcloud does not read that
+# as "leave it private", it REMOVES the allUsers binding (confirmed in
+# surface/run/deploy.py, not inferred) — the binding 40-serve.sh adds because the
+# load balancer reaches Cloud Run as an ordinary unauthenticated caller. Passed
+# here, the first deploy after the cutover would have turned the whole site into
+# a 403 for every visitor. Public-ness is 40-serve.sh's decision and this file
+# leaves it alone; what it does assert, on every deploy, is that ingress stays
+# restricted to the load balancer, so the service is never both public and
+# reachable around Cloudflare.
 name: deploy-web
 
 on:
@@ -41,7 +62,16 @@ env:
   GCP_PROJECT: majorana-core
   GCP_REGION: us-west1
   SERVICE: majorana-web
-  CUSTOM_AUDIENCE: majorana-web
+  VERIFY_SERVICE: majorana-web-verify
+  VERIFY_AUDIENCE: majorana-web-verify
+  # No project roles at all; reads the website's own secrets and nothing else
+  # (infra/web-lb/05-runtime-identity.sh). Without it the service inherits the
+  # default compute account, which holds roles/editor on the project.
+  RUNTIME_SA: majorana-web-runtime@majorana-core.iam.gserviceaccount.com
+  # Public values: the live sign-in redirect prints both. The redirect URI names
+  # the production host on purpose — sign-in only ever completes there.
+  WORKOS_CLIENT_ID: client_01KX3TN2Y37QDVCWG1M7M5WRG8
+  WORKOS_REDIRECT_URI: https://leonaqt.com/auth/callback
 
 jobs:
   deploy-web:
@@ -88,7 +118,7 @@ jobs:
       - name: load web sizing
         if: steps.expect.outputs.expected == 'yes'
         run: |
-          for key in WEB_MIN_INSTANCES WEB_MAX_INSTANCES WEB_XFF_TRUSTED_HOPS; do
+          for key in WEB_MIN_INSTANCES WEB_MAX_INSTANCES WEB_XFF_TRUSTED_HOPS WEB_SIGN_IN; do
             grep -qE "^${key}=[0-9]+$" infra/fleet.env || {
               echo "::error::${key} is missing from infra/fleet.env or is not a plain integer"
               exit 1
@@ -126,18 +156,27 @@ jobs:
       # they are build args in cloudbuild.web.yaml rather than service settings.
       # Changing one of those means a rebuild, not a `run services update`.
       #
-      # That split is why the browser-side Sentry DSN is still absent: it is a
-      # NEXT_PUBLIC_ value, so switching it on means a build arg and therefore a
-      # rebuild, and it would start reporting from a service no visitor reaches.
-      # The server-side DSN below is a runtime setting and costs nothing to have
-      # early. Add the client one in the commit that puts the load balancer in
-      # front, not before.
+      # The browser-side Sentry DSN arrives here, in the commit that puts the load
+      # balancer in front, as the note this replaces asked: before that it would
+      # have reported from a service no visitor reaches. It is read from Secret
+      # Manager rather than written into this file — it is not a secret (every
+      # browser receives it), but a DSN in a workflow is a string the secret
+      # scanners are right to stop on. WEB_SENTRY_DSN and not SENTRY_DSN: that
+      # one is the api's, a different Sentry project.
+      #
+      # _PUBLIC_ENV defaults to `spike` in cloudbuild.web.yaml, which is what a
+      # hand-run build should say. This one is production and says so; left at
+      # the default, every browser error would be filed under an environment
+      # nobody watches.
       - name: build image
         if: steps.creds.outputs.have == 'true'
         run: |
+          browser_dsn=$(gcloud secrets versions access latest --secret WEB_SENTRY_DSN --project "$GCP_PROJECT")
+          [ -n "$browser_dsn" ] || { echo "::error::WEB_SENTRY_DSN read back empty"; exit 1; }
+          echo "::add-mask::${browser_dsn}"
           gcloud builds submit --config cloudbuild.web.yaml \
             --ignore-file=.gcloudignore.web \
-            --substitutions=_TAG="${{ steps.tag.outputs.tag }}",_SHA="${{ github.sha }}" \
+            --substitutions=_TAG="${{ steps.tag.outputs.tag }}",_SHA="${{ github.sha }}",_PUBLIC_ENV=production,_SENTRY_DSN="${browser_dsn}",_WORKOS_REDIRECT_URI="${WORKOS_REDIRECT_URI}" \
             --project "$GCP_PROJECT" --region "$GCP_REGION" .
 
       # ## MAJORANA_PUBLIC_CATALOG_API, found by comparing the two stacks
@@ -171,36 +210,63 @@ jobs:
       # "hard (subtle)"; the token already exists and identifies the caller
       # directly, so the NAT is not needed for this.
       #
-      # --no-traffic --tag verify: the revision is reachable at its own hostname
-      # and serves nobody until the shift step below. LEONA_DEPLOY_ENV is set at
-      # RUNTIME as well as at build time because lib/lab-direction.ts and
-      # lib/public-demo.ts read it per request.
-      - name: deploy web (no traffic)
-        id: dark
+      # LEONA_DEPLOY_ENV is set at RUNTIME as well as at build time because
+      # lib/lab-direction.ts and lib/public-demo.ts read it per request.
+      #
+      # ## Composed once, used twice
+      #
+      # The twin's smoke test is only evidence about majorana-web if the two run
+      # the same settings. So the strings are built here, once, and both deploys
+      # below read them; there is no second copy to keep in step.
+      #
+      # Secret names carry a WEB_ prefix (see the SENTRY_DSN note above for what
+      # an unqualified name costs). WEB_DEVELOPER_EMAILS and WEB_CONTACT_FALLBACK
+      # are addresses rather than secrets, and live in Secret Manager to stay out
+      # of a public workflow file; production on Vercel sets both, and without
+      # them developer accounts resolve to the free tier and the contact form
+      # offers no way through. infra/web-lb/06-sign-in-secrets.sh creates them.
+      #
+      # WEB_SIGN_IN (infra/fleet.env) is explicit rather than "on if the secret
+      # exists": a deploy that quietly configures itself from whatever is lying
+      # in Secret Manager is a deploy nobody reviewed. At 1 a missing secret
+      # fails the deploy, loudly, before anybody is served the revision.
+      - name: compose the runtime settings
         if: steps.creds.outputs.have == 'true'
         run: |
-          gcloud run deploy "$SERVICE" \
+          vars="LEONA_DEPLOY_ENV=production,LEONA_XFF_TRUSTED_HOPS=${WEB_XFF_TRUSTED_HOPS},LEONA_GIT_COMMIT_SHA=${{ github.sha }},MAJORANA_ENV=production,MAJORANA_PUBLIC_CATALOG_API=true"
+          secrets="SENTRY_DSN=WEB_SENTRY_DSN:latest,MAJORANA_TRUSTED_CALLER_TOKEN=TRUSTED_CALLER_TOKEN:latest,LEONA_DEVELOPER_EMAILS=WEB_DEVELOPER_EMAILS:latest,CONTACT_FALLBACK=WEB_CONTACT_FALLBACK:latest"
+          if [ "$WEB_SIGN_IN" = "1" ]; then
+            vars="${vars},WORKOS_CLIENT_ID=${WORKOS_CLIENT_ID},WORKOS_REDIRECT_URI=${WORKOS_REDIRECT_URI}"
+            secrets="${secrets},WORKOS_API_KEY=WEB_WORKOS_API_KEY:latest,WORKOS_COOKIE_PASSWORD=WEB_WORKOS_COOKIE_PASSWORD:latest"
+          else
+            echo "::warning::WEB_SIGN_IN=0 — this revision cannot sign anybody in. Fine while Vercel serves leonaqt.com; NOT fine at the cutover (infra/web-lb/80-cutover-preflight.sh refuses GO on it)."
+          fi
+          {
+            echo "WEB_ENV_VARS=${vars}"
+            echo "WEB_SECRETS=${secrets}"
+            echo "WEB_IMAGE=us-west1-docker.pkg.dev/${GCP_PROJECT}/majorana/web:${{ steps.tag.outputs.tag }}"
+          } >> "$GITHUB_ENV"
+
+      # Private, IAM-gated, never public: --no-allow-unauthenticated is right on
+      # THIS service and wrong on majorana-web (see the header).
+      - name: deploy the twin
+        id: twin
+        if: steps.creds.outputs.have == 'true'
+        run: |
+          gcloud run deploy "$VERIFY_SERVICE" \
             --project "$GCP_PROJECT" --region "$GCP_REGION" \
-            --image "us-west1-docker.pkg.dev/${GCP_PROJECT}/majorana/web:${{ steps.tag.outputs.tag }}" \
-            --no-allow-unauthenticated \
-            --port 8080 \
-            --min-instances "$WEB_MIN_INSTANCES" \
-            --max-instances "$WEB_MAX_INSTANCES" \
-            --set-env-vars "LEONA_DEPLOY_ENV=production,LEONA_XFF_TRUSTED_HOPS=${WEB_XFF_TRUSTED_HOPS},LEONA_GIT_COMMIT_SHA=${{ github.sha }},MAJORANA_ENV=production,MAJORANA_PUBLIC_CATALOG_API=true" \
-            --set-secrets "SENTRY_DSN=WEB_SENTRY_DSN:latest,MAJORANA_TRUSTED_CALLER_TOKEN=TRUSTED_CALLER_TOKEN:latest" \
-            --no-traffic --tag verify
-
-          previous=$(gcloud run services describe "$SERVICE" \
-            --project "$GCP_PROJECT" --region "$GCP_REGION" --format=json \
-            | jq -r '[.status.traffic[] | select((.percent // 0) > 0) | .revisionName] | first // ""')
-          echo "previous=${previous}" >> "$GITHUB_OUTPUT"
-
-          url=$(gcloud run services describe "$SERVICE" \
-            --project "$GCP_PROJECT" --region "$GCP_REGION" --format=json \
-            | jq -r '.status.traffic[] | select(.tag=="verify") | .url')
-          [ -n "$url" ] || { echo "::error::no URL for the verify tag"; exit 1; }
+            --image "$WEB_IMAGE" \
+            --no-allow-unauthenticated --ingress all \
+            --service-account "$RUNTIME_SA" \
+            --port 8080 --min-instances 0 --max-instances 2 \
+            --set-env-vars "$WEB_ENV_VARS" \
+            --set-secrets "$WEB_SECRETS" \
+            --set-custom-audiences "$VERIFY_AUDIENCE"
+          url=$(gcloud run services describe "$VERIFY_SERVICE" \
+            --project "$GCP_PROJECT" --region "$GCP_REGION" --format='value(status.url)')
+          [ -n "$url" ] || { echo "::error::no URL for ${VERIFY_SERVICE}"; exit 1; }
           echo "url=${url}" >> "$GITHUB_OUTPUT"
-          echo "dark revision at ${url}, previously serving: ${previous:-<none>}"
+          echo "twin at ${url}"
 
       - id: idtoken
         name: identity token for the private service
@@ -210,7 +276,7 @@ jobs:
           workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
           service_account: ${{ secrets.GCP_DEPLOY_SERVICE_ACCOUNT }}
           token_format: id_token
-          id_token_audience: majorana-web
+          id_token_audience: majorana-web-verify
           id_token_include_email: true
 
       # Every assertion here is one the 2026-08-14 and 2026-08-16 incidents
@@ -218,10 +284,10 @@ jobs:
       # route rendering is not every kind of route rendering. `/repository` and
       # the 404 page are named individually because each has 500'd in production
       # while every other signal was green.
-      - name: smoke-test the dark revision
+      - name: smoke-test the twin
         if: steps.creds.outputs.have == 'true'
         env:
-          URL: ${{ steps.dark.outputs.url }}
+          URL: ${{ steps.twin.outputs.url }}
           TOKEN: ${{ steps.idtoken.outputs.id_token }}
         run: |
           fail=0
@@ -260,6 +326,34 @@ jobs:
           rm -f "$ja"
           [ "$fail" -eq 0 ] || exit 1
 
+      # No --allow-unauthenticated flag in either direction: see the header. What
+      # IS asserted on every deploy is the ingress restriction, so there is no
+      # deploy after which this service is reachable around Cloudflare.
+      #
+      # --no-traffic, then the shift below: a revision whose container cannot
+      # start fails HERE, with the previous revision still serving everybody.
+      - name: deploy majorana-web (no traffic)
+        id: dark
+        if: steps.creds.outputs.have == 'true'
+        run: |
+          previous=$(gcloud run services describe "$SERVICE" \
+            --project "$GCP_PROJECT" --region "$GCP_REGION" --format=json \
+            | jq -r '[.status.traffic[] | select((.percent // 0) > 0) | .revisionName] | first // ""')
+          echo "previous=${previous}" >> "$GITHUB_OUTPUT"
+
+          gcloud run deploy "$SERVICE" \
+            --project "$GCP_PROJECT" --region "$GCP_REGION" \
+            --image "$WEB_IMAGE" \
+            --ingress internal-and-cloud-load-balancing \
+            --service-account "$RUNTIME_SA" \
+            --port 8080 \
+            --min-instances "$WEB_MIN_INSTANCES" \
+            --max-instances "$WEB_MAX_INSTANCES" \
+            --set-env-vars "$WEB_ENV_VARS" \
+            --set-secrets "$WEB_SECRETS" \
+            --no-traffic
+          echo "deployed dark, previously serving: ${previous:-<none>}"
+
       - name: shift web traffic
         if: steps.creds.outputs.have == 'true'
         run: |
@@ -269,25 +363,35 @@ jobs:
       # The shift is the only step between a revision that served nobody and one
       # that serves everybody, so it gets its own readback rather than being
       # trusted because the command exited 0.
+      #
+      # Read from the control plane, because there is no data-plane route from a
+      # runner any more: the run.app URL refuses by ingress and the load balancer
+      # refuses by origin lock. What a visitor meets is web-deploy-watch.yml's and
+      # verify-web-cache.yml's question, asked through the public name.
+      #
+      # The second assertion is the dangerous pair, checked where it would be
+      # created: a service that is public AND reachable directly is the whole
+      # site with no Cloudflare, no rate limit and no origin lock in front of it.
       - name: the shifted revision is the one serving
         if: steps.creds.outputs.have == 'true'
-        env:
-          TOKEN: ${{ steps.idtoken.outputs.id_token }}
         run: |
-          serving=$(gcloud run services describe "$SERVICE" \
-            --project "$GCP_PROJECT" --region "$GCP_REGION" --format=json \
-            | jq -r '[.status.traffic[] | select((.percent // 0) > 0) | .revisionName] | first // ""')
-          latest=$(gcloud run services describe "$SERVICE" \
-            --project "$GCP_PROJECT" --region "$GCP_REGION" --format='value(status.latestCreatedRevisionName)')
-          if [ "$serving" != "$latest" ]; then
-            echo "::error::traffic is on ${serving:-<none>}, not the revision just built (${latest})"
+          svc=$(gcloud run services describe "$SERVICE" \
+            --project "$GCP_PROJECT" --region "$GCP_REGION" --format=json)
+          serving=$(jq -r '[.status.traffic[] | select((.percent // 0) > 0) | .revisionName] | first // ""' <<<"$svc")
+          latest=$(jq -r '.status.latestCreatedRevisionName // ""' <<<"$svc")
+          if [ -z "$latest" ] || [ "$serving" != "$latest" ]; then
+            echo "::error::traffic is on ${serving:-<none>}, not the revision just built (${latest:-<none>})"
             exit 1
           fi
-          url=$(gcloud run services describe "$SERVICE" \
-            --project "$GCP_PROJECT" --region "$GCP_REGION" --format='value(status.url)')
-          code=$(curl -sS --max-time 45 -o /dev/null -w '%{http_code}' -H "Authorization: Bearer ${TOKEN}" "${url}/")
-          [ "$code" = "200" ] || { echo "::error::the service URL returned ${code} after the shift"; exit 1; }
-          echo "serving ${latest} at ${url}"
+          ingress=$(jq -r '.metadata.annotations["run.googleapis.com/ingress"] // ""' <<<"$svc")
+          public=$(gcloud run services get-iam-policy "$SERVICE" \
+            --project "$GCP_PROJECT" --region "$GCP_REGION" --format=json \
+            | jq -r '[.bindings[]? | select(.role=="roles/run.invoker") | .members[]] | map(select(.=="allUsers" or .=="allAuthenticatedUsers")) | length')
+          if [ "$public" != "0" ] && [ "$ingress" != "internal-and-cloud-load-balancing" ]; then
+            echo "::error::${SERVICE} is public with ingress '${ingress}' — it is reachable around Cloudflare. Restrict ingress NOW: infra/web-lb/40-serve.sh"
+            exit 1
+          fi
+          echo "serving ${latest}; ingress ${ingress}; public through the load balancer: $([ "$public" != "0" ] && echo yes || echo 'not yet')"
 
       - name: roll web traffic back on failure
         if: failure() && steps.creds.outputs.have == 'true' && steps.dark.outputs.previous != ''
