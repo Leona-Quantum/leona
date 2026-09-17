@@ -22,7 +22,12 @@ dependencies = [
 
 [project.optional-dependencies]
 notebooks = [
-    "jupyterlab",
+    # Floor, not decoration: two XSS advisories published 2026-09-17
+    # (GHSA-gx64-gj6p-pc4c CVSS 7.5, GHSA-pppj-hq3g-57pj CVSS 8.6) cover 4.6.0
+    # and 4.6.1 and are patched in 4.6.2. Unconstrained, a fresh resolve on a
+    # machine with an older index could land back inside that range; uv.lock
+    # already sits at 4.6.3, so this changes nothing it resolves today.
+    "jupyterlab>=4.6.3",
     "ipykernel",
     "nbformat",
     "nbclient",
