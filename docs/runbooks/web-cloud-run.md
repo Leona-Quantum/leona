@@ -209,10 +209,37 @@ because the response was never a cache candidate.
 Two more things the rule has to get right, both of which have already caused a
 production incident here:
 
-- **The locale cookie has to be in the cache key**, or one visitor's Japanese
-  page is served to the next English reader. `leona.locale.v2` is the cookie
-  (`apps/web/lib/public-locale.ts`); `majorana.locale.v1` is the legacy one the
-  middleware still honours, so it belongs in the key too.
+- **A request carrying a locale cookie must never be answered from the cache**, or
+  one visitor's Japanese page is served to the next English reader.
+  `leona.locale.v2` is the cookie (`apps/web/lib/public-locale.ts`);
+  `majorana.locale.v1` is the legacy one the middleware still honours.
+
+  This used to say "put the cookie in the cache key". **That cannot be built on the
+  plan the zone is on**: a custom cache key naming cookies is Enterprise-only
+  (Cloudflare's cache-keys availability table reads `Cookie | No | No | No | Yes`
+  across Free, Pro, Business, Enterprise; read 2026-09-17). Followed as written, the
+  collaborator would have found no such field, saved the rule without it, and the
+  two languages would have shared one cache entry — with `cf-cache-status: HIT`
+  reporting success the whole time.
+
+  What works on every plan is the rule's **filter**, where `http.cookie` is an
+  ordinary field: make the page eligible for cache only when the request carries
+  neither cookie.
+
+  ```
+  (http.request.uri.path eq "/repository"
+   or starts_with(http.request.uri.path, "/repository/layers"))
+  and not http.cookie contains "leona.locale.v2="
+  and not http.cookie contains "majorana.locale.v1="
+  ```
+
+  A request with no locale cookie always renders English — the site does not
+  negotiate from `Accept-Language` (ai-ops 329) — so the one shared entry is the
+  English page, which is what nearly every first visit and every crawler asks for,
+  and those are the load the 15 September outage was made of. A reader who has
+  chosen a language, either one, renders fresh. If ai-ops 329 ever adds
+  `Accept-Language` negotiation, this rule becomes wrong the same day: a cookie-less
+  Japanese browser would be handed the cached English page.
 - **`/repository/<slug>` must NOT be covered.** `/repository/layers` deliberately
   includes its subtree because every child there is equally public;
   `/repository` deliberately does not, because its own children are the
