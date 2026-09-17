@@ -306,6 +306,105 @@ test("gates and algorithms views are sent in full regardless of ?rows=, matching
   assert.equal(totalAlgoRows, 8);
 });
 
+// ---------------------------------------------------------------------------
+// The Atlas list-payload trim: a response carries only the reader's own
+// language on the bilingual fields (title/titleJa, description/descriptionJa,
+// categoryLabel/categoryLabelJa). Measured 2026-09-11 on
+// https://leonaqt.com/repository?category=algorithms: 610 KB decoded HTML, of
+// which ~322 KB was the RSC flight payload — every one of ~153 rows carrying
+// BOTH languages regardless of which one the page renders.
+// ---------------------------------------------------------------------------
+
+test("an English response carries no Japanese text on title/description/categoryLabel, single rows", () => {
+  const corpus = [
+    entry("grover-search", {
+      title: "Grover search",
+      titleJa: "グローバー探索",
+      description: "A search algorithm.",
+      descriptionJa: "探索アルゴリズム。",
+      categoryLabel: "Algorithms",
+      categoryLabelJa: "アルゴリズム",
+    }),
+  ];
+  const view = buildRepositoryBrowseView(corpus, null, null, params(), "en");
+  assert.equal(view.shownListRows.length, 1);
+  const row = view.shownListRows[0];
+  assert.equal(row.kind, "single");
+  if (row.kind !== "single") return;
+  // The reader's own language survives untouched.
+  assert.equal(row.entry.title, "Grover search");
+  assert.equal(row.entry.description, "A search algorithm.");
+  assert.equal(row.entry.categoryLabel, "Algorithms");
+  // The other language's bytes do not cross into the response at all.
+  assert.equal(row.entry.titleJa, "", "titleJa must not leak into an English response");
+  assert.equal(row.entry.descriptionJa, "", "descriptionJa must not leak into an English response");
+  assert.equal(row.entry.categoryLabelJa, "", "categoryLabelJa must not leak into an English response");
+});
+
+test("a Japanese response carries no English text on title/description/categoryLabel, single rows", () => {
+  const corpus = [
+    entry("grover-search", {
+      title: "Grover search",
+      titleJa: "グローバー探索",
+      description: "A search algorithm.",
+      descriptionJa: "探索アルゴリズム。",
+      categoryLabel: "Algorithms",
+      categoryLabelJa: "アルゴリズム",
+    }),
+  ];
+  const view = buildRepositoryBrowseView(corpus, null, null, params(), "ja");
+  const row = view.shownListRows[0];
+  assert.equal(row.kind, "single");
+  if (row.kind !== "single") return;
+  assert.equal(row.entry.titleJa, "グローバー探索");
+  assert.equal(row.entry.descriptionJa, "探索アルゴリズム。");
+  assert.equal(row.entry.categoryLabelJa, "アルゴリズム");
+  assert.equal(row.entry.title, "", "title must not leak into a Japanese response");
+  assert.equal(row.entry.description, "", "description must not leak into a Japanese response");
+  assert.equal(row.entry.categoryLabel, "", "categoryLabel must not leak into a Japanese response");
+});
+
+test("the trim also applies to folded group members (width families and curated clusters), both categories and gates", () => {
+  const widths = [2, 4];
+  const corpus = widths.map((width) =>
+    entry(`bench-${width}q`, {
+      title: `Bench chain · ${width} qubits`,
+      titleJa: `ベンチ鎖・${width}量子ビット`,
+      description: "Same on every width.",
+      descriptionJa: "すべての幅で同じ。",
+    }),
+  );
+  const view = buildRepositoryBrowseView(corpus, null, null, params(), "en");
+  const row = view.shownListRows[0];
+  assert.equal(row.kind, "group");
+  if (row.kind !== "group") return;
+  for (const member of row.members) {
+    assert.notEqual(member.title, "", "the active language must survive folding");
+    assert.equal(member.titleJa, "", "a folded member must not leak the other language either");
+    assert.equal(member.descriptionJa, "");
+  }
+
+  // Same check on the algorithms-category grouped path and the gates path,
+  // which build their rows through a different branch of buildRepositoryBrowseView.
+  const algoCorpus = [
+    entry("algo-a", { category: "algorithms", titleJa: "アルゴA", descriptionJa: "説明A" }),
+  ];
+  const algoView = buildRepositoryBrowseView(algoCorpus, null, null, params({ category: "algorithms" }), "en");
+  const algoRow = algoView.algorithmGroups.flatMap((g) => g.rows)[0];
+  assert.equal(algoRow.kind, "single");
+  if (algoRow.kind === "single") {
+    assert.equal(algoRow.entry.titleJa, "");
+    assert.equal(algoRow.entry.descriptionJa, "");
+  }
+
+  const gateCorpus = [
+    entry("gate-a", { category: "gates", titleJa: "ゲートA", descriptionJa: "説明A" }),
+  ];
+  const gateView = buildRepositoryBrowseView(gateCorpus, null, null, params({ category: "gates" }), "en");
+  assert.equal(gateView.gateEntries[0].titleJa, "");
+  assert.equal(gateView.gateEntries[0].descriptionJa, "");
+});
+
 test("an empty match reports zero rather than throwing, and offers nothing more", () => {
   const corpus = [entry("only-entry")];
   const view = buildRepositoryBrowseView(corpus, null, null, params({ query: "nothing matches this" }), "en");

@@ -185,6 +185,52 @@ function collectRowSlugs(row: BrowseRow, into: Set<string>): void {
 }
 
 /**
+ * Drop the bilingual field a reader's locale never renders, on one entry —
+ * the Atlas list-payload trim.
+ *
+ * `PublicRepositoryListEntry` carries BOTH languages of `title`,
+ * `description` and `categoryLabel` because upstream computations over this
+ * same module need both, unconditionally: `familyInvariant` (families.ts)
+ * compares `description`/`descriptionJa` between candidate members to decide
+ * whether they are one circuit at different widths, and
+ * `deriveWidthFamilies`/`widthFamilyGroup` strip the width off both
+ * `title` and `titleJa` to build a family's shared (bilingual) label. All of
+ * that runs above, over the full, un-localized `entries` this function
+ * receives — before any row is folded, ordered, capped, or chosen for this
+ * response.
+ *
+ * By the time a row is about to cross into `RepositoryBrowser` — a
+ * `"use client"` component, so anything passed to it as props is serialized
+ * into the page's RSC flight payload — only ONE language is ever read off
+ * these three fields: `locale === "ja" ? entry.titleJa : entry.title` and the
+ * same shape for `description`/`categoryLabel` (repository-browser.tsx).
+ * Blanking the field that branch does not take removes that language's bytes
+ * from the payload with no change to the client at all: the ternary still
+ * reads the same field it always did, that field's content is untouched, and
+ * only the field nobody was going to read this request is now `""`.
+ *
+ * `categoryLabel`/`categoryLabelJa` is not currently read by
+ * `repository-browser.tsx` at all (only by the detail page's own fetch and by
+ * `familyInvariant` above), but it is trimmed the same way for consistency
+ * and because a future reader of the list projection should not have to
+ * relearn that this one field is exempt.
+ */
+function localizeListEntry(
+  entry: PublicRepositoryListEntry,
+  locale: "en" | "ja",
+): PublicRepositoryListEntry {
+  return locale === "ja"
+    ? { ...entry, title: "", description: "", categoryLabel: "" }
+    : { ...entry, titleJa: "", descriptionJa: "", categoryLabelJa: "" };
+}
+
+/** `localizeListEntry`, applied to every entry a folded row carries. */
+function localizeRow(row: BrowseRow, locale: "en" | "ja"): BrowseRow {
+  if (row.kind === "single") return { kind: "single", entry: localizeListEntry(row.entry, locale) };
+  return { ...row, members: row.members.map((member) => localizeListEntry(member, locale)) };
+}
+
+/**
  * Trim an estimate listing to the rows a response is actually sending.
  *
  * `estimates` arrives sized for the WHOLE corpus (one row per published
@@ -364,6 +410,19 @@ export function buildRepositoryBrowseView(
   for (const row of shownListRows) collectRowSlugs(row, sentSlugs);
   for (const row of shownUnrankedRows) collectRowSlugs(row, sentSlugs);
 
+  // The locale trim runs LAST, after every computation above that needed both
+  // languages (family folding, search, sentSlugs) is done — see
+  // localizeListEntry's header. Nothing past this point reads `gateEntries`,
+  // `algorithmGroups`, `shownListRows` or `shownUnrankedRows` in their
+  // pre-trim form, so this is also the only place the trim has to happen.
+  const localizedGateEntries = gateEntries.map((entry) => localizeListEntry(entry, locale));
+  const localizedAlgorithmGroups = algorithmGroups.map((group) => ({
+    ...group,
+    rows: group.rows.map((row) => localizeRow(row, locale)),
+  }));
+  const localizedShownListRows = shownListRows.map((row) => localizeRow(row, locale));
+  const localizedShownUnrankedRows = shownUnrankedRows.map((row) => localizeRow(row, locale));
+
   return {
     facets: {
       topicGroups,
@@ -381,10 +440,10 @@ export function buildRepositoryBrowseView(
     shownRowCount,
     cappableRowsLength: cappableRows.length,
     nextRowLimit: cappedList.next,
-    gateEntries,
-    algorithmGroups,
-    shownListRows,
-    shownUnrankedRows,
+    gateEntries: localizedGateEntries,
+    algorithmGroups: localizedAlgorithmGroups,
+    shownListRows: localizedShownListRows,
+    shownUnrankedRows: localizedShownUnrankedRows,
     estimates: trimEstimatesToSentSlugs(estimates, sentSlugs),
   };
 }
