@@ -134,6 +134,62 @@ else
 fi
 
 # ---------------------------------------------------------------------------
+# Three things that are each fine alone and dangerous in a pair.
+#
+#   public + reachable directly   the whole site on a run.app URL, with no
+#                                 Cloudflare, no rate limit and no origin lock.
+#                                 40-serve.sh orders its two commands to avoid
+#                                 this; deploy-web.yml re-asserts the ingress on
+#                                 every deploy; this reads what is actually there.
+#   public + the default identity every Cloud Run service can ask the metadata
+#                                 server for its account's token, and the default
+#                                 compute account holds roles/editor. On Vercel
+#                                 the website held no cloud credential at all.
+#   a public twin                 majorana-web-verify exists to be probed by CI
+#                                 with an identity token. Public, it is the first
+#                                 line of this list again under another name.
+# ---------------------------------------------------------------------------
+echo "== public only through the load balancer, and as nobody in particular"
+svc_json=$(g run services describe "$SERVICE" --region "$REGION" --format=json 2>/dev/null || true)
+ingress=$(printf '%s' "$svc_json" | python3 -c 'import json,sys
+try: print(json.load(sys.stdin)["metadata"]["annotations"].get("run.googleapis.com/ingress",""))
+except Exception: print("")')
+runs_as=$(printf '%s' "$svc_json" | python3 -c 'import json,sys
+try: print(json.load(sys.stdin)["spec"]["template"]["spec"].get("serviceAccountName",""))
+except Exception: print("")')
+is_public() { # <service>
+  g run services get-iam-policy "$1" --region "$REGION" --format=json 2>/dev/null | python3 -c 'import json,sys
+try: b=json.load(sys.stdin).get("bindings",[])
+except Exception: b=[]
+m={x for i in b if i.get("role")=="roles/run.invoker" for x in i.get("members",[])}
+print("yes" if m & {"allUsers","allAuthenticatedUsers"} else "no")'
+}
+web_public=$(is_public "$SERVICE")
+if [ -z "$ingress" ]; then
+  note FAIL "could not read ${SERVICE}'s ingress setting"
+elif [ "$web_public" = yes ] && [ "$ingress" != "internal-and-cloud-load-balancing" ]; then
+  note FAIL "${SERVICE} is public with ingress '${ingress}' — it is reachable around Cloudflare"
+else
+  note OK "ingress ${ingress}; public: ${web_public}"
+fi
+case "$runs_as" in
+  majorana-web-runtime@*) note OK "runs as ${runs_as} (no project roles — ./05-runtime-identity.sh checks that)";;
+  *) if [ "$web_public" = yes ]; then
+       note FAIL "${SERVICE} is public and runs as ${runs_as:-the default compute account}, which holds roles/editor"
+     else
+       note WARN "${SERVICE} runs as ${runs_as:-the default compute account}; the next deploy-web run moves it to majorana-web-runtime"
+     fi;;
+esac
+if exists run services describe majorana-web-verify --region "$REGION"; then
+  case "$(is_public majorana-web-verify)" in
+    no) note OK "the smoke-test twin is private";;
+    *)  note FAIL "majorana-web-verify is PUBLIC — it serves the site with nothing in front of it";;
+  esac
+else
+  note WARN "no smoke-test twin yet (./07-verify-twin.sh); deploy-web.yml needs it"
+fi
+
+# ---------------------------------------------------------------------------
 # The one setting that has to move at the same moment the load balancer does.
 #
 # WEB_XFF_TRUSTED_HOPS says how many x-forwarded-for entries Google appends to

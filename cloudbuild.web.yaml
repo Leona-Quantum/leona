@@ -15,13 +15,21 @@
 # https://majorana-api-nikekeixtq-uw.a.run.app as the control plane (read
 # 2026-09-15), and LEONA_DEPLOY_ENV=production keeps the preview-only
 # allowances (Vercel Toolbar CSP, /lab, the public demo) off.
-# NEXT_PUBLIC_SENTRY_DSN is deliberately not forwarded: a spike should not send
-# its errors into production's Sentry project.
+#
+# _SENTRY_DSN and _WORKOS_REDIRECT_URI default to EMPTY, and that is the spike's
+# correct value: a hand-run build should not send browser errors into
+# production's Sentry project, and an empty NEXT_PUBLIC_SENTRY_DSN makes the
+# client SDK a no-op. deploy-web.yml passes the real ones, with
+# _PUBLIC_ENV=production, because that build is the one visitors get. They are
+# declared here even though they default to nothing: Cloud Build rejects a
+# substitution the config does not name.
 substitutions:
   _SHA: unset
   _DEPLOY_ENV: production
   _API_URL: https://majorana-api-nikekeixtq-uw.a.run.app
   _PUBLIC_ENV: spike
+  _SENTRY_DSN: ''
+  _WORKOS_REDIRECT_URI: ''
 steps:
   - name: gcr.io/cloud-builders/docker
     args:
@@ -38,6 +46,10 @@ steps:
       - NEXT_PUBLIC_API_URL=${_API_URL}
       - --build-arg
       - NEXT_PUBLIC_MAJORANA_ENV=${_PUBLIC_ENV}
+      - --build-arg
+      - NEXT_PUBLIC_SENTRY_DSN=${_SENTRY_DSN}
+      - --build-arg
+      - NEXT_PUBLIC_WORKOS_REDIRECT_URI=${_WORKOS_REDIRECT_URI}
       - -t
       - us-west1-docker.pkg.dev/majorana-core/majorana/web:${_TAG}
       - .

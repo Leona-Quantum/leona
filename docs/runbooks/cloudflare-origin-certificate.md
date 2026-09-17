@@ -80,11 +80,24 @@ the checks pass. Then, in one sitting:
 
 ```bash
 cd infra/web-lb
+./05-runtime-identity.sh                                                  # the website's own identity, no project roles
+./06-sign-in-secrets.sh --from-env-file <vercel pull> --contact-fallback auto
+./07-verify-twin.sh                                                       # the private twin CI smoke-tests
 ./31-origin-certificate.sh --cert origin.pem --key origin.key --dry-run   # checks only
 ./31-origin-certificate.sh --cert origin.pem --key origin.key             # uploads, repoints the map
+./32-rehearsal-hostname.sh                                                # any name under the domain can be rehearsed
 ./40-serve.sh                                                             # refuses unless the lock is attached
 ./90-verify.sh                                                            # reads the handshake, not the config
+PREVIEW_HOST=gcp-preview.leonaqt.com ./80-cutover-preflight.sh            # GO, or NO-GO and why
 ```
+
+**Say GO only on the preflight's GO.** The collaborator asked for the literal sentence "GO
+for Cloudflare cutover" before he moves the records. `80-cutover-preflight.sh` is what
+stands behind it: sign-in mounted and reaching WorkOS, the dedicated identity, a warm
+instance, traffic on the latest revision, and — given a `PREVIEW_HOST` — a real request
+through Cloudflare's edge, Full (strict), the origin lock and Cloud Run, on a name no
+visitor uses. Without the rehearsal record the first request through Cloudflare is a real
+visitor's.
 
 `WEB_XFF_TRUSTED_HOPS` in `infra/fleet.env` goes `0` → `1` in the same commit that runs
 `40-serve.sh`; `90-verify.sh` fails if they disagree. Turning Cloudflare's proxy on does not

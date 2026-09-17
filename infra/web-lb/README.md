@@ -35,15 +35,52 @@ around the edge protections. That is an origin lock, not a rule set.
 
 | # | Script | Needs |
 |---|---|---|
-| 1 | `10-origin-lock.sh` | nothing — creates the Cloud Armor policy from Cloudflare's published ranges |
-| 2 | `20-load-balancer.sh` | step 1 |
-| 3 | `31-origin-certificate.sh` | step 2, and a Cloudflare Origin Certificate + key |
-| 4 | `40-serve.sh` | a servable certificate, and the origin lock attached |
+| 1 | `05-runtime-identity.sh` | nothing — the website's own service account, holding no project role |
+| 2 | `06-sign-in-secrets.sh` | step 1; the owner mints the WorkOS key, everything else it finds or makes |
+| 3 | `07-verify-twin.sh` | step 1 — the private twin `deploy-web.yml` smoke-tests |
+| 4 | `10-origin-lock.sh` | nothing — creates the Cloud Armor policy from Cloudflare's published ranges |
+| 5 | `20-load-balancer.sh` | step 4 |
+| 6 | `31-origin-certificate.sh` | step 5, and a Cloudflare Origin Certificate + key |
+| 7 | `32-rehearsal-hostname.sh` | step 6 — lets any name under the domain be rehearsed through Cloudflare |
+| 8 | `40-serve.sh` | a servable certificate, and the origin lock attached |
+| — | `80-cutover-preflight.sh` | ends in **GO** or **NO-GO**; what stands behind telling the collaborator to move the records |
 | — | *point `leonaqt.com` at the printed IP, **proxied*** | **the collaborator who holds Cloudflare** |
 | — | `90-verify.sh` | reads it all back, including from the TLS handshake |
 
-`test-gates.sh` drives step 4's refusals with no cloud behind it; run it after touching
+`test-gates.sh` drives `40-serve.sh`'s refusals with no cloud behind it; run it after touching
 `common.sh`.
+
+## Two things the move would have broken by itself
+
+Both were found on 2026-09-17 by reading what `40-serve.sh` does against what
+`deploy-web.yml` did, before either had met the other in production.
+
+**The deploy workflow passed `--no-allow-unauthenticated` to `majorana-web`.** On an
+existing service gcloud reads that as "remove the `allUsers` binding" — the binding
+`40-serve.sh` adds, because the load balancer reaches Cloud Run as an unauthenticated
+caller. The first deploy after the cutover would have turned the site into a 403 for every
+visitor. The workflow now leaves that binding alone and asserts the ingress restriction
+instead.
+
+**The smoke test probed `majorana-web` at a run.app URL.** Ingress is a property of the
+service, so once it is restricted to the load balancer no run.app URL of that service
+answers a GitHub runner, token or not — and the load balancer refuses a runner too, by
+design. The smoke test would have failed forever and the site would have frozen at one
+revision. It runs on the private twin now (`07-verify-twin.sh`).
+
+**And one it would have widened.** `majorana-web` ran as the default compute account, which
+holds `roles/editor`. On Vercel the website held no cloud credential at all.
+`05-runtime-identity.sh` gives it an account with no project roles.
+
+## What the rehearsal found before any visitor did
+
+With the WorkOS settings mounted on the twin, `/`, `/repository` and `/pricing` rendered and
+everything that runs the sign-in middleware returned **500**: the 404 page, the OG image,
+`/auth/sign-in`, `/api/contact`, `/studio`. AuthKit reads `NEXT_PUBLIC_WORKOS_REDIRECT_URI`,
+and Next inlines `NEXT_PUBLIC_*` at **build** time — setting it on the running service does
+nothing, which was tried. The image had been built without it, because sign-in had never
+been switched on there. It is a build argument now (`cloudbuild.web.yaml`). Had the records
+moved first, every signed-out visitor to the workspace would have met a 500.
 
 ## Which certificate, and why 30 is no longer the path
 
