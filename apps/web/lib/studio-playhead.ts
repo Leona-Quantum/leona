@@ -88,6 +88,15 @@ export function momentEffect({
   // Nothing is drawn at this moment — the playhead is between columns that
   // hold no gate. Reporting "nothing changed" would be true and useless.
   if (through.length === before.length) return null;
+  // A moment that is only measurements has nothing this reading can honestly
+  // say. `executeCircuit` treats M as a no-op on the statevector (it is
+  // terminal), so before and after are identical and the sentence would come
+  // out as "Nothing about the state changes here" — true of the vector, and
+  // exactly the wrong thing to tell a reader about the step that produces the
+  // outcome they are looking at. Seen on the GHZ fixture, where the last
+  // moment is the measurement layer.
+  const added = through.slice(before.length);
+  if (added.length > 0 && added.every((step) => step.gate === "M")) return null;
 
   const flatAfter = flattenBuilderSteps([...through], [...customGates]);
   const flatBefore = flattenBuilderSteps([...before], [...customGates]);
