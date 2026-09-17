@@ -41,6 +41,8 @@ import {
   workedExampleSignInHref,
   workedExampleStudioHref,
 } from "../lib/atlas-worked-example-steps";
+import { stepEffect, type StepEffect } from "../lib/atlas-step-effect";
+import { describeStepEffect, phasePanelCopy, phaseRow, shouldShowPhases } from "../lib/atlas-step-effect-copy";
 import { AtlasOutcomeBars } from "./atlas-circuit";
 import { SignInLink } from "./sign-in-link";
 
@@ -118,6 +120,28 @@ export function AtlasWorkedExampleFigure({
   const [currentStep, setCurrentStep] = useState(0);
   const [playing, setPlaying] = useState(false);
   const [openedStep, setOpenedStep] = useState<number | null>(null);
+  /**
+   * What each step did to the state, read once for the whole example.
+   *
+   * Computed for every step rather than for the current one because the note
+   * list below renders all of them at once — and because it has to be in the
+   * server HTML: the sentences are the figure's explanation, and a reader
+   * without JavaScript would otherwise get the step labels and nothing else.
+   * The cost is `steps.length` prefix runs of a ≤ 12-qubit statevector, the
+   * same kernel the probability bars already run once per scrub.
+   */
+  const effects = useMemo<StepEffect[]>(
+    () =>
+      example.steps.map((_, index) =>
+        stepEffect({
+          steps: example.steps,
+          customGates: example.customGates,
+          qubitCount: example.qubitCount,
+          index,
+        }),
+      ),
+    [example],
+  );
 
   useEffect(() => {
     if (!playing) return;
@@ -164,6 +188,9 @@ export function AtlasWorkedExampleFigure({
   const label = example.observable && example.observable.length > 0 ? observableLabel(example.observable) : null;
   const atEnd = !playing && currentStep >= total - 1;
   const title = locale === "ja" ? example.title.ja : example.title.en;
+  const currentEffect = effects[currentStep];
+  const effectText = effects.map((effect) => describeStepEffect(effect, locale));
+  const effectChange = effects.map((effect) => (effect.kind === "ok" ? effect.change : undefined));
 
   return (
     // No outer .mj-atlas-hero here — the caller (repository-entry-view.tsx)
@@ -280,6 +307,9 @@ export function AtlasWorkedExampleFigure({
               <strong>{formatSignificant(reading.value)}</strong>
             </p>
           ) : null}
+          {currentEffect && shouldShowPhases(currentEffect) ? (
+            <AtlasPhaseTable effect={currentEffect} locale={locale} />
+          ) : null}
         </div>
       </figure>
 
@@ -296,6 +326,17 @@ export function AtlasWorkedExampleFigure({
                 {copy.step(index + 1, total)} · <code>{stepLabel(step, example.customGates)}</code>
               </button>
               {note ? <p>{locale === "ja" ? note.ja : note.en}</p> : null}
+              {/* The derived account of what this step did to the state. It
+                  sits below the author's note, not instead of it: the note says
+                  what the step is FOR, this says what it measurably did. Null
+                  when the reading declined — a figure that cannot read the
+                  state must print nothing rather than something a reader would
+                  take for "nothing changed". */}
+              {effectText[index] ? (
+                <p className="mj-worked-example-effect" data-change={effectChange[index]}>
+                  {effectText[index]}
+                </p>
+              ) : null}
               {step.gate === "CUSTOM" ? (
                 <>
                   <button
@@ -344,6 +385,91 @@ export function AtlasWorkedExampleFigure({
       ) : (
         <p className="mj-worked-example-signin-note">{copy.signInUnavailable}</p>
       )}
+    </div>
+  );
+}
+
+/**
+ * One phase drawn as a point on the unit circle: the argument of that
+ * amplitude, relative to the largest one.
+ *
+ * A dot on the rim rather than a rotating hand, because the hand version this
+ * replaces was unreadable at the size the table needs — a 14px circle with a
+ * hairline border disappears against the panel, and without a visible centre a
+ * hand at 0 and a hand at π are the same horizontal line. A dot has a position
+ * even when the circle around it is faint, and 0 (right) and π (left) are
+ * never the same picture.
+ *
+ * Decorative: the printed value sits in the next cell and is what a screen
+ * reader reads.
+ */
+function PhaseDial({ turns }: { turns: number }): React.ReactElement {
+  // SVG y grows downward, so negating the sine draws the argument
+  // counter-clockwise from the positive real axis, as the complex plane does.
+  const radians = turns * 2 * Math.PI;
+  const x = 8 + 5 * Math.cos(radians);
+  const y = 8 - 5 * Math.sin(radians);
+  return (
+    <svg className="mj-worked-example-phase-dial" viewBox="0 0 16 16" aria-hidden="true" focusable="false">
+      <circle className="mj-worked-example-phase-rim" cx="8" cy="8" r="5" />
+      <line className="mj-worked-example-phase-hand" x1="8" y1="8" x2={x} y2={y} />
+      <circle className="mj-worked-example-phase-point" cx={x} cy={y} r="1.8" />
+    </svg>
+  );
+}
+
+/**
+ * The amplitudes after the current step, with their phases — shown only where
+ * the probability bars alone would mislead (`shouldShowPhases`).
+ *
+ * The phase is drawn as well as printed: a dial, because a phase is an angle
+ * and a reader comparing eight rows takes in eight pointer directions faster
+ * than eight strings of the form "3π/4". The dial is a rotated line inside a
+ * circle, so it costs one transform and needs no font that can render the
+ * character. The printed value stays beside it — the dial is the comparison,
+ * the text is the number.
+ */
+function AtlasPhaseTable({
+  effect,
+  locale,
+}: {
+  effect: Extract<StepEffect, { kind: "ok" }>;
+  locale: PublicLocale;
+}): React.ReactElement {
+  const copy = phasePanelCopy(locale);
+  const rows = effect.phases.map((amplitude) => phaseRow(amplitude, locale));
+  return (
+    <div className="mj-worked-example-phases">
+      <span className="mj-atlas-outcomes-label">{copy.heading}</span>
+      <table className="mj-worked-example-phase-table">
+        <thead>
+          <tr>
+            <th scope="col">{copy.stateColumn}</th>
+            <th scope="col">{copy.probabilityColumn}</th>
+            <th scope="col" colSpan={2}>
+              {copy.phaseColumn}
+            </th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((row) => (
+            <tr key={row.bitstring}>
+              <th scope="row">{row.bitstring}</th>
+              <td>{row.probability}</td>
+              <td>
+                <PhaseDial turns={row.phaseTurns} />
+              </td>
+              <td className="mj-worked-example-phase-value">{row.phase}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      {effect.otherStates > 0 ? (
+        <p className="mj-worked-example-phase-rest">
+          {copy.other(effect.otherStates, `${(effect.otherProbability * 100).toFixed(1)}%`)}
+        </p>
+      ) : null}
+      <p className="mj-worked-example-phase-note">{copy.note}</p>
     </div>
   );
 }
