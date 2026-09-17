@@ -371,3 +371,45 @@
 .mj-worked-example-phase-point { fill: var(--accent); }
 .mj-worked-example-phase-rest,
 .mj-worked-example-phase-note { margin: 0; color: var(--text-2); font-size: var(--fs-12); line-height: 1.5; }
+
+/* ===== worked-example: the component / used-in note ========================= */
+/* Was one line — a label, a colon and a link. It is now a miniature of the
+   example it points at: the record's own phrase that the link was built from,
+   the example's circuit, where it ends up, and its readout. */
+.mj-worked-example-component-note {
+  display: grid;
+  gap: var(--sp-2);
+  margin: var(--sp-4) 0;
+  padding: var(--sp-4);
+  border: var(--border-hairline) solid var(--border-0);
+  border-radius: var(--radius-panel, var(--radius-control));
+  background: var(--bg-1);
+}
+.mj-worked-example-component-head { margin: 0; }
+.mj-worked-example-component-because { margin: 0; color: var(--text-1); font-size: var(--fs-13); line-height: 1.55; }
+.mj-worked-example-component-because q { color: var(--text-0); font-style: italic; }
+.mj-worked-example-component-title { margin: var(--sp-1) 0 0; font-size: var(--fs-16); }
+.mj-worked-example-component-instance { margin: 0; color: var(--text-1); font-size: var(--fs-13); line-height: 1.55; }
+.mj-worked-example-component-figure {
+  display: grid;
+  gap: var(--sp-3);
+  align-items: start;
+  margin-top: var(--sp-1);
+  /* The circuit takes the space it needs and the outcome bars take a fixed
+     column beside it, dropping under it when there is not room for both. */
+  grid-template-columns: minmax(0, 1fr);
+}
+@media (min-width: 720px) {
+  .mj-worked-example-component-figure { grid-template-columns: minmax(0, 1fr) 13rem; }
+}
+.mj-worked-example-component-figure .mj-atlas-svg { max-width: 100%; height: auto; }
+.mj-worked-example-component-readout { margin: 0; color: var(--text-1); font-size: var(--fs-13); line-height: 1.55; }
+.mj-worked-example-component-phase {
+  margin: 0;
+  padding-left: var(--sp-3);
+  border-left: 2px solid var(--accent);
+  color: var(--text-2);
+  font-size: var(--fs-12);
+  line-height: 1.5;
+}
+.mj-worked-example-component-open { justify-self: start; margin-top: var(--sp-1); color: var(--accent); font-size: var(--fs-13); }

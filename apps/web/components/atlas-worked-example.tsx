@@ -43,6 +43,7 @@ import {
 } from "../lib/atlas-worked-example-steps";
 import { stepEffect, type StepEffect } from "../lib/atlas-step-effect";
 import { describeStepEffect, phasePanelCopy, phaseRow, shouldShowPhases } from "../lib/atlas-step-effect-copy";
+import type { WorkedExampleSummary } from "../lib/atlas-worked-example-summary";
 import { AtlasOutcomeBars } from "./atlas-circuit";
 import { SignInLink } from "./sign-in-link";
 
@@ -94,6 +95,39 @@ const COPY = {
 } as const;
 
 const STEP_MS = 1100;
+
+/**
+ * Copy for the component / used-in note. Kept apart from COPY above because
+ * the note is a different piece of writing with a different job: COPY labels
+ * the controls of a figure a reader has already decided to read, this argues
+ * that a reader should read a DIFFERENT figure, and the two drifted apart the
+ * moment the note stopped being one line.
+ */
+const COMPONENT_COPY = {
+  en: {
+    component: "A part this method uses, worked through",
+    usedIn: "This record, used inside a worked example",
+    because: "This page says ",
+    becauseTail: " — here is a concrete, runnable instance of it.",
+    outcomes: "Where it ends up",
+    phaseStep: "One of its steps changes only phase: the outcome probabilities stay put while the state does not.",
+    openPart: "Open this part in Studio",
+    openUsing: "Open that example in Studio",
+    figureAlt: (title: string, steps: number, qubits: number) =>
+      `${title}: ${steps} ${steps === 1 ? "step" : "steps"} on ${qubits} ${qubits === 1 ? "qubit" : "qubits"}`,
+  },
+  ja: {
+    component: "この手法が使う部分を、実例でたどる",
+    usedIn: "この項目が、ある具体例の中で使われている例",
+    because: "このページには",
+    becauseTail: "とあります。その具体的で実行できる例がこちらです。",
+    outcomes: "最終的な測定結果",
+    phaseStep: "この例には、位相だけを変えるステップがあります。測定結果の確率は動きませんが、状態は変わっています。",
+    openPart: "この部分をStudioで開く",
+    openUsing: "その具体例をStudioで開く",
+    figureAlt: (title: string, steps: number, qubits: number) => `${title}：${qubits}量子ビット、${steps}ステップ`,
+  },
+} as const;
 
 function prefersReducedMotion(): boolean {
   return typeof window !== "undefined" && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
@@ -489,40 +523,105 @@ function AtlasPhaseTable({
  * nothing is worse than one that opens the example somewhere it actually runs.
  */
 export function AtlasWorkedExampleComponentNote({
-  title,
-  exampleId,
-  relation,
+  summary,
   locale,
   isSignedIn,
   signInHref,
 }: {
-  title: string;
-  exampleId: string;
-  relation: "component" | "used-in";
+  summary: WorkedExampleSummary;
   locale: PublicLocale;
   isSignedIn: boolean;
   signInHref: string | null;
 }): React.ReactElement {
-  const label =
-    relation === "used-in"
-      ? locale === "ja"
-        ? "次の具体例で使われています"
-        : "See this in a worked example"
-      : locale === "ja"
-        ? "この手法が使う一部分の実例"
-        : "Worked example of a part this method uses";
-  const openingSignIn = COPY[locale].openingSignIn;
+  const ja = locale === "ja";
+  const copy = COMPONENT_COPY[locale];
+  const title = ja ? summary.title.ja : summary.title.en;
+  const label = summary.relation === "used-in" ? copy.usedIn : copy.component;
+  const layout = layoutAtlasCircuit(summary.drawing, "thumb");
+  const openLabel = summary.relation === "used-in" ? copy.openUsing : copy.openPart;
+
   return (
-    <p className="mj-worked-example-component-note">
-      <span className="mj-atlas-outcomes-label">{label}</span>
-      {": "}
+    <section className="mj-worked-example-component-note" aria-label={`${label}: ${title}`}>
+      <p className="mj-worked-example-component-head">
+        <span className="mj-atlas-outcomes-label">{label}</span>
+      </p>
+      {/* The record's OWN words, quoted. This is why the link exists, and it is
+          checked against the live corpus by check-worked-example-links.mjs —
+          so the note can say "this page says X" without that being a claim
+          nobody verifies. */}
+      <p className="mj-worked-example-component-because">
+        {copy.because}
+        <q>{summary.evidence}</q>
+        {copy.becauseTail}
+      </p>
+      <h3 className="mj-worked-example-component-title">{title}</h3>
+      <p className="mj-worked-example-component-instance">{ja ? summary.instance.ja : summary.instance.en}</p>
+
+      <div className="mj-worked-example-component-figure">
+        <svg
+          className="mj-atlas-svg"
+          viewBox={`0 0 ${layout.width} ${layout.height}`}
+          width={layout.width}
+          height={layout.height}
+          role="img"
+          aria-label={copy.figureAlt(title, summary.stepCount, summary.qubitCount)}
+        >
+          {summary.drawing.wires.map((wire, index) => (
+            <g key={`${wire}-${index}`} className="mj-atlas-wire">
+              <line x1={layout.labelWidth - 6} x2={layout.width - 8} y1={layout.wireY[index]} y2={layout.wireY[index]} />
+              <text x={layout.labelWidth - 12} y={layout.wireY[index]} textAnchor="end" dominantBaseline="central">
+                {wire}
+              </text>
+            </g>
+          ))}
+          {layout.steps.map((step) => (
+            <g key={step.index} className="mj-atlas-op" data-tone={step.tone} data-state="past">
+              <rect x={step.box.x} y={step.box.y} width={step.box.width} height={step.box.height} rx={7} />
+              {step.passes.map((wire) => (
+                <line
+                  key={wire}
+                  className="mj-atlas-op-pass"
+                  x1={step.box.x}
+                  x2={step.box.x + step.box.width}
+                  y1={layout.wireY[wire]}
+                  y2={layout.wireY[wire]}
+                />
+              ))}
+              <text x={step.center} y={step.labelY} textAnchor="middle" dominantBaseline="central">
+                {step.label}
+              </text>
+            </g>
+          ))}
+        </svg>
+        {summary.outcomes.length > 0 ? (
+          <AtlasOutcomeBars
+            label={copy.outcomes}
+            outcomes={[
+              ...summary.outcomes.map((outcome) => ({ label: outcome.bitstring, probability: outcome.probability })),
+              ...(summary.otherOutcomes > 0
+                ? [{ label: COPY[locale].otherStates(summary.otherOutcomes), probability: summary.otherProbability }]
+                : []),
+            ]}
+          />
+        ) : null}
+      </div>
+
+      <p className="mj-worked-example-component-readout">{ja ? summary.readout.ja : summary.readout.en}</p>
+      {summary.hasPhaseStep ? <p className="mj-worked-example-component-phase">{copy.phaseStep}</p> : null}
+
       {isSignedIn ? (
-        <a href={workedExampleStudioHref(exampleId)}>{title}</a>
+        <a className="mj-worked-example-component-open" href={workedExampleStudioHref(summary.exampleId)}>
+          {openLabel}
+        </a>
       ) : signInHref ? (
-        <SignInLink href={workedExampleSignInHref(exampleId)} pendingLabel={openingSignIn}>{title}</SignInLink>
-      ) : (
-        title
-      )}
-    </p>
+        <SignInLink
+          className="mj-worked-example-component-open"
+          href={workedExampleSignInHref(summary.exampleId)}
+          pendingLabel={COPY[locale].openingSignIn}
+        >
+          {openLabel}
+        </SignInLink>
+      ) : null}
+    </section>
   );
 }

@@ -4,6 +4,7 @@ import { test } from "node:test";
 import { circuitMoments } from "./circuit-moments.ts";
 import type { BuilderStep, CustomGateDefinition } from "./studio-builder.ts";
 import { MAX_LIVE_PROBABILITY_QUBITS, playheadReading, stepsBeforeMoment } from "./studio-playhead.ts";
+import { WORKED_EXAMPLES } from "./worked-examples.ts";
 
 const BELL: BuilderStep[] = [
   { id: "h", gate: "H", qubits: [0] },
@@ -88,4 +89,34 @@ test("a negative angle is read, not declined — studio-simulation.ts's angle() 
 
 test("stepsBeforeMoment keeps array order", () => {
   assert.deepEqual(stepsBeforeMoment(["a", "b", "c"], [1, 0, 2], 2), ["a", "b"]);
+});
+
+test("equal probabilities list in counting order, not in float order", () => {
+  // The real case, not a constructed one: three Hadamards alone reach exactly
+  // equal amplitudes, so they cannot show this bug. It takes a gate whose
+  // decomposition carries rounding — the Grover example's phase oracle, whose
+  // multi-controlled Z leaves the eight amplitudes differing at the 17th
+  // significant figure. Sorted by a bare subtraction the live figure listed
+  // them 100, 111, 011, 101, 000, 001, 110, 010: an order with no meaning,
+  // which a reader looking for one bitstring has to search rather than index
+  // into. The states stay equally likely, so only the ordering is at issue.
+  const grover = WORKED_EXAMPLES.find((example) => example.id === "grover-3q-101");
+  assert.ok(grover, "grover-3q-101 is missing from WORKED_EXAMPLES");
+  const throughOracle = grover.steps.slice(0, 2);
+  const reading = playheadReading({
+    qubitCount: grover.qubitCount,
+    steps: throughOracle,
+    customGates: grover.customGates,
+    columns: throughOracle.map((_, index) => index),
+    moment: throughOracle.length,
+  });
+  assert.equal(reading.kind, "ok");
+  if (reading.kind !== "ok") return;
+  assert.deepEqual(
+    reading.bars.map((bar) => bar.bitstring),
+    ["000", "001", "010", "011", "100", "101", "110", "111"],
+  );
+  // The premise: they really are all the same probability, so ordering them by
+  // probability is meaningless and the tie-break is the whole answer.
+  for (const bar of reading.bars) assert.ok(Math.abs(bar.probability - 0.125) < 1e-12);
 });

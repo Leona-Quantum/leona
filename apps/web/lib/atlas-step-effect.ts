@@ -399,9 +399,15 @@ function relativePhases(
       phaseTurns: turns,
     });
   }
-  populated.sort(
-    (left, right) => right.probability - left.probability || left.bitstring.localeCompare(right.bitstring),
-  );
+  // Probability first, but compared with a tolerance: the states of an equal
+  // superposition differ in their last float bits, so a bare subtraction
+  // ordered eight identical 12.5% rows by rounding noise and the table read
+  // 100, 111, 011, 000, 001 — no order a reader could follow or predict.
+  populated.sort((left, right) => {
+    const gap = right.probability - left.probability;
+    if (Math.abs(gap) > 1e-12) return gap;
+    return left.bitstring.localeCompare(right.bitstring);
+  });
   const shown = populated.slice(0, PHASES_SHOWN);
   const rest = populated.slice(PHASES_SHOWN);
   return {

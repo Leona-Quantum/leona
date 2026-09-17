@@ -88,7 +88,18 @@ export function playheadReading({
   for (let index = 0; index < probabilities.length; index += 1) {
     if (probabilities[index] > 1e-12) nonzero.push({ index, probability: probabilities[index] });
   }
-  nonzero.sort((left, right) => right.probability - left.probability || left.index - right.index);
+  // Probability first, compared with a tolerance, then basis index. A bare
+  // subtraction orders the equal amplitudes of a uniform superposition by
+  // their last float bits: on the Grover example's oracle step the eight
+  // identical 12.5% bars read 100, 111, 011, 101, 000, 001, 110, 010 — an
+  // order with no meaning, which a reader scanning for one bitstring has to
+  // search rather than index into. Within the tolerance the basis index is
+  // the tie-break, so equal outcomes list in counting order.
+  nonzero.sort((left, right) => {
+    const gap = right.probability - left.probability;
+    if (Math.abs(gap) > 1e-12) return gap;
+    return left.index - right.index;
+  });
   const shown = nonzero.slice(0, LIVE_PROBABILITY_BARS);
   const rest = nonzero.slice(LIVE_PROBABILITY_BARS);
   return {

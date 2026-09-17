@@ -501,6 +501,35 @@ const QPE_PHASE: BlockTemplate = {
   },
 };
 
+/**
+ * The middle third of the Draper adder: the phase rotations that do the
+ * arithmetic, without the QFT on either side of them.
+ *
+ * Split out of DRAPER_ADD_CONSTANT so an addition can be shown as what it is —
+ * transform into the Fourier basis, turn some phases, transform back — rather
+ * than as one opaque box. DRAPER_ADD_CONSTANT is unchanged and still emits the
+ * same flat gate list; this is the same `cp0` rotations it already used, given
+ * a name so a worked example (and a Studio user) can place them alone.
+ *
+ * On its own this block moves no outcome probability whatsoever: on a basis
+ * state it changes only a global phase, and on a Fourier-basis state it is the
+ * whole addition. That is exactly why it is worth being able to place alone.
+ */
+const FOURIER_ADD_CONSTANT: BlockTemplate = {
+  key: "fourier_add_constant",
+  name: "Fourier-basis constant addition",
+  category: "arithmetic",
+  summary: "The per-qubit phase rotations that add the constant a to a register already in the Fourier basis — the Draper adder without its two transforms.",
+  params: [intParam("n", "Qubits", 2, 12, 4), intParam("a", "Constant to add", 0, 4095, 3)],
+  qubitCount: (p) => asInt(p, "n"),
+  build: (p) => {
+    const n = asInt(p, "n");
+    const a = asInt(p, "a");
+    const qubits = Array.from({ length: n }, (_, i) => i);
+    return leafBlock(`fourier-add-${n}-${a}`, `Add ${a} in Fourier basis`, n, qubits.map((k) => cp0(k, n, a)));
+  },
+};
+
 const DRAPER_ADD_CONSTANT: BlockTemplate = {
   key: "draper_add_constant",
   name: "Draper adder (constant)",
@@ -783,6 +812,7 @@ export const BLOCK_TEMPLATES: readonly BlockTemplate[] = [
   DJ_BALANCED_ORACLE,
   CONTROLLED_PHASE_POWERS,
   QPE_PHASE,
+  FOURIER_ADD_CONSTANT,
   DRAPER_ADD_CONSTANT,
   ISING_TROTTER_STEP,
   HARDWARE_EFFICIENT_LAYER,
