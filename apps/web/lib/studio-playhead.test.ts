@@ -177,3 +177,21 @@ test("momentEffect reports the real state on the moment a gate entangles", () =>
   assert.equal(effect.entangles, true);
   assert.match(describeStepEffect(effect, "en") ?? "", /entangles the qubits/);
 });
+
+test("a measurement-only moment declines rather than saying nothing changed", () => {
+  // The kernel treats M as a no-op on the statevector because measurement is
+  // terminal, so before and after are identical and the reading would print
+  // "Nothing about the state changes here" over the very step that produces the
+  // reader's outcome. Seen on the GHZ fixture's last moment.
+  const steps: BuilderStep[] = [
+    { id: "h", gate: "H", qubits: [0] },
+    { id: "cx", gate: "CX", qubits: [0, 1] },
+    { id: "m0", gate: "M", qubits: [0] },
+    { id: "m1", gate: "M", qubits: [1] },
+  ];
+  const columns = [0, 1, 2, 2];
+  // The gate moments still read.
+  assert.ok(momentEffect({ qubitCount: 2, steps, customGates: [], columns, moment: 2 }));
+  // The measurement moment does not.
+  assert.equal(momentEffect({ qubitCount: 2, steps, customGates: [], columns, moment: 3 }), null);
+});

@@ -5,7 +5,10 @@
 // axe-core / visual-diff checks when Playwright lands.
 import { EmptyState, RunView, StageRail, VerdictBanner, VerificationSummaryPanel, type RailStage } from "@majorana/ui";
 import { RUN_FIXTURES } from "../../(app)/run/[taskId]/fixtures";
+import { useState } from "react";
 import { CircuitDiagram } from "../../../components/circuit-diagram";
+import { PlayheadPanel } from "../../(app)/studio/studio-playhead";
+import { circuitMoments } from "../../../lib/circuit-moments";
 import { reconstructInterchangeCircuit } from "../../../lib/circuit-conversion";
 import { CIRCUIT_FRAMEWORKS } from "../../../lib/circuit-frameworks";
 import { studioDraftBundle, type StudioDraftArtifact } from "../../../lib/studio-drafts";
@@ -37,16 +40,37 @@ function ghzQasm(n: number): string {
  * plane, which a local dev server cannot reach. */
 function DiagramFixture({ qasm, title }: { qasm: string; title: string }) {
   const result = reconstructInterchangeCircuit(qasm);
+  // The playhead beside the diagram, as the library's read-only circuit view
+  // composes them. It is here because that view needs a SAVED artifact to
+  // render at all, so the composition was otherwise unreviewable without
+  // seeding data — which is the gap this page exists to close.
+  const moments = result.kind === "ok" ? circuitMoments(result.circuit.qubitCount, result.circuit.steps) : null;
+  const [moment, setMoment] = useState<number | "end">("end");
   return (
     <section>
       <h2 style={{ fontSize: "var(--fs-16)", fontWeight: 500 }}>{title}</h2>
       {result.kind === "ok" ? (
-        <CircuitDiagram
-          qubitCount={result.circuit.qubitCount}
-          steps={result.circuit.steps}
-          customGates={[]}
-          ariaLabel={title}
-        />
+        <>
+          <CircuitDiagram
+            qubitCount={result.circuit.qubitCount}
+            steps={result.circuit.steps}
+            customGates={[]}
+            ariaLabel={title}
+          />
+          {moments ? (
+            <PlayheadPanel
+              qubitCount={result.circuit.qubitCount}
+              steps={result.circuit.steps}
+              customGates={[]}
+              columns={moments.columns}
+              count={moments.count}
+              moment={moment === "end" ? moments.count : moment}
+              onMoment={setMoment}
+              copy={WORKSPACE_COPY.en.studio}
+              locale="en"
+            />
+          ) : null}
+        </>
       ) : result.kind === "too_large" ? (
         <p className="mj-artifact-copy">
           Too large to draw ({result.qubitCount} qubits, {result.stepCount} operations).

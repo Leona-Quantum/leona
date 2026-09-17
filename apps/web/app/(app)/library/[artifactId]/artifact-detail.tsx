@@ -17,6 +17,9 @@ import {
 } from "../../../../lib/framework-code-options";
 import { MAX_VIEWABLE_STEPS } from "../../../../lib/studio-parse";
 import { CircuitDiagram } from "../../../../components/circuit-diagram";
+import { PlayheadPanel } from "../../studio/studio-playhead";
+import { circuitMoments } from "../../../../lib/circuit-moments";
+import { WORKSPACE_COPY } from "../../../../lib/workspace-locale";
 import { artifactExportFilename, artifactExportManifest, artifactExportSource, fileExtension } from "../../../../lib/artifact-export";
 import { ARTIFACT_PANELS, type StudioPanel as ArtifactPanel } from "../../../../lib/studio-panels";
 import { PanelTabs, panelRegion } from "../../../../components/panel-tabs";
@@ -331,7 +334,7 @@ export function ArtifactDetail({ artifactId, locale = "en" }: { artifactId: stri
           <div {...panelRegion("artifact", tab)}>
             {tab === "code" ? <CodeAndExport artifact={artifact} copied={copied} onCopy={copyCode} copy={copy} /> : null}
             {tab === "simulation" ? <Simulation artifact={artifact} copy={copy} locale={locale} /> : null}
-            {tab === "visual" ? <CircuitDiagramPanel artifact={artifact} copy={copy} /> : null}
+            {tab === "visual" ? <CircuitDiagramPanel artifact={artifact} copy={copy} locale={locale} /> : null}
             {tab === "summary" ? <Summary artifact={artifact} copy={copy} locale={locale} /> : null}
           </div>
         </div>
@@ -578,7 +581,24 @@ function CodeAndExport({ artifact, copied, onCopy, copy }: { artifact: LibraryAr
  * (Issue refs are spelled "PR 148" rather than with a leading hash on purpose —
  * the repo's raw-hex lint gate reads a hash followed by three digits as a CSS
  * color literal.) */
-function CircuitDiagramPanel({ artifact, copy }: { artifact: LibraryArtifact; copy: ArtifactCopy }) {
+function CircuitDiagramPanel({
+  artifact,
+  copy,
+  locale,
+}: {
+  artifact: LibraryArtifact;
+  copy: ArtifactCopy;
+  locale: PublicLocale;
+}) {
+  /**
+   * The playhead's position. Studio holds this too; the Library holds its own
+   * because the two are different readers of the same circuit — someone editing
+   * and someone opening a thing they saved last week — and sharing the state
+   * would mean one of them moving the other's.
+   *
+   * `"end"` is a real position, not the last number, exactly as in Studio.
+   */
+  const [moment, setMoment] = useState<number | "end">("end");
   const reconstruction = useMemo(
     () => {
       if (artifact.qasm) return reconstructInterchangeCircuit(artifact.qasm);
@@ -609,17 +629,55 @@ function CircuitDiagramPanel({ artifact, copy }: { artifact: LibraryArtifact; co
     [artifact.qasm, artifact.code, artifact.framework],
   );
 
+  /**
+   * The playhead's columns, derived once from whichever reconstruction path
+   * produced the circuit — the stored QASM or the parsed framework source.
+   *
+   * Not computed inside the memo above: the two paths return their `ok` shape
+   * from different functions, so adding it there would have covered one of them
+   * and silently left the other without it.
+   */
+  const moments = useMemo(
+    () =>
+      reconstruction && reconstruction.kind === "ok"
+        ? circuitMoments(reconstruction.circuit.qubitCount, reconstruction.circuit.steps)
+        : null,
+    [reconstruction],
+  );
+
   const body = !reconstruction || reconstruction.kind === "unparsable"
     ? <p className="mj-artifact-copy">{copy.diagramUnavailable}</p>
     : reconstruction.kind === "too_large"
       ? <p className="mj-artifact-copy">{copy.diagramTooLarge(reconstruction.qubitCount, reconstruction.stepCount)}</p>
       : (
-        <CircuitDiagram
-          qubitCount={reconstruction.circuit.qubitCount}
-          steps={reconstruction.circuit.steps}
-          customGates={[]}
-          ariaLabel={`${artifact.title} circuit diagram`}
-        />
+        <>
+          <CircuitDiagram
+            qubitCount={reconstruction.circuit.qubitCount}
+            steps={reconstruction.circuit.steps}
+            customGates={[]}
+            ariaLabel={`${artifact.title} circuit diagram`}
+          />
+          {/* The panel this view never had. Until now a saved circuit was drawn
+              and not explained: a reader opening something they built last week
+              got a picture, its code and its metadata, and had to re-open it in
+              Studio to find out what it does. This is the same PlayheadPanel
+              Studio uses — probabilities, the amplitude-and-phase list, and one
+              derived sentence per moment — not a second implementation, so the
+              two surfaces cannot drift about the same circuit. */}
+          {moments ? (
+            <PlayheadPanel
+              qubitCount={reconstruction.circuit.qubitCount}
+              steps={reconstruction.circuit.steps}
+              customGates={[]}
+              columns={moments.columns}
+              count={moments.count}
+              moment={moment === "end" ? moments.count : moment}
+              onMoment={setMoment}
+              copy={WORKSPACE_COPY[locale].studio}
+              locale={locale}
+            />
+          ) : null}
+        </>
       );
 
   return (
