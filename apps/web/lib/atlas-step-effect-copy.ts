@@ -128,12 +128,15 @@ function movementSentence(effect: StepEffectReading, locale: PublicLocale): stri
     case "redistribute": {
       const gained = effect.moves.filter((move) => move.after > move.before).slice(0, 2);
       const lost = effect.moves.filter((move) => move.after < move.before).slice(0, 2);
-      const gainedText = gained
-        .map((move) => `${move.bitstring} ${formatPercent(move.before)} → ${formatPercent(move.after)}`)
-        .join(", ");
-      const lostText = lost
-        .map((move) => `${move.bitstring} ${formatPercent(move.before)} → ${formatPercent(move.after)}`)
-        .join(", ");
+      // The list separator follows the locale, like every other mark in these
+      // sentences: a Japanese sentence that ends 「…、010 3.1% → 0.8%。」 with a
+      // Western comma inside it reads as a copy that was translated except for
+      // the part a template built.
+      const separator = ja ? "、" : ", ";
+      const move = (item: { bitstring: string; before: number; after: number }) =>
+        `${item.bitstring} ${formatPercent(item.before)} → ${formatPercent(item.after)}`;
+      const gainedText = gained.map(move).join(separator);
+      const lostText = lost.map(move).join(separator);
       const { after, newlyPopulated, emptied } = effect.support;
       // "the same N outcomes" is only true when the SET did not change. A step
       // that populates three states and empties three others leaves the size

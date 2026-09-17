@@ -587,6 +587,10 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
     playheadSlider: string;
     playheadBitOrder: (highest: number) => string;
     playheadUnavailable: (reason: string, limit: number) => string;
+    playheadPhaseTitle: string;
+    playheadPhaseNote: string;
+    playheadPhaseColumn: string;
+    playheadEffectLabel: string;
     splitShow: string;
     splitHide: string;
     liveSync: string;
@@ -1476,6 +1480,10 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
         mid_circuit_measurement: "A gate follows a measurement on the same qubit, so live probabilities are off from here.",
         angle: "The browser simulator can't read one of these angles, so live probabilities are off.",
       }[reason] ?? "Live probabilities are unavailable for this circuit."),
+      playheadPhaseTitle: "Amplitude and phase",
+      playheadPhaseNote: "Phases are measured against the largest amplitude. A global phase is not observable, so only the differences carry meaning.",
+      playheadPhaseColumn: "Relative phase",
+      playheadEffectLabel: "What this moment did",
       splitShow: "Code beside diagram",
       splitHide: "Diagram only",
       liveSync: "Live",
@@ -2415,6 +2423,10 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
         mid_circuit_measurement: "測定のあとに同じ量子ビットへゲートがあるため、ここから先のライブ確率は表示できません。",
         angle: "ブラウザのシミュレータが読めない角度があるため、ライブ確率は表示できません。",
       }[reason] ?? "この回路ではライブ確率を表示できません。"),
+      playheadPhaseTitle: "振幅と位相",
+      playheadPhaseNote: "位相は最大振幅を基準とした相対値です。全体位相は観測できないため、意味を持つのは差だけです。",
+      playheadPhaseColumn: "相対位相",
+      playheadEffectLabel: "このモーメントで起きたこと",
       splitShow: "図の横にコード",
       splitHide: "図のみ",
       liveSync: "連動中",
