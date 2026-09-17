@@ -28,14 +28,16 @@ test("every record has at least one link and at most two", () => {
   }
 });
 
-test("the map matches the verified count — 179 records, 197 links", () => {
+test("the map matches the verified count — 196 records, 214 links", () => {
   // 84 records / 99 links from the base map (atlas-example-map.json), plus
   // the 2026-09-15 VQE pass: 37 VQE-method records (instance) + 50 VQE
   // operator records (component) = 87 new links, 86 new records
   // (operator-trotter-product already carried a link and gained a second),
   // plus the 2026-09-17 pass over the records that rendered no figure at all:
   // 11 new links over 9 new records (string-rewriting-derivation-counts and
-  // ising-formulations-np-problems take two each).
+  // ising-formulations-np-problems take two each), plus the 2026-09-17 gate
+  // pass: 17 gate records, each an `instance` link to a demonstration of that
+  // gate written for it.
   //
   // This number is a CENSUS, not a target. A batch that changes it changes it
   // on purpose and updates this line with why — the point of pinning it is
@@ -43,6 +45,6 @@ test("the map matches the verified count — 179 records, 197 links", () => {
   // entries, is otherwise invisible.
   const slugs = Object.keys(WORKED_EXAMPLE_LINKS);
   const total = slugs.reduce((sum, slug) => sum + WORKED_EXAMPLE_LINKS[slug].length, 0);
-  assert.equal(slugs.length, 179);
-  assert.equal(total, 197);
+  assert.equal(slugs.length, 196);
+  assert.equal(total, 214);
 });
