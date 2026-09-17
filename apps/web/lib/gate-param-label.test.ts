@@ -65,3 +65,27 @@ test("an empty or blank param draws nothing", () => {
   assert.equal(formatGateParam(""), "");
   assert.equal(formatGateParam("   "), "");
 });
+
+test("a huge but finite angle returns a label instead of overflowing the stack", () => {
+  // (1e308 / pi) * 16 is Infinity, and every comparison below it degrades to
+  // NaN: `NaN > tolerance` is false, so a naive reject branch does not fire and
+  // the gcd recurses on NaN forever. Reported by Sourcery on PR 919 and
+  // confirmed: a user typing this into Studio's angle field crashed the render.
+  assert.doesNotThrow(() => formatGateParam("1e308"));
+  assert.doesNotThrow(() => formatGateParam("-1e308"));
+  assert.equal(formatGateParam("1e308"), "1e+308");
+});
+
+test("an angle NEAR a multiple of pi is not printed as that multiple", () => {
+  // pi/16 + 1e-11 is not pi/16, and printing it as "π/16" makes an
+  // approximation indistinguishable from an exact value. The old 1e-9
+  // tolerance absorbed a gap of 5.09e-11 and did exactly that.
+  const near = Math.PI / 16 + 1e-11;
+  assert.notEqual(formatGateParam(String(near)), "π/16");
+  // The tolerance still has to absorb a real string round trip, which is how
+  // every generated angle actually arrives — measured gap: exactly zero.
+  for (const exact of [(3 * Math.PI) / 4, (3 * Math.PI) / 2, 3 * Math.PI, Math.PI, -Math.PI / 4]) {
+    const label = formatGateParam(String(exact));
+    assert.ok(label.includes("π"), `${exact} round-tripped through a string must still read as a multiple of pi, got ${label}`);
+  }
+});

@@ -71,7 +71,28 @@ function piMultiple(value: number): string | null {
   if (value === 0) return null; // "0" is already the shortest exact label.
   const sixteenths = (value / Math.PI) * 16;
   const rounded = Math.round(sixteenths);
-  if (rounded === 0 || Math.abs(sixteenths - rounded) > 1e-9) return null;
+  // `isSafeInteger` is what stands between this and a stack overflow, and it is
+  // the ONLY guard doing so — an earlier version had a redundant `isFinite`
+  // check above it, and removing that one changed nothing.
+  //
+  // A finite input can produce a non-finite quotient: 1e308 is an ordinary
+  // float and (1e308 / pi) * 16 overflows to Infinity. Every test below then
+  // degrades to NaN — `Math.abs(Infinity - Infinity)` is NaN, and
+  // `NaN > tolerance` is FALSE, so a tolerance check alone does not reject it —
+  // and `greatestCommonDivisor(Infinity, 16)` recurses on NaN until the stack
+  // goes. A user typing 1e308 into Studio's angle field crashed the diagram.
+  // `Number.isSafeInteger` is false for Infinity and for NaN, so it closes all
+  // of that with one test.
+  if (rounded === 0 || !Number.isSafeInteger(rounded)) return null;
+  // Relative, and tight. This tolerance exists ONLY to absorb the error of a
+  // float that has been through a decimal string and back — which is how every
+  // generated angle arrives, since `BuilderStep.param` is a string. Measured:
+  // for 3pi/4, 3pi/2, 3pi, pi and -pi/4 that round trip leaves a gap of exactly
+  // zero, so nothing here needs slack. The 1e-9 absolute tolerance this
+  // replaces was wide enough to relabel `pi/16 + 1e-11` as `π/16` — an
+  // approximation printed as an exact value, which is the one thing the
+  // decimal fallback exists to prevent.
+  if (Math.abs(sixteenths - rounded) > Math.abs(sixteenths) * 1e-12 + 1e-12) return null;
   const divisor = greatestCommonDivisor(Math.abs(rounded), 16);
   const top = rounded / divisor;
   const bottom = 16 / divisor;
