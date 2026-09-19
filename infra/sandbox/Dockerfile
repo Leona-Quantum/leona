@@ -8,10 +8,13 @@
 # sandbox than the one that was reviewed and scanned, and nothing in the repo,
 # the diff, or the weekly container scan would say so.
 #
-# The digest below is `3.13-slim-bookworm` as of 2026-08-15. Updating it is a
-# deliberate edit with a reviewable diff, which is the entire point; the tag is
-# kept alongside so the next person knows which line to re-resolve.
-FROM python:3.13-slim-bookworm@sha256:00faa2debb87529f9f0764e9491d8ba400a3678976616c3bd7cb193745ac20d1
+# The digest below is `3.13-slim-bookworm` as of 2026-09-19 (Docker Hub
+# last_updated 2026-09-19 08:10 UTC), the first rebuild carrying libpcre2-8-0
+# 10.42-1+deb12u1 (CVE-2026-86145, CVE-2026-89157, CVE-2026-89161; ai-ops 315).
+# Updating it is a deliberate edit with a reviewable diff, which is the entire
+# point; the tag is kept alongside so the next person knows which line to
+# re-resolve.
+FROM python:3.13-slim-bookworm@sha256:2325bb286ec344af3e5898cc224b5844e2707ac6e26b1632516fd3edc84a5e26
 
 # This image is the Vercel Sandbox root filesystem for generated quantum code.
 # Keep it dependency-complete because production sandboxes are created with the
