@@ -103,7 +103,10 @@ uv run --locked --extra notebooks --extra dev ruff check shared tests scripts
   No course lab, test, or CI job needs an IBM account.
 
 `pyproject.toml` is the dependency source of truth. The `requirements*.txt` files are retained only
-as a `pip` fallback for environments where `uv` cannot be installed.
+as a `pip` fallback for environments where `uv` cannot be installed. They are generated from
+`uv.lock` by `scripts/sync_pip_fallback.py` (every locked package named, at the locked version as a
+floor), and CI fails if they fall behind it. After changing `pyproject.toml` or `uv.lock`, run
+`uv run python scripts/sync_pip_fallback.py`.
 
 When intentionally upgrading the Qiskit minor version, update the constraint and run the full
 notebook execution job before merging.

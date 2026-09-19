@@ -114,9 +114,9 @@ python -m pip install -r requirements.txt -r requirements-notebooks.txt
 jupyter lab
 ```
 
-`requirements.txt` and `requirements-notebooks.txt` are pinned loosely to match
-`pyproject.toml`; they are not resolved and locked the way `uv.lock` is, so results can vary
-slightly by platform. If a learner hits a version mismatch this way, check their installed
+`requirements.txt` and `requirements-notebooks.txt` name every package `uv.lock` resolves, each
+with the locked version as its floor, so pip can install that environment or anything newer within
+`pyproject.toml`'s bounds. They are floors, not pins, so results can still vary slightly by platform. If a learner hits a version mismatch this way, check their installed
 Qiskit version first (`python -c "import qiskit; print(qiskit.__version__)"`) — it should be
 `2.5.x`.
 
