@@ -155,6 +155,16 @@ jobs:
           packages/py/frameworks
           services/worker/tests/test_circuit_lowering.py
           -q
+      # The study group's pip fallback files name every package its uv.lock resolves, at
+      # the locked version. Kept by hand, they fell behind the lock four times in three
+      # weeks (pillow, nbconvert and idna, jupyterlab, anyio), and each time `osv` went red
+      # on every open PR whatever it changed. They are generated now, and this fails the
+      # one PR that lets them drift instead of all of them. `--self-test` first: a gate
+      # nobody has seen go red is not yet evidence.
+      - name: the curriculum's pip fallback matches its lockfile
+        run: |
+          uv run python curricula/qiskit-study-group/static/scripts/sync_pip_fallback.py --self-test
+          uv run python curricula/qiskit-study-group/static/scripts/sync_pip_fallback.py --check
       # Every curriculum notebook, actually executed. Nothing ran these before: CI read
       # their answer keys as text and never their code, so a qiskit release renaming a
       # method would have left the whole study group broken with every check green, and

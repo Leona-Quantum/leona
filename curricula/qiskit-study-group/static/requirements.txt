@@ -1,22 +1,42 @@
 # Pip fallback for environments where `uv` cannot be installed. Prefer
 # `uv sync --locked` (see pyproject.toml and uv.lock) when you can use it.
 #
-# This file matches the base dependencies in pyproject.toml. The floors are not
-# decorative: a fallback file is resolved fresh on the learner's machine, so
-# whatever a resolver can legally pick here IS a supported environment for this
-# course, and an auditor reading this file has to be able to see that.
+# The floors are not decorative. A fallback file is resolved fresh on the
+# learner's machine, so whatever a resolver can legally pick here IS a supported
+# environment for this course, and osv-scanner audits it that way: a dependency
+# the file does not name is resolved to an old release, and a floor below the
+# lock is read at the floor. So every package uv.lock resolves is named below, at
+# the version the lock installs, and `uv sync --locked` and this file describe
+# the same environment. Upper bounds from pyproject.toml (`qiskit<2.6`) are kept.
 #
-# `pillow` is named even though nothing here imports it — matplotlib pulls it.
-# With only `matplotlib>=3.8` stated, a resolver is free to take the floor, and
-# osv-scanner does exactly that: it resolved this file to pillow 9.5.0, which
-# carries seven advisories up to CVSS 9.3. Nobody was shipped that version —
-# uv.lock pins 12.3.0 and that is what `uv sync --locked` installs — but the
-# fallback path could not say so, and a route that cannot be audited is a route
-# nobody should be sent down. The floors below are the versions the lockfile
-# actually resolves, so both routes now describe the same environment.
-qiskit>=2.5,<2.6
-numpy>=2.0
-matplotlib>=3.11
-pillow>=12.3
+# The list is generated, because keeping it by hand failed four times in three
+# weeks (pillow, nbconvert and idna, jupyterlab, anyio), each time turning the
+# repository's `osv` gate red on every open PR. CI runs
+# `scripts/sync_pip_fallback.py --check` and fails if this file falls behind
+# uv.lock. If osv flags a package here, the lock itself is vulnerable: run
+# `uv lock --upgrade-package <name>`, then the script.
+
+# ---- Generated from uv.lock by scripts/sync_pip_fallback.py. Do not edit below this line: change pyproject.toml or uv.lock, then run `uv run python scripts/sync_pip_fallback.py`. ----
+antlr4-python3-runtime>=4.13.2
+contourpy>=1.3.3
+cycler>=0.12.1
+dill>=0.4.1
+fonttools>=4.64.0
+kiwisolver>=1.5.1
+matplotlib>=3.11.1
+numpy>=2.4.6 ; python_full_version < '3.12'
+numpy>=2.5.2 ; python_full_version >= '3.12'
+openqasm3>=1.0.1
+packaging>=26.3
+pillow>=12.3.0
 pylatexenc>=2.11
-qiskit-qasm3-import>=0.6,<0.7
+pyparsing>=3.3.2
+python-dateutil>=2.9.0.post0
+qiskit>=2.5.2,<2.6
+qiskit-qasm3-import>=0.6.0,<0.7
+rustworkx>=0.18.1
+scipy>=1.17.1 ; python_full_version < '3.12'
+scipy>=1.18.1 ; python_full_version >= '3.12'
+six>=1.17.0
+stevedore>=5.9.1
+typing-extensions>=4.16.0
