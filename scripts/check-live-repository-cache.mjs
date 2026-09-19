@@ -151,7 +151,11 @@ export function classifyNeverShared(o, { edgeOnly = false } = {}) {
   if (o.cacheHeaderName === "cf-cache-status" && CACHED_VALUES.has(o.cacheHeader ?? "")) {
     return { verdict: "fail", reason: `Cloudflare answered it from its cache (cf-cache-status: ${o.cacheHeader}) — the Cache Rule's filter no longer refuses it` };
   }
-  return { verdict: "pass", reason: `HTTP ${o.status}, ${o.cacheHeaderName ?? "no cache header"}: ${o.cacheHeader ?? "(none)"}, no CDN-Cache-Control` };
+  // Say what was seen. An edge-only probe passes WITH the origin's marker present, and a
+  // line that reported "no CDN-Cache-Control" there would misstate the one fact the probe
+  // exists to separate from the edge's verdict.
+  const marker = o.cdnCacheControl ? `CDN-Cache-Control: ${o.cdnCacheControl} (expected here; the edge refused it)` : "no CDN-Cache-Control";
+  return { verdict: "pass", reason: `HTTP ${o.status}, ${o.cacheHeaderName ?? "no cache header"}: ${o.cacheHeader ?? "(none)"}, ${marker}` };
 }
 
 function selfTest() {
