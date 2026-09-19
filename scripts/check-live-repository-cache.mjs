@@ -124,18 +124,28 @@ export function classify(observations) {
  *
  * A `x-vercel-cache: HIT` here is fine and is not failed on — Vercel's key
  * separates these requests correctly. Only Cloudflare's verdict counts.
+ *
+ * `edgeOnly` marks the one probe the origin CANNOT lock: a bare `?_rsc` with no
+ * header. Next's `missing` matcher treats an empty value as absent, so the origin
+ * still marks that response cacheable (it is the ordinary HTML page, the same
+ * document as `/repository`). What keeps it out of the edge is the Cache Rule's
+ * `_rsc` line, so for this probe only the edge's verdict is read.
  */
 const NEVER_SHARED = [
   { path: "/repository", headers: { RSC: "1" }, what: "a React payload request with no ?_rsc (Next answers a 307)" },
   { path: "/repository?_rsc", headers: { RSC: "1" }, what: "the React payload itself" },
   { path: "/repository/layers", headers: { RSC: "1" }, what: "a React payload request on the map" },
   { path: "/repository", headers: { Cookie: "leona.locale.v2=ja" }, what: "a reader who chose Japanese" },
+  { path: "/repository?_rsc", headers: {}, what: "the payload address with no header (the Cache Rule's _rsc line is the only lock)", edgeOnly: true },
 ];
 
 /** Pure: one never-shared observation in, one verdict out. */
-export function classifyNeverShared(o) {
+export function classifyNeverShared(o, { edgeOnly = false } = {}) {
   if (!o.status) return { verdict: "fail", reason: "the request itself failed" };
-  if (o.cdnCacheControl) {
+  // A broken origin answers these without any cache marker too, so "no marker"
+  // on a 5xx or 404 would read as a pass. Next answers them 200 or 307.
+  if (o.status < 200 || o.status >= 400) return { verdict: "fail", reason: `unexpected HTTP ${o.status} — these requests are answered 200 or 307` };
+  if (o.cdnCacheControl && !edgeOnly) {
     return { verdict: "fail", reason: `the origin marked it cacheable for Cloudflare (CDN-Cache-Control: ${o.cdnCacheControl}) — lib/edge-cache-headers.ts no longer applies` };
   }
   if (o.cacheHeaderName === "cf-cache-status" && CACHED_VALUES.has(o.cacheHeader ?? "")) {
@@ -240,9 +250,13 @@ function selfTest() {
     { name: "a Vercel HIT is fine, its key honours Vary", o: { status: 200, cacheHeader: "HIT", cacheHeaderName: "x-vercel-cache" }, verdict: "pass" },
     { name: "Cloudflare DYNAMIC with no marker passes", o: { status: 307, cacheHeader: "DYNAMIC", cacheHeaderName: "cf-cache-status" }, verdict: "pass" },
     { name: "a thrown request fails rather than passing on silence", o: { status: 0, cacheHeader: null }, verdict: "fail" },
+    { name: "a 500 with no marker fails, it is not a pass", o: { status: 500, cacheHeader: "DYNAMIC", cacheHeaderName: "cf-cache-status" }, verdict: "fail" },
+    { name: "a 404 with no marker fails", o: { status: 404, cacheHeader: null }, verdict: "fail" },
+    { name: "edge-only: the origin's marker is expected and passes", o: { status: 200, cdnCacheControl: "max-age=300", cacheHeader: "DYNAMIC", cacheHeaderName: "cf-cache-status" }, edgeOnly: true, verdict: "pass" },
+    { name: "edge-only: a Cloudflare HIT still fails", o: { status: 200, cdnCacheControl: "max-age=300", cacheHeader: "HIT", cacheHeaderName: "cf-cache-status" }, edgeOnly: true, verdict: "fail" },
   ];
-  for (const { name, o, verdict } of neverSharedCases) {
-    const got = classifyNeverShared(o);
+  for (const { name, o, edgeOnly, verdict } of neverSharedCases) {
+    const got = classifyNeverShared(o, { edgeOnly });
     if (got.verdict !== verdict) {
       console.error(`check-live-repository-cache: SELF-TEST FAILED — never-shared ${name}: expected ${verdict}, got ${got.verdict} (${got.reason})`);
       headerFailed += 1;
@@ -310,9 +324,9 @@ async function main() {
       worstExit = 1;
     }
   }
-  for (const { path, headers, what } of NEVER_SHARED) {
-    const { verdict, reason } = classifyNeverShared(await probe(`${SITE_ORIGIN}${path}`, headers));
-    const sent = Object.entries(headers).map(([k, v]) => `${k}: ${v}`).join(", ");
+  for (const { path, headers, what, edgeOnly } of NEVER_SHARED) {
+    const { verdict, reason } = classifyNeverShared(await probe(`${SITE_ORIGIN}${path}`, headers), { edgeOnly });
+    const sent = Object.entries(headers).map(([k, v]) => `${k}: ${v}`).join(", ") || "no extra headers";
     if (verdict === "pass") {
       console.log(`check-live-repository-cache: PASS never shared: ${path} with ${sent} (${what}) — ${reason}`);
     } else {
