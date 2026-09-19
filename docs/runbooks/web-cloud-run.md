@@ -234,7 +234,7 @@ production incident here:
   and not http.cookie contains "leona.locale.v2="
   and not http.cookie contains "majorana.locale.v1="
   and not http.request.uri.query contains "_rsc"
-  and not any(lower(http.request.headers.names[*])[*] eq "rsc")
+  and not any(lower(http.request.headers.names[*])[*] == "rsc")
   ```
 
   `/repository/folders` was missing from the 17 September version: the origin has marked it
