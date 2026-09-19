@@ -5,6 +5,7 @@ version = "0.0.0"
 requires-python = ">=3.12"
 dependencies = [
     "majorana-api",
+    "openai>=3.0.0",
     "majorana-agent",
     "majorana-llm",
     "majorana-sandbox[vercel]",
@@ -23,6 +24,12 @@ dependencies = [
     # research.py parses the arXiv API's Atom response. Declared for the same
     # reason cryptography is: this service imports it directly.
     "defusedxml>=0.7.1,<1",
+    # errors.py classifies a transient database commit failure into
+    # RetryableJobError, so it imports the driver and ORM exception types
+    # directly. Both arrive transitively through majorana-api today, but the
+    # same "a dependency you import is a dependency you declare" rule applies.
+    "sqlalchemy[asyncio]>=2.0.52",
+    "psycopg[binary]>=3.3.5",
 ]
 
 [project.scripts]

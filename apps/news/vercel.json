@@ -1,0 +1,6 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "framework": null,
+  "installCommand": "echo 'News renderer has no runtime dependencies'",
+  "buildCommand": "node build-vercel.mjs"
+}

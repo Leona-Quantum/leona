@@ -1,9 +1,11 @@
+import { resolve } from "node:path";
 import type { NextConfig } from "next";
 import {
   contentSecurityPolicy,
   errorReportingOrigin,
 } from "./lib/content-security-policy";
 import { permissionsPolicy } from "./lib/permissions-policy";
+import { deployEnv } from "./lib/deploy-env";
 
 /**
  * Content-Security-Policy (05-security.md §1 platform+edge).
@@ -88,16 +90,25 @@ const CONTROL_PLANE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000"
  * `VERCEL_ENV !== "production"`, so it fails CLOSED. An unset or unexpected
  * `VERCEL_ENV` — a self-hosted build, a container build, a platform rename —
  * then yields the tight policy instead of silently widening production's.
+ *
+ * Reads through `deployEnv()` (lib/deploy-env.ts), which checks
+ * `LEONA_DEPLOY_ENV` first and falls back to `VERCEL_ENV` — on Vercel,
+ * `LEONA_DEPLOY_ENV` is never set, so this is exactly `VERCEL_ENV`,
+ * unchanged. On Cloud Run there is no toolbar to admit either way (nothing
+ * ships `vercel.live`), so `LEONA_DEPLOY_ENV=preview`/`development` widening
+ * this allowlist there is inert, not a new exposure — the CSP is stricter
+ * than what actually runs.
  */
+const resolvedDeployEnv = deployEnv();
 const vercelToolbar =
-  process.env.VERCEL_ENV === "preview" ||
+  resolvedDeployEnv === "preview" ||
   // `vercel dev` sets VERCEL_ENV="development"; a plain `next dev` sets it to
   // nothing at all. Both are a local server on a laptop, so both are listed —
   // without the first, which of the two commands you happened to start decided
   // whether the toolbar worked. Raised by CodeRabbit on PR 651, numbered without
   // a hash because `check-raw-hex` reads a three-digit hash-number as a colour.
-  process.env.VERCEL_ENV === "development" ||
-  (process.env.VERCEL_ENV === undefined && process.env.NODE_ENV === "development");
+  resolvedDeployEnv === "development" ||
+  (resolvedDeployEnv === undefined && process.env.NODE_ENV === "development");
 
 const csp = contentSecurityPolicy({
   controlPlane: CONTROL_PLANE,
@@ -124,6 +135,50 @@ const nextConfig: NextConfig = {
   // restart. Unset everywhere except a second local server, so CI and Vercel
   // build to the usual directory.
   distDir: process.env.NEXT_DIST_DIR || ".next",
+  // Cloud Run spike (ai-ops gcp-migration-20260912 PLAN.md, "Hosting and
+  // build" row): `output: "standalone"` traces the server's actual runtime
+  // dependencies into `.next/standalone`, so a Docker image can ship a
+  // minimal `node_modules` instead of the whole workspace. Opt-in on
+  // NEXT_OUTPUT=standalone — a var set only by apps/web/Dockerfile's build
+  // stage — so Vercel's build, CI, and a plain local `next build`/`next dev`
+  // are byte-for-byte what they were before this key existed: Vercel has its
+  // own deployment artifact format and does not read `output` at all, but an
+  // untested `undefined` vs. explicitly-omitted distinction is not a risk
+  // worth taking on the platform that currently serves production.
+  ...(process.env.NEXT_OUTPUT === "standalone"
+    ? {
+        output: "standalone" as const,
+        // pnpm workspace root, two levels up from apps/web (where
+        // pnpm-workspace.yaml and pnpm-lock.yaml live). apps/web depends on
+        // @majorana/ui and @majorana/contracts-gen as `workspace:*`, both
+        // resolved through the pnpm virtual store at the workspace root, not
+        // under apps/web/node_modules — so file tracing has to be told the
+        // root explicitly. Without this, Next infers the nearest lockfile
+        // itself and its own docs warn that inference can pick the wrong
+        // directory in a monorepo, silently leaving workspace packages out
+        // of `.next/standalone`.
+        //
+        // `path.resolve(process.cwd(), "..", "..")`, not
+        // `fileURLToPath(import.meta.url)`: this file is loaded through
+        // Next's own config loader, which transpiles next.config.ts to
+        // CommonJS via SWC on the legacy path (module: "commonjs" —
+        // node_modules/next/dist/build/next-config-ts/transpile-config.js) and
+        // only uses a native ESM `import()` when an internal flag enables
+        // Node's TS-stripping loader. `import.meta` is unconditionally valid
+        // ESM syntax; whether it survives that CJS transpile intact is a
+        // question about the *build* platform's Next/Node combination, not
+        // this repo's, and it would change nothing about `process.cwd()`,
+        // which both module targets support identically. Measured, not
+        // assumed: `pnpm --filter @majorana/web exec pwd` and vercel.json's
+        // own `buildCommand` (`pnpm --filter @majorana/web build`) both run
+        // with apps/web as the working directory, on Vercel and in
+        // apps/web/Dockerfile alike — pnpm's `--filter` sets cwd to the
+        // selected package before invoking its script, which is why this
+        // resolves against `process.cwd()` rather than this module's own
+        // location.
+        outputFileTracingRoot: resolve(process.cwd(), "..", ".."),
+      }
+    : {}),
   // Security headers baseline (05-security.md §1 platform+edge). The CSP above
   // documents exactly which classes it stops and which it does not.
   async headers() {
@@ -169,6 +224,36 @@ const nextConfig: NextConfig = {
       // reads the standard header and declines. `Vercel-CDN-Cache-Control` is
       // consumed at the edge and never reaches the client.
       //
+      // ## Both header names, because the edge is changing underneath this
+      //
+      // `Vercel-CDN-Cache-Control` is read by exactly one CDN. The GCP migration
+      // (ai-ops gcp-migration-20260912) puts Cloudflare in front of Cloud Run
+      // instead, where that header is an unrecognised string that passes through
+      // inert — and the failure is silent in the worst direction: the site keeps
+      // working and every Atlas page renders on every request, which is the load
+      // shape behind the 2026-09-15 outage. `CDN-Cache-Control` is the IETF
+      // targeted-cache-control header that Cloudflare does read.
+      //
+      // Both are set rather than one replacing the other, because production
+      // runs on both stacks through the cutover and its 30-day rollback window.
+      // Vercel's own precedence is `Vercel-CDN-Cache-Control` before
+      // `CDN-Cache-Control` before `Cache-Control`, so adding the second name
+      // changes nothing about what Vercel does today; it only means the same
+      // intent survives the switch. Drop the Vercel name when Vercel is retired,
+      // not before.
+      //
+      // ## The header is half of it, and the missing half is not in this repo
+      //
+      // A `no-store` `Cache-Control` still reaches the client here (see below),
+      // and Cloudflare does not cache HTML at all by default regardless of what
+      // any cache header says — it needs a Cache Rule naming these paths. So
+      // this header alone does NOT make the Atlas cached on Cloudflare, and a
+      // reader who checks only that this file is correct would conclude it is.
+      // The paired Cache Rule lives in the Cloudflare dashboard and is recorded
+      // in `docs/runbooks/web-cloud-run.md`; the check that settles whether it
+      // works is a repeat request measured against `cf-cache-status: HIT`, the
+      // same way `x-vercel-cache: HIT` settles it today.
+      //
       // ## Why 300
       //
       // The same number as CATALOG_REVALIDATE_SECONDS, which is what the corpus
@@ -186,7 +271,32 @@ const nextConfig: NextConfig = {
       ...["/repository/layers", "/:locale(en|ja)/repository/layers"].flatMap((base) =>
         [base, `${base}/:path*`].map((source) => ({
           source,
-          headers: [{ key: "Vercel-CDN-Cache-Control", value: "max-age=300" }],
+          headers: [
+            { key: "Vercel-CDN-Cache-Control", value: "max-age=300" },
+            { key: "CDN-Cache-Control", value: "max-age=300" },
+          ],
+        })),
+      ),
+      // `/repository/folders` — same mechanism as `/repository/layers` above,
+      // for the same reason: it resolves `?scheme=` on the server, so reading
+      // `searchParams` opts it out of static rendering the same way, and the
+      // long note above this block is the account for both routes, not just
+      // the first. `:path*` is included because every folder below the root
+      // (`/repository/folders/<kind>/<family>/...`) is equally public — see
+      // `lib/routed-paths.ts`'s `LOCALE_PREFIX_ROUTES` for the same reasoning
+      // applied to the middleware rewrite that has to reach it first.
+      //
+      // `/repository/papers` is deliberately NOT here: it and `/repository/
+      // papers/[id]` read no `searchParams`, so they prerender outright (the
+      // `claims` recipe) and reach the CDN through Next's own static output —
+      // the same reason `/repository/claims` carries no header entry either.
+      ...["/repository/folders", "/:locale(en|ja)/repository/folders"].flatMap((base) =>
+        [base, `${base}/:path*`].map((source) => ({
+          source,
+          headers: [
+            { key: "Vercel-CDN-Cache-Control", value: "max-age=300" },
+            { key: "CDN-Cache-Control", value: "max-age=300" },
+          ],
         })),
       ),
       // The Atlas browse index, same mechanism, exact path ONLY — no `:path*`.
@@ -199,7 +309,10 @@ const nextConfig: NextConfig = {
       // matter what the route protection says.
       ...["/repository", "/:locale(en|ja)/repository"].map((source) => ({
         source,
-        headers: [{ key: "Vercel-CDN-Cache-Control", value: "max-age=300" }],
+        headers: [
+          { key: "Vercel-CDN-Cache-Control", value: "max-age=300" },
+          { key: "CDN-Cache-Control", value: "max-age=300" },
+        ],
       })),
       // The landing page's demo video and the wordmark, which are the first
       // binary assets this app has ever served.
@@ -234,6 +347,7 @@ const nextConfig: NextConfig = {
         headers: [
           { key: "Cache-Control", value: "public, max-age=604800" },
           { key: "Vercel-CDN-Cache-Control", value: "max-age=31536000" },
+          { key: "CDN-Cache-Control", value: "max-age=31536000" },
         ],
       })),
       {

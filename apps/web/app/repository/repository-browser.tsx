@@ -28,6 +28,7 @@ import { PIPELINE_STANCES, type InterfaceStance } from "../../lib/repository/int
 import { TOPICS_BY_ID, type TopicId } from "../../lib/repository/topics";
 import { AtlasCircuitThumb } from "../../components/atlas-circuit";
 import { hasAtlasCircuit } from "../../lib/repository/atlas-circuit-layout";
+import { isPlaceholderDiagram } from "../../lib/repository/placeholder-diagrams";
 
 const COPY = {
   en: {
@@ -662,8 +663,10 @@ export function RepositoryBrowser({
     return (
       <article className="mj-repo-card">
         {/* The record's own drawing at card size (UX pass 6). Decorative and
-            unlabelled, so the title stays the one name and the one link. */}
-        {hasAtlasCircuit(entry.visualization) ? (
+            unlabelled, so the title stays the one name and the one link.
+            A stock placeholder diagram (§ isPlaceholderDiagram) is not a
+            drawing of this record, so it draws nothing here either. */}
+        {hasAtlasCircuit(entry.visualization) && !isPlaceholderDiagram(entry.visualization) ? (
           <div className="mj-atlas-thumb-slot">
             <AtlasCircuitThumb source={entry.visualization} />
           </div>

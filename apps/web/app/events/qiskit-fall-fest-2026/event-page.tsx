@@ -97,11 +97,6 @@ export default function EventPage() {
                 2026 <em>@ Keio</em>
               </span>
             </h1>
-            <p className={s.heroMessage}>
-              {t("量子コンピュータを、")}
-              <br />
-              {t("自分の手で動かす週末。")}
-            </p>
             <div className={s.heroDate}>
               <time dateTime="2026-10-17">
                 10.17<small>{t("土")}</small>
@@ -230,15 +225,8 @@ export default function EventPage() {
         <section className={s.experience} aria-labelledby="experience-title">
           <div className={s.experienceHeading}>
             <h2 id="experience-title">
-              {t("学ぶだけで、")}
-              <br />
-              {t("終わらない。")}
+              {t("アイデアからコードまで。")}
             </h2>
-            <p>
-              {t("Qiskitで回路をつくり、")}
-              <br />
-              {t("実行結果から次のアイデアへ。")}
-            </p>
             <div className={s.technology}>
               <span>{t("演習で使用予定")}</span>
               <Image
@@ -425,13 +413,15 @@ export default function EventPage() {
                 </span>
               </li>
               <li>
-                <Image
-                  src="/events/qiskit-fall-fest-2026/quanmatic.svg"
-                  alt={event.supporters[1]}
-                  width={190}
-                  height={23}
-                  unoptimized
-                />
+                <span className={s.partnerQuanmatic}>
+                  <Image
+                    src="/events/qiskit-fall-fest-2026/quanmatic.png"
+                    alt={event.supporters[1]}
+                    width={2500}
+                    height={2500}
+                    unoptimized
+                  />
+                </span>
               </li>
               <li>
                 <Image

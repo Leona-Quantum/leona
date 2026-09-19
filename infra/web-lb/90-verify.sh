@@ -1,0 +1,230 @@
+#!/usr/bin/env bash
+#
+# Read back what is actually in Google Cloud and compare it with what the other
+# scripts were supposed to create. Safe to run at any time; changes nothing.
+#
+# The origin lock is checked against Cloudflare's LIVE published list rather than
+# against a copy, because the failure mode is a range Cloudflare added after the
+# policy was written: the policy is internally consistent, every rule is present,
+# and some fraction of real visitors get a 403 from an origin that looks healthy.
+# Comparing the policy with itself cannot see that.
+set -euo pipefail
+cd "$(dirname "$0")" && . ./common.sh
+
+fail=0
+note() { printf '  %-6s %s\n' "$1" "$2"; [ "$1" = "FAIL" ] && fail=1; return 0; }
+
+echo "== origin lock vs Cloudflare's published ranges"
+g compute security-policies describe "$ARMOR_NAME" --format=json > /tmp/.armor.$$ 2>/dev/null || {
+  note FAIL "security policy ${ARMOR_NAME} is absent"; }
+if [ -s /tmp/.armor.$$ ]; then
+  python3 - /tmp/.armor.$$ <<'PY'
+import json,sys,urllib.request
+raw=json.load(open(sys.argv[1])); d=raw[0] if isinstance(raw,list) else raw
+allow=[r for r in d["rules"] if r["action"]=="allow"]
+inpol=set(x for r in allow for x in r["match"]["config"]["srcIpRanges"])
+default=[r for r in d["rules"] if r["priority"]==2147483647]
+live=json.load(urllib.request.urlopen("https://api.cloudflare.com/client/v4/ips"))["result"]
+want=set(live["ipv4_cidrs"]+live["ipv6_cidrs"])
+missing, extra = want-inpol, inpol-want
+print(f'  {"OK  " if not missing else "FAIL"}   {len(inpol)} allowed ranges; Cloudflare publishes {len(want)}')
+if missing: print("  FAIL   ranges Cloudflare added that this policy refuses:", ", ".join(sorted(missing)))
+if extra:   print("  WARN   ranges allowed that Cloudflare no longer publishes:", ", ".join(sorted(extra)))
+act = default[0]["action"] if default else "<absent>"
+print(f'  {"OK  " if act.startswith("deny") else "FAIL"}   default rule: {act}')
+raise SystemExit(1 if (missing or not act.startswith("deny")) else 0)
+PY
+  [ $? -eq 0 ] || fail=1
+fi
+rm -f /tmp/.armor.$$
+
+echo "== load balancer"
+for r in "compute addresses describe ${IP_NAME} --global" \
+         "compute network-endpoint-groups describe ${NEG_NAME} --region ${REGION}" \
+         "compute backend-services describe ${BACKEND_NAME} --global" \
+         "compute url-maps describe ${URLMAP_NAME}" \
+         "compute url-maps describe ${REDIRECT_URLMAP_NAME}"; do
+  # shellcheck disable=SC2086
+  if exists $r; then note OK "${r%% describe*} ${r#* describe }"; else note FAIL "missing: $r"; fi
+done
+
+echo "== the backend carries the origin lock"
+attached=$(g compute backend-services describe "$BACKEND_NAME" --global --format='value(securityPolicy)' 2>/dev/null || true)
+case "$attached" in *"$ARMOR_NAME") note OK "security policy attached";; *) note FAIL "backend has no origin lock (${attached:-none})";; esac
+
+echo "== Cloud CDN is off (the CDN is Cloudflare — see README.md)"
+cdn=$(g compute backend-services describe "$BACKEND_NAME" --global --format='value(enableCDN)' 2>/dev/null || true)
+case "$cdn" in True|true) note FAIL "Cloud CDN is enabled; that is a second cache in front of Cloudflare's";; *) note OK "Cloud CDN off";; esac
+
+echo "== certificate"
+read -r cert_name cert_state <<EOF
+$(serving_certificate)
+EOF
+case "$cert_state" in
+  ACTIVE)       note OK   "certificate ${cert_name} ACTIVE (Google-managed)";;
+  SELF_MANAGED) note OK   "certificate ${cert_name} in place (Cloudflare Origin, ai-ops 325)";;
+  ABSENT)       note WARN "no certificate attached to the map yet (./30-certificate.sh or ./31-origin-certificate.sh)";;
+  *)            note WARN "certificate ${cert_name} is ${cert_state} — not servable";;
+esac
+
+echo "== serving"
+if exists compute forwarding-rules describe majorana-web-fr-443 --global; then
+  note OK "forwarding rule on :443"
+  IP=$(g compute addresses describe "$IP_NAME" --global --format='value(address)')
+
+  # What the load balancer PRESENTS, read from the handshake rather than from the
+  # Certificate Manager resource. The two can disagree — a map entry updated
+  # while the proxy still serves the previous certificate — and the one a visitor
+  # meets is this one, so this is the reading that counts.
+  presented=$(openssl s_client -connect "${IP}:443" -servername leonaqt.com </dev/null 2>/dev/null \
+    | openssl x509 -noout -issuer 2>/dev/null || true)
+  presented_lc=$(printf '%s' "$presented" | tr '[:upper:]' '[:lower:]')
+  is_origin=no
+  case "$presented_lc" in *cloudflare*origin*) is_origin=yes;; esac
+
+  # An Origin Certificate is trusted by Cloudflare and by nothing else, so the
+  # honest probe from this machine has to skip verification — and then assert the
+  # issuer separately, which is a stronger check than the trust store would have
+  # made: it says WHICH certificate, not merely that some public CA vouched for
+  # one.
+  insecure=""; [ "$is_origin" = yes ] && insecure="-k"
+  # shellcheck disable=SC2086
+  code=$(curl -sS $insecure -o /dev/null -w '%{http_code}' --max-time 20 \
+    --resolve "leonaqt.com:443:${IP}" https://leonaqt.com/ || echo 000)
+  # A 403 here is the origin lock doing its job: this machine is not Cloudflare.
+  case "$code" in 403) note OK  "load balancer answers, origin lock refuses a non-Cloudflare caller (403)";;
+                  200) note WARN "load balancer answered 200 to a direct caller — the origin lock is not refusing";;
+                  *)   note FAIL "load balancer returned ${code}";; esac
+
+  if [ "$cert_state" = SELF_MANAGED ] && [ "$is_origin" != yes ]; then
+    note FAIL "the map says Cloudflare Origin but the handshake presents: ${presented:-<no certificate>}"
+  elif [ "$cert_state" = ACTIVE ] && [ "$is_origin" = yes ]; then
+    note FAIL "the map says Google-managed but the handshake presents a Cloudflare Origin certificate"
+  elif [ -n "$presented" ]; then
+    note OK "presents ${presented#issuer=}"
+  fi
+
+  # ---------------------------------------------------------------------------
+  # The failure this whole section exists to catch (ai-ops 325).
+  #
+  # An Origin Certificate is correct only where every request arrives through
+  # Cloudflare. If leonaqt.com is pointed at this load balancer with the orange
+  # cloud OFF, the address a visitor resolves is Google's, their browser is
+  # handed a certificate signed by an authority it has never heard of, and the
+  # site is a full-page TLS warning for everyone at once. Nothing on our side
+  # errors, because our side is working exactly as configured.
+  #
+  # Read from DNS rather than from Cloudflare's API: what a visitor resolves is
+  # the question, and a proxied name answers as a Cloudflare address, never as
+  # the origin's.
+  # ---------------------------------------------------------------------------
+  if [ "$is_origin" = yes ]; then
+    echo "== leonaqt.com is proxied, which an Origin Certificate requires"
+    resolved=$(dig +short leonaqt.com A 2>/dev/null | grep -E '^[0-9]' | head -3 | tr '\n' ' ')
+    if [ -z "$resolved" ]; then
+      note WARN "leonaqt.com does not resolve to an A record from here"
+    elif printf '%s' "$resolved" | grep -q "$IP"; then
+      note FAIL "leonaqt.com resolves straight to the load balancer (${resolved}) while it serves an Origin Certificate — every visitor gets a certificate warning. Turn the orange cloud ON for @ and www."
+    else
+      note OK "leonaqt.com resolves to ${resolved}(not the origin), so it is proxied or still on Vercel"
+    fi
+  fi
+else
+  note WARN "not serving yet (./40-serve.sh, after the certificate is ACTIVE)"
+fi
+
+# ---------------------------------------------------------------------------
+# Three things that are each fine alone and dangerous in a pair.
+#
+#   public + reachable directly   the whole site on a run.app URL, with no
+#                                 Cloudflare, no rate limit and no origin lock.
+#                                 40-serve.sh orders its two commands to avoid
+#                                 this; deploy-web.yml re-asserts the ingress on
+#                                 every deploy; this reads what is actually there.
+#   public + the default identity every Cloud Run service can ask the metadata
+#                                 server for its account's token, and the default
+#                                 compute account holds roles/editor. On Vercel
+#                                 the website held no cloud credential at all.
+#   a public twin                 majorana-web-verify exists to be probed by CI
+#                                 with an identity token. Public, it is the first
+#                                 line of this list again under another name.
+# ---------------------------------------------------------------------------
+echo "== public only through the load balancer, and as nobody in particular"
+svc_json=$(g run services describe "$SERVICE" --region "$REGION" --format=json 2>/dev/null || true)
+ingress=$(printf '%s' "$svc_json" | python3 -c 'import json,sys
+try: print(json.load(sys.stdin)["metadata"]["annotations"].get("run.googleapis.com/ingress",""))
+except Exception: print("")')
+runs_as=$(printf '%s' "$svc_json" | python3 -c 'import json,sys
+try: print(json.load(sys.stdin)["spec"]["template"]["spec"].get("serviceAccountName",""))
+except Exception: print("")')
+is_public() { # <service>
+  g run services get-iam-policy "$1" --region "$REGION" --format=json 2>/dev/null | python3 -c 'import json,sys
+try: b=json.load(sys.stdin).get("bindings",[])
+except Exception: b=[]
+m={x for i in b if i.get("role")=="roles/run.invoker" for x in i.get("members",[])}
+print("yes" if m & {"allUsers","allAuthenticatedUsers"} else "no")'
+}
+web_public=$(is_public "$SERVICE")
+if [ -z "$ingress" ]; then
+  note FAIL "could not read ${SERVICE}'s ingress setting"
+elif [ "$web_public" = yes ] && [ "$ingress" != "internal-and-cloud-load-balancing" ]; then
+  note FAIL "${SERVICE} is public with ingress '${ingress}' — it is reachable around Cloudflare"
+else
+  note OK "ingress ${ingress}; public: ${web_public}"
+fi
+case "$runs_as" in
+  majorana-web-runtime@*) note OK "runs as ${runs_as} (no project roles — ./05-runtime-identity.sh checks that)";;
+  *) if [ "$web_public" = yes ]; then
+       note FAIL "${SERVICE} is public and runs as ${runs_as:-the default compute account}, which holds roles/editor"
+     else
+       note WARN "${SERVICE} runs as ${runs_as:-the default compute account}; the next deploy-web run moves it to majorana-web-runtime"
+     fi;;
+esac
+if exists run services describe majorana-web-verify --region "$REGION"; then
+  case "$(is_public majorana-web-verify)" in
+    no) note OK "the smoke-test twin is private";;
+    *)  note FAIL "majorana-web-verify is PUBLIC — it serves the site with nothing in front of it";;
+  esac
+else
+  note WARN "no smoke-test twin yet (./07-verify-twin.sh); deploy-web.yml needs it"
+fi
+
+# ---------------------------------------------------------------------------
+# The one setting that has to move at the same moment the load balancer does.
+#
+# WEB_XFF_TRUSTED_HOPS says how many x-forwarded-for entries Google appends to
+# the right of the address that connected. On a bare Cloud Run URL that is 0;
+# behind the load balancer it is 1, because the load balancer appends the peer
+# and then itself. Getting it wrong does not error — too low meters visitors by a
+# value the caller wrote, too high meters everyone as one bucket.
+#
+# infra/fleet.env says to change it "in the same commit that creates the load
+# balancer". A sentence in a file is not a checker, and this is precisely the
+# shape of rule that gets read, agreed with, and then not done — so the fact that
+# forwarding rules now exist is checked against the number the deploy actually
+# ships.
+# ---------------------------------------------------------------------------
+echo "== the forwarding-hop count matches the topology"
+fleet="$(dirname "$0")/../fleet.env"
+hops=$(grep -E '^WEB_XFF_TRUSTED_HOPS=[0-9]+$' "$fleet" 2>/dev/null | cut -d= -f2)
+serving_via_lb=no
+exists compute forwarding-rules describe majorana-web-fr-443 --global && serving_via_lb=yes
+live=$(g run services describe "$SERVICE" --region "$REGION" \
+  --format='value(spec.template.spec.containers[0].env.filter("name:LEONA_XFF_TRUSTED_HOPS").extract("value"))' 2>/dev/null | tr -d "[]'" )
+if [ -z "$hops" ]; then
+  note FAIL "WEB_XFF_TRUSTED_HOPS is missing from ${fleet} or is not a plain integer"
+elif [ "$serving_via_lb" = yes ] && [ "$hops" != "1" ]; then
+  note FAIL "the load balancer is serving but WEB_XFF_TRUSTED_HOPS is ${hops} — it must be 1, or the rate limiter meters a value the caller writes"
+elif [ "$serving_via_lb" = no ] && [ "$hops" != "0" ]; then
+  note FAIL "no forwarding rule exists but WEB_XFF_TRUSTED_HOPS is ${hops} — it must be 0 until the load balancer is in front, or every visitor shares one bucket"
+else
+  note OK "WEB_XFF_TRUSTED_HOPS=${hops} matches the topology (load balancer serving: ${serving_via_lb})"
+fi
+if [ -n "$live" ] && [ "$live" != "$hops" ]; then
+  note FAIL "the running service has LEONA_XFF_TRUSTED_HOPS=${live} but fleet.env says ${hops} — the deploy has not caught up"
+elif [ -n "$live" ]; then
+  note OK "the running service agrees: LEONA_XFF_TRUSTED_HOPS=${live}"
+fi
+
+echo
+[ "$fail" -eq 0 ] && echo "all checks passed" || { echo "FAILURES above"; exit 1; }

@@ -70,20 +70,29 @@ const LOCALE_ROUTES = ["", "/about", "/contact", "/pricing", "/privacy", "/terms
  * that reach the CDN — and the difference is the thing to understand before
  * editing either list.
  *
- * `/repository/layers` and `/repository/layers/[id]` are around 96% of this
- * site's traffic and they are deliberately absent here. Both resolve search
- * parameters during render so a shared link arrives already panned and
- * expanded with JavaScript off, and Next opts any page reading `searchParams`
- * into request-time rendering. They cannot prerender, so requiring them here
- * would be requiring the build to do something the framework forbids. They are
+ * `/repository/layers`, `/repository/layers/[id]` and `/repository/folders`
+ * are deliberately absent here. `layers*` is around 96% of this site's
+ * traffic; `folders` resolves `?scheme=`. All three resolve search parameters
+ * during render — a shared link arrives already panned, expanded or switched,
+ * with JavaScript off — and Next opts any page reading `searchParams` into
+ * request-time rendering. They cannot prerender, so requiring them here would
+ * be requiring the build to do something the framework forbids. They are
  * cached in front of the render instead, by `Vercel-CDN-Cache-Control` in
  * `apps/web/next.config.ts`, and `public-revalidate.test.ts` is what asserts
  * that header still covers them.
  *
- * `/repository/claims` reads no search parameters and fetches nothing, so it is
- * the one Atlas route this check can speak for.
+ * `/repository/claims` and `/repository/papers` read no search parameters and
+ * fetch nothing they don't already fetch statically, so both are routes this
+ * check can speak for.
+ *
+ * `/repository/papers/[id]` also prerenders — same recipe, one static page per
+ * paper per locale — and unlike the entries above it cannot be named as a
+ * clean path here: this list only ever holds paths with no dynamic segment,
+ * because `missingRoutes()` matches manifest keys by exact string. A
+ * dynamic route needs one CONCRETE example instead, in `REQUIRED_STATIC_ROUTES`
+ * directly, below — see the paper picked there and why.
  */
-const LOCALE_ATLAS_ROUTES = ["/repository/claims"];
+const LOCALE_ATLAS_ROUTES = ["/repository/claims", "/repository/papers"];
 
 export const REQUIRED_STATIC_ROUTES = [
   { route: "/_not-found", why: "the boundary in every route's tree; dynamic here makes the whole app dynamic" },
@@ -103,6 +112,27 @@ export const REQUIRED_STATIC_ROUTES = [
       why: `Atlas page with no searchParams and no corpus fetch, served from the CDN at ${path} via the ${locale} rewrite`,
     })),
   ),
+  // One concrete paper, both locales, standing in for the whole
+  // `/repository/papers/[id]` route: `personalizedRoutes()` below traces every
+  // route file's closure textually, so it finds `cookies()` reachable from
+  // `app/[locale]/layout.tsx` (behind `chrome="static"`'s runtime ternary, the
+  // same "guarded outside this check" shape `partitionPersonalized()`'s own
+  // doc comment describes for `/pricing` and `/repository/claims`) on THIS
+  // route too — and unlike those, nothing here told it the route was meant to
+  // be static, so it reported all 656 built pages as a leak. `missingRoutes()`
+  // still needs a literal manifest key, not a pattern, so this has to be one
+  // real slug rather than `/repository/papers/[id]` itself.
+  //
+  // Peter Shor's 1995 factoring paper (arxiv:quant-ph/9508027) — chosen for
+  // being about as permanent an entry as this register has; `paperSlug()`
+  // maps it to `arxiv-quant-ph_9508027`. If it is ever removed from
+  // `PAPER_REGISTER`, `missingRoutes()` fails loudly on exactly this line
+  // rather than silently going quiet, which is the failure mode a stale
+  // hardcoded id would otherwise have.
+  ...LOCALES.map((locale) => ({
+    route: `/${locale}/repository/papers/arxiv-quant-ph_9508027`,
+    why: "one concrete /repository/papers/[id] page, standing in for the whole dynamic route (see comment above)",
+  })),
 ];
 
 /** Pure, so `--self-test` exercises the same code path CI does. */

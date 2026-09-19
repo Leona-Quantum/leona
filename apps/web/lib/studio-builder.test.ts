@@ -1,7 +1,14 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { generateBuilderCode, type CustomGateDefinition, type BuilderStep } from "./studio-builder.ts";
+import {
+  customGateDefinitionHasCycle,
+  customGateUsageCount,
+  generateBuilderCode,
+  ungroupCustomGateStep,
+  type CustomGateDefinition,
+  type BuilderStep,
+} from "./studio-builder.ts";
 
 const customGate: CustomGateDefinition = {
   id: "custom-abc123",
@@ -151,6 +158,105 @@ test("every executable variant names what it built, so the canvas is not UNKNOWN
   assert.match(code.qulacs, /^FINAL_CIRCUIT = circuit$/m, "qulacs must bind FINAL_CIRCUIT");
 });
 
+test("SDG, TDG, P, CP, RZZ and CCX emit the documented syntax in every framework", () => {
+  const gateSteps: BuilderStep[] = [
+    { id: "sdg", gate: "SDG", qubits: [0] },
+    { id: "tdg", gate: "TDG", qubits: [1] },
+    { id: "p", gate: "P", qubits: [2], param: "pi/4" },
+    { id: "cp", gate: "CP", qubits: [0, 1], param: "pi/3" },
+    { id: "rzz", gate: "RZZ", qubits: [1, 2], param: "pi/6" },
+    { id: "ccx", gate: "CCX", qubits: [0, 1, 2] },
+  ];
+  const generated = generateBuilderCode(gateSteps, 3);
+
+  assert.match(generated.qiskit, /^qc\.sdg\(0\)$/m);
+  assert.match(generated.qiskit, /^qc\.tdg\(1\)$/m);
+  assert.match(generated.qiskit, /^qc\.p\(pi\/4, 2\)$/m);
+  assert.match(generated.qiskit, /^qc\.cp\(pi\/3, 0, 1\)$/m);
+  assert.match(generated.qiskit, /^qc\.rzz\(pi\/6, 1, 2\)$/m);
+  assert.match(generated.qiskit, /^qc\.ccx\(0, 1, 2\)$/m);
+
+  assert.match(generated.pennylane, /^ {4}qml\.adjoint\(qml\.S\)\(wires=0\)$/m);
+  assert.match(generated.pennylane, /^ {4}qml\.adjoint\(qml\.T\)\(wires=1\)$/m);
+  assert.match(generated.pennylane, /^ {4}qml\.PhaseShift\(pi\/4, wires=2\)$/m);
+  assert.match(generated.pennylane, /^ {4}qml\.ControlledPhaseShift\(pi\/3, wires=\[0, 1\]\)$/m);
+  assert.match(generated.pennylane, /^ {4}qml\.IsingZZ\(pi\/6, wires=\[1, 2\]\)$/m);
+  assert.match(generated.pennylane, /^ {4}qml\.Toffoli\(wires=\[0, 1, 2\]\)$/m);
+
+  assert.match(generated.cirq, /^ {4}\(cirq\.S\*\*-1\)\(qubits\[0\]\),$/m);
+  assert.match(generated.cirq, /^ {4}\(cirq\.T\*\*-1\)\(qubits\[1\]\),$/m);
+  assert.match(generated.cirq, /^ {4}cirq\.ZPowGate\(exponent=\(pi\/4\)\/pi\)\.on\(qubits\[2\]\),$/m);
+  assert.match(generated.cirq, /^ {4}cirq\.CZPowGate\(exponent=\(pi\/3\)\/pi\)\.on\(qubits\[0\], qubits\[1\]\),$/m);
+  assert.match(generated.cirq, /^ {4}cirq\.rzz\(pi\/6\)\.on\(qubits\[1\], qubits\[2\]\),$/m);
+  assert.match(generated.cirq, /^ {4}cirq\.CCX\(qubits\[0\], qubits\[1\], qubits\[2\]\),$/m);
+
+  // OpenQASM 3: stdgates.inc has sdg/tdg/p/cp/ccx natively but not rzz, so a
+  // circuit using RZZ prefixes a `gate rzz(theta) a, b {...}` definition.
+  assert.match(generated.openqasm3, /^sdg q\[0\];$/m);
+  assert.match(generated.openqasm3, /^tdg q\[1\];$/m);
+  assert.match(generated.openqasm3, /^p\(pi\/4\) q\[2\];$/m);
+  assert.match(generated.openqasm3, /^cp\(pi\/3\) q\[0\], q\[1\];$/m);
+  assert.match(generated.openqasm3, /^rzz\(pi\/6\) q\[1\], q\[2\];$/m);
+  assert.match(generated.openqasm3, /^ccx q\[0\], q\[1\], q\[2\];$/m);
+  assert.match(generated.openqasm3, /^gate rzz\(theta\) a, b \{$/m);
+  assert.match(generated.openqasm3, /^ {4}cx a, b;$/m);
+  assert.match(generated.openqasm3, /^ {4}rz\(theta\) b;$/m);
+
+  // A circuit with no RZZ step must not carry the definition at all.
+  const withoutRzz = generateBuilderCode([{ id: "h", gate: "H", qubits: [0] }], 1);
+  assert.doesNotMatch(withoutRzz.openqasm3, /gate rzz/);
+
+  assert.match(generated.cudaq, /^ {4}s\.adj\(q\[0\]\)$/m);
+  assert.match(generated.cudaq, /^ {4}t\.adj\(q\[1\]\)$/m);
+  assert.match(generated.cudaq, /^ {4}r1\(pi\/4, q\[2\]\)$/m);
+  assert.match(generated.cudaq, /^ {4}x\.ctrl\(\[q\[0\], q\[1\]\], q\[2\]\)$/m);
+  // CP and RZZ are decomposed from confirmed-native r1/rz/x.ctrl primitives —
+  // CUDA-Q documents no controlled-phase or RZZ convenience call.
+  assert.match(generated.cudaq, /r1\(\(pi\/3\)\/2, q\[0\]\)/);
+  assert.match(generated.cudaq, /x\.ctrl\(q\[1\], q\[2\]\)\n {4}rz\(pi\/6, q\[2\]\)/);
+
+  assert.match(generated.braket, /^circuit\.si\(0\)$/m);
+  assert.match(generated.braket, /^circuit\.ti\(1\)$/m);
+  assert.match(generated.braket, /^circuit\.phaseshift\(2, pi\/4\)$/m);
+  assert.match(generated.braket, /^circuit\.cphaseshift\(0, 1, pi\/3\)$/m);
+  assert.match(generated.braket, /^circuit\.zz\(1, 2, pi\/6\)$/m);
+  assert.match(generated.braket, /^circuit\.ccnot\(0, 1, 2\)$/m);
+
+  assert.match(generated.pyquil, /^program \+= PHASE\(-pi\/2, 0\)$/m);
+  assert.match(generated.pyquil, /^program \+= PHASE\(-pi\/4, 1\)$/m);
+  assert.match(generated.pyquil, /^program \+= PHASE\(pi\/4, 2\)$/m);
+  assert.match(generated.pyquil, /^program \+= CPHASE\(pi\/3, 0, 1\)$/m);
+  assert.match(generated.pyquil, /^program \+= CNOT\(1, 2\)\nprogram \+= RZ\(pi\/6, 2\)\nprogram \+= CNOT\(1, 2\)$/m);
+  assert.match(generated.pyquil, /^program \+= CCNOT\(0, 1, 2\)$/m);
+
+  // Qibo's controlled phase is CU1, not CPHASE, and its phase gate is U1.
+  assert.match(generated.qibo, /^circuit\.add\(gates\.SDG\(0\)\)$/m);
+  assert.match(generated.qibo, /^circuit\.add\(gates\.TDG\(1\)\)$/m);
+  assert.match(generated.qibo, /^circuit\.add\(gates\.U1\(2, pi\/4\)\)$/m);
+  assert.match(generated.qibo, /^circuit\.add\(gates\.CU1\(0, 1, pi\/3\)\)$/m);
+  assert.match(generated.qibo, /^circuit\.add\(gates\.RZZ\(1, 2, pi\/6\)\)$/m);
+  assert.match(generated.qibo, /^circuit\.add\(gates\.TOFFOLI\(0, 1, 2\)\)$/m);
+
+  // Qulacs has native Sdag/Tdag/TOFFOLI/U1 but no controlled-phase (its `CP`
+  // export is an unrelated Kraus-map helper) or RZZ; both are decomposed.
+  assert.match(generated.qulacs, /^circuit\.add_gate\(Sdag\(0\)\)$/m);
+  assert.match(generated.qulacs, /^circuit\.add_gate\(Tdag\(1\)\)$/m);
+  assert.match(generated.qulacs, /^circuit\.add_gate\(U1\(2, pi\/4\)\)$/m);
+  assert.match(generated.qulacs, /^circuit\.add_gate\(TOFFOLI\(0, 1, 2\)\)$/m);
+  assert.match(generated.qulacs, /^circuit\.add_gate\(U1\(0, \(pi\/3\)\/2\)\)$/m);
+  assert.match(generated.qulacs, /^circuit\.add_gate\(RZ\(2, -\(pi\/6\)\)\)$/m);
+
+  // Classiq's controlled phase is `CPhase`, not `CPHASE`; SDG/TDG are not in
+  // its standard_gates reference, so both decompose through the documented
+  // PHASE function; RZZ/CCX take their multi-qubit operand as one QArray.
+  assert.match(generated.qmod, /^ {4}PHASE\(-pi\/2, q\[0\]\)$/m);
+  assert.match(generated.qmod, /^ {4}PHASE\(-pi\/4, q\[1\]\)$/m);
+  assert.match(generated.qmod, /^ {4}PHASE\(pi\/4, q\[2\]\)$/m);
+  assert.match(generated.qmod, /^ {4}CPhase\(pi\/3, q\[0\], q\[1\]\)$/m);
+  assert.match(generated.qmod, /^ {4}RZZ\(pi\/6, \[q\[1\], q\[2\]\]\)$/m);
+  assert.match(generated.qmod, /^ {4}CCX\(\[q\[0\], q\[1\]\], q\[2\]\)$/m);
+});
+
 test("an unmeasured circuit binds FINAL_CIRCUIT too", () => {
   // A circuit with no measurement is a legitimate thing to publish, and it is
   // the case that most needs the binding: it cannot be sampled, so its only
@@ -164,4 +270,78 @@ test("an unmeasured circuit binds FINAL_CIRCUIT too", () => {
   assert.match(code.pyquil, /^FINAL_CIRCUIT = program$/m);
   assert.match(code.qibo, /^FINAL_CIRCUIT = circuit$/m);
   assert.match(code.qulacs, /^FINAL_CIRCUIT = circuit$/m);
+});
+
+test("a block cannot be saved to contain itself, directly or through another block", () => {
+  assert.equal(customGateDefinitionHasCycle("g1", [{ id: "a", gate: "H", qubits: [0] }], []), false);
+  // Direct: g1's proposed body calls g1.
+  assert.equal(
+    customGateDefinitionHasCycle("g1", [{ id: "a", gate: "CUSTOM", customGateId: "g1", qubits: [0] }], []),
+    true,
+  );
+  // Indirect: g1's proposed body calls g2, whose saved body calls g1.
+  const g2: CustomGateDefinition = { id: "g2", name: "g2", qubitCount: 1, steps: [{ id: "b", gate: "CUSTOM", customGateId: "g1", qubits: [0] }] };
+  assert.equal(
+    customGateDefinitionHasCycle("g1", [{ id: "a", gate: "CUSTOM", customGateId: "g2", qubits: [0] }], [g2]),
+    true,
+  );
+  // Unrelated: g1's proposed body calls g2, which does not call back into g1.
+  const g3: CustomGateDefinition = { id: "g3", name: "g3", qubitCount: 1, steps: [{ id: "c", gate: "X", qubits: [0] }] };
+  assert.equal(
+    customGateDefinitionHasCycle("g1", [{ id: "a", gate: "CUSTOM", customGateId: "g3", qubits: [0] }], [g3]),
+    false,
+  );
+});
+
+test("customGateUsageCount counts the canvas and every other definition's own steps", () => {
+  const inner: CustomGateDefinition = { id: "inner", name: "Inner", qubitCount: 1, steps: [{ id: "x", gate: "X", qubits: [0] }] };
+  const outer: CustomGateDefinition = {
+    id: "outer",
+    name: "Outer",
+    qubitCount: 1,
+    steps: [
+      { id: "a", gate: "CUSTOM", customGateId: "inner", qubits: [0] },
+      { id: "b", gate: "CUSTOM", customGateId: "inner", qubits: [0] },
+    ],
+  };
+  const canvas: BuilderStep[] = [{ id: "c1", gate: "CUSTOM", customGateId: "inner", qubits: [0] }];
+  assert.equal(customGateUsageCount("inner", canvas, [inner, outer]), 3);
+  assert.equal(customGateUsageCount("outer", canvas, [inner, outer]), 0);
+  assert.equal(customGateUsageCount("missing", canvas, [inner, outer]), 0);
+});
+
+test("ungrouping replaces one instance with its own definition's steps, remapped, one level only", () => {
+  const nested: CustomGateDefinition = { id: "inner", name: "Inner", qubitCount: 1, steps: [{ id: "x", gate: "X", qubits: [0] }] };
+  const outer: CustomGateDefinition = {
+    id: "outer",
+    name: "Outer",
+    qubitCount: 2,
+    steps: [
+      { id: "a", gate: "H", qubits: [0] },
+      { id: "b", gate: "CUSTOM", customGateId: "inner", qubits: [1] },
+    ],
+  };
+  const canvas: BuilderStep[] = [
+    { id: "before", gate: "H", qubits: [2] },
+    { id: "target", gate: "CUSTOM", customGateId: "outer", qubits: [3, 4] },
+    { id: "after", gate: "M", qubits: [3] },
+  ];
+  const ungrouped = ungroupCustomGateStep(canvas, "target", [outer, nested]);
+  assert.ok(ungrouped);
+  assert.equal(ungrouped.length, 4);
+  assert.equal(ungrouped[0].id, "before");
+  // outer's local qubit 0 -> global 3, local 1 -> global 4.
+  assert.deepEqual({ gate: ungrouped[1].gate, qubits: ungrouped[1].qubits }, { gate: "H", qubits: [3] });
+  // The nested block stays a CUSTOM step — ungroup is one level, not a full flatten.
+  assert.deepEqual({ gate: ungrouped[2].gate, qubits: ungrouped[2].qubits, customGateId: ungrouped[2].customGateId }, { gate: "CUSTOM", qubits: [4], customGateId: "inner" });
+  assert.equal(ungrouped[3].id, "after");
+  // Replacement steps get fresh ids, distinct from both the original definition's and each other's.
+  assert.notEqual(ungrouped[1].id, "a");
+  assert.notEqual(ungrouped[1].id, ungrouped[2].id);
+
+  assert.equal(ungroupCustomGateStep(canvas, "missing", [outer, nested]), null);
+  assert.equal(ungroupCustomGateStep(canvas, "before", [outer, nested]), null); // not a CUSTOM step
+  const opaqueCanvas: BuilderStep[] = [{ id: "op", gate: "CUSTOM", customGateId: "opaque-gate", qubits: [0] }];
+  const opaqueGate: CustomGateDefinition = { id: "opaque-gate", name: "SDK op", qubitCount: 1, steps: [{ id: "z", gate: "X", qubits: [0] }], opaque: true };
+  assert.equal(ungroupCustomGateStep(opaqueCanvas, "op", [opaqueGate]), null);
 });

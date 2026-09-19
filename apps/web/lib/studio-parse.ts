@@ -1,4 +1,4 @@
-import { BUILDER_GATES, createBuilderStepId, TWO_QUBIT_GATES, type BuilderStep, type BuiltinBuilderGate } from "./studio-builder.ts";
+import { BUILDER_GATES, builderGateArity, createBuilderStepId, type BuilderStep, type BuiltinBuilderGate } from "./studio-builder.ts";
 import { parseGateAngle } from "./gate-angle.ts";
 
 export interface ParsedBuilderCircuit {
@@ -47,20 +47,22 @@ export const MAX_VIEWABLE_QUBITS = 4096;
 export const MAX_VIEWABLE_STEPS = 4096;
 
 const QISKIT_GATE_METHODS: Record<string, BuiltinBuilderGate> = {
-  h: "H", x: "X", y: "Y", z: "Z", s: "S", t: "T",
-  rx: "RX", ry: "RY", rz: "RZ",
-  cx: "CX", cz: "CZ", swap: "SWAP",
+  h: "H", x: "X", y: "Y", z: "Z", s: "S", t: "T", sdg: "SDG", tdg: "TDG",
+  rx: "RX", ry: "RY", rz: "RZ", p: "P",
+  cx: "CX", cz: "CZ", swap: "SWAP", cp: "CP", rzz: "RZZ",
+  ccx: "CCX",
 };
 
 const PENNYLANE_GATE_NAMES: Record<string, BuiltinBuilderGate> = {
   Hadamard: "H", PauliX: "X", PauliY: "Y", PauliZ: "Z", S: "S", T: "T",
-  RX: "RX", RY: "RY", RZ: "RZ",
-  CNOT: "CX", CZ: "CZ", SWAP: "SWAP",
+  RX: "RX", RY: "RY", RZ: "RZ", PhaseShift: "P",
+  CNOT: "CX", CZ: "CZ", SWAP: "SWAP", ControlledPhaseShift: "CP", IsingZZ: "RZZ",
+  Toffoli: "CCX",
 };
 
 const CIRQ_GATE_NAMES: Record<string, BuiltinBuilderGate> = {
   H: "H", X: "X", Y: "Y", Z: "Z", S: "S", T: "T",
-  CNOT: "CX", CZ: "CZ", SWAP: "SWAP",
+  CNOT: "CX", CZ: "CZ", SWAP: "SWAP", CCX: "CCX",
 };
 
 const CIRQ_ROTATIONS: Record<string, BuiltinBuilderGate> = { rx: "RX", ry: "RY", rz: "RZ" };
@@ -75,7 +77,7 @@ const CIRQ_ROTATIONS: Record<string, BuiltinBuilderGate> = { rx: "RX", ry: "RY",
  */
 export function parseBuilderCircuit(
   code: string,
-  framework: "qiskit" | "pennylane" | "cirq" | "openqasm3",
+  framework: "qiskit" | "pennylane" | "cirq" | "openqasm3" | "openqasm2",
   // No editor-shaped ceiling any more; the bound that remains is what can
   // actually be drawn. Callers doing costlier work — simulation, conversion —
   // pass their own, narrower capability budget.
@@ -92,7 +94,9 @@ export function parseBuilderCircuit(
       ? parsePennylane(lines)
       : framework === "cirq"
         ? parseCirq(lines)
-        : parseOpenQasm3(lines);
+        : framework === "openqasm3"
+          ? parseOpenQasm3(lines)
+          : parseOpenQasm2(lines);
   if (!parsed) return null;
   let qubitCount = Math.max(parsed.qubitCount, 1);
   for (const step of parsed.steps) {
@@ -106,12 +110,34 @@ export function parseBuilderCircuit(
 }
 
 const OPENQASM_GATE_NAMES: Record<string, BuiltinBuilderGate> = {
-  h: "H", x: "X", y: "Y", z: "Z", s: "S", t: "T",
-  rx: "RX", ry: "RY", rz: "RZ",
-  cx: "CX", cz: "CZ", swap: "SWAP",
+  h: "H", x: "X", y: "Y", z: "Z", s: "S", t: "T", sdg: "SDG", tdg: "TDG",
+  rx: "RX", ry: "RY", rz: "RZ", p: "P",
+  cx: "CX", cz: "CZ", swap: "SWAP", cp: "CP", rzz: "RZZ",
+  ccx: "CCX",
 };
 
-function parseOpenQasm3(lines: string[]): ParsedBuilderCircuit | null {
+/**
+ * `stdgates.inc` has no native `rzz`, so `generateBuilderCode` prefixes a
+ * circuit that uses one with this exact literal definition (see
+ * `RZZ_QASM_GATE_DEFINITION` in studio-builder.ts — the two are kept in sync
+ * by both being spelled out, since importing one into the other would blur
+ * which file owns the canonical shape). A circuit round-tripped through the
+ * Code tab must recognize and strip it before the per-line parser below,
+ * which otherwise fails closed on the first unrecognized `gate` line. An
+ * `rzz(...)` call with no matching preamble is intentionally left
+ * unrecognized — see the generic `call` fallback below.
+ */
+function stripRzzPreamble(lines: string[]): string[] {
+  const expected = ["gate rzz(theta) a, b {", "cx a, b;", "rz(theta) b;", "cx a, b;", "}"];
+  const start = lines.indexOf(expected[0]);
+  if (start === -1) return lines;
+  const body = lines.slice(start, start + expected.length);
+  if (body.length !== expected.length || !body.every((line, index) => line === expected[index])) return lines;
+  return [...lines.slice(0, start), ...lines.slice(start + expected.length)];
+}
+
+function parseOpenQasm3(rawLines: string[]): ParsedBuilderCircuit | null {
+  const lines = stripRzzPreamble(rawLines);
   let qubitCount = 0;
   let bitCount: number | null = null;
   let measured = false;
@@ -130,7 +156,7 @@ function parseOpenQasm3(lines: string[]): ParsedBuilderCircuit | null {
       measured = true;
       continue;
     }
-    const rotation = /^(rx|ry|rz)\((.+)\)\s+q\[(\d+)\]\s*;$/.exec(line);
+    const rotation = /^(rx|ry|rz|p)\((.+)\)\s+q\[(\d+)\]\s*;$/.exec(line);
     if (rotation) {
       const angle = parseAngle(rotation[2]);
       if (angle === null) return null;
@@ -139,7 +165,21 @@ function parseOpenQasm3(lines: string[]): ParsedBuilderCircuit | null {
       steps.push(step);
       continue;
     }
-    const call = /^(h|x|y|z|s|t|cx|cz|swap)\s+(.+)\s*;$/.exec(line);
+    const twoQubitRotation = /^(cp|rzz)\((.+)\)\s+(.+)\s*;$/.exec(line);
+    if (twoQubitRotation) {
+      const angle = parseAngle(twoQubitRotation[2]);
+      if (angle === null) return null;
+      const operands = splitArgs(twoQubitRotation[3]).map((operand) => {
+        const match = /^q\[(\d+)\]$/.exec(operand);
+        return match ? Number(match[1]) : null;
+      });
+      if (operands.some((qubit) => qubit === null)) return null;
+      const step = gateStep(OPENQASM_GATE_NAMES[twoQubitRotation[1]], operands as number[], angle);
+      if (!step) return null;
+      steps.push(step);
+      continue;
+    }
+    const call = /^(h|x|y|z|s|t|sdg|tdg|cx|cz|swap|ccx)\s+(.+)\s*;$/.exec(line);
     if (!call) return null;
     const gate = OPENQASM_GATE_NAMES[call[1]];
     const operands = splitArgs(call[2]).map((operand) => {
@@ -156,6 +196,124 @@ function parseOpenQasm3(lines: string[]): ParsedBuilderCircuit | null {
   return { qubitCount, steps: measured ? [...steps, ...measurementSteps(qubitCount)] : steps };
 }
 
+const OPENQASM2_ROTATION_NAMES: Record<string, BuiltinBuilderGate> = { rx: "RX", ry: "RY", rz: "RZ", p: "P", u1: "P" };
+const OPENQASM2_TWO_QUBIT_ROTATION_NAMES: Record<string, BuiltinBuilderGate> = { cp: "CP", cu1: "CP", rzz: "RZZ" };
+const OPENQASM2_CALL_NAMES: Record<string, BuiltinBuilderGate> = {
+  h: "H", x: "X", y: "Y", z: "Z", s: "S", t: "T", sdg: "SDG", tdg: "TDG",
+  cx: "CX", cz: "CZ", swap: "SWAP", ccx: "CCX",
+};
+
+/**
+ * Reconstruct builder steps from a bounded OpenQASM 2.0 subset — the format
+ * most published circuits are actually written in. This is a strict, editable
+ * reader in the same spirit as `parseOpenQasm3` above: one qubit register, one
+ * classical register, a fixed gate vocabulary with 1:1 native builder gates
+ * (never a decomposition — see `appendStandardGate` in circuit-conversion.ts
+ * for the permissive/decomposing SDK-interchange reader, which this is not),
+ * and a single trailing measurement of every declared qubit. Anything outside
+ * that — a `gate` definition, `if`, `reset`, `u`/`u2`/`u3`, a second register,
+ * a partial measurement — returns null rather than drawing a lie.
+ *
+ * `p`/`u1` and `cp`/`cu1` are qelib1.inc aliases for the same native P/CP
+ * builder gates; both map onto the identical BuilderStep so the round trip
+ * through `generateBuilderCode`'s OpenQASM 3 emitter (which only ever writes
+ * `p`/`cp`) is exact regardless of which alias the source used.
+ */
+function parseOpenQasm2(lines: string[]): ParsedBuilderCircuit | null {
+  let headerSeen = false;
+  let qubitRegisterName: string | null = null;
+  let qubitCount = 0;
+  let bitRegisterName: string | null = null;
+  let bitCount: number | null = null;
+  let measuring = false;
+  const measuredQubits = new Set<number>();
+  const steps: BuilderStep[] = [];
+
+  const resolveOperand = (operand: string): number | null => {
+    if (!qubitRegisterName) return null;
+    const match = /^([A-Za-z_]\w*)\[(\d+)\]$/.exec(operand.trim());
+    return match && match[1] === qubitRegisterName ? Number(match[2]) : null;
+  };
+
+  for (const line of lines) {
+    if (/^OPENQASM\s+2(?:\.0)?\s*;$/i.test(line)) { headerSeen = true; continue; }
+    if (/^include\s+["']qelib1\.inc["']\s*;$/i.test(line)) continue;
+    if (/^barrier\b.*;$/.test(line)) continue;
+
+    const qreg = /^qreg\s+([A-Za-z_]\w*)\[(\d+)\]\s*;$/.exec(line);
+    if (qreg) {
+      if (qubitRegisterName !== null || Number(qreg[2]) < 1) return null;
+      qubitRegisterName = qreg[1];
+      qubitCount = Number(qreg[2]);
+      continue;
+    }
+    const creg = /^creg\s+([A-Za-z_]\w*)\[(\d+)\]\s*;$/.exec(line);
+    if (creg) {
+      if (bitRegisterName !== null || Number(creg[2]) < 1) return null;
+      bitRegisterName = creg[1];
+      bitCount = Number(creg[2]);
+      continue;
+    }
+    if (!qubitRegisterName) return null;
+
+    if (bitRegisterName) {
+      const whole = new RegExp(`^measure\\s+${qubitRegisterName}\\s*->\\s*${bitRegisterName}\\s*;$`).exec(line);
+      if (whole) {
+        if (measuring || bitCount !== qubitCount) return null;
+        for (let qubit = 0; qubit < qubitCount; qubit += 1) measuredQubits.add(qubit);
+        measuring = true;
+        continue;
+      }
+      const indexed = new RegExp(`^measure\\s+${qubitRegisterName}\\[(\\d+)\\]\\s*->\\s*${bitRegisterName}\\[(\\d+)\\]\\s*;$`).exec(line);
+      if (indexed) {
+        const qubitIndex = Number(indexed[1]);
+        const bitIndex = Number(indexed[2]);
+        if (qubitIndex !== bitIndex || qubitIndex >= qubitCount || bitCount === null || bitIndex >= bitCount) return null;
+        if (measuredQubits.has(qubitIndex)) return null;
+        measuredQubits.add(qubitIndex);
+        measuring = true;
+        continue;
+      }
+    }
+    if (measuring) return null;
+
+    const rotation = /^(rx|ry|rz|p|u1)\((.+)\)\s+(.+)\s*;$/.exec(line);
+    if (rotation) {
+      const angle = parseAngle(rotation[2]);
+      if (angle === null) return null;
+      const qubit = resolveOperand(rotation[3]);
+      if (qubit === null) return null;
+      const step = gateStep(OPENQASM2_ROTATION_NAMES[rotation[1]], [qubit], angle);
+      if (!step) return null;
+      steps.push(step);
+      continue;
+    }
+    const twoQubitRotation = /^(cp|cu1|rzz)\((.+)\)\s+(.+)\s*;$/.exec(line);
+    if (twoQubitRotation) {
+      const angle = parseAngle(twoQubitRotation[2]);
+      if (angle === null) return null;
+      const operands = splitArgs(twoQubitRotation[3]).map(resolveOperand);
+      if (operands.some((qubit) => qubit === null)) return null;
+      const step = gateStep(OPENQASM2_TWO_QUBIT_ROTATION_NAMES[twoQubitRotation[1]], operands as number[], angle);
+      if (!step) return null;
+      steps.push(step);
+      continue;
+    }
+    const call = /^(h|x|y|z|s|t|sdg|tdg|cx|cz|swap|ccx)\s+(.+)\s*;$/.exec(line);
+    if (!call) return null;
+    const operands = splitArgs(call[2]).map(resolveOperand);
+    if (operands.some((qubit) => qubit === null)) return null;
+    const step = gateStep(OPENQASM2_CALL_NAMES[call[1]], operands as number[]);
+    if (!step) return null;
+    steps.push(step);
+  }
+
+  if (!headerSeen || !qubitRegisterName) return null;
+  if (measuring && measuredQubits.size !== qubitCount) return null;
+  if (steps.some((step) => step.qubits.some((qubit) => qubit >= qubitCount))) return null;
+  return { qubitCount, steps: measuring ? [...steps, ...measurementSteps(qubitCount)] : steps };
+}
+
 function measurementSteps(qubitCount: number): BuilderStep[] {
   return measurementStepsForQubits(Array.from({ length: qubitCount }, (_, qubit) => qubit));
 }
@@ -166,9 +324,8 @@ function measurementStepsForQubits(qubits: number[]): BuilderStep[] {
 
 function gateStep(gate: BuiltinBuilderGate, qubits: number[], param?: string): BuilderStep | null {
   if (!(BUILDER_GATES as string[]).includes(gate)) return null;
-  const expectsTwo = TWO_QUBIT_GATES.includes(gate);
-  if (expectsTwo && (qubits.length !== 2 || qubits[0] === qubits[1])) return null;
-  if (!expectsTwo && qubits.length !== 1) return null;
+  if (qubits.length !== builderGateArity(gate)) return null;
+  if (new Set(qubits).size !== qubits.length) return null;
   return { id: createBuilderStepId(), gate, qubits, ...(param ? { param } : {}) };
 }
 
@@ -196,12 +353,22 @@ function parseQiskit(lines: string[]): ParsedBuilderCircuit | null {
     const gate = QISKIT_GATE_METHODS[call[1]];
     if (!gate) return null;
     const args = splitArgs(call[2]);
-    if (gate === "RX" || gate === "RY" || gate === "RZ") {
+    if (gate === "RX" || gate === "RY" || gate === "RZ" || gate === "P") {
       if (args.length !== 2) return null;
       const angle = parseAngle(args[0]);
       const qubit = parseIndex(args[1]);
       if (angle === null || qubit === null) return null;
       const step = gateStep(gate, [qubit], angle);
+      if (!step) return null;
+      steps.push(step);
+      continue;
+    }
+    if (gate === "CP" || gate === "RZZ") {
+      if (args.length !== 3) return null;
+      const angle = parseAngle(args[0]);
+      const qubits = [parseIndex(args[1]), parseIndex(args[2])];
+      if (angle === null || qubits.some((qubit) => qubit === null)) return null;
+      const step = gateStep(gate, qubits as number[], angle);
       if (!step) return null;
       steps.push(step);
       continue;
@@ -248,18 +415,41 @@ function parsePennylane(lines: string[]): ParsedBuilderCircuit | null {
       returnedSeen = true;
       continue;
     }
+    // PennyLane has no dedicated dagger gates, so a generated SDG/TDG round-trips
+    // as `qml.adjoint(qml.S)(wires=...)` — a double call the generic `qml.NAME(...)`
+    // pattern below cannot represent, so it is matched first.
+    const adjoint = /^qml\.adjoint\(qml\.(S|T)\)\(wires=(\S+)\)$/.exec(line);
+    if (adjoint) {
+      const qubit = parseIndex(adjoint[2]);
+      if (qubit === null) return null;
+      const step = gateStep(adjoint[1] === "S" ? "SDG" : "TDG", [qubit]);
+      if (!step) return null;
+      steps.push(step);
+      continue;
+    }
     const call = /^qml\.(\w+)\((.*)\)$/.exec(line);
     if (!call) return null;
     const gate = PENNYLANE_GATE_NAMES[call[1]];
     if (!gate) return null;
     const rawArgs = call[2];
-    if (gate === "RX" || gate === "RY" || gate === "RZ") {
+    if (gate === "RX" || gate === "RY" || gate === "RZ" || gate === "P") {
       const rotation = /^(.+?),\s*wires\s*=\s*(\S+)$/.exec(rawArgs);
       if (!rotation) return null;
       const angle = parseAngle(rotation[1]);
       const qubit = parseIndex(rotation[2]);
       if (angle === null || qubit === null) return null;
       const step = gateStep(gate, [qubit], angle);
+      if (!step) return null;
+      steps.push(step);
+      continue;
+    }
+    if (gate === "CP" || gate === "RZZ") {
+      const twoQubitRotation = /^(.+?),\s*wires\s*=\s*(\[.+\])$/.exec(rawArgs);
+      if (!twoQubitRotation) return null;
+      const angle = parseAngle(twoQubitRotation[1]);
+      const wires = parseWires(twoQubitRotation[2]);
+      if (angle === null || !wires || wires.length !== 2) return null;
+      const step = gateStep(gate, wires, angle);
       if (!step) return null;
       steps.push(step);
       continue;
@@ -299,6 +489,46 @@ function parseCirq(lines: string[]): ParsedBuilderCircuit | null {
       const angle = parseAngle(rotation[2]);
       if (angle === null) return null;
       const step = gateStep(CIRQ_ROTATIONS[rotation[1]], [Number(rotation[3])], angle);
+      if (!step) return null;
+      steps.push(step);
+      continue;
+    }
+    // The four shapes below all start with "cirq." and would otherwise
+    // syntactically (but wrongly) match the generic `call` regex below with an
+    // unmapped gate name ("ZPowGate", "CZPowGate", …), which returns null
+    // rather than falling through — so each must be tried first.
+    const dagger = /^\(cirq\.(S|T)\*\*-1\)\(qubits\[(\d+)\]\)$/.exec(line);
+    if (dagger) {
+      const step = gateStep(dagger[1] === "S" ? "SDG" : "TDG", [Number(dagger[2])]);
+      if (!step) return null;
+      steps.push(step);
+      continue;
+    }
+    const phase = /^cirq\.ZPowGate\(exponent=\((.+)\)\/pi\)\.on\(qubits\[(\d+)\]\)$/.exec(line);
+    if (phase) {
+      const angle = parseAngle(phase[1]);
+      if (angle === null) return null;
+      const step = gateStep("P", [Number(phase[2])], angle);
+      if (!step) return null;
+      steps.push(step);
+      continue;
+    }
+    const controlledPhase = /^cirq\.CZPowGate\(exponent=\((.+)\)\/pi\)\.on\((.+)\)$/.exec(line);
+    if (controlledPhase) {
+      const angle = parseAngle(controlledPhase[1]);
+      const qubits = splitArgs(controlledPhase[2]).map(parseIndex);
+      if (angle === null || qubits.some((qubit) => qubit === null)) return null;
+      const step = gateStep("CP", qubits as number[], angle);
+      if (!step) return null;
+      steps.push(step);
+      continue;
+    }
+    const zz = /^cirq\.rzz\((.+?)\)\.on\((.+)\)$/.exec(line);
+    if (zz) {
+      const angle = parseAngle(zz[1]);
+      const qubits = splitArgs(zz[2]).map(parseIndex);
+      if (angle === null || qubits.some((qubit) => qubit === null)) return null;
+      const step = gateStep("RZZ", qubits as number[], angle);
       if (!step) return null;
       steps.push(step);
       continue;

@@ -3,6 +3,29 @@ import { allCircuitConversionResults, parseCircuitSource } from "./circuit-conve
 import { MAX_PARSABLE_QUBITS, type ParsedBuilderCircuit } from "./studio-parse.ts";
 import { TIER_LIMITS, type TierLimits } from "./account-tier.ts";
 import { scopedStorage } from "./user-storage.ts";
+// The pure statevector kernel — extracted so a public, unauthenticated
+// component (the Atlas worked-example figure) can compute probabilities
+// without importing this file's account-tier.ts / user-storage.ts edges. See
+// statevector-kernel.ts's own doc comment. Re-exported below unchanged, so
+// every existing caller of this file sees no behavior change.
+import {
+  bitstringFor,
+  executeCircuit,
+  idealProbabilities,
+  idealStatevector,
+  singleQubitUnitary,
+  type ComplexMatrix,
+  type SingleQubitUnitaryGate,
+} from "./statevector-kernel.ts";
+
+export {
+  bitstringFor,
+  idealProbabilities,
+  idealStatevector,
+  singleQubitUnitary,
+  type ComplexMatrix,
+  type SingleQubitUnitaryGate,
+};
 
 /**
  * A deliberately small, in-browser execution lane for Studio. It never runs
@@ -88,8 +111,6 @@ export type CpuSimulationRequest = {
   /** Injectable only for deterministic unit tests. */
   id?: string;
 };
-
-export type ComplexMatrix = readonly [number, number, number, number, number, number, number, number];
 
 export function sourceFingerprint(source: string): string {
   // FNV-1a is not a security primitive. It is a compact, stable provenance
@@ -201,41 +222,6 @@ export function runCpuSimulation(
   };
 }
 
-export type SingleQubitUnitaryGate = "H" | "X" | "Y" | "Z" | "S" | "T" | "RX" | "RY" | "RZ";
-
-/**
- * The 2×2 unitary this kernel applies for a one-qubit gate, as
- * [re00, im00, re01, im01, re10, im10, re11, im11]. Exported so Studio's gate
- * inspector prints the matrix that actually runs, not a second copy of it.
- */
-export function singleQubitUnitary(gate: SingleQubitUnitaryGate, theta = 0): ComplexMatrix {
-  switch (gate) {
-    case "H": return HADAMARD;
-    case "X": return PAULI_X;
-    case "Y": return PAULI_Y;
-    case "Z": return PAULI_Z;
-    case "S": return PHASE_S;
-    case "T": return PHASE_T;
-    case "RX": return rotationX(theta);
-    case "RY": return rotationY(theta);
-    case "RZ": return rotationZ(theta);
-  }
-}
-
-/**
- * Ideal outcome probabilities, |amplitude|² per basis index, from the same kernel
- * the CPU lane samples. Measurements are terminal here exactly as they are there.
- * Throws where the kernel does: custom gates, and angles outside its syntax.
- */
-export function idealProbabilities(circuit: ParsedBuilderCircuit): Float64Array {
-  const state = executeCircuit(circuit);
-  const probabilities = new Float64Array(state.real.length);
-  for (let index = 0; index < probabilities.length; index += 1) {
-    probabilities[index] = state.real[index] ** 2 + state.imaginary[index] ** 2;
-  }
-  return probabilities;
-}
-
 export function loadCpuSimulationRecords(artifactId: string): CpuSimulationRecord[] {
   return loadAllRecords()[artifactId] ?? [];
 }
@@ -260,91 +246,6 @@ export function saveCpuSimulationRecord(record: CpuSimulationRecord): boolean {
   }
 }
 
-function executeCircuit(circuit: ParsedBuilderCircuit): { real: Float64Array; imaginary: Float64Array } {
-  const dimension = 1 << circuit.qubitCount;
-  const real = new Float64Array(dimension);
-  const imaginary = new Float64Array(dimension);
-  real[0] = 1;
-
-  for (const step of circuit.steps) {
-    const [first, second] = step.qubits;
-    switch (step.gate) {
-      case "H": applySingleQubit(real, imaginary, first, HADAMARD); break;
-      case "X": applySingleQubit(real, imaginary, first, PAULI_X); break;
-      case "Y": applySingleQubit(real, imaginary, first, PAULI_Y); break;
-      case "Z": applySingleQubit(real, imaginary, first, PAULI_Z); break;
-      case "S": applySingleQubit(real, imaginary, first, PHASE_S); break;
-      case "T": applySingleQubit(real, imaginary, first, PHASE_T); break;
-      case "RX": applySingleQubit(real, imaginary, first, rotationX(angle(step.param))); break;
-      case "RY": applySingleQubit(real, imaginary, first, rotationY(angle(step.param))); break;
-      case "RZ": applySingleQubit(real, imaginary, first, rotationZ(angle(step.param))); break;
-      case "CX": applyControlledX(real, imaginary, first, second); break;
-      case "CZ": applyControlledZ(real, imaginary, first, second); break;
-      case "SWAP": applySwap(real, imaginary, first, second); break;
-      // Builder parsers only emit terminal measurements. Sampling happens after
-      // the unitary evolution, so measurement is represented in the record.
-      case "M": break;
-      case "CUSTOM": throw new Error("Custom gates are not eligible for the bounded CPU simulator.");
-    }
-  }
-  return { real, imaginary };
-}
-
-function applySingleQubit(real: Float64Array, imaginary: Float64Array, qubit: number, matrix: ComplexMatrix) {
-  const mask = 1 << qubit;
-  for (let low = 0; low < real.length; low += mask << 1) {
-    for (let offset = 0; offset < mask; offset += 1) {
-      const zero = low + offset;
-      const one = zero + mask;
-      const zeroReal = real[zero];
-      const zeroImaginary = imaginary[zero];
-      const oneReal = real[one];
-      const oneImaginary = imaginary[one];
-      real[zero] = matrix[0] * zeroReal - matrix[1] * zeroImaginary + matrix[2] * oneReal - matrix[3] * oneImaginary;
-      imaginary[zero] = matrix[0] * zeroImaginary + matrix[1] * zeroReal + matrix[2] * oneImaginary + matrix[3] * oneReal;
-      real[one] = matrix[4] * zeroReal - matrix[5] * zeroImaginary + matrix[6] * oneReal - matrix[7] * oneImaginary;
-      imaginary[one] = matrix[4] * zeroImaginary + matrix[5] * zeroReal + matrix[6] * oneImaginary + matrix[7] * oneReal;
-    }
-  }
-}
-
-function applyControlledX(real: Float64Array, imaginary: Float64Array, control: number, target: number) {
-  const controlMask = 1 << control;
-  const targetMask = 1 << target;
-  for (let index = 0; index < real.length; index += 1) {
-    if ((index & controlMask) === 0 || (index & targetMask) !== 0) continue;
-    const paired = index | targetMask;
-    swapAmplitude(real, imaginary, index, paired);
-  }
-}
-
-function applyControlledZ(real: Float64Array, imaginary: Float64Array, control: number, target: number) {
-  const mask = (1 << control) | (1 << target);
-  for (let index = 0; index < real.length; index += 1) {
-    if ((index & mask) === mask) {
-      real[index] = -real[index];
-      imaginary[index] = -imaginary[index];
-    }
-  }
-}
-
-function applySwap(real: Float64Array, imaginary: Float64Array, first: number, second: number) {
-  const firstMask = 1 << first;
-  const secondMask = 1 << second;
-  for (let index = 0; index < real.length; index += 1) {
-    const firstBit = index & firstMask;
-    const secondBit = index & secondMask;
-    if (Boolean(firstBit) === Boolean(secondBit)) continue;
-    const paired = index ^ firstMask ^ secondMask;
-    if (index < paired) swapAmplitude(real, imaginary, index, paired);
-  }
-}
-
-function swapAmplitude(real: Float64Array, imaginary: Float64Array, first: number, second: number) {
-  [real[first], real[second]] = [real[second], real[first]];
-  [imaginary[first], imaginary[second]] = [imaginary[second], imaginary[first]];
-}
-
 function sampleCounts(state: { real: Float64Array; imaginary: Float64Array }, qubitCount: number, shots: number, seed: number): Record<string, number> {
   const cumulative = new Float64Array(state.real.length);
   let total = 0;
@@ -366,47 +267,6 @@ function sampleCounts(state: { real: Float64Array; imaginary: Float64Array }, qu
   }
   return Object.fromEntries(Object.entries(counts).sort(([left], [right]) => left.localeCompare(right)));
 }
-
-/** Basis index → bitstring, highest qubit first (q(n-1) … q0), as every record prints it. */
-export function bitstringFor(index: number, qubitCount: number): string {
-  let result = "";
-  for (let qubit = qubitCount - 1; qubit >= 0; qubit -= 1) result += (index & (1 << qubit)) === 0 ? "0" : "1";
-  return result;
-}
-
-function angle(raw: string | undefined): number {
-  if (!raw) throw new Error("Rotation gate is missing its angle.");
-  const value = raw.trim().replaceAll(/\s+/g, "");
-  if (/^\d+(?:\.\d+)?$/.test(value)) return Number(value);
-  const match = /^(?:(\d+(?:\.\d+)?)\*)?pi(?:\/(\d+(?:\.\d+)?))?$/.exec(value);
-  if (!match) throw new Error("Rotation angle is outside the bounded simulation syntax.");
-  return (match[1] ? Number(match[1]) : 1) * Math.PI / (match[2] ? Number(match[2]) : 1);
-}
-
-function rotationX(theta: number): ComplexMatrix {
-  const cosine = Math.cos(theta / 2);
-  const sine = Math.sin(theta / 2);
-  return [cosine, 0, 0, -sine, 0, -sine, cosine, 0];
-}
-
-function rotationY(theta: number): ComplexMatrix {
-  const cosine = Math.cos(theta / 2);
-  const sine = Math.sin(theta / 2);
-  return [cosine, 0, -sine, 0, sine, 0, cosine, 0];
-}
-
-function rotationZ(theta: number): ComplexMatrix {
-  const cosine = Math.cos(theta / 2);
-  const sine = Math.sin(theta / 2);
-  return [cosine, -sine, 0, 0, 0, 0, cosine, sine];
-}
-
-const HADAMARD: ComplexMatrix = [Math.SQRT1_2, 0, Math.SQRT1_2, 0, Math.SQRT1_2, 0, -Math.SQRT1_2, 0];
-const PAULI_X: ComplexMatrix = [0, 0, 1, 0, 1, 0, 0, 0];
-const PAULI_Y: ComplexMatrix = [0, 0, 0, -1, 0, 1, 0, 0];
-const PAULI_Z: ComplexMatrix = [1, 0, 0, 0, 0, 0, -1, 0];
-const PHASE_S: ComplexMatrix = [1, 0, 0, 0, 0, 0, 0, 1];
-const PHASE_T: ComplexMatrix = [1, 0, 0, 0, 0, 0, Math.SQRT1_2, Math.SQRT1_2];
 
 function browserSeed(): number {
   return Math.floor(Math.random() * (MAX_CPU_SEED + 1));

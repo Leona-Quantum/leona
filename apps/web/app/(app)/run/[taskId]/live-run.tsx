@@ -13,6 +13,7 @@ import {
   type RunEvent,
 } from "@majorana/ui";
 import { ChatMarkdown } from "../../../../components/chat-markdown";
+import { parseSseBlock } from "../../../../lib/sse-events";
 import { runToFollow } from "../../../../lib/conversation-follow";
 import { refusalSentence, responseString, submittedId } from "../../../../lib/api-error.ts";
 import { QUEUE_POLL_INTERVAL_MS, isWaitingForWorker, queuePositionLabel } from "../../../../lib/queue-position";
@@ -243,19 +244,6 @@ export type Turn = {
   verificationSummary: VerificationSummary | null;
   terminal: boolean;
 };
-
-function parseEvent(block: string): { id: number | null; data: string } | null {
-  const lines = block.split("\n");
-  if (lines.some((line) => line.startsWith(":"))) return null;
-  const idLine = lines.find((line) => line.startsWith("id:"));
-  const data = lines
-    .filter((line) => line.startsWith("data:"))
-    .map((line) => line.slice("data:".length).trimStart())
-    .join("\n");
-  if (!data) return null;
-  const parsedId = idLine ? Number(idLine.slice("id:".length).trim()) : NaN;
-  return { id: Number.isFinite(parsedId) ? parsedId : null, data };
-}
 
 function answerFromEvents(events: WireEvent[], locale: PublicLocale = "en"): string | null {
   const completed = [...events].reverse().find((event) => event.type === "chat.completed" && event.text);
@@ -567,7 +555,7 @@ export function LiveRun({ taskId, locale = "en" }: { taskId: string; locale?: Pu
             const blocks = buffer.split("\n\n");
             buffer = blocks.pop() ?? "";
             for (const block of blocks) {
-              const parsed = parseEvent(block);
+              const parsed = parseSseBlock(block);
               if (!parsed) continue;
               const event = JSON.parse(parsed.data) as WireEvent;
               attempts = 0;

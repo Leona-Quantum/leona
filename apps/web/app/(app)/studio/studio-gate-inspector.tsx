@@ -81,6 +81,7 @@ export function GateInspectorCard({
               : copy.inspectorNoMatrixAngle}
         </p>
       )}
+      {step.gate === "CUSTOM" && custom?.opaque ? <p className="mj-gate-inspector-note">{copy.blockOpaqueNote}</p> : null}
     </div>
   );
 }

@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { describe, it } from "node:test";
+import { afterEach, beforeEach, describe, it } from "node:test";
 
 import {
   CONTACT_MAX_PER_WINDOW,
@@ -201,5 +201,92 @@ describe("cf-connecting-ip, once leonaqt.com is proxied through Cloudflare (ai-o
     const result = contactAddress(headers);
     assert.equal(result, "203.0.113.7", "the first entry, not the full list nor the forged header");
     assert.notEqual(result, "203.0.113.7, 192.0.2.55", "must not use the whole list string as the key");
+  });
+});
+
+// The GCP migration (ai-ops gcp-migration-20260912) moves this app off Vercel and
+// behind Google's external Application Load Balancer. Neither
+// x-vercel-forwarded-for nor x-real-ip exists there, so EVERY case above takes
+// its else-branch and the function used to land on the caller-written first
+// entry of x-forwarded-for — the exact bug PR 702's review caught, reintroduced
+// by a change of platform rather than a change of code, with nothing to notice
+// it: no error, no exception, and a green suite, because every test above
+// supplies a Vercel header. The first case below is confirmed to fail against
+// the code as it stood before this fix (run directly against that version, not
+// assumed): it returned "1.2.3.4", the value the caller wrote.
+describe("contactAddress behind Google's load balancer", () => {
+  const hopsEnv = process.env.LEONA_XFF_TRUSTED_HOPS;
+  beforeEach(() => {
+    process.env.LEONA_XFF_TRUSTED_HOPS = "1"; // client, then the load balancer
+  });
+  afterEach(() => {
+    if (hopsEnv === undefined) delete process.env.LEONA_XFF_TRUSTED_HOPS;
+    else process.env.LEONA_XFF_TRUSTED_HOPS = hopsEnv;
+  });
+
+  it("ignores a caller-written leading entry and meters the address Google observed", () => {
+    // Google's load balancer PRESERVES the arriving x-forwarded-for and appends
+    // to it, unlike Vercel's edge, which overwrites its own header. So the first
+    // entry here is whatever the caller sent and must never be the key.
+    const headers = new Headers({ "x-forwarded-for": "1.2.3.4, 203.0.113.7, 35.191.0.1" });
+    const result = contactAddress(headers);
+    assert.equal(result, "203.0.113.7", "second from the right: the peer the load balancer saw");
+    assert.notEqual(result, "1.2.3.4", "the caller-written entry must not become the key");
+  });
+
+  it("meters the peer when no caller entry was sent", () => {
+    const headers = new Headers({ "x-forwarded-for": "203.0.113.7, 35.191.0.1" });
+    assert.equal(contactAddress(headers), "203.0.113.7");
+  });
+
+  it("honours cf-connecting-ip when Google's own witness says Cloudflare connected", () => {
+    const headers = new Headers({
+      "x-forwarded-for": "1.2.3.4, 104.20.1.1, 35.191.0.1", // peer is a Cloudflare edge address
+      "cf-connecting-ip": "198.51.100.9",
+    });
+    assert.equal(contactAddress(headers), "198.51.100.9");
+  });
+
+  it("ignores a forged cf-connecting-ip when the peer is not a Cloudflare address", () => {
+    const headers = new Headers({
+      "x-forwarded-for": "1.2.3.4, 203.0.113.7, 35.191.0.1",
+      "cf-connecting-ip": "198.51.100.4", // forged
+    });
+    assert.equal(contactAddress(headers), "203.0.113.7");
+  });
+
+  it("meters a request that did not come through the load balancer as one shared bucket", () => {
+    // Too few entries to contain a peer at the configured distance: the request
+    // reached the container by some other route. Sharing one bucket throttles
+    // those callers together; falling back to the header's own first entry would
+    // hand the caller the key, which is the bypass, not a degradation.
+    const headers = new Headers({ "x-forwarded-for": "1.2.3.4" });
+    const result = contactAddress(headers);
+    assert.equal(result, "unknown");
+    assert.notEqual(result, "1.2.3.4", "a caller-written header must not become the key");
+  });
+
+  it("still prefers the Vercel witness while both platforms are serving", () => {
+    // Production runs on both stacks through the cutover and its 30-day
+    // rollback window, and the workflow sets LEONA_XFF_TRUSTED_HOPS on the Cloud
+    // Run service only. A Vercel request must keep its existing behaviour even
+    // if the variable were ever set there.
+    const headers = new Headers({
+      "x-vercel-forwarded-for": "203.0.113.7",
+      "x-forwarded-for": "1.2.3.4, 198.51.100.8, 35.191.0.1",
+    });
+    assert.equal(contactAddress(headers), "203.0.113.7");
+  });
+
+  it("reads the bare Cloud Run topology when no load balancer is in front", () => {
+    process.env.LEONA_XFF_TRUSTED_HOPS = "0"; // Google's front end appends only the peer
+    const headers = new Headers({ "x-forwarded-for": "1.2.3.4, 203.0.113.7" });
+    assert.equal(contactAddress(headers), "203.0.113.7");
+  });
+
+  it("keeps the pre-migration last-resort branch when the variable is unset", () => {
+    delete process.env.LEONA_XFF_TRUSTED_HOPS;
+    const headers = new Headers({ "x-forwarded-for": "203.0.113.7, 192.0.2.55" });
+    assert.equal(contactAddress(headers), "203.0.113.7", "local development is unchanged");
   });
 });

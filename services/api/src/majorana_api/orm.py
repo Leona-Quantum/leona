@@ -15,6 +15,7 @@ from sqlalchemy import (
     ForeignKey,
     ForeignKeyConstraint,
     Integer,
+    LargeBinary,
     Numeric,
     Text,
     UniqueConstraint,
@@ -969,3 +970,44 @@ class ProviderCredential(Base):
     updated_at: Mapped[dt.datetime | None] = mapped_column(server_default=func.now())
     last_verified_at: Mapped[dt.datetime | None]
     last_used_at: Mapped[dt.datetime | None]
+
+
+class NewsBatch(Base):
+    __tablename__ = "news_batches"
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True)
+    workspace_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("workspaces.id"))
+    user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id"))
+    request_key: Mapped[str]
+    request: Mapped[dict[str, Any]]
+    stage: Mapped[str] = mapped_column(server_default="queued")
+    checkpoint: Mapped[dict[str, Any]] = mapped_column(server_default=text("'{}'::jsonb"))
+    calls: Mapped[int] = mapped_column(server_default="0")
+    error: Mapped[str | None]
+    created_at: Mapped[dt.datetime] = mapped_column(server_default=func.now())
+    updated_at: Mapped[dt.datetime] = mapped_column(server_default=func.now())
+
+
+class NewsArticle(Base):
+    __tablename__ = "news_articles"
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True)
+    workspace_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("workspaces.id"))
+    batch_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("news_batches.id"))
+    event_key: Mapped[str]
+    document: Mapped[dict[str, Any]]
+    digest: Mapped[str]
+    review: Mapped[dict[str, Any]]
+    status: Mapped[str] = mapped_column(server_default="draft")
+    publication_log: Mapped[list] = mapped_column(JSONB, server_default=text("'[]'::jsonb"))
+    published_at: Mapped[dt.datetime | None]
+    created_at: Mapped[dt.datetime] = mapped_column(server_default=func.now())
+
+
+class NewsAsset(Base):
+    __tablename__ = "news_assets"
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True)
+    workspace_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("workspaces.id"))
+    article_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("news_articles.id"), unique=True)
+    # Bounded compressed WebP; DB-owned bytes make draft access and backups atomic.
+    data: Mapped[bytes] = mapped_column(LargeBinary)
+    metadata_json: Mapped[dict[str, Any]]
+    created_at: Mapped[dt.datetime] = mapped_column(server_default=func.now())

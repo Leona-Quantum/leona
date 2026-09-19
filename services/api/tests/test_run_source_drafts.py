@@ -39,6 +39,18 @@ def test_run_request_accepts_only_supported_response_locales():
         runs.CreateRunRequest(task_prompt="Bell", response_locale="fr")
 
 
+def test_source_intent_defaults_to_verify_and_accepts_revise():
+    assert runs.CreateRunRequest(task_prompt="Bell").source_intent == "verify"
+    assert (
+        runs.CreateRunRequest(
+            task_prompt="Bell", source_code="x = 1", source_intent="revise"
+        ).source_intent
+        == "revise"
+    )
+    with pytest.raises(ValidationError):
+        runs.CreateRunRequest(task_prompt="Bell", source_intent="rewrite")
+
+
 def test_circuit_optimization_request_is_code_free_and_explicitly_execute():
     optimization = {
         "compiler": "qiskit",
@@ -179,6 +191,75 @@ async def test_run_and_job_are_bound_to_the_new_draft_version(scope, monkeypatch
     assert captured["run"]["artifact_version_id"] == draft_id
     assert captured["job"]["payload"]["source_code"] == "edited source"
     assert captured["job"]["payload"]["response_locale"] == "en"
+    # The default carried explicitly into every job payload, not omitted —
+    # `handle_run_execute` reads this key from live payloads with
+    # `payload.get("source_intent") or "verify"`; only a payload persisted
+    # BEFORE this field existed should ever be missing it.
+    assert captured["job"]["payload"]["source_intent"] == "verify"
+
+
+async def test_explicit_revise_intent_flows_into_the_job_payload(scope, monkeypatch):
+    """The one new wire value this feature adds: a caller that sets
+    `source_intent="revise"` must see it land, unmodified, in the worker job
+    payload `handle_run_execute` reads — the same path `test_run_and_job_are_
+    bound_to_the_new_draft_version` proves for the default."""
+    base_id = uuid.uuid4()
+    draft_id = uuid.uuid4()
+    run_id = uuid.uuid4()
+    captured = {}
+    body = runs.CreateRunRequest(
+        task_prompt="Add a Grover oracle for 101",
+        framework=Framework.QISKIT,
+        artifact_version_id=base_id,
+        source_code="edited source",
+        source_intent="revise",
+    )
+
+    async def create_draft(*_args):
+        return draft_id
+
+    async def create_run(_scope, _session, **values):
+        captured["run"] = values
+        return SimpleNamespace(id=run_id)
+
+    async def append_event(*_args, **_kwargs):
+        return None
+
+    async def enqueue_job(_session, **values):
+        captured["job"] = values
+
+    async def no_runs_yet(*_args, **_kwargs):
+        return {}
+
+    async def no_queue(*_args, **_kwargs):
+        return {}
+
+    async def no_submissions_yet(*_args, **_kwargs):
+        return 0
+
+    monkeypatch.setattr(runs.runs_repo, "queue_positions", no_queue)
+    monkeypatch.setattr(runs.runs_repo, "count_runs_by_mode_since", no_runs_yet)
+    monkeypatch.setattr(
+        runs.runs_repo, "count_submitted_runs_for_account_since", no_submissions_yet
+    )
+    monkeypatch.setattr(runs, "_create_stale_source_draft", create_draft)
+    monkeypatch.setattr(runs.runs_repo, "create_run", create_run)
+    monkeypatch.setattr(runs.runs_repo, "append_run_event", append_event)
+    monkeypatch.setattr(runs.system, "enqueue_job", enqueue_job)
+    monkeypatch.setattr(runs, "_to_resource", lambda row, queue_position=None: row.id)
+
+    identity = (User(email="local-dev@majorana.test", plan=None), Workspace())
+    settings = Settings(
+        workos_client_id="test",
+        workos_jwt_issuer="https://issuer.invalid",
+        workos_jwks_url="https://jwks.invalid",
+        web_origin="https://web.invalid",
+    )
+    result = await runs.create_run(body, scope, object(), identity, settings)
+
+    assert result == run_id
+    assert captured["job"]["payload"]["source_intent"] == "revise"
+    assert captured["job"]["payload"]["source_code"] == "edited source"
 
 
 async def test_circuit_optimization_enqueues_worker_job_without_creating_a_draft(

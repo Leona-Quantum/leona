@@ -1,4 +1,4 @@
-import { BUILDER_GATES, ROTATION_GATES, TWO_QUBIT_GATES, type BuilderStep, type CustomGateDefinition } from "./studio-builder.ts";
+import { ANGLE_GATES, BUILDER_GATES, builderGateArity, type BuilderStep, type CustomGateDefinition } from "./studio-builder.ts";
 import { isGateAngle } from "./gate-angle.ts";
 import { scopedStorage } from "./user-storage.ts";
 import { MAX_VIEWABLE_QUBITS } from "./studio-parse.ts";
@@ -101,9 +101,9 @@ function isBuilderStep(value: unknown, qubitCount: number, customGates: Map<stri
   }
   if (typeof gate !== "string" || !(BUILDER_GATES as string[]).includes(gate)) return false;
   if (gate === "M" && !allowMeasurement) return false;
-  const expectedQubits = TWO_QUBIT_GATES.includes(gate as (typeof TWO_QUBIT_GATES)[number]) ? 2 : 1;
+  const expectedQubits = builderGateArity(gate);
   if (!hasQubits(step.qubits, qubitCount, expectedQubits)) return false;
-  if (ROTATION_GATES.includes(gate as (typeof ROTATION_GATES)[number])) return isAngleParameter(step.param);
+  if (ANGLE_GATES.includes(gate as (typeof ANGLE_GATES)[number])) return isAngleParameter(step.param);
   return step.param === undefined && step.customGateId === undefined;
 }
 

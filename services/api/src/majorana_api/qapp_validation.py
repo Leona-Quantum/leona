@@ -14,7 +14,24 @@ from typing import Any
 MAX_NUMERIC_MAGNITUDE = 1_000_000_000
 
 _SCALARS = {"string", "number", "integer", "boolean"}
-_PROPERTY_KEYS = {
+
+#: The four shapes a Qapp property may take, and the keywords each may carry. Scalars
+#: and arrays of scalars are the original subset. The two object shapes were added on
+#: 2026-09-16 after a generation in production spent all twelve paid attempts on the
+#: same rejection: the model kept describing measurement counts as an object, because
+#: that IS what a histogram is (`{"00": 512, "11": 488}`), and the subset refused it
+#: every time. Refusing the most natural quantum output was the defect, not the model.
+#:
+#: - a **map**: `{"type": "object", "additionalProperties": {<scalar schema>}}`, at
+#:   most 100 entries. Keys are strings the program chooses (bitstrings, labels).
+#: - a **record array**: `{"type": "array", "items": {"type": "object", "properties":
+#:   {name: <scalar schema>}}}`, at most 100 rows of at most 24 scalar fields. A table
+#:   such as `[{"state": "00", "count": 512}]`.
+#:
+#: Nothing nests deeper: a map's values and a record's fields are scalars only, so the
+#: size of any value is still bounded by the 16 KB input limit and the 100-entry caps,
+#: and `validate_qapp_inputs` can check every leaf with the one scalar rule.
+_SCALAR_KEYS = {
     "type",
     "title",
     "description",
@@ -24,10 +41,25 @@ _PROPERTY_KEYS = {
     "maximum",
     "minLength",
     "maxLength",
-    "minItems",
-    "maxItems",
-    "items",
 }
+_ARRAY_KEYS = _SCALAR_KEYS | {"minItems", "maxItems", "items"}
+_MAP_KEYS = {"type", "title", "description", "additionalProperties", "maxProperties"}
+_RECORD_KEYS = {"type", "title", "description", "properties", "required", "additionalProperties"}
+#: Kept as the union for callers that only need "is this keyword ever allowed".
+_PROPERTY_KEYS = _ARRAY_KEYS | _MAP_KEYS | _RECORD_KEYS
+MAX_PROPERTIES = 24
+MAX_ARRAY_ITEMS = 100
+MAX_MAP_ENTRIES = 100
+MAX_NAME_LENGTH = 80
+#: One sentence naming every accepted shape, handed to the repair model verbatim so a
+#: rejection teaches the fix rather than only the fault.
+ACCEPTED_SHAPES = (
+    "Accepted property shapes: a scalar (string, number, integer, boolean); an array of "
+    "one scalar type (maxItems <= 100); a map of scalars written as type=object with "
+    "additionalProperties naming a scalar type (for measurement counts such as "
+    '{"00": 512, "11": 488}; maxProperties <= 100); or an array of flat records whose '
+    "items are type=object with scalar-typed properties. Nothing nests deeper than that."
+)
 
 _FORBIDDEN_UI_PATTERNS: tuple[tuple[re.Pattern[str], str], ...] = (
     (
@@ -158,41 +190,129 @@ def validate_qapp_ui_document(document: str) -> None:
             raise ValueError(f"Qapp UI document uses forbidden {capability}")
 
 
+def _check_name(name: Any, what: str) -> str:
+    if not isinstance(name, str) or not name or len(name) > MAX_NAME_LENGTH:
+        raise ValueError(f"Qapp {what} names must contain 1-{MAX_NAME_LENGTH} characters")
+    return name
+
+
+def _reject_unknown_keywords(name: str, definition: dict[str, Any], allowed: set[str]) -> None:
+    unknown = set(definition) - allowed
+    if unknown:
+        raise ValueError(
+            f"Qapp property {name} uses unsupported schema keywords: {', '.join(sorted(unknown))}"
+        )
+
+
+def _normalize_scalar(
+    name: str, definition: Any, *, allowed: set[str] = _SCALAR_KEYS
+) -> dict[str, Any]:
+    if not isinstance(definition, dict):
+        raise ValueError(f"Qapp property {name} must be a schema")
+    _reject_unknown_keywords(name, definition, allowed)
+    if definition.get("type") not in _SCALARS:
+        raise ValueError(f"Qapp property {name} has an unsupported type")
+    return definition
+
+
+def _normalize_record(name: str, items: dict[str, Any]) -> dict[str, Any]:
+    """The `items` of a record array: a flat object of scalar fields, nothing deeper."""
+    _reject_unknown_keywords(f"{name} items", items, _RECORD_KEYS)
+    properties = items.get("properties")
+    if not isinstance(properties, dict) or not properties or len(properties) > MAX_PROPERTIES:
+        raise ValueError(
+            f"Qapp property {name} records must declare 1-{MAX_PROPERTIES} scalar properties"
+        )
+    required = items.get("required", [])
+    if not isinstance(required, list) or any(not isinstance(item, str) for item in required):
+        raise ValueError(f"Qapp property {name} records' required must be a string list")
+    if len(set(required)) != len(required) or not set(required).issubset(properties):
+        raise ValueError(
+            f"Qapp property {name} records' required names must be unique declared properties"
+        )
+    if items.get("additionalProperties") not in (None, False):
+        raise ValueError(f"Qapp property {name} records may not allow additional properties")
+    fields = {
+        _check_name(field, "record property"): _normalize_scalar(f"{name}.{field}", definition)
+        for field, definition in properties.items()
+    }
+    return {
+        "type": "object",
+        "properties": fields,
+        "required": required,
+        "additionalProperties": False,
+    }
+
+
+def _normalize_map(name: str, definition: dict[str, Any]) -> dict[str, Any]:
+    """`{"type": "object", "additionalProperties": {<scalar>}}` — a histogram's shape."""
+    _reject_unknown_keywords(name, definition, _MAP_KEYS)
+    values = definition.get("additionalProperties")
+    if not isinstance(values, dict) or values.get("type") not in _SCALARS:
+        raise ValueError(
+            f"Qapp property {name} must be a map of scalar values: an object schema whose "
+            "additionalProperties names one scalar type"
+        )
+    _normalize_scalar(f"{name} values", values)
+    if int(definition.get("maxProperties", MAX_MAP_ENTRIES)) > MAX_MAP_ENTRIES:
+        raise ValueError(f"Qapp property {name} exceeds the {MAX_MAP_ENTRIES}-entry limit")
+    return definition
+
+
+def _normalize_property(name: str, definition: Any) -> dict[str, Any]:
+    if not isinstance(definition, dict):
+        raise ValueError(f"Qapp property {name} must be a schema")
+    kind = definition.get("type")
+    if kind in _SCALARS:
+        return _normalize_scalar(name, definition)
+    if kind == "object":
+        return _normalize_map(name, definition)
+    if kind == "array":
+        _reject_unknown_keywords(name, definition, _ARRAY_KEYS)
+        items = definition.get("items")
+        if not isinstance(items, dict):
+            raise ValueError(
+                f"Qapp property {name} must be an array of scalar values or of flat records"
+            )
+        if items.get("type") == "object":
+            normalized: dict[str, Any] = {**definition, "items": _normalize_record(name, items)}
+        elif items.get("type") in _SCALARS:
+            _normalize_scalar(f"{name} items", items)
+            normalized = definition
+        else:
+            raise ValueError(
+                f"Qapp property {name} must be an array of scalar values or of flat records"
+            )
+        if int(definition.get("maxItems", MAX_ARRAY_ITEMS)) > MAX_ARRAY_ITEMS:
+            raise ValueError(f"Qapp property {name} exceeds the {MAX_ARRAY_ITEMS}-item limit")
+        return normalized
+    raise ValueError(f"Qapp property {name} has an unsupported type")
+
+
 def normalize_qapp_schema(schema: dict[str, Any]) -> dict[str, Any]:
-    """Accept a small UI-friendly schema subset and return its canonical form."""
+    """Accept a small UI-friendly schema subset and return its canonical form.
+
+    The subset is the four shapes described beside `_SCALAR_KEYS` above. Every
+    rejection names the property and, where a shape was almost right, what the
+    accepted shape is — the message is handed to the repair model, and a message
+    that only says what is wrong was measured to produce the same wrong answer
+    twelve times in a row.
+    """
     if not isinstance(schema, dict) or schema.get("type") != "object":
         raise ValueError("Qapp schema must be an object schema")
     properties = schema.get("properties", {})
-    if not isinstance(properties, dict) or len(properties) > 24:
-        raise ValueError("Qapp schema may define at most 24 properties")
+    if not isinstance(properties, dict) or len(properties) > MAX_PROPERTIES:
+        raise ValueError(f"Qapp schema may define at most {MAX_PROPERTIES} properties")
     required = schema.get("required", [])
     if not isinstance(required, list) or any(not isinstance(item, str) for item in required):
         raise ValueError("Qapp schema required must be a string list")
     if len(set(required)) != len(required) or not set(required).issubset(properties):
         raise ValueError("Qapp schema required names must be unique declared properties")
 
-    normalized_properties: dict[str, Any] = {}
-    for name, definition in properties.items():
-        if not isinstance(name, str) or not name or len(name) > 80:
-            raise ValueError("Qapp property names must contain 1-80 characters")
-        if not isinstance(definition, dict):
-            raise ValueError(f"Qapp property {name} must be a schema")
-        unknown = set(definition) - _PROPERTY_KEYS
-        if unknown:
-            raise ValueError(
-                f"Qapp property {name} uses unsupported schema keywords: "
-                f"{', '.join(sorted(unknown))}"
-            )
-        kind = definition.get("type")
-        if kind not in _SCALARS | {"array"}:
-            raise ValueError(f"Qapp property {name} has an unsupported type")
-        if kind == "array":
-            items = definition.get("items")
-            if not isinstance(items, dict) or items.get("type") not in _SCALARS:
-                raise ValueError(f"Qapp property {name} must be an array of scalar values")
-            if int(definition.get("maxItems", 100)) > 100:
-                raise ValueError(f"Qapp property {name} exceeds the 100-item limit")
-        normalized_properties[name] = definition
+    normalized_properties = {
+        _check_name(name, "property"): _normalize_property(name, definition)
+        for name, definition in properties.items()
+    }
     return {
         "type": "object",
         "properties": normalized_properties,
@@ -215,6 +335,82 @@ def _valid_scalar(value: Any, kind: str) -> bool:
     return isinstance(value, str)
 
 
+def _validate_scalar(name: str, item: Any, definition: dict[str, Any]) -> None:
+    """Every keyword here is a claim about ONE scalar, applied to one scalar."""
+    kind = definition["type"]
+    if not _valid_scalar(item, kind):
+        raise ValueError(f"Qapp input {name} has the wrong type")
+    if "enum" in definition and item not in definition["enum"]:
+        raise ValueError(f"Qapp input {name} is not an allowed value")
+    if kind in {"number", "integer"}:
+        # A DEFAULT bound when the schema declares none, exactly as `maxLength`
+        # defaults to 4000 and `maxItems` to 100. Those two had a default and
+        # numerics did not, which meant a generated schema that simply omitted
+        # `maximum` — nothing requires one — accepted any integer a visitor cared
+        # to send, including one used by the program as a problem size. The qubit
+        # preflight cannot catch that: it checks the version's frozen
+        # generation-time estimate, never the value that arrives at execution.
+        if item < definition.get("minimum", -MAX_NUMERIC_MAGNITUDE):
+            raise ValueError(f"Qapp input {name} is below its minimum")
+        if item > definition.get("maximum", MAX_NUMERIC_MAGNITUDE):
+            raise ValueError(f"Qapp input {name} is above its maximum")
+    if kind == "string":
+        if len(item) < int(definition.get("minLength", 0)) or len(item) > int(
+            definition.get("maxLength", 4000)
+        ):
+            raise ValueError(f"Qapp input {name} has an invalid length")
+
+
+_ITEM_KEYWORDS = ("enum", "minimum", "maximum", "minLength", "maxLength")
+
+
+def _validate_record(name: str, row: Any, record: dict[str, Any]) -> None:
+    if not isinstance(row, dict):
+        raise ValueError(f"Qapp input {name} rows must be objects")
+    fields = record["properties"]
+    if set(row) - set(fields):
+        raise ValueError(f"Qapp input {name} rows contain undeclared properties")
+    if set(record["required"]) - set(row):
+        raise ValueError(f"Qapp input {name} rows are missing required properties")
+    for field, item in row.items():
+        _validate_scalar(f"{name}.{field}", item, fields[field])
+
+
+def _validate_value(name: str, value: Any, definition: dict[str, Any]) -> None:
+    kind = definition["type"]
+    if kind == "array":
+        if not isinstance(value, list):
+            raise ValueError(f"Qapp input {name} must be an array")
+        if len(value) < int(definition.get("minItems", 0)) or len(value) > int(
+            definition.get("maxItems", MAX_ARRAY_ITEMS)
+        ):
+            raise ValueError(f"Qapp input {name} has an invalid item count")
+        items = definition["items"]
+        if items["type"] == "object":
+            for row in value:
+                _validate_record(name, row, items)
+            return
+        # `normalize_qapp_schema` admits the scalar keywords on the ARRAY property as
+        # well as on its `items`, and generated schemas write them in either place.
+        # The array-level ones win where both are present; comparing a list against
+        # `enum` made an array property that declares one reject every valid input.
+        merged = {**items, **{key: definition[key] for key in _ITEM_KEYWORDS if key in definition}}
+        for item in value:
+            _validate_scalar(name, item, merged)
+        return
+    if kind == "object":
+        if not isinstance(value, dict):
+            raise ValueError(f"Qapp input {name} must be an object")
+        if len(value) > int(definition.get("maxProperties", MAX_MAP_ENTRIES)):
+            raise ValueError(f"Qapp input {name} has too many entries")
+        for key, item in value.items():
+            if not isinstance(key, str) or not key or len(key) > MAX_NAME_LENGTH:
+                raise ValueError(f"Qapp input {name} has an invalid key")
+            _validate_scalar(f"{name}[{key}]", item, definition["additionalProperties"])
+        return
+    _validate_scalar(name, value, definition)
+
+
 def validate_qapp_inputs(schema: dict[str, Any], inputs: dict[str, Any]) -> None:
     schema = normalize_qapp_schema(schema)
     if len(json.dumps(inputs, ensure_ascii=False, allow_nan=False).encode()) > 16_384:
@@ -227,47 +423,7 @@ def validate_qapp_inputs(schema: dict[str, Any], inputs: dict[str, Any]) -> None
     if missing:
         raise ValueError("Qapp inputs are missing required properties")
     for name, value in inputs.items():
-        definition = properties[name]
-        kind = definition["type"]
-        values = value if kind == "array" and isinstance(value, list) else [value]
-        scalar_kind = definition.get("items", {}).get("type") if kind == "array" else kind
-        if kind == "array":
-            if not isinstance(value, list):
-                raise ValueError(f"Qapp input {name} must be an array")
-            if len(value) < int(definition.get("minItems", 0)) or len(value) > int(
-                definition.get("maxItems", 100)
-            ):
-                raise ValueError(f"Qapp input {name} has an invalid item count")
-        if any(not _valid_scalar(item, scalar_kind) for item in values):
-            raise ValueError(f"Qapp input {name} has the wrong type")
-        # Every keyword below is a claim about a SCALAR, so it is applied to
-        # `values` — the items for an array, the value itself otherwise — and
-        # never to the array object. Comparing a list against `enum` made an
-        # array property that declares one reject every valid input with a 422,
-        # and gating the bounds on `kind` left array items with no bound check at
-        # all. `normalize_qapp_schema` admits these keywords on array properties,
-        # so both were reachable from ordinary generated output.
-        for item in values:
-            if "enum" in definition and item not in definition["enum"]:
-                raise ValueError(f"Qapp input {name} is not an allowed value")
-            if scalar_kind in {"number", "integer"}:
-                # A DEFAULT bound when the schema declares none, exactly as
-                # `maxLength` defaults to 4000 and `maxItems` to 100 above. Those
-                # two had a default and numerics did not, which meant a generated
-                # schema that simply omitted `maximum` — nothing requires one —
-                # accepted any integer a visitor cared to send, including one used
-                # by the program as a problem size. The qubit preflight cannot
-                # catch that: it checks the version's frozen generation-time
-                # estimate, never the value that arrives at execution.
-                if item < definition.get("minimum", -MAX_NUMERIC_MAGNITUDE):
-                    raise ValueError(f"Qapp input {name} is below its minimum")
-                if item > definition.get("maximum", MAX_NUMERIC_MAGNITUDE):
-                    raise ValueError(f"Qapp input {name} is above its maximum")
-            if scalar_kind == "string":
-                if len(item) < int(definition.get("minLength", 0)) or len(item) > int(
-                    definition.get("maxLength", 4000)
-                ):
-                    raise ValueError(f"Qapp input {name} has an invalid length")
+        _validate_value(name, value, properties[name])
 
 
 # --------------------------------------------------------------------- is it usable at all

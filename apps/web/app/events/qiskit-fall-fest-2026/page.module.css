@@ -200,11 +200,6 @@
   color: var(--qff-accent);
   white-space: nowrap;
 }
-.heroMessage {
-  padding-top: var(--qff-space);
-  font-size: var(--qff-lead);
-  line-height: 1.7;
-}
 .heroDate {
   display: flex;
   gap: var(--sp-4);
@@ -417,10 +412,6 @@
   line-height: 1.5;
   font-weight: 500;
 }
-.speaker h4 small {
-  font-size: var(--qff-small);
-  margin-left: var(--sp-2);
-}
 .talkTitle {
   font-size: var(--qff-body);
   line-height: 1.8;
@@ -444,9 +435,8 @@
   grid-template-columns: 1fr 1fr;
   gap: var(--sp-16);
 }
-.experienceHeading > p {
-  margin-top: var(--sp-6);
-  color: var(--qff-muted);
+.experienceHeading > h2 {
+  font-weight: 700;
 }
 .technology {
   margin-top: var(--sp-10);
@@ -711,9 +701,6 @@
   .hero h1 {
     font-size: var(--qff-title);
   }
-  .heroMessage {
-    font-size: var(--qff-body);
-  }
   .heroArt {
     min-height: 0;
     aspect-ratio: 1;
@@ -874,6 +861,23 @@
   max-width: 100%;
   height: auto;
 }
+.partnerQuanmatic {
+  position: relative;
+  display: block;
+  width: 190px;
+  max-width: 100%;
+  aspect-ratio: 5.8;
+  overflow: hidden;
+}
+/* Frame the logo within the supplied square image's transparent padding. */
+.partnerQuanmatic img {
+  position: absolute;
+  width: 126%;
+  max-width: none;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+}
 .partnerLeona {
   width: 190px;
   max-width: 100%;
@@ -918,7 +922,7 @@
 }
 .schedule li {
   display: grid;
-  grid-template-columns: 100px minmax(0, 1fr);
+  grid-template-columns: 130px minmax(0, 1fr);
   gap: var(--sp-6);
   padding: var(--sp-6) 0;
   border-bottom: 1px solid var(--qff-line);

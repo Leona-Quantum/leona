@@ -151,12 +151,15 @@ REVIEW_JSON = json.dumps({"verdict": "ready", "findings": []})
 
 class Session:
     """Mirrors `test_handlers.py`'s `Session`: `.get` answers the owner-tier
-    lookup, defaulting to `None` (free-lane fallback, ai-ops#171)."""
+    lookup, defaulting to `None` (free-lane fallback, ai-ops#171). `.info` mirrors
+    the real `AsyncSession.info` dict that `__main__._execute_with_heartbeat`
+    stamps `job_attempt` onto before a handler runs."""
 
     def __init__(self, user=None):
         self.commits = 0
         self.rollbacks = 0
         self.user = user
+        self.info: dict = {}
 
     async def commit(self):
         self.commits += 1
@@ -398,6 +401,40 @@ class MemoryNotebookStore:
         return rows[-limit:]
 
 
+class FakeUsageRepo:
+    """An in-memory stand-in for `majorana_api.repos.usage.record_usage`,
+    faithful to its ON CONFLICT DO NOTHING + content-match contract
+    (services/api/src/majorana_api/repos/usage.py:19-72) rather than just
+    recording calls like `_fake_run_plumbing`'s `fake_record_usage` does:
+    the tests below are about that contract's interaction with retries, so
+    they need a fake that actually enforces it — same event id + same
+    (kind, quantity, meta) returns the existing row and writes nothing new;
+    same event id + different content raises, exactly like the real
+    `usage_events` unique index + Python-side compare would with a live
+    Postgres (which this suite does not have — see the worktree's
+    pytest report for the live-DB skip count)."""
+
+    def __init__(self):
+        self.events: dict[uuid.UUID, dict] = {}
+        self.calls: list[dict] = []
+
+    async def record_usage(self, scope, session, *, kind, quantity, meta, event_id=None):
+        self.calls.append({"kind": kind, "quantity": quantity, "meta": meta, "event_id": event_id})
+        key = event_id if event_id is not None else uuid.uuid4()
+        existing = self.events.get(key)
+        if existing is None:
+            record = {"kind": kind, "quantity": quantity, "meta": meta}
+            self.events[key] = record
+            return SimpleNamespace(id=key, **record)
+        if (
+            existing["kind"] != kind
+            or float(existing["quantity"]) != float(quantity)
+            or existing["meta"] != meta
+        ):
+            raise ValueError("usage event idempotency key was reused with different content")
+        return SimpleNamespace(id=key, **existing)
+
+
 def _payload(
     *, run_id, notebook_id, version_id, kind="generate", request=None, base_version_id=None
 ):
@@ -470,6 +507,90 @@ async def test_generate_happy_path_saves_a_ready_version_with_outputs(_fake_run_
     # usage: SANDBOX_SECONDS recorded once for the run.
     assert len(usage_calls) == 1
     assert usage_calls[0]["quantity"] > 0
+
+
+# --------------------------------------------------------- usage: attempt-scoped idempotency
+
+
+async def test_retry_records_a_second_event_and_both_attempts_sum(monkeypatch):
+    """The bug this fixes: a retried attempt used to share the FIRST attempt's
+    idempotency key (`uuid5(run_id, "usage:sandbox")`), so its insert hit
+    `ON CONFLICT DO NOTHING`, the content compare inside
+    `usage_repo.record_usage` disagreed with the first attempt's stored row,
+    and the resulting `ValueError` was caught and only logged by
+    `_record_sandbox_usage` — the retry's seconds were silently never
+    recorded. Against the pre-fix code this fails: only one event is ever
+    stored and the total is 10.0, not 15.0."""
+    fake_repo = FakeUsageRepo()
+    monkeypatch.setattr(nh, "usage_repo", fake_repo)
+    run_id = uuid.uuid4()
+    scope = Scope(user_id=uuid.uuid4(), workspace_id=uuid.uuid4(), role=Role.MEMBER)
+
+    first_attempt = Session()
+    first_attempt.info["job_attempt"] = 1
+    await nh._record_sandbox_usage(
+        first_attempt, scope, run_id, SimpleNamespace(sandbox_seconds_used=10.0)
+    )
+
+    retry = Session()
+    retry.info["job_attempt"] = 2
+    await nh._record_sandbox_usage(retry, scope, run_id, SimpleNamespace(sandbox_seconds_used=5.0))
+
+    assert len(fake_repo.events) == 2, "the retry's event must not be dropped by ON CONFLICT"
+    assert sum(e["quantity"] for e in fake_repo.events.values()) == 15.0
+    assert sorted(e["meta"]["attempt"] for e in fake_repo.events.values()) == [1, 2]
+    assert first_attempt.rollbacks == 0
+    assert retry.rollbacks == 0
+
+
+async def test_same_attempt_redelivered_with_same_quantity_is_one_event(monkeypatch):
+    """Idempotency WITHIN an attempt must survive the fix: a true duplicate
+    delivery of the same attempt (e.g. the handler's own commit retried) still
+    produces exactly one row, because the event id and meta are identical."""
+    fake_repo = FakeUsageRepo()
+    monkeypatch.setattr(nh, "usage_repo", fake_repo)
+    run_id = uuid.uuid4()
+    scope = Scope(user_id=uuid.uuid4(), workspace_id=uuid.uuid4(), role=Role.MEMBER)
+
+    session = Session()
+    session.info["job_attempt"] = 1
+    await nh._record_sandbox_usage(
+        session, scope, run_id, SimpleNamespace(sandbox_seconds_used=10.0)
+    )
+    await nh._record_sandbox_usage(
+        session, scope, run_id, SimpleNamespace(sandbox_seconds_used=10.0)
+    )
+
+    assert len(fake_repo.events) == 1
+    assert session.commits == 2
+    assert session.rollbacks == 0
+
+
+async def test_same_attempt_different_quantity_still_logs_and_keeps_the_first(monkeypatch, caplog):
+    """The real bug signal this fix must keep: two deliveries that both claim
+    to be the same attempt but disagree on quantity. Still caught and only
+    logged — never raised into the run, never overwriting the first figure."""
+    fake_repo = FakeUsageRepo()
+    monkeypatch.setattr(nh, "usage_repo", fake_repo)
+    run_id = uuid.uuid4()
+    scope = Scope(user_id=uuid.uuid4(), workspace_id=uuid.uuid4(), role=Role.MEMBER)
+
+    session = Session()
+    session.info["job_attempt"] = 1
+    await nh._record_sandbox_usage(
+        session, scope, run_id, SimpleNamespace(sandbox_seconds_used=10.0)
+    )
+    with caplog.at_level("ERROR", logger="majorana_worker.notebook_handlers"):
+        await nh._record_sandbox_usage(
+            session, scope, run_id, SimpleNamespace(sandbox_seconds_used=99.0)
+        )
+
+    assert len(fake_repo.events) == 1
+    (stored,) = fake_repo.events.values()
+    assert stored["quantity"] == 10.0, "the first attempt's figure must stand"
+    assert session.commits == 1
+    assert session.rollbacks == 1
+    assert "sandbox usage metering failed" in caplog.text
 
 
 async def test_guard_violating_draft_ends_failed_with_the_guard_message(_fake_run_plumbing):

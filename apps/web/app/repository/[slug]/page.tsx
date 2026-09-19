@@ -23,6 +23,8 @@ import { deriveInterface, neighboursOf, type EntryInterface } from "../../../lib
 import { resolveEntryPort, type BrowseSearchParams } from "../../../lib/repository/browse-params";
 import { SECTION_PARAM, withCard } from "../../../lib/repository/map-card";
 import { parseRecordSection } from "../../../lib/repository/record-card";
+import { resolveWorkedExamples } from "../../../lib/repository/worked-example-resolution";
+import { workedExampleSummary } from "../../../lib/atlas-worked-example-summary";
 import { RepositoryEntryView } from "./repository-entry-view";
 
 export async function generateStaticParams() {
@@ -145,6 +147,22 @@ export default async function RepositoryEntryPage({
     entries.map((candidate) => [candidate.slug, locale === "ja" ? candidate.titleJa : candidate.title]),
   );
 
+  // Resolved server-side and passed down as plain data, not imported into the
+  // client entry view: worked-examples.ts carries all 14 (soon 21) examples'
+  // full step lists and prose, and a client import would ship every one of
+  // them to every record page's visitor rather than just this record's own.
+  // See worked-example-resolution.ts's doc comment.
+  const workedExamples = resolveWorkedExamples(entry.slug);
+  // A full summary, not a title: the note draws the example's own circuit,
+  // final outcomes and readout, and quotes the phrase on THIS record the link
+  // was built from. `workedExampleSummary` collapses the WorkedExample to a
+  // serializable object here so the examples module still never crosses into
+  // the client bundle. "component" | "used-in" only — a hero-relation
+  // ("instance") link never reaches .components (see resolveWorkedExamples).
+  const workedExampleComponents = workedExamples.components.map(({ link, example }) =>
+    workedExampleSummary(example, link),
+  );
+
   const corpusEntry = layerCorpusEntry({ ...entry, verificationMethods: entryVerificationMethods(entry) });
   // The section `?sec=` names, resolved against the record's own list the way
   // the card resolves its own; `?port=` still lands a reader on the end it
@@ -177,6 +195,8 @@ export default async function RepositoryEntryPage({
         section={section}
         hasLayers={hasLayers}
         mapHref={mapHref}
+        workedExample={workedExamples.hero}
+        workedExampleComponents={workedExampleComponents}
         estimate={
           // Decided here, not by testing the element: a React element is truthy
           // whatever it renders, so passing one unconditionally gives an empty

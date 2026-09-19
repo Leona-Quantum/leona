@@ -14,11 +14,11 @@ import { singleQubitUnitary } from "./studio-simulation.ts";
 export type GateFamily = "clifford" | "rotation" | "entangler" | "measure" | "custom";
 
 export function gateFamily(gate: BuilderStep["gate"]): GateFamily {
-  if (gate === "RX" || gate === "RY" || gate === "RZ") return "rotation";
-  if (gate === "CX" || gate === "CZ" || gate === "SWAP") return "entangler";
+  if (gate === "RX" || gate === "RY" || gate === "RZ" || gate === "P") return "rotation";
+  if (gate === "CX" || gate === "CZ" || gate === "SWAP" || gate === "CP" || gate === "RZZ" || gate === "CCX") return "entangler";
   if (gate === "M") return "measure";
   if (gate === "CUSTOM") return "custom";
-  return "clifford";
+  return "clifford"; // H, X, Y, Z, S, T, SDG, TDG
 }
 
 /** Radians for any angle `parseGateAngle` accepts; null for anything it rejects. */
@@ -36,7 +36,7 @@ export function gateAngleRadians(value: unknown): number | null {
 }
 
 export type Amplitude = { re: number; im: number };
-export type GateUnitary = { size: 2 | 4; rows: Amplitude[][] };
+export type GateUnitary = { size: 2 | 4 | 8; rows: Amplitude[][] };
 
 const real = (value: number): Amplitude => ({ re: value, im: 0 });
 const permutation = (rows: number[][]): Amplitude[][] => rows.map((row) => row.map(real));
@@ -47,7 +47,9 @@ const permutation = (rows: number[][]): Amplitude[][] => rows.map((row) => row.m
  * has no honest number.
  *
  * Two-qubit matrices are written in the basis |a b⟩ = 00, 01, 10, 11, where `a`
- * is the operation's first qubit (the control, for CX and CZ).
+ * is the operation's first qubit (the control, for CX, CZ, CP and RZZ). The
+ * three-qubit CCX matrix follows the same convention, |a b c⟩ ascending from
+ * 000 to 111 with `a` the first control.
  */
 export function gateUnitary(step: Pick<BuilderStep, "gate" | "param">): GateUnitary | null {
   switch (step.gate) {
@@ -57,10 +59,13 @@ export function gateUnitary(step: Pick<BuilderStep, "gate" | "param">): GateUnit
     case "Z":
     case "S":
     case "T":
+    case "SDG":
+    case "TDG":
       return twoByTwo(singleQubitUnitary(step.gate));
     case "RX":
     case "RY":
-    case "RZ": {
+    case "RZ":
+    case "P": {
       const theta = gateAngleRadians(step.param);
       return theta === null ? null : twoByTwo(singleQubitUnitary(step.gate, theta));
     }
@@ -70,6 +75,36 @@ export function gateUnitary(step: Pick<BuilderStep, "gate" | "param">): GateUnit
       return { size: 4, rows: permutation([[1, 0, 0, 0], [0, 1, 0, 0], [0, 0, 1, 0], [0, 0, 0, -1]]) };
     case "SWAP":
       return { size: 4, rows: permutation([[1, 0, 0, 0], [0, 0, 1, 0], [0, 1, 0, 0], [0, 0, 0, 1]]) };
+    case "CP": {
+      const theta = gateAngleRadians(step.param);
+      if (theta === null) return null;
+      const rows = permutation([[1, 0, 0, 0], [0, 1, 0, 0], [0, 0, 1, 0], [0, 0, 0, 0]]);
+      rows[3][3] = { re: Math.cos(theta), im: Math.sin(theta) };
+      return { size: 4, rows };
+    }
+    case "RZZ": {
+      const theta = gateAngleRadians(step.param);
+      if (theta === null) return null;
+      const agree: Amplitude = { re: Math.cos(theta / 2), im: -Math.sin(theta / 2) };
+      const disagree: Amplitude = { re: Math.cos(theta / 2), im: Math.sin(theta / 2) };
+      // |00⟩ and |11⟩ agree (Z⊗Z eigenvalue +1); |01⟩ and |10⟩ disagree (-1).
+      const diagonal = [agree, disagree, disagree, agree];
+      return { size: 4, rows: diagonal.map((entry, index) => diagonal.map((_, column) => (column === index ? entry : { re: 0, im: 0 }))) };
+    }
+    case "CCX":
+      return {
+        size: 8,
+        rows: permutation([
+          [1, 0, 0, 0, 0, 0, 0, 0],
+          [0, 1, 0, 0, 0, 0, 0, 0],
+          [0, 0, 1, 0, 0, 0, 0, 0],
+          [0, 0, 0, 1, 0, 0, 0, 0],
+          [0, 0, 0, 0, 1, 0, 0, 0],
+          [0, 0, 0, 0, 0, 1, 0, 0],
+          [0, 0, 0, 0, 0, 0, 0, 1],
+          [0, 0, 0, 0, 0, 0, 1, 0],
+        ]),
+      };
     default:
       return null;
   }

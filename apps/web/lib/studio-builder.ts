@@ -1,6 +1,11 @@
 import type { CircuitFrameworkKey } from "./circuit-frameworks";
 
-export type BuiltinBuilderGate = "H" | "X" | "Y" | "Z" | "S" | "T" | "RX" | "RY" | "RZ" | "CX" | "CZ" | "SWAP" | "M";
+export type BuiltinBuilderGate =
+  | "H" | "X" | "Y" | "Z" | "S" | "T" | "SDG" | "TDG"
+  | "RX" | "RY" | "RZ" | "P"
+  | "CX" | "CZ" | "SWAP" | "CP" | "RZZ"
+  | "CCX"
+  | "M";
 export type BuilderGate = BuiltinBuilderGate | "CUSTOM";
 export type BuilderCodeVariants = Record<CircuitFrameworkKey, string>;
 
@@ -21,9 +26,39 @@ export type CustomGateDefinition = {
   opaque?: boolean;
 };
 
-export const BUILDER_GATES: BuiltinBuilderGate[] = ["H", "X", "Y", "Z", "S", "T", "RX", "RY", "RZ", "CX", "CZ", "SWAP", "M"];
-export const TWO_QUBIT_GATES: BuiltinBuilderGate[] = ["CX", "CZ", "SWAP"];
+export const BUILDER_GATES: BuiltinBuilderGate[] = [
+  "H", "X", "Y", "Z", "S", "T", "SDG", "TDG",
+  "RX", "RY", "RZ", "P",
+  "CX", "CZ", "SWAP", "CP", "RZZ",
+  "CCX",
+  "M",
+];
+/** Every two-qubit builtin, entanglers and the two-qubit parameterized gates alike. */
+export const TWO_QUBIT_GATES: BuiltinBuilderGate[] = ["CX", "CZ", "SWAP", "CP", "RZZ"];
+/** The one three-qubit builtin. A qubit-count switch that only knows "one or two"
+ * silently truncates CCX's third wire — every arity check in this file and its
+ * callers goes through `builderGateArity` instead of a bare ternary. */
+export const THREE_QUBIT_GATES: BuiltinBuilderGate[] = ["CCX"];
+/** The three original single-qubit rotations. Unchanged in meaning: still
+ * exactly "one qubit, needs an angle". P is angle-carrying and single-qubit
+ * too, but it is not a rotation about a Bloch axis, so it lives in
+ * `ANGLE_GATES` below rather than silently widening what this name means. */
 export const ROTATION_GATES: BuiltinBuilderGate[] = ["RX", "RY", "RZ"];
+/** Every builtin whose BuilderStep must carry an angle `param` — the three
+ * rotations plus the phase gate and the two parameterized two-qubit gates. */
+export const ANGLE_GATES: BuiltinBuilderGate[] = ["RX", "RY", "RZ", "P", "CP", "RZZ"];
+
+/** How many qubits a builtin gate's `qubits` array must hold. */
+export function builderGateArity(gate: BuiltinBuilderGate): 1 | 2 | 3 {
+  if ((THREE_QUBIT_GATES as string[]).includes(gate)) return 3;
+  if ((TWO_QUBIT_GATES as string[]).includes(gate)) return 2;
+  return 1;
+}
+
+/** Whether a builtin gate's BuilderStep must carry an angle `param`. */
+export function builderGateNeedsAngle(gate: BuiltinBuilderGate): boolean {
+  return (ANGLE_GATES as string[]).includes(gate);
+}
 
 export function createBuilderStepId(prefix = "step"): string {
   return `${prefix}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
@@ -62,7 +97,7 @@ function usedCustomGates(steps: BuilderStep[], customGates: CustomGateDefinition
 type QubitReference = (qubit: number) => string;
 
 function qiskitOperation(step: BuilderStep, resolve: QubitReference, customGates: CustomGateDefinition[]): string {
-  const [a, b] = step.qubits;
+  const [a, b, c] = step.qubits;
   switch (step.gate) {
     case "H": return `qc.h(${resolve(a)})`;
     case "X": return `qc.x(${resolve(a)})`;
@@ -70,12 +105,18 @@ function qiskitOperation(step: BuilderStep, resolve: QubitReference, customGates
     case "Z": return `qc.z(${resolve(a)})`;
     case "S": return `qc.s(${resolve(a)})`;
     case "T": return `qc.t(${resolve(a)})`;
+    case "SDG": return `qc.sdg(${resolve(a)})`;
+    case "TDG": return `qc.tdg(${resolve(a)})`;
     case "RX": return `qc.rx(${step.param}, ${resolve(a)})`;
     case "RY": return `qc.ry(${step.param}, ${resolve(a)})`;
     case "RZ": return `qc.rz(${step.param}, ${resolve(a)})`;
+    case "P": return `qc.p(${step.param}, ${resolve(a)})`;
     case "CX": return `qc.cx(${resolve(a)}, ${resolve(b)})`;
     case "CZ": return `qc.cz(${resolve(a)}, ${resolve(b)})`;
     case "SWAP": return `qc.swap(${resolve(a)}, ${resolve(b)})`;
+    case "CP": return `qc.cp(${step.param}, ${resolve(a)}, ${resolve(b)})`;
+    case "RZZ": return `qc.rzz(${step.param}, ${resolve(a)}, ${resolve(b)})`;
+    case "CCX": return `qc.ccx(${resolve(a)}, ${resolve(b)}, ${resolve(c)})`;
     case "CUSTOM": {
       const custom = customGates.find((gate) => gate.id === step.customGateId);
       return custom
@@ -87,7 +128,7 @@ function qiskitOperation(step: BuilderStep, resolve: QubitReference, customGates
 }
 
 function pennylaneOperation(step: BuilderStep, resolve: QubitReference, customGates: CustomGateDefinition[]): string {
-  const [a, b] = step.qubits;
+  const [a, b, c] = step.qubits;
   switch (step.gate) {
     case "H": return `qml.Hadamard(wires=${resolve(a)})`;
     case "X": return `qml.PauliX(wires=${resolve(a)})`;
@@ -95,12 +136,21 @@ function pennylaneOperation(step: BuilderStep, resolve: QubitReference, customGa
     case "Z": return `qml.PauliZ(wires=${resolve(a)})`;
     case "S": return `qml.S(wires=${resolve(a)})`;
     case "T": return `qml.T(wires=${resolve(a)})`;
+    // PennyLane has no dedicated dagger gates; `qml.adjoint` is the documented
+    // way to invert any operator, S and T included.
+    case "SDG": return `qml.adjoint(qml.S)(wires=${resolve(a)})`;
+    case "TDG": return `qml.adjoint(qml.T)(wires=${resolve(a)})`;
     case "RX": return `qml.RX(${step.param}, wires=${resolve(a)})`;
     case "RY": return `qml.RY(${step.param}, wires=${resolve(a)})`;
     case "RZ": return `qml.RZ(${step.param}, wires=${resolve(a)})`;
+    case "P": return `qml.PhaseShift(${step.param}, wires=${resolve(a)})`;
     case "CX": return `qml.CNOT(wires=[${resolve(a)}, ${resolve(b)}])`;
     case "CZ": return `qml.CZ(wires=[${resolve(a)}, ${resolve(b)}])`;
     case "SWAP": return `qml.SWAP(wires=[${resolve(a)}, ${resolve(b)}])`;
+    case "CP": return `qml.ControlledPhaseShift(${step.param}, wires=[${resolve(a)}, ${resolve(b)}])`;
+    // IsingZZ(phi) = exp(-i phi/2 Z⊗Z), the same convention this file's RZZ uses.
+    case "RZZ": return `qml.IsingZZ(${step.param}, wires=[${resolve(a)}, ${resolve(b)}])`;
+    case "CCX": return `qml.Toffoli(wires=[${resolve(a)}, ${resolve(b)}, ${resolve(c)}])`;
     case "CUSTOM": {
       const custom = customGates.find((gate) => gate.id === step.customGateId);
       return custom
@@ -112,7 +162,7 @@ function pennylaneOperation(step: BuilderStep, resolve: QubitReference, customGa
 }
 
 function cirqOperation(step: BuilderStep, resolve: QubitReference, customGates: CustomGateDefinition[]): string {
-  const [a, b] = step.qubits;
+  const [a, b, c] = step.qubits;
   switch (step.gate) {
     case "H": return `cirq.H(${resolve(a)})`;
     case "X": return `cirq.X(${resolve(a)})`;
@@ -120,12 +170,22 @@ function cirqOperation(step: BuilderStep, resolve: QubitReference, customGates: 
     case "Z": return `cirq.Z(${resolve(a)})`;
     case "S": return `cirq.S(${resolve(a)})`;
     case "T": return `cirq.T(${resolve(a)})`;
+    // Cirq has no dedicated dagger constants; `**-1` on the (EigenGate) S/T
+    // gates is the documented way to invert them.
+    case "SDG": return `(cirq.S**-1)(${resolve(a)})`;
+    case "TDG": return `(cirq.T**-1)(${resolve(a)})`;
     case "RX": return `cirq.rx(${step.param}).on(${resolve(a)})`;
     case "RY": return `cirq.ry(${step.param}).on(${resolve(a)})`;
     case "RZ": return `cirq.rz(${step.param}).on(${resolve(a)})`;
+    // ZPowGate(exponent=t) applies diag(1, e^{i*pi*t}); dividing by pi converts
+    // this file's radians into that "turns" exponent.
+    case "P": return `cirq.ZPowGate(exponent=(${step.param})/pi).on(${resolve(a)})`;
     case "CX": return `cirq.CNOT(${resolve(a)}, ${resolve(b)})`;
     case "CZ": return `cirq.CZ(${resolve(a)}, ${resolve(b)})`;
     case "SWAP": return `cirq.SWAP(${resolve(a)}, ${resolve(b)})`;
+    case "CP": return `cirq.CZPowGate(exponent=(${step.param})/pi).on(${resolve(a)}, ${resolve(b)})`;
+    case "RZZ": return `cirq.rzz(${step.param}).on(${resolve(a)}, ${resolve(b)})`;
+    case "CCX": return `cirq.CCX(${resolve(a)}, ${resolve(b)}, ${resolve(c)})`;
     case "CUSTOM": {
       const custom = customGates.find((gate) => gate.id === step.customGateId);
       return custom
@@ -156,6 +216,70 @@ function cirqDefinition(gate: CustomGateDefinition, customGates: CustomGateDefin
   ];
 }
 
+/**
+ * Whether saving `newSteps` as the body of `definitionId` would make that
+ * block (directly or through another block it calls) contain itself. Checked
+ * at save time, before a block-edit panel is allowed to write the new
+ * definition — a definition already on disk is never re-checked against its
+ * own unedited body, only a proposed replacement.
+ */
+export function customGateDefinitionHasCycle(
+  definitionId: string,
+  newSteps: BuilderStep[],
+  customGates: CustomGateDefinition[],
+): boolean {
+  const byId = new Map(customGates.map((gate) => [gate.id, gate]));
+  const visit = (steps: BuilderStep[], visited: ReadonlySet<string>): boolean => {
+    for (const step of steps) {
+      if (step.gate !== "CUSTOM" || !step.customGateId) continue;
+      if (step.customGateId === definitionId) return true;
+      if (visited.has(step.customGateId)) continue;
+      const nested = byId.get(step.customGateId);
+      if (nested && visit(nested.steps, new Set(visited).add(step.customGateId))) return true;
+    }
+    return false;
+  };
+  return visit(newSteps, new Set());
+}
+
+/** How many places instantiate this block — the top-level canvas plus every
+ * other definition's own steps. Saving a block's definition changes all of
+ * them; a block-edit panel shows this count before Save commits. */
+export function customGateUsageCount(
+  definitionId: string,
+  steps: BuilderStep[],
+  customGates: CustomGateDefinition[],
+): number {
+  const uses = (list: BuilderStep[]) => list.filter((step) => step.gate === "CUSTOM" && step.customGateId === definitionId).length;
+  return uses(steps) + customGates.reduce((sum, gate) => sum + (gate.id === definitionId ? 0 : uses(gate.steps)), 0);
+}
+
+/**
+ * Replace one CUSTOM step with its definition's own steps, in place, one
+ * level — a nested block inside the definition stays a CUSTOM step rather
+ * than being flattened further. Returns null instead of guessing when the
+ * step is missing, is not a CUSTOM step, or its definition is opaque or empty
+ * (an opaque block has no steps to ungroup into).
+ */
+export function ungroupCustomGateStep(
+  steps: BuilderStep[],
+  stepId: string,
+  customGates: CustomGateDefinition[],
+): BuilderStep[] | null {
+  const index = steps.findIndex((step) => step.id === stepId);
+  if (index === -1) return null;
+  const target = steps[index];
+  if (target.gate !== "CUSTOM" || !target.customGateId) return null;
+  const definition = customGates.find((gate) => gate.id === target.customGateId);
+  if (!definition || definition.opaque || !definition.steps.length) return null;
+  const replacement = definition.steps.map((child) => ({
+    ...child,
+    id: createBuilderStepId(`${target.id}-ungrouped`),
+    qubits: child.qubits.map((qubit) => target.qubits[qubit]),
+  }));
+  return [...steps.slice(0, index), ...replacement, ...steps.slice(index + 1)];
+}
+
 export function flattenBuilderSteps(
   steps: BuilderStep[],
   customGates: CustomGateDefinition[],
@@ -177,7 +301,7 @@ export function flattenBuilderSteps(
 }
 
 function cudaqOperation(step: BuilderStep): string {
-  const [a, b] = step.qubits;
+  const [a, b, c] = step.qubits;
   switch (step.gate) {
     case "H": return `h(q[${a}])`;
     case "X": return `x(q[${a}])`;
@@ -185,19 +309,54 @@ function cudaqOperation(step: BuilderStep): string {
     case "Z": return `z(q[${a}])`;
     case "S": return `s(q[${a}])`;
     case "T": return `t(q[${a}])`;
+    // `.adj` is CUDA-Q's documented adjoint modifier, available on any gate.
+    case "SDG": return `s.adj(q[${a}])`;
+    case "TDG": return `t.adj(q[${a}])`;
     case "RX": return `rx(${step.param}, q[${a}])`;
     case "RY": return `ry(${step.param}, q[${a}])`;
     case "RZ": return `rz(${step.param}, q[${a}])`;
+    // r1(theta, qubit) is CUDA-Q's native "rotation about |1>", i.e. diag(1, e^{i*theta}).
+    case "P": return `r1(${step.param}, q[${a}])`;
     case "CX": return `x.ctrl(q[${a}], q[${b}])`;
     case "CZ": return `z.ctrl(q[${a}], q[${b}])`;
     case "SWAP": return `swap(q[${a}], q[${b}])`;
+    // No documented native controlled-phase or RZZ modifier combination, so
+    // both are decomposed here from confirmed-native primitives (r1/rz plus
+    // `.ctrl`) rather than guessed at a single call. CP(θ) = P(θ/2) on the
+    // control · CX · P(-θ/2) on the target · CX · P(θ/2) on the target;
+    // RZZ(θ) = CX · RZ(θ) on the target · CX.
+    // Joined with a newline plus the kernel body's own 4-space indent, so every
+    // line lands at the same depth once the caller prefixes this whole string
+    // with its usual leading "    " (a plain "\n" would leave lines 2+ flush left).
+    case "CP": return [
+      `r1(${halfExpr(step.param)}, q[${a}])`,
+      `x.ctrl(q[${a}], q[${b}])`,
+      `r1(${negateExpr(halfExpr(step.param))}, q[${b}])`,
+      `x.ctrl(q[${a}], q[${b}])`,
+      `r1(${halfExpr(step.param)}, q[${b}])`,
+    ].join("\n    ");
+    case "RZZ": return [
+      `x.ctrl(q[${a}], q[${b}])`,
+      `rz(${step.param}, q[${b}])`,
+      `x.ctrl(q[${a}], q[${b}])`,
+    ].join("\n    ");
+    // `.ctrl` takes its controls as one list before the target.
+    case "CCX": return `x.ctrl([q[${a}], q[${b}]], q[${c}])`;
     case "M": return "";
     case "CUSTOM": return "";
   }
 }
 
+function halfExpr(param: string | undefined): string {
+  return `(${param})/2`;
+}
+
+function negateExpr(expr: string): string {
+  return `-(${expr})`;
+}
+
 function braketOperation(step: BuilderStep): string {
-  const [a, b] = step.qubits;
+  const [a, b, c] = step.qubits;
   switch (step.gate) {
     case "H": return `circuit.h(${a})`;
     case "X": return `circuit.x(${a})`;
@@ -205,19 +364,31 @@ function braketOperation(step: BuilderStep): string {
     case "Z": return `circuit.z(${a})`;
     case "S": return `circuit.s(${a})`;
     case "T": return `circuit.t(${a})`;
+    // `si`/`ti` are Braket's own names for the conjugate transposes of S/T.
+    case "SDG": return `circuit.si(${a})`;
+    case "TDG": return `circuit.ti(${a})`;
     case "RX": return `circuit.rx(${a}, ${step.param})`;
     case "RY": return `circuit.ry(${a}, ${step.param})`;
     case "RZ": return `circuit.rz(${a}, ${step.param})`;
+    case "P": return `circuit.phaseshift(${a}, ${step.param})`;
     case "CX": return `circuit.cnot(${a}, ${b})`;
     case "CZ": return `circuit.cz(${a}, ${b})`;
     case "SWAP": return `circuit.swap(${a}, ${b})`;
+    case "CP": return `circuit.cphaseshift(${a}, ${b}, ${step.param})`;
+    // circuit.zz(q0, q1, angle) = exp(-i*angle*Z⊗Z/2), the same convention this file's RZZ uses.
+    case "RZZ": return `circuit.zz(${a}, ${b}, ${step.param})`;
+    case "CCX": return `circuit.ccnot(${a}, ${b}, ${c})`;
     case "M": return "";
     case "CUSTOM": return "";
   }
 }
 
+/** `stdgates.inc` defines `p`, `cp`, `ccx`, `sdg` and `tdg` natively, but not
+ * `rzz` — its call site below relies on the `gate rzz(theta) a, b { ... }`
+ * preamble `generateBuilderCode` emits once, ahead of `qubit[...] q;`, when
+ * any step uses it (see `RZZ_QASM_GATE_DEFINITION` and its use below). */
 function openqasmOperation(step: BuilderStep): string {
-  const [a, b] = step.qubits;
+  const [a, b, c] = step.qubits;
   switch (step.gate) {
     case "H": return `h q[${a}];`;
     case "X": return `x q[${a}];`;
@@ -225,19 +396,33 @@ function openqasmOperation(step: BuilderStep): string {
     case "Z": return `z q[${a}];`;
     case "S": return `s q[${a}];`;
     case "T": return `t q[${a}];`;
+    case "SDG": return `sdg q[${a}];`;
+    case "TDG": return `tdg q[${a}];`;
     case "RX": return `rx(${step.param}) q[${a}];`;
     case "RY": return `ry(${step.param}) q[${a}];`;
     case "RZ": return `rz(${step.param}) q[${a}];`;
+    case "P": return `p(${step.param}) q[${a}];`;
     case "CX": return `cx q[${a}], q[${b}];`;
     case "CZ": return `cz q[${a}], q[${b}];`;
     case "SWAP": return `swap q[${a}], q[${b}];`;
+    case "CP": return `cp(${step.param}) q[${a}], q[${b}];`;
+    case "RZZ": return `rzz(${step.param}) q[${a}], q[${b}];`;
+    case "CCX": return `ccx q[${a}], q[${b}], q[${c}];`;
     case "M": return "";
     case "CUSTOM": return "";
   }
 }
 
+/** OpenQASM 3's `stdgates.inc` has no `rzz`. This is the exact shape Qiskit's
+ * own qasm3 exporter uses for a bound RZZ instruction (see
+ * `circuit-conversion.ts`'s `parseOpenQasm3StandardGates`, which already
+ * reconstructs this precise definition), so emitting it here keeps the two
+ * directions round-trippable through the same shape rather than inventing a
+ * second one. */
+const RZZ_QASM_GATE_DEFINITION = ["gate rzz(theta) a, b {", "    cx a, b;", "    rz(theta) b;", "    cx a, b;", "}"];
+
 function pyquilOperation(step: BuilderStep): string {
-  const [a, b] = step.qubits;
+  const [a, b, c] = step.qubits;
   switch (step.gate) {
     case "H": return `program += H(${a})`;
     case "X": return `program += X(${a})`;
@@ -245,19 +430,29 @@ function pyquilOperation(step: BuilderStep): string {
     case "Z": return `program += Z(${a})`;
     case "S": return `program += S(${a})`;
     case "T": return `program += T(${a})`;
+    // pyquil.gates has no SDG/TDG; PHASE(-pi/2) and PHASE(-pi/4) are exact —
+    // S = PHASE(pi/2) and T = PHASE(pi/4), so this is the inverse, not an
+    // approximation.
+    case "SDG": return `program += PHASE(-pi/2, ${a})`;
+    case "TDG": return `program += PHASE(-pi/4, ${a})`;
     case "RX": return `program += RX(${step.param}, ${a})`;
     case "RY": return `program += RY(${step.param}, ${a})`;
     case "RZ": return `program += RZ(${step.param}, ${a})`;
+    case "P": return `program += PHASE(${step.param}, ${a})`;
     case "CX": return `program += CNOT(${a}, ${b})`;
     case "CZ": return `program += CZ(${a}, ${b})`;
     case "SWAP": return `program += SWAP(${a}, ${b})`;
+    case "CP": return `program += CPHASE(${step.param}, ${a}, ${b})`;
+    // pyquil's standard gate set has no RZZ; decompose exactly (RZZ(θ) = CX · RZ(θ)@target · CX).
+    case "RZZ": return `program += CNOT(${a}, ${b})\nprogram += RZ(${step.param}, ${b})\nprogram += CNOT(${a}, ${b})`;
+    case "CCX": return `program += CCNOT(${a}, ${b}, ${c})`;
     case "M": return "";
     case "CUSTOM": return "";
   }
 }
 
 function qiboOperation(step: BuilderStep): string {
-  const [a, b] = step.qubits;
+  const [a, b, c] = step.qubits;
   switch (step.gate) {
     case "H": return `circuit.add(gates.H(${a}))`;
     case "X": return `circuit.add(gates.X(${a}))`;
@@ -265,19 +460,27 @@ function qiboOperation(step: BuilderStep): string {
     case "Z": return `circuit.add(gates.Z(${a}))`;
     case "S": return `circuit.add(gates.S(${a}))`;
     case "T": return `circuit.add(gates.T(${a}))`;
+    case "SDG": return `circuit.add(gates.SDG(${a}))`;
+    case "TDG": return `circuit.add(gates.TDG(${a}))`;
     case "RX": return `circuit.add(gates.RX(${a}, ${step.param}))`;
     case "RY": return `circuit.add(gates.RY(${a}, ${step.param}))`;
     case "RZ": return `circuit.add(gates.RZ(${a}, ${step.param}))`;
+    // Qibo's phase gate is the OpenQASM-derived U1(qubit, theta) = diag(1, e^{i*theta}).
+    case "P": return `circuit.add(gates.U1(${a}, ${step.param}))`;
     case "CX": return `circuit.add(gates.CNOT(${a}, ${b}))`;
     case "CZ": return `circuit.add(gates.CZ(${a}, ${b}))`;
     case "SWAP": return `circuit.add(gates.SWAP(${a}, ${b}))`;
+    // Qibo's controlled phase is named CU1 (controlled-U1), not CPHASE.
+    case "CP": return `circuit.add(gates.CU1(${a}, ${b}, ${step.param}))`;
+    case "RZZ": return `circuit.add(gates.RZZ(${a}, ${b}, ${step.param}))`;
+    case "CCX": return `circuit.add(gates.TOFFOLI(${a}, ${b}, ${c}))`;
     case "M": return "";
     case "CUSTOM": return "";
   }
 }
 
 function qulacsOperation(step: BuilderStep): string {
-  const [a, b] = step.qubits;
+  const [a, b, c] = step.qubits;
   switch (step.gate) {
     case "H": return `circuit.add_gate(H(${a}))`;
     case "X": return `circuit.add_gate(X(${a}))`;
@@ -285,13 +488,37 @@ function qulacsOperation(step: BuilderStep): string {
     case "Z": return `circuit.add_gate(Z(${a}))`;
     case "S": return `circuit.add_gate(S(${a}))`;
     case "T": return `circuit.add_gate(T(${a}))`;
+    case "SDG": return `circuit.add_gate(Sdag(${a}))`;
+    case "TDG": return `circuit.add_gate(Tdag(${a}))`;
     // Qulacs uses exp(+i theta Pauli/2); portable angles use exp(-i theta Pauli/2).
     case "RX": return `circuit.add_gate(RX(${a}, -(${step.param})))`;
     case "RY": return `circuit.add_gate(RY(${a}, -(${step.param})))`;
     case "RZ": return `circuit.add_gate(RZ(${a}, -(${step.param})))`;
+    // U1(index, lambda) is Qulacs' QASM-derived phase gate, diag(1, e^{i*lambda}) —
+    // a fixed diagonal unitary, not an exp(±i·Pauli/2) rotation, so unlike
+    // RX/RY/RZ above it carries no sign-convention flip.
+    case "P": return `circuit.add_gate(U1(${a}, ${step.param}))`;
     case "CX": return `circuit.add_gate(CNOT(${a}, ${b}))`;
     case "CZ": return `circuit.add_gate(CZ(${a}, ${b}))`;
     case "SWAP": return `circuit.add_gate(SWAP(${a}, ${b}))`;
+    // Qulacs has no controlled-phase gate (`qulacs.gate.CP` is an unrelated
+    // completely-positive Kraus-map helper, not a quantum gate) and no RZZ, so
+    // both are decomposed from confirmed-native U1/CNOT/RZ. Joined with a
+    // trailing newline; qulacsLines are spread as top-level statements, so no
+    // extra indent is needed (contrast the CUDA-Q kernel body above).
+    case "CP": return [
+      `circuit.add_gate(U1(${a}, ${halfExpr(step.param)}))`,
+      `circuit.add_gate(CNOT(${a}, ${b}))`,
+      `circuit.add_gate(U1(${b}, ${negateExpr(halfExpr(step.param))}))`,
+      `circuit.add_gate(CNOT(${a}, ${b}))`,
+      `circuit.add_gate(U1(${b}, ${halfExpr(step.param)}))`,
+    ].join("\n");
+    case "RZZ": return [
+      `circuit.add_gate(CNOT(${a}, ${b}))`,
+      `circuit.add_gate(RZ(${b}, -(${step.param})))`,
+      `circuit.add_gate(CNOT(${a}, ${b}))`,
+    ].join("\n");
+    case "CCX": return `circuit.add_gate(TOFFOLI(${a}, ${b}, ${c}))`;
     case "M": return "";
     case "CUSTOM": return "";
   }
@@ -321,7 +548,7 @@ function qulacsOperation(step: BuilderStep): string {
  * file is where a reader actually sees it.
  */
 function qmodOperation(step: BuilderStep): string {
-  const [a, b] = step.qubits;
+  const [a, b, c] = step.qubits;
   switch (step.gate) {
     case "H": return `H(q[${a}])`;
     case "X": return `X(q[${a}])`;
@@ -329,12 +556,23 @@ function qmodOperation(step: BuilderStep): string {
     case "Z": return `Z(q[${a}])`;
     case "S": return `S(q[${a}])`;
     case "T": return `T(q[${a}])`;
+    // Classiq's standard_gates reference does not document SDG/TDG; PHASE is
+    // documented, and PHASE(-pi/2)/PHASE(-pi/4) are exact inverses of S and T.
+    case "SDG": return `PHASE(-pi/2, q[${a}])`;
+    case "TDG": return `PHASE(-pi/4, q[${a}])`;
     case "RX": return `RX(${step.param}, q[${a}])`;
     case "RY": return `RY(${step.param}, q[${a}])`;
     case "RZ": return `RZ(${step.param}, q[${a}])`;
+    case "P": return `PHASE(${step.param}, q[${a}])`;
     case "CX": return `CX(q[${a}], q[${b}])`;
     case "CZ": return `CZ(q[${a}], q[${b}])`;
     case "SWAP": return `SWAP(q[${a}], q[${b}])`;
+    // Classiq's controlled phase is `CPhase`, not `CPHASE`.
+    case "CP": return `CPhase(${step.param}, q[${a}], q[${b}])`;
+    // Classiq's RZZ/CCX take their multi-qubit operand as one QArray, unlike
+    // the single-target gates above.
+    case "RZZ": return `RZZ(${step.param}, [q[${a}], q[${b}]])`;
+    case "CCX": return `CCX([q[${a}], q[${b}]], q[${c}])`;
     case "M": return "";
     case "CUSTOM": return "";
   }
@@ -451,9 +689,13 @@ export function generateBuilderCode(
   ].join("\n");
 
   const openqasmLines = flattenedOperations.map(openqasmOperation).filter(Boolean);
+  const usesRzz = flattenedOperations.some((step) => step.gate === "RZZ");
   const openqasm3 = [
     "OPENQASM 3.0;",
     'include "stdgates.inc";',
+    // stdgates.inc has no rzz; define it once, the same shape Qiskit's own
+    // qasm3 exporter uses for a bound RZZ instruction.
+    ...(usesRzz ? RZZ_QASM_GATE_DEFINITION : []),
     `qubit[${qubitCount}] q;`,
     ...(measured ? [`bit[${qubitCount}] c;`] : []),
     "",
@@ -464,7 +706,7 @@ export function generateBuilderCode(
   const pyquilLines = flattenedOperations.map(pyquilOperation).filter(Boolean);
   const pyquil = [
     "from pyquil import Program",
-    `from pyquil.gates import ${["H", "X", "Y", "Z", "S", "T", "RX", "RY", "RZ", "CNOT", "CZ", "SWAP", ...(measured ? ["MEASURE"] : [])].join(", ")}`,
+    `from pyquil.gates import ${["H", "X", "Y", "Z", "S", "T", "PHASE", "RX", "RY", "RZ", "CNOT", "CZ", "SWAP", "CPHASE", "CCNOT", ...(measured ? ["MEASURE"] : [])].join(", ")}`,
     ...(usesAngle ? ["from math import pi"] : []),
     "",
     "program = Program()",
@@ -490,7 +732,7 @@ export function generateBuilderCode(
   const qulacsLines = flattenedOperations.map(qulacsOperation).filter(Boolean);
   const qulacs = [
     "from qulacs import QuantumCircuit",
-    `from qulacs.gate import ${["H", "X", "Y", "Z", "S", "T", "RX", "RY", "RZ", "CNOT", "CZ", "SWAP", ...(measured ? ["Measurement"] : [])].join(", ")}`,
+    `from qulacs.gate import ${["H", "X", "Y", "Z", "S", "T", "Sdag", "Tdag", "RX", "RY", "RZ", "U1", "CNOT", "CZ", "SWAP", "TOFFOLI", ...(measured ? ["Measurement"] : [])].join(", ")}`,
     ...(usesAngle ? ["from math import pi"] : []),
     "",
     `circuit = QuantumCircuit(${qubitCount})`,

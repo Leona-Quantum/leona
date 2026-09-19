@@ -290,3 +290,135 @@
   .mj-atlas-playhead, .mj-atlas-op rect, .mj-atlas-fold-summary::before, .mj-atlas-thumb-slot { transition: none; }
 }
 /* ===== end Atlas visual pass ================================================ */
+
+/* ===== Worked-example figure (Atlas worked-example lane, 2026-09-15) =======
+   The concrete-example hero that replaces the plain circuit drawing when a
+   record's first resolvable worked-example link is "instance". Shares the
+   .mj-atlas-figure/.mj-atlas-stage/.mj-atlas-op/.mj-atlas-controls/
+   .mj-atlas-outcomes rules above — reduced-motion handling included — and
+   adds only what those do not already carry: the disclaimer, title and
+   instance sentence above the drawing, the per-step notes list below it, and
+   the readout / Open-in-Studio row at the end. ============================ */
+.mj-worked-example { display: grid; gap: var(--sp-3); }
+.mj-worked-example-disclaimer { margin: 0; color: var(--text-2); font-size: var(--fs-12); }
+.mj-worked-example-title { margin: 0; }
+.mj-worked-example-instance { margin: 0; color: var(--text-1); }
+.mj-worked-example-reading { display: grid; align-content: start; gap: var(--sp-2); }
+.mj-worked-example-expectation { display: grid; gap: var(--sp-1); margin: 0; }
+.mj-worked-example-expectation strong { color: var(--text-0); font-family: var(--font-mono); font-size: var(--fs-16); font-variant-numeric: tabular-nums; }
+.mj-worked-example-hamiltonian { margin: 0; color: var(--text-2); font-family: var(--font-mono); font-size: var(--fs-13); }
+.mj-worked-example-notes { display: grid; gap: var(--sp-3); margin: 0; padding: 0; list-style: none; }
+.mj-worked-example-note { padding: var(--sp-3); border: var(--border-hairline) solid var(--border-0); border-radius: var(--radius-control); }
+.mj-worked-example-note[data-current] { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 6%, transparent); }
+.mj-worked-example-note-step { display: block; margin: 0 0 var(--sp-1); padding: 0; border: 0; background: none; color: var(--text-0); font-size: var(--fs-14); text-align: left; cursor: pointer; }
+.mj-worked-example-note-step:hover, .mj-worked-example-note-step:focus-visible { color: var(--accent); }
+.mj-worked-example-note p { margin: 0; color: var(--text-1); font-size: var(--fs-13); line-height: 1.5; }
+.mj-worked-example-block-toggle { margin-top: var(--sp-2); padding: 0; border: 0; background: none; color: var(--text-2); font-size: var(--fs-12); text-decoration: underline; cursor: pointer; }
+.mj-worked-example-block-toggle:hover, .mj-worked-example-block-toggle:focus-visible { color: var(--accent); }
+.mj-worked-example-block-gates { display: grid; gap: var(--sp-2); margin: var(--sp-2) 0 0; padding: 0 0 0 var(--sp-4); color: var(--text-2); font-size: var(--fs-12); font-family: var(--font-mono); }
+/* The derived reading for one gate inside an opened block. Sans, not mono:
+   the gate label above it is mono because it is a symbol, and this is prose. */
+.mj-worked-example-block-effect {
+  margin: 2px 0 0;
+  color: var(--text-2);
+  font-family: var(--font-ui);
+  font-size: var(--fs-12);
+  line-height: 1.5;
+}
+.mj-worked-example-readout { margin: 0; padding: var(--sp-3); border: var(--border-hairline) solid var(--border-0); border-radius: var(--radius-control); background: var(--bg-1); color: var(--text-0); }
+.mj-worked-example-signin-note { margin: 0; color: var(--text-2); font-size: var(--fs-13); }
+.mj-worked-example-component-note { margin: var(--sp-3) 0; padding: var(--sp-3); border: 1px dashed var(--border-0); border-radius: var(--radius-control); font-size: var(--fs-13); }
+.mj-worked-example-component-note a { color: var(--accent); }
+/* ===== end worked-example figure ============================================ */
+
+/* ===== worked-example: derived step effect and phase panel =================== */
+/* The one-sentence account of what a step did to the state, under the author's
+   note. `data-change` is the classifier's own verdict, so the accent can mark
+   the case a reader is most likely to skip past: a step whose whole content is
+   phase, which the probability bars show as nothing happening. */
+.mj-worked-example-effect {
+  margin: var(--sp-2) 0 0;
+  padding-left: var(--sp-3);
+  border-left: 2px solid var(--border-0);
+  color: var(--text-2);
+  font-size: var(--fs-12);
+  line-height: 1.55;
+}
+.mj-worked-example-effect[data-change="phase"] { border-left-color: var(--accent); color: var(--text-1); }
+.mj-worked-example-effect[data-change="none"] { font-style: italic; }
+
+.mj-worked-example-phases { display: grid; gap: var(--sp-2); }
+.mj-worked-example-phase-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-family: var(--font-mono);
+  font-size: var(--fs-12);
+  font-variant-numeric: tabular-nums;
+}
+.mj-worked-example-phase-table th,
+.mj-worked-example-phase-table td {
+  padding: 2px var(--sp-1);
+  text-align: right;
+  font-weight: 400;
+}
+.mj-worked-example-phase-table thead th {
+  color: var(--text-2);
+  font-size: var(--fs-12);
+  border-bottom: var(--border-hairline) solid var(--border-0);
+}
+.mj-worked-example-phase-table tbody th { color: var(--text-0); text-align: left; }
+.mj-worked-example-phase-table tbody td { color: var(--text-1); }
+.mj-worked-example-phase-value { width: 4.5em; }
+
+/* A phase drawn as a point on the unit circle — see PhaseDial in
+   components/atlas-worked-example.tsx for why a point and not a hand. The rim
+   is deliberately dim and the point is the accent: the reader is comparing
+   eight positions, not eight circles. */
+.mj-worked-example-phase-dial { display: inline-block; width: 16px; height: 16px; vertical-align: middle; }
+.mj-worked-example-phase-rim { fill: none; stroke: var(--border-0); stroke-width: 1; }
+.mj-worked-example-phase-hand { stroke: color-mix(in srgb, var(--accent) 45%, transparent); stroke-width: 1; }
+.mj-worked-example-phase-point { fill: var(--accent); }
+.mj-worked-example-phase-rest,
+.mj-worked-example-phase-note { margin: 0; color: var(--text-2); font-size: var(--fs-12); line-height: 1.5; }
+
+/* ===== worked-example: the component / used-in note ========================= */
+/* Was one line — a label, a colon and a link. It is now a miniature of the
+   example it points at: the record's own phrase that the link was built from,
+   the example's circuit, where it ends up, and its readout. */
+.mj-worked-example-component-note {
+  display: grid;
+  gap: var(--sp-2);
+  margin: var(--sp-4) 0;
+  padding: var(--sp-4);
+  border: var(--border-hairline) solid var(--border-0);
+  border-radius: var(--radius-panel, var(--radius-control));
+  background: var(--bg-1);
+}
+.mj-worked-example-component-head { margin: 0; }
+.mj-worked-example-component-because { margin: 0; color: var(--text-1); font-size: var(--fs-13); line-height: 1.55; }
+.mj-worked-example-component-because q { color: var(--text-0); font-style: italic; }
+.mj-worked-example-component-title { margin: var(--sp-1) 0 0; font-size: var(--fs-16); }
+.mj-worked-example-component-instance { margin: 0; color: var(--text-1); font-size: var(--fs-13); line-height: 1.55; }
+.mj-worked-example-component-figure {
+  display: grid;
+  gap: var(--sp-3);
+  align-items: start;
+  margin-top: var(--sp-1);
+  /* The circuit takes the space it needs and the outcome bars take a fixed
+     column beside it, dropping under it when there is not room for both. */
+  grid-template-columns: minmax(0, 1fr);
+}
+@media (min-width: 720px) {
+  .mj-worked-example-component-figure { grid-template-columns: minmax(0, 1fr) 13rem; }
+}
+.mj-worked-example-component-figure .mj-atlas-svg { max-width: 100%; height: auto; }
+.mj-worked-example-component-readout { margin: 0; color: var(--text-1); font-size: var(--fs-13); line-height: 1.55; }
+.mj-worked-example-component-phase {
+  margin: 0;
+  padding-left: var(--sp-3);
+  border-left: 2px solid var(--accent);
+  color: var(--text-2);
+  font-size: var(--fs-12);
+  line-height: 1.5;
+}
+.mj-worked-example-component-open { justify-self: start; margin-top: var(--sp-1); color: var(--accent); font-size: var(--fs-13); }

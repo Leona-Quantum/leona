@@ -68,7 +68,7 @@ import { verificationFromResource } from "../lib/verification-record";
 import { WORKSPACE_PINS_EVENT, isPinned, setPinned, togglePinned } from "../lib/workspace-pins";
 import { ThemeToggle } from "./theme-toggle";
 import { TourGate } from "./tour/tour-gate";
-import { WORKSPACE_SIDEBAR_EVENT } from "../lib/tour/events.ts";
+import { WORKSPACE_ACCOUNT_MENU_EVENT, WORKSPACE_SIDEBAR_EVENT } from "../lib/tour/events.ts";
 import { TourHelpButton } from "./tour/tour-help-button";
 import type { PublicLocale } from "../lib/public-locale";
 import { PROJECT_SHARE_COPY, WORKSPACE_COPY, ACCOUNT_COPY } from "../lib/workspace-locale";
@@ -159,13 +159,15 @@ export function Shell({
 
   // A guided tour step can point at the rail or the sidebar, which on a phone sit in
   // the collapsed drawer. The tour asks for the drawer; only phone width opens it, and
-  // the next route change closes it again as it always does.
+  // the next route change closes it again as it always does. The tour also asks for it
+  // shut when a step's control is on the page an open drawer covers.
   useEffect(() => {
-    function openForTour() {
-      if (window.innerWidth <= 720) setSidebarCollapsed(false);
+    function drawerForTour(event: Event) {
+      if (window.innerWidth > 720) return;
+      setSidebarCollapsed((event as CustomEvent<{ open?: boolean } | null>).detail?.open === false);
     }
-    window.addEventListener(WORKSPACE_SIDEBAR_EVENT, openForTour);
-    return () => window.removeEventListener(WORKSPACE_SIDEBAR_EVENT, openForTour);
+    window.addEventListener(WORKSPACE_SIDEBAR_EVENT, drawerForTour);
+    return () => window.removeEventListener(WORKSPACE_SIDEBAR_EVENT, drawerForTour);
   }, []);
 
   useEffect(() => {
@@ -825,6 +827,14 @@ function WorkspaceSidebar({
       window.removeEventListener("keydown", handleKeyDown);
     };
   }, [userMenuOpen]);
+
+  // A guided tour step that points into this menu (Usage, Settings) asks for it open,
+  // so a resumed tour, or Back from a step inside Settings, does not find it shut.
+  useEffect(() => {
+    const openForTour = () => setUserMenuOpen(true);
+    window.addEventListener(WORKSPACE_ACCOUNT_MENU_EVENT, openForTour);
+    return () => window.removeEventListener(WORKSPACE_ACCOUNT_MENU_EVENT, openForTour);
+  }, []);
 
   // The allowance numbers, read when the drawer opens rather than on every page
   // load. Nobody needs them until they look, and this is one round trip to the

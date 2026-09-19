@@ -451,6 +451,24 @@ Never invent measured results, claim an assumed value was supplied by the user, 
 an explicit user requirement. This mode does not authorize execution of unsupported work.
 """
 
+SOURCE_REVISION_PLAN_DIRECTIVE = """The request asks for a change to an existing program,
+supplied as source_to_revise. Ground problem_summary and every planning choice in that
+program's actual structure — qubit count, gates, algorithm, and framework — and describe
+what the task asks for as a change TO it, not a plan for an unrelated circuit that merely
+satisfies the same words. Preserve any part of the existing design the task does not ask
+to change. If source_to_revise.truncated is true, plan from the qubit count, algorithm,
+and structure visible in the given prefix; do not invent content past it.
+"""
+
+SOURCE_REVISION_GENERATION_DIRECTIVE = """previous_source here is the user's own existing
+program, not a rejected candidate: repair_feedback is absent because nothing has failed
+yet. Start from it and apply exactly the change task and Plan describe, preserving every
+part of the source the task does not ask to change — framework, unrelated gates,
+parameter names, and structure. This is a revision, not a rewrite: do not regenerate the
+circuit from scratch, and do not limit the change to "the smallest correction" the way a
+repair would — apply the requested change in full.
+"""
+
 # The one place the Plan states something a check can disagree with. Everything else
 # the planner writes is either consumed by generation or compared against a number the
 # same model produced, so it cannot catch a coherent misconception — see
@@ -3275,8 +3293,13 @@ hard contracts:
   assigns a JSON-serializable dict to RESULT. It never performs network, filesystem,
   subprocess, dynamic-code, environment, credential, or package-install operations.
 - input_schema and output_schema use JSON Schema type=object. They have at most 24
-  properties. Properties are string, number, integer, boolean, or arrays of those
-  scalar types (at most 100 items). Set additionalProperties=false.
+  properties, each in one of four shapes: a scalar (string, number, integer, boolean);
+  an array of one scalar type (maxItems at most 100); a map of scalars, written as
+  type=object with additionalProperties naming a scalar type, which is how measurement
+  counts such as {"00": 512, "11": 488} are described (maxProperties at most 100); or
+  an array of flat records, whose items are type=object with scalar-typed properties.
+  Nothing nests deeper than that. Set additionalProperties=false on both top-level
+  schemas, and make RESULT match output_schema exactly.
 - qubits_estimate is a conservative maximum for every valid input the schema permits,
   from 1 through 27. Bound any input that controls problem size so the program can
   never exceed that maximum. The source must also enforce those bounds before it

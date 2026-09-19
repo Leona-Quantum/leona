@@ -95,6 +95,7 @@ from majorana_api.jobs import (
 )
 from majorana_api.orm import ImportJob, User
 from majorana_api.qapp_validation import (
+    ACCEPTED_SHAPES,
     QappUsabilityWarning,
     check_qapp_usability,
     normalize_qapp_schema,
@@ -137,6 +138,7 @@ from majorana_frameworks.optimizers import (
 )
 from majorana_frameworks.roles import result_was_derived
 
+from .news_pipeline import handle_news_collect, handle_news_dead_letter
 from .research import research_enabled
 from .runtime_ports import SandboxCandidateExecutor, TrustedOpenQASMConverter
 from .simple_events import SimpleEventObserver
@@ -393,6 +395,10 @@ async def handle_run_execute(
         allow_ai_assumptions=bool(payload.get("allow_ai_assumptions", False)),
         conversation_id=run.conversation_id,
         source_code=payload.get("source_code"),
+        # Old, replayed job payloads predate this key entirely and must
+        # deserialize to today's only behavior, not to a value that never had
+        # a chance to mean anything to them.
+        source_intent=payload.get("source_intent") or "verify",
         source_framework=Framework(run.framework),
         parent_artifact_id=parent_artifact_id,
     )
@@ -510,6 +516,12 @@ class _QappContractRepair(BaseModel):
 # A rich app can fail independent contract, UI, and source checks in sequence.
 # Leave enough room for one full retry plus targeted repairs of each component.
 _QAPP_GENERATION_ATTEMPTS = 12
+#: The same deterministic rejection, word for word, this many times in a row means the
+#: repair prompt is not being understood, and every further attempt is a paid call
+#: that buys the same answer. Measured 2026-09-16: one generation spent all twelve
+#: attempts, about nine seconds and one model call each, on an identical rejection.
+#: Three is enough to distinguish "did not follow the hint once" from "cannot".
+_QAPP_IDENTICAL_REJECTIONS = 3
 _QAPP_ALLOWED_IMPORTS = ", ".join(sorted(ALLOWED_IMPORTS))
 _QAPP_REPAIR_CANDIDATE_CHARS = 60_000
 _QAPP_REPAIR_SYSTEM_PROMPT = """You repair one rejected portion of an LLM-generated Qapp.
@@ -571,13 +583,55 @@ def _qapp_repair_feedback(exc: ValueError) -> str:
             "Statevector.expectation_value(operator), SparsePauliOp, and "
             "scipy.optimize.minimize instead."
         )
-    if "unsupported schema keywords" in feedback or "unsupported type" in feedback:
+    if any(
+        marker in feedback
+        for marker in (
+            "unsupported schema keywords",
+            "unsupported type",
+            "must be an array of scalar values",
+            "must be a map of scalar values",
+            "records must declare",
+            "records may not",
+        )
+    ):
+        # Name the shapes that ARE accepted, not only the one that was not. Before
+        # 2026-09-16 the hint fired on two of the six messages, and a rejection it
+        # did not cover was answered with the same schema twelve times in a row.
         feedback += (
-            " Nested objects and maps are unsupported. Represent measurement counts as "
-            "parallel scalar arrays such as bitstrings and counts, each with maxItems <= 100, "
-            "and update quantum_source, output_schema, and ui_document together."
+            f" {ACCEPTED_SHAPES} Update quantum_source, output_schema, and ui_document "
+            "together so the program's RESULT matches the schema exactly."
         )
     return feedback[:2_000]
+
+
+def _qapp_failure_message(repair_kind: str, failure: BaseException) -> str:
+    """One sentence for the person who asked, keyed on the LAST check that failed.
+
+    "The Qapp could not be generated safely" was the only message, and it was wrong
+    for the common case: a result shape the schema subset refused is not a safety
+    finding, and telling a creator it was sent them looking for the wrong thing.
+    The deterministic rejection text itself is not shown — it is written for the
+    repair model, can quote the model's own output, and can run to 2,000 chars.
+    """
+    if isinstance(failure, QappUsabilityWarning):
+        return "The generated interface could not be made usable within the attempt budget."
+    if repair_kind == "contract":
+        return (
+            "The app's inputs or results could not be described within Leona's limits "
+            "after several attempts. Try asking for a simpler result, such as counts "
+            "or a single number."
+        )
+    if repair_kind == "source":
+        return (
+            "The generated quantum program did not pass its checks or failed its test "
+            "run after several attempts. Try narrowing what the app should compute."
+        )
+    if repair_kind == "ui":
+        return (
+            "The generated interface used a browser capability Leona does not allow, "
+            "and the repairs did not remove it."
+        )
+    return "The Qapp could not be generated. Try rephrasing the request."
 
 
 def _qapp_smoke_value(schema: dict[str, Any], *, end: str = "low") -> Any:
@@ -638,9 +692,35 @@ def _qapp_smoke_value(schema: dict[str, Any], *, end: str = "low") -> Any:
                 return _qapp_smoke_value(schema, end="low")
             return "x" * max(int(declared), 1)
         return "x" * max(int(schema.get("minLength", 0)), 1)
+    if value_type == "object":
+        # A map of scalars. Its low end is empty — a histogram with no entries is a
+        # valid one — and its high end is `maxProperties` entries of the values'
+        # own high value, so the top-of-range run sees the largest table it may be
+        # handed. No declared ceiling means no top of range, as for arrays.
+        values = schema.get("additionalProperties")
+        if not isinstance(values, dict):
+            raise ValueError("cannot derive a smoke-test value for a Qapp map with no value schema")
+        declared = schema.get("maxProperties")
+        if end != "high" or declared is None:
+            return {}
+        value = _qapp_smoke_value(values, end="high")
+        return {f"k{index}": value for index in range(int(declared))}
     if value_type == "array":
         item_schema = schema.get("items")
-        item = _qapp_smoke_value(item_schema if isinstance(item_schema, dict) else {}, end=end)
+        if isinstance(item_schema, dict) and item_schema.get("type") == "object":
+            # A record array: one row holding every declared field at this end.
+            fields = item_schema.get("properties")
+            if not isinstance(fields, dict):
+                raise ValueError(
+                    "cannot derive a smoke-test value for a Qapp record with no fields"
+                )
+            item: Any = {
+                field: _qapp_smoke_value(definition, end=end)
+                for field, definition in fields.items()
+                if isinstance(definition, dict)
+            }
+        else:
+            item = _qapp_smoke_value(item_schema if isinstance(item_schema, dict) else {}, end=end)
         if end == "high":
             declared = schema.get("maxItems")
             # `normalize_qapp_schema` refuses a declared `maxItems` above 100 but
@@ -811,11 +891,13 @@ async def _handle_qapp_generation(
         session=session,
         run_id=ctx.run_id,
     )
+    #: Which check rejected the last candidate; read by the failure message below
+    #: as well as by the loop, so it lives outside the `try`.
+    repair_kind = "full"
     try:
         feedback: str | None = None
         previous_candidate: str | None = None
         generated: _GeneratedQapp | None = None
-        repair_kind = "full"
         #: A usability finding buys ONE repair for the whole generation, not one per
         #: attempt. The budget is 12 attempts, and these rules have never been measured
         #: against real generated output — no live generation has run since the provider
@@ -826,6 +908,10 @@ async def _handle_qapp_generation(
         #: The last candidate that passed every check except usability. Deep-copied,
         #: because `generated` is rebound and mutated on each attempt.
         usability_fallback: _GeneratedQapp | None = None
+        #: The previous attempt's rejection, verbatim, and how many attempts in a row
+        #: have produced exactly it.
+        last_rejection: str | None = None
+        identical_rejections = 0
         for attempt in range(1, _QAPP_GENERATION_ATTEMPTS + 1):
             if repair_kind == "ui":
                 response_model: type[BaseModel] = _QappUiRepair
@@ -902,8 +988,10 @@ async def _handle_qapp_generation(
                         "concise CSS/JavaScript without comments, SVG artwork, or repeated "
                         "markup so the complete JSON fits in one response. Schema "
                         "property definitions may use only type, title, description, default, "
-                        "enum, minimum, maximum, minLength, maxLength, minItems, maxItems, and "
-                        f"items.{repair_context}"
+                        "enum, minimum, maximum, minLength, maxLength, minItems, maxItems, "
+                        "items, additionalProperties (a scalar schema, making the property a "
+                        "map), maxProperties, and — inside record items — properties and "
+                        f"required. {ACCEPTED_SHAPES}{repair_context}"
                     ),
                     response_schema=response_model.model_json_schema(),
                     schema_name="generate_qapp",
@@ -1065,6 +1153,22 @@ async def _handle_qapp_generation(
                     break
                 if attempt == _QAPP_GENERATION_ATTEMPTS:
                     raise
+                rejection = str(exc)
+                identical_rejections = (
+                    identical_rejections + 1 if rejection == last_rejection else 1
+                )
+                last_rejection = rejection
+                if identical_rejections >= _QAPP_IDENTICAL_REJECTIONS:
+                    log.warning(
+                        "Qapp generation for run %s stopped after %d identical rejections "
+                        "(attempt %d/%d): %s",
+                        ctx.run_id,
+                        identical_rejections,
+                        attempt,
+                        _QAPP_GENERATION_ATTEMPTS,
+                        rejection,
+                    )
+                    raise
                 feedback = _qapp_repair_feedback(exc)
                 log.info(
                     "Qapp candidate rejected for run %s (attempt %d/%d): %s",
@@ -1093,9 +1197,10 @@ async def _handle_qapp_generation(
             range_smoke=range_smoke.model_dump(mode="json"),
         )
         await session.commit()
-    except Exception:
+    except Exception as failure:
         await session.rollback()
         log.exception("Qapp generation failed for run %s", ctx.run_id)
+        failure_message = _qapp_failure_message(repair_kind, failure)
         await ctx.sink.emit(
             "stage.finished",
             {
@@ -1109,7 +1214,7 @@ async def _handle_qapp_generation(
             {
                 "stage": Stage.GENERATE,
                 "code": "qapp_generation_failed",
-                "message": "The Qapp could not be generated safely.",
+                "message": failure_message,
             },
         )
         return await store.finish(
@@ -1791,6 +1896,7 @@ async def _handle_agent_execution(
         requested_shots=ctx.shots,
         requested_seed=ctx.seed,
         initial_source=ctx.source_code,
+        revise_source=ctx.source_intent == "revise",
         allow_ai_assumptions=ctx.allow_ai_assumptions,
         rollback=session.rollback,
         research_sink=_research_sink_for(ctx),
@@ -2996,6 +3102,7 @@ async def handle_qpu_run_dead_letter(
 
 
 HANDLERS: dict[str, JobHandler] = {
+    "news.collect": handle_news_collect,
     RUN_EXECUTE_JOB_KIND: handle_run_execute,
     QAPP_EXECUTE_JOB_KIND: handle_qapp_execute,
     CIRCUIT_OPTIMIZE_JOB_KIND: handle_circuit_optimize,
@@ -3009,6 +3116,7 @@ HANDLERS: dict[str, JobHandler] = {
 }
 
 DEAD_LETTER_HANDLERS: dict[str, DeadLetterHandler] = {
+    "news.collect": handle_news_dead_letter,
     RUN_EXECUTE_JOB_KIND: handle_run_dead_letter,
     QAPP_EXECUTE_JOB_KIND: handle_qapp_execute_dead_letter,
     CIRCUIT_OPTIMIZE_JOB_KIND: handle_run_dead_letter,

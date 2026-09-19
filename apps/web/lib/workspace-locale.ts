@@ -497,6 +497,43 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
     deleteCustomGate: (name: string) => string;
     customGateCreated: (name: string) => string;
     customGateCannotGroup: string;
+    closeBlock: (name: string) => string;
+    blockOpaqueNote: string;
+    editBlock: string;
+    editBlockTitle: (name: string) => string;
+    editBlockUses: (count: number) => string;
+    editBlockSave: string;
+    editBlockCancel: string;
+    editBlockCycleError: string;
+    ungroupBlock: string;
+    ungrouped: (name: string) => string;
+    blockSaved: (name: string, uses: number) => string;
+    blocksPanelOpen: string;
+    blocksPanelTitle: string;
+    blockCategoryLabel: Record<"state-preparation" | "transforms" | "oracles" | "arithmetic" | "simulation" | "variational", string>;
+    insertAtQubit: string;
+    insertBlock: string;
+    blockInserted: (name: string) => string;
+    blockTooNarrow: (required: number, available: number) => string;
+    addQubitsForBlock: string;
+    galleryOpen: string;
+    galleryTitle: string;
+    exampleQubits: (count: number) => string;
+    loadExample: string;
+    unsavedChangesConfirm: string;
+    exampleNotFound: string;
+    atlasImporting: string;
+    atlasImportFailed: string;
+    expectationValue: (value: number) => string;
+    askTitle: string;
+    askPlaceholder: string;
+    askSubmit: string;
+    askCancel: string;
+    askStageLabel: Record<"planned" | "coded" | "sandboxed" | "verified" | "saved", string>;
+    askChangeSummary: (added: Array<{ gate: string; count: number }>, removed: Array<{ gate: string; count: number }>) => string;
+    askGoBack: string;
+    askDisconnected: string;
+    askOpenRun: string;
     hideInspector: string;
     showInspector: string;
     circuitRestored: string;
@@ -529,7 +566,7 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
     shortcutsClose: string;
     shortcutGroups: Record<"general" | "visual" | "simulation", string>;
     shortcutRows: Record<string, string>;
-    paletteGroups: Record<"oneQubit" | "rotations" | "twoQubit" | "measure", string>;
+    paletteGroups: Record<"oneQubit" | "rotations" | "twoQubit" | "measure" | "more", string>;
     gateNames: Record<string, string>;
     inspectorActsOn: (qubits: string) => string;
     inspectorAngle: string;
@@ -550,6 +587,10 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
     playheadSlider: string;
     playheadBitOrder: (highest: number) => string;
     playheadUnavailable: (reason: string, limit: number) => string;
+    playheadPhaseTitle: string;
+    playheadPhaseNote: string;
+    playheadPhaseColumn: string;
+    playheadEffectLabel: string;
     splitShow: string;
     splitHide: string;
     liveSync: string;
@@ -1213,12 +1254,18 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
         Z: "Pauli-Z flips the phase of |1⟩ without changing probabilities.",
         S: "S applies a π/2 phase to |1⟩.",
         T: "T applies a π/4 phase — the non-Clifford workhorse.",
+        SDG: "S† is the inverse of S: a −π/2 phase on |1⟩.",
+        TDG: "T† is the inverse of T: a −π/4 phase on |1⟩.",
         RX: "RX rotates the qubit around the X axis by the chosen angle.",
         RY: "RY rotates the qubit around the Y axis by the chosen angle.",
         RZ: "RZ rotates the qubit around the Z axis by the chosen angle.",
+        P: "Phase applies the chosen angle to |1⟩ and leaves |0⟩ unchanged.",
         CX: "Controlled-X entangles the target with the control qubit.",
         CZ: "Controlled-Z applies a phase when both qubits are |1⟩.",
         SWAP: "SWAP exchanges the states of two qubits.",
+        CP: "Controlled phase applies the chosen angle only when both qubits are |1⟩.",
+        RZZ: "ZZ rotation applies a phase set by the chosen angle, based on whether the two qubits agree or differ.",
+        CCX: "Toffoli flips the target qubit when both control qubits are |1⟩.",
         M: "Measurement records the final computational-basis result.",
       },
       palette: "Gate palette",
@@ -1295,6 +1342,55 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
       deleteCustomGate: (name) => `Delete custom gate ${name}`,
       customGateCreated: (name) => `${name} is ready in the gate palette.`,
       customGateCannotGroup: "Select two or more unitary gates to create a custom gate.",
+      closeBlock: (name) => `Close ${name}`,
+      blockOpaqueNote: "This operation cannot be opened.",
+      editBlock: "Edit block",
+      editBlockTitle: (name) => `Edit ${name}`,
+      editBlockUses: (count) => count === 1 ? "Changes 1 use of this block." : `Changes ${count} uses of this block.`,
+      editBlockSave: "Save",
+      editBlockCancel: "Cancel",
+      editBlockCycleError: "That would make this block contain itself. Remove the block first.",
+      ungroupBlock: "Ungroup",
+      ungrouped: (name) => `${name} was ungrouped.`,
+      blockSaved: (name, uses) => uses === 1 ? `Saved ${name}. 1 use updated.` : `Saved ${name}. ${uses} uses updated.`,
+      blocksPanelOpen: "Insert block",
+      blocksPanelTitle: "Block library",
+      blockCategoryLabel: {
+        "state-preparation": "State preparation",
+        transforms: "Transforms",
+        oracles: "Oracles",
+        arithmetic: "Arithmetic",
+        simulation: "Simulation",
+        variational: "Variational",
+      },
+      insertAtQubit: "Insert at qubit",
+      insertBlock: "Insert",
+      blockInserted: (name) => `${name} added to the circuit.`,
+      blockTooNarrow: (required, available) => `This block needs ${required} qubit${required === 1 ? "" : "s"}; only ${available} ${available === 1 ? "is" : "are"} free at this position.`,
+      addQubitsForBlock: "Add qubits",
+      galleryOpen: "Examples",
+      galleryTitle: "Start from a known circuit",
+      exampleQubits: (count) => `${count} qubit${count === 1 ? "" : "s"}`,
+      loadExample: "Load",
+      unsavedChangesConfirm: "This replaces the current draft. Continue?",
+      exampleNotFound: "That example was not found. Starting a new circuit instead.",
+      atlasImporting: "Adding this Atlas entry to your Studio…",
+      atlasImportFailed: "This Atlas entry could not be added to your Studio.",
+      expectationValue: (value) => `⟨H⟩ = ${value.toFixed(4)}`,
+      askTitle: "Ask Leona",
+      askPlaceholder: "Describe the change, for example: add a Hadamard on qubit 0",
+      askSubmit: "Ask",
+      askCancel: "Cancel",
+      askStageLabel: { planned: "Planning", coded: "Writing code", sandboxed: "Running", verified: "Verifying", saved: "Saving" },
+      askChangeSummary: (added, removed) => {
+        const parts: string[] = [];
+        if (added.length) parts.push(`added ${added.map((entry) => `${entry.count} ${entry.gate}`).join(", ")}`);
+        if (removed.length) parts.push(`removed ${removed.map((entry) => `${entry.count} ${entry.gate}`).join(", ")}`);
+        return parts.length ? `${parts.join("; ")}.` : "No gates changed.";
+      },
+      askGoBack: "Go back to the previous version",
+      askDisconnected: "The connection closed before the run finished. It may still complete.",
+      askOpenRun: "Open the run to see its result.",
       hideInspector: "Hide inspector",
       showInspector: "Inspector",
       circuitRestored: "Circuit loaded from the saved artifact. Edits stay in this draft until you verify & save.",
@@ -1338,7 +1434,7 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
         step: "Move the playhead one moment",
         runCpu: "Run the CPU simulation",
       },
-      paletteGroups: { oneQubit: "One-qubit", rotations: "Rotations", twoQubit: "Two-qubit", measure: "Measure" },
+      paletteGroups: { oneQubit: "One-qubit", rotations: "Rotations", twoQubit: "Two-qubit", measure: "Measure", more: "More gates" },
       gateNames: {
         H: "Hadamard",
         X: "Pauli-X",
@@ -1346,12 +1442,18 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
         Z: "Pauli-Z",
         S: "S phase",
         T: "T phase",
+        SDG: "S† phase",
+        TDG: "T† phase",
         RX: "X rotation",
         RY: "Y rotation",
         RZ: "Z rotation",
+        P: "Phase shift",
         CX: "Controlled-X (CNOT)",
         CZ: "Controlled-Z",
         SWAP: "Swap",
+        CP: "Controlled phase",
+        RZZ: "ZZ rotation",
+        CCX: "Toffoli (CCX)",
         M: "Measurement",
       },
       inspectorActsOn: (qubits) => `on ${qubits}`,
@@ -1378,6 +1480,10 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
         mid_circuit_measurement: "A gate follows a measurement on the same qubit, so live probabilities are off from here.",
         angle: "The browser simulator can't read one of these angles, so live probabilities are off.",
       }[reason] ?? "Live probabilities are unavailable for this circuit."),
+      playheadPhaseTitle: "Amplitude and phase",
+      playheadPhaseNote: "Phases are measured against the largest amplitude. A global phase is not observable, so only the differences carry meaning.",
+      playheadPhaseColumn: "Relative phase",
+      playheadEffectLabel: "What this moment did",
       splitShow: "Code beside diagram",
       splitHide: "Diagram only",
       liveSync: "Live",
@@ -2091,12 +2197,18 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
         Z: "パウリZは、確率を変えずに|1⟩の位相を反転します。",
         S: "Sゲートは|1⟩にπ/2の位相を与えます。",
         T: "Tゲートは|1⟩にπ/4の位相を与える非クリフォードゲートです。",
+        SDG: "S†はSの逆ゲートで、|1⟩に−π/2の位相を与えます。",
+        TDG: "T†はTの逆ゲートで、|1⟩に−π/4の位相を与えます。",
         RX: "RXは選択した角度だけX軸周りに回転します。",
         RY: "RYは選択した角度だけY軸周りに回転します。",
         RZ: "RZは選択した角度だけZ軸周りに回転します。",
+        P: "位相ゲートは選択した角度を|1⟩に与え、|0⟩はそのままです。",
         CX: "制御Xゲートは、制御量子ビットと対象量子ビットをもつれさせます。",
         CZ: "制御Zゲートは、両方が|1⟩のとき位相を反転します。",
         SWAP: "SWAPゲートは2つの量子ビットの状態を交換します。",
+        CP: "制御位相ゲートは、両方が|1⟩のときだけ選択した角度を与えます。",
+        RZZ: "ZZ回転は、2つの量子ビットが一致するかどうかに応じて選択した角度の位相を与えます。",
+        CCX: "トフォリゲートは、両方の制御量子ビットが|1⟩のとき対象量子ビットを反転します。",
         M: "測定は計算基底での最終結果を記録します。",
       },
       palette: "ゲートパレット",
@@ -2173,6 +2285,55 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
       deleteCustomGate: (name) => `カスタムゲート${name}を削除`,
       customGateCreated: (name) => `${name}をパレットに追加しました。`,
       customGateCannotGroup: "カスタムゲートには、2つ以上の単一ゲートを選択してください。",
+      closeBlock: (name) => `${name}を閉じる`,
+      blockOpaqueNote: "この操作は開けません。",
+      editBlock: "ブロックを編集",
+      editBlockTitle: (name) => `${name}を編集`,
+      editBlockUses: (count) => `このブロックの使用${count}件が変わります。`,
+      editBlockSave: "保存",
+      editBlockCancel: "キャンセル",
+      editBlockCycleError: "このブロックが自分自身を含むことになります。先にそのブロックを削除してください。",
+      ungroupBlock: "グループ解除",
+      ungrouped: (name) => `${name}のグループを解除しました。`,
+      blockSaved: (name, uses) => `${name}を保存しました。使用${uses}件を更新しました。`,
+      blocksPanelOpen: "ブロックを挿入",
+      blocksPanelTitle: "ブロックライブラリ",
+      blockCategoryLabel: {
+        "state-preparation": "状態準備",
+        transforms: "変換",
+        oracles: "オラクル",
+        arithmetic: "算術",
+        simulation: "シミュレーション",
+        variational: "変分",
+      },
+      insertAtQubit: "挿入する量子ビット",
+      insertBlock: "挿入",
+      blockInserted: (name) => `${name}を回路に追加しました。`,
+      blockTooNarrow: (required, available) => `このブロックには${required}量子ビット必要ですが、この位置には${available}量子ビットしか空きがありません。`,
+      addQubitsForBlock: "量子ビットを追加",
+      galleryOpen: "サンプル回路",
+      galleryTitle: "既知の回路から始める",
+      exampleQubits: (count) => `${count}量子ビット`,
+      loadExample: "読み込む",
+      unsavedChangesConfirm: "現在の編集内容が置き換わります。続けますか？",
+      exampleNotFound: "そのサンプルは見つかりませんでした。新しい回路を開始します。",
+      atlasImporting: "このAtlasの項目をStudioに追加しています…",
+      atlasImportFailed: "このAtlasの項目をStudioに追加できませんでした。",
+      expectationValue: (value) => `⟨H⟩ = ${value.toFixed(4)}`,
+      askTitle: "Leonaに依頼",
+      askPlaceholder: "変更内容を記入してください。例：量子ビット0にアダマールを追加",
+      askSubmit: "依頼する",
+      askCancel: "キャンセル",
+      askStageLabel: { planned: "計画中", coded: "コード生成中", sandboxed: "実行中", verified: "検証中", saved: "保存中" },
+      askChangeSummary: (added, removed) => {
+        const parts: string[] = [];
+        if (added.length) parts.push(`追加: ${added.map((entry) => `${entry.gate}×${entry.count}`).join("、")}`);
+        if (removed.length) parts.push(`削除: ${removed.map((entry) => `${entry.gate}×${entry.count}`).join("、")}`);
+        return parts.length ? `${parts.join("、")}。` : "ゲートの変更はありません。";
+      },
+      askGoBack: "前のバージョンに戻す",
+      askDisconnected: "実行が完了する前に接続が切れました。処理は継続している可能性があります。",
+      askOpenRun: "実行結果を見る",
       hideInspector: "詳細を隠す",
       showInspector: "回路の詳細",
       circuitRestored: "保存済み回路を読み込みました。検証して保存するまで、編集はこの下書きにのみ反映されます。",
@@ -2216,7 +2377,7 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
         step: "再生位置を1モーメント動かす",
         runCpu: "CPUシミュレーションを実行",
       },
-      paletteGroups: { oneQubit: "1量子ビット", rotations: "回転", twoQubit: "2量子ビット", measure: "測定" },
+      paletteGroups: { oneQubit: "1量子ビット", rotations: "回転", twoQubit: "2量子ビット", measure: "測定", more: "その他のゲート" },
       gateNames: {
         H: "アダマール",
         X: "パウリX",
@@ -2224,12 +2385,18 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
         Z: "パウリZ",
         S: "S位相",
         T: "T位相",
+        SDG: "S†位相",
+        TDG: "T†位相",
         RX: "X軸回転",
         RY: "Y軸回転",
         RZ: "Z軸回転",
+        P: "位相シフト",
         CX: "制御X（CNOT）",
         CZ: "制御Z",
         SWAP: "SWAP",
+        CP: "制御位相",
+        RZZ: "ZZ回転",
+        CCX: "トフォリ（CCX）",
         M: "測定",
       },
       inspectorActsOn: (qubits) => `対象: ${qubits}`,
@@ -2256,6 +2423,10 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
         mid_circuit_measurement: "測定のあとに同じ量子ビットへゲートがあるため、ここから先のライブ確率は表示できません。",
         angle: "ブラウザのシミュレータが読めない角度があるため、ライブ確率は表示できません。",
       }[reason] ?? "この回路ではライブ確率を表示できません。"),
+      playheadPhaseTitle: "振幅と位相",
+      playheadPhaseNote: "位相は最大振幅を基準とした相対値です。全体位相は観測できないため、意味を持つのは差だけです。",
+      playheadPhaseColumn: "相対位相",
+      playheadEffectLabel: "このモーメントで起きたこと",
       splitShow: "図の横にコード",
       splitHide: "図のみ",
       liveSync: "連動中",
@@ -3802,6 +3973,7 @@ export type ToursCopy = {
     wandered: (place: string) => string;
     away: (place: string) => string;
     hidden: string;
+    covered: string;
     offline: string;
     offlineSkipped: (count: number) => string;
     doing: string;
@@ -3907,6 +4079,7 @@ export const TOURS_COPY: Record<PublicLocale, ToursCopy> = {
       wandered: (place) => `You're on ${place} now. Go back to the tour, or pause here?`,
       away: (place) => `Next stop: ${place}.`,
       hidden: "That control isn't on screen at this window size. You can skip this step.",
+      covered: "Something is open on top of this step. Close it to carry on.",
       offline: "This step needs the workspace online, so it's skipped here.",
       offlineSkipped: (count) => (count === 1 ? "Skipped one step that needs the workspace online." : `Skipped ${count} steps that need the workspace online.`),
       doing: "Doing it for you.",
@@ -4132,6 +4305,7 @@ export const TOURS_COPY: Record<PublicLocale, ToursCopy> = {
       wandered: (place) => `今は${place}にいます。ツアーに戻りますか？それともここで一時停止しますか？`,
       away: (place) => `次は${place}です。`,
       hidden: "この画面幅ではその操作が表示されていません。このステップは飛ばせます。",
+      covered: "このステップの上に別の画面が開いています。閉じると続けられます。",
       offline: "このステップにはワークスペースへの接続が必要なため、ここでは飛ばします。",
       offlineSkipped: (count) => `ワークスペースへの接続が必要な${count}つのステップを飛ばしました。`,
       doing: "代わりに操作しています。",
