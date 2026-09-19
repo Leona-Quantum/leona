@@ -74,10 +74,13 @@ the checks pass. Then, in one sitting:
    Eshaan will give the address; it is the load balancer's global IP.
 9. **Security → WAF → Rate limiting rules**: one rule, which is all a Free plan allows, and
    the zone is on Free (the collaborator confirmed it 2026-09-17). Expression
-   `(starts_with(http.request.uri.path, "/repository") and not cf.client.bot)`, same IP,
-   **60 requests per 10 seconds**, action Block for 10 seconds — on Free the period and the
-   block are both fixed at 10 s and the only fields a rule may test are the path and
-   "verified bot". This is ai-ops 318. Verified bots are exempt on the collaborator's
+   `(starts_with(http.request.uri.path, "/repository") and not cf.bot_management.verified_bot)`,
+   same IP, **60 requests per 10 seconds**, action Block for 10 seconds — on Free the period
+   and the block are both fixed at 10 s and the only fields a rule may test are the path and
+   "verified bot" (Cloudflare's rate-limiting page lists them as "Path, Verified Bot"; the
+   17 September PDF wrote the older name `cf.client.bot`, corrected in the GO message of
+   2026-09-19). If the expression editor refuses it, build the same rule from the two
+   dropdown fields, URI Path starts with `/repository` and Verified Bot off. This is ai-ops 318. Verified bots are exempt on the collaborator's
    suggestion, relayed by the owner, so a search engine is never rate-limited off the Atlas.
    The trade is written down because nobody found out what sent the 15 September traffic: if
    it was a verified crawler, this rule lets it through, and the cache rule is what absorbs it.
@@ -88,7 +91,12 @@ the checks pass. Then, in one sitting:
     Knowing when it went on is how a challenged monitor is told from a real fault. If it
     blocks them or a search engine, it goes off again and the rate limit stays; the owner's
     options on 318 allowed for exactly that.
-11. Tell Eshaan it is done. Undo for any of these is the same screen and takes under a
+11. **Analytics & Logs → Web Analytics**: turn automatic setup **off** for the zone. With it
+    on, Cloudflare injects `static.cloudflareinsights.com/beacon.min.js` into every proxied
+    page; the site's Content-Security-Policy refuses it, so it collects nothing and logs a
+    console error on every page view (seen on `gcp-preview` 2026-09-19). ai-ops 141 is DNS
+    and CDN only, so the answer is to switch it off, not to widen the CSP.
+12. Tell Eshaan it is done. Undo for any of these is the same screen and takes under a
     minute; step 7 and 8 reverse by putting the old address back.
 
 ### Eshaan

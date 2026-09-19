@@ -38,7 +38,8 @@
  */
 
 const SITE_ORIGIN = process.env.LEONA_LIVE_ORIGIN ?? "https://leonaqt.com";
-const CHECKED_PATHS = ["/repository/layers"];
+// The three families next.config.ts marks cacheable (`lib/edge-cache-headers.ts`).
+const CHECKED_PATHS = ["/repository", "/repository/layers", "/repository/folders"];
 const ATTEMPTS = 5;
 const RETRY_DELAY_MS = 1500;
 // HIT and PRERENDER are Vercel's. REVALIDATED, UPDATING and STALE are
@@ -106,6 +107,51 @@ export function classify(observations) {
     verdict: "warn",
     reason: `${observations.length} attempts, none came from the edge (saw: ${seen.join(", ")}) — likely a cold edge, not necessarily a regression`,
   };
+}
+
+/**
+ * Requests that must never be answered from a shared cache, nor marked for one.
+ *
+ * Next's client router asks for the same address with an `RSC` header and gets a
+ * different body (a 307 to `?_rsc`, then the raw `text/x-component` payload), and
+ * a reader who chose Japanese gets a different language on the same address.
+ * Vercel keys its cache on `Vary: rsc` and on the middleware's rewritten path, so
+ * neither mixes there. Cloudflare ignores `Vary` and cannot put a cookie in the
+ * cache key on this plan, so both depend on two locks: the origin not sending
+ * `CDN-Cache-Control` for these requests, and the Cache Rule's filter refusing
+ * them. This reads both, without ever trying to poison anything: it only looks
+ * at how these requests themselves are answered.
+ *
+ * A `x-vercel-cache: HIT` here is fine and is not failed on — Vercel's key
+ * separates these requests correctly. Only Cloudflare's verdict counts.
+ *
+ * `edgeOnly` marks the one probe the origin CANNOT lock: a bare `?_rsc` with no
+ * header. Next's `missing` matcher treats an empty value as absent, so the origin
+ * still marks that response cacheable (it is the ordinary HTML page, the same
+ * document as `/repository`). What keeps it out of the edge is the Cache Rule's
+ * `_rsc` line, so for this probe only the edge's verdict is read.
+ */
+const NEVER_SHARED = [
+  { path: "/repository", headers: { RSC: "1" }, what: "a React payload request with no ?_rsc (Next answers a 307)" },
+  { path: "/repository?_rsc", headers: { RSC: "1" }, what: "the React payload itself" },
+  { path: "/repository/layers", headers: { RSC: "1" }, what: "a React payload request on the map" },
+  { path: "/repository", headers: { Cookie: "leona.locale.v2=ja" }, what: "a reader who chose Japanese" },
+  { path: "/repository?_rsc", headers: {}, what: "the payload address with no header (the Cache Rule's _rsc line is the only lock)", edgeOnly: true },
+];
+
+/** Pure: one never-shared observation in, one verdict out. */
+export function classifyNeverShared(o, { edgeOnly = false } = {}) {
+  if (!o.status) return { verdict: "fail", reason: "the request itself failed" };
+  // A broken origin answers these without any cache marker too, so "no marker"
+  // on a 5xx or 404 would read as a pass. Next answers them 200 or 307.
+  if (o.status < 200 || o.status >= 400) return { verdict: "fail", reason: `unexpected HTTP ${o.status} — these requests are answered 200 or 307` };
+  if (o.cdnCacheControl && !edgeOnly) {
+    return { verdict: "fail", reason: `the origin marked it cacheable for Cloudflare (CDN-Cache-Control: ${o.cdnCacheControl}) — lib/edge-cache-headers.ts no longer applies` };
+  }
+  if (o.cacheHeaderName === "cf-cache-status" && CACHED_VALUES.has(o.cacheHeader ?? "")) {
+    return { verdict: "fail", reason: `Cloudflare answered it from its cache (cf-cache-status: ${o.cacheHeader}) — the Cache Rule's filter no longer refuses it` };
+  }
+  return { verdict: "pass", reason: `HTTP ${o.status}, ${o.cacheHeaderName ?? "no cache header"}: ${o.cacheHeader ?? "(none)"}, no CDN-Cache-Control` };
 }
 
 function selfTest() {
@@ -197,6 +243,26 @@ function selfTest() {
     }
   }
 
+  const neverSharedCases = [
+    { name: "origin marking a payload cacheable fails", o: { status: 307, cdnCacheControl: "max-age=300", cacheHeader: "DYNAMIC", cacheHeaderName: "cf-cache-status" }, verdict: "fail" },
+    { name: "a Cloudflare HIT on a payload request fails", o: { status: 200, cacheHeader: "HIT", cacheHeaderName: "cf-cache-status" }, verdict: "fail" },
+    { name: "a Cloudflare STALE counts as served from the edge", o: { status: 200, cacheHeader: "STALE", cacheHeaderName: "cf-cache-status" }, verdict: "fail" },
+    { name: "a Vercel HIT is fine, its key honours Vary", o: { status: 200, cacheHeader: "HIT", cacheHeaderName: "x-vercel-cache" }, verdict: "pass" },
+    { name: "Cloudflare DYNAMIC with no marker passes", o: { status: 307, cacheHeader: "DYNAMIC", cacheHeaderName: "cf-cache-status" }, verdict: "pass" },
+    { name: "a thrown request fails rather than passing on silence", o: { status: 0, cacheHeader: null }, verdict: "fail" },
+    { name: "a 500 with no marker fails, it is not a pass", o: { status: 500, cacheHeader: "DYNAMIC", cacheHeaderName: "cf-cache-status" }, verdict: "fail" },
+    { name: "a 404 with no marker fails", o: { status: 404, cacheHeader: null }, verdict: "fail" },
+    { name: "edge-only: the origin's marker is expected and passes", o: { status: 200, cdnCacheControl: "max-age=300", cacheHeader: "DYNAMIC", cacheHeaderName: "cf-cache-status" }, edgeOnly: true, verdict: "pass" },
+    { name: "edge-only: a Cloudflare HIT still fails", o: { status: 200, cdnCacheControl: "max-age=300", cacheHeader: "HIT", cacheHeaderName: "cf-cache-status" }, edgeOnly: true, verdict: "fail" },
+  ];
+  for (const { name, o, edgeOnly, verdict } of neverSharedCases) {
+    const got = classifyNeverShared(o, { edgeOnly });
+    if (got.verdict !== verdict) {
+      console.error(`check-live-repository-cache: SELF-TEST FAILED — never-shared ${name}: expected ${verdict}, got ${got.verdict} (${got.reason})`);
+      headerFailed += 1;
+    }
+  }
+
   let failed = headerFailed;
   for (const { name, observations, verdict } of cases) {
     const got = classify(observations);
@@ -206,14 +272,14 @@ function selfTest() {
     }
   }
   if (failed > 0) process.exit(1);
-  console.log(`check-live-repository-cache: self-test ok (${cases.length} classify cases + ${headerCases.length} header cases, pass/warn/fail all exercised)`);
+  console.log(`check-live-repository-cache: self-test ok (${cases.length} classify cases + ${headerCases.length} header cases + ${neverSharedCases.length} never-shared cases, pass/warn/fail all exercised)`);
 }
 
-async function probe(url) {
+async function probe(url, headers = {}) {
   try {
-    const res = await fetch(url, { redirect: "manual" });
+    const res = await fetch(url, { redirect: "manual", headers });
     const { name, value } = readCacheHeader(res.headers);
-    return { status: res.status, cacheHeader: value, cacheHeaderName: name };
+    return { status: res.status, cacheHeader: value, cacheHeaderName: name, cdnCacheControl: res.headers.get("cdn-cache-control") };
   } catch (err) {
     // A network failure is not a 200, so it folds into the same "non-200" bucket
     // `classify` already handles — no separate branch needed for it.
@@ -255,6 +321,16 @@ async function main() {
       console.log(`::error::check-live-repository-cache: UNCONFIRMED ${SITE_ORIGIN}${path} — ${reason}`);
     } else {
       console.log(`::error::check-live-repository-cache: FAIL ${SITE_ORIGIN}${path} — ${reason}`);
+      worstExit = 1;
+    }
+  }
+  for (const { path, headers, what, edgeOnly } of NEVER_SHARED) {
+    const { verdict, reason } = classifyNeverShared(await probe(`${SITE_ORIGIN}${path}`, headers), { edgeOnly });
+    const sent = Object.entries(headers).map(([k, v]) => `${k}: ${v}`).join(", ") || "no extra headers";
+    if (verdict === "pass") {
+      console.log(`check-live-repository-cache: PASS never shared: ${path} with ${sent} (${what}) — ${reason}`);
+    } else {
+      console.log(`::error::check-live-repository-cache: FAIL never shared: ${path} with ${sent} (${what}) — ${reason}`);
       worstExit = 1;
     }
   }

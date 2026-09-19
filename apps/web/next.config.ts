@@ -6,6 +6,7 @@ import {
 } from "./lib/content-security-policy";
 import { permissionsPolicy } from "./lib/permissions-policy";
 import { deployEnv } from "./lib/deploy-env";
+import { edgeCacheRules } from "./lib/edge-cache-headers";
 
 /**
  * Content-Security-Policy (05-security.md §1 platform+edge).
@@ -268,14 +269,17 @@ const nextConfig: NextConfig = {
       // header phase matches is a platform-ordering detail this file should not
       // depend on, so both are listed and the live check is `x-vercel-cache: HIT`
       // on a repeat request, not a reading of the routing order.
+      //
+      // ## Only a plain request is marked cacheable for Cloudflare
+      //
+      // `edgeCacheRules` sends `Vercel-CDN-Cache-Control` on every response and
+      // `CDN-Cache-Control` only when the request carries no `RSC` header, no
+      // `_rsc` parameter and no locale cookie. Cloudflare ignores `Vary`, so a
+      // payload request would otherwise put the React payload (or Next's 307 to
+      // it) in the edge cache under the address readers ask for. The account,
+      // with the measurement, is in `lib/edge-cache-headers.ts`.
       ...["/repository/layers", "/:locale(en|ja)/repository/layers"].flatMap((base) =>
-        [base, `${base}/:path*`].map((source) => ({
-          source,
-          headers: [
-            { key: "Vercel-CDN-Cache-Control", value: "max-age=300" },
-            { key: "CDN-Cache-Control", value: "max-age=300" },
-          ],
-        })),
+        [base, `${base}/:path*`].flatMap((source) => edgeCacheRules(source, 300)),
       ),
       // `/repository/folders` — same mechanism as `/repository/layers` above,
       // for the same reason: it resolves `?scheme=` on the server, so reading
@@ -291,13 +295,7 @@ const nextConfig: NextConfig = {
       // `claims` recipe) and reach the CDN through Next's own static output —
       // the same reason `/repository/claims` carries no header entry either.
       ...["/repository/folders", "/:locale(en|ja)/repository/folders"].flatMap((base) =>
-        [base, `${base}/:path*`].map((source) => ({
-          source,
-          headers: [
-            { key: "Vercel-CDN-Cache-Control", value: "max-age=300" },
-            { key: "CDN-Cache-Control", value: "max-age=300" },
-          ],
-        })),
+        [base, `${base}/:path*`].flatMap((source) => edgeCacheRules(source, 300)),
       ),
       // The Atlas browse index, same mechanism, exact path ONLY — no `:path*`.
       // `/repository/layers` above deliberately covers its subtree
@@ -307,13 +305,7 @@ const nextConfig: NextConfig = {
       // uncached in `app/repository/` — see lib/routed-paths.ts. A `:path*`
       // here would cache them anyway, silently, at the platform layer, no
       // matter what the route protection says.
-      ...["/repository", "/:locale(en|ja)/repository"].map((source) => ({
-        source,
-        headers: [
-          { key: "Vercel-CDN-Cache-Control", value: "max-age=300" },
-          { key: "CDN-Cache-Control", value: "max-age=300" },
-        ],
-      })),
+      ...["/repository", "/:locale(en|ja)/repository"].flatMap((source) => edgeCacheRules(source, 300)),
       // The landing page's demo video and the wordmark, which are the first
       // binary assets this app has ever served.
       //

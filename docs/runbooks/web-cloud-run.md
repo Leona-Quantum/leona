@@ -196,7 +196,8 @@ operator.
 ## The Cloudflare Cache Rule, which is not in this repository
 
 `next.config.ts` sets `CDN-Cache-Control: max-age=300` on `/repository`,
-`/repository/layers*`, and a year on `/media/*` and `/brand/*`. That header is
+`/repository/layers*`, `/repository/folders*` (only on a plain request, see below), and a
+year on `/media/*` and `/brand/*`. That header is
 necessary and **not sufficient**, and the gap is the kind that reads as done:
 the file is correct, the tests pass, and the Atlas is uncached.
 
@@ -228,10 +229,16 @@ production incident here:
 
   ```
   (http.request.uri.path eq "/repository"
-   or starts_with(http.request.uri.path, "/repository/layers"))
+   or starts_with(http.request.uri.path, "/repository/layers")
+   or starts_with(http.request.uri.path, "/repository/folders"))
   and not http.cookie contains "leona.locale.v2="
   and not http.cookie contains "majorana.locale.v1="
+  and not http.request.uri.query contains "_rsc"
+  and not any(lower(http.request.headers.names[*])[*] == "rsc")
   ```
+
+  `/repository/folders` was missing from the 17 September version: the origin has marked it
+  cacheable since PR 915, and without the prefix here Cloudflare never considers it.
 
   A request with no locale cookie always renders English — the site does not
   negotiate from `Accept-Language` (ai-ops 329) — so the one shared entry is the
@@ -246,6 +253,25 @@ production incident here:
   personalised entry pages. A rule written as `/repository*` caches them anyway,
   silently, at the edge, whatever the route protection says. Write the rule as
   the exact path `/repository` plus the prefix `/repository/layers`.
+
+- **A React payload request must never be answered from the cache, or stored in it.**
+  Next's client router fetches the same address with an `RSC: 1` header and a `?_rsc=`
+  parameter, and gets a different body: measured through `gcp-preview` on 2026-09-19,
+  `/repository` with `RSC: 1` answers a 307 to `/repository?_rsc`, and that address with the
+  header answers the raw `text/x-component` payload. Next marks this with `Vary: rsc`, which
+  Vercel honours and Cloudflare ignores (its Vary page: for any header other than `Accept`,
+  `Accept-Language` and `Accept-Encoding`, "Cloudflare does not know the field's
+  semantics"). So one such request on a cold edge would store the redirect or the payload
+  under the address readers ask for, for five minutes.
+
+  Two locks, either of which holds alone. The origin (`apps/web/lib/edge-cache-headers.ts`)
+  sends `CDN-Cache-Control` only on a request with no `RSC` header, no `_rsc` parameter and
+  no locale cookie, so with Edge TTL on "use cache-control header if present" those
+  responses fall back to `private, no-store` or to no header, and are bypassed. The rule's
+  last two lines refuse the same requests at the edge, which is what still holds if Edge TTL
+  is ever switched to "ignore cache-control header": that mode caches whatever the filter
+  admits. If the dashboard refuses the header line, save the rule without it and leave Edge
+  TTL on "use cache-control header"; the origin lock covers it.
 
 **What settles whether it works**, once it exists: a repeat request reaching
 `cf-cache-status: HIT`, the same way `x-vercel-cache: HIT` settles it on Vercel
