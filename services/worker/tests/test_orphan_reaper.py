@@ -106,3 +106,93 @@ async def test_a_negative_grace_period_is_rejected():
         await system.list_orphaned_runs(_Session(), grace_seconds=-1)
     with pytest.raises(ValueError, match="direct_grace_seconds"):
         await system.list_orphaned_runs(_Session(), direct_grace_seconds=-1)
+
+
+class _Recorder:
+    """Stands in for `majorana_api.repos.notebooks` inside `close_orphaned_run`."""
+
+    def __init__(self, version):
+        self.version = version
+        self.results: list[dict] = []
+        self.turns: list[dict] = []
+
+    async def get_version_by_run_id(self, _scope, _session, run_id, *, for_update=False):
+        self.asked_for = run_id
+        self.locked = for_update
+        return self.version
+
+    async def set_version_result(self, _scope, _session, version_id, **fields):
+        self.results.append({"version_id": version_id, **fields})
+
+    async def append_turn(self, _scope, _session, notebook_id, **fields):
+        self.turns.append({"notebook_id": notebook_id, **fields})
+
+
+async def _close(monkeypatch, version):
+    from types import SimpleNamespace
+
+    from majorana_worker import handlers
+
+    recorder = _Recorder(version)
+
+    async def list_run_events(_scope, _session, _run_id):
+        return []
+
+    async def fail_run_from_dead_letter(_scope, _session, _run_id, **_kwargs):
+        return True
+
+    monkeypatch.setattr(handlers, "notebooks_repo", recorder)
+    monkeypatch.setattr(
+        handlers,
+        "runs_repo",
+        SimpleNamespace(
+            list_run_events=list_run_events, fail_run_from_dead_letter=fail_run_from_dead_letter
+        ),
+    )
+    monkeypatch.setattr(handlers, "_validated_event_payload", lambda _run, _type, payload: payload)
+    orphan = _orphan("callback never landed")
+    closed = await handlers.close_orphaned_run(_Session(), orphan)
+    return orphan, recorder, closed
+
+
+async def test_the_reaper_also_fails_the_notebook_version_the_run_was_generating(monkeypatch):
+    """Closing only the run left the notebook refusing every later edit, for good.
+
+    The API answers 409 `notebook_version_in_flight` while a notebook's latest version
+    is `queued` or `running`, and the dead-letter handler is the only other thing that
+    ever moves that row. The reaper runs precisely when that handler did not.
+    """
+    from types import SimpleNamespace
+
+    version = SimpleNamespace(id=uuid.uuid4(), notebook_id=uuid.uuid4(), status="running")
+    orphan, recorder, closed = await _close(monkeypatch, version)
+
+    assert closed is True
+    assert recorder.asked_for == orphan.run_id
+    # The status is read under a row lock, so a handler finishing between this read
+    # and the write below cannot have its `ready` overwritten.
+    assert recorder.locked is True
+    assert [(r["version_id"], r["status"]) for r in recorder.results] == [(version.id, "failed")]
+    assert "callback never landed" in recorder.results[0]["error"]
+    assert [(t["notebook_id"], t["version_id"], t["run_id"]) for t in recorder.turns] == [
+        (version.notebook_id, version.id, orphan.run_id)
+    ]
+
+
+@pytest.mark.parametrize("status", ["ready", "failed"])
+async def test_a_version_that_already_has_a_result_is_left_alone(monkeypatch, status):
+    from types import SimpleNamespace
+
+    version = SimpleNamespace(id=uuid.uuid4(), notebook_id=uuid.uuid4(), status=status)
+    _orphan_row, recorder, _closed = await _close(monkeypatch, version)
+
+    assert recorder.results == []
+    assert recorder.turns == []
+
+
+async def test_a_run_that_made_no_notebook_closes_as_before(monkeypatch):
+    _orphan_row, recorder, closed = await _close(monkeypatch, None)
+
+    assert closed is True
+    assert recorder.results == []
+    assert recorder.turns == []
