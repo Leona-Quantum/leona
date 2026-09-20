@@ -738,6 +738,49 @@ async def test_only_the_creator_may_publish_and_the_gate_is_never_reached(public
     assert publication.audits == []
 
 
+async def test_deleting_a_qapp_stamps_it_gone_and_takes_it_off_its_public_address(publication):
+    """`deleted_at` had readers from the start and no writer.
+
+    Every listing and lookup filters on it, so a Qapp could be unpublished but
+    never removed from "My Qapps". The delete sets the stamp every reader already
+    honours, and clears the publication pair in the same write so the row never
+    claims to be public about a page that is gone.
+    """
+    publication.qapp.visibility = "public"
+    publication.qapp.published_at = dt.datetime.now(dt.timezone.utc)
+    publication.qapp.deleted_at = None
+    probe = _Probe(rows=[])
+
+    await publication.repo.soft_delete_qapp(publication.owner.scope, probe, publication.qapp.id)
+
+    assert publication.qapp.deleted_at is not None
+    assert publication.qapp.updated_at == publication.qapp.deleted_at
+    assert publication.qapp.visibility == "private"
+    assert publication.qapp.published_at is None
+    assert publication.audits == ["qapp.deleted"]
+    assert probe.flushed == 1
+
+
+async def test_only_the_creator_may_delete_a_qapp(publication):
+    """The same reason as publishing: `get_qapp` is workspace-scoped, not owner-scoped.
+
+    A co-member of the workspace can read the row, so without this check they
+    could delete an app somebody else made and published.
+    """
+    publication.qapp.deleted_at = None
+    probe = _Probe(rows=[])
+
+    with pytest.raises(publication.repo.AuthzError) as refused:
+        await publication.repo.soft_delete_qapp(
+            publication.stranger.scope, probe, publication.qapp.id
+        )
+
+    assert "only the Qapp creator may delete it" in str(refused.value)
+    assert publication.qapp.deleted_at is None
+    assert publication.audits == []
+    assert probe.flushed == 0
+
+
 def test_a_stored_range_smoke_is_read_by_presence_not_by_truthiness():
     """ai-ops 180: NULL means *nobody ever asked*, and only NULL may mean that.
 

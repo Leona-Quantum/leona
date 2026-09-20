@@ -320,6 +320,41 @@ async def set_visibility(
     return qapp
 
 
+async def soft_delete_qapp(scope: Scope, session: AsyncSession, qapp_id: uuid.UUID) -> None:
+    """Take a Qapp out of every listing and off its public address.
+
+    The `deleted_at` column and the filter on every read existed from the start;
+    nothing ever set it, so a generated Qapp could be unpublished but never
+    removed from "My Qapps".
+
+    Creator-only, for the reason publishing is: `get_qapp` is workspace-scoped, so
+    a co-member can read the row, and the owner check is all that stands between
+    them and deleting somebody else's app.
+
+    The publication stamp is cleared in the same write. Every reader already
+    filters on `deleted_at`, so this is not what takes `/q/<slug>` down; it is so
+    the row never says "public" about a page that no longer exists, and so
+    `ck_qapps_publication_stamp` sees the pair it requires.
+    """
+    require_write(scope)
+    qapp = await get_qapp(scope, session, qapp_id)
+    if qapp.owner_user_id != scope.user_id:
+        raise AuthzError("only the Qapp creator may delete it")
+    now = touched_now()
+    qapp.visibility = Visibility.PRIVATE.value
+    qapp.published_at = None
+    qapp.deleted_at = now
+    qapp.updated_at = now
+    await record_audit(
+        scope,
+        session,
+        action="qapp.deleted",
+        target_kind="qapp",
+        target_id=qapp.id,
+    )
+    await session.flush()
+
+
 async def create_execution(
     scope: Scope,
     session: AsyncSession,

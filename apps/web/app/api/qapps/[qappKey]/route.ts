@@ -7,3 +7,13 @@ export async function GET(_request: Request, context: { params: Promise<{ qappKe
     return forwardFromControlPlane(await fetchControlPlane(controlPlaneUrl(`/v1/qapps/${encodeURIComponent(qappKey)}`), { headers: { Authorization: `Bearer ${accessToken}` } }));
   } catch (error) { return controlPlaneUnavailable(error); }
 }
+
+export async function DELETE(_request: Request, context: { params: Promise<{ qappKey: string }> }) {
+  const [{ accessToken }, { qappKey }] = await Promise.all([getMajoranaAuth({ ensureSignedIn: true }), context.params]);
+  try {
+    return forwardFromControlPlane(await fetchControlPlane(controlPlaneUrl(`/v1/qapps/${encodeURIComponent(qappKey)}`), {
+      method: "DELETE",
+      headers: { Authorization: `Bearer ${accessToken}` },
+    }));
+  } catch (error) { return controlPlaneUnavailable(error); }
+}

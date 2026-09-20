@@ -21,6 +21,9 @@ type PublicQappSummary = {
 
 export type QappGalleryView = "mine" | "public";
 
+// The control plane's `list_qapps` / `list_public_qapps` page size (repos/qapps.py).
+const LIST_LIMIT = 100;
+
 const COPY = {
   en: {
     eyebrow: "Quantum applications",
@@ -40,6 +43,7 @@ const COPY = {
     retry: "Try again",
     clear: "Clear search",
     count: (shown: number, total: number) => `${shown} of ${total} Qapps`,
+    capped: (limit: number) => `Showing the newest ${limit}. Older Qapps are still there; search does not reach them yet.`,
     private: "Private",
     published: "Public",
     updated: "Updated",
@@ -67,6 +71,7 @@ const COPY = {
     retry: "再試行",
     clear: "検索をクリア",
     count: (shown: number, total: number) => `${total}件中${shown}件のQapp`,
+    capped: (limit: number) => `最新の${limit}件を表示しています。それより古いQappも残っていますが、検索の対象にはまだなっていません。`,
     private: "非公開",
     published: "公開中",
     updated: "更新",
@@ -158,7 +163,13 @@ export function QappGallery({ view, locale = "en" }: { view: QappGalleryView; lo
         </div>
 
         {!loading && !error && items.length > 0 ? (
-          <p className="mj-library-meta"><span>{copy.count(visible.length, items.length)}</span></p>
+          <p className="mj-library-meta">
+            <span>{copy.count(visible.length, items.length)}</span>
+            {/* Both listings stop at LIST_LIMIT rows with no cursor, so a full page
+                means "at least this many", and the count above would otherwise
+                read as the total. */}
+            {items.length >= LIST_LIMIT ? <span role="note">{copy.capped(LIST_LIMIT)}</span> : null}
+          </p>
         ) : null}
 
         {loading ? <QappGalleryNotice role="status" text={copy.loading} /> : null}
