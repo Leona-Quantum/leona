@@ -232,6 +232,11 @@ async def set_qapp_visibility(
     return _qapp_resource(qapp)
 
 
+@router.delete("/qapps/{qapp_id}", status_code=204)
+async def delete_qapp(qapp_id: uuid.UUID, scope: CurrentScope, session: DbSession) -> None:
+    await qapps_repo.soft_delete_qapp(scope, session, qapp_id)
+
+
 @router.post("/qapps/{slug}/executions", response_model=QappExecution, status_code=202)
 async def execute_qapp(
     slug: str,
