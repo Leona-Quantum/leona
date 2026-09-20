@@ -1,9 +1,30 @@
 # Post-deploy only, never a PR gate: there is no build artifact to check before a
-# merge, only the live edge after one. Fires on every Vercel Production deployment
-# (i.e. every push to `dev` that Vercel deploys, regardless of whether apps/web
-# changed) and asks the one question none of the required checks can:
-# `client-bundle`'s `check-static-routes.mjs` reads a local build's route table,
-# never a live request. This is the request.
+# merge, only the live edge after one. Fires when `deploy-web` finishes, and asks
+# the one question none of the required checks can: `client-bundle`'s
+# `check-static-routes.mjs` reads a local build's route table, never a live
+# request. This is the request.
+#
+# ## Why it follows deploy-web and no longer Vercel
+#
+# Until 2026-09-20 this fired on Vercel's Production `deployment_status`, because
+# Vercel served leonaqt.com. Since the cutover a visitor is served by Cloudflare
+# in front of the Google load balancer, and Vercel builds only as the rollback
+# target. Left keyed on Vercel it would have asked the live site its question a
+# few minutes after every merge — when Vercel finished, which is BEFORE deploy-web
+# shifts traffic — and so reported on the revision being replaced, green, every
+# time. When Vercel is retired it would have stopped firing at all, and a
+# workflow that never runs reports nothing.
+#
+# deploy-web also concludes `success` when it decides a commit has nothing to
+# deploy. The probes run then too: they are cheap, and the live site is still the
+# thing being asked about.
+#
+# `workflow_dispatch` is here so the probes can be pointed at the live site on
+# demand — the first thing anyone wants after a Cloudflare setting changes.
+#
+# A runner is a datacentre address and Cloudflare's Bot Fight Mode may challenge
+# it. Both scripts report that as a blind probe (`cf-mitigated`), distinctly from
+# a page that does not render.
 #
 # Built after PR 591 shipped and a live cache-buster test wrongly read it as
 # broken (`cache-buster-cannot-test-a-cache` memory) — see
@@ -15,7 +36,10 @@
 # a workflow that only runs after the deploy it is checking.
 name: verify-web-cache
 on:
-  deployment_status:
+  workflow_run:
+    workflows: [deploy-web]
+    types: [completed]
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -23,9 +47,8 @@ permissions:
 jobs:
   check-repository-layers:
     if: >
-      github.event.deployment_status.state == 'success' &&
-      github.event.deployment.environment == 'Production' &&
-      github.event.deployment.creator.login == 'vercel[bot]'
+      github.event_name == 'workflow_dispatch' ||
+      github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -58,9 +81,8 @@ jobs:
   # which is exactly the shape of what everyone missed.
   render:
     if: >
-      github.event.deployment_status.state == 'success' &&
-      github.event.deployment.environment == 'Production' &&
-      github.event.deployment.creator.login == 'vercel[bot]'
+      github.event_name == 'workflow_dispatch' ||
+      github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1

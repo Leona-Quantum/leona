@@ -38,6 +38,17 @@
 // Anonymous on purpose: no cookies, no session. That is what a stranger gets,
 // and a stranger is who found nothing wrong with the marketing pages while the
 // Atlas was down.
+//
+// ## A challenged probe is blind, and says so
+//
+// Since 2026-09-20 leonaqt.com is served through Cloudflare with Bot Fight Mode
+// on, and a GitHub runner is a datacentre address. When Cloudflare challenges a
+// request it answers 403 with `cf-mitigated: challenge`, and that 403 is a fact
+// about the RUNNER, not about the site: every probe here would fail, the
+// negative control included, and the run would read as "the product is down"
+// while visitors are being served normally. So a challenged response is
+// reported as its own thing. It still fails the run — an instrument that cannot
+// see must not go green — but it says which of the two it is.
 
 const BASE = process.env.LEONA_BASE_URL || "https://leonaqt.com";
 const TIMEOUT_MS = 30_000;
@@ -73,7 +84,8 @@ const PROBES = [
   },
 ];
 
-async function status(url) {
+/** The status, and Cloudflare's `cf-mitigated` header when it sent one. */
+async function observe(url) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
   try {
@@ -82,7 +94,7 @@ async function status(url) {
       signal: controller.signal,
       headers: { "cache-control": "no-cache" },
     });
-    return response.status;
+    return { status: response.status, mitigated: response.headers.get("cf-mitigated") };
   } finally {
     clearTimeout(timer);
   }
@@ -103,6 +115,9 @@ function selfTest() {
     failures.push("a 200 against an expected 404 passed — the negative control is inert");
   }
   if (verdict({ expect: 200 }, 200) !== null) failures.push("a matching status was reported as a failure");
+  if (!isBlind(verdict({ expect: 200 }, 403, "challenge"))) failures.push("a Cloudflare challenge was not reported as a blind probe");
+  if (verdict({ expect: 200 }, 200, "challenge") === null) failures.push("a challenged response passed because its status happened to match");
+  if (isBlind(verdict({ expect: 200 }, 403))) failures.push("a plain 403 was reported as a challenge — a real refusal would be excused");
   if (failures.length) {
     console.error("self-test failed — this checker cannot be trusted:");
     for (const line of failures) console.error(`  ${line}`);
@@ -111,9 +126,18 @@ function selfTest() {
   console.log("self-test: the status comparison fails when it should, in both directions");
 }
 
+const BLIND = "BLIND:";
+
 /** null when the probe is satisfied, otherwise why not. */
-function verdict(probe, actual) {
+function verdict(probe, actual, mitigated = null) {
+  if (mitigated) {
+    return `${BLIND} Cloudflare answered with cf-mitigated: ${mitigated} (HTTP ${actual}) — it challenged this runner, so this says nothing about the page`;
+  }
   return actual === probe.expect ? null : `expected ${probe.expect}, got ${actual}`;
+}
+
+function isBlind(problem) {
+  return typeof problem === "string" && problem.startsWith(BLIND);
 }
 
 if (process.argv.includes("--self-test")) {
@@ -125,8 +149,8 @@ const results = await Promise.all(
   PROBES.map(async (probe) => {
     const url = `${BASE}${probe.path}`;
     try {
-      const actual = await status(url);
-      return { probe, actual, problem: verdict(probe, actual) };
+      const { status: actual, mitigated } = await observe(url);
+      return { probe, actual, problem: verdict(probe, actual, mitigated) };
     } catch (error) {
       return { probe, actual: null, problem: `request failed: ${error?.message ?? error}` };
     }
@@ -142,6 +166,14 @@ for (const { probe, actual, problem } of results) {
     console.log(`       ${problem}`);
     console.log(`       this route is: ${probe.why}`);
   }
+}
+
+const blind = results.filter(({ problem }) => isBlind(problem)).length;
+if (blind && blind === failed) {
+  console.error(`\n::error::Cloudflare challenged ${blind} of ${PROBES.length} probes against ${BASE}. This run could not see the site.`);
+  console.error("::error::That is about this runner's address (Bot Fight Mode treats datacentre traffic as a bot), not about what a visitor gets.");
+  console.error("::error::Read the site from an ordinary connection before concluding anything: docs/runbooks/cloudflare-origin-certificate.md.");
+  process.exit(2);
 }
 
 if (failed) {

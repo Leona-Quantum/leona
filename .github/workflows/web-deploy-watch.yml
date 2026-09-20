@@ -16,7 +16,7 @@
 #
 #   - `deploy.yml` ships Cloud Run through GitHub Actions. Entirely separate
 #     pipeline, and it was green throughout.
-#   - `verify-web-cache.yml` triggers on `deployment_status`. When Vercel never
+#   - `verify-web-cache.yml` triggered on `deployment_status` then. When Vercel never
 #     deploys, that event never fires, so the workflow never runs — and a
 #     workflow that never runs reports nothing at all.
 #   - The failure watch reads workflow runs. There was no failing run to read.
@@ -79,7 +79,6 @@ jobs:
             # deployment created by any other integration would otherwise
             # satisfy the check and make this workflow quietly useless — the
             # exact shape of the ten silent hours it exists to prevent.
-            # `verify-web-cache.yml` already gates on the same login.
             count=$(gh api "repos/${GITHUB_REPOSITORY}/deployments?sha=${SHA}&environment=Production" \
               --jq '[.[] | select(.creator.login == "vercel[bot]")] | length')
             if [ "$count" -gt 0 ]; then

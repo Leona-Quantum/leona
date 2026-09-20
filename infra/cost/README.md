@@ -89,8 +89,9 @@ ISR, Fast Data Transfer and Edge Requests were all $0 inside their allowances.
 Measured from Vercel's deployment API over the seven days to 2026-09-16: **190
 deployments, 145 of them previews** (the preview count firmed up to 145 on a
 fuller page of the same window), against 184 wall-clock build minutes. Nothing
-consumes a preview — `verify-web-cache.yml` is the only workflow that reacts to
-a Vercel deployment and it gates on `environment == 'Production'`.
+consumes a preview — no workflow reads a preview URL, and since 2026-09-20 none
+reacts to a Vercel deployment event at all (`verify-web-cache.yml` follows
+`deploy-web`; `web-deploy-watch.yml` reads Production records only).
 
 **The headline number is not the saving, and the split is what matters.** Those
 145 previews came from **109 distinct branches**, so only **36** were a second

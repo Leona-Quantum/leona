@@ -148,6 +148,45 @@ gcloud certificate-manager dns-authorizations delete majorana-web-auth-leonaqt-c
 gcloud certificate-manager dns-authorizations delete majorana-web-auth-www-leonaqt-com --location=global --project=majorana-core
 ```
 
+## After the switch: what was measured, 2026-09-20
+
+The collaborator finished the Cloudflare side at about 07:40 UTC (both records proxied to
+`35.190.65.233`, SSL Full (strict), the cache rule, the rate limit, Bot Fight Mode on at
+07:36 UTC). Read back the same day from an ordinary connection:
+
+- Both names resolve to Cloudflare; the apex answers 200 with `server: cloudflare` and
+  `via: 1.1 google`; `www` answers 308 to the apex with path and query kept; visitors are
+  handed a Let's Encrypt certificate, never the Origin one; a request that skips Cloudflare
+  gets 403 from the origin lock.
+- `/repository`, `/repository/layers` and `/repository/folders` come from Cloudflare's cache
+  (HIT by the second request). The five never-shared requests (React payloads, the Japanese
+  cookie, a bare `?_rsc`) are all DYNAMIC. 70 sampled sitemap URLs all answer 200 or 308.
+- `infra/web-lb/90-verify.sh` passes: 22 allowed ranges against the 22 Cloudflare publishes,
+  the Origin certificate in the handshake, ingress restricted, the twin private, one trusted
+  forwarding hop.
+- `majorana-web-cert` and its two DNS authorizations are deleted (their definitions are kept
+  in ai-ops `desk/leona/plans/gcp-migration-20260912/archive/`). The two
+  `_acme-challenge` CNAME records in Cloudflare DNS now point at nothing and can go.
+
+**Bot Fight Mode challenges every request from a GitHub runner.** Measured at 22:52 UTC from
+a runner in Azure (Cloudflare colo IAD): `/`, `/repository`, a record page and
+`/auth/sign-in` each answered `403` with `cf-mitigated: challenge`. So the two post-deploy
+probes cannot see the public site while it is on. They now say so rather than reporting the
+site down (`scripts/check-live-pages.mjs` exits 2 with "could not see the site"), and the
+question that mattered most — does a record page render — moved to the pre-shift smoke test
+on the private twin in `deploy-web.yml`, which no edge setting can blind. What a runner can
+no longer check is the part only the public name shows: Cloudflare's cache verdicts.
+`web-deploy-watch` is unaffected; it reads GitHub's deployment records and never contacts the
+site. Step 10 above named it as exposed, which was wrong.
+
+Whether Bot Fight Mode stays on is the owner's call (ai-ops 318). With it off the monitors
+see again and the rate limit still holds; with it on, read the cache from an ordinary
+connection after a change to the cache rule: `node scripts/check-live-repository-cache.mjs`.
+
+`gcp-preview` has no remaining use. Nothing in CI reads it; only
+`infra/web-lb/80-cutover-preflight.sh` does, and that script's job is done. The wildcard map
+entry that made it answer (`majorana-web-entry-wildcard`) is harmless to leave.
+
 ## What each check actually proves
 
 - `31-origin-certificate.sh --dry-run` reads the files and refuses four ways: an issuer that

@@ -54,10 +54,10 @@ skip()  { echo "SKIP: $1";  exit 0; }
 #
 # Measured from Vercel's own deployment API over the seven days to 2026-09-16:
 # 190 deployments on this project, of which **142 were previews** — 130 of the
-# 184 wall-clock build minutes. Nothing consumes a preview.
-# `verify-web-cache.yml` is the only workflow that reacts to a Vercel
-# deployment at all and it gates on `deployment.environment == 'Production'`;
-# no other workflow reads a preview URL.
+# 184 wall-clock build minutes. Nothing consumes a preview: no workflow reads a
+# preview URL, and since 2026-09-20 none reacts to a Vercel deployment event at
+# all (`verify-web-cache.yml` follows `deploy-web`; `web-deploy-watch.yml`
+# reads Production records only).
 #
 # The path rules below cannot get at this, and not by oversight. This repo
 # keeps ~34 worktrees, one branch each, and a branch's FIRST deployment has no
