@@ -423,7 +423,26 @@ export function LiveRun({ taskId, locale = "en" }: { taskId: string; locale?: Pu
     ?? (turns[0]?.prompt ? titleFromPrompt(turns[0].prompt) : null)
     ?? (locale === "ja" ? "量子チャット" : "Quantum chat");
 
+  // Which conversation this page is showing, readable from inside an await. This
+  // component is not remounted when `taskId` changes (the effect below resets it
+  // in place), so anything that resumes after a network round trip has to check it
+  // is still on the page it left — `loadConversation` does that with `loadSeq`.
+  const shownTaskIdRef = useRef(taskId);
+  // Counts conversation changes. A request compares the count it left with, not
+  // the task id: going A -> B -> A lands on the same id after two resets, and the
+  // request from the first visit to A must not act on the second.
+  const conversationGenRef = useRef(0);
+
   useEffect(() => {
+    if (shownTaskIdRef.current !== taskId) {
+      conversationGenRef.current += 1;
+      // A message still in flight belongs to the conversation that was just left;
+      // `loadConversation` decides afresh whether the new one is mid-turn. Not on
+      // mount: there the initial state is already right, fixtures included.
+      setPendingPrompt(null);
+      setPending(false);
+    }
+    shownTaskIdRef.current = taskId;
     conversationIdRef.current = null;
     setConversationId(null);
     setStopping(false);
@@ -742,6 +761,12 @@ export function LiveRun({ taskId, locale = "en" }: { taskId: string; locale?: Pu
       return;
     }
     const previousRunId = activeRunIdRef.current;
+    // Opening another chat from the sidebar while this POST is out does not cancel
+    // it. When it came back it called `followRun` regardless, and the page now
+    // showing a DIFFERENT conversation began streaming this one's run into it; on
+    // failure it also wrote this prompt back into the other chat's composer.
+    const sentFrom = conversationGenRef.current;
+    const stillHere = () => conversationGenRef.current === sentFrom;
     submittingRef.current = true;
     setSubmitting(true);
     setPending(true);
@@ -794,7 +819,10 @@ export function LiveRun({ taskId, locale = "en" }: { taskId: string; locale?: Pu
       // message the user had just sent. Nothing needed the URL to name the
       // newest run: /conversation answers for any run in the conversation, and
       // every link back into one names its first.
-      followRun(submitted);
+      //
+      // Only if the reader is still here. The run exists either way and the chat
+      // row below is still updated, so it is waiting when they come back.
+      if (stillHere()) followRun(submitted);
       const chatToContinue = existingChat ?? loadChatHistory({ includeDemo: false, includeArchived: true }).find(
         (chat) => chat.id === taskId || chat.conversationId === conversationId,
       );
@@ -814,6 +842,9 @@ export function LiveRun({ taskId, locale = "en" }: { taskId: string; locale?: Pu
         });
       }
     } catch (cause) {
+      // The reader has moved to another conversation: its composer, error line and
+      // run are not this message's to touch. The reset effect already cleared ours.
+      if (!stillHere()) return;
       setError(cause instanceof Error ? cause.message : locale === "ja" ? "メッセージの送信に失敗しました" : "Message submission failed");
       // The turn never started; go back to following the one that was on screen.
       followRun(previousRunId);
@@ -823,8 +854,14 @@ export function LiveRun({ taskId, locale = "en" }: { taskId: string; locale?: Pu
       restoreAttachments(sentAttachments);
       setPendingPrompt(null);
     } finally {
-      submittingRef.current = false;
-      setSubmitting(false);
+      // Only our own. After a conversation change the reset effect has already
+      // cleared these, and the reader may have sent a message in the new chat since:
+      // clearing them here would re-open that chat's composer mid-send and let a
+      // second message through. (Sourcery, PR 929.)
+      if (stillHere()) {
+        submittingRef.current = false;
+        setSubmitting(false);
+      }
     }
   }
 

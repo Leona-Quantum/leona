@@ -236,3 +236,96 @@ test("connection notice persists through a retry until the stream actually recon
     await waitFor(() => assert.equal(view.queryByText("Connection interrupted. Reconnecting…"), null));
   } finally { view.unmount(); restore(); }
 });
+
+function otherConversation() {
+  const payload = conversation(false);
+  return {
+    ...payload,
+    id: "conversation-two",
+    turns: payload.turns.map((turn) => ({ ...turn, run: { ...turn.run, id: "run-two", conversation_id: "conversation-two", task_prompt: "Another chat" } })),
+  };
+}
+
+test("a follow-up that lands after the reader opened another chat does not take that chat over", async () => {
+  // The page is not remounted when `taskId` changes, so a POST that resumes after
+  // the switch used to call followRun() on whatever conversation was now showing.
+  for (const outcome of ["accepted", "refused"] as const) {
+    const response = deferred<Response>();
+    const requested: string[] = [];
+    const restore = liveFetch((url) => {
+      requested.push(url);
+      if (url === "/api/runs/run-one/conversation") return Response.json(conversation(false));
+      if (url === "/api/runs/run-two/conversation") return Response.json(otherConversation());
+      if (url === "/api/runs") return response.promise;
+      if (url === "/api/runs/run-two" || url === "/api/runs/run-three") return Response.json({ status: "succeeded" });
+    });
+    const view = render(<LiveRun taskId="run-one" />);
+    try {
+      await view.findByText("Initial answer");
+      fireEvent.change(view.getByRole("textbox"), { target: { value: "Continue my circuit" } });
+      act(() => { fireEvent.submit(view.container.querySelector("form")!); });
+
+      view.rerender(<LiveRun taskId="run-two" />);
+      await waitFor(() => assert.ok(requested.includes("/api/runs/run-two/conversation")));
+      // The message in flight was the other conversation's; it is not shown here.
+      await waitFor(() => assert.equal(view.queryByText("Continue my circuit"), null));
+
+      await act(async () => response.resolve(
+        outcome === "accepted"
+          ? Response.json({ id: "run-three", conversation_id: "conversation-one" })
+          : Response.json({}, { status: 503 }),
+      ));
+      // Give a wrongly-followed run the chance to open its stream before asserting it did not.
+      await act(async () => { await new Promise((resolve) => setTimeout(resolve, 50)); });
+
+      assert.deepEqual(requested.filter((url) => url.includes("run-three")), [], `${outcome}: the other chat must not start following this run`);
+      assert.equal((view.getByRole("textbox") as HTMLTextAreaElement).value, "", `${outcome}: the other chat's composer must stay empty`);
+      assert.equal(view.queryByRole("alert"), null, `${outcome}: the other chat must not show this message's error`);
+    } finally { view.unmount(); restore(); }
+  }
+});
+
+test("a late reply to the old chat's message does not re-open the new chat's composer mid-send", async () => {
+  // Sourcery on PR 929: the old request's `finally` cleared the submitting flag
+  // unconditionally, so if the reader had already sent something in the chat they
+  // moved to, that chat's send guard dropped and a second message could go through.
+  const first = deferred<Response>();
+  const second = deferred<Response>();
+  const posts: string[] = [];
+  const restore = liveFetch((url, init) => {
+    if (url === "/api/runs/run-one/conversation") return Response.json(conversation(false));
+    if (url === "/api/runs/run-two/conversation") return Response.json(otherConversation());
+    if (url === "/api/runs") {
+      posts.push(String(JSON.parse(String(init?.body)).conversation_id));
+      return posts.length === 1 ? first.promise : second.promise;
+    }
+    if (url.startsWith("/api/runs/run-")) return Response.json({ status: "succeeded" });
+  });
+  const view = render(<LiveRun taskId="run-one" />);
+  try {
+    await view.findByText("Initial answer");
+    fireEvent.change(view.getByRole("textbox"), { target: { value: "For chat one" } });
+    act(() => { fireEvent.submit(view.container.querySelector("form")!); });
+
+    view.rerender(<LiveRun taskId="run-two" />);
+    await view.findByRole("heading", { name: "Another chat" });
+    fireEvent.change(view.getByRole("textbox"), { target: { value: "For chat two" } });
+    act(() => { fireEvent.submit(view.container.querySelector("form")!); });
+    assert.deepEqual(posts, ["conversation-one", "conversation-two"]);
+
+    // While a message is being submitted the page offers no Stop: there is no run
+    // to stop yet (the "follow-up sends once" test above pins the same thing).
+    assert.equal(view.queryByRole("button", { name: "Stop" }), null);
+
+    // Chat one's request fails late. Chat two is still sending and must stay that way.
+    // What the unguarded `finally` actually did here was clear `submitting`, and the
+    // visible result is a Stop button for a run that does not exist yet. A second
+    // message is refused either way — `pending` also blocks it — so asserting on the
+    // POST count alone passed with the bug in place. It is kept as the weaker claim.
+    await act(async () => first.resolve(Response.json({}, { status: 503 })));
+    assert.equal(view.queryByRole("button", { name: "Stop" }), null, "chat two is still submitting; it must not be offered a Stop");
+    fireEvent.change(view.getByRole("textbox"), { target: { value: "A second message" } });
+    act(() => { fireEvent.submit(view.container.querySelector("form")!); });
+    assert.deepEqual(posts, ["conversation-one", "conversation-two"]);
+  } finally { view.unmount(); restore(); second.resolve(Response.json({}, { status: 503 })); }
+});
