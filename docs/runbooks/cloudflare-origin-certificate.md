@@ -165,8 +165,10 @@ The collaborator finished the Cloudflare side at about 07:40 UTC (both records p
   the Origin certificate in the handshake, ingress restricted, the twin private, one trusted
   forwarding hop.
 - `majorana-web-cert` and its two DNS authorizations are deleted (their definitions are kept
-  in ai-ops `desk/leona/plans/gcp-migration-20260912/archive/`). The two
-  `_acme-challenge` CNAME records in Cloudflare DNS now point at nothing and can go.
+  in ai-ops `desk/leona/plans/gcp-migration-20260912/archive/`). Nothing in DNS goes with
+  them: the authorizations read `FAILED` because their CNAMEs were never created.
+  **`_acme-challenge.leonaqt.com` is Cloudflare's, not Google's** — it points at
+  `…dcv.cloudflare.com` and is how Cloudflare renews the certificate visitors see. Leave it.
 
 **Bot Fight Mode challenges every request from a GitHub runner.** Measured at 22:52 UTC from
 a runner in Azure (Cloudflare colo IAD): `/`, `/repository`, a record page and
