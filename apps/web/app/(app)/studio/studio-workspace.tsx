@@ -1824,7 +1824,10 @@ export function CircuitBuilder({ seed, framework, selectedGate, onSelectGate, on
     // without a word and without an undo entry, so `CX(q0, q7)` vanished when q7
     // went and nothing on screen said why. It is now one undo step and a sentence.
     const dropped = next < qubitCount ? steps.filter((step) => step.qubits.some((q) => q >= next)).length : 0;
-    if (dropped > 0) pushHistory();
+    // Every change of width is an undo step, not only the ones that drop gates:
+    // otherwise Undo after removing an EMPTY wire skips it and takes back whatever
+    // came before, which reads as Undo having done the wrong thing. (Sourcery, PR 928.)
+    pushHistory();
     setQubitCount(next);
     setPendingQubits((current) => current.filter((qubit) => qubit < next));
     if (next < qubitCount) setSteps((current) => current.filter((step) => step.qubits.every((q) => q < next)));

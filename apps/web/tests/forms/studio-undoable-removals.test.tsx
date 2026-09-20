@@ -81,3 +81,16 @@ test("studio: deleting a selected gate can be undone", async () => {
   fireEvent.click(getByRole("button", { name: copy.undo }));
   await waitFor(() => assert.deepEqual(ids(latest().steps), ["s-h0", "s-cx", "s-x1"]));
 });
+
+test("studio: removing an empty wire is its own undo step", async () => {
+  const { getByRole, latest } = renderBuilder();
+  // q3 is added empty, then removed again: no gate is involved either time.
+  fireEvent.click(getByRole("button", { name: copy.addQubit }));
+  await waitFor(() => assert.equal(latest()?.qubitCount, 4));
+  fireEvent.click(getByRole("button", { name: copy.removeQubit }));
+  await waitFor(() => assert.equal(latest()?.qubitCount, 3));
+  // Undo gives the wire back; it does not reach past it to the step before.
+  fireEvent.click(getByRole("button", { name: copy.undo }));
+  await waitFor(() => assert.equal(latest()?.qubitCount, 4));
+  assert.deepEqual(ids(latest()?.steps ?? []), ["s-h0", "s-cx", "s-x1"]);
+});
