@@ -15,11 +15,13 @@ import type { BuilderStep, CustomGateDefinition } from "./studio-builder.ts";
  * this replaces — undoing the single gate just placed — the observable
  * result is the same: pop, restore, the last thing you did is gone.
  *
- * Deletions are not pushed by convention here and stay exactly as undoable as
- * they always were (not at all through this mechanism): pressing Undo right
- * after a delete restores the state from before whichever push-worthy action
- * came before it, not the delete itself. See studio-workspace.tsx for which
- * actions push.
+ * Removals push too, since 2026-09-20. They did not at first, which left the
+ * most destructive actions on the canvas as the only ones Undo could not take
+ * back: Clear emptied an arbitrarily large circuit on one click, and "Remove
+ * qubit" silently deleted every gate touching that wire, including two-qubit
+ * gates whose other wire stayed. A snapshot restores those exactly, so there
+ * was never a reason particular to deletes. See studio-workspace.tsx for the
+ * full list of actions that push.
  */
 
 export interface StudioHistorySnapshot {

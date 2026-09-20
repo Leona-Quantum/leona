@@ -497,6 +497,14 @@ function appendStandardGate(
   qubits: number[],
   emit: (gate: StandardGate, qubits: number[], param?: string) => void,
 ): boolean | null {
+  // A gate applied to the same wire twice (`cx q[0], q[0]`) is not a gate. The
+  // strict parser (studio-parse.ts `gateStep`) and the server-metadata reader
+  // (circuit-ir.ts `boundedIndices`) both refuse it; this reader, the third way a
+  // circuit reaches the canvas, did not. The statevector kernel then skipped every
+  // basis state for it, so the Visual tab showed the gate on the diagram and a
+  // state as if it were not there. Declining here covers the direct path, every
+  // decomposition, and a custom gate's body with one check.
+  if (new Set(qubits).size !== qubits.length) return null;
   const direct = DIRECT_STANDARD_GATES[gate];
   if (direct) {
     const requiresAngle = direct === "RX" || direct === "RY" || direct === "RZ";
