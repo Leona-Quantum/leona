@@ -313,10 +313,19 @@ test("a late reply to the old chat's message does not re-open the new chat's com
     act(() => { fireEvent.submit(view.container.querySelector("form")!); });
     assert.deepEqual(posts, ["conversation-one", "conversation-two"]);
 
-    // Chat one's request fails late. Chat two is still sending and must stay guarded.
+    // While a message is being submitted the page offers no Stop: there is no run
+    // to stop yet (the "follow-up sends once" test above pins the same thing).
+    assert.equal(view.queryByRole("button", { name: "Stop" }), null);
+
+    // Chat one's request fails late. Chat two is still sending and must stay that way.
+    // What the unguarded `finally` actually did here was clear `submitting`, and the
+    // visible result is a Stop button for a run that does not exist yet. A second
+    // message is refused either way — `pending` also blocks it — so asserting on the
+    // POST count alone passed with the bug in place. It is kept as the weaker claim.
     await act(async () => first.resolve(Response.json({}, { status: 503 })));
+    assert.equal(view.queryByRole("button", { name: "Stop" }), null, "chat two is still submitting; it must not be offered a Stop");
     fireEvent.change(view.getByRole("textbox"), { target: { value: "A second message" } });
     act(() => { fireEvent.submit(view.container.querySelector("form")!); });
-    assert.deepEqual(posts, ["conversation-one", "conversation-two"], "chat two's in-flight send must still block another");
+    assert.deepEqual(posts, ["conversation-one", "conversation-two"]);
   } finally { view.unmount(); restore(); second.resolve(Response.json({}, { status: 503 })); }
 });
