@@ -81,10 +81,10 @@ done
 # website (scripts/vercel-ignore-build.sh), so "differs from dev's tip" is
 # ordinary — it is printed for a human to read against the log, not judged.
 live_sha=$(fact sha)
-tip=$(git -C "$(dirname "$0")" rev-parse origin/dev 2>/dev/null || echo "?")
+tip=$(git rev-parse origin/dev 2>/dev/null || echo "?")
 if [ "$live_sha" = "$tip" ]; then ok "serving dev's tip ${tip:0:8}"; else
   warn "serving ${live_sha:0:8}; origin/dev is ${tip:0:8} — fine if nothing since built the website:"
-  git -C "$(dirname "$0")" log --oneline "${live_sha}..origin/dev" 2>/dev/null | head -5 | sed 's/^/        /' || true
+  git log --oneline "${live_sha}..origin/dev" 2>/dev/null | head -5 | sed 's/^/        /' || true
 fi
 rm -f /tmp/.svc.$$ /tmp/.svcfacts.$$
 

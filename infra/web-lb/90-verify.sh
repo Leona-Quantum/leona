@@ -205,7 +205,14 @@ fi
 # ships.
 # ---------------------------------------------------------------------------
 echo "== the forwarding-hop count matches the topology"
-fleet="$(dirname "$0")/../fleet.env"
+# Relative to HERE, not to "$0": line 12 already changed into this directory, so
+# resolving "$0" again doubles a relative path (`infra/web-lb/90-verify.sh` run
+# from the repo root looked for infra/web-lb/infra/web-lb/../fleet.env). grep
+# then exited 2 under `set -e` with its stderr discarded, and the script died
+# here silently — after printing every earlier OK and before "all checks
+# passed". Found on the post-cutover read-back, 2026-09-20.
+fleet="../fleet.env"
+[ -r "$fleet" ] || note FAIL "cannot read ${fleet} from $(pwd)"
 hops=$(grep -E '^WEB_XFF_TRUSTED_HOPS=[0-9]+$' "$fleet" 2>/dev/null | cut -d= -f2)
 serving_via_lb=no
 exists compute forwarding-rules describe majorana-web-fr-443 --global && serving_via_lb=yes

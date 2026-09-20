@@ -392,8 +392,8 @@ jobs:
       #
       # Read from the control plane, because there is no data-plane route from a
       # runner any more: the run.app URL refuses by ingress and the load balancer
-      # refuses by origin lock. What a visitor meets is web-deploy-watch.yml's and
-      # verify-web-cache.yml's question, asked through the public name.
+      # refuses by origin lock. What a visitor meets is verify-web-cache.yml's
+      # question, asked through the public name once this run completes.
       #
       # The second assertion is the dangerous pair, checked where it would be
       # created: a service that is public AND reachable directly is the whole
