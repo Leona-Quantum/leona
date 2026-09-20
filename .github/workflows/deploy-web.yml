@@ -309,6 +309,16 @@ jobs:
           probe /repository 200 '<title>'
           probe /pricing 200 '<title>'
           probe /this-route-does-not-exist 404 '<title>'
+          # A RECORD PAGE, and its negative control. Per-request, uncached, and it
+          # reads the session — the one kind of route that returned 500 for an
+          # hour on 2026-08-16 while every prerendered page above was fine
+          # (scripts/check-live-pages.mjs has the account). That script asks the
+          # same two questions of the public name after the shift, but since
+          # 2026-09-20 Cloudflare's Bot Fight Mode challenges a GitHub runner
+          # there (measured: 4 of 4 requests, 403 cf-mitigated: challenge), so
+          # here, before anybody is served, is the only place a runner can ask.
+          probe /repository/bell-state-qiskit 200 '<title>'
+          probe /repository/a-slug-this-corpus-will-never-publish 404 '<title>'
           probe /opengraph-image 200 ''
           # The locale cookie is leona.locale.v2 (lib/public-locale.ts). Sending
           # the wrong cookie name renders English and passes a lang="en" check,
