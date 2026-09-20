@@ -59,6 +59,40 @@ export function canonicalOrigin(
 }
 
 /**
+ * What to resolve a relative redirect against: `new URL(path, redirectBase(request.url))`.
+ *
+ * Never `request.url` alone. A self-hosted Next server builds every request's
+ * URL from the address it LISTENS on, not from the `Host` header
+ * (`attachRequestMeta` in next-server: `${protocol}://${fetchHostname}:${port}`),
+ * and in the Cloud Run container that is `0.0.0.0:8080`. Vercel hid this by
+ * rewriting it. So on the day leonaqt.com moved to Google (2026-09-20) the
+ * sign-in callback, which redirects to `returnPathname` on "the request's
+ * origin", sent every person who signed in to `https://0.0.0.0:8080/run`. No
+ * check saw it: the smoke test follows sign-in as far as WorkOS, whose URL is
+ * absolute, and the leg that comes back needs a real account.
+ *
+ * A wildcard listen address is one nobody can have typed, so it is replaced by
+ * the origin this deployment is configured to answer on. Anything else is kept:
+ * on Vercel, on a preview host and in local dev the request's own origin is
+ * real, and it is what keeps a reader on the hostname they arrived by.
+ */
+export function redirectBase(
+  requestUrl: string,
+  env: Record<string, string | undefined> = process.env,
+): string {
+  let hostname: string;
+  try {
+    ({ hostname } = new URL(requestUrl));
+  } catch {
+    return canonicalOrigin(env);
+  }
+  return UNROUTABLE_HOSTNAMES.has(hostname) ? canonicalOrigin(env) : requestUrl;
+}
+
+/** Listen-on-everything addresses, as `URL.hostname` spells them. */
+const UNROUTABLE_HOSTNAMES = new Set(["0.0.0.0", "[::]", "[::0]", "[0:0:0:0:0:0:0:0]"]);
+
+/**
  * The one host a reader and a crawler should end up on.
  *
  * Derived from `PRODUCTION_ORIGIN` rather than written a second time, so moving

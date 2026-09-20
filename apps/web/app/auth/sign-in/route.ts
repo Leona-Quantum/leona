@@ -2,6 +2,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { getMajoranaAuthorizationUrl, isMajoranaAuthConfigured } from "../../../lib/auth";
 import { safeReturnTo } from "../../../lib/return-to";
 import { signInFailurePath } from "../../../lib/sign-in";
+import { redirectBase } from "../../../lib/site-origin";
 
 /**
  * A constant href that starts sign-in, so a cached page can link to it.
@@ -32,7 +33,7 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
   if (!isMajoranaAuthConfigured()) {
     console.error("sign-in redirect refused: authentication is not configured", { requestId });
     return NextResponse.redirect(
-      new URL(signInFailurePath("not_configured", requestId, returnTo), request.url),
+      new URL(signInFailurePath("not_configured", requestId, returnTo), redirectBase(request.url)),
       303,
     );
   }
@@ -50,7 +51,9 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
     // the host the reader actually arrived on — which also keeps this correct on
     // preview deployments and on each of the site's several hostnames, where a
     // hardcoded origin would have sent them somewhere else to sign in.
-    return NextResponse.redirect(new URL(target, request.url));
+    // `redirectBase`, not `request.url` bare: on Cloud Run the request's own
+    // origin is the container's listen address (lib/site-origin.ts).
+    return NextResponse.redirect(new URL(target, redirectBase(request.url)));
   } catch (cause) {
     // Never the provider's message: it can carry request details, and it is not
     // something a visitor can act on. The name alone is enough to triage with,
@@ -58,7 +61,7 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
     const error = cause instanceof Error ? cause : new Error("unknown sign-in provider error");
     console.error("sign-in redirect failed", { requestId, errorName: error.name });
     return NextResponse.redirect(
-      new URL(signInFailurePath("provider_unavailable", requestId, returnTo), request.url),
+      new URL(signInFailurePath("provider_unavailable", requestId, returnTo), redirectBase(request.url)),
       303,
     );
   }
