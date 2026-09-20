@@ -169,6 +169,18 @@ for (const { probe, actual, problem } of results) {
 }
 
 const blind = results.filter(({ problem }) => isBlind(problem)).length;
+// `--challenged-ok` is for the one caller that is challenged every time and knows
+// it: the post-deploy workflow on a GitHub runner. The owner ruled on 2026-09-20
+// (ai-ops 348) that Bot Fight Mode stays on, with the render question answered
+// before the traffic shift (deploy-web's smoke test on the private twin) and
+// around the clock by the Google uptime checks, which Cloudflare lets through. A
+// run that is red after every deploy teaches everyone to ignore red, so there a
+// fully challenged run is a notice. It must be EVERY probe: one real failure among
+// challenges is still a failure, and without the flag nothing changes.
+if (blind && blind === PROBES.length && process.argv.includes("--challenged-ok")) {
+  console.log(`::notice::Cloudflare challenged all ${blind} probes against ${BASE}, so this run verified nothing. That is expected from a GitHub runner while Bot Fight Mode is on (ai-ops 348). A record page is rendered before every traffic shift by deploy-web's smoke test, and the Google uptime checks watch the live site.`);
+  process.exit(0);
+}
 if (blind && blind === failed) {
   console.error(`\n::error::Cloudflare challenged ${blind} of ${PROBES.length} probes against ${BASE}. This run could not see the site.`);
   console.error("::error::That is about this runner's address (Bot Fight Mode treats datacentre traffic as a bot), not about what a visitor gets.");

@@ -315,11 +315,18 @@ async function checkPath(path) {
     if (runningVerdict.verdict === "pass") break;
     if (attempt < ATTEMPTS) await new Promise((resolve) => setTimeout(resolve, RETRY_DELAY_MS));
   }
-  return { path, ...classify(observations) };
+  return { path, ...classify(observations), challenged: observations.every((o) => Boolean(o.mitigated)) };
 }
 
 async function main() {
   const results = await Promise.all(CHECKED_PATHS.map((path) => checkPath(path)));
+  // See check-live-pages.mjs for why: from a GitHub runner, with Bot Fight Mode on
+  // by the owner's ruling (ai-ops 348), every request is challenged every time.
+  // All of them, or it is a failure like any other.
+  if (process.argv.includes("--challenged-ok") && results.length > 0 && results.every((result) => result.challenged)) {
+    console.log(`::notice::Cloudflare challenged every cache probe against ${SITE_ORIGIN}, so this run verified nothing. Expected from a GitHub runner while Bot Fight Mode is on (ai-ops 348). Read the cache from an ordinary connection after a change to the cache rule: node scripts/check-live-repository-cache.mjs`);
+    process.exit(0);
+  }
   let worstExit = 0;
   for (const { path, verdict, reason } of results) {
     if (verdict === "pass") {

@@ -22,9 +22,16 @@
 # `workflow_dispatch` is here so the probes can be pointed at the live site on
 # demand — the first thing anyone wants after a Cloudflare setting changes.
 #
-# A runner is a datacentre address and Cloudflare's Bot Fight Mode may challenge
-# it. Both scripts report that as a blind probe (`cf-mitigated`), distinctly from
-# a page that does not render.
+# A runner is a datacentre address and Cloudflare's Bot Fight Mode challenges it:
+# measured 2026-09-20, 4 of 4 requests. The owner ruled the same day that Bot Fight
+# Mode stays on (ai-ops 348), so both scripts run here with `--challenged-ok`: a
+# run in which EVERY probe was challenged is a notice saying it verified nothing,
+# not a failure, because a workflow that is red after every deploy stops meaning
+# anything. One real failure among challenges still fails. What covers the gap:
+# deploy-web renders a record page on the private twin before every traffic
+# shift, and the Google uptime checks ask the live site for the home page and a
+# record page from five regions around the clock; Cloudflare lets those through
+# (720 of 720 answered 200 in two hours with Bot Fight Mode on).
 #
 # Built after PR 591 shipped and a live cache-buster test wrongly read it as
 # broken (`cache-buster-cannot-test-a-cache` memory) — see
@@ -59,7 +66,7 @@ jobs:
       - name: scanner self-test
         run: node scripts/check-live-repository-cache.mjs --self-test
       - name: the highest-traffic public route is actually served from the CDN
-        run: node scripts/check-live-repository-cache.mjs
+        run: node scripts/check-live-repository-cache.mjs --challenged-ok
 
   # Does a visitor get a page at all, on each KIND of route?
   #
@@ -97,4 +104,4 @@ jobs:
       - name: probe self-test
         run: node scripts/check-live-pages.mjs --self-test
       - name: a visitor gets a page on every kind of route
-        run: node scripts/check-live-pages.mjs
+        run: node scripts/check-live-pages.mjs --challenged-ok
