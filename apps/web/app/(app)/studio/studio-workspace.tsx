@@ -165,7 +165,7 @@ export function StudioWorkspace({ artifactId, newDraft = false, exampleId, atlas
   // two surfaces from taking turns refreshing each other forever.
   const [artifactProjects, setArtifactProjects] = useState<ArtifactProject[]>([]);
   const [projectFilter, setProjectFilter] = useState<ProjectFilter>(ALL_PROJECTS);
-  const [title, setTitle] = useState("Untitled circuit");
+  const [title, setTitle] = useState(copy.untitledCircuit);
   const [framework, setFramework] = useState<StudioFramework>("qiskit");
   const [drafts, setDrafts] = useState<BuilderCodeVariants>(() => ({ ...STARTER_CODES }));
   const [draftNotes, setDraftNotes] = useState<Partial<Record<StudioFramework, string>>>({});
@@ -572,7 +572,7 @@ export function StudioWorkspace({ artifactId, newDraft = false, exampleId, atlas
     setArtifactHydration("ready");
     setShowEditor(true);
     setArtifact(next);
-    setTitle(next?.title ?? "Untitled circuit");
+    setTitle(next?.title ?? copy.untitledCircuit);
     const nextBundle = makeDraftBundle(next, copy);
     const nextDrafts = nextBundle.codes;
     const nextFramework = normalizeFramework(next?.framework)
@@ -657,7 +657,19 @@ export function StudioWorkspace({ artifactId, newDraft = false, exampleId, atlas
    * back" can restore it, and diff the circuit that was open against the one
    * the new version parses to for the "gates added/removed" summary. */
   async function handleAskSaved(artifactId: string) {
-    const backup = { artifact, builderSeed, title, drafts, framework, activeExample };
+    // The canvas as it stands NOW, not `builderSeed`. The seed is what the canvas
+    // was last loaded from; every gate placed since lives only in the builder and
+    // its mirror, `canvasCircuit`. Backing up the seed meant "go back" restored the
+    // latest code beside a canvas from before the reader's own edits — and the next
+    // canvas edit then regenerated the code from that older circuit.
+    const liveSeed: BuilderSeed = {
+      ...builderSeed,
+      qubitCount: canvasCircuit.qubitCount,
+      steps: canvasCircuit.steps,
+      customGates: canvasCircuit.customGates,
+      operationCount: canvasCircuit.steps.length,
+    };
+    const backup = { artifact, builderSeed: liveSeed, title, drafts, framework, activeExample };
     const beforeSteps = canvasCircuit.steps;
     try {
       const loaded = await loadArtifact(artifactId);
@@ -687,7 +699,10 @@ export function StudioWorkspace({ artifactId, newDraft = false, exampleId, atlas
     setFramework(askBackup.framework);
     setCode(askBackup.drafts[askBackup.framework]);
     setActiveExample(askBackup.activeExample);
-    seedBuilder(askBackup.builderSeed);
+    // A fresh key, so the builder remounts on the restored circuit even when the
+    // backup's seed shares a key with the one Ask Leona's version was loaded under.
+    seedCounter.current += 1;
+    seedBuilder({ ...askBackup.builderSeed, key: `ask-back-${seedCounter.current}` });
     setAskBackup(null);
     setAskChangeSummary(null);
   }
@@ -1672,12 +1687,22 @@ export function CircuitBuilder({ seed, framework, selectedGate, onSelectGate, on
   liveSyncRef.current = liveSync;
   const onLiveApplyRef = useRef(onLiveApply);
   onLiveApplyRef.current = onLiveApply;
+  const reportedEditRef = useRef(false);
   useEffect(() => {
     if (seed.readOnly) return;
     // The untouched seed is not re-persisted; only user edits are reported.
     // Reference equality is the signal: any edit replaces these arrays, while
     // StrictMode's double-invoked mount effect still sees the seed values.
-    if (qubitCount === seed.qubitCount && steps === seed.steps && customGates === seed.customGates) return;
+    //
+    // "Untouched" stops being true for good at the first edit, though. Undo
+    // restores a snapshot, and the snapshot of a never-edited canvas IS the seed's
+    // own arrays — so undoing back to where you started matched this test and was
+    // never reported. The page's mirror, the stored draft and the code kept the
+    // edit the canvas had just taken back. The ref resets with the builder, which
+    // remounts on every new seed key.
+    const atSeed = qubitCount === seed.qubitCount && steps === seed.steps && customGates === seed.customGates;
+    if (atSeed && !reportedEditRef.current) return;
+    reportedEditRef.current = true;
     onCircuitChangeRef.current?.({ qubitCount, steps, customGates });
     if (liveSyncRef.current) onLiveApplyRef.current?.(generateBuilderCode(steps, qubitCount, customGates));
   }, [qubitCount, steps, customGates, seed]);
@@ -1686,7 +1711,7 @@ export function CircuitBuilder({ seed, framework, selectedGate, onSelectGate, on
   const armedCustom = armedCustomId ? customGates.find((gate) => gate.id === armedCustomId) ?? null : null;
   const armed: BuilderGate = (BUILDER_GATES as string[]).includes(selectedGate) ? selectedGate as BuilderGate : armedCustom ? "CUSTOM" : "H";
   const requiredQubits = armedCustom?.qubitCount ?? builderGateArity(armed as BuiltinBuilderGate);
-  const selectedLabel = armed === "CUSTOM" ? armedCustom?.name ?? "Custom gate" : armed;
+  const selectedLabel = armed === "CUSTOM" ? armedCustom?.name ?? copy.customGateLabel : armed;
   const moments = useMemo(() => circuitMoments(qubitCount, steps), [qubitCount, steps]);
   const playheadMoment = playhead === "end" ? moments.count : Math.min(playhead, moments.count);
   const rotationArmed = ANGLE_GATES.includes(armed as (typeof ANGLE_GATES)[number]);
@@ -1720,9 +1745,10 @@ export function CircuitBuilder({ seed, framework, selectedGate, onSelectGate, on
 
   /** Snapshot the current state onto the undo stack, immediately before a
    * mutation that should be undoable — a gate placement, creating a custom
-   * gate, saving an edited block definition, or ungrouping an instance. See
-   * lib/studio-history.ts for why this replaced the old placed-step-id-only
-   * mechanism, and why a delete does not push here. */
+   * gate, saving an edited block definition, ungrouping an instance, and since
+   * 2026-09-20 every removal: deleting a step or a selection, Clear, and a
+   * "Remove qubit" that takes gates with it. See lib/studio-history.ts for why
+   * this replaced the old placed-step-id-only mechanism. */
   function pushHistory() {
     setHistory((current) => pushStudioHistory(current, { qubitCount, steps, customGates }));
   }
@@ -1793,9 +1819,29 @@ export function CircuitBuilder({ seed, framework, selectedGate, onSelectGate, on
     // any width a browser will lay out.
     const next = Math.min(MAX_VIEWABLE_QUBITS, Math.max(1, qubitCount + delta));
     if (next === qubitCount) return;
+    // Removing a wire also removes every gate that touches it, including a
+    // two-qubit gate whose OTHER wire stays on the canvas. That used to happen
+    // without a word and without an undo entry, so `CX(q0, q7)` vanished when q7
+    // went and nothing on screen said why. It is now one undo step and a sentence.
+    const dropped = next < qubitCount ? steps.filter((step) => step.qubits.some((q) => q >= next)).length : 0;
+    // Every change of width is an undo step, not only the ones that drop gates:
+    // otherwise Undo after removing an EMPTY wire skips it and takes back whatever
+    // came before, which reads as Undo having done the wrong thing. (Sourcery, PR 928.)
+    pushHistory();
     setQubitCount(next);
     setPendingQubits((current) => current.filter((qubit) => qubit < next));
     if (next < qubitCount) setSteps((current) => current.filter((step) => step.qubits.every((q) => q < next)));
+    setBuilderMessage(dropped > 0 ? copy.qubitRemovedWithGates(dropped) : null);
+  }
+
+  function clearAll() {
+    if (!steps.length) return;
+    pushHistory();
+    const count = steps.length;
+    setSteps([]);
+    setSelectedStepIds([]);
+    setPendingQubits([]);
+    setBuilderMessage(copy.clearedUndo(count));
   }
 
   function selectStep(stepId: string, multi = false) {
@@ -1809,12 +1855,14 @@ export function CircuitBuilder({ seed, framework, selectedGate, onSelectGate, on
   function deleteSelected() {
     if (!selectedStepIds.length) return;
     const selected = new Set(selectedStepIds);
+    pushHistory();
     setSteps((current) => current.filter((step) => !selected.has(step.id)));
     setSelectedStepIds([]);
     setBuilderMessage(null);
   }
 
   function deleteStep(stepId: string) {
+    pushHistory();
     setSteps((current) => current.filter((step) => step.id !== stepId));
     setSelectedStepIds((current) => current.filter((id) => id !== stepId));
     setBuilderMessage(null);
@@ -2170,7 +2218,7 @@ export function CircuitBuilder({ seed, framework, selectedGate, onSelectGate, on
               <button className="mj-secondary-button" type="button" onClick={ungroupSelected}>{copy.ungroupBlock}</button>
             ) : null}
             <button className="mj-secondary-button" type="button" onClick={() => setShowBlocksPanel(true)}>{copy.blocksPanelOpen}</button>
-            <button className="mj-secondary-button" type="button" onClick={() => { setSteps([]); setSelectedStepIds([]); setPendingQubits([]); setBuilderMessage(null); }} disabled={!steps.length}>{copy.clearAll}</button>
+            <button className="mj-secondary-button" type="button" onClick={clearAll} disabled={!steps.length}>{copy.clearAll}</button>
             <span className="mj-builder-controls-divider" aria-hidden="true" />
             <button className="mj-secondary-button" type="button" onClick={() => changeQubitCount(-1)} disabled={qubitCount <= 1}>{copy.removeQubit}</button>
             <button className="mj-secondary-button" type="button" onClick={() => changeQubitCount(1)} disabled={qubitCount >= MAX_VIEWABLE_QUBITS}>{copy.addQubit}</button>

@@ -430,6 +430,9 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
     removeQubit: string;
     undo: string;
     clearAll: string;
+    clearedUndo: (count: number) => string;
+    qubitRemovedWithGates: (count: number) => string;
+    untitledCircuit: string;
     applyToCode: string;
     appliedToCode: string;
     compression: string;
@@ -1275,6 +1278,9 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
       removeQubit: "Remove qubit",
       undo: "Undo",
       clearAll: "Clear",
+      clearedUndo: (count) => `Cleared ${count} gate${count === 1 ? "" : "s"}. Undo brings ${count === 1 ? "it" : "them"} back.`,
+      qubitRemovedWithGates: (count) => `Removed the qubit and ${count} gate${count === 1 ? "" : "s"} that touched it. Undo brings ${count === 1 ? "it" : "them"} back.`,
+      untitledCircuit: "Untitled circuit",
       applyToCode: "Apply to code",
       appliedToCode: "Generated code applied to all framework drafts.",
       compression: "Circuit compression",
@@ -2218,6 +2224,9 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
       removeQubit: "量子ビットを削除",
       undo: "元に戻す",
       clearAll: "クリア",
+      clearedUndo: (count) => `${count}個のゲートを消去しました。「元に戻す」で復元できます。`,
+      qubitRemovedWithGates: (count) => `量子ビットと、それに掛かっていた${count}個のゲートを削除しました。「元に戻す」で復元できます。`,
+      untitledCircuit: "無題の回路",
       applyToCode: "コードに反映",
       appliedToCode: "生成したコードを各フレームワークの下書きに反映しました。",
       compression: "量子回路を圧縮",

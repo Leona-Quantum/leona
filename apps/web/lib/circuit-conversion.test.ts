@@ -387,3 +387,20 @@ test("OpenQASM 2.0 is recognized by content under the OpenQASM 3 tab, since it h
   assert.equal(circuitFrameworkOrNull("qasm2")?.key, "openqasm3");
   assert.ok(parseCircuitSource(bell, "OpenQASM 2.0"));
 });
+
+test("interchange reconstruction declines a gate applied to the same wire twice", () => {
+  // The control: the same program with distinct wires reads fine, so the null
+  // below is about the repeated operand and not about this test's QASM.
+  const sound = ['OPENQASM 3.0;', 'include "stdgates.inc";', "qubit[2] q;", "h q[0];", "cx q[0], q[1];"].join("\n");
+  const soundCircuit = parseInterchangeCircuit(sound);
+  assert.ok(soundCircuit);
+  assert.deepEqual(soundCircuit.steps.map((step) => [step.gate, step.qubits]), [["H", [0]], ["CX", [0, 1]]]);
+
+  // Direct gate, a decomposed gate, and a custom gate's body: the three routes to `emit`.
+  const direct = sound.replace("cx q[0], q[1];", "cx q[0], q[0];");
+  const decomposed = sound.replace("cx q[0], q[1];", "cp(pi/2) q[1], q[1];");
+  const viaCustomGate = ['OPENQASM 3.0;', 'include "stdgates.inc";', "gate pair a, b { cx a, b; }", "qubit[2] q;", "pair q[1], q[1];"].join("\n");
+  assert.equal(parseInterchangeCircuit(direct), null);
+  assert.equal(parseInterchangeCircuit(decomposed), null);
+  assert.equal(parseInterchangeCircuit(viaCustomGate), null);
+});
