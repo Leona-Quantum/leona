@@ -2,6 +2,7 @@
 
 import type { components } from "@majorana/contracts-gen";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { QappRuntime } from "../../../../components/qapp-runtime";
 import { qappCopy } from "../../../../lib/qapp-copy";
@@ -19,6 +20,9 @@ export function QappWorkspace({ qappId, locale = "en" }: { qappId: string; local
   const [saving, setSaving] = useState(false);
   const [reload, setReload] = useState(0);
   const [visibilityNotice, setNotice] = useState<string | null>(null);
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const router = useRouter();
 
   useEffect(() => {
     let active = true;
@@ -65,6 +69,37 @@ export function QappWorkspace({ qappId, locale = "en" }: { qappId: string; local
     }
   }
 
+  async function copyPublicLink() {
+    if (!detail) return;
+    setError(null);
+    try {
+      await navigator.clipboard.writeText(`${window.location.origin}/q/${encodeURIComponent(detail.qapp.slug)}`);
+      setNotice(copy.linkCopied);
+    } catch {
+      setNotice(copy.linkCopyFailed);
+    }
+  }
+
+  async function deleteQapp() {
+    if (!detail || deleting) return;
+    setDeleting(true);
+    setError(null);
+    setNotice(null);
+    try {
+      const response = await fetch(`/api/qapps/${encodeURIComponent(qappId)}`, { method: "DELETE" });
+      if (!response.ok) {
+        // problem+json again: `title` carries the reason (creator-only, read-only role).
+        const payload = await response.json().catch(() => null) as { title?: string } | null;
+        throw new Error(payload?.title || copy.deleteFailed);
+      }
+      router.push("/qapps");
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : copy.deleteFailed);
+      setDeleting(false);
+      setConfirmingDelete(false);
+    }
+  }
+
   if (error && !detail) return <div className="qapp-private-empty leona-workspace-state" role="alert"><p>{error}</p><button className="mj-secondary-button" type="button" onClick={() => setReload((value) => value + 1)}>{copy.tryAgain}</button><Link href="/qapps">{copy.all}</Link></div>;
   if (!detail || detail.qapp.id !== qappId) return <div className="qapp-private-empty" role="status">{copy.loading}</div>;
   const isPublic = detail.qapp.visibility === "public";
@@ -80,11 +115,27 @@ export function QappWorkspace({ qappId, locale = "en" }: { qappId: string; local
         </div>
         <div className="qapp-private-actions">
           {isPublic ? <Link className="mj-secondary-button" href={`/q/${encodeURIComponent(detail.qapp.slug)}`}>{copy.openPublic}</Link> : null}
-          <button className="mj-primary-button" type="button" disabled={saving} onClick={() => void toggleVisibility()}>
+          {isPublic ? <button className="mj-secondary-button" type="button" onClick={() => void copyPublicLink()}>{copy.copyLink}</button> : null}
+          <button className="mj-primary-button" type="button" disabled={saving || deleting} onClick={() => void toggleVisibility()}>
             {saving ? copy.saving : isPublic ? copy.makePrivate : copy.publish}
           </button>
+          {confirmingDelete ? (
+            <>
+              <button className="mj-workspace-leave" type="button" disabled={deleting} onClick={() => void deleteQapp()}>
+                {deleting ? copy.deleting : copy.deleteConfirm}
+              </button>
+              <button className="mj-secondary-button" type="button" disabled={deleting} onClick={() => setConfirmingDelete(false)}>
+                {copy.deleteCancel}
+              </button>
+            </>
+          ) : (
+            <button className="mj-workspace-leave" type="button" disabled={saving} onClick={() => setConfirmingDelete(true)}>
+              {copy.deleteQapp}
+            </button>
+          )}
         </div>
       </header>
+      {confirmingDelete ? <p className="mj-artifact-copy" role="status">{copy.deleteWarning}</p> : null}
       {error ? <p role="alert" className="qapp-private-error">{error}</p> : null}
       {visibilityNotice ? <p className="leona-workspace-feedback" role="status">{visibilityNotice}</p> : null}
       {notice ? (
