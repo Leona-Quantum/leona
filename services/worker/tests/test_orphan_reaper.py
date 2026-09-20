@@ -116,8 +116,9 @@ class _Recorder:
         self.results: list[dict] = []
         self.turns: list[dict] = []
 
-    async def get_version_by_run_id(self, _scope, _session, run_id):
+    async def get_version_by_run_id(self, _scope, _session, run_id, *, for_update=False):
         self.asked_for = run_id
+        self.locked = for_update
         return self.version
 
     async def set_version_result(self, _scope, _session, version_id, **fields):
@@ -168,6 +169,9 @@ async def test_the_reaper_also_fails_the_notebook_version_the_run_was_generating
 
     assert closed is True
     assert recorder.asked_for == orphan.run_id
+    # The status is read under a row lock, so a handler finishing between this read
+    # and the write below cannot have its `ready` overwritten.
+    assert recorder.locked is True
     assert [(r["version_id"], r["status"]) for r in recorder.results] == [(version.id, "failed")]
     assert "callback never landed" in recorder.results[0]["error"]
     assert [(t["notebook_id"], t["version_id"], t["run_id"]) for t in recorder.turns] == [

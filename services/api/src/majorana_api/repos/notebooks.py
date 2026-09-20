@@ -221,24 +221,30 @@ async def get_version(
 
 
 async def get_version_by_run_id(
-    scope: Scope, session: AsyncSession, run_id: uuid.UUID
+    scope: Scope, session: AsyncSession, run_id: uuid.UUID, *, for_update: bool = False
 ) -> NotebookVersion | None:
     """The version created FOR this run — backs idempotent replay of `POST
     /notebooks`: a repeated Idempotency-Key finds the already-created run via
     `runs_repo.find_run_by_idempotency_key`, and this is how the route gets back
     to the notebook that run produced (there is no `notebooks.created_by_run_id`
     column the way `qapps` has one; `notebook_versions.run_id` is the only edge).
+
+    `for_update` locks the VERSION row (not the notebook it joins to) until the
+    caller commits. The orphan reaper reads a version's status and then writes a
+    result over it; without the lock a handler finishing in between would have its
+    `ready` overwritten with `failed`.
     """
-    return (
-        await session.execute(
-            select(NotebookVersion)
-            .join(Notebook, NotebookVersion.notebook_id == Notebook.id)
-            .where(
-                NotebookVersion.run_id == run_id,
-                Notebook.workspace_id == scope.workspace_id,
-            )
+    query = (
+        select(NotebookVersion)
+        .join(Notebook, NotebookVersion.notebook_id == Notebook.id)
+        .where(
+            NotebookVersion.run_id == run_id,
+            Notebook.workspace_id == scope.workspace_id,
         )
-    ).scalar_one_or_none()
+    )
+    if for_update:
+        query = query.with_for_update(of=NotebookVersion)
+    return (await session.execute(query)).scalar_one_or_none()
 
 
 async def get_version_by_seq(

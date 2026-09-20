@@ -2707,9 +2707,12 @@ async def _fail_orphaned_notebook_version(
 
     Keyed on `notebook_versions.run_id`, the only edge from a run to a notebook, so
     it needs nothing from the job payload the reaper does not have. A version that
-    already reached a result is left exactly as it is.
+    already reached a result is left exactly as it is — and the read takes a row
+    lock, so "already" cannot change between the check and the write: a handler
+    that finishes first is seen as finished, and one that finishes after waits for
+    this commit and then records its own result. (Sourcery, PR 930.)
     """
-    version = await notebooks_repo.get_version_by_run_id(scope, session, run_id)
+    version = await notebooks_repo.get_version_by_run_id(scope, session, run_id, for_update=True)
     if version is None or version.status not in _NOTEBOOK_VERSION_IN_FLIGHT:
         return False
     await notebooks_repo.set_version_result(
