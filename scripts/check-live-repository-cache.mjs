@@ -5,7 +5,7 @@
  * `check-static-routes.mjs` reads a local build's route table, and neither it nor
  * any other required check ever makes a request to the deployed site.
  *
- * Runs post-deploy (`on: deployment_status`, `verify-web-cache.yml`), never as a
+ * Runs post-deploy (`verify-web-cache.yml`, after `deploy-web` finishes), never as a
  * PR gate — there is no build artifact to check before a merge, only the live
  * edge after one. That also means nothing is blocked by this script failing;
  * see the WARN case below for why that is deliberate rather than a gap.
@@ -94,7 +94,12 @@ export function classify(observations) {
   const nonOk = observations.filter((o) => o.status !== 200);
   if (nonOk.length === observations.length) {
     const statuses = nonOk.map((o) => o.status).join(", ");
-    return { verdict: "fail", reason: `every attempt returned a non-200 status (${statuses})` };
+    // A Cloudflare challenge is a fact about the runner, not the site (see
+    // check-live-pages.mjs). Still a failure, because a probe that cannot see
+    // must not go green, but it has to say which of the two it is.
+    const challenged = nonOk.find((o) => o.mitigated);
+    const blind = challenged ? ` — Cloudflare challenged this runner (cf-mitigated: ${challenged.mitigated}), so this says nothing about the page` : "";
+    return { verdict: "fail", reason: `every attempt returned a non-200 status (${statuses})${blind}` };
   }
   const cachedHit = observations.some((o) => o.status === 200 && CACHED_VALUES.has(o.cacheHeader ?? ""));
   if (cachedHit) {
@@ -283,7 +288,7 @@ async function probe(url, headers = {}) {
   try {
     const res = await fetch(url, { redirect: "manual", headers });
     const { name, value } = readCacheHeader(res.headers);
-    return { status: res.status, cacheHeader: value, cacheHeaderName: name, cdnCacheControl: res.headers.get("cdn-cache-control") };
+    return { status: res.status, cacheHeader: value, cacheHeaderName: name, cdnCacheControl: res.headers.get("cdn-cache-control"), mitigated: res.headers.get("cf-mitigated") };
   } catch (err) {
     // A network failure is not a 200, so it folds into the same "non-200" bucket
     // `classify` already handles — no separate branch needed for it.
