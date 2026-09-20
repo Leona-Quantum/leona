@@ -107,6 +107,7 @@ from majorana_api.repos import provider_credentials as credentials_repo
 from majorana_api.repos import runs as runs_repo
 from majorana_api.repos import artifacts as artifacts_repo
 from majorana_api.repos import qpu_runs as qpu_runs_repo
+from majorana_api.repos import notebooks as notebooks_repo
 from majorana_api.repos import qapps as qapps_repo
 from majorana_api.repos import system
 from majorana_api.repos import usage as usage_repo
@@ -2683,8 +2684,57 @@ async def close_orphaned_run(session: AsyncSession, orphan: system.OrphanedRun) 
         error_event_id=error_event_id,
         finished_event_id=uuid.uuid5(orphan.run_id, "run.finished"),
     )
+    await _fail_orphaned_notebook_version(scope, session, orphan.run_id, reason)
     await session.commit()
     return closed
+
+
+_NOTEBOOK_VERSION_IN_FLIGHT = frozenset({"queued", "running"})
+
+
+async def _fail_orphaned_notebook_version(
+    scope: Scope, session: AsyncSession, run_id: uuid.UUID, reason: str
+) -> bool:
+    """Close the notebook version an orphaned run was generating, if there is one.
+
+    `handle_notebook_dead_letter` does this when the dead-letter callback is what
+    ends the job. This reaper exists for the case where that callback never landed,
+    and it closed only the `runs` row: the `notebook_versions` row stayed `running`,
+    and the API refuses every later edit, chat turn and rerun on a notebook whose
+    latest version is in flight (`notebook_version_in_flight`, 409). Nothing else
+    ever moves that row, so the notebook was stuck for good with no way out for its
+    owner.
+
+    Keyed on `notebook_versions.run_id`, the only edge from a run to a notebook, so
+    it needs nothing from the job payload the reaper does not have. A version that
+    already reached a result is left exactly as it is.
+    """
+    version = await notebooks_repo.get_version_by_run_id(scope, session, run_id)
+    if version is None or version.status not in _NOTEBOOK_VERSION_IN_FLIGHT:
+        return False
+    await notebooks_repo.set_version_result(
+        scope,
+        session,
+        version.id,
+        status="failed",
+        spec=None,
+        source="",
+        ipynb=None,
+        report=None,
+        review=None,
+        error=f"run orphaned: {reason[:1900]}",
+        message=None,
+    )
+    await notebooks_repo.append_turn(
+        scope,
+        session,
+        version.notebook_id,
+        role="nala",
+        content=f"I couldn't finish this: {reason[:500]}",
+        version_id=version.id,
+        run_id=run_id,
+    )
+    return True
 
 
 def validated_fixtures_dir(payload: dict[str, Any]) -> Path:
