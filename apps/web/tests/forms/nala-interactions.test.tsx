@@ -284,3 +284,39 @@ test("a follow-up that lands after the reader opened another chat does not take 
     } finally { view.unmount(); restore(); }
   }
 });
+
+test("a late reply to the old chat's message does not re-open the new chat's composer mid-send", async () => {
+  // Sourcery on PR 929: the old request's `finally` cleared the submitting flag
+  // unconditionally, so if the reader had already sent something in the chat they
+  // moved to, that chat's send guard dropped and a second message could go through.
+  const first = deferred<Response>();
+  const second = deferred<Response>();
+  const posts: string[] = [];
+  const restore = liveFetch((url, init) => {
+    if (url === "/api/runs/run-one/conversation") return Response.json(conversation(false));
+    if (url === "/api/runs/run-two/conversation") return Response.json(otherConversation());
+    if (url === "/api/runs") {
+      posts.push(String(JSON.parse(String(init?.body)).conversation_id));
+      return posts.length === 1 ? first.promise : second.promise;
+    }
+    if (url.startsWith("/api/runs/run-")) return Response.json({ status: "succeeded" });
+  });
+  const view = render(<LiveRun taskId="run-one" />);
+  try {
+    await view.findByText("Initial answer");
+    fireEvent.change(view.getByRole("textbox"), { target: { value: "For chat one" } });
+    act(() => { fireEvent.submit(view.container.querySelector("form")!); });
+
+    view.rerender(<LiveRun taskId="run-two" />);
+    await view.findByRole("heading", { name: "Another chat" });
+    fireEvent.change(view.getByRole("textbox"), { target: { value: "For chat two" } });
+    act(() => { fireEvent.submit(view.container.querySelector("form")!); });
+    assert.deepEqual(posts, ["conversation-one", "conversation-two"]);
+
+    // Chat one's request fails late. Chat two is still sending and must stay guarded.
+    await act(async () => first.resolve(Response.json({}, { status: 503 })));
+    fireEvent.change(view.getByRole("textbox"), { target: { value: "A second message" } });
+    act(() => { fireEvent.submit(view.container.querySelector("form")!); });
+    assert.deepEqual(posts, ["conversation-one", "conversation-two"], "chat two's in-flight send must still block another");
+  } finally { view.unmount(); restore(); second.resolve(Response.json({}, { status: 503 })); }
+});

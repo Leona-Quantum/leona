@@ -428,9 +428,14 @@ export function LiveRun({ taskId, locale = "en" }: { taskId: string; locale?: Pu
   // in place), so anything that resumes after a network round trip has to check it
   // is still on the page it left — `loadConversation` does that with `loadSeq`.
   const shownTaskIdRef = useRef(taskId);
+  // Counts conversation changes. A request compares the count it left with, not
+  // the task id: going A -> B -> A lands on the same id after two resets, and the
+  // request from the first visit to A must not act on the second.
+  const conversationGenRef = useRef(0);
 
   useEffect(() => {
     if (shownTaskIdRef.current !== taskId) {
+      conversationGenRef.current += 1;
       // A message still in flight belongs to the conversation that was just left;
       // `loadConversation` decides afresh whether the new one is mid-turn. Not on
       // mount: there the initial state is already right, fixtures included.
@@ -760,8 +765,8 @@ export function LiveRun({ taskId, locale = "en" }: { taskId: string; locale?: Pu
     // it. When it came back it called `followRun` regardless, and the page now
     // showing a DIFFERENT conversation began streaming this one's run into it; on
     // failure it also wrote this prompt back into the other chat's composer.
-    const sentFrom = taskId;
-    const stillHere = () => shownTaskIdRef.current === sentFrom;
+    const sentFrom = conversationGenRef.current;
+    const stillHere = () => conversationGenRef.current === sentFrom;
     submittingRef.current = true;
     setSubmitting(true);
     setPending(true);
@@ -849,10 +854,14 @@ export function LiveRun({ taskId, locale = "en" }: { taskId: string; locale?: Pu
       restoreAttachments(sentAttachments);
       setPendingPrompt(null);
     } finally {
-      // The reset effect already cleared both for the conversation now on screen;
-      // clearing them again here is harmless, and needed when nothing changed.
-      submittingRef.current = false;
-      setSubmitting(false);
+      // Only our own. After a conversation change the reset effect has already
+      // cleared these, and the reader may have sent a message in the new chat since:
+      // clearing them here would re-open that chat's composer mid-send and let a
+      // second message through. (Sourcery, PR 929.)
+      if (stillHere()) {
+        submittingRef.current = false;
+        setSubmitting(false);
+      }
     }
   }
 
