@@ -6,6 +6,7 @@ type Schemas = components["schemas"];
 export type ExternalCircuitCompiler = Schemas["CircuitCompiler"];
 export type CircuitOptimizationRequest = Schemas["CircuitOptimizationRequest"];
 export type CircuitOptimizationResult = Schemas["CircuitOptimizationResult"];
+export type CircuitOptimizationOperation = Schemas["CircuitOptimizationOperation"];
 
 export const EXTERNAL_CIRCUIT_COMPILERS = CIRCUIT_COMPILER_VALUES;
 export const EXTERNAL_COMPILER_MAX_QUBITS = 64;
@@ -20,12 +21,19 @@ export class ExternalCompressionInputError extends Error {
   }
 }
 
-export function circuitOptimizationRequest(
-  compiler: ExternalCircuitCompiler,
+/**
+ * Studio steps -> the closed, validated Worker compiler-lane operation list.
+ *
+ * Shared by `circuitOptimizationRequest` (one compiler, `studio-external-
+ * compression.ts`) and `synthesisRequest` (every compiler in the lane against
+ * a target, `studio-synthesis.ts`) — both entry points into the same trusted
+ * lane accept exactly this shape, and duplicating the gate/angle/custom-gate
+ * validation between them is how the two silently drift.
+ */
+export function circuitOperationsFromSteps(
   qubitCount: number,
   steps: BuilderStep[],
-  optimizationLevel: number = 2,
-): CircuitOptimizationRequest {
+): CircuitOptimizationOperation[] {
   if (!steps.length) throw new ExternalCompressionInputError("empty", "The circuit is empty.");
   if (qubitCount > EXTERNAL_COMPILER_MAX_QUBITS || steps.length > EXTERNAL_COMPILER_MAX_OPERATIONS) {
     throw new ExternalCompressionInputError(
@@ -33,41 +41,50 @@ export function circuitOptimizationRequest(
       `External compilation is limited to ${EXTERNAL_COMPILER_MAX_QUBITS} qubits and ${EXTERNAL_COMPILER_MAX_OPERATIONS} operations.`,
     );
   }
+  return steps.map((step) => {
+    if (step.gate === "CUSTOM") {
+      throw new ExternalCompressionInputError(
+        "custom_gate",
+        "External compilers cannot accept Studio custom gates until they are expanded.",
+      );
+    }
+    // The Worker compiler contract (`CircuitOptimizationGate`) is a closed
+    // 13-member enum — H, X, Y, Z, S, T, RX, RY, RZ, CX, CZ, SWAP, M — that
+    // predates SDG/TDG/P/CP/RZZ/CCX. Sending one through would either be
+    // silently rejected server-side or, worse, sent with its angle dropped
+    // (P/CP/RZZ) since only RX/RY/RZ are treated as angle-carrying below.
+    // Fail closed here instead, the same way a custom gate already does.
+    // `isSupportedExternalGate` is a type predicate, not a bare boolean check,
+    // so this also narrows `step.gate` for the object literal below.
+    if (!isSupportedExternalGate(step.gate)) {
+      throw new ExternalCompressionInputError(
+        "unsupported_gate",
+        `External compilers do not yet support ${step.gate}.`,
+      );
+    }
+    const rotation = step.gate === "RX" || step.gate === "RY" || step.gate === "RZ";
+    const angle = rotation ? angleRadians(step.param) : null;
+    if (rotation && angle === null) {
+      throw new ExternalCompressionInputError(
+        "angle",
+        `External compilers require a bound numeric angle for ${step.gate}.`,
+      );
+    }
+    return { gate: step.gate, qubits: step.qubits, angle_radians: angle };
+  });
+}
+
+export function circuitOptimizationRequest(
+  compiler: ExternalCircuitCompiler,
+  qubitCount: number,
+  steps: BuilderStep[],
+  optimizationLevel: number = 2,
+): CircuitOptimizationRequest {
   return {
     compiler,
     qubit_count: qubitCount,
     optimization_level: optimizationLevel,
-    operations: steps.map((step) => {
-      if (step.gate === "CUSTOM") {
-        throw new ExternalCompressionInputError(
-          "custom_gate",
-          "External compilers cannot accept Studio custom gates until they are expanded.",
-        );
-      }
-      // The Worker compiler contract (`CircuitOptimizationGate`) is a closed
-      // 13-member enum — H, X, Y, Z, S, T, RX, RY, RZ, CX, CZ, SWAP, M — that
-      // predates SDG/TDG/P/CP/RZZ/CCX. Sending one through would either be
-      // silently rejected server-side or, worse, sent with its angle dropped
-      // (P/CP/RZZ) since only RX/RY/RZ are treated as angle-carrying below.
-      // Fail closed here instead, the same way a custom gate already does.
-      // `isSupportedExternalGate` is a type predicate, not a bare boolean check,
-      // so this also narrows `step.gate` for the object literal below.
-      if (!isSupportedExternalGate(step.gate)) {
-        throw new ExternalCompressionInputError(
-          "unsupported_gate",
-          `External compilers do not yet support ${step.gate}.`,
-        );
-      }
-      const rotation = step.gate === "RX" || step.gate === "RY" || step.gate === "RZ";
-      const angle = rotation ? angleRadians(step.param) : null;
-      if (rotation && angle === null) {
-        throw new ExternalCompressionInputError(
-          "angle",
-          `External compilers require a bound numeric angle for ${step.gate}.`,
-        );
-      }
-      return { gate: step.gate, qubits: step.qubits, angle_radians: angle };
-    }),
+    operations: circuitOperationsFromSteps(qubitCount, steps),
   };
 }
 
@@ -140,7 +157,7 @@ function isCompiler(value: unknown): value is ExternalCircuitCompiler {
  * the request validator uses — so the two directions cannot drift apart when a
  * gate is added.
  */
-function isOperation(value: unknown): boolean {
+export function isOperation(value: unknown): boolean {
   if (!record(value)) return false;
   if (typeof value.gate !== "string") return false;
   if (!(CIRCUIT_OPTIMIZATION_GATE_VALUES as readonly string[]).includes(value.gate)) return false;
@@ -171,19 +188,22 @@ function isSupportedExternalGate(gate: BuilderStep["gate"]): gate is SupportedEx
   return SUPPORTED_EXTERNAL_GATES.has(gate);
 }
 
-function isMetrics(value: unknown): boolean {
+export function isMetrics(value: unknown): boolean {
   return record(value)
     && Number.isInteger(value.qubits)
     && nullableNonNegativeInteger(value.depth)
     && nullableNonNegativeInteger(value.gate_count)
     && nullableNonNegativeInteger(value.two_qubit_gate_count)
+    // t_count (2.21.0): optional on the wire for a payload from before this
+    // field existed, so absence is accepted alongside null and a number.
+    && (value.t_count === undefined || nullableNonNegativeInteger(value.t_count))
     && nullableNonNegativeInteger(value.measurement_count);
 }
 
-function nullableNonNegativeInteger(value: unknown): boolean {
+export function nullableNonNegativeInteger(value: unknown): boolean {
   return value === null || (Number.isInteger(value) && (value as number) >= 0);
 }
 
-function record(value: unknown): value is Record<string, unknown> {
+export function record(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }
