@@ -7,7 +7,9 @@ from pathlib import Path
 import pytest
 
 ROOT = Path(__file__).resolve().parents[3]
-render = runpy.run_path(str(ROOT / "scripts/news-deploy-config.py"))["render"]
+_module = runpy.run_path(str(ROOT / "scripts/news-deploy-config.py"))
+render = _module["render"]
+PLACEHOLDER_SITE_URL = _module["PLACEHOLDER_SITE_URL"]
 
 
 def settings():
@@ -22,6 +24,35 @@ def test_disabled_release_needs_no_credential():
     assert "LEONA_NEWS_ENABLED=false" in result["api_env"]
     assert "LEONA_NEWS_SCHEDULE_ENABLED=false" in result["worker_env"]
     assert "MODEL=" not in result["api_env"]
+    # renderer_deploy/site_url are outputs of render(), never API/worker env.
+    assert "RENDERER_DEPLOY" not in result["api_env"]
+    assert "RENDERER_DEPLOY" not in result["worker_env"]
+    assert "SITE_URL" not in result["api_env"]
+    assert "SITE_URL" not in result["worker_env"]
+
+
+def test_renderer_deploy_defaults_off_and_needs_no_real_hostname():
+    config = settings()
+    assert config["renderer_deploy"] is False
+    assert config["site_url"] == PLACEHOLDER_SITE_URL
+    result = render(config, "")
+    assert result["renderer_deploy"] == "false"
+    assert result["site_url"] == PLACEHOLDER_SITE_URL
+
+
+def test_renderer_deploy_rejects_the_placeholder_hostname():
+    config = settings()
+    config["renderer_deploy"] = True
+    with pytest.raises(ValueError):
+        render(config, "")
+
+
+def test_renderer_deploy_accepts_a_real_hostname():
+    config = settings()
+    config.update(renderer_deploy=True, site_url="https://news.leonaqt.com")
+    result = render(config, "")
+    assert result["renderer_deploy"] == "true"
+    assert result["site_url"] == "https://news.leonaqt.com"
 
 
 def test_enabled_release_requires_workspace_and_pinned_secret():
@@ -47,6 +78,9 @@ def test_enabled_release_requires_workspace_and_pinned_secret():
         {"public": "false"},
         {"enabled": False, "schedule_enabled": True},
         {"enabled": True, "workspace_id": "invalid"},
+        {"renderer_deploy": "false"},
+        {"site_url": "http://news.leonaqt.com"},
+        {"site_url": "not a url"},
     ],
 )
 def test_rejects_malformed_release_settings(change):

@@ -49,7 +49,7 @@ APIキーはWorkerが使用します。画面側にキーを設定しただけ�
 
 詳細は [RUNBOOK.md](RUNBOOK.md) を参照してください。API・Workerの設定、DB移行、編集者の認証、Cloud Runへのデプロイ計画、DNS接続、監視項目を記載しています。
 
-本番は、このフォルダの既存の `Dockerfile` からビルドしたイメージをCloud Runにデプロイする計画です（未デプロイ。手順はRUNBOOK.mdを参照）。公開・定期収集の設定はルートの `infra/news.json` で管理し、既存のAPI・Workerデプロイが反映します。初期値は無効です。
+本番は、このフォルダの既存の `Dockerfile` からビルドしたイメージをCloud Runにデプロイします。デプロイ経路（`deploy-news.yml`）は追加済みですが、`infra/news.json` の `renderer_deploy` が既定で `false` のため休止中です。公開先のホスト名は未確定（オーナーの決定待ち。手順はRUNBOOK.mdを参照）。公開・定期収集の設定はルートの `infra/news.json` で管理し、既存のAPI・Workerデプロイが反映します。初期値は無効です。
 
 コンテナで動かす場合は、このフォルダをビルドコンテキストにします。
 

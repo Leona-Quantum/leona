@@ -10,68 +10,63 @@ The existing `deploy` workflow on `dev` validates `infra/news.json` before migra
 
 One-time credential setup (owner action): store the OpenAI key in Google Secret Manager, authorize the existing Worker's runtime service account to read that secret, and set the GitHub repository **variable** `LEONA_NEWS_OPENAI_SECRET_VERSION` to its name and numeric version, for example `LEONA_NEWS_OPENAI_API_KEY:1`. This variable contains a reference, never the key. Enabled configurations reject missing references or `:latest`. The workflow binds it to Worker `LEONA_NEWS_OPENAI_API_KEY` — deliberately not the existing Worker `OPENAI_API_KEY`, which the core product's own LLM calls already use and which this must never overwrite — preserving other existing secret bindings. Neither the API nor the renderer receive it. The local `.env` is neither uploaded nor automatically synchronized. No secret has been created or uploaded by this work. News generation requires `LEONA_NEWS_OPENAI_API_KEY` explicitly and never falls back to the core `OPENAI_API_KEY`. Keep the core key unchanged. If a local news environment file used the old variable name, register the news key under `LEONA_NEWS_OPENAI_API_KEY` before running the Worker locally; deployment does not rename or synchronize local credentials.
 
-## Deployment plan: Cloud Run (not yet deployed)
+## Deployment plan: Cloud Run (built, dormant)
 
-**Nothing described in this section has been deployed.** The renderer was originally
-planned as a separate Vercel project; Vercel is retired as a host for the rest of
-this product (ADR-0033) and this app never had a live Vercel project to begin
-with, so the plan below is Cloud Run from the start, matching `apps/web` and
-`apps/news`'s existing `Dockerfile`. It is a plan to execute, in the same shape
-as the steps `docs/runbooks/web-cloud-run.md` used for the main site, not a
-record of something that happened.
+The renderer was originally planned as a separate Vercel project; Vercel is
+retired as a host for the rest of this product (ADR-0033) and this app never
+had a live Vercel project to begin with, so `.github/workflows/deploy-news.yml`
+and `cloudbuild.news.yaml` build and deploy it on Cloud Run, in the same
+dark-revision → smoke-test → shift-traffic → read-back shape
+`docs/runbooks/web-cloud-run.md` and `deploy-web.yml` use for the main site.
 
-1. **Build and push an image to Artifact Registry**, from this folder's own
-   `Dockerfile` (repo root as build context is not required here — `apps/news`
-   has no workspace dependencies to resolve, unlike `apps/web`):
+**The workflow exists but does nothing on an ordinary merge.** It is a clean
+no-op — one line saying why it skipped — unless `infra/news.json`'s
+`renderer_deploy` is `true` (default `false`), and it refuses to let that flag
+go true while `site_url` is still the placeholder it ships with
+(`scripts/news-deploy-config.py`). Nobody has to remember not to deploy this;
+the flag is the whole gate. The operator sequence is:
 
-   ```sh
-   gcloud builds submit --project=majorana-core --region=us-west1 \
-     --tag us-west1-docker.pkg.dev/majorana-core/majorana/news:$(git rev-parse --short=8 HEAD) \
-     apps/news
-   ```
+1. **Set the flags.** In a reviewed PR, set `infra/news.json`'s `site_url` to
+   the real hostname (see step 2) and `renderer_deploy` to `true`. Merging
+   builds the image, deploys it dark, smoke-tests `/healthz` and `/readyz`,
+   and shifts traffic — but the service stays `--no-allow-unauthenticated`
+   throughout, so "deployed" still does not mean "reachable by a visitor".
 
-2. **Deploy a Cloud Run service** (`majorana-news`, or another name the owner
-   picks), private until verified, then public — the same dark-deploy-then-shift
-   shape `deploy-web.yml` uses for the main site:
+2. **Choose the hostname — OWNER DECISION, not made here.** `leonaquantum.com`
+   now redirects to `leonaqt.com` (2026-09-20 cutover), so the old plan of
+   `news.leonaquantum.com` is stale; whatever replaces it has to live under a
+   domain that still resolves. Two options, pick one — do not build both:
 
-   ```sh
-   gcloud run deploy majorana-news --project=majorana-core --region=us-west1 \
-     --image=us-west1-docker.pkg.dev/majorana-core/majorana/news:$(git rev-parse --short=8 HEAD) \
-     --port=8080 --min-instances=0 --max-instances=2 \
-     --set-env-vars="LEONA_NEWS_MODE=published,LEONA_NEWS_API_URL=<existing production API HTTPS origin>,SITE_URL=https://news.leonaquantum.com"
-   ```
+   - **`news.leonaqt.com` via Cloudflare** — a `gcloud run domain-mappings
+     create --service=majorana-news --domain=news.leonaqt.com
+     --region=us-west1` (or a route added to the existing load balancer,
+     `infra/web-lb/`, if the owner wants the same Cloud Armor/origin-lock
+     posture `leonaqt.com` has), then a matching Cloudflare DNS record for
+     `news.leonaqt.com` — a CNAME at the domain mapping's target, or an
+     A/AAAA record at the load balancer's fixed address
+     (`docs/runbooks/cloudflare-origin-certificate.md` has the exact steps
+     for the latter).
+   - **A `leonaqt.com/news` path** through the existing load balancer
+     (`infra/web-lb/`), added as a path-matched backend service alongside
+     `majorana-web`'s. No new DNS record; the existing certificate and
+     origin lock already cover it.
 
-   No OpenAI key, admin bearer or DB credential belongs on this service — see
-   "Public renderer" below for the full variable list. Verify with the
-   service's own `run.app` URL and an identity token before anything public
-   points at it, the same way `docs/runbooks/web-cloud-run.md` § Reaching it
-   verifies `majorana-web`.
+   Record the choice in this file once made; `infra/news.json`'s `site_url`
+   is the renderer's own record of it (`SITE_URL` below must match whatever
+   is decided, in both places).
 
-3. **Point `news.leonaquantum.com` at it**, by one of two routes — pick one,
-   do not build both:
+3. **DNS**, once steps 1–2 are both done: only the Cloudflare-record work the
+   chosen option above actually needs — none at all for the path option.
 
-   - **A Cloud Run domain mapping** (`gcloud run domain-mappings create
-     --service=majorana-news --domain=news.leonaquantum.com
-     --region=us-west1`), which is the simpler route and does not require the
-     existing `infra/web-lb/` load balancer to know about this service at all.
-   - **A route through the existing load balancer** (`infra/web-lb/`), added
-     as a second backend service alongside `majorana-web`'s, if the owner
-     wants `news.leonaquantum.com` behind the same Cloud Armor/origin-lock
-     posture as `leonaqt.com`. This is more setup and only worth it if that
-     posture is actually wanted here.
-
-   Either way, the DNS side is a Cloudflare record for `news.leonaquantum.com`
-   — a CNAME at the domain mapping's target, or an A/AAAA record at the load
-   balancer's fixed address, proxied or DNS-only to match how `leonaqt.com`'s
-   own record is configured (`docs/runbooks/cloudflare-origin-certificate.md`).
-
-4. **Wire it into CI**, once the owner picks the deploy trigger (on every push
-   to `dev`, same as `deploy-web.yml`, or a separate manual workflow) — not
-   built yet; `.github/workflows/deploy-web.yml` is the closest template.
+The `gcloud builds submit` / `gcloud run deploy` commands `deploy-news.yml`
+runs are exactly what a by-hand debug of a single revision would use; see
+that workflow file for the flags (image tag, sizing from `infra/fleet.env`,
+env vars). No OpenAI key, admin bearer or DB credential belongs on this
+service — see "Public renderer" below for the full variable list.
 
 After launch, first confirm the backend (existing API/Worker) is already
 serving news data and the renderer's own `/readyz` passes before attaching the
-custom domain — the ordering constraint is the same one the old Vercel plan
+chosen hostname — the ordering constraint is the same one the old Vercel plan
 named, only the mechanism changed. Later API changes must remain backward
 compatible with the preceding renderer revision; use additive migrations and
 separate removal releases. If a backend deploy fails, the renderer returns an
@@ -119,25 +114,29 @@ Edits preserve the source identities, record the previous document/review, remov
 
 ## Public renderer
 
-The primary deployment plan is the Cloud Run service described above, built
-from this folder's own `Dockerfile` — nothing has been deployed yet. Build
-locally the same way CI or Cloud Build would: `docker build -t
-leona-news:<revision> apps/news`. The existing `services/api/Dockerfile`
-remains the API/Worker image; do not deploy the Node renderer in its place.
+The Cloud Run service described above, built from this folder's own
+`Dockerfile`, is the only deployment path — `deploy-news.yml` runs it once
+`infra/news.json`'s `renderer_deploy` is true. Build locally the same way CI
+or Cloud Build would: `docker build -t leona-news:<revision> apps/news`. The
+existing `services/api/Dockerfile` remains the API/Worker image; do not
+deploy the Node renderer in its place.
 
 Set only renderer variables in the public service:
 
 ```env
 LEONA_NEWS_MODE=published
 LEONA_NEWS_API_URL=https://YOUR_EXISTING_API_ORIGIN
-SITE_URL=https://news.leonaquantum.com
+SITE_URL=<the hostname chosen under "Deployment plan" step 2 — an owner decision, not yet made>
 HOST=0.0.0.0
 PORT=8080
 ```
 
+`SITE_URL` above is `deploy-news.yml`'s own env var and comes straight from
+`infra/news.json`'s `site_url` field — the two are never set independently.
+
 No OpenAI key, admin bearer or DB credential is needed by this service. All API requests are server-to-server. Published article images are proxied through the API and cannot reveal draft images. Responses currently use `no-store`, including media, to make withdrawal immediate; do not add a CDN cache without an explicit purge/invalidation design. `/healthz` is process liveness; `/readyz` checks the API/DB/public-news configuration.
 
-Enable `LEONA_NEWS_PUBLIC=true` on the API only when ready to serve approved articles. Attach `news.leonaquantum.com` to the new renderer using the actual DNS records supplied by its hosting service, and verify HTTPS. Preserve existing apex records and confirm how any older news URLs will be retained or redirected before switching an existing news host.
+Enable `LEONA_NEWS_PUBLIC=true` on the API only when ready to serve approved articles. Attach the chosen hostname (Deployment plan step 2 — `news.leonaqt.com` or a `leonaqt.com/news` path, owner decision) to the renderer using the actual DNS or load-balancer routing that option needs, and verify HTTPS. Preserve existing apex records and confirm how any older news URLs will be retained or redirected before switching an existing news host.
 
 The renderer provides canonical article URLs, RSS at `/feed.xml` (latest 50), and a sitemap at `/sitemap.xml` (latest 500). Older pages remain reachable through keyset pagination. Extend to sitemap indexes before the publication count materially exceeds 500. Search and category queries are bounded and executed in the API; error responses never fall back to sample articles. Development samples are only rendered in explicit `preview` mode.
 

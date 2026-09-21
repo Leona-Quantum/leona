@@ -1,0 +1,34 @@
+# Builds the news renderer image (apps/news/Dockerfile). Dormant until
+# infra/news.json's `renderer_deploy` flag is true — see .github/workflows/
+# deploy-news.yml and apps/news/RUNBOOK.md. Mirrors cloudbuild.web.yaml's
+# shape, but simpler: apps/news/package.json has no dependencies to install,
+# and neither LEONA_NEWS_API_URL nor SITE_URL is inlined at build time the way
+# NEXT_PUBLIC_* is for the web app — server.mjs / live-server.mjs read both at
+# request time, so they are Cloud Run --set-env-vars in deploy-news.yml, not
+# substitutions here.
+#
+# Source for this build is `apps/news` itself, not the repo root: the
+# Dockerfile's COPY lines are written relative to that directory
+# (`COPY ... server.mjs render.mjs ...`), unlike apps/web's Dockerfile, which
+# needs the whole pnpm workspace as build context. deploy-news.yml submits
+# `apps/news` as the upload source, so `.` below already means that directory.
+substitutions:
+  _TAG: unset
+steps:
+  - name: gcr.io/cloud-builders/docker
+    args:
+      - build
+      - -f
+      - Dockerfile
+      - -t
+      - us-west1-docker.pkg.dev/majorana-core/majorana/news:${_TAG}
+      - .
+images:
+  - us-west1-docker.pkg.dev/majorana-core/majorana/news:${_TAG}
+options:
+  machineType: E2_HIGHCPU_8
+  logging: CLOUD_LOGGING_ONLY
+# The renderer has no framework build step (package.json's own "build" script
+# is just `node --check` on each file) — this is generous headroom for a
+# plain `docker build` on a tiny context, not a measured duration.
+timeout: 600s
