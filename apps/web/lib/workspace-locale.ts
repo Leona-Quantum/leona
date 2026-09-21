@@ -484,6 +484,47 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
     externalApply: string;
     externalConfirmApply: string;
     externalApplied: (compiler: string, before: number, after: number) => string;
+    synthesisHeading: string;
+    synthesisIntro: string;
+    synthesisTargetLabel: string;
+    synthesisTargetGeneric: string;
+    synthesisTargetDevice: string;
+    synthesisConnectivityAllToAll: string;
+    synthesisConnectivityLine: string;
+    synthesisConnectivityGrid: string;
+    synthesisConnectivityHeavyHex: string;
+    synthesisDeviceLoading: string;
+    synthesisDeviceUnavailable: string;
+    synthesisObjectiveLabel: string;
+    synthesisObjectiveDepth: string;
+    synthesisObjectiveTwoQubit: string;
+    synthesisObjectiveTCount: string;
+    synthesisRun: string;
+    synthesisRunning: string;
+    synthesisOpenRun: string;
+    synthesisFailed: string;
+    synthesisConnectionLost: string;
+    synthesisCandidates: string;
+    synthesisColumnCompiler: string;
+    synthesisColumnStatus: string;
+    synthesisColumnDepth: string;
+    synthesisColumnTwoQubit: string;
+    synthesisColumnTCount: string;
+    synthesisColumnGates: string;
+    synthesisColumnEquivalence: string;
+    synthesisStatusSucceeded: string;
+    synthesisStatusUnsupported: string;
+    synthesisStatusFailed: string;
+    synthesisEquivalent: string;
+    synthesisNotEquivalent: string;
+    synthesisNotChecked: string;
+    synthesisBest: string;
+    synthesisUse: string;
+    synthesisConfirmUse: string;
+    synthesisApplied: (compiler: string) => string;
+    synthesisUndo: string;
+    synthesisUndone: string;
+    synthesisCannotApply: string;
     angleLabel: string;
     builderEmpty: string;
     generatedPreview: string;
@@ -1332,6 +1373,47 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
       externalApply: "Apply compiler result",
       externalConfirmApply: "Replace code with compiler result",
       externalApplied: (compiler, before, after) => `${compiler} result applied (${before} → ${after} gates). Framework drafts were regenerated; verification is stale.`,
+      synthesisHeading: "Targeted synthesis",
+      synthesisIntro: "Pick a target and what to minimize. Every compiler in the lane runs against it, and each result is checked for equivalence before you can use it.",
+      synthesisTargetLabel: "Target",
+      synthesisTargetGeneric: "Generic connectivity",
+      synthesisTargetDevice: "Device",
+      synthesisConnectivityAllToAll: "All-to-all (no constraint)",
+      synthesisConnectivityLine: "Line",
+      synthesisConnectivityGrid: "Grid",
+      synthesisConnectivityHeavyHex: "Heavy-hex",
+      synthesisDeviceLoading: "Loading devices…",
+      synthesisDeviceUnavailable: "Device list unavailable.",
+      synthesisObjectiveLabel: "Minimize",
+      synthesisObjectiveDepth: "Depth",
+      synthesisObjectiveTwoQubit: "Two-qubit gate count",
+      synthesisObjectiveTCount: "T count",
+      synthesisRun: "Run synthesis",
+      synthesisRunning: "Running…",
+      synthesisOpenRun: "Open run",
+      synthesisFailed: "Synthesis failed.",
+      synthesisConnectionLost: "Connection to the run was lost.",
+      synthesisCandidates: "Candidates",
+      synthesisColumnCompiler: "Compiler",
+      synthesisColumnStatus: "Status",
+      synthesisColumnDepth: "Depth",
+      synthesisColumnTwoQubit: "2Q gates",
+      synthesisColumnTCount: "T gates",
+      synthesisColumnGates: "Gates",
+      synthesisColumnEquivalence: "Equivalence",
+      synthesisStatusSucceeded: "Compiled",
+      synthesisStatusUnsupported: "Not supported",
+      synthesisStatusFailed: "Failed",
+      synthesisEquivalent: "Equivalent",
+      synthesisNotEquivalent: "Not equivalent",
+      synthesisNotChecked: "Not checked (too wide)",
+      synthesisBest: "Best",
+      synthesisUse: "Use this circuit",
+      synthesisConfirmUse: "Replace circuit with this candidate",
+      synthesisApplied: (compiler) => `Circuit replaced with ${compiler}'s output. Framework drafts were regenerated; verification is stale.`,
+      synthesisUndo: "Undo",
+      synthesisUndone: "Synthesis undone.",
+      synthesisCannotApply: "Cannot be applied.",
       angleLabel: "Rotation angle",
       builderEmpty: "Empty circuit — place gates from the palette.",
       generatedPreview: "Built circuit",
@@ -2278,6 +2360,47 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
       externalApply: "コンパイル結果を反映",
       externalConfirmApply: "コードをコンパイル結果で置換",
       externalApplied: (compiler, before, after) => `${compiler}の結果を反映しました（${before} → ${after}ゲート）。各フレームワークのコードを再生成し、検証状態を古いものとして扱います。`,
+      synthesisHeading: "ターゲット指定合成",
+      synthesisIntro: "ターゲットと最小化したい指標を選びます。レーン内の全コンパイラを実行し、結果はすべて使用前に等価性を確認します。",
+      synthesisTargetLabel: "ターゲット",
+      synthesisTargetGeneric: "汎用の接続性",
+      synthesisTargetDevice: "デバイス",
+      synthesisConnectivityAllToAll: "全結合(制約なし)",
+      synthesisConnectivityLine: "ライン",
+      synthesisConnectivityGrid: "グリッド",
+      synthesisConnectivityHeavyHex: "ヘビーヘックス",
+      synthesisDeviceLoading: "デバイスを読み込み中…",
+      synthesisDeviceUnavailable: "デバイス一覧を取得できません。",
+      synthesisObjectiveLabel: "最小化する指標",
+      synthesisObjectiveDepth: "深さ",
+      synthesisObjectiveTwoQubit: "2量子ビットゲート数",
+      synthesisObjectiveTCount: "Tゲート数",
+      synthesisRun: "合成を実行",
+      synthesisRunning: "実行中…",
+      synthesisOpenRun: "実行結果を開く",
+      synthesisFailed: "合成に失敗しました。",
+      synthesisConnectionLost: "実行への接続が切断されました。",
+      synthesisCandidates: "候補",
+      synthesisColumnCompiler: "コンパイラ",
+      synthesisColumnStatus: "状態",
+      synthesisColumnDepth: "深さ",
+      synthesisColumnTwoQubit: "2量子ビットゲート",
+      synthesisColumnTCount: "Tゲート",
+      synthesisColumnGates: "ゲート数",
+      synthesisColumnEquivalence: "等価性",
+      synthesisStatusSucceeded: "コンパイル済み",
+      synthesisStatusUnsupported: "非対応",
+      synthesisStatusFailed: "失敗",
+      synthesisEquivalent: "等価",
+      synthesisNotEquivalent: "非等価",
+      synthesisNotChecked: "未確認(量子ビット数が多すぎます)",
+      synthesisBest: "最良",
+      synthesisUse: "この回路を使う",
+      synthesisConfirmUse: "この候補で回路を置き換える",
+      synthesisApplied: (compiler) => `回路を${compiler}の結果に置き換えました。各フレームワークのコードを再生成し、検証状態を古いものとして扱います。`,
+      synthesisUndo: "元に戻す",
+      synthesisUndone: "合成を元に戻しました。",
+      synthesisCannotApply: "使用できません。",
       angleLabel: "回転角",
       builderEmpty: "空の回路 — パレットからゲートを配置してください。",
       generatedPreview: "作成中の回路",
