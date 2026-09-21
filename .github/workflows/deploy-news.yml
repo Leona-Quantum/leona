@@ -1,0 +1,249 @@
+# Deploy the news renderer (apps/news) to Cloud Run. Dormant by default.
+#
+# ## Why this exists, and what it does today
+#
+# apps/news (Leona Quantum News) merged in PR 883 and was never deployed.
+# apps/news/RUNBOOK.md's "Deployment plan: Cloud Run" section describes the
+# steps this workflow automates; the shape — dark revision, smoke-test,
+# shift traffic, read back the serving revision — follows deploy.yml's api
+# deploy and deploy-web.yml, for the same reason those do: a revision that
+# builds, deploys, and cannot serve is the failure worth catching before
+# anybody is.
+#
+# This workflow is a clean no-op unless infra/news.json's `renderer_deploy`
+# is true (default false) — see the "should this deploy run" step below and
+# scripts/news-deploy-config.py, which also refuses `renderer_deploy: true`
+# while `site_url` is still the placeholder it ships with. Until the owner
+# sets both, `should this deploy run` is the only step that does anything.
+#
+# This file creates no cloud resource, secret, or DNS record — it only
+# builds an image and, once the flag above is true, deploys it. The
+# renderer stays `--no-allow-unauthenticated` even after this workflow
+# shifts traffic to it: nobody is served until the owner separately decides
+# a hostname and points it at this service (apps/news/RUNBOOK.md § choose
+# hostname → DNS), the same "deployed but not reachable" state
+# docs/runbooks/web-cloud-run.md describes for majorana-web's own first
+# revisions, before its load balancer existed.
+name: deploy-news
+
+on:
+  push:
+    branches: [dev]
+    paths:
+      - 'apps/news/**'
+      - 'infra/news.json'
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-news-cloud-run
+  cancel-in-progress: false
+
+env:
+  GCP_PROJECT: majorana-core
+  GCP_REGION: us-west1
+  SERVICE: majorana-news
+  CUSTOM_AUDIENCE: majorana-news
+  # The production API origin. Same constant cloudbuild.web.yaml's _API_URL
+  # default uses (that file's own comment: read from leonaqt.com's live CSP,
+  # 2026-09-15) — one place this string is typed, not two that can drift.
+  PROD_API_ORIGIN: https://majorana-api-nikekeixtq-uw.a.run.app
+
+jobs:
+  deploy-news:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write # Workload Identity Federation
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with: { persist-credentials: false }
+
+      # The same validator deploy.yml's "validate news configuration" step
+      # runs, reused rather than re-implemented — infra/news.json is one
+      # file and this is its one parser. This job only reads the
+      # `renderer_deploy`/`site_url` outputs; `api_env`/`worker_env`/
+      # `openai_secret` are deploy.yml's concern, not this workflow's.
+      - name: validate news configuration
+        id: news
+        env:
+          LEONA_NEWS_OPENAI_SECRET_VERSION: ${{ vars.LEONA_NEWS_OPENAI_SECRET_VERSION }}
+        run: python3 scripts/news-deploy-config.py
+
+      # Note what this does NOT test: whether apps/news or infra/news.json
+      # changed. The `on.push.paths` filter above already limits which
+      # pushes trigger a run at all; this step is the flag gate, and it also
+      # covers workflow_dispatch, which paths filters do not apply to.
+      - name: should this deploy run
+        id: expect
+        run: |
+          if [ "${{ steps.news.outputs.renderer_deploy }}" = "true" ]; then
+            echo "expected=yes" >> "$GITHUB_OUTPUT"
+          else
+            echo "expected=no" >> "$GITHUB_OUTPUT"
+            echo "SKIP: infra/news.json renderer_deploy is false — see apps/news/RUNBOOK.md"
+          fi
+
+      - name: load news sizing
+        if: steps.expect.outputs.expected == 'yes'
+        run: |
+          for key in NEWS_MIN_INSTANCES NEWS_MAX_INSTANCES; do
+            grep -qE "^${key}=[0-9]+$" infra/fleet.env || {
+              echo "::error::${key} is missing from infra/fleet.env or is not a plain integer"
+              exit 1
+            }
+          done
+          grep -E '^NEWS_[A-Z_]+=[0-9]+$' infra/fleet.env >> "$GITHUB_ENV"
+
+      - name: check deploy credentials
+        id: creds
+        if: steps.expect.outputs.expected == 'yes'
+        run: echo "have=${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER != '' && secrets.GCP_DEPLOY_SERVICE_ACCOUNT != '' }}" >> "$GITHUB_OUTPUT"
+
+      - if: steps.expect.outputs.expected == 'yes' && steps.creds.outputs.have != 'true'
+        run: |
+          echo "::error::GCP_WORKLOAD_IDENTITY_PROVIDER / GCP_DEPLOY_SERVICE_ACCOUNT not set —"
+          echo "::error::renderer_deploy is true but the news renderer was NOT deployed. See apps/news/RUNBOOK.md"
+          exit 1
+
+      - name: tag
+        id: tag
+        if: steps.creds.outputs.have == 'true'
+        run: echo "tag=$(git rev-parse --short=8 HEAD)" >> "$GITHUB_OUTPUT"
+
+      - uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3.0.0
+        if: steps.creds.outputs.have == 'true'
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ secrets.GCP_DEPLOY_SERVICE_ACCOUNT }}
+          token_format: access_token
+
+      - uses: google-github-actions/setup-gcloud@aa5489c8933f4cc7a4f7d45035b3b1440c9c10db # v3.0.1
+        if: steps.creds.outputs.have == 'true'
+
+      # `apps/news` is the upload source, not the repo root: cloudbuild.news.yaml
+      # docker-builds from inside that context — see that file's own comment
+      # for why (no workspace dependencies to resolve, unlike apps/web). No
+      # .gcloudignore is needed: the whole directory is small (~700 KB) and
+      # the Dockerfile's own explicit COPY list already decides what lands
+      # in the image.
+      - name: build image
+        if: steps.creds.outputs.have == 'true'
+        run: |
+          gcloud builds submit --config cloudbuild.news.yaml \
+            --substitutions=_TAG="${{ steps.tag.outputs.tag }}" \
+            --project "$GCP_PROJECT" --region "$GCP_REGION" apps/news
+
+      # No secrets, no DB credential, no OpenAI key: the renderer reads only
+      # these three env vars (RUNBOOK.md § Public renderer). SITE_URL comes
+      # from infra/news.json, already validated non-placeholder by the
+      # "validate news configuration" step above whenever renderer_deploy is
+      # true — this step cannot be reached otherwise.
+      #
+      # --no-allow-unauthenticated is deliberate and NOT the default that
+      # would apply anyway on a brand-new service: written explicitly so a
+      # later edit to this step cannot silently drop it. Nothing points a
+      # hostname at this service yet (that is the owner's decision, RUNBOOK.md
+      # § choose hostname), so staying IAM-gated after the traffic shift below
+      # is what keeps "deployed" different from "public".
+      - name: deploy news (no traffic)
+        id: dark
+        if: steps.creds.outputs.have == 'true'
+        run: |
+          gcloud run deploy "$SERVICE" \
+            --project "$GCP_PROJECT" --region "$GCP_REGION" \
+            --image "us-west1-docker.pkg.dev/${GCP_PROJECT}/majorana/news:${{ steps.tag.outputs.tag }}" \
+            --no-allow-unauthenticated \
+            --port 8080 \
+            --min-instances "$NEWS_MIN_INSTANCES" \
+            --max-instances "$NEWS_MAX_INSTANCES" \
+            --set-env-vars "LEONA_NEWS_MODE=published,LEONA_NEWS_API_URL=${PROD_API_ORIGIN},SITE_URL=${{ steps.news.outputs.site_url }}" \
+            --no-traffic --tag verify
+
+          previous=$(gcloud run services describe "$SERVICE" \
+            --project "$GCP_PROJECT" --region "$GCP_REGION" --format=json \
+            | jq -r '[.status.traffic[] | select((.percent // 0) > 0) | .revisionName] | first // ""')
+          echo "previous=${previous}" >> "$GITHUB_OUTPUT"
+
+          url=$(gcloud run services describe "$SERVICE" \
+            --project "$GCP_PROJECT" --region "$GCP_REGION" --format=json \
+            | jq -r '.status.traffic[] | select(.tag=="verify") | .url')
+          [ -n "$url" ] || { echo "::error::no URL for the verify tag"; exit 1; }
+          echo "url=${url}" >> "$GITHUB_OUTPUT"
+          echo "dark revision at ${url}, previously serving: ${previous:-<none>}"
+
+      - id: idtoken
+        name: identity token for the private service
+        if: steps.creds.outputs.have == 'true'
+        uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3.0.0
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ secrets.GCP_DEPLOY_SERVICE_ACCOUNT }}
+          token_format: id_token
+          id_token_audience: majorana-news
+          id_token_include_email: true
+
+      # /healthz is process liveness (server.mjs: always 200, no upstream
+      # call). /readyz is live.js's own check that the renderer can actually
+      # reach LEONA_NEWS_API_URL (live-server.mjs: fetches one article page
+      # before answering) — the two together are "the container started" and
+      # "it can serve real news", which is the same liveness/readiness split
+      # deploy-web.yml's probes make for the main site.
+      - name: smoke-test the dark revision
+        if: steps.creds.outputs.have == 'true'
+        env:
+          URL: ${{ steps.dark.outputs.url }}
+          TOKEN: ${{ steps.idtoken.outputs.id_token }}
+        run: |
+          fail=0
+          probe() { # path expected-status
+            body=$(mktemp)
+            code=$(curl -sS --max-time 30 -o "$body" -w '%{http_code}' -H "Authorization: Bearer ${TOKEN}" "${URL}$1")
+            if [ "$code" != "$2" ]; then
+              echo "::error::$1 returned ${code}, expected $2"
+              cat "$body"
+              fail=1
+            else
+              echo "ok  $1 -> ${code} ($(wc -c < "$body") bytes)"
+            fi
+            rm -f "$body"
+          }
+          probe /healthz 200
+          probe /readyz 200
+          [ "$fail" -eq 0 ] || exit 1
+
+      - name: shift news traffic
+        if: steps.creds.outputs.have == 'true'
+        run: |
+          gcloud run services update-traffic "$SERVICE" \
+            --project "$GCP_PROJECT" --region "$GCP_REGION" --to-latest
+
+      # The shift is the only step between a revision that served nobody and
+      # one the service's IAM-gated URL will answer for, so it gets its own
+      # readback rather than being trusted because the command exited 0.
+      - name: the shifted revision is the one serving
+        if: steps.creds.outputs.have == 'true'
+        env:
+          TOKEN: ${{ steps.idtoken.outputs.id_token }}
+        run: |
+          serving=$(gcloud run services describe "$SERVICE" \
+            --project "$GCP_PROJECT" --region "$GCP_REGION" --format=json \
+            | jq -r '[.status.traffic[] | select((.percent // 0) > 0) | .revisionName] | first // ""')
+          latest=$(gcloud run services describe "$SERVICE" \
+            --project "$GCP_PROJECT" --region "$GCP_REGION" --format='value(status.latestCreatedRevisionName)')
+          if [ "$serving" != "$latest" ]; then
+            echo "::error::traffic is on ${serving:-<none>}, not the revision just built (${latest})"
+            exit 1
+          fi
+          url=$(gcloud run services describe "$SERVICE" \
+            --project "$GCP_PROJECT" --region "$GCP_REGION" --format='value(status.url)')
+          code=$(curl -sS --max-time 30 -o /dev/null -w '%{http_code}' -H "Authorization: Bearer ${TOKEN}" "${url}/healthz")
+          [ "$code" = "200" ] || { echo "::error::the service URL returned ${code} after the shift"; exit 1; }
+          echo "serving ${latest} at ${url}"
+
+      - name: roll news traffic back on failure
+        if: failure() && steps.creds.outputs.have == 'true' && steps.dark.outputs.previous != ''
+        run: |
+          echo "::warning::rolling traffic back to ${{ steps.dark.outputs.previous }}"
+          gcloud run services update-traffic "$SERVICE" \
+            --project "$GCP_PROJECT" --region "$GCP_REGION" \
+            --to-revisions "${{ steps.dark.outputs.previous }}=100"
