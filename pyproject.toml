@@ -76,7 +76,7 @@ dev = [
     # The stack still exists — it now exists in the sandbox, where there are no
     # credentials to reach and no egress to reach them over.
     "pyzx>=0.10.6,<0.11",
-    "pytket>=2.18.1,<3",
+    "pytket>=2.18.3,<3",
     "bqskit==1.2.1",
     # Qulacs supplies the research-oriented high-performance local simulator.
     # Pin it so the worker's local double and the production image execute the
