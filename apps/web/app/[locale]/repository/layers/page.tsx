@@ -40,15 +40,16 @@ import { paperSlug } from "../../../../lib/repository/papers";
  * route, and no amount of removing cookie reads changes that.
  *
  * What CAN reach it is the edge cache in front of the render.
- * `next.config.ts` attaches `Vercel-CDN-Cache-Control` to this path, and
- * Vercel's cache key is the request URL *including the query string* — so every
- * distinct deep link gets its own entry rather than one entry serving them all.
- * That this works on a response Next itself marks `no-store` is measured, not
- * assumed: see the header block in `next.config.ts`.
+ * `next.config.ts` attaches `CDN-Cache-Control` to this path (`Vercel-CDN-Cache-Control`
+ * until Vercel was retired as a host — ADR-0033), and the CDN's cache key is the
+ * request URL *including the query string* — so every distinct deep link gets
+ * its own entry rather than one entry serving them all. That this works on a
+ * response Next itself marks `no-store` is measured, not assumed: see the
+ * header block in `next.config.ts`.
  *
  * The move under `[locale]` is what makes that cache SAFE rather than merely
- * fast. Cookies are not part of Vercel's cache key — measured on the same
- * preview: two requests to one URL carrying `leona.locale.v2=en` and
+ * fast. Cookies are not part of the cache key — measured on a Vercel preview at
+ * the time: two requests to one URL carrying `leona.locale.v2=en` and
  * `leona.locale.v2=ja` were served ONE render. Reading the locale cookie here,
  * with an edge cache in front, would therefore have handed a Japanese reader the
  * English page and called it a hit. The locale has to be in the path, and now is.

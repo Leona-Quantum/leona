@@ -14,8 +14,11 @@
  * revamp rather than doing it on its own or leaving it.
  *
  * **What each caller passes as `lang`, and why it differs.** The issue framed
- * this as one restructuring with one cost. Measured against production it is
- * two different situations and only one of them was ever expensive:
+ * this as one restructuring with one cost. Measured against production while
+ * Vercel was still the CDN, it is two different situations and only one of
+ * them was ever expensive (the `cache-control` line is Next's own and
+ * unchanged on Cloud Run; the CDN-side header is now Cloudflare's
+ * `cf-cache-status`, not re-measured since this file has not changed):
  *
  *     [locale] pages   /  /pricing  /contact  /privacy
  *                      cache-control: public          x-vercel-cache: PRERENDER

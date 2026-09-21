@@ -8,7 +8,7 @@ import { isLabDirectionEnabled } from "./lab-direction.ts";
 // whatever it is given — assigning undefined stores the literal "undefined" —
 // so both setting and restoring delete the key instead.
 const env = process.env as Record<string, string | undefined>;
-const KEYS = ["VERCEL_ENV", "NODE_ENV"] as const;
+const KEYS = ["LEONA_DEPLOY_ENV", "NODE_ENV"] as const;
 const ORIGINAL = new Map(KEYS.map((key) => [key as string, env[key]]));
 
 function setEnv(values: Partial<Record<(typeof KEYS)[number], string>>) {
@@ -30,19 +30,20 @@ describe("isLabDirectionEnabled", () => {
   it("is off in a production build, which is what leonaqt.com runs", () => {
     // The whole point of the gate: /lab is an unratified second landing page,
     // nothing links to it, and a signed-in account could reach it by URL.
-    setEnv({ NODE_ENV: "production", VERCEL_ENV: "production" });
+    setEnv({ NODE_ENV: "production", LEONA_DEPLOY_ENV: "production" });
     assert.equal(isLabDirectionEnabled(), false);
   });
 
-  it("stays off in production even when VERCEL_ENV is absent", () => {
-    // A production-mode build outside Vercel (docker, `next start`) must not
-    // fall through to enabled just because the platform variable is missing.
+  it("stays off in production even when LEONA_DEPLOY_ENV is absent", () => {
+    // A production-mode build with no deploy-stage variable set at all (a
+    // container build run by hand) must not fall through to enabled just
+    // because the variable is missing.
     setEnv({ NODE_ENV: "production" });
     assert.equal(isLabDirectionEnabled(), false);
   });
 
   it("is on for a preview deployment, where the direction gets reviewed", () => {
-    setEnv({ NODE_ENV: "production", VERCEL_ENV: "preview" });
+    setEnv({ NODE_ENV: "production", LEONA_DEPLOY_ENV: "preview" });
     assert.equal(isLabDirectionEnabled(), true);
   });
 

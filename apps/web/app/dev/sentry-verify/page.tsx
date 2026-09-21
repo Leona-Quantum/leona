@@ -13,9 +13,12 @@ export const metadata = { title: "Sentry verify — Leona Quantum" };
  * Same gate as `app/dev/ui/fixtures.tsx`: 404s in a production build unless
  * explicitly armed, and by a DIFFERENT env var (`MAJORANA_SENTRY_VERIFY`, not
  * `MAJORANA_UI_FIXTURES`) so re-verifying Sentry after a config change does
- * not also expose the UI fixtures page. Arm it in Vercel (Production env), hit
- * both buttons, confirm the events in Sentry, then remove the env var — this
- * page has no reason to be reachable outside that window.
+ * not also expose the UI fixtures page. Arm it on `majorana-web` (Cloud Run:
+ * `gcloud run services update majorana-web --update-env-vars
+ * MAJORANA_SENTRY_VERIFY=1`; the next `deploy-web.yml` run wipes it, since
+ * `--set-env-vars` there replaces the whole set), hit both buttons, confirm
+ * the events in Sentry, then remove the env var — this page has no reason to
+ * be reachable outside that window.
  */
 export default function SentryVerifyPage() {
   if (process.env.NODE_ENV === "production" && process.env.MAJORANA_SENTRY_VERIFY !== "1") {

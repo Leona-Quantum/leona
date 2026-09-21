@@ -57,7 +57,10 @@ export async function GET() {
   // `force-dynamic` and `no-store`, so the `Set-Cookie` below cannot be stored
   // by the CDN and shown to somebody else. See `lib/auth-hint.ts` — doing this
   // from middleware or a page render would instead drop those pages out of the
-  // cache entirely, since Vercel will not store a response carrying a cookie.
+  // cache entirely: a response carrying a cookie must stay out of the CDN
+  // cache, which this route's own `no-store` header already guarantees
+  // independent of any CDN-specific behaviour (Vercel by default; Cloudflare
+  // per the Cache Rule in docs/runbooks/web-cloud-run.md).
   if (signedIn) {
     response.cookies.set(AUTH_HINT_COOKIE, AUTH_HINT_SIGNED_IN, authHintCookieOptions());
   } else {

@@ -2,9 +2,14 @@
 /**
  * Compare the same routes on two stacks and report where they disagree.
  *
- * Phase 3 of the GCP migration (ai-ops `gcp-migration-20260912`) is a week of
- * running Vercel and Cloud Run side by side. This is what "side by side" means
- * concretely: fetch the same path from both, and say what differs.
+ * Written for Phase 3 of the GCP migration (ai-ops `gcp-migration-20260912`),
+ * a week of running Vercel and Cloud Run side by side; this is what "side by
+ * side" meant concretely: fetch the same path from both, and say what
+ * differs. **That week is over** — Vercel was retired as a host on
+ * 2026-09-21 (ADR-0033) and no longer serves a comparable live copy, so this
+ * script is not runnable against production as originally intended. Kept as
+ * a reference for the next dual-stack migration this shape would apply to,
+ * not as a live tool.
  *
  * ## What it compares, and why not the bytes
  *

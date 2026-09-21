@@ -31,7 +31,7 @@ the work.
 | 0008 | Generated contracts package | accepted — in force |
 | 0009 | LLM wrapper (anthropic / openai / deepseek) | accepted — in force |
 | 0010 | Observability: OTel + Sentry | accepted — in force |
-| 0011 | Deploys: web on Vercel, api+worker on Cloud Run gen2 | accepted — **preview clause amended 2026-08-04** |
+| 0011 | Deploys: web on Vercel, api+worker on Cloud Run gen2 | accepted — **preview clause amended 2026-08-04; web half superseded by 0033** (2026-09-21) |
 | 0012 | Staged posture, phases 0–4 | accepted — phases complete |
 | 0013 | Framework-native circuit source is authoritative | accepted — in force |
 | 0014 | Durable circuit tool loop | superseded by 0023 |
@@ -51,6 +51,11 @@ the work.
 | 0028 | Row-level security as defense-in-depth, enforcement gated off by default | **accepted** — policies installed on 24 tables; `MAJORANA_RLS_ENFORCED` still off |
 | 0029 | A project share reaches through RLS, scoped to the shared project | **accepted** — resolves 0028's hard precondition on the flip |
 | 0030 | Auth, the locale rewrite and the canonical-host redirect stay in `middleware.ts` on the edge | **accepted** — in force; the Next 16 `proxy` deprecation warning is accepted noise |
+| 0033 | The website is hosted on Cloud Run; Vercel is retired except the code sandbox | **accepted** — in force since 2026-09-21; supersedes the web half of 0011 |
+
+ADR-0031 (Qapp isolation and publication) and ADR-0032 (notebooks run in the
+existing sandbox) exist on disk but are not yet in this index — a gap that
+predates this entry and is not this sweep's to close.
 
 ## Decisions with no ADR
 
@@ -74,7 +79,9 @@ answers "why" only from runbooks, memory and code comments.
    and orphaned the accounts provisioned against staging.
 3. **Tiers, billing and QPU runs** — `tiers.py`, `routes/billing.py`, `routes/qpu.py`,
    migration `0034_qpu_runs`, and the three `LEONA_*_EMAILS` allowlists that must be set
-   identically on api, worker and Vercel.
+   identically on api, worker and `majorana-web` (Cloud Run since ADR-0033;
+   `docs/runbooks/deploys.md` § the tier allowlists table notes only one of the three
+   is confirmed wired into `deploy-web.yml` post-migration).
 4. **Workspace sharing, projects and invitations** — migrations `0037_active_workspace`,
    `0038_membership_invitation`, `0041_studio_projects`, `0042_project_shares`,
    `0043_project_artifact_limit`, plus `repos/shares.py` (62.8 KB, the largest
@@ -151,3 +158,8 @@ answers "why" only from runbooks, memory and code comments.
 - 2026-08-04: status-line sweep — 0016/0019/0020/0021/0023 marked implemented, 0022
   marked partially implemented and partially superseded by 0023, 0017 and 0018
   annotated with what was never built, and the no-ADR list above opened.
+- 2026-09-21: **ADR-0033** moves the website's only host to Cloud Run
+  (`majorana-web`) and retires Vercel except the code-execution sandbox
+  (ADR-0006, unaffected), superseding the web half of ADR-0011. This index
+  entry and 0011's status line were added in the PR 941 leftovers sweep, after
+  the ADR file itself had already landed.
