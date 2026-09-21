@@ -564,6 +564,18 @@ GIDNEY_2025 = AssumptionSet(
                 "the two terms needs a factory model this record does not have"
             ),
         ),
+        ValueProvenance(
+            fields=("rotation_t_coefficient",),
+            note=(
+                "Ross and Selinger, Optimal ancilla-free Clifford+T approximation "
+                "of z-rotations (arXiv:1403.2975) — the leading term of "
+                "3*log2(1/eps) + O(log log 1/eps) for the T-count of an "
+                "ancilla-free single-qubit z-rotation synthesis, which this field "
+                "carries as the coefficient in t_per_rotation. Not from arXiv:2505.15917: "
+                "that paper's circuit is Toffoli-only and states no rotation "
+                "synthesis convention"
+            ),
+        ),
     ),
     physical_error_rate=1e-3,
     threshold=1e-2,
@@ -586,10 +598,14 @@ GIDNEY_2025 = AssumptionSet(
 no source stated and a fourth that contradicted its source; checking the paper
 line by line rather than the docstring found that it states all four, plus the
 patch conversion this package had been applying to every set. What is left is
-three attributions: two values that come from the paper Gidney's own
-bibliography cites for the suppression law, one from the layout paper, and one
-departure — the factory's derivation rather than its slack-padded figure — each
-disclosed in `citation` rather than in a comment nobody reading the page sees.
+four attributions: two values that come from the paper Gidney's own
+bibliography cites for the suppression law, one from the layout paper, one
+departure — the factory's derivation rather than its slack-padded figure —
+and one from the paper this model's rotation-synthesis coefficient was always
+Ross and Selinger's, stated until 2026-09-21 only in a docstring on the field
+itself rather than in `citation`, where a reader of the public page could
+actually see it — each now disclosed in `citation` rather than in a comment
+nobody reading the page sees.
 """
 
 COMPOSED_TRAPPED_ION = AssumptionSet(
@@ -635,6 +651,17 @@ COMPOSED_TRAPPED_ION = AssumptionSet(
                 "blocks; this model has one distance for the whole machine and so "
                 "cannot represent that, which makes these factories more expensive "
                 "than the ones the paper costs"
+            ),
+        ),
+        ValueProvenance(
+            fields=("rotation_t_coefficient",),
+            note=(
+                "Ross and Selinger, Optimal ancilla-free Clifford+T approximation "
+                "of z-rotations (arXiv:1403.2975) — the leading term of "
+                "3*log2(1/eps) + O(log log 1/eps) for the T-count of an "
+                "ancilla-free single-qubit z-rotation synthesis. Neither Webber et "
+                "al. nor Litinski's factory papers state a rotation-synthesis "
+                "convention — their circuits are costed in Toffolis"
             ),
         ),
     ),

@@ -415,6 +415,11 @@ export interface components {
             distance: components["schemas"]["CodeDistanceSummary"] | null;
             /** @default null */
             footprint: components["schemas"]["FootprintSummary"] | null;
+            /**
+             * @description The qubits-vs-runtime Pareto frontier across the deployment's built-in assumption sets. Present exactly when `basis` carries a cost (may still have zero points, e.g. Clifford-only); null under NO_CIRCUIT/REFUSED, same as the other layers.
+             * @default null
+             */
+            frontier: components["schemas"]["FrontierSummary"] | null;
             /** @default null */
             logical: components["schemas"]["LogicalCostSummary"] | null;
             /** Notes */
@@ -427,6 +432,11 @@ export interface components {
             reason: string | null;
             /** @default null */
             runtime: components["schemas"]["RuntimeSummary"] | null;
+            /**
+             * @description The estimate at a series of problem sizes, only when this entry's Atlas record states an explicit n-dependence for its logical cost. Null otherwise — never fabricated by fitting or extrapolating a curve. No entry currently states one.
+             * @default null
+             */
+            scaling: components["schemas"]["ScalingCurveSummary"] | null;
             /** Slug */
             slug: string;
             /**
@@ -1871,6 +1881,56 @@ export interface components {
          * @enum {string}
          */
         Framework: "qiskit" | "pennylane" | "cirq" | "braket" | "qibo" | "qulacs";
+        /**
+         * FrontierPointSummary
+         * @description One non-dominated point on the qubits-vs-runtime trade.
+         *
+         *     Independently labelled with the assumption set that produced it, which
+         *     may differ from `CatalogEntryEstimate.assumptions` above — a frontier
+         *     compares choices *across* hardware and error-correction assumptions on
+         *     purpose (Azure's resource estimator does the same), and every point
+         *     carries enough to stand alone so a reader never has to guess which claim
+         *     it is. See `packages/py/estimation/src/majorana_estimation/frontier.py`.
+         */
+        FrontierPointSummary: {
+            /** Assumption Citation */
+            assumption_citation: string;
+            /**
+             * Assumption Set
+             * @description AssumptionSet.identity that produced this point, e.g. `gidney-2025@v2`.
+             */
+            assumption_set: string;
+            /** Factory Count */
+            factory_count: number;
+            /**
+             * Runtime Seconds
+             * @description Never null: a point with no stated runtime cannot be ranked, so it never reaches the frontier.
+             */
+            runtime_seconds: number;
+            /** Target Failure Probability */
+            target_failure_probability: number;
+            /** Total Physical Qubits */
+            total_physical_qubits: number;
+        };
+        /**
+         * FrontierSummary
+         * @description The Pareto frontier of physical qubits vs runtime for this entry's
+         *     circuit, swept across the deployment's built-in assumption sets and
+         *     factory counts at the same failure target already used above.
+         *
+         *     `points` may be empty for a Clifford-only circuit — it has no stated
+         *     runtime under any assumption set, so nothing can be ranked, and an empty
+         *     frontier is the honest report of that rather than an omitted field.
+         */
+        FrontierSummary: {
+            /**
+             * Considered
+             * @description How many candidate points were swept before the Pareto filter kept these.
+             */
+            considered: number;
+            /** Points */
+            points?: components["schemas"]["FrontierPointSummary"][];
+        };
         /**
          * GenerateCourseRequest
          * @description Which modules to turn into notebooks. `None` means every module that does
@@ -4254,6 +4314,40 @@ export interface components {
              * @enum {string}
              */
             type: "sandbox.result";
+        };
+        /**
+         * ScalingCurvePointSummary
+         * @description One `n` on a scaling curve, and what it costs.
+         */
+        ScalingCurvePointSummary: {
+            /** N */
+            n: number;
+            /**
+             * Runtime Seconds
+             * @default null
+             */
+            runtime_seconds: number | null;
+            /** Total Physical Qubits */
+            total_physical_qubits: number;
+        };
+        /**
+         * ScalingCurveSummary
+         * @description The estimate at a series of problem sizes, for a workload whose
+         *     logical cost is a *stated* function of a problem parameter — see
+         *     `packages/py/estimation/src/majorana_estimation/scaling.py`. Never
+         *     fabricated: this is null until an Atlas record states an explicit
+         *     `n`-dependence for this entry's algorithm, which none currently does.
+         */
+        ScalingCurveSummary: {
+            /** Parameter Name */
+            parameter_name: string;
+            /** Points */
+            points?: components["schemas"]["ScalingCurvePointSummary"][];
+            /**
+             * Source
+             * @description Where the n-dependence comes from — a paper or Atlas record, never derived here.
+             */
+            source: string;
         };
         /** Scope */
         Scope: {

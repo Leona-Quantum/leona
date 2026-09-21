@@ -76,6 +76,27 @@ function priced(overrides: Record<string, unknown> = {}): Record<string, unknown
     },
     target_failure_probability: 0.01,
     notes: ["factory_count defaulted to the crossover"],
+    frontier: frontier(),
+    ...overrides,
+  };
+}
+
+function frontierPoint(overrides: Record<string, unknown> = {}): Record<string, unknown> {
+  return {
+    assumption_set: "gidney-2025@v2+eps=1e-06",
+    assumption_citation: "Gidney 2025",
+    target_failure_probability: 0.01,
+    factory_count: 132,
+    total_physical_qubits: 168_640,
+    runtime_seconds: 1e-5,
+    ...overrides,
+  };
+}
+
+function frontier(overrides: Record<string, unknown> = {}): Record<string, unknown> {
+  return {
+    points: [frontierPoint()],
+    considered: 2,
     ...overrides,
   };
 }
@@ -94,6 +115,68 @@ test("a priced basis missing a layer is rejected rather than half-rendered", () 
   for (const layer of ["logical", "distance", "footprint", "runtime"]) {
     assert.equal(parseEstimate(priced({ [layer]: null })), null, `${layer} should be required`);
   }
+});
+
+test("a priced basis with no frontier is rejected, same rule as the other layers", () => {
+  assert.equal(parseEstimate(priced({ frontier: null })), null);
+});
+
+test("the frontier parses with every point's assumption set and citation", () => {
+  const parsed = parseEstimate(
+    priced({
+      frontier: frontier({
+        points: [
+          frontierPoint({ assumption_set: "gidney-2025@v2+eps=1e-06", factory_count: 1 }),
+          frontierPoint({ assumption_set: "composed-trapped-ion@v2", factory_count: 200 }),
+        ],
+        considered: 24,
+      }),
+    }),
+  );
+  assert.ok(parsed);
+  assert.equal(parsed.frontier?.considered, 24);
+  assert.equal(parsed.frontier?.points.length, 2);
+  assert.equal(parsed.frontier?.points[1]?.assumptionSet, "composed-trapped-ion@v2");
+  assert.equal(parsed.frontier?.points[0]?.totalPhysicalQubits, 168_640);
+});
+
+test("a frontier may have zero points and still parse -- a Clifford-only circuit has nothing to rank", () => {
+  const parsed = parseEstimate(priced({ frontier: frontier({ points: [], considered: 2 }) }));
+  assert.ok(parsed);
+  assert.deepEqual(parsed.frontier, { points: [], considered: 2 });
+});
+
+test("one unreadable frontier point is dropped, the rest of the frontier survives", () => {
+  const parsed = parseEstimate(
+    priced({
+      frontier: frontier({
+        points: [frontierPoint(), frontierPoint({ total_physical_qubits: "not-a-number" })],
+      }),
+    }),
+  );
+  assert.equal(parsed?.frontier?.points.length, 1);
+});
+
+test("a frontier missing `considered` is rejected whole, not silently treated as zero", () => {
+  const malformed = priced();
+  const frontierPayload = malformed.frontier as Record<string, unknown>;
+  delete frontierPayload.considered;
+  assert.equal(parseEstimate(malformed), null);
+});
+
+test("a refused basis carrying a frontier is rejected, same as a stray footprint", () => {
+  const contradictory = {
+    slug: "x",
+    basis: "refused",
+    assumptions: assumptions(),
+    reason: "unrecognised operation: wibble",
+    logical: null,
+    distance: null,
+    footprint: null,
+    runtime: null,
+    frontier: frontier(),
+  };
+  assert.equal(parseEstimate(contradictory), null);
 });
 
 test("a refusal carrying a footprint is rejected", () => {

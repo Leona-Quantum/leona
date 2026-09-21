@@ -194,7 +194,7 @@ export function isMetrics(value: unknown): boolean {
     && nullableNonNegativeInteger(value.depth)
     && nullableNonNegativeInteger(value.gate_count)
     && nullableNonNegativeInteger(value.two_qubit_gate_count)
-    // t_count (2.21.0): optional on the wire for a payload from before this
+    // t_count (2.22.0): optional on the wire for a payload from before this
     // field existed, so absence is accepted alongside null and a number.
     && (value.t_count === undefined || nullableNonNegativeInteger(value.t_count))
     && nullableNonNegativeInteger(value.measurement_count);

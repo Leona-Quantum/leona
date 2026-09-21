@@ -33,6 +33,8 @@ from majorana_contracts import (
     CodeDistanceSummary,
     CostOnSmallestMachine,
     FootprintSummary,
+    FrontierPointSummary,
+    FrontierSummary,
     LogicalCostSummary,
     ResourceEstimateBasis,
     RuntimeSummary,
@@ -41,7 +43,9 @@ from majorana_estimation import (
     BUILTIN_ASSUMPTION_SETS,
     GIDNEY_2025,
     AssumptionSet,
+    LogicalCost,
     PhysicalEstimate,
+    compute_frontier,
     estimate,
 )
 from majorana_openqasm.non_clifford import NonCliffordCost, portable_circuit_cost
@@ -208,6 +212,46 @@ def _runtime_summary(physical: PhysicalEstimate) -> RuntimeSummary:
     )
 
 
+def _frontier_summary(logical: LogicalCost, assumptions: AssumptionSet) -> FrontierSummary:
+    """Sweep every built-in assumption set for this circuit's Pareto frontier.
+
+    Reuses `logical` exactly as already priced above (its T-count, if any came
+    from a synthesis precision, was resolved once at the requested epsilon).
+    `estimate()` past this point never reads a rotation precision — only
+    `t_per_toffoli` and the physical/timing fields — so the frontier's other
+    built-in sets need none attached; a fixed circuit's T-count does not
+    change because a different hardware set is asked what it costs.
+
+    `assumptions` itself (carrying whatever precision the caller requested) is
+    swept in place of its bare registry entry, so the frontier's point for
+    this hardware matches the headline figure shown alongside it exactly —
+    same identity, same number — rather than a second, unlabelled variant.
+    """
+    sweep_sets = [assumptions] + [
+        other for other in BUILTIN_ASSUMPTION_SETS.values() if other.name != assumptions.name
+    ]
+    citations = {s.identity: s.citation for s in sweep_sets}
+    result = compute_frontier(
+        logical,
+        assumption_sets=sweep_sets,
+        target_failure_probabilities=(TARGET_FAILURE_PROBABILITY,),
+    )
+    return FrontierSummary(
+        points=[
+            FrontierPointSummary(
+                assumption_set=point.assumption_set,
+                assumption_citation=citations[point.assumption_set],
+                target_failure_probability=point.target_failure_probability,
+                factory_count=point.factory_count,
+                total_physical_qubits=point.total_physical_qubits,
+                runtime_seconds=point.runtime_seconds,
+            )
+            for point in result.points
+        ],
+        considered=result.considered,
+    )
+
+
 def _summarize(
     slug: str,
     basis: ResourceEstimateBasis,
@@ -250,6 +294,7 @@ def _summarize(
         ),
         target_failure_probability=physical.target_failure_probability,
         notes=list(physical.notes),
+        frontier=_frontier_summary(physical.logical, assumptions),
     )
 
 
