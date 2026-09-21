@@ -1,8 +1,8 @@
 // A deliberately narrow showcase seam: public only on explicitly enabled
 // preview deployments (or local development), never on production.
 //
-// deployEnv() reads LEONA_DEPLOY_ENV first, VERCEL_ENV as the fallback
-// (lib/deploy-env.ts) — on Vercel that is VERCEL_ENV, unchanged.
+// deployEnv() reads LEONA_DEPLOY_ENV (lib/deploy-env.ts), set by
+// deploy-web.yml/cloudbuild.web.yaml on Cloud Run.
 import { deployEnv } from "./deploy-env.ts";
 
 export function isPublicDemoEnabled(): boolean {

@@ -16,7 +16,6 @@ const PRODUCTION = {
   controlPlane: "https://api.example.test",
   development: false,
   errorReporting: null,
-  vercelToolbar: false,
 } as const;
 
 const DSN =
@@ -27,13 +26,11 @@ test("development permits React's debugging eval without weakening production", 
     controlPlane: "http://localhost:8000",
     development: true,
     errorReporting: null,
-    vercelToolbar: false,
   });
   const production = contentSecurityPolicy({
     controlPlane: "https://api.example.test",
     development: false,
     errorReporting: null,
-    vercelToolbar: false,
   });
 
   assert.match(development, /script-src 'self' 'unsafe-inline' 'unsafe-eval'/);
@@ -50,7 +47,6 @@ test("connect-src names the Sentry ingest origin, or the browser SDK reports not
     controlPlane: "https://api.example.test",
     development: false,
     errorReporting: origin,
-    vercelToolbar: false,
   });
 
   // The failing arm: without this the browser refuses every envelope POST with
@@ -88,41 +84,36 @@ test("no DSN adds no host, and a malformed DSN does not fail the build", () => {
     controlPlane: "https://api.example.test",
     development: false,
     errorReporting: errorReportingOrigin(undefined),
-    vercelToolbar: false,
   });
   assert.match(withoutSentry, /connect-src 'self' https:\/\/api\.example\.test;/);
   assert.doesNotMatch(withoutSentry, /sentry\.io/);
 });
 
-test("the Vercel Toolbar's six origins reach preview and never production", () => {
-  const base = { controlPlane: "https://api.example.test", development: false, errorReporting: null };
-  const preview = contentSecurityPolicy({ ...base, vercelToolbar: true });
-  const production = contentSecurityPolicy({ ...base, vercelToolbar: false });
+test("the production policy is pinned exactly, and admits no Vercel origin", () => {
+  const production = contentSecurityPolicy({
+    controlPlane: "https://api.example.test",
+    development: false,
+    errorReporting: null,
+  });
 
-  // Preview gets every directive the toolbar documents. Anything short of all
-  // six and the toolbar half-loads, which is worse than declining it outright:
-  // the console fills with a *different* violation and the feature still fails.
-  assert.match(preview, /script-src [^;]*https:\/\/vercel\.live/);
-  assert.match(preview, /connect-src [^;]*https:\/\/vercel\.live wss:\/\/ws-us3\.pusher\.com/);
-  assert.match(preview, /img-src [^;]*https:\/\/vercel\.live https:\/\/vercel\.com/);
-  assert.match(preview, /font-src [^;]*https:\/\/vercel\.live https:\/\/assets\.vercel\.com/);
-  assert.match(preview, /style-src [^;]*https:\/\/vercel\.live/);
-  assert.match(preview, /frame-src https:\/\/vercel\.live/);
-
-  // The one that actually matters. `vercel.live` must not appear anywhere in the
-  // production policy — not in one directive, not in six. This is the assertion
-  // that fails if someone later "fixes" the owner's console message by widening
-  // production instead of clearing the cookie that triggers it.
-  assert.doesNotMatch(production, /vercel\.live/);
-  assert.doesNotMatch(production, /pusher\.com/);
+  // Until 2026-09-21 this policy also widened for the Vercel Toolbar on preview
+  // deployments (six directives: script-src, connect-src, img-src, frame-src,
+  // style-src, font-src, gated on a `vercelToolbar` parameter this function no
+  // longer takes). Production never admitted any of it — this assertion is what
+  // proved that then, and there being no `vercelToolbar` arm left to compare
+  // against is what proves it now: `vercel.live`, `vercel.com`, `pusher.com`
+  // and a `frame-src` directive cannot appear in a policy this function has no
+  // code path left to add them from.
+  assert.doesNotMatch(production, /vercel\.live|vercel\.com|pusher\.com/);
   assert.doesNotMatch(production, /frame-src/);
 
   // The production policy in full, pinned as an exact string so that any change
   // to it is a decision somebody wrote down rather than a side effect.
   //
-  // It last changed when `script-src-attr`, `style-src-elem` and `style-src-attr`
-  // were added. The toolbar widening remains additive to this — additive or it
-  // is a regression.
+  // It last changed when the `vercelToolbar` parameter and every `toolbar(...)`
+  // origin were removed (PR 941's leftovers; ADR-0033) — production's own
+  // string is unchanged by that removal, which is the point of pinning it here
+  // rather than trusting the diff.
   //
   // Sourcery asked on PR 676 (numbered without a hash on purpose — see
   // `check-raw-hex`) for this to be relaxed into per-directive assertions,
@@ -145,8 +136,7 @@ test("the Vercel Toolbar's six origins reach preview and never production", () =
       "form-action 'self'; frame-ancestors 'none'; upgrade-insecure-requests",
   );
 
-  // Clickjacking protection is not a thing the toolbar gets to relax.
-  assert.match(preview, /frame-ancestors 'none'/);
+  assert.match(production, /frame-ancestors 'none'/);
 });
 
 test("inline event handler attributes are refused on every environment", () => {
@@ -157,13 +147,9 @@ test("inline event handler attributes are refused on every environment", () => {
   // otherwise admit it.
   //
   // Every environment, deliberately. React attaches listeners from the bundle
-  // and emits no handler attributes, so there is no arm — development, preview
-  // or production — that needs this open, and an exception is how one arrives.
-  for (const environment of [
-    PRODUCTION,
-    { ...PRODUCTION, development: true },
-    { ...PRODUCTION, vercelToolbar: true },
-  ]) {
+  // and emits no handler attributes, so there is no arm — development or
+  // production — that needs this open, and an exception is how one arrives.
+  for (const environment of [PRODUCTION, { ...PRODUCTION, development: true }]) {
     assert.match(contentSecurityPolicy(environment), /script-src-attr 'none'/);
   }
 });
@@ -199,16 +185,19 @@ test("an injected <style> element is refused, while inline style attributes stil
 const styleSrcElemOf = (policy: string) =>
   policy.split("; ").find((d) => d.startsWith("style-src-elem ")) ?? "";
 
-test("only production gets the hashed style-src-elem; dev and preview inject unhashable CSS", () => {
+test("only production gets the hashed style-src-elem; dev injects unhashable CSS", () => {
   // `next dev` injects CSS as <style> elements for hot reload and the error
-  // overlay. Vercel injects `vercel.live/_next-live/feedback/feedback.js` into
-  // every PREVIEW deployment — the widget a change gets reviewed with — and it
-  // writes its own. Six of them on `/pricing`, measured on a preview of the
-  // branch that added this directive, with no toolbar cookie set. Neither set is
-  // hashable and neither exists in a production build, so both open the
-  // directive and production alone closes it.
+  // overlay. Neither is hashable and neither exists in a production build, so
+  // development opens the directive and production alone closes it.
+  //
+  // Until 2026-09-21 there was a second open arm here, preview: Vercel injected
+  // `vercel.live/_next-live/feedback/feedback.js` into every preview deployment
+  // — the widget a change was reviewed with — and it wrote its own inline
+  // stylesheets (six of them on `/pricing`, measured on a preview of the branch
+  // that added this directive, with no toolbar cookie set). ADR-0033 retired
+  // Vercel as a host and preview deployments with it, so `contentSecurityPolicy`
+  // has no `vercelToolbar` parameter left to open that arm from.
   assert.match(styleSrcElemOf(contentSecurityPolicy({ ...PRODUCTION, development: true })), /'unsafe-inline'/);
-  assert.match(styleSrcElemOf(contentSecurityPolicy({ ...PRODUCTION, vercelToolbar: true })), /'unsafe-inline'/);
   assert.doesNotMatch(styleSrcElemOf(contentSecurityPolicy(PRODUCTION)), /'unsafe-inline'/);
 });
 
@@ -223,10 +212,7 @@ test("wherever style-src-elem opens, it carries no hash — or the 'unsafe-inlin
   // `next dev` with "Note that 'unsafe-inline' is ignored if either a hash or
   // nonce value is present in the source list". A developer would have seen
   // hot reload stop applying CSS and had nothing pointing here.
-  for (const [name, environment] of [
-    ["development", { ...PRODUCTION, development: true }],
-    ["preview", { ...PRODUCTION, vercelToolbar: true }],
-  ] as const) {
+  for (const [name, environment] of [["development", { ...PRODUCTION, development: true }]] as const) {
     const directive = styleSrcElemOf(contentSecurityPolicy(environment));
     assert.ok(directive, `${name} must still emit style-src-elem`);
     assert.ok(
@@ -239,12 +225,6 @@ test("wherever style-src-elem opens, it carries no hash — or the 'unsafe-inlin
 
   // The mirror of it: production carries the hash and no `'unsafe-inline'`, so
   // there is nothing for the hash to cancel there.
-  //
-  // The corollary is a fact about how to VERIFY this directive, and it is
-  // asserted here rather than left in a comment because it is the thing most
-  // likely to be got wrong next: since preview opens the directive, a preview
-  // URL does not exercise production's `style-src-elem` at all. Checking a
-  // change to it means a local production build, not a preview link.
   const produced = styleSrcElemOf(contentSecurityPolicy(PRODUCTION));
   assert.ok(produced.includes("sha256-"));
   assert.ok(!produced.includes("'unsafe-inline'"));
@@ -319,7 +299,6 @@ test("script-src carries no hash — a hash silently disables 'unsafe-inline' an
   for (const [label, options] of [
     ["production", PRODUCTION],
     ["development", { ...PRODUCTION, development: true }],
-    ["preview", { ...PRODUCTION, vercelToolbar: true }],
   ] as const) {
     const directive = contentSecurityPolicy(options)
       .split(";")

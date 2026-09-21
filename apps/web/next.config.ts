@@ -5,7 +5,7 @@ import {
   errorReportingOrigin,
 } from "./lib/content-security-policy";
 import { permissionsPolicy } from "./lib/permissions-policy";
-import { deployEnv, publicReleaseSha } from "./lib/deploy-env";
+import { publicReleaseSha } from "./lib/deploy-env";
 import { edgeCacheRules } from "./lib/edge-cache-headers";
 
 /**
@@ -82,42 +82,12 @@ const CONTROL_PLANE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000"
  * out from under us, and a developer pointing at a deployed https API should
  * still get the directive.
  */
-/**
- * The Vercel Toolbar's origins are admitted on preview deployments and on a
- * local dev server, never on production. See the `vercelToolbar` doc comment in
- * lib/content-security-policy.ts for what it costs and why production declines.
- *
- * Written as an allowlist of two known-safe cases rather than
- * `VERCEL_ENV !== "production"`, so it fails CLOSED. An unset or unexpected
- * `VERCEL_ENV` — a self-hosted build, a container build, a platform rename —
- * then yields the tight policy instead of silently widening production's.
- *
- * Reads through `deployEnv()` (lib/deploy-env.ts), which checks
- * `LEONA_DEPLOY_ENV` first and falls back to `VERCEL_ENV` — on Vercel,
- * `LEONA_DEPLOY_ENV` is never set, so this is exactly `VERCEL_ENV`,
- * unchanged. On Cloud Run there is no toolbar to admit either way (nothing
- * ships `vercel.live`), so `LEONA_DEPLOY_ENV=preview`/`development` widening
- * this allowlist there is inert, not a new exposure — the CSP is stricter
- * than what actually runs.
- */
-const resolvedDeployEnv = deployEnv();
-const vercelToolbar =
-  resolvedDeployEnv === "preview" ||
-  // `vercel dev` sets VERCEL_ENV="development"; a plain `next dev` sets it to
-  // nothing at all. Both are a local server on a laptop, so both are listed —
-  // without the first, which of the two commands you happened to start decided
-  // whether the toolbar worked. Raised by CodeRabbit on PR 651, numbered without
-  // a hash because `check-raw-hex` reads a three-digit hash-number as a colour.
-  resolvedDeployEnv === "development" ||
-  (resolvedDeployEnv === undefined && process.env.NODE_ENV === "development");
-
 const csp = contentSecurityPolicy({
   controlPlane: CONTROL_PLANE,
   development: process.env.NODE_ENV === "development",
   // Same env var `instrumentation-client.ts` gates the browser SDK on, so the
   // policy and the SDK can never disagree about whether Sentry is configured.
   errorReporting: errorReportingOrigin(process.env.NEXT_PUBLIC_SENTRY_DSN),
-  vercelToolbar,
 });
 
 const nextConfig: NextConfig = {
@@ -165,19 +135,21 @@ const nextConfig: NextConfig = {
   poweredByHeader: false,
   // Two dev servers in one worktree otherwise share `.next` and corrupt each
   // other's build cache, which surfaces as stale-resolve errors that survive a
-  // restart. Unset everywhere except a second local server, so CI and Vercel
-  // build to the usual directory.
+  // restart. Unset everywhere except a second local server, so CI and the
+  // Cloud Build image build (cloudbuild.web.yaml) use the usual directory.
   distDir: process.env.NEXT_DIST_DIR || ".next",
   // Cloud Run spike (ai-ops gcp-migration-20260912 PLAN.md, "Hosting and
   // build" row): `output: "standalone"` traces the server's actual runtime
   // dependencies into `.next/standalone`, so a Docker image can ship a
   // minimal `node_modules` instead of the whole workspace. Opt-in on
   // NEXT_OUTPUT=standalone — a var set only by apps/web/Dockerfile's build
-  // stage — so Vercel's build, CI, and a plain local `next build`/`next dev`
-  // are byte-for-byte what they were before this key existed: Vercel has its
-  // own deployment artifact format and does not read `output` at all, but an
-  // untested `undefined` vs. explicitly-omitted distinction is not a risk
-  // worth taking on the platform that currently serves production.
+  // stage — so CI and a plain local `next build`/`next dev` are byte-for-byte
+  // what they were before this key existed. Until Vercel was retired as a host
+  // (ADR-0033, 2026-09-21) this also kept its build untouched: Vercel has its
+  // own deployment artifact format and never read `output` at all, but an
+  // untested `undefined` vs. explicitly-omitted distinction was not a risk
+  // worth taking on the platform serving production at the time. Cloud Run is
+  // now the only consumer of this output, via apps/web/Dockerfile.
   ...(process.env.NEXT_OUTPUT === "standalone"
     ? {
         output: "standalone" as const,
@@ -202,13 +174,13 @@ const nextConfig: NextConfig = {
         // question about the *build* platform's Next/Node combination, not
         // this repo's, and it would change nothing about `process.cwd()`,
         // which both module targets support identically. Measured, not
-        // assumed: `pnpm --filter @majorana/web exec pwd` and vercel.json's
-        // own `buildCommand` (`pnpm --filter @majorana/web build`) both run
-        // with apps/web as the working directory, on Vercel and in
-        // apps/web/Dockerfile alike — pnpm's `--filter` sets cwd to the
-        // selected package before invoking its script, which is why this
-        // resolves against `process.cwd()` rather than this module's own
-        // location.
+        // assumed: `pnpm --filter @majorana/web exec pwd` runs with apps/web
+        // as the working directory in apps/web/Dockerfile — pnpm's `--filter`
+        // sets cwd to the selected package before invoking its script, which
+        // is why this resolves against `process.cwd()` rather than this
+        // module's own location. (The same held for vercel.json's own
+        // `buildCommand` there too, until Vercel was retired as a host —
+        // ADR-0033.)
         outputFileTracingRoot: resolve(process.cwd(), "..", ".."),
       }
     : {}),

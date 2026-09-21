@@ -23,43 +23,9 @@ export function contentSecurityPolicy({
   controlPlane,
   development,
   errorReporting,
-  vercelToolbar,
 }: {
   controlPlane: string;
   development: boolean;
-  /**
-   * Whether to admit the Vercel Toolbar's six origins. True on preview
-   * deployments, false on production.
-   *
-   * Next bundles a loader for the toolbar into the client on every deployment,
-   * production included. It is gated on a cookie, so it is inert for a visitor:
-   *
-   *     if (/(?:^|;\s)__vercel_toolbar=1(?:;|$)/.test(document.cookie)) { ... }
-   *
-   * For anyone holding `__vercel_toolbar=1` it appends a `vercel.live` script
-   * tag, this policy refuses it, and the refusal is logged on every page. That
-   * is what the owner was seeing on production and reported as a site bug
-   * (ai-ops issue 116 — numbered without a hash on purpose, because
-   * `check-raw-hex` reads a three-digit hash-number as a CSS colour and fails
-   * lint on it). It is not one — an anonymous load of leonaqt.com requests no
-   * `vercel.live` at all, checked before this was written — but a console that
-   * cries wolf on every navigation is how a real error goes unread.
-   *
-   * The toolbar needs SIX directives widened, not one: `script-src`,
-   * `connect-src` (including a `wss://` to Pusher), `img-src`, `frame-src`,
-   * `style-src` and `font-src`. That is the whole reason this is keyed on the
-   * environment rather than granted everywhere. On a preview deployment the
-   * toolbar is the point — it is how a change gets commented on before it
-   * ships — and the blast radius is a URL nobody but us opens. On production it
-   * would buy one developer a convenience in exchange for letting a third-party
-   * origin execute script, frame, and open a socket on the page every visitor
-   * loads. `frame-ancestors 'none'` is untouched either way.
-   *
-   * Production consequence, stated so it is not a surprise: the toolbar cannot
-   * work on leonaqt.com under this policy. Clearing the `__vercel_toolbar=1`
-   * cookie for the domain silences the message at the source.
-   */
-  vercelToolbar: boolean;
   /**
    * The Sentry ingest origin, or null when no DSN is configured.
    *
@@ -78,10 +44,6 @@ export function contentSecurityPolicy({
   errorReporting: string | null;
 }): string {
   const controlPlaneIsHttp = controlPlane.startsWith("http://");
-  // Exactly the origins vercel.com/docs/vercel-toolbar/managing-toolbar lists,
-  // per directive. Empty on production, which is what keeps the arrays below
-  // byte-identical to the policy that shipped before this parameter existed.
-  const toolbar = (...origins: string[]) => (vercelToolbar ? origins : []);
   const scriptSources = [
     "'self'",
     // **`'unsafe-inline'` stays, and the reasoning is NOT restated here.** It is
@@ -128,13 +90,11 @@ export function contentSecurityPolicy({
     // such a link would execute. Revisit this whole decision if either breaks.
     "'unsafe-inline'",
     ...(development ? ["'unsafe-eval'"] : []),
-    ...toolbar("https://vercel.live"),
   ];
   const connectSources = [
     "'self'",
     controlPlane,
     ...(errorReporting ? [errorReporting] : []),
-    ...toolbar("https://vercel.live", "wss://ws-us3.pusher.com"),
   ];
   return [
     "default-src 'self'",
@@ -163,7 +123,7 @@ export function contentSecurityPolicy({
     // an old one. Leaving it as the pre-existing behaviour is the fail-open
     // direction on purpose: an old browser gets exactly today's policy, not a
     // broken page.
-    `style-src ${["'self'", "'unsafe-inline'", ...toolbar("https://vercel.live")].join(" ")}`,
+    `style-src ${["'self'", "'unsafe-inline'"].join(" ")}`,
     // Inline `<style>` ELEMENTS, named by hash instead of admitted wholesale.
     //
     // This application serves exactly one, the 404 page's language-switching
@@ -172,26 +132,22 @@ export function contentSecurityPolicy({
     // refused. `lib/html-injection-surface.test.ts` is what stops a second one
     // being added without this list being updated: it counts the sinks.
     //
-    // ## Production ALONE gets the hashed form, and the two exceptions are real
+    // ## Production ALONE gets the hashed form
     //
-    // Development, because the dev server injects stylesheets as `<style>`
-    // elements for hot reload and for the error overlay. Neither is hashable and
-    // neither exists in a production build.
+    // The one exception is development: the dev server injects stylesheets as
+    // `<style>` elements for hot reload and for the error overlay. Neither is
+    // hashable and neither exists in a production build.
     //
-    // Preview, because Vercel injects `vercel.live/_next-live/feedback/
-    // feedback.js` into every preview deployment — the widget the owner reviews
-    // a change with — and it writes its own inline stylesheets. Measured, not
-    // predicted: the hashed form on a preview of this very branch refused SIX of
-    // them on `/pricing` alone, on a page with no toolbar cookie set. Hashing
-    // them is not an option; they are Vercel's and they move with it.
+    // Until 2026-09-21 there was a second exception, preview: Vercel injected
+    // `vercel.live/_next-live/feedback/feedback.js` into every preview
+    // deployment — the widget the owner reviewed a change with — and it wrote
+    // its own inline stylesheets (measured, not predicted: the hashed form on
+    // a preview of this very branch refused SIX of them on `/pricing` alone,
+    // on a page with no toolbar cookie set). ADR-0033 retired Vercel as a
+    // host; preview deployments no longer exist, so that exception is gone —
+    // production and development are the only two arms this function has now.
     //
-    // Leaving preview broken would also contradict the decision the
-    // `vercelToolbar` comment above records — that on a preview the toolbar is
-    // the point, and half-loading it is worse than declining it, because the
-    // console cries wolf on every navigation. Production is untouched by this:
-    // it admits no `vercel.live` and Vercel injects no feedback script into it.
-    //
-    // ## Why the exceptions DROP the hash rather than adding to it
+    // ## Why the exception DROPS the hash rather than adding to it
     //
     // Not tidiness: **`'unsafe-inline'` is ignored in any directive that also
     // carries a hash or a nonce.** `'self' <hash> 'unsafe-inline'` is therefore
@@ -204,10 +160,6 @@ export function contentSecurityPolicy({
     // "Note that 'unsafe-inline' is ignored if either a hash or nonce value is
     // present in the source list". Production is unaffected — it has no
     // `'unsafe-inline'` in this directive for a hash to cancel.
-    //
-    // The consequence worth stating: a preview deployment does NOT exercise
-    // production's `style-src-elem`. Verifying a change to it means a local
-    // production build (`next build && next start`), not a preview URL.
     //
     // ## The one thing this knowingly breaks, and why it is accepted
     //
@@ -229,10 +181,7 @@ export function contentSecurityPolicy({
     // directive.
     `style-src-elem ${[
       "'self'",
-      ...(development || vercelToolbar
-        ? ["'unsafe-inline'"]
-        : [inlineHash(NOT_FOUND_LOCALE_STYLE)]),
-      ...toolbar("https://vercel.live"),
+      ...(development ? ["'unsafe-inline'"] : [inlineHash(NOT_FOUND_LOCALE_STYLE)]),
     ].join(" ")}`,
     // Inline `style` ATTRIBUTES, which stay open, stated explicitly rather than
     // inherited so that the split above is legible as a decision.
@@ -250,12 +199,9 @@ export function contentSecurityPolicy({
     // other directives here, since `img-src` and `font-src` name no external
     // origin for a `url()` to smuggle a value to.
     "style-src-attr 'unsafe-inline'",
-    `img-src ${["'self'", "data:", "blob:", ...toolbar("https://vercel.live", "https://vercel.com")].join(" ")}`,
-    `font-src ${["'self'", "data:", ...toolbar("https://vercel.live", "https://assets.vercel.com")].join(" ")}`,
+    `img-src ${["'self'", "data:", "blob:"].join(" ")}`,
+    `font-src ${["'self'", "data:"].join(" ")}`,
     `connect-src ${connectSources.join(" ")}`,
-    // Only ever emitted for the toolbar. Absent on production, where `frame-src`
-    // falls back to `default-src 'self'` exactly as it did before.
-    ...toolbar("frame-src https://vercel.live"),
     "object-src 'none'",
     "base-uri 'self'",
     "form-action 'self'",

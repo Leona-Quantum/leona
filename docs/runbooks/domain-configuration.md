@@ -1,5 +1,13 @@
 # Domain configuration handoff
 
+**Superseded, 2026-09-21.** This runbook is the historical record of the
+one-time Vercel DNS handoff — kept for the account of what was done and why,
+not as current instruction. DNS for `leonaqt.com` moved to Cloudflare in front
+of the Google load balancer on 2026-09-20 and Vercel was retired as a host
+(ADR-0033); the records below no longer reflect what is live. For the current
+DNS/TLS setup, read `docs/runbooks/cloudflare-origin-certificate.md` and
+ADR-0033.
+
 This is the DNS handoff for the person who controls the two domains. It contains
 no API keys, passwords, or other secrets.
 

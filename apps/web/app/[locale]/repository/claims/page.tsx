@@ -68,7 +68,11 @@ export default async function RepositorySpeedupClaimsPage({
       // `getMajoranaAuth()` -> `withAuth()`, which THROWS on a request that did
       // not pass through AuthKit's middleware — and this path deliberately no
       // longer does, because AuthKit sets a cookie on every request it sees and
-      // Vercel will not store a response carrying `Set-Cookie`.
+      // a response carrying `Set-Cookie` must stay out of the CDN cache. That
+      // was true of Vercel by default; since the move to Cloudflare (ADR-0033)
+      // it depends on the Cache Rule described in
+      // docs/runbooks/web-cloud-run.md, which has not been re-verified against
+      // this specific path.
       chrome="static"
       showLanguageToggle
     >

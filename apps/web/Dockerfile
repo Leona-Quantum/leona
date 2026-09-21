@@ -61,10 +61,10 @@ COPY packages/ts/contracts-gen packages/ts/contracts-gen
 # build time, not read at request time, so they have to be set here rather
 # than as a Cloud Run runtime env var. LEONA_DEPLOY_ENV and
 # NEXT_PUBLIC_API_URL matter even more than usual: next.config.ts computes
-# the CSP (including the vercelToolbar allowlist and the control-plane
-# connect-src origin) at module-evaluation time, and Next bakes headers()'s
-# result into routes-manifest.json during `next build` — so setting these
-# only as runtime env on the Cloud Run service would ship a CSP built against
+# the CSP (including the control-plane connect-src origin) at
+# module-evaluation time, and Next bakes headers()'s result into
+# routes-manifest.json during `next build` — so setting these only as
+# runtime env on the Cloud Run service would ship a CSP built against
 # whatever (or nothing) was set here instead.
 #
 # WORKOS_*, SENTRY_DSN (server) and OTEL_EXPORTER_OTLP_ENDPOINT are

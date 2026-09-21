@@ -35,9 +35,9 @@ import { layerState } from "../../../../../lib/repository/states";
  * Next opts any page reading `searchParams` into request-time rendering, so
  * prerendering is off the table here regardless of what else is removed.
  *
- * It reaches the CDN the other way — `Vercel-CDN-Cache-Control` in
+ * It reaches the CDN the other way — `CDN-Cache-Control` in
  * `next.config.ts` — and the locale had to come out of the cookie first, because
- * Vercel's cache key has the query string in it but not cookies. See the long
+ * the CDN cache key has the query string in it but not cookies. See the long
  * note in `../page.tsx`, which is where the measurements are written down.
  *
  * `dynamicParams = false` restricts BOTH segments: an unknown `[locale]` 404s
@@ -188,8 +188,11 @@ export default async function RepositoryLayerNodePage({
       // No per-visitor part in the chrome. `"full"` calls `getMajoranaAuth()` ->
       // `withAuth()`, which THROWS on a request that did not pass through
       // AuthKit's middleware — and this path deliberately no longer does,
-      // because AuthKit sets a cookie on every request it sees and Vercel will
-      // not store a response carrying `Set-Cookie`.
+      // because AuthKit sets a cookie on every request it sees and a response
+      // carrying `Set-Cookie` must stay out of the CDN cache. That was true of
+      // Vercel by default; since the move to Cloudflare (ADR-0033) it depends
+      // on the Cache Rule described in docs/runbooks/web-cloud-run.md, which
+      // has not been re-verified against this specific path.
       chrome="static"
       showLanguageToggle
     >

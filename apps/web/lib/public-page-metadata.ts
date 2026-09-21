@@ -39,7 +39,7 @@ import { CONTACT_COPY, HOME_COPY, PRICING_COPY, PRIVACY_COPY, TERMS_COPY, WORKSP
  * not put a cookie anywhere near a cached response: see the long comment
  * on `middleware.ts`'s `localeRewrite()` and on `[locale]/page.tsx` for the
  * measurements this rests on. The trap this codebase has already been bitten
- * by is a DIFFERENT one — a dynamic route with `Vercel-CDN-Cache-Control` in
+ * by is a DIFFERENT one — a dynamic route with `CDN-Cache-Control` in
  * front of it (`[locale]/repository/layers/page.tsx`) reading the locale
  * COOKIE directly, where the cache key has no room for it. None of these six
  * pages read `searchParams`, so none of them are on that path.

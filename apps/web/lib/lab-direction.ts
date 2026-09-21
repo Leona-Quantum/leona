@@ -7,9 +7,9 @@
 // reviewed — a preview deployment or a local dev server — and unreachable on
 // production, with no environment variable that can open it there.
 //
-// `deployEnv()` reads LEONA_DEPLOY_ENV first, VERCEL_ENV as the fallback
-// (lib/deploy-env.ts) — on Vercel that is VERCEL_ENV, unchanged. NODE_ENV is
-// read directly here, not through that module: it is not a platform variable.
+// `deployEnv()` reads LEONA_DEPLOY_ENV (lib/deploy-env.ts), set by
+// deploy-web.yml/cloudbuild.web.yaml on Cloud Run. NODE_ENV is read directly
+// here, not through that module: it is not a platform variable.
 import { deployEnv } from "./deploy-env.ts";
 
 export function isLabDirectionEnabled(): boolean {

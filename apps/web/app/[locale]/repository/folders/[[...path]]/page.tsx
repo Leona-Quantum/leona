@@ -17,10 +17,10 @@
 // reading `searchParams` opts any page out of static rendering unconditionally, so
 // the `revalidate` + `dynamicParams = false` recipe that prerenders `papers` cannot
 // reach this route at any price. What CAN reach it is the edge cache in FRONT of the
-// render: `next.config.ts` attaches `Vercel-CDN-Cache-Control` / `CDN-Cache-Control`
+// render: `next.config.ts` attaches `CDN-Cache-Control`
 // to this path (mirroring the `/repository/layers` entry, same 300s), and moving under
 // `[locale]` is what makes that cache SAFE rather than merely fast — cookies are not
-// part of Vercel's cache key, so serving this from a cookie-read layout would have
+// part of the CDN cache key, so serving this from a cookie-read layout would have
 // handed a Japanese reader the English tree and called it a hit. See the long note in
 // `../layers/page.tsx` for the measurement.
 import type { Metadata } from "next";
