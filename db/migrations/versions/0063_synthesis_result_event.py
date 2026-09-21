@@ -1,7 +1,7 @@
 """Allow the targeted-synthesis result event.
 
-Revision ID: 0062
-Revises: 0061
+Revision ID: 0063
+Revises: 0062
 
 `synthesis.result` carries every compiler's outcome for one targeted-synthesis
 request (proposal 3): a device or generic-connectivity target plus an
@@ -16,13 +16,17 @@ the first real synthesis run would fail on the INSERT rather than in a test, the
 same failure mode `test_run_event_type_allowlist` exists to catch before a
 deploy (see 0060 for the precedent).
 
+Numbered 0063, not 0062: PR 942 (branch fix/p12-deploy-skew-and-stream-reconnect)
+independently claimed 0062 for `0062_repair_orphaned_notebook_versions.py`. This
+migration must land after that PR merges, and depends on its revision id.
+
 The event log is append-only. Downgrade refuses to discard results already given.
 """
 
 from alembic import op
 
-revision = "0062"
-down_revision = "0061"
+revision = "0063"
+down_revision = "0062"
 branch_labels = None
 depends_on = None
 
