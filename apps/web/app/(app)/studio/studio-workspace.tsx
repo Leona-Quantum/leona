@@ -1642,13 +1642,18 @@ export function CircuitBuilder({ seed, framework, selectedGate, onSelectGate, on
   const synthesisStreamRef = useRef<EventSource | null>(null);
   const synthesisRunSeqRef = useRef(0);
 
+  // Loaded the first time a reader picks "device" as the target, not on every
+  // Studio open: most sessions never use it, and an eager request on mount
+  // was one more call on a page that already makes several.
+  const synthesisDevicesRequested = synthesisTargetMode === "device";
   useEffect(() => {
+    if (!synthesisDevicesRequested) return;
     let cancelled = false;
     fetchQpuBackends()
       .then((backends) => { if (!cancelled) setSynthesisDevices(backends); })
       .catch(() => { if (!cancelled) setSynthesisDevicesFailed(true); });
     return () => { cancelled = true; };
-  }, []);
+  }, [synthesisDevicesRequested]);
 
   const synthesisTarget: SynthesisTarget = useMemo(
     () => synthesisTargetMode === "device" && synthesisDeviceId
@@ -1695,10 +1700,17 @@ export function CircuitBuilder({ seed, framework, selectedGate, onSelectGate, on
     synthesisObjective,
   ]);
 
-  useEffect(() => () => {
-    mountedRef.current = false;
-    externalStreamRef.current?.close();
-    synthesisStreamRef.current?.close();
+  useEffect(() => {
+    // Set on mount as well as cleared on unmount. A cleanup-only effect left
+    // this false for good under React's dev-mode double mount (mount, cleanup,
+    // mount), so every compiler and synthesis run on a dev server stayed on
+    // "Running…" forever: the handlers bail when this is false.
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+      externalStreamRef.current?.close();
+      synthesisStreamRef.current?.close();
+    };
   }, []);
 
   useEffect(() => {
@@ -2701,7 +2713,7 @@ export function CircuitBuilder({ seed, framework, selectedGate, onSelectGate, on
                       type="radio"
                       name="studio-synthesis-target-mode"
                       checked={synthesisTargetMode === "device"}
-                      disabled={synthesisBusy || !synthesisDevices?.length}
+                      disabled={synthesisBusy || synthesisDevicesFailed || synthesisDevices?.length === 0}
                       onChange={() => setSynthesisTargetMode("device")}
                     />
                     <span>{copy.synthesisTargetDevice}</span>
@@ -2727,7 +2739,7 @@ export function CircuitBuilder({ seed, framework, selectedGate, onSelectGate, on
               ) : (
                 <label>
                   <span>{copy.synthesisTargetDevice}</span>
-                  {synthesisDevicesFailed ? <small>{copy.synthesisDeviceUnavailable}</small> : null}
+                  {synthesisDevicesFailed || synthesisDevices?.length === 0 ? <small>{copy.synthesisDeviceUnavailable}</small> : null}
                   {synthesisDevices === null && !synthesisDevicesFailed ? <small>{copy.synthesisDeviceLoading}</small> : null}
                   {synthesisDevices?.length ? (
                     <select
