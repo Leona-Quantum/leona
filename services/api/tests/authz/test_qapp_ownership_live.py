@@ -107,7 +107,7 @@ async def _second_generated_version(db, scope: Scope, qapp, *, tag: str):
     version by construction, exactly as `roll_back` itself only cares that
     `version.qapp_id == qapp.id`.
     """
-    run = await runs_repo.create_run(
+    await runs_repo.create_run(
         scope, db, task_prompt=f"qapp authz probe {tag} v2", mode=RunMode.QAPP, framework=Framework.QISKIT
     )
     # Reuse create_generated's insert path directly on the SAME qapp row by
