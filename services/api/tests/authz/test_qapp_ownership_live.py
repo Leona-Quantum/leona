@@ -78,7 +78,11 @@ async def _co_member_scope(db, owner: Scope, tag: str, *, role: Role = Role.MEMB
 async def _generated_qapp(db, scope: Scope, *, tag: str):
     """One private Qapp, owned by `scope`, with a real originating run."""
     run = await runs_repo.create_run(
-        scope, db, task_prompt=f"qapp authz probe {tag}", mode=RunMode.QAPP, framework=Framework.QISKIT
+        scope,
+        db,
+        task_prompt=f"qapp authz probe {tag}",
+        mode=RunMode.QAPP,
+        framework=Framework.QISKIT,
     )
     qapp, version = await qapps_repo.create_generated(
         scope,
@@ -108,7 +112,11 @@ async def _second_generated_version(db, scope: Scope, qapp, *, tag: str):
     `version.qapp_id == qapp.id`.
     """
     await runs_repo.create_run(
-        scope, db, task_prompt=f"qapp authz probe {tag} v2", mode=RunMode.QAPP, framework=Framework.QISKIT
+        scope,
+        db,
+        task_prompt=f"qapp authz probe {tag} v2",
+        mode=RunMode.QAPP,
+        framework=Framework.QISKIT,
     )
     # Reuse create_generated's insert path directly on the SAME qapp row by
     # inserting a second version by hand through the repository's own ORM
