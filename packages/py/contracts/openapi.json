@@ -834,6 +834,18 @@
             ],
             "default": null
           },
+          "frontier": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/FrontierSummary"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "The qubits-vs-runtime Pareto frontier across the deployment's built-in assumption sets. Present exactly when `basis` carries a cost (may still have zero points, e.g. Clifford-only); null under NO_CIRCUIT/REFUSED, same as the other layers."
+          },
           "logical": {
             "anyOf": [
               {
@@ -876,6 +888,18 @@
               }
             ],
             "default": null
+          },
+          "scaling": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ScalingCurveSummary"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "The estimate at a series of problem sizes, only when this entry's Atlas record states an explicit n-dependence for its logical cost. Null otherwise \u2014 never fabricated by fitting or extrapolating a curve. No entry currently states one."
           },
           "slug": {
             "title": "Slug",
@@ -3722,6 +3746,77 @@
         ],
         "title": "Framework",
         "type": "string"
+      },
+      "FrontierPointSummary": {
+        "additionalProperties": false,
+        "description": "One non-dominated point on the qubits-vs-runtime trade.\n\nIndependently labelled with the assumption set that produced it, which\nmay differ from `CatalogEntryEstimate.assumptions` above \u2014 a frontier\ncompares choices *across* hardware and error-correction assumptions on\npurpose (Azure's resource estimator does the same), and every point\ncarries enough to stand alone so a reader never has to guess which claim\nit is. See `packages/py/estimation/src/majorana_estimation/frontier.py`.",
+        "properties": {
+          "assumption_citation": {
+            "title": "Assumption Citation",
+            "type": "string"
+          },
+          "assumption_set": {
+            "description": "AssumptionSet.identity that produced this point, e.g. `gidney-2025@v2`.",
+            "title": "Assumption Set",
+            "type": "string"
+          },
+          "factory_count": {
+            "minimum": 0,
+            "title": "Factory Count",
+            "type": "integer"
+          },
+          "runtime_seconds": {
+            "description": "Never null: a point with no stated runtime cannot be ranked, so it never reaches the frontier.",
+            "exclusiveMinimum": 0,
+            "title": "Runtime Seconds",
+            "type": "number"
+          },
+          "target_failure_probability": {
+            "exclusiveMaximum": 1,
+            "exclusiveMinimum": 0,
+            "title": "Target Failure Probability",
+            "type": "number"
+          },
+          "total_physical_qubits": {
+            "minimum": 0,
+            "title": "Total Physical Qubits",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "assumption_set",
+          "assumption_citation",
+          "target_failure_probability",
+          "factory_count",
+          "total_physical_qubits",
+          "runtime_seconds"
+        ],
+        "title": "FrontierPointSummary",
+        "type": "object"
+      },
+      "FrontierSummary": {
+        "additionalProperties": false,
+        "description": "The Pareto frontier of physical qubits vs runtime for this entry's\ncircuit, swept across the deployment's built-in assumption sets and\nfactory counts at the same failure target already used above.\n\n`points` may be empty for a Clifford-only circuit \u2014 it has no stated\nruntime under any assumption set, so nothing can be ranked, and an empty\nfrontier is the honest report of that rather than an omitted field.",
+        "properties": {
+          "considered": {
+            "description": "How many candidate points were swept before the Pareto filter kept these.",
+            "minimum": 0,
+            "title": "Considered",
+            "type": "integer"
+          },
+          "points": {
+            "items": {
+              "$ref": "#/components/schemas/FrontierPointSummary"
+            },
+            "title": "Points",
+            "type": "array"
+          }
+        },
+        "required": [
+          "considered"
+        ],
+        "title": "FrontierSummary",
+        "type": "object"
       },
       "GenerateCourseRequest": {
         "additionalProperties": false,
@@ -8235,6 +8330,68 @@
         "title": "SandboxResult",
         "type": "object"
       },
+      "ScalingCurvePointSummary": {
+        "additionalProperties": false,
+        "description": "One `n` on a scaling curve, and what it costs.",
+        "properties": {
+          "n": {
+            "minimum": 1,
+            "title": "N",
+            "type": "integer"
+          },
+          "runtime_seconds": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Runtime Seconds"
+          },
+          "total_physical_qubits": {
+            "minimum": 0,
+            "title": "Total Physical Qubits",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "n",
+          "total_physical_qubits"
+        ],
+        "title": "ScalingCurvePointSummary",
+        "type": "object"
+      },
+      "ScalingCurveSummary": {
+        "additionalProperties": false,
+        "description": "The estimate at a series of problem sizes, for a workload whose\nlogical cost is a *stated* function of a problem parameter \u2014 see\n`packages/py/estimation/src/majorana_estimation/scaling.py`. Never\nfabricated: this is null until an Atlas record states an explicit\n`n`-dependence for this entry's algorithm, which none currently does.",
+        "properties": {
+          "parameter_name": {
+            "title": "Parameter Name",
+            "type": "string"
+          },
+          "points": {
+            "items": {
+              "$ref": "#/components/schemas/ScalingCurvePointSummary"
+            },
+            "title": "Points",
+            "type": "array"
+          },
+          "source": {
+            "description": "Where the n-dependence comes from \u2014 a paper or Atlas record, never derived here.",
+            "title": "Source",
+            "type": "string"
+          }
+        },
+        "required": [
+          "parameter_name",
+          "source"
+        ],
+        "title": "ScalingCurveSummary",
+        "type": "object"
+      },
       "Scope": {
         "additionalProperties": false,
         "properties": {
@@ -9932,7 +10089,7 @@
   "info": {
     "description": "Cross-boundary types only; API paths are owned by services/api.",
     "title": "majorana-contracts",
-    "version": "2.20.0"
+    "version": "2.21.0"
   },
   "openapi": "3.1.0",
   "paths": {}

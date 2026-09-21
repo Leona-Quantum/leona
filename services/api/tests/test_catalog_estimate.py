@@ -633,3 +633,109 @@ def test_a_span_that_runs_backwards_is_refused_rather_than_rendered():
     }
     with pytest.raises(ValidationError):
         CatalogEntryEstimate(**mislabelled)
+
+
+# --- the frontier (proposal 4) -----------------------------------------------
+
+
+def test_frontier_is_present_only_when_there_is_a_cost():
+    """Same present-iff-priced rule as every other layer (E4's own invariant,
+    now extended to the frontier by CatalogEntryEstimate's own validator)."""
+    bell = estimate_for_record(_record(_gate("h", 0), _gate("cx", 0, 1)), "bell", ASSUMPTIONS)
+    assert bell.frontier is not None
+
+    no_circuit = estimate_for_record(None, "nope", ASSUMPTIONS)
+    assert no_circuit.frontier is None
+
+    refused = estimate_for_record(_record(_gate("wibble", 0)), "odd", ASSUMPTIONS)
+    assert refused.frontier is None
+
+
+def test_frontier_is_empty_but_present_for_a_clifford_only_circuit():
+    """No point has a stated runtime under any set, so nothing can be ranked —
+    an empty list is the honest report of that, not an omitted field."""
+    bell = estimate_for_record(_record(_gate("h", 0), _gate("cx", 0, 1)), "bell", ASSUMPTIONS)
+    assert bell.frontier.points == []
+    assert bell.frontier.considered >= 1
+
+
+def test_frontier_contains_the_headline_and_smallest_machine_as_its_own_points():
+    """The flagship pair this file already pins (836,800 @ 346 factories and
+    8,800 @ 1 factory) must both actually be on the frontier this endpoint
+    now also serves -- not just individually computable via `factory_count`.
+
+    Filtered by `ASSUMPTIONS.identity`, not the bare `GIDNEY_2025.identity`:
+    `ASSUMPTIONS` carries the file's default epsilon
+    (`gidney-2025@v2+eps=1e-06`), and the frontier sweeps the exact
+    assumptions object it was asked to price under -- see
+    `test_frontier_sweeps_the_requested_precision_not_only_the_bare_registry_entry`.
+    """
+    flagship = next(
+        (r for r in _manifest_records() if r.get("slug") == "benchmark-hea-rzry-cz-16q"),
+        None,
+    )
+    assert flagship is not None, "the corpus entry this pins is gone; re-pin, do not delete"
+
+    result = estimate_for_record(flagship, "benchmark-hea-rzry-cz-16q", ASSUMPTIONS)
+    points_by_count = {
+        p.factory_count: p
+        for p in result.frontier.points
+        if p.assumption_set == ASSUMPTIONS.identity
+    }
+    assert points_by_count[346].total_physical_qubits == 836_800
+    assert points_by_count[1].total_physical_qubits == 8_800
+    # Monotonic trade: more factories, more qubits, less time -- every point
+    # in between the two pinned ones must sit on the same curve.
+    ordered = sorted(points_by_count)
+    for earlier, later in zip(ordered, ordered[1:]):
+        assert (
+            points_by_count[earlier].total_physical_qubits
+            < points_by_count[later].total_physical_qubits
+        )
+        assert points_by_count[earlier].runtime_seconds > points_by_count[later].runtime_seconds
+
+
+def test_frontier_may_exclude_a_dominated_assumption_set_entirely():
+    """A real, checked finding for this flagship circuit: gidney-2025 beats
+    composed-trapped-ion on both axes at every sampled factory count, so the
+    trapped-ion side contributes zero points -- `considered` (24, both sets
+    sampled) is larger than `len(points)` (12, gidney-2025 only). This is not
+    a bug to fix; a frontier that always shows every set would be hiding
+    exactly the comparison it exists to make."""
+    flagship = next(
+        (r for r in _manifest_records() if r.get("slug") == "benchmark-hea-rzry-cz-16q"),
+        None,
+    )
+    result = estimate_for_record(flagship, "benchmark-hea-rzry-cz-16q", ASSUMPTIONS)
+
+    identities = {p.assumption_set for p in result.frontier.points}
+    assert identities == {ASSUMPTIONS.identity}
+    assert result.frontier.considered > len(result.frontier.points)
+
+
+def test_every_frontier_point_carries_a_nonempty_citation():
+    """`assumption_citation` equals `GIDNEY_2025.citation` even though the
+    point's own `assumption_set` is `ASSUMPTIONS.identity` (eps-suffixed):
+    `AssumptionSet.citation` names the sourced physical constants, which do
+    not depend on the synthesis precision -- only `identity` does."""
+    flagship = next(
+        (r for r in _manifest_records() if r.get("slug") == "benchmark-hea-rzry-cz-16q"),
+        None,
+    )
+    result = estimate_for_record(flagship, "benchmark-hea-rzry-cz-16q", ASSUMPTIONS)
+    assert result.frontier.points, "fixture should produce a non-empty frontier"
+    for point in result.frontier.points:
+        assert point.assumption_citation.strip()
+        assert point.assumption_citation == GIDNEY_2025.citation == ASSUMPTIONS.citation
+
+
+def test_frontier_sweeps_the_requested_precision_not_only_the_bare_registry_entry():
+    """The primary assumptions (carrying whatever epsilon was requested) is
+    swept in place of its bare registry entry, so the frontier's point for
+    this hardware matches the headline figure exactly -- same identity."""
+    circuit = _record(_gate("ry", 0, param="0.3"))
+    result = estimate_for_record(circuit, "ansatz", ASSUMPTIONS)
+
+    identities = {p.assumption_set for p in result.frontier.points}
+    assert ASSUMPTIONS.identity in identities
+    assert GIDNEY_2025.identity not in identities  # the bare, eps-less identity is not used
