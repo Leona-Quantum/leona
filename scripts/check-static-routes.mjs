@@ -24,10 +24,12 @@
  * ## What it does and does not prove
  *
  * It proves these routes were PRERENDERED by `next build`. It does not prove
- * the CDN serves them from the edge — that needs `x-vercel-cache: HIT` on a
- * repeat request against a real deployment, and no build artefact can stand in
- * for it. Prerendering is necessary and not sufficient; this catches the
- * regression that makes the sufficient half impossible.
+ * the CDN serves them from the edge — that needs `cf-cache-status: HIT` (was
+ * `x-vercel-cache: HIT` before Vercel was retired as a host, ADR-0033; see
+ * `check-live-repository-cache.mjs`, which reads both) on a repeat request
+ * against a real deployment, and no build artefact can stand in for it.
+ * Prerendering is necessary and not sufficient; this catches the regression
+ * that makes the sufficient half impossible.
  *
  * ## Usage
  *
@@ -77,7 +79,7 @@ const LOCALE_ROUTES = ["", "/about", "/contact", "/pricing", "/privacy", "/terms
  * with JavaScript off — and Next opts any page reading `searchParams` into
  * request-time rendering. They cannot prerender, so requiring them here would
  * be requiring the build to do something the framework forbids. They are
- * cached in front of the render instead, by `Vercel-CDN-Cache-Control` in
+ * cached in front of the render instead, by `CDN-Cache-Control` in
  * `apps/web/next.config.ts`, and `public-revalidate.test.ts` is what asserts
  * that header still covers them.
  *
