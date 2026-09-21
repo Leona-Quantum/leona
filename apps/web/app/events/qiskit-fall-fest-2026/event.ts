@@ -7,7 +7,7 @@ export const event = {
   path: "/events/qiskit-fall-fest-2026",
   registrationUrl: "https://forms.gle/Fir3TT1umiuWGnGu9" as string | null,
   contactEmail: "rei.watanabe@keio.jp",
-  venueDetails: null as string | null,
+  venueName: "日吉協生館２階 AICラウンジ" as const,
   venueMapUrl: null as string | null,
   organizers: ["慶應義塾大学", "IBM Quantum"],
   organizerNames: ["鈴木類", "渡邉黎"],

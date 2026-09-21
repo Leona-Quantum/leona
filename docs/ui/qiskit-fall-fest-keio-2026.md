@@ -20,10 +20,12 @@ and production merge in this conversation on 2026-09-08.
 
 ## Content and registration
 
-October 17–18, 2026; Keio AIC; in person; beginners welcome; planned capacity 40–50.
+October 17–18, 2026; AIC Lounge, 2F, Kyoseikan, Hiyoshi; in person;
+beginners welcome; planned capacity 40–50.
 Attendance is free, as stated in the owner-supplied registration form. The five
-speakers are marked planned and the supplied talk title provisional. Campus,
-room, map, and detailed PC preparation remain explicitly pending.
+speakers are marked planned and the supplied talk title provisional. The venue
+is confirmed as 日吉協生館２階 AICラウンジ. Directions, map, and detailed PC
+preparation remain explicitly pending.
 The Code of Conduct is final at the owner's request. Contact and conduct reports:
 `rei.watanabe@keio.jp`.
 
