@@ -314,6 +314,21 @@ export const STAGE_VALUES = [
   "export",
 ] as const;
 
+/** SynthesisConnectivity — 4 members. */
+export const SYNTHESIS_CONNECTIVITY_VALUES = [
+  "all_to_all",
+  "line",
+  "grid",
+  "heavy_hex",
+] as const;
+
+/** SynthesisObjective — 3 members. */
+export const SYNTHESIS_OBJECTIVE_VALUES = [
+  "depth",
+  "two_qubit_count",
+  "t_count",
+] as const;
+
 /** TopLevelExecution — 3 members. */
 export const TOP_LEVEL_EXECUTION_VALUES = [
   "required",

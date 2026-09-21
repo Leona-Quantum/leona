@@ -120,7 +120,8 @@ else
 
    That reads the clipboard straight into Secret Manager: the key is never
    typed, echoed, pasted into a chat or written to a file. Creating a second key
-   does not disturb the one Vercel uses, so the rollback path keeps working.
+   does not disturb any existing one. (Vercel no longer serves the site; see
+   ADR-0033.)
 TXT
 fi
 

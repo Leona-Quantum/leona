@@ -58,6 +58,16 @@ EXPORTED = [
     models.CatalogProfileList,
     models.CircuitOptimizationRequest,
     models.CircuitOptimizationResult,
+    # Proposal 3 (targeted synthesis): a second, target-aware entry point into
+    # the same trusted compiler lane CircuitOptimizationRequest/Result serve —
+    # SynthesisRequest is the request body, SynthesisResult the assembled
+    # per-compiler-candidate answer also carried inside SynthesisResultEvent
+    # (hoisted automatically via the RunEvent union above).
+    models.SynthesisTarget,
+    models.SynthesisRequest,
+    models.SynthesisEquivalence,
+    models.SynthesisCandidate,
+    models.SynthesisResult,
     models.Run,
     models.Qapp,
     models.QappVersion,

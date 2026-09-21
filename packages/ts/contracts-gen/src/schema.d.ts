@@ -415,6 +415,11 @@ export interface components {
             distance: components["schemas"]["CodeDistanceSummary"] | null;
             /** @default null */
             footprint: components["schemas"]["FootprintSummary"] | null;
+            /**
+             * @description The qubits-vs-runtime Pareto frontier across the deployment's built-in assumption sets. Present exactly when `basis` carries a cost (may still have zero points, e.g. Clifford-only); null under NO_CIRCUIT/REFUSED, same as the other layers.
+             * @default null
+             */
+            frontier: components["schemas"]["FrontierSummary"] | null;
             /** @default null */
             logical: components["schemas"]["LogicalCostSummary"] | null;
             /** Notes */
@@ -427,6 +432,11 @@ export interface components {
             reason: string | null;
             /** @default null */
             runtime: components["schemas"]["RuntimeSummary"] | null;
+            /**
+             * @description The estimate at a series of problem sizes, only when this entry's Atlas record states an explicit n-dependence for its logical cost. Null otherwise — never fabricated by fitting or extrapolating a curve. No entry currently states one.
+             * @default null
+             */
+            scaling: components["schemas"]["ScalingCurveSummary"] | null;
             /** Slug */
             slug: string;
             /**
@@ -1871,6 +1881,56 @@ export interface components {
          * @enum {string}
          */
         Framework: "qiskit" | "pennylane" | "cirq" | "braket" | "qibo" | "qulacs";
+        /**
+         * FrontierPointSummary
+         * @description One non-dominated point on the qubits-vs-runtime trade.
+         *
+         *     Independently labelled with the assumption set that produced it, which
+         *     may differ from `CatalogEntryEstimate.assumptions` above — a frontier
+         *     compares choices *across* hardware and error-correction assumptions on
+         *     purpose (Azure's resource estimator does the same), and every point
+         *     carries enough to stand alone so a reader never has to guess which claim
+         *     it is. See `packages/py/estimation/src/majorana_estimation/frontier.py`.
+         */
+        FrontierPointSummary: {
+            /** Assumption Citation */
+            assumption_citation: string;
+            /**
+             * Assumption Set
+             * @description AssumptionSet.identity that produced this point, e.g. `gidney-2025@v2`.
+             */
+            assumption_set: string;
+            /** Factory Count */
+            factory_count: number;
+            /**
+             * Runtime Seconds
+             * @description Never null: a point with no stated runtime cannot be ranked, so it never reaches the frontier.
+             */
+            runtime_seconds: number;
+            /** Target Failure Probability */
+            target_failure_probability: number;
+            /** Total Physical Qubits */
+            total_physical_qubits: number;
+        };
+        /**
+         * FrontierSummary
+         * @description The Pareto frontier of physical qubits vs runtime for this entry's
+         *     circuit, swept across the deployment's built-in assumption sets and
+         *     factory counts at the same failure target already used above.
+         *
+         *     `points` may be empty for a Clifford-only circuit — it has no stated
+         *     runtime under any assumption set, so nothing can be ranked, and an empty
+         *     frontier is the honest report of that rather than an omitted field.
+         */
+        FrontierSummary: {
+            /**
+             * Considered
+             * @description How many candidate points were swept before the Pareto filter kept these.
+             */
+            considered: number;
+            /** Points */
+            points?: components["schemas"]["FrontierPointSummary"][];
+        };
         /**
          * GenerateCourseRequest
          * @description Which modules to turn into notebooks. `None` means every module that does
@@ -3650,6 +3710,11 @@ export interface components {
             /** Qubits */
             qubits: number;
             /**
+             * T Count
+             * @default null
+             */
+            t_count: number | null;
+            /**
              * Two Qubit Gate Count
              * @default null
              */
@@ -3997,7 +4062,7 @@ export interface components {
          * RunEvent
          * @description Discriminated union of all run event types (class name sets the schema id).
          */
-        RunEvent: components["schemas"]["RunQueued"] | components["schemas"]["RunStarted"] | components["schemas"]["RunModeResolved"] | components["schemas"]["StageStarted"] | components["schemas"]["StageFinished"] | components["schemas"]["PlanProduced"] | components["schemas"]["ResearchCompleted"] | components["schemas"]["LlmCall"] | components["schemas"]["LlmDelta"] | components["schemas"]["ChatDelta"] | components["schemas"]["ChatCompleted"] | components["schemas"]["ChatError"] | components["schemas"]["ConversationTitled"] | components["schemas"]["QappGenerated"] | components["schemas"]["NotebookGrades"] | components["schemas"]["CodeGenerated"] | components["schemas"]["ScreenResult"] | components["schemas"]["ResourceEstimateResult"] | components["schemas"]["CompilationResult"] | components["schemas"]["CodeFinalized"] | components["schemas"]["SandboxResult"] | components["schemas"]["VerificationResult"] | components["schemas"]["SemanticReviewRecorded"] | components["schemas"]["StrictVerificationRecorded"] | components["schemas"]["BaselineResult"] | components["schemas"]["ExportClassified"] | components["schemas"]["ArtifactSaved"] | components["schemas"]["RunAnalysis"] | components["schemas"]["RunDiagnosed"] | components["schemas"]["RunRestarted"] | components["schemas"]["RunBestEffort"] | components["schemas"]["RunErrorEvent"] | components["schemas"]["RunFinished"];
+        RunEvent: components["schemas"]["RunQueued"] | components["schemas"]["RunStarted"] | components["schemas"]["RunModeResolved"] | components["schemas"]["StageStarted"] | components["schemas"]["StageFinished"] | components["schemas"]["PlanProduced"] | components["schemas"]["ResearchCompleted"] | components["schemas"]["LlmCall"] | components["schemas"]["LlmDelta"] | components["schemas"]["ChatDelta"] | components["schemas"]["ChatCompleted"] | components["schemas"]["ChatError"] | components["schemas"]["ConversationTitled"] | components["schemas"]["QappGenerated"] | components["schemas"]["NotebookGrades"] | components["schemas"]["CodeGenerated"] | components["schemas"]["ScreenResult"] | components["schemas"]["ResourceEstimateResult"] | components["schemas"]["CompilationResult"] | components["schemas"]["SynthesisResultEvent"] | components["schemas"]["CodeFinalized"] | components["schemas"]["SandboxResult"] | components["schemas"]["VerificationResult"] | components["schemas"]["SemanticReviewRecorded"] | components["schemas"]["StrictVerificationRecorded"] | components["schemas"]["BaselineResult"] | components["schemas"]["ExportClassified"] | components["schemas"]["ArtifactSaved"] | components["schemas"]["RunAnalysis"] | components["schemas"]["RunDiagnosed"] | components["schemas"]["RunRestarted"] | components["schemas"]["RunBestEffort"] | components["schemas"]["RunErrorEvent"] | components["schemas"]["RunFinished"];
         /** RunFinished */
         RunFinished: {
             /** @default null */
@@ -4259,6 +4324,40 @@ export interface components {
              * @enum {string}
              */
             type: "sandbox.result";
+        };
+        /**
+         * ScalingCurvePointSummary
+         * @description One `n` on a scaling curve, and what it costs.
+         */
+        ScalingCurvePointSummary: {
+            /** N */
+            n: number;
+            /**
+             * Runtime Seconds
+             * @default null
+             */
+            runtime_seconds: number | null;
+            /** Total Physical Qubits */
+            total_physical_qubits: number;
+        };
+        /**
+         * ScalingCurveSummary
+         * @description The estimate at a series of problem sizes, for a workload whose
+         *     logical cost is a *stated* function of a problem parameter — see
+         *     `packages/py/estimation/src/majorana_estimation/scaling.py`. Never
+         *     fabricated: this is null until an Atlas record states an explicit
+         *     `n`-dependence for this entry's algorithm, which none currently does.
+         */
+        ScalingCurveSummary: {
+            /** Parameter Name */
+            parameter_name: string;
+            /** Points */
+            points?: components["schemas"]["ScalingCurvePointSummary"][];
+            /**
+             * Source
+             * @description Where the n-dependence comes from — a paper or Atlas record, never derived here.
+             */
+            source: string;
         };
         /** Scope */
         Scope: {
@@ -4689,6 +4788,200 @@ export interface components {
              * @description Key extracted from the run's result dict, e.g. ground_state_energy_Ha
              */
             primary_metric: string;
+        };
+        /**
+         * SynthesisCandidate
+         * @description One compiler's outcome for a targeted-synthesis request.
+         *
+         *     A compiler that cannot represent the target, or that fails, is a
+         *     candidate too — ``status`` says which, and ``reason`` says why. Nothing
+         *     is silently dropped from the list a caller sees.
+         */
+        SynthesisCandidate: {
+            /** @default null */
+            after: components["schemas"]["ResourceMetrics"] | null;
+            /** @default null */
+            before: components["schemas"]["ResourceMetrics"] | null;
+            compiler: components["schemas"]["CircuitCompiler"];
+            /**
+             * Compiler Version
+             * @default null
+             */
+            compiler_version: string | null;
+            /** @default null */
+            equivalence: components["schemas"]["SynthesisEquivalence"] | null;
+            /**
+             * Operations
+             * @default null
+             */
+            operations: components["schemas"]["CircuitOptimizationOperation"][] | null;
+            /**
+             * Reason
+             * @default null
+             */
+            reason: string | null;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "unsupported" | "failed" | "succeeded";
+            /** Warnings */
+            warnings?: string[];
+        };
+        /**
+         * SynthesisConnectivity
+         * @description Qubit connectivity a targeted-synthesis candidate is routed onto.
+         *
+         *     ``ALL_TO_ALL`` is no constraint at all — every compiler's existing,
+         *     unrouted output already satisfies it. The other three are coupling-map
+         *     shapes a candidate's two-qubit gates must respect after compilation;
+         *     Studio's own IR fixes the basis (the closed
+         *     :class:`CircuitOptimizationGate` set), so connectivity is the only axis
+         *     a "target" adds.
+         * @enum {string}
+         */
+        SynthesisConnectivity: "all_to_all" | "line" | "grid" | "heavy_hex";
+        /**
+         * SynthesisEquivalence
+         * @description The independent equivalence verdict for one candidate, from
+         *     ``majorana_verification`` — never the compiler's own claim.
+         *
+         *     ``checked`` is false exactly when the circuit was too wide for the
+         *     method below to run; a caller must not read ``equivalent`` in that case
+         *     (it is ``None``), and must never treat an unchecked candidate as
+         *     equivalent.
+         */
+        SynthesisEquivalence: {
+            /** Checked */
+            checked: boolean;
+            /** Detail */
+            detail: string;
+            /**
+             * Equivalent
+             * @default null
+             */
+            equivalent: boolean | null;
+            /**
+             * Method
+             * @default exact_unitary_statevector
+             * @constant
+             */
+            method: "exact_unitary_statevector";
+            /** Width Limit */
+            width_limit: number;
+        };
+        /**
+         * SynthesisObjective
+         * @description What a targeted-synthesis run ranks candidates by.
+         * @enum {string}
+         */
+        SynthesisObjective: "depth" | "two_qubit_count" | "t_count";
+        /**
+         * SynthesisRequest
+         * @description Studio's closed circuit IR plus a target and an objective, handed to
+         *     every compiler in the lane that supports the resolved connectivity.
+         *
+         *     Same closed, declarative, code-free IR as :class:`CircuitOptimizationRequest`
+         *     — this is a second entry point into the same trusted Worker compiler lane,
+         *     not a new execution surface.
+         */
+        SynthesisRequest: {
+            objective: components["schemas"]["SynthesisObjective"];
+            /** Operations */
+            operations: components["schemas"]["CircuitOptimizationOperation"][];
+            /** Qubit Count */
+            qubit_count: number;
+            target: components["schemas"]["SynthesisTarget"];
+        };
+        /**
+         * SynthesisResult
+         * @description The whole targeted-synthesis answer: every compiler the lane tried,
+         *     each checked for equivalence, none dropped.
+         *
+         *     Carried inside ``SynthesisResultEvent`` (``majorana_contracts.events``),
+         *     the run-event analogue of ``compilation.result`` for this second entry
+         *     point into the compiler lane.
+         */
+        SynthesisResult: {
+            /** @default null */
+            best_candidate_compiler: components["schemas"]["CircuitCompiler"] | null;
+            /** Candidates */
+            candidates: components["schemas"]["SynthesisCandidate"][];
+            /** Input Fingerprint */
+            input_fingerprint: string;
+            objective: components["schemas"]["SynthesisObjective"];
+            /** Qubit Count */
+            qubit_count: number;
+            resolved_connectivity: components["schemas"]["SynthesisConnectivity"];
+            /** Resolved Note */
+            resolved_note: string;
+            target: components["schemas"]["SynthesisTarget"];
+        };
+        /**
+         * SynthesisResultEvent
+         * @description Every compiler the targeted-synthesis lane tried for one request, each
+         *     independently checked for equivalence. The second, target-aware entry
+         *     point into the same trusted compiler lane ``compilation.result`` reports
+         *     on; unlike that event this one always carries every attempted compiler,
+         *     not one selected candidate.
+         *
+         *     ``result`` is populated exactly when ``accepted`` is true — a
+         *     request-level refusal (an unrecognised device, a malformed target) has
+         *     no candidates to report, only ``reason``.
+         */
+        SynthesisResultEvent: {
+            /** Accepted */
+            accepted: boolean;
+            /**
+             * Reason
+             * @default null
+             */
+            reason: string | null;
+            /** @default null */
+            result: components["schemas"]["SynthesisResult"] | null;
+            /**
+             * Run Id
+             * Format: uuid
+             */
+            run_id: string;
+            /**
+             * Seq
+             * @description Unique per run; powers replay and SSE Last-Event-ID
+             */
+            seq: number;
+            /**
+             * Ts
+             * Format: date-time
+             */
+            ts: string;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "synthesis.result";
+        };
+        /**
+         * SynthesisTarget
+         * @description What a targeted-synthesis candidate is compiled for: a device or a
+         *     generic connectivity, never both.
+         *
+         *     A known ``device_id`` is resolved server-side to a connectivity class
+         *     from its published technology (trapped-ion and neutral-atom devices are
+         *     all-to-all; superconducting devices resolve to ``heavy_hex`` for IBM's
+         *     own public architecture and to ``grid`` elsewhere, since this repo
+         *     carries no per-device coupling map — ``SynthesisResult.resolved_note``
+         *     says which). Studio's IR is a closed 13-gate set already applied by
+         *     every compiler path in this lane, so there is no separate basis-gate
+         *     choice here.
+         */
+        SynthesisTarget: {
+            /** @default null */
+            connectivity: components["schemas"]["SynthesisConnectivity"] | null;
+            /**
+             * Device Id
+             * @default null
+             */
+            device_id: string | null;
         };
         /**
          * TextAnswer

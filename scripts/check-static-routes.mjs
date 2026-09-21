@@ -24,10 +24,12 @@
  * ## What it does and does not prove
  *
  * It proves these routes were PRERENDERED by `next build`. It does not prove
- * the CDN serves them from the edge — that needs `x-vercel-cache: HIT` on a
- * repeat request against a real deployment, and no build artefact can stand in
- * for it. Prerendering is necessary and not sufficient; this catches the
- * regression that makes the sufficient half impossible.
+ * the CDN serves them from the edge — that needs `cf-cache-status: HIT` (was
+ * `x-vercel-cache: HIT` before Vercel was retired as a host, ADR-0033; see
+ * `check-live-repository-cache.mjs`, which reads both) on a repeat request
+ * against a real deployment, and no build artefact can stand in for it.
+ * Prerendering is necessary and not sufficient; this catches the regression
+ * that makes the sufficient half impossible.
  *
  * ## Usage
  *
@@ -77,13 +79,18 @@ const LOCALE_ROUTES = ["", "/about", "/contact", "/pricing", "/privacy", "/terms
  * with JavaScript off — and Next opts any page reading `searchParams` into
  * request-time rendering. They cannot prerender, so requiring them here would
  * be requiring the build to do something the framework forbids. They are
- * cached in front of the render instead, by `Vercel-CDN-Cache-Control` in
+ * cached in front of the render instead, by `CDN-Cache-Control` in
  * `apps/web/next.config.ts`, and `public-revalidate.test.ts` is what asserts
  * that header still covers them.
  *
  * `/repository/claims` and `/repository/papers` read no search parameters and
  * fetch nothing they don't already fetch statically, so both are routes this
  * check can speak for.
+ *
+ * `/repository/find` (proposal 2, the method finder, owner-approved
+ * 2026-09-20) joined them on the same terms: every filter — problem area,
+ * qubit/depth limits, hardware era — is client-side React state, so the page
+ * itself reads no `searchParams` and calls no Dynamic API.
  *
  * `/repository/papers/[id]` also prerenders — same recipe, one static page per
  * paper per locale — and unlike the entries above it cannot be named as a
@@ -92,7 +99,7 @@ const LOCALE_ROUTES = ["", "/about", "/contact", "/pricing", "/privacy", "/terms
  * dynamic route needs one CONCRETE example instead, in `REQUIRED_STATIC_ROUTES`
  * directly, below — see the paper picked there and why.
  */
-const LOCALE_ATLAS_ROUTES = ["/repository/claims", "/repository/papers"];
+const LOCALE_ATLAS_ROUTES = ["/repository/claims", "/repository/find", "/repository/papers"];
 
 export const REQUIRED_STATIC_ROUTES = [
   { route: "/_not-found", why: "the boundary in every route's tree; dynamic here makes the whole app dynamic" },

@@ -561,12 +561,14 @@ def test_the_second_set_is_composed_and_says_so_per_value():
         "routing_factor",
         "factory_footprint_logical",
         "factory_cycles_per_state",
+        "rotation_t_coefficient",
     ]
     for name in attributed:
         assert name in rendered, f"{name}'s source is undisclosed to the reader"
-    # Both papers reachable from the page, not just the primary one.
+    # All three papers reachable from the page, not just the primary one.
     assert "arXiv:2108.12371" in rendered
     assert "arXiv:1808.02892" in rendered
+    assert "arXiv:1403.2975" in rendered
 
 
 def test_the_two_builtin_sets_are_a_pair_the_ordering_refusal_can_refuse():
@@ -686,11 +688,19 @@ def test_gidney_states_every_value_this_set_holds():
     assert GIDNEY_2025.working_allowances == ()
 
     rendered = GIDNEY_2025.citation
-    for name in ("threshold", "logical_error_prefactor", "routing_factor"):
+    for name in (
+        "threshold",
+        "logical_error_prefactor",
+        "routing_factor",
+        "rotation_t_coefficient",
+    ):
         assert name in rendered, f"{name}'s source is undisclosed to the reader"
     # The suppression law is Fowler and Gidney, not the paper the set is named
     # for — which is the sort of thing only reading both turns up.
     assert "arXiv:1808.06709" in rendered
+    # rotation_t_coefficient is Ross and Selinger, not this paper either — it
+    # was disclosed only in a field docstring until 2026-09-21.
+    assert "arXiv:1403.2975" in rendered
 
     # The departure: the paper derives 114.7 rounds per CCZ state and then
     # rounds it to 150 for slack, carrying 150 forward. This set takes the

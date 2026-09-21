@@ -2,56 +2,78 @@
 
 ## PR and merge integration
 
-The existing `ci` workflow runs the news Node tests through the pnpm workspace. Those tests build the actual Vercel function in a temporary directory and exercise its HTTP handler, assets, upstream outage handling and public-only boundary. The `db` job creates a separate `leona_news_test` database, migrates it and runs the real PostgreSQL news integration tests. The existing migration job also tests the entire migration history up→down→up.
+The existing `ci` workflow runs the news Node tests through the pnpm workspace. Those tests exercise the actual HTTP handler (`server.mjs`'s `createNewsHandler`) directly, assets, upstream outage handling and public-only boundary — no build step is involved, since the renderer's only deployment target is now the container image built from `apps/news/Dockerfile`. The `db` job creates a separate `leona_news_test` database, migrates it and runs the real PostgreSQL news integration tests. The existing migration job also tests the entire migration history up→down→up.
 
 The existing `deploy` workflow on `dev` validates `infra/news.json` before migrations, applies migration 0061 through its normal Alembic step, and passes reviewed news settings into the existing API and Worker revisions using `--update-env-vars`. Before shifting API traffic, it checks that public news returns 404 when disabled or a valid listing when enabled. Existing API/Worker rollout and recovery checks still apply. No separate news queue or DB deployment is necessary.
 
 `infra/news.json` owns the news feature flags, newsroom/editor IDs, model names and request limits. Initial flags are all false. To enable draft generation, fill in an existing workspace UUID and set `enabled=true` in a reviewed PR. Scheduling additionally needs an existing owner/admin user UUID. Enable `public`, `schedule_enabled` and `auto_publish` separately as launch checks pass. The deployment overwrites manual Cloud Run changes to these managed settings on the next merge; emergency console changes must also be recorded in the JSON before another deploy.
 
-One-time credential setup (owner action): store the OpenAI key in Google Secret Manager, authorize the existing Worker's runtime service account to read that secret, and set the GitHub repository **variable** `LEONA_NEWS_OPENAI_SECRET_VERSION` to its name and numeric version, for example `LEONA_NEWS_OPENAI_API_KEY:1`. This variable contains a reference, never the key. Enabled configurations reject missing references or `:latest`. The workflow binds it to Worker `LEONA_NEWS_OPENAI_API_KEY` — deliberately not the existing Worker `OPENAI_API_KEY`, which the core product's own LLM calls already use and which this must never overwrite — preserving other existing secret bindings. API and Vercel do not receive it. The local `.env` is neither uploaded nor automatically synchronized. No secret has been created or uploaded by this work. News generation requires `LEONA_NEWS_OPENAI_API_KEY` explicitly and never falls back to the core `OPENAI_API_KEY`. Keep the core key unchanged. If a local news environment file used the old variable name, register the news key under `LEONA_NEWS_OPENAI_API_KEY` before running the Worker locally; deployment does not rename or synchronize local credentials.
+One-time credential setup (owner action): store the OpenAI key in Google Secret Manager, authorize the existing Worker's runtime service account to read that secret, and set the GitHub repository **variable** `LEONA_NEWS_OPENAI_SECRET_VERSION` to its name and numeric version, for example `LEONA_NEWS_OPENAI_API_KEY:1`. This variable contains a reference, never the key. Enabled configurations reject missing references or `:latest`. The workflow binds it to Worker `LEONA_NEWS_OPENAI_API_KEY` — deliberately not the existing Worker `OPENAI_API_KEY`, which the core product's own LLM calls already use and which this must never overwrite — preserving other existing secret bindings. Neither the API nor the renderer receive it. The local `.env` is neither uploaded nor automatically synchronized. No secret has been created or uploaded by this work. News generation requires `LEONA_NEWS_OPENAI_API_KEY` explicitly and never falls back to the core `OPENAI_API_KEY`. Keep the core key unchanged. If a local news environment file used the old variable name, register the news key under `LEONA_NEWS_OPENAI_API_KEY` before running the Worker locally; deployment does not rename or synchronize local credentials.
 
-## One-time Vercel setup
+## Deployment plan: Cloud Run (built, dormant)
 
-Create a separate project named `leona-news` in the existing Vercel team, connected to the **same GitHub repository**:
+The renderer was originally planned as a separate Vercel project; Vercel is
+retired as a host for the rest of this product (ADR-0033) and this app never
+had a live Vercel project to begin with, so `.github/workflows/deploy-news.yml`
+and `cloudbuild.news.yaml` build and deploy it on Cloud Run, in the same
+dark-revision → smoke-test → shift-traffic → read-back shape
+`docs/runbooks/web-cloud-run.md` and `deploy-web.yml` use for the main site.
 
-| Setting | Value |
-|---|---|
-| Root Directory | `apps/news` |
-| Framework Preset | Other |
-| Production Branch | `dev` (set explicitly; do not use `prod`) |
-| Node.js | 24.x |
-| Build Command | from this folder's `vercel.json`: `node build-vercel.mjs` |
-| Install Command | from `vercel.json`; no dependencies to install |
-| Output Directory | leave the dashboard override disabled; Build Output API is used |
-| `LEONA_NEWS_API_URL` | existing production API HTTPS origin |
-| `SITE_URL` | `https://news.leonaquantum.com` |
+**The workflow exists but does nothing on an ordinary merge.** It is a clean
+no-op — one line saying why it skipped — unless `infra/news.json`'s
+`renderer_deploy` is `true` (default `false`), and it refuses to let that flag
+go true while `site_url` is still the placeholder it ships with
+(`scripts/news-deploy-config.py`). Nobody has to remember not to deploy this;
+the flag is the whole gate. The operator sequence is:
 
-The build writes `.vercel/output` using an explicit file allowlist; `.env` and local artifacts are excluded. The function always uses published mode, even if someone supplies an editor/preview mode environment variable. It never forwards an admin token. Preview deployments use `X-Robots-Tag: noindex, nofollow`; also keep Vercel's preview deployment protection enabled. Preview points to published API data only, or to an explicitly configured test API origin.
+1. **Set the flags.** In a reviewed PR, set `infra/news.json`'s `site_url` to
+   the real hostname (see step 2) and `renderer_deploy` to `true`. Merging
+   builds the image, deploys it dark, smoke-tests `/healthz` and `/readyz`,
+   and shifts traffic — but the service stays `--no-allow-unauthenticated`
+   throughout, so "deployed" still does not mean "reachable by a visitor".
 
-After this initial project connection, Git integration updates the news renderer on commits to `dev`, while the existing GitHub workflow updates API/Worker. These are independent deployments, not an atomic release. First launch must wait for the backend deploy and the renderer's `/readyz` to pass before adding the custom domain. Later API changes must remain backward compatible with the preceding renderer revision; use additive migrations and separate removal releases. If a backend deploy fails, the renderer returns an honest unavailable state, never sample news. Revert/promote renderer revisions through Vercel and follow the existing backend recovery runbook independently.
+2. **Choose the hostname — OWNER DECISION, not made here.** `leonaquantum.com`
+   now redirects to `leonaqt.com` (2026-09-20 cutover), so the old plan of
+   `news.leonaquantum.com` is stale; whatever replaces it has to live under a
+   domain that still resolves. Two options, pick one — do not build both:
 
-## DNS: Cloudflare → Vercel
+   - **`news.leonaqt.com` via Cloudflare** — a `gcloud run domain-mappings
+     create --service=majorana-news --domain=news.leonaqt.com
+     --region=us-west1` (or a route added to the existing load balancer,
+     `infra/web-lb/`, if the owner wants the same Cloud Armor/origin-lock
+     posture `leonaqt.com` has), then a matching Cloudflare DNS record for
+     `news.leonaqt.com` — a CNAME at the domain mapping's target, or an
+     A/AAAA record at the load balancer's fixed address
+     (`docs/runbooks/cloudflare-origin-certificate.md` has the exact steps
+     for the latter).
+   - **A `leonaqt.com/news` path** through the existing load balancer
+     (`infra/web-lb/`), added as a path-matched backend service alongside
+     `majorana-web`'s. No new DNS record; the existing certificate and
+     origin lock already cover it.
 
-Read-only DNS lookup on 2026-09-14 returned `julian.ns.cloudflare.com` and `lisa.ns.cloudflare.com` for `leonaquantum.com`. No public A or CNAME answer for `news.leonaquantum.com` was returned. This does not prove that the Cloudflare dashboard has no pending or differently typed records; inspect its `news` entries before editing.
+   Record the choice in this file once made; `infra/news.json`'s `site_url`
+   is the renderer's own record of it (`SITE_URL` below must match whatever
+   is decided, in both places).
 
-1. Once the new renderer passes `/readyz`, add **news.leonaquantum.com** under the new Vercel project's Settings → Domains.
-2. Copy the exact CNAME destination shown there. It is project-specific; do not substitute a remembered generic Vercel hostname.
-3. In Cloudflare → `leonaquantum.com` → DNS → Records, add:
+3. **DNS**, once steps 1–2 are both done: only the Cloudflare-record work the
+   chosen option above actually needs — none at all for the path option.
 
-   | Field | Value |
-   |---|---|
-   | Type | CNAME |
-   | Name | `news` |
-   | Target | exact value from Vercel Domains |
-   | Proxy status | DNS only (gray cloud) |
-   | TTL | Auto |
+The `gcloud builds submit` / `gcloud run deploy` commands `deploy-news.yml`
+runs are exactly what a by-hand debug of a single revision would use; see
+that workflow file for the flags (image tag, sizing from `infra/fleet.env`,
+env vars). No OpenAI key, admin bearer or DB credential belongs on this
+service — see "Public renderer" below for the full variable list.
 
-4. If Vercel asks for ownership verification, also add its exact TXT name/value. Resolve any existing A/AAAA/CNAME for the **same news hostname** before adding a conflicting record. Preserve apex, `www`, email records and nameservers.
-5. Wait for Vercel to show valid configuration and an issued certificate. Check `https://news.leonaquantum.com/readyz`, article/citation/image pages, `/feed.xml` and `/sitemap.xml`. Confirm any old news URLs have agreed redirects before replacing an existing publication.
-
-The CNAME destination cannot be finalized until the Vercel project/domain has been created. A CNAME alone does not register the domain with Vercel. Existing Leona hosting does not need to be replaced to add this subdomain.
-
-References: [Vercel monorepos](https://vercel.com/docs/monorepos), [Git integration](https://vercel.com/docs/git), [Build Output API](https://vercel.com/docs/build-output-api/primitives), [custom domains](https://vercel.com/docs/domains/working-with-domains/add-a-domain), [Cloudflare DNS-only setup](https://vercel.com/kb/guide/migrate-to-vercel-from-cloudflare).
+After launch, first confirm the backend (existing API/Worker) is already
+serving news data and the renderer's own `/readyz` passes before attaching the
+chosen hostname — the ordering constraint is the same one the old Vercel plan
+named, only the mechanism changed. Later API changes must remain backward
+compatible with the preceding renderer revision; use additive migrations and
+separate removal releases. If a backend deploy fails, the renderer returns an
+honest unavailable state, never sample news. Revert/promote renderer revisions
+through Cloud Run's own revision traffic controls
+(`gcloud run services update-traffic`), the same mechanism `deploys.md` uses
+for the API and worker.
 
 ## Architecture and repository findings
 
@@ -92,21 +114,29 @@ Edits preserve the source identities, record the previous document/review, remov
 
 ## Public renderer
 
-The primary deployment is a separate Vercel project described below. A container remains available for local or alternative hosting. Build with `docker build -t leona-news:<revision> apps/news`. The existing `services/api/Dockerfile` remains the API/Worker image; do not deploy the Node renderer in its place.
+The Cloud Run service described above, built from this folder's own
+`Dockerfile`, is the only deployment path — `deploy-news.yml` runs it once
+`infra/news.json`'s `renderer_deploy` is true. Build locally the same way CI
+or Cloud Build would: `docker build -t leona-news:<revision> apps/news`. The
+existing `services/api/Dockerfile` remains the API/Worker image; do not
+deploy the Node renderer in its place.
 
 Set only renderer variables in the public service:
 
 ```env
 LEONA_NEWS_MODE=published
 LEONA_NEWS_API_URL=https://YOUR_EXISTING_API_ORIGIN
-SITE_URL=https://news.leonaquantum.com
+SITE_URL=<the hostname chosen under "Deployment plan" step 2 — an owner decision, not yet made>
 HOST=0.0.0.0
 PORT=8080
 ```
 
+`SITE_URL` above is `deploy-news.yml`'s own env var and comes straight from
+`infra/news.json`'s `site_url` field — the two are never set independently.
+
 No OpenAI key, admin bearer or DB credential is needed by this service. All API requests are server-to-server. Published article images are proxied through the API and cannot reveal draft images. Responses currently use `no-store`, including media, to make withdrawal immediate; do not add a CDN cache without an explicit purge/invalidation design. `/healthz` is process liveness; `/readyz` checks the API/DB/public-news configuration.
 
-Enable `LEONA_NEWS_PUBLIC=true` on the API only when ready to serve approved articles. Attach `news.leonaquantum.com` to the new renderer using the actual DNS records supplied by its hosting service, and verify HTTPS. Preserve existing apex records and confirm how any older news URLs will be retained or redirected before switching an existing news host.
+Enable `LEONA_NEWS_PUBLIC=true` on the API only when ready to serve approved articles. Attach the chosen hostname (Deployment plan step 2 — `news.leonaqt.com` or a `leonaqt.com/news` path, owner decision) to the renderer using the actual DNS or load-balancer routing that option needs, and verify HTTPS. Preserve existing apex records and confirm how any older news URLs will be retained or redirected before switching an existing news host.
 
 The renderer provides canonical article URLs, RSS at `/feed.xml` (latest 50), and a sitemap at `/sitemap.xml` (latest 500). Older pages remain reachable through keyset pagination. Extend to sitemap indexes before the publication count materially exceeds 500. Search and category queries are bounded and executed in the API; error responses never fall back to sample articles. Development samples are only rendered in explicit `preview` mode.
 

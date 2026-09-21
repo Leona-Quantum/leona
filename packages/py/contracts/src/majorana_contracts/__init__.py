@@ -39,6 +39,8 @@ from .enums import (
     ShareRole,
     SourceKind,
     Stage,
+    SynthesisConnectivity,
+    SynthesisObjective,
     TopLevelExecution,
     UsageKind,
     CHAT_USAGE_ROLE,
@@ -87,6 +89,7 @@ from .events import (
     StageFinished,
     StageStarted,
     StrictVerificationRecorded,
+    SynthesisResultEvent,
     VerificationResult,
     run_event_adapter,
 )
@@ -176,6 +179,8 @@ from .models import (
     CodeDistanceSummary,
     CostOnSmallestMachine,
     FootprintSummary,
+    FrontierPointSummary,
+    FrontierSummary,
     LogicalCostSummary,
     Project,
     ProjectShare,
@@ -189,7 +194,14 @@ from .models import (
     ResourceMetrics,
     Run,
     RuntimeSummary,
+    ScalingCurvePointSummary,
+    ScalingCurveSummary,
     SharedProject,
+    SynthesisCandidate,
+    SynthesisEquivalence,
+    SynthesisRequest,
+    SynthesisResult,
+    SynthesisTarget,
     VerificationRecord,
     VerificationCheckSummary,
     VerificationSummary,
@@ -359,12 +371,28 @@ from .lifecycle import (
 # 2.19.0 payload still validates and an ungraded notebook behaves exactly as before.
 # The answer key never leaves the server — `for_learner()` strips it and
 # `leaks_answer_key()` asserts that it did.
-# 2.21.0: Proposal 6 (Qapps v2). Qapp.created_by_run_id becomes optional and gains
+# 2.21.0: CatalogEntryEstimate gains `frontier` (FrontierSummary — the
+# qubits-vs-runtime Pareto frontier across the deployment's built-in
+# assumption sets, proposal 4) and `scaling` (ScalingCurveSummary, null
+# until an Atlas record states an explicit n-dependence — none does yet).
+# Additive: both default to None, mirrored by the same present-iff-priced
+# rule the other estimate layers already follow, so a pre-2.21.0 client
+# reading an old response shape is unaffected.
+# 2.22.0: Targeted synthesis (proposal 3). ResourceMetrics gains `t_count` (optional,
+# defaults None — every existing payload still validates). New: SynthesisConnectivity,
+# SynthesisObjective, SynthesisTarget, SynthesisRequest, SynthesisEquivalence,
+# SynthesisCandidate, SynthesisResult, and the SynthesisResultEvent run event. A second,
+# target-aware entry point into the existing trusted compiler lane
+# (CircuitOptimizationRequest/Result are untouched): a client picks a device or a generic
+# connectivity plus an objective, every compiler in the lane is tried against it, and each
+# resulting candidate carries an independent equivalence verdict from majorana_verification
+# rather than the compiler's own claim. Purely additive.
+# 2.23.0: Proposal 6 (Qapps v2). Qapp.created_by_run_id becomes optional and gains
 # forked_from_qapp_id/forked_from_version_id (a fork has no originating run) —
 # additive/widening, and every existing Qapp still reports a non-null
 # created_by_run_id. QappRangeSmoke is unchanged. New route-local response shapes
 # (version history, activity, usage, rollback) are not contracts models.
-CONTRACTS_VERSION = "2.21.0"
+CONTRACTS_VERSION = "2.23.0"
 
 __all__ = [
     "TextAnswer",
@@ -406,6 +434,14 @@ __all__ = [
     "CircuitOptimizationOperation",
     "CircuitOptimizationRequest",
     "CircuitOptimizationResult",
+    "SynthesisConnectivity",
+    "SynthesisObjective",
+    "SynthesisTarget",
+    "SynthesisRequest",
+    "SynthesisEquivalence",
+    "SynthesisCandidate",
+    "SynthesisResult",
+    "SynthesisResultEvent",
     "CatalogEstimateSummary",
     "CatalogProvenance",
     "CodeDistanceSummary",
@@ -514,6 +550,8 @@ __all__ = [
     "Project",
     "ProjectShare",
     "FootprintSummary",
+    "FrontierPointSummary",
+    "FrontierSummary",
     "LogicalCostSummary",
     "PublicCatalogEntry",
     "PlannableVerificationMethod",
@@ -522,6 +560,8 @@ __all__ = [
     "QpuEstimateBasis",
     "ResourceEstimateBasis",
     "RuntimeSummary",
+    "ScalingCurvePointSummary",
+    "ScalingCurveSummary",
     "QpuProvider",
     "QpuRunRecord",
     "QpuRunStatus",

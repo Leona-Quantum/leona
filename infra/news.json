@@ -9,5 +9,7 @@
   "daily_batch_limit": 3,
   "interval_hours": 8,
   "model": "gpt-5.5",
-  "image_model": "gpt-image-2.5-flare"
+  "image_model": "gpt-image-2.5-flare",
+  "renderer_deploy": false,
+  "site_url": "https://REPLACE-WITH-NEWS-HOSTNAME.invalid"
 }

@@ -12,13 +12,10 @@ import { isPublicDemoEnabled } from "./public-demo.ts";
 const env = process.env as Record<string, string | undefined>;
 const KEYS = [
   "LEONA_DEPLOY_ENV",
-  "VERCEL_ENV",
   "NODE_ENV",
   "MAJORANA_PUBLIC_DEMO",
   "LEONA_GIT_COMMIT_SHA",
-  "VERCEL_GIT_COMMIT_SHA",
   "NEXT_PUBLIC_LEONA_GIT_COMMIT_SHA",
-  "NEXT_PUBLIC_VERCEL_GIT_COMMIT_SHA",
 ] as const;
 const ORIGINAL = new Map(KEYS.map((key) => [key as string, env[key]]));
 
@@ -38,34 +35,18 @@ afterEach(() => {
 });
 
 describe("deployEnv()", () => {
-  it("on Vercel (no LEONA_DEPLOY_ENV set), resolves to VERCEL_ENV unchanged — production", () => {
-    setEnv({ VERCEL_ENV: "production" });
+  it("resolves to LEONA_DEPLOY_ENV when set", () => {
+    setEnv({ LEONA_DEPLOY_ENV: "production" });
     assert.equal(deployEnv(), "production");
-  });
-
-  it("on Vercel, resolves to VERCEL_ENV unchanged — preview", () => {
-    setEnv({ VERCEL_ENV: "preview" });
+    setEnv({ LEONA_DEPLOY_ENV: "preview" });
     assert.equal(deployEnv(), "preview");
-  });
-
-  it("on Vercel, resolves to VERCEL_ENV unchanged — development", () => {
-    setEnv({ VERCEL_ENV: "development" });
+    setEnv({ LEONA_DEPLOY_ENV: "development" });
     assert.equal(deployEnv(), "development");
   });
 
-  it("with neither var set, resolves to undefined (a bare `next dev`/`next build`)", () => {
+  it("with the var unset, resolves to undefined (a bare `next dev`/`next build`)", () => {
     setEnv({});
     assert.equal(deployEnv(), undefined);
-  });
-
-  it("LEONA_DEPLOY_ENV overrides VERCEL_ENV when both are set", () => {
-    setEnv({ LEONA_DEPLOY_ENV: "preview", VERCEL_ENV: "production" });
-    assert.equal(deployEnv(), "preview");
-  });
-
-  it("LEONA_DEPLOY_ENV governs alone, with no VERCEL_ENV at all (Cloud Run)", () => {
-    setEnv({ LEONA_DEPLOY_ENV: "production" });
-    assert.equal(deployEnv(), "production");
   });
 });
 
@@ -84,34 +65,17 @@ describe("fail-closed: an unrecognised deploy env reads as neither preview nor d
     assert.equal(isPublicDemoEnabled(), false);
   });
 
-  it("stays off for an empty-string LEONA_DEPLOY_ENV rather than treating it as unset-and-fall-through", () => {
-    setEnv({ LEONA_DEPLOY_ENV: "", VERCEL_ENV: "preview", NODE_ENV: "production" });
-    // "" ?? x only falls through on null/undefined, never on the empty string,
-    // so an accidentally-empty var shadows a real VERCEL_ENV instead of
-    // deferring to it — and "" matches no allowlist entry either, so this
-    // still fails closed rather than opening anything.
+  it("stays off for an empty-string LEONA_DEPLOY_ENV rather than treating it as unset", () => {
+    setEnv({ LEONA_DEPLOY_ENV: "", NODE_ENV: "production" });
+    // "" matches no allowlist entry, so this fails closed rather than opening
+    // anything — an accidentally-empty var is not the same as an unset one,
+    // but both land on the same refused-by-default outcome here.
     assert.equal(deployEnv(), "");
     assert.equal(isLabDirectionEnabled(), false);
   });
 });
 
-describe("readers unchanged on Vercel (VERCEL_ENV alone, LEONA_DEPLOY_ENV never set)", () => {
-  it("isLabDirectionEnabled(): on for preview, off for production", () => {
-    setEnv({ VERCEL_ENV: "preview", NODE_ENV: "production" });
-    assert.equal(isLabDirectionEnabled(), true);
-    setEnv({ VERCEL_ENV: "production", NODE_ENV: "production" });
-    assert.equal(isLabDirectionEnabled(), false);
-  });
-
-  it("isPublicDemoEnabled(): on for preview with the flag set, off for production", () => {
-    setEnv({ VERCEL_ENV: "preview", NODE_ENV: "production", MAJORANA_PUBLIC_DEMO: "true" });
-    assert.equal(isPublicDemoEnabled(), true);
-    setEnv({ VERCEL_ENV: "production", NODE_ENV: "production", MAJORANA_PUBLIC_DEMO: "true" });
-    assert.equal(isPublicDemoEnabled(), false);
-  });
-});
-
-describe("readers respond to LEONA_DEPLOY_ENV with no VERCEL_ENV present (Cloud Run)", () => {
+describe("readers respond to LEONA_DEPLOY_ENV", () => {
   it("isLabDirectionEnabled(): on for preview, off for production", () => {
     setEnv({ LEONA_DEPLOY_ENV: "preview", NODE_ENV: "production" });
     assert.equal(isLabDirectionEnabled(), true);
@@ -128,25 +92,23 @@ describe("readers respond to LEONA_DEPLOY_ENV with no VERCEL_ENV present (Cloud 
 });
 
 describe("releaseSha() / publicReleaseSha()", () => {
-  it("releaseSha(): LEONA_GIT_COMMIT_SHA first, VERCEL_GIT_COMMIT_SHA as the Vercel fallback", () => {
-    setEnv({ VERCEL_GIT_COMMIT_SHA: "abc0000" });
-    assert.equal(releaseSha(), "abc0000");
-    setEnv({ LEONA_GIT_COMMIT_SHA: "def1111", VERCEL_GIT_COMMIT_SHA: "abc0000" });
+  it("releaseSha(): reads LEONA_GIT_COMMIT_SHA", () => {
+    setEnv({ LEONA_GIT_COMMIT_SHA: "def1111" });
     assert.equal(releaseSha(), "def1111");
   });
 
-  it("releaseSha(): undefined with neither set, same as before this module existed", () => {
+  it("releaseSha(): undefined when unset", () => {
     setEnv({});
     assert.equal(releaseSha(), undefined);
   });
 
-  it("publicReleaseSha(): NEXT_PUBLIC_LEONA_GIT_COMMIT_SHA first, the Vercel var as fallback", () => {
-    setEnv({ NEXT_PUBLIC_VERCEL_GIT_COMMIT_SHA: "abc0000" });
-    assert.equal(publicReleaseSha(), "abc0000");
-    setEnv({
-      NEXT_PUBLIC_LEONA_GIT_COMMIT_SHA: "def1111",
-      NEXT_PUBLIC_VERCEL_GIT_COMMIT_SHA: "abc0000",
-    });
+  it("publicReleaseSha(): reads NEXT_PUBLIC_LEONA_GIT_COMMIT_SHA", () => {
+    setEnv({ NEXT_PUBLIC_LEONA_GIT_COMMIT_SHA: "def1111" });
     assert.equal(publicReleaseSha(), "def1111");
+  });
+
+  it("publicReleaseSha(): undefined when unset", () => {
+    setEnv({});
+    assert.equal(publicReleaseSha(), undefined);
   });
 });

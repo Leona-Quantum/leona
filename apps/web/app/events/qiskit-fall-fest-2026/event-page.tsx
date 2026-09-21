@@ -107,7 +107,7 @@ export default function EventPage() {
               </time>
             </div>
             <p className={s.heroVenue}>
-              {t("慶應義塾大学 AIC")}<span>{t("対面開催")}</span>
+              {t(event.venueName)}<span>{t("対面開催")}</span>
             </p>
             <a className={s.button} href="#register">
               {t("参加登録")}<span aria-hidden="true">↗</span>
@@ -161,7 +161,7 @@ export default function EventPage() {
           </div>
           <div className={s.aboutBody}>
             <p>
-              {t("講演で量子計算の研究や活用事例を知り、Qiskitの実習でコードを書きます。ミニハッカソンではチームで課題に取り組み、成果を発表します。慶應義塾大学AICで、一緒に量子計算を体験しましょう。")}
+              {t("講演で量子計算の研究や活用事例を知り、Qiskitの実習でコードを書きます。ミニハッカソンではチームで課題に取り組み、成果を発表します。日吉協生館２階 AICラウンジで、一緒に量子計算を体験しましょう。")}
             </p>
             <dl className={s.facts}>
               <div>
@@ -266,10 +266,9 @@ export default function EventPage() {
               <span className={s.venueMonogram} aria-hidden="true">
                 AIC
               </span>
-              <h3>{t("慶應義塾大学 AIC")}</h3>
+              <h3>{t(event.venueName)}</h3>
               <p>
-                {event.venueDetails ??
-                  t("キャンパス・建物・部屋番号、会場までの経路は、確定次第ご案内します。")}
+                {t("会場までの経路は、後日ご案内します。")}
               </p>
               {event.venueMapUrl && (
                 <a href={event.venueMapUrl} className={s.textLink}>
@@ -304,7 +303,7 @@ export default function EventPage() {
             <p>
               {t("2026年10月17日（土）・18日（日）")}
               <br />
-              {t("慶應義塾大学 AIC / 定員40〜50名（予定）")}
+              {t("日吉協生館２階 AICラウンジ / 定員40〜50名（予定）")}
             </p>
           </div>
           <div className={s.registrationBody}>

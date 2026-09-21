@@ -3,6 +3,11 @@ One shared module so producer and consumer can't drift."""
 
 RUN_EXECUTE_JOB_KIND = "run.execute"
 CIRCUIT_OPTIMIZE_JOB_KIND = "circuit.optimize"
+# Proposal 3 (targeted synthesis): a second, target-aware entry point into the
+# same trusted compiler lane CIRCUIT_OPTIMIZE_JOB_KIND serves. A device or
+# generic-connectivity target plus an objective, tried across every compiler
+# in the lane in one job.
+CIRCUIT_SYNTHESIZE_JOB_KIND = "circuit.synthesize"
 CATALOG_IMPORT_JOB_KIND = "catalog.import"
 # Durable hardware submission (two-PR schema change; this is the contract
 # half). No producer enqueues it until the qpu_run record storage lands — the

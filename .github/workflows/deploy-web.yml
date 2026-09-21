@@ -1,13 +1,15 @@
 # Deploy the website to Cloud Run.
 #
-# ## What this is, and what still runs beside it
+# ## This is the only way the website is deployed
 #
-# GCP migration phase 2 (ai-ops `desk/leona/plans/gcp-migration-20260912/PLAN.md`).
-# Vercel still builds and serves leonaqt.com; this builds and serves the same
-# commit on Cloud Run so the two can be compared before DNS moves, and so the
-# cutover is a DNS change rather than a first deploy. Both stacks run through the
-# cutover and its 30-day rollback window — that is deliberate, and it is why
-# nothing here removes a Vercel workflow.
+# GCP migration (ai-ops `desk/leona/plans/gcp-migration-20260912/PLAN.md`).
+# Visitors reach leonaqt.com through Cloudflare -> the Google load balancer ->
+# the `majorana-web` Cloud Run service this workflow deploys. DNS moved on
+# 2026-09-20 and Vercel was retired on 2026-09-21: its Git integration is
+# disconnected, so a push no longer builds anything there. A run that deploys
+# nothing when it should have is therefore an outage in the making, not a
+# difference between two stacks — which is why a missing credential and
+# WEB_SIGN_IN=0 fail the run below instead of warning.
 #
 # ## The shape is deploy.yml's, on purpose
 #
@@ -15,8 +17,7 @@
 # sequence the api has used since July, because the failure it prevents is the
 # same one: a revision that builds, deploys, and cannot serve. A web deploy that
 # only checked "did a deployment record appear" is exactly what was in place on
-# 2026-08-14 when a silent Vercel failure went unnoticed, and what
-# web-deploy-watch.yml exists to catch after the fact.
+# 2026-08-14 when a silent Vercel failure went unnoticed for hours.
 #
 # ## Why the smoke test runs on a twin, not on majorana-web
 #
@@ -83,10 +84,8 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with: { persist-credentials: false, fetch-depth: 0 }
 
-      # The same script Vercel's Ignored Build Step runs, and the same one
-      # web-deploy-watch.yml reuses to decide whether a build was owed. A second
-      # copy of "does the web app build from this path" would drift from the
-      # first, and the drifted copy would read as current. Exit 0 means SKIP.
+      # scripts/web-build-needed.sh decides; checked by
+      # scripts/check-web-build-needed.mjs in the web lint. Exit 0 means SKIP.
       #
       # Note what this does NOT test: the list is a blacklist of paths the web
       # app does not build from, named individually, so a package added later is
@@ -107,8 +106,8 @@ jobs:
             echo "no usable base sha: deploying"
             exit 0
           fi
-          if VERCEL_GIT_PREVIOUS_SHA="$BEFORE" VERCEL_GIT_COMMIT_SHA="${{ github.sha }}" \
-               bash scripts/vercel-ignore-build.sh; then
+          if WEB_BUILD_BASE="$BEFORE" WEB_BUILD_HEAD="${{ github.sha }}" \
+               bash scripts/web-build-needed.sh; then
             echo "expected=no" >> "$GITHUB_OUTPUT"
             echo "SKIP: nothing the web app builds from changed"
           else
@@ -131,11 +130,14 @@ jobs:
         if: steps.expect.outputs.expected == 'yes'
         run: echo "have=${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER != '' && secrets.GCP_DEPLOY_SERVICE_ACCOUNT != '' }}" >> "$GITHUB_OUTPUT"
 
+      # A warning while Vercel still served the site; an error now, because
+      # nothing else deploys it and a skipped deploy leaves the site frozen.
       - if: steps.expect.outputs.expected == 'yes' && steps.creds.outputs.have != 'true'
         run: |
-          echo "::warning::GCP_WORKLOAD_IDENTITY_PROVIDER / GCP_DEPLOY_SERVICE_ACCOUNT not set —"
-          echo "::warning::the web app was NOT deployed to Cloud Run. Vercel is unaffected."
-          echo "::warning::Deploy by hand: docs/runbooks/web-cloud-run.md"
+          echo "::error::GCP_WORKLOAD_IDENTITY_PROVIDER / GCP_DEPLOY_SERVICE_ACCOUNT not set —"
+          echo "::error::the web app was NOT deployed, and nothing else deploys it."
+          echo "::error::Deploy by hand: docs/runbooks/web-cloud-run.md"
+          exit 1
 
       - name: tag
         id: tag
@@ -181,8 +183,8 @@ jobs:
 
       # ## MAJORANA_PUBLIC_CATALOG_API, found by comparing the two stacks
       #
-      # Production sets it; the first Cloud Run deploys did not, because it is
-      # stored write-only in Vercel and reads back empty. With it off, entry pages
+      # Vercel production set it; the first Cloud Run deploys did not, because it
+      # was stored write-only in Vercel and read back empty. With it off, entry pages
       # render from the committed corpus instead of the API's catalog, and every
       # benchmark entry silently loses its "Circuit structure" and "Fault-tolerant
       # cost" sections — a page that returns 200, renders, and is missing content
@@ -222,7 +224,7 @@ jobs:
       # Secret names carry a WEB_ prefix (see the SENTRY_DSN note above for what
       # an unqualified name costs). WEB_DEVELOPER_EMAILS and WEB_CONTACT_FALLBACK
       # are addresses rather than secrets, and live in Secret Manager to stay out
-      # of a public workflow file; production on Vercel sets both, and without
+      # of a public workflow file; production on Vercel set both, and without
       # them developer accounts resolve to the free tier and the contact form
       # offers no way through. infra/web-lb/06-sign-in-secrets.sh creates them.
       #
@@ -239,7 +241,8 @@ jobs:
             vars="${vars},WORKOS_CLIENT_ID=${WORKOS_CLIENT_ID},WORKOS_REDIRECT_URI=${WORKOS_REDIRECT_URI}"
             secrets="${secrets},WORKOS_API_KEY=WEB_WORKOS_API_KEY:latest,WORKOS_COOKIE_PASSWORD=WEB_WORKOS_COOKIE_PASSWORD:latest"
           else
-            echo "::warning::WEB_SIGN_IN=0 — this revision cannot sign anybody in. Fine while Vercel serves leonaqt.com; NOT fine at the cutover (infra/web-lb/80-cutover-preflight.sh refuses GO on it)."
+            echo "::error::WEB_SIGN_IN=0 in infra/fleet.env — this revision could not sign anybody in, and it would serve leonaqt.com. Not deploying it."
+            exit 1
           fi
           {
             echo "WEB_ENV_VARS=${vars}"

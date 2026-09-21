@@ -59,18 +59,27 @@ incidents.
 
 ### Which pipeline actually broke
 
-`apps/web` (Vercel, self-deploys from `dev`) and `services/api` / `services/worker`
-(Cloud Run, shipped by `.github/workflows/deploy.yml` on merge to `dev`) are two
-independent deploys that share a trigger, not one. A bad push to `dev` can break
+`apps/web` (Cloud Run `majorana-web`, shipped by `.github/workflows/deploy-web.yml`) and
+`services/api` / `services/worker` (Cloud Run, shipped by `.github/workflows/deploy.yml`)
+are two independent deploys that share a trigger (a merge to `dev`), not one. A bad push to `dev` can break
 either, both, or neither, and the failure mode tells you which:
 
-- **Web looks broken** (page errors, blank screens, stale content) — check
-  https://vercel.com/majoranaq/web/deployments first. Confirm what is actually
-  *live* by reading `data-dpl-id` out of the served HTML rather than trusting
-  the commit status, which misreports in both directions:
+- **Web looks broken** (page errors, blank screens, stale content) — check the newest
+  `deploy-web` run first (`gh run list --repo Leona-Quantum/leona --workflow deploy-web -L 3`),
+  then which revision is serving:
   ```
-  curl -s https://leonaqt.com/ | grep -o 'data-dpl-id="[^"]*"'
+  gcloud run services describe majorana-web --project majorana-core \
+    --region us-west1 --format='value(status.traffic)'
   ```
+  Rolling back is shifting traffic to the previous revision (list them with
+  `gcloud run revisions list --service majorana-web --project majorana-core --region us-west1`):
+  ```
+  gcloud run services update-traffic majorana-web --project majorana-core \
+    --region us-west1 --to-revisions <previous-revision>=100
+  ```
+  The next merge to `dev` that touches the website deploys over it and shifts traffic
+  back to the newest revision. Vercel was retired on 2026-09-21 and serves nothing
+  (ADR-0033).
 - **API/worker looks broken** (runs not starting, 5xx from the API, catalog
   stale) — check https://console.cloud.google.com/run?project=majorana-core,
   or directly:
@@ -83,7 +92,8 @@ either, both, or neither, and the failure mode tells you which:
 - **The GitHub Actions run is the fastest single signal for the Cloud Run
   side**: `gh run list --repo EshMis/majorana --workflow=deploy.yml --limit 5`
   — red there implicates the api/worker deploy; green clears it as the cause
-  and points you at Vercel or at something that isn't a deploy at all.
+  and points you at the web deploy (`deploy-web.yml`) or at something that
+  isn't a deploy at all.
 
 ### The database is lost or corrupted
 
@@ -156,20 +166,23 @@ advancing; no fresh lines in Cloud Run logs for `majorana-worker`.
 
 | System | URL | Check first |
 |---|---|---|
-| Cloud Run (api, worker) | console.cloud.google.com/run?project=majorana-core | Revision status, traffic split |
+| Cloud Run (api, worker, web) | console.cloud.google.com/run?project=majorana-core | Revision status, traffic split |
 | Cloud SQL | console.cloud.google.com/sql/instances/majorana-pg/overview?project=majorana-core | CPU/connections/storage, backup status |
 | Cloud Logging | console.cloud.google.com/logs/query?project=majorana-core | Filter on `resource.labels.service_name` |
-| Vercel | vercel.com/majoranaq/web | Deployments tab — which one is Promoted |
+| Vercel (code sandbox only — ADR-0033, `apps/web` no longer deploys here) | vercel.com/majoranaq | Sandbox deployments/usage |
 | GitHub Actions | github.com/EshMis/majorana/actions/workflows/deploy.yml | Which deploy ran, and whether it was green |
 | WorkOS | dashboard.workos.com | Session/user lookup, revocation (§4) |
 | Sentry (once armed) | org `majorana-ms`, projects `python` / `web` | Stack traces — `docs/runbooks/observability.md` |
 
 ## 4. Kill switches — what actually exists
 
-Every environment variable below is set on the **api** and/or **worker** Cloud
-Run services. Changing one is a new revision: it takes effect in about a minute
-and is reverted the same way. `docs/runbooks/deploys.md` §Environment has the
-exact `gcloud run services update` shape.
+Every environment variable below is set on the **api**, **worker** and/or
+**web** (`majorana-web`) Cloud Run services. Changing one is a new revision: it
+takes effect in about a minute and is reverted the same way.
+`docs/runbooks/deploys.md` §Environment has the exact `gcloud run services
+update` shape; for `majorana-web` specifically, remember that a plain `gcloud
+run services update` is overwritten by the next `deploy-web.yml` run, whose
+`--set-env-vars` replaces the whole set.
 
 ### Stop hardware submission (narrowest, instant)
 
@@ -195,18 +208,26 @@ SYSTEM_CATALOG_ENABLED=false           # api    — closes /v1/catalog/*: every
                                        #          .public_scope raises, and
                                        #          auth/catalog_deps turns that
                                        #          into a 404)
-MAJORANA_PUBLIC_CATALOG_API=false      # VERCEL  — does NOT close anything. It
+MAJORANA_PUBLIC_CATALOG_API=false      # WEB     — does NOT close anything. It
                                        #          switches the web app from the
                                        #          live API to the bundled static
                                        #          corpus, so the site keeps
                                        #          working and the API stays open
-MAJORANA_PUBLIC_DEMO=false             # VERCEL  — the /demo page
+MAJORANA_PUBLIC_DEMO=false             # WEB     — the /demo page
 ```
 
-Setting the Vercel flag alongside the API one is what keeps the public pages
-serving during the incident instead of erroring. See `docs/runbooks/deploys.md`
-§"The public catalog flag". Turning the API one off has a visible product cost,
-so it is a Sev-1/2 lever, not a first resort.
+Both were `VERCEL` flags before ADR-0033; `MAJORANA_PUBLIC_CATALOG_API` is now
+confirmed hardcoded `=true` in `deploy-web.yml`'s `WEB_ENV_VARS` (see
+`docs/runbooks/deploys.md` §"The public catalog flag"), so setting it `=false`
+means a `gcloud run services update` on `majorana-web`, reverted (or
+overwritten) by the next `deploy-web.yml` run. **`MAJORANA_PUBLIC_DEMO` was NOT
+found in `deploy-web.yml`'s env composition at all** — `isPublicDemoEnabled()`
+also requires `LEONA_DEPLOY_ENV === "preview"`, which production's
+`LEONA_DEPLOY_ENV=production` never satisfies, so `/demo` reads as already
+unreachable in production regardless of this variable. This lever may already
+be a no-op; not re-verified live, flagged rather than fixed here. Turning the
+API flag off has a visible product cost, so it is a Sev-1/2 lever, not a first
+resort.
 
 ### Throttle anonymous traffic instead of stopping it
 
@@ -306,9 +327,15 @@ Several levers above replace the running revision. Do this first.
    `docs/gates/sandbox-egress-2026-08-07.md`: a log queried immediately after an
    event may not contain it yet, and that produced a security gate that passed
    for the wrong reason. Wait, then re-read.
-4. **The served page's deployment id** — `data-dpl-id` in the HTML says which
-   Vercel deployment a user actually got, which the commit status does not
-   reliably report.
+4. **The served page's deployment id.** `data-dpl-id` in the HTML was Vercel's
+   own marker of which deployment a user actually got, which the commit status
+   did not reliably report — **not re-verified against Cloud Run**: this sweep
+   did not confirm whether `data-dpl-id` (or any equivalent) still appears in
+   the HTML `majorana-web` serves. `LEONA_GIT_COMMIT_SHA` /
+   `NEXT_PUBLIC_LEONA_GIT_COMMIT_SHA` are set on every deploy
+   (`lib/deploy-env.ts`) and are the likely replacement signal, but whether
+   either is actually rendered anywhere in the page for a responder to read is
+   unconfirmed. Check before relying on this step in a live incident.
 5. TODO(owner): where exported evidence is stored. Not in this repository — it is
    public.
 
@@ -331,8 +358,9 @@ importance order: rotating out of order locks you out of the thing you need next
    otherwise.
 5. **`TRUSTED_CALLER_TOKEN`** — must be set in **two** places or it silently buys
    nothing: `TRUSTED_CALLER_TOKEN` on the api service and
-   `MAJORANA_TRUSTED_CALLER_TOKEN` on Vercel. Verify afterwards, because the
-   failure is silent:
+   `MAJORANA_TRUSTED_CALLER_TOKEN` on the web Cloud Run service
+   (`majorana-web`, Secret Manager secret `TRUSTED_CALLER_TOKEN` — see
+   `deploy-web.yml`). Verify afterwards, because the failure is silent:
    ```
    curl -sI https://<api>/v1/catalog/entries -H "X-Majorana-Trusted-Caller: $TOKEN" \
      | grep -i x-majorana-caller-trust      # expect: trusted
@@ -355,9 +383,13 @@ first — §3 above has the diagnostic.
     --to-revisions <known-good-revision>=100
   ```
   `docs/runbooks/deploys.md` has the tagged-revision procedure in full.
-- **Web (Vercel):** promote the previous deployment from the Vercel dashboard.
-  Confirm what is actually being served by reading `data-dpl-id` out of the page
-  rather than trusting the commit status, which misreports in both directions.
+- **Web (Cloud Run, `majorana-web`):** same mechanism as api/worker — shift
+  traffic to the previous revision (§3's "Web looks broken" has the exact
+  commands: `gcloud run revisions list` to find it, then `gcloud run services
+  update-traffic majorana-web --to-revisions <previous>=100`). Vercel is
+  retired as a host (ADR-0033) and has no role in this any more. Confirm what
+  is actually being served by reading it back (§3's `status.traffic`), rather
+  than trusting the commit status, which misreports in both directions.
 - **The sandbox rootfs:** `:latest` is moved by hand. Roll back by re-promoting
   the previous dated tag — `docs/runbooks/sandbox-image.md` §5.
 - **The database:** migrations are reversible and the history is linear, but a

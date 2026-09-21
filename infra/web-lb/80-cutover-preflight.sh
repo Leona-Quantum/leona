@@ -78,7 +78,7 @@ done
   || no "traffic is on $(fact serving), the latest ready revision is $(fact latest)"
 
 # Which commit is serving, against what dev holds. Not every commit builds the
-# website (scripts/vercel-ignore-build.sh), so "differs from dev's tip" is
+# website (scripts/web-build-needed.sh), so "differs from dev's tip" is
 # ordinary — it is printed for a human to read against the log, not judged.
 live_sha=$(fact sha)
 tip=$(git rev-parse origin/dev 2>/dev/null || echo "?")

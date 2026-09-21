@@ -24,7 +24,7 @@ from .enums import (
     VerificationResultKind,
     VerifierDecision,
 )
-from .models import ResourceMetrics, VerificationSummary
+from .models import ResourceMetrics, SynthesisResult, VerificationSummary
 from .plan import Plan
 
 
@@ -237,6 +237,32 @@ class CompilationResult(_EventBase):
     after: ResourceMetrics | None = None
     compatibility: dict[str, Any] = Field(default_factory=dict)
     reason: str | None = None
+
+
+class SynthesisResultEvent(_EventBase):
+    """Every compiler the targeted-synthesis lane tried for one request, each
+    independently checked for equivalence. The second, target-aware entry
+    point into the same trusted compiler lane ``compilation.result`` reports
+    on; unlike that event this one always carries every attempted compiler,
+    not one selected candidate.
+
+    ``result`` is populated exactly when ``accepted`` is true — a
+    request-level refusal (an unrecognised device, a malformed target) has
+    no candidates to report, only ``reason``.
+    """
+
+    type: Literal["synthesis.result"] = "synthesis.result"
+    accepted: bool
+    reason: str | None = None
+    result: SynthesisResult | None = None
+
+    @model_validator(mode="after")
+    def result_present_iff_accepted(self) -> "SynthesisResultEvent":
+        if self.accepted and self.result is None:
+            raise ValueError("an accepted synthesis result states its result")
+        if not self.accepted and self.result is not None:
+            raise ValueError("a refused synthesis request states no result")
+        return self
 
 
 class CodeVariant(BaseModel):
@@ -487,6 +513,7 @@ RunEvent = Annotated[
     | ScreenResult
     | ResourceEstimateResult
     | CompilationResult
+    | SynthesisResultEvent
     | CodeFinalized
     | SandboxResult
     | VerificationResult

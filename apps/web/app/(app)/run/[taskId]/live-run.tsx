@@ -14,6 +14,7 @@ import {
 } from "@majorana/ui";
 import { ChatMarkdown } from "../../../../components/chat-markdown";
 import { parseSseBlock } from "../../../../lib/sse-events";
+import { reconnectDelayMs } from "../../../../lib/reconnecting-sse-stream";
 import { runToFollow } from "../../../../lib/conversation-follow";
 import { refusalSentence, responseString, submittedId } from "../../../../lib/api-error.ts";
 import { QUEUE_POLL_INTERVAL_MS, isWaitingForWorker, queuePositionLabel } from "../../../../lib/queue-position";
@@ -650,7 +651,10 @@ export function LiveRun({ taskId, locale = "en" }: { taskId: string; locale?: Pu
           setConnectionError(locale === "ja" ? "接続が中断されました。再接続しています…" : "Connection interrupted. Reconnecting…");
           await new Promise<void>((resolve) => {
             wakeReconnect = () => { clearTimeout(reconnectTimer); wakeReconnect = null; resolve(); };
-            reconnectTimer = setTimeout(wakeReconnect, Math.min(1000 * 2 ** attempts++, 10000));
+            // Shared with the notebook/course progress reader
+            // (lib/reconnecting-sse-stream.ts), which reconnects the same way
+            // this page always has rather than a second copy of the formula.
+            reconnectTimer = setTimeout(wakeReconnect, reconnectDelayMs(attempts++));
           });
           if (!controller.signal.aborted && !conversationIdRef.current) refreshConversation();
         }

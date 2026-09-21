@@ -35,6 +35,7 @@ const METRICS = {
   depth: 16,
   gate_count: 32,
   two_qubit_gate_count: 15,
+  t_count: null,
   measurement_count: 5,
   estimated_runtime_ms: 40,
 };

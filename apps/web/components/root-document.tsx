@@ -14,8 +14,11 @@
  * revamp rather than doing it on its own or leaving it.
  *
  * **What each caller passes as `lang`, and why it differs.** The issue framed
- * this as one restructuring with one cost. Measured against production it is
- * two different situations and only one of them was ever expensive:
+ * this as one restructuring with one cost. Measured against production while
+ * Vercel was still the CDN, it is two different situations and only one of
+ * them was ever expensive (the `cache-control` line is Next's own and
+ * unchanged on Cloud Run; the CDN-side header is now Cloudflare's
+ * `cf-cache-status`, not re-measured since this file has not changed):
  *
  *     [locale] pages   /  /pricing  /contact  /privacy
  *                      cache-control: public          x-vercel-cache: PRERENDER
@@ -44,11 +47,13 @@ import { Instrument_Sans, Instrument_Serif, JetBrains_Mono } from "next/font/goo
 import Script from "next/script";
 import { DARK_PUBLIC_PATHS, ACCENT_STORAGE_KEY, THEME_STORAGE_KEY, type Theme } from "../lib/theme";
 import { ThemeController } from "./theme-controller";
+import { ChunkErrorRecovery } from "./chunk-error-recovery";
 import { SIDEBAR_STORAGE_KEY } from "../lib/sidebar-layout";
 import { AUTH_HINT_COOKIE, AUTH_HINT_SIGNED_IN } from "../lib/auth-hint";
 import { LEGACY_PUBLIC_LOCALE_COOKIE, PUBLIC_LOCALE_COOKIE } from "../lib/public-locale";
 import { canonicalOrigin } from "../lib/site-origin";
 import { OG_IMAGE, SITE_NAME, TITLE_TEMPLATE } from "../lib/public-metadata";
+import { publicReleaseSha } from "../lib/deploy-env";
 import "../app/globals.css";
 import "../styles/ux-shell.css";
 import "../styles/ux-site.css";
@@ -266,6 +271,10 @@ export function RootDocument({ lang, children, forcedTheme }: { lang: string; ch
       </head>
       <body>
         <ThemeController locale={lang} forcedTheme={forcedTheme} />
+        {/* Same build id `next.config.ts` passes to `deploymentId` — the
+            fallback recovery for a chunk-load failure that mechanism does not
+            cover. See components/chunk-error-recovery.tsx. */}
+        <ChunkErrorRecovery buildId={publicReleaseSha() ?? "dev"} />
         {children}
       </body>
     </html>

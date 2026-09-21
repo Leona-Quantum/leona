@@ -6,11 +6,24 @@ import re
 import uuid
 from pathlib import Path
 
+# infra/news.json ships with this literal value for `site_url`. It is not a
+# real origin (`.invalid` is reserved for exactly this by RFC 2606) and
+# `render()` refuses to let `renderer_deploy` go true while it is still set —
+# see apps/news/RUNBOOK.md, "choose hostname", which leaves the real value an
+# owner decision.
+PLACEHOLDER_SITE_URL = "https://REPLACE-WITH-NEWS-HOSTNAME.invalid"
+
 
 def render(config: dict, secret: str) -> dict[str, str]:
     flags = ("enabled", "public", "schedule_enabled", "auto_publish", "arxiv_enabled")
+    # renderer_deploy/site_url gate deploy-news.yml (the renderer's own Cloud
+    # Run deploy). They are validated here alongside the rest of
+    # infra/news.json but are never forwarded to the API/worker: encode()
+    # below excludes them explicitly.
+    renderer_only = ("renderer_deploy", "site_url")
     expected = {
         *flags,
+        *renderer_only,
         "workspace_id",
         "editor_user_id",
         "daily_batch_limit",
@@ -20,7 +33,7 @@ def render(config: dict, secret: str) -> dict[str, str]:
     }
     if set(config) != expected:
         raise ValueError("Unexpected or missing news configuration keys")
-    for key in flags:
+    for key in (*flags, "renderer_deploy"):
         if type(config[key]) is not bool:
             raise ValueError(f"{key} must be a boolean")
     for key, maximum in (("daily_batch_limit", 20), ("interval_hours", 24)):
@@ -34,6 +47,10 @@ def render(config: dict, secret: str) -> dict[str, str]:
             r"[a-zA-Z0-9._-]{1,100}", config[key]
         ):
             raise ValueError(f"Invalid {key}")
+    if not isinstance(config["site_url"], str) or not re.fullmatch(
+        r"https://[a-zA-Z0-9.-]+(/[a-zA-Z0-9._~%/-]*)?", config["site_url"]
+    ):
+        raise ValueError("Invalid site_url")
     if (
         any(config[key] for key in ("public", "schedule_enabled", "auto_publish"))
         and not config["enabled"]
@@ -46,6 +63,11 @@ def render(config: dict, secret: str) -> dict[str, str]:
     if config["enabled"] and not re.fullmatch(r"[a-zA-Z0-9_-]+:[1-9][0-9]*", secret):
         raise ValueError(
             "Set LEONA_NEWS_OPENAI_SECRET_VERSION to an existing Secret Manager name:numeric-version"
+        )
+    if config["renderer_deploy"] and config["site_url"] == PLACEHOLDER_SITE_URL:
+        raise ValueError(
+            "site_url is still the placeholder — set the real hostname (owner "
+            "decision, see apps/news/RUNBOOK.md) before renderer_deploy can be true"
         )
 
     def value(v):
@@ -62,8 +84,10 @@ def render(config: dict, secret: str) -> dict[str, str]:
 
     return {
         "api_env": encode(common | {"public"}),
-        "worker_env": encode(expected - {"public"}),
+        "worker_env": encode(expected - {"public"} - set(renderer_only)),
         "openai_secret": secret if config["enabled"] else "",
+        "renderer_deploy": value(config["renderer_deploy"]),
+        "site_url": config["site_url"],
     }
 
 

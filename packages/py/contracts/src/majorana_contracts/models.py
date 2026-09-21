@@ -26,6 +26,8 @@ from .enums import (
     RetryTarget,
     SemanticReviewDecision,
     ShareRole,
+    SynthesisConnectivity,
+    SynthesisObjective,
     VerificationFailureClass,
     VerificationMethod,
     VerificationResultKind,
@@ -508,6 +510,70 @@ class CostOnSmallestMachine(_ResourceBase):
     runtime: RuntimeSummary
 
 
+class FrontierPointSummary(_ResourceBase):
+    """One non-dominated point on the qubits-vs-runtime trade.
+
+    Independently labelled with the assumption set that produced it, which
+    may differ from `CatalogEntryEstimate.assumptions` above — a frontier
+    compares choices *across* hardware and error-correction assumptions on
+    purpose (Azure's resource estimator does the same), and every point
+    carries enough to stand alone so a reader never has to guess which claim
+    it is. See `packages/py/estimation/src/majorana_estimation/frontier.py`.
+    """
+
+    assumption_set: str = Field(
+        description="AssumptionSet.identity that produced this point, e.g. `gidney-2025@v2`."
+    )
+    assumption_citation: str
+    target_failure_probability: float = Field(gt=0, lt=1)
+    factory_count: int = Field(ge=0)
+    total_physical_qubits: int = Field(ge=0)
+    runtime_seconds: float = Field(
+        gt=0,
+        description="Never null: a point with no stated runtime cannot be ranked, so it never reaches the frontier.",
+    )
+
+
+class FrontierSummary(_ResourceBase):
+    """The Pareto frontier of physical qubits vs runtime for this entry's
+    circuit, swept across the deployment's built-in assumption sets and
+    factory counts at the same failure target already used above.
+
+    `points` may be empty for a Clifford-only circuit — it has no stated
+    runtime under any assumption set, so nothing can be ranked, and an empty
+    frontier is the honest report of that rather than an omitted field.
+    """
+
+    points: list[FrontierPointSummary] = Field(default_factory=list)
+    considered: int = Field(
+        ge=0,
+        description="How many candidate points were swept before the Pareto filter kept these.",
+    )
+
+
+class ScalingCurvePointSummary(_ResourceBase):
+    """One `n` on a scaling curve, and what it costs."""
+
+    n: int = Field(ge=1)
+    total_physical_qubits: int = Field(ge=0)
+    runtime_seconds: float | None = None
+
+
+class ScalingCurveSummary(_ResourceBase):
+    """The estimate at a series of problem sizes, for a workload whose
+    logical cost is a *stated* function of a problem parameter — see
+    `packages/py/estimation/src/majorana_estimation/scaling.py`. Never
+    fabricated: this is null until an Atlas record states an explicit
+    `n`-dependence for this entry's algorithm, which none currently does.
+    """
+
+    parameter_name: str
+    source: str = Field(
+        description="Where the n-dependence comes from — a paper or Atlas record, never derived here."
+    )
+    points: list[ScalingCurvePointSummary] = Field(default_factory=list)
+
+
 class CatalogEntryEstimate(_ResourceBase):
     """A catalogue entry's fault-tolerant cost, or a stated reason there is none (E4).
 
@@ -549,6 +615,24 @@ class CatalogEntryEstimate(_ResourceBase):
     )
     target_failure_probability: float | None = Field(default=None, gt=0, lt=1)
     notes: list[str] = Field(default_factory=list, max_length=20)
+    frontier: FrontierSummary | None = Field(
+        default=None,
+        description=(
+            "The qubits-vs-runtime Pareto frontier across the deployment's "
+            "built-in assumption sets. Present exactly when `basis` carries a "
+            "cost (may still have zero points, e.g. Clifford-only); null "
+            "under NO_CIRCUIT/REFUSED, same as the other layers."
+        ),
+    )
+    scaling: ScalingCurveSummary | None = Field(
+        default=None,
+        description=(
+            "The estimate at a series of problem sizes, only when this "
+            "entry's Atlas record states an explicit n-dependence for its "
+            "logical cost. Null otherwise — never fabricated by fitting or "
+            "extrapolating a curve. No entry currently states one."
+        ),
+    )
 
     @model_validator(mode="after")
     def _numbers_and_reasons_are_mutually_exclusive(self) -> Self:
@@ -566,11 +650,21 @@ class CatalogEntryEstimate(_ResourceBase):
                 raise ValueError(f"basis {self.basis} must carry every layer of the estimate")
             if self.reason is not None:
                 raise ValueError(f"basis {self.basis} carries a cost, so it states no reason")
+            if self.frontier is None:
+                raise ValueError(
+                    f"basis {self.basis} carries a cost, so it must carry a frontier too"
+                )
         else:
             if any(layer is not None for layer in layers):
                 raise ValueError(f"basis {self.basis} states no cost, so it carries no layers")
             if self.smallest_machine is not None:
                 raise ValueError(f"basis {self.basis} states no cost, so it costs no machine")
+            if self.frontier is not None:
+                raise ValueError(f"basis {self.basis} states no cost, so it carries no frontier")
+            if self.scaling is not None:
+                raise ValueError(
+                    f"basis {self.basis} states no cost, so it carries no scaling curve"
+                )
             if not self.reason:
                 raise ValueError(f"basis {self.basis} must say why there is no cost")
         if priced and self.basis is ResourceEstimateBasis.ESTIMATED:
@@ -798,6 +892,12 @@ class ResourceMetrics(_ResourceBase):
     depth: int | None = Field(default=None, ge=0)
     gate_count: int | None = Field(default=None, ge=0)
     two_qubit_gate_count: int | None = Field(default=None, ge=0)
+    #: Count of Studio's ``T`` gate specifically (2.22.0). ``None`` only for a
+    #: caller that never computed it — every circuit-optimization and
+    #: targeted-synthesis path fills it, since ``T`` is one of the closed
+    #: gate set's 13 members and costing it is a plain count, same as
+    #: ``two_qubit_gate_count``.
+    t_count: int | None = Field(default=None, ge=0)
     measurement_count: int | None = Field(default=None, ge=0)
     estimated_runtime_ms: int | None = Field(default=None, ge=0)
 
@@ -832,6 +932,143 @@ class CircuitOptimizationResult(_ResourceBase):
     output_fingerprint: str = Field(pattern=r"^[0-9a-f]{64}$")
     equivalence: Literal["unitary_up_to_global_phase"] = "unitary_up_to_global_phase"
     warnings: list[str] = Field(default_factory=list, max_length=20)
+
+
+class SynthesisTarget(_ResourceBase):
+    """What a targeted-synthesis candidate is compiled for: a device or a
+    generic connectivity, never both.
+
+    A known ``device_id`` is resolved server-side to a connectivity class
+    from its published technology (trapped-ion and neutral-atom devices are
+    all-to-all; superconducting devices resolve to ``heavy_hex`` for IBM's
+    own public architecture and to ``grid`` elsewhere, since this repo
+    carries no per-device coupling map — ``SynthesisResult.resolved_note``
+    says which). Studio's IR is a closed 13-gate set already applied by
+    every compiler path in this lane, so there is no separate basis-gate
+    choice here.
+    """
+
+    device_id: str | None = Field(default=None, min_length=1, max_length=120)
+    connectivity: SynthesisConnectivity | None = None
+
+    @model_validator(mode="after")
+    def exactly_one_target_shape(self) -> Self:
+        if (self.device_id is None) == (self.connectivity is None):
+            raise ValueError("a target names exactly one of device_id or connectivity")
+        return self
+
+
+class SynthesisRequest(_ResourceBase):
+    """Studio's closed circuit IR plus a target and an objective, handed to
+    every compiler in the lane that supports the resolved connectivity.
+
+    Same closed, declarative, code-free IR as :class:`CircuitOptimizationRequest`
+    — this is a second entry point into the same trusted Worker compiler lane,
+    not a new execution surface.
+    """
+
+    qubit_count: int = Field(ge=1, le=64)
+    operations: list[CircuitOptimizationOperation] = Field(min_length=1, max_length=1024)
+    target: SynthesisTarget
+    objective: SynthesisObjective
+
+    @model_validator(mode="after")
+    def circuit_is_bounded_and_measurements_are_terminal(self) -> Self:
+        measurement_seen = False
+        for operation in self.operations:
+            if any(qubit >= self.qubit_count for qubit in operation.qubits):
+                raise ValueError("operation references a qubit outside qubit_count")
+            if operation.gate is CircuitOptimizationGate.MEASURE:
+                measurement_seen = True
+            elif measurement_seen:
+                raise ValueError("measurement operations must be terminal")
+        return self
+
+
+class SynthesisEquivalence(_ResourceBase):
+    """The independent equivalence verdict for one candidate, from
+    ``majorana_verification`` — never the compiler's own claim.
+
+    ``checked`` is false exactly when the circuit was too wide for the
+    method below to run; a caller must not read ``equivalent`` in that case
+    (it is ``None``), and must never treat an unchecked candidate as
+    equivalent.
+    """
+
+    checked: bool
+    equivalent: bool | None = None
+    method: Literal["exact_unitary_statevector"] = "exact_unitary_statevector"
+    width_limit: int = Field(ge=1)
+    detail: str = Field(min_length=1, max_length=280)
+
+    @model_validator(mode="after")
+    def equivalent_is_present_iff_checked(self) -> Self:
+        if self.checked and self.equivalent is None:
+            raise ValueError("a checked report states equivalent")
+        if not self.checked and self.equivalent is not None:
+            raise ValueError("an unchecked report states no equivalent verdict")
+        return self
+
+
+class SynthesisCandidate(_ResourceBase):
+    """One compiler's outcome for a targeted-synthesis request.
+
+    A compiler that cannot represent the target, or that fails, is a
+    candidate too — ``status`` says which, and ``reason`` says why. Nothing
+    is silently dropped from the list a caller sees.
+    """
+
+    compiler: CircuitCompiler
+    status: Literal["unsupported", "failed", "succeeded"]
+    reason: str | None = Field(default=None, max_length=280)
+    compiler_version: str | None = Field(default=None, min_length=1, max_length=120)
+    operations: list[CircuitOptimizationOperation] | None = Field(default=None, max_length=4096)
+    before: ResourceMetrics | None = None
+    after: ResourceMetrics | None = None
+    equivalence: SynthesisEquivalence | None = None
+    warnings: list[str] = Field(default_factory=list, max_length=20)
+
+    @model_validator(mode="after")
+    def fields_match_status(self) -> Self:
+        succeeded = self.status == "succeeded"
+        if not succeeded and not self.reason:
+            raise ValueError("an unsupported or failed candidate states a reason")
+        success_fields = (
+            self.compiler_version,
+            self.operations,
+            self.before,
+            self.after,
+            self.equivalence,
+        )
+        if succeeded and any(field is None for field in success_fields):
+            raise ValueError(
+                "a succeeded candidate states compiler_version, operations, before, "
+                "after and equivalence"
+            )
+        if not succeeded and any(field is not None for field in success_fields):
+            raise ValueError("an unsupported or failed candidate states no success fields")
+        return self
+
+
+class SynthesisResult(_ResourceBase):
+    """The whole targeted-synthesis answer: every compiler the lane tried,
+    each checked for equivalence, none dropped.
+
+    Carried inside ``SynthesisResultEvent`` (``majorana_contracts.events``),
+    the run-event analogue of ``compilation.result`` for this second entry
+    point into the compiler lane.
+    """
+
+    qubit_count: int = Field(ge=1, le=64)
+    target: SynthesisTarget
+    resolved_connectivity: SynthesisConnectivity
+    resolved_note: str = Field(min_length=1, max_length=280)
+    objective: SynthesisObjective
+    input_fingerprint: str = Field(pattern=r"^[0-9a-f]{64}$")
+    candidates: list[SynthesisCandidate] = Field(min_length=1, max_length=8)
+    #: The lowest-``objective`` candidate among those that succeeded AND were
+    #: independently confirmed equivalent. ``None`` when no candidate qualifies.
+    best_candidate_compiler: CircuitCompiler | None = None
 
 
 class Run(_ResourceBase):

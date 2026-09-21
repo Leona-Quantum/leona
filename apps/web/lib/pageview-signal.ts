@@ -53,6 +53,7 @@ export const PAGEVIEW_ROUTES = [
   "/repository/papers",
   "/repository/papers/[id]",
   "/repository/claims",
+  "/repository/find",
   "/repository/folders",
   "/repository/[slug]",
 ] as const;
@@ -83,6 +84,8 @@ export const PAGEVIEW_ROUTES = [
 export const RESERVED_REPOSITORY_SEGMENTS = {
   // `claims/page.tsx` — one page, no child route.
   claims: { subtree: "none" },
+  // `find/page.tsx` — the method finder (proposal 2). One page, no child route.
+  find: { subtree: "none" },
   // `folders/[[...path]]/page.tsx` — an optional catch-all, so every depth
   // below it is served by the same page.
   folders: { subtree: "catch-all" },
@@ -291,7 +294,7 @@ export function pageviewSignal(input: {
  * Whether the counter should emit at all.
  *
  * Default-on with an explicit opt-out, rather than opt-in behind a flag
- * somebody has to remember to set in the Vercel dashboard. An opt-in counter
+ * somebody has to remember to set on the Cloud Run service. An opt-in counter
  * that nobody arms produces the same zero as no counter at all, and looks
  * identical to "nobody visited" — which is the exact question it was built to
  * answer.
