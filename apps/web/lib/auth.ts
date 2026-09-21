@@ -82,7 +82,10 @@ export async function getMajoranaAuth(options?: { ensureSignedIn?: boolean }) {
  * the render-time callers this replaced survived until the v4 upgrade.)
  *
  * Returning the relative `returnTo` under local dev auth keeps the route
- * handler's `new URL(target, request.url)` correct either way.
+ * handler's `new URL(target, redirectBase(request.url))` correct either way: an
+ * absolute WorkOS URL comes back unchanged, a relative path resolves against the
+ * origin a reader can actually reach (never `request.url` bare — on Cloud Run
+ * that is the container's listen address; see `redirectBase` in site-origin.ts).
  */
 export async function getMajoranaAuthorizationUrl(returnTo: string): Promise<string> {
   const destination = safeReturnTo(returnTo);

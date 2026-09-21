@@ -32,7 +32,28 @@ const WEB = join(ROOT, "apps", "web");
 // between the comma and the base; the first argument may not contain a parenthesis
 // closing the call early, which keeps `new URL(request.url).search, request.url` out.
 const REQUEST_AS_BASE = /new URL\(\s*[^;]*?,\s*(?:request|req)\.(?:url|nextUrl)\b/g;
-const HANDLE_AUTH = /handleAuth\(\s*\{([\s\S]*?)\n\}\s*\)/g;
+const HANDLE_AUTH_CALL = /\bhandleAuth\s*\(/g;
+
+/**
+ * The text of a call's arguments, from just after its `(` to the matching `)`.
+ * Counted, not pattern-matched: the first version required the closing brace on a
+ * line of its own, so a compact `handleAuth({ returnPathname: "/run" })` — the
+ * shape this rule exists to refuse — passed. (Sourcery, PR 932.) Comments are
+ * already blanked by the caller; string contents are not, which is safe here
+ * because an unbalanced parenthesis inside a string can only make the slice
+ * longer, and a longer slice can only find a `baseURL` that is really there.
+ */
+function callArguments(code, openIndex) {
+  let depth = 0;
+  for (let i = openIndex; i < code.length; i += 1) {
+    if (code[i] === "(") depth += 1;
+    else if (code[i] === ")") {
+      depth -= 1;
+      if (depth === 0) return code.slice(openIndex + 1, i);
+    }
+  }
+  return code.slice(openIndex + 1);
+}
 
 /** Findings for one source text: `{ line, what }[]`. */
 export function scan(source) {
@@ -45,8 +66,10 @@ export function scan(source) {
     if (/redirectBase\(\s*$/.test(code.slice(0, match.index + upToBase.length - upToBase.match(/(?:request|req)\.(?:url|nextUrl)$/)[0].length))) continue;
     findings.push({ line: lineOf(match.index), what: "a URL resolved against the request's own URL — use redirectBase(request.url)" });
   }
-  for (const match of code.matchAll(HANDLE_AUTH)) {
-    if (!/\bbaseURL\s*:/.test(match[1])) {
+  for (const match of code.matchAll(HANDLE_AUTH_CALL)) {
+    // `import { handleAuth } from …` has no call parenthesis and is not matched.
+    const args = callArguments(code, match.index + match[0].length - 1);
+    if (!/\bbaseURL\s*:/.test(args)) {
       findings.push({ line: lineOf(match.index), what: "handleAuth() without baseURL — AuthKit then redirects to the request's own origin" });
     }
   }
@@ -64,6 +87,11 @@ function selfTest() {
     ["only in a comment", '// new URL(target, request.url) was the bug\nconst x = 1;', 0],
     ["handleAuth without baseURL", 'export const GET = handleAuth({\n  returnPathname: "/run",\n});', 1],
     ["handleAuth with baseURL", 'export const GET = handleAuth({\n  returnPathname: "/run",\n  baseURL: siteOrigin() ?? undefined,\n});', 0],
+    ["handleAuth on one line, without baseURL", 'export const GET = handleAuth({ returnPathname: "/run" });', 1],
+    ["handleAuth with no arguments at all", "export const GET = handleAuth();", 1],
+    ["handleAuth on one line, with baseURL", 'export const GET = handleAuth({ returnPathname: "/run", baseURL: origin() });', 0],
+    ["handleAuth with a nested call before baseURL", 'handleAuth({ onSuccess: async () => { (await cookies()).set(A, B, opts()); }, baseURL: x });', 0],
+    ["importing handleAuth is not calling it", 'import { handleAuth } from "@workos-inc/authkit-nextjs";', 0],
   ];
   const failures = cases.filter(([, source, want]) => scan(source).length !== want);
   if (failures.length) {
@@ -80,7 +108,7 @@ function sources(dir, out = []) {
     if (name === "node_modules" || name === ".next" || name.startsWith(".form-test")) continue;
     const path = join(dir, name);
     if (statSync(path).isDirectory()) sources(path, out);
-    else if (/\.(ts|tsx)$/.test(name) && !/\.test\.tsx?$/.test(name)) out.push(path);
+    else if (/\.(ts|tsx|js|jsx|mjs|cjs)$/.test(name) && !/\.test\.[cm]?[jt]sx?$/.test(name)) out.push(path);
   }
   return out;
 }
@@ -88,7 +116,9 @@ function sources(dir, out = []) {
 if (process.argv.includes("--self-test")) {
   selfTest();
 } else {
-  const files = [...sources(join(WEB, "app")), ...sources(join(WEB, "lib")), ...sources(join(WEB, "components")), join(WEB, "middleware.ts")];
+  // The whole web app, not a list of directories somebody has to remember to extend:
+  // `sources` skips node_modules, build output and test bundles, and test files.
+  const files = sources(WEB).filter((file) => !relative(WEB, file).startsWith(`tests${"/"}`));
   let count = 0;
   for (const file of files) {
     for (const { line, what } of scan(readFileSync(file, "utf8"))) {
