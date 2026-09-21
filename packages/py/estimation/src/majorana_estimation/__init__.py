@@ -37,7 +37,20 @@ from .estimate import (
     choose_code_distance,
     estimate,
 )
+from .frontier import (
+    Frontier,
+    FrontierPoint,
+    compute_frontier,
+    pareto_frontier,
+    sweep_estimates,
+)
 from .logical import LogicalCost
+from .scaling import (
+    ScalingCurve,
+    ScalingLaw,
+    ScalingPoint,
+    compute_scaling_curve,
+)
 
 __all__ = [
     "BUILTIN_ASSUMPTION_SETS",
@@ -50,13 +63,22 @@ __all__ = [
     "DistanceChoice",
     "FactoryTiming",
     "Footprint",
+    "Frontier",
+    "FrontierPoint",
     "LogicalCost",
     "PatchFootprint",
     "PhysicalEstimate",
     "Runtime",
+    "ScalingCurve",
+    "ScalingLaw",
+    "ScalingPoint",
     "SpeedupClass",
     "ValueProvenance",
     "assess_advantage",
     "choose_code_distance",
+    "compute_frontier",
+    "compute_scaling_curve",
     "estimate",
+    "pareto_frontier",
+    "sweep_estimates",
 ]
