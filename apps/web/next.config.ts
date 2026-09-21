@@ -31,10 +31,10 @@ import { edgeCacheRules } from "./lib/edge-cache-headers";
  *
  * That leaves nonces, and a nonce has to be minted per request and appear in
  * both the header and the HTML. The HTML on the public pages is served from
- * Vercel's CDN with a nonce baked in at render time, so a fresh nonce in the
+ * the edge cache with a nonce baked in at render time, so a fresh nonce in the
  * header would match nothing in the cached document and block the whole page.
  * Nonces therefore mean per-request rendering, which is precisely the caching
- * that `localeRewrite` in `middleware.ts` and the `Vercel-CDN-Cache-Control`
+ * that `localeRewrite` in `middleware.ts` and the `CDN-Cache-Control`
  * rules below exist to buy. That trade is the owner's call, not a refactor.
  *
  * ## What IS closed, and was not before
@@ -196,52 +196,22 @@ const nextConfig: NextConfig = {
       // pages on the CDN is unavailable here at any price. What is available is
       // an edge cache in FRONT of the render, which is what this configures.
       //
-      // ## Measured, because the documentation contradicts itself here
+      // ## Why a CDN-specific header, not Cache-Control
       //
       // Next sends `cache-control: private, no-cache, no-store, max-age=0,
-      // must-revalidate` on every dynamic page. Vercel documents both that
-      // "Vercel-CDN-Cache-Control is exclusive to Vercel and has top priority"
-      // and, in its cacheable-response criteria, that a response must not
-      // "contain the private, no-cache or no-store directives in the
-      // Cache-Control header". Those cannot both govern this case, and nothing
-      // in either doc says which wins.
+      // must-revalidate` on every dynamic page, and config headers here cannot
+      // override a header the render itself sets. A targeted header that only
+      // the edge reads is the way round that. Until 2026-09-21 this was
+      // `Vercel-CDN-Cache-Control`, measured on a Vercel preview to beat the
+      // `no-store` (one render served three consecutive GETs; plain
+      // `Cache-Control` from this file did not). Vercel no longer serves the
+      // site, so only `CDN-Cache-Control` — the IETF targeted-cache-control
+      // header, which Cloudflare reads — is sent now. The browser still
+      // receives `no-store`, deliberately: only the edge is meant to hold this.
       //
-      // A preview deployment of `spike/repo-cdn-cache-control` answered it. Three
-      // arms, three consecutive GETs each, one run:
-      //
-      //   /cs-probe    Vercel-CDN-Cache-Control     MISS HIT  HIT
-      //   /cs-cc       Cache-Control via this file  MISS MISS MISS
-      //   /cs-control  no header                    MISS MISS MISS
-      //
-      // The probe's three responses carried a byte-identical render timestamp,
-      // so one render served all three; the two controls each rendered three
-      // times. So the priority rule wins, and a plain `Cache-Control` here does
-      // not — Vercel's own note that config headers "will be overridden by
-      // headers defined in Function responses" covers that second arm, and it is
-      // why this cannot simply be written as `s-maxage`.
-      //
-      // The browser still receives `no-store`, which is left alone deliberately:
-      // only Vercel's CDN is meant to hold this, and any other proxy in the path
-      // reads the standard header and declines. `Vercel-CDN-Cache-Control` is
-      // consumed at the edge and never reaches the client.
-      //
-      // ## Both header names, because the edge is changing underneath this
-      //
-      // `Vercel-CDN-Cache-Control` is read by exactly one CDN. The GCP migration
-      // (ai-ops gcp-migration-20260912) puts Cloudflare in front of Cloud Run
-      // instead, where that header is an unrecognised string that passes through
-      // inert — and the failure is silent in the worst direction: the site keeps
-      // working and every Atlas page renders on every request, which is the load
-      // shape behind the 2026-09-15 outage. `CDN-Cache-Control` is the IETF
-      // targeted-cache-control header that Cloudflare does read.
-      //
-      // Both are set rather than one replacing the other, because production
-      // runs on both stacks through the cutover and its 30-day rollback window.
-      // Vercel's own precedence is `Vercel-CDN-Cache-Control` before
-      // `CDN-Cache-Control` before `Cache-Control`, so adding the second name
-      // changes nothing about what Vercel does today; it only means the same
-      // intent survives the switch. Drop the Vercel name when Vercel is retired,
-      // not before.
+      // The failure mode if this stops working is silent in the worst
+      // direction: the site keeps working and every Atlas page renders on
+      // every request, which is the load shape behind the 2026-09-15 outage.
       //
       // ## The header is half of it, and the missing half is not in this repo
       //
@@ -253,7 +223,7 @@ const nextConfig: NextConfig = {
       // The paired Cache Rule lives in the Cloudflare dashboard and is recorded
       // in `docs/runbooks/web-cloud-run.md`; the check that settles whether it
       // works is a repeat request measured against `cf-cache-status: HIT`, the
-      // same way `x-vercel-cache: HIT` settles it today.
+      // and `verify-web-cache` runs that check after every web deploy.
       //
       // ## Why 300
       //
@@ -267,13 +237,13 @@ const nextConfig: NextConfig = {
       // The clean path is what a reader requests; middleware rewrites it to the
       // `/{locale}` form before the routing layer sees it. Which of the two the
       // header phase matches is a platform-ordering detail this file should not
-      // depend on, so both are listed and the live check is `x-vercel-cache: HIT`
-      // on a repeat request, not a reading of the routing order.
+      // depend on, so both are listed and the live check is `cf-cache-status:
+      // HIT` on a repeat request, not a reading of the routing order.
       //
       // ## Only a plain request is marked cacheable for Cloudflare
       //
-      // `edgeCacheRules` sends `Vercel-CDN-Cache-Control` on every response and
-      // `CDN-Cache-Control` only when the request carries no `RSC` header, no
+      // `edgeCacheRules` sends `CDN-Cache-Control` only when the request
+      // carries no `RSC` header, no
       // `_rsc` parameter and no locale cookie. Cloudflare ignores `Vary`, so a
       // payload request would otherwise put the React payload (or Next's 307 to
       // it) in the edge cache under the address readers ask for. The account,
@@ -309,37 +279,35 @@ const nextConfig: NextConfig = {
       // The landing page's demo video and the wordmark, which are the first
       // binary assets this app has ever served.
       //
-      // ## What Vercel does without this
+      // ## What the edge does without this
       //
-      // Files under `public/` leave the edge with
-      // `cache-control: public, max-age=0, must-revalidate` — measured on the
-      // preview deployment, on the 6.8 MB mp4 itself. That is a conditional
+      // Files under `public/` leave the server with
+      // `cache-control: public, max-age=0, must-revalidate` (measured on a
+      // Vercel preview, on the 6.8 MB mp4 itself). That is a conditional
       // request on every single page load. The 304 that comes back is cheap in
-      // bytes and not cheap in time: it is a full round trip to the edge before
-      // the poster frame can be trusted, on the largest asset the site owns, on
-      // the first screen a visitor sees.
+      // bytes and not cheap in time: it is a full round trip before the poster
+      // frame can be trusted, on the largest asset the site owns, on the first
+      // screen a visitor sees.
       //
-      // ## The two numbers, and why they differ
+      // ## One week at both layers, and not `immutable`
       //
-      // `Vercel-CDN-Cache-Control` is a year because the edge cache is keyed to
-      // a deployment: a new deploy cannot serve a stale copy of this, so there
-      // is no upper bound worth choosing other than "as long as possible".
+      // Neither cache is keyed to a deployment. These filenames are not
+      // content-hashed — they are `leona-product-demo.mp4` and a person will
+      // eventually replace it in place with a re-cut of the same name — so any
+      // TTL is how long a re-cut can stay invisible. A week bounds that while
+      // still costing zero requests for every repeat visit inside it.
       //
-      // `Cache-Control` is a week, and deliberately NOT `immutable`, because a
-      // browser cache is not keyed to a deployment. `immutable` is the right
-      // answer only for content-hashed filenames, and these are not hashed —
-      // they are `leona-product-demo.mp4` and a person will eventually replace
-      // it in place with a re-cut of the same name. A year of `immutable` would
-      // strand that re-cut in visitors' browsers with no way to reach them; a
-      // week bounds the damage to a week, while still costing zero requests for
-      // every repeat visit inside it. If these ever gain a content hash, raise
-      // the browser number to a year and add `immutable` in the same commit.
+      // The edge number used to be a year, because Vercel's edge cache WAS
+      // keyed to a deployment and a new deploy could not serve a stale copy.
+      // Cloudflare's is not: at a year, a replaced video would have been served
+      // stale from the edge for up to a year unless someone purged it by hand.
+      // If these ever gain a content hash, raise both numbers to a year and add
+      // `immutable` in the same commit.
       ...["/media/:path*", "/brand/:path*"].map((source) => ({
         source,
         headers: [
           { key: "Cache-Control", value: "public, max-age=604800" },
-          { key: "Vercel-CDN-Cache-Control", value: "max-age=31536000" },
-          { key: "CDN-Cache-Control", value: "max-age=31536000" },
+          { key: "CDN-Cache-Control", value: "max-age=604800" },
         ],
       })),
       {

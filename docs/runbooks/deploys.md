@@ -1,7 +1,10 @@
 # Runbook: deploying api + worker to Cloud Run
 
-Web deploys itself — Vercel builds every push to `dev` and aliases production
-(ADR-0011). **api and worker historically did not**, and the Cloud Run services
+The website is deployed by `.github/workflows/deploy-web.yml` to Cloud Run
+(`majorana-web`; ADR-0033, runbook `web-cloud-run.md`). Until 2026-09-21 Vercel
+built it, and several sections below still describe Vercel-era settings; where
+they say "set on Vercel", read "set in `deploy-web.yml`'s runtime settings".
+**api and worker historically did not deploy themselves**, and the Cloud Run services
 kept serving whatever image was last pushed by hand.
 
 That gap caused three incidents. On 2026-07-19 both services were still running
