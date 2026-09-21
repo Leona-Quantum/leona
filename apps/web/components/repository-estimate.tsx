@@ -17,7 +17,7 @@
 // then-283, measured 2026-07).
 import type { ReactNode } from "react";
 import type { PublicLocale } from "../lib/public-locale";
-import type { RepositoryEstimate } from "../lib/repository/estimate";
+import type { EstimateFrontier, RepositoryEstimate } from "../lib/repository/estimate";
 
 // Re-exported so a page importing the panel gets its renderability rule from the
 // same module, without reaching past it.
@@ -94,6 +94,12 @@ const COPY = {
     comparability:
       "Two estimates may be compared only when this identity matches. Change the precision or the hardware set and every number above is a different claim.",
     notesTitle: "Stated caveats",
+    frontierTitle: "Qubits vs runtime, across hardware",
+    frontierBlurb:
+      "Each row is one hardware set and factory count. None was picked for you — a hardware set with no row here was checked and beaten on both qubits and runtime by a row that is shown.",
+    frontierHardware: "Hardware",
+    frontierConsidered: "combinations checked",
+    frontierEmpty: "Nothing to rank: this circuit has no stated runtime under any hardware set.",
     seconds: "s",
     ms: "ms",
     us: "µs",
@@ -172,6 +178,12 @@ const COPY = {
     comparability:
       "この識別子が一致する場合にのみ、2つの推定値を比較できます。精度やハードウェア前提を変えると、上のすべての数値は別の主張になります。",
     notesTitle: "明示された注意点",
+    frontierTitle: "ハードウェアごとの量子ビット数と実行時間",
+    frontierBlurb:
+      "各行は1つのハードウェアと工場数の組み合わせです。どれかを選んで示しているわけではありません。ここに行がないハードウェアは検討した上で、量子ビット数と実行時間の両方で別の行に劣っていたため除外されています。",
+    frontierHardware: "ハードウェア",
+    frontierConsidered: "件を検討",
+    frontierEmpty: "順位付けできる対象がありません。この回路はどのハードウェア前提でも実行時間を提示できません。",
     seconds: "秒",
     ms: "ミリ秒",
     us: "マイクロ秒",
@@ -289,6 +301,90 @@ function Layer({ title, note, children }: { title: string; note?: string; childr
       <h4>{title}</h4>
       {note ? <p className="mj-estimate-layer-note">{note}</p> : null}
       <dl className="mj-estimate-rows">{children}</dl>
+    </section>
+  );
+}
+
+/**
+ * The Pareto frontier of physical qubits vs runtime, across the deployment's
+ * built-in hardware sets (proposal 4's frontier — Azure's resource
+ * estimator's own move, applied here). A small table rather than a chart:
+ * this codebase has no charting library and the proposal that asked for this
+ * says not to add one for it.
+ *
+ * `points` arrives already sorted ascending by qubits, and every row is
+ * independently labelled with the hardware that produced it — a hardware
+ * set with no row here was checked and beaten on both axes by a row that is
+ * shown, not silently dropped or preferred (see `frontier.py`'s module
+ * docstring for why combining hardware sets on one table is honest rather
+ * than a silent ranking).
+ */
+function FrontierTable({
+  frontier,
+  copy,
+  locale,
+}: {
+  frontier: EstimateFrontier;
+  copy: Copy;
+  locale: PublicLocale;
+}) {
+  if (frontier.points.length === 0) {
+    return (
+      <section className="mj-estimate-frontier">
+        <h4>{copy.frontierTitle}</h4>
+        <p className="mj-estimate-layer-note">{copy.frontierEmpty}</p>
+      </section>
+    );
+  }
+
+  // One citation per hardware set actually shown, in the order it first
+  // appears, so a reader can trace every row's source without the same
+  // sentence repeated once per row.
+  const citations = new Map<string, string>();
+  for (const point of frontier.points) {
+    if (!citations.has(point.assumptionSet)) {
+      citations.set(point.assumptionSet, point.assumptionCitation);
+    }
+  }
+
+  return (
+    <section className="mj-estimate-frontier">
+      <h4>{copy.frontierTitle}</h4>
+      <p className="mj-estimate-layer-note">{copy.frontierBlurb}</p>
+      <div className="mj-estimate-frontier-table-wrap">
+        <table className="mj-estimate-frontier-table">
+          <thead>
+            <tr>
+              <th scope="col">{copy.frontierHardware}</th>
+              <th scope="col">{copy.factoryCount}</th>
+              <th scope="col">{copy.physicalQubits}</th>
+              <th scope="col">{copy.runtime}</th>
+            </tr>
+          </thead>
+          <tbody>
+            {frontier.points.map((point) => (
+              <tr key={`${point.assumptionSet}-${point.factoryCount}`}>
+                <td>
+                  <code>{point.assumptionSet}</code>
+                </td>
+                <td>{count(point.factoryCount, locale)}</td>
+                <td>{count(point.totalPhysicalQubits, locale)}</td>
+                <td>{formatDuration(point.runtimeSeconds, copy)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      <p className="mj-estimate-layer-note">
+        {count(frontier.considered, locale)} {copy.frontierConsidered}
+      </p>
+      <ul className="mj-estimate-frontier-citations">
+        {Array.from(citations.entries()).map(([identity, citation]) => (
+          <li key={identity}>
+            <code>{identity}</code>: {citation}
+          </li>
+        ))}
+      </ul>
     </section>
   );
 }
@@ -477,6 +573,10 @@ export function RepositoryEstimatePanel({
           />
         )}
       </Layer>
+
+      {estimate.frontier !== null ? (
+        <FrontierTable frontier={estimate.frontier} copy={copy} locale={locale} />
+      ) : null}
 
       {estimate.notes.length > 0 ? (
         <section className="mj-estimate-notes">
