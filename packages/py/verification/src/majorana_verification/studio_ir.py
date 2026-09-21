@@ -82,7 +82,9 @@ def _unitary_prefix(
     return operations[:first_measurement]
 
 
-def _studio_circuit(qubit_count: int, operations: list[CircuitOptimizationOperation]) -> QuantumCircuit:
+def _studio_circuit(
+    qubit_count: int, operations: list[CircuitOptimizationOperation]
+) -> QuantumCircuit:
     """Build the unitary Qiskit circuit for Studio's closed operation list.
 
     Measurements are dropped (via `_unitary_prefix`) rather than represented:

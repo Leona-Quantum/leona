@@ -941,7 +941,13 @@ class SynthesisCandidate(_ResourceBase):
         succeeded = self.status == "succeeded"
         if not succeeded and not self.reason:
             raise ValueError("an unsupported or failed candidate states a reason")
-        success_fields = (self.compiler_version, self.operations, self.before, self.after, self.equivalence)
+        success_fields = (
+            self.compiler_version,
+            self.operations,
+            self.before,
+            self.after,
+            self.equivalence,
+        )
         if succeeded and any(field is None for field in success_fields):
             raise ValueError(
                 "a succeeded candidate states compiler_version, operations, before, "

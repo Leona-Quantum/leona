@@ -71,7 +71,10 @@ def test_above_the_width_limit_reports_not_checked_rather_than_raising():
     wide = [_op("H", [i]) for i in range(SYNTHESIS_EQUIVALENCE_MAX_QUBITS + 1)]
 
     report = equivalent_operations(
-        SYNTHESIS_EQUIVALENCE_MAX_QUBITS + 1, wide, list(wide), max_qubits=SYNTHESIS_EQUIVALENCE_MAX_QUBITS
+        SYNTHESIS_EQUIVALENCE_MAX_QUBITS + 1,
+        wide,
+        list(wide),
+        max_qubits=SYNTHESIS_EQUIVALENCE_MAX_QUBITS,
     )
 
     assert report.checked is False

@@ -680,7 +680,9 @@ def _reduce_connected(edges: Iterable[tuple[int, int]], qubit_count: int) -> lis
     return [(remap[left], remap[right]) for left, right in edges if left in keep and right in keep]
 
 
-def _coupling_map_for_target(qubit_count: int, connectivity: str | None) -> list[tuple[int, int]] | None:
+def _coupling_map_for_target(
+    qubit_count: int, connectivity: str | None
+) -> list[tuple[int, int]] | None:
     """Edges for a requested connectivity, sized to exactly `qubit_count`.
 
     `None` means no constraint (``all_to_all`` or unset) -- every compiler's

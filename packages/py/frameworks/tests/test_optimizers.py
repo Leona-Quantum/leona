@@ -8,16 +8,13 @@ from qiskit import QuantumCircuit
 from qiskit.quantum_info import Operator
 
 from majorana_contracts import (
-    CircuitOptimizationOperation,
     CircuitOptimizationRequest,
     SynthesisRequest,
-    SynthesisTarget,
 )
 from majorana_contracts.enums import (
     CircuitCompiler,
     CircuitOptimizationGate,
     SynthesisConnectivity,
-    SynthesisObjective,
 )
 from majorana_frameworks import optimizer_kernel
 from majorana_frameworks import optimizers
