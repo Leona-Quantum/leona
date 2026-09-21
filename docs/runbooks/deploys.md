@@ -2,8 +2,9 @@
 
 The website is deployed by `.github/workflows/deploy-web.yml` to Cloud Run
 (`majorana-web`; ADR-0033, runbook `web-cloud-run.md`). Until 2026-09-21 Vercel
-built it, and several sections below still describe Vercel-era settings; where
-they say "set on Vercel", read "set in `deploy-web.yml`'s runtime settings".
+built and served it; the sections below that used to say "set on Vercel" now
+name `deploy-web.yml`'s runtime settings or the `WEB_*` Secret Manager entries
+it reads from.
 **api and worker historically did not deploy themselves**, and the Cloud Run services
 kept serving whatever image was last pushed by hand.
 
@@ -291,9 +292,15 @@ The three `LEONA_*_EMAILS` lists are tier allowlists, named after the internal
 tier ids rather than the plan names on the pricing page: `pro` is sold as
 **Plus** and `team` as **Professional**. `TIER_ALLOWLIST_ENV` in
 `services/api/src/majorana_api/tiers.py` is the one table both services read
-them from. Each must be set on the api service, the worker, AND Vercel, or an
-account is metered at one tier by the surface that displays and another by the
-surface that refuses.
+them from. Each must be set on the api service, the worker, AND `majorana-web`
+(Cloud Run), or an account is metered at one tier by the surface that displays
+and another by the surface that refuses. **As of this sweep, only
+`LEONA_DEVELOPER_EMAILS` is confirmed wired into `deploy-web.yml`'s
+`WEB_ENV_VARS`/`WEB_SECRETS` composition** (`LEONA_DEVELOPER_EMAILS=
+WEB_DEVELOPER_EMAILS:latest`) — `LEONA_TEAM_EMAILS` and `LEONA_PRO_EMAILS`
+appear in neither `vars` nor `secrets` there, which reads like a gap left by
+the Vercel-to-Cloud-Run move rather than a deliberate decision. Flagged, not
+fixed here: `.github/workflows/deploy-web.yml` is a blast-radius file.
 
 ### The production WorkOS pair
 
@@ -304,7 +311,7 @@ browser follows, and the issuer is derived from it. The secret in this system is
 
 | Variable | Production value |
 |---|---|
-| `WORKOS_CLIENT_ID` (Vercel + `majorana-api`) | `client_01KX3TN2Y37QDVCWG1M7M5WRG8` |
+| `WORKOS_CLIENT_ID` (`majorana-web` + `majorana-api`) | `client_01KX3TN2Y37QDVCWG1M7M5WRG8` |
 | `WORKOS_JWT_ISSUER` (`majorana-api`) | `https://api.workos.com/user_management/client_01KX3TN2Y37QDVCWG1M7M5WRG8` |
 
 **The issuer does not follow the client id.** It defaults to being derived from it, but
@@ -354,9 +361,12 @@ migration and the traffic shift.
 
 ### The public catalog flag — `MAJORANA_PUBLIC_CATALOG_API`
 
-**Set on Vercel, not on Cloud Run.** It is read by the Next.js server
-(`apps/web/lib/public-catalog.ts`), and it is the single switch that decides where
-`/repository` gets its content:
+**Set on the `majorana-web` Cloud Run service, in `deploy-web.yml`'s
+`WEB_ENV_VARS` — hardcoded there as `MAJORANA_PUBLIC_CATALOG_API=true`, not a
+Secret Manager entry.** Until 2026-09-21 this was set on Vercel instead; the
+mechanism moved but the flag's meaning did not. It is read by the Next.js
+server (`apps/web/lib/public-catalog.ts`), and it is the single switch that
+decides where `/repository` gets its content:
 
 | Value | What `/repository` serves |
 |---|---|
@@ -369,9 +379,10 @@ is why the operational consequence below kept surprising people.
 **There is a whole-corpus fallback and it is deliberate.** If the API is unreachable,
 returns nothing usable, or fails the page-completeness check, `repository-source.ts`
 serves the static corpus anyway rather than 500 the public site, and logs
-`[repository-source] falling back to the static corpus`. **Grep the Vercel logs for that
-line before concluding the cutover is healthy** — a silent fallback makes a broken
-cutover look like a working one, which is exactly why it is logged loudly.
+`[repository-source] falling back to the static corpus`. **Grep `majorana-web`'s
+Cloud Logging for that line before concluding the cutover is healthy** — a silent
+fallback makes a broken cutover look like a working one, which is exactly why
+it is logged loudly.
 
 This used to say the fallback was safe "for as long as both sides really are the same
 283 records". The conditional was right and the premise has stopped holding: the two
@@ -401,9 +412,10 @@ Steps 1 and 2 are a deliberate, reviewed action — there is no automatic sync, 
 (ADR-0019). Until they run, the database keeps serving the previous manifest and the
 repository keeps showing the fix.
 
-**Turning the flag off is not free.** It is a Vercel config change and a redeploy of the
-same code, and it takes effect immediately — but it changes *what the site serves*, not
-just where it reads from:
+**Turning the flag off is not free.** It is an edit to `deploy-web.yml`'s
+`WEB_ENV_VARS` line and a redeploy of the same code, and it takes effect
+immediately — but it changes *what the site serves*, not just where it reads
+from:
 
 | Flag | `/repository` serves | What is lost |
 |---|---|---|

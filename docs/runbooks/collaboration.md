@@ -7,10 +7,11 @@ Leona Quantum uses a two-step collaboration boundary:
 2. Eshaan reviews and merges into `dev`, then owns the `dev` → Production
    promotion and hosted redeployment.
 
-This works on the current Vercel Hobby setup because the contributor loop does
-not depend on Vercel Preview deployments. A stable Preview link remains useful
-for authenticated product review; local browsers are the source of truth for
-unmerged changes.
+This works because the contributor loop does not depend on a per-PR preview
+deployment — there is no such thing since Vercel was retired as a host
+(ADR-0033); a branch is tried locally or, for authenticated product review, on
+the private twin (`majorana-web-verify`, IAM-gated). Local browsers are the
+source of truth for unmerged changes.
 
 ## Sharing A Workspace
 
@@ -97,9 +98,9 @@ browser/compiler caches.
 - Contributor opens a PR from `feature/<slice>` into `dev`.
 - Required checks and code review must pass before merge.
 - Eshaan verifies the merged `dev` deployment and any database migration on a
-  development/Preview environment.
+  development environment or the private twin (`majorana-web-verify`).
 - Eshaan promotes `dev` to `prod`, supplies hosted secrets through the existing
-  secret stores, and redeploys Cloud Run/Vercel. Contributors do not push to
+  secret stores, and redeploys Cloud Run. Contributors do not push to
   protected branches or promote Production.
 - A rollback is a hosted deployment rollback or a forward fix; do not rewrite
   shared migration history.

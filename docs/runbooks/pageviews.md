@@ -1,11 +1,24 @@
 # Runbook: public pageviews
 
+**This runbook describes the Vercel-era retrieval procedure and has NOT been
+re-verified against Cloud Run.** The website moved to Cloud Run
+(`majorana-web`) and Vercel was retired as a host on 2026-09-21 (ADR-0033).
+The `console.log` call itself (`countPageview()`) is unchanged and still runs
+on every request; what changed is where the line lands. On Cloud Run, stdout
+from a container goes to Cloud Logging, and Cloud Run auto-parses a
+valid-JSON stdout line into `jsonPayload` rather than `textPayload` — so the
+`vercel logs`-based commands below are replaced with a `gcloud logging read`
+equivalent, adapted from the same pattern `docs/runbooks/deploys.md` and
+`docs/runbooks/incident.md` use for the api/worker logs. **Nobody has run the
+replacement commands against a real pageview yet; verify the query actually
+matches before relying on it during an incident.**
+
 ## What exists
 
-One line in the Vercel runtime log per public pageview, written by
-`countPageview()` in `apps/web/middleware.ts`. The decision of what counts and
-what is recorded is `apps/web/lib/pageview-signal.ts`; its tests are
-`apps/web/lib/pageview-signal.test.ts`.
+One line in the Cloud Logging output for `majorana-web` per public pageview,
+written by `countPageview()` in `apps/web/middleware.ts`. The decision of what
+counts and what is recorded is `apps/web/lib/pageview-signal.ts`; its tests
+are `apps/web/lib/pageview-signal.test.ts`.
 
 That is the whole implementation. There is no dashboard, no database table, no
 client script, and no third-party account.
@@ -43,57 +56,68 @@ A line looks like this, and contains nothing else:
 
 ## Turning it off
 
-Set `LEONA_PAGEVIEW_LOG=off` in the Vercel project environment and redeploy.
-It is default-on: a counter nobody remembers to arm reports zero reads, which
-looks exactly like the finding it was built to test for.
+Set `LEONA_PAGEVIEW_LOG=off` on the `majorana-web` Cloud Run service and
+redeploy (`gcloud run services update majorana-web --project majorana-core
+--region us-west1 --update-env-vars LEONA_PAGEVIEW_LOG=off` — reverted by the
+next `deploy-web.yml` run, since its `--set-env-vars` replaces the whole set;
+add it there instead for anything longer-lived). It is default-on: a counter
+nobody remembers to arm reports zero reads, which looks exactly like the
+finding it was built to test for.
 
 ## Reading the counts back
 
-The lines go to Vercel's runtime logs for the `web` project. Retention is
-Vercel's, not ours — see the ceiling below.
+The lines go to Cloud Logging, under `resource.type="cloud_run_revision"`,
+`resource.labels.service_name="majorana-web"`. There is no per-service
+retention add-on the way Vercel sold one — see the ceiling below for what
+governs it instead.
 
-**From the dashboard.** Project `web` → Observability → Logs, filter on
-`leona.pageview`, group by the `route` value.
+**From the console.**
+`console.cloud.google.com/logs/query?project=majorana-core`, query:
 
-**From the CLI**, against the current production deployment. `vercel logs` needs
-a deployment URL or id — it has no "whatever is in production right now" mode, and
-`vercel inspect` needs the same argument, so there is no one-liner that discovers
-it for you. Take the URL from the dashboard, or list them:
-
-```bash
-vercel ls web --scope majoranaq          # the top row is the current production deployment
-vercel logs --deployment <deployment-url> --scope majoranaq \
-  --query "leona.pageview" --since 24h --limit 1000
+```
+resource.type="cloud_run_revision"
+resource.labels.service_name="majorana-web"
+jsonPayload.evt="leona.pageview"
 ```
 
-**Use `--query`, not a pipe into `grep`.** This is the one part of this procedure
-that fails silently rather than loudly. `vercel logs` returns the most recent 100
-entries by default and this site takes enough crawler traffic to fill that window
-in **seconds** — so `vercel logs ... | grep leona.pageview` prints nothing, which
-is indistinguishable from "nobody visited". That is exactly the reading this
-counter exists to prevent, and it happened on the first attempt to verify the
-counter after it shipped: the counter was working perfectly and the grep said
-zero. `--query` filters server-side, before the limit is applied. Set `--since`
-and `--limit` deliberately; both silently truncate.
+**From the CLI:**
+
+```bash
+gcloud logging read \
+  'resource.type="cloud_run_revision" AND resource.labels.service_name="majorana-web" AND jsonPayload.evt="leona.pageview"' \
+  --project majorana-core --freshness=24h --limit 1000 --format=json
+```
 
 Counts per route for a day:
 
 ```bash
-vercel logs --deployment <deployment-url> --scope majoranaq \
-  --query "leona.pageview" --since 24h --limit 1000 --json \
-  | grep -o '{"evt":"leona.pageview"[^}]*}' \
-  | jq -r 'select(.day == "2026-08-14") | .route' \
+gcloud logging read \
+  'resource.type="cloud_run_revision" AND resource.labels.service_name="majorana-web" AND jsonPayload.evt="leona.pageview"' \
+  --project majorana-core --freshness=24h --limit 1000 --format=json \
+  | jq -r '.[] | select(.jsonPayload.day == "2026-08-14") | .jsonPayload.route' \
   | sort | uniq -c | sort -rn
 ```
 
+Set `--freshness` and `--limit` deliberately, the same trap the old Vercel
+procedure warned about applies here too in spirit: a default or too-small
+`--limit` truncates silently, and a truncated result reads exactly like "nobody
+visited" — which is precisely the failure this counter exists to catch.
+**Neither query above has been run against a real pageview yet** — confirm
+`gcloud logging read` actually surfaces `jsonPayload.evt`/`jsonPayload.day`/
+`jsonPayload.route` as named here (Cloud Run's JSON-stdout auto-parsing is
+documented behaviour, but this specific field mapping was not checked live)
+before trusting a total pulled this way.
+
 ## The ceiling — read this before trusting a total
 
-**Retention is not under our control and is not durable.** Vercel's base Pro
-runtime-log retention is **1 day**. The team currently has the paid
-**Observability Plus** add-on enabled, which extends retention to 30 days and
-unlocks querying — but that is a metered add-on ($1.20/1M events), not a
-guarantee, and if it is ever switched off the window silently collapses back to
-a day. Nothing in this repo would notice.
+**Retention is governed by the project's Cloud Logging bucket configuration,
+not re-verified here.** GCP's own default for the `_Default` log bucket is 30
+days, which would already be longer than Vercel's base-Pro 1-day / paid
+Observability-Plus 30-day setup this section used to describe — but whether
+`majorana-core` still uses the default bucket and retention, or has a custom
+one, was not checked as part of this sweep. Confirm at
+`console.cloud.google.com/logs/storage?project=majorana-core` before quoting a
+retention window to anyone.
 
 So this counter answers "is anyone reading the map **this week**". It does not
 build a history. Any question of the form "how did traffic change over the
