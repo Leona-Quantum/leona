@@ -5,7 +5,7 @@ import {
   errorReportingOrigin,
 } from "./lib/content-security-policy";
 import { permissionsPolicy } from "./lib/permissions-policy";
-import { deployEnv } from "./lib/deploy-env";
+import { deployEnv, publicReleaseSha } from "./lib/deploy-env";
 import { edgeCacheRules } from "./lib/edge-cache-headers";
 
 /**
@@ -122,6 +122,38 @@ const csp = contentSecurityPolicy({
 
 const nextConfig: NextConfig = {
   experimental: { globalNotFound: true },
+  /**
+   * Cloud Run version-skew protection (ai-ops gcp-migration-20260912; see
+   * docs/runbooks/web-cloud-run.md "The gap this move opens and does not
+   * close: stale chunks"). Vercel kept a previous deployment's `_next/static`
+   * reachable after a new one shipped, so a tab left open across a deploy
+   * could still fetch the chunk it was built against; Cloud Run has no
+   * equivalent — traffic shifts to the new revision, the old chunk paths
+   * 404, and the tab breaks on its next navigation.
+   *
+   * Setting `deploymentId` does not bring the old assets back (see the
+   * runbook section above for what would: a Cloud Storage bucket holding
+   * each build's `/_next/static` for a week, which is a new cloud resource
+   * and out of scope here). What it does: Next appends `?dpl=<id>` to every
+   * chunk URL and sends the id as `x-deployment-id` on client-side page-data
+   * fetches; when the server's id disagrees, the router abandons the
+   * client-side transition and does a full MPA reload instead — so a stale
+   * tab self-heals the moment it navigates, rather than throwing a
+   * ChunkLoadError the reader has to notice and reload past themselves. It
+   * does not cover a chunk fetched by a dynamic `import()` outside a
+   * navigation (a lazy-loaded component) — that failure mode is still
+   * possible and is what `components/chunk-error-recovery.tsx` (rendered in
+   * `RootDocument`) catches instead, by reloading the page once.
+   *
+   * `publicReleaseSha()` (lib/deploy-env.ts) resolves to the build's commit
+   * SHA — `NEXT_PUBLIC_LEONA_GIT_COMMIT_SHA`, set as a build arg by
+   * cloudbuild.web.yaml (`apps/web/Dockerfile` bakes it in at `next build`
+   * time, same as the Sentry release id already read from the same var), or
+   * Vercel's own `NEXT_PUBLIC_VERCEL_GIT_COMMIT_SHA` there. Undefined for a
+   * bare local `next dev`/`next build`, which leaves `deploymentId` unset —
+   * exactly Next's default, so nothing changes locally.
+   */
+  deploymentId: publicReleaseSha(),
   // @majorana/ui ships TS/TSX source (vendored components) — Next transpiles it.
   transpilePackages: ["@majorana/ui"],
   // Next sends `X-Powered-By: Next.js` on every response unless this is off.
