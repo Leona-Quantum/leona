@@ -1,31 +1,23 @@
 #!/usr/bin/env bash
 #
-# Vercel's "Ignored Build Step". Decides whether this commit needs the web app
-# rebuilt at all.
+# Decides whether a commit on `dev` needs the website rebuilt and redeployed.
+# `.github/workflows/deploy-web.yml` runs it before building the Cloud Run image.
 #
-#   exit 1  ->  BUILD  (Vercel proceeds)
-#   exit 0  ->  SKIP   (Vercel cancels the build and reuses the last deployment)
+#   WEB_BUILD_BASE=<sha before the push> WEB_BUILD_HEAD=<sha after> bash scripts/web-build-needed.sh
+#
+#   exit 1  ->  BUILD
+#   exit 0  ->  SKIP   (nothing the web app builds from changed)
+#
+# The inverted exit codes are inherited from Vercel's "Ignored Build Step",
+# which this script was until Vercel was retired on 2026-09-21. They are kept
+# so the deploy workflow's `if ...; then SKIP` reads the same as it always has.
 #
 # ## Why this exists
 #
-# Read from the Vercel usage console on 2026-08-14 (UTC), current billing
-# cycle (Aug 11 -> Sep 11), four days in:
-#
-#   Build CPU Minutes    129 hours   $26.54   <- 57% of everything
-#   Observability Events 7.64M       $9.16
-#   Vercel Functions     (4 lines)   ~$10.61
-#   ISR Reads / Writes   1.13K/1.21K $0
-#   Fast Data Transfer   29 GB/1 TB  $0
-#   Edge Requests        1.25M/10M   $0
-#
-# The included $20 credit was fully consumed and on-demand charges stood at
-# $26.61. **Serving traffic is not what costs money here** — the CDN lines are
-# comfortably inside the included allowances and ISR is literally zero. Builds
-# are the bill.
-#
-# This is a monorepo. Every push to any branch triggered a full Next.js build,
-# including pushes that touched only Python, only the worker, only CI config,
-# or only documentation — none of which the web app compiles against.
+# This is a monorepo, and most pushes touch only Python, the worker, CI config
+# or documentation, none of which the web app compiles against. On Vercel,
+# builds were 57% of the bill (read 2026-08-14); on Cloud Build they cost build
+# minutes and a deploy that changes nothing a visitor sees.
 #
 # ## What the web build actually depends on
 #
@@ -50,55 +42,18 @@ set -uo pipefail
 build() { echo "BUILD: $1"; exit 1; }
 skip()  { echo "SKIP: $1";  exit 0; }
 
-# ## Preview deployments are skipped by default
-#
-# Measured from Vercel's own deployment API over the seven days to 2026-09-16:
-# 190 deployments on this project, of which **142 were previews** — 130 of the
-# 184 wall-clock build minutes. Nothing consumes a preview: no workflow reads a
-# preview URL, and since 2026-09-20 none reacts to a Vercel deployment event at
-# all (`verify-web-cache.yml` follows `deploy-web`; `web-deploy-watch.yml`
-# reads Production records only).
-#
-# The path rules below cannot get at this, and not by oversight. This repo
-# keeps ~34 worktrees, one branch each, and a branch's FIRST deployment has no
-# `VERCEL_GIT_PREVIOUS_SHA` — which the "fail open" rule is obliged to BUILD,
-# because an unknown change set must never be skipped. So the diff-based rules
-# are structurally unable to stop the preview builds that cost the most.
-#
-# Previews stay available on demand, two ways, both checked before the diff is
-# computed because neither depends on it:
-#
-#   * set `LEONA_VERCEL_PREVIEWS=1` in the Vercel project's environment, or
-#   * put `[preview]` anywhere in the commit message.
-#
-# Production is untouched. `VERCEL_ENV` is `production` for the `dev` branch,
-# and — this is the part that has to stay true — any value this script does
-# not recognise falls through to the path rules rather than skipping. The test
-# for `preview` is positive and exact, so an empty or unexpected `VERCEL_ENV`
-# builds, exactly as it did before this block existed.
-if [ "${VERCEL_ENV:-}" = "preview" ]; then
-  if [ "${LEONA_VERCEL_PREVIEWS:-}" = "1" ]; then
-    : # opted in for the whole project — fall through to the path rules
-  elif grep -qiF '[preview]' <<<"${VERCEL_GIT_COMMIT_MESSAGE:-}"; then
-    : # opted in for this commit — fall through to the path rules
-  else
-    skip "preview deployment, and nothing consumes previews (set LEONA_VERCEL_PREVIEWS=1, or put [preview] in the commit message, to build one)"
-  fi
-fi
-
-# Vercel runs this from the project's Root Directory, which is `apps/web`, not
-# the repository root. Every path pattern below is repo-root-relative, and
-# `git diff --name-only` only prints repo-root-relative paths when it is not
-# asked for `--relative` — but the cd is cheap and makes the assumption
-# explicit rather than inherited from git's defaults.
+# Every path pattern below is repo-root-relative, and `git diff --name-only`
+# only prints repo-root-relative paths when it is not asked for `--relative` —
+# but the cd is cheap and makes the assumption explicit rather than inherited
+# from git's defaults (Vercel used to run this from `apps/web`).
 cd "$(git rev-parse --show-toplevel 2>/dev/null)" 2>/dev/null || build "not inside a git work tree"
 
-BASE="${VERCEL_GIT_PREVIOUS_SHA:-}"
-HEAD_SHA="${VERCEL_GIT_COMMIT_SHA:-HEAD}"
+BASE="${WEB_BUILD_BASE:-}"
+HEAD_SHA="${WEB_BUILD_HEAD:-HEAD}"
 
 # No usable base — first deployment, a force-push, or a rebuild. Build.
-if [ -z "$BASE" ]; then
-  build "no VERCEL_GIT_PREVIOUS_SHA, so the change set is unknown"
+if [ -z "$BASE" ] || [ "$BASE" = "0000000000000000000000000000000000000000" ]; then
+  build "no WEB_BUILD_BASE, so the change set is unknown"
 fi
 
 if ! CHANGED="$(git diff --name-only "$BASE" "$HEAD_SHA" 2>/dev/null)" || [ -z "$CHANGED" ]; then

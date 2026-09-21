@@ -33,44 +33,44 @@ function headersFor(request: { headers?: Record<string, string>; query?: Record<
     .flatMap((rule) => rule.headers.map((h) => h.key));
 }
 
-test("a plain request is marked cacheable for both edges", () => {
-  assert.deepEqual(headersFor({}), ["Vercel-CDN-Cache-Control", "CDN-Cache-Control"]);
+test("a plain request is marked cacheable", () => {
+  assert.deepEqual(headersFor({}), ["CDN-Cache-Control"]);
 });
 
 test("a payload request is not marked cacheable for Cloudflare, which ignores Vary", () => {
   // Measured through Cloudflare 2026-09-19: `RSC: 1` on /repository answers a
   // 307 to /repository?_rsc, and on /repository?_rsc the raw text/x-component
   // payload. Both carried CDN-Cache-Control: max-age=300 before this change.
-  assert.deepEqual(headersFor({ headers: { rsc: "1" } }), ["Vercel-CDN-Cache-Control"]);
-  assert.deepEqual(headersFor({ headers: { rsc: "1" }, query: { _rsc: "" } }), ["Vercel-CDN-Cache-Control"]);
-  assert.deepEqual(headersFor({ query: { _rsc: "1x7qz" } }), ["Vercel-CDN-Cache-Control"]);
+  assert.deepEqual(headersFor({ headers: { rsc: "1" } }), []);
+  assert.deepEqual(headersFor({ headers: { rsc: "1" }, query: { _rsc: "" } }), []);
+  assert.deepEqual(headersFor({ query: { _rsc: "1x7qz" } }), []);
 });
 
 test("an empty ?_rsc counts as absent in Next's matcher, so the header condition is the one that holds", () => {
   // Documents the boundary the comment in edge-cache-headers.ts relies on. If a
   // Next upgrade starts treating an empty value as present, this fails and the
   // comment needs rewriting; nothing about the protection gets weaker.
-  assert.deepEqual(headersFor({ query: { _rsc: "" } }), ["Vercel-CDN-Cache-Control", "CDN-Cache-Control"]);
+  assert.deepEqual(headersFor({ query: { _rsc: "" } }), ["CDN-Cache-Control"]);
 });
 
 test("a request carrying either locale cookie is not marked cacheable for Cloudflare", () => {
   for (const name of [PUBLIC_LOCALE_COOKIE, LEGACY_PUBLIC_LOCALE_COOKIE]) {
-    assert.deepEqual(headersFor({ headers: { cookie: `${name}=ja` } }), ["Vercel-CDN-Cache-Control"], name);
+    assert.deepEqual(headersFor({ headers: { cookie: `${name}=ja` } }), [], name);
     assert.deepEqual(
       headersFor({ headers: { cookie: `wos-session=abc; ${name}=en; other=1` } }),
-      ["Vercel-CDN-Cache-Control"],
+      [],
       `${name} among other cookies`,
     );
   }
   // An unrelated cookie changes nothing: the cached pages have no per-visitor part.
-  assert.deepEqual(headersFor({ headers: { cookie: "other=1" } }), ["Vercel-CDN-Cache-Control", "CDN-Cache-Control"]);
+  assert.deepEqual(headersFor({ headers: { cookie: "other=1" } }), ["CDN-Cache-Control"]);
 });
 
 test("any value of the RSC header counts as present, not only 1", () => {
   // Next lowercases the key it looks up, and Node lowercases incoming header
   // names, so the condition's key has to be lowercase to match anything.
   assert.ok(EDGE_CACHE_BYPASS_WHEN_PRESENT.some((c) => c.type === "header" && c.key === "rsc"));
-  assert.deepEqual(headersFor({ headers: { rsc: "0" } }), ["Vercel-CDN-Cache-Control"]);
+  assert.deepEqual(headersFor({ headers: { rsc: "0" } }), []);
 });
 
 test("next.config.ts sends CDN-Cache-Control for the Atlas only through edgeCacheRules", () => {
