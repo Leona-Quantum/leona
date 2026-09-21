@@ -36,15 +36,13 @@ const COPY = {
   en: {
     heading: "Find a method for your problem",
     intro:
-      "Pick a problem area and state your limits. This returns the methods whose own records satisfy them — never a guess about one it does not state.",
+      "Pick a problem area and set your limits. You'll see the methods whose records meet them, and why. When a record doesn't state something, the result says so instead of guessing.",
     problemLabel: "Problem area",
     anyProblem: "Any problem area",
-    queryLabel: "Also search for (optional)",
+    queryLabel: "Search text (optional)",
     queryPlaceholder: "e.g. Grover, VQE, factoring",
     maxQubitsLabel: "Max qubits",
     maxDepthLabel: "Max depth (gates)",
-    dataSizeLabel: "Problem size n (optional)",
-    dataSizeNote: "No record in this catalog states a comparable field yet — shown for reference only.",
     hardwareLabel: "Target hardware",
     hardwareAny: "No preference",
     hardwareNisq: "NISQ-era (today's noisy hardware)",
@@ -52,10 +50,10 @@ const COPY = {
     resultsCount: (n: number) => (n === 1 ? "1 method matches." : `${n} methods match.`),
     whyItMatches: "Why it matches",
     costLabel: "Cost, as recorded",
-    regimeLabel: "Advantage regime",
-    regimeFromEstimate: (qubits: string) => `Fault-tolerant cost estimate: ${qubits} physical qubits.`,
-    regimeEstimatorOff: "Not stated in the source. The fault-tolerant cost estimator is not wired in this environment.",
-    regimeEstimatorNoAnswer: "Not stated in the source, and the resource estimator has no fault-tolerant cost for this record.",
+    regimeLabel: "Speedup, as the sources state it",
+    estimateLabel: "Fault-tolerant estimate",
+    estimateValue: (qubits: string) => `${qubits} physical qubits`,
+    estimateNone: "No estimate for this method yet.",
     notStated: "Not stated in the source.",
     sourceLabel: "Source",
     openRecord: "Open the record",
@@ -71,15 +69,13 @@ const COPY = {
   ja: {
     heading: "問題に合う手法を探す",
     intro:
-      "問題領域を選び、制約を入力してください。実際にその条件を満たすと記載のある手法だけを返します — 記載のないことを推測はしません。",
+      "問題領域を選び、制約を入力してください。記録がその条件を満たす手法と、その理由を表示します。記録に記載のない項目は、推測せずに「記載なし」と表示します。",
     problemLabel: "問題領域",
     anyProblem: "指定なし",
-    queryLabel: "さらに検索（任意）",
+    queryLabel: "検索語（任意）",
     queryPlaceholder: "例: Grover、VQE、素因数分解",
     maxQubitsLabel: "量子ビット数の上限",
     maxDepthLabel: "深さの上限（ゲート数）",
-    dataSizeLabel: "問題サイズ n（任意）",
-    dataSizeNote: "このカタログには、比較可能な項目を持つ記録がまだありません。参考情報として表示します。",
     hardwareLabel: "対象ハードウェア",
     hardwareAny: "指定なし",
     hardwareNisq: "NISQ世代（現行のノイズあり実機）",
@@ -87,10 +83,10 @@ const COPY = {
     resultsCount: (n: number) => `${n} 件の手法が一致しました。`,
     whyItMatches: "一致した理由",
     costLabel: "記載されたコスト",
-    regimeLabel: "優位性の領域",
-    regimeFromEstimate: (qubits: string) => `フォールトトレラントコストの見積もり: 物理量子ビット ${qubits} 個。`,
-    regimeEstimatorOff: "出典に記載なし。この環境ではフォールトトレラントコスト見積もりが接続されていません。",
-    regimeEstimatorNoAnswer: "出典に記載なし。リソース見積もりにもこの記録のフォールトトレラントコストはありません。",
+    regimeLabel: "速度向上（出典の記載どおり）",
+    estimateLabel: "フォールトトレラント見積もり",
+    estimateValue: (qubits: string) => `物理量子ビット ${qubits} 個`,
+    estimateNone: "この手法の見積もりはまだありません。",
     notStated: "出典に記載なし。",
     sourceLabel: "出典",
     openRecord: "記録を開く",
@@ -159,7 +155,8 @@ function ResultCard({
   const description = locale === "ja" && record.descriptionJa ? record.descriptionJa : record.description;
   const categoryLabel = locale === "ja" ? record.categoryLabelJa : record.categoryLabel;
   const cost = statedCost(record);
-  const regime = regimeDisplay(record, copy, estimatesAvailable);
+  const regime = statedRegime(record);
+  const estimate = estimateDisplay(record, copy, estimatesAvailable);
   const router = useRouter();
 
   function askInRun() {
@@ -196,8 +193,14 @@ function ResultCard({
         </div>
         <div>
           <dt>{copy.regimeLabel}</dt>
-          <dd>{regime}</dd>
+          <dd>{regime.stated ? regime.value : copy.notStated}</dd>
         </div>
+        {estimate !== null ? (
+          <div>
+            <dt>{copy.estimateLabel}</dt>
+            <dd>{estimate}</dd>
+          </div>
+        ) : null}
         <div>
           <dt>{copy.sourceLabel}</dt>
           <dd>{record.provenance || copy.notStated}</dd>
@@ -231,17 +234,21 @@ function ResultCard({
   );
 }
 
-function regimeDisplay(
+/**
+ * The resource estimator's physical-qubit count, kept apart from the speedup
+ * line above it: a cost estimate is not a statement about advantage. Null
+ * (row hidden) when this deployment has no estimates at all, so a reader never
+ * sees a sentence about how the site is wired.
+ */
+function estimateDisplay(
   record: FinderRecord,
   copy: (typeof COPY)["en"] | (typeof COPY)["ja"],
   estimatesAvailable: boolean,
-): string {
+): string | null {
   if (record.estimate && record.estimate.totalPhysicalQubits !== null) {
-    return copy.regimeFromEstimate(record.estimate.totalPhysicalQubits.toLocaleString());
+    return copy.estimateValue(record.estimate.totalPhysicalQubits.toLocaleString());
   }
-  const stated = statedRegime(record);
-  if (stated.stated) return stated.value as string;
-  return estimatesAvailable ? copy.regimeEstimatorNoAnswer : copy.regimeEstimatorOff;
+  return estimatesAvailable ? copy.estimateNone : null;
 }
 
 export function AtlasMethodFinder({
@@ -261,7 +268,6 @@ export function AtlasMethodFinder({
   const [query, setQuery] = useState(DEFAULT_FINDER_LIMITS.query);
   const [maxQubitsInput, setMaxQubitsInput] = useState("");
   const [maxDepthInput, setMaxDepthInput] = useState("");
-  const [dataSizeInput, setDataSizeInput] = useState("");
   const [hardwareEra, setHardwareEra] = useState<HardwareEraFilter>(DEFAULT_FINDER_LIMITS.hardwareEra);
 
   // Same move `RepositoryBrowser` makes — see that file's own comment. Starts
@@ -291,10 +297,13 @@ export function AtlasMethodFinder({
       query,
       maxQubits: parseOptionalInt(maxQubitsInput),
       maxDepth: parseOptionalInt(maxDepthInput),
-      dataSizeN: parseOptionalInt(dataSizeInput),
+      // No record states a comparable problem size yet (0 of 284 on
+      // 2026-09-20), so there is no input for it; the matcher still takes
+      // the limit, for when records carry the field.
+      dataSizeN: null,
       hardwareEra,
     }),
-    [problem, query, maxQubitsInput, maxDepthInput, dataSizeInput, hardwareEra],
+    [problem, query, maxQubitsInput, maxDepthInput, hardwareEra],
   );
 
   const outcome = useMemo(
@@ -315,7 +324,6 @@ export function AtlasMethodFinder({
     setQuery("");
     setMaxQubitsInput("");
     setMaxDepthInput("");
-    setDataSizeInput("");
     setHardwareEra(DEFAULT_FINDER_LIMITS.hardwareEra);
   }
 
@@ -372,18 +380,6 @@ export function AtlasMethodFinder({
             value={maxDepthInput}
             onChange={(event) => setMaxDepthInput(event.target.value)}
           />
-        </label>
-
-        <label>
-          {copy.dataSizeLabel}
-          <input
-            type="number"
-            min={0}
-            inputMode="numeric"
-            value={dataSizeInput}
-            onChange={(event) => setDataSizeInput(event.target.value)}
-          />
-          <span className="mj-repository-search-status">{copy.dataSizeNote}</span>
         </label>
 
         <fieldset>
