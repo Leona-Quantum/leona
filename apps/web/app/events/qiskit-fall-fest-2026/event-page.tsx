@@ -403,6 +403,7 @@ export default function EventPage() {
                 />
               </li>
             </ul>
+            <p className={s.organizerNames}>{event.organizerNames.join(" / ")}</p>
           </div>
           <div className={s.supporters}>
             <h2>{t("協力")}</h2>

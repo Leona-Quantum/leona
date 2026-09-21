@@ -27,8 +27,9 @@ room, map, and detailed PC preparation remain explicitly pending.
 The Code of Conduct is final at the owner's request. Contact and conduct reports:
 `rei.watanabe@keio.jp`.
 
-Keio University and IBM Quantum co-organize. Leona Quantum, Quanmatic, and Blueqat
-support the event. The host and supporter artwork is grouped separately.
+Keio University and IBM Quantum co-organize. 鈴木類 and 渡邉黎 are listed with
+the organizers. Leona Quantum, Quanmatic, and Blueqat support the event. The
+host and supporter artwork is grouped separately.
 
 `app/events/qiskit-fall-fest-2026/event.ts` centralizes operational configuration.
 Registration is enabled at the owner's explicit request with
@@ -79,16 +80,18 @@ checkout are preserved and excluded from this change.
 ## Timed program supplied by the owner
 
 The owner's latest schedule supersedes the broad-period program from the earlier
-planning PDF. October 17 has 15 entries from check-in at 09:30 to the 18:00
+planning PDF. October 17 has 17 entries from check-in at 09:30 to the 18:00
 checkpoint close: Quanmatic and Blueqat talks, Qiskit 101, SQD hands-on work,
-challenge briefing, team formation, and the hackathon.
+challenge briefing, an optimization hands-on workshop, team formation, explicit
+hackathon preparation, and the hackathon.
 
 October 18 has 11 entries, beginning at 09:30 with 小山 尚彦, followed by
 IBM Quantum's 渡邉 毅 at 09:55 and 田中 宗 at 10:20. The speaker section follows
 these updated day assignments and presentation order. The final submission
-deadline is 17:00 for the notebook, project URL, and presentation slides.
-Presentations and Q&A run 17:05–17:45: up to 10 teams, four minutes each.
-Judging, awards, closing, and the group photo finish at 18:00.
+deadline is 16:30 for the notebook, project URL, and presentation slides.
+Presentations and Q&A run 16:35–17:15: up to 10 teams, four minutes each.
+Judging runs for 15 minutes, from 17:15–17:30. Awards, the closing ceremony,
+and the group photo have their own 17:30–18:00 slot.
 
 Blank detail cells in the supplied schedule remain blank. Times are displayed in
 both language versions, and the page retains a notice that the schedule may change.
