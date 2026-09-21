@@ -3,11 +3,25 @@
 import { handleAuth } from "@workos-inc/authkit-nextjs";
 import { cookies } from "next/headers";
 import { AUTH_HINT_COOKIE, AUTH_HINT_SIGNED_IN, authHintCookieOptions } from "../../../lib/auth-hint";
+import { siteOrigin } from "../../../lib/site-origin";
 
 // Land the signed-in user in the real workspace, not the /dashboard debug
 // surface (Owner Inbox 2026-07-17: the raw /v1/me dump read as a broken page).
 export const GET = handleAuth({
   returnPathname: "/run",
+  /**
+   * Where the signed-in person is sent, as an origin. Without it AuthKit uses
+   * the request's own, and in the Cloud Run container that is the address the
+   * server listens on: everyone who signed in after the move to Google landed on
+   * `https://0.0.0.0:8080/run` (owner report, 2026-09-20; `redirectBase` in
+   * lib/site-origin.ts has the mechanism). AuthKit documents this option for
+   * exactly that case.
+   *
+   * The origin of the sign-in redirect URI, because this route IS that URI: by
+   * construction it is an origin this handler answers on, in production, on a
+   * preview and on localhost alike. Unset, AuthKit keeps its old behaviour.
+   */
+  baseURL: siteOrigin() ?? undefined,
   /**
    * Write the auth hint at the moment the session is created (ai-ops issue 114,
    * "close that last case").

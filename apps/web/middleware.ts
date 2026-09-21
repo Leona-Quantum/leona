@@ -28,6 +28,9 @@ import { isPublicPath, workosUnauthenticatedPaths } from "./lib/public-paths";
 import { localeRewriteTarget } from "./lib/locale-rewrite";
 import { isRoutedPath, localePrefixRoute, LOCALE_ROUTES } from "./lib/routed-paths";
 import { canonicalHostRedirect } from "./lib/site-origin";
+// Its own line: lib/site-origin.test.ts pins the import above verbatim, to notice a
+// merge that drops it.
+import { redirectBase } from "./lib/site-origin";
 
 // The public list and its glob form both live in lib/public-paths.ts, which is
 // where they can be tested — this file cannot be loaded by `node --test`,
@@ -273,7 +276,7 @@ export default async function middleware(request: NextRequest, event: NextFetchE
     if (pathname.startsWith("/api/")) {
       return NextResponse.json({ error: "Authentication is not configured." }, { status: 503 });
     }
-    return NextResponse.redirect(new URL("/", request.url));
+    return NextResponse.redirect(new URL("/", redirectBase(request.url)));
   }
   return workosMiddleware(request, event);
 }

@@ -414,3 +414,29 @@ test("the locale redirect still routes through the same-origin builder", () => {
   assert.match(body[0], /canonicalLocaleTarget\(/, "canonicalRedirect no longer uses the safe builder");
   assert.doesNotMatch(body[0], /new URL\(rest/, "the relative-URL open redirect came back");
 });
+
+test("a redirect is never resolved against the address the server listens on", async () => {
+  const { redirectBase } = await import("./site-origin.ts");
+  const env = { NEXT_PUBLIC_WORKOS_REDIRECT_URI: "https://leonaqt.com/auth/callback" };
+  const land = (requestUrl: string, path = "/run") => new URL(path, redirectBase(requestUrl, env)).href;
+
+  // The owner's report, 2026-09-20: signing in ended at https://0.0.0.0:8080/run.
+  // A self-hosted Next server reports its listen address as the request's origin.
+  assert.equal(land("https://0.0.0.0:8080/auth/callback?code=x"), "https://leonaqt.com/run");
+  assert.equal(land("http://0.0.0.0:8080/auth/sign-in"), "https://leonaqt.com/run");
+  assert.equal(land("https://[::]:8080/auth/sign-in"), "https://leonaqt.com/run");
+
+  // A real host is kept, so a reader stays on the hostname they arrived by:
+  // production, a preview deployment, and local dev.
+  assert.equal(land("https://leonaqt.com/auth/sign-in?returnTo=%2Fstudio"), "https://leonaqt.com/run");
+  assert.equal(land("https://web-git-some-branch-majoranaq.vercel.app/auth/sign-in"), "https://web-git-some-branch-majoranaq.vercel.app/run");
+  assert.equal(land("http://localhost:3000/auth/sign-in"), "http://localhost:3000/run");
+
+  // An absolute target is returned unchanged whatever the base (the WorkOS hop).
+  assert.equal(land("https://0.0.0.0:8080/auth/sign-in", "https://api.workos.com/user_management/authorize?x=1"), "https://api.workos.com/user_management/authorize?x=1");
+
+  // Nothing configured: the production origin, never the listen address.
+  assert.equal(new URL("/run", redirectBase("https://0.0.0.0:8080/x", {})).href, "https://leonaqt.com/run");
+  // A request URL that does not parse cannot be trusted as a base either.
+  assert.equal(redirectBase("not a url", env), "https://leonaqt.com");
+});
