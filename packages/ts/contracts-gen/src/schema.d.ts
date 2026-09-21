@@ -4820,38 +4820,21 @@ export interface components {
          *     point into the same trusted compiler lane ``compilation.result`` reports
          *     on; unlike that event this one always carries every attempted compiler,
          *     not one selected candidate.
+         *
+         *     ``result`` is populated exactly when ``accepted`` is true — a
+         *     request-level refusal (an unrecognised device, a malformed target) has
+         *     no candidates to report, only ``reason``.
          */
         SynthesisResultEvent: {
             /** Accepted */
             accepted: boolean;
-            /** @default null */
-            best_candidate_compiler: components["schemas"]["CircuitCompiler"] | null;
-            /** Candidates */
-            candidates?: components["schemas"]["SynthesisCandidate"][];
-            /**
-             * Input Fingerprint
-             * @default null
-             */
-            input_fingerprint: string | null;
-            /** @default null */
-            objective: components["schemas"]["SynthesisObjective"] | null;
-            /**
-             * Qubit Count
-             * @default null
-             */
-            qubit_count: number | null;
             /**
              * Reason
              * @default null
              */
             reason: string | null;
             /** @default null */
-            resolved_connectivity: components["schemas"]["SynthesisConnectivity"] | null;
-            /**
-             * Resolved Note
-             * @default null
-             */
-            resolved_note: string | null;
+            result: components["schemas"]["SynthesisResult"] | null;
             /**
              * Run Id
              * Format: uuid
@@ -4862,8 +4845,6 @@ export interface components {
              * @description Unique per run; powers replay and SSE Last-Event-ID
              */
             seq: number;
-            /** @default null */
-            target: components["schemas"]["SynthesisTarget"] | null;
             /**
              * Ts
              * Format: date-time

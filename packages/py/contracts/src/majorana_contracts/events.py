@@ -11,7 +11,6 @@ from pydantic import BaseModel, ConfigDict, Field, TypeAdapter, model_validator
 
 from .enums import (
     BaselineKind,
-    CircuitCompiler,
     EvidenceStrength,
     ExportStatus,
     Framework,
@@ -20,14 +19,12 @@ from .enums import (
     RetryTarget,
     SemanticReviewDecision,
     Stage,
-    SynthesisConnectivity,
-    SynthesisObjective,
     VerificationMethod,
     VerificationFailureClass,
     VerificationResultKind,
     VerifierDecision,
 )
-from .models import ResourceMetrics, SynthesisCandidate, SynthesisTarget, VerificationSummary
+from .models import ResourceMetrics, SynthesisResult, VerificationSummary
 from .plan import Plan
 
 
@@ -248,19 +245,24 @@ class SynthesisResultEvent(_EventBase):
     point into the same trusted compiler lane ``compilation.result`` reports
     on; unlike that event this one always carries every attempted compiler,
     not one selected candidate.
+
+    ``result`` is populated exactly when ``accepted`` is true — a
+    request-level refusal (an unrecognised device, a malformed target) has
+    no candidates to report, only ``reason``.
     """
 
     type: Literal["synthesis.result"] = "synthesis.result"
     accepted: bool
     reason: str | None = None
-    qubit_count: int | None = None
-    target: SynthesisTarget | None = None
-    resolved_connectivity: SynthesisConnectivity | None = None
-    resolved_note: str | None = None
-    objective: SynthesisObjective | None = None
-    input_fingerprint: str | None = None
-    candidates: list[SynthesisCandidate] = Field(default_factory=list)
-    best_candidate_compiler: CircuitCompiler | None = None
+    result: SynthesisResult | None = None
+
+    @model_validator(mode="after")
+    def result_present_iff_accepted(self) -> "SynthesisResultEvent":
+        if self.accepted and self.result is None:
+            raise ValueError("an accepted synthesis result states its result")
+        if not self.accepted and self.result is not None:
+            raise ValueError("a refused synthesis request states no result")
+        return self
 
 
 class CodeVariant(BaseModel):

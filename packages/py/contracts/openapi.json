@@ -9283,64 +9283,11 @@
       },
       "SynthesisResultEvent": {
         "additionalProperties": false,
-        "description": "Every compiler the targeted-synthesis lane tried for one request, each\nindependently checked for equivalence. The second, target-aware entry\npoint into the same trusted compiler lane ``compilation.result`` reports\non; unlike that event this one always carries every attempted compiler,\nnot one selected candidate.",
+        "description": "Every compiler the targeted-synthesis lane tried for one request, each\nindependently checked for equivalence. The second, target-aware entry\npoint into the same trusted compiler lane ``compilation.result`` reports\non; unlike that event this one always carries every attempted compiler,\nnot one selected candidate.\n\n``result`` is populated exactly when ``accepted`` is true \u2014 a\nrequest-level refusal (an unrecognised device, a malformed target) has\nno candidates to report, only ``reason``.",
         "properties": {
           "accepted": {
             "title": "Accepted",
             "type": "boolean"
-          },
-          "best_candidate_compiler": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/CircuitCompiler"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "default": null
-          },
-          "candidates": {
-            "items": {
-              "$ref": "#/components/schemas/SynthesisCandidate"
-            },
-            "title": "Candidates",
-            "type": "array"
-          },
-          "input_fingerprint": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "default": null,
-            "title": "Input Fingerprint"
-          },
-          "objective": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/SynthesisObjective"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "default": null
-          },
-          "qubit_count": {
-            "anyOf": [
-              {
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "default": null,
-            "title": "Qubit Count"
           },
           "reason": {
             "anyOf": [
@@ -9354,28 +9301,16 @@
             "default": null,
             "title": "Reason"
           },
-          "resolved_connectivity": {
+          "result": {
             "anyOf": [
               {
-                "$ref": "#/components/schemas/SynthesisConnectivity"
+                "$ref": "#/components/schemas/SynthesisResult"
               },
               {
                 "type": "null"
               }
             ],
             "default": null
-          },
-          "resolved_note": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "default": null,
-            "title": "Resolved Note"
           },
           "run_id": {
             "format": "uuid",
@@ -9387,17 +9322,6 @@
             "minimum": 0,
             "title": "Seq",
             "type": "integer"
-          },
-          "target": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/SynthesisTarget"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "default": null
           },
           "ts": {
             "format": "date-time",
