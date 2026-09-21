@@ -75,7 +75,7 @@ wheels = [
 
 [[package]]
 name = "amazon-braket-sdk"
-version = "1.127.0"
+version = "1.127.1"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "amazon-braket-default-simulator" },
@@ -92,9 +92,9 @@ dependencies = [
     { name = "oqpy" },
     { name = "sympy" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/25/b8/94a8b380d880917cac546c34b8dcbb6f355fabb97d33691a6b86e299f317/amazon_braket_sdk-1.127.0.tar.gz", hash = "sha256:621ae1c702590c158654b1b3376bf2afd184945ec56c974fb1146651ed7c66af", size = 280587, upload-time = "2026-09-02T16:44:30.012Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/50/84/1d28f341a8ee5dfca9483f71921a6ab3bf43b9f39b93a1265e3887db481e/amazon_braket_sdk-1.127.1.tar.gz", hash = "sha256:9af357a4b869245363ba024345e3cbbf5cb270fcfb297b1931050d28ad86716f", size = 280816, upload-time = "2026-09-16T20:52:13.692Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/48/c6/274d1b08239d029f3755ea06e644015193f89d8160c974c38b684eeee135/amazon_braket_sdk-1.127.0-py3-none-any.whl", hash = "sha256:821c9af2c8bf5d230e365008d29faee041bd62dc5ab669d36fb307af21324d72", size = 403441, upload-time = "2026-09-02T16:44:28.216Z" },
+    { url = "https://files.pythonhosted.org/packages/fb/3d/7c716117b59ea1985a00e1a2e3d0e598d0fb624aeec0580cef1f3fec5434/amazon_braket_sdk-1.127.1-py3-none-any.whl", hash = "sha256:df444507d607402938fd2c50fe180733bff4886fdf027225f6364486ecdd5dbb", size = 403513, upload-time = "2026-09-16T20:52:11.927Z" },
 ]
 
 [[package]]
@@ -1903,7 +1903,7 @@ requires-dist = [{ name = "majorana-contracts", editable = "packages/py/contract
 [package.metadata.requires-dev]
 dev = [
     { name = "amazon-braket-default-simulator", specifier = "==1.40.1.post0" },
-    { name = "amazon-braket-sdk", specifier = "==1.127.0" },
+    { name = "amazon-braket-sdk", specifier = "==1.127.1" },
     { name = "bqskit", specifier = "==1.2.1" },
     { name = "cirq-core", specifier = ">=1.4" },
     { name = "httpx", specifier = ">=0.27" },
