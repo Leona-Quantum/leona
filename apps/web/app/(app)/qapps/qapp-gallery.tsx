@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { QappsIcon, SearchIcon } from "../../../components/icons";
 import { refusalSentence } from "../../../lib/api-error";
+import { readPublicQappPage } from "../../../lib/qapp-management";
 import type { PublicLocale } from "../../../lib/public-locale";
 
 type Qapp = components["schemas"]["Qapp"];
@@ -108,9 +109,10 @@ export function QappGallery({ view, locale = "en" }: { view: QappGalleryView; lo
         // server-paged { items, next_cursor } response (proposal 6). This tab
         // only ever shows the first page of the public listing — real paging
         // and search for the public gallery live at `/q`.
-        const items = view === "mine"
-          ? payload
-          : (payload as { items?: unknown }).items;
+        // readPublicQappPage also accepts the bare array the API returned
+        // before proposal 6, for the minutes when the API and website deploys
+        // are out of step.
+        const items = view === "mine" ? payload : readPublicQappPage(payload)?.items;
         if (!Array.isArray(items)) throw new Error(refusalSentence(payload) ?? copy.loadFailed);
         return items as Array<Qapp | PublicQappSummary>;
       })

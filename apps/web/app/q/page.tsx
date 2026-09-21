@@ -2,7 +2,7 @@ import Link from "next/link";
 import { controlPlaneUrl, fetchControlPlane } from "../../lib/control-plane";
 import { qappCopy } from "../../lib/qapp-copy";
 import { getPublicLocale } from "../../lib/public-locale-server";
-import type { PublicQappPage } from "../../lib/qapp-management";
+import { readPublicQappPage, type PublicQappPage } from "../../lib/qapp-management";
 
 export const metadata = {
   title: "Explore Qapps — Leona Quantum",
@@ -34,9 +34,8 @@ export default async function QappGalleryPage({
   if (q) url.searchParams.set("q", q);
   if (cursor) url.searchParams.set("cursor", cursor);
   const response = await fetchControlPlane(url);
-  const page: PublicQappPage = response.ok
-    ? (await response.json() as PublicQappPage)
-    : { items: [], next_cursor: null };
+  const page: PublicQappPage =
+    (response.ok ? readPublicQappPage(await response.json()) : null) ?? { items: [], next_cursor: null };
 
   return (
     <main className="mj-qapps-page qapp-gallery-page">

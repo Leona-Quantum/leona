@@ -64,3 +64,20 @@ export type PublicQappPage = {
   items: PublicQappGalleryItem[];
   next_cursor: string | null;
 };
+
+/**
+ * Read `GET /v1/qapps/public` in either shape: `{ items, next_cursor }`
+ * (proposal 6) or the bare array the API returned before it. The API and the
+ * website deploy separately (`deploy.yml`, `deploy-web.yml`), so for a few
+ * minutes after the change ships either side can be talking to the other's
+ * old version; this keeps the gallery rendering through that window instead
+ * of throwing on `items` being undefined. Returns null for anything else.
+ */
+export function readPublicQappPage(payload: unknown): PublicQappPage | null {
+  if (Array.isArray(payload)) return { items: payload as PublicQappGalleryItem[], next_cursor: null };
+  if (payload && typeof payload === "object" && Array.isArray((payload as { items?: unknown }).items)) {
+    const page = payload as { items: PublicQappGalleryItem[]; next_cursor?: unknown };
+    return { items: page.items, next_cursor: typeof page.next_cursor === "string" ? page.next_cursor : null };
+  }
+  return null;
+}
