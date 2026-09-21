@@ -45,6 +45,14 @@ from .frontier import (
     sweep_estimates,
 )
 from .logical import LogicalCost
+from .provenance import (
+    ASSUMPTION_SET_CONSTANT_FIELDS,
+    ATLAS_PAPER_IDS,
+    ConstantSource,
+    SourceKind,
+    all_builtin_sources,
+    sources_for,
+)
 from .scaling import (
     ScalingCurve,
     ScalingLaw,
@@ -53,6 +61,8 @@ from .scaling import (
 )
 
 __all__ = [
+    "ASSUMPTION_SET_CONSTANT_FIELDS",
+    "ATLAS_PAPER_IDS",
     "BUILTIN_ASSUMPTION_SETS",
     "COMPOSED_TRAPPED_ION",
     "GIDNEY_2025",
@@ -60,6 +70,7 @@ __all__ = [
     "AdvantageStatus",
     "AdvantageVerdict",
     "AssumptionSet",
+    "ConstantSource",
     "DistanceChoice",
     "FactoryTiming",
     "Footprint",
@@ -72,13 +83,16 @@ __all__ = [
     "ScalingCurve",
     "ScalingLaw",
     "ScalingPoint",
+    "SourceKind",
     "SpeedupClass",
     "ValueProvenance",
+    "all_builtin_sources",
     "assess_advantage",
     "choose_code_distance",
     "compute_frontier",
     "compute_scaling_curve",
     "estimate",
     "pareto_frontier",
+    "sources_for",
     "sweep_estimates",
 ]
