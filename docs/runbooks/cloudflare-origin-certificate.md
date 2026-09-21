@@ -86,8 +86,8 @@ the checks pass. Then, in one sitting:
    it was a verified crawler, this rule lets it through, and the cache rule is what absorbs it.
 10. **Security → Bots**: turn **Bot Fight Mode** on, **last**, and note the time. Also ai-ops
     318. It cannot be skipped for chosen paths or addresses, and Cloudflare says it may
-    challenge legitimate automated traffic — which describes `web-deploy-watch`,
-    `verify-web-cache` and the bench, all of which probe leonaqt.com from GitHub's runners.
+    challenge legitimate automated traffic — which describes `verify-web-cache`
+    and the bench, all of which probe leonaqt.com from GitHub's runners.
     Knowing when it went on is how a challenged monitor is told from a real fault. If it
     blocks them or a search engine, it goes off again and the rate limit stays; the owner's
     options on 318 allowed for exactly that.
@@ -178,8 +178,8 @@ site down (`scripts/check-live-pages.mjs` exits 2 with "could not see the site")
 question that mattered most — does a record page render — moved to the pre-shift smoke test
 on the private twin in `deploy-web.yml`, which no edge setting can blind. What a runner can
 no longer check is the part only the public name shows: Cloudflare's cache verdicts.
-`web-deploy-watch` is unaffected; it reads GitHub's deployment records and never contacts the
-site. Step 10 above named it as exposed, which was wrong.
+`web-deploy-watch` (retired with Vercel on 2026-09-21) was unaffected: it read GitHub's
+deployment records and never contacted the site.
 
 **Bot Fight Mode stays on** (owner ruling, 2026-09-20, ai-ops 348). Two things cover what the
 runner can no longer see. `deploy-web` renders a record page on the private twin before every

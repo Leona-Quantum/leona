@@ -38,7 +38,7 @@ const NEXT_CONFIG = fileURLToPath(new URL("../next.config.ts", import.meta.url))
  * about a static render that never happens, so it is required to be ABSENT
  * rather than merely tolerated; a reader who found one would reasonably conclude
  * the page was cached in a way it is not. Those pages are cached in front of the
- * render instead, by `Vercel-CDN-Cache-Control` in `next.config.ts`.
+ * render instead, by the `CDN-Cache-Control` header `next.config.ts` sets through `edgeCacheRules`.
  *
  * Every other page here is prerendered and carries the shared revalidate.
  */
@@ -107,11 +107,12 @@ test("every PRERENDERED public page revalidates on the one shared cadence", () =
 
 test("a page that reads searchParams carries no revalidate, and is CDN-cached instead", () => {
   // The two halves of one rule. Such a page cannot prerender, so `revalidate`
-  // would be a false claim; and with no `Vercel-CDN-Cache-Control` source
+  // would be a false claim; and with no `edgeCacheRules` source (the
+  // `CDN-Cache-Control` header Cloudflare reads)
   // covering it, it is not cached at all — which is the silent regression this
   // whole change exists to fix, and it looks exactly like success from CI.
   const config = readFileSync(NEXT_CONFIG, "utf8");
-  assert.match(config, /Vercel-CDN-Cache-Control/, "next.config.ts no longer sets Vercel-CDN-Cache-Control at all");
+  assert.match(config, /edgeCacheRules\(source, 300\)/, "next.config.ts no longer routes any page through edgeCacheRules");
 
   const dynamicPages = pageFiles().filter(({ source }) => readsSearchParams(source));
   assert.ok(dynamicPages.length > 0, "no searchParams-reading page found, so this check would pass vacuously");
@@ -141,7 +142,7 @@ test("a page that reads searchParams carries no revalidate, and is CDN-cached in
     const exactCovered = LOCALE_ROUTES.includes(route) && config.includes(`"${route}"`);
     assert.ok(
       prefixCovered || exactCovered,
-      `${route} reads searchParams but no Vercel-CDN-Cache-Control source in next.config.ts covers it, so it renders on every request and is never cached`,
+      `${route} reads searchParams but no edgeCacheRules source in next.config.ts covers it, so it renders on every request and is never cached`,
     );
     // **The third half of the rule, and the one that looks redundant.**
     //

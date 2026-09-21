@@ -59,18 +59,27 @@ incidents.
 
 ### Which pipeline actually broke
 
-`apps/web` (Vercel, self-deploys from `dev`) and `services/api` / `services/worker`
-(Cloud Run, shipped by `.github/workflows/deploy.yml` on merge to `dev`) are two
-independent deploys that share a trigger, not one. A bad push to `dev` can break
+`apps/web` (Cloud Run `majorana-web`, shipped by `.github/workflows/deploy-web.yml`) and
+`services/api` / `services/worker` (Cloud Run, shipped by `.github/workflows/deploy.yml`)
+are two independent deploys that share a trigger (a merge to `dev`), not one. A bad push to `dev` can break
 either, both, or neither, and the failure mode tells you which:
 
-- **Web looks broken** (page errors, blank screens, stale content) — check
-  https://vercel.com/majoranaq/web/deployments first. Confirm what is actually
-  *live* by reading `data-dpl-id` out of the served HTML rather than trusting
-  the commit status, which misreports in both directions:
+- **Web looks broken** (page errors, blank screens, stale content) — check the newest
+  `deploy-web` run first (`gh run list --repo Leona-Quantum/leona --workflow deploy-web -L 3`),
+  then which revision is serving:
   ```
-  curl -s https://leonaqt.com/ | grep -o 'data-dpl-id="[^"]*"'
+  gcloud run services describe majorana-web --project majorana-core \
+    --region us-west1 --format='value(status.traffic)'
   ```
+  Rolling back is shifting traffic to the previous revision (list them with
+  `gcloud run revisions list --service majorana-web --project majorana-core --region us-west1`):
+  ```
+  gcloud run services update-traffic majorana-web --project majorana-core \
+    --region us-west1 --to-revisions <previous-revision>=100
+  ```
+  The next merge to `dev` that touches the website deploys over it and shifts traffic
+  back to the newest revision. Vercel was retired on 2026-09-21 and serves nothing
+  (ADR-0033).
 - **API/worker looks broken** (runs not starting, 5xx from the API, catalog
   stale) — check https://console.cloud.google.com/run?project=majorana-core,
   or directly:
