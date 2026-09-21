@@ -29,7 +29,7 @@ dependencies = [
     # directly. Both arrive transitively through majorana-api today, but the
     # same "a dependency you import is a dependency you declare" rule applies.
     "sqlalchemy[asyncio]>=2.0.54",
-    "psycopg[binary]>=3.3.5",
+    "psycopg[binary]>=3.3.6",
 ]
 
 [project.scripts]
