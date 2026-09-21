@@ -53,6 +53,14 @@ from .provenance import (
     all_builtin_sources,
     sources_for,
 )
+from .qref import (
+    QREF_PACKAGE_VERSION_CHECKED_AGAINST,
+    QREF_SCHEMA_VERSION,
+    export_estimate_to_qref,
+    export_logical_cost_to_qref,
+    import_logical_cost_from_qref,
+    validate_qref_document,
+)
 from .scaling import (
     ScalingCurve,
     ScalingLaw,
@@ -67,6 +75,8 @@ __all__ = [
     "COMPOSED_TRAPPED_ION",
     "GIDNEY_2025",
     "MAX_CODE_DISTANCE",
+    "QREF_PACKAGE_VERSION_CHECKED_AGAINST",
+    "QREF_SCHEMA_VERSION",
     "AdvantageStatus",
     "AdvantageVerdict",
     "AssumptionSet",
@@ -92,7 +102,11 @@ __all__ = [
     "compute_frontier",
     "compute_scaling_curve",
     "estimate",
+    "export_estimate_to_qref",
+    "export_logical_cost_to_qref",
+    "import_logical_cost_from_qref",
     "pareto_frontier",
     "sources_for",
     "sweep_estimates",
+    "validate_qref_document",
 ]
