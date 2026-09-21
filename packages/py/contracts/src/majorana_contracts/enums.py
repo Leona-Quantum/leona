@@ -27,6 +27,31 @@ class CircuitCompiler(StrEnum):
     BQSKIT = "bqskit"
 
 
+class SynthesisConnectivity(StrEnum):
+    """Qubit connectivity a targeted-synthesis candidate is routed onto.
+
+    ``ALL_TO_ALL`` is no constraint at all — every compiler's existing,
+    unrouted output already satisfies it. The other three are coupling-map
+    shapes a candidate's two-qubit gates must respect after compilation;
+    Studio's own IR fixes the basis (the closed
+    :class:`CircuitOptimizationGate` set), so connectivity is the only axis
+    a "target" adds.
+    """
+
+    ALL_TO_ALL = "all_to_all"
+    LINE = "line"
+    GRID = "grid"
+    HEAVY_HEX = "heavy_hex"
+
+
+class SynthesisObjective(StrEnum):
+    """What a targeted-synthesis run ranks candidates by."""
+
+    DEPTH = "depth"
+    TWO_QUBIT_COUNT = "two_qubit_count"
+    T_COUNT = "t_count"
+
+
 class CircuitOptimizationGate(StrEnum):
     """Gate subset that Studio can round-trip through every framework draft."""
 

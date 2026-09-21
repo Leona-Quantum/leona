@@ -11,6 +11,7 @@ from pydantic import BaseModel, ConfigDict, Field, TypeAdapter, model_validator
 
 from .enums import (
     BaselineKind,
+    CircuitCompiler,
     EvidenceStrength,
     ExportStatus,
     Framework,
@@ -19,12 +20,14 @@ from .enums import (
     RetryTarget,
     SemanticReviewDecision,
     Stage,
+    SynthesisConnectivity,
+    SynthesisObjective,
     VerificationMethod,
     VerificationFailureClass,
     VerificationResultKind,
     VerifierDecision,
 )
-from .models import ResourceMetrics, VerificationSummary
+from .models import ResourceMetrics, SynthesisCandidate, SynthesisTarget, VerificationSummary
 from .plan import Plan
 
 
@@ -237,6 +240,27 @@ class CompilationResult(_EventBase):
     after: ResourceMetrics | None = None
     compatibility: dict[str, Any] = Field(default_factory=dict)
     reason: str | None = None
+
+
+class SynthesisResultEvent(_EventBase):
+    """Every compiler the targeted-synthesis lane tried for one request, each
+    independently checked for equivalence. The second, target-aware entry
+    point into the same trusted compiler lane ``compilation.result`` reports
+    on; unlike that event this one always carries every attempted compiler,
+    not one selected candidate.
+    """
+
+    type: Literal["synthesis.result"] = "synthesis.result"
+    accepted: bool
+    reason: str | None = None
+    qubit_count: int | None = None
+    target: SynthesisTarget | None = None
+    resolved_connectivity: SynthesisConnectivity | None = None
+    resolved_note: str | None = None
+    objective: SynthesisObjective | None = None
+    input_fingerprint: str | None = None
+    candidates: list[SynthesisCandidate] = Field(default_factory=list)
+    best_candidate_compiler: CircuitCompiler | None = None
 
 
 class CodeVariant(BaseModel):
@@ -487,6 +511,7 @@ RunEvent = Annotated[
     | ScreenResult
     | ResourceEstimateResult
     | CompilationResult
+    | SynthesisResultEvent
     | CodeFinalized
     | SandboxResult
     | VerificationResult

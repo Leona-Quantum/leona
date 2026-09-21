@@ -26,6 +26,8 @@ from .enums import (
     RetryTarget,
     SemanticReviewDecision,
     ShareRole,
+    SynthesisConnectivity,
+    SynthesisObjective,
     VerificationFailureClass,
     VerificationMethod,
     VerificationResultKind,
@@ -798,6 +800,12 @@ class ResourceMetrics(_ResourceBase):
     depth: int | None = Field(default=None, ge=0)
     gate_count: int | None = Field(default=None, ge=0)
     two_qubit_gate_count: int | None = Field(default=None, ge=0)
+    #: Count of Studio's ``T`` gate specifically (2.21.0). ``None`` only for a
+    #: caller that never computed it — every circuit-optimization and
+    #: targeted-synthesis path fills it, since ``T`` is one of the closed
+    #: gate set's 13 members and costing it is a plain count, same as
+    #: ``two_qubit_gate_count``.
+    t_count: int | None = Field(default=None, ge=0)
     measurement_count: int | None = Field(default=None, ge=0)
     estimated_runtime_ms: int | None = Field(default=None, ge=0)
 
@@ -832,6 +840,137 @@ class CircuitOptimizationResult(_ResourceBase):
     output_fingerprint: str = Field(pattern=r"^[0-9a-f]{64}$")
     equivalence: Literal["unitary_up_to_global_phase"] = "unitary_up_to_global_phase"
     warnings: list[str] = Field(default_factory=list, max_length=20)
+
+
+class SynthesisTarget(_ResourceBase):
+    """What a targeted-synthesis candidate is compiled for: a device or a
+    generic connectivity, never both.
+
+    A known ``device_id`` is resolved server-side to a connectivity class
+    from its published technology (trapped-ion and neutral-atom devices are
+    all-to-all; superconducting devices resolve to ``heavy_hex`` for IBM's
+    own public architecture and to ``grid`` elsewhere, since this repo
+    carries no per-device coupling map — ``SynthesisResult.resolved_note``
+    says which). Studio's IR is a closed 13-gate set already applied by
+    every compiler path in this lane, so there is no separate basis-gate
+    choice here.
+    """
+
+    device_id: str | None = Field(default=None, min_length=1, max_length=120)
+    connectivity: SynthesisConnectivity | None = None
+
+    @model_validator(mode="after")
+    def exactly_one_target_shape(self) -> Self:
+        if (self.device_id is None) == (self.connectivity is None):
+            raise ValueError("a target names exactly one of device_id or connectivity")
+        return self
+
+
+class SynthesisRequest(_ResourceBase):
+    """Studio's closed circuit IR plus a target and an objective, handed to
+    every compiler in the lane that supports the resolved connectivity.
+
+    Same closed, declarative, code-free IR as :class:`CircuitOptimizationRequest`
+    — this is a second entry point into the same trusted Worker compiler lane,
+    not a new execution surface.
+    """
+
+    qubit_count: int = Field(ge=1, le=64)
+    operations: list[CircuitOptimizationOperation] = Field(min_length=1, max_length=1024)
+    target: SynthesisTarget
+    objective: SynthesisObjective
+
+    @model_validator(mode="after")
+    def circuit_is_bounded_and_measurements_are_terminal(self) -> Self:
+        measurement_seen = False
+        for operation in self.operations:
+            if any(qubit >= self.qubit_count for qubit in operation.qubits):
+                raise ValueError("operation references a qubit outside qubit_count")
+            if operation.gate is CircuitOptimizationGate.MEASURE:
+                measurement_seen = True
+            elif measurement_seen:
+                raise ValueError("measurement operations must be terminal")
+        return self
+
+
+class SynthesisEquivalence(_ResourceBase):
+    """The independent equivalence verdict for one candidate, from
+    ``majorana_verification`` — never the compiler's own claim.
+
+    ``checked`` is false exactly when the circuit was too wide for the
+    method below to run; a caller must not read ``equivalent`` in that case
+    (it is ``None``), and must never treat an unchecked candidate as
+    equivalent.
+    """
+
+    checked: bool
+    equivalent: bool | None = None
+    method: Literal["exact_unitary_statevector"] = "exact_unitary_statevector"
+    width_limit: int = Field(ge=1)
+    detail: str = Field(min_length=1, max_length=280)
+
+    @model_validator(mode="after")
+    def equivalent_is_present_iff_checked(self) -> Self:
+        if self.checked and self.equivalent is None:
+            raise ValueError("a checked report states equivalent")
+        if not self.checked and self.equivalent is not None:
+            raise ValueError("an unchecked report states no equivalent verdict")
+        return self
+
+
+class SynthesisCandidate(_ResourceBase):
+    """One compiler's outcome for a targeted-synthesis request.
+
+    A compiler that cannot represent the target, or that fails, is a
+    candidate too — ``status`` says which, and ``reason`` says why. Nothing
+    is silently dropped from the list a caller sees.
+    """
+
+    compiler: CircuitCompiler
+    status: Literal["unsupported", "failed", "succeeded"]
+    reason: str | None = Field(default=None, max_length=280)
+    compiler_version: str | None = Field(default=None, min_length=1, max_length=120)
+    operations: list[CircuitOptimizationOperation] | None = Field(default=None, max_length=4096)
+    before: ResourceMetrics | None = None
+    after: ResourceMetrics | None = None
+    equivalence: SynthesisEquivalence | None = None
+    warnings: list[str] = Field(default_factory=list, max_length=20)
+
+    @model_validator(mode="after")
+    def fields_match_status(self) -> Self:
+        succeeded = self.status == "succeeded"
+        if not succeeded and not self.reason:
+            raise ValueError("an unsupported or failed candidate states a reason")
+        success_fields = (self.compiler_version, self.operations, self.before, self.after, self.equivalence)
+        if succeeded and any(field is None for field in success_fields):
+            raise ValueError(
+                "a succeeded candidate states compiler_version, operations, before, "
+                "after and equivalence"
+            )
+        if not succeeded and any(field is not None for field in success_fields):
+            raise ValueError("an unsupported or failed candidate states no success fields")
+        return self
+
+
+class SynthesisResult(_ResourceBase):
+    """The whole targeted-synthesis answer: every compiler the lane tried,
+    each checked for equivalence, none dropped.
+
+    Carried inside ``SynthesisResultEvent`` (``majorana_contracts.events``),
+    the run-event analogue of ``compilation.result`` for this second entry
+    point into the compiler lane.
+    """
+
+    qubit_count: int = Field(ge=1, le=64)
+    target: SynthesisTarget
+    resolved_connectivity: SynthesisConnectivity
+    resolved_note: str = Field(min_length=1, max_length=280)
+    objective: SynthesisObjective
+    input_fingerprint: str = Field(pattern=r"^[0-9a-f]{64}$")
+    candidates: list[SynthesisCandidate] = Field(min_length=1, max_length=8)
+    #: The lowest-``objective`` candidate among those that succeeded AND were
+    #: independently confirmed equivalent. ``None`` when no candidate qualifies.
+    best_candidate_compiler: CircuitCompiler | None = None
 
 
 class Run(_ResourceBase):

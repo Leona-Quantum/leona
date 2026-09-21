@@ -39,6 +39,8 @@ from .enums import (
     ShareRole,
     SourceKind,
     Stage,
+    SynthesisConnectivity,
+    SynthesisObjective,
     TopLevelExecution,
     UsageKind,
     CHAT_USAGE_ROLE,
@@ -87,6 +89,7 @@ from .events import (
     StageFinished,
     StageStarted,
     StrictVerificationRecorded,
+    SynthesisResultEvent,
     VerificationResult,
     run_event_adapter,
 )
@@ -190,6 +193,11 @@ from .models import (
     Run,
     RuntimeSummary,
     SharedProject,
+    SynthesisCandidate,
+    SynthesisEquivalence,
+    SynthesisRequest,
+    SynthesisResult,
+    SynthesisTarget,
     VerificationRecord,
     VerificationCheckSummary,
     VerificationSummary,
@@ -359,7 +367,16 @@ from .lifecycle import (
 # 2.19.0 payload still validates and an ungraded notebook behaves exactly as before.
 # The answer key never leaves the server — `for_learner()` strips it and
 # `leaks_answer_key()` asserts that it did.
-CONTRACTS_VERSION = "2.20.0"
+# 2.21.0: Targeted synthesis (proposal 3). ResourceMetrics gains `t_count` (optional,
+# defaults None — every existing payload still validates). New: SynthesisConnectivity,
+# SynthesisObjective, SynthesisTarget, SynthesisRequest, SynthesisEquivalence,
+# SynthesisCandidate, SynthesisResult, and the SynthesisResultEvent run event. A second,
+# target-aware entry point into the existing trusted compiler lane
+# (CircuitOptimizationRequest/Result are untouched): a client picks a device or a generic
+# connectivity plus an objective, every compiler in the lane is tried against it, and each
+# resulting candidate carries an independent equivalence verdict from majorana_verification
+# rather than the compiler's own claim. Purely additive.
+CONTRACTS_VERSION = "2.21.0"
 
 __all__ = [
     "TextAnswer",
@@ -401,6 +418,14 @@ __all__ = [
     "CircuitOptimizationOperation",
     "CircuitOptimizationRequest",
     "CircuitOptimizationResult",
+    "SynthesisConnectivity",
+    "SynthesisObjective",
+    "SynthesisTarget",
+    "SynthesisRequest",
+    "SynthesisEquivalence",
+    "SynthesisCandidate",
+    "SynthesisResult",
+    "SynthesisResultEvent",
     "CatalogEstimateSummary",
     "CatalogProvenance",
     "CodeDistanceSummary",

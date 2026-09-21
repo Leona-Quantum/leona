@@ -3640,6 +3640,11 @@ export interface components {
             /** Qubits */
             qubits: number;
             /**
+             * T Count
+             * @default null
+             */
+            t_count: number | null;
+            /**
              * Two Qubit Gate Count
              * @default null
              */
@@ -3987,7 +3992,7 @@ export interface components {
          * RunEvent
          * @description Discriminated union of all run event types (class name sets the schema id).
          */
-        RunEvent: components["schemas"]["RunQueued"] | components["schemas"]["RunStarted"] | components["schemas"]["RunModeResolved"] | components["schemas"]["StageStarted"] | components["schemas"]["StageFinished"] | components["schemas"]["PlanProduced"] | components["schemas"]["ResearchCompleted"] | components["schemas"]["LlmCall"] | components["schemas"]["LlmDelta"] | components["schemas"]["ChatDelta"] | components["schemas"]["ChatCompleted"] | components["schemas"]["ChatError"] | components["schemas"]["ConversationTitled"] | components["schemas"]["QappGenerated"] | components["schemas"]["NotebookGrades"] | components["schemas"]["CodeGenerated"] | components["schemas"]["ScreenResult"] | components["schemas"]["ResourceEstimateResult"] | components["schemas"]["CompilationResult"] | components["schemas"]["CodeFinalized"] | components["schemas"]["SandboxResult"] | components["schemas"]["VerificationResult"] | components["schemas"]["SemanticReviewRecorded"] | components["schemas"]["StrictVerificationRecorded"] | components["schemas"]["BaselineResult"] | components["schemas"]["ExportClassified"] | components["schemas"]["ArtifactSaved"] | components["schemas"]["RunAnalysis"] | components["schemas"]["RunDiagnosed"] | components["schemas"]["RunRestarted"] | components["schemas"]["RunBestEffort"] | components["schemas"]["RunErrorEvent"] | components["schemas"]["RunFinished"];
+        RunEvent: components["schemas"]["RunQueued"] | components["schemas"]["RunStarted"] | components["schemas"]["RunModeResolved"] | components["schemas"]["StageStarted"] | components["schemas"]["StageFinished"] | components["schemas"]["PlanProduced"] | components["schemas"]["ResearchCompleted"] | components["schemas"]["LlmCall"] | components["schemas"]["LlmDelta"] | components["schemas"]["ChatDelta"] | components["schemas"]["ChatCompleted"] | components["schemas"]["ChatError"] | components["schemas"]["ConversationTitled"] | components["schemas"]["QappGenerated"] | components["schemas"]["NotebookGrades"] | components["schemas"]["CodeGenerated"] | components["schemas"]["ScreenResult"] | components["schemas"]["ResourceEstimateResult"] | components["schemas"]["CompilationResult"] | components["schemas"]["SynthesisResultEvent"] | components["schemas"]["CodeFinalized"] | components["schemas"]["SandboxResult"] | components["schemas"]["VerificationResult"] | components["schemas"]["SemanticReviewRecorded"] | components["schemas"]["StrictVerificationRecorded"] | components["schemas"]["BaselineResult"] | components["schemas"]["ExportClassified"] | components["schemas"]["ArtifactSaved"] | components["schemas"]["RunAnalysis"] | components["schemas"]["RunDiagnosed"] | components["schemas"]["RunRestarted"] | components["schemas"]["RunBestEffort"] | components["schemas"]["RunErrorEvent"] | components["schemas"]["RunFinished"];
         /** RunFinished */
         RunFinished: {
             /** @default null */
@@ -4679,6 +4684,219 @@ export interface components {
              * @description Key extracted from the run's result dict, e.g. ground_state_energy_Ha
              */
             primary_metric: string;
+        };
+        /**
+         * SynthesisCandidate
+         * @description One compiler's outcome for a targeted-synthesis request.
+         *
+         *     A compiler that cannot represent the target, or that fails, is a
+         *     candidate too — ``status`` says which, and ``reason`` says why. Nothing
+         *     is silently dropped from the list a caller sees.
+         */
+        SynthesisCandidate: {
+            /** @default null */
+            after: components["schemas"]["ResourceMetrics"] | null;
+            /** @default null */
+            before: components["schemas"]["ResourceMetrics"] | null;
+            compiler: components["schemas"]["CircuitCompiler"];
+            /**
+             * Compiler Version
+             * @default null
+             */
+            compiler_version: string | null;
+            /** @default null */
+            equivalence: components["schemas"]["SynthesisEquivalence"] | null;
+            /**
+             * Operations
+             * @default null
+             */
+            operations: components["schemas"]["CircuitOptimizationOperation"][] | null;
+            /**
+             * Reason
+             * @default null
+             */
+            reason: string | null;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "unsupported" | "failed" | "succeeded";
+            /** Warnings */
+            warnings?: string[];
+        };
+        /**
+         * SynthesisConnectivity
+         * @description Qubit connectivity a targeted-synthesis candidate is routed onto.
+         *
+         *     ``ALL_TO_ALL`` is no constraint at all — every compiler's existing,
+         *     unrouted output already satisfies it. The other three are coupling-map
+         *     shapes a candidate's two-qubit gates must respect after compilation;
+         *     Studio's own IR fixes the basis (the closed
+         *     :class:`CircuitOptimizationGate` set), so connectivity is the only axis
+         *     a "target" adds.
+         * @enum {string}
+         */
+        SynthesisConnectivity: "all_to_all" | "line" | "grid" | "heavy_hex";
+        /**
+         * SynthesisEquivalence
+         * @description The independent equivalence verdict for one candidate, from
+         *     ``majorana_verification`` — never the compiler's own claim.
+         *
+         *     ``checked`` is false exactly when the circuit was too wide for the
+         *     method below to run; a caller must not read ``equivalent`` in that case
+         *     (it is ``None``), and must never treat an unchecked candidate as
+         *     equivalent.
+         */
+        SynthesisEquivalence: {
+            /** Checked */
+            checked: boolean;
+            /** Detail */
+            detail: string;
+            /**
+             * Equivalent
+             * @default null
+             */
+            equivalent: boolean | null;
+            /**
+             * Method
+             * @default exact_unitary_statevector
+             * @constant
+             */
+            method: "exact_unitary_statevector";
+            /** Width Limit */
+            width_limit: number;
+        };
+        /**
+         * SynthesisObjective
+         * @description What a targeted-synthesis run ranks candidates by.
+         * @enum {string}
+         */
+        SynthesisObjective: "depth" | "two_qubit_count" | "t_count";
+        /**
+         * SynthesisRequest
+         * @description Studio's closed circuit IR plus a target and an objective, handed to
+         *     every compiler in the lane that supports the resolved connectivity.
+         *
+         *     Same closed, declarative, code-free IR as :class:`CircuitOptimizationRequest`
+         *     — this is a second entry point into the same trusted Worker compiler lane,
+         *     not a new execution surface.
+         */
+        SynthesisRequest: {
+            objective: components["schemas"]["SynthesisObjective"];
+            /** Operations */
+            operations: components["schemas"]["CircuitOptimizationOperation"][];
+            /** Qubit Count */
+            qubit_count: number;
+            target: components["schemas"]["SynthesisTarget"];
+        };
+        /**
+         * SynthesisResult
+         * @description The whole targeted-synthesis answer: every compiler the lane tried,
+         *     each checked for equivalence, none dropped.
+         *
+         *     Carried inside ``SynthesisResultEvent`` (``majorana_contracts.events``),
+         *     the run-event analogue of ``compilation.result`` for this second entry
+         *     point into the compiler lane.
+         */
+        SynthesisResult: {
+            /** @default null */
+            best_candidate_compiler: components["schemas"]["CircuitCompiler"] | null;
+            /** Candidates */
+            candidates: components["schemas"]["SynthesisCandidate"][];
+            /** Input Fingerprint */
+            input_fingerprint: string;
+            objective: components["schemas"]["SynthesisObjective"];
+            /** Qubit Count */
+            qubit_count: number;
+            resolved_connectivity: components["schemas"]["SynthesisConnectivity"];
+            /** Resolved Note */
+            resolved_note: string;
+            target: components["schemas"]["SynthesisTarget"];
+        };
+        /**
+         * SynthesisResultEvent
+         * @description Every compiler the targeted-synthesis lane tried for one request, each
+         *     independently checked for equivalence. The second, target-aware entry
+         *     point into the same trusted compiler lane ``compilation.result`` reports
+         *     on; unlike that event this one always carries every attempted compiler,
+         *     not one selected candidate.
+         */
+        SynthesisResultEvent: {
+            /** Accepted */
+            accepted: boolean;
+            /** @default null */
+            best_candidate_compiler: components["schemas"]["CircuitCompiler"] | null;
+            /** Candidates */
+            candidates?: components["schemas"]["SynthesisCandidate"][];
+            /**
+             * Input Fingerprint
+             * @default null
+             */
+            input_fingerprint: string | null;
+            /** @default null */
+            objective: components["schemas"]["SynthesisObjective"] | null;
+            /**
+             * Qubit Count
+             * @default null
+             */
+            qubit_count: number | null;
+            /**
+             * Reason
+             * @default null
+             */
+            reason: string | null;
+            /** @default null */
+            resolved_connectivity: components["schemas"]["SynthesisConnectivity"] | null;
+            /**
+             * Resolved Note
+             * @default null
+             */
+            resolved_note: string | null;
+            /**
+             * Run Id
+             * Format: uuid
+             */
+            run_id: string;
+            /**
+             * Seq
+             * @description Unique per run; powers replay and SSE Last-Event-ID
+             */
+            seq: number;
+            /** @default null */
+            target: components["schemas"]["SynthesisTarget"] | null;
+            /**
+             * Ts
+             * Format: date-time
+             */
+            ts: string;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "synthesis.result";
+        };
+        /**
+         * SynthesisTarget
+         * @description What a targeted-synthesis candidate is compiled for: a device or a
+         *     generic connectivity, never both.
+         *
+         *     A known ``device_id`` is resolved server-side to a connectivity class
+         *     from its published technology (trapped-ion and neutral-atom devices are
+         *     all-to-all; superconducting devices resolve to ``heavy_hex`` for IBM's
+         *     own public architecture and to ``grid`` elsewhere, since this repo
+         *     carries no per-device coupling map — ``SynthesisResult.resolved_note``
+         *     says which). Studio's IR is a closed 13-gate set already applied by
+         *     every compiler path in this lane, so there is no separate basis-gate
+         *     choice here.
+         */
+        SynthesisTarget: {
+            /** @default null */
+            connectivity: components["schemas"]["SynthesisConnectivity"] | null;
+            /**
+             * Device Id
+             * @default null
+             */
+            device_id: string | null;
         };
         /**
          * TextAnswer
