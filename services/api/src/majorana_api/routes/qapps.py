@@ -294,7 +294,9 @@ async def list_public_qapps(
     """
     before = _decode_public_qapp_cursor(cursor) if cursor else None
     bounded = min(max(limit, 1), qapps_repo.PUBLIC_GALLERY_PAGE_MAX)
-    rows = await qapps_repo.list_public_qapps(scope, session, search=q, before=before, limit=bounded)
+    rows = await qapps_repo.list_public_qapps(
+        scope, session, search=q, before=before, limit=bounded
+    )
     items = [
         PublicQappSummary(
             slug=qapp.slug,
@@ -361,7 +363,9 @@ async def list_qapp_versions(
     """This Qapp's version history, so a creator can choose which one is live."""
     qapp = await qapps_repo.get_qapp(scope, session, qapp_id)
     bounded = min(max(limit, 1), QAPP_VERSION_PAGE_MAX)
-    rows = await qapps_repo.list_versions(scope, session, qapp_id, before_seq=before_seq, limit=bounded)
+    rows = await qapps_repo.list_versions(
+        scope, session, qapp_id, before_seq=before_seq, limit=bounded
+    )
     return QappVersionPage(
         versions=[
             QappVersionSummary(

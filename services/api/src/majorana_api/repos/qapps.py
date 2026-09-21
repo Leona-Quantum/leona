@@ -405,17 +405,21 @@ async def list_qapp_activity(
     if qapp.owner_user_id != scope.user_id:
         raise AuthzError("only the Qapp creator may view its activity")
     rows = (
-        await session.execute(
-            select(AuditLog)
-            .where(
-                AuditLog.workspace_id == scope.workspace_id,
-                AuditLog.target_kind == "qapp",
-                AuditLog.target_id == qapp.id,
+        (
+            await session.execute(
+                select(AuditLog)
+                .where(
+                    AuditLog.workspace_id == scope.workspace_id,
+                    AuditLog.target_kind == "qapp",
+                    AuditLog.target_id == qapp.id,
+                )
+                .order_by(AuditLog.id.desc())
+                .limit(limit)
             )
-            .order_by(AuditLog.id.desc())
-            .limit(limit)
         )
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
     return list(rows)
 
 
@@ -564,9 +568,7 @@ async def fork_qapp(
         output_schema=source_version.output_schema,
         fingerprint=hashlib.sha256(canonical.encode()).hexdigest(),
         source_artifact_version_id=None,
-        generation_prompt=(
-            f"Forked from qapp {source.slug} (version {source_version.seq})."
-        ),
+        generation_prompt=(f"Forked from qapp {source.slug} (version {source_version.seq})."),
         range_smoke=None,
     )
     session.add(qapp)
