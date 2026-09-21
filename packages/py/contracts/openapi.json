@@ -5984,9 +5984,17 @@
             "type": "string"
           },
           "created_by_run_id": {
-            "format": "uuid",
-            "title": "Created By Run Id",
-            "type": "string"
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Created By Run Id"
           },
           "current_version_id": {
             "format": "uuid",
@@ -5996,6 +6004,32 @@
           "description": {
             "title": "Description",
             "type": "string"
+          },
+          "forked_from_qapp_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Forked From Qapp Id"
+          },
+          "forked_from_version_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Forked From Version Id"
           },
           "id": {
             "format": "uuid",
@@ -6051,7 +6085,6 @@
           "description",
           "visibility",
           "current_version_id",
-          "created_by_run_id",
           "created_at",
           "updated_at"
         ],
@@ -9932,7 +9965,7 @@
   "info": {
     "description": "Cross-boundary types only; API paths are owned by services/api.",
     "title": "majorana-contracts",
-    "version": "2.20.0"
+    "version": "2.21.0"
   },
   "openapi": "3.1.0",
   "paths": {}

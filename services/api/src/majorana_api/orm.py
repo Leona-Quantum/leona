@@ -235,7 +235,13 @@ class Qapp(Base):
     description: Mapped[str]
     visibility: Mapped[str] = mapped_column(server_default="private")
     current_version_id: Mapped[uuid.UUID | None] = mapped_column(_UUID)
-    created_by_run_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("runs.id"))
+    #: NULL for a fork (migration 0064) — nobody's prompt produced it, so there
+    #: is no run to point at.
+    created_by_run_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("runs.id"))
+    #: Which published Qapp/version this one was copied from, or both NULL if
+    #: it was generated rather than forked (0064's `ck_qapps_forked_from_pair`).
+    forked_from_qapp_id: Mapped[uuid.UUID | None] = mapped_column(_UUID)
+    forked_from_version_id: Mapped[uuid.UUID | None] = mapped_column(_UUID)
     published_at: Mapped[dt.datetime | None]
     deleted_at: Mapped[dt.datetime | None]
     created_at: Mapped[dt.datetime | None] = mapped_column(server_default=func.now())

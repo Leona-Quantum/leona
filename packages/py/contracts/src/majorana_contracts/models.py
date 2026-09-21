@@ -889,7 +889,15 @@ class Qapp(_ResourceBase):
     description: str
     visibility: Visibility
     current_version_id: UUID
-    created_by_run_id: UUID
+    #: `None` for a Qapp created by forking a published one instead of by
+    #: generation — see `forked_from_qapp_id` below. Every generated Qapp still
+    #: carries the run that produced it.
+    created_by_run_id: UUID | None = None
+    #: The published Qapp and version this one was forked from, or both `None`
+    #: for a generated Qapp. Always both-or-neither (enforced at the database
+    #: by `ck_qapps_forked_from_pair`, migration 0064).
+    forked_from_qapp_id: UUID | None = None
+    forked_from_version_id: UUID | None = None
     created_at: datetime
     updated_at: datetime
     published_at: datetime | None = None

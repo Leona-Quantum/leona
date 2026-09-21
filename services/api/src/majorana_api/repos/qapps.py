@@ -7,6 +7,7 @@ such query states that public exception alongside the normal tenant predicate.
 
 from __future__ import annotations
 
+import dataclasses
 import datetime as dt
 import hashlib
 import json
@@ -20,7 +21,7 @@ from sqlalchemy import and_, func, or_, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..ids import uuid7
-from ..orm import Qapp, QappExecution, QappVersion, Run, User
+from ..orm import AuditLog, Qapp, QappExecution, QappVersion, Run, User
 from ._base import AuthzError, NotFoundError, RepoError, require_write, touched_now
 from .audit import record_audit
 
@@ -34,6 +35,10 @@ def _accessible(scope: Scope) -> Any:
 
 class QappPublicationBlocked(RepoError):
     """The current version has not completed one schema-valid sandbox execution."""
+
+
+class QappForkBlocked(RepoError):
+    """The source Qapp is not eligible to be forked — it must be published."""
 
 
 class QappExecutionCeiling(RepoError):
@@ -56,6 +61,16 @@ class QappExecutionCeiling(RepoError):
     def __init__(self, scope_name: str) -> None:
         super().__init__(f"Qapp execution ceiling reached: {scope_name}")
         self.scope_name = scope_name
+
+
+def _escape_ilike(term: str) -> str:
+    """Escape `%`, `_` and the escape character itself for a literal `ILIKE` match.
+
+    Gallery search is a substring match a visitor types, not a pattern language —
+    a title containing a literal `%` or `_` must not let a searcher's `%` or `_`
+    behave as a wildcard instead of the character it looks like.
+    """
+    return term.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
 
 
 def _slug(title: str, qapp_id: uuid.UUID) -> str:
@@ -204,49 +219,82 @@ async def list_qapps(scope: Scope, session: AsyncSession, *, limit: int = 100) -
     )
 
 
+#: Default and maximum page size for `list_public_qapps`. Kept small: each row
+#: also serializes `PublicQappSummary`, and the point of real paging is that a
+#: page answers in one bounded query rather than one that grows with the
+#: gallery.
+PUBLIC_GALLERY_PAGE_DEFAULT = 24
+PUBLIC_GALLERY_PAGE_MAX = 60
+
+
 async def list_public_qapps(
-    scope: Scope, session: AsyncSession, *, limit: int = 100
+    scope: Scope,
+    session: AsyncSession,
+    *,
+    search: str | None = None,
+    before: tuple[dt.datetime, uuid.UUID] | None = None,
+    limit: int = PUBLIC_GALLERY_PAGE_DEFAULT,
 ) -> list[tuple[Qapp, QappVersion]]:
-    """List published Qapps with only their current version available to projection.
+    """One page of published Qapps, newest-published first, with only their
+    current version available to projection.
 
-    The route turns these rows into a deliberately small public summary. Keeping
-    the join here avoids both an N+1 lookup and exposing version source/UI fields
-    to callers that only need gallery metadata.
+    Real server-side paging and search, not client-side filtering of one page:
+    `before` is a keyset cursor on the same `(published_at, id)` pair the list
+    is ordered by, and `search` is a substring match on title/description
+    pushed into the query rather than applied after the fact — so a Qapp
+    published before the first page's window is exactly as searchable as one
+    on it. The join here avoids both an N+1 lookup and exposing version
+    source/UI fields to callers that only need gallery metadata.
     """
-    return list(
-        (
-            await session.execute(
-                select(Qapp, QappVersion)
-                .join(
-                    QappVersion,
-                    and_(
-                        QappVersion.qapp_id == Qapp.id,
-                        QappVersion.id == Qapp.current_version_id,
-                    ),
-                )
-                .where(
-                    _accessible(scope),
-                    Qapp.visibility == Visibility.PUBLIC.value,
-                    Qapp.published_at.is_not(None),
-                    Qapp.deleted_at.is_(None),
-                )
-                .order_by(Qapp.published_at.desc(), Qapp.id.desc())
-                .limit(limit)
-            )
-        ).all()
+    stmt = (
+        select(Qapp, QappVersion)
+        .join(
+            QappVersion,
+            and_(
+                QappVersion.qapp_id == Qapp.id,
+                QappVersion.id == Qapp.current_version_id,
+            ),
+        )
+        .where(
+            _accessible(scope),
+            Qapp.visibility == Visibility.PUBLIC.value,
+            Qapp.published_at.is_not(None),
+            Qapp.deleted_at.is_(None),
+        )
     )
-
-
-async def get_qapp(scope: Scope, session: AsyncSession, qapp_id: uuid.UUID) -> Qapp:
-    row = (
-        await session.execute(
-            select(Qapp).where(
-                Qapp.id == qapp_id,
-                Qapp.workspace_id == scope.workspace_id,
-                Qapp.deleted_at.is_(None),
+    term = (search or "").strip()
+    if term:
+        pattern = f"%{_escape_ilike(term)}%"
+        stmt = stmt.where(
+            or_(
+                Qapp.title.ilike(pattern, escape="\\"),
+                Qapp.description.ilike(pattern, escape="\\"),
             )
         )
-    ).scalar_one_or_none()
+    if before is not None:
+        before_published_at, before_id = before
+        stmt = stmt.where(
+            or_(
+                Qapp.published_at < before_published_at,
+                and_(Qapp.published_at == before_published_at, Qapp.id < before_id),
+            )
+        )
+    bounded = min(max(limit, 1), PUBLIC_GALLERY_PAGE_MAX)
+    stmt = stmt.order_by(Qapp.published_at.desc(), Qapp.id.desc()).limit(bounded)
+    return list((await session.execute(stmt)).all())
+
+
+async def get_qapp(
+    scope: Scope, session: AsyncSession, qapp_id: uuid.UUID, *, for_update: bool = False
+) -> Qapp:
+    stmt = select(Qapp).where(
+        Qapp.id == qapp_id,
+        Qapp.workspace_id == scope.workspace_id,
+        Qapp.deleted_at.is_(None),
+    )
+    if for_update:
+        stmt = stmt.with_for_update()
+    row = (await session.execute(stmt)).scalar_one_or_none()
     if row is None:
         raise NotFoundError("qapp")
     return row
@@ -281,6 +329,263 @@ async def get_current_version(scope: Scope, session: AsyncSession, qapp: Qapp) -
     if row is None:
         raise NotFoundError("qapp version")
     return row
+
+
+async def get_version(scope: Scope, session: AsyncSession, version_id: uuid.UUID) -> QappVersion:
+    """One version of a Qapp this scope's workspace owns — not the public
+    projection. Used by version history and rollback, both creator-facing.
+    """
+    row = (
+        await session.execute(
+            select(QappVersion)
+            .join(Qapp, QappVersion.qapp_id == Qapp.id)
+            .where(
+                QappVersion.id == version_id,
+                Qapp.workspace_id == scope.workspace_id,
+                Qapp.deleted_at.is_(None),
+            )
+        )
+    ).scalar_one_or_none()
+    if row is None:
+        raise NotFoundError("qapp version")
+    return row
+
+
+async def list_versions(
+    scope: Scope,
+    session: AsyncSession,
+    qapp_id: uuid.UUID,
+    *,
+    before_seq: int | None = None,
+    limit: int = 20,
+) -> list[QappVersion]:
+    """This Qapp's version history, newest authored first.
+
+    Ordered by `seq` (authoring order), which is NOT "which is current" — a
+    rollback moves `qapps.current_version_id` without authoring a row, so the
+    current version is frequently not the highest `seq`. Callers compare ids,
+    the same discipline `artifacts.list_versions` documents for the identical
+    reason.
+
+    Workspace-scoped like every other Qapp read here (`get_qapp`,
+    `qapp_detail`) — any co-member can see history. Only rollback itself is
+    creator-only, matching how `set_visibility`/`soft_delete_qapp` narrow a
+    workspace-scoped read to an owner-only write.
+    """
+    qapp = await get_qapp(scope, session, qapp_id)
+    stmt = (
+        select(QappVersion)
+        .join(Qapp, QappVersion.qapp_id == Qapp.id)
+        .where(
+            QappVersion.qapp_id == qapp.id,
+            Qapp.workspace_id == scope.workspace_id,
+            Qapp.deleted_at.is_(None),
+        )
+        .order_by(QappVersion.seq.desc())
+        .limit(limit)
+    )
+    if before_seq is not None:
+        stmt = stmt.where(QappVersion.seq < before_seq)
+    return list((await session.execute(stmt)).scalars().all())
+
+
+async def list_qapp_activity(
+    scope: Scope, session: AsyncSession, qapp_id: uuid.UUID, *, limit: int = 20
+) -> list[AuditLog]:
+    """Who changed this Qapp's publication state or live version, and when.
+
+    Creator-only, for the same reason publishing and deleting are: a
+    workspace co-member can otherwise read out who else touched the
+    workspace's Qapp and when. Reuses the append-only `audit_log` table
+    (`record_audit`) rather than a new column or table — every action this
+    surfaces (`qapp.created`, `qapp.published`, `qapp.unpublished`,
+    `qapp.rolled_back`, `qapp.forked`, `qapp.deleted`) already writes there.
+    """
+    qapp = await get_qapp(scope, session, qapp_id)
+    if qapp.owner_user_id != scope.user_id:
+        raise AuthzError("only the Qapp creator may view its activity")
+    rows = (
+        await session.execute(
+            select(AuditLog)
+            .where(
+                AuditLog.workspace_id == scope.workspace_id,
+                AuditLog.target_kind == "qapp",
+                AuditLog.target_id == qapp.id,
+            )
+            .order_by(AuditLog.id.desc())
+            .limit(limit)
+        )
+    ).scalars().all()
+    return list(rows)
+
+
+async def roll_back(
+    scope: Scope, session: AsyncSession, qapp_id: uuid.UUID, version_id: uuid.UUID
+) -> tuple[Qapp, bool]:
+    """Make an earlier (or later) version live again. A pointer move, not a copy.
+
+    Returns ``(qapp, demoted_to_private)``. ``demoted_to_private`` is True when
+    a PUBLIC Qapp was taken private by this call, which happens only when the
+    target version has never completed a successful run: ADR-0031 requires the
+    CURRENT version to carry that proof before a Qapp may be public
+    (`set_visibility`'s gate), and a rollback must not let a public page start
+    serving a version that gate has never seen. When the target version
+    already has a qualifying execution — the ordinary case, since every
+    version this system has ever produced is born from a generation whose
+    low-end smoke run already earned one — the Qapp stays public and the
+    public page serves the new version immediately: "the public page always
+    serves exactly the chosen version" with no separate re-publish step.
+
+    Creator-only, matching `set_visibility`/`soft_delete_qapp`: `get_qapp` is
+    workspace-scoped, so a co-member of the same workspace can read the row,
+    and the owner check is what stands between them and repointing (or
+    de-publishing) somebody else's Qapp.
+
+    Locked with `for_update` on the Qapp row so a concurrent rollback or
+    publish cannot interleave with the gate check below.
+    """
+    require_write(scope)
+    qapp = await get_qapp(scope, session, qapp_id, for_update=True)
+    if qapp.owner_user_id != scope.user_id:
+        raise AuthzError("only the Qapp creator may change its live version")
+    version = await get_version(scope, session, version_id)
+    if version.qapp_id != qapp.id:
+        raise NotFoundError("qapp version")
+    if qapp.current_version_id == version.id:
+        return qapp, False
+
+    from_version_id = qapp.current_version_id
+    now = touched_now()
+    qapp.current_version_id = version.id
+    qapp.updated_at = now
+
+    demoted = False
+    if qapp.visibility == Visibility.PUBLIC.value:
+        succeeded = (
+            await session.execute(
+                select(QappExecution.id)
+                .where(
+                    QappExecution.qapp_id == qapp.id,
+                    QappExecution.qapp_version_id == version.id,
+                    QappExecution.status == QappExecutionStatus.SUCCEEDED.value,
+                )
+                .limit(1)
+            )
+        ).scalar_one_or_none()
+        if succeeded is None:
+            qapp.visibility = Visibility.PRIVATE.value
+            qapp.published_at = None
+            demoted = True
+
+    await record_audit(
+        scope,
+        session,
+        action="qapp.rolled_back",
+        target_kind="qapp",
+        target_id=qapp.id,
+        meta={
+            "from_version_id": str(from_version_id) if from_version_id else None,
+            "to_version_id": str(version.id),
+            "to_seq": version.seq,
+            "demoted_to_private": demoted,
+        },
+    )
+    await session.flush()
+    return qapp, demoted
+
+
+async def fork_qapp(
+    scope: Scope, session: AsyncSession, *, source_slug: str
+) -> tuple[Qapp, QappVersion]:
+    """Copy a published Qapp's current version into the caller's own account.
+
+    The fork is a NEW Qapp, privately owned by the caller, whose first version
+    is a byte-for-byte copy of the source's current version's UI document and
+    quantum source. Provenance travels with it (`forked_from_qapp_id`,
+    `forked_from_version_id`, migration 0064) so a reader can trace it back.
+
+    Only a PUBLISHED source may be forked — `visibility == public` alone is not
+    enough (a Qapp is briefly in that state with `published_at` unset nowhere
+    in practice, but the pair is the actual publication contract everywhere
+    else in this module, so it is checked here too). This also is what refuses
+    forking a private Qapp: a source in the caller's OWN workspace that has
+    simply never been published is refused by the same check that refuses a
+    stranger's private Qapp, because publication — not workspace membership —
+    is the line fork draws.
+
+    The fork itself starts PRIVATE and passes through the ordinary document
+    guard (at the worker, on generation) and publication gate
+    (`set_visibility`) exactly like any other Qapp: copying a Qapp does not
+    copy its proof that it runs; the new owner must execute their own copy
+    successfully before they can publish it, because `qapp_executions` is
+    keyed on this new `qapp_id`/`qapp_version_id`, not the source's.
+    """
+    require_write(scope)
+    source = await get_accessible_by_slug(scope, session, source_slug)
+    if source.visibility != Visibility.PUBLIC.value or source.published_at is None:
+        raise QappForkBlocked("only a published Qapp may be forked")
+    source_version = await get_current_version(scope, session, source)
+
+    canonical = json.dumps(
+        {
+            "framework": source_version.framework,
+            "qubits_estimate": source_version.qubits_estimate,
+            "ui_document": source_version.ui_document,
+            "quantum_source": source_version.quantum_source,
+            "input_schema": source_version.input_schema,
+            "output_schema": source_version.output_schema,
+        },
+        sort_keys=True,
+        separators=(",", ":"),
+        ensure_ascii=False,
+    )
+    qapp_id = uuid7()
+    qapp = Qapp(
+        id=qapp_id,
+        workspace_id=scope.workspace_id,
+        owner_user_id=scope.user_id,
+        slug=_slug(source.title, qapp_id),
+        title=source.title,
+        description=source.description,
+        visibility=Visibility.PRIVATE.value,
+        created_by_run_id=None,
+        forked_from_qapp_id=source.id,
+        forked_from_version_id=source_version.id,
+    )
+    version = QappVersion(
+        id=uuid7(),
+        qapp_id=qapp_id,
+        seq=1,
+        framework=source_version.framework,
+        qubits_estimate=source_version.qubits_estimate,
+        ui_document=source_version.ui_document,
+        quantum_source=source_version.quantum_source,
+        input_schema=source_version.input_schema,
+        output_schema=source_version.output_schema,
+        fingerprint=hashlib.sha256(canonical.encode()).hexdigest(),
+        source_artifact_version_id=None,
+        generation_prompt=(
+            f"Forked from qapp {source.slug} (version {source_version.seq})."
+        ),
+        range_smoke=None,
+    )
+    session.add(qapp)
+    session.add(version)
+    await session.flush()
+    qapp.current_version_id = version.id
+    await record_audit(
+        scope,
+        session,
+        action="qapp.forked",
+        target_kind="qapp",
+        target_id=qapp.id,
+        meta={
+            "forked_from_qapp_id": str(source.id),
+            "forked_from_version_id": str(source_version.id),
+        },
+    )
+    await session.flush()
+    return qapp, version
 
 
 async def set_visibility(
@@ -380,6 +685,88 @@ async def create_execution(
     session.add(execution)
     await session.flush()
     return execution
+
+
+@dataclasses.dataclass
+class QappVersionUsageCounts:
+    """One version's execution counts, for the creator's usage view only."""
+
+    qapp_version_id: uuid.UUID
+    total: int
+    succeeded: int
+    failed: int
+    queued: int
+    running: int
+    last_execution_at: dt.datetime | None
+    last_execution_status: str | None
+
+
+async def qapp_usage(
+    scope: Scope, session: AsyncSession, qapp_id: uuid.UUID
+) -> list[QappVersionUsageCounts]:
+    """Executions per version, last run, and run outcomes — creator-only.
+
+    Built entirely from `qapp_executions` this Qapp already has: no new
+    tracking of viewers or anonymous traffic, and nothing here counts a page
+    view. Every row aggregated is a paid sandbox execution someone
+    deliberately ran, through `execute_qapp`'s existing spend ceilings.
+
+    Creator-only for the same reason `list_qapp_activity` is: `get_qapp` is
+    workspace-scoped, so without the owner check a co-member could read out
+    how much another member's Qapp is being used.
+    """
+    qapp = await get_qapp(scope, session, qapp_id)
+    if qapp.owner_user_id != scope.user_id:
+        raise AuthzError("only the Qapp creator may view its usage")
+
+    counts_by_status = (
+        await session.execute(
+            select(
+                QappExecution.qapp_version_id,
+                QappExecution.status,
+                func.count().label("n"),
+            )
+            .where(QappExecution.qapp_id == qapp.id)
+            .group_by(QappExecution.qapp_version_id, QappExecution.status)
+        )
+    ).all()
+
+    # DISTINCT ON is Postgres-specific, which this repository already is
+    # throughout (postgresql.UUID/JSONB columns) — it is the one query shape
+    # that gets "the most recent row per version" without one round trip per
+    # version found above.
+    last_by_version = (
+        await session.execute(
+            text(
+                "select distinct on (qapp_version_id) qapp_version_id, status, created_at "
+                "from qapp_executions where qapp_id = :qapp_id "
+                "order by qapp_version_id, created_at desc"
+            ),
+            {"qapp_id": qapp.id},
+        )
+    ).all()
+    last_by_id = {row.qapp_version_id: row for row in last_by_version}
+
+    totals: dict[uuid.UUID, dict[str, int]] = {}
+    for version_id, status, n in counts_by_status:
+        totals.setdefault(version_id, {})[status] = int(n)
+
+    results: list[QappVersionUsageCounts] = []
+    for version_id, by_status in totals.items():
+        last = last_by_id.get(version_id)
+        results.append(
+            QappVersionUsageCounts(
+                qapp_version_id=version_id,
+                total=sum(by_status.values()),
+                succeeded=by_status.get(QappExecutionStatus.SUCCEEDED.value, 0),
+                failed=by_status.get(QappExecutionStatus.FAILED.value, 0),
+                queued=by_status.get(QappExecutionStatus.QUEUED.value, 0),
+                running=by_status.get(QappExecutionStatus.RUNNING.value, 0),
+                last_execution_at=last.created_at if last is not None else None,
+                last_execution_status=last.status if last is not None else None,
+            )
+        )
+    return results
 
 
 #: How long a `running` Qapp execution may sit before another delivery may

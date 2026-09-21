@@ -3089,9 +3089,9 @@ export interface components {
             created_at: string;
             /**
              * Created By Run Id
-             * Format: uuid
+             * @default null
              */
-            created_by_run_id: string;
+            created_by_run_id: string | null;
             /**
              * Current Version Id
              * Format: uuid
@@ -3099,6 +3099,16 @@ export interface components {
             current_version_id: string;
             /** Description */
             description: string;
+            /**
+             * Forked From Qapp Id
+             * @default null
+             */
+            forked_from_qapp_id: string | null;
+            /**
+             * Forked From Version Id
+             * @default null
+             */
+            forked_from_version_id: string | null;
             /**
              * Id
              * Format: uuid

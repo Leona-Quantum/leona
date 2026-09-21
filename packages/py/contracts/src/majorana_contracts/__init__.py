@@ -359,7 +359,12 @@ from .lifecycle import (
 # 2.19.0 payload still validates and an ungraded notebook behaves exactly as before.
 # The answer key never leaves the server — `for_learner()` strips it and
 # `leaks_answer_key()` asserts that it did.
-CONTRACTS_VERSION = "2.20.0"
+# 2.21.0: Proposal 6 (Qapps v2). Qapp.created_by_run_id becomes optional and gains
+# forked_from_qapp_id/forked_from_version_id (a fork has no originating run) —
+# additive/widening, and every existing Qapp still reports a non-null
+# created_by_run_id. QappRangeSmoke is unchanged. New route-local response shapes
+# (version history, activity, usage, rollback) are not contracts models.
+CONTRACTS_VERSION = "2.21.0"
 
 __all__ = [
     "TextAnswer",
