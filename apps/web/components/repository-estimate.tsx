@@ -96,7 +96,7 @@ const COPY = {
     notesTitle: "Stated caveats",
     frontierTitle: "Qubits vs runtime, across hardware",
     frontierBlurb:
-      "Each row is one hardware set and factory count. None was picked for you — a hardware set with no row here was checked and beaten on both qubits and runtime by a row that is shown.",
+      "Each row is one hardware set with a number of magic-state factories, and none of them is a recommendation. A combination that isn't listed was checked: it needed at least as many qubits and at least as long a runtime as a row that is.",
     frontierHardware: "Hardware",
     frontierConsidered: "combinations checked",
     frontierEmpty: "Nothing to rank: this circuit has no stated runtime under any hardware set.",
@@ -180,7 +180,7 @@ const COPY = {
     notesTitle: "明示された注意点",
     frontierTitle: "ハードウェアごとの量子ビット数と実行時間",
     frontierBlurb:
-      "各行は1つのハードウェアと工場数の組み合わせです。どれかを選んで示しているわけではありません。ここに行がないハードウェアは検討した上で、量子ビット数と実行時間の両方で別の行に劣っていたため除外されています。",
+      "各行は、1つのハードウェア前提とマジック状態工場の数の組み合わせです。どれかを推奨しているわけではありません。表にない組み合わせも検討済みで、表にあるいずれかの行と比べて、量子ビット数も実行時間も同じかそれ以上でした。",
     frontierHardware: "ハードウェア",
     frontierConsidered: "件を検討",
     frontierEmpty: "順位付けできる対象がありません。この回路はどのハードウェア前提でも実行時間を提示できません。",
