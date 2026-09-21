@@ -21,5 +21,7 @@ Runs the eval corpus through the real pipeline and scores it (Phase 2 step 7).
   direct-handler pattern — see `evals/public-benchmarks/README.md` first, then each
   benchmark's `PROVENANCE.md` for what is vendored, pinned, and NOT yet scored (QCircuitEval
   is structural-only; both benchmarks have a real gradable-task ceiling below 100%, for
-  reasons written down there, not a harness defect). `.github/workflows/public-benchmarks.yml`
-  is a draft, `workflow_dispatch`-only, no secrets wired in — it cannot spend money as shipped.
+  reasons written down there, not a harness defect). There is no workflow for it yet: a
+  paid run waits on the owner approving the spend, and the workflow that runs it on every
+  model change lands with that approval (a `workflow_dispatch` draft is in this branch's
+  history at 09a4c63f).
