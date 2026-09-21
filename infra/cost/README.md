@@ -78,42 +78,22 @@ every 2 seconds, so it genuinely cannot be throttled or scaled to zero as
 written. Changing that is an architecture change (wake on Cloud Tasks or Pub/Sub
 push), not a setting. `minScale: 1` is itself his ai-ops 101 ruling.
 
-## Vercel
+## Vercel (retired 2026-09-21)
 
-The Vercel bill is **builds**, not traffic — measured from the console on
-2026-08-14 and unchanged in shape since: Build CPU Minutes were 57% of it while
-ISR, Fast Data Transfer and Edge Requests were all $0 inside their allowances.
-`scripts/vercel-ignore-build.sh` is where that is dealt with, and
-`scripts/check-vercel-ignore-build.mjs` is what keeps it honest.
+The website moved to Cloud Run on 2026-09-20 (DNS) and Vercel's Git integration
+was disconnected on 2026-09-21, so Vercel no longer builds anything and its bill
+should fall to the Pro seat plus Vercel Sandbox usage (the code-execution
+sandbox is the one thing still on Vercel; see
+`~/Developer/ai-ops/desk/leona/plans/gcp-migration-20260912/PLAN.md`).
 
-Measured from Vercel's deployment API over the seven days to 2026-09-16: **190
-deployments, 145 of them previews** (the preview count firmed up to 145 on a
-fuller page of the same window), against 184 wall-clock build minutes. Nothing
-consumes a preview — no workflow reads a preview URL, and since 2026-09-20 none
-reacts to a Vercel deployment event at all (`verify-web-cache.yml` follows
-`deploy-web`; `web-deploy-watch.yml` reads Production records only).
+What the Vercel bill used to be, for comparison: **builds**, not traffic —
+measured from the console on 2026-08-14, Build CPU Minutes were 57% of it while
+ISR, Fast Data Transfer and Edge Requests were all $0 inside their allowances;
+over the seven days to 2026-09-16, 190 deployments of which 145 were previews,
+56 of those merge-queue refs nobody opened.
 
-**The headline number is not the saving, and the split is what matters.** Those
-145 previews came from **109 distinct branches**, so only **36** were a second
-or later push to a branch that already had a deployment — about 28 build minutes
-of the 184. The other 109 were each a branch's first deployment, and a first
-deployment appears to build whatever the ignore step says: `4707b57c` and the
-`pr-904` merge-queue ref were both first deployments and both built, while
-`16706cb7`, a second push to the same branch, was cancelled by the ignore step
-under identical code. The most likely reason is structural rather than a bug —
-"skip" means "reuse the previous deployment", and a first deployment has none to
-reuse. This is inference from three deployments, not a documented rule; treat it
-as the working explanation and not as settled.
+The same "does this commit touch the website" rule now gates the Cloud Build
+image build in `deploy-web.yml`: `scripts/web-build-needed.sh`, checked by
+`scripts/check-web-build-needed.mjs`. There are no preview deployments on Cloud
+Run, so the preview rules the Vercel version carried are gone.
 
-So the two mechanisms do different halves of the job and neither replaces the
-other:
-
-* `scripts/vercel-ignore-build.sh` skips previews from the second push onward.
-  `LEONA_VERCEL_PREVIEWS=1` on the project, or `[preview]` in a commit message,
-  still builds one.
-* `apps/web/vercel.json` sets `git.deploymentEnabled` to refuse
-  `gh-readonly-queue/*` outright, which is the only thing that reaches a first
-  deployment. **56 of the 145** were merge-queue refs — transient branches
-  GitHub creates to trial a merge and deletes minutes later, whose preview URL
-  nobody has ever opened. Ordinary feature branches keep their first preview,
-  which is the one a person might actually look at.

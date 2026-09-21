@@ -103,7 +103,7 @@ untrusted generated code runs only in ephemeral network-locked sandboxes
 
 ## Layout
 
-- `apps/web` — Next.js App Router UI (Vercel)
+- `apps/web` — Next.js App Router UI (Cloud Run `majorana-web`, behind Cloudflare and the Google load balancer)
 - `apps/news` — Leona Quantum News renderer and local editorial UI (Node.js)
 - `services/api`, `services/worker` — FastAPI control plane + job runner (Cloud Run)
 - `packages/py/*` — agent, contracts, estimation, frameworks, llm, notebooks (leona-notebooks: the
@@ -148,9 +148,9 @@ with no sources, is untracked, has no `pyproject.toml`, and nothing imports `maj
 ## Branching / commits / PRs
 
 - `feature/* → dev`; squash merge only; protected branches require checks (admins too).
-  **`dev` IS production.** leonaqt.com serves from `dev`: `apps/web` self-deploys from it
-  through Vercel (ADR-0011) and `.github/workflows/deploy.yml` ships api + worker on every
-  merge to it. The `prod` branch is vestigial — measured 2026-08-14, `origin/dev` is **559
+  **`dev` IS production.** leonaqt.com serves from `dev`: `.github/workflows/deploy-web.yml`
+  ships `apps/web` to Cloud Run (ADR-0033; Vercel retired 2026-09-21) and
+  `.github/workflows/deploy.yml` ships api + worker on every merge to it. The `prod` branch is vestigial — measured 2026-08-14, `origin/dev` is **559
   commits ahead of `origin/prod`**, and nothing has shipped from `prod` in months. Do not
   open a `dev → prod` PR expecting it to deploy anything. The consequence that matters:
   a merge to `dev` is a production release and needs the same owner authorisation a deploy

@@ -5,7 +5,7 @@ import { LEGACY_PUBLIC_LOCALE_COOKIE, PUBLIC_LOCALE_COOKIE } from "./public-loca
  * its render. See the long note above the Atlas entries in `next.config.ts` for
  * why a header is needed at all and why 300 seconds.
  *
- * ## Two headers, and only one of them is conditional
+ * ## Conditional on the request, because Cloudflare ignores `Vary`
  *
  * The same URL answers with different bodies depending on the REQUEST. Measured
  * through Cloudflare on 2026-09-19, against `/repository`:
@@ -17,7 +17,7 @@ import { LEGACY_PUBLIC_LOCALE_COOKIE, PUBLIC_LOCALE_COOKIE } from "./public-loca
  *
  * and before this change all four carried `CDN-Cache-Control: max-age=300`.
  * Next answers `Vary: rsc, next-router-state-tree, …` on each of them, which is
- * enough for Vercel, whose edge honours `Vary`. Cloudflare's does not: it keys
+ * enough for an edge that honours `Vary`. Cloudflare's does not: it keys
  * on the URL and ignores `Vary` apart from content encoding. So once a Cache
  * Rule makes these paths eligible, one request carrying `RSC: 1` on a cold edge
  * stores the redirect (or, one hop later, the React payload) under the address
@@ -36,10 +36,10 @@ import { LEGACY_PUBLIC_LOCALE_COOKIE, PUBLIC_LOCALE_COOKIE } from "./public-loca
  * cache-control header if present", a response without it falls back to Next's
  * own `private, no-store` or to no header at all, and is not stored.
  *
- * `Vercel-CDN-Cache-Control` stays unconditional. Vercel still serves the site
- * through the cutover and its rollback window, its edge honours `Vary`, and
- * making it conditional would stop Vercel caching the client-side navigation
- * payloads it caches safely today. Drop it when Vercel is retired.
+ * Until Vercel was retired this also sent `Vercel-CDN-Cache-Control`
+ * unconditionally, because Vercel's edge honours `Vary` and could cache the
+ * navigation payloads safely. No Vercel edge serves the site any more, so that
+ * header was dropped rather than left as a string nothing reads.
  */
 export const EDGE_CACHE_BYPASS_WHEN_PRESENT = [
   // Next's client router marks every payload request with this header, and the
@@ -61,11 +61,10 @@ export type EdgeCacheRule = {
   missing?: { type: "header" | "query" | "cookie"; key: string }[];
 };
 
-/** Both entries for one `source`: Vercel's header always, Cloudflare's only on a plain request. */
+/** The entry for one `source`: Cloudflare's header, only on a plain request. */
 export function edgeCacheRules(source: string, maxAgeSeconds: number): EdgeCacheRule[] {
   const value = `max-age=${maxAgeSeconds}`;
   return [
-    { source, headers: [{ key: "Vercel-CDN-Cache-Control", value }] },
     {
       source,
       missing: EDGE_CACHE_BYPASS_WHEN_PRESENT.map((condition) => ({ ...condition })),
