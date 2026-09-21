@@ -841,6 +841,11 @@
   max-width: 100%;
   height: auto;
 }
+.organizerNames {
+  margin: var(--sp-5) 0 0;
+  font-size: var(--qff-small);
+  letter-spacing: 0.04em;
+}
 .partnerLogos {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
