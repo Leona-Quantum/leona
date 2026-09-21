@@ -77,6 +77,7 @@ Source: Gidney, *How to factor 2048 bit RSA integers with less than a million no
 | `physical_qubits_per_patch` | `2(d+1)²` | paper — "distance d surface code patches using 2(d + 1)² physical qubits per logical qubit" |
 | `t_per_toffoli` | 8 | paper — "8T-to-CCZ distillation [Jon13] to power Toffoli gates … needs 8 T states" |
 | `factory_cycles_per_state` | `(14.7 + 4d)/8` | paper's derivation — **departure, see below** |
+| `rotation_t_coefficient` | 3.0 | **Ross & Selinger** — see below |
 
 ### The suppression law is not in this paper
 
@@ -155,6 +156,7 @@ same-distance convention is the one this model can actually represent.
 | `routing_factor` | 2.0 | Litinski §2 — leading term of both data blocks; **see below** |
 | `factory_footprint_logical` | 44.0 | Litinski §4.2 — the 116-to-12 block, **see below** |
 | `factory_cycles_per_state` | `9.27d` | Litinski §4.2 + §Translation — **see below** |
+| `rotation_t_coefficient` | 3.0 | Ross & Selinger — see below; neither Webber nor Litinski states a rotation-synthesis convention |
 
 ### The distillation block was the wrong one for this set's own error rate
 
@@ -210,6 +212,54 @@ their sources actually specify.
 These two estimates must never be ranked against each other. `comparable_with` refuses on
 identity, and `/v1/catalog/estimates` states one set once for the whole payload so a client
 holding it has nothing inside it to rank across.
+
+## `rotation_t_coefficient` was sourced only in a docstring until 2026-09-21
+
+`AssumptionSet.rotation_t_coefficient` (Ross & Selinger,
+[arXiv:1403.2975](https://arxiv.org/abs/1403.2975), the leading term of
+`3*log2(1/eps) + O(log log 1/eps)` for ancilla-free z-rotation synthesis) has held the
+value 3.0 on both built-in sets since the field existed, and the field's own docstring
+named the paper correctly the whole time. What it did not do is reach `citation` — the
+disclosure mechanism this whole document is about — because it was never added to
+either set's `value_provenance`. A reader of the public estimate panel saw every other
+constant's source and not this one, which is the same shape of gap `working_allowances`
+exists to close, just on the one field the structural check (see below) did not yet
+cover. Both sets now attribute it, and `test_provenance.py`'s completeness check exists
+so a future field cannot repeat this quietly.
+
+## Every constant's source, checked structurally
+
+`packages/py/estimation/src/majorana_estimation/provenance.py` turns this document's
+audit trail into something a test enforces rather than a table someone has to remember
+to update. `packages/py/estimation/tests/test_provenance.py`:
+
+- derives, for every field of `AssumptionSet` that states a physical or algorithmic
+  number, whether it is disclosed as `working_allowances` (no source states it),
+  `value_provenance` (attributed to a specific paper, possibly not `source_citation`),
+  or implicitly `source_citation` itself — and fails if a **new** field is added to
+  `AssumptionSet` without being classified as one of these, so this cannot silently
+  regress the way `rotation_t_coefficient` did;
+- cross-checks the three arXiv ids that are cited here **and** already carry an entry in
+  the Atlas corpus paper register (`apps/web/lib/repository/paper-register.ts`) — Fowler
+  & Gidney (`arxiv:1808.06709`), Litinski's *A Game of Surface Codes*
+  (`arxiv:1808.02892`), and Ross & Selinger (`arxiv:1403.2975`) — by reading that file's
+  text directly, so a constant claiming an Atlas cross-link is checked against the real
+  register rather than trusted;
+- records the two constants in `estimate.py` that are not physical constants at all —
+  `MAX_CODE_DISTANCE` and the `target_failure_probability` default — as explicit
+  engineering/policy choices with **no source recorded**, rather than leaving them
+  silently unclassified.
+
+**Four of the seven papers this estimator cites are not yet in the Atlas paper
+register**: Gidney 2025 (arXiv:2505.15917, the primary source for `gidney-2025`),
+Babbush et al. (arXiv:2011.04149, `advantage.py`), Webber et al. (arXiv:2108.12371,
+the physical layer of `composed-trapped-ion`), and Litinski's *Magic state distillation:
+not as costly as you think* (Quantum 3, 205, no arXiv id stated anywhere in this
+package). They remain real, checked citations in `source_citation` and
+`value_provenance` — nothing here demotes them — but they cannot yet render as an
+Atlas cross-link the way the other three can. Adding them to the register is a corpus
+editorial decision outside this package's scope; filed for the owner rather than done
+here.
 
 ## What both sets still share, and what is still open
 

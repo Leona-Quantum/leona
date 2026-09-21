@@ -508,6 +508,70 @@ class CostOnSmallestMachine(_ResourceBase):
     runtime: RuntimeSummary
 
 
+class FrontierPointSummary(_ResourceBase):
+    """One non-dominated point on the qubits-vs-runtime trade.
+
+    Independently labelled with the assumption set that produced it, which
+    may differ from `CatalogEntryEstimate.assumptions` above — a frontier
+    compares choices *across* hardware and error-correction assumptions on
+    purpose (Azure's resource estimator does the same), and every point
+    carries enough to stand alone so a reader never has to guess which claim
+    it is. See `packages/py/estimation/src/majorana_estimation/frontier.py`.
+    """
+
+    assumption_set: str = Field(
+        description="AssumptionSet.identity that produced this point, e.g. `gidney-2025@v2`."
+    )
+    assumption_citation: str
+    target_failure_probability: float = Field(gt=0, lt=1)
+    factory_count: int = Field(ge=0)
+    total_physical_qubits: int = Field(ge=0)
+    runtime_seconds: float = Field(
+        gt=0,
+        description="Never null: a point with no stated runtime cannot be ranked, so it never reaches the frontier.",
+    )
+
+
+class FrontierSummary(_ResourceBase):
+    """The Pareto frontier of physical qubits vs runtime for this entry's
+    circuit, swept across the deployment's built-in assumption sets and
+    factory counts at the same failure target already used above.
+
+    `points` may be empty for a Clifford-only circuit — it has no stated
+    runtime under any assumption set, so nothing can be ranked, and an empty
+    frontier is the honest report of that rather than an omitted field.
+    """
+
+    points: list[FrontierPointSummary] = Field(default_factory=list)
+    considered: int = Field(
+        ge=0,
+        description="How many candidate points were swept before the Pareto filter kept these.",
+    )
+
+
+class ScalingCurvePointSummary(_ResourceBase):
+    """One `n` on a scaling curve, and what it costs."""
+
+    n: int = Field(ge=1)
+    total_physical_qubits: int = Field(ge=0)
+    runtime_seconds: float | None = None
+
+
+class ScalingCurveSummary(_ResourceBase):
+    """The estimate at a series of problem sizes, for a workload whose
+    logical cost is a *stated* function of a problem parameter — see
+    `packages/py/estimation/src/majorana_estimation/scaling.py`. Never
+    fabricated: this is null until an Atlas record states an explicit
+    `n`-dependence for this entry's algorithm, which none currently does.
+    """
+
+    parameter_name: str
+    source: str = Field(
+        description="Where the n-dependence comes from — a paper or Atlas record, never derived here."
+    )
+    points: list[ScalingCurvePointSummary] = Field(default_factory=list)
+
+
 class CatalogEntryEstimate(_ResourceBase):
     """A catalogue entry's fault-tolerant cost, or a stated reason there is none (E4).
 
@@ -549,6 +613,24 @@ class CatalogEntryEstimate(_ResourceBase):
     )
     target_failure_probability: float | None = Field(default=None, gt=0, lt=1)
     notes: list[str] = Field(default_factory=list, max_length=20)
+    frontier: FrontierSummary | None = Field(
+        default=None,
+        description=(
+            "The qubits-vs-runtime Pareto frontier across the deployment's "
+            "built-in assumption sets. Present exactly when `basis` carries a "
+            "cost (may still have zero points, e.g. Clifford-only); null "
+            "under NO_CIRCUIT/REFUSED, same as the other layers."
+        ),
+    )
+    scaling: ScalingCurveSummary | None = Field(
+        default=None,
+        description=(
+            "The estimate at a series of problem sizes, only when this "
+            "entry's Atlas record states an explicit n-dependence for its "
+            "logical cost. Null otherwise — never fabricated by fitting or "
+            "extrapolating a curve. No entry currently states one."
+        ),
+    )
 
     @model_validator(mode="after")
     def _numbers_and_reasons_are_mutually_exclusive(self) -> Self:
@@ -566,11 +648,21 @@ class CatalogEntryEstimate(_ResourceBase):
                 raise ValueError(f"basis {self.basis} must carry every layer of the estimate")
             if self.reason is not None:
                 raise ValueError(f"basis {self.basis} carries a cost, so it states no reason")
+            if self.frontier is None:
+                raise ValueError(
+                    f"basis {self.basis} carries a cost, so it must carry a frontier too"
+                )
         else:
             if any(layer is not None for layer in layers):
                 raise ValueError(f"basis {self.basis} states no cost, so it carries no layers")
             if self.smallest_machine is not None:
                 raise ValueError(f"basis {self.basis} states no cost, so it costs no machine")
+            if self.frontier is not None:
+                raise ValueError(f"basis {self.basis} states no cost, so it carries no frontier")
+            if self.scaling is not None:
+                raise ValueError(
+                    f"basis {self.basis} states no cost, so it carries no scaling curve"
+                )
             if not self.reason:
                 raise ValueError(f"basis {self.basis} must say why there is no cost")
         if priced and self.basis is ResourceEstimateBasis.ESTIMATED:

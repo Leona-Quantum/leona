@@ -82,6 +82,43 @@ export interface EstimateSmallestMachine {
   runtime: EstimateRuntime;
 }
 
+/**
+ * One non-dominated point on the qubits-vs-runtime trade, labelled with the
+ * assumption set that produced it — which may differ from `assumptions` on
+ * the enclosing estimate (proposal 4's frontier compares hardware choices on
+ * purpose; see `packages/py/estimation/.../frontier.py`).
+ */
+export interface EstimateFrontierPoint {
+  assumptionSet: string;
+  assumptionCitation: string;
+  targetFailureProbability: number;
+  factoryCount: number;
+  totalPhysicalQubits: number;
+  runtimeSeconds: number;
+}
+
+export interface EstimateFrontier {
+  points: EstimateFrontierPoint[];
+  /** How many candidate points were swept before the Pareto filter kept these. */
+  considered: number;
+}
+
+/** The estimate at a series of problem sizes, only when an Atlas record
+ * states an explicit n-dependence for this entry — none does yet, so this is
+ * always null today. Kept typed rather than ignored so a future backend that
+ * populates it does not silently fail to parse. */
+export interface EstimateScalingPoint {
+  n: number;
+  totalPhysicalQubits: number;
+  runtimeSeconds: number | null;
+}
+
+export interface EstimateScalingCurve {
+  parameterName: string;
+  source: string;
+  points: EstimateScalingPoint[];
+}
+
 export interface RepositoryEstimate {
   slug: string;
   basis: ResourceEstimateBasis;
@@ -95,6 +132,9 @@ export interface RepositoryEstimate {
   smallestMachine: EstimateSmallestMachine | null;
   targetFailureProbability: number | null;
   notes: string[];
+  /** Present exactly when `basis` carries a cost — same rule as the layers above. */
+  frontier: EstimateFrontier | null;
+  scaling: EstimateScalingCurve | null;
 }
 
 /** One row of the browse list's cost column. */
@@ -341,6 +381,68 @@ function parseSmallestMachine(
   return { footprint, runtime };
 }
 
+function parseFrontierPoint(value: unknown): EstimateFrontierPoint | null {
+  if (!isRecord(value)) return null;
+  const assumptionSet = nonEmptyString(value.assumption_set);
+  const assumptionCitation = nonEmptyString(value.assumption_citation);
+  const targetFailureProbability = requiredNum(value.target_failure_probability);
+  const factoryCount = requiredNum(value.factory_count);
+  const totalPhysicalQubits = requiredNum(value.total_physical_qubits);
+  const runtimeSeconds = requiredNum(value.runtime_seconds);
+  if (
+    assumptionSet === null ||
+    assumptionCitation === null ||
+    targetFailureProbability === null ||
+    factoryCount === null ||
+    totalPhysicalQubits === null ||
+    runtimeSeconds === null
+  ) {
+    return null;
+  }
+  return {
+    assumptionSet,
+    assumptionCitation,
+    targetFailureProbability,
+    factoryCount,
+    totalPhysicalQubits,
+    runtimeSeconds,
+  };
+}
+
+/**
+ * A bad individual point is dropped rather than failing the whole frontier —
+ * same policy as `parseEstimateList`'s rows: one unreadable point should not
+ * cost the visitor the rest of the trade.
+ */
+function parseFrontier(value: unknown): EstimateFrontier | null {
+  if (!isRecord(value)) return null;
+  const considered = requiredNum(value.considered);
+  if (considered === null || !Array.isArray(value.points)) return null;
+  const points = value.points
+    .map(parseFrontierPoint)
+    .filter((entry): entry is EstimateFrontierPoint => entry !== null);
+  return { points, considered };
+}
+
+function parseScalingPoint(value: unknown): EstimateScalingPoint | null {
+  if (!isRecord(value)) return null;
+  const n = requiredNum(value.n);
+  const totalPhysicalQubits = requiredNum(value.total_physical_qubits);
+  if (n === null || totalPhysicalQubits === null) return null;
+  return { n, totalPhysicalQubits, runtimeSeconds: num(value.runtime_seconds) };
+}
+
+function parseScaling(value: unknown): EstimateScalingCurve | null {
+  if (!isRecord(value)) return null;
+  const parameterName = nonEmptyString(value.parameter_name);
+  const source = nonEmptyString(value.source);
+  if (parameterName === null || source === null || !Array.isArray(value.points)) return null;
+  const points = value.points
+    .map(parseScalingPoint)
+    .filter((entry): entry is EstimateScalingPoint => entry !== null);
+  return { parameterName, source, points };
+}
+
 /**
  * Narrow one `/estimate` payload, or return null.
  *
@@ -362,6 +464,7 @@ export function parseEstimate(payload: unknown): RepositoryEstimate | null {
   const runtime = parseRuntime(payload.runtime);
   const reason = nonEmptyString(payload.reason);
   const layers = [logical, distance, footprint, runtime];
+  const frontier = parseFrontier(payload.frontier);
 
   if (isPriced(basis)) {
     if (layers.some((layer) => layer === null)) return null;
@@ -370,7 +473,11 @@ export function parseEstimate(payload: unknown): RepositoryEstimate | null {
     // the panel renders "Estimated under a stated precision" above a blurb
     // pointing at a precision row that is hidden because there is none.
     if (basis === "estimated" && assumptions.rotationSynthesisEpsilon === null) return null;
-  } else if (layers.some((layer) => layer !== null) || reason === null) {
+    // Same present-iff-priced rule as the layers above (CatalogEntryEstimate's
+    // model_validator): a priced basis with no frontier is a producer/parser
+    // disagreement, not a partial result to render.
+    if (frontier === null) return null;
+  } else if (layers.some((layer) => layer !== null) || reason === null || frontier !== null) {
     return null;
   }
 
@@ -390,6 +497,8 @@ export function parseEstimate(payload: unknown): RepositoryEstimate | null {
     notes: Array.isArray(payload.notes)
       ? payload.notes.filter((note): note is string => typeof note === "string")
       : [],
+    frontier,
+    scaling: parseScaling(payload.scaling),
   };
 }
 
