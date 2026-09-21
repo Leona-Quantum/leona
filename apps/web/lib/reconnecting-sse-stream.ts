@@ -81,17 +81,25 @@ function defaultWait(ms: number, signal: AbortSignal): Promise<void> {
 }
 
 /**
- * Resolves `"terminal"` once `onBlock` returns `true`, or `"aborted"` if
- * `signal` fires first — a stream the caller closed on purpose (unmount, or
- * following a different id), which is not an outcome to react to. It never
- * rejects: every connection failure — a non-2xx response, a body-less
- * response, a network error, a stream that ends without a terminal block —
- * is retried rather than surfaced as a permanent failure, exactly like the
- * Run page's own reader.
+ * Statuses that retrying cannot fix: signed out, not allowed, or the run is
+ * not there. Retrying them would poll the API every 10 seconds for as long as
+ * the tab stays open, with nothing on screen saying so. Everything else — a
+ * 5xx, a 429, a network error, a body-less response, a stream that ends early
+ * — is treated as a drop and retried.
+ */
+export const PERMANENT_STREAM_STATUSES: ReadonlySet<number> = new Set([401, 403, 404, 410]);
+
+/**
+ * Resolves `"terminal"` once `onBlock` returns `true`; `"gone"` when the
+ * server answers with one of `PERMANENT_STREAM_STATUSES`, which no retry can
+ * change; or `"aborted"` if `signal` fires first — a stream the caller closed
+ * on purpose (unmount, or following a different id), which is not an outcome
+ * to react to. It never rejects: every other connection failure is retried
+ * rather than surfaced, like the Run page's own reader.
  */
 export async function followReconnectingSseStream(
   options: FollowReconnectingSseStreamOptions,
-): Promise<"terminal" | "aborted"> {
+): Promise<"terminal" | "gone" | "aborted"> {
   const { request, signal, onBlock, onConnectionChange, backoff } = options;
   const wait = options.wait ?? ((ms: number) => defaultWait(ms, signal));
   let attempt = 0;
@@ -100,6 +108,7 @@ export async function followReconnectingSseStream(
     try {
       const { url, headers } = request();
       const response = await fetch(url, { headers, cache: "no-store", signal });
+      if (PERMANENT_STREAM_STATUSES.has(response.status)) return "gone";
       if (!response.ok) throw new Error(`Response stream failed (${response.status})`);
       if (!response.body) throw new Error("Response stream returned no body");
       onConnectionChange?.(null);

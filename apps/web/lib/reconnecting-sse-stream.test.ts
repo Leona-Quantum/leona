@@ -236,3 +236,57 @@ test("aborting while waiting to reconnect resolves 'aborted' instead of retrying
     },
   );
 });
+
+test("a status no retry can fix resolves 'gone' after one request, without waiting", async () => {
+  for (const status of [401, 403, 404, 410]) {
+    let calls = 0;
+    const waits: number[] = [];
+    // A retry is the bug, so the first wait aborts: a regression then resolves
+    // "aborted" and fails the assertion below instead of spinning forever.
+    const controller = new AbortController();
+    await withStubbedFetch(
+      (async () => {
+        calls++;
+        return new Response("nope", { status });
+      }) as typeof fetch,
+      async () => {
+        const outcome = await followReconnectingSseStream({
+          request: () => ({ url: "/api/runs/r1/events/stream" }),
+          signal: controller.signal,
+          onBlock: () => false,
+          wait: async (ms) => {
+            waits.push(ms);
+            controller.abort();
+          },
+        });
+        assert.equal(outcome, "gone", `status ${status}`);
+      },
+    );
+    assert.equal(calls, 1, `status ${status} was requested ${calls} times`);
+    assert.deepEqual(waits, [], `status ${status} waited to retry`);
+  }
+});
+
+test("a 5xx or 429 is still a drop and is retried", async () => {
+  for (const status of [429, 500, 502, 503]) {
+    let calls = 0;
+    await withStubbedFetch(
+      (async () => {
+        calls++;
+        if (calls === 1) return new Response("busy", { status });
+        return new Response(streamOf(['data: {"type":"run.finished"}\n\n']), { status: 200 });
+      }) as typeof fetch,
+      async () => {
+        const outcome = await followReconnectingSseStream({
+          request: () => ({ url: "/api/runs/r1/events/stream" }),
+          signal: new AbortController().signal,
+          onBlock: (block) => JSON.parse(block.data).type === "run.finished",
+          wait: async () => {},
+        });
+        assert.equal(outcome, "terminal", `status ${status}`);
+      },
+    );
+    assert.equal(calls, 2, `status ${status}`);
+  }
+});
+

@@ -81,9 +81,10 @@ export interface RunProgressEvent {
  * like that; it reconnects with capped exponential backoff until the stream
  * either reaches a terminal event or the caller closes it. This hook now does
  * the same, via `lib/reconnecting-sse-stream.ts`, so a drop is retried rather
- * than reported — `"lost"` stays in the type for `run-stream-outcome.ts`'s own
- * tests and for a future caller that has a real reason to give up early, but
- * this hook does not produce it.
+ * than reported. `"lost"` now fires only when the server answers with a
+ * status no retry can change (401, 403, 404, 410 — see
+ * `PERMANENT_STREAM_STATUSES`), which is the case where holding state open
+ * forever really would be wrong.
  *
  * Read through a ref rather than listed as an effect dependency: the reader
  * that opens the stream should not restart just because the caller re-created
@@ -139,13 +140,16 @@ export function useRunProgress(
       // — a drop and its retry are invisible to the reader, the same way an
       // idle-timeout reconnect on the Run page itself is invisible until the
       // banner appears.
+    }).then((outcome) => {
+      // "terminal" was already reported by `onBlock`; "aborted" is a stream
+      // this effect closed itself (unmount, or `runId` changing). "gone" is
+      // the server saying no retry can help — signed out, not allowed, or no
+      // such run — so the caller gets "lost" and its existing recovery (the
+      // notebook editor clears cells stuck mid-grading and says so). A drop
+      // is never reported this way: every drop is retried with the Run page's
+      // own backoff.
+      if (outcome === "gone") report("lost");
     });
-    // `followReconnectingSseStream` only ever resolves "terminal" (already
-    // reported by `onBlock` above, so `report` here is a no-op) or "aborted" —
-    // a stream this effect closed itself, by unmounting or by `runId`
-    // changing, which is not an outcome the caller should react to. It never
-    // gives up and reports the stream "lost" the way a single failed attempt
-    // used to: every drop is retried with the Run page's own backoff instead.
     return () => controller.abort();
   }, [runId]);
 
