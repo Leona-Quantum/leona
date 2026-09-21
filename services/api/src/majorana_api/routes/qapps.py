@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import base64
+import binascii
 import os
 import uuid
 import datetime as dt
@@ -99,6 +101,90 @@ class ExecuteQappRequest(RequestModel):
     inputs: dict[str, Any] = Field(default_factory=dict)
 
 
+# Route-local response models, same reasoning as `ArtifactVersionSummary` /
+# `ArtifactVersionPage` in routes/artifacts.py: these are one endpoint's
+# presentation of rows the shared contracts already describe. Putting them in
+# majorana_contracts would mean a CONTRACTS_VERSION bump and a contracts-gen
+# regeneration for shapes nothing outside this route consumes.
+
+
+class QappVersionSummary(BaseModel):
+    """One row of a Qapp's version history. Carries no UI document or quantum
+    source — loading one is a separate, explicit fetch, same reasoning as the
+    artifact history panel."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    id: uuid.UUID
+    seq: int = Field(ge=1)
+    is_current: bool
+    framework: Framework
+    qubits_estimate: int = Field(ge=1, le=27)
+    fingerprint: str
+    created_at: dt.datetime
+    range_smoke: QappRangeSmoke | None = None
+
+
+class QappVersionPage(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    versions: list[QappVersionSummary]
+    current_version_id: uuid.UUID | None
+    #: Pass back as `before_seq` for the next page; null when this page was
+    #: short enough that there is no next page.
+    next_before_seq: int | None
+
+
+class RollBackQappResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    qapp: Qapp
+    #: True when this rollback took a PUBLIC Qapp private, because the target
+    #: version has never completed a successful run — see
+    #: `repos/qapps.py::roll_back`.
+    demoted_to_private: bool
+
+
+class QappActivityEntry(BaseModel):
+    """One audit-log row about this Qapp — who changed it, and when.
+    Creator-only; see `repos/qapps.py::list_qapp_activity`."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    action: str
+    actor_user_id: uuid.UUID
+    created_at: dt.datetime
+    meta: dict[str, Any] | None = None
+
+
+class QappVersionUsage(BaseModel):
+    """One version's execution counts, for the creator's usage view only.
+    Built from `qapp_executions`; no viewer or page-view tracking exists."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    qapp_version_id: uuid.UUID
+    total: int
+    succeeded: int
+    failed: int
+    queued: int
+    running: int
+    last_execution_at: dt.datetime | None = None
+    last_execution_status: str | None = None
+
+
+class PublicQappPage(BaseModel):
+    """One page of the public gallery — real server-side paging, not a
+    client-filtered slice of one fixed page."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    items: list[PublicQappSummary]
+    #: Opaque; pass back as `cursor` for the next page. Null when this page
+    #: was short enough that there is no next page.
+    next_cursor: str | None
+
+
 def _required(value, name: str):
     if value is None:
         raise RuntimeError(f"persisted Qapp is missing {name}")
@@ -116,6 +202,8 @@ def _qapp_resource(row) -> Qapp:
         visibility=row.visibility,
         current_version_id=_required(row.current_version_id, "current_version_id"),
         created_by_run_id=row.created_by_run_id,
+        forked_from_qapp_id=row.forked_from_qapp_id,
+        forked_from_version_id=row.forked_from_version_id,
         published_at=row.published_at,
         created_at=_required(row.created_at, "created_at"),
         updated_at=_required(row.updated_at, "updated_at"),
@@ -173,10 +261,43 @@ async def list_qapps(scope: CurrentScope, session: DbSession) -> list[Qapp]:
     return [_qapp_resource(row) for row in await qapps_repo.list_qapps(scope, session)]
 
 
-@router.get("/qapps/public", response_model=list[PublicQappSummary])
-async def list_public_qapps(scope: PublicQappScope, session: DbSession) -> list[PublicQappSummary]:
-    rows = await qapps_repo.list_public_qapps(scope, session)
-    return [
+#: A cursor is opaque on the wire so a client cannot depend on its shape — it
+#: names one row's `(published_at, id)` pair, base64'd. Decoding failure is a
+#: client error (a stale or hand-edited cursor), not a server one.
+def _encode_public_qapp_cursor(published_at: dt.datetime, qapp_id: uuid.UUID) -> str:
+    raw = f"{published_at.isoformat()}\t{qapp_id}"
+    return base64.urlsafe_b64encode(raw.encode()).decode()
+
+
+def _decode_public_qapp_cursor(cursor: str) -> tuple[dt.datetime, uuid.UUID]:
+    try:
+        raw = base64.urlsafe_b64decode(cursor.encode()).decode()
+        published_at_raw, qapp_id_raw = raw.split("\t")
+        return dt.datetime.fromisoformat(published_at_raw), uuid.UUID(qapp_id_raw)
+    except (ValueError, UnicodeDecodeError, binascii.Error):
+        raise HTTPException(status_code=422, detail="invalid cursor") from None
+
+
+@router.get("/qapps/public", response_model=PublicQappPage)
+async def list_public_qapps(
+    scope: PublicQappScope,
+    session: DbSession,
+    q: str | None = None,
+    cursor: str | None = None,
+    limit: int = qapps_repo.PUBLIC_GALLERY_PAGE_DEFAULT,
+) -> PublicQappPage:
+    """The public gallery, one real server-side page at a time.
+
+    `q` is a substring match over title/description, pushed into the query —
+    not a client-side filter of whatever page happened to load. `cursor`, when
+    given, continues from a previous page's `next_cursor`.
+    """
+    before = _decode_public_qapp_cursor(cursor) if cursor else None
+    bounded = min(max(limit, 1), qapps_repo.PUBLIC_GALLERY_PAGE_MAX)
+    rows = await qapps_repo.list_public_qapps(
+        scope, session, search=q, before=before, limit=bounded
+    )
+    items = [
         PublicQappSummary(
             slug=qapp.slug,
             title=qapp.title,
@@ -188,6 +309,13 @@ async def list_public_qapps(scope: PublicQappScope, session: DbSession) -> list[
         )
         for qapp, version in rows
     ]
+    next_cursor = None
+    if len(rows) == bounded:
+        last_qapp, _ = rows[-1]
+        next_cursor = _encode_public_qapp_cursor(
+            _required(last_qapp.published_at, "published_at"), last_qapp.id
+        )
+    return PublicQappPage(items=items, next_cursor=next_cursor)
 
 
 @router.get("/qapps/public/{slug}", response_model=PublicQapp)
@@ -215,6 +343,128 @@ async def public_qapp(slug: str, scope: PublicQappScope, session: DbSession) -> 
 async def qapp_detail(qapp_id: uuid.UUID, scope: CurrentScope, session: DbSession) -> QappDetail:
     qapp = await qapps_repo.get_qapp(scope, session, qapp_id)
     version = await qapps_repo.get_current_version(scope, session, qapp)
+    return QappDetail(qapp=_qapp_resource(qapp), version=_version_resource(version))
+
+
+#: Default/max page size for one Qapp's OWN version history — small on
+#: purpose, same reasoning as `VERSION_PAGE_DEFAULT` in routes/artifacts.py.
+QAPP_VERSION_PAGE_DEFAULT = 20
+QAPP_VERSION_PAGE_MAX = 100
+
+
+@router.get("/qapps/{qapp_id}/versions", response_model=QappVersionPage)
+async def list_qapp_versions(
+    qapp_id: uuid.UUID,
+    scope: CurrentScope,
+    session: DbSession,
+    before_seq: int | None = None,
+    limit: int = QAPP_VERSION_PAGE_DEFAULT,
+) -> QappVersionPage:
+    """This Qapp's version history, so a creator can choose which one is live."""
+    qapp = await qapps_repo.get_qapp(scope, session, qapp_id)
+    bounded = min(max(limit, 1), QAPP_VERSION_PAGE_MAX)
+    rows = await qapps_repo.list_versions(
+        scope, session, qapp_id, before_seq=before_seq, limit=bounded
+    )
+    return QappVersionPage(
+        versions=[
+            QappVersionSummary(
+                id=row.id,
+                seq=row.seq,
+                is_current=row.id == qapp.current_version_id,
+                framework=row.framework,
+                qubits_estimate=row.qubits_estimate,
+                fingerprint=row.fingerprint,
+                created_at=_required(row.created_at, "created_at"),
+                range_smoke=(
+                    QappRangeSmoke.model_validate(row.range_smoke)
+                    if row.range_smoke is not None
+                    else None
+                ),
+            )
+            for row in rows
+        ],
+        current_version_id=qapp.current_version_id,
+        next_before_seq=rows[-1].seq if len(rows) == bounded else None,
+    )
+
+
+@router.post(
+    "/qapps/{qapp_id}/versions/{version_id}/rollback",
+    response_model=RollBackQappResponse,
+)
+async def roll_back_qapp_version(
+    qapp_id: uuid.UUID,
+    version_id: uuid.UUID,
+    scope: CurrentScope,
+    session: DbSession,
+) -> RollBackQappResponse:
+    """Make an earlier (or later) version the live one. Creator-only.
+
+    If the Qapp is public and the target version has never completed a
+    successful run, this also takes it private — see
+    `repos/qapps.py::roll_back` for why, and `demoted_to_private` on the
+    response for how the caller is told.
+    """
+    qapp, demoted = await qapps_repo.roll_back(scope, session, qapp_id, version_id)
+    return RollBackQappResponse(qapp=_qapp_resource(qapp), demoted_to_private=demoted)
+
+
+@router.get("/qapps/{qapp_id}/activity", response_model=list[QappActivityEntry])
+async def qapp_activity(
+    qapp_id: uuid.UUID, scope: CurrentScope, session: DbSession
+) -> list[QappActivityEntry]:
+    """Who published, unpublished, rolled back or deleted this Qapp, and when.
+    Creator-only."""
+    rows = await qapps_repo.list_qapp_activity(scope, session, qapp_id)
+    return [
+        QappActivityEntry(
+            action=row.action,
+            actor_user_id=row.actor_user_id,
+            created_at=_required(row.created_at, "created_at"),
+            meta=row.meta,
+        )
+        for row in rows
+    ]
+
+
+@router.get("/qapps/{qapp_id}/usage", response_model=list[QappVersionUsage])
+async def qapp_usage(
+    qapp_id: uuid.UUID, scope: CurrentScope, session: DbSession
+) -> list[QappVersionUsage]:
+    """Executions per version, last run, and run outcomes. Creator-only.
+
+    Built entirely from `qapp_executions` this Qapp already has — no new
+    tracking of viewers.
+    """
+    rows = await qapps_repo.qapp_usage(scope, session, qapp_id)
+    return [
+        QappVersionUsage(
+            qapp_version_id=row.qapp_version_id,
+            total=row.total,
+            succeeded=row.succeeded,
+            failed=row.failed,
+            queued=row.queued,
+            running=row.running,
+            last_execution_at=row.last_execution_at,
+            last_execution_status=row.last_execution_status,
+        )
+        for row in rows
+    ]
+
+
+@router.post("/qapps/public/{slug}/fork", response_model=QappDetail, status_code=201)
+async def fork_qapp(slug: str, scope: CurrentScope, session: DbSession) -> QappDetail:
+    """Copy a published Qapp into the caller's own account as a new, private Qapp.
+
+    Refused (409) unless the source is currently published — that is the one
+    rule that also refuses forking a private Qapp, whether it is a stranger's
+    or the caller's own unpublished draft.
+    """
+    try:
+        qapp, version = await qapps_repo.fork_qapp(scope, session, source_slug=slug)
+    except qapps_repo.QappForkBlocked as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from None
     return QappDetail(qapp=_qapp_resource(qapp), version=_version_resource(version))
 
 

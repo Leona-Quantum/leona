@@ -387,7 +387,12 @@ from .lifecycle import (
 # connectivity plus an objective, every compiler in the lane is tried against it, and each
 # resulting candidate carries an independent equivalence verdict from majorana_verification
 # rather than the compiler's own claim. Purely additive.
-CONTRACTS_VERSION = "2.22.0"
+# 2.23.0: Proposal 6 (Qapps v2). Qapp.created_by_run_id becomes optional and gains
+# forked_from_qapp_id/forked_from_version_id (a fork has no originating run) —
+# additive/widening, and every existing Qapp still reports a non-null
+# created_by_run_id. QappRangeSmoke is unchanged. New route-local response shapes
+# (version history, activity, usage, rollback) are not contracts models.
+CONTRACTS_VERSION = "2.23.0"
 
 __all__ = [
     "TextAnswer",

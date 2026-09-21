@@ -280,6 +280,17 @@ const nextConfig: NextConfig = {
       // here would cache them anyway, silently, at the platform layer, no
       // matter what the route protection says.
       ...["/repository", "/:locale(en|ja)/repository"].flatMap((source) => edgeCacheRules(source, 300)),
+      // The public Qapp gallery index (proposal 6, item 2) — same mechanism and
+      // same reasoning as `/repository` immediately above: it resolves `?q=`
+      // and `?cursor=` on the server, so reading `searchParams` opts it out of
+      // static rendering, and an edge cache in front of the render is what is
+      // available instead. Exact path ONLY, not `:path*`: `/q/<slug>` pages are
+      // personalized (they call `getMajoranaAuth()` to know whether the viewer
+      // can execute) and must stay dynamic and uncached — the same split
+      // `/repository` draws against `/repository/<slug>`. `/q` does not go
+      // through the `/{locale}` rewrite (it is a plain top-level route, not
+      // under `app/[locale]/`), so there is no locale-prefixed form to list.
+      ...edgeCacheRules("/q", 300),
       // The landing page's demo video and the wordmark, which are the first
       // binary assets this app has ever served.
       //

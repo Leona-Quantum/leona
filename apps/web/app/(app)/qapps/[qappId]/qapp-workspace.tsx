@@ -116,6 +116,8 @@ export function QappWorkspace({ qappId, locale = "en" }: { qappId: string; local
         <div className="qapp-private-actions">
           {isPublic ? <Link className="mj-secondary-button" href={`/q/${encodeURIComponent(detail.qapp.slug)}`}>{copy.openPublic}</Link> : null}
           {isPublic ? <button className="mj-secondary-button" type="button" onClick={() => void copyPublicLink()}>{copy.copyLink}</button> : null}
+          <Link className="mj-secondary-button" href={`/qapps/${encodeURIComponent(qappId)}/versions`}>{copy.versionsHeading}</Link>
+          <Link className="mj-secondary-button" href={`/qapps/${encodeURIComponent(qappId)}/usage`}>{copy.usageHeading}</Link>
           <button className="mj-primary-button" type="button" disabled={saving || deleting} onClick={() => void toggleVisibility()}>
             {saving ? copy.saving : isPublic ? copy.makePrivate : copy.publish}
           </button>

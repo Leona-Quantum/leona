@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { QappsIcon, SearchIcon } from "../../../components/icons";
 import { refusalSentence } from "../../../lib/api-error";
+import { readPublicQappPage } from "../../../lib/qapp-management";
 import type { PublicLocale } from "../../../lib/public-locale";
 
 type Qapp = components["schemas"]["Qapp"];
@@ -96,13 +97,24 @@ export function QappGallery({ view, locale = "en" }: { view: QappGalleryView; lo
     const controller = new AbortController();
     setLoading(true);
     setError(null);
-    fetch(view === "mine" ? "/api/qapps" : "/api/qapps/public", { cache: "no-store", signal: controller.signal })
+    // `LIST_LIMIT` below assumes one full page; the public route's own default
+    // page size is smaller (proposal 6's real paging lives at `/q`), so this
+    // in-app tab asks for the same size it always showed rather than
+    // inheriting the new default.
+    fetch(view === "mine" ? "/api/qapps" : `/api/qapps/public?limit=${LIST_LIMIT}`, { cache: "no-store", signal: controller.signal })
       .then(async (response) => {
         const payload = await response.json() as unknown;
-        if (!response.ok || !Array.isArray(payload)) {
-          throw new Error(refusalSentence(payload) ?? copy.loadFailed);
-        }
-        return payload as Array<Qapp | PublicQappSummary>;
+        if (!response.ok) throw new Error(refusalSentence(payload) ?? copy.loadFailed);
+        // `/api/qapps` is a bare array; `/api/qapps/public` is a real
+        // server-paged { items, next_cursor } response (proposal 6). This tab
+        // only ever shows the first page of the public listing — real paging
+        // and search for the public gallery live at `/q`.
+        // readPublicQappPage also accepts the bare array the API returned
+        // before proposal 6, for the minutes when the API and website deploys
+        // are out of step.
+        const items = view === "mine" ? payload : readPublicQappPage(payload)?.items;
+        if (!Array.isArray(items)) throw new Error(refusalSentence(payload) ?? copy.loadFailed);
+        return items as Array<Qapp | PublicQappSummary>;
       })
       .then((payload) => {
         if (active) setItems(payload);

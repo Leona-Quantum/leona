@@ -262,12 +262,12 @@ async def test_public_qapp_listing_returns_only_gallery_safe_metadata(monkeypatc
         ui_document="<html>large generated app</html>",
     )
 
-    async def rows(scope, session):
+    async def rows(scope, session, **kwargs):
         return [(qapp, version)]
 
     monkeypatch.setattr("majorana_api.routes.qapps.qapps_repo.list_public_qapps", rows)
     result = await list_public_qapps(SimpleNamespace(), object())
-    dumped = result[0].model_dump()
+    dumped = result.items[0].model_dump()
 
     assert dumped == {
         "slug": "h2-energy-123",
@@ -282,6 +282,8 @@ async def test_public_qapp_listing_returns_only_gallery_safe_metadata(monkeypatc
     assert "owner_user_id" not in dumped
     assert "quantum_source" not in dumped
     assert "ui_document" not in dumped
+    # One row is fewer than the default page size, so there is no next page.
+    assert result.next_cursor is None
 
 
 #: Navigation payloads, measured against `_FORBIDDEN_UI_PATTERNS`. The split is

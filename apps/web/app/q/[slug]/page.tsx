@@ -7,6 +7,7 @@ import { getMajoranaAuth } from "../../../lib/auth";
 import { controlPlaneUrl, fetchControlPlane } from "../../../lib/control-plane";
 import { qappCopy } from "../../../lib/qapp-copy";
 import { getPublicLocale } from "../../../lib/public-locale-server";
+import { QappForkButton } from "./qapp-fork-button";
 
 type PublicQapp = components["schemas"]["PublicQapp"];
 
@@ -58,6 +59,23 @@ export default async function PublicQappPage({ params }: { params: Promise<{ slu
         slug={qapp.slug}
         uiDocument={qapp.ui_document}
         canExecute={Boolean(auth.user)}
+        signInPath={`/auth/sign-in?returnTo=${encodeURIComponent(returnTo)}`}
+        locale={locale}
+      />
+      <section className="qapp-record" aria-labelledby="qapp-record-heading">
+        <h2 id="qapp-record-heading">{copy.recordHeading}</h2>
+        {/* Only what publication already proves, stated as a fact rather than
+            a verdict — ADR-0031: this is an executability gate, not semantic
+            quantum verification, and must not be labelled as the latter. The
+            top-of-range smoke result is creator-only by owner ruling
+            (ai-ops 180) and is deliberately not shown here. */}
+        <p>{copy.recordRanSuccessfully}</p>
+        <p>{copy.recordQubits(qapp.qubits_estimate)}</p>
+        <p className="qapp-record-note">{copy.recordNote}</p>
+      </section>
+      <QappForkButton
+        slug={qapp.slug}
+        signedIn={Boolean(auth.user)}
         signInPath={`/auth/sign-in?returnTo=${encodeURIComponent(returnTo)}`}
         locale={locale}
       />

@@ -50,20 +50,23 @@ test("Qapp gallery lists the signed-in workspace and filters it by search", asyn
 
 test("Qapp gallery explores public summaries without receiving generated source or UI", async () => {
   const fetchStub = stubFetch((request) => {
-    assert.equal(request.url, "/api/qapps/public");
+    assert.equal(request.url, "/api/qapps/public?limit=100");
     return {
       status: 200,
-      body: [
-        {
-          slug: "phase-explorer-018f",
-          title: "Phase explorer",
-          description: "Compare interference as phase changes.",
-          framework: "qiskit",
-          qubits_estimate: 2,
-          version: 3,
-          published_at: "2026-08-24T12:00:00Z",
-        },
-      ],
+      body: {
+        items: [
+          {
+            slug: "phase-explorer-018f",
+            title: "Phase explorer",
+            description: "Compare interference as phase changes.",
+            framework: "qiskit",
+            qubits_estimate: 2,
+            version: 3,
+            published_at: "2026-08-24T12:00:00Z",
+          },
+        ],
+        next_cursor: null,
+      },
     };
   });
 
