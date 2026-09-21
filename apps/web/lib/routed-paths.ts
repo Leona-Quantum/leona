@@ -103,7 +103,7 @@ export const LOCALE_ROUTES: readonly string[] = [
  * button's now comes from `RepositoryBrowser`'s own client-side fetch to
  * `/api/auth/session`. Neither reads auth during the server render, so the
  * render is identical for every visitor and the response holds on the CDN
- * behind the `Vercel-CDN-Cache-Control` header in `next.config.ts` — exact
+ * behind the `CDN-Cache-Control` header in `next.config.ts` — exact
  * path only, not a `:path*` subtree, so `/repository/<slug>` is untouched by
  * it either way.
  *

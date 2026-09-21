@@ -13,13 +13,15 @@ import { TourGate } from "../../components/tour/tour-gate";
  * `getPublicLocale()` calls `cookies()`, which is a Dynamic API, and everywhere
  * else in this app that would be the reason not to do it. Here it is free, and
  * that was measured rather than assumed — read from outside, this route tree
- * already answers:
+ * already answered, while Vercel was still the CDN:
  *
  *     cache-control: private, no-cache, no-store, max-age=0, must-revalidate
  *     x-vercel-cache: MISS
  *
  * There is no CDN entry to lose. The page was already dynamic on every request
- * before this layout existed.
+ * before this layout existed. The `cache-control` line is Next's own and
+ * unchanged on Cloud Run; the CDN-side header is now Cloudflare's
+ * `cf-cache-status`, not re-measured here since this layout has not changed.
  */
 export const metadata = rootMetadata;
 

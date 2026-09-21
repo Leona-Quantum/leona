@@ -21,7 +21,7 @@ import { RepositoryBrowser } from "../../../repository/repository-browser";
 // static rendering unconditionally. `dynamicParams = false` is what stops
 // `[locale]` from swallowing a mistyped one-segment URL and answering it with
 // this page instead of a 404; `next.config.ts` attaches
-// `Vercel-CDN-Cache-Control` here, exact-path only — this page does NOT also
+// `CDN-Cache-Control` here, exact-path only — this page does NOT also
 // cover `/repository/<slug>`, which stays personalized and uncached in
 // `app/repository/`.
 //

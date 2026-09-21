@@ -291,7 +291,7 @@ export function pageviewSignal(input: {
  * Whether the counter should emit at all.
  *
  * Default-on with an explicit opt-out, rather than opt-in behind a flag
- * somebody has to remember to set in the Vercel dashboard. An opt-in counter
+ * somebody has to remember to set on the Cloud Run service. An opt-in counter
  * that nobody arms produces the same zero as no counter at all, and looks
  * identical to "nobody visited" — which is the exact question it was built to
  * answer.
