@@ -87,6 +87,11 @@ const LOCALE_ROUTES = ["", "/about", "/contact", "/pricing", "/privacy", "/terms
  * fetch nothing they don't already fetch statically, so both are routes this
  * check can speak for.
  *
+ * `/repository/find` (proposal 2, the method finder, owner-approved
+ * 2026-09-20) joined them on the same terms: every filter — problem area,
+ * qubit/depth limits, hardware era — is client-side React state, so the page
+ * itself reads no `searchParams` and calls no Dynamic API.
+ *
  * `/repository/papers/[id]` also prerenders — same recipe, one static page per
  * paper per locale — and unlike the entries above it cannot be named as a
  * clean path here: this list only ever holds paths with no dynamic segment,
@@ -94,7 +99,7 @@ const LOCALE_ROUTES = ["", "/about", "/contact", "/pricing", "/privacy", "/terms
  * dynamic route needs one CONCRETE example instead, in `REQUIRED_STATIC_ROUTES`
  * directly, below — see the paper picked there and why.
  */
-const LOCALE_ATLAS_ROUTES = ["/repository/claims", "/repository/papers"];
+const LOCALE_ATLAS_ROUTES = ["/repository/claims", "/repository/find", "/repository/papers"];
 
 export const REQUIRED_STATIC_ROUTES = [
   { route: "/_not-found", why: "the boundary in every route's tree; dynamic here makes the whole app dynamic" },

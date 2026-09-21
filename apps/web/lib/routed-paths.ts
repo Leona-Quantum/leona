@@ -124,9 +124,17 @@ export const LOCALE_ROUTES: readonly string[] = [
  * `folders` reads `?scheme=`, so it stays on the `layers` half: CDN-cached in
  * front of a per-request render, never prerendered. See the header comment on
  * each moved page for which half it is on.
+ *
+ * ## `/repository/find` joined on the `claims`/`papers` recipe too
+ *
+ * The method finder (proposal 2, owner-approved 2026-09-20) reads no
+ * `searchParams` — every filter is client-side React state — and calls
+ * `getMajoranaAuth()` nowhere, so it prerenders outright on the same terms as
+ * `claims` and `papers`. See `app/[locale]/repository/find/page.tsx`.
  */
 export const LOCALE_PREFIX_ROUTES: readonly string[] = [
   "/repository/claims",
+  "/repository/find",
   "/repository/folders",
   "/repository/layers",
   "/repository/papers",
