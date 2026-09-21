@@ -8,7 +8,8 @@ Public product page: `https://leonaqt.com/workspace`
 
 ## Architecture
 
-- Next.js web app on Vercel, with WorkOS AuthKit for workspace identity.
+- Next.js web app on Cloud Run (`majorana-web`, behind Cloudflare and the Google
+  load balancer — ADR-0033), with WorkOS AuthKit for workspace identity.
 - FastAPI control plane and a separate Cloud Run worker backed by Neon Postgres.
 - OpenAI-compatible and DeepSeek LLM routing, with stage-specific model selection.
 - Vercel Sandbox with explicit deny-all egress for generated code.
