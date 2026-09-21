@@ -422,3 +422,29 @@
   line-height: 1.5;
 }
 .mj-worked-example-component-open { justify-self: start; margin-top: var(--sp-1); color: var(--accent); font-size: var(--fs-13); }
+
+/* Atlas method finder (proposal 2, owner-approved 2026-09-20). Reuses
+   `.mj-repository-controls`, `.mj-repo-card`, `.mj-facet-chip` and
+   `.mj-primary-button` from the sections above rather than restating their
+   layout; only what is new to this page gets its own rule. */
+.mj-finder { display: grid; gap: var(--sp-4); margin-top: var(--sp-3); }
+.mj-finder-form { display: grid; gap: var(--sp-4); grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr)); align-items: start; }
+.mj-finder-form label { display: grid; gap: var(--sp-1); font-size: var(--fs-13); color: var(--text-1); }
+.mj-finder-form input, .mj-finder-form select { min-height: calc(var(--sp-10) + var(--sp-1)); }
+.mj-finder-form fieldset { display: grid; gap: var(--sp-2); border: var(--border-hairline) solid var(--border-0); border-radius: var(--radius-control); padding: var(--sp-3); }
+.mj-finder-form legend { padding-inline: var(--sp-1); font-size: var(--fs-13); color: var(--text-1); }
+.mj-finder-radio { display: flex; align-items: center; gap: var(--sp-2); font-size: var(--fs-13); color: var(--text-0); }
+.mj-finder-results { display: grid; gap: var(--sp-4); grid-template-columns: repeat(auto-fill, minmax(20rem, 1fr)); list-style: none; margin: 0; padding: 0; }
+.mj-finder-card { list-style: none; }
+.mj-finder-criteria { display: grid; gap: var(--sp-1); margin: var(--sp-2) 0; padding: 0; list-style: none; font-size: var(--fs-13); }
+.mj-finder-criterion { display: flex; align-items: baseline; gap: var(--sp-2); }
+.mj-finder-criterion-mark { flex: 0 0 auto; width: 1.2em; text-align: center; }
+.mj-finder-criterion-satisfied .mj-finder-criterion-mark { color: var(--ok); }
+.mj-finder-criterion-violated .mj-finder-criterion-mark { color: var(--err); }
+.mj-finder-criterion-not-stated .mj-finder-criterion-mark { color: var(--text-2); }
+.mj-finder-facts { display: grid; gap: var(--sp-2); margin: var(--sp-2) 0; font-size: var(--fs-13); }
+.mj-finder-facts > div { display: grid; gap: 0.15em; }
+.mj-finder-facts dt { color: var(--text-2); }
+.mj-finder-facts dd { margin: 0; color: var(--text-0); }
+.mj-finder-empty { display: grid; gap: var(--sp-2); padding: var(--sp-4); border: var(--border-hairline) dashed var(--border-0); border-radius: var(--radius-control); color: var(--text-1); }
+.mj-finder-empty ul { margin: 0; padding-left: var(--sp-5); }
