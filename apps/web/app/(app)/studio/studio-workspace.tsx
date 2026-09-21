@@ -61,6 +61,20 @@ import {
   type CircuitOptimizationResult,
   type ExternalCircuitCompiler,
 } from "../../../lib/studio-external-compression";
+import {
+  SYNTHESIS_CONNECTIVITIES,
+  SYNTHESIS_OBJECTIVES,
+  builderStepsFromSynthesisCandidate,
+  isApplicable as isSynthesisCandidateApplicable,
+  objectiveMetric,
+  synthesisRequest,
+  synthesisResultEventFromEvent,
+  type SynthesisCandidate,
+  type SynthesisConnectivity,
+  type SynthesisObjective,
+  type SynthesisResult,
+  type SynthesisTarget,
+} from "../../../lib/studio-synthesis";
 import { PanelTabs, panelRegion } from "../../../components/panel-tabs";
 import { circuitMoments } from "../../../lib/circuit-moments";
 import { gateFamily, type GateFamily } from "../../../lib/gate-inspector";
@@ -1598,6 +1612,56 @@ export function CircuitBuilder({ seed, framework, selectedGate, onSelectGate, on
   // beside the new one. Bumped by that same effect, captured before the
   // request, compared after it.
   const externalRunSeqRef = useRef(0);
+
+  // Targeted synthesis (proposal 3): a second, target-aware entry point into
+  // the same trusted compiler lane the external-compression state above
+  // drives — same shape (busy/runId/result/error/confirm/snapshot, a stream
+  // ref and a run-seq ref to retire a stale in-flight request), because it
+  // is the same class of action: run something heavier than an in-browser
+  // rewrite, then optionally replace the whole circuit with one candidate.
+  const [synthesisTargetMode, setSynthesisTargetMode] = useState<"generic" | "device">("generic");
+  const [synthesisConnectivity, setSynthesisConnectivity] = useState<SynthesisConnectivity>("all_to_all");
+  const [synthesisDeviceId, setSynthesisDeviceId] = useState<string | null>(null);
+  const [synthesisObjective, setSynthesisObjective] = useState<SynthesisObjective>("depth");
+  const [synthesisDevices, setSynthesisDevices] = useState<QpuBackendInfo[] | null>(null);
+  const [synthesisDevicesFailed, setSynthesisDevicesFailed] = useState(false);
+  const [synthesisBusy, setSynthesisBusy] = useState(false);
+  const [synthesisRunId, setSynthesisRunId] = useState<string | null>(null);
+  const [synthesisResult, setSynthesisResult] = useState<SynthesisResult | null>(null);
+  const [synthesisError, setSynthesisError] = useState<string | null>(null);
+  // Which candidate's apply button is armed for a second click — a compiler
+  // value, or null. Per-candidate rather than one boolean (externalConfirmPending's
+  // shape) because a row of candidates has more than one apply button.
+  const [synthesisConfirmPending, setSynthesisConfirmPending] = useState<string | null>(null);
+  // No separate snapshot state: applying a candidate writes into the SAME
+  // `compressionSnapshot` `applyExternalCompression` already uses, so one
+  // Undo (`undoCompression`, `canUndoCompression`) covers every full-circuit
+  // replacement this component makes — in-browser compression, one external
+  // compiler, or a synthesis candidate — rather than three parallel undo
+  // slots a user would have to know to look for separately.
+  const synthesisStreamRef = useRef<EventSource | null>(null);
+  const synthesisRunSeqRef = useRef(0);
+
+  // Loaded the first time a reader picks "device" as the target, not on every
+  // Studio open: most sessions never use it, and an eager request on mount
+  // was one more call on a page that already makes several.
+  const synthesisDevicesRequested = synthesisTargetMode === "device";
+  useEffect(() => {
+    if (!synthesisDevicesRequested) return;
+    let cancelled = false;
+    fetchQpuBackends()
+      .then((backends) => { if (!cancelled) setSynthesisDevices(backends); })
+      .catch(() => { if (!cancelled) setSynthesisDevicesFailed(true); });
+    return () => { cancelled = true; };
+  }, [synthesisDevicesRequested]);
+
+  const synthesisTarget: SynthesisTarget = useMemo(
+    () => synthesisTargetMode === "device" && synthesisDeviceId
+      ? { device_id: synthesisDeviceId, connectivity: null }
+      : { device_id: null, connectivity: synthesisConnectivity },
+    [synthesisTargetMode, synthesisDeviceId, synthesisConnectivity],
+  );
+
   /** The gate under the pointer or focus, explained in a card (UX pass 6). */
   const [inspection, setInspection] = useState<CircuitDiagramInspection | null>(null);
   /** "end" follows the circuit as gates are placed; a number pins a moment. */
@@ -1622,6 +1686,7 @@ export function CircuitBuilder({ seed, framework, selectedGate, onSelectGate, on
     setApplyConfirmPending(false);
     setCompressionConfirmPending(false);
     setExternalConfirmPending(false);
+    setSynthesisConfirmPending(null);
   }, [
     syncState.kind,
     sourceCode,
@@ -1631,11 +1696,21 @@ export function CircuitBuilder({ seed, framework, selectedGate, onSelectGate, on
     compressionStrategy,
     externalCompiler,
     externalLevel,
+    synthesisTarget,
+    synthesisObjective,
   ]);
 
-  useEffect(() => () => {
-    mountedRef.current = false;
-    externalStreamRef.current?.close();
+  useEffect(() => {
+    // Set on mount as well as cleared on unmount. A cleanup-only effect left
+    // this false for good under React's dev-mode double mount (mount, cleanup,
+    // mount), so every compiler and synthesis run on a dev server stayed on
+    // "Running…" forever: the handlers bail when this is false.
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+      externalStreamRef.current?.close();
+      synthesisStreamRef.current?.close();
+    };
   }, []);
 
   useEffect(() => {
@@ -1650,6 +1725,18 @@ export function CircuitBuilder({ seed, framework, selectedGate, onSelectGate, on
     setExternalError(null);
     setExternalRunId(null);
   }, [steps, qubitCount, externalCompiler, externalLevel]);
+
+  useEffect(() => {
+    // Same reasoning as the external-compression effect above, for the
+    // synthesis lane's own in-flight run.
+    synthesisRunSeqRef.current += 1;
+    synthesisStreamRef.current?.close();
+    synthesisStreamRef.current = null;
+    setSynthesisBusy(false);
+    setSynthesisResult(null);
+    setSynthesisError(null);
+    setSynthesisRunId(null);
+  }, [steps, qubitCount, synthesisTarget, synthesisObjective]);
 
   const compression = useMemo(
     () => compressCircuit(steps, compressionStrategy),
@@ -2143,6 +2230,99 @@ export function CircuitBuilder({ seed, framework, selectedGate, onSelectGate, on
     ));
   }
 
+  async function runSynthesis() {
+    synthesisStreamRef.current?.close();
+    setSynthesisResult(null);
+    setSynthesisError(null);
+    setSynthesisRunId(null);
+    let request;
+    try {
+      request = synthesisRequest(qubitCount, steps, synthesisTarget, synthesisObjective);
+    } catch (cause) {
+      setSynthesisError(cause instanceof Error ? cause.message : copy.synthesisFailed);
+      return;
+    }
+    setSynthesisBusy(true);
+    const seq = synthesisRunSeqRef.current;
+    try {
+      const response = await fetch("/api/runs", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Idempotency-Key": crypto.randomUUID(),
+        },
+        body: JSON.stringify({
+          task_prompt: "Synthesize the bounded Studio circuit against a target.",
+          mode: "execute",
+          framework: "qiskit",
+          circuit_synthesis: request,
+        }),
+      });
+      const payload = (await response.json()) as unknown;
+      // Same two ways of being too late `runExternalCompression` guards
+      // against: unmounted, or superseded by an edit while the POST was in
+      // flight. See that function's comment for the full reasoning.
+      if (!mountedRef.current || synthesisRunSeqRef.current !== seq) return;
+      const submittedRunId = submittedId(payload);
+      if (!response.ok || !submittedRunId) {
+        throw new Error(refusalSentence(payload) ?? copy.synthesisFailed);
+      }
+      setSynthesisRunId(submittedRunId);
+      const stream = new EventSource(`/api/runs/${encodeURIComponent(submittedRunId)}/events/stream`);
+      synthesisStreamRef.current = stream;
+      stream.addEventListener("synthesis.result", (event) => {
+        const wire = parseCompilerEvent(event);
+        const parsed = synthesisResultEventFromEvent(wire);
+        if (parsed?.accepted && parsed.result) {
+          setSynthesisResult(parsed.result);
+          setSynthesisError(null);
+        } else {
+          setSynthesisError(parsed?.reason ?? compilerEventReason(wire) ?? copy.synthesisFailed);
+        }
+        setSynthesisBusy(false);
+        stream.close();
+        synthesisStreamRef.current = null;
+      });
+      stream.addEventListener("run.error", (event) => {
+        const wire = parseCompilerEvent(event);
+        setSynthesisError(compilerEventReason(wire) ?? copy.synthesisFailed);
+        setSynthesisBusy(false);
+        stream.close();
+        synthesisStreamRef.current = null;
+      });
+      stream.onerror = () => {
+        setSynthesisError(copy.synthesisConnectionLost);
+        setSynthesisBusy(false);
+        stream.close();
+        synthesisStreamRef.current = null;
+      };
+    } catch (cause) {
+      if (!mountedRef.current || synthesisRunSeqRef.current !== seq) return;
+      setSynthesisError(cause instanceof Error ? cause.message : copy.synthesisFailed);
+      setSynthesisBusy(false);
+    }
+  }
+
+  function applySynthesisCandidate(candidate: SynthesisCandidate) {
+    if (!isSynthesisCandidateApplicable(candidate)) return;
+    const compiled = builderStepsFromSynthesisCandidate(candidate);
+    if (!compiled.length || circuitStepSignature(compiled) === circuitStepSignature(steps)) return;
+    if (syncState.kind !== "in_sync" && synthesisConfirmPending !== candidate.compiler) {
+      setSynthesisConfirmPending(candidate.compiler);
+      setBuilderMessage(copy.compressionOverwrite);
+      return;
+    }
+    const before = [...steps];
+    setSteps(compiled);
+    setSelectedStepIds([]);
+    setPendingQubits([]);
+    setSynthesisConfirmPending(null);
+    setApplyConfirmPending(false);
+    setExternalConfirmPending(false);
+    setCompressionSnapshot({ before, afterSignature: circuitStepSignature(compiled) });
+    onApply(generateBuilderCode(compiled, qubitCount, customGates));
+    setBuilderMessage(copy.synthesisApplied(externalCompilerName(candidate.compiler)));
+  }
 
   return (
     <StudioPanelSurface
@@ -2502,6 +2682,183 @@ export function CircuitBuilder({ seed, framework, selectedGate, onSelectGate, on
               ) : null}
             </div>
           </details>
+
+          {/* Proposal 3: a second, target-aware entry point into the same
+              compiler lane above. Folded by default for the same reason. */}
+          <details className="mj-sim-details">
+            <summary>{copy.synthesisHeading}</summary>
+            <div className="mj-studio-optimizer-panel">
+              <div className="mj-studio-external-compression-head">
+                <div>
+                  <h4>{copy.synthesisHeading}</h4>
+                  <p>{copy.synthesisIntro}</p>
+                </div>
+              </div>
+
+              <fieldset className="mj-studio-compression-strategies">
+                <legend className="mj-section-label">{copy.synthesisTargetLabel}</legend>
+                <div>
+                  <label data-selected={synthesisTargetMode === "generic" ? "true" : undefined}>
+                    <input
+                      type="radio"
+                      name="studio-synthesis-target-mode"
+                      checked={synthesisTargetMode === "generic"}
+                      disabled={synthesisBusy}
+                      onChange={() => setSynthesisTargetMode("generic")}
+                    />
+                    <span>{copy.synthesisTargetGeneric}</span>
+                  </label>
+                  <label data-selected={synthesisTargetMode === "device" ? "true" : undefined}>
+                    <input
+                      type="radio"
+                      name="studio-synthesis-target-mode"
+                      checked={synthesisTargetMode === "device"}
+                      disabled={synthesisBusy || synthesisDevicesFailed || synthesisDevices?.length === 0}
+                      onChange={() => setSynthesisTargetMode("device")}
+                    />
+                    <span>{copy.synthesisTargetDevice}</span>
+                  </label>
+                </div>
+              </fieldset>
+
+              {synthesisTargetMode === "generic" ? (
+                <label>
+                  <span>{copy.synthesisTargetGeneric}</span>
+                  <select
+                    value={synthesisConnectivity}
+                    disabled={synthesisBusy}
+                    onChange={(event) => setSynthesisConnectivity(event.target.value as SynthesisConnectivity)}
+                  >
+                    {SYNTHESIS_CONNECTIVITIES.map((connectivity) => (
+                      <option key={connectivity} value={connectivity}>
+                        {synthesisConnectivityLabel(connectivity, copy)}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              ) : (
+                <label>
+                  <span>{copy.synthesisTargetDevice}</span>
+                  {synthesisDevicesFailed || synthesisDevices?.length === 0 ? <small>{copy.synthesisDeviceUnavailable}</small> : null}
+                  {synthesisDevices === null && !synthesisDevicesFailed ? <small>{copy.synthesisDeviceLoading}</small> : null}
+                  {synthesisDevices?.length ? (
+                    <select
+                      value={synthesisDeviceId ?? ""}
+                      disabled={synthesisBusy}
+                      onChange={(event) => setSynthesisDeviceId(event.target.value || null)}
+                    >
+                      <option value="" disabled>—</option>
+                      {synthesisDevices.map((device) => (
+                        <option key={device.device_id} value={device.device_id}>{device.display_name}</option>
+                      ))}
+                    </select>
+                  ) : null}
+                </label>
+              )}
+
+              <label>
+                <span>{copy.synthesisObjectiveLabel}</span>
+                <select
+                  value={synthesisObjective}
+                  disabled={synthesisBusy}
+                  onChange={(event) => setSynthesisObjective(event.target.value as SynthesisObjective)}
+                >
+                  {SYNTHESIS_OBJECTIVES.map((objective) => (
+                    <option key={objective} value={objective}>{synthesisObjectiveLabel(objective, copy)}</option>
+                  ))}
+                </select>
+              </label>
+
+              <div className="mj-studio-compression-actions">
+                <button
+                  className="mj-primary-button"
+                  type="button"
+                  disabled={synthesisBusy || !steps.length || (synthesisTargetMode === "device" && !synthesisDeviceId)}
+                  onClick={() => void runSynthesis()}
+                >
+                  {synthesisBusy ? copy.synthesisRunning : copy.synthesisRun}
+                </button>
+                {synthesisRunId ? <a href={`/run/${synthesisRunId}`}>{copy.synthesisOpenRun} →</a> : null}
+              </div>
+              {synthesisError ? <p className="mj-studio-external-error" role="alert">{synthesisError}</p> : null}
+
+              {synthesisResult ? (
+                <div className="mj-studio-external-result" role="status">
+                  <p className="mj-mono-muted">{synthesisResult.resolved_note}</p>
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>{copy.synthesisColumnCompiler}</th>
+                        <th>{copy.synthesisColumnStatus}</th>
+                        <th>{copy.synthesisColumnGates}</th>
+                        <th>{copy.synthesisColumnDepth}</th>
+                        <th>{copy.synthesisColumnTwoQubit}</th>
+                        <th>{copy.synthesisColumnTCount}</th>
+                        <th>{copy.synthesisColumnEquivalence}</th>
+                        <th />
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {synthesisResult.candidates.map((candidate) => {
+                        const best = synthesisResult.best_candidate_compiler === candidate.compiler;
+                        const applicable = isSynthesisCandidateApplicable(candidate);
+                        const succeeded = candidate.status === "succeeded";
+                        return (
+                          <tr key={candidate.compiler} data-best={best ? "true" : undefined}>
+                            <td>
+                              {externalCompilerName(candidate.compiler)}
+                              {best ? <strong className="mj-mono-muted"> · {copy.synthesisBest}</strong> : null}
+                            </td>
+                            <td>{synthesisStatusLabel(candidate, copy)}</td>
+                            {succeeded ? (
+                              <>
+                                <td>{candidate.after?.gate_count}</td>
+                                <td>{candidate.after?.depth}</td>
+                                <td>{candidate.after?.two_qubit_gate_count}</td>
+                                <td>{candidate.after?.t_count}</td>
+                                <td>{synthesisEquivalenceLabel(candidate.equivalence, copy)}</td>
+                              </>
+                            ) : (
+                              <td colSpan={5} className="mj-mono-muted">{candidate.reason}</td>
+                            )}
+                            <td>
+                              {applicable ? (
+                                <button
+                                  className="mj-secondary-button"
+                                  type="button"
+                                  onClick={() => applySynthesisCandidate(candidate)}
+                                >
+                                  {synthesisConfirmPending === candidate.compiler ? copy.synthesisConfirmUse : copy.synthesisUse}
+                                </button>
+                              ) : succeeded ? (
+                                <span className="mj-mono-muted" title={candidate.equivalence?.detail}>
+                                  {copy.synthesisCannotApply}
+                                </span>
+                              ) : null}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                  {synthesisConfirmPending ? (
+                    <button
+                      className="mj-secondary-button"
+                      type="button"
+                      onClick={() => { setSynthesisConfirmPending(null); setBuilderMessage(null); }}
+                    >
+                      {copy.cancel}
+                    </button>
+                  ) : null}
+                  {canUndoCompression ? (
+                    <div className="mj-studio-compression-actions">
+                      <button className="mj-secondary-button" type="button" onClick={undoCompression}>{copy.synthesisUndo}</button>
+                    </div>
+                  ) : null}
+                </div>
+              ) : null}
+            </div>
+          </details>
         </section>
       )}
 
@@ -2543,6 +2900,31 @@ function externalCompilerName(compiler: ExternalCircuitCompiler): string {
   if (compiler === "pennylane") return "PennyLane";
   if (compiler === "pyzx") return "PyZX";
   return "BQSKit";
+}
+
+function synthesisConnectivityLabel(connectivity: SynthesisConnectivity, copy: StudioCopy): string {
+  if (connectivity === "all_to_all") return copy.synthesisConnectivityAllToAll;
+  if (connectivity === "line") return copy.synthesisConnectivityLine;
+  if (connectivity === "grid") return copy.synthesisConnectivityGrid;
+  return copy.synthesisConnectivityHeavyHex;
+}
+
+function synthesisObjectiveLabel(objective: SynthesisObjective, copy: StudioCopy): string {
+  if (objective === "depth") return copy.synthesisObjectiveDepth;
+  if (objective === "two_qubit_count") return copy.synthesisObjectiveTwoQubit;
+  return copy.synthesisObjectiveTCount;
+}
+
+function synthesisStatusLabel(candidate: SynthesisCandidate, copy: StudioCopy): string {
+  if (candidate.status === "succeeded") return copy.synthesisStatusSucceeded;
+  if (candidate.status === "unsupported") return copy.synthesisStatusUnsupported;
+  return copy.synthesisStatusFailed;
+}
+
+function synthesisEquivalenceLabel(equivalence: SynthesisCandidate["equivalence"], copy: StudioCopy): string {
+  if (!equivalence) return "";
+  if (!equivalence.checked) return copy.synthesisNotChecked;
+  return equivalence.equivalent ? copy.synthesisEquivalent : copy.synthesisNotEquivalent;
 }
 
 /**

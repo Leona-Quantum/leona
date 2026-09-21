@@ -19,13 +19,14 @@ from majorana_contracts import Conversation as ConversationResource
 from majorana_contracts import ConversationTurn
 from majorana_contracts import IllegalTransition, assert_transition, is_terminal
 from majorana_contracts import Run as RunResource
+from majorana_contracts import SynthesisRequest
 from majorana_contracts.enums import ExportStatus, Framework, RunMode, RunStatus
 from pydantic import ConfigDict, Field, model_validator
 from opentelemetry import metrics
 
 from ..auth.deps import CurrentIdentity, CurrentScope, DbSession, get_settings
 from ..request_models import RequestModel
-from ..jobs import CIRCUIT_OPTIMIZE_JOB_KIND, RUN_EXECUTE_JOB_KIND
+from ..jobs import CIRCUIT_OPTIMIZE_JOB_KIND, CIRCUIT_SYNTHESIZE_JOB_KIND, RUN_EXECUTE_JOB_KIND
 from ..orm import Run as RunRow
 from ..repos import artifacts as artifacts_repo
 from ..repos import folders as folders_repo
@@ -120,15 +121,24 @@ class CreateRunRequest(RequestModel):
     # strict: missing scientific inputs are requested from the user.
     allow_ai_assumptions: bool = False
     circuit_optimization: CircuitOptimizationRequest | None = None
+    #: Proposal 3: a second, target-aware entry point into the same trusted
+    #: compiler lane `circuit_optimization` serves — see
+    #: `majorana_contracts.SynthesisRequest`.
+    circuit_synthesis: SynthesisRequest | None = None
 
     @model_validator(mode="after")
     def circuit_optimization_is_a_code_free_execute_job(self) -> "CreateRunRequest":
-        if self.circuit_optimization is None:
+        if self.circuit_optimization is not None and self.circuit_synthesis is not None:
+            raise ValueError("circuit_optimization and circuit_synthesis are mutually exclusive")
+        if self.circuit_optimization is None and self.circuit_synthesis is None:
             return self
         if self.mode is not RunMode.EXECUTE:
-            raise ValueError("circuit_optimization requires mode=execute")
+            raise ValueError("circuit_optimization/circuit_synthesis requires mode=execute")
         if self.source_code is not None:
-            raise ValueError("circuit_optimization accepts declarative operations, not source_code")
+            raise ValueError(
+                "circuit_optimization/circuit_synthesis accepts declarative operations, "
+                "not source_code"
+            )
         return self
 
 
@@ -468,6 +478,7 @@ async def _enforce_execute_backstop(
     if (
         body.mode in (RunMode.EXECUTE, RunMode.QAPP, RunMode.NOTEBOOK)
         and body.circuit_optimization is None
+        and body.circuit_synthesis is None
     ):
         # Reserved under the account's lock rather than merely counted: two
         # submissions at the boundary used to read the same number and both
@@ -552,7 +563,7 @@ async def create_run(
     await _enforce_execute_backstop(body, scope, session, identity, settings)
     artifact_version_id = (
         body.artifact_version_id
-        if body.circuit_optimization is not None
+        if body.circuit_optimization is not None or body.circuit_synthesis is not None
         else await _create_stale_source_draft(body, scope, session)
     )
     try:
@@ -596,7 +607,11 @@ async def create_run(
     # The job payload carries the scope the worker will act under — it resumes
     # the creator's authority, never a broader one (system repo stays minimal).
     job_kind = (
-        CIRCUIT_OPTIMIZE_JOB_KIND if body.circuit_optimization is not None else RUN_EXECUTE_JOB_KIND
+        CIRCUIT_OPTIMIZE_JOB_KIND
+        if body.circuit_optimization is not None
+        else CIRCUIT_SYNTHESIZE_JOB_KIND
+        if body.circuit_synthesis is not None
+        else RUN_EXECUTE_JOB_KIND
     )
     await system.enqueue_job(
         session,
@@ -612,6 +627,11 @@ async def create_run(
             **(
                 {"circuit_optimization": body.circuit_optimization.model_dump(mode="json")}
                 if body.circuit_optimization is not None
+                else {}
+            ),
+            **(
+                {"circuit_synthesis": body.circuit_synthesis.model_dump(mode="json")}
+                if body.circuit_synthesis is not None
                 else {}
             ),
         },

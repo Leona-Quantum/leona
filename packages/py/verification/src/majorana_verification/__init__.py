@@ -82,6 +82,10 @@ from majorana_verification.native import (
     supports_native_result_consistency,
 )
 from majorana_verification.policy import EvidenceSufficiency, assess_evidence_sufficiency
+from majorana_verification.studio_ir import (
+    SYNTHESIS_EQUIVALENCE_MAX_QUBITS,
+    equivalent_operations,
+)
 from majorana_verification.statevector import (
     IDEAL_DISTRIBUTION_MAX_QUBITS,
     STATEVECTOR_MAX_QUBITS,
@@ -169,6 +173,8 @@ __all__ = [
     "statistical_equivalence",
     "simulate_statevector",
     "unitary",
+    "SYNTHESIS_EQUIVALENCE_MAX_QUBITS",
+    "equivalent_operations",
     "EvidenceSufficiency",
     "assess_evidence_sufficiency",
 ]

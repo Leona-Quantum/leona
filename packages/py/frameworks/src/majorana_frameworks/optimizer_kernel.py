@@ -77,6 +77,20 @@ class Compiler(StrEnum):
     BQSKIT = "bqskit"
 
 
+class Connectivity(StrEnum):
+    """Qubit connectivity a targeted-synthesis candidate is routed onto.
+
+    Local stand-in for ``majorana_contracts.enums.SynthesisConnectivity``.
+    Member names and values must stay byte-identical to that enum; a test
+    pins this, the same way it pins ``Gate`` and ``Compiler``.
+    """
+
+    ALL_TO_ALL = "all_to_all"
+    LINE = "line"
+    GRID = "grid"
+    HEAVY_HEX = "heavy_hex"
+
+
 @dataclass(frozen=True)
 class Op:
     """One operation in the bounded, code-free Studio compiler interchange.
@@ -627,6 +641,120 @@ def _version(distribution: str) -> str:
     return importlib.metadata.version(distribution)
 
 
+def _reduce_connected(edges: Iterable[tuple[int, int]], qubit_count: int) -> list[tuple[int, int]]:
+    """The induced subgraph on a CONNECTED `qubit_count`-node subset.
+
+    A generated topology (grid, heavy-hex) is usually larger than the
+    circuit's qubit count, and taking the induced subgraph on an arbitrary
+    `qubit_count`-node subset is not guaranteed connected -- an unroutable
+    coupling map for any two-qubit gate that crosses the gap. Breadth-first
+    search from the lowest-numbered node instead: each node after the first
+    is added only via an edge from one already kept, so the visited prefix
+    is connected by construction for any graph with a connected component of
+    at least `qubit_count` nodes reachable from the start -- true for every
+    line/grid/heavy-hex map this kernel generates. Deterministic (sorted
+    start, insertion-ordered adjacency) so the same target always routes the
+    same way.
+    """
+
+    adjacency: dict[int, list[int]] = {}
+    for left, right in edges:
+        adjacency.setdefault(left, []).append(right)
+        adjacency.setdefault(right, []).append(left)
+    start = min(adjacency)
+    order = [start]
+    seen = {start}
+    queue = [start]
+    while queue and len(seen) < qubit_count:
+        node = queue.pop(0)
+        for neighbor in adjacency.get(node, []):
+            if neighbor in seen:
+                continue
+            seen.add(neighbor)
+            order.append(neighbor)
+            queue.append(neighbor)
+            if len(seen) >= qubit_count:
+                break
+    keep = set(order[:qubit_count])
+    remap = {old: new for new, old in enumerate(sorted(keep))}
+    return [(remap[left], remap[right]) for left, right in edges if left in keep and right in keep]
+
+
+def _coupling_map_for_target(
+    qubit_count: int, connectivity: str | None
+) -> list[tuple[int, int]] | None:
+    """Edges for a requested connectivity, sized to exactly `qubit_count`.
+
+    `None` means no constraint (``all_to_all`` or unset) -- every compiler's
+    existing, unrouted output already satisfies it. The generated maps are
+    real topologies (Qiskit's own ``CouplingMap`` generators), reduced to a
+    connected `qubit_count`-node induced subgraph by `_reduce_connected`
+    when the generator's natural size is larger, which it usually is:
+    heavy-hex in particular exists only at specific lattice sizes (19
+    qubits at distance 3, 57 at distance 5, ...), never at an arbitrary n.
+    """
+
+    if not connectivity or connectivity == Connectivity.ALL_TO_ALL:
+        return None
+    if qubit_count < 2:
+        # No two-qubit gate can violate any topology below 2 qubits.
+        return None
+    from qiskit.transpiler import CouplingMap
+
+    if connectivity == Connectivity.LINE:
+        return list(CouplingMap.from_line(qubit_count, bidirectional=True).get_edges())
+    if connectivity == Connectivity.GRID:
+        cols = math.ceil(math.sqrt(qubit_count))
+        rows = math.ceil(qubit_count / cols)
+        edges = list(CouplingMap.from_grid(rows, cols, bidirectional=True).get_edges())
+        return edges if rows * cols == qubit_count else _reduce_connected(edges, qubit_count)
+    if connectivity == Connectivity.HEAVY_HEX:
+        distance = 3
+        while CouplingMap.from_heavy_hex(distance, bidirectional=True).size() < qubit_count:
+            distance += 2
+        edges = list(CouplingMap.from_heavy_hex(distance, bidirectional=True).get_edges())
+        return _reduce_connected(edges, qubit_count)
+    raise KernelError("target_unsupported", f"unknown connectivity {connectivity!r}")
+
+
+def _route_onto_target(
+    qubit_count: int, operations: list[Op], coupling_map: list[tuple[int, int]]
+) -> list[Op]:
+    """Map an already-optimized operation list onto a connectivity constraint.
+
+    Applied AFTER a compiler's own logical optimization, uniformly regardless
+    of which compiler produced `operations`: Qiskit's own router (SWAP
+    insertion at ``optimization_level=0``, so this adds routing without
+    re-running gate-cancellation passes a prior compiler already did) is the
+    one place this kernel teaches a target to every compiler in the lane,
+    rather than each of the six SDKs its own device-aware compile flow. Every
+    compiler's output already round-trips through this same closed gate set
+    (`_operations_from_qiskit` et al. all refuse anything else), so building a
+    Qiskit circuit from any of them here always succeeds.
+
+    Any output permutation the router introduces is materialized back into
+    explicit SWAP operations by `_operations_from_qiskit`'s own
+    `restore_output_permutation` (the same mechanism `_qiskit_compile` already
+    uses), so the operations this returns are always in the ORIGINAL logical
+    qubit order -- which is what makes the equivalence check downstream a
+    plain, permutation-free comparison.
+    """
+
+    from qiskit import QuantumCircuit
+    from qiskit.transpiler import CouplingMap, generate_preset_pass_manager
+
+    circuit = QuantumCircuit(qubit_count)
+    _apply_operations(circuit, operations, _QISKIT_APPLIERS)
+    manager = generate_preset_pass_manager(
+        optimization_level=0,
+        basis_gates=_QISKIT_BASIS,
+        coupling_map=CouplingMap(coupling_map),
+        seed_transpiler=42,
+    )
+    routed = manager.run(circuit)
+    return _operations_from_qiskit(routed, restore_output_permutation=True)
+
+
 _COMPILERS: dict[
     Compiler,
     Callable[[int, list[Op], int], tuple[list[Op], str]],
@@ -712,6 +840,70 @@ def compile_operations(payload: dict) -> dict:
     }
 
 
+def synthesize_operations(payload: dict) -> dict:
+    """Run every requested compiler over one circuit for a targeted-synthesis
+    request, optionally routing each compiler's own output onto a shared
+    connectivity constraint (see `_route_onto_target`).
+
+    Unlike `compile_operations`, one compiler's failure never stops the
+    batch: each is wrapped independently and the result carries every
+    attempted compiler's own outcome, so a caller can show a compiler that
+    could not run instead of silently dropping it. A malformed REQUEST
+    itself (not a per-compiler outcome -- a bad qubit count, an unknown
+    connectivity) still fails the whole call, the same as
+    `compile_operations` does today.
+    """
+
+    try:
+        qubit_count = int(payload["qubit_count"])
+        optimization_level = int(payload["optimization_level"])
+        operations = [_decode_operation(entry) for entry in payload["operations"]]
+        connectivity = payload.get("connectivity")
+        requested = payload.get("compilers") or [name.value for name in Compiler]
+        coupling_map = _coupling_map_for_target(qubit_count, connectivity)
+    except KernelError as err:
+        return {"ok": False, "code": err.code, "message": str(err)}
+    except (KeyError, TypeError, ValueError) as exc:
+        return {
+            "ok": False,
+            "code": "compiler_failed",
+            "message": f"malformed synthesis request ({type(exc).__name__}).",
+        }
+
+    results: dict[str, dict] = {}
+    for compiler_value in requested:
+        try:
+            compiler = Compiler(compiler_value)
+            compile_fn = _COMPILERS[compiler]
+            optimized, version = compile_fn(qubit_count, list(operations), optimization_level)
+            if coupling_map:
+                optimized = _route_onto_target(qubit_count, optimized, coupling_map)
+        except KernelError as err:
+            results[compiler_value] = {"ok": False, "code": err.code, "message": str(err)}
+        except ImportError:
+            # Same deployment-window case `compile_operations` names: this
+            # kernel's source ships independently of the sandbox rootfs image
+            # that supplies the SDKs it imports lazily.
+            results[compiler_value] = {
+                "ok": False,
+                "code": "compiler_unavailable",
+                "message": f"The {compiler_value} compiler is not installed in this sandbox image.",
+            }
+        except Exception as exc:
+            results[compiler_value] = {
+                "ok": False,
+                "code": "compiler_failed",
+                "message": f"{compiler_value} could not compile this circuit ({type(exc).__name__}).",
+            }
+        else:
+            results[compiler_value] = {
+                "ok": True,
+                "operations": [op.to_dict() for op in optimized],
+                "version": version,
+            }
+    return {"ok": True, "results": results}
+
+
 def _main() -> None:
     """Entry point when this file runs as the sandbox's ``main.py``.
 
@@ -726,6 +918,27 @@ def _main() -> None:
     try:
         payload = json.loads(LEONA_TRUSTED_PAYLOAD)  # noqa: F821
         result = compile_operations(payload)
+    except Exception as exc:
+        result = {"ok": False, "code": "compiler_internal_error", "message": type(exc).__name__}
+    with open(result_path, "w", encoding="utf-8") as handle:
+        handle.write(json.dumps(result))
+
+
+def _main_synthesize() -> None:
+    """Entry point for a targeted-synthesis (multi-compiler) run.
+
+    A second entrypoint into the SAME trusted program `_main` runs in --
+    `majorana_sandbox.run_trusted`'s `entrypoint` parameter selects which
+    function `compose_trusted` calls, so this needs no separate program
+    registration. Same contract as `_main`: the two globals are prepended by
+    the control plane, nothing is ever printed to stdout, and the only
+    channel back is the result file.
+    """
+
+    result_path = LEONA_TRUSTED_RESULT_PATH  # noqa: F821
+    try:
+        payload = json.loads(LEONA_TRUSTED_PAYLOAD)  # noqa: F821
+        result = synthesize_operations(payload)
     except Exception as exc:
         result = {"ok": False, "code": "compiler_internal_error", "message": type(exc).__name__}
     with open(result_path, "w", encoding="utf-8") as handle:

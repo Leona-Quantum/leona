@@ -74,6 +74,54 @@ def test_circuit_optimization_request_is_code_free_and_explicitly_execute():
         )
 
 
+def test_circuit_synthesis_request_is_code_free_and_explicitly_execute():
+    synthesis = {
+        "qubit_count": 2,
+        "operations": [
+            {"gate": "H", "qubits": [0]},
+            {"gate": "CX", "qubits": [0, 1]},
+        ],
+        "target": {"connectivity": "line"},
+        "objective": "two_qubit_count",
+    }
+    accepted = runs.CreateRunRequest(
+        task_prompt="Synthesize this Studio circuit for a line target",
+        mode="execute",
+        circuit_synthesis=synthesis,
+    )
+    assert accepted.circuit_synthesis is not None
+    with pytest.raises(ValidationError, match="requires mode=execute"):
+        runs.CreateRunRequest(task_prompt="Synthesize", circuit_synthesis=synthesis)
+    with pytest.raises(ValidationError, match="not source_code"):
+        runs.CreateRunRequest(
+            task_prompt="Synthesize",
+            mode="execute",
+            source_code="print('not accepted')",
+            circuit_synthesis=synthesis,
+        )
+
+
+def test_circuit_optimization_and_circuit_synthesis_are_mutually_exclusive():
+    optimization = {
+        "compiler": "qiskit",
+        "qubit_count": 1,
+        "operations": [{"gate": "H", "qubits": [0]}],
+    }
+    synthesis = {
+        "qubit_count": 1,
+        "operations": [{"gate": "H", "qubits": [0]}],
+        "target": {"connectivity": "all_to_all"},
+        "objective": "depth",
+    }
+    with pytest.raises(ValidationError, match="mutually exclusive"):
+        runs.CreateRunRequest(
+            task_prompt="Both",
+            mode="execute",
+            circuit_optimization=optimization,
+            circuit_synthesis=synthesis,
+        )
+
+
 async def test_edited_source_creates_explicitly_unverified_immutable_draft(scope, monkeypatch):
     base_id = uuid.uuid4()
     artifact_id = uuid.uuid4()
@@ -314,4 +362,58 @@ async def test_circuit_optimization_enqueues_worker_job_without_creating_a_draft
     assert captured["run"]["artifact_version_id"] is None
     assert captured["job"]["kind"] == "circuit.optimize"
     assert captured["job"]["payload"]["circuit_optimization"]["compiler"] == "pytket"
+    assert "source_code" not in captured["job"]["payload"]
+
+
+async def test_circuit_synthesis_enqueues_worker_job_without_creating_a_draft(scope, monkeypatch):
+    run_id = uuid.uuid4()
+    captured = {}
+    body = runs.CreateRunRequest(
+        task_prompt="Synthesize this Studio circuit for a heavy-hex target",
+        mode="execute",
+        framework="qiskit",
+        circuit_synthesis={
+            "qubit_count": 2,
+            "operations": [
+                {"gate": "H", "qubits": [0]},
+                {"gate": "CX", "qubits": [0, 1]},
+            ],
+            "target": {"device_id": "ibm.open_plan"},
+            "objective": "t_count",
+        },
+    )
+
+    async def no_gate(*_args, **_kwargs):
+        return None
+
+    async def create_run(_scope, _session, **values):
+        captured["run"] = values
+        return SimpleNamespace(id=run_id)
+
+    async def append_event(*_args, **_kwargs):
+        return None
+
+    async def enqueue_job(_session, **values):
+        captured["job"] = values
+
+    async def no_queue(*_args, **_kwargs):
+        return {}
+
+    async def draft_must_not_run(*_args, **_kwargs):
+        raise AssertionError("synthesis preview must not persist a source draft")
+
+    monkeypatch.setattr(runs, "_enforce_execute_backstop", no_gate)
+    monkeypatch.setattr(runs, "_create_stale_source_draft", draft_must_not_run)
+    monkeypatch.setattr(runs.runs_repo, "create_run", create_run)
+    monkeypatch.setattr(runs.runs_repo, "append_run_event", append_event)
+    monkeypatch.setattr(runs.runs_repo, "queue_positions", no_queue)
+    monkeypatch.setattr(runs.system, "enqueue_job", enqueue_job)
+    monkeypatch.setattr(runs, "_to_resource", lambda row, queue_position=None: row.id)
+
+    result = await runs.create_run(body, scope, object(), object(), object())
+
+    assert result == run_id
+    assert captured["run"]["artifact_version_id"] is None
+    assert captured["job"]["kind"] == "circuit.synthesize"
+    assert captured["job"]["payload"]["circuit_synthesis"]["target"]["device_id"] == "ibm.open_plan"
     assert "source_code" not in captured["job"]["payload"]

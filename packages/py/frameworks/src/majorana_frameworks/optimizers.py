@@ -44,12 +44,17 @@ import json
 from pathlib import Path
 from typing import Any
 
+from dataclasses import dataclass
+
 from majorana_contracts import (
+    CircuitCompiler,
     CircuitOptimizationGate,
     CircuitOptimizationOperation,
     CircuitOptimizationRequest,
     CircuitOptimizationResult,
     ResourceMetrics,
+    SynthesisConnectivity,
+    SynthesisRequest,
 )
 
 _TWO_QUBIT_GATES = {
@@ -224,6 +229,7 @@ def _metrics(qubit_count: int, operations: list[CircuitOptimizationOperation]) -
     gate_count = 0
     measurements = 0
     two_qubit = 0
+    t_count = 0
     for operation in operations:
         layer = max((reached.get(qubit, 0) for qubit in operation.qubits), default=0) + 1
         for qubit in operation.qubits:
@@ -235,11 +241,14 @@ def _metrics(qubit_count: int, operations: list[CircuitOptimizationOperation]) -
             gate_count += 1
             if operation.gate in _TWO_QUBIT_GATES:
                 two_qubit += 1
+            if operation.gate is CircuitOptimizationGate.T:
+                t_count += 1
     return ResourceMetrics(
         qubits=qubit_count,
         depth=depth,
         gate_count=gate_count,
         two_qubit_gate_count=two_qubit,
+        t_count=t_count,
         measurement_count=measurements,
     )
 
@@ -260,3 +269,185 @@ def _fingerprint(operations: list[CircuitOptimizationOperation]) -> str:
     return hashlib.sha256(
         json.dumps(payload, sort_keys=True, separators=(",", ":")).encode()
     ).hexdigest()
+
+
+#: Kernel refusal codes that name a CAPABILITY the compiler/circuit combination
+#: lacks (a stated budget, a gate-set requirement, a missing SDK, an unknown
+#: target) rather than an unexpected failure. `synthesis_candidates_from_kernel`
+#: reports these as `status="unsupported"`; everything else -- an output shape
+#: the kernel could not lower back, a timeout, an internal error -- is
+#: `status="failed"`: the compiler was attempted and something went wrong,
+#: which is a different claim than "this compiler cannot do this".
+_UNSUPPORTED_KERNEL_CODES = frozenset(
+    {
+        "bqskit_budget_exceeded",
+        "pyzx_budget_exceeded",
+        "pyzx_requires_clifford_t",
+        "compiler_unavailable",
+        "target_unsupported",
+    }
+)
+
+
+def build_synthesis_kernel_payload(
+    request: SynthesisRequest,
+    *,
+    connectivity: SynthesisConnectivity,
+    compilers: list[CircuitCompiler] | None = None,
+) -> dict[str, Any]:
+    """The JSON `optimizer_kernel.synthesize_operations` is handed.
+
+    Same unitary-prefix-only shape `build_kernel_payload` uses for the
+    single-compiler lane, plus the resolved connectivity and which
+    compilers to try (every compiler in the lane, unless the caller narrows
+    it — e.g. for a test).
+    """
+
+    unitary, _measurements = _split_terminal_measurements(request.operations)
+    return {
+        "qubit_count": request.qubit_count,
+        # Targeted synthesis always asks for the strongest generic effort each
+        # compiler offers: `objective` picks which candidate to highlight, not
+        # a per-compiler knob none of the six adapters expose today (see
+        # SynthesisRequest's docstring / this feature's PR description).
+        "optimization_level": 3,
+        "operations": [operation.model_dump(mode="json") for operation in unitary],
+        "connectivity": connectivity.value,
+        "compilers": [compiler.value for compiler in (compilers or list(CircuitCompiler))],
+    }
+
+
+@dataclass(frozen=True)
+class CompiledCandidate:
+    """One compiler's compile-only outcome for a targeted-synthesis request —
+    everything this SDK-free control-plane module can compute.
+
+    Deliberately carries no equivalence verdict: that needs Qiskit's
+    simulator primitives (`majorana_verification.equivalent_operations`),
+    and keeping SDK use out of this module is this file's whole design (see
+    the module docstring and `test_the_control_plane_half_imports_no_compiler_sdk`).
+    The caller — `majorana_worker` — computes equivalence and assembles the
+    final `SynthesisCandidate` contract object from this plus that verdict.
+    """
+
+    compiler: CircuitCompiler
+    status: str
+    reason: str | None
+    compiler_version: str | None
+    operations: list[CircuitOptimizationOperation] | None
+    before: ResourceMetrics | None
+    after: ResourceMetrics | None
+    warnings: list[str]
+
+
+def _unsupported_or_failed(compiler: CircuitCompiler, code: str, message: str) -> CompiledCandidate:
+    status = "unsupported" if code in _UNSUPPORTED_KERNEL_CODES else "failed"
+    return CompiledCandidate(
+        compiler=compiler,
+        status=status,
+        reason=message,
+        compiler_version=None,
+        operations=None,
+        before=None,
+        after=None,
+        warnings=[],
+    )
+
+
+def synthesis_candidates_from_kernel(
+    request: SynthesisRequest, kernel_result: dict[str, Any]
+) -> list[CompiledCandidate]:
+    """Validate the kernel's per-compiler answers and assemble compile-only candidates.
+
+    Mirrors `result_from_kernel`'s re-validation discipline: everything the
+    kernel returns crossed a process boundary, so operations go back through
+    `CircuitOptimizationOperation` rather than being trusted. A malformed
+    per-compiler entry becomes that ONE candidate's failure, never a whole-
+    request exception — the request itself only fails when the kernel
+    reports no result at all (a bad qubit count, an unrecognised
+    connectivity: `optimizer_kernel.synthesize_operations`'s own top-level
+    refusal).
+    """
+
+    if not kernel_result.get("ok"):
+        raise CircuitOptimizationError(
+            str(kernel_result.get("code") or "compiler_failed"),
+            str(kernel_result.get("message") or "The synthesis lane returned no result."),
+        )
+    per_compiler = kernel_result.get("results")
+    if not isinstance(per_compiler, dict):
+        raise CircuitOptimizationError(
+            "compiler_internal_error", "The synthesis lane returned no per-compiler results."
+        )
+    _unitary, measurements = _split_terminal_measurements(request.operations)
+    before = _metrics(request.qubit_count, request.operations)
+    candidates: list[CompiledCandidate] = []
+    for compiler in CircuitCompiler:
+        entry = per_compiler.get(compiler.value)
+        if entry is None:
+            continue  # not requested for this run
+        if not entry.get("ok"):
+            code = str(entry.get("code") or "compiler_failed")
+            message = str(entry.get("message") or f"{compiler.value} returned no result.")
+            candidates.append(_unsupported_or_failed(compiler, code, message))
+            continue
+        version = str(entry.get("version") or "")
+        raw_operations = entry.get("operations")
+        if not version or not isinstance(raw_operations, list):
+            candidates.append(
+                _unsupported_or_failed(
+                    compiler,
+                    "compiler_internal_error",
+                    f"{compiler.value} reported success but returned no operations or version.",
+                )
+            )
+            continue
+        try:
+            optimized = [CircuitOptimizationOperation.model_validate(op) for op in raw_operations]
+        except Exception:
+            candidates.append(
+                _unsupported_or_failed(
+                    compiler,
+                    "compiler_output_unsupported",
+                    f"{compiler.value} returned an operation Studio cannot represent.",
+                )
+            )
+            continue
+        operations = [*optimized, *measurements]
+        if len(operations) > _MAX_RESULT_OPERATIONS:
+            candidates.append(
+                _unsupported_or_failed(
+                    compiler,
+                    "compiler_output_too_large",
+                    f"{compiler.value} output exceeds {_MAX_RESULT_OPERATIONS} Studio operations.",
+                )
+            )
+            continue
+        if any(qubit >= request.qubit_count for op in operations for qubit in op.qubits):
+            candidates.append(
+                _unsupported_or_failed(
+                    compiler,
+                    "compiler_output_unsupported",
+                    f"{compiler.value} returned an operation outside the circuit's qubits.",
+                )
+            )
+            continue
+        after = _metrics(request.qubit_count, operations)
+        warnings: list[str] = []
+        if not _strictly_improves(before, after):
+            warnings.append(
+                f"{compiler.value} did not reduce gate count, logical depth, or two-qubit gates."
+            )
+        candidates.append(
+            CompiledCandidate(
+                compiler=compiler,
+                status="succeeded",
+                reason=None,
+                compiler_version=version,
+                operations=operations,
+                before=before,
+                after=after,
+                warnings=warnings,
+            )
+        )
+    return candidates

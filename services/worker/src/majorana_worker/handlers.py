@@ -84,6 +84,7 @@ from majorana_api.db import AsyncSession
 from majorana_api.jobs import (
     CATALOG_IMPORT_JOB_KIND,
     CIRCUIT_OPTIMIZE_JOB_KIND,
+    CIRCUIT_SYNTHESIZE_JOB_KIND,
     COURSE_PLAN_JOB_KIND,
     COURSE_REVISE_JOB_KIND,
     NOTEBOOK_GENERATE_JOB_KIND,
@@ -130,6 +131,7 @@ from .notebook_handlers import (
     handle_notebook_grade,
     handle_notebook_revise,
 )
+from .synthesis_handlers import handle_circuit_synthesize
 from majorana_frameworks.optimizers import (
     CircuitOptimizationError,
     build_kernel_payload,
@@ -3159,6 +3161,7 @@ HANDLERS: dict[str, JobHandler] = {
     RUN_EXECUTE_JOB_KIND: handle_run_execute,
     QAPP_EXECUTE_JOB_KIND: handle_qapp_execute,
     CIRCUIT_OPTIMIZE_JOB_KIND: handle_circuit_optimize,
+    CIRCUIT_SYNTHESIZE_JOB_KIND: handle_circuit_synthesize,
     CATALOG_IMPORT_JOB_KIND: handle_catalog_import,
     QPU_RUN_JOB_KIND: handle_qpu_run,
     NOTEBOOK_GENERATE_JOB_KIND: handle_notebook_generate,
@@ -3173,6 +3176,7 @@ DEAD_LETTER_HANDLERS: dict[str, DeadLetterHandler] = {
     RUN_EXECUTE_JOB_KIND: handle_run_dead_letter,
     QAPP_EXECUTE_JOB_KIND: handle_qapp_execute_dead_letter,
     CIRCUIT_OPTIMIZE_JOB_KIND: handle_run_dead_letter,
+    CIRCUIT_SYNTHESIZE_JOB_KIND: handle_run_dead_letter,
     QPU_RUN_JOB_KIND: handle_qpu_run_dead_letter,
     NOTEBOOK_GENERATE_JOB_KIND: handle_notebook_dead_letter,
     NOTEBOOK_REVISE_JOB_KIND: handle_notebook_dead_letter,
