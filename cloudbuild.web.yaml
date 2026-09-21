@@ -14,7 +14,7 @@
 # Defaults match production as it is served today: the CSP on leonaqt.com names
 # https://majorana-api-nikekeixtq-uw.a.run.app as the control plane (read
 # 2026-09-15), and LEONA_DEPLOY_ENV=production keeps the preview-only
-# allowances (Vercel Toolbar CSP, /lab, the public demo) off.
+# allowances (/lab, the public demo) off.
 #
 # _SENTRY_DSN and _WORKOS_REDIRECT_URI default to EMPTY, and that is the spike's
 # correct value: a hand-run build should not send browser errors into
