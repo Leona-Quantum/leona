@@ -53,7 +53,7 @@ dev = [
     "numba==0.67.0",
     # Qibo stays on its in-process NumPy backend; optional Qibolab hardware
     # backends are not installed inside the network-locked sandbox.
-    "qibo==0.3.4",
+    "qibo==0.3.5",
     # The Studio compiler lane's six SDKs are TEST-ONLY here, and that is the
     # shape ai-ops#186's option A asked for. They EXECUTE in the sandbox rootfs
     # (`infra/sandbox/Dockerfile`, proved by `sandbox-image.yml`), which holds no
