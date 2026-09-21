@@ -315,11 +315,30 @@ async function checkPath(path) {
     if (runningVerdict.verdict === "pass") break;
     if (attempt < ATTEMPTS) await new Promise((resolve) => setTimeout(resolve, RETRY_DELAY_MS));
   }
-  return { path, ...classify(observations) };
+  return { path, ...classify(observations), challenged: observations.every((o) => Boolean(o.mitigated)) };
 }
 
 async function main() {
   const results = await Promise.all(CHECKED_PATHS.map((path) => checkPath(path)));
+  // The never-shared probes run BEFORE the challenged verdict is reached, not after
+  // it. The first version decided from the three cache paths alone and exited, so a
+  // never-shared request that came back unchallenged AND wrong was never even sent.
+  // (Sourcery, PR 933.)
+  const neverShared = [];
+  for (const probeSpec of NEVER_SHARED) {
+    neverShared.push({ ...probeSpec, observation: await probe(`${SITE_ORIGIN}${probeSpec.path}`, probeSpec.headers) });
+  }
+  // See check-live-pages.mjs for why: from a GitHub runner, with Bot Fight Mode on
+  // by the owner's ruling (ai-ops 348), every request is challenged every time.
+  // EVERY one of them, cache paths and never-shared alike, or it is a failure like
+  // any other.
+  const everyProbeChallenged = results.length > 0
+    && results.every((result) => result.challenged)
+    && neverShared.every(({ observation }) => Boolean(observation.mitigated));
+  if (process.argv.includes("--challenged-ok") && everyProbeChallenged) {
+    console.log(`::notice::Cloudflare challenged all ${results.length + neverShared.length} cache probes against ${SITE_ORIGIN}, so this run verified nothing. Expected from a GitHub runner while Bot Fight Mode is on (ai-ops 348). Read the cache from an ordinary connection after a change to the cache rule: node scripts/check-live-repository-cache.mjs`);
+    process.exit(0);
+  }
   let worstExit = 0;
   for (const { path, verdict, reason } of results) {
     if (verdict === "pass") {
@@ -333,8 +352,8 @@ async function main() {
       worstExit = 1;
     }
   }
-  for (const { path, headers, what, edgeOnly } of NEVER_SHARED) {
-    const { verdict, reason } = classifyNeverShared(await probe(`${SITE_ORIGIN}${path}`, headers), { edgeOnly });
+  for (const { path, headers, what, edgeOnly, observation } of neverShared) {
+    const { verdict, reason } = classifyNeverShared(observation, { edgeOnly });
     const sent = Object.entries(headers).map(([k, v]) => `${k}: ${v}`).join(", ") || "no extra headers";
     if (verdict === "pass") {
       console.log(`check-live-repository-cache: PASS never shared: ${path} with ${sent} (${what}) — ${reason}`);

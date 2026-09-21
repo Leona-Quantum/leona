@@ -181,9 +181,16 @@ no longer check is the part only the public name shows: Cloudflare's cache verdi
 `web-deploy-watch` is unaffected; it reads GitHub's deployment records and never contacts the
 site. Step 10 above named it as exposed, which was wrong.
 
-Whether Bot Fight Mode stays on is the owner's call (ai-ops 318). With it off the monitors
-see again and the rate limit still holds; with it on, read the cache from an ordinary
-connection after a change to the cache rule: `node scripts/check-live-repository-cache.mjs`.
+**Bot Fight Mode stays on** (owner ruling, 2026-09-20, ai-ops 348). Two things cover what the
+runner can no longer see. `deploy-web` renders a record page on the private twin before every
+traffic shift. And the Google Cloud uptime checks in `majorana-core` ask the live site for the
+home page and a record page from five regions around the clock and email the owner; Cloudflare
+lets them through — every hour of 2026-09-20 passed, 720 of 720 requests answered 200 in two
+hours with Bot Fight Mode on. `verify-web-cache` therefore runs both probes with
+`--challenged-ok`: a run in which every probe was challenged is a notice that it verified
+nothing, and one real failure among challenges still fails. After a change to the Cloudflare
+cache rule, read the cache from an ordinary connection:
+`node scripts/check-live-repository-cache.mjs`.
 
 `gcp-preview` has no remaining use. Nothing in CI reads it; only
 `infra/web-lb/80-cutover-preflight.sh` does, and that script's job is done. The wildcard map
