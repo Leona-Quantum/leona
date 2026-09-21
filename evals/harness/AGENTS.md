@@ -16,3 +16,10 @@ Runs the eval corpus through the real pipeline and scores it (Phase 2 step 7).
   30 — expand it toward the full suite as cases are validated.
 - The nightly baseline is `.github/workflows/bench.yml`; it is **inert until
   `ANTHROPIC_API_KEY` is set** (no key → skipped, never faked) and does not block merges.
+- **`majorana_evals.public_benchmarks`** (proposal 1, ai-ops-approved 2026-09-20) scores
+  Nala against public benchmarks (Qiskit HumanEval, QCircuitEval) through this same
+  direct-handler pattern — see `evals/public-benchmarks/README.md` first, then each
+  benchmark's `PROVENANCE.md` for what is vendored, pinned, and NOT yet scored (QCircuitEval
+  is structural-only; both benchmarks have a real gradable-task ceiling below 100%, for
+  reasons written down there, not a harness defect). `.github/workflows/public-benchmarks.yml`
+  is a draft, `workflow_dispatch`-only, no secrets wired in — it cannot spend money as shipped.
