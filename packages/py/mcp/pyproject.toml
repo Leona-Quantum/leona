@@ -15,6 +15,9 @@ dependencies = [
     # Already in uv.lock (the API's tests and the MCP SDK both use it). Named
     # here because this package imports it directly.
     "httpx>=0.27,<1",
+    # `server.py` imports `pydantic.Field` for the tool parameter schemas. The floor
+    # is the one mcp 1.x already requires, so this adds no constraint of its own.
+    "pydantic>=2.11,<3",
 ]
 
 [project.scripts]
