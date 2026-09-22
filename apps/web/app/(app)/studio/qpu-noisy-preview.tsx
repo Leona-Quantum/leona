@@ -40,6 +40,10 @@ const NOT_GATE_MODEL: DeviceEstimate = { status: "unavailable", reason: "not_gat
  * `prepareCircuitForPreview` already reads that refusal. */
 const COULD_NOT_ESTIMATE: DeviceEstimate = { status: "unavailable", reason: "unparsable" };
 
+/** An estimate the simulator stopped at its time budget. Cached like any
+ * other answer, so returning to this circuit and device does not stall again. */
+const TIMED_OUT: DeviceEstimate = { status: "unavailable", reason: "timed_out" };
+
 /**
  * The hardware panel's "before you pay" estimate: what the chosen device's
  * published error figures predict for the circuit that would be submitted.
@@ -111,7 +115,8 @@ function QpuNoisyPreviewPanel({
     const key = preparedCircuitKey(qasm, parseLimits);
     void simulator.run(consumer, { kind: "noise_estimate", qasm, limits: parseLimits, noise }).then((outcome) => {
       if (outcome.status === "superseded") return;
-      const estimate = ESTIMATES.store(key, noise, outcome.status === "done" ? outcome.result : COULD_NOT_ESTIMATE);
+      const answer = outcome.status === "done" ? outcome.result : outcome.status === "timed_out" ? TIMED_OUT : COULD_NOT_ESTIMATE;
+      const estimate = ESTIMATES.store(key, noise, answer);
       if (live) setComputed({ circuitKey: key, noise, device: estimate });
     });
     return () => {

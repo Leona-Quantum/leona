@@ -1,4 +1,5 @@
 import { scheduleAfterPaint } from "./qpu-noise.ts";
+import type { ParseLimits } from "./qpu-ideal.ts";
 import {
   SIMULATOR_PROTOCOL_VERSION,
   createSimulatorContext,
@@ -52,6 +53,17 @@ import {
  * it before the worker existed. The job the broken worker was holding is run
  * here instead, so nobody's placeholder waits forever. Once a worker has
  * failed, the client does not try another one this page load.
+ *
+ * ## A worker that goes quiet
+ *
+ * A worker that took a job and neither answers nor fails would hold the one
+ * slot forever, and every later simulation on the page would wait behind it.
+ * So each job sent to a worker carries a time budget sized from the job
+ * (`simulatorJobBudgetMs` below). When it runs out, that worker is
+ * terminated, the job answers `timed_out`, and the next job gets a fresh
+ * worker. The timed-out job is NOT re-run here: it is the one job known to be
+ * slow, and running it on this thread would freeze the page for exactly as
+ * long as the worker was spared.
  */
 
 export type SimulatorOutcome<T> =
@@ -60,7 +72,9 @@ export type SimulatorOutcome<T> =
   | { status: "superseded" }
   /** The job itself threw (the kernel refuses a custom gate, say). It would
    * have thrown on the main thread too; the message is the thrown one. */
-  | { status: "failed"; error: string };
+  | { status: "failed"; error: string }
+  /** The worker did not answer within the job's budget and was stopped. */
+  | { status: "timed_out"; budgetMs: number };
 
 /** The parts of a `Worker` the client uses, so tests can hand it a fake. */
 export type SimulatorWorkerPort = {
@@ -74,6 +88,110 @@ export type SimulatorWorkerPort = {
 /** Runs a task later and returns a function that cancels it. */
 export type SimulatorSchedule = (task: () => void) => () => void;
 
+/** Runs a task after `ms` milliseconds and returns a function that cancels it. */
+export type SimulatorTimer = (task: () => void, ms: number) => () => void;
+
+const defaultTimer: SimulatorTimer = (task, ms) => {
+  const handle = setTimeout(task, ms);
+  return () => clearTimeout(handle);
+};
+
+// ---------------------------------------------------------------------------
+// The time budget for one worker job.
+//
+// A statevector job's cost is close to (amplitudes) x (passes over them):
+// 2^n amplitudes, one pass per gate, plus the passes each job makes after the
+// simulation. Fitted to the three 20-qubit jobs measured in headless Chromium
+// against a production build (simulator-protocol.ts, 2026-09-22, one run
+// each), that is about 1.5 ns per amplitude per pass on the Mac they ran on:
+//
+//   comparison, 1,000 gates:              2,412 ms / (2^20 x 1,500)   = 1.5 ns
+//   noise estimate, 400 gates, 7 devices:   875 ms / (2^20 x   596)   = 1.4 ns
+//   CPU run, 1,000 gates, 1,000 shots:    2,337 ms / (2^20 x 2,000)   = 1.1 ns
+//
+// The budget is TWENTY times that estimate. A low-end phone runs this kind
+// of loop five to ten times slower than that Mac, and the estimate itself is
+// read from the program text (below), not from the parsed circuit, so it can
+// be off by a factor of two either way. A budget is a bound on how long a
+// hung worker can stall the page, not a forecast, so it errs long.
+//
+// The floor, 15 s, is what a small job gets. Its real cost is milliseconds;
+// the floor is there for the first job of a page, which also waits for the
+// worker's script (about 70 KB) to arrive over whatever connection the reader
+// has. The ceiling, 10 minutes, caps the one case the formula runs away on:
+// the developer tier's largest CPU run (20 qubits, 4,000 operations, 65,536
+// shots, each shot scanning the whole distribution) estimates at about 110 s
+// on that Mac, so twenty times it would be 36 minutes. Ten minutes still
+// leaves that run more than five times its estimate.
+// ---------------------------------------------------------------------------
+
+const NS_PER_AMPLITUDE_PASS = 1.5;
+const BUDGET_SAFETY_FACTOR = 20;
+export const MIN_JOB_BUDGET_MS = 15_000;
+export const MAX_JOB_BUDGET_MS = 10 * 60_000;
+
+/** After the simulation a comparison sorts the whole distribution (to find
+ * its top rows) and takes a log-gamma per outcome for the shot-noise figure:
+ * about 400 passes' worth at 20 qubits, measured in Node as the gap between
+ * a comparison and the simulation inside it. Rounded up. */
+const COMPARISON_PASSES = 500;
+
+/** Per device, a noise estimate mixes with uniform (one pass), applies the
+ * readout flip (one pass per qubit), takes two distances and picks the top
+ * rows (about four passes). Counted as qubits + 8. */
+const NOISE_PASSES_PER_DEVICE_BEYOND_QUBITS = 8;
+
+/** A program read through the standard-gate decomposition can come out with
+ * more steps than it has statements; two per statement covers the common
+ * gates, and the tier's operation cap bounds it whatever happens. */
+const STEPS_PER_STATEMENT = 2;
+
+/** The milliseconds a worker may take over `job` before it is stopped. */
+export function simulatorJobBudgetMs(job: SimulatorJob): number {
+  let qubits: number;
+  let passes: number;
+  switch (job.kind) {
+    case "cpu_counts":
+      qubits = job.circuit.qubitCount;
+      // Each shot scans at most the whole cumulative distribution.
+      passes = job.circuit.steps.length + job.shots;
+      break;
+    case "compare_ideal": {
+      const program = programSize(job.qasm, job.limits);
+      qubits = program.qubits;
+      passes = program.steps + COMPARISON_PASSES;
+      break;
+    }
+    case "noise_estimate": {
+      const program = programSize(job.qasm, job.limits);
+      qubits = program.qubits;
+      passes = program.steps + job.noise.profiles.length * (program.qubits + NOISE_PASSES_PER_DEVICE_BEYOND_QUBITS);
+      break;
+    }
+  }
+  const estimateMs = (2 ** qubits * passes * NS_PER_AMPLITUDE_PASS) / 1e6;
+  return Math.round(Math.min(MAX_JOB_BUDGET_MS, Math.max(MIN_JOB_BUDGET_MS, BUDGET_SAFETY_FACTOR * estimateMs)));
+}
+
+/**
+ * Qubits and steps read off the OpenQASM text, without parsing it on this
+ * thread. Both are capped by the tier's limits, because the worker refuses a
+ * program over either before it simulates anything, so a refused program
+ * costs nothing close to its size. A program with no register declaration
+ * this recognises is assumed to be as wide as the tier allows.
+ */
+function programSize(qasm: string, limits: ParseLimits): { qubits: number; steps: number } {
+  let declared = 0;
+  for (const match of qasm.matchAll(/\bqubit\s*\[\s*(\d+)\s*\]|\bqreg\s+\w+\s*\[\s*(\d+)\s*\]/g)) {
+    declared += Number(match[1] ?? match[2]);
+  }
+  const statements = qasm.split(";").length - 1;
+  return {
+    qubits: Math.min(limits.cpuSimQubits, declared > 0 ? declared : limits.cpuSimQubits),
+    steps: Math.min(limits.cpuSimOperations, Math.max(1, statements) * STEPS_PER_STATEMENT),
+  };
+}
+
 type AnyOutcome = SimulatorOutcome<unknown>;
 
 type Subscription = { consumer: string; entry: Entry; resolve: (outcome: AnyOutcome) => void; promise: Promise<AnyOutcome> };
@@ -84,11 +202,14 @@ export class SimulatorClient {
   readonly #createWorker: () => SimulatorWorkerPort | null;
   readonly #schedule: SimulatorSchedule;
   readonly #runJob: (job: SimulatorJob, context: SimulatorContext) => unknown;
+  readonly #setTimer: SimulatorTimer;
+  readonly #budgetMs: (job: SimulatorJob) => number;
   readonly #context = createSimulatorContext();
   #worker: SimulatorWorkerPort | null = null;
   #workerFailed = false;
   #queue: Entry[] = [];
   #running: { entry: Entry; on: "worker" | "main_thread" } | null = null;
+  #cancelWatchdog: (() => void) | null = null;
   readonly #subscriptions = new Map<string, Subscription>();
   #nextId = 1;
 
@@ -99,10 +220,16 @@ export class SimulatorClient {
     /** The fallback's job runner. `runSimulatorJob` always, except in tests
      * that need to see whether a job ran at all. */
     runJob?: (job: SimulatorJob, context: SimulatorContext) => unknown;
+    /** The watchdog's clock. `setTimeout` except in tests. */
+    setTimer?: SimulatorTimer;
+    /** Each worker job's budget. `simulatorJobBudgetMs` except in tests. */
+    budgetMs?: (job: SimulatorJob) => number;
   }) {
     this.#createWorker = options.createWorker;
     this.#schedule = options.schedule ?? scheduleAfterPaint;
     this.#runJob = options.runJob ?? runSimulatorJob;
+    this.#setTimer = options.setTimer ?? defaultTimer;
+    this.#budgetMs = options.budgetMs ?? simulatorJobBudgetMs;
   }
 
   run<J extends SimulatorJob>(consumer: string, job: J): Promise<SimulatorOutcome<SimulatorResultOf<J>>> {
@@ -154,6 +281,8 @@ export class SimulatorClient {
       try {
         this.#running = { entry, on: "worker" };
         worker.postMessage({ protocol: SIMULATOR_PROTOCOL_VERSION, id: entry.id, job: entry.job });
+        const budgetMs = this.#budgetMs(entry.job);
+        this.#cancelWatchdog = this.#setTimer(() => this.#onTimeout(entry, budgetMs), budgetMs);
         return;
       } catch {
         // A job that cannot be cloned into a message. Nothing in the protocol
@@ -186,6 +315,7 @@ export class SimulatorClient {
   }
 
   #finish(entry: Entry, outcome: AnyOutcome) {
+    this.#disarmWatchdog();
     this.#running = null;
     for (const subscription of entry.subscribers.values()) {
       this.#subscriptions.delete(subscription.consumer);
@@ -228,19 +358,46 @@ export class SimulatorClient {
   }
 
   #onWorkerFailure() {
+    this.#disarmWatchdog();
     this.#abandonWorker();
     const running = this.#running;
     if (running?.on === "worker") this.#runOnMainThread(running.entry);
   }
 
+  /** The job's budget ran out with no answer: stop that worker, answer the
+   * job, and let the next one start on a fresh worker. */
+  #onTimeout(entry: Entry, budgetMs: number) {
+    this.#cancelWatchdog = null;
+    if (this.#running?.entry !== entry || this.#running.on !== "worker") return;
+    this.#retireWorker();
+    this.#finish(entry, { status: "timed_out", budgetMs });
+  }
+
+  #disarmWatchdog() {
+    this.#cancelWatchdog?.();
+    this.#cancelWatchdog = null;
+  }
+
+  /** A worker that loaded but cannot be used: never try another. */
   #abandonWorker() {
     this.#workerFailed = true;
+    this.#retireWorker();
+  }
+
+  /** Terminates the current worker and detaches it, so nothing it sends or
+   * fires afterwards can reach a job it no longer holds. */
+  #retireWorker() {
+    const worker = this.#worker;
+    this.#worker = null;
+    if (!worker) return;
+    worker.onmessage = null;
+    worker.onerror = null;
+    worker.onmessageerror = null;
     try {
-      this.#worker?.terminate();
+      worker.terminate();
     } catch {
       // Already gone.
     }
-    this.#worker = null;
   }
 }
 

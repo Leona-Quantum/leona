@@ -42,7 +42,10 @@ export type IdealComparisonUnavailable =
   | "unparsable"
   | "qubit_limit"
   | "operation_limit"
-  | "register_mismatch";
+  | "register_mismatch"
+  /** The simulator worker did not answer within the job's time budget
+   * (simulator-client.ts), so it was stopped rather than left to stall the page. */
+  | "timed_out";
 
 export type IdealComparisonRow = {
   bitstring: string;

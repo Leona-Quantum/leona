@@ -14,6 +14,9 @@ type StudioCopy = (typeof WORKSPACE_COPY)[PublicLocale]["studio"];
  * circuit, which is what `unparsable` already tells the reader. */
 const COULD_NOT_COMPARE: IdealComparison = { status: "unavailable", reason: "unparsable" };
 
+/** A comparison the simulator stopped at its time budget. */
+const TIMED_OUT: IdealComparison = { status: "unavailable", reason: "timed_out" };
+
 /**
  * The hardware panel's "measured against ideal" readout. Everything here runs
  * in this component alone — `compareMeasuredToIdeal` (lib/qpu-ideal.ts) is a
@@ -67,7 +70,8 @@ export function QpuMeasuredVsIdeal({
     // exactly what `jobKey` names, which is why `jobKey` is the dependency.
     void simulator.run(consumer, job).then((outcome) => {
       if (!live || outcome.status === "superseded") return;
-      setComputed({ jobKey, comparison: outcome.status === "done" ? outcome.result : COULD_NOT_COMPARE });
+      const comparison = outcome.status === "done" ? outcome.result : outcome.status === "timed_out" ? TIMED_OUT : COULD_NOT_COMPARE;
+      setComputed({ jobKey, comparison });
     });
     return () => {
       live = false;

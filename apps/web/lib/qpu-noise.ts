@@ -209,7 +209,10 @@ export type NoisyPreviewUnavailable =
   | "no_figures"
   | "unparsable"
   | "qubit_limit"
-  | "operation_limit";
+  | "operation_limit"
+  /** The simulator worker did not answer within the job's time budget
+   * (simulator-client.ts), so it was stopped rather than left to stall the page. */
+  | "timed_out";
 
 export type NoisyPreview =
   | {

@@ -874,6 +874,10 @@ export function StudioWorkspace({ artifactId, newDraft = false, exampleId, atlas
       }, limits);
       const outcome = await simulator.run("studio-cpu-run", { kind: "cpu_counts", circuit: plan.circuit, shots: plan.shots, seed: plan.seed });
       if (outcome.status === "superseded") return;
+      if (outcome.status === "timed_out") {
+        setMessage(copy.cpuSimulationTimedOut);
+        return;
+      }
       if (outcome.status === "failed") throw new Error(outcome.error);
       const record = cpuSimulationRecord(plan, outcome.result);
       if (!saveCpuSimulationRecord(record)) {

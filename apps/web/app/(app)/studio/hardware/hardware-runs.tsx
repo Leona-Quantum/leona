@@ -34,6 +34,10 @@ const PAGE_SIZE = 25;
  * stored program, which is what `unparsable` already tells the reader. */
 const COULD_NOT_COMPARE: IdealComparison = { status: "unavailable", reason: "unparsable" };
 
+/** A comparison the simulator stopped at its time budget. Recorded like any
+ * other answer, so the page moves on to the next run and never asks again. */
+const TIMED_OUT: IdealComparison = { status: "unavailable", reason: "timed_out" };
+
 export function HardwareRuns({ locale, limits }: { locale: PublicLocale; limits: CpuSimulationLimits }) {
   const copy = WORKSPACE_COPY[locale].hardwareRuns;
   const studioCopy = WORKSPACE_COPY[locale].studio;
@@ -99,8 +103,12 @@ export function HardwareRuns({ locale, limits }: { locale: PublicLocale; limits:
       order,
       isCached: (id) => comparisonsRef.current.has(id),
       compute: (item) =>
-        simulator.run(consumer, compareRunJob(item, limits)).then((outcome) =>
-          outcome.status === "done" ? outcome.result : outcome.status === "failed" ? COULD_NOT_COMPARE : null),
+        simulator.run(consumer, compareRunJob(item, limits)).then((outcome) => {
+          if (outcome.status === "done") return outcome.result;
+          if (outcome.status === "failed") return COULD_NOT_COMPARE;
+          if (outcome.status === "timed_out") return TIMED_OUT;
+          return null;
+        }),
       onResult: (id, comparison) => {
         // Written to the ref at once as well as to state, so a restarted worker
         // that runs before this render commits still sees it as done.
