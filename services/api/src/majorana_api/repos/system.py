@@ -506,6 +506,23 @@ async def find_membership(
     )
 
 
+async def find_live_workspace(session: AsyncSession, *, workspace_id: Any) -> Workspace | None:
+    """The workspace row, if it exists and has not been soft-deleted.
+
+    Pre-Scope like `find_membership` above, and here for the same reason that one is:
+    a personal access token names the workspace it acts in, and the auth layer has to
+    check that workspace is still there before a Scope can be built from it. The query
+    belongs in this module because `scripts/check_raw_queries.py` allows SQL only in
+    the repository layer — `auth/deps.py` is deliberately outside it, which is the
+    rule that sent this function here rather than leaving it inline where it is used.
+    """
+    return (
+        await session.execute(
+            select(Workspace).where(Workspace.id == workspace_id, Workspace.deleted_at.is_(None))
+        )
+    ).scalar_one_or_none()
+
+
 @dataclass(frozen=True)
 class ActiveWorkspace:
     """The tenant a request acts in, and the caller's role in it."""

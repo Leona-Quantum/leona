@@ -7,6 +7,7 @@ caller sends, and that adding the switch did not quietly open a second way in.
 """
 
 import inspect
+import typing
 
 import pytest
 from majorana_contracts.enums import Role
@@ -133,13 +134,47 @@ def test_no_route_accepts_a_caller_supplied_scope():
 
 
 def test_get_scope_reads_no_request_input():
-    """The dependency takes an identity, a session, and server-side settings
-    (ai-ops#143: `settings` arms the RLS GUCs via `_set_rls_context`, which
-    reads `Settings.rls_enforced` — process configuration, not a Request, not
-    a header, not a query parameter). So there is still no value a caller can
-    send that changes which workspace their request acts in."""
+    """The dependency takes an identity, a session, server-side settings, and a
+    verified credential — and still nothing a caller can choose the value of.
+
+    `settings` arms the RLS GUCs via `_set_rls_context`, which reads
+    `Settings.rls_enforced`: process configuration, not a Request, not a header, not
+    a query parameter (ai-ops#143).
+
+    `token` is the personal access token this request presented, already resolved by
+    `get_verified_token` (ai-ops 362). It is the one parameter that CAN change which
+    workspace a request acts in, so it is worth saying exactly why it does not break
+    the rule this test is here to keep:
+
+      * it is not a value the caller supplies. It is a row this service issued, found
+        by SHA-256 of the presented secret — edit any byte of it and the digest misses
+        and the request is 401, so a caller cannot steer it to a different workspace;
+      * the workspace it names was fixed by the ACCOUNT HOLDER at mint, from their own
+        scope, and `CreateTokenRequest` has no workspace field to have set it from
+        anything else;
+      * it is re-validated against `memberships` on every request, so it grants nothing
+        that access already revoked would not also revoke.
+
+    What the rule forbids is a request that TELLS this function which tenant to act in.
+    A credential that names one it was issued for is a different thing, and it is
+    refused outright — never silently widened to another workspace — when it no longer
+    resolves (`_token_scope`).
+
+    The parameter is a `Depends(get_presented_token)` rather than a bare `Request` on
+    purpose, and that is not cosmetic: a `Request` parameter here would be resolved in
+    declaration order, possibly before `get_identity` had verified anything, and would
+    then answer `None` for a valid token — giving an automation the browser's scope.
+    """
     params = inspect.signature(deps.get_scope).parameters
-    assert set(params) == {"identity", "session", "settings"}
+    assert set(params) == {"identity", "session", "settings", "token"}
+    # The credential comes from the dependency that waits on identity, never straight
+    # off the request. If this ever becomes `Request`, the ordering bug above is back.
+    [marker] = [
+        meta
+        for meta in typing.get_args(params["token"].annotation)[1:]
+        if hasattr(meta, "dependency")
+    ]
+    assert marker.dependency is deps.get_presented_token
 
 
 def test_switch_refuses_extra_fields():

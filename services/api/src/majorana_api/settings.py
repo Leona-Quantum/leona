@@ -12,6 +12,7 @@ from .rate_limit import (
     DEFAULT_ANON_LIMIT,
     DEFAULT_AUTH_FAILURE_LIMIT,
     DEFAULT_COMMENT_LIMIT,
+    DEFAULT_TOKEN_LIMIT,
     DEFAULT_TRUSTED_LIMIT,
 )
 from .tiers import TIER_ALLOWLIST_ENV, parse_developer_emails
@@ -242,6 +243,27 @@ class Settings:
     #: `rate_limit.py` says why the default is what it is). `0` disables it,
     #: the same escape hatch as the limits above.
     comment_rate_limit_per_minute: int = DEFAULT_COMMENT_LIMIT
+    #: Requests one personal access token may make per minute
+    #: (`DEFAULT_TOKEN_LIMIT` in `rate_limit.py` says why the default is what it
+    #: is). `0` disables it, the same escape hatch as the limits above.
+    token_rate_limit_per_minute: int = DEFAULT_TOKEN_LIMIT
+    #: Whether personal access tokens work at all (`MAJORANA_PERSONAL_ACCESS_TOKENS`).
+    #:
+    #: **Default OFF, and it ships that way deliberately.** A personal access token is
+    #: a new credential type, so `plans/rebuild/05-security.md` §1a binds it and its §2
+    #: release gate applies to the execution/boundary lane. Three of that gate's items
+    #: are met by the code this flag guards — the authz rows, the logs-are-token-free
+    #: check and the gitleaks rule — and one is NOT: the k6 abuse run against the
+    #: per-token ceiling, which needs a deployment to run against and has not been
+    #: done. A gate item that cannot be ticked is not a reason to hold the code out of
+    #: review; it is a reason the code must not be reachable, which is what this is.
+    #:
+    #: Off, `POST/GET/DELETE /v1/tokens` answer 404 (not 403: a feature that does not
+    #: exist here should not advertise that it exists elsewhere) and a `lq_pat_` bearer
+    #: is refused at the auth dependency before any lookup, so no token can be minted
+    #: and none that somehow exists can be used. Flipping it on is the owner's, after
+    #: the k6 run — the same shape as `infra/news.json`'s `renderer_deploy`.
+    personal_access_tokens_enabled: bool = False
 
     def __post_init__(self) -> None:
         if self.local_dev_auth and self.environment != "development":
@@ -332,4 +354,11 @@ class Settings:
             comment_rate_limit_per_minute=_int_env(
                 "COMMENT_RATE_LIMIT_PER_MINUTE", DEFAULT_COMMENT_LIMIT
             ),
+            token_rate_limit_per_minute=_int_env(
+                "TOKEN_RATE_LIMIT_PER_MINUTE", DEFAULT_TOKEN_LIMIT
+            ),
+            personal_access_tokens_enabled=os.environ.get("MAJORANA_PERSONAL_ACCESS_TOKENS", "")
+            .strip()
+            .lower()
+            in {"1", "true", "yes"},
         )

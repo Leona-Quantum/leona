@@ -179,6 +179,21 @@ DEFAULT_TRUSTED_LIMIT = 20_000
 #: exactly twenty.
 DEFAULT_COMMENT_LIMIT = 20
 
+#: Requests one PERSONAL ACCESS TOKEN may make per minute (proposal 7 Phase B, owner
+#: ruling ai-ops 362). A fourth independent bucket, for the same reason the comment
+#: limiter is a third: its subject is a credential, not an address and not an account.
+#:
+#: Chosen against what the feature is FOR. An editor plugin or an MCP client asking
+#: the Atlas a question, starting a run and polling it does tens of requests a minute
+#: at its busiest; a script that has got into a loop, or somebody walking the catalog
+#: with a stolen token, does thousands. 600 sits an order of magnitude above the first
+#: and two below the second, so it bounds abuse without any real integration ever
+#: meeting it. Per token rather than per account on purpose: one runaway script must
+#: not lock its owner out of their other automations.
+#:
+#: `0` disables it, the same escape hatch the three limiters above have.
+DEFAULT_TOKEN_LIMIT = 600
+
 #: Presented by our own server-side renderer to prove it is not an anonymous
 #: caller. Never sent from a browser: the value is a server-only secret, and
 #: `apps/web/lib/repository-source.ts` — the only sender — is imported solely by

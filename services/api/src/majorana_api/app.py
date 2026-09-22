@@ -41,6 +41,7 @@ from .routes.billing import router as billing_router
 from .routes.catalog import router as catalog_router
 from .routes.comments import router as comments_router
 from .routes.me import router as me_router
+from .routes.tokens import router as tokens_router
 from .routes.news import router as news_router
 from .routes.courses import router as courses_router
 from .routes.notebooks import router as notebooks_router
@@ -221,6 +222,21 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         limit=app.state.settings.comment_rate_limit_per_minute,
         bucket="comment posting",
         warn_thresholds=(),
+    )
+    # Per personal access TOKEN — not per address and not per account. Consulted by
+    # `auth/deps.py::_meter_token` rather than by a middleware, because the token is
+    # not known until it has been resolved, and a middleware that reached for it
+    # would be resolving credentials twice. Keyed on the token's id, never on the
+    # secret: a limiter key can reach a log line, and the id is already stored.
+    #
+    # Warning thresholds ARE on, unlike the comment limiter's. One person hitting
+    # their own posting ceiling is nobody's business; a credential hitting its
+    # ceiling is either a loop we shipped or a token somebody else is holding, and
+    # both are worth a look.
+    app.state.token_limiter = FixedWindowLimiter(
+        limit=app.state.settings.token_rate_limit_per_minute,
+        bucket="personal access token",
+        warn_hint="check whether an integration is looping, or the token is compromised.",
     )
 
     @app.middleware("http")
@@ -518,6 +534,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         return {"ok": True}
 
     app.include_router(me_router, prefix="/v1")
+    app.include_router(tokens_router, prefix="/v1")
     app.include_router(news_router, prefix="/v1")
     app.include_router(artifacts_router, prefix="/v1")
     app.include_router(runs_router, prefix="/v1")

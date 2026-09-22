@@ -198,3 +198,38 @@ id = "generic-api-key"
     '''(?i)token\s*=\s*"abcdef0123456789abcdef"''',
   ]
 
+
+[[rules]]
+# Leona personal access tokens (proposal 7 Phase B, owner ruling ai-ops 362).
+#
+# ## Why a DETECTION rule in a file that is otherwise suppressions
+#
+# Everything above narrows the default rules so the gate can be met. This is the
+# other direction: a credential this project ISSUES, which no built-in rule knows
+# about. `05-security.md` §2 asks for the gitleaks rule as part of the release gate
+# for a new credential type, and the plan for Phase B names it outright.
+#
+# A token is `lq_pat_` followed by `secrets.token_urlsafe(32)` — 43 characters of
+# base64url, so 256 bits. The prefix exists precisely so this rule (and GitHub's
+# own secret scanning, which matches the same way) can recognise one: without it a
+# leaked token is 50 characters that look like every other opaque string, and the
+# scan that would catch it is the one that cannot be written.
+#
+# ## The shape, and why the length is pinned
+#
+# `{43}` rather than `{20,}`: the generator's output length is fixed, so pinning it
+# is free here and costs an attacker the ability to hide a real token inside a
+# longer plausible-looking string. `\b` on the tail so a token embedded in a URL or
+# a JSON value still matches.
+#
+# ## The control
+#
+# `services/api/tests/test_token_access.py::test_the_gitleaks_rule_matches_a_real_token`
+# mints a token through the real generator and asserts this regex matches it, and
+# that it does NOT match the prefix alone or a truncated one. A detection rule
+# nobody has watched fire is a rule that may match nothing at all, and this one
+# guards a credential that by design exists in no other scanner's dictionary.
+id = "leona-personal-access-token"
+description = "Leona Quantum personal access token"
+regex = '''lq_pat_[A-Za-z0-9_-]{43}\b'''
+keywords = ["lq_pat_"]
