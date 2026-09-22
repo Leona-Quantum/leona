@@ -42,6 +42,7 @@ from .models import (
     QpuJobStatus,
     QpuProviderKey,
     QpuSubmissionBlockReason,
+    reported_backend_name,
 )
 from .pricing import estimate as rate_card_estimate
 from .provider import QpuDisabledError
@@ -160,6 +161,11 @@ class IbmRuntimeProvider:
             status=_STATUS_MAP.get(str(job.status()), QpuJobStatus.QUEUED),
             submitted_at=datetime.now(UTC).isoformat(),
             source_fingerprint=request.source_fingerprint,
+            # The backend `least_busy` returned is the one the circuit was
+            # transpiled for and the sampler ran on, so its name is the machine
+            # this job is on. Read here because nowhere later knows it: the
+            # record's `device_id` is the catalog entry, not the processor.
+            backend_name=reported_backend_name(getattr(backend, "name", None)),
         )
 
     def _service(self):

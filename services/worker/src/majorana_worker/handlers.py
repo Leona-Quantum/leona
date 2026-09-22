@@ -3066,6 +3066,11 @@ async def handle_qpu_run(
             record.id,
             QpuRunStatus.RUNNING,
             provider_job_id=submitted.provider_job_id,
+            # Which physical machine the job went to (migration 0065). Written
+            # here, with the job id, because submit is the only moment the
+            # adapter holds the backend it chose; None when the provider did not
+            # name one, and the column stays NULL rather than guessed.
+            backend_name=submitted.backend_name,
         )
         if credential is not None:
             # After the provider accepted it, not before. A submit that IBM

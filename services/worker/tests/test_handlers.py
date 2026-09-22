@@ -1713,6 +1713,39 @@ async def test_qpu_run_submits_a_queued_record_and_schedules_the_poll(monkeypatc
     assert session.commits == 2
 
 
+async def test_qpu_run_records_the_backend_the_provider_ran_the_job_on(monkeypatch):
+    """Migration 0065. The machine is written in the SAME transition as the
+    provider job id, because submit is the only moment the adapter knows it;
+    a provider that names no machine leaves it None, never a guess."""
+    from majorana_qpu import QpuJobRecord, QpuJobStatus, QpuProviderKey
+
+    monkeypatch.setattr(handlers, "submission_block_reason", lambda **_: None)
+
+    for reported in ("ibm_brisbane", None):
+        record = _qpu_record("queued")
+        captured = _patch_qpu_repo(monkeypatch, record)
+
+        class FakeProvider:
+            def submit(self, request, reported=reported):
+                return QpuJobRecord(
+                    provider=QpuProviderKey.IBM,
+                    provider_job_id="prov-123",
+                    device_id=request.device_id,
+                    shots=request.shots,
+                    status=QpuJobStatus.QUEUED,
+                    source_fingerprint=request.source_fingerprint,
+                    backend_name=reported,
+                )
+
+        await handlers.handle_qpu_run(
+            _FakeQpuSession(), _qpu_payload(str(record.id)), provider=FakeProvider()
+        )
+
+        assert captured["transition"]["status"].value == "running"
+        assert captured["transition"]["provider_job_id"] == "prov-123"
+        assert captured["transition"]["backend_name"] == reported
+
+
 async def test_qpu_run_poll_completes_the_record_with_raw_counts(monkeypatch):
     from majorana_qpu import QpuJobRecord, QpuJobStatus, QpuProviderKey
 

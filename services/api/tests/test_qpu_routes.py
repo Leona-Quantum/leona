@@ -312,6 +312,7 @@ async def test_submission_with_open_gates_writes_the_record_and_enqueues(monkeyp
             provider=kwargs["provider"],
             device_id=kwargs["device_id"],
             provider_job_id=None,
+            backend_name=None,
             shots=kwargs["shots"],
             status="queued",
             source_fingerprint=kwargs["source_fingerprint"],
@@ -426,3 +427,151 @@ async def test_the_gate_is_closed_when_the_rows_key_has_been_rotated_away(monkey
     response = await qpu_routes.qpu_submission_gate(scope=_scope(), session=_RowFromTheRetiredKey())
     assert response.submission_available is True
     assert response.blocked_reason is None
+
+
+# ----------------------------------------------------------------- run history
+
+
+def _history_row(scope, *, fingerprint: str = "fnv1a-deadbeef", backend_name=None):
+    """A qpu_runs row as the repository returns it, with every field the
+    history item serializes. A missing attribute here is a 500 in production,
+    which is the failure a double with too few fields would hide."""
+    import datetime as dt
+    import uuid as uuid_module
+    from types import SimpleNamespace
+
+    return SimpleNamespace(
+        id=uuid_module.uuid4(),
+        workspace_id=scope.workspace_id,
+        user_id=scope.user_id,
+        artifact_version_id=None,
+        provider="ibm",
+        device_id="ibm.open_plan",
+        provider_job_id="job-1",
+        backend_name=backend_name,
+        shots=128,
+        status="done",
+        source_fingerprint=fingerprint,
+        qasm="OPENQASM 3.0;",
+        estimate_basis="free_tier_allowance",
+        estimated_total_usd=None,
+        rate_source="https://example.invalid/rates",
+        rate_confirmed_on="2026-09-22",
+        raw_counts={"0": 60, "1": 68},
+        error=None,
+        submitted_at=dt.datetime.now(dt.UTC),
+        completed_at=dt.datetime.now(dt.UTC),
+        created_at=dt.datetime.now(dt.UTC),
+    )
+
+
+def test_run_history_is_a_scoped_get():
+    assert ("/qpu/runs", "GET") in _routes()
+    assert "scope" in qpu_routes.qpu_run_history.__annotations__
+
+
+async def test_run_history_passes_the_callers_scope_and_clamps_the_page(monkeypatch):
+    """The route names no workspace of its own; the repository gets the caller's
+    scope object itself, and the page size is clamped the way every list route
+    in this API clamps it."""
+    scope = _scope()
+    calls: list[dict] = []
+
+    async def fake_list(scope_arg, session_arg, **kwargs):
+        calls.append({"scope": scope_arg, **kwargs})
+        return []
+
+    monkeypatch.setattr(qpu_routes.qpu_runs_repo, "list_records", fake_list)
+
+    for asked, used in ((0, 1), (-5, 1), (7, 7), (10_000, qpu_routes.QPU_RUN_PAGE_MAX)):
+        await qpu_routes.qpu_run_history(scope=scope, session=object(), limit=asked)
+        assert calls[-1]["limit"] == used
+        assert calls[-1]["scope"] is scope
+        assert calls[-1]["source_fingerprint"] is None
+
+
+async def test_run_history_returns_a_cursor_only_when_the_page_is_full(monkeypatch):
+    scope = _scope()
+    rows = [_history_row(scope, backend_name="ibm_brisbane"), _history_row(scope)]
+
+    async def fake_list(scope_arg, session_arg, *, cursor, limit, source_fingerprint):
+        return rows[:limit]
+
+    monkeypatch.setattr(qpu_routes.qpu_runs_repo, "list_records", fake_list)
+
+    full = await qpu_routes.qpu_run_history(scope=scope, session=object(), limit=2)
+    assert [item.id for item in full.items] == [row.id for row in rows]
+    assert full.next_cursor == rows[-1].id
+    # The history item carries the program and the machine; the ideal is
+    # computed from exactly this text, and grouping by machine reads this field.
+    assert full.items[0].qasm == "OPENQASM 3.0;"
+    assert full.items[0].backend_name == "ibm_brisbane"
+    assert full.items[1].backend_name is None
+
+    short = await qpu_routes.qpu_run_history(scope=scope, session=object(), limit=5)
+    assert short.next_cursor is None
+
+
+def _history_client(monkeypatch, scope):
+    import httpx
+    from majorana_api.app import create_app
+    from majorana_api.auth import deps as auth_deps
+    from majorana_api.settings import Settings
+
+    app = create_app(
+        Settings(
+            workos_client_id="client_test",
+            workos_jwt_issuer="https://test.invalid",
+            workos_jwks_url="https://test.invalid/jwks",
+            web_origin="http://localhost:3000",
+        )
+    )
+    app.dependency_overrides[auth_deps.get_scope] = lambda: scope
+    app.dependency_overrides[auth_deps.get_session] = lambda: object()
+    return httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test")
+
+
+async def test_qpu_run_history_is_reachable_beside_the_single_record_read(monkeypatch):
+    """One real request each, through the real router, rather than reasoning
+    about route order. `GET /v1/qpu/runs` must reach the list (a 422 here would
+    mean `{record_id}` claimed it and failed to parse "runs"), and
+    `GET /v1/qpu/runs/{id}` must still reach the single-record read."""
+    scope = _scope()
+    row = _history_row(scope, backend_name="ibm_torino")
+    seen: dict[str, object] = {}
+
+    async def fake_list(scope_arg, session_arg, *, cursor, limit, source_fingerprint):
+        seen["list"] = {"cursor": cursor, "limit": limit, "fingerprint": source_fingerprint}
+        return [row]
+
+    async def fake_get(scope_arg, session_arg, record_id):
+        seen["get"] = record_id
+        return row
+
+    monkeypatch.setattr(qpu_routes.qpu_runs_repo, "list_records", fake_list)
+    monkeypatch.setattr(qpu_routes.qpu_runs_repo, "get_record", fake_get)
+
+    async with _history_client(monkeypatch, scope) as client:
+        listed = await client.get(
+            "/v1/qpu/runs", params={"limit": 3, "source_fingerprint": "fnv1a-deadbeef"}
+        )
+        single = await client.get(f"/v1/qpu/runs/{row.id}")
+        bad_cursor = await client.get("/v1/qpu/runs", params={"cursor": "not-a-uuid"})
+        blank_fingerprint = await client.get("/v1/qpu/runs", params={"source_fingerprint": ""})
+
+    assert listed.status_code == 200, listed.text
+    body = listed.json()
+    assert [item["id"] for item in body["items"]] == [str(row.id)]
+    assert body["items"][0]["backend_name"] == "ibm_torino"
+    assert body["items"][0]["qasm"] == "OPENQASM 3.0;"
+    assert body["next_cursor"] is None
+    assert seen["list"] == {"cursor": None, "limit": 3, "fingerprint": "fnv1a-deadbeef"}
+
+    assert single.status_code == 200, single.text
+    assert single.json()["backend_name"] == "ibm_torino"
+    # The single-record shape is unchanged: it never carried the program.
+    assert "qasm" not in single.json()
+    assert seen["get"] == row.id
+
+    assert bad_cursor.status_code == 422
+    assert blank_fingerprint.status_code == 422

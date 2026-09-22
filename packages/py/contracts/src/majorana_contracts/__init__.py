@@ -392,7 +392,10 @@ from .lifecycle import (
 # additive/widening, and every existing Qapp still reports a non-null
 # created_by_run_id. QappRangeSmoke is unchanged. New route-local response shapes
 # (version history, activity, usage, rollback) are not contracts models.
-CONTRACTS_VERSION = "2.23.0"
+# 2.24.0: Proposal 5, increment 2. QpuRunRecord gains optional `backend_name`, the
+# physical machine the provider ran the job on (migration 0065). Additive: it
+# defaults to None, and None is also its value for every run recorded before it.
+CONTRACTS_VERSION = "2.24.0"
 
 __all__ = [
     "TextAnswer",

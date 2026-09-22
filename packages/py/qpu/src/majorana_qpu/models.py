@@ -131,6 +131,31 @@ class QpuRunJobPayload(BaseModel):
     source_fingerprint: str
 
 
+#: Longest backend name the record keeps; `qpu_runs.ck_qpu_runs_backend_name`
+#: (migration 0065) enforces the same bound. IBM's names are short
+#: (`ibm_brisbane`), so this only ever refuses something that is not a name.
+MAX_BACKEND_NAME_CHARS = 120
+
+
+def reported_backend_name(value: object) -> str | None:
+    """The provider's backend name if it reported a usable one, else None.
+
+    Never raises, and that is the point of it. It runs on the submit path
+    AFTER the provider has accepted the job, and the worker writes its result in
+    the same transition that records the provider job id. A name that failed
+    validation there would lose the job id of a job that is already running and
+    billing, so anything that is not a plain, non-blank string within the
+    column's bound becomes None: "not reported", which is true. Nothing is
+    truncated or tidied into a name the provider did not send.
+    """
+    if not isinstance(value, str):
+        return None
+    name = value.strip()
+    if not name or len(name) > MAX_BACKEND_NAME_CHARS:
+        return None
+    return name
+
+
 class QpuJobRecord(BaseModel):
     """Attestation-first job record: provider job id, device, shots, and the
     raw counts exactly as returned — never averaged or corrected in place."""
@@ -148,3 +173,9 @@ class QpuJobRecord(BaseModel):
     source_fingerprint: str
     raw_counts: dict[str, int] | None = None
     error: str | None = None
+    #: The physical machine the provider handed the job to, as it named it.
+    #: `device_id` is Leona's catalog entry (`ibm.open_plan`); IBM picks the
+    #: machine itself with `least_busy`, so this is the only place that choice
+    #: is recorded. Set by submit() through `reported_backend_name`; None when
+    #: the provider did not say.
+    backend_name: str | None = None

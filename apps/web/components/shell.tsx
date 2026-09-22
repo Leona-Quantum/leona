@@ -16,7 +16,7 @@ import {
   PlusIcon,
   QappsIcon,
   SearchIcon,
-  GaugeIcon, SettingsIcon, SignOutIcon,
+  ChipIcon, GaugeIcon, SettingsIcon, SignOutIcon,
   StudioIcon,
   TrashIcon,
 } from "./icons";
@@ -1201,6 +1201,14 @@ function WorkspaceSidebar({
             <LibraryIcon size={16} />
             <span className="mj-sidebar-copy">{copy.library}</span>
           </Link>
+          {/* Not in the public preview: the demo has no workspace, so it has no
+              hardware runs to list and the page would only ever be empty. */}
+          {!demoMode ? (
+            <Link prefetch={false} className="mj-sidebar-library-link" href="/studio/hardware" aria-label={copy.hardwareRuns} title={copy.hardwareRuns}>
+              <ChipIcon size={16} />
+              <span className="mj-sidebar-copy">{copy.hardwareRuns}</span>
+            </Link>
+          ) : null}
 
           {pinnedArtifacts.length ? (
             <>
