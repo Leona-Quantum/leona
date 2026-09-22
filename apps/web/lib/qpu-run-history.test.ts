@@ -14,12 +14,15 @@ import {
   appendRunPage,
   applyRunUpdates,
   compareRun,
+  compareRunJob,
   groupRunsByBackend,
   nextMacrotask,
   readRun,
   unfinishedRunIds,
   workThroughComparisons,
 } from "./qpu-run-history.ts";
+import type { IdealComparison } from "./qpu-ideal.ts";
+import { createSimulatorContext, runSimulatorJob } from "./simulator-protocol.ts";
 import { sourceFingerprint } from "./studio-simulation.ts";
 
 const BELL_QASM = [
@@ -222,6 +225,77 @@ test("stopping cancels the pending task and computes nothing more", () => {
   assert.equal(scheduler.pending(), 0);
   scheduler.flushOne();
   assert.deepEqual(computed, [order[0].id]);
+});
+
+/** A comparison answered later, the way the simulator worker answers. */
+function deferred() {
+  let resolve!: (comparison: IdealComparison | null) => void;
+  const promise = new Promise<IdealComparison | null>((settle) => {
+    resolve = settle;
+  });
+  return { promise, resolve };
+}
+
+const settle = () => new Promise<void>((resolve) => setImmediate(resolve));
+
+function asyncWorker(order: QpuRunHistoryItem[]) {
+  const scheduler = manualScheduler();
+  const asked: { id: string; answer: ReturnType<typeof deferred> }[] = [];
+  const results = new Map<string, IdealComparison>();
+  const stop = workThroughComparisons({
+    order,
+    isCached: (id) => results.has(id),
+    compute: (item) => {
+      const answer = deferred();
+      asked.push({ id: item.id, answer });
+      return answer.promise;
+    },
+    onResult: (id, comparison) => results.set(id, comparison),
+    schedule: scheduler.schedule,
+  });
+  return { scheduler, asked, results, stop };
+}
+
+const NO_COUNTS: IdealComparison = { status: "unavailable", reason: "no_counts" };
+
+test("an answer that comes later is recorded, and only then is the next run planned", async () => {
+  const order = [run(), run()];
+  const { scheduler, asked, results } = asyncWorker(order);
+  scheduler.flushOne();
+  assert.deepEqual(asked.map((entry) => entry.id), [order[0].id]);
+  // The simulator holds one of this page's comparisons at a time: nothing
+  // more is scheduled while the first is being worked out.
+  assert.equal(scheduler.pending(), 0);
+  asked[0].answer.resolve(NO_COUNTS);
+  await settle();
+  assert.deepEqual(results.get(order[0].id), NO_COUNTS);
+  assert.equal(scheduler.pending(), 1);
+  scheduler.flushOne();
+  assert.deepEqual(asked.map((entry) => entry.id), [order[0].id, order[1].id]);
+});
+
+test("an answer that lands after stopping is dropped, and a withdrawn answer ends the loop", async () => {
+  const stopped = asyncWorker([run(), run()]);
+  stopped.scheduler.flushOne();
+  stopped.stop();
+  stopped.asked[0].answer.resolve(NO_COUNTS);
+  await settle();
+  assert.equal(stopped.results.size, 0);
+  assert.equal(stopped.scheduler.pending(), 0);
+
+  const withdrawn = asyncWorker([run(), run()]);
+  withdrawn.scheduler.flushOne();
+  withdrawn.asked[0].answer.resolve(null);
+  await settle();
+  assert.equal(withdrawn.results.size, 0);
+  assert.equal(withdrawn.scheduler.pending(), 0, "nothing more is planned for a loop whose ask was withdrawn");
+});
+
+test("the worker job for a run is exactly compareRun's comparison", () => {
+  const item = run();
+  const direct = compareRun(item, TIER_LIMITS.free);
+  assert.equal(direct.status, "computed");
+  assert.deepEqual(runSimulatorJob(compareRunJob(item, TIER_LIMITS.free), createSimulatorContext()), direct);
 });
 
 test("the default scheduler prefers idle time and falls back to a zero timeout", async () => {

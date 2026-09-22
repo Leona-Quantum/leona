@@ -17,7 +17,7 @@ Everything goes through the same `/v1/notebooks` routes the web surface uses, so
 notebook edited here and one edited on leonaqt.com are the same object with the same
 version history. Configuration is two environment variables — never a token in a cell:
 
-    LEONA_API_URL    default https://api.leonaqt.com
+    LEONA_API_URL    default https://majorana-api-nikekeixtq-uw.a.run.app
     LEONA_API_TOKEN  a bearer token for the control plane
 
 The transport is stdlib `urllib` so the package adds no dependency; IPython is imported
@@ -39,7 +39,12 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-DEFAULT_API_URL = "https://api.leonaqt.com"
+#: The control plane's public address, the same one the website calls (its CSP
+#: `connect-src` names it). This was `https://api.leonaqt.com` until 2026-09-22, a name
+#: that has never resolved (NXDOMAIN, see rate_limit.py's note), so anyone who followed
+#: the docs and left LEONA_API_URL unset got a DNS error before their first request.
+#: If a vanity hostname is ever pointed at the API, change this and the docs together.
+DEFAULT_API_URL = "https://majorana-api-nikekeixtq-uw.a.run.app"
 Transport = Callable[[str, str, dict[str, str], bytes | None], tuple[int, bytes]]
 #: `() -> (cell_source, traceback_text) | None` — how `%nala fix` reads the last
 #: failure. `load_ipython_extension` binds this to the live shell; tests inject a

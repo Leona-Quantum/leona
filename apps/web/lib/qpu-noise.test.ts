@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
+  DeviceEstimateCache,
   PreparedCircuitCache,
   applyReadoutFlip,
   deviceEstimateFor,
@@ -421,4 +422,43 @@ test("device estimates are remembered per prepared circuit and per noise object"
   assert.equal(peekDeviceEstimate(prepared, sameFigures), undefined);
   // And a different circuit is a different entry.
   assert.equal(peekDeviceEstimate(prepareCircuitForPreview(BELL, LIMITS), noise), undefined);
+});
+
+test("estimates from the worker are remembered per circuit and per noise object, holding one distribution per circuit", () => {
+  const cache = new DeviceEstimateCache(2);
+  const one = device(profile("one", { one: 0.001, two: 0.01, readout: 0.02 }));
+  const two = device(profile("two", { one: 0.002, two: 0.02, readout: 0.03 }));
+  const key = preparedCircuitKey(BELL, LIMITS);
+  // Two structured clones of one ideal: equal numbers, different arrays, as
+  // two replies from the worker arrive.
+  const prepared = prepareCircuitForPreview(BELL, LIMITS);
+  const first = estimateDevice({ prepared, noise: one });
+  const second = estimateDevice({ prepared, noise: two });
+  assert.ok(first.status === "computed" && second.status === "computed");
+  const cloned = { ...second, ideal: Float64Array.from(second.ideal) };
+
+  assert.equal(cache.peek(key, one), undefined);
+  const keptFirst = cache.store(key, one, first);
+  const keptSecond = cache.store(key, two, cloned);
+  assert.equal(cache.peek(key, one), keptFirst);
+  assert.equal(cache.peek(key, two), keptSecond);
+  assert.ok(keptFirst.status === "computed" && keptSecond.status === "computed");
+  assert.equal(keptSecond.ideal, keptFirst.ideal, "the second device's estimate points at the first one's distribution");
+  assert.deepEqual({ ...keptSecond, ideal: null }, { ...cloned, ideal: null }, "nothing else about the estimate changes");
+
+  // Identity, not content: a refetched catalog's noise object is a new key.
+  assert.equal(cache.peek(key, structuredClone(one)), undefined);
+
+  // Least recently used circuits go first; peeking counts as use.
+  const ghz = qasm(3, ["h q[0];", "cx q[0], q[1];", "cx q[1], q[2];"]);
+  const wide = qasm(3, ["x q[0];", "x q[2];"]);
+  cache.store(preparedCircuitKey(ghz, LIMITS), one, estimateDevice({ prepared: prepareCircuitForPreview(ghz, LIMITS), noise: one }));
+  cache.peek(key, one);
+  cache.store(preparedCircuitKey(wide, LIMITS), one, estimateDevice({ prepared: prepareCircuitForPreview(wide, LIMITS), noise: one }));
+  assert.equal(cache.peek(preparedCircuitKey(ghz, LIMITS), one), undefined, "the least recently used circuit was evicted");
+  assert.ok(cache.peek(key, one));
+
+  // An unavailable estimate is remembered too, and holds no distribution.
+  const refused = { status: "unavailable" as const, reason: "unparsable" as const };
+  assert.equal(cache.store("not-a-circuit", one, refused), refused);
 });
