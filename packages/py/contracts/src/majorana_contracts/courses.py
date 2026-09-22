@@ -403,11 +403,17 @@ class GradebookEntry(_ResourceBase):
     #: The grading run, so a reader can be pointed at the attempt itself.
     run_id: UUID
     graded_at: datetime
-    #: This attempt was graded AFTER the module's due date. Strictly after: an
-    #: attempt graded at the due instant itself is on time, the way "due at 17:00"
-    #: is read. Always `False` for a module with no due date. It is about this, the
-    #: latest, attempt: a member who finished on time and tried again after the
-    #: deadline shows as late, because the gradebook shows the latest attempt.
+    #: Nothing this member did at this module was graded by its due date: their
+    #: FIRST attempt was graded after it. Strictly after: an attempt graded at the
+    #: due instant itself is on time, the way "due at 17:00" is read. Always
+    #: `False` for a module with no due date. Owner ruling ai-ops 364, option 1.
+    #:
+    #: It is deliberately not about the attempt the rest of this entry describes.
+    #: Somebody who finished on time and practised again after the deadline is not
+    #: late, though the score beside the flag is still that later attempt's, because
+    #: the gradebook shows where a member has got to. The converse follows and is
+    #: intended: an on-time 0 out of 3 followed by a late 3 out of 3 reads as 3 out
+    #: of 3 and not late.
     late: bool = False
 
 

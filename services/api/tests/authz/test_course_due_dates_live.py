@@ -154,7 +154,15 @@ async def _course(db, creator: Scope):
     return course, modules, version
 
 
-async def _grade(db, learner: Scope, version_id: uuid.UUID, *, at: dt.datetime):
+async def _grade(
+    db,
+    learner: Scope,
+    version_id: uuid.UUID,
+    *,
+    at: dt.datetime,
+    passed: int = 1,
+    failed: int = 0,
+):
     """One grading run and its `notebook.grades` event, graded at `at`.
 
     Both clocks are set by hand: every row here is written in ONE transaction, where
@@ -184,11 +192,17 @@ async def _grade(db, learner: Scope, version_id: uuid.UUID, *, at: dt.datetime):
             "version_id": str(version_id),
             "grades": {
                 "notebook_slug": "graded",
-                "cells": [{"id": "ex1", "status": "passed", "graded_by": "deterministic"}],
+                "cells": [
+                    {
+                        "id": "ex1",
+                        "status": "passed" if passed else "failed",
+                        "graded_by": "deterministic",
+                    }
+                ],
             },
-            "passed": 1,
-            "failed": 0,
-            "attempted": 1,
+            "passed": passed,
+            "failed": failed,
+            "attempted": passed + failed,
             "note": "",
         },
     )
@@ -389,6 +403,73 @@ async def test_late_and_missing_hold_their_boundary_on_timestamps_postgres_wrote
     assert past_it[nobody.user_id].missing_module_ids == [modules[0].id]
     for learner in (on_the_dot, after, before):
         assert past_it[learner.user_id].missing_module_ids == []
+
+
+async def test_practising_after_the_deadline_does_not_make_an_on_time_member_late(db):
+    """Owner ruling ai-ops 364, option 1: "Late only if there was no graded attempt by
+    the due time", with the latest score still the one shown.
+
+    Ana is graded before the deadline and tries again afterwards. Bo only ever tries
+    afterwards, twice. Under the rule as first built -- late follows the latest attempt
+    -- both would be late, because both of their latest attempts are past the due date.
+
+    Bo is the negative control, and he is the whole point of the pair: a change that
+    read the wrong instant, or dropped `late` altogether, would make Ana pass on its
+    own. Only Bo staying late says the mark still fires when nothing was on time.
+    """
+    creator = await _owner_scope(db, "teacher")
+    ana = await _co_member(db, creator, "ana")
+    bo = await _co_member(db, creator, "bo")
+    course, modules, version = await _course(db, creator)
+    await courses_repo.update_course(
+        creator, db, course.id, module_patches=[_parsed_patch(modules[0].id, DUE_IN_TOKYO)]
+    )
+    # On time and failing, then late and passing: the case the ruling calls out, where
+    # the mark and the score deliberately disagree.
+    await _grade(db, ana, version.id, at=DUE - dt.timedelta(hours=2), passed=0, failed=1)
+    ana_latest = await _grade(db, ana, version.id, at=DUE + dt.timedelta(hours=2))
+    await _grade(db, bo, version.id, at=DUE + dt.timedelta(minutes=1), passed=0, failed=1)
+    bo_latest = await _grade(db, bo, version.id, at=DUE + dt.timedelta(hours=3))
+
+    rows = {
+        row.user_id: row
+        for row in (await courses_repo.course_gradebook(creator, db, course.id, now=DUE + TICK)).rows
+    }
+    ana_entry = rows[ana.user_id].entries[0]
+    bo_entry = rows[bo.user_id].entries[0]
+
+    assert ana_entry.late is False
+    assert bo_entry.late is True
+    # Latest rather than best, unchanged: each row still shows the last attempt, so
+    # Ana's on-time failure reads as the pass she got afterwards.
+    assert (ana_entry.run_id, ana_entry.passed, ana_entry.failed) == (ana_latest.id, 1, 0)
+    assert (bo_entry.run_id, bo_entry.passed, bo_entry.failed) == (bo_latest.id, 1, 0)
+    # Neither is missing: a missing module is one with no attempt at all.
+    assert rows[ana.user_id].missing_module_ids == []
+    assert rows[bo.user_id].missing_module_ids == []
+
+
+async def test_one_members_on_time_attempt_does_not_clear_anothers_late_mark(db):
+    """The `late` window is partitioned by member AND module. A partition too wide --
+    by module alone -- would let Ana's on-time attempt clear Bo's mark, and the test
+    above could not tell, because there each member's own history explains their mark.
+    """
+    creator = await _owner_scope(db, "teacher")
+    ana = await _co_member(db, creator, "ana")
+    bo = await _co_member(db, creator, "bo")
+    course, modules, version = await _course(db, creator)
+    await courses_repo.update_course(
+        creator, db, course.id, module_patches=[_parsed_patch(modules[0].id, DUE_IN_TOKYO)]
+    )
+    await _grade(db, ana, version.id, at=DUE - dt.timedelta(hours=1))
+    await _grade(db, bo, version.id, at=DUE + dt.timedelta(hours=1))
+
+    rows = {
+        row.user_id: row
+        for row in (await courses_repo.course_gradebook(creator, db, course.id, now=DUE + TICK)).rows
+    }
+    assert rows[ana.user_id].entries[0].late is False
+    assert rows[bo.user_id].entries[0].late is True
 
 
 async def test_moving_the_due_date_moves_late_with_it(db):
