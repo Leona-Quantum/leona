@@ -214,11 +214,24 @@ def to_ipynb(
     # is unaffected: nothing a later solution computes can reach backward into a value
     # already printed. Found by Greptile on PR 959: the original guard cleared only the
     # replaced cell's own id.
+    #
+    # A cell the build DROPS counts as a replacement too. `for_learner` removes some cells
+    # outright (a quiz's `answer`, a hidden grader) rather than stubbing them, and those ran
+    # in the answer-key kernel just the same, so the cells after one are exactly as
+    # suspect as the cells after a stub. `cells_for_build` keeps the spec's order, so a
+    # gap in the authored ids before a cell means something above it was taken out.
     authored = {cell.id: cell.source for cell in spec.cells}
+    authored_order = [cell.id for cell in spec.cells]
     cells: list[dict[str, Any]] = []
     execution_count = 0
     redacted_from_here = False
+    next_authored = 0
     for cell in cells_for_build(spec, build):
+        if cell.id in authored:
+            position = authored_order.index(cell.id, next_authored)
+            if position > next_authored:
+                redacted_from_here = True
+            next_authored = position + 1
         if cell.source != authored.get(cell.id, cell.source):
             redacted_from_here = True
         if redacted_from_here:
