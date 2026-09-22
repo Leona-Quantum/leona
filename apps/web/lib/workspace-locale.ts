@@ -1239,7 +1239,7 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
       hardwarePreviewEstimated: "Estimated",
       hardwarePreviewGates: (two, one, qubits) =>
         `Gates counted as written: ${two} two-qubit, ${one} one-qubit. Qubits read out: ${qubits}.`,
-      hardwarePreviewFigures: (machine) => `Figures used for ${machine}`,
+      hardwarePreviewFigures: (machine) => `Figures used, as published for ${machine}:`,
       hardwarePreviewFigureLabel: (kind) => ({
         one_qubit: "One-qubit gate error",
         two_qubit: "Two-qubit gate error",
@@ -2279,7 +2279,7 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
       hardwarePreviewEstimated: "推定",
       hardwarePreviewGates: (two, one, qubits) =>
         `書かれたとおりに数えたゲート数: 2量子ビットゲート${two}個、1量子ビットゲート${one}個。読み出す量子ビット: ${qubits}個。`,
-      hardwarePreviewFigures: (machine) => `${machine}に使った数値`,
+      hardwarePreviewFigures: (machine) => `使った数値（${machine}の公表値）:`,
       hardwarePreviewFigureLabel: (kind) => ({
         one_qubit: "1量子ビットゲートのエラー率",
         two_qubit: "2量子ビットゲートのエラー率",

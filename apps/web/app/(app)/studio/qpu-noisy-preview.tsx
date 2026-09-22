@@ -126,7 +126,9 @@ export function QpuNoisyPreview({
           preview.tally.measuredQubits,
         )}
       </p>
-      <span className="mj-section-label">{copy.hardwarePreviewFigures(shown.machine)}</span>
+      {/* A note, not a .mj-section-label: that class uppercases, and a backend
+          name like ibm_miami is an identifier that must read as written. */}
+      <p className="mj-qpu-note">{copy.hardwarePreviewFigures(shown.machine)}</p>
       <ul className="mj-qpu-figures">
         {FIGURE_FIELDS.map(({ kind, field }) => (
           <li key={kind}>
