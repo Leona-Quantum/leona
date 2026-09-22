@@ -331,6 +331,25 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
     //: same way as the estimate directly above it on screen.
     hardwareSpendExhausted: (estimate: string, limit: string, spent: string) => string;
     hardwareSpendFreeTier: (estimate: string) => string;
+    //: The pre-submit noise estimate (lib/qpu-noise.ts). `access` is the
+    //: device's QpuAccess, because a free-queue run costs allowance, not money.
+    hardwarePreviewTitle: (access: string) => string;
+    hardwarePreviewComputing: string;
+    hardwarePreviewTvd: string;
+    hardwarePreviewUniform: string;
+    hardwarePreviewReading: (reading: string, share: string, shots: string) => string;
+    hardwarePreviewRange: (count: number, min: string, max: string, machine: string) => string;
+    hardwarePreviewEstimated: string;
+    hardwarePreviewGates: (two: string, one: string, qubits: number) => string;
+    hardwarePreviewFigures: (machine: string) => string;
+    hardwarePreviewFigureLabel: (kind: string) => string;
+    hardwarePreviewStatistic: (statistic: string) => string;
+    hardwarePreviewNotPublished: string;
+    hardwarePreviewFigureMeta: (statistic: string, date: string) => string;
+    hardwarePreviewSource: string;
+    hardwarePreviewMachines: string;
+    hardwarePreviewCaveat: string;
+    hardwarePreviewUnavailable: (reason: string) => string;
     verifySave: string;
     starting: string;
     bringYourOwn: string;
@@ -1260,6 +1279,39 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
         `Estimated at ${estimate}. Your plan includes ${limit} of hardware time weekly, and ${spent} is already committed. Free-queue devices and browser simulation stay available.`,
       hardwareSpendFreeTier: (estimate) =>
         `Estimated at ${estimate}. Billed hardware is not part of the free plan; free-queue devices and browser simulation stay available.`,
+      hardwarePreviewTitle: (access) => (access === "free_queue" ? "Before you use free time" : "Before you pay"),
+      hardwarePreviewComputing: "Working out what this device's published figures predict…",
+      hardwarePreviewTvd: "Expected distance from ideal",
+      hardwarePreviewUniform: "Random bits, for comparison",
+      hardwarePreviewReading: (reading, share, shots) => ({
+        ideal_near_uniform: `This circuit's ideal answer is already about as spread out as random bits, so at ${shots} shots a run cannot show much difference between a good device and noise.`,
+        closer_to_noise: `On these figures, the result would land ${share} of the way from the ideal answer to random bits. Past halfway it is closer to noise than to the answer, so it will likely be hard to tell apart from noise.`,
+        ideal_stands_out: `On these figures, the result would land ${share} of the way from the ideal answer to random bits. That is short of halfway, so the ideal answer should still stand out.`,
+      }[reading] ?? ""),
+      hardwarePreviewRange: (count, min, max, machine) =>
+        `The provider picks the machine when you submit. Across the ${count} machines it may pick from, the expected distance runs from ${min} to ${max}. The table uses the least favorable one, ${machine}.`,
+      hardwarePreviewEstimated: "Estimated",
+      hardwarePreviewGates: (two, one, qubits) =>
+        `Gates counted as written: ${two} two-qubit, ${one} one-qubit. Qubits read out: ${qubits}.`,
+      hardwarePreviewFigures: (machine) => `Figures used, as published for ${machine}:`,
+      hardwarePreviewFigureLabel: (kind) => ({
+        one_qubit: "One-qubit gate error",
+        two_qubit: "Two-qubit gate error",
+        readout: "Readout error",
+      }[kind] ?? kind),
+      hardwarePreviewStatistic: (statistic) => ({ median: "median", mean: "average", stated: "as published" }[statistic] ?? statistic),
+      hardwarePreviewNotPublished: "not published, left out",
+      hardwarePreviewFigureMeta: (statistic, date) => `(${statistic}, read ${date})`,
+      hardwarePreviewSource: "Source",
+      hardwarePreviewMachines: "Each machine",
+      hardwarePreviewCaveat: "This is an estimate from the vendor's published figures. It does not predict any single run. Gates are counted as written, but hardware with limited wiring adds gates to route a circuit, idle qubits decay, and any figure a vendor did not publish is left out. A real run will likely be noisier.",
+      hardwarePreviewUnavailable: (reason) => ({
+        not_gate_model: "This device runs analog programs, not gate circuits, so there is no gate-noise estimate for it.",
+        no_figures: "No published error figures are recorded for this device, so there is no estimate.",
+        unparsable: "This circuit uses gates or a measurement layout the in-browser simulator cannot read, so there is no estimate.",
+        qubit_limit: "This circuit is wider than your plan's browser simulation limit, so there is no estimate.",
+        operation_limit: "This circuit exceeds the browser operation limit, so there is no estimate.",
+      }[reason] ?? "No estimate could be computed for this circuit."),
       verifySave: "Verify & save",
       starting: "Starting…",
       bringYourOwn: "Save without running",
@@ -2305,6 +2357,39 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
         `見積もりは${estimate}です。プランの実機実行枠は週${limit}で、すでに${spent}を使用しています。無料キューとブラウザシミュレーションは引き続き利用できます。`,
       hardwareSpendFreeTier: (estimate) =>
         `見積もりは${estimate}です。有料の実機実行は無料プラン対象外です。無料キューとブラウザシミュレーションは引き続き利用できます。`,
+      hardwarePreviewTitle: (access) => (access === "free_queue" ? "無料枠を使う前に" : "支払う前に"),
+      hardwarePreviewComputing: "この実機の公表値から予想を計算しています…",
+      hardwarePreviewTvd: "理論値からの予想距離",
+      hardwarePreviewUniform: "比較: ランダムなビット列",
+      hardwarePreviewReading: (reading, share, shots) => ({
+        ideal_near_uniform: `この回路の理論上の結果は、もともとランダムなビット列とほぼ同じくらい散らばっています。${shots}ショットでは、性能の良い実機でもノイズとの違いはほとんど見えません。`,
+        closer_to_noise: `この数値では、結果は理論上の答えからランダムなビット列までの${share}の位置になります。半分を超えると答えよりノイズに近いため、ノイズと見分けにくい結果になる可能性が高いです。`,
+        ideal_stands_out: `この数値では、結果は理論上の答えからランダムなビット列までの${share}の位置になります。半分に届かないため、理論上の答えはまだ読み取れるはずです。`,
+      }[reading] ?? ""),
+      hardwarePreviewRange: (count, min, max, machine) =>
+        `実機は送信時にプロバイダーが選びます。選ばれる可能性のある${count}台では、予想距離は${min}から${max}です。表には最も条件の悪い${machine}の値を示しています。`,
+      hardwarePreviewEstimated: "推定",
+      hardwarePreviewGates: (two, one, qubits) =>
+        `書かれたとおりに数えたゲート数: 2量子ビットゲート${two}個、1量子ビットゲート${one}個。読み出す量子ビット: ${qubits}個。`,
+      hardwarePreviewFigures: (machine) => `使った数値（${machine}の公表値）:`,
+      hardwarePreviewFigureLabel: (kind) => ({
+        one_qubit: "1量子ビットゲートのエラー率",
+        two_qubit: "2量子ビットゲートのエラー率",
+        readout: "読み出しエラー率",
+      }[kind] ?? kind),
+      hardwarePreviewStatistic: (statistic) => ({ median: "中央値", mean: "平均値", stated: "公表値" }[statistic] ?? statistic),
+      hardwarePreviewNotPublished: "公表されていないため除外",
+      hardwarePreviewFigureMeta: (statistic, date) => `（${statistic}、${date}確認）`,
+      hardwarePreviewSource: "出典",
+      hardwarePreviewMachines: "実機ごとの予想距離",
+      hardwarePreviewCaveat: "これは実機メーカーが公表した数値にもとづく推定で、個々の実行を予測するものではありません。ゲートは書かれたとおりに数えていますが、配線の限られた実機では回路を配置するためにゲートが追加され、待機中の量子ビットも劣化します。公表されていない数値は除外しています。実際の実行はこれよりノイズが大きくなる可能性が高いです。",
+      hardwarePreviewUnavailable: (reason) => ({
+        not_gate_model: "この実機はゲート回路ではなくアナログのプログラムを実行するため、ゲートのノイズ見積もりはありません。",
+        no_figures: "この実機には公表されたエラー率の記録がないため、見積もりはありません。",
+        unparsable: "この回路はブラウザ内シミュレーションの対応範囲外のため、見積もりを計算できません。",
+        qubit_limit: "この回路は、お使いのプランのブラウザシミュレーション上限を超えているため、見積もりを計算できません。",
+        operation_limit: "この回路は操作数の上限を超えているため、見積もりを計算できません。",
+      }[reason] ?? "この回路の見積もりを計算できませんでした。"),
       verifySave: "検証して保存",
       starting: "開始中…",
       bringYourOwn: "実行せずに保存",
