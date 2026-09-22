@@ -5,7 +5,9 @@ import {
   applyReadoutFlip,
   estimateNoisyDistribution,
   idealWeight,
+  prepareCircuitForPreview,
   previewNoisyRun,
+  previewPreparedRun,
   tallyGates,
   totalVariationDistance,
   type NoisyPreview,
@@ -285,4 +287,15 @@ test("rows hold the largest outcomes of both distributions, largest first", () =
   }
   const shownEstimate = result.rows.reduce((sum, row) => sum + row.estimatedShare, 0);
   assert.ok(Math.abs(shownEstimate + result.otherEstimatedShare - 1) < 1e-9);
+});
+
+test("a circuit prepared once gives the same preview on every device as preparing it each time", () => {
+  const prepared = prepareCircuitForPreview(BELL, LIMITS);
+  for (const noise of [
+    device(profile("a", { one: 0.001, two: 0.01, readout: 0.02 })),
+    device(profile("b", { two: 0.004 }), profile("c", { two: 0.009, readout: 0.03 })),
+    { gate_model: false, machine_chosen_at_submit: false, profiles: [] },
+  ]) {
+    assert.deepEqual(previewPreparedRun({ prepared, noise, shots: 500 }), previewNoisyRun({ qasm: BELL, noise, shots: 500, limits: LIMITS }));
+  }
 });

@@ -243,6 +243,33 @@ export type NoisyPreview =
 const DEFAULT_MAX_ROWS = 6;
 const UNIFORM_TOLERANCE = 1e-12;
 
+/**
+ * The half of a preview that depends only on the circuit: parse, gate tally,
+ * and the ideal distribution. It is the expensive half (a full statevector
+ * simulation, 870 ms for 20 qubits and ~400 gates measured in Node, against
+ * 380 ms for all seven IBM profiles), while the device and the shot count
+ * change far more often than the circuit, so a caller computes this once per
+ * circuit and passes it to `previewPreparedRun` for each device.
+ */
+export type PreparedCircuit =
+  | { status: "prepared"; qubitCount: number; tally: GateTally; ideal: Float64Array }
+  | { status: "unavailable"; reason: "unparsable" | "qubit_limit" | "operation_limit" };
+
+export function prepareCircuitForPreview(qasm: string, limits: CpuSimulationLimits): PreparedCircuit {
+  const parsed = parseSubmittedCircuit(qasm, limits);
+  if (parsed.status === "unavailable") return parsed;
+  const { circuit } = parsed;
+  const tally = tallyGates(circuit);
+  if (!tally) return { status: "unavailable", reason: "unparsable" };
+  try {
+    return { status: "prepared", qubitCount: circuit.qubitCount, tally, ideal: idealProbabilities(circuit) };
+  } catch {
+    // The kernel throws on custom gates and angles outside its syntax. That
+    // is "cannot estimate", never an estimate from a partial circuit.
+    return { status: "unavailable", reason: "unparsable" };
+  }
+}
+
 export function previewNoisyRun(input: {
   qasm: string;
   noise: QpuPublishedNoise;
@@ -250,31 +277,29 @@ export function previewNoisyRun(input: {
   limits: CpuSimulationLimits;
   maxRows?: number;
 }): NoisyPreview {
-  const { qasm, noise, shots, limits, maxRows = DEFAULT_MAX_ROWS } = input;
+  const { qasm, noise, shots, limits, maxRows } = input;
+  if (!noise.gate_model) return { status: "unavailable", reason: "not_gate_model" };
+  return previewPreparedRun({ prepared: prepareCircuitForPreview(qasm, limits), noise, shots, maxRows });
+}
+
+export function previewPreparedRun(input: {
+  prepared: PreparedCircuit;
+  noise: QpuPublishedNoise;
+  shots: number;
+  maxRows?: number;
+}): NoisyPreview {
+  const { prepared, noise, shots, maxRows = DEFAULT_MAX_ROWS } = input;
   if (!noise.gate_model) return { status: "unavailable", reason: "not_gate_model" };
   const profiles = noise.profiles.filter(hasAnyFigure);
   if (profiles.length === 0) return { status: "unavailable", reason: "no_figures" };
-
-  const parsed = parseSubmittedCircuit(qasm, limits);
-  if (parsed.status === "unavailable") return parsed;
-  const { circuit } = parsed;
-  const tally = tallyGates(circuit);
-  if (!tally) return { status: "unavailable", reason: "unparsable" };
-
-  let ideal: Float64Array;
-  try {
-    ideal = idealProbabilities(circuit);
-  } catch {
-    // The kernel throws on custom gates and angles outside its syntax. That
-    // is "cannot estimate", never an estimate from a partial circuit.
-    return { status: "unavailable", reason: "unparsable" };
-  }
+  if (prepared.status === "unavailable") return prepared;
+  const { qubitCount, tally, ideal } = prepared;
 
   const uniform = new Float64Array(ideal.length).fill(1 / ideal.length);
   const uniformTvd = totalVariationDistance(ideal, uniform);
   const estimates = new Map<NoisyPreviewMachine, Float64Array>();
   const machines = profiles.map((profile) => {
-    const estimate = estimateNoisyDistribution(ideal, circuit.qubitCount, tally, ratesOf(profile));
+    const estimate = estimateNoisyDistribution(ideal, qubitCount, tally, ratesOf(profile));
     const machine: NoisyPreviewMachine = {
       machine: profile.machine,
       profile,
@@ -294,11 +319,11 @@ export function previewNoisyRun(input: {
     : shown.tvdToUniform <= shown.tvd
       ? "closer_to_noise"
       : "ideal_stands_out";
-  const { rows, otherIdealShare, otherEstimatedShare } = topRows(ideal, estimates.get(shown)!, circuit.qubitCount, maxRows);
+  const { rows, otherIdealShare, otherEstimatedShare } = topRows(ideal, estimates.get(shown)!, qubitCount, maxRows);
 
   return {
     status: "computed",
-    qubitCount: circuit.qubitCount,
+    qubitCount: qubitCount,
     shots,
     tally,
     machineChosenAtSubmit: noise.machine_chosen_at_submit,
