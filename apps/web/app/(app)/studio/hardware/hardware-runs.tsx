@@ -1,8 +1,20 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
-import { fetchQpuRunHistory, type QpuRunHistoryItem } from "../../../../lib/qpu";
-import { appendRunPage, groupRunsByBackend, readRun, type BackendGroup } from "../../../../lib/qpu-run-history";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { QPU_RUN_POLL_MS, fetchQpuRun, fetchQpuRunHistory, type QpuRunHistoryItem } from "../../../../lib/qpu";
+import type { IdealComparison } from "../../../../lib/qpu-ideal";
+import {
+  appendRunPage,
+  applyRunUpdates,
+  compareRun,
+  groupRunsByBackend,
+  nextMacrotask,
+  readRun,
+  unfinishedRunIds,
+  workThroughComparisons,
+  type BackendGroup,
+  type RunReading,
+} from "../../../../lib/qpu-run-history";
 import type { PublicLocale } from "../../../../lib/public-locale";
 import type { CpuSimulationLimits } from "../../../../lib/studio-simulation";
 import { WORKSPACE_COPY } from "../../../../lib/workspace-locale";
@@ -20,12 +32,20 @@ const PAGE_SIZE = 25;
 export function HardwareRuns({ locale, limits }: { locale: PublicLocale; limits: CpuSimulationLimits }) {
   const copy = WORKSPACE_COPY[locale].hardwareRuns;
   const studioCopy = WORKSPACE_COPY[locale].studio;
-  const [items, setItems] = useState<QpuRunHistoryItem[]>([]);
+  const [items, setItems] = useState<readonly QpuRunHistoryItem[]>([]);
   const [cursor, setCursor] = useState<string | null>(null);
   const [state, setState] = useState<"loading" | "ready" | "error">("loading");
   const [attempt, setAttempt] = useState(0);
   const [loadingOlder, setLoadingOlder] = useState(false);
   const [olderFailed, setOlderFailed] = useState(false);
+  const [comparisons, setComparisons] = useState<ReadonlyMap<string, IdealComparison>>(() => new Map());
+  // The worker asks "already worked out?" at the moment each task runs, which
+  // is later than the render that started it, so it reads through a ref rather
+  // than through a closure over one render's map.
+  const comparisonsRef = useRef(comparisons);
+  useEffect(() => {
+    comparisonsRef.current = comparisons;
+  }, [comparisons]);
 
   useEffect(() => {
     let cancelled = false;
@@ -59,6 +79,79 @@ export function HardwareRuns({ locale, limits }: { locale: PublicLocale; limits:
   }
 
   const groups = useMemo(() => groupRunsByBackend(items), [items]);
+
+  // Comparisons, worked out one per task in the order the page shows them, so
+  // the top of the page fills in first. Restarted when the list changes (a
+  // refresh, an older page), which re-plans without redoing finished work.
+  useEffect(() => {
+    const order = groups.flatMap((group) => group.runs);
+    return workThroughComparisons({
+      order,
+      isCached: (id) => comparisonsRef.current.has(id),
+      compute: (item) => compareRun(item, limits),
+      onResult: (id, comparison) => {
+        // Written to the ref at once as well as to state, so a restarted worker
+        // that runs before this render commits still sees it as done.
+        const next = new Map(comparisonsRef.current);
+        next.set(id, comparison);
+        comparisonsRef.current = next;
+        setComparisons(next);
+      },
+      schedule: nextMacrotask,
+    });
+  }, [groups, limits]);
+
+  // A queued or running job changes on the provider's schedule, so while the
+  // page lists one it re-reads those runs at Studio's cadence, and stops as
+  // soon as none are left. Keyed on the ids rather than on `items`, so an
+  // answer that changes nothing does not restart the timer.
+  const unfinishedKey = unfinishedRunIds(items).join(",");
+  useEffect(() => {
+    if (!unfinishedKey) return;
+    const ids = unfinishedKey.split(",");
+    let cancelled = false;
+    let inFlight = false;
+    let timer: number | undefined;
+
+    const refresh = () => {
+      if (cancelled || inFlight || document.hidden) return;
+      inFlight = true;
+      Promise.allSettled(ids.map((id) => fetchQpuRun(id)))
+        .then((results) => {
+          if (cancelled) return;
+          const records = results.flatMap((result) => (result.status === "fulfilled" ? [result.value] : []));
+          setItems((shown) => applyRunUpdates(shown, records));
+        })
+        .finally(() => {
+          inFlight = false;
+        });
+    };
+    const start = () => {
+      if (timer === undefined) timer = window.setInterval(refresh, QPU_RUN_POLL_MS);
+    };
+    const stop = () => {
+      if (timer !== undefined) window.clearInterval(timer);
+      timer = undefined;
+    };
+    // A hidden tab asks nothing. Coming back reads at once, since the reader
+    // is looking at a list that may be minutes old.
+    const onVisibility = () => {
+      if (document.hidden) {
+        stop();
+      } else {
+        refresh();
+        start();
+      }
+    };
+
+    if (!document.hidden) start();
+    document.addEventListener("visibilitychange", onVisibility);
+    return () => {
+      cancelled = true;
+      stop();
+      document.removeEventListener("visibilitychange", onVisibility);
+    };
+  }, [unfinishedKey]);
 
   return (
     <div className="mj-workspace-page">
@@ -94,6 +187,7 @@ export function HardwareRuns({ locale, limits }: { locale: PublicLocale; limits:
                 <MachineSection
                   key={group.backend ?? "unrecorded"}
                   group={group}
+                  comparisons={comparisons}
                   copy={copy}
                   studioCopy={studioCopy}
                   limits={limits}
@@ -116,12 +210,14 @@ export function HardwareRuns({ locale, limits }: { locale: PublicLocale; limits:
 
 function MachineSection({
   group,
+  comparisons,
   copy,
   studioCopy,
   limits,
   locale,
 }: {
   group: BackendGroup;
+  comparisons: ReadonlyMap<string, IdealComparison>;
   copy: Copy;
   studioCopy: StudioCopy;
   limits: CpuSimulationLimits;
@@ -138,7 +234,15 @@ function MachineSection({
       {group.backend === null ? <p className="mj-qpu-note">{copy.unrecordedMachineNote}</p> : null}
       <ol className="mj-qpu-history-runs">
         {group.runs.map((item) => (
-          <RunCard key={item.id} item={item} copy={copy} studioCopy={studioCopy} limits={limits} locale={locale} />
+          <RunCard
+            key={item.id}
+            item={item}
+            reading={readRun(item, comparisons)}
+            copy={copy}
+            studioCopy={studioCopy}
+            limits={limits}
+            locale={locale}
+          />
         ))}
       </ol>
     </section>
@@ -147,21 +251,22 @@ function MachineSection({
 
 function RunCard({
   item,
+  reading,
   copy,
   studioCopy,
   limits,
   locale,
 }: {
   item: QpuRunHistoryItem;
+  reading: RunReading;
   copy: Copy;
   studioCopy: StudioCopy;
   limits: CpuSimulationLimits;
   locale: PublicLocale;
 }) {
-  const reading = useMemo(() => readRun(item, limits), [item, limits]);
-  const [detailsOpen, setDetailsOpen] = useState(false);
   const when = item.submitted_at ?? item.created_at;
-  const computed = reading.kind === "compared" && reading.comparison.status === "computed" ? reading.comparison : null;
+  const comparison = reading.kind === "compared" ? reading.comparison : null;
+  const computed = comparison?.status === "computed" ? comparison : null;
 
   return (
     <li className="mj-qpu-record mj-qpu-history-run">
@@ -179,33 +284,35 @@ function RunCard({
           <div><dt>{copy.columnFidelity}</dt><dd>{computed.hellingerFidelity.toFixed(3)}</dd></div>
         </dl>
       ) : (
-        <p className="mj-qpu-note">{readingSentence(reading, copy, studioCopy)}</p>
+        <p className="mj-qpu-note" role={reading.kind === "working_out" ? "status" : undefined}>
+          {readingSentence(reading, copy, studioCopy)}
+        </p>
       )}
       {item.error ? <p className="mj-qpu-note">{`${studioCopy.hardwareJobError}: ${item.error}`}</p> : null}
 
       {computed ? (
-        // Rendered only once opened: the table inside recomputes the ideal
-        // distribution, and a page of closed rows should not run it twice each.
-        <details onToggle={(event) => setDetailsOpen((event.currentTarget as HTMLDetailsElement).open)}>
+        // The comparison already worked out off the render path is handed
+        // over, so opening this costs no second simulation.
+        <details>
           <summary>{copy.details}</summary>
-          {detailsOpen ? (
-            <QpuMeasuredVsIdeal
-              qasm={item.qasm}
-              submittedFingerprint={item.source_fingerprint}
-              counts={item.raw_counts}
-              limits={limits}
-              copy={studioCopy}
-            />
-          ) : null}
+          <QpuMeasuredVsIdeal
+            qasm={item.qasm}
+            submittedFingerprint={item.source_fingerprint}
+            counts={item.raw_counts}
+            limits={limits}
+            copy={studioCopy}
+            comparison={computed}
+          />
         </details>
       ) : null}
     </li>
   );
 }
 
-function readingSentence(reading: ReturnType<typeof readRun>, copy: Copy, studioCopy: StudioCopy): string {
+function readingSentence(reading: RunReading, copy: Copy, studioCopy: StudioCopy): string {
   if (reading.kind === "in_progress") return copy.inProgress;
   if (reading.kind === "ended_without_counts") return copy.endedWithoutCounts;
+  if (reading.kind === "working_out") return copy.workingOut;
   if (reading.comparison.status === "computed") return "";
   // Studio's sentence for this code says the circuit was edited after it was
   // sent. Here the comparison is against the run's own stored program, so a

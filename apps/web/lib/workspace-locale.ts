@@ -841,6 +841,8 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
     status: (status: string) => string;
     inProgress: string;
     endedWithoutCounts: string;
+    /** A finished run whose comparison is still being computed in this tab. */
+    workingOut: string;
     programMismatch: string;
     details: string;
     showOlder: string;
@@ -1891,6 +1893,7 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
     }[status] ?? status),
     inProgress: "Not finished yet",
     endedWithoutCounts: "No counts came back",
+    workingOut: "Working out the comparison…",
     programMismatch: "The stored circuit does not match the one this job was submitted with, so no comparison is shown.",
     details: "Details",
     showOlder: "Show older runs",
@@ -2930,6 +2933,7 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
     }[status] ?? status),
     inProgress: "まだ完了していません",
     endedWithoutCounts: "測定結果は返ってきませんでした",
+    workingOut: "比較を計算しています…",
     programMismatch: "保存されている回路が、このジョブを送信したときの回路と一致しないため、比較は表示しません。",
     details: "詳細",
     showOlder: "さらに古い実行を表示",
