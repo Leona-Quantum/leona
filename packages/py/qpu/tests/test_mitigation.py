@@ -66,7 +66,7 @@ def test_the_fixture_was_generated_by_mitiq():
     assert FIXTURE["generated_by"] == "scripts/mitiq_parity.py --write"
     # Every section has cases; an empty section would make every loop below
     # pass vacuously.
-    for section in ("readout", "extrapolation", "distribution", "fold"):
+    for section in ("readout", "extrapolation", "distribution", "fold", "fold_compiled"):
         assert FIXTURE[section], section
 
 
@@ -141,6 +141,44 @@ def test_folding_uses_the_same_gates_as_mitiq_fold_global(program, scale):
         )
     entries.sort(key=json.dumps)
     assert entries == program["mitiq"][scale]
+
+
+def _parity_script():
+    """`scripts/mitiq_parity.py`, for its compile settings only. It imports Mitiq
+    inside functions, never at module level, so loading it here needs none."""
+    import importlib.util
+
+    path = Path(__file__).resolve().parents[4] / "scripts" / "mitiq_parity.py"
+    spec = importlib.util.spec_from_file_location("mitiq_parity", path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+@pytest.mark.parametrize("program", FIXTURE["fold_compiled"], ids=lambda program: program["name"])
+def test_folding_the_compiled_circuit_matches_mitiq_and_keeps_every_pair(program):
+    """Mitiq's `fold_global` on the same compiled circuit is the oracle for the
+    gate multiset; basis translation afterwards must then leave each physical
+    pair's two-qubit gates exactly scale times as many."""
+    script = _parity_script()
+    isa, target = script.compile_for_parity(program["qasm"])
+    # The compiled circuit is the one Mitiq folded, or the rest proves nothing.
+    assert script._operation_multiset(isa) == program["mitiq"]["isa"]
+    base = script._physical_pairs(isa)
+    for scale in ("3", "5"):
+        assert (
+            script._operation_multiset(mitigation.fold_global(isa, int(scale)))
+            == (program["mitiq"][scale])
+        )
+        translated = mitigation.fold_compiled(isa, int(scale), target)
+        assert script._physical_pairs(translated) == {
+            pair: int(scale) * count for pair, count in base.items()
+        }
+
+
+def test_the_compiled_parity_programs_include_one_that_was_routed():
+    triangle = next(p for p in FIXTURE["fold_compiled"] if p["name"] == "routed triangle")
+    assert sum(1 for gate in triangle["mitiq"]["isa"] if len(gate[1]) == 2) > 3
 
 
 def _diff(left, right):
@@ -259,28 +297,112 @@ def test_richardson_weights_for_one_three_five():
 # ---------------------------------------------------------------------------
 
 
-def test_the_folds_survive_transpilation_at_about_three_and_five_times_the_gates():
+TRIANGLE = (
+    # Three CXs around a triangle: no line of qubits can hold all three pairs,
+    # so FakeManilaV2 (a five-qubit line) has to route it with SWAPs.
+    'OPENQASM 3.0; include "stdgates.inc"; qubit[3] q; bit[3] c; '
+    "h q[0]; cx q[0], q[1]; cx q[1], q[2]; cx q[0], q[2]; rz(0.3) q[2]; c = measure q;"
+)
+
+
+def _physical_pairs(circuit):
+    """Each two-qubit gate's physical qubits, in order, as a multiset."""
+    from collections import Counter
+
+    return Counter(
+        tuple(circuit.find_bit(qubit).index for qubit in instruction.qubits)
+        for instruction in circuit.data
+        if instruction.operation.num_qubits == 2 and instruction.operation.name != "barrier"
+    )
+
+
+def _measured_qubits(circuit):
+    return [
+        (
+            circuit.find_bit(instruction.qubits[0]).index,
+            circuit.find_bit(instruction.clbits[0]).index,
+        )
+        for instruction in circuit.data
+        if instruction.operation.name == "measure"
+    ]
+
+
+@pytest.mark.parametrize("qasm", [GHZ3, TRIANGLE], ids=["ghz3", "routed-triangle"])
+def test_every_scale_runs_the_same_physical_pairs_exactly_one_three_and_five_times(qasm):
+    """Greptile P1 on PR 970. The 3x and 5x circuits are folded from the
+    compiled circuit, so each physical pair's two-qubit gates, SWAPs included,
+    run exactly 3 and 5 times as often as at scale 1, and nothing else runs."""
     backend = _fake_backend()
-    circuit = _loads(GHZ3)
-    folded = [mitigation.fold_global(circuit, scale) for scale in (3, 5)]
 
-    pubs, record = _transpile_pubs(circuit, folded, backend)
+    pubs, record = _transpile_pubs(_loads(qasm), backend, zne=True)
 
-    base, three, five = record["zne"]["two_qubit_gates"]
-    assert base > 0
-    # Exactly 3x and 5x on this backend (a line, so no routing SWAPs are
-    # needed); the bounds leave room for routing on a denser circuit elsewhere.
-    assert 2.5 * base <= three <= 3.5 * base
-    assert 4.5 * base <= five <= 5.5 * base
-    assert len(pubs) == 3
-    assert record["zne"]["scale_factors"] == [1, 3, 5]
-    assert [mitigation.two_qubit_gate_count(pub) for pub in pubs] == [base, three, five]
+    base, three, five = (_physical_pairs(pub) for pub in pubs)
+    assert base
+    assert three == {pair: 3 * count for pair, count in base.items()}
+    assert five == {pair: 5 * count for pair, count in base.items()}
+    assert record["zne"]["two_qubit_gates"] == [
+        sum(base.values()),
+        3 * sum(base.values()),
+        5 * sum(base.values()),
+    ]
+    # Read out through the same physical qubits into the same bits at every scale.
+    assert _measured_qubits(pubs[0]) == _measured_qubits(pubs[1]) == _measured_qubits(pubs[2])
+
+
+def test_the_triangle_really_is_routed():
+    """Without this the test above could pass on a circuit that needed no SWAPs,
+    which is the case where folding before compilation was harmless."""
+    from qiskit.transpiler.preset_passmanagers import generate_preset_pass_manager
+
+    isa = generate_preset_pass_manager(backend=_fake_backend(), optimization_level=1).run(
+        _loads(TRIANGLE)
+    )
+    assert sum(_physical_pairs(isa).values()) > 3
+
+
+def test_the_folds_stay_in_the_backends_instruction_set_and_implement_the_circuit():
+    """sx+ is not native on IBM's machines; basis translation alone brings it
+    back, and the folded circuit still implements exactly what scale 1 does."""
+    from qiskit.quantum_info import Operator
+
+    backend = _fake_backend()
+    pubs, _ = _transpile_pubs(_loads(TRIANGLE), backend, zne=True)
+    for pub in pubs:
+        for instruction in pub.data:
+            name = instruction.operation.name
+            if name == "barrier":
+                continue
+            qargs = tuple(pub.find_bit(qubit).index for qubit in instruction.qubits)
+            assert backend.target.instruction_supported(name, qargs), (name, qargs)
+    reference = Operator(pubs[0].remove_final_measurements(inplace=False))
+    for pub in pubs[1:]:
+        assert Operator(pub.remove_final_measurements(inplace=False)).equiv(reference)
+
+
+def test_folding_the_logical_circuit_would_have_mixed_pairs():
+    """The measurement behind the fix, kept as a regression anchor: the logical
+    3x fold, compiled with the scale-1 layout pinned, runs a different pair
+    multiset on the routed triangle than 3 x scale 1. Seeded, because routing
+    is stochastic and the point is that it CAN differ, not that it always does."""
+    from qiskit.transpiler.preset_passmanagers import generate_preset_pass_manager
+
+    backend = _fake_backend()
+    circuit = _loads(TRIANGLE)
+    isa = generate_preset_pass_manager(
+        backend=backend, optimization_level=1, seed_transpiler=11
+    ).run(circuit)
+    layout = list(isa.layout.initial_index_layout(filter_ancillas=True))
+    logical_fold = generate_preset_pass_manager(
+        backend=backend, optimization_level=1, initial_layout=layout, seed_transpiler=0
+    ).run(mitigation.fold_global(circuit, 3))
+    base = _physical_pairs(isa)
+    assert _physical_pairs(logical_fold) != {pair: 3 * count for pair, count in base.items()}
 
 
 def test_without_barriers_the_transpiler_undoes_the_fold():
-    """The control that makes the test above mean something: the same G G+ G
-    with no barrier between the copies is cancelled back to G's gate count at
-    the optimization level the adapter uses."""
+    """The control for the barriers: the same G G+ G with no barrier between the
+    copies is cancelled back to G's gate count by an optimiser at level 1, so a
+    fold without barriers would not survive anyone recompiling it."""
     from qiskit.transpiler.preset_passmanagers import generate_preset_pass_manager
 
     backend = _fake_backend()
@@ -300,30 +422,6 @@ def test_without_barriers_the_transpiler_undoes_the_fold():
     assert mitigation.two_qubit_gate_count(compiled_unprotected) == (
         mitigation.two_qubit_gate_count(compiled_plain)
     )
-
-
-def test_the_folded_copies_run_on_the_scale_one_circuits_qubits():
-    """Different physical qubits would make the noise scaling partly a change
-    of qubits. Checked on a layout the transpiler would not pick by itself."""
-    from qiskit.transpiler.preset_passmanagers import generate_preset_pass_manager
-
-    backend = _fake_backend()
-    circuit = _loads(BELL)
-    folded = [mitigation.fold_global(circuit, scale) for scale in (3, 5)]
-    isa = generate_preset_pass_manager(
-        backend=backend, optimization_level=1, initial_layout=[3, 4]
-    ).run(circuit)
-    from majorana_qpu.ibm import _initial_layout
-
-    assert _initial_layout(isa) == [3, 4]
-    pubs, record = _transpile_pubs(circuit, folded, backend)
-    layouts = [_initial_layout(pub) for pub in pubs]
-    assert layouts[1] == layouts[0] and layouts[2] == layouts[0]
-    measured = [
-        [bit["qubit"] for bit in mitigation.readout_calibration(pub, backend)["bits"]]
-        for pub in pubs
-    ]
-    assert measured[0] == measured[1] == measured[2]
 
 
 # ---------------------------------------------------------------------------
@@ -439,7 +537,10 @@ def test_folded_counts_are_stored_by_scale_and_raw_counts_are_not_copied():
     assert stored["zne"].get("counts") is None  # the input is not mutated
 
 
-@pytest.mark.parametrize("pubs", [None, [{"0": 1}], [{"0": 1}, None, {"0": 1}]])
+@pytest.mark.parametrize(
+    "pubs",
+    [None, [{"0": 1}], [{"0": 1}, None, {"0": 1}], [{"0": 1}, {"0": 0, "1": 0}, {"0": 1}]],
+)
 def test_a_job_missing_a_folded_circuit_says_so_instead_of_extrapolating(pubs):
     document = mitigation.with_folded_counts(mitigation.requested_zne_record(), pubs)
     assert "counts" not in document["zne"]

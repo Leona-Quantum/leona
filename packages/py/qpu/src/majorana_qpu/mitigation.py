@@ -8,11 +8,12 @@ enforces that, and `scripts/mitiq_parity.py` is the only place Mitiq runs.
 
 ## What runs where
 
-- **At submit, in the worker** (`ibm.py`): `fold_global` builds the 3x and 5x
-  circuits for zero-noise extrapolation, `two_qubit_gate_count` records how much
-  longer each one came out of the transpiler, and `readout_calibration` snapshots
-  the backend's reported readout errors for the qubits the counts will be read
-  from. Only the first two change what is sent to IBM; the third is a read.
+- **At submit, in the worker** (`ibm.py`): `fold_compiled` builds the 3x and 5x
+  circuits for zero-noise extrapolation from the compiled circuit,
+  `two_qubit_gate_count` records how many two-qubit gates each one sends, and
+  `readout_calibration` snapshots the backend's reported readout errors for the
+  qubits the counts will be read from. Only the first changes what is sent to
+  IBM; the other two are reads.
 - **At display, in the browser** (`apps/web/lib/qpu-mitigation.ts`): the
   correction and the extrapolation themselves, computed from the stored raw
   counts and the stored snapshot, the same way the measured-against-ideal reading
@@ -115,7 +116,11 @@ def with_folded_counts(
     document = {**dict(stored), "zne": dict(stored.get("zne") or {})}
     folded_scales = ZNE_SCALE_FACTORS[1:]
     folded = list(pub_counts or [])[1 : 1 + len(folded_scales)]
-    if len(folded) == len(folded_scales) and all(counts for counts in folded):
+    # A PUB whose counts total zero is no distribution either; storing it would
+    # hand every reader a division by zero (Greptile P2 on PR 970, reader side).
+    if len(folded) == len(folded_scales) and all(
+        counts and sum(counts.values()) > 0 for counts in folded
+    ):
         document["zne"]["counts"] = {
             str(scale): dict(counts)  # type: ignore[arg-type]
             for scale, counts in zip(folded_scales, folded, strict=True)
@@ -194,31 +199,23 @@ def _split_terminal_measurements(circuit: Any) -> tuple[Any, list[Any]]:
 def fold_global(circuit: Any, scale_factor: int) -> Any:
     """Global unitary folding: G -> G (G+ G)^k with k = (scale_factor - 1) / 2.
 
-    The logical circuit is folded BEFORE transpilation, as ai-ops 361 specified,
-    so each copy is transpiled the same way the submitted circuit is. Only odd
-    integer factors are accepted: they are the ones global folding reaches
-    exactly, and ZNE_SCALE_FACTORS uses no other kind.
+    The circuit-level operation, the same one Mitiq's `fold_global` performs,
+    which `scripts/mitiq_parity.py` checks on logical and on compiled circuits.
+    The adapter applies it to the COMPILED circuit, through `fold_compiled`; see
+    that function for why. Only odd integer factors are accepted: they are the
+    ones global folding reaches exactly, and ZNE_SCALE_FACTORS uses no other kind.
 
     ## Why the barriers
 
-    A barrier separates each G from the G+ next to it, and it is what keeps the
-    transpiler from undoing the fold. `optimization_level=1`, which the adapter
-    uses for every PUB, runs `InverseCancellation` and
-    `Optimize1qGatesDecomposition` in a loop; both work on runs of adjacent gates,
-    and G G+ is by construction a run that cancels to nothing. Levels 2 and 3 add
-    commutation-aware cancellation and block re-synthesis, which would find it
-    too. A barrier is a directive every one of those passes treats as the end of
-    a run, so nothing is cancelled across it, and the scale-3 circuit reaches the
-    device with about three times the two-qubit gates. That is checked on a fake
-    backend in `tests/test_mitigation.py`, together with the control that makes
-    it mean something: the same fold without barriers collapses back to the
-    original gate count at level 1.
-
-    The optimization level is left at 1 rather than lowered to 0 for the folded
-    copies, because each copy has to be compiled the way the scale-1 circuit is.
-    If the folds were compiled less carefully than the original, part of the
-    extra noise ZNE measures would come from worse compilation instead of from
-    running the gates longer.
+    A barrier separates each G from the G+ next to it, so no optimiser can undo
+    the fold. G G+ is by construction a run of gates that cancels to nothing, and
+    `InverseCancellation` and `Optimize1qGatesDecomposition` (optimization level
+    1), and commutation-aware cancellation and block re-synthesis (levels 2 and
+    3), all work on runs of adjacent gates. Every one of those passes treats a
+    barrier as the end of a run. The adapter runs no optimiser after folding, but
+    the barriers mean that stays true if one ever does run. `tests/test_mitigation.py`
+    has the control: the same fold without barriers, put through level 1,
+    collapses back to the original gate count.
     """
     if not isinstance(scale_factor, int) or scale_factor < 1 or scale_factor % 2 == 0:
         raise ValueError(f"global folding needs an odd scale factor >= 1, got {scale_factor!r}")
@@ -233,6 +230,54 @@ def fold_global(circuit: Any, scale_factor: int) -> Any:
     for instruction in measurements:
         folded.append(instruction)
     return folded
+
+
+def fold_compiled(isa_circuit: Any, scale_factor: int, target: Any) -> Any:
+    """The compiled (ISA) circuit folded to `scale_factor`, still in the
+    backend's instruction set.
+
+    ## Why fold after compilation
+
+    Zero-noise extrapolation assumes the three circuits differ only in how many
+    times the same gates run. Folding the logical circuit and compiling each copy
+    breaks that as soon as the circuit needs routing. Pinning the scale-1
+    layout fixes only where the qubits START. The router then inserts SWAPs into
+    each longer copy independently, so their two-qubit gates can land on other
+    physical pairs, with other error rates, and the "noise scale" mixes in
+    pair-specific noise. Measured on FakeManilaV2 with a three-qubit triangle of
+    CXs, which a line cannot embed: the logical 3x fold, compiled with the pinned
+    layout, ran 5 CXs on pair (3, 2) where 3 x the scale-1 circuit's 1 would be 3,
+    and the 5x fold ran 9 where it should run 5.
+
+    Folding the compiled circuit makes that impossible by construction. G is the
+    compiled circuit's unitary part, so G+ acts on exactly the same physical
+    qubits, pair for pair (a CX, CZ or ECR is its own inverse on the same pair),
+    and every scale runs each physical pair's gates exactly 1, 3 or 5 times as
+    often. The measurements come after the folds, on the same physical qubits, so
+    all three circuits are read through the same calibration too.
+
+    ## Back into the backend's instruction set
+
+    G+ can contain inverses the backend does not run natively (sx+ on IBM's
+    machines). They are rewritten by basis translation ALONE: no layout, no
+    routing, no optimisation. Translation rewrites one gate at a time on the
+    qubits that gate already has, so it cannot move a gate to another pair or
+    merge anything across a barrier.
+    """
+    from qiskit.circuit.equivalence_library import SessionEquivalenceLibrary
+    from qiskit.transpiler import PassManager
+    from qiskit.transpiler.passes import BasisTranslator
+
+    folded = fold_global(isa_circuit, scale_factor)
+    translate = PassManager(
+        [BasisTranslator(SessionEquivalenceLibrary, target_basis=None, target=target)]
+    )
+    return translate.run(folded)
+
+
+def ensure_foldable(circuit: Any) -> None:
+    """Raise ZneUnsupported if `circuit` cannot be folded; return otherwise."""
+    _split_terminal_measurements(circuit)
 
 
 def zne_refusal(qasm: str) -> ZneUnsupported | None:

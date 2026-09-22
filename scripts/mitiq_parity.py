@@ -159,6 +159,54 @@ FOLD_PROGRAMS = [
 ]
 
 
+#: Programs folded AFTER compilation, the way the adapter folds them
+#: (`mitigation.fold_compiled`). The triangle cannot sit on a line of qubits, so
+#: compiling it adds SWAPs: the case Greptile's P1 on PR 970 was about.
+COMPILED_FOLD_PROGRAMS = [
+    *FOLD_PROGRAMS,
+    {
+        "name": "routed triangle",
+        "qasm": 'OPENQASM 3.0; include "stdgates.inc"; qubit[3] q; bit[3] c; '
+        "h q[0]; cx q[0], q[1]; cx q[1], q[2]; cx q[0], q[2]; rz(0.3) q[2]; c = measure q;",
+    },
+]
+
+#: How the parity programs are compiled: IBM's basis on a line with exactly as
+#: many qubits as the program, seeded so the same qiskit gives the same circuit
+#: here and in CI. Not a fake backend: that would put qiskit-ibm-runtime in the
+#: isolated environment, and a line is what forces the routing.
+COMPILE_BASIS = ["rz", "sx", "x", "cx"]
+COMPILE_SEED = 11
+
+
+def compile_for_parity(qasm: str):
+    """(ISA circuit, its Target) for one parity program."""
+    from qiskit import qasm3
+    from qiskit.transpiler import CouplingMap, Target
+    from qiskit.transpiler.preset_passmanagers import generate_preset_pass_manager
+
+    circuit = qasm3.loads(qasm)
+    coupling = CouplingMap.from_line(circuit.num_qubits)
+    isa = generate_preset_pass_manager(
+        basis_gates=COMPILE_BASIS,
+        coupling_map=coupling,
+        optimization_level=1,
+        seed_transpiler=COMPILE_SEED,
+    ).run(circuit)
+    target = Target.from_configuration(
+        basis_gates=[*COMPILE_BASIS, "measure"], coupling_map=coupling
+    )
+    return isa, target
+
+
+def _physical_pairs(circuit) -> dict[str, int]:
+    pairs: Counter = Counter()
+    for instruction in circuit.data:
+        if instruction.operation.num_qubits == 2 and instruction.operation.name != "barrier":
+            pairs[",".join(str(circuit.find_bit(qubit).index) for qubit in instruction.qubits)] += 1
+    return dict(sorted(pairs.items()))
+
+
 def _mitiq_index(ours: int, width: int) -> int:
     """Qiskit keys put classical bit 0 rightmost; Mitiq's probability vectors put
     qubit 0 first (most significant). Reverse the bits to move between them."""
@@ -255,6 +303,18 @@ def mitiq_fold(program: dict) -> dict:
     return {str(scale): _operation_multiset(mitiq_fold_global(circuit, scale)) for scale in (3, 5)}
 
 
+def mitiq_fold_compiled(program: dict) -> dict:
+    """Mitiq's `fold_global` on the COMPILED circuit: the gate multiset our
+    `fold_global` must produce before `fold_compiled` translates the basis."""
+    from mitiq.zne.scaling import fold_global as mitiq_fold_global
+
+    isa, _ = compile_for_parity(program["qasm"])
+    return {
+        "isa": _operation_multiset(isa),
+        **{str(scale): _operation_multiset(mitiq_fold_global(isa, scale)) for scale in (3, 5)},
+    }
+
+
 def mitiq_numbers() -> dict:
     return {
         "readout": [{**case, "mitiq": mitiq_readout(case)} for case in READOUT_CASES],
@@ -265,6 +325,9 @@ def mitiq_numbers() -> dict:
             {**case, "mitiq": mitiq_distribution(case)} for case in DISTRIBUTION_CASES
         ],
         "fold": [{**program, "mitiq": mitiq_fold(program)} for program in FOLD_PROGRAMS],
+        "fold_compiled": [
+            {**program, "mitiq": mitiq_fold_compiled(program)} for program in COMPILED_FOLD_PROGRAMS
+        ],
     }
 
 
@@ -389,6 +452,35 @@ def compare_with_ours(numbers: dict) -> list[tuple[str, float, float]]:
                     0.0,
                 )
             )
+    for program in numbers["fold_compiled"]:
+        isa, target = compile_for_parity(program["qasm"])
+        rows.append(
+            (
+                f"compiled circuit differs from the one Mitiq folded: {program['name']}",
+                0.0 if _operation_multiset(isa) == program["mitiq"]["isa"] else 1.0,
+                0.0,
+            )
+        )
+        base = _physical_pairs(isa)
+        for scale in ("3", "5"):
+            mine = _operation_multiset(ours.fold_global(isa, int(scale)))
+            rows.append(
+                (
+                    f"compiled fold x{scale} gates differ from Mitiq's: {program['name']}",
+                    0.0 if mine == program["mitiq"][scale] else 1.0,
+                    0.0,
+                )
+            )
+            translated = _physical_pairs(ours.fold_compiled(isa, int(scale), target))
+            expected = {pair: int(scale) * count for pair, count in base.items()}
+            rows.append(
+                (
+                    f"compiled fold x{scale} runs other physical pairs than {scale} x scale 1: "
+                    f"{program['name']}",
+                    0.0 if translated == expected else 1.0,
+                    0.0,
+                )
+            )
     return rows
 
 
@@ -412,6 +504,20 @@ def unitary_parity() -> list[tuple[str, float, float]]:
             rows.append(
                 (
                     f"fold x{scale} unitary equals Mitiq's: {program['name']}",
+                    0.0 if same else 1.0,
+                    0.0,
+                )
+            )
+    for program in COMPILED_FOLD_PROGRAMS:
+        isa, target = compile_for_parity(program["qasm"])
+        for scale in (3, 5):
+            theirs = mitiq_fold_global(isa, scale).remove_final_measurements(inplace=False)
+            # After basis translation, which is what is sent.
+            mine = ours.fold_compiled(isa, scale, target).remove_final_measurements(inplace=False)
+            same = Operator(mine).equiv(Operator(theirs))
+            rows.append(
+                (
+                    f"compiled fold x{scale} unitary equals Mitiq's: {program['name']}",
                     0.0 if same else 1.0,
                     0.0,
                 )
@@ -454,7 +560,7 @@ def main(argv: list[str] | None = None) -> int:
     # The committed fixture must still be what Mitiq and our Python say, or CI is
     # holding our code to stale numbers. Projections get Mitiq's own tolerance:
     # a different scipy may stop SLSQP at a slightly different point.
-    for section in ("readout", "extrapolation", "distribution", "fold"):
+    for section in ("readout", "extrapolation", "distribution", "fold", "fold_compiled"):
         if not _close(committed[section], fresh[section]):
             print(f"FIXTURE STALE: section {section!r} differs from a fresh run")
             failures += 1

@@ -47,7 +47,8 @@ from .models import (
 from .mitigation import (
     MITIGATION_RECORD_VERSION,
     ZNE_SCALE_FACTORS,
-    fold_global,
+    ensure_foldable,
+    fold_compiled,
     readout_calibration,
     two_qubit_gate_count,
 )
@@ -151,16 +152,16 @@ class IbmRuntimeProvider:
         from qiskit_ibm_runtime import QiskitRuntimeService, SamplerV2
 
         circuit = qasm3.loads(request.qasm)
-        # Folded BEFORE IBM is contacted: a circuit that cannot be folded raises
+        # Checked BEFORE IBM is contacted: a circuit that cannot be folded raises
         # `ZneUnsupported` here, having sent nothing. The worker has already
         # asked `zne_refusal` before claiming the attempt, so this is the second
-        # line, not the first.
-        folded = (
-            [fold_global(circuit, scale) for scale in ZNE_SCALE_FACTORS[1:]] if request.zne else []
-        )
+        # line, not the first. The folding itself needs the compiled circuit,
+        # so it happens in `_transpile_pubs`.
+        if request.zne:
+            ensure_foldable(circuit)
         service = QiskitRuntimeService(**self._service_kwargs())
         backend = service.least_busy(operational=True, simulator=False)
-        pubs, mitigation = _transpile_pubs(circuit, folded, backend)
+        pubs, mitigation = _transpile_pubs(circuit, backend, zne=request.zne)
         sampler = SamplerV2(mode=backend)
         sampler.options.default_shots = request.shots
         # ONE job for every PUB. A ZNE submission is three circuits, and three
@@ -235,7 +236,7 @@ class IbmRuntimeProvider:
 
 
 def _transpile_pubs(
-    circuit: object, folded: list[object], backend: object
+    circuit: object, backend: object, *, zne: bool
 ) -> tuple[list[object], dict[str, object] | None]:
     """The ISA circuits to send, and what submit records about them.
 
@@ -243,16 +244,13 @@ def _transpile_pubs(
     run without ZNE sends the same circuit it always did and its `raw_counts`
     mean what they always meant.
 
-    ## Why the folded copies take the scale-1 layout
-
-    Extrapolating across scale factors only means something if the three
-    circuits ran on the same physical qubits. Left to itself the layout pass
-    scores the folded circuit afresh and may pick different qubits for it, and
-    the "noise scaling" would then partly be a change of qubits with different
-    error rates. So the folded copies are given the layout the scale-1 circuit
-    got. Routing can still add different SWAPs to the longer circuits, which is
-    why each PUB's two-qubit gate count is recorded rather than assumed to be
-    exactly 3x and 5x.
+    With ZNE the 3x and 5x circuits are folded from that compiled circuit
+    (`mitigation.fold_compiled`), never compiled again. So every scale runs its
+    two-qubit gates on the same physical pairs, including the SWAPs routing
+    added, and reads out on the same physical qubits. That is what makes the
+    three circuits one noise series rather than three circuits with different
+    noise, and why each PUB's two-qubit gate count comes out exactly 1x, 3x and
+    5x the scale-1 count. The counts are still recorded rather than assumed.
     """
     from qiskit.transpiler.preset_passmanagers import generate_preset_pass_manager
 
@@ -266,27 +264,15 @@ def _transpile_pubs(
     readout = readout_calibration(isa, backend)
     if readout is not None:
         mitigation["readout"] = readout
-    if folded:
-        folded_pass_manager = generate_preset_pass_manager(
-            backend=backend,
-            optimization_level=1,
-            initial_layout=_initial_layout(isa),
-        )
-        pubs.extend(folded_pass_manager.run(copy) for copy in folded)
+    if zne:
+        target = backend.target  # type: ignore[attr-defined]
+        pubs.extend(fold_compiled(isa, scale, target) for scale in ZNE_SCALE_FACTORS[1:])
         mitigation["zne"] = {
             "scale_factors": list(ZNE_SCALE_FACTORS),
             "folding": "global",
             "two_qubit_gates": [two_qubit_gate_count(pub) for pub in pubs],
         }
     return pubs, (mitigation if len(mitigation) > 1 else None)
-
-
-def _initial_layout(isa: object) -> list[int] | None:
-    """The physical qubit each logical qubit was placed on, or None if unknown."""
-    try:
-        return list(isa.layout.initial_index_layout(filter_ancillas=True))  # type: ignore[attr-defined]
-    except Exception:  # noqa: BLE001 — no layout to pin means the pass picks one
-        return None
 
 
 def _register_counts(pub_result: object) -> dict[str, int] | None:
