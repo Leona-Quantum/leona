@@ -2090,6 +2090,11 @@ export interface components {
          *
          *     `email` and `display_name` are exactly what `GET /v1/workspace` already shows
          *     every member about every other member, and nothing more.
+         *
+         *     A member who has not been graded on anything still gets a row: `entries` is
+         *     empty, `total_passed` is 0 and `last_graded_at` is `None`. A client must render
+         *     that as "not started", never as a score of zero, because "has not tried" and
+         *     "tried and got nothing right" are different facts about a learner.
          */
         GradebookRow: {
             /**
@@ -2103,9 +2108,9 @@ export interface components {
             entries?: components["schemas"]["GradebookEntry"][];
             /**
              * Last Graded At
-             * Format: date-time
+             * @default null
              */
-            last_graded_at: string;
+            last_graded_at: string | null;
             /** Total Graded Cells */
             total_graded_cells: number;
             /** Total Passed */

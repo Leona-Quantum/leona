@@ -578,6 +578,12 @@ def _grade_row(user_id, notebook_id, *, email, name=None, passed=1, graded=2, cu
     )
 
 
+def _not_started(user_id, *, email, name=None):
+    """The row the LEFT join returns for a member with no grading event: the member
+    columns filled, every grade column NULL."""
+    return (user_id, email, name, *([None] * 10))
+
+
 async def test_the_course_creator_gradebook_query_has_no_user_clause():
     owner = make_scope(Role.MEMBER)
     course = _course_row(workspace_id=owner.workspace_id, owner_user_id=owner.user_id)
@@ -593,17 +599,26 @@ async def test_the_course_creator_gradebook_query_has_no_user_clause():
     assert "runs.workspace_id = " in sql, "tenancy boundary missing"
     assert "notebooks.workspace_id = " in sql
     assert "notebooks.deleted_at IS NULL" in sql
-    # A current member only: the members page stops showing someone who left.
-    assert "memberships.workspace_id = " in sql
     assert "DISTINCT ON (runs.user_id, notebook_versions.notebook_id)" in sql
+    # Driven FROM current memberships and LEFT joined to the grades, so a member who
+    # has not started is listed, and a person who left is not.
+    assert (
+        sql.split("LEFT OUTER JOIN")[0]
+        .rstrip()
+        .endswith("FROM memberships JOIN users ON users.id = memberships.user_id")
+    ), "the statement must start from memberships, not from the grades"
+    assert "memberships.workspace_id = " in sql
     # The creator's view is everyone's, so no clause pins it to one user.
     assert "runs.user_id = %(" not in sql
+    assert "memberships.user_id = %(" not in sql
     assert owner.user_id not in params.values()
 
 
 async def test_a_member_who_did_not_create_the_course_is_pinned_to_their_own_row():
-    """The mutation this exists for: drop the `Run.user_id` clause for non-creators
-    and a classmate's marks land on every member's screen."""
+    """The mutation this exists for: drop the user clause for non-creators and every
+    classmate's row, marks included, lands on every member's screen. The outer
+    `memberships.user_id` clause decides whose rows come back; the inner `runs.user_id`
+    one only keeps the grouping from reading classmates' attempts."""
     member = make_scope(Role.ADMIN)
     course = _course_row(workspace_id=member.workspace_id)  # someone else created it
     notebook_id = uuid.uuid4()
@@ -614,7 +629,8 @@ async def test_a_member_who_did_not_create_the_course_is_pinned_to_their_own_row
 
     assert book.visibility is contracts.GradebookVisibility.OWN_ROW
     sql, params = compiled(session.statements[-1])
-    assert "runs.user_id = %(" in sql, "a non-creator must only ever see their own row"
+    assert "memberships.user_id = %(" in sql, "a non-creator must only ever see their own row"
+    assert "runs.user_id = %(" in sql
     assert member.user_id in params.values()
 
 
@@ -652,19 +668,46 @@ async def test_gradebook_rows_total_over_the_whole_course_not_only_attempted_mod
     assert [e.stale for e in bo_row.entries] == [False, True]
 
 
-async def test_gradebook_skips_the_grades_query_when_no_module_has_a_live_notebook():
+async def test_a_member_who_has_not_started_is_a_row_with_no_entries():
+    """Not a zero score: no entries, `last_graded_at` None, and the whole course as
+    the denominator still ahead of them."""
+    owner = make_scope()
+    course = _course_row(workspace_id=owner.workspace_id, owner_user_id=owner.user_id)
+    notebook_id = uuid.uuid4()
+    module = _module_row(course_id=course.id, notebook_id=notebook_id)
+    ana, cy = uuid.uuid4(), uuid.uuid4()
+    grades = [
+        _grade_row(ana, notebook_id, email="ana@example.test", passed=2, graded=2),
+        _not_started(cy, email="cy@example.test"),
+    ]
+    session = _gradebook_session(course, [module], [(notebook_id, GRADED_SPEC)], grades)
+
+    book = await courses_repo.course_gradebook(owner, session, course.id)
+
+    assert [row.email for row in book.rows] == ["ana@example.test", "cy@example.test"]
+    cy_row = book.rows[1]
+    assert cy_row.entries == []
+    assert cy_row.last_graded_at is None
+    assert (cy_row.total_passed, cy_row.total_graded_cells) == (0, 2)
+
+
+async def test_members_are_listed_even_when_no_module_has_a_live_notebook():
+    """The grades half of the statement matches nothing, and the member list still
+    comes back: the creator sees who is in the class before anything is gradable."""
     owner = make_scope()
     course = _course_row(workspace_id=owner.workspace_id, owner_user_id=owner.user_id)
     deleted_nb = uuid.uuid4()
     module = _module_row(course_id=course.id, notebook_id=deleted_nb)
     # The live-notebook query returns nothing: the notebook was soft-deleted.
-    session = SequencedSession([_Res(scalar=course), _Res(scalar=course), _Res([module]), _Res([])])
+    session = _gradebook_session(
+        course, [module], [], [_not_started(owner.user_id, email="me@example.test")]
+    )
 
     book = await courses_repo.course_gradebook(owner, session, course.id)
 
-    assert book.rows == []
     assert book.modules[0].notebook_id is None
-    assert len(session.statements) == 4
+    assert [(row.user_id, row.entries) for row in book.rows] == [(owner.user_id, [])]
+    assert len(session.statements) == 5
 
 
 async def test_gradebook_of_another_workspace_is_not_found():

@@ -326,9 +326,12 @@ class GradebookVisibility(StrEnum):
     "Your progress").
     """
 
-    #: The course's creator: every current member who has been graded on it.
+    #: The course's creator: every current member of the workspace, including those
+    #: who have not started, because "who has not started" is an instructor's first
+    #: question and the member list is already visible to every member.
     ALL_MEMBERS = "all_members"
-    #: Anyone else in the workspace: their own row, and no one else's.
+    #: Anyone else in the workspace: their own row, and no one else's. Present even
+    #: before they have been graded on anything.
     OWN_ROW = "own_row"
 
 
@@ -375,6 +378,11 @@ class GradebookRow(_ResourceBase):
 
     `email` and `display_name` are exactly what `GET /v1/workspace` already shows
     every member about every other member, and nothing more.
+
+    A member who has not been graded on anything still gets a row: `entries` is
+    empty, `total_passed` is 0 and `last_graded_at` is `None`. A client must render
+    that as "not started", never as a score of zero, because "has not tried" and
+    "tried and got nothing right" are different facts about a learner.
     """
 
     user_id: UUID
@@ -389,7 +397,9 @@ class GradebookRow(_ResourceBase):
     #: member who has done two modules of five is shown out of all five, not out of
     #: the two they happened to reach.
     total_graded_cells: int = Field(ge=0)
-    last_graded_at: datetime
+    #: When their latest graded attempt at any module was recorded; `None` when they
+    #: have not been graded on this course at all.
+    last_graded_at: datetime | None = None
 
 
 class CourseGradebook(_ResourceBase):

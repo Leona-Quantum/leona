@@ -924,6 +924,16 @@ def _gradebook(course, modules, *, visibility="all_members"):
             total_graded_cells=4,
             last_graded_at=NOW,
         ),
+        # A member who has not started: listed for the course's creator all the same.
+        contracts.GradebookRow(
+            user_id=uuid_module.uuid4(),
+            email="cy@example.test",
+            display_name="Cy",
+            entries=[],
+            total_passed=0,
+            total_graded_cells=5,
+            last_graded_at=None,
+        ),
     ]
     return contracts.CourseGradebook(
         course_id=course.id,
@@ -960,7 +970,12 @@ async def test_gradebook_returns_the_repo_answer_with_its_visibility(client, gra
     assert response.status_code == 200, response.text
     body = response.json()
     assert body["visibility"] == "all_members"
-    assert [row["email"] for row in body["rows"]] == ["ana@example.test", "bo@example.test"]
+    assert [row["email"] for row in body["rows"]] == [
+        "ana@example.test",
+        "bo@example.test",
+        "cy@example.test",
+    ]
+    assert body["rows"][2]["entries"] == [] and body["rows"][2]["last_graded_at"] is None
     assert body["rows"][0]["entries"][0]["passed"] == 1
 
 
@@ -1006,7 +1021,7 @@ async def test_gradebook_csv_is_one_row_per_member_per_module_with_totals(client
         "graded_cells",
     ]
     assert header[-2:] == ["course_cells_passed", "course_graded_cells"]
-    assert len(body) == 4, "two members x two modules"
+    assert len(body) == 6, "three members x two modules"
     record = [dict(zip(header, row, strict=True)) for row in body]
     # A module the member has not been graded on: passed EMPTY, not 0, and the
     # module's count today as the denominator.
@@ -1014,10 +1029,18 @@ async def test_gradebook_csv_is_one_row_per_member_per_module_with_totals(client
     assert record[1]["cells_passed"] == ""
     assert record[1]["graded_cells"] == "3"
     assert record[0]["cells_passed"] == "1" and record[0]["graded_cells"] == "2"
-    assert [r["course_graded_cells"] for r in record] == ["5", "5", "4", "4"]
+    assert [r["course_graded_cells"] for r in record] == ["5", "5", "4", "4", "5", "5"]
     assert record[3]["outdated"] == "yes" and record[2]["outdated"] == ""
     # A member with no display name is listed by their email.
     assert record[2]["member"] == "bo@example.test"
+    # A member who has not started: every module "not started" (empty), and the
+    # course total empty rather than 0, while the denominator is still the course's.
+    cy = [r for r in record if r["email"] == "cy@example.test"]
+    assert [r["cells_passed"] for r in cy] == ["", ""]
+    assert [r["graded_cells"] for r in cy] == ["2", "3"]
+    assert [r["graded_at"] for r in cy] == ["", ""]
+    assert [r["course_cells_passed"] for r in cy] == ["", ""]
+    assert record[0]["course_cells_passed"] == "1", "a started member keeps their total"
 
 
 async def test_gradebook_csv_cannot_smuggle_a_formula_into_a_spreadsheet(client, gradebook_course):

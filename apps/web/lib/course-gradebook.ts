@@ -3,10 +3,10 @@
  * Nothing here touches the DOM or imports React.
  *
  * Who is in the table is decided by the control plane, not here: the course's
- * creator is sent every member's row and anyone else only their own
- * (`repos.courses.course_gradebook`). The client reads `visibility` to title the
- * table honestly and never filters rows itself, because a filter in the browser
- * would be a filter over data the browser had already been sent.
+ * creator is sent every current member's row, started or not, and anyone else
+ * only their own (`repos.courses.course_gradebook`). The client reads `visibility`
+ * to title the table honestly and never filters rows itself, because a filter in
+ * the browser would be a filter over data the browser had already been sent.
  */
 import type { CourseGradebook, GradebookEntry, GradebookModule, GradebookRow } from "./course-types";
 

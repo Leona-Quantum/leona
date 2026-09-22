@@ -16,7 +16,8 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
 }
 
-function formatWhen(value: string, locale: PublicLocale): string {
+function formatWhen(value: string | null | undefined, locale: PublicLocale): string {
+  if (!value) return "";
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return value;
   return new Intl.DateTimeFormat(locale === "ja" ? "ja-JP" : "en-US", {
@@ -122,8 +123,8 @@ export function CourseGradebook({
 
 /**
  * The table itself. Who is in it was decided by the control plane: the course's
- * creator is sent every member's row (`visibility: "all_members"`) and anyone
- * else only their own (`"own_row"`). This component titles the table from that
+ * creator is sent every current member's row, started or not
+ * (`visibility: "all_members"`), and anyone else only their own (`"own_row"`). This component titles the table from that
  * field and never filters rows, because a filter here would only hide data the
  * browser had already been sent.
  */
@@ -152,6 +153,10 @@ export function CourseGradebookView({
   const lede = book && !everyone ? coursesCopy.yourProgressLede : coursesCopy.gradebookLede;
   const rows = book?.rows ?? [];
   const columns = book ? gradebookColumns(book) : [];
+  // The creator is sent every current member, started or not, so "nobody has
+  // started" is a table of "Not started" rows, not an empty list. Say it in words
+  // as well, above the table, because a column of identical cells is easy to misread.
+  const nobodyStarted = rows.every((row) => (row.entries ?? []).length === 0);
 
   return (
     <section className="mj-course-gradebook" aria-labelledby="course-gradebook-title">
@@ -188,7 +193,7 @@ export function CourseGradebookView({
       {downloadError ? <p role="alert" className="mj-notebook-workspace-error">{downloadError}</p> : null}
       {loading && !book ? <p className="mj-notebook-chat-empty" role="status">{coursesCopy.gradebookLoading}</p> : null}
 
-      {book && rows.length === 0 ? (
+      {book && nobodyStarted ? (
         <p className="mj-notebook-chat-empty">{everyone ? coursesCopy.gradebookEmpty : coursesCopy.yourProgressEmpty}</p>
       ) : null}
 
@@ -281,9 +286,14 @@ function GradebookTableRow({
           </td>
         );
       })}
-      <td>
-        <Score passed={row.total_passed} graded={row.total_graded_cells} locale={locale} />
-      </td>
+      {(row.entries ?? []).length > 0 ? (
+        <td>
+          <Score passed={row.total_passed} graded={row.total_graded_cells} locale={locale} />
+        </td>
+      ) : (
+        // Not "0/N": a member who has not started has not scored zero.
+        <td className="mj-course-gradebook-empty-cell">{coursesCopy.gradebookNotStarted}</td>
+      )}
       <td className="mj-mono-muted">{formatWhen(row.last_graded_at, locale)}</td>
     </tr>
   );

@@ -515,6 +515,8 @@ def render_gradebook_csv(book: contracts.CourseGradebook) -> str:
     `GET /notebooks/{id}/grades` draws with `null`. Its `graded_cells` is the
     module's count today, so a member's `graded_cells` column sums to their
     `course_graded_cells`, which is the check a spreadsheet user will make first.
+    A member who has not started anything gets `course_cells_passed` empty too,
+    for the same reason.
 
     Totals are two numeric columns rather than one "7/12" cell, because a
     spreadsheet reads "7/12" as the 12th of July.
@@ -537,7 +539,7 @@ def render_gradebook_csv(book: contracts.CourseGradebook) -> str:
                 entry.version_seq if entry else None,
                 ("yes" if entry.stale else "no") if entry else None,
                 entry.run_id if entry else None,
-                row.total_passed,
+                row.total_passed if row.entries else None,
                 row.total_graded_cells,
             )
             writer.writerow([_csv_cell(cell) for cell in cells])

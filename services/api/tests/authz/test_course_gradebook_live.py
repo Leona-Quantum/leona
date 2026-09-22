@@ -1,18 +1,19 @@
 """Who may read a course's gradebook, against real Postgres (ai-ops 349 proposal 8).
 
 The rule under test (`repos.courses.course_gradebook`): **the course's creator sees
-every current member's row, anyone else in the workspace sees only their own, and a
-caller from another workspace sees nothing at all** (404, the answer every course
-route gives across a workspace boundary). Owner ruling ai-ops 260, option 1, is
+every current member's row, started or not; anyone else in the workspace sees only
+their own, started or not; and a caller from another workspace sees nothing at all**
+(404, the answer every course route gives across a workspace boundary). Owner ruling ai-ops 260, option 1, is
 "only the person who created it sees the answers"; a gradebook carries results
 rather than answers, but it shows one member's work to another, so it follows the
 same line.
 
 `test_course_repo.py` asserts the clauses on the compiled SQL. That proves the query
 SAYS the right thing; only a database proves it DOES — that `DISTINCT ON` keeps the
-latest attempt rather than an arbitrary one, that the membership join drops a person
-who left, and that a grading event forged in another workspace against this
-workspace's notebook version is not joined in on the strength of its payload alone.
+latest attempt rather than an arbitrary one, that the LEFT join from memberships
+lists a member with no attempt and drops a person who left, and that a grading event
+forged in another workspace against this workspace's notebook version is not joined
+in on the strength of its payload alone.
 
 Everything runs inside the authz `db` fixture's transaction and is rolled back. One
 connection throughout, so there is no cross-connection visibility question to make
@@ -25,7 +26,9 @@ stranger is stopped earlier and more strongly by `get_course`'s workspace filter
 
 from __future__ import annotations
 
+import csv as csv_module
 import datetime as dt
+import io
 import uuid
 
 import httpx
@@ -204,10 +207,15 @@ async def _grade(db, learner: Scope, version_id: uuid.UUID, *, passed: int, at: 
 # ---------------------------------------------------------------------------- the rule
 
 
-async def test_the_course_creator_sees_every_member_who_was_graded(db):
+def _by_user(book):
+    return {row.user_id: row for row in book.rows}
+
+
+async def test_the_course_creator_sees_every_current_member_started_or_not(db):
     creator = await _owner_scope(db, "teacher")
     ana = await _co_member(db, creator, "ana")
     bo = await _co_member(db, creator, "bo")
+    cy = await _co_member(db, creator, "cy")  # never graded
     course, modules, _nb, version = await _course(db, creator)
     await _grade(db, ana, version.id, passed=2, at=T0)
     await _grade(db, bo, version.id, passed=1, at=T0)
@@ -215,14 +223,19 @@ async def test_the_course_creator_sees_every_member_who_was_graded(db):
     book = await courses_repo.course_gradebook(creator, db, course.id)
 
     assert book.visibility is GradebookVisibility.ALL_MEMBERS
-    assert {row.user_id for row in book.rows} == {ana.user_id, bo.user_id}
-    by_user = {row.user_id: row for row in book.rows}
-    assert [(e.module_id, e.passed, e.graded_cells) for e in by_user[ana.user_id].entries] == [
+    # The whole class, the creator included: the members page lists them too.
+    assert set(_by_user(book)) == {creator.user_id, ana.user_id, bo.user_id, cy.user_id}
+    rows = _by_user(book)
+    assert [(e.module_id, e.passed, e.graded_cells) for e in rows[ana.user_id].entries] == [
         (modules[0].id, 2, 2)
     ]
-    assert by_user[bo.user_id].total_passed == 1
+    assert rows[bo.user_id].total_passed == 1
     # Week 2 has no notebook, so it adds nothing to the denominator.
-    assert by_user[bo.user_id].total_graded_cells == 2
+    assert rows[bo.user_id].total_graded_cells == 2
+    # Cy has not started: a row with nothing in it, not a zero score.
+    assert rows[cy.user_id].entries == []
+    assert rows[cy.user_id].last_graded_at is None
+    assert (rows[cy.user_id].total_passed, rows[cy.user_id].total_graded_cells) == (0, 2)
     assert [m.graded_cells for m in book.modules] == [2, None]
 
 
@@ -238,14 +251,16 @@ async def test_a_member_who_did_not_create_the_course_sees_only_their_own_row(db
 
     assert book.visibility is GradebookVisibility.OWN_ROW
     assert [row.user_id for row in book.rows] == [ana.user_id]
+    assert book.rows[0].total_passed == 2
     # The control: Bo's attempt is really there, and the creator can see it. Without
     # this, "Ana sees one row" would also pass if Bo's grading had silently not landed.
     everyone = await courses_repo.course_gradebook(creator, db, course.id)
-    assert bo.user_id in {row.user_id for row in everyone.rows}
+    assert _by_user(everyone)[bo.user_id].total_passed == 1
 
 
-async def test_workspace_role_does_not_open_the_full_gradebook(db):
-    """An ADMIN of the workspace who did not write the course is a classmate here."""
+async def test_a_member_who_has_not_started_still_gets_their_own_row_and_no_one_elses(db):
+    """An ADMIN of the workspace who did not write the course is a classmate here, and
+    a classmate who has not started sees one empty row: their own."""
     creator = await _owner_scope(db, "teacher")
     admin = await _co_member(db, creator, "admin", role=Role.ADMIN)
     ana = await _co_member(db, creator, "ana")
@@ -255,7 +270,9 @@ async def test_workspace_role_does_not_open_the_full_gradebook(db):
     book = await courses_repo.course_gradebook(admin, db, course.id)
 
     assert book.visibility is GradebookVisibility.OWN_ROW
-    assert book.rows == []
+    assert [(row.user_id, row.entries, row.last_graded_at) for row in book.rows] == [
+        (admin.user_id, [], None)
+    ]
 
 
 async def test_a_member_created_course_gives_its_creator_the_full_view(db):
@@ -267,12 +284,13 @@ async def test_a_member_created_course_gives_its_creator_the_full_view(db):
     course, _modules, _nb, version = await _course(db, teacher)
     await _grade(db, ana, version.id, passed=1, at=T0)
 
-    assert [
-        row.user_id for row in (await courses_repo.course_gradebook(teacher, db, course.id)).rows
-    ] == [ana.user_id]
+    teacher_view = await courses_repo.course_gradebook(teacher, db, course.id)
+    assert set(_by_user(teacher_view)) == {workspace_owner.user_id, teacher.user_id, ana.user_id}
     owner_view = await courses_repo.course_gradebook(workspace_owner, db, course.id)
     assert owner_view.visibility is GradebookVisibility.OWN_ROW
-    assert owner_view.rows == []
+    assert [(row.user_id, row.entries) for row in owner_view.rows] == [
+        (workspace_owner.user_id, [])
+    ]
 
 
 async def test_another_workspace_cannot_read_the_gradebook_at_all(db):
@@ -286,14 +304,15 @@ async def test_another_workspace_cannot_read_the_gradebook_at_all(db):
 
 async def test_a_grading_event_forged_in_another_workspace_is_not_joined_in(db):
     """The join to the notebook version goes through the event PAYLOAD, which the
-    writer controls. A run in workspace B carrying A's version id must not appear in
+    writer controls. A run in workspace B carrying A's version id must not count in
     A's gradebook.
 
     The forger is a MEMBER of A running in their own workspace B, on purpose. A
-    stranger with no membership in A is also dropped by the membership join, so a
-    stranger-only version of this test stayed green with `runs.workspace_id` deleted
-    from the query (tried: 9 of 9 passed). Only a member of A who writes the run
-    somewhere else isolates the tenancy clause."""
+    stranger with no membership in A is never a row at all, so a stranger-only
+    version of this test stayed green with `runs.workspace_id` deleted from the
+    query (tried: 9 of 9 passed). Only a member of A who writes the run somewhere
+    else isolates the tenancy clause: they ARE listed, so the question is whether
+    the forged attempt is counted against their name."""
     creator = await _owner_scope(db, "teacher")
     course, _modules, _nb, version = await _course(db, creator)
     user, own_workspace = await _person(db, "forger")
@@ -305,13 +324,14 @@ async def test_a_grading_event_forged_in_another_workspace_is_not_joined_in(db):
 
     book = await courses_repo.course_gradebook(creator, db, course.id)
 
-    assert book.rows == []
-    # The control: the same member, graded INSIDE A, does appear. Without it an empty
-    # gradebook would pass whether or not the query could see anything at all.
+    assert set(_by_user(book)) == {creator.user_id, user.id}, "the stranger is no member"
+    assert _by_user(book)[user.id].entries == [], "the forged attempt must not count"
+    # The control: the same member, graded INSIDE A, does count. Without it an empty
+    # row would pass whether or not the query could see anything at all.
     inside = Scope(user_id=user.id, workspace_id=creator.workspace_id, role=Role.MEMBER)
     await _grade(db, inside, version.id, passed=1, at=T0)
     book = await courses_repo.course_gradebook(creator, db, course.id)
-    assert [(row.user_id, row.total_passed) for row in book.rows] == [(user.id, 1)]
+    assert _by_user(book)[user.id].total_passed == 1
 
 
 # ------------------------------------------------------------------ what a row reports
@@ -327,7 +347,7 @@ async def test_the_latest_attempt_wins_and_a_revised_notebook_marks_it_outdated(
     later = await _grade(db, ana, version.id, passed=1, at=T0 + dt.timedelta(hours=2))
     await _grade(db, ana, version.id, passed=2, at=T0)
 
-    [row] = (await courses_repo.course_gradebook(creator, db, course.id)).rows
+    row = _by_user(await courses_repo.course_gradebook(creator, db, course.id))[ana.user_id]
     [entry] = row.entries
     assert (entry.passed, entry.run_id, entry.stale) == (1, later.id, False)
     assert entry.version_seq == 1
@@ -337,24 +357,28 @@ async def test_the_latest_attempt_wins_and_a_revised_notebook_marks_it_outdated(
     )
     await _make_ready(db, creator, revised.id)
 
-    [row] = (await courses_repo.course_gradebook(creator, db, course.id)).rows
+    row = _by_user(await courses_repo.course_gradebook(creator, db, course.id))[ana.user_id]
     assert row.entries[0].stale is True
     assert row.entries[0].version_seq == 1
 
 
 async def test_a_person_who_left_the_workspace_leaves_the_gradebook(db):
+    """Graded or not: the LEFT join must start from CURRENT memberships, so a person
+    who left is gone whether or not they had an attempt to join to."""
     creator = await _owner_scope(db, "teacher")
     ana = await _co_member(db, creator, "ana")
     bo = await _co_member(db, creator, "bo")
+    dee = await _co_member(db, creator, "dee")  # never graded
     course, _modules, _nb, version = await _course(db, creator)
     await _grade(db, ana, version.id, passed=2, at=T0)
     await _grade(db, bo, version.id, passed=2, at=T0)
 
     # Through the real removal path, the one the members page's "Remove" button uses.
     await workspaces_repo.remove_member(creator, db, user_id=bo.user_id)
+    await workspaces_repo.remove_member(creator, db, user_id=dee.user_id)
 
     book = await courses_repo.course_gradebook(creator, db, course.id)
-    assert [row.user_id for row in book.rows] == [ana.user_id]
+    assert set(_by_user(book)) == {creator.user_id, ana.user_id}
 
 
 # -------------------------------------------------------------------------------- HTTP
@@ -375,6 +399,7 @@ async def test_over_http_a_stranger_gets_404_and_a_member_gets_their_own_row(db)
     creator = await _owner_scope(db, "teacher")
     ana = await _co_member(db, creator, "ana")
     bo = await _co_member(db, creator, "bo")
+    cy = await _co_member(db, creator, "cy")  # never graded
     course, _modules, _nb, version = await _course(db, creator)
     await _grade(db, ana, version.id, passed=2, at=T0)
     await _grade(db, bo, version.id, passed=1, at=T0)
@@ -394,9 +419,16 @@ async def test_over_http_a_stranger_gets_404_and_a_member_gets_their_own_row(db)
     csv_text = own_csv.content.decode("utf-8")
     ana_email = own.json()["rows"][0]["email"]
     assert ana_email in csv_text
-    # Bo's email must not reach Ana through the export either.
+    # Neither a classmate who was graded nor one who was not reaches Ana through the
+    # export: her CSV is her own row and nothing else.
     async with _client(db, creator) as c:
         full = (await c.get(f"/v1/courses/{course.id}/gradebook")).json()
-    bo_email = next(row["email"] for row in full["rows"] if row["user_id"] == str(bo.user_id))
-    assert bo_email not in csv_text
+        full_csv = (await c.get(f"/v1/courses/{course.id}/gradebook.csv")).content.decode()
+    emails = {row["user_id"]: row["email"] for row in full["rows"]}
+    assert emails[str(bo.user_id)] not in csv_text
+    assert emails[str(cy.user_id)] not in csv_text
     assert full["visibility"] == "all_members"
+    # The creator's export lists Cy, not started: an empty cells_passed.
+    records = list(csv_module.DictReader(io.StringIO(full_csv.lstrip("\ufeff"))))
+    cy_rows = [r for r in records if r["email"] == emails[str(cy.user_id)]]
+    assert [(r["module_number"], r["cells_passed"]) for r in cy_rows] == [("1", ""), ("2", "")]

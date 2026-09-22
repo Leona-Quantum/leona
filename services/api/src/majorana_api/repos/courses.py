@@ -731,32 +731,40 @@ async def _live_notebook_graded_cells(
 async def course_gradebook(
     scope: Scope, session: AsyncSession, course_id: uuid.UUID
 ) -> contracts.CourseGradebook:
-    """Each member's latest graded attempt at each module of a course.
+    """Each current member's latest graded attempt at each module of a course.
 
     ## Who sees which rows
 
-    **The course's creator (`courses.owner_user_id`) sees every member; anyone else in
-    the workspace sees only their own row.** Owner ruling ai-ops 260, option 1, is
-    "only the person who created it sees the answers". A gradebook carries results,
-    not answers, but it does expose one member's work to another, and the person the
-    ruling already trusts with the answer key is the one person for whom that is the
-    point. Workspace role is deliberately NOT the test: an admin who did not write
-    the course is a classmate, and classmates do not read each other's marks. A
-    caller from another workspace never gets this far: `get_course` answers 404,
-    the same "absent or not yours" every course route gives.
+    **The course's creator (`courses.owner_user_id`) sees every current member of the
+    workspace, started or not; anyone else sees only their own row, started or not.**
+    Owner ruling ai-ops 260, option 1, is "only the person who created it sees the
+    answers". A gradebook carries results, not answers, but it does expose one
+    member's work to another, and the person the ruling already trusts with the
+    answer key is the one person for whom that is the point. Workspace role is
+    deliberately NOT the test: an admin who did not write the course is a classmate,
+    and classmates do not read each other's marks. A caller from another workspace
+    never gets this far: `get_course` answers 404, the same "absent or not yours"
+    every course route gives.
+
+    Members who have not started are listed for the creator because "who has not
+    started" is an instructor's first question, and listing them exposes nothing new:
+    it is the member list `GET /v1/workspace` already shows every member, plus each
+    person's own results. So the statement is driven FROM `memberships` and LEFT
+    joined to the grades, rather than driven from the grades, which could only ever
+    list people who had already been graded.
 
     The rule is applied HERE, in the query, rather than by filtering rows in the
-    route. A member's view is a query that cannot return anyone else's attempt, so
-    there is no second code path (the CSV export, say) that could forget to filter.
+    route. A member's view is a query that cannot return anyone else's row, so there
+    is no second code path (the CSV export, say) that could forget to filter.
 
     ## Where the numbers come from
 
     No table of its own. Grading already writes each verdict to `run_events` as
     `notebook.grades`, and `latest_grades_for_reader` already reads one learner's back
-    from there; this is the same statement without the `Run.user_id` clause for the
-    creator, grouped with `DISTINCT ON (user, notebook)` so Postgres hands back one
-    row per member per module rather than every attempt ever made. The counts are read
-    out of the payload in SQL, so the per-cell messages never leave the database.
+    from there. The inner query is that statement for every member at once, grouped
+    with `DISTINCT ON (user, notebook)` so Postgres keeps one row per member per module
+    rather than every attempt ever made. The counts are read out of the payload in
+    SQL, so the per-cell messages never leave the database.
 
     A member is someone with a membership row NOW. A person who left the workspace
     keeps their runs, but the members page stops showing them the day they leave,
@@ -793,29 +801,25 @@ async def course_gradebook(
         for row in modules
         if row.notebook_id is not None and row.notebook_id in live
     }
-    if not module_by_notebook:
-        return contracts.CourseGradebook(
-            course_id=course.id, visibility=visibility, modules=columns
-        )
 
     cells = RunEvent.payload["grades"]["cells"]
-    stmt = (
+    latest = (
         select(
-            Run.user_id,
-            User.email,
-            User.display_name,
-            NotebookVersion.notebook_id,
-            NotebookVersion.id,
-            NotebookVersion.seq,
-            Notebook.current_version_id,
-            RunEvent.run_id,
-            func.coalesce(RunEvent.ts, RunEvent.created_at),
-            RunEvent.payload["passed"].as_integer(),
-            RunEvent.payload["failed"].as_integer(),
-            RunEvent.payload["attempted"].as_integer(),
+            Run.user_id.label("user_id"),
+            NotebookVersion.notebook_id.label("notebook_id"),
+            NotebookVersion.id.label("version_id"),
+            NotebookVersion.seq.label("version_seq"),
+            Notebook.current_version_id.label("current_version_id"),
+            RunEvent.run_id.label("run_id"),
+            func.coalesce(RunEvent.ts, RunEvent.created_at).label("graded_at"),
+            RunEvent.payload["passed"].as_integer().label("passed"),
+            RunEvent.payload["failed"].as_integer().label("failed"),
+            RunEvent.payload["attempted"].as_integer().label("attempted"),
             # `jsonb_array_length` raises on a non-array, and one malformed event must
             # not take the whole gradebook down with it.
-            case((func.jsonb_typeof(cells) == "array", func.jsonb_array_length(cells)), else_=0),
+            case(
+                (func.jsonb_typeof(cells) == "array", func.jsonb_array_length(cells)), else_=0
+            ).label("graded_cells"),
         )
         .join(Run, RunEvent.run_id == Run.id)
         .join(
@@ -823,16 +827,13 @@ async def course_gradebook(
             NotebookVersion.id == cast(RunEvent.payload["version_id"].astext, PGUUID),
         )
         .join(Notebook, Notebook.id == NotebookVersion.notebook_id)
-        .join(
-            Membership,
-            and_(Membership.user_id == Run.user_id, Membership.workspace_id == scope.workspace_id),
-        )
-        .join(User, User.id == Run.user_id)
         .where(
             RunEvent.type == "notebook.grades",
             Run.workspace_id == scope.workspace_id,
             Notebook.workspace_id == scope.workspace_id,
             Notebook.deleted_at.is_(None),
+            # Empty when no module has a notebook yet. The statement still runs,
+            # because the creator still needs the member list with nobody started.
             NotebookVersion.notebook_id.in_(list(module_by_notebook)),
         )
         .distinct(Run.user_id, NotebookVersion.notebook_id)
@@ -851,7 +852,37 @@ async def course_gradebook(
         )
     )
     if not everyone:
-        stmt = stmt.where(Run.user_id == scope.user_id)
+        # Redundant with the outer `memberships.user_id` clause below, which is the one
+        # that decides whose rows come back. This one keeps a member's request from
+        # grouping every classmate's attempts only to throw them away.
+        latest = latest.where(Run.user_id == scope.user_id)
+    graded = latest.subquery("latest_grades")
+
+    stmt = (
+        select(
+            Membership.user_id,
+            User.email,
+            User.display_name,
+            graded.c.notebook_id,
+            graded.c.version_id,
+            graded.c.version_seq,
+            graded.c.current_version_id,
+            graded.c.run_id,
+            graded.c.graded_at,
+            graded.c.passed,
+            graded.c.failed,
+            graded.c.attempted,
+            graded.c.graded_cells,
+        )
+        .select_from(Membership)
+        .join(User, User.id == Membership.user_id)
+        # LEFT: a member with no grading event still comes back, once, with every
+        # grade column NULL. That row is "not started", which is the point.
+        .outerjoin(graded, graded.c.user_id == Membership.user_id)
+        .where(Membership.workspace_id == scope.workspace_id)
+    )
+    if not everyone:
+        stmt = stmt.where(Membership.user_id == scope.user_id)
 
     people: dict[uuid.UUID, tuple[str, str | None]] = {}
     entries: dict[uuid.UUID, list[contracts.GradebookEntry]] = {}
@@ -870,11 +901,12 @@ async def course_gradebook(
         attempted,
         graded_cells,
     ) in (await session.execute(stmt)).all():
-        module = module_by_notebook.get(notebook_id)
+        people[user_id] = (email, display_name)
+        found = entries.setdefault(user_id, [])
+        module = module_by_notebook.get(notebook_id) if notebook_id is not None else None
         if module is None:
             continue
-        people[user_id] = (email, display_name)
-        entries.setdefault(user_id, []).append(
+        found.append(
             contracts.GradebookEntry(
                 module_id=module.id,
                 passed=max(int(passed or 0), 0),
@@ -907,7 +939,7 @@ async def course_gradebook(
                 entries=found,
                 total_passed=sum(entry.passed for entry in found),
                 total_graded_cells=sum(entry.graded_cells for entry in found) + remaining,
-                last_graded_at=max(entry.graded_at for entry in found),
+                last_graded_at=max((entry.graded_at for entry in found), default=None),
             )
         )
     rows.sort(key=lambda row: ((row.display_name or row.email).casefold(), str(row.user_id)))

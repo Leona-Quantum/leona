@@ -62,6 +62,16 @@ const everyone: CourseGradebook = {
       total_graded_cells: 5,
       last_graded_at: "2026-09-21T10:00:00Z",
     },
+    {
+      // Has not started: the creator is sent every current member all the same.
+      user_id: "u-cy",
+      email: "cy@example.test",
+      display_name: "Cy",
+      entries: [],
+      total_passed: 0,
+      total_graded_cells: 5,
+      last_graded_at: null,
+    },
   ],
 };
 
@@ -97,8 +107,24 @@ test("the course creator sees every member, each module, totals and a CSV downlo
   // Ana: 1 of 2 on module 1 (graded on an earlier version), not started on module 2.
   assert.ok(screen.getByText(copy.gradebookScore(1, 2)));
   assert.ok(screen.getByText(copy.gradebookOlderVersion));
-  assert.equal(screen.getAllByText(copy.gradebookNotStarted).length, 2);
   assert.ok(screen.getByText(copy.gradebookScore(3, 5)), "Bo's course total");
+
+  // Cy has not started: listed, with "Not started" in both modules AND the total,
+  // never a "0/5" that reads as a failing score.
+  const cyRow = screen.getByRole("rowheader", { name: /Cy/ }).closest("tr");
+  assert.ok(cyRow);
+  const cyCells = [...cyRow.querySelectorAll("td")].map((cell) => cell.textContent);
+  assert.deepEqual(cyCells, [
+    copy.gradebookNotStarted,
+    copy.gradebookNotStarted,
+    copy.gradebookNotStarted,
+    "",
+  ]);
+  assert.equal(screen.queryByText(copy.gradebookScore(0, 5)), null);
+  // Ana's module 2, Bo's module 1, and Cy's three cells.
+  assert.equal(screen.getAllByText(copy.gradebookNotStarted).length, 5);
+  // Somebody has started, so the "nobody has started" sentence stays away.
+  assert.equal(screen.queryByText(copy.gradebookEmpty), null);
 
   const download = screen.getByRole("button", { name: copy.gradebookDownloadCsv }) as HTMLButtonElement;
   assert.equal(download.disabled, false);
@@ -118,16 +144,27 @@ test("a member who did not make the course sees 'Your progress' with one row lab
   assert.equal(screen.queryByRole("button", { name: copy.gradebookDownloadCsv }), null);
 });
 
-test("an empty gradebook says so in words that fit who is looking", () => {
-  const creatorEmpty = view({ ...everyone, rows: [] });
-  assert.ok(creatorEmpty.getByText(copy.gradebookEmpty));
-  const download = creatorEmpty.getByRole("button", { name: copy.gradebookDownloadCsv }) as HTMLButtonElement;
-  assert.equal(download.disabled, true, "nothing to download yet");
-  creatorEmpty.unmount();
+test("when nobody has started, the class is still listed and the page says so", () => {
+  const cy = everyone.rows![2];
+  const creator = view({ ...everyone, rows: [cy] });
+  assert.ok(creator.getByText(copy.gradebookEmpty));
+  assert.ok(creator.getByText("Cy"), "the member who has not started is still listed");
+  const download = creator.getByRole("button", { name: copy.gradebookDownloadCsv }) as HTMLButtonElement;
+  assert.equal(download.disabled, false, "the class list is worth exporting");
+  creator.unmount();
 
-  const memberEmpty = view({ ...everyone, visibility: "own_row", rows: [] });
-  assert.ok(memberEmpty.getByText(copy.yourProgressEmpty));
-  assert.equal(memberEmpty.queryByText(copy.gradebookEmpty), null);
+  // A member who has not started sees their own row, labelled You, not an empty page.
+  const member = view({ ...everyone, visibility: "own_row", rows: [cy] });
+  assert.ok(member.getByText(copy.yourProgressEmpty));
+  assert.ok(member.getByRole("rowheader", { name: copy.gradebookYou }));
+  assert.equal(member.getAllByText(copy.gradebookNotStarted).length, 3);
+  assert.equal(member.queryByText(copy.gradebookEmpty), null);
+  member.unmount();
+
+  // Defensive only (the API always sends a member their own row): no rows at all.
+  const none = view({ ...everyone, rows: [] });
+  const disabled = none.getByRole("button", { name: copy.gradebookDownloadCsv }) as HTMLButtonElement;
+  assert.equal(disabled.disabled, true, "nothing to download");
 });
 
 test("the Japanese view renders the Japanese copy", () => {

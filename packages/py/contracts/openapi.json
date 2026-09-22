@@ -4087,7 +4087,7 @@
       },
       "GradebookRow": {
         "additionalProperties": false,
-        "description": "One workspace member's results across the course.\n\n`email` and `display_name` are exactly what `GET /v1/workspace` already shows\nevery member about every other member, and nothing more.",
+        "description": "One workspace member's results across the course.\n\n`email` and `display_name` are exactly what `GET /v1/workspace` already shows\nevery member about every other member, and nothing more.\n\nA member who has not been graded on anything still gets a row: `entries` is\nempty, `total_passed` is 0 and `last_graded_at` is `None`. A client must render\nthat as \"not started\", never as a score of zero, because \"has not tried\" and\n\"tried and got nothing right\" are different facts about a learner.",
         "properties": {
           "display_name": {
             "anyOf": [
@@ -4113,9 +4113,17 @@
             "type": "array"
           },
           "last_graded_at": {
-            "format": "date-time",
-            "title": "Last Graded At",
-            "type": "string"
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Last Graded At"
           },
           "total_graded_cells": {
             "minimum": 0,
@@ -4137,8 +4145,7 @@
           "user_id",
           "email",
           "total_passed",
-          "total_graded_cells",
-          "last_graded_at"
+          "total_graded_cells"
         ],
         "title": "GradebookRow",
         "type": "object"
