@@ -18,7 +18,7 @@ different purpose).
 
 Two data classes:
 
-- **Live-probed (21 tables)** — every distinct join shape RLS uses (direct column;
+- **Live-probed (23 tables)** — every distinct join shape RLS uses (direct column;
   one hop via `artifacts`; two hops via `artifact_versions`; one hop via `runs`; one hop
   via `runs` through `agent_runs`'s shared primary key) proven against real rows from
   `rls_helpers.provision()`, with a positive control, a cross-tenant negative, and a
@@ -78,6 +78,9 @@ LIVE_TABLES: tuple[tuple[str, str], ...] = (
     ("run_plans", "id"),
     ("run_candidates", "id"),
     ("candidate_executions", "id"),
+    # Migration 0068. Both directly scoped on their own workspace_id.
+    ("comments", "id"),
+    ("comment_mentions", "comment_id"),
 )
 
 #: (table, ancestor table an EXISTS predicate must name). Verified structurally —

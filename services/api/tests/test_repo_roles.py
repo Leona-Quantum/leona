@@ -6,6 +6,7 @@ import uuid
 
 import pytest
 from repo_test_helpers import make_scope
+from majorana_contracts import CommentTargetType
 from majorana_contracts.enums import Role, RunMode, RunStatus, UsageKind, VerificationMethod
 
 from majorana_api.repos import (
@@ -13,6 +14,7 @@ from majorana_api.repos import (
     agent,
     artifacts,
     audit,
+    comments,
     folders,
     qapps,
     runs,
@@ -94,6 +96,13 @@ VIEWER_BLOCKED_WRITES = [
         deployment_limit=600,
     ),
     lambda s, db: qapps.mark_execution_running(s, db, uuid.uuid4()),
+    # Comments (migration 0068): a viewer reads threads and writes nothing. See
+    # repos/comments.py's module docstring for why that is the default.
+    lambda s, db: comments.create_comment(
+        s, db, target_type=CommentTargetType.RUN, target_id=uuid.uuid4(), body="x"
+    ),
+    lambda s, db: comments.update_comment(s, db, uuid.uuid4(), body="x"),
+    lambda s, db: comments.delete_comment(s, db, uuid.uuid4()),
     lambda s, db: qapps.finish_execution(
         s,
         db,

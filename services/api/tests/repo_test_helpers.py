@@ -269,8 +269,11 @@ async def _delete_committed_tenants(factory, workspace_ids, user_ids) -> None:
         Artifact,
         ArtifactVersion,
         AuditLog,
+        Comment,
+        CommentMention,
         Job,
         Membership,
+        Notebook,
         Project,
         ProjectShare,
         QpuRun,
@@ -359,6 +362,23 @@ async def _delete_committed_tenants(factory, workspace_ids, user_ids) -> None:
             )
             await session.execute(delete(Artifact).where(Artifact.id.in_(artifact_ids)))
         await session.execute(delete(Project).where(Project.workspace_id.in_(workspace_ids)))
+        # Comments (migration 0068) reference the workspace and the author, and
+        # their mentions a user as well, so they go before either. Mentions by
+        # user too: a torn-down user can have been mentioned in a workspace this
+        # call is NOT removing, and that row alone would block the user delete.
+        # A comment such a user WROTE elsewhere is left to fail the user delete
+        # loudly, because removing it could orphan other people's replies. The
+        # replies' self-reference is satisfied within one statement.
+        await session.execute(
+            delete(CommentMention).where(
+                (CommentMention.workspace_id.in_(workspace_ids))
+                | (CommentMention.mentioned_user_id.in_(user_ids))
+            )
+        )
+        await session.execute(delete(Comment).where(Comment.workspace_id.in_(workspace_ids)))
+        # Before the runs: a notebook version names the run that generated it.
+        # Versions and turns go with the notebook (ON DELETE CASCADE, 0058).
+        await session.execute(delete(Notebook).where(Notebook.workspace_id.in_(workspace_ids)))
         run_ids = list(
             (await session.execute(select(Run.id).where(Run.workspace_id.in_(workspace_ids))))
             .scalars()

@@ -93,6 +93,10 @@ class TenantRows:
     run_plans: uuid.UUID
     run_candidates: uuid.UUID
     candidate_executions: uuid.UUID
+    comments: uuid.UUID
+    #: Looked up by `comment_id`, the table's leading key column: its primary
+    #: key is (comment_id, mentioned_user_id) and each tenant has one row.
+    comment_mentions: uuid.UUID
 
 
 async def _build_tenant(session: AsyncSession, tag: str) -> TenantRows:
@@ -289,6 +293,25 @@ async def _build_tenant(session: AsyncSession, tag: str) -> TenantRows:
         },
     )
 
+    # Migration 0068. A comment on this tenant's run and one mention row. Raw
+    # SQL for the same reason as everything above: this is data for the
+    # database's own control to be probed against, inserted with enforcement off.
+    comment_id = uuid.uuid4()
+    await session.execute(
+        text(
+            "insert into comments (id, workspace_id, target_type, target_id, author_user_id, body) "
+            "values (:id, :w, 'run', :r, :u, 'rls probe')"
+        ),
+        {"id": comment_id, "w": ws.id, "r": run.id, "u": owner.id},
+    )
+    await session.execute(
+        text(
+            "insert into comment_mentions (comment_id, workspace_id, mentioned_user_id) "
+            "values (:c, :w, :u)"
+        ),
+        {"c": comment_id, "w": ws.id, "u": owner.id},
+    )
+
     return TenantRows(
         workspace_id=ws.id,
         owner_user_id=owner.id,
@@ -313,6 +336,8 @@ async def _build_tenant(session: AsyncSession, tag: str) -> TenantRows:
         run_plans=plan_id,
         run_candidates=candidate_id,
         candidate_executions=execution_id,
+        comments=comment_id,
+        comment_mentions=comment_id,
     )
 
 
