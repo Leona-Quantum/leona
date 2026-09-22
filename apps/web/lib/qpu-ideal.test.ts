@@ -264,6 +264,28 @@ test("decomposition path: a circuit outside the strict grammar but with a canoni
   assert.ok(result.tvd < 0.05, `expected the decomposed X-like gate near |1>, tvd was ${result.tvd}`);
 });
 
+test("decomposition path, Qiskit exporter shape: per-qubit indexed measurement keeps the bit order", () => {
+  // What `qiskit.qasm3.dumps` writes for a measured circuit: the bit register
+  // declared first and one indexed measurement per qubit. The strict grammar
+  // refuses indexed measurement, so this is the path production artifacts take,
+  // and the one where a reversed key convention would go unnoticed.
+  const exported = [
+    "OPENQASM 3.0;",
+    'include "stdgates.inc";',
+    "bit[2] c;",
+    "qubit[2] q;",
+    "x q[0];",
+    "c[0] = measure q[0];",
+    "c[1] = measure q[1];",
+  ].join("\n");
+  const base = { qasm: exported, submittedFingerprint: sourceFingerprint(exported), limits: LIMITS };
+  const right = computed(compareMeasuredToIdeal({ ...base, counts: { "01": 1000 } }));
+  assert.equal(right.model, "openqasm_standard_decomposition");
+  assert.ok(right.tvd < 1e-9, `qubit 0 flipped reads as "01" (bit 0 rightmost), tvd was ${right.tvd}`);
+  const reversed = computed(compareMeasuredToIdeal({ ...base, counts: { "10": 1000 } }));
+  assert.ok(reversed.tvd > 1 - 1e-9, `"10" is the reversed convention, tvd was ${reversed.tvd}`);
+});
+
 // --- shot-noise closed form -------------------------------------------------
 
 const P_03_QASM = [
