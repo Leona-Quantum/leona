@@ -424,6 +424,7 @@ def _to_qpu_run_resource(record: QpuRunRow) -> QpuRunRecord:
         provider=record.provider,
         device_id=record.device_id,
         provider_job_id=record.provider_job_id,
+        backend_name=record.backend_name,
         shots=record.shots,
         status=record.status,
         source_fingerprint=record.source_fingerprint,
@@ -579,6 +580,67 @@ async def qpu_submit(
         payload=payload.model_dump(mode="json"),
     )
     return _to_qpu_run_resource(record)
+
+
+class QpuRunHistoryItem(QpuRunRecord):
+    """One run in the workspace's hardware history: the record, plus its program.
+
+    `qasm` is here and not on `QpuRunRecord` because only a history needs it. The
+    submitting Studio already holds the circuit it sent; a page listing past runs
+    has nothing else to compute the ideal distribution from, and the
+    measured-against-ideal reading is a pure function of exactly this text
+    (`apps/web/lib/qpu-ideal.ts`). It is the workspace's own program, read under
+    the same workspace predicate as the counts beside it.
+
+    Route-local, on the precedent in this module's docstring: a read-only
+    projection whose shape is this route's own business.
+    """
+
+    qasm: str
+
+
+class QpuRunPage(BaseModel):
+    items: list[QpuRunHistoryItem]
+    #: Pass back as `cursor` for the next page. Null when this page was not full,
+    #: which is the last page — the same rule `GET /runs` and `GET /notebooks` use.
+    next_cursor: uuid.UUID | None
+
+
+#: Default and ceiling for one page. The ceiling is the one every list route in
+#: this API applies; each item carries its program, so the web asks for less.
+QPU_RUN_PAGE_DEFAULT = 50
+QPU_RUN_PAGE_MAX = 100
+
+
+@router.get("/qpu/runs", response_model=QpuRunPage)
+async def qpu_run_history(
+    scope: CurrentScope,
+    session: DbSession,
+    cursor: uuid.UUID | None = None,
+    limit: int = QPU_RUN_PAGE_DEFAULT,
+    source_fingerprint: Annotated[str | None, Query(min_length=1, max_length=200)] = None,
+) -> QpuRunPage:
+    """This workspace's hardware runs, newest first, paged by cursor.
+
+    Every row comes through `qpu_runs_repo.list_records`, which applies the
+    workspace predicate itself; there is no parameter here that names a
+    workspace, so there is nothing a caller can widen. `source_fingerprint`
+    narrows to one circuit (Studio restoring its last run after a reload).
+
+    No route-order hazard with `GET /qpu/runs/{record_id}` below: a literal path
+    only loses to a templated sibling when both register the same method AND the
+    template can match it, and `{record_id}` needs a segment `/qpu/runs` does not
+    have. `test_qpu_run_history_is_reachable_beside_the_single_record_read`
+    checks it with a request rather than leaving it to this comment.
+    """
+    limit = min(max(limit, 1), QPU_RUN_PAGE_MAX)
+    rows = await qpu_runs_repo.list_records(
+        scope, session, cursor=cursor, limit=limit, source_fingerprint=source_fingerprint
+    )
+    items = [
+        QpuRunHistoryItem(**_to_qpu_run_resource(row).model_dump(), qasm=row.qasm) for row in rows
+    ]
+    return QpuRunPage(items=items, next_cursor=rows[-1].id if len(rows) == limit else None)
 
 
 @router.get("/qpu/runs/{record_id}", response_model=QpuRunRecord)

@@ -921,6 +921,11 @@ class QpuRun(Base):
     provider: Mapped[str]
     device_id: Mapped[str]
     provider_job_id: Mapped[str | None]
+    #: The physical machine the provider ran the job on (migration 0065).
+    #: `device_id` is Leona's catalog key; this is what IBM's `least_busy`
+    #: actually picked. NULL when the provider reported nothing, and for every
+    #: row written before the column existed.
+    backend_name: Mapped[str | None]
     shots: Mapped[int] = mapped_column(Integer)
     status: Mapped[str] = mapped_column(server_default="queued")
     source_fingerprint: Mapped[str]

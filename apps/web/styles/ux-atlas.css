@@ -433,7 +433,14 @@
 .mj-finder-form input, .mj-finder-form select { min-height: calc(var(--sp-10) + var(--sp-1)); }
 .mj-finder-form fieldset { display: grid; gap: var(--sp-2); border: var(--border-hairline) solid var(--border-0); border-radius: var(--radius-control); padding: var(--sp-3); }
 .mj-finder-form legend { padding-inline: var(--sp-1); font-size: var(--fs-13); color: var(--text-1); }
-.mj-finder-radio { display: flex; align-items: center; gap: var(--sp-2); font-size: var(--fs-13); color: var(--text-0); }
+/* Qualified by the form, and with `flex-direction: row`, because two broader label rules
+   outrank or outlast a bare `.mj-finder-radio`: `.mj-finder-form label` (grid) and
+   `.mj-repository-controls label` (column flex). Between them the radio was stacked above
+   its words and stretched to the column width at the 44px input height, so each option drew
+   as a 277 x 44 disc (measured on leonaqt.com, 2026-09-22). The label keeps the touch height;
+   the input goes back to its own size. */
+.mj-finder-form .mj-finder-radio { display: flex; flex-direction: row; align-items: center; gap: var(--sp-2); min-height: calc(var(--sp-8) + var(--sp-1)); font-size: var(--fs-13); color: var(--text-0); cursor: pointer; }
+.mj-finder-form .mj-finder-radio input { flex: 0 0 auto; width: auto; min-height: 0; margin: 0; accent-color: var(--accent); }
 .mj-finder-results { display: grid; gap: var(--sp-4); grid-template-columns: repeat(auto-fill, minmax(20rem, 1fr)); list-style: none; margin: 0; padding: 0; }
 .mj-finder-card { list-style: none; }
 .mj-finder-criteria { display: grid; gap: var(--sp-1); margin: var(--sp-2) 0; padding: 0; list-style: none; font-size: var(--fs-13); }

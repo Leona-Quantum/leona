@@ -147,6 +147,11 @@ export function StudioIcon(props: IconProps) {
   return <Icon {...props}><path d="M3 4.5h10v7H3zM5 2.5h6M6 14h4M8 11.5V14" /><path d="m6 7 1.2 1.2L10 5.5" /></Icon>;
 }
 
+/** A chip with pins: the Studio sidebar's "Hardware runs" entry. */
+export function ChipIcon(props: IconProps) {
+  return <Icon {...props}><rect x="4.5" y="4.5" width="7" height="7" rx="1" /><path d="M6.5 2.5v2M9.5 2.5v2M6.5 11.5v2M9.5 11.5v2M2.5 6.5h2M2.5 9.5h2M11.5 6.5h2M11.5 9.5h2" /></Icon>;
+}
+
 export function SettingsIcon(props: IconProps) {
   return <Icon {...props}><path d="M6.3 2.9h3.4l.45 1.35 1.2.7 1.4-.2 1.7 2.95-.95 1.05v1.4l.95 1.05-1.7 2.95-1.4-.2-1.2.7-.45 1.35H6.3l-.45-1.35-1.2-.7-1.4.2-1.7-2.95.95-1.05V8.8l-.95-1.05 1.7-2.95 1.4.2 1.2-.7z" /><circle cx="8" cy="8" r="1.8" /></Icon>;
 }

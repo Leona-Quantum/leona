@@ -7028,6 +7028,85 @@ div.mj-rail-row:hover {
 .mj-qpu-ideal-table code {
   font-family: var(--font-mono);
 }
+/* The hardware-runs page (app/(app)/studio/hardware): one section per machine,
+   one card per run, newest first. Cards rather than one wide table so a run's
+   measured-against-ideal detail can open under it at phone width. Each card is
+   a .mj-qpu-record, the same card Studio's hardware panel shows a run in. */
+.mj-qpu-history {
+  display: grid;
+  gap: var(--sp-8);
+}
+.mj-qpu-history-guide {
+  max-width: 640px;
+  margin: 0;
+  color: var(--text-1);
+  font-size: var(--fs-13);
+  line-height: 1.55;
+}
+.mj-qpu-history-state {
+  display: grid;
+  justify-items: start;
+  gap: var(--sp-3);
+}
+.mj-qpu-history-machine {
+  display: grid;
+  gap: var(--sp-3);
+}
+.mj-qpu-history-machine-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--sp-2) var(--sp-4);
+}
+.mj-qpu-history-machine-head h2 {
+  margin: 0;
+  color: var(--text-0);
+  font-size: var(--fs-16);
+  font-weight: 500;
+}
+.mj-qpu-history-machine-name {
+  font-family: var(--font-mono);
+}
+.mj-qpu-history-runs {
+  display: grid;
+  gap: var(--sp-3);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.mj-qpu-history-run-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--sp-1) var(--sp-4);
+  color: var(--text-1);
+  font-size: var(--fs-12);
+}
+.mj-qpu-history-run-head strong {
+  color: var(--text-0);
+  font-weight: 500;
+}
+.mj-qpu-history-run-head .mj-mono-muted {
+  overflow-wrap: anywhere;
+}
+.mj-qpu-history-run > details > summary {
+  cursor: pointer;
+  color: var(--text-1);
+  font-size: var(--fs-12);
+}
+.mj-qpu-history-run > details > summary:hover {
+  color: var(--text-0);
+}
+.mj-qpu-history-more {
+  justify-self: start;
+}
+.mj-qpu-history-link {
+  margin: 0;
+  font-size: var(--fs-12);
+}
+.mj-qpu-history-link a {
+  color: var(--accent);
+}
 .mj-studio-version-panel {
   padding-bottom: var(--sp-5);
 }

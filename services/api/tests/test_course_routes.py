@@ -726,6 +726,148 @@ async def test_another_member_downloads_the_course_without_the_answer_key(client
     assert b"Which gate creates a superposition?" in blob
 
 
+CHALLENGE_SOURCE = """\
+# ---
+# title: Week 1 challenge
+# kind: challenge
+# ---
+
+# %% [markdown] role=objective
+# ## Build a Bell pair
+
+# %% role=setup
+from qiskit import QuantumCircuit
+
+# %% [markdown] role=exercise
+# Build `bell`.
+
+# %% role=solution stub="bell = None\\n"
+bell = QuantumCircuit(2)
+bell.h(0)
+bell.cx(0, 1)
+
+# %% [markdown] role=summary
+# Done.
+"""
+
+
+def _challenge_execution_report() -> dict:
+    """The stored `notebook_versions.report` for `CHALLENGE_SOURCE`, as it would come
+    back out of Postgres: `c02` (`role=setup`, never redacted) and `c04` (`role=solution`,
+    the cell a challenge build's stub replaces) each printed something when the version
+    was generated."""
+    from leona_notebooks.execution import CellResult, ExecutionReport
+
+    report = ExecutionReport(
+        notebook_slug="week-01",
+        ok=True,
+        runner="sandbox",
+        cells=[
+            CellResult(id="c02", status="ok", stdout="qiskit imported\n"),
+            CellResult(id="c04", status="ok", stdout="Bell pair built\n"),
+        ],
+    )
+    return report.model_dump(mode="json")
+
+
+def _course_with_a_challenge(monkeypatch, *, owner_user_id):
+    """A ONE-module course whose module is a challenge with a real executed report —
+    the shape the worker leaves behind once a module's notebook has actually run.
+
+    Deliberately not built on `_two_module_course`: that helper's modules default to
+    `kind="lesson"` on the ROW, which `module_filename` (not `spec.kind`) uses to name
+    the `.nb.py`/`.ipynb` file, so a module carrying `CHALLENGE_SOURCE` under a
+    `kind="lesson"` row would compile the RIGHT build (`builds_for` reads `spec.kind`)
+    under the WRONG name (`lesson.ipynb`, not `challenge.ipynb`) — confusing to read
+    and not what this test is about. One module, `kind="challenge"` on both the row
+    and the source, keeps the file the test asserts on unambiguous.
+    """
+    from leona_notebooks.source import parse_source
+
+    course = _course_row(owner_user_id=owner_user_id)
+    module = _module_row(
+        course_id=course.id, seq=1, slug="week-01", title="Week 1", kind="challenge"
+    )
+    version = _version_row(
+        notebook_id=uuid_module.uuid4(),
+        status="ready",
+        spec=parse_source(CHALLENGE_SOURCE, slug=module.slug).model_dump(mode="json"),
+        report=_challenge_execution_report(),
+    )
+    module.notebook_id = version.notebook_id
+
+    async def fake_get_course(_scope, _session, _course_id):
+        return course
+
+    async def fake_list_modules(_scope, _session, _course_id):
+        return [module]
+
+    async def latest(_scope, _session, notebook_ids):
+        return {nid: version for nid in notebook_ids}
+
+    async def fake_current_version(_scope, _session, _notebook_id):
+        return version
+
+    monkeypatch.setattr(courses_repo, "get_course", fake_get_course)
+    monkeypatch.setattr(courses_repo, "list_modules", fake_list_modules)
+    monkeypatch.setattr(courses_repo, "_latest_versions", latest)
+    monkeypatch.setattr(notebooks_repo, "get_current_version", fake_current_version)
+    return course
+
+
+def _notebook_named(archive: zipfile.ZipFile, suffix: str) -> dict:
+    (name,) = (n for n in archive.namelist() if n.endswith(suffix))
+    return json.loads(archive.read(name))
+
+
+async def test_the_author_downloads_a_course_with_its_executed_outputs(
+    client, scope_identity, monkeypatch
+):
+    """The defect this fixes: every module notebook already ran in the sandbox when its
+    version was generated, but `export_course_zip` rebuilt every notebook from its spec
+    with `execute=False` and never carried a `report` in, so the owner's own download
+    looked never-run — a challenge cell's solution included.
+    """
+    scope, _identity = scope_identity
+    course = _course_with_a_challenge(monkeypatch, owner_user_id=scope.user_id)
+
+    async with client as c:
+        response = await c.get(f"/v1/courses/{course.id}/export.zip")
+
+    assert response.status_code == 200, response.text
+    with zipfile.ZipFile(io.BytesIO(response.content)) as archive:
+        solution = _notebook_named(archive, "_solution.ipynb")
+    by_id = {cell["id"]: cell for cell in solution["cells"]}
+    assert by_id["c02"]["outputs"], "an ordinary cell must carry the output it produced"
+    assert by_id["c04"]["outputs"], "the owner's own solution build must carry its output"
+
+
+async def test_a_non_owner_never_downloads_the_solution_cells_output(client, monkeypatch):
+    """Owner ruling ai-ops 260, option 1, extended to OUTPUT, not just source.
+
+    A non-owner's challenge build already redacts the solution cell's SOURCE (the stub
+    replaces it). Without this fix, `export_course_zip` carried no outputs at all, which
+    hid the leak; once outputs are threaded through, the same per-cell redaction
+    `to_ipynb` already proves for the single-notebook export
+    (`test_a_stub_does_not_carry_the_solutions_output`) must hold here too — a non-owner
+    must never see what the hidden solution cell printed.
+    """
+    course = _course_with_a_challenge(monkeypatch, owner_user_id=uuid_module.uuid4())
+
+    async with client as c:
+        response = await c.get(f"/v1/courses/{course.id}/export.zip")
+
+    assert response.status_code == 200, response.text
+    with zipfile.ZipFile(io.BytesIO(response.content)) as archive:
+        names = archive.namelist()
+        assert not any(n.startswith("solutions/") for n in names), names
+        challenge = _notebook_named(archive, "challenge.ipynb")
+    by_id = {cell["id"]: cell for cell in challenge["cells"]}
+    assert by_id["c02"]["outputs"], "an unredacted cell must keep the output it produced"
+    assert by_id["c04"]["outputs"] == [], "a non-owner must never see the solution's output"
+    assert "Bell pair built" not in json.dumps(challenge)
+
+
 async def test_export_of_a_module_with_no_compiled_notebook_is_409(client, monkeypatch):
     course, modules = _two_module_course(monkeypatch)
     versions = {}

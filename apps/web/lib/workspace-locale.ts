@@ -35,6 +35,8 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
     createQapp: string;
     createQappStudio: string;
     library: string;
+    /** The hardware-runs page, listed under Studio beside `library`. */
+    hardwareRuns: string;
     projects: string;
     chats: string;
     artifacts: string;
@@ -304,6 +306,8 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
     hardwareInterchangeRequired: string;
     hardwareJobStatus: string;
     hardwareJobId: string;
+    /** The physical machine the provider ran the job on (`ibm_brisbane`). */
+    hardwareMachine: string;
     hardwareJobError: string;
     hardwareRawCounts: string;
     hardwareIdealComparison: string;
@@ -317,6 +321,8 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
     hardwareIdealOtherOutcomes: string;
     hardwareIdealProvenance: string;
     hardwareIdealUnavailable: (reason: string) => string;
+    /** Link from the hardware panel to the hardware-runs page. */
+    hardwareRunHistory: string;
     hardwarePricedOnly: string;
     hardwareBlockedReason: (reason: string) => string;
     //: The weekly hardware BUDGET is spent, which is not the same thing as the
@@ -811,6 +817,38 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
 
     teachMeInNotebook: string;
   };
+  /* The hardware-runs page (`app/(app)/studio/hardware`, proposal 5 increment 2).
+     Every key REQUIRED, for the reason the sidebar block gives: the Record type is
+     the whole of the Japanese-parity gate. */
+  hardwareRuns: {
+    title: string;
+    intro: string;
+    readingGuide: string;
+    loading: string;
+    loadFailed: string;
+    retry: string;
+    empty: string;
+    emptyAction: string;
+    unrecordedMachine: string;
+    unrecordedMachineNote: string;
+    machineRunCount: (count: number) => string;
+    columnSubmitted: string;
+    columnStatus: string;
+    columnShots: string;
+    columnDistance: string;
+    columnShotNoise: string;
+    columnFidelity: string;
+    status: (status: string) => string;
+    inProgress: string;
+    endedWithoutCounts: string;
+    /** A finished run whose comparison is still being computed in this tab. */
+    workingOut: string;
+    programMismatch: string;
+    details: string;
+    showOlder: string;
+    loadingOlder: string;
+    olderFailed: string;
+  };
   courses: {
     title: string;
     lede: string;
@@ -919,6 +957,7 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
       createQapp: "Create Qapp",
       createQappStudio: "Create from Studio",
       library: "All artifacts",
+      hardwareRuns: "Hardware runs",
       projects: "Projects",
       chats: "Chats",
       artifacts: "Artifacts",
@@ -1210,6 +1249,7 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
       hardwareInterchangeRequired: "No OpenQASM export is stored for this version. Rerun Verify & save to produce one.",
       hardwareJobStatus: "Job status",
       hardwareJobId: "Provider job",
+      hardwareMachine: "Machine",
       hardwareJobError: "Provider error",
       hardwareRawCounts: "Raw device counts",
       hardwareIdealComparison: "Measured against ideal",
@@ -1231,6 +1271,7 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
         operation_limit: "This circuit exceeds the browser operation limit, so no ideal outcome can be computed for it.",
         register_mismatch: "The device counts do not match this circuit's measured qubits, so they cannot be compared to an ideal outcome.",
       }[reason] ?? "No ideal outcome could be computed for this job."),
+      hardwareRunHistory: "See every hardware run in this workspace",
       hardwarePricedOnly: "Leona can price this device but cannot send jobs to it yet. Only IBM devices can be run today.",
       hardwareBlockedReason: (reason) => ({
         provider_not_supported: "Leona cannot send jobs to this device yet. Only IBM devices can be run today.",
@@ -1848,6 +1889,40 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
 
     teachMeInNotebook: "Teach me this in a notebook",
   },
+  hardwareRuns: {
+    title: "Hardware runs",
+    intro: "Every job this workspace has sent to a quantum computer, grouped by the machine that ran it. For each finished job, the distance compares what the machine measured with what a perfect, noiseless device would give for the same circuit.",
+    readingGuide: "Distance goes from 0 (the same as the ideal) to 1 (no overlap at all). Even a perfect device shows some distance, because it only runs a finite number of shots. \"From sampling alone\" is how much to expect at that shot count, so distance well above it comes from the machine.",
+    loading: "Loading hardware runs…",
+    loadFailed: "Hardware runs could not be loaded because the server could not be reached.",
+    retry: "Try again",
+    empty: "No hardware runs yet. Jobs you send from the hardware panel in Studio will show up here.",
+    emptyAction: "Open Studio",
+    unrecordedMachine: "Machine not recorded",
+    unrecordedMachineNote: "These jobs ran before Leona recorded which machine was used, or the provider did not say. They are listed on their own because Leona does not guess which machine ran them.",
+    machineRunCount: (count) => (count === 1 ? "1 run" : `${count} runs`),
+    columnSubmitted: "Submitted",
+    columnStatus: "Status",
+    columnShots: "Shots",
+    columnDistance: "Distance from ideal",
+    columnShotNoise: "From sampling alone",
+    columnFidelity: "Hellinger fidelity",
+    status: (status) => ({
+      queued: "Queued",
+      running: "Running",
+      done: "Finished",
+      error: "Failed",
+      cancelled: "Cancelled",
+    }[status] ?? status),
+    inProgress: "Not finished yet",
+    endedWithoutCounts: "No counts came back",
+    workingOut: "Working out the comparison…",
+    programMismatch: "The stored circuit does not match the one this job was submitted with, so no comparison is shown.",
+    details: "Details",
+    showOlder: "Show older runs",
+    loadingOlder: "Loading…",
+    olderFailed: "Older runs could not be loaded. Try again.",
+  },
   courses: {
     title: "Courses",
     lede: "Plan a course with Nala, then work through each module as a notebook.",
@@ -1957,6 +2032,7 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
       createQapp: "Qappを作る",
       createQappStudio: "Studioから作る",
       library: "すべての回路・実行記録",
+      hardwareRuns: "実機での実行履歴",
       projects: "プロジェクト",
       chats: "チャット",
       artifacts: "回路・実行記録",
@@ -2242,6 +2318,7 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
       hardwareInterchangeRequired: "このバージョンにOpenQASMエクスポートがありません。「検証して保存」を再実行してください。",
       hardwareJobStatus: "ジョブの状態",
       hardwareJobId: "実機側のジョブID",
+      hardwareMachine: "実行した実機",
       hardwareJobError: "プロバイダーのエラー",
       hardwareRawCounts: "測定結果（生データ）",
       hardwareIdealComparison: "理論値との比較",
@@ -2263,6 +2340,7 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
         operation_limit: "この回路は操作数の上限を超えているため、理論値を計算できません。",
         register_mismatch: "実機の測定結果がこの回路の量子ビット数と一致しないため、理論値と比較できません。",
       }[reason] ?? "このジョブの理論値を計算できませんでした。"),
+      hardwareRunHistory: "このワークスペースの実機での実行履歴をすべて見る",
       hardwarePricedOnly: "この実機は料金の見積もりのみ対応しており、まだジョブを送信できません。現在実行できるのはIBMの実機のみです。",
       hardwareBlockedReason: (reason) => ({
         provider_not_supported: "この実機にはまだジョブを送信できません。現在実行できるのはIBMの実機のみです。",
@@ -2874,6 +2952,40 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
     cellNotRunBadge: "未実行",
 
     teachMeInNotebook: "ノートブックで学ぶ",
+  },
+  hardwareRuns: {
+    title: "実機での実行履歴",
+    intro: "このワークスペースから量子コンピュータに送ったジョブを、実行した実機ごとにまとめています。完了したジョブでは、同じ回路を雑音のない理想的な装置で実行した場合の分布と、実機で測定した分布との距離を示します。",
+    readingGuide: "距離は0（理論値と一致）から1（重なりなし）までの値です。理想的な装置でも有限回のショットでは多少の距離が出るため、そのショット数で見込まれる大きさを「サンプリングのみ」に示しています。これを大きく上回る分は、サンプリングではなく実機に由来します。",
+    loading: "実機での実行履歴を読み込み中…",
+    loadFailed: "サーバーに接続できないため、実機での実行履歴を読み込めませんでした。",
+    retry: "再試行",
+    empty: "実機での実行はまだありません。Studioのハードウェアパネルから送ったジョブがここに表示されます。",
+    emptyAction: "Studioを開く",
+    unrecordedMachine: "実機名の記録なし",
+    unrecordedMachineNote: "これらのジョブは、使った実機をLeonaが記録するようになる前に実行されたか、提供元が実機名を返しませんでした。どの実機で実行されたかを推測せず、別にまとめています。",
+    machineRunCount: (count) => `${count}件の実行`,
+    columnSubmitted: "送信日時",
+    columnStatus: "状態",
+    columnShots: "ショット数",
+    columnDistance: "理論値との距離",
+    columnShotNoise: "サンプリングのみ",
+    columnFidelity: "ヘリンガー忠実度",
+    status: (status) => ({
+      queued: "待機中",
+      running: "実行中",
+      done: "完了",
+      error: "失敗",
+      cancelled: "キャンセル",
+    }[status] ?? status),
+    inProgress: "まだ完了していません",
+    endedWithoutCounts: "測定結果は返ってきませんでした",
+    workingOut: "比較を計算しています…",
+    programMismatch: "保存されている回路が、このジョブを送信したときの回路と一致しないため、比較は表示しません。",
+    details: "詳細",
+    showOlder: "さらに古い実行を表示",
+    loadingOlder: "読み込み中…",
+    olderFailed: "古い実行を読み込めませんでした。もう一度お試しください。",
   },
   courses: {
     title: "コース",

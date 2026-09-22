@@ -201,11 +201,40 @@ def to_ipynb(
     # answer sitting directly beneath it — the whole exercise, given away by a field
     # nobody thought of as content. Keyed on the source actually differing rather than on
     # the role, so any future redaction is covered the moment it changes a cell.
+    #
+    # And once one cell has been replaced, every cell AFTER it loses its output too, not
+    # only the replaced one. Owner ruling ai-ops 260, option 1: only the notebook's own
+    # author sees the answer — and a later cell's own source can be untouched and still
+    # disclose it, because the run that produced its output executed in the same kernel
+    # as the hidden solution: a checkpoint that asserts on the solution's variable, or a
+    # print one cell down that echoes it, carries the answer-key run's result even though
+    # its own text never changed. There is no way to tell, from a cell's own source, which
+    # later cells read a name the solution defined — so every cell from the first
+    # replacement onward is treated as contaminated. A cell BEFORE the first replacement
+    # is unaffected: nothing a later solution computes can reach backward into a value
+    # already printed. Found by Greptile on PR 959: the original guard cleared only the
+    # replaced cell's own id.
+    #
+    # A cell the build DROPS counts as a replacement too. `for_learner` removes some cells
+    # outright (a quiz's `answer`, a hidden grader) rather than stubbing them, and those ran
+    # in the answer-key kernel just the same, so the cells after one are exactly as
+    # suspect as the cells after a stub. `cells_for_build` keeps the spec's order, so a
+    # gap in the authored ids before a cell means something above it was taken out.
     authored = {cell.id: cell.source for cell in spec.cells}
+    authored_order = [cell.id for cell in spec.cells]
     cells: list[dict[str, Any]] = []
     execution_count = 0
+    redacted_from_here = False
+    next_authored = 0
     for cell in cells_for_build(spec, build):
+        if cell.id in authored:
+            position = authored_order.index(cell.id, next_authored)
+            if position > next_authored:
+                redacted_from_here = True
+            next_authored = position + 1
         if cell.source != authored.get(cell.id, cell.source):
+            redacted_from_here = True
+        if redacted_from_here:
             results.pop(cell.id, None)
         metadata: dict[str, Any] = {
             "leona": {

@@ -81,6 +81,33 @@ async function loadCategoryIds() {
   }
 }
 
+// The Japanese field-label map the record page reads, bundled on its own for the
+// same reason as the category vocabulary above: under `--entry-file` the loaded
+// module is one batch, and the map has to be checked against that batch too, so a
+// batch that adds a label adds its translation in the same change.
+async function loadDataLabelsJa() {
+  const dir = mkdtempSync(join(tmpdir(), "repo-data-labels-"));
+  const file = join(dir, "data-labels-ja.mjs");
+  try {
+    await esbuild.build({
+      entryPoints: [join(root, "apps/web/lib/repository/data-labels-ja.ts")],
+      bundle: true,
+      format: "esm",
+      platform: "neutral",
+      outfile: file,
+      logLevel: "silent",
+    });
+    const labels = await import(pathToFileURL(file).href);
+    return labels.DATA_LABELS_JA ?? {};
+  } catch (error) {
+    rmSync(dir, { recursive: true, force: true });
+    console.error("✖ failed to bundle the Japanese field labels from data-labels-ja.ts:", error.message);
+    process.exit(1);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+
 const outDir = mkdtempSync(join(tmpdir(), "repo-data-"));
 const outFile = join(outDir, "public-repository.mjs");
 const bundleTarget = ENTRY_FILE ?? "apps/web/lib/public-repository.ts";
@@ -889,6 +916,31 @@ for (const entry of entries) {
         );
       }
     }
+  }
+}
+
+// Every field label a record shows needs its Japanese name. The record page falls
+// back to the English label, so a missing one is not an error a reader sees as
+// broken; it is English beside Japanese chrome, which is how 233 of 262 labels
+// went untranslated before this check existed (2026-09-22).
+{
+  const dataLabelsJa = await loadDataLabelsJa();
+  if (Object.keys(dataLabelsJa).length === 0) {
+    errors.push("DATA_LABELS_JA bundled empty: the check below would pass vacuously");
+  }
+  const untranslated = new Map();
+  for (const entry of entries) {
+    for (const row of [...(entry.resources ?? []), ...(entry.metadata ?? [])]) {
+      if (!Object.hasOwn(dataLabelsJa, row.label)) {
+        untranslated.set(row.label, [...(untranslated.get(row.label) ?? []), entry.slug]);
+      }
+    }
+  }
+  for (const [label, slugs] of untranslated) {
+    errors.push(
+      `field label "${label}" (on ${slugs.slice(0, 3).join(", ")}${slugs.length > 3 ? ` and ${slugs.length - 3} more` : ""}) `
+        + "has no Japanese name: add it to apps/web/lib/repository/data-labels-ja.ts",
+    );
   }
 }
 

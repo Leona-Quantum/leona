@@ -42,6 +42,7 @@ from majorana_contracts.courses import (
 )
 
 from leona_notebooks.curriculum import build_curriculum
+from leona_notebooks.execution import ExecutionReport
 from leona_notebooks.source import render_source
 from leona_notebooks.spec import Audience, Framework, NotebookKind, NotebookSpec, Style
 
@@ -436,6 +437,7 @@ def export_course_zip(
     slug: str = "course",
     framework: Framework | None = None,
     include_solutions: bool = True,
+    notebook_reports: dict[str, ExecutionReport] | None = None,
 ) -> bytes:
     """Build the course through `build_curriculum` (never executing) and zip it.
 
@@ -444,6 +446,14 @@ def export_course_zip(
     Nothing is executed here — the notebooks were already executed in the sandbox
     when their versions were generated, and `execute=True` would want a kernel this
     process is not entitled to start.
+
+    `notebook_reports`, keyed like `notebook_specs` (by module slug), carries each
+    module's `ExecutionReport` from that same sandbox run into its compiled `.ipynb` —
+    without it a downloaded course's notebooks look never-run, although every one of
+    them already executed once. Redaction for a non-owner (`include_solutions=False`)
+    is unaffected: `build_curriculum` decides which BUILD a module gets — a challenge or
+    quiz downgrades to `challenge` there, which strips the answer cell's own output —
+    and a report handed to a build it does not belong in is simply not used.
     """
     with tempfile.TemporaryDirectory(prefix="leona-course-") as tmp:
         source_root = Path(tmp) / "src"
@@ -455,7 +465,11 @@ def export_course_zip(
             target.parent.mkdir(parents=True, exist_ok=True)
             target.write_text(text, encoding="utf-8")
         manifest = build_curriculum(
-            source_root, out_root, execute=False, include_solutions=include_solutions
+            source_root,
+            out_root,
+            execute=False,
+            include_solutions=include_solutions,
+            reports=notebook_reports,
         )
         # `build_curriculum` deliberately does NOT copy `curriculum.yaml` into the
         # build — for the hand-authored Quanmatic curriculum it is the build's input,
