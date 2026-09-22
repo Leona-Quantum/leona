@@ -130,6 +130,10 @@ def require_api_key(env: dict[str, str]) -> str:
     accidentally treat a missing key as "use no auth"."""
 
     key = env.get(JEV_API_KEY_ENV_VAR, "").strip()
+    # A key copied from a .env-style line keeps its quotes (`KEY="..."`), and Jev
+    # answers a quoted key with a bare 401. Strip one matched pair of quotes.
+    if len(key) >= 2 and key[0] == key[-1] and key[0] in "\"'":
+        key = key[1:-1].strip()
     if not key:
         raise JevKeyMissing(
             f"{JEV_API_KEY_ENV_VAR} is not set. The operator loads it from "

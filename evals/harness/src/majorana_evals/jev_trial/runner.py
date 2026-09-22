@@ -55,6 +55,7 @@ def run_jev_trial(
 
     for case in cases:
         pool = finder_rankings[case.id]
+        input_tokens = None
         if ranker_name == "current-finder":
             ranked_slugs = [c.slug for c in pool.ranked]
             confidence = None
@@ -62,13 +63,16 @@ def run_jev_trial(
             answer = ranker.rank(case, pool)
             ranked_slugs = answer.ranked_slugs
             confidence = answer.confidence
+            input_tokens = answer.input_tokens
 
         score = score_case(case, pool, ranker_name, ranked_slugs, confidence)
+        score = score.model_copy(update={"input_tokens": input_tokens})
         case_scores.append(score)
         if score.top1_confidence is not None and score.top1_correct is not None:
             confidence_pairs.append((score.top1_confidence, score.top1_correct))
 
     pool_sizes = {case_id: ranking.pool_size for case_id, ranking in finder_rankings.items()}
+    billed = [s.input_tokens for s in case_scores if s.input_tokens is not None]
 
     return JevTrialReport(
         ranker=ranker_name,
@@ -83,6 +87,7 @@ def run_jev_trial(
         mrr=mrr(case_scores),
         brier_score=brier_score(confidence_pairs) if confidence_pairs else None,
         reliability_bins=reliability_bins(confidence_pairs) if confidence_pairs else [],
+        total_input_tokens=sum(billed) if billed else None,
         cases=case_scores,
         note=note,
     )

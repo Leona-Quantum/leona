@@ -19,7 +19,7 @@ from pydantic import BaseModel, ConfigDict, Field
 #: an actual network call to Jev. Every report carries this so a report can never be
 #: mistaken for a priced result by accident (same reason
 #: `public_benchmarks.schema.RunMode` exists).
-RankerName = Literal["current-finder", "oracle", "random", "stub-jev", "live-jev"]
+RankerName = Literal["current-finder", "oracle", "random", "stub-jev", "lexical", "live-jev"]
 
 
 class CuratedCase(BaseModel):
@@ -87,6 +87,9 @@ class RankedAnswer(BaseModel):
     #: Raw text describing what produced this answer — the stub's fixed script, the
     #: HTTP status if a live call failed, etc. Never silently swallowed.
     note: str | None = None
+    #: Billed input tokens as the provider reported them (`usage.input_tokens`).
+    #: Only a live call has one; every zero-spend ranker leaves it None.
+    input_tokens: int | None = Field(default=None, ge=0)
 
 
 class CaseScore(BaseModel):
@@ -104,6 +107,8 @@ class CaseScore(BaseModel):
     #: (oracle/random/stub-jev/live-jev) — used to build the aggregate calibration.
     top1_confidence: float | None = None
     top1_correct: bool | None = None
+    #: Copied from `RankedAnswer.input_tokens`; None for every zero-spend ranker.
+    input_tokens: int | None = Field(default=None, ge=0)
 
 
 class ReliabilityBin(BaseModel):
@@ -140,5 +145,8 @@ class JevTrialReport(BaseModel):
     #: None unless the ranker reports confidence (oracle/random/stub-jev/live-jev).
     brier_score: float | None = None
     reliability_bins: list[ReliabilityBin] = Field(default_factory=list)
+    #: Sum of per-case `input_tokens`, i.e. what a live run was billed for (output
+    #: is unbilled per typesafe.ai). None when no case made a live call.
+    total_input_tokens: int | None = Field(default=None, ge=0)
     cases: list[CaseScore]
     note: str | None = None
