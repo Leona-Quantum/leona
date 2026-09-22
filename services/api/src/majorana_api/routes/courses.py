@@ -15,6 +15,7 @@ ask for eight notebooks past a limit that stops at one.
 from __future__ import annotations
 
 import csv
+import datetime as dt
 import io
 import uuid
 from typing import Annotated
@@ -292,6 +293,17 @@ async def update_course(
             summary=body.summary,
             module_patches=body.modules,
         )
+    except courses_repo.DueDateCreatorOnly:
+        # Still the 403 every creator-only action answers with, but with a sentence:
+        # the app's bare `AuthzError` handler titles it "forbidden", and the web
+        # client puts `title` in front of the person.
+        raise HTTPException(
+            status_code=403,
+            detail={
+                "error": "Only the person who made this course can set its due dates.",
+                "reason": "course_due_date_creator_only",
+            },
+        ) from None
     except courses_repo.ModuleAlreadyGenerated as exc:
         raise HTTPException(
             status_code=409,
@@ -502,6 +514,12 @@ _GRADEBOOK_CSV_HEADER = (
     "cells_passed",
     "graded_cells",
     "graded_at",
+    # Beside `graded_at`, which is the time they are read against. Inserted rather
+    # than appended so the course totals stay the last two columns, where the first
+    # spreadsheet formula anyone writes against this file will point.
+    "due_at",
+    "late",
+    "missing",
     "notebook_version",
     "outdated",
     "run_id",
@@ -531,12 +549,19 @@ def render_gradebook_csv(book: contracts.CourseGradebook) -> str:
 
     Totals are two numeric columns rather than one "7/12" cell, because a
     spreadsheet reads "7/12" as the 12th of July.
+
+    `due_at` is the module's due date in UTC (ISO 8601 with its offset, like
+    `graded_at`), empty when there is none. `late` is `yes`/`no` for an attempt and
+    empty where there is none, the way `outdated` is. `missing` is `yes` or `no` on
+    every row: it is a fact about the member and the module, not about an attempt,
+    and "no" is a real answer for a module that is not due yet.
     """
     buffer = io.StringIO()
     writer = csv.writer(buffer, lineterminator="\r\n")
     writer.writerow(_GRADEBOOK_CSV_HEADER)
     for row in book.rows:
         by_module = {entry.module_id: entry for entry in row.entries}
+        missing = set(row.missing_module_ids)
         for module in book.modules:
             entry = by_module.get(module.id)
             cells: tuple[object, ...] = (
@@ -547,6 +572,9 @@ def render_gradebook_csv(book: contracts.CourseGradebook) -> str:
                 entry.passed if entry else None,
                 entry.graded_cells if entry else module.graded_cells,
                 entry.graded_at.isoformat() if entry else None,
+                module.due_at.astimezone(dt.timezone.utc).isoformat() if module.due_at else None,
+                ("yes" if entry.late else "no") if entry else None,
+                "yes" if module.id in missing else "no",
                 entry.version_seq if entry else None,
                 ("yes" if entry.stale else "no") if entry else None,
                 entry.run_id if entry else None,

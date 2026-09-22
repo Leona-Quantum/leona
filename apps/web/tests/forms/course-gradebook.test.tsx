@@ -11,8 +11,8 @@ const copy = WORKSPACE_COPY.en.courses;
 function noop() {}
 
 const modules: CourseGradebook["modules"] = [
-  { id: "m1", seq: 1, slug: "bell", title: "The Bell state", notebook_id: "nb-1", graded_cells: 2 },
-  { id: "m2", seq: 2, slug: "teleport", title: "Teleportation", notebook_id: "nb-2", graded_cells: 3 },
+  { id: "m1", seq: 1, slug: "bell", title: "The Bell state", notebook_id: "nb-1", graded_cells: 2, due_at: null },
+  { id: "m2", seq: 2, slug: "teleport", title: "Teleportation", notebook_id: "nb-2", graded_cells: 3, due_at: null },
 ];
 
 const everyone: CourseGradebook = {
@@ -35,6 +35,7 @@ const everyone: CourseGradebook = {
           stale: true,
           run_id: "r1",
           graded_at: "2026-09-20T10:00:00Z",
+          late: false,
         },
       ],
       total_passed: 1,
@@ -56,6 +57,7 @@ const everyone: CourseGradebook = {
           stale: false,
           run_id: "r2",
           graded_at: "2026-09-21T10:00:00Z",
+          late: false,
         },
       ],
       total_passed: 3,
@@ -204,7 +206,7 @@ test("while a module is still generating, a started member's total says not know
     ...everyone,
     modules: [
       modules![0],
-      { id: "m2", seq: 2, slug: "teleport", title: "Teleportation", notebook_id: "nb-2", graded_cells: null },
+      { id: "m2", seq: 2, slug: "teleport", title: "Teleportation", notebook_id: "nb-2", graded_cells: null, due_at: null },
     ],
     rows: [{ ...everyone.rows![0], total_graded_cells: null }, { ...everyone.rows![2], total_graded_cells: null }],
   };

@@ -22,6 +22,7 @@ function entry(moduleId: string, passed: number): GradebookEntry {
     stale: false,
     run_id: "run-1",
     graded_at: "2026-09-20T10:00:00Z",
+    late: false,
   };
 }
 
@@ -35,8 +36,8 @@ test("a member is named the way the members page names them: display name, else 
 test("columns come out in course order whatever order they arrived in", () => {
   const columns = gradebookColumns({
     modules: [
-      { id: "b", seq: 2, slug: "b", title: "B", notebook_id: null, graded_cells: null },
-      { id: "a", seq: 1, slug: "a", title: "A", notebook_id: "nb", graded_cells: 2 },
+      { id: "b", seq: 2, slug: "b", title: "B", notebook_id: null, graded_cells: null, due_at: null },
+      { id: "a", seq: 1, slug: "a", title: "A", notebook_id: "nb", graded_cells: 2, due_at: null },
     ],
   });
   assert.deepEqual(columns.map((column) => column.id), ["a", "b"]);
@@ -69,9 +70,9 @@ test("totals pending: a module still generating, one with no notebook, or nothin
     total_graded_cells: total,
     last_graded_at: null,
   });
-  const ready = { id: "a", seq: 1, slug: "a", title: "A", notebook_id: "nb-a", graded_cells: 2 };
-  const generating = { id: "b", seq: 2, slug: "b", title: "B", notebook_id: "nb-b", graded_cells: null };
-  const planned = { id: "c", seq: 3, slug: "c", title: "C", notebook_id: null, graded_cells: null };
+  const ready = { id: "a", seq: 1, slug: "a", title: "A", notebook_id: "nb-a", graded_cells: 2, due_at: null };
+  const generating = { id: "b", seq: 2, slug: "b", title: "B", notebook_id: "nb-b", graded_cells: null, due_at: null };
+  const planned = { id: "c", seq: 3, slug: "c", title: "C", notebook_id: null, graded_cells: null, due_at: null };
 
   assert.equal(gradebookTotalsPending({ modules: [ready], rows: [row(2)] }), false);
   // "Still being generated" only when a module HAS a notebook that is not ready.

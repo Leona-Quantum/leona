@@ -1310,3 +1310,217 @@ def test_an_unknown_course_total_is_an_empty_cell_not_a_smaller_number():
     assert [r["graded_cells"] for r in records] == ["2", ""]
     # The control: what IS known still reaches the sheet.
     assert [r["course_cells_passed"] for r in records] == ["2", "2"]
+
+
+# ------------------------------------------------------------------------- due dates
+#
+# Through the REAL `update_course`, with only the course and module reads faked: the
+# three states of `due_at` (absent, a value, null) are told apart by which keys the
+# client sent, so the thing worth proving is that FastAPI's parse of the body still
+# carries that set all the way to the repository.
+
+
+class _FlushOnly:
+    """The one session method `update_course` calls once the reads are faked."""
+
+    async def flush(self):
+        return None
+
+
+@pytest.fixture
+def due_client(client):
+    """`client`, with a session the real `update_course` can flush. `client` hands the
+    routes a bare `object()`, which was enough while every repo call was faked."""
+    client._transport.app.dependency_overrides[auth_deps.get_session] = lambda: _FlushOnly()
+    return client
+
+
+def _due_course(monkeypatch, scope, *, creator: bool, generated: bool = True):
+    course, modules = _two_module_course(
+        monkeypatch,
+        workspace_id=scope.workspace_id,
+        **({"owner_user_id": scope.user_id} if creator else {}),
+    )
+    if generated:
+        modules[0].notebook_id = uuid_module.uuid4()
+    return course, modules
+
+
+async def test_the_creator_sets_and_clears_a_due_date_over_http(
+    due_client, scope_identity, monkeypatch
+):
+    scope, _identity = scope_identity
+    course, modules = _due_course(monkeypatch, scope, creator=True)
+    target, planned = modules
+    assert target.notebook_id is not None and planned.notebook_id is None
+    async with due_client as c:
+        set_response = await c.patch(
+            f"/v1/courses/{course.id}",
+            json={
+                "modules": [
+                    {"id": str(target.id), "due_at": "2026-09-30T17:00:00+09:00"},
+                    {"id": str(planned.id), "due_at": "2026-10-07T08:00:00Z"},
+                ]
+            },
+        )
+        # A module patch that does not SEND due_at: the planned module's title
+        # changes and its due date stays.
+        kept_response = await c.patch(
+            f"/v1/courses/{course.id}",
+            json={"modules": [{"id": str(planned.id), "title": "Renamed"}]},
+        )
+        cleared_response = await c.patch(
+            f"/v1/courses/{course.id}", json={"modules": [{"id": str(target.id), "due_at": None}]}
+        )
+
+    assert set_response.status_code == 200, set_response.text
+    body = set_response.json()
+    assert body["owner_user_id"] == str(scope.user_id)
+    # Accepted on a module whose notebook already exists, and returned in UTC.
+    assert dt.datetime.fromisoformat(body["modules"][0]["due_at"]) == dt.datetime(
+        2026, 9, 30, 8, 0, tzinfo=dt.timezone.utc
+    )
+    assert body["modules"][0]["due_at"].endswith(("Z", "+00:00"))
+
+    assert kept_response.status_code == 200, kept_response.text
+    kept = kept_response.json()["modules"][1]
+    assert kept["title"] == "Renamed"
+    assert kept["due_at"] is not None, "a module patch without due_at must leave it"
+
+    assert cleared_response.status_code == 200, cleared_response.text
+    cleared = cleared_response.json()["modules"]
+    assert cleared[0]["due_at"] is None
+    assert cleared[1]["due_at"] is not None, "clearing one module leaves the other"
+
+
+async def test_someone_who_did_not_create_the_course_is_refused_403_and_nothing_changes(
+    due_client, scope_identity, monkeypatch
+):
+    scope, _identity = scope_identity
+    course, modules = _due_course(monkeypatch, scope, creator=False)
+    async with due_client as c:
+        response = await c.patch(
+            f"/v1/courses/{course.id}",
+            json={
+                "title": "Also renamed",
+                "modules": [{"id": str(modules[1].id), "due_at": "2026-09-30T08:00:00Z"}],
+            },
+        )
+        clear = await c.patch(
+            f"/v1/courses/{course.id}",
+            json={"modules": [{"id": str(modules[1].id), "due_at": None}]},
+        )
+    assert response.status_code == 403, response.text
+    assert response.json()["reason"] == "course_due_date_creator_only"
+    assert response.json()["title"] == "Only the person who made this course can set its due dates."
+    assert clear.status_code == 403
+    assert modules[1].due_at is None
+    assert course.title == "Qiskit study group", "the title riding along was not applied"
+
+
+async def test_a_due_date_on_a_course_in_another_workspace_is_404(client, monkeypatch):
+    async def fake_get_course(_scope, _session, _course_id):
+        raise NotFoundError("course")
+
+    monkeypatch.setattr(courses_repo, "get_course", fake_get_course)
+    async with client as c:
+        response = await c.patch(
+            f"/v1/courses/{uuid_module.uuid4()}",
+            json={"modules": [{"id": str(uuid_module.uuid4()), "due_at": "2026-09-30T08:00:00Z"}]},
+        )
+    assert response.status_code == 404
+
+
+async def test_a_due_date_with_no_utc_offset_is_422(due_client, scope_identity, monkeypatch):
+    scope, _identity = scope_identity
+    course, modules = _due_course(monkeypatch, scope, creator=True)
+    async with due_client as c:
+        response = await c.patch(
+            f"/v1/courses/{course.id}",
+            json={"modules": [{"id": str(modules[0].id), "due_at": "2026-09-30T17:00:00"}]},
+        )
+    assert response.status_code == 422
+    assert modules[0].due_at is None
+
+
+async def test_a_plan_edit_riding_with_a_due_date_on_a_generated_module_is_still_409(
+    due_client, scope_identity, monkeypatch
+):
+    scope, _identity = scope_identity
+    course, modules = _due_course(monkeypatch, scope, creator=True)
+    async with due_client as c:
+        response = await c.patch(
+            f"/v1/courses/{course.id}",
+            json={
+                "modules": [
+                    {"id": str(modules[0].id), "due_at": "2026-09-30T08:00:00Z", "title": "New"}
+                ]
+            },
+        )
+    assert response.status_code == 409
+    assert response.json()["reason"] == "course_module_already_generated"
+
+
+def test_the_csv_carries_due_at_late_and_missing_beside_graded_at():
+    import csv as csv_module
+
+    import majorana_contracts as contracts
+
+    from majorana_api.routes.courses import render_gradebook_csv
+
+    due = dt.datetime(2026, 9, 30, 17, 0, tzinfo=dt.timezone(dt.timedelta(hours=9)))
+    first, second, third = (uuid_module.uuid4() for _ in range(3))
+    entry = contracts.GradebookEntry(
+        module_id=first,
+        passed=1,
+        failed=1,
+        attempted=2,
+        graded_cells=2,
+        version_seq=1,
+        run_id=uuid_module.uuid4(),
+        graded_at=NOW,
+        late=True,
+    )
+    book = contracts.CourseGradebook(
+        course_id=uuid_module.uuid4(),
+        visibility=contracts.GradebookVisibility.ALL_MEMBERS,
+        modules=[
+            contracts.GradebookModule(
+                id=first, seq=1, slug="a", title="A", graded_cells=2, due_at=due
+            ),
+            contracts.GradebookModule(
+                id=second, seq=2, slug="b", title="B", graded_cells=2, due_at=due
+            ),
+            contracts.GradebookModule(id=third, seq=3, slug="c", title="C", graded_cells=2),
+        ],
+        rows=[
+            contracts.GradebookRow(
+                user_id=uuid_module.uuid4(),
+                email="ana@example.test",
+                entries=[entry],
+                total_passed=1,
+                total_graded_cells=6,
+                last_graded_at=NOW,
+                missing_module_ids=[second],
+            )
+        ],
+    )
+    reader = csv_module.DictReader(io.StringIO(render_gradebook_csv(book)))
+    header = reader.fieldnames
+    records = list(reader)
+
+    assert header is not None
+    at = header.index("graded_at")
+    assert header[at : at + 4] == ["graded_at", "due_at", "late", "missing"]
+    # PR 965's pinned ends are where they were.
+    assert header[:4] == ["member", "email", "module_number", "module"]
+    assert header[-2:] == ["course_cells_passed", "course_graded_cells"]
+    # In UTC, whatever offset the value arrived with.
+    assert [r["due_at"] for r in records] == [
+        "2026-09-30T08:00:00+00:00",
+        "2026-09-30T08:00:00+00:00",
+        "",
+    ]
+    # `late` only where there is an attempt; `missing` on every row.
+    assert [r["late"] for r in records] == ["yes", "", ""]
+    assert [r["missing"] for r in records] == ["no", "yes", "no"]

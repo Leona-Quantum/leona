@@ -407,7 +407,14 @@ from .lifecycle import (
 # 2.26.0: Proposal 5, increment 4. QpuRunRecord gains optional `mitigation`, the
 # stored inputs for readout correction and zero-noise extrapolation (migration
 # 0066). Additive: it defaults to None, and `raw_counts` keeps its meaning.
-CONTRACTS_VERSION = "2.26.0"
+# 2.28.0: Course due dates (ai-ops 349 proposal 8, assignments). CourseModule gains
+# `due_at`, Course gains `owner_user_id`, CourseModulePatch gains `due_at` (absent
+# leaves it, null clears it; creator-only), GradebookModule gains `due_at`,
+# GradebookEntry gains `late` and GradebookRow gains `missing_module_ids`. All
+# optional with defaults, so a 2.26.0 payload still validates (migration 0067).
+# Numbered 2.28.0, not 2.27.0: the comments branch claims 2.27.0, and its line goes
+# between 2.26.0 and this one whichever of the two lands first.
+CONTRACTS_VERSION = "2.28.0"
 
 __all__ = [
     "TextAnswer",

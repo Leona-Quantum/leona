@@ -25,6 +25,7 @@ const bellState: CourseModule = {
   notebook_id: null,
   status: "planned",
   notebook_version_seq: null,
+  due_at: null,
 };
 
 const teleportation: CourseModule = {
@@ -43,6 +44,7 @@ const teleportation: CourseModule = {
   notebook_id: "nb-123",
   status: "ready",
   notebook_version_seq: 1,
+  due_at: null,
 };
 
 function noop() {}
