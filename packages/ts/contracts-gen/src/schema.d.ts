@@ -1352,6 +1352,23 @@ export interface components {
              */
             updated_at: string;
         };
+        /**
+         * CourseGradebook
+         * @description How members are doing on a course's graded exercises. Results, never answers:
+         *     nothing here carries a cell's check, answer key, or the member's own code.
+         */
+        CourseGradebook: {
+            /**
+             * Course Id
+             * Format: uuid
+             */
+            course_id: string;
+            /** Modules */
+            modules?: components["schemas"]["GradebookModule"][];
+            /** Rows */
+            rows?: components["schemas"]["GradebookRow"][];
+            visibility: components["schemas"]["GradebookVisibility"];
+        };
         /** CourseList */
         CourseList: {
             /** Items */
@@ -1999,6 +2016,126 @@ export interface components {
             /** Notebook Slug */
             notebook_slug: string;
         };
+        /**
+         * GradebookEntry
+         * @description One member's LATEST graded attempt at one module.
+         *
+         *     Latest rather than best. The gradebook answers "where has this person got to",
+         *     and a best-ever score would keep showing a pass on cells the notebook has since
+         *     rewritten. `stale` says when that has happened: the verdicts are about the
+         *     version named by `version_seq`, which is no longer the current one.
+         */
+        GradebookEntry: {
+            /** Attempted */
+            attempted: number;
+            /** Failed */
+            failed: number;
+            /**
+             * Graded At
+             * Format: date-time
+             */
+            graded_at: string;
+            /** Graded Cells */
+            graded_cells: number;
+            /**
+             * Module Id
+             * Format: uuid
+             */
+            module_id: string;
+            /** Passed */
+            passed: number;
+            /**
+             * Run Id
+             * Format: uuid
+             */
+            run_id: string;
+            /**
+             * Stale
+             * @default false
+             */
+            stale: boolean;
+            /** Version Seq */
+            version_seq: number;
+        };
+        /**
+         * GradebookModule
+         * @description One column of the gradebook: a module, and what its notebook grades today.
+         */
+        GradebookModule: {
+            /**
+             * Graded Cells
+             * @default null
+             */
+            graded_cells: number | null;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Notebook Id
+             * @default null
+             */
+            notebook_id: string | null;
+            /** Seq */
+            seq: number;
+            /** Slug */
+            slug: string;
+            /** Title */
+            title: string;
+        };
+        /**
+         * GradebookRow
+         * @description One workspace member's results across the course.
+         *
+         *     `email` and `display_name` are exactly what `GET /v1/workspace` already shows
+         *     every member about every other member, and nothing more.
+         *
+         *     A member who has not been graded on anything still gets a row: `entries` is
+         *     empty, `total_passed` is 0 and `last_graded_at` is `None`. A client must render
+         *     that as "not started", never as a score of zero, because "has not tried" and
+         *     "tried and got nothing right" are different facts about a learner.
+         */
+        GradebookRow: {
+            /**
+             * Display Name
+             * @default null
+             */
+            display_name: string | null;
+            /** Email */
+            email: string;
+            /** Entries */
+            entries?: components["schemas"]["GradebookEntry"][];
+            /**
+             * Last Graded At
+             * @default null
+             */
+            last_graded_at: string | null;
+            /**
+             * Total Graded Cells
+             * @default null
+             */
+            total_graded_cells: number | null;
+            /** Total Passed */
+            total_passed: number;
+            /**
+             * User Id
+             * Format: uuid
+             */
+            user_id: string;
+        };
+        /**
+         * GradebookVisibility
+         * @description Which rows of a course's gradebook the caller was allowed to see.
+         *
+         *     Carried on the response rather than inferred by the client, because the two
+         *     answers look alike: a course creator whose class has not started sees an empty
+         *     table, and a member who has not started sees an empty table too. The client has
+         *     to know which of the two it is showing to title it honestly ("Gradebook" or
+         *     "Your progress").
+         * @enum {string}
+         */
+        GradebookVisibility: "all_members" | "own_row";
         /**
          * ImportNotebookRequest
          * @description An existing `.ipynb` becomes a notebook the reader can then edit with Nala.

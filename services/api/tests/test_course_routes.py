@@ -1025,3 +1025,288 @@ async def test_every_run_creating_course_route_is_gated(
         async with client as c:
             await getattr(c, method)(url, json=body)
     assert calls == [1]
+
+
+# ------------------------------------------------------------------------- gradebook
+
+
+def _gradebook(course, modules, *, visibility="all_members"):
+    """A gradebook as the repo would return it: two members, one of them with a
+    display name built to be a spreadsheet formula."""
+    import majorana_contracts as contracts
+
+    first, second = modules
+    entry = contracts.GradebookEntry(
+        module_id=first.id,
+        passed=1,
+        failed=1,
+        attempted=2,
+        graded_cells=2,
+        version_seq=1,
+        stale=False,
+        run_id=uuid_module.uuid4(),
+        graded_at=NOW,
+    )
+    rows = [
+        contracts.GradebookRow(
+            user_id=uuid_module.uuid4(),
+            email="ana@example.test",
+            display_name='=HYPERLINK("http://evil.test","Open")',
+            entries=[entry],
+            total_passed=1,
+            total_graded_cells=5,
+            last_graded_at=NOW,
+        ),
+        contracts.GradebookRow(
+            user_id=uuid_module.uuid4(),
+            email="bo@example.test",
+            display_name=None,
+            entries=[entry.model_copy(update={"module_id": second.id, "stale": True})],
+            total_passed=1,
+            total_graded_cells=4,
+            last_graded_at=NOW,
+        ),
+        # A member who has not started: listed for the course's creator all the same.
+        contracts.GradebookRow(
+            user_id=uuid_module.uuid4(),
+            email="cy@example.test",
+            display_name="Cy",
+            entries=[],
+            total_passed=0,
+            total_graded_cells=5,
+            last_graded_at=None,
+        ),
+    ]
+    return contracts.CourseGradebook(
+        course_id=course.id,
+        visibility=contracts.GradebookVisibility(visibility),
+        modules=[
+            contracts.GradebookModule(
+                id=first.id, seq=1, slug=first.slug, title=first.title, graded_cells=2
+            ),
+            contracts.GradebookModule(
+                id=second.id, seq=2, slug=second.slug, title="-1 is the answer", graded_cells=3
+            ),
+        ],
+        rows=rows,
+    )
+
+
+@pytest.fixture
+def gradebook_course(monkeypatch):
+    course, modules = _two_module_course(monkeypatch)
+    book = _gradebook(course, modules)
+
+    async def fake_gradebook(_scope, _session, course_id):
+        assert course_id == course.id
+        return book
+
+    monkeypatch.setattr(courses_repo, "course_gradebook", fake_gradebook)
+    return course, book
+
+
+async def test_gradebook_returns_the_repo_answer_with_its_visibility(client, gradebook_course):
+    course, book = gradebook_course
+    async with client as c:
+        response = await c.get(f"/v1/courses/{course.id}/gradebook")
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["visibility"] == "all_members"
+    assert [row["email"] for row in body["rows"]] == [
+        "ana@example.test",
+        "bo@example.test",
+        "cy@example.test",
+    ]
+    assert body["rows"][2]["entries"] == [] and body["rows"][2]["last_graded_at"] is None
+    assert body["rows"][0]["entries"][0]["passed"] == 1
+
+
+async def test_gradebook_of_a_course_in_another_workspace_is_404(client, monkeypatch):
+    async def fake_gradebook(_scope, _session, _course_id):
+        raise NotFoundError("course")
+
+    async def fake_get_course(_scope, _session, _course_id):
+        raise NotFoundError("course")
+
+    monkeypatch.setattr(courses_repo, "course_gradebook", fake_gradebook)
+    monkeypatch.setattr(courses_repo, "get_course", fake_get_course)
+    async with client as c:
+        json_response = await c.get(f"/v1/courses/{uuid_module.uuid4()}/gradebook")
+        csv_response = await c.get(f"/v1/courses/{uuid_module.uuid4()}/gradebook.csv")
+    assert json_response.status_code == 404
+    assert csv_response.status_code == 404
+
+
+async def test_gradebook_csv_is_one_row_per_member_per_module_with_totals(client, gradebook_course):
+    import csv as csv_module
+
+    course, _book = gradebook_course
+    async with client as c:
+        response = await c.get(f"/v1/courses/{course.id}/gradebook.csv")
+
+    assert response.status_code == 200, response.text
+    assert response.headers["content-type"].startswith("text/csv")
+    assert (
+        response.headers["content-disposition"]
+        == f'attachment; filename="{course.slug}-gradebook.csv"'
+    )
+    text = response.content.decode("utf-8")
+    assert text.startswith("﻿"), "Excel needs the BOM to read a Japanese name as UTF-8"
+    rows = list(csv_module.reader(io.StringIO(text.lstrip("﻿"))))
+    header, body = rows[0], rows[1:]
+    assert header[:6] == [
+        "member",
+        "email",
+        "module_number",
+        "module",
+        "cells_passed",
+        "graded_cells",
+    ]
+    assert header[-2:] == ["course_cells_passed", "course_graded_cells"]
+    assert len(body) == 6, "three members x two modules"
+    record = [dict(zip(header, row, strict=True)) for row in body]
+    # A module the member has not been graded on: passed EMPTY, not 0, and the
+    # module's count today as the denominator.
+    assert record[1]["email"] == "ana@example.test"
+    assert record[1]["cells_passed"] == ""
+    assert record[1]["graded_cells"] == "3"
+    assert record[0]["cells_passed"] == "1" and record[0]["graded_cells"] == "2"
+    assert [r["course_graded_cells"] for r in record] == ["5", "5", "4", "4", "5", "5"]
+    assert record[3]["outdated"] == "yes" and record[2]["outdated"] == ""
+    # A member with no display name is listed by their email.
+    assert record[2]["member"] == "bo@example.test"
+    # A member who has not started: every module "not started" (empty), and the
+    # course total empty rather than 0, while the denominator is still the course's.
+    cy = [r for r in record if r["email"] == "cy@example.test"]
+    assert [r["cells_passed"] for r in cy] == ["", ""]
+    assert [r["graded_cells"] for r in cy] == ["2", "3"]
+    assert [r["graded_at"] for r in cy] == ["", ""]
+    assert [r["course_cells_passed"] for r in cy] == ["", ""]
+    assert record[0]["course_cells_passed"] == "1", "a started member keeps their total"
+
+
+async def test_gradebook_csv_cannot_smuggle_a_formula_into_a_spreadsheet(client, gradebook_course):
+    course, _book = gradebook_course
+    async with client as c:
+        response = await c.get(f"/v1/courses/{course.id}/gradebook.csv")
+    text = response.content.decode("utf-8")
+    assert "'=HYPERLINK(" in text
+    assert ",=HYPERLINK(" not in text and ',"=HYPERLINK(' not in text
+    assert "'-1 is the answer" in text
+
+
+@pytest.mark.parametrize("prefix", ["=", "+", "-", "@", "\t", "\r"])
+def test_every_formula_prefix_is_neutralised(prefix):
+    import csv as csv_module
+
+    import majorana_contracts as contracts
+
+    from majorana_api.routes.courses import render_gradebook_csv
+
+    module_id = uuid_module.uuid4()
+    book = contracts.CourseGradebook(
+        course_id=uuid_module.uuid4(),
+        visibility=contracts.GradebookVisibility.ALL_MEMBERS,
+        modules=[
+            contracts.GradebookModule(
+                id=module_id, seq=1, slug="m", title=f"{prefix}title", graded_cells=1
+            )
+        ],
+        rows=[
+            contracts.GradebookRow(
+                user_id=uuid_module.uuid4(),
+                email=f"{prefix}x@example.test",
+                display_name=f"{prefix}cmd|' /C calc'!A0",
+                entries=[],
+                total_passed=0,
+                total_graded_cells=1,
+                last_graded_at=NOW,
+            )
+        ],
+    )
+    [_header, row] = list(csv_module.reader(io.StringIO(render_gradebook_csv(book))))
+    member, email, _seq, title = row[:4]
+    for cell in (member, email, title):
+        assert cell.startswith("'" + prefix), repr(cell)
+    # The control: an ordinary value is left exactly as typed.
+    assert row[2] == "1"
+
+
+async def test_gradebook_csv_and_gradebook_and_export_resolve_to_their_own_routes(
+    client, gradebook_course
+):
+    """Three sibling paths under one course, checked with real requests rather than
+    reasoned about: `gradebook.csv` must not be swallowed by `gradebook`, and adding
+    both must not change what `export.zip` answers (409, every module unready)."""
+    course, _book = gradebook_course
+    async with client as c:
+        as_json = await c.get(f"/v1/courses/{course.id}/gradebook")
+        as_csv = await c.get(f"/v1/courses/{course.id}/gradebook.csv")
+        as_zip = await c.get(f"/v1/courses/{course.id}/export.zip")
+        wrong_method = await c.post(f"/v1/courses/{course.id}/gradebook.csv")
+    assert as_json.headers["content-type"].startswith("application/json")
+    assert as_csv.headers["content-type"].startswith("text/csv")
+    assert as_zip.status_code == 409 and as_zip.json()["reason"] == "course_not_ready"
+    assert wrong_method.status_code == 405
+
+
+def test_an_unknown_course_total_is_an_empty_cell_not_a_smaller_number():
+    """Greptile, PR 965: while a module is still being generated its count is unknown,
+    so the member's course total is `None`, and the CSV leaves that cell empty rather
+    than writing the smaller sum of the modules it could count."""
+    import csv as csv_module
+
+    import majorana_contracts as contracts
+
+    from majorana_api.routes.courses import render_gradebook_csv
+
+    ready, generating = uuid_module.uuid4(), uuid_module.uuid4()
+    book = contracts.CourseGradebook(
+        course_id=uuid_module.uuid4(),
+        visibility=contracts.GradebookVisibility.ALL_MEMBERS,
+        modules=[
+            contracts.GradebookModule(
+                id=ready,
+                seq=1,
+                slug="a",
+                title="Ready",
+                notebook_id=uuid_module.uuid4(),
+                graded_cells=2,
+            ),
+            contracts.GradebookModule(
+                id=generating,
+                seq=2,
+                slug="b",
+                title="Generating",
+                notebook_id=uuid_module.uuid4(),
+                graded_cells=None,
+            ),
+        ],
+        rows=[
+            contracts.GradebookRow(
+                user_id=uuid_module.uuid4(),
+                email="ana@example.test",
+                entries=[
+                    contracts.GradebookEntry(
+                        module_id=ready,
+                        passed=2,
+                        failed=0,
+                        attempted=2,
+                        graded_cells=2,
+                        version_seq=1,
+                        run_id=uuid_module.uuid4(),
+                        graded_at=NOW,
+                    )
+                ],
+                total_passed=2,
+                total_graded_cells=None,
+                last_graded_at=NOW,
+            )
+        ],
+    )
+    assert book.model_dump(mode="json")["rows"][0]["total_graded_cells"] is None
+    records = list(csv_module.DictReader(io.StringIO(render_gradebook_csv(book))))
+    assert [r["course_graded_cells"] for r in records] == ["", ""]
+    assert [r["graded_cells"] for r in records] == ["2", ""]
+    # The control: what IS known still reaches the sheet.
+    assert [r["course_cells_passed"] for r in records] == ["2", "2"]

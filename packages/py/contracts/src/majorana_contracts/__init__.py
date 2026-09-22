@@ -95,6 +95,7 @@ from .events import (
 )
 from .courses import (
     Course,
+    CourseGradebook,
     CourseList,
     CourseModule,
     CourseModulePatch,
@@ -110,6 +111,10 @@ from .courses import (
     CreateCourseTurnResponse,
     GenerateCourseRequest,
     GenerateCourseResponse,
+    GradebookEntry,
+    GradebookModule,
+    GradebookRow,
+    GradebookVisibility,
     PlannedModule,
     UpdateCourseRequest,
 )
@@ -395,10 +400,13 @@ from .lifecycle import (
 # 2.24.0: Proposal 5, increment 2. QpuRunRecord gains optional `backend_name`, the
 # physical machine the provider ran the job on (migration 0065). Additive: it
 # defaults to None, and None is also its value for every run recorded before it.
+# 2.25.0: Course gradebook (ai-ops 349 proposal 8). New: CourseGradebook,
+# GradebookModule, GradebookRow, GradebookEntry and the closed GradebookVisibility
+# enum, the response of GET /v1/courses/{id}/gradebook. Purely additive: no existing
+# model changes, and the data is read from `notebook.grades` events already stored.
 # 2.26.0: Proposal 5, increment 4. QpuRunRecord gains optional `mitigation`, the
 # stored inputs for readout correction and zero-noise extrapolation (migration
 # 0066). Additive: it defaults to None, and `raw_counts` keeps its meaning.
-# (2.25.0 is claimed by PR 965, the course gradebook, which lands first.)
 CONTRACTS_VERSION = "2.26.0"
 
 __all__ = [
@@ -490,6 +498,7 @@ __all__ = [
     "Qapp",
     "Audience",
     "Course",
+    "CourseGradebook",
     "CourseList",
     "CourseModule",
     "CourseModulePatch",
@@ -505,6 +514,10 @@ __all__ = [
     "CreateCourseTurnResponse",
     "GenerateCourseRequest",
     "GenerateCourseResponse",
+    "GradebookEntry",
+    "GradebookModule",
+    "GradebookRow",
+    "GradebookVisibility",
     "PlannedModule",
     "AuthorNotebookVersionRequest",
     "AuthorNotebookVersionResponse",
