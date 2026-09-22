@@ -6982,6 +6982,30 @@ div.mj-rail-row:hover {
 .mj-qpu-source a {
   color: var(--accent);
 }
+/* The "before you pay" estimate reuses .mj-qpu-ideal's card; these are its
+   figure list (one line per published figure, each with its source link) and
+   the per-machine breakdown shown when the provider picks the machine. */
+.mj-qpu-figures {
+  display: grid;
+  gap: var(--sp-1);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  color: var(--text-1);
+  font-size: var(--fs-12);
+  line-height: 1.5;
+}
+.mj-qpu-figures a {
+  color: var(--accent);
+}
+.mj-qpu-machines summary {
+  cursor: pointer;
+  color: var(--text-1);
+  font-size: var(--fs-12);
+}
+.mj-qpu-machines > .mj-qpu-figures {
+  padding-top: var(--sp-1);
+}
 .mj-qpu-flow > .mj-primary-button:disabled {
   cursor: not-allowed;
   opacity: 0.55;
@@ -7027,30 +7051,6 @@ div.mj-rail-row:hover {
 }
 .mj-qpu-ideal-table code {
   font-family: var(--font-mono);
-}
-/* The "before you pay" estimate reuses .mj-qpu-ideal's card; these are its
-   figure list (one line per published figure, each with its source link) and
-   the per-machine breakdown shown when the provider picks the machine. */
-.mj-qpu-figures {
-  display: grid;
-  gap: var(--sp-1);
-  margin: 0;
-  padding: 0;
-  list-style: none;
-  color: var(--text-1);
-  font-size: var(--fs-12);
-  line-height: 1.5;
-}
-.mj-qpu-figures a {
-  color: var(--accent);
-}
-.mj-qpu-machines summary {
-  cursor: pointer;
-  color: var(--text-1);
-  font-size: var(--fs-12);
-}
-.mj-qpu-machines > .mj-qpu-figures {
-  padding-top: var(--sp-1);
 }
 .mj-studio-version-panel {
   padding-bottom: var(--sp-5);

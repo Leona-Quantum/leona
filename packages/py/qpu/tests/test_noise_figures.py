@@ -13,12 +13,11 @@ import re
 
 import pytest
 
-from majorana_qpu import (
-    ErrorStatistic,
-    PublishedErrorFigure,
-    backend_info,
-    list_backends,
-)
+from majorana_qpu import backend_info, list_backends
+
+# Imported from `models` rather than the package root, which re-exports only
+# what the API and worker use; these types matter to the table and its tests.
+from majorana_qpu.models import ErrorStatistic, PublishedErrorFigure
 
 
 def _figures(backend):

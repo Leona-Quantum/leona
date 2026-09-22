@@ -317,6 +317,14 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
     hardwareIdealOtherOutcomes: string;
     hardwareIdealProvenance: string;
     hardwareIdealUnavailable: (reason: string) => string;
+    hardwarePricedOnly: string;
+    hardwareBlockedReason: (reason: string) => string;
+    //: The weekly hardware BUDGET is spent, which is not the same thing as the
+    //: deployment being switched off — a person can act on this one. Takes the
+    //: formatted amounts rather than raw numbers so the currency renders the
+    //: same way as the estimate directly above it on screen.
+    hardwareSpendExhausted: (estimate: string, limit: string, spent: string) => string;
+    hardwareSpendFreeTier: (estimate: string) => string;
     //: The pre-submit noise estimate (lib/qpu-noise.ts). `access` is the
     //: device's QpuAccess, because a free-queue run costs allowance, not money.
     hardwarePreviewTitle: (access: string) => string;
@@ -335,14 +343,6 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
     hardwarePreviewMachines: string;
     hardwarePreviewCaveat: string;
     hardwarePreviewUnavailable: (reason: string) => string;
-    hardwarePricedOnly: string;
-    hardwareBlockedReason: (reason: string) => string;
-    //: The weekly hardware BUDGET is spent, which is not the same thing as the
-    //: deployment being switched off — a person can act on this one. Takes the
-    //: formatted amounts rather than raw numbers so the currency renders the
-    //: same way as the estimate directly above it on screen.
-    hardwareSpendExhausted: (estimate: string, limit: string, spent: string) => string;
-    hardwareSpendFreeTier: (estimate: string) => string;
     verifySave: string;
     starting: string;
     bringYourOwn: string;
@@ -1226,6 +1226,17 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
         operation_limit: "This circuit exceeds the browser operation limit, so no ideal outcome can be computed for it.",
         register_mismatch: "The device counts do not match this circuit's measured qubits, so they cannot be compared to an ideal outcome.",
       }[reason] ?? "No ideal outcome could be computed for this job."),
+      hardwarePricedOnly: "Leona can price this device but cannot send jobs to it yet. Only IBM devices can be run today.",
+      hardwareBlockedReason: (reason) => ({
+        provider_not_supported: "Leona cannot send jobs to this device yet. Only IBM devices can be run today.",
+        submission_disabled: "Hardware submission is off in this deployment.",
+        credentials_unconfigured: "No provider credentials are configured, so nothing can be submitted.",
+        provider_dependency_missing: "The provider SDK is not installed, so nothing can be submitted.",
+      }[reason] ?? "Hardware submission is unavailable in this deployment."),
+      hardwareSpendExhausted: (estimate, limit, spent) =>
+        `Estimated at ${estimate}. Your plan includes ${limit} of hardware time weekly, and ${spent} is already committed. Free-queue devices and browser simulation stay available.`,
+      hardwareSpendFreeTier: (estimate) =>
+        `Estimated at ${estimate}. Billed hardware is not part of the free plan; free-queue devices and browser simulation stay available.`,
       hardwarePreviewTitle: (access) => (access === "free_queue" ? "Before you use free time" : "Before you pay"),
       hardwarePreviewTvd: "Expected distance from ideal",
       hardwarePreviewUniform: "Random bits, for comparison",
@@ -1258,17 +1269,6 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
         qubit_limit: "This circuit is wider than your plan's browser simulation limit, so there is no estimate.",
         operation_limit: "This circuit exceeds the browser operation limit, so there is no estimate.",
       }[reason] ?? "No estimate could be computed for this circuit."),
-      hardwarePricedOnly: "Leona can price this device but cannot send jobs to it yet. Only IBM devices can be run today.",
-      hardwareBlockedReason: (reason) => ({
-        provider_not_supported: "Leona cannot send jobs to this device yet. Only IBM devices can be run today.",
-        submission_disabled: "Hardware submission is off in this deployment.",
-        credentials_unconfigured: "No provider credentials are configured, so nothing can be submitted.",
-        provider_dependency_missing: "The provider SDK is not installed, so nothing can be submitted.",
-      }[reason] ?? "Hardware submission is unavailable in this deployment."),
-      hardwareSpendExhausted: (estimate, limit, spent) =>
-        `Estimated at ${estimate}. Your plan includes ${limit} of hardware time weekly, and ${spent} is already committed. Free-queue devices and browser simulation stay available.`,
-      hardwareSpendFreeTier: (estimate) =>
-        `Estimated at ${estimate}. Billed hardware is not part of the free plan; free-queue devices and browser simulation stay available.`,
       verifySave: "Verify & save",
       starting: "Starting…",
       bringYourOwn: "Save without running",
@@ -2266,6 +2266,17 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
         operation_limit: "この回路は操作数の上限を超えているため、理論値を計算できません。",
         register_mismatch: "実機の測定結果がこの回路の量子ビット数と一致しないため、理論値と比較できません。",
       }[reason] ?? "このジョブの理論値を計算できませんでした。"),
+      hardwarePricedOnly: "この実機は料金の見積もりのみ対応しており、まだジョブを送信できません。現在実行できるのはIBMの実機のみです。",
+      hardwareBlockedReason: (reason) => ({
+        provider_not_supported: "この実機にはまだジョブを送信できません。現在実行できるのはIBMの実機のみです。",
+        submission_disabled: "この環境ではハードウェア実行が無効になっています。",
+        credentials_unconfigured: "実機提供元の認証情報が未設定のため、実行できません。",
+        provider_dependency_missing: "この環境はこの実機提供元に対応していません。",
+      }[reason] ?? "現在の環境では量子コンピュータでの実行を利用できません。"),
+      hardwareSpendExhausted: (estimate, limit, spent) =>
+        `見積もりは${estimate}です。プランの実機実行枠は週${limit}で、すでに${spent}を使用しています。無料キューとブラウザシミュレーションは引き続き利用できます。`,
+      hardwareSpendFreeTier: (estimate) =>
+        `見積もりは${estimate}です。有料の実機実行は無料プラン対象外です。無料キューとブラウザシミュレーションは引き続き利用できます。`,
       hardwarePreviewTitle: (access) => (access === "free_queue" ? "無料枠を使う前に" : "支払う前に"),
       hardwarePreviewTvd: "理論値からの予想距離",
       hardwarePreviewUniform: "比較: ランダムなビット列",
@@ -2298,17 +2309,6 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
         qubit_limit: "この回路は、お使いのプランのブラウザシミュレーション上限を超えているため、見積もりを計算できません。",
         operation_limit: "この回路は操作数の上限を超えているため、見積もりを計算できません。",
       }[reason] ?? "この回路の見積もりを計算できませんでした。"),
-      hardwarePricedOnly: "この実機は料金の見積もりのみ対応しており、まだジョブを送信できません。現在実行できるのはIBMの実機のみです。",
-      hardwareBlockedReason: (reason) => ({
-        provider_not_supported: "この実機にはまだジョブを送信できません。現在実行できるのはIBMの実機のみです。",
-        submission_disabled: "この環境ではハードウェア実行が無効になっています。",
-        credentials_unconfigured: "実機提供元の認証情報が未設定のため、実行できません。",
-        provider_dependency_missing: "この環境はこの実機提供元に対応していません。",
-      }[reason] ?? "現在の環境では量子コンピュータでの実行を利用できません。"),
-      hardwareSpendExhausted: (estimate, limit, spent) =>
-        `見積もりは${estimate}です。プランの実機実行枠は週${limit}で、すでに${spent}を使用しています。無料キューとブラウザシミュレーションは引き続き利用できます。`,
-      hardwareSpendFreeTier: (estimate) =>
-        `見積もりは${estimate}です。有料の実機実行は無料プラン対象外です。無料キューとブラウザシミュレーションは引き続き利用できます。`,
       verifySave: "検証して保存",
       starting: "開始中…",
       bringYourOwn: "実行せずに保存",
