@@ -2,7 +2,10 @@ import { getAccountTier } from "../../../../lib/account-tier-server";
 import { getPublicLocale } from "../../../../lib/public-locale-server";
 import { HardwareRuns } from "./hardware-runs";
 
-export const metadata = { title: "Hardware runs — Leona Quantum" };
+// The page's own name only: the root layout's title template appends
+// " · Leona Quantum" (`lib/public-metadata.ts`), so writing the site name here
+// as well would put it in the tab twice.
+export const metadata = { title: "Hardware runs" };
 
 /**
  * The workspace's hardware runs, grouped by the machine that ran them
