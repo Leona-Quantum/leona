@@ -133,6 +133,35 @@ export async function refusalReason(response: Response): Promise<string | null> 
 
 type Fetch = (input: string, init?: RequestInit) => Promise<Response>;
 
+/**
+ * A page, or a thrown `CommentRequestError` — never a half-read object.
+ *
+ * The panel sits inside pages that matter more than it does (a notebook, a run,
+ * Studio). A 200 that is not a comment list — an older control plane, a proxy
+ * error page, a test double answering every URL with the notebook — used to
+ * reach `threadsOf` as `items: undefined`, throw during render, and take the
+ * whole notebook page down with it. Refused here, it becomes the panel's own
+ * "could not load" state and nothing else on the page notices.
+ */
+async function readList(response: Response): Promise<CommentList> {
+  if (!response.ok) throw new CommentRequestError(response.status, await refusalReason(response));
+  let payload: unknown;
+  try {
+    payload = await response.json();
+  } catch {
+    throw new CommentRequestError(response.status, "unreadable_response");
+  }
+  if (!payload || typeof payload !== "object" || !Array.isArray((payload as { items?: unknown }).items)) {
+    throw new CommentRequestError(response.status, "unexpected_response");
+  }
+  const list = payload as CommentList;
+  return {
+    ...list,
+    items: list.items.filter((item) => Boolean(item) && typeof item === "object" && typeof item.id === "string"),
+    next_cursor: typeof list.next_cursor === "string" ? list.next_cursor : null,
+  };
+}
+
 export async function fetchThread(
   fetcher: Fetch,
   targetType: CommentTargetType,
@@ -141,18 +170,14 @@ export async function fetchThread(
 ): Promise<CommentList> {
   const params = new URLSearchParams({ target_type: targetType, target_id: targetId });
   if (cursor) params.set("cursor", cursor);
-  const response = await fetcher(`/api/comments?${params}`, { cache: "no-store" });
-  if (!response.ok) throw new CommentRequestError(response.status, await refusalReason(response));
-  return (await response.json()) as CommentList;
+  return readList(await fetcher(`/api/comments?${params}`, { cache: "no-store" }));
 }
 
 export async function fetchMentions(fetcher: Fetch, cursor?: string | null): Promise<CommentList> {
   const params = new URLSearchParams();
   if (cursor) params.set("cursor", cursor);
   const query = params.toString();
-  const response = await fetcher(`/api/comments/mentions${query ? `?${query}` : ""}`, { cache: "no-store" });
-  if (!response.ok) throw new CommentRequestError(response.status, await refusalReason(response));
-  return (await response.json()) as CommentList;
+  return readList(await fetcher(`/api/comments/mentions${query ? `?${query}` : ""}`, { cache: "no-store" }));
 }
 
 export class CommentRequestError extends Error {

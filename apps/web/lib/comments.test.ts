@@ -4,6 +4,9 @@ import test from "node:test";
 import {
   type Comment,
   type CommentPerson,
+  CommentRequestError,
+  fetchMentions,
+  fetchThread,
   insertMention,
   isCommentableId,
   mentionQuery,
@@ -103,4 +106,38 @@ test("each kind of thing links to the page it is opened on", () => {
   assert.equal(targetHref("run", "abc"), "/run/abc#comments");
   assert.equal(targetHref("notebook", "abc"), "/notebooks/abc#comments");
   assert.equal(targetHref("artifact", "a b"), "/studio?artifact=a%20b#comments");
+});
+
+function respond(status: number, body: unknown, raw = false): Response {
+  return new Response(raw ? String(body) : JSON.stringify(body), {
+    status,
+    headers: { "Content-Type": "application/json" },
+  });
+}
+
+test("a 200 that is not a comment list is refused, not handed to the renderer", async () => {
+  // What crashed the notebook page in the form-submission suite: a double that
+  // answers every URL with the notebook resource, so `items` was undefined.
+  for (const body of [{ id: "nb", title: "A notebook" }, { items: "nope" }, null, [1, 2]]) {
+    await assert.rejects(
+      fetchThread(async () => respond(200, body), "notebook", "0190a4f0-0000-7000-8000-000000000001"),
+      (error: unknown) => error instanceof CommentRequestError && error.reason === "unexpected_response",
+    );
+  }
+  await assert.rejects(
+    fetchMentions(async () => respond(200, "<html>proxy error</html>", true)),
+    (error: unknown) => error instanceof CommentRequestError && error.reason === "unreadable_response",
+  );
+});
+
+test("a refusal carries the API's reason, and a good page passes through with junk rows dropped", async () => {
+  await assert.rejects(
+    fetchThread(async () => respond(404, { reason: "not_found" }), "run", "x"),
+    (error: unknown) => error instanceof CommentRequestError && error.status === 404 && error.reason === "not_found",
+  );
+  const good = comment();
+  const page = await fetchThread(async () => respond(200, { items: [good, null, { no: "id" }], can_comment: true }), "run", "x");
+  assert.deepEqual(page.items.map((item) => item.id), [good.id]);
+  assert.equal(page.next_cursor, null);
+  assert.equal(page.can_comment, true);
 });
