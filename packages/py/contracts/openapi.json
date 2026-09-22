@@ -2835,6 +2835,40 @@
         "title": "Course",
         "type": "object"
       },
+      "CourseGradebook": {
+        "additionalProperties": false,
+        "description": "How members are doing on a course's graded exercises. Results, never answers:\nnothing here carries a cell's check, answer key, or the member's own code.",
+        "properties": {
+          "course_id": {
+            "format": "uuid",
+            "title": "Course Id",
+            "type": "string"
+          },
+          "modules": {
+            "items": {
+              "$ref": "#/components/schemas/GradebookModule"
+            },
+            "title": "Modules",
+            "type": "array"
+          },
+          "rows": {
+            "items": {
+              "$ref": "#/components/schemas/GradebookRow"
+            },
+            "title": "Rows",
+            "type": "array"
+          },
+          "visibility": {
+            "$ref": "#/components/schemas/GradebookVisibility"
+          }
+        },
+        "required": [
+          "course_id",
+          "visibility"
+        ],
+        "title": "CourseGradebook",
+        "type": "object"
+      },
       "CourseList": {
         "additionalProperties": false,
         "properties": {
@@ -4180,6 +4214,208 @@
         ],
         "title": "GradeReport",
         "type": "object"
+      },
+      "GradebookEntry": {
+        "additionalProperties": false,
+        "description": "One member's LATEST graded attempt at one module.\n\nLatest rather than best. The gradebook answers \"where has this person got to\",\nand a best-ever score would keep showing a pass on cells the notebook has since\nrewritten. `stale` says when that has happened: the verdicts are about the\nversion named by `version_seq`, which is no longer the current one.",
+        "properties": {
+          "attempted": {
+            "minimum": 0,
+            "title": "Attempted",
+            "type": "integer"
+          },
+          "failed": {
+            "minimum": 0,
+            "title": "Failed",
+            "type": "integer"
+          },
+          "graded_at": {
+            "format": "date-time",
+            "title": "Graded At",
+            "type": "string"
+          },
+          "graded_cells": {
+            "minimum": 0,
+            "title": "Graded Cells",
+            "type": "integer"
+          },
+          "module_id": {
+            "format": "uuid",
+            "title": "Module Id",
+            "type": "string"
+          },
+          "passed": {
+            "minimum": 0,
+            "title": "Passed",
+            "type": "integer"
+          },
+          "run_id": {
+            "format": "uuid",
+            "title": "Run Id",
+            "type": "string"
+          },
+          "stale": {
+            "default": false,
+            "title": "Stale",
+            "type": "boolean"
+          },
+          "version_seq": {
+            "minimum": 1,
+            "title": "Version Seq",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "module_id",
+          "passed",
+          "failed",
+          "attempted",
+          "graded_cells",
+          "version_seq",
+          "run_id",
+          "graded_at"
+        ],
+        "title": "GradebookEntry",
+        "type": "object"
+      },
+      "GradebookModule": {
+        "additionalProperties": false,
+        "description": "One column of the gradebook: a module, and what its notebook grades today.",
+        "properties": {
+          "graded_cells": {
+            "anyOf": [
+              {
+                "minimum": 0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Graded Cells"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "notebook_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Notebook Id"
+          },
+          "seq": {
+            "minimum": 1,
+            "title": "Seq",
+            "type": "integer"
+          },
+          "slug": {
+            "title": "Slug",
+            "type": "string"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "seq",
+          "slug",
+          "title"
+        ],
+        "title": "GradebookModule",
+        "type": "object"
+      },
+      "GradebookRow": {
+        "additionalProperties": false,
+        "description": "One workspace member's results across the course.\n\n`email` and `display_name` are exactly what `GET /v1/workspace` already shows\nevery member about every other member, and nothing more.\n\nA member who has not been graded on anything still gets a row: `entries` is\nempty, `total_passed` is 0 and `last_graded_at` is `None`. A client must render\nthat as \"not started\", never as a score of zero, because \"has not tried\" and\n\"tried and got nothing right\" are different facts about a learner.",
+        "properties": {
+          "display_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Display Name"
+          },
+          "email": {
+            "title": "Email",
+            "type": "string"
+          },
+          "entries": {
+            "items": {
+              "$ref": "#/components/schemas/GradebookEntry"
+            },
+            "title": "Entries",
+            "type": "array"
+          },
+          "last_graded_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Last Graded At"
+          },
+          "total_graded_cells": {
+            "anyOf": [
+              {
+                "minimum": 0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Total Graded Cells"
+          },
+          "total_passed": {
+            "minimum": 0,
+            "title": "Total Passed",
+            "type": "integer"
+          },
+          "user_id": {
+            "format": "uuid",
+            "title": "User Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "user_id",
+          "email",
+          "total_passed"
+        ],
+        "title": "GradebookRow",
+        "type": "object"
+      },
+      "GradebookVisibility": {
+        "description": "Which rows of a course's gradebook the caller was allowed to see.\n\nCarried on the response rather than inferred by the client, because the two\nanswers look alike: a course creator whose class has not started sees an empty\ntable, and a member who has not started sees an empty table too. The client has\nto know which of the two it is showing to title it honestly (\"Gradebook\" or\n\"Your progress\").",
+        "enum": [
+          "all_members",
+          "own_row"
+        ],
+        "title": "GradebookVisibility",
+        "type": "string"
       },
       "ImportNotebookRequest": {
         "additionalProperties": false,

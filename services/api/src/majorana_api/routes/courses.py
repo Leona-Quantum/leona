@@ -14,6 +14,8 @@ ask for eight notebooks past a limit that stops at one.
 
 from __future__ import annotations
 
+import csv
+import io
 import uuid
 from typing import Annotated
 
@@ -464,6 +466,114 @@ async def export_course(course_id: uuid.UUID, scope: CurrentScope, session: DbSe
         content=blob,
         media_type="application/zip",
         headers={"Content-Disposition": f'attachment; filename="{course.slug}.zip"'},
+    )
+
+
+# ------------------------------------------------------------------------- gradebook
+
+
+@router.get("/courses/{course_id}/gradebook", response_model=contracts.CourseGradebook)
+async def get_course_gradebook(
+    course_id: uuid.UUID, scope: CurrentScope, session: DbSession
+) -> contracts.CourseGradebook:
+    """How members are doing on this course's graded exercises.
+
+    The course's creator gets every member's row; anyone else in the workspace gets
+    their own row only, and `visibility` says which of the two this is. The reason
+    (owner ruling ai-ops 260, option 1) and why workspace role is not the test are on
+    `courses_repo.course_gradebook`, which is where the rule is enforced: this route
+    and the CSV beside it cannot disagree about it because neither applies it.
+    """
+    return await courses_repo.course_gradebook(scope, session, course_id)
+
+
+#: A spreadsheet reads a cell that starts with one of these as a formula, or (tab,
+#: CR) as the start of one once the cell is trimmed. Display names and module titles
+#: are text other people typed, so a name of `=HYPERLINK("http://…","Open")` would
+#: otherwise become a live link in the instructor's spreadsheet. OWASP's CSV injection
+#: guidance: prefix a single quote, which every spreadsheet shows as text.
+_FORMULA_PREFIXES = ("=", "+", "-", "@", "\t", "\r")
+
+_GRADEBOOK_CSV_HEADER = (
+    "member",
+    "email",
+    "module_number",
+    "module",
+    "cells_passed",
+    "graded_cells",
+    "graded_at",
+    "notebook_version",
+    "outdated",
+    "run_id",
+    "course_cells_passed",
+    "course_graded_cells",
+)
+
+
+def _csv_cell(value: object) -> str:
+    text = "" if value is None else str(value)
+    return "'" + text if text.startswith(_FORMULA_PREFIXES) else text
+
+
+def render_gradebook_csv(book: contracts.CourseGradebook) -> str:
+    """One row per member per module, with the member's course totals on every row.
+
+    A module the member has not been graded on still gets its row, with
+    `cells_passed` EMPTY rather than 0: "has not tried" and "tried and passed
+    nothing" are different facts about a learner, the same distinction
+    `GET /notebooks/{id}/grades` draws with `null`. Its `graded_cells` is the
+    module's count today, so a member's `graded_cells` column sums to their
+    `course_graded_cells`, which is the check a spreadsheet user will make first.
+    A member who has not started anything gets `course_cells_passed` empty too,
+    for the same reason. `course_graded_cells` is empty while the total cannot be
+    known (a module still has no ready notebook to count): an empty cell is honest,
+    and a smaller number would read as a better score than the member has.
+
+    Totals are two numeric columns rather than one "7/12" cell, because a
+    spreadsheet reads "7/12" as the 12th of July.
+    """
+    buffer = io.StringIO()
+    writer = csv.writer(buffer, lineterminator="\r\n")
+    writer.writerow(_GRADEBOOK_CSV_HEADER)
+    for row in book.rows:
+        by_module = {entry.module_id: entry for entry in row.entries}
+        for module in book.modules:
+            entry = by_module.get(module.id)
+            cells: tuple[object, ...] = (
+                row.display_name or row.email,
+                row.email,
+                module.seq,
+                module.title,
+                entry.passed if entry else None,
+                entry.graded_cells if entry else module.graded_cells,
+                entry.graded_at.isoformat() if entry else None,
+                entry.version_seq if entry else None,
+                ("yes" if entry.stale else "no") if entry else None,
+                entry.run_id if entry else None,
+                row.total_passed if row.entries else None,
+                row.total_graded_cells,
+            )
+            writer.writerow([_csv_cell(cell) for cell in cells])
+    return buffer.getvalue()
+
+
+@router.get("/courses/{course_id}/gradebook.csv")
+async def export_course_gradebook(
+    course_id: uuid.UUID, scope: CurrentScope, session: DbSession
+) -> Response:
+    """The gradebook as a spreadsheet. Same rows as `GET .../gradebook`, from the
+    same call, so a member who downloads it gets their own row and nothing else.
+
+    UTF-8 with a byte-order mark. Without it Excel opens the file in the system
+    code page and a Japanese member's name arrives as mojibake; every tool that
+    reads CSV as UTF-8 skips the mark.
+    """
+    course = await courses_repo.get_course(scope, session, course_id)
+    book = await courses_repo.course_gradebook(scope, session, course_id)
+    return Response(
+        content="\ufeff" + render_gradebook_csv(book),
+        media_type="text/csv; charset=utf-8",
+        headers={"Content-Disposition": f'attachment; filename="{course.slug}-gradebook.csv"'},
     )
 
 
