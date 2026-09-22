@@ -3,6 +3,7 @@ import { readdirSync, readFileSync, statSync } from "node:fs";
 import { dirname, join, relative } from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
+import { UPGRADE_COPY } from "./public-copy.ts";
 import { SITE_NAME } from "./public-metadata.ts";
 
 /**
@@ -52,7 +53,18 @@ function templatedFromAbove(pageFile: string): boolean {
   return false;
 }
 
-const TITLE_LITERAL = /title:\s*(?:"([^"]*)"|`([^`]*)`)/g;
+/**
+ * Each `title:` and the rest of its line, then every string or template literal in
+ * that stretch. Reading the whole expression rather than only a literal right after
+ * the colon is what catches `title: locale === "ja" ? "…" : "… · Leona Quantum"`.
+ *
+ * What a source scan cannot do is evaluate a title that is not written in the page:
+ * `entry.title` and `qapp.title` are record data, which never carry the site name,
+ * and a title read from a copy constant is checked against the constant itself
+ * below. Anything else a page composes at runtime is outside this test.
+ */
+const TITLE_EXPRESSION = /\btitle:([^\n]*)/g;
+const STRING_LITERAL = /"([^"\\]*)"|`([^`\\]*)`/g;
 
 test("no page under a templated layout names the site in its own title", () => {
   const pages = walk(appRoot).filter((file) => /\/page\.tsx$/.test(file));
@@ -61,12 +73,22 @@ test("no page under a templated layout names the site in its own title", () => {
   assert.ok(scanned.length > 10, `only ${scanned.length} pages sit under a templated layout; the ancestor test is broken`);
   const doubled: string[] = [];
   for (const file of scanned) {
-    for (const match of readFileSync(file, "utf8").matchAll(TITLE_LITERAL)) {
-      const title = (match[1] ?? match[2] ?? "").trim();
-      if (title.endsWith(SITE_NAME)) doubled.push(`${relative(appRoot, file)}: "${title}"`);
+    for (const expression of readFileSync(file, "utf8").matchAll(TITLE_EXPRESSION)) {
+      for (const literal of expression[1].matchAll(STRING_LITERAL)) {
+        const title = (literal[1] ?? literal[2] ?? "").trim();
+        if (title.endsWith(SITE_NAME)) doubled.push(`${relative(appRoot, file)}: "${title}"`);
+      }
     }
   }
   assert.deepEqual(doubled, [], `these titles would read "… · ${SITE_NAME} · ${SITE_NAME}":\n${doubled.join("\n")}`);
+});
+
+test("the upgrade page's title, which comes from a copy constant, does not name the site", () => {
+  // `app/(app)/upgrade/page.tsx` is the one page whose metadata title is an
+  // identifier, not a literal, so the scan above cannot read it.
+  for (const copy of Object.values(UPGRADE_COPY)) {
+    assert.ok(!copy.title.trim().endsWith(SITE_NAME), `UPGRADE_COPY title "${copy.title}" names the site`);
+  }
 });
 
 test("a page in the same segment as its templated layout is not scanned", () => {
