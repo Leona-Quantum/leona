@@ -14,6 +14,7 @@ import pytest
 from leona_mcp_fixtures import FakeCatalogApi
 from mcp.shared.memory import create_connected_server_and_client_session
 
+from leona_mcp import __version__
 from leona_mcp.client import CatalogClient
 from leona_mcp.server import INSTRUCTIONS, SERVER_NAME, build_server
 
@@ -34,6 +35,7 @@ async def test_initialize_names_the_server_and_says_what_it_does_not_do(server):
         # so run the handshake once more to read what the server answers.
         result = await session.initialize()
     assert result.serverInfo.name == SERVER_NAME
+    assert result.serverInfo.version == __version__
     assert result.instructions == INSTRUCTIONS
     for phrase in ("public, read-only API", "not stated in the record", "spends money"):
         assert phrase in result.instructions

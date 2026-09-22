@@ -90,6 +90,10 @@ def build_server(client: CatalogClient | None = None) -> FastMCP:
     # WARNING, not the SDK's INFO default: INFO logs every request and every HTTP call
     # to stderr, which an MCP client shows its user as noise.
     server = FastMCP(SERVER_NAME, instructions=INSTRUCTIONS, log_level="WARNING")
+    # FastMCP takes no version and the SDK then reports its own ("1.30.0") as the
+    # server's in `serverInfo`. The low-level server it wraps reads this attribute;
+    # a test pins the handshake so an SDK change here fails rather than misreports.
+    server._mcp_server.version = __version__
 
     @server.tool(
         name="search_methods",
