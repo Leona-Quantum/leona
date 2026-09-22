@@ -66,10 +66,18 @@ function probability(value: unknown): number | null {
   return typeof value === "number" && Number.isFinite(value) && value >= 0 && value <= 1 ? value : null;
 }
 
+/**
+ * A counts object that can be turned into a distribution, or null. Its total
+ * must be positive: a well-shaped set of counts that are all zero is not a
+ * distribution, and extrapolating from it would divide by zero (Greptile P2 on
+ * PR 970).
+ */
 function countsOf(value: unknown): Record<string, number> | null {
   if (!isRecord(value)) return null;
   const entries = Object.entries(value);
   if (!entries.length || entries.some(([, count]) => !Number.isInteger(count) || (count as number) < 0)) return null;
+  const total = entries.reduce((sum, [, count]) => sum + (count as number), 0);
+  if (!(total > 0) || !Number.isFinite(total)) return null;
   return value as Record<string, number>;
 }
 
@@ -300,7 +308,10 @@ export type MitigationUnavailable =
   /** A reported error rate of 0.5 or more on some qubit. */
   | "calibration_unusable"
   /** ZNE was requested but the folded circuits' counts did not come back. */
-  | "zne_no_counts";
+  | "zne_no_counts"
+  /** The correction threw on this run's stored inputs. The raw comparison is
+   * unaffected: each correction is isolated from it and from the other one. */
+  | "could_not_compute";
 
 export type DistanceReading = {
   tvd: number;
@@ -375,8 +386,35 @@ export function mitigatedReadings(input: {
 }): MitigatedReadings {
   const { ideal, qubitCount, rawCounts, rows } = input;
   const document = readMitigation(input.mitigation);
-  const shape = new RegExp(`^[01]{${qubitCount}}$`);
 
+  return {
+    readout: isolated(() => readoutReading(document, ideal, qubitCount, rawCounts, rows)),
+    zne: document?.zne ? isolated(() => zneReading(document, ideal, qubitCount, rawCounts, rows)) : null,
+  };
+}
+
+/**
+ * Runs one correction so that whatever goes wrong inside it becomes that
+ * correction's "unavailable", never an exception out of the job. The readings
+ * share a worker job with the raw comparison (`compare_mitigated`), and a throw
+ * there would fail the whole job, which the page shows as the raw comparison
+ * failing too.
+ */
+function isolated<T extends { status: string }>(compute: () => T): T | { status: "unavailable"; reason: MitigationUnavailable } {
+  try {
+    return compute();
+  } catch {
+    return { status: "unavailable", reason: "could_not_compute" };
+  }
+}
+
+function readoutReading(
+  document: MitigationDocument | null,
+  ideal: Float64Array,
+  qubitCount: number,
+  rawCounts: Record<string, number>,
+  rows: readonly string[],
+): MitigatedReadings["readout"] {
   let readout: MitigatedReadings["readout"];
   const bits = document?.readout?.bits ?? null;
   if (!bits) {
@@ -397,29 +435,33 @@ export function mitigatedReadings(input: {
       symmetric: bits.some((bit) => bit.source === "target_measure_error"),
     };
   }
+  return readout;
+}
 
-  let zne: MitigatedReadings["zne"] = null;
-  if (document?.zne) {
-    const three = document.zne.counts?.["3"];
-    const five = document.zne.counts?.["5"];
-    const widthMatches = (counts: Record<string, number> | undefined) => Boolean(counts && Object.keys(counts).every((key) => shape.test(key)));
-    if (!widthMatches(three) || !widthMatches(five)) {
-      zne = { status: "unavailable", reason: "zne_no_counts" };
-    } else {
-      const byScale = [[1, rawCounts], [3, three!], [5, five!]] as const;
-      const richardson = extrapolateDistribution(byScale, "richardson");
-      const linear = extrapolateDistribution(byScale, "linear");
-      zne = {
-        status: "computed",
-        reading: {
-          richardson: { ...distanceTo(ideal, denseFromShares(richardson.distribution, qubitCount), rows), clippedMass: richardson.clippedMass },
-          linear: { ...distanceTo(ideal, denseFromShares(linear.distribution, qubitCount), rows), clippedMass: linear.clippedMass },
-          twoQubitGates: document.zne.twoQubitGates,
-        },
-      };
-    }
-  }
-  return { readout, zne };
+function zneReading(
+  document: MitigationDocument,
+  ideal: Float64Array,
+  qubitCount: number,
+  rawCounts: Record<string, number>,
+  rows: readonly string[],
+): NonNullable<MitigatedReadings["zne"]> {
+  const shape = new RegExp(`^[01]{${qubitCount}}$`);
+  const three = document.zne?.counts?.["3"];
+  const five = document.zne?.counts?.["5"];
+  const widthMatches = (counts: Record<string, number> | undefined): counts is Record<string, number> =>
+    Boolean(counts && Object.keys(counts).every((key) => shape.test(key)));
+  if (!widthMatches(three) || !widthMatches(five)) return { status: "unavailable", reason: "zne_no_counts" };
+  const byScale = [[1, rawCounts], [3, three], [5, five]] as const;
+  const richardson = extrapolateDistribution(byScale, "richardson");
+  const linear = extrapolateDistribution(byScale, "linear");
+  return {
+    status: "computed",
+    reading: {
+      richardson: { ...distanceTo(ideal, denseFromShares(richardson.distribution, qubitCount), rows), clippedMass: richardson.clippedMass },
+      linear: { ...distanceTo(ideal, denseFromShares(linear.distribution, qubitCount), rows), clippedMass: linear.clippedMass },
+      twoQubitGates: document.zne?.twoQubitGates ?? null,
+    },
+  };
 }
 
 /**
@@ -438,13 +480,22 @@ export function compareAndMitigate(input: IdealComparisonInput & { mitigation: u
   const { mitigation, ...compare } = input;
   const { comparison, ideal } = compareMeasuredToIdealWithIdeal(compare);
   if (comparison.status !== "computed" || !ideal || !compare.counts) return { comparison, readings: null };
-  const readings = mitigatedReadings({
-    ideal,
-    qubitCount: comparison.qubitCount,
-    rawCounts: compare.counts,
-    mitigation,
-    rows: comparison.rows.map((row) => row.bitstring),
-  });
+  // The raw comparison is already made, and nothing below may take it away:
+  // `mitigatedReadings` isolates each correction, and this catches anything
+  // that escapes before them (reading the document itself), so the job always
+  // answers with the comparison.
+  let readings: MitigatedReadings;
+  try {
+    readings = mitigatedReadings({
+      ideal,
+      qubitCount: comparison.qubitCount,
+      rawCounts: compare.counts,
+      mitigation,
+      rows: comparison.rows.map((row) => row.bitstring),
+    });
+  } catch {
+    readings = { readout: { status: "unavailable", reason: "could_not_compute" }, zne: null };
+  }
   return { comparison, readings };
 }
 

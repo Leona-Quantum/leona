@@ -15,6 +15,7 @@ import {
 import { compareMeasuredToIdeal } from "./qpu-ideal.ts";
 import { sourceFingerprint } from "./studio-simulation.ts";
 import { TIER_LIMITS } from "./account-tier.ts";
+import { WORKSPACE_COPY } from "./workspace-locale.ts";
 
 /**
  * The shared fixture. `scripts/mitiq_parity.py --write` put Mitiq 1.1.0's numbers
@@ -261,5 +262,52 @@ test("a ZNE run whose folded counts never came back says so instead of extrapola
     { scale_factors: [1, 3, 5], counts: { "3": { "0": 1 }, "5": { "1": 1 } } },
   ]) {
     assert.deepEqual(bell(raw, { version: 1, zne }).readings.zne, { status: "unavailable", reason: "zne_no_counts" });
+  }
+});
+
+test("folded counts that total zero leave ZNE unavailable and the raw comparison untouched", () => {
+  // Greptile P2 on PR 970: well shaped, version 1, and all zero. It used to pass
+  // the checks and then throw inside the extrapolation, which failed the whole
+  // worker job and with it the raw comparison.
+  const raw = { "00": 460, "01": 30, "10": 38, "11": 496 };
+  const zero = { "00": 0, "01": 0, "10": 0, "11": 0 };
+  const mitigation = { version: 1, readout: READOUT, zne: { scale_factors: [1, 3, 5], counts: { "3": zero, "5": raw } } };
+  const direct = compareMeasuredToIdeal({ qasm: BELL_QASM, submittedFingerprint: sourceFingerprint(BELL_QASM), counts: raw, limits: TIER_LIMITS.free });
+  const { comparison, readings } = bell(raw, mitigation);
+  assert.deepEqual(comparison, direct);
+  assert.deepEqual(readings.zne, { status: "unavailable", reason: "zne_no_counts" });
+  // The other correction is not taken down with it.
+  assert.equal(readings.readout.status, "computed");
+});
+
+test("a correction that throws never costs the raw comparison", () => {
+  // Anything that escapes a correction becomes "could not compute" for it,
+  // never an exception out of the worker job that also carries the comparison.
+  const raw = { "00": 460, "01": 30, "10": 38, "11": 496 };
+  const hostile = {
+    version: 1,
+    get readout(): never {
+      throw new Error("stored document broke the reader");
+    },
+  };
+  const direct = compareMeasuredToIdeal({ qasm: BELL_QASM, submittedFingerprint: sourceFingerprint(BELL_QASM), counts: raw, limits: TIER_LIMITS.free });
+  const { comparison, readings } = compareAndMitigate({
+    qasm: BELL_QASM,
+    submittedFingerprint: sourceFingerprint(BELL_QASM),
+    counts: raw,
+    limits: TIER_LIMITS.free,
+    mitigation: hostile,
+  });
+  assert.deepEqual(comparison, direct);
+  assert.deepEqual(readings?.readout, { status: "unavailable", reason: "could_not_compute" });
+});
+
+test("every unavailable reason has its own sentence in both locales", () => {
+  for (const locale of ["en", "ja"] as const) {
+    const sentence = WORKSPACE_COPY[locale].studio.hardwareMitigationUnavailable;
+    const fallback = sentence("not-a-reason");
+    for (const reason of ["no_calibration", "calibration_mismatch", "calibration_unusable", "zne_no_counts", "could_not_compute"]) {
+      assert.notEqual(sentence(reason), fallback, `${locale}: ${reason}`);
+    }
   }
 });

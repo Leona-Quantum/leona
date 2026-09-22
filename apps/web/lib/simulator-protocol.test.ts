@@ -231,6 +231,22 @@ test("results that are not a noise estimate move nothing", () => {
   assert.deepEqual(unavailable.transfer, [], "an unavailable estimate carries no distribution to move");
 });
 
+test("compare_mitigated answers with the raw comparison even when the folded counts total zero", () => {
+  // Greptile P2 on PR 970, at the boundary the page actually uses: the job must
+  // be an ok reply carrying the comparison, not an ok:false that costs it.
+  const { source, counts } = CIRCUITS[0];
+  const input = { qasm: source, submittedFingerprint: sourceFingerprint(source), counts, limits: LIMITS };
+  const zero = Object.fromEntries(Object.keys(counts ?? {}).map((key) => [key, 0]));
+  const job: SimulatorJob = {
+    kind: "compare_mitigated",
+    ...input,
+    mitigation: { version: 1, zne: { scale_factors: [1, 3, 5], counts: { "3": zero, "5": zero } } },
+  };
+  const result = resultOf(throughTheBoundary(job)) as { comparison: unknown; readings: { zne: unknown } };
+  assert.deepEqual(result.comparison, compareMeasuredToIdeal(input));
+  assert.deepEqual(result.readings.zne, { status: "unavailable", reason: "zne_no_counts" });
+});
+
 test("a job that throws becomes an ok:false reply with the thrown message, never an uncaught error", () => {
   const custom: ParsedBuilderCircuit = { qubitCount: 1, steps: [{ id: "g", gate: "CUSTOM", qubits: [0], customGateId: "x" }] };
   const handled = handleSimulatorRequest(
