@@ -149,6 +149,12 @@ export const FRAMEWORK_VALUES = [
   "qulacs",
 ] as const;
 
+/** GradebookVisibility — 2 members. */
+export const GRADEBOOK_VISIBILITY_VALUES = [
+  "all_members",
+  "own_row",
+] as const;
+
 /** MeasurementPolicy — 5 members. */
 export const MEASUREMENT_POLICY_VALUES = [
   "none",
