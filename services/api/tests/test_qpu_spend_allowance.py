@@ -310,6 +310,7 @@ async def _fake_create_record(scope_arg, session_arg, **kwargs):
         provider=kwargs["provider"],
         device_id=kwargs["device_id"],
         provider_job_id=None,
+        backend_name=None,
         shots=kwargs["shots"],
         status="queued",
         source_fingerprint=kwargs["source_fingerprint"],

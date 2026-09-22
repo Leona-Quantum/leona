@@ -300,6 +300,58 @@ async def claim_submission_attempt(
     return result.rowcount == 1
 
 
+def list_records_stmt(
+    scope: Scope,
+    *,
+    cursor: uuid.UUID | None = None,
+    limit: int = 50,
+    source_fingerprint: str | None = None,
+):
+    """The history query as a statement, so a test can EXPLAIN this exact one.
+
+    Split out for the reason `authorized_spend_stmt` is: migration 0065's two
+    indexes exist for this statement, and a test holding its own copy of the SQL
+    would keep passing while a refactor dropped the real query back to scanning
+    every workspace's runs.
+    """
+    stmt = (
+        select(QpuRun)
+        .where(QpuRun.workspace_id == scope.workspace_id)
+        .order_by(QpuRun.id.desc())
+        .limit(limit)
+    )
+    if source_fingerprint is not None:
+        stmt = stmt.where(QpuRun.source_fingerprint == source_fingerprint)
+    if cursor is not None:
+        stmt = stmt.where(QpuRun.id < cursor)
+    return stmt
+
+
+async def list_records(
+    scope: Scope,
+    session: AsyncSession,
+    *,
+    cursor: uuid.UUID | None = None,
+    limit: int = 50,
+    source_fingerprint: str | None = None,
+) -> list[QpuRun]:
+    """This workspace's hardware runs, newest first, one page at a time.
+
+    Keyed and paged the way `runs.list_runs` and `notebooks.list_notebooks` are:
+    `create_record` mints UUIDv7 ids, which sort by creation time, so the id is
+    both the order and the cursor and a page boundary never splits or repeats a
+    row the way an offset does while new runs arrive.
+
+    `source_fingerprint` narrows to one circuit. Studio asks for exactly that on
+    load (the latest run of the circuit on screen). Both forms ride an index from
+    migration 0065; see its docstring for why the fingerprint form has its own.
+    """
+    stmt = list_records_stmt(
+        scope, cursor=cursor, limit=limit, source_fingerprint=source_fingerprint
+    )
+    return list((await session.execute(stmt)).scalars().all())
+
+
 async def get_record(scope: Scope, session: AsyncSession, record_id: uuid.UUID) -> QpuRun:
     stmt = select(QpuRun).where(QpuRun.id == record_id, QpuRun.workspace_id == scope.workspace_id)
     record = (await session.execute(stmt)).scalar_one_or_none()
@@ -315,6 +367,7 @@ async def transition(
     status: QpuRunStatus,
     *,
     provider_job_id: str | None = None,
+    backend_name: str | None = None,
     raw_counts: dict[str, int] | None = None,
     error: str | None = None,
     submitted_at: dt.datetime | None = None,
@@ -325,6 +378,10 @@ async def transition(
     The WHERE clause repeats the from-status predicate so two workers cannot
     both complete the same record: whoever loses the race matches zero rows
     and reads back the winner's terminal state instead of overwriting it.
+
+    `backend_name` is written only when given, like `provider_job_id` beside
+    it: a later transition that does not know the machine must not erase the
+    one the submit recorded.
     """
     require_write(scope)
     record = await get_record(scope, session, record_id)
@@ -334,6 +391,8 @@ async def transition(
     values: dict[str, Any] = {"status": status.value, "updated_at": dt.datetime.now(dt.UTC)}
     if provider_job_id is not None:
         values["provider_job_id"] = provider_job_id
+    if backend_name is not None:
+        values["backend_name"] = backend_name
     if raw_counts is not None:
         values["raw_counts"] = raw_counts
     if error is not None:
