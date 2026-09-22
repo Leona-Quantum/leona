@@ -379,7 +379,7 @@ async def test_comments_are_invisible_and_untouchable_across_workspaces(db, data
         assert {row.workspace_id for row in own.comments} == {a.workspace_id}
 
         people = await comments.list_people(sa, db)
-        assert {p.user_id for p in people} == set(a.users.values())
+        assert {p.user_id for p in people} == set(a.users.values()) - {sa.user_id}
 
         inbox = await comments.list_mentions(sa, db, limit=100)
         assert b.comment_id not in {row.id for row in inbox.comments}

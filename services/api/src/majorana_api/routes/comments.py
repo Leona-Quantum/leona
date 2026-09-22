@@ -148,7 +148,7 @@ async def list_my_mentions(
 async def list_mentionable_people(
     scope: CurrentScope, session: DbSession
 ) -> contracts.CommentPeopleList:
-    """The current members of this workspace, with the handle that mentions each."""
+    """The other current members of this workspace, with the handle that mentions each."""
     people = await comments_repo.list_people(scope, session)
     return contracts.CommentPeopleList(items=[_person(p) for p in people])
 

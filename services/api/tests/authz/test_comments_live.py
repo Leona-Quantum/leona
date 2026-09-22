@@ -269,7 +269,7 @@ async def test_every_route_answers_another_workspace_with_the_404_of_nothing(sta
     assert inbox.status_code == 200
     assert inbox.json() == {"items": [], "next_cursor": None, "can_comment": True}
     people = await bob.get("/v1/comments/people")
-    assert [p["user_id"] for p in people.json()["items"]] == [str(stage["scopes"]["bob"].user_id)]
+    assert people.json()["items"] == [], "Bob's workspace has nobody else in it to mention"
 
     # And A's thread is untouched by all of it.
     for kind in ("run", "notebook", "artifact"):
@@ -454,8 +454,8 @@ async def test_mentions_reach_current_members_of_this_workspace_only(stage):
     people = (await clients["member"].get("/v1/comments/people")).json()["items"]
     assert _handle(stage, "leaver") not in {p["handle"] for p in people}
     assert {p["handle"] for p in people} == {
-        _handle(stage, n) for n in ("owner", "admin", "member", "member2", "viewer")
-    }
+        _handle(stage, n) for n in ("owner", "admin", "member2", "viewer")
+    }, "every other current member, and not the caller: a self-mention never resolves"
     assert all(set(p) == {"user_id", "display_name", "handle", "current_member"} for p in people), (
         "no email address leaves in the people list"
     )

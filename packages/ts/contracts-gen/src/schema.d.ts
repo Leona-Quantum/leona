@@ -1199,7 +1199,7 @@ export interface components {
         };
         /**
          * CommentPeopleList
-         * @description The current members a comment in this workspace can mention.
+         * @description The current members the caller can mention here: everyone but the caller.
          */
         CommentPeopleList: {
             /** Items */

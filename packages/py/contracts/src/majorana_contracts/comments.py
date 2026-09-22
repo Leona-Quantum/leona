@@ -104,7 +104,7 @@ class CommentList(_ResourceBase):
 
 
 class CommentPeopleList(_ResourceBase):
-    """The current members a comment in this workspace can mention."""
+    """The current members the caller can mention here: everyone but the caller."""
 
     items: list[CommentPerson]
 

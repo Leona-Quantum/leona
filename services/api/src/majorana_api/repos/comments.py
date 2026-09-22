@@ -133,12 +133,16 @@ def _people(members: list[Member]) -> dict[uuid.UUID, Person]:
 
 
 async def list_people(scope: Scope, session: AsyncSession) -> list[Person]:
-    """Everyone a comment in this workspace can mention, in membership order.
+    """Everyone the caller can mention here, in membership order: every other
+    current member. Not the caller, because a mention of yourself never resolves.
 
     No role gate beyond membership: this is the members list the caller can
-    already read at `GET /v1/workspace`, minus the email addresses.
+    already read at `GET /v1/workspace`, minus the email addresses. Handles are
+    derived from the WHOLE membership, caller included, so a collision with the
+    caller's own handle still gives the other member their full address.
     """
-    return list(_people(await _members(scope, session)).values())
+    people = _people(await _members(scope, session))
+    return [person for user_id, person in people.items() if user_id != scope.user_id]
 
 
 # ------------------------------------------------------------------------------ targets
