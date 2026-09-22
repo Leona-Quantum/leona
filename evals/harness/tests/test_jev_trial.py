@@ -13,7 +13,12 @@ import urllib.request
 
 import pytest
 
-from majorana_evals.jev_trial.controls import OracleRanker, RandomRanker, StubJevClient
+from majorana_evals.jev_trial.controls import (
+    LexicalOverlapRanker,
+    OracleRanker,
+    RandomRanker,
+    StubJevClient,
+)
 from majorana_evals.jev_trial.curated_cases import PINNED_SHA256, load_curated_cases
 from majorana_evals.jev_trial.finder_bridge import FinderBridgeError, rank_via_finder
 from majorana_evals.jev_trial.jev_client import JevClient, JevKeyMissing, require_api_key
@@ -25,6 +30,7 @@ from majorana_evals.jev_trial.metrics import (
     top_k_hit,
 )
 from majorana_evals.jev_trial.runner import run_jev_trial
+from majorana_evals.jev_trial.schema import FinderCandidate, FinderRanking
 
 KNOWN_DOMAIN_TOPICS = {
     "chemistry",
@@ -211,6 +217,54 @@ def test_stub_jev_flows_end_to_end_in_jevs_real_response_shape():
         assert case.ranked_slugs  # produced a real, non-empty ranking for every case
 
 
+def test_lexical_control_beats_the_alphabetical_finder_and_bills_nothing():
+    """The word-overlap control is the bar a live Jev score is read against. It must
+    rank by content (so it clears the finder's alphabetical tie-break by a wide
+    margin on this set) and must never report billed tokens."""
+
+    cases, digest = load_curated_cases()
+    lexical = run_jev_trial(
+        cases, curated_cases_sha256=digest, ranker=LexicalOverlapRanker(), ranker_name="lexical"
+    )
+    finder = run_jev_trial(
+        cases, curated_cases_sha256=digest, ranker=None, ranker_name="current-finder"
+    )
+    assert lexical.top1_hit_rate >= finder.top1_hit_rate + 0.4
+    assert lexical.total_input_tokens is None
+    assert all(c.input_tokens is None for c in lexical.cases)
+    pools = {c.case_id: set(c.ranked_slugs) for c in finder.cases}
+    for c in lexical.cases:  # a permutation of the same pool, nothing added or dropped
+        assert set(c.ranked_slugs) == pools[c.case_id]
+
+
+def _pool(*titles: str) -> FinderRanking:
+    return FinderRanking(
+        case_id="synthetic",
+        domain="chemistry",
+        pool_size=len(titles),
+        ranked=[
+            FinderCandidate(
+                slug=f"s{i}", title=t, algorithm_family="f", description="", satisfied_count=1
+            )
+            for i, t in enumerate(titles)
+        ],
+    )
+
+
+def test_lexical_control_ranks_the_overlapping_record_first():
+    cases, _ = load_curated_cases()
+    case = cases[0].model_copy(update={"query": "tensor hypercontraction please"})
+    answer = LexicalOverlapRanker().rank(case, _pool("Grover search", "Tensor hypercontraction"))
+    assert answer.ranked_slugs == ["s1", "s0"]
+
+
+def test_lexical_control_with_no_overlap_keeps_the_finders_order():
+    cases, _ = load_curated_cases()
+    case = cases[0].model_copy(update={"query": "zzz qqq"})
+    answer = LexicalOverlapRanker().rank(case, _pool("Beta", "Alpha", "Gamma"))
+    assert answer.ranked_slugs == ["s0", "s1", "s2"]
+
+
 def test_current_finder_ranker_reports_no_confidence():
     cases, digest = load_curated_cases()
     report = run_jev_trial(
@@ -238,6 +292,21 @@ def test_require_api_key_raises_on_blank_value():
 
 def test_require_api_key_returns_the_key_when_present():
     assert require_api_key({"TYPESAFE_API_KEY": "sk-test-123"}) == "sk-test-123"
+
+
+@pytest.mark.parametrize("quoted", ['"sk-test-123"', "'sk-test-123'", ' "sk-test-123" '])
+def test_require_api_key_strips_one_pair_of_env_file_quotes(quoted):
+    # Jev answers a quoted key with a bare 401, and llm-keys.txt lines are .env style.
+    assert require_api_key({"TYPESAFE_API_KEY": quoted}) == "sk-test-123"
+
+
+def test_require_api_key_keeps_an_unmatched_quote():
+    assert require_api_key({"TYPESAFE_API_KEY": '"sk-test-123'}) == '"sk-test-123'
+
+
+def test_require_api_key_raises_on_a_pair_of_empty_quotes():
+    with pytest.raises(JevKeyMissing):
+        require_api_key({"TYPESAFE_API_KEY": '""'})
 
 
 def test_jev_client_refuses_construction_with_empty_key():

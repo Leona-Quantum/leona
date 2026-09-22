@@ -51,4 +51,5 @@ class LiveJevRanker:
             confidence=result.answer.confidence,
             probabilities=result.answer.probabilities,
             note=f"live-jev: model={result.model}, input_tokens={result.input_tokens}",
+            input_tokens=result.input_tokens,
         )

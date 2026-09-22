@@ -11,6 +11,8 @@
       --ranker random   --out /tmp/jev-trial-random.json
   uv run --package majorana-evals python -m majorana_evals.jev_trial run \\
       --ranker stub-jev --out /tmp/jev-trial-stub-jev.json
+  uv run --package majorana-evals python -m majorana_evals.jev_trial run \\
+      --ranker lexical  --out /tmp/jev-trial-lexical.json
 
   # A REAL run — spends a fraction of a cent (18 cases, ~1-2k input tokens each at
   # $42/billion input tokens; output is unbilled per typesafe.ai's own pricing page)
@@ -19,8 +21,8 @@
   # operator loads it from ~/Developer/projects/leona-secrets/llm-keys.txt. This
   # harness refuses outright, before any network attempt, if the key is absent.
   uv run --package majorana-evals python -m majorana_evals.jev_trial run \\
-      --ranker live-jev --out evals/jev-trial-report.json \\
-      --markdown-out evals/jev-trial-report.md
+      --ranker live-jev --out evals/report-jev-trial-live-<date>.json \\
+      --markdown-out evals/report-jev-trial-live-<date>.md
 
 No DATABASE_URL, no sandbox, no worker pipeline — see runner.py's docstring."""
 
@@ -30,7 +32,12 @@ import argparse
 import os
 from pathlib import Path
 
-from majorana_evals.jev_trial.controls import OracleRanker, RandomRanker, StubJevClient
+from majorana_evals.jev_trial.controls import (
+    LexicalOverlapRanker,
+    OracleRanker,
+    RandomRanker,
+    StubJevClient,
+)
 from majorana_evals.jev_trial.curated_cases import load_curated_cases
 from majorana_evals.jev_trial.jev_client import JevClient, JevKeyMissing, require_api_key
 from majorana_evals.jev_trial.live_jev import LiveJevRanker
@@ -51,6 +58,10 @@ def _write_markdown_summary(report: JevTrialReport, path: Path) -> None:
         f"- Brier score: {report.brier_score:.3f}"
         if report.brier_score is not None
         else "- Brier score: n/a (this ranker reports no confidence)",
+        f"- billed input tokens: {report.total_input_tokens} "
+        f"(about ${report.total_input_tokens * 42 / 1e9:.6f} at $42 per billion)"
+        if report.total_input_tokens is not None
+        else "- billed input tokens: none (zero-spend ranker)",
         f"- pipeline commit: `{report.pipeline_commit_sha or 'unknown'}`",
         f"- curated cases sha256: `{report.curated_cases_sha256}`",
     ]
@@ -81,6 +92,8 @@ def _build_ranker(name: str):
         return RandomRanker()
     if name == "stub-jev":
         return StubJevClient()
+    if name == "lexical":
+        return LexicalOverlapRanker()
     if name == "live-jev":
         api_key = require_api_key(os.environ)  # raises JevKeyMissing if absent
         return LiveJevRanker(JevClient(api_key=api_key))
@@ -103,6 +116,7 @@ def _run(args: argparse.Namespace) -> int:
         "oracle": "zero-spend positive control — expected: 100% on every metric",
         "random": "zero-spend negative control — expected: near chance",
         "stub-jev": "zero-spend wiring test — canned response in Jev's real envelope shape, NOT a quality measurement",
+        "lexical": "zero-spend control — TF-IDF word overlap on the same text Jev is sent; the bar Jev must clear to show more than keyword matching",
         "live-jev": "LIVE run: spent real TypeSafe AI tokens",
     }[args.ranker]
 
@@ -130,7 +144,7 @@ def main() -> None:
     run_parser = subparsers.add_parser("run")
     run_parser.add_argument(
         "--ranker",
-        choices=["current-finder", "oracle", "random", "stub-jev", "live-jev"],
+        choices=["current-finder", "oracle", "random", "stub-jev", "lexical", "live-jev"],
         required=True,
     )
     run_parser.add_argument("--out", required=True)
