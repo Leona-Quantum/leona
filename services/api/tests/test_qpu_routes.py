@@ -137,7 +137,7 @@ def _scope():
     return SimpleNamespace(user_id=uuid_module.uuid4(), workspace_id=uuid_module.uuid4())
 
 
-def _submission(device_id: str = "braket.ionq.forte") -> QpuSubmissionRequest:
+def _submission(device_id: str = "ibm.open_plan") -> QpuSubmissionRequest:
     return QpuSubmissionRequest(
         device_id=device_id,
         shots=128,
@@ -192,6 +192,50 @@ async def test_submission_rejects_unknown_devices_with_404():
             settings=_sources(),
         )
     assert excinfo.value.status_code == 404
+
+
+async def test_submission_refuses_a_priced_device_it_has_no_route_to(monkeypatch):
+    """A Braket device is on the rate card but has no submit adapter. The route
+    must refuse it before any gate, write nothing and enqueue nothing, even for
+    a caller whose IBM credential would pass every other check. Before this, the
+    record was written with Braket's label and price and the worker ran it on
+    IBM."""
+    from fastapi import HTTPException
+
+    written: list[object] = []
+
+    async def must_not_write(*args, **kwargs):
+        written.append(kwargs)
+
+    async def connected(scope_arg, session_arg) -> bool:
+        return True
+
+    monkeypatch.setattr(qpu_routes, "submission_block_reason", lambda **_: None)
+    monkeypatch.setattr(qpu_routes, "_caller_can_submit", connected)
+    monkeypatch.setattr(qpu_routes.qpu_runs_repo, "create_record", must_not_write)
+    monkeypatch.setattr(qpu_routes.system, "enqueue_job", must_not_write)
+    for device_id in ("braket.ionq.forte", "braket.iqm.garnet", "braket.quera.aquila"):
+        with pytest.raises(HTTPException) as excinfo:
+            await qpu_routes.qpu_submit(
+                _submission(device_id),
+                scope=_scope(),
+                session=object(),
+                identity=_unmetered_identity(),
+                settings=_sources(),
+            )
+        assert excinfo.value.status_code == 409
+        assert excinfo.value.detail == {"blocked_reason": "provider_not_supported"}
+    assert written == []
+
+
+def test_only_ibm_devices_are_submittable_and_the_catalog_says_so():
+    from majorana_qpu import RATE_CARD, SUBMITTABLE_PROVIDERS, QpuProviderKey
+
+    assert SUBMITTABLE_PROVIDERS == frozenset({QpuProviderKey.IBM})
+    for backend in RATE_CARD:
+        assert backend.submittable is (backend.provider is QpuProviderKey.IBM)
+        # Serialised, so the web catalog can show a priced-only device as such.
+        assert backend.model_dump()["submittable"] is backend.submittable
 
 
 async def test_submission_refuses_with_the_gate_reason(monkeypatch):
@@ -303,10 +347,13 @@ async def test_submission_with_open_gates_writes_the_record_and_enqueues(monkeyp
 
     assert result.status.value == "queued"
     assert result.id == record_id
-    assert result.estimated_total_usd is not None
+    # The free queue has no total to charge; the snapshot says so rather than
+    # inventing one (models.QpuCostEstimate).
+    assert result.estimated_total_usd is None
     assert result.rate_source.startswith("https://")
     record = captured["record"]
-    assert record["provider"] == "braket"
+    assert record["estimate_basis"] == "free_tier_allowance"
+    assert record["provider"] == "ibm"
     assert record["qasm"].startswith("OPENQASM 3.0")
     job = captured["job"]
     assert job["kind"] == "qpu.run"

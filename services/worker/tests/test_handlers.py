@@ -1582,7 +1582,8 @@ def _qpu_record(
         user_id=user_id or uuid.uuid4(),
         status=status,
         provider_job_id=provider_job_id,
-        device_id="braket.ionq.forte",
+        provider="ibm",
+        device_id="ibm.open_plan",
         shots=128,
         qasm="OPENQASM 3.0;",
         source_fingerprint="fnv1a-deadbeef",
@@ -1646,6 +1647,35 @@ async def test_qpu_run_closes_the_record_when_the_gate_shut_after_enqueue(monkey
     assert captured["transition"]["status"].value == "error"
     assert "submission_disabled" in captured["transition"]["error"]
     assert "enqueued" not in captured
+    assert session.commits == 1
+
+
+async def test_qpu_run_refuses_a_queued_record_for_a_provider_with_no_adapter(monkeypatch):
+    """Real execution (no injected provider) builds IBM's adapter and nothing
+    else. A queued Braket record must be closed before any credential is loaded
+    or any provider is built, so it can never run on IBM under a Braket label."""
+    monkeypatch.setattr(handlers, "submission_block_reason", lambda **_: None)
+    record = _qpu_record("queued")
+    record.provider = "braket"
+    captured = _patch_qpu_repo(monkeypatch, record)
+    session = _FakeQpuSession()
+
+    async def no_credential(*args, **kwargs):
+        raise AssertionError("no credential may be loaded for a provider with no adapter")
+
+    def no_ibm(*args, **kwargs):
+        raise AssertionError("the IBM adapter must not be built for a Braket record")
+
+    monkeypatch.setattr(handlers, "_qpu_credential_for", no_credential)
+    monkeypatch.setattr(handlers, "_ibm_provider", no_ibm)
+
+    await handlers.handle_qpu_run(session, _qpu_payload(str(record.id)))
+
+    assert captured["transition"]["status"].value == "error"
+    assert "cannot submit to braket" in captured["transition"]["error"]
+    assert "nothing was sent" in captured["transition"]["error"]
+    assert "enqueued" not in captured
+    assert "claims" not in captured
     assert session.commits == 1
 
 

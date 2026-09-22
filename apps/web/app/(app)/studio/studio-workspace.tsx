@@ -45,7 +45,7 @@ import { CIRCUIT_FRAMEWORKS, circuitFramework, circuitFrameworkOrNull, isExecuta
 import { MAX_CPU_SEED, MAX_CPU_SHOTS, cpuSimulationEligibility, loadCpuSimulationRecords, runCpuSimulation, saveCpuSimulationRecord, sourceFingerprint, type CpuSimulationEligibility, type CpuSimulationLimits, type CpuSimulationRecord } from "../../../lib/studio-simulation";
 import { TIER_LIMITS } from "../../../lib/account-tier";
 import { formatShare, simulationChartData, simulationReading, type SimulationChartData, type SimulationReading } from "../../../lib/simulation-visual";
-import { QpuSubmissionRefused, fetchQpuBackends, fetchQpuEstimate, fetchQpuRun, fetchQpuSubmissionGate, formatUsd, submitQpuRun, type QpuBackendInfo, type QpuCostEstimate, type QpuRunRecord, type QpuSubmissionGate } from "../../../lib/qpu";
+import { QpuSubmissionRefused, fetchQpuBackends, fetchQpuEstimate, fetchQpuRun, fetchQpuSubmissionGate, formatUsd, isPricedOnly, submitQpuRun, type QpuBackendInfo, type QpuCostEstimate, type QpuRunRecord, type QpuSubmissionGate } from "../../../lib/qpu";
 import { WORKSPACE_COPY } from "../../../lib/workspace-locale";
 import { DEFAULT_RUN_SHOTS, sampling } from "../../../lib/studio-run-request";
 import { verificationFromMetadata, verificationFromResource, type VerificationCheck } from "../../../lib/verification-record";
@@ -3408,8 +3408,9 @@ function QpuLane({ artifact, shots, copy }: { artifact: LibraryArtifact | null; 
   // Only a stored interchange program is submittable: the qasm field also
   // carries human-readable availability notes for artifacts without one.
   const submittableQasm = artifact?.qasm && looksLikeOpenQasm3(artifact.qasm) ? artifact.qasm : null;
+  const pricedOnly = backend !== null && isPricedOnly(backend);
   const canSubmit = Boolean(
-    gate?.submission_available && verified && submittableQasm && selected && !submitting,
+    gate?.submission_available && verified && submittableQasm && selected && !pricedOnly && !submitting,
   );
 
   function startHardwareSubmission() {
@@ -3491,6 +3492,7 @@ function QpuLane({ artifact, shots, copy }: { artifact: LibraryArtifact | null; 
           </button>
           {!verified ? <p className="mj-qpu-note">{copy.hardwareVerifiedRequired}</p> : null}
           {verified && !submittableQasm ? <p className="mj-qpu-note">{copy.hardwareInterchangeRequired}</p> : null}
+          {pricedOnly ? <p className="mj-qpu-note">{copy.hardwarePricedOnly}</p> : null}
           {gate && !gate.submission_available ? <p className="mj-qpu-note">{copy.hardwareBlockedReason(gate.blocked_reason ?? "")}</p> : null}
           {submitError ? <p className="mj-qpu-note" role="alert">{submitError}</p> : null}
           {qpuRun ? (

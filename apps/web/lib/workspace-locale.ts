@@ -306,6 +306,7 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
     hardwareJobId: string;
     hardwareJobError: string;
     hardwareRawCounts: string;
+    hardwarePricedOnly: string;
     hardwareBlockedReason: (reason: string) => string;
     //: The weekly hardware BUDGET is spent, which is not the same thing as the
     //: deployment being switched off — a person can act on this one. Takes the
@@ -1177,7 +1178,9 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
       hardwareJobId: "Provider job",
       hardwareJobError: "Provider error",
       hardwareRawCounts: "Raw device counts",
+      hardwarePricedOnly: "Leona can price this device but cannot send jobs to it yet. Only IBM devices can be run today.",
       hardwareBlockedReason: (reason) => ({
+        provider_not_supported: "Leona cannot send jobs to this device yet. Only IBM devices can be run today.",
         submission_disabled: "Hardware submission is off in this deployment.",
         credentials_unconfigured: "No provider credentials are configured, so nothing can be submitted.",
         provider_dependency_missing: "The provider SDK is not installed, so nothing can be submitted.",
@@ -2164,7 +2167,9 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
       hardwareJobId: "実機側のジョブID",
       hardwareJobError: "プロバイダーのエラー",
       hardwareRawCounts: "測定結果（生データ）",
+      hardwarePricedOnly: "この実機は料金の見積もりのみ対応しており、まだジョブを送信できません。現在実行できるのはIBMの実機のみです。",
       hardwareBlockedReason: (reason) => ({
+        provider_not_supported: "この実機にはまだジョブを送信できません。現在実行できるのはIBMの実機のみです。",
         submission_disabled: "この環境ではハードウェア実行が無効になっています。",
         credentials_unconfigured: "実機提供元の認証情報が未設定のため、実行できません。",
         provider_dependency_missing: "この環境はこの実機提供元に対応していません。",
