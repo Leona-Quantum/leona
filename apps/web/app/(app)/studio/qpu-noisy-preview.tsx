@@ -1,8 +1,18 @@
 "use client";
 
-import { useMemo } from "react";
+import { memo, useEffect, useMemo, useState } from "react";
 import type { QpuBackendInfo, QpuPublishedErrorFigure, QpuPublishedNoiseProfile } from "../../../lib/qpu";
-import { prepareCircuitForPreview, previewPreparedRun, type MissingFigure, type NoisyPreview } from "../../../lib/qpu-noise";
+import {
+  PreparedCircuitCache,
+  estimateDevice,
+  finishPreview,
+  preparedCircuitKey,
+  scheduleAfterPaint,
+  type DeviceEstimate,
+  type MissingFigure,
+  type NoisyPreview,
+  type PreparedCircuit,
+} from "../../../lib/qpu-noise";
 import { formatShare } from "../../../lib/simulation-visual";
 import type { CpuSimulationLimits } from "../../../lib/studio-simulation";
 import type { PublicLocale } from "../../../lib/public-locale";
@@ -17,14 +27,24 @@ const FIGURE_FIELDS: { kind: MissingFigure; field: keyof Omit<QpuPublishedNoiseP
 ];
 
 /**
+ * Prepared circuits (parse, gate tally, ideal distribution), shared by every
+ * mount of the preview. Three entries bound the memory at 3 x 8 MB at the
+ * 20-qubit tier and cover the realistic case: a person moving between a
+ * couple of saved versions.
+ */
+const PREPARED_CIRCUITS = new PreparedCircuitCache(3);
+
+/**
  * The hardware panel's "before you pay" estimate: what the chosen device's
  * published error figures predict for the circuit that would be submitted.
- * `previewNoisyRun` (lib/qpu-noise.ts) is a pure function of its arguments,
- * so this renders a local estimate, not a call to any server and not a
+ * Everything it renders comes from pure functions in lib/qpu-noise.ts, so
+ * this is a local estimate, not a call to any server and not a
  * prediction of a specific run. It renders nothing for an API that predates
  * `published_noise`, since absence there means "not sent", not "no noise".
  */
-export function QpuNoisyPreview({
+export const QpuNoisyPreview = memo(QpuNoisyPreviewPanel);
+
+function QpuNoisyPreviewPanel({
   backend,
   qasm,
   shots,
@@ -38,25 +58,60 @@ export function QpuNoisyPreview({
   copy: StudioCopy;
 }) {
   const noise = backend.published_noise ?? null;
-  // Two memos, because the first is a full statevector simulation (close to
-  // a second at the 20-qubit tier) and depends only on the circuit, while the
-  // second reruns whenever the device or the shot count changes. Keyed on
-  // `gate_model` rather than on the device, so moving between gate devices
-  // does not simulate the circuit again.
   const wantsCircuit = Boolean(noise?.gate_model);
-  const prepared = useMemo(
-    () => (wantsCircuit ? prepareCircuitForPreview(qasm, limits) : null),
-    [wantsCircuit, qasm, limits],
+  // The circuit half (a full statevector simulation, close to a second at the
+  // 20-qubit tier) never runs during render: it would freeze Studio for that
+  // long on every new circuit. It runs in an effect, one macrotask after the
+  // next paint, so the placeholder below reaches the screen first. The result
+  // is cached by program text and limit VALUES, every dependency is a
+  // primitive or a memo of primitives, and the component is memo()'d, so
+  // nothing else in Studio re-rendering can start it again.
+  const qubitLimit = limits.cpuSimQubits;
+  const operationLimit = limits.cpuSimOperations;
+  const parseLimits = useMemo(
+    () => ({ cpuSimQubits: qubitLimit, cpuSimOperations: operationLimit }),
+    [qubitLimit, operationLimit],
   );
-  const preview = useMemo((): NoisyPreview | null => {
+  const key = preparedCircuitKey(qasm, parseLimits);
+  const [computed, setComputed] = useState<{ key: string; prepared: PreparedCircuit } | null>(null);
+  const prepared = !wantsCircuit
+    ? null
+    : computed?.key === key
+      ? computed.prepared
+      : PREPARED_CIRCUITS.peek(qasm, parseLimits) ?? null;
+  const needsWork = wantsCircuit && prepared === null;
+
+  useEffect(() => {
+    if (!needsWork) return;
+    // A newer circuit, or unmounting, cancels a run that has not started. A
+    // run that already finished is cached and tagged with its own key, and the
+    // render above ignores a result whose key is not the current one.
+    return scheduleAfterPaint(() => {
+      setComputed({ key: preparedCircuitKey(qasm, parseLimits), prepared: PREPARED_CIRCUITS.getOrPrepare(qasm, parseLimits) });
+    });
+  }, [needsWork, qasm, parseLimits]);
+
+  // The device half stays in render as memos. It is cheap for one machine
+  // (about 27 ms at 20 qubits, measured in Node) and grows with the number of
+  // machines. Two memos rather than one, so typing a shot count reruns only
+  // the shot-noise pass, never the per-machine estimates.
+  const device = useMemo((): DeviceEstimate | null => {
     if (!noise) return null;
-    // `prepared` is null exactly when the device is not a gate device.
-    if (!prepared) return { status: "unavailable", reason: "not_gate_model" };
-    return previewPreparedRun({ prepared, noise, shots });
-  }, [prepared, noise, shots]);
-  if (!preview) return null;
+    if (!wantsCircuit) return { status: "unavailable", reason: "not_gate_model" };
+    return prepared ? estimateDevice({ prepared, noise }) : null;
+  }, [prepared, noise, wantsCircuit]);
+  const preview = useMemo((): NoisyPreview | null => (device ? finishPreview(device, shots) : null), [device, shots]);
 
   const title = copy.hardwarePreviewTitle(backend.access);
+  if (!noise) return null;
+  if (!preview) {
+    return (
+      <div className="mj-qpu-ideal mj-qpu-preview" aria-busy="true">
+        <span className="mj-section-label">{title}</span>
+        <p className="mj-qpu-note" role="status">{copy.hardwarePreviewComputing}</p>
+      </div>
+    );
+  }
   if (preview.status === "unavailable") {
     return (
       <div className="mj-qpu-ideal mj-qpu-preview">

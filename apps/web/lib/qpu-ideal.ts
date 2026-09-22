@@ -157,7 +157,12 @@ export type ParsedSubmission =
  * a circuit exactly the way this comparison later will, and a circuit the one
  * refuses is never one the other accepts.
  */
-export function parseSubmittedCircuit(qasm: string, limits: CpuSimulationLimits): ParsedSubmission {
+/** The two tier limits the parse step enforces. Narrower than
+ * `CpuSimulationLimits` so a caller can key a cache on exactly what the
+ * result depends on (qpu-noise.ts's `preparedCircuitKey`). */
+export type ParseLimits = Pick<CpuSimulationLimits, "cpuSimQubits" | "cpuSimOperations">;
+
+export function parseSubmittedCircuit(qasm: string, limits: ParseLimits): ParsedSubmission {
   // Rule 3: parse like `cpuSimulationEligibility` (studio-simulation.ts) does
   // — strict direct parse first, then the decomposition path.
   const direct = parseBuilderCircuit(qasm, "openqasm3", MAX_PARSABLE_QUBITS);

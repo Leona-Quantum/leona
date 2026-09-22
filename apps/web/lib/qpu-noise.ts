@@ -1,8 +1,7 @@
-import { expectedShotNoiseTvd, parseSubmittedCircuit } from "./qpu-ideal.ts";
+import { expectedShotNoiseTvd, parseSubmittedCircuit, type ParseLimits } from "./qpu-ideal.ts";
 import { bitstringFor, idealProbabilities } from "./statevector-kernel.ts";
 import type { QpuPublishedErrorFigure, QpuPublishedNoise, QpuPublishedNoiseProfile } from "./qpu.ts";
 import type { ParsedBuilderCircuit } from "./studio-parse.ts";
-import type { CpuSimulationLimits } from "./studio-simulation.ts";
 
 /**
  * "Before you pay": what a device's published error figures predict for a
@@ -255,7 +254,7 @@ export type PreparedCircuit =
   | { status: "prepared"; qubitCount: number; tally: GateTally; ideal: Float64Array }
   | { status: "unavailable"; reason: "unparsable" | "qubit_limit" | "operation_limit" };
 
-export function prepareCircuitForPreview(qasm: string, limits: CpuSimulationLimits): PreparedCircuit {
+export function prepareCircuitForPreview(qasm: string, limits: ParseLimits): PreparedCircuit {
   const parsed = parseSubmittedCircuit(qasm, limits);
   if (parsed.status === "unavailable") return parsed;
   const { circuit } = parsed;
@@ -270,11 +269,104 @@ export function prepareCircuitForPreview(qasm: string, limits: CpuSimulationLimi
   }
 }
 
+/**
+ * The cache key for `prepareCircuitForPreview`: the program text and the two
+ * limits the result depends on, by value. By value, not by object identity,
+ * so a caller that rebuilds an equal limits object on every render still hits
+ * the cache instead of simulating the circuit again.
+ */
+export function preparedCircuitKey(qasm: string, limits: ParseLimits): string {
+  return `${limits.cpuSimQubits}:${limits.cpuSimOperations}:${qasm}`;
+}
+
+/**
+ * A small least-recently-used cache of prepared circuits, so remounting the
+ * hardware panel, or switching away from a gate device and back, does not
+ * repeat the simulation. Bounded because each entry holds the whole ideal
+ * distribution: 2^n doubles, 8 MB at the 20-qubit tier.
+ */
+export class PreparedCircuitCache {
+  readonly #entries = new Map<string, PreparedCircuit>();
+  readonly #maxEntries: number;
+  readonly #prepare: (qasm: string, limits: ParseLimits) => PreparedCircuit;
+
+  constructor(maxEntries: number, prepare: (qasm: string, limits: ParseLimits) => PreparedCircuit = prepareCircuitForPreview) {
+    this.#maxEntries = Math.max(1, maxEntries);
+    this.#prepare = prepare;
+  }
+
+  /** The cached result, or undefined. Cheap enough to call during render. */
+  peek(qasm: string, limits: ParseLimits): PreparedCircuit | undefined {
+    const key = preparedCircuitKey(qasm, limits);
+    const hit = this.#entries.get(key);
+    if (hit) {
+      // Refresh recency: delete and re-insert moves the key to the end.
+      this.#entries.delete(key);
+      this.#entries.set(key, hit);
+    }
+    return hit;
+  }
+
+  /** The cached result, computing and storing it on a miss. The miss is the
+   * expensive path, so callers keep it off the render path. */
+  getOrPrepare(qasm: string, limits: ParseLimits): PreparedCircuit {
+    const hit = this.peek(qasm, limits);
+    if (hit) return hit;
+    const prepared = this.#prepare(qasm, limits);
+    this.#entries.set(preparedCircuitKey(qasm, limits), prepared);
+    while (this.#entries.size > this.#maxEntries) {
+      const oldest = this.#entries.keys().next().value;
+      if (oldest === undefined) break;
+      this.#entries.delete(oldest);
+    }
+    return prepared;
+  }
+}
+
+type PaintHost = {
+  requestAnimationFrame?: (callback: () => void) => number;
+  cancelAnimationFrame?: (handle: number) => void;
+  setTimeout: (callback: () => void, delay: number) => unknown;
+  clearTimeout: (handle: never) => void;
+};
+
+/**
+ * Runs `task` in a macrotask after the next paint, and returns a function that
+ * cancels it if it has not started. A requestAnimationFrame callback runs just
+ * BEFORE the frame paints, so the timeout scheduled from inside it runs just
+ * after. A bare setTimeout(0) can run before the browser paints at all, which
+ * would put a placeholder on screen only after the work it was covering. Where
+ * there is no requestAnimationFrame (a test runner), it falls back to the
+ * timeout alone.
+ *
+ * A hidden tab does not fire animation frames, so the task waits until the tab
+ * is shown. Nobody is looking at the placeholder in the meantime.
+ */
+export function scheduleAfterPaint(task: () => void, host: PaintHost = globalThis as unknown as PaintHost): () => void {
+  let cancelled = false;
+  let frame: number | null = null;
+  let timer: unknown = null;
+  const run = () => {
+    if (!cancelled) task();
+  };
+  const queue = () => {
+    frame = null;
+    if (!cancelled) timer = host.setTimeout(run, 0);
+  };
+  if (typeof host.requestAnimationFrame === "function") frame = host.requestAnimationFrame(queue);
+  else queue();
+  return () => {
+    cancelled = true;
+    if (frame !== null) host.cancelAnimationFrame?.(frame);
+    if (timer !== null) host.clearTimeout(timer as never);
+  };
+}
+
 export function previewNoisyRun(input: {
   qasm: string;
   noise: QpuPublishedNoise;
   shots: number;
-  limits: CpuSimulationLimits;
+  limits: ParseLimits;
   maxRows?: number;
 }): NoisyPreview {
   const { qasm, noise, shots, limits, maxRows } = input;
@@ -288,7 +380,30 @@ export function previewPreparedRun(input: {
   shots: number;
   maxRows?: number;
 }): NoisyPreview {
-  const { prepared, noise, shots, maxRows = DEFAULT_MAX_ROWS } = input;
+  const { prepared, noise, shots, maxRows } = input;
+  return finishPreview(estimateDevice({ prepared, noise, maxRows }), shots);
+}
+
+/**
+ * Everything in a preview except the shot count: each machine's estimate,
+ * the range, and the rows. Split from `finishPreview` because it is the
+ * device half's heavy part (a readout pass of n x 2^n per machine, about
+ * 27 ms per machine at 20 qubits), and typing a shot count should not
+ * repeat it.
+ */
+export type DeviceEstimate =
+  | (Omit<Extract<NoisyPreview, { status: "computed" }>, "shots" | "shotNoiseTvd" | "reading"> & {
+      status: "computed";
+      ideal: Float64Array;
+    })
+  | { status: "unavailable"; reason: NoisyPreviewUnavailable };
+
+export function estimateDevice(input: {
+  prepared: PreparedCircuit;
+  noise: QpuPublishedNoise;
+  maxRows?: number;
+}): DeviceEstimate {
+  const { prepared, noise, maxRows = DEFAULT_MAX_ROWS } = input;
   if (!noise.gate_model) return { status: "unavailable", reason: "not_gate_model" };
   const profiles = noise.profiles.filter(hasAnyFigure);
   if (profiles.length === 0) return { status: "unavailable", reason: "no_figures" };
@@ -313,33 +428,39 @@ export function previewPreparedRun(input: {
 
   const shown = machines.reduce((worst, machine) => (machine.tvd > worst.tvd ? machine : worst), machines[0]);
   const tvds = machines.map((machine) => machine.tvd);
-  const shotNoiseTvd = expectedShotNoiseTvd(ideal, shots);
-  const reading: NoisyPreviewReading = uniformTvd <= shotNoiseTvd
-    ? "ideal_near_uniform"
-    : shown.tvdToUniform <= shown.tvd
-      ? "closer_to_noise"
-      : "ideal_stands_out";
   const { rows, otherIdealShare, otherEstimatedShare } = topRows(ideal, estimates.get(shown)!, qubitCount, maxRows);
 
   return {
     status: "computed",
-    qubitCount: qubitCount,
-    shots,
+    ideal,
+    qubitCount,
     tally,
     machineChosenAtSubmit: noise.machine_chosen_at_submit,
     shown,
     machines,
     tvdRange: { min: Math.min(...tvds), max: Math.max(...tvds) },
     uniformTvd,
-    shotNoiseTvd,
     // Not `> 0`: a uniform ideal comes out of the kernel as 1/2^n plus rounding,
     // and dividing by that rounding would report "all the way to noise".
     shareTowardNoise: uniformTvd > UNIFORM_TOLERANCE ? clamp01(shown.tvd / uniformTvd) : null,
-    reading,
     rows,
     otherIdealShare,
     otherEstimatedShare,
   };
+}
+
+/** The shot-dependent rest: sampling noise alone at `shots`, and the reading
+ * it decides. One pass over the ideal distribution. */
+export function finishPreview(device: DeviceEstimate, shots: number): NoisyPreview {
+  if (device.status === "unavailable") return device;
+  const { ideal, ...rest } = device;
+  const shotNoiseTvd = expectedShotNoiseTvd(ideal, shots);
+  const reading: NoisyPreviewReading = device.uniformTvd <= shotNoiseTvd
+    ? "ideal_near_uniform"
+    : device.shown.tvdToUniform <= device.shown.tvd
+      ? "closer_to_noise"
+      : "ideal_stands_out";
+  return { ...rest, status: "computed", shots, shotNoiseTvd, reading };
 }
 
 function hasAnyFigure(profile: QpuPublishedNoiseProfile): boolean {

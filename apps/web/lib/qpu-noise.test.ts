@@ -2,12 +2,17 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
+  PreparedCircuitCache,
   applyReadoutFlip,
+  estimateDevice,
   estimateNoisyDistribution,
+  finishPreview,
   idealWeight,
   prepareCircuitForPreview,
+  preparedCircuitKey,
   previewNoisyRun,
   previewPreparedRun,
+  scheduleAfterPaint,
   tallyGates,
   totalVariationDistance,
   type NoisyPreview,
@@ -298,4 +303,105 @@ test("a circuit prepared once gives the same preview on every device as preparin
   ]) {
     assert.deepEqual(previewPreparedRun({ prepared, noise, shots: 500 }), previewNoisyRun({ qasm: BELL, noise, shots: 500, limits: LIMITS }));
   }
+});
+
+test("the device estimate and the shot step compose to the same preview at every shot count", () => {
+  const prepared = prepareCircuitForPreview(qasm(3, ["h q[0];", "cx q[0], q[1];", "cx q[1], q[2];"]), LIMITS);
+  const noise = device(profile("a", { two: 0.004, readout: 0.01 }), profile("b", { two: 0.009, readout: 0.03 }));
+  const estimate = estimateDevice({ prepared, noise });
+  for (const shots of [1, 100, 4096]) {
+    assert.deepEqual(finishPreview(estimate, shots), previewPreparedRun({ prepared, noise, shots }));
+  }
+  // The shot count reaches the result, so a finishPreview that ignored it would fail here.
+  const few = finishPreview(estimate, 10);
+  const many = finishPreview(estimate, 10_000);
+  assert.ok(few.status === "computed" && many.status === "computed" && few.shotNoiseTvd > many.shotNoiseTvd);
+});
+
+test("prepared-circuit cache: keyed by limit values, computes once per key, evicts least recently used", () => {
+  const calls: string[] = [];
+  const cache = new PreparedCircuitCache(2, (source, limits) => {
+    calls.push(preparedCircuitKey(source, limits));
+    return prepareCircuitForPreview(source, limits);
+  });
+  const limitsA = { cpuSimQubits: 8, cpuSimOperations: 2000 };
+  const sameValues = { cpuSimQubits: 8, cpuSimOperations: 2000 };
+  const first = cache.getOrPrepare(BELL, limitsA);
+  // A different object with equal values is a hit, not a second simulation.
+  assert.equal(cache.getOrPrepare(BELL, sameValues), first);
+  assert.equal(cache.peek(BELL, sameValues), first);
+  assert.equal(calls.length, 1);
+  // A different limit value is a different result (it can flip qubit_limit).
+  cache.getOrPrepare(BELL, { cpuSimQubits: 1, cpuSimOperations: 2000 });
+  assert.equal(calls.length, 2);
+  // Two entries now, oldest first: BELL at 8 qubits, BELL at 1. Touching the
+  // older one makes the 1-qubit entry the least recently used, so adding a
+  // third key must evict that one and keep the touched one.
+  cache.peek(BELL, limitsA);
+  const other = qasm(1, ["x q[0];"]);
+  cache.getOrPrepare(other, limitsA);
+  assert.equal(calls.length, 3);
+  assert.ok(cache.peek(BELL, limitsA), "the recently used entry must survive");
+  assert.equal(cache.peek(BELL, { cpuSimQubits: 1, cpuSimOperations: 2000 }), undefined);
+  assert.equal(cache.peek(qasm(2, ["h q[1];"]), limitsA), undefined, "peek never computes");
+  assert.equal(calls.length, 3);
+});
+
+function fakePaintHost() {
+  const frames: (() => void)[] = [];
+  const timers = new Map<number, () => void>();
+  let nextTimer = 1;
+  return {
+    frames,
+    timers,
+    host: {
+      requestAnimationFrame: (callback: () => void) => frames.push(callback),
+      cancelAnimationFrame: (handle: number) => { frames[handle - 1] = () => undefined; },
+      setTimeout: (callback: () => void) => { const id = nextTimer++; timers.set(id, callback); return id; },
+      clearTimeout: (handle: never) => { timers.delete(handle as unknown as number); },
+    },
+    paint() { for (const frame of frames.splice(0)) frame(); },
+    runTimers() { for (const [id, timer] of [...timers]) { timers.delete(id); timer(); } },
+  };
+}
+
+test("scheduleAfterPaint runs the task only after the frame and then a macrotask", () => {
+  const fake = fakePaintHost();
+  let ran = 0;
+  scheduleAfterPaint(() => { ran += 1; }, fake.host);
+  assert.equal(ran, 0, "not synchronously");
+  fake.runTimers();
+  assert.equal(ran, 0, "not before the frame has painted");
+  fake.paint();
+  assert.equal(ran, 0, "not inside the frame callback, which runs before paint");
+  fake.runTimers();
+  assert.equal(ran, 1);
+});
+
+test("scheduleAfterPaint's cancel stops the task before the frame and between frame and timer", () => {
+  for (const cancelAt of ["before_frame", "after_frame", "before_frame_no_cancel_api"] as const) {
+    const fake = fakePaintHost();
+    // A host with no cancelAnimationFrame: the frame still fires, and the
+    // cancelled flag alone has to stop the task.
+    const host = cancelAt === "before_frame_no_cancel_api" ? { ...fake.host, cancelAnimationFrame: undefined } : fake.host;
+    let ran = 0;
+    const cancel = scheduleAfterPaint(() => { ran += 1; }, host);
+    if (cancelAt === "after_frame") fake.paint();
+    cancel();
+    fake.paint();
+    fake.runTimers();
+    assert.equal(ran, 0, cancelAt);
+  }
+});
+
+test("scheduleAfterPaint falls back to a plain timeout where there is no animation frame", async () => {
+  let ran = 0;
+  scheduleAfterPaint(() => { ran += 1; }, { setTimeout, clearTimeout } as never);
+  assert.equal(ran, 0);
+  await new Promise((resolve) => setTimeout(resolve, 5));
+  assert.equal(ran, 1);
+  const cancel = scheduleAfterPaint(() => { ran += 1; }, { setTimeout, clearTimeout } as never);
+  cancel();
+  await new Promise((resolve) => setTimeout(resolve, 5));
+  assert.equal(ran, 1);
 });

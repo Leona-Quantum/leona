@@ -328,6 +328,7 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
     //: The pre-submit noise estimate (lib/qpu-noise.ts). `access` is the
     //: device's QpuAccess, because a free-queue run costs allowance, not money.
     hardwarePreviewTitle: (access: string) => string;
+    hardwarePreviewComputing: string;
     hardwarePreviewTvd: string;
     hardwarePreviewUniform: string;
     hardwarePreviewReading: (reading: string, share: string, shots: string) => string;
@@ -1238,6 +1239,7 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
       hardwareSpendFreeTier: (estimate) =>
         `Estimated at ${estimate}. Billed hardware is not part of the free plan; free-queue devices and browser simulation stay available.`,
       hardwarePreviewTitle: (access) => (access === "free_queue" ? "Before you use free time" : "Before you pay"),
+      hardwarePreviewComputing: "Working out what this device's published figures predict…",
       hardwarePreviewTvd: "Expected distance from ideal",
       hardwarePreviewUniform: "Random bits, for comparison",
       hardwarePreviewReading: (reading, share, shots) => ({
@@ -2278,6 +2280,7 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
       hardwareSpendFreeTier: (estimate) =>
         `見積もりは${estimate}です。有料の実機実行は無料プラン対象外です。無料キューとブラウザシミュレーションは引き続き利用できます。`,
       hardwarePreviewTitle: (access) => (access === "free_queue" ? "無料枠を使う前に" : "支払う前に"),
+      hardwarePreviewComputing: "この実機の公表値から予想を計算しています…",
       hardwarePreviewTvd: "理論値からの予想距離",
       hardwarePreviewUniform: "比較: ランダムなビット列",
       hardwarePreviewReading: (reading, share, shots) => ({
