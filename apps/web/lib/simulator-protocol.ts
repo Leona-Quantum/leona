@@ -12,14 +12,17 @@ import { sampleCircuitCounts, type CpuSimulationLimits } from "./studio-simulati
  *
  * Every heavy number the signed-in pages show is a statevector simulation in
  * the viewer's own tab, and at the tier ceilings (20 qubits, account-tier.ts)
- * one of them is a second or more of uninterrupted main-thread time: about
- * 1.2 s per measured-against-ideal comparison at 1,000 gates on the hardware-
- * runs page, a 912 ms task for Studio's pre-submit noise estimate at 400
- * gates, and longer still for Studio's own CPU run at the 4,000-operation
- * ceiling. Scheduling those after paint (qpu-noise.ts's `scheduleAfterPaint`,
- * qpu-run-history.ts's `workThroughComparisons`) got the placeholder on
- * screen first, but the page still froze while it showed. Moving the work to
- * a worker is the only way the page answers input during it.
+ * one of them is a second or more of uninterrupted main-thread time.
+ * Measured 2026-09-22 in headless Chromium against a production build, one
+ * run each, at 20 qubits: one measured-against-ideal comparison at 1,000
+ * gates was a single 2,412 ms long task; the noise estimate at 400 gates
+ * across seven machines, 875 ms; a 1,000-shot CPU run at 1,000 gates,
+ * 2,337 ms. The same three jobs through the worker left no long task on the
+ * page at all (no gap over 22 ms in a 20 ms timer). Scheduling the work after
+ * paint (qpu-noise.ts's `scheduleAfterPaint`, qpu-run-history.ts's
+ * `workThroughComparisons`) got the placeholder on screen first, but the page
+ * still froze while it showed; a worker is the only way the page answers
+ * input during it.
  *
  * ## Same numbers, by construction
  *
