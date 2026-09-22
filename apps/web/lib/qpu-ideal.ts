@@ -63,6 +63,12 @@ export type IdealComparison =
       rows: IdealComparisonRow[];
       otherMeasuredShare: number;
       otherIdealShare: number;
+      /**
+       * The ideal distribution itself, indexed like the counts keys read as
+       * binary. Returned so the mitigated readings (`qpu-mitigation.ts`) are
+       * measured against the same vector without simulating the circuit twice.
+       */
+      ideal: Float64Array;
     }
   | { status: "unavailable"; reason: IdealComparisonUnavailable };
 
@@ -165,6 +171,7 @@ export function compareMeasuredToIdeal(input: {
     rows,
     otherMeasuredShare,
     otherIdealShare,
+    ideal,
   };
 }
 
