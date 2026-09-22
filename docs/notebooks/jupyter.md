@@ -29,9 +29,15 @@ beyond IPython — its HTTP calls go through the standard library's `urllib`, no
 ## Configure — two environment variables, never a token in a cell
 
 ```bash
-export LEONA_API_URL=https://api.leonaqt.com      # optional; this is the default
-export LEONA_API_TOKEN=<your bearer token>          # required
+export LEONA_API_URL=https://majorana-api-nikekeixtq-uw.a.run.app   # optional; this is the default
+export LEONA_API_TOKEN=<your bearer token>                           # required
 ```
+
+A note on the token, because it is the part that does not work yet for most people:
+the control plane accepts the short-lived session token the website holds, which
+expires within the hour, and there is no way yet to make a longer-lived personal token
+in your account settings. That is being decided (ai-ops 362). Until it lands, `%nala`
+is practical only for someone who can copy a current session token by hand.
 
 Set these in your shell, a `.env` your shell sources, or your Jupyter kernel's
 environment — **never** paste a token into a notebook cell or pass it as a magic
