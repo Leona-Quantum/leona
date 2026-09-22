@@ -35,6 +35,7 @@ import { ExampleNotesPanel } from "./studio-example-notes-panel";
 import { circuitChangeSummary, type CircuitChangeSummary } from "../../../lib/circuit-change-summary";
 import { AskLeonaBox } from "./studio-ask-leona";
 import { QpuMeasuredVsIdeal } from "./qpu-measured-vs-ideal";
+import { QpuNoisyPreview } from "./qpu-noisy-preview";
 import { loadStoredCircuit, saveStoredCircuit } from "../../../lib/studio-circuits";
 import { circuitSyncState, type CircuitSyncState } from "../../../lib/studio-sync";
 import { looksLikeOpenQasm3, parseCircuitSource, parseInterchangeCircuit, reconstructInterchangeCircuit } from "../../../lib/circuit-conversion";
@@ -3484,6 +3485,11 @@ function QpuLane({ artifact, shots, copy, limits }: { artifact: LibraryArtifact 
               ) : null}
               <p className="mj-qpu-source"><a href={backend.rate_source} target="_blank" rel="noreferrer">{copy.hardwareRateSource} ↗</a></p>
             </div>
+          ) : null}
+          {/* Before submitting: what the device's published error figures predict
+              for the exact program that would be sent (lib/qpu-noise.ts). */}
+          {backend && submittableQasm ? (
+            <QpuNoisyPreview backend={backend} qasm={submittableQasm} shots={shotCount} limits={limits} copy={copy} />
           ) : null}
           <button
             className="mj-primary-button"
