@@ -44,7 +44,8 @@ import { canvasSeedCandidates, draftSourceFramework, studioDraftBundle, type Stu
 import { CircuitDiagram, type CircuitDiagramInspection } from "../../../components/circuit-diagram";
 import { MAX_VIEWABLE_QUBITS, MAX_VIEWABLE_STEPS } from "../../../lib/studio-parse";
 import { CIRCUIT_FRAMEWORKS, circuitFramework, circuitFrameworkOrNull, isExecutableCircuitFramework, type CircuitFrameworkKey } from "../../../lib/circuit-frameworks";
-import { MAX_CPU_SEED, MAX_CPU_SHOTS, cpuSimulationEligibility, loadCpuSimulationRecords, runCpuSimulation, saveCpuSimulationRecord, sourceFingerprint, type CpuSimulationEligibility, type CpuSimulationLimits, type CpuSimulationRecord } from "../../../lib/studio-simulation";
+import { MAX_CPU_SEED, MAX_CPU_SHOTS, cpuSimulationEligibility, cpuSimulationRecord, loadCpuSimulationRecords, planCpuSimulation, saveCpuSimulationRecord, sourceFingerprint, type CpuSimulationEligibility, type CpuSimulationLimits, type CpuSimulationRecord } from "../../../lib/studio-simulation";
+import { simulator } from "../../../lib/simulator-client";
 import { TIER_LIMITS } from "../../../lib/account-tier";
 import { formatShare, simulationChartData, simulationReading, type SimulationChartData, type SimulationReading } from "../../../lib/simulation-visual";
 import { QPU_RUN_POLL_MS, QpuSubmissionRefused, afterRestore, backendNameOf, fetchLatestQpuRunFor, fetchQpuBackends, fetchQpuEstimate, fetchQpuRun, fetchQpuSubmissionGate, formatUsd, isPricedOnly, isUnfinishedRun, runForCircuit, submitQpuRun, type QpuBackendInfo, type QpuCostEstimate, type QpuRunRecord, type QpuSubmissionGate } from "../../../lib/qpu";
@@ -427,7 +428,15 @@ export function StudioWorkspace({ artifactId, newDraft = false, exampleId, atlas
   const shortcutsOpenRef = useRef(shortcutsOpen);
   shortcutsOpenRef.current = shortcutsOpen;
   const runCpuRef = useRef<() => void>(() => undefined);
-  runCpuRef.current = () => startCpuSimulation();
+  runCpuRef.current = () => void startCpuSimulation();
+  // The CPU run answers later now (it runs in the simulator worker), so a
+  // second press of the button or the shortcut can arrive while it is still
+  // going. `busy` cannot stop that on its own: it reaches the handler only
+  // after the next render. And the answer can arrive after the reader has
+  // moved to another artifact, whose record list it must not join.
+  const cpuRunInFlight = useRef(false);
+  const shownArtifactId = useRef<string | null>(null);
+  shownArtifactId.current = artifact?.id ?? null;
   useEffect(() => {
     if (!showEditor) return;
     const onKey = (event: globalThis.KeyboardEvent) => {
@@ -813,7 +822,8 @@ export function StudioWorkspace({ artifactId, newDraft = false, exampleId, atlas
     setMessage(null);
   }
 
-  function startCpuSimulation(confirmRerun = false) {
+  async function startCpuSimulation(confirmRerun = false) {
+    if (cpuRunInFlight.current) return;
     if (!artifact) {
       selectPanel("simulation");
       setMessage(copy.simulationArtifactRequired);
@@ -845,8 +855,15 @@ export function StudioWorkspace({ artifactId, newDraft = false, exampleId, atlas
     }
 
     setBusy("simulation");
+    cpuRunInFlight.current = true;
     try {
-      const record = runCpuSimulation({
+      // The checks (eligibility, shots, this browser's pacing, the seed) run
+      // here, as they always did; only the simulation itself, a second or
+      // more of work at the 20-qubit tier, goes to the simulator worker, so
+      // "Starting…" paints and the page keeps answering while it runs. The
+      // worker samples with the same kernel and seeded generator
+      // (`sampleCircuitCounts`), so a seed reproduces the counts it always did.
+      const plan = planCpuSimulation({
         artifactId: artifact.id,
         artifactVersionId: artifact.currentVersionId,
         code,
@@ -855,16 +872,23 @@ export function StudioWorkspace({ artifactId, newDraft = false, exampleId, atlas
         shots: parsedShots,
         seed: parsedSeed,
       }, limits);
+      const outcome = await simulator.run("studio-cpu-run", { kind: "cpu_counts", circuit: plan.circuit, shots: plan.shots, seed: plan.seed });
+      if (outcome.status === "superseded") return;
+      if (outcome.status === "failed") throw new Error(outcome.error);
+      const record = cpuSimulationRecord(plan, outcome.result);
       if (!saveCpuSimulationRecord(record)) {
         setMessage(copy.simulationPersistenceUnavailable);
         return;
       }
-      setSimulationRecords((current) => [record, ...current.filter((item) => item.id !== record.id)]);
+      if (shownArtifactId.current === record.artifactId) {
+        setSimulationRecords((current) => [record, ...current.filter((item) => item.id !== record.id)]);
+      }
       setRerunPending(false);
       setMessage(copy.cpuSimulationRecorded);
     } catch (cause) {
       setMessage(cause instanceof Error ? cause.message : copy.simulationFailed);
     } finally {
+      cpuRunInFlight.current = false;
       setBusy(null);
     }
   }
