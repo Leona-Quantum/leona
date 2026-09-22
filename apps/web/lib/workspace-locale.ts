@@ -306,6 +306,17 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
     hardwareJobId: string;
     hardwareJobError: string;
     hardwareRawCounts: string;
+    hardwareIdealComparison: string;
+    hardwareIdealTvd: string;
+    hardwareIdealTvdGloss: string;
+    hardwareIdealFidelity: string;
+    hardwareIdealShotNoise: (share: string, shots: string) => string;
+    hardwareIdealBitstring: string;
+    hardwareIdealMeasuredShare: string;
+    hardwareIdealIdealShare: string;
+    hardwareIdealOtherOutcomes: string;
+    hardwareIdealProvenance: string;
+    hardwareIdealUnavailable: (reason: string) => string;
     hardwareBlockedReason: (reason: string) => string;
     //: The weekly hardware BUDGET is spent, which is not the same thing as the
     //: deployment being switched off — a person can act on this one. Takes the
@@ -1177,6 +1188,25 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
       hardwareJobId: "Provider job",
       hardwareJobError: "Provider error",
       hardwareRawCounts: "Raw device counts",
+      hardwareIdealComparison: "Measured against ideal",
+      hardwareIdealTvd: "Total variation distance",
+      hardwareIdealTvdGloss: "0 means the same distribution as this circuit's ideal outcome. 1 means no overlap at all.",
+      hardwareIdealFidelity: "Hellinger fidelity",
+      hardwareIdealShotNoise: (share, shots) =>
+        `A perfect device would still differ from the ideal distribution by about ${share} at ${shots} shots, from sampling alone.`,
+      hardwareIdealBitstring: "Outcome",
+      hardwareIdealMeasuredShare: "Measured",
+      hardwareIdealIdealShare: "Ideal",
+      hardwareIdealOtherOutcomes: "Other outcomes",
+      hardwareIdealProvenance: "Computed in this browser from the circuit that was submitted. This is a local reading, not a verification result.",
+      hardwareIdealUnavailable: (reason) => ({
+        circuit_changed: "The circuit has changed since this job was submitted, so there is no ideal outcome to compare it with.",
+        no_counts: "No device counts are available yet for this job.",
+        unparsable: "This circuit is outside the browser lane's supported gate shape, so no ideal outcome can be computed for it.",
+        qubit_limit: "This circuit is wider than your plan's browser simulation limit, so no ideal outcome can be computed for it.",
+        operation_limit: "This circuit exceeds the browser operation limit, so no ideal outcome can be computed for it.",
+        register_mismatch: "The device counts do not match this circuit's measured qubits, so they cannot be compared to an ideal outcome.",
+      }[reason] ?? "No ideal outcome could be computed for this job."),
       hardwareBlockedReason: (reason) => ({
         submission_disabled: "Hardware submission is off in this deployment.",
         credentials_unconfigured: "No provider credentials are configured, so nothing can be submitted.",
@@ -2164,6 +2194,25 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
       hardwareJobId: "実機側のジョブID",
       hardwareJobError: "プロバイダーのエラー",
       hardwareRawCounts: "測定結果（生データ）",
+      hardwareIdealComparison: "理論値との比較",
+      hardwareIdealTvd: "全変動距離",
+      hardwareIdealTvdGloss: "0ならこの回路の理論上の分布と一致し、1なら重なりが全くないことを意味します。",
+      hardwareIdealFidelity: "ヘリンガー忠実度",
+      hardwareIdealShotNoise: (share, shots) =>
+        `理想的な実機であっても、${shots}ショットではサンプリングのばらつきだけで理論値と約${share}の差が生じます。`,
+      hardwareIdealBitstring: "測定結果",
+      hardwareIdealMeasuredShare: "実測",
+      hardwareIdealIdealShare: "理論値",
+      hardwareIdealOtherOutcomes: "その他の結果",
+      hardwareIdealProvenance: "このブラウザ内で、実行を依頼した回路から計算した値です。検証結果ではありません。",
+      hardwareIdealUnavailable: (reason) => ({
+        circuit_changed: "このジョブを依頼した後に回路が変更されたため、比較できる理論値がありません。",
+        no_counts: "このジョブの実機測定結果がまだありません。",
+        unparsable: "この回路はブラウザ内シミュレーションの対応範囲外のため、理論値を計算できません。",
+        qubit_limit: "この回路は、お使いのプランのブラウザシミュレーション上限を超えているため、理論値を計算できません。",
+        operation_limit: "この回路は操作数の上限を超えているため、理論値を計算できません。",
+        register_mismatch: "実機の測定結果がこの回路の量子ビット数と一致しないため、理論値と比較できません。",
+      }[reason] ?? "このジョブの理論値を計算できませんでした。"),
       hardwareBlockedReason: (reason) => ({
         submission_disabled: "この環境ではハードウェア実行が無効になっています。",
         credentials_unconfigured: "実機提供元の認証情報が未設定のため、実行できません。",

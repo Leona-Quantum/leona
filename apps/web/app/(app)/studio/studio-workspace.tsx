@@ -34,6 +34,7 @@ import { ExampleGallery } from "./studio-example-gallery";
 import { ExampleNotesPanel } from "./studio-example-notes-panel";
 import { circuitChangeSummary, type CircuitChangeSummary } from "../../../lib/circuit-change-summary";
 import { AskLeonaBox } from "./studio-ask-leona";
+import { QpuMeasuredVsIdeal } from "./qpu-measured-vs-ideal";
 import { loadStoredCircuit, saveStoredCircuit } from "../../../lib/studio-circuits";
 import { circuitSyncState, type CircuitSyncState } from "../../../lib/studio-sync";
 import { looksLikeOpenQasm3, parseCircuitSource, parseInterchangeCircuit, reconstructInterchangeCircuit } from "../../../lib/circuit-conversion";
@@ -1263,6 +1264,7 @@ export function StudioWorkspace({ artifactId, newDraft = false, exampleId, atlas
                       sandboxBusy={busy !== null}
                       copy={copy}
                       locale={locale}
+                      limits={limits}
                     />
                   ) : null}
                   {panel === "summary" ? (
@@ -3139,6 +3141,7 @@ function SimulationPanel({
   sandboxBusy,
   copy,
   locale,
+  limits,
 }: {
   artifact: LibraryArtifact | null;
   eligibility: CpuSimulationEligibility;
@@ -3156,6 +3159,7 @@ function SimulationPanel({
   sandboxBusy: boolean;
   copy: StudioCopy;
   locale: PublicLocale;
+  limits: CpuSimulationLimits;
 }) {
   const currentRecords = eligibility.eligible
     ? records.filter((record) => (
@@ -3270,7 +3274,7 @@ function SimulationPanel({
         {/* After the CPU records, not between the run button and its result:
             you run, then you read, then you consider hardware (UX pass 6). */}
         <div className="mj-studio-lane">
-          <QpuLane artifact={artifact} shots={shots} copy={copy} />
+          <QpuLane artifact={artifact} shots={shots} copy={copy} limits={limits} />
         </div>
       </div>
     </section>
@@ -3348,7 +3352,7 @@ function hardwareRefusalText(cause: unknown, copy: StudioCopy): string {
   return cause.message;
 }
 
-function QpuLane({ artifact, shots, copy }: { artifact: LibraryArtifact | null; shots: string; copy: StudioCopy }) {
+function QpuLane({ artifact, shots, copy, limits }: { artifact: LibraryArtifact | null; shots: string; copy: StudioCopy; limits: CpuSimulationLimits }) {
   const [backends, setBackends] = useState<QpuBackendInfo[] | null>(null);
   const [gate, setGate] = useState<QpuSubmissionGate | null>(null);
   const [catalogError, setCatalogError] = useState(false);
@@ -3505,6 +3509,15 @@ function QpuLane({ artifact, shots, copy }: { artifact: LibraryArtifact | null; 
                   <span className="mj-section-label">{copy.hardwareRawCounts}</span>
                   <code>{Object.entries(qpuRun.raw_counts).sort(([, left], [, right]) => right - left).map(([bitstring, count]) => `${bitstring}: ${count}`).join("\n")}</code>
                 </div>
+              ) : null}
+              {qpuRun.status === "done" && qpuRun.raw_counts ? (
+                <QpuMeasuredVsIdeal
+                  qasm={submittableQasm ?? ""}
+                  submittedFingerprint={qpuRun.source_fingerprint}
+                  counts={qpuRun.raw_counts}
+                  limits={limits}
+                  copy={copy}
+                />
               ) : null}
             </div>
           ) : null}
