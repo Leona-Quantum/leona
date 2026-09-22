@@ -311,3 +311,92 @@ class CreateCourseTurnRequest(_ResourceBase):
 class CreateCourseTurnResponse(_ResourceBase):
     turn: CourseTurn
     run_id: UUID
+
+
+# --------------------------------------------------------------------------- gradebook
+
+
+class GradebookVisibility(StrEnum):
+    """Which rows of a course's gradebook the caller was allowed to see.
+
+    Carried on the response rather than inferred by the client, because the two
+    answers look alike: a course creator whose class has not started sees an empty
+    table, and a member who has not started sees an empty table too. The client has
+    to know which of the two it is showing to title it honestly ("Gradebook" or
+    "Your progress").
+    """
+
+    #: The course's creator: every current member who has been graded on it.
+    ALL_MEMBERS = "all_members"
+    #: Anyone else in the workspace: their own row, and no one else's.
+    OWN_ROW = "own_row"
+
+
+class GradebookModule(_ResourceBase):
+    """One column of the gradebook: a module, and what its notebook grades today."""
+
+    id: UUID
+    seq: int = Field(ge=1)
+    slug: str
+    title: str
+    #: `None` when the module has no notebook that still resolves (never generated,
+    #: or deleted). Such a module can have no attempts, and says so.
+    notebook_id: UUID | None = None
+    #: Graded cells in the notebook's CURRENT version, or `None` when there is no
+    #: ready version to count. An attempt on an older version carries its own count.
+    graded_cells: int | None = Field(default=None, ge=0)
+
+
+class GradebookEntry(_ResourceBase):
+    """One member's LATEST graded attempt at one module.
+
+    Latest rather than best. The gradebook answers "where has this person got to",
+    and a best-ever score would keep showing a pass on cells the notebook has since
+    rewritten. `stale` says when that has happened: the verdicts are about the
+    version named by `version_seq`, which is no longer the current one.
+    """
+
+    module_id: UUID
+    passed: int = Field(ge=0)
+    failed: int = Field(ge=0)
+    attempted: int = Field(ge=0)
+    #: Graded cells in the version this attempt was graded against — the
+    #: denominator `passed` is out of.
+    graded_cells: int = Field(ge=0)
+    version_seq: int = Field(ge=1)
+    stale: bool = False
+    #: The grading run, so a reader can be pointed at the attempt itself.
+    run_id: UUID
+    graded_at: datetime
+
+
+class GradebookRow(_ResourceBase):
+    """One workspace member's results across the course.
+
+    `email` and `display_name` are exactly what `GET /v1/workspace` already shows
+    every member about every other member, and nothing more.
+    """
+
+    user_id: UUID
+    email: str
+    display_name: str | None = None
+    #: Only the modules this member has been graded on, in module order.
+    entries: list[GradebookEntry] = Field(default_factory=list)
+    #: Cells passed, summed over `entries`.
+    total_passed: int = Field(ge=0)
+    #: Graded cells across the whole course: each attempted module counted at the
+    #: version it was graded on, each unattempted one at its current version. So a
+    #: member who has done two modules of five is shown out of all five, not out of
+    #: the two they happened to reach.
+    total_graded_cells: int = Field(ge=0)
+    last_graded_at: datetime
+
+
+class CourseGradebook(_ResourceBase):
+    """How members are doing on a course's graded exercises. Results, never answers:
+    nothing here carries a cell's check, answer key, or the member's own code."""
+
+    course_id: UUID
+    visibility: GradebookVisibility
+    modules: list[GradebookModule] = Field(default_factory=list)
+    rows: list[GradebookRow] = Field(default_factory=list)

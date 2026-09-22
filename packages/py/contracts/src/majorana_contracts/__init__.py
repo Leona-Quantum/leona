@@ -95,6 +95,7 @@ from .events import (
 )
 from .courses import (
     Course,
+    CourseGradebook,
     CourseList,
     CourseModule,
     CourseModulePatch,
@@ -110,6 +111,10 @@ from .courses import (
     CreateCourseTurnResponse,
     GenerateCourseRequest,
     GenerateCourseResponse,
+    GradebookEntry,
+    GradebookModule,
+    GradebookRow,
+    GradebookVisibility,
     PlannedModule,
     UpdateCourseRequest,
 )
@@ -392,7 +397,11 @@ from .lifecycle import (
 # additive/widening, and every existing Qapp still reports a non-null
 # created_by_run_id. QappRangeSmoke is unchanged. New route-local response shapes
 # (version history, activity, usage, rollback) are not contracts models.
-CONTRACTS_VERSION = "2.23.0"
+# 2.24.0: Course gradebook (ai-ops 349 proposal 8). New: CourseGradebook,
+# GradebookModule, GradebookRow, GradebookEntry and the closed GradebookVisibility
+# enum, the response of GET /v1/courses/{id}/gradebook. Purely additive: no existing
+# model changes, and the data is read from `notebook.grades` events already stored.
+CONTRACTS_VERSION = "2.24.0"
 
 __all__ = [
     "TextAnswer",
@@ -483,6 +492,7 @@ __all__ = [
     "Qapp",
     "Audience",
     "Course",
+    "CourseGradebook",
     "CourseList",
     "CourseModule",
     "CourseModulePatch",
@@ -498,6 +508,10 @@ __all__ = [
     "CreateCourseTurnResponse",
     "GenerateCourseRequest",
     "GenerateCourseResponse",
+    "GradebookEntry",
+    "GradebookModule",
+    "GradebookRow",
+    "GradebookVisibility",
     "PlannedModule",
     "AuthorNotebookVersionRequest",
     "AuthorNotebookVersionResponse",
