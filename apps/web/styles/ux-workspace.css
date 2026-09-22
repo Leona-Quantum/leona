@@ -153,19 +153,36 @@
    sideways inside its own box on a narrow screen rather than widening the page. */
 .mj-course-gradebook { margin-top: var(--sp-6); display: grid; gap: var(--sp-3); }
 .mj-course-gradebook-head { display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: space-between; gap: var(--sp-3); }
-.mj-course-gradebook-head h2 { margin: 0; }
+.mj-course-gradebook-head h2 { margin: 0; font-size: var(--fs-16); font-weight: 500; }
 .mj-course-gradebook-lede { margin: var(--sp-1) 0 0; color: var(--text-1); max-width: 60ch; }
 .mj-course-gradebook-actions { display: flex; gap: var(--sp-2); }
-.mj-course-gradebook-scroll { overflow-x: auto; }
-.mj-course-gradebook-table { width: 100%; border-collapse: collapse; font-size: var(--fs-13); }
+/* `position: relative` is load-bearing. Each score carries an `.sr-only` sentence,
+   which is absolutely positioned; without a positioned ancestor its containing block
+   is the page, so it escapes this box's clipping and a 375px phone scrolled the whole
+   page sideways (measured: 434px of document width in a 375px viewport). */
+.mj-course-gradebook-scroll { position: relative; overflow-x: auto; }
+/* `separate` rather than `collapse`: a collapsed border is drawn by the table grid,
+   not the cell, so the sticky member column below lost its divider once scrolled. */
+.mj-course-gradebook-table { width: 100%; border-collapse: separate; border-spacing: 0; font-size: var(--fs-13); }
 .mj-course-gradebook-table th,
 .mj-course-gradebook-table td { padding: var(--sp-2); border-bottom: 1px solid var(--border-0); text-align: left; vertical-align: top; }
 .mj-course-gradebook-table thead th { color: var(--text-1); font-weight: 500; }
 .mj-course-gradebook-table thead th > span { display: block; }
-.mj-course-gradebook-module-title { max-width: 18ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* Wraps rather than truncating: "Superposition with the…" hid the half of the title
+   that tells two modules apart. */
+.mj-course-gradebook-module-title { min-width: 12ch; max-width: 22ch; overflow-wrap: break-word; }
+.mj-course-gradebook-table td { white-space: nowrap; }
 .mj-course-gradebook-table tbody th strong,
 .mj-course-gradebook-table tbody th small,
 .mj-course-gradebook-table td small { display: block; }
 .mj-course-gradebook-table small { color: var(--text-1); font-weight: 400; }
 .mj-course-gradebook-score { font-family: var(--font-mono); }
 .mj-course-gradebook-empty-cell { color: var(--text-1); }
+/* On a narrow screen the table scrolls sideways; the member column stays put so a
+   score is never read without the name it belongs to. */
+@media (max-width: 720px) {
+  .mj-course-gradebook-table tr > :first-child { position: sticky; left: 0; z-index: 1; max-width: 10rem; background: var(--bg-0); border-right: 1px solid var(--border-0); }
+  /* A capped sticky column leaves room for the scores beside it. Names wrap at
+     spaces; only a word too long for the column (an email) is broken. */
+  .mj-course-gradebook-table tbody th { overflow-wrap: break-word; }
+}
