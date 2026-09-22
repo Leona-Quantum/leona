@@ -50,9 +50,9 @@ function embedLocale(value: string | undefined): PublicLocale {
 export async function generateMetadata({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;
   const qapp = await loadPublicQapp(slug);
-  if (!qapp) return { title: "Qapp — Leona Quantum", robots: { index: false, follow: false } };
+  if (!qapp) return { title: "Qapp", robots: { index: false, follow: false } };
   return {
-    title: `${qapp.title} — Qapp · Leona Quantum`,
+    title: `${qapp.title} — Qapp`,
     description: qapp.description,
     // This is a widget for someone else's page, not a destination of its own —
     // `/q/[slug]` is the page that should be indexed, shared, and previewed.

@@ -1,6 +1,6 @@
 import { AccountContent } from "./account-content";
 
-export const metadata = { title: "Account — Leona Quantum" };
+export const metadata = { title: "Account" };
 
 /**
  * /account as a full page.
