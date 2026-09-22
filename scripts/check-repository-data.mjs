@@ -919,6 +919,28 @@ for (const entry of entries) {
   }
 }
 
+// Japanese prose ends a sentence with 。, not an ASCII full stop. The
+// literature-expansion intake wrote 37 summaries ending in "." after Japanese
+// text (fixed 2026-09-22), and each one reached three fields of its record. Only
+// a full stop straight after a Japanese character is refused, so "et al." and
+// decimals inside Japanese text stay legal.
+{
+  const JA_SENTENCE_END = /[\u3040-\u30ff\u4e00-\u9fff）」][.](?=\s|$)/u;
+  const walk = (value, key, slug) => {
+    if (Array.isArray(value)) {
+      for (const item of value) walk(item, key, slug);
+    } else if (value && typeof value === "object") {
+      for (const [childKey, child] of Object.entries(value)) walk(child, childKey, slug);
+    } else if (typeof value === "string" && key.endsWith("Ja") && JA_SENTENCE_END.test(value)) {
+      const at = value.search(JA_SENTENCE_END);
+      errors.push(
+        `${slug}: ${key} ends a Japanese sentence with "." instead of "。" (…${value.slice(Math.max(0, at - 20), at + 2)})`,
+      );
+    }
+  };
+  for (const entry of entries) walk(entry, "", entry.slug);
+}
+
 // Every field label a record shows needs its Japanese name. The record page falls
 // back to the English label, so a missing one is not an error a reader sees as
 // broken; it is English beside Japanese chrome, which is how 233 of 262 labels
