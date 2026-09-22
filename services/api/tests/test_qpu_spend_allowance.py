@@ -47,6 +47,20 @@ FORTE = "braket.ionq.forte"
 #: The free-queue device. Its estimate carries no total at all.
 OPEN_PLAN = "ibm.open_plan"
 
+
+@pytest.fixture(autouse=True)
+def _every_priced_provider_routable(monkeypatch):
+    """The ceiling only bites on a billed device, and no billed device has a
+    submit adapter yet (`majorana_qpu.SUBMITTABLE_PROVIDERS` is IBM's free queue
+    alone), so the route now refuses FORTE before it reaches the ceiling. These
+    tests are about the ceiling, not the routing: treat every provider as
+    routable here so the ceiling stays tested for the day a billed one lands.
+    `test_qpu_routes.py` asserts the real routing."""
+    import majorana_qpu.models as qpu_models
+
+    monkeypatch.setattr(qpu_models, "SUBMITTABLE_PROVIDERS", frozenset(qpu_models.QpuProviderKey))
+
+
 QASM = 'OPENQASM 3.0; include "stdgates.inc"; qubit[1] q; bit[1] c; h q[0]; c[0] = measure q[0];'
 
 

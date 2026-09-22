@@ -9,6 +9,7 @@ from .models import (
     QpuProviderKey,
     QpuRunJobPayload,
     QpuSubmissionBlockReason,
+    SUBMITTABLE_PROVIDERS,
 )
 from .pricing import (
     RATE_CARD,
@@ -27,6 +28,7 @@ from .ibm import IbmRuntimeProvider, submission_block_reason
 
 __all__ = [
     "RATE_CARD",
+    "SUBMITTABLE_PROVIDERS",
     "EstimateBasis",
     "IbmCredentialRejected",
     "IbmRuntimeProvider",

@@ -26,7 +26,19 @@ export type QpuBackendInfo = {
   allowance_note: string | null;
   rate_source: string;
   rate_confirmed_on: string;
+  /**
+   * Whether Leona can send a job to this device, or only price it. Only IBM has
+   * a submit route today. Absent from an API that predates the field, which
+   * never refused on it, so read it as `isPricedOnly` does: only an explicit
+   * `false` means priced-only.
+   */
+  submittable?: boolean;
 };
+
+/** A device on the rate card that Leona can estimate but not submit to. */
+export function isPricedOnly(backend: Pick<QpuBackendInfo, "submittable">): boolean {
+  return backend.submittable === false;
+}
 
 export type QpuCostEstimate = {
   device_id: string;
@@ -49,6 +61,7 @@ export type QpuSubmissionGate = {
     | "credentials_unconfigured"
     | "provider_dependency_missing"
     | "unknown_device"
+    | "provider_not_supported"
     | null;
 };
 

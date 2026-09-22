@@ -71,6 +71,18 @@ SETTINGS_KWARGS = dict(
     web_origin="http://localhost:3000",
 )
 
+
+@pytest.fixture(autouse=True)
+def _every_priced_provider_routable(monkeypatch):
+    """Billed devices have no submit adapter yet, so the route refuses FORTE and
+    GARNET before the ceiling these tests are about. Same stance as
+    `test_qpu_spend_allowance.py`: every provider routable here, the real
+    routing asserted in `test_qpu_routes.py`."""
+    import majorana_qpu.models as qpu_models
+
+    monkeypatch.setattr(qpu_models, "SUBMITTABLE_PROVIDERS", frozenset(qpu_models.QpuProviderKey))
+
+
 FORTE = "braket.ionq.forte"
 GARNET = "braket.iqm.garnet"
 OPEN_PLAN = "ibm.open_plan"

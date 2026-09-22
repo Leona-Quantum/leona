@@ -43,6 +43,7 @@ from majorana_qpu import (
     QpuBackendInfo,
     QpuCostEstimate,
     QpuRunJobPayload,
+    QpuSubmissionBlockReason,
     UnknownDeviceError,
     backend_info,
     estimate as rate_card_estimate,
@@ -521,6 +522,14 @@ async def qpu_submit(
         backend = backend_info(body.device_id)
     except UnknownDeviceError:
         raise HTTPException(status_code=404, detail="unknown QPU device") from None
+    # Before the credential gate: a priced device whose provider has no submit
+    # adapter cannot be run by any credential, and the worker would otherwise
+    # send the job to IBM under this device's label and price.
+    if not backend.submittable:
+        raise HTTPException(
+            status_code=409,
+            detail={"blocked_reason": QpuSubmissionBlockReason.PROVIDER_NOT_SUPPORTED.value},
+        )
     reason = submission_block_reason(has_credential=await _caller_can_submit(scope, session))
     if reason is not None:
         raise HTTPException(status_code=409, detail={"blocked_reason": reason.value})

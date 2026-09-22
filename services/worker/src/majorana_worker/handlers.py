@@ -2965,6 +2965,23 @@ async def handle_qpu_run(
     # branch, always: `provider` has no production producer.
     credential: tuple[str, str | None] | None = None
     if provider is None:
+        if status is QpuRunStatus.QUEUED and record.provider != IBM_PROVIDER:
+            # The only real adapter below is IBM's. A queued record for any other
+            # provider (the API refuses these now; this catches a row written
+            # before it did) would otherwise be sent to IBM under a label and a
+            # price that are not IBM's. Nothing has been sent yet, so say so.
+            await qpu_runs_repo.transition(
+                scope,
+                session,
+                record.id,
+                QpuRunStatus.ERROR,
+                error=(
+                    f"Leona cannot submit to {record.provider} devices yet; "
+                    "nothing was sent to any provider"
+                ),
+            )
+            await session.commit()
+            return
         if record.user_id != scope.user_id:
             # The payload and the row disagree about whose run this is. There is
             # no correct credential to load, and guessing at one would submit a
