@@ -253,7 +253,7 @@
   list-style: none;
   border: var(--border-hairline) solid var(--border-0);
   border-radius: var(--radius-control);
-  background: var(--bg-2);
+  background: var(--bg-0);
   box-shadow: var(--shadow-popover);
 }
 .mj-comment-suggestions li {
@@ -268,7 +268,7 @@
   cursor: pointer;
 }
 .mj-comment-suggestions li[aria-selected="true"],
-.mj-comment-suggestions li:hover { background: var(--bg-1); }
+.mj-comment-suggestions li:hover { background: var(--bg-2); }
 .mj-comment-composer-actions { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: var(--sp-2); }
 .mj-comment-hint { margin-right: auto; color: var(--text-2); font-size: var(--fs-12); }
 .mj-comments-more { justify-self: start; }
