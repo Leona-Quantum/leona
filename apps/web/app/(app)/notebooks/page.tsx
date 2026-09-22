@@ -1,7 +1,7 @@
 import { getPublicLocale } from "../../../lib/public-locale-server";
 import { NotebooksHome } from "./notebooks-home";
 
-export const metadata = { title: "Notebooks — Leona Quantum" };
+export const metadata = { title: "Notebooks" };
 
 export default async function NotebooksPage({
   searchParams,

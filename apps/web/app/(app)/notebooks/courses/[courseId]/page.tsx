@@ -1,7 +1,7 @@
 import { getPublicLocale } from "../../../../../lib/public-locale-server";
 import { CourseWorkspace } from "./course-workspace";
 
-export const metadata = { title: "Course — Leona Quantum" };
+export const metadata = { title: "Course" };
 
 export default async function CoursePage({
   params,

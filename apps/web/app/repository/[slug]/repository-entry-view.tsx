@@ -42,6 +42,7 @@ import type { WorkedExampleSummary } from "../../../lib/atlas-worked-example-sum
 // (WORKED_EXAMPLES/workedExample), only the shape of the one resolved example
 // the server already picked. See worked-example-resolution.ts's doc comment.
 import type { WorkedExample } from "../../../lib/worked-examples";
+import { DATA_LABELS_JA } from "../../../lib/repository/data-labels-ja";
 
 const COPY = {
   en: {
@@ -191,40 +192,6 @@ function variantLabel(status: "native" | "conversion" | "source" | "unsupported"
   return "Unsupported";
 }
 
-const DATA_LABELS_JA: Record<string, string> = {
-  Qubits: "量子ビット",
-  Depth: "深さ",
-  Outcomes: "出力",
-  Shots: "ショット",
-  Queries: "クエリ数",
-  Phase: "位相",
-  "Rotation layers": "回転レイヤー",
-  "Gate family": "ゲート系統",
-  "Bit order": "ビット順",
-  Export: "エクスポート",
-  Matrix: "行列",
-  Rotation: "回転",
-  Square: "二乗",
-  Power: "累乗",
-  Family: "系統",
-  Control: "制御",
-  Target: "対象",
-  "Universal role": "普遍量子計算での役割",
-  "Native form": "ネイティブ形式",
-  Decomposition: "分解",
-  Role: "役割",
-  Promise: "前提条件",
-  "Quantum queries": "量子クエリ",
-  "Classical queries": "古典クエリ",
-  Function: "関数",
-  "Input register": "入力レジスタ",
-  "Output register": "出力レジスタ",
-  Samples: "サンプル数",
-  Constraint: "制約",
-  Encoding: "符号化",
-  Transmission: "送信",
-  Readout: "読み出し",
-};
 
 function dataLabel(label: string, locale: PublicLocale): string {
   return locale === "ja" ? DATA_LABELS_JA[label] ?? label : label;
