@@ -148,3 +148,24 @@
 .mj-accent-picker [data-accent-option="moss"] i { background: var(--accent-moss); }
 .mj-accent-picker [data-accent-option="plum"] i { background: var(--accent-plum); }
 .mj-language-preference-panel .mj-language-preference + .mj-language-preference { margin-top: var(--sp-4); padding-top: var(--sp-4); border-top: var(--border-hairline) solid var(--border-0); }
+
+/* Course gradebook (course-gradebook.tsx): members down, modules across. Scrolls
+   sideways inside its own box on a narrow screen rather than widening the page. */
+.mj-course-gradebook { margin-top: var(--sp-6); display: grid; gap: var(--sp-3); }
+.mj-course-gradebook-head { display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: space-between; gap: var(--sp-3); }
+.mj-course-gradebook-head h2 { margin: 0; }
+.mj-course-gradebook-lede { margin: var(--sp-1) 0 0; color: var(--text-1); max-width: 60ch; }
+.mj-course-gradebook-actions { display: flex; gap: var(--sp-2); }
+.mj-course-gradebook-scroll { overflow-x: auto; }
+.mj-course-gradebook-table { width: 100%; border-collapse: collapse; font-size: var(--fs-13); }
+.mj-course-gradebook-table th,
+.mj-course-gradebook-table td { padding: var(--sp-2); border-bottom: 1px solid var(--border-0); text-align: left; vertical-align: top; }
+.mj-course-gradebook-table thead th { color: var(--text-1); font-weight: 500; }
+.mj-course-gradebook-table thead th > span { display: block; }
+.mj-course-gradebook-module-title { max-width: 18ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mj-course-gradebook-table tbody th strong,
+.mj-course-gradebook-table tbody th small,
+.mj-course-gradebook-table td small { display: block; }
+.mj-course-gradebook-table small { color: var(--text-1); font-weight: 400; }
+.mj-course-gradebook-score { font-family: var(--font-mono); }
+.mj-course-gradebook-empty-cell { color: var(--text-1); }
