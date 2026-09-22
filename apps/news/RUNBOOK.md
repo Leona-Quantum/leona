@@ -32,31 +32,49 @@ the flag is the whole gate. The operator sequence is:
    and shifts traffic — but the service stays `--no-allow-unauthenticated`
    throughout, so "deployed" still does not mean "reachable by a visitor".
 
-2. **Choose the hostname — OWNER DECISION, not made here.** `leonaquantum.com`
-   now redirects to `leonaqt.com` (2026-09-20 cutover), so the old plan of
-   `news.leonaquantum.com` is stale; whatever replaces it has to live under a
-   domain that still resolves. Two options, pick one — do not build both:
+2. **Choose the hostname — DECIDED (ai-ops 354, owner ruling "option 1",
+   2026-09-21): `news.leonaqt.com`, a separate subdomain through Cloudflare.**
+   `leonaquantum.com` now redirects to `leonaqt.com` (2026-09-20 cutover), so
+   the old plan of `news.leonaquantum.com` is stale; `infra/news.json`'s
+   `site_url` is already set to `https://news.leonaqt.com` (this commit).
 
-   - **`news.leonaqt.com` via Cloudflare** — a `gcloud run domain-mappings
-     create --service=majorana-news --domain=news.leonaqt.com
-     --region=us-west1` (or a route added to the existing load balancer,
-     `infra/web-lb/`, if the owner wants the same Cloud Armor/origin-lock
-     posture `leonaqt.com` has), then a matching Cloudflare DNS record for
-     `news.leonaqt.com` — a CNAME at the domain mapping's target, or an
-     A/AAAA record at the load balancer's fixed address
-     (`docs/runbooks/cloudflare-origin-certificate.md` has the exact steps
-     for the latter).
-   - **A `leonaqt.com/news` path** through the existing load balancer
-     (`infra/web-lb/`), added as a path-matched backend service alongside
-     `majorana-web`'s. No new DNS record; the existing certificate and
-     origin lock already cover it.
+   **Routing mechanism: the existing load balancer (`infra/web-lb/`), not a
+   Cloud Run domain mapping.** `gcloud run domain-mappings create` would ask
+   Google to verify the hostname and serve its own Google-managed certificate,
+   which needs a DNS TXT/CNAME verification record — exactly the conflict
+   `docs/runbooks/cloudflare-origin-certificate.md` describes for the apex
+   (Cloudflare already holds `_acme-challenge.leonaqt.com`, and a domain
+   mapping would need the equivalent for `news`). Routing through the same
+   load balancer that already serves `leonaqt.com` avoids that conflict
+   entirely and keeps the same Cloud Armor origin-lock and Cloudflare-only
+   posture the rest of the site has. See "Switch-on runbook" below for the
+   exact commands.
 
-   Record the choice in this file once made; `infra/news.json`'s `site_url`
-   is the renderer's own record of it (`SITE_URL` below must match whatever
-   is decided, in both places).
+   **The existing Cloudflare Origin Certificate already covers
+   `news.leonaqt.com` — confirmed read-only, not assumed:**
 
-3. **DNS**, once steps 1–2 are both done: only the Cloudflare-record work the
-   chosen option above actually needs — none at all for the path option.
+   ```sh
+   gcloud certificate-manager certificates describe majorana-web-origin-cert \
+     --location=global --project=majorana-core --format='value(sanDnsnames)'
+   # -> *.leonaqt.com, leonaqt.com
+   ```
+
+   and the certificate map already has a wildcard entry for it
+   (`majorana-web-entry-wildcard`, created by
+   `infra/web-lb/32-rehearsal-hostname.sh` and left in place — see that
+   script's own comment). So no new certificate, no Cloudflare collaborator
+   visit, and no new Certificate Manager work is needed for this hostname —
+   only a new Cloud Run backend, a load-balancer host rule, and one Cloudflare
+   DNS record.
+
+3. **DNS**, once steps 1–2 and the load-balancer wiring below are done: one
+   Cloudflare `news` record, **A**, at the load balancer's static IP
+   (`gcloud compute addresses describe majorana-web-ip --global
+   --format='value(address)'`), **Proxied** (orange cloud) — the same
+   requirement `docs/runbooks/cloudflare-origin-certificate.md` explains for
+   the apex: unproxied, a visitor's browser is handed the Origin Certificate
+   directly and sees a full-page TLS warning, because that certificate is
+   trusted by Cloudflare's edge and nothing else.
 
 The `gcloud builds submit` / `gcloud run deploy` commands `deploy-news.yml`
 runs are exactly what a by-hand debug of a single revision would use; see
@@ -74,6 +92,231 @@ honest unavailable state, never sample news. Revert/promote renderer revisions
 through Cloud Run's own revision traffic controls
 (`gcloud run services update-traffic`), the same mechanism `deploys.md` uses
 for the API and worker.
+
+## Switch-on runbook: news.leonaqt.com (ai-ops 354)
+
+This is the exact ordered procedure to take the hostname decision above from
+"routed nowhere" to "live". Nothing in this section has been run — two
+prerequisites only the owner can give have not been given yet (below), so
+none of `enabled`, `public`, `renderer_deploy` or `workspace_id` change in
+this commit. This section is what the next session runs once the owner has
+supplied them.
+
+### 0. Blocking prerequisites (owner-only, not yet given — ai-ops 354)
+
+- **A news-only OpenAI key**, separate from the product's own key. Do not
+  reuse `OPENAI_API_KEY` — see "One-time credential setup" above for why the
+  code refuses to fall back to it.
+- **Which workspace owns the newsroom** — an existing workspace UUID for
+  `infra/news.json`'s `workspace_id`.
+
+Stop here until both exist. Steps 1–5 below can run without them (they only
+make the renderer reachable while still `--no-allow-unauthenticated` and
+`public: false`); step 6 (`enabled: true`) needs the workspace UUID, and news
+generation needs the key.
+
+### 1. Owner: store the key and point the repo at it
+
+1. Put the news-only key in Google Secret Manager as its own secret (any
+   name — the code does not hardcode one). Example name used in the docs
+   below: `LEONA_NEWS_OPENAI_API_KEY`.
+2. Authorize the existing Worker's runtime service account to read that
+   secret version (`roles/secretmanager.secretAccessor` on the secret).
+3. Set the GitHub repository **variable** `LEONA_NEWS_OPENAI_SECRET_VERSION`
+   to `<secret-name>:<numeric-version>`, e.g. `LEONA_NEWS_OPENAI_API_KEY:1` —
+   never `:latest` (`scripts/news-deploy-config.py` rejects both a malformed
+   reference and `:latest`).
+4. **The code that reads it:** `deploy.yml` binds this reference onto the
+   Worker's `LEONA_NEWS_OPENAI_API_KEY` environment variable via
+   `--set-secrets` (`.github/workflows/deploy.yml`, the `worker_secrets`
+   step) — that variable name is what `services/worker` actually reads, not
+   the Secret Manager resource name, which can be anything. The API and the
+   public renderer never receive it.
+
+Never paste the key value into chat, a GitHub issue/PR, or `infra/news.json`
+— it is a reviewed reference (`name:version`), not the key itself. If it
+needs to move between people before it reaches Secret Manager, the handover
+file is `/Users/Eshaan/Developer/projects/leona-secrets/llm-keys.txt`.
+
+### 2. Reviewed PR: workspace and site_url
+
+`site_url` is already `https://news.leonaqt.com` (this commit). In a
+separate, later, reviewed PR: set `infra/news.json`'s `workspace_id` to the
+UUID from step 0, and `enabled: true` (required before `workspace_id` is
+accepted by `scripts/news-deploy-config.py`). Leave `public`,
+`schedule_enabled`, `auto_publish` false until the checks below pass —
+`enabled: true` alone only turns on draft generation into the editor, not
+anything public.
+
+### 3. Reviewed PR: deploy the renderer
+
+Set `infra/news.json`'s `renderer_deploy` to `true`. Merging to `dev` runs
+`.github/workflows/deploy-news.yml`: it builds the image, deploys
+`majorana-news` to Cloud Run **dark** (`--no-traffic`), smoke-tests
+`/healthz` and `/readyz` on the dark revision, then shifts traffic. The
+service is created with no ingress restriction yet and stays
+`--no-allow-unauthenticated` — "deployed" still does not mean "reachable by
+a visitor". This is the first real deploy of `majorana-news`; as of
+2026-09-21 the service does not exist yet (confirmed:
+`gcloud run services describe majorana-news --region=us-west1
+--project=majorana-core` → `Cannot find service`).
+
+### 4. Wire the load balancer (new backend, same LB, same origin lock)
+
+Run from `infra/web-lb/` so `common.sh` is on the path, after step 3's
+deploy has created the `majorana-news` Cloud Run service:
+
+```sh
+PROJECT=majorana-core REGION=us-west1
+NEG=majorana-news-neg
+BACKEND=majorana-news-backend
+ARMOR=majorana-web-origin-lock   # the existing Cloudflare-only origin lock — reused, not duplicated
+URLMAP=majorana-web-urlmap       # the existing URL map — a host rule is added to it, not a new map
+
+# Serverless NEG -> the news Cloud Run service (same shape as majorana-web-neg)
+gcloud compute network-endpoint-groups create "$NEG" \
+  --project="$PROJECT" --region="$REGION" \
+  --network-endpoint-type=serverless --cloud-run-service=majorana-news
+
+# Backend service, no --protocol (a serverless NEG rejects a port name)
+gcloud compute backend-services create "$BACKEND" \
+  --project="$PROJECT" --global --load-balancing-scheme=EXTERNAL_MANAGED
+gcloud compute backend-services add-backend "$BACKEND" \
+  --project="$PROJECT" --global \
+  --network-endpoint-group="$NEG" --network-endpoint-group-region="$REGION"
+gcloud compute backend-services update "$BACKEND" \
+  --project="$PROJECT" --global --security-policy="$ARMOR"
+
+# Host rule on the EXISTING url map — new-hosts + a path matcher whose
+# default service is the news backend. This does not touch the
+# majorana-web host rule (still the url map's --default-service).
+gcloud compute url-maps add-path-matcher "$URLMAP" \
+  --project="$PROJECT" \
+  --path-matcher-name=news-matcher \
+  --default-service="$BACKEND" \
+  --new-hosts=news.leonaqt.com
+```
+
+No new static IP, no new HTTPS/HTTP proxy, no new forwarding rule, no new
+certificate or certificate-map entry — all four already exist and already
+cover any `*.leonaqt.com` name (see the hostname decision above).
+
+### 5. Lock ingress, then unlock through the load balancer only — ORDER MATTERS
+
+Same non-cosmetic ordering `infra/web-lb/40-serve.sh` uses for `majorana-web`,
+for the same reason: between these two commands in the wrong order, the
+service is a public `run.app` URL with no Cloudflare, no rate limit and no
+Cloud Armor in front of it.
+
+```sh
+gcloud run services update majorana-news --project=majorana-core --region=us-west1 \
+  --ingress=internal-and-cloud-load-balancing
+gcloud run services add-iam-policy-binding majorana-news --project=majorana-core --region=us-west1 \
+  --member=allUsers --role=roles/run.invoker
+```
+
+### 6. Cloudflare DNS (the collaborator who holds `leonaqt.com` access)
+
+One record, no certificate work:
+
+```
+news   A   <majorana-web-ip's address>   Proxied (orange cloud)
+```
+
+Get the address with
+`gcloud compute addresses describe majorana-web-ip --global --project=majorana-core --format='value(address)'`
+— it is the same address `leonaqt.com` and `www` already use.
+
+### 7. Verify
+
+```sh
+# Through Cloudflare, as a visitor would reach it
+curl -sS -o /dev/null -w '%{http_code}\n' https://news.leonaqt.com/healthz
+curl -sS -o /dev/null -w '%{http_code}\n' https://news.leonaqt.com/readyz
+
+# Straight to the load balancer, bypassing DNS, to isolate LB config from Cloudflare
+curl -sS -k -o /dev/null -w '%{http_code}\n' \
+  --resolve news.leonaqt.com:443:$(gcloud compute addresses describe majorana-web-ip --global --project=majorana-core --format='value(address)') \
+  https://news.leonaqt.com/healthz
+
+# Confirm the origin certificate is what is actually served (expect Cloudflare's Origin CA)
+openssl s_client -connect $(gcloud compute addresses describe majorana-web-ip --global --project=majorana-core --format='value(address)'):443 \
+  -servername news.leonaqt.com </dev/null 2>/dev/null | openssl x509 -noout -issuer
+
+# The bare run.app URL must now refuse (403) — proves the ingress lock, not just the route
+curl -sS -o /dev/null -w '%{http_code}\n' \
+  $(gcloud run services describe majorana-news --region=us-west1 --project=majorana-core --format='value(status.url)')
+```
+
+Only after `/healthz` and `/readyz` are both 200 through Cloudflare, and the
+`run.app` URL is 403, is the renderer "live" in the sense of reachable. It
+still serves no public news until `LEONA_NEWS_PUBLIC=true` is set on the API
+("Public renderer" below) — routing and publication are separate switches on
+purpose.
+
+### 8. 05-security §1a items that apply
+
+`~/Developer/ai-ops/desk/leona/plans/rebuild/05-security.md` §1a scopes that
+document to "the execution/sandbox lane and any change that widens an
+external boundary — a new anonymous route, a new credential, a new
+provider...". `news.leonaqt.com` is a new anonymous (unauthenticated) route
+and this switch-on adds a new credential (the news-only OpenAI key), so it is
+in scope; it does **not** touch the sandbox/execution lane, so §2's
+hostile-payload-suite and sandbox-egress-canary boxes do not apply here —
+those gate `packages/py/sandbox`, which this change never touches. From §2,
+what does apply before this goes fully public (`LEONA_NEWS_PUBLIC=true`):
+
+- **No secret-shaped strings in client bundle or error responses.** The
+  renderer holds no secret at all by design (§ "Public renderer": only
+  `LEONA_NEWS_MODE`, `LEONA_NEWS_API_URL`, `SITE_URL`, `HOST`, `PORT`) — the
+  step 5 ingress lock plus this design constraint is the control; there is no
+  bundle-scanning check specific to `apps/news` today, so a manual check that
+  `gcloud run services describe majorana-news --format=json` shows no secret
+  env vars is worth doing once, and is cheap.
+- **Rate limits / quota enforcement under abuse.** This is a new
+  unauthenticated origin behind the same Cloud Armor origin lock as
+  `leonaqt.com`, but Cloudflare's actual rate-limiting rule (ai-ops 318) is
+  scoped to `/repository` on the `leonaqt.com` host, not this one — confirm
+  whether that rule needs a `news.leonaqt.com` sibling before publishing, or
+  whether the renderer's own bounded upstream calls (it only proxies to the
+  existing API, never runs a provider call itself) make it low-risk enough to
+  skip. Owner call, not a blocking default.
+- **Dependency + code scanning (osv-scanner, semgrep) and gitleaks** already
+  run repo-wide in `security.yml` and already cover `apps/news` — no new gate
+  needed, just confirm the PRs that touch it stay green on those required
+  checks.
+- **Blast-radius / CODEOWNERS.** None of `infra/news.json`,
+  `apps/news/`, or `infra/web-lb/` are in `.github/CODEOWNERS` today.
+  `.github/workflows/` is — a PR that edits `deploy-news.yml` itself (not
+  needed for steps 4–6 above, which are run by hand against existing
+  infrastructure, not through a new workflow) would need a `Blast-radius:`
+  line per `scripts/check-blast-radius.mjs`.
+- Authz suite, MFA, secret rotation, restore drill: unaffected by this
+  change, unchanged from their existing §2 status.
+
+### 9. Undo
+
+From ai-ops 354, the fast path:
+
+1. Set `infra/news.json`'s `renderer_deploy` back to `false` in a reviewed
+   PR. This stops future renderer deploys; it does **not** remove the
+   already-deployed Cloud Run revision or the load-balancer route added in
+   step 4 — those keep running until torn down separately.
+2. Set `LEONA_NEWS_PUBLIC=false` on the API. Public reads 404 immediately
+   (existing behavior, "Public renderer" above) — this is the actual
+   "news is off" switch for a visitor, independent of whether the renderer
+   process is still running.
+
+Full teardown, if the lane itself should stop existing (not requested by
+ai-ops 354, listed for completeness):
+
+```sh
+gcloud compute url-maps remove-path-matcher majorana-web-urlmap --project=majorana-core --path-matcher-name=news-matcher
+gcloud compute backend-services delete majorana-news-backend --project=majorana-core --global
+gcloud compute network-endpoint-groups delete majorana-news-neg --project=majorana-core --region=us-west1
+gcloud run services delete majorana-news --project=majorana-core --region=us-west1
+# and ask the Cloudflare collaborator to delete the `news` DNS record.
+```
 
 ## Architecture and repository findings
 

@@ -31,10 +31,20 @@ def test_disabled_release_needs_no_credential():
     assert "SITE_URL" not in result["worker_env"]
 
 
-def test_renderer_deploy_defaults_off_and_needs_no_real_hostname():
+def test_renderer_deploy_defaults_off_with_the_owner_ruled_hostname():
+    # The hostname is the owner's ruling (ai-ops 354, option 1: news.leonaqt.com);
+    # setting it switches nothing on, because renderer_deploy stays false.
     config = settings()
     assert config["renderer_deploy"] is False
-    assert config["site_url"] == PLACEHOLDER_SITE_URL
+    assert config["site_url"] == "https://news.leonaqt.com"
+    result = render(config, "")
+    assert result["renderer_deploy"] == "false"
+    assert result["site_url"] == "https://news.leonaqt.com"
+
+
+def test_renderer_deploy_off_needs_no_real_hostname():
+    config = settings()
+    config["site_url"] = PLACEHOLDER_SITE_URL
     result = render(config, "")
     assert result["renderer_deploy"] == "false"
     assert result["site_url"] == PLACEHOLDER_SITE_URL
@@ -42,7 +52,7 @@ def test_renderer_deploy_defaults_off_and_needs_no_real_hostname():
 
 def test_renderer_deploy_rejects_the_placeholder_hostname():
     config = settings()
-    config["renderer_deploy"] = True
+    config.update(renderer_deploy=True, site_url=PLACEHOLDER_SITE_URL)
     with pytest.raises(ValueError):
         render(config, "")
 
