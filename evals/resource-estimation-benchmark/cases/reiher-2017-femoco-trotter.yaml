@@ -1,0 +1,120 @@
+task_id: reiher-2017-femoco-trotter
+algorithm: >
+  Trotter-Suzuki decomposition of the FeMoco (nitrogenase active-site) electronic
+  Hamiltonian, "Serial" circuit implementation variant (Reiher et al.'s construction — the
+  paper that established this as a benchmark problem for quantum chemistry resource
+  estimation).
+problem_size:
+  active_space: "Structure 1: 54 electrons, 54 spatial orbitals (108 spin-orbitals), charge +3"
+  target_accuracy: "0.1 mHa"
+hardware_assumptions:
+  physical_gate_error_rate: 0.001
+  qec_scheme: "surface code"
+  physical_gate_time_ns: 10
+prompt: |
+  You are estimating fault-tolerant quantum computing resources for a specific, published
+  configuration. The source paper compares three different circuit-implementation variants
+  of the same algorithm (Serial, Nesting, and PAR) across two active spaces and two accuracy
+  targets — this task pins ONE specific combination.
+
+  Algorithm: Trotter-Suzuki decomposition of the FeMoco electronic-structure Hamiltonian,
+  the "Serial" circuit-implementation variant.
+
+  Problem size: "Structure 1" active space (54 electrons, 54 spatial orbitals).
+
+  Target accuracy: 0.1 mHa (millihartree).
+
+  Hardware / QEC assumptions (use exactly these):
+  - Physical gate time: 10 nanoseconds (100 MHz clock), the assumption behind the paper's
+    own logical-level runtime figure
+  - Physical gate error rate: 1e-3
+  - Surface code error correction
+
+  Report:
+  1. Logical qubit count.
+  2. T-gate count.
+  3. Total physical qubit count (at the stated 1e-3 physical error rate).
+  4. Total runtime, in days.
+assumptions:
+  - "Structure 1 active space: 54 electrons, 54 spatial orbitals, singlet, charge +3 \
+    (Table 1 caption, Sec.III, Appendix J)"
+  - "0.1 mHa target accuracy, \"Serial\" circuit variant (Table 1, Sec.III \"Resource \
+    Estimates\")"
+  - "Physical gate time 10 ns (100 MHz), stated in-text immediately before Table 1"
+  - "Physical error rate 1e-3, surface code (Table 2, immediately following Table 1, same \
+    section)"
+quantities_pinned: [logical_qubits, t_count, physical_qubits, runtime_value]
+reference:
+  logical_qubits: 111
+  t_count: 1100000000000000
+  physical_qubits: 180000000
+  runtime_value: 130
+units:
+  runtime_value: days
+tolerance_log10:
+  logical_qubits: 0.05
+  t_count: 0.10
+  physical_qubits: 0.15
+  runtime_value: 0.10
+tolerance_rationale:
+  logical_qubits: "A circuit-structure count for the stated active space and variant, printed as a single exact value with no disclosed alternative reading — a narrow factor-of-1.12 band for rounding only."
+  t_count: "Table 1's own printed value (1.1x10^15) for this exact (structure, accuracy, variant) cell — a factor-of-1.26 band for order-of-magnitude-precise reporting typical of this earlier (2017) paper's style."
+  physical_qubits: >
+    Table 2 gives this figure for the SAME (Structure 1, Serial) row at three different
+    physical error rates (1e-3, 1e-6, 1e-9) that differ by orders of magnitude from each
+    other — this task pins 1e-3 specifically. A factor-of-1.4 band (log10=0.15) covers the
+    paper's own coarse rounding at this early stage of the field's resource-estimate
+    methodology (contrast with the tighter bands on later, more precisely-computed papers
+    in this corpus).
+  runtime_value: >
+    Table 1's own runtime figure (130 days) for this cell, computed directly from the T-count
+    and the stated 10ns/gate clock — a factor-of-1.26 band for rounding.
+source:
+  arxiv_id: "1605.03590"
+  title: "Elucidating Reaction Mechanisms on Quantum Computers"
+  authors:
+    - "Markus Reiher"
+    - "Nathan Wiebe"
+    - "Krysta M. Svore"
+    - "Dave Wecker"
+    - "Matthias Troyer"
+  venue: "PNAS 114 (29), 7555-7560 (2017); arXiv v2, 25 May 2016"
+  location: "Table 1 and Table 2, Section III \"Resource Estimates\"; active-space definition in Table 1 caption and Appendix J"
+  url: "https://arxiv.org/abs/1605.03590"
+  retrieved: "2026-09-21"
+cross_check:
+  ran: true
+  tool: "Microsoft QDK Python package (`qdk` v1.32.3), `qdk.estimator.LogicalCounts.estimate()`"
+  command: >
+    LogicalCounts({"numQubits": 111, "tCount": 1_100_000_000_000_000, ...}).estimate({
+    "errorBudget": 0.01, "qubitParams": {"name": "qubit_gate_ns_e3"}, "qecScheme":
+    {"name": "surface_code"}})
+  inputs:
+    numQubits: 111
+    tCount: 1100000000000000
+    errorBudget: 0.01
+    qubitParams: "qubit_gate_ns_e3"
+    qecScheme: "surface_code"
+  result:
+    physicalQubits: 1844634
+    runtime_years: 516
+  agreement: >
+    Disagrees sharply in BOTH directions at once: the generic estimator predicts about 100x
+    FEWER physical qubits (1.84M vs. the paper's 1.8x10^8) but about 1,450x MORE runtime (516
+    years vs. the paper's 130 days), for the same input logical counts. This is a known,
+    understood effect, not a harness bug: this 2017 paper assumes a flat "one T-gate
+    executed every 10 nanoseconds" clock, not derived from any magic-state-factory
+    throughput model — later work (e.g. Babbush et al. 2018, Sec.III of this same corpus's
+    lee-2021 case) explicitly revisits this style of estimate because a real
+    distillation-throughput-limited factory cannot sustain that clock rate at this T-count,
+    making the 2017 paper's own runtime figure understood in later literature as
+    substantially optimistic. The REFERENCE value used for grading remains the paper's own
+    Table 1/2 figures regardless: this benchmark tests whether a model knows what THIS PAPER
+    reports, not an independently re-derived "true" resource cost.
+  note: null
+notes: >
+  This paper also reports "Nesting" and "PAR" circuit variants (higher T-count, fewer
+  logical qubits, shorter runtime) and a "Structure 2" active space and a 1 mHa accuracy
+  target, none of which are used here — only the (Structure 1, 0.1 mHa, Serial) cell is
+  graded, and the prompt states this pin explicitly so a model is not scored against a
+  different, also-valid cell of the same table.

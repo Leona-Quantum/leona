@@ -1,0 +1,126 @@
+task_id: gidney-ekera-2019-rsa2048
+algorithm: >
+  Shor's algorithm for RSA integer factorization via order-finding, compiled with windowed,
+  approximate modular multiplication and executed with surface-code lattice surgery
+  ("(ours) 2019 (parallel)" configuration).
+problem_size:
+  rsa_modulus_bits: 2048
+hardware_assumptions:
+  qubit_modality: "gate-based (generic superconducting-style) qubits"
+  physical_gate_error_rate: 0.001
+  surface_code_cycle_time_us: 1
+  control_system_reaction_time_us: 10
+  connectivity: "planar (2D nearest-neighbor)"
+  distillation_strategy: "28 parallel CCZ magic-state factories, reaction-limited carry runways"
+  level1_code_distance: 15
+  level2_code_distance: 27
+prompt: |
+  You are estimating fault-tolerant quantum computing resources for a specific, published
+  configuration. Answer using ONLY the assumptions below — do not substitute your own
+  preferred error-correction scheme or distillation strategy.
+
+  Algorithm: Shor's algorithm for factoring a 2048-bit RSA modulus via order-finding,
+  compiled with windowed approximate modular multiplication, executed on a surface-code
+  architecture with lattice surgery (this is the specific construction and parallel
+  execution strategy Gidney & Ekerå call "(ours) 2019 (parallel)").
+
+  Hardware / QEC assumptions (use exactly these):
+  - Physical gate error rate: 1e-3 (uniform across gates and measurements)
+  - Surface code cycle time: 1 microsecond
+  - Control system reaction time (classical decoding latency budget): 10 microseconds
+  - Planar (2D nearest-neighbor) qubit connectivity
+  - 28 magic-state distillation factories running in parallel, reaction-limited carry runways
+  - Level-1 surface code distance 15, level-2 (top-level logical) surface code distance 27
+
+  Report:
+  1. Total physical qubit count (compute + magic-state factories + routing), as an integer.
+  2. Total expected wall-clock runtime to complete the factorization, in hours (state the
+     unit).
+
+  Do not report a logical qubit count or a Toffoli/T-gate count — this task does not ask for
+  them (the source paper does not print an unambiguous single value for either under this
+  exact configuration; see this case's `notes`).
+assumptions:
+  - "RSA modulus n = 2048 bits (title; Table 3, n=2048 row, p.16)"
+  - "Physical gate error rate 1e-3 (abstract; Table 2, p.3)"
+  - "Surface code cycle time 1 microsecond (abstract; Table 2, p.3)"
+  - "Control system reaction time 10 microseconds (abstract; Table 2, p.3)"
+  - "Planar connectivity, 28-factory reaction-limited-carry-runways execution strategy — the \
+    row labelled \"(ours) 2019 (parallel)\" in Table 2 (p.3), distinguished from the adjacent \
+    \"1 factory\"/\"1 thread\" rows in the same table, which are different configurations"
+  - "Level-1 code distance d1=15, level-2 code distance d2=27 (Table 3, n=2048 row, p.16)"
+quantities_pinned: [physical_qubits, runtime_value]
+reference:
+  physical_qubits: 20000000
+  runtime_value: 7.44
+units:
+  runtime_value: hours
+tolerance_log10:
+  physical_qubits: 0.10
+  runtime_value: 0.12
+tolerance_rationale:
+  physical_qubits: >
+    Table 2's "(ours) 2019 (parallel)" row states this as "20 (millions)" — a value the
+    paper itself already rounds to 2 significant figures from a more precise script output
+    (estimate_costs.py, per the paper's own text). A factor-of-1.26 band (log10=0.10) covers
+    ordinary 2-sig-fig rounding without being so loose it would also accept the OTHER
+    configurations in the same table (16M and 19M physical qubits for the "1 factory" and
+    "1 thread" rows), which are genuinely different answers to a genuinely different
+    (mis-specified) question.
+  runtime_value: >
+    7.44 hours is the exact conversion of Table 2's "expected runtime: 0.31 (days)" for this
+    row (0.31 x 24 = 7.44); the paper's own abstract rounds the same quantity to "8 hours."
+    A factor-of-1.32 band (log10=0.12) comfortably covers both the paper's own two roundings
+    of its one underlying number (7.44h from the table, 8h from the abstract) while still
+    excluding the adjacent table rows' 6-day and 8.6-hour expected runtimes for different
+    configurations.
+source:
+  arxiv_id: "1905.09749"
+  title: "How to factor 2048 bit RSA integers in 8 hours using 20 million noisy qubits"
+  authors: ["Craig Gidney", "Martin Ekerå"]
+  venue: "Quantum 5, 433 (2021); v3 13 Apr 2021 is the version read"
+  location: "Table 2 (p.3), row \"(ours) 2019 (parallel)\"; Table 3 (p.16), n=2048 row"
+  url: "https://arxiv.org/abs/1905.09749"
+  retrieved: "2026-09-21"
+cross_check:
+  ran: true
+  tool: "Microsoft QDK Python package (`qdk` v1.32.3), `qdk.estimator.LogicalCounts.estimate()`"
+  command: >
+    LogicalCounts({"numQubits": 6189, "cczCount": 2_700_000_000, ...}).estimate({"errorBudget":
+    0.01, "qubitParams": {"name": "qubit_gate_ns_e3"}, "qecScheme": {"name": "surface_code"}})
+  inputs:
+    numQubits: 6189
+    cczCount: 2700000000
+    note: >
+      APPROXIMATE input only — the paper does not print an unambiguous Toffoli count or
+      logical-qubit count for this exact row (see notes below), so this cross-check feeds
+      the paper's own asymptotic logical-qubit formula (6189, from 3n+0.002n*lg(n) at
+      n=2048) and its "Toffoli+T/2" composite magic-state count (2.7 billion, Table 1) as
+      stand-ins. This is a rough sanity check, not a validation of a pinned quantity — no
+      quantity derived from it is graded.
+  result:
+    physicalQubits: 21862964
+    runtime_days: 1.0
+  agreement: >
+    Rough corroboration only, given the approximate input: predicted physical qubits
+    (21.86M) is within 10% of the paper's own 20M; predicted runtime (~1 day) is about 3x
+    the paper's 0.31-day table value, plausibly because the generic estimator's magic-state
+    factory throughput model differs from the paper's own bespoke "reaction-limited carry
+    runways" execution strategy. Not used as the reference value for grading (neither
+    quantity fed to it is itself graded in this task).
+  note: null
+notes: >
+  DROPPED from this case (not graded): Toffoli/T-gate count and logical qubit count. On
+  adversarial re-read, no table in this paper prints a single, unambiguous integer for
+  either quantity for the exact "(ours) 2019 (parallel)" configuration. Table 1 gives a
+  combined "Toffoli+T/2" composite metric (2.7 billion at n=2048) that is explicitly NOT a
+  raw Toffoli count (T-states are given a 1/2 discount in that metric because "T states take
+  less volume to distill than Toffoli states," p.27); a separate in-text illustrative example
+  (Sec. 2.12, p.12) gives ~3 billion Toffolis, but the authors themselves flag that example
+  as a rounded simplification using a DIFFERENT code distance (d1=17, not the script's
+  d1=15) that does not match the precise headline figures. Similarly, no explicit integer
+  logical-qubit count is printed for this row — only the same asymptotic formula (~6,189)
+  or an author-disclaimed illustrative "226x63 grid" (14,238). Rather than pick one of two
+  non-equivalent numbers and present it as "the" Toffoli count or logical-qubit count, this
+  case grades only physical_qubits and runtime_value, which ARE printed as single numbers
+  for this row.

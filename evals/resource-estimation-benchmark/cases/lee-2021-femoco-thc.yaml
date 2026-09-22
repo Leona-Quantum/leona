@@ -1,0 +1,131 @@
+task_id: lee-2021-femoco-thc
+algorithm: >
+  Qubitization of the FeMoco (nitrogenase active-site) electronic Hamiltonian compiled via
+  tensor hypercontraction (THC), Lee et al.'s construction.
+problem_size:
+  active_space: "Reiher et al. active space: 54 electrons, 54 spatial orbitals (108 spin-orbitals), singlet"
+  thc_rank: 350
+hardware_assumptions:
+  physical_gate_error_rate: 0.001
+  surface_code_cycle_time_us: 1
+  control_system_reaction_time_us: 10
+  total_error_budget: 0.01
+  compute_region_code_distance: 31
+  magic_state_factories: "4 CCZ factories (Gidney-Fowler 2019 design), Toffoli production rate 25 kHz"
+prompt: |
+  You are estimating fault-tolerant quantum computing resources for a specific, published
+  configuration. Answer using ONLY the assumptions below.
+
+  Algorithm: qubitization of the FeMoco (nitrogenase cofactor) electronic-structure
+  Hamiltonian, using the Reiher et al. active space (54 electrons, 54 spatial orbitals),
+  compiled via tensor hypercontraction (THC) with rank M=350.
+
+  Hardware / QEC assumptions (use exactly these):
+  - Physical gate error rate: 1e-3
+  - Surface code, 1 microsecond cycle time
+  - Control system reaction time: 10 microseconds
+  - Total error budget: 1%
+  - Compute-region surface code distance: 31 (level-1 factory distance 19, level-2 factory
+    distance 31)
+  - 4 parallel CCZ magic-state factories (Gidney-Fowler 2019 design), Toffoli production
+    rate 25 kHz
+
+  Report:
+  1. Logical qubit count.
+  2. Toffoli gate count.
+  3. Total physical qubit count.
+  4. Total runtime, in days.
+assumptions:
+  - "Reiher et al. active space: 54 electrons, 54 spatial orbitals (108 spin-orbitals), \
+    singlet S=0 (Sec.IV.3, cross-referenced to Reiher et al. 2017)"
+  - "THC rank M=350, the paper's highlighted row for this active space (Table 4, p.24)"
+  - "Logical qubits = 2,142 (Table 4, M=350 row)"
+  - "Physical gate error rate 1e-3, control reaction time 10us, surface code 1us cycle \
+    time, total error budget 1% (Sec.IV.3, p.28)"
+  - "Compute-region code distance 31, level-1 factory distance 19, level-2 factory distance \
+    31 (Sec.IV.3, p.28)"
+  - "4 CCZ magic-state factories (Gidney-Fowler 2019 design), 25 kHz Toffoli production \
+    rate (Sec.IV.3, p.28)"
+quantities_pinned: [logical_qubits, toffoli_count, physical_qubits, runtime_value]
+reference:
+  logical_qubits: 2142
+  toffoli_count: 6700000000
+  physical_qubits: 4000000
+  runtime_value: 3.5
+units:
+  runtime_value: days
+tolerance_log10:
+  logical_qubits: 0.06
+  toffoli_count: 0.12
+  physical_qubits: 0.10
+  runtime_value: 0.08
+tolerance_rationale:
+  logical_qubits: >
+    Table 4's algorithmic tally is 2,142, but the paper's OWN physical-layout floorplan
+    diagram (Sec.IV.3) uses a simplified grid of 1,908 logical qubits for the same
+    configuration, without reconciling the two numbers. A factor-of-1.15 band (log10=0.06)
+    is set to cover this internal ~10-12% spread (log10(2142/1908)=0.050) rather than pretend
+    the paper gives one number.
+  toffoli_count: >
+    The paper states TWO different Toffoli figures for this exact configuration: Table 4's
+    headline 5.3x10^9, and a second figure literally computed from the layout's own inner-loop
+    count (483,000 loops x 13,880 Toffolis/loop = 6.7 billion) used later in the SAME section
+    to derive the graded physical-qubit count. This case uses the layout-derived 6.7x10^9 as
+    the reference (for internal consistency with the physical_qubits figure below) and sets a
+    factor-of-1.32 band (log10=0.12) wide enough to also accept the Table 4 headline figure
+    (log10(6.7/5.3)=0.10) as a legitimately correct alternative reading of the same paper.
+  physical_qubits: >
+    "About four million," the paper's abstract's own rounding of a precise floorplan
+    calculation (1908 x 2 x 32^2 = 3,907,584). A factor-of-1.26 band (log10=0.10) covers the
+    gap between the paper's own precise and rounded framings of the same number.
+  runtime_value: >
+    The paper states "3 days" in one sentence and "3.5 days" two paragraphs later for the
+    SAME configuration — an internal inconsistency, not two different scenarios. This case
+    uses the larger, more conservative 3.5 days as the reference and sets a factor-of-1.20
+    band (log10=0.08), wide enough to also accept the paper's own "3 days" reading
+    (log10(3.5/3)=0.067).
+source:
+  arxiv_id: "2011.03494"
+  title: "Even more efficient quantum computations of chemistry through tensor hypercontraction"
+  authors:
+    - "Joonho Lee"
+    - "Dominic W. Berry"
+    - "Craig Gidney"
+    - "William J. Huggins"
+    - "Jarrod R. McClean"
+    - "Nathan Wiebe"
+    - "Ryan Babbush"
+  venue: "arXiv preprint, 2021"
+  location: "Table 4 (p.24, M=350 row); Section IV.3 (pp.28,31, floorplan and physical-resource calculation)"
+  url: "https://arxiv.org/abs/2011.03494"
+  retrieved: "2026-09-21"
+cross_check:
+  ran: true
+  tool: "Microsoft QDK Python package (`qdk` v1.32.3), `qdk.estimator.LogicalCounts.estimate()`"
+  command: >
+    LogicalCounts({"numQubits": 2142, "cczCount": 6_700_000_000, ...}).estimate({"errorBudget":
+    0.01, "qubitParams": {"name": "qubit_gate_ns_e3"}, "qecScheme": {"name": "surface_code"}})
+  inputs:
+    numQubits: 2142
+    cczCount: 6700000000
+    errorBudget: 0.01
+    qubitParams: "qubit_gate_ns_e3"
+    qecScheme: "surface_code"
+  result:
+    physicalQubits: 8474232
+    runtime_days: 2.7
+  agreement: >
+    Physical qubits: predicted 8.47M vs. the paper's ~4M — Azure predicts about 2.1x MORE
+    qubits (opposite direction from this paper's own comparison point, Gidney 2025's RSA
+    case, where the generic estimator under-predicted relative to bespoke techniques;
+    here Lee et al.'s bespoke floorplanning is itself more qubit-efficient than the
+    estimator's generic surface-code layout). Runtime agrees well: 2.7 days predicted vs.
+    3-3.5 days in the paper, within the paper's own internal spread. Recorded as partial
+    corroboration (runtime) and a understood, paper-specific gap (physical qubits).
+  note: null
+notes: >
+  This paper compiles a SECOND FeMoco active space (Li et al.'s, 152 spin-orbitals, THC
+  rank M=450, logical qubits 2,196, Toffoli 3.2x10^10 — Table 5) but never compiles a full
+  surface-code physical-resource layout for it. This case uses ONLY the Reiher-active-space
+  configuration, which is the one the paper's own physical-resource estimate (Sec.IV.3)
+  actually covers; the Li-active-space numbers are not used anywhere in this case.
