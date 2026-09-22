@@ -1040,3 +1040,31 @@ async def test_the_gradebook_reads_the_clock_when_no_moment_is_given(monkeypatch
     book = await courses_repo.course_gradebook(owner, session, course.id)
 
     assert book.rows[0].missing_module_ids == [module.id]
+
+
+@pytest.mark.parametrize(
+    ("sent", "stored"),
+    [
+        ("2026-09-30T17:00:30.123456+09:00", DUE),
+        ("2026-09-30T17:00:59.999999+09:00", DUE),
+        ("2026-09-30T08:00:00Z", DUE),
+        ("2026-09-30T17:01:00+09:00", DUE + dt.timedelta(minutes=1)),
+    ],
+    ids=["seconds-dropped", "truncated-not-rounded", "already-whole", "the-next-minute"],
+)
+async def test_a_due_date_is_stored_truncated_to_the_minute(sent, stored):
+    """Review on PR 969: the editor shows minutes, so a stored 08:00:30 read as 08:00
+    and re-saving the untouched form moved the deadline, which can flip an attempt
+    between late and on time. The stored value is the one shown."""
+    creator = make_scope()
+    course = _course_row(workspace_id=creator.workspace_id, owner_user_id=creator.user_id)
+    module = _module_row(course_id=course.id)
+    session = SequencedSession([_Res([course]), _Res([course]), _Res([module])])
+
+    await courses_repo.update_course(
+        creator, session, course.id, module_patches=[_patch(id=str(module.id), due_at=sent)]
+    )
+
+    assert module.due_at == stored
+    assert (module.due_at.second, module.due_at.microsecond) == (0, 0)
+    assert module.due_at.utcoffset() == dt.timedelta(0)

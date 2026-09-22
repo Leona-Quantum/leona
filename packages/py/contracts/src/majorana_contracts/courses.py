@@ -185,7 +185,7 @@ class CourseModule(_ResourceBase):
     #: `seq` of the notebook version the module's status was read from.
     notebook_version_seq: int | None = None
     #: When the course's creator wants this module done by, as an instant (UTC on
-    #: the wire); `None` when no due date is set. Set through
+    #: the wire, always a whole minute); `None` when no due date is set. Set through
     #: `UpdateCourseRequest.modules[].due_at`. Unlike the plan fields above it can be
     #: changed after the module's notebook exists: a due date is about the class's
     #: schedule, not about what the notebook teaches.
@@ -304,7 +304,10 @@ class CourseModulePatch(_ResourceBase):
     #: but a due date has to be removable, and a separate "clear" flag would allow
     #: the contradiction of sending both. The instant must carry a UTC offset: a
     #: bare "2026-09-30T17:00" names a different moment in every time zone, and the
-    #: server would have to guess which one the instructor meant.
+    #: server would have to guess which one the instructor meant. It is stored
+    #: TRUNCATED to the minute (seconds and below dropped, never rounded): a due
+    #: date is set and shown to the minute, and `late` is decided against the value
+    #: stored, so it has to be the value shown.
     due_at: AwareDatetime | None = None
 
 

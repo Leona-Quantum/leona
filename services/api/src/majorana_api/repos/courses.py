@@ -357,6 +357,25 @@ class DueDateCreatorOnly(AuthzError):
     """
 
 
+def normalise_due_at(value: dt.datetime | None) -> dt.datetime | None:
+    """The due date as stored: the same instant, in UTC, TRUNCATED to the minute.
+
+    UTC so the resource a PATCH returns reads the same as every later GET, which
+    gets the value back from Postgres in the session's zone (UTC).
+
+    Whole minutes because a due date is set and shown to the minute (the web
+    editor is a `datetime-local` input with no seconds), and `late` is decided on
+    it to the microsecond. Kept with seconds, a deadline of 08:00:30 would show as
+    08:00, an attempt at 08:00:10 would read on time against a deadline the reader
+    was shown as already passed, and re-saving the untouched form would move the
+    deadline (review on PR 969). Truncated, never rounded: "due at 08:00" means
+    08:00:00, so a stray 08:00:59 becomes the minute it was typed in, not the next.
+    """
+    if value is None:
+        return None
+    return value.astimezone(dt.timezone.utc).replace(second=0, microsecond=0)
+
+
 def _sets_due_at(patch: contracts.CourseModulePatch) -> bool:
     """Whether a patch touches the due date at all, clearing included.
 
@@ -442,12 +461,7 @@ async def update_course(
             if patch.kind is not None:
                 row.kind = patch.kind.value
             if _sets_due_at(patch):
-                # Stored as the instant it names; normalised to UTC so the resource
-                # this request returns reads the same as every later GET, which gets
-                # the value back from Postgres in the session's zone (UTC).
-                row.due_at = (
-                    patch.due_at.astimezone(dt.timezone.utc) if patch.due_at is not None else None
-                )
+                row.due_at = normalise_due_at(patch.due_at)
             row.updated_at = touched_now()
 
         wanted = {patch.id: patch.seq for patch in module_patches if patch.seq is not None}
