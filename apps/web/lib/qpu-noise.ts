@@ -482,6 +482,65 @@ export function deviceEstimateFor(prepared: PreparedCircuit, noise: QpuPublished
   return estimate;
 }
 
+/**
+ * Device estimates that came back from the simulator worker, remembered per
+ * circuit (by `preparedCircuitKey`) and per published-noise object, so the
+ * preview can read them during render the way it reads
+ * `peekDeviceEstimate`. The worker cannot key them by the noise object's
+ * identity itself: a structured clone never preserves it. The page can, and
+ * does, for the same reason `DEVICE_ESTIMATES` above does — a refetched
+ * catalog brings new noise objects and must never be served an estimate made
+ * from the old figures.
+ *
+ * Each estimate carries the circuit's whole ideal distribution, and every
+ * device's copy of it is the same array of numbers, so the first one stored
+ * for a circuit is kept and later estimates are pointed at it. That holds the
+ * page to one distribution per remembered circuit (8 MB at 20 qubits), as
+ * `PreparedCircuitCache` did when the simulation ran here, with `maxCircuits`
+ * bounding it the same way.
+ */
+export class DeviceEstimateCache {
+  readonly #circuits = new Map<string, { ideal: Float64Array | null; byNoise: WeakMap<QpuPublishedNoise, DeviceEstimate> }>();
+  readonly #maxCircuits: number;
+
+  constructor(maxCircuits: number) {
+    this.#maxCircuits = Math.max(1, maxCircuits);
+  }
+
+  /** The remembered estimate, or undefined. Cheap enough to call during render. */
+  peek(circuitKey: string, noise: QpuPublishedNoise): DeviceEstimate | undefined {
+    const circuit = this.#circuits.get(circuitKey);
+    if (!circuit) return undefined;
+    this.#circuits.delete(circuitKey);
+    this.#circuits.set(circuitKey, circuit);
+    return circuit.byNoise.get(noise);
+  }
+
+  /** Remembers `estimate` and returns the copy that is kept, which may share
+   * its ideal distribution with one stored earlier for the same circuit. */
+  store(circuitKey: string, noise: QpuPublishedNoise, estimate: DeviceEstimate): DeviceEstimate {
+    let circuit = this.#circuits.get(circuitKey);
+    if (circuit) {
+      this.#circuits.delete(circuitKey);
+    } else {
+      circuit = { ideal: null, byNoise: new WeakMap() };
+    }
+    this.#circuits.set(circuitKey, circuit);
+    let kept = estimate;
+    if (estimate.status === "computed") {
+      if (circuit.ideal && circuit.ideal.length === estimate.ideal.length) kept = { ...estimate, ideal: circuit.ideal };
+      else circuit.ideal = estimate.ideal;
+    }
+    circuit.byNoise.set(noise, kept);
+    while (this.#circuits.size > this.#maxCircuits) {
+      const oldest = this.#circuits.keys().next().value;
+      if (oldest === undefined) break;
+      this.#circuits.delete(oldest);
+    }
+    return kept;
+  }
+}
+
 /** The shot-dependent rest: sampling noise alone at `shots`, and the reading
  * it decides. One pass over the ideal distribution. */
 export function finishPreview(device: DeviceEstimate, shots: number): NoisyPreview {

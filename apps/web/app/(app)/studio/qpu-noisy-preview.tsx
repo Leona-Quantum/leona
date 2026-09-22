@@ -1,18 +1,16 @@
 "use client";
 
-import { memo, useEffect, useMemo, useState } from "react";
+import { memo, useEffect, useId, useMemo, useState } from "react";
 import type { QpuBackendInfo, QpuPublishedErrorFigure, QpuPublishedNoise, QpuPublishedNoiseProfile } from "../../../lib/qpu";
 import {
-  PreparedCircuitCache,
-  deviceEstimateFor,
+  DeviceEstimateCache,
   finishPreview,
-  peekDeviceEstimate,
   preparedCircuitKey,
-  scheduleAfterPaint,
   type DeviceEstimate,
   type MissingFigure,
   type NoisyPreview,
 } from "../../../lib/qpu-noise";
+import { simulator } from "../../../lib/simulator-client";
 import { formatShare } from "../../../lib/simulation-visual";
 import type { CpuSimulationLimits } from "../../../lib/studio-simulation";
 import type { PublicLocale } from "../../../lib/public-locale";
@@ -27,14 +25,20 @@ const FIGURE_FIELDS: { kind: MissingFigure; field: keyof Omit<QpuPublishedNoiseP
 ];
 
 /**
- * Prepared circuits (parse, gate tally, ideal distribution), shared by every
- * mount of the preview. Three entries bound the memory at 3 x 8 MB at the
- * 20-qubit tier and cover the realistic case: a person moving between a
- * couple of saved versions.
+ * Device estimates, shared by every mount of the preview, for the three most
+ * recent circuits. Three bounds the memory at 3 x 8 MB at the 20-qubit tier
+ * (each circuit's ideal distribution is held once) and covers the realistic
+ * case: a person moving between a couple of saved versions. The simulator
+ * worker keeps its own three prepared circuits, so a device not yet estimated
+ * for a remembered circuit costs no second simulation either.
  */
-const PREPARED_CIRCUITS = new PreparedCircuitCache(3);
+const ESTIMATES = new DeviceEstimateCache(3);
 
 const NOT_GATE_MODEL: DeviceEstimate = { status: "unavailable", reason: "not_gate_model" };
+
+/** A job that threw in the simulator: the kernel refusing the circuit, read as
+ * `prepareCircuitForPreview` already reads that refusal. */
+const COULD_NOT_ESTIMATE: DeviceEstimate = { status: "unavailable", reason: "unparsable" };
 
 /**
  * The hardware panel's "before you pay" estimate: what the chosen device's
@@ -61,15 +65,20 @@ function QpuNoisyPreviewPanel({
 }) {
   const noise = backend.published_noise ?? null;
   const wantsCircuit = Boolean(noise?.gate_model);
-  // Nothing expensive runs during render. The circuit half (a full statevector
-  // simulation, 720 ms at 20 qubits and 400 gates in headless Chromium) and the
-  // device half (210 ms for IBM's seven candidate machines at the same size)
-  // run in an effect, one macrotask after the next paint, so the placeholder
-  // below reaches the screen first. Both are cached: circuits by program text
-  // and limit VALUES, device estimates per circuit and noise object. Render
-  // only reads those caches, every dependency is a primitive, a memo of
-  // primitives, or a catalog object that keeps its identity, and the component
-  // is memo()'d, so nothing else in Studio re-rendering starts any of it again.
+  // Nothing expensive runs during render, or on this thread at all where a
+  // worker can be had. The circuit half (a full statevector simulation, 720 ms
+  // at 20 qubits and 400 gates in headless Chromium) and the device half
+  // (210 ms for IBM's seven candidate machines at the same size) run in the
+  // simulator worker (lib/simulator-client.ts), so the page keeps answering
+  // input while the placeholder below shows; without one, the client runs the
+  // same functions here one macrotask after the next paint, as this panel did
+  // before the worker. Results are cached: the worker keeps prepared circuits
+  // by program text and limit VALUES, the page keeps device estimates per
+  // circuit and noise object. Render only reads the page's cache, every
+  // dependency is a primitive, a memo of primitives, or a catalog object that
+  // keeps its identity, and the component is memo()'d, so nothing else in
+  // Studio re-rendering starts any of it again.
+  const consumer = `qpu-noisy-preview:${useId()}`;
   const qubitLimit = limits.cpuSimQubits;
   const operationLimit = limits.cpuSimOperations;
   const parseLimits = useMemo(
@@ -86,22 +95,30 @@ function QpuNoisyPreviewPanel({
     if (computed?.circuitKey === circuitKey && computed.noise === noise) {
       device = computed.device;
     } else {
-      const cachedCircuit = PREPARED_CIRCUITS.peek(qasm, parseLimits);
-      device = cachedCircuit ? peekDeviceEstimate(cachedCircuit, noise) ?? null : null;
+      device = ESTIMATES.peek(circuitKey, noise) ?? null;
     }
   }
   const needsWork = noise !== null && wantsCircuit && device === null;
 
   useEffect(() => {
     if (!needsWork || !noise) return;
-    // A newer circuit or device, or unmounting, cancels a run that has not
-    // started. A run that already finished is cached and tagged with its own
-    // circuit and noise, and the render above ignores one that does not match.
-    return scheduleAfterPaint(() => {
-      const prepared = PREPARED_CIRCUITS.getOrPrepare(qasm, parseLimits);
-      setComputed({ circuitKey: preparedCircuitKey(qasm, parseLimits), noise, device: deviceEstimateFor(prepared, noise) });
+    // A newer circuit or device, or unmounting, withdraws the ask: a job still
+    // waiting never runs, and one already running has its answer dropped (see
+    // simulator-client.ts). An answer that does arrive is cached and tagged
+    // with its own circuit and noise, and the render above ignores one that
+    // does not match.
+    let live = true;
+    const key = preparedCircuitKey(qasm, parseLimits);
+    void simulator.run(consumer, { kind: "noise_estimate", qasm, limits: parseLimits, noise }).then((outcome) => {
+      if (outcome.status === "superseded") return;
+      const estimate = ESTIMATES.store(key, noise, outcome.status === "done" ? outcome.result : COULD_NOT_ESTIMATE);
+      if (live) setComputed({ circuitKey: key, noise, device: estimate });
     });
-  }, [needsWork, qasm, parseLimits, noise]);
+    return () => {
+      live = false;
+      simulator.cancel(consumer);
+    };
+  }, [needsWork, qasm, parseLimits, noise, consumer]);
 
   // Only the shot-noise pass reads `shots`, so typing a shot count reruns one
   // pass over the ideal distribution and never the per-machine estimates.
