@@ -8,7 +8,7 @@ and a submission the deployment cannot make is a named block, never a spinner.
 from __future__ import annotations
 
 from enum import StrEnum
-from typing import Literal
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, computed_field
 
@@ -137,7 +137,14 @@ class QpuCostEstimate(BaseModel):
     model_config = ConfigDict(frozen=True)
 
     device_id: str
+    #: Per circuit, as the user asked for them.
     shots: int = Field(ge=1)
+    #: Circuits the submission sends: 1, or 3 with zero-noise extrapolation.
+    circuits: int = Field(default=1, ge=1)
+    #: Shots the provider executes in total, `shots * circuits`. Defaulted so a
+    #: caller building an estimate by hand without it still validates; the rate
+    #: card always sets it.
+    total_shots: int | None = None
     basis: EstimateBasis
     currency: Literal["USD"] = "USD"
     task_fee_usd: float | None = None
@@ -174,6 +181,11 @@ class QpuJobRequest(BaseModel):
     shots: int = Field(ge=1)
     qasm: str
     source_fingerprint: str
+    #: Zero-noise extrapolation (proposal 5, increment 4): also send the circuit
+    #: folded to 3x and 5x its gates, as two more PUBs of the SAME job, so one
+    #: queue wait covers all three. `shots` is per circuit. Off unless the user
+    #: opted in, and the worker reads the opt-in from the durable row.
+    zne: bool = False
 
 
 class QpuRunJobPayload(BaseModel):
@@ -247,3 +259,12 @@ class QpuJobRecord(BaseModel):
     #: is recorded. Set by submit() through `reported_backend_name`; None when
     #: the provider did not say.
     backend_name: str | None = None
+    #: What submit() recorded for mitigation (migration 0066): the readout
+    #: calibration snapshot and, for a ZNE submission, each PUB's scale factor
+    #: and transpiled two-qubit gate count. Shaped by `majorana_qpu.mitigation`;
+    #: None when nothing was recorded.
+    mitigation: dict[str, Any] | None = None
+    #: Counts of EVERY PUB in the job, in PUB order, from poll(). `raw_counts` is
+    #: still the first one exactly as before; a ZNE job's folded circuits are the
+    #: rest. None for a job that has not finished.
+    pub_counts: list[dict[str, int] | None] | None = None

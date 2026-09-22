@@ -1589,6 +1589,7 @@ def _qpu_record(
         source_fingerprint="fnv1a-deadbeef",
         submitted_at=None,
         created_at=None,
+        mitigation=None,
     )
 
 
@@ -1771,6 +1772,186 @@ async def test_qpu_run_poll_completes_the_record_with_raw_counts(monkeypatch):
     assert captured["transition"]["status"].value == "done"
     assert captured["transition"]["raw_counts"] == {"0": 66, "1": 62}
     assert "enqueued" not in captured
+
+
+_ZNE_BELL = (
+    'OPENQASM 3.0; include "stdgates.inc"; qubit[2] q; bit[2] c; '
+    "h q[0]; cx q[0], q[1]; c = measure q;"
+)
+
+
+async def test_a_zne_run_the_circuit_cannot_fold_closes_before_the_attempt_is_claimed(
+    monkeypatch,
+):
+    """Migration 0066. A reset cannot be undone, so the fold would be wrong and
+    the adapter refuses it; asking first means the record closes with "nothing
+    was sent" rather than consuming its one attempt on a submit that fails."""
+    from majorana_qpu.mitigation import requested_zne_record
+
+    monkeypatch.setattr(handlers, "submission_block_reason", lambda **_: None)
+    record = _qpu_record("queued")
+    record.qasm = (
+        'OPENQASM 3.0; include "stdgates.inc"; qubit[1] q; bit[1] c; '
+        "h q[0]; reset q[0]; c[0] = measure q[0];"
+    )
+    record.mitigation = requested_zne_record()
+    captured = _patch_qpu_repo(monkeypatch, record)
+
+    class NeverSubmit:
+        def submit(self, request):
+            raise AssertionError("an unfoldable ZNE circuit must not reach the provider")
+
+    session = _FakeQpuSession()
+    await handlers.handle_qpu_run(session, _qpu_payload(str(record.id)), provider=NeverSubmit())
+
+    assert captured["transition"]["status"].value == "error"
+    assert "zero-noise extrapolation cannot be applied" in captured["transition"]["error"]
+    assert "Nothing was sent to IBM" in captured["transition"]["error"]
+    assert "claims" not in captured
+    assert "enqueued" not in captured
+    assert session.commits == 1
+
+
+async def test_a_zne_run_is_submitted_with_zne_and_records_what_submit_reported(monkeypatch):
+    from majorana_qpu import QpuJobRecord, QpuJobStatus, QpuProviderKey
+    from majorana_qpu.mitigation import requested_zne_record
+
+    monkeypatch.setattr(handlers, "submission_block_reason", lambda **_: None)
+    record = _qpu_record("queued")
+    record.qasm = _ZNE_BELL
+    record.mitigation = requested_zne_record()
+    captured = _patch_qpu_repo(monkeypatch, record)
+    readout = {"register": "c", "calibrated_at": None, "bits": []}
+
+    class FakeProvider:
+        def submit(self, request):
+            captured["submitted"] = request
+            return QpuJobRecord(
+                provider=QpuProviderKey.IBM,
+                provider_job_id="prov-zne",
+                device_id=request.device_id,
+                shots=request.shots,
+                status=QpuJobStatus.QUEUED,
+                source_fingerprint=request.source_fingerprint,
+                mitigation={
+                    "version": 1,
+                    "readout": readout,
+                    "zne": {"two_qubit_gates": [1, 3, 5]},
+                },
+            )
+
+    await handlers.handle_qpu_run(
+        _FakeQpuSession(), _qpu_payload(str(record.id)), provider=FakeProvider()
+    )
+
+    assert captured["submitted"].zne is True
+    written = captured["transition"]["mitigation"]
+    # The user's request survives and the adapter's report is added beside it.
+    assert written["zne"] == {
+        "scale_factors": [1, 3, 5],
+        "folding": "global",
+        "two_qubit_gates": [1, 3, 5],
+    }
+    assert written["readout"] == readout
+
+
+async def test_a_run_without_zne_is_submitted_without_it_and_keeps_its_calibration(monkeypatch):
+    """Readout correction needs no opt-in: every run records the calibration."""
+    from majorana_qpu import QpuJobRecord, QpuJobStatus, QpuProviderKey
+
+    monkeypatch.setattr(handlers, "submission_block_reason", lambda **_: None)
+    record = _qpu_record("queued")
+    captured = _patch_qpu_repo(monkeypatch, record)
+
+    class FakeProvider:
+        def submit(self, request):
+            captured["submitted"] = request
+            return QpuJobRecord(
+                provider=QpuProviderKey.IBM,
+                provider_job_id="prov-1",
+                device_id=request.device_id,
+                shots=request.shots,
+                status=QpuJobStatus.QUEUED,
+                source_fingerprint=request.source_fingerprint,
+                mitigation={"version": 1, "readout": {"register": "c", "bits": []}},
+            )
+
+    await handlers.handle_qpu_run(
+        _FakeQpuSession(), _qpu_payload(str(record.id)), provider=FakeProvider()
+    )
+
+    assert captured["submitted"].zne is False
+    assert captured["transition"]["mitigation"] == {
+        "version": 1,
+        "readout": {"register": "c", "bits": []},
+    }
+
+
+async def test_a_finished_zne_run_stores_the_folded_counts_beside_the_raw_ones(monkeypatch):
+    from majorana_qpu import QpuJobRecord, QpuJobStatus, QpuProviderKey
+    from majorana_qpu.mitigation import merged_after_submit, requested_zne_record
+
+    monkeypatch.setattr(handlers, "submission_block_reason", lambda **_: None)
+    record = _qpu_record("running", provider_job_id="prov-zne")
+    record.mitigation = merged_after_submit(
+        requested_zne_record(), {"zne": {"two_qubit_gates": [1, 3, 5]}}
+    )
+    captured = _patch_qpu_repo(monkeypatch, record)
+    pubs = [{"00": 500, "11": 524}, {"00": 470, "11": 554}, {"00": 440, "11": 584}]
+
+    class FakeProvider:
+        def poll(self, provider_job_id):
+            return QpuJobRecord(
+                provider=QpuProviderKey.IBM,
+                provider_job_id=provider_job_id,
+                device_id="ibm_brisbane",
+                shots=0,
+                status=QpuJobStatus.DONE,
+                source_fingerprint="",
+                raw_counts=pubs[0],
+                pub_counts=pubs,
+            )
+
+    await handlers.handle_qpu_run(
+        _FakeQpuSession(), _qpu_payload(str(record.id)), provider=FakeProvider()
+    )
+
+    transition = captured["transition"]
+    assert transition["status"].value == "done"
+    # raw_counts is still exactly the submitted circuit's counts.
+    assert transition["raw_counts"] == pubs[0]
+    assert transition["mitigation"]["zne"]["counts"] == {"3": pubs[1], "5": pubs[2]}
+    assert transition["mitigation"]["zne"]["two_qubit_gates"] == [1, 3, 5]
+
+
+async def test_a_finished_run_without_zne_writes_no_mitigation_at_completion(monkeypatch):
+    from majorana_qpu import QpuJobRecord, QpuJobStatus, QpuProviderKey
+
+    monkeypatch.setattr(handlers, "submission_block_reason", lambda **_: None)
+    record = _qpu_record("running", provider_job_id="prov-1")
+    record.mitigation = {"version": 1, "readout": {"register": "c", "bits": []}}
+    captured = _patch_qpu_repo(monkeypatch, record)
+
+    class FakeProvider:
+        def poll(self, provider_job_id):
+            return QpuJobRecord(
+                provider=QpuProviderKey.IBM,
+                provider_job_id=provider_job_id,
+                device_id="ibm_brisbane",
+                shots=0,
+                status=QpuJobStatus.DONE,
+                source_fingerprint="",
+                raw_counts={"00": 1},
+                pub_counts=[{"00": 1}],
+            )
+
+    await handlers.handle_qpu_run(
+        _FakeQpuSession(), _qpu_payload(str(record.id)), provider=FakeProvider()
+    )
+
+    # None means "leave the column as it is": the calibration written at submit
+    # stays, and nothing about ZNE is invented for a run that did not ask for it.
+    assert captured["transition"]["mitigation"] is None
 
 
 async def test_a_redelivered_job_never_submits_to_the_provider_twice(monkeypatch):

@@ -6940,6 +6940,19 @@
             "title": "Id",
             "type": "string"
           },
+          "mitigation": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Mitigation"
+          },
           "provider": {
             "$ref": "#/components/schemas/QpuProvider"
           },

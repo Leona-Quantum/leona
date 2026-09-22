@@ -1,4 +1,5 @@
 import { compareMeasuredToIdeal, type IdealComparison, type ParseLimits } from "./qpu-ideal.ts";
+import { compareAndMitigate, type MitigatedReadings } from "./qpu-mitigation.ts";
 import { PreparedCircuitCache, estimateDevice, type DeviceEstimate } from "./qpu-noise.ts";
 import type { QpuPublishedNoise } from "./qpu.ts";
 import type { ParsedBuilderCircuit } from "./studio-parse.ts";
@@ -27,7 +28,8 @@ import { sampleCircuitCounts, type CpuSimulationLimits } from "./studio-simulati
  * ## Same numbers, by construction
  *
  * `runSimulatorJob` calls the SAME pure functions the page called before —
- * `compareMeasuredToIdeal`, `PreparedCircuitCache` + `estimateDevice`,
+ * `compareMeasuredToIdeal` (and `compareAndMitigate`, which is it plus the
+ * mitigated readings), `PreparedCircuitCache` + `estimateDevice`,
  * `sampleCircuitCounts` — imported, never re-implemented. The worker runs it;
  * so does the page itself wherever a worker is unavailable (SSR, `node
  * --test`, a browser that refuses one), which is what makes the fallback
@@ -49,6 +51,20 @@ export type SimulatorJob =
       limits: CpuSimulationLimits;
       maxRows?: number;
     }
+  | {
+      /** `compare_ideal` plus the run's mitigated readings (proposal 5,
+       * increment 4), from the same simulation. The readings need the dense
+       * ideal distribution, so they are worked out here, beside it, and only
+       * their small summary crosses back (qpu-mitigation.ts). */
+      kind: "compare_mitigated";
+      qasm: string;
+      submittedFingerprint: string;
+      counts: Record<string, number> | null;
+      limits: CpuSimulationLimits;
+      maxRows?: number;
+      /** The run's stored `mitigation` document, read defensively by `readMitigation`. */
+      mitigation: unknown;
+    }
   | { kind: "noise_estimate"; qasm: string; limits: ParseLimits; noise: QpuPublishedNoise }
   | { kind: "cpu_counts"; circuit: ParsedBuilderCircuit; shots: number; seed: number };
 
@@ -56,6 +72,7 @@ export type SimulatorJobKind = SimulatorJob["kind"];
 
 export type SimulatorResults = {
   compare_ideal: IdealComparison;
+  compare_mitigated: { comparison: IdealComparison; readings: MitigatedReadings | null };
   noise_estimate: DeviceEstimate;
   cpu_counts: Record<string, number>;
 };
@@ -93,6 +110,15 @@ export function runSimulatorJob(job: SimulatorJob, context: SimulatorContext): S
         limits: job.limits,
         maxRows: job.maxRows,
       });
+    case "compare_mitigated":
+      return compareAndMitigate({
+        qasm: job.qasm,
+        submittedFingerprint: job.submittedFingerprint,
+        counts: job.counts,
+        limits: job.limits,
+        maxRows: job.maxRows,
+        mitigation: job.mitigation,
+      });
     case "noise_estimate":
       // Exactly what the preview did on the page: prepare (or reuse) the
       // circuit, then estimate the device. Not `deviceEstimateFor`, whose
@@ -108,7 +134,10 @@ export function runSimulatorJob(job: SimulatorJob, context: SimulatorContext): S
 export function isSimulatorRequest(value: unknown): value is SimulatorRequest {
   if (!isObject(value) || value.protocol !== SIMULATOR_PROTOCOL_VERSION || !Number.isInteger(value.id)) return false;
   const job = value.job;
-  return isObject(job) && (job.kind === "compare_ideal" || job.kind === "noise_estimate" || job.kind === "cpu_counts");
+  return (
+    isObject(job)
+    && (job.kind === "compare_ideal" || job.kind === "compare_mitigated" || job.kind === "noise_estimate" || job.kind === "cpu_counts")
+  );
 }
 
 export function isSimulatorResponse(value: unknown): value is SimulatorResponse {

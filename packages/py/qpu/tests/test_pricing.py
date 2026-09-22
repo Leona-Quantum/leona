@@ -52,3 +52,24 @@ def test_unknown_device_and_bad_shots_fail_closed():
         estimate("braket.ionq.forte", shots=0)
     with pytest.raises(UnknownDeviceError):
         backend_info("nope")
+
+
+def test_an_estimate_for_three_circuits_counts_every_task_and_every_shot():
+    """Zero-noise extrapolation sends three circuits. Each is its own task and
+    runs every shot, so both the task fee and the shot fees triple."""
+    from majorana_qpu import estimate
+
+    one = estimate("braket.ionq.forte", 100)
+    three = estimate("braket.ionq.forte", 100, circuits=3)
+    assert (one.circuits, one.total_shots) == (1, 100)
+    assert (three.circuits, three.total_shots, three.shots) == (3, 300, 100)
+    assert three.task_fee_usd == pytest.approx(3 * one.task_fee_usd)
+    assert three.shot_fees_usd == pytest.approx(3 * one.shot_fees_usd)
+    assert three.total_usd == pytest.approx(3 * one.total_usd)
+
+
+def test_zero_circuits_is_refused():
+    from majorana_qpu import estimate
+
+    with pytest.raises(ValueError):
+        estimate("ibm.open_plan", 10, circuits=0)

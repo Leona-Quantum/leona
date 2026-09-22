@@ -136,6 +136,13 @@ export const MAX_JOB_BUDGET_MS = 10 * 60_000;
  * a comparison and the simulation inside it. Rounded up. */
 const COMPARISON_PASSES = 500;
 
+/** The mitigated readings beside a comparison (qpu-mitigation.ts): one pass
+ * per qubit for the readout correction, then its projection's sort, three
+ * distances and the two zero-noise distributions. Measured in Node at 20
+ * qubits, 3 runs: 430 to 499 ms per call, about 320 passes at the rate above.
+ * Rounded up, plus the per-qubit passes counted separately. */
+const MITIGATION_PASSES_BEYOND_QUBITS = 400;
+
 /** Per device, a noise estimate mixes with uniform (one pass), applies the
  * readout flip (one pass per qubit), takes two distances and picks the top
  * rows (about four passes). Counted as qubits + 8. */
@@ -160,6 +167,12 @@ export function simulatorJobBudgetMs(job: SimulatorJob): number {
       const program = programSize(job.qasm, job.limits);
       qubits = program.qubits;
       passes = program.steps + COMPARISON_PASSES;
+      break;
+    }
+    case "compare_mitigated": {
+      const program = programSize(job.qasm, job.limits);
+      qubits = program.qubits;
+      passes = program.steps + COMPARISON_PASSES + program.qubits + MITIGATION_PASSES_BEYOND_QUBITS;
       break;
     }
     case "noise_estimate": {

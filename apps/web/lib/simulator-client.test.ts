@@ -464,6 +464,15 @@ test("the budget is at least twenty times each measured 20-qubit job, and stays 
     assert.ok(budget < MAX_JOB_BUDGET_MS, `${measuredJob.kind}: a measured job should not need the ceiling`);
   }
 
+  // The mitigated comparison (proposal 5, increment 4) is the comparison plus
+  // about half a second of readout correction and extrapolation at 20 qubits
+  // (430 to 499 ms measured in Node, qpu-mitigation.ts), so its budget covers
+  // twenty times the sum of the two measurements and is above the plain one.
+  const mitigated = simulatorJobBudgetMs({ kind: "compare_mitigated", qasm: program(20, 1_000), submittedFingerprint: "x", counts: null, limits, mitigation: null });
+  assert.ok(mitigated >= 20 * (2_412 + 499), `compare_mitigated: budget ${mitigated} ms is under 20 x the measured cost`);
+  assert.ok(mitigated > simulatorJobBudgetMs(measured[0][0]));
+  assert.ok(mitigated < MAX_JOB_BUDGET_MS);
+
   // A small job gets the floor, which covers loading the worker itself.
   assert.equal(simulatorJobBudgetMs(job(1)), MIN_JOB_BUDGET_MS);
   assert.equal(simulatorJobBudgetMs({ kind: "compare_ideal", qasm: program(2, 2), submittedFingerprint: "x", counts: null, limits }), MIN_JOB_BUDGET_MS);

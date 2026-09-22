@@ -1266,6 +1266,14 @@ class QpuRunRecord(_ResourceBase):
     rate_source: str
     rate_confirmed_on: str
     raw_counts: dict[str, int] | None = None
+    # Mitigation inputs (migration 0066), never a replacement for `raw_counts`:
+    # the zero-noise-extrapolation opt-in, the readout calibration the backend
+    # reported at submit time for each measured bit's physical qubit, and the
+    # counts of the 3x and 5x folded circuits. The corrections are computed by
+    # the reader from these (apps/web/lib/qpu-mitigation.ts). Versioned by its
+    # own `version` field and shaped by `majorana_qpu.mitigation`, which this
+    # package cannot import, so it is typed loosely here and read defensively.
+    mitigation: dict[str, Any] | None = None
     error: str | None = None
     submitted_at: datetime | None = None
     completed_at: datetime | None = None

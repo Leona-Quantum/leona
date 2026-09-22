@@ -3634,6 +3634,13 @@ export interface components {
              * Format: uuid
              */
             id: string;
+            /**
+             * Mitigation
+             * @default null
+             */
+            mitigation: {
+                [key: string]: unknown;
+            } | null;
             provider: components["schemas"]["QpuProvider"];
             /**
              * Provider Job Id

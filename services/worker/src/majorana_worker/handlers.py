@@ -58,6 +58,12 @@ from majorana_qpu import (
     QpuRunJobPayload,
     submission_block_reason,
 )
+from majorana_qpu.mitigation import (
+    merged_after_submit,
+    with_folded_counts,
+    zne_refusal,
+    zne_requested,
+)
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 from majorana_sandbox import (
     DEFAULT_MEMORY_MB,
@@ -3016,6 +3022,30 @@ async def handle_qpu_run(
     qpu = provider if provider is not None else _ibm_provider(*credential)
 
     if status is QpuRunStatus.QUEUED:
+        zne = zne_requested(record.mitigation)
+        if zne:
+            # Asked BEFORE the claim below, so a circuit zero-noise extrapolation
+            # cannot fold (a reset, a qubit reused after its measurement) closes
+            # with "nothing was sent" instead of consuming the record's one
+            # attempt on a submit the adapter would refuse. Not silently run
+            # without ZNE either: the user chose it after being shown what it
+            # costs, and a run that quietly did less than they asked for would
+            # look, on the history page, like a run where ZNE was never offered.
+            refusal = zne_refusal(record.qasm)
+            if refusal is not None:
+                await qpu_runs_repo.transition(
+                    scope,
+                    session,
+                    record.id,
+                    QpuRunStatus.ERROR,
+                    error=(
+                        f"zero-noise extrapolation cannot be applied to this circuit: {refusal}. "
+                        "Nothing was sent to IBM; submit it again without zero-noise "
+                        "extrapolation."
+                    ),
+                )
+                await session.commit()
+                return
         # Claim the attempt and COMMIT it before the provider is contacted, so a
         # redelivery of this job cannot contact them a second time.
         #
@@ -3054,6 +3084,7 @@ async def handle_qpu_run(
                 shots=record.shots,
                 qasm=record.qasm,
                 source_fingerprint=record.source_fingerprint,
+                zne=zne,
             ),
         )
         # No `submitted_at` here: the claim above already stamped it, and that
@@ -3071,6 +3102,10 @@ async def handle_qpu_run(
             # adapter holds the backend it chose; None when the provider did not
             # name one, and the column stays NULL rather than guessed.
             backend_name=submitted.backend_name,
+            # The readout calibration and, for ZNE, each PUB's transpiled gate
+            # count (migration 0066), for the same reason: the adapter only
+            # holds the backend and the ISA circuits during submit.
+            mitigation=merged_after_submit(record.mitigation, submitted.mitigation),
         )
         if credential is not None:
             # After the provider accepted it, not before. A submit that IBM
@@ -3105,6 +3140,13 @@ async def handle_qpu_run(
                 record.id,
                 QpuRunStatus.DONE,
                 raw_counts=polled.raw_counts,
+                # The folded circuits' counts land in the same transition as the
+                # raw ones, so a finished record never has half its evidence.
+                mitigation=(
+                    with_folded_counts(record.mitigation, polled.pub_counts)
+                    if zne_requested(record.mitigation)
+                    else None
+                ),
             )
             await session.commit()
             return

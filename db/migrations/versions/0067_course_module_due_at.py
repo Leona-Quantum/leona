@@ -1,7 +1,7 @@
 """A due date per course module: `course_modules.due_at`.
 
 Revision ID: 0067
-Revises: 0065
+Revises: 0066
 
 Proposal 8 (ai-ops 349, "Notebooks and courses for a class"), the assignments
 slice: the course's creator can say when each module is due, and the gradebook
@@ -9,13 +9,11 @@ reads an attempt as late, or a module nobody attempted as missing, against it.
 
 ## Numbering
 
-`0067`, revising `0065`, the head of `dev` when this was written. 0066 is claimed
-by the open hardware-mitigation branch (`add/qpu-mitigation`) and 0068 by the
-comments branch (`add/workspace-comments`); both revise 0065 as well. The
-revision id is a label; what alembic follows is `down_revision`, so whichever of
-the three lands after another re-points its `down_revision` at the new head when
-it merges `dev` in. Two heads never reach `dev`: CI's `upgrade head` refuses to
-choose between them.
+`0067`, revising `0066` (hardware mitigation, PR 970), the head of `dev` once that
+landed. 0068 is claimed by the comments branch (`add/workspace-comments`), which
+re-points its own `down_revision` at whichever head it merges onto. The revision
+id is a label; what alembic follows is `down_revision`. Two heads never reach
+`dev`: CI's `upgrade head` refuses to choose between them.
 
 ## The column
 
@@ -58,7 +56,7 @@ import sqlalchemy as sa
 from alembic import op
 
 revision = "0067"
-down_revision = "0065"
+down_revision = "0066"
 branch_labels = None
 depends_on = None
 

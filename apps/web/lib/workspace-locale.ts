@@ -325,6 +325,28 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
     hardwareIdealUnavailable: (reason: string) => string;
     /** Link from the hardware panel to the hardware-runs page. */
     hardwareRunHistory: string;
+    /* Mitigation (proposal 5, increment 4). Zero-noise extrapolation is opt-in
+       and its cost is shown before submitting; readout correction needs no
+       opt-in. Both are computed from the raw counts and shown beside them. */
+    hardwareZneOption: string;
+    /** What opting in sends and what it uses, on IBM's free queue. */
+    hardwareZneCost: (circuits: string, totalShots: string, shots: string) => string;
+    /** Under a billed estimate: the fees above already cover every circuit. */
+    hardwareZnePriced: (circuits: string, totalShots: string) => string;
+    hardwareMitigationHeading: string;
+    hardwareMitigationNote: string;
+    hardwareReadoutCorrected: string;
+    hardwareReadoutGloss: string;
+    hardwareReadoutCalibratedAt: (date: string) => string;
+    hardwareReadoutSymmetric: string;
+    hardwareZneRichardson: string;
+    hardwareZneLinear: string;
+    hardwareZneGloss: string;
+    hardwareZneClipped: (share: string) => string;
+    hardwareZneGates: (base: string, three: string, five: string) => string;
+    hardwareMitigationUnavailable: (reason: string) => string;
+    /** Column heading in the measured-against-ideal table. */
+    hardwareReadoutCorrectedShare: string;
     hardwarePricedOnly: string;
     hardwareBlockedReason: (reason: string) => string;
     //: The weekly hardware BUDGET is spent, which is not the same thing as the
@@ -859,6 +881,9 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
     columnDistance: string;
     columnShotNoise: string;
     columnFidelity: string;
+    columnReadoutCorrected: string;
+    columnZne: string;
+    zneRequested: string;
     status: (status: string) => string;
     inProgress: string;
     endedWithoutCounts: string;
@@ -1316,6 +1341,29 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
         timed_out: "The ideal outcome took too long to work out in this browser, so Leona stopped it.",
       }[reason] ?? "No ideal outcome could be computed for this job."),
       hardwareRunHistory: "See every hardware run in this workspace",
+      hardwareZneOption: "Also run zero-noise extrapolation",
+      hardwareZneCost: (circuits, totalShots, shots) =>
+        `Sends ${circuits} circuits in one job: yours, and two copies with 3 and 5 times its gates. That is ${totalShots} shots instead of ${shots}, so it uses about three times as much of your IBM allowance, or a bit more, since the longer copies take longer to run.`,
+      hardwareZnePriced: (circuits, totalShots) => `Priced for ${circuits} circuits, ${totalShots} shots in total.`,
+      hardwareMitigationHeading: "Mitigated readings",
+      hardwareMitigationNote: "Computed in this browser from the raw counts above, which stay exactly as the device returned them.",
+      hardwareReadoutCorrected: "Readout corrected",
+      hardwareReadoutGloss: "Undoes the readout errors IBM reported for the measured qubits when the job was sent, then adjusts the result to the nearest valid set of probabilities.",
+      hardwareReadoutCalibratedAt: (date) => `IBM measured those error rates on ${date}.`,
+      hardwareReadoutSymmetric: "IBM reported one error rate per qubit, so the same figure is used for reading 0 as 1 and 1 as 0.",
+      hardwareZneRichardson: "Zero-noise estimate (Richardson)",
+      hardwareZneLinear: "Zero-noise estimate (straight-line fit)",
+      hardwareZneGloss: "Zero-noise extrapolation runs the circuit at three noise levels and follows the trend back to zero noise. The result is an estimate, and it can overshoot: a small change in the counts can move it a lot. When the two fits above disagree, neither is reliable.",
+      hardwareZneClipped: (share) => `The fit went below zero for some outcomes (${share} in total). Those were set to zero and the rest scaled up, which is a sign the estimate overshot.`,
+      hardwareZneGates: (base, three, five) => `Two-qubit gates on the device: ${base}, ${three} and ${five}.`,
+      hardwareMitigationUnavailable: (reason) => ({
+        no_calibration: "No readout calibration was recorded for this run, so no correction is shown.",
+        calibration_mismatch: "The recorded calibration does not match the measured bits, so no correction is shown.",
+        calibration_unusable: "A measured qubit reads wrong at least half the time, so no correction is shown.",
+        zne_no_counts: "Zero-noise extrapolation was requested, but the counts for the longer circuits did not come back.",
+        could_not_compute: "This correction could not be worked out from what was stored for this run. The raw reading above is unaffected.",
+      }[reason] ?? "No mitigated reading could be computed for this run."),
+      hardwareReadoutCorrectedShare: "Readout corrected",
       hardwarePricedOnly: "Leona can price this device but cannot send jobs to it yet. Only IBM devices can be run today.",
       hardwareBlockedReason: (reason) => ({
         provider_not_supported: "Leona cannot send jobs to this device yet. Only IBM devices can be run today.",
@@ -1985,6 +2033,9 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
     columnDistance: "Distance from ideal",
     columnShotNoise: "From sampling alone",
     columnFidelity: "Hellinger fidelity",
+    columnReadoutCorrected: "Distance after readout correction",
+    columnZne: "Distance of the zero-noise estimate (Richardson)",
+    zneRequested: "Zero-noise extrapolation",
     status: (status) => ({
       queued: "Queued",
       running: "Running",
@@ -2437,6 +2488,29 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
         timed_out: "このブラウザでは理論値の計算に時間がかかりすぎたため、計算を中止しました。",
       }[reason] ?? "このジョブの理論値を計算できませんでした。"),
       hardwareRunHistory: "このワークスペースの実機での実行履歴をすべて見る",
+      hardwareZneOption: "ゼロノイズ外挿も実行する",
+      hardwareZneCost: (circuits, totalShots, shots) =>
+        `1つのジョブで${circuits}個の回路を送ります。元の回路と、ゲート数を3倍・5倍にした2つの複製です。ショット数は${shots}ではなく合計${totalShots}になるため、IBMの利用枠をおよそ3倍使います。長い複製は実行にも時間がかかるので、実際にはそれより少し多くなります。`,
+      hardwareZnePriced: (circuits, totalShots) => `${circuits}個の回路、合計${totalShots}ショット分の料金です。`,
+      hardwareMitigationHeading: "エラー緩和後の値",
+      hardwareMitigationNote: "上の生の測定結果から、このブラウザ内で計算した値です。生の測定結果は実機が返したまま変更していません。",
+      hardwareReadoutCorrected: "読み出し補正後",
+      hardwareReadoutGloss: "ジョブ送信時にIBMが報告した、測定した量子ビットの読み出しエラーを打ち消し、結果を最も近い有効な確率分布に直した値です。",
+      hardwareReadoutCalibratedAt: (date) => `このエラー率はIBMが${date}に測定したものです。`,
+      hardwareReadoutSymmetric: "IBMは量子ビットごとに1つのエラー率しか報告していないため、0を1と読む誤りにも1を0と読む誤りにも同じ値を使っています。",
+      hardwareZneRichardson: "ゼロノイズ推定（リチャードソン外挿）",
+      hardwareZneLinear: "ゼロノイズ推定（直線フィット）",
+      hardwareZneGloss: "ゼロノイズ外挿では、回路を3段階のノイズで実行し、その傾向からノイズがゼロの場合の値を推定します。測定値ではなく推定値で、行き過ぎることがあります。測定結果が少し変わるだけで大きく動くこともあります。2つのフィットの結果が食い違う場合は、どちらもあまり信頼できません。",
+      hardwareZneClipped: (share) => `一部の測定結果でフィットがゼロを下回りました（合計${share}）。それらをゼロにして残りを拡大しています。推定が行き過ぎている兆候です。`,
+      hardwareZneGates: (base, three, five) => `実機上の2量子ビットゲート数: ${base}、${three}、${five}`,
+      hardwareMitigationUnavailable: (reason) => ({
+        no_calibration: "この実行では読み出しの較正値が記録されていないため、補正は表示しません。",
+        calibration_mismatch: "記録された較正値が測定したビットと一致しないため、補正は表示しません。",
+        calibration_unusable: "測定した量子ビットの中に、半分以上の確率で読み間違えるものがあるため、補正は表示しません。",
+        zne_no_counts: "ゼロノイズ外挿を指定しましたが、長い回路の測定結果が返ってきませんでした。",
+        could_not_compute: "この実行で保存された内容からは、この補正を計算できませんでした。上の生の測定結果には影響ありません。",
+      }[reason] ?? "この実行ではエラー緩和後の値を計算できませんでした。"),
+      hardwareReadoutCorrectedShare: "読み出し補正後",
       hardwarePricedOnly: "この実機は料金の見積もりのみ対応しており、まだジョブを送信できません。現在実行できるのはIBMの実機のみです。",
       hardwareBlockedReason: (reason) => ({
         provider_not_supported: "この実機にはまだジョブを送信できません。現在実行できるのはIBMの実機のみです。",
@@ -3101,6 +3175,9 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
     columnDistance: "理論値との距離",
     columnShotNoise: "サンプリングのみ",
     columnFidelity: "ヘリンガー忠実度",
+    columnReadoutCorrected: "読み出し補正後の距離",
+    columnZne: "ゼロノイズ推定の距離（リチャードソン外挿）",
+    zneRequested: "ゼロノイズ外挿あり",
     status: (status) => ({
       queued: "待機中",
       running: "実行中",
