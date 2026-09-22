@@ -449,6 +449,39 @@ export function estimateDevice(input: {
   };
 }
 
+/**
+ * `estimateDevice`, remembered per prepared circuit and per published-noise
+ * object. The device half is not free either: IBM's seven candidate machines
+ * cost about 210 ms at 20 qubits (measured in headless Chromium), so switching
+ * back to a device already estimated must not pay it again. Keyed by object
+ * identity in WeakMaps, so an estimate lives exactly as long as the prepared
+ * circuit it came from (evicted with it from `PreparedCircuitCache`) and a
+ * refetched catalog, which brings new noise objects, is never served an
+ * estimate from the old figures.
+ */
+const DEVICE_ESTIMATES = new WeakMap<PreparedCircuit, WeakMap<QpuPublishedNoise, DeviceEstimate>>();
+
+/** The remembered estimate, or undefined. Cheap enough to call during render. */
+export function peekDeviceEstimate(prepared: PreparedCircuit, noise: QpuPublishedNoise): DeviceEstimate | undefined {
+  return DEVICE_ESTIMATES.get(prepared)?.get(noise);
+}
+
+/** The remembered estimate, computing it on a miss. The miss is the
+ * expensive path, so callers keep it off the render path. */
+export function deviceEstimateFor(prepared: PreparedCircuit, noise: QpuPublishedNoise): DeviceEstimate {
+  let byNoise = DEVICE_ESTIMATES.get(prepared);
+  if (!byNoise) {
+    byNoise = new WeakMap();
+    DEVICE_ESTIMATES.set(prepared, byNoise);
+  }
+  let estimate = byNoise.get(noise);
+  if (!estimate) {
+    estimate = estimateDevice({ prepared, noise });
+    byNoise.set(noise, estimate);
+  }
+  return estimate;
+}
+
 /** The shot-dependent rest: sampling noise alone at `shots`, and the reading
  * it decides. One pass over the ideal distribution. */
 export function finishPreview(device: DeviceEstimate, shots: number): NoisyPreview {

@@ -1,17 +1,17 @@
 "use client";
 
 import { memo, useEffect, useMemo, useState } from "react";
-import type { QpuBackendInfo, QpuPublishedErrorFigure, QpuPublishedNoiseProfile } from "../../../lib/qpu";
+import type { QpuBackendInfo, QpuPublishedErrorFigure, QpuPublishedNoise, QpuPublishedNoiseProfile } from "../../../lib/qpu";
 import {
   PreparedCircuitCache,
-  estimateDevice,
+  deviceEstimateFor,
   finishPreview,
+  peekDeviceEstimate,
   preparedCircuitKey,
   scheduleAfterPaint,
   type DeviceEstimate,
   type MissingFigure,
   type NoisyPreview,
-  type PreparedCircuit,
 } from "../../../lib/qpu-noise";
 import { formatShare } from "../../../lib/simulation-visual";
 import type { CpuSimulationLimits } from "../../../lib/studio-simulation";
@@ -33,6 +33,8 @@ const FIGURE_FIELDS: { kind: MissingFigure; field: keyof Omit<QpuPublishedNoiseP
  * couple of saved versions.
  */
 const PREPARED_CIRCUITS = new PreparedCircuitCache(3);
+
+const NOT_GATE_MODEL: DeviceEstimate = { status: "unavailable", reason: "not_gate_model" };
 
 /**
  * The hardware panel's "before you pay" estimate: what the chosen device's
@@ -59,47 +61,50 @@ function QpuNoisyPreviewPanel({
 }) {
   const noise = backend.published_noise ?? null;
   const wantsCircuit = Boolean(noise?.gate_model);
-  // The circuit half (a full statevector simulation, close to a second at the
-  // 20-qubit tier) never runs during render: it would freeze Studio for that
-  // long on every new circuit. It runs in an effect, one macrotask after the
-  // next paint, so the placeholder below reaches the screen first. The result
-  // is cached by program text and limit VALUES, every dependency is a
-  // primitive or a memo of primitives, and the component is memo()'d, so
-  // nothing else in Studio re-rendering can start it again.
+  // Nothing expensive runs during render. The circuit half (a full statevector
+  // simulation, 720 ms at 20 qubits and 400 gates in headless Chromium) and the
+  // device half (210 ms for IBM's seven candidate machines at the same size)
+  // run in an effect, one macrotask after the next paint, so the placeholder
+  // below reaches the screen first. Both are cached: circuits by program text
+  // and limit VALUES, device estimates per circuit and noise object. Render
+  // only reads those caches, every dependency is a primitive, a memo of
+  // primitives, or a catalog object that keeps its identity, and the component
+  // is memo()'d, so nothing else in Studio re-rendering starts any of it again.
   const qubitLimit = limits.cpuSimQubits;
   const operationLimit = limits.cpuSimOperations;
   const parseLimits = useMemo(
     () => ({ cpuSimQubits: qubitLimit, cpuSimOperations: operationLimit }),
     [qubitLimit, operationLimit],
   );
-  const key = preparedCircuitKey(qasm, parseLimits);
-  const [computed, setComputed] = useState<{ key: string; prepared: PreparedCircuit } | null>(null);
-  const prepared = !wantsCircuit
-    ? null
-    : computed?.key === key
-      ? computed.prepared
-      : PREPARED_CIRCUITS.peek(qasm, parseLimits) ?? null;
-  const needsWork = wantsCircuit && prepared === null;
+  const circuitKey = preparedCircuitKey(qasm, parseLimits);
+  const [computed, setComputed] = useState<{ circuitKey: string; noise: QpuPublishedNoise; device: DeviceEstimate } | null>(null);
+
+  let device: DeviceEstimate | null = null;
+  if (noise && !wantsCircuit) {
+    device = NOT_GATE_MODEL;
+  } else if (noise) {
+    if (computed?.circuitKey === circuitKey && computed.noise === noise) {
+      device = computed.device;
+    } else {
+      const cachedCircuit = PREPARED_CIRCUITS.peek(qasm, parseLimits);
+      device = cachedCircuit ? peekDeviceEstimate(cachedCircuit, noise) ?? null : null;
+    }
+  }
+  const needsWork = noise !== null && wantsCircuit && device === null;
 
   useEffect(() => {
-    if (!needsWork) return;
-    // A newer circuit, or unmounting, cancels a run that has not started. A
-    // run that already finished is cached and tagged with its own key, and the
-    // render above ignores a result whose key is not the current one.
+    if (!needsWork || !noise) return;
+    // A newer circuit or device, or unmounting, cancels a run that has not
+    // started. A run that already finished is cached and tagged with its own
+    // circuit and noise, and the render above ignores one that does not match.
     return scheduleAfterPaint(() => {
-      setComputed({ key: preparedCircuitKey(qasm, parseLimits), prepared: PREPARED_CIRCUITS.getOrPrepare(qasm, parseLimits) });
+      const prepared = PREPARED_CIRCUITS.getOrPrepare(qasm, parseLimits);
+      setComputed({ circuitKey: preparedCircuitKey(qasm, parseLimits), noise, device: deviceEstimateFor(prepared, noise) });
     });
-  }, [needsWork, qasm, parseLimits]);
+  }, [needsWork, qasm, parseLimits, noise]);
 
-  // The device half stays in render as memos. It is cheap for one machine
-  // (about 27 ms at 20 qubits, measured in Node) and grows with the number of
-  // machines. Two memos rather than one, so typing a shot count reruns only
-  // the shot-noise pass, never the per-machine estimates.
-  const device = useMemo((): DeviceEstimate | null => {
-    if (!noise) return null;
-    if (!wantsCircuit) return { status: "unavailable", reason: "not_gate_model" };
-    return prepared ? estimateDevice({ prepared, noise }) : null;
-  }, [prepared, noise, wantsCircuit]);
+  // Only the shot-noise pass reads `shots`, so typing a shot count reruns one
+  // pass over the ideal distribution and never the per-machine estimates.
   const preview = useMemo((): NoisyPreview | null => (device ? finishPreview(device, shots) : null), [device, shots]);
 
   const title = copy.hardwarePreviewTitle(backend.access);

@@ -4,10 +4,12 @@ import test from "node:test";
 import {
   PreparedCircuitCache,
   applyReadoutFlip,
+  deviceEstimateFor,
   estimateDevice,
   estimateNoisyDistribution,
   finishPreview,
   idealWeight,
+  peekDeviceEstimate,
   prepareCircuitForPreview,
   preparedCircuitKey,
   previewNoisyRun,
@@ -404,4 +406,19 @@ test("scheduleAfterPaint falls back to a plain timeout where there is no animati
   cancel();
   await new Promise((resolve) => setTimeout(resolve, 5));
   assert.equal(ran, 1);
+});
+
+test("device estimates are remembered per prepared circuit and per noise object", () => {
+  const prepared = prepareCircuitForPreview(BELL, LIMITS);
+  const noise = device(profile("a", { two: 0.004, readout: 0.01 }));
+  const sameFigures = device(profile("a", { two: 0.004, readout: 0.01 }));
+  assert.equal(peekDeviceEstimate(prepared, noise), undefined, "peek never computes");
+  const first = deviceEstimateFor(prepared, noise);
+  assert.equal(deviceEstimateFor(prepared, noise), first, "a second call reuses the estimate");
+  assert.equal(peekDeviceEstimate(prepared, noise), first);
+  assert.deepEqual(first, estimateDevice({ prepared, noise }));
+  // A refetched catalog brings new objects: never served the old estimate.
+  assert.equal(peekDeviceEstimate(prepared, sameFigures), undefined);
+  // And a different circuit is a different entry.
+  assert.equal(peekDeviceEstimate(prepareCircuitForPreview(BELL, LIMITS), noise), undefined);
 });
