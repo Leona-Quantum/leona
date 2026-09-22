@@ -1,12 +1,13 @@
 import "./dom-env.ts";
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { fireEvent, render } from "@testing-library/react";
+import { act, fireEvent, render, waitFor } from "@testing-library/react";
 import { CourseGradebookView } from "../../app/(app)/notebooks/courses/[courseId]/course-gradebook.tsx";
-import { CourseModuleCard } from "../../app/(app)/notebooks/courses/[courseId]/course-workspace.tsx";
+import { CourseModuleCard, CourseWorkspace } from "../../app/(app)/notebooks/courses/[courseId]/course-workspace.tsx";
 import { formatDueDate } from "../../lib/course-due-dates.ts";
-import type { CourseGradebook, CourseModule } from "../../lib/course-types.ts";
+import type { Course, CourseGradebook, CourseModule } from "../../lib/course-types.ts";
 import { WORKSPACE_COPY } from "../../lib/workspace-locale.ts";
+import { stubFetch } from "./dom-env.ts";
 
 // Every assertion about a date is about a zone; pin one. Tokyo, where 17:00 on the
 // 30th is 08:00 UTC.
@@ -259,5 +260,78 @@ test("reader-facing due-date copy has no em dashes in either language", () => {
       strings.gradebookLegend,
     ];
     for (const text of texts) assert.doesNotMatch(text, /[–—]/, `${locale}: ${text}`);
+  }
+});
+
+// ----------------------------------------------------- a save that outlives its course
+
+function courseFixture(id: string, title: string): Course {
+  return {
+    id,
+    slug: id,
+    title,
+    summary: "",
+    brief: "",
+    kind: "course",
+    audience: { level: "engineer" } as Course["audience"],
+    style: {} as Course["style"],
+    framework: { name: "qiskit", version: ">=2.5,<2.6", execution: "local-statevector" } as Course["framework"],
+    language: "en",
+    status: "ready",
+    plan_run_id: null,
+    owner_user_id: "u-teacher",
+    modules: [{ ...generated, id: `${id}-m1`, slug: `${id}-week-01`, due_at: null }],
+    module_count: 1,
+    ready_count: 1,
+    created_at: "2026-09-10T00:00:00Z",
+    updated_at: "2026-09-10T00:00:00Z",
+  };
+}
+
+test("a due-date save that returns after the reader moved to another course is dropped", async () => {
+  // Review on PR 969. The stub never honours the abort, which is the worst case: the
+  // old course's response DOES arrive, and only the component can refuse it.
+  const first = courseFixture("c1", "First course");
+  const second = courseFixture("c2", "Second course");
+  let releasePatch: (() => void) | null = null;
+  const stub = stubFetch((request) => {
+    if (request.url.endsWith("/api/me")) return { status: 200, body: { user_id: "u-teacher" } };
+    if (request.url.endsWith("/turns")) return { status: 200, body: { items: [] } };
+    if (request.url.endsWith("/gradebook")) {
+      return { status: 200, body: { course_id: "x", visibility: "all_members", modules: [], rows: [] } };
+    }
+    if (request.method === "PATCH") {
+      return new Promise((resolve) => {
+        releasePatch = () => resolve({ status: 200, body: { ...first, title: "First course, saved" } });
+      });
+    }
+    if (request.url.endsWith("/api/courses/c1")) return { status: 200, body: first };
+    if (request.url.endsWith("/api/courses/c2")) return { status: 200, body: second };
+    return { status: 404, body: { title: "not stubbed" } };
+  });
+  try {
+    const view = render(<CourseWorkspace courseId="c1" locale="en" />);
+    const input = (await waitFor(() => view.getByLabelText(copy.dueDateLabel))) as HTMLInputElement;
+    fireEvent.change(input, { target: { value: "2026-09-30T17:00" } });
+    fireEvent.click(view.getByRole("button", { name: copy.saveDueDate }));
+    await waitFor(() => assert.ok(releasePatch, "the PATCH is in flight"));
+
+    view.rerender(<CourseWorkspace courseId="c2" locale="en" />);
+    await waitFor(() => assert.ok(view.getByRole("button", { name: "Second course" })));
+
+    await act(async () => {
+      releasePatch?.();
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    });
+
+    // Still the second course, not the first one's saved body and not "Loading".
+    assert.ok(view.getByRole("button", { name: "Second course" }));
+    assert.equal(view.queryByText(copy.loading), null);
+    assert.equal(view.queryByText("First course, saved"), null);
+    // And the second course's editor is not left saying "Saving…".
+    assert.ok(view.getByRole("button", { name: copy.saveDueDate }));
+    assert.equal(view.queryByRole("button", { name: copy.savingDueDate }), null);
+  } finally {
+    stub.restore();
   }
 });

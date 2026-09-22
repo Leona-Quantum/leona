@@ -14,6 +14,7 @@ import {
   gradebookHasDueDates,
   moduleOverdue,
   ownGradebookRow,
+  saveResponseApplies,
   viewerCreatedCourse,
 } from "./course-due-dates.ts";
 import type { CourseGradebook, GradebookRow } from "./course-types.ts";
@@ -127,4 +128,24 @@ test("the due-date controls are offered to the course's creator and no one else"
   assert.equal(viewerCreatedCourse({ owner_user_id: null }, null), false, "null must not equal null here");
   assert.equal(viewerCreatedCourse({ owner_user_id: null }, "u-ana"), false);
   assert.equal(viewerCreatedCourse(null, "u-teacher"), false);
+});
+
+test("a stored due date with seconds is the same due date as its minute in the input", () => {
+  // Review on PR 969: compared to the millisecond, an untouched form over 08:00:30Z
+  // read as changed, and saving it moved the deadline.
+  const withSeconds = "2026-09-30T08:00:30.123Z";
+  assert.equal(dueDateInputValue(withSeconds), "2026-09-30T17:00");
+  assert.equal(dueDateChanged(dueDateInputValue(withSeconds), withSeconds), false);
+  assert.equal(dueDateChanged("2026-09-30T17:01", withSeconds), true, "the next minute is a change");
+  assert.equal(dueDateChanged("2026-09-30T16:59", withSeconds), true, "and so is the one before");
+});
+
+test("a save's response is written only while its course is still on screen", () => {
+  assert.equal(saveResponseApplies("c1", "c1", null), true);
+  assert.equal(saveResponseApplies("c1", "c1", "c1"), true);
+  // Review on PR 969: the reader moved to c2 while c1's save was in flight.
+  assert.equal(saveResponseApplies("c1", "c2", null), false);
+  assert.equal(saveResponseApplies("c1", "c2", "c1"), false);
+  // A body that is some other course is never written, whatever is on screen.
+  assert.equal(saveResponseApplies("c1", "c1", "c2"), false);
 });

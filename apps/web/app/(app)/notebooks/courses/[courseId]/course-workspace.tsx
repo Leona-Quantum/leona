@@ -15,6 +15,7 @@ import {
   formatDueDate,
   moduleOverdue,
   ownGradebookRow,
+  saveResponseApplies,
   viewerCreatedCourse,
 } from "../../../../../lib/course-due-dates";
 import { courseHasGradableNotebook } from "../../../../../lib/course-gradebook";
@@ -104,6 +105,13 @@ export function CourseWorkspace({ courseId, locale = "en" }: { courseId: string;
 
   const reloadSeq = useRef(0);
   const turnsSeq = useRef(0);
+  //: The course on screen NOW, readable from a save that was started for an earlier
+  //: one. `courseId` itself is captured per render, so inside a stale callback it is
+  //: still the old id and cannot tell the two apart.
+  const openCourseId = useRef(courseId);
+  openCourseId.current = courseId;
+  //: The due-date save in flight, aborted when the reader moves to another course.
+  const dueSaveAbort = useRef<AbortController | null>(null);
   const titleEditing = useRef(false);
   titleEditing.current = editingTitle;
 
@@ -167,6 +175,9 @@ export function CourseWorkspace({ courseId, locale = "en" }: { courseId: string;
     setPlanRunActive(false);
     setModuleRunIds({});
     setGradebook(null);
+    dueSaveAbort.current?.abort();
+    dueSaveAbort.current = null;
+    setSavingDueModuleId(null);
     loadCourse();
     loadTurns();
     return () => { reloadSeq.current += 1; turnsSeq.current += 1; };
@@ -324,24 +335,39 @@ export function CourseWorkspace({ courseId, locale = "en" }: { courseId: string;
 
   async function saveDueDate(moduleId: string, dueAt: string | null) {
     if (!course || savingDueModuleId) return;
+    // A save answers for the course it was started on. If the reader has moved to
+    // another course by the time it returns, writing its response into state would
+    // put the OLD course on screen under the new id, and the page would sit on
+    // "Loading course…" for good (review on PR 969). So the request is aborted when
+    // the course changes, and a response that still gets through is dropped.
+    const requested = courseId;
+    const controller = new AbortController();
+    dueSaveAbort.current = controller;
     setSavingDueModuleId(moduleId);
     setActionError(null);
     try {
-      const response = await fetch(`/api/courses/${encodeURIComponent(courseId)}`, {
+      const response = await fetch(`/api/courses/${encodeURIComponent(requested)}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(dueDatePatchBody(moduleId, dueAt)),
+        signal: controller.signal,
       });
       const payload = (await response.json()) as unknown;
+      if (!saveResponseApplies(requested, openCourseId.current, null)) return;
       if (!response.ok || !isRecord(payload) || typeof payload.id !== "string") {
         throw new Error(refusalSentence(payload) ?? coursesCopy.dueDateSaveFailed);
       }
+      if (!saveResponseApplies(requested, openCourseId.current, payload.id)) return;
       setCourse(payload as unknown as Course);
       setGradebookRefresh((current) => current + 1);
     } catch (cause) {
+      if (controller.signal.aborted || !saveResponseApplies(requested, openCourseId.current, null)) return;
       setActionError(cause instanceof Error ? cause.message : coursesCopy.dueDateSaveFailed);
     } finally {
-      setSavingDueModuleId(null);
+      if (dueSaveAbort.current === controller) dueSaveAbort.current = null;
+      // The course change already cleared this; clearing it again here would end the
+      // "Saving…" state of a save started on the new course.
+      if (saveResponseApplies(requested, openCourseId.current, null)) setSavingDueModuleId(null);
     }
   }
 

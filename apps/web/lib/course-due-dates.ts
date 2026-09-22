@@ -84,17 +84,42 @@ export function dueDatePatchBody(moduleId: string, dueAt: string | null): {
   return { modules: [{ id: moduleId, due_at: dueAt }] };
 }
 
+const MINUTE_MS = 60_000;
+
 /**
  * Whether the input holds a change worth saving: a valid date that differs from
- * the stored one, compared as instants so a stored `…Z` and the same minute typed
- * back in do not count as a change.
+ * the stored one, compared as instants AT MINUTE PRECISION.
+ *
+ * Minutes because that is all the input shows, and all the control plane keeps
+ * (it truncates `due_at` to the minute on write). Compared to the millisecond, an
+ * untouched form over a stored `08:00:30Z` read as changed, and saving it quietly
+ * moved the deadline 30 seconds, which can flip an attempt between late and on
+ * time (review on PR 969). A stored `…Z` and the same minute typed back in are
+ * the same due date.
  */
 export function dueDateChanged(value: string, stored: string | null | undefined): boolean {
   const next = dueDateFromInput(value);
   if (next === null) return false;
   if (!stored) return true;
   const storedTime = new Date(stored).getTime();
-  return Number.isNaN(storedTime) || new Date(next).getTime() !== storedTime;
+  if (Number.isNaN(storedTime)) return true;
+  return Math.floor(new Date(next).getTime() / MINUTE_MS) !== Math.floor(storedTime / MINUTE_MS);
+}
+
+/**
+ * Whether a due-date save's response may be written into the page.
+ *
+ * Only when the course it was sent for is still the one on screen, and (once the
+ * response has one) its body is that course. `payloadCourseId` is `null` for the
+ * check made before the body is read, which asks only the first question.
+ */
+export function saveResponseApplies(
+  requestedCourseId: string,
+  onScreenCourseId: string,
+  payloadCourseId: string | null,
+): boolean {
+  if (requestedCourseId !== onScreenCourseId) return false;
+  return payloadCourseId === null || payloadCourseId === requestedCourseId;
 }
 
 /**
