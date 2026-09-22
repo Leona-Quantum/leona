@@ -396,6 +396,9 @@ class CourseModule(Base):
     notebook_id: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("notebooks.id", ondelete="SET NULL")
     )
+    # When the creator wants the module done by (migration 0067). NULL is "no due
+    # date"; a plan revision keeps it on every module whose slug survives.
+    due_at: Mapped[dt.datetime | None]
     created_at: Mapped[dt.datetime | None] = mapped_column(server_default=func.now())
     updated_at: Mapped[dt.datetime | None] = mapped_column(server_default=func.now())
 
