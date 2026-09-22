@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { QappRuntime } from "../../../../components/qapp-runtime";
 import { qappCopy } from "../../../../lib/qapp-copy";
+import { qappEmbedSnippet } from "../../../../lib/qapp-embed-snippet.ts";
 import type { PublicLocale } from "../../../../lib/public-locale";
 import { rangeSmokeNotice } from "../../../../lib/qapp-range-smoke.ts";
 
@@ -15,6 +16,7 @@ type Detail = { qapp: Qapp; version: QappVersion };
 
 export function QappWorkspace({ qappId, locale = "en" }: { qappId: string; locale?: PublicLocale }) {
   const copy = qappCopy(locale).workspace;
+  const embedCopy = qappCopy(locale).embed;
   const [detail, setDetail] = useState<Detail | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
@@ -80,6 +82,20 @@ export function QappWorkspace({ qappId, locale = "en" }: { qappId: string; local
     }
   }
 
+  // ai-ops 355, item 5: a small, optional affordance next to "Copy public
+  // link" — the snippet itself is `lib/qapp-embed-snippet.ts`, tested there,
+  // so this button is just wiring, the same shape as `copyPublicLink` above.
+  async function copyEmbedCode() {
+    if (!detail) return;
+    setError(null);
+    try {
+      await navigator.clipboard.writeText(qappEmbedSnippet(window.location.origin, detail.qapp.slug));
+      setNotice(embedCopy.embedCopied);
+    } catch {
+      setNotice(embedCopy.embedCopyFailed);
+    }
+  }
+
   async function deleteQapp() {
     if (!detail || deleting) return;
     setDeleting(true);
@@ -116,6 +132,7 @@ export function QappWorkspace({ qappId, locale = "en" }: { qappId: string; local
         <div className="qapp-private-actions">
           {isPublic ? <Link className="mj-secondary-button" href={`/q/${encodeURIComponent(detail.qapp.slug)}`}>{copy.openPublic}</Link> : null}
           {isPublic ? <button className="mj-secondary-button" type="button" onClick={() => void copyPublicLink()}>{copy.copyLink}</button> : null}
+          {isPublic ? <button className="mj-secondary-button" type="button" onClick={() => void copyEmbedCode()}>{embedCopy.copyEmbed}</button> : null}
           <Link className="mj-secondary-button" href={`/qapps/${encodeURIComponent(qappId)}/versions`}>{copy.versionsHeading}</Link>
           <Link className="mj-secondary-button" href={`/qapps/${encodeURIComponent(qappId)}/usage`}>{copy.usageHeading}</Link>
           <button className="mj-primary-button" type="button" disabled={saving || deleting} onClick={() => void toggleVisibility()}>

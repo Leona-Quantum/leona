@@ -23,6 +23,7 @@ export function contentSecurityPolicy({
   controlPlane,
   development,
   errorReporting,
+  frameAncestors = "'none'",
 }: {
   controlPlane: string;
   development: boolean;
@@ -42,6 +43,15 @@ export function contentSecurityPolicy({
    * exactly the same silent way.
    */
   errorReporting: string | null;
+  /**
+   * The `frame-ancestors` directive's value, defaulted to `'none'` — no site
+   * may frame this response. `/embed/q/[slug]` (ai-ops 355, owner ruling "Any
+   * website may embed a published Qapp") is the one caller that passes
+   * something else; `next.config.ts` is what scopes that override to the
+   * embed route alone — see `lib/embed-routes.ts` for how, and why the plain
+   * catch-all cannot simply be given a second, later value instead.
+   */
+  frameAncestors?: string;
 }): string {
   const controlPlaneIsHttp = controlPlane.startsWith("http://");
   const scriptSources = [
@@ -205,7 +215,7 @@ export function contentSecurityPolicy({
     "object-src 'none'",
     "base-uri 'self'",
     "form-action 'self'",
-    "frame-ancestors 'none'",
+    `frame-ancestors ${frameAncestors}`,
     ...(controlPlaneIsHttp ? [] : ["upgrade-insecure-requests"]),
   ].join("; ");
 }

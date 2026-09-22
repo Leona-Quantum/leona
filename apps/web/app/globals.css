@@ -3145,3 +3145,125 @@ html[lang="ja"] .mj-company-hero-title-line {
     min-height: 70vh;
   }
 }
+
+/* The view-only Qapp embed (ai-ops 355) — a small card meant to sit inside a
+   third-party <iframe>, not a full page. Sized for that: no viewport-relative
+   padding or clamp()ed display type, unlike .qapp-page/.qapp-page-intro,
+   which assume a full browser window. */
+.qapp-embed-page {
+  box-sizing: border-box;
+  max-width: 40rem;
+  margin: 0 auto;
+  padding: 1.25rem;
+  background: var(--bg-0);
+  color: var(--text-0);
+}
+
+.qapp-embed-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: .5rem 1rem;
+  margin-bottom: .5rem;
+}
+
+.qapp-embed-title {
+  margin: .2rem 0 .5rem;
+  font-size: 1.5rem;
+  line-height: 1.2;
+  letter-spacing: -.02em;
+}
+
+.qapp-embed-description {
+  margin: 0 0 1.25rem;
+  color: var(--text-2);
+  font-size: .95rem;
+  line-height: 1.5;
+}
+
+.qapp-embed-fields {
+  margin: 0 0 1.25rem;
+}
+
+.qapp-embed-fields h2,
+.qapp-embed-record h2 {
+  margin: 0 0 .5rem;
+  font-size: .82rem;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+  color: var(--text-2);
+}
+
+.qapp-embed-fields dl {
+  margin: 0;
+  display: grid;
+  gap: .35rem 0;
+}
+
+.qapp-embed-field {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0 .4rem;
+  font-size: .88rem;
+  line-height: 1.4;
+}
+
+.qapp-embed-field dt {
+  font-weight: 600;
+}
+
+.qapp-embed-field dd {
+  margin: 0;
+  color: var(--text-2);
+}
+
+.qapp-embed-fields-empty {
+  margin: 0;
+  color: var(--text-2);
+  font-size: .88rem;
+}
+
+.qapp-embed-record {
+  margin: 0 0 1.25rem;
+  padding: .9rem 1rem;
+  border: 1px solid var(--border-0);
+  border-radius: .75rem;
+  background: var(--bg-2);
+  font-size: .88rem;
+  line-height: 1.5;
+}
+
+.qapp-embed-record p {
+  margin: 0 0 .35rem;
+}
+
+.qapp-embed-record p:last-child {
+  margin-bottom: 0;
+}
+
+.qapp-embed-footer {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: .75rem;
+}
+
+.qapp-embed-view-only-note {
+  margin: 0;
+  color: var(--text-2);
+  font-size: .82rem;
+}
+
+.qapp-embed-not-found {
+  text-align: center;
+  padding: 2.5rem 1.25rem;
+}
+
+.qapp-embed-not-found .qapp-embed-badge {
+  font-family: var(--font-mono);
+  font-size: .78rem;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+  color: var(--text-2);
+}

@@ -106,6 +106,23 @@ export const QAPP_COPY = {
       version: (value: number) => `Version ${value}`,
       publishedOn: "Published",
     },
+    // `/embed/q/[slug]` (ai-ops 355): a view-only card another site can put in
+    // an <iframe>. No run button, no sign-in — see that page's own docstring
+    // for why. `public.badge`/`public.kicker`/`public.recordHeading` etc. are
+    // reused as-is rather than restated here.
+    embed: {
+      inputsHeading: "Inputs",
+      outputsHeading: "Outputs",
+      noInputs: "This Qapp takes no inputs.",
+      noOutputs: "This Qapp has no declared outputs.",
+      openToRun: "Open on Leona Quantum to run it",
+      viewOnlyNote: "View only. It will not run here.",
+      copyEmbed: "Copy embed code",
+      embedCopied: "Embed code copied.",
+      embedCopyFailed: "The embed code could not be copied.",
+      notFoundTitle: "Qapp not found",
+      notFoundBody: "This Qapp is not published, or the link is wrong.",
+    },
   },
   ja: {
     runtime: {
@@ -197,6 +214,19 @@ export const QAPP_COPY = {
       qubits: (value: number) => `${value}量子ビット`,
       version: (value: number) => `バージョン${value}`,
       publishedOn: "公開",
+    },
+    embed: {
+      inputsHeading: "入力",
+      outputsHeading: "出力",
+      noInputs: "このQappに入力はありません。",
+      noOutputs: "このQappに出力の定義はありません。",
+      openToRun: "Leona Quantumで開いて実行する",
+      viewOnlyNote: "閲覧のみです。ここでは実行されません。",
+      copyEmbed: "埋め込みコードをコピー",
+      embedCopied: "埋め込みコードをコピーしました。",
+      embedCopyFailed: "埋め込みコードをコピーできませんでした。",
+      notFoundTitle: "Qappが見つかりません",
+      notFoundBody: "このQappは公開されていないか、リンクが正しくありません。",
     },
   },
 } as const satisfies Record<PublicLocale, unknown>;

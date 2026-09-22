@@ -139,6 +139,21 @@ test("the production policy is pinned exactly, and admits no Vercel origin", () 
   assert.match(production, /frame-ancestors 'none'/);
 });
 
+test("frame-ancestors defaults to 'none' and can be widened for the embed route alone (ai-ops 355)", () => {
+  const defaulted = contentSecurityPolicy(PRODUCTION);
+  assert.match(defaulted, /frame-ancestors 'none'/);
+
+  const embed = contentSecurityPolicy({ ...PRODUCTION, frameAncestors: "https:" });
+  assert.match(embed, /frame-ancestors https:;/);
+  assert.doesNotMatch(embed, /frame-ancestors 'none'/);
+
+  // Nothing else in the policy moves when only frame-ancestors is widened —
+  // the owner's ruling opens exactly that one header, for exactly one route.
+  const withoutFrameAncestors = (policy: string) =>
+    policy.split("; ").filter((directive) => !directive.startsWith("frame-ancestors")).join("; ");
+  assert.equal(withoutFrameAncestors(defaulted), withoutFrameAncestors(embed));
+});
+
 test("inline event handler attributes are refused on every environment", () => {
   // `script-src-attr` does NOT inherit from `script-src` when it is present, so
   // this is enforced even though `script-src` still carries `'unsafe-inline'`

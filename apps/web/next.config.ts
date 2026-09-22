@@ -7,6 +7,7 @@ import {
 import { permissionsPolicy } from "./lib/permissions-policy";
 import { publicReleaseSha } from "./lib/deploy-env";
 import { edgeCacheRules } from "./lib/edge-cache-headers";
+import { EMBED_QAPP_SOURCES, GENERAL_ANTI_FRAMING_SOURCE } from "./lib/embed-routes";
 
 /**
  * Content-Security-Policy (05-security.md §1 platform+edge).
@@ -88,6 +89,30 @@ const csp = contentSecurityPolicy({
   // Same env var `instrumentation-client.ts` gates the browser SDK on, so the
   // policy and the SDK can never disagree about whether Sentry is configured.
   errorReporting: errorReportingOrigin(process.env.NEXT_PUBLIC_SENTRY_DSN),
+});
+
+/**
+ * The embed route's own policy (ai-ops 355, owner ruling: "Any website may
+ * embed a published Qapp"). Identical to `csp` in every directive except
+ * `frame-ancestors` — nothing else about the embed page's security posture
+ * changes, so this is built from the same `contentSecurityPolicy()` call
+ * rather than a hand-duplicated string that could drift from it.
+ *
+ * `https:` rather than `*`. The ruling is "any website", and in practice that
+ * is any HTTPS site — `*` would also admit a plain `http://` parent page,
+ * whose framing traffic (the outer document, and anything on it that could
+ * rewrite the frame around the embed) is legible to whoever is on the same
+ * network as the visitor. The embedded content itself carries nothing
+ * sensitive either way (see `app/embed/q/[slug]/page.tsx`'s own docstring),
+ * so this is a small extra margin rather than a load-bearing restriction, and
+ * it costs nothing real: plain-HTTP sites embedding third-party widgets are
+ * already rare and getting rarer as browsers phase out mixed content.
+ */
+const embedCsp = contentSecurityPolicy({
+  controlPlane: CONTROL_PLANE,
+  development: process.env.NODE_ENV === "development",
+  errorReporting: errorReportingOrigin(process.env.NEXT_PUBLIC_SENTRY_DSN),
+  frameAncestors: "https:",
 });
 
 const nextConfig: NextConfig = {
@@ -291,6 +316,13 @@ const nextConfig: NextConfig = {
       // through the `/{locale}` rewrite (it is a plain top-level route, not
       // under `app/[locale]/`), so there is no locale-prefixed form to list.
       ...edgeCacheRules("/q", 300),
+      // The view-only Qapp embed (ai-ops 355). Exact path AND `:path*`, unlike
+      // `/q` above: every `/embed/q/<slug>` is the same shape of page as its
+      // sibling and reads no per-visitor state at all (no `getMajoranaAuth()`,
+      // no cookie of any kind — see app/embed/q/[slug]/page.tsx), so there is
+      // no personalized child route this has to carve back out, the way
+      // `/repository` has to exclude `/repository/<slug>`.
+      ...EMBED_QAPP_SOURCES.flatMap((source) => edgeCacheRules(source, 300)),
       // The landing page's demo video and the wordmark, which are the first
       // binary assets this app has ever served.
       //
@@ -326,10 +358,11 @@ const nextConfig: NextConfig = {
         ],
       })),
       {
+        // Every route, without exception: none of these five headers change
+        // for the embed route (ai-ops 355 widens only `frame-ancestors`, and
+        // `X-Frame-Options` cannot be selectively widened at all — see below).
         source: "/(.*)",
         headers: [
-          { key: "Content-Security-Policy", value: csp },
-          { key: "X-Frame-Options", value: "DENY" },
           { key: "X-Content-Type-Options", value: "nosniff" },
           { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
           { key: "Cross-Origin-Opener-Policy", value: "same-origin" },
@@ -341,6 +374,35 @@ const nextConfig: NextConfig = {
           { key: "Permissions-Policy", value: permissionsPolicy() },
         ],
       },
+      {
+        // Every route EXCEPT the embed subtree keeps the default anti-framing
+        // policy, byte-for-byte. This can't be "every route, then a later,
+        // more specific override for the embed route" — Next merges every
+        // matching `source`'s headers, so a later entry can replace a value
+        // for a key it ALSO sets (that's how `embedCsp` below replaces `csp`),
+        // but it cannot un-set a key it never mentions. If this source were
+        // the usual `/(.*)`, `/embed/q/<slug>` would still receive
+        // `X-Frame-Options: DENY` from here even though the embed-specific
+        // entry never sets that header — X-Frame-Options has no wildcard form,
+        // so "no X-Frame-Options" is only reachable by never matching in the
+        // first place. See `lib/embed-routes.ts` for the pattern itself and
+        // `embed-routes.test.ts` for proof, against Next's own path matcher,
+        // that it excludes exactly the embed subtree and nothing else.
+        source: GENERAL_ANTI_FRAMING_SOURCE,
+        headers: [
+          { key: "Content-Security-Policy", value: csp },
+          { key: "X-Frame-Options", value: "DENY" },
+        ],
+      },
+      // The embed route (ai-ops 355, owner ruling: "Any website may embed a
+      // published Qapp"). Relaxed CSP only — no X-Frame-Options entry at all,
+      // for the reason above, and no other header here: the block right above
+      // this comment already covers `/embed/q/<slug>` for everything that
+      // isn't framing-related.
+      ...EMBED_QAPP_SOURCES.map((source) => ({
+        source,
+        headers: [{ key: "Content-Security-Policy", value: embedCsp }],
+      })),
     ];
   },
 };
