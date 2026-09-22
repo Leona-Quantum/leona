@@ -1305,7 +1305,7 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
       hardwareReadoutSymmetric: "IBM reported one error rate per qubit, so the same figure is used for reading 0 as 1 and 1 as 0.",
       hardwareZneRichardson: "Zero-noise estimate (Richardson)",
       hardwareZneLinear: "Zero-noise estimate (straight-line fit)",
-      hardwareZneGloss: "Zero-noise extrapolation runs the circuit at three noise levels and follows the trend back to zero noise. The result is an estimate, and it can overshoot: a small change in the counts can move it a lot. When the two fits below disagree, neither is reliable.",
+      hardwareZneGloss: "Zero-noise extrapolation runs the circuit at three noise levels and follows the trend back to zero noise. The result is an estimate, and it can overshoot: a small change in the counts can move it a lot. When the two fits above disagree, neither is reliable.",
       hardwareZneClipped: (share) => `The fit went below zero for some outcomes (${share} in total). Those were set to zero and the rest scaled up, which is a sign the estimate overshot.`,
       hardwareZneGates: (base, three, five) => `Two-qubit gates on the device: ${base}, ${three} and ${five}.`,
       hardwareMitigationUnavailable: (reason) => ({

@@ -7072,6 +7072,15 @@ div.mj-rail-row:hover {
    so the page never does. */
 .mj-qpu-ideal-scroll {
   overflow-x: auto;
+  /* A shadow at whichever edge has more columns beyond it, so a table that
+     scrolls reads as scrollable rather than as cut off. The two local layers
+     are the card's own background and cover the shadow once that edge is
+     reached; the two scroll layers are the shadow itself. */
+  background:
+    linear-gradient(to right, var(--bg-2) 40%, transparent) left center / 32px 100% no-repeat local,
+    linear-gradient(to left, var(--bg-2) 40%, transparent) right center / 32px 100% no-repeat local,
+    radial-gradient(farthest-side at 0 50%, color-mix(in srgb, var(--text-0) 22%, transparent), transparent) left center / 12px 100% no-repeat scroll,
+    radial-gradient(farthest-side at 100% 50%, color-mix(in srgb, var(--text-0) 22%, transparent), transparent) right center / 12px 100% no-repeat scroll;
 }
 .mj-qpu-ideal-table {
   width: 100%;
@@ -7096,6 +7105,19 @@ div.mj-rail-row:hover {
 }
 .mj-qpu-ideal-table code {
   font-family: var(--font-mono);
+}
+/* Narrow screens: tighter cells, so five columns scroll less. It sits after
+   the rules above because it overrides them. The outcome heading stays on one
+   line: squeezed, a four-character Japanese heading otherwise stacks one
+   character per line above a column of bitstrings. */
+@media (max-width: 480px) {
+  .mj-qpu-ideal-table th,
+  .mj-qpu-ideal-table td {
+    padding: var(--sp-1);
+  }
+  .mj-qpu-ideal-table th:first-child {
+    white-space: nowrap;
+  }
 }
 /* The hardware-runs page (app/(app)/studio/hardware): one section per machine,
    one card per run, newest first. Cards rather than one wide table so a run's
