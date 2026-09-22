@@ -321,6 +321,7 @@ async def test_submission_with_open_gates_writes_the_record_and_enqueues(monkeyp
             rate_source=kwargs["rate_source"],
             rate_confirmed_on=kwargs["rate_confirmed_on"],
             raw_counts=None,
+            mitigation=kwargs.get("mitigation"),
             error=None,
             submitted_at=None,
             completed_at=None,
@@ -432,7 +433,7 @@ async def test_the_gate_is_closed_when_the_rows_key_has_been_rotated_away(monkey
 # ----------------------------------------------------------------- run history
 
 
-def _history_row(scope, *, fingerprint: str = "fnv1a-deadbeef", backend_name=None):
+def _history_row(scope, *, fingerprint: str = "fnv1a-deadbeef", backend_name=None, mitigation=None):
     """A qpu_runs row as the repository returns it, with every field the
     history item serializes. A missing attribute here is a 500 in production,
     which is the failure a double with too few fields would hide."""
@@ -458,6 +459,7 @@ def _history_row(scope, *, fingerprint: str = "fnv1a-deadbeef", backend_name=Non
         rate_source="https://example.invalid/rates",
         rate_confirmed_on="2026-09-22",
         raw_counts={"0": 60, "1": 68},
+        mitigation=mitigation,
         error=None,
         submitted_at=dt.datetime.now(dt.UTC),
         completed_at=dt.datetime.now(dt.UTC),
@@ -575,3 +577,48 @@ async def test_qpu_run_history_is_reachable_beside_the_single_record_read(monkey
 
     assert bad_cursor.status_code == 422
     assert blank_fingerprint.status_code == 422
+
+
+async def test_the_estimate_prices_zero_noise_extrapolation_before_anyone_opts_in():
+    """Proposal 5, increment 4: what opting in costs is shown before submitting,
+    so the estimate route takes the same flag the submission does."""
+    one = await qpu_routes.qpu_estimate(
+        QpuEstimateRequest(device_id="braket.iqm.garnet", shots=2048), scope=object()
+    )
+    zne = await qpu_routes.qpu_estimate(
+        QpuEstimateRequest(device_id="braket.iqm.garnet", shots=2048, zne=True), scope=object()
+    )
+    assert (one.circuits, one.total_shots) == (1, 2048)
+    assert (zne.circuits, zne.total_shots) == (3, 3 * 2048)
+    assert zne.shots == 2048  # still per circuit
+    assert zne.task_fee_usd == pytest.approx(3 * 0.30)
+    assert zne.total_usd == pytest.approx(3 * (0.30 + 2048 * 0.00145))
+
+
+async def test_the_free_queue_estimate_with_zne_names_the_extra_shots():
+    """IBM's Open Plan has no price to multiply; the allowance's QPU time grows
+    instead, and the page states it from `circuits` and `total_shots`."""
+    zne = await qpu_routes.qpu_estimate(
+        QpuEstimateRequest(device_id="ibm.open_plan", shots=1024, zne=True), scope=object()
+    )
+    assert zne.basis.value == "free_tier_allowance"
+    assert zne.total_usd is None
+    assert (zne.circuits, zne.total_shots) == (3, 3072)
+
+
+def test_zne_is_off_unless_asked_for():
+    assert QpuEstimateRequest(device_id="ibm.open_plan", shots=1).zne is False
+    assert _submission().zne is False
+
+
+def test_the_route_and_the_worker_agree_on_how_many_circuits_zne_sends():
+    from majorana_qpu.mitigation import ZNE_SCALE_FACTORS
+
+    assert qpu_routes.ZNE_CIRCUITS == len(ZNE_SCALE_FACTORS) == 3
+
+
+def test_a_history_item_carries_the_mitigation_document():
+    row = _history_row(_scope(), mitigation={"version": 1, "zne": {"scale_factors": [1, 3, 5]}})
+    resource = qpu_routes._to_qpu_run_resource(row)
+    assert resource.mitigation == {"version": 1, "zne": {"scale_factors": [1, 3, 5]}}
+    assert resource.raw_counts == {"0": 60, "1": 68}

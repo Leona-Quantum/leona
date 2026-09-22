@@ -51,6 +51,7 @@ from majorana_qpu import (
     submission_block_reason,
     verify_ibm_api_key,
 )
+from majorana_qpu.mitigation import ZNE_SCALE_FACTORS, requested_zne_record
 
 from .. import credential_crypto
 from ..auth.deps import CurrentIdentity, CurrentScope, DbSession, get_settings
@@ -82,11 +83,25 @@ class QpuBackendsResponse(BaseModel):
     backends: list[QpuBackendInfo]
 
 
+#: What a zero-noise-extrapolation submission sends: the circuit and its 3x and
+#: 5x folds, one PUB each. Read from the scale factors so the price and the
+#: worker cannot disagree about how many circuits there are.
+ZNE_CIRCUITS = len(ZNE_SCALE_FACTORS)
+
+
+def _circuits_for(zne: bool) -> int:
+    return ZNE_CIRCUITS if zne else 1
+
+
 class QpuEstimateRequest(RequestModel):
     model_config = ConfigDict(extra="forbid")
 
     device_id: str = Field(min_length=1, max_length=120)
     shots: int = Field(ge=1, le=MAX_ESTIMATE_SHOTS)
+    #: Price the submission WITH zero-noise extrapolation, so the page can show
+    #: what opting in costs before anyone opts in. Same flag, same arithmetic as
+    #: the submission below, so the number shown is the number recorded.
+    zne: bool = False
 
 
 class QpuSubmissionGateResponse(BaseModel):
@@ -105,7 +120,7 @@ async def qpu_backends(scope: CurrentScope) -> QpuBackendsResponse:
 @router.post("/qpu/estimates", response_model=QpuCostEstimate)
 async def qpu_estimate(body: QpuEstimateRequest, scope: CurrentScope) -> QpuCostEstimate:
     try:
-        return rate_card_estimate(body.device_id, body.shots)
+        return rate_card_estimate(body.device_id, body.shots, circuits=_circuits_for(body.zne))
     except UnknownDeviceError:
         raise HTTPException(status_code=404, detail="unknown QPU device") from None
 
@@ -413,6 +428,10 @@ class QpuSubmissionRequest(RequestModel):
     shots: int = Field(ge=1, le=MAX_ESTIMATE_SHOTS)
     qasm: str = Field(min_length=1, max_length=MAX_SUBMISSION_QASM_CHARS)
     source_fingerprint: str = Field(min_length=1, max_length=200)
+    #: Opt in to zero-noise extrapolation: the job also runs the circuit folded
+    #: to 3x and 5x its gates. Off by default, because it triples the shots the
+    #: provider executes (and, on IBM's free plan, the allowance time they use).
+    zne: bool = False
 
 
 def _to_qpu_run_resource(record: QpuRunRow) -> QpuRunRecord:
@@ -435,6 +454,7 @@ def _to_qpu_run_resource(record: QpuRunRow) -> QpuRunRecord:
         rate_source=record.rate_source,
         rate_confirmed_on=record.rate_confirmed_on,
         raw_counts=record.raw_counts,
+        mitigation=record.mitigation,
         error=record.error,
         submitted_at=record.submitted_at,
         completed_at=record.completed_at,
@@ -534,7 +554,11 @@ async def qpu_submit(
     reason = submission_block_reason(has_credential=await _caller_can_submit(scope, session))
     if reason is not None:
         raise HTTPException(status_code=409, detail={"blocked_reason": reason.value})
-    estimate = rate_card_estimate(body.device_id, body.shots)
+    # With ZNE the estimate covers all three circuits, and that multiplied figure
+    # is what the spend reservation below checks and what the row records. The
+    # page showed the same number before the user pressed submit, because the
+    # estimate route prices it with this same call.
+    estimate = rate_card_estimate(body.device_id, body.shots, circuits=_circuits_for(body.zne))
     user, _workspace = identity
     limits = limits_for(tier_of(user, settings))
     try:
@@ -564,6 +588,10 @@ async def qpu_submit(
         estimated_total_usd=estimate.total_usd,
         rate_source=estimate.rate_source,
         rate_confirmed_on=estimate.rate_confirmed_on,
+        # The opt-in goes on the row, not into the job payload: the worker reads
+        # every attested value from the row, and the payload is `extra="forbid"`,
+        # so a new field there would be refused by a worker one deploy older.
+        mitigation=requested_zne_record() if body.zne else None,
     )
     payload = QpuRunJobPayload(
         workspace_id=str(scope.workspace_id),
