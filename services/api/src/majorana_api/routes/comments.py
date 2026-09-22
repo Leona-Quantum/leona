@@ -102,8 +102,8 @@ def _to_list(scope: Scope, read: comments_repo.CommentRead) -> contracts.Comment
 
 def _refused(exc: comments_repo.CommentRefused) -> HTTPException:
     sentences = {
-        "parent_deleted": "That comment was deleted, so it can no longer be replied to.",
-        "comment_deleted": "That comment was deleted, so it can no longer be edited.",
+        "parent_deleted": "That comment was deleted, so you cannot reply to it.",
+        "comment_deleted": "That comment was deleted, so you cannot edit it.",
     }
     return HTTPException(
         409,
@@ -122,7 +122,7 @@ def _meter(request: Request, scope: Scope) -> None:
         raise HTTPException(
             429,
             detail={
-                "error": "You are posting comments faster than this allows. Wait a moment and try again.",
+                "error": "You are posting comments too quickly. Wait a moment and try again.",
                 "reason": "comment_rate_limited",
             },
             headers={"Retry-After": str(decision.retry_after_s)},
