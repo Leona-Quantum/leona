@@ -14,7 +14,7 @@ import uuid
 
 import pytest
 from majorana_contracts import Scope
-from majorana_contracts.enums import Role, RunMode, UsageKind, VerificationMethod
+from majorana_contracts.enums import QpuRunStatus, Role, RunMode, UsageKind, VerificationMethod
 from sqlalchemy import select
 
 from majorana_api.db import engine_from_env, session_factory
@@ -24,6 +24,7 @@ from majorana_api.repos import (
     audit,
     folders,
     projects,
+    qpu_runs,
     runs,
     system,
     usage,
@@ -50,6 +51,8 @@ class WorkspaceData:
     folder_id: uuid.UUID
     project_id: uuid.UUID
     usage_quantity: float
+    qpu_run_id: uuid.UUID
+    qpu_fingerprint: str
 
 
 def scope_for(ws: WorkspaceData, role: Role) -> Scope:
@@ -118,6 +121,36 @@ async def _build_workspace(session, tag: str) -> WorkspaceData:
     )
     await usage.record_usage(owner_scope, session, kind=UsageKind.RUN, quantity=7)
     await audit.record_audit(owner_scope, session, action=f"authz.fixture.{tag}")
+    # A hardware run with a machine recorded, so the probes below have a
+    # provider-attested row, counts and a backend name to fail to see. The
+    # fingerprint is unique per build: `list_records(source_fingerprint=...)` is
+    # probed with the OTHER workspace's value, and a shared one would make that
+    # probe unable to tell a leak from a coincidence.
+    qpu_fingerprint = f"fnv1a-authz-{tag}-{uuid.uuid4().hex[:8]}"
+    qpu_run = await qpu_runs.create_record(
+        owner_scope,
+        session,
+        device_id="ibm.open_plan",
+        provider="ibm",
+        shots=128,
+        qasm="OPENQASM 3.0;",
+        source_fingerprint=qpu_fingerprint,
+        estimate_basis="free_tier_allowance",
+        estimated_total_usd=None,
+        rate_source="https://example.invalid/rates",
+        rate_confirmed_on="2026-09-22",
+    )
+    await qpu_runs.transition(
+        owner_scope,
+        session,
+        qpu_run.id,
+        QpuRunStatus.RUNNING,
+        provider_job_id=f"job-{tag}",
+        backend_name=f"ibm_authz_{tag}",
+    )
+    await qpu_runs.transition(
+        owner_scope, session, qpu_run.id, QpuRunStatus.DONE, raw_counts={"0": 64, "1": 64}
+    )
     return WorkspaceData(
         workspace_id=ws.id,
         users=users,
@@ -128,6 +161,8 @@ async def _build_workspace(session, tag: str) -> WorkspaceData:
         folder_id=folder.id,
         project_id=project.id,
         usage_quantity=7.0,
+        qpu_run_id=qpu_run.id,
+        qpu_fingerprint=qpu_fingerprint,
     )
 
 
