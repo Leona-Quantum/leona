@@ -16,6 +16,8 @@ import { ChatMarkdown } from "../../../../components/chat-markdown";
 import { parseSseBlock } from "../../../../lib/sse-events";
 import { reconnectDelayMs } from "../../../../lib/reconnecting-sse-stream";
 import { runToFollow } from "../../../../lib/conversation-follow";
+import { CommentsPanel } from "../../../../components/comments-panel";
+import { isCommentableId } from "../../../../lib/comments";
 import { refusalSentence, responseString, submittedId } from "../../../../lib/api-error.ts";
 import { QUEUE_POLL_INTERVAL_MS, isWaitingForWorker, queuePositionLabel } from "../../../../lib/queue-position";
 import { archiveChat, loadChatHistory, rememberChat, updateChat, type ChatSummary } from "../../../../lib/chat-history";
@@ -961,6 +963,13 @@ export function LiveRun({ taskId, locale = "en" }: { taskId: string; locale?: Pu
             ) : null}
             {!turns.length && !activePrompt && !pending ? <p className="mj-run-waiting">{locale === "ja" ? "会話に接続しています…" : "Connecting to the conversation…"}</p> : null}
           </div>
+          {/* The workspace's comments on this run (proposal 9). Collapsed under the
+              conversation, because this column keeps itself scrolled to the newest
+              message and an open panel would be what it scrolled to. Not on the
+              built-in example runs, which have no row to comment on. */}
+          {!fixtureEvents && isCommentableId(taskId) ? (
+            <CommentsPanel targetType="run" targetId={taskId} locale={locale} collapsible />
+          ) : null}
         </div>
       </div>
       {showLatest ? <div className="mj-run-latest"><button className="mj-secondary-button" type="button" onClick={() => { const container = chatScrollRef.current; if (container) container.scrollTop = container.scrollHeight; shouldAutoScrollRef.current = true; setShowLatest(false); }}>{locale === "ja" ? "最新のメッセージへ" : "Latest message"} ↓</button></div> : null}

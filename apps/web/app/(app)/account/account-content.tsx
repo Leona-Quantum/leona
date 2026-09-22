@@ -11,7 +11,8 @@ import { AccentPicker } from "../../../components/accent-picker";
 import { LanguageToggle } from "../../../components/language-toggle";
 import { ThemeToggle } from "../../../components/theme-toggle";
 import { getPublicLocale } from "../../../lib/public-locale-server";
-import { ACCOUNT_COPY, SHARING_COPY, TOURS_COPY, WORKSPACE_COPY } from "../../../lib/workspace-locale";
+import { ACCOUNT_COPY, COMMENTS_COPY, SHARING_COPY, TOURS_COPY, WORKSPACE_COPY } from "../../../lib/workspace-locale";
+import { MentionsList } from "../../../components/mentions-list";
 import { ACCOUNT_TITLE_ID } from "./account-title-id";
 import { AccountPanes } from "./account-panes";
 import { GuidedToursPane } from "../../../components/tour/guided-tours-pane";
@@ -113,6 +114,14 @@ export async function AccountContent() {
       id: "workspaces",
       label: SHARING_COPY[locale].workspacesTitle,
       panel: <WorkspacesPane locale={locale} />,
+    },
+    {
+      // Comments that name you (proposal 9), reached from the account menu's
+      // "Mentions" entry as `/account#mentions`. Beside Workspaces because a
+      // mention is only ever from someone in the workspace you are in.
+      id: "mentions",
+      label: COMMENTS_COPY[locale].mentionsTitle,
+      panel: <MentionsList locale={locale} />,
     },
     {
       id: "archived",

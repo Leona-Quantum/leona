@@ -16,7 +16,7 @@ import {
   PlusIcon,
   QappsIcon,
   SearchIcon,
-  ChipIcon, GaugeIcon, SettingsIcon, SignOutIcon,
+  ChipIcon, GaugeIcon, MentionIcon, SettingsIcon, SignOutIcon,
   StudioIcon,
   TrashIcon,
 } from "./icons";
@@ -1351,6 +1351,10 @@ function WorkspaceSidebar({
                       </span>
                     ) : null}
                   </Link>
+                  {/* Comments that mention you (proposal 9). A Settings pane rather
+                      than a page of its own, so it opens over whatever you were
+                      doing, like the two entries around it. */}
+                  <Link role="menuitem" href="/account#mentions"><span className="mj-sidebar-menu-line"><MentionIcon size={16} />{copy.mentions}</span></Link>
                   <Link role="menuitem" href="/account" data-tour="menu-settings"><span className="mj-sidebar-menu-line"><SettingsIcon size={16} />{copy.settings}</span></Link>
                   {/* Stays an anchor. /auth/sign-out is a route handler that
                       clears the session and redirects; there is no page for a

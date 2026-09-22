@@ -7,6 +7,8 @@ import { useRouter } from "next/navigation";
 import type { FormEvent } from "react";
 import { useEffect, useRef, useState } from "react";
 import { ChatMarkdown } from "../../../../components/chat-markdown";
+import { CommentsPanel } from "../../../../components/comments-panel";
+import { isCommentableId } from "../../../../lib/comments";
 import { NotebookDiffView } from "../../../../components/notebook-diff-view";
 import { NotebookReviewPanel } from "../../../../components/notebook-review-panel";
 import {
@@ -1278,6 +1280,12 @@ export function NotebookWorkspace({ notebookId, locale = "en" }: { notebookId: s
             </details>
           ) : null}
           {!compareMode && version ? <NotebookReviewPanel review={version.review} locale={locale} /> : null}
+          {/* The workspace's comments on this notebook (proposal 9): about the
+              notebook itself, not one version of it, so they stay put when a
+              revision lands. */}
+          {isCommentableId(notebookId) ? (
+            <CommentsPanel targetType="notebook" targetId={notebookId} locale={locale} />
+          ) : null}
         </section>
 
         <aside className="mj-notebook-workspace-chat" aria-label={copy.chatLabel}>

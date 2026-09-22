@@ -78,6 +78,8 @@ import {
   type SynthesisTarget,
 } from "../../../lib/studio-synthesis";
 import { PanelTabs, panelRegion } from "../../../components/panel-tabs";
+import { CommentsPanel } from "../../../components/comments-panel";
+import { COMMENTS_ANCHOR, isCommentableId } from "../../../lib/comments";
 import { circuitMoments } from "../../../lib/circuit-moments";
 import { gateFamily, type GateFamily } from "../../../lib/gate-inspector";
 import { gateShortcutKey, isTypingTarget, studioShortcut } from "../../../lib/studio-shortcuts";
@@ -216,6 +218,12 @@ export function StudioWorkspace({ artifactId, newDraft = false, exampleId, atlas
     setPanel(next);
     setPopout(null);
   }
+  // A Mentions link ends in `#comments` (lib/comments.ts `targetHref`), and the
+  // thread lives on the Summary tab, so arriving that way opens Summary rather
+  // than leaving the reader on Code looking for it.
+  useEffect(() => {
+    if (window.location.hash === COMMENTS_ANCHOR) setPanel("summary");
+  }, []);
   // Strings, not numbers: an empty seed field means "let the planner choose" and
   // a number state would have to encode that as 0, which is a valid seed.
   const [shots, setShots] = useState(String(DEFAULT_RUN_SHOTS));
@@ -3728,6 +3736,15 @@ function SummaryPanel({
           <div className="mj-studio-version-row"><span className="mj-studio-version-dot" /><div><strong>{copy.draftNotSaved}</strong><p>{copy.draftVersionNote}</p></div></div>
         )}
       </div>
+
+      {/* The workspace's comments on this saved circuit (proposal 9). Only a
+          circuit the server holds: one that lives only in this browser has no
+          row for anyone else to read a comment on. */}
+      {artifact && isCommentableId(artifact.id) ? (
+        <div className="mj-studio-summary-section">
+          <CommentsPanel targetType="artifact" targetId={artifact.id} locale={locale} />
+        </div>
+      ) : null}
 
       <details className="mj-sim-details">
         <summary>{copy.runContract}</summary>
