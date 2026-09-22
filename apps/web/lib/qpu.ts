@@ -33,6 +33,43 @@ export type QpuBackendInfo = {
    * `false` means priced-only.
    */
   submittable?: boolean;
+  /**
+   * Published error figures for the pre-submit noise estimate, mirroring
+   * `majorana_qpu.PublishedNoise` (packages/py/qpu/src/majorana_qpu/noise_figures.py).
+   * Optional because an API deployed before the field existed does not send
+   * it; absent means "no preview", never "no noise".
+   */
+  published_noise?: QpuPublishedNoise | null;
+};
+
+/** What a published figure summarises: a median, a mean, or one headline
+ * figure with no statistic named on the page. */
+export type QpuErrorStatistic = "median" | "mean" | "stated";
+
+export type QpuPublishedErrorFigure = {
+  /** Error probability per operation; a published fidelity F is stored as 1 - F. */
+  value: number;
+  statistic: QpuErrorStatistic;
+  /** The figure exactly as the source page printed it. */
+  published_as: string;
+  source_url: string;
+  read_on: string;
+};
+
+export type QpuPublishedNoiseProfile = {
+  machine: string;
+  /** null: the source did not publish this figure. */
+  one_qubit_gate_error: QpuPublishedErrorFigure | null;
+  two_qubit_gate_error: QpuPublishedErrorFigure | null;
+  readout_error: QpuPublishedErrorFigure | null;
+};
+
+export type QpuPublishedNoise = {
+  /** false for an analog device, where gate errors do not apply. */
+  gate_model: boolean;
+  /** true when the provider picks the machine at submit time (IBM Open Plan). */
+  machine_chosen_at_submit: boolean;
+  profiles: QpuPublishedNoiseProfile[];
 };
 
 /** A device on the rate card that Leona can estimate but not submit to. */

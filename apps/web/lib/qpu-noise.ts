@@ -1,0 +1,389 @@
+import { expectedShotNoiseTvd, parseSubmittedCircuit } from "./qpu-ideal.ts";
+import { bitstringFor, idealProbabilities } from "./statevector-kernel.ts";
+import type { QpuPublishedErrorFigure, QpuPublishedNoise, QpuPublishedNoiseProfile } from "./qpu.ts";
+import type { ParsedBuilderCircuit } from "./studio-parse.ts";
+import type { CpuSimulationLimits } from "./studio-simulation.ts";
+
+/**
+ * "Before you pay": what a device's published error figures predict for a
+ * circuit, computed in this browser before the circuit is submitted.
+ *
+ * It is an estimate from vendor summaries (a median, a mean, or one headline
+ * figure per device, recorded with its source in majorana_qpu's
+ * noise_figures.py), never a prediction of a particular run. Nothing is sent
+ * anywhere and nothing is executed on a server: the ideal distribution comes
+ * from the same bounded parser and statevector kernel as the measured-against-
+ * ideal panel (qpu-ideal.ts), and the noise is arithmetic on top of it.
+ *
+ * ## The model, and why this one
+ *
+ * Gate errors use a GLOBAL depolarising approximation. A randomized-
+ * benchmarking error rate r on a d-dimensional gate corresponds to a
+ * depolarising channel that replaces the state with the maximally mixed one
+ * with probability lambda = d r / (d - 1): 2r for one-qubit gates, 4r/3 for
+ * two-qubit gates. That is the definition RB fits, so the conversion takes the
+ * published number at its word. The approximation is to let each such event
+ * scramble the whole register, so the distribution before readout is
+ *
+ *   P * ideal + (1 - P) * uniform,   P = product over gates of (1 - lambda_g),
+ *
+ * which is the usual first-order estimate of circuit fidelity from per-gate
+ * error rates. Readout error is then applied exactly, as an independent
+ * symmetric bit flip on each measured qubit (a 2x2 confusion matrix per
+ * qubit, applied as a tensor product).
+ *
+ * A per-gate density-matrix simulation would get the SHAPE of the noise right,
+ * and was rejected on cost: it holds 4^n amplitudes where the statevector holds
+ * 2^n. At the browser tiers' 8 to 20 qubit ceilings (account-tier.ts) that is
+ * 1 MB at 8 qubits, 268 MB at 12, and 17.6 TB at 20. Sampling noisy statevector
+ * trajectories instead costs one full simulation per trajectory, 1.2 s each
+ * at 20 qubits and about 1,000 gates by the sweep studio-simulation.ts cites,
+ * and would itself be noisy. The global model costs one ideal simulation plus
+ * O(n 2^n) arithmetic per device, which fits every tier.
+ *
+ * What the approximation gets wrong, in the direction that matters: real
+ * errors are local and partly coherent, so the distribution's shape differs;
+ * gates are counted as written, while a device with limited wiring adds swap
+ * gates to route the circuit; idle qubits decay; and a figure the vendor did
+ * not publish is left out rather than guessed. All of those except the shape
+ * make a real run noisier than this, and the UI says so.
+ */
+
+/** Physical gates implied by a parsed circuit, counted as written. */
+export type GateTally = {
+  oneQubit: number;
+  twoQubit: number;
+  /** Qubits read out at the end. The parse path only accepts a whole-register
+   * measurement, so this is every qubit. */
+  measuredQubits: number;
+};
+
+/**
+ * How many one- and two-qubit gates each builder gate stands for. Gates no
+ * device runs as one native two-qubit operation use their textbook
+ * decompositions: SWAP is three CX; CP(theta) and RZZ(theta) are two CX with
+ * three and one phase rotations; CCX is Qiskit's six-CX definition with nine
+ * one-qubit gates. Some devices do better (trapped ions and IBM's fractional
+ * gates can run RZZ as one operation), so these counts lean high for them,
+ * and phase gates that superconducting devices apply in software are counted
+ * as real gates. Both effects are small next to what the tally leaves out
+ * (routing swaps), which is why the tally stays device-independent.
+ */
+const GATE_COST: Record<string, { oneQubit: number; twoQubit: number }> = {
+  H: { oneQubit: 1, twoQubit: 0 },
+  X: { oneQubit: 1, twoQubit: 0 },
+  Y: { oneQubit: 1, twoQubit: 0 },
+  Z: { oneQubit: 1, twoQubit: 0 },
+  S: { oneQubit: 1, twoQubit: 0 },
+  T: { oneQubit: 1, twoQubit: 0 },
+  SDG: { oneQubit: 1, twoQubit: 0 },
+  TDG: { oneQubit: 1, twoQubit: 0 },
+  RX: { oneQubit: 1, twoQubit: 0 },
+  RY: { oneQubit: 1, twoQubit: 0 },
+  RZ: { oneQubit: 1, twoQubit: 0 },
+  P: { oneQubit: 1, twoQubit: 0 },
+  CX: { oneQubit: 0, twoQubit: 1 },
+  CZ: { oneQubit: 0, twoQubit: 1 },
+  SWAP: { oneQubit: 0, twoQubit: 3 },
+  CP: { oneQubit: 3, twoQubit: 2 },
+  RZZ: { oneQubit: 1, twoQubit: 2 },
+  CCX: { oneQubit: 9, twoQubit: 6 },
+  M: { oneQubit: 0, twoQubit: 0 },
+};
+
+/** Null when the circuit holds a gate this table has no cost for (a custom
+ * gate), because a tally that skipped it would understate the noise silently. */
+export function tallyGates(circuit: ParsedBuilderCircuit): GateTally | null {
+  let oneQubit = 0;
+  let twoQubit = 0;
+  for (const step of circuit.steps) {
+    const cost = GATE_COST[step.gate];
+    if (!cost) return null;
+    oneQubit += cost.oneQubit;
+    twoQubit += cost.twoQubit;
+  }
+  return { oneQubit, twoQubit, measuredQubits: circuit.qubitCount };
+}
+
+/** Per-operation error probabilities. Null means not published: left out. */
+export type NoiseRates = {
+  oneQubitGateError: number | null;
+  twoQubitGateError: number | null;
+  readoutError: number | null;
+};
+
+/**
+ * The weight left on the ideal distribution after every gate's depolarising
+ * event, P in the module comment. A rate so high that lambda reaches 1 (a
+ * one-qubit error of 1/2, a two-qubit error of 3/4) means full
+ * depolarisation, and P is 0.
+ */
+export function idealWeight(tally: GateTally, rates: NoiseRates): number {
+  const oneQubitSurvival = clamp01(1 - 2 * (rates.oneQubitGateError ?? 0));
+  const twoQubitSurvival = clamp01(1 - (4 / 3) * (rates.twoQubitGateError ?? 0));
+  return oneQubitSurvival ** tally.oneQubit * twoQubitSurvival ** tally.twoQubit;
+}
+
+/** weight * distribution + (1 - weight) * uniform. */
+export function mixWithUniform(distribution: Float64Array, weight: number): Float64Array {
+  const uniformShare = (1 - weight) / distribution.length;
+  const mixed = new Float64Array(distribution.length);
+  for (let index = 0; index < distribution.length; index += 1) {
+    mixed[index] = weight * distribution[index] + uniformShare;
+  }
+  return mixed;
+}
+
+/**
+ * Applies an independent, symmetric readout flip with probability `flip` to
+ * each of the first `qubitCount` qubits. Basis index i has qubit j at bit j,
+ * the statevector kernel's convention, so the confusion matrix for qubit j
+ * mixes each index with its partner i ^ (1 << j).
+ *
+ * Symmetric because each vendor publishes one readout number per device. IBM's
+ * is the mean of P(read 0 | prepared 1) and P(read 1 | prepared 0), and the two
+ * are not equal in practice: the example qubit in IBM's backend-details guide
+ * (quantum.cloud.ibm.com/docs/en/guides/qpu-information) misreads a prepared 1
+ * 8.7% of the time and a prepared 0 2.0%. One figure cannot express that.
+ */
+export function applyReadoutFlip(distribution: Float64Array, qubitCount: number, flip: number): Float64Array {
+  const result = Float64Array.from(distribution);
+  if (flip <= 0) return result;
+  const keep = 1 - flip;
+  for (let qubit = 0; qubit < qubitCount; qubit += 1) {
+    const mask = 1 << qubit;
+    for (let index = 0; index < result.length; index += 1) {
+      if (index & mask) continue;
+      const zero = result[index];
+      const one = result[index | mask];
+      result[index] = keep * zero + flip * one;
+      result[index | mask] = flip * zero + keep * one;
+    }
+  }
+  return result;
+}
+
+/** The estimated outcome distribution under the model in the module comment. */
+export function estimateNoisyDistribution(
+  ideal: Float64Array,
+  qubitCount: number,
+  tally: GateTally,
+  rates: NoiseRates,
+): Float64Array {
+  const afterGates = mixWithUniform(ideal, idealWeight(tally, rates));
+  return applyReadoutFlip(afterGates, Math.min(tally.measuredQubits, qubitCount), rates.readoutError ?? 0);
+}
+
+export function totalVariationDistance(left: Float64Array, right: Float64Array): number {
+  let sum = 0;
+  for (let index = 0; index < left.length; index += 1) sum += Math.abs(left[index] - right[index]);
+  return clamp01(sum / 2);
+}
+
+export type MissingFigure = "one_qubit" | "two_qubit" | "readout";
+
+export type NoisyPreviewRow = { bitstring: string; idealShare: number; estimatedShare: number };
+
+export type NoisyPreviewMachine = {
+  machine: string;
+  profile: QpuPublishedNoiseProfile;
+  /** Total variation distance between the estimate and the ideal. */
+  tvd: number;
+  /** Total variation distance between the estimate and uniform random bits. */
+  tvdToUniform: number;
+  missing: MissingFigure[];
+};
+
+/**
+ * - `ideal_near_uniform`: the ideal distribution is no farther from random bits
+ *   than sampling alone would put a perfect device's result at this shot count,
+ *   so no device could show much here.
+ * - `closer_to_noise`: the estimate is at least as close to uniform random bits
+ *   as to the ideal. Under the gate model alone this is exactly P <= 1/2; it is
+ *   the point past which the result looks more like noise than like the answer.
+ * - `ideal_stands_out`: otherwise.
+ */
+export type NoisyPreviewReading = "ideal_near_uniform" | "closer_to_noise" | "ideal_stands_out";
+
+export type NoisyPreviewUnavailable =
+  | "not_gate_model"
+  | "no_figures"
+  | "unparsable"
+  | "qubit_limit"
+  | "operation_limit";
+
+export type NoisyPreview =
+  | {
+      status: "computed";
+      qubitCount: number;
+      shots: number;
+      tally: GateTally;
+      machineChosenAtSubmit: boolean;
+      /** The machine with the largest expected distance. With one profile it
+       * is that profile; with IBM's submit-time choice it is the least
+       * favourable candidate, so the preview errs toward caution. */
+      shown: NoisyPreviewMachine;
+      machines: NoisyPreviewMachine[];
+      tvdRange: { min: number; max: number };
+      /** Distance of uniform random bits from the ideal. */
+      uniformTvd: number;
+      /** Expected distance of a perfect device's sample from the ideal at `shots`. */
+      shotNoiseTvd: number;
+      /** `shown.tvd / uniformTvd`: how far the estimate sits from the ideal
+       * toward random bits, 0 at the ideal and 1 at uniform. Null when the
+       * ideal is itself uniform and the ratio has no meaning. */
+      shareTowardNoise: number | null;
+      reading: NoisyPreviewReading;
+      rows: NoisyPreviewRow[];
+      otherIdealShare: number;
+      otherEstimatedShare: number;
+    }
+  | { status: "unavailable"; reason: NoisyPreviewUnavailable };
+
+const DEFAULT_MAX_ROWS = 6;
+const UNIFORM_TOLERANCE = 1e-12;
+
+export function previewNoisyRun(input: {
+  qasm: string;
+  noise: QpuPublishedNoise;
+  shots: number;
+  limits: CpuSimulationLimits;
+  maxRows?: number;
+}): NoisyPreview {
+  const { qasm, noise, shots, limits, maxRows = DEFAULT_MAX_ROWS } = input;
+  if (!noise.gate_model) return { status: "unavailable", reason: "not_gate_model" };
+  const profiles = noise.profiles.filter(hasAnyFigure);
+  if (profiles.length === 0) return { status: "unavailable", reason: "no_figures" };
+
+  const parsed = parseSubmittedCircuit(qasm, limits);
+  if (parsed.status === "unavailable") return parsed;
+  const { circuit } = parsed;
+  const tally = tallyGates(circuit);
+  if (!tally) return { status: "unavailable", reason: "unparsable" };
+
+  let ideal: Float64Array;
+  try {
+    ideal = idealProbabilities(circuit);
+  } catch {
+    // The kernel throws on custom gates and angles outside its syntax. That
+    // is "cannot estimate", never an estimate from a partial circuit.
+    return { status: "unavailable", reason: "unparsable" };
+  }
+
+  const uniform = new Float64Array(ideal.length).fill(1 / ideal.length);
+  const uniformTvd = totalVariationDistance(ideal, uniform);
+  const estimates = new Map<NoisyPreviewMachine, Float64Array>();
+  const machines = profiles.map((profile) => {
+    const estimate = estimateNoisyDistribution(ideal, circuit.qubitCount, tally, ratesOf(profile));
+    const machine: NoisyPreviewMachine = {
+      machine: profile.machine,
+      profile,
+      tvd: totalVariationDistance(estimate, ideal),
+      tvdToUniform: totalVariationDistance(estimate, uniform),
+      missing: missingFigures(profile),
+    };
+    estimates.set(machine, estimate);
+    return machine;
+  });
+
+  const shown = machines.reduce((worst, machine) => (machine.tvd > worst.tvd ? machine : worst), machines[0]);
+  const tvds = machines.map((machine) => machine.tvd);
+  const shotNoiseTvd = expectedShotNoiseTvd(ideal, shots);
+  const reading: NoisyPreviewReading = uniformTvd <= shotNoiseTvd
+    ? "ideal_near_uniform"
+    : shown.tvdToUniform <= shown.tvd
+      ? "closer_to_noise"
+      : "ideal_stands_out";
+  const { rows, otherIdealShare, otherEstimatedShare } = topRows(ideal, estimates.get(shown)!, circuit.qubitCount, maxRows);
+
+  return {
+    status: "computed",
+    qubitCount: circuit.qubitCount,
+    shots,
+    tally,
+    machineChosenAtSubmit: noise.machine_chosen_at_submit,
+    shown,
+    machines,
+    tvdRange: { min: Math.min(...tvds), max: Math.max(...tvds) },
+    uniformTvd,
+    shotNoiseTvd,
+    // Not `> 0`: a uniform ideal comes out of the kernel as 1/2^n plus rounding,
+    // and dividing by that rounding would report "all the way to noise".
+    shareTowardNoise: uniformTvd > UNIFORM_TOLERANCE ? clamp01(shown.tvd / uniformTvd) : null,
+    reading,
+    rows,
+    otherIdealShare,
+    otherEstimatedShare,
+  };
+}
+
+function hasAnyFigure(profile: QpuPublishedNoiseProfile): boolean {
+  return Boolean(profile.one_qubit_gate_error || profile.two_qubit_gate_error || profile.readout_error);
+}
+
+function valueOf(figure: QpuPublishedErrorFigure | null | undefined): number | null {
+  return figure && Number.isFinite(figure.value) ? figure.value : null;
+}
+
+function ratesOf(profile: QpuPublishedNoiseProfile): NoiseRates {
+  return {
+    oneQubitGateError: valueOf(profile.one_qubit_gate_error),
+    twoQubitGateError: valueOf(profile.two_qubit_gate_error),
+    readoutError: valueOf(profile.readout_error),
+  };
+}
+
+function missingFigures(profile: QpuPublishedNoiseProfile): MissingFigure[] {
+  const missing: MissingFigure[] = [];
+  if (valueOf(profile.one_qubit_gate_error) === null) missing.push("one_qubit");
+  if (valueOf(profile.two_qubit_gate_error) === null) missing.push("two_qubit");
+  if (valueOf(profile.readout_error) === null) missing.push("readout");
+  return missing;
+}
+
+/**
+ * The outcomes that matter in either distribution: the top `maxRows` of the
+ * ideal and of the estimate, merged and ordered by the larger of the two
+ * shares. Selected in one pass rather than by sorting all 2^n entries, since
+ * at the 20-qubit tier that sort is a million elements for six rows.
+ */
+function topRows(
+  ideal: Float64Array,
+  estimate: Float64Array,
+  qubitCount: number,
+  maxRows: number,
+): { rows: NoisyPreviewRow[]; otherIdealShare: number; otherEstimatedShare: number } {
+  const candidates = new Set<number>([...topIndices(ideal, maxRows), ...topIndices(estimate, maxRows)]);
+  const rows = Array.from(candidates, (index) => ({
+    index,
+    bitstring: bitstringFor(index, qubitCount),
+    idealShare: ideal[index],
+    estimatedShare: estimate[index],
+  }))
+    .sort((left, right) =>
+      Math.max(right.idealShare, right.estimatedShare) - Math.max(left.idealShare, left.estimatedShare)
+      || left.index - right.index)
+    .slice(0, maxRows)
+    .map(({ bitstring, idealShare, estimatedShare }) => ({ bitstring, idealShare, estimatedShare }));
+  const shownIdeal = rows.reduce((sum, row) => sum + row.idealShare, 0);
+  const shownEstimate = rows.reduce((sum, row) => sum + row.estimatedShare, 0);
+  return { rows, otherIdealShare: clamp01(1 - shownIdeal), otherEstimatedShare: clamp01(1 - shownEstimate) };
+}
+
+function topIndices(distribution: Float64Array, count: number): number[] {
+  const top: number[] = [];
+  for (let index = 0; index < distribution.length; index += 1) {
+    const value = distribution[index];
+    if (top.length === count && value <= distribution[top[top.length - 1]]) continue;
+    let position = top.length;
+    while (position > 0 && distribution[top[position - 1]] < value) position -= 1;
+    top.splice(position, 0, index);
+    if (top.length > count) top.pop();
+  }
+  return top;
+}
+
+function clamp01(value: number): number {
+  if (!Number.isFinite(value)) return 0;
+  return Math.min(1, Math.max(0, value));
+}

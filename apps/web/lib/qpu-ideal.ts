@@ -95,34 +95,11 @@ export function compareMeasuredToIdeal(input: {
   const shots = entries.reduce((sum, [, count]) => sum + count, 0);
   if (shots <= 0) return { status: "unavailable", reason: "no_counts" };
 
-  // Rule 3: parse like `cpuSimulationEligibility` (studio-simulation.ts) does
-  // — strict direct parse first, then the decomposition path.
-  const direct = parseBuilderCircuit(qasm, "openqasm3", MAX_PARSABLE_QUBITS);
-  let circuit: ParsedBuilderCircuit | null;
-  let model: CpuSimulationModel;
-  if (direct) {
-    // The strict OpenQASM 3 grammar (`parseOpenQasm3` in studio-parse.ts)
-    // only ever recognizes a literal `c = measure q;` whole-register
-    // statement, with `bit[n] c;` required to match `qubit[n] q;` exactly —
-    // there is no indexed or partial form in its grammar at all. A circuit
-    // that parses here is canonical by construction; no extra check needed.
-    circuit = direct;
-    model = "direct_source";
-  } else {
-    const decomposed = allCircuitConversionResults(qasm, "openqasm3", qasm).qiskit;
-    const viaDecomposition = decomposed ? parseCircuitSource(decomposed.code, "qiskit", MAX_PARSABLE_QUBITS) : null;
-    circuit = viaDecomposition && hasCanonicalWholeRegisterMeasurement(qasm, viaDecomposition.qubitCount)
-      ? viaDecomposition
-      : null;
-    model = "openqasm_standard_decomposition";
-  }
-  if (!circuit || !circuit.steps.some((step) => step.gate === "M")) {
-    return { status: "unavailable", reason: "unparsable" };
-  }
-
-  // Rule 4.
-  if (circuit.qubitCount > limits.cpuSimQubits) return { status: "unavailable", reason: "qubit_limit" };
-  if (circuit.steps.length > limits.cpuSimOperations) return { status: "unavailable", reason: "operation_limit" };
+  // Rules 3 and 4, shared with the pre-submit noise estimate (qpu-noise.ts)
+  // so both panels read a circuit through exactly one parse path.
+  const parsed = parseSubmittedCircuit(qasm, limits);
+  if (parsed.status === "unavailable") return parsed;
+  const { circuit, model } = parsed;
 
   // Rule 5: fail closed rather than pad or truncate a malformed key.
   const registerShape = new RegExp(`^[01]{${circuit.qubitCount}}$`);
@@ -166,6 +143,51 @@ export function compareMeasuredToIdeal(input: {
     otherMeasuredShare,
     otherIdealShare,
   };
+}
+
+export type ParsedSubmission =
+  | { status: "parsed"; circuit: ParsedBuilderCircuit; model: CpuSimulationModel }
+  | { status: "unavailable"; reason: "unparsable" | "qubit_limit" | "operation_limit" };
+
+/**
+ * Rules 3 and 4 of `compareMeasuredToIdeal`: reconstruct the submitted
+ * OpenQASM 3 circuit through the same parse path the browser CPU lane uses,
+ * require a canonical whole-register measurement, and hold it to the viewer's
+ * tier limits. Exported so the pre-submit noise estimate (qpu-noise.ts) reads
+ * a circuit exactly the way this comparison later will, and a circuit the one
+ * refuses is never one the other accepts.
+ */
+export function parseSubmittedCircuit(qasm: string, limits: CpuSimulationLimits): ParsedSubmission {
+  // Rule 3: parse like `cpuSimulationEligibility` (studio-simulation.ts) does
+  // — strict direct parse first, then the decomposition path.
+  const direct = parseBuilderCircuit(qasm, "openqasm3", MAX_PARSABLE_QUBITS);
+  let circuit: ParsedBuilderCircuit | null;
+  let model: CpuSimulationModel;
+  if (direct) {
+    // The strict OpenQASM 3 grammar (`parseOpenQasm3` in studio-parse.ts)
+    // only ever recognizes a literal `c = measure q;` whole-register
+    // statement, with `bit[n] c;` required to match `qubit[n] q;` exactly —
+    // there is no indexed or partial form in its grammar at all. A circuit
+    // that parses here is canonical by construction; no extra check needed.
+    circuit = direct;
+    model = "direct_source";
+  } else {
+    const decomposed = allCircuitConversionResults(qasm, "openqasm3", qasm).qiskit;
+    const viaDecomposition = decomposed ? parseCircuitSource(decomposed.code, "qiskit", MAX_PARSABLE_QUBITS) : null;
+    circuit = viaDecomposition && hasCanonicalWholeRegisterMeasurement(qasm, viaDecomposition.qubitCount)
+      ? viaDecomposition
+      : null;
+    model = "openqasm_standard_decomposition";
+  }
+  if (!circuit || !circuit.steps.some((step) => step.gate === "M")) {
+    return { status: "unavailable", reason: "unparsable" };
+  }
+
+  // Rule 4.
+  if (circuit.qubitCount > limits.cpuSimQubits) return { status: "unavailable", reason: "qubit_limit" };
+  if (circuit.steps.length > limits.cpuSimOperations) return { status: "unavailable", reason: "operation_limit" };
+
+  return { status: "parsed", circuit, model };
 }
 
 /**
@@ -296,7 +318,7 @@ function buildRows(
  * and an N-shot sample drawn from it — sampling noise alone, with no hardware
  * involved. `(1/(2N)) * sum_i E|X_i - N p_i|`, X_i ~ Binomial(N, p_i).
  */
-function expectedShotNoiseTvd(ideal: Float64Array, shots: number): number {
+export function expectedShotNoiseTvd(ideal: Float64Array, shots: number): number {
   let sum = 0;
   for (let index = 0; index < ideal.length; index += 1) {
     sum += expectedAbsoluteDeviation(shots, ideal[index]);
