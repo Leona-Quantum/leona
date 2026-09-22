@@ -2,6 +2,7 @@ import { getMajoranaAuth } from "../../../lib/auth";
 import { DEFAULT_PROJECT_ARTIFACT_LIMIT } from "../../../lib/account-tier";
 import { getAccountTier } from "../../../lib/account-tier-server";
 import { AccessTokens } from "./access-tokens";
+import { personalAccessTokensEnabled } from "../../../lib/access-tokens-server";
 import { AccountSettings } from "./account-settings";
 import { ArchivedChats } from "./archived-chats";
 import { BillingPanel } from "./billing-panel";
@@ -34,10 +35,11 @@ import { GuidedToursPane } from "../../../components/tour/guided-tours-pane";
  */
 
 export async function AccountContent() {
-  const [{ user }, locale, { tier, limits }] = await Promise.all([
+  const [{ user }, locale, { tier, limits }, tokensEnabled] = await Promise.all([
     getMajoranaAuth({ ensureSignedIn: true }),
     getPublicLocale(),
     getAccountTier(),
+    personalAccessTokensEnabled(),
   ]);
   const copy = ACCOUNT_COPY[locale];
   // The archive panel is the sidebar's, not this page's — it is the same list
@@ -139,20 +141,26 @@ export async function AccountContent() {
       label: copy.qpuTitle,
       panel: <QpuCredentials locale={locale} />,
     },
-    {
-      // Directly after the IBM key, and directly before billing, for the same
-      // adjacency argument the key itself was placed on: these are the three panes
-      // that answer "what, other than me, can act on this account". A token is the
-      // newest of them and the only one that can act WITHOUT a browser, so it reads
-      // next to the credential it is deliberately unable to reach.
-      //
-      // Renders nothing at all when the control plane answers 404 for /v1/tokens —
-      // the deployment has the feature switched off. So this entry is safe to add
-      // before the feature is turned on; see `AccessTokens`.
-      id: "tokens",
-      label: copy.tokensTitle,
-      panel: <AccessTokens locale={locale} />,
-    },
+    // Directly after the IBM key, and directly before billing, for the same adjacency
+    // argument the key itself was placed on: these are the three panes that answer
+    // "what, other than me, can act on this account". A token is the newest of them
+    // and the only one that can act WITHOUT a browser, so it reads next to the
+    // credential it is deliberately unable to reach.
+    //
+    // SPREAD, not registered unconditionally. The rail is built from this list, so a
+    // pane that renders null still leaves an "Access tokens" link opening onto an
+    // empty region (Greptile, PR 973). While the feature is switched off there is no
+    // entry here at all, and `/account#tokens` falls back to the default pane the way
+    // any unknown fragment does.
+    ...(tokensEnabled
+      ? [
+          {
+            id: "tokens",
+            label: copy.tokensTitle,
+            panel: <AccessTokens locale={locale} />,
+          },
+        ]
+      : []),
     {
       id: "billing",
       label: copy.billingTitle,

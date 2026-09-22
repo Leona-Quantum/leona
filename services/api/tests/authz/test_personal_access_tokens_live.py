@@ -386,3 +386,102 @@ async def test_an_account_cannot_hold_more_than_the_ceiling(db):
     await tokens_repo.revoke(scope, db, live[0].id)
     _token, row = await tokens_repo.mint(scope, db, name="room again")
     assert row.id is not None
+
+
+# ------------------------------------------------------------------ idempotency, on Postgres
+
+
+async def test_a_replayed_idempotency_key_refuses_rather_than_minting_a_second_token(db):
+    """The harm this exists to prevent: a caller whose response was lost retries, gets a
+    SECOND credential, and the first stays live and unknown to them forever.
+
+    So a replay is 409 carrying the first token's id and tail — what somebody needs in
+    order to revoke it — and the account still holds exactly one token afterwards.
+    """
+    scope, _user, _ws = await _owner_scope(db, "ana")
+    key = f"retry-{uuid.uuid4().hex[:8]}"
+    first_secret, first = await tokens_repo.mint(
+        scope, db, name="editor plugin", idempotency_key=key
+    )
+
+    with pytest.raises(tokens_repo.IdempotencyKeyAlreadyMinted) as replayed:
+        await tokens_repo.mint(scope, db, name="editor plugin", idempotency_key=key)
+
+    assert replayed.value.row.id == first.id
+    assert replayed.value.row.tail == first.tail
+    assert [row.id for row in await tokens_repo.list_tokens(scope, db)] == [first.id]
+    # The first token is untouched and still works — the refusal changed nothing.
+    assert await tokens_repo.resolve_presented(db, first_secret) is not None
+
+
+async def test_the_same_key_with_a_different_request_is_refused_as_reused(db):
+    """`POST /v1/comments`'s contract, applied here: a key is a promise about one
+    request. Answering a different ask with it would hand somebody a token whose
+    scopes or lifetime are not the ones they just asked for."""
+    scope, _user, _ws = await _owner_scope(db, "ana")
+    key = f"reused-{uuid.uuid4().hex[:8]}"
+    await tokens_repo.mint(scope, db, name="editor plugin", idempotency_key=key)
+
+    with pytest.raises(tokens_repo.IdempotencyKeyReused):
+        await tokens_repo.mint(
+            scope, db, name="editor plugin", scopes=[TokenScope.RUN], idempotency_key=key
+        )
+    assert len(await tokens_repo.list_tokens(scope, db)) == 1
+
+
+async def test_one_persons_key_never_reaches_anothers_token(db):
+    """The idempotency index is per USER, not per workspace. Two people who happen to
+    choose the same string must each get their own token, and neither lookup may ever
+    return the other's — which here would be handing somebody another account's
+    credential id."""
+    ana, _au, _aw = await _owner_scope(db, "ana")
+    bo, _bu, _bw = await _owner_scope(db, "bo")
+    key = "deploy"
+
+    _ana_secret, ana_row = await tokens_repo.mint(ana, db, name="ci", idempotency_key=key)
+    _bo_secret, bo_row = await tokens_repo.mint(bo, db, name="ci", idempotency_key=key)
+
+    assert ana_row.id != bo_row.id
+    assert [row.id for row in await tokens_repo.list_tokens(ana, db)] == [ana_row.id]
+    assert [row.id for row in await tokens_repo.list_tokens(bo, db)] == [bo_row.id]
+
+
+async def test_the_mint_takes_the_callers_user_row_lock_before_counting(db):
+    """The check-then-insert that bounds an account at `MAX_TOKENS_PER_USER` is only
+    a bound if it is serialised (Greptile, PR 973).
+
+    Asserted structurally rather than by racing two transactions: a real race needs two
+    connections and a barrier, and a test that merely *usually* interleaves them is a
+    test that passes for the wrong reason most days. What makes the bound hold is that
+    the statement is issued at all and before the count, so that is what is read — off
+    the compiled SQL, which is the artefact Postgres actually receives.
+    """
+    statements: list[str] = []
+
+    class _Recorder:
+        def __init__(self, inner):
+            self._inner = inner
+
+        async def execute(self, statement, *args, **kwargs):
+            statements.append(str(statement.compile(compile_kwargs={"literal_binds": False})))
+            return await self._inner.execute(statement, *args, **kwargs)
+
+        def __getattr__(self, name):
+            return getattr(self._inner, name)
+
+    scope, _user, _ws = await _owner_scope(db, "ana")
+    await tokens_repo.mint(scope, _Recorder(db), name="probe")
+
+    locking = [sql for sql in statements if "FOR UPDATE" in sql.upper()]
+    assert locking, f"no row lock was taken; statements were: {statements}"
+    assert "users" in locking[0].lower()
+    # And it is the FIRST thing, before the count it protects.
+    assert statements.index(locking[0]) < next(
+        index
+        for index, sql in enumerate(statements)
+        if "personal_access_tokens" in sql.lower() and "select" in sql.lower()
+    )
+    # Guard on the probe itself: an empty capture would make the `index` comparison
+    # above unreachable rather than false, and a recorder that silently stopped
+    # recording must not read as "no lock was needed".
+    assert len(statements) >= 2

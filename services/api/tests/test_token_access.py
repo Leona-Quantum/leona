@@ -324,3 +324,36 @@ async def test_a_token_whose_workspace_is_gone_is_refused_not_redirected(
             live=live,
         )
     assert raised.value.status_code == 404
+
+
+# ------------------------------------------------------------------ idempotency shape
+
+
+def test_the_idempotency_hash_covers_what_decides_the_token_and_nothing_else():
+    """The three fields that decide what the token IS. A retry differing in any of
+    them is a different ask under a used key, which is a 409 and not a replay."""
+    base = dict(name="editor", expires_in_days=30, scopes=["read"])
+    digest = tokens_repo.idempotency_request_hash(**base)
+
+    # Independent of dict ordering and of the order scopes arrive in.
+    assert digest == tokens_repo.idempotency_request_hash(
+        scopes=["read"], expires_in_days=30, name="editor"
+    )
+    assert tokens_repo.idempotency_request_hash(
+        name="editor", expires_in_days=30, scopes=["run", "read"]
+    ) == tokens_repo.idempotency_request_hash(
+        name="editor", expires_in_days=30, scopes=["read", "run"]
+    )
+
+    for changed in (
+        dict(base, name="a different purpose"),
+        dict(base, expires_in_days=31),
+        dict(base, scopes=["read", "run"]),
+    ):
+        assert tokens_repo.idempotency_request_hash(**changed) != digest, changed
+
+    # And the separator does its job: two different splits of the same characters
+    # must not collide, which a naive concatenation would allow.
+    assert tokens_repo.idempotency_request_hash(
+        name="ab", expires_in_days=1, scopes=["read"]
+    ) != tokens_repo.idempotency_request_hash(name="a", expires_in_days=1, scopes=["read"])

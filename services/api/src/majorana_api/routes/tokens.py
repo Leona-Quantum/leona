@@ -17,7 +17,7 @@ from __future__ import annotations
 import uuid
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, Header, HTTPException
 from majorana_contracts.tokens import (
     MAX_TOKENS_PER_USER,
     CreateTokenRequest,
@@ -61,7 +61,12 @@ async def list_tokens(scope: CurrentScope, session: DbSession) -> PersonalAccess
     "/tokens", response_model=MintedToken, status_code=201, dependencies=[Depends(_enabled)]
 )
 async def mint_token(
-    body: CreateTokenRequest, scope: CurrentScope, session: DbSession
+    body: CreateTokenRequest,
+    scope: CurrentScope,
+    session: DbSession,
+    idempotency_key: Annotated[
+        str | None, Header(alias="Idempotency-Key", min_length=1, max_length=255)
+    ] = None,
 ) -> MintedToken:
     """Mint a token in the caller's active workspace and return it ONCE.
 
@@ -69,6 +74,21 @@ async def mint_token(
     names its own tenant is a body that can be edited to name another one. The
     lifetime ceiling (90 days, the owner's ruling) is a `le=` on the request model, so
     an over-long ask is a 422 naming the field rather than a token quietly cut short.
+
+    ## Idempotency, and why a retry is a 409 rather than a replay
+
+    Takes an `Idempotency-Key`, as `services/api/AGENTS.md` asks of every mutation, but
+    it cannot honour that header's usual contract and does not pretend to. Elsewhere a
+    retry after a lost response returns what the first request created; here the thing
+    the caller lost is the secret, and nothing stores it, so no implementation could
+    return it — and one that could would be a worse system than one that cannot.
+
+    What a retry must not do is mint a SECOND token, leaving the first live and unknown
+    to the caller: an orphan credential nobody will revoke because nobody knows it
+    exists. So a replayed key answers **409 `idempotency_key_already_minted`**, naming
+    the token the first request made by id and tail, which is what somebody needs in
+    order to revoke it and mint again. The same key with a different body is
+    `idempotency_key_reused`, the contract `POST /v1/comments` already has.
     """
     try:
         presented, row = await tokens_repo.mint(
@@ -77,6 +97,7 @@ async def mint_token(
             name=body.name,
             expires_in_days=body.expires_in_days,
             scopes=body.scopes,
+            idempotency_key=idempotency_key,
         )
     except tokens_repo.TokenLimitReached:
         raise HTTPException(
@@ -85,6 +106,26 @@ async def mint_token(
                 "error": f"You already have {MAX_TOKENS_PER_USER} active access tokens. "
                 "Revoke one before creating another.",
                 "reason": "token_limit_reached",
+            },
+        ) from None
+    except tokens_repo.IdempotencyKeyAlreadyMinted as already:
+        raise HTTPException(
+            409,
+            detail={
+                "error": "That request already created a token, and its secret cannot be "
+                f"shown again. Revoke lq_pat_\u2026{already.row.tail} and create another.",
+                "reason": "idempotency_key_already_minted",
+                "token_id": str(already.row.id),
+                "tail": already.row.tail,
+            },
+        ) from None
+    except tokens_repo.IdempotencyKeyReused:
+        raise HTTPException(
+            409,
+            detail={
+                "error": "This Idempotency-Key was used for a different token. Use a new "
+                "key, or repeat the original request exactly.",
+                "reason": "idempotency_key_reused",
             },
         ) from None
     return MintedToken(token=presented, record=tokens_repo.to_resource(row))

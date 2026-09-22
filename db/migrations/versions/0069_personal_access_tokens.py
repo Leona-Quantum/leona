@@ -61,6 +61,24 @@ workspace switcher on the website.
 - `ck_personal_access_tokens_tail` — exactly four characters, so nothing can quietly
   start storing more of the secret in the clear under this column's name.
 
+## Idempotency, and why a replay cannot be idempotent here
+
+`POST /v1/tokens` takes an `Idempotency-Key`, as `services/api/AGENTS.md` asks of every
+mutation. It cannot honour the usual contract, and the columns are here so it can refuse
+correctly rather than pretend.
+
+The usual contract is "a retry after a lost response returns what the first request
+created". For every other resource that is possible because the resource is stored. Here
+the thing the caller lost is the **secret**, and the whole design is that nothing stores
+it — so a replay cannot return it, and any implementation that could would be a worse
+system than one that cannot.
+
+What a replay must NOT do is mint a second token. That is the real harm: the caller
+retries, receives a second credential, and the first stays live and unknown to them — an
+orphan nobody will ever revoke because nobody knows it exists. So a replayed key answers
+409 naming the token the first request made, with its id and tail, which is exactly what
+somebody needs in order to revoke it and mint again.
+
 ## Grants
 
 `app_rw` gets select, insert and update — it mints, it stamps `last_used_at`, and it
@@ -119,6 +137,8 @@ def upgrade() -> None:
         sa.Column("expires_at", sa.TIMESTAMP(timezone=True), nullable=False),
         sa.Column("last_used_at", sa.TIMESTAMP(timezone=True), nullable=True),
         sa.Column("revoked_at", sa.TIMESTAMP(timezone=True), nullable=True),
+        sa.Column("idempotency_key", sa.Text(), nullable=True),
+        sa.Column("idempotency_request_hash", sa.Text(), nullable=True),
         sa.ForeignKeyConstraint(["user_id"], ["users.id"], ondelete="CASCADE"),
         sa.ForeignKeyConstraint(["workspace_id"], ["workspaces.id"]),
         sa.CheckConstraint(
@@ -143,6 +163,25 @@ def upgrade() -> None:
             f"and expires_at <= created_at + interval '{_MAX_LIFETIME_DAYS} days'",
             name="ck_personal_access_tokens_lifetime",
         ),
+        sa.CheckConstraint(
+            "idempotency_key is null or char_length(idempotency_key) between 1 and 255",
+            name="ck_personal_access_tokens_idempotency_key_length",
+        ),
+        sa.CheckConstraint(
+            "(idempotency_key is null) = (idempotency_request_hash is null)",
+            name="ck_personal_access_tokens_idempotency_pair",
+        ),
+    )
+    # A key is the OWNER's own, per user rather than per workspace: 0068 makes the
+    # same argument for comments, that two people who choose the same string must each
+    # get their own outcome and a lookup must never hand one person another's row.
+    # Here it is stronger still, because the row in question is a credential.
+    op.create_index(
+        "uq_personal_access_tokens_idempotency_key",
+        "personal_access_tokens",
+        ["user_id", "idempotency_key"],
+        unique=True,
+        postgresql_where=sa.text("idempotency_key IS NOT NULL"),
     )
     # The auth path: one seek per authenticated request, on the whole hash. Unique
     # because two rows sharing a secret would make "which token was this" unanswerable

@@ -102,13 +102,20 @@ export function AccessTokens({ locale }: { locale: PublicLocale }) {
 
   const revoke = async (id: string) => {
     setBusy(true);
+    let failed = false;
     try {
       const response = await fetch(`/api/tokens/${id}`, { method: "DELETE" });
-      if (!response.ok && response.status !== 204) setError(copy.tokensRevokeError);
+      failed = !response.ok && response.status !== 204;
+      // Reload either way: on failure the list is the evidence that the token is
+      // still active, which is the thing the reader needs to see.
       await load();
     } catch {
-      setError(copy.tokensRevokeError);
+      failed = true;
     } finally {
+      // AFTER the reload, never before. `load()` clears the error on a successful
+      // read, so setting it first meant a failed revoke showed nothing at all: the
+      // row stayed active and the page looked like it had worked (Greptile, PR 973).
+      if (failed) setError(copy.tokensRevokeError);
       setBusy(false);
     }
   };

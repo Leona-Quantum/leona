@@ -50,7 +50,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..ids import uuid7
-from ..orm import PersonalAccessToken
+from ..orm import PersonalAccessToken, User
 from ._base import NotFoundError, touched_now
 
 #: Bytes of entropy behind the prefix. 32 bytes is 256 bits, which is why this is
@@ -65,6 +65,35 @@ LAST_USED_RESOLUTION = dt.timedelta(minutes=5)
 
 class TokenLimitReached(Exception):
     """This account already holds `MAX_TOKENS_PER_USER` live tokens."""
+
+
+class IdempotencyKeyAlreadyMinted(Exception):
+    """This key already minted a token, whose secret is gone and cannot be re-shown.
+
+    Carries the row so the caller can name it — its id and tail are what somebody needs
+    in order to revoke the credential their lost response was carrying.
+    """
+
+    def __init__(self, row: PersonalAccessToken) -> None:
+        super().__init__("idempotency key already minted a token")
+        self.row = row
+
+
+class IdempotencyKeyReused(Exception):
+    """The same key, a different request. Refused rather than answered with the
+    other request's token, which is the rule `POST /v1/runs` and `POST /v1/comments`
+    already follow."""
+
+
+def idempotency_request_hash(*, name: str, expires_in_days: int, scopes: list[str]) -> str:
+    """What "the same request" means for a mint.
+
+    The three fields that decide what the token IS. A caller who retries with the same
+    key but asks for different scopes is not retrying, they are asking for something
+    else under a used key, and that is the 409 this hash exists to produce.
+    """
+    payload = f"{name}\u0000{expires_in_days}\u0000{','.join(sorted(scopes))}"
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
 
 def new_token() -> str:
@@ -133,6 +162,7 @@ async def mint(
     name: str,
     expires_in_days: int = MAX_TOKEN_LIFETIME_DAYS,
     scopes: list[TokenScope] | None = None,
+    idempotency_key: str | None = None,
     now: dt.datetime | None = None,
 ) -> tuple[str, PersonalAccessToken]:
     """Create a token for the caller in the caller's own active workspace.
@@ -150,6 +180,42 @@ async def mint(
     moment = now if now is not None else touched_now()
     if not 1 <= expires_in_days <= MAX_TOKEN_LIFETIME_DAYS:
         raise ValueError(f"expires_in_days must be between 1 and {MAX_TOKEN_LIFETIME_DAYS}")
+    normalised = normalise_scopes(scopes)
+    request_hash = (
+        idempotency_request_hash(name=name, expires_in_days=expires_in_days, scopes=normalised)
+        if idempotency_key
+        else None
+    )
+
+    # The caller's own row, locked for the rest of this transaction. Everything below
+    # is a check-then-insert -- count the live tokens, then add one -- and without the
+    # lock two concurrent mints near the ceiling both read the same count and both
+    # insert, leaving the account above a bound that is there to bound abuse. The same
+    # shape and the same remedy as the artifact quota (`repos/artifacts.py`), and the
+    # same lock ordering: `users` is the last link in that module's stated chain
+    # (artifact -> project -> workspace -> user) and nothing here holds anything above
+    # it, so this introduces no new cycle.
+    #
+    # It also serialises the idempotency lookup below against a concurrent retry, which
+    # the partial unique index would otherwise have to catch as an IntegrityError.
+    await session.execute(select(User.id).where(User.id == scope.user_id).with_for_update())
+
+    if idempotency_key:
+        existing = (
+            await session.execute(
+                select(PersonalAccessToken).where(
+                    PersonalAccessToken.user_id == scope.user_id,
+                    PersonalAccessToken.idempotency_key == idempotency_key,
+                )
+            )
+        ).scalar_one_or_none()
+        if existing is not None:
+            if existing.idempotency_request_hash != request_hash:
+                raise IdempotencyKeyReused
+            # Same key, same request: the first one worked and its secret is gone.
+            # Answering with a SECOND token here is the failure this whole branch
+            # exists to prevent -- the first would stay live and unknown to the caller.
+            raise IdempotencyKeyAlreadyMinted(existing)
 
     live_now = [row for row in await list_tokens(scope, session) if _live(row, now=moment)]
     if len(live_now) >= MAX_TOKENS_PER_USER:
@@ -165,9 +231,11 @@ async def mint(
         name=name,
         token_hash=hash_token(presented),
         tail=secret[-TOKEN_TAIL_CHARS:],
-        scopes=normalise_scopes(scopes),
+        scopes=normalised,
         created_at=moment,
         expires_at=moment + dt.timedelta(days=expires_in_days),
+        idempotency_key=idempotency_key,
+        idempotency_request_hash=request_hash,
     )
     session.add(row)
     await session.flush()

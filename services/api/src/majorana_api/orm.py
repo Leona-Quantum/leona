@@ -1114,3 +1114,5 @@ class PersonalAccessToken(Base):
     expires_at: Mapped[dt.datetime]
     last_used_at: Mapped[dt.datetime | None]
     revoked_at: Mapped[dt.datetime | None]
+    idempotency_key: Mapped[str | None]
+    idempotency_request_hash: Mapped[str | None]
