@@ -88,6 +88,8 @@ const cases = [
   ["all-zeros base (new branch) fails open", DOCS, { "docs/a.md": "y" }, { __ZEROBASE: "1" }, "BUILD"],
   ["unlisted top-level path builds", DOCS, { "somewhere-new/x.txt": "y" }, {}, "BUILD"],
   ["notebooks package builds (not on the list)", DOCS, { "packages/py/notebooks/x.py": "y" }, {}, "BUILD"],
+  ["mcp package skips (apps/web never imports it)", DOCS, { "packages/py/mcp/src/x.py": "y" }, {}, "SKIP"],
+  ["mcp package plus a web change builds", DOCS, { "packages/py/mcp/src/x.py": "y", "apps/web/app/page.tsx": "y" }, {}, "BUILD"],
 ];
 
 let failed = 0;
