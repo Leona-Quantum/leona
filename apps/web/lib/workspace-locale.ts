@@ -2216,7 +2216,7 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
     gradebookLateHint: (date) => `Nothing was checked by the due date, ${date}.`,
     gradebookMissing: "Missing",
     gradebookMissingHint: (date) => `Not started, and the due date (${date}) has passed.`,
-    gradebookLegend: "Late: checked after the due date. Missing: not started, and the due date has passed.",
+    gradebookLegend: "Late: nothing was checked by the due date. Missing: not started, and the due date has passed.",
   },
   },
   ja: {
@@ -3390,7 +3390,7 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
     gradebookLateHint: (date) => `提出期限（${date}）までに採点された提出がありません。`,
     gradebookMissing: "未提出",
     gradebookMissingHint: (date) => `未着手のまま、提出期限（${date}）を過ぎています。`,
-    gradebookLegend: "期限後：提出期限より後に採点された結果です。未提出：未着手のまま提出期限を過ぎています。",
+    gradebookLegend: "期限後：提出期限までに採点された提出がありません。未提出：未着手のまま提出期限を過ぎています。",
   },
   },
 };
