@@ -2780,6 +2780,19 @@
             "title": "Modules",
             "type": "array"
           },
+          "owner_user_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Owner User Id"
+          },
           "plan_run_id": {
             "anyOf": [
               {
@@ -2909,6 +2922,19 @@
             "title": "Deliverable",
             "type": "string"
           },
+          "due_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Due At"
+          },
           "duration_minutes": {
             "anyOf": [
               {
@@ -3012,7 +3038,7 @@
       },
       "CourseModulePatch": {
         "additionalProperties": false,
-        "description": "A hand edit to one planned module. Refused once the module has a notebook:\nthe notebook was generated FROM these fields, so changing them afterwards\nwould leave the module describing something the notebook does not teach.",
+        "description": "A hand edit to one planned module. Refused once the module has a notebook:\nthe notebook was generated FROM these fields, so changing them afterwards\nwould leave the module describing something the notebook does not teach.\n\n`due_at` is the exception on both counts. It may be changed at any time,\nnotebook or not, because it describes the class's schedule rather than the\nnotebook; and only the course's creator may change it, where anyone who can\nwrite in the workspace may edit a planned module. A patch that carries\n`due_at` and nothing else is therefore accepted on a generated module.",
         "properties": {
           "brief": {
             "anyOf": [
@@ -3026,6 +3052,19 @@
             ],
             "default": null,
             "title": "Brief"
+          },
+          "due_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Due At"
           },
           "id": {
             "format": "uuid",
@@ -4239,6 +4278,11 @@
             "title": "Graded Cells",
             "type": "integer"
           },
+          "late": {
+            "default": false,
+            "title": "Late",
+            "type": "boolean"
+          },
           "module_id": {
             "format": "uuid",
             "title": "Module Id",
@@ -4282,6 +4326,19 @@
         "additionalProperties": false,
         "description": "One column of the gradebook: a module, and what its notebook grades today.",
         "properties": {
+          "due_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Due At"
+          },
           "graded_cells": {
             "anyOf": [
               {
@@ -4375,6 +4432,14 @@
             ],
             "default": null,
             "title": "Last Graded At"
+          },
+          "missing_module_ids": {
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "title": "Missing Module Ids",
+            "type": "array"
           },
           "total_graded_cells": {
             "anyOf": [
@@ -7125,6 +7190,19 @@
             "format": "uuid",
             "title": "Id",
             "type": "string"
+          },
+          "mitigation": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Mitigation"
           },
           "provider": {
             "$ref": "#/components/schemas/QpuProvider"

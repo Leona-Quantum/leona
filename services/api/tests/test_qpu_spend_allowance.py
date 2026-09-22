@@ -319,6 +319,7 @@ async def _fake_create_record(scope_arg, session_arg, **kwargs):
         rate_source=kwargs["rate_source"],
         rate_confirmed_on=kwargs["rate_confirmed_on"],
         raw_counts=None,
+        mitigation=kwargs.get("mitigation"),
         error=None,
         submitted_at=None,
         completed_at=None,
@@ -552,3 +553,111 @@ async def test_the_deployment_gate_is_read_before_the_account_is_charged(monkeyp
         )
     assert excinfo.value.status_code == 409
     assert reached == []
+
+
+# ------------------------------------------------ zero-noise extrapolation's cost
+
+
+def _zne_submission(device_id: str = FORTE, shots: int = 128) -> QpuSubmissionRequest:
+    return QpuSubmissionRequest(
+        device_id=device_id, shots=shots, qasm=QASM, source_fingerprint="fnv1a-deadbeef", zne=True
+    )
+
+
+async def test_zne_is_priced_as_three_circuits_and_that_is_what_the_row_records(monkeypatch):
+    """Proposal 5, increment 4. ZNE sends the circuit and its 3x and 5x folds, so
+    the reservation is asked to fit three circuits' worth, and the row keeps
+    that figure, which is what `GET /v1/usage` sums."""
+    _open_the_gate(monkeypatch)
+    reserved: list[tuple] = []
+    written: dict = {}
+
+    async def fake_reserve(scope, session, since, limit, estimate):
+        reserved.append((limit, estimate))
+
+    async def recording_create_record(scope_arg, session_arg, **kwargs):
+        written.update(kwargs)
+        return await _fake_create_record(scope_arg, session_arg, **kwargs)
+
+    monkeypatch.setattr(qpu_runs_repo, "reserve_qpu_spend_slot", fake_reserve)
+    monkeypatch.setattr(qpu_routes.qpu_runs_repo, "create_record", recording_create_record)
+    monkeypatch.setattr(qpu_routes.system, "enqueue_job", _fake_enqueue_job)
+
+    result = await qpu_routes.qpu_submit(
+        _zne_submission(shots=1_000),
+        scope=make_scope(),
+        session=object(),
+        identity=_identity("free"),
+        settings=_sources(),
+    )
+
+    three_circuits = 3 * 0.30 + 3 * 1_000 * 0.08
+    assert reserved == [(None, pytest.approx(three_circuits))]
+    assert result.estimated_total_usd == pytest.approx(three_circuits)
+    assert written["shots"] == 1_000  # per circuit, as the user asked
+    assert written["mitigation"]["zne"]["scale_factors"] == [1, 3, 5]
+    # The opt-in rides on the row and nowhere else: the payload is extra="forbid".
+    assert result.mitigation == written["mitigation"]
+
+
+async def test_a_zne_submission_that_does_not_fit_is_refused_where_one_circuit_would_fit(
+    monkeypatch,
+):
+    """Against the REAL reservation: 103 shots on Forte is $8.54 as one circuit
+    and $25.62 as three, so a $25 ceiling admits the first and refuses the
+    second. A route that priced ZNE as one circuit would admit both."""
+    _open_the_gate(monkeypatch)
+    _stage_a_ceiling(monkeypatch, "free", STAGED_LIMIT_USD)
+
+    async def nothing_spent(scope, session, since):
+        return 0.0
+
+    monkeypatch.setattr(qpu_runs_repo, "authorized_spend_since", nothing_spent)
+    monkeypatch.setattr(qpu_routes.qpu_runs_repo, "create_record", _fake_create_record)
+    monkeypatch.setattr(qpu_routes.system, "enqueue_job", _fake_enqueue_job)
+
+    admitted = await qpu_routes.qpu_submit(
+        _submission(FORTE, shots=103),
+        scope=make_scope(),
+        session=LockOnlySession(),
+        identity=_identity("free"),
+        settings=_sources(),
+    )
+    assert admitted.estimated_total_usd == pytest.approx(0.30 + 103 * 0.08)
+
+    with pytest.raises(HTTPException) as excinfo:
+        await qpu_routes.qpu_submit(
+            _zne_submission(FORTE, shots=103),
+            scope=make_scope(),
+            session=LockOnlySession(),
+            identity=_identity("free"),
+            settings=_sources(),
+        )
+    assert excinfo.value.status_code == 429
+    assert excinfo.value.detail["estimate_usd"] == pytest.approx(3 * 0.30 + 3 * 103 * 0.08)
+
+
+async def test_a_submission_without_zne_records_no_mitigation_request(monkeypatch):
+    _open_the_gate(monkeypatch)
+    written: dict = {}
+
+    async def fake_reserve(scope, session, since, limit, estimate):
+        return None
+
+    async def recording_create_record(scope_arg, session_arg, **kwargs):
+        written.update(kwargs)
+        return await _fake_create_record(scope_arg, session_arg, **kwargs)
+
+    monkeypatch.setattr(qpu_runs_repo, "reserve_qpu_spend_slot", fake_reserve)
+    monkeypatch.setattr(qpu_routes.qpu_runs_repo, "create_record", recording_create_record)
+    monkeypatch.setattr(qpu_routes.system, "enqueue_job", _fake_enqueue_job)
+
+    await qpu_routes.qpu_submit(
+        _submission(FORTE, shots=10),
+        scope=make_scope(),
+        session=object(),
+        identity=_identity("free"),
+        settings=_sources(),
+    )
+    assert written["mitigation"] is None
+    assert written["estimated_total_usd"] == pytest.approx(0.30 + 10 * 0.08)

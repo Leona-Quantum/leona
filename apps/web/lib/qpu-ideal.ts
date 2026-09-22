@@ -71,43 +71,64 @@ export type IdealComparison =
 
 const DEFAULT_MAX_ROWS = 8;
 
-export function compareMeasuredToIdeal(input: {
+export type IdealComparisonInput = {
   qasm: string;
   submittedFingerprint: string;
   counts: Record<string, number> | null;
   limits: CpuSimulationLimits;
   maxRows?: number;
-}): IdealComparison {
+};
+
+export function compareMeasuredToIdeal(input: IdealComparisonInput): IdealComparison {
+  return compareMeasuredToIdealWithIdeal(input).comparison;
+}
+
+/**
+ * The comparison, and the ideal distribution it was measured against (null
+ * when no comparison was computed).
+ *
+ * Kept out of `IdealComparison` on purpose. The distribution is 2^n doubles,
+ * 8 MB at the 20-qubit tier, and a comparison is a value pages keep: the
+ * hardware-runs page holds one per run it lists, and each crosses from the
+ * simulator worker by structured clone. Only the mitigated readings need the
+ * vector (qpu-mitigation.ts), and they are computed beside the comparison in
+ * the same worker job, so the vector never has to leave it.
+ */
+export function compareMeasuredToIdealWithIdeal(input: IdealComparisonInput): {
+  comparison: IdealComparison;
+  ideal: Float64Array | null;
+} {
   const { qasm, submittedFingerprint, counts, limits, maxRows = DEFAULT_MAX_ROWS } = input;
+  const unavailable = (comparison: IdealComparison) => ({ comparison, ideal: null });
 
   // Rule 1: the circuit shown must be the circuit that was submitted. A
   // circuit edited in the Studio after submission is a different source, and
   // comparing against ITS ideal distribution would silently mislabel a
   // hardware result that has nothing to do with what is now on screen.
   if (sourceFingerprint(qasm) !== submittedFingerprint) {
-    return { status: "unavailable", reason: "circuit_changed" };
+    return unavailable({ status: "unavailable", reason: "circuit_changed" });
   }
 
   // Rule 2.
-  if (!counts) return { status: "unavailable", reason: "no_counts" };
+  if (!counts) return unavailable({ status: "unavailable", reason: "no_counts" });
   const entries = Object.entries(counts);
-  if (entries.length === 0) return { status: "unavailable", reason: "no_counts" };
+  if (entries.length === 0) return unavailable({ status: "unavailable", reason: "no_counts" });
   if (entries.some(([, count]) => !Number.isInteger(count) || count < 0)) {
-    return { status: "unavailable", reason: "register_mismatch" };
+    return unavailable({ status: "unavailable", reason: "register_mismatch" });
   }
   const shots = entries.reduce((sum, [, count]) => sum + count, 0);
-  if (shots <= 0) return { status: "unavailable", reason: "no_counts" };
+  if (shots <= 0) return unavailable({ status: "unavailable", reason: "no_counts" });
 
   // Rules 3 and 4, shared with the pre-submit noise estimate (qpu-noise.ts)
   // so both panels read a circuit through exactly one parse path.
   const parsed = parseSubmittedCircuit(qasm, limits);
-  if (parsed.status === "unavailable") return parsed;
+  if (parsed.status === "unavailable") return unavailable(parsed);
   const { circuit, model } = parsed;
 
   // Rule 5: fail closed rather than pad or truncate a malformed key.
   const registerShape = new RegExp(`^[01]{${circuit.qubitCount}}$`);
   if (!entries.every(([bitstring]) => registerShape.test(bitstring))) {
-    return { status: "unavailable", reason: "register_mismatch" };
+    return unavailable({ status: "unavailable", reason: "register_mismatch" });
   }
 
   // Rule 6.
@@ -135,16 +156,19 @@ export function compareMeasuredToIdeal(input: {
   const { rows, otherMeasuredShare, otherIdealShare } = buildRows(ideal, entries, circuit.qubitCount, shots, maxRows);
 
   return {
-    status: "computed",
-    qubitCount: circuit.qubitCount,
-    shots,
-    model,
-    tvd,
-    hellingerFidelity,
-    shotNoiseTvd,
-    rows,
-    otherMeasuredShare,
-    otherIdealShare,
+    comparison: {
+      status: "computed",
+      qubitCount: circuit.qubitCount,
+      shots,
+      model,
+      tvd,
+      hellingerFidelity,
+      shotNoiseTvd,
+      rows,
+      otherMeasuredShare,
+      otherIdealShare,
+    },
+    ideal,
   };
 }
 

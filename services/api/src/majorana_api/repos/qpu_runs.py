@@ -228,7 +228,15 @@ async def create_record(
     rate_source: str,
     rate_confirmed_on: str,
     artifact_version_id: uuid.UUID | None = None,
+    mitigation: dict[str, Any] | None = None,
 ) -> QpuRun:
+    """Write the QUEUED attestation row.
+
+    `mitigation` is the user's opt-in to zero-noise extrapolation when they made
+    one (`majorana_qpu.mitigation.requested_zne_record`), and None otherwise. It
+    is written here, with the estimate that was multiplied for it, so the row
+    that records the price also records what the price was for.
+    """
     require_write(scope)
     record = QpuRun(
         id=uuid7(),
@@ -245,6 +253,7 @@ async def create_record(
         estimated_total_usd=estimated_total_usd,
         rate_source=rate_source,
         rate_confirmed_on=rate_confirmed_on,
+        mitigation=mitigation,
     )
     session.add(record)
     await session.flush()
@@ -369,6 +378,7 @@ async def transition(
     provider_job_id: str | None = None,
     backend_name: str | None = None,
     raw_counts: dict[str, int] | None = None,
+    mitigation: dict[str, Any] | None = None,
     error: str | None = None,
     submitted_at: dt.datetime | None = None,
     completed_at: dt.datetime | None = None,
@@ -382,6 +392,12 @@ async def transition(
     `backend_name` is written only when given, like `provider_job_id` beside
     it: a later transition that does not know the machine must not erase the
     one the submit recorded.
+
+    `mitigation` is the same, and it is written WHOLE: the caller passes the
+    merged document (the row's own plus what this step adds), never a fragment
+    to be merged here. A merge inside this UPDATE would be a JSONB expression
+    each reader of this function has to reason about; the from-status fence
+    below already guarantees nobody else wrote the row since the caller read it.
     """
     require_write(scope)
     record = await get_record(scope, session, record_id)
@@ -395,6 +411,8 @@ async def transition(
         values["backend_name"] = backend_name
     if raw_counts is not None:
         values["raw_counts"] = raw_counts
+    if mitigation is not None:
+        values["mitigation"] = mitigation
     if error is not None:
         values["error"] = error[:2000]
     if submitted_at is not None:

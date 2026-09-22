@@ -178,6 +178,21 @@
 .mj-course-gradebook-table small { color: var(--text-1); font-weight: 400; }
 .mj-course-gradebook-score { font-family: var(--font-mono); }
 .mj-course-gradebook-empty-cell { color: var(--text-1); }
+/* Due dates (ai-ops 349 proposal 8). Late and missing are words, never colour
+   alone: the colour only repeats what the word already says. */
+.mj-course-gradebook-table thead .mj-course-gradebook-due { display: block; margin-top: var(--sp-1); color: var(--text-1); font-size: var(--fs-12); font-weight: 400; }
+.mj-course-gradebook-flag { display: block; width: fit-content; margin-top: var(--sp-1); padding: 0 var(--sp-1); border: 1px solid currentColor; border-radius: var(--radius-control); font-size: var(--fs-12); font-weight: 500; }
+.mj-course-gradebook-flag--late { color: var(--warn); }
+.mj-course-gradebook-flag--missing { margin-top: 0; color: var(--err); }
+.mj-course-gradebook-legend { margin: 0; color: var(--text-1); font-size: var(--fs-12); }
+.mj-course-module-due { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-2); margin: 0; color: var(--text-0); font-size: var(--fs-13); }
+.mj-course-due-overdue { padding: 0 var(--sp-1); border: 1px solid currentColor; border-radius: var(--radius-control); color: var(--err); font-size: var(--fs-12); font-weight: 500; }
+.mj-course-due-form { display: grid; gap: var(--sp-1); padding-top: var(--sp-3); border-top: 1px solid var(--border-0); }
+.mj-course-due-form .mj-section-label { margin: 0; }
+.mj-course-due-controls { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-2); }
+.mj-course-due-controls input { min-width: 0; padding: var(--sp-1) var(--sp-2); border: 1px solid var(--border-0); border-radius: var(--radius-control); color: var(--text-0); background: var(--bg-0); font: inherit; font-size: var(--fs-13); color-scheme: light dark; }
+.mj-course-due-controls input:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.mj-course-due-hint { margin: 0; color: var(--text-1); font-size: var(--fs-12); }
 /* On a narrow screen the table scrolls sideways; the member column stays put so a
    score is never read without the name it belongs to. */
 @media (max-width: 720px) {

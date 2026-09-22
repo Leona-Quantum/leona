@@ -1466,6 +1466,11 @@ export interface components {
             /** Modules */
             modules?: components["schemas"]["CourseModule"][];
             /**
+             * Owner User Id
+             * @default null
+             */
+            owner_user_id: string | null;
+            /**
              * Plan Run Id
              * @default null
              */
@@ -1535,6 +1540,11 @@ export interface components {
              */
             deliverable: string;
             /**
+             * Due At
+             * @default null
+             */
+            due_at: string | null;
+            /**
              * Duration Minutes
              * @default null
              */
@@ -1581,6 +1591,12 @@ export interface components {
          * @description A hand edit to one planned module. Refused once the module has a notebook:
          *     the notebook was generated FROM these fields, so changing them afterwards
          *     would leave the module describing something the notebook does not teach.
+         *
+         *     `due_at` is the exception on both counts. It may be changed at any time,
+         *     notebook or not, because it describes the class's schedule rather than the
+         *     notebook; and only the course's creator may change it, where anyone who can
+         *     write in the workspace may edit a planned module. A patch that carries
+         *     `due_at` and nothing else is therefore accepted on a generated module.
          */
         CourseModulePatch: {
             /**
@@ -1588,6 +1604,11 @@ export interface components {
              * @default null
              */
             brief: string | null;
+            /**
+             * Due At
+             * @default null
+             */
+            due_at: string | null;
             /**
              * Id
              * Format: uuid
@@ -2194,6 +2215,11 @@ export interface components {
             /** Graded Cells */
             graded_cells: number;
             /**
+             * Late
+             * @default false
+             */
+            late: boolean;
+            /**
              * Module Id
              * Format: uuid
              */
@@ -2218,6 +2244,11 @@ export interface components {
          * @description One column of the gradebook: a module, and what its notebook grades today.
          */
         GradebookModule: {
+            /**
+             * Due At
+             * @default null
+             */
+            due_at: string | null;
             /**
              * Graded Cells
              * @default null
@@ -2267,6 +2298,8 @@ export interface components {
              * @default null
              */
             last_graded_at: string | null;
+            /** Missing Module Ids */
+            missing_module_ids?: string[];
             /**
              * Total Graded Cells
              * @default null
@@ -3757,6 +3790,13 @@ export interface components {
              * Format: uuid
              */
             id: string;
+            /**
+             * Mitigation
+             * @default null
+             */
+            mitigation: {
+                [key: string]: unknown;
+            } | null;
             provider: components["schemas"]["QpuProvider"];
             /**
              * Provider Job Id

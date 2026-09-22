@@ -1,21 +1,17 @@
 """Comments and @-mentions on runs, notebooks and saved circuits.
 
 Revision ID: 0068
-Revises: 0065
+Revises: 0067
 
 Proposal 9 (ai-ops 349, "Working together, live"), first slice: comments and
 mentions. Presence and co-editing come later and add nothing here.
 
 ## Numbering
 
-`0068`, revising `0065`. 0066 is claimed by the open hardware-mitigation branch
-(`add/qpu-mitigation`), and 0067 is held for a possible gradebook index on
-`add/course-gradebook` (no migration on that branch as of 2026-09-22), so this
-file takes the next free number instead of racing them for one. The revision ID
-is only a label; what alembic follows is `down_revision`, and whichever of these
-branches lands after another re-points its `down_revision` at the new head on
-rebase. Two heads never reach `dev`, because CI's `upgrade head` refuses to pick
-between them.
+`0068`, revising `0067` (course module due dates), which revises `0066`
+(hardware mitigation). The three were built at the same time and landed in that
+order; this file was written against `0065` and re-pointed once `0067` was on
+`dev`, so the chain stays a single head.
 
 ## Two tables
 
@@ -91,7 +87,7 @@ from alembic import op
 from sqlalchemy.dialects import postgresql
 
 revision = "0068"
-down_revision = "0065"
+down_revision = "0067"
 branch_labels = None
 depends_on = None
 

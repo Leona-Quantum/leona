@@ -559,7 +559,9 @@ def _gradebook_session(course, modules, live, grade_rows):
     )
 
 
-def _grade_row(user_id, notebook_id, *, email, name=None, passed=1, graded=2, current=True):
+def _grade_row(
+    user_id, notebook_id, *, email, name=None, passed=1, graded=2, current=True, graded_at=NOW
+):
     version_id = uuid.uuid4()
     return (
         user_id,
@@ -570,7 +572,7 @@ def _grade_row(user_id, notebook_id, *, email, name=None, passed=1, graded=2, cu
         3,
         version_id if current else uuid.uuid4(),
         uuid.uuid4(),
-        NOW,
+        graded_at,
         passed,
         graded - passed,
         graded,
@@ -769,3 +771,300 @@ async def test_gradebook_of_another_workspace_is_not_found():
     session = SequencedSession([_Res(scalar=None)])
     with pytest.raises(NotFoundError):
         await courses_repo.course_gradebook(make_scope(), session, uuid.uuid4())
+
+
+# -------------------------------------------------------------------------- due dates
+#
+# A due date is the one module field that may change after the notebook exists, and
+# the one only the course's creator may change. Both halves are asserted, and the
+# refusal is asserted to happen before any row is touched.
+
+DUE = dt.datetime(2026, 9, 30, 8, 0, tzinfo=dt.timezone.utc)
+ONE_TICK = dt.timedelta(microseconds=1)
+
+
+def _patch(**fields) -> contracts.CourseModulePatch:
+    """Parsed from a dict, the way FastAPI parses a request body, so the set of keys
+    the client SENT (`model_fields_set`) is what a real request would carry."""
+    return contracts.CourseModulePatch.model_validate(fields)
+
+
+async def test_the_creator_sets_a_due_date_on_a_module_that_already_has_a_notebook():
+    creator = make_scope()
+    course = _course_row(workspace_id=creator.workspace_id, owner_user_id=creator.user_id)
+    generated = _module_row(course_id=course.id, notebook_id=uuid.uuid4())
+    session = SequencedSession([_Res([course]), _Res([course]), _Res([generated])])
+    tokyo = dt.timezone(dt.timedelta(hours=9))
+
+    await courses_repo.update_course(
+        creator,
+        session,
+        course.id,
+        module_patches=[_patch(id=str(generated.id), due_at="2026-09-30T17:00:00+09:00")],
+    )
+
+    assert generated.due_at == dt.datetime(2026, 9, 30, 17, 0, tzinfo=tokyo)
+    # Normalised to UTC, so the PATCH response reads like every later GET.
+    assert generated.due_at.utcoffset() == dt.timedelta(0)
+    assert generated.due_at == DUE
+
+
+async def test_an_explicit_null_clears_the_due_date_and_an_absent_key_leaves_it():
+    creator = make_scope()
+    course = _course_row(workspace_id=creator.workspace_id, owner_user_id=creator.user_id)
+    planned = _module_row(course_id=course.id, due_at=DUE)
+
+    session = SequencedSession([_Res([course]), _Res([course]), _Res([planned])])
+    await courses_repo.update_course(
+        creator, session, course.id, module_patches=[_patch(id=str(planned.id), title="Renamed")]
+    )
+    assert planned.title == "Renamed"
+    assert planned.due_at == DUE, "a patch that did not send due_at must not clear it"
+
+    session = SequencedSession([_Res([course]), _Res([course]), _Res([planned])])
+    await courses_repo.update_course(
+        creator, session, course.id, module_patches=[_patch(id=str(planned.id), due_at=None)]
+    )
+    assert planned.due_at is None
+
+
+@pytest.mark.parametrize("role", [Role.MEMBER, Role.ADMIN, Role.OWNER])
+async def test_only_the_course_creator_may_set_or_clear_a_due_date(role):
+    """Workspace role is not the test: an admin, or the workspace's owner, who did
+    not write the course is a classmate, and a classmate who could move the
+    deadline could make their own late attempt on time."""
+    someone_else = make_scope(role)
+    course = _course_row(workspace_id=someone_else.workspace_id, title="Kept")
+    planned = _module_row(course_id=course.id, due_at=DUE)
+    for due_at in ("2026-10-07T08:00:00Z", None):
+        session = SequencedSession([_Res([course]), _Res([course]), _Res([planned])])
+        with pytest.raises(courses_repo.DueDateCreatorOnly):
+            await courses_repo.update_course(
+                someone_else,
+                session,
+                course.id,
+                title="Changed alongside",
+                module_patches=[_patch(id=str(planned.id), due_at=due_at)],
+            )
+        # Refused before anything was touched: the module was never even listed,
+        # and the title that rode along with the refused patch was not applied.
+        assert len(session.statements) == 1
+        assert planned.due_at == DUE
+        assert course.title == "Kept"
+
+
+async def test_the_creator_refusal_is_an_authz_error_so_the_app_answers_403():
+    assert issubclass(courses_repo.DueDateCreatorOnly, AuthzError)
+
+
+async def test_someone_else_may_still_edit_a_planned_module_without_touching_its_due_date():
+    """The creator rule is about due dates only. Editing a planned module stays
+    open to anyone who can write in the workspace, as it was before due dates."""
+    someone_else = make_scope()
+    course = _course_row(workspace_id=someone_else.workspace_id)
+    planned = _module_row(course_id=course.id, due_at=DUE)
+    session = SequencedSession([_Res([course]), _Res([course]), _Res([planned])])
+    await courses_repo.update_course(
+        someone_else, session, course.id, module_patches=[_patch(id=str(planned.id), title="New")]
+    )
+    assert planned.title == "New" and planned.due_at == DUE
+
+
+@pytest.mark.parametrize(
+    "fields",
+    [
+        {"due_at": "2026-10-07T08:00:00Z", "title": "Also retitled"},
+        {"due_at": "2026-10-07T08:00:00Z", "seq": 2},
+        {},
+    ],
+    ids=["due-date-and-title", "due-date-and-reorder", "nothing-but-the-id"],
+)
+async def test_a_generated_module_still_refuses_every_plan_edit(fields):
+    """The due-date exemption is for a patch that carries a due date and nothing
+    else. Anything more, and a bare id with nothing at all, is refused as before."""
+    creator = make_scope()
+    course = _course_row(workspace_id=creator.workspace_id, owner_user_id=creator.user_id)
+    generated = _module_row(course_id=course.id, notebook_id=uuid.uuid4(), due_at=DUE)
+    session = SequencedSession([_Res([course]), _Res([course]), _Res([generated])])
+    with pytest.raises(courses_repo.ModuleAlreadyGenerated):
+        await courses_repo.update_course(
+            creator, session, course.id, module_patches=[_patch(id=str(generated.id), **fields)]
+        )
+    assert generated.due_at == DUE
+
+
+def test_a_due_date_without_a_utc_offset_is_refused():
+    """ "2026-09-30T17:00" is a different moment in every time zone; the server
+    would have to guess which one the instructor meant."""
+    from pydantic import ValidationError
+
+    with pytest.raises(ValidationError):
+        _patch(id=str(uuid.uuid4()), due_at="2026-09-30T17:00:00")
+
+
+def test_a_module_resource_carries_its_due_date_and_a_course_its_creator():
+    module = _module_row(due_at=DUE)
+    assert courses_repo.module_to_resource(module, None).due_at == DUE
+    assert courses_repo.module_to_resource(_module_row(), None).due_at is None
+
+
+async def test_course_to_resource_names_the_courses_creator():
+    course = _course_row()
+    session = SequencedSession([_Res([course]), _Res([])])
+    resource = await courses_repo.course_to_resource(make_scope(), session, course)
+    assert resource.owner_user_id == course.owner_user_id
+
+
+# ------------------------------------------------------------- late and missing, boundary
+
+
+def _due_course(owner, *, due_at=DUE, spec=GRADED_SPEC):
+    course = _course_row(workspace_id=owner.workspace_id, owner_user_id=owner.user_id)
+    notebook_id = uuid.uuid4()
+    module = _module_row(course_id=course.id, notebook_id=notebook_id, due_at=due_at)
+    return course, module, notebook_id, [(notebook_id, spec)]
+
+
+@pytest.mark.parametrize(
+    ("graded_at", "late"),
+    [(DUE - ONE_TICK, False), (DUE, False), (DUE + ONE_TICK, True)],
+    ids=["before", "exactly-at", "one-microsecond-after"],
+)
+async def test_an_attempt_is_late_only_when_graded_strictly_after_the_due_date(graded_at, late):
+    """The convention: "due at 17:00" includes 17:00. An attempt graded at the due
+    instant itself is on time."""
+    owner = make_scope()
+    course, module, notebook_id, live = _due_course(owner)
+    ana = uuid.uuid4()
+    grades = [_grade_row(ana, notebook_id, email="ana@example.test", graded_at=graded_at)]
+    session = _gradebook_session(course, [module], live, grades)
+
+    book = await courses_repo.course_gradebook(owner, session, course.id, now=DUE + ONE_TICK)
+
+    assert book.modules[0].due_at == DUE
+    [entry] = book.rows[0].entries
+    assert entry.late is late
+    # Late or not, an attempt is never also missing.
+    assert book.rows[0].missing_module_ids == []
+
+
+@pytest.mark.parametrize(
+    ("now", "missing"),
+    [(DUE - ONE_TICK, False), (DUE, False), (DUE + ONE_TICK, True)],
+    ids=["before", "exactly-at", "one-microsecond-after"],
+)
+async def test_a_member_with_no_attempt_is_missing_only_once_the_due_date_has_passed(now, missing):
+    """The same boundary as `late`, from the other side: at the due instant an attempt
+    would still be on time, so a member who has none is not missing yet."""
+    owner = make_scope()
+    course, module, notebook_id, live = _due_course(owner)
+    cy = uuid.uuid4()
+    session = _gradebook_session(course, [module], live, [_not_started(cy, email="cy@x.test")])
+
+    book = await courses_repo.course_gradebook(owner, session, course.id, now=now)
+
+    assert book.rows[0].missing_module_ids == ([module.id] if missing else [])
+
+
+async def test_nothing_is_late_or_missing_on_a_module_with_no_due_date():
+    owner = make_scope()
+    course, module, notebook_id, live = _due_course(owner, due_at=None)
+    ana, cy = uuid.uuid4(), uuid.uuid4()
+    grades = [
+        _grade_row(ana, notebook_id, email="ana@x.test", graded_at=NOW + dt.timedelta(days=400)),
+        _not_started(cy, email="cy@x.test"),
+    ]
+    session = _gradebook_session(course, [module], live, grades)
+
+    book = await courses_repo.course_gradebook(owner, session, course.id, now=NOW)
+
+    assert book.modules[0].due_at is None
+    assert book.rows[0].entries[0].late is False
+    assert [row.missing_module_ids for row in book.rows] == [[], []]
+
+
+@pytest.mark.parametrize(
+    "spec",
+    [None, {"cells": "nope"}, {**GRADED_SPEC, "cells": GRADED_SPEC["cells"][:1]}],
+    ids=["no-ready-version", "spec-no-longer-validates", "no-graded-exercise"],
+)
+async def test_a_module_with_nothing_to_be_graded_on_is_never_missing(spec):
+    """Past due and unattempted, but there is nothing a member COULD have attempted:
+    flagging it would mark the whole class missing for work that is not there."""
+    owner = make_scope()
+    course, module, _notebook_id, live = _due_course(owner, spec=spec)
+    session = _gradebook_session(
+        course, [module], live, [_not_started(owner.user_id, email="me@x")]
+    )
+
+    book = await courses_repo.course_gradebook(owner, session, course.id, now=DUE + ONE_TICK)
+
+    assert book.rows[0].missing_module_ids == []
+
+
+async def test_missing_modules_are_listed_in_course_order_for_each_member_separately():
+    owner = make_scope()
+    course = _course_row(workspace_id=owner.workspace_id, owner_user_id=owner.user_id)
+    nbs = [uuid.uuid4() for _ in range(3)]
+    modules = [
+        _module_row(
+            course_id=course.id, seq=i + 1, slug=f"week-0{i + 1}", notebook_id=nb, due_at=DUE
+        )
+        for i, nb in enumerate(nbs)
+    ]
+    ana, cy = uuid.uuid4(), uuid.uuid4()
+    grades = [
+        _grade_row(ana, nbs[1], email="ana@x.test", graded_at=DUE + dt.timedelta(hours=1)),
+        _not_started(cy, email="cy@x.test"),
+    ]
+    session = _gradebook_session(course, modules, [(nb, GRADED_SPEC) for nb in nbs], grades)
+
+    book = await courses_repo.course_gradebook(owner, session, course.id, now=DUE + ONE_TICK)
+
+    ana_row, cy_row = book.rows
+    assert ana_row.missing_module_ids == [modules[0].id, modules[2].id]
+    assert ana_row.entries[0].late is True
+    assert cy_row.missing_module_ids == [m.id for m in modules]
+    # Late and missing change nothing about the scores PR 965 reports.
+    assert (ana_row.total_passed, ana_row.total_graded_cells) == (1, 6)
+
+
+async def test_the_gradebook_reads_the_clock_when_no_moment_is_given(monkeypatch):
+    owner = make_scope()
+    course, module, _notebook_id, live = _due_course(owner)
+    monkeypatch.setattr(courses_repo, "touched_now", lambda: DUE + ONE_TICK)
+    session = _gradebook_session(
+        course, [module], live, [_not_started(owner.user_id, email="me@x")]
+    )
+
+    book = await courses_repo.course_gradebook(owner, session, course.id)
+
+    assert book.rows[0].missing_module_ids == [module.id]
+
+
+@pytest.mark.parametrize(
+    ("sent", "stored"),
+    [
+        ("2026-09-30T17:00:30.123456+09:00", DUE),
+        ("2026-09-30T17:00:59.999999+09:00", DUE),
+        ("2026-09-30T08:00:00Z", DUE),
+        ("2026-09-30T17:01:00+09:00", DUE + dt.timedelta(minutes=1)),
+    ],
+    ids=["seconds-dropped", "truncated-not-rounded", "already-whole", "the-next-minute"],
+)
+async def test_a_due_date_is_stored_truncated_to_the_minute(sent, stored):
+    """Review on PR 969: the editor shows minutes, so a stored 08:00:30 read as 08:00
+    and re-saving the untouched form moved the deadline, which can flip an attempt
+    between late and on time. The stored value is the one shown."""
+    creator = make_scope()
+    course = _course_row(workspace_id=creator.workspace_id, owner_user_id=creator.user_id)
+    module = _module_row(course_id=course.id)
+    session = SequencedSession([_Res([course]), _Res([course]), _Res([module])])
+
+    await courses_repo.update_course(
+        creator, session, course.id, module_patches=[_patch(id=str(module.id), due_at=sent)]
+    )
+
+    assert module.due_at == stored
+    assert (module.due_at.second, module.due_at.microsecond) == (0, 0)
+    assert module.due_at.utcoffset() == dt.timedelta(0)

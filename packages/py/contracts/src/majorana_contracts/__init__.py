@@ -414,11 +414,22 @@ from .lifecycle import (
 # GradebookModule, GradebookRow, GradebookEntry and the closed GradebookVisibility
 # enum, the response of GET /v1/courses/{id}/gradebook. Purely additive: no existing
 # model changes, and the data is read from `notebook.grades` events already stored.
+# 2.26.0: Proposal 5, increment 4. QpuRunRecord gains optional `mitigation`, the
+# stored inputs for readout correction and zero-noise extrapolation (migration
+# 0066). Additive: it defaults to None, and `raw_counts` keeps its meaning.
+# 2.28.0: Course due dates (ai-ops 349 proposal 8, assignments). CourseModule gains
+# `due_at`, Course gains `owner_user_id`, CourseModulePatch gains `due_at` (absent
+# leaves it, null clears it; creator-only), GradebookModule gains `due_at`,
+# GradebookEntry gains `late` and GradebookRow gains `missing_module_ids`. All
+# optional with defaults, so a 2.26.0 payload still validates (migration 0067).
+# Numbered 2.28.0, not 2.27.0: the comments branch claims 2.27.0, and its line goes
+# between 2.26.0 and this one whichever of the two lands first.
 # 2.29.0: Proposal 9, first slice. Comment, CommentList, CommentPerson,
 # CommentPeopleList, CommentTargetType and the create/update bodies: comments and
 # @-mentions on a run, a notebook or a saved circuit (migration 0068). Additive:
-# new names only. Numbered 2.29.0 for the agreed landing order: hardware
-# mitigation (2.26.0) and notebook due dates (2.28.0) land before this.
+# new names only. 2.27.0 was never used: the comments branch held it while the
+# landing order was open, and moved here once mitigation (2.26.0) and due dates
+# (2.28.0) were set to land first.
 CONTRACTS_VERSION = "2.29.0"
 
 __all__ = [

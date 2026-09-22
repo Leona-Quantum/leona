@@ -6,7 +6,7 @@ import type { IdealComparison } from "../../../../lib/qpu-ideal";
 import {
   appendRunPage,
   applyRunUpdates,
-  compareRunJob,
+  compareMitigatedRunJob,
   groupRunsByBackend,
   nextMacrotask,
   readRun,
@@ -15,6 +15,7 @@ import {
   type BackendGroup,
   type RunReading,
 } from "../../../../lib/qpu-run-history";
+import { zneRequested, type MitigatedReadings } from "../../../../lib/qpu-mitigation";
 import type { PublicLocale } from "../../../../lib/public-locale";
 import { simulator } from "../../../../lib/simulator-client";
 import type { CpuSimulationLimits } from "../../../../lib/studio-simulation";
@@ -55,6 +56,11 @@ export function HardwareRuns({ locale, limits }: { locale: PublicLocale; limits:
   useEffect(() => {
     comparisonsRef.current = comparisons;
   }, [comparisons]);
+  // The mitigated readings (proposal 5, increment 4), keyed like the
+  // comparisons and written in the same task, so a run never shows one without
+  // the other and neither is computed during render.
+  const [mitigations, setMitigations] = useState<ReadonlyMap<string, MitigatedReadings | null>>(() => new Map());
+  const mitigationsRef = useRef(mitigations);
 
   useEffect(() => {
     let cancelled = false;
@@ -99,12 +105,22 @@ export function HardwareRuns({ locale, limits }: { locale: PublicLocale; limits:
   const consumer = `hardware-runs:${useId()}`;
   useEffect(() => {
     const order = groups.flatMap((group) => group.runs);
+    // The mitigated readings arrive in the same worker answer as each
+    // comparison and are held here until `onResult` records both together.
+    const readingsById = new Map<string, MitigatedReadings | null>();
     const stop = workThroughComparisons({
       order,
       isCached: (id) => comparisonsRef.current.has(id),
+      // One worker job per run for the comparison AND its mitigated readings
+      // (proposal 5, increment 4): the readings need the dense ideal the
+      // comparison simulates, and cost about half a second at 20 qubits, so
+      // they are worked out beside it in the worker rather than on this thread.
       compute: (item) =>
-        simulator.run(consumer, compareRunJob(item, limits)).then((outcome) => {
-          if (outcome.status === "done") return outcome.result;
+        simulator.run(consumer, compareMitigatedRunJob(item, limits)).then((outcome) => {
+          if (outcome.status === "done") {
+            readingsById.set(item.id, outcome.result.readings);
+            return outcome.result.comparison;
+          }
           if (outcome.status === "failed") return COULD_NOT_COMPARE;
           if (outcome.status === "timed_out") return TIMED_OUT;
           return null;
@@ -116,6 +132,12 @@ export function HardwareRuns({ locale, limits }: { locale: PublicLocale; limits:
         next.set(id, comparison);
         comparisonsRef.current = next;
         setComparisons(next);
+        // Recorded with the comparison they were computed beside. A run whose
+        // job failed or timed out has none, and the details say why.
+        const nextMitigations = new Map(mitigationsRef.current);
+        nextMitigations.set(id, readingsById.get(id) ?? null);
+        mitigationsRef.current = nextMitigations;
+        setMitigations(nextMitigations);
       },
       schedule: nextMacrotask,
     });
@@ -212,6 +234,7 @@ export function HardwareRuns({ locale, limits }: { locale: PublicLocale; limits:
                   key={group.backend ?? "unrecorded"}
                   group={group}
                   comparisons={comparisons}
+                  mitigations={mitigations}
                   copy={copy}
                   studioCopy={studioCopy}
                   limits={limits}
@@ -235,6 +258,7 @@ export function HardwareRuns({ locale, limits }: { locale: PublicLocale; limits:
 function MachineSection({
   group,
   comparisons,
+  mitigations,
   copy,
   studioCopy,
   limits,
@@ -242,6 +266,7 @@ function MachineSection({
 }: {
   group: BackendGroup;
   comparisons: ReadonlyMap<string, IdealComparison>;
+  mitigations: ReadonlyMap<string, MitigatedReadings | null>;
   copy: Copy;
   studioCopy: StudioCopy;
   limits: CpuSimulationLimits;
@@ -262,6 +287,7 @@ function MachineSection({
             key={item.id}
             item={item}
             reading={readRun(item, comparisons)}
+            mitigated={mitigations.get(item.id) ?? null}
             copy={copy}
             studioCopy={studioCopy}
             limits={limits}
@@ -276,6 +302,7 @@ function MachineSection({
 function RunCard({
   item,
   reading,
+  mitigated,
   copy,
   studioCopy,
   limits,
@@ -283,6 +310,8 @@ function RunCard({
 }: {
   item: QpuRunHistoryItem;
   reading: RunReading;
+  /** Worked out with the comparison, off the render path; null when there is none. */
+  mitigated: MitigatedReadings | null;
   copy: Copy;
   studioCopy: StudioCopy;
   limits: CpuSimulationLimits;
@@ -291,6 +320,7 @@ function RunCard({
   const when = item.submitted_at ?? item.created_at;
   const comparison = reading.kind === "compared" ? reading.comparison : null;
   const computed = comparison?.status === "computed" ? comparison : null;
+  const zne = zneRequested(item.mitigation);
 
   return (
     <li className="mj-qpu-record mj-qpu-history-run">
@@ -299,6 +329,7 @@ function RunCard({
         <span>{copy.status(item.status)}</span>
         <span>{`${copy.columnShots}: ${item.shots.toLocaleString(locale === "ja" ? "ja-JP" : "en-US")}`}</span>
         {item.provider_job_id ? <span className="mj-mono-muted">{`${studioCopy.hardwareJobId}: ${item.provider_job_id}`}</span> : null}
+        {zne ? <span>{copy.zneRequested}</span> : null}
       </div>
 
       {computed ? (
@@ -306,6 +337,12 @@ function RunCard({
           <div><dt>{copy.columnDistance}</dt><dd>{computed.tvd.toFixed(3)}</dd></div>
           <div><dt>{copy.columnShotNoise}</dt><dd>{computed.shotNoiseTvd.toFixed(3)}</dd></div>
           <div><dt>{copy.columnFidelity}</dt><dd>{computed.hellingerFidelity.toFixed(3)}</dd></div>
+          {mitigated?.readout.status === "computed" ? (
+            <div><dt>{copy.columnReadoutCorrected}</dt><dd>{mitigated.readout.reading.tvd.toFixed(3)}</dd></div>
+          ) : null}
+          {mitigated?.zne?.status === "computed" ? (
+            <div><dt>{copy.columnZne}</dt><dd>{mitigated.zne.reading.richardson.tvd.toFixed(3)}</dd></div>
+          ) : null}
         </dl>
       ) : (
         <p className="mj-qpu-note" role={reading.kind === "working_out" ? "status" : undefined}>
@@ -323,10 +360,12 @@ function RunCard({
             qasm={item.qasm}
             submittedFingerprint={item.source_fingerprint}
             counts={item.raw_counts}
+            mitigation={item.mitigation}
             limits={limits}
             copy={studioCopy}
             workingOut={copy.workingOut}
             comparison={computed}
+            readings={mitigated}
           />
         </details>
       ) : null}
