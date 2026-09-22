@@ -560,8 +560,24 @@ def _gradebook_session(course, modules, live, grade_rows):
 
 
 def _grade_row(
-    user_id, notebook_id, *, email, name=None, passed=1, graded=2, current=True, graded_at=NOW
+    user_id,
+    notebook_id,
+    *,
+    email,
+    name=None,
+    passed=1,
+    graded=2,
+    current=True,
+    graded_at=NOW,
+    first_graded_at=None,
 ):
+    """One row of the gradebook statement: this member's LATEST attempt at this module.
+
+    `first_graded_at` is the separate instant the query's window function carries, the
+    earliest grading of the same module by the same member. It defaults to `graded_at`,
+    which is the truth whenever there has only ever been one attempt; pass it to
+    describe somebody who tried more than once, which is what `late` turns on.
+    """
     version_id = uuid.uuid4()
     return (
         user_id,
@@ -573,6 +589,7 @@ def _grade_row(
         version_id if current else uuid.uuid4(),
         uuid.uuid4(),
         graded_at,
+        graded_at if first_graded_at is None else first_graded_at,
         passed,
         graded - passed,
         graded,
@@ -583,7 +600,7 @@ def _grade_row(
 def _not_started(user_id, *, email, name=None):
     """The row the LEFT join returns for a member with no grading event: the member
     columns filled, every grade column NULL."""
-    return (user_id, email, name, *([None] * 10))
+    return (user_id, email, name, *([None] * 11))
 
 
 async def test_the_course_creator_gradebook_query_has_no_user_clause():
@@ -946,6 +963,41 @@ async def test_an_attempt_is_late_only_when_graded_strictly_after_the_due_date(g
     assert entry.late is late
     # Late or not, an attempt is never also missing.
     assert book.rows[0].missing_module_ids == []
+
+
+@pytest.mark.parametrize(
+    ("first_graded_at", "late"),
+    [(DUE - ONE_TICK, False), (DUE, False), (DUE + ONE_TICK, True)],
+    ids=["first-attempt-before", "first-attempt-exactly-at", "first-attempt-after"],
+)
+async def test_late_reads_the_first_attempt_not_the_one_the_row_shows(first_graded_at, late):
+    """Owner ruling ai-ops 364, option 1: "Late only if there was no graded attempt by
+    the due time". Every case here shows an attempt graded a day PAST the deadline, so
+    under the rule as first built all three would be late; only the first attempt moves.
+
+    The third case is the negative control: it is the one that still reads `True`, so a
+    change that stopped marking anyone late could not pass this parametrisation.
+    """
+    owner = make_scope()
+    course, module, notebook_id, live = _due_course(owner)
+    ana = uuid.uuid4()
+    grades = [
+        _grade_row(
+            ana,
+            notebook_id,
+            email="ana@example.test",
+            graded_at=DUE + dt.timedelta(days=1),
+            first_graded_at=first_graded_at,
+        )
+    ]
+    session = _gradebook_session(course, [module], live, grades)
+
+    book = await courses_repo.course_gradebook(owner, session, course.id, now=DUE + ONE_TICK)
+
+    [entry] = book.rows[0].entries
+    assert entry.late is late
+    # Latest rather than best is untouched: the row still describes the later attempt.
+    assert entry.graded_at == DUE + dt.timedelta(days=1)
 
 
 @pytest.mark.parametrize(

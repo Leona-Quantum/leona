@@ -807,10 +807,10 @@ async def _live_notebook_graded_cells(
 
 def _is_late(graded_at: dt.datetime, due_at: dt.datetime | None) -> bool:
     """Strictly after the due instant. One comparison, used for both the `late`
-    flag (an attempt's grading time) and `missing` (the clock), so the two cannot
-    disagree about which side of the deadline the instant itself falls on: an
-    attempt graded AT the due time is on time, and at that same instant a module
-    with no attempt is not missing yet."""
+    flag (the member's FIRST attempt at the module) and `missing` (the clock), so
+    the two cannot disagree about which side of the deadline the instant itself
+    falls on: an attempt graded AT the due time is on time, and at that same
+    instant a module with no attempt is not missing yet."""
     return due_at is not None and graded_at > due_at
 
 
@@ -869,10 +869,18 @@ async def course_gradebook(
     Both are read against the module's `due_at`, and both are derived here rather
     than stored, for the reason the module statuses are: the instructor can move a
     due date after the attempts exist, and a stored flag would then be wrong. An
-    entry is `late` when its attempt was graded strictly after the due date. A
-    module is missing for a member when its due date has passed (strictly, at
-    `now`), they have no attempt at it, and it has something to be graded on (see
-    `GradebookRow.missing_module_ids`).
+    entry is `late` when the member had NO graded attempt at that module by the due
+    date -- their first attempt was graded strictly after it (owner ruling ai-ops
+    364, option 1). Somebody who finished on time and practised again afterwards is
+    not late, though the row still shows that latest attempt's score, which is what
+    an instructor asked to see. A module is missing for a member when its due date
+    has passed (strictly, at `now`), they have no attempt at it, and it has
+    something to be graded on (see `GradebookRow.missing_module_ids`).
+
+    The two marks are then the same question asked of the same instant: `late` says
+    the first attempt came after the deadline, `missing` says no attempt has come at
+    all. Neither can contradict the other, because a member with an attempt before
+    the deadline is neither.
 
     `now` is the API process's clock unless a caller passes one. The comparison is
     against `graded_at`, which Postgres stamped, so the two clocks differ by however
@@ -930,6 +938,17 @@ async def course_gradebook(
             Notebook.current_version_id.label("current_version_id"),
             RunEvent.run_id.label("run_id"),
             func.coalesce(RunEvent.ts, RunEvent.created_at).label("graded_at"),
+            # The EARLIEST grading of this module by this member, across every attempt
+            # the WHERE clause kept -- not just the one `DISTINCT ON` is about to pick.
+            # A window function is evaluated before `DISTINCT ON`, and this partition is
+            # exactly the `DISTINCT ON` key, so every row of a group carries the same
+            # value and the surviving row carries it too. It is what `late` is decided
+            # on: owner ruling ai-ops 364, option 1, "Late only if there was no graded
+            # attempt by the due time". "Was there one by then" is "was the first one by
+            # then", so no second statement and no due date in SQL are needed.
+            func.min(func.coalesce(RunEvent.ts, RunEvent.created_at))
+            .over(partition_by=(Run.user_id, NotebookVersion.notebook_id))
+            .label("first_graded_at"),
             RunEvent.payload["passed"].as_integer().label("passed"),
             RunEvent.payload["failed"].as_integer().label("failed"),
             RunEvent.payload["attempted"].as_integer().label("attempted"),
@@ -987,6 +1006,7 @@ async def course_gradebook(
             graded.c.current_version_id,
             graded.c.run_id,
             graded.c.graded_at,
+            graded.c.first_graded_at,
             graded.c.passed,
             graded.c.failed,
             graded.c.attempted,
@@ -1014,6 +1034,7 @@ async def course_gradebook(
         current_version_id,
         run_id,
         graded_at,
+        first_graded_at,
         passed,
         failed,
         attempted,
@@ -1035,7 +1056,7 @@ async def course_gradebook(
                 stale=current_version_id != version_id,
                 run_id=run_id,
                 graded_at=_required(graded_at, "graded_at"),
-                late=_is_late(_required(graded_at, "graded_at"), module.due_at),
+                late=_is_late(_required(first_graded_at, "first_graded_at"), module.due_at),
             )
         )
 

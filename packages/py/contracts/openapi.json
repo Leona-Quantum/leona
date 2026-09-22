@@ -11101,7 +11101,7 @@
   "info": {
     "description": "Cross-boundary types only; API paths are owned by services/api.",
     "title": "majorana-contracts",
-    "version": "2.29.0"
+    "version": "2.29.1"
   },
   "openapi": "3.1.0",
   "paths": {}

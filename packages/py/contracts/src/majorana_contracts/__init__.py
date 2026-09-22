@@ -430,7 +430,13 @@ from .lifecycle import (
 # new names only. 2.27.0 was never used: the comments branch held it while the
 # landing order was open, and moved here once mitigation (2.26.0) and due dates
 # (2.28.0) were set to land first.
-CONTRACTS_VERSION = "2.29.0"
+# 2.29.1: `GradebookEntry.late` documents the rule the owner chose on ai-ops 364,
+# option 1 — late means the member had NO graded attempt by the due date, read
+# from their first attempt rather than the latest one the row shows. A PATCH: the
+# field, its type and its JSON are unchanged, and only what the value MEANS moved,
+# which is exactly the "invisible on the wire" case this package versions anyway,
+# because a consumer rendering the flag is rendering a different claim afterwards.
+CONTRACTS_VERSION = "2.29.1"
 
 __all__ = [
     "MAX_COMMENT_CHARS",
