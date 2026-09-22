@@ -22,7 +22,7 @@ from sqlalchemy import (
     func,
     text,
 )
-from sqlalchemy.dialects.postgresql import INET, JSONB, UUID
+from sqlalchemy.dialects.postgresql import ARRAY, INET, JSONB, UUID
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 _UUID = UUID(as_uuid=True)
@@ -1075,3 +1075,44 @@ class NewsAsset(Base):
     data: Mapped[bytes] = mapped_column(LargeBinary)
     metadata_json: Mapped[dict[str, Any]]
     created_at: Mapped[dt.datetime] = mapped_column(server_default=func.now())
+
+
+class PersonalAccessToken(Base):
+    """One person's long-lived credential for an outside tool (migration 0069).
+
+    **Per USER and per WORKSPACE, and both halves matter.** `user_id` is who the token
+    acts as; `workspace_id` is the single tenant it acts in, fixed at mint and never
+    re-read from `users.active_workspace_id`. A token that followed its owner's
+    workspace switcher would change an automation's reach because a person clicked
+    something on the website.
+
+    `token_hash` is a SHA-256 of the presented credential. The credential itself is in
+    no column of this table, is returned by exactly one endpoint on exactly the request
+    that creates it, and appears in no log line and no error message. `tail` is four
+    characters of it, kept so a person can tell their own tokens apart.
+
+    `repos/personal_access_tokens.py` scopes every query on `scope.user_id` — narrower
+    than the workspace predicate the rest of the repository layer uses, on the same
+    argument `ProviderCredential` makes above: no query in that module admits a user id
+    other than the caller's, so there is no path by which one account reads, uses or
+    revokes another's token. Unlike the rest of the tenant tables this one carries NO
+    row-level-security policy, because the auth dependency has to read it before a
+    workspace_id exists to key one on; 0069's docstring makes that argument in full and
+    places it in 0053's GLOBAL/IDENTITY group.
+    """
+
+    __tablename__ = "personal_access_tokens"
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True)
+    user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"))
+    workspace_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("workspaces.id"))
+    name: Mapped[str]
+    token_hash: Mapped[str]
+    tail: Mapped[str]
+    scopes: Mapped[list[str]] = mapped_column(ARRAY(Text))
+    created_at: Mapped[dt.datetime] = mapped_column(server_default=func.now())
+    expires_at: Mapped[dt.datetime]
+    last_used_at: Mapped[dt.datetime | None]
+    revoked_at: Mapped[dt.datetime | None]
+    idempotency_key: Mapped[str | None]
+    idempotency_request_hash: Mapped[str | None]

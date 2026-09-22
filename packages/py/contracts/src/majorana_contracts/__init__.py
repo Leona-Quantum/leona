@@ -103,6 +103,18 @@ from .comments import (
     CreateCommentRequest,
     UpdateCommentRequest,
 )
+from .tokens import (
+    MAX_TOKEN_LIFETIME_DAYS,
+    MAX_TOKENS_PER_USER,
+    TOKEN_PREFIX,
+    TOKEN_TAIL_CHARS,
+    CreateTokenRequest,
+    MintedToken,
+    PersonalAccessToken,
+    PersonalAccessTokenList,
+    TokenName,
+    TokenScope,
+)
 from .courses import (
     Course,
     CourseGradebook,
@@ -436,10 +448,28 @@ from .lifecycle import (
 # field, its type and its JSON are unchanged, and only what the value MEANS moved,
 # which is exactly the "invisible on the wire" case this package versions anyway,
 # because a consumer rendering the flag is rendering a different claim afterwards.
-CONTRACTS_VERSION = "2.29.1"
+# 2.30.0: Proposal 7 Phase B, personal access tokens (ai-ops 362, option 1 —
+# "Tokens may read and start verified runs, and expire after at most 90 days;
+# hardware jobs come later under their own permission"). New: PersonalAccessToken,
+# PersonalAccessTokenList, MintedToken, CreateTokenRequest and the closed TokenScope
+# enum, behind GET/POST /v1/tokens and DELETE /v1/tokens/{id} (migration 0069).
+# Additive: new names only, no existing model changes. TokenScope has exactly `read`
+# and `run` — the absence of a `hardware` member IS the deferral in the ruling, so
+# adding one later is a widening a review can see.
+CONTRACTS_VERSION = "2.30.0"
 
 __all__ = [
     "MAX_COMMENT_CHARS",
+    "MAX_TOKENS_PER_USER",
+    "MAX_TOKEN_LIFETIME_DAYS",
+    "TOKEN_PREFIX",
+    "TOKEN_TAIL_CHARS",
+    "CreateTokenRequest",
+    "MintedToken",
+    "PersonalAccessToken",
+    "PersonalAccessTokenList",
+    "TokenName",
+    "TokenScope",
     "Comment",
     "CommentList",
     "CommentPeopleList",

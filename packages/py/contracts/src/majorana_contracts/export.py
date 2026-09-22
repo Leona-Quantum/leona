@@ -13,7 +13,7 @@ from pathlib import Path
 from pydantic import RootModel
 from pydantic.json_schema import models_json_schema
 
-from . import CONTRACTS_VERSION, comments, courses, events, models, notebooks, plan, scope
+from . import CONTRACTS_VERSION, comments, courses, events, models, notebooks, plan, scope, tokens
 
 DEFAULT_OUT = Path(__file__).resolve().parents[2] / "openapi.json"
 
@@ -125,6 +125,17 @@ EXPORTED = [
     comments.CommentPeopleList,
     comments.CreateCommentRequest,
     comments.UpdateCommentRequest,
+    # Proposal 7 Phase B, personal access tokens (migration 0069). TokenScope is an
+    # enum and reaches the document as a hoisted $def of the two shapes that carry it.
+    # `MintedToken` is listed even though it is the one response that carries a
+    # secret: what reaches the schema is the FIELD, `token: string`, which is exactly
+    # what a generated client needs in order to have somewhere to put it — and
+    # leaving it out would not hide anything, it would just mean the one response a
+    # client must handle carefully is the one with no generated type.
+    tokens.PersonalAccessToken,
+    tokens.PersonalAccessTokenList,
+    tokens.MintedToken,
+    tokens.CreateTokenRequest,
 ]
 
 

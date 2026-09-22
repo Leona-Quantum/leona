@@ -3581,6 +3581,26 @@ export const ACCOUNT_COPY: Record<PublicLocale, {
    * problem.
    */
   qpuTitle: string;
+  tokensTitle: string;
+  tokensHelp: string;
+  tokensName: string;
+  tokensExpiry: string;
+  tokensAllowRuns: string;
+  tokensCreate: string;
+  tokensLoading: string;
+  tokensEmpty: string;
+  tokensShownOnce: string;
+  tokensShownOnceHelp: string;
+  tokensDismiss: string;
+  tokensRevoke: string;
+  tokensRevoked: string;
+  tokensExpired: string;
+  tokensCanRun: string;
+  tokensNeverUsed: string;
+  tokensExpiresIn: (days: number) => string;
+  tokensLoadError: string;
+  tokensCreateError: string;
+  tokensRevokeError: string;
   qpuHelp: string;
   qpuOpenPlan: string;
   qpuStepAccount: string;
@@ -3771,6 +3791,26 @@ export const ACCOUNT_COPY: Record<PublicLocale, {
     billingEstimatesLink: "See hardware estimates in Studio",
     billingUpgradeLink: "Compare plans",
     qpuTitle: "Connect IBM Quantum",
+    tokensTitle: "Access tokens",
+    tokensHelp: "Let a tool on your own computer — a code editor, or an AI assistant — read the Atlas and start verified runs as you, without opening this site. A token works in this workspace only. It cannot reach your IBM Quantum key, your billing, or this page.",
+    tokensName: "What is it for?",
+    tokensExpiry: "Days until it expires",
+    tokensAllowRuns: "Also let it start verified runs",
+    tokensCreate: "Create token",
+    tokensLoading: "Loading your access tokens\u2026",
+    tokensEmpty: "You have no access tokens.",
+    tokensShownOnce: "Copy this now. You will not see it again.",
+    tokensShownOnceHelp: "We keep only a scrambled copy, so there is no way to show it to you a second time. If you lose it, revoke it and make another.",
+    tokensDismiss: "Done",
+    tokensRevoke: "Revoke",
+    tokensRevoked: "Revoked",
+    tokensExpired: "Expired",
+    tokensCanRun: "can start runs",
+    tokensNeverUsed: "never used",
+    tokensExpiresIn: (days) => (days === 1 ? "Expires tomorrow" : `Expires in ${days} days`),
+    tokensLoadError: "We could not load your tokens. Try again in a moment.",
+    tokensCreateError: "We could not create that token. Try again in a moment.",
+    tokensRevokeError: "We could not revoke that token. Try again in a moment.",
     qpuHelp:
       "Run on IBM hardware with your own IBM account instead of the one Leona shares between everybody.",
     qpuOpenPlan:
@@ -3975,6 +4015,26 @@ export const ACCOUNT_COPY: Record<PublicLocale, {
     billingEstimatesLink: "Studio でハードウェア見積もりを見る",
     billingUpgradeLink: "プランを比較する",
     qpuTitle: "IBM Quantum と接続",
+    tokensTitle: "アクセストークン",
+    tokensHelp: "お使いのコードエディタや AI アシスタントから、このサイトを開かずに Atlas を読んだり、検証付きの実行を開始したりできます。トークンが使えるのはこのワークスペースだけです。IBM Quantum のキー、請求、このページには一切届きません。",
+    tokensName: "用途",
+    tokensExpiry: "有効期限（日数）",
+    tokensAllowRuns: "検証付きの実行も許可する",
+    tokensCreate: "トークンを作成",
+    tokensLoading: "アクセストークンを読み込んでいます…",
+    tokensEmpty: "アクセストークンはありません。",
+    tokensShownOnce: "今すぐコピーしてください。二度と表示されません。",
+    tokensShownOnceHelp: "保存しているのはハッシュ化したものだけなので、もう一度表示する方法はありません。紛失した場合は無効化して作り直してください。",
+    tokensDismiss: "完了",
+    tokensRevoke: "無効化",
+    tokensRevoked: "無効化済み",
+    tokensExpired: "期限切れ",
+    tokensCanRun: "実行の開始が可能",
+    tokensNeverUsed: "未使用",
+    tokensExpiresIn: (days) => (days === 1 ? "明日で期限切れ" : `あと ${days} 日で期限切れ`),
+    tokensLoadError: "トークンを読み込めませんでした。少し時間をおいて再度お試しください。",
+    tokensCreateError: "トークンを作成できませんでした。少し時間をおいて再度お試しください。",
+    tokensRevokeError: "トークンを無効化できませんでした。少し時間をおいて再度お試しください。",
     qpuHelp:
       "全員で共有しているアカウントではなく、ご自身の IBM アカウントで IBM の量子コンピュータを実行できます。",
     qpuOpenPlan:

@@ -9,7 +9,13 @@ import { paneForHash } from "./account-pane-selection.ts";
 const HERE = dirname(fileURLToPath(import.meta.url));
 
 // The rail's ids, in the order account-content.tsx declares them.
-const PANES = ["preferences", "tours", "identity", "usage", "workspaces", "mentions", "archived", "qpu", "billing"] as const;
+// The rail's ids, in the order account-content.tsx declares them. `tokens` is
+// registered only where the control plane has personal access tokens switched on, so
+// a live rail may be this list minus that one; `paneForHash` is given whatever list
+// the page actually built, and an id missing from it resolves to null exactly as any
+// other unknown fragment does (asserted below).
+const PANES = ["preferences", "tours", "identity", "usage", "workspaces", "mentions", "archived", "qpu", "tokens", "billing"] as const;
+const PANES_WITHOUT_TOKENS = PANES.filter((id) => id !== "tokens");
 
 describe("which settings pane a fragment asks for", () => {
   it("resolves the two entry points that existed before the rail did", () => {
@@ -37,6 +43,14 @@ describe("which settings pane a fragment asks for", () => {
     assert.equal(paneForHash(PANES, "#"), null);
   });
 
+  it("resolves nothing for #tokens on a deployment without the feature", () => {
+    // The switched-off case, end to end at this layer: the pane is absent from the
+    // list, so a bookmarked /account#tokens falls back to the default pane instead of
+    // selecting a section that does not exist.
+    assert.equal(paneForHash(PANES, "#tokens"), "tokens");
+    assert.equal(paneForHash(PANES_WITHOUT_TOKENS, "#tokens"), null);
+  });
+
   it("returns null for an unknown fragment rather than blanking the panel", () => {
     // A stale bookmark or a mistyped anchor was a harmless no-op scroll before
     // the rail existed. It has to stay harmless: null means "keep the default",
@@ -54,9 +68,16 @@ describe("which settings pane a fragment asks for", () => {
   // the pane ids, so it would keep passing after someone renamed a pane in
   // account-content.tsx and every deep link in the product broke. This reads the
   // real declaration and fails when the two disagree.
+  //
+  // The indentation is matched loosely (`\s+`, not exactly six spaces) because not
+  // every pane is registered at the same depth any more: `tokens` is spread in
+  // conditionally, so it sits two levels further in. A width-specific pattern would
+  // have silently stopped seeing it — reporting nine ids where the file declares ten
+  // — which is the failure mode this control exists to catch, arriving through the
+  // control itself.
   it("checks the ids it asserts on against the ones the page actually declares", () => {
     const source = readFileSync(join(HERE, "..", "app", "(app)", "account", "account-content.tsx"), "utf8");
-    const declared = [...source.matchAll(/^\s{6}id: "([a-z-]+)",$/gm)].map((match) => match[1]);
+    const declared = [...source.matchAll(/^\s+id: "([a-z-]+)",$/gm)].map((match) => match[1]);
     assert.deepEqual(
       declared,
       [...PANES],
