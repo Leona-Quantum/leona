@@ -1,0 +1,125 @@
+task_id: beverland-2022-factoring-majorana
+algorithm: >
+  Shor's algorithm for RSA integer factorization (custom-optimized implementation, generator
+  base 7), on Majorana-based topological qubits with a Hastings-Haah code (Beverland et al.'s
+  worked application example).
+problem_size:
+  rsa_modulus_bits: 2048
+hardware_assumptions:
+  qubit_modality: "Majorana-based topological qubits, (ns, 1e-4)* profile"
+  gate_time_ns: 100
+  measurement_time_ns: 100
+  clifford_error_rate: 0.0001
+  non_clifford_t_state_error_rate: 0.05
+  qec_scheme: "Hastings-Haah code"
+  code_distance: 15
+  t_factory_count: 15
+prompt: |
+  You are estimating fault-tolerant quantum computing resources for a specific, published
+  worked example. Answer using ONLY the assumptions below — note this uses a DIFFERENT
+  qubit modality and error-correcting code than a standard gate-based/surface-code estimate
+  of the same problem.
+
+  Algorithm: Shor's algorithm for factoring a 2048-bit RSA modulus (a custom-optimized
+  implementation with generator base 7).
+
+  Hardware / QEC assumptions (use exactly these — the "(ns, 1e-4)*" Majorana-qubit profile):
+  - Majorana-based topological qubits
+  - Gate time: 100 nanoseconds; measurement time: 100 nanoseconds
+  - Clifford gate error rate: 1e-4; non-Clifford (T-state) error rate: 0.05 (much higher than
+    the Clifford rate — this is a real, stated feature of this qubit type, not a typo)
+  - Hastings-Haah error-correcting code, code distance 15
+  - 15 T-factories, occupying about 0.9% of total physical qubits
+
+  Report:
+  1. Logical qubit count.
+  2. T-gate count (the number of T states consumed).
+  3. Total physical qubit count.
+  4. Total runtime, in hours.
+assumptions:
+  - "RSA modulus n=2048, custom-optimized Shor's algorithm implementation, generator base 7 \
+    (p.11; Table I, p.12, factoring row)"
+  - "Logical qubits Q=25,481 (Table I, factoring row)"
+  - "T-count M=1.5x10^10 (Table I, factoring row)"
+  - "Majorana qubit, (ns, 1e-4)* profile: gate/measurement time 100ns/100ns, Clifford error \
+    1e-4, T-state error 0.05 (Table II, p.13 — the much higher T-state error rate for this \
+    qubit type relative to its Clifford error rate is explicitly stated, not a transcription \
+    error)"
+  - "Hastings-Haah code (Majorana qubits use this code per the paper's own text), code \
+    distance d=15; 15 T-factories occupying ~0.9% of physical qubits (Table III p.14 and \
+    Table IV p.19, factoring row under this qubit type)"
+quantities_pinned: [logical_qubits, t_count, physical_qubits, runtime_value]
+reference:
+  logical_qubits: 25481
+  t_count: 15000000000
+  physical_qubits: 26000000
+  runtime_value: 15
+units:
+  runtime_value: hours
+tolerance_log10:
+  logical_qubits: 0.03
+  t_count: 0.08
+  physical_qubits: 0.10
+  runtime_value: 0.15
+tolerance_rationale:
+  logical_qubits: "Derived from the same stated algorithmic-qubit formula as this corpus's Beverland chemistry case — narrow band for rounding only."
+  t_count: "A precise table entry tied to a stated error-budget requirement (P_T <= 7.4e-12, Table I) — factor-of-1.2 band."
+  physical_qubits: "Table IV's figure for this qubit type/code combination, an optimization output — same factor-of-1.26 band as the sibling chemistry case."
+  runtime_value: >
+    Table IV's own runtime figure (15 hours) for this row — a factor-of-1.4 band, matching
+    the sibling chemistry case (both come from the same table's same methodology).
+source:
+  arxiv_id: "2211.07629"
+  title: "Assessing requirements to scale to practical quantum advantage"
+  authors:
+    - "Michael E. Beverland"
+    - "Prakash Murali"
+    - "Matthias Troyer"
+    - "Krysta M. Svore"
+    - "Torsten Hoefler"
+    - "Vadym Kliuchnikov"
+    - "Guang Hao Low"
+    - "Mathias Soeken"
+    - "Aarthi Sundaram"
+    - "Alexander Vaschillo"
+  venue: "arXiv preprint, 2022"
+  location: "Table I (p.12, factoring row); Table II (p.13, Majorana (ns,1e-4)* qubit); Table III (p.14) and Table IV (p.19, factoring row)"
+  url: "https://arxiv.org/abs/2211.07629"
+  retrieved: "2026-09-21"
+cross_check:
+  ran: true
+  tool: "Microsoft QDK Python package (`qdk` v1.32.3), `qdk.estimator.LogicalCounts.estimate()`"
+  command: >
+    LogicalCounts({"numQubits": 25481, "tCount": 15_000_000_000, ...}).estimate({
+    "errorBudget": 0.01, "qubitParams": {"name": "qubit_maj_ns_e4"}, "qecScheme":
+    {"name": "floquet_code"}}) — also tried with qecScheme "surface_code" for comparison
+    (see result.surface_code_variant below)
+  inputs:
+    numQubits: 25481
+    tCount: 15000000000
+    errorBudget: 0.01
+    qubitParams: "qubit_maj_ns_e4"
+    qecScheme: "floquet_code (primary); surface_code (comparison)"
+  result:
+    floquet_code_variant: {physicalQubits: 66703260, runtime_hours: 21}
+    surface_code_variant: {physicalQubits: 75472670, runtime_days: 9}
+  agreement: >
+    Using the estimator's floquet_code scheme (the closest built-in preset to the paper's
+    own Hastings-Haah code — both are dynamically-driven, Majorana-compatible codes, though
+    not identical constructions): predicted 66.7M physical qubits vs. the paper's 26M (about
+    2.6x more) and 21 hours vs. the paper's 15 hours (about 1.4x more) — within a factor of
+    ~3, the best available match given no exact Hastings-Haah preset exists in this tool. The
+    surface_code preset, tried for comparison, agrees far worse on runtime (9 days vs. 15
+    hours, ~14x), confirming floquet_code is the more appropriate proxy. Recorded as
+    reasonable order-of-magnitude corroboration, not exact agreement (no tool tested has an
+    exact Hastings-Haah implementation).
+  note: null
+notes: >
+  This case and gidney-2025-rsa2048 / gidney-ekera-2019-rsa2048 all estimate resources for
+  the SAME algorithm and problem size (factoring a 2048-bit RSA modulus) under DIFFERENT
+  hardware/QEC assumptions, giving different determined answers — this is a deliberate
+  design choice (see SPEC.md's anti-contamination argument): a model that has merely
+  memorized "RSA-2048 costs ~20 million qubits" from one famous paper, without actually
+  using the stated hardware assumptions, will fail this case (26M physical qubits, 15 hours
+  — a very different profile from the gate-based surface-code cases) even though the
+  problem size looks identical on the surface.

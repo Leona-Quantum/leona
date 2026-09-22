@@ -1,0 +1,139 @@
+task_id: kivlichan-2020-hubbard-8x8
+algorithm: >
+  Trotterized fault-tolerant quantum simulation of the planar Fermi-Hubbard model, first
+  quantized via a low-T-count ancilla scheme (Kivlichan et al.'s construction).
+problem_size:
+  lattice: "8x8 sites (64 sites, 128 spin-orbitals)"
+  hubbard_u_over_t: 4
+  target_precision: "relative precision, 0.5% of the system's ground-state energy"
+  ancilla_scheme: "4 extra ancilla qubits (the lower-ancilla-count of the paper's two schemes for this lattice)"
+hardware_assumptions:
+  physical_gate_error_rate: 0.001
+  qec_scheme: "surface code, code distance swept 15-51 (step 2) to minimize physical qubits per the paper's own optimization"
+  decoder_latency_us: 10
+  magic_state_distillation: "15-to-1 plus CCZ catalyzation (the paper's distillation-scheme choice for this error rate)"
+prompt: |
+  You are estimating fault-tolerant quantum computing resources for a specific row of a
+  published table. Answer using ONLY the assumptions below — the source paper studies many
+  lattice sizes, ancilla schemes, precision targets, and error rates; this task pins ONE
+  specific combination.
+
+  Algorithm: Trotterized simulation of the planar Fermi-Hubbard model (U/t=4), using the
+  paper's ancilla scheme that adds only 4 extra ancilla qubits to the register.
+
+  Problem size: an 8x8 lattice (64 sites, 128 spin-orbitals).
+
+  Target accuracy: relative precision to within 0.5% of the system's ground-state energy
+  (the paper's "relative precision" target, as opposed to its separate "absolute precision"
+  target for the same lattice).
+
+  Hardware / QEC assumptions (use exactly these):
+  - Physical gate error rate: 1e-3
+  - Surface code, with code distance chosen (by the paper's own cost-minimization
+    procedure) to minimize total physical qubits at this error rate
+  - Decoder/classical-control latency: 10 microseconds per logical measurement round
+  - Magic state distillation: whichever single- or double-round 15-to-1 (with or without CCZ
+    catalyzation) scheme is optimal at this error rate for this lattice size — use the
+    paper's own optimized choice, not a scheme you pick yourself
+
+  Report:
+  1. Logical qubit count.
+  2. Toffoli gate count.
+  3. T-gate count (this paper reports both Toffoli AND T counts separately for the same
+     circuit — do not derive one from the other; report the paper's own two numbers).
+  4. Total physical qubit count.
+  5. Total runtime, in hours.
+assumptions:
+  - "Lattice 8x8 (64 sites), U/t=4 (Table 1 caption, Sec.3.3, printed p.13)"
+  - "Ancilla scheme requiring 4 extra qubits, i.e. logical qubits = 2*(lattice sites) + 4 = \
+    132 (Table 1 row \"8x8, Anc=4\"; logical-qubit arithmetic verified: 2*64+4=132)"
+  - "Relative precision target: 0.5% of system energy (Table 1's own precision target, as \
+    opposed to Table 2's absolute-precision target for the same lattice)"
+  - "Physical gate error rate 1e-3 (Table 1 column for this error rate)"
+  - "Decoder latency <=10 microseconds per logical measurement round, described in-text as \
+    \"100 times slower than previously assumed\" (Sec.3.3 text)"
+  - "Surface code distance swept 15-51 in steps of 2 to minimize physical qubits per row \
+    (Sec.3.3 text, Appendix H); no single surface-code cycle time is stated in the paper"
+  - "Distillation scheme superscript 'b' (15-to-1 plus CCZ catalyzation) — the scheme the \
+    paper's own optimization selects for the p=1e-3 column of this row (Table 1 footnote)"
+quantities_pinned: [logical_qubits, toffoli_count, t_count, physical_qubits, runtime_value]
+reference:
+  logical_qubits: 132
+  toffoli_count: 250000
+  t_count: 23000000
+  physical_qubits: 320000
+  runtime_value: 0.60
+units:
+  runtime_value: hours
+tolerance_log10:
+  logical_qubits: 0.03
+  toffoli_count: 0.15
+  t_count: 0.15
+  physical_qubits: 0.15
+  runtime_value: 0.15
+tolerance_rationale:
+  logical_qubits: >
+    Determined by an exact, stated formula (2 x lattice sites + 4 ancillas = 132) — there is
+    no legitimate room for variation given the stated assumptions, so the band
+    (factor of 1.07, log10=0.03) exists only to allow trivial rounding, not real disagreement.
+  toffoli_count: >
+    A precise table entry (2.5x10^5), but produced by the paper's own per-row numerical
+    minimization over Trotter step count (Eq. 12 / Appendix H) rather than a closed-form
+    formula — a different but equally valid numerical search over the same stated
+    assumptions could reasonably land within tens of percent. Factor-of-1.4 band (log10=0.15).
+  t_count: "Same reasoning as toffoli_count: a numerically-optimized table entry, same band."
+  physical_qubits: >
+    Depends on the paper's own code-distance sweep AND its own choice of distillation scheme
+    for this error rate (footnote 'b') — both are optimization outputs, not closed-form
+    quantities, so the same factor-of-1.4 band as the gate counts is used.
+  runtime_value: >
+    Runtime is a product of the (numerically optimized) logical depth and the stated
+    decoder-latency-dominated cycle time; inherits the same optimization-derived slack as
+    the gate counts above.
+source:
+  arxiv_id: "1902.10673"
+  title: "Improved Fault-Tolerant Quantum Simulation of Condensed-Phase Correlated Electrons via Trotterization"
+  authors:
+    - "Ian D. Kivlichan"
+    - "Craig Gidney"
+    - "Dominic W. Berry"
+    - "Nathan Wiebe"
+    - "Jarrod McClean"
+    - "Wei Sun"
+    - "Zhang Jiang"
+    - "Nicholas Rubin"
+    - "Austin Fowler"
+    - "Alan Aspuru-Guzik"
+    - "Hartmut Neven"
+    - "Ryan Babbush"
+  venue: "arXiv preprint, 2019-2020"
+  location: "Section 3.3 \"Surface code resource estimate analysis\", Table 1 (printed p.13), row \"8x8, Anc=4\""
+  url: "https://arxiv.org/abs/1902.10673"
+  retrieved: "2026-09-21"
+cross_check:
+  ran: true
+  tool: "Microsoft QDK Python package (`qdk` v1.32.3), `qdk.estimator.LogicalCounts.estimate()`"
+  command: >
+    LogicalCounts({"numQubits": 132, "cczCount": 250_000, ...}).estimate({"errorBudget": 0.01,
+    "qubitParams": {"name": "qubit_gate_ns_e3"}, "qecScheme": {"name": "surface_code"}})
+  inputs:
+    numQubits: 132
+    cczCount: 250000
+    errorBudget: 0.01
+    qubitParams: "qubit_gate_ns_e3"
+    qecScheme: "surface_code"
+  result:
+    physicalQubits: 521156
+    runtime_seconds: 6
+  agreement: >
+    Physical qubits agree within a factor of 1.6 (521K predicted vs. 320K in the paper) —
+    reasonable given the two estimators use different code-distance-optimization
+    conventions. Runtime disagrees sharply (6 seconds predicted vs. 2,160 seconds / 0.60
+    hours in the paper), by roughly 360x. The likely cause: this paper explicitly uses a
+    decoder/control latency of 10 microseconds per round, stated in-text as "100 times
+    slower than previously assumed" specifically BECAUSE the paper wanted a more
+    conservative, realistic runtime than a naive model gives — the generic estimator's
+    default clocking has no way to reproduce that deliberately pessimistic, paper-specific
+    choice. Recorded as an honest, understood disagreement, not corroboration.
+  note: null
+notes: null

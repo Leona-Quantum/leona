@@ -1691,6 +1691,9 @@ dependencies = [
 pdf = [
     { name = "pypdf" },
 ]
+resource-estimation-crosscheck = [
+    { name = "qdk" },
+]
 
 [package.metadata]
 requires-dist = [
@@ -1703,8 +1706,9 @@ requires-dist = [
     { name = "pydantic", specifier = ">=2.13.5" },
     { name = "pypdf", marker = "extra == 'pdf'", specifier = ">=6.19.0" },
     { name = "pyyaml", specifier = ">=6" },
+    { name = "qdk", marker = "extra == 'resource-estimation-crosscheck'", specifier = ">=1.30,<2" },
 ]
-provides-extras = ["pdf"]
+provides-extras = ["pdf", "resource-estimation-crosscheck"]
 
 [[package]]
 name = "majorana-frameworks"
@@ -3179,6 +3183,19 @@ wheels = [
 ]
 
 [[package]]
+name = "pyqir"
+version = "0.12.5"
+source = { registry = "https://pypi.org/simple" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/6e/10/3b041f225dac208451f568188fd06524360ffc66ff855a1a205af0a895a0/pyqir-0.12.5-cp39-abi3-macosx_10_12_x86_64.whl", hash = "sha256:9bc8232f028f40e026cb72c7f654cf63f4c464ff4695874b70a45e8c34969665", size = 2160708, upload-time = "2026-05-12T18:06:54.242Z" },
+    { url = "https://files.pythonhosted.org/packages/88/94/a120794a8048291203b28c96e1c212243c45d8d99e2dad9002d67c0559ce/pyqir-0.12.5-cp39-abi3-macosx_11_0_arm64.whl", hash = "sha256:7f568054dbb42b7fd33e0d5b58e7ac60ad6af496e9e1376fcb4a45290e9f510d", size = 2102202, upload-time = "2026-05-12T18:06:56.336Z" },
+    { url = "https://files.pythonhosted.org/packages/5b/b7/da263a4c694b062d94b899a7248dec2238f965dc4ee58c69c6ba1263297e/pyqir-0.12.5-cp39-abi3-manylinux_2_34_x86_64.whl", hash = "sha256:4304984337a26cb01f8f0b0b0b436737e90379fbd0adfb48f142cfd942234384", size = 2640753, upload-time = "2026-05-12T18:06:57.988Z" },
+    { url = "https://files.pythonhosted.org/packages/31/9f/e78010a4158e65be86b0013bccd5b0709ae87d8af9da82685464fb8e784c/pyqir-0.12.5-cp39-abi3-manylinux_2_38_aarch64.whl", hash = "sha256:ced0baf85371393bae59c3c93a97d3de68217f43fde21b7be8c6ed31b1e00128", size = 2709456, upload-time = "2026-05-12T18:06:59.761Z" },
+    { url = "https://files.pythonhosted.org/packages/04/b2/970e1621e372dffbb540cbb06518d0af4a16e63c074db61d60fb3d464ae2/pyqir-0.12.5-cp39-abi3-win_amd64.whl", hash = "sha256:c70381e8e1e2db8e2a9d5aec484f51328b66f7ac9cc72989ba05a61d7689f950", size = 1967113, upload-time = "2026-05-12T18:07:01.197Z" },
+    { url = "https://files.pythonhosted.org/packages/a9/6e/575bbfe2382e15c2c1e1a3062ba5f1f0b61d73da05b2ff1b130dbda1214b/pyqir-0.12.5-cp39-abi3-win_arm64.whl", hash = "sha256:1be238924839fa5edbae20fb5a039f0caabe349e96c20029e7decf180a7aa1ae", size = 1868996, upload-time = "2026-05-12T18:07:02.58Z" },
+]
+
+[[package]]
 name = "pyspnego"
 version = "0.12.1"
 source = { registry = "https://pypi.org/simple" }
@@ -3386,6 +3403,22 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/94/79/eb5d252a73408b894fc7a34c88cd403baeaf91f5957ee8d27eefa3fd718e/pyzx-0.10.6.tar.gz", hash = "sha256:ba770fb71ba84f8a9d8604246b21f87bf4dfafdcc4c01d480424e566fc1f4c6a", size = 548797, upload-time = "2026-09-01T13:50:46.17Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/0e/c8/1284142d46cd8f1ae9418aae5494050d74eadc2891b0b81e73cca4b214ed/pyzx-0.10.6-py3-none-any.whl", hash = "sha256:3e98a54b5da2385e5dea5754c0d1b57c4a5dc1c9bc5eb1a1eaee4115deb324d9", size = 576349, upload-time = "2026-09-01T13:50:44.171Z" },
+]
+
+[[package]]
+name = "qdk"
+version = "1.32.3"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "pyqir" },
+]
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/51/07/bb8868b915ed44092f6d509e29d12e42f2ec7d4772aec8d0e1fd019fb840/qdk-1.32.3-cp310-abi3-macosx_10_12_x86_64.whl", hash = "sha256:707f2984295bebd9d9cc82e6e46ce40ad3f105045785e6e3e15f942cec30fc22", size = 7110513, upload-time = "2026-09-11T01:58:39.889Z" },
+    { url = "https://files.pythonhosted.org/packages/3b/8f/4062ace98b0b221320a8629e74e22623cb564f58f17c91212cf06fafa74e/qdk-1.32.3-cp310-abi3-macosx_11_0_arm64.whl", hash = "sha256:859a1c1565fce2e6668b3ce82d92e802ca98210268b0399928a5542e5110f88b", size = 6712063, upload-time = "2026-09-11T01:58:42.145Z" },
+    { url = "https://files.pythonhosted.org/packages/d7/37/f1c02b4228713ceacbca1721766a0bb1067314b299c02b6586b469f4e38b/qdk-1.32.3-cp310-abi3-manylinux_2_35_aarch64.whl", hash = "sha256:f42e1750644452280055446f66e26e78e338bd23dd745233938d6057876c92d9", size = 7405821, upload-time = "2026-09-11T01:58:43.978Z" },
+    { url = "https://files.pythonhosted.org/packages/60/b9/42b4b676fc30b7d52b2925adb8dd189e005f798bb2736ed7d1d47e391979/qdk-1.32.3-cp310-abi3-manylinux_2_35_x86_64.whl", hash = "sha256:9a434491e284036d2fe4e32aec6db5f384114bcb59c913d10e8e6df8bf30cee9", size = 8057973, upload-time = "2026-09-11T01:58:46.446Z" },
+    { url = "https://files.pythonhosted.org/packages/c6/5d/2dfa8f49301c16b85aa303873d43b19759369cf69204a995d8597571272e/qdk-1.32.3-cp310-abi3-win_amd64.whl", hash = "sha256:7ccb218ca160e481e9fb50faf207df3116ed66b16b966753862f90581c96a157", size = 8582674, upload-time = "2026-09-11T01:58:48.79Z" },
+    { url = "https://files.pythonhosted.org/packages/13/d5/bb22a428c6ead9af9c7f93aacbeb4fc31b3435e4f839b75e9c5ef3b0f0b8/qdk-1.32.3-cp310-abi3-win_arm64.whl", hash = "sha256:7b046eb4cd624670176207e3a0b4cbb44822c926f5c7a21f08bacd7c0a20a28a", size = 8041003, upload-time = "2026-09-11T01:58:50.908Z" },
 ]
 
 [[package]]

@@ -1,0 +1,112 @@
+task_id: babbush-2018-hubbard-8x8
+algorithm: >
+  Linear-T qubitization of the planar Fermi-Hubbard model (Babbush et al.'s linear-T-complexity
+  construction, an alternative to Trotterization).
+problem_size:
+  lattice: "8x8 sites, periodic boundary conditions (128 spin-orbitals)"
+  hubbard_u_over_t: 4
+  target_precision: "energy precision Delta_E = t/100"
+hardware_assumptions:
+  physical_gate_error_rate: 0.001
+  qec_scheme: "surface code"
+  surface_code_cycle_time_us: 1
+prompt: |
+  You are estimating fault-tolerant quantum computing resources for a specific row of a
+  published table. Answer using ONLY the assumptions below.
+
+  Algorithm: a linear-T-complexity qubitization circuit (Babbush et al. 2018) for
+  time-evolving/estimating the ground-state energy of the planar Fermi-Hubbard model,
+  periodic boundary conditions, U/t=4, targeting an energy precision of Delta_E = t/100.
+
+  Problem size: an 8x8 lattice (128 spin-orbitals).
+
+  Hardware / QEC assumptions (use exactly these):
+  - Physical gate error rate: 1e-3
+  - Surface code, 1 microsecond cycle time
+  - Automated (not hand-derived) physical-resource compilation, the paper's own headline
+    per-error-rate figures
+
+  Report:
+  1. Logical qubit count.
+  2. T-gate count (this algorithm's cost metric is T-gates; it has no separate Toffoli count
+     — do not invent one).
+  3. Total physical qubit count.
+  4. Total runtime, in hours.
+assumptions:
+  - "Lattice 8x8 (128 spin-orbitals), periodic BC, U/t=4, Delta_E=t/100 (Table IV, p.27)"
+  - "Logical qubits = 161 = 128 spin-orbitals + 33 ancilla (Table IV row \"8x8\")"
+  - "T-count = 2.9x10^8 (Table IV row \"8x8\")"
+  - "Physical gate error rate 1e-3, surface code, 1us cycle time (Table VI inputs, p.31)"
+  - "Physical qubits and runtime from Table IX (p.34), the paper's own automated \
+    (PP-based) headline physical estimate, row matching Hubbard 8x8/128 at p=1e-3"
+quantities_pinned: [logical_qubits, t_count, physical_qubits, runtime_value]
+reference:
+  logical_qubits: 161
+  t_count: 290000000
+  physical_qubits: 2400000
+  runtime_value: 15
+units:
+  runtime_value: hours
+tolerance_log10:
+  logical_qubits: 0.03
+  t_count: 0.10
+  physical_qubits: 0.15
+  runtime_value: 0.15
+tolerance_rationale:
+  logical_qubits: >
+    Fixed by the algorithm's register layout (spin-orbitals plus a stated ancilla count) —
+    essentially no legitimate room for disagreement given the stated problem size; a narrow
+    factor-of-1.07 band exists only for rounding.
+  t_count: >
+    A precisely-derived table entry from the algorithm's own (non-numerically-optimized,
+    closed-form) T-complexity formula — tighter than the Trotter-based papers in this corpus
+    because this algorithm's whole point is a clean, closed-form linear-T cost, so a
+    factor-of-1.26 band (log10=0.10) is appropriate.
+  physical_qubits: >
+    Table IX is the paper's own AUTOMATED physical-resource compilation (distinguished in the
+    paper from an earlier, cruder hand-derived estimate in Table VII/VIII) — still involves
+    code-distance and factory-count optimization choices with legitimate multi-ten-percent
+    variation, hence the wider factor-of-1.4 band (log10=0.15), matching this corpus's other
+    automated-compilation cases (e.g. Kivlichan 2020).
+  runtime_value: "Same reasoning as physical_qubits: an automated-compilation output, same band."
+source:
+  arxiv_id: "1805.03662"
+  title: "Encoding Electronic Spectra in Quantum Circuits with Linear T Complexity"
+  authors:
+    - "Ryan Babbush"
+    - "Craig Gidney"
+    - "Dominic W. Berry"
+    - "Nathan Wiebe"
+    - "Jarrod McClean"
+    - "Alexandru Paler"
+    - "Austin Fowler"
+    - "Hartmut Neven"
+  venue: "arXiv preprint, 2018 (v2)"
+  location: "Table IV (p.27, row \"8x8\"); Table VI (p.31, inputs); Table IX (p.34, automated physical estimate)"
+  url: "https://arxiv.org/abs/1805.03662"
+  retrieved: "2026-09-21"
+cross_check:
+  ran: true
+  tool: "Microsoft QDK Python package (`qdk` v1.32.3), `qdk.estimator.LogicalCounts.estimate()`"
+  command: >
+    LogicalCounts({"numQubits": 161, "tCount": 290_000_000, ...}).estimate({"errorBudget": 0.01,
+    "qubitParams": {"name": "qubit_gate_ns_e3"}, "qecScheme": {"name": "surface_code"}})
+  inputs:
+    numQubits: 161
+    tCount: 290000000
+    errorBudget: 0.01
+    qubitParams: "qubit_gate_ns_e3"
+    qecScheme: "surface_code"
+  result:
+    physicalQubits: 879622
+    runtime_seconds: 2668
+  agreement: >
+    Physical qubits: predicted 880K vs. the paper's 2.4M — Azure predicts about 2.7x FEWER
+    qubits. Runtime: predicted 44 minutes vs. the paper's 15 hours — Azure predicts about 20x
+    LESS time. Both point the same direction as this same paper's jellium case
+    (babbush-2018-jellium-n128) and the Reiher 2017 case in this corpus: generic
+    magic-state-factory-throughput models built into a modern estimator do not reproduce
+    these earlier, more optimistic per-gate clocking assumptions common in 2017-2018 resource
+    estimates. Recorded as an honest, understood disagreement, not corroboration.
+  note: null
+notes: null

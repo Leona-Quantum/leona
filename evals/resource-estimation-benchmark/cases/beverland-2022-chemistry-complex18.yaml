@@ -1,0 +1,122 @@
+task_id: beverland-2022-chemistry-complex18
+algorithm: >
+  Double-factorized qubitization for ground-state energy estimation of "Complex XVIII," a
+  ruthenium carbon-fixation catalyst (Beverland et al.'s worked application example).
+problem_size:
+  system: "Complex XVIII (ruthenium carbon-fixation catalyst)"
+  target_accuracy: "1 mHa"
+hardware_assumptions:
+  qubit_modality: "gate-based (ns, 1e-4) superconducting-style qubits"
+  gate_time_ns: 50
+  measurement_time_ns: 100
+  clifford_error_rate: 0.0001
+  non_clifford_t_state_error_rate: 0.0001
+  qec_scheme: "surface code"
+  surface_code_distance: 17
+  t_factory_count: 17
+prompt: |
+  You are estimating fault-tolerant quantum computing resources for a specific, published
+  worked example. Answer using ONLY the assumptions below.
+
+  Algorithm: double-factorized qubitization for ground-state energy estimation of "Complex
+  XVIII," a ruthenium carbon-fixation catalyst, to a target accuracy of 1 mHa.
+
+  Hardware / QEC assumptions (use exactly these — the "(ns, 1e-4)" gate-based qubit and
+  surface-code profile):
+  - Gate-based superconducting-style qubits
+  - Two-qubit gate time: 50 nanoseconds; measurement time: 100 nanoseconds
+  - Clifford gate error rate: 1e-4; non-Clifford (T-state) error rate: 1e-4
+  - Surface code error correction, code distance 17
+  - 17 T-factories, occupying about 15% of total physical qubits
+
+  Report:
+  1. Logical qubit count.
+  2. T-gate count (the number of T states consumed).
+  3. Total physical qubit count.
+  4. Total runtime, in months.
+assumptions:
+  - "System: \"Complex XVIII,\" a ruthenium carbon-fixation catalyst; target accuracy 1 mHa \
+    (Table I, p.12; description p.10)"
+  - "Logical qubits Q=2,740 (Table I, Complex XVIII row)"
+  - "T-count M=5.4x10^11 (Table I, Complex XVIII row; the paper calls this quantity the \
+    \"number of T states consumed\")"
+  - "Gate-based (ns, 1e-4) qubit: gate time 50ns, measurement time 100ns, Clifford and \
+    T-state error rate both 1e-4 (Table II, p.13)"
+  - "Surface code (gate-based qubits use surface code per the paper's own text), code \
+    distance d=17, 17 T-factories occupying ~15% of physical qubits (Table IV, p.19, row \
+    for Complex XVIII under this qubit type)"
+quantities_pinned: [logical_qubits, t_count, physical_qubits, runtime_value]
+reference:
+  logical_qubits: 2740
+  t_count: 540000000000
+  physical_qubits: 1900000
+  runtime_value: 1.0
+units:
+  runtime_value: months
+tolerance_log10:
+  logical_qubits: 0.03
+  t_count: 0.08
+  physical_qubits: 0.10
+  runtime_value: 0.15
+tolerance_rationale:
+  logical_qubits: >
+    Derived from a stated algorithmic-qubit formula (Q = 2*Q_alg + ceil(sqrt(8*Q_alg+1)),
+    Appendix D) with no disclosed alternative reading — a narrow factor-of-1.07 band for
+    rounding only.
+  t_count: >
+    A precise table entry from the algorithm's own double-factorization cost formula, tied to
+    a stated error-budget requirement (P_T <= 6.1e-15, also Table I) — factor-of-1.2 band.
+  physical_qubits: >
+    Table IV's physical-qubit figure depends on the paper's own code-distance and
+    T-factory-count optimization for this specific application and qubit type — moderate
+    factor-of-1.26 band, tighter than the older Reiher 2017 estimate but looser than an
+    exact closed-form count, matching this corpus's other automated-compilation cases.
+  runtime_value: >
+    The paper itself reports this rounded to "1.0 month" (Table IV) rather than a more
+    precise sub-unit figure — the tolerance (factor of 1.4, log10=0.15) is set loose enough
+    to reflect that the reference value is already a coarse rounding, not a precise figure a
+    tighter band could meaningfully test against.
+source:
+  arxiv_id: "2211.07629"
+  title: "Assessing requirements to scale to practical quantum advantage"
+  authors:
+    - "Michael E. Beverland"
+    - "Prakash Murali"
+    - "Matthias Troyer"
+    - "Krysta M. Svore"
+    - "Torsten Hoefler"
+    - "Vadym Kliuchnikov"
+    - "Guang Hao Low"
+    - "Mathias Soeken"
+    - "Aarthi Sundaram"
+    - "Alexander Vaschillo"
+  venue: "arXiv preprint, 2022"
+  location: "Table I (p.12, Complex XVIII row); Table II (p.13, (ns,1e-4) qubit); Table IV (p.19, Complex XVIII row)"
+  url: "https://arxiv.org/abs/2211.07629"
+  retrieved: "2026-09-21"
+cross_check:
+  ran: true
+  tool: "Microsoft QDK Python package (`qdk` v1.32.3), `qdk.estimator.LogicalCounts.estimate()`"
+  command: >
+    LogicalCounts({"numQubits": 2740, "tCount": 540_000_000_000, ...}).estimate({
+    "errorBudget": 0.01, "qubitParams": {"name": "qubit_gate_ns_e4"}, "qecScheme":
+    {"name": "surface_code"}})
+  inputs:
+    numQubits: 2740
+    tCount: 540000000000
+    errorBudget: 0.01
+    qubitParams: "qubit_gate_ns_e4"
+    qecScheme: "surface_code"
+  result:
+    physicalQubits: 3462140
+    runtime_days: 43
+  agreement: >
+    Reasonable corroboration: predicted 3.46M physical qubits vs. the paper's 1.9M (about
+    1.8x), and predicted 43 days vs. the paper's ~30 days / 1 month (about 1.4x). Both within
+    a factor of 2, the closest agreement of any case in this corpus that has a real
+    cross-check — plausibly because Beverland et al.'s own architecture (a generic surface
+    code, no bespoke techniques like yoked codes or magic state cultivation) is closer in
+    spirit to the estimator's own default model than the more exotic constructions in this
+    corpus's Gidney 2025 or Lee 2021 cases.
+  note: null
+notes: null

@@ -1,0 +1,131 @@
+task_id: gidney-2025-rsa2048
+algorithm: >
+  Shor's algorithm for RSA integer factorization via order-finding, compiled with
+  approximate residue arithmetic (Chevignard-Fouque-Schrottenloher truncation), yoked
+  surface codes for cold storage, and magic state cultivation replacing the first
+  distillation stage (Gidney 2025's construction).
+problem_size:
+  rsa_modulus_bits: 2048
+hardware_assumptions:
+  qubit_modality: "gate-based (generic superconducting-style) qubits"
+  physical_gate_error_rate: 0.001
+  surface_code_cycle_time_us: 1
+  control_system_reaction_time_us: 10
+  compute_and_hot_storage_code_distance: 25
+  cold_storage_scheme: "yoked surface codes (Gidney-Newman-Brooks-Jones 2023), 430 physical qubits per logical qubit"
+  magic_state_cultivation: "6 parallel 8T-to-CCZ factories, cultivation target error 1e-7, distillation suppression 28*p^2 < 1e-12"
+prompt: |
+  You are estimating fault-tolerant quantum computing resources for a specific, published
+  configuration that improves on an earlier (2019) construction for the SAME problem. Answer
+  using ONLY the assumptions below.
+
+  Algorithm: Shor's algorithm for factoring a 2048-bit RSA modulus via order-finding,
+  compiled with approximate residue arithmetic (truncation parameters f=33, s=8, l=21,
+  m=1280, w1=6, w3=3, w4=5), using yoked surface codes for cold (idle) qubit storage and
+  magic state cultivation (rather than a first distillation round) to produce CCZ states.
+
+  Hardware / QEC assumptions (use exactly these):
+  - Physical gate error rate: 1e-3 (uniform)
+  - Surface code cycle time: 1 microsecond
+  - Control system reaction time: 10 microseconds
+  - Compute region and hot-storage patches: surface code distance 25
+  - Cold storage: yoked surface codes at 430 physical qubits per logical qubit
+  - Magic state cultivation: 6 parallel 8T-to-CCZ factories, cultivation target error 1e-7,
+    ~150 cultivation rounds (rounded up from ~14.7 for slack), distillation suppression
+    28*p^2 < 1e-12
+
+  Report:
+  1. Total Toffoli gate count for the factorization (this construction's own gate-count
+     metric — do not convert to a T-count).
+  2. Total physical qubit count (cold storage + hot storage/compute + magic-state factories).
+  3. Total expected wall-clock runtime, in days.
+
+  Do not report a single logical qubit count — the source paper itself gives three
+  non-identical figures for this quantity under this exact configuration (see this case's
+  `notes`); this task does not grade it.
+assumptions:
+  - "RSA modulus n = 2048 bits (title; Table 5, n=2048 row, Sec.3)"
+  - "Physical gate error rate 1e-3, surface code cycle time 1us, control reaction time 10us \
+    (abstract, reused from Gidney & Ekera 2019)"
+  - "Truncation parameters f=33, s=8, l=21, m=1280, w1=6, w3=3, w4=5 (Sec.3, n=2048 row)"
+  - "Compute/hot-storage code distance d=25, giving 2(d+1)^2=1352 physical qubits per \
+    logical qubit (Sec.3)"
+  - "Cold storage: yoked surface codes, 430 physical qubits per logical qubit (Sec.3, cold \
+    storage tally: 1280 x 430 = 550,400)"
+  - "6 parallel 8T-to-CCZ magic state cultivation factories, cultivation target error 1e-7, \
+    ~150 rounds (rounded up from ~14.7 for slack), distillation suppression 28p^2<1e-12 \
+    (Sec.3, magic state cultivation discussion)"
+quantities_pinned: [toffoli_count, physical_qubits, runtime_value]
+reference:
+  toffoli_count: 6500000000
+  physical_qubits: 897864
+  runtime_value: 4.96
+units:
+  runtime_value: days
+tolerance_log10:
+  toffoli_count: 0.08
+  physical_qubits: 0.08
+  runtime_value: 0.10
+tolerance_rationale:
+  toffoli_count: >
+    Table 5 gives 6.5x10^9 Toffolis as a single, exact-as-printed number for this row (no
+    disclosed internal inconsistency, unlike the Toffoli figures in this corpus's Lee 2021
+    or Gidney & Ekera 2019 cases). A factor-of-1.20 band (log10=0.08) allows for the paper's
+    own rounding to 2 significant figures without admitting an order-of-magnitude miss.
+  physical_qubits: >
+    897,864 is an exact sum the paper computes from its own component tallies (cold storage
+    1280x430=550,400; hot storage 131x1,352=177,112; compute region 170,352). A
+    factor-of-1.20 band covers reasonable arithmetic/rounding slack while remaining far
+    tighter than the abstract's own explicit padding of this figure up to "under one
+    million... for slack."
+  runtime_value: >
+    4.96 days is the paper's own precisely computed figure (12.07 hours/shot x 9.1 shots /
+    24, divided by a 93.3% logical success probability); the abstract rounds this UP to "a
+    week" purely for slack, so a model that answers close to the precise 4.96-day figure
+    should not be penalized relative to one that parrots the abstract's looser framing. A
+    factor-of-1.26 band (log10=0.10) covers ordinary rounding without accepting the
+    abstract's "under a week" framing taken to its loosest reading (~7 days would be a
+    41% miss, outside this band on purpose).
+source:
+  arxiv_id: "2505.15917"
+  title: "How to factor 2048 bit RSA integers with less than a million noisy qubits"
+  authors: ["Craig Gidney"]
+  venue: "arXiv preprint, 2025 (Google Quantum AI)"
+  location: "Table 5 (Sec.3, n=2048 row) and the surrounding worked calculation in Sec.3"
+  url: "https://arxiv.org/abs/2505.15917"
+  retrieved: "2026-09-21"
+cross_check:
+  ran: true
+  tool: "Microsoft QDK Python package (`qdk` v1.32.3), `qdk.estimator.LogicalCounts.estimate()`"
+  command: >
+    LogicalCounts({"numQubits": 1537, "cczCount": 6_500_000_000, ...}).estimate({"errorBudget":
+    0.01, "qubitParams": {"name": "qubit_gate_ns_e3"}, "qecScheme": {"name": "surface_code"}})
+  inputs:
+    numQubits: 1537
+    cczCount: 6500000000
+    errorBudget: 0.01
+    qubitParams: "qubit_gate_ns_e3"
+    qecScheme: "surface_code"
+  result:
+    physicalQubits: 6405372
+    runtime_days: 3.0
+  agreement: >
+    Disagrees by about 7x on physical qubits (6.41M predicted vs. 898K in the paper) and
+    about 1.6x on runtime (3 days predicted vs. 4.96 days in the paper). The large
+    physical-qubit gap is expected and understood: this generic surface-code estimator has
+    no model of yoked surface codes for cold storage or magic state cultivation — both are
+    exactly the techniques this 2025 paper introduces to cut physical qubit count relative
+    to Gidney & Ekera 2019's plain surface code, so a generic estimator necessarily falls
+    back to a plain-surface-code cost, closer to (though still below) the 2019 paper's own
+    20M-qubit figure once the 6.5B Toffoli input is fed to it directly. Recorded as an
+    honest disagreement with a stated cause, not treated as corroboration.
+  note: null
+notes: >
+  DROPPED from this case (not graded): logical qubit count. The paper gives THREE
+  non-reconciled figures for the same n=2048 row: 1,399 (Table 5's own "Qubits" column),
+  1,409 (Sec.3.2's worked formula m+3f+2l+len(m)), and 1,537 ("including idle hot patches" —
+  the figure the paper's own 897,864 physical-qubit tally is actually built from, per
+  Sec.3). Rather than silently pick one, this case excludes logical_qubits from grading. If
+  a future increment wants to grade it, 1,537 is the internally-consistent choice (it is
+  what the graded physical_qubits figure is derived from) with a tolerance band wide enough
+  to cover the 1,399-1,537 spread (log10(1537/1399) = 0.041).
