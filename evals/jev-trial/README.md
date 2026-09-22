@@ -63,6 +63,8 @@ uv run --package majorana-evals python -m majorana_evals.jev_trial run \
     --ranker random   --out /tmp/jev-trial-random.json
 uv run --package majorana-evals python -m majorana_evals.jev_trial run \
     --ranker stub-jev --out /tmp/jev-trial-stub-jev.json
+uv run --package majorana-evals python -m majorana_evals.jev_trial run \
+    --ranker lexical  --out /tmp/jev-trial-lexical.json
 ```
 
 **Measured 2026-09-21** (this repo, `add/jev-offline-trial`), n=18 cases:
@@ -88,24 +90,65 @@ concrete case for the trial.
 Mutation-check performed 2026-09-21: inverted `metrics.top_k_hit`'s comparison,
 reran `--ranker oracle`, confirmed top-1/top-3 dropped from 100% to 0%, reverted.
 
-A REAL run — spends a fraction of a cent (18 requests, roughly 500-1,000 input
-tokens each at $42/billion input tokens, i.e. on the order of $0.001 total; output is
-unbilled per typesafe.ai's pricing page; this is an ESTIMATE, not a measurement, made
-before any real call) but is a real call to a new third party carrying the case's
-problem-statement text as Input:
+A real run needs `TYPESAFE_API_KEY` in the environment. Load it from the secrets file;
+the harness strips one pair of `.env`-style quotes, because Jev answers a quoted key
+with a bare 401. With no key it refuses before any network attempt (exit 2) and writes
+no report.
 
 ```bash
-# TYPESAFE_API_KEY must be in the environment first — the operator loads it from
-# ~/Developer/projects/leona-secrets/llm-keys.txt (see jev_client.py). No key ->
-# this refuses before any network attempt (exit 2), and writes no report file.
-uv run --package majorana-evals python -m majorana_evals.jev_trial run \
-    --ranker live-jev --out evals/jev-trial-report.json \
-    --markdown-out evals/jev-trial-report.md
+TYPESAFE_API_KEY="$(grep '^TYPESAFE_API_KEY=' ~/Developer/projects/leona-secrets/llm-keys.txt | cut -d= -f2-)" \
+  uv run --package majorana-evals python -m majorana_evals.jev_trial run \
+    --ranker live-jev --out evals/report-jev-trial-live-<date>.json \
+    --markdown-out evals/report-jev-trial-live-<date>.md
 ```
+
+## Live result, 2026-09-22 (owner put the key in; ai-ops#358)
+
+Two full live runs plus a one-case smoke test, on `origin/dev` 3c212e59. Run 2 also
+carried this branch's token-capture and quote-stripping edits, neither of which touches
+the ranking. Reports: `evals/report-jev-trial-*-20260922*.json`.
+
+| ranker | top-1 | top-3 | MRR | Brier |
+|---|---|---|---|---|
+| **Jev, run 1** | **94% (17/18)** | 100% | 0.972 | 0.060 |
+| **Jev, run 2** | **94% (17/18)** | 100% | 0.972 | 0.055 |
+| word overlap (`lexical`, zero-spend control) | 78% (14/18) | 100% | 0.889 | 0.310 (uncalibrated) |
+| current finder | 17% (3/18) | 56% | 0.418 | n/a |
+| random, seed 1337 | 39% | 72% | 0.572 | 0.219 |
+
+What it cost: 20,129 billed input tokens for a full run, about $0.0008 at $42 per
+billion; output is unbilled. Three calls in total (two full runs and the smoke test)
+came to under $0.002.
+
+How to read it:
+
+- **Most of the gap is the finder, not Jev.** The `lexical` control ranks the same
+  candidates by plain TF-IDF word overlap with the query, using exactly the text Jev is
+  sent. It lifts top-1 from 17% to 78% with no model at all. Any content-aware ranking
+  fixes most of the alphabetical tie-break problem in `DERIVATION.md`.
+- **Jev adds a little on top, and 18 cases cannot say how much.** Jev got three cases
+  right that word overlap missed (`optimization-adiabatic`,
+  `ml-quantum-kernel-classifier`, `communication-teleportation`), and word overlap got
+  none right that Jev missed. An exact sign test on 3 against 0 gives p = 0.25. That is
+  consistent with a real edge, and it is not evidence of one.
+- **Jev's confidence tracks its accuracy here.** All 13 answers above 0.8 confidence
+  were right, and the one miss sat in the 0.4 to 0.6 bin. With a single miss that is
+  thin evidence, but nothing contradicts it.
+- **Stable top pick, jittery tail.** Jev chose the same first method in all 18 cases
+  on both runs. The order below first place differed in 15 of 18, and confidence moved
+  by up to 0.07.
+- **The one case both miss may be a labelling choice.** `optimization-qaoa-benchmark`
+  asks for "a QAOA ring-graph MaxCut benchmark circuit". Both rankers put
+  `qaoa-maxcut-ring` first, which is a QAOA MaxCut circuit on a ring but is not tagged
+  `benchmark-circuit`, so the ground truth scores it wrong.
+- **The cases favour word matching.** Queries were written from the catalog's own
+  tags and titles, so they share words with their answers. A set of queries phrased
+  the way a user would put a problem, without the method's name in them, is the test
+  that would separate Jev from word overlap. It has not been built.
 
 ## Tests
 
 `evals/harness/tests/test_jev_trial.py` — loaders, metrics (incl. the theoretical
-chance rate and reliability bins), all four zero-spend rankers end to end, and that
+chance rate and reliability bins), all five zero-spend rankers end to end, the key loader's quote stripping, and that
 `--ranker live-jev` refuses outright (no network call attempted) when
 `TYPESAFE_API_KEY` is absent.

@@ -10,6 +10,8 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
+import re
 from typing import Protocol
 
 from majorana_evals.jev_trial.jev_client import JevAskResult, JevChoiceAnswer
@@ -147,4 +149,84 @@ class StubJevClient:
             confidence=result.answer.confidence,
             probabilities=result.answer.probabilities,
             note="stub-jev: canned response in Jev's real envelope shape — not a quality signal",
+        )
+
+
+#: Words too common in both the queries and the catalog text to say anything about
+#: fit. A fixed, short list written once before the first lexical run — not tuned
+#: against this trial's scores.
+_STOPWORDS = frozenset(
+    "a an and as at be by for from how i in is it its method methods need of on or such "
+    "that the this to use using via want what which with".split()
+)
+
+
+def _tokens(text: str) -> list[str]:
+    return [t for t in re.findall(r"[a-z0-9]+", text.lower()) if t not in _STOPWORDS]
+
+
+class LexicalOverlapRanker:
+    """A zero-spend CONTROL, not a proposed product ranker: TF-IDF cosine between the
+    case's query and exactly the candidate text Jev is sent (`live_jev._criteria`:
+    title, family, description), with IDF computed over the case's own pool. No
+    stemming, no synonyms, no tuning.
+
+    It answers the question a live Jev score cannot answer on its own: the curated
+    queries share wording with their expected records' titles ("phase estimation",
+    "tensor hypercontraction"), so a high Jev score could come from word overlap that
+    any relevance ranker gets for free. Jev beating THIS is evidence of more than
+    keyword matching; Jev tying it is evidence only that the current finder's
+    alphabetical tie-break is the problem.
+
+    `confidence` is the top candidate's share of the summed cosine scores. It is not
+    calibrated and is reported only so the scorer's Brier path has a number."""
+
+    name = "lexical"
+
+    def rank(self, case: CuratedCase, pool: FinderRanking) -> RankedAnswer:
+        # Imported here, not at module top: live_jev imports jev_client, and this keeps
+        # the control's text identical to what the live ranker sends.
+        from majorana_evals.jev_trial.live_jev import _criteria
+
+        texts = _criteria(pool)
+        docs = {slug: _tokens(text) for slug, text in texts.items()}
+        n_docs = len(docs)
+        df: dict[str, int] = {}
+        for toks in docs.values():
+            for t in set(toks):
+                df[t] = df.get(t, 0) + 1
+
+        def weights(toks: list[str]) -> dict[str, float]:
+            w: dict[str, float] = {}
+            for t in toks:
+                w[t] = w.get(t, 0.0) + 1.0
+            # Smoothed IDF: a term in every pool record still counts a little.
+            return {
+                t: tf * (math.log((1 + n_docs) / (1 + df.get(t, 0))) + 1.0) for t, tf in w.items()
+            }
+
+        q = weights(_tokens(case.query))
+        q_norm = math.sqrt(sum(v * v for v in q.values())) or 1.0
+        scores: dict[str, float] = {}
+        for slug, toks in docs.items():
+            d = weights(toks)
+            d_norm = math.sqrt(sum(v * v for v in d.values())) or 1.0
+            scores[slug] = sum(q[t] * d.get(t, 0.0) for t in q) / (q_norm * d_norm)
+
+        pool_order = [c.slug for c in pool.ranked]
+        # Stable sort: equal scores keep the finder's own order, so a query with no
+        # overlap at all degrades to exactly the current finder's ranking.
+        ranked_slugs = sorted(pool_order, key=lambda s: -scores[s])
+        total = sum(scores.values())
+        n = len(ranked_slugs)
+        probabilities = (
+            {s: scores[s] / total for s in ranked_slugs}
+            if total > 0
+            else {s: 1.0 / n for s in ranked_slugs}
+        )
+        return RankedAnswer(
+            ranked_slugs=ranked_slugs,
+            confidence=probabilities[ranked_slugs[0]] if n else 0.0,
+            probabilities=probabilities,
+            note="lexical: TF-IDF cosine over the same text Jev is sent; uncalibrated share",
         )

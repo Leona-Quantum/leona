@@ -1,0 +1,447 @@
+{
+  "ranker": "lexical",
+  "generated_at": "2026-09-22T03:21:24.182892+00:00",
+  "pipeline_commit_sha": "3c212e592ce8f70a6bf6ea7e278a5958d23582c5",
+  "curated_cases_sha256": "acaba7471870d6b7e561ac47a9a661178ca2e39d900c5a04df9b84f84da59247",
+  "corpus_size": 284,
+  "total_cases": 18,
+  "theoretical_chance_top1_rate": 0.258576336517513,
+  "top1_hit_rate": 0.7777777777777778,
+  "top3_hit_rate": 1.0,
+  "mrr": 0.8888888888888888,
+  "brier_score": 0.3104556151459194,
+  "reliability_bins": [
+    {
+      "lower": 0.0,
+      "upper": 0.2,
+      "count": 1,
+      "mean_confidence": 0.1598517633350844,
+      "empirical_hit_rate": 0.0
+    },
+    {
+      "lower": 0.2,
+      "upper": 0.4,
+      "count": 10,
+      "mean_confidence": 0.3080626688263317,
+      "empirical_hit_rate": 0.8
+    },
+    {
+      "lower": 0.4,
+      "upper": 0.6000000000000001,
+      "count": 3,
+      "mean_confidence": 0.49189852972831405,
+      "empirical_hit_rate": 1.0
+    },
+    {
+      "lower": 0.6000000000000001,
+      "upper": 0.8,
+      "count": 3,
+      "mean_confidence": 0.7335444590152189,
+      "empirical_hit_rate": 0.6666666666666666
+    },
+    {
+      "lower": 0.8,
+      "upper": 1.0,
+      "count": 1,
+      "mean_confidence": 0.8876900567493187,
+      "empirical_hit_rate": 1.0
+    }
+  ],
+  "total_input_tokens": null,
+  "cases": [
+    {
+      "case_id": "chem-phase-estimation",
+      "ranker": "lexical",
+      "ranked_slugs": [
+        "molecular-energy-phase-estimation",
+        "vqe-ground-state-energy",
+        "quantum-phase-estimation",
+        "qite-imaginary-time",
+        "tensor-hypercontraction-block-encoding",
+        "h2-molecular-hamiltonian",
+        "protein-folding-variational",
+        "projection-based-embedding-vqe",
+        "vqe-uccsd-ansatz",
+        "vqe-k-upccgsd",
+        "operator-electronic-structure",
+        "operator-dipole"
+      ],
+      "top1_hit": true,
+      "top3_hit": true,
+      "reciprocal_rank": 1.0,
+      "top1_confidence": 0.2958276247257583,
+      "top1_correct": true,
+      "input_tokens": null
+    },
+    {
+      "case_id": "chem-variational-fermionic",
+      "ranker": "lexical",
+      "ranked_slugs": [
+        "h2-molecular-hamiltonian",
+        "vqe-uccsd-ansatz",
+        "tensor-hypercontraction-block-encoding",
+        "vqe-k-upccgsd",
+        "operator-dipole",
+        "protein-folding-variational",
+        "operator-electronic-structure",
+        "vqe-ground-state-energy",
+        "molecular-energy-phase-estimation",
+        "qite-imaginary-time",
+        "projection-based-embedding-vqe",
+        "quantum-phase-estimation"
+      ],
+      "top1_hit": true,
+      "top3_hit": true,
+      "reciprocal_rank": 1.0,
+      "top1_confidence": 0.37294576503719856,
+      "top1_correct": true,
+      "input_tokens": null
+    },
+    {
+      "case_id": "chem-block-encoding",
+      "ranker": "lexical",
+      "ranked_slugs": [
+        "tensor-hypercontraction-block-encoding",
+        "vqe-ground-state-energy",
+        "vqe-uccsd-ansatz",
+        "quantum-phase-estimation",
+        "vqe-k-upccgsd",
+        "projection-based-embedding-vqe",
+        "qite-imaginary-time",
+        "protein-folding-variational",
+        "h2-molecular-hamiltonian",
+        "operator-electronic-structure",
+        "operator-dipole",
+        "molecular-energy-phase-estimation"
+      ],
+      "top1_hit": true,
+      "top3_hit": true,
+      "reciprocal_rank": 1.0,
+      "top1_confidence": 0.5484141326895582,
+      "top1_correct": true,
+      "input_tokens": null
+    },
+    {
+      "case_id": "materials-trotter-ising",
+      "ranker": "lexical",
+      "ranked_slugs": [
+        "hamiltonian-simulation-ising",
+        "transverse-field-ising-operator",
+        "ising-hamiltonian-operator",
+        "benchmark-tfim-vqe-3q",
+        "benchmark-tfim-vqe-16q",
+        "ising-formulations-np-problems",
+        "benchmark-ising-trotter-3q",
+        "benchmark-ising-trotter-16q",
+        "heisenberg-xxz-operator",
+        "quantum-kicked-rotator-simulation",
+        "correlated-fermion-simulation",
+        "fermi-hubbard-operator",
+        "jones-polynomial-approximation",
+        "turaev-viro-invariants"
+      ],
+      "top1_hit": true,
+      "top3_hit": true,
+      "reciprocal_rank": 1.0,
+      "top1_confidence": 0.20618824070259947,
+      "top1_correct": true,
+      "input_tokens": null
+    },
+    {
+      "case_id": "materials-tfim-vqe-benchmark",
+      "ranker": "lexical",
+      "ranked_slugs": [
+        "benchmark-tfim-vqe-3q",
+        "benchmark-tfim-vqe-16q",
+        "transverse-field-ising-operator",
+        "hamiltonian-simulation-ising",
+        "ising-hamiltonian-operator",
+        "benchmark-ising-trotter-3q",
+        "benchmark-ising-trotter-16q",
+        "quantum-kicked-rotator-simulation",
+        "ising-formulations-np-problems",
+        "correlated-fermion-simulation",
+        "jones-polynomial-approximation",
+        "turaev-viro-invariants",
+        "fermi-hubbard-operator",
+        "heisenberg-xxz-operator"
+      ],
+      "top1_hit": true,
+      "top3_hit": true,
+      "reciprocal_rank": 1.0,
+      "top1_confidence": 0.26218770506151556,
+      "top1_correct": true,
+      "input_tokens": null
+    },
+    {
+      "case_id": "materials-adiabatic-ising-optimization",
+      "ranker": "lexical",
+      "ranked_slugs": [
+        "ising-formulations-np-problems",
+        "ising-hamiltonian-operator",
+        "transverse-field-ising-operator",
+        "benchmark-tfim-vqe-3q",
+        "benchmark-tfim-vqe-16q",
+        "quantum-kicked-rotator-simulation",
+        "correlated-fermion-simulation",
+        "heisenberg-xxz-operator",
+        "hamiltonian-simulation-ising",
+        "benchmark-ising-trotter-3q",
+        "benchmark-ising-trotter-16q",
+        "jones-polynomial-approximation",
+        "turaev-viro-invariants",
+        "fermi-hubbard-operator"
+      ],
+      "top1_hit": true,
+      "top3_hit": true,
+      "reciprocal_rank": 1.0,
+      "top1_confidence": 0.3183127927468289,
+      "top1_correct": true,
+      "input_tokens": null
+    },
+    {
+      "case_id": "optimization-qaoa-benchmark",
+      "ranker": "lexical",
+      "ranked_slugs": [
+        "qaoa-maxcut-ring",
+        "benchmark-qaoa-ring-16q",
+        "benchmark-qaoa-ring-3q",
+        "qaoa-in-qaoa",
+        "adapt-qaoa",
+        "low-autocorrelation-binary-sequences-problem",
+        "qaoa-combinatorial-optimization",
+        "cooling-systems-optimization",
+        "zero-sum-game-equilibria",
+        "ising-formulations-np-problems",
+        "decoded-quantum-interferometry",
+        "quantum-adiabatic-evolution",
+        "quantum-forward-kinematics-inverse-solve",
+        "quantum-simulated-annealing",
+        "quantum-vulnerability-analysis",
+        "semidefinite-programming",
+        "workflow-scheduling-qubo"
+      ],
+      "top1_hit": false,
+      "top3_hit": true,
+      "reciprocal_rank": 0.5,
+      "top1_confidence": 0.2558728364010048,
+      "top1_correct": false,
+      "input_tokens": null
+    },
+    {
+      "case_id": "optimization-adiabatic",
+      "ranker": "lexical",
+      "ranked_slugs": [
+        "adapt-qaoa",
+        "quantum-adiabatic-evolution",
+        "qaoa-in-qaoa",
+        "low-autocorrelation-binary-sequences-problem",
+        "qaoa-combinatorial-optimization",
+        "ising-formulations-np-problems",
+        "qaoa-maxcut-ring",
+        "quantum-simulated-annealing",
+        "benchmark-qaoa-ring-16q",
+        "benchmark-qaoa-ring-3q",
+        "quantum-forward-kinematics-inverse-solve",
+        "semidefinite-programming",
+        "workflow-scheduling-qubo",
+        "cooling-systems-optimization",
+        "decoded-quantum-interferometry",
+        "quantum-vulnerability-analysis",
+        "zero-sum-game-equilibria"
+      ],
+      "top1_hit": false,
+      "top3_hit": true,
+      "reciprocal_rank": 0.5,
+      "top1_confidence": 0.1598517633350844,
+      "top1_correct": false,
+      "input_tokens": null
+    },
+    {
+      "case_id": "optimization-quantum-walk-annealing",
+      "ranker": "lexical",
+      "ranked_slugs": [
+        "quantum-simulated-annealing",
+        "cooling-systems-optimization",
+        "qaoa-combinatorial-optimization",
+        "zero-sum-game-equilibria",
+        "quantum-adiabatic-evolution",
+        "adapt-qaoa",
+        "workflow-scheduling-qubo",
+        "quantum-forward-kinematics-inverse-solve",
+        "decoded-quantum-interferometry",
+        "semidefinite-programming",
+        "quantum-vulnerability-analysis",
+        "qaoa-in-qaoa",
+        "ising-formulations-np-problems",
+        "low-autocorrelation-binary-sequences-problem",
+        "qaoa-maxcut-ring",
+        "benchmark-qaoa-ring-16q",
+        "benchmark-qaoa-ring-3q"
+      ],
+      "top1_hit": true,
+      "top3_hit": true,
+      "reciprocal_rank": 1.0,
+      "top1_confidence": 0.3362649043036411,
+      "top1_correct": true,
+      "input_tokens": null
+    },
+    {
+      "case_id": "ml-quantum-kernel-classifier",
+      "ranker": "lexical",
+      "ranked_slugs": [
+        "quantum-edge-detection",
+        "quantum-kernel-fraud-detection",
+        "quantum-kernel-svm",
+        "benchmark-phase-feature-map-16q",
+        "benchmark-phase-feature-map-3q"
+      ],
+      "top1_hit": false,
+      "top3_hit": true,
+      "reciprocal_rank": 0.5,
+      "top1_confidence": 0.3917864139862173,
+      "top1_correct": false,
+      "input_tokens": null
+    },
+    {
+      "case_id": "ml-quantum-kernel-benchmark",
+      "ranker": "lexical",
+      "ranked_slugs": [
+        "benchmark-phase-feature-map-16q",
+        "benchmark-phase-feature-map-3q",
+        "quantum-kernel-svm",
+        "quantum-kernel-fraud-detection",
+        "quantum-edge-detection"
+      ],
+      "top1_hit": true,
+      "top3_hit": true,
+      "reciprocal_rank": 1.0,
+      "top1_confidence": 0.34745197683217816,
+      "top1_correct": true,
+      "input_tokens": null
+    },
+    {
+      "case_id": "finance-option-pricing",
+      "ranker": "lexical",
+      "ranked_slugs": [
+        "rainbow-options-amplitude-loading",
+        "option-pricing-amplitude-estimation",
+        "amplitude-estimation",
+        "derivative-pricing-resource-threshold",
+        "asian-option-pricing-karhunen-loeve",
+        "risk-analysis-amplitude-estimation",
+        "hhl-linear-systems"
+      ],
+      "top1_hit": true,
+      "top3_hit": true,
+      "reciprocal_rank": 1.0,
+      "top1_confidence": 0.2937884284663749,
+      "top1_correct": true,
+      "input_tokens": null
+    },
+    {
+      "case_id": "finance-linear-system-hhl",
+      "ranker": "lexical",
+      "ranked_slugs": [
+        "hhl-linear-systems",
+        "amplitude-estimation",
+        "asian-option-pricing-karhunen-loeve",
+        "option-pricing-amplitude-estimation",
+        "rainbow-options-amplitude-loading",
+        "derivative-pricing-resource-threshold",
+        "risk-analysis-amplitude-estimation"
+      ],
+      "top1_hit": true,
+      "top3_hit": true,
+      "reciprocal_rank": 1.0,
+      "top1_confidence": 0.7192236549434894,
+      "top1_correct": true,
+      "input_tokens": null
+    },
+    {
+      "case_id": "linear-algebra-oracle-quantum-walk",
+      "ranker": "lexical",
+      "ranked_slugs": [
+        "electrical-resistance",
+        "heat-equation-solver",
+        "wave-equation-simulation",
+        "quantum-portfolio-optimization",
+        "hybrid-hhl-portfolio-optimization",
+        "quantum-transport-method",
+        "nonlinear-differential-equations",
+        "linear-kinetic-plasma-encoding",
+        "hhl-linear-systems",
+        "quantum-singular-value-transformation",
+        "linear-differential-equations",
+        "top-eigenvector-estimation",
+        "spectral-sum-estimation"
+      ],
+      "top1_hit": true,
+      "top3_hit": true,
+      "reciprocal_rank": 1.0,
+      "top1_confidence": 0.43800990851105487,
+      "top1_correct": true,
+      "input_tokens": null
+    },
+    {
+      "case_id": "cryptography-discrete-log",
+      "ranker": "lexical",
+      "ranked_slugs": [
+        "elliptic-curve-discrete-log-resources",
+        "average-case-lattice-problems-by-filtering",
+        "shor-period-finding",
+        "discrete-logarithm",
+        "finite-ring-ideals"
+      ],
+      "top1_hit": true,
+      "top3_hit": true,
+      "reciprocal_rank": 1.0,
+      "top1_confidence": 0.4892715479843291,
+      "top1_correct": true,
+      "input_tokens": null
+    },
+    {
+      "case_id": "communication-teleportation",
+      "ranker": "lexical",
+      "ranked_slugs": [
+        "superdense-coding-circuit",
+        "quantum-teleportation"
+      ],
+      "top1_hit": false,
+      "top3_hit": true,
+      "reciprocal_rank": 0.5,
+      "top1_confidence": 0.7215338132262542,
+      "top1_correct": false,
+      "input_tokens": null
+    },
+    {
+      "case_id": "communication-superdense-coding",
+      "ranker": "lexical",
+      "ranked_slugs": [
+        "superdense-coding-circuit",
+        "quantum-teleportation"
+      ],
+      "top1_hit": true,
+      "top3_hit": true,
+      "reciprocal_rank": 1.0,
+      "top1_confidence": 0.7598759088759133,
+      "top1_correct": true,
+      "input_tokens": null
+    },
+    {
+      "case_id": "metrology-noon-state",
+      "ranker": "lexical",
+      "ranked_slugs": [
+        "noon-state",
+        "dicke-state"
+      ],
+      "top1_hit": true,
+      "top3_hit": true,
+      "reciprocal_rank": 1.0,
+      "top1_confidence": 0.8876900567493187,
+      "top1_correct": true,
+      "input_tokens": null
+    }
+  ],
+  "note": "zero-spend control — TF-IDF word overlap on the same text Jev is sent; the bar Jev must clear to show more than keyword matching"
+}
