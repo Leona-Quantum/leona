@@ -37,9 +37,9 @@ def test_every_rate_card_device_records_its_published_noise():
         assert noise is not None, f"{backend.device_id} has no published_noise entry"
         if noise.gate_model:
             assert noise.profiles, f"{backend.device_id}: a gate device needs at least one profile"
-            assert any(
-                profile.two_qubit_gate_error is not None for profile in noise.profiles
-            ), f"{backend.device_id}: no two-qubit figure at all"
+            assert any(profile.two_qubit_gate_error is not None for profile in noise.profiles), (
+                f"{backend.device_id}: no two-qubit figure at all"
+            )
         else:
             assert not noise.profiles, "a device that runs no gates has no gate-error profile"
 
