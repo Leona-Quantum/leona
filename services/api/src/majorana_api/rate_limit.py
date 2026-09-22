@@ -167,6 +167,18 @@ DEFAULT_WINDOW_S = 60.0
 #: docstring already records once. The control for a leaked token is rotating it.
 DEFAULT_TRUSTED_LIMIT = 20_000
 
+#: Comments one signed-in person may post per window (`routes/comments.py`).
+#:
+#: Keyed by user id, not by address: a comment is always authenticated, so the
+#: account is the thing that is actually posting, and an office on one NAT must
+#: not share a single ceiling. Twenty a minute is several times what a person
+#: typing into a thread produces; what it stops is a script, or a stuck retry,
+#: filling a thread faster than anyone can read it. Per instance, like the other
+#: limiters here, so the ceiling a determined caller sees is this times the
+#: number of Cloud Run instances; that is a bound on damage, not a promise of
+#: exactly twenty.
+DEFAULT_COMMENT_LIMIT = 20
+
 #: Presented by our own server-side renderer to prove it is not an anonymous
 #: caller. Never sent from a browser: the value is a server-only secret, and
 #: `apps/web/lib/repository-source.ts` — the only sender — is imported solely by

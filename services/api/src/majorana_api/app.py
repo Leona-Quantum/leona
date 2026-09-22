@@ -39,6 +39,7 @@ from .repos import AuthzError, NotFoundError
 from .routes.artifacts import router as artifacts_router
 from .routes.billing import router as billing_router
 from .routes.catalog import router as catalog_router
+from .routes.comments import router as comments_router
 from .routes.me import router as me_router
 from .routes.news import router as news_router
 from .routes.courses import router as courses_router
@@ -209,6 +210,17 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     # runs everywhere and counts only a refusal.
     app.state.auth_failure_throttle = AuthFailureThrottle(
         limit=app.state.settings.auth_failure_limit
+    )
+    # Per ACCOUNT, not per address, and consulted by one route only
+    # (`routes/comments.py::_meter`) rather than in a middleware: a comment is
+    # always authenticated, so the thing to meter is the person posting, and
+    # the user id is not known until the scope dependency has run. No warning
+    # thresholds: one person reaching their own posting ceiling is not
+    # something anyone on call needs to hear about.
+    app.state.comment_limiter = FixedWindowLimiter(
+        limit=app.state.settings.comment_rate_limit_per_minute,
+        bucket="comment posting",
+        warn_thresholds=(),
     )
 
     @app.middleware("http")
@@ -521,6 +533,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(qapps_router, prefix="/v1")
     app.include_router(notebooks_router, prefix="/v1")
     app.include_router(courses_router, prefix="/v1")
+    app.include_router(comments_router, prefix="/v1")
     app.include_router(billing_router, prefix="/v1")
     app.include_router(usage_router, prefix="/v1")
     _wire_observability(app)
