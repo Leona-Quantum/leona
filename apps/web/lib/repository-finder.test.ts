@@ -72,6 +72,30 @@ test("statedCost reports not-stated for a record with neither field — never a 
   assert.equal(cost.value, null);
 });
 
+test("statedCost gives the Japanese finder its own unit, not the English word", () => {
+  const r = record({ resources: [{ label: "Qubits", value: "16" }] });
+  const cost = statedCost(r);
+  assert.equal(cost.value, "16 qubits");
+  assert.equal(cost.valueJa, "16 量子ビット");
+  assert.doesNotMatch(cost.valueJa ?? "", /qubits/);
+});
+
+test("statedCost treats a 'Reported cost' row saying nothing is stated as not stated", () => {
+  // The Classiq-parity intake writes this sentence for a blank complexity.
+  const r = record({ resources: [{ label: "Reported cost", value: "Not stated by the sources read" }] });
+  assert.deepEqual(statedCost(r), { stated: false, value: null, valueJa: null });
+});
+
+test("statedCost still falls back to Qubits when the reported cost says nothing is stated", () => {
+  const r = record({
+    resources: [
+      { label: "Reported cost", value: "Not stated by the sources read" },
+      { label: "Qubits", value: "3" },
+    ],
+  });
+  assert.equal(statedCost(r).value, "3 qubits");
+});
+
 // --- statedRegime -------------------------------------------------------------
 
 test("statedRegime marks a speedup class checked against the primary paper", () => {
@@ -97,16 +121,18 @@ test("statedRegime marks a speedup class NOT yet checked against the primary pap
   const regime = statedRegime(r);
   assert.equal(regime.stated, true);
   assert.match(regime.value ?? "", /not yet checked against the record's own primary paper/);
+  assert.match(regime.valueJa ?? "", /まだ照合していません/);
+  assert.doesNotMatch(regime.valueJa ?? "", /secondary index/);
 });
 
 test("statedRegime falls back to a stated Readiness row", () => {
   const r = record({ resources: [{ label: "Readiness", value: "FTQC required" }] });
-  assert.deepEqual(statedRegime(r), { stated: true, value: "FTQC required" });
+  assert.deepEqual(statedRegime(r), { stated: true, value: "FTQC required", valueJa: "FTQC required" });
 });
 
 test("statedRegime reports not-stated for a record with neither field", () => {
   const r = record({ resources: [{ label: "Qubits", value: "5" }] });
-  assert.deepEqual(statedRegime(r), { stated: false, value: null });
+  assert.deepEqual(statedRegime(r), { stated: false, value: null, valueJa: null });
 });
 
 // --- qubits / depth limits ----------------------------------------------------
