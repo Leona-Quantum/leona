@@ -122,6 +122,13 @@ export function AccessTokens({ locale }: { locale: PublicLocale }) {
 
   const now = new Date();
   const rows = tokens ? sortTokens(tokens, now) : [];
+  // Three states, as `apps/web/AGENTS.md` asks of every async view: loading while the
+  // first read is in flight, empty when it comes back with nothing, and error. The
+  // minting form is withheld during loading on purpose — offering to create a
+  // credential before the existing ones are known invites somebody to mint a second
+  // copy of a token they already have, and the ceiling is a count of the list they
+  // cannot see yet.
+  const loading = tokens === null && error === null;
 
   return (
     <section className="mj-artifact-panel" id="tokens" aria-labelledby="tokens-heading">
@@ -143,6 +150,11 @@ export function AccessTokens({ locale }: { locale: PublicLocale }) {
         </div>
       ) : null}
 
+      {loading ? (
+        <p className="mj-panel-help" role="status" aria-live="polite">
+          {copy.tokensLoading}
+        </p>
+      ) : (
       <form className="leona-workspace-actions" onSubmit={create}>
         <label>
           {copy.tokensName}
@@ -176,6 +188,7 @@ export function AccessTokens({ locale }: { locale: PublicLocale }) {
           {copy.tokensCreate}
         </button>
       </form>
+      )}
 
       {error ? (
         <p className="mj-panel-help" role="alert">

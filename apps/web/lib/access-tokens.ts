@@ -78,10 +78,12 @@ export function sortTokens(records: AccessTokenRecord[], now: Date): AccessToken
  * Whether this deployment has the feature at all.
  *
  * `404` from `GET /api/tokens` is the control plane's answer while
- * `MAJORANA_PERSONAL_ACCESS_TOKENS` is off, and the pane hides itself rather than
- * showing a section whose every button fails. Distinguished from a real error, which
- * has to be shown: a pane that silently disappeared whenever the API was unreachable
- * would read as "your tokens are gone".
+ * `LEONA_PERSONAL_ACCESS_TOKENS` is off, and it is the ONLY status that means the
+ * feature is absent. Everything else — 401, 429, 5xx, an unreachable service — is an
+ * outage, and an outage must leave the pane in place showing its error: it is the only
+ * place a token can be REVOKED, and hiding it takes that away from somebody who may be
+ * reaching for it precisely because something is wrong. A pane that vanished whenever
+ * the API was unreachable would also read as "your tokens are gone".
  */
 export function featureIsAbsent(status: number): boolean {
   return status === 404;

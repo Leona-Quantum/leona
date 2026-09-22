@@ -3587,6 +3587,7 @@ export const ACCOUNT_COPY: Record<PublicLocale, {
   tokensExpiry: string;
   tokensAllowRuns: string;
   tokensCreate: string;
+  tokensLoading: string;
   tokensEmpty: string;
   tokensShownOnce: string;
   tokensShownOnceHelp: string;
@@ -3796,6 +3797,7 @@ export const ACCOUNT_COPY: Record<PublicLocale, {
     tokensExpiry: "Days until it expires",
     tokensAllowRuns: "Also let it start verified runs",
     tokensCreate: "Create token",
+    tokensLoading: "Loading your access tokens\u2026",
     tokensEmpty: "You have no access tokens.",
     tokensShownOnce: "Copy this now. You will not see it again.",
     tokensShownOnceHelp: "We keep only a scrambled copy, so there is no way to show it to you a second time. If you lose it, revoke it and make another.",
@@ -4019,6 +4021,7 @@ export const ACCOUNT_COPY: Record<PublicLocale, {
     tokensExpiry: "有効期限（日数）",
     tokensAllowRuns: "検証付きの実行も許可する",
     tokensCreate: "トークンを作成",
+    tokensLoading: "アクセストークンを読み込んでいます…",
     tokensEmpty: "アクセストークンはありません。",
     tokensShownOnce: "今すぐコピーしてください。二度と表示されません。",
     tokensShownOnceHelp: "保存しているのはハッシュ化したものだけなので、もう一度表示する方法はありません。紛失した場合は無効化して作り直してください。",

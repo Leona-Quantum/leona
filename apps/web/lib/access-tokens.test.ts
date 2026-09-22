@@ -81,9 +81,20 @@ test("sorting does not mutate the array it was given", () => {
 
 test("only a 404 means the deployment has no tokens feature", () => {
   assert.equal(featureIsAbsent(404), true);
-  // Everything else is an error to show. A pane that vanished on a 500 or a timeout
-  // would read as "your tokens are gone", which is the one thing it must not say.
+  // Everything else is an outage, not an absence — and the distinction is what keeps
+  // the pane on screen when the API is misbehaving. The pane is the only place a token
+  // can be REVOKED, so hiding it on a 401, a 429 or a 5xx takes the revoke button away
+  // from somebody who may be reaching for it precisely because something is wrong.
   for (const status of [200, 401, 403, 429, 500, 502, 0]) {
     assert.equal(featureIsAbsent(status), false, `status ${status}`);
   }
+});
+
+test("403 is not treated as absence, which is the case most likely to be got wrong", () => {
+  // Singled out because it is the plausible mistake: a token route answering 403 reads
+  // like "you may not have this", and collapsing it into 404 would hide the pane from
+  // an account whose session had merely gone stale. 404 is a statement about the
+  // DEPLOYMENT; 403 is a statement about the caller, and only the first hides anything.
+  assert.equal(featureIsAbsent(403), false);
+  assert.notEqual(featureIsAbsent(403), featureIsAbsent(404));
 });

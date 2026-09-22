@@ -12,7 +12,7 @@ export const dynamic = "force-dynamic";
  * caller could edit to ask for somebody else's.
  *
  * A **404 is a real answer here**, not an error to smooth over. The control plane
- * answers 404 for every route in this family while `MAJORANA_PERSONAL_ACCESS_TOKENS`
+ * answers 404 for every route in this family while `LEONA_PERSONAL_ACCESS_TOKENS`
  * is off, and the settings pane reads that as "this deployment has no tokens" and
  * renders nothing. So the status is passed through exactly as it came.
  */

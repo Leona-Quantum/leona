@@ -247,7 +247,12 @@ class Settings:
     #: (`DEFAULT_TOKEN_LIMIT` in `rate_limit.py` says why the default is what it
     #: is). `0` disables it, the same escape hatch as the limits above.
     token_rate_limit_per_minute: int = DEFAULT_TOKEN_LIMIT
-    #: Whether personal access tokens work at all (`MAJORANA_PERSONAL_ACCESS_TOKENS`).
+    #: Whether personal access tokens work at all (`LEONA_PERSONAL_ACCESS_TOKENS`).
+    #:
+    #: `LEONA_`, not `MAJORANA_`: the root AGENTS.md's rename directive puts env vars
+    #: in scope and says not to add new `majorana` identifiers. The exemption it grants
+    #: is for infrastructure ids (the GCP project, Cloud Run services), which this is
+    #: not — it is a product switch an operator sets.
     #:
     #: **Default OFF, and it ships that way deliberately.** A personal access token is
     #: a new credential type, so `plans/rebuild/05-security.md` §1a binds it and its §2
@@ -357,7 +362,7 @@ class Settings:
             token_rate_limit_per_minute=_int_env(
                 "TOKEN_RATE_LIMIT_PER_MINUTE", DEFAULT_TOKEN_LIMIT
             ),
-            personal_access_tokens_enabled=os.environ.get("MAJORANA_PERSONAL_ACCESS_TOKENS", "")
+            personal_access_tokens_enabled=os.environ.get("LEONA_PERSONAL_ACCESS_TOKENS", "")
             .strip()
             .lower()
             in {"1", "true", "yes"},
