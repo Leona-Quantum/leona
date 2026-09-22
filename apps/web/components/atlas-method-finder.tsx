@@ -189,11 +189,11 @@ function ResultCard({
       <dl className="mj-finder-facts">
         <div>
           <dt>{copy.costLabel}</dt>
-          <dd>{cost.stated ? cost.value : copy.notStated}</dd>
+          <dd>{cost.stated ? (locale === "ja" ? cost.valueJa : cost.value) : copy.notStated}</dd>
         </div>
         <div>
           <dt>{copy.regimeLabel}</dt>
-          <dd>{regime.stated ? regime.value : copy.notStated}</dd>
+          <dd>{regime.stated ? (locale === "ja" ? regime.valueJa : regime.value) : copy.notStated}</dd>
         </div>
         {estimate !== null ? (
           <div>

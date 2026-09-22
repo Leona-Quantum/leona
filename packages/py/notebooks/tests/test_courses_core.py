@@ -27,6 +27,7 @@ from leona_notebooks.courses import (
     plan_prompt,
     revise_plan_prompt,
 )
+from leona_notebooks.execution import CellResult, ExecutionReport
 from leona_notebooks.source import parse_source
 from leona_notebooks.spec import NotebookKind
 
@@ -292,6 +293,103 @@ def test_a_challenge_module_also_exports_its_solution_build():
     assert "answer = None\n" in challenge_sources
     assert "answer = 1\n" not in challenge_sources
     assert "answer = 1\n" in solution_sources
+
+
+# Shared by the two output tests below: c02 (`role=setup`) comes BEFORE the solution and
+# is the negative control; c04 is the `role=solution` cell (the id `parse_source` assigns
+# it, verified by inspection — a stub replaces its source in the challenge build); c06
+# (`role=checkpoint`) comes AFTER the solution and must be redacted too, even though its
+# own source never changes — it references the solution's variable, so its printed
+# output from the answer-key run is the answer wearing a different cell's name (ai-ops
+# 260; Greptile, PR 959).
+_CHALLENGE_WITH_A_CHECKPOINT = (
+    "# ---\n# title: C\n# kind: challenge\n# ---\n"
+    "# %% [markdown] role=objective\n# o\n"
+    "# %% role=setup\nprint('setup')\n"
+    "# %% [markdown] role=exercise\n# do it\n"
+    '# %% role=solution stub="answer = None\\n"\nanswer = 1\n'
+    "# %% [markdown] role=hint\n# h\n"
+    "# %% role=checkpoint\nif answer is not None:\n    assert answer == 1\n"
+    "# %% [markdown] role=summary\n# s\n"
+)
+
+
+def _challenge_report() -> ExecutionReport:
+    return ExecutionReport(
+        notebook_slug="week-01",
+        ok=True,
+        runner="sandbox",
+        cells=[
+            CellResult(id="c02", status="ok", stdout="setup\n"),
+            CellResult(id="c04", status="ok", stdout="1\n"),
+            CellResult(id="c06", status="ok", stdout="checkpoint passed\n"),
+        ],
+    )
+
+
+def test_export_course_zip_carries_the_modules_execution_outputs_for_the_owner():
+    """The defect: every module was already run in the sandbox when its version was
+    generated, and the reader downloaded a zip that looked never-run. `notebook_reports`
+    is how the route hands `export_course_zip` what `export_notebook_version` already
+    gets from `version.report` for a single notebook.
+    """
+    plan = CoursePlan(
+        title="One challenge",
+        modules=[_module("week-01", kind=NotebookKind.CHALLENGE)],
+    )
+    specs = {"week-01": parse_source(_CHALLENGE_WITH_A_CHECKPOINT, slug="week-01")}
+    blob = export_course_zip(
+        plan, specs, include_solutions=True, notebook_reports={"week-01": _challenge_report()}
+    )
+    with zipfile.ZipFile(io.BytesIO(blob)) as archive:
+        solution = json.loads(archive.read("solutions/week-01/challenge_solution.ipynb"))
+    by_id = {cell["id"]: cell for cell in solution["cells"]}
+    # The owner's `solution` build is the unredacted spec: every cell's own output is
+    # exactly what the author is entitled to see, before AND after the solution.
+    assert by_id["c02"]["outputs"], "a cell before the solution must carry its output"
+    assert by_id["c04"]["outputs"], "the owner's solution build must carry its own output"
+    assert by_id["c06"]["outputs"], "a cell after the solution must carry its output too"
+
+
+def test_export_course_zip_never_carries_a_solution_cells_output_to_a_non_owner():
+    """Owner ruling ai-ops 260, option 1, applied to output — not just to source.
+
+    `include_solutions=False` (a non-owner) means `build_curriculum` writes only the
+    `challenge` build, never `solutions/`. Without redaction at the OUTPUT level too, a
+    reader who cannot read the answer's SOURCE could still read the answer's printed
+    RESULT sitting under the stub — the same class of leak `to_ipynb`'s own
+    `test_a_stub_does_not_carry_the_solutions_output` proves against for one notebook,
+    checked here for the course path that wraps it. And it is not enough to redact only
+    the replaced cell: `c06` (`role=checkpoint`) below never changes its own source, but
+    it runs one cell after the hidden solution and references its variable — a downstream
+    leak Greptile flagged on PR 959, fixed at `to_ipynb` itself.
+    """
+    plan = CoursePlan(
+        title="One challenge",
+        modules=[_module("week-01", kind=NotebookKind.CHALLENGE)],
+    )
+    specs = {"week-01": parse_source(_CHALLENGE_WITH_A_CHECKPOINT, slug="week-01")}
+    blob = export_course_zip(
+        plan, specs, include_solutions=False, notebook_reports={"week-01": _challenge_report()}
+    )
+    with zipfile.ZipFile(io.BytesIO(blob)) as archive:
+        names = set(archive.namelist())
+        challenge = json.loads(archive.read("week-01/challenge.ipynb"))
+    assert not any(name.startswith("solutions/") for name in names), names
+    by_id = {cell["id"]: cell for cell in challenge["cells"]}
+    # The control: a cell BEFORE the redaction keeps its output — otherwise the
+    # assertions below would pass on a build that simply dropped every output, which
+    # teaches the reader nothing.
+    assert by_id["c02"]["outputs"], "a cell before the redaction must keep its output"
+    assert by_id["c04"]["outputs"] == [], "a non-owner must never see the solution's output"
+    assert by_id["c06"]["outputs"] == [], "nor a downstream cell's output that could leak it"
+    # And the redacted cell's stdout ("1\n", the printed answer) must not have landed on
+    # any OTHER cell either — checked on the outputs, not `json.dumps(challenge)` whole,
+    # because the checkpoint cell's own SOURCE legitimately contains the literal `1` as
+    # part of `assert answer == 1` and a whole-document substring check would false-fail
+    # on that.
+    all_outputs = [entry for cell in challenge["cells"] for entry in cell.get("outputs", [])]
+    assert not any(entry.get("text") == "1\n" for entry in all_outputs)
 
 
 # --------------------------------------------------------------------------- starters

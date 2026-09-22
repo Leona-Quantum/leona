@@ -309,6 +309,33 @@ async def claim_submission_attempt(
     return result.rowcount == 1
 
 
+def list_records_stmt(
+    scope: Scope,
+    *,
+    cursor: uuid.UUID | None = None,
+    limit: int = 50,
+    source_fingerprint: str | None = None,
+):
+    """The history query as a statement, so a test can EXPLAIN this exact one.
+
+    Split out for the reason `authorized_spend_stmt` is: migration 0065's two
+    indexes exist for this statement, and a test holding its own copy of the SQL
+    would keep passing while a refactor dropped the real query back to scanning
+    every workspace's runs.
+    """
+    stmt = (
+        select(QpuRun)
+        .where(QpuRun.workspace_id == scope.workspace_id)
+        .order_by(QpuRun.id.desc())
+        .limit(limit)
+    )
+    if source_fingerprint is not None:
+        stmt = stmt.where(QpuRun.source_fingerprint == source_fingerprint)
+    if cursor is not None:
+        stmt = stmt.where(QpuRun.id < cursor)
+    return stmt
+
+
 async def list_records(
     scope: Scope,
     session: AsyncSession,
@@ -325,19 +352,12 @@ async def list_records(
     row the way an offset does while new runs arrive.
 
     `source_fingerprint` narrows to one circuit. Studio asks for exactly that on
-    load (the latest run of the circuit on screen), and filtering here is what
-    keeps that one row instead of a scan through every page of the history.
+    load (the latest run of the circuit on screen). Both forms ride an index from
+    migration 0065; see its docstring for why the fingerprint form has its own.
     """
-    stmt = (
-        select(QpuRun)
-        .where(QpuRun.workspace_id == scope.workspace_id)
-        .order_by(QpuRun.id.desc())
-        .limit(limit)
+    stmt = list_records_stmt(
+        scope, cursor=cursor, limit=limit, source_fingerprint=source_fingerprint
     )
-    if source_fingerprint is not None:
-        stmt = stmt.where(QpuRun.source_fingerprint == source_fingerprint)
-    if cursor is not None:
-        stmt = stmt.where(QpuRun.id < cursor)
     return list((await session.execute(stmt)).scalars().all())
 
 

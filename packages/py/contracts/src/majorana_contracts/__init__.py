@@ -395,10 +395,11 @@ from .lifecycle import (
 # 2.24.0: Proposal 5, increment 2. QpuRunRecord gains optional `backend_name`, the
 # physical machine the provider ran the job on (migration 0065). Additive: it
 # defaults to None, and None is also its value for every run recorded before it.
-# 2.25.0: Proposal 5, increment 4. QpuRunRecord gains optional `mitigation`, the
+# 2.26.0: Proposal 5, increment 4. QpuRunRecord gains optional `mitigation`, the
 # stored inputs for readout correction and zero-noise extrapolation (migration
 # 0066). Additive: it defaults to None, and `raw_counts` keeps its meaning.
-CONTRACTS_VERSION = "2.25.0"
+# (2.25.0 is claimed by PR 965, the course gradebook, which lands first.)
+CONTRACTS_VERSION = "2.26.0"
 
 __all__ = [
     "TextAnswer",

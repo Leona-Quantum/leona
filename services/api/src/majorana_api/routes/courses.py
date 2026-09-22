@@ -418,6 +418,7 @@ async def export_course(course_id: uuid.UUID, scope: CurrentScope, session: DbSe
         )
 
     specs: dict[str, object] = {}
+    reports: dict[str, contracts.ExecutionReport] = {}
     for module in modules:
         if module.notebook_id is None:
             continue
@@ -431,6 +432,13 @@ async def export_course(course_id: uuid.UUID, scope: CurrentScope, session: DbSe
                 },
             )
         specs[module.slug] = contracts.NotebookSpec.model_validate(version.spec)
+        # The module's notebook already ran in the sandbox when this version was
+        # generated (same as any other notebook version) — carried into the export so
+        # the reader gets the executed copy, exactly as `export_notebook_version` does
+        # for a single notebook. A version with no report (imported, or from before
+        # execution reports were stored) simply exports with empty outputs, as before.
+        if version.report is not None:
+            reports[module.slug] = contracts.ExecutionReport.model_validate(version.report)
 
     plan = courses_repo.plan_from_modules(course, modules)
     # `export_course_zip` compiles every notebook and builds an archive — CPU work
@@ -450,6 +458,7 @@ async def export_course(course_id: uuid.UUID, scope: CurrentScope, session: DbSe
         slug=course.slug,
         framework=contracts.NotebookFramework.model_validate(course.framework or {}),
         include_solutions=scope.user_id == course.owner_user_id,
+        notebook_reports=reports,  # type: ignore[arg-type]
     )
     return Response(
         content=blob,

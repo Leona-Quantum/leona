@@ -135,6 +135,8 @@ async def stage():
     try:
         yield {
             "alice": alice,
+            "alice_scope": alice_scope,
+            "factory": factory,
             "bob": bob,
             "alice_runs": alice_runs,
             "bob_runs": [bob_run, bob_same_circuit],
@@ -213,3 +215,38 @@ async def test_nothing_copied_from_another_workspace_reaches_its_rows(stage):
     ids = {item["id"] for item in after_bob.json()["items"]}
     assert ids <= {str(i) for i in stage["alice_runs"]}
     assert ids, "positive control: Alice's older rows sit below Bob's newest id"
+
+
+async def _plan(factory, stmt) -> str:
+    from sqlalchemy import text
+    from sqlalchemy.dialects import postgresql
+
+    sql = str(stmt.compile(dialect=postgresql.dialect(), compile_kwargs={"literal_binds": True}))
+    async with factory() as session:
+        # A tiny table is sequentially scanned whatever the index says.
+        await session.execute(text("set local enable_seqscan = off"))
+        return "\n".join(row[0] for row in (await session.execute(text("EXPLAIN " + sql))).all())
+
+
+async def test_the_history_and_the_restore_lookup_ride_their_indexes(stage):
+    """Migration 0065's two indexes, asserted against the statements the
+    repository builds rather than a copy of the SQL (the reason
+    `list_records_stmt` is split out). Without them the planner walks the
+    primary key backwards and filters out every other workspace's runs."""
+    scope, factory = stage["alice_scope"], stage["factory"]
+
+    page = await _plan(factory, qpu_runs_repo.list_records_stmt(scope, limit=25))
+    assert "ix_qpu_runs_workspace_id_desc" in page, page
+
+    after_cursor = await _plan(
+        factory, qpu_runs_repo.list_records_stmt(scope, cursor=stage["alice_runs"][-1], limit=25)
+    )
+    assert "ix_qpu_runs_workspace_id_desc" in after_cursor, after_cursor
+
+    restore = await _plan(
+        factory,
+        qpu_runs_repo.list_records_stmt(scope, limit=1, source_fingerprint=stage["shared_circuit"]),
+    )
+    assert "ix_qpu_runs_workspace_fingerprint_id_desc" in restore, restore
+    # Served by the index's own order, not sorted after the fact.
+    assert "Sort" not in restore, restore

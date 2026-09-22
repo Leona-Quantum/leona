@@ -40,6 +40,70 @@ class EstimateBasis(StrEnum):
     FREE_TIER_ALLOWANCE = "free_tier_allowance"
 
 
+class ErrorStatistic(StrEnum):
+    """What a published error figure summarises across a device's qubits.
+
+    Vendors do not all publish the same statistic, and a median, a mean and a
+    single headline number are not interchangeable: a mean is pulled up by a
+    few bad pairs that a median ignores. The statistic travels with the value
+    so the preview can say which one it used instead of calling all of them
+    "median".
+    """
+
+    MEDIAN = "median"
+    MEAN = "mean"
+    #: One system-level figure with no statistic named on the page.
+    STATED = "stated"
+
+
+class PublishedErrorFigure(BaseModel):
+    """One error figure exactly as a vendor, AWS or IBM page published it."""
+
+    model_config = ConfigDict(frozen=True)
+
+    #: Error probability per operation, 0 < value < 1. A page that publishes a
+    #: fidelity F is recorded as 1 - F; `published_as` keeps the printed form
+    #: so the conversion can be checked against the source.
+    value: float = Field(gt=0, lt=1)
+    statistic: ErrorStatistic
+    #: The figure as the page printed it, so a reader can find it on the page.
+    published_as: str
+    source_url: str
+    read_on: str  # ISO date the page was read
+
+
+class PublishedNoiseProfile(BaseModel):
+    """The published figures for one machine. None means the page did not
+    publish that figure. The preview then leaves it out and says so; it never
+    fills the gap."""
+
+    model_config = ConfigDict(frozen=True)
+
+    machine: str
+    one_qubit_gate_error: PublishedErrorFigure | None = None
+    two_qubit_gate_error: PublishedErrorFigure | None = None
+    readout_error: PublishedErrorFigure | None = None
+
+
+class PublishedNoise(BaseModel):
+    """What a device's published error figures are, for a pre-run estimate.
+
+    `profiles` holds one entry for a device Leona sends to one named machine,
+    and several for IBM's Open Plan, whose adapter lets IBM pick the machine at
+    submit time (`least_busy`). In that case no single profile describes the
+    run, and `machine_chosen_at_submit` tells the preview to show the spread
+    across machines rather than pick one.
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    #: False for an analog device (QuEra Aquila), where gate errors mean
+    #: nothing and a circuit cannot run at all.
+    gate_model: bool
+    machine_chosen_at_submit: bool = False
+    profiles: tuple[PublishedNoiseProfile, ...] = ()
+
+
 class QpuBackendInfo(BaseModel):
     model_config = ConfigDict(frozen=True)
 
@@ -57,6 +121,10 @@ class QpuBackendInfo(BaseModel):
     allowance_note: str | None = None
     rate_source: str
     rate_confirmed_on: str  # ISO date the source was fetched
+    # Published error figures for the Studio pre-run noise estimate
+    # (noise_figures.py). None only for a device nobody has looked up yet;
+    # every device on the rate card has an entry, and a test holds that.
+    published_noise: PublishedNoise | None = None
 
     @computed_field  # type: ignore[prop-decorator]
     @property

@@ -33,6 +33,43 @@ export type QpuBackendInfo = {
    * `false` means priced-only.
    */
   submittable?: boolean;
+  /**
+   * Published error figures for the pre-submit noise estimate, mirroring
+   * `majorana_qpu.PublishedNoise` (packages/py/qpu/src/majorana_qpu/noise_figures.py).
+   * Optional because an API deployed before the field existed does not send
+   * it; absent means "no preview", never "no noise".
+   */
+  published_noise?: QpuPublishedNoise | null;
+};
+
+/** What a published figure summarises: a median, a mean, or one headline
+ * figure with no statistic named on the page. */
+export type QpuErrorStatistic = "median" | "mean" | "stated";
+
+export type QpuPublishedErrorFigure = {
+  /** Error probability per operation; a published fidelity F is stored as 1 - F. */
+  value: number;
+  statistic: QpuErrorStatistic;
+  /** The figure exactly as the source page printed it. */
+  published_as: string;
+  source_url: string;
+  read_on: string;
+};
+
+export type QpuPublishedNoiseProfile = {
+  machine: string;
+  /** null: the source did not publish this figure. */
+  one_qubit_gate_error: QpuPublishedErrorFigure | null;
+  two_qubit_gate_error: QpuPublishedErrorFigure | null;
+  readout_error: QpuPublishedErrorFigure | null;
+};
+
+export type QpuPublishedNoise = {
+  /** false for an analog device, where gate errors do not apply. */
+  gate_model: boolean;
+  /** true when the provider picks the machine at submit time (IBM Open Plan). */
+  machine_chosen_at_submit: boolean;
+  profiles: QpuPublishedNoiseProfile[];
 };
 
 /** A device on the rate card that Leona can estimate but not submit to. */
@@ -269,4 +306,53 @@ export async function fetchQpuRunHistory(
 export async function fetchLatestQpuRunFor(sourceFingerprint: string): Promise<QpuRunHistoryItem | null> {
   const page = await fetchQpuRunHistory({ sourceFingerprint, limit: 1 });
   return page.items[0] ?? null;
+}
+
+/**
+ * How often an unfinished hardware run is re-read. Studio's panel and the
+ * hardware-runs page poll at the same rate, so one job reads the same way in
+ * both places.
+ */
+export const QPU_RUN_POLL_MS = 10_000;
+
+/** Whether the provider can still change this run. */
+export function isUnfinishedRun(record: Pick<QpuRunRecord, "status">): boolean {
+  return record.status === "queued" || record.status === "running";
+}
+
+/**
+ * The run Studio's hardware panel may show for the circuit on screen, or null.
+ *
+ * The panel keeps one run in state, and several things can put a run there for
+ * a circuit that is no longer open: a restore or a poll answering after the
+ * reader switched artifacts, or a submission confirming after they moved on.
+ * Deriving what is SHOWN from the fingerprint, instead of trusting whatever
+ * state holds, is what makes every one of those harmless. A run of another
+ * circuit is neither displayed nor polled, whichever way it arrived.
+ */
+export function runForCircuit<T extends Pick<QpuRunRecord, "source_fingerprint">>(
+  run: T | null,
+  circuitFingerprint: string | null,
+): T | null {
+  if (!run || !circuitFingerprint) return null;
+  return run.source_fingerprint === circuitFingerprint ? run : null;
+}
+
+/**
+ * What the panel should hold once a restore lookup for `requestedFor` answers.
+ *
+ * A run already held for that same circuit wins: it is a submission made, or a
+ * poll answered, while the lookup was in flight, and so is at least as new as
+ * anything the lookup can return. Anything else is replaced, including a run
+ * of a different circuit left over from before a switch. A lookup that found
+ * nothing clears a leftover rather than leaving it in state.
+ */
+export function afterRestore<T extends Pick<QpuRunRecord, "source_fingerprint">>(
+  current: T | null,
+  latest: T | null,
+  requestedFor: string,
+): T | null {
+  if (current && current.source_fingerprint === requestedFor) return current;
+  if (latest && latest.source_fingerprint === requestedFor) return latest;
+  return null;
 }

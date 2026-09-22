@@ -16,6 +16,15 @@ from .models import (
     QpuCostEstimate,
     QpuProviderKey,
 )
+from .noise_figures import (
+    AQT_IBEX_Q1_NOISE,
+    IBM_OPEN_PLAN_NOISE,
+    IONQ_FORTE_NOISE,
+    IQM_EMERALD_NOISE,
+    IQM_GARNET_NOISE,
+    QUERA_AQUILA_NOISE,
+    RIGETTI_CEPHEUS_NOISE,
+)
 
 BRAKET_RATE_SOURCE = "https://aws.amazon.com/braket/pricing/"
 IBM_PLAN_SOURCE = "https://quantum.cloud.ibm.com/docs/en/guides/plans-overview"
@@ -46,6 +55,7 @@ RATE_CARD: tuple[QpuBackendInfo, ...] = (
         allowance_note=IBM_OPEN_PLAN_ALLOWANCE,
         rate_source=IBM_PLAN_SOURCE,
         rate_confirmed_on=RATES_CONFIRMED_ON,
+        published_noise=IBM_OPEN_PLAN_NOISE,
     ),
     QpuBackendInfo(
         provider=QpuProviderKey.BRAKET,
@@ -58,6 +68,7 @@ RATE_CARD: tuple[QpuBackendInfo, ...] = (
         per_shot_usd=0.02350,
         rate_source=BRAKET_RATE_SOURCE,
         rate_confirmed_on=RATES_CONFIRMED_ON,
+        published_noise=AQT_IBEX_Q1_NOISE,
     ),
     QpuBackendInfo(
         provider=QpuProviderKey.BRAKET,
@@ -70,6 +81,7 @@ RATE_CARD: tuple[QpuBackendInfo, ...] = (
         per_shot_usd=0.08000,
         rate_source=BRAKET_RATE_SOURCE,
         rate_confirmed_on=RATES_CONFIRMED_ON,
+        published_noise=IONQ_FORTE_NOISE,
     ),
     QpuBackendInfo(
         provider=QpuProviderKey.BRAKET,
@@ -82,6 +94,7 @@ RATE_CARD: tuple[QpuBackendInfo, ...] = (
         per_shot_usd=0.00160,
         rate_source=BRAKET_RATE_SOURCE,
         rate_confirmed_on=RATES_CONFIRMED_ON,
+        published_noise=IQM_EMERALD_NOISE,
     ),
     QpuBackendInfo(
         provider=QpuProviderKey.BRAKET,
@@ -94,6 +107,7 @@ RATE_CARD: tuple[QpuBackendInfo, ...] = (
         per_shot_usd=0.00145,
         rate_source=BRAKET_RATE_SOURCE,
         rate_confirmed_on=RATES_CONFIRMED_ON,
+        published_noise=IQM_GARNET_NOISE,
     ),
     QpuBackendInfo(
         provider=QpuProviderKey.BRAKET,
@@ -106,6 +120,7 @@ RATE_CARD: tuple[QpuBackendInfo, ...] = (
         per_shot_usd=0.01000,
         rate_source=BRAKET_RATE_SOURCE,
         rate_confirmed_on=RATES_CONFIRMED_ON,
+        published_noise=QUERA_AQUILA_NOISE,
     ),
     QpuBackendInfo(
         provider=QpuProviderKey.BRAKET,
@@ -118,6 +133,7 @@ RATE_CARD: tuple[QpuBackendInfo, ...] = (
         per_shot_usd=0.000425,
         rate_source=BRAKET_RATE_SOURCE,
         rate_confirmed_on=RATES_CONFIRMED_ON,
+        published_noise=RIGETTI_CEPHEUS_NOISE,
     ),
 )
 

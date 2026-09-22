@@ -315,6 +315,7 @@ def test_a_stub_does_not_carry_the_solutions_output() -> None:
         kind="challenge",
         cells=[
             Cell(id="obj", kind="markdown", role=CellRole.OBJECTIVE, source="## Go"),
+            Cell(id="pre", kind="code", role=CellRole.SETUP, source='print("setup")'),
             Cell(id="ex", kind="markdown", role=CellRole.EXERCISE, source="Compute 6*7."),
             Cell(
                 id="s1",
@@ -332,16 +333,68 @@ def test_a_stub_does_not_carry_the_solutions_output() -> None:
         ok=True,
         runner="sandbox",
         cells=[
+            CellResult(id="pre", status="ok", stdout="setup\n"),
             CellResult(id="s1", status="ok", stdout="42\n"),
             CellResult(id="ctx", status="ok", stdout="context\n"),
         ],
     )
     challenge = to_ipynb(spec, build="challenge", report=report)
     by_id = {cell["id"]: cell for cell in challenge["cells"]}
+    # A cell BEFORE the first replacement is unaffected — nothing the (still hidden)
+    # solution computes can reach backward into a value this cell already printed.
+    # The control: otherwise this test would pass on a build that simply dropped every
+    # output, which teaches the reader nothing.
+    assert by_id["pre"]["outputs"], "a cell before the redaction must keep its output"
     assert by_id["s1"]["outputs"] == []
-    # A cell that was NOT redacted keeps its output — otherwise this test would pass on
-    # a build that simply dropped every output, which teaches the reader nothing.
-    assert by_id["ctx"]["outputs"], "an unredacted cell must keep the output it produced"
+    # `ctx`'s own SOURCE never changed, but it ran in the same kernel, right after the
+    # real solution, so its stdout is not provably free of the answer either — treated
+    # as contaminated along with every other cell from the first replacement onward
+    # (Greptile, PR 959: the original guard cleared only the replaced cell's own id).
+    assert by_id["ctx"]["outputs"] == [], "a cell AFTER the redaction must not leak it either"
     assert "42" not in json.dumps(challenge)
-    # ...and the solution build, which is for the author, still shows it.
-    assert "42" in json.dumps(to_ipynb(spec, build="solution", report=report))
+    # ...and the solution build, which is for the author, still shows everything.
+    solution = to_ipynb(spec, build="solution", report=report)
+    by_id = {cell["id"]: cell for cell in solution["cells"]}
+    assert by_id["pre"]["outputs"] and by_id["s1"]["outputs"] and by_id["ctx"]["outputs"]
+    assert "42" in json.dumps(solution)
+
+
+def test_a_cell_the_build_drops_starts_the_redaction_too() -> None:
+    """`for_learner` REMOVES an unstubbed `answer` cell rather than stubbing it.
+
+    The cells after it ran in the same answer-key kernel, so they are as suspect as the
+    cells after a stub, and the source comparison alone never sees a cell that is gone.
+    """
+    from majorana_contracts.notebooks import Cell, NotebookSpec
+
+    spec = NotebookSpec(
+        slug="dropped",
+        title="Dropped",
+        kind="challenge",
+        cells=[
+            Cell(id="obj", kind="markdown", role=CellRole.OBJECTIVE, source="## Go"),
+            Cell(id="pre", kind="code", role=CellRole.SETUP, source='print("setup")'),
+            Cell(id="ans", kind="markdown", role=CellRole.ANSWER, source="The answer is 42."),
+            Cell(id="after", kind="code", role=CellRole.RUN, source="print(answer)"),
+        ],
+    )
+    report = ExecutionReport(
+        notebook_slug="dropped",
+        ok=True,
+        runner="sandbox",
+        cells=[
+            CellResult(id="pre", status="ok", stdout="setup\n"),
+            CellResult(id="after", status="ok", stdout="42\n"),
+        ],
+    )
+    challenge = to_ipynb(spec, build="challenge", report=report)
+    by_id = {cell["id"]: cell for cell in challenge["cells"]}
+    assert "ans" not in by_id, "the answer cell is dropped from the challenge build"
+    assert by_id["pre"]["outputs"], "a cell before the dropped one keeps its output"
+    assert by_id["after"]["outputs"] == [], (
+        "a cell after a dropped answer must not carry its output"
+    )
+    full = to_ipynb(spec, build="full", report=report)
+    assert {c["id"]: c for c in full["cells"]}["after"]["outputs"], (
+        "the author's build keeps everything"
+    )

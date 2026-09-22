@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo } from "react";
-import { compareMeasuredToIdeal } from "../../../lib/qpu-ideal";
+import { compareMeasuredToIdeal, type IdealComparison } from "../../../lib/qpu-ideal";
 import { mitigatedReadings, type MitigatedReadings } from "../../../lib/qpu-mitigation";
 import { formatShare } from "../../../lib/simulation-visual";
 import type { CpuSimulationLimits } from "../../../lib/studio-simulation";
@@ -17,6 +17,13 @@ type StudioCopy = (typeof WORKSPACE_COPY)[PublicLocale]["studio"];
  * circuit that was submitted, not a second verification pass and not a call
  * to any server.
  *
+ * `comparison`, when given, is used as-is instead of being computed here. The
+ * hardware-runs page passes the one it already worked out off the render path
+ * (`workThroughComparisons`); Studio's single run computes its own.
+ *
+ * `readings` works the same way for the mitigated readings: the hardware-runs
+ * page works them out in the same scheduled task as the comparison.
+ *
  * The mitigated readings (lib/qpu-mitigation.ts, proposal 5 increment 4) sit
  * BESIDE the raw one and never replace it: the raw distance and the raw counts
  * are always shown, and a correction that cannot be made says why instead of
@@ -29,6 +36,8 @@ export function QpuMeasuredVsIdeal({
   mitigation,
   limits,
   copy,
+  comparison: precomputed,
+  readings: precomputedReadings,
 }: {
   qasm: string;
   submittedFingerprint: string;
@@ -37,17 +46,21 @@ export function QpuMeasuredVsIdeal({
   mitigation?: unknown;
   limits: CpuSimulationLimits;
   copy: StudioCopy;
+  comparison?: IdealComparison;
+  readings?: MitigatedReadings | null;
 }) {
   const comparison = useMemo(
-    () => compareMeasuredToIdeal({ qasm, submittedFingerprint, counts, limits }),
-    [qasm, submittedFingerprint, counts, limits],
+    () => precomputed ?? compareMeasuredToIdeal({ qasm, submittedFingerprint, counts, limits }),
+    [precomputed, qasm, submittedFingerprint, counts, limits],
   );
   const readings = useMemo<MitigatedReadings | null>(
     () =>
-      comparison.status === "computed" && counts
-        ? mitigatedReadings({ ideal: comparison.ideal, qubitCount: comparison.qubitCount, rawCounts: counts, mitigation })
-        : null,
-    [comparison, counts, mitigation],
+      precomputedReadings !== undefined
+        ? precomputedReadings
+        : comparison.status === "computed" && counts
+          ? mitigatedReadings({ ideal: comparison.ideal, qubitCount: comparison.qubitCount, rawCounts: counts, mitigation })
+          : null,
+    [precomputedReadings, comparison, counts, mitigation],
   );
 
   if (comparison.status === "unavailable") {

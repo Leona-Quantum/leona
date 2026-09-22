@@ -11,10 +11,18 @@ A curriculum source directory mirrors the repository it builds:
         CHECKLIST.md                # -> solutions/week01_qubits_circuits/SELF_EVALUATION.md
     static/                         # copied to the build root as-is (pyproject, scripts, tests…)
 
-`build_curriculum` compiles every `.nb.py`, writes the `.ipynb` builds (never with
-outputs), copies everything else, and returns a manifest naming every file it produced.
-With `execute=True` it also runs each notebook through nbclient and refuses to report
-success for one that failed.
+`build_curriculum` compiles every `.nb.py`, writes the `.ipynb` builds, copies everything
+else, and returns a manifest naming every file it produced. With `execute=True` it also
+runs each notebook through nbclient and refuses to report success for one that failed —
+that run is validation only and is never written back into the build (see `builds_for`).
+
+Outputs are empty by default (a hand-authored `.nb.py` was never executed by this
+process, and nothing here should invent a result). A caller that already has each unit's
+`ExecutionReport` — a generated course, whose modules ran in the sandbox when their
+notebook versions were made — passes `reports`, keyed by unit directory, and that unit's
+builds carry the outputs the run actually produced. `to_ipynb` does the per-cell
+redaction (a stubbed `role=solution` cell never keeps the answer's output), so a
+`reports` entry is safe to hand to every build of a unit, `challenge` included.
 """
 
 from __future__ import annotations
@@ -194,12 +202,18 @@ def build_curriculum(
     kernel_name: str = "python3",
     clean: bool = False,
     include_solutions: bool = True,
+    reports: dict[str, ExecutionReport] | None = None,
 ) -> BuildManifest:
     """Compile a curriculum source tree into its `.ipynb` repository.
 
     `include_solutions=False` omits the `solutions/` half — the copy of every challenge
     and quiz with its answers in place. Used when the reader is not the course's author
     (owner ruling ai-ops 260, option 1).
+
+    `reports`, keyed by unit directory (the same key `curriculum.yaml`'s `units[].directory`
+    uses), supplies the `ExecutionReport` a unit's notebook already produced when it ran.
+    `None` (the default, and the only case for a hand-authored curriculum this process
+    never executed) leaves every build's outputs empty, exactly as before.
     """
     source_root = Path(source_dir)
     out_root = Path(out_dir)
@@ -248,11 +262,19 @@ def build_curriculum(
         entry = BuiltNotebook(
             source=source, outputs=[], spec=spec, structure_failures=check_structure(spec)
         )
+        # Keyed by the unit's own directory (the same string `curriculum.yaml`'s
+        # `units[].directory` and the caller's `reports` dict both use) — not by
+        # `slug` above, which flattens nested parts for a human-readable notebook name
+        # and is not what a caller keying `reports` by unit would have on hand.
+        unit_report = (reports or {}).get(rel.parent.as_posix())
         for build, target_rel in builds_for(
             spec, rel, curriculum, include_solutions=include_solutions
         ):
             target = out_root / target_rel
-            _write_notebook(target, to_ipynb(spec, build=build, include_outputs=False))  # type: ignore[arg-type]
+            # `report=unit_report` is safe for every build, `challenge` included:
+            # `to_ipynb` drops the output of any cell whose build source differs from
+            # the authored one, which is exactly the stubbed solution cell.
+            _write_notebook(target, to_ipynb(spec, build=build, report=unit_report))  # type: ignore[arg-type]
             entry.outputs.append(target)
             if execute:
                 from leona_notebooks.local_runner import execute_with_nbclient
