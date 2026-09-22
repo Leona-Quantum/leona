@@ -414,12 +414,12 @@ from .lifecycle import (
 # GradebookModule, GradebookRow, GradebookEntry and the closed GradebookVisibility
 # enum, the response of GET /v1/courses/{id}/gradebook. Purely additive: no existing
 # model changes, and the data is read from `notebook.grades` events already stored.
-# 2.27.0: Proposal 9, first slice. Comment, CommentList, CommentPerson,
+# 2.29.0: Proposal 9, first slice. Comment, CommentList, CommentPerson,
 # CommentPeopleList, CommentTargetType and the create/update bodies: comments and
 # @-mentions on a run, a notebook or a saved circuit (migration 0068). Additive:
-# new names only. Numbered 2.27.0 because 2.26.0 is claimed by the open hardware
-# mitigation branch; whichever of the two lands later renumbers on rebase.
-CONTRACTS_VERSION = "2.27.0"
+# new names only. Numbered 2.29.0 for the agreed landing order: hardware
+# mitigation (2.26.0) and notebook due dates (2.28.0) land before this.
+CONTRACTS_VERSION = "2.29.0"
 
 __all__ = [
     "MAX_COMMENT_CHARS",
