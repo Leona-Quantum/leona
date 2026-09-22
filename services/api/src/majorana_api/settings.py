@@ -8,7 +8,12 @@ import os
 from dataclasses import dataclass
 
 from .catalog_authority import CatalogAuthority
-from .rate_limit import DEFAULT_ANON_LIMIT, DEFAULT_AUTH_FAILURE_LIMIT, DEFAULT_TRUSTED_LIMIT
+from .rate_limit import (
+    DEFAULT_ANON_LIMIT,
+    DEFAULT_AUTH_FAILURE_LIMIT,
+    DEFAULT_COMMENT_LIMIT,
+    DEFAULT_TRUSTED_LIMIT,
+)
 from .tiers import TIER_ALLOWLIST_ENV, parse_developer_emails
 
 _MIN_TOKEN_LENGTH = 32
@@ -233,6 +238,10 @@ class Settings:
     #: escape hatch as the other two: a caller wrongly refused for their
     #: address's failures is worse than an unmetered one.
     auth_failure_limit: int = DEFAULT_AUTH_FAILURE_LIMIT
+    #: Comments one person may post per minute (`DEFAULT_COMMENT_LIMIT` in
+    #: `rate_limit.py` says why the default is what it is). `0` disables it,
+    #: the same escape hatch as the limits above.
+    comment_rate_limit_per_minute: int = DEFAULT_COMMENT_LIMIT
 
     def __post_init__(self) -> None:
         if self.local_dev_auth and self.environment != "development":
@@ -320,4 +329,7 @@ class Settings:
             rls_enforced=os.environ.get("MAJORANA_RLS_ENFORCED", "").strip().lower()
             in {"1", "true", "yes"},
             auth_failure_limit=_int_env("AUTH_FAILURE_LIMIT", DEFAULT_AUTH_FAILURE_LIMIT),
+            comment_rate_limit_per_minute=_int_env(
+                "COMMENT_RATE_LIMIT_PER_MINUTE", DEFAULT_COMMENT_LIMIT
+            ),
         )

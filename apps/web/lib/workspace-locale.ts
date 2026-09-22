@@ -142,6 +142,7 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
     dropOutside: string;
     accountMenu: string;
     usageLimits: string;
+    mentions: string;
     usageRunsLeft: (remaining: number, limit: number) => string;
     usageRunsNone: string;
     usageRunsUnlimited: string;
@@ -1125,6 +1126,7 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
       dropOutside: "Drop here to remove from project",
       accountMenu: "Account menu",
       usageLimits: "Usage & limits",
+      mentions: "Mentions",
       // The allowance window ROLLS. "Resets weekly" would be the natural thing
       // to write here and it would be false: runs come back one at a time,
       // seven days after each was spent, so the only honest sentence names a
@@ -2278,6 +2280,7 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
       dropOutside: "ここにドロップしてプロジェクトから外す",
       accountMenu: "アカウントメニュー",
       usageLimits: "使用状況と上限",
+      mentions: "メンション",
       // 英語版と同じ理由：この枠は「週ごとにリセット」ではなくローリング7日間。
       // 使った実行が7日後に1回ずつ戻るので、曜日ではなく日付で言うしかない。
       usageRunsLeft: (remaining: number, limit: number) => `実行 残り ${remaining}/${limit}`,
@@ -4010,6 +4013,149 @@ export const INVITE_COPY: Record<PublicLocale, {
     declineWarning: (workspace) =>
       `${workspace} から退出すると、アクセスできなくなります。すでに実行したものはワークスペースに残ります。再参加には管理者の招待が必要です。`,
     failed: "操作を完了できませんでした。",
+  },
+};
+
+export type CommentTargetKindCopy = "run" | "notebook" | "artifact";
+
+/**
+ * Comments and mentions (proposal 9, first slice). Plain words: a comment is a
+ * note one person leaves for the others, and the copy says what happens, not
+ * what the feature is called. A viewer is told why there is no box to type in,
+ * in the same terms INVITE_COPY used when they were added ("cannot run or save").
+ */
+export const COMMENTS_COPY: Record<PublicLocale, {
+  title: string;
+  loading: string;
+  loadFailed: string;
+  retry: string;
+  empty: string;
+  emptyWriter: string;
+  viewerNote: string;
+  placeholder: string;
+  replyPlaceholder: string;
+  post: string;
+  posting: string;
+  reply: string;
+  edit: string;
+  save: string;
+  saving: string;
+  cancel: string;
+  delete: string;
+  deleteConfirm: string;
+  deleteConfirmHelp: string;
+  deleting: string;
+  deleted: string;
+  edited: string;
+  formerMember: string;
+  showMore: string;
+  mentionHint: string;
+  suggestionsLabel: string;
+  tooLong: (limit: number) => string;
+  rateLimited: string;
+  postFailed: string;
+  editFailed: string;
+  deleteFailed: string;
+  parentDeleted: string;
+  commentDeleted: string;
+  count: (n: number) => string;
+  mentionsTitle: string;
+  mentionsLede: string;
+  mentionsEmpty: string;
+  mentionsFailed: string;
+  mentionedYou: (author: string, target: CommentTargetKindCopy) => string;
+  openTarget: (target: CommentTargetKindCopy) => string;
+  targetKinds: Record<CommentTargetKindCopy, string>;
+}> = {
+  en: {
+    title: "Comments",
+    loading: "Loading comments…",
+    loadFailed: "Could not load the comments.",
+    retry: "Try again",
+    empty: "No comments yet.",
+    emptyWriter: "No comments yet. Leave a note for the people in this workspace.",
+    viewerNote: "You can read the comments here. Viewers cannot write them.",
+    placeholder: "Write a comment",
+    replyPlaceholder: "Write a reply",
+    post: "Comment",
+    posting: "Posting…",
+    reply: "Reply",
+    edit: "Edit",
+    save: "Save",
+    saving: "Saving…",
+    cancel: "Cancel",
+    delete: "Delete",
+    deleteConfirm: "Delete this comment?",
+    deleteConfirmHelp: "This removes it for everyone. Replies to it stay.",
+    deleting: "Deleting…",
+    deleted: "Comment deleted",
+    edited: "edited",
+    formerMember: "Former member",
+    showMore: "Show more comments",
+    mentionHint: "Type @ to mention someone in this workspace.",
+    suggestionsLabel: "People you can mention",
+    tooLong: (limit) => `Keep it under ${limit.toLocaleString("en")} characters.`,
+    rateLimited: "You are posting quickly. Wait a moment, then try again.",
+    postFailed: "Could not post that. Your text is still here.",
+    editFailed: "Could not save your change. Your text is still here.",
+    deleteFailed: "Could not delete the comment.",
+    parentDeleted: "That comment was deleted, so you cannot reply to it.",
+    commentDeleted: "That comment was deleted while you were editing it.",
+    count: (n) => (n === 1 ? "1 comment" : `${n} comments`),
+    mentionsTitle: "Mentions",
+    mentionsLede: "Comments in this workspace that mention you, newest first.",
+    mentionsEmpty: "Nobody has mentioned you in this workspace yet.",
+    mentionsFailed: "Could not load your mentions.",
+    mentionedYou: (author, target) =>
+      `${author} mentioned you on a ${target === "artifact" ? "saved circuit" : target}`,
+    openTarget: (target) =>
+      target === "run" ? "Open the run" : target === "notebook" ? "Open the notebook" : "Open in Studio",
+    targetKinds: { run: "run", notebook: "notebook", artifact: "saved circuit" },
+  },
+  ja: {
+    title: "コメント",
+    loading: "コメントを読み込み中…",
+    loadFailed: "コメントを読み込めませんでした。",
+    retry: "再試行",
+    empty: "まだコメントはありません。",
+    emptyWriter: "まだコメントはありません。このワークスペースのメンバーにメモを残せます。",
+    viewerNote: "ここでコメントを読むことはできますが、閲覧者は書き込めません。",
+    placeholder: "コメントを書く",
+    replyPlaceholder: "返信を書く",
+    post: "コメントする",
+    posting: "送信中…",
+    reply: "返信",
+    edit: "編集",
+    save: "保存",
+    saving: "保存中…",
+    cancel: "キャンセル",
+    delete: "削除",
+    deleteConfirm: "このコメントを削除しますか？",
+    deleteConfirmHelp: "全員の画面から消えます。このコメントへの返信は残ります。",
+    deleting: "削除中…",
+    deleted: "削除されたコメント",
+    edited: "編集済み",
+    formerMember: "以前のメンバー",
+    showMore: "さらに表示",
+    mentionHint: "@ を入力すると、このワークスペースのメンバーをメンションできます。",
+    suggestionsLabel: "メンションできるメンバー",
+    tooLong: (limit) => `${limit.toLocaleString("ja")}文字以内にしてください。`,
+    rateLimited: "短い間に続けて投稿しています。少し待ってからもう一度送信してください。",
+    postFailed: "投稿できませんでした。入力した文章はそのまま残っています。",
+    editFailed: "変更を保存できませんでした。入力した文章はそのまま残っています。",
+    deleteFailed: "コメントを削除できませんでした。",
+    parentDeleted: "そのコメントは削除されたため、返信できません。",
+    commentDeleted: "編集中にそのコメントが削除されました。",
+    count: (n) => `コメント ${n}件`,
+    mentionsTitle: "メンション",
+    mentionsLede: "このワークスペースで、あなたがメンションされたコメントです。新しい順に並んでいます。",
+    mentionsEmpty: "このワークスペースでは、まだメンションされていません。",
+    mentionsFailed: "メンションを読み込めませんでした。",
+    mentionedYou: (author, target) =>
+      `${author}さんが${target === "run" ? "実行" : target === "notebook" ? "ノートブック" : "保存した回路"}であなたをメンションしました`,
+    openTarget: (target) =>
+      target === "run" ? "実行を開く" : target === "notebook" ? "ノートブックを開く" : "Studioで開く",
+    targetKinds: { run: "実行", notebook: "ノートブック", artifact: "保存した回路" },
   },
 };
 

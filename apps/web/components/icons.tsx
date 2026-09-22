@@ -220,3 +220,8 @@ export function GaugeIcon(props: IconProps) {
 export function SignOutIcon(props: IconProps) {
   return <Icon {...props}><path d="M6.5 2.5H3.5v11h3" /><path d="M10 5.5 12.5 8 10 10.5M6.5 8h6" /></Icon>;
 }
+
+/** A speech bubble with an at sign: the rail's "Mentions" entry. */
+export function MentionIcon(props: IconProps) {
+  return <Icon {...props}><path d="M3 3.5h10v7H7.5L4.5 13v-2.5H3z" /><circle cx="8" cy="7" r="1.3" /><path d="M9.3 7v.6c0 .7.9.9 1.2.2.4-1.9-.9-3.1-2.5-3.1a2.3 2.3 0 1 0 1 4.4" /></Icon>;
+}

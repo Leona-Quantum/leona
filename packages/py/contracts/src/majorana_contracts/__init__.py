@@ -93,6 +93,16 @@ from .events import (
     VerificationResult,
     run_event_adapter,
 )
+from .comments import (
+    MAX_COMMENT_CHARS,
+    Comment,
+    CommentList,
+    CommentPeopleList,
+    CommentPerson,
+    CommentTargetType,
+    CreateCommentRequest,
+    UpdateCommentRequest,
+)
 from .courses import (
     Course,
     CourseGradebook,
@@ -414,9 +424,23 @@ from .lifecycle import (
 # optional with defaults, so a 2.26.0 payload still validates (migration 0067).
 # Numbered 2.28.0, not 2.27.0: the comments branch claims 2.27.0, and its line goes
 # between 2.26.0 and this one whichever of the two lands first.
-CONTRACTS_VERSION = "2.28.0"
+# 2.29.0: Proposal 9, first slice. Comment, CommentList, CommentPerson,
+# CommentPeopleList, CommentTargetType and the create/update bodies: comments and
+# @-mentions on a run, a notebook or a saved circuit (migration 0068). Additive:
+# new names only. 2.27.0 was never used: the comments branch held it while the
+# landing order was open, and moved here once mitigation (2.26.0) and due dates
+# (2.28.0) were set to land first.
+CONTRACTS_VERSION = "2.29.0"
 
 __all__ = [
+    "MAX_COMMENT_CHARS",
+    "Comment",
+    "CommentList",
+    "CommentPeopleList",
+    "CommentPerson",
+    "CommentTargetType",
+    "CreateCommentRequest",
+    "UpdateCommentRequest",
     "TextAnswer",
     "RubricAnswer",
     "NumericAnswer",

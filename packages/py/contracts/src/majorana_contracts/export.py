@@ -13,7 +13,7 @@ from pathlib import Path
 from pydantic import RootModel
 from pydantic.json_schema import models_json_schema
 
-from . import CONTRACTS_VERSION, courses, events, models, notebooks, plan, scope
+from . import CONTRACTS_VERSION, comments, courses, events, models, notebooks, plan, scope
 
 DEFAULT_OUT = Path(__file__).resolve().parents[2] / "openapi.json"
 
@@ -117,6 +117,14 @@ EXPORTED = [
     courses.CourseGradebook,
     models.VerificationRecord,
     models.QpuRunRecord,
+    # Proposal 9, first slice (migration 0068). CommentTargetType is an enum and
+    # reaches the document as a hoisted $def of Comment and the request body.
+    comments.CommentPerson,
+    comments.Comment,
+    comments.CommentList,
+    comments.CommentPeopleList,
+    comments.CreateCommentRequest,
+    comments.UpdateCommentRequest,
 ]
 
 

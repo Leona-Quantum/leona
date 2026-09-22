@@ -5,6 +5,7 @@ RLS check (05-security.md §1)."""
 
 import pytest
 from matrix_helpers import ALL_ROLES, any_team_grantee, requires_db, scope_for
+from majorana_contracts import CommentTargetType
 from majorana_contracts.enums import QpuRunStatus, Role, RunMode, UsageKind, VerificationMethod
 
 from majorana_api.repos import (
@@ -14,6 +15,7 @@ from majorana_api.repos import (
     NotFoundError,
     artifacts,
     audit,
+    comments,
     folders,
     projects,
     qpu_runs,
@@ -349,3 +351,76 @@ async def test_hardware_runs_cannot_be_moved_across_workspaces(db, dataset):
             await qpu_runs.transition(
                 sa, db, b.qpu_run_id, QpuRunStatus.ERROR, backend_name="ibm_attack"
             )
+
+
+async def test_comments_are_invisible_and_untouchable_across_workspaces(db, dataset):
+    """Comments and mentions (migration 0068), through every repository entry point.
+
+    Workspace B has a comment on its run that mentions B's member. For every role
+    in A: B's thread is absent (the target check refuses before any comment is
+    read), B's comment cannot be edited, deleted or replied to, a comment cannot
+    be posted onto B's run, and nothing of B's reaches A's mentions inbox or A's
+    list of people to mention.
+
+    The positive control is A's own thread, read under the same roles: a list
+    function that returned nothing at all would pass every "B is absent" line.
+    """
+    a, b = dataset
+    for role in ALL_ROLES:
+        sa = scope_for(a, role)
+        with pytest.raises(NotFoundError):
+            await comments.list_comments(
+                sa, db, target_type=CommentTargetType.RUN, target_id=b.run_id
+            )
+        own = await comments.list_comments(
+            sa, db, target_type=CommentTargetType.RUN, target_id=a.run_id
+        )
+        assert [row.id for row in own.comments] == [a.comment_id]
+        assert {row.workspace_id for row in own.comments} == {a.workspace_id}
+
+        people = await comments.list_people(sa, db)
+        assert {p.user_id for p in people} == set(a.users.values()) - {sa.user_id}
+
+        inbox = await comments.list_mentions(sa, db, limit=100)
+        assert b.comment_id not in {row.id for row in inbox.comments}
+        if role == Role.MEMBER:
+            assert [row.id for row in inbox.comments] == [a.comment_id]
+
+    for role in WRITE_ROLES:
+        sa = scope_for(a, role)
+        with pytest.raises(NotFoundError):
+            await comments.create_comment(
+                sa, db, target_type=CommentTargetType.RUN, target_id=b.run_id, body="x"
+            )
+        # B's comment as the PARENT of a reply on A's own run: the parent is
+        # looked up on this target in this workspace, so it is absent.
+        with pytest.raises(NotFoundError):
+            await comments.create_comment(
+                sa,
+                db,
+                target_type=CommentTargetType.RUN,
+                target_id=a.run_id,
+                body="x",
+                parent_id=b.comment_id,
+            )
+        with pytest.raises(NotFoundError):
+            await comments.update_comment(sa, db, b.comment_id, body="taken")
+        with pytest.raises(NotFoundError):
+            await comments.delete_comment(sa, db, b.comment_id)
+
+
+async def test_a_viewer_reads_comments_and_writes_none(db, dataset):
+    a, _ = dataset
+    viewer = scope_for(a, Role.VIEWER)
+    thread = await comments.list_comments(
+        viewer, db, target_type=CommentTargetType.RUN, target_id=a.run_id
+    )
+    assert [row.id for row in thread.comments] == [a.comment_id]
+    with pytest.raises(AuthzError):
+        await comments.create_comment(
+            viewer, db, target_type=CommentTargetType.RUN, target_id=a.run_id, body="x"
+        )
+    with pytest.raises(AuthzError):
+        await comments.update_comment(viewer, db, a.comment_id, body="x")
+    with pytest.raises(AuthzError):
+        await comments.delete_comment(viewer, db, a.comment_id)

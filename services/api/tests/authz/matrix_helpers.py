@@ -13,7 +13,7 @@ import os
 import uuid
 
 import pytest
-from majorana_contracts import Scope
+from majorana_contracts import CommentTargetType, Scope
 from majorana_contracts.enums import QpuRunStatus, Role, RunMode, UsageKind, VerificationMethod
 from sqlalchemy import select
 
@@ -22,6 +22,7 @@ from majorana_api.orm import Artifact
 from majorana_api.repos import (
     artifacts,
     audit,
+    comments,
     folders,
     projects,
     qpu_runs,
@@ -53,6 +54,7 @@ class WorkspaceData:
     usage_quantity: float
     qpu_run_id: uuid.UUID
     qpu_fingerprint: str
+    comment_id: uuid.UUID
 
 
 def scope_for(ws: WorkspaceData, role: Role) -> Scope:
@@ -151,6 +153,16 @@ async def _build_workspace(session, tag: str) -> WorkspaceData:
     await qpu_runs.transition(
         owner_scope, session, qpu_run.id, QpuRunStatus.DONE, raw_counts={"0": 64, "1": 64}
     )
+    # A comment on the run that mentions the workspace's own member, so the
+    # probes have a thread, a body and an inbox row to fail to see (migration
+    # 0068). The handle is the member's address before the `@`.
+    comment = await comments.create_comment(
+        owner_scope,
+        session,
+        target_type=CommentTargetType.RUN,
+        target_id=run.id,
+        body=f"authz probe for @{tag}-{Role.MEMBER}",
+    )
     return WorkspaceData(
         workspace_id=ws.id,
         users=users,
@@ -163,6 +175,7 @@ async def _build_workspace(session, tag: str) -> WorkspaceData:
         usage_quantity=7.0,
         qpu_run_id=qpu_run.id,
         qpu_fingerprint=qpu_fingerprint,
+        comment_id=comment.comments[0].id,
     )
 
 

@@ -419,6 +419,45 @@ class CourseTurn(Base):
     created_at: Mapped[dt.datetime | None] = mapped_column(server_default=func.now())
 
 
+class Comment(Base):
+    """Migration 0068. A comment, or a one-level reply, on a run, notebook or
+    artifact. `target_id` has no FK (it names a row in one of three tables); the
+    repository checks it. The reply FK is composite in the migration so a reply
+    cannot sit on a different target or workspace than its parent; only the
+    columns are declared here, which is all the queries need."""
+
+    __tablename__ = "comments"
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True)
+    workspace_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("workspaces.id"))
+    target_type: Mapped[str]
+    target_id: Mapped[uuid.UUID] = mapped_column(_UUID)
+    author_user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id"))
+    parent_id: Mapped[uuid.UUID | None] = mapped_column(_UUID)
+    body: Mapped[str]
+    created_at: Mapped[dt.datetime | None] = mapped_column(server_default=func.now())
+    edited_at: Mapped[dt.datetime | None]
+    deleted_at: Mapped[dt.datetime | None]
+    #: `Idempotency-Key` of the POST that created it, and the SHA-256 of that
+    #: request, so a retry returns this row and a reused key with another body
+    #: is refused. NULL together when no key was sent.
+    idempotency_key: Mapped[str | None]
+    idempotency_request_hash: Mapped[str | None]
+
+
+class CommentMention(Base):
+    """Migration 0068. One person a comment mentions. `workspace_id` is a copy of
+    the comment's, held consistent by a composite FK, so the inbox index can lead
+    with it."""
+
+    __tablename__ = "comment_mentions"
+
+    comment_id: Mapped[uuid.UUID] = mapped_column(_UUID, primary_key=True)
+    mentioned_user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id"), primary_key=True)
+    workspace_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("workspaces.id"))
+    created_at: Mapped[dt.datetime | None] = mapped_column(server_default=func.now())
+
+
 class ArtifactSource(Base):
     """Provenance (migration 0015): one pinned source record per version."""
 

@@ -9,7 +9,7 @@ import { paneForHash } from "./account-pane-selection.ts";
 const HERE = dirname(fileURLToPath(import.meta.url));
 
 // The rail's ids, in the order account-content.tsx declares them.
-const PANES = ["preferences", "tours", "identity", "usage", "workspaces", "archived", "qpu", "billing"] as const;
+const PANES = ["preferences", "tours", "identity", "usage", "workspaces", "mentions", "archived", "qpu", "billing"] as const;
 
 describe("which settings pane a fragment asks for", () => {
   it("resolves the two entry points that existed before the rail did", () => {
@@ -19,6 +19,11 @@ describe("which settings pane a fragment asks for", () => {
     // mapping were wrong — 200, a settings page, no error anywhere.
     assert.equal(paneForHash(PANES, "#usage"), "usage");
     assert.equal(paneForHash(PANES, "#archived"), "archived");
+  });
+
+  it("resolves the account menu's Mentions entry", () => {
+    // `/account#mentions` is what the Mentions menu item links to (proposal 9).
+    assert.equal(paneForHash(PANES, "#mentions"), "mentions");
   });
 
   it("accepts a fragment with or without its hash", () => {

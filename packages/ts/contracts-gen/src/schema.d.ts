@@ -1112,6 +1112,146 @@ export interface components {
             /** Language */
             language: string;
         };
+        /**
+         * Comment
+         * @description One comment, or one reply to a comment.
+         *
+         *     A deleted comment keeps its place in its thread so the replies under it still
+         *     read in order: `deleted_at` is set, and `body`, `author` and `mentions` are
+         *     emptied in the response. The words are not served to anybody after deletion,
+         *     including the person who wrote them.
+         */
+        Comment: {
+            /** @default null */
+            author: components["schemas"]["CommentPerson"] | null;
+            /**
+             * Body
+             * @default
+             */
+            body: string;
+            /**
+             * Can Delete
+             * @default false
+             */
+            can_delete: boolean;
+            /**
+             * Can Edit
+             * @default false
+             */
+            can_edit: boolean;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /**
+             * Deleted At
+             * @default null
+             */
+            deleted_at: string | null;
+            /**
+             * Edited At
+             * @default null
+             */
+            edited_at: string | null;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Mentions */
+            mentions?: components["schemas"]["CommentPerson"][];
+            /**
+             * Parent Id
+             * @default null
+             */
+            parent_id: string | null;
+            /**
+             * Target Id
+             * Format: uuid
+             */
+            target_id: string;
+            target_type: components["schemas"]["CommentTargetType"];
+            /**
+             * Workspace Id
+             * Format: uuid
+             */
+            workspace_id: string;
+        };
+        /**
+         * CommentList
+         * @description A page of comments. `next_cursor` is the id to pass as `cursor` for the next
+         *     page, and None on the last one.
+         */
+        CommentList: {
+            /**
+             * Can Comment
+             * @default false
+             */
+            can_comment: boolean;
+            /** Items */
+            items: components["schemas"]["Comment"][];
+            /**
+             * Next Cursor
+             * @default null
+             */
+            next_cursor: string | null;
+        };
+        /**
+         * CommentPeopleList
+         * @description The current members the caller can mention here: everyone but the caller.
+         */
+        CommentPeopleList: {
+            /** Items */
+            items: components["schemas"]["CommentPerson"][];
+        };
+        /**
+         * CommentPerson
+         * @description A member as a comment shows them: a name and the handle that mentions them.
+         *
+         *     `handle` is what follows `@` in a comment body. It is derived from the part of
+         *     the member's email address before the `@`, which every member of the
+         *     workspace can already read in its members list, and it becomes the whole
+         *     address only when two current members would otherwise share one handle.
+         *
+         *     Someone who has LEFT the workspace is still the author of what they wrote,
+         *     but nothing about them is served any more: `current_member` is False, and
+         *     `display_name` and `handle` are empty. Mentions never name a former member
+         *     at all; they are dropped when read.
+         */
+        CommentPerson: {
+            /**
+             * Current Member
+             * @default true
+             */
+            current_member: boolean;
+            /**
+             * Display Name
+             * @default null
+             */
+            display_name: string | null;
+            /**
+             * Handle
+             * @default
+             */
+            handle: string;
+            /**
+             * User Id
+             * Format: uuid
+             */
+            user_id: string;
+        };
+        /**
+         * CommentTargetType
+         * @description What a comment is on, named after the entity the rest of the API uses.
+         *
+         *     `artifact` is what Studio calls a saved circuit: the Studio page is
+         *     `/studio?artifact=<id>` and the resource is `/v1/artifacts/<id>`. Closed on
+         *     purpose — a new target type means a new existence check in the API and a new
+         *     value in the database CHECK, not a string a client can invent.
+         * @enum {string}
+         */
+        CommentTargetType: "run" | "notebook" | "artifact";
         /** CompilationResult */
         CompilationResult: {
             /** Accepted */
@@ -1603,6 +1743,22 @@ export interface components {
         CourseTurnList: {
             /** Items */
             items?: components["schemas"]["CourseTurn"][];
+        };
+        /** CreateCommentRequest */
+        CreateCommentRequest: {
+            /** Body */
+            body: string;
+            /**
+             * Parent Id
+             * @default null
+             */
+            parent_id: string | null;
+            /**
+             * Target Id
+             * Format: uuid
+             */
+            target_id: string;
+            target_type: components["schemas"]["CommentTargetType"];
         };
         /** CreateCourseRequest */
         CreateCourseRequest: {
@@ -5193,6 +5349,11 @@ export interface components {
          * @enum {string}
          */
         TopLevelExecution: "required" | "demo_only" | "forbidden";
+        /** UpdateCommentRequest */
+        UpdateCommentRequest: {
+            /** Body */
+            body: string;
+        };
         /** UpdateCourseRequest */
         UpdateCourseRequest: {
             /**
