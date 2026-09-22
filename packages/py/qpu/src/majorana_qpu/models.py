@@ -10,12 +10,22 @@ from __future__ import annotations
 from enum import StrEnum
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, computed_field
 
 
 class QpuProviderKey(StrEnum):
     IBM = "ibm"
     BRAKET = "braket"
+
+
+#: Providers a submission can actually be sent to. The rate card prices more
+#: providers than this (every Braket device), because an estimate needs only the
+#: vendor's published rates. A submission needs an adapter in the worker, and
+#: the worker has one for IBM only. A provider joins this set in the same change
+#: that adds its adapter; until then the API refuses the submission and the
+#: worker refuses the job, so a Braket device can never be run on IBM hardware
+#: under a Braket label and a Braket price.
+SUBMITTABLE_PROVIDERS: frozenset[QpuProviderKey] = frozenset({QpuProviderKey.IBM})
 
 
 class QpuAccess(StrEnum):
@@ -48,6 +58,12 @@ class QpuBackendInfo(BaseModel):
     rate_source: str
     rate_confirmed_on: str  # ISO date the source was fetched
 
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def submittable(self) -> bool:
+        """Whether Leona can send a job to this device today, or only price it."""
+        return self.provider in SUBMITTABLE_PROVIDERS
+
 
 class QpuCostEstimate(BaseModel):
     model_config = ConfigDict(frozen=True)
@@ -70,6 +86,9 @@ class QpuSubmissionBlockReason(StrEnum):
     CREDENTIALS_UNCONFIGURED = "credentials_unconfigured"
     PROVIDER_DEPENDENCY_MISSING = "provider_dependency_missing"
     UNKNOWN_DEVICE = "unknown_device"
+    #: The device is priced but its provider has no submit adapter (see
+    #: `SUBMITTABLE_PROVIDERS`).
+    PROVIDER_NOT_SUPPORTED = "provider_not_supported"
 
 
 class QpuJobStatus(StrEnum):

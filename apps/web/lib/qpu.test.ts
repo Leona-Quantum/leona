@@ -17,7 +17,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { QpuSubmissionRefused, submitQpuRun } from "./qpu.ts";
+import { QpuSubmissionRefused, isPricedOnly, submitQpuRun } from "./qpu.ts";
+import { WORKSPACE_COPY } from "./workspace-locale.ts";
 
 const REQUEST = {
   device_id: "braket.ionq.forte",
@@ -157,4 +158,35 @@ test("an accepted submission is still returned as the record", async () => {
   const record = await submitQpuRun(REQUEST);
   assert.equal(record.id, "record-1");
   assert.equal(record.status, "queued");
+});
+
+test("only an explicit submittable: false marks a device as priced-only", () => {
+  // Only IBM has a submit route. A Braket device is priced but Leona cannot run
+  // it, and before the API refused it the job ran on IBM under Braket's label.
+  assert.equal(isPricedOnly({ submittable: false }), true);
+  assert.equal(isPricedOnly({ submittable: true }), false);
+  // An API older than the field never refused on it, so absence is not a refusal.
+  assert.equal(isPricedOnly({}), false);
+});
+
+test("the provider_not_supported refusal reaches the screen as its reason", async () => {
+  respondWith(
+    { type: "about:blank", title: "request refused", status: 409, code: "http_error", blocked_reason: "provider_not_supported" },
+    409,
+  );
+  await assert.rejects(submitQpuRun(REQUEST), (error: unknown) => {
+    assert.ok(error instanceof QpuSubmissionRefused);
+    assert.equal(error.reason, "provider_not_supported");
+    return true;
+  });
+});
+
+test("both locales say why a priced-only device was refused, not the generic fallback", () => {
+  for (const locale of ["en", "ja"] as const) {
+    const studio = WORKSPACE_COPY[locale].studio;
+    const specific = studio.hardwareBlockedReason("provider_not_supported");
+    assert.notEqual(specific, studio.hardwareBlockedReason("a-reason-nobody-defined"), locale);
+    assert.match(specific, /IBM/, locale);
+    assert.match(studio.hardwarePricedOnly, /IBM/, locale);
+  }
 });
