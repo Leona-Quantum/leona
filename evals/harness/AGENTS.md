@@ -25,3 +25,10 @@ Runs the eval corpus through the real pipeline and scores it (Phase 2 step 7).
   paid run waits on the owner approving the spend, and the workflow that runs it on every
   model change lands with that approval (a `workflow_dispatch` draft is in this branch's
   history at 09a4c63f).
+- **`majorana_evals.jev_trial`** (ai-ops#358, owner: "option 1. i have created account")
+  is a DIFFERENT shape from the two above — it scores a RANKING (the Atlas method finder's
+  candidates) against a small curated ground truth, never the run pipeline/sandbox/DB. See
+  `evals/jev-trial/README.md` first, then `DERIVATION.md` for how the 18-case ground truth
+  was built and the (measured) finding that the current finder ranks a domain-only query
+  alphabetically by title. Zero-spend controls (`--ranker oracle/random/stub-jev`) run
+  today; `--ranker live-jev` needs `TYPESAFE_API_KEY` and is not wired into the product.

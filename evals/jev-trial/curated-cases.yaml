@@ -1,0 +1,222 @@
+# Curated ground truth for the Jev offline trial (ai-ops#358, owner: "option 1. i have
+# created account"). See DERIVATION.md for the full method; this file is the data.
+#
+# EVERY `expected_slugs` entry is derived MECHANICALLY from the Atlas catalog's own
+# per-record `topics` tags (apps/web/lib/repository/topics.ts's closed, rule-assigned
+# vocabulary — see that file's own header on why an assignment is reviewable, not
+# hand-labelled) or, where noted, a case-insensitive substring match against the
+# catalog's own `title` text. No record's fitness for a case was judged by reading its
+# physics and deciding it "seems right" — each `derivation` line names the exact
+# topic-tag intersection or title substring, checkable by grepping the corpus.
+#
+# This is OUR OWN small set (18 cases, 2026-09-21), built for this offline trial. It is
+# not an official Atlas ground-truth artifact, has not been reviewed by the owner, and
+# should not be read as a claim about which methods are objectively "best" for a stated
+# problem — only about which ones the catalog's own classification says are the closest
+# fit within the stated `domain` pool.
+#
+# `domain` is a domain-facet TopicId (the finder's `problem` filter — a HARD filter in
+# production, see finder.ts). `expected_pool_size` pins the size of that domain's full
+# candidate pool as measured 2026-09-21 (`node --experimental-strip-types` dump of
+# PUBLIC_REPOSITORY_ENTRIES); the loader recomputes it and raises if the corpus has
+# drifted, the same shape as the public-benchmark harness's dataset-hash pinning.
+cases:
+  - id: chem-phase-estimation
+    domain: chemistry
+    query: >-
+      I want to compute the ground-state energy of a molecule using quantum phase
+      estimation, not a variational method.
+    expected_slugs:
+      - quantum-phase-estimation
+      - molecular-energy-phase-estimation
+      - tensor-hypercontraction-block-encoding
+    expected_pool_size: 12
+    derivation: >-
+      topics ⊇ {chemistry, phase-estimation} — both catalog-assigned facets
+      (domain ∩ method).
+
+  - id: chem-variational-fermionic
+    domain: chemistry
+    query: >-
+      I need a variational ansatz for a molecular Hamiltonian encoded via a
+      fermion-to-qubit mapping such as Jordan-Wigner.
+    expected_slugs:
+      - h2-molecular-hamiltonian
+      - vqe-uccsd-ansatz
+      - vqe-k-upccgsd
+    expected_pool_size: 12
+    derivation: "topics ⊇ {chemistry, variational, fermionic-encoding} (3-facet intersection)."
+
+  - id: chem-block-encoding
+    domain: chemistry
+    query: >-
+      I need a block-encoding technique for quantum chemistry, such as tensor
+      hypercontraction.
+    expected_slugs:
+      - tensor-hypercontraction-block-encoding
+    expected_pool_size: 12
+    derivation: "topics ⊇ {chemistry, block-encoding}."
+
+  - id: materials-trotter-ising
+    domain: materials
+    query: >-
+      I want to Trotterize a transverse-field Ising Hamiltonian for a spin/materials
+      simulation.
+    expected_slugs:
+      - hamiltonian-simulation-ising
+      - benchmark-ising-trotter-3q
+      - benchmark-ising-trotter-16q
+    expected_pool_size: 14
+    derivation: "topics ⊇ {materials, trotterization}."
+
+  - id: materials-tfim-vqe-benchmark
+    domain: materials
+    query: >-
+      Give me a VQE ansatz benchmark circuit for the transverse-field Ising model.
+    expected_slugs:
+      - benchmark-tfim-vqe-3q
+      - benchmark-tfim-vqe-16q
+    expected_pool_size: 14
+    derivation: "topics ⊇ {materials, variational} (within the materials pool, exactly these two)."
+
+  - id: materials-adiabatic-ising-optimization
+    domain: materials
+    query: >-
+      I want an Ising-model formulation suited to adiabatic optimization of an
+      NP-hard problem, described in materials/spin-model terms.
+    expected_slugs:
+      - ising-formulations-np-problems
+    expected_pool_size: 14
+    derivation: "topics ⊇ {materials, adiabatic}."
+
+  - id: optimization-qaoa-benchmark
+    domain: optimization
+    query: "I need a QAOA ring-graph MaxCut benchmark circuit."
+    expected_slugs:
+      - benchmark-qaoa-ring-3q
+      - benchmark-qaoa-ring-16q
+    expected_pool_size: 17
+    derivation: "topics ⊇ {optimization, qaoa, benchmark-circuit} (3-facet intersection)."
+
+  - id: optimization-adiabatic
+    domain: optimization
+    query: >-
+      I want to solve a combinatorial optimization problem via adiabatic evolution,
+      not QAOA.
+    expected_slugs:
+      - quantum-adiabatic-evolution
+      - ising-formulations-np-problems
+    expected_pool_size: 17
+    derivation: "topics ⊇ {optimization, adiabatic}."
+
+  - id: optimization-quantum-walk-annealing
+    domain: optimization
+    query: >-
+      I need a quantum-walk-based sampling method for optimization, like simulated
+      annealing.
+    expected_slugs:
+      - quantum-simulated-annealing
+    expected_pool_size: 17
+    derivation: "topics ⊇ {optimization, quantum-walk}."
+
+  - id: ml-quantum-kernel-classifier
+    domain: machine-learning
+    query: >-
+      I want a quantum kernel method for a supervised classification or
+      anomaly-detection task, not a benchmark circuit or an image-processing routine.
+    expected_slugs:
+      - quantum-kernel-svm
+      - quantum-kernel-fraud-detection
+    expected_pool_size: 5
+    derivation: >-
+      topics ⊇ {machine-learning, quantum-kernel} MINUS records also carrying
+      benchmark-circuit (excludes the two phase-feature-map benchmarks);
+      quantum-edge-detection is excluded because it lacks the quantum-kernel tag.
+      All three tags are catalog-assigned.
+
+  - id: ml-quantum-kernel-benchmark
+    domain: machine-learning
+    query: >-
+      I need a benchmark circuit for a quantum kernel / phase feature map, for
+      scaling tests rather than an application.
+    expected_slugs:
+      - benchmark-phase-feature-map-3q
+      - benchmark-phase-feature-map-16q
+    expected_pool_size: 5
+    derivation: "topics ⊇ {machine-learning, quantum-kernel, benchmark-circuit}."
+
+  - id: finance-option-pricing
+    domain: finance
+    query: "I need to price options using quantum amplitude estimation."
+    expected_slugs:
+      - option-pricing-amplitude-estimation
+      - rainbow-options-amplitude-loading
+      - asian-option-pricing-karhunen-loeve
+    expected_pool_size: 7
+    derivation: >-
+      title contains "option" (case-insensitive), within the finance domain pool —
+      a catalog-text match, not a topic-tag intersection: this corpus does not
+      further sub-tag the amplitude-estimation family by application.
+
+  - id: finance-linear-system-hhl
+    domain: finance
+    query: "I need to solve a linear system for a finance application — an HHL-style method."
+    expected_slugs:
+      - hhl-linear-systems
+    expected_pool_size: 7
+    derivation: "topics ⊇ {finance, linear-algebra}."
+
+  - id: linear-algebra-oracle-quantum-walk
+    domain: linear-algebra
+    query: >-
+      I want an oracle/quantum-walk-based method for computing the effective
+      resistance of an electrical network.
+    expected_slugs:
+      - electrical-resistance
+    expected_pool_size: 13
+    derivation: "topics ⊇ {linear-algebra, oracle-query, quantum-walk}."
+
+  - id: cryptography-discrete-log
+    domain: cryptography
+    query: >-
+      I need a quantum algorithm for the discrete logarithm problem, standard or
+      elliptic-curve.
+    expected_slugs:
+      - discrete-logarithm
+      - elliptic-curve-discrete-log-resources
+    expected_pool_size: 5
+    derivation: >-
+      title contains "discrete log" (case-insensitive), within the cryptography
+      domain pool — distinguishes from shor-period-finding (factoring, not
+      discrete log) and finite-ring-ideals despite both sharing algorithmFamily
+      and the phase-estimation tag with the expected pair.
+
+  - id: communication-teleportation
+    domain: communication
+    query: >-
+      I want to transmit an unknown qubit's state to a distant party using
+      pre-shared entanglement and two classical bits.
+    expected_slugs:
+      - quantum-teleportation
+    expected_pool_size: 2
+    derivation: "topics ⊇ {communication} (pool size 2); title contains \"teleportation\"."
+
+  - id: communication-superdense-coding
+    domain: communication
+    query: >-
+      I want to send two classical bits of information by transmitting only one
+      qubit, using pre-shared entanglement.
+    expected_slugs:
+      - superdense-coding-circuit
+    expected_pool_size: 2
+    derivation: "topics ⊇ {communication} (pool size 2); title contains \"superdense coding\"."
+
+  - id: metrology-noon-state
+    domain: metrology
+    query: >-
+      I need a maximally phase-sensitive two-mode NOON state for interferometric
+      metrology.
+    expected_slugs:
+      - noon-state
+    expected_pool_size: 2
+    derivation: "topics ⊇ {metrology} (pool size 2); title contains \"NOON state\"."
