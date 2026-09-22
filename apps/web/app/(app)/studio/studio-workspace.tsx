@@ -46,7 +46,7 @@ import { CIRCUIT_FRAMEWORKS, circuitFramework, circuitFrameworkOrNull, isExecuta
 import { MAX_CPU_SEED, MAX_CPU_SHOTS, cpuSimulationEligibility, loadCpuSimulationRecords, runCpuSimulation, saveCpuSimulationRecord, sourceFingerprint, type CpuSimulationEligibility, type CpuSimulationLimits, type CpuSimulationRecord } from "../../../lib/studio-simulation";
 import { TIER_LIMITS } from "../../../lib/account-tier";
 import { formatShare, simulationChartData, simulationReading, type SimulationChartData, type SimulationReading } from "../../../lib/simulation-visual";
-import { QpuSubmissionRefused, backendNameOf, fetchLatestQpuRunFor, fetchQpuBackends, fetchQpuEstimate, fetchQpuRun, fetchQpuSubmissionGate, formatUsd, isPricedOnly, submitQpuRun, type QpuBackendInfo, type QpuCostEstimate, type QpuRunRecord, type QpuSubmissionGate } from "../../../lib/qpu";
+import { QPU_RUN_POLL_MS, QpuSubmissionRefused, afterRestore, backendNameOf, fetchLatestQpuRunFor, fetchQpuBackends, fetchQpuEstimate, fetchQpuRun, fetchQpuSubmissionGate, formatUsd, isPricedOnly, isUnfinishedRun, runForCircuit, submitQpuRun, type QpuBackendInfo, type QpuCostEstimate, type QpuRunRecord, type QpuSubmissionGate } from "../../../lib/qpu";
 import { WORKSPACE_COPY } from "../../../lib/workspace-locale";
 import { DEFAULT_RUN_SHOTS, sampling } from "../../../lib/studio-run-request";
 import { verificationFromMetadata, verificationFromResource, type VerificationCheck } from "../../../lib/verification-record";
@@ -3414,6 +3414,11 @@ function QpuLane({ artifact, shots, copy, limits }: { artifact: LibraryArtifact 
   const submittableQasm = artifact?.qasm && looksLikeOpenQasm3(artifact.qasm) ? artifact.qasm : null;
   const pricedOnly = backend !== null && isPricedOnly(backend);
   const circuitFingerprint = submittableQasm ? sourceFingerprint(submittableQasm) : null;
+  // The run the panel shows and polls: only ever one of the circuit on screen.
+  // `qpuRun` can hold another circuit's run (a lookup, poll or submission that
+  // answered after the reader switched artifacts); `runForCircuit` is what keeps
+  // that from being displayed or polled. See its doc comment.
+  const shownRun = runForCircuit(qpuRun, circuitFingerprint);
   const canSubmit = Boolean(
     gate?.submission_available && verified && submittableQasm && selected && !pricedOnly && !submitting,
   );
@@ -3435,37 +3440,53 @@ function QpuLane({ artifact, shots, copy, limits }: { artifact: LibraryArtifact 
       .finally(() => setSubmitting(false));
   }
 
-  // After a reload, bring back the latest run of THIS circuit (review finding on
-  // PR 957: a finished run used to vanish with the tab's memory). Matched on the
-  // same fingerprint the submission sent, so it can only restore a run of the
-  // exact program on screen, never a neighbour's. A run already in state wins:
-  // a submission made while this request was in flight is newer than anything
-  // it can return. A failed lookup leaves the panel as it was, since a history
-  // that could not be read says nothing about whether a run exists.
+  // Bring back the latest run of THIS circuit: after a reload (review finding on
+  // PR 957: a finished run used to vanish with the tab's memory), and after the
+  // reader switches to another circuit. Matched on the same fingerprint the
+  // submission sent, so it can only restore a run of the exact program on
+  // screen, never a neighbour's.
+  //
+  // A leftover run of the previous circuit is cleared first, which also stops
+  // its polling (the poll below follows `shownRun`, which is already null for
+  // it). The lookup's answer goes through `afterRestore`: a run of this circuit
+  // that arrived meanwhile wins, and switching again cancels this lookup
+  // before it can write. A failed lookup changes nothing, since a history that
+  // could not be read says nothing about whether a run exists.
   useEffect(() => {
-    if (!circuitFingerprint || qpuRun) return;
+    if (shownRun) return;
+    setQpuRun((current) => (current && current.source_fingerprint !== circuitFingerprint ? null : current));
+    if (!circuitFingerprint) return;
     let cancelled = false;
     fetchLatestQpuRunFor(circuitFingerprint)
       .then((latest) => {
-        if (!cancelled && latest) setQpuRun((current) => current ?? latest);
+        if (!cancelled) setQpuRun((current) => afterRestore(current, latest, circuitFingerprint));
       })
       .catch(() => undefined);
     return () => {
       cancelled = true;
     };
-  }, [circuitFingerprint, qpuRun]);
+  }, [circuitFingerprint, shownRun]);
 
   // A submitted job settles on the provider's schedule; poll the durable
-  // record until it reports a terminal state.
+  // record until it reports a terminal state. Follows `shownRun`, so switching
+  // circuits stops it, and an answer that lands after the switch (or after the
+  // record was replaced) is dropped rather than written over the new state.
   useEffect(() => {
-    if (!qpuRun || qpuRun.status === "done" || qpuRun.status === "error" || qpuRun.status === "cancelled") return;
+    if (!shownRun || !isUnfinishedRun(shownRun)) return;
+    const polledId = shownRun.id;
+    let cancelled = false;
     const timer = window.setInterval(() => {
-      fetchQpuRun(qpuRun.id)
-        .then((next) => setQpuRun(next))
+      fetchQpuRun(polledId)
+        .then((next) => {
+          if (!cancelled) setQpuRun((current) => (current && current.id === polledId ? next : current));
+        })
         .catch(() => undefined);
-    }, 10_000);
-    return () => window.clearInterval(timer);
-  }, [qpuRun]);
+    }, QPU_RUN_POLL_MS);
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+    };
+  }, [shownRun]);
 
   return (
     <div className="mj-qpu-lane" data-tour="studio-qpu">
@@ -3524,25 +3545,25 @@ function QpuLane({ artifact, shots, copy, limits }: { artifact: LibraryArtifact 
           {pricedOnly ? <p className="mj-qpu-note">{copy.hardwarePricedOnly}</p> : null}
           {gate && !gate.submission_available ? <p className="mj-qpu-note">{copy.hardwareBlockedReason(gate.blocked_reason ?? "")}</p> : null}
           {submitError ? <p className="mj-qpu-note" role="alert">{submitError}</p> : null}
-          {qpuRun ? (
+          {shownRun ? (
             <div className="mj-qpu-record" role="status">
               <dl className="mj-studio-contract">
-                <div><dt>{copy.hardwareJobStatus}</dt><dd>{qpuRun.status}</dd></div>
-                {qpuRun.provider_job_id ? <div><dt>{copy.hardwareJobId}</dt><dd>{qpuRun.provider_job_id}</dd></div> : null}
-                {backendNameOf(qpuRun) ? <div><dt>{copy.hardwareMachine}</dt><dd><code>{backendNameOf(qpuRun)}</code></dd></div> : null}
-                {qpuRun.error ? <div><dt>{copy.hardwareJobError}</dt><dd>{qpuRun.error}</dd></div> : null}
+                <div><dt>{copy.hardwareJobStatus}</dt><dd>{shownRun.status}</dd></div>
+                {shownRun.provider_job_id ? <div><dt>{copy.hardwareJobId}</dt><dd>{shownRun.provider_job_id}</dd></div> : null}
+                {backendNameOf(shownRun) ? <div><dt>{copy.hardwareMachine}</dt><dd><code>{backendNameOf(shownRun)}</code></dd></div> : null}
+                {shownRun.error ? <div><dt>{copy.hardwareJobError}</dt><dd>{shownRun.error}</dd></div> : null}
               </dl>
-              {qpuRun.raw_counts ? (
+              {shownRun.raw_counts ? (
                 <div className="mj-studio-simulation-counts">
                   <span className="mj-section-label">{copy.hardwareRawCounts}</span>
-                  <code>{Object.entries(qpuRun.raw_counts).sort(([, left], [, right]) => right - left).map(([bitstring, count]) => `${bitstring}: ${count}`).join("\n")}</code>
+                  <code>{Object.entries(shownRun.raw_counts).sort(([, left], [, right]) => right - left).map(([bitstring, count]) => `${bitstring}: ${count}`).join("\n")}</code>
                 </div>
               ) : null}
-              {qpuRun.status === "done" && qpuRun.raw_counts ? (
+              {shownRun.status === "done" && shownRun.raw_counts ? (
                 <QpuMeasuredVsIdeal
                   qasm={submittableQasm ?? ""}
-                  submittedFingerprint={qpuRun.source_fingerprint}
-                  counts={qpuRun.raw_counts}
+                  submittedFingerprint={shownRun.source_fingerprint}
+                  counts={shownRun.raw_counts}
                   limits={limits}
                   copy={copy}
                 />
