@@ -67,6 +67,13 @@ export const PUBLIC_PATHS: readonly string[] = [
   "/workspace",
   "/open-source",
   "/q",
+  // The view-only Qapp embed (ai-ops 355, owner ruling: "Any website may
+  // embed a published Qapp"). Its whole point is to be framed by a site with
+  // no session of its own, so it can never sit behind AuthKit — same
+  // reasoning as `/q` immediately above, which this mirrors. The route calls
+  // no auth API at all (`app/embed/q/[slug]/page.tsx`), so being on this list
+  // removes a gate that was never going to have anything to check anyway.
+  "/embed/q",
   "/contact",
   "/privacy",
   "/terms",

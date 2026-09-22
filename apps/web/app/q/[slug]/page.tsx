@@ -1,28 +1,14 @@
-import type { components } from "@majorana/contracts-gen";
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { cache } from "react";
 import { QappRuntime } from "../../../components/qapp-runtime";
 import { getMajoranaAuth } from "../../../lib/auth";
-import { controlPlaneUrl, fetchControlPlane } from "../../../lib/control-plane";
 import { qappCopy } from "../../../lib/qapp-copy";
 import { getPublicLocale } from "../../../lib/public-locale-server";
+// Shared with /embed/q/[slug] (ai-ops 355) — the one visibility check both
+// public-facing Qapp surfaces use. See lib/qapp-public.ts for why it lives
+// there now instead of here.
+import { loadPublicQapp } from "../../../lib/qapp-public";
 import { QappForkButton } from "./qapp-fork-button";
-
-type PublicQapp = components["schemas"]["PublicQapp"];
-
-/**
- * One control-plane read per request, shared by the metadata and the page.
- * `cache` dedupes within a render, so the title can be the Qapp's own title —
- * the tab used to read "bell-explorer-01a0ab5c… — Qapp", the slug with its
- * uuid tail, which is also what a shared link previewed as.
- */
-const loadPublicQapp = cache(async (slug: string): Promise<PublicQapp | null> => {
-  const response = await fetchControlPlane(controlPlaneUrl(`/v1/qapps/public/${encodeURIComponent(slug)}`));
-  if (response.status === 404) return null;
-  if (!response.ok) throw new Error("Qapp is temporarily unavailable");
-  return await response.json() as PublicQapp;
-});
 
 export async function generateMetadata({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;

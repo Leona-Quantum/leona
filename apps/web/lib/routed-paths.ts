@@ -161,6 +161,10 @@ export const ROUTED_SEGMENTS: readonly string[] = [
   "dashboard",
   "demo",
   "dev",
+  // The view-only Qapp embed (ai-ops 355), `/embed/q/<slug>`. Public by
+  // design — see `PUBLIC_PATHS` in public-paths.ts — and routed the same way
+  // `q` is: only the first segment matters here.
+  "embed",
   "events",
   "lab",
   "library",

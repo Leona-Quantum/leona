@@ -93,6 +93,17 @@ export const MACHINE_READABLE_PATHS: readonly string[] = ["/llms.txt"];
  * `/demo` and `/lab` are preview surfaces that only exist on some deployments
  * (`isPublicDemoEnabled()`; the lab is an alternative visual direction), so
  * indexing either would publish an address most visitors get a 404 from.
+ *
+ * `/embed` (ai-ops 355) is the one entry here that is fully public — it is in
+ * `public-paths.ts`'s `PUBLIC_PATHS`, unlike everything else on this list —
+ * and disallowed anyway, for a content reason rather than an access one:
+ * `/embed/q/<slug>` is a smaller rendering of `/q/<slug>`, built to sit inside
+ * someone else's `<iframe>`, and indexing it would put a widget in search
+ * results next to the real page it is a widget FOR. Each page also sets its
+ * own `robots: { index: false, follow: false }` (`app/embed/q/[slug]/page.tsx`);
+ * this is the second, disallow-file half of the same decision, not a
+ * duplicate of it — one is a request a crawler can ignore, the other is the
+ * standing instruction most crawlers actually read first.
  */
 export const CRAWLER_DISALLOWED_PATHS: readonly string[] = [
   "/account",
@@ -101,6 +112,7 @@ export const CRAWLER_DISALLOWED_PATHS: readonly string[] = [
   "/dashboard",
   "/demo",
   "/dev/",
+  "/embed",
   "/lab",
   "/library",
   "/notebooks",
