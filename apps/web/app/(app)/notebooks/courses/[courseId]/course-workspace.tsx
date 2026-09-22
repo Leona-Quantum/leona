@@ -7,6 +7,7 @@ import { useEffect, useRef, useState } from "react";
 import { ChevronIcon } from "../../../../../components/icons";
 import { ChatMarkdown } from "../../../../../components/chat-markdown";
 import { refusalSentence } from "../../../../../lib/api-error";
+import { courseHasGradableNotebook } from "../../../../../lib/course-gradebook";
 import {
   courseModuleStatusPill,
   courseProgress,
@@ -29,6 +30,7 @@ import {
 import type { PublicLocale } from "../../../../../lib/public-locale";
 import { useRunProgress } from "../../../../../lib/use-run-progress";
 import { WORKSPACE_COPY } from "../../../../../lib/workspace-locale";
+import { CourseGradebook } from "./course-gradebook";
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
@@ -435,6 +437,13 @@ export function CourseWorkspace({ courseId, locale = "en" }: { courseId: string;
           </form>
         </aside>
       </div>
+
+      {/* Only once a module has a notebook: before that there is nothing anyone
+          could have been graded on, and an empty gradebook under a plan that is
+          still being written reads as a failure rather than as "not yet". */}
+      {courseHasGradableNotebook(course.modules ?? []) ? (
+        <CourseGradebook courseId={course.id} courseSlug={course.slug} locale={locale} />
+      ) : null}
     </section>
   );
 }

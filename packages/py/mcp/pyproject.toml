@@ -1,0 +1,31 @@
+[project]
+name = "leona-mcp"
+version = "0.1.0"
+description = "A read-only MCP server over the public Quantum Atlas at leonaqt.com"
+readme = "README.md"
+requires-python = ">=3.12"
+license = "MIT"
+dependencies = [
+    # The official MCP Python SDK, held on the 1.x line. 2.x exists (2.0.0,
+    # 2026-07-28) and is maintained in parallel, but it moves to `httpx2`,
+    # `mcp-types` and `opentelemetry-api`, none of which this repo carries.
+    # 1.x resolves against the `httpx`, `starlette`, `uvicorn`, `pydantic`,
+    # `anyio`, `jsonschema` and `pyjwt` already in uv.lock.
+    "mcp>=1.27,<2",
+    # Already in uv.lock (the API's tests and the MCP SDK both use it). Named
+    # here because this package imports it directly.
+    "httpx>=0.27,<1",
+    # `server.py` imports `pydantic.Field` for the tool parameter schemas. The floor
+    # is the one mcp 1.x already requires, so this adds no constraint of its own.
+    "pydantic>=2.11,<3",
+]
+
+[project.scripts]
+leona-mcp = "leona_mcp.server:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/leona_mcp"]

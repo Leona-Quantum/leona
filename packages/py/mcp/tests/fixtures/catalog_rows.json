@@ -1,0 +1,1827 @@
+{
+ "_about": "Ten real rows of GET /v1/catalog/entries (the full view). Each `record` is the `source_blob` of the same slug in services/api/catalog_bootstrap/manifest.json (source_commit 56e14da1074f85b04f4cef4c417d5b4c0c449bda), parsed and not edited. The envelope fields beside it (slug, execution_state, updated_at, provenance) were copied from the production API on 2026-09-22. Chosen to cover: numeric and non-numeric Qubits and Depth rows, a portable circuit with and without angles, a recorded OpenQASM 3.0 variant, a speedup class checked and not checked against the primary paper, a 'Not stated' reported cost, and the one Readiness row in the corpus.",
+ "rows": [
+  {
+   "execution_state": "template_only",
+   "provenance": {
+    "import_provider": "catalog_bootstrap",
+    "source_blob_sha256": "2d38b1569415505673de2fd18fc0e9e05ec170a266d1fd5fef6732ca080e7f03",
+    "upstream_identity": "benchmark-ghz-chain-3q",
+    "upstream_ref": "d7b52ee71423334b1a542e5ad4594e399c81a13b"
+   },
+   "record": {
+    "algorithmFamily": "Entanglement benchmark",
+    "category": "basic-circuits",
+    "categoryLabel": "Basic circuits",
+    "categoryLabelJa": "基本回路",
+    "codeVariants": [
+     {
+      "code": "from qiskit import QuantumCircuit\n\nqc = QuantumCircuit(3)\nqc.h(0)\nqc.cx(0, 1)\nqc.cx(1, 2)\nqc.measure_all()\n\nFINAL_CIRCUIT = qc",
+      "filename": "benchmark-ghz-chain-3q.py",
+      "framework": "Qiskit",
+      "language": "python",
+      "status": "native"
+     }
+    ],
+    "description": "A width-scaled GHZ preparation circuit with one Hadamard and a nearest-neighbor CNOT chain.",
+    "descriptionJa": "1つのHadamardと最近接CNOTチェーンで構成する、幅可変のGHZ状態準備回路です。",
+    "explanation": "The circuit is stored once as a framework-neutral ordered gate graph and converted lazily when a framework is selected. The converter preserves gate order, numeric angle expressions, qubit indices, and terminal all-qubit measurement for its bounded gate set. It intentionally does not claim that downstream compiler decompositions or device behavior are identical. The cited MQT Bench work motivates scalable, cross-level benchmark families; this particular circuit is a Leona Quantum-authored scaffold and should be compared by width, operation count, transpiled depth, two-qubit count, and measured output behavior.",
+    "explanationJa": "この回路はフレームワークに依存しない順序付きゲートグラフとして保存し、選択したフレームワークへ表示時に変換します。対応するゲートの範囲では、ゲート順、数値角度、量子ビット番号、末尾の全量子ビット測定を保持します。ただし、各コンパイラでの分解や実機での動作が同じになるとは限りません。MQT Bench論文は、規模を変えられる多層的なベンチマーク方法の出典です。この回路自体はLeona Quantum独自のサンプル実装です。量子ビット数、演算数、変換後の深さ、2量子ビット演算数、測定結果を比較してください。",
+    "exportStatus": "Seven deterministic framework exports available from the portable circuit model",
+    "framework": "Qiskit",
+    "introduction": "A width-scaled GHZ preparation circuit with one Hadamard and a nearest-neighbor CNOT chain. This 3-qubit record gives the repository a concrete, inspectable circuit at a known width rather than only a family-level description.",
+    "introductionJa": "1つのHadamardと最近接CNOTチェーンで構成する、幅可変のGHZ状態準備回路です。 この3量子ビット項目は、ファミリー説明だけでなく、幅が明確な検査可能な回路を提供します。",
+    "literature": [
+     {
+      "authors": "Nils Quetschlich, Lukas Burgholzer, Robert Wille",
+      "relevance": "Defines a cross-level, scalable benchmark methodology; this entry is a Leona Quantum-authored portable scaffold, not a byte-for-byte upstream circuit.",
+      "relevanceJa": "抽象度と規模をまたぐベンチマーク方法論を示します。本項目はLeona Quantum独自の移植可能な回路で、上流回路の複製ではありません。",
+      "title": "MQT Bench: Benchmarking Software and Design Automation Tools for Quantum Computing",
+      "url": "https://arxiv.org/abs/2204.13719",
+      "year": "2022"
+     }
+    ],
+    "metadata": [
+     {
+      "label": "Circuit model",
+      "value": "Ordered portable gate graph"
+     },
+     {
+      "label": "Measurement",
+      "value": "Terminal all-qubit"
+     }
+    ],
+    "portableCircuit": {
+     "measure": true,
+     "qubitCount": 3,
+     "steps": [
+      {
+       "gate": "H",
+       "qubits": [
+        0
+       ]
+      },
+      {
+       "gate": "CX",
+       "qubits": [
+        0,
+        1
+       ]
+      },
+      {
+       "gate": "CX",
+       "qubits": [
+        1,
+        2
+       ]
+      }
+     ]
+    },
+    "provenance": "Leona Quantum portable benchmark expansion · MQT Bench methodology reference",
+    "relatedSlugs": [
+     "vqe-ground-state-energy",
+     "bell-state-qiskit"
+    ],
+    "resources": [
+     {
+      "label": "Qubits",
+      "value": "3"
+     },
+     {
+      "label": "Operations",
+      "value": "3"
+     },
+     {
+      "label": "Framework exports",
+      "value": "7"
+     }
+    ],
+    "slug": "benchmark-ghz-chain-3q",
+    "source": {
+     "kind": "curated_reference",
+     "license": "Citation metadata; Leona Quantum-authored scaffold",
+     "reviewedBy": "Leona Quantum curation pass",
+     "title": "MQT Bench: Benchmarking Software and Design Automation Tools for Quantum Computing",
+     "url": "https://arxiv.org/abs/2204.13719"
+    },
+    "sourceCoverage": {
+     "hardware": "unknown",
+     "simulation": "unknown",
+     "theory": "unknown"
+    },
+    "status": "verified_caveats",
+    "tags": [
+     "GHZ",
+     "entanglement",
+     "benchmark",
+     "3 qubits",
+     "seven-framework export"
+    ],
+    "title": "GHZ chain benchmark · 3 qubits",
+    "titleJa": "GHZチェーン・ベンチマーク・3量子ビット",
+    "topics": [
+     "benchmark-circuit",
+     "state-preparation"
+    ],
+    "updatedAt": "2026-07-18",
+    "verification": "Portable construction and seven-target code generation checked; no simulator, hardware, or performance result is claimed.",
+    "verificationDetails": {
+     "caveat": "This is a parameterized Leona Quantum benchmark scaffold informed by the cited suite, not an upstream benchmark file or a hardware result.",
+     "method": "Deterministic portable-gate construction plus catalog schema validation",
+     "result": "Pass · 3 qubits and 3 pre-measurement operations emit non-empty Qiskit, PennyLane, Cirq, CUDA-Q, Amazon Braket, OpenQASM 3.0, and PyQuil source."
+    },
+    "verificationMethods": [
+     "construction",
+     "research_paper"
+    ],
+    "visualization": {
+     "operations": [
+      {
+       "label": "H",
+       "qubits": [
+        0
+       ],
+       "tone": "neutral"
+      },
+      {
+       "label": "CX",
+       "qubits": [
+        0,
+        1
+       ],
+       "tone": "accent"
+      },
+      {
+       "label": "CX",
+       "qubits": [
+        1,
+        2
+       ],
+       "tone": "accent"
+      }
+     ],
+     "outcomes": [],
+     "wires": [
+      "q0",
+      "q1",
+      "q2"
+     ]
+    }
+   },
+   "slug": "benchmark-ghz-chain-3q",
+   "updated_at": "2026-07-19T09:47:25.716422Z"
+  },
+  {
+   "execution_state": "template_only",
+   "provenance": {
+    "import_provider": "catalog_bootstrap",
+    "source_blob_sha256": "24ef0038820a9e42c075609858ccc6473c9df958c2726c851e0caef6b1b4c6fa",
+    "upstream_identity": "benchmark-phase-feature-map-3q",
+    "upstream_ref": "d7b52ee71423334b1a542e5ad4594e399c81a13b"
+   },
+   "record": {
+    "algorithmFamily": "Quantum machine learning",
+    "category": "basic-circuits",
+    "categoryLabel": "Basic circuits",
+    "categoryLabelJa": "基本回路",
+    "codeVariants": [
+     {
+      "code": "from qiskit import QuantumCircuit\nfrom numpy import pi\n\nqc = QuantumCircuit(3)\nqc.h(0)\nqc.h(1)\nqc.h(2)\nqc.rz(1*pi/8, 0)\nqc.rz(2*pi/8, 1)\nqc.rz(3*pi/8, 2)\nqc.cx(0, 1)\nqc.rz(3*pi/8, 1)\nqc.cx(0, 1)\nqc.cx(1, 2)\nqc.rz(4*pi/8, 2)\nqc.cx(1, 2)\nqc.measure_all()\n\nFINAL_CIRCUIT = qc",
+      "filename": "benchmark-phase-feature-map-3q.py",
+      "framework": "Qiskit",
+      "language": "python",
+      "status": "native"
+     }
+    ],
+    "description": "A fixed-data feature-map scaffold with Hadamards, local phase rotations, and pairwise ZZ encodings.",
+    "descriptionJa": "Hadamard、局所位相回転、ペアZZ符号化を組み合わせた固定データ特徴量マップです。",
+    "explanation": "The circuit is stored once as a framework-neutral ordered gate graph and converted lazily when a framework is selected. The converter preserves gate order, numeric angle expressions, qubit indices, and terminal all-qubit measurement for its bounded gate set. It intentionally does not claim that downstream compiler decompositions or device behavior are identical. The cited MQT Bench work motivates scalable, cross-level benchmark families; this particular circuit is a Leona Quantum-authored scaffold and should be compared by width, operation count, transpiled depth, two-qubit count, and measured output behavior.",
+    "explanationJa": "この回路はフレームワークに依存しない順序付きゲートグラフとして保存し、選択したフレームワークへ表示時に変換します。対応するゲートの範囲では、ゲート順、数値角度、量子ビット番号、末尾の全量子ビット測定を保持します。ただし、各コンパイラでの分解や実機での動作が同じになるとは限りません。MQT Bench論文は、規模を変えられる多層的なベンチマーク方法の出典です。この回路自体はLeona Quantum独自のサンプル実装です。量子ビット数、演算数、変換後の深さ、2量子ビット演算数、測定結果を比較してください。",
+    "exportStatus": "Seven deterministic framework exports available from the portable circuit model",
+    "framework": "Qiskit",
+    "introduction": "A fixed-data feature-map scaffold with Hadamards, local phase rotations, and pairwise ZZ encodings. This 3-qubit record gives the repository a concrete, inspectable circuit at a known width rather than only a family-level description.",
+    "introductionJa": "Hadamard、局所位相回転、ペアZZ符号化を組み合わせた固定データ特徴量マップです。 この3量子ビット項目は、ファミリー説明だけでなく、幅が明確な検査可能な回路を提供します。",
+    "literature": [
+     {
+      "authors": "Nils Quetschlich, Lukas Burgholzer, Robert Wille",
+      "relevance": "Defines a cross-level, scalable benchmark methodology; this entry is a Leona Quantum-authored portable scaffold, not a byte-for-byte upstream circuit.",
+      "relevanceJa": "抽象度と規模をまたぐベンチマーク方法論を示します。本項目はLeona Quantum独自の移植可能な回路で、上流回路の複製ではありません。",
+      "title": "MQT Bench: Benchmarking Software and Design Automation Tools for Quantum Computing",
+      "url": "https://arxiv.org/abs/2204.13719",
+      "year": "2022"
+     }
+    ],
+    "metadata": [
+     {
+      "label": "Circuit model",
+      "value": "Ordered portable gate graph"
+     },
+     {
+      "label": "Measurement",
+      "value": "Terminal all-qubit"
+     }
+    ],
+    "portableCircuit": {
+     "measure": true,
+     "qubitCount": 3,
+     "steps": [
+      {
+       "gate": "H",
+       "qubits": [
+        0
+       ]
+      },
+      {
+       "gate": "H",
+       "qubits": [
+        1
+       ]
+      },
+      {
+       "gate": "H",
+       "qubits": [
+        2
+       ]
+      },
+      {
+       "gate": "RZ",
+       "param": "1*pi/8",
+       "qubits": [
+        0
+       ]
+      },
+      {
+       "gate": "RZ",
+       "param": "2*pi/8",
+       "qubits": [
+        1
+       ]
+      },
+      {
+       "gate": "RZ",
+       "param": "3*pi/8",
+       "qubits": [
+        2
+       ]
+      },
+      {
+       "gate": "CX",
+       "qubits": [
+        0,
+        1
+       ]
+      },
+      {
+       "gate": "RZ",
+       "param": "3*pi/8",
+       "qubits": [
+        1
+       ]
+      },
+      {
+       "gate": "CX",
+       "qubits": [
+        0,
+        1
+       ]
+      },
+      {
+       "gate": "CX",
+       "qubits": [
+        1,
+        2
+       ]
+      },
+      {
+       "gate": "RZ",
+       "param": "4*pi/8",
+       "qubits": [
+        2
+       ]
+      },
+      {
+       "gate": "CX",
+       "qubits": [
+        1,
+        2
+       ]
+      }
+     ]
+    },
+    "provenance": "Leona Quantum portable benchmark expansion · MQT Bench methodology reference",
+    "relatedSlugs": [
+     "vqe-ground-state-energy",
+     "bell-state-qiskit"
+    ],
+    "resources": [
+     {
+      "label": "Qubits",
+      "value": "3"
+     },
+     {
+      "label": "Operations",
+      "value": "12"
+     },
+     {
+      "label": "Framework exports",
+      "value": "7"
+     }
+    ],
+    "slug": "benchmark-phase-feature-map-3q",
+    "source": {
+     "kind": "curated_reference",
+     "license": "Citation metadata; Leona Quantum-authored scaffold",
+     "reviewedBy": "Leona Quantum curation pass",
+     "title": "MQT Bench: Benchmarking Software and Design Automation Tools for Quantum Computing",
+     "url": "https://arxiv.org/abs/2204.13719"
+    },
+    "sourceCoverage": {
+     "hardware": "unknown",
+     "simulation": "unknown",
+     "theory": "unknown"
+    },
+    "status": "verified_caveats",
+    "tags": [
+     "feature map",
+     "quantum kernel",
+     "QML",
+     "3 qubits",
+     "seven-framework export"
+    ],
+    "title": "Phase feature-map benchmark · 3 qubits",
+    "titleJa": "位相特徴量マップ・ベンチマーク・3量子ビット",
+    "topics": [
+     "benchmark-circuit",
+     "quantum-kernel",
+     "machine-learning"
+    ],
+    "updatedAt": "2026-07-18",
+    "verification": "Portable construction and seven-target code generation checked; no simulator, hardware, or performance result is claimed.",
+    "verificationDetails": {
+     "caveat": "This is a parameterized Leona Quantum benchmark scaffold informed by the cited suite, not an upstream benchmark file or a hardware result.",
+     "method": "Deterministic portable-gate construction plus catalog schema validation",
+     "result": "Pass · 3 qubits and 12 pre-measurement operations emit non-empty Qiskit, PennyLane, Cirq, CUDA-Q, Amazon Braket, OpenQASM 3.0, and PyQuil source."
+    },
+    "verificationMethods": [
+     "construction",
+     "research_paper"
+    ],
+    "visualization": {
+     "operations": [
+      {
+       "label": "H",
+       "qubits": [
+        0
+       ],
+       "tone": "neutral"
+      },
+      {
+       "label": "H",
+       "qubits": [
+        1
+       ],
+       "tone": "neutral"
+      },
+      {
+       "label": "H",
+       "qubits": [
+        2
+       ],
+       "tone": "neutral"
+      },
+      {
+       "label": "RZ",
+       "qubits": [
+        0
+       ],
+       "tone": "warn"
+      },
+      {
+       "label": "RZ",
+       "qubits": [
+        1
+       ],
+       "tone": "warn"
+      },
+      {
+       "label": "RZ",
+       "qubits": [
+        2
+       ],
+       "tone": "warn"
+      },
+      {
+       "label": "CX",
+       "qubits": [
+        0,
+        1
+       ],
+       "tone": "accent"
+      },
+      {
+       "label": "RZ",
+       "qubits": [
+        1
+       ],
+       "tone": "warn"
+      },
+      {
+       "label": "CX",
+       "qubits": [
+        0,
+        1
+       ],
+       "tone": "accent"
+      },
+      {
+       "label": "CX",
+       "qubits": [
+        1,
+        2
+       ],
+       "tone": "accent"
+      },
+      {
+       "label": "RZ",
+       "qubits": [
+        2
+       ],
+       "tone": "warn"
+      },
+      {
+       "label": "CX",
+       "qubits": [
+        1,
+        2
+       ],
+       "tone": "accent"
+      }
+     ],
+     "outcomes": [],
+     "wires": [
+      "q0",
+      "q1",
+      "q2"
+     ]
+    }
+   },
+   "slug": "benchmark-phase-feature-map-3q",
+   "updated_at": "2026-07-19T09:49:15.923923Z"
+  },
+  {
+   "execution_state": "template_only",
+   "provenance": {
+    "import_provider": "catalog_bootstrap",
+    "source_blob_sha256": "514e91a205aa2e7e03e111b520fe995428f85d841bc688902d6d015f28f91fa9",
+    "upstream_identity": "bernstein-vazirani-qiskit",
+    "upstream_ref": "d7b52ee71423334b1a542e5ad4594e399c81a13b"
+   },
+   "record": {
+    "algorithmFamily": "Quantum query algorithm",
+    "category": "algorithms",
+    "categoryLabel": "Algorithms",
+    "categoryLabelJa": "アルゴリズム",
+    "codeVariants": [
+     {
+      "code": "from qiskit import QuantumCircuit\n\nsecret = '101'\nqc = QuantumCircuit(len(secret) + 1, len(secret))\nqc.x(len(secret))\nqc.h(range(len(secret) + 1))\nfor index, bit in enumerate(reversed(secret)):\n    if bit == '1':\n        qc.cx(index, len(secret))\nqc.h(range(len(secret)))\nqc.measure(range(len(secret)), range(len(secret)))\n\nFINAL_CIRCUIT = qc",
+      "filename": "bernstein_vazirani.py",
+      "framework": "Qiskit",
+      "language": "python",
+      "status": "native"
+     }
+    ],
+    "description": "A query circuit that recovers the hidden bit string in f(x) = s · x.",
+    "descriptionJa": "f(x) = s · xに埋め込まれた隠れたビット列を復元するクエリ回路です。",
+    "explanation": "A parity oracle applies CX from every secret-bit position set to 1 into the output qubit. Hadamard interference then exposes s in the input register.",
+    "explanationJa": "パリティオラクルは秘密ビットが1の位置から出力量子ビットへCXを適用します。Hによる干渉で入力レジスタにsが現れます。",
+    "explanationMd": "Bernstein–Vazirani recovers a hidden bit string $s\\in\\{0,1\\}^n$ from an oracle for the parity function $f(x)=s\\cdot x=\\bigoplus_i s_i x_i \\bmod 2$. The circuit prepares the output qubit in $|-\\rangle$ and the input register in superposition, queries $U_f$ once — phase kickback writes $(-1)^{s\\cdot x}$ onto $|x\\rangle$ — and applies $H^{\\otimes n}$ to the input register, which by the Hadamard/Fourier identity collapses it exactly to the basis state $|s\\rangle$: measuring returns $s$ with certainty in the ideal circuit. Classically, determining an $n$-bit $s$ from black-box parity queries requires $n$ queries (one per standard basis vector), so the quantum circuit gives an $n$-to-$1$ query reduction under this promise, not a general search speedup. This record reviews the CX-based parity-oracle construction and its Deutsch–Jozsa-style readout; the one-query claim is scoped to this query/promise model, and oracle-construction and state-preparation costs stay visible rather than folded into the count.",
+    "explanationMdJa": "Bernstein–Vaziraniは、パリティ関数 $f(x)=s\\cdot x=\\bigoplus_i s_i x_i \\bmod 2$ のオラクルから隠れたビット列$s\\in\\{0,1\\}^n$を復元します。回路は出力量子ビットを$|-\\rangle$に、入力レジスタを重ね合わせに用意し、$U_f$を1回呼び出します(位相キックバックにより$|x\\rangle$に$(-1)^{s\\cdot x}$が書き込まれます)。その後入力レジスタに$H^{\\otimes n}$を適用すると、Hadamard/フーリエ恒等式により、レジスタは厳密に基底状態$|s\\rangle$へ収束し、理想回路では測定すると確実に$s$が得られます。古典的には、ブラックボックスのパリティクエリから$n$ビットの$s$を決定するには標準基底ベクトルごとに1回、計$n$回のクエリが必要です。したがって量子回路はこの約束の下で$n$対$1$のクエリ削減を与えますが、一般的な探索の高速化ではありません。この項目は、CXベースのパリティオラクル構成とそのDeutsch–Jozsa型読み出しをレビューしたものです。1回のクエリという主張はこのクエリ・約束モデルに限定されており、オラクル構成と状態準備のコストはクエリ数に埋め込まれず明示されたままです。",
+    "exportStatus": "Native Qiskit · oracle construction classified separately",
+    "framework": "Qiskit",
+    "introduction": "Bernstein–Vazirani is a useful companion to Deutsch–Jozsa because it returns the hidden string rather than only its promise class.",
+    "introductionJa": "Bernstein–Vaziraniは、関数の分類だけでなく隠れた文字列を返すため、Deutsch–Jozsaと比較できる例です。",
+    "literature": [
+     {
+      "authors": "Michael A. Nielsen and Isaac L. Chuang",
+      "relevance": "Standard graduate textbook covering the single- and two-qubit gate definitions, matrix identities, and circuit primitives this record states.",
+      "relevanceJa": "この項目が示す1・2量子ビットゲートの定義、行列恒等式、回路プリミティブを扱う標準的な大学院教科書です。",
+      "title": "Quantum Computation and Quantum Information: 10th Anniversary Edition",
+      "url": "https://doi.org/10.1017/cbo9780511976667",
+      "year": "2010"
+     }
+    ],
+    "metadata": [
+     {
+      "label": "Function",
+      "value": "f(x) = s · x mod 2"
+     },
+     {
+      "label": "Quantum queries",
+      "value": "1"
+     },
+     {
+      "label": "Classical queries",
+      "value": "n"
+     }
+    ],
+    "provenance": "Primary paper",
+    "relatedSlugs": [
+     "deutsch-jozsa-cirq"
+    ],
+    "resources": [
+     {
+      "label": "Qubits",
+      "value": "n + 1"
+     },
+     {
+      "label": "Depth",
+      "value": "oracle-dependent"
+     },
+     {
+      "label": "Queries",
+      "value": "1"
+     }
+    ],
+    "slug": "bernstein-vazirani-qiskit",
+    "source": {
+     "kind": "curated_reference",
+     "license": "CC BY 4.0-compatible reference metadata",
+     "reviewedBy": "Leona Quantum curation pass",
+     "title": "Quantum Complexity Theory",
+     "url": "https://doi.org/10.1137/s0097539796300921"
+    },
+    "sourceCoverage": {
+     "hardware": "unknown",
+     "simulation": "unknown",
+     "theory": "unknown"
+    },
+    "status": "verified_caveats",
+    "tags": [
+     "query",
+     "hidden string",
+     "oracle",
+     "Qiskit"
+    ],
+    "title": "Bernstein–Vazirani hidden-string circuit",
+    "titleJa": "Bernstein–Vazirani隠れ文字列回路",
+    "topics": [
+     "algorithm-reference",
+     "oracle-query"
+    ],
+    "updatedAt": "2026-07-15",
+    "verification": "Secret-string recovery circuit reviewed",
+    "verificationDetails": {
+     "caveat": "The one-query claim is for the promise/query model; state preparation, oracle construction, and readout costs remain visible.",
+     "method": "Construct a parity oracle for a fixed secret string and inspect the Deutsch–Jozsa-style readout.",
+     "result": "The ideal circuit returns the encoded secret string with one oracle query."
+    },
+    "verificationMethods": [
+     "construction",
+     "textbook_citation"
+    ],
+    "visualization": {
+     "operations": [
+      {
+       "label": "H",
+       "qubits": [
+        0,
+        1,
+        2,
+        3
+       ],
+       "tone": "accent"
+      },
+      {
+       "label": "U_s",
+       "qubits": [
+        0,
+        1,
+        2,
+        3
+       ],
+       "tone": "ok"
+      },
+      {
+       "label": "M",
+       "qubits": [
+        0,
+        1,
+        2
+       ],
+       "tone": "warn"
+      }
+     ],
+     "outcomes": [
+      {
+       "label": "secret s",
+       "probability": 1
+      }
+     ],
+     "wires": [
+      "x[0]",
+      "x[1]",
+      "x[2]",
+      "out"
+     ]
+    }
+   },
+   "slug": "bernstein-vazirani-qiskit",
+   "updated_at": "2026-07-19T09:50:28.686486Z"
+  },
+  {
+   "execution_state": "template_only",
+   "provenance": {
+    "import_provider": "catalog_bootstrap",
+    "source_blob_sha256": "23ff063dba8a066b32e2b5ceb0c97292766550d220eeb978e3c9e4772b18e527",
+    "upstream_identity": "decoded-quantum-interferometry",
+    "upstream_ref": "d7b52ee71423334b1a542e5ad4594e399c81a13b"
+   },
+   "record": {
+    "algorithmFamily": "Optimization · decoded interferometry",
+    "category": "algorithms",
+    "categoryLabel": "Algorithms",
+    "categoryLabelJa": "アルゴリズム",
+    "codeVariants": [
+     {
+      "code": "ALGORITHM: Optimization by decoded quantum interferometry\nPROBLEM: Given a set of constraints over a finite field, such as a max-XORSAT instance or the task of finding a degree-n polynomial over 𝔽ₚ that approximates a given data set as well as possible, produce an assignment that satisfies as many constraints as possible.\nIDEA: Decoded Quantum Interferometry uses the quantum Fourier transform to reduce the optimization problem to a decoding problem, so the number of constraints the output satisfies is set by the number of errors that can be decoded. When each constraint depends on only a few variables, the induced code is a classical LDPC code, which efficient classical decoders such as belief propagation handle at large error counts. When the constraints carry algebraic structure, as in polynomial fitting over 𝔽ₚ, that structure carries over to the decoding problem and yields Reed-Solomon codes, which classical algorithms decode up to half their distance; this is the regime where the paper claims its speedup. The construction is built on Regev's reduction.\nREPORTED COST: Not stated by the sources read\nBASIS: abstract of arXiv:2408.08292: \"For approximating optimal polynomial fits over finite fields, DQI achieves a superpolynomial speedup over known classical algorithms.\" That abstract states no explicit query, gate, or qubit count, and the Quantum Algorithm Zoo entry likewise quotes no bound, classing the entry as \"Superpolynomial\" and describing the polynomial-regression case as \"apparent exponential speedup\".\nPRIMARY SOURCE: Stephen P. Jordan, Noah Shutty, Mary Wootters, Adam Zalcman, Alexander Schmidhuber, Robbie King, Sergei V. Isakov, Tanuj Khattar, Ryan Babbush (2024), Optimization by Decoded Quantum Interferometry — https://arxiv.org/abs/2408.08292\n\nThis is a literature reference record, not an executable circuit.",
+      "filename": "decoded-quantum-interferometry.txt",
+      "framework": "Qiskit",
+      "language": "text",
+      "note": "A reference record, not runnable source. Leona cannot execute it, so it cannot be saved to your Library as a circuit.",
+      "status": "unsupported"
+     }
+    ],
+    "description": "Given a set of constraints over a finite field, such as a max-XORSAT instance or the task of finding a degree-n polynomial over 𝔽ₚ that approximates a given data set as well as possible, produce an assignment that satisfies as many constraints as possible.",
+    "descriptionJa": "有限体上の制約集合、たとえばmax-XORSATインスタンスや、与えられたデータ集合を𝔽ₚ上でできるだけよく近似する次数nの多項式を求める課題に対し、満たす制約の数ができるだけ多い割り当てを出力します。",
+    "explanation": "Decoded Quantum Interferometry uses the quantum Fourier transform to reduce the optimization problem to a decoding problem, so the number of constraints the output satisfies is set by the number of errors that can be decoded. When each constraint depends on only a few variables, the induced code is a classical LDPC code, which efficient classical decoders such as belief propagation handle at large error counts. When the constraints carry algebraic structure, as in polynomial fitting over 𝔽ₚ, that structure carries over to the decoding problem and yields Reed-Solomon codes, which classical algorithms decode up to half their distance; this is the regime where the paper claims its speedup. The construction is built on Regev's reduction. This record's speedup class, \"Superpolynomial\", is a secondary source's classification of the optimization, numerics, and machine learning it files this under — not a claim its primary paper makes. Not checked against the primary source yet. The sources read state no complexity bound for this record (abstract of arXiv:2408.08292: \"For approximating optimal polynomial fits over finite fields, DQI achieves a superpolynomial speedup over known classical algorithms.\" That abstract states no explicit query, gate, or qubit count, and the Quantum Algorithm Zoo entry likewise quotes no bound, classing the entry as \"Superpolynomial\" and describing the polynomial-regression case as \"apparent exponential speedup\".).",
+    "explanationJa": "DQIは量子フーリエ変換を用いて最適化問題を復号問題へ帰着させ、出力が満たす制約の個数は復号できる誤りの個数によって決まります。各制約が少数の変数にしか依存しない場合、得られる符号は古典LDPC符号となり、信念伝播などの効率的な古典復号器が多数の誤りを訂正できます。制約に代数的構造がある場合、たとえば𝔽ₚ上の多項式フィッティングでは、その構造が復号問題側へ引き継がれてReed-Solomon符号となり、最小距離の半分まで古典的に復号できます。論文が高速化を主張しているのはこの領域で、全体はRegevの帰着の上に構成されています。本記録の速度向上の区分「Superpolynomial」は、二次資料が分類したものであり、一次論文の主張ではありません。一次資料との照合はまだ行っていません。参照した出典は本記録に対する計算量の上界を述べていません。",
+    "exportStatus": "Literature reference · no circuit supplied",
+    "framework": "Qiskit",
+    "introduction": "Given a set of constraints over a finite field, such as a max-XORSAT instance or the task of finding a degree-n polynomial over 𝔽ₚ that approximates a given data set as well as possible, produce an assignment that satisfies as many constraints as possible. Decoded Quantum Interferometry uses the quantum Fourier transform to reduce the optimization problem to a decoding problem, so the number of constraints the output satisfies is set by the number of errors that can be decoded. When each constraint depends on only a few variables, the induced code is a classical LDPC code, which efficient classical decoders such as belief propagation handle at large error counts. When the constraints carry algebraic structure, as in polynomial fitting over 𝔽ₚ, that structure carries over to the decoding problem and yields Reed-Solomon codes, which classical algorithms decode up to half their distance; this is the regime where the paper claims its speedup. The construction is built on Regev's reduction.",
+    "introductionJa": "有限体上の制約集合、たとえばmax-XORSATインスタンスや、与えられたデータ集合を𝔽ₚ上でできるだけよく近似する次数nの多項式を求める課題に対し、満たす制約の数ができるだけ多い割り当てを出力します。DQIは量子フーリエ変換を用いて最適化問題を復号問題へ帰着させ、出力が満たす制約の個数は復号できる誤りの個数によって決まります。各制約が少数の変数にしか依存しない場合、得られる符号は古典LDPC符号となり、信念伝播などの効率的な古典復号器が多数の誤りを訂正できます。制約に代数的構造がある場合、たとえば𝔽ₚ上の多項式フィッティングでは、その構造が復号問題側へ引き継がれてReed-Solomon符号となり、最小距離の半分まで古典的に復号できます。論文が高速化を主張しているのはこの領域で、全体はRegevの帰着の上に構成されています。",
+    "literature": [
+     {
+      "authors": "Stephen P. Jordan, Noah Shutty, Mary Wootters, Adam Zalcman, Alexander Schmidhuber, Robbie King, Sergei V. Isakov, Tanuj Khattar, Ryan Babbush",
+      "relevance": "Primary paper introducing DQI, the reduction from optimization to decoding via the quantum Fourier transform, the polynomial-fit speedup claim over finite fields, and the max-XORSAT instance on which DQI is compared with classical heuristics.",
+      "relevanceJa": "DQIを導入した一次文献です。量子フーリエ変換による最適化から復号への帰着、有限体上の多項式フィッティングにおける高速化の主張、古典ヒューリスティクスと比較したmax-XORSATインスタンスが記載されています。",
+      "title": "Optimization by Decoded Quantum Interferometry",
+      "url": "https://arxiv.org/abs/2408.08292",
+      "year": "2024"
+     }
+    ],
+    "metadata": [
+     {
+      "label": "Speedup class",
+      "value": "Superpolynomial (not yet checked against the record's own primary paper)"
+     },
+     {
+      "label": "Complexity basis",
+      "value": "abstract of arXiv:2408.08292: \"For approximating optimal polynomial fits over finite fields, DQI achieves a superpolynomial speedup over known classical algorithms.\" That abstract states no explicit query, gate, or qubit count, and the Quantum Algorithm Zoo entry likewise quotes no bound, classing the entry as \"Superpolynomial\" and describing the polynomial-regression case as \"apparent exponential speedup\"."
+     },
+     {
+      "label": "Circuit",
+      "value": "Not supplied"
+     }
+    ],
+    "provenance": "Leona Quantum Zoo-parity intake",
+    "relatedSlugs": [
+     "quantum-fourier-transform",
+     "qaoa-maxcut-ring"
+    ],
+    "resources": [
+     {
+      "label": "Record type",
+      "value": "Literature reference"
+     },
+     {
+      "label": "Speedup class (secondary source)",
+      "value": "Superpolynomial"
+     },
+     {
+      "label": "Primary source on the speedup",
+      "value": "Not checked against the primary source yet"
+     },
+     {
+      "label": "Reported cost",
+      "value": "Not stated by the sources read"
+     }
+    ],
+    "slug": "decoded-quantum-interferometry",
+    "source": {
+     "kind": "curated_reference",
+     "license": "Citation metadata only; source publication terms apply",
+     "reviewedBy": "Leona Quantum curation pass",
+     "title": "Optimization by Decoded Quantum Interferometry",
+     "url": "https://arxiv.org/abs/2408.08292"
+    },
+    "sourceCoverage": {
+     "hardware": "unknown",
+     "simulation": "unknown",
+     "theory": "unknown"
+    },
+    "status": "verified_caveats",
+    "tags": [
+     "optimization",
+     "decoding",
+     "quantum fourier transform",
+     "ldpc",
+     "reed-solomon"
+    ],
+    "title": "Optimization by decoded quantum interferometry",
+    "titleJa": "復号量子干渉法（DQI）による最適化",
+    "topics": [
+     "algorithm-reference",
+     "optimization"
+    ],
+    "updatedAt": "2026-08-12",
+    "verification": "Literature record · problem statement recorded from the literature; speedup class not yet checked against the record's own primary paper · primary reference checked against its arXiv abs page",
+    "verificationDetails": {
+     "caveat": "This record cites a published claim; no circuit was constructed, simulated, run, or benchmarked here. The speedup is stated relative to known classical algorithms for optimal polynomial fits over finite fields rather than proven as a separation, and the paper itself reports that on the max-XORSAT instance it constructs, a tailored classical solver outperforms DQI even though DQI finds an approximate optimum significantly faster than general-purpose classical heuristics such as simulated annealing. How many constraints are satisfied is inherited from whichever decoder is used, so no approximation guarantee is recorded here independent of that decoder, and no qubit count, circuit depth, or fault-tolerance estimate is established.",
+     "method": "Curation only. The problem statement was recorded from the literature; the speedup class is not yet checked against the record's own primary paper; the primary reference's title, authors and submission year were read from its arXiv abs page; the complexity claim was taken from a clause of that paper's abstract (abstract of arXiv:2408.08292: \"For approximating optimal polynomial fits over finite fields, DQI achieves a superpolynomial speedup over known classical algorithms.\" That abstract states no explicit query, gate, or qubit count, and the Quantum Algorithm Zoo entry likewise quotes no bound, classing the entry as \"Superpolynomial\" and describing the polynomial-regression case as \"apparent exponential speedup\".). No circuit was constructed, simulated or run.",
+     "result": "Pass · the record's problem, speedup class and primary reference agree with the two sources named above."
+    },
+    "verificationMethods": [
+     "research_paper"
+    ],
+    "visualization": {
+     "operations": [
+      {
+       "label": "encode",
+       "qubits": [
+        0
+       ],
+       "tone": "neutral"
+      },
+      {
+       "label": "transform",
+       "qubits": [
+        0,
+        1
+       ],
+       "tone": "accent"
+      },
+      {
+       "label": "measure",
+       "qubits": [
+        1,
+        2
+       ],
+       "tone": "warn"
+      }
+     ],
+     "outcomes": [],
+     "wires": [
+      "problem",
+      "algorithm",
+      "readout"
+     ]
+    }
+   },
+   "slug": "decoded-quantum-interferometry",
+   "updated_at": "2026-08-11T23:33:44.444838Z"
+  },
+  {
+   "execution_state": "template_only",
+   "provenance": {
+    "import_provider": "catalog_bootstrap",
+    "source_blob_sha256": "5af0727be15c12d7c074402558fe86ab3db707064ba25d95418343e8dbce951a",
+    "upstream_identity": "grover-unstructured-search",
+    "upstream_ref": "d7b52ee71423334b1a542e5ad4594e399c81a13b"
+   },
+   "record": {
+    "algorithmFamily": "Amplitude amplification",
+    "category": "algorithms",
+    "categoryLabel": "Algorithms",
+    "categoryLabelJa": "アルゴリズム",
+    "classicalComparison": {
+     "baseline": "Linear scan or a classical indexed data structure, depending on whether the oracle is already available.",
+     "baselineJa": "オラクルが既にあるかに応じて、線形走査または古典インデックス構造を比較対象にします。",
+     "metrics": [
+      {
+       "classical": "O(N)",
+       "label": "Query complexity",
+       "labelJa": "クエリ計算量",
+       "quantum": "O(√N)"
+      },
+      {
+       "classical": "~N/2 avg",
+       "label": "Queries (1 of N marked)",
+       "labelJa": "クエリ数(N中1件)",
+       "quantum": "⌊(π/4)√N⌋"
+      },
+      {
+       "classical": "n bits",
+       "label": "Register (N = 2ⁿ)",
+       "labelJa": "レジスタ (N = 2ⁿ)",
+       "quantum": "n qubits"
+      },
+      {
+       "classical": "baseline",
+       "label": "Asymptotic speedup",
+       "labelJa": "漸近的な高速化",
+       "quantum": "quadratic"
+      }
+     ],
+     "practicalRead": "Include oracle synthesis, state preparation, error correction, measurement repetitions, and data-loading costs before calling it an application speedup.",
+     "practicalReadJa": "応用の高速化と呼ぶ前に、オラクル合成、状態準備、誤り訂正、測定反復、データ投入のコストを含めます。",
+     "quantumClaim": "Quadratic improvement in oracle queries for an unstructured search problem.",
+     "quantumClaimJa": "非構造化探索でオラクルクエリ数を二次的に改善する主張です。"
+    },
+    "codeVariants": [
+     {
+      "code": "from qiskit import QuantumCircuit\n\nqc = QuantumCircuit(2)\nqc.h([0, 1])\n# Oracle marks one basis state.\nqc.cz(0, 1)\nqc.h([0, 1])\nqc.x([0, 1])\nqc.cz(0, 1)\nqc.x([0, 1])\nqc.h([0, 1])\n\nFINAL_CIRCUIT = qc",
+      "filename": "grover_search.py",
+      "framework": "Qiskit",
+      "language": "python",
+      "note": "The oracle is intentionally small so the circuit can be inspected. Scaling claims belong to the cited query-complexity result.",
+      "status": "native"
+     }
+    ],
+    "description": "The canonical search primitive, paired with the linear classical baseline it is meant to improve.",
+    "descriptionJa": "改善対象である線形な古典ベースラインと対にした、代表的な探索プリミティブです。",
+    "explanation": "For an unstructured domain of size N with one marked item, the ideal query count scales as O(√N), versus O(N) classical queries. It is a query-complexity statement, not a blanket wall-clock guarantee.",
+    "explanationJa": "サイズNで対象が1つの非構造化領域では理想クエリ数がO(√N)で、古典のO(N)と対比されます。これはクエリ計算量であり、実時間の一律保証ではありません。",
+    "explanationMd": "For an unstructured search space of size $N$ with a single marked item, Grover's algorithm reaches the marked state with high probability using $O(\\sqrt N)$ oracle queries, versus $O(N)$ expected queries for classical exhaustive search — a quadratic query-complexity separation, not a claim about wall-clock time on any given hardware. The construction alternates an oracle $U_f$ that flips the sign of the marked amplitude with the diffusion operator $2|s\\rangle\\langle s|-I$; each pass rotates the state by $2\\theta$ (where $\\sin\\theta=1/\\sqrt N$) toward the marked subspace, and the success amplitude after $k$ iterations is $\\sin\\big((2k+1)\\theta\\big)$, so overshooting past the optimal $k\\approx\\frac{\\pi}{4}\\sqrt N$ actually reduces success probability. This record's two-qubit ($N=4$) toy oracle and diffusion layer are checked against the ideal circuit — small-instance evidence for the construction — while the $O(\\sqrt N)$ asymptotic claim rests on the cited literature and assumes a coherent oracle where oracle calls, not classical readout, dominate cost.",
+    "explanationMdJa": "サイズ$N$の非構造化探索空間に対象が1つあるとき、Groverのアルゴリズムは$O(\\sqrt N)$回のオラクル呼び出しで高確率に対象状態に到達します。これは古典的な全探索の期待$O(N)$回に対する二次的なクエリ計算量の分離であり、特定ハードウェア上の実時間についての主張ではありません。構成はオラクル$U_f$(対象振幅の符号反転)と拡散演算子$2|s\\rangle\\langle s|-I$を交互に適用し、各回で状態を対象部分空間へ向けて角度$2\\theta$($\\sin\\theta=1/\\sqrt N$)回転させ、$k$回反復後の成功振幅は$\\sin\\big((2k+1)\\theta\\big)$になるため、最適な$k\\approx\\frac{\\pi}{4}\\sqrt N$を超えると成功確率はむしろ下がります。この項目の2量子ビット($N=4$)トイオラクルと拡散層は理想回路と照合されており、構成についての小規模インスタンス証拠です。一方$O(\\sqrt N)$という漸近的主張自体は引用文献に基づき、オラクル呼び出しが古典的読み出しではなくコストを支配するコヒーレントなオラクルアクセスを前提とします。",
+    "exportStatus": "Native Qiskit · framework conversions available as review requests",
+    "framework": "Qiskit",
+    "industryUseCases": [
+     "Search over a costly implicit predicate",
+     "Amplitude amplification inside Monte Carlo workflows",
+     "Constraint and satisfiability subroutines"
+    ],
+    "industryUseCasesJa": [
+     "高コストな暗黙述語の探索",
+     "モンテカルロ処理内の振幅増幅",
+     "制約充足・SATサブルーチン"
+    ],
+    "introduction": "Grover amplifies the amplitude of marked states using an oracle and a diffusion step. It is useful for testing whether a claimed speedup includes oracle construction and readout costs.",
+    "introductionJa": "Groverはオラクルと拡散ステップで対象状態の振幅を増幅します。オラクル構築と読み出しコストを含む主張か確認するための基礎例です。",
+    "literature": [
+     {
+      "authors": "Lov K. Grover",
+      "relevance": "Original search algorithm and the O(√N) query comparison with classical search.",
+      "relevanceJa": "探索アルゴリズムと古典探索とのO(√N)クエリ比較を示す原論文です。",
+      "title": "A fast quantum mechanical algorithm for database search",
+      "url": "https://arxiv.org/abs/quant-ph/9605043",
+      "year": "1996"
+     }
+    ],
+    "metadata": [
+     {
+      "label": "Oracle",
+      "value": "One marked state"
+     },
+     {
+      "label": "Classical baseline",
+      "value": "Linear search"
+     },
+     {
+      "label": "Readout",
+      "value": "Measure candidate"
+     }
+    ],
+    "provenance": "Literature reference",
+    "relatedSlugs": [
+     "amplitude-estimation",
+     "hadamard-gate"
+    ],
+    "resources": [
+     {
+      "label": "Qubits",
+      "value": "2 toy"
+     },
+     {
+      "label": "Depth",
+      "value": "Oracle + diffusion"
+     },
+     {
+      "label": "Claim",
+      "value": "O(√N) queries"
+     }
+    ],
+    "slug": "grover-unstructured-search",
+    "source": {
+     "kind": "curated_reference",
+     "license": "Public bibliographic link; code is an original reference implementation",
+     "reviewedBy": "LeonaQ literature curation pass",
+     "title": "A fast quantum mechanical algorithm for database search",
+     "url": "https://arxiv.org/abs/quant-ph/9605043"
+    },
+    "sourceCoverage": {
+     "hardware": "unknown",
+     "simulation": "unknown",
+     "theory": "unknown"
+    },
+    "status": "verified_caveats",
+    "tags": [
+     "search",
+     "oracle",
+     "amplitude amplification",
+     "query complexity"
+    ],
+    "title": "Grover unstructured search",
+    "titleJa": "Grover非構造化探索",
+    "topics": [
+     "algorithm-reference",
+     "amplitude-amplification",
+     "oracle-query"
+    ],
+    "updatedAt": "2026-07-14",
+    "verification": "Toy oracle structure checked · asymptotic claim is literature-backed",
+    "verificationDetails": {
+     "caveat": "The asymptotic advantage assumes a coherent oracle and a cost model where oracle calls dominate.",
+     "method": "Two-qubit marked-state oracle and diffusion layer checked against the ideal circuit.",
+     "result": "Pass for the toy fixture · no hardware speedup claim."
+    },
+    "verificationMethods": [
+     "small_instance",
+     "construction",
+     "research_paper"
+    ],
+    "visualization": {
+     "operations": [
+      {
+       "label": "H×2",
+       "qubits": [
+        0,
+        1
+       ],
+       "tone": "accent"
+      },
+      {
+       "label": "Oracle",
+       "qubits": [
+        0,
+        1
+       ],
+       "tone": "warn"
+      },
+      {
+       "label": "Diffusion",
+       "qubits": [
+        0,
+        1
+       ],
+       "tone": "ok"
+      }
+     ],
+     "outcomes": [
+      {
+       "label": "Marked state",
+       "probability": 0.75
+      }
+     ],
+     "wires": [
+      "q[0]",
+      "q[1]"
+     ]
+    }
+   },
+   "slug": "grover-unstructured-search",
+   "updated_at": "2026-07-19T09:51:02.128402Z"
+  },
+  {
+   "execution_state": "template_only",
+   "provenance": {
+    "import_provider": "catalog_bootstrap",
+    "source_blob_sha256": "5e7c064616a7340ebb04219b98c2ca8baeafc226c6ebeee6b99d4de7bc72f7e3",
+    "upstream_identity": "hadamard-gate",
+    "upstream_ref": "d7b52ee71423334b1a542e5ad4594e399c81a13b"
+   },
+   "record": {
+    "algorithmFamily": "Single-qubit gate",
+    "category": "gates",
+    "categoryLabel": "Gates",
+    "categoryLabelJa": "ゲート",
+    "codeVariants": [
+     {
+      "code": "OPENQASM 3.0;\ninclude \"stdgates.inc\";\nqubit q;\nh q;",
+      "filename": "hadamard.qasm",
+      "framework": "OpenQASM 3.0",
+      "language": "openqasm",
+      "status": "native"
+     },
+     {
+      "code": "from qiskit import QuantumCircuit\n\nqc = QuantumCircuit(1)\nqc.h(0)\n\nFINAL_CIRCUIT = qc",
+      "filename": "hadamard.py",
+      "framework": "Qiskit",
+      "language": "python",
+      "status": "native"
+     },
+     {
+      "code": "import cirq\n\nqubit = cirq.LineQubit(0)\ncircuit = cirq.Circuit(cirq.H(qubit))\n\nFINAL_CIRCUIT = circuit",
+      "filename": "hadamard.py",
+      "framework": "Cirq",
+      "language": "python",
+      "status": "native"
+     }
+    ],
+    "description": "The smallest useful reference for putting a qubit into an equal superposition.",
+    "descriptionJa": "量子ビットを等しい重ね合わせに置くための、最小の参照例です。",
+    "explanation": "Applied to |0⟩, H produces (|0⟩ + |1⟩)/√2. Applied to |1⟩, it produces (|0⟩ − |1⟩)/√2. The relative sign matters when later gates interfere amplitudes.",
+    "explanationJa": "|0⟩にHを適用すると(|0⟩ + |1⟩)/√2、|1⟩では(|0⟩ − |1⟩)/√2になります。後続ゲートの干渉では相対位相が重要です。",
+    "explanationMd": "Hadamard is the single-qubit unitary $H = \\frac{1}{\\sqrt{2}}\\begin{pmatrix}1 & 1\\\\ 1 & -1\\end{pmatrix}$. It sends $|0\\rangle \\mapsto \\frac{1}{\\sqrt2}(|0\\rangle+|1\\rangle)$ and $|1\\rangle \\mapsto \\frac{1}{\\sqrt2}(|0\\rangle-|1\\rangle)$, so a computational-basis measurement always returns $0$ or $1$ with probability $1/2$ regardless of which state it acted on — the difference is the relative sign in front of $|1\\rangle$, a phase that only becomes visible once another gate lets the two branches interfere. $H$ is both Hermitian and unitary, so $H^\\dagger = H = H^{-1}$, and direct matrix multiplication gives $H^2 = I$, exactly the identity this record's matrix check confirms. Geometrically $H$ is a $\\pi$ rotation of the Bloch sphere about the axis $(\\hat x + \\hat z)/\\sqrt2$, exchanging the $Z$ and $X$ eigenbases. It is the standard way to open superposition-based circuits such as Bell states, GHZ states, Grover diffusion, and the QFT.",
+    "explanationMdJa": "アダマールゲートは1量子ビットのユニタリ演算 $H = \\frac{1}{\\sqrt2}\\begin{pmatrix}1&1\\\\1&-1\\end{pmatrix}$ です。$|0\\rangle \\mapsto \\frac{1}{\\sqrt2}(|0\\rangle+|1\\rangle)$、$|1\\rangle \\mapsto \\frac{1}{\\sqrt2}(|0\\rangle-|1\\rangle)$ となるため、計算基底で測定すると入力によらず0と1がそれぞれ確率$1/2$で得られます。違いは$|1\\rangle$の前の相対符号だけで、後続ゲートで2つの分岐が干渉して初めて意味を持ちます。$H$はエルミートかつユニタリで $H^\\dagger = H = H^{-1}$、直接計算すると $H^2 = I$ となり、これがこの項目の行列チェックが確認する恒等式です。ブロッホ球上では軸$(\\hat x + \\hat z)/\\sqrt2$周りの$\\pi$回転にあたり、$Z$基底と$X$基底を入れ替えます。ベル状態、GHZ状態、Groverの拡散演算子、QFTなど重ね合わせを使う回路の出発点として使われます。",
+    "exportStatus": "Native OpenQASM 3 · direct framework snippets available",
+    "framework": "OpenQASM 3.0",
+    "introduction": "Hadamard is a good first record because its behavior is easy to inspect mathematically and in a measured distribution.",
+    "introductionJa": "アダマールゲートは、数式と測定分布の両方で挙動を確認しやすい、最も基本的な例です。",
+    "literature": [
+     {
+      "authors": "Michael A. Nielsen and Isaac L. Chuang",
+      "relevance": "Standard graduate textbook covering the single- and two-qubit gate definitions, matrix identities, and circuit primitives this record states.",
+      "relevanceJa": "この項目が示す1・2量子ビットゲートの定義、行列恒等式、回路プリミティブを扱う標準的な大学院教科書です。",
+      "title": "Quantum Computation and Quantum Information: 10th Anniversary Edition",
+      "url": "https://doi.org/10.1017/cbo9780511976667",
+      "year": "2010"
+     }
+    ],
+    "metadata": [
+     {
+      "label": "Input",
+      "value": "|0⟩ or |1⟩"
+     },
+     {
+      "label": "Output",
+      "value": "Equal-amplitude superposition"
+     },
+     {
+      "label": "Measurement",
+      "value": "P(0) = P(1) = 0.5"
+     }
+    ],
+    "provenance": "Curated reference",
+    "relatedSlugs": [
+     "bell-state-qiskit",
+     "ghz-state-pennylane"
+    ],
+    "resources": [
+     {
+      "label": "Qubits",
+      "value": "1"
+     },
+     {
+      "label": "Depth",
+      "value": "1 gate"
+     },
+     {
+      "label": "Outcomes",
+      "value": "2"
+     }
+    ],
+    "slug": "hadamard-gate",
+    "source": {
+     "kind": "curated_reference",
+     "license": "CC BY 4.0-compatible reference metadata",
+     "reviewedBy": "LeonaQ curation pass",
+     "title": "OpenQASM 3 standard gate set",
+     "url": "https://openqasm.com/language/gates.html"
+    },
+    "sourceCoverage": {
+     "hardware": "unknown",
+     "simulation": "unknown",
+     "theory": "unknown"
+    },
+    "status": "verified",
+    "tags": [
+     "superposition",
+     "single qubit",
+     "foundations"
+    ],
+    "title": "Hadamard gate",
+    "titleJa": "アダマールゲート",
+    "topics": [
+     "gate-primitive"
+    ],
+    "updatedAt": "2026-07-14",
+    "verification": "Unitary matrix check · canonical basis vectors preserved",
+    "verificationDetails": {
+     "method": "Exact matrix comparison against H = 1/√2 [[1, 1], [1, -1]].",
+     "result": "Pass · global phase and basis-state amplitudes match."
+    },
+    "verificationMethods": [
+     "unitary_equivalence",
+     "exact_simulation",
+     "research_paper"
+    ],
+    "visualization": {
+     "operations": [
+      {
+       "label": "H",
+       "qubits": [
+        0
+       ],
+       "tone": "accent"
+      }
+     ],
+     "outcomes": [
+      {
+       "label": "0",
+       "probability": 0.5
+      },
+      {
+       "label": "1",
+       "probability": 0.5
+      }
+     ],
+     "wires": [
+      "q[0]"
+     ]
+    }
+   },
+   "slug": "hadamard-gate",
+   "updated_at": "2026-07-19T09:51:06.025997Z"
+  },
+  {
+   "execution_state": "template_only",
+   "provenance": {
+    "import_provider": "catalog_bootstrap",
+    "source_blob_sha256": "1b0860fddf268a96664f0bf1ab4cc782a2eabd1cefc624aac931e6efd6928eca",
+    "upstream_identity": "pell-equation-regulator",
+    "upstream_ref": "56e14da1074f85b04f4cef4c417d5b4c0c449bda"
+   },
+   "record": {
+    "algorithmFamily": "Computational number theory",
+    "category": "algorithms",
+    "categoryLabel": "Algorithms",
+    "categoryLabelJa": "アルゴリズム",
+    "codeVariants": [
+     {
+      "code": "ALGORITHM: Pell's equation by computing the regulator\nPROBLEM: Given a positive non-square integer d, Pell's equation is x² − dy² = 1 and the goal is to find all integer solutions. The least solution can have exponentially many bits, so it cannot be written down; the computational problem is instead to compute the integer part of the regulator R = ln(x₁ + y₁√d), from which the solution can be recovered.\nIDEA: Hallgren extends the hidden subgroup problem from finite groups to the group of real numbers. The regulator is an irrational period of a function defined on reduced ideals through a distance function, so the task becomes period finding where the period is not an integer and the group is not discrete. A discretized, pseudo-periodic version of that function is Fourier sampled twice over Z_q, and the two integer outputs are combined by a continued-fraction expansion to recover an integer close to the irrational period. Classical ideal composition and reduction on reduced quadratic ideals supply the function evaluations, which the paper shows can be done in time polynomial in log Δ. The framework is Shor's, applied to a group-like subset of the reals rather than to a group.\nREPORTED COST: Polynomial in log Δ and log δ, where Δ is the quadratic discriminant and δ the precision to which the regulator is approximated, with probability exponentially close to one.\nBASIS: section 3.2, Theorem 2 of the J. ACM version (doi:10.1145/1206035.1206039): \"There is a polynomial-time quantum algorithm that, given a quadratic discriminant ∆, approximates the regulator to within δ of the associated order O in time polynomial in log∆ and logδ with probability exponentially close to one.\"; the supporting evaluation bound is section 2, Theorem 1, which states that the discretized function can be evaluated in time polynomial in log∆ with high probability.\nPRIMARY SOURCE: Sean Hallgren (2007), Polynomial-Time Quantum Algorithms for Pell's Equation and the Principal Ideal Problem — https://doi.org/10.1145/1206035.1206039\n\nThis is a literature reference record, not an executable circuit.",
+      "filename": "pell-equation-regulator.txt",
+      "framework": "Qiskit",
+      "language": "text",
+      "note": "A reference record, not runnable source. Leona cannot execute it, so it cannot be saved to your Library as a circuit.",
+      "status": "unsupported"
+     }
+    ],
+    "description": "Given a positive non-square integer d, Pell's equation is x² − dy² = 1 and the goal is to find all integer solutions. The least solution can have exponentially many bits, so it cannot be written down; the computational problem is instead to compute the integer part of the regulator R = ln(x₁ + y₁√d), from which the solution can be recovered.",
+    "descriptionJa": "平方数でない正の整数 d が与えられたとき、Pell 方程式 x² − dy² = 1 のすべての整数解を求めることが目標です。ただし最小解はビット数が指数的に大きくなりうるため、そのまま書き下すことはできません。そこで計算上の問題は、基本解から定まる調整子 R = ln(x₁ + y₁√d) の整数部分を求めることに置き換えられます。解はそこから復元できます。",
+    "explanation": "Hallgren extends the hidden subgroup problem from finite groups to the group of real numbers. The regulator is an irrational period of a function defined on reduced ideals through a distance function, so the task becomes period finding where the period is not an integer and the group is not discrete. A discretized, pseudo-periodic version of that function is Fourier sampled twice over Z_q, and the two integer outputs are combined by a continued-fraction expansion to recover an integer close to the irrational period. Classical ideal composition and reduction on reduced quadratic ideals supply the function evaluations, which the paper shows can be done in time polynomial in log Δ. The framework is Shor's, applied to a group-like subset of the reals rather than to a group. This record's speedup class, \"Superpolynomial\", is a secondary source's classification of the algebraic and number theoretic algorithms it files this under — not a claim its primary paper makes. Stated by the primary source: \"The best algorithm for factoring integers has expected time L(1/3,b) for some constant b [LL93]. Assuming the GRH, the best algorithms for Pell's equation and the principal ideal problem have expected time L(1/2,b′), for some constant b′, so there is a sub-exponential gap between the best known classical algorithms.\". Reported cost: Polynomial in log Δ and log δ, where Δ is the quadratic discriminant and δ the precision to which the regulator is approximated, with probability exponentially close to one..",
+    "explanationJa": "Hallgren は隠れ部分群問題を有限群から実数の加法群へ拡張します。調整子は、距離関数を通じて被約イデアル上に定義される関数の無理数の周期であるため、問題は、周期が整数でなく群も離散でない状況における周期発見となります。この関数を離散化した擬周期的な版を Z_q 上で二度 Fourier サンプリングし、得られた二つの整数を連分数展開によって組み合わせることで、無理数の周期に近い整数を復元します。関数の値は被約な二次イデアルに対する古典的なイデアルの合成と簡約によって与えられ、論文はこれが log Δ の多項式時間で行えることを示しています。枠組みは Shor のものですが、適用先は群ではなく実数の中の群に似た部分集合です。本記録の速度向上の区分「Superpolynomial」は、二次資料が分類したものであり、一次論文の主張ではありません。一次資料に記載があります：「The best algorithm for factoring integers has expected time L(1/3,b) for some constant b [LL93]. Assuming the GRH, the best algorithms for Pell's equation and the principal ideal problem have expected time L(1/2,b′), for some constant b′, so there is a sub-exponential gap between the best known classical algorithms.」。報告されている計算量は Polynomial in log Δ and log δ, where Δ is the quadratic discriminant and δ the precision to which the regulator is approximated, with probability exponentially close to one. です。",
+    "exportStatus": "Literature reference · no circuit supplied",
+    "framework": "Qiskit",
+    "introduction": "Given a positive non-square integer d, Pell's equation is x² − dy² = 1 and the goal is to find all integer solutions. The least solution can have exponentially many bits, so it cannot be written down; the computational problem is instead to compute the integer part of the regulator R = ln(x₁ + y₁√d), from which the solution can be recovered. Hallgren extends the hidden subgroup problem from finite groups to the group of real numbers. The regulator is an irrational period of a function defined on reduced ideals through a distance function, so the task becomes period finding where the period is not an integer and the group is not discrete. A discretized, pseudo-periodic version of that function is Fourier sampled twice over Z_q, and the two integer outputs are combined by a continued-fraction expansion to recover an integer close to the irrational period. Classical ideal composition and reduction on reduced quadratic ideals supply the function evaluations, which the paper shows can be done in time polynomial in log Δ. The framework is Shor's, applied to a group-like subset of the reals rather than to a group.",
+    "introductionJa": "平方数でない正の整数 d が与えられたとき、Pell 方程式 x² − dy² = 1 のすべての整数解を求めることが目標です。ただし最小解はビット数が指数的に大きくなりうるため、そのまま書き下すことはできません。そこで計算上の問題は、基本解から定まる調整子 R = ln(x₁ + y₁√d) の整数部分を求めることに置き換えられます。解はそこから復元できます。Hallgren は隠れ部分群問題を有限群から実数の加法群へ拡張します。調整子は、距離関数を通じて被約イデアル上に定義される関数の無理数の周期であるため、問題は、周期が整数でなく群も離散でない状況における周期発見となります。この関数を離散化した擬周期的な版を Z_q 上で二度 Fourier サンプリングし、得られた二つの整数を連分数展開によって組み合わせることで、無理数の周期に近い整数を復元します。関数の値は被約な二次イデアルに対する古典的なイデアルの合成と簡約によって与えられ、論文はこれが log Δ の多項式時間で行えることを示しています。枠組みは Shor のものですが、適用先は群ではなく実数の中の群に似た部分集合です。",
+    "literature": [
+     {
+      "authors": "Sean Hallgren",
+      "relevance": "Primary source, and the source of this record's cost claim. The full text is freely available from the author's page at the Pennsylvania State University; the version read for this record is the longer journal manuscript, whose own footnote says a preliminary version appeared at STOC 2002, which is the version the Quantum Algorithm Zoo cites. Consult it for the extension of the hidden subgroup problem to the reals, for the two Fourier samplings combined by continued fractions, and for the open question in section 3.1 about whether a fixed precision suffices for all ideals.",
+      "relevanceJa": "一次資料であり、本記録の計算量の出典です。全文は著者のペンシルベニア州立大学のページから自由に入手できます。本記録のために参照したのは、より長い雑誌版の原稿であり、その脚注自身が、予稿版が STOC 2002 に現れたと述べています。Quantum Algorithm Zoo が引用しているのはその予稿版です。隠れ部分群問題の実数への拡張、連分数によって組み合わされる二度の Fourier サンプリング、および固定した精度がすべてのイデアルに対して十分かどうかという第3.1節の未解決問題については、原論文で確認してください。",
+      "title": "Polynomial-Time Quantum Algorithms for Pell's Equation and the Principal Ideal Problem",
+      "url": "https://doi.org/10.1145/1206035.1206039",
+      "year": "2007"
+     }
+    ],
+    "metadata": [
+     {
+      "label": "Speedup class",
+      "value": "Superpolynomial (checked against the record's own primary paper, which states it)"
+     },
+     {
+      "label": "Complexity basis",
+      "value": "section 3.2, Theorem 2 of the J. ACM version (doi:10.1145/1206035.1206039): \"There is a polynomial-time quantum algorithm that, given a quadratic discriminant ∆, approximates the regulator to within δ of the associated order O in time polynomial in log∆ and logδ with probability exponentially close to one.\"; the supporting evaluation bound is section 2, Theorem 1, which states that the discretized function can be evaluated in time polynomial in log∆ with high probability."
+     },
+     {
+      "label": "Circuit",
+      "value": "Not supplied"
+     }
+    ],
+    "provenance": "Leona Quantum Zoo-parity intake",
+    "relatedSlugs": [
+     "principal-ideal-problem",
+     "shor-period-finding",
+     "discrete-logarithm"
+    ],
+    "resources": [
+     {
+      "label": "Record type",
+      "value": "Literature reference"
+     },
+     {
+      "label": "Speedup class (secondary source)",
+      "value": "Superpolynomial"
+     },
+     {
+      "label": "Primary source on the speedup",
+      "value": "Stated by the primary source: \"The best algorithm for factoring integers has expected time L(1/3,b) for some constant b [LL93]. Assuming the GRH, the best algorithms for Pell's equation and the principal ideal problem have expected time L(1/2,b′), for some constant b′, so there is a sub-exponential gap between the best known classical algorithms.\""
+     },
+     {
+      "label": "Reported cost",
+      "value": "Polynomial in log Δ and log δ, where Δ is the quadratic discriminant and δ the precision to which the regulator is approximated, with probability exponentially close to one."
+     }
+    ],
+    "slug": "pell-equation-regulator",
+    "source": {
+     "kind": "curated_reference",
+     "license": "Citation metadata only; source publication terms apply",
+     "reviewedBy": "Leona Quantum curation pass",
+     "title": "Polynomial-Time Quantum Algorithms for Pell's Equation and the Principal Ideal Problem",
+     "url": "https://doi.org/10.1145/1206035.1206039"
+    },
+    "sourceCoverage": {
+     "hardware": "unknown",
+     "simulation": "unknown",
+     "theory": "unknown"
+    },
+    "status": "verified_caveats",
+    "tags": [
+     "pell equation",
+     "regulator",
+     "real quadratic field",
+     "hidden subgroup problem",
+     "period finding"
+    ],
+    "title": "Pell's equation by computing the regulator",
+    "titleJa": "基本単数の対数の計算によるPell方程式の求解",
+    "topics": [
+     "algorithm-reference",
+     "phase-estimation"
+    ],
+    "updatedAt": "2026-08-12",
+    "verification": "Literature record · problem statement recorded from the literature; speedup class checked against the record's own primary paper, which states it · primary reference checked against its arXiv abs page",
+    "verificationDetails": {
+     "caveat": "This is a literature record: nothing was constructed, compiled, simulated or run, and no instance of Pell's equation was solved here. What the algorithm returns is an approximation of the regulator to a requested precision, not the least solution and not an exact regulator; the paper says the approximation is refined afterwards using classical algorithms. The result holds for real quadratic fields — degree two over the rationals — and nothing here covers higher degree; the paper says so and treats the general case as later work. The paper flags a genuine gap in the period-finding-over-the-reals machinery it introduces, noting in section 3.1 that it is an open question whether some fixed precision works for all ideals, so the choice of working precision is not settled in general by this document. The quantum result itself is unconditional and that is the paper's point — it contrasts with the classical algorithms, whose running time and correctness both depend on the generalized Riemann hypothesis. But the sub-exponential gap quoted on this record is a gap against the best classical algorithms known, not a proved lower bound, and one side of that comparison is itself GRH-conditional. Computing the class group is a separate matter that the same paper says does need the GRH.",
+     "method": "Curation only. The problem statement was recorded from the literature; the speedup class is checked against the record's own primary paper, which states it; the primary reference's title, authors and submission year were read from its arXiv abs page; the complexity claim was taken from a clause of that paper's abstract (section 3.2, Theorem 2 of the J. ACM version (doi:10.1145/1206035.1206039): \"There is a polynomial-time quantum algorithm that, given a quadratic discriminant ∆, approximates the regulator to within δ of the associated order O in time polynomial in log∆ and logδ with probability exponentially close to one.\"; the supporting evaluation bound is section 2, Theorem 1, which states that the discretized function can be evaluated in time polynomial in log∆ with high probability.). No circuit was constructed, simulated or run.",
+     "result": "Pass · the record's problem, speedup class and primary reference agree with the two sources named above."
+    },
+    "verificationMethods": [
+     "research_paper"
+    ],
+    "visualization": {
+     "operations": [
+      {
+       "label": "encode",
+       "qubits": [
+        0
+       ],
+       "tone": "neutral"
+      },
+      {
+       "label": "transform",
+       "qubits": [
+        0,
+        1
+       ],
+       "tone": "accent"
+      },
+      {
+       "label": "measure",
+       "qubits": [
+        1,
+        2
+       ],
+       "tone": "warn"
+      }
+     ],
+     "outcomes": [],
+     "wires": [
+      "problem",
+      "algorithm",
+      "readout"
+     ]
+    }
+   },
+   "slug": "pell-equation-regulator",
+   "updated_at": "2026-08-13T05:38:06.398037Z"
+  },
+  {
+   "execution_state": "template_only",
+   "provenance": {
+    "import_provider": "catalog_bootstrap",
+    "source_blob_sha256": "e95fa8c94473393ef98f626475d2ff88f82a1e483a791ee70a692f4af26417fe",
+    "upstream_identity": "quadratically-signed-weight-enumerators",
+    "upstream_ref": "56e14da1074f85b04f4cef4c417d5b4c0c449bda"
+   },
+   "record": {
+    "algorithmFamily": "PromiseBQP-complete problem",
+    "category": "algorithms",
+    "categoryLabel": "Algorithms",
+    "categoryLabelJa": "アルゴリズム",
+    "codeVariants": [
+     {
+      "code": "ALGORITHM: Quadratically signed weight enumerators\nPROBLEM: A quadratically signed weight enumerator is the sum S(A, B, x, y) = Σ (−1)^(bᵀBb) x^|b| y^(n−|b|) over the 0/1 vectors b with Ab = 0. Given that the diagonal of A is the identity, that k and l are positive integers, and a promise that |S(A, lwtr(A), k, l)| is at least (k² + l²)^(n/2)/2, determine the sign of S.\nIDEA: Knill and Laflamme expand a quantum circuit's amplitude by multiplying out its gate sequence, writing each gate as (4 + 3σ̃)/5 so that the product becomes a sum over 0/1 vectors with signs given by a quadratic form. That sum is then recognized as an instance of the quadratically signed weight enumerator above. The two directions follow: an oracle deciding the sign of such a sum lets a classical probabilistic machine simulate a quantum computer, and conversely a quantum computer can decide the sign under the promise, so the problem is BQP-complete. A more restricted variant is shown to be solvable by the one-bit model of quantum computation, in which only a single qubit is initialized and the rest of the register is maximally mixed. The paper is a bridge between quantum computation and a purely combinatorial quantity, not a faster way of computing anything.\nREPORTED COST: Not stated by the sources read\nBASIS: The source states no complexity bound for this record, because its results are equivalence and completeness theorems rather than an algorithm with a runtime. The only asymptotic figures in the text are internal steps: section III, proof of Theorem 7 — \"By using binary search on x, the desired probability can be determined to within O(ǫ/N) in O(log(N/ǫ)) queries\" — and section IV — \"these gates can be approximated to within O(ǫ/N) using the standard ones with polylog(N/ǫ) overhead in gates\". Read for this: the abstract, sections I through V and appendix A.\nPRIMARY SOURCE: E. Knill, R. Laflamme (1999), Quantum Computation and Quadratically Signed Weight Enumerators — https://arxiv.org/abs/quant-ph/9909094\n\nThis is a literature reference record, not an executable circuit.",
+      "filename": "quadratically-signed-weight-enumerators.txt",
+      "framework": "Qiskit",
+      "language": "text",
+      "note": "A reference record, not runnable source. Leona cannot execute it, so it cannot be saved to your Library as a circuit.",
+      "status": "unsupported"
+     }
+    ],
+    "description": "A quadratically signed weight enumerator is the sum S(A, B, x, y) = Σ (−1)^(bᵀBb) x^|b| y^(n−|b|) over the 0/1 vectors b with Ab = 0. Given that the diagonal of A is the identity, that k and l are positive integers, and a promise that |S(A, lwtr(A), k, l)| is at least (k² + l²)^(n/2)/2, determine the sign of S.",
+    "descriptionJa": "二次符号付き重み多項式とは、Ab = 0 を満たす 0/1 ベクトル b にわたる和 S(A, B, x, y) = Σ (−1)^(bᵀBb) x^|b| y^(n−|b|) のことです。A の対角成分が単位行列であること、k と l が正の整数であること、および |S(A, lwtr(A), k, l)| が (k² + l²)^(n/2)/2 以上であるという約束のもとで、S の符号を決定する問題です。",
+    "explanation": "Knill and Laflamme expand a quantum circuit's amplitude by multiplying out its gate sequence, writing each gate as (4 + 3σ̃)/5 so that the product becomes a sum over 0/1 vectors with signs given by a quadratic form. That sum is then recognized as an instance of the quadratically signed weight enumerator above. The two directions follow: an oracle deciding the sign of such a sum lets a classical probabilistic machine simulate a quantum computer, and conversely a quantum computer can decide the sign under the promise, so the problem is BQP-complete. A more restricted variant is shown to be solvable by the one-bit model of quantum computation, in which only a single qubit is initialized and the rest of the register is maximally mixed. The paper is a bridge between quantum computation and a purely combinatorial quantity, not a faster way of computing anything. This record's speedup class, \"Superpolynomial\", is a secondary source's classification of the approximation and simulation algorithms it files this under — not a claim its primary paper makes. Not stated by the primary source — the full text of arXiv:quant-ph/9909094 — abstract, sections I through V and appendix A. The paper's claim is a polynomial-equivalence and BQP-completeness result, not a speedup: an oracle for the sign problem makes classical probabilistic computation as powerful as quantum computation. No statement anywhere compares a quantum algorithm's cost with a classical algorithm's cost for a shared task. was read and makes no such claim. The sources read state no complexity bound for this record (The source states no complexity bound for this record, because its results are equivalence and completeness theorems rather than an algorithm with a runtime. The only asymptotic figures in the text are internal steps: section III, proof of Theorem 7 — \"By using binary search on x, the desired probability can be determined to within O(ǫ/N) in O(log(N/ǫ)) queries\" — and section IV — \"these gates can be approximated to within O(ǫ/N) using the standard ones with polylog(N/ǫ) overhead in gates\". Read for this: the abstract, sections I through V and appendix A.).",
+    "explanationJa": "Knill と Laflamme は、量子回路の振幅をゲート列の積として展開する際に、各ゲートを (4 + 3σ̃)/5 の形に書きます。すると積は 0/1 ベクトルにわたる和となり、その符号は二次形式によって与えられます。この和が、上に述べた二次符号付き重み多項式の一例として認識されます。ここから両方向の主張が従います。すなわち、そのような和の符号を判定するオラクルがあれば古典確率的計算機は量子計算機をシミュレートでき、逆に約束のもとで量子計算機はその符号を判定できるため、この問題は BQP 完全です。さらに制限した変種は、1量子ビットのみを初期化し残りのレジスタを最大混合状態とする「1ビットモデル」の量子計算によって解けることが示されています。この論文は量子計算と純粋に組合せ論的な量との橋渡しであって、何かをより速く計算する方法ではありません。本記録の速度向上の区分「Superpolynomial」は、二次資料が分類したものであり、一次論文の主張ではありません。一次資料には記載がありません（the full text of arXiv:quant-ph/9909094 — abstract, sections I through V and appendix A. The paper's claim is a polynomial-equivalence and BQP-completeness result, not a speedup: an oracle for the sign problem makes classical probabilistic computation as powerful as quantum computation. No statement anywhere compares a quantum algorithm's cost with a classical algorithm's cost for a shared task. を確認）。参照した出典は本記録に対する計算量の上界を述べていません。",
+    "exportStatus": "Literature reference · no circuit supplied",
+    "framework": "Qiskit",
+    "introduction": "A quadratically signed weight enumerator is the sum S(A, B, x, y) = Σ (−1)^(bᵀBb) x^|b| y^(n−|b|) over the 0/1 vectors b with Ab = 0. Given that the diagonal of A is the identity, that k and l are positive integers, and a promise that |S(A, lwtr(A), k, l)| is at least (k² + l²)^(n/2)/2, determine the sign of S. Knill and Laflamme expand a quantum circuit's amplitude by multiplying out its gate sequence, writing each gate as (4 + 3σ̃)/5 so that the product becomes a sum over 0/1 vectors with signs given by a quadratic form. That sum is then recognized as an instance of the quadratically signed weight enumerator above. The two directions follow: an oracle deciding the sign of such a sum lets a classical probabilistic machine simulate a quantum computer, and conversely a quantum computer can decide the sign under the promise, so the problem is BQP-complete. A more restricted variant is shown to be solvable by the one-bit model of quantum computation, in which only a single qubit is initialized and the rest of the register is maximally mixed. The paper is a bridge between quantum computation and a purely combinatorial quantity, not a faster way of computing anything.",
+    "introductionJa": "二次符号付き重み多項式とは、Ab = 0 を満たす 0/1 ベクトル b にわたる和 S(A, B, x, y) = Σ (−1)^(bᵀBb) x^|b| y^(n−|b|) のことです。A の対角成分が単位行列であること、k と l が正の整数であること、および |S(A, lwtr(A), k, l)| が (k² + l²)^(n/2)/2 以上であるという約束のもとで、S の符号を決定する問題です。Knill と Laflamme は、量子回路の振幅をゲート列の積として展開する際に、各ゲートを (4 + 3σ̃)/5 の形に書きます。すると積は 0/1 ベクトルにわたる和となり、その符号は二次形式によって与えられます。この和が、上に述べた二次符号付き重み多項式の一例として認識されます。ここから両方向の主張が従います。すなわち、そのような和の符号を判定するオラクルがあれば古典確率的計算機は量子計算機をシミュレートでき、逆に約束のもとで量子計算機はその符号を判定できるため、この問題は BQP 完全です。さらに制限した変種は、1量子ビットのみを初期化し残りのレジスタを最大混合状態とする「1ビットモデル」の量子計算によって解けることが示されています。この論文は量子計算と純粋に組合せ論的な量との橋渡しであって、何かをより速く計算する方法ではありません。",
+    "literature": [
+     {
+      "authors": "E. Knill, R. Laflamme",
+      "relevance": "Primary source. Consult it for the expansion of a circuit amplitude into a signed sum over 0/1 vectors, for the exact promise the completeness results are stated under, and for the authors' own remark in the conclusion that this promise may be difficult to verify — which is the reason this record carries no complexity and makes no speedup claim.",
+      "relevanceJa": "一次資料です。回路の振幅を 0/1 ベクトルにわたる符号付きの和へ展開する方法、完全性の結果が述べられている正確な約束、およびその約束の検証が困難でありうるという結論部での著者ら自身の指摘については、原論文で確認してください。本記録が計算量をもたず高速化を主張しないのは、この指摘によります。",
+      "title": "Quantum Computation and Quadratically Signed Weight Enumerators",
+      "url": "https://arxiv.org/abs/quant-ph/9909094",
+      "year": "1999"
+     }
+    ],
+    "metadata": [
+     {
+      "label": "Speedup class",
+      "value": "Superpolynomial (checked against the record's own primary paper, which does not state it)"
+     },
+     {
+      "label": "Complexity basis",
+      "value": "The source states no complexity bound for this record, because its results are equivalence and completeness theorems rather than an algorithm with a runtime. The only asymptotic figures in the text are internal steps: section III, proof of Theorem 7 — \"By using binary search on x, the desired probability can be determined to within O(ǫ/N) in O(log(N/ǫ)) queries\" — and section IV — \"these gates can be approximated to within O(ǫ/N) using the standard ones with polylog(N/ǫ) overhead in gates\". Read for this: the abstract, sections I through V and appendix A."
+     },
+     {
+      "label": "Circuit",
+      "value": "Not supplied"
+     }
+    ],
+    "provenance": "Leona Quantum Zoo-parity intake",
+    "relatedSlugs": [
+     "sparse-matrix-power-diagonal-entries",
+     "string-rewriting-derivation-counts",
+     "jones-polynomial-approximation"
+    ],
+    "resources": [
+     {
+      "label": "Record type",
+      "value": "Literature reference"
+     },
+     {
+      "label": "Speedup class (secondary source)",
+      "value": "Superpolynomial"
+     },
+     {
+      "label": "Primary source on the speedup",
+      "value": "Not stated by the primary source — the full text of arXiv:quant-ph/9909094 — abstract, sections I through V and appendix A. The paper's claim is a polynomial-equivalence and BQP-completeness result, not a speedup: an oracle for the sign problem makes classical probabilistic computation as powerful as quantum computation. No statement anywhere compares a quantum algorithm's cost with a classical algorithm's cost for a shared task. was read and makes no such claim"
+     },
+     {
+      "label": "Reported cost",
+      "value": "Not stated by the sources read"
+     }
+    ],
+    "slug": "quadratically-signed-weight-enumerators",
+    "source": {
+     "kind": "curated_reference",
+     "license": "Citation metadata only; source publication terms apply",
+     "reviewedBy": "Leona Quantum curation pass",
+     "title": "Quantum Computation and Quadratically Signed Weight Enumerators",
+     "url": "https://arxiv.org/abs/quant-ph/9909094"
+    },
+    "sourceCoverage": {
+     "hardware": "unknown",
+     "simulation": "unknown",
+     "theory": "unknown"
+    },
+    "status": "verified_caveats",
+    "tags": [
+     "weight enumerator",
+     "bqp-complete",
+     "one-bit model",
+     "promise problem",
+     "ising partition function"
+    ],
+    "title": "Quadratically signed weight enumerators",
+    "titleJa": "二次符号付き重み多項式",
+    "topics": [
+     "algorithm-reference",
+     "phase-estimation"
+    ],
+    "updatedAt": "2026-08-12",
+    "verification": "Literature record · problem statement recorded from the literature; speedup class checked against the record's own primary paper, which does not state it · primary reference checked against its arXiv abs page",
+    "verificationDetails": {
+     "caveat": "This is a literature record: nothing was constructed, compiled, simulated or run, and no weight enumerator was evaluated here. The Zoo files this entry as a superpolynomial speedup; the paper it cites claims no speedup at all, and states a polynomial equivalence between quantum computation and classical probabilistic computation given an oracle for this sum. Nothing here should be read as a quantum algorithm that beats a classical one. The completeness results are stated for promise problems, and the authors themselves name that as a disadvantage relative to other BQP-hard problems, observing that factoring and discrete logarithm have the advantage of not requiring a potentially difficult to verify promise — so an instance of this problem is not obviously one you can check you are allowed to hand to the algorithm. Two questions are left open in the paper: whether the converse of the one-bit-model theorem holds, and whether a simulation theorem analogous to the main one holds for the one-bit model. The record therefore states no complexity rather than borrowing a figure from an internal step.",
+     "method": "Curation only. The problem statement was recorded from the literature; the speedup class is checked against the record's own primary paper, which does not state it; the primary reference's title, authors and submission year were read from its arXiv abs page; the complexity claim was taken from a clause of that paper's abstract (The source states no complexity bound for this record, because its results are equivalence and completeness theorems rather than an algorithm with a runtime. The only asymptotic figures in the text are internal steps: section III, proof of Theorem 7 — \"By using binary search on x, the desired probability can be determined to within O(ǫ/N) in O(log(N/ǫ)) queries\" — and section IV — \"these gates can be approximated to within O(ǫ/N) using the standard ones with polylog(N/ǫ) overhead in gates\". Read for this: the abstract, sections I through V and appendix A.). No circuit was constructed, simulated or run.",
+     "result": "Pass · the record's problem, speedup class and primary reference agree with the two sources named above."
+    },
+    "verificationMethods": [
+     "research_paper"
+    ],
+    "visualization": {
+     "operations": [
+      {
+       "label": "encode",
+       "qubits": [
+        0
+       ],
+       "tone": "neutral"
+      },
+      {
+       "label": "transform",
+       "qubits": [
+        0,
+        1
+       ],
+       "tone": "accent"
+      },
+      {
+       "label": "measure",
+       "qubits": [
+        1,
+        2
+       ],
+       "tone": "warn"
+      }
+     ],
+     "outcomes": [],
+     "wires": [
+      "problem",
+      "algorithm",
+      "readout"
+     ]
+    }
+   },
+   "slug": "quadratically-signed-weight-enumerators",
+   "updated_at": "2026-08-13T05:38:06.683056Z"
+  },
+  {
+   "execution_state": "template_only",
+   "provenance": {
+    "import_provider": "catalog_bootstrap",
+    "source_blob_sha256": "e8ac064a8cfb835af1e11909f3765615a0b2331380a8197fbd0ee08132e63307",
+    "upstream_identity": "quantum-phase-estimation",
+    "upstream_ref": "56e14da1074f85b04f4cef4c417d5b4c0c449bda"
+   },
+   "record": {
+    "algorithmFamily": "Eigenvalue estimation",
+    "category": "algorithms",
+    "categoryLabel": "Algorithms",
+    "categoryLabelJa": "アルゴリズム",
+    "classicalComparison": {
+     "baseline": "Classical diagonalization, Lanczos/Krylov methods, or Fourier analysis when the operator has exploitable structure.",
+     "baselineJa": "構造を利用できる場合は、古典対角化、Lanczos/Krylov法、フーリエ解析を比較します。",
+     "practicalRead": "Report eigenstate overlap, evolution cost, precision, repetitions, and the classical method used to interpret the result.",
+     "practicalReadJa": "固有状態重なり、発展コスト、精度、反復回数、結果の解釈に使う古典手法を報告します。",
+     "quantumClaim": "Estimates eigenphases with precision tied to controlled-U evolution time in the coherent access model.",
+     "quantumClaimJa": "コヒーレントアクセスモデルで、制御Uの発展時間に結びついた精度で固有位相を推定します。"
+    },
+    "codeVariants": [
+     {
+      "code": "from qiskit import QuantumCircuit\nfrom qiskit.circuit.library import QFT\n\nqc = QuantumCircuit(3)\nqc.h([0, 1])\n# Controlled powers of U occupy the problem-specific block.\nqc.cp(0.5, 0, 2)\nqc.cp(1.0, 1, 2)\nqc.append(QFT(2, inverse=True), [0, 1])\n\nFINAL_CIRCUIT = qc",
+      "filename": "phase_estimation.py",
+      "framework": "Qiskit",
+      "language": "python",
+      "note": "The controlled-U block is a phase-rotation toy, not a Hamiltonian simulation implementation.",
+      "status": "native"
+     }
+    ],
+    "description": "The eigenphase-estimation primitive behind chemistry, simulation, and period-finding workflows.",
+    "descriptionJa": "化学、シミュレーション、周期発見の基礎となる固有位相推定プリミティブです。",
+    "explanation": "If U|ψ⟩ = e^{2πiφ}|ψ⟩, the phase register estimates φ. In Hamiltonian simulation, the phase is related to an energy after choosing a time scale and evolution operator.",
+    "explanationJa": "U|ψ⟩ = e^{2πiφ}|ψ⟩なら、位相レジスタがφを推定します。ハミルトニアンシミュレーションでは時間スケールと発展演算子を選び、位相をエネルギーに対応させます。",
+    "explanationMd": "Quantum phase estimation extracts the phase $\\varphi\\in[0,1)$ of an eigenvalue $e^{2\\pi i\\varphi}$ for a unitary $U$ acting on an eigenstate $U|\\psi\\rangle=e^{2\\pi i\\varphi}|\\psi\\rangle$. With $m$ phase-register qubits prepared in $|+\\rangle^{\\otimes m}$, applying controlled powers $c\\text{-}U^{2^j}$ for $j=0,\\dots,m-1$ and an inverse QFT concentrates the register's amplitude near the $m$-bit binary expansion of $\\varphi$, with success probability $\\ge4/\\pi^2$ for the nearest $m$-bit estimate and error shrinking as $O(2^{-m})$ — precision scales with the *coherent* circuit depth needed to apply $U^{2^{m-1}}$. This record checks a single-qubit phase rotation with a known eigenstate against the inverse-QFT readout — a controlled setting where $\\varphi$ is known in advance — matching the entry's caveat: applying QPE to an unknown Hamiltonian's eigenstate additionally requires state overlap and enough coherent evolution time to reach the desired precision.",
+    "explanationMdJa": "量子位相推定は、固有状態 $U|\\psi\\rangle=e^{2\\pi i\\varphi}|\\psi\\rangle$ を持つユニタリ$U$の固有値の位相$\\varphi\\in[0,1)$を抽出します。$m$個の位相レジスタ量子ビットを$|+\\rangle^{\\otimes m}$に用意し、$j=0,\\dots,m-1$について制御べき乗$c\\text{-}U^{2^j}$を適用してから逆QFTをかけると、位相レジスタの振幅は$\\varphi$の$m$ビット2進展開付近に集中し、最近傍の$m$ビット推定に対する成功確率は$\\ge4/\\pi^2$、誤差は$O(2^{-m})$で縮小します。つまり精度は$U^{2^{m-1}}$を適用するのに必要な「コヒーレントな」回路深さにスケールします。この項目は既知の固有状態を持つ1量子ビット位相回転を逆QFT読み出しと照合しており、$\\varphi$が事前に分かっている制御された設定です。これはこのエントリの注記と一致します。未知のハミルトニアンの固有状態にQPEを適用するには、さらにその固有状態との重なりと、所望の精度に達するための十分なコヒーレント発展時間が必要です。",
+    "exportStatus": "Native Qiskit pattern · OpenQASM export is decomposition-dependent",
+    "framework": "Qiskit",
+    "industryUseCases": [
+     "Molecular and materials spectra",
+     "Hamiltonian simulation",
+     "Period finding and cryptographic subroutines"
+    ],
+    "industryUseCasesJa": [
+     "分子・材料スペクトル",
+     "ハミルトニアンシミュレーション",
+     "周期発見と暗号サブルーチン"
+    ],
+    "introduction": "QPE converts an eigenvalue phase into a classical bit string using controlled powers of a unitary and an inverse QFT. It is powerful, but its coherent-depth and state-overlap requirements are much stronger than a small demo suggests.",
+    "introductionJa": "QPEはユニタリの制御べき乗と逆QFTで固有位相を古典ビット列に変換します。小さなデモより、コヒーレント深さと状態重なりの要件がはるかに強い点に注意します。",
+    "literature": [
+     {
+      "authors": "A. Yu. Kitaev",
+      "relevance": "Foundational quantum measurement setting associated with phase estimation and hidden subgroup structure.",
+      "relevanceJa": "位相推定と隠れ部分群構造に関係する量子測定の基礎文献です。",
+      "title": "Quantum measurements and the Abelian Stabilizer Problem",
+      "url": "https://arxiv.org/abs/quant-ph/9511026",
+      "year": "1995"
+     },
+     {
+      "authors": "Nikhil S. Mande, Ronald de Wolf",
+      "relevance": "Provides modern precision and error-cost bounds for phase estimation.",
+      "relevanceJa": "位相推定の精度と誤差に関する現代的なコスト境界を示します。",
+      "title": "Tight Bounds for Quantum Phase Estimation and Related Problems",
+      "url": "https://arxiv.org/abs/2305.04908",
+      "year": "2023"
+     }
+    ],
+    "metadata": [
+     {
+      "label": "Input",
+      "value": "Approximate eigenstate"
+     },
+     {
+      "label": "Output",
+      "value": "Eigenphase bits"
+     },
+     {
+      "label": "Classical post",
+      "value": "Phase interpretation"
+     }
+    ],
+    "provenance": "Literature reference",
+    "relatedSlugs": [
+     "qft-resource-screen",
+     "vqe-ground-state-energy",
+     "shor-period-finding"
+    ],
+    "resources": [
+     {
+      "label": "Registers",
+      "value": "Phase + eigenstate"
+     },
+     {
+      "label": "Precision",
+      "value": "Bits of phase"
+     },
+     {
+      "label": "Core",
+      "value": "Controlled-U"
+     }
+    ],
+    "slug": "quantum-phase-estimation",
+    "source": {
+     "kind": "curated_reference",
+     "license": "Public bibliographic link; code is an original reference implementation",
+     "reviewedBy": "LeonaQ literature curation pass",
+     "title": "Quantum measurements and the Abelian Stabilizer Problem",
+     "url": "https://arxiv.org/abs/quant-ph/9511026"
+    },
+    "sourceCoverage": {
+     "hardware": "unknown",
+     "simulation": "unknown",
+     "theory": "unknown"
+    },
+    "status": "verified_caveats",
+    "tags": [
+     "phase",
+     "eigenvalue",
+     "chemistry",
+     "simulation"
+    ],
+    "title": "Quantum phase estimation",
+    "titleJa": "量子位相推定",
+    "topics": [
+     "algorithm-reference",
+     "phase-estimation",
+     "chemistry"
+    ],
+    "updatedAt": "2026-07-14",
+    "verification": "Known-eigenphase toy circuit checked · coherent controlled-U required",
+    "verificationDetails": {
+     "caveat": "State preparation overlap, coherent evolution, approximation error, and fault tolerance are first-order constraints.",
+     "method": "A single-qubit phase rotation with an exact eigenstate is compared with the inverse-QFT readout.",
+     "result": "Pass for the toy phase · practical applications require controlled powers of U and precision budgeting."
+    },
+    "verificationMethods": [
+     "small_instance",
+     "construction",
+     "research_paper"
+    ],
+    "visualization": {
+     "operations": [
+      {
+       "label": "H",
+       "qubits": [
+        0
+       ],
+       "tone": "accent"
+      },
+      {
+       "label": "c-U²ʲ",
+       "qubits": [
+        0,
+        1
+       ],
+       "tone": "warn"
+      },
+      {
+       "label": "QFT†",
+       "qubits": [
+        0
+       ],
+       "tone": "ok"
+      }
+     ],
+     "outcomes": [
+      {
+       "label": "φ bits",
+       "probability": 0.9
+      }
+     ],
+     "wires": [
+      "phase[0..m]",
+      "eigenstate |ψ⟩"
+     ]
+    }
+   },
+   "slug": "quantum-phase-estimation",
+   "updated_at": "2026-07-19T09:53:39.219756Z"
+  },
+  {
+   "execution_state": "template_only",
+   "provenance": {
+    "import_provider": "catalog_bootstrap",
+    "source_blob_sha256": "49ac9ed0d5d80d2b550167631d894ee3f08351309ff1bcee9c69b1e94a06d224",
+    "upstream_identity": "shor-period-finding",
+    "upstream_ref": "56e14da1074f85b04f4cef4c417d5b4c0c449bda"
+   },
+   "record": {
+    "algorithmFamily": "Hidden-period / factoring",
+    "category": "algorithms",
+    "categoryLabel": "Algorithms",
+    "categoryLabelJa": "アルゴリズム",
+    "classicalComparison": {
+     "baseline": "General number-field sieve for factoring and classical discrete-logarithm algorithms under the same security parameter.",
+     "baselineJa": "同じ安全性パラメータで、因数分解には一般数体篩、離散対数には古典アルゴリズムを比較します。",
+     "metrics": [
+      {
+       "classical": "sub-exponential",
+       "label": "Time complexity",
+       "labelJa": "時間計算量",
+       "quantum": "polynomial in log N"
+      },
+      {
+       "classical": "exp(Õ(b^⅓))",
+       "label": "Scaling (b = log₂N)",
+       "labelJa": "スケーリング (b = log₂N)",
+       "quantum": "Õ(b³)"
+      },
+      {
+       "classical": "—",
+       "label": "Logical qubits (2048-bit)",
+       "labelJa": "論理量子ビット(2048ビット)",
+       "quantum": "~few thousand"
+      },
+      {
+       "classical": "RSA / ECC assumed hard",
+       "label": "Impact",
+       "labelJa": "影響",
+       "quantum": "breaks RSA / ECC"
+      }
+     ],
+     "practicalRead": "Compare logical qubits, T gates, error-correction overhead, runtime, and key sizes; never collapse a mathematical threat into a current hardware claim.",
+     "practicalReadJa": "論理量子ビット、Tゲート、誤り訂正オーバーヘッド、実時間、鍵サイズを比較し、数学的脅威を現行ハードウェアの主張に短絡させないでください。",
+     "quantumClaim": "Polynomial-time asymptotic factoring and discrete logarithms in the fault-tolerant query/gate model.",
+     "quantumClaimJa": "フォールトトレラントなクエリ・ゲートモデルで、因数分解と離散対数を多項式時間で行う漸近的主張です。"
+    },
+    "codeVariants": [
+     {
+      "code": "from qiskit import QuantumCircuit\n\n# Reference skeleton: modular multiplication is problem-specific.\nqc = QuantumCircuit(6)\nqc.h(range(3))\n# controlled-U^(2^j) blocks feed inverse QFT.\nqc.barrier()\n\nFINAL_CIRCUIT = qc",
+      "filename": "shor_period_finding.py",
+      "framework": "Qiskit",
+      "language": "python",
+      "note": "This is a conceptual skeleton, not a production factoring implementation or security benchmark.",
+      "status": "native"
+     }
+    ],
+    "description": "The cryptography-facing quantum algorithm record, with the assumptions that make its security relevance precise.",
+    "descriptionJa": "暗号に関わる量子アルゴリズムと、その安全性の前提を説明します。",
+    "explanation": "Quantum phase estimation extracts a period from modular arithmetic; the classical continued-fraction step turns that period into candidate factors. The record keeps those quantum and classical halves separate.",
+    "explanationJa": "量子位相推定で剰余算術の周期を抽出し、古典の連分数処理で因数候補に変換します。量子部分と古典部分を分けて扱います。",
+    "explanationMd": "Shor's algorithm reduces factoring $N$ to finding the period $r$ of $f(x)=a^x \\bmod N$ for a random $a$ coprime to $N$: once $r$ is known, $\\gcd(a^{r/2}\\pm1, N)$ yields a nontrivial factor with good probability (when $r$ is even and $a^{r/2}\\not\\equiv -1$). The quantum step estimates $r$ via phase estimation: preparing a superposition over the exponent register, applying controlled modular exponentiation $U_a^{2^j}$, and reading out with an inverse QFT gives a phase close to $s/r$ for random integer $s$; a classical continued-fraction expansion then recovers $r$. This record documents that circuit motif — controlled-$U$ powers feeding an inverse QFT — and keeps the quantum (period-extraction) and classical (continued-fraction) halves visible as separate steps, consistent with its own status: a reviewable reference, not a resource-estimated fault-tolerant implementation, since a cryptographically relevant instance needs thousands of logical qubits and deep modular-arithmetic circuits.",
+    "explanationMdJa": "Shorのアルゴリズムは、$N$と互いに素なランダムな$a$に対する $f(x)=a^x \\bmod N$ の周期$r$を求める問題に因数分解を帰着させます。$r$が分かれば、$\\gcd(a^{r/2}\\pm1, N)$が(rが偶数で$a^{r/2}\\not\\equiv -1$のとき)高確率で非自明な因数を与えます。量子部分は位相推定で$r$を推定します。指数レジスタを重ね合わせにし、制御剰余べき乗$U_a^{2^j}$を適用し、逆QFTで読み出すとランダムな整数$s$に対して$s/r$に近い位相が得られ、古典的な連分数展開でその位相から$r$を復元します。この項目は、制御$U$べき乗が逆QFTに入るというこの回路のモチーフを記録し、量子(周期抽出)部分と古典(連分数)部分を別のステップとして明示しており、これはこの項目自身のステータス、すなわちレビュー可能な参照であってリソース見積り済みのフォールトトレラント実装ではないという位置づけと整合します。暗号的に意味のある規模には数千の論理量子ビットと深い剰余算術回路が必要だからです。",
+    "exportStatus": "Conceptual Qiskit path · OpenQASM conversion requires resource-aware decomposition",
+    "framework": "Qiskit",
+    "industryUseCases": [
+     "Post-quantum cryptography migration planning",
+     "PKI and long-lived secret inventory",
+     "Quantum-safe protocol testing"
+    ],
+    "industryUseCasesJa": [
+     "耐量子暗号への移行計画",
+     "PKIと長期秘密情報の棚卸し",
+     "量子安全プロトコルのテスト"
+    ],
+    "introduction": "Shor's algorithm reduces factoring and discrete logarithms to period finding. It is industry-relevant primarily as a migration and risk-planning reference today, not as a near-term production attack.",
+    "introductionJa": "Shorのアルゴリズムは因数分解と離散対数を周期発見に帰着します。現在の主な産業的意義は、直近の攻撃ではなく移行とリスク計画です。",
+    "literature": [
+     {
+      "authors": "Peter W. Shor",
+      "relevance": "Original factoring and discrete-logarithm algorithm based on quantum period finding.",
+      "relevanceJa": "量子周期発見に基づく因数分解・離散対数アルゴリズムの原論文です。",
+      "title": "Polynomial-Time Algorithms for Prime Factorization and Discrete Logarithms on a Quantum Computer",
+      "url": "https://arxiv.org/abs/quant-ph/9508027",
+      "year": "1995"
+     }
+    ],
+    "metadata": [
+     {
+      "label": "Threatened",
+      "value": "RSA / finite-field DLP"
+     },
+     {
+      "label": "Quantum output",
+      "value": "Period samples"
+     },
+     {
+      "label": "Deployment",
+      "value": "Migration planning"
+     }
+    ],
+    "provenance": "Literature reference",
+    "relatedSlugs": [
+     "quantum-phase-estimation",
+     "qft-resource-screen",
+     "shor-code-error-correction"
+    ],
+    "resources": [
+     {
+      "label": "Quantum core",
+      "value": "Order finding"
+     },
+     {
+      "label": "Classical post",
+      "value": "Continued fractions"
+     },
+     {
+      "label": "Readiness",
+      "value": "FTQC required"
+     }
+    ],
+    "slug": "shor-period-finding",
+    "source": {
+     "kind": "curated_reference",
+     "license": "Public bibliographic link; code is an original reference sketch",
+     "reviewedBy": "LeonaQ literature curation pass",
+     "title": "Polynomial-Time Algorithms for Prime Factorization and Discrete Logarithms on a Quantum Computer",
+     "url": "https://arxiv.org/abs/quant-ph/9508027"
+    },
+    "sourceCoverage": {
+     "hardware": "unknown",
+     "simulation": "unknown",
+     "theory": "unknown"
+    },
+    "status": "community_review",
+    "tags": [
+     "cryptography",
+     "factoring",
+     "period finding",
+     "fault tolerant"
+    ],
+    "title": "Shor period finding",
+    "titleJa": "Shor周期発見",
+    "topics": [
+     "algorithm-reference",
+     "phase-estimation",
+     "error-correction",
+     "cryptography"
+    ],
+    "updatedAt": "2026-07-14",
+    "verification": "Circuit motif documented · fault-tolerant resource estimate pending",
+    "verificationDetails": {
+     "caveat": "A useful implementation requires large, fault-tolerant resources and careful classical post-processing.",
+     "method": "The order-finding and inverse-QFT structure is represented as a literature-oriented reference record.",
+     "result": "Reviewable reference · not a claim of practical cryptanalysis."
+    },
+    "verificationMethods": [
+     "community_submission",
+     "construction",
+     "research_paper"
+    ],
+    "visualization": {
+     "operations": [
+      {
+       "label": "U_f",
+       "qubits": [
+        0
+       ],
+       "tone": "warn"
+      },
+      {
+       "label": "QPE",
+       "qubits": [
+        0,
+        1
+       ],
+       "tone": "accent"
+      },
+      {
+       "label": "QFT†",
+       "qubits": [
+        1
+       ],
+       "tone": "ok"
+      }
+     ],
+     "outcomes": [
+      {
+       "label": "Period r",
+       "probability": 0.5
+      }
+     ],
+     "wires": [
+      "work register",
+      "phase register",
+      "classical post-processing"
+     ]
+    }
+   },
+   "slug": "shor-period-finding",
+   "updated_at": "2026-07-19T09:54:04.797330Z"
+  }
+ ]
+}

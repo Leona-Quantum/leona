@@ -112,6 +112,9 @@ EXPORTED = [
     courses.GenerateCourseResponse,
     courses.CreateCourseTurnRequest,
     courses.CreateCourseTurnResponse,
+    # Proposal 8. Only the top-level response is listed: the row, entry and
+    # module shapes and the visibility enum are referenced by it and get hoisted.
+    courses.CourseGradebook,
     models.VerificationRecord,
     models.QpuRunRecord,
 ]

@@ -936,6 +936,32 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
     chatLoadFailed: string;
     chatSendFailed: string;
     progressLabel: string;
+
+    /** The course creator's view: every member's latest graded attempt. */
+    gradebookTitle: string;
+    gradebookLede: string;
+    gradebookEmpty: string;
+    /** Anyone else's view of the same table: their own row only. */
+    yourProgressTitle: string;
+    yourProgressLede: string;
+    yourProgressEmpty: string;
+    gradebookLoading: string;
+    gradebookLoadFailed: string;
+    gradebookRefresh: string;
+    gradebookMemberColumn: string;
+    gradebookYou: string;
+    gradebookTotalColumn: string;
+    gradebookLastColumn: string;
+    gradebookNotStarted: string;
+    /** A course total that cannot be known yet: a module still has no ready notebook. */
+    gradebookTotalUnknown: string;
+    gradebookTotalsPending: string;
+    gradebookScore: (passed: number, graded: number) => string;
+    gradebookOlderVersion: string;
+    gradebookOlderVersionHint: (seq: number) => string;
+    gradebookDownloadCsv: string;
+    gradebookDownloadingCsv: string;
+    gradebookDownloadCsvFailed: string;
   };
 }> = {
   en: {
@@ -2023,6 +2049,32 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
     chatLoadFailed: "The conversation could not be loaded.",
     chatSendFailed: "The message could not be sent.",
     progressLabel: "Working",
+
+    gradebookTitle: "Gradebook",
+    gradebookLede:
+      "The latest result each member got on each module. Only you can see everyone's results. "
+      + "Other members see only their own.",
+    gradebookEmpty: "No one has checked an exercise in this course yet.",
+    yourProgressTitle: "Your progress",
+    yourProgressLede: "Your latest result on each module. You and the person who made this course can see it.",
+    yourProgressEmpty: "You have not checked an exercise in this course yet.",
+    gradebookLoading: "Loading results…",
+    gradebookLoadFailed: "The results could not be loaded.",
+    gradebookRefresh: "Refresh",
+    gradebookMemberColumn: "Member",
+    gradebookYou: "You",
+    gradebookTotalColumn: "Total",
+    gradebookLastColumn: "Last checked",
+    gradebookNotStarted: "Not started",
+    gradebookTotalUnknown: "Not known yet",
+    gradebookTotalsPending: "Some modules do not have a ready notebook yet, so totals are not known yet.",
+    gradebookScore: (passed, graded) => `${passed} of ${graded} exercises correct`,
+    gradebookOlderVersion: "Earlier version",
+    gradebookOlderVersionHint: (seq) =>
+      `Checked against version ${seq} of this notebook, which has since been revised.`,
+    gradebookDownloadCsv: "Download CSV",
+    gradebookDownloadingCsv: "Downloading…",
+    gradebookDownloadCsvFailed: "The gradebook could not be downloaded.",
   },
   },
   ja: {
@@ -3099,6 +3151,31 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
     chatLoadFailed: "会話を読み込めませんでした。",
     chatSendFailed: "メッセージを送信できませんでした。",
     progressLabel: "処理中",
+
+    gradebookTitle: "成績表",
+    gradebookLede:
+      "各メンバーが各モジュールで最後に採点を受けた結果です。全員の結果を見られるのはあなただけです。"
+      + "ほかのメンバーには自分の結果だけが表示されます。",
+    gradebookEmpty: "このコースの演習は、まだ誰も採点を受けていません。",
+    yourProgressTitle: "あなたの進捗",
+    yourProgressLede: "各モジュールで最後に採点を受けた結果です。あなたと、このコースを作成した人が見られます。",
+    yourProgressEmpty: "このコースの演習は、まだ採点を受けていません。",
+    gradebookLoading: "結果を読み込んでいます…",
+    gradebookLoadFailed: "結果を読み込めませんでした。",
+    gradebookRefresh: "更新",
+    gradebookMemberColumn: "メンバー",
+    gradebookYou: "あなた",
+    gradebookTotalColumn: "合計",
+    gradebookLastColumn: "最終採点",
+    gradebookNotStarted: "未着手",
+    gradebookTotalUnknown: "未確定",
+    gradebookTotalsPending: "準備のできたノートブックがまだないモジュールがあるため、合計はまだ確定していません。",
+    gradebookScore: (passed, graded) => `${graded} 問中 ${passed} 問が正解です`,
+    gradebookOlderVersion: "以前の版",
+    gradebookOlderVersionHint: (seq) => `このノートブックの版 ${seq} で採点された結果です。その後、内容が改訂されています。`,
+    gradebookDownloadCsv: "CSVをダウンロード",
+    gradebookDownloadingCsv: "ダウンロードしています…",
+    gradebookDownloadCsvFailed: "成績表をダウンロードできませんでした。",
   },
   },
 };
