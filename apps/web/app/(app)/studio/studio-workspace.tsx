@@ -47,6 +47,7 @@ import { MAX_CPU_SEED, MAX_CPU_SHOTS, cpuSimulationEligibility, loadCpuSimulatio
 import { TIER_LIMITS } from "../../../lib/account-tier";
 import { formatShare, simulationChartData, simulationReading, type SimulationChartData, type SimulationReading } from "../../../lib/simulation-visual";
 import { QpuSubmissionRefused, backendNameOf, fetchLatestQpuRunFor, fetchQpuBackends, fetchQpuEstimate, fetchQpuRun, fetchQpuSubmissionGate, formatUsd, isPricedOnly, submitQpuRun, type QpuBackendInfo, type QpuCostEstimate, type QpuRunRecord, type QpuSubmissionGate } from "../../../lib/qpu";
+import { ZNE_SCALE_FACTORS } from "../../../lib/qpu-mitigation";
 import { WORKSPACE_COPY } from "../../../lib/workspace-locale";
 import { DEFAULT_RUN_SHOTS, sampling } from "../../../lib/studio-run-request";
 import { verificationFromMetadata, verificationFromResource, type VerificationCheck } from "../../../lib/verification-record";
@@ -3363,6 +3364,10 @@ function QpuLane({ artifact, shots, copy, limits }: { artifact: LibraryArtifact 
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [qpuRun, setQpuRun] = useState<QpuRunRecord | null>(null);
+  // Zero-noise extrapolation, off by default: it sends three circuits and uses
+  // about three times the provider allowance, which the panel says before the
+  // box can be ticked (proposal 5, increment 4).
+  const [zne, setZne] = useState(false);
 
   const parsedShots = Number.parseInt(shots, 10);
   const shotCount = Number.isInteger(parsedShots) && parsedShots >= 1 && parsedShots <= MAX_CPU_SHOTS ? parsedShots : 1024;
@@ -3384,12 +3389,17 @@ function QpuLane({ artifact, shots, copy, limits }: { artifact: LibraryArtifact 
     };
   }, []);
 
+  const selectedBackend = backends?.find((item) => item.device_id === selected) ?? null;
+  // Only a device Leona can submit to offers ZNE, and a box ticked on one device
+  // does not carry over to a priced-only one.
+  const zneOn = zne && selectedBackend !== null && !isPricedOnly(selectedBackend);
+
   useEffect(() => {
     if (!selected) return;
     let cancelled = false;
     setEstimating(true);
     setEstimateError(false);
-    fetchQpuEstimate(selected, shotCount)
+    fetchQpuEstimate(selected, shotCount, { zne: zneOn })
       .then((result) => {
         if (!cancelled) setEstimate(result);
       })
@@ -3405,9 +3415,9 @@ function QpuLane({ artifact, shots, copy, limits }: { artifact: LibraryArtifact 
     return () => {
       cancelled = true;
     };
-  }, [selected, shotCount]);
+  }, [selected, shotCount, zneOn]);
 
-  const backend = backends?.find((item) => item.device_id === selected) ?? null;
+  const backend = selectedBackend;
   const verified = artifact?.status === "verified" || artifact?.status === "verified_caveats";
   // Only a stored interchange program is submittable: the qasm field also
   // carries human-readable availability notes for artifacts without one.
@@ -3427,6 +3437,7 @@ function QpuLane({ artifact, shots, copy, limits }: { artifact: LibraryArtifact 
       shots: shotCount,
       qasm: submittableQasm,
       source_fingerprint: sourceFingerprint(submittableQasm),
+      zne: zneOn,
     })
       .then(setQpuRun)
       .catch((cause: unknown) => {
@@ -3498,9 +3509,15 @@ function QpuLane({ artifact, shots, copy, limits }: { artifact: LibraryArtifact 
                   <>
                     <dl className="mj-studio-contract">
                       <div><dt>{copy.hardwareTaskFee}</dt><dd>{estimate.task_fee_usd !== null ? formatUsd(estimate.task_fee_usd) : "—"}</dd></div>
-                      <div><dt>{copy.hardwareShotFees(estimate.shots.toLocaleString("en-US"))}</dt><dd>{estimate.shot_fees_usd !== null ? formatUsd(estimate.shot_fees_usd) : "—"}</dd></div>
+                      {/* Every shot the provider runs, which with ZNE is three circuits' worth. */}
+                      <div><dt>{copy.hardwareShotFees((estimate.total_shots ?? estimate.shots).toLocaleString("en-US"))}</dt><dd>{estimate.shot_fees_usd !== null ? formatUsd(estimate.shot_fees_usd) : "—"}</dd></div>
                       <div><dt>{copy.hardwareEstimatedTotal}</dt><dd><strong>{estimate.total_usd !== null ? formatUsd(estimate.total_usd) : "—"}</strong></dd></div>
                     </dl>
+                    {(estimate.circuits ?? 1) > 1 ? (
+                      <p className="mj-qpu-note">
+                        {copy.hardwareZnePriced(String(estimate.circuits), (estimate.total_shots ?? estimate.shots).toLocaleString("en-US"))}
+                      </p>
+                    ) : null}
                     <p className="mj-qpu-disclaimer">{estimate.disclaimer}</p>
                   </>
                 ) : (
@@ -3509,6 +3526,23 @@ function QpuLane({ artifact, shots, copy, limits }: { artifact: LibraryArtifact 
               ) : null}
               <p className="mj-qpu-source"><a href={backend.rate_source} target="_blank" rel="noreferrer">{copy.hardwareRateSource} ↗</a></p>
             </div>
+          ) : null}
+          {backend && !pricedOnly ? (
+            // The cost is stated beside the box, before it is ticked: what is
+            // sent, how many shots that is, and what it does to the allowance.
+            <label className="mj-qpu-zne-toggle">
+              <input type="checkbox" checked={zne} disabled={submitting} onChange={(event) => setZne(event.target.checked)} />
+              <span>
+                <strong>{copy.hardwareZneOption}</strong>
+                <small>
+                  {copy.hardwareZneCost(
+                    String(ZNE_SCALE_FACTORS.length),
+                    (shotCount * ZNE_SCALE_FACTORS.length).toLocaleString("en-US"),
+                    shotCount.toLocaleString("en-US"),
+                  )}
+                </small>
+              </span>
+            </label>
           ) : null}
           <button
             className="mj-primary-button"
@@ -3543,6 +3577,7 @@ function QpuLane({ artifact, shots, copy, limits }: { artifact: LibraryArtifact 
                   qasm={submittableQasm ?? ""}
                   submittedFingerprint={qpuRun.source_fingerprint}
                   counts={qpuRun.raw_counts}
+                  mitigation={qpuRun.mitigation}
                   limits={limits}
                   copy={copy}
                 />

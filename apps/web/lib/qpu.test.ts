@@ -17,7 +17,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { QpuSubmissionRefused, isPricedOnly, submitQpuRun } from "./qpu.ts";
+import { QpuSubmissionRefused, fetchQpuEstimate, isPricedOnly, submitQpuRun } from "./qpu.ts";
 import { WORKSPACE_COPY } from "./workspace-locale.ts";
 
 const REQUEST = {
@@ -188,5 +188,44 @@ test("both locales say why a priced-only device was refused, not the generic fal
     assert.notEqual(specific, studio.hardwareBlockedReason("a-reason-nobody-defined"), locale);
     assert.match(specific, /IBM/, locale);
     assert.match(studio.hardwarePricedOnly, /IBM/, locale);
+  }
+});
+
+
+/**
+ * Zero-noise extrapolation (proposal 5, increment 4) rides on the same two
+ * requests. The flag is sent only when it is on: both request models are
+ * `extra="forbid"`, so a key an older API does not know would refuse every
+ * ordinary submission during a deploy.
+ */
+function captureBodies(): string[] {
+  const bodies: string[] = [];
+  (globalThis as { fetch?: unknown }).fetch = async (_url: unknown, init?: { body?: string }) => {
+    bodies.push(init?.body ?? "");
+    return new Response(JSON.stringify({ id: "r", status: "queued", device_id: "ibm.open_plan", shots: 1 }), { status: 201 });
+  };
+  return bodies;
+}
+
+test("zne is sent only when it is on", async () => {
+  const bodies = captureBodies();
+  await submitQpuRun(REQUEST);
+  await submitQpuRun({ ...REQUEST, zne: false });
+  await submitQpuRun({ ...REQUEST, zne: true });
+  await fetchQpuEstimate("ibm.open_plan", 1024);
+  await fetchQpuEstimate("ibm.open_plan", 1024, { zne: true });
+  const parsed = bodies.map((body) => JSON.parse(body) as Record<string, unknown>);
+  assert.equal("zne" in parsed[0], false);
+  assert.equal("zne" in parsed[1], false);
+  assert.equal(parsed[2].zne, true);
+  assert.deepEqual(parsed[3], { device_id: "ibm.open_plan", shots: 1024 });
+  assert.deepEqual(parsed[4], { device_id: "ibm.open_plan", shots: 1024, zne: true });
+});
+
+test("the ZNE cost sentence names the circuits and both shot totals in both locales", () => {
+  for (const locale of ["en", "ja"] as const) {
+    const sentence = WORKSPACE_COPY[locale].studio.hardwareZneCost("3", "3,072", "1,024");
+    for (const part of ["3", "3,072", "1,024"]) assert.ok(sentence.includes(part), `${locale}: ${part}`);
+    assert.equal(sentence.includes("\u2014"), false, "no em dashes in reader-facing copy");
   }
 });

@@ -42,7 +42,16 @@ export function isPricedOnly(backend: Pick<QpuBackendInfo, "submittable">): bool
 
 export type QpuCostEstimate = {
   device_id: string;
+  /** Per circuit, as asked for. */
   shots: number;
+  /**
+   * Circuits the submission sends: 1, or 3 with zero-noise extrapolation.
+   * Optional because an API older than the field sends nothing, and it only
+   * ever priced one circuit.
+   */
+  circuits?: number;
+  /** Shots the provider runs in total, `shots * circuits`. */
+  total_shots?: number | null;
   basis: "vendor_rate_card" | "free_tier_allowance";
   currency: "USD";
   task_fee_usd: number | null;
@@ -73,11 +82,13 @@ export async function fetchQpuBackends(): Promise<QpuBackendInfo[]> {
   return payload.backends as QpuBackendInfo[];
 }
 
-export async function fetchQpuEstimate(deviceKey: string, shots: number): Promise<QpuCostEstimate> {
+export async function fetchQpuEstimate(deviceKey: string, shots: number, options: { zne?: boolean } = {}): Promise<QpuCostEstimate> {
+  // `zne` is sent only when asked for, so an API older than the field (which is
+  // `extra="forbid"`) never sees a key it would refuse.
   const response = await fetch("/api/qpu/estimates", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ device_id: deviceKey, shots }),
+    body: JSON.stringify(options.zne ? { device_id: deviceKey, shots, zne: true } : { device_id: deviceKey, shots }),
     cache: "no-store",
   });
   if (!response.ok) throw new Error(`qpu estimate unavailable (${response.status})`);
@@ -115,6 +126,13 @@ export type QpuRunRecord = {
   rate_source: string;
   rate_confirmed_on: string;
   raw_counts: Record<string, number> | null;
+  /**
+   * What mitigation needs (migration 0066): the zero-noise-extrapolation opt-in,
+   * the readout calibration recorded at submit, and the folded circuits' counts.
+   * Read it only through `readMitigation` (qpu-mitigation.ts), which refuses a
+   * version it does not know. Optional because an older API sends nothing.
+   */
+  mitigation?: unknown;
   error: string | null;
   submitted_at: string | null;
   completed_at: string | null;
@@ -156,11 +174,14 @@ export async function submitQpuRun(request: {
   shots: number;
   qasm: string;
   source_fingerprint: string;
+  /** Opt in to zero-noise extrapolation. Omitted from the body unless true. */
+  zne?: boolean;
 }): Promise<QpuRunRecord> {
+  const { zne, ...rest } = request;
   const response = await fetch("/api/qpu/submissions", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(request),
+    body: JSON.stringify(zne ? { ...rest, zne: true } : rest),
     cache: "no-store",
   });
   // Parsed defensively, because the body is not always this API's. A proxy

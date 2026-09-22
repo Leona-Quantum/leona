@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { fetchQpuRunHistory, type QpuRunHistoryItem } from "../../../../lib/qpu";
+import { mitigatedReadings, zneRequested } from "../../../../lib/qpu-mitigation";
 import { appendRunPage, groupRunsByBackend, readRun, type BackendGroup } from "../../../../lib/qpu-run-history";
 import type { PublicLocale } from "../../../../lib/public-locale";
 import type { CpuSimulationLimits } from "../../../../lib/studio-simulation";
@@ -162,6 +163,16 @@ function RunCard({
   const [detailsOpen, setDetailsOpen] = useState(false);
   const when = item.submitted_at ?? item.created_at;
   const computed = reading.kind === "compared" && reading.comparison.status === "computed" ? reading.comparison : null;
+  // Beside the raw distance, never instead of it: the readout-corrected and
+  // zero-noise distances to the same ideal, from the run's stored inputs.
+  const mitigated = useMemo(
+    () =>
+      computed && item.raw_counts
+        ? mitigatedReadings({ ideal: computed.ideal, qubitCount: computed.qubitCount, rawCounts: item.raw_counts, mitigation: item.mitigation })
+        : null,
+    [computed, item.raw_counts, item.mitigation],
+  );
+  const zne = zneRequested(item.mitigation);
 
   return (
     <li className="mj-qpu-record mj-qpu-history-run">
@@ -170,6 +181,7 @@ function RunCard({
         <span>{copy.status(item.status)}</span>
         <span>{`${copy.columnShots}: ${item.shots.toLocaleString(locale === "ja" ? "ja-JP" : "en-US")}`}</span>
         {item.provider_job_id ? <span className="mj-mono-muted">{`${studioCopy.hardwareJobId}: ${item.provider_job_id}`}</span> : null}
+        {zne ? <span>{copy.zneRequested}</span> : null}
       </div>
 
       {computed ? (
@@ -177,6 +189,12 @@ function RunCard({
           <div><dt>{copy.columnDistance}</dt><dd>{computed.tvd.toFixed(3)}</dd></div>
           <div><dt>{copy.columnShotNoise}</dt><dd>{computed.shotNoiseTvd.toFixed(3)}</dd></div>
           <div><dt>{copy.columnFidelity}</dt><dd>{computed.hellingerFidelity.toFixed(3)}</dd></div>
+          {mitigated?.readout.status === "computed" ? (
+            <div><dt>{copy.columnReadoutCorrected}</dt><dd>{mitigated.readout.reading.tvd.toFixed(3)}</dd></div>
+          ) : null}
+          {mitigated?.zne?.status === "computed" ? (
+            <div><dt>{copy.columnZne}</dt><dd>{mitigated.zne.reading.richardson.tvd.toFixed(3)}</dd></div>
+          ) : null}
         </dl>
       ) : (
         <p className="mj-qpu-note">{readingSentence(reading, copy, studioCopy)}</p>
@@ -193,6 +211,7 @@ function RunCard({
               qasm={item.qasm}
               submittedFingerprint={item.source_fingerprint}
               counts={item.raw_counts}
+              mitigation={item.mitigation}
               limits={limits}
               copy={studioCopy}
             />
