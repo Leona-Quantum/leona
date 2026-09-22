@@ -10,8 +10,9 @@ finder's rules read five other rows.
 
 Paging follows `collectCatalogPages` in `apps/web/lib/catalog-pagination.ts`: pages
 of 100, the server's `X-Catalog-Total` header as the completeness check, and a
-refusal rather than a partial Atlas when the pages do not add up. A partial catalog
-looks exactly like a complete one to whoever reads it, so this never serves one.
+refusal rather than a partial Atlas when the pages do not add up or any row has no
+readable record. A partial catalog looks exactly like a complete one to whoever
+reads it, so this never serves one.
 """
 
 from __future__ import annotations
@@ -115,8 +116,9 @@ class CatalogClient:
                     return await self._walk(http)
                 except _CatalogChanged as exc:
                     raise CatalogUnavailable(
-                        f"The Atlas could not be read as one consistent whole ({exc}). This "
-                        "usually means a publication is in progress. Try again in a minute."
+                        f"The Atlas could not be read as one complete, consistent whole ({exc}). "
+                        "Not answering from part of it. If a publication is in progress, try "
+                        "again in a minute."
                     ) from exc
 
     async def _walk(self, http: httpx.AsyncClient) -> list[AtlasRow]:
@@ -159,10 +161,14 @@ class CatalogClient:
             )
         rows, rejected = parse_rows(collected)
         if rejected:
-            logger.warning(
-                "skipped %d Atlas row(s) with no readable record: %s",
-                len(rejected),
-                ", ".join(rejected[:10]),
+            # A published entry whose record is null or has no title still counts toward
+            # X-Catalog-Total, so the count check above passes. Dropping it and serving
+            # the rest would be answering from a partial Atlas, so it fails the read the
+            # same way a short count does, and nothing is cached.
+            shown = ", ".join(rejected[:10])
+            more = f" and {len(rejected) - 10} more" if len(rejected) > 10 else ""
+            raise _CatalogChanged(
+                f"{len(rejected)} published row(s) had no readable record: {shown}{more}"
             )
         slugs = [row.slug for row in rows]
         if len(set(slugs)) != len(slugs):

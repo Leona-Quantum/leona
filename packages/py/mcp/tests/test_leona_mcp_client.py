@@ -100,6 +100,45 @@ async def test_duplicate_records_across_pages_are_not_served(small_pages):
         await CatalogClient("https://api.example", transport=api.transport()).rows()
 
 
+@pytest.mark.parametrize(
+    ("broken", "named"),
+    [
+        ({"record": None}, "hadamard-gate"),
+        ({"record": {"slug": "hadamard-gate"}}, "hadamard-gate"),
+        ({"slug": None}, "index:5"),
+    ],
+)
+async def test_a_row_without_a_readable_record_fails_the_read_and_is_not_cached(
+    small_pages, broken, named
+):
+    # The count still matches X-Catalog-Total (ten rows, total ten), so only the row
+    # check can catch this. Serving the other nine would be a partial Atlas.
+    payload = raw_rows()
+    assert payload[5]["slug"] == "hadamard-gate"
+    payload[5] = {**payload[5], **broken}
+    api = FakeCatalogApi(payload)
+    catalog = CatalogClient("https://api.example", transport=api.transport())
+    with pytest.raises(CatalogUnavailable, match="1 published row") as caught:
+        await catalog.rows()
+    assert named in str(caught.value)
+    assert "Not answering from part of it" in str(caught.value)
+    # Both walks read every page (4 pages of 3), and nothing was kept.
+    assert len(api.requests) == 8
+    api.payload = raw_rows()
+    assert len(await catalog.rows()) == 10
+    assert len(api.requests) == 12
+
+
+async def test_many_unreadable_rows_are_counted_and_the_first_ten_named():
+    payload = [{"slug": f"s{i:02d}", "record": None} for i in range(12)]
+    api = FakeCatalogApi(payload)
+    with pytest.raises(CatalogUnavailable, match=r"12 published row\(s\)") as caught:
+        await CatalogClient("https://api.example", transport=api.transport()).rows()
+    message = str(caught.value)
+    assert "s00" in message and "s09" in message and "s10" not in message
+    assert "and 2 more" in message
+
+
 @pytest.mark.parametrize("status", [404, 429, 500])
 async def test_an_http_error_is_reported_in_plain_words(status):
     api = FakeCatalogApi(status=status)
