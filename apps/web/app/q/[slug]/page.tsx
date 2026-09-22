@@ -13,9 +13,9 @@ import { QappForkButton } from "./qapp-fork-button";
 export async function generateMetadata({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;
   const qapp = await loadPublicQapp(slug);
-  if (!qapp) return { title: "Qapp — Leona Quantum", robots: { index: false } };
+  if (!qapp) return { title: "Qapp", robots: { index: false } };
   return {
-    title: `${qapp.title} — Qapp · Leona Quantum`,
+    title: `${qapp.title} — Qapp`,
     description: qapp.description,
     openGraph: { title: qapp.title, description: qapp.description, type: "website" },
     robots: { index: true, follow: true },
