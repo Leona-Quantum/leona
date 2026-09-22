@@ -508,3 +508,166 @@ async def test_append_turn_starts_at_one_when_there_are_no_turns():
         make_scope(), session, course.id, role="user", content="hi", run_id=None
     )
     assert turn.seq == 1
+
+
+# -------------------------------------------------------------------------- gradebook
+#
+# Who sees which rows is the ruling (ai-ops 260, option 1), so it is asserted on the SQL
+# the repo emits: the route tests replace this function with a fake, and a fake cannot
+# show which clauses the real query carries. `tests/authz/test_course_gradebook_live.py`
+# proves the same rule against Postgres.
+
+GRADED_SPEC = {
+    "schema_version": 1,
+    "slug": "graded",
+    "title": "Graded",
+    "kind": "lesson",
+    "cells": [
+        {"id": "c01", "kind": "markdown", "role": "objective", "source": "# Hi"},
+        {
+            "id": "ex1",
+            "kind": "code",
+            "role": "solution",
+            "source": "def double(x):\n    return 2 * x",
+            "stub": "def double(x):\n    ...",
+            "check": "assert double(3) == 6",
+        },
+        {
+            "id": "ex2",
+            "kind": "code",
+            "role": "solution",
+            "source": "def triple(x):\n    return 3 * x",
+            "stub": "def triple(x):\n    ...",
+            "check": "assert triple(2) == 6",
+        },
+    ],
+}
+
+
+def _gradebook_session(course, modules, live, grade_rows):
+    """Results in the order `course_gradebook` issues its statements: the course, the
+    course again (inside `list_modules`), the modules, the live notebooks with their
+    current specs, then the grades."""
+    return SequencedSession(
+        [
+            _Res(scalar=course),
+            _Res(scalar=course),
+            _Res(modules),
+            _Res(live),
+            _Res(grade_rows),
+        ]
+    )
+
+
+def _grade_row(user_id, notebook_id, *, email, name=None, passed=1, graded=2, current=True):
+    version_id = uuid.uuid4()
+    return (
+        user_id,
+        email,
+        name,
+        notebook_id,
+        version_id,
+        3,
+        version_id if current else uuid.uuid4(),
+        uuid.uuid4(),
+        NOW,
+        passed,
+        graded - passed,
+        graded,
+        graded,
+    )
+
+
+async def test_the_course_creator_gradebook_query_has_no_user_clause():
+    owner = make_scope(Role.MEMBER)
+    course = _course_row(workspace_id=owner.workspace_id, owner_user_id=owner.user_id)
+    notebook_id = uuid.uuid4()
+    module = _module_row(course_id=course.id, notebook_id=notebook_id)
+    session = _gradebook_session(course, [module], [(notebook_id, GRADED_SPEC)], [])
+
+    book = await courses_repo.course_gradebook(owner, session, course.id)
+
+    assert book.visibility is contracts.GradebookVisibility.ALL_MEMBERS
+    sql, params = compiled(session.statements[-1])
+    assert "run_events.type = " in sql
+    assert "runs.workspace_id = " in sql, "tenancy boundary missing"
+    assert "notebooks.workspace_id = " in sql
+    assert "notebooks.deleted_at IS NULL" in sql
+    # A current member only: the members page stops showing someone who left.
+    assert "memberships.workspace_id = " in sql
+    assert "DISTINCT ON (runs.user_id, notebook_versions.notebook_id)" in sql
+    # The creator's view is everyone's, so no clause pins it to one user.
+    assert "runs.user_id = %(" not in sql
+    assert owner.user_id not in params.values()
+
+
+async def test_a_member_who_did_not_create_the_course_is_pinned_to_their_own_row():
+    """The mutation this exists for: drop the `Run.user_id` clause for non-creators
+    and a classmate's marks land on every member's screen."""
+    member = make_scope(Role.ADMIN)
+    course = _course_row(workspace_id=member.workspace_id)  # someone else created it
+    notebook_id = uuid.uuid4()
+    module = _module_row(course_id=course.id, notebook_id=notebook_id)
+    session = _gradebook_session(course, [module], [(notebook_id, GRADED_SPEC)], [])
+
+    book = await courses_repo.course_gradebook(member, session, course.id)
+
+    assert book.visibility is contracts.GradebookVisibility.OWN_ROW
+    sql, params = compiled(session.statements[-1])
+    assert "runs.user_id = %(" in sql, "a non-creator must only ever see their own row"
+    assert member.user_id in params.values()
+
+
+async def test_gradebook_rows_total_over_the_whole_course_not_only_attempted_modules():
+    owner = make_scope()
+    course = _course_row(workspace_id=owner.workspace_id, owner_user_id=owner.user_id)
+    first_nb, second_nb = uuid.uuid4(), uuid.uuid4()
+    modules = [
+        _module_row(course_id=course.id, seq=1, slug="week-01", notebook_id=first_nb),
+        _module_row(course_id=course.id, seq=2, slug="week-02", notebook_id=second_nb),
+        _module_row(course_id=course.id, seq=3, slug="week-03", notebook_id=None),
+    ]
+    ana, bo = uuid.uuid4(), uuid.uuid4()
+    grades = [
+        _grade_row(bo, first_nb, email="bo@example.test", passed=2, graded=2),
+        _grade_row(bo, second_nb, email="bo@example.test", passed=0, graded=2, current=False),
+        _grade_row(ana, second_nb, email="ana@example.test", name="Ana", passed=1, graded=2),
+    ]
+    session = _gradebook_session(
+        course, modules, [(first_nb, GRADED_SPEC), (second_nb, GRADED_SPEC)], grades
+    )
+
+    book = await courses_repo.course_gradebook(owner, session, course.id)
+
+    assert [m.graded_cells for m in book.modules] == [2, 2, None]
+    assert [m.notebook_id for m in book.modules] == [first_nb, second_nb, None]
+    # Sorted by what the members page shows: the name, else the email.
+    assert [row.email for row in book.rows] == ["ana@example.test", "bo@example.test"]
+    ana_row, bo_row = book.rows
+    # Ana did one module of two: out of four cells, not out of the two she reached.
+    assert (ana_row.total_passed, ana_row.total_graded_cells) == (1, 4)
+    assert [e.module_id for e in ana_row.entries] == [modules[1].id]
+    assert (bo_row.total_passed, bo_row.total_graded_cells) == (2, 4)
+    assert [e.module_id for e in bo_row.entries] == [modules[0].id, modules[1].id]
+    assert [e.stale for e in bo_row.entries] == [False, True]
+
+
+async def test_gradebook_skips_the_grades_query_when_no_module_has_a_live_notebook():
+    owner = make_scope()
+    course = _course_row(workspace_id=owner.workspace_id, owner_user_id=owner.user_id)
+    deleted_nb = uuid.uuid4()
+    module = _module_row(course_id=course.id, notebook_id=deleted_nb)
+    # The live-notebook query returns nothing: the notebook was soft-deleted.
+    session = SequencedSession([_Res(scalar=course), _Res(scalar=course), _Res([module]), _Res([])])
+
+    book = await courses_repo.course_gradebook(owner, session, course.id)
+
+    assert book.rows == []
+    assert book.modules[0].notebook_id is None
+    assert len(session.statements) == 4
+
+
+async def test_gradebook_of_another_workspace_is_not_found():
+    session = SequencedSession([_Res(scalar=None)])
+    with pytest.raises(NotFoundError):
+        await courses_repo.course_gradebook(make_scope(), session, uuid.uuid4())

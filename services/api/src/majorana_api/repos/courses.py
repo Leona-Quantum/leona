@@ -27,12 +27,24 @@ from typing import Any
 import majorana_contracts as contracts
 from majorana_contracts import Scope
 from majorana_contracts.courses import CoursePlan, PlannedModule
+from pydantic import ValidationError
+from sqlalchemy import and_, case, cast, func, select
 from sqlalchemy import delete as sa_delete
-from sqlalchemy import select
+from sqlalchemy.dialects.postgresql import UUID as PGUUID
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..ids import uuid7
-from ..orm import Course, CourseModule, CourseTurn, Notebook, NotebookVersion
+from ..orm import (
+    Course,
+    CourseModule,
+    CourseTurn,
+    Membership,
+    Notebook,
+    NotebookVersion,
+    Run,
+    RunEvent,
+    User,
+)
 from ._base import NotFoundError, require_write, touched_now
 from .audit import record_audit
 
@@ -663,4 +675,242 @@ def turn_to_resource(turn: CourseTurn) -> contracts.CourseTurn:
         role=turn.role,  # type: ignore[arg-type]
         content=turn.content,
         created_at=_required(turn.created_at, "created_at"),
+    )
+
+
+# ---------------------------------------------------------------------------- gradebook
+
+
+async def _live_notebook_graded_cells(
+    scope: Scope, session: AsyncSession, notebook_ids: list[uuid.UUID]
+) -> dict[uuid.UUID, int | None]:
+    """Every module notebook that still resolves, mapped to the graded-cell count of
+    its CURRENT version (`None` when it has no ready version, or one that no longer
+    parses).
+
+    Counted with `NotebookSpec.graded_cells()`, the same call the grading route uses
+    to decide what an attempt is graded on, so the gradebook's denominator cannot
+    drift from the one a learner was actually scored against. A notebook missing
+    from the result is soft-deleted or not this workspace's, and its module reads as
+    having no notebook, exactly as `_latest_versions` treats it.
+    """
+    if not notebook_ids:
+        return {}
+    rows = (
+        await session.execute(
+            select(Notebook.id, NotebookVersion.spec)
+            .outerjoin(
+                NotebookVersion,
+                and_(
+                    NotebookVersion.id == Notebook.current_version_id,
+                    NotebookVersion.notebook_id == Notebook.id,
+                ),
+            )
+            .where(
+                Notebook.id.in_(notebook_ids),
+                Notebook.workspace_id == scope.workspace_id,
+                Notebook.deleted_at.is_(None),
+            )
+        )
+    ).all()
+    counts: dict[uuid.UUID, int | None] = {}
+    for notebook_id, spec in rows:
+        if not spec:
+            counts[notebook_id] = None
+            continue
+        try:
+            counts[notebook_id] = len(contracts.NotebookSpec.model_validate(spec).graded_cells())
+        except ValidationError:
+            # A spec written by an older build that no longer validates. The module
+            # still has a notebook and its members' attempts still count; only the
+            # "out of how many today" figure is unknown, and `None` says that.
+            counts[notebook_id] = None
+    return counts
+
+
+async def course_gradebook(
+    scope: Scope, session: AsyncSession, course_id: uuid.UUID
+) -> contracts.CourseGradebook:
+    """Each member's latest graded attempt at each module of a course.
+
+    ## Who sees which rows
+
+    **The course's creator (`courses.owner_user_id`) sees every member; anyone else in
+    the workspace sees only their own row.** Owner ruling ai-ops 260, option 1, is
+    "only the person who created it sees the answers". A gradebook carries results,
+    not answers, but it does expose one member's work to another, and the person the
+    ruling already trusts with the answer key is the one person for whom that is the
+    point. Workspace role is deliberately NOT the test: an admin who did not write
+    the course is a classmate, and classmates do not read each other's marks. A
+    caller from another workspace never gets this far: `get_course` answers 404,
+    the same "absent or not yours" every course route gives.
+
+    The rule is applied HERE, in the query, rather than by filtering rows in the
+    route. A member's view is a query that cannot return anyone else's attempt, so
+    there is no second code path (the CSV export, say) that could forget to filter.
+
+    ## Where the numbers come from
+
+    No table of its own. Grading already writes each verdict to `run_events` as
+    `notebook.grades`, and `latest_grades_for_reader` already reads one learner's back
+    from there; this is the same statement without the `Run.user_id` clause for the
+    creator, grouped with `DISTINCT ON (user, notebook)` so Postgres hands back one
+    row per member per module rather than every attempt ever made. The counts are read
+    out of the payload in SQL, so the per-cell messages never leave the database.
+
+    A member is someone with a membership row NOW. A person who left the workspace
+    keeps their runs, but the members page stops showing them the day they leave,
+    and a gradebook that kept listing them would show their email to people who
+    can no longer see it anywhere else.
+
+    Latest rather than best, and `stale` when the version graded is no longer the
+    notebook's current one: see `GradebookEntry`.
+    """
+    course = await get_course(scope, session, course_id)
+    modules = await list_modules(scope, session, course_id)
+    everyone = scope.user_id == course.owner_user_id
+    visibility = (
+        contracts.GradebookVisibility.ALL_MEMBERS
+        if everyone
+        else contracts.GradebookVisibility.OWN_ROW
+    )
+
+    notebook_ids = [row.notebook_id for row in modules if row.notebook_id is not None]
+    live = await _live_notebook_graded_cells(scope, session, notebook_ids)
+    columns = [
+        contracts.GradebookModule(
+            id=row.id,
+            seq=row.seq,
+            slug=row.slug,
+            title=row.title,
+            notebook_id=row.notebook_id if row.notebook_id in live else None,
+            graded_cells=live.get(row.notebook_id) if row.notebook_id in live else None,
+        )
+        for row in modules
+    ]
+    module_by_notebook = {
+        row.notebook_id: row
+        for row in modules
+        if row.notebook_id is not None and row.notebook_id in live
+    }
+    if not module_by_notebook:
+        return contracts.CourseGradebook(
+            course_id=course.id, visibility=visibility, modules=columns
+        )
+
+    cells = RunEvent.payload["grades"]["cells"]
+    stmt = (
+        select(
+            Run.user_id,
+            User.email,
+            User.display_name,
+            NotebookVersion.notebook_id,
+            NotebookVersion.id,
+            NotebookVersion.seq,
+            Notebook.current_version_id,
+            RunEvent.run_id,
+            func.coalesce(RunEvent.ts, RunEvent.created_at),
+            RunEvent.payload["passed"].as_integer(),
+            RunEvent.payload["failed"].as_integer(),
+            RunEvent.payload["attempted"].as_integer(),
+            # `jsonb_array_length` raises on a non-array, and one malformed event must
+            # not take the whole gradebook down with it.
+            case((func.jsonb_typeof(cells) == "array", func.jsonb_array_length(cells)), else_=0),
+        )
+        .join(Run, RunEvent.run_id == Run.id)
+        .join(
+            NotebookVersion,
+            NotebookVersion.id == cast(RunEvent.payload["version_id"].astext, PGUUID),
+        )
+        .join(Notebook, Notebook.id == NotebookVersion.notebook_id)
+        .join(
+            Membership,
+            and_(Membership.user_id == Run.user_id, Membership.workspace_id == scope.workspace_id),
+        )
+        .join(User, User.id == Run.user_id)
+        .where(
+            RunEvent.type == "notebook.grades",
+            Run.workspace_id == scope.workspace_id,
+            Notebook.workspace_id == scope.workspace_id,
+            Notebook.deleted_at.is_(None),
+            NotebookVersion.notebook_id.in_(list(module_by_notebook)),
+        )
+        .distinct(Run.user_id, NotebookVersion.notebook_id)
+        # DISTINCT ON keeps the FIRST row of each group in this order, so the two
+        # leading keys must be the distinct ones and the rest pick the latest: the
+        # `created_at`-then-`seq` order `latest_grades_for_reader` uses, plus the run id
+        # (a UUIDv7, so time-ordered) last. `seq` only separates events WITHIN a run;
+        # two grading runs stamped in the same microsecond both carry their verdict at
+        # the same seq, and without a final key Postgres may pick either.
+        .order_by(
+            Run.user_id,
+            NotebookVersion.notebook_id,
+            Run.created_at.desc(),
+            RunEvent.seq.desc(),
+            Run.id.desc(),
+        )
+    )
+    if not everyone:
+        stmt = stmt.where(Run.user_id == scope.user_id)
+
+    people: dict[uuid.UUID, tuple[str, str | None]] = {}
+    entries: dict[uuid.UUID, list[contracts.GradebookEntry]] = {}
+    for (
+        user_id,
+        email,
+        display_name,
+        notebook_id,
+        version_id,
+        version_seq,
+        current_version_id,
+        run_id,
+        graded_at,
+        passed,
+        failed,
+        attempted,
+        graded_cells,
+    ) in (await session.execute(stmt)).all():
+        module = module_by_notebook.get(notebook_id)
+        if module is None:
+            continue
+        people[user_id] = (email, display_name)
+        entries.setdefault(user_id, []).append(
+            contracts.GradebookEntry(
+                module_id=module.id,
+                passed=max(int(passed or 0), 0),
+                failed=max(int(failed or 0), 0),
+                attempted=max(int(attempted or 0), 0),
+                graded_cells=max(int(graded_cells or 0), 0),
+                version_seq=version_seq,
+                stale=current_version_id != version_id,
+                run_id=run_id,
+                graded_at=_required(graded_at, "graded_at"),
+            )
+        )
+
+    seq_of = {row.id: row.seq for row in modules}
+    rows: list[contracts.GradebookRow] = []
+    for user_id, found in entries.items():
+        found.sort(key=lambda entry: seq_of.get(entry.module_id, 0))
+        attempted_modules = {entry.module_id for entry in found}
+        # Out of the WHOLE course: what they were graded on, plus what they have not
+        # reached yet at today's count. See `GradebookRow.total_graded_cells`.
+        remaining = sum(
+            column.graded_cells or 0 for column in columns if column.id not in attempted_modules
+        )
+        email, display_name = people[user_id]
+        rows.append(
+            contracts.GradebookRow(
+                user_id=user_id,
+                email=email,
+                display_name=display_name,
+                entries=found,
+                total_passed=sum(entry.passed for entry in found),
+                total_graded_cells=sum(entry.graded_cells for entry in found) + remaining,
+                last_graded_at=max(entry.graded_at for entry in found),
+            )
+        )
+    rows.sort(key=lambda row: ((row.display_name or row.email).casefold(), str(row.user_id)))
+    return contracts.CourseGradebook(
+        course_id=course.id, visibility=visibility, modules=columns, rows=rows
     )
