@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo } from "react";
-import { compareMeasuredToIdeal } from "../../../lib/qpu-ideal";
+import { compareMeasuredToIdeal, type IdealComparison } from "../../../lib/qpu-ideal";
 import { formatShare } from "../../../lib/simulation-visual";
 import type { CpuSimulationLimits } from "../../../lib/studio-simulation";
 import type { PublicLocale } from "../../../lib/public-locale";
@@ -15,6 +15,10 @@ type StudioCopy = (typeof WORKSPACE_COPY)[PublicLocale]["studio"];
  * pure function of its arguments, so this is a local reading of the exact
  * circuit that was submitted, not a second verification pass and not a call
  * to any server.
+ *
+ * `comparison`, when given, is used as-is instead of being computed here. The
+ * hardware-runs page passes the one it already worked out off the render path
+ * (`workThroughComparisons`); Studio's single run computes its own.
  */
 export function QpuMeasuredVsIdeal({
   qasm,
@@ -22,16 +26,18 @@ export function QpuMeasuredVsIdeal({
   counts,
   limits,
   copy,
+  comparison: precomputed,
 }: {
   qasm: string;
   submittedFingerprint: string;
   counts: Record<string, number> | null;
   limits: CpuSimulationLimits;
   copy: StudioCopy;
+  comparison?: IdealComparison;
 }) {
   const comparison = useMemo(
-    () => compareMeasuredToIdeal({ qasm, submittedFingerprint, counts, limits }),
-    [qasm, submittedFingerprint, counts, limits],
+    () => precomputed ?? compareMeasuredToIdeal({ qasm, submittedFingerprint, counts, limits }),
+    [precomputed, qasm, submittedFingerprint, counts, limits],
   );
 
   if (comparison.status === "unavailable") {

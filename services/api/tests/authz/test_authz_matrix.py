@@ -5,7 +5,7 @@ RLS check (05-security.md §1)."""
 
 import pytest
 from matrix_helpers import ALL_ROLES, any_team_grantee, requires_db, scope_for
-from majorana_contracts.enums import Role, RunMode, UsageKind, VerificationMethod
+from majorana_contracts.enums import QpuRunStatus, Role, RunMode, UsageKind, VerificationMethod
 
 from majorana_api.repos import (
     ADMIN_ROLES,
@@ -16,6 +16,7 @@ from majorana_api.repos import (
     audit,
     folders,
     projects,
+    qpu_runs,
     runs,
     shares,
     usage,
@@ -298,3 +299,53 @@ async def test_the_test_forged_scope_reaches_data(db, dataset):
     a, b = dataset
     forged = scope_for(b, Role.OWNER).model_copy(update={"user_id": a.users[Role.OWNER]})
     assert (await artifacts.get_artifact(forged, db, b.artifact_id)).id == b.artifact_id
+
+
+async def test_hardware_runs_are_invisible_across_workspaces(db, dataset):
+    """`qpu_runs` through the paths the run history and Studio read (proposal 5,
+    increment 2). Workspace B's run carries counts and a backend name; for every
+    role in A it is absent from the single read, from every page of the list,
+    and from a fingerprint query naming B's exact circuit.
+
+    The own-workspace assertions are the positive control: a list that returned
+    nothing at all would pass every "B is absent" line below."""
+    a, b = dataset
+    for role in ALL_ROLES:
+        sa = scope_for(a, role)
+        with pytest.raises(LookupError):
+            await qpu_runs.get_record(sa, db, b.qpu_run_id)
+
+        seen = []
+        cursor = None
+        while True:
+            page = await qpu_runs.list_records(sa, db, cursor=cursor, limit=2)
+            seen.extend(page)
+            if len(page) < 2:
+                break
+            cursor = page[-1].id
+        assert a.qpu_run_id in {row.id for row in seen}
+        assert b.qpu_run_id not in {row.id for row in seen}
+        assert {row.workspace_id for row in seen} == {a.workspace_id}
+
+        assert await qpu_runs.list_records(sa, db, source_fingerprint=b.qpu_fingerprint) == []
+        own = await qpu_runs.list_records(sa, db, source_fingerprint=a.qpu_fingerprint)
+        assert [row.id for row in own] == [a.qpu_run_id]
+        assert own[0].backend_name == "ibm_authz_a"
+
+        # A cursor is not a way in: B's own id as the cursor still returns only
+        # A's rows below it, never B's.
+        after_b = await qpu_runs.list_records(sa, db, cursor=b.qpu_run_id, limit=100)
+        assert {row.workspace_id for row in after_b} <= {a.workspace_id}
+
+
+async def test_hardware_runs_cannot_be_moved_across_workspaces(db, dataset):
+    """LookupError, not ValueError. B's run is DONE, so a transition that could
+    SEE it would refuse DONE -> ERROR as an illegal move instead; only the
+    workspace predicate produces "not visible" here."""
+    a, b = dataset
+    for role in WRITE_ROLES:
+        sa = scope_for(a, role)
+        with pytest.raises(LookupError):
+            await qpu_runs.transition(
+                sa, db, b.qpu_run_id, QpuRunStatus.ERROR, backend_name="ibm_attack"
+            )
