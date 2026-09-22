@@ -1193,7 +1193,7 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
       hardwareIdealTvdGloss: "0 means the same distribution as this circuit's ideal outcome. 1 means no overlap at all.",
       hardwareIdealFidelity: "Hellinger fidelity",
       hardwareIdealShotNoise: (share, shots) =>
-        `A perfect device would still differ from the ideal distribution by about ${share} at ${shots} shots, from sampling alone.`,
+        `A perfect device would still show a distance of about ${share} at ${shots} shots, from sampling alone.`,
       hardwareIdealBitstring: "Outcome",
       hardwareIdealMeasuredShare: "Measured",
       hardwareIdealIdealShare: "Ideal",
@@ -1202,7 +1202,7 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
       hardwareIdealUnavailable: (reason) => ({
         circuit_changed: "The circuit has changed since this job was submitted, so there is no ideal outcome to compare it with.",
         no_counts: "No device counts are available yet for this job.",
-        unparsable: "This circuit is outside the browser lane's supported gate shape, so no ideal outcome can be computed for it.",
+        unparsable: "This circuit uses gates or a measurement layout the in-browser simulator cannot read, so no ideal outcome can be computed for it.",
         qubit_limit: "This circuit is wider than your plan's browser simulation limit, so no ideal outcome can be computed for it.",
         operation_limit: "This circuit exceeds the browser operation limit, so no ideal outcome can be computed for it.",
         register_mismatch: "The device counts do not match this circuit's measured qubits, so they cannot be compared to an ideal outcome.",
@@ -2199,7 +2199,7 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
       hardwareIdealTvdGloss: "0ならこの回路の理論上の分布と一致し、1なら重なりが全くないことを意味します。",
       hardwareIdealFidelity: "ヘリンガー忠実度",
       hardwareIdealShotNoise: (share, shots) =>
-        `理想的な実機であっても、${shots}ショットではサンプリングのばらつきだけで理論値と約${share}の差が生じます。`,
+        `理想的な実機であっても、${shots}ショットではサンプリングのばらつきだけで約${share}の全変動距離が生じます。`,
       hardwareIdealBitstring: "測定結果",
       hardwareIdealMeasuredShare: "実測",
       hardwareIdealIdealShare: "理論値",

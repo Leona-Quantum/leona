@@ -60,7 +60,7 @@ export function QpuMeasuredVsIdeal({
       </dl>
       <p className="mj-qpu-note">{copy.hardwareIdealTvdGloss}</p>
       <p className="mj-qpu-note">
-        {copy.hardwareIdealShotNoise(formatShare(comparison.shotNoiseTvd, "en-US"), comparison.shots.toLocaleString("en-US"))}
+        {copy.hardwareIdealShotNoise(comparison.shotNoiseTvd.toFixed(3), comparison.shots.toLocaleString("en-US"))}
       </p>
       <table className="mj-qpu-ideal-table">
         <thead>
