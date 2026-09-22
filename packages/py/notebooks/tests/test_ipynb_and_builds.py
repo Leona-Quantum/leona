@@ -315,6 +315,7 @@ def test_a_stub_does_not_carry_the_solutions_output() -> None:
         kind="challenge",
         cells=[
             Cell(id="obj", kind="markdown", role=CellRole.OBJECTIVE, source="## Go"),
+            Cell(id="pre", kind="code", role=CellRole.SETUP, source='print("setup")'),
             Cell(id="ex", kind="markdown", role=CellRole.EXERCISE, source="Compute 6*7."),
             Cell(
                 id="s1",
@@ -332,16 +333,27 @@ def test_a_stub_does_not_carry_the_solutions_output() -> None:
         ok=True,
         runner="sandbox",
         cells=[
+            CellResult(id="pre", status="ok", stdout="setup\n"),
             CellResult(id="s1", status="ok", stdout="42\n"),
             CellResult(id="ctx", status="ok", stdout="context\n"),
         ],
     )
     challenge = to_ipynb(spec, build="challenge", report=report)
     by_id = {cell["id"]: cell for cell in challenge["cells"]}
+    # A cell BEFORE the first replacement is unaffected — nothing the (still hidden)
+    # solution computes can reach backward into a value this cell already printed.
+    # The control: otherwise this test would pass on a build that simply dropped every
+    # output, which teaches the reader nothing.
+    assert by_id["pre"]["outputs"], "a cell before the redaction must keep its output"
     assert by_id["s1"]["outputs"] == []
-    # A cell that was NOT redacted keeps its output — otherwise this test would pass on
-    # a build that simply dropped every output, which teaches the reader nothing.
-    assert by_id["ctx"]["outputs"], "an unredacted cell must keep the output it produced"
+    # `ctx`'s own SOURCE never changed, but it ran in the same kernel, right after the
+    # real solution, so its stdout is not provably free of the answer either — treated
+    # as contaminated along with every other cell from the first replacement onward
+    # (Greptile, PR 959: the original guard cleared only the replaced cell's own id).
+    assert by_id["ctx"]["outputs"] == [], "a cell AFTER the redaction must not leak it either"
     assert "42" not in json.dumps(challenge)
-    # ...and the solution build, which is for the author, still shows it.
-    assert "42" in json.dumps(to_ipynb(spec, build="solution", report=report))
+    # ...and the solution build, which is for the author, still shows everything.
+    solution = to_ipynb(spec, build="solution", report=report)
+    by_id = {cell["id"]: cell for cell in solution["cells"]}
+    assert by_id["pre"]["outputs"] and by_id["s1"]["outputs"] and by_id["ctx"]["outputs"]
+    assert "42" in json.dumps(solution)
