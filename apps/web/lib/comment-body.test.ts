@@ -97,3 +97,13 @@ test("line breaks, including Windows ones, become <br>, and nothing else does", 
     { kind: "text", text: "c" },
   ]);
 });
+
+test("every kind of handle the server hands out is highlighted: short, full address, fallback", () => {
+  // The three forms in services/api/src/majorana_api/mentions.py. The patterns
+  // are mirrored by hand, so this pins that the web reads each one as the
+  // server does.
+  const html = render("@jose, @alex@two.example and @member-1a2b3c4d.", ["jose", "alex@two.example", "member-1a2b3c4d"]);
+  assert.equal(html.match(/mj-comment-mention/g)?.length, 3);
+  assert.match(html, /<span class="mj-comment-mention">@alex@two\.example<\/span>/);
+  assert.match(html, /<span class="mj-comment-mention">@member-1a2b3c4d<\/span>\./);
+});
