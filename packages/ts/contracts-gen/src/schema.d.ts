@@ -1208,14 +1208,27 @@ export interface components {
          *     the member's email address before the `@`, which every member of the
          *     workspace can already read in its members list, and it becomes the whole
          *     address only when two current members would otherwise share one handle.
+         *
+         *     Someone who has LEFT the workspace is still the author of what they wrote,
+         *     but nothing about them is served any more: `current_member` is False, and
+         *     `display_name` and `handle` are empty. Mentions never name a former member
+         *     at all; they are dropped when read.
          */
         CommentPerson: {
+            /**
+             * Current Member
+             * @default true
+             */
+            current_member: boolean;
             /**
              * Display Name
              * @default null
              */
             display_name: string | null;
-            /** Handle */
+            /**
+             * Handle
+             * @default
+             */
             handle: string;
             /**
              * User Id

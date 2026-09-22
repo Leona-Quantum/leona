@@ -47,11 +47,17 @@ class CommentPerson(_ResourceBase):
     the member's email address before the `@`, which every member of the
     workspace can already read in its members list, and it becomes the whole
     address only when two current members would otherwise share one handle.
+
+    Someone who has LEFT the workspace is still the author of what they wrote,
+    but nothing about them is served any more: `current_member` is False, and
+    `display_name` and `handle` are empty. Mentions never name a former member
+    at all; they are dropped when read.
     """
 
     user_id: UUID
     display_name: str | None = None
-    handle: str
+    handle: str = ""
+    current_member: bool = True
 
 
 class Comment(_ResourceBase):

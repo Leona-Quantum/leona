@@ -2388,8 +2388,13 @@
       },
       "CommentPerson": {
         "additionalProperties": false,
-        "description": "A member as a comment shows them: a name and the handle that mentions them.\n\n`handle` is what follows `@` in a comment body. It is derived from the part of\nthe member's email address before the `@`, which every member of the\nworkspace can already read in its members list, and it becomes the whole\naddress only when two current members would otherwise share one handle.",
+        "description": "A member as a comment shows them: a name and the handle that mentions them.\n\n`handle` is what follows `@` in a comment body. It is derived from the part of\nthe member's email address before the `@`, which every member of the\nworkspace can already read in its members list, and it becomes the whole\naddress only when two current members would otherwise share one handle.\n\nSomeone who has LEFT the workspace is still the author of what they wrote,\nbut nothing about them is served any more: `current_member` is False, and\n`display_name` and `handle` are empty. Mentions never name a former member\nat all; they are dropped when read.",
         "properties": {
+          "current_member": {
+            "default": true,
+            "title": "Current Member",
+            "type": "boolean"
+          },
           "display_name": {
             "anyOf": [
               {
@@ -2403,6 +2408,7 @@
             "title": "Display Name"
           },
           "handle": {
+            "default": "",
             "title": "Handle",
             "type": "string"
           },
@@ -2413,8 +2419,7 @@
           }
         },
         "required": [
-          "user_id",
-          "handle"
+          "user_id"
         ],
         "title": "CommentPerson",
         "type": "object"
