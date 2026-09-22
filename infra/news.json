@@ -11,5 +11,5 @@
   "model": "gpt-5.5",
   "image_model": "gpt-image-2.5-flare",
   "renderer_deploy": false,
-  "site_url": "https://REPLACE-WITH-NEWS-HOSTNAME.invalid"
+  "site_url": "https://news.leonaqt.com"
 }
