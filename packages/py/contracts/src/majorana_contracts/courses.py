@@ -31,7 +31,7 @@ from enum import StrEnum
 from typing import Literal
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from .notebooks import (
     _SLUG_RE,
@@ -184,6 +184,12 @@ class CourseModule(_ResourceBase):
     status: CourseModuleStatus = CourseModuleStatus.PLANNED
     #: `seq` of the notebook version the module's status was read from.
     notebook_version_seq: int | None = None
+    #: When the course's creator wants this module done by, as an instant (UTC on
+    #: the wire); `None` when no due date is set. Set through
+    #: `UpdateCourseRequest.modules[].due_at`. Unlike the plan fields above it can be
+    #: changed after the module's notebook exists: a due date is about the class's
+    #: schedule, not about what the notebook teaches.
+    due_at: datetime | None = None
 
 
 class Course(_ResourceBase):
@@ -206,6 +212,11 @@ class Course(_ResourceBase):
     status: CourseStatus
     #: The run that planned (or is planning) this course.
     plan_run_id: UUID | None = None
+    #: Who created the course (`courses.owner_user_id`). The one person who may set
+    #: due dates, and the one whose gradebook lists every member, so a client needs
+    #: it to decide whether to offer those controls. Optional only so the model stays
+    #: additive; the API always sends it.
+    owner_user_id: UUID | None = None
     modules: list[CourseModule] = Field(default_factory=list)
     module_count: int = Field(default=0, ge=0)
     #: Modules whose notebook's latest version is ready.
@@ -271,7 +282,14 @@ class CreateCourseResponse(_ResourceBase):
 class CourseModulePatch(_ResourceBase):
     """A hand edit to one planned module. Refused once the module has a notebook:
     the notebook was generated FROM these fields, so changing them afterwards
-    would leave the module describing something the notebook does not teach."""
+    would leave the module describing something the notebook does not teach.
+
+    `due_at` is the exception on both counts. It may be changed at any time,
+    notebook or not, because it describes the class's schedule rather than the
+    notebook; and only the course's creator may change it, where anyone who can
+    write in the workspace may edit a planned module. A patch that carries
+    `due_at` and nothing else is therefore accepted on a generated module.
+    """
 
     id: UUID
     title: str | None = Field(default=None, min_length=1, max_length=240)
@@ -280,6 +298,14 @@ class CourseModulePatch(_ResourceBase):
     kind: NotebookKind | None = None
     #: New position in the course, 1-based. Reordering renumbers the others.
     seq: int | None = Field(default=None, ge=1)
+    #: The module's due date. Three states, told apart by whether the key is SENT:
+    #: absent leaves the due date as it is, an instant sets it, and an explicit
+    #: `null` clears it. Every other field here treats `null` as "leave alone",
+    #: but a due date has to be removable, and a separate "clear" flag would allow
+    #: the contradiction of sending both. The instant must carry a UTC offset: a
+    #: bare "2026-09-30T17:00" names a different moment in every time zone, and the
+    #: server would have to guess which one the instructor meant.
+    due_at: AwareDatetime | None = None
 
 
 class UpdateCourseRequest(_ResourceBase):
@@ -348,6 +374,9 @@ class GradebookModule(_ResourceBase):
     #: Graded cells in the notebook's CURRENT version, or `None` when there is no
     #: ready version to count. An attempt on an older version carries its own count.
     graded_cells: int | None = Field(default=None, ge=0)
+    #: The module's due date, `None` when there is none. `GradebookEntry.late` and
+    #: `GradebookRow.missing_module_ids` are both read against it.
+    due_at: datetime | None = None
 
 
 class GradebookEntry(_ResourceBase):
@@ -371,6 +400,12 @@ class GradebookEntry(_ResourceBase):
     #: The grading run, so a reader can be pointed at the attempt itself.
     run_id: UUID
     graded_at: datetime
+    #: This attempt was graded AFTER the module's due date. Strictly after: an
+    #: attempt graded at the due instant itself is on time, the way "due at 17:00"
+    #: is read. Always `False` for a module with no due date. It is about this, the
+    #: latest, attempt: a member who finished on time and tried again after the
+    #: deadline shows as late, because the gradebook shows the latest attempt.
+    late: bool = False
 
 
 class GradebookRow(_ResourceBase):
@@ -406,6 +441,17 @@ class GradebookRow(_ResourceBase):
     #: When their latest graded attempt at any module was recorded; `None` when they
     #: have not been graded on this course at all.
     last_graded_at: datetime | None = None
+    #: Modules whose due date has passed with no graded attempt from this member, in
+    #: module order. A list on the row rather than a flag on an entry, because an
+    #: entry IS an attempt and a missing module is exactly the one with none.
+    #:
+    #: "Passed" is strictly after: at the due instant itself an attempt would still
+    #: be on time (see `GradebookEntry.late`), so the module is not missing yet.
+    #: Only a module with something to be graded on can be missing: its notebook has
+    #: a ready version with at least one graded exercise (`GradebookModule.
+    #: graded_cells` above zero). A member cannot miss work that does not exist yet,
+    #: and a lesson with no exercises produces no attempt for anyone, ever.
+    missing_module_ids: list[UUID] = Field(default_factory=list)
 
 
 class CourseGradebook(_ResourceBase):

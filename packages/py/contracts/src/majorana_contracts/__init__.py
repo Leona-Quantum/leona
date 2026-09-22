@@ -404,7 +404,14 @@ from .lifecycle import (
 # GradebookModule, GradebookRow, GradebookEntry and the closed GradebookVisibility
 # enum, the response of GET /v1/courses/{id}/gradebook. Purely additive: no existing
 # model changes, and the data is read from `notebook.grades` events already stored.
-CONTRACTS_VERSION = "2.25.0"
+# 2.28.0: Course due dates (ai-ops 349 proposal 8, assignments). CourseModule gains
+# `due_at`, Course gains `owner_user_id`, CourseModulePatch gains `due_at` (absent
+# leaves it, null clears it; creator-only), GradebookModule gains `due_at`,
+# GradebookEntry gains `late` and GradebookRow gains `missing_module_ids`. All
+# optional with defaults, so a 2.25.0 payload still validates (migration 0067).
+# Numbered 2.28.0, not 2.26.0: the hardware-mitigation branch claims 2.26.0 and the
+# comments branch 2.27.0, and whichever lands later slots its line in above this one.
+CONTRACTS_VERSION = "2.28.0"
 
 __all__ = [
     "TextAnswer",
