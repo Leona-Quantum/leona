@@ -26,7 +26,8 @@ const COULD_NOT_COMPARE: IdealComparison = { status: "unavailable", reason: "unp
  * (`workThroughComparisons`); Studio's single run computes its own, in the
  * simulator worker (lib/simulator-client.ts), and shows `workingOut` until it
  * arrives. It used to compute it during render, which at the 20-qubit tier
- * froze Studio for a second or more every time the finished job rendered.
+ * froze Studio for a second or more whenever the panel was handed a new job
+ * or new counts.
  */
 export function QpuMeasuredVsIdeal({
   qasm,
