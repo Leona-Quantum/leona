@@ -1184,6 +1184,11 @@ export interface components {
          *     page, and None on the last one.
          */
         CommentList: {
+            /**
+             * Can Comment
+             * @default false
+             */
+            can_comment: boolean;
             /** Items */
             items: components["schemas"]["Comment"][];
             /**

@@ -96,6 +96,7 @@ def _to_list(scope: Scope, read: comments_repo.CommentRead) -> contracts.Comment
     return contracts.CommentList(
         items=[_to_comment(scope, row, read) for row in read.comments],
         next_cursor=read.next_cursor,
+        can_comment=comments_repo.may_comment(scope),
     )
 
 

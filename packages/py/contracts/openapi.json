@@ -2341,6 +2341,11 @@
         "additionalProperties": false,
         "description": "A page of comments. `next_cursor` is the id to pass as `cursor` for the next\npage, and None on the last one.",
         "properties": {
+          "can_comment": {
+            "default": false,
+            "title": "Can Comment",
+            "type": "boolean"
+          },
           "items": {
             "items": {
               "$ref": "#/components/schemas/Comment"

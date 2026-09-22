@@ -86,6 +86,12 @@ class CommentRead:
     next_cursor: uuid.UUID | None = None
 
 
+def may_comment(scope: Scope) -> bool:
+    """Whether this caller may post or reply at all. The same set `require_write`
+    enforces on every write below, stated once so a client is told the truth."""
+    return scope.role in WRITE_ROLES
+
+
 def may_edit(scope: Scope, row: Comment) -> bool:
     return (
         row.deleted_at is None and scope.role in WRITE_ROLES and row.author_user_id == scope.user_id

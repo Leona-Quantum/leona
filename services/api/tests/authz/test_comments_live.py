@@ -266,7 +266,8 @@ async def test_every_route_answers_another_workspace_with_the_404_of_nothing(sta
     assert (unknown_edit.status_code, unknown_edit.content) == (404, nothing)
 
     inbox = await bob.get("/v1/comments/mentions")
-    assert inbox.status_code == 200 and inbox.json() == {"items": [], "next_cursor": None}
+    assert inbox.status_code == 200
+    assert inbox.json() == {"items": [], "next_cursor": None, "can_comment": True}
     people = await bob.get("/v1/comments/people")
     assert [p["user_id"] for p in people.json()["items"]] == [str(stage["scopes"]["bob"].user_id)]
 
@@ -283,6 +284,8 @@ async def test_viewer_reads_but_cannot_write(stage):
 
     listed = await _thread(viewer, "run", run)
     assert listed.status_code == 200
+    assert listed.json()["can_comment"] is False
+    assert (await _thread(member, "run", run)).json()["can_comment"] is True
     [seen] = listed.json()["items"]
     assert seen["body"] == "for everyone to read"
     assert (seen["can_edit"], seen["can_delete"]) == (False, False)

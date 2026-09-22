@@ -97,6 +97,10 @@ class CommentList(_ResourceBase):
 
     items: list[Comment]
     next_cursor: UUID | None = None
+    #: Whether the CALLER may post here, from their role in the workspace, so a
+    #: client shows a viewer the thread without a composer they would be
+    #: refused at. The server still decides on every post.
+    can_comment: bool = False
 
 
 class CommentPeopleList(_ResourceBase):
