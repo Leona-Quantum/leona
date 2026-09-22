@@ -163,7 +163,26 @@ function resourceValue(record: FinderRecord, label: string): string | undefined 
 export interface StatedField {
   stated: boolean;
   value: string | null;
+  /**
+   * The same line for a Japanese reader. The recorded text itself stays as the
+   * record wrote it (the corpus is English); only the words this module adds
+   * around it are translated, the unit and the checked-or-not note. Without it
+   * the Japanese finder printed "16 qubits" and "(from a secondary index; not yet
+   * checked ...)" beside Japanese labels (seen on leonaqt.com, 2026-09-22).
+   */
+  valueJa: string | null;
 }
+
+const NOT_STATED: StatedField = { stated: false, value: null, valueJa: null };
+
+/**
+ * A "Reported cost" row that says the sources state no cost. The Classiq-parity
+ * intake writes exactly this sentence when a concept's complexity is blank
+ * (`entries-classiq-parity.ts`), and shown as a cost it read as if one were
+ * recorded, in English, on the Japanese page too. The record page keeps the row;
+ * the finder has its own not-stated wording for it.
+ */
+const REPORTED_COST_NOT_STATED = /^not stated\b/i;
 
 /**
  * "Cost as recorded" for display. Prefers the one field authored as a cost
@@ -175,16 +194,25 @@ export interface StatedField {
  */
 export function statedCost(record: FinderRecord): StatedField {
   const reported = resourceValue(record, "Reported cost");
-  if (reported) return { stated: true, value: reported };
+  if (reported && !REPORTED_COST_NOT_STATED.test(reported.trim())) {
+    return { stated: true, value: reported, valueJa: reported };
+  }
   const qubits = resourceValue(record, "Qubits");
   const depth = resourceValue(record, "Depth");
   if (qubits || depth) {
     const parts: string[] = [];
-    if (qubits) parts.push(`${qubits} qubits`);
-    if (depth) parts.push(depth);
-    return { stated: true, value: parts.join(", ") };
+    const partsJa: string[] = [];
+    if (qubits) {
+      parts.push(`${qubits} qubits`);
+      partsJa.push(`${qubits} 量子ビット`);
+    }
+    if (depth) {
+      parts.push(depth);
+      partsJa.push(depth);
+    }
+    return { stated: true, value: parts.join(", "), valueJa: partsJa.join("、") };
   }
-  return { stated: false, value: null };
+  return NOT_STATED;
 }
 
 /**
@@ -208,11 +236,14 @@ export function statedRegime(record: FinderRecord): StatedField {
       value: checked
         ? `${speedup} (checked against the record's own primary paper)`
         : `${speedup} (from a secondary index; not yet checked against the record's own primary paper)`,
+      valueJa: checked
+        ? `${speedup}（記録の一次論文と照合済み）`
+        : `${speedup}（二次的な索引による。記録の一次論文とはまだ照合していません）`,
     };
   }
   const readiness = resourceValue(record, "Readiness");
-  if (readiness) return { stated: true, value: readiness };
-  return { stated: false, value: null };
+  if (readiness) return { stated: true, value: readiness, valueJa: readiness };
+  return NOT_STATED;
 }
 
 function checkNumericLimit(

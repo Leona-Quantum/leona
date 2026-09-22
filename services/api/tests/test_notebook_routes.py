@@ -570,6 +570,118 @@ async def test_a_non_author_downloading_a_LESSON_still_gets_it_redacted(client, 
     assert "worked = None" in response.text
 
 
+# ---------------------------------------- a downstream cell can leak the answer too (PR 959)
+
+_LEAKY_LESSON_SPEC = {
+    "schema_version": 1,
+    "slug": "l",
+    "title": "A graded lesson",
+    "kind": "lesson",
+    "cells": [
+        {"id": "obj", "kind": "markdown", "role": "objective", "source": "## Lesson"},
+        {"id": "pre", "kind": "code", "role": "setup", "source": "print('setup')"},
+        {
+            "id": "solution",
+            "kind": "code",
+            "role": "solution",
+            "source": "worked = 42",
+            "stub": "worked = None\n",
+        },
+        # This cell's own SOURCE never changes between builds — it prints whatever
+        # `worked` was bound to, and in the answer-key run that was the real solution's
+        # value. `checkpoint` is downstream of `solution`, not itself redacted.
+        {"id": "checkpoint", "kind": "code", "role": "checkpoint", "source": "print(worked)"},
+        {"id": "summary", "kind": "markdown", "role": "summary", "source": "Done."},
+    ],
+}
+
+
+def _leaky_lesson_report() -> dict:
+    from leona_notebooks.execution import CellResult, ExecutionReport
+
+    report = ExecutionReport(
+        notebook_slug="l",
+        ok=True,
+        runner="sandbox",
+        cells=[
+            CellResult(id="pre", status="ok", stdout="setup\n"),
+            CellResult(id="solution", status="ok", stdout="42\n"),
+            CellResult(id="checkpoint", status="ok", stdout="42\n"),
+        ],
+    )
+    return report.model_dump(mode="json")
+
+
+def _wire_leaky_lesson(monkeypatch, notebook):
+    version = _version_row(
+        notebook_id=notebook.id,
+        seq=1,
+        status="ready",
+        ipynb=None,
+        spec=_LEAKY_LESSON_SPEC,
+        report=_leaky_lesson_report(),
+    )
+
+    async def fake_get_notebook(_scope, _session, _notebook_id):
+        return notebook
+
+    async def fake_get_version_by_seq(_scope, _session, _notebook_id, _seq):
+        return version
+
+    monkeypatch.setattr(notebooks_repo, "get_notebook", fake_get_notebook)
+    monkeypatch.setattr(notebooks_repo, "get_version_by_seq", fake_get_version_by_seq)
+    return version
+
+
+async def test_a_non_author_never_sees_a_downstream_cells_output_either(client, monkeypatch):
+    """Greptile's P1 on PR 959, confirmed here first (this test failed against the
+    unfixed `to_ipynb` before the fix landed, proving the leak was real on THIS route,
+    not only in the course zip it was originally reported against).
+
+    `to_ipynb` used to drop only the output of the cell whose SOURCE it replaced — the
+    stub itself. `checkpoint` below is unchanged text (`print(worked)`), but it ran in
+    the same kernel as the hidden `solution` cell and printed the value that cell
+    produced: `42`, the answer. Owner ruling ai-ops 260, option 1 — only the author may
+    see it, and this cell's stdout handed it to any other workspace member who clicked
+    export.
+    """
+    notebook = _notebook_row(slug="l", owner_user_id=uuid_module.uuid4())
+    _wire_leaky_lesson(monkeypatch, notebook)
+
+    async with client as c:
+        response = await c.get(f"/v1/notebooks/{notebook.id}/versions/1/export.ipynb")
+
+    assert response.status_code == 200
+    body = response.json()
+    by_id = {cell["id"]: cell for cell in body["cells"]}
+    # The control: a cell before the redacted one keeps its output, so the assertions
+    # below are about redaction and not about a route that dropped every output.
+    assert by_id["pre"]["outputs"], "a cell before the redacted one must keep its output"
+    assert by_id["solution"]["outputs"] == [], "the redacted cell itself carries no output"
+    assert by_id["checkpoint"]["outputs"] == [], "a cell AFTER it must not leak the answer either"
+    assert "42" not in json_module.dumps(body)
+
+
+async def test_the_author_still_sees_every_cells_output(client, scope_identity, monkeypatch):
+    """The positive control: the fix must not have turned into "drop every output"."""
+    scope, _identity = scope_identity
+    notebook = _notebook_row(slug="l", owner_user_id=scope.user_id)
+    _wire_leaky_lesson(monkeypatch, notebook)
+
+    async with client as c:
+        # A lesson's default build for its own author is "full" (`build_for_kind`), so
+        # no query parameter is needed to see everything.
+        response = await c.get(f"/v1/notebooks/{notebook.id}/versions/1/export.ipynb")
+
+    assert response.status_code == 200
+    body = response.json()
+    by_id = {cell["id"]: cell for cell in body["cells"]}
+    assert by_id["pre"]["outputs"]
+    assert by_id["solution"]["outputs"], "the author's own solution output must survive"
+    assert by_id["checkpoint"]["outputs"], "and everything downstream of it too"
+    assert "42" in json_module.dumps(body)
+
+
 # ------------------------------------------------ a learner's score is kept (ai-ops 260)
 
 

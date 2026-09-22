@@ -1,7 +1,7 @@
 import { notFound } from "next/navigation";
 import { SentryVerifyButtons } from "./buttons";
 
-export const metadata = { title: "Sentry verify — Leona Quantum" };
+export const metadata = { title: "Sentry verify" };
 
 /**
  * A deliberate-error page for proving Sentry is actually receiving events —

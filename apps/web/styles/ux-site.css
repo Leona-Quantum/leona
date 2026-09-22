@@ -250,6 +250,18 @@
   .mj-public-site .mj-public-nav-primary { padding-inline: var(--sp-2); font-size: var(--fs-12); }
   .lq-public-auth,
   .lq-public-auth .mj-auth-slot[data-auth-slot="in"] { flex-direction: row; gap: var(--sp-3); }
+  /* The row scrolls at this width, and in source order the workspace button came last, so on
+     a 375px phone it started at x = 566 with Pricing, Contact and the language switch: off
+     screen, reachable only by discovering that the header scrolls. Moving it up beside the
+     wordmark keeps the one-row header and puts the one action a visitor came for on screen;
+     the links scroll after it. (`position: sticky` cannot do this: a sticky item's containing
+     block is the header's visible box, and an item already past it has nowhere to stick.) */
+  .mj-public-site .lq-public-auth { order: 1; }
+  .mj-public-site .lq-public-navigation { order: 2; }
+  /* Signed in, the slot holds Sign out and then the workspace button, and in Japanese the
+     pair is wider than what is left beside the wordmark, so the button was cut at the
+     edge. The button leads; Sign out follows it into the scrolling part of the row. */
+  .mj-public-site .lq-public-auth .mj-public-nav-primary { order: -1; }
   .mj-public-site .mj-public-footer-links { flex-wrap: wrap; }
   .lq-site-product-grid { grid-template-columns: minmax(0, 1fr); gap: var(--sp-2); }
   .mj-about-site .mj-about-person-card { display: block; }
