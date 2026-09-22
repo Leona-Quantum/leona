@@ -21,6 +21,7 @@ to write them:
 
 from __future__ import annotations
 
+import datetime as dt
 import uuid
 from typing import Any
 
@@ -45,7 +46,7 @@ from ..orm import (
     RunEvent,
     User,
 )
-from ._base import NotFoundError, require_write, touched_now
+from ._base import AuthzError, NotFoundError, require_write, touched_now
 from .audit import record_audit
 
 #: How far seqs are pushed out of the way while a course is being renumbered.
@@ -347,6 +348,36 @@ class ModuleAlreadyGenerated(Exception):
         self.module_id = module_id
 
 
+class DueDateCreatorOnly(AuthzError):
+    """Someone other than the course's creator tried to set or clear a due date.
+
+    An `AuthzError`, so anything that does not catch it specifically still answers
+    403 through the app's handler; a subclass so the route can give that 403 a
+    sentence without telling it apart from a read-only role by the message text.
+    """
+
+
+def _sets_due_at(patch: contracts.CourseModulePatch) -> bool:
+    """Whether a patch touches the due date at all, clearing included.
+
+    Read from the fields the client SENT, not from the value: `due_at: null` is a
+    request to clear the due date, and an absent key is a request to leave it
+    alone. Both parse to `None`, so the value alone cannot tell them apart.
+    """
+    return "due_at" in patch.model_fields_set
+
+
+def _touches_plan(patch: contracts.CourseModulePatch) -> bool:
+    """Whether a patch edits anything the module's notebook was generated from.
+
+    Everything but `due_at` counts, and so does a patch that names a module and
+    sends nothing else: that was refused on a generated module before due dates
+    existed, and a due date is no reason to start accepting it.
+    """
+    sent = patch.model_fields_set - {"id"}
+    return bool(sent - {"due_at"}) or not sent
+
+
 async def update_course(
     scope: Scope,
     session: AsyncSession,
@@ -362,9 +393,32 @@ async def update_course(
     `ModuleAlreadyGenerated` — including a pure `seq` reorder, because moving a
     generated module renumbers what "module 3 of this course" means in the
     preface every other notebook was written against.
+
+    ## Due dates
+
+    `due_at` is the one module field that is NOT refused on a generated module,
+    and the one field only the course's creator (`courses.owner_user_id`) may
+    change. A due date is the class's schedule, so it is set on exactly the
+    modules a learner can open; and it is the instructor's, in the sense owner
+    ruling ai-ops 260 draws: the person who made the course decides what counts as
+    late, and a classmate who could move the deadline could make their own late
+    attempt on time. Workspace role is not the test, for the reason
+    `course_gradebook` gives: an admin who did not write the course is a classmate.
+
+    The creator check runs before any row is touched, so a refused patch changes
+    nothing, including the title or plan edits it may have carried alongside.
+    `AuthzError` is the refusal every other creator-only action gives (a Qapp's
+    publish, rollback and activity), which the app answers as 403: the caller can
+    already read the course, so a 404 would be a lie about its existence.
     """
     require_write(scope)
     course = await get_course(scope, session, course_id)
+    if (
+        module_patches
+        and any(_sets_due_at(patch) for patch in module_patches)
+        and scope.user_id != course.owner_user_id
+    ):
+        raise DueDateCreatorOnly("only the course creator may set a module's due date")
     if title is not None:
         course.title = title
     if summary is not None:
@@ -377,7 +431,7 @@ async def update_course(
             row = by_id.get(patch.id)
             if row is None:
                 raise NotFoundError("course module")
-            if row.notebook_id is not None:
+            if row.notebook_id is not None and _touches_plan(patch):
                 raise ModuleAlreadyGenerated(patch.id)
             if patch.title is not None:
                 row.title = patch.title
@@ -387,6 +441,13 @@ async def update_course(
                 row.objectives = list(patch.objectives)
             if patch.kind is not None:
                 row.kind = patch.kind.value
+            if _sets_due_at(patch):
+                # Stored as the instant it names; normalised to UTC so the resource
+                # this request returns reads the same as every later GET, which gets
+                # the value back from Postgres in the session's zone (UTC).
+                row.due_at = (
+                    patch.due_at.astimezone(dt.timezone.utc) if patch.due_at is not None else None
+                )
             row.updated_at = touched_now()
 
         wanted = {patch.id: patch.seq for patch in module_patches if patch.seq is not None}
@@ -544,6 +605,7 @@ def module_to_resource(
         notebook_id=notebook_id,
         status=status,
         notebook_version_seq=version_seq,
+        due_at=module.due_at,
     )
 
 
@@ -599,6 +661,7 @@ async def course_to_resource(
         language=course.language,
         status=_derive_status(course.status, module_resources),
         plan_run_id=course.plan_run_id,
+        owner_user_id=course.owner_user_id,
         modules=module_resources,
         module_count=len(module_resources),
         ready_count=ready,
@@ -728,8 +791,21 @@ async def _live_notebook_graded_cells(
     return counts
 
 
+def _is_late(graded_at: dt.datetime, due_at: dt.datetime | None) -> bool:
+    """Strictly after the due instant. One comparison, used for both the `late`
+    flag (an attempt's grading time) and `missing` (the clock), so the two cannot
+    disagree about which side of the deadline the instant itself falls on: an
+    attempt graded AT the due time is on time, and at that same instant a module
+    with no attempt is not missing yet."""
+    return due_at is not None and graded_at > due_at
+
+
 async def course_gradebook(
-    scope: Scope, session: AsyncSession, course_id: uuid.UUID
+    scope: Scope,
+    session: AsyncSession,
+    course_id: uuid.UUID,
+    *,
+    now: dt.datetime | None = None,
 ) -> contracts.CourseGradebook:
     """Each current member's latest graded attempt at each module of a course.
 
@@ -773,7 +849,24 @@ async def course_gradebook(
 
     Latest rather than best, and `stale` when the version graded is no longer the
     notebook's current one: see `GradebookEntry`.
+
+    ## Late and missing
+
+    Both are read against the module's `due_at`, and both are derived here rather
+    than stored, for the reason the module statuses are: the instructor can move a
+    due date after the attempts exist, and a stored flag would then be wrong. An
+    entry is `late` when its attempt was graded strictly after the due date. A
+    module is missing for a member when its due date has passed (strictly, at
+    `now`), they have no attempt at it, and it has something to be graded on (see
+    `GradebookRow.missing_module_ids`).
+
+    `now` is the API process's clock unless a caller passes one. The comparison is
+    against `graded_at`, which Postgres stamped, so the two clocks differ by however
+    far Cloud Run and Cloud SQL drift apart; both are NTP-synced, and a deadline is
+    not a sub-second instrument. Asking Postgres for `now()` instead would add a
+    round trip to every gradebook read to correct an error nobody can see.
     """
+    moment = now if now is not None else touched_now()
     course = await get_course(scope, session, course_id)
     modules = await list_modules(scope, session, course_id)
     everyone = scope.user_id == course.owner_user_id
@@ -793,8 +886,19 @@ async def course_gradebook(
             title=row.title,
             notebook_id=row.notebook_id if row.notebook_id in live else None,
             graded_cells=live.get(row.notebook_id) if row.notebook_id in live else None,
+            due_at=row.due_at,
         )
         for row in modules
+    ]
+    # Modules a member can be missing: due, and gradable today. A module with no
+    # ready notebook, or one with no graded exercise in it, can never be attempted,
+    # so flagging it would mark the whole class missing for work that is not there.
+    can_be_missed = [
+        column
+        for column in columns
+        if _is_late(moment, column.due_at)
+        and column.graded_cells is not None
+        and column.graded_cells > 0
     ]
     module_by_notebook = {
         row.notebook_id: row
@@ -917,6 +1021,7 @@ async def course_gradebook(
                 stale=current_version_id != version_id,
                 run_id=run_id,
                 graded_at=_required(graded_at, "graded_at"),
+                late=_is_late(_required(graded_at, "graded_at"), module.due_at),
             )
         )
 
@@ -949,6 +1054,9 @@ async def course_gradebook(
                 total_passed=sum(entry.passed for entry in found),
                 total_graded_cells=total_graded_cells,
                 last_graded_at=max((entry.graded_at for entry in found), default=None),
+                missing_module_ids=[
+                    column.id for column in can_be_missed if column.id not in attempted_modules
+                ],
             )
         )
     rows.sort(key=lambda row: ((row.display_name or row.email).casefold(), str(row.user_id)))
