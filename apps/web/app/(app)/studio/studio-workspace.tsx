@@ -46,6 +46,7 @@ import { MAX_VIEWABLE_QUBITS, MAX_VIEWABLE_STEPS } from "../../../lib/studio-par
 import { CIRCUIT_FRAMEWORKS, circuitFramework, circuitFrameworkOrNull, isExecutableCircuitFramework, type CircuitFrameworkKey } from "../../../lib/circuit-frameworks";
 import { MAX_CPU_SEED, MAX_CPU_SHOTS, cpuSimulationEligibility, cpuSimulationRecord, loadCpuSimulationRecords, planCpuSimulation, saveCpuSimulationRecord, sourceFingerprint, type CpuSimulationEligibility, type CpuSimulationLimits, type CpuSimulationRecord } from "../../../lib/studio-simulation";
 import { simulator } from "../../../lib/simulator-client";
+import { CpuRunSlot } from "../../../lib/studio-cpu-run";
 import { TIER_LIMITS } from "../../../lib/account-tier";
 import { formatShare, simulationChartData, simulationReading, type SimulationChartData, type SimulationReading } from "../../../lib/simulation-visual";
 import { QPU_RUN_POLL_MS, QpuSubmissionRefused, afterRestore, backendNameOf, fetchLatestQpuRunFor, fetchQpuBackends, fetchQpuEstimate, fetchQpuRun, fetchQpuSubmissionGate, formatUsd, isPricedOnly, isUnfinishedRun, runForCircuit, submitQpuRun, type QpuBackendInfo, type QpuCostEstimate, type QpuRunRecord, type QpuSubmissionGate } from "../../../lib/qpu";
@@ -148,6 +149,9 @@ const STARTER_CODES: BuilderCodeVariants = generateBuilderCode(STARTER_STEPS, 2)
  * artifact whose code the builder cannot represent, and drawing a Bell pair
  * for an unrelated circuit would be a far worse lie than drawing nothing.
  */
+/** The simulator consumer Studio's CPU run asks under (lib/simulator-client.ts). */
+const STUDIO_CPU_RUN = "studio-cpu-run";
+
 const STARTER_SEED: Omit<BuilderSeed, "key"> = {
   artifactIdentity: null,
   qubitCount: 2,
@@ -429,14 +433,29 @@ export function StudioWorkspace({ artifactId, newDraft = false, exampleId, atlas
   shortcutsOpenRef.current = shortcutsOpen;
   const runCpuRef = useRef<() => void>(() => undefined);
   runCpuRef.current = () => void startCpuSimulation();
-  // The CPU run answers later now (it runs in the simulator worker), so a
-  // second press of the button or the shortcut can arrive while it is still
-  // going. `busy` cannot stop that on its own: it reaches the handler only
-  // after the next render. And the answer can arrive after the reader has
-  // moved to another artifact, whose record list it must not join.
-  const cpuRunInFlight = useRef(false);
+  // A CPU run answers later (it runs in the simulator worker), by which time
+  // the reader may have opened another artifact. `cpuRuns` decides whether the
+  // answer may still touch the page, and holds one run at a time, which `busy`
+  // cannot do on its own: a second press of Run or its shortcut reaches the
+  // handler before `busy` has rendered (lib/studio-cpu-run.ts).
+  // `shownArtifactId` is the artifact on screen as of the latest render, which
+  // an answer can arrive ahead of the effect below.
+  const [cpuRuns] = useState(() => new CpuRunSlot());
   const shownArtifactId = useRef<string | null>(null);
   shownArtifactId.current = artifact?.id ?? null;
+  const shownId = artifact?.id ?? null;
+  useEffect(() => {
+    // Another artifact is on screen: a run started on the last one is
+    // abandoned, its job withdrawn, and Run released for this one.
+    if (cpuRuns.show(shownId)) {
+      simulator.cancel(STUDIO_CPU_RUN);
+      setBusy((current) => (current === "simulation" ? null : current));
+    }
+  }, [cpuRuns, shownId]);
+  // Studio going away abandons a run still in flight.
+  useEffect(() => () => {
+    if (cpuRuns.show(null)) simulator.cancel(STUDIO_CPU_RUN);
+  }, [cpuRuns]);
   useEffect(() => {
     if (!showEditor) return;
     const onKey = (event: globalThis.KeyboardEvent) => {
@@ -823,7 +842,7 @@ export function StudioWorkspace({ artifactId, newDraft = false, exampleId, atlas
   }
 
   async function startCpuSimulation(confirmRerun = false) {
-    if (cpuRunInFlight.current) return;
+    if (cpuRuns.busy()) return;
     if (!artifact) {
       selectPanel("simulation");
       setMessage(copy.simulationArtifactRequired);
@@ -854,8 +873,9 @@ export function StudioWorkspace({ artifactId, newDraft = false, exampleId, atlas
       return;
     }
 
+    const ticket = cpuRuns.begin(artifact.id);
+    if (!ticket) return;
     setBusy("simulation");
-    cpuRunInFlight.current = true;
     try {
       // The checks (eligibility, shots, this browser's pacing, the seed) run
       // here, as they always did; only the simulation itself, a second or
@@ -872,8 +892,12 @@ export function StudioWorkspace({ artifactId, newDraft = false, exampleId, atlas
         shots: parsedShots,
         seed: parsedSeed,
       }, limits);
-      const outcome = await simulator.run("studio-cpu-run", { kind: "cpu_counts", circuit: plan.circuit, shots: plan.shots, seed: plan.seed });
-      if (outcome.status === "superseded") return;
+      const outcome = await simulator.run(STUDIO_CPU_RUN, { kind: "cpu_counts", circuit: plan.circuit, shots: plan.shots, seed: plan.seed });
+      // Everything below changes the page: the record, the list, the rerun
+      // prompt, the message. It happens only for the run that still owns the
+      // artifact on screen. An abandoned run saves nothing either; it
+      // belonged to an artifact the reader has left.
+      if (outcome.status === "superseded" || !cpuRuns.owns(ticket, shownArtifactId.current)) return;
       if (outcome.status === "timed_out") {
         setMessage(copy.cpuSimulationTimedOut);
         return;
@@ -884,16 +908,17 @@ export function StudioWorkspace({ artifactId, newDraft = false, exampleId, atlas
         setMessage(copy.simulationPersistenceUnavailable);
         return;
       }
-      if (shownArtifactId.current === record.artifactId) {
-        setSimulationRecords((current) => [record, ...current.filter((item) => item.id !== record.id)]);
-      }
+      setSimulationRecords((current) => [record, ...current.filter((item) => item.id !== record.id)]);
       setRerunPending(false);
       setMessage(copy.cpuSimulationRecorded);
     } catch (cause) {
+      // Reached before the answer (the plan's own checks) or from a run that
+      // still owns the page (a job that threw), never from an abandoned run.
       setMessage(cause instanceof Error ? cause.message : copy.simulationFailed);
     } finally {
-      cpuRunInFlight.current = false;
-      setBusy(null);
+      // Only the run that still holds the slot releases Run: an abandoned
+      // run's cleanup must not unlock a run started since on another artifact.
+      if (cpuRuns.end(ticket)) setBusy(null);
     }
   }
 
