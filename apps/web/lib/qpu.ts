@@ -99,6 +99,15 @@ export type QpuRunRecord = {
   provider: "ibm" | "braket";
   device_id: string;
   provider_job_id: string | null;
+  /**
+   * The physical machine the provider ran the job on (`ibm_brisbane`), as the
+   * provider named it. `device_id` is Leona's catalog entry, and IBM picks the
+   * machine itself, so this is the only field that says which processor the
+   * counts came from. Null when nothing was reported, which includes every run
+   * recorded before the field existed; optional because an API older than it
+   * sends nothing at all. Read it through `backendNameOf`.
+   */
+  backend_name?: string | null;
   shots: number;
   status: "queued" | "running" | "done" | "error" | "cancelled";
   source_fingerprint: string;
@@ -192,4 +201,51 @@ export async function fetchQpuRun(recordId: string): Promise<QpuRunRecord> {
   const response = await fetch(`/api/qpu/runs/${recordId}`, { cache: "no-store" });
   if (!response.ok) throw new Error(`qpu run unavailable (${response.status})`);
   return (await response.json()) as QpuRunRecord;
+}
+
+/** The machine a run went to, or null when none was recorded. Never a guess. */
+export function backendNameOf(record: Pick<QpuRunRecord, "backend_name">): string | null {
+  const name = record.backend_name;
+  return typeof name === "string" && name.trim() ? name : null;
+}
+
+/** One run in the workspace history: the record plus the program that was submitted. */
+export type QpuRunHistoryItem = QpuRunRecord & { qasm: string };
+
+export type QpuRunPage = {
+  items: QpuRunHistoryItem[];
+  /** Pass back as `cursor` for the next page; null on the last page. */
+  next_cursor: string | null;
+};
+
+/**
+ * One page of `GET /v1/qpu/runs`, newest first. `sourceFingerprint` narrows it
+ * to one circuit, which is how Studio finds the last run of what is on screen.
+ *
+ * A body without an `items` array is refused rather than read as an empty
+ * history: "no runs yet" is a sentence the page shows, and it must not be shown
+ * for a response that simply failed to parse.
+ */
+export async function fetchQpuRunHistory(
+  options: { cursor?: string | null; limit?: number; sourceFingerprint?: string } = {},
+): Promise<QpuRunPage> {
+  const params = new URLSearchParams();
+  if (options.cursor) params.set("cursor", options.cursor);
+  if (options.limit !== undefined) params.set("limit", String(options.limit));
+  if (options.sourceFingerprint) params.set("source_fingerprint", options.sourceFingerprint);
+  const query = params.toString();
+  const response = await fetch(`/api/qpu/runs${query ? `?${query}` : ""}`, { cache: "no-store" });
+  if (!response.ok) throw new Error(`qpu run history unavailable (${response.status})`);
+  const payload = (await response.json().catch(() => null)) as { items?: unknown; next_cursor?: unknown } | null;
+  if (!payload || !Array.isArray(payload.items)) throw new Error("qpu run history payload malformed");
+  return {
+    items: payload.items as QpuRunHistoryItem[],
+    next_cursor: typeof payload.next_cursor === "string" ? payload.next_cursor : null,
+  };
+}
+
+/** The most recent run of one circuit in this workspace, or null if it never ran. */
+export async function fetchLatestQpuRunFor(sourceFingerprint: string): Promise<QpuRunHistoryItem | null> {
+  const page = await fetchQpuRunHistory({ sourceFingerprint, limit: 1 });
+  return page.items[0] ?? null;
 }

@@ -3453,6 +3453,10 @@ function QpuLane({ artifact, shots, copy, limits }: { artifact: LibraryArtifact 
           off while its real flow was live underneath. It was only ever a label;
           it is one now. */}
       <span className="mj-qpu-lane-title">{copy.qpuExecution}</span>
+      {/* The whole record, across circuits and machines. Here as well as in the
+          sidebar because this panel is where someone who just ran a job looks
+          for the rest of them. */}
+      <p className="mj-qpu-history-link"><a href="/studio/hardware">{copy.hardwareRunHistory}</a></p>
       {catalogError ? <p>{copy.hardwareCatalogUnavailable}</p> : null}
       {!catalogError && !backends ? <p>{copy.hardwareCatalogLoading}</p> : null}
       {backends && backends.length ? (
