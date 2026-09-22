@@ -7,6 +7,16 @@ import { useEffect, useRef, useState } from "react";
 import { ChevronIcon } from "../../../../../components/icons";
 import { ChatMarkdown } from "../../../../../components/chat-markdown";
 import { refusalSentence } from "../../../../../lib/api-error";
+import {
+  dueDateChanged,
+  dueDateFromInput,
+  dueDateInputValue,
+  dueDatePatchBody,
+  formatDueDate,
+  moduleOverdue,
+  ownGradebookRow,
+  viewerCreatedCourse,
+} from "../../../../../lib/course-due-dates";
 import { courseHasGradableNotebook } from "../../../../../lib/course-gradebook";
 import {
   courseModuleStatusPill,
@@ -17,6 +27,7 @@ import {
 } from "../../../../../lib/course-progress";
 import type {
   Course,
+  CourseGradebook as CourseGradebookData,
   CourseModule,
   CourseTurn,
   CreateCourseTurnResponse,
@@ -78,6 +89,18 @@ export function CourseWorkspace({ courseId, locale = "en" }: { courseId: string;
   const [generatingAll, setGeneratingAll] = useState(false);
   const [generatingModuleId, setGeneratingModuleId] = useState<string | null>(null);
   const [reordering, setReordering] = useState(false);
+  const [savingDueModuleId, setSavingDueModuleId] = useState<string | null>(null);
+
+  //: Who is looking, from `/api/me`, compared against `course.owner_user_id` to decide
+  //: whether to offer the due-date controls. `null` until it answers, so the controls
+  //: appear a moment late rather than appear for a member and then 403 on save.
+  const [viewerId, setViewerId] = useState<string | null>(null);
+  //: The gradebook as `CourseGradebook` last loaded it. A member's copy is their own
+  //: row, which is where "overdue" comes from; the course page never works it out
+  //: from the browser's clock.
+  const [gradebook, setGradebook] = useState<CourseGradebookData | null>(null);
+  //: Bumped after a due date is saved, so the gradebook re-reads late and missing.
+  const [gradebookRefresh, setGradebookRefresh] = useState(0);
 
   const reloadSeq = useRef(0);
   const turnsSeq = useRef(0);
@@ -143,10 +166,25 @@ export function CourseWorkspace({ courseId, locale = "en" }: { courseId: string;
     setFollowedPlanRunId(null);
     setPlanRunActive(false);
     setModuleRunIds({});
+    setGradebook(null);
     loadCourse();
     loadTurns();
     return () => { reloadSeq.current += 1; turnsSeq.current += 1; };
   }, [courseId]);
+
+  useEffect(() => {
+    let active = true;
+    void fetch("/api/me", { cache: "no-store" })
+      .then((response) => (response.ok ? response.json() : null))
+      .then((payload: unknown) => {
+        if (!active || !isRecord(payload)) return;
+        if (typeof payload.user_id === "string") setViewerId(payload.user_id);
+      })
+      .catch(() => {});
+    return () => {
+      active = false;
+    };
+  }, []);
 
   const planEvents = useRunProgress(followedPlanRunId, () => {
     setPlanRunActive(false);
@@ -284,6 +322,29 @@ export function CourseWorkspace({ courseId, locale = "en" }: { courseId: string;
     }
   }
 
+  async function saveDueDate(moduleId: string, dueAt: string | null) {
+    if (!course || savingDueModuleId) return;
+    setSavingDueModuleId(moduleId);
+    setActionError(null);
+    try {
+      const response = await fetch(`/api/courses/${encodeURIComponent(courseId)}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(dueDatePatchBody(moduleId, dueAt)),
+      });
+      const payload = (await response.json()) as unknown;
+      if (!response.ok || !isRecord(payload) || typeof payload.id !== "string") {
+        throw new Error(refusalSentence(payload) ?? coursesCopy.dueDateSaveFailed);
+      }
+      setCourse(payload as unknown as Course);
+      setGradebookRefresh((current) => current + 1);
+    } catch (cause) {
+      setActionError(cause instanceof Error ? cause.message : coursesCopy.dueDateSaveFailed);
+    } finally {
+      setSavingDueModuleId(null);
+    }
+  }
+
   async function downloadRepo() {
     if (!course || downloading || course.status !== "ready") return;
     setDownloading(true);
@@ -312,6 +373,8 @@ export function CourseWorkspace({ courseId, locale = "en" }: { courseId: string;
 
   const progress = courseProgress(course);
   const orderedModules = [...(course.modules ?? [])].sort((a, b) => a.seq - b.seq);
+  const isCreator = viewerCreatedCourse(course, viewerId);
+  const ownRow = ownGradebookRow(gradebook);
   const generateAllDisabled = generatingAll || planRunActive || progress.ready === progress.total;
 
   return (
@@ -401,6 +464,10 @@ export function CourseWorkspace({ courseId, locale = "en" }: { courseId: string;
               onMoveUp={() => void moveModule(module.id, -1)}
               onMoveDown={() => void moveModule(module.id, 1)}
               onRunTerminal={loadCourse}
+              canSetDueDate={isCreator}
+              overdue={moduleOverdue(ownRow, module.id)}
+              savingDueDate={savingDueModuleId === module.id}
+              onSaveDueDate={(dueAt) => void saveDueDate(module.id, dueAt)}
             />
           ))}
         </section>
@@ -442,7 +509,13 @@ export function CourseWorkspace({ courseId, locale = "en" }: { courseId: string;
           could have been graded on, and an empty gradebook under a plan that is
           still being written reads as a failure rather than as "not yet". */}
       {courseHasGradableNotebook(course.modules ?? []) ? (
-        <CourseGradebook courseId={course.id} courseSlug={course.slug} locale={locale} />
+        <CourseGradebook
+          courseId={course.id}
+          courseSlug={course.slug}
+          locale={locale}
+          refreshKey={gradebookRefresh}
+          onLoaded={setGradebook}
+        />
       ) : null}
     </section>
   );
@@ -468,6 +541,10 @@ export function CourseModuleCard({
   onMoveUp,
   onMoveDown,
   onRunTerminal,
+  canSetDueDate = false,
+  overdue = false,
+  savingDueDate = false,
+  onSaveDueDate,
 }: {
   module: CourseModule;
   modules: CourseModule[];
@@ -481,6 +558,13 @@ export function CourseModuleCard({
   onMoveUp: () => void;
   onMoveDown: () => void;
   onRunTerminal: () => void;
+  /** The viewer created the course, so they may set this module's due date. */
+  canSetDueDate?: boolean;
+  /** Past due with no graded attempt from the viewer (their own gradebook row says so). */
+  overdue?: boolean;
+  savingDueDate?: boolean;
+  /** Called with the instant in UTC, or `null` to clear the due date. */
+  onSaveDueDate?: (dueAt: string | null) => void;
 }) {
   const copy = WORKSPACE_COPY[locale];
   const coursesCopy = copy.courses;
@@ -520,6 +604,14 @@ export function CourseModuleCard({
       </div>
 
       <h3 className="mj-course-module-title">{module.title}</h3>
+      {module.due_at ? (
+        <p className="mj-course-module-due">
+          <time dateTime={module.due_at}>{coursesCopy.dueLabel(formatDueDate(module.due_at, locale))}</time>
+          {overdue ? (
+            <span className="mj-course-due-overdue">{coursesCopy.dueOverdue}</span>
+          ) : null}
+        </p>
+      ) : null}
       <p className="mj-course-module-topic">{coursesCopy.topicLabel}: {module.topic}</p>
 
       {(module.key_concepts ?? []).length > 0 ? (
@@ -580,6 +672,70 @@ export function CourseModuleCard({
           </button>
         ) : null}
       </div>
+
+      {canSetDueDate && onSaveDueDate ? (
+        <DueDateEditor module={module} locale={locale} saving={savingDueDate} onSave={onSaveDueDate} />
+      ) : null}
     </article>
+  );
+}
+
+/**
+ * The creator's due-date control on one module card: a `datetime-local` input in
+ * the viewer's own zone, a save, and a remove once one is set. What is sent is the
+ * instant in UTC (`dueDateFromInput`); what comes back replaces the draft.
+ */
+function DueDateEditor({
+  module,
+  locale,
+  saving,
+  onSave,
+}: {
+  module: CourseModule;
+  locale: PublicLocale;
+  saving: boolean;
+  onSave: (dueAt: string | null) => void;
+}) {
+  const coursesCopy = WORKSPACE_COPY[locale].courses;
+  const stored = module.due_at ?? null;
+  const [draft, setDraft] = useState(() => dueDateInputValue(stored));
+  // A saved (or cleared) value arriving from the server replaces the draft; an
+  // unrelated re-render of the card does not.
+  useEffect(() => {
+    setDraft(dueDateInputValue(stored));
+  }, [stored]);
+  const inputId = `course-module-due-${module.id}`;
+  const hintId = `${inputId}-hint`;
+
+  return (
+    <form
+      className="mj-course-due-form"
+      onSubmit={(event) => {
+        event.preventDefault();
+        const next = dueDateFromInput(draft);
+        if (next && dueDateChanged(draft, stored)) onSave(next);
+      }}
+    >
+      <label htmlFor={inputId} className="mj-section-label">{coursesCopy.dueDateLabel}</label>
+      <div className="mj-course-due-controls">
+        <input
+          id={inputId}
+          type="datetime-local"
+          value={draft}
+          aria-describedby={hintId}
+          disabled={saving}
+          onChange={(event) => setDraft(event.target.value)}
+        />
+        <button className="mj-secondary-button" type="submit" disabled={saving || !dueDateChanged(draft, stored)}>
+          {saving ? coursesCopy.savingDueDate : coursesCopy.saveDueDate}
+        </button>
+        {stored ? (
+          <button className="mj-secondary-button" type="button" disabled={saving} onClick={() => onSave(null)}>
+            {coursesCopy.clearDueDate}
+          </button>
+        ) : null}
+      </div>
+      <p id={hintId} className="mj-course-due-hint">{coursesCopy.dueDateHint}</p>
+    </form>
   );
 }

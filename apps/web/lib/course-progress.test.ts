@@ -27,6 +27,7 @@ function makeModule(overrides: Partial<CourseModule>): CourseModule {
     notebook_id: null,
     status: "planned",
     notebook_version_seq: null,
+    due_at: null,
     ...overrides,
   };
 }

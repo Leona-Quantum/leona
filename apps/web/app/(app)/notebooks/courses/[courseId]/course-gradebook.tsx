@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { refusalSentence } from "../../../../../lib/api-error";
+import { formatDueDate, gradebookHasDueDates } from "../../../../../lib/course-due-dates";
 import {
   gradebookColumns,
   gradebookCsvFilename,
@@ -38,10 +39,17 @@ export function CourseGradebook({
   courseId,
   courseSlug,
   locale,
+  refreshKey = 0,
+  onLoaded,
 }: {
   courseId: string;
   courseSlug: string;
   locale: PublicLocale;
+  /** Changing it re-reads the gradebook, as after a due date is saved. */
+  refreshKey?: number;
+  /** Handed each gradebook as it arrives: the course page reads a member's own row
+   * from it to mark a module overdue. */
+  onLoaded?: (book: CourseGradebookData) => void;
 }) {
   const coursesCopy = WORKSPACE_COPY[locale].courses;
   const [book, setBook] = useState<CourseGradebookData | null>(null);
@@ -61,7 +69,10 @@ export function CourseGradebook({
         if (!response.ok || !isRecord(payload) || typeof payload.visibility !== "string") {
           throw new Error(refusalSentence(payload) ?? coursesCopy.gradebookLoadFailed);
         }
-        if (seq === loadSeq.current) setBook(payload as unknown as CourseGradebookData);
+        if (seq === loadSeq.current) {
+          setBook(payload as unknown as CourseGradebookData);
+          onLoaded?.(payload as unknown as CourseGradebookData);
+        }
       })
       .catch((cause) => {
         if (seq === loadSeq.current) {
@@ -82,6 +93,14 @@ export function CourseGradebook({
       loadSeq.current += 1;
     };
   }, [courseId]);
+
+  // A refresh keeps the table on screen while it re-reads; only a new course clears it.
+  const firstRefresh = useRef(refreshKey);
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- load is recreated per render; the key is the trigger
+  useEffect(() => {
+    if (refreshKey === firstRefresh.current) return;
+    load();
+  }, [refreshKey]);
 
   async function downloadCsv() {
     if (downloading) return;
@@ -159,6 +178,7 @@ export function CourseGradebookView({
   // as well, above the table, because a column of identical cells is easy to misread.
   const nobodyStarted = rows.every((row) => (row.entries ?? []).length === 0);
   const totalsPending = book ? gradebookTotalsPending(book) : null;
+  const hasDueDates = book ? gradebookHasDueDates(book) : false;
 
   return (
     <section className="mj-course-gradebook" aria-labelledby="course-gradebook-title">
@@ -215,6 +235,11 @@ export function CourseGradebookView({
                   <th scope="col" key={module.id}>
                     <span className="mj-mono-muted">{coursesCopy.moduleSeqLabel(module.seq)}</span>
                     <span className="mj-course-gradebook-module-title" title={module.title}>{module.title}</span>
+                    {module.due_at ? (
+                      <time className="mj-course-gradebook-due" dateTime={module.due_at}>
+                        {coursesCopy.dueLabel(formatDueDate(module.due_at, locale))}
+                      </time>
+                    ) : null}
                   </th>
                 ))}
                 <th scope="col">{coursesCopy.gradebookTotalColumn}</th>
@@ -234,6 +259,10 @@ export function CourseGradebookView({
             </tbody>
           </table>
         </div>
+      ) : null}
+
+      {book && rows.length > 0 && hasDueDates ? (
+        <p className="mj-course-gradebook-legend">{coursesCopy.gradebookLegend}</p>
       ) : null}
     </section>
   );
@@ -276,7 +305,19 @@ function GradebookTableRow({
       </th>
       {columns.map((module) => {
         const entry = gradebookEntry(row, module.id);
+        const due = module.due_at ? formatDueDate(module.due_at, locale) : "";
         if (!entry) {
+          // Missing replaces "Not started" rather than sitting beside it: it IS "not
+          // started", with the due date passed. The control plane decides which.
+          if ((row.missing_module_ids ?? []).includes(module.id)) {
+            return (
+              <td key={module.id}>
+                <span className="mj-course-gradebook-flag mj-course-gradebook-flag--missing" title={coursesCopy.gradebookMissingHint(due)}>
+                  {coursesCopy.gradebookMissing}
+                </span>
+              </td>
+            );
+          }
           return (
             <td key={module.id} className="mj-course-gradebook-empty-cell">
               {coursesCopy.gradebookNotStarted}
@@ -286,6 +327,11 @@ function GradebookTableRow({
         return (
           <td key={module.id}>
             <Score passed={entry.passed} graded={entry.graded_cells} locale={locale} />
+            {entry.late ? (
+              <span className="mj-course-gradebook-flag mj-course-gradebook-flag--late" title={coursesCopy.gradebookLateHint(due)}>
+                {coursesCopy.gradebookLate}
+              </span>
+            ) : null}
             {entry.stale ? (
               <small title={coursesCopy.gradebookOlderVersionHint(entry.version_seq)}>
                 {coursesCopy.gradebookOlderVersion}

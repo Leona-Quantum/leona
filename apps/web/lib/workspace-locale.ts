@@ -960,6 +960,24 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
     gradebookDownloadCsv: string;
     gradebookDownloadingCsv: string;
     gradebookDownloadCsvFailed: string;
+
+    /** A module's due date, in the viewer's zone: "Due Tue, Sep 30, 5:00 PM GMT+9". */
+    dueLabel: (date: string) => string;
+    /** The member's own module: past its due date with no graded attempt. */
+    dueOverdue: string;
+    /** The creator's control on each module card. */
+    dueDateLabel: string;
+    dueDateHint: string;
+    saveDueDate: string;
+    savingDueDate: string;
+    clearDueDate: string;
+    dueDateSaveFailed: string;
+    /** Gradebook cell markers, and the legend that explains them. */
+    gradebookLate: string;
+    gradebookLateHint: (date: string) => string;
+    gradebookMissing: string;
+    gradebookMissingHint: (date: string) => string;
+    gradebookLegend: string;
   };
 }> = {
   en: {
@@ -2070,6 +2088,20 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
     gradebookDownloadCsv: "Download CSV",
     gradebookDownloadingCsv: "Downloading…",
     gradebookDownloadCsvFailed: "The gradebook could not be downloaded.",
+
+    dueLabel: (date) => `Due ${date}`,
+    dueOverdue: "Overdue",
+    dueDateLabel: "Due date",
+    dueDateHint: "Enter it in your time zone. Each member sees it in their own.",
+    saveDueDate: "Save due date",
+    savingDueDate: "Saving…",
+    clearDueDate: "Remove due date",
+    dueDateSaveFailed: "The due date could not be saved.",
+    gradebookLate: "Late",
+    gradebookLateHint: (date) => `Checked after the due date, ${date}.`,
+    gradebookMissing: "Missing",
+    gradebookMissingHint: (date) => `Not started, and the due date (${date}) has passed.`,
+    gradebookLegend: "Late: checked after the due date. Missing: not started, and the due date has passed.",
   },
   },
   ja: {
@@ -3168,6 +3200,20 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
     gradebookDownloadCsv: "CSVをダウンロード",
     gradebookDownloadingCsv: "ダウンロードしています…",
     gradebookDownloadCsvFailed: "成績表をダウンロードできませんでした。",
+
+    dueLabel: (date) => `提出期限 ${date}`,
+    dueOverdue: "期限切れ",
+    dueDateLabel: "提出期限",
+    dueDateHint: "あなたのタイムゾーンで入力してください。メンバーにはそれぞれのタイムゾーンで表示されます。",
+    saveDueDate: "期限を保存",
+    savingDueDate: "保存しています…",
+    clearDueDate: "期限を削除",
+    dueDateSaveFailed: "提出期限を保存できませんでした。",
+    gradebookLate: "期限後",
+    gradebookLateHint: (date) => `提出期限（${date}）より後に採点されました。`,
+    gradebookMissing: "未提出",
+    gradebookMissingHint: (date) => `未着手のまま、提出期限（${date}）を過ぎています。`,
+    gradebookLegend: "期限後：提出期限より後に採点された結果です。未提出：未着手のまま提出期限を過ぎています。",
   },
   },
 };
