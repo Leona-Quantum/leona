@@ -107,6 +107,13 @@ export const CIRCUIT_OPTIMIZATION_GATE_VALUES = [
   "M",
 ] as const;
 
+/** CommentTargetType — 3 members. */
+export const COMMENT_TARGET_TYPE_VALUES = [
+  "run",
+  "notebook",
+  "artifact",
+] as const;
+
 /** CourseModuleStatus — 5 members. */
 export const COURSE_MODULE_STATUS_VALUES = [
   "planned",

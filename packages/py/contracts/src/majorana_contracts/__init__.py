@@ -93,6 +93,16 @@ from .events import (
     VerificationResult,
     run_event_adapter,
 )
+from .comments import (
+    MAX_COMMENT_CHARS,
+    Comment,
+    CommentList,
+    CommentPeopleList,
+    CommentPerson,
+    CommentTargetType,
+    CreateCommentRequest,
+    UpdateCommentRequest,
+)
 from .courses import (
     Course,
     CourseList,
@@ -395,9 +405,23 @@ from .lifecycle import (
 # 2.24.0: Proposal 5, increment 2. QpuRunRecord gains optional `backend_name`, the
 # physical machine the provider ran the job on (migration 0065). Additive: it
 # defaults to None, and None is also its value for every run recorded before it.
-CONTRACTS_VERSION = "2.24.0"
+# 2.27.0: Proposal 9, first slice. Comment, CommentList, CommentPerson,
+# CommentPeopleList, CommentTargetType and the create/update bodies: comments and
+# @-mentions on a run, a notebook or a saved circuit (migration 0068). Additive:
+# new names only. Numbered 2.27.0, not 2.25.0, because two open branches already
+# claim 2.25.0 (course gradebook) and 2.26.0 (hardware mitigation); whichever of
+# the three lands later renumbers on rebase.
+CONTRACTS_VERSION = "2.27.0"
 
 __all__ = [
+    "MAX_COMMENT_CHARS",
+    "Comment",
+    "CommentList",
+    "CommentPeopleList",
+    "CommentPerson",
+    "CommentTargetType",
+    "CreateCommentRequest",
+    "UpdateCommentRequest",
     "TextAnswer",
     "RubricAnswer",
     "NumericAnswer",
