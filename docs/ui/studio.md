@@ -46,7 +46,8 @@ saves the resulting evidence.
   including an unsaved draft. It computes the ideal probability of measuring
   one and the Pauli-Z expectation for a chosen qubit over 3–41 angles. The
   browser worker bounds this to 12 qubits, 512 operations, and a whole-sweep
-  work budget. Mid-circuit measurement and opaque custom gates are refused.
+  work budget. Truncated saved diagrams, mid-circuit measurement, and opaque
+  custom gates are refused so the export describes the circuit actually run.
   Results are temporary, with CSV and JSON downloads; the JSON includes the
   source and circuit snapshot. No shots, noise, hardware, verification, or
   saved artifact version are involved.

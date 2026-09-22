@@ -17,9 +17,10 @@ import type { ParsedBuilderCircuit } from "../../../lib/studio-parse";
 import { WORKSPACE_COPY } from "../../../lib/workspace-locale";
 
 /** Studio's reproducible, local angle experiment. It never changes the circuit. */
-export function StudioParameterSweep({ circuit, synchronized, sourceCode, locale, onOpenVisual }: {
+export function StudioParameterSweep({ circuit, synchronized, complete, sourceCode, locale, onOpenVisual }: {
   circuit: ParsedBuilderCircuit;
   synchronized: boolean;
+  complete: boolean;
   sourceCode: string;
   locale: PublicLocale;
   onOpenVisual: () => void;
@@ -41,7 +42,7 @@ export function StudioParameterSweep({ circuit, synchronized, sourceCode, locale
   const [error, setError] = useState<string | null>(null);
   const [completed, setCompleted] = useState<{ key: string; result: ParameterSweepResult } | null>(null);
   const fingerprint = sourceFingerprint(sourceCode);
-  const key = JSON.stringify([fingerprint, circuit, synchronized, step?.id, qubit, start, end, pointCount]);
+  const key = JSON.stringify([fingerprint, circuit, synchronized, complete, step?.id, qubit, start, end, pointCount]);
   const keyRef = useRef(key);
   keyRef.current = key;
   const result = completed?.key === key ? completed.result : null;
@@ -60,7 +61,7 @@ export function StudioParameterSweep({ circuit, synchronized, sourceCode, locale
 
   async function run(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!synchronized || issue || !step || tooLarge || runningRef.current) return;
+    if (!synchronized || !complete || issue || !step || tooLarge || runningRef.current) return;
     const startDegrees = Number(start);
     const endDegrees = Number(end);
     const points = Number(pointCount);
@@ -117,10 +118,11 @@ export function StudioParameterSweep({ circuit, synchronized, sourceCode, locale
       <summary>{copy.heading}</summary>
       <div className="mj-studio-sweep-body">
         <p>{copy.intro}</p>
+        {!complete ? <p role="status">{copy.incomplete}</p> : null}
         {!synchronized ? <p role="status">{copy.outOfSync} <button type="button" className="mj-text-button" onClick={onOpenVisual}>{copy.openVisual} →</button></p> : null}
-        {synchronized && issue ? <p role="status">{copy.unavailable[issue]}</p> : null}
-        {synchronized && !issue && !step ? <p role="status">{copy.noAngle} <button type="button" className="mj-text-button" onClick={onOpenVisual}>{copy.openVisual} →</button></p> : null}
-        {synchronized && !issue && step ? (
+        {complete && synchronized && issue ? <p role="status">{copy.unavailable[issue]}</p> : null}
+        {complete && synchronized && !issue && !step ? <p role="status">{copy.noAngle} <button type="button" className="mj-text-button" onClick={onOpenVisual}>{copy.openVisual} →</button></p> : null}
+        {complete && synchronized && !issue && step ? (
           <form onSubmit={(event) => void run(event)}>
             <div className="mj-studio-sweep-fields">
               <label htmlFor={`${id}-gate`}>{copy.gate}

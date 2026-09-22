@@ -8,7 +8,7 @@ import type { ParsedBuilderCircuit } from "../../lib/studio-parse.ts";
 const CIRCUIT: ParsedBuilderCircuit = { qubitCount: 1, steps: [{ id: "turn", gate: "RY", qubits: [0], param: "pi/4" }] };
 
 test("a Studio user can run an angle sweep, read the table, and see stale results withdrawn after an edit", async () => {
-  const props = { circuit: CIRCUIT, synchronized: true, sourceCode: "ry(pi/4)", locale: "en" as const, onOpenVisual: () => {} };
+  const props = { circuit: CIRCUIT, synchronized: true, complete: true, sourceCode: "ry(pi/4)", locale: "en" as const, onOpenVisual: () => {} };
   const view = render(<StudioParameterSweep {...props} />);
   fireEvent.click(screen.getByText("Parameter sweep"));
   fireEvent.change(screen.getByLabelText("Points"), { target: { value: "3" } });
@@ -26,8 +26,15 @@ test("a Studio user can run an angle sweep, read the table, and see stale result
 });
 
 test("an unsynchronized diagram cannot be swept as if it were the code", () => {
-  const view = render(<StudioParameterSweep circuit={CIRCUIT} synchronized={false} sourceCode="different code" locale="en" onOpenVisual={() => {}} />);
+  const view = render(<StudioParameterSweep circuit={CIRCUIT} synchronized={false} complete={true} sourceCode="different code" locale="en" onOpenVisual={() => {}} />);
   fireEvent.click(screen.getByText("Parameter sweep"));
   assert.match(view.container.textContent ?? "", /diagram differs from the source code/);
+  assert.equal(view.container.querySelector("form"), null);
+});
+
+test("a truncated saved diagram cannot export a sweep under the full source", () => {
+  const view = render(<StudioParameterSweep circuit={CIRCUIT} synchronized={true} complete={false} sourceCode="ry(pi/4); omitted operations" locale="en" onOpenVisual={() => {}} />);
+  fireEvent.click(screen.getByText("Parameter sweep"));
+  assert.match(view.container.textContent ?? "", /saved diagram omits operations/);
   assert.equal(view.container.querySelector("form"), null);
 });

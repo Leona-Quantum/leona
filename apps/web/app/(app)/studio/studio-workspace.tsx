@@ -1312,6 +1312,7 @@ export function StudioWorkspace({ artifactId, newDraft = false, exampleId, atlas
                       eligibility={cpuEligibility}
                       circuit={canvasCircuit}
                       synchronized={canvasSync.kind === "in_sync"}
+                      complete={!builderSeed.readOnlyReasons.includes("truncated")}
                       sourceCode={code}
                       onOpenVisual={() => selectPanel("visual")}
                       records={simulationRecords}
@@ -3197,6 +3198,7 @@ function SimulationPanel({
   eligibility,
   circuit,
   synchronized,
+  complete,
   sourceCode,
   onOpenVisual,
   records,
@@ -3219,6 +3221,7 @@ function SimulationPanel({
   eligibility: CpuSimulationEligibility;
   circuit: ParsedBuilderCircuit;
   synchronized: boolean;
+  complete: boolean;
   sourceCode: string;
   onOpenVisual: () => void;
   records: CpuSimulationRecord[];
@@ -3347,7 +3350,7 @@ function SimulationPanel({
           )}
         </section>
 
-        <StudioParameterSweep circuit={circuit} synchronized={synchronized} sourceCode={sourceCode} locale={locale} onOpenVisual={onOpenVisual} />
+        <StudioParameterSweep circuit={circuit} synchronized={synchronized} complete={complete} sourceCode={sourceCode} locale={locale} onOpenVisual={onOpenVisual} />
 
         {/* After the CPU records, not between the run button and its result:
             you run, then you read, then you consider hardware (UX pass 6). */}

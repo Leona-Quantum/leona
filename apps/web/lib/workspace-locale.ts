@@ -275,6 +275,7 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
       openVisual: string;
       noAngle: string;
       outOfSync: string;
+      incomplete: string;
       tooLarge: string;
       unavailable: Record<"width" | "operations" | "custom" | "measurement" | "angle" | "invalid", string>;
       boundary: string;
@@ -1309,6 +1310,7 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
         openVisual: "Open Visual tab",
         noAngle: "Add an RX, RY, RZ, P, CP, or RZZ gate to explore its angle.",
         outOfSync: "The diagram differs from the source code. Rebuild or apply it on the Visual tab before sweeping.",
+        incomplete: "This saved diagram omits operations from the source. A sweep of the partial circuit would give misleading results, so it is unavailable.",
         tooLarge: "This sweep is too large. Use fewer points or a shorter circuit.",
         unavailable: {
           width: "Sweep supports up to 12 qubits.",
@@ -2488,6 +2490,7 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
         openVisual: "Visualタブを開く",
         noAngle: "RX、RY、RZ、P、CP、RZZのいずれかを追加してください。",
         outOfSync: "図とソースコードが異なります。Visualタブで図を再構築するか、図の変更をコードに反映してください。",
+        incomplete: "この保存済みの図では、ソースコードの一部の操作が省略されています。不完全な回路で掃引すると誤解を招くため、利用できません。",
         tooLarge: "計算量が上限を超えます。点数か回路の長さを減らしてください。",
         unavailable: {
           width: "掃引は12量子ビットまで対応します。",
