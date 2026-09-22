@@ -4,6 +4,7 @@ import { PreparedCircuitCache, estimateDevice, type DeviceEstimate } from "./qpu
 import type { QpuPublishedNoise } from "./qpu.ts";
 import type { ParsedBuilderCircuit } from "./studio-parse.ts";
 import { sampleCircuitCounts, type CpuSimulationLimits } from "./studio-simulation.ts";
+import { runParameterSweep, type ParameterSweepRequest, type ParameterSweepResult } from "./studio-parameter-sweep.ts";
 
 /**
  * The request/response protocol between the page and the simulator worker
@@ -66,7 +67,8 @@ export type SimulatorJob =
       mitigation: unknown;
     }
   | { kind: "noise_estimate"; qasm: string; limits: ParseLimits; noise: QpuPublishedNoise }
-  | { kind: "cpu_counts"; circuit: ParsedBuilderCircuit; shots: number; seed: number };
+  | { kind: "cpu_counts"; circuit: ParsedBuilderCircuit; shots: number; seed: number }
+  | { kind: "parameter_sweep"; request: ParameterSweepRequest };
 
 export type SimulatorJobKind = SimulatorJob["kind"];
 
@@ -75,6 +77,7 @@ export type SimulatorResults = {
   compare_mitigated: { comparison: IdealComparison; readings: MitigatedReadings | null };
   noise_estimate: DeviceEstimate;
   cpu_counts: Record<string, number>;
+  parameter_sweep: ParameterSweepResult;
 };
 
 export type SimulatorResultOf<J extends SimulatorJob> = SimulatorResults[J["kind"]];
@@ -128,6 +131,8 @@ export function runSimulatorJob(job: SimulatorJob, context: SimulatorContext): S
       return estimateDevice({ prepared: context.prepared.getOrPrepare(job.qasm, job.limits), noise: job.noise });
     case "cpu_counts":
       return sampleCircuitCounts(job.circuit, job.shots, job.seed);
+    case "parameter_sweep":
+      return runParameterSweep(job.request);
   }
 }
 
@@ -136,7 +141,7 @@ export function isSimulatorRequest(value: unknown): value is SimulatorRequest {
   const job = value.job;
   return (
     isObject(job)
-    && (job.kind === "compare_ideal" || job.kind === "compare_mitigated" || job.kind === "noise_estimate" || job.kind === "cpu_counts")
+    && (job.kind === "compare_ideal" || job.kind === "compare_mitigated" || job.kind === "noise_estimate" || job.kind === "cpu_counts" || job.kind === "parameter_sweep")
   );
 }
 

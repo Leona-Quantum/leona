@@ -262,6 +262,31 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
     /** A CPU run the simulator worker did not finish within its time budget. */
     cpuSimulationTimedOut: string;
     simulationBoundary: string;
+    sweep: {
+      heading: string;
+      intro: string;
+      gate: string;
+      qubit: string;
+      start: string;
+      end: string;
+      points: string;
+      run: string;
+      running: string;
+      openVisual: string;
+      noAngle: string;
+      outOfSync: string;
+      incomplete: string;
+      tooLarge: string;
+      unavailable: Record<"width" | "operations" | "custom" | "measurement" | "angle" | "invalid", string>;
+      boundary: string;
+      chart: string;
+      angleColumn: string;
+      probabilityColumn: string;
+      expectationColumn: string;
+      downloadCsv: string;
+      downloadJson: string;
+      timedOut: string;
+    };
     simulationArtifact: string;
     sourceFingerprint: string;
     interchangeFingerprint: string;
@@ -1272,6 +1297,38 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
       simulationFailed: "CPU simulation failed before a record could be created.",
       cpuSimulationTimedOut: "The simulation took too long in this browser, so Leona stopped it before making a record.",
       simulationBoundary: "Runs in your browser on the parsed circuit. A local check, not verification.",
+      sweep: {
+        heading: "Parameter sweep",
+        intro: "Vary one gate angle and see how a qubit responds. Useful for checking interference, entanglement, and circuit sensitivity.",
+        gate: "Angle gate",
+        qubit: "Observe qubit",
+        start: "From (°)",
+        end: "To (°)",
+        points: "Points",
+        run: "Run sweep",
+        running: "Calculating…",
+        openVisual: "Open Visual tab",
+        noAngle: "Add an RX, RY, RZ, P, CP, or RZZ gate to explore its angle.",
+        outOfSync: "The diagram differs from the source code. Rebuild or apply it on the Visual tab before sweeping.",
+        incomplete: "This saved diagram omits operations from the source. A sweep of the partial circuit would give misleading results, so it is unavailable.",
+        tooLarge: "This sweep is too large. Use fewer points or a shorter circuit.",
+        unavailable: {
+          width: "Sweep supports up to 12 qubits.",
+          operations: "Sweep supports up to 512 operations.",
+          custom: "Expand or ungroup custom gates before sweeping.",
+          measurement: "Sweep needs terminal measurements; it cannot model mid-circuit collapse.",
+          angle: "An angle in this circuit is not a fixed number or π expression.",
+          invalid: "This diagram has an invalid gate or qubit reference.",
+        },
+        boundary: "Exact ideal statevector, no shots or noise. Local exploration only; this does not verify or save the circuit.",
+        chart: "Probability of measuring 1 across the angle range",
+        angleColumn: "Angle (°)",
+        probabilityColumn: "P(1)",
+        expectationColumn: "⟨Z⟩",
+        downloadCsv: "Download CSV",
+        downloadJson: "Download reproducible JSON",
+        timedOut: "The sweep took too long in this browser and was stopped.",
+      },
       simulationArtifact: "Artifact",
       sourceFingerprint: "Source fingerprint",
       interchangeFingerprint: "Interchange fingerprint",
@@ -2420,6 +2477,38 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
       simulationFailed: "記録を作成する前にCPUシミュレーションが失敗しました。",
       cpuSimulationTimedOut: "このブラウザではシミュレーションに時間がかかりすぎたため、記録を作成する前に中止しました。",
       simulationBoundary: "ブラウザー上で解析済みの回路を実行します。ローカルの確認であり、検証ではありません。",
+      sweep: {
+        heading: "パラメータ掃引",
+        intro: "ゲート角度を変え、量子ビットの応答を調べます。干渉、もつれ、回路の感度を確認できます。",
+        gate: "角度付きゲート",
+        qubit: "観測する量子ビット",
+        start: "開始角度 (°)",
+        end: "終了角度 (°)",
+        points: "点数",
+        run: "掃引を実行",
+        running: "計算中…",
+        openVisual: "Visualタブを開く",
+        noAngle: "RX、RY、RZ、P、CP、RZZのいずれかを追加してください。",
+        outOfSync: "図とソースコードが異なります。Visualタブで図を再構築するか、図の変更をコードに反映してください。",
+        incomplete: "この保存済みの図では、ソースコードの一部の操作が省略されています。不完全な回路で掃引すると誤解を招くため、利用できません。",
+        tooLarge: "計算量が上限を超えます。点数か回路の長さを減らしてください。",
+        unavailable: {
+          width: "掃引は12量子ビットまで対応します。",
+          operations: "掃引は512操作まで対応します。",
+          custom: "カスタムゲートを展開してから掃引してください。",
+          measurement: "測定は回路の最後に置いてください。途中の測定による状態の収縮は扱えません。",
+          angle: "回路に数値またはπの式ではない角度があります。",
+          invalid: "図に無効なゲートまたは量子ビット参照があります。",
+        },
+        boundary: "理想状態ベクトルの厳密計算です。ショット数やノイズは含みません。ローカルでの探索用で、回路の検証や保存はしません。",
+        chart: "角度ごとの測定結果1の確率",
+        angleColumn: "角度 (°)",
+        probabilityColumn: "P(1)",
+        expectationColumn: "⟨Z⟩",
+        downloadCsv: "CSVをダウンロード",
+        downloadJson: "再現可能なJSONをダウンロード",
+        timedOut: "ブラウザ内での計算時間が上限を超えたため、掃引を中止しました。",
+      },
       simulationArtifact: "保存した回路",
       sourceFingerprint: "ソース識別子",
       interchangeFingerprint: "変換後回路の識別子",

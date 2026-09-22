@@ -42,11 +42,20 @@ saves the resulting evidence.
   Unsupported source, export-only frameworks, unsaved drafts, and out-of-bound
   circuits fail closed with a visible reason. Re-runs require confirmation and
   append a new local record.
+- `Parameter sweep` explores one angle gate on a synchronized visual circuit,
+  including an unsaved draft. It computes the ideal probability of measuring
+  one and the Pauli-Z expectation for a chosen qubit over 3–41 angles. The
+  browser worker bounds this to 12 qubits, 512 operations, and a whole-sweep
+  work budget. Truncated saved diagrams, mid-circuit measurement, and opaque
+  custom gates are refused so the export describes the circuit actually run.
+  Results are temporary, with CSV and JSON downloads; the JSON includes the
+  source and circuit snapshot. No shots, noise, hardware, verification, or
+  saved artifact version are involved.
 - `Verify & save` submits the edited code through the control plane's deny-all
   sandbox. UI success is only shown after typed run evidence arrives.
-- GPU and QPU lanes can be shown as unavailable roadmap controls only. They
-  become actionable after their provider, cost, security, and confirmation
-  contracts exist.
+- QPU submission uses a stored interchange circuit, a backend estimate, and
+  explicit confirmation. The GPU lane remains unavailable until its provider,
+  cost, security, and confirmation contracts exist.
 - `Save version` writes a new artifact version with a provenance edge to the
   parent artifact. Unsaved edits are marked as a draft and are never presented
   as verified.
@@ -72,7 +81,7 @@ that owns each action, rather than sitting above a tab bar that already had them
 | Header | Working-circuit title, draft/version status, verdict chip (hidden on the Summary tab, where the panel it summarizes is already visible), Download export, Save without running, `Verify & save`, and the Qapp disclosure |
 | Tabs | `Code`, `Simulation`, `Visual`, `Summary`, in that pinned order |
 | Code tab | Framework selector, copy action, editable source, and an "About these conversions" disclosure |
-| Simulation tab | CPU lane (shots, seed, run control, ineligibility reasons with a sandbox-execution fallback), QPU lane (device selector, cost estimate, submission), and a list of local CPU simulation records |
+| Simulation tab | CPU lane (shots, seed, run control, ineligibility reasons with a sandbox-execution fallback), local parameter sweep, QPU lane (device selector, cost estimate, submission), and a list of local CPU simulation records |
 | Visual tab | Gate palette, custom gates, circuit-sync banner, the circuit diagram, circuit-compression controls (local strategies shown directly; external-compiler queueing folded behind a closed-by-default disclosure), builder controls, and a folded gate-note disclosure for the selected gate |
 | Summary tab | Circuit fact strip, evidence panel, version history, and a folded verification-contract disclosure |
 | Responsive fallback | Single column at every width; the tab bar and its panel never force horizontal page overflow |
