@@ -139,15 +139,34 @@ def list_backends() -> tuple[QpuBackendInfo, ...]:
     return RATE_CARD
 
 
-def estimate(device_id: str, shots: int) -> QpuCostEstimate:
-    """Deterministic pre-run estimate from the published rate card only."""
+def estimate(device_id: str, shots: int, *, circuits: int = 1) -> QpuCostEstimate:
+    """Deterministic pre-run estimate from the published rate card only.
+
+    `shots` is per circuit and `circuits` is how many circuits the submission
+    sends: 1, or 3 for zero-noise extrapolation (the circuit and its 3x and 5x
+    folds). Every circuit runs every shot, so the shots the provider executes
+    are `shots * circuits`, and the estimate says so rather than quoting the
+    single circuit the user drew.
+
+    For a billed device each circuit is counted as its own provider task, so the
+    task fee is multiplied too. That is the higher of the two ways a provider
+    could bill a batch, and the right direction to be wrong in for a number shown
+    before somebody spends money. For IBM's free queue there is no price to
+    multiply; what grows is the allowance's QPU time, which `circuits` and
+    `total_shots` let the page state.
+    """
     backend = backend_info(device_id)
     if shots < 1:
         raise ValueError("shots must be at least 1")
+    if circuits < 1:
+        raise ValueError("circuits must be at least 1")
+    total_shots = shots * circuits
     if backend.access is QpuAccess.FREE_QUEUE:
         return QpuCostEstimate(
             device_id=device_id,
             shots=shots,
+            circuits=circuits,
+            total_shots=total_shots,
             basis=EstimateBasis.FREE_TIER_ALLOWANCE,
             allowance_note=backend.allowance_note,
             rate_source=backend.rate_source,
@@ -155,14 +174,17 @@ def estimate(device_id: str, shots: int) -> QpuCostEstimate:
             disclaimer=FREE_QUEUE_DISCLAIMER,
         )
     assert backend.per_task_usd is not None and backend.per_shot_usd is not None
-    shot_fees = round(shots * backend.per_shot_usd, 6)
+    task_fees = round(circuits * backend.per_task_usd, 6)
+    shot_fees = round(total_shots * backend.per_shot_usd, 6)
     return QpuCostEstimate(
         device_id=device_id,
         shots=shots,
+        circuits=circuits,
+        total_shots=total_shots,
         basis=EstimateBasis.VENDOR_RATE_CARD,
-        task_fee_usd=backend.per_task_usd,
+        task_fee_usd=task_fees,
         shot_fees_usd=shot_fees,
-        total_usd=round(backend.per_task_usd + shot_fees, 6),
+        total_usd=round(task_fees + shot_fees, 6),
         rate_source=backend.rate_source,
         rate_confirmed_on=backend.rate_confirmed_on,
         disclaimer=ESTIMATE_DISCLAIMER,
