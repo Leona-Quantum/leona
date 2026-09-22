@@ -14,13 +14,16 @@ import {
   appendRunPage,
   applyRunUpdates,
   compareRun,
+  compareRunJob,
+  compareMitigatedRunJob,
   groupRunsByBackend,
-  mitigateRun,
   nextMacrotask,
   readRun,
   unfinishedRunIds,
   workThroughComparisons,
 } from "./qpu-run-history.ts";
+import type { IdealComparison } from "./qpu-ideal.ts";
+import { createSimulatorContext, runSimulatorJob } from "./simulator-protocol.ts";
 import { sourceFingerprint } from "./studio-simulation.ts";
 
 const BELL_QASM = [
@@ -122,9 +125,9 @@ test("reading a run never computes: a finished run without a result is still bei
   assert.deepEqual(readRun(finished, new Map([[finished.id, comparison]])), { kind: "compared", comparison });
 });
 
-test("a run's mitigated readings are measured against the comparison it already has", () => {
-  // Proposal 5, increment 4: the page works these out in the same task as the
-  // comparison, reusing its ideal, so there is no second simulation.
+test("a run's mitigated readings come from the same worker job as its comparison", () => {
+  // Proposal 5, increment 4: one simulation for both, in the worker, because
+  // the readings need the dense ideal and cost about half a second at 20 qubits.
   const item = run({
     mitigation: {
       version: 1,
@@ -138,15 +141,17 @@ test("a run's mitigated readings are measured against the comparison it already 
       },
     },
   });
-  const comparison = compareRun(item, TIER_LIMITS.free);
-  const readings = mitigateRun(item, comparison);
+  const job = compareMitigatedRunJob(item, TIER_LIMITS.free);
+  assert.equal(job.kind, "compare_mitigated");
+  assert.equal(job.mitigation, item.mitigation);
+  const { comparison, readings } = runSimulatorJob(job, createSimulatorContext());
+  assert.deepEqual(comparison, compareRun(item, TIER_LIMITS.free));
   assert.equal(readings?.readout.status, "computed");
   if (readings?.readout.status !== "computed" || comparison.status !== "computed") return;
   assert.ok(readings.readout.reading.tvd < comparison.tvd, `${readings.readout.reading.tvd} vs ${comparison.tvd}`);
   assert.equal(readings.zne, null);
-  // No computed comparison, nothing to measure against.
-  const mismatched = run({ source_fingerprint: "fnv1a-00000000" });
-  assert.equal(mitigateRun(mismatched, compareRun(mismatched, TIER_LIMITS.free)), null);
+  // A run recorded before mitigation existed sends null, never undefined.
+  assert.equal(compareMitigatedRunJob(run(), TIER_LIMITS.free).mitigation, null);
 });
 
 test("unfinished and failed runs get their own reading, not a comparison", () => {
@@ -250,6 +255,77 @@ test("stopping cancels the pending task and computes nothing more", () => {
   assert.equal(scheduler.pending(), 0);
   scheduler.flushOne();
   assert.deepEqual(computed, [order[0].id]);
+});
+
+/** A comparison answered later, the way the simulator worker answers. */
+function deferred() {
+  let resolve!: (comparison: IdealComparison | null) => void;
+  const promise = new Promise<IdealComparison | null>((settle) => {
+    resolve = settle;
+  });
+  return { promise, resolve };
+}
+
+const settle = () => new Promise<void>((resolve) => setImmediate(resolve));
+
+function asyncWorker(order: QpuRunHistoryItem[]) {
+  const scheduler = manualScheduler();
+  const asked: { id: string; answer: ReturnType<typeof deferred> }[] = [];
+  const results = new Map<string, IdealComparison>();
+  const stop = workThroughComparisons({
+    order,
+    isCached: (id) => results.has(id),
+    compute: (item) => {
+      const answer = deferred();
+      asked.push({ id: item.id, answer });
+      return answer.promise;
+    },
+    onResult: (id, comparison) => results.set(id, comparison),
+    schedule: scheduler.schedule,
+  });
+  return { scheduler, asked, results, stop };
+}
+
+const NO_COUNTS: IdealComparison = { status: "unavailable", reason: "no_counts" };
+
+test("an answer that comes later is recorded, and only then is the next run planned", async () => {
+  const order = [run(), run()];
+  const { scheduler, asked, results } = asyncWorker(order);
+  scheduler.flushOne();
+  assert.deepEqual(asked.map((entry) => entry.id), [order[0].id]);
+  // The simulator holds one of this page's comparisons at a time: nothing
+  // more is scheduled while the first is being worked out.
+  assert.equal(scheduler.pending(), 0);
+  asked[0].answer.resolve(NO_COUNTS);
+  await settle();
+  assert.deepEqual(results.get(order[0].id), NO_COUNTS);
+  assert.equal(scheduler.pending(), 1);
+  scheduler.flushOne();
+  assert.deepEqual(asked.map((entry) => entry.id), [order[0].id, order[1].id]);
+});
+
+test("an answer that lands after stopping is dropped, and a withdrawn answer ends the loop", async () => {
+  const stopped = asyncWorker([run(), run()]);
+  stopped.scheduler.flushOne();
+  stopped.stop();
+  stopped.asked[0].answer.resolve(NO_COUNTS);
+  await settle();
+  assert.equal(stopped.results.size, 0);
+  assert.equal(stopped.scheduler.pending(), 0);
+
+  const withdrawn = asyncWorker([run(), run()]);
+  withdrawn.scheduler.flushOne();
+  withdrawn.asked[0].answer.resolve(null);
+  await settle();
+  assert.equal(withdrawn.results.size, 0);
+  assert.equal(withdrawn.scheduler.pending(), 0, "nothing more is planned for a loop whose ask was withdrawn");
+});
+
+test("the worker job for a run is exactly compareRun's comparison", () => {
+  const item = run();
+  const direct = compareRun(item, TIER_LIMITS.free);
+  assert.equal(direct.status, "computed");
+  assert.deepEqual(runSimulatorJob(compareRunJob(item, TIER_LIMITS.free), createSimulatorContext()), direct);
 });
 
 test("the default scheduler prefers idle time and falls back to a zero timeout", async () => {

@@ -1,14 +1,13 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { QPU_RUN_POLL_MS, fetchQpuRun, fetchQpuRunHistory, type QpuRunHistoryItem } from "../../../../lib/qpu";
 import type { IdealComparison } from "../../../../lib/qpu-ideal";
 import {
   appendRunPage,
   applyRunUpdates,
-  compareRun,
+  compareMitigatedRunJob,
   groupRunsByBackend,
-  mitigateRun,
   nextMacrotask,
   readRun,
   unfinishedRunIds,
@@ -18,6 +17,7 @@ import {
 } from "../../../../lib/qpu-run-history";
 import { zneRequested, type MitigatedReadings } from "../../../../lib/qpu-mitigation";
 import type { PublicLocale } from "../../../../lib/public-locale";
+import { simulator } from "../../../../lib/simulator-client";
 import type { CpuSimulationLimits } from "../../../../lib/studio-simulation";
 import { WORKSPACE_COPY } from "../../../../lib/workspace-locale";
 import { QpuMeasuredVsIdeal } from "../qpu-measured-vs-ideal";
@@ -30,6 +30,14 @@ type StudioCopy = (typeof WORKSPACE_COPY)[PublicLocale]["studio"];
  * its program and, once finished, costs a statevector simulation in this tab.
  */
 const PAGE_SIZE = 25;
+
+/** A comparison whose job threw in the simulator: the kernel refusing the
+ * stored program, which is what `unparsable` already tells the reader. */
+const COULD_NOT_COMPARE: IdealComparison = { status: "unavailable", reason: "unparsable" };
+
+/** A comparison the simulator stopped at its time budget. Recorded like any
+ * other answer, so the page moves on to the next run and never asks again. */
+const TIMED_OUT: IdealComparison = { status: "unavailable", reason: "timed_out" };
 
 export function HardwareRuns({ locale, limits }: { locale: PublicLocale; limits: CpuSimulationLimits }) {
   const copy = WORKSPACE_COPY[locale].hardwareRuns;
@@ -87,16 +95,36 @@ export function HardwareRuns({ locale, limits }: { locale: PublicLocale; limits:
 
   const groups = useMemo(() => groupRunsByBackend(items), [items]);
 
-  // Comparisons, worked out one per task in the order the page shows them, so
-  // the top of the page fills in first. Restarted when the list changes (a
-  // refresh, an older page), which re-plans without redoing finished work.
+  // Comparisons, worked out one at a time in the order the page shows them, so
+  // the top of the page fills in first. Each is a statevector simulation of up
+  // to a second or more at the tier ceiling, so each runs in the simulator
+  // worker (lib/simulator-client.ts) and the page keeps answering input while
+  // "Working out…" shows. Restarted when the list changes (a refresh, an older
+  // page), which re-plans without redoing finished work: the restart asks for
+  // the same run again and picks up the job already running for it.
+  const consumer = `hardware-runs:${useId()}`;
   useEffect(() => {
     const order = groups.flatMap((group) => group.runs);
-    const byId = new Map(order.map((item) => [item.id, item]));
-    return workThroughComparisons({
+    // The mitigated readings arrive in the same worker answer as each
+    // comparison and are held here until `onResult` records both together.
+    const readingsById = new Map<string, MitigatedReadings | null>();
+    const stop = workThroughComparisons({
       order,
       isCached: (id) => comparisonsRef.current.has(id),
-      compute: (item) => compareRun(item, limits),
+      // One worker job per run for the comparison AND its mitigated readings
+      // (proposal 5, increment 4): the readings need the dense ideal the
+      // comparison simulates, and cost about half a second at 20 qubits, so
+      // they are worked out beside it in the worker rather than on this thread.
+      compute: (item) =>
+        simulator.run(consumer, compareMitigatedRunJob(item, limits)).then((outcome) => {
+          if (outcome.status === "done") {
+            readingsById.set(item.id, outcome.result.readings);
+            return outcome.result.comparison;
+          }
+          if (outcome.status === "failed") return COULD_NOT_COMPARE;
+          if (outcome.status === "timed_out") return TIMED_OUT;
+          return null;
+        }),
       onResult: (id, comparison) => {
         // Written to the ref at once as well as to state, so a restarted worker
         // that runs before this render commits still sees it as done.
@@ -104,17 +132,20 @@ export function HardwareRuns({ locale, limits }: { locale: PublicLocale; limits:
         next.set(id, comparison);
         comparisonsRef.current = next;
         setComparisons(next);
-        // Still inside the scheduled task, so the mitigated readings are off
-        // the render path too. They reuse this comparison's ideal distribution.
-        const item = byId.get(id);
+        // Recorded with the comparison they were computed beside. A run whose
+        // job failed or timed out has none, and the details say why.
         const nextMitigations = new Map(mitigationsRef.current);
-        nextMitigations.set(id, item ? mitigateRun(item, comparison) : null);
+        nextMitigations.set(id, readingsById.get(id) ?? null);
         mitigationsRef.current = nextMitigations;
         setMitigations(nextMitigations);
       },
       schedule: nextMacrotask,
     });
-  }, [groups, limits]);
+    return () => {
+      stop();
+      simulator.cancel(consumer);
+    };
+  }, [groups, limits, consumer]);
 
   // A queued or running job changes on the provider's schedule, so while the
   // page lists one it re-reads those runs at Studio's cadence, and stops as
@@ -332,6 +363,7 @@ function RunCard({
             mitigation={item.mitigation}
             limits={limits}
             copy={studioCopy}
+            workingOut={copy.workingOut}
             comparison={computed}
             readings={mitigated}
           />

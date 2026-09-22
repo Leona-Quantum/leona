@@ -1,9 +1,11 @@
+import { compareMeasuredToIdealWithIdeal, type IdealComparison, type IdealComparisonInput } from "./qpu-ideal.ts";
+
 /**
  * Readout correction and zero-noise extrapolation of a hardware run, computed in
  * this browser from what the run record stores (proposal 5, increment 4).
  *
  * The owner's ruling on ai-ops 361: write both techniques directly, and use
- * Mitiq only in tests. So nothing here imports anything; the numbers are held
+ * Mitiq only in tests. So nothing here imports Mitiq; the numbers are held
  * to Mitiq's by `qpu-mitigation.test.ts`, which reads the fixture
  * `packages/py/qpu/tests/fixtures/mitigation-parity.json` that
  * `scripts/mitiq_parity.py` generated from Mitiq 1.1.0, and to the Python twin
@@ -301,10 +303,17 @@ export type MitigationUnavailable =
   | "zne_no_counts";
 
 export type DistanceReading = {
-  /** Dense, indexed like the ideal distribution. */
-  distribution: Float64Array;
   tvd: number;
   hellingerFidelity: number;
+  /**
+   * The mitigated share of each outcome the comparison table shows, keyed by
+   * bitstring, and the share of everything else. Only these, never the dense
+   * distribution: that is 2^n doubles (8 MB at 20 qubits), the table needs a
+   * handful of them, and a reading is a value the hardware-runs page keeps one
+   * of per run after it crosses from the simulator worker.
+   */
+  shares: Record<string, number>;
+  otherShare: number;
 };
 
 export type ZneReading = {
@@ -319,14 +328,21 @@ export type MitigatedReadings = {
   zne: { status: "computed"; reading: ZneReading } | { status: "unavailable"; reason: MitigationUnavailable } | null;
 };
 
-function distanceTo(ideal: Float64Array, distribution: Float64Array): DistanceReading {
+function distanceTo(ideal: Float64Array, distribution: ArrayLike<number>, rows: readonly string[]): DistanceReading {
   let absolute = 0;
   let overlap = 0;
   for (let index = 0; index < ideal.length; index += 1) {
     absolute += Math.abs(distribution[index] - ideal[index]);
     overlap += Math.sqrt(Math.max(distribution[index], 0) * ideal[index]);
   }
-  return { distribution, tvd: clamp01(0.5 * absolute), hellingerFidelity: clamp01(overlap ** 2) };
+  const shares: Record<string, number> = {};
+  let shown = 0;
+  for (const bitstring of rows) {
+    const share = distribution[Number.parseInt(bitstring, 2)] ?? 0;
+    shares[bitstring] = share;
+    shown += share;
+  }
+  return { tvd: clamp01(0.5 * absolute), hellingerFidelity: clamp01(overlap ** 2), shares, otherShare: clamp01(1 - shown) };
 }
 
 function denseFromShares(shares: Record<string, number>, width: number): Float64Array {
@@ -337,19 +353,27 @@ function denseFromShares(shares: Record<string, number>, width: number): Float64
 
 /**
  * The mitigated readings for one finished run, measured against the ideal that
- * `compareMeasuredToIdeal` already computed for it (so the circuit is only
- * simulated once, and every refusal that function makes still applies).
+ * the comparison was measured against (so the circuit is only simulated once,
+ * and every refusal the comparison makes still applies). Run it through
+ * `compareAndMitigate`, which is how both pages get it: in the simulator
+ * worker, in the same job as the comparison.
  *
- * `qubitCount` is the width of the counted register, which that function has
- * checked every counts key against.
+ * Not cheap at the tier ceiling. Measured in Node on the Mac the simulator's
+ * budgets were fitted on, 3 runs at 20 qubits: 430 to 499 ms per call, of which
+ * the readout correction (about 55 ms) and its projection's sort (about 176 ms)
+ * are most. That is why it runs in the worker and not in a page callback.
+ *
+ * `qubitCount` is the width of the counted register, which the comparison has
+ * checked every counts key against; `rows` are the bitstrings its table shows.
  */
 export function mitigatedReadings(input: {
   ideal: Float64Array;
   qubitCount: number;
   rawCounts: Record<string, number>;
   mitigation: unknown;
+  rows: readonly string[];
 }): MitigatedReadings {
-  const { ideal, qubitCount, rawCounts } = input;
+  const { ideal, qubitCount, rawCounts, rows } = input;
   const document = readMitigation(input.mitigation);
   const shape = new RegExp(`^[01]{${qubitCount}}$`);
 
@@ -368,7 +392,7 @@ export function mitigatedReadings(input: {
     const corrected = closestProbabilityDistribution(readoutCorrectedQuasi(rawCounts, bits));
     readout = {
       status: "computed",
-      reading: distanceTo(ideal, corrected),
+      reading: distanceTo(ideal, corrected, rows),
       calibratedAt: document?.readout?.calibratedAt ?? null,
       symmetric: bits.some((bit) => bit.source === "target_measure_error"),
     };
@@ -388,14 +412,40 @@ export function mitigatedReadings(input: {
       zne = {
         status: "computed",
         reading: {
-          richardson: { ...distanceTo(ideal, denseFromShares(richardson.distribution, qubitCount)), clippedMass: richardson.clippedMass },
-          linear: { ...distanceTo(ideal, denseFromShares(linear.distribution, qubitCount)), clippedMass: linear.clippedMass },
+          richardson: { ...distanceTo(ideal, denseFromShares(richardson.distribution, qubitCount), rows), clippedMass: richardson.clippedMass },
+          linear: { ...distanceTo(ideal, denseFromShares(linear.distribution, qubitCount), rows), clippedMass: linear.clippedMass },
           twoQubitGates: document.zne.twoQubitGates,
         },
       };
     }
   }
   return { readout, zne };
+}
+
+/**
+ * The measured-against-ideal comparison and, when it was computed, the
+ * mitigated readings beside it, from one simulation. This is the simulator
+ * worker's `compare_mitigated` job (simulator-protocol.ts).
+ *
+ * `readings` is null exactly when the comparison is unavailable: a correction
+ * has nothing to be measured against without the ideal, and the panel says why
+ * the comparison is missing instead.
+ */
+export function compareAndMitigate(input: IdealComparisonInput & { mitigation: unknown }): {
+  comparison: IdealComparison;
+  readings: MitigatedReadings | null;
+} {
+  const { mitigation, ...compare } = input;
+  const { comparison, ideal } = compareMeasuredToIdealWithIdeal(compare);
+  if (comparison.status !== "computed" || !ideal || !compare.counts) return { comparison, readings: null };
+  const readings = mitigatedReadings({
+    ideal,
+    qubitCount: comparison.qubitCount,
+    rawCounts: compare.counts,
+    mitigation,
+    rows: comparison.rows.map((row) => row.bitstring),
+  });
+  return { comparison, readings };
 }
 
 /** Whether the run asked for zero-noise extrapolation. */

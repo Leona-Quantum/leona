@@ -44,7 +44,9 @@ import { canvasSeedCandidates, draftSourceFramework, studioDraftBundle, type Stu
 import { CircuitDiagram, type CircuitDiagramInspection } from "../../../components/circuit-diagram";
 import { MAX_VIEWABLE_QUBITS, MAX_VIEWABLE_STEPS } from "../../../lib/studio-parse";
 import { CIRCUIT_FRAMEWORKS, circuitFramework, circuitFrameworkOrNull, isExecutableCircuitFramework, type CircuitFrameworkKey } from "../../../lib/circuit-frameworks";
-import { MAX_CPU_SEED, MAX_CPU_SHOTS, cpuSimulationEligibility, loadCpuSimulationRecords, runCpuSimulation, saveCpuSimulationRecord, sourceFingerprint, type CpuSimulationEligibility, type CpuSimulationLimits, type CpuSimulationRecord } from "../../../lib/studio-simulation";
+import { MAX_CPU_SEED, MAX_CPU_SHOTS, cpuSimulationEligibility, cpuSimulationRecord, loadCpuSimulationRecords, planCpuSimulation, saveCpuSimulationRecord, sourceFingerprint, type CpuSimulationEligibility, type CpuSimulationLimits, type CpuSimulationRecord } from "../../../lib/studio-simulation";
+import { simulator } from "../../../lib/simulator-client";
+import { CpuRunSlot } from "../../../lib/studio-cpu-run";
 import { TIER_LIMITS } from "../../../lib/account-tier";
 import { formatShare, simulationChartData, simulationReading, type SimulationChartData, type SimulationReading } from "../../../lib/simulation-visual";
 import { QPU_RUN_POLL_MS, QpuSubmissionRefused, afterRestore, backendNameOf, fetchLatestQpuRunFor, fetchQpuBackends, fetchQpuEstimate, fetchQpuRun, fetchQpuSubmissionGate, formatUsd, isPricedOnly, isUnfinishedRun, runForCircuit, submitQpuRun, type QpuBackendInfo, type QpuCostEstimate, type QpuRunRecord, type QpuSubmissionGate } from "../../../lib/qpu";
@@ -148,6 +150,9 @@ const STARTER_CODES: BuilderCodeVariants = generateBuilderCode(STARTER_STEPS, 2)
  * artifact whose code the builder cannot represent, and drawing a Bell pair
  * for an unrelated circuit would be a far worse lie than drawing nothing.
  */
+/** The simulator consumer Studio's CPU run asks under (lib/simulator-client.ts). */
+const STUDIO_CPU_RUN = "studio-cpu-run";
+
 const STARTER_SEED: Omit<BuilderSeed, "key"> = {
   artifactIdentity: null,
   qubitCount: 2,
@@ -428,7 +433,30 @@ export function StudioWorkspace({ artifactId, newDraft = false, exampleId, atlas
   const shortcutsOpenRef = useRef(shortcutsOpen);
   shortcutsOpenRef.current = shortcutsOpen;
   const runCpuRef = useRef<() => void>(() => undefined);
-  runCpuRef.current = () => startCpuSimulation();
+  runCpuRef.current = () => void startCpuSimulation();
+  // A CPU run answers later (it runs in the simulator worker), by which time
+  // the reader may have opened another artifact. `cpuRuns` decides whether the
+  // answer may still touch the page, and holds one run at a time, which `busy`
+  // cannot do on its own: a second press of Run or its shortcut reaches the
+  // handler before `busy` has rendered (lib/studio-cpu-run.ts).
+  // `shownArtifactId` is the artifact on screen as of the latest render, which
+  // an answer can arrive ahead of the effect below.
+  const [cpuRuns] = useState(() => new CpuRunSlot());
+  const shownArtifactId = useRef<string | null>(null);
+  shownArtifactId.current = artifact?.id ?? null;
+  const shownId = artifact?.id ?? null;
+  useEffect(() => {
+    // Another artifact is on screen: a run started on the last one is
+    // abandoned, its job withdrawn, and Run released for this one.
+    if (cpuRuns.show(shownId)) {
+      simulator.cancel(STUDIO_CPU_RUN);
+      setBusy((current) => (current === "simulation" ? null : current));
+    }
+  }, [cpuRuns, shownId]);
+  // Studio going away abandons a run still in flight.
+  useEffect(() => () => {
+    if (cpuRuns.show(null)) simulator.cancel(STUDIO_CPU_RUN);
+  }, [cpuRuns]);
   useEffect(() => {
     if (!showEditor) return;
     const onKey = (event: globalThis.KeyboardEvent) => {
@@ -814,7 +842,8 @@ export function StudioWorkspace({ artifactId, newDraft = false, exampleId, atlas
     setMessage(null);
   }
 
-  function startCpuSimulation(confirmRerun = false) {
+  async function startCpuSimulation(confirmRerun = false) {
+    if (cpuRuns.busy()) return;
     if (!artifact) {
       selectPanel("simulation");
       setMessage(copy.simulationArtifactRequired);
@@ -845,9 +874,17 @@ export function StudioWorkspace({ artifactId, newDraft = false, exampleId, atlas
       return;
     }
 
+    const ticket = cpuRuns.begin(artifact.id);
+    if (!ticket) return;
     setBusy("simulation");
     try {
-      const record = runCpuSimulation({
+      // The checks (eligibility, shots, this browser's pacing, the seed) run
+      // here, as they always did; only the simulation itself, a second or
+      // more of work at the 20-qubit tier, goes to the simulator worker, so
+      // "Starting…" paints and the page keeps answering while it runs. The
+      // worker samples with the same kernel and seeded generator
+      // (`sampleCircuitCounts`), so a seed reproduces the counts it always did.
+      const plan = planCpuSimulation({
         artifactId: artifact.id,
         artifactVersionId: artifact.currentVersionId,
         code,
@@ -856,6 +893,18 @@ export function StudioWorkspace({ artifactId, newDraft = false, exampleId, atlas
         shots: parsedShots,
         seed: parsedSeed,
       }, limits);
+      const outcome = await simulator.run(STUDIO_CPU_RUN, { kind: "cpu_counts", circuit: plan.circuit, shots: plan.shots, seed: plan.seed });
+      // Everything below changes the page: the record, the list, the rerun
+      // prompt, the message. It happens only for the run that still owns the
+      // artifact on screen. An abandoned run saves nothing either; it
+      // belonged to an artifact the reader has left.
+      if (outcome.status === "superseded" || !cpuRuns.owns(ticket, shownArtifactId.current)) return;
+      if (outcome.status === "timed_out") {
+        setMessage(copy.cpuSimulationTimedOut);
+        return;
+      }
+      if (outcome.status === "failed") throw new Error(outcome.error);
+      const record = cpuSimulationRecord(plan, outcome.result);
       if (!saveCpuSimulationRecord(record)) {
         setMessage(copy.simulationPersistenceUnavailable);
         return;
@@ -864,9 +913,13 @@ export function StudioWorkspace({ artifactId, newDraft = false, exampleId, atlas
       setRerunPending(false);
       setMessage(copy.cpuSimulationRecorded);
     } catch (cause) {
+      // Reached before the answer (the plan's own checks) or from a run that
+      // still owns the page (a job that threw), never from an abandoned run.
       setMessage(cause instanceof Error ? cause.message : copy.simulationFailed);
     } finally {
-      setBusy(null);
+      // Only the run that still holds the slot releases Run: an abandoned
+      // run's cleanup must not unlock a run started since on another artifact.
+      if (cpuRuns.end(ticket)) setBusy(null);
     }
   }
 
@@ -3276,7 +3329,7 @@ function SimulationPanel({
         {/* After the CPU records, not between the run button and its result:
             you run, then you read, then you consider hardware (UX pass 6). */}
         <div className="mj-studio-lane">
-          <QpuLane artifact={artifact} shots={shots} copy={copy} limits={limits} />
+          <QpuLane artifact={artifact} shots={shots} copy={copy} limits={limits} workingOut={WORKSPACE_COPY[locale].hardwareRuns.workingOut} />
         </div>
       </div>
     </section>
@@ -3354,7 +3407,7 @@ function hardwareRefusalText(cause: unknown, copy: StudioCopy): string {
   return cause.message;
 }
 
-function QpuLane({ artifact, shots, copy, limits }: { artifact: LibraryArtifact | null; shots: string; copy: StudioCopy; limits: CpuSimulationLimits }) {
+function QpuLane({ artifact, shots, copy, limits, workingOut }: { artifact: LibraryArtifact | null; shots: string; copy: StudioCopy; limits: CpuSimulationLimits; workingOut: string }) {
   const [backends, setBackends] = useState<QpuBackendInfo[] | null>(null);
   const [gate, setGate] = useState<QpuSubmissionGate | null>(null);
   const [catalogError, setCatalogError] = useState(false);
@@ -3607,6 +3660,7 @@ function QpuLane({ artifact, shots, copy, limits }: { artifact: LibraryArtifact 
                   mitigation={shownRun.mitigation}
                   limits={limits}
                   copy={copy}
+                  workingOut={workingOut}
                 />
               ) : null}
             </div>

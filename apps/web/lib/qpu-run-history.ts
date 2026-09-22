@@ -1,5 +1,4 @@
 import { compareMeasuredToIdeal, type IdealComparison } from "./qpu-ideal.ts";
-import { mitigatedReadings, type MitigatedReadings } from "./qpu-mitigation.ts";
 import { backendNameOf, isUnfinishedRun, type QpuRunHistoryItem, type QpuRunRecord } from "./qpu.ts";
 import type { CpuSimulationLimits } from "./studio-simulation.ts";
 
@@ -92,7 +91,9 @@ export function readRun(
 /**
  * The measured-against-ideal comparison for one finished run. EXPENSIVE: a
  * statevector simulation of the stored program, up to the tier's qubit and
- * operation limits. Call it only through `workThroughComparisons`.
+ * operation limits. Call it only through `workThroughComparisons`, and on the
+ * page only in the simulator worker (`compareRunJob` below is the same
+ * comparison as a job for it).
  *
  * The comparison is made against the run's OWN stored program, not whatever is
  * open in Studio, and `compareMeasuredToIdeal` still checks it against the
@@ -110,25 +111,34 @@ export function compareRun(item: QpuRunHistoryItem, limits: CpuSimulationLimits)
   });
 }
 
+/** `compareRun` as a job for the simulator worker (lib/simulator-protocol.ts),
+ * which runs `compareMeasuredToIdeal` on exactly these arguments. */
+export function compareRunJob(item: QpuRunHistoryItem, limits: CpuSimulationLimits) {
+  return {
+    kind: "compare_ideal" as const,
+    qasm: item.qasm,
+    submittedFingerprint: item.source_fingerprint,
+    counts: item.raw_counts,
+    limits,
+  };
+}
+
 /**
- * The mitigated readings for one finished run (proposal 5, increment 4), from
- * the comparison `compareRun` already made, or null when there is no computed
- * comparison to measure them against.
- *
- * Not free: readout correction touches every one of the 2^n outcomes once per
- * qubit, and the projection sorts them. So the page works it out in the same
- * scheduled task as the comparison (the `onResult` of `workThroughComparisons`),
- * never during render. It needs no second simulation, because it reuses the
- * comparison's ideal distribution.
+ * `compareRunJob` plus the run's mitigated readings (proposal 5, increment 4),
+ * as ONE job for the simulator worker: the readings need the comparison's
+ * dense ideal distribution, which stays in the worker, and at 20 qubits they
+ * cost about half a second, which is too much for the page's thread
+ * (qpu-mitigation.ts's `mitigatedReadings` has the measurement).
  */
-export function mitigateRun(item: QpuRunHistoryItem, comparison: IdealComparison): MitigatedReadings | null {
-  if (comparison.status !== "computed" || !item.raw_counts) return null;
-  return mitigatedReadings({
-    ideal: comparison.ideal,
-    qubitCount: comparison.qubitCount,
-    rawCounts: item.raw_counts,
-    mitigation: item.mitigation,
-  });
+export function compareMitigatedRunJob(item: QpuRunHistoryItem, limits: CpuSimulationLimits) {
+  return {
+    kind: "compare_mitigated" as const,
+    qasm: item.qasm,
+    submittedFingerprint: item.source_fingerprint,
+    counts: item.raw_counts,
+    limits,
+    mitigation: item.mitigation ?? null,
+  };
 }
 
 /** Schedules one task and returns a function that cancels it if it has not run. */
@@ -174,11 +184,18 @@ export const nextMacrotask: ScheduleTask = (task) => {
  * Caching by run id is sound because only finished runs are compared, and a
  * finished run never changes: `qpu_runs_repo.transition` refuses to rewrite a
  * terminal record, and its counts are written once.
+ *
+ * `compute` may answer later, through a promise, which is how the page hands
+ * each comparison to the simulator worker (lib/simulator-client.ts): the next
+ * one is planned only once this one has answered, so the simulator holds one
+ * of this page's comparisons at a time. A promise that resolves to null is an
+ * ask withdrawn; nothing is recorded and nothing more is planned, because an
+ * ask is only withdrawn when this loop has been stopped or replaced.
  */
 export function workThroughComparisons(options: {
   order: readonly QpuRunHistoryItem[];
   isCached: (id: string) => boolean;
-  compute: (item: QpuRunHistoryItem) => IdealComparison;
+  compute: (item: QpuRunHistoryItem) => IdealComparison | PromiseLike<IdealComparison | null>;
   onResult: (id: string, comparison: IdealComparison) => void;
   schedule: ScheduleTask;
 }): () => void {
@@ -206,7 +223,16 @@ export function workThroughComparisons(options: {
       if (position >= queue.length) return;
       const item = queue[position];
       position += 1;
-      onResult(item.id, compute(item));
+      const answer = compute(item);
+      if (isPromiseLike(answer)) {
+        answer.then((comparison) => {
+          if (stopped || !comparison) return;
+          onResult(item.id, comparison);
+          planNext();
+        });
+        return;
+      }
+      onResult(item.id, answer);
       planNext();
     });
   };
@@ -217,6 +243,10 @@ export function workThroughComparisons(options: {
     cancelPending?.();
     cancelPending = null;
   };
+}
+
+function isPromiseLike<T>(value: T | PromiseLike<T | null>): value is PromiseLike<T | null> {
+  return typeof (value as { then?: unknown } | null)?.then === "function";
 }
 
 /** Ids of the listed runs the provider can still change, in list order. */

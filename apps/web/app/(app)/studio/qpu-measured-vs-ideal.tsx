@@ -1,14 +1,22 @@
 "use client";
 
-import { useMemo } from "react";
-import { compareMeasuredToIdeal, type IdealComparison } from "../../../lib/qpu-ideal";
-import { mitigatedReadings, type MitigatedReadings } from "../../../lib/qpu-mitigation";
+import { useEffect, useId, useMemo, useState } from "react";
+import type { IdealComparison } from "../../../lib/qpu-ideal";
+import type { MitigatedReadings } from "../../../lib/qpu-mitigation";
 import { formatShare } from "../../../lib/simulation-visual";
+import { simulator } from "../../../lib/simulator-client";
 import type { CpuSimulationLimits } from "../../../lib/studio-simulation";
 import type { PublicLocale } from "../../../lib/public-locale";
 import type { WORKSPACE_COPY } from "../../../lib/workspace-locale";
 
 type StudioCopy = (typeof WORKSPACE_COPY)[PublicLocale]["studio"];
+
+/** A comparison whose job threw in the simulator: the kernel refusing the
+ * circuit, which is what `unparsable` already tells the reader. */
+const COULD_NOT_COMPARE: IdealComparison = { status: "unavailable", reason: "unparsable" };
+
+/** A comparison the simulator stopped at its time budget. */
+const TIMED_OUT: IdealComparison = { status: "unavailable", reason: "timed_out" };
 
 /**
  * The hardware panel's "measured against ideal" readout. Everything here runs
@@ -19,15 +27,18 @@ type StudioCopy = (typeof WORKSPACE_COPY)[PublicLocale]["studio"];
  *
  * `comparison`, when given, is used as-is instead of being computed here. The
  * hardware-runs page passes the one it already worked out off the render path
- * (`workThroughComparisons`); Studio's single run computes its own.
+ * (`workThroughComparisons`); Studio's single run computes its own, in the
+ * simulator worker (lib/simulator-client.ts), and shows `workingOut` until it
+ * arrives. It used to compute it during render, which at the 20-qubit tier
+ * froze Studio for a second or more whenever the panel was handed a new job
+ * or new counts.
  *
- * `readings` works the same way for the mitigated readings: the hardware-runs
- * page works them out in the same scheduled task as the comparison.
- *
- * The mitigated readings (lib/qpu-mitigation.ts, proposal 5 increment 4) sit
- * BESIDE the raw one and never replace it: the raw distance and the raw counts
- * are always shown, and a correction that cannot be made says why instead of
- * falling back to anything.
+ * `readings` works the same way for the mitigated readings (proposal 5,
+ * increment 4). Where they are not handed over, they come from the same
+ * worker job as the comparison (`compare_mitigated`): they need the dense
+ * ideal distribution, which stays in the worker, and they sit BESIDE the raw
+ * reading, never replacing it. A correction that cannot be made says why
+ * instead of falling back to anything.
  */
 export function QpuMeasuredVsIdeal({
   qasm,
@@ -36,6 +47,7 @@ export function QpuMeasuredVsIdeal({
   mitigation,
   limits,
   copy,
+  workingOut,
   comparison: precomputed,
   readings: precomputedReadings,
 }: {
@@ -46,22 +58,59 @@ export function QpuMeasuredVsIdeal({
   mitigation?: unknown;
   limits: CpuSimulationLimits;
   copy: StudioCopy;
+  /** The placeholder while the comparison is worked out. */
+  workingOut: string;
   comparison?: IdealComparison;
   readings?: MitigatedReadings | null;
 }) {
-  const comparison = useMemo(
-    () => precomputed ?? compareMeasuredToIdeal({ qasm, submittedFingerprint, counts, limits }),
-    [precomputed, qasm, submittedFingerprint, counts, limits],
+  const consumer = `qpu-measured-vs-ideal:${useId()}`;
+  // Keyed by VALUE, not by object identity: a poll that hands over an equal
+  // counts object must neither restart the simulation nor flash the
+  // placeholder again.
+  const job = useMemo(
+    () => ({ kind: "compare_mitigated" as const, qasm, submittedFingerprint, counts, limits, mitigation: mitigation ?? null }),
+    [qasm, submittedFingerprint, counts, limits, mitigation],
   );
-  const readings = useMemo<MitigatedReadings | null>(
-    () =>
-      precomputedReadings !== undefined
-        ? precomputedReadings
-        : comparison.status === "computed" && counts
-          ? mitigatedReadings({ ideal: comparison.ideal, qubitCount: comparison.qubitCount, rawCounts: counts, mitigation })
-          : null,
-    [precomputedReadings, comparison, counts, mitigation],
-  );
+  const jobKey = useMemo(() => JSON.stringify(job), [job]);
+  const [computed, setComputed] = useState<{
+    jobKey: string;
+    comparison: IdealComparison;
+    readings: MitigatedReadings | null;
+  } | null>(null);
+  const current = computed?.jobKey === jobKey ? computed : null;
+  const comparison = precomputed ?? current?.comparison ?? null;
+  // Handed over with a precomputed comparison, or worked out beside this one.
+  const readings = precomputed ? (precomputedReadings ?? null) : (current?.readings ?? null);
+  const needsWork = !comparison;
+
+  useEffect(() => {
+    if (!needsWork) return;
+    let live = true;
+    // `job` is read from the render that scheduled this effect; its value is
+    // exactly what `jobKey` names, which is why `jobKey` is the dependency.
+    void simulator.run(consumer, job).then((outcome) => {
+      if (!live || outcome.status === "superseded") return;
+      if (outcome.status === "done") {
+        setComputed({ jobKey, comparison: outcome.result.comparison, readings: outcome.result.readings });
+        return;
+      }
+      setComputed({ jobKey, comparison: outcome.status === "timed_out" ? TIMED_OUT : COULD_NOT_COMPARE, readings: null });
+    });
+    return () => {
+      live = false;
+      simulator.cancel(consumer);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- `job` is value-equal whenever `jobKey` is
+  }, [needsWork, jobKey, consumer]);
+
+  if (!comparison) {
+    return (
+      <div className="mj-qpu-ideal" aria-busy="true">
+        <span className="mj-section-label">{copy.hardwareIdealComparison}</span>
+        <p className="mj-qpu-note" role="status">{workingOut}</p>
+      </div>
+    );
+  }
 
   if (comparison.status === "unavailable") {
     return (
@@ -73,9 +122,10 @@ export function QpuMeasuredVsIdeal({
   }
 
   const showOther = comparison.otherMeasuredShare > 0 || comparison.otherIdealShare > 0;
-  const corrected = readings?.readout.status === "computed" ? readings.readout.reading.distribution : null;
-  const extrapolated = readings?.zne?.status === "computed" ? readings.zne.reading.richardson.distribution : null;
-  const shareAt = (distribution: Float64Array, bitstring: string) => distribution[Number.parseInt(bitstring, 2)] ?? 0;
+  // The worker sends the mitigated shares of exactly the rows this table shows,
+  // plus the rest as one figure (qpu-mitigation.ts's `DistanceReading`).
+  const corrected = readings?.readout.status === "computed" ? readings.readout.reading : null;
+  const extrapolated = readings?.zne?.status === "computed" ? readings.zne.reading.richardson : null;
 
   return (
     <div className="mj-qpu-ideal">
@@ -114,8 +164,8 @@ export function QpuMeasuredVsIdeal({
               <tr key={row.bitstring}>
                 <td><code>{row.bitstring}</code></td>
                 <td>{formatShare(row.measuredShare, "en-US")}</td>
-                {corrected ? <td>{formatShare(shareAt(corrected, row.bitstring), "en-US")}</td> : null}
-                {extrapolated ? <td>{formatShare(shareAt(extrapolated, row.bitstring), "en-US")}</td> : null}
+                {corrected ? <td>{formatShare(corrected.shares[row.bitstring] ?? 0, "en-US")}</td> : null}
+                {extrapolated ? <td>{formatShare(extrapolated.shares[row.bitstring] ?? 0, "en-US")}</td> : null}
                 <td>{formatShare(row.idealShare, "en-US")}</td>
               </tr>
             ))}
@@ -123,8 +173,8 @@ export function QpuMeasuredVsIdeal({
               <tr>
                 <td>{copy.hardwareIdealOtherOutcomes}</td>
                 <td>{formatShare(comparison.otherMeasuredShare, "en-US")}</td>
-                {corrected ? <td>{formatShare(otherShare(corrected, comparison.rows), "en-US")}</td> : null}
-                {extrapolated ? <td>{formatShare(otherShare(extrapolated, comparison.rows), "en-US")}</td> : null}
+                {corrected ? <td>{formatShare(corrected.otherShare, "en-US")}</td> : null}
+                {extrapolated ? <td>{formatShare(extrapolated.otherShare, "en-US")}</td> : null}
                 <td>{formatShare(comparison.otherIdealShare, "en-US")}</td>
               </tr>
             ) : null}
@@ -134,12 +184,6 @@ export function QpuMeasuredVsIdeal({
       <p className="mj-qpu-note">{copy.hardwareIdealProvenance}</p>
     </div>
   );
-}
-
-/** The share of a distribution outside the rows the table shows. */
-function otherShare(distribution: Float64Array, rows: readonly { bitstring: string }[]): number {
-  const shown = rows.reduce((sum, row) => sum + (distribution[Number.parseInt(row.bitstring, 2)] ?? 0), 0);
-  return Math.min(1, Math.max(0, 1 - shown));
 }
 
 /**

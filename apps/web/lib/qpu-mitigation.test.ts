@@ -4,9 +4,9 @@ import test from "node:test";
 
 import {
   closestProbabilityDistribution,
+  compareAndMitigate,
   extrapolateDistribution,
   linearZeroNoise,
-  mitigatedReadings,
   readMitigation,
   readoutCorrectedQuasi,
   richardsonZeroNoise,
@@ -144,15 +144,19 @@ const READOUT = {
   ],
 };
 
-function bellIdeal(counts: Record<string, number>) {
-  const comparison = compareMeasuredToIdeal({
+/** The raw comparison and the mitigated readings for a Bell run, from ONE
+ * simulation (the simulator's `compare_mitigated` job). */
+function bell(counts: Record<string, number>, mitigation: unknown) {
+  const { comparison, readings } = compareAndMitigate({
     qasm: BELL_QASM,
     submittedFingerprint: sourceFingerprint(BELL_QASM),
     counts,
     limits: TIER_LIMITS.free,
+    mitigation,
   });
   assert.equal(comparison.status, "computed");
-  return comparison as Extract<typeof comparison, { status: "computed" }>;
+  assert.ok(readings, "a computed comparison always comes with readings");
+  return { comparison: comparison as Extract<typeof comparison, { status: "computed" }>, readings: readings! };
 }
 
 test("an unknown document version is refused rather than read as the one it resembles", () => {
@@ -165,13 +169,7 @@ test("an unknown document version is refused rather than read as the one it rese
 test("readout correction moves a noisy Bell run closer to its ideal", () => {
   // Readout errors only: a perfect Bell state read through the READOUT qubits.
   const raw = { "00": 460, "01": 30, "10": 38, "11": 496 };
-  const comparison = bellIdeal(raw);
-  const readings = mitigatedReadings({
-    ideal: comparison.ideal,
-    qubitCount: comparison.qubitCount,
-    rawCounts: raw,
-    mitigation: { version: 1, readout: READOUT },
-  });
+  const { comparison, readings } = bell(raw, { version: 1, readout: READOUT });
   assert.equal(readings.readout.status, "computed");
   if (readings.readout.status !== "computed") return;
   assert.ok(readings.readout.reading.tvd < comparison.tvd, `${readings.readout.reading.tvd} vs raw ${comparison.tvd}`);
@@ -179,36 +177,58 @@ test("readout correction moves a noisy Bell run closer to its ideal", () => {
   assert.equal(readings.readout.calibratedAt, READOUT.calibrated_at);
   assert.equal(readings.readout.symmetric, false);
   assert.equal(readings.zne, null, "no ZNE reading for a run that did not ask for it");
+  // The table's shares: exactly the comparison's rows, and the rest as one figure.
+  const shares = readings.readout.reading.shares;
+  assert.deepEqual(Object.keys(shares).sort(), comparison.rows.map((row) => row.bitstring).sort());
+  const shown = Object.values(shares).reduce((sum, share) => sum + share, 0);
+  assert.ok(Math.abs(shown + readings.readout.reading.otherShare - 1) < 1e-12);
+});
+
+test("the comparison beside the readings is exactly the plain comparison", () => {
+  // compareAndMitigate is compareMeasuredToIdeal plus the readings, and the
+  // dense ideal never rides along on the comparison (it is 8 MB at 20 qubits).
+  const raw = { "00": 460, "01": 30, "10": 38, "11": 496 };
+  const direct = compareMeasuredToIdeal({ qasm: BELL_QASM, submittedFingerprint: sourceFingerprint(BELL_QASM), counts: raw, limits: TIER_LIMITS.free });
+  const { comparison } = bell(raw, { version: 1, readout: READOUT });
+  assert.deepEqual(comparison, direct);
+  assert.equal("ideal" in comparison, false);
+});
+
+test("no readings without a computed comparison to measure them against", () => {
+  const { comparison, readings } = compareAndMitigate({
+    qasm: BELL_QASM,
+    submittedFingerprint: "fnv1a-00000000",
+    counts: { "00": 1 },
+    limits: TIER_LIMITS.free,
+    mitigation: { version: 1, readout: READOUT },
+  });
+  assert.deepEqual(comparison, { status: "unavailable", reason: "circuit_changed" });
+  assert.equal(readings, null);
 });
 
 test("a run recorded before calibration snapshots existed says so", () => {
   const raw = { "00": 500, "11": 524 };
-  const comparison = bellIdeal(raw);
   for (const mitigation of [null, undefined, { version: 1 }]) {
-    const readings = mitigatedReadings({ ideal: comparison.ideal, qubitCount: 2, rawCounts: raw, mitigation });
-    assert.deepEqual(readings.readout, { status: "unavailable", reason: "no_calibration" });
+    assert.deepEqual(bell(raw, mitigation).readings.readout, { status: "unavailable", reason: "no_calibration" });
   }
 });
 
 test("a snapshot that does not cover exactly the counted bits is not used", () => {
   const raw = { "00": 500, "11": 524 };
-  const comparison = bellIdeal(raw);
   const oneBit = { ...READOUT, bits: [READOUT.bits[0]] };
   const wrongBits = { ...READOUT, bits: [READOUT.bits[0], { ...READOUT.bits[1], clbit: 2 }] };
   for (const readout of [oneBit, wrongBits]) {
-    const readings = mitigatedReadings({ ideal: comparison.ideal, qubitCount: 2, rawCounts: raw, mitigation: { version: 1, readout } });
-    assert.deepEqual(readings.readout, { status: "unavailable", reason: "calibration_mismatch" });
+    assert.deepEqual(bell(raw, { version: 1, readout }).readings.readout, { status: "unavailable", reason: "calibration_mismatch" });
   }
   const useless = { ...READOUT, bits: [READOUT.bits[0], { ...READOUT.bits[1], prob_meas0_prep1: 0.5 }] };
   assert.deepEqual(
-    mitigatedReadings({ ideal: comparison.ideal, qubitCount: 2, rawCounts: raw, mitigation: { version: 1, readout: useless } }).readout,
+    bell(raw, { version: 1, readout: useless }).readings.readout,
     { status: "unavailable", reason: "calibration_unusable" },
   );
 });
 
 test("ZNE extrapolates a decaying Bell run back toward its ideal and reports the fit it used", () => {
   const raw = { "00": 460, "01": 40, "10": 44, "11": 480 };
-  const comparison = bellIdeal(raw);
   const mitigation = {
     version: 1,
     zne: {
@@ -222,7 +242,7 @@ test("ZNE extrapolates a decaying Bell run back toward its ideal and reports the
     },
   };
   assert.ok(zneRequested(mitigation));
-  const readings = mitigatedReadings({ ideal: comparison.ideal, qubitCount: 2, rawCounts: raw, mitigation });
+  const { comparison, readings } = bell(raw, mitigation);
   assert.equal(readings.zne?.status, "computed");
   if (readings.zne?.status !== "computed") return;
   assert.ok(readings.zne.reading.richardson.tvd < comparison.tvd);
@@ -234,14 +254,12 @@ test("ZNE extrapolates a decaying Bell run back toward its ideal and reports the
 
 test("a ZNE run whose folded counts never came back says so instead of extrapolating", () => {
   const raw = { "00": 500, "11": 524 };
-  const comparison = bellIdeal(raw);
   for (const zne of [
     { scale_factors: [1, 3, 5], error: "the provider returned no counts for the folded circuits" },
     { scale_factors: [1, 3, 5], counts: { "3": { "00": 1 } } },
     // Keys of the wrong width: counts from some other register.
     { scale_factors: [1, 3, 5], counts: { "3": { "0": 1 }, "5": { "1": 1 } } },
   ]) {
-    const readings = mitigatedReadings({ ideal: comparison.ideal, qubitCount: 2, rawCounts: raw, mitigation: { version: 1, zne } });
-    assert.deepEqual(readings.zne, { status: "unavailable", reason: "zne_no_counts" });
+    assert.deepEqual(bell(raw, { version: 1, zne }).readings.zne, { status: "unavailable", reason: "zne_no_counts" });
   }
 });
