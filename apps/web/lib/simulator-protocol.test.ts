@@ -3,6 +3,7 @@ import test from "node:test";
 
 import { TIER_LIMITS } from "./account-tier.ts";
 import { compareMeasuredToIdeal, parseSubmittedCircuit } from "./qpu-ideal.ts";
+import { compareAndMitigate } from "./qpu-mitigation.ts";
 import { estimateDevice, prepareCircuitForPreview } from "./qpu-noise.ts";
 import type { QpuPublishedErrorFigure, QpuPublishedNoise } from "./qpu.ts";
 import {
@@ -115,6 +116,25 @@ for (const { name, source, counts } of CIRCUITS) {
     assert.deepEqual(resultOf(throughTheBoundary(job)), direct);
   });
 
+  test(`compare_mitigated returns exactly the direct comparison and readings: ${name}`, () => {
+    const input = { qasm: source, submittedFingerprint: sourceFingerprint(source), counts, limits: LIMITS };
+    const plain = compareMeasuredToIdeal(input);
+    assert.equal(plain.status, "computed");
+    const width = plain.status === "computed" ? plain.qubitCount : 0;
+    // A calibration for every counted bit, so the correction really runs and
+    // its readings cross the boundary, not only a refusal.
+    const bits = Array.from({ length: width }, (_, clbit) => ({ clbit, qubit: clbit, prob_meas1_prep0: 0.02, prob_meas0_prep1: 0.04, source: "backend_properties" }));
+    const mitigation = { version: 1, readout: { register: "c", calibrated_at: null, bits } };
+    const direct = compareAndMitigate({ ...input, mitigation });
+    assert.equal(direct.readings?.readout.status, "computed");
+    // The comparison half is the plain comparison, field for field.
+    assert.deepEqual(direct.comparison, compareMeasuredToIdeal(input));
+    const job: SimulatorJob = { kind: "compare_mitigated", ...input, mitigation };
+    assert.deepEqual(runSimulatorJob(job, createSimulatorContext()), direct);
+    assert.deepEqual(resultOf(throughTheBoundary(job)), direct);
+    assert.ok(isSimulatorRequest({ protocol: SIMULATOR_PROTOCOL_VERSION, id: 1, job }));
+  });
+
   test(`noise_estimate returns exactly the direct estimate, ideal distribution included: ${name}`, () => {
     const direct = estimateDevice({ prepared: prepareCircuitForPreview(source, LIMITS), noise: NOISE });
     assert.equal(direct.status, "computed", `the ${name} fixture must be a computed estimate to test anything`);
@@ -209,6 +229,22 @@ test("results that are not a noise estimate move nothing", () => {
   );
   assert.ok(unavailable);
   assert.deepEqual(unavailable.transfer, [], "an unavailable estimate carries no distribution to move");
+});
+
+test("compare_mitigated answers with the raw comparison even when the folded counts total zero", () => {
+  // Greptile P2 on PR 970, at the boundary the page actually uses: the job must
+  // be an ok reply carrying the comparison, not an ok:false that costs it.
+  const { source, counts } = CIRCUITS[0];
+  const input = { qasm: source, submittedFingerprint: sourceFingerprint(source), counts, limits: LIMITS };
+  const zero = Object.fromEntries(Object.keys(counts ?? {}).map((key) => [key, 0]));
+  const job: SimulatorJob = {
+    kind: "compare_mitigated",
+    ...input,
+    mitigation: { version: 1, zne: { scale_factors: [1, 3, 5], counts: { "3": zero, "5": zero } } },
+  };
+  const result = resultOf(throughTheBoundary(job)) as { comparison: unknown; readings: { zne: unknown } };
+  assert.deepEqual(result.comparison, compareMeasuredToIdeal(input));
+  assert.deepEqual(result.readings.zne, { status: "unavailable", reason: "zne_no_counts" });
 });
 
 test("a job that throws becomes an ok:false reply with the thrown message, never an uncaught error", () => {

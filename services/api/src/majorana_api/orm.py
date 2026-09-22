@@ -935,6 +935,17 @@ class QpuRun(Base):
     rate_source: Mapped[str]
     rate_confirmed_on: Mapped[str]
     raw_counts: Mapped[dict[str, Any] | None]
+    #: Mitigation inputs (migration 0066): the ZNE opt-in, the readout
+    #: calibration snapshot taken at submit, and the folded circuits' counts.
+    #: Shaped by `majorana_qpu.mitigation`; `raw_counts` never moves into it.
+    #:
+    #: `none_as_null` because `create_record` passes None explicitly for a run
+    #: without ZNE, and a plain JSONB column turns an explicit None into the JSON
+    #: value `null`, not SQL NULL. That fails 0066's object CHECK, and it would
+    #: make `mitigation IS NULL` false for every run with nothing recorded.
+    #: Found by the live suites against real Postgres, where every run without
+    #: ZNE failed that CHECK on insert.
+    mitigation: Mapped[dict[str, Any] | None] = mapped_column(JSONB(none_as_null=True))
     error: Mapped[str | None]
     submitted_at: Mapped[dt.datetime | None]
     completed_at: Mapped[dt.datetime | None]

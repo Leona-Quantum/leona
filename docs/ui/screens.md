@@ -23,7 +23,8 @@ grown since — treat an entry that says "pending" as a floor, not a fact.
 /run/[taskId]            live conversation + activity for one run (resumable, SSE)
 /studio                  circuit workspace — editor, preview, inspector, output, versions
 /studio/hardware         hardware runs: the workspace's QPU jobs grouped by the machine
-                         that ran them, each finished one measured against its ideal
+                         that ran them, each finished one measured against its ideal,
+                         with readout-corrected and zero-noise distances beside the raw one
 /shared/[projectId]      shared project view (Team tier)
 /account                 identity, workspace, members  (+ intercepted modal route)
 /workspace               workspace surface

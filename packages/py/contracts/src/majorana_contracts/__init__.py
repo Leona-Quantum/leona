@@ -404,7 +404,10 @@ from .lifecycle import (
 # GradebookModule, GradebookRow, GradebookEntry and the closed GradebookVisibility
 # enum, the response of GET /v1/courses/{id}/gradebook. Purely additive: no existing
 # model changes, and the data is read from `notebook.grades` events already stored.
-CONTRACTS_VERSION = "2.25.0"
+# 2.26.0: Proposal 5, increment 4. QpuRunRecord gains optional `mitigation`, the
+# stored inputs for readout correction and zero-noise extrapolation (migration
+# 0066). Additive: it defaults to None, and `raw_counts` keeps its meaning.
+CONTRACTS_VERSION = "2.26.0"
 
 __all__ = [
     "TextAnswer",

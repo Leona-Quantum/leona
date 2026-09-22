@@ -15,6 +15,7 @@ import {
   applyRunUpdates,
   compareRun,
   compareRunJob,
+  compareMitigatedRunJob,
   groupRunsByBackend,
   nextMacrotask,
   readRun,
@@ -122,6 +123,35 @@ test("reading a run never computes: a finished run without a result is still bei
   assert.deepEqual(readRun(finished, new Map()), { kind: "working_out" });
   const comparison = compareRun(finished, TIER_LIMITS.free);
   assert.deepEqual(readRun(finished, new Map([[finished.id, comparison]])), { kind: "compared", comparison });
+});
+
+test("a run's mitigated readings come from the same worker job as its comparison", () => {
+  // Proposal 5, increment 4: one simulation for both, in the worker, because
+  // the readings need the dense ideal and cost about half a second at 20 qubits.
+  const item = run({
+    mitigation: {
+      version: 1,
+      readout: {
+        register: "c",
+        calibrated_at: null,
+        bits: [
+          { clbit: 0, qubit: 0, prob_meas1_prep0: 0.02, prob_meas0_prep1: 0.04, source: "backend_properties" },
+          { clbit: 1, qubit: 1, prob_meas1_prep0: 0.02, prob_meas0_prep1: 0.03, source: "backend_properties" },
+        ],
+      },
+    },
+  });
+  const job = compareMitigatedRunJob(item, TIER_LIMITS.free);
+  assert.equal(job.kind, "compare_mitigated");
+  assert.equal(job.mitigation, item.mitigation);
+  const { comparison, readings } = runSimulatorJob(job, createSimulatorContext());
+  assert.deepEqual(comparison, compareRun(item, TIER_LIMITS.free));
+  assert.equal(readings?.readout.status, "computed");
+  if (readings?.readout.status !== "computed" || comparison.status !== "computed") return;
+  assert.ok(readings.readout.reading.tvd < comparison.tvd, `${readings.readout.reading.tvd} vs ${comparison.tvd}`);
+  assert.equal(readings.zne, null);
+  // A run recorded before mitigation existed sends null, never undefined.
+  assert.equal(compareMitigatedRunJob(run(), TIER_LIMITS.free).mitigation, null);
 });
 
 test("unfinished and failed runs get their own reading, not a comparison", () => {

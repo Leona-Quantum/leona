@@ -123,6 +123,24 @@ export function compareRunJob(item: QpuRunHistoryItem, limits: CpuSimulationLimi
   };
 }
 
+/**
+ * `compareRunJob` plus the run's mitigated readings (proposal 5, increment 4),
+ * as ONE job for the simulator worker: the readings need the comparison's
+ * dense ideal distribution, which stays in the worker, and at 20 qubits they
+ * cost about half a second, which is too much for the page's thread
+ * (qpu-mitigation.ts's `mitigatedReadings` has the measurement).
+ */
+export function compareMitigatedRunJob(item: QpuRunHistoryItem, limits: CpuSimulationLimits) {
+  return {
+    kind: "compare_mitigated" as const,
+    qasm: item.qasm,
+    submittedFingerprint: item.source_fingerprint,
+    counts: item.raw_counts,
+    limits,
+    mitigation: item.mitigation ?? null,
+  };
+}
+
 /** Schedules one task and returns a function that cancels it if it has not run. */
 export type ScheduleTask = (task: () => void) => () => void;
 
