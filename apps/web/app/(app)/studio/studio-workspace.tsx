@@ -42,7 +42,7 @@ import { looksLikeOpenQasm3, parseCircuitSource, parseInterchangeCircuit, recons
 import { circuitIRDiagram, circuitIRFromMetadata, validateCircuitIR, type CircuitIRReadOnlyReason } from "../../../lib/circuit-ir";
 import { canvasSeedCandidates, draftSourceFramework, studioDraftBundle, type StudioDraftBundle } from "../../../lib/studio-drafts";
 import { CircuitDiagram, type CircuitDiagramInspection } from "../../../components/circuit-diagram";
-import { MAX_VIEWABLE_QUBITS, MAX_VIEWABLE_STEPS } from "../../../lib/studio-parse";
+import { MAX_VIEWABLE_QUBITS, MAX_VIEWABLE_STEPS, type ParsedBuilderCircuit } from "../../../lib/studio-parse";
 import { CIRCUIT_FRAMEWORKS, circuitFramework, circuitFrameworkOrNull, isExecutableCircuitFramework, type CircuitFrameworkKey } from "../../../lib/circuit-frameworks";
 import { MAX_CPU_SEED, MAX_CPU_SHOTS, cpuSimulationEligibility, cpuSimulationRecord, loadCpuSimulationRecords, planCpuSimulation, saveCpuSimulationRecord, sourceFingerprint, type CpuSimulationEligibility, type CpuSimulationLimits, type CpuSimulationRecord } from "../../../lib/studio-simulation";
 import { simulator } from "../../../lib/simulator-client";
@@ -89,6 +89,7 @@ import { gateShortcutKey, isTypingTarget, studioShortcut } from "../../../lib/st
 import { insertBeforeTrailingMeasurements } from "../../../lib/studio-placement";
 import { GateInspectorCard } from "./studio-gate-inspector";
 import { PlayheadPanel } from "./studio-playhead";
+import { StudioParameterSweep } from "./studio-parameter-sweep";
 import { ShortcutSheet } from "./studio-shortcut-sheet";
 
 // Tab order is the working order: you write code, you run it, you look at what
@@ -1309,6 +1310,10 @@ export function StudioWorkspace({ artifactId, newDraft = false, exampleId, atlas
                     <SimulationPanel
                       artifact={artifact}
                       eligibility={cpuEligibility}
+                      circuit={canvasCircuit}
+                      synchronized={canvasSync.kind === "in_sync"}
+                      sourceCode={code}
+                      onOpenVisual={() => selectPanel("visual")}
                       records={simulationRecords}
                       shots={shots}
                       seed={seed}
@@ -3190,6 +3195,10 @@ function StudioPanelSurface({
 function SimulationPanel({
   artifact,
   eligibility,
+  circuit,
+  synchronized,
+  sourceCode,
+  onOpenVisual,
   records,
   shots,
   seed,
@@ -3208,6 +3217,10 @@ function SimulationPanel({
 }: {
   artifact: LibraryArtifact | null;
   eligibility: CpuSimulationEligibility;
+  circuit: ParsedBuilderCircuit;
+  synchronized: boolean;
+  sourceCode: string;
+  onOpenVisual: () => void;
   records: CpuSimulationRecord[];
   shots: string;
   seed: string;
@@ -3333,6 +3346,8 @@ function SimulationPanel({
             <p className="mj-studio-empty">{copy.simulationNoRecords}</p>
           )}
         </section>
+
+        <StudioParameterSweep circuit={circuit} synchronized={synchronized} sourceCode={sourceCode} locale={locale} onOpenVisual={onOpenVisual} />
 
         {/* After the CPU records, not between the run button and its result:
             you run, then you read, then you consider hardware (UX pass 6). */}

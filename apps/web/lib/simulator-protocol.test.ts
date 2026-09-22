@@ -18,6 +18,7 @@ import {
 } from "./simulator-protocol.ts";
 import type { ParsedBuilderCircuit } from "./studio-parse.ts";
 import { cpuSimulationRecord, planCpuSimulation, runCpuSimulation, sampleCircuitCounts, sourceFingerprint } from "./studio-simulation.ts";
+import { runParameterSweep } from "./studio-parameter-sweep.ts";
 
 /*
  * The worker's promise is "the same numbers": every job the page hands it
@@ -106,6 +107,18 @@ function resultOf(response: SimulatorResponse, id = 7): unknown {
   assert.equal(response.id, id);
   return (response as Extract<SimulatorResponse, { ok: true }>).result;
 }
+
+test("parameter sweep crosses the worker boundary with the same ideal readings", () => {
+  const circuit: ParsedBuilderCircuit = { qubitCount: 2, steps: [
+    { id: "turn", gate: "RY", qubits: [0], param: "pi/4" },
+    { id: "entangle", gate: "CX", qubits: [0, 1] },
+  ] };
+  const request = { circuit, stepId: "turn", measuredQubit: 1, startDegrees: 0, endDegrees: 180, points: 7 };
+  const job: SimulatorJob = { kind: "parameter_sweep", request };
+  const direct = runParameterSweep(request);
+  assert.deepEqual(runSimulatorJob(job, createSimulatorContext()), direct);
+  assert.deepEqual(resultOf(throughTheBoundary(job)), direct);
+});
 
 for (const { name, source, counts } of CIRCUITS) {
   test(`compare_ideal returns exactly the direct comparison: ${name}`, () => {

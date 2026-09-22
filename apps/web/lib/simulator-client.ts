@@ -163,6 +163,10 @@ export function simulatorJobBudgetMs(job: SimulatorJob): number {
       // Each shot scans at most the whole cumulative distribution.
       passes = job.circuit.steps.length + job.shots;
       break;
+    case "parameter_sweep":
+      qubits = Math.min(job.request.circuit.qubitCount, 12);
+      passes = job.request.circuit.steps.length * Math.min(job.request.points, 41);
+      break;
     case "compare_ideal": {
       const program = programSize(job.qasm, job.limits);
       qubits = program.qubits;

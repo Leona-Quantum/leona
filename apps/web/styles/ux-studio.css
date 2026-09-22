@@ -858,6 +858,129 @@
   max-width: 360px;
 }
 
+/* One gate-angle experiment, local to the Simulation tab. The table is the
+   accessible reading of the chart and remains usable without colour. */
+.mj-studio-sweep {
+  border-top: 1px solid var(--border-0);
+  padding-top: var(--sp-3);
+}
+.mj-studio-sweep > summary {
+  color: var(--text-0);
+  font-weight: 600;
+  cursor: pointer;
+}
+.mj-studio-sweep-body {
+  display: grid;
+  gap: var(--sp-3);
+  padding: var(--sp-3) 0;
+}
+.mj-studio-sweep-body > p {
+  margin: 0;
+  color: var(--text-2);
+}
+.mj-studio-sweep-body > p[role="alert"] {
+  color: var(--err);
+}
+.mj-studio-sweep-body .mj-text-button {
+  border: 0;
+  padding: 0;
+  color: var(--accent);
+  background: none;
+  text-decoration: underline;
+  cursor: pointer;
+}
+.mj-studio-sweep-body form {
+  display: grid;
+  justify-items: start;
+  gap: var(--sp-3);
+}
+.mj-studio-sweep-fields {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(135px, 1fr));
+  gap: var(--sp-3);
+  width: 100%;
+}
+.mj-studio-sweep-fields label {
+  display: grid;
+  align-content: start;
+  gap: var(--sp-1);
+  color: var(--text-2);
+  font-size: var(--fs-12);
+}
+.mj-studio-sweep-fields input,
+.mj-studio-sweep-fields select {
+  width: 100%;
+  min-width: 0;
+  min-height: 38px;
+  padding: var(--sp-2);
+  border: 1px solid var(--border-0);
+  border-radius: var(--radius-control);
+  background: var(--bg-0);
+  color: var(--text-0);
+}
+.mj-studio-sweep-result {
+  display: grid;
+  gap: var(--sp-3);
+  padding-top: var(--sp-2);
+  border-top: 1px solid var(--border-0);
+}
+.mj-studio-sweep-result-head,
+.mj-studio-sweep-result-head > div {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--sp-2);
+}
+.mj-studio-sweep-result-head {
+  justify-content: space-between;
+}
+.mj-studio-sweep-chart {
+  display: block;
+  width: 100%;
+  max-width: 720px;
+  height: auto;
+  overflow: visible;
+}
+.mj-studio-sweep-chart line {
+  stroke: var(--border-0);
+  stroke-width: 1;
+}
+.mj-studio-sweep-chart polyline {
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 2.5;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+}
+.mj-studio-sweep-chart text {
+  fill: var(--text-2);
+  font-size: 12px;
+}
+.mj-studio-sweep-table-wrap {
+  max-height: 280px;
+  overflow: auto;
+}
+.mj-studio-sweep-table-wrap table {
+  width: 100%;
+  border-collapse: collapse;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+.mj-studio-sweep-table-wrap caption {
+  text-align: left;
+  color: var(--text-2);
+  font-size: var(--fs-12);
+}
+.mj-studio-sweep-table-wrap th,
+.mj-studio-sweep-table-wrap td {
+  padding: var(--sp-1) var(--sp-2);
+  border-bottom: 1px solid var(--border-0);
+}
+.mj-studio-sweep-table-wrap th {
+  color: var(--text-2);
+  font-size: var(--fs-12);
+}
+
 /* ── Summary ────────────────────────────────────────────────────────────── */
 .mj-studio-version-meta {
   align-items: center;
