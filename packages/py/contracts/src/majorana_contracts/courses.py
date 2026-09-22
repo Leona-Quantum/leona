@@ -396,7 +396,13 @@ class GradebookRow(_ResourceBase):
     #: version it was graded on, each unattempted one at its current version. So a
     #: member who has done two modules of five is shown out of all five, not out of
     #: the two they happened to reach.
-    total_graded_cells: int = Field(ge=0)
+    #:
+    #: `None` when that sum cannot be known yet: some module this member has not been
+    #: graded on has no ready notebook to count (`GradebookModule.graded_cells` is
+    #: `None`), which is the normal state of a course while its modules are still
+    #: being generated. A number there would be smaller than the real total and would
+    #: read as a better score than the member has, so there is no number.
+    total_graded_cells: int | None = Field(default=None, ge=0)
     #: When their latest graded attempt at any module was recorded; `None` when they
     #: have not been graded on this course at all.
     last_graded_at: datetime | None = None

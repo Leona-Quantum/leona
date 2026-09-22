@@ -2111,8 +2111,11 @@ export interface components {
              * @default null
              */
             last_graded_at: string | null;
-            /** Total Graded Cells */
-            total_graded_cells: number;
+            /**
+             * Total Graded Cells
+             * @default null
+             */
+            total_graded_cells: number | null;
             /** Total Passed */
             total_passed: number;
             /**

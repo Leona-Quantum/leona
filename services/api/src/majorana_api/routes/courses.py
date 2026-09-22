@@ -525,7 +525,9 @@ def render_gradebook_csv(book: contracts.CourseGradebook) -> str:
     module's count today, so a member's `graded_cells` column sums to their
     `course_graded_cells`, which is the check a spreadsheet user will make first.
     A member who has not started anything gets `course_cells_passed` empty too,
-    for the same reason.
+    for the same reason. `course_graded_cells` is empty while the total cannot be
+    known (a module still has no ready notebook to count): an empty cell is honest,
+    and a smaller number would read as a better score than the member has.
 
     Totals are two numeric columns rather than one "7/12" cell, because a
     spreadsheet reads "7/12" as the 12th of July.

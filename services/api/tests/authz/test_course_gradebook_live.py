@@ -230,12 +230,13 @@ async def test_the_course_creator_sees_every_current_member_started_or_not(db):
         (modules[0].id, 2, 2)
     ]
     assert rows[bo.user_id].total_passed == 1
-    # Week 2 has no notebook, so it adds nothing to the denominator.
-    assert rows[bo.user_id].total_graded_cells == 2
+    # Week 2 has no notebook, so nobody's course total can be known yet: `None`,
+    # never the smaller sum of the one module that can be counted.
+    assert rows[bo.user_id].total_graded_cells is None
     # Cy has not started: a row with nothing in it, not a zero score.
     assert rows[cy.user_id].entries == []
     assert rows[cy.user_id].last_graded_at is None
-    assert (rows[cy.user_id].total_passed, rows[cy.user_id].total_graded_cells) == (0, 2)
+    assert (rows[cy.user_id].total_passed, rows[cy.user_id].total_graded_cells) == (0, None)
     assert [m.graded_cells for m in book.modules] == [2, None]
 
 
@@ -360,6 +361,45 @@ async def test_the_latest_attempt_wins_and_a_revised_notebook_marks_it_outdated(
     row = _by_user(await courses_repo.course_gradebook(creator, db, course.id))[ana.user_id]
     assert row.entries[0].stale is True
     assert row.entries[0].version_seq == 1
+
+
+async def test_the_total_is_unknown_while_a_module_generates_and_known_once_it_is_ready(db):
+    """The course-generation path in order: the module's notebook is created and
+    attached with a QUEUED version (what `POST /courses/{id}/generate` does), and only
+    later does that version become ready. In between, the total is unknown rather than
+    too small (Greptile, PR 965)."""
+    creator = await _owner_scope(db, "teacher")
+    ana = await _co_member(db, creator, "ana")
+    course, modules, _nb, version = await _course(db, creator)
+    await _grade(db, ana, version.id, passed=2, at=T0)
+    second, queued = await notebooks_repo.create_notebook(
+        creator,
+        db,
+        slug=f"gradebook-nb-{uuid.uuid4().hex[:8]}",
+        title="Week 2",
+        kind="lesson",
+        summary="",
+        language="en",
+        framework=FRAMEWORK,
+        request={},
+        run_id=None,
+    )
+    await courses_repo.attach_module_notebook(creator, db, course.id, modules[1].id, second.id)
+
+    generating = await courses_repo.course_gradebook(creator, db, course.id)
+    assert [(m.notebook_id, m.graded_cells) for m in generating.modules] == [
+        (modules[0].notebook_id, 2),
+        (second.id, None),
+    ]
+    ana_row = _by_user(generating)[ana.user_id]
+    assert (ana_row.total_passed, ana_row.total_graded_cells) == (2, None)
+
+    await _make_ready(db, creator, queued.id)
+
+    ready = await courses_repo.course_gradebook(creator, db, course.id)
+    ana_row = _by_user(ready)[ana.user_id]
+    assert (ana_row.total_passed, ana_row.total_graded_cells) == (2, 4)
+    assert _by_user(ready)[creator.user_id].total_graded_cells == 4
 
 
 async def test_a_person_who_left_the_workspace_leaves_the_gradebook(db):

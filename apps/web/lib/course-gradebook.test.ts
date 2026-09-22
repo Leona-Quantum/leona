@@ -7,6 +7,7 @@ import {
   gradebookCsvFilename,
   gradebookEntry,
   gradebookMemberName,
+  gradebookTotalsPending,
 } from "./course-gradebook.ts";
 import type { GradebookEntry } from "./course-types.ts";
 
@@ -56,4 +57,27 @@ test("the gradebook is offered only once some module has a notebook", () => {
 
 test("the CSV is saved under the name the control plane gives it", () => {
   assert.equal(gradebookCsvFilename("qiskit-study-group-ab12cd34"), "qiskit-study-group-ab12cd34-gradebook.csv");
+});
+
+test("totals pending: a module still generating, one with no notebook, or nothing pending", () => {
+  const row = (total: number | null) => ({
+    user_id: "u",
+    email: "u@example.test",
+    display_name: null,
+    entries: [],
+    total_passed: 0,
+    total_graded_cells: total,
+    last_graded_at: null,
+  });
+  const ready = { id: "a", seq: 1, slug: "a", title: "A", notebook_id: "nb-a", graded_cells: 2 };
+  const generating = { id: "b", seq: 2, slug: "b", title: "B", notebook_id: "nb-b", graded_cells: null };
+  const planned = { id: "c", seq: 3, slug: "c", title: "C", notebook_id: null, graded_cells: null };
+
+  assert.equal(gradebookTotalsPending({ modules: [ready], rows: [row(2)] }), null);
+  // "Still being generated" only when a module HAS a notebook that is not ready.
+  assert.equal(gradebookTotalsPending({ modules: [ready, generating, planned], rows: [row(null)] }), "generating");
+  // A module nobody has generated is not "being generated".
+  assert.equal(gradebookTotalsPending({ modules: [ready, planned], rows: [row(null)] }), "no_notebook");
+  // Every total known (each member was graded on the unknown module): nothing to say.
+  assert.equal(gradebookTotalsPending({ modules: [ready, generating], rows: [row(4)] }), null);
 });

@@ -4126,9 +4126,17 @@
             "title": "Last Graded At"
           },
           "total_graded_cells": {
-            "minimum": 0,
-            "title": "Total Graded Cells",
-            "type": "integer"
+            "anyOf": [
+              {
+                "minimum": 0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Total Graded Cells"
           },
           "total_passed": {
             "minimum": 0,
@@ -4144,8 +4152,7 @@
         "required": [
           "user_id",
           "email",
-          "total_passed",
-          "total_graded_cells"
+          "total_passed"
         ],
         "title": "GradebookRow",
         "type": "object"

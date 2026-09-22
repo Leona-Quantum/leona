@@ -637,11 +637,11 @@ async def test_a_member_who_did_not_create_the_course_is_pinned_to_their_own_row
 async def test_gradebook_rows_total_over_the_whole_course_not_only_attempted_modules():
     owner = make_scope()
     course = _course_row(workspace_id=owner.workspace_id, owner_user_id=owner.user_id)
-    first_nb, second_nb = uuid.uuid4(), uuid.uuid4()
+    first_nb, second_nb, third_nb = uuid.uuid4(), uuid.uuid4(), uuid.uuid4()
     modules = [
         _module_row(course_id=course.id, seq=1, slug="week-01", notebook_id=first_nb),
         _module_row(course_id=course.id, seq=2, slug="week-02", notebook_id=second_nb),
-        _module_row(course_id=course.id, seq=3, slug="week-03", notebook_id=None),
+        _module_row(course_id=course.id, seq=3, slug="week-03", notebook_id=third_nb),
     ]
     ana, bo = uuid.uuid4(), uuid.uuid4()
     grades = [
@@ -649,21 +649,20 @@ async def test_gradebook_rows_total_over_the_whole_course_not_only_attempted_mod
         _grade_row(bo, second_nb, email="bo@example.test", passed=0, graded=2, current=False),
         _grade_row(ana, second_nb, email="ana@example.test", name="Ana", passed=1, graded=2),
     ]
-    session = _gradebook_session(
-        course, modules, [(first_nb, GRADED_SPEC), (second_nb, GRADED_SPEC)], grades
-    )
+    live = [(first_nb, GRADED_SPEC), (second_nb, GRADED_SPEC), (third_nb, GRADED_SPEC)]
+    session = _gradebook_session(course, modules, live, grades)
 
     book = await courses_repo.course_gradebook(owner, session, course.id)
 
-    assert [m.graded_cells for m in book.modules] == [2, 2, None]
-    assert [m.notebook_id for m in book.modules] == [first_nb, second_nb, None]
+    assert [m.graded_cells for m in book.modules] == [2, 2, 2]
+    assert [m.notebook_id for m in book.modules] == [first_nb, second_nb, third_nb]
     # Sorted by what the members page shows: the name, else the email.
     assert [row.email for row in book.rows] == ["ana@example.test", "bo@example.test"]
     ana_row, bo_row = book.rows
-    # Ana did one module of two: out of four cells, not out of the two she reached.
-    assert (ana_row.total_passed, ana_row.total_graded_cells) == (1, 4)
+    # Ana did one module of three: out of six cells, not out of the two she reached.
+    assert (ana_row.total_passed, ana_row.total_graded_cells) == (1, 6)
     assert [e.module_id for e in ana_row.entries] == [modules[1].id]
-    assert (bo_row.total_passed, bo_row.total_graded_cells) == (2, 4)
+    assert (bo_row.total_passed, bo_row.total_graded_cells) == (2, 6)
     assert [e.module_id for e in bo_row.entries] == [modules[0].id, modules[1].id]
     assert [e.stale for e in bo_row.entries] == [False, True]
 
@@ -691,6 +690,60 @@ async def test_a_member_who_has_not_started_is_a_row_with_no_entries():
     assert (cy_row.total_passed, cy_row.total_graded_cells) == (0, 2)
 
 
+async def test_a_total_is_unknown_while_a_module_is_still_being_generated():
+    """Greptile, PR 965. A module is attached to its notebook before that notebook has
+    a ready version, so during ordinary generation its count is unknown. Counting it
+    as 0 made every learner's total too small, which reads as a better score than they
+    have; the total is `None` instead, for everyone who has that module still ahead."""
+    owner = make_scope()
+    course = _course_row(workspace_id=owner.workspace_id, owner_user_id=owner.user_id)
+    ready_nb, generating_nb = uuid.uuid4(), uuid.uuid4()
+    modules = [
+        _module_row(course_id=course.id, seq=1, slug="week-01", notebook_id=ready_nb),
+        _module_row(course_id=course.id, seq=2, slug="week-02", notebook_id=generating_nb),
+    ]
+    ana, cy = uuid.uuid4(), uuid.uuid4()
+    grades = [
+        _grade_row(ana, ready_nb, email="ana@example.test", passed=1, graded=2),
+        _not_started(cy, email="cy@example.test"),
+    ]
+    # The generating notebook resolves (it is live) but has no ready version: spec None.
+    live = [(ready_nb, GRADED_SPEC), (generating_nb, None)]
+    session = _gradebook_session(course, modules, live, grades)
+
+    book = await courses_repo.course_gradebook(owner, session, course.id)
+
+    assert [m.graded_cells for m in book.modules] == [2, None]
+    assert book.modules[1].notebook_id == generating_nb, "attached, still generating"
+    ana_row, cy_row = book.rows
+    assert (ana_row.total_passed, ana_row.total_graded_cells) == (1, None)
+    assert cy_row.total_graded_cells is None
+
+
+async def test_a_module_the_member_was_graded_on_needs_no_current_count():
+    """The attempt carries its own denominator, so a module whose CURRENT count is
+    unknown does not make the total unknown for someone already graded on it. Only a
+    module still ahead of the member does."""
+    owner = make_scope()
+    course = _course_row(workspace_id=owner.workspace_id, owner_user_id=owner.user_id)
+    notebook_id = uuid.uuid4()
+    module = _module_row(course_id=course.id, notebook_id=notebook_id)
+    ana, cy = uuid.uuid4(), uuid.uuid4()
+    grades = [
+        _grade_row(ana, notebook_id, email="ana@example.test", passed=1, graded=2),
+        _not_started(cy, email="cy@example.test"),
+    ]
+    # A current spec that no longer validates: the count today is unknown.
+    session = _gradebook_session(course, [module], [(notebook_id, {"cells": "nope"})], grades)
+
+    book = await courses_repo.course_gradebook(owner, session, course.id)
+
+    assert book.modules[0].graded_cells is None
+    ana_row, cy_row = book.rows
+    assert ana_row.total_graded_cells == 2, "counted at the version Ana was graded on"
+    assert cy_row.total_graded_cells is None, "Cy still has it ahead, uncounted"
+
+
 async def test_members_are_listed_even_when_no_module_has_a_live_notebook():
     """The grades half of the statement matches nothing, and the member list still
     comes back: the creator sees who is in the class before anything is gradable."""
@@ -707,6 +760,8 @@ async def test_members_are_listed_even_when_no_module_has_a_live_notebook():
 
     assert book.modules[0].notebook_id is None
     assert [(row.user_id, row.entries) for row in book.rows] == [(owner.user_id, [])]
+    # A module with no notebook has no count, so the course total is not known.
+    assert book.rows[0].total_graded_cells is None
     assert len(session.statements) == 5
 
 

@@ -927,8 +927,17 @@ async def course_gradebook(
         attempted_modules = {entry.module_id for entry in found}
         # Out of the WHOLE course: what they were graded on, plus what they have not
         # reached yet at today's count. See `GradebookRow.total_graded_cells`.
-        remaining = sum(
-            column.graded_cells or 0 for column in columns if column.id not in attempted_modules
+        ahead = [column.graded_cells for column in columns if column.id not in attempted_modules]
+        known = [count for count in ahead if count is not None]
+        # A module still being generated (attached, no ready version yet) has no count.
+        # Treating that as 0 made every learner's total too small until generation
+        # finished, which reads as a better score than they have (Greptile, PR 965).
+        # An attempted module never needs its current count: it is counted at the
+        # version the member was graded on, which the attempt itself carries.
+        total_graded_cells = (
+            sum(entry.graded_cells for entry in found) + sum(known)
+            if len(known) == len(ahead)
+            else None
         )
         email, display_name = people[user_id]
         rows.append(
@@ -938,7 +947,7 @@ async def course_gradebook(
                 display_name=display_name,
                 entries=found,
                 total_passed=sum(entry.passed for entry in found),
-                total_graded_cells=sum(entry.graded_cells for entry in found) + remaining,
+                total_graded_cells=total_graded_cells,
                 last_graded_at=max((entry.graded_at for entry in found), default=None),
             )
         )

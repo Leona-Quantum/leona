@@ -39,3 +39,21 @@ export function courseHasGradableNotebook(modules: ReadonlyArray<{ notebook_id?:
 export function gradebookCsvFilename(slug: string): string {
   return `${slug}-gradebook.csv`;
 }
+
+/**
+ * Why some course totals are not known yet, or `null` when every total is.
+ *
+ * A total is `null` from the control plane when a module the member has not been
+ * graded on has no ready notebook to count. During generation that is the normal
+ * state, and a number there would be smaller than the real total, which reads as a
+ * better score than the member has. The two reasons get different sentences because
+ * "still being generated" is untrue of a module nobody has generated.
+ */
+export function gradebookTotalsPending(
+  book: Pick<CourseGradebook, "modules" | "rows">,
+): "generating" | "no_notebook" | null {
+  if (!(book.rows ?? []).some((row) => row.total_graded_cells == null)) return null;
+  const unknown = gradebookColumns(book).filter((module) => module.graded_cells == null);
+  if (unknown.some((module) => module.notebook_id)) return "generating";
+  return unknown.length > 0 ? "no_notebook" : null;
+}

@@ -7,6 +7,7 @@ import {
   gradebookCsvFilename,
   gradebookEntry,
   gradebookMemberName,
+  gradebookTotalsPending,
 } from "../../../../../lib/course-gradebook";
 import type { CourseGradebook as CourseGradebookData, GradebookRow } from "../../../../../lib/course-types";
 import type { PublicLocale } from "../../../../../lib/public-locale";
@@ -157,6 +158,7 @@ export function CourseGradebookView({
   // started" is a table of "Not started" rows, not an empty list. Say it in words
   // as well, above the table, because a column of identical cells is easy to misread.
   const nobodyStarted = rows.every((row) => (row.entries ?? []).length === 0);
+  const totalsPending = book ? gradebookTotalsPending(book) : null;
 
   return (
     <section className="mj-course-gradebook" aria-labelledby="course-gradebook-title">
@@ -195,6 +197,12 @@ export function CourseGradebookView({
 
       {book && nobodyStarted ? (
         <p className="mj-notebook-chat-empty">{everyone ? coursesCopy.gradebookEmpty : coursesCopy.yourProgressEmpty}</p>
+      ) : null}
+
+      {book && rows.length > 0 && totalsPending ? (
+        <p className="mj-notebook-chat-empty">
+          {totalsPending === "generating" ? coursesCopy.gradebookTotalsGenerating : coursesCopy.gradebookTotalsNoNotebook}
+        </p>
       ) : null}
 
       {book && rows.length > 0 ? (
@@ -286,13 +294,17 @@ function GradebookTableRow({
           </td>
         );
       })}
-      {(row.entries ?? []).length > 0 ? (
+      {(row.entries ?? []).length === 0 ? (
+        // Not "0/N": a member who has not started has not scored zero.
+        <td className="mj-course-gradebook-empty-cell">{coursesCopy.gradebookNotStarted}</td>
+      ) : row.total_graded_cells == null ? (
+        // Not a smaller number: a module still without a ready notebook would be
+        // missing from the denominator, and "3/4" would read better than it is.
+        <td className="mj-course-gradebook-empty-cell">{coursesCopy.gradebookTotalUnknown}</td>
+      ) : (
         <td>
           <Score passed={row.total_passed} graded={row.total_graded_cells} locale={locale} />
         </td>
-      ) : (
-        // Not "0/N": a member who has not started has not scored zero.
-        <td className="mj-course-gradebook-empty-cell">{coursesCopy.gradebookNotStarted}</td>
       )}
       <td className="mj-mono-muted">{formatWhen(row.last_graded_at, locale)}</td>
     </tr>

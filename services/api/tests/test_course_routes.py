@@ -1248,3 +1248,65 @@ async def test_gradebook_csv_and_gradebook_and_export_resolve_to_their_own_route
     assert as_csv.headers["content-type"].startswith("text/csv")
     assert as_zip.status_code == 409 and as_zip.json()["reason"] == "course_not_ready"
     assert wrong_method.status_code == 405
+
+
+def test_an_unknown_course_total_is_an_empty_cell_not_a_smaller_number():
+    """Greptile, PR 965: while a module is still being generated its count is unknown,
+    so the member's course total is `None`, and the CSV leaves that cell empty rather
+    than writing the smaller sum of the modules it could count."""
+    import csv as csv_module
+
+    import majorana_contracts as contracts
+
+    from majorana_api.routes.courses import render_gradebook_csv
+
+    ready, generating = uuid_module.uuid4(), uuid_module.uuid4()
+    book = contracts.CourseGradebook(
+        course_id=uuid_module.uuid4(),
+        visibility=contracts.GradebookVisibility.ALL_MEMBERS,
+        modules=[
+            contracts.GradebookModule(
+                id=ready,
+                seq=1,
+                slug="a",
+                title="Ready",
+                notebook_id=uuid_module.uuid4(),
+                graded_cells=2,
+            ),
+            contracts.GradebookModule(
+                id=generating,
+                seq=2,
+                slug="b",
+                title="Generating",
+                notebook_id=uuid_module.uuid4(),
+                graded_cells=None,
+            ),
+        ],
+        rows=[
+            contracts.GradebookRow(
+                user_id=uuid_module.uuid4(),
+                email="ana@example.test",
+                entries=[
+                    contracts.GradebookEntry(
+                        module_id=ready,
+                        passed=2,
+                        failed=0,
+                        attempted=2,
+                        graded_cells=2,
+                        version_seq=1,
+                        run_id=uuid_module.uuid4(),
+                        graded_at=NOW,
+                    )
+                ],
+                total_passed=2,
+                total_graded_cells=None,
+                last_graded_at=NOW,
+            )
+        ],
+    )
+    assert book.model_dump(mode="json")["rows"][0]["total_graded_cells"] is None
+    records = list(csv_module.DictReader(io.StringIO(render_gradebook_csv(book))))
+    assert [r["course_graded_cells"] for r in records] == ["", ""]
+    assert [r["graded_cells"] for r in records] == ["2", ""]
+    # The control: what IS known still reaches the sheet.
+    assert [r["course_cells_passed"] for r in records] == ["2", "2"]

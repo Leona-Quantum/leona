@@ -192,7 +192,40 @@ test("reader-facing gradebook copy has no em dashes in either language", () => {
       strings.gradebookOlderVersion,
       strings.gradebookOlderVersionHint(3),
       strings.gradebookDownloadCsvFailed,
+      strings.gradebookTotalUnknown,
+      strings.gradebookTotalsGenerating,
+      strings.gradebookTotalsNoNotebook,
     ];
     for (const text of texts) assert.doesNotMatch(text, /[\u2013\u2014]/, `${locale}: ${text}`);
   }
+});
+
+test("while a module is still generating, a started member's total says not known yet", () => {
+  const generating: CourseGradebook = {
+    ...everyone,
+    modules: [
+      modules![0],
+      { id: "m2", seq: 2, slug: "teleport", title: "Teleportation", notebook_id: "nb-2", graded_cells: null },
+    ],
+    rows: [{ ...everyone.rows![0], total_graded_cells: null }, { ...everyone.rows![2], total_graded_cells: null }],
+  };
+  const screen = view(generating);
+
+  assert.ok(screen.getByText(copy.gradebookTotalsGenerating));
+  const anaRow = screen.getByRole("rowheader", { name: /Ana/ }).closest("tr");
+  assert.ok(anaRow);
+  const anaCells = [...anaRow.querySelectorAll("td")].map((cell) => cell.textContent);
+  // Module 1 is known (1 of 2); the total is not a smaller "1/2" but "Not known yet".
+  assert.equal(anaCells[2], copy.gradebookTotalUnknown);
+  assert.doesNotMatch(anaCells[2] ?? "", /\d/);
+  // Cy has not started, which still reads as not started rather than not known.
+  const cyRow = screen.getByRole("rowheader", { name: /Cy/ }).closest("tr");
+  assert.equal(cyRow?.querySelectorAll("td")[2]?.textContent, copy.gradebookNotStarted);
+  screen.unmount();
+
+  // The Japanese sentence and cell, from the same state.
+  const ja = WORKSPACE_COPY.ja.courses;
+  const jaScreen = view(generating, "ja");
+  assert.ok(jaScreen.getByText(ja.gradebookTotalsGenerating));
+  assert.ok(jaScreen.getByText(ja.gradebookTotalUnknown));
 });
