@@ -3648,6 +3648,37 @@
         "title": "CreateNotebookTurnResponse",
         "type": "object"
       },
+      "CreateTokenRequest": {
+        "additionalProperties": false,
+        "description": "Mint a token in the caller's ACTIVE workspace.\n\nThe workspace is not a field. It is read from the caller's own scope, for the same\nreason `auth/deps.py::get_scope` refuses a workspace id from the request: a body\nthat names its own tenant is a body that can be edited to name another one.",
+        "properties": {
+          "expires_in_days": {
+            "default": 90,
+            "maximum": 90,
+            "minimum": 1,
+            "title": "Expires In Days",
+            "type": "integer"
+          },
+          "name": {
+            "maxLength": 80,
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          },
+          "scopes": {
+            "items": {
+              "$ref": "#/components/schemas/TokenScope"
+            },
+            "title": "Scopes",
+            "type": "array"
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "title": "CreateTokenRequest",
+        "type": "object"
+      },
       "EvidenceStrength": {
         "description": "What a passing run's verdict was actually proved by.\n\nDeliberately *not* a fourth VerifierDecision value. A run whose only check was\n`return_contract` \u2014 \"does the result dict have a `counts` key?\" \u2014 is a real pass:\nnothing it claimed was contradicted. It is just not the same claim as a run whose\nreported distribution was compared against the circuit's Born distribution to\n1.8e-16, and until 2026-07-20 both printed the single word \"Verified\".\n\nThis grades the checks, not final sufficiency. Verification v2 refuses a final\nPASS when the check set is structural-only or lacks a dedicated property check;\na physical grade may likewise describe one limited passing claim while the final\ndecision remains INCONCLUSIVE because another required claim is unsupported.",
         "enum": [
@@ -5035,6 +5066,25 @@
         "title": "MeasurementPolicy",
         "type": "string"
       },
+      "MintedToken": {
+        "additionalProperties": false,
+        "description": "The response to `POST /v1/tokens`, and the only object that carries the secret.\n\n`token` is returned once, on the request that created it. The server stores a\nSHA-256 of it and nothing else, so there is no second read: if it is lost, the\nonly remedy is to revoke this one and mint another. That is the property being\nbought, and it is why the creating request is the only one that can show it.",
+        "properties": {
+          "record": {
+            "$ref": "#/components/schemas/PersonalAccessToken"
+          },
+          "token": {
+            "title": "Token",
+            "type": "string"
+          }
+        },
+        "required": [
+          "token",
+          "record"
+        ],
+        "title": "MintedToken",
+        "type": "object"
+      },
       "Notebook": {
         "additionalProperties": false,
         "description": "Owner-facing notebook resource. Content lives in versions.",
@@ -6052,6 +6102,102 @@
           "pauli"
         ],
         "title": "PauliTerm",
+        "type": "object"
+      },
+      "PersonalAccessToken": {
+        "additionalProperties": false,
+        "description": "One token, as its owner sees it in their account settings.\n\nCarries no secret and no hash \u2014 nothing here can be presented to the API. The\ntail is four characters of a 256-bit secret, which is how the person recognises\nwhich token a row is, and `last_used_at` is how they decide whether revoking one\nwill break something.",
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "expires_at": {
+            "format": "date-time",
+            "title": "Expires At",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "last_used_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Last Used At"
+          },
+          "name": {
+            "maxLength": 80,
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          },
+          "revoked_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Revoked At"
+          },
+          "scopes": {
+            "items": {
+              "$ref": "#/components/schemas/TokenScope"
+            },
+            "title": "Scopes",
+            "type": "array"
+          },
+          "tail": {
+            "maxLength": 4,
+            "minLength": 4,
+            "title": "Tail",
+            "type": "string"
+          },
+          "workspace_id": {
+            "format": "uuid",
+            "title": "Workspace Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "tail",
+          "name",
+          "workspace_id",
+          "scopes",
+          "created_at",
+          "expires_at"
+        ],
+        "title": "PersonalAccessToken",
+        "type": "object"
+      },
+      "PersonalAccessTokenList": {
+        "additionalProperties": false,
+        "properties": {
+          "tokens": {
+            "items": {
+              "$ref": "#/components/schemas/PersonalAccessToken"
+            },
+            "title": "Tokens",
+            "type": "array"
+          }
+        },
+        "title": "PersonalAccessTokenList",
         "type": "object"
       },
       "Plan": {
@@ -10174,6 +10320,15 @@
         ],
         "title": "TextAnswer",
         "type": "object"
+      },
+      "TokenScope": {
+        "description": "What a token may do. Closed, and short on purpose.\n\n`READ` is implied by every token and is what a token with nothing else can do.\n`RUN` is additive: it does not replace `READ`, it adds starting a run to it, so a\ntoken's scopes are either `{read}` or `{read, run}` and never `{run}` alone. That\nis enforced at the database (`ck_personal_access_tokens_scopes`) as well as here,\nbecause a row that reached the table another way must still be answerable.\n\nThere is no `hardware`. See this module's docstring.",
+        "enum": [
+          "read",
+          "run"
+        ],
+        "title": "TokenScope",
+        "type": "string"
       },
       "TopLevelExecution": {
         "enum": [

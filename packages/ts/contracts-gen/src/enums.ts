@@ -342,6 +342,12 @@ export const SYNTHESIS_OBJECTIVE_VALUES = [
   "t_count",
 ] as const;
 
+/** TokenScope — 2 members. */
+export const TOKEN_SCOPE_VALUES = [
+  "read",
+  "run",
+] as const;
+
 /** TopLevelExecution — 3 members. */
 export const TOP_LEVEL_EXECUTION_VALUES = [
   "required",

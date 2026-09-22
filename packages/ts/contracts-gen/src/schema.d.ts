@@ -1868,6 +1868,25 @@ export interface components {
             version: components["schemas"]["NotebookVersionSummary"];
         };
         /**
+         * CreateTokenRequest
+         * @description Mint a token in the caller's ACTIVE workspace.
+         *
+         *     The workspace is not a field. It is read from the caller's own scope, for the same
+         *     reason `auth/deps.py::get_scope` refuses a workspace id from the request: a body
+         *     that names its own tenant is a body that can be edited to name another one.
+         */
+        CreateTokenRequest: {
+            /**
+             * Expires In Days
+             * @default 90
+             */
+            expires_in_days: number;
+            /** Name */
+            name: string;
+            /** Scopes */
+            scopes?: components["schemas"]["TokenScope"][];
+        };
+        /**
          * EvidenceStrength
          * @description What a passing run's verdict was actually proved by.
          *
@@ -2597,6 +2616,20 @@ export interface components {
          */
         MeasurementPolicy: "none" | "only_if_requested" | "measure_all" | "specified" | "not_applicable";
         /**
+         * MintedToken
+         * @description The response to `POST /v1/tokens`, and the only object that carries the secret.
+         *
+         *     `token` is returned once, on the request that created it. The server stores a
+         *     SHA-256 of it and nothing else, so there is no second read: if it is lost, the
+         *     only remedy is to revoke this one and mint another. That is the property being
+         *     bought, and it is why the creating request is the only one that can show it.
+         */
+        MintedToken: {
+            record: components["schemas"]["PersonalAccessToken"];
+            /** Token */
+            token: string;
+        };
+        /**
          * Notebook
          * @description Owner-facing notebook resource. Content lives in versions.
          */
@@ -3141,6 +3174,58 @@ export interface components {
              * @description Pauli string over I, X, Y, Z with one character per qubit, qubit 0 leftmost. 'ZI' is Z on qubit 0; 'XX' is X on both. Every term in a Hamiltonian must be the same length.
              */
             pauli: string;
+        };
+        /**
+         * PersonalAccessToken
+         * @description One token, as its owner sees it in their account settings.
+         *
+         *     Carries no secret and no hash — nothing here can be presented to the API. The
+         *     tail is four characters of a 256-bit secret, which is how the person recognises
+         *     which token a row is, and `last_used_at` is how they decide whether revoking one
+         *     will break something.
+         */
+        PersonalAccessToken: {
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /**
+             * Expires At
+             * Format: date-time
+             */
+            expires_at: string;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Last Used At
+             * @default null
+             */
+            last_used_at: string | null;
+            /** Name */
+            name: string;
+            /**
+             * Revoked At
+             * @default null
+             */
+            revoked_at: string | null;
+            /** Scopes */
+            scopes: components["schemas"]["TokenScope"][];
+            /** Tail */
+            tail: string;
+            /**
+             * Workspace Id
+             * Format: uuid
+             */
+            workspace_id: string;
+        };
+        /** PersonalAccessTokenList */
+        PersonalAccessTokenList: {
+            /** Tokens */
+            tokens?: components["schemas"]["PersonalAccessToken"][];
         };
         /** Plan */
         Plan: {
@@ -5344,6 +5429,20 @@ export interface components {
              */
             kind: "text";
         };
+        /**
+         * TokenScope
+         * @description What a token may do. Closed, and short on purpose.
+         *
+         *     `READ` is implied by every token and is what a token with nothing else can do.
+         *     `RUN` is additive: it does not replace `READ`, it adds starting a run to it, so a
+         *     token's scopes are either `{read}` or `{read, run}` and never `{run}` alone. That
+         *     is enforced at the database (`ck_personal_access_tokens_scopes`) as well as here,
+         *     because a row that reached the table another way must still be answerable.
+         *
+         *     There is no `hardware`. See this module's docstring.
+         * @enum {string}
+         */
+        TokenScope: "read" | "run";
         /**
          * TopLevelExecution
          * @enum {string}
