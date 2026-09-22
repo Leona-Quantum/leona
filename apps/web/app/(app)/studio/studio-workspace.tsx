@@ -46,7 +46,7 @@ import { CIRCUIT_FRAMEWORKS, circuitFramework, circuitFrameworkOrNull, isExecuta
 import { MAX_CPU_SEED, MAX_CPU_SHOTS, cpuSimulationEligibility, loadCpuSimulationRecords, runCpuSimulation, saveCpuSimulationRecord, sourceFingerprint, type CpuSimulationEligibility, type CpuSimulationLimits, type CpuSimulationRecord } from "../../../lib/studio-simulation";
 import { TIER_LIMITS } from "../../../lib/account-tier";
 import { formatShare, simulationChartData, simulationReading, type SimulationChartData, type SimulationReading } from "../../../lib/simulation-visual";
-import { QpuSubmissionRefused, fetchQpuBackends, fetchQpuEstimate, fetchQpuRun, fetchQpuSubmissionGate, formatUsd, isPricedOnly, submitQpuRun, type QpuBackendInfo, type QpuCostEstimate, type QpuRunRecord, type QpuSubmissionGate } from "../../../lib/qpu";
+import { QpuSubmissionRefused, backendNameOf, fetchLatestQpuRunFor, fetchQpuBackends, fetchQpuEstimate, fetchQpuRun, fetchQpuSubmissionGate, formatUsd, isPricedOnly, submitQpuRun, type QpuBackendInfo, type QpuCostEstimate, type QpuRunRecord, type QpuSubmissionGate } from "../../../lib/qpu";
 import { WORKSPACE_COPY } from "../../../lib/workspace-locale";
 import { DEFAULT_RUN_SHOTS, sampling } from "../../../lib/studio-run-request";
 import { verificationFromMetadata, verificationFromResource, type VerificationCheck } from "../../../lib/verification-record";
@@ -3413,6 +3413,7 @@ function QpuLane({ artifact, shots, copy, limits }: { artifact: LibraryArtifact 
   // carries human-readable availability notes for artifacts without one.
   const submittableQasm = artifact?.qasm && looksLikeOpenQasm3(artifact.qasm) ? artifact.qasm : null;
   const pricedOnly = backend !== null && isPricedOnly(backend);
+  const circuitFingerprint = submittableQasm ? sourceFingerprint(submittableQasm) : null;
   const canSubmit = Boolean(
     gate?.submission_available && verified && submittableQasm && selected && !pricedOnly && !submitting,
   );
@@ -3433,6 +3434,26 @@ function QpuLane({ artifact, shots, copy, limits }: { artifact: LibraryArtifact 
       })
       .finally(() => setSubmitting(false));
   }
+
+  // After a reload, bring back the latest run of THIS circuit (review finding on
+  // PR 957: a finished run used to vanish with the tab's memory). Matched on the
+  // same fingerprint the submission sent, so it can only restore a run of the
+  // exact program on screen, never a neighbour's. A run already in state wins:
+  // a submission made while this request was in flight is newer than anything
+  // it can return. A failed lookup leaves the panel as it was, since a history
+  // that could not be read says nothing about whether a run exists.
+  useEffect(() => {
+    if (!circuitFingerprint || qpuRun) return;
+    let cancelled = false;
+    fetchLatestQpuRunFor(circuitFingerprint)
+      .then((latest) => {
+        if (!cancelled && latest) setQpuRun((current) => current ?? latest);
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, [circuitFingerprint, qpuRun]);
 
   // A submitted job settles on the provider's schedule; poll the durable
   // record until it reports a terminal state.
@@ -3508,6 +3529,7 @@ function QpuLane({ artifact, shots, copy, limits }: { artifact: LibraryArtifact 
               <dl className="mj-studio-contract">
                 <div><dt>{copy.hardwareJobStatus}</dt><dd>{qpuRun.status}</dd></div>
                 {qpuRun.provider_job_id ? <div><dt>{copy.hardwareJobId}</dt><dd>{qpuRun.provider_job_id}</dd></div> : null}
+                {backendNameOf(qpuRun) ? <div><dt>{copy.hardwareMachine}</dt><dd><code>{backendNameOf(qpuRun)}</code></dd></div> : null}
                 {qpuRun.error ? <div><dt>{copy.hardwareJobError}</dt><dd>{qpuRun.error}</dd></div> : null}
               </dl>
               {qpuRun.raw_counts ? (
