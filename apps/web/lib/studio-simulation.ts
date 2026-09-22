@@ -182,6 +182,31 @@ export function runCpuSimulation(
   request: CpuSimulationRequest,
   limits: CpuSimulationLimits = TIER_LIMITS.free,
 ): CpuSimulationRecord {
+  const plan = planCpuSimulation(request, limits);
+  return cpuSimulationRecord(plan, sampleCircuitCounts(plan.circuit, plan.shots, plan.seed));
+}
+
+/**
+ * Everything `runCpuSimulation` checks before it simulates, in the same order
+ * and with the same errors: eligibility, shots, this browser's pacing, the
+ * seed. Split out so Studio can hand the one expensive step,
+ * `sampleCircuitCounts`, to the simulator worker (simulator-protocol.ts) and
+ * keep the rest here — pacing reads per-account `localStorage`, which a
+ * worker has no access to.
+ */
+export type CpuSimulationPlan = {
+  request: CpuSimulationRequest;
+  eligibility: Extract<CpuSimulationEligibility, { eligible: true }>;
+  framework: ExecutableCircuitFrameworkKey;
+  circuit: ParsedBuilderCircuit;
+  shots: number;
+  seed: number;
+};
+
+export function planCpuSimulation(
+  request: CpuSimulationRequest,
+  limits: CpuSimulationLimits = TIER_LIMITS.free,
+): CpuSimulationPlan {
   const eligibility = cpuSimulationEligibility(request, limits);
   if (!eligibility.eligible) throw new Error(`CPU simulation is unavailable: ${eligibility.reason}`);
   if (!Number.isInteger(request.shots) || request.shots < 1 || request.shots > limits.cpuSimShots) {
@@ -200,8 +225,22 @@ export function runCpuSimulation(
 
   const framework = circuitFramework(request.framework).key;
   if (!isExecutableCircuitFramework(framework)) throw new Error("CPU simulation requires Qiskit, PennyLane, or Cirq source.");
-  const state = executeCircuit(eligibility.circuit);
-  const counts = sampleCounts(state, eligibility.circuit.qubitCount, request.shots, seed);
+  return { request, eligibility, framework, circuit: eligibility.circuit, shots: request.shots, seed };
+}
+
+/**
+ * The expensive, pure step of a CPU run: the statevector simulation and the
+ * seeded sampling over it. A function of its arguments alone, which is what
+ * lets the simulator worker run it and return the same counts the page would.
+ */
+export function sampleCircuitCounts(circuit: ParsedBuilderCircuit, shots: number, seed: number): Record<string, number> {
+  return sampleCounts(executeCircuit(circuit), circuit.qubitCount, shots, seed);
+}
+
+/** The record for a plan's counts. Its time is read here, after the counts
+ * exist, as `runCpuSimulation` always read it. */
+export function cpuSimulationRecord(plan: CpuSimulationPlan, counts: Record<string, number>): CpuSimulationRecord {
+  const { request, eligibility, framework, seed } = plan;
   const now = request.now ?? new Date();
   return {
     id: request.id ?? simulationId(now),

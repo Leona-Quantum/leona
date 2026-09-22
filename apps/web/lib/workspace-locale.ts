@@ -259,6 +259,8 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
     simulationPersistenceUnavailable: string;
     cpuSimulationRecorded: string;
     simulationFailed: string;
+    /** A CPU run the simulator worker did not finish within its time budget. */
+    cpuSimulationTimedOut: string;
     simulationBoundary: string;
     simulationArtifact: string;
     sourceFingerprint: string;
@@ -1225,6 +1227,7 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
       simulationPersistenceUnavailable: "The CPU result was not recorded because this browser cannot store local simulation records.",
       cpuSimulationRecorded: "CPU simulation recorded in this browser. It did not start a Nala Run or verify this artifact.",
       simulationFailed: "CPU simulation failed before a record could be created.",
+      cpuSimulationTimedOut: "The simulation took too long in this browser, so Leona stopped it before making a record.",
       simulationBoundary: "Runs in your browser on the parsed circuit. A local check, not verification.",
       simulationArtifact: "Artifact",
       sourceFingerprint: "Source fingerprint",
@@ -1294,6 +1297,7 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
         qubit_limit: "This circuit is wider than your plan's browser simulation limit, so no ideal outcome can be computed for it.",
         operation_limit: "This circuit exceeds the browser operation limit, so no ideal outcome can be computed for it.",
         register_mismatch: "The device counts do not match this circuit's measured qubits, so they cannot be compared to an ideal outcome.",
+        timed_out: "The ideal outcome took too long to work out in this browser, so Leona stopped it.",
       }[reason] ?? "No ideal outcome could be computed for this job."),
       hardwareRunHistory: "See every hardware run in this workspace",
       hardwarePricedOnly: "Leona can price this device but cannot send jobs to it yet. Only IBM devices can be run today.",
@@ -1339,6 +1343,7 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
         unparsable: "This circuit uses gates or a measurement layout the in-browser simulator cannot read, so there is no estimate.",
         qubit_limit: "This circuit is wider than your plan's browser simulation limit, so there is no estimate.",
         operation_limit: "This circuit exceeds the browser operation limit, so there is no estimate.",
+        timed_out: "This estimate took too long to work out in this browser, so Leona stopped it.",
       }[reason] ?? "No estimate could be computed for this circuit."),
       verifySave: "Verify & save",
       starting: "Starting…",
@@ -2330,6 +2335,7 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
       simulationPersistenceUnavailable: "ブラウザにシミュレーション履歴を保存できなかったため、CPU結果を記録しませんでした。",
       cpuSimulationRecorded: "CPUシミュレーションをこのブラウザに記録しました。この結果は正式な検証結果ではありません。",
       simulationFailed: "記録を作成する前にCPUシミュレーションが失敗しました。",
+      cpuSimulationTimedOut: "このブラウザではシミュレーションに時間がかかりすぎたため、記録を作成する前に中止しました。",
       simulationBoundary: "ブラウザー上で解析済みの回路を実行します。ローカルの確認であり、検証ではありません。",
       simulationArtifact: "保存した回路",
       sourceFingerprint: "ソース識別子",
@@ -2399,6 +2405,7 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
         qubit_limit: "この回路は、お使いのプランのブラウザシミュレーション上限を超えているため、理論値を計算できません。",
         operation_limit: "この回路は操作数の上限を超えているため、理論値を計算できません。",
         register_mismatch: "実機の測定結果がこの回路の量子ビット数と一致しないため、理論値と比較できません。",
+        timed_out: "このブラウザでは理論値の計算に時間がかかりすぎたため、計算を中止しました。",
       }[reason] ?? "このジョブの理論値を計算できませんでした。"),
       hardwareRunHistory: "このワークスペースの実機での実行履歴をすべて見る",
       hardwarePricedOnly: "この実機は料金の見積もりのみ対応しており、まだジョブを送信できません。現在実行できるのはIBMの実機のみです。",
@@ -2444,6 +2451,7 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
         unparsable: "この回路はブラウザ内シミュレーションの対応範囲外のため、見積もりを計算できません。",
         qubit_limit: "この回路は、お使いのプランのブラウザシミュレーション上限を超えているため、見積もりを計算できません。",
         operation_limit: "この回路は操作数の上限を超えているため、見積もりを計算できません。",
+        timed_out: "このブラウザではこの見積もりの計算に時間がかかりすぎたため、計算を中止しました。",
       }[reason] ?? "この回路の見積もりを計算できませんでした。"),
       verifySave: "検証して保存",
       starting: "開始中…",
