@@ -433,7 +433,9 @@ async def test_practising_after_the_deadline_does_not_make_an_on_time_member_lat
 
     rows = {
         row.user_id: row
-        for row in (await courses_repo.course_gradebook(creator, db, course.id, now=DUE + TICK)).rows
+        for row in (
+            await courses_repo.course_gradebook(creator, db, course.id, now=DUE + TICK)
+        ).rows
     }
     ana_entry = rows[ana.user_id].entries[0]
     bo_entry = rows[bo.user_id].entries[0]
@@ -466,7 +468,9 @@ async def test_one_members_on_time_attempt_does_not_clear_anothers_late_mark(db)
 
     rows = {
         row.user_id: row
-        for row in (await courses_repo.course_gradebook(creator, db, course.id, now=DUE + TICK)).rows
+        for row in (
+            await courses_repo.course_gradebook(creator, db, course.id, now=DUE + TICK)
+        ).rows
     }
     assert rows[ana.user_id].entries[0].late is False
     assert rows[bo.user_id].entries[0].late is True

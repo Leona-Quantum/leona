@@ -1056,9 +1056,7 @@ async def course_gradebook(
                 stale=current_version_id != version_id,
                 run_id=run_id,
                 graded_at=_required(graded_at, "graded_at"),
-                late=_is_late(
-                    _required(first_graded_at, "first_graded_at"), module.due_at
-                ),
+                late=_is_late(_required(first_graded_at, "first_graded_at"), module.due_at),
             )
         )
 
