@@ -315,6 +315,7 @@ async def transition(
     status: QpuRunStatus,
     *,
     provider_job_id: str | None = None,
+    backend_name: str | None = None,
     raw_counts: dict[str, int] | None = None,
     error: str | None = None,
     submitted_at: dt.datetime | None = None,
@@ -325,6 +326,10 @@ async def transition(
     The WHERE clause repeats the from-status predicate so two workers cannot
     both complete the same record: whoever loses the race matches zero rows
     and reads back the winner's terminal state instead of overwriting it.
+
+    `backend_name` is written only when given, like `provider_job_id` beside
+    it: a later transition that does not know the machine must not erase the
+    one the submit recorded.
     """
     require_write(scope)
     record = await get_record(scope, session, record_id)
@@ -334,6 +339,8 @@ async def transition(
     values: dict[str, Any] = {"status": status.value, "updated_at": dt.datetime.now(dt.UTC)}
     if provider_job_id is not None:
         values["provider_job_id"] = provider_job_id
+    if backend_name is not None:
+        values["backend_name"] = backend_name
     if raw_counts is not None:
         values["raw_counts"] = raw_counts
     if error is not None:

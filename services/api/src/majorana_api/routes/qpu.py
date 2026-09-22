@@ -424,6 +424,7 @@ def _to_qpu_run_resource(record: QpuRunRow) -> QpuRunRecord:
         provider=record.provider,
         device_id=record.device_id,
         provider_job_id=record.provider_job_id,
+        backend_name=record.backend_name,
         shots=record.shots,
         status=record.status,
         source_fingerprint=record.source_fingerprint,

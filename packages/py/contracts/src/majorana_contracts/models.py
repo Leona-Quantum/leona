@@ -1250,6 +1250,12 @@ class QpuRunRecord(_ResourceBase):
     provider: QpuProvider
     device_id: str
     provider_job_id: str | None = None
+    # The physical machine the provider ran the job on, as the provider named
+    # it (`ibm_brisbane`). `device_id` is Leona's catalog entry, and IBM picks
+    # the machine itself, so this is the only field that says which processor
+    # produced `raw_counts`. None when the provider reported nothing, which
+    # includes every run recorded before the field existed — never inferred.
+    backend_name: str | None = None
     shots: int = Field(ge=1)
     status: QpuRunStatus
     source_fingerprint: str

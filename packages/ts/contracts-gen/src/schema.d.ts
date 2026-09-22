@@ -3432,6 +3432,11 @@ export interface components {
              */
             artifact_version_id: string | null;
             /**
+             * Backend Name
+             * @default null
+             */
+            backend_name: string | null;
+            /**
              * Completed At
              * @default null
              */

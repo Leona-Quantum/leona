@@ -312,6 +312,7 @@ async def test_submission_with_open_gates_writes_the_record_and_enqueues(monkeyp
             provider=kwargs["provider"],
             device_id=kwargs["device_id"],
             provider_job_id=None,
+            backend_name=None,
             shots=kwargs["shots"],
             status="queued",
             source_fingerprint=kwargs["source_fingerprint"],
