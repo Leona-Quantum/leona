@@ -21,6 +21,50 @@ const args = process.argv.slice(2);
 const minEntriesFlag = args.indexOf("--min-entries");
 const MIN_ENTRIES = minEntriesFlag >= 0 ? Number(args[minEntriesFlag + 1]) : 1;
 const QUIET = args.includes("--quiet");
+
+// Hiragana and katakana, the iteration mark 々, CJK ideographs (extension A and
+// the main block), half-width katakana, and the closing brackets Japanese prose
+// ends a quotation with.
+const JA_FULL_STOP = /[\u3040-\u30ff\u3005\u3400-\u4dbf\u4e00-\u9fff\uff66-\uff9f）」』][.](?![0-9A-Za-z])/gu;
+
+/** Every `*Ja` string anywhere in `value` that ends a Japanese sentence with ".". */
+function jaFullStopHits(value, key = "") {
+  if (Array.isArray(value)) return value.flatMap((item) => jaFullStopHits(item, key));
+  if (value && typeof value === "object") {
+    return Object.entries(value).flatMap(([childKey, child]) => jaFullStopHits(child, childKey));
+  }
+  if (typeof value !== "string" || !key.endsWith("Ja")) return [];
+  return [...value.matchAll(JA_FULL_STOP)].map((m) => ({
+    key,
+    excerpt: value.slice(Math.max(0, m.index - 20), m.index + 3),
+  }));
+}
+
+if (args.includes("--self-test")) {
+  const cases = [
+    [{ descriptionJa: "説明です." }, 1],
+    [{ descriptionJa: "説明です.」" }, 1],
+    [{ descriptionJa: "人々." }, 1],
+    [{ descriptionJa: "説明です. 次の文です。" }, 1],
+    [{ literature: [{ relevanceJa: "論文です." }] }, 1],
+    [{ descriptionJa: "説明です。" }, 0],
+    [{ descriptionJa: "Grover et al. の手法です。" }, 0],
+    [{ descriptionJa: "確率は0.5です。" }, 0],
+    [{ descriptionJa: "ファイル名.json を開きます。" }, 0],
+    [{ description: "日本語の文です." }, 0],
+  ];
+  let bad = 0;
+  for (const [record, want] of cases) {
+    const got = jaFullStopHits(record).length;
+    if (got !== want) {
+      bad += 1;
+      console.error(`✖ self-test: ${JSON.stringify(record)} gave ${got} hit(s), wanted ${want}`);
+    }
+  }
+  if (bad) process.exit(1);
+  console.log(`✓ check-repository-data self-test: ${cases.length} Japanese full-stop cases`);
+  process.exit(0);
+}
 // --entry-file <path>: validate a single batch module (its default/array export)
 // in isolation — used by parallel content batches so one broken file doesn't
 // block another batch's check. relatedSlugs are then checked against the union
@@ -921,24 +965,17 @@ for (const entry of entries) {
 
 // Japanese prose ends a sentence with 。, not an ASCII full stop. The
 // literature-expansion intake wrote 37 summaries ending in "." after Japanese
-// text (fixed 2026-09-22), and each one reached three fields of its record. Only
-// a full stop straight after a Japanese character is refused, so "et al." and
-// decimals inside Japanese text stay legal.
+// text (fixed 2026-09-22), and each one reached three fields of its record. A
+// full stop straight after a Japanese character is refused unless a letter or
+// digit follows it, so "et al." and decimals stay legal while "です.」" and
+// "人々." are caught (both slipped past the first version of this rule; review
+// on PR 966). `--self-test` pins every one of those cases.
 {
-  const JA_SENTENCE_END = /[\u3040-\u30ff\u4e00-\u9fff）」][.](?=\s|$)/u;
-  const walk = (value, key, slug) => {
-    if (Array.isArray(value)) {
-      for (const item of value) walk(item, key, slug);
-    } else if (value && typeof value === "object") {
-      for (const [childKey, child] of Object.entries(value)) walk(child, childKey, slug);
-    } else if (typeof value === "string" && key.endsWith("Ja") && JA_SENTENCE_END.test(value)) {
-      const at = value.search(JA_SENTENCE_END);
-      errors.push(
-        `${slug}: ${key} ends a Japanese sentence with "." instead of "。" (…${value.slice(Math.max(0, at - 20), at + 2)})`,
-      );
+  for (const entry of entries) {
+    for (const hit of jaFullStopHits(entry)) {
+      errors.push(`${entry.slug}: ${hit.key} ends a Japanese sentence with "." instead of "。" (…${hit.excerpt})`);
     }
-  };
-  for (const entry of entries) walk(entry, "", entry.slug);
+  }
 }
 
 // Every field label a record shows needs its Japanese name. The record page falls
