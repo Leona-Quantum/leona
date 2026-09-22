@@ -258,6 +258,10 @@
      block is the header's visible box, and an item already past it has nowhere to stick.) */
   .mj-public-site .lq-public-auth { order: 1; }
   .mj-public-site .lq-public-navigation { order: 2; }
+  /* Signed in, the slot holds Sign out and then the workspace button, and in Japanese the
+     pair is wider than what is left beside the wordmark, so the button was cut at the
+     edge. The button leads; Sign out follows it into the scrolling part of the row. */
+  .mj-public-site .lq-public-auth .mj-public-nav-primary { order: -1; }
   .mj-public-site .mj-public-footer-links { flex-wrap: wrap; }
   .lq-site-product-grid { grid-template-columns: minmax(0, 1fr); gap: var(--sp-2); }
   .mj-about-site .mj-about-person-card { display: block; }
