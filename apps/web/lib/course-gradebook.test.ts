@@ -73,11 +73,11 @@ test("totals pending: a module still generating, one with no notebook, or nothin
   const generating = { id: "b", seq: 2, slug: "b", title: "B", notebook_id: "nb-b", graded_cells: null };
   const planned = { id: "c", seq: 3, slug: "c", title: "C", notebook_id: null, graded_cells: null };
 
-  assert.equal(gradebookTotalsPending({ modules: [ready], rows: [row(2)] }), null);
+  assert.equal(gradebookTotalsPending({ modules: [ready], rows: [row(2)] }), false);
   // "Still being generated" only when a module HAS a notebook that is not ready.
-  assert.equal(gradebookTotalsPending({ modules: [ready, generating, planned], rows: [row(null)] }), "generating");
+  assert.equal(gradebookTotalsPending({ modules: [ready, generating, planned], rows: [row(null)] }), true);
   // A module nobody has generated is not "being generated".
-  assert.equal(gradebookTotalsPending({ modules: [ready, planned], rows: [row(null)] }), "no_notebook");
+  assert.equal(gradebookTotalsPending({ modules: [ready, planned], rows: [row(null)] }), true);
   // Every total known (each member was graded on the unknown module): nothing to say.
-  assert.equal(gradebookTotalsPending({ modules: [ready, generating], rows: [row(4)] }), null);
+  assert.equal(gradebookTotalsPending({ modules: [ready, generating], rows: [row(4)] }), false);
 });

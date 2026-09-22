@@ -953,8 +953,7 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
     gradebookNotStarted: string;
     /** A course total that cannot be known yet: a module still has no ready notebook. */
     gradebookTotalUnknown: string;
-    gradebookTotalsGenerating: string;
-    gradebookTotalsNoNotebook: string;
+    gradebookTotalsPending: string;
     gradebookScore: (passed: number, graded: number) => string;
     gradebookOlderVersion: string;
     gradebookOlderVersionHint: (seq: number) => string;
@@ -2063,8 +2062,7 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
     gradebookLastColumn: "Last checked",
     gradebookNotStarted: "Not started",
     gradebookTotalUnknown: "Not known yet",
-    gradebookTotalsGenerating: "Some modules are still being generated, so totals are not known yet.",
-    gradebookTotalsNoNotebook: "Some modules do not have a notebook yet, so totals are not known yet.",
+    gradebookTotalsPending: "Some modules do not have a ready notebook yet, so totals are not known yet.",
     gradebookScore: (passed, graded) => `${passed} of ${graded} exercises correct`,
     gradebookOlderVersion: "Earlier version",
     gradebookOlderVersionHint: (seq) =>
@@ -3163,8 +3161,7 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
     gradebookLastColumn: "最終採点",
     gradebookNotStarted: "未着手",
     gradebookTotalUnknown: "未確定",
-    gradebookTotalsGenerating: "生成中のモジュールがあるため、合計はまだ確定していません。",
-    gradebookTotalsNoNotebook: "ノートブックがまだないモジュールがあるため、合計はまだ確定していません。",
+    gradebookTotalsPending: "準備のできたノートブックがまだないモジュールがあるため、合計はまだ確定していません。",
     gradebookScore: (passed, graded) => `${graded} 問中 ${passed} 問が正解です`,
     gradebookOlderVersion: "以前の版",
     gradebookOlderVersionHint: (seq) => `このノートブックの版 ${seq} で採点された結果です。その後、内容が改訂されています。`,

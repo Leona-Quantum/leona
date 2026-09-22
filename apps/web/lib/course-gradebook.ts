@@ -41,19 +41,21 @@ export function gradebookCsvFilename(slug: string): string {
 }
 
 /**
- * Why some course totals are not known yet, or `null` when every total is.
+ * Whether some course totals are not known yet.
  *
  * A total is `null` from the control plane when a module the member has not been
  * graded on has no ready notebook to count. During generation that is the normal
  * state, and a number there would be smaller than the real total, which reads as a
- * better score than the member has. The two reasons get different sentences because
- * "still being generated" is untrue of a module nobody has generated.
+ * better score than the member has.
+ *
+ * One reason, one sentence ("no ready notebook yet"). An earlier version told a
+ * module with a notebook apart as "still being generated", but the gradebook also
+ * gets a notebook with no count when generation FAILED or its spec no longer
+ * validates, and "still being generated" is untrue of those (review on PR 965). The
+ * module list carries no status to tell them apart, so the sentence says only what
+ * is true of all of them.
  */
-export function gradebookTotalsPending(
-  book: Pick<CourseGradebook, "modules" | "rows">,
-): "generating" | "no_notebook" | null {
-  if (!(book.rows ?? []).some((row) => row.total_graded_cells == null)) return null;
-  const unknown = gradebookColumns(book).filter((module) => module.graded_cells == null);
-  if (unknown.some((module) => module.notebook_id)) return "generating";
-  return unknown.length > 0 ? "no_notebook" : null;
+export function gradebookTotalsPending(book: Pick<CourseGradebook, "modules" | "rows">): boolean {
+  if (!(book.rows ?? []).some((row) => row.total_graded_cells == null)) return false;
+  return gradebookColumns(book).some((module) => module.graded_cells == null);
 }

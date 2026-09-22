@@ -193,8 +193,7 @@ test("reader-facing gradebook copy has no em dashes in either language", () => {
       strings.gradebookOlderVersionHint(3),
       strings.gradebookDownloadCsvFailed,
       strings.gradebookTotalUnknown,
-      strings.gradebookTotalsGenerating,
-      strings.gradebookTotalsNoNotebook,
+      strings.gradebookTotalsPending,
     ];
     for (const text of texts) assert.doesNotMatch(text, /[\u2013\u2014]/, `${locale}: ${text}`);
   }
@@ -211,7 +210,7 @@ test("while a module is still generating, a started member's total says not know
   };
   const screen = view(generating);
 
-  assert.ok(screen.getByText(copy.gradebookTotalsGenerating));
+  assert.ok(screen.getByText(copy.gradebookTotalsPending));
   const anaRow = screen.getByRole("rowheader", { name: /Ana/ }).closest("tr");
   assert.ok(anaRow);
   const anaCells = [...anaRow.querySelectorAll("td")].map((cell) => cell.textContent);
@@ -226,6 +225,6 @@ test("while a module is still generating, a started member's total says not know
   // The Japanese sentence and cell, from the same state.
   const ja = WORKSPACE_COPY.ja.courses;
   const jaScreen = view(generating, "ja");
-  assert.ok(jaScreen.getByText(ja.gradebookTotalsGenerating));
+  assert.ok(jaScreen.getByText(ja.gradebookTotalsPending));
   assert.ok(jaScreen.getByText(ja.gradebookTotalUnknown));
 });

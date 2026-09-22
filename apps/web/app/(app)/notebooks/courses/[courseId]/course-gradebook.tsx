@@ -201,7 +201,7 @@ export function CourseGradebookView({
 
       {book && rows.length > 0 && totalsPending ? (
         <p className="mj-notebook-chat-empty">
-          {totalsPending === "generating" ? coursesCopy.gradebookTotalsGenerating : coursesCopy.gradebookTotalsNoNotebook}
+          {coursesCopy.gradebookTotalsPending}
         </p>
       ) : null}
 
