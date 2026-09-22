@@ -85,6 +85,13 @@ export function CommentsPanel({
   const [editError, setEditError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
 
+  // One Idempotency-Key per submission (where it goes + what it says), kept until
+  // that submission's outcome is known, the way the notebook's grading attempts
+  // keep theirs. A retry after a lost response then carries the SAME key and the
+  // server hands back the comment it already made; editing the text first makes
+  // it a different submission with a new key.
+  const pendingKeys = useRef(new Map<string, string>());
+
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
   const [deleting, setDeleting] = useState<string | null>(null);
   const [itemError, setItemError] = useState<{ id: string; message: string } | null>(null);
@@ -148,16 +155,26 @@ export function CommentsPanel({
 
   /** Posts, and answers with the sentence to show if it did not work. */
   async function post(body: string, parentId: string | null): Promise<string | null> {
+    const submission = `${parentId ?? ""}\u0000${body}`;
+    const key = pendingKeys.current.get(submission) ?? crypto.randomUUID();
+    pendingKeys.current.set(submission, key);
     try {
       const response = await fetch("/api/comments", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", "Idempotency-Key": key },
         body: JSON.stringify({ target_type: targetType, target_id: targetId, body, parent_id: parentId }),
       });
       if (response.status === 201) {
         const created = (await response.json()) as Comment;
+        pendingKeys.current.delete(submission);
         setItems((current) => mergeComments(current, [created]));
         return null;
+      }
+      // Refused for good (a 4xx other than a rate limit): the next attempt is a
+      // new submission. A 429 or a 5xx keeps the key, because the post may yet
+      // have landed and a retry must be able to find it.
+      if (response.status >= 400 && response.status < 500 && response.status !== 429) {
+        pendingKeys.current.delete(submission);
       }
       const reason = await refusalReason(response);
       if (response.status === 429) return copy.rateLimited;

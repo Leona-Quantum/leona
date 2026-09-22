@@ -22,17 +22,18 @@ import uuid
 
 import httpx
 import pytest
-from majorana_contracts import Scope
+from majorana_contracts import CommentTargetType, Scope
 from majorana_contracts.enums import Role, RunMode
 from matrix_helpers import requires_db
 from repo_test_helpers import delete_committed_tenants
-from sqlalchemy import select
+from sqlalchemy import func, select
 
 from majorana_api.app import create_app
 from majorana_api.auth import deps as auth_deps
 from majorana_api.db import engine_from_env, session_factory
-from majorana_api.orm import AuditLog, User
+from majorana_api.orm import AuditLog, CommentMention, User
 from majorana_api.repos import artifacts as artifacts_repo
+from majorana_api.repos import comments
 from majorana_api.repos import notebooks as notebooks_repo
 from majorana_api.repos import runs as runs_repo
 from majorana_api.repos import system, workspaces
@@ -556,3 +557,149 @@ async def test_the_static_paths_are_not_swallowed_by_the_id_route(stage):
             "/v1/comments", params={"target_type": "project", "target_id": str(uuid.uuid4())}
         )
     ).status_code == 422
+
+
+async def _post_keyed(client, target_type, target_id, body, key, parent_id=None):
+    payload = {"target_type": target_type, "target_id": str(target_id), "body": body}
+    if parent_id is not None:
+        payload["parent_id"] = str(parent_id)
+    return await client.post("/v1/comments", json=payload, headers={"Idempotency-Key": key})
+
+
+async def test_a_retry_with_the_same_key_returns_the_original_and_creates_nothing(stage):
+    """The lost-response retry (Greptile, PR 968): same key, same request, twice."""
+    clients = stage["clients"]
+    run = stage["a"]["run"]
+    key = f"retry-{uuid.uuid4()}"
+    body = f"did the seed change? @{_handle(stage, 'admin')}"
+
+    first = await _post_keyed(clients["member"], "run", run, body, key)
+    assert first.status_code == 201, first.text
+    # Whitespace around the body is trimmed before hashing, so this is the same request.
+    again = await _post_keyed(clients["member"], "run", run, f"  {body}\n", key)
+    assert again.status_code == 201, again.text
+    assert again.json() == first.json(), "the retry gets the original comment back, unchanged"
+
+    items = (await _thread(clients["member"], "run", run)).json()["items"]
+    assert [i["id"] for i in items] == [first.json()["id"]], "nothing new was written"
+    inbox = (await clients["admin"].get("/v1/comments/mentions")).json()["items"]
+    assert [i["id"] for i in inbox] == [first.json()["id"]], "the mention was not sent twice"
+    async with stage["factory"]() as session:
+        mention_rows = (
+            await session.execute(
+                select(func.count())
+                .select_from(CommentMention)
+                .where(CommentMention.comment_id == uuid.UUID(first.json()["id"]))
+            )
+        ).scalar_one()
+    assert mention_rows == 1
+
+
+async def test_a_reused_key_with_a_different_request_is_refused_and_writes_nothing(stage):
+    clients = stage["clients"]
+    run, notebook = stage["a"]["run"], stage["a"]["notebook"]
+    key = f"reuse-{uuid.uuid4()}"
+    original = await _post_keyed(clients["member"], "run", run, "first words", key)
+    assert original.status_code == 201
+
+    for target_type, target_id, body in (
+        ("run", run, "different words"),
+        ("notebook", notebook, "first words"),
+    ):
+        refused = await _post_keyed(clients["member"], target_type, target_id, body, key)
+        assert refused.status_code == 409, refused.text
+        assert refused.json()["reason"] == "idempotency_key_reused"
+    assert [i["body"] for i in (await _thread(clients["member"], "run", run)).json()["items"]] == [
+        "first words"
+    ]
+    assert (await _thread(clients["member"], "notebook", notebook)).json()["items"] == []
+
+    # A key is the author's own: someone else using the same string gets their
+    # own comment, never the first author's back.
+    theirs = await _post_keyed(clients["member2"], "run", run, "first words", key)
+    assert theirs.status_code == 201
+    assert theirs.json()["id"] != original.json()["id"]
+    assert theirs.json()["author"]["user_id"] == str(stage["scopes"]["member2"].user_id)
+
+    too_long = await _post_keyed(clients["member"], "run", run, "x", "k" * 256)
+    assert too_long.status_code == 422
+
+
+async def test_a_retry_is_not_charged_against_the_posting_limit(stage):
+    scopes, people = stage["scopes"], stage["people"]
+    tight = _client(
+        stage["factory"],
+        stage["engine"],
+        scopes["member"],
+        people["member"][0],
+        people["owner"][1],
+        comment_rate_limit_per_minute=1,
+    )
+    try:
+        run = stage["a"]["run"]
+        key = f"metered-{uuid.uuid4()}"
+        assert (await _post_keyed(tight, "run", run, "only one", key)).status_code == 201
+        retry = await _post_keyed(tight, "run", run, "only one", key)
+        assert retry.status_code == 201, "the comment exists; returning it costs no allowance"
+        assert (await _post(tight, "run", run, "a second one")).status_code == 429
+    finally:
+        await tight.aclose()
+
+
+async def test_two_inserts_racing_on_one_key_become_in_flight_not_a_500(stage):
+    """The window the route's lookup cannot close: both requests passed it. Driven
+    at the repository, where the unique index is what decides."""
+    scope = stage["scopes"]["member"]
+    key = f"race-{uuid.uuid4()}"
+    async with stage["factory"]() as session:
+        await comments.create_comment(
+            scope,
+            session,
+            target_type=CommentTargetType.RUN,
+            target_id=stage["a"]["run"],
+            body="winner",
+            idempotency_key=key,
+            idempotency_request_hash="a" * 64,
+        )
+        with pytest.raises(comments.CommentIdempotencyKeyInFlight):
+            await comments.create_comment(
+                scope,
+                session,
+                target_type=CommentTargetType.RUN,
+                target_id=stage["a"]["run"],
+                body="loser",
+                idempotency_key=key,
+                idempotency_request_hash="a" * 64,
+            )
+        await session.rollback()
+
+
+async def test_a_member_whose_address_is_not_ascii_can_be_mentioned_by_the_handle_served(stage):
+    """End to end for the handle invariant (Greptile, PR 968): whatever handle
+    `GET /v1/comments/people` serves for a member is one `POST /v1/comments`
+    resolves back to that member, including an address the parser cannot read."""
+    tag = stage["tag"]
+    async with stage["factory"]() as session:
+        for name, email in (("yamada", f"山田@例え{tag}.jp"), ("jose", f"José{tag}@comments.test")):
+            user, personal = await system.get_or_provision_user(
+                session, workos_user_id=f"comments-{name}-{tag}", email=email
+            )
+            # Registered for teardown before anything can fail.
+            stage["people"][name] = (user, personal)
+            await workspaces.add_member(
+                stage["owner_scope"], session, user_id=user.id, role=Role.MEMBER
+            )
+        await session.commit()
+
+    member = stage["clients"]["member"]
+    people = (await member.get("/v1/comments/people")).json()["items"]
+    served = {p["user_id"]: p["handle"] for p in people}
+    yamada = str(stage["people"]["yamada"][0].id)
+    jose = str(stage["people"]["jose"][0].id)
+    assert served[jose] == f"jose{tag}", "accents fold to the ASCII short form"
+    assert served[yamada].startswith("member-"), "no ASCII to build a handle from"
+
+    for user_id in (yamada, jose):
+        posted = await _post(member, "run", stage["a"]["run"], f"cc @{served[user_id]} please")
+        assert posted.status_code == 201
+        assert [p["user_id"] for p in posted.json()["mentions"]] == [user_id]

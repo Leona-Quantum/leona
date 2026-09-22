@@ -49,6 +49,29 @@ def touched_now() -> dt.datetime:
     return dt.datetime.now(dt.timezone.utc)
 
 
+def is_unique_violation(exc: Exception, index_name: str) -> bool:
+    """True only for a unique violation on the NAMED index.
+
+    Read from the driver's diagnostics where available (psycopg exposes
+    `sqlstate` and `diag.constraint_name`) and falls back to the index name
+    appearing in the message, which is how every Postgres driver renders it. The
+    fallback matters because a false negative here is safe (a genuine race
+    surfaces as a 500 instead of a 409, which is loud) while a false positive is
+    not (a real fault answered as retryable).
+
+    Shared by every idempotent insert (`runs.create_run`,
+    `comments.create_comment`), so the one subtle rule, never relabel a
+    DIFFERENT constraint's failure as "retry to receive it", lives in one place.
+    """
+    orig = getattr(exc, "orig", None)
+    if getattr(orig, "sqlstate", None) not in (None, "23505"):
+        return False
+    constraint = getattr(getattr(orig, "diag", None), "constraint_name", None)
+    if constraint:
+        return constraint == index_name
+    return index_name in str(exc)
+
+
 def require_write(scope: Scope) -> None:
     if scope.role not in WRITE_ROLES:
         raise AuthzError(f"role {scope.role} cannot write")

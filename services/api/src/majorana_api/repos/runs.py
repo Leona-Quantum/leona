@@ -23,7 +23,7 @@ from ..orm import Run, RunEvent, User, VerificationRecord
 from ..tiers import TOKENS_PER_RUN_EQUIVALENT
 from . import artifacts as artifacts_repo
 from . import usage as usage_repo
-from ._base import NotFoundError, require_write
+from ._base import NotFoundError, is_unique_violation, require_write
 from .system import queue_positions_for_jobs
 
 
@@ -231,20 +231,10 @@ _IDEMPOTENCY_INDEX = "uq_runs_workspace_idempotency_key"
 def _is_idempotency_conflict(exc: IntegrityError) -> bool:
     """True only for a unique violation on the idempotency index.
 
-    Read from the driver's diagnostics where available — psycopg exposes
-    `sqlstate` and `diag.constraint_name` — and falls back to the index name
-    appearing in the message, which is how every Postgres driver renders it. The
-    fallback matters because a false negative here is safe (a genuine race
-    surfaces as a 500 instead of a 409, which is loud) while a false positive is
-    not (a real fault answered as retryable).
+    The rule, and why its fallback errs the way it does, is `_base.is_unique_violation`,
+    shared with every other idempotent insert.
     """
-    orig = getattr(exc, "orig", None)
-    if getattr(orig, "sqlstate", None) not in (None, "23505"):
-        return False
-    constraint = getattr(getattr(orig, "diag", None), "constraint_name", None)
-    if constraint:
-        return constraint == _IDEMPOTENCY_INDEX
-    return _IDEMPOTENCY_INDEX in str(exc)
+    return is_unique_violation(exc, _IDEMPOTENCY_INDEX)
 
 
 class IdempotencyKeyInFlight(Exception):

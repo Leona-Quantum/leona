@@ -33,18 +33,26 @@ export async function GET(request: Request) {
   }
 }
 
-/** Post a comment or a reply: `CreateCommentRequest` -> `Comment`. */
+/**
+ * Post a comment or a reply: `CreateCommentRequest` -> `Comment`.
+ *
+ * `Idempotency-Key` is forwarded, the way `POST /api/runs` forwards it, so the
+ * panel's retry of a post whose response was lost gets the first comment back
+ * instead of posting it twice.
+ */
 export async function POST(request: Request) {
   const [{ accessToken }, body] = await Promise.all([
     getMajoranaAuth({ ensureSignedIn: true }),
     request.text(),
   ]);
+  const idempotencyKey = request.headers.get("Idempotency-Key");
   try {
     const upstream = await fetchControlPlane(controlPlaneUrl("/v1/comments"), {
       method: "POST",
       headers: {
         Authorization: `Bearer ${accessToken}`,
         "Content-Type": request.headers.get("Content-Type") ?? "application/json",
+        ...(idempotencyKey ? { "Idempotency-Key": idempotencyKey } : {}),
       },
       body,
     });

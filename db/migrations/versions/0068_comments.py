@@ -47,6 +47,18 @@ but not in the (workspace, person, newest) order the inbox reads.
   isolation; a comment whose notebook was later soft-deleted keeps its row,
   because nothing here ever hard-deletes a notebook, run or artifact.
 
+## Idempotency
+
+`POST /v1/comments` takes an `Idempotency-Key`, the same contract `POST /v1/runs`
+has (0002 and 0047): a retry after a lost response returns the comment the first
+request created instead of posting it twice, and a reused key with a different
+body is refused. The key is stored with a SHA-256 of the admitted request, and
+`uq_comments_author_idempotency_key` is unique per (workspace, author, key), not
+per workspace as for runs. A key is the author's own: two people who happen to
+choose the same string must each get their own comment, and the lookup must
+never hand one person another person's comment. Both columns are NULL for a
+comment posted without a key, and they are NULL together (`ck_comments_idempotency_pair`).
+
 ## Soft delete, and the grant that makes it the only kind
 
 A deleted comment keeps its place in its thread (`deleted_at` is set, the API
@@ -106,6 +118,8 @@ def upgrade() -> None:
         ),
         sa.Column("edited_at", sa.TIMESTAMP(timezone=True), nullable=True),
         sa.Column("deleted_at", sa.TIMESTAMP(timezone=True), nullable=True),
+        sa.Column("idempotency_key", sa.Text(), nullable=True),
+        sa.Column("idempotency_request_hash", sa.Text(), nullable=True),
         sa.ForeignKeyConstraint(["workspace_id"], ["workspaces.id"]),
         sa.ForeignKeyConstraint(["author_user_id"], ["users.id"]),
         # Serves the thread read — `WHERE workspace_id, target_type, target_id
@@ -123,6 +137,21 @@ def upgrade() -> None:
         sa.CheckConstraint(
             "parent_id is null or parent_id <> id", name="ck_comments_not_own_parent"
         ),
+        sa.CheckConstraint(
+            "idempotency_key is null or char_length(idempotency_key) between 1 and 255",
+            name="ck_comments_idempotency_key_length",
+        ),
+        sa.CheckConstraint(
+            "(idempotency_key is null) = (idempotency_request_hash is null)",
+            name="ck_comments_idempotency_pair",
+        ),
+    )
+    op.create_index(
+        "uq_comments_author_idempotency_key",
+        "comments",
+        ["workspace_id", "author_user_id", "idempotency_key"],
+        unique=True,
+        postgresql_where=sa.text("idempotency_key IS NOT NULL"),
     )
     op.create_foreign_key(
         "fk_comments_parent_same_thread",

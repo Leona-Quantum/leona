@@ -435,6 +435,11 @@ class Comment(Base):
     created_at: Mapped[dt.datetime | None] = mapped_column(server_default=func.now())
     edited_at: Mapped[dt.datetime | None]
     deleted_at: Mapped[dt.datetime | None]
+    #: `Idempotency-Key` of the POST that created it, and the SHA-256 of that
+    #: request, so a retry returns this row and a reused key with another body
+    #: is refused. NULL together when no key was sent.
+    idempotency_key: Mapped[str | None]
+    idempotency_request_hash: Mapped[str | None]
 
 
 class CommentMention(Base):

@@ -37,6 +37,7 @@ import uuid
 
 from majorana_contracts import CommentTargetType, Scope
 from sqlalchemy import and_, delete, exists, or_, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..ids import uuid7
@@ -46,7 +47,7 @@ from . import artifacts as artifacts_repo
 from . import notebooks as notebooks_repo
 from . import runs as runs_repo
 from ._base import ADMIN_ROLES, WRITE_ROLES, AuthzError, NotFoundError, RepoError
-from ._base import require_write, touched_now
+from ._base import is_unique_violation, require_write, touched_now
 from .audit import record_audit
 
 
@@ -60,6 +61,17 @@ class CommentRefused(RepoError):
     def __init__(self, reason: str):
         super().__init__(reason)
         self.reason = reason
+
+
+#: The partial unique index migration 0068 creates on
+#: (workspace_id, author_user_id, idempotency_key).
+_IDEMPOTENCY_INDEX = "uq_comments_author_idempotency_key"
+
+
+class CommentIdempotencyKeyInFlight(RepoError):
+    """Another request from the same author holds this Idempotency-Key and won the
+    insert. Raised here so the route never has to know which index refused it, and
+    never has to import sqlalchemy to find out (AGENTS.md rule 2)."""
 
 
 @dataclasses.dataclass(frozen=True)
@@ -315,6 +327,34 @@ async def list_mentions(
     return await _read(scope, session, rows, next_cursor=next_cursor)
 
 
+async def find_by_idempotency_key(
+    scope: Scope, session: AsyncSession, idempotency_key: str
+) -> Comment | None:
+    """The comment THIS author posted in THIS workspace under this key, if any.
+
+    Keyed on the author as well as the workspace, like the index: a key is the
+    caller's own, so another member's comment is never what a retry gets back.
+    """
+    return (
+        (
+            await session.execute(
+                select(Comment).where(
+                    Comment.workspace_id == scope.workspace_id,
+                    Comment.author_user_id == scope.user_id,
+                    Comment.idempotency_key == idempotency_key,
+                )
+            )
+        )
+        .scalars()
+        .first()
+    )
+
+
+async def read_one(scope: Scope, session: AsyncSession, row: Comment) -> CommentRead:
+    """One stored comment, with what a route needs to serialize it."""
+    return await _read(scope, session, [row])
+
+
 # ------------------------------------------------------------------------------ writes
 
 
@@ -343,8 +383,15 @@ async def create_comment(
     target_id: uuid.UUID,
     body: str,
     parent_id: uuid.UUID | None = None,
+    idempotency_key: str | None = None,
+    idempotency_request_hash: str | None = None,
 ) -> CommentRead:
     """A new comment, or a reply when `parent_id` is set.
+
+    `idempotency_key` and its request hash are stored with the row. The route looks
+    a key up first (`find_by_idempotency_key`); this only has to turn the race two
+    concurrent retries can still run, both past that lookup, into
+    `CommentIdempotencyKeyInFlight` rather than a 500.
 
     Threads are one level deep. A reply to a reply is filed under the comment at
     the top of that thread rather than refused, because the person replying meant
@@ -371,11 +418,20 @@ async def create_comment(
         author_user_id=scope.user_id,
         parent_id=top_id,
         body=body,
+        idempotency_key=idempotency_key,
+        idempotency_request_hash=idempotency_request_hash,
     )
     session.add(row)
     # The mention rows reference the comment through a foreign key, so it has to
     # exist first.
-    await session.flush()
+    try:
+        await session.flush()
+    except IntegrityError as exc:
+        # ONLY the idempotency index, by name. Any other constraint failing here
+        # is a real fault and must not be answered "retry to receive it".
+        if idempotency_key is not None and is_unique_violation(exc, _IDEMPOTENCY_INDEX):
+            raise CommentIdempotencyKeyInFlight(idempotency_key) from exc
+        raise
     members = await _members(scope, session)
     await _replace_mentions(scope, session, row, members)
     await session.flush()

@@ -1,7 +1,8 @@
 """Comments and @-mentions on runs, notebooks and saved circuits (proposal 9).
 
     GET    /v1/comments?target_type=&target_id=   the thread on one thing, oldest first
-    POST   /v1/comments                           comment, or reply with `parent_id`
+    POST   /v1/comments                           comment, or reply with `parent_id`;
+                                                  takes an `Idempotency-Key`
     PATCH  /v1/comments/{comment_id}              the author rewrites their comment
     DELETE /v1/comments/{comment_id}              the author, or an owner or admin
     GET    /v1/comments/mentions                  comments that mention me, newest first
@@ -19,11 +20,13 @@ repository layer raises the same `NotFoundError` for both.
 
 from __future__ import annotations
 
+import hashlib
+import json
 import uuid
 from typing import Annotated
 
 import majorana_contracts as contracts
-from fastapi import APIRouter, HTTPException, Query, Request, Response
+from fastapi import APIRouter, Header, HTTPException, Query, Request, Response
 from majorana_contracts import CommentTargetType, Scope
 
 from ..auth.deps import CurrentScope, DbSession
@@ -178,11 +181,59 @@ async def list_comments(
     return _to_list(scope, read)
 
 
+def _idempotency_request_hash(body: CreateCommentRequest) -> str:
+    """Fingerprint the whole admitted request, the way `routes/runs.py` does.
+
+    `model_dump(mode="json")` rather than a hand-picked subset, so a field added
+    to the request later is covered without anybody remembering it here. The body
+    is hashed AFTER validation has trimmed it, so a retry that differs only in
+    surrounding whitespace is still the same request.
+    """
+    return hashlib.sha256(
+        json.dumps(body.model_dump(mode="json"), sort_keys=True).encode()
+    ).hexdigest()
+
+
+def _key_reused() -> HTTPException:
+    return HTTPException(
+        409,
+        detail={
+            "error": (
+                "This Idempotency-Key was used for a different comment. Use a new key, "
+                "or resend the original request to receive its comment."
+            ),
+            "reason": "idempotency_key_reused",
+        },
+    )
+
+
 @router.post("/comments", response_model=contracts.Comment, status_code=201)
 async def create_comment(
-    request: Request, body: CreateCommentRequest, scope: CurrentScope, session: DbSession
+    request: Request,
+    body: CreateCommentRequest,
+    scope: CurrentScope,
+    session: DbSession,
+    idempotency_key: Annotated[
+        str | None, Header(alias="Idempotency-Key", min_length=1, max_length=255)
+    ] = None,
 ) -> contracts.Comment:
-    """Post a comment, or a reply when `parent_id` is set. Viewers get 403."""
+    """Post a comment, or a reply when `parent_id` is set. Viewers get 403.
+
+    Takes an `Idempotency-Key`, with `POST /v1/runs`'s contract: a retry carrying
+    the key of a comment this person already posted gets that comment back (201,
+    nothing new written, no mention sent twice), and the same key with a different
+    request is 409 `idempotency_key_reused`. The lookup runs BEFORE the posting
+    meter, so retrying a post whose response was lost does not spend the caller's
+    allowance on a comment that already exists.
+    """
+    request_hash = _idempotency_request_hash(body) if idempotency_key else None
+    if idempotency_key:
+        existing = await comments_repo.find_by_idempotency_key(scope, session, idempotency_key)
+        if existing is not None:
+            if existing.idempotency_request_hash != request_hash:
+                raise _key_reused()
+            read = await comments_repo.read_one(scope, session, existing)
+            return _to_comment(scope, existing, read)
     _meter(request, scope)
     try:
         read = await comments_repo.create_comment(
@@ -192,9 +243,25 @@ async def create_comment(
             target_id=body.target_id,
             body=body.body,
             parent_id=body.parent_id,
+            idempotency_key=idempotency_key,
+            idempotency_request_hash=request_hash,
         )
     except comments_repo.CommentRefused as exc:
         raise _refused(exc) from None
+    except comments_repo.CommentIdempotencyKeyInFlight:
+        # Two requests with the same key both passed the lookup above and the
+        # unique index let exactly one insert through. Losing that race is not a
+        # server fault; the other request's comment exists or is about to.
+        raise HTTPException(
+            409,
+            detail={
+                "error": (
+                    "A comment with this Idempotency-Key is being posted by another "
+                    "request. Retry to receive it."
+                ),
+                "reason": "idempotency_key_in_flight",
+            },
+        ) from None
     return _to_comment(scope, read.comments[0], read)
 
 
