@@ -3275,7 +3275,7 @@ function SimulationPanel({
         {/* After the CPU records, not between the run button and its result:
             you run, then you read, then you consider hardware (UX pass 6). */}
         <div className="mj-studio-lane">
-          <QpuLane artifact={artifact} shots={shots} copy={copy} limits={limits} />
+          <QpuLane artifact={artifact} shots={shots} copy={copy} limits={limits} workingOut={WORKSPACE_COPY[locale].hardwareRuns.workingOut} />
         </div>
       </div>
     </section>
@@ -3353,7 +3353,7 @@ function hardwareRefusalText(cause: unknown, copy: StudioCopy): string {
   return cause.message;
 }
 
-function QpuLane({ artifact, shots, copy, limits }: { artifact: LibraryArtifact | null; shots: string; copy: StudioCopy; limits: CpuSimulationLimits }) {
+function QpuLane({ artifact, shots, copy, limits, workingOut }: { artifact: LibraryArtifact | null; shots: string; copy: StudioCopy; limits: CpuSimulationLimits; workingOut: string }) {
   const [backends, setBackends] = useState<QpuBackendInfo[] | null>(null);
   const [gate, setGate] = useState<QpuSubmissionGate | null>(null);
   const [catalogError, setCatalogError] = useState(false);
@@ -3572,6 +3572,7 @@ function QpuLane({ artifact, shots, copy, limits }: { artifact: LibraryArtifact 
                   counts={shownRun.raw_counts}
                   limits={limits}
                   copy={copy}
+                  workingOut={workingOut}
                 />
               ) : null}
             </div>
