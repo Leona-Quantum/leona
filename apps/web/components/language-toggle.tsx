@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { PUBLIC_LOCALE_COOKIE, type PublicLocale } from "../lib/public-locale";
+import { PUBLIC_LOCALE_COOKIE, PUBLIC_LOCALE_COOKIE_MAX_AGE_SECONDS, type PublicLocale } from "../lib/public-locale";
 
 /**
  * Switches the reader's locale: write the cookie, then re-render. The caller says how.
@@ -30,7 +30,7 @@ export function LanguageToggle({
 
   function selectLocale(nextLocale: PublicLocale) {
     if (nextLocale === locale) return;
-    document.cookie = `${PUBLIC_LOCALE_COOKIE}=${nextLocale}; Path=/; Max-Age=31536000; SameSite=Lax`;
+    document.cookie = `${PUBLIC_LOCALE_COOKIE}=${nextLocale}; Path=/; Max-Age=${PUBLIC_LOCALE_COOKIE_MAX_AGE_SECONDS}; SameSite=Lax`;
     if (mode === "refresh") {
       // The root layout re-renders <html lang> from the cookie; set it now too so
       // nothing reads the old language during the round trip.

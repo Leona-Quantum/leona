@@ -20,10 +20,16 @@
 import { authkitMiddleware } from "@workos-inc/authkit-nextjs";
 import { NextResponse, type NextFetchEvent, type NextRequest } from "next/server";
 import { isWorkosAuthConfigured } from "./lib/auth-config";
-import { canonicalLocaleTarget } from "./lib/canonical-locale-redirect";
+import { canonicalLocaleTarget, localePrefixOf } from "./lib/canonical-locale-redirect";
 import { isLocalDevAuthEnabled } from "./lib/local-dev-auth";
 import { pageviewLoggingEnabled, pageviewSignal } from "./lib/pageview-signal";
-import { LEGACY_PUBLIC_LOCALE_COOKIE, parsePublicLocale, PUBLIC_LOCALE_COOKIE, PUBLIC_LOCALES } from "./lib/public-locale";
+import {
+  LEGACY_PUBLIC_LOCALE_COOKIE,
+  parsePublicLocale,
+  publicLocaleCookieOptions,
+  PUBLIC_LOCALE_COOKIE,
+  PUBLIC_LOCALES,
+} from "./lib/public-locale";
 import { isPublicPath, workosUnauthenticatedPaths } from "./lib/public-paths";
 import { localeRewriteTarget } from "./lib/locale-rewrite";
 import { isRoutedPath, localePrefixRoute, LOCALE_ROUTES } from "./lib/routed-paths";
@@ -169,7 +175,19 @@ function localeRewrite(request: NextRequest): NextResponse | null {
 /**
  * `/en/pricing` is a real, reachable route once the pages move under
  * `[locale]`, and leaving it reachable would publish every public page at two
- * addresses. One canonical URL, so send it back to the clean one.
+ * addresses. One canonical URL, so send it back to the clean one — and since
+ * the prefix a reader followed IS the locale they meant, set it as their
+ * locale cookie on the way through (ai-ops 329).
+ *
+ * Before this, `/ja` and `/ja/pricing` 308'd to the unprefixed address with no
+ * cookie at all, so a shared `/ja` link opened the site in English with
+ * nothing to say a language had been dropped — the cookie was the only thing
+ * that made Japanese render, and nothing on the redirect path ever set it.
+ * `/en/...` gets the identical treatment for the reverse case: a reader who
+ * had switched to `ja` and is handed an `/en` link should land in English
+ * too, not silently keep the cookie the link's own prefix contradicts. Both
+ * directions go through the one `localePrefixOf` lookup below, so there is no
+ * special case for either locale.
  *
  * No loop: the rewrite above is internal, so the browser is never asked for the
  * prefixed form and never arrives here carrying it.
@@ -177,13 +195,52 @@ function localeRewrite(request: NextRequest): NextResponse | null {
  * The target is built by `lib/canonical-locale-redirect.ts`, which is where the
  * reason it is not a one-liner is written down: this runs before the auth gate,
  * so handing an attacker-influenced tail to the relative `new URL(str, base)`
- * form made it an unauthenticated open redirect off this origin.
+ * form made it an unauthenticated open redirect off this origin. `localePrefixOf`
+ * lives beside it for the same reason and returns a value that can only ever be
+ * a member of `PUBLIC_LOCALES` — never a fragment of that attacker-influenced
+ * tail — so the cookie below can never be handed a locale the site does not
+ * serve.
+ *
+ * ## Why 307 and not 308, now that this also sets a cookie
+ *
+ * The plain redirect had no side effect, so a browser caching it forever cost
+ * nothing — the next visit still landed on the right clean page. Once the hop
+ * also decides which locale to remember, a permanently-cached 308 is a
+ * permanently-cached DECISION: a reader who follows `/ja/pricing`, switches
+ * back to English, then follows the same `/ja/pricing` link again would have
+ * the browser skip this server entirely and jump straight to `/pricing` on
+ * its own — silently keeping the English cookie this redirect exists to
+ * overwrite. 307 keeps the method-preserving behaviour 308 had (unlike 302,
+ * which would turn a POST into a GET) but is not a status a browser is
+ * entitled to cache indefinitely without asking the server again.
+ *
+ * `Cache-Control: private, no-store` closes the rest of it, on both ends:
+ * - the reader's own browser is told not to reuse this exact response either,
+ *   which is the belt to 307's suspenders;
+ * - a SHARED cache must not store a response carrying `Set-Cookie` at all.
+ *   This site sits behind Cloudflare, which ignores `Vary` (measured against
+ *   `/repository` for PR 923 — see `lib/edge-cache-headers.ts`), so a
+ *   cacheable `Set-Cookie` response here is exactly the shape of bug that fix
+ *   closed one route tree over: one visitor's locale redirect, stored at the
+ *   edge and replayed to the next visitor who asks for the same `/ja/...`
+ *   URL. `private, no-store` keeps this hop out of that cache regardless of
+ *   whether a future Cloudflare Cache Rule ever names these paths.
  */
 function canonicalRedirect(request: NextRequest): NextResponse | null {
-  const target = canonicalLocaleTarget(request.nextUrl.pathname, request.url, PUBLIC_LOCALES);
+  const { pathname } = request.nextUrl;
+  const target = canonicalLocaleTarget(pathname, request.url, PUBLIC_LOCALES);
   if (target === null) return null;
   target.search = request.nextUrl.search;
-  return NextResponse.redirect(target, 308);
+  const response = NextResponse.redirect(target, 307);
+  response.headers.set("Cache-Control", "private, no-store");
+  // Cannot disagree with the null check above — both read the same first path
+  // segment against the same PUBLIC_LOCALES list — so this is never null here;
+  // the guard is for the type, not a second decision.
+  const locale = localePrefixOf(pathname, PUBLIC_LOCALES);
+  if (locale !== null) {
+    response.cookies.set(PUBLIC_LOCALE_COOKIE, locale, publicLocaleCookieOptions());
+  }
+  return response;
 }
 
 /**

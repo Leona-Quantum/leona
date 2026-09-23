@@ -39,14 +39,35 @@
  * `CATALOG_REVALIDATE_SECONDS` into its own file. The list still has exactly one
  * definition; `middleware.ts` passes it in.
  */
+/**
+ * The locale a request's path names, from its first segment — or null if that
+ * segment is not one of `locales`.
+ *
+ * Split out of `canonicalLocaleTarget` below so `middleware.ts`'s
+ * `canonicalRedirect` can learn WHICH locale a `/ja/...` or `/en/...` request
+ * named without re-deriving `segments[1]` itself: it needs that value to set
+ * `PUBLIC_LOCALE_COOKIE` to (ai-ops 329 — a shared `/ja` link should open the
+ * site in Japanese instead of silently collapsing to English), and a second
+ * copy of "the first path segment, checked against `locales`" is exactly the
+ * kind of thing that goes on agreeing until one of them changes.
+ *
+ * The return value is always a member of `locales` or `null` — never a
+ * substring of the attacker-influenced tail below — so a caller that writes
+ * it straight into a cookie cannot be handed anything the site does not
+ * actually serve.
+ */
+export function localePrefixOf(pathname: string, locales: readonly string[]): string | null {
+  const first = pathname.split("/")[1] ?? "";
+  return locales.includes(first) ? first : null;
+}
+
 export function canonicalLocaleTarget(
   pathname: string,
   requestUrl: string,
   locales: readonly string[],
 ): URL | null {
+  if (localePrefixOf(pathname, locales) === null) return null;
   const segments = pathname.split("/");
-  const first = segments[1] ?? "";
-  if (!locales.includes(first)) return null;
   const target = new URL(requestUrl);
   // Backslashes first: the URL parser would treat them as separators anyway, so
   // normalizing here means the emptiness filter below sees the same segments the
