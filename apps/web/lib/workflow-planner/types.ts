@@ -59,7 +59,12 @@ export interface ParamSpec {
 }
 
 /** Where a parameter's value came from — the page prints this beside the number. */
-export type ParamOrigin = "text" | "assumed" | "reader" | "unset";
+/**
+ * `invalid` is a value the reader typed that the parameter cannot take (out of
+ * range, not a whole number where one is needed, not a number at all). It
+ * carries no value, so no formula ever sees it, and the page says why.
+ */
+export type ParamOrigin = "text" | "assumed" | "reader" | "unset" | "invalid";
 
 export interface ParamValue {
   key: ParamKey;

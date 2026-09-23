@@ -174,7 +174,7 @@ function regularEdges(text: string, nodes: number | null): { value: number; evid
   return { value: (nodes * degree) / 2, evidence: m[0] };
 }
 
-function withinSpec(spec: ParamSpec, value: number): boolean {
+export function withinSpec(spec: ParamSpec, value: number): boolean {
   if (!Number.isFinite(value) || value < spec.min || value > spec.max) return false;
   return !spec.integer || Number.isInteger(value);
 }

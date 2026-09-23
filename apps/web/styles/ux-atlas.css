@@ -482,6 +482,8 @@
 .mj-plan-origin { font-size: var(--fs-12); color: var(--text-1); }
 .mj-plan-param-assumed .mj-plan-origin { color: var(--warn); }
 .mj-plan-param-unset .mj-plan-origin { color: var(--text-2); }
+.mj-plan-param-invalid .mj-plan-origin { color: var(--err); }
+.mj-plan-param-invalid input { border-color: var(--err); }
 .mj-plan-hint { font-size: var(--fs-12); color: var(--text-2); }
 .mj-plan-section { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--sp-3); }
 .mj-plan-subheading { font-size: var(--fs-14); margin: var(--sp-2) 0 0; }

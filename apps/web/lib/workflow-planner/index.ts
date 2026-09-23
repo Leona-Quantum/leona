@@ -26,13 +26,17 @@ import { assembleWorkflow, compileStage, type MethodChoices, type Stage } from "
 import { costReport, type CostReport } from "./costs.ts";
 import { indexPlannerGraph, type IndexedGraph, type PlannerGraph } from "./graph.ts";
 import { problemById, type ProblemClass } from "./problems.ts";
-import { readParams, recogniseProblems, type Recognition } from "./recognise.ts";
+import { readParams, recogniseProblems, withinSpec, type Recognition } from "./recognise.ts";
 import type { ParamKey, ParamValues, ProblemId } from "./types.ts";
 
 export interface PlanOverrides {
   /** The problem the reader picked, overriding the recognised one. */
   problem?: ProblemId | null;
-  /** Values the reader typed. `null` clears a value the text or an assumption supplied. */
+  /**
+   * Values the reader typed. `null` clears a value the text or an assumption
+   * supplied; `NaN` is typed text that is not a number, and is refused like any
+   * other value the parameter cannot take.
+   */
   params?: Partial<Record<ParamKey, number | null>>;
   choices?: MethodChoices;
 }
@@ -48,14 +52,25 @@ export interface WorkflowPlan {
   costs: CostReport | null;
 }
 
-function applyReaderValues(params: ParamValues, overrides: PlanOverrides["params"]): ParamValues {
+/**
+ * A typed value is held to the same spec the sentence is (`withinSpec`): the
+ * range the parameter can take and, where it counts something, a whole number.
+ * Anything else becomes `invalid` with no value — a κ of −1 or a layer count of
+ * 1.5 would otherwise reach the formulas and print a negative step count beside
+ * a paper's name.
+ */
+function applyReaderValues(problem: ProblemClass, params: ParamValues, overrides: PlanOverrides["params"]): ParamValues {
   if (!overrides) return params;
-  const next: ParamValues = { ...params };
-  for (const [key, typed] of Object.entries(overrides) as [ParamKey, number | null | undefined][]) {
-    if (typed === undefined || !(key in next)) continue;
-    next[key] = typed === null ? { key, value: null, origin: "unset" } : { key, value: typed, origin: "reader" };
-  }
-  return next;
+  return Object.fromEntries(
+    problem.params.map((spec) => {
+      const typed = overrides[spec.key];
+      const current = params[spec.key] ?? { key: spec.key, value: null, origin: "unset" as const };
+      if (typed === undefined) return [spec.key, current];
+      if (typed === null) return [spec.key, { key: spec.key, value: null, origin: "unset" as const }];
+      if (!withinSpec(spec, typed)) return [spec.key, { key: spec.key, value: null, origin: "invalid" as const }];
+      return [spec.key, { key: spec.key, value: typed, origin: "reader" as const }];
+    }),
+  ) as ParamValues;
 }
 
 export function planWorkflow(graph: PlannerGraph | IndexedGraph, text: string, overrides: PlanOverrides = {}): WorkflowPlan {
@@ -66,7 +81,7 @@ export function planWorkflow(graph: PlannerGraph | IndexedGraph, text: string, o
   if (!problem) {
     return { recognitions, problem: null, problemPicked: false, params: {}, root: null, compile: null, costs: null };
   }
-  const params = applyReaderValues(readParams(problem, text), overrides.params);
+  const params = applyReaderValues(problem, readParams(problem, text), overrides.params);
   const root = assembleWorkflow(index, problem, overrides.choices);
   const compile = compileStage(index, root, overrides.choices);
   return {

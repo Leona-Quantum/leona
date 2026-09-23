@@ -346,3 +346,22 @@ test("numbers print the same in a sentence and in the table", () => {
   assert.equal(formatPlain(1e-9), "1 × 10⁻⁹");
   assert.equal(formatPlain(6.5e9), "6.5 × 10⁹");
 });
+
+test("a typed value the parameter cannot take is refused with no value, never passed to a formula", () => {
+  const linear = plan("Solve a linear system of equations.", { params: { kappa: -1 } });
+  assert.equal(linear.params.kappa?.origin, "invalid");
+  assert.equal(linear.params.kappa?.value, null);
+  assert.equal(lineById(linear.costs!.lines, "costa-steps").value, null);
+  const qaoa = plan("MaxCut on a 3-regular graph with 50 nodes using QAOA.", { params: { layers: 1.5 } });
+  assert.equal(qaoa.params.layers?.origin, "invalid", "a layer count must be whole");
+  const garbled = plan("Factor a 2048-bit RSA modulus.", { params: { bits: Number.NaN } });
+  assert.equal(garbled.params.bits?.origin, "invalid", "text that is not a number is refused, not treated as cleared");
+  const cleared = plan("Factor a 2048-bit RSA modulus.", { params: { bits: null } });
+  assert.equal(cleared.params.bits?.origin, "unset");
+});
+
+test("the Japanese '1 件' reading does not fire inside a larger count", () => {
+  const read = readParams(problemById("search")!, "候補 11 件の中から探したい。");
+  assert.notEqual(read.markedCount?.origin, "text", "11 件 is not one accepted item");
+  assert.equal(readParams(problemById("search")!, "候補から 1 件を探したい。").markedCount?.value, 1);
+});

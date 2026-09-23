@@ -63,6 +63,9 @@ const COPY = {
     assumed: "Assumed:",
     notSet: "Not set. Lines that need it stay blank.",
     readerSet: "You set this.",
+    invalid: (integer: boolean, min: string, max: string) =>
+      `Not used: this needs ${integer ? "a whole number" : "a number"} from ${min} to ${max}.`,
+    checkingSignIn: "Checking sign-in…",
     workflowHeading: "The workflow",
     workflowIntro:
       "Each block is an Atlas method filling one step. Swap any block for another that fills the same step; the costs follow the blocks you pick.",
@@ -136,6 +139,9 @@ const COPY = {
     assumed: "仮定：",
     notSet: "未設定です。これを必要とする行は空欄になります。",
     readerSet: "あなたが設定しました。",
+    invalid: (integer: boolean, min: string, max: string) =>
+      `使用していません。${min} から ${max} までの${integer ? "整数" : "数"}を入力してください。`,
+    checkingSignIn: "サインイン状態を確認しています…",
     workflowHeading: "ワークフロー",
     workflowIntro:
       "各ブロックは、一つのステップを担うアトラスの手法です。同じステップを担う別のブロックに入れ替えられ、コストは選んだブロックに合わせて変わります。",
@@ -378,6 +384,7 @@ function ParamRow({
   if (value?.origin === "text" && value.evidence) origin = copy.fromText(value.evidence);
   else if (value?.origin === "assumed" && value.assumedReason) origin = `${copy.assumed} ${t(value.assumedReason, locale)}`;
   else if (value?.origin === "reader") origin = copy.readerSet;
+  else if (value?.origin === "invalid") origin = copy.invalid(spec.integer, formatPlain(spec.min), formatPlain(spec.max));
   return (
     <label className={`mj-plan-param mj-plan-param-${value?.origin ?? "unset"}`}>
       <span>
@@ -462,15 +469,26 @@ export function AtlasWorkflowPlanner({
   // Same client-side session read as the method finder, for the same reason:
   // a server read would make this prerendered page per-visitor.
   const [session, setSession] = useState<{ signedIn: boolean; signInHref: string | null } | null>(null);
+  // "loading" shows a disabled action rather than a sign-in link a signed-in
+  // reader could click in the first moment; "failed" falls back to the sign-in
+  // link, which still works for a signed-in reader (sign-in returns them to
+  // Studio), so a failed check degrades to one extra redirect, not a dead end.
+  const [sessionState, setSessionState] = useState<"loading" | "ready" | "failed">("loading");
   useEffect(() => {
     let cancelled = false;
     fetch("/api/auth/session", { credentials: "include" })
       .then((response) => (response.ok ? response.json() : null))
       .then((data: { signedIn: boolean; signInHref: string | null } | null) => {
-        if (!cancelled && data) setSession(data);
+        if (cancelled) return;
+        if (data) {
+          setSession(data);
+          setSessionState("ready");
+        } else {
+          setSessionState("failed");
+        }
       })
       .catch(() => {
-        // Left signed-out, which is what the server rendered.
+        if (!cancelled) setSessionState("failed");
       });
     return () => {
       cancelled = true;
@@ -482,7 +500,9 @@ export function AtlasWorkflowPlanner({
     const out: Partial<Record<ParamKey, number | null>> = {};
     for (const [key, raw] of Object.entries(typed) as [ParamKey, string | undefined][]) {
       if (raw === undefined) continue;
-      out[key] = raw.trim() === "" ? null : parseNumber(raw);
+      // Unparseable text is NaN, not null: null would read as "cleared" and
+      // quietly fall back to the sentence's value while the box shows the typo.
+      out[key] = raw.trim() === "" ? null : parseNumber(raw) ?? Number.NaN;
     }
     return out;
   }, [typed]);
@@ -706,7 +726,11 @@ export function AtlasWorkflowPlanner({
                       <div key={label}>
                         <dt>{label}</dt>
                         <dd>{formatValue(line)}</dd>
-                        <dd className="mj-plan-muted">{copy.kinds[line.kind]}</dd>
+                        {/* The line's own label, so a per-attempt or one-stage figure
+                            is not read as the whole algorithm's count. */}
+                        <dd className="mj-plan-muted">
+                          {t(line.label, locale)} · {copy.kinds[line.kind]}
+                        </dd>
                       </div>
                     ))}
                   </dl>
@@ -755,7 +779,11 @@ export function AtlasWorkflowPlanner({
             )}
             <div className="mj-repo-card-links">
               {example ? (
-                isSignedIn ? (
+                sessionState === "loading" ? (
+                  <button type="button" className="mj-primary-button" disabled aria-busy="true">
+                    {copy.checkingSignIn}
+                  </button>
+                ) : isSignedIn ? (
                   <a className="mj-primary-button" href={workedExampleStudioHref(example.id)}>
                     {copy.openInStudio}
                   </a>
