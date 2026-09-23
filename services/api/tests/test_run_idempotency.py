@@ -31,6 +31,17 @@ def _stored(request_hash: str | None) -> RunRow:
     return RunRow(idempotency_key="k", idempotency_request_hash=request_hash)
 
 
+def _workflow_context(**overrides) -> dict:
+    base: dict = dict(
+        version=1,
+        problem="vqe",
+        problem_label="VQE for the H2 ground state",
+        planner_path="/repository/plan/vqe",
+    )
+    base.update(overrides)
+    return base
+
+
 # --------------------------------------------------------------------------
 # The fingerprint
 # --------------------------------------------------------------------------
@@ -69,6 +80,23 @@ def test_source_code_moves_the_fingerprint():
     assert a != b
 
 
+def test_workflow_context_moves_the_fingerprint():
+    """`model_dump(mode="json")` over the whole body is why this needs no
+    dedicated wiring: a request that only differs in `workflow_context` must
+    still hash differently, the same guarantee every other field gets."""
+    a = _idempotency_request_hash(_body())
+    b = _idempotency_request_hash(_body(workflow_context=_workflow_context()))
+    assert a != b
+
+
+def test_a_different_workflow_context_moves_the_fingerprint():
+    a = _idempotency_request_hash(_body(workflow_context=_workflow_context()))
+    b = _idempotency_request_hash(
+        _body(workflow_context=_workflow_context(problem_label="a different reading"))
+    )
+    assert a != b
+
+
 # --------------------------------------------------------------------------
 # The refusal
 # --------------------------------------------------------------------------
@@ -77,6 +105,25 @@ def test_source_code_moves_the_fingerprint():
 def test_a_genuine_retry_is_allowed_through():
     body = _body()
     _assert_same_request(_stored(_idempotency_request_hash(body)), _idempotency_request_hash(body))
+
+
+def test_a_retry_with_the_same_workflow_context_is_allowed_through():
+    body = _body(workflow_context=_workflow_context())
+    _assert_same_request(_stored(_idempotency_request_hash(body)), _idempotency_request_hash(body))
+
+
+def test_a_different_workflow_context_under_the_same_key_is_refused():
+    stored = _stored(_idempotency_request_hash(_body(workflow_context=_workflow_context())))
+    with pytest.raises(HTTPException) as refused:
+        _assert_same_request(
+            stored,
+            _idempotency_request_hash(
+                _body(workflow_context=_workflow_context(problem_label="a different reading"))
+            ),
+        )
+
+    assert refused.value.status_code == 409
+    assert refused.value.detail["reason"] == "idempotency_key_reused"
 
 
 def test_a_different_body_under_the_same_key_is_refused():

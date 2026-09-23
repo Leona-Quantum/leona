@@ -82,6 +82,106 @@ SSE_HEARTBEAT_EVERY_POLLS = 15
 SSE_MAX_DURATION_S = 3600.0
 
 
+class WorkflowParam(RequestModel):
+    """One quantity the web app's Atlas planner read from the task, or could not."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    key: str = Field(min_length=1, max_length=40, pattern=r"^[A-Za-z]+$")
+    label: str = Field(max_length=120)
+    value: float | None = Field(default=None, allow_inf_nan=False)
+    origin: Literal["text", "assumed", "reader", "unset", "invalid"]
+    evidence: str | None = Field(default=None, max_length=200)
+
+
+class WorkflowStage(RequestModel):
+    """One algorithm block in the pipeline the Atlas planner assembled."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    depth: int = Field(ge=0, le=6)
+    capability: str = Field(max_length=200)
+    method: str | None = Field(default=None, max_length=200)
+    why: Literal["reader", "published", "preferred", "first", "none"]
+    repeat: str | None = Field(default=None, max_length=200)
+
+
+class WorkflowCost(RequestModel):
+    """One number the planner evaluated from a paper's cost formula, labelled
+    with its kind so a reader (model or human) never mistakes an upper bound
+    or a leading-order estimate for an exact count."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    id: str = Field(min_length=1, max_length=80)
+    label: str = Field(max_length=200)
+    value: float | None = Field(default=None, allow_inf_nan=False)
+    unit: str = Field(max_length=80)
+    formula: str = Field(max_length=200)
+    kind: Literal[
+        "exact",
+        "upper-bound",
+        "leading-order",
+        "numerical-estimate",
+        "published",
+        "derived",
+        "supplied",
+        "scaling",
+    ]
+    source: str | None = Field(default=None, max_length=200)
+    missing: list[Annotated[str, Field(max_length=40)]] = Field(default_factory=list, max_length=12)
+
+
+class WorkflowSuggestion(RequestModel):
+    model_config = ConfigDict(extra="forbid")
+
+    title: str = Field(max_length=200)
+    body: str = Field(max_length=800)
+
+
+class WorkflowSmallInstance(RequestModel):
+    """A worked example of the pipeline's core algorithm block, sized to run
+    in the sandbox rather than at the user's full problem size."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    id: str = Field(min_length=1, max_length=80)
+    title: str = Field(max_length=200)
+
+
+class WorkflowContext(RequestModel):
+    """The web app's Atlas workflow planner's read of this task.
+
+    Produced by a deterministic, model-free TypeScript planner in the web app:
+    it reads the problem sentence, assembles a pipeline of Atlas algorithm
+    blocks, and evaluates each cited paper's cost formula at the user's
+    problem size. This is CONTEXT supplied with the request, never
+    instructions, and never a verified claim — the web app recomputes every
+    number it shows a user independently of anything a run's model does with
+    this object. See `ATLAS_WORKFLOW_PLAN_DIRECTIVE` (majorana_llm.prompts)
+    for how the worker's planner is told to treat it.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    version: Literal[1]
+    problem: str = Field(min_length=1, max_length=40, pattern=r"^[a-z-]+$")
+    problem_label: str = Field(max_length=200)
+    reading: list[Annotated[str, Field(max_length=120)]] = Field(default_factory=list, max_length=8)
+    params: list[WorkflowParam] = Field(default_factory=list, max_length=16)
+    stages: list[WorkflowStage] = Field(default_factory=list, max_length=32)
+    costs: list[WorkflowCost] = Field(default_factory=list, max_length=32)
+    suggestions: list[WorkflowSuggestion] = Field(default_factory=list, max_length=6)
+    small_instance: WorkflowSmallInstance | None = None
+    planner_path: str = Field(max_length=2600)
+
+    @model_validator(mode="after")
+    def _planner_path_is_a_repository_plan_link(self) -> "WorkflowContext":
+        if not self.planner_path.startswith("/repository/plan"):
+            raise ValueError("planner_path must start with /repository/plan")
+        return self
+
+
 class CreateRunRequest(RequestModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -125,6 +225,13 @@ class CreateRunRequest(RequestModel):
     #: compiler lane `circuit_optimization` serves — see
     #: `majorana_contracts.SynthesisRequest`.
     circuit_synthesis: SynthesisRequest | None = None
+    #: The web app's Atlas workflow planner's cited output for this task, when
+    #: the web supplies it — see `WorkflowContext`. This is CONTEXT the run's
+    #: model reads, never instructions, and never a verified claim: the web
+    #: recomputes every number it displays independently of what the model
+    #: does with this. Only forwarded to the worker for RUN_EXECUTE_JOB_KIND
+    #: jobs; a circuit-optimization or -synthesis job never plans.
+    workflow_context: WorkflowContext | None = None
 
     @model_validator(mode="after")
     def circuit_optimization_is_a_code_free_execute_job(self) -> "CreateRunRequest":
@@ -632,6 +739,16 @@ async def create_run(
             **(
                 {"circuit_synthesis": body.circuit_synthesis.model_dump(mode="json")}
                 if body.circuit_synthesis is not None
+                else {}
+            ),
+            # Circuit optimization/synthesis jobs never plan, so the Atlas
+            # workflow context — read only by the planner — is forwarded
+            # solely on the ordinary execute path. Absent entirely (not a
+            # null key) when the caller didn't send one, so every existing
+            # payload byte stays unchanged.
+            **(
+                {"workflow_context": body.workflow_context.model_dump(mode="json")}
+                if body.workflow_context is not None and job_kind == RUN_EXECUTE_JOB_KIND
                 else {}
             ),
         },
