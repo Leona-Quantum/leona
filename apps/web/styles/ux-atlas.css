@@ -506,6 +506,9 @@
 .mj-plan-cost p { font-size: var(--fs-13); color: var(--text-1); }
 .mj-plan-atlas-link { font-size: var(--fs-12); }
 .mj-plan-callout { padding: var(--sp-3); border: var(--border-hairline) dashed var(--border-0); border-radius: var(--radius-control); color: var(--text-1); font-size: var(--fs-13); }
+.mj-plan-gate { display: grid; gap: var(--sp-3); justify-items: start; }
+.mj-plan-gate h2 { font-size: var(--fs-16); margin: 0; color: var(--text-0); }
+.mj-plan-gate p { margin: 0; }
 .mj-plan-table-wrap { overflow-x: auto; }
 .mj-plan-table { width: 100%; border-collapse: collapse; font-size: var(--fs-13); }
 .mj-plan-table th, .mj-plan-table td { padding: var(--sp-2); text-align: left; vertical-align: top; border-bottom: var(--border-hairline) solid var(--border-0); }

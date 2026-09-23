@@ -29,6 +29,7 @@ import { workedExampleSignInHref, workedExampleStudioHref } from "../lib/atlas-w
 import { writeLandingPromptHandoff } from "../lib/landing-prompt-handoff";
 import { MathText } from "./math-text";
 import { SignInLink } from "./sign-in-link";
+import { majoranaSignInPath } from "../lib/sign-in";
 
 export interface PlannerPaper {
   id: string;
@@ -50,6 +51,12 @@ const COPY = {
     heading: "Plan a quantum workflow",
     intro:
       "Describe the problem in a sentence. The planner builds it from Atlas blocks, costs each part from the papers, and suggests where it could be cheaper. Every number says where it came from and what kind of number it is.",
+    gateTitle: "Sign in to plan a workflow",
+    gateBody:
+      "The planner is part of your Leona account, alongside Studio and Nala. Sign in, or create an account, and describe your problem in a sentence. You get the workflow as Atlas blocks, its cost at your size, and ways to make it cheaper, and you can send it on to Studio or Nala.",
+    gateAction: "Sign in",
+    gateOpening: "Opening sign in…",
+    gateChecking: "Checking whether you are signed in…",
     inputLabel: "Your problem",
     inputPlaceholder: "e.g. Factor a 2048-bit RSA modulus",
     examples: "Try one",
@@ -126,6 +133,12 @@ const COPY = {
     heading: "量子ワークフローを計画する",
     intro:
       "問題を一文で書いてください。プランナーがアトラスのブロックで組み立て、各部分のコストを論文から見積もり、安くできる箇所を提案します。どの数値にも、出典と数値の種類を示します。",
+    gateTitle: "サインインしてワークフローを計画する",
+    gateBody:
+      "プランナーは Leona のアカウントの機能で、Studio や Nala と並んでいます。サインインするかアカウントを作成し、解きたい問題を一文で書いてください。アトラスのブロックで組んだワークフロー、あなたのサイズでのコスト、安くする方法が表示され、そのまま Studio や Nala に送れます。",
+    gateAction: "サインイン",
+    gateOpening: "サインインを開いています…",
+    gateChecking: "サインインの状態を確認しています…",
     inputLabel: "解きたい問題",
     inputPlaceholder: "例：2048 ビットの RSA 法を素因数分解したい",
     examples: "例を試す",
@@ -413,6 +426,30 @@ function formatInput(value: number): string {
   return value.toExponential().replace("e+", "e");
 }
 
+// A sentence that arrived in `#q=` while the reader was signed out is kept for
+// this tab in sessionStorage and put back after sign-in. It is never added to
+// the sign-in URL: `returnTo` is a query string, and a query string reaches
+// the server, which is the one thing the fragment exists to avoid.
+const PENDING_KEY = "leona.plan.pending-q";
+
+function stashPendingQuery(q: string) {
+  try {
+    window.sessionStorage.setItem(PENDING_KEY, q);
+  } catch {
+    // Storage off or full: the reader retypes the sentence, nothing breaks.
+  }
+}
+
+function takePendingQuery(): string | null {
+  try {
+    const q = window.sessionStorage.getItem(PENDING_KEY);
+    window.sessionStorage.removeItem(PENDING_KEY);
+    return q && q.trim() ? q.trim().slice(0, PLAN_TEXT_MAX) : null;
+  } catch {
+    return null;
+  }
+}
+
 function readHashQuery(): string | null {
   try {
     const hash = window.location.hash.replace(/^#/, "");
@@ -454,16 +491,17 @@ export function AtlasWorkflowPlanner({
   // this page changes only the fragment, so the browser keeps the document and
   // a load-only read would leave the old sentence on screen.
   useEffect(() => {
-    const apply = () => {
-      const fromHash = readHashQuery();
+    const apply = (initial: boolean) => {
+      const fromHash = readHashQuery() ?? (initial ? takePendingQuery() : null);
       if (fromHash) {
         setPicked(null);
         setText(fromHash);
       }
     };
-    apply();
-    window.addEventListener("hashchange", apply);
-    return () => window.removeEventListener("hashchange", apply);
+    apply(true);
+    const onHashChange = () => apply(false);
+    window.addEventListener("hashchange", onHashChange);
+    return () => window.removeEventListener("hashchange", onHashChange);
   }, []);
 
   // Same client-side session read as the method finder, for the same reason:
@@ -495,6 +533,17 @@ export function AtlasWorkflowPlanner({
     };
   }, []);
   const isSignedIn = session?.signedIn ?? false;
+  // Owner ruling, ai-ops 369: the planner is "gated to people who have an
+  // account", as a linked Studio / Atlas / Nala feature. The page itself stays
+  // public and prerendered (its heading and what it does are the Atlas's to
+  // show), but nothing below the intro renders until a session says signed
+  // in. A failed session check shows the sign-in link, which still works for a
+  // signed-in reader: sign-in returns them here.
+  const gate: "checking" | "signed-out" | null =
+    sessionState === "loading" ? "checking" : isSignedIn ? null : "signed-out";
+  useEffect(() => {
+    if (gate === "signed-out" && text.trim()) stashPendingQuery(text.trim());
+  }, [gate, text]);
 
   const readerParams = useMemo(() => {
     const out: Partial<Record<ParamKey, number | null>> = {};
@@ -576,6 +625,28 @@ export function AtlasWorkflowPlanner({
     for (const [label, line] of candidates) {
       if (line && line.value !== null) logicalTiles.push({ label, line });
     }
+  }
+
+  if (gate) {
+    return (
+      <section className="mj-plan" aria-labelledby="plan-heading">
+        <h1 id="plan-heading">{copy.heading}</h1>
+        <p>{copy.intro}</p>
+        {gate === "checking" ? (
+          <p className="mj-plan-muted" aria-live="polite">
+            {copy.gateChecking}
+          </p>
+        ) : (
+          <div className="mj-plan-callout mj-plan-gate">
+            <h2>{copy.gateTitle}</h2>
+            <p>{copy.gateBody}</p>
+            <SignInLink href={majoranaSignInPath("/repository/plan")} className="mj-plan-chip" pendingLabel={copy.gateOpening}>
+              {copy.gateAction}
+            </SignInLink>
+          </div>
+        )}
+      </section>
+    );
   }
 
   return (

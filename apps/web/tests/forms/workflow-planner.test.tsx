@@ -18,9 +18,12 @@ const EXAMPLES: Record<string, PlannerExample> = {
   "grover-3q-101": { id: "grover-3q-101", title: "Grover's algorithm finds |101⟩", instance: "3 qubits", blocks: ["Hadamard layer", "Phase oracle", "Grover diffuser"] },
 };
 
-function renderPlanner() {
-  const session = stubFetch(() => ({ status: 200, body: { signedIn: false, signInHref: "/auth/sign-in" } }));
+// The planner renders for a signed-in account only (ai-ops 369), so every test
+// of what it does starts signed in, and waits for the session read to land.
+async function renderPlanner(signedIn = true) {
+  const session = stubFetch(() => ({ status: 200, body: { signedIn, signInHref: signedIn ? null : "/auth/sign-in" } }));
   const view = render(<AtlasWorkflowPlanner locale="en" graph={GRAPH} papers={PAPERS} examples={EXAMPLES} />);
+  if (signedIn) await waitFor(() => assert.ok(screen.getByLabelText("Your problem")));
   return { view, restore: session.restore };
 }
 
@@ -31,7 +34,7 @@ function row(container: HTMLElement, label: RegExp): HTMLTableRowElement {
 }
 
 test("a sentence becomes a costed workflow: the reading, the numbers and their words, the blocks, and the sourced cost", async () => {
-  const { view, restore } = renderPlanner();
+  const { view, restore } = await renderPlanner();
   try {
     fireEvent.change(screen.getByLabelText("Your problem"), {
       target: { value: "Search a database of 2^20 records for the single record that matches." },
@@ -51,7 +54,7 @@ test("a sentence becomes a costed workflow: the reading, the numbers and their w
 });
 
 test("a number the reader types outranks the sentence, and a missing one blanks only the lines that need it", async () => {
-  const { view, restore } = renderPlanner();
+  const { view, restore } = await renderPlanner();
   try {
     fireEvent.change(screen.getByLabelText("Your problem"), { target: { value: "Solve a linear system of equations." } });
     await waitFor(() => assert.ok(view.container.querySelector("table")));
@@ -65,7 +68,7 @@ test("a number the reader types outranks the sentence, and a missing one blanks 
 });
 
 test("swapping the block a cost model is for withdraws its numbers and says why", async () => {
-  const { view, restore } = renderPlanner();
+  const { view, restore } = await renderPlanner();
   try {
     fireEvent.change(screen.getByLabelText("Your problem"), {
       target: { value: "Ground-state energy of a molecule with 100 spin-orbitals and λ = 500 hartree, to chemical accuracy." },
@@ -88,7 +91,7 @@ test("swapping the block a cost model is for withdraws its numbers and says why"
 });
 
 test("a sentence with nothing recognisable asks the reader to pick, instead of guessing", async () => {
-  const { view, restore } = renderPlanner();
+  const { view, restore } = await renderPlanner();
   try {
     fireEvent.change(screen.getByLabelText("Your problem"), { target: { value: "Make my code faster." } });
     await waitFor(() => assert.match(view.container.textContent ?? "", /found no problem it knows/));
@@ -99,7 +102,7 @@ test("a sentence with nothing recognisable asks the reader to pick, instead of g
 });
 
 test("a #q= link followed while the page is open replaces the sentence, and near-certain success is not printed as 100%", async () => {
-  const { view, restore } = renderPlanner();
+  const { view, restore } = await renderPlanner();
   try {
     window.location.hash = `q=${encodeURIComponent("Search a database of 2^20 records for the single record that matches.")}`;
     window.dispatchEvent(new Event("hashchange"));
@@ -108,5 +111,40 @@ test("a #q= link followed while the page is open replaces the sentence, and near
   } finally {
     window.location.hash = "";
     restore();
+  }
+});
+
+test("signed out, the planner shows what it is and a sign-in link back to itself, and nothing else", async () => {
+  const { view, restore } = await renderPlanner(false);
+  try {
+    await waitFor(() => assert.ok(screen.getByText("Sign in to plan a workflow")));
+    assert.equal(screen.queryByLabelText("Your problem"), null);
+    assert.equal(view.container.querySelector(".mj-plan-stages"), null);
+    const link = screen.getByText("Sign in").closest("a");
+    assert.equal(link?.getAttribute("href"), "/auth/sign-in?returnTo=%2Frepository%2Fplan");
+  } finally {
+    restore();
+  }
+});
+
+test("a sentence that arrives signed out waits in this tab and comes back after sign-in, never in the sign-in URL", async () => {
+  window.sessionStorage.clear();
+  window.location.hash = `q=${encodeURIComponent("Factor a 2048-bit RSA modulus.")}`;
+  const first = await renderPlanner(false);
+  try {
+    await waitFor(() => assert.ok(screen.getByText("Sign in to plan a workflow")));
+    await waitFor(() => assert.equal(window.sessionStorage.getItem("leona.plan.pending-q"), "Factor a 2048-bit RSA modulus."));
+    assert.doesNotMatch(screen.getByText("Sign in").closest("a")?.getAttribute("href") ?? "", /2048|RSA|q=/);
+  } finally {
+    first.restore();
+    first.view.unmount();
+  }
+  window.location.hash = "";
+  const second = await renderPlanner(true);
+  try {
+    await waitFor(() => assert.equal((screen.getByLabelText("Your problem") as HTMLTextAreaElement).value, "Factor a 2048-bit RSA modulus."));
+    assert.equal(window.sessionStorage.getItem("leona.plan.pending-q"), null);
+  } finally {
+    second.restore();
   }
 });
