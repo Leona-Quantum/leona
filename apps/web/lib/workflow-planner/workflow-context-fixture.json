@@ -141,9 +141,9 @@
       {
         "key": "lambda",
         "label": "λ（係数の絶対値の和）",
-        "value": null,
-        "origin": "unset",
-        "evidence": null
+        "value": 500,
+        "origin": "text",
+        "evidence": "λ は 500 ハートリー"
       },
       {
         "key": "deltaE",
@@ -155,9 +155,9 @@
       {
         "key": "orbitals",
         "label": "スピン軌道の数 (N)",
-        "value": null,
-        "origin": "unset",
-        "evidence": null
+        "value": 100,
+        "origin": "text",
+        "evidence": "スピン軌道は 100"
       }
     ],
     "stages": [
@@ -229,55 +229,54 @@
       {
         "id": "babbush-qubits",
         "label": "論理量子ビット（系＋補助）",
-        "value": null,
+        "value": 193,
         "unit": "論理量子ビット",
         "formula": "N + log₂(4·√2·π·λ³·N⁵ / ΔE³)",
         "kind": "leading-order",
         "source": "arxiv:1805.03662, Eq. (55)",
-        "missing": [
-          "lambda",
-          "orbitals"
-        ]
+        "missing": []
       },
       {
         "id": "babbush-t",
         "label": "T ゲート（主要項）",
-        "value": null,
+        "value": 3332162203.618775,
         "unit": "T ゲート",
         "formula": "24·√2·π·N·λ / ΔE",
         "kind": "leading-order",
         "source": "arxiv:1805.03662, Theorem 1",
-        "missing": [
-          "lambda",
-          "orbitals"
-        ]
+        "missing": []
       },
       {
         "id": "babbush-queries",
         "label": "ハミルトニアンの select 回路の呼び出し",
-        "value": null,
+        "value": 1048576,
         "unit": "回の問い合わせ",
         "formula": "2^m < √2·π·λ / ΔE",
         "kind": "upper-bound",
         "source": "arxiv:1805.03662, Eqs. (24) and (26)",
-        "missing": [
-          "lambda"
-        ]
+        "missing": []
       },
       {
         "id": "babbush-bits",
         "label": "位相推定の量子ビット (m)",
-        "value": null,
+        "value": 20,
         "unit": "量子ビット",
         "formula": "⌈log₂(√2·π·λ / 2ΔE)⌉",
         "kind": "exact",
         "source": "arxiv:1805.03662, Eqs. (24) and (26)",
-        "missing": [
-          "lambda"
-        ]
+        "missing": []
       }
     ],
-    "suggestions": [],
+    "suggestions": [
+      {
+        "title": "あなたの λ と ΔE での、位相推定と VQE の比較",
+        "body": "量子ビット化したウォークの位相推定では select の呼び出しは多くても 1,048,576 回で、1 回で済みます。VQE ではエネルギー 1 回の推定に約 9.77 × 10¹⁰ 回の測定が必要で、最適化の各ステップで繰り返します。ΔE を半分にすると前者は 2 倍、後者は 4 倍になります。"
+      },
+      {
+        "title": "λ を小さくすると両方のコストが下がります",
+        "body": "どちらの回数も λ とともに増え、位相推定は λ に比例し、VQE は λ の 2 乗に比例します。λ はハミルトニアンの書き方で決まるので、アトラスにあるブロック符号化を比べてから選んでください。"
+      }
+    ],
     "small_instance": {
       "id": "vqe-2q-transverse-ising",
       "title": "vqe-2q-transverse-ising"

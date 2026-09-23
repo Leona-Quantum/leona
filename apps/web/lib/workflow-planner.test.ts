@@ -365,3 +365,17 @@ test("the Japanese '1 件' reading does not fire inside a larger count", () => {
   assert.notEqual(read.markedCount?.origin, "text", "11 件 is not one accepted item");
   assert.equal(readParams(problemById("search")!, "候補から 1 件を探したい。").markedCount?.value, 1);
 });
+
+test("a Japanese sentence that joins a name to its number with a particle is read, and its hartree units convert", () => {
+  const ground = problemById("ground-state")!;
+  const read = readParams(ground, "分子の基底状態エネルギーを化学精度で求めたい。スピン軌道は 100 個、λ は 500 ハートリー。");
+  assert.deepEqual([read.orbitals?.value, read.orbitals?.origin], [100, "text"]);
+  assert.deepEqual([read.lambda?.value, read.lambda?.origin], [500, "text"]);
+  assert.equal(read.deltaE?.value, 0.0016);
+  const milli = readParams(ground, "λ が 250、精度は 1.6 ミリハートリー。");
+  assert.equal(milli.lambda?.value, 250);
+  assert.ok(Math.abs((milli.deltaE?.value ?? 0) - 0.0016) < 1e-12, "ミリハートリー is a thousandth of a hartree, not a hartree");
+  const solve = readParams(problemById("linear-system")!, "条件数は 1000、誤差は 0.001 の連立一次方程式を解きたい。");
+  assert.equal(solve.kappa?.value, 1000);
+  assert.equal(solve.epsilon?.value, 0.001);
+});
