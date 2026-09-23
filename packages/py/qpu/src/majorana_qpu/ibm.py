@@ -41,6 +41,7 @@ from .models import (
     QpuJobRequest,
     QpuJobStatus,
     QpuProviderKey,
+    QpuQueueInfo,
     QpuSubmissionBlockReason,
     reported_backend_name,
 )
@@ -233,6 +234,27 @@ class IbmRuntimeProvider:
 
     def result(self, provider_job_id: str) -> QpuJobRecord:
         return self.poll(provider_job_id)
+
+    def queue_status(self) -> QpuQueueInfo:
+        """How busy the Open Plan queue is, for the "before you submit" panel.
+
+        Reports the SAME backend `submit()` would use: the Open Plan catalog
+        entry does not name one, IBM's own `least_busy` call picks it, and a
+        number reported for a different, named backend would answer a
+        question a submission is not actually asking. `pending_jobs` is
+        whatever `BackendStatus.pending_jobs` reports; None when the field is
+        missing or not an int, which is "not reported" and never a guess.
+        """
+        reason = self._block_reason()
+        if reason is not None:
+            raise QpuDisabledError(reason)
+        backend = self._service().least_busy(operational=True, simulator=False)
+        status = backend.status()
+        pending = getattr(status, "pending_jobs", None)
+        return QpuQueueInfo(
+            backend_name=reported_backend_name(getattr(backend, "name", None)),
+            pending_jobs=pending if isinstance(pending, int) else None,
+        )
 
 
 def _transpile_pubs(

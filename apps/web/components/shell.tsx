@@ -66,6 +66,7 @@ import { ProjectShareDialog } from "./project-share-dialog";
 import { archiveArtifact, artifactFromResource, daysUntilArtifactDeletion, deleteArtifact, isArtifactDeleted, loadLibraryArtifacts, rememberArtifact, restoreArtifact, setArtifactProjectLocally, type LibraryArtifact } from "../lib/library-data";
 import { verificationFromResource } from "../lib/verification-record";
 import { WORKSPACE_PINS_EVENT, isPinned, setPinned, togglePinned } from "../lib/workspace-pins";
+import { NotificationsBell } from "./notifications-bell";
 import { ThemeToggle } from "./theme-toggle";
 import { TourGate } from "./tour/tour-gate";
 import { WORKSPACE_ACCOUNT_MENU_EVENT, WORKSPACE_SIDEBAR_EVENT } from "../lib/tour/events.ts";
@@ -380,6 +381,7 @@ export function Shell({
       currentPath={pathname}
       headerRight={
         <>
+          {demoMode ? null : <NotificationsBell locale={locale} demoMode={demoMode} />}
           {demoMode ? null : <TourHelpButton locale={locale} />}
           <ThemeToggle locale={locale} />
           {headerRight}

@@ -122,6 +122,12 @@ from .presence import (
     PresenceViewer,
 )
 from .tour_signals import RecordTourSignalRequest, TourSignalKind
+from .notifications import (
+    MAX_NOTIFICATION_SUMMARY_CHARS,
+    Notification,
+    NotificationKind,
+    NotificationList,
+)
 from .courses import (
     Course,
     CourseGradebook,
@@ -503,7 +509,14 @@ from .lifecycle import (
 # anonymous lookup is a POST with the token in the body, not a GET with it in
 # the path — see `LookupNotebookShareRequest`'s docstring for why a
 # path-embedded secret was the wrong shape for this deployment's own logging.
-CONTRACTS_VERSION = "2.33.0"
+# 2.34.0: ai-ops 349, option 2, "Job-finished notifications". New: Notification,
+# NotificationList, NotificationKind and MAX_NOTIFICATION_SUMMARY_CHARS, behind
+# GET /v1/notifications, POST /v1/notifications/{id}/read and POST
+# /v1/notifications/read-all (migration 0073, revising 0072). Additive: new names only.
+# NotificationKind is closed at exactly `qpu_run_terminal` and `mention` — a
+# third producer needs its own migration and its own line here, the same
+# discipline 2.30.0 applies to TokenScope.
+CONTRACTS_VERSION = "2.34.0"
 
 __all__ = [
     "PresenceHeartbeatRequest",
@@ -684,6 +697,10 @@ __all__ = [
     "GradeAttemptRequest",
     "GradeAttemptResponse",
     "NotebookGradesSnapshot",
+    "MAX_NOTIFICATION_SUMMARY_CHARS",
+    "Notification",
+    "NotificationKind",
+    "NotificationList",
     "RerunNotebookResponse",
     "ReviewFinding",
     "Seed",

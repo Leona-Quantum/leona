@@ -6988,6 +6988,25 @@ div.mj-rail-row:hover {
   display: grid;
   gap: var(--sp-2);
 }
+/* How busy the device is, read before submitting (ai-ops 349, option 2). */
+.mj-qpu-queue {
+  display: grid;
+  gap: var(--sp-1);
+  padding: var(--sp-2) var(--sp-3);
+  border: 1px solid var(--border-0);
+  border-radius: var(--radius-control);
+  background: var(--bg-1);
+}
+.mj-qpu-queue-title {
+  color: var(--text-1);
+  font-size: var(--fs-12);
+  font-weight: 600;
+}
+.mj-qpu-queue-line {
+  margin: 0;
+  color: var(--text-0);
+  font-size: var(--fs-13);
+}
 .mj-qpu-disclaimer,
 .mj-qpu-note {
   margin: 0;

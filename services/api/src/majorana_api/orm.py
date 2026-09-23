@@ -474,6 +474,28 @@ class Presence(Base):
     last_seen_at: Mapped[dt.datetime] = mapped_column(server_default=func.now())
 
 
+class Notification(Base):
+    """Migration 0073. One event for one recipient: a hardware run of theirs
+    reached a terminal state, or someone mentioned them in a comment.
+
+    Scoped on `user_id` (the recipient), not `workspace_id` — see the
+    migration's docstring. `data` is a snapshot taken at write time, never a
+    pointer a reader has to follow back to a row that may since have changed
+    or gone away.
+    """
+
+    __tablename__ = "notifications"
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True)
+    user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id"))
+    workspace_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("workspaces.id"))
+    kind: Mapped[str]
+    summary: Mapped[str]
+    data: Mapped[dict[str, Any]] = mapped_column(JSONB, server_default=text("'{}'::jsonb"))
+    created_at: Mapped[dt.datetime | None] = mapped_column(server_default=func.now())
+    read_at: Mapped[dt.datetime | None]
+
+
 class ArtifactSource(Base):
     """Provenance (migration 0015): one pinned source record per version."""
 

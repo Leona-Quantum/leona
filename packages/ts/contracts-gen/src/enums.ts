@@ -206,6 +206,12 @@ export const NOTEBOOK_VERSION_STATUS_VALUES = [
   "failed",
 ] as const;
 
+/** NotificationKind — 2 members. */
+export const NOTIFICATION_KIND_VALUES = [
+  "qpu_run_terminal",
+  "mention",
+] as const;
+
 /** Optimizer — 3 members. */
 export const OPTIMIZER_VALUES = [
   "COBYLA",

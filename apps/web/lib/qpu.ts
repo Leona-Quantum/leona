@@ -138,6 +138,42 @@ export async function fetchQpuSubmissionGate(): Promise<QpuSubmissionGate> {
   return (await response.json()) as QpuSubmissionGate;
 }
 
+/**
+ * How busy a device is, read before submitting. `pending_jobs` is the
+ * provider's own count — worded as "N jobs ahead of yours", never a minutes
+ * figure the provider does not publish. `unavailable_reason` reuses the same
+ * reason codes `QpuSubmissionGate.blocked_reason` does (plus
+ * `queue_unavailable` for a transient read failure), so a client renders it
+ * with the SAME sentence the gate already has for that reason rather than a
+ * second copy of the wording.
+ */
+export type QpuQueueStatus = {
+  device_id: string;
+  backend_name: string | null;
+  pending_jobs: number | null;
+  unavailable_reason: string | null;
+  checked_at: string;
+};
+
+export async function fetchQpuQueueStatus(deviceId: string): Promise<QpuQueueStatus> {
+  const response = await fetch(`/api/qpu/backends/${encodeURIComponent(deviceId)}/queue`, {
+    cache: "no-store",
+  });
+  if (!response.ok) throw new Error(`qpu queue status unavailable (${response.status})`);
+  return (await response.json()) as QpuQueueStatus;
+}
+
+/** How busy the device reads, in one honest line — never a fabricated ETA. */
+export function queueStatusLine(
+  status: Pick<QpuQueueStatus, "pending_jobs" | "unavailable_reason">,
+  copy: { jobsAhead: (count: string) => string; noneAhead: string },
+): string | null {
+  if (status.unavailable_reason !== null) return null;
+  if (status.pending_jobs === null) return null;
+  if (status.pending_jobs === 0) return copy.noneAhead;
+  return copy.jobsAhead(status.pending_jobs.toLocaleString("en-US"));
+}
+
 export function formatUsd(value: number): string {
   return value.toLocaleString("en-US", { style: "currency", currency: "USD", maximumFractionDigits: value < 1 ? 4 : 2 });
 }

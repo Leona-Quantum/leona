@@ -143,6 +143,16 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
     accountMenu: string;
     usageLimits: string;
     mentions: string;
+    /** The bell button's own label; the count is read separately so a screen
+     * reader hears "Notifications, 3 unread" rather than a number with no name. */
+    notifications: string;
+    notificationsUnread: (count: number) => string;
+    notificationsEmpty: string;
+    notificationsMarkAllRead: string;
+    notificationsMarkRead: string;
+    /** "N minutes/hours/days ago", for one notification's timestamp. */
+    notificationsAgo: (value: number, unit: "minute" | "hour" | "day") => string;
+    notificationsJustNow: string;
     usageRunsLeft: (remaining: number, limit: number) => string;
     usageRunsNone: string;
     usageRunsUnlimited: string;
@@ -375,6 +385,12 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
     hardwareReadoutCorrectedShare: string;
     hardwarePricedOnly: string;
     hardwareBlockedReason: (reason: string) => string;
+    /** "How busy is this device?" — the panel shown before submitting. */
+    hardwareQueueTitle: string;
+    hardwareQueueChecking: string;
+    hardwareQueueJobsAhead: (count: string) => string;
+    hardwareQueueNoneAhead: string;
+    hardwareQueueMachine: (name: string) => string;
     //: The weekly hardware BUDGET is spent, which is not the same thing as the
     //: deployment being switched off — a person can act on this one. Takes the
     //: formatted amounts rather than raw numbers so the currency renders the
@@ -1154,6 +1170,14 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
       accountMenu: "Account menu",
       usageLimits: "Usage & limits",
       mentions: "Mentions",
+      notifications: "Notifications",
+      notificationsUnread: (count) => `Notifications, ${count} unread`,
+      notificationsEmpty: "Nothing yet. A hardware run finishing or a mention will show up here.",
+      notificationsMarkAllRead: "Mark all as read",
+      notificationsMarkRead: "Mark as read",
+      notificationsAgo: (value, unit) =>
+        `${value} ${unit}${value === 1 ? "" : "s"} ago`,
+      notificationsJustNow: "Just now",
       // The allowance window ROLLS. "Resets weekly" would be the natural thing
       // to write here and it would be false: runs come back one at a time,
       // seven days after each was spent, so the only honest sentence names a
@@ -1431,7 +1455,13 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
         submission_disabled: "Hardware submission is off in this deployment.",
         credentials_unconfigured: "No provider credentials are configured, so nothing can be submitted.",
         provider_dependency_missing: "The provider SDK is not installed, so nothing can be submitted.",
+        queue_unavailable: "The device's queue could not be read just now.",
       }[reason] ?? "Hardware submission is unavailable in this deployment."),
+      hardwareQueueTitle: "How busy is this device?",
+      hardwareQueueChecking: "Checking the queue…",
+      hardwareQueueJobsAhead: (count) => `${count} jobs ahead of yours`,
+      hardwareQueueNoneAhead: "No jobs ahead of yours right now",
+      hardwareQueueMachine: (name) => `on ${name}`,
       hardwareSpendExhausted: (estimate, limit, spent) =>
         `Estimated at ${estimate}. Your plan includes ${limit} of hardware time weekly, and ${spent} is already committed. Free-queue devices and browser simulation stay available.`,
       hardwareSpendFreeTier: (estimate) =>
@@ -2341,6 +2371,14 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
       accountMenu: "アカウントメニュー",
       usageLimits: "使用状況と上限",
       mentions: "メンション",
+      notifications: "通知",
+      notificationsUnread: (count) => `通知、未読${count}件`,
+      notificationsEmpty: "まだ通知はありません。実機の実行が終わったときや、メンションされたときにここに表示されます。",
+      notificationsMarkAllRead: "すべて既読にする",
+      notificationsMarkRead: "既読にする",
+      notificationsAgo: (value, unit) =>
+        `${value}${{ minute: "分", hour: "時間", day: "日" }[unit]}前`,
+      notificationsJustNow: "たった今",
       // 英語版と同じ理由：この枠は「週ごとにリセット」ではなくローリング7日間。
       // 使った実行が7日後に1回ずつ戻るので、曜日ではなく日付で言うしかない。
       usageRunsLeft: (remaining: number, limit: number) => `実行 残り ${remaining}/${limit}`,
@@ -2612,7 +2650,13 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
         submission_disabled: "この環境ではハードウェア実行が無効になっています。",
         credentials_unconfigured: "実機提供元の認証情報が未設定のため、実行できません。",
         provider_dependency_missing: "この環境はこの実機提供元に対応していません。",
+        queue_unavailable: "現在、この実機のキューを読み取れませんでした。",
       }[reason] ?? "現在の環境では量子コンピュータでの実行を利用できません。"),
+      hardwareQueueTitle: "この実機の混み具合",
+      hardwareQueueChecking: "キューを確認しています…",
+      hardwareQueueJobsAhead: (count) => `あなたの前に${count}件のジョブが待っています`,
+      hardwareQueueNoneAhead: "今なら、あなたの前に待っているジョブはありません",
+      hardwareQueueMachine: (name) => `実機: ${name}`,
       hardwareSpendExhausted: (estimate, limit, spent) =>
         `見積もりは${estimate}です。プランの実機実行枠は週${limit}で、すでに${spent}を使用しています。無料キューとブラウザシミュレーションは引き続き利用できます。`,
       hardwareSpendFreeTier: (estimate) =>

@@ -275,6 +275,7 @@ async def _delete_committed_tenants(factory, workspace_ids, user_ids) -> None:
         Membership,
         Notebook,
         Presence,
+        Notification,
         Project,
         ProjectShare,
         QpuRun,
@@ -352,6 +353,21 @@ async def _delete_committed_tenants(factory, workspace_ids, user_ids) -> None:
         # the same good failure mode: a ForeignKeyViolation from the workspace
         # delete rather than a wrong answer somewhere quiet.
         await session.execute(delete(QpuRun).where(QpuRun.workspace_id.in_(workspace_ids)))
+        # Notifications (migration 0073) reference the workspace where the
+        # event happened AND the recipient, and the two sets genuinely differ
+        # the same way CommentMention's do just below: a mention notifies a
+        # guest whose OWN workspace is not in this teardown's set at all, so
+        # filtering only on workspace_id would leave their row behind to block
+        # the user delete at the bottom of this function. Absent here until a
+        # suite committed one that outlived its own rollback — the same good
+        # failure mode as `QpuRun` above: a ForeignKeyViolation from the
+        # workspace or user delete, not a wrong answer somewhere quiet.
+        await session.execute(
+            delete(Notification).where(
+                (Notification.workspace_id.in_(workspace_ids))
+                | (Notification.user_id.in_(user_ids))
+            )
+        )
         if artifact_ids:
             await session.execute(
                 update(Artifact)
