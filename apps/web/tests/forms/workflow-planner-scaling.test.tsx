@@ -22,14 +22,17 @@ const PAPERS: PlannerPaper[] = PAPER_REGISTER.papers
 const ESTIMATE: unknown = JSON.parse(readFileSync(join(process.cwd(), "lib/workflow-planner/physical-fixture.json"), "utf8"));
 const RSA = "Factor a 2048-bit RSA modulus.";
 
-function renderPlanner(signedIn: boolean) {
+// Signed in: the planner renders for an account only (ai-ops 369), so the
+// input exists once the session read lands.
+async function renderPlanner(signedIn: boolean) {
   const stub = stubFetch((request: RecordedRequest) => {
     if (request.url === "/api/auth/session") return { status: 200, body: { signedIn, signInHref: "/auth/sign-in" } };
     if (request.url === "/api/estimates/logical") return { status: 200, body: ESTIMATE };
     return { status: 404 };
   });
   const view = render(<AtlasWorkflowPlanner locale="en" graph={GRAPH} papers={PAPERS} examples={{}} />);
-  fireEvent.change(screen.getByLabelText("Your problem"), { target: { value: RSA } });
+  const input = await waitFor(() => screen.getByLabelText("Your problem"));
+  fireEvent.change(input, { target: { value: RSA } });
   return { view, stub };
 }
 
@@ -37,8 +40,8 @@ function chartTitles(container: HTMLElement): string[] {
   return [...container.querySelectorAll(".mj-plan-chart-title")].map((node) => node.textContent ?? "");
 }
 
-test("a plan draws one chart per quantity, with the published sizes marked, for a signed-out reader too", async () => {
-  const { view, stub } = renderPlanner(false);
+test("a plan draws one chart per quantity, with the published sizes marked, and costs nothing until asked", async () => {
+  const { view, stub } = await renderPlanner(true);
   try {
     await waitFor(() => assert.match(view.container.textContent ?? "", /How it grows, and what machine it needs/));
     assert.deepEqual(chartTitles(view.container), ["Logical qubits", "Toffoli gates", "Serial depth"]);
@@ -47,8 +50,8 @@ test("a plan draws one chart per quantity, with the published sizes marked, for 
     assert.match(view.container.textContent ?? "", /Published at this size/);
     const axis = screen.getByLabelText(/Vary/) as HTMLSelectElement;
     assert.equal(axis.value, "bits");
-    await waitFor(() => assert.ok(screen.getByText("Sign in to estimate the machine")));
-    assert.equal(screen.getByText("Sign in to estimate the machine").getAttribute("href"), "/auth/sign-in");
+    await waitFor(() => assert.ok(screen.getByRole("button", { name: "Estimate the machine" })));
+    // The machine is costed on request, not on every keystroke.
     assert.equal(stub.calls.filter((c) => c.url === "/api/estimates/logical").length, 0);
   } finally {
     stub.restore();
@@ -56,7 +59,7 @@ test("a plan draws one chart per quantity, with the published sizes marked, for 
 });
 
 test("a signed-in reader costs the whole curve in one request and sees both machines at their size", async () => {
-  const { view, stub } = renderPlanner(true);
+  const { view, stub } = await renderPlanner(true);
   try {
     const button = await waitFor(() => screen.getByRole("button", { name: "Estimate the machine" }));
     fireEvent.click(button);
