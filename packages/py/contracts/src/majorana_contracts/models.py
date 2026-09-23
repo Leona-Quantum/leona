@@ -1274,6 +1274,13 @@ class QpuRunRecord(_ResourceBase):
     # own `version` field and shaped by `majorana_qpu.mitigation`, which this
     # package cannot import, so it is typed loosely here and read defensively.
     mitigation: dict[str, Any] | None = None
+    # A Studio parameter sweep run on hardware as one job (migration 0075):
+    # the parameter label and every point's OpenQASM 3 program, each PUB's
+    # transpiled two-qubit gate count, and every binding's raw counts in
+    # binding order. None for a run that did not sweep. Shaped by
+    # `majorana_qpu.sweep`, which this package cannot import, so it is typed
+    # loosely here and read defensively, same as `mitigation`.
+    sweep: dict[str, Any] | None = None
     error: str | None = None
     submitted_at: datetime | None = None
     completed_at: datetime | None = None

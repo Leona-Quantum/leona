@@ -3967,6 +3967,13 @@ export interface components {
              */
             submitted_at: string | null;
             /**
+             * Sweep
+             * @default null
+             */
+            sweep: {
+                [key: string]: unknown;
+            } | null;
+            /**
              * User Id
              * Format: uuid
              */

@@ -334,7 +334,7 @@ def test_every_scale_runs_the_same_physical_pairs_exactly_one_three_and_five_tim
     run exactly 3 and 5 times as often as at scale 1, and nothing else runs."""
     backend = _fake_backend()
 
-    pubs, record = _transpile_pubs(_loads(qasm), backend, zne=True)
+    pubs, record, _sweep = _transpile_pubs(_loads(qasm), backend, zne=True)
 
     base, three, five = (_physical_pairs(pub) for pub in pubs)
     assert base
@@ -366,7 +366,7 @@ def test_the_folds_stay_in_the_backends_instruction_set_and_implement_the_circui
     from qiskit.quantum_info import Operator
 
     backend = _fake_backend()
-    pubs, _ = _transpile_pubs(_loads(TRIANGLE), backend, zne=True)
+    pubs, _, _sweep = _transpile_pubs(_loads(TRIANGLE), backend, zne=True)
     for pub in pubs:
         for instruction in pub.data:
             name = instruction.operation.name

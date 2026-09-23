@@ -1,5 +1,7 @@
 from .models import (
     MAX_BACKEND_NAME_CHARS,
+    SWEEP_MAX_BINDINGS,
+    SWEEP_MIN_BINDINGS,
     EstimateBasis,
     QpuAccess,
     QpuBackendInfo,
@@ -10,6 +12,7 @@ from .models import (
     QpuProviderKey,
     QpuRunJobPayload,
     QpuSubmissionBlockReason,
+    QpuSweepBinding,
     SUBMITTABLE_PROVIDERS,
     reported_backend_name,
 )
@@ -32,6 +35,8 @@ __all__ = [
     "MAX_BACKEND_NAME_CHARS",
     "RATE_CARD",
     "SUBMITTABLE_PROVIDERS",
+    "SWEEP_MAX_BINDINGS",
+    "SWEEP_MIN_BINDINGS",
     "EstimateBasis",
     "IbmCredentialRejected",
     "IbmRuntimeProvider",
@@ -48,6 +53,7 @@ __all__ = [
     "QpuProviderKey",
     "QpuRunJobPayload",
     "QpuSubmissionBlockReason",
+    "QpuSweepBinding",
     "UnknownDeviceError",
     "backend_info",
     "estimate",

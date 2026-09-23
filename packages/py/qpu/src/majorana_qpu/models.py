@@ -174,6 +174,47 @@ class QpuJobStatus(StrEnum):
     CANCELLED = "cancelled"
 
 
+#: A Studio parameter sweep sent to hardware sends every point as its own PUB
+#: of ONE job (ai-ops 349, "parameter sweeps batched into one task where the
+#: provider allows it") — the same one-job-many-PUBs mechanism ZNE already
+#: uses for its 3x/5x folds, just with one PUB per swept value instead of one
+#: per fold. Bounds below are named because a batch's cost and IBM queue time
+#: both scale with it.
+#:
+#: Minimum 2: one binding is an ordinary submission, not a sweep.
+SWEEP_MIN_BINDINGS = 2
+#: A sweep sends one PUB per binding with no folding, so a batch's total
+#: shots and transpile cost scale linearly with this number. 20 keeps a single
+#: job's worst case (20 PUBs at up to MAX_ESTIMATE_SHOTS shots each) bounded
+#: the same way the ZNE opt-in bounds its own multiplier (3 circuits): the
+#: cost and allowance checks are the real backstop, but a batch this size
+#: still turns what would otherwise be up to 20 separate queue waits into one
+#: without letting a single Studio sweep monopolize a shared device's queue.
+SWEEP_MAX_BINDINGS = 20
+
+
+class QpuSweepBinding(BaseModel):
+    """One point of a hardware parameter sweep: a fully-bound circuit.
+
+    Studio's local ideal sweep (`apps/web/lib/studio-parameter-sweep.ts`)
+    already rewrites one gate's angle and re-derives the circuit for each
+    point entirely client-side; a hardware sweep reuses exactly that — the
+    client sends N complete OpenQASM 3 programs, one per point, rather than a
+    single parameterized program bound by a value array. That keeps this
+    package's IBM adapter to the multi-PUB submission it already ships for
+    ZNE, instead of a second, unverified mechanism (a genuine OpenQASM 3
+    `input` parameter bound through Qiskit) that this sandbox could not
+    exercise against a real account any more than the rest of the adapter can
+    (see `ibm.py`'s "CI proves the gating only").
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    #: Shown beside this point's result, e.g. "45°". Not parsed; display only.
+    label: str = Field(min_length=1, max_length=60)
+    qasm: str = Field(min_length=1)
+
+
 class QpuJobRequest(BaseModel):
     model_config = ConfigDict(frozen=True)
 
@@ -186,6 +227,13 @@ class QpuJobRequest(BaseModel):
     #: queue wait covers all three. `shots` is per circuit. Off unless the user
     #: opted in, and the worker reads the opt-in from the durable row.
     zne: bool = False
+    #: A parameter-sweep batch (ai-ops 349): every point as its own PUB of this
+    #: SAME job. None for an ordinary submission. `qasm` above is still
+    #: `bindings[0].qasm` — every reader that only knows about single-circuit
+    #: submissions keeps working. Mutually exclusive with `zne`; the route and
+    #: the worker both refuse a record that asked for both before either
+    #: reaches this adapter.
+    bindings: tuple[QpuSweepBinding, ...] | None = None
 
 
 class QpuRunJobPayload(BaseModel):
@@ -264,7 +312,13 @@ class QpuJobRecord(BaseModel):
     #: and transpiled two-qubit gate count. Shaped by `majorana_qpu.mitigation`;
     #: None when nothing was recorded.
     mitigation: dict[str, Any] | None = None
+    #: What submit() recorded for a hardware parameter sweep (migration 0075):
+    #: each PUB's transpiled two-qubit gate count, added beside the request's
+    #: own `parameter_label`/`bindings`. Shaped by `majorana_qpu.sweep`; None
+    #: when this run did not sweep.
+    sweep: dict[str, Any] | None = None
     #: Counts of EVERY PUB in the job, in PUB order, from poll(). `raw_counts` is
     #: still the first one exactly as before; a ZNE job's folded circuits are the
-    #: rest. None for a job that has not finished.
+    #: rest, and a sweep's other bindings are the rest. None for a job that has
+    #: not finished.
     pub_counts: list[dict[str, int] | None] | None = None

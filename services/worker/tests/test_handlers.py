@@ -1655,6 +1655,7 @@ def _qpu_record(
         submitted_at=None,
         created_at=None,
         mitigation=None,
+        sweep=None,
     )
 
 
@@ -2017,6 +2018,158 @@ async def test_a_finished_run_without_zne_writes_no_mitigation_at_completion(mon
     # None means "leave the column as it is": the calibration written at submit
     # stays, and nothing about ZNE is invented for a run that did not ask for it.
     assert captured["transition"]["mitigation"] is None
+
+
+_SWEEP_BINDINGS = [
+    {
+        "label": "0°",
+        "qasm": 'OPENQASM 3.0; include "stdgates.inc"; qubit[1] q; bit[1] c; c[0] = measure q[0];',
+    },
+    {
+        "label": "90°",
+        "qasm": 'OPENQASM 3.0; include "stdgates.inc"; qubit[1] q; bit[1] c; x q[0]; c[0] = measure q[0];',
+    },
+    {
+        "label": "180°",
+        "qasm": 'OPENQASM 3.0; include "stdgates.inc"; qubit[1] q; bit[1] c; h q[0]; c[0] = measure q[0];',
+    },
+]
+
+
+def _sweep_record(status: str, *, provider_job_id: str | None = None) -> SimpleNamespace:
+    from majorana_qpu.sweep import requested_sweep_record
+
+    record = _qpu_record(status, provider_job_id=provider_job_id)
+    record.qasm = _SWEEP_BINDINGS[0]["qasm"]
+    record.sweep = requested_sweep_record("RX angle (q0)", _SWEEP_BINDINGS)
+    return record
+
+
+async def test_a_sweep_run_is_submitted_with_every_bindings_program(monkeypatch):
+    """The worker resubmits every binding from the ROW, not from the payload —
+    same "resubmit from the row" contract `record.qasm` itself has."""
+    from majorana_qpu import QpuJobRecord, QpuJobStatus, QpuProviderKey
+
+    monkeypatch.setattr(handlers, "submission_block_reason", lambda **_: None)
+    record = _sweep_record("queued")
+    captured = _patch_qpu_repo(monkeypatch, record)
+
+    class FakeProvider:
+        def submit(self, request):
+            captured["submitted"] = request
+            return QpuJobRecord(
+                provider=QpuProviderKey.IBM,
+                provider_job_id="prov-sweep",
+                device_id=request.device_id,
+                shots=request.shots,
+                status=QpuJobStatus.QUEUED,
+                source_fingerprint=request.source_fingerprint,
+                sweep={"two_qubit_gate_counts": [0, 0, 0]},
+            )
+
+    await handlers.handle_qpu_run(
+        _FakeQpuSession(), _qpu_payload(str(record.id)), provider=FakeProvider()
+    )
+
+    submitted = captured["submitted"]
+    assert submitted.zne is False
+    assert [b.qasm for b in submitted.bindings] == [b["qasm"] for b in _SWEEP_BINDINGS]
+    assert [b.label for b in submitted.bindings] == [b["label"] for b in _SWEEP_BINDINGS]
+    written = captured["transition"]["sweep"]
+    assert written["parameter_label"] == "RX angle (q0)"
+    assert written["bindings"] == _SWEEP_BINDINGS
+    assert written["two_qubit_gate_counts"] == [0, 0, 0]
+    # The opt-in and its programs ride on the row and nowhere else: the
+    # payload is extra="forbid", same invariant ZNE's request has.
+    assert captured["transition"]["mitigation"] is None
+
+
+async def test_a_finished_sweep_splits_every_bindings_counts_back_beside_the_raw_ones(
+    monkeypatch,
+):
+    """Result splitting (ai-ops 349): the sweep view reads each point's counts
+    from `sweep.counts[i]`, indexed exactly like `sweep.bindings[i]` — no
+    off-by-one to remember, unlike ZNE's folded-counts shape."""
+    from majorana_qpu import QpuJobRecord, QpuJobStatus, QpuProviderKey
+
+    monkeypatch.setattr(handlers, "submission_block_reason", lambda **_: None)
+    record = _sweep_record("running", provider_job_id="prov-sweep")
+    record.sweep["two_qubit_gate_counts"] = [0, 0, 0]
+    captured = _patch_qpu_repo(monkeypatch, record)
+    pubs = [{"0": 1000}, {"1": 1000}, {"0": 500, "1": 500}]
+
+    class FakeProvider:
+        def poll(self, provider_job_id):
+            return QpuJobRecord(
+                provider=QpuProviderKey.IBM,
+                provider_job_id=provider_job_id,
+                device_id="ibm_brisbane",
+                shots=0,
+                status=QpuJobStatus.DONE,
+                source_fingerprint="",
+                raw_counts=pubs[0],
+                pub_counts=pubs,
+            )
+
+    await handlers.handle_qpu_run(
+        _FakeQpuSession(), _qpu_payload(str(record.id)), provider=FakeProvider()
+    )
+
+    transition = captured["transition"]
+    assert transition["status"].value == "done"
+    # raw_counts is still exactly binding 0's counts, same meaning it always had.
+    assert transition["raw_counts"] == pubs[0]
+    assert transition["sweep"]["counts"] == pubs
+    assert len(transition["sweep"]["counts"]) == len(_SWEEP_BINDINGS)
+    assert transition["mitigation"] is None
+
+
+async def test_a_finished_run_without_a_sweep_writes_no_sweep_document_at_completion(monkeypatch):
+    from majorana_qpu import QpuJobRecord, QpuJobStatus, QpuProviderKey
+
+    monkeypatch.setattr(handlers, "submission_block_reason", lambda **_: None)
+    record = _qpu_record("running", provider_job_id="prov-1")
+    captured = _patch_qpu_repo(monkeypatch, record)
+
+    class FakeProvider:
+        def poll(self, provider_job_id):
+            return QpuJobRecord(
+                provider=QpuProviderKey.IBM,
+                provider_job_id=provider_job_id,
+                device_id="ibm_brisbane",
+                shots=0,
+                status=QpuJobStatus.DONE,
+                source_fingerprint="",
+                raw_counts={"0": 1},
+                pub_counts=[{"0": 1}],
+            )
+
+    await handlers.handle_qpu_run(
+        _FakeQpuSession(), _qpu_payload(str(record.id)), provider=FakeProvider()
+    )
+
+    assert captured["transition"]["sweep"] is None
+
+
+async def test_a_sweep_and_zne_together_on_one_record_is_an_assertion_failure(monkeypatch):
+    """Defense in depth: the route refuses this combination before any row
+    exists, so the only way a QUEUED record carries both is a bug upstream —
+    and the handler must not silently pick one and submit anyway."""
+    from majorana_qpu.mitigation import requested_zne_record
+
+    monkeypatch.setattr(handlers, "submission_block_reason", lambda **_: None)
+    record = _sweep_record("queued")
+    record.mitigation = requested_zne_record()
+    _patch_qpu_repo(monkeypatch, record)
+
+    class NeverSubmit:
+        def submit(self, request):
+            raise AssertionError("a record requesting both must never reach the provider")
+
+    with pytest.raises(AssertionError, match="must not request both"):
+        await handlers.handle_qpu_run(
+            _FakeQpuSession(), _qpu_payload(str(record.id)), provider=NeverSubmit()
+        )
 
 
 async def test_a_redelivered_job_never_submits_to_the_provider_twice(monkeypatch):

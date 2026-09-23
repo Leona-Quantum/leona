@@ -830,3 +830,162 @@ async def test_the_allowance_sum_rides_its_index(account):
         plan = "\n".join(row[0] for row in (await session.execute(text("EXPLAIN " + sql))).all())
 
     assert "ix_qpu_runs_user_created" in plan, plan
+
+
+# --------------------------------------------------------- a hardware sweep's cost
+
+
+def _sweep_body(device_id: str, shots: int, n: int, tag: str = "sweep") -> dict:
+    return {
+        "device_id": device_id,
+        "shots": shots,
+        "qasm": QASM,
+        "source_fingerprint": f"fnv1a-{tag}",
+        "sweep": {
+            "parameter_label": "RX angle (q0)",
+            "bindings": [{"label": f"{i}°", "qasm": QASM} for i in range(n)],
+        },
+    }
+
+
+@pytest.mark.parametrize("account", [TEAM_PLAN], indirect=True)
+async def test_a_sweep_that_does_not_fit_the_staged_budget_is_refused_live(account, staged_budget):
+    """The refuse-over-allowance case, over real HTTP and real Postgres: five
+    points on Garnet ($0.30 + $0.00145/shot) at 10,000 shots is $74.00, which
+    does not fit in `STAGED_BUDGET` ($25); one point at the same shots does.
+    Proves the batch price — bindings x shots — is what the real route, the
+    real reservation and the real row all agree on, not just the doubles in
+    `test_qpu_spend_allowance.py`."""
+    client, factory, scope, _user = account
+
+    one_point = await client.post("/v1/qpu/submissions", json=_body(GARNET, 10_000, "one-point"))
+    assert one_point.status_code == 201, one_point.text
+    assert one_point.json()["estimated_total_usd"] == pytest.approx(14.80)
+
+    refused = await client.post(
+        "/v1/qpu/submissions", json=_sweep_body(GARNET, 10_000, 5, "five-points")
+    )
+    assert refused.status_code == 429, refused.text
+    detail = refused.json()
+    assert detail["reason"] == "qpu_spend_exhausted"
+    assert detail["estimate_usd"] == pytest.approx(5 * (0.30 + 10_000 * 0.00145))
+    assert detail["spent_usd"] == pytest.approx(14.80)
+
+    async with factory() as session:
+        rows = (
+            await session.execute(
+                QpuRun.__table__.select().where(
+                    QpuRun.workspace_id == scope.workspace_id,
+                    QpuRun.source_fingerprint == "fnv1a-five-points",
+                )
+            )
+        ).all()
+    assert rows == [], "a refused sweep wrote a durable attestation row"
+
+
+@pytest.mark.parametrize("account", [TEAM_PLAN], indirect=True)
+async def test_a_sweep_that_fits_is_accepted_and_carries_every_binding_live(account):
+    """The accept side, with the sweep document actually round-tripping
+    through Postgres: every binding's label and QASM come back exactly as
+    sent, on the NEW `sweep` column (migration 0075) — not folded into
+    `mitigation`, which stays null."""
+    client, _factory, _scope, _user = account
+    response = await client.post("/v1/qpu/submissions", json=_sweep_body(GARNET, 1_000, 4, "fits"))
+    assert response.status_code == 201, response.text
+    body = response.json()
+    assert body["estimated_total_usd"] == pytest.approx(4 * (0.30 + 1_000 * 0.00145))
+    assert body["mitigation"] is None
+    assert body["sweep"]["parameter_label"] == "RX angle (q0)"
+    assert [b["label"] for b in body["sweep"]["bindings"]] == ["0°", "1°", "2°", "3°"]
+
+
+@pytest.mark.asyncio
+async def test_two_concurrent_sweep_sized_reservations_cannot_both_spend_the_same_last_dollars():
+    """`test_the_last_dollars_cannot_be_spent_twice_by_two_connections` proves
+    the lock for a single-circuit estimate. This is the SAME race, over two
+    real connections, with a BATCH-sized estimate (5 bindings x $0.00145/shot
+    x 10,000 shots + 5 x $0.30 = $74.00) — proving the reservation a Studio
+    sweep reserves through is the identical `reserve_qpu_spend_slot` lock, not
+    a second path that only happens to price the same way in tests with doubles.
+    """
+    assert STAGED_BUDGET > 0
+    engine = engine_from_env()
+    factory = session_factory(engine)
+
+    async with factory() as session:
+        user, workspace = await _provision(session, "sweep-race", plan=TEAM_PLAN)
+        scope = Scope(user_id=user.id, workspace_id=workspace.id, role=Role.OWNER)
+        await session.commit()
+
+    batch_estimate = round(5 * 0.30 + 5 * 10_000 * 0.00145, 6)  # $74.00
+    # Fill the budget to exactly one batch's width short of the ceiling, so
+    # both callers below are racing for the same last batch-sized slot.
+    staged = round(STAGED_BUDGET - batch_estimate, 6)
+    async with factory() as session:
+        await qpu_runs_repo.create_record(
+            scope,
+            session,
+            device_id=GARNET,
+            provider="braket",
+            shots=1,
+            qasm=QASM,
+            source_fingerprint="fnv1a-fill",
+            estimate_basis="vendor_rate_card",
+            estimated_total_usd=staged,
+            rate_source="https://aws.amazon.com/braket/pricing/",
+            rate_confirmed_on="2026-07-23",
+        )
+        await session.commit()
+
+    since = dt.datetime.now(dt.timezone.utc) - TIER_WINDOW
+    a_has_the_slot = asyncio.Event()
+    b_outcome: list[object] = []
+
+    async def caller_a() -> None:
+        async with factory() as session:
+            await qpu_runs_repo.reserve_qpu_spend_slot(
+                scope, session, since, STAGED_BUDGET, batch_estimate
+            )
+            a_has_the_slot.set()
+            await asyncio.sleep(BLOCKED_FOR_S)
+            await qpu_runs_repo.create_record(
+                scope,
+                session,
+                device_id=GARNET,
+                provider="braket",
+                shots=10_000,
+                qasm=QASM,
+                source_fingerprint="fnv1a-sweep-a",
+                estimate_basis="vendor_rate_card",
+                estimated_total_usd=batch_estimate,
+                rate_source="https://aws.amazon.com/braket/pricing/",
+                rate_confirmed_on="2026-07-23",
+            )
+            await session.commit()
+
+    async def caller_b() -> None:
+        await slot_taken_or_the_reason_why(a_has_the_slot, task_a)
+        async with factory() as session:
+            try:
+                await qpu_runs_repo.reserve_qpu_spend_slot(
+                    scope, session, since, STAGED_BUDGET, batch_estimate
+                )
+                b_outcome.append("reserved")
+            except qpu_runs_repo.QpuSpendReached as reached:
+                b_outcome.append(reached)
+
+    task_a = asyncio.create_task(caller_a())
+    task_b = asyncio.create_task(caller_b())
+
+    try:
+        await asyncio.gather(task_a, task_b)
+        assert len(b_outcome) == 1
+        assert isinstance(b_outcome[0], qpu_runs_repo.QpuSpendReached), (
+            "the second caller reserved the same last batch-sized slot the "
+            "first one did — the account row was not held across the read "
+            "and the write for a batch estimate"
+        )
+        assert b_outcome[0].spent == pytest.approx(STAGED_BUDGET)
+    finally:
+        await delete_committed_tenants(factory, [workspace.id], [user.id])
+        await engine.dispose()

@@ -322,6 +322,7 @@ async def test_submission_with_open_gates_writes_the_record_and_enqueues(monkeyp
             rate_confirmed_on=kwargs["rate_confirmed_on"],
             raw_counts=None,
             mitigation=kwargs.get("mitigation"),
+            sweep=kwargs.get("sweep"),
             error=None,
             submitted_at=None,
             completed_at=None,
@@ -433,7 +434,9 @@ async def test_the_gate_is_closed_when_the_rows_key_has_been_rotated_away(monkey
 # ----------------------------------------------------------------- run history
 
 
-def _history_row(scope, *, fingerprint: str = "fnv1a-deadbeef", backend_name=None, mitigation=None):
+def _history_row(
+    scope, *, fingerprint: str = "fnv1a-deadbeef", backend_name=None, mitigation=None, sweep=None
+):
     """A qpu_runs row as the repository returns it, with every field the
     history item serializes. A missing attribute here is a 500 in production,
     which is the failure a double with too few fields would hide."""
@@ -460,6 +463,7 @@ def _history_row(scope, *, fingerprint: str = "fnv1a-deadbeef", backend_name=Non
         rate_confirmed_on="2026-09-22",
         raw_counts={"0": 60, "1": 68},
         mitigation=mitigation,
+        sweep=sweep,
         error=None,
         submitted_at=dt.datetime.now(dt.UTC),
         completed_at=dt.datetime.now(dt.UTC),

@@ -56,6 +56,7 @@ from majorana_qpu import (
     QpuJobRequest,
     QpuJobStatus,
     QpuRunJobPayload,
+    QpuSweepBinding,
     submission_block_reason,
 )
 from majorana_qpu.mitigation import (
@@ -63,6 +64,11 @@ from majorana_qpu.mitigation import (
     with_folded_counts,
     zne_refusal,
     zne_requested,
+)
+from majorana_qpu.sweep import (
+    merged_after_submit as sweep_merged_after_submit,
+    sweep_requested,
+    with_binding_counts,
 )
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 from majorana_sandbox import (
@@ -3032,6 +3038,11 @@ async def handle_qpu_run(
 
     if status is QpuRunStatus.QUEUED:
         zne = zne_requested(record.mitigation)
+        sweep = sweep_requested(record.sweep)
+        # Enforced twice: the route refuses a request that asks for both before
+        # any row exists, and this asserts that no path — a row written by an
+        # older API, a bug in a future one — ever hands the adapter both.
+        assert not (zne and sweep), "a qpu_run record must not request both zne and a sweep"
         if zne:
             # Asked BEFORE the claim below, so a circuit zero-noise extrapolation
             # cannot fold (a reset, a qubit reused after its measurement) closes
@@ -3086,6 +3097,19 @@ async def handle_qpu_run(
             await session.commit()
             return
         await session.commit()
+        # `record.sweep["bindings"]` carries every point's own label and QASM,
+        # written by the API and never by this handler — resubmitted from the
+        # row, same as `record.qasm` itself. `binding_qasms` already asserted
+        # this is a sweep; the labels ride along because the adapter has no
+        # other use for them, but a future reader of `QpuJobRequest` might.
+        bindings = (
+            tuple(
+                QpuSweepBinding(label=b["label"], qasm=b["qasm"])
+                for b in record.sweep["bindings"]  # type: ignore[index]
+            )
+            if sweep
+            else None
+        )
         submitted = await asyncio.to_thread(
             qpu.submit,
             QpuJobRequest(
@@ -3094,6 +3118,7 @@ async def handle_qpu_run(
                 qasm=record.qasm,
                 source_fingerprint=record.source_fingerprint,
                 zne=zne,
+                bindings=bindings,
             ),
         )
         # No `submitted_at` here: the claim above already stamped it, and that
@@ -3115,6 +3140,9 @@ async def handle_qpu_run(
             # count (migration 0066), for the same reason: the adapter only
             # holds the backend and the ISA circuits during submit.
             mitigation=merged_after_submit(record.mitigation, submitted.mitigation),
+            # For a sweep, the same shape: each PUB's transpiled gate count,
+            # added beside the request's own parameter label and bindings.
+            sweep=sweep_merged_after_submit(record.sweep, submitted.sweep) if sweep else None,
         )
         if credential is not None:
             # After the provider accepted it, not before. A submit that IBM
@@ -3154,6 +3182,12 @@ async def handle_qpu_run(
                 mitigation=(
                     with_folded_counts(record.mitigation, polled.pub_counts)
                     if zne_requested(record.mitigation)
+                    else None
+                ),
+                # Same for a sweep: every binding's counts, in binding order.
+                sweep=(
+                    with_binding_counts(record.sweep, polled.pub_counts)
+                    if sweep_requested(record.sweep)
                     else None
                 ),
             )

@@ -1003,6 +1003,17 @@ class QpuRun(Base):
     #: Found by the live suites against real Postgres, where every run without
     #: ZNE failed that CHECK on insert.
     mitigation: Mapped[dict[str, Any] | None] = mapped_column(JSONB(none_as_null=True))
+    #: A Studio hardware parameter sweep (migration 0075): the parameter label
+    #: and every point's OpenQASM 3 program at submission, each PUB's
+    #: transpiled two-qubit gate count at submit, and every binding's raw
+    #: counts at completion. Shaped by `majorana_qpu.sweep`; a NEW column
+    #: rather than a key inside `mitigation` because `mitigation` is
+    #: documented as noise-mitigation inputs and a sweep is not one — see
+    #: 0075's own docstring. `none_as_null` for the same reason `mitigation`
+    #: needs it: `create_record` passes None explicitly for a run that did not
+    #: sweep, and a plain JSONB column would store that as JSON `null` rather
+    #: than SQL NULL, failing 0075's object CHECK.
+    sweep: Mapped[dict[str, Any] | None] = mapped_column(JSONB(none_as_null=True))
     error: Mapped[str | None]
     submitted_at: Mapped[dt.datetime | None]
     completed_at: Mapped[dt.datetime | None]

@@ -320,6 +320,7 @@ async def _fake_create_record(scope_arg, session_arg, **kwargs):
         rate_confirmed_on=kwargs["rate_confirmed_on"],
         raw_counts=None,
         mitigation=kwargs.get("mitigation"),
+        sweep=kwargs.get("sweep"),
         error=None,
         submitted_at=None,
         completed_at=None,
@@ -661,3 +662,190 @@ async def test_a_submission_without_zne_records_no_mitigation_request(monkeypatc
     )
     assert written["mitigation"] is None
     assert written["estimated_total_usd"] == pytest.approx(0.30 + 10 * 0.08)
+
+
+# ------------------------------------------------ a hardware parameter sweep's cost
+
+
+def _sweep_bindings(n: int) -> list[dict]:
+    return [{"label": f"{i}°", "qasm": QASM} for i in range(n)]
+
+
+def _sweep_submission(
+    device_id: str = FORTE, shots: int = 128, *, n: int = 5
+) -> QpuSubmissionRequest:
+    bindings = _sweep_bindings(n)
+    return QpuSubmissionRequest(
+        device_id=device_id,
+        shots=shots,
+        qasm=bindings[0]["qasm"],
+        source_fingerprint="fnv1a-deadbeef",
+        sweep={"parameter_label": "RX angle (q0)", "bindings": bindings},
+    )
+
+
+async def test_a_sweep_is_priced_as_n_circuits_and_that_is_what_the_row_records(monkeypatch):
+    """The owner-approved shape (ai-ops 349): a batch is priced for bindings x
+    shots, the whole batch, not one point — same `circuits` arithmetic ZNE's
+    three folds already use, reused rather than a second pricing path."""
+    _open_the_gate(monkeypatch)
+    reserved: list[tuple] = []
+    written: dict = {}
+
+    async def fake_reserve(scope, session, since, limit, estimate):
+        reserved.append((limit, estimate))
+
+    async def recording_create_record(scope_arg, session_arg, **kwargs):
+        written.update(kwargs)
+        return await _fake_create_record(scope_arg, session_arg, **kwargs)
+
+    monkeypatch.setattr(qpu_runs_repo, "reserve_qpu_spend_slot", fake_reserve)
+    monkeypatch.setattr(qpu_routes.qpu_runs_repo, "create_record", recording_create_record)
+    monkeypatch.setattr(qpu_routes.system, "enqueue_job", _fake_enqueue_job)
+
+    result = await qpu_routes.qpu_submit(
+        _sweep_submission(shots=1_000, n=5),
+        scope=make_scope(),
+        session=object(),
+        identity=_identity("free"),
+        settings=_sources(),
+    )
+
+    five_circuits = 5 * 0.30 + 5 * 1_000 * 0.08
+    assert reserved == [(None, pytest.approx(five_circuits))]
+    assert result.estimated_total_usd == pytest.approx(five_circuits)
+    assert written["shots"] == 1_000  # per point, as the user asked
+    assert written["sweep"]["parameter_label"] == "RX angle (q0)"
+    assert written["sweep"]["bindings"] == _sweep_bindings(5)
+    assert result.sweep == written["sweep"]
+    # Not written to mitigation: a sweep and ZNE are different columns.
+    assert written["mitigation"] is None
+
+
+async def test_a_sweep_refused_over_allowance_where_fewer_bindings_would_fit(monkeypatch):
+    """Against the REAL reservation: 103 shots on Forte is $8.54 for one point
+    and would be $42.70 for five — a $25 ceiling admits the first shape (an
+    ordinary submission) and refuses the batch. A route that priced a sweep as
+    one circuit would wrongly admit both."""
+    _open_the_gate(monkeypatch)
+    _stage_a_ceiling(monkeypatch, "free", STAGED_LIMIT_USD)
+
+    async def nothing_spent(scope, session, since):
+        return 0.0
+
+    monkeypatch.setattr(qpu_runs_repo, "authorized_spend_since", nothing_spent)
+    monkeypatch.setattr(qpu_routes.qpu_runs_repo, "create_record", _fake_create_record)
+    monkeypatch.setattr(qpu_routes.system, "enqueue_job", _fake_enqueue_job)
+
+    admitted = await qpu_routes.qpu_submit(
+        _submission(FORTE, shots=103),
+        scope=make_scope(),
+        session=LockOnlySession(),
+        identity=_identity("free"),
+        settings=_sources(),
+    )
+    assert admitted.estimated_total_usd == pytest.approx(0.30 + 103 * 0.08)
+
+    with pytest.raises(HTTPException) as excinfo:
+        await qpu_routes.qpu_submit(
+            _sweep_submission(FORTE, shots=103, n=5),
+            scope=make_scope(),
+            session=LockOnlySession(),
+            identity=_identity("free"),
+            settings=_sources(),
+        )
+    assert excinfo.value.status_code == 429
+    assert excinfo.value.detail["reason"] == "qpu_spend_exhausted"
+    assert excinfo.value.detail["estimate_usd"] == pytest.approx(5 * 0.30 + 5 * 103 * 0.08)
+
+
+async def test_nothing_is_written_when_a_sweep_is_refused_over_allowance(monkeypatch):
+    _open_the_gate(monkeypatch)
+    _stage_a_ceiling(monkeypatch, "free", STAGED_LIMIT_USD)
+    wrote: list[str] = []
+
+    async def fake_reserve(scope, session, since, limit, estimate):
+        raise qpu_runs_repo.QpuSpendReached(0.0, limit, estimate)
+
+    async def fake_create_record(*args, **kwargs):
+        wrote.append("record")
+
+    async def fake_enqueue_job(*args, **kwargs):
+        wrote.append("job")
+
+    monkeypatch.setattr(qpu_runs_repo, "reserve_qpu_spend_slot", fake_reserve)
+    monkeypatch.setattr(qpu_routes.qpu_runs_repo, "create_record", fake_create_record)
+    monkeypatch.setattr(qpu_routes.system, "enqueue_job", fake_enqueue_job)
+
+    with pytest.raises(HTTPException):
+        await qpu_routes.qpu_submit(
+            _sweep_submission(),
+            scope=make_scope(),
+            session=object(),
+            identity=_identity("free"),
+            settings=_sources(),
+        )
+    assert wrote == []
+
+
+def test_a_sweep_and_zne_together_is_refused_before_any_pricing(monkeypatch):
+    _open_the_gate(monkeypatch)
+    bindings = _sweep_bindings(3)
+    with pytest.raises(ValueError, match="mutually exclusive"):
+        QpuSubmissionRequest(
+            device_id=FORTE,
+            shots=128,
+            qasm=bindings[0]["qasm"],
+            source_fingerprint="fnv1a-deadbeef",
+            zne=True,
+            sweep={"parameter_label": "angle", "bindings": bindings},
+        )
+
+
+def test_a_sweep_whose_top_level_qasm_disagrees_with_binding_zero_is_refused():
+    """Refused rather than silently preferring one side, so a client bug that
+    sends the two out of sync cannot run the wrong point as "the" run."""
+    bindings = _sweep_bindings(3)
+    with pytest.raises(ValueError, match="bindings\\[0\\].qasm"):
+        QpuSubmissionRequest(
+            device_id=FORTE,
+            shots=128,
+            qasm="OPENQASM 3.0; a different program;",
+            source_fingerprint="fnv1a-deadbeef",
+            sweep={"parameter_label": "angle", "bindings": bindings},
+        )
+
+
+@pytest.mark.parametrize("n", [0, 1, 21])
+def test_a_sweep_outside_the_binding_bounds_is_refused(n):
+    """Below `SWEEP_MIN_BINDINGS` (2, an ordinary submission covers 1 point) or
+    above `SWEEP_MAX_BINDINGS` (20, see its own docstring for why)."""
+    bindings = _sweep_bindings(max(n, 1))
+    with pytest.raises(ValueError):
+        QpuSubmissionRequest(
+            device_id=FORTE,
+            shots=128,
+            qasm=bindings[0]["qasm"],
+            source_fingerprint="fnv1a-deadbeef",
+            sweep={"parameter_label": "angle", "bindings": bindings[:n] if n else []},
+        )
+
+
+async def test_a_sweep_estimate_prices_the_whole_batch():
+    """`POST /qpu/estimates` with `sweep_bindings` set is what Studio's cost
+    preview calls before submit — it must return exactly what the submission
+    above records, so the number shown is the number charged."""
+    from majorana_api.routes.qpu import QpuEstimateRequest, qpu_estimate
+
+    result = await qpu_estimate(
+        QpuEstimateRequest(device_id=FORTE, shots=1_000, sweep_bindings=5), scope=make_scope()
+    )
+    assert result.total_usd == pytest.approx(5 * 0.30 + 5 * 1_000 * 0.08)
+    assert result.circuits == 5
+
+
+def test_a_sweep_estimate_and_zne_together_is_refused():
+    from majorana_api.routes.qpu import QpuEstimateRequest
+
+    with pytest.raises(ValueError, match="mutually exclusive"):
+        QpuEstimateRequest(device_id=FORTE, shots=1_000, zne=True, sweep_bindings=5)

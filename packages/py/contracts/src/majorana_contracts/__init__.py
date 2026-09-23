@@ -467,7 +467,16 @@ from .lifecycle import (
 # looking at a run, a notebook or a saved circuit right now (migration 0070).
 # Additive: new names only. PresenceTargetType is its own enum, not a reuse of
 # CommentTargetType, so presence and comments can each grow independently.
-CONTRACTS_VERSION = "2.31.0"
+# 2.32.0: Proposal 5 increment 5 (ai-ops 349, "parameter sweeps batched into one
+# task where the provider allows it"). QpuRunRecord gains optional `sweep`, a
+# Studio parameter sweep submitted to hardware as one job, one PUB per point
+# (migration 0075). Additive: it defaults to None, `raw_counts` and `mitigation`
+# keep their meaning, and a sweep and zero-noise extrapolation are mutually
+# exclusive so a run never carries both. Provisional like 2.28.0 was: several
+# migrations were branching from 0069 at once, and the orchestrator renumbers
+# migrations and may renumber this version note at landing if another 2.32.0
+# lands first.
+CONTRACTS_VERSION = "2.32.0"
 
 __all__ = [
     "PresenceHeartbeatRequest",

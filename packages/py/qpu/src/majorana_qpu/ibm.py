@@ -148,6 +148,10 @@ class IbmRuntimeProvider:
         reason = self._block_reason()
         if reason is not None:
             raise QpuDisabledError(reason)
+        assert not (request.zne and request.bindings), (
+            "a sweep and zero-noise extrapolation cannot both be requested; "
+            "the route and the worker must refuse that before it reaches here"
+        )
         from qiskit import qasm3
         from qiskit_ibm_runtime import QiskitRuntimeService, SamplerV2
 
@@ -161,13 +165,15 @@ class IbmRuntimeProvider:
             ensure_foldable(circuit)
         service = QiskitRuntimeService(**self._service_kwargs())
         backend = service.least_busy(operational=True, simulator=False)
-        pubs, mitigation = _transpile_pubs(circuit, backend, zne=request.zne)
+        pubs, mitigation, sweep = _transpile_pubs(
+            circuit, backend, zne=request.zne, bindings=request.bindings
+        )
         sampler = SamplerV2(mode=backend)
         sampler.options.default_shots = request.shots
-        # ONE job for every PUB. A ZNE submission is three circuits, and three
-        # jobs would be three waits in IBM's queue, with the device's noise free
-        # to drift between them — which is exactly the thing the three scale
-        # factors are supposed to hold still.
+        # ONE job for every PUB. A ZNE submission is three circuits and a sweep
+        # is up to SWEEP_MAX_BINDINGS; either way, N separate jobs would be N
+        # waits in IBM's queue, with the device's noise free to drift between
+        # them — which is exactly what one job holds still.
         job = sampler.run(pubs)
         return QpuJobRecord(
             provider=QpuProviderKey.IBM,
@@ -183,6 +189,7 @@ class IbmRuntimeProvider:
             # record's `device_id` is the catalog entry, not the processor.
             backend_name=reported_backend_name(getattr(backend, "name", None)),
             mitigation=mitigation,
+            sweep=sweep,
         )
 
     def _service(self):
@@ -236,25 +243,38 @@ class IbmRuntimeProvider:
 
 
 def _transpile_pubs(
-    circuit: object, backend: object, *, zne: bool
-) -> tuple[list[object], dict[str, object] | None]:
-    """The ISA circuits to send, and what submit records about them.
+    circuit: object,
+    backend: object,
+    *,
+    zne: bool,
+    bindings: tuple[object, ...] | None = None,
+) -> tuple[list[object], dict[str, object] | None, dict[str, object] | None]:
+    """The ISA circuits to send, what submit records for mitigation, and what
+    it records for a sweep. At most one of `zne`/`bindings` is set — the caller
+    (`submit`) asserts that before this runs.
 
-    The scale-1 circuit is transpiled exactly as it was before ZNE existed, so a
-    run without ZNE sends the same circuit it always did and its `raw_counts`
-    mean what they always meant.
+    The scale-1 / binding-0 circuit is transpiled exactly as it was before
+    either feature existed, so a plain run sends the same circuit it always did
+    and its `raw_counts` mean what they always meant.
 
-    With ZNE the 3x and 5x circuits are folded from that compiled circuit
-    (`mitigation.fold_compiled`), never compiled again. So every scale runs its
-    two-qubit gates on the same physical pairs, including the SWAPs routing
-    added, and reads out on the same physical qubits. That is what makes the
-    three circuits one noise series rather than three circuits with different
-    noise, and why each PUB's two-qubit gate count comes out exactly 1x, 3x and
-    5x the scale-1 count. The counts are still recorded rather than assumed.
+    With ZNE the 3x and 5x circuits are FOLDED from that compiled circuit
+    (`mitigation.fold_compiled`), never compiled again, so every scale runs its
+    two-qubit gates on the same physical pairs. A sweep's other bindings are
+    different circuits (only one gate's angle differs), each transpiled
+    independently with the SAME seed, which gives them the same layout and
+    routing whenever the compiler's choice depends only on the circuit's
+    connectivity — true here, since a sweep varies a parameter's numeric value,
+    never which qubits a gate touches. Unlike ZNE's folds this is not enforced
+    by construction, only made deterministic; `two_qubit_gate_counts` is
+    recorded for every binding so a reader can see whether every point actually
+    landed on the same physical circuit.
     """
     from qiskit.transpiler.preset_passmanagers import generate_preset_pass_manager
 
-    isa = generate_preset_pass_manager(backend=backend, optimization_level=1).run(circuit)
+    pass_manager = generate_preset_pass_manager(
+        backend=backend, optimization_level=1, seed_transpiler=0
+    )
+    isa = pass_manager.run(circuit)
     pubs = [isa]
     mitigation: dict[str, object] = {"version": MITIGATION_RECORD_VERSION}
     # A read of what the backend reported, taken now because the calibration a
@@ -272,7 +292,18 @@ def _transpile_pubs(
             "folding": "global",
             "two_qubit_gates": [two_qubit_gate_count(pub) for pub in pubs],
         }
-    return pubs, (mitigation if len(mitigation) > 1 else None)
+        return pubs, (mitigation if len(mitigation) > 1 else None), None
+    sweep: dict[str, object] | None = None
+    if bindings:
+        from qiskit import qasm3
+
+        # bindings[0] IS `circuit` (the route asserts `qasm == bindings[0].qasm`
+        # before the row is written), so `isa` above already covers it; only
+        # the rest need their own parse and transpile.
+        for binding in bindings[1:]:
+            pubs.append(pass_manager.run(qasm3.loads(binding.qasm)))  # type: ignore[attr-defined]
+        sweep = {"two_qubit_gate_counts": [two_qubit_gate_count(pub) for pub in pubs]}
+    return pubs, (mitigation if len(mitigation) > 1 else None), sweep
 
 
 def _register_counts(pub_result: object) -> dict[str, int] | None:

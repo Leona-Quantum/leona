@@ -229,6 +229,7 @@ async def create_record(
     rate_confirmed_on: str,
     artifact_version_id: uuid.UUID | None = None,
     mitigation: dict[str, Any] | None = None,
+    sweep: dict[str, Any] | None = None,
 ) -> QpuRun:
     """Write the QUEUED attestation row.
 
@@ -236,6 +237,11 @@ async def create_record(
     one (`majorana_qpu.mitigation.requested_zne_record`), and None otherwise. It
     is written here, with the estimate that was multiplied for it, so the row
     that records the price also records what the price was for.
+
+    `sweep` is the same shape for a Studio parameter sweep submitted to
+    hardware (`majorana_qpu.sweep.requested_sweep_record`), and None for any
+    run that is not one — including a ZNE run; the two are mutually exclusive
+    and the route refuses a request that asks for both before this is called.
     """
     require_write(scope)
     record = QpuRun(
@@ -254,6 +260,7 @@ async def create_record(
         rate_source=rate_source,
         rate_confirmed_on=rate_confirmed_on,
         mitigation=mitigation,
+        sweep=sweep,
     )
     session.add(record)
     await session.flush()
@@ -379,6 +386,7 @@ async def transition(
     backend_name: str | None = None,
     raw_counts: dict[str, int] | None = None,
     mitigation: dict[str, Any] | None = None,
+    sweep: dict[str, Any] | None = None,
     error: str | None = None,
     submitted_at: dt.datetime | None = None,
     completed_at: dt.datetime | None = None,
@@ -413,6 +421,8 @@ async def transition(
         values["raw_counts"] = raw_counts
     if mitigation is not None:
         values["mitigation"] = mitigation
+    if sweep is not None:
+        values["sweep"] = sweep
     if error is not None:
         values["error"] = error[:2000]
     if submitted_at is not None:

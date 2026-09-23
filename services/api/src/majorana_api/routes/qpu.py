@@ -35,7 +35,7 @@ from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from majorana_contracts import QpuRunRecord
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from majorana_qpu import (
     IbmCredentialRejected,
@@ -44,6 +44,8 @@ from majorana_qpu import (
     QpuCostEstimate,
     QpuRunJobPayload,
     QpuSubmissionBlockReason,
+    SWEEP_MAX_BINDINGS,
+    SWEEP_MIN_BINDINGS,
     UnknownDeviceError,
     backend_info,
     estimate as rate_card_estimate,
@@ -52,6 +54,7 @@ from majorana_qpu import (
     verify_ibm_api_key,
 )
 from majorana_qpu.mitigation import ZNE_SCALE_FACTORS, requested_zne_record
+from majorana_qpu.sweep import requested_sweep_record
 
 from .. import credential_crypto
 from ..auth.deps import CurrentIdentity, CurrentScope, DbSession, get_settings
@@ -89,7 +92,46 @@ class QpuBackendsResponse(BaseModel):
 ZNE_CIRCUITS = len(ZNE_SCALE_FACTORS)
 
 
-def _circuits_for(zne: bool) -> int:
+class QpuSweepBindingRequest(RequestModel):
+    """One point of a Studio parameter sweep: a fully-bound circuit, exactly as
+    `apps/web/lib/studio-parameter-sweep.ts` builds it for the local ideal
+    sweep, just serialized to real OpenQASM 3 rather than kept as a step list.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    #: Shown beside this point's result, e.g. "45°". Not parsed by this API.
+    label: str = Field(min_length=1, max_length=60)
+    qasm: str = Field(min_length=1, max_length=MAX_SUBMISSION_QASM_CHARS)
+
+
+class QpuSweepRequest(RequestModel):
+    """A Studio parameter sweep to run on hardware as one job, one PUB per
+    point (ai-ops 349). `SWEEP_MIN_BINDINGS`/`SWEEP_MAX_BINDINGS` are enforced
+    here, at the boundary, rather than only in the worker: a batch too small to
+    be a sweep or too large to price sensibly is refused before anything about
+    it is priced or reserved.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    #: The gate/parameter that was varied, e.g. "RX angle (q0)". Display only.
+    parameter_label: str = Field(min_length=1, max_length=120)
+    bindings: list[QpuSweepBindingRequest] = Field(
+        min_length=SWEEP_MIN_BINDINGS, max_length=SWEEP_MAX_BINDINGS
+    )
+
+
+def _circuits_for(zne: bool, sweep: QpuSweepRequest | None = None) -> int:
+    """How many circuits (PUBs) one submission sends.
+
+    A sweep and ZNE are mutually exclusive — callers validate that before this
+    runs — so at most one of `zne`/`sweep` ever applies. Reused by both the
+    estimate route and the submission route, which is what makes "the estimate
+    shown before submit is the estimate recorded" true for a batch the same way
+    it already was for ZNE."""
+    if sweep is not None:
+        return len(sweep.bindings)
     return ZNE_CIRCUITS if zne else 1
 
 
@@ -102,6 +144,19 @@ class QpuEstimateRequest(RequestModel):
     #: what opting in costs before anyone opts in. Same flag, same arithmetic as
     #: the submission below, so the number shown is the number recorded.
     zne: bool = False
+    #: Price a batch of this many points, so Studio's hardware-sweep cost
+    #: preview shows the WHOLE batch's cost (bindings x shots) before submit,
+    #: not one point's. Only the count is needed here — the price depends on
+    #: how many circuits run, never on what is in them — so this route never
+    #: sees the per-point QASM the submission body carries. None prices one
+    #: circuit (or, with `zne`, three); mutually exclusive with `zne`.
+    sweep_bindings: int | None = Field(default=None, ge=SWEEP_MIN_BINDINGS, le=SWEEP_MAX_BINDINGS)
+
+    @model_validator(mode="after")
+    def _sweep_and_zne_are_exclusive(self) -> "QpuEstimateRequest":
+        if self.zne and self.sweep_bindings is not None:
+            raise ValueError("a sweep estimate and zero-noise extrapolation are mutually exclusive")
+        return self
 
 
 class QpuSubmissionGateResponse(BaseModel):
@@ -119,8 +174,9 @@ async def qpu_backends(scope: CurrentScope) -> QpuBackendsResponse:
 
 @router.post("/qpu/estimates", response_model=QpuCostEstimate)
 async def qpu_estimate(body: QpuEstimateRequest, scope: CurrentScope) -> QpuCostEstimate:
+    circuits = body.sweep_bindings if body.sweep_bindings is not None else _circuits_for(body.zne)
     try:
-        return rate_card_estimate(body.device_id, body.shots, circuits=_circuits_for(body.zne))
+        return rate_card_estimate(body.device_id, body.shots, circuits=circuits)
     except UnknownDeviceError:
         raise HTTPException(status_code=404, detail="unknown QPU device") from None
 
@@ -432,6 +488,25 @@ class QpuSubmissionRequest(RequestModel):
     #: to 3x and 5x its gates. Off by default, because it triples the shots the
     #: provider executes (and, on IBM's free plan, the allowance time they use).
     zne: bool = False
+    #: A Studio parameter sweep to run on hardware as one job (ai-ops 349). When
+    #: given, `qasm`/`shots` above still mean binding 0 — every existing reader
+    #: of a plain submission keeps working — and `bindings[0].qasm` must equal
+    #: `qasm` exactly, checked below rather than silently preferred, so a client
+    #: bug that sends the two out of sync is refused instead of quietly running
+    #: the wrong point as "the" run. Mutually exclusive with `zne`.
+    sweep: QpuSweepRequest | None = None
+
+    @model_validator(mode="after")
+    def _sweep_is_consistent(self) -> "QpuSubmissionRequest":
+        if self.sweep is None:
+            return self
+        if self.zne:
+            raise ValueError(
+                "a sweep submission and zero-noise extrapolation are mutually exclusive"
+            )
+        if self.sweep.bindings[0].qasm != self.qasm:
+            raise ValueError("qasm must equal sweep.bindings[0].qasm")
+        return self
 
 
 def _to_qpu_run_resource(record: QpuRunRow) -> QpuRunRecord:
@@ -455,6 +530,7 @@ def _to_qpu_run_resource(record: QpuRunRow) -> QpuRunRecord:
         rate_confirmed_on=record.rate_confirmed_on,
         raw_counts=record.raw_counts,
         mitigation=record.mitigation,
+        sweep=record.sweep,
         error=record.error,
         submitted_at=record.submitted_at,
         completed_at=record.completed_at,
@@ -554,11 +630,14 @@ async def qpu_submit(
     reason = submission_block_reason(has_credential=await _caller_can_submit(scope, session))
     if reason is not None:
         raise HTTPException(status_code=409, detail={"blocked_reason": reason.value})
-    # With ZNE the estimate covers all three circuits, and that multiplied figure
-    # is what the spend reservation below checks and what the row records. The
-    # page showed the same number before the user pressed submit, because the
-    # estimate route prices it with this same call.
-    estimate = rate_card_estimate(body.device_id, body.shots, circuits=_circuits_for(body.zne))
+    # With ZNE the estimate covers all three circuits, and with a sweep it
+    # covers every binding — that multiplied figure is what the spend
+    # reservation below checks and what the row records. The page showed the
+    # same number before the user pressed submit, because the estimate route
+    # prices it with this same call and the same `circuits` count.
+    estimate = rate_card_estimate(
+        body.device_id, body.shots, circuits=_circuits_for(body.zne, body.sweep)
+    )
     user, _workspace = identity
     limits = limits_for(tier_of(user, settings))
     try:
@@ -592,6 +671,17 @@ async def qpu_submit(
         # every attested value from the row, and the payload is `extra="forbid"`,
         # so a new field there would be refused by a worker one deploy older.
         mitigation=requested_zne_record() if body.zne else None,
+        # Every binding's own program lives on the row too, for the same
+        # reason: the worker resubmits each point from here, never from the
+        # request that is about to go out of scope.
+        sweep=(
+            requested_sweep_record(
+                body.sweep.parameter_label,
+                [{"label": b.label, "qasm": b.qasm} for b in body.sweep.bindings],
+            )
+            if body.sweep is not None
+            else None
+        ),
     )
     payload = QpuRunJobPayload(
         workspace_id=str(scope.workspace_id),
