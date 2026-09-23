@@ -1,0 +1,46 @@
+# Zero-cost SDK-drift reference check (ai-ops#357 option 3, first increment).
+#
+# Re-runs every task's own MODERN-idiom canonical solution
+# (evals/sdk-drift-benchmark/cases/*.yaml) against the LATEST published Qiskit release —
+# not the repo-pinned qiskit==2.5.2 — to catch a task whose own reference has drifted
+# before anyone tries to grade a model against it. This is the "re-run on every release"
+# half described in evals/sdk-drift-benchmark/SPEC.md.
+#
+# Deliberately NOT a live model run: no provider key, no secret of any kind, no network
+# call beyond `pip`/`uv` installing packages. A failure here means a REFERENCE SOLUTION
+# broke on a newer Qiskit, never that a model was graded and scored badly.
+#
+# Runs weekly rather than on every Qiskit release (a release-triggered webhook is future
+# work — see SPEC.md's "what this increment does NOT build") and can be run on demand via
+# workflow_dispatch. Staggered off `bench.yml`'s nightly 07:00 UTC cron to avoid runner
+# contention.
+name: sdk-drift-reference-check
+
+on:
+  schedule:
+    - cron: "0 9 * * 1" # 09:00 UTC every Monday
+  workflow_dispatch: {}
+
+jobs:
+  drift-check:
+    runs-on: ubuntu-latest
+    if: ${{ github.repository == 'EshMis/majorana' || github.repository == 'Leona-Quantum/leona' }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with: { persist-credentials: false }
+      - uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4 # v10.1.0
+      - run: uv sync --package majorana-evals --frozen
+      - name: install the LATEST published Qiskit (overriding the repo-pinned version)
+        run: uv pip install --upgrade qiskit
+      - name: report the Qiskit version actually under test
+        run: uv run --no-sync --package majorana-evals python -c "import qiskit; print(qiskit.__version__)"
+      - name: re-run every canonical solution against it
+        run: |
+          uv run --no-sync --package majorana-evals python -m majorana_evals.sdk_drift \
+            drift-check --out sdk-drift-check-report.json
+      - if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: sdk-drift-check-report
+          path: sdk-drift-check-report.json
+          if-no-files-found: ignore

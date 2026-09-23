@@ -1,0 +1,48 @@
+task_id: legacy-qasm-parser-removed
+change:
+  drift_topic: legacy-qasm-parser-removed
+  old_api: "from qiskit.qasm import Qasm; Qasm(data=qasm_text).parse()"
+  new_api: "from qiskit import qasm2; qasm2.loads(qasm_text)"
+  changed_in_version: "1.0.0"
+  release_note_url: "https://quantum.cloud.ibm.com/docs/en/migration-guides/qiskit-1.0-features"
+  release_note_quote: "The legacy OpenQASM 2 parser module...has been superseded by the qiskit.qasm2 module."
+prompt: |
+  Using Qiskit, write a function `parse_qasm_num_qubits(qasm_text: str) -> int` that
+  parses an OpenQASM 2 program given as a string and returns the number of qubits it
+  declares.
+
+  Requirements:
+  - Preserve the exact function name and signature.
+entry_point: parse_qasm_num_qubits
+scaffold: |
+  def parse_qasm_num_qubits(qasm_text: str) -> int:
+      """Parse an OpenQASM 2 program and return the number of qubits it declares."""
+canonical_solution: |2
+      from qiskit import qasm2
+
+      circuit = qasm2.loads(qasm_text)
+      return circuit.num_qubits
+outdated_solution: |2
+      from qiskit.qasm import Qasm
+
+      ast = Qasm(data=qasm_text).parse()
+      return len(getattr(ast, "qubits", []))
+hidden_test: |
+  def check(candidate):
+      qasm_text = (
+          "OPENQASM 2.0;\n"
+          'include "qelib1.inc";\n'
+          "qreg q[2];\n"
+          "creg c[2];\n"
+          "h q[0];\n"
+          "cx q[0],q[1];\n"
+          "measure q -> c;\n"
+      )
+      assert candidate(qasm_text) == 2, candidate(qasm_text)
+expected_failure_pattern: "cannot import name 'Qasm'"
+qiskit_pin_at_authoring: "2.5.2"
+notes: >
+  Verified directly (2026-09-23): `from qiskit.qasm import Qasm` raises
+  `ImportError: cannot import name 'Qasm' from 'qiskit.qasm'` (the module exists as an
+  empty deprecation shim, so the failure is a missing name, not a missing module);
+  `qasm2.loads` parses the sample program and reports `num_qubits == 2` correctly.

@@ -1,0 +1,52 @@
+task_id: opflow-removed
+change:
+  drift_topic: opflow-removed
+  old_api: "from qiskit.opflow import X, Z, I; op = 0.5 * (X ^ X) + 0.3 * (Z ^ I)"
+  new_api: "from qiskit.quantum_info import SparsePauliOp; op = SparsePauliOp(['XX', 'ZI'], coeffs=[0.5, 0.3])"
+  changed_in_version: "superseded by Qiskit 1.0 (opflow itself deprecated pre-1.0)"
+  release_note_url: "https://github.com/Qiskit/documentation/blob/2d2c2fcad47dd9e7ac1cc6807527dfccd796ea24/docs/migration-guides/qiskit-opflow-module.mdx"
+  release_note_quote: "The new qiskit.primitives, in combination with the qiskit.quantum_info module, have superseded functionality of qiskit.opflow."
+prompt: |
+  Using Qiskit, write a function `hamiltonian_matrix() -> np.ndarray` that returns the
+  4x4 dense matrix for the Hamiltonian H = 0.5*(X⊗X) + 0.3*(Z⊗I), where the tensor-product
+  ordering follows Qiskit's own little-endian convention (qubit 0 is the rightmost Pauli
+  in the string).
+
+  Requirements:
+  - Preserve the exact function name and signature.
+entry_point: hamiltonian_matrix
+scaffold: |
+  import numpy as np
+
+
+  def hamiltonian_matrix() -> np.ndarray:
+      """Return the 4x4 dense matrix for H = 0.5*(X tensor X) + 0.3*(Z tensor I)."""
+canonical_solution: |2
+      from qiskit.quantum_info import SparsePauliOp
+
+      op = SparsePauliOp(["XX", "ZI"], coeffs=[0.5, 0.3])
+      return op.to_matrix()
+outdated_solution: |2
+      from qiskit.opflow import X, Z, I
+
+      op = 0.5 * (X ^ X) + 0.3 * (Z ^ I)
+      return op.to_matrix()
+hidden_test: |
+  def check(candidate):
+      import numpy as np
+      matrix = candidate()
+      expected = np.array([
+          [0.3, 0.0, 0.0, 0.5],
+          [0.0, 0.3, 0.5, 0.0],
+          [0.0, 0.5, -0.3, 0.0],
+          [0.5, 0.0, 0.0, -0.3],
+      ])
+      assert np.allclose(matrix, expected), f"matrix mismatch:\n{matrix}\nvs\n{expected}"
+expected_failure_pattern: "No module named 'qiskit\\.opflow'"
+qiskit_pin_at_authoring: "2.5.2"
+notes: >
+  `qiskit.opflow` fails at the import line itself (`ModuleNotFoundError: No module named
+  'qiskit.opflow'`, verified 2026-09-23) so its own tensor-ordering convention is never
+  reached — the expected matrix above was computed directly from
+  `SparsePauliOp(["XX","ZI"], coeffs=[0.5,0.3]).to_matrix()` under qiskit==2.5.2, not
+  hand-derived, to avoid a transcription error.

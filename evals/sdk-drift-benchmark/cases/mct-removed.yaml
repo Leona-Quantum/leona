@@ -1,0 +1,57 @@
+task_id: mct-removed
+change:
+  drift_topic: mct-removed
+  old_api: "qc.mct([0, 1], 2)"
+  new_api: "qc.mcx([0, 1], 2)"
+  changed_in_version: "1.0.0"
+  release_note_url: "https://quantum.cloud.ibm.com/docs/en/migration-guides/qiskit-1.0-features"
+  release_note_quote: "table entry: mct() -> mcx() (Old -> New API table; no standalone prose sentence on this page)"
+prompt: |
+  Using Qiskit, write a function `toffoli_like_unitary() -> np.ndarray` that builds a
+  3-qubit circuit with a single multi-controlled-X gate (controls=[0, 1], target=2) and
+  returns its 8x8 unitary matrix.
+
+  Requirements:
+  - Preserve the exact function name and signature.
+entry_point: toffoli_like_unitary
+scaffold: |
+  import numpy as np
+  from qiskit import QuantumCircuit
+
+
+  def toffoli_like_unitary() -> np.ndarray:
+      """Build a 3-qubit multi-controlled-X (controls=[0,1], target=2) circuit and return
+      its unitary matrix."""
+canonical_solution: |2
+      from qiskit.quantum_info import Operator
+
+      qc = QuantumCircuit(3)
+      qc.mcx([0, 1], 2)
+      return Operator(qc).data
+outdated_solution: |2
+      from qiskit.quantum_info import Operator
+
+      qc = QuantumCircuit(3)
+      qc.mct([0, 1], 2)
+      return Operator(qc).data
+hidden_test: |
+  def check(candidate):
+      import numpy as np
+      matrix = candidate()
+      expected = np.array([
+          [1, 0, 0, 0, 0, 0, 0, 0],
+          [0, 1, 0, 0, 0, 0, 0, 0],
+          [0, 0, 1, 0, 0, 0, 0, 0],
+          [0, 0, 0, 0, 0, 0, 0, 1],
+          [0, 0, 0, 0, 1, 0, 0, 0],
+          [0, 0, 0, 0, 0, 1, 0, 0],
+          [0, 0, 0, 0, 0, 0, 1, 0],
+          [0, 0, 0, 1, 0, 0, 0, 0],
+      ])
+      assert np.allclose(matrix, expected), matrix
+expected_failure_pattern: "no attribute 'mct'"
+qiskit_pin_at_authoring: "2.5.2"
+notes: >
+  Verified directly (2026-09-23): `QuantumCircuit.mct` raises `AttributeError:
+  'QuantumCircuit' object has no attribute 'mct'`; the expected matrix above was computed
+  from `Operator(qc).data` under qiskit==2.5.2 with `qc.mcx([0, 1], 2)`, not hand-derived.

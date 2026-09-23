@@ -1,0 +1,40 @@
+task_id: basicaer-removed
+change:
+  drift_topic: basicaer-removed
+  old_api: "from qiskit import BasicAer; backend = BasicAer.get_backend('qasm_simulator')"
+  new_api: "from qiskit.providers.basic_provider import BasicProvider; backend = BasicProvider().get_backend('basic_simulator')"
+  changed_in_version: "1.0.0 (deprecated in 0.46)"
+  release_note_url: "https://quantum.cloud.ibm.com/docs/en/api/qiskit/release-notes/1.0"
+  release_note_quote: "The qiskit.providers.basicaer module, exposed as qiskit.BasicAer, has been removed following it[s] deprecation on the 0.46 release."
+prompt: |
+  Using Qiskit, write a function `basic_backend_name() -> str` that instantiates a purely
+  local simulator backend requiring no third-party simulator package beyond Qiskit's own
+  core install, and returns its `.name` attribute.
+
+  Requirements:
+  - Preserve the exact function name and signature.
+entry_point: basic_backend_name
+scaffold: |
+  def basic_backend_name() -> str:
+      """Return the name of a purely local simulator backend requiring no third-party
+      simulator package beyond Qiskit's own core install."""
+canonical_solution: |2
+      from qiskit.providers.basic_provider import BasicProvider
+
+      backend = BasicProvider().get_backend("basic_simulator")
+      return backend.name
+outdated_solution: |2
+      from qiskit import BasicAer
+
+      backend = BasicAer.get_backend("qasm_simulator")
+      return backend.name
+hidden_test: |
+  def check(candidate):
+      name = candidate()
+      assert isinstance(name, str), name
+      assert name == "basic_simulator", name
+expected_failure_pattern: "cannot import name 'BasicAer'"
+qiskit_pin_at_authoring: "2.5.2"
+notes: >
+  Verified directly (2026-09-23): `from qiskit import BasicAer` raises
+  `ImportError: cannot import name 'BasicAer' from 'qiskit'` under qiskit==2.5.2.

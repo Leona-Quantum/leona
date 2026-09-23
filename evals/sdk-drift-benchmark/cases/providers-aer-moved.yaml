@@ -1,0 +1,53 @@
+task_id: providers-aer-moved
+change:
+  drift_topic: providers-aer-moved
+  old_api: "from qiskit.providers.aer import AerSimulator"
+  new_api: "from qiskit_aer import AerSimulator"
+  changed_in_version: "1.0.0 (deprecated in 0.46)"
+  release_note_url: "https://quantum.cloud.ibm.com/docs/en/api/qiskit/release-notes/1.0"
+  release_note_quote: "Importing from qiskit.providers.aer will no longer work, following its deprecation in Qiskit 0.46."
+prompt: |
+  Using Qiskit, write a function `zero_state_counts(shots: int) -> dict` that builds a
+  1-qubit circuit with a single measurement (no gates — the qubit stays in |0>), runs it
+  on a local simulator for `shots` shots, and returns the measurement-outcome counts
+  dict.
+
+  Requirements:
+  - Preserve the exact function name and signature.
+  - The run must be a purely local, offline simulation — no network call and no account
+    or credential of any kind.
+entry_point: zero_state_counts
+scaffold: |
+  from qiskit import QuantumCircuit, transpile
+
+
+  def zero_state_counts(shots: int) -> dict:
+      """Build a 1-qubit circuit that only measures, run it on a local simulator for
+      `shots` shots, and return the measurement-outcome counts dict."""
+canonical_solution: |2
+      from qiskit_aer import AerSimulator
+
+      qc = QuantumCircuit(1, 1)
+      qc.measure(0, 0)
+      backend = AerSimulator()
+      tqc = transpile(qc, backend)
+      job = backend.run(tqc, shots=shots)
+      return job.result().get_counts()
+outdated_solution: |2
+      from qiskit.providers.aer import AerSimulator
+
+      qc = QuantumCircuit(1, 1)
+      qc.measure(0, 0)
+      backend = AerSimulator()
+      tqc = transpile(qc, backend)
+      job = backend.run(tqc, shots=shots)
+      return job.result().get_counts()
+hidden_test: |
+  def check(candidate):
+      counts = candidate(50)
+      assert counts == {"0": 50}, counts
+expected_failure_pattern: "No module named 'qiskit\\.providers\\.aer'"
+qiskit_pin_at_authoring: "2.5.2"
+notes: >
+  Verified directly (2026-09-23): `from qiskit.providers.aer import AerSimulator` raises
+  `ModuleNotFoundError: No module named 'qiskit.providers.aer'` under qiskit==2.5.2.

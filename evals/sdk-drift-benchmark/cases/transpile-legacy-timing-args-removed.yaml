@@ -1,0 +1,53 @@
+task_id: transpile-legacy-timing-args-removed
+change:
+  drift_topic: transpile-legacy-timing-args-removed
+  old_api: "generate_preset_pass_manager(optimization_level=1, backend=backend, instruction_durations={}, timing_constraints={})"
+  new_api: "generate_preset_pass_manager(optimization_level=1, backend=backend)"
+  changed_in_version: "2.0.0"
+  release_note_url: "https://quantum.cloud.ibm.com/docs/en/migration-guides/qiskit-2.0"
+  release_note_quote: "The instruction_durations and timing_constraints input arguments are no longer supported."
+prompt: |
+  Using Qiskit, write a function `preset_pass_manager_ok_with_timing(num_qubits: int) ->
+  bool` that builds a target-specific compilation pass manager (optimization level 1) for
+  a generic simulated backend with `num_qubits` qubits, and returns `True` if
+  construction succeeds.
+
+  Requirements:
+  - Preserve the exact function name and signature.
+  - Construct the pass manager using only the backend and the optimization level — no
+    other configuration input.
+entry_point: preset_pass_manager_ok_with_timing
+scaffold: |
+  def preset_pass_manager_ok_with_timing(num_qubits: int) -> bool:
+      """Build a preset pass manager for a generic simulated backend and return True on
+      success."""
+canonical_solution: |2
+      from qiskit.providers.fake_provider import GenericBackendV2
+      from qiskit.transpiler import generate_preset_pass_manager
+
+      backend = GenericBackendV2(num_qubits=num_qubits)
+      generate_preset_pass_manager(optimization_level=1, backend=backend)
+      return True
+outdated_solution: |2
+      from qiskit.providers.fake_provider import GenericBackendV2
+      from qiskit.transpiler import generate_preset_pass_manager
+
+      backend = GenericBackendV2(num_qubits=num_qubits)
+      generate_preset_pass_manager(
+          optimization_level=1,
+          backend=backend,
+          instruction_durations={},
+          timing_constraints={},
+      )
+      return True
+hidden_test: |
+  def check(candidate):
+      assert candidate(3) is True
+expected_failure_pattern: "unexpected keyword argument 'instruction_durations'"
+qiskit_pin_at_authoring: "2.5.2"
+notes: >
+  Verified directly (2026-09-23) against qiskit==2.5.2: passing both
+  `instruction_durations={}` and `timing_constraints={}` raises `TypeError:
+  generate_preset_pass_manager() got an unexpected keyword argument
+  'instruction_durations'` (Python reports the first unexpected kwarg it encounters); the
+  plain call succeeds.

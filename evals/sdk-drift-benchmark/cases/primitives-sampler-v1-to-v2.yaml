@@ -1,0 +1,61 @@
+task_id: primitives-sampler-v1-to-v2
+change:
+  drift_topic: primitives-sampler-v1-to-v2
+  old_api: "from qiskit.primitives import Sampler; result = Sampler().run(qc, shots=shots).result(); result.quasi_dists[0]"
+  new_api: "from qiskit.primitives import StatevectorSampler; result = StatevectorSampler().run([(qc,)], shots=shots).result(); result[0].data.meas.get_counts()"
+  changed_in_version: "deprecated in 1.2, removed in 2.0"
+  release_note_url: "https://quantum.cloud.ibm.com/docs/en/api/qiskit/release-notes/2.0"
+  release_note_quote: "Primitive V1 implementations and V1-exclusive non-versioned type aliases are now deprecated in favor of their V2 counterparts (Qiskit 1.2); removed in Qiskit 2.0."
+prompt: |
+  Using Qiskit, write a function `bell_counts_via_sampler(shots: int) -> dict` that builds
+  a Bell-pair circuit (H on qubit 0, CX(0, 1)), adds measurements, samples it `shots`
+  times via a Sampler primitive, and returns the measurement-outcome counts dict.
+
+  Requirements:
+  - Preserve the exact function name and signature.
+entry_point: bell_counts_via_sampler
+scaffold: |
+  from qiskit import QuantumCircuit
+
+
+  def bell_counts_via_sampler(shots: int) -> dict:
+      """Build a Bell-pair circuit, sample it via a Sampler primitive, and return the
+      measurement-outcome counts dict."""
+canonical_solution: |2
+      from qiskit.primitives import StatevectorSampler
+
+      qc = QuantumCircuit(2)
+      qc.h(0)
+      qc.cx(0, 1)
+      qc.measure_all()
+
+      sampler = StatevectorSampler()
+      job = sampler.run([(qc,)], shots=shots)
+      result = job.result()
+      return result[0].data.meas.get_counts()
+outdated_solution: |2
+      from qiskit.primitives import Sampler
+
+      qc = QuantumCircuit(2)
+      qc.h(0)
+      qc.cx(0, 1)
+      qc.measure_all()
+
+      sampler = Sampler()
+      result = sampler.run(qc, shots=shots).result()
+      return result.quasi_dists[0]
+hidden_test: |
+  def check(candidate):
+      counts = candidate(200)
+      assert isinstance(counts, dict), counts
+      assert sum(counts.values()) == 200, counts
+      assert set(counts.keys()) <= {"00", "11"}, (
+          f"a Bell state should only ever yield 00 or 11, got {counts.keys()}"
+      )
+expected_failure_pattern: "cannot import name 'Sampler'"
+qiskit_pin_at_authoring: "2.5.2"
+notes: >
+  Verified directly (2026-09-23): `from qiskit.primitives import Sampler` raises
+  `ImportError: cannot import name 'Sampler' from 'qiskit.primitives'`; the V2
+  `StatevectorSampler().run([(qc,)], shots=shots)` call executes correctly and
+  `result[0].data.meas.get_counts()` returns the expected counts dict.

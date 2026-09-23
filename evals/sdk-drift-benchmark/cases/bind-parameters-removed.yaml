@@ -1,0 +1,58 @@
+task_id: bind-parameters-removed
+change:
+  drift_topic: bind-parameters-removed
+  old_api: "qc.bind_parameters({theta: value})"
+  new_api: "qc.assign_parameters({theta: value})"
+  changed_in_version: "1.0.0"
+  release_note_url: "https://quantum.cloud.ibm.com/docs/en/migration-guides/qiskit-1.0-features"
+  release_note_quote: "table entry: bind_parameters() -> assign_parameters() (Old -> New API table; no standalone prose sentence on this page)"
+prompt: |
+  Using Qiskit, write a function `bound_circuit_unitary(theta_value: float) -> np.ndarray`
+  that builds a 1-qubit circuit with a single `RX(theta)` gate, binds `theta` to
+  `theta_value`, and returns the resulting 2x2 unitary matrix.
+
+  Requirements:
+  - Preserve the exact function name and signature.
+entry_point: bound_circuit_unitary
+scaffold: |
+  import numpy as np
+  from qiskit import QuantumCircuit
+  from qiskit.circuit import Parameter
+
+
+  def bound_circuit_unitary(theta_value: float) -> np.ndarray:
+      """Build a 1-qubit RX(theta) circuit, bind theta, and return its unitary matrix."""
+canonical_solution: |2
+      from qiskit.quantum_info import Operator
+
+      theta = Parameter("theta")
+      qc = QuantumCircuit(1)
+      qc.rx(theta, 0)
+      bound = qc.assign_parameters({theta: theta_value})
+      return Operator(bound).data
+outdated_solution: |2
+      from qiskit.quantum_info import Operator
+
+      theta = Parameter("theta")
+      qc = QuantumCircuit(1)
+      qc.rx(theta, 0)
+      bound = qc.bind_parameters({theta: theta_value})
+      return Operator(bound).data
+hidden_test: |
+  def check(candidate):
+      import numpy as np
+      matrix = candidate(np.pi / 2)
+      half = np.pi / 4
+      expected = np.array(
+          [[np.cos(half), -1j * np.sin(half)], [-1j * np.sin(half), np.cos(half)]]
+      )
+      assert np.allclose(matrix, expected, atol=1e-6), matrix
+expected_failure_pattern: "no attribute 'bind_parameters'"
+qiskit_pin_at_authoring: "2.5.2"
+notes: >
+  Verified directly (2026-09-23): `QuantumCircuit.bind_parameters` raises
+  `AttributeError: 'QuantumCircuit' object has no attribute 'bind_parameters'`;
+  `assign_parameters` binds correctly and `Operator(bound).data` matches the standard
+  RX(theta) matrix formula. No prose sentence names this specific rename (it appears only
+  as a row in the 1.0 migration guide's Old->New API table) — cited as a table entry
+  rather than a fabricated quote.

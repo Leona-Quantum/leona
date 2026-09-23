@@ -1,0 +1,68 @@
+task_id: execute-removed
+change:
+  drift_topic: execute-removed
+  old_api: "from qiskit import execute; job = execute(qc, backend, shots=shots)"
+  new_api: "from qiskit import transpile; tqc = transpile(qc, backend); job = backend.run(tqc, shots=shots)"
+  changed_in_version: "1.0.0"
+  release_note_url: "https://quantum.cloud.ibm.com/docs/en/api/qiskit/release-notes/1.0"
+  release_note_quote: "Qiskit's execute() function is removed."
+prompt: |
+  Using Qiskit, write a function `bell_counts(shots: int) -> dict` that builds a 2-qubit
+  Bell-pair circuit (H on qubit 0, then CX(0, 1)), measures both qubits into a 2-bit
+  classical register, runs it on a local simulator for `shots` shots, and returns the
+  measurement-outcome counts dict (a mapping from bitstring to occurrence count).
+
+  Requirements:
+  - Preserve the exact function name and signature.
+  - The run must be a purely local, offline simulation — no network call and no account
+    or credential of any kind.
+entry_point: bell_counts
+scaffold: |
+  from qiskit import QuantumCircuit, transpile
+
+
+  def bell_counts(shots: int) -> dict:
+      """Build a Bell-pair circuit, run it on a local simulator for `shots` shots, and
+      return the measurement-outcome counts dict."""
+canonical_solution: |2
+      from qiskit_aer import AerSimulator
+
+      qc = QuantumCircuit(2, 2)
+      qc.h(0)
+      qc.cx(0, 1)
+      qc.measure([0, 1], [0, 1])
+
+      backend = AerSimulator()
+      tqc = transpile(qc, backend)
+      job = backend.run(tqc, shots=shots)
+      return job.result().get_counts()
+outdated_solution: |2
+      from qiskit import execute
+      from qiskit_aer import AerSimulator
+
+      qc = QuantumCircuit(2, 2)
+      qc.h(0)
+      qc.cx(0, 1)
+      qc.measure([0, 1], [0, 1])
+
+      backend = AerSimulator()
+      job = execute(qc, backend, shots=shots)
+      return job.result().get_counts()
+hidden_test: |
+  def check(candidate):
+      counts = candidate(200)
+      assert isinstance(counts, dict), counts
+      assert sum(counts.values()) == 200, counts
+      assert set(counts.keys()) <= {"00", "11"}, (
+          f"a Bell state should only ever yield 00 or 11, got {counts.keys()}"
+      )
+expected_failure_pattern: "cannot import name 'execute'"
+qiskit_pin_at_authoring: "2.5.2"
+notes: >
+  Verified directly against the installed qiskit==2.5.2 (2026-09-23): `qiskit.execute`
+  (attribute access) raises `AttributeError: module 'qiskit' has no attribute 'execute'`,
+  but the outdated solution actually writes `from qiskit import execute`, which goes
+  through Python's import machinery instead and raises a DIFFERENT error —
+  `ImportError: cannot import name 'execute' from 'qiskit'` — confirmed by running the
+  grader against this exact case, not just the bare attribute-access probe. The modern
+  transpile+run path executes correctly.

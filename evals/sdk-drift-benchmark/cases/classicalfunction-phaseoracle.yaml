@@ -1,0 +1,49 @@
+task_id: classicalfunction-phaseoracle
+change:
+  drift_topic: classicalfunction-phaseoracle
+  old_api: "from qiskit.circuit.classicalfunction import BooleanExpression; BooleanExpression('a & b')"
+  new_api: "from qiskit.circuit.library import PhaseOracleGate; PhaseOracleGate('a & b')"
+  changed_in_version: "deprecated in 1.4, removed in 2.0"
+  release_note_url: "https://quantum.cloud.ibm.com/docs/en/api/qiskit/release-notes/2.0"
+  release_note_quote: "The qiskit.circuit.classicalfunction module has been removed following deprecation in v1.4."
+prompt: |
+  Using Qiskit, write a function `oracle_marks_11()` that builds a 2-qubit phase oracle
+  for the boolean expression "a & b" (i.e. it multiplies the |11> basis state's phase by
+  -1 and leaves every other basis state unchanged), and returns the oracle object.
+
+  Requirements:
+  - Preserve the exact function name and signature.
+entry_point: oracle_marks_11
+scaffold: |
+  def oracle_marks_11():
+      """Build a 2-qubit phase oracle for 'a & b' and return the oracle object."""
+canonical_solution: |2
+      from qiskit.circuit.library import PhaseOracleGate
+
+      return PhaseOracleGate("a & b")
+outdated_solution: |2
+      from qiskit.circuit.classicalfunction import BooleanExpression
+
+      return BooleanExpression("a & b")
+hidden_test: |
+  def check(candidate):
+      import numpy as np
+      from qiskit import QuantumCircuit
+      from qiskit.quantum_info import Statevector
+
+      oracle = candidate()
+      init = QuantumCircuit(oracle.num_qubits)
+      init.h(range(oracle.num_qubits))
+      sv = Statevector(init).evolve(oracle)
+      expected = Statevector(np.array([0.5, 0.5, 0.5, -0.5]))
+      assert sv.equiv(expected), sv.data
+expected_failure_pattern: "No module named 'qiskit\\.circuit\\.classicalfunction'"
+qiskit_pin_at_authoring: "2.5.2"
+notes: >
+  Verified directly (2026-09-23): `from qiskit.circuit.classicalfunction import
+  BooleanExpression` raises `ModuleNotFoundError: No module named
+  'qiskit.circuit.classicalfunction'`; `PhaseOracleGate("a & b")` applied to |++> gives the
+  statevector [0.5, 0.5, 0.5, -0.5] (little-endian: index 3 = |11>), confirmed numerically
+  rather than hand-derived. `PhaseOracle` (a QuantumCircuit subclass, same package) also
+  works but is deprecated as of Qiskit 2.2 in favor of `PhaseOracleGate`, which is used
+  here as the actually-current idiom.

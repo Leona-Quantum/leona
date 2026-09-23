@@ -1,0 +1,58 @@
+task_id: primitives-estimator-v1-to-v2
+change:
+  drift_topic: primitives-estimator-v1-to-v2
+  old_api: "from qiskit.primitives import Estimator; result = Estimator().run(qc, observable).result(); result.values[0]"
+  new_api: "from qiskit.primitives import StatevectorEstimator; result = StatevectorEstimator().run([(qc, observable)]).result(); result[0].data.evs"
+  changed_in_version: "deprecated in 1.2, removed in 2.0"
+  release_note_url: "https://quantum.cloud.ibm.com/docs/en/api/qiskit/release-notes/2.0"
+  release_note_quote: "Primitive V1 implementations and V1-exclusive non-versioned type aliases are now deprecated in favor of their V2 counterparts (Qiskit 1.2); removed in Qiskit 2.0."
+prompt: |
+  Using Qiskit, write a function `zz_expectation() -> float` that builds a Bell-pair
+  circuit (H on qubit 0, CX(0, 1)) and returns the expectation value of the observable
+  Z⊗Z via an Estimator primitive. On a perfect Bell state this must return 1.0.
+
+  Requirements:
+  - Preserve the exact function name and signature.
+entry_point: zz_expectation
+scaffold: |
+  from qiskit import QuantumCircuit
+
+
+  def zz_expectation() -> float:
+      """Build a Bell-pair circuit and return <ZZ> via an Estimator primitive."""
+canonical_solution: |2
+      from qiskit.primitives import StatevectorEstimator
+      from qiskit.quantum_info import SparsePauliOp
+
+      qc = QuantumCircuit(2)
+      qc.h(0)
+      qc.cx(0, 1)
+
+      observable = SparsePauliOp(["ZZ"])
+      estimator = StatevectorEstimator()
+      job = estimator.run([(qc, observable)])
+      return float(job.result()[0].data.evs)
+outdated_solution: |2
+      from qiskit.primitives import Estimator
+      from qiskit.quantum_info import SparsePauliOp
+
+      qc = QuantumCircuit(2)
+      qc.h(0)
+      qc.cx(0, 1)
+
+      observable = SparsePauliOp(["ZZ"])
+      estimator = Estimator()
+      result = estimator.run(qc, observable).result()
+      return float(result.values[0])
+hidden_test: |
+  def check(candidate):
+      value = candidate()
+      assert isinstance(value, float), value
+      assert abs(value - 1.0) < 1e-6, f"expected <ZZ>=1.0 on a Bell state, got {value}"
+expected_failure_pattern: "cannot import name 'Estimator'"
+qiskit_pin_at_authoring: "2.5.2"
+notes: >
+  Verified directly (2026-09-23): `from qiskit.primitives import Estimator` raises
+  `ImportError: cannot import name 'Estimator' from 'qiskit.primitives'`; the V2
+  `StatevectorEstimator` path executes correctly and returns 0.9999999999999998 (rounds to
+  1.0 within the stated tolerance) for a Bell state's <ZZ>.

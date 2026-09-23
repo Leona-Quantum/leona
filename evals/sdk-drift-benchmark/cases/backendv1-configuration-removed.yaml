@@ -1,0 +1,38 @@
+task_id: backendv1-configuration-removed
+change:
+  drift_topic: backendv1-configuration-removed
+  old_api: "backend.configuration().n_qubits"
+  new_api: "backend.num_qubits"
+  changed_in_version: "BackendV1 deprecated in 1.2.0, removed in 2.0"
+  release_note_url: "https://quantum.cloud.ibm.com/docs/en/api/qiskit/release-notes/2.0"
+  release_note_quote: "The BackendV1 model has been removed following its deprecation in Qiskit 1.2.0."
+prompt: |
+  Using Qiskit, write a function `backend_qubit_count() -> int` that constructs a
+  `qiskit.providers.fake_provider.GenericBackendV2` configured for 5 qubits, and returns
+  how many qubits it has.
+
+  Requirements:
+  - Preserve the exact function name and signature.
+entry_point: backend_qubit_count
+scaffold: |
+  def backend_qubit_count() -> int:
+      """Return the number of qubits on a 5-qubit generic simulated backend."""
+canonical_solution: |2
+      from qiskit.providers.fake_provider import GenericBackendV2
+
+      backend = GenericBackendV2(num_qubits=5)
+      return backend.num_qubits
+outdated_solution: |2
+      from qiskit.providers.fake_provider import GenericBackendV2
+
+      backend = GenericBackendV2(num_qubits=5)
+      return backend.configuration().n_qubits
+hidden_test: |
+  def check(candidate):
+      assert candidate() == 5, candidate()
+expected_failure_pattern: "no attribute 'configuration'"
+qiskit_pin_at_authoring: "2.5.2"
+notes: >
+  Verified directly (2026-09-23): `GenericBackendV2(num_qubits=5).configuration()` raises
+  `AttributeError: 'GenericBackendV2' object has no attribute 'configuration'` (BackendV2
+  never had that BackendV1-only method); `.num_qubits` returns 5 correctly.
