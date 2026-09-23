@@ -1153,3 +1153,39 @@ class TourSignalCount(Base):
     step: Mapped[str] = mapped_column(primary_key=True)
     kind: Mapped[str] = mapped_column(primary_key=True)
     count: Mapped[int] = mapped_column(Integer, server_default=text("0"))
+
+
+class NotebookShareLink(Base):
+    """A public, read-only, revocable door onto one notebook (migration 0072).
+
+    Same shape as `PersonalAccessToken` immediately above, and for the same reason:
+    `token_hash` is a SHA-256 of the presented secret, which is in no column here;
+    `tail` is four characters of it, kept so the creator's own list can tell two
+    links apart. `workspace_id` is denormalized and fixed at mint, exactly like
+    `PersonalAccessToken.workspace_id` — the anonymous resolve path needs a
+    workspace to arm RLS with before it has touched `notebooks` at all.
+
+    Carries no row-level-security policy, on 0069's identity/bootstrap argument
+    (see migration 0072's docstring), NOT on `notebooks`' own declined `visibility`
+    escape hatch — those are two different arguments and this table makes the
+    first one, never the second. `repos/notebook_share_links.py` admits no
+    `notebook_id` to its creator-facing functions other than one already proven to
+    belong to `scope.workspace_id`.
+    """
+
+    __tablename__ = "notebook_share_links"
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True)
+    notebook_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("notebooks.id", ondelete="CASCADE"))
+    workspace_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("workspaces.id"))
+    created_by_user_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE")
+    )
+    token_hash: Mapped[str]
+    tail: Mapped[str]
+    created_at: Mapped[dt.datetime] = mapped_column(server_default=func.now())
+    expires_at: Mapped[dt.datetime | None]
+    last_viewed_at: Mapped[dt.datetime | None]
+    revoked_at: Mapped[dt.datetime | None]
+    idempotency_key: Mapped[str | None]
+    idempotency_request_hash: Mapped[str | None]

@@ -247,7 +247,16 @@ EXEMPT_PATHS = frozenset({"/health"})
 #: threat (a script in a loop), and its own body-size cap (1 KiB, enforced in
 #: the route) is what actually bounds what one admitted request can cost —
 #: `DEFAULT_ANON_LIMIT` only needs to bound how OFTEN, which this reuses as-is.
-LIMITED_PATH_PREFIXES = ("/v1/catalog", "/v1/qapps/public", "/v1/news/articles", "/v1/tour-signals")
+LIMITED_PATH_PREFIXES = (
+    "/v1/catalog",
+    "/v1/qapps/public",
+    "/v1/news/articles",
+    "/v1/tour-signals",
+    # The anonymous notebook share view (ai-ops 349 option 2, migration 0072). Every
+    # caller is metered here for the same reason `/v1/qapps/public` already is: there
+    # is no account behind a share-link read to reserve an allowance under.
+    "/v1/notebooks/shared",
+)
 
 #: Auth failures (401s the API actually returned — see `AuthFailureThrottle`
 #: for why 403 does not count) allowed from one address before it is refused

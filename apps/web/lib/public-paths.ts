@@ -160,6 +160,28 @@ export const PUBLIC_PATHS: readonly string[] = [
   // rather than discovered later — which is the whole reason this file asks for
   // an argument per entry instead of a line per entry.
   "/api/qapps/public",
+  // The public notebook share view (ai-ops 349 option 2, migration 0072). The
+  // page itself, `/shared/notebooks`. Everything about the route it proxies is
+  // already anonymous: `app/api/notebooks/shared/lookup/route.ts` calls no
+  // `getMajoranaAuth`, sends no Authorization header, and the FastAPI route
+  // behind it takes `PublicNotebookShare`
+  // (`auth/notebook_share_deps.py::get_public_notebook_share`), which resolves
+  // an anonymous, least-authority `Scope` from the token in the body — never a
+  // session. The response is `PublicNotebookView`, an `extra="forbid"`
+  // projection carrying no `workspace_id`, `owner_user_id`, `notebook_id` or
+  // `run_id`, with `cells`/`report` already redacted server-side by the same
+  // function ai-ops 260 uses for a signed-in non-owner (`NotebookSpec.for_learner()`).
+  "/shared/notebooks",
+  // `/api/notebooks/[notebookId]/route.ts` also exists (an authenticated GET
+  // for one notebook), and Next's dynamic-segment matching means
+  // `/api/notebooks/shared` WITHOUT `/lookup` resolves there with
+  // `notebookId="shared"` — the identical shape `/api/qapps/public`'s own
+  // comment above documents for `[qappKey]`. Publishing this path removes the
+  // middleware layer in front of that route; it does not remove its own
+  // `getMajoranaAuth({ ensureSignedIn: true })` call, which still refuses an
+  // anonymous caller. `/lookup` itself is POST-only and calls no auth at all,
+  // by design — see the entry above.
+  "/api/notebooks/shared",
   ...(isPublicDemoEnabled() ? ["/demo"] : []),
 ];
 

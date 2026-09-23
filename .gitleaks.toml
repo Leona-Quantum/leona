@@ -233,3 +233,25 @@ id = "leona-personal-access-token"
 description = "Leona Quantum personal access token"
 regex = '''lq_pat_[A-Za-z0-9_-]{43}\b'''
 keywords = ["lq_pat_"]
+
+
+[[rules]]
+# Leona notebook share-link tokens (ai-ops 349 option 2, migration 0072). Same
+# argument as the rule immediately above, for a different credential: a token is
+# `lq_shr_` followed by `secrets.token_urlsafe(32)`, 43 characters of base64url
+# (256 bits), and the prefix is what lets this rule — and GitHub's own secret
+# scanning — recognise a leaked one at all.
+#
+# Deliberately a SEPARATE rule and a separate prefix from `lq_pat_`, not a shared
+# pattern with two keywords: the two credentials have different blast radii if
+# leaked (this one reads a single already-redacted notebook; that one acts as a
+# person), and a leak report that named which prefix matched would be strictly
+# less useful if both prefixes fed one rule.
+#
+# The control: `services/api/tests/test_notebook_share_routes.py::
+# test_the_gitleaks_rule_matches_a_real_share_token` mints a token through the
+# real generator and asserts this regex matches it.
+id = "leona-notebook-share-token"
+description = "Leona Quantum notebook share-link token"
+regex = '''lq_shr_[A-Za-z0-9_-]{43}\b'''
+keywords = ["lq_shr_"]

@@ -3267,3 +3267,111 @@ html[lang="ja"] .mj-company-hero-title-line {
   text-transform: uppercase;
   color: var(--text-2);
 }
+
+/* ── Notebook share links (ai-ops 349 option 2, migration 0072) ──────────── */
+
+.mj-notebook-share-dialog {
+  box-sizing: border-box;
+  max-width: 28rem;
+  width: min(90vw, 28rem);
+  padding: 1.25rem;
+  border: 1px solid var(--border-0);
+  border-radius: var(--radius-card);
+  background: var(--bg-1);
+  color: var(--text-0);
+}
+
+.mj-notebook-share-dialog::backdrop {
+  background: color-mix(in srgb, var(--bg-0) 60%, transparent);
+}
+
+.mj-notebook-share-dialog h2 {
+  margin: 0 0 .5rem;
+  font-size: 1.1rem;
+}
+
+.mj-notebook-share-create {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: end;
+  gap: .75rem;
+  margin: .75rem 0;
+}
+
+/* The anonymous public view, `app/shared/notebooks/`. Deliberately its own
+   small set rather than reused `.qapp-embed-*` names: this page is a full
+   route with its own scroll, not an iframe-embedded widget, and giving it a
+   distinct prefix keeps a future change to one from silently reaching the
+   other. */
+
+.shared-notebook-page {
+  box-sizing: border-box;
+  max-width: 46rem;
+  margin: 0 auto;
+  padding: 1.25rem;
+  background: var(--bg-0);
+  color: var(--text-0);
+}
+
+.shared-notebook-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: .5rem 1rem;
+  margin-bottom: 1.25rem;
+}
+
+.shared-notebook-brand {
+  font-weight: 600;
+  color: var(--text-0);
+  text-decoration: none;
+}
+
+.shared-notebook-badge {
+  font-family: var(--font-mono);
+  font-size: .78rem;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+  color: var(--text-2);
+}
+
+.shared-notebook-status {
+  padding: 2rem 1rem;
+  text-align: center;
+  color: var(--text-2);
+}
+
+.shared-notebook-intro h1 {
+  margin: 0 0 .4rem;
+  font-size: 1.5rem;
+  line-height: 1.2;
+  letter-spacing: -.02em;
+}
+
+.shared-notebook-intro p {
+  margin: 0 0 .5rem;
+  color: var(--text-2);
+  font-size: .95rem;
+  line-height: 1.5;
+}
+
+.shared-notebook-view-only-notice {
+  display: inline-block;
+  padding: .3rem .6rem;
+  border-radius: var(--radius-control);
+  background: var(--mono-tint);
+  color: var(--text-1);
+  font-size: .82rem;
+}
+
+.shared-notebook-cta {
+  margin-top: 2rem;
+  padding-top: 1.25rem;
+  border-top: 1px solid var(--border-0);
+  text-align: center;
+}
+
+.shared-notebook-cta p {
+  margin: 0 0 .5rem;
+  color: var(--text-2);
+}

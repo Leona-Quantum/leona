@@ -19,6 +19,7 @@ from . import (
     courses,
     events,
     models,
+    notebook_shares,
     notebooks,
     plan,
     presence,
@@ -156,6 +157,22 @@ EXPORTED = [
     # ai-ops 326, the guided tours' signal counts (migration 0071, anonymous).
     # TourSignalKind is an enum and reaches the document as a hoisted $def.
     tour_signals.RecordTourSignalRequest,
+    # Proposal 7 ("Notebooks and courses for a class"), public read-only notebook
+    # share links, ai-ops 349 option 2 (migration 0072).
+    notebook_shares.NotebookShareLink,
+    notebook_shares.NotebookShareLinkList,
+    notebook_shares.MintedNotebookShareLink,
+    notebook_shares.CreateNotebookShareLinkRequest,
+    notebook_shares.LookupNotebookShareRequest,
+    # `PublicNotebookView` is a bare `BaseModel`, not a `models._ResourceBase`
+    # subclass (deliberately — see its own docstring), so
+    # `test_every_public_resource_model_reaches_the_export` does not REQUIRE it
+    # here. It is listed anyway: this hand-maintained list is what
+    # `packages/ts/contracts-gen` actually generates the web app's TS types
+    # from, and the web app needs `components["schemas"]["PublicNotebookView"]`
+    # exactly as much as any `_ResourceBase` type — the export test's `_ResourceBase`
+    # filter is a floor on this list, not a ceiling.
+    notebook_shares.PublicNotebookView,
 ]
 
 

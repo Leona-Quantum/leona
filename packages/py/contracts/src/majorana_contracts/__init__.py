@@ -197,6 +197,18 @@ from .notebooks import (
     TextAnswer,
     UpdateNotebookRequest,
 )
+from .notebook_shares import (
+    MAX_LIVE_SHARE_LINKS_PER_NOTEBOOK,
+    MAX_SHARE_LINK_LIFETIME_DAYS,
+    SHARE_TOKEN_PREFIX,
+    SHARE_TOKEN_TAIL_CHARS,
+    CreateNotebookShareLinkRequest,
+    LookupNotebookShareRequest,
+    MintedNotebookShareLink,
+    NotebookShareLink,
+    NotebookShareLinkList,
+    PublicNotebookView,
+)
 from .models import (
     Artifact,
     ArtifactVersion,
@@ -477,7 +489,21 @@ from .lifecycle import (
 # enum — see tour_signals.py's module docstring for why: they are tour CONTENT,
 # checked against services/api's tour_signal_vocabulary.py instead, which changes
 # at the pace tours change rather than the pace this package's version does.
-CONTRACTS_VERSION = "2.32.0"
+# 2.33.0: Proposal 7 ("Notebooks and courses for a class"), public read-only
+# notebook share links (ai-ops 349 option 2). New: NotebookShareLink,
+# NotebookShareLinkList, MintedNotebookShareLink, CreateNotebookShareLinkRequest,
+# LookupNotebookShareRequest, PublicNotebookView, behind
+# POST/GET /v1/notebooks/{id}/share-links, DELETE
+# /v1/notebooks/{id}/share-links/{link_id}, and the anonymous
+# POST /v1/notebooks/shared/lookup (migration 0072, revising 0071 — tour signals
+# landed first). Additive: new names only, no existing model changes.
+# `PublicNotebookView` is deliberately NOT `Notebook` with fields hidden — it is
+# its own `extra="forbid"` type with an explicit field list, so nothing added to
+# `Notebook` later can ride across the public boundary by omission. The
+# anonymous lookup is a POST with the token in the body, not a GET with it in
+# the path — see `LookupNotebookShareRequest`'s docstring for why a
+# path-embedded secret was the wrong shape for this deployment's own logging.
+CONTRACTS_VERSION = "2.33.0"
 
 __all__ = [
     "PresenceHeartbeatRequest",
@@ -497,6 +523,16 @@ __all__ = [
     "TokenScope",
     "RecordTourSignalRequest",
     "TourSignalKind",
+    "MAX_LIVE_SHARE_LINKS_PER_NOTEBOOK",
+    "MAX_SHARE_LINK_LIFETIME_DAYS",
+    "SHARE_TOKEN_PREFIX",
+    "SHARE_TOKEN_TAIL_CHARS",
+    "CreateNotebookShareLinkRequest",
+    "LookupNotebookShareRequest",
+    "MintedNotebookShareLink",
+    "NotebookShareLink",
+    "NotebookShareLinkList",
+    "PublicNotebookView",
     "Comment",
     "CommentList",
     "CommentPeopleList",

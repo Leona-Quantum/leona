@@ -12,6 +12,7 @@ import { PresenceBar } from "../../../../components/presence-bar";
 import { isCommentableId } from "../../../../lib/comments";
 import { isPresenceTrackableId } from "../../../../lib/presence";
 import { NotebookDiffView } from "../../../../components/notebook-diff-view";
+import { NotebookShareDialog } from "../../../../components/notebook-share-dialog";
 import { NotebookReviewPanel } from "../../../../components/notebook-review-panel";
 import {
   NotebookView,
@@ -663,6 +664,13 @@ export function NotebookWorkspace({ notebookId, locale = "en" }: { notebookId: s
   // makes it honest — `ungradable` cells stay out of the denominator, because a
   // grader that could not run has established nothing about the reader.
   const isAuthorOfARedactedNotebook = canDownloadSolutions(notebook, viewerId);
+  // Broader than `isAuthorOfARedactedNotebook`, deliberately: sharing is not
+  // limited to the `REDACTED_KINDS` a solutions download applies to — any
+  // notebook the caller created can be shared, since `for_learner()` redacts
+  // every kind the same way. The control plane enforces this independently
+  // (`repos/notebook_share_links.py::_owned_notebook`); hiding the button for
+  // a non-owner here just avoids showing a control that would 403.
+  const isOwner = notebook !== null && viewerId !== null && notebook.owner_user_id === viewerId;
 
   const summary = gradeSummary(gradeReport);
   const rate = passRate(summary);
@@ -1183,6 +1191,7 @@ export function NotebookWorkspace({ notebookId, locale = "en" }: { notebookId: s
           >
             {quizzing ? copy.creating : copy.quizButtonLabel}
           </button>
+          {isOwner ? <NotebookShareDialog notebookId={notebookId} locale={locale} /> : null}
             </div>
           </details>
         </div>

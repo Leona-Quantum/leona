@@ -1852,6 +1852,22 @@ export interface components {
             run_id: string;
             version: components["schemas"]["NotebookVersionSummary"];
         };
+        /**
+         * CreateNotebookShareLinkRequest
+         * @description Mint a link for one notebook the caller owns.
+         *
+         *     The notebook is a path parameter, not a body field, for the same reason a
+         *     token's workspace is not one (`tokens.CreateTokenRequest`): the route already
+         *     knows which notebook from the URL, and a body that repeated it would be a
+         *     second thing that could disagree with the first.
+         */
+        CreateNotebookShareLinkRequest: {
+            /**
+             * Expires In Days
+             * @default null
+             */
+            expires_in_days: number | null;
+        };
         /** CreateNotebookTurnRequest */
         CreateNotebookTurnRequest: {
             /** Message */
@@ -2611,10 +2627,46 @@ export interface components {
             toffoli_count: number;
         };
         /**
+         * LookupNotebookShareRequest
+         * @description `POST /v1/notebooks/shared/lookup`'s body, and the WHOLE reason this is a
+         *     POST with a body rather than the more obvious `GET /notebooks/shared/{token}`.
+         *
+         *     A share token in a URL PATH ends up in every request line a proxy or an
+         *     application server logs — this deployment's own uvicorn runs with default
+         *     access logging on (`services/api/Dockerfile`), so a path-embedded token would
+         *     print to stdout, and stdout is what Cloud Run ships to the log sink. A field
+         *     in a JSON body does not appear in an access log line, which logs the method,
+         *     path and status and nothing past the `?`. The web app carries the token to
+         *     the browser in a URL FRAGMENT (`#token`, never sent to any server at all) and
+         *     reads it client-side before making this call — see `apps/web/app/shared/
+         *     notebooks/page.tsx`. Found by this feature's own authz test asserting on
+         *     `caplog`, the same discipline `tokens.py`'s tests already apply to bearer
+         *     tokens; a token in a path segment is the one case that check would have
+         *     missed if the route had shipped as a GET.
+         */
+        LookupNotebookShareRequest: {
+            /** Token */
+            token: string;
+        };
+        /**
          * MeasurementPolicy
          * @enum {string}
          */
         MeasurementPolicy: "none" | "only_if_requested" | "measure_all" | "specified" | "not_applicable";
+        /**
+         * MintedNotebookShareLink
+         * @description The response to `POST /v1/notebooks/{id}/share-links`, the only object that
+         *     carries the secret.
+         *
+         *     `token` is returned once. The server stores a SHA-256 of it and nothing else,
+         *     so losing it means revoking this link and minting another — never a second
+         *     read.
+         */
+        MintedNotebookShareLink: {
+            record: components["schemas"]["NotebookShareLink"];
+            /** Token */
+            token: string;
+        };
         /**
          * MintedToken
          * @description The response to `POST /v1/tokens`, and the only object that carries the secret.
@@ -2849,6 +2901,52 @@ export interface components {
             warnings?: string[];
             /** What This Notebook Does Not Establish */
             what_this_notebook_does_not_establish?: string[];
+        };
+        /**
+         * NotebookShareLink
+         * @description One link, as its creator sees it in the share dialog.
+         *
+         *     Carries no secret and no hash — nothing here can be presented to the public
+         *     route. `tail` is how the creator recognises which link a row is.
+         */
+        NotebookShareLink: {
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /**
+             * Expires At
+             * @default null
+             */
+            expires_at: string | null;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Last Viewed At
+             * @default null
+             */
+            last_viewed_at: string | null;
+            /**
+             * Notebook Id
+             * Format: uuid
+             */
+            notebook_id: string;
+            /**
+             * Revoked At
+             * @default null
+             */
+            revoked_at: string | null;
+            /** Tail */
+            tail: string;
+        };
+        /** NotebookShareLinkList */
+        NotebookShareLinkList: {
+            /** Items */
+            items?: components["schemas"]["NotebookShareLink"][];
         };
         /** NotebookSpec */
         NotebookSpec: {
@@ -3570,6 +3668,51 @@ export interface components {
              * Format: date-time
              */
             updated_at: string;
+        };
+        /**
+         * PublicNotebookView
+         * @description What an anonymous holder of a valid link sees. Nothing else.
+         *
+         *     `extra="forbid"` and an explicit field list, the same defence
+         *     `PublicQappSummary` uses: this is the type that decides what crosses the
+         *     public boundary, so a field silently added elsewhere in the notebook resource
+         *     cannot ride along by accident. There is no `id`, `notebook_id`, `workspace_id`,
+         *     `owner_user_id`, or `run_id` anywhere on this model, on purpose — a public
+         *     viewer is told nothing about which tenant, which account, or which internal
+         *     ids the notebook lives behind.
+         *
+         *     `cells` and `report` are ALREADY the redacted half — the route applies
+         *     `NotebookSpec.for_learner()` before this model is ever constructed, exactly as
+         *     `GET /notebooks/{id}/versions/{seq}` does for a signed-in non-owner. This model
+         *     does not repeat that check; it trusts the route did it, the same way
+         *     `PublicQappSummary` trusts its route to have filtered on `visibility`.
+         */
+        PublicNotebookView: {
+            /** Cells */
+            cells?: components["schemas"]["Cell"][];
+            framework: components["schemas"]["NotebookFramework"];
+            kind: components["schemas"]["NotebookKind"];
+            /**
+             * Language
+             * @enum {string}
+             */
+            language: "en" | "ja";
+            /** @default null */
+            report: components["schemas"]["ExecutionReport"] | null;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "ready" | "not_ready";
+            /** Summary */
+            summary: string;
+            /** Title */
+            title: string;
+            /**
+             * Version Seq
+             * @default null
+             */
+            version_seq: number | null;
         };
         /**
          * PublicQapp
