@@ -9,7 +9,7 @@ no chemistry package is needed.
 
 Qubit model. For H2 in a minimal basis the two molecular orbitals are fixed by
 symmetry: bonding g = (a + b) / sqrt(2 + 2S) and antibonding u = (a - b) /
-sqrt(2 - 2S). The ground state only ever holds the electron pair in one
+sqrt(2 - 2S), with S the overlap of the two atomic 1s functions. The ground state only ever holds the electron pair in one
 orbital or the other, so each orbital becomes one qubit (|1> = holds the pair)
 and the Hamiltonian is exact on those states:
 
@@ -95,13 +95,13 @@ def ao_integrals(r):
 def hamiltonian(r_angstrom):
     r = r_angstrom * BOHR_PER_ANGSTROM
     overlap, core, eri = ao_integrals(r)
-    s = overlap[0, 1]
-    mo = np.array(
-        [
-            [1 / math.sqrt(2 + 2 * s), 1 / math.sqrt(2 - 2 * s)],
-            [1 / math.sqrt(2 + 2 * s), -1 / math.sqrt(2 - 2 * s)],
-        ]
-    )
+    # The published contraction coefficients carry eight figures, so each 1s
+    # function's self-overlap is 0.99999999..., not 1. Normalise with the
+    # computed value so the two orbitals are orthonormal to rounding error.
+    self_overlap, s = overlap[0, 0], overlap[0, 1]
+    g_norm = 1 / math.sqrt(2 * (self_overlap + s))
+    u_norm = 1 / math.sqrt(2 * (self_overlap - s))
+    mo = np.array([[g_norm, u_norm], [g_norm, -u_norm]])
     h = mo.T @ core @ mo
     g = np.einsum("pi,qj,pqrs,rk,sl->ijkl", mo, mo, eri, mo, mo)
     e_g = 2 * h[0, 0] + g[0, 0, 0, 0]

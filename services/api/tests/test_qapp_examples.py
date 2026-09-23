@@ -80,6 +80,20 @@ def test_ui_document_passes_the_generation_guard_and_usability_check(key):
 
 
 @pytest.mark.parametrize("key", EXAMPLE_KEYS)
+def test_every_input_has_its_own_labelled_control(key):
+    """Stricter than `check_qapp_usability`, which (by its own docstring) is
+    satisfied by an input's name appearing anywhere, even in a comment. A
+    hand-written example can meet the real rule: an element whose id IS the
+    input's name, and a <label for> naming it."""
+    example = examples_by_key()[key]
+    for name in example.input_schema["properties"]:
+        assert f'id="{name}"' in example.ui_document, f"no control with id {name}"
+        assert re.search(rf'<label\b[^>]*\bfor="{name}"', example.ui_document), (
+            f"no label for {name}"
+        )
+
+
+@pytest.mark.parametrize("key", EXAMPLE_KEYS)
 def test_program_passes_the_sandbox_safety_guard(key):
     guard = check_python_code(examples_by_key()[key].quantum_source)
     assert guard.ok, guard.reason
@@ -180,9 +194,9 @@ def test_qaoa_graphs_drawn_in_the_page_are_the_graphs_the_program_solves():
     for name, (nodes, edges) in solved.items():
         assert drawn[name]["nodes"] == nodes
         assert [tuple(edge) for edge in drawn[name]["edges"]] == edges
-    assert list(drawn) == examples_by_key()["qaoa_maxcut"].input_schema["properties"]["graph"][
-        "enum"
-    ]
+    assert (
+        list(drawn) == examples_by_key()["qaoa_maxcut"].input_schema["properties"]["graph"]["enum"]
+    )
 
 
 @pytest.mark.parametrize(
@@ -253,6 +267,29 @@ def test_h2_energies_at_the_textbook_geometry():
     operator, _ = namespace["hamiltonian"](1.4 / namespace["BOHR_PER_ANGSTROM"])
     assert namespace["energy"](operator, 0.0) == pytest.approx(-1.1167, abs=5e-5)
     assert namespace["exact_energy"](operator) == pytest.approx(-1.1373, abs=5e-5)
+
+
+def test_h2_operator_gives_the_fully_filled_state_its_real_energy():
+    """The pair operator's fourth state, both orbitals doubly filled, is one no
+    ansatz here reaches, so no sweep output depends on it. Its energy is still
+    part of the operator the docstring calls exact, so it is checked by a route
+    that shares nothing with the pair model: all four spin orbitals filled is
+    the determinant with AO density P = 2 S^-1, whose energy is
+    tr(P h) + 1/2 sum P P [(mn|ls) - 1/2 (ml|ns)] + 1/R."""
+    import numpy as np
+
+    namespace = _h2()
+    r_bohr = 1.4
+    overlap, core, eri = namespace["ao_integrals"](r_bohr)
+    density = 2 * np.linalg.inv(overlap)
+    coulomb = np.einsum("ls,mnls->mn", density, eri)
+    exchange = np.einsum("ls,mlns->mn", density, eri)
+    filled = float(
+        np.sum(density * core) + 0.5 * np.sum(density * (coulomb - 0.5 * exchange)) + 1 / r_bohr
+    )
+    operator, _ = namespace["hamiltonian"](r_bohr / namespace["BOHR_PER_ANGSTROM"])
+    # |q1 q0> = |11> is index 3.
+    assert operator.to_matrix().real[3, 3] == pytest.approx(filled, abs=1e-9)
 
 
 def test_h2_sweep_finds_the_known_bond_length_and_vqe_matches_exact():
