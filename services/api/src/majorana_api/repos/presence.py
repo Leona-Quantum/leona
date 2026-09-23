@@ -1,5 +1,5 @@
 """Scoped storage for presence: who else in the workspace is looking at a run,
-a notebook or a saved circuit, right now (migration 0073).
+a notebook or a saved circuit, right now (migration 0070).
 
 ## Who may do what
 

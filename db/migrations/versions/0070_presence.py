@@ -1,6 +1,6 @@
 """Presence: who else in the workspace is looking at this right now.
 
-Revision ID: 0073
+Revision ID: 0070
 Revises: 0069
 
 Proposal 9 (ai-ops 349, "Working together, live"), second slice. First slice
@@ -69,7 +69,7 @@ import sqlalchemy as sa
 from alembic import op
 from sqlalchemy.dialects import postgresql
 
-revision = "0073"
+revision = "0070"
 down_revision = "0069"
 branch_labels = None
 depends_on = None

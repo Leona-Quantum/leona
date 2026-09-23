@@ -459,7 +459,7 @@ class CommentMention(Base):
 
 
 class Presence(Base):
-    """Migration 0073. One row per (workspace, target, person): the last time
+    """Migration 0070. One row per (workspace, target, person): the last time
     that person's tab heartbeated while looking at that run, notebook or saved
     circuit. The primary key IS the natural key — every write is an upsert on
     exactly this tuple, and nothing looks a row up by anything less."""

@@ -464,7 +464,7 @@ from .lifecycle import (
 # adding one later is a widening a review can see.
 # 2.31.0: Proposal 9, second slice. PresenceViewer, PresenceList,
 # PresenceTargetType and PresenceHeartbeatRequest: who else in the workspace is
-# looking at a run, a notebook or a saved circuit right now (migration 0073).
+# looking at a run, a notebook or a saved circuit right now (migration 0070).
 # Additive: new names only. PresenceTargetType is its own enum, not a reuse of
 # CommentTargetType, so presence and comments can each grow independently.
 CONTRACTS_VERSION = "2.31.0"

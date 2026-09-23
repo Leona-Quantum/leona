@@ -377,7 +377,7 @@ async def _delete_committed_tenants(factory, workspace_ids, user_ids) -> None:
             )
         )
         await session.execute(delete(Comment).where(Comment.workspace_id.in_(workspace_ids)))
-        # Presence (migration 0073) references the workspace and the viewer, the
+        # Presence (migration 0070) references the workspace and the viewer, the
         # same two-sided reasoning as comment_mentions just above: a torn-down
         # user's presence row in a workspace this call is NOT removing would
         # otherwise survive and block the user delete.

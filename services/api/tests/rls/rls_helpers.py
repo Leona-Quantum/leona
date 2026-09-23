@@ -97,7 +97,7 @@ class TenantRows:
     #: Looked up by `comment_id`, the table's leading key column: its primary
     #: key is (comment_id, mentioned_user_id) and each tenant has one row.
     comment_mentions: uuid.UUID
-    #: Migration 0073. Looked up by `user_id`: `presence`'s primary key is
+    #: Migration 0070. Looked up by `user_id`: `presence`'s primary key is
     #: (workspace_id, target_type, target_id, user_id), composite like
     #: comment_mentions, and each tenant has exactly one row here (the owner's
     #: own heartbeat on their run), so the owner's id is unique enough to find it.
@@ -298,7 +298,7 @@ async def _build_tenant(session: AsyncSession, tag: str) -> TenantRows:
         },
     )
 
-    # Migration 0073. One presence row: the owner heartbeating their own run.
+    # Migration 0070. One presence row: the owner heartbeating their own run.
     # Through the repository function rather than raw SQL — `heartbeat` does
     # nothing RLS-relevant (no GUC is set anywhere in this module), so calling
     # it is no less a fixture than an INSERT, and it exercises the real upsert

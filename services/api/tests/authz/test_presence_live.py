@@ -1,4 +1,4 @@
-"""`/v1/presence` over real HTTP, against real Postgres (proposal 9, migration 0073).
+"""`/v1/presence` over real HTTP, against real Postgres (proposal 9, migration 0070).
 
 Drives the routes a browser calls, one client per person, and pins the rules an
 owner would want to know about:

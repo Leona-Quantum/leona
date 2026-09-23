@@ -147,7 +147,7 @@ EXPORTED = [
     tokens.PersonalAccessTokenList,
     tokens.MintedToken,
     tokens.CreateTokenRequest,
-    # Proposal 9, second slice (migration 0073). PresenceTargetType is an enum
+    # Proposal 9, second slice (migration 0070). PresenceTargetType is an enum
     # and reaches the document as a hoisted $def of the two shapes below.
     presence.PresenceViewer,
     presence.PresenceList,
