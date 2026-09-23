@@ -46,6 +46,7 @@ from .routes.tokens import router as tokens_router
 from .routes.news import router as news_router
 from .routes.courses import router as courses_router
 from .routes.notebooks import router as notebooks_router
+from .routes.presence import router as presence_router
 from .routes.qpu import router as qpu_router
 from .routes.qapps import router as qapps_router
 from .routes.runs import router as runs_router
@@ -222,6 +223,15 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.state.comment_limiter = FixedWindowLimiter(
         limit=app.state.settings.comment_rate_limit_per_minute,
         bucket="comment posting",
+        warn_thresholds=(),
+    )
+    # Per ACCOUNT, the same shape as `comment_limiter` immediately above and for
+    # the same reason: a heartbeat is always authenticated, consulted by one
+    # route only (`routes/presence.py::_meter`), and nobody on call needs to
+    # hear that one person hit their own presence ceiling.
+    app.state.presence_limiter = FixedWindowLimiter(
+        limit=app.state.settings.presence_rate_limit_per_minute,
+        bucket="presence heartbeat",
         warn_thresholds=(),
     )
     # Per personal access TOKEN — not per address and not per account. Consulted by
@@ -553,6 +563,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(notebooks_router, prefix="/v1")
     app.include_router(courses_router, prefix="/v1")
     app.include_router(comments_router, prefix="/v1")
+    app.include_router(presence_router, prefix="/v1")
     app.include_router(billing_router, prefix="/v1")
     app.include_router(usage_router, prefix="/v1")
     _wire_observability(app)

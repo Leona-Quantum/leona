@@ -84,7 +84,9 @@ import {
 } from "../../../lib/studio-synthesis";
 import { PanelTabs, panelRegion } from "../../../components/panel-tabs";
 import { CommentsPanel } from "../../../components/comments-panel";
+import { PresenceBar } from "../../../components/presence-bar";
 import { COMMENTS_ANCHOR, isCommentableId } from "../../../lib/comments";
+import { isPresenceTrackableId } from "../../../lib/presence";
 import { circuitMoments } from "../../../lib/circuit-moments";
 import { gateFamily, type GateFamily } from "../../../lib/gate-inspector";
 import { gateShortcutKey, isTypingTarget, studioShortcut } from "../../../lib/studio-shortcuts";
@@ -1108,6 +1110,13 @@ export function StudioWorkspace({ artifactId, newDraft = false, exampleId, atlas
                     reach two places. Each now lives once, inside the tab that
                     owns it (Owner Inbox 2026-07-31). */}
                 <div className="mj-studio-actions">
+                  {/* Who else in the workspace is looking at this saved circuit
+                      right now (proposal 9, second slice). Only a circuit the
+                      server holds: one that lives only in this browser has
+                      nobody else who could be looking at it. */}
+                  {artifact && isPresenceTrackableId(artifact.id) ? (
+                    <PresenceBar targetType="artifact" targetId={artifact.id} locale={locale} />
+                  ) : null}
                   {/* The chip is a shortcut to the evidence panel. On the tab
                       that already renders that panel it would just be the same
                       sentence twice — so it is hidden there, not unmounted.

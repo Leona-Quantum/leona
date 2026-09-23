@@ -274,6 +274,7 @@ async def _delete_committed_tenants(factory, workspace_ids, user_ids) -> None:
         Job,
         Membership,
         Notebook,
+        Presence,
         Project,
         ProjectShare,
         QpuRun,
@@ -376,6 +377,15 @@ async def _delete_committed_tenants(factory, workspace_ids, user_ids) -> None:
             )
         )
         await session.execute(delete(Comment).where(Comment.workspace_id.in_(workspace_ids)))
+        # Presence (migration 0070) references the workspace and the viewer, the
+        # same two-sided reasoning as comment_mentions just above: a torn-down
+        # user's presence row in a workspace this call is NOT removing would
+        # otherwise survive and block the user delete.
+        await session.execute(
+            delete(Presence).where(
+                (Presence.workspace_id.in_(workspace_ids)) | (Presence.user_id.in_(user_ids))
+            )
+        )
         # Before the runs: a notebook version names the run that generated it.
         # Versions and turns go with the notebook (ON DELETE CASCADE, 0058).
         await session.execute(delete(Notebook).where(Notebook.workspace_id.in_(workspace_ids)))

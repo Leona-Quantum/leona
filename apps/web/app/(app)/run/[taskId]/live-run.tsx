@@ -17,7 +17,9 @@ import { parseSseBlock } from "../../../../lib/sse-events";
 import { reconnectDelayMs } from "../../../../lib/reconnecting-sse-stream";
 import { runToFollow } from "../../../../lib/conversation-follow";
 import { CommentsPanel } from "../../../../components/comments-panel";
+import { PresenceBar } from "../../../../components/presence-bar";
 import { isCommentableId } from "../../../../lib/comments";
+import { isPresenceTrackableId } from "../../../../lib/presence";
 import { refusalSentence, responseString, submittedId } from "../../../../lib/api-error.ts";
 import { QUEUE_POLL_INTERVAL_MS, isWaitingForWorker, queuePositionLabel } from "../../../../lib/queue-position";
 import { archiveChat, loadChatHistory, rememberChat, updateChat, type ChatSummary } from "../../../../lib/chat-history";
@@ -920,6 +922,12 @@ export function LiveRun({ taskId, locale = "en", planner }: { taskId: string; lo
               </span>
             </div>
             <div className="mj-run-task-actions">
+              {/* Who else in the workspace is looking at this run right now
+                  (proposal 9, second slice). Not on the built-in example runs,
+                  which have no row anyone else could be looking at. */}
+              {!fixtureEvents && isPresenceTrackableId(taskId) ? (
+                <PresenceBar targetType="run" targetId={taskId} locale={locale} />
+              ) : null}
               <span className="mj-run-home-status">
                 <span className="mj-status-dot" aria-hidden="true" />
                 {fixtureEvents ? locale === "ja" ? "サンプル" : "Example" : streaming || pending ? locale === "ja" ? "実行中" : "Live" : locale === "ja" ? "準備完了" : "Ready"}

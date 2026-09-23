@@ -38,12 +38,12 @@ import os
 import uuid
 
 import pytest
-from majorana_contracts import Scope
+from majorana_contracts import PresenceTargetType, Scope
 from majorana_contracts.enums import Role, RunMode, UsageKind, VerificationMethod
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from majorana_api.repos import artifacts, folders, projects, runs, system, usage
+from majorana_api.repos import artifacts, folders, presence, projects, runs, system, usage
 
 requires_db = pytest.mark.skipif(
     "DATABASE_URL" not in os.environ, reason="RLS suite needs DATABASE_URL"
@@ -97,6 +97,11 @@ class TenantRows:
     #: Looked up by `comment_id`, the table's leading key column: its primary
     #: key is (comment_id, mentioned_user_id) and each tenant has one row.
     comment_mentions: uuid.UUID
+    #: Migration 0070. Looked up by `user_id`: `presence`'s primary key is
+    #: (workspace_id, target_type, target_id, user_id), composite like
+    #: comment_mentions, and each tenant has exactly one row here (the owner's
+    #: own heartbeat on their run), so the owner's id is unique enough to find it.
+    presence: uuid.UUID
 
 
 async def _build_tenant(session: AsyncSession, tag: str) -> TenantRows:
@@ -293,6 +298,13 @@ async def _build_tenant(session: AsyncSession, tag: str) -> TenantRows:
         },
     )
 
+    # Migration 0070. One presence row: the owner heartbeating their own run.
+    # Through the repository function rather than raw SQL — `heartbeat` does
+    # nothing RLS-relevant (no GUC is set anywhere in this module), so calling
+    # it is no less a fixture than an INSERT, and it exercises the real upsert
+    # path this suite would otherwise never touch.
+    await presence.heartbeat(scope, session, target_type=PresenceTargetType.RUN, target_id=run.id)
+
     # Migration 0068. A comment on this tenant's run and one mention row. Raw
     # SQL for the same reason as everything above: this is data for the
     # database's own control to be probed against, inserted with enforcement off.
@@ -338,6 +350,7 @@ async def _build_tenant(session: AsyncSession, tag: str) -> TenantRows:
         candidate_executions=execution_id,
         comments=comment_id,
         comment_mentions=comment_id,
+        presence=owner.id,
     )
 
 

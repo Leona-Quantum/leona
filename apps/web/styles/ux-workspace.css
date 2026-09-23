@@ -350,3 +350,21 @@
 .mj-comments--collapsible[open] > summary h2::before { content: "▾"; }
 .mj-chat-content > .mj-comments { margin-top: var(--sp-6); }
 .mj-notebook-workspace-notebook > .mj-comments { margin-top: var(--sp-4); }
+
+/* Presence (proposal 9, second slice), 2026-09-23. A small, overlapping stack
+   of avatars — who else is looking at this right now. Tokens only, so both
+   themes come free; no motion, because a roster that pops in and out while
+   someone reads is the opposite of unobtrusive. */
+.mj-presence { display: inline-flex; align-items: center; }
+.mj-presence-stack { display: flex; align-items: center; margin: 0; padding: 0; list-style: none; }
+.mj-presence-stack li + li { margin-left: calc(-1 * var(--sp-1)); }
+.mj-presence-avatar {
+  width: 22px;
+  height: 22px;
+  flex: 0 0 22px;
+  font-size: var(--fs-12);
+  border: var(--border-hairline) solid var(--bg-0);
+  box-shadow: 0 0 0 1px var(--border-0);
+  cursor: default;
+}
+.mj-presence-overflow { background: var(--bg-2); color: var(--text-1); font-weight: 600; }

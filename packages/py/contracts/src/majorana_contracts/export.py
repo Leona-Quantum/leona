@@ -13,7 +13,18 @@ from pathlib import Path
 from pydantic import RootModel
 from pydantic.json_schema import models_json_schema
 
-from . import CONTRACTS_VERSION, comments, courses, events, models, notebooks, plan, scope, tokens
+from . import (
+    CONTRACTS_VERSION,
+    comments,
+    courses,
+    events,
+    models,
+    notebooks,
+    plan,
+    presence,
+    scope,
+    tokens,
+)
 
 DEFAULT_OUT = Path(__file__).resolve().parents[2] / "openapi.json"
 
@@ -136,6 +147,11 @@ EXPORTED = [
     tokens.PersonalAccessTokenList,
     tokens.MintedToken,
     tokens.CreateTokenRequest,
+    # Proposal 9, second slice (migration 0070). PresenceTargetType is an enum
+    # and reaches the document as a hoisted $def of the two shapes below.
+    presence.PresenceViewer,
+    presence.PresenceList,
+    presence.PresenceHeartbeatRequest,
 ]
 
 

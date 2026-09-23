@@ -458,6 +458,21 @@ class CommentMention(Base):
     created_at: Mapped[dt.datetime | None] = mapped_column(server_default=func.now())
 
 
+class Presence(Base):
+    """Migration 0070. One row per (workspace, target, person): the last time
+    that person's tab heartbeated while looking at that run, notebook or saved
+    circuit. The primary key IS the natural key — every write is an upsert on
+    exactly this tuple, and nothing looks a row up by anything less."""
+
+    __tablename__ = "presence"
+
+    workspace_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("workspaces.id"), primary_key=True)
+    target_type: Mapped[str] = mapped_column(primary_key=True)
+    target_id: Mapped[uuid.UUID] = mapped_column(_UUID, primary_key=True)
+    user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id"), primary_key=True)
+    last_seen_at: Mapped[dt.datetime] = mapped_column(server_default=func.now())
+
+
 class ArtifactSource(Base):
     """Provenance (migration 0015): one pinned source record per version."""
 
