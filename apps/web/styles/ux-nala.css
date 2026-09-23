@@ -140,3 +140,11 @@
    it is an offer beside the main action, not a second call to action. */
 .mj-run-plan-cue { max-width: 46rem; margin: var(--sp-2) auto 0; padding: 0 var(--sp-4); font-size: var(--fs-13); color: var(--text-2); text-align: center; }
 .mj-run-plan-cue strong { color: var(--text-1); font-weight: 500; }
+.mj-run-atlas-note { max-width: 46rem; margin: var(--sp-2) 0 0 auto; padding: var(--sp-2) var(--sp-3); font-size: var(--fs-13); color: var(--text-1); border: var(--border-hairline) solid var(--border-0); border-radius: var(--radius-control); background: var(--bg-1); }
+.mj-run-atlas-note summary { cursor: pointer; color: var(--text-1); }
+.mj-run-atlas-note[open] { display: grid; gap: var(--sp-2); }
+.mj-run-atlas-note p, .mj-run-atlas-note ul { margin: 0; }
+.mj-run-atlas-note ul { padding-left: var(--sp-5); display: grid; gap: var(--sp-1); }
+.mj-run-atlas-note strong { font-family: var(--font-mono); font-weight: 500; color: var(--text-0); }
+.mj-run-atlas-note-label { color: var(--text-2); font-size: var(--fs-12); text-transform: uppercase; letter-spacing: 0.04em; }
+.mj-run-atlas-note-meta { color: var(--text-2); font-size: var(--fs-12); }
