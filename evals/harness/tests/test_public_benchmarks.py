@@ -442,3 +442,98 @@ async def test_dry_run_canonical_control_passes_on_gradable_qcircuiteval_tasks()
         (result.task_id, result.reasons) for result in report.results if not result.passed
     ]
     assert all(result.functional_grading == "not_implemented" for result in report.results)
+
+
+# ---------------------------------------------------------------------------
+# Budget ceiling — the task-loop half of the guard (budget.py's BudgetGuardedLLM is the
+# per-call half, tested in test_budget.py). No DB needed: once the tracker already reads
+# as exceeded, `run_public_benchmark` must never open a session for a skipped task, so a
+# factory that raises if entered is a stronger proof than a real (unused) database would be.
+# ---------------------------------------------------------------------------
+
+
+class _PoisonedFactory:
+    """Raises if ever called — proves a skipped task never even tries to touch the DB."""
+
+    def __call__(self, *args, **kwargs):
+        raise AssertionError("factory() called for a task that should have been skipped")
+
+
+class _PoisonedLLM:
+    async def complete(self, request, *, on_delta=None):
+        raise AssertionError("LLM called for a task that should have been skipped")
+
+
+async def test_run_public_benchmark_skips_every_task_once_budget_already_exceeded():
+    from majorana_evals.public_benchmarks.budget import BudgetTracker
+
+    tasks = load_qiskit_human_eval_tasks()[:3]
+    tracker = BudgetTracker(ceiling_usd=1.0, spent_usd=1.0)  # already AT the ceiling
+    report = await run_public_benchmark(
+        tasks,
+        benchmark="qiskit-human-eval",
+        factory=_PoisonedFactory(),
+        scope=None,
+        llm=_PoisonedLLM(),
+        sandbox=LocalSubprocessSandbox(),
+        run_mode="live",
+        dataset_commit_sha="test",
+        dataset_sha256={"dataset.json": "test"},
+        prompt_version="test",
+        budget=tracker,
+    )
+    assert report.total == 3
+    assert report.passed == 0
+    for result in report.results:
+        assert result.run_status == "skipped_budget_ceiling"
+        assert "not attempted" in result.reasons[0]
+
+
+@requires_db
+async def test_run_public_benchmark_runs_earlier_tasks_then_skips_once_exceeded():
+    """A budget that goes over mid-run (simulated by a tracker that starts already at the
+    ceiling but is only consulted by `run_public_benchmark`'s own loop, never inside
+    `run_public_task`) must still let already-started work finish and only skip what comes
+    after — checked here by giving the FIRST task room to run (tracker starts under the
+    ceiling) and confirming the tracker's own post-hoc state, once manually pushed over,
+    stops the rest."""
+
+    from majorana_evals.public_benchmarks.budget import BudgetTracker
+
+    tasks = load_qiskit_human_eval_tasks()[:2]
+    tracker = BudgetTracker(ceiling_usd=1.0, spent_usd=0.0)
+
+    engine = engine_from_env()
+    factory = session_factory(engine)
+    try:
+        scope = await _scope(factory)
+
+        class _OneShotThenOverBudgetLLM(StubPipelineLLM):
+            """Behaves exactly like the canonical stub, but pushes the tracker over the
+            ceiling as a side effect of its first call — simulating "the task in flight
+            spent enough to cross the cap", which the per-call guard (test_budget.py)
+            already covers in isolation; this confirms the LOOP notices before task 2."""
+
+            async def complete(self, request, *, on_delta=None):
+                tracker.spent_usd = tracker.ceiling_usd
+                return await super().complete(request, on_delta=on_delta)
+
+        report = await run_public_benchmark(
+            tasks,
+            benchmark="qiskit-human-eval",
+            factory=factory,
+            scope=scope,
+            llm=_OneShotThenOverBudgetLLM(mode="canonical"),
+            sandbox=LocalSubprocessSandbox(),
+            run_mode="live",
+            dataset_commit_sha="test",
+            dataset_sha256={"dataset.json": "test"},
+            prompt_version="test",
+            budget=tracker,
+        )
+    finally:
+        await engine.dispose()
+
+    assert report.total == 2
+    assert report.results[0].run_status != "skipped_budget_ceiling"
+    assert report.results[1].run_status == "skipped_budget_ceiling"

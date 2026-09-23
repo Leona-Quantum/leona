@@ -12,9 +12,11 @@ needs to anticipate that today."""
 
 from __future__ import annotations
 
+import inspect
 import subprocess
 from pathlib import Path
 
+from majorana_evals.public_benchmarks.budget import BudgetTracker
 from majorana_evals.resource_estimation.adapters import ModelAdapter
 from majorana_evals.resource_estimation.grader import grade_task
 from majorana_evals.resource_estimation.schema import BenchmarkReport, ResourceEstimationTask
@@ -37,15 +39,44 @@ def _pipeline_commit_sha() -> str | None:
     return completed.stdout.strip() or None
 
 
-def run_benchmark(
+async def run_benchmark(
     tasks: list[ResourceEstimationTask],
     *,
     adapter: ModelAdapter,
     run_mode: ReportRunMode,
     dataset_sha256: str,
     note: str | None = None,
+    budget: BudgetTracker | None = None,
 ) -> BenchmarkReport:
-    results = [grade_task(task, adapter.answer(task)) for task in tasks]
+    """Async so a real (paid) adapter's `answer()` — a coroutine, since it calls a real
+    `LLMClient` — can be awaited. The three offline adapters in `adapters.py` return a
+    plain `ModelAnswer` (not awaitable); `inspect.isawaitable` tells the two apart so
+    neither needs a different call site.
+
+    `budget`, when given, is checked BEFORE each task; once exceeded, every remaining task
+    is graded against an empty `ModelAnswer` (== "no answer" for every pinned quantity,
+    scored 0 by `grade_task`, never a fabricated skip status) with a note saying why —
+    `resource_estimation.BenchmarkReport` has no per-task run_status field to mark
+    "skipped" the way `public_benchmarks` does, so the reason lives in `TaskResult.reasons`
+    via the same "no answer given" path grading already produces for a missing key."""
+    from majorana_evals.resource_estimation.schema import ModelAnswer
+
+    results = []
+    for task in tasks:
+        if budget is not None and budget.exceeded():
+            empty = ModelAnswer(
+                task_id=task.task_id,
+                values={},
+                raw=(
+                    f"not attempted: ${budget.spent_usd:.4f} already spent, "
+                    f"${budget.ceiling_usd:.2f} ceiling reached before this task"
+                ),
+            )
+            results.append(grade_task(task, empty))
+            continue
+        maybe_answer = adapter.answer(task)
+        answer = await maybe_answer if inspect.isawaitable(maybe_answer) else maybe_answer
+        results.append(grade_task(task, answer))
     total = len(results)
     passed = sum(1 for result in results if result.passed)
     mean_score = sum(result.score for result in results) / total if total else 0.0
