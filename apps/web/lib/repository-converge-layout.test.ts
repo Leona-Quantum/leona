@@ -1046,7 +1046,12 @@ test("every capability draws a figure — not just the two that converge", () =>
   // the figure was looked at in both locales before this number moved — which is how
   // the adiabatic method's label was caught being clipped mid-phrase into
   // "Interpolate slowly from an easy Hamiltonian to…" and shortened.
-  assert.equal(capabilities.length, 31, "the graph's slot count changed; update these figures");
+  // **32 in s0923, ai-ops 195**: `ground-state-framing`. The tripwire fired an
+  // eighth time — its figure is a single method fanned trivially (one lane,
+  // two circles: `hamiltonian-access` and `ground-state-problem`), which is
+  // the expected shape for a one-method slot filed as a feed rather than a
+  // chain anyone walks.
+  assert.equal(capabilities.length, 32, "the graph's slot count changed; update these figures");
 
   for (const focus of capabilities) {
     for (const locale of ["en", "ja"] as const) {
@@ -1085,7 +1090,11 @@ test("every capability draws a figure — not just the two that converge", () =>
   // which is now three region openings in a row that did not move it.
   const byGrain = capabilities.map((focus) => diagramFor(focus.id).grain);
   assert.equal(byGrain.filter((grain) => grain === "states").length, 1);
-  assert.equal(byGrain.filter((grain) => grain === "methods").length, 30);
+  // 30 -> 31 in s0923 (ai-ops 195): `ground-state-framing` fans too, for the
+  // plainest reason of all — it has exactly one method and no interior, so
+  // there is nothing for a state chain to be drawn from. The one slot drawing
+  // a state chain is still the only one.
+  assert.equal(byGrain.filter((grain) => grain === "methods").length, 31);
 });
 
 test("`drawableSlots` is the list of slots that actually draw", () => {
@@ -1103,7 +1112,10 @@ test("`drawableSlots` is the list of slots that actually draw", () => {
   // slots and 31 with W29's one — the same new slots the figure test above pins, and
   // the point of asserting the length beside the deepEqual is that two empty lists
   // are also deep-equal.
-  assert.equal(offered.length, 31);
+  // 32 in s0923 (ai-ops 195), tracking the figure test above one-for-one:
+  // `ground-state-framing` draws (`diagramFor` reports `empty: false`), so it
+  // is offered too.
+  assert.equal(offered.length, 32);
 
   // And it is still a strict superset of the convergence claim, which is a
   // different and narrower statement — narrower by one since session 119,
@@ -2037,9 +2049,12 @@ test("a line that opens into something says so, and a line that does not is not 
   // adiabatic paper interpolates continuously and delegates nothing this map draws.
   // A region that adds only leaves is a region whose interior the papers do not
   // decompose, which is a statement about the papers and not a gap in the reading.
-  assert.equal(openable + leaves + 1, 114, "the thirty-one figures draw 114 lines between them");
+  // **114 -> 115 in s0923 (ai-ops 195), one new leaf.** `ground-state-framing`'s
+  // one method has `steps: []` and no interior for a chain to open into — the
+  // plainest leaf shape, same as W29's two above it. `openable` does not move.
+  assert.equal(openable + leaves + 1, 115, "the thirty-two figures draw 115 lines between them");
   assert.equal(openable, 30, "30 of them open into something the canvas draws");
-  assert.equal(leaves, 83, "83 are leaves — the canvas records nothing finer for them");
+  assert.equal(leaves, 84, "84 are leaves — the canvas records nothing finer for them");
 
 });
 
