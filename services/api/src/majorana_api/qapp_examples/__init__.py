@@ -318,9 +318,9 @@ H2_VQE = QappExample(
     key="h2_vqe",
     title="Hydrogen molecule energy (VQE)",
     description=(
-        "Sweep the distance between the two atoms of H₂ and find its lowest energy at each "
-        "one with a variational quantum eigensolver, next to the classical Hartree–Fock guess "
-        "and the exact answer. The bottom of the curve is the bond length."
+        "Sweep the distance between the two atoms of H₂ and find the lowest energy at each "
+        "distance with a variational quantum eigensolver. The classical Hartree-Fock guess and "
+        "the exact answer are drawn alongside. The bottom of the curve is the bond length."
     ),
     framework="qiskit",
     qubits_estimate=2,

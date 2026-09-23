@@ -44,7 +44,7 @@ summary{cursor:pointer;font-weight:600}
 <body>
 <main>
 <h1>Hydrogen molecule energy (VQE)</h1>
-<p class="lede">How much energy does an H₂ molecule have when its two atoms sit a given distance apart? At each distance a variational quantum eigensolver (VQE) tunes one rotation angle on a two-qubit circuit until the measured energy stops falling. The lowest point of the curve is the bond length. Hartree–Fock, the classical starting guess, is drawn for comparison.</p>
+<p class="lede">The energy of an H₂ molecule depends on how far apart its two atoms are. At each distance, a variational quantum eigensolver (VQE) turns one rotation angle on a two-qubit circuit until the energy stops falling. The bottom of the curve is the bond length. Hartree-Fock, the classical starting guess, is drawn for comparison.</p>
 
 <div class="controls">
 <label for="r_min">Shortest distance (Å)
@@ -69,23 +69,23 @@ summary{cursor:pointer;font-weight:600}
 <div class="panel">
 <h2 id="results-title">Energy against bond length</h2>
 <div class="chart" id="chart" role="img"></div>
-<div class="key"><span class="exact">Exact, in this basis</span><span class="vqe">VQE</span><span class="hf">Hartree–Fock</span></div>
+<div class="key"><span class="exact">Exact, in this basis</span><span class="vqe">VQE</span><span class="hf">Hartree-Fock</span></div>
 </div>
 <div class="panel">
 <h2>What the sweep found</h2>
 <div class="stats">
 <div class="stat"><strong id="bond"></strong><span id="bond-note">bond length (lowest energy)</span></div>
 <div class="stat"><strong id="bond-energy"></strong><span>energy there, in hartree</span></div>
-<div class="stat"><strong id="correlation"></strong><span>largest energy Hartree–Fock misses (correlation), in millihartree</span></div>
+<div class="stat"><strong id="correlation"></strong><span>most energy Hartree-Fock misses at any distance (the correlation energy), in millihartree</span></div>
 <div class="stat"><strong id="vqe-error"></strong><span>largest gap between VQE and exact, in millihartree</span></div>
 </div>
-<p class="legend">Minimal STO-3G basis, ideal noiseless simulation. The circuit can reach every state this basis allows for the electron pair, so VQE lands on the exact answer here. The interesting part is how far Hartree–Fock drifts as the bond stretches. On real hardware, noise would open a gap.</p>
+<p class="legend">Minimal STO-3G basis, ideal noiseless simulation. The circuit can reach every state this basis allows for the electron pair, so VQE lands on the exact answer here. Watch Hartree-Fock instead: it drifts further from the exact curve as the bond stretches. On real hardware, noise would open a gap between VQE and exact.</p>
 </div>
 <div class="panel">
 <details>
 <summary>Every point</summary>
 <table>
-<thead><tr><th scope="col">Distance (Å)</th><th scope="col">Hartree–Fock</th><th scope="col">VQE</th><th scope="col">Exact</th><th scope="col">Weight on the excited pair</th></tr></thead>
+<thead><tr><th scope="col">Distance (Å)</th><th scope="col">Hartree-Fock</th><th scope="col">VQE</th><th scope="col">Exact</th><th scope="col">Weight on the excited pair</th></tr></thead>
 <tbody id="rows"></tbody>
 </table>
 </details>

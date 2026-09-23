@@ -9,7 +9,7 @@ import type { PublicLocale } from "../../../lib/public-locale";
 const COPY = {
   en: {
     title: "Start from an example",
-    lede: "Qapps written by Leona. Adding one puts a private copy in your account. Run it to check it works, then publish it whenever you like.",
+    lede: "Example Qapps from the Leona team. Adding one puts a private copy in your account. Run it once to check it works, then publish it whenever you like.",
     add: "Add to my Qapps",
     adding: "Adding…",
     addFailed: "The example could not be added. Please try again.",
@@ -18,7 +18,7 @@ const COPY = {
   },
   ja: {
     title: "サンプルから始める",
-    lede: "Leonaが用意したQappです。追加すると、非公開のコピーがあなたのアカウントに作られます。実行して動作を確かめてから、好きなときに公開できます。",
+    lede: "Leonaチームが用意したサンプルQappです。追加すると、非公開のコピーがあなたのアカウントに作られます。一度実行して動作を確かめてから、好きなときに公開できます。",
     add: "自分のQappに追加",
     adding: "追加しています…",
     addFailed: "サンプルを追加できませんでした。もう一度お試しください。",
