@@ -219,7 +219,8 @@ function SourceCite({ source, papers, locale }: { source: SourceKey | null; pape
       <a href={paper.url} rel="noreferrer" target="_blank" title={`${paper.title}: “${entry.quote}”`}>
         {shortAuthors(paper.authors, locale)} {paper.year}
       </a>
-      , {locale === "ja" ? entry.locatorJa : entry.locator}
+      {locale === "ja" ? "、" : ", "}
+      {locale === "ja" ? entry.locatorJa : entry.locator}
     </span>
   );
 }
@@ -598,7 +599,9 @@ export function AtlasWorkflowPlanner({
             <p className="mj-plan-muted">{copy.pickedByYou}</p>
           ) : recognition && plan.problem ? (
             <p className="mj-plan-muted">
-              {copy.becauseOf}: {recognition.evidence.map((words) => `“${words}”`).join(", ")}
+              {locale === "ja"
+                ? `${copy.becauseOf}：${recognition.evidence.map((words) => `「${words}」`).join("、")}`
+                : `${copy.becauseOf}: ${recognition.evidence.map((words) => `“${words}”`).join(", ")}`}
             </p>
           ) : (
             <p>{copy.noRecognition}</p>
