@@ -41,6 +41,15 @@ class RunContext:
     source_intent: Literal["verify", "revise"] = "verify"
     source_framework: Framework | None = None
     parent_artifact_id: Any | None = None
+    #: The web app's Atlas workflow planner's cited output for this task, when
+    #: the web supplied one on `POST /v1/runs` — see `WorkflowContext` in
+    #: `majorana_api.routes.runs`. Read-only context for the planner
+    #: (`ProductionSimplePipelinePorts.plan`), never instructions and never a
+    #: verified claim. A job payload persisted before this field existed has
+    #: no key for it; `handle_run_execute` reads it with `.get(...)` so an old,
+    #: replayed payload deserializes to `None`, today's only behavior for a
+    #: run that never carried one.
+    workflow_context: dict[str, Any] | None = None
     #: Short model-written name for this conversation, settled before dispatch.
     #: None on a later turn, which already has one, or when naming failed.
     conversation_title: str | None = None

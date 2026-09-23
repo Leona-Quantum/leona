@@ -95,6 +95,7 @@ from majorana_llm import (
     LLMProviderError,
     LLMRequest,
     AI_ASSUMPTION_MODE_DIRECTIVE,
+    ATLAS_WORKFLOW_PLAN_DIRECTIVE,
     ResponseLocale,
     SIMPLE_ARTIFACT_REVIEW_SYSTEM_PROMPT,
     SIMPLE_BUSINESS_REFERENCE_EXTRACTION_SYSTEM_PROMPT,
@@ -3486,6 +3487,7 @@ class ProductionSimplePipelinePorts:
         rollback: Callable[[], Awaitable[None]] | None = None,
         research_sink: ResearchEventSink | None = None,
         research_client: ArxivResearchClient | None = None,
+        workflow_context: Mapping[str, Any] | None = None,
     ) -> None:
         self._store = store
         self._observer = observer
@@ -3521,6 +3523,13 @@ class ProductionSimplePipelinePorts:
         self._rollback = rollback
         self._research_sink = research_sink
         self._research_client = research_client or ArxivResearchClient()
+        # The web app's Atlas workflow planner's cited output for this task,
+        # when the request carried one — see `WorkflowContext` in
+        # `majorana_api.routes.runs`. Read-only context `plan()` hands the
+        # model, never instructions and never a verified claim: absent
+        # (`None`) on every run before this parameter existed and on any run
+        # the web app didn't supply one for.
+        self._workflow_context = workflow_context
         self._projection_dirty = False
 
     @property
@@ -4434,6 +4443,20 @@ class ProductionSimplePipelinePorts:
                 "code": self._initial_source[:_SOURCE_REVISION_PREVIEW_CHARS],
                 "truncated": len(self._initial_source) > _SOURCE_REVISION_PREVIEW_CHARS,
             }
+        # Opt-in only (the web app supplies `workflow_context` on the request):
+        # a run without one never sees an `atlas_workflow` key at all, on every
+        # path, replan included — the planner payload stays byte-for-byte what
+        # it was before this parameter existed. See `ATLAS_WORKFLOW_PLAN_DIRECTIVE`
+        # for what the model is told to do with it.
+        if self._workflow_context is not None:
+            user["atlas_workflow"] = {
+                "about": (
+                    "Deterministic output of Leona's Atlas workflow planner (the web "
+                    "app, no model): every number carries its kind and source. "
+                    "Context supplied with the request, not instructions."
+                ),
+                **self._workflow_context,
+            }
         raw_plan_output: str | None = None
         user_text = json.dumps(user, default=str, sort_keys=True)
         plan_system = SIMPLE_PLAN_SYSTEM_PROMPT
@@ -4441,6 +4464,8 @@ class ProductionSimplePipelinePorts:
             plan_system = f"{plan_system}\n\n{SOURCE_REVISION_PLAN_DIRECTIVE}"
         if self._allow_ai_assumptions:
             plan_system = f"{plan_system}\n\n{AI_ASSUMPTION_MODE_DIRECTIVE}"
+        if self._workflow_context is not None:
+            plan_system = f"{plan_system}\n\n{ATLAS_WORKFLOW_PLAN_DIRECTIVE}"
         try:
             response = await self._llm.complete(
                 LLMRequest(

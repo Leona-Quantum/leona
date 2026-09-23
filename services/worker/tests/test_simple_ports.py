@@ -38,7 +38,7 @@ from majorana_contracts.enums import (
 )
 from majorana_contracts.plan import Plan, ProblemTerm, ReferenceProblem
 from majorana_frameworks import FrameworkProgram
-from majorana_llm import LLMProviderError, LLMResponse
+from majorana_llm import ATLAS_WORKFLOW_PLAN_DIRECTIVE, LLMProviderError, LLMResponse
 
 from majorana_worker import simple_ports as simple_ports_module
 from majorana_worker.simple_ports import (
@@ -493,6 +493,75 @@ async def test_revise_without_initial_source_behaves_as_ordinary_generation():
     generate_result = await ports.generate(run_id, plan_result.value, None, None)
     assert generate_result.failure is None
     assert len(llm.requests) == 2
+
+
+_WORKFLOW_CONTEXT = {
+    "version": 1,
+    "problem": "vqe-h2",
+    "problem_label": "VQE for the H2 ground state",
+    "planner_path": "/repository/plan/vqe-h2",
+    "costs": [
+        {
+            "id": "trotter-steps",
+            "label": "Trotter steps",
+            "value": 12.0,
+            "unit": "steps",
+            "formula": "O(t^2/eps)",
+            "kind": "upper-bound",
+            "source": "Lloyd 1996",
+        }
+    ],
+}
+
+
+def _workflow_ports(
+    llm: "QueueLLM", *, workflow_context: dict | None
+) -> ProductionSimplePipelinePorts:
+    return ProductionSimplePipelinePorts(
+        store=MemoryAgentStore(),
+        observer=Observer(),
+        llm=llm,
+        executor=Executor(),
+        reviewer=Reviewer(),
+        converter=Converter(),
+        saver=Saver(),
+        task_prompt="Simulate H2 ground state energy with VQE",
+        framework=Framework.QISKIT,
+        requested_shots=100,
+        requested_seed=7,
+        workflow_context=workflow_context,
+    )
+
+
+async def test_workflow_context_reaches_the_planner_payload_and_system_prompt():
+    """The web app's Atlas planner output, when the request carries one, must
+    reach the model as `atlas_workflow` plus the directive telling it how to
+    use that context — see `ATLAS_WORKFLOW_PLAN_DIRECTIVE`."""
+    run_id = uuid4()
+    llm = QueueLLM([json.dumps(_plan_payload())])
+    ports = _workflow_ports(llm, workflow_context=_WORKFLOW_CONTEXT)
+
+    plan_result = await ports.plan(run_id, None, None)
+    assert plan_result.failure is None
+    plan_request = json.loads(llm.requests[0].user)
+    assert plan_request["atlas_workflow"]["problem"] == "vqe-h2"
+    assert plan_request["atlas_workflow"]["costs"][0]["kind"] == "upper-bound"
+    assert "about" in plan_request["atlas_workflow"]
+    assert ATLAS_WORKFLOW_PLAN_DIRECTIVE in llm.requests[0].system
+
+
+async def test_without_workflow_context_the_planner_payload_and_system_are_unchanged():
+    """Absent (the default) must reproduce every run's behavior from before
+    this parameter existed: no `atlas_workflow` key, and no directive text."""
+    run_id = uuid4()
+    llm = QueueLLM([json.dumps(_plan_payload())])
+    ports = _workflow_ports(llm, workflow_context=None)
+
+    plan_result = await ports.plan(run_id, None, None)
+    assert plan_result.failure is None
+    plan_request = json.loads(llm.requests[0].user)
+    assert "atlas_workflow" not in plan_request
+    assert ATLAS_WORKFLOW_PLAN_DIRECTIVE not in llm.requests[0].system
 
 
 async def test_plan_and_generation_receive_referential_conversation_context():
