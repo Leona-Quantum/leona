@@ -177,6 +177,36 @@ export interface LayerCapability extends LayerNodeBase {
   contract: LayerContract;
   whyALayer: string;
   whyALayerJa: string;
+  /**
+   * How this slot's contract edge participates in the automatic cross-capability
+   * walk (`state-graph.ts`'s `stateEdges`, and therefore `statePathsBetween` and
+   * `expansionOf`) that draws a capability's own "converge" figure.
+   *
+   * Absent — every capability but one — means the edge is a general fact:
+   * `contract.from` genuinely produces something a route may pick up wherever
+   * `contract.to` is asked for, and the walk may compose through it freely.
+   * That is what makes a state a state rather than a per-route label.
+   *
+   * `"authored-only"` says the opposite is true of THIS contract: `contract.to`
+   * is not a transformation of `contract.from`, it is `contract.from` PLUS a
+   * declaration only the caller can supply — session s0923, ai-ops 195's
+   * `ground-state-framing`, whose own `whyALayer` argues at length that "an
+   * automatic encoding cannot supply" that declaration. Letting the walk
+   * compose through such a slot automatically would let ANY holder of
+   * `contract.from`, anywhere on the map, claim a declaration it never made.
+   * That is not hypothetical: before this field existed, `hamiltonian-
+   * surrogate` — a Koopman-von-Neumann simulation device deliberately typed as
+   * "just a `hamiltonian-access`" so simulator-side consumers accept it
+   * (state-vocabulary.ts's own comment on it) — walked through
+   * `ground-state-framing` into the VQE region and back out as a drawn "way
+   * across" on `nonlinear-ode-solve`'s own figure, four new lanes that no paper
+   * sources and that pushed the figure past its width ceiling. `stateEdges`
+   * omits this contract's edge from the general pool for exactly that reason.
+   * An authored route that actually names this capability in its own `.steps`
+   * is unaffected: that is drawn from `routeOf` and `hops`, never from this
+   * walk, which is why omitting the edge here costs the VQE region nothing.
+   */
+  traversal?: "authored-only";
 }
 
 /**

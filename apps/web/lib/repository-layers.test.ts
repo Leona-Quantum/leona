@@ -1117,6 +1117,21 @@ test("the authored graph's own sibling sets partition, on every slot that has on
   }
 });
 
+// **The first genuinely one-method slot, and the comment above predicted this
+// exact shape of exception before it arrived: "the literature may have
+// published exactly one way."** `ground-state-framing` (session s0923, ai-ops
+// 195, option 1) is not a slot with one filler competing for a place two or
+// more methods would otherwise contest — R2's whole test, `whyALayer` says so
+// directly — it is a declaration a caller brings, restated as a step so the
+// map can draw it, mirroring how `phase-estimation` is filed as a feed on
+// `phase-estimation-ground-state`. A second "method" here would have to
+// invent a competing way to attach the SAME caller declaration to an operator,
+// which is not a second technique, it is the same one paraphrased — exactly
+// the manufactured-competition failure `whyALayer` on this slot argues against
+// by name. Allowlisted rather than silently exempted, so the next one-method
+// slot has to argue the same case rather than pattern-match an empty array.
+const ONE_METHOD_SLOTS_ARGUED_NOT_CONTESTED: readonly string[] = ["ground-state-framing"];
+
 test("every slot in the authored graph has at least two ways through it", () => {
   // `whyALayer`'s own doctrine, asserted rather than reviewed: *"if there is no
   // honest sentence saying which genuinely different methods compete for this
@@ -1136,8 +1151,17 @@ test("every slot in the authored graph has at least two ways through it", () => 
   const thin = LAYER_GRAPH.nodes
     .filter(isCapability)
     .map((node) => ({ id: node.id, ways: methodsRealizing(LAYER_GRAPH, node.id).length }))
-    .filter((slot) => slot.ways < 2);
+    .filter((slot) => slot.ways < 2 && !ONE_METHOD_SLOTS_ARGUED_NOT_CONTESTED.includes(slot.id));
   assert.deepEqual(thin, []);
+  // The allowlist itself has to stay true: a slot named on it that later gains a
+  // real second method should come off, not sit there as a stale exemption.
+  for (const id of ONE_METHOD_SLOTS_ARGUED_NOT_CONTESTED) {
+    assert.equal(
+      methodsRealizing(LAYER_GRAPH, id).length,
+      1,
+      `${id}: no longer one method — remove it from ONE_METHOD_SLOTS_ARGUED_NOT_CONTESTED`,
+    );
+  }
 });
 
 // ---------------------------------------------------------------------------
@@ -2894,10 +2918,18 @@ test("the linear-ODE region does not go backwards on the half that is closed", (
  * record's generality. Left as a bare count it can grow silently, and the field would go
  * on reading "closed" while methods quietly moved from having an answer to having an
  * excuse. Naming it means adding one is an edit to this test, in front of a reviewer.
- * The single member is `koopman-linearization`: its only paper proves the linearization
+ * The first member is `koopman-linearization`: its only paper proves the linearization
  * at arbitrary basis but scopes **both** of its complexity theorems to the Fourier
  * instance, which is a different record in this graph — and that record does carry the
  * numbers.
+ *
+ * The second, added session s0923 (ai-ops 195), is
+ * `fermion-to-qubit-mapping-motivates-vqe-framing`: it realises `ground-state-framing`
+ * on one sentence from Jiang, Kalev, Mruczkiewicz and Neven's introduction, motivating
+ * why an efficient encoding matters at all. Their paper prices their OWN ternary-tree
+ * construction, a different, competing-methods question W32 scoped and refused
+ * separately — not the motivating sentence itself, which carries no resource count to
+ * report.
  */
 test("every method says what it costs, or says why it does not", () => {
   const caps = LAYER_GRAPH.nodes.filter(isCapability).map((node) => node.id);
@@ -2913,7 +2945,7 @@ test("every method says what it costs, or says why it does not", () => {
   const declared = region.declaredAbsences.get("cost") ?? [];
   assert.deepEqual(
     [...declared].sort(),
-    ["koopman-linearization"],
+    ["fermion-to-qubit-mapping-motivates-vqe-framing", "koopman-linearization"],
     "the set of methods excused from carrying a cost has changed — an absence is a claim, not a default",
   );
   assert.deepEqual(
@@ -3038,7 +3070,16 @@ test("every hop the Atlas draws says what happens on it", () => {
     ["excited-state-energy", 7, 22],
     ["full-discretization", 2, 2],
     ["gate-synthesis", 2, 2],
-    ["ground-state-energy", 4, 11],
+    // 11 -> 12, s0923 (ai-ops 195): `ground-state-framing` is now a fourth step
+    // on `variational-ground-state`, filed as a feed, so it is one more stretch
+    // on this region -- authored in that method's own `hops`, not on the new
+    // capability's realizing method (that hop was already counted as 1/1 on
+    // `ground-state-framing`'s own row above).
+    ["ground-state-energy", 4, 12],
+    // s0923, ai-ops 195: one method, `steps: []`, so its whole route is its own
+    // stretch -- the same shape `phase-estimation-ground-state`'s own final leg
+    // takes, keyed by the method's own id in `hops`.
+    ["ground-state-framing", 1, 1],
     ["hamiltonian-recasting", 2, 2],
     ["hamiltonian-simulation", 3, 8],
     ["hidden-period-finding", 3, 3],

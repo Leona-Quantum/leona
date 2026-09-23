@@ -674,5 +674,14 @@ export const PAPER_REGISTER: PaperRegister = {
     { id: "arxiv:1507.08969", title: "Towards Practical Quantum Variational Algorithms", authors: "D. Wecker, M. B. Hastings, M. Troyer", year: "2015", url: "https://arxiv.org/abs/1507.08969" },
     { id: "arxiv:2011.04149", title: "Focus beyond quadratic speedups for error-corrected quantum advantage", authors: "Ryan Babbush, Jarrod McClean, Michael Newman, Craig Gidney, Sergio Boixo, Hartmut Neven", year: "2020", url: "https://arxiv.org/abs/2011.04149" },
     { id: "arxiv:quant-ph/9708016", title: "Quantum Algorithms Revisited", authors: "Richard Cleve, Artur Ekert, Chiara Macchiavello, Michele Mosca", year: "1997", url: "https://arxiv.org/abs/quant-ph/9708016" },
+    // Added session s0923 for `fermion-to-qubit-mapping-motivates-vqe-framing`
+    // (layer-graph.ts), which cites this paper's own first section, not its
+    // ternary-tree mapping -- ai-ops 195 (option 1). `theory: "reported"` for the
+    // proved optimal-weight construction (Theorem 1); `hardware: "absent"`, no
+    // device named; `simulation: "unknown"` rather than "absent" per the rule --
+    // the abstract states no numerics either way. Title verified off the PDF's
+    // own first page (arxiv.org/pdf/1910.10746); year is the v1 submission year
+    // (23 Oct 2019), not the v2 date the PDF itself carries.
+    { id: "arxiv:1910.10746", title: "Optimal fermion-to-qubit mapping via ternary trees with applications to reduced quantum states learning", authors: "Zhang Jiang, Amir Kalev, Wojciech Mruczkiewicz, Hartmut Neven", year: "2019", url: "https://arxiv.org/abs/1910.10746", reports: { theory: "reported", simulation: "unknown", hardware: "absent" }, reportsBasis: "abstract" },
   ],
 };

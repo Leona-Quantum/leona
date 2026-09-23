@@ -483,7 +483,14 @@ test("Theory is held on every method, and each hop inside it is empty or filled 
   // single undivided act — the alternation IS Farhi et al.'s construction and the
   // adiabatic interpolation is one continuous evolution — so neither hangs a stub the
   // way `backtracking-tree-walk-search` hangs `phase-estimation`.
-  assert.equal(hops, 160, `${hops} hops, not 160`);
+  // +1 in s0923 (ai-ops 195): `card.trace` is the SPINE only (`cardHopNotes` maps
+  // `card.trace.value`, which comes from `routeOf`'s `segments`, never its `feeds`),
+  // so `variational-ground-state` gaining `ground-state-framing` as a fourth STEP
+  // contributes nothing here — it is a feed, not a segment. The one new hop is
+  // `fermion-to-qubit-mapping-motivates-vqe-framing`'s own stretch: `steps: []`, so
+  // its whole route is the own-work segment `hasOwnStretch` draws, the same shape
+  // W29's two atomic methods take.
+  assert.equal(hops, 161, `${hops} hops, not 161`);
 
   // **A floor, and it must not be zero.** The marked-prose path is the whole of the owner's
   // re-decision, and a rendering path with no instance anywhere has never been drawn. One
@@ -1473,7 +1480,13 @@ test("the unnamed stretch is 56 of 63 methods, one each, and 13 of them follow a
   // 101/15 in W29, and `trailing` holds a sixth time. Both methods delegate to
   // nothing and add their stretch at index 0, the plainest version of the shape:
   // there is no step for the stretch to trail.
-  assert.equal(withOwn.length, 101);
+  // 102/15 in s0923 (ai-ops 195): `fermion-to-qubit-mapping-motivates-vqe-framing`
+  // has `steps: []`, so its whole route is the own-work segment at index 0 — the
+  // plainest version of the shape again, `trailing` untouched for the same reason.
+  // `variational-ground-state` gaining `ground-state-framing` as a fourth STEP moves
+  // neither number: that step is filed as a feed, never a segment, so `route.segments`
+  // for that method is exactly what it was.
+  assert.equal(withOwn.length, 102);
   assert.equal(trailing.length, 15);
 
   // The three that remain of the four the owner named. Pinned by their states
@@ -1635,7 +1648,11 @@ test("an own: card exists for exactly the methods that have the stretch, and no 
   // 93 with the four PDE methods, tracking the stretch census one-for-one.
   // 95 in unit 4, tracking the stretch census above one-for-one as it must.
   // 99 in W28 and 101 in W29, tracking it one-for-one both times.
-  assert.equal(built, 101);
+  // 102 in s0923 (ai-ops 195): `fermion-to-qubit-mapping-motivates-vqe-framing`
+  // has an unnamed stretch (`steps: []`), tracking the stretch census one-for-one
+  // as it must — `variational-ground-state` gaining a fourth STEP does not move
+  // this number, since that step is a feed and route.segments for it is unchanged.
+  assert.equal(built, 102);
   // A prefix on nothing, and a prefix on a capability, both resolve to shut
   // rather than to something. `?card=` is user-supplied.
   assert.equal(cardExists(input, ownCardId("not-a-method")), false);
@@ -1699,7 +1716,9 @@ test("an own: card says what its stretch does, or the standing phrase, in both l
     `[own-card census] ${named.size + standing.size} own cards; `
       + `${named.size} say what their stretch does, ${standing.size} still draw the standing phrase`,
   );
-  assert.equal(named.size + standing.size, 101, "the own-card population moved — see the census above it");
+  // 102 in s0923 (ai-ops 195): `fermion-to-qubit-mapping-motivates-vqe-framing`'s
+  // own-stretch hop, tracking the two counts above one-for-one as they must.
+  assert.equal(named.size + standing.size, 102, "the own-card population moved — see the census above it");
   // 14 when complaint (c) was closed on the DRAWN population (leona 725, 726):
   // exactly the stretches the canvas reaches as a lane, and every one of them
   // already carried paper-registered mathematics on its own hop.
@@ -1759,9 +1778,13 @@ test("an own: card says what its stretch does, or the standing phrase, in both l
   // authored and named — "alternate U(C,γ) and U(B,β), p times, from the uniform
   // superposition" and "interpolate H(t) between H_B and H_P, tracking the
   // instantaneous ground state" — so the fallback surface is still unreached.
+  // 102 in s0923 (ai-ops 195): `fermion-to-qubit-mapping-motivates-vqe-framing`'s
+  // own-stretch hop carries `name`/`nameJa` ("Attach the caller's declaration" /
+  // "呼び出し側の宣言を付す"), so it lands in `named`, not `standing` — a method
+  // landing without one is exactly what `standing.size` below would have caught.
   assert.equal(
     named.size,
-    101,
+    102,
     "the number of own cards that say what their stretch does changed — ratchet it up when you fill one in, never down",
   );
   assert.equal(standing.size, 0, "an own card fell back to the standing phrase — see the note above");

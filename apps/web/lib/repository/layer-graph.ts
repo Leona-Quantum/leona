@@ -11766,7 +11766,13 @@ export const LAYER_GRAPH: LayerGraph = {
     conditionsJa: "変分原理により、正規化された任意の試行状態についてエネルギーは基底状態エネルギーの上界となります。したがって返る数値が真の最小値を下回ることはありません。しかし、それがどれだけ上に来るかについては何の保証もありません。精度を制限するのは、アンザッツ族が基底状態に近い状態を含んでいるかどうかと、古典最適化器がそれを見つけられるかどうかであり、そのいずれも証明によって解決されてはいません。ハミルトニアンは、個別に測定できる項の和として到達可能でなければなりません。Peruzzo らはこの取引を自身の言葉で述べています。量子位相推定は「与えられた固有ベクトルの固有値を効率的に求められるが、完全にコヒーレントな発展を必要とする」のに対し、この手法は「コヒーレントな発展への要求を大幅に低減する」。すなわち、回路の短さを反復回数で購入しています。",
     cost: "Both papers price one energy evaluation; neither bounds the loop. Peruzzo et al. write $H$ as $M$ Pauli terms with largest coefficient $|h_{\\max}|$; a term of coefficient $h$ to precision $p$ costs $O(|h|^2/p^2)$ state preparations and measurements, so a full $\\langle H \\rangle$ costs $O(|h_{\\max}|^2 M/p^2)$. For a second-quantised molecular Hamiltonian they put $M$ at $O(N^4)$ in general, $N$ the number of single-particle basis functions, unchanged by Jordan-Wigner. Assuming a parameter count polynomial in the system size, one whole iteration, classical update included, costs $O(n^r |h_{\\max}|^2 M/p^2)$, $n$ the system size, $r$ a small constant set by the state encoding and the minimiser. McClean et al. write the same shape with the variance explicit: under a normal approximation to the estimator's sampling error, precision $\\varepsilon$ in $\\langle H \\rangle$ takes $n_{\\text{expect}} = M \\sum_\\gamma \\mathrm{Var}[H_\\gamma]/\\varepsilon^2$ state preparations, summed over the $M$ terms $H_\\gamma$. Neither bounds the iteration count. Peruzzo et al. say only that convergence must still respect that task's QMA-completeness; what McClean et al. report instead is a count of function evaluations, a different quantity: on unitary coupled cluster for $\\mathrm{H}_2$ in a minimal STO-3G basis, derivative-free optimisers took up to $1000\\times$ fewer of them than the Nelder-Mead method used here before — a ratio from that instance, which they say needs further testing as the dimension grows.",
     costJa: "両論文ともエネルギー評価 1 回分の値段は付けますが、その外側の古典ループを抑えた論文はどちらでもありません。Peruzzo らは $H$ を $M$ 個の Pauli 項の和に分解し、係数の最大値を $|h_{\\max}|$ と書きます。係数 $h$ の 1 項を精度 $p$ で見積もるには状態生成と測定の繰り返しが $O(|h|^2/p^2)$ 回かかり、$\\langle H \\rangle$ 全体では $O(|h_{\\max}|^2 M/p^2)$ となります。第二量子化された分子ハミルトニアンについて、彼らは $M$ を一般に $O(N^4)$ と見積もります。$N$ は 1 粒子基底関数の個数であり、この項数は Jordan-Wigner 変換で増えません。パラメータ数が系のサイズについて多項式であると仮定すると、古典側の更新まで含めた 1 反復あたりのコストは $O(n^r |h_{\\max}|^2 M/p^2)$ です。ここで $n$ は系のサイズ、$r$ は状態の符号化と用いる最小化法で決まる小さな定数です。McClean らは同じ形を分散を露わにして書きます。推定量の標本誤差を正規分布とみなすと、$\\langle H \\rangle$ を精度 $\\varepsilon$ で得るのに必要な状態生成回数は $n_{\\text{expect}} = M \\sum_\\gamma \\mathrm{Var}[H_\\gamma]/\\varepsilon^2$ であり、和は $M$ 個の項 $H_\\gamma$ にわたります。反復回数を抑えた論文もどちらでもありません。Peruzzo らは、最終的な基底状態への収束は依然としてこの問題の QMA 完全な複雑さに従わねばならない、と述べるにとどまります。McClean らが代わりに報告するのは関数評価の回数であり、これは反復回数とは別の量です。最小 STO-3G 基底での $\\mathrm{H}_2$ のユニタリ結合クラスターという例題で、微分を用いない最適化手法は、それまでこの手法に組み合わされていた Nelder-Mead 法に比べ、最大で $1000\\times$ 少ない回数で済みました。これはその一例での比であり、次元が大きくなったときにどうなるかはさらなる検証を要すると彼ら自身が書いています。",
-    steps: ["ansatz-construction", "parameter-optimization", "observable-estimation"],
+    // `ground-state-framing` added last, session s0923, ai-ops 195 (option 1): by the
+    // time the route reaches it `holding` is `observable-value`, which does not satisfy
+    // that slot's `hamiltonian-access` entry, so it lands as a feed rather than a hop --
+    // the same shape `phase-estimation` takes inside `phase-estimation-ground-state`,
+    // declared because the paper cited there makes the claim, not because the checker
+    // asked. See `ground-state-framing`'s own `whyALayer` for why it is drawn at all.
+    steps: ["ansatz-construction", "parameter-optimization", "observable-estimation", "ground-state-framing"],
     example: {
       pseudocode: [
         "given  a Hamiltonian H on N qubits, written as a sum of M terms polynomial",
@@ -11861,6 +11867,18 @@ export const LAYER_GRAPH: LayerGraph = {
       "observable-estimation": {
         theory: "With $|\\psi\\rangle$ fixed, $H$ is expanded over Pauli products, $H = \\sum_{i\\alpha} h_\\alpha^i \\sigma_\\alpha^i + \\sum_{ij\\alpha\\beta} h_{\\alpha\\beta}^{ij} \\sigma_\\alpha^i \\sigma_\\beta^j + \\dots$, and linearity moves the weights outside the state, $\\langle H\\rangle = \\sum_{i\\alpha} h_\\alpha^i \\langle\\sigma_\\alpha^i\\rangle + \\sum_{ij\\alpha\\beta} h_{\\alpha\\beta}^{ij} \\langle\\sigma_\\alpha^i \\sigma_\\beta^j\\rangle + \\dots$ [[assumption: $H$ is a sum of $M$ terms with $M$ polynomial in the size of the system]]. Each term is read off an independently prepared copy, so the term estimators have zero covariance and their variances add; splitting the error budget uniformly at $\\varepsilon^2/M$ per term then gives $n_{\\mathrm{expect}} = M \\sum_\\gamma \\mathrm{Var}[H_\\gamma]/\\varepsilon^2$ [[approximation: $\\varepsilon$ is a precision in the normal-distribution approximation to the estimator]]. Coherence time per measurement is $O(1)$ given parallel qubit rotation and readout, else $O(k)$ in the locality $k$ of the term. The operators measured are the 1- and 2-electron reduced density matrices, so dipole moment and charge density need no additional measurements. [[approximation: dropping the $k^*$ smallest-weight terms, $e_{k^*} = \\sum_i^{k^*} |h_i| < C\\varepsilon$ with $0 \\leq C < 1$, biases the estimator, and the survivors must then be measured to variance $(1-C^2)\\varepsilon^2/(M-k^*)$ each]].",
         theoryJa: "$|\\psi\\rangle$ を固定すると、$H$ は Pauli 積で展開され、$H = \\sum_{i\\alpha} h_\\alpha^i \\sigma_\\alpha^i + \\sum_{ij\\alpha\\beta} h_{\\alpha\\beta}^{ij} \\sigma_\\alpha^i \\sigma_\\beta^j + \\dots$ と書けます。観測量の線形性により重みは状態の外へ出て、$\\langle H\\rangle = \\sum_{i\\alpha} h_\\alpha^i \\langle\\sigma_\\alpha^i\\rangle + \\sum_{ij\\alpha\\beta} h_{\\alpha\\beta}^{ij} \\langle\\sigma_\\alpha^i \\sigma_\\beta^j\\rangle + \\dots$ となります [[assumption: $H$ は $M$ 項の和であり、$M$ は系のサイズについて多項式です]]。各項は独立に準備したコピーから読み出すため、項ごとの推定量の共分散はゼロで、分散は足し合わされます。誤差予算を 1 項あたり $\\varepsilon^2/M$ に均等配分すると、$n_{\\mathrm{expect}} = M \\sum_\\gamma \\mathrm{Var}[H_\\gamma]/\\varepsilon^2$ が得られます [[approximation: $\\varepsilon$ は推定量の正規分布近似における精度です]]。測定 1 回あたりに必要なコヒーレンス時間は、量子ビットの回転と読み出しを並列に行える場合は $O(1)$、そうでなければ項の局所性 $k$ について $O(k)$ です。測定される演算子は 1 電子および 2 電子の縮約密度行列そのものなので、双極子モーメントや電荷密度に追加の測定は要りません。[[approximation: 重みの小さい $k^*$ 項を $e_{k^*} = \\sum_i^{k^*} |h_i| < C\\varepsilon$（$0 \\leq C < 1$）となるように落とします。推定量にはバイアスが入るため、残った項はそれぞれ分散 $(1-C^2)\\varepsilon^2/(M-k^*)$ まで精密に測る必要があります]]。",
+      },
+      // s0923, ai-ops 195: a delegated hop, so no `name` -- the drawn name is
+      // `ground-state-framing`'s own label. By the time the route reaches this
+      // step (last in `steps`) it already holds `observable-value`, which does
+      // not satisfy the slot's `hamiltonian-access` entry, so `routeOf` files it
+      // as a feed rather than a hop -- the same shape `phase-estimation` takes
+      // inside `phase-estimation-ground-state`.
+      "ground-state-framing": {
+        theory:
+          "Peruzzo et al. and McClean et al. never run this step -- their own construction already begins holding a ground-state-problem, the same Hamiltonian-plus-declaration this route's own slot is entered with, and ends at an observable-value well before this step is reached. What licenses drawing the step here at all is a different paper's own claim about VQE's inputs: Jiang, Kalev, Mruczkiewicz and Neven, introducing an unrelated ternary-tree fermion-to-qubit mapping, state that \"fermion-to-qubit mapping is a key ingredient in any quantum simulation protocol, e.g., the variational quantum eigensolver (VQE)\". That is why it is filed as a feed rather than a hop: nothing this route holds by this point needs the declaration re-attached, and the step records the reason the route is entered the way it is, not a further transformation of anything it holds.",
+        theoryJa:
+          "Peruzzo らと McClean らはこの工程を一度も実行していません。彼らの構成は、この経路自身のスロットが入る際に持つのと同じ、ハミルトニアンと宣言の組である ground-state-problem をすでに保持した状態で始まり、この工程に至るはるか前に observable-value で終わっています。この工程をここに描くことを許すのは、VQE の入力について述べる別の論文の主張です。Jiang、Kalev、Mruczkiewicz、Neven は、無関係な三分木によるフェルミオン-量子ビット写像を導入する中で、「フェルミオン-量子ビット写像は、変分量子固有値ソルバー（VQE）をはじめ、あらゆる量子シミュレーションプロトコルにおいて重要な要素である」と述べています。だからこそこれはホップではなくフィードとして記録されます。この時点で経路が保持しているものに宣言を再び付す必要はなく、この工程が記録するのは経路がこの形で入られる理由であって、保持している何かへのさらなる変換ではありません。",
       },
     },
     // No `cost`, and the absence is the claim. The 2026-07-19 ruling: VQE is a
@@ -11965,6 +11983,113 @@ export const LAYER_GRAPH: LayerGraph = {
     citations: [
       { title: "A variational eigenvalue solver on a quantum processor", authors: "Alberto Peruzzo, Jarrod McClean, Peter Shadbolt, Man-Hong Yung, Xiao-Qi Zhou, Peter J. Love, Al\u00e1n Aspuru-Guzik, Jeremy L. O'Brien", year: "2013", url: "https://arxiv.org/abs/1304.3061" },
       { title: "The theory of variational hybrid quantum-classical algorithms", authors: "Jarrod R. McClean, Jonathan Romero, Ryan Babbush, Al\u00e1n Aspuru-Guzik", year: "2015", url: "https://arxiv.org/abs/1509.04279" },
+    ],
+  },
+  // ── Session s0923, ai-ops 195 (option 1) ──────────────────────────────
+  // Closes the `ground-state-energy` join-wanted row on the `phase-estimation`
+  // precedent: a declared framing step, filed as a feed on a VQE method, rather
+  // than a region. See `region-joins.ts`'s (deleted) `ground-state-energy` row
+  // and W32 (plans/atlas-revamp/W32-fermion-to-qubit-mapping.md §6, §8.2) for why a
+  // fermion-to-qubit REGION cannot close this row (a qubit Pauli sum never
+  // reaches `ground-state-problem`) and why this declaration does.
+  {
+    kind: "capability",
+    id: "ground-state-framing",
+    label: "Frame an operator as a ground-state question",
+    labelJa: "演算子を基底状態の問いとして枠づける",
+    shortLabel: "Frame the ground-state question",
+    shortLabelJa: "基底状態の問いとして枠づける",
+    summary: "Given a Hamiltonian reachable as hamiltonian-access, plus the caller's own declaration that the quantity wanted is its lowest eigenvalue rather than its time evolution, return the same operator typed as a ground-state-problem -- the entry `ground-state-energy`, and every method realising it, is written against.",
+    summaryJa: "hamiltonian-access として到達可能なハミルトニアンと、求めたい量がその時間発展ではなく最小固有値であるという呼び出し側自身の宣言が与えられたとき、同じ演算子を ground-state-problem として型づけて返します。ground-state-energy およびそれを実現するすべての方式は、この入力を前提としています。",
+    contract: {
+      // **The entry state does the real work; this contract's job is only to say
+      // when a route may cross into it.** `hamiltonian-access` is a root already
+      // reachable from the encoding ingredients `ingredients.ts` joins to it
+      // (`electronic-structure hamiltonian`, `fermi-hubbard hamiltonian`,
+      // `kitaev-chain hamiltonian`), so nothing about that side is new. What is
+      // new is the declaration -- see `whyALayer`.
+      from: "hamiltonian-access",
+      to: "ground-state-problem",
+
+      takes: "A Hermitian operator reachable as a sum of terms, as sparse-access oracles or as a block-encoding -- exactly what hamiltonian-access already promises -- plus the one thing no prior process can hand over: the caller's own declaration that the quantity being asked for is that operator's lowest eigenvalue rather than, say, its state at a later time.",
+      takesJa: "項の和、疎アクセスオラクル、あるいはブロックエンコーディングとして到達可能なエルミート演算子（hamiltonian-access がすでに約束しているもの）に加えて、いかなる先行工程も代わりに渡すことのできないもの、すなわち求めたい量がその演算子の最小固有値であって、後の時刻における状態ではないという、呼び出し側自身による宣言。",
+      returns: "The identical operator, now typed as a ground-state-problem. Nothing about the Hamiltonian is transformed; the whole content of this step is the declaration attached to it.",
+      returnsJa: "同一の演算子であって、いまや ground-state-problem として型づけられたもの。ハミルトニアンそのものは何も変換されておらず、この工程の内容はもっぱらそこに付された宣言です。",
+    },
+    whyALayer: "This is the thinnest layer the map draws -- it changes no bit of the operator, only what is declared about it -- and it is still drawn rather than folded into `ground-state-energy`'s own contract, for the reason `ground-state-problem` is a narrower state than `hamiltonian-access` at all: the declaration is not decoration (state-vocabulary.ts says so directly), and a route that has not made it should not be able to walk into this region by accident. Jiang, Kalev, Mruczkiewicz and Neven name exactly this framing, in their own first section, while introducing an unrelated ternary-tree fermion-to-qubit encoding: \"fermion-to-qubit mapping is a key ingredient in any quantum simulation protocol, e.g., the variational quantum eigensolver (VQE)\" -- one sentence about VQE's own inputs, not about their encoding, which is why it sources a framing step rather than a region. W32 read that same paper's encoding for a competing-methods slot at `hamiltonian-access` and refused it (R2, plans/leona-map-scaling-rules.md); this slot is not that proposal -- it takes a bare Hamiltonian and the caller's own declaration and returns the pair, and the declaration is precisely what an automatic encoding cannot supply. It stands on one method rather than two contested ones, by the owner's own ruling on ai-ops 195 (which closes ai-ops 64's \"some problems can be solved using VQE by different framing and preparation of the problem itself\"): a slot that only names what a caller already knows they want has nothing to contest the way `ansatz-construction` or `ground-state-energy` itself do, and inventing a second method here would manufacture a competition the paper making the claim does not contain.",
+    whyALayerJa: "これは地図が描く中で最も薄い層です。演算子を1ビットも変えず、それについて宣言される内容だけを変えます。それでもこれを ground-state-energy 自身の契約に折り込まず、独立した層として描くのは、ground-state-problem が hamiltonian-access より狭い状態であることと同じ理由によります。宣言は飾りではありません（state-vocabulary.ts がそう明記しています）。その宣言をまだ行っていない経路が、誤ってこの領域に入り込めてはならないのです。Jiang、Kalev、Mruczkiewicz、Neven は、無関係な三分木によるフェルミオン-量子ビット符号化を導入する自身の第一節で、まさにこの枠づけを名指ししています。「フェルミオン-量子ビット写像は、変分量子固有値ソルバー（VQE）をはじめ、あらゆる量子シミュレーションプロトコルにおいて重要な要素である」。これは VQE 自身の入力についての一文であり、彼らの符号化についての一文ではありません。だからこの一文は領域ではなく枠づけの一段を裏づけます。W32 は同じ論文の符号化を hamiltonian-access における競合方式のスロットとして読み、拒否しました（R2、plans/leona-map-scaling-rules.md）。この層はその提案ではありません。裸のハミルトニアンと呼び出し側自身の宣言を受け取り、その組を返すのであって、宣言こそ自動的な符号化には決して供給できないものです。この層が、競合する二方式ではなく一方式の上に立っているのは、所有者自身の ai-ops 195 の裁定によるものです（この裁定は ai-ops 64 の「一部の問題は、問題そのものの異なる枠づけと準備によって VQE で解くことができる」に答えます）。呼び出し側がすでに何を求めているかを述べるだけの層には、ansatz-construction や ground-state-energy 自身が持つような競うべき対象がなく、ここに第二の方式を求めることは、その主張をした論文自体が含んでいない競合を作り出すことになります。",
+    // **`traversal: "authored-only"` — see the field's own doc comment on
+    // `LayerCapability` (layers.ts).** Without it, `state-graph.ts`'s general
+    // walk composes THROUGH this slot from any `hamiltonian-access` holder
+    // anywhere on the map, including `hamiltonian-surrogate` (a Koopman-von-
+    // Neumann simulation device, deliberately typed as "just a hamiltonian-
+    // access" so simulator-side consumers accept it) -- drawing four unsourced
+    // lanes on `nonlinear-ode-solve`'s own figure and pushing it past its width
+    // ceiling. Found and fixed in the same session that added this slot
+    // (s0923, ai-ops 195); mutation-checked by removing this line and
+    // confirming `repository-converge-layout.test.ts` fails with those four
+    // lanes back.
+    traversal: "authored-only",
+  },
+  {
+    kind: "method",
+    id: "fermion-to-qubit-mapping-motivates-vqe-framing",
+    label: "The mapping paper that names VQE as the reason to frame a ground-state question",
+    labelJa: "VQE を枠づけの理由として名指しする、符号化論文",
+    shortLabel: "Cited for the VQE framing claim",
+    shortLabelJa: "VQE 枠づけの主張として引用",
+    summary: "Realises `ground-state-framing` on one citation: a ternary-tree fermion-to-qubit mapping paper whose own first section states, in passing, that an efficient encoding matters because a caller downstream -- naming VQE by name -- is going to ask for a ground state. The mapping itself is not drawn here; only the sentence that motivates it is.",
+    summaryJa: "ground-state-framing を一つの引用で実現します。三分木によるフェルミオン-量子ビット写像の論文であり、その第一節は、効率的な符号化が重要である理由として、VQE を名指ししながら、下流の呼び出し側が基底状態を求めることになると述べています。写像そのものはここには描かれておらず、それを動機づける一文だけが描かれています。",
+    realizes: "ground-state-framing",
+    conditions: "Jiang, Kalev, Mruczkiewicz and Neven open by motivating why an efficient fermion-to-qubit mapping matters at all, and the sentence names the caller's declaration directly: \"Having an efficient, simple, fermion-to-qubit mapping is a key ingredient in any quantum simulation protocol, e.g., the variational quantum eigensolver (VQE) [12, 13].\" The paper's own construction -- a ternary-tree encoding proven optimal on average Pauli weight -- is a different, competing-methods question that W32 scoped and refused separately (plans/atlas-revamp/W32-fermion-to-qubit-mapping.md §3); nothing about that refusal touches this sentence, which is about what VQE consumes rather than about how an operator is encoded.",
+    conditionsJa: "Jiang、Kalev、Mruczkiewicz、Neven は、効率的なフェルミオン-量子ビット写像がそもそも重要である理由を第一節で述べています。その一文は呼び出し側の宣言を直接名指しします。「フェルミオン-量子ビット写像は、変分量子固有値ソルバー（VQE）[12, 13] をはじめ、あらゆる量子シミュレーションプロトコルにおいて重要な要素である」。論文自身の構成（平均 Pauli 重みで最適性が証明された三分木符号化）は別の、競合方式の問いであり、W32 が個別に検討し拒否しています（plans/atlas-revamp/W32-fermion-to-qubit-mapping.md §3）。その拒否はこの一文には触れません。この一文は演算子がどう符号化されるかではなく、VQE が何を受け取るかについてのものだからです。",
+    // The paper prices its OWN ternary-tree construction (Theorem 1, average Pauli
+    // weight) -- not the sentence this method cites, which is a one-line motivation
+    // with nothing to price. See `absences.cost` rather than leaving this field a
+    // silent hole.
+    absences: {
+      cost: {
+        reason:
+          "Jiang, Kalev, Mruczkiewicz and Neven price their ternary-tree fermion-to-qubit mapping (Theorem 1: average Pauli weight at least log base 3 of 2n, saturated constructively) -- a different, competing-methods question W32 scoped and refused separately. The sentence this method realises is a one-line motivation in their introduction, naming VQE as an example consumer of an efficient encoding; the paper attaches no resource count to that sentence itself, and there is none to report.",
+        reasonJa:
+          "Jiang、Kalev、Mruczkiewicz、Neven が価格をつけているのは自身の三分木によるフェルミオン-量子ビット写像です（定理1: 平均 Pauli 重みは log_3(2n) 以上であり、構成的に達成されます）。これは別の、競合方式の問いであり、W32 が個別に検討し拒否しています。この方式が実現する一文は、序論における一行の動機づけであって、効率的な符号化を利用する例として VQE を名指ししているにすぎません。論文はこの一文自体には資源の見積もりを付けておらず、報告すべきものはありません。",
+      },
+    },
+    steps: [],
+    // `steps` is empty, so the whole route is this method's own stretch --
+    // `hops` is keyed by the method's own id rather than by a named step, the
+    // same shape `hasOwnStretch` requires everywhere else it fires.
+    hops: {
+      "fermion-to-qubit-mapping-motivates-vqe-framing": {
+        name: "Attach the caller's declaration",
+        nameJa: "呼び出し側の宣言を付す",
+        theory:
+          "The operator itself is unchanged: this hop's only content is the declaration Jiang, Kalev, Mruczkiewicz and Neven's introduction names as the reason a VQE caller wants an efficient encoding at all -- \"fermion-to-qubit mapping is a key ingredient in any quantum simulation protocol, e.g., the variational quantum eigensolver (VQE)\". [[assumption: the operator handed in already satisfies hamiltonian-access, and nothing about it is transformed here -- only what is declared about it changes]] The paper's own construction never performs this step: it takes a fermionic operator and returns a qubit Pauli sum, and never frames anything as a ground-state question. What it supplies is the reason a caller downstream would run this step at all, not the step's mechanism.",
+        theoryJa:
+          "演算子そのものは変わりません。この工程が持つ内容は、Jiang、Kalev、Mruczkiewicz、Neven の序論が、VQE がそもそも効率的な符号化を求める理由として名指す宣言だけです。「フェルミオン-量子ビット写像は、変分量子固有値ソルバー（VQE）をはじめ、あらゆる量子シミュレーションプロトコルにおいて重要な要素である」。[[assumption: 渡される演算子はすでに hamiltonian-access を満たしており、この工程で変換されるものは何もなく、変わるのはそれについて宣言される内容だけです]] 論文自身の構成はこの工程を実行しません。受け取るのはフェルミオン演算子であり、返すのは量子ビット Pauli 和であって、何かを基底状態の問いとして枠づけることは一度もありません。論文が与えるのは、この工程をそもそも実行する理由であって、工程そのものの機構ではありません。",
+      },
+    },
+    example: {
+      pseudocode: [
+        "given  H, a Hamiltonian reachable as hamiltonian-access -- a sum of terms,",
+        "       sparse-access oracles, or a block-encoding                    (state-vocabulary.ts)",
+        "       the caller's own declaration that the quantity wanted is H's lowest",
+        "       eigenvalue, rather than its state under time evolution -- nothing on",
+        "       this map computes that declaration; it is what the caller brought",
+        "",
+        "# Jiang, Kalev, Mruczkiewicz and Neven's own contribution is a ternary-tree",
+        "#   fermion-to-qubit encoding, not this step. Their introduction states, in",
+        "#   passing, the reason a caller downstream would run this step at all:",
+        "#   \"fermion-to-qubit mapping is a key ingredient in any quantum simulation",
+        "#   protocol, e.g., the variational quantum eigensolver (VQE)\"      (Sec. 1)",
+        "",
+        "return  H, now typed ground-state-problem",
+        "# no term of H is read, written or transformed -- the whole content of this",
+        "#   step is the declaration attached to it",
+      ].join("\n"),
+    },
+    citations: [
+      { title: "Optimal fermion-to-qubit mapping via ternary trees with applications to reduced quantum states learning", authors: "Zhang Jiang, Amir Kalev, Wojciech Mruczkiewicz, Hartmut Neven", year: "2019", url: "https://arxiv.org/abs/1910.10746" },
     ],
   },
   {
