@@ -145,13 +145,26 @@ def _cited_source(qualified_field: str, reference: str) -> ConstantSource:
     Substring matching on the id string itself, not on prose, because arXiv
     ids are precise and every citation in this package that names one spells
     it out in full (`arXiv:1808.06709`, not "Fowler and Gidney's paper").
+
+    **When a note names more than one registered paper, the earliest wins.**
+    Notes lead with their source and name other papers after it, often to
+    disown them: `rotation_t_coefficient`'s note cites Ross and Selinger and
+    then says "Not from arXiv:2505.15917". Returning the first id found while
+    iterating `ATLAS_PAPER_IDS` instead made the answer depend on a frozenset's
+    iteration order, which Python randomises per process through string
+    hashing: once Gidney 2025 joined the register, that constant was
+    attributed to the paper its own note rules out in 7 of 16 hash seeds.
     """
-    for atlas_id in ATLAS_PAPER_IDS:
-        arxiv_number = atlas_id.removeprefix("arxiv:")
-        if arxiv_number in reference:
-            return ConstantSource(
-                field=qualified_field, kind=SourceKind.ATLAS_PAPER_REGISTER, reference=atlas_id
-            )
+    positions = [
+        (reference.find(atlas_id.removeprefix("arxiv:")), atlas_id)
+        for atlas_id in ATLAS_PAPER_IDS
+        if atlas_id.removeprefix("arxiv:") in reference
+    ]
+    if positions:
+        _, atlas_id = min(positions)
+        return ConstantSource(
+            field=qualified_field, kind=SourceKind.ATLAS_PAPER_REGISTER, reference=atlas_id
+        )
     return ConstantSource(field=qualified_field, kind=SourceKind.CITED, reference=reference)
 
 

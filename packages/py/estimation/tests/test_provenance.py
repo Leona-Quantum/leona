@@ -105,7 +105,7 @@ def test_neither_builtin_set_has_a_no_source_recorded_constant():
         ("routing_factor", SourceKind.ATLAS_PAPER_REGISTER, "1808.02892"),
         ("rotation_t_coefficient", SourceKind.ATLAS_PAPER_REGISTER, "1403.2975"),
         # Gidney 2025 joined the Atlas paper register on 2026-09-22 (PR 974), so
-        # the constants it sources now cross-link rather than only cite.
+        # the constants it sources now classify as registered rather than only cited.
         ("physical_error_rate", SourceKind.ATLAS_PAPER_REGISTER, "2505.15917"),
         ("cycle_time_s", SourceKind.ATLAS_PAPER_REGISTER, "2505.15917"),
         ("t_per_toffoli", SourceKind.ATLAS_PAPER_REGISTER, "2505.15917"),
@@ -194,3 +194,21 @@ def test_atlas_paper_register_cross_check():
             "update ATLAS_PAPER_IDS and docs/estimation/assumption-sets.md, this "
             "constant can now cross-link"
         )
+
+
+def test_a_note_naming_two_registered_papers_is_attributed_to_the_first():
+    """The earliest id in the note wins, whatever order the register iterates in.
+
+    `rotation_t_coefficient`'s note cites Ross and Selinger (arXiv:1403.2975)
+    and later says "Not from arXiv:2505.15917". Before this rule the answer
+    followed `ATLAS_PAPER_IDS`'s iteration order, which string hashing
+    randomises per process, so the parametrized case above failed in some
+    hash seeds and passed in others. Both orders of the two ids are asserted,
+    so the rule cannot pass by coinciding with one iteration order.
+    """
+    from majorana_estimation.provenance import _cited_source
+
+    first = _cited_source("x.f", "Ross and Selinger (arXiv:1403.2975). Not from arXiv:2505.15917.")
+    assert first.reference == "arxiv:1403.2975"
+    swapped = _cited_source("x.f", "Gidney (arXiv:2505.15917); compare arXiv:1403.2975.")
+    assert swapped.reference == "arxiv:2505.15917"
