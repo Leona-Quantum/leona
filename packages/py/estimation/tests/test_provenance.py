@@ -104,9 +104,11 @@ def test_neither_builtin_set_has_a_no_source_recorded_constant():
         ("logical_error_prefactor", SourceKind.ATLAS_PAPER_REGISTER, "1808.06709"),
         ("routing_factor", SourceKind.ATLAS_PAPER_REGISTER, "1808.02892"),
         ("rotation_t_coefficient", SourceKind.ATLAS_PAPER_REGISTER, "1403.2975"),
-        ("physical_error_rate", SourceKind.CITED, "2505.15917"),
-        ("cycle_time_s", SourceKind.CITED, "2505.15917"),
-        ("t_per_toffoli", SourceKind.CITED, "2505.15917"),
+        # Gidney 2025 joined the Atlas paper register on 2026-09-22 (PR 974), so
+        # the constants it sources now cross-link rather than only cite.
+        ("physical_error_rate", SourceKind.ATLAS_PAPER_REGISTER, "2505.15917"),
+        ("cycle_time_s", SourceKind.ATLAS_PAPER_REGISTER, "2505.15917"),
+        ("t_per_toffoli", SourceKind.ATLAS_PAPER_REGISTER, "2505.15917"),
     ],
 )
 def test_gidney_2025_field_sources(field, expected_kind, expected_id_fragment):
@@ -181,10 +183,11 @@ def test_atlas_paper_register_cross_check():
             f"found in {register_path} -- re-check and update provenance.py"
         )
 
-    # The four papers this package cites that are documented as NOT in the
-    # register (docs/estimation/assumption-sets.md) must not have quietly
-    # gained an entry that would make our CITED classification stale.
-    for not_registered in ("2505.15917", "2011.04149", "2108.12371"):
+    # The papers this package cites that are documented as NOT in the register
+    # (docs/estimation/assumption-sets.md) must not have quietly gained an entry
+    # that would make our CITED classification stale. Gidney 2025 and Babbush et
+    # al. left this list on 2026-09-22 when they joined the register (PR 974).
+    for not_registered in ("2108.12371",):
         needle = f'id: "arxiv:{not_registered}"'
         assert needle not in text, (
             f"arxiv:{not_registered} now has an Atlas paper-register entry -- "

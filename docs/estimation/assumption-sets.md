@@ -239,27 +239,32 @@ to update. `packages/py/estimation/tests/test_provenance.py`:
   or implicitly `source_citation` itself — and fails if a **new** field is added to
   `AssumptionSet` without being classified as one of these, so this cannot silently
   regress the way `rotation_t_coefficient` did;
-- cross-checks the three arXiv ids that are cited here **and** already carry an entry in
-  the Atlas corpus paper register (`apps/web/lib/repository/paper-register.ts`) — Fowler
-  & Gidney (`arxiv:1808.06709`), Litinski's *A Game of Surface Codes*
-  (`arxiv:1808.02892`), and Ross & Selinger (`arxiv:1403.2975`) — by reading that file's
-  text directly, so a constant claiming an Atlas cross-link is checked against the real
-  register rather than trusted;
+- cross-checks the five arXiv ids that are cited here **and** carry an entry in the Atlas
+  corpus paper register (`apps/web/lib/repository/paper-register.ts`) — Fowler & Gidney
+  (`arxiv:1808.06709`), Litinski's *A Game of Surface Codes* (`arxiv:1808.02892`), Ross &
+  Selinger (`arxiv:1403.2975`), Gidney 2025 (`arxiv:2505.15917`) and Babbush et al.
+  (`arxiv:2011.04149`) — by reading that file's text directly, so a constant claiming an
+  Atlas cross-link is checked against the real register rather than trusted;
 - records the two constants in `estimate.py` that are not physical constants at all —
   `MAX_CODE_DISTANCE` and the `target_failure_probability` default — as explicit
   engineering/policy choices with **no source recorded**, rather than leaving them
   silently unclassified.
 
-**Four of the seven papers this estimator cites are not yet in the Atlas paper
-register**: Gidney 2025 (arXiv:2505.15917, the primary source for `gidney-2025`),
-Babbush et al. (arXiv:2011.04149, `advantage.py`), Webber et al. (arXiv:2108.12371,
-the physical layer of `composed-trapped-ion`), and Litinski's *Magic state distillation:
-not as costly as you think* (Quantum 3, 205, no arXiv id stated anywhere in this
-package). They remain real, checked citations in `source_citation` and
-`value_provenance` — nothing here demotes them — but they cannot yet render as an
-Atlas cross-link the way the other three can. Adding them to the register is a corpus
-editorial decision outside this package's scope; filed for the owner rather than done
-here.
+**Two of the seven papers this estimator cites are not yet in the Atlas paper
+register**: Webber et al. (arXiv:2108.12371, the physical layer of `composed-trapped-ion`)
+and Litinski's *Magic state distillation: not as costly as you think* (Quantum 3, 205, no
+arXiv id stated anywhere in this package). They remain real, checked citations in
+`source_citation` and `value_provenance` — nothing here demotes them — but they cannot
+yet render as an Atlas cross-link the way the other five can.
+
+Gidney 2025 (arXiv:2505.15917, the primary source for `gidney-2025`) and Babbush et al.
+(arXiv:2011.04149, `advantage.py`) were on this list until 2026-09-22, when the Atlas
+workflow planner (PR 974) began citing both and added them to the register as ordinary
+rows (metadata from the arXiv API, no `reports`). The three `gidney-2025` constants
+sourced to Gidney 2025 — `physical_error_rate`, `cycle_time_s`, `t_per_toffoli` — now
+classify as Atlas-registered and cross-link. This was earlier filed as the owner's
+editorial call; it was made in that PR as a routine register addition and is flagged
+there for him to reverse if he prefers.
 
 ## What both sets still share, and what is still open
 
