@@ -18,7 +18,7 @@ test("under a prompt the planner recognises: the problem, the pipeline and cost 
   const text = note.textContent ?? "";
   assert.match(text, /The Atlas workflow for this problem: Factor an integer \(RSA\)/);
   assert.match(text, /Logical qubits \(Gidney–Ekerå 2019\): 6,190/);
-  assert.match(text, /leading order; arxiv:1905\.09749, abstract/);
+  assert.match(text, /Leading order; arxiv:1905\.09749, abstract/);
   const link = note.querySelector("a");
   assert.equal(link?.getAttribute("href"), `/repository/plan#q=${encodeURIComponent("Factor a 2048-bit RSA modulus.")}`);
 });

@@ -19,7 +19,7 @@ import type { PublicLocale } from "../lib/public-locale";
 import { formatPlain } from "../lib/workflow-planner/costs.ts";
 import { indexPlannerGraph, type IndexedGraph, type PlannerGraph } from "../lib/workflow-planner/graph.ts";
 import { contextForPrompt } from "../lib/workflow-planner/run-context.ts";
-import type { CostKind } from "../lib/workflow-planner/types.ts";
+import { COST_KIND_LABEL } from "../lib/workflow-planner/plan-copy.ts";
 
 const COPY = {
   en: {
@@ -28,16 +28,6 @@ const COPY = {
     costs: "Cost at the size in the prompt",
     notStated: "not stated",
     openPlan: "Open the full plan",
-    kinds: {
-      exact: "exact",
-      "upper-bound": "upper bound",
-      "leading-order": "leading order",
-      "numerical-estimate": "paper's numerical estimate",
-      published: "published",
-      derived: "derived",
-      supplied: "from your input",
-      scaling: "scaling only",
-    } satisfies Record<CostKind, string>,
   },
   ja: {
     summary: (problem: string) => `この問題のアトラスのワークフロー：${problem}`,
@@ -45,16 +35,6 @@ const COPY = {
     costs: "プロンプトの規模でのコスト",
     notStated: "記載なし",
     openPlan: "計画全体を開く",
-    kinds: {
-      exact: "厳密",
-      "upper-bound": "上界",
-      "leading-order": "主要項",
-      "numerical-estimate": "論文の数値見積もり",
-      published: "公表値",
-      derived: "導出",
-      supplied: "入力値から",
-      scaling: "スケーリングのみ",
-    } satisfies Record<CostKind, string>,
   },
 } as const;
 
@@ -95,7 +75,7 @@ export function AtlasWorkflowNote({
                 {line.label}: <strong>{line.value === null ? copy.notStated : `${formatPlain(line.value)} ${line.unit}`}</strong>
                 <span className="mj-run-atlas-note-meta">
                   {" "}
-                  ({copy.kinds[line.kind]}
+                  ({COST_KIND_LABEL[line.kind][locale]}
                   {line.source ? `; ${line.source}` : ""})
                 </span>
               </li>
