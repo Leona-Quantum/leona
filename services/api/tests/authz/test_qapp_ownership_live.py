@@ -329,3 +329,60 @@ async def test_forking_a_published_qapp_succeeds_and_records_provenance(db):
     # cannot ride the source's proof of executability.
     with pytest.raises(qapps_repo.QappPublicationBlocked):
         await qapps_repo.set_visibility(forker, db, fork.id, "public")
+
+
+# ------------------------------------------------------------ example copies
+
+
+async def test_an_example_copy_is_private_to_the_caller_until_they_run_it(db):
+    """ai-ops 363: an example lands PRIVATE in the caller's own workspace, with
+    neither provenance column set (the database's both-or-neither fork check
+    has to accept that), and publishing it is refused until THIS copy has run.
+    A second person's copy is a separate Qapp that the first cannot see."""
+    from majorana_api.qapp_examples import EXAMPLES_REVISION, examples_by_key
+    from majorana_api.repos._base import NotFoundError
+
+    example = examples_by_key()["bell_pair"]
+    owner = await _owner_scope(db, "example-owner")
+    other = await _owner_scope(db, "example-other")
+
+    async def copy(scope):
+        return await qapps_repo.create_from_example(
+            scope,
+            db,
+            example_key=example.key,
+            example_revision=EXAMPLES_REVISION,
+            title=example.title,
+            description=example.description,
+            framework=example.framework,
+            qubits_estimate=example.qubits_estimate,
+            ui_document=example.ui_document,
+            quantum_source=example.quantum_source,
+            input_schema=example.input_schema,
+            output_schema=example.output_schema,
+        )
+
+    qapp, version = await copy(owner)
+    assert qapp.workspace_id == owner.workspace_id
+    assert qapp.owner_user_id == owner.user_id
+    assert qapp.visibility == "private"
+    assert qapp.published_at is None
+    assert qapp.created_by_run_id is None
+    assert qapp.forked_from_qapp_id is None and qapp.forked_from_version_id is None
+    assert version.quantum_source == example.quantum_source
+    assert version.ui_document == example.ui_document
+    assert "bell_pair" in version.generation_prompt
+
+    with pytest.raises(qapps_repo.QappPublicationBlocked):
+        await qapps_repo.set_visibility(owner, db, qapp.id, "public")
+
+    theirs, _ = await copy(other)
+    assert theirs.id != qapp.id
+    assert theirs.slug != qapp.slug
+    with pytest.raises(NotFoundError):
+        await qapps_repo.get_qapp(other, db, qapp.id)
+
+    # The control: once the owner's copy has run, the same call publishes it.
+    published = await _publish(db, owner, qapp, version)
+    assert published.visibility == "public"
+    assert published.published_at is not None
