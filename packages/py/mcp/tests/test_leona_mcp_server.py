@@ -47,7 +47,7 @@ async def test_initialize_names_the_server_and_says_what_it_does_not_do(server):
         assert phrase in result.instructions
 
 
-async def test_tools_list_offers_the_three_atlas_tools_read_only_and_four_acting_ones(server, api):
+async def test_tools_list_offers_the_three_atlas_tools_read_only_and_five_acting_ones(server, api):
     async with create_connected_server_and_client_session(server) as session:
         tools = (await session.list_tools()).tools
     assert sorted(t.name for t in tools) == [
@@ -56,6 +56,7 @@ async def test_tools_list_offers_the_three_atlas_tools_read_only_and_four_acting
         "get_run",
         "list_my_runs",
         "list_problem_areas",
+        "run_qapp",
         "run_verified",
         "search_methods",
     ]
@@ -66,10 +67,12 @@ async def test_tools_list_offers_the_three_atlas_tools_read_only_and_four_acting
         assert tool.annotations.readOnlyHint is True
         assert tool.annotations.destructiveHint is False
         assert tool.description
-    # The acting tools need a token and are not marked read-only; run_verified has
-    # a side effect (a new run) and is not marked idempotent either.
-    assert by_name["run_verified"].annotations.readOnlyHint is False
-    assert by_name["run_verified"].annotations.idempotentHint is False
+    # The acting tools need a token and are not marked read-only; run_verified and
+    # run_qapp each have a side effect (a new run, a new Qapp execution) and are
+    # not marked idempotent either.
+    for name in ("run_verified", "run_qapp"):
+        assert by_name[name].annotations.readOnlyHint is False
+        assert by_name[name].annotations.idempotentHint is False
     for name in ("get_run", "list_my_runs", "estimate_resources"):
         assert by_name[name].annotations.readOnlyHint is True
     for name in by_name:
@@ -439,6 +442,158 @@ async def test_estimate_resources_calls_the_planner_route(monkeypatch):
     }
 
 
+_EXECUTION_ID = "55555555-5555-5555-5555-555555555555"
+_QAPP_ID = "66666666-6666-6666-6666-666666666666"
+_VERSION_ID = "77777777-7777-7777-7777-777777777777"
+
+
+def _execution_json(*, status="queued", result=None, error_code=None):
+    return {
+        "id": _EXECUTION_ID,
+        "qapp_id": _QAPP_ID,
+        "qapp_version_id": _VERSION_ID,
+        "status": status,
+        "inputs": {"state": "phi_plus", "basis": "Z", "shots": 256},
+        "result": result,
+        "error_code": error_code,
+        "created_at": "2026-09-23T00:00:00Z",
+    }
+
+
+async def test_run_qapp_starts_and_polls_to_a_terminal_result(monkeypatch):
+    """`run_qapp` calls the SAME `POST /v1/qapps/{slug}/executions` route the
+    Qapp's own page calls, and polls the SAME `GET /v1/qapps/executions/{id}` a
+    browser session would — proved here at the wire level, not just the client's."""
+    transport = _patch_token_client(
+        monkeypatch,
+        [
+            (202, _execution_json(status="queued")),
+            (200, _execution_json(status="running")),
+            (200, _execution_json(status="succeeded", result={"correlation": 1.0})),
+        ],
+    )
+    server = build_server()
+    async with create_connected_server_and_client_session(server) as session:
+        result = await session.call_tool(
+            "run_qapp",
+            {
+                "slug": "bell-pair-abc123",
+                "inputs": {"state": "phi_plus", "basis": "Z", "shots": 256},
+            },
+        )
+    assert result.isError is False
+    body = json.loads(result.content[0].text)
+    assert body["status"] == "succeeded"
+    assert body["result"] == {"correlation": 1.0}
+    assert transport.calls[0][0] == "POST"
+    assert transport.calls[0][1].endswith("/v1/qapps/bell-pair-abc123/executions")
+    assert transport.calls[0][2]["Authorization"] == f"Bearer {_TEST_TOKEN}"
+    assert transport.calls[0][3] == {"inputs": {"state": "phi_plus", "basis": "Z", "shots": 256}}
+    assert transport.calls[1][1].endswith(f"/v1/qapps/executions/{_EXECUTION_ID}")
+
+
+async def test_run_qapp_a_failed_execution_comes_back_as_data_not_a_crash(monkeypatch):
+    _patch_token_client(
+        monkeypatch,
+        [
+            (202, _execution_json(status="queued")),
+            (200, _execution_json(status="failed", error_code="sandbox_timeout")),
+        ],
+    )
+    server = build_server()
+    async with create_connected_server_and_client_session(server) as session:
+        result = await session.call_tool("run_qapp", {"slug": "bell-pair-abc123"})
+    assert result.isError is False
+    body = json.loads(result.content[0].text)
+    assert body["status"] == "failed"
+    assert body["error_code"] == "sandbox_timeout"
+
+
+async def test_run_qapp_defaults_to_empty_inputs_when_omitted(monkeypatch):
+    """`inputs` is optional on the tool (for a Qapp whose schema defaults every
+    field), and omitting it must reach the API as `{"inputs": {}}`, never a
+    missing key — `ExecuteQappRequest.inputs` on the server side defaults the
+    same way, but a client that dropped the key entirely would be relying on
+    that default rather than stating its own."""
+    transport = _patch_token_client(
+        monkeypatch,
+        [(202, _execution_json(status="queued")), (200, _execution_json(status="succeeded"))],
+    )
+    server = build_server()
+    async with create_connected_server_and_client_session(server) as session:
+        result = await session.call_tool("run_qapp", {"slug": "bell-pair-abc123"})
+    assert result.isError is False
+    assert transport.calls[0][3] == {"inputs": {}}
+
+
+async def test_run_qapp_a_timeout_is_a_clear_error_not_a_long_wait(monkeypatch):
+    """Same reasoning and technique as `test_run_verified_a_timeout_is_a_clear_error_
+    not_a_long_wait`: real wall-clock time backs anyio's thread handoff, so this
+    shortens the real poll interval rather than faking `time.monotonic()`."""
+    import leona_mcp.server as server_module
+
+    _patch_token_client(
+        monkeypatch,
+        [(202, _execution_json(status="queued"))]
+        + [(200, _execution_json(status="running"))] * 200,
+    )
+    monkeypatch.setattr(server_module, "DEFAULT_POLL_S", 0.02)
+    server = build_server()
+    async with create_connected_server_and_client_session(server) as session:
+        result = await session.call_tool("run_qapp", {"slug": "bell-pair-abc123", "wait_s": 1})
+    assert result.isError is True
+    assert "did not reach a terminal state" in result.content[0].text
+    assert _EXECUTION_ID in result.content[0].text
+
+
+async def test_run_qapp_with_no_token_set_gives_clear_guidance_not_a_crash(monkeypatch):
+    monkeypatch.delenv("LEONA_API_TOKEN", raising=False)
+    server = build_server()
+    async with create_connected_server_and_client_session(server) as session:
+        result = await session.call_tool("run_qapp", {"slug": "bell-pair-abc123"})
+    assert result.isError is True
+    assert "LEONA_API_TOKEN" in result.content[0].text
+    assert "Account" in result.content[0].text
+
+
+async def test_run_qapp_a_read_only_token_is_told_to_mint_one_with_run_scope(monkeypatch):
+    # Same wire shape `test_a_read_only_token_is_told_to_mint_one_with_run_scope`
+    # checks for `run_verified`: RFC 7807 Problem+JSON, refusal text under
+    # "title", "reason" at the top level, no "detail" key — because this is the
+    # SAME `token_access.check` a `run`-scoped route always answers with.
+    _patch_token_client(
+        monkeypatch,
+        [
+            (
+                403,
+                {
+                    "type": "about:blank",
+                    "title": "this token can read but not start runs; mint one with the run scope",
+                    "status": 403,
+                    "code": "http_error",
+                    "reason": "token_scope_insufficient",
+                },
+            )
+        ],
+    )
+    server = build_server()
+    async with create_connected_server_and_client_session(server) as session:
+        result = await session.call_tool("run_qapp", {"slug": "bell-pair-abc123"})
+    assert result.isError is True
+    assert "run scope" in result.content[0].text
+
+
+async def test_run_qapp_a_private_or_missing_qapp_is_not_found_not_a_crash(monkeypatch):
+    _patch_token_client(
+        monkeypatch, [(404, {"type": "about:blank", "title": "qapp not found", "status": 404})]
+    )
+    server = build_server()
+    async with create_connected_server_and_client_session(server) as session:
+        result = await session.call_tool("run_qapp", {"slug": "someone-elses-private-qapp"})
+    assert result.isError is True
+    assert "qapp not found" in result.content[0].text
+
+
 async def test_the_token_never_appears_in_any_tool_output_or_log(monkeypatch, caplog):
     _patch_token_client(
         monkeypatch,
@@ -447,6 +602,8 @@ async def test_the_token_never_appears_in_any_tool_output_or_log(monkeypatch, ca
             (200, _run_json(status="succeeded", verifier_decision="pass")),
             (200, _run_json(status="succeeded", verifier_decision="pass")),
             (200, [_run_json(status="succeeded")]),
+            (202, _execution_json(status="queued")),
+            (200, _execution_json(status="succeeded", result={"correlation": 1.0})),
         ],
     )
     server = build_server()
@@ -456,6 +613,7 @@ async def test_the_token_never_appears_in_any_tool_output_or_log(monkeypatch, ca
                 await session.call_tool("run_verified", {"prompt": "Anything"}),
                 await session.call_tool("get_run", {"run_id": _RUN_ID}),
                 await session.call_tool("list_my_runs", {}),
+                await session.call_tool("run_qapp", {"slug": "bell-pair-abc123"}),
             ]
     for result in results:
         for block in result.content:

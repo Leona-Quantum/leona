@@ -100,13 +100,26 @@ READ_WRITES: frozenset[tuple[str, str]] = frozenset(
     }
 )
 
-#: What `run` adds: start a verified run, and stop one you started. Cancelling is here
-#: rather than in a scope of its own because a credential that can start work it cannot
-#: stop is worse for the account holder, not better.
+#: What `run` adds: start a verified run, stop one you started, or start a published
+#: Qapp's own sandboxed execution. Cancelling a run is here rather than in a scope of
+#: its own because a credential that can start work it cannot stop is worse for the
+#: account holder, not better.
 RUN_WRITES: frozenset[tuple[str, str]] = frozenset(
     {
         ("POST", "/runs"),
         ("POST", "/runs/{run_id}/cancel"),
+        # "Call a Qapp as an API" (ai-ops 349 option 2). This is NOT a new execution
+        # path: it is `execute_qapp` (routes/qapps.py), the exact route a signed-in
+        # browser session already reaches from the Qapp's own page, which enqueues
+        # the exact same sandboxed run through `majorana_sandbox.run` that ADR-0031
+        # describes. Widening it to a token is what ai-ops 349's §1a gate is about —
+        # a new caller class reaching execution, not a new place execution happens —
+        # so it earns its own allowlist entry rather than riding in on `/runs`'s.
+        # `run` because it spends the caller's own sandbox allowance and the same
+        # three abuse ceilings (`QAPP_EXECUTION_BACKSTOP_PER_HOUR` and friends)
+        # exactly as opening the page and clicking run would; `read` alone must not
+        # be able to spend that.
+        ("POST", "/qapps/{slug}/executions"),
     }
 )
 

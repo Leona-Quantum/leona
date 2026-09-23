@@ -146,6 +146,27 @@ def test_a_run_token_may_start_and_cancel_a_run():
         assert token_access.check(method, template, f"/v1{template}", READ_AND_RUN) is None
 
 
+def test_a_run_token_may_call_a_qapp_as_an_api_but_a_read_token_may_not():
+    """ai-ops 349 option 2's "call it as an API" line, named explicitly rather than
+    left to ride on the generic sweep above: a future edit that dropped this one
+    entry from `RUN_WRITES` would still pass every OTHER test in this file, because
+    the census and the run-token sweep only prove properties of whatever the set
+    happens to contain, never that this particular route is in it.
+    """
+    template = "/qapps/{slug}/executions"
+    path = "/v1/qapps/bell-pair-abc123/executions"
+    assert (("POST", template)) in token_access.RUN_WRITES
+
+    assert token_access.check("POST", template, path, READ_AND_RUN) is None
+
+    refusal = token_access.check("POST", template, path, READ_ONLY)
+    assert refusal is not None
+    # Fixable by minting a wider token, not "sign in on the website instead" — the
+    # same distinction `test_a_read_token_may_read_and_estimate_but_not_start_a_run`
+    # pins for `/runs`.
+    assert refusal.reason == token_access.INSUFFICIENT_SCOPE
+
+
 def test_a_path_outside_the_versioned_api_is_refused_whatever_the_template_says():
     """The mount point is checked, not assumed. A second mount of the same sub-router
     would otherwise let an allowlisted template through at an unreviewed address."""
