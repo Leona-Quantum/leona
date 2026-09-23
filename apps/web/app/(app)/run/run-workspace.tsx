@@ -19,6 +19,7 @@ import { isComposerMode, type ComposerMode } from "../../../lib/run-mode";
 import { RunComposer, type ComposerFramework } from "../../../components/run-composer";
 import { LionessField } from "../../../components/lioness-field";
 import { usePromptAttachments } from "../../../lib/use-prompt-attachments";
+import { NalaPlanCue } from "../../../components/nala-plan-cue";
 
 export function RunWorkspace({ demoMode = false, locale = "en" }: { demoMode?: boolean; locale?: PublicLocale } = {}) {
   const copy = WORKSPACE_COPY[locale].run;
@@ -268,6 +269,8 @@ export function RunWorkspace({ demoMode = false, locale = "en" }: { demoMode?: b
               locale={locale}
             />
           </div>
+
+          <NalaPlanCue prompt={prompt} locale={locale} />
 
           {confirmingSend && contextArtifact ? (
             <div className="mj-run-confirm" ref={confirmationRef} tabIndex={-1} role="region" aria-labelledby="run-confirm-title" aria-describedby="run-confirm-body">

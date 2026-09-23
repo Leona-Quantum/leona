@@ -1386,3 +1386,6 @@
   border-color: color-mix(in srgb, var(--accent) 55%, var(--border-0));
   color: var(--text-0);
 }
+
+/* Block library → Atlas workflow planner (studio-blocks-panel.tsx). */
+.mj-blocks-plan-link { margin: 0 0 var(--sp-3); font-size: var(--fs-12); color: var(--text-2); }

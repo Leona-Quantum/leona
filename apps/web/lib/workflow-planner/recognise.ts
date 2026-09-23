@@ -108,7 +108,7 @@ const RULES: Partial<Record<ParamKey, Rule[]>> = {
     { pattern: /\b(?:a single|one|the single|the only|unique|exactly one|only one)\s+(?:[a-z-]+\s+)?(?:record|item|entry|solution|match|marked|element|key|string|password|candidate|answer)s?\b/i, read: () => 1 },
     { pattern: new RegExp(String.raw`(${N})\s+(?:marked|solutions?|matches|matching|targets?|accepted|valid|good)\b`, "i"), read: num() },
     { pattern: new RegExp(String.raw`\bM\s*=\s*(${N})`), read: num() },
-    { pattern: /(?:1|一)\s*件/, read: () => 1 },
+    { pattern: /(?<![\d０-９])(?:1|一)\s*件/, read: () => 1 },
   ],
   lambda: [
     { pattern: new RegExp(String.raw`(?:λ|\blambda\b|\bone[- ]norm\b|\b1[- ]norm\b|\bL1[- ]norm\b)\s*(?:=|:|of|is|≈|~)?\s*(${N})${ENERGY_UNIT}`, "i"), read: (m) => hartree(parseNumber(m[1]), m[2]) },
@@ -197,26 +197,29 @@ function readParam(spec: ParamSpec, text: string): ParamValue | null {
   return null;
 }
 
-/** Every parameter the problem declares: read from the text, else assumed with its reason, else unset. */
-export function readParams(problem: ProblemClass, text: string): ParamValues {
-  const values: ParamValues = {};
-  for (const spec of problem.params) {
-    let found = readParam(spec, text);
-    if (!found && spec.key === "edges") {
-      const regular = regularEdges(text, values.nodes?.value ?? null);
-      if (regular && withinSpec(spec, regular.value)) {
-        found = { key: "edges", value: regular.value, origin: "text", evidence: regular.evidence };
-      }
-    }
-    if (found) {
-      values[spec.key] = found;
-    } else if (spec.assumed) {
-      values[spec.key] = { key: spec.key, value: spec.assumed.value, origin: "assumed", assumedReason: spec.assumed.reason };
-    } else {
-      values[spec.key] = { key: spec.key, value: null, origin: "unset" };
+function resolveParam(spec: ParamSpec, text: string, nodes: number | null): ParamValue {
+  let found = readParam(spec, text);
+  if (!found && spec.key === "edges") {
+    const regular = regularEdges(text, nodes);
+    if (regular && withinSpec(spec, regular.value)) {
+      found = { key: "edges", value: regular.value, origin: "text", evidence: regular.evidence };
     }
   }
-  return values;
+  if (found) return found;
+  if (spec.assumed) return { key: spec.key, value: spec.assumed.value, origin: "assumed", assumedReason: spec.assumed.reason };
+  return { key: spec.key, value: null, origin: "unset" };
+}
+
+/**
+ * Every parameter the problem declares: read from the text, else assumed with
+ * its reason, else unset. Built with `Object.fromEntries` rather than by
+ * assigning through a computed key, which semgrep's remote-property-injection
+ * rule blocks even when, as here, the key comes from a closed union.
+ */
+export function readParams(problem: ProblemClass, text: string): ParamValues {
+  const nodesSpec = problem.params.find((spec) => spec.key === "nodes");
+  const nodes = nodesSpec ? readParam(nodesSpec, text)?.value ?? null : null;
+  return Object.fromEntries(problem.params.map((spec) => [spec.key, resolveParam(spec, text, nodes)])) as ParamValues;
 }
 
 // ---------------------------------------------------------------------------
