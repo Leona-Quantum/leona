@@ -271,7 +271,9 @@ async def test_run_verified_a_succeeded_status_is_not_claimed_verified_without_p
 
 
 async def test_run_verified_a_failed_run_comes_back_as_data_not_a_crash(monkeypatch):
-    _patch_token_client(monkeypatch, [(201, _run_json(status="queued")), (200, _run_json(status="failed"))])
+    _patch_token_client(
+        monkeypatch, [(201, _run_json(status="queued")), (200, _run_json(status="failed"))]
+    )
     server = build_server()
     async with create_connected_server_and_client_session(server) as session:
         result = await session.call_tool("run_verified", {"prompt": "Do something impossible"})
@@ -322,7 +324,9 @@ async def test_the_other_acting_tools_also_need_a_token(monkeypatch, tool):
     args = {
         "get_run": {"run_id": _RUN_ID},
         "list_my_runs": {},
-        "estimate_resources": {"points": [{"label": "x", "logical_qubits": 4, "toffoli_count": 100}]},
+        "estimate_resources": {
+            "points": [{"label": "x", "logical_qubits": 4, "toffoli_count": 100}]
+        },
     }[tool]
     async with create_connected_server_and_client_session(server) as session:
         result = await session.call_tool(tool, args)
@@ -374,7 +378,9 @@ async def test_a_read_only_token_is_told_to_mint_one_with_run_scope(monkeypatch)
 
 
 async def test_get_run_and_list_my_runs_read_a_run(monkeypatch):
-    transport = _patch_token_client(monkeypatch, [(200, _run_json(status="succeeded", verifier_decision="pass"))])
+    transport = _patch_token_client(
+        monkeypatch, [(200, _run_json(status="succeeded", verifier_decision="pass"))]
+    )
     server = build_server()
     async with create_connected_server_and_client_session(server) as session:
         result = await session.call_tool("get_run", {"run_id": _RUN_ID})
@@ -385,7 +391,9 @@ async def test_get_run_and_list_my_runs_read_a_run(monkeypatch):
 
 
 async def test_list_my_runs_wraps_the_list(monkeypatch):
-    _patch_token_client(monkeypatch, [(200, [_run_json(status="succeeded"), _run_json(status="running")])])
+    _patch_token_client(
+        monkeypatch, [(200, [_run_json(status="succeeded"), _run_json(status="running")])]
+    )
     server = build_server()
     async with create_connected_server_and_client_session(server) as session:
         result = await session.call_tool("list_my_runs", {"limit": 5})
@@ -402,7 +410,9 @@ async def test_estimate_resources_calls_the_planner_route(monkeypatch):
             "cycle_time_ns": 1000,
             "code": "surface",
         },
-        "points": [{"label": "x", "parameter_value": None, "refused": "No Toffoli or T count was stated."}],
+        "points": [
+            {"label": "x", "parameter_value": None, "refused": "No Toffoli or T count was stated."}
+        ],
         "citations": {"gidney-2025@v2": "Gidney & Ekerå 2025"},
     }
     transport = _patch_token_client(monkeypatch, [(200, response)])

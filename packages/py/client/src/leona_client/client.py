@@ -32,7 +32,14 @@ from typing import Any
 from majorana_contracts import Run
 from majorana_contracts.enums import RunStatus
 
-from .atlas import SearchLimits, method_detail, normalize_slug, problem_area_counts, search, similar_slugs
+from .atlas import (
+    SearchLimits,
+    method_detail,
+    normalize_slug,
+    problem_area_counts,
+    search,
+    similar_slugs,
+)
 from .catalog import DEFAULT_API_URL as ATLAS_DEFAULT_API_URL
 from .catalog import CatalogClient
 
@@ -55,9 +62,7 @@ FixContext = Callable[[], "tuple[str, str] | None"]
 DEFAULT_RUN_WAIT_S = 600
 DEFAULT_RUN_POLL_S = 3.0
 
-_TERMINAL_RUN_STATUSES = frozenset(
-    {RunStatus.SUCCEEDED, RunStatus.FAILED, RunStatus.CANCELLED}
-)
+_TERMINAL_RUN_STATUSES = frozenset({RunStatus.SUCCEEDED, RunStatus.FAILED, RunStatus.CANCELLED})
 
 
 class LeonaClientError(RuntimeError):
@@ -265,8 +270,7 @@ class Client:
                 )
             if time.monotonic() >= deadline:
                 raise LeonaClientError(
-                    f"{notebook_id} is still generating after {wait_s}s — "
-                    f"pull it once it finishes"
+                    f"{notebook_id} is still generating after {wait_s}s — pull it once it finishes"
                 )
             tick()
             sleep(poll_s)
@@ -309,7 +313,9 @@ class Client:
             if replies:
                 return str(replies[-1]["content"])
             sleep(poll_s)
-        raise LeonaClientError("Nala has not replied yet — the run is still going; ask again in a minute")
+        raise LeonaClientError(
+            "Nala has not replied yet — the run is still going; ask again in a minute"
+        )
 
     # -- runs (proposal 7 Phase C; owner ruling ai-ops 362 option 1) --------
 

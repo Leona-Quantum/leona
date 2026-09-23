@@ -79,7 +79,9 @@ def test_get_run_and_cancel_run():
 
 
 def test_list_runs_builds_the_query_and_returns_typed_rows():
-    client, transport = _client([(200, [_run_json(status="succeeded"), _run_json(status="failed")])])
+    client, transport = _client(
+        [(200, [_run_json(status="succeeded"), _run_json(status="failed")])]
+    )
     runs = client.list_runs(status="failed", limit=10)
     assert [run.status for run in runs] == ["succeeded", "failed"]
     assert transport.calls[0][1] == "https://api.test/v1/runs?limit=10&status=failed"

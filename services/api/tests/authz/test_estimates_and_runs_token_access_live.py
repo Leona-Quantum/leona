@@ -124,7 +124,9 @@ async def test_a_read_only_token_can_now_call_estimate_resources(db):
         response = await client.post(
             "/v1/estimates/logical",
             headers=_auth(token),
-            json={"points": [{"label": "12 electrons", "logical_qubits": 40, "toffoli_count": 10_000}]},
+            json={
+                "points": [{"label": "12 electrons", "logical_qubits": 40, "toffoli_count": 10_000}]
+            },
         )
 
     assert response.status_code == 200, response.text

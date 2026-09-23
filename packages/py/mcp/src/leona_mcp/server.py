@@ -104,8 +104,7 @@ _NEEDS_TOKEN = (
 )
 
 RUN_VERIFIED_DESCRIPTION = (
-    _NEEDS_TOKEN
-    + "Starts a Nala run — the same pipeline and the same POST /v1/runs route the "
+    _NEEDS_TOKEN + "Starts a Nala run — the same pipeline and the same POST /v1/runs route the "
     "website's Run box calls — as the token's own account, then polls for up to "
     "wait_s seconds for it to reach a terminal state (succeeded, failed or "
     "cancelled). Returns the run AS IT STOOD when it stopped waiting, including its "
@@ -180,12 +179,17 @@ class EstimatePoint(BaseModel):
     label: str = Field(min_length=1, max_length=120, description="A name for this problem size.")
     logical_qubits: int = Field(ge=1, description="Logical qubits the source states at this size.")
     toffoli_count: int = Field(default=0, ge=0, description="Toffoli gates the source states.")
-    t_count: int = Field(default=0, ge=0, description="T gates the source states, if counted instead of Toffolis.")
+    t_count: int = Field(
+        default=0, ge=0, description="T gates the source states, if counted instead of Toffolis."
+    )
     non_clifford_depth: int = Field(
-        default=0, ge=0, description="The serial non-Clifford chain length, if the source states one."
+        default=0,
+        ge=0,
+        description="The serial non-Clifford chain length, if the source states one.",
     )
     parameter_value: float | None = Field(
-        default=None, description="The problem parameter this point is at — echoed back, never read."
+        default=None,
+        description="The problem parameter this point is at — echoed back, never read.",
     )
 
 
@@ -343,8 +347,12 @@ def build_server(client: CatalogClient | None = None) -> FastMCP:
             Literal["qiskit", "pennylane", "cirq", "braket", "qibo", "qulacs"],
             Field(description="The SDK the generated code should target."),
         ] = "qiskit",
-        seed: Annotated[int | None, Field(ge=0, description="A fixed RNG seed, for a reproducible run.")] = None,
-        shots: Annotated[int | None, Field(ge=1, le=20_000, description="Shots for the final execution.")] = None,
+        seed: Annotated[
+            int | None, Field(ge=0, description="A fixed RNG seed, for a reproducible run.")
+        ] = None,
+        shots: Annotated[
+            int | None, Field(ge=1, le=20_000, description="Shots for the final execution.")
+        ] = None,
         timeout_s: Annotated[
             int | None, Field(ge=1, le=600, description="The run's own backend execution timeout.")
         ] = None,
@@ -378,7 +386,9 @@ def build_server(client: CatalogClient | None = None) -> FastMCP:
         annotations=_AUTHENTICATED_READ_ONLY,
     )
     async def get_run(
-        run_id: Annotated[str, Field(description="A run id, as run_verified or list_my_runs returned it.")],
+        run_id: Annotated[
+            str, Field(description="A run id, as run_verified or list_my_runs returned it.")
+        ],
     ) -> dict[str, Any]:
         client = _token_client()
         run = await _in_thread(client.get_run, run_id)
@@ -391,7 +401,9 @@ def build_server(client: CatalogClient | None = None) -> FastMCP:
         annotations=_AUTHENTICATED_READ_ONLY,
     )
     async def list_my_runs(
-        limit: Annotated[int, Field(ge=1, le=100, description="At most this many runs, most recent first.")] = 20,
+        limit: Annotated[
+            int, Field(ge=1, le=100, description="At most this many runs, most recent first.")
+        ] = 20,
         status: Annotated[
             Literal["queued", "running", "succeeded", "failed", "cancelled"] | None,
             Field(description="Only runs in this status."),
@@ -414,7 +426,9 @@ def build_server(client: CatalogClient | None = None) -> FastMCP:
         ],
         assumptions: Annotated[
             str | None,
-            Field(description="A built-in assumption-set key, e.g. 'gidney-2025@v2'. Defaults to that set."),
+            Field(
+                description="A built-in assumption-set key, e.g. 'gidney-2025@v2'. Defaults to that set."
+            ),
         ] = None,
     ) -> dict[str, Any]:
         client = _token_client()
