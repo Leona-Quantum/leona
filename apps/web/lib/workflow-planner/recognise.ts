@@ -17,6 +17,14 @@
 import { PROBLEMS, problemById, type ProblemClass } from "./problems.ts";
 import type { Bilingual, ParamKey, ParamSpec, ParamValue, ParamValues, ProblemId } from "./types.ts";
 
+/**
+ * The most text a plan is read from, wherever the text arrives: typed on the
+ * page, or handed in through the URL fragment by the Run composer's cue. One
+ * constant for both, so the cue recognises exactly the text the page will get
+ * (PR 974 review: the cue read the whole draft and sent a prefix of it).
+ */
+export const PLAN_TEXT_MAX = 2000;
+
 // ---------------------------------------------------------------------------
 // Numbers
 

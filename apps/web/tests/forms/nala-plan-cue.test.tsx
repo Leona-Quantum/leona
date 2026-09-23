@@ -26,3 +26,13 @@ test("the Japanese cue reads the Japanese sentence", () => {
   assert.match(view.container.textContent ?? "", /整数の素因数分解（RSA）/);
   assert.match(view.container.textContent ?? "", /アトラスで計画する/);
 });
+
+test("the cue judges only the text the link will carry, so a keyword past the limit offers nothing", () => {
+  const padding = "x".repeat(2100);
+  const late = `${padding} Factor a 2048-bit RSA modulus.`;
+  assert.equal(render(<NalaPlanCue prompt={late} locale="en" />).container.textContent, "", "RSA sits past what the planner would receive");
+  const early = `Factor a 2048-bit RSA modulus. ${padding}`;
+  const view = render(<NalaPlanCue prompt={early} locale="en" />);
+  const href = view.container.querySelector("a")?.getAttribute("href") ?? "";
+  assert.ok(decodeURIComponent(href.split("#q=")[1] ?? "").startsWith("Factor a 2048-bit RSA modulus."));
+});

@@ -12,21 +12,26 @@
  */
 import { useMemo } from "react";
 import type { PublicLocale } from "../lib/public-locale";
-import { recogniseProblem } from "../lib/workflow-planner/recognise.ts";
+import { PLAN_TEXT_MAX, recogniseProblem } from "../lib/workflow-planner/recognise.ts";
 import { problemById } from "../lib/workflow-planner/problems.ts";
 
 /** Below this the draft is too short to be a problem statement, and a cue would flicker in and out while typing. */
 const MIN_PROMPT_LENGTH = 12;
 
+/** The text the planner will receive: what the cue recognises, and what the link carries. */
+function planText(prompt: string): string {
+  return prompt.trim().slice(0, PLAN_TEXT_MAX);
+}
+
 export function planHref(prompt: string): string {
-  return `/repository/plan#q=${encodeURIComponent(prompt.trim().slice(0, 2000))}`;
+  return `/repository/plan#q=${encodeURIComponent(planText(prompt))}`;
 }
 
 export function NalaPlanCue({ prompt, locale }: { prompt: string; locale: PublicLocale }) {
   const problem = useMemo(() => {
-    const trimmed = prompt.trim();
-    if (trimmed.length < MIN_PROMPT_LENGTH) return null;
-    const found = recogniseProblem(trimmed);
+    const sent = planText(prompt);
+    if (sent.length < MIN_PROMPT_LENGTH) return null;
+    const found = recogniseProblem(sent);
     return found ? problemById(found.problem) ?? null : null;
   }, [prompt]);
   if (!problem) return null;

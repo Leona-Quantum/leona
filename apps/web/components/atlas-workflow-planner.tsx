@@ -21,7 +21,7 @@ import { useRouter } from "next/navigation";
 import type { PublicLocale } from "../lib/public-locale";
 import { planWorkflow, PROBLEMS, formatPlain, type PlannerGraph, type Stage, type CostReport } from "../lib/workflow-planner/index.ts";
 import { indexPlannerGraph } from "../lib/workflow-planner/graph.ts";
-import { parseNumber } from "../lib/workflow-planner/recognise.ts";
+import { parseNumber, PLAN_TEXT_MAX } from "../lib/workflow-planner/recognise.ts";
 import { PLANNER_SOURCES, type SourceKey } from "../lib/workflow-planner/sources.ts";
 import type { Bilingual, CostKind, CostLine, ParamKey, ParamValue, ProblemId, Suggestion } from "../lib/workflow-planner/types.ts";
 import type { ProblemClass } from "../lib/workflow-planner/problems.ts";
@@ -417,7 +417,7 @@ function readHashQuery(): string | null {
   try {
     const hash = window.location.hash.replace(/^#/, "");
     const q = new URLSearchParams(hash).get("q");
-    return q && q.trim() ? q.slice(0, 2000) : null;
+    return q && q.trim() ? q.trim().slice(0, PLAN_TEXT_MAX) : null;
   } catch {
     return null;
   }
