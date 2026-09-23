@@ -168,16 +168,20 @@ async def list_viewers(
     await _require_target(scope, session, target_type, target_id)
     cutoff = touched_now() - dt.timedelta(seconds=PRESENCE_TTL_S)
     rows = (
-        await session.execute(
-            select(Presence.user_id).where(
-                Presence.workspace_id == scope.workspace_id,
-                Presence.target_type == target_type.value,
-                Presence.target_id == target_id,
-                Presence.last_seen_at >= cutoff,
-                Presence.user_id != scope.user_id,
+        (
+            await session.execute(
+                select(Presence.user_id).where(
+                    Presence.workspace_id == scope.workspace_id,
+                    Presence.target_type == target_type.value,
+                    Presence.target_id == target_id,
+                    Presence.last_seen_at >= cutoff,
+                    Presence.user_id != scope.user_id,
+                )
             )
         )
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
     if not rows:
         return []
     present = set(rows)

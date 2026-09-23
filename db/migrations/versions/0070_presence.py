@@ -89,7 +89,12 @@ def upgrade() -> None:
         sa.Column("target_type", sa.Text(), nullable=False),
         sa.Column("target_id", postgresql.UUID(as_uuid=True), nullable=False),
         sa.Column("user_id", postgresql.UUID(as_uuid=True), nullable=False),
-        sa.Column("last_seen_at", sa.TIMESTAMP(timezone=True), nullable=False, server_default=sa.func.now()),
+        sa.Column(
+            "last_seen_at",
+            sa.TIMESTAMP(timezone=True),
+            nullable=False,
+            server_default=sa.func.now(),
+        ),
         sa.PrimaryKeyConstraint(
             "workspace_id", "target_type", "target_id", "user_id", name="pk_presence"
         ),
@@ -103,9 +108,7 @@ def upgrade() -> None:
     # PREFIX of the primary key above (whose second column is `target_type`), so
     # without this index that delete would be a sequential scan of the whole
     # table on every heartbeat from every workspace.
-    op.create_index(
-        "ix_presence_workspace_last_seen", "presence", ["workspace_id", "last_seen_at"]
-    )
+    op.create_index("ix_presence_workspace_last_seen", "presence", ["workspace_id", "last_seen_at"])
 
     # Written out per table, as 0058 and 0068 do, rather than formatted from a
     # template: a policy is read in review against the one it copies, and a

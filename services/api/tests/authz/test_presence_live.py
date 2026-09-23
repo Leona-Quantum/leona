@@ -229,9 +229,11 @@ async def test_every_route_answers_another_workspace_with_the_404_of_nothing(sta
         assert (foreign_beat.status_code, foreign_beat.content) == (404, nothing)
 
     # And A's presence is untouched: Bob's refused heartbeat wrote nothing.
-    owner_sees = (await stage["clients"]["owner"].get(
-        "/v1/presence", params={"target_type": "run", "target_id": str(stage["a"]["run"])}
-    )).json()["viewers"]
+    owner_sees = (
+        await stage["clients"]["owner"].get(
+            "/v1/presence", params={"target_type": "run", "target_id": str(stage["a"]["run"])}
+        )
+    ).json()["viewers"]
     assert str(stage["scopes"]["bob"].user_id) not in {v["user_id"] for v in owner_sees}
 
 
@@ -244,7 +246,9 @@ async def test_a_heartbeat_updates_in_place_not_a_second_row(stage):
     async with stage["factory"]() as session:
         count = (
             await session.execute(
-                select(func.count()).select_from(Presence).where(
+                select(func.count())
+                .select_from(Presence)
+                .where(
                     Presence.workspace_id == stage["ws_a"],
                     Presence.user_id == stage["scopes"]["member"].user_id,
                     Presence.target_id == run,
