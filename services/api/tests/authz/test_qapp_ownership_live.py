@@ -346,11 +346,12 @@ async def test_an_example_copy_is_private_to_the_caller_until_they_run_it(db):
     owner = await _owner_scope(db, "example-owner")
     other = await _owner_scope(db, "example-other")
 
-    async def copy(scope):
+    async def copy(scope, key=None, example_key=example.key):
         return await qapps_repo.create_from_example(
             scope,
             db,
-            example_key=example.key,
+            idempotency_key=key,
+            example_key=example_key,
             example_revision=EXAMPLES_REVISION,
             title=example.title,
             description=example.description,
@@ -362,7 +363,7 @@ async def test_an_example_copy_is_private_to_the_caller_until_they_run_it(db):
             output_schema=example.output_schema,
         )
 
-    qapp, version, created = await copy(owner)
+    qapp, version, created = await copy(owner, key="press-1")
     assert created is True
     assert qapp.workspace_id == owner.workspace_id
     assert qapp.owner_user_id == owner.user_id
@@ -377,11 +378,18 @@ async def test_an_example_copy_is_private_to_the_caller_until_they_run_it(db):
     with pytest.raises(qapps_repo.QappPublicationBlocked):
         await qapps_repo.set_visibility(owner, db, qapp.id, "public")
 
-    # Idempotent per person and example: asking again returns the same copy and
-    # writes nothing, so a retried or double-clicked request leaves no duplicate.
-    again, again_version, created_again = await copy(owner)
+    # Idempotent per REQUEST: a retry with the same key returns the same copy and
+    # writes nothing, while a new press (a new key, or none) is a deliberate
+    # second copy. The same key sent for a different example is refused.
+    again, again_version, created_again = await copy(owner, key="press-1")
     assert created_again is False
     assert again.id == qapp.id and again_version.id == version.id
+    second, _, second_created = await copy(owner, key="press-2")
+    assert second_created is True and second.id != qapp.id
+    third, _, third_created = await copy(owner)
+    assert third_created is True and third.id not in {qapp.id, second.id}
+    with pytest.raises(qapps_repo.QappExampleKeyReused):
+        await copy(owner, key="press-1", example_key="grover_search")
 
     theirs, _, theirs_created = await copy(other)
     assert theirs_created is True
@@ -394,9 +402,3 @@ async def test_an_example_copy_is_private_to_the_caller_until_they_run_it(db):
     published = await _publish(db, owner, qapp, version)
     assert published.visibility == "public"
     assert published.published_at is not None
-
-    # A deleted copy does not count: adding the example again makes a fresh one.
-    await qapps_repo.soft_delete_qapp(other, db, theirs.id)
-    fresh, _, fresh_created = await copy(other)
-    assert fresh_created is True
-    assert fresh.id != theirs.id

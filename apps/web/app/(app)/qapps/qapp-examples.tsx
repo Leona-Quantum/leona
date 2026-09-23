@@ -74,7 +74,12 @@ export function QappExamples({ locale = "en" }: { locale?: PublicLocale }) {
     setAdding(key);
     setError(null);
     try {
-      const response = await fetch(`/api/qapps/examples/${encodeURIComponent(key)}`, { method: "POST" });
+      // One key per press: a retry of this request converges on one copy, while
+      // pressing Add again later is a deliberate second copy and gets a new key.
+      const response = await fetch(`/api/qapps/examples/${encodeURIComponent(key)}`, {
+        method: "POST",
+        headers: { "Idempotency-Key": crypto.randomUUID() },
+      });
       const payload = await response.json() as { qapp?: { id?: string } } | { title?: string };
       if (!response.ok || !("qapp" in payload) || !payload.qapp?.id) {
         throw new Error(refusalSentence(payload) ?? copy.addFailed);

@@ -7,9 +7,9 @@ import binascii
 import os
 import uuid
 import datetime as dt
-from typing import Any
+from typing import Annotated, Any
 
-from fastapi import APIRouter, HTTPException, Response
+from fastapi import APIRouter, Header, HTTPException, Response
 from majorana_contracts import Qapp, QappExecution, QappRangeSmoke, QappVersion, PublicQapp
 from majorana_contracts.enums import Framework, Visibility
 from pydantic import BaseModel, ConfigDict, Field
@@ -378,33 +378,47 @@ async def list_qapp_examples(scope: CurrentScope) -> list[QappExampleSummary]:
 
 @router.post("/qapps/examples/{key}", response_model=QappDetail, status_code=201)
 async def copy_qapp_example(
-    key: str, scope: CurrentScope, session: DbSession, response: Response
+    key: str,
+    scope: CurrentScope,
+    session: DbSession,
+    response: Response,
+    idempotency_key: Annotated[
+        str | None, Header(alias="Idempotency-Key", min_length=1, max_length=255)
+    ] = None,
 ) -> QappDetail:
     """Copy one example into the caller's own account as a new, private Qapp.
 
-    201 with the new copy, or 200 with the copy the caller already has of this
-    example (`create_from_example` is idempotent per person and example), so a
-    retry never makes a duplicate. The copy publishes like any other Qapp: only
-    after its owner has run it successfully (`set_visibility`). Nothing about an
-    example is public until then.
+    Takes an `Idempotency-Key`, with `POST /v1/runs`'s contract: a retry carrying
+    the same key gets the first attempt's copy back with 200 instead of a
+    duplicate, and the same key sent for a different example is 409. Without a
+    key, or with a new one, every request makes a new copy (201). The copy
+    publishes like any other Qapp: only after its owner has run it successfully
+    (`set_visibility`). Nothing about an example is public until then.
     """
     example = examples_by_key().get(key)
     if example is None:
         raise HTTPException(status_code=404, detail="example not found")
-    qapp, version, created = await qapps_repo.create_from_example(
-        scope,
-        session,
-        example_key=example.key,
-        example_revision=EXAMPLES_REVISION,
-        title=example.title,
-        description=example.description,
-        framework=example.framework,
-        qubits_estimate=example.qubits_estimate,
-        ui_document=example.ui_document,
-        quantum_source=example.quantum_source,
-        input_schema=example.input_schema,
-        output_schema=example.output_schema,
-    )
+    try:
+        qapp, version, created = await qapps_repo.create_from_example(
+            scope,
+            session,
+            idempotency_key=idempotency_key,
+            example_key=example.key,
+            example_revision=EXAMPLES_REVISION,
+            title=example.title,
+            description=example.description,
+            framework=example.framework,
+            qubits_estimate=example.qubits_estimate,
+            ui_document=example.ui_document,
+            quantum_source=example.quantum_source,
+            input_schema=example.input_schema,
+            output_schema=example.output_schema,
+        )
+    except qapps_repo.QappExampleKeyReused as exc:
+        raise HTTPException(
+            status_code=409,
+            detail={"title": str(exc), "reason": "idempotency_key_reused"},
+        ) from None
     if not created:
         response.status_code = 200
     return QappDetail(qapp=_qapp_resource(qapp), version=_version_resource(version))

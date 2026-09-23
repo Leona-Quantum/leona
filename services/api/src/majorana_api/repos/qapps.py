@@ -41,6 +41,10 @@ class QappForkBlocked(RepoError):
     """The source Qapp is not eligible to be forked — it must be published."""
 
 
+class QappExampleKeyReused(RepoError):
+    """An Idempotency-Key already used to copy one example was sent to copy another."""
+
+
 class QappExecutionCeiling(RepoError):
     """A spend ceiling refused this execution. ``scope_name`` says which one.
 
@@ -604,18 +608,20 @@ async def create_from_example(
     quantum_source: str,
     input_schema: dict[str, Any],
     output_schema: dict[str, Any],
+    idempotency_key: str | None = None,
 ) -> tuple[Qapp, QappVersion, bool]:
     """Copy one of Leona's example Qapps into the caller's own account.
 
-    Returns `(qapp, version, created)`. The copy is idempotent on its natural
-    key, (workspace, person, example, revision): if the caller already has a
-    live copy of this revision, that copy comes back with `created=False` and
-    nothing is written. So a retried request, a double click or a second tab
-    cannot leave duplicates behind, which is what the API's "idempotency keys on
-    mutations" rule is for, without a client key or a new column. Two requests
-    racing each other are serialised by a transaction-scoped advisory lock on the
-    same key, so the second one finds the first one's copy. A deleted copy does
-    not count: adding the example again after deleting it makes a fresh copy.
+    Returns `(qapp, version, created)`. Idempotency is per REQUEST, with the
+    `Idempotency-Key` contract `POST /v1/runs` and `POST /v1/comments` use: a
+    retry carrying the same key gets the copy the first attempt made
+    (`created=False`, nothing written), and a key already used for a different
+    example raises `QappExampleKeyReused`. A new key, or no key, always makes a
+    new copy, so someone who wants a second clean copy of an example gets one,
+    as with forking. The key is kept in the `qapp.created` audit entry's meta
+    rather than a new column, and a transaction-scoped advisory lock on
+    (workspace, person, key) serialises two attempts racing with the same key,
+    so the second finds the first one's copy.
 
     The bundle is passed in whole (the route resolves it from
     `majorana_api.qapp_examples`) so this layer stays free of any knowledge of
@@ -637,33 +643,37 @@ async def create_from_example(
             f"qubits_estimate must be between {QAPP_MIN_QUBITS} and {QAPP_MAX_QUBITS}, "
             f"got {qubits_estimate}"
         )
-    natural_key = (
-        f"qapp-example:{scope.workspace_id}:{scope.user_id}:{example_key}:{example_revision}"
-    )
-    await session.execute(select(func.pg_advisory_xact_lock(func.hashtextextended(natural_key, 0))))
-    existing = (
+    if idempotency_key is not None:
+        lock_key = f"qapp-example:{scope.workspace_id}:{scope.user_id}:{idempotency_key}"
         await session.execute(
-            select(Qapp)
-            .join(
-                AuditLog,
-                and_(AuditLog.target_kind == "qapp", AuditLog.target_id == Qapp.id),
-            )
-            .where(
-                AuditLog.workspace_id == scope.workspace_id,
-                AuditLog.actor_user_id == scope.user_id,
-                AuditLog.action == "qapp.created",
-                AuditLog.meta["example"].astext == example_key,
-                AuditLog.meta["example_revision"].astext == str(example_revision),
-                Qapp.workspace_id == scope.workspace_id,
-                Qapp.owner_user_id == scope.user_id,
-                Qapp.deleted_at.is_(None),
-            )
-            .order_by(Qapp.created_at.desc())
-            .limit(1)
+            select(func.pg_advisory_xact_lock(func.hashtextextended(lock_key, 0)))
         )
-    ).scalar_one_or_none()
-    if existing is not None:
-        return existing, await get_current_version(scope, session, existing), False
+        earlier = (
+            await session.execute(
+                select(Qapp, AuditLog.meta)
+                .join(
+                    AuditLog,
+                    and_(AuditLog.target_kind == "qapp", AuditLog.target_id == Qapp.id),
+                )
+                .where(
+                    AuditLog.workspace_id == scope.workspace_id,
+                    AuditLog.actor_user_id == scope.user_id,
+                    AuditLog.action == "qapp.created",
+                    AuditLog.meta["idempotency_key"].astext == idempotency_key,
+                    Qapp.workspace_id == scope.workspace_id,
+                    Qapp.owner_user_id == scope.user_id,
+                    Qapp.deleted_at.is_(None),
+                )
+                .limit(1)
+            )
+        ).first()
+        if earlier is not None:
+            existing, meta = earlier
+            if (meta or {}).get("example") != example_key:
+                raise QappExampleKeyReused(
+                    "this Idempotency-Key was already used to copy a different example"
+                )
+            return existing, await get_current_version(scope, session, existing), False
     canonical = json.dumps(
         {
             "framework": framework,
@@ -717,7 +727,11 @@ async def create_from_example(
         action="qapp.created",
         target_kind="qapp",
         target_id=qapp.id,
-        meta={"example": example_key, "example_revision": example_revision},
+        meta={
+            "example": example_key,
+            "example_revision": example_revision,
+            **({"idempotency_key": idempotency_key} if idempotency_key is not None else {}),
+        },
     )
     await session.flush()
     return qapp, version, True
