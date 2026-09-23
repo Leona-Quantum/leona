@@ -509,6 +509,26 @@
 .mj-plan-gate { display: grid; gap: var(--sp-3); justify-items: start; }
 .mj-plan-gate h2 { font-size: var(--fs-16); margin: 0; color: var(--text-0); }
 .mj-plan-gate p { margin: 0; }
+.mj-plan-scale-axis { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-2); font-size: var(--fs-13); color: var(--text-1); }
+.mj-plan-scale-axis select { min-height: calc(var(--sp-10) + var(--sp-1)); max-width: 100%; }
+.mj-plan-scale-controls { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-3); }
+.mj-plan-charts { display: grid; gap: var(--sp-4); grid-template-columns: repeat(auto-fit, minmax(16rem, 1fr)); }
+.mj-plan-chart-cell { display: grid; gap: var(--sp-1); min-width: 0; }
+.mj-plan-chart { margin: 0; display: grid; gap: var(--sp-1); }
+.mj-plan-chart figcaption { display: flex; flex-wrap: wrap; justify-content: space-between; gap: var(--sp-2); font-size: var(--fs-13); }
+.mj-plan-chart-title { color: var(--text-0); font-weight: 500; }
+.mj-plan-chart-readout { font-family: var(--font-mono); font-size: var(--fs-12); color: var(--text-1); }
+.mj-plan-chart svg { width: 100%; height: auto; display: block; overflow: visible; }
+.mj-plan-chart-grid { stroke: var(--border-0); stroke-width: 1; opacity: 0.6; }
+.mj-plan-chart-tick { fill: var(--text-2); font-size: 10px; font-family: var(--font-mono); }
+.mj-plan-chart-line { fill: none; stroke: var(--accent); stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
+.mj-plan-chart-point { fill: var(--accent); stroke: var(--bg-0); stroke-width: 2; }
+.mj-plan-chart-current { fill: var(--bg-0); stroke: var(--accent); stroke-width: 2.5; }
+.mj-plan-chart-mark { fill: none; stroke: var(--text-0); stroke-width: 1.5; }
+.mj-plan-chart-cross { stroke: var(--text-2); stroke-width: 1; stroke-dasharray: 3 3; }
+.mj-plan-chart-source { margin: 0; font-size: var(--fs-12); color: var(--text-2); }
+.mj-plan-chart-key { color: var(--text-1); }
+.mj-plan-physical { display: grid; gap: var(--sp-3); }
 .mj-plan-table-wrap { overflow-x: auto; }
 .mj-plan-table { width: 100%; border-collapse: collapse; font-size: var(--fs-13); }
 .mj-plan-table th, .mj-plan-table td { padding: var(--sp-2); text-align: left; vertical-align: top; border-bottom: var(--border-hairline) solid var(--border-0); }

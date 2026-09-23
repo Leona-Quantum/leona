@@ -17,6 +17,7 @@
  * stays one cached document for every visitor.
  */
 import { useEffect, useMemo, useState } from "react";
+import { PlanScaling } from "./atlas-plan-scaling";
 import { useRouter } from "next/navigation";
 import type { PublicLocale } from "../lib/public-locale";
 import { planWorkflow, PROBLEMS, formatPlain, type PlannerGraph, type Stage, type CostReport } from "../lib/workflow-planner/index.ts";
@@ -808,6 +809,21 @@ export function AtlasWorkflowPlanner({
                 </div>
               ) : null}
             </section>
+          ) : null}
+
+          {costs && plan.problem ? (
+            <PlanScaling
+              locale={locale}
+              problem={plan.problem.id}
+              params={plan.params}
+              root={plan.root}
+              paramName={paramName}
+              cite={(source) => <SourceCite source={source} papers={paperMap} locale={locale} />}
+              kindLabel={(kind) => copy.kinds[kind]}
+              signedIn={isSignedIn}
+              sessionReady={sessionState !== "loading"}
+              signInHref={session?.signInHref ?? null}
+            />
           ) : null}
 
           {costs && costs.suggestions.length > 0 ? (
