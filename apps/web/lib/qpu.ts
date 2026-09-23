@@ -119,13 +119,20 @@ export async function fetchQpuBackends(): Promise<QpuBackendInfo[]> {
   return payload.backends as QpuBackendInfo[];
 }
 
-export async function fetchQpuEstimate(deviceKey: string, shots: number, options: { zne?: boolean } = {}): Promise<QpuCostEstimate> {
-  // `zne` is sent only when asked for, so an API older than the field (which is
-  // `extra="forbid"`) never sees a key it would refuse.
+export async function fetchQpuEstimate(
+  deviceKey: string,
+  shots: number,
+  options: { zne?: boolean; sweepBindings?: number } = {},
+): Promise<QpuCostEstimate> {
+  // `zne`/`sweep_bindings` are sent only when asked for, so an API older than
+  // either field (both `extra="forbid"`) never sees a key it would refuse.
+  const body: Record<string, unknown> = { device_id: deviceKey, shots };
+  if (options.zne) body.zne = true;
+  if (options.sweepBindings !== undefined) body.sweep_bindings = options.sweepBindings;
   const response = await fetch("/api/qpu/estimates", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(options.zne ? { device_id: deviceKey, shots, zne: true } : { device_id: deviceKey, shots }),
+    body: JSON.stringify(body),
     cache: "no-store",
   });
   if (!response.ok) throw new Error(`qpu estimate unavailable (${response.status})`);
@@ -170,6 +177,15 @@ export type QpuRunRecord = {
    * version it does not know. Optional because an older API sends nothing.
    */
   mitigation?: unknown;
+  /**
+   * A Studio parameter sweep run on hardware as one job (migration 0075):
+   * the parameter label, every point's label/QASM, and — once the job
+   * finishes — every point's raw counts in the same order. Read it only
+   * through the sweep result readers, which refuse a version they do not
+   * know, the same discipline `readMitigation` follows for `mitigation`.
+   * Optional because an older API sends nothing.
+   */
+  sweep?: unknown;
   error: string | null;
   submitted_at: string | null;
   completed_at: string | null;
@@ -206,6 +222,8 @@ export class QpuSubmissionRefused extends Error {
   }
 }
 
+export type QpuSweepBindingRequest = { label: string; qasm: string };
+
 export async function submitQpuRun(request: {
   device_id: string;
   shots: number;
@@ -213,12 +231,22 @@ export async function submitQpuRun(request: {
   source_fingerprint: string;
   /** Opt in to zero-noise extrapolation. Omitted from the body unless true. */
   zne?: boolean;
+  /**
+   * A parameter sweep to run as one job (ai-ops 349): `qasm`/`shots` above
+   * still mean `bindings[0]`, and the server refuses a request where they
+   * disagree — see `QpuSubmissionRequest._sweep_is_consistent` on the API.
+   * Mutually exclusive with `zne`.
+   */
+  sweep?: { parameter_label: string; bindings: QpuSweepBindingRequest[] };
 }): Promise<QpuRunRecord> {
-  const { zne, ...rest } = request;
+  const { zne, sweep, ...rest } = request;
+  const body: Record<string, unknown> = { ...rest };
+  if (zne) body.zne = true;
+  if (sweep) body.sweep = sweep;
   const response = await fetch("/api/qpu/submissions", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(zne ? { ...rest, zne: true } : rest),
+    body: JSON.stringify(body),
     cache: "no-store",
   });
   // Parsed defensively, because the body is not always this API's. A proxy

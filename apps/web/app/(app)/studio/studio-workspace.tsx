@@ -94,6 +94,7 @@ import { insertBeforeTrailingMeasurements } from "../../../lib/studio-placement"
 import { GateInspectorCard } from "./studio-gate-inspector";
 import { PlayheadPanel } from "./studio-playhead";
 import { StudioParameterSweep } from "./studio-parameter-sweep";
+import { StudioHardwareSweep } from "./studio-hardware-sweep";
 import { ShortcutSheet } from "./studio-shortcut-sheet";
 
 // Tab order is the working order: you write code, you run it, you look at what
@@ -3392,6 +3393,7 @@ function SimulationPanel({
         </section>
 
         <StudioParameterSweep circuit={circuit} synchronized={synchronized} complete={complete} sourceCode={sourceCode} locale={locale} onOpenVisual={onOpenVisual} />
+        <StudioHardwareSweep circuit={circuit} synchronized={synchronized} complete={complete} sourceCode={sourceCode} locale={locale} />
 
         {/* After the CPU records, not between the run button and its result:
             you run, then you read, then you consider hardware (UX pass 6). */}

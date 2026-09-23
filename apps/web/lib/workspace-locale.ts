@@ -287,6 +287,48 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
       downloadJson: string;
       timedOut: string;
     };
+    /** A Studio parameter sweep run on real hardware as one job (ai-ops 349):
+     * every point its own PUB of one submission, priced and reserved for the
+     * whole batch before it can be confirmed. */
+    hardwareSweep: {
+      heading: string;
+      intro: string;
+      gate: string;
+      qubit: string;
+      start: string;
+      end: string;
+      points: string;
+      device: string;
+      shots: string;
+      noAngle: string;
+      outOfSync: string;
+      incomplete: string;
+      unavailable: Record<"width" | "operations" | "custom" | "measurement" | "angle" | "invalid" | "points", string>;
+      catalogLoading: string;
+      catalogUnavailable: string;
+      gateClosed: string;
+      noSubmittableDevice: string;
+      previewHeading: string;
+      previewing: string;
+      previewFailed: string;
+      previewPerPoint: (perPoint: string) => string;
+      previewTotal: (total: string) => string;
+      previewTotalShots: (points: number, totalShots: string) => string;
+      previewAllowance: string;
+      submit: string;
+      submitting: string;
+      submitFailed: string;
+      jobQueued: string;
+      jobRunning: string;
+      jobDone: string;
+      jobError: (message: string) => string;
+      resultHeading: string;
+      resultLabelColumn: string;
+      resultIdealColumn: string;
+      resultMeasuredColumn: string;
+      resultCountsColumn: string;
+      boundary: string;
+    };
     simulationArtifact: string;
     sourceFingerprint: string;
     interchangeFingerprint: string;
@@ -1330,6 +1372,53 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
         downloadCsv: "Download CSV",
         downloadJson: "Download reproducible JSON",
         timedOut: "The sweep took too long in this browser and was stopped.",
+      },
+      hardwareSweep: {
+        heading: "Hardware parameter sweep",
+        intro: "Run the same sweep on a real device, as one job. Every point runs in its own PUB, so one queue wait covers the whole batch.",
+        gate: "Angle gate",
+        qubit: "Observe qubit",
+        start: "From (°)",
+        end: "To (°)",
+        points: "Points",
+        device: "Device",
+        shots: "Shots per point",
+        noAngle: "Add an RX, RY, RZ, P, CP, or RZZ gate to explore its angle.",
+        outOfSync: "The diagram differs from the source code. Rebuild or apply it on the Visual tab before sweeping.",
+        incomplete: "This saved diagram omits operations from the source. A sweep of the partial circuit would give misleading results, so it is unavailable.",
+        unavailable: {
+          width: "Sweep supports up to 12 qubits.",
+          operations: "Sweep supports up to 512 operations.",
+          custom: "Expand or ungroup custom gates before sweeping.",
+          measurement: "Sweep needs terminal measurements; it cannot model mid-circuit collapse.",
+          angle: "An angle in this circuit is not a fixed number or π expression.",
+          invalid: "This diagram has an invalid gate or qubit reference.",
+          points: "A hardware batch runs 2 to 20 points. Use fewer points, or run more on the local sweep above.",
+        },
+        catalogLoading: "Loading hardware catalog…",
+        catalogUnavailable: "The hardware catalog is unavailable right now.",
+        gateClosed: "Hardware submission is not open for this account yet.",
+        noSubmittableDevice: "No device on the catalog accepts a submission today.",
+        previewHeading: "Batch cost preview",
+        previewing: "Pricing the batch…",
+        previewFailed: "Could not price this batch.",
+        previewPerPoint: (perPoint) => `${perPoint} per point`,
+        previewTotal: (total) => `${total} for the whole batch`,
+        previewTotalShots: (points, totalShots) => `${points} points × the shots above = ${totalShots} shots total`,
+        previewAllowance: "Reached through IBM's free queue allowance, not per-shot billing. The whole batch shares one queue wait.",
+        submit: "Submit batch to hardware",
+        submitting: "Submitting…",
+        submitFailed: "The batch was not submitted.",
+        jobQueued: "Queued",
+        jobRunning: "Running on the device",
+        jobDone: "Finished",
+        jobError: (message) => `The hardware run failed: ${message}`,
+        resultHeading: "Measured results, one row per point",
+        resultLabelColumn: "Angle",
+        resultIdealColumn: "Ideal P(1)",
+        resultMeasuredColumn: "Measured P(1)",
+        resultCountsColumn: "Raw counts",
+        boundary: "One real hardware job, priced and reserved for the whole batch before you confirm. Each point's counts are exactly what the device returned for it.",
       },
       simulationArtifact: "Artifact",
       sourceFingerprint: "Source fingerprint",
@@ -2511,6 +2600,53 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
         downloadCsv: "CSVをダウンロード",
         downloadJson: "再現可能なJSONをダウンロード",
         timedOut: "ブラウザ内での計算時間が上限を超えたため、掃引を中止しました。",
+      },
+      hardwareSweep: {
+        heading: "実機でのパラメータ掃引",
+        intro: "同じ掃引を実機で1つのジョブとして実行します。各点は1つのPUBとして送られるため、待ち時間は全体でひとつだけです。",
+        gate: "角度付きゲート",
+        qubit: "観測する量子ビット",
+        start: "開始角度 (°)",
+        end: "終了角度 (°)",
+        points: "点数",
+        device: "デバイス",
+        shots: "1点あたりのショット数",
+        noAngle: "RX、RY、RZ、P、CP、RZZのいずれかを追加してください。",
+        outOfSync: "図とソースコードが異なります。Visualタブで図を再構築するか、図の変更をコードに反映してください。",
+        incomplete: "この保存済みの図では、ソースコードの一部の操作が省略されています。不完全な回路で掃引すると誤解を招くため、利用できません。",
+        unavailable: {
+          width: "掃引は12量子ビットまで対応します。",
+          operations: "掃引は512操作まで対応します。",
+          custom: "カスタムゲートを展開してから掃引してください。",
+          measurement: "測定は回路の最後に置いてください。途中の測定による状態の収縮は扱えません。",
+          angle: "回路に数値またはπの式ではない角度があります。",
+          invalid: "図に無効なゲートまたは量子ビット参照があります。",
+          points: "実機バッチは2〜20点で実行します。点数を減らすか、上のローカル掃引をご利用ください。",
+        },
+        catalogLoading: "ハードウェアカタログを読み込み中…",
+        catalogUnavailable: "現在ハードウェアカタログを利用できません。",
+        gateClosed: "このアカウントではまだ実機への送信が開放されていません。",
+        noSubmittableDevice: "現在、送信を受け付けるデバイスがカタログにありません。",
+        previewHeading: "バッチ費用の見積もり",
+        previewing: "バッチの価格を計算中…",
+        previewFailed: "このバッチの価格を計算できませんでした。",
+        previewPerPoint: (perPoint) => `1点あたり ${perPoint}`,
+        previewTotal: (total) => `バッチ全体で ${total}`,
+        previewTotalShots: (points, totalShots) => `${points}点 × 上記のショット数 = 合計${totalShots}ショット`,
+        previewAllowance: "IBMの無料キュー枠を利用します。ショットごとの課金はなく、バッチ全体で待ち時間はひとつだけです。",
+        submit: "バッチを実機に送信",
+        submitting: "送信中…",
+        submitFailed: "バッチを送信できませんでした。",
+        jobQueued: "キュー待ち",
+        jobRunning: "デバイスで実行中",
+        jobDone: "完了",
+        jobError: (message) => `実機での実行に失敗しました: ${message}`,
+        resultHeading: "測定結果（点ごと）",
+        resultLabelColumn: "角度",
+        resultIdealColumn: "理想P(1)",
+        resultMeasuredColumn: "測定P(1)",
+        resultCountsColumn: "生カウント",
+        boundary: "実機での1つのジョブで、確認前にバッチ全体の価格と予約枠を提示します。各点のカウントはデバイスがその点について返した値そのものです。",
       },
       simulationArtifact: "保存した回路",
       sourceFingerprint: "ソース識別子",
