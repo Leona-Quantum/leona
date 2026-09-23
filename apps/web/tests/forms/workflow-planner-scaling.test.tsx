@@ -45,7 +45,7 @@ test("a plan draws one chart per quantity, with the published sizes marked, for 
     // Gidney 2025's Table 5 sizes that fall on the curve (1024…8192), and no others.
     assert.equal(view.container.querySelectorAll(".mj-plan-chart-mark").length, 8);
     assert.match(view.container.textContent ?? "", /Published at this size/);
-    const axis = screen.getByLabelText(/Grow/) as HTMLSelectElement;
+    const axis = screen.getByLabelText(/Vary/) as HTMLSelectElement;
     assert.equal(axis.value, "bits");
     await waitFor(() => assert.ok(screen.getByText("Sign in to estimate the machine")));
     assert.equal(screen.getByText("Sign in to estimate the machine").getAttribute("href"), "/auth/sign-in");

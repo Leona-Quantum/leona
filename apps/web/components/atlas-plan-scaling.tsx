@@ -38,10 +38,9 @@ import type { SourceKey } from "../lib/workflow-planner/sources.ts";
 const COPY = {
   en: {
     heading: "How it grows, and what machine it needs",
-    intro:
-      "The same formulas as the table above, evaluated across a range of sizes. Everything else stays where you set it.",
-    axis: "Grow",
-    held: "Other values held where they are.",
+    intro: "These are the formulas from the table above, evaluated across a range of sizes.",
+    axis: "Vary",
+    held: "The other values stay where you set them.",
     series: {
       logicalQubits: "Logical qubits",
       toffolis: "Toffoli gates",
@@ -80,13 +79,12 @@ const COPY = {
     refused: "Not costed",
     under: "Under",
     omitted: (n: number) => `${n} point${n === 1 ? "" : "s"} had no gate count to cost and ${n === 1 ? "is" : "are"} left out.`,
-    param: "Value",
   },
   ja: {
     heading: "規模に応じた伸びと、必要な機械",
-    intro: "上の表と同じ式を、いくつかのサイズで評価しています。ほかの値はあなたが設定したままです。",
+    intro: "上の表と同じ式を、いくつかのサイズで評価しています。",
     axis: "変化させる量",
-    held: "ほかの値はそのままです。",
+    held: "ほかの値はあなたが設定したままです。",
     series: {
       logicalQubits: "論理量子ビット",
       toffolis: "Toffoli ゲート",
@@ -125,7 +123,6 @@ const COPY = {
     refused: "見積もり不可",
     under: "前提",
     omitted: (n: number) => `ゲート数のない ${n} 点は除いています。`,
-    param: "値",
   },
 } as const;
 
