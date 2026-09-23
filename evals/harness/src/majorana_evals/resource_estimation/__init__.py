@@ -13,6 +13,7 @@ from majorana_evals.resource_estimation.adapters import (
     ReferenceAdapter,
 )
 from majorana_evals.resource_estimation.grader import grade_task
+from majorana_evals.resource_estimation.live_adapter import LiveModelAdapter
 from majorana_evals.resource_estimation.loader import (
     DEFAULT_CASES_DIR,
     dataset_sha256,
@@ -32,6 +33,7 @@ from majorana_evals.resource_estimation.schema import (
 
 __all__ = [
     "ConstantGuessAdapter",
+    "LiveModelAdapter",
     "ModelAdapter",
     "PerturbedAdapter",
     "ReferenceAdapter",

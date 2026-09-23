@@ -29,6 +29,7 @@ from majorana_api.repos import runs as runs_repo
 from majorana_worker.agent_store import RepoAgentStore
 from majorana_worker.handlers import handle_run_execute
 
+from majorana_evals.public_benchmarks.budget import BudgetTracker
 from majorana_evals.public_benchmarks.qcircuiteval import score_qcircuiteval_task
 from majorana_evals.public_benchmarks.qiskit_human_eval import score_qiskit_human_eval_task
 from majorana_evals.public_benchmarks.schema import (
@@ -213,11 +214,34 @@ async def run_public_benchmark(
     dataset_sha256: dict[str, str],
     prompt_version: str,
     note: str | None = None,
+    budget: BudgetTracker | None = None,
 ) -> PublicBenchmarkReport:
+    """`budget`, when given, is checked BEFORE starting each task (not mid-task — a task
+    already in flight is allowed to finish; `BudgetGuardedLLM` is the mid-task stop). Once
+    `budget.exceeded()`, every remaining task is recorded as skipped rather than attempted
+    (and then immediately failed by `BudgetGuardedLLM` for a $0 cost) — so a report always
+    accounts for all `len(tasks)` tasks, distinguishing "ran and failed" from "never
+    attempted because the ceiling was already reached"."""
     results: list[PublicTaskResult] = []
     by_model: dict[str, ModelCallUsage] = {}
     by_stage: dict[str, ModelCallUsage] = {}
-    for task in tasks:
+    for index, task in enumerate(tasks):
+        if budget is not None and budget.exceeded():
+            for skipped_task in tasks[index:]:
+                results.append(
+                    PublicTaskResult(
+                        benchmark=skipped_task.benchmark,
+                        task_id=skipped_task.task_id,
+                        passed=False,
+                        run_status="skipped_budget_ceiling",
+                        reasons=[
+                            f"not attempted: ${budget.spent_usd:.4f} already spent, "
+                            f"${budget.ceiling_usd:.2f} ceiling reached before this task"
+                        ],
+                        wall_time_s=0.0,
+                    )
+                )
+            break
         result, usage_model, usage_stage = await run_public_task(
             task, factory=factory, scope=scope, llm=llm, sandbox=sandbox
         )

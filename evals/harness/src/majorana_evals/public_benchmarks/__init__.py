@@ -10,8 +10,14 @@ see that file before trusting a QCircuitEval pass/fail).
 This module never makes a paid call on its own: `run_public_task`/`run_public_benchmark`
 take an injected `LLMClient`, and `stub_llm.StubPipelineLLM` is a zero-cost double for
 testing the harness end to end (see its docstring for the positive/negative control
-design)."""
+design). `budget.BudgetGuardedLLM` wraps the real client for a `--live` run with a hard
+spend ceiling — see that module's docstring."""
 
+from majorana_evals.public_benchmarks.budget import (
+    BudgetExceeded,
+    BudgetGuardedLLM,
+    BudgetTracker,
+)
 from majorana_evals.public_benchmarks.pricing import (
     ModelPrice,
     PricingAssumptions,
@@ -36,6 +42,9 @@ from majorana_evals.public_benchmarks.schema import (
 from majorana_evals.public_benchmarks.stub_llm import StubPipelineLLM
 
 __all__ = [
+    "BudgetExceeded",
+    "BudgetGuardedLLM",
+    "BudgetTracker",
     "ModelCallUsage",
     "ModelPrice",
     "PricingAssumptions",

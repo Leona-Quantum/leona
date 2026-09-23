@@ -47,6 +47,7 @@ from majorana_evals.public_benchmarks.qiskit_human_eval import (
     PROMPT_VERSION as QHE_PROMPT_VERSION,
     load_qiskit_human_eval_tasks,
 )
+from majorana_evals.public_benchmarks.budget import BudgetGuardedLLM, BudgetTracker
 from majorana_evals.public_benchmarks.runner import run_public_benchmark
 from majorana_evals.public_benchmarks.schema import PublicBenchmarkReport
 from majorana_evals.public_benchmarks.stub_llm import StubPipelineLLM
@@ -97,10 +98,17 @@ async def _run(args: argparse.Namespace) -> int:
     if args.limit is not None:
         tasks = tasks[: args.limit]
 
+    tracker: BudgetTracker | None = None
     if args.live:
-        llm = default_llm()
+        if args.budget_usd is None:
+            raise SystemExit(
+                "--live requires --budget-usd (a hard spend ceiling) — "
+                "see evals/public-benchmarks/PRICING.md before choosing one"
+            )
+        tracker = BudgetTracker(ceiling_usd=args.budget_usd)
+        llm = BudgetGuardedLLM(default_llm(), tracker)
         run_mode = "live"
-        note = "LIVE run: spent real provider tokens."
+        note = f"LIVE run: spent real provider tokens, ${args.budget_usd:.2f} ceiling."
     else:
         llm = StubPipelineLLM(mode=args.stub)
         run_mode = f"stub-{args.stub}"
@@ -133,6 +141,7 @@ async def _run(args: argparse.Namespace) -> int:
             dataset_sha256=dataset_sha256,
             prompt_version=prompt_version,
             note=note,
+            budget=tracker,
         )
     finally:
         await engine.dispose()
@@ -144,6 +153,18 @@ async def _run(args: argparse.Namespace) -> int:
     print(
         f"{report.passed}/{report.total} passed ({report.pass_rate:.0%}) [{run_mode}] -> {out_path}"
     )
+    if tracker is not None:
+        rate_note = (
+            f" (rates priced for {tracker.unpriced_models}, NOT the served model — "
+            "figure may be wrong)"
+            if tracker.unpriced_models
+            else ""
+        )
+        print(
+            f"spend: ${tracker.spent_usd:.4f} of ${tracker.ceiling_usd:.2f} ceiling, "
+            f"{tracker.calls} calls, {tracker.input_tokens} in / {tracker.output_tokens} "
+            f"out tokens{rate_note}"
+        )
     return 0
 
 
@@ -164,6 +185,12 @@ def main() -> None:
     mode = run_parser.add_mutually_exclusive_group()
     mode.add_argument("--stub", choices=["canonical", "garbage"], default="canonical")
     mode.add_argument("--live", action="store_true", help="spend real provider tokens")
+    run_parser.add_argument(
+        "--budget-usd",
+        type=float,
+        default=None,
+        help="hard spend ceiling in USD, required with --live (see PRICING.md)",
+    )
 
     args = parser.parse_args()
     if args.command == "run":

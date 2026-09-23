@@ -260,9 +260,9 @@ def test_grade_task_rejects_a_mismatched_task_id():
 # ---------------------------------------------------------------------------
 
 
-def test_reference_adapter_scores_100_percent():
+async def test_reference_adapter_scores_100_percent():
     tasks, sha = load_resource_estimation_tasks()
-    report = run_benchmark(
+    report = await run_benchmark(
         tasks, adapter=ReferenceAdapter(), run_mode="stub-reference", dataset_sha256=sha
     )
     assert report.total == len(tasks)
@@ -275,9 +275,9 @@ def test_reference_adapter_scores_100_percent():
             assert grade.log10_abs_error == 0.0
 
 
-def test_perturbed_adapter_scores_zero_on_every_quantity():
+async def test_perturbed_adapter_scores_zero_on_every_quantity():
     tasks, sha = load_resource_estimation_tasks()
-    report = run_benchmark(
+    report = await run_benchmark(
         tasks,
         adapter=PerturbedAdapter(factor=10.0),
         run_mode="stub-perturbed-10x",
@@ -292,9 +292,9 @@ def test_perturbed_adapter_scores_zero_on_every_quantity():
             assert grade.score == 0.0
 
 
-def test_constant_guess_baseline_scores_near_zero():
+async def test_constant_guess_baseline_scores_near_zero():
     tasks, sha = load_resource_estimation_tasks()
-    report = run_benchmark(
+    report = await run_benchmark(
         tasks, adapter=ConstantGuessAdapter(), run_mode="stub-constant-guess", dataset_sha256=sha
     )
     assert report.passed == 0
@@ -309,9 +309,9 @@ def test_perturbed_adapter_rejects_a_factor_of_one_or_less():
         PerturbedAdapter(factor=1.0)
 
 
-def test_run_benchmark_records_dataset_sha256_and_adapter_name():
+async def test_run_benchmark_records_dataset_sha256_and_adapter_name():
     tasks, sha = load_resource_estimation_tasks()
-    report = run_benchmark(
+    report = await run_benchmark(
         tasks[:1], adapter=ReferenceAdapter(), run_mode="stub-reference", dataset_sha256=sha
     )
     assert report.dataset_sha256 == sha
