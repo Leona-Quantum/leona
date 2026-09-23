@@ -113,11 +113,21 @@ export interface StateEdge {
   narrowedBy?: string;
 }
 
-/** Every move the authored graph permits, contract edges first. */
+/**
+ * Every move the authored graph permits, contract edges first.
+ *
+ * A capability marked `traversal: "authored-only"` contributes no contract
+ * edge here at all — see that field's own doc comment on `LayerCapability` for
+ * why (session s0923, ai-ops 195). An authored route that names such a
+ * capability in its own `.steps` still draws it, through `routeOf` and `hops`;
+ * this function is the general cross-capability walk, and that walk is
+ * precisely what the field turns off.
+ */
 export function stateEdges(graph: LayerGraph, vocabulary: StateVocabulary): StateEdge[] {
   const edges: StateEdge[] = [];
   for (const node of graph.nodes) {
     if (!isCapability(node)) continue;
+    if (node.traversal === "authored-only") continue;
     edges.push({
       key: node.id,
       slot: node.id,

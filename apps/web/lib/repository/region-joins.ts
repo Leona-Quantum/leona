@@ -506,18 +506,27 @@ export const DECLARED_SLOT_ENTRIES: Readonly<Record<string, EntryDisposition>> =
     reason:
       "Nothing produces a noisy expectation value, so the whole five-node region can only be entered directly — and its own whyALayer says nothing downstream can consume its output either, leaving it sealed at both ends. The missing process is the one that runs a circuit on hardware and returns a biased estimate; the map has only observable-estimation, which returns the idealised number. Not a front door anybody wants.",
   },
-  "ground-state-energy": {
-    supply: "ingredient",
-    intent: "join-wanted",
-    reason:
-      "The VQE slot has no way in. Its entry, a Hamiltonian declared to want its lowest eigenvalue, is produced by nothing, and the three routes naming it file it as a feed — so a reader may reach a ground-state energy only as an ingredient of an excited-state calculation, never by bringing a problem to it. ai-ops#64's 'some problems can be solved using VQE by different framing and preparation of the problem itself' names exactly this missing framing process.",
-  },
-  "ansatz-construction": {
-    supply: "root-supplied",
-    intent: "settled",
-    reason:
-      "Consumes an eigenvalue problem, which the excited-state root is entered with and which satisfies it. Seven routes walk it on their spine and they are all reachable, so this is supplied rather than open — the gap in this region is at ground-state-energy, not here.",
-  },
+  // **`ground-state-energy` and `ansatz-construction` left this table in session
+  // s0923, ai-ops 195 (option 1) — both rows are `joined` now, not merely
+  // `settled`, and this table only holds slots whose entry state no process
+  // produces at all.** `ground-state-framing` (layer-graph.ts, filed as a feed
+  // step on `variational-ground-state`, mirroring how `phase-estimation` is
+  // filed as a feed on `phase-estimation-ground-state`) now realises a
+  // `contract.to: "ground-state-problem"`, sourced to Jiang, Kalev, Mruczkiewicz
+  // and Neven's own first-section claim that "fermion-to-qubit mapping is a key
+  // ingredient in any quantum simulation protocol, e.g., the variational
+  // quantum eigensolver (VQE)" (arxiv:1910.10746). That single new producer
+  // satisfies both rows at once, and `ansatz-construction` moving is the
+  // mechanical consequence the auditor's `stale` check demands, not a second
+  // fix: `ground-state-problem` specializes `eigenvalue-problem`, which is
+  // exactly what `ansatz-construction` consumes, so the same producer that
+  // closes the VQE slot's own entry also gives it a second, real supplier
+  // alongside the excited-state root it was already reachable from. Nothing
+  // about `ansatz-construction`'s contract, methods or citations changed.
+  //
+  // Undo: delete `ground-state-framing` and its realizing method from
+  // layer-graph.ts, remove the step reference from `variational-ground-state`,
+  // and restore these two rows (git history carries their prior text).
   "excited-state-energy": {
     supply: "front-door",
     intent: "settled",

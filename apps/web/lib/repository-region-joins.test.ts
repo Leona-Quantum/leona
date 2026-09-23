@@ -374,10 +374,14 @@ test("the authored graph's slot entries are all declared, and no row has gone st
   assert.deepEqual(audit.misclassified, []);
 });
 
-test("the map is nine regions, and eighteen of its thirty-one slots consume something nothing produces", () => {
+test("the map is nine regions, and sixteen of its thirty-two slots consume something nothing produces", () => {
   const regions = regionsOf(LAYER_GRAPH);
   assert.deepEqual(
     regions.map((region) => region.nodes.length),
+    // **s0923, ai-ops 195 (option 1): [110, ...] -> [112, ...], region 1 only.**
+    // `ground-state-framing` and its one realizing method land in region 1 by
+    // `steps`/`realizes` containment (the same edges `phase-estimation` joined
+    // through), so the region count stays nine and only the first entry moves.
     // **[110, 13, 5, 4, 3, 3, 3, 3] — eight regions, and the last four arrived from
     // three different lanes that never met.** The two 3s at indices 5 and 6 are the PDE
     // discretization slots (ai-ops#64); the 3 at index 7 is `device-characterization`
@@ -402,12 +406,13 @@ test("the map is nine regions, and eighteen of its thirty-one slots consume some
     // of its states touches anything the rest of the map produces or consumes.
     // `cost-hamiltonian` is a root because the encoding slot that would produce it
     // was scoped and refused, and `assignment` has an arrival and no departure.
-    [110, 13, 5, 4, 3, 3, 3, 3, 3],
+    [112, 13, 5, 4, 3, 3, 3, 3, 3],
     "the region shape changed; re-read what joined or split before updating this",
   );
 
   const entries = slotEntries(LAYER_GRAPH, STATE_VOCABULARY);
-  assert.equal(entries.length, 31);
+  // 31 -> 32: `ground-state-framing` is a new capability node (s0923, ai-ops 195).
+  assert.equal(entries.length, 32);
   const open = entries.filter((entry) => entry.supply !== "joined");
   // 15 -> 17: both W28 slots are front doors. Neither is joined, and that is not a
   // failure of the region — a marking oracle is the problem stated rather than a thing
@@ -417,7 +422,13 @@ test("the map is nine regions, and eighteen of its thirty-one slots consume some
   // 17 -> 18: W29's one slot is a front door too, and its row in
   // DECLARED_SLOT_ENTRIES is `join-wanted` rather than `settled` — the producer is
   // genuinely missing and was refused with a reason, not judged unnecessary.
-  assert.equal(open.length, 18);
+  // 18 -> 16: s0923, ai-ops 195. `ground-state-framing` itself is `joined` on arrival
+  // (hamiltonian-access already has producers), so it adds nothing to `open` — and its
+  // new `ground-state-problem` producer moves BOTH `ground-state-energy` (the row this
+  // session closes) and `ansatz-construction` (a mechanical consequence: `ground-state-
+  // problem` specializes `eigenvalue-problem`, which is what `ansatz-construction`
+  // consumes) out of `open` and into `joined`. Net: -2 from those, +0 from the new node.
+  assert.equal(open.length, 16);
 
   const bySupply = (supply: string) => open.filter((entry) => entry.supply === supply).length;
   // **`root-supplied` moves 2 -> 3 without anyone editing `error-correction`.** Unit 4's
@@ -438,9 +449,13 @@ test("the map is nine regions, and eighteen of its thirty-one slots consume some
   // W29 moves `front-door` 9 -> 10 and touches neither of the other two, for the
   // same reason W28 did not: `cost-hamiltonian` and `assignment` are new names
   // nothing else on the map consumes, so no existing slot re-types.
+  // s0923 (ai-ops 195) moves `root-supplied` 3 -> 2 (`ansatz-construction` re-types to
+  // `joined`) and `ingredient` 5 -> 4 (`ground-state-energy` re-types to `joined`), and
+  // touches `front-door` not at all — the row this session closes was `ingredient`, not
+  // `front-door`, unlike every prior region-opening entry in this history.
   assert.equal(bySupply("front-door"), 10);
-  assert.equal(bySupply("root-supplied"), 3);
-  assert.equal(bySupply("ingredient"), 5);
+  assert.equal(bySupply("root-supplied"), 2);
+  assert.equal(bySupply("ingredient"), 4);
   assert.equal(bySupply("joined"), 0, "by construction — `open` already excludes them");
 });
 
@@ -455,15 +470,37 @@ test("the cross-region join surface is 105 compositions at three states", () => 
   // land on the same seven compilation methods, which is what "connect the
   // compilation region" is worth today.
   const surface = joinSurface(LAYER_GRAPH, STATE_VOCABULARY);
-  assert.equal(surface.within + surface.crosses, 611);
-  assert.equal(surface.crosses, 178, "the cross-region surface moved — say why in the PR");
+  // s0923, ai-ops 195: 611 -> 640 (+29), crosses 178 -> 179 (+1). Three states move,
+  // all from the one new method (`fermion-to-qubit-mapping-motivates-vqe-framing`,
+  // realising `ground-state-framing`, contract `hamiltonian-access -> ground-state-
+  // problem`), and all three moves are `stateSatisfies` walking upward from a single
+  // new node, not three separate edits:
+  //   - `ground-state-problem` gains its first arrival (the new method) and 25
+  //     departures — every existing method whose slot's `from` is satisfied by
+  //     `ground-state-problem` (itself, `eigenvalue-problem`, `hamiltonian-access` or
+  //     `matrix-access`). All 25 sit in region 1 with the new arrival: +25 within, +0
+  //     crosses.
+  //   - `hermitian-generator` and `hamiltonian-surrogate` each gain the new method as
+  //     one more departure, because both already specialize `hamiltonian-access`,
+  //     which is what the new method's own slot consumes. `hamiltonian-surrogate`'s
+  //     two arrivals both sit in region 1 (+1 departure -> +2 asserted, +0 crosses).
+  //     `hermitian-generator` has one arrival outside region 1 (+1 departure -> +2
+  //     asserted, +1 crosses — see the crossing-states table below).
+  // 25 + 2 + 2 = 29 asserted, 0 + 0 + 1 = 1 crosses: matches both figures below.
+  // Re-run `node scripts/check-region-joins.mjs` rather than re-deriving this by hand
+  // if it moves again.
+  assert.equal(surface.within + surface.crosses, 640);
+  assert.equal(surface.crosses, 179, "the cross-region surface moved — say why in the PR");
 
   const crossing = surface.states.filter((state) => state.crosses > 0);
   assert.deepEqual(
     crossing.map((state) => [state.state, state.crosses]),
     [
       ["parameterized-circuit", 91],
-      ["hermitian-generator", 24],
+      // 24 -> 25, s0923 (ai-ops 195): `ground-state-framing`'s realizing method also
+      // consumes `hamiltonian-access`, which `hermitian-generator` satisfies, adding one
+      // departure — and one of the state's two arrivals sits outside region 1.
+      ["hermitian-generator", 25],
       ["evolution-circuit", 21],
       ["linear-system", 18],
       ["linear-ivp", 17],
@@ -493,7 +530,12 @@ test("every crossing runs between three pairs of regions, and each pair is a dif
 
   const surface = joinSurface(LAYER_GRAPH, STATE_VOCABULARY);
   const crossings = surface.crossings.filter((crossing) => crossing.crosses);
-  assert.equal(crossings.length, 178);
+  // 178 -> 179, s0923 (ai-ops 195): `hermitian-generator`'s one new departure (see the
+  // join-surface test above) has one arrival outside region 1. The pair set below does
+  // not move — that crossing runs region 5 -> region 1 (`graph-laplacian-discretization`
+  // to the new method), a pair this test already
+  // names.
+  assert.equal(crossings.length, 179);
 
   const pairs = new Set(
     crossings.map((crossing) => `${region.get(crossing.arrival)}->${region.get(crossing.departure)}`),
@@ -513,7 +555,12 @@ test("every crossing runs between three pairs of regions, and each pair is a dif
   );
 });
 
-test("five slots want a join nobody has recorded, and three of the five are the ones ai-ops#64 names", () => {
+test("four slots want a join nobody has recorded, and three of the four are the ones ai-ops#64 names", () => {
+  // **`ground-state-energy` left this worklist in session s0923, ai-ops 195 (option
+  // 1).** `ground-state-framing` now produces `ground-state-problem`, so the row is
+  // `joined`, not merely re-judged `settled` — see the two rows this closure removed
+  // from `DECLARED_SLOT_ENTRIES` in `region-joins.ts` for the mechanism and the
+  // mechanical side effect on `ansatz-construction`.
   // The fourth arrived with the search region and is a different KIND of want, which
   // is why it is worth the rename rather than a bumped number. ai-ops#64's three are
   // slots the map cannot be entered at sensibly — a reader with a Hamiltonian cannot
@@ -548,7 +595,6 @@ test("five slots want a join nobody has recorded, and three of the five are the 
       "combinatorial-optimization",
       "error-correction",
       "error-mitigation",
-      "ground-state-energy",
       "quantum-walk-search",
     ],
   );
@@ -601,7 +647,10 @@ test("the map is eight regions under containment and five under what a trace wal
   // That is the first time a region has arrived already joined under containment, and
   // it was not designed — the paper's detector IS phase estimation on its own walk
   // operator, and the edge fell out of reading it.
-  assert.deepEqual(componentsUnder(layerAdjacency(LAYER_GRAPH)), [110, 13, 5, 4, 3, 3, 3, 3, 3]);
+  // 110 -> 112, s0923 (ai-ops 195): `ground-state-framing` and its one realizing
+  // method join this component through the same edges `phase-estimation` used —
+  // `steps`/`realizes` containment, not a new merge.
+  assert.deepEqual(componentsUnder(layerAdjacency(LAYER_GRAPH)), [112, 13, 5, 4, 3, 3, 3, 3, 3]);
   // **[126, 5, 4, 3], and the two lanes that landed here behave OPPOSITELY under the
   // walk — which is the distinction these two lines exist to make visible.** The PDE
   // regions are separate under containment and merge into the 126 under the walk:
@@ -639,5 +688,8 @@ test("the map is eight regions under containment and five under what a trace wal
   // Recorded rather than fixed, and W29 §3 says why: naming a consumer is the next
   // real piece of work, and inventing one is the prohibited move. The same sentence
   // the line above already carries for `marked-item`.
-  assert.deepEqual(componentsUnder(walkableAdjacency(LAYER_GRAPH, STATE_VOCABULARY)), [129, 5, 4, 3, 3, 3]);
+  // 129 -> 131, s0923 (ai-ops 195): the same two new nodes, already inside the 112
+  // under containment above, so no new merge — just +2 on the component they were
+  // already in.
+  assert.deepEqual(componentsUnder(walkableAdjacency(LAYER_GRAPH, STATE_VOCABULARY)), [131, 5, 4, 3, 3, 3]);
 });
