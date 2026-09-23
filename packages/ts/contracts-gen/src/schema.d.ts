@@ -995,6 +995,20 @@ export interface components {
             warnings?: string[];
         };
         /**
+         * ClaimCertificateRequest
+         * @description `recipient_name` absent (or blank) means "use my account's display name
+         *     today" — resolved server-side, at claim time, so the choice is made once
+         *     and the certificate does not silently reprint if the name is changed
+         *     later.
+         */
+        ClaimCertificateRequest: {
+            /**
+             * Recipient Name
+             * @default null
+             */
+            recipient_name: string | null;
+        };
+        /**
          * CodeDistanceSummary
          * @description Layer 2's working, not just its answer.
          */
@@ -1112,6 +1126,30 @@ export interface components {
             /** Language */
             language: string;
         };
+        /**
+         * CohortMember
+         * @description One roster row. Creator-visible only — see `CohortVisibility`.
+         */
+        CohortMember: {
+            /**
+             * Display Name
+             * @default null
+             */
+            display_name: string | null;
+            /** Email */
+            email: string;
+            /**
+             * User Id
+             * Format: uuid
+             */
+            user_id: string;
+        };
+        /**
+         * CohortVisibility
+         * @description Which rows of a course's cohort list the caller was allowed to see.
+         * @enum {string}
+         */
+        CohortVisibility: "all_cohorts" | "own_cohort";
         /**
          * Comment
          * @description One comment, or one reply to a comment.
@@ -1498,11 +1536,110 @@ export interface components {
             updated_at: string;
         };
         /**
+         * CourseCertificate
+         * @description A claimed certificate, as its course's workspace sees it (never the
+         *     public/anonymous view — see this module's docstring).
+         */
+        CourseCertificate: {
+            /**
+             * Course Id
+             * Format: uuid
+             */
+            course_id: string;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Issued At
+             * Format: date-time
+             */
+            issued_at: string;
+            /** Public Url Path */
+            public_url_path: string;
+            /** Recipient Name */
+            recipient_name: string;
+            /**
+             * Revoked At
+             * @default null
+             */
+            revoked_at: string | null;
+            /**
+             * Revoked By User Id
+             * @default null
+             */
+            revoked_by_user_id: string | null;
+            /**
+             * User Id
+             * Format: uuid
+             */
+            user_id: string;
+        };
+        /** CourseCertificateList */
+        CourseCertificateList: {
+            /**
+             * Course Id
+             * Format: uuid
+             */
+            course_id: string;
+            /** Items */
+            items?: components["schemas"]["CourseCertificate"][];
+        };
+        /** CourseCohort */
+        CourseCohort: {
+            /**
+             * Course Id
+             * Format: uuid
+             */
+            course_id: string;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Member Count
+             * @default 0
+             */
+            member_count: number;
+            /** Members */
+            members?: components["schemas"]["CohortMember"][];
+            /** Name */
+            name: string;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+        };
+        /** CourseCohortList */
+        CourseCohortList: {
+            /**
+             * Course Id
+             * Format: uuid
+             */
+            course_id: string;
+            /** Items */
+            items?: components["schemas"]["CourseCohort"][];
+            visibility: components["schemas"]["CohortVisibility"];
+        };
+        /**
          * CourseGradebook
          * @description How members are doing on a course's graded exercises. Results, never answers:
          *     nothing here carries a cell's check, answer key, or the member's own code.
          */
         CourseGradebook: {
+            /**
+             * Cohort Id
+             * @default null
+             */
+            cohort_id: string | null;
             /**
              * Course Id
              * Format: uuid
@@ -1743,6 +1880,11 @@ export interface components {
         CourseTurnList: {
             /** Items */
             items?: components["schemas"]["CourseTurn"][];
+        };
+        /** CreateCohortRequest */
+        CreateCohortRequest: {
+            /** Name */
+            name: string;
         };
         /** CreateCommentRequest */
         CreateCommentRequest: {
@@ -2319,6 +2461,11 @@ export interface components {
          *     "tried and got nothing right" are different facts about a learner.
          */
         GradebookRow: {
+            /**
+             * Cohort Name
+             * @default null
+             */
+            cohort_name: string | null;
             /**
              * Display Name
              * @default null
@@ -5197,6 +5344,22 @@ export interface components {
             type: "verification.semantic_review";
         };
         /**
+         * SetCohortMembershipRequest
+         * @description Assign, move or clear one member's cohort for this course.
+         *
+         *     Unlike `CourseModulePatch.due_at`, there is no "leave it alone" state to
+         *     tell apart from "clear it": this body has one field and one purpose, so
+         *     `cohort_id: null` and an absent key mean the same thing — take the member
+         *     out of every cohort of this course.
+         */
+        SetCohortMembershipRequest: {
+            /**
+             * Cohort Id
+             * @default null
+             */
+            cohort_id: string | null;
+        };
+        /**
          * ShareRole
          * @description What a project grant lets someone outside the workspace do (migration 0042).
          *
@@ -5729,6 +5892,11 @@ export interface components {
          * @enum {string}
          */
         TourSignalKind: "tour_started" | "step_done" | "step_skipped" | "did_it_for_me" | "offline_skip" | "tour_done" | "tour_left" | "step_missed" | "ask_show_me" | "ask_nala";
+        /** UpdateCohortRequest */
+        UpdateCohortRequest: {
+            /** Name */
+            name: string;
+        };
         /** UpdateCommentRequest */
         UpdateCommentRequest: {
             /** Body */

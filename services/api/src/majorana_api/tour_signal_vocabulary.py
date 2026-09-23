@@ -6,7 +6,7 @@ storing arbitrary strings forever is this file: `track` and `step` are checked
 against `KNOWN_TRACKS`/`KNOWN_STEPS` before anything is written, and an unknown
 value is refused (422), never stored. `kind` is checked the same way against
 `TOUR_SIGNAL_KINDS`, and is also enforced by a CHECK constraint at the database
-(migration 0071) as a second, independent line.
+(migration 0074) as a second, independent line.
 
 ## Mirrors the web side, and how it is kept from drifting silently
 
@@ -43,7 +43,7 @@ from __future__ import annotations
 #: `tracks.ts`'s real step ids (see the drift test), and folding a sentinel
 #: into it would make the derivation-vs-mirror equality check in
 #: `signal-vocabulary.test.ts` lie about what it is comparing. `step` stays
-#: NOT NULL and part of migration 0071's composite primary key — a NULL cannot
+#: NOT NULL and part of migration 0074's composite primary key — a NULL cannot
 #: be, so a real (if sentinel) string is the only option, not merely the
 #: chosen one. Starts with `_`, which no real `data-tour`-derived id in
 #: `tracks.ts` does or ever will, by the same convention `TOUR_TRACK_IDS`'s
@@ -51,7 +51,7 @@ from __future__ import annotations
 NO_STEP = "_track"
 
 #: `apps/web/lib/tour/signal.ts`'s `TOUR_SIGNAL_KINDS`. Also mirrored, as a
-#: literal, by migration 0071's CHECK constraint — see that file for why a
+#: literal, by migration 0074's CHECK constraint — see that file for why a
 #: literal rather than an import.
 TOUR_SIGNAL_KINDS: frozenset[str] = frozenset(
     {

@@ -163,6 +163,8 @@ export const ROUTED_SEGMENTS: readonly string[] = [
   "account",
   "api",
   "auth",
+  // Public course certificates, `/certificates/<id>` (ai-ops 349). See PUBLIC_PATHS.
+  "certificates",
   "dashboard",
   "demo",
   "dev",

@@ -247,6 +247,13 @@ EXEMPT_PATHS = frozenset({"/health"})
 #: threat (a script in a loop), and its own body-size cap (1 KiB, enforced in
 #: the route) is what actually bounds what one admitted request can cost —
 #: `DEFAULT_ANON_LIMIT` only needs to bound how OFTEN, which this reuses as-is.
+#:
+#: `/v1/certificates` (ai-ops 349 proposal 8) is the Open Badges 2.0 hosted
+#: assertion — 05-security.md §1a's public-route rate-limit item for that
+#: route is met by belonging to this tuple, the same way `/v1/qapps/public`
+#: already meets it. It covers `/v1/certificates/{id}` and nothing under
+#: `/v1/courses/*`, which every certificate write and read stays under and
+#: which is authenticated already.
 LIMITED_PATH_PREFIXES = (
     "/v1/catalog",
     "/v1/qapps/public",
@@ -256,6 +263,7 @@ LIMITED_PATH_PREFIXES = (
     # caller is metered here for the same reason `/v1/qapps/public` already is: there
     # is no account behind a share-link read to reserve an allowance under.
     "/v1/notebooks/shared",
+    "/v1/certificates",
 )
 
 #: Auth failures (401s the API actually returned — see `AuthFailureThrottle`

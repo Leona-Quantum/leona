@@ -3375,3 +3375,97 @@ html[lang="ja"] .mj-company-hero-title-line {
   margin: 0 0 .5rem;
   color: var(--text-2);
 }
+
+/* The public certificate page (ai-ops 349 proposal 8), `/certificates/[id]` —
+   an anonymous, unauthenticated surface, styled the same way `.qapp-page` is:
+   full-bleed background/text tokens rather than the workspace shell. */
+.certificate-page {
+  min-height: 100vh;
+  padding: 0 clamp(1rem, 4vw, 4rem) 3rem;
+  background: var(--bg-0);
+  color: var(--text-0);
+}
+
+.certificate-page-header {
+  display: flex;
+  align-items: center;
+  min-height: 4.5rem;
+  border-bottom: 1px solid color-mix(in srgb, currentColor 14%, transparent);
+  font-size: .9rem;
+}
+
+.certificate-brand {
+  color: inherit;
+  font-weight: 700;
+  text-decoration: none;
+  letter-spacing: -.02em;
+}
+
+.certificate-revoked-banner {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: .5rem;
+  margin-top: 1.5rem;
+  padding: .8rem 1rem;
+  border-radius: 8px;
+  border: 1px solid var(--warn);
+  background: var(--bg-2);
+  color: var(--text-1);
+  font-size: .9rem;
+}
+
+.certificate-card {
+  max-width: 42rem;
+  margin: clamp(2rem, 6vw, 4rem) 0 2rem;
+  padding: clamp(1.75rem, 4vw, 3rem);
+  border: 1px solid color-mix(in srgb, currentColor 16%, transparent);
+  border-radius: 1.25rem;
+  background: var(--bg-1);
+  box-shadow: 0 1.5rem 4rem rgb(0 0 0 / .08);
+}
+
+.certificate-card--revoked {
+  opacity: .7;
+}
+
+.certificate-kicker {
+  margin: 0 0 .5rem;
+  color: var(--text-2);
+  font-family: var(--font-mono);
+  font-size: .72rem;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+}
+
+.certificate-recipient {
+  margin: 0 0 .5rem;
+  font-size: clamp(1.75rem, 4vw, 2.75rem);
+  line-height: 1.05;
+  letter-spacing: -.03em;
+}
+
+.certificate-course {
+  margin: 0 0 1rem;
+  color: var(--text-1);
+  font-size: 1.15rem;
+}
+
+.certificate-meta {
+  margin: 0;
+  color: var(--text-2);
+  font-size: .9rem;
+}
+
+.certificate-verification-note {
+  max-width: 42rem;
+  color: var(--text-2);
+  font-size: .82rem;
+}
+
+.certificate-download {
+  display: inline-block;
+  color: inherit;
+  font-size: .9rem;
+  text-decoration: underline;
+}

@@ -36,3 +36,19 @@ export type GradebookModule = components["schemas"]["GradebookModule"];
 export type GradebookRow = components["schemas"]["GradebookRow"];
 export type GradebookEntry = components["schemas"]["GradebookEntry"];
 export type GradebookVisibility = components["schemas"]["GradebookVisibility"];
+
+// Cohorts (ai-ops 349 proposal 8).
+export type CohortMember = components["schemas"]["CohortMember"];
+export type CohortVisibility = components["schemas"]["CohortVisibility"];
+export type CourseCohort = components["schemas"]["CourseCohort"];
+export type CourseCohortList = components["schemas"]["CourseCohortList"];
+export type CreateCohortRequest = components["schemas"]["CreateCohortRequest"];
+export type UpdateCohortRequest = components["schemas"]["UpdateCohortRequest"];
+export type SetCohortMembershipRequest = components["schemas"]["SetCohortMembershipRequest"];
+
+// Certificates (ai-ops 349 proposal 8). The public Open Badges 2.0 assertion
+// itself has no generated type — it is a fixed external vocabulary, not a
+// contracts model (see `certificates.py`'s module docstring on the API side).
+export type CourseCertificate = components["schemas"]["CourseCertificate"];
+export type CourseCertificateList = components["schemas"]["CourseCertificateList"];
+export type ClaimCertificateRequest = components["schemas"]["ClaimCertificateRequest"];

@@ -15,6 +15,8 @@ from pydantic.json_schema import models_json_schema
 
 from . import (
     CONTRACTS_VERSION,
+    certificates,
+    cohorts,
     comments,
     courses,
     events,
@@ -129,6 +131,21 @@ EXPORTED = [
     # Proposal 8. Only the top-level response is listed: the row, entry and
     # module shapes and the visibility enum are referenced by it and get hoisted.
     courses.CourseGradebook,
+    # Proposal 8, cohorts slice (migration 0074). CohortMember and
+    # CohortVisibility are referenced by CourseCohort/CourseCohortList and get
+    # hoisted; the three request bodies are listed because nothing else
+    # references them.
+    cohorts.CourseCohort,
+    cohorts.CourseCohortList,
+    cohorts.CreateCohortRequest,
+    cohorts.UpdateCohortRequest,
+    cohorts.SetCohortMembershipRequest,
+    # Proposal 8, certificates slice (migration 0074). The public Open Badges
+    # 2.0 hosted assertion is NOT here — it is a fixed external vocabulary, not
+    # a contracts model; see certificates.py's module docstring.
+    certificates.CourseCertificate,
+    certificates.CourseCertificateList,
+    certificates.ClaimCertificateRequest,
     models.VerificationRecord,
     models.QpuRunRecord,
     # Proposal 9, first slice (migration 0068). CommentTargetType is an enum and

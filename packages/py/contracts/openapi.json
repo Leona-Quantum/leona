@@ -1984,6 +1984,27 @@
         "title": "CircuitOptimizationResult",
         "type": "object"
       },
+      "ClaimCertificateRequest": {
+        "additionalProperties": false,
+        "description": "`recipient_name` absent (or blank) means \"use my account's display name\ntoday\" \u2014 resolved server-side, at claim time, so the choice is made once\nand the certificate does not silently reprint if the name is changed\nlater.",
+        "properties": {
+          "recipient_name": {
+            "anyOf": [
+              {
+                "maxLength": 200,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Recipient Name"
+          }
+        },
+        "title": "ClaimCertificateRequest",
+        "type": "object"
+      },
       "CodeDistanceSummary": {
         "additionalProperties": false,
         "description": "Layer 2's working, not just its answer.",
@@ -2226,6 +2247,48 @@
         ],
         "title": "CodeVariant",
         "type": "object"
+      },
+      "CohortMember": {
+        "additionalProperties": false,
+        "description": "One roster row. Creator-visible only \u2014 see `CohortVisibility`.",
+        "properties": {
+          "display_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Display Name"
+          },
+          "email": {
+            "title": "Email",
+            "type": "string"
+          },
+          "user_id": {
+            "format": "uuid",
+            "title": "User Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "user_id",
+          "email"
+        ],
+        "title": "CohortMember",
+        "type": "object"
+      },
+      "CohortVisibility": {
+        "description": "Which rows of a course's cohort list the caller was allowed to see.",
+        "enum": [
+          "all_cohorts",
+          "own_cohort"
+        ],
+        "title": "CohortVisibility",
+        "type": "string"
       },
       "Comment": {
         "additionalProperties": false,
@@ -2848,10 +2911,196 @@
         "title": "Course",
         "type": "object"
       },
+      "CourseCertificate": {
+        "additionalProperties": false,
+        "description": "A claimed certificate, as its course's workspace sees it (never the\npublic/anonymous view \u2014 see this module's docstring).",
+        "properties": {
+          "course_id": {
+            "format": "uuid",
+            "title": "Course Id",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "issued_at": {
+            "format": "date-time",
+            "title": "Issued At",
+            "type": "string"
+          },
+          "public_url_path": {
+            "title": "Public Url Path",
+            "type": "string"
+          },
+          "recipient_name": {
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Recipient Name",
+            "type": "string"
+          },
+          "revoked_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Revoked At"
+          },
+          "revoked_by_user_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Revoked By User Id"
+          },
+          "user_id": {
+            "format": "uuid",
+            "title": "User Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "course_id",
+          "user_id",
+          "recipient_name",
+          "issued_at",
+          "public_url_path"
+        ],
+        "title": "CourseCertificate",
+        "type": "object"
+      },
+      "CourseCertificateList": {
+        "additionalProperties": false,
+        "properties": {
+          "course_id": {
+            "format": "uuid",
+            "title": "Course Id",
+            "type": "string"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/CourseCertificate"
+            },
+            "title": "Items",
+            "type": "array"
+          }
+        },
+        "required": [
+          "course_id"
+        ],
+        "title": "CourseCertificateList",
+        "type": "object"
+      },
+      "CourseCohort": {
+        "additionalProperties": false,
+        "properties": {
+          "course_id": {
+            "format": "uuid",
+            "title": "Course Id",
+            "type": "string"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "member_count": {
+            "default": 0,
+            "minimum": 0,
+            "title": "Member Count",
+            "type": "integer"
+          },
+          "members": {
+            "items": {
+              "$ref": "#/components/schemas/CohortMember"
+            },
+            "title": "Members",
+            "type": "array"
+          },
+          "name": {
+            "maxLength": 80,
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "course_id",
+          "name",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "CourseCohort",
+        "type": "object"
+      },
+      "CourseCohortList": {
+        "additionalProperties": false,
+        "properties": {
+          "course_id": {
+            "format": "uuid",
+            "title": "Course Id",
+            "type": "string"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/CourseCohort"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "visibility": {
+            "$ref": "#/components/schemas/CohortVisibility"
+          }
+        },
+        "required": [
+          "course_id",
+          "visibility"
+        ],
+        "title": "CourseCohortList",
+        "type": "object"
+      },
       "CourseGradebook": {
         "additionalProperties": false,
         "description": "How members are doing on a course's graded exercises. Results, never answers:\nnothing here carries a cell's check, answer key, or the member's own code.",
         "properties": {
+          "cohort_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Cohort Id"
+          },
           "course_id": {
             "format": "uuid",
             "title": "Course Id",
@@ -3307,6 +3556,22 @@
           }
         },
         "title": "CourseTurnList",
+        "type": "object"
+      },
+      "CreateCohortRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "name": {
+            "maxLength": 80,
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "title": "CreateCohortRequest",
         "type": "object"
       },
       "CreateCommentRequest": {
@@ -4450,6 +4715,18 @@
         "additionalProperties": false,
         "description": "One workspace member's results across the course.\n\n`email` and `display_name` are exactly what `GET /v1/workspace` already shows\nevery member about every other member, and nothing more.\n\nA member who has not been graded on anything still gets a row: `entries` is\nempty, `total_passed` is 0 and `last_graded_at` is `None`. A client must render\nthat as \"not started\", never as a score of zero, because \"has not tried\" and\n\"tried and got nothing right\" are different facts about a learner.",
         "properties": {
+          "cohort_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Cohort Name"
+          },
           "display_name": {
             "anyOf": [
               {
@@ -9844,6 +10121,27 @@
         "title": "SemanticReviewRecorded",
         "type": "object"
       },
+      "SetCohortMembershipRequest": {
+        "additionalProperties": false,
+        "description": "Assign, move or clear one member's cohort for this course.\n\nUnlike `CourseModulePatch.due_at`, there is no \"leave it alone\" state to\ntell apart from \"clear it\": this body has one field and one purpose, so\n`cohort_id: null` and an absent key mean the same thing \u2014 take the member\nout of every cohort of this course.",
+        "properties": {
+          "cohort_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Cohort Id"
+          }
+        },
+        "title": "SetCohortMembershipRequest",
+        "type": "object"
+      },
       "ShareRole": {
         "description": "What a project grant lets someone outside the workspace do (migration 0042).\n\nDeliberately NOT `Role`, and deliberately not a subset of it. A workspace Role\nanswers \"what may this member do anywhere in this tenant\"; a ShareRole answers\n\"what may this outsider do to the contents of one project\". They are two\ndifferent questions and the codebase has one gate \u2014 `require_write(scope)` \u2014\nthat reads a Role. Sharing the type would make that gate look like it answers\nboth.\n\nEDITOR is bounded by what the grant maps onto internally: a MEMBER-level scope\nconfined to one project, so every `require_admin` operation (deleting an\nartifact, making one public) refuses a grantee without a denylist anyone could\nforget to extend.",
         "enum": [
@@ -10777,6 +11075,22 @@
         "title": "TourSignalKind",
         "type": "string"
       },
+      "UpdateCohortRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "name": {
+            "maxLength": 80,
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "title": "UpdateCohortRequest",
+        "type": "object"
+      },
       "UpdateCommentRequest": {
         "additionalProperties": false,
         "properties": {
@@ -11694,7 +12008,7 @@
   "info": {
     "description": "Cross-boundary types only; API paths are owned by services/api.",
     "title": "majorana-contracts",
-    "version": "2.34.0"
+    "version": "2.35.0"
   },
   "openapi": "3.1.0",
   "paths": {}

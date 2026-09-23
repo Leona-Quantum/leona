@@ -153,6 +153,22 @@ from .courses import (
     PlannedModule,
     UpdateCourseRequest,
 )
+from .cohorts import (
+    MAX_COHORT_NAME_LENGTH,
+    CohortMember,
+    CohortVisibility,
+    CourseCohort,
+    CourseCohortList,
+    CreateCohortRequest,
+    SetCohortMembershipRequest,
+    UpdateCohortRequest,
+)
+from .certificates import (
+    MAX_RECIPIENT_NAME_LENGTH,
+    ClaimCertificateRequest,
+    CourseCertificate,
+    CourseCertificateList,
+)
 from .notebooks import (
     AnswerPrompt,
     Audience,
@@ -516,7 +532,20 @@ from .lifecycle import (
 # NotificationKind is closed at exactly `qpu_run_terminal` and `mention` — a
 # third producer needs its own migration and its own line here, the same
 # discipline 2.30.0 applies to TokenScope.
-CONTRACTS_VERSION = "2.34.0"
+# 2.35.0: Course cohorts (ai-ops 349 proposal 8, cohorts slice). New: CourseCohort,
+# CourseCohortList, CohortMember, CohortVisibility (closed), CreateCohortRequest,
+# UpdateCohortRequest, SetCohortMembershipRequest (migration 0074, which also
+# creates course_certificates for the slice that follows in the same PR).
+# GradebookRow gains optional `cohort_name`, and GET .../gradebook and
+# .../gradebook.csv gain an optional `cohort_id` filter. Additive: new names only,
+# `cohort_name` defaults to None, and an unfiltered gradebook read is unchanged.
+# 2.35.0, same release: Course certificates (ai-ops 349 proposal 8, certificates slice). New:
+# CourseCertificate, CourseCertificateList, ClaimCertificateRequest (migration
+# 0074's course_certificates table). The public Open Badges 2.0 hosted assertion
+# at `GET /v1/certificates/{id}` is a fixed external vocabulary, not a contracts
+# model — see certificates.py's module docstring for why. Additive: new names
+# only, no existing model changed.
+CONTRACTS_VERSION = "2.35.0"
 
 __all__ = [
     "PresenceHeartbeatRequest",
@@ -662,6 +691,18 @@ __all__ = [
     "GradebookRow",
     "GradebookVisibility",
     "PlannedModule",
+    "MAX_COHORT_NAME_LENGTH",
+    "CohortMember",
+    "CohortVisibility",
+    "CourseCohort",
+    "CourseCohortList",
+    "CreateCohortRequest",
+    "SetCohortMembershipRequest",
+    "UpdateCohortRequest",
+    "MAX_RECIPIENT_NAME_LENGTH",
+    "ClaimCertificateRequest",
+    "CourseCertificate",
+    "CourseCertificateList",
     "AuthorNotebookVersionRequest",
     "AuthorNotebookVersionResponse",
     "Cell",

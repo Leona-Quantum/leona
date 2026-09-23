@@ -47,6 +47,7 @@ from .routes.tokens import router as tokens_router
 from .routes.tour_signals import router as tour_signals_router
 from .routes.news import router as news_router
 from .routes.courses import router as courses_router
+from .routes.certificates import router as certificates_router
 from .routes.notebooks import router as notebooks_router
 from .routes.notebook_shares import router as notebook_shares_router
 from .routes.presence import router as presence_router
@@ -567,6 +568,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(notebooks_router, prefix="/v1")
     app.include_router(notebook_shares_router, prefix="/v1")
     app.include_router(courses_router, prefix="/v1")
+    app.include_router(certificates_router, prefix="/v1")
     app.include_router(comments_router, prefix="/v1")
     app.include_router(presence_router, prefix="/v1")
     app.include_router(notifications_router, prefix="/v1")

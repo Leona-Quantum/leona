@@ -109,6 +109,9 @@ export const CRAWLER_DISALLOWED_PATHS: readonly string[] = [
   "/account",
   "/api/",
   "/auth/",
+  // Public so a badge verifier can read it, but it carries a person's name, so it
+  // is never crawled (the page also sets noindex).
+  "/certificates",
   "/dashboard",
   "/demo",
   "/dev/",

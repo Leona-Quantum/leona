@@ -107,6 +107,12 @@ export const CIRCUIT_OPTIMIZATION_GATE_VALUES = [
   "M",
 ] as const;
 
+/** CohortVisibility — 2 members. */
+export const COHORT_VISIBILITY_VALUES = [
+  "all_cohorts",
+  "own_cohort",
+] as const;
+
 /** CommentTargetType — 3 members. */
 export const COMMENT_TARGET_TYPE_VALUES = [
   "run",

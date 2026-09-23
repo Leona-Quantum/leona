@@ -89,6 +89,7 @@ function row(missing: string[]): GradebookRow {
     user_id: "u",
     email: "u@example.test",
     display_name: null,
+    cohort_name: null,
     entries: [],
     total_passed: 0,
     total_graded_cells: 2,
@@ -101,7 +102,13 @@ test("overdue comes from the viewer's own row, and only when the gradebook is th
   const modules: CourseGradebook["modules"] = [
     { id: "m1", seq: 1, slug: "a", title: "A", notebook_id: "nb", graded_cells: 2, due_at: STORED },
   ];
-  const own: CourseGradebook = { course_id: "c", visibility: "own_row", modules, rows: [row(["m1"])] };
+  const own: CourseGradebook = {
+    course_id: "c",
+    cohort_id: null,
+    visibility: "own_row",
+    modules,
+    rows: [row(["m1"])],
+  };
   const everyone: CourseGradebook = { ...own, visibility: "all_members" };
 
   assert.equal(moduleOverdue(ownGradebookRow(own), "m1"), true);

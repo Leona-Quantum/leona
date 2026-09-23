@@ -65,6 +65,7 @@ test("totals pending: a module still generating, one with no notebook, or nothin
     user_id: "u",
     email: "u@example.test",
     display_name: null,
+    cohort_name: null,
     entries: [],
     total_passed: 0,
     total_graded_cells: total,

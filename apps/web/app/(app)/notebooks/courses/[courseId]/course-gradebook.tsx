@@ -10,7 +10,11 @@ import {
   gradebookMemberName,
   gradebookTotalsPending,
 } from "../../../../../lib/course-gradebook";
-import type { CourseGradebook as CourseGradebookData, GradebookRow } from "../../../../../lib/course-types";
+import type {
+  CourseCohortList,
+  CourseGradebook as CourseGradebookData,
+  GradebookRow,
+} from "../../../../../lib/course-types";
 import type { PublicLocale } from "../../../../../lib/public-locale";
 import { WORKSPACE_COPY } from "../../../../../lib/workspace-locale";
 
@@ -57,13 +61,22 @@ export function CourseGradebook({
   const [loading, setLoading] = useState(true);
   const [downloading, setDownloading] = useState(false);
   const [downloadError, setDownloadError] = useState<string | null>(null);
+  //: `""` means every member. Reset whenever the course changes; NOT reset by
+  //: `refreshKey` alone, so saving a due date does not silently drop the filter.
+  const [cohortId, setCohortId] = useState("");
+  //: The filter's own options. Fetched once per course — not from the
+  //: gradebook response, which carries `cohort_name` per row but not the full
+  //: list a reader has not yet been assigned into.
+  const [cohortOptions, setCohortOptions] = useState<CourseCohortList | null>(null);
   const loadSeq = useRef(0);
 
-  function load() {
+  function load(filterCohortId: string) {
     const seq = ++loadSeq.current;
     setLoading(true);
     setError(null);
-    fetch(`/api/courses/${encodeURIComponent(courseId)}/gradebook`, { cache: "no-store" })
+    const url = new URL(`/api/courses/${encodeURIComponent(courseId)}/gradebook`, window.location.origin);
+    if (filterCohortId) url.searchParams.set("cohort_id", filterCohortId);
+    fetch(url, { cache: "no-store" })
       .then(async (response) => {
         const payload = (await response.json()) as unknown;
         if (!response.ok || !isRecord(payload) || typeof payload.visibility !== "string") {
@@ -88,7 +101,12 @@ export function CourseGradebook({
   useEffect(() => {
     setBook(null);
     setDownloadError(null);
-    load();
+    setCohortId("");
+    load("");
+    fetch(`/api/courses/${encodeURIComponent(courseId)}/cohorts`, { cache: "no-store" })
+      .then((response) => (response.ok ? (response.json() as Promise<CourseCohortList>) : null))
+      .then((payload) => setCohortOptions(payload))
+      .catch(() => setCohortOptions(null));
     return () => {
       loadSeq.current += 1;
     };
@@ -99,33 +117,49 @@ export function CourseGradebook({
   // eslint-disable-next-line react-hooks/exhaustive-deps -- load is recreated per render; the key is the trigger
   useEffect(() => {
     if (refreshKey === firstRefresh.current) return;
-    load();
+    load(cohortId);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- cohortId read at refresh time, not a trigger
   }, [refreshKey]);
+
+  function onCohortFilterChange(next: string) {
+    setCohortId(next);
+    load(next);
+  }
 
   async function downloadCsv() {
     if (downloading) return;
     setDownloading(true);
     setDownloadError(null);
     try {
-      const response = await fetch(`/api/courses/${encodeURIComponent(courseId)}/gradebook/csv`, {
-        cache: "no-store",
-      });
+      const url = new URL(
+        `/api/courses/${encodeURIComponent(courseId)}/gradebook/csv`,
+        window.location.origin,
+      );
+      if (cohortId) url.searchParams.set("cohort_id", cohortId);
+      const response = await fetch(url, { cache: "no-store" });
       if (!response.ok) {
         const payload = await response.json().catch(() => null);
         throw new Error(refusalSentence(payload) ?? coursesCopy.gradebookDownloadCsvFailed);
       }
-      const url = URL.createObjectURL(await response.blob());
+      const blobUrl = URL.createObjectURL(await response.blob());
       const anchor = document.createElement("a");
-      anchor.href = url;
+      anchor.href = blobUrl;
       anchor.download = gradebookCsvFilename(courseSlug);
       anchor.click();
-      URL.revokeObjectURL(url);
+      URL.revokeObjectURL(blobUrl);
     } catch (cause) {
       setDownloadError(cause instanceof Error ? cause.message : coursesCopy.gradebookDownloadCsvFailed);
     } finally {
       setDownloading(false);
     }
   }
+
+  //: Only worth showing once there is more than one cohort to choose between,
+  //: and only to the creator — a member's own row never changes with the filter.
+  const cohortItems = cohortOptions?.items ?? [];
+  const showCohortFilter = Boolean(
+    cohortOptions && cohortOptions.visibility === "all_cohorts" && cohortItems.length > 0,
+  );
 
   return (
     <CourseGradebookView
@@ -135,8 +169,13 @@ export function CourseGradebook({
       error={error}
       downloading={downloading}
       downloadError={downloadError}
-      onRetry={load}
+      onRetry={() => load(cohortId)}
       onDownload={() => void downloadCsv()}
+      cohortFilter={
+        showCohortFilter
+          ? { options: cohortItems, value: cohortId, onChange: onCohortFilterChange }
+          : null
+      }
     />
   );
 }
@@ -157,6 +196,7 @@ export function CourseGradebookView({
   downloadError,
   onRetry,
   onDownload,
+  cohortFilter = null,
 }: {
   book: CourseGradebookData | null;
   locale: PublicLocale;
@@ -166,6 +206,14 @@ export function CourseGradebookView({
   downloadError: string | null;
   onRetry: () => void;
   onDownload: () => void;
+  /** `null` hides the control entirely — there is nothing to filter by, or
+   * the caller is not the creator, for whom every filter answers the same
+   * single row (ai-ops 349 proposal 8). */
+  cohortFilter?: {
+    options: NonNullable<CourseCohortList["items"]>;
+    value: string;
+    onChange: (cohortId: string) => void;
+  } | null;
 }) {
   const coursesCopy = WORKSPACE_COPY[locale].courses;
   const everyone = book?.visibility === "all_members";
@@ -188,6 +236,23 @@ export function CourseGradebookView({
           {book ? <p className="mj-course-gradebook-lede">{lede}</p> : null}
         </div>
         <div className="mj-course-gradebook-actions">
+          {cohortFilter ? (
+            <label className="mj-course-gradebook-cohort-filter">
+              <span className="sr-only">{coursesCopy.cohortFilterLabel}</span>
+              <select
+                aria-label={coursesCopy.cohortFilterLabel}
+                value={cohortFilter.value}
+                onChange={(event) => cohortFilter.onChange(event.target.value)}
+              >
+                <option value="">{coursesCopy.allCohorts}</option>
+                {cohortFilter.options.map((cohort) => (
+                  <option key={cohort.id} value={cohort.id}>
+                    {cohort.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+          ) : null}
           <button type="button" className="mj-secondary-button" disabled={loading} onClick={onRetry}>
             {coursesCopy.gradebookRefresh}
           </button>
@@ -302,6 +367,7 @@ function GradebookTableRow({
             {row.display_name?.trim() ? <small>{row.email}</small> : null}
           </>
         )}
+        {row.cohort_name ? <small className="mj-mono-muted">{row.cohort_name}</small> : null}
       </th>
       {columns.map((module) => {
         const entry = gradebookEntry(row, module.id);
