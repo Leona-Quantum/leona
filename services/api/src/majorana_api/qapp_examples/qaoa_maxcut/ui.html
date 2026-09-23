@@ -28,13 +28,15 @@ button:focus-visible,select:focus-visible,input:focus-visible{outline:2px solid 
 .status{min-height:1.5em;color:var(--muted);margin:10px 0 0}
 .error{color:var(--error);margin:10px 0 0}
 .graph{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:8px}
-.graph svg{display:block;width:100%;height:auto}
+.graph svg{display:block;width:100%;max-width:280px;height:auto;margin:0 auto}
 .panel{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:14px;margin-top:16px}
 .panel h2{font-size:1rem;margin:0 0 10px}
 .stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:12px}
 .stat strong{display:block;font-size:1.35rem;font-variant-numeric:tabular-nums}
 .stat span{color:var(--muted);font-size:.8rem}
 .legend{color:var(--muted);font-size:.8rem}
+.wide{grid-column:1/-1}
+.stats + .legend{margin-top:12px}
 table{width:100%;border-collapse:collapse;font-size:.88rem}
 th,td{text-align:left;padding:5px 6px;border-bottom:1px solid var(--line)}
 td.num{font-variant-numeric:tabular-nums}
@@ -48,7 +50,7 @@ td.num{font-variant-numeric:tabular-nums}
 
 <div class="layout">
 <div class="controls">
-<label for="graph">Graph
+<label class="wide" for="graph">Graph
 <select id="graph"></select>
 </label>
 <label for="layers">QAOA layers (p)
@@ -59,13 +61,13 @@ td.num{font-variant-numeric:tabular-nums}
 </select>
 </label>
 <label class="check" for="optimize"><input id="optimize" type="checkbox" checked> Find the best angles</label>
-<label for="gamma">γ (cost angle): <output id="gamma-value" for="gamma">0.80</output>
+<label for="gamma"><span>γ (cost angle): <output id="gamma-value" for="gamma">0.80</output></span>
 <input id="gamma" type="range" min="0" max="3.1416" step="0.01" value="0.8" disabled>
 </label>
-<label for="beta">β (mixer angle): <output id="beta-value" for="beta">0.40</output>
+<label for="beta"><span>β (mixer angle): <output id="beta-value" for="beta">0.40</output></span>
 <input id="beta" type="range" min="0" max="1.5708" step="0.01" value="0.4" disabled>
-<span class="hint">Your own γ and β apply to every layer. Untick "Find the best angles" to set them.</span>
 </label>
+<p class="hint wide">To set γ and β yourself, uncheck "Find the best angles". Your angles apply to every layer.</p>
 </div>
 <div class="graph" id="graph-view" role="img" aria-label="Graph preview"></div>
 </div>

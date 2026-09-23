@@ -60,7 +60,7 @@ button:focus-visible,select:focus-visible,input:focus-visible{outline:2px solid 
 <input id="marked" type="number" min="0" max="7" step="1" value="5" inputmode="numeric">
 <span class="hint" id="marked-hint">A number from 0 to 7</span>
 </label>
-<label for="iterations">Grover iterations: <output id="iterations-value" for="iterations">2</output>
+<label for="iterations"><span>Grover iterations: <output id="iterations-value" for="iterations">2</output></span>
 <input id="iterations" type="range" min="0" max="8" step="1" value="2">
 <span class="hint" id="optimal-hint"></span>
 </label>
@@ -107,7 +107,7 @@ button:focus-visible,select:focus-visible,input:focus-visible{outline:2px solid 
     $("marked").max = String(highest);
     $("marked-hint").textContent = "A number from 0 to " + highest;
     $("iterations-value").textContent = $("iterations").value;
-    $("optimal-hint").textContent = "About " + optimalIterations(qubits) + " is best for " + (highest + 1) + " items";
+    $("optimal-hint").textContent = "For " + (highest + 1) + " items the first peak is at " + optimalIterations(qubits);
   }
 
   function showError(message) {
@@ -125,7 +125,8 @@ button:focus-visible,select:focus-visible,input:focus-visible{outline:2px solid 
       "Item " + result.marked + " is the bitstring " + result.marked_bitstring + ". After " + result.iterations +
       " iteration" + (result.iterations === 1 ? "" : "s") + " the exact chance is " + percent(result.success_probability) +
       "; " + percent(result.measured_success) + " of your " + result.shots + " shots found it. A random guess finds it " +
-      percent(1 / 2 ** result.qubits) + " of the time. The best number of iterations here is " + result.optimal_iterations + ".";
+      percent(1 / 2 ** result.qubits) + " of the time. For this many items the chance first peaks after " + result.optimal_iterations +
+      " iterations. Later peaks exist, but each one costs more oracle calls.";
 
     const steps = $("steps");
     steps.replaceChildren();
@@ -205,7 +206,7 @@ button:focus-visible,select:focus-visible,input:focus-visible{outline:2px solid 
     try {
       const result = await window.qapp.run({ qubits, marked, iterations, shots });
       render(result);
-      $("status").textContent = "Done. Try one iteration more or fewer than the best number.";
+      $("status").textContent = "Done. Try one iteration either side of the first peak.";
     } catch (error) {
       $("status").textContent = "";
       showError((error && error.message) || "The search did not finish. Please try again.");

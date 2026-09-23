@@ -5237,6 +5237,26 @@ a.mj-facet-option:hover {
   color: var(--text-0);
   text-decoration: underline;
 }
+/* Leona's example Qapps (ai-ops 363), under the person's own list. */
+.mj-qapps-examples {
+  margin-top: var(--sp-12);
+}
+.mj-qapps-examples > h2 {
+  margin: 0 0 var(--sp-2);
+  font-size: var(--fs-20);
+  font-weight: 500;
+}
+.mj-qapps-examples > p {
+  max-width: 68ch;
+  margin: 0 0 var(--sp-4);
+  color: var(--text-1);
+  line-height: 1.55;
+}
+.mj-qapps-example-error {
+  margin: 0 auto 0 0;
+  color: var(--err);
+  font-size: var(--fs-12);
+}
 
 @media (max-width: 720px) {
   .mj-qapps-scroll {

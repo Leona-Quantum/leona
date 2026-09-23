@@ -7,6 +7,7 @@ import { QappsIcon, SearchIcon } from "../../../components/icons";
 import { refusalSentence } from "../../../lib/api-error";
 import { readPublicQappPage } from "../../../lib/qapp-management";
 import type { PublicLocale } from "../../../lib/public-locale";
+import { QappExamples } from "./qapp-examples";
 
 type Qapp = components["schemas"]["Qapp"];
 
@@ -197,6 +198,8 @@ export function QappGallery({ view, locale = "en" }: { view: QappGalleryView; lo
               : (visible as PublicQappSummary[]).map((qapp) => <PublicQappCard key={qapp.slug} qapp={qapp} locale={locale} />)}
           </div>
         ) : null}
+
+        {view === "mine" ? <QappExamples locale={locale} /> : null}
       </div>
     </section>
   );

@@ -81,3 +81,34 @@ export function readPublicQappPage(payload: unknown): PublicQappPage | null {
   }
   return null;
 }
+
+/** One of Leona's example Qapps (ai-ops 363), as `GET /v1/qapps/examples` lists it. */
+export type QappExampleSummary = {
+  key: string;
+  title: string;
+  description: string;
+  framework: string;
+  qubits_estimate: number;
+};
+
+function isQappExampleSummary(value: unknown): value is QappExampleSummary {
+  if (!value || typeof value !== "object") return false;
+  const row = value as Record<string, unknown>;
+  return typeof row.key === "string" && row.key.length > 0
+    && typeof row.title === "string"
+    && typeof row.description === "string"
+    && typeof row.framework === "string"
+    && typeof row.qubits_estimate === "number";
+}
+
+/**
+ * Read `GET /v1/qapps/examples`. Null for anything that is not a list of
+ * well-formed rows, never a partial list. That includes the answer an API from
+ * before the examples shipped gives for this path (it reads "examples" as a
+ * Qapp id and refuses it), which is what the website sees for the minutes when
+ * the two deploys are out of step.
+ */
+export function readQappExamples(payload: unknown): QappExampleSummary[] | null {
+  if (!Array.isArray(payload)) return null;
+  return payload.every(isQappExampleSummary) ? payload : null;
+}
