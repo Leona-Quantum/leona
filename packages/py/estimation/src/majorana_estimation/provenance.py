@@ -17,12 +17,13 @@ real citation, and must not be *oversold* as belonging to the Atlas corpus's
 own paper register when it does not (yet) have an entry there.
 
 - `ATLAS_PAPER_REGISTER` — the paper also has an entry in the Atlas corpus's
-  paper register (`apps/web/lib/repository/paper-register.ts`), so a reader
-  can follow the constant to the same page the catalogue itself links.
+  paper register (`apps/web/lib/repository/paper-register.ts`), so the
+  constant is tied to the same paper record the catalogue cites. No page
+  renders this as a link yet: the estimate panel prints the citation as text.
 - `CITED` — a real, checked citation (an arXiv id, DOI, or paper + section
   quoted in `assumptions.py` or `docs/estimation/assumption-sets.md`) for a
   paper that is not (yet) in that register. Still a source; just not (yet) a
-  cross-linkable one.
+  registered one.
 - `NO_SOURCE_RECORDED` — nothing states this. Reserved for values that are
   not physics claims at all: an engineering safety margin, a policy default.
   A `working_allowances` entry on an `AssumptionSet` renders exactly this
@@ -35,7 +36,7 @@ distillation: not as costly as you think* (Quantum 3, 205, no arXiv id given
 anywhere in this package). Gidney 2025 (arXiv:2505.15917) and Babbush et al.
 (arXiv:2011.04149) joined the register on 2026-09-22, when the Atlas workflow
 planner began citing both (PR 974), so the `gidney-2025` constants they source
-now cross-link. That is a corpus fact, not something this module invents — see
+now classify as Atlas-registered. That is a corpus fact, not something this module invents — see
 `docs/estimation/assumption-sets.md`.
 """
 
