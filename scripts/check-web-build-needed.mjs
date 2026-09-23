@@ -90,6 +90,8 @@ const cases = [
   ["notebooks package builds (not on the list)", DOCS, { "packages/py/notebooks/x.py": "y" }, {}, "BUILD"],
   ["mcp package skips (apps/web never imports it)", DOCS, { "packages/py/mcp/src/x.py": "y" }, {}, "SKIP"],
   ["mcp package plus a web change builds", DOCS, { "packages/py/mcp/src/x.py": "y", "apps/web/app/page.tsx": "y" }, {}, "BUILD"],
+  ["client package skips (apps/web never imports it)", DOCS, { "packages/py/client/src/x.py": "y" }, {}, "SKIP"],
+  ["client package plus a web change builds", DOCS, { "packages/py/client/src/x.py": "y", "apps/web/app/page.tsx": "y" }, {}, "BUILD"],
 ];
 
 let failed = 0;

@@ -8,9 +8,9 @@ this package and the site now disagree about a record.
 from __future__ import annotations
 
 import pytest
-from leona_mcp_fixtures import raw_rows, record, row, rows
+from leona_client_fixtures import raw_rows, record, row, rows
 
-from leona_mcp.atlas import (
+from leona_client.atlas import (
     MAX_RESULTS,
     NOT_STATED,
     AtlasRow,

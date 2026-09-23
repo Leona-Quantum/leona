@@ -1,5 +1,9 @@
 """Reading the Atlas from Leona's public API.
 
+Moved here from `leona_mcp.client` in proposal 7 Phase D, unchanged: `leona-mcp`'s
+Atlas tools and `leona_client.Client`'s Atlas convenience methods now share this one
+fetch implementation instead of each having their own.
+
 One endpoint, anonymous and read-only: `GET /v1/catalog/entries`
 (`services/api/src/majorana_api/routes/catalog.py`). It takes no credential, and
 this module sends none. Nothing else on the network is contacted.

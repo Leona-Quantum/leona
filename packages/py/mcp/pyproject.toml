@@ -1,7 +1,7 @@
 [project]
 name = "leona-mcp"
-version = "0.1.0"
-description = "A read-only MCP server over the public Quantum Atlas at leonaqt.com"
+version = "0.2.0"
+description = "An MCP server over the public Quantum Atlas at leonaqt.com, and, with a token, verified runs"
 readme = "README.md"
 requires-python = ">=3.12"
 license = "MIT"
@@ -12,12 +12,22 @@ dependencies = [
     # 1.x resolves against the `httpx`, `starlette`, `uvicorn`, `pydantic`,
     # `anyio`, `jsonschema` and `pyjwt` already in uv.lock.
     "mcp>=1.27,<2",
-    # Already in uv.lock (the API's tests and the MCP SDK both use it). Named
-    # here because this package imports it directly.
-    "httpx>=0.27,<1",
-    # `server.py` imports `pydantic.Field` for the tool parameter schemas. The floor
-    # is the one mcp 1.x already requires, so this adds no constraint of its own.
+    # `server.py` imports `pydantic.Field`/`BaseModel` for the tool parameter
+    # schemas. The floor is the one mcp 1.x already requires, so this adds no
+    # constraint of its own.
     "pydantic>=2.11,<3",
+    # `run_verified` polls `leona_client.Client` (synchronous) off the stdio
+    # server's event loop via `anyio.to_thread.run_sync`. Already in uv.lock
+    # transitively through `mcp`; named here because this package imports it
+    # directly.
+    "anyio>=4.4,<5",
+    # The one HTTP client (proposal 7 Phase D, ai-ops 349/362): the Atlas fetch
+    # (`CatalogClient`) that used to live in this package, plus the
+    # authenticated control-plane calls the acting tools below make. Installable
+    # standalone the same way this package is — see its own pyproject.toml —
+    # which is what keeps `uvx --from ...#subdirectory=packages/py/mcp` working
+    # with no other workspace member on disk.
+    "leona-client",
 ]
 
 [project.scripts]
@@ -29,3 +39,10 @@ build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/leona_mcp"]
+
+[tool.uv.sources]
+# See leona-client's own pyproject.toml for why this resolves for a standalone
+# `uvx --from git+...#subdirectory=packages/py/mcp` install too, not only inside
+# `uv sync --all-packages`: verified by installing this exact package from a
+# `git+file://` URL into a throwaway venv with no local workspace checkout.
+leona-client = { workspace = true }

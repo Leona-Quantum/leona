@@ -2,25 +2,43 @@
 
 An MCP server that lets an AI assistant look things up in the
 [Quantum Atlas](https://leonaqt.com/repository), Leona Quantum's public catalog of
-quantum algorithms, gates, states and benchmark circuits.
+quantum algorithms, gates, states and benchmark circuits — and, with a personal
+access token, start a verified run, read its result, and estimate physical
+resources, all as the token's own account.
 
-It is read-only: it reads one public API endpoint, the same anonymous catalog listing
-the website uses, and nothing else. You need no account or key. It does not run code
-or submit jobs, and it cannot spend money. It runs on your machine and talks to your
-MCP client over stdio.
+Three tools need nothing at all: they read one public API endpoint, the same
+anonymous catalog listing the website uses. You need no account or key, and they
+cannot spend money. Four more need a personal access token (minted on leonaqt.com,
+Account → Access tokens) in the `LEONA_API_TOKEN` environment variable — never as a
+tool argument, and it is never logged or echoed in an error. Without one, those four
+tools answer with a message telling you to set it; the three read-only tools are
+unaffected. The server runs on your machine and talks to your MCP client over stdio.
 
 ## Tools
 
-| Tool | What it does |
-|---|---|
-| `search_methods` | Filters the Atlas by free text, problem area, a qubit limit, a depth limit, and NISQ or fault-tolerant, using the same rules as the site's method finder. Results are unranked candidates, sorted by slug. |
-| `get_method` | One record in full: description, explanation, the cost it states, its speedup class and whether that was checked against the primary paper, its verification tier, the literature it cites, and the OpenQASM 3 of its circuit when it has one. |
-| `list_problem_areas` | The problem areas the Atlas uses, with a definition and a record count for each. |
+| Tool | Needs a token | What it does |
+|---|---|---|
+| `search_methods` | No | Filters the Atlas by free text, problem area, a qubit limit, a depth limit, and NISQ or fault-tolerant, using the same rules as the site's method finder. Results are unranked candidates, sorted by slug. |
+| `get_method` | No | One record in full: description, explanation, the cost it states, its speedup class and whether that was checked against the primary paper, its verification tier, the literature it cites, and the OpenQASM 3 of its circuit when it has one. |
+| `list_problem_areas` | No | The problem areas the Atlas uses, with a definition and a record count for each. |
+| `run_verified` | Yes (`run` scope) | Starts a Nala run — the same route the website's Run box calls — as your account, and polls for up to `wait_s` seconds for a verified result. |
+| `get_run` | Yes | Reads one of your own runs by id, including its verification record. |
+| `list_my_runs` | Yes | Lists your own runs, most recent first. |
+| `estimate_resources` | Yes | Turns a logical cost you state into physical qubits and runtime under a named assumption set. |
 
-Everything comes from the published record, with a link back to its page on
-leonaqt.com. When a record does not carry a field, the answer says "not stated in the
-record" instead of guessing. A record is a claim from the sources it cites, not a
-result this server checked.
+Everything the first three tools return comes from the published Atlas record, with
+a link back to its page on leonaqt.com. When a record does not carry a field, the
+answer says "not stated in the record" instead of guessing. A record is a claim from
+the sources it cites, not a result this server checked.
+
+**A run's `status` can be `"succeeded"` while its verification did not pass.** Read
+`verifier_decision` and `verification_summary` — every run tool's response also
+carries a plain `verified` boolean, true only when `verifier_decision` is `"pass"` —
+before telling anyone a result is verified.
+
+No tool submits a hardware job. Owner ruling ai-ops 362: "hardware jobs come later
+under their own permission," so there is no tool, and no token scope, that could
+reach one.
 
 ## Install
 
@@ -99,9 +117,13 @@ replace `"uvx"` with the full path that `which uvx` prints (for example
 | Variable | Default | Meaning |
 |---|---|---|
 | `LEONA_API_URL` | `https://majorana-api-nikekeixtq-uw.a.run.app` | The Leona API to read. Point it at `http://localhost:8000` to read a local API. |
+| `LEONA_API_TOKEN` | unset | A personal access token, for `run_verified`/`get_run`/`list_my_runs`/`estimate_resources`. Leave unset to use only the three read-only Atlas tools. |
 
-In Claude Code, pass it with `--env LEONA_API_URL=...` before the server name. In the
-JSON configs, add `"env": {"LEONA_API_URL": "..."}` beside `args`.
+In Claude Code, pass either with `--env NAME=value` before the server name. In the
+JSON configs, add `"env": {"LEONA_API_URL": "...", "LEONA_API_TOKEN": "..."}` beside
+`args`. Personal access tokens are a Leona feature still being rolled out
+(proposal 7 Phase B); if `run_verified` answers that tokens are not available yet,
+that is the account-wide switch, not this server.
 
 The server reads the whole Atlas once (a few megabytes, in pages of 100) and reuses it
 for ten minutes. HTTP calls time out after 30 seconds. If the listing it gets back is
@@ -118,6 +140,10 @@ uv run pytest packages/py/mcp -q
 uv run leona-mcp            # speaks MCP on stdin and stdout; Ctrl-C to stop
 ```
 
-The filtering rules are copies of TypeScript in `apps/web/lib/repository/`, which is
-the source of truth. `tests/test_leona_mcp_mirrors.py` fails when a copied vocabulary
-stops matching it. See `AGENTS.md` in this directory before changing a rule.
+The Atlas filtering rules and the HTTP client live in `leona_client`
+(`packages/py/client`), shared with the `%nala` Jupyter magic and the
+`leona-notebooks` CLI — this package now holds only the MCP protocol layer. The
+filtering rules are themselves copies of TypeScript in `apps/web/lib/repository/`,
+which is the source of truth; `packages/py/client/tests/test_mirrors.py` fails when a
+copied vocabulary stops matching it. See `AGENTS.md` in this directory, and in
+`packages/py/client`, before changing a rule.

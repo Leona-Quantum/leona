@@ -16,9 +16,11 @@ for: the estimator knows hardware, the caller knows the algorithm).
 **Authenticated on purpose.** It is integer arithmetic with no database, no
 provider and no execution — the same shape as `POST /qpu/estimates` — but a
 route that costs whatever body it is sent is a new anonymous surface under the
-security gate (`05-security.md` §1a), so it takes a signed-in scope. It is not
-in `token_access.READ_WRITES`, so a personal access token is refused here
-until someone allowlists it deliberately.
+security gate (`05-security.md` §1a), so it takes a signed-in scope. It is in
+`token_access.READ_WRITES` (proposal 7 Phase C, ai-ops 349/362), added
+deliberately rather than by default once a token-holding caller (`leona_mcp`'s
+`estimate_resources` MCP tool) needed it — see that list's own comment for why
+a `read` token, not just `run`, may call this.
 
 The request and response are route-local, like `QpuEstimateRequest`, rather
 than contracts models: nothing but the planner reads them, and the layer

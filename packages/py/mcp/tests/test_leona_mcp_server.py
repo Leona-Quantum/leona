@@ -11,11 +11,11 @@ import json
 
 import httpx
 import pytest
+from leona_client import CatalogClient
 from leona_mcp_fixtures import FakeCatalogApi
 from mcp.shared.memory import create_connected_server_and_client_session
 
 from leona_mcp import __version__
-from leona_mcp.client import CatalogClient
 from leona_mcp.server import INSTRUCTIONS, SERVER_NAME, build_server
 
 
@@ -37,19 +37,43 @@ async def test_initialize_names_the_server_and_says_what_it_does_not_do(server):
     assert result.serverInfo.name == SERVER_NAME
     assert result.serverInfo.version == __version__
     assert result.instructions == INSTRUCTIONS
-    for phrase in ("public, read-only API", "not stated in the record", "spends money"):
+    for phrase in (
+        "public, read-only API",
+        "not stated in the record",
+        "spends money",
+        "LEONA_API_TOKEN",
+        "verifier_decision",
+    ):
         assert phrase in result.instructions
 
 
-async def test_tools_list_offers_exactly_three_read_only_tools(server, api):
+async def test_tools_list_offers_the_three_atlas_tools_read_only_and_four_acting_ones(server, api):
     async with create_connected_server_and_client_session(server) as session:
         tools = (await session.list_tools()).tools
-    assert sorted(t.name for t in tools) == ["get_method", "list_problem_areas", "search_methods"]
-    for tool in tools:
+    assert sorted(t.name for t in tools) == [
+        "estimate_resources",
+        "get_method",
+        "get_run",
+        "list_my_runs",
+        "list_problem_areas",
+        "run_verified",
+        "search_methods",
+    ]
+    by_name = {tool.name: tool for tool in tools}
+    for name in ("search_methods", "get_method", "list_problem_areas"):
+        tool = by_name[name]
         assert tool.annotations is not None
         assert tool.annotations.readOnlyHint is True
         assert tool.annotations.destructiveHint is False
         assert tool.description
+    # The acting tools need a token and are not marked read-only; run_verified has
+    # a side effect (a new run) and is not marked idempotent either.
+    assert by_name["run_verified"].annotations.readOnlyHint is False
+    assert by_name["run_verified"].annotations.idempotentHint is False
+    for name in ("get_run", "list_my_runs", "estimate_resources"):
+        assert by_name[name].annotations.readOnlyHint is True
+    for name in by_name:
+        assert by_name[name].annotations.destructiveHint is False
     search = next(t for t in tools if t.name == "search_methods")
     assert set(search.inputSchema["properties"]) == {
         "query",
@@ -122,3 +146,319 @@ async def test_an_unreachable_api_is_an_error_result_not_a_crash():
         result = await session.call_tool("list_problem_areas", {})
     assert result.isError is True
     assert "Could not reach the Atlas API" in result.content[0].text
+
+
+# --------------------------------------------------------------------- acting tools
+#
+# `_token_client()` calls `leona_client.Client.from_env()`, so these patch that
+# classmethod (on the same class object `leona_mcp.server` imported) rather than
+# the server's own `build_server`, which only ever configures the Atlas tools'
+# `CatalogClient`.
+
+_TEST_TOKEN = "lq_pat_do_not_leak_this_test_token_00000"  # noqa: S105 - a fixture value, not a secret
+_RUN_ID = "11111111-1111-1111-1111-111111111111"
+_CONVERSATION_ID = "22222222-2222-2222-2222-222222222222"
+_WORKSPACE_ID = "33333333-3333-3333-3333-333333333333"
+_USER_ID = "44444444-4444-4444-4444-444444444444"
+
+
+def _run_json(*, status="succeeded", verifier_decision=None, verification_summary=None):
+    return {
+        "id": _RUN_ID,
+        "conversation_id": _CONVERSATION_ID,
+        "workspace_id": _WORKSPACE_ID,
+        "user_id": _USER_ID,
+        "task_prompt": "Build a GHZ state and verify it",
+        "mode": "execute",
+        "status": status,
+        "framework": "qiskit",
+        "created_at": "2026-09-23T00:00:00Z",
+        "verifier_decision": verifier_decision,
+        "verification_summary": verification_summary,
+    }
+
+
+class _Recording:
+    """The same transport shape `leona_notebooks`'s tests use: a plain
+    `(method, url, headers, body) -> (status, bytes)` callable."""
+
+    def __init__(self, responses: list[tuple[int, dict]]) -> None:
+        self.responses = list(responses)
+        self.calls: list[tuple[str, str, dict, dict | None]] = []
+
+    def __call__(self, method, url, headers, body):
+        self.calls.append((method, url, dict(headers), json.loads(body) if body else None))
+        status, payload = self.responses.pop(0)
+        return status, json.dumps(payload).encode()
+
+
+def _patch_token_client(monkeypatch, responses, *, token=_TEST_TOKEN):
+    import leona_mcp.server as server_module
+
+    transport = _Recording(responses)
+    fake = server_module.Client(api_url="https://api.example", token=token, transport=transport)
+    monkeypatch.setattr(server_module.Client, "from_env", classmethod(lambda cls: fake))
+    return transport
+
+
+async def test_run_verified_starts_and_polls_to_a_verified_result(monkeypatch):
+    transport = _patch_token_client(
+        monkeypatch,
+        [
+            (201, _run_json(status="queued")),
+            (
+                200,
+                _run_json(
+                    status="succeeded",
+                    verifier_decision="pass",
+                    verification_summary={
+                        "decision": "pass",
+                        "reason_code": "ok",
+                        "candidate_defect_observed": False,
+                        "retry_target": "none",
+                    },
+                ),
+            ),
+        ],
+    )
+    server = build_server()
+    async with create_connected_server_and_client_session(server) as session:
+        result = await session.call_tool(
+            "run_verified", {"prompt": "Build a GHZ state and verify it"}
+        )
+    assert result.isError is False
+    body = json.loads(result.content[0].text)
+    assert body["status"] == "succeeded"
+    assert body["verifier_decision"] == "pass"
+    assert body["verified"] is True
+    assert transport.calls[0][0] == "POST"
+    assert transport.calls[0][1].endswith("/v1/runs")
+    assert transport.calls[0][2]["Authorization"] == f"Bearer {_TEST_TOKEN}"
+    assert transport.calls[0][3] == {
+        "task_prompt": "Build a GHZ state and verify it",
+        "framework": "qiskit",
+    }
+    assert transport.calls[1][1].endswith(f"/v1/runs/{_RUN_ID}")
+
+
+async def test_run_verified_a_succeeded_status_is_not_claimed_verified_without_pass(monkeypatch):
+    _patch_token_client(
+        monkeypatch,
+        [
+            (201, _run_json(status="queued")),
+            (
+                200,
+                _run_json(
+                    status="succeeded",
+                    verifier_decision="fail",
+                    verification_summary={
+                        "decision": "fail",
+                        "reason_code": "candidate_defect",
+                        "candidate_defect_observed": True,
+                        "retry_target": "code_generation",
+                    },
+                ),
+            ),
+        ],
+    )
+    server = build_server()
+    async with create_connected_server_and_client_session(server) as session:
+        result = await session.call_tool("run_verified", {"prompt": "Build a Bell pair"})
+    body = json.loads(result.content[0].text)
+    assert body["status"] == "succeeded"
+    assert body["verifier_decision"] == "fail"
+    assert body["verified"] is False
+
+
+async def test_run_verified_a_failed_run_comes_back_as_data_not_a_crash(monkeypatch):
+    _patch_token_client(
+        monkeypatch, [(201, _run_json(status="queued")), (200, _run_json(status="failed"))]
+    )
+    server = build_server()
+    async with create_connected_server_and_client_session(server) as session:
+        result = await session.call_tool("run_verified", {"prompt": "Do something impossible"})
+    assert result.isError is False
+    body = json.loads(result.content[0].text)
+    assert body["status"] == "failed"
+    assert body["verified"] is False
+
+
+async def test_run_verified_a_timeout_is_a_clear_error_not_a_long_wait(monkeypatch):
+    """`run_verified` polls off the event loop via `anyio.to_thread.run_sync`,
+    which itself depends on real wall-clock time to hand control back — so unlike
+    the plain-`Client`-level timeout test in `packages/py/client`, this cannot
+    fake `time.monotonic()` globally without also breaking anyio's own thread
+    handoff (observed: doing so left the test's OWN await hanging on
+    `StopIteration` from a starved iterator, consumed by unrelated code paths
+    that also call the patched global). Instead this shortens the real poll
+    interval so the minimum allowed `wait_s=1` elapses in about a second."""
+    import leona_mcp.server as server_module
+
+    _patch_token_client(
+        monkeypatch,
+        [(201, _run_json(status="queued"))] + [(200, _run_json(status="running"))] * 200,
+    )
+    monkeypatch.setattr(server_module, "DEFAULT_POLL_S", 0.02)
+    server = build_server()
+    async with create_connected_server_and_client_session(server) as session:
+        result = await session.call_tool("run_verified", {"prompt": "A slow one", "wait_s": 1})
+    assert result.isError is True
+    assert "did not reach a terminal state" in result.content[0].text
+    assert _RUN_ID in result.content[0].text
+
+
+async def test_run_verified_with_no_token_set_gives_clear_guidance_not_a_crash(monkeypatch):
+    monkeypatch.delenv("LEONA_API_TOKEN", raising=False)
+    server = build_server()
+    async with create_connected_server_and_client_session(server) as session:
+        result = await session.call_tool("run_verified", {"prompt": "Anything"})
+    assert result.isError is True
+    assert "LEONA_API_TOKEN" in result.content[0].text
+    assert "Account" in result.content[0].text
+
+
+@pytest.mark.parametrize("tool", ["get_run", "list_my_runs", "estimate_resources"])
+async def test_the_other_acting_tools_also_need_a_token(monkeypatch, tool):
+    monkeypatch.delenv("LEONA_API_TOKEN", raising=False)
+    server = build_server()
+    args = {
+        "get_run": {"run_id": _RUN_ID},
+        "list_my_runs": {},
+        "estimate_resources": {
+            "points": [{"label": "x", "logical_qubits": 4, "toffoli_count": 100}]
+        },
+    }[tool]
+    async with create_connected_server_and_client_session(server) as session:
+        result = await session.call_tool(tool, args)
+    assert result.isError is True
+    assert "LEONA_API_TOKEN" in result.content[0].text
+
+
+async def test_a_token_the_feature_switch_refuses_is_a_clear_error(monkeypatch):
+    """The "tokens switched off" state (`MAJORANA_PERSONAL_ACCESS_TOKENS=false`,
+    the shipped default): every token, valid or not, is a plain 401 "invalid
+    token" from `get_verified_token` — before any route or scope check. Wire
+    shape checked live against `create_app()`: RFC 7807 Problem+JSON, the
+    message under "title", no "detail" key."""
+    _patch_token_client(
+        monkeypatch, [(401, {"type": "about:blank", "title": "invalid token", "status": 401})]
+    )
+    server = build_server()
+    async with create_connected_server_and_client_session(server) as session:
+        result = await session.call_tool("run_verified", {"prompt": "Anything"})
+    assert result.isError is True
+    assert "401" in result.content[0].text
+    assert "invalid token" in result.content[0].text
+
+
+async def test_a_read_only_token_is_told_to_mint_one_with_run_scope(monkeypatch):
+    # Real wire shape, checked live against `create_app()`: the API's error
+    # middleware answers RFC 7807 Problem+JSON. `token_access.check`'s message is
+    # under "title", and "reason" sits at the top level — there is no "detail" key.
+    _patch_token_client(
+        monkeypatch,
+        [
+            (
+                403,
+                {
+                    "type": "about:blank",
+                    "title": "this token can read but not start runs; mint one with the run scope",
+                    "status": 403,
+                    "code": "http_error",
+                    "reason": "token_scope_insufficient",
+                },
+            )
+        ],
+    )
+    server = build_server()
+    async with create_connected_server_and_client_session(server) as session:
+        result = await session.call_tool("run_verified", {"prompt": "Anything"})
+    assert result.isError is True
+    assert "run scope" in result.content[0].text
+
+
+async def test_get_run_and_list_my_runs_read_a_run(monkeypatch):
+    transport = _patch_token_client(
+        monkeypatch, [(200, _run_json(status="succeeded", verifier_decision="pass"))]
+    )
+    server = build_server()
+    async with create_connected_server_and_client_session(server) as session:
+        result = await session.call_tool("get_run", {"run_id": _RUN_ID})
+    assert result.isError is False
+    assert json.loads(result.content[0].text)["id"] == _RUN_ID
+    assert transport.calls[0][0] == "GET"
+    assert transport.calls[0][3] is None
+
+
+async def test_list_my_runs_wraps_the_list(monkeypatch):
+    _patch_token_client(
+        monkeypatch, [(200, [_run_json(status="succeeded"), _run_json(status="running")])]
+    )
+    server = build_server()
+    async with create_connected_server_and_client_session(server) as session:
+        result = await session.call_tool("list_my_runs", {"limit": 5})
+    body = json.loads(result.content[0].text)
+    assert [run["status"] for run in body["runs"]] == ["succeeded", "running"]
+
+
+async def test_estimate_resources_calls_the_planner_route(monkeypatch):
+    response = {
+        "assumptions": {
+            "identity": "gidney-2025@v2",
+            "citation": "Gidney & Ekerå 2025",
+            "physical_error_rate": 1e-3,
+            "cycle_time_ns": 1000,
+            "code": "surface",
+        },
+        "points": [
+            {"label": "x", "parameter_value": None, "refused": "No Toffoli or T count was stated."}
+        ],
+        "citations": {"gidney-2025@v2": "Gidney & Ekerå 2025"},
+    }
+    transport = _patch_token_client(monkeypatch, [(200, response)])
+    server = build_server()
+    async with create_connected_server_and_client_session(server) as session:
+        result = await session.call_tool(
+            "estimate_resources",
+            {"points": [{"label": "x", "logical_qubits": 4}]},
+        )
+    assert result.isError is False
+    body = json.loads(result.content[0].text)
+    assert body["points"][0]["refused"]
+    assert transport.calls[0][1].endswith("/v1/estimates/logical")
+    assert transport.calls[0][3] == {
+        "points": [
+            {
+                "label": "x",
+                "logical_qubits": 4,
+                "toffoli_count": 0,
+                "t_count": 0,
+                "non_clifford_depth": 0,
+            }
+        ]
+    }
+
+
+async def test_the_token_never_appears_in_any_tool_output_or_log(monkeypatch, caplog):
+    _patch_token_client(
+        monkeypatch,
+        [
+            (201, _run_json(status="queued")),
+            (200, _run_json(status="succeeded", verifier_decision="pass")),
+            (200, _run_json(status="succeeded", verifier_decision="pass")),
+            (200, [_run_json(status="succeeded")]),
+        ],
+    )
+    server = build_server()
+    with caplog.at_level("DEBUG"):
+        async with create_connected_server_and_client_session(server) as session:
+            results = [
+                await session.call_tool("run_verified", {"prompt": "Anything"}),
+                await session.call_tool("get_run", {"run_id": _RUN_ID}),
+                await session.call_tool("list_my_runs", {}),
+            ]
+    for result in results:
+        for block in result.content:
+            assert _TEST_TOKEN not in block.text
+    for record in caplog.records:
+        assert _TEST_TOKEN not in record.getMessage()

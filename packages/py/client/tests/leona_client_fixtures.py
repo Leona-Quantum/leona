@@ -1,13 +1,8 @@
-"""A fake catalog API for this package's protocol-level tests.
+"""Shared test data: ten real catalog rows, and a fake API that serves them.
 
-The real fixture data (`leona_client_fixtures.py`, ten real catalog rows) and the
-`AtlasRow`/`parse_rows` it depends on now live in `packages/py/client` — moved there
-in Phase D along with `CatalogClient`. Rather than duplicate the JSON, this reads it
-by relative path (a file read, not an import: pytest's per-directory `sys.path`
-insertion does not let this package's tests import a module from a sibling
-package's `tests/` directory). `FakeCatalogApi` itself is small enough that keeping
-one copy per package's tests is cheaper than the cross-package import machinery
-that avoiding it would need.
+The rows are real (see `_about` in fixtures/catalog_rows.json), so a test that
+reads a verdict off one of them is reading what production serves, not a record
+shaped to make the test pass.
 """
 
 from __future__ import annotations
@@ -19,13 +14,30 @@ from typing import Any
 
 import httpx
 
-_FIXTURE = (
-    Path(__file__).resolve().parents[2] / "client" / "tests" / "fixtures" / "catalog_rows.json"
-)
+from leona_client.atlas import AtlasRow, parse_rows
+
+FIXTURE = Path(__file__).parent / "fixtures" / "catalog_rows.json"
 
 
 def raw_rows() -> list[dict[str, Any]]:
-    return json.loads(_FIXTURE.read_text(encoding="utf-8"))["rows"]
+    return json.loads(FIXTURE.read_text(encoding="utf-8"))["rows"]
+
+
+def rows() -> list[AtlasRow]:
+    parsed, rejected = parse_rows(raw_rows())
+    assert not rejected
+    return parsed
+
+
+def row(slug: str) -> AtlasRow:
+    for candidate in rows():
+        if candidate.slug == slug:
+            return candidate
+    raise KeyError(slug)
+
+
+def record(slug: str) -> dict[str, Any]:
+    return dict(row(slug).record)
 
 
 class FakeCatalogApi:

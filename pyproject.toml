@@ -151,6 +151,7 @@ root_packages = [
     "majorana_contracts",
     "majorana_worker",
     "leona_mcp",
+    "leona_client",
 ]
 include_external_packages = true
 
@@ -185,20 +186,46 @@ type = "forbidden"
 source_modules = ["majorana_agent"]
 forbidden_modules = ["majorana_api", "majorana_worker", "fastapi", "sqlalchemy", "psycopg"]
 
-# packages/py/mcp is a public, credential-free MCP server that reads the Atlas only
-# through the API's anonymous `GET /v1/catalog/entries`. It must never reach into the
-# control plane, the worker, the sandbox or a database driver: any of those would
-# make an install on a stranger's machine something other than a read-only HTTP
+# packages/py/mcp is a public MCP server whose only network access is through
+# leona_client: the anonymous `GET /v1/catalog/entries` for its Atlas tools, and,
+# when a personal access token is set, the authenticated control plane for its
+# acting tools (proposal 7 Phase C). It must never reach into the control plane
+# ITSELF, the worker, the agent core, the sandbox or a database driver: any of
+# those would make an install on a stranger's machine something other than an HTTP
 # client. (It is also installed standalone with `uvx --from git+...`, where none of
 # these exist, so an import of one would fail there even if it passed here.)
+#
+# majorana_contracts is deliberately NOT in this list, unlike before proposal 7
+# Phase D: leona_client depends on it for typed run responses (`Run`,
+# `VerificationSummary` — pure pydantic, no server/worker/database code, and itself
+# installable standalone; see its own pyproject.toml), and this contract is
+# transitive, so leona_mcp -> leona_client -> majorana_contracts would otherwise
+# fail a contract that was never protecting against that module. The isolation
+# this contract exists for — no control-plane server code, no worker, no database
+# driver, no credential baked in anywhere but the environment — is unchanged.
 [[tool.importlinter.contracts]]
-name = "the MCP server is only an HTTP client of the public API"
+name = "the MCP server reaches the control plane only through leona_client"
 type = "forbidden"
 source_modules = ["leona_mcp"]
 forbidden_modules = [
     "majorana_api",
     "majorana_agent",
-    "majorana_contracts",
+    "majorana_worker",
+    "sqlalchemy",
+    "psycopg",
+]
+
+# leona_client is installed standalone too (by leona_mcp, by leona_notebooks, and
+# on its own — see packages/py/client/AGENTS.md), so it carries the same isolation
+# leona_mcp does, minus majorana_contracts, which it depends on directly and on
+# purpose.
+[[tool.importlinter.contracts]]
+name = "the shared client reaches the control plane only over HTTP"
+type = "forbidden"
+source_modules = ["leona_client"]
+forbidden_modules = [
+    "majorana_api",
+    "majorana_agent",
     "majorana_worker",
     "sqlalchemy",
     "psycopg",

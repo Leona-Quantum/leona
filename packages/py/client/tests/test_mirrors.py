@@ -18,7 +18,7 @@ from pathlib import Path
 
 import pytest
 
-from leona_mcp import atlas
+from leona_client import atlas
 
 REPO = Path(__file__).resolve().parents[4]
 
