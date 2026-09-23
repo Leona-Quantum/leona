@@ -3986,6 +3986,28 @@ export interface components {
          * @enum {string}
          */
         QpuRunStatus: "queued" | "running" | "done" | "error" | "cancelled";
+        /**
+         * RecordTourSignalRequest
+         * @description `POST /v1/tour-signals`'s body. Anonymous — no `Scope`, no identifier of
+         *     any kind, on purpose: this counts events, never people (the same ceiling
+         *     `apps/web/lib/pageview-signal.ts` states for the pageview counter it sits
+         *     beside in spirit).
+         *
+         *     `track` and `step` are bounded here only by shape; the route rejects a
+         *     value outside `tour_signal_vocabulary.KNOWN_TRACKS` /
+         *     `.KNOWN_STEPS` with a 422 before anything reaches the repository. The 64
+         *     character ceiling is generous headroom over the longest real id today
+         *     (`first-light`, `preferences`) and exists so a request this model refuses
+         *     is refused for being the wrong SHAPE, independent of whether it also
+         *     happens to name a real track.
+         */
+        RecordTourSignalRequest: {
+            kind: components["schemas"]["TourSignalKind"];
+            /** Step */
+            step: string;
+            /** Track */
+            track: string;
+        };
         /** Reference */
         Reference: {
             /**
@@ -5505,6 +5527,17 @@ export interface components {
          * @enum {string}
          */
         TopLevelExecution: "required" | "demo_only" | "forbidden";
+        /**
+         * TourSignalKind
+         * @description What happened to a tour step. Mirrors `apps/web/lib/tour/signal.ts`'s
+         *     `TOUR_SIGNAL_KINDS` exactly — ten members, no more, no fewer. A new kind
+         *     needs a change here (contracts version bump) AND a matching CHECK
+         *     constraint widening (a new migration), which is the review point: this
+         *     codebase's kind lists (see `TokenScope`) are closed by construction rather
+         *     than by convention.
+         * @enum {string}
+         */
+        TourSignalKind: "tour_started" | "step_done" | "step_skipped" | "did_it_for_me" | "offline_skip" | "tour_done" | "tour_left" | "step_missed" | "ask_show_me" | "ask_nala";
         /** UpdateCommentRequest */
         UpdateCommentRequest: {
             /** Body */

@@ -321,6 +321,14 @@ jobs:
           # ceiling, is docs/gates/k6-personal-access-tokens-2026-09-23.md. To switch
           # tokens off, change this to false: every /v1/tokens route then answers 404
           # and an lq_pat_ bearer is refused before any lookup.
+          #
+          # LEONA_TOUR_SIGNALS=true is declared the same way, for the same reason. It
+          # switches the guided-tours step-count route on (ai-ops 326). The last
+          # release-gate item, the k6 run against the shared anonymous ceiling, is
+          # docs/gates/k6-tour-signals-2026-09-23.md (attempt 3, after two
+          # host-contention failures recorded in the same file). To switch the route
+          # off, change this to false: POST /v1/tour-signals then answers 404 rather
+          # than 204/422.
           gcloud run deploy majorana-api --project "$GCP_PROJECT" --region "$GCP_REGION" \
             --image "$IMAGE_REPO:${{ steps.tag.outputs.tag }}" \
             --set-cloudsql-instances "$CLOUDSQL_INSTANCE" \
@@ -328,7 +336,7 @@ jobs:
             --cpu "$API_CPU" --memory "${API_MEMORY_MI}Mi" --concurrency "$API_CONCURRENCY" \
             --timeout "$API_REQUEST_TIMEOUT_S" \
             --cpu-boost \
-            --update-env-vars "MAJORANA_SERVICE=api,MAJORANA_ENV=production,MAJORANA_RELEASE=${{ steps.tag.outputs.tag }},LEONA_PERSONAL_ACCESS_TOKENS=true,${{ steps.news.outputs.api_env }}" \
+            --update-env-vars "MAJORANA_SERVICE=api,MAJORANA_ENV=production,MAJORANA_RELEASE=${{ steps.tag.outputs.tag }},LEONA_PERSONAL_ACCESS_TOKENS=true,LEONA_TOUR_SIGNALS=true,${{ steps.news.outputs.api_env }}" \
             --remove-env-vars SENTRY_DSN \
             --update-secrets SENTRY_DSN=SENTRY_DSN:latest \
             --no-traffic --tag verify

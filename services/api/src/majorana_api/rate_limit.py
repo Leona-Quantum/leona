@@ -238,10 +238,16 @@ DEFAULT_MAX_KEYS = 20_000
 #: would take the revision down, which is the one outcome worse than the abuse.
 EXEMPT_PATHS = frozenset({"/health"})
 
-#: The ONLY routes this limiter meters — the surface that serves data to a
-#: caller presenting no credential. See the module docstring for why the path,
-#: rather than the `Authorization` header, is what decides.
-LIMITED_PATH_PREFIXES = ("/v1/catalog", "/v1/qapps/public", "/v1/news/articles")
+#: The ONLY routes this limiter meters — the surface reachable by a caller
+#: presenting no credential, reads and (as of `/v1/tour-signals`, ai-ops 326)
+#: one write. See the module docstring for why the path, rather than the
+#: `Authorization` header, is what decides. `/v1/tour-signals` shares the same
+#: anonymous bucket and ceiling as the reads here rather than getting a bucket
+#: of its own: it is the same population (anyone, no credential) and the same
+#: threat (a script in a loop), and its own body-size cap (1 KiB, enforced in
+#: the route) is what actually bounds what one admitted request can cost —
+#: `DEFAULT_ANON_LIMIT` only needs to bound how OFTEN, which this reuses as-is.
+LIMITED_PATH_PREFIXES = ("/v1/catalog", "/v1/qapps/public", "/v1/news/articles", "/v1/tour-signals")
 
 #: Auth failures (401s the API actually returned — see `AuthFailureThrottle`
 #: for why 403 does not count) allowed from one address before it is refused

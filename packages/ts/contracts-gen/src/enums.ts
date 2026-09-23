@@ -362,6 +362,20 @@ export const TOP_LEVEL_EXECUTION_VALUES = [
   "forbidden",
 ] as const;
 
+/** TourSignalKind — 10 members. */
+export const TOUR_SIGNAL_KIND_VALUES = [
+  "tour_started",
+  "step_done",
+  "step_skipped",
+  "did_it_for_me",
+  "offline_skip",
+  "tour_done",
+  "tour_left",
+  "step_missed",
+  "ask_show_me",
+  "ask_nala",
+] as const;
+
 /** VerificationFailureClass — 6 members. */
 export const VERIFICATION_FAILURE_CLASS_VALUES = [
   "candidate_defect",

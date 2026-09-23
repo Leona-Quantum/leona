@@ -24,6 +24,7 @@ from . import (
     presence,
     scope,
     tokens,
+    tour_signals,
 )
 
 DEFAULT_OUT = Path(__file__).resolve().parents[2] / "openapi.json"
@@ -152,6 +153,9 @@ EXPORTED = [
     presence.PresenceViewer,
     presence.PresenceList,
     presence.PresenceHeartbeatRequest,
+    # ai-ops 326, the guided tours' signal counts (migration 0071, anonymous).
+    # TourSignalKind is an enum and reaches the document as a hoisted $def.
+    tour_signals.RecordTourSignalRequest,
 ]
 
 

@@ -275,6 +275,29 @@ class Settings:
     #: the k6 run — the same shape as `infra/news.json`'s `renderer_deploy`.
     personal_access_tokens_enabled: bool = False
 
+    #: `POST /v1/tour-signals` (ai-ops 326) — same shape as
+    #: `personal_access_tokens_enabled` above, and the same reason.
+    #:
+    #: **Default OFF.** This is a NEW ANONYMOUS ROUTE, so `05-security.md` §1a binds
+    #: it. Everything else the security review asked for is met: input validation and
+    #: a size cap with mutation-tested tests, a rate-limit test proving the shared
+    #: anon ceiling covers this path, and a test proving nothing identifying is stored
+    #: or logged. What is NOT met is the k6 abuse run — attempted twice
+    #: (`docs/gates/k6-tour-signals-2026-09-23.md`), and both runs failed on host
+    #: contention: `uptime` read load averages of 126–257 on a 10-core machine, and
+    #: the run's OWN pre-existing, unmodified `anon_flood`/`sustained_readers`
+    #: thresholds failed identically both times, which is the control that says the
+    #: cause is the shared machine and not this route. This route's OWN new claims
+    #: (its 1 KiB body cap, its bystander's non-interference) passed cleanly both
+    #: times; only the flood's ability to reach the ceiling did not, because the k6
+    #: generator itself could not sustain the target rate under that load.
+    #:
+    #: Off, `POST /v1/tour-signals` answers 404 rather than 422/204 — a feature that
+    #: does not exist here should not advertise that it exists elsewhere, the same
+    #: argument `personal_access_tokens_enabled` makes. Flipping it on is the
+    #: owner's, after a clean k6 run on a quieter host.
+    tour_signals_enabled: bool = False
+
     def __post_init__(self) -> None:
         if self.local_dev_auth and self.environment != "development":
             raise RuntimeError("local dev auth is only valid when MAJORANA_ENV=development")
@@ -373,5 +396,7 @@ class Settings:
             personal_access_tokens_enabled=os.environ.get("LEONA_PERSONAL_ACCESS_TOKENS", "")
             .strip()
             .lower()
+            in {"1", "true", "yes"},
+            tour_signals_enabled=os.environ.get("LEONA_TOUR_SIGNALS", "").strip().lower()
             in {"1", "true", "yes"},
         )
