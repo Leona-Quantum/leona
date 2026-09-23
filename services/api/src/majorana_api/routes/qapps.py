@@ -9,7 +9,7 @@ import uuid
 import datetime as dt
 from typing import Any
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Response
 from majorana_contracts import Qapp, QappExecution, QappRangeSmoke, QappVersion, PublicQapp
 from majorana_contracts.enums import Framework, Visibility
 from pydantic import BaseModel, ConfigDict, Field
@@ -377,17 +377,21 @@ async def list_qapp_examples(scope: CurrentScope) -> list[QappExampleSummary]:
 
 
 @router.post("/qapps/examples/{key}", response_model=QappDetail, status_code=201)
-async def copy_qapp_example(key: str, scope: CurrentScope, session: DbSession) -> QappDetail:
+async def copy_qapp_example(
+    key: str, scope: CurrentScope, session: DbSession, response: Response
+) -> QappDetail:
     """Copy one example into the caller's own account as a new, private Qapp.
 
-    The copy publishes like any other Qapp: only after its owner has run it
-    successfully (`set_visibility`). Nothing about an example is public until
-    then.
+    201 with the new copy, or 200 with the copy the caller already has of this
+    example (`create_from_example` is idempotent per person and example), so a
+    retry never makes a duplicate. The copy publishes like any other Qapp: only
+    after its owner has run it successfully (`set_visibility`). Nothing about an
+    example is public until then.
     """
     example = examples_by_key().get(key)
     if example is None:
         raise HTTPException(status_code=404, detail="example not found")
-    qapp, version = await qapps_repo.create_from_example(
+    qapp, version, created = await qapps_repo.create_from_example(
         scope,
         session,
         example_key=example.key,
@@ -401,6 +405,8 @@ async def copy_qapp_example(key: str, scope: CurrentScope, session: DbSession) -
         input_schema=example.input_schema,
         output_schema=example.output_schema,
     )
+    if not created:
+        response.status_code = 200
     return QappDetail(qapp=_qapp_resource(qapp), version=_version_resource(version))
 
 

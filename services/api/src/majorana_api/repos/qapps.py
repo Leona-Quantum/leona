@@ -604,8 +604,18 @@ async def create_from_example(
     quantum_source: str,
     input_schema: dict[str, Any],
     output_schema: dict[str, Any],
-) -> tuple[Qapp, QappVersion]:
+) -> tuple[Qapp, QappVersion, bool]:
     """Copy one of Leona's example Qapps into the caller's own account.
+
+    Returns `(qapp, version, created)`. The copy is idempotent on its natural
+    key, (workspace, person, example, revision): if the caller already has a
+    live copy of this revision, that copy comes back with `created=False` and
+    nothing is written. So a retried request, a double click or a second tab
+    cannot leave duplicates behind, which is what the API's "idempotency keys on
+    mutations" rule is for, without a client key or a new column. Two requests
+    racing each other are serialised by a transaction-scoped advisory lock on the
+    same key, so the second one finds the first one's copy. A deleted copy does
+    not count: adding the example again after deleting it makes a fresh copy.
 
     The bundle is passed in whole (the route resolves it from
     `majorana_api.qapp_examples`) so this layer stays free of any knowledge of
@@ -627,6 +637,33 @@ async def create_from_example(
             f"qubits_estimate must be between {QAPP_MIN_QUBITS} and {QAPP_MAX_QUBITS}, "
             f"got {qubits_estimate}"
         )
+    natural_key = (
+        f"qapp-example:{scope.workspace_id}:{scope.user_id}:{example_key}:{example_revision}"
+    )
+    await session.execute(select(func.pg_advisory_xact_lock(func.hashtextextended(natural_key, 0))))
+    existing = (
+        await session.execute(
+            select(Qapp)
+            .join(
+                AuditLog,
+                and_(AuditLog.target_kind == "qapp", AuditLog.target_id == Qapp.id),
+            )
+            .where(
+                AuditLog.workspace_id == scope.workspace_id,
+                AuditLog.actor_user_id == scope.user_id,
+                AuditLog.action == "qapp.created",
+                AuditLog.meta["example"].astext == example_key,
+                AuditLog.meta["example_revision"].astext == str(example_revision),
+                Qapp.workspace_id == scope.workspace_id,
+                Qapp.owner_user_id == scope.user_id,
+                Qapp.deleted_at.is_(None),
+            )
+            .order_by(Qapp.created_at.desc())
+            .limit(1)
+        )
+    ).scalar_one_or_none()
+    if existing is not None:
+        return existing, await get_current_version(scope, session, existing), False
     canonical = json.dumps(
         {
             "framework": framework,
@@ -683,7 +720,7 @@ async def create_from_example(
         meta={"example": example_key, "example_revision": example_revision},
     )
     await session.flush()
-    return qapp, version
+    return qapp, version, True
 
 
 async def set_visibility(

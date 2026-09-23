@@ -362,7 +362,8 @@ async def test_an_example_copy_is_private_to_the_caller_until_they_run_it(db):
             output_schema=example.output_schema,
         )
 
-    qapp, version = await copy(owner)
+    qapp, version, created = await copy(owner)
+    assert created is True
     assert qapp.workspace_id == owner.workspace_id
     assert qapp.owner_user_id == owner.user_id
     assert qapp.visibility == "private"
@@ -376,7 +377,14 @@ async def test_an_example_copy_is_private_to_the_caller_until_they_run_it(db):
     with pytest.raises(qapps_repo.QappPublicationBlocked):
         await qapps_repo.set_visibility(owner, db, qapp.id, "public")
 
-    theirs, _ = await copy(other)
+    # Idempotent per person and example: asking again returns the same copy and
+    # writes nothing, so a retried or double-clicked request leaves no duplicate.
+    again, again_version, created_again = await copy(owner)
+    assert created_again is False
+    assert again.id == qapp.id and again_version.id == version.id
+
+    theirs, _, theirs_created = await copy(other)
+    assert theirs_created is True
     assert theirs.id != qapp.id
     assert theirs.slug != qapp.slug
     with pytest.raises(NotFoundError):
@@ -386,3 +394,9 @@ async def test_an_example_copy_is_private_to_the_caller_until_they_run_it(db):
     published = await _publish(db, owner, qapp, version)
     assert published.visibility == "public"
     assert published.published_at is not None
+
+    # A deleted copy does not count: adding the example again makes a fresh one.
+    await qapps_repo.soft_delete_qapp(other, db, theirs.id)
+    fresh, _, fresh_created = await copy(other)
+    assert fresh_created is True
+    assert fresh.id != theirs.id

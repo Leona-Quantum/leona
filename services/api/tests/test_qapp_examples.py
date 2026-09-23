@@ -22,7 +22,7 @@ from types import SimpleNamespace
 from typing import Any
 
 import pytest
-from fastapi import HTTPException
+from fastapi import HTTPException, Response
 from majorana_contracts import Scope
 from majorana_contracts.enums import Framework, Role
 from majorana_sandbox.guard import check_python_code
@@ -342,7 +342,7 @@ async def test_copying_an_unknown_example_is_a_404_and_writes_nothing():
     session = SimpleNamespace(added=[])
     session.add = session.added.append
     with pytest.raises(HTTPException) as refused:
-        await qapp_routes.copy_qapp_example("not-an-example", _scope(), session)
+        await qapp_routes.copy_qapp_example("not-an-example", _scope(), session, Response())
     assert refused.value.status_code == 404
     assert session.added == []
 
@@ -356,7 +356,9 @@ async def test_copying_passes_the_bundle_through_byte_for_byte(monkeypatch):
 
     monkeypatch.setattr(qapp_routes.qapps_repo, "create_from_example", create_from_example)
     with pytest.raises(RuntimeError, match="stop before"):
-        await qapp_routes.copy_qapp_example("grover_search", _scope(), SimpleNamespace())
+        await qapp_routes.copy_qapp_example(
+            "grover_search", _scope(), SimpleNamespace(), Response()
+        )
     example = examples_by_key()["grover_search"]
     assert captured["quantum_source"] == example.quantum_source
     assert captured["ui_document"] == example.ui_document
