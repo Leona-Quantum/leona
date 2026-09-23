@@ -1,0 +1,146 @@
+task_id: ma-qaoa-single-layer
+source:
+  arxiv_id: "2609.02793"
+  title: "Variational preparation of thermofield double states for SYK models via multi-angle QAOA"
+  authors: ["Hamza Muhammad Hamid Ashfaq", "Myungshik Byun", "Kwang-Yong Kim"]
+  submitted: "2026-09-02"
+  venue: null
+  location: "Equation (18)"
+  url: "https://arxiv.org/abs/2609.02793"
+  license: "arXiv.org's default non-exclusive, perpetual distribution license (arxiv.org/licenses/nonexclusive-distrib/1.0/), which every arXiv submission grants by default"
+  retrieved: "2026-09-23"
+quoted_excerpt: >
+  Equation (18): "|psi(theta)> = prod_{l=1}^{p} [prod_{mu=1}^{M_M} e^{-i theta^M_{l,mu}
+  P^M_mu} prod_{nu=1}^{M_C} e^{-i theta^C_{l,nu} P^C_nu}] |I>"; the ma-QAOA ansatz assigns
+  "an independent angle to every time evolution" (contrasted with standard QAOA's one
+  shared angle per layer for the whole mixer/cost operator).
+prompt: |
+  The paper arXiv:2609.02793 ("Variational preparation of thermofield double states for SYK
+  models via multi-angle QAOA") defines the multi-angle QAOA (ma-QAOA) ansatz in Equation
+  (18):
+
+      |psi(theta)> = prod_{l=1}^{p} [ prod_{mu=1}^{M_M} exp(-i theta^M_{l,mu} P^M_mu)
+                                        prod_{nu=1}^{M_C} exp(-i theta^C_{l,nu} P^C_nu) ] |I>
+
+  The defining feature of "multi-angle" QAOA (as opposed to standard QAOA) is that EVERY
+  Pauli-string term P_mu / P_nu gets its OWN independent angle theta_{l,mu} / theta_{l,nu},
+  rather than one shared angle per layer for the whole mixer or the whole cost operator.
+
+  Implement a single layer (p=1) of this ansatz as a Qiskit function
+  `ma_qaoa_layer(cost_terms: list, mixer_angles: list) -> QuantumCircuit`, where:
+  - `cost_terms` is a list of `(pauli_string, angle)` tuples: each is one cost-operator
+    term `exp(-i * angle * P)`, where `pauli_string` is a Qiskit-convention Pauli string
+    (e.g. `"ZZZZ"`) of length `n` (the number of qubits), applied in the order given.
+  - `mixer_angles` is a length-`n` list giving the INDEPENDENT mixer angle `beta_i` for
+    qubit `i`'s single-qubit mixer term `exp(-i * beta_i * X_i)` (this is `P^M_mu = X_i`
+    for each qubit — the standard QAOA mixer generator, but with a per-qubit angle rather
+    than one shared beta).
+  - The initial state `|I>` is the standard QAOA initial state: `|+>^n` (a Hadamard on
+    every qubit).
+
+  Requirements:
+  - Preserve the exact function name and signature.
+  - Build, in order: (1) Hadamard on every qubit, (2) each cost term's
+    `exp(-i * angle * P)` in the order given in `cost_terms`, (3) each qubit's independent
+    mixer rotation `exp(-i * beta_i * X_i)`.
+  - `n = len(mixer_angles)`.
+entry_point: ma_qaoa_layer
+scaffold: |
+  from qiskit import QuantumCircuit
+
+
+  def ma_qaoa_layer(cost_terms: list, mixer_angles: list) -> QuantumCircuit:
+      """Build one layer (p=1) of the multi-angle QAOA ansatz (Eq. 18): |+>^n, then the
+      cost-operator Pauli-string exponentials, then independent per-qubit X mixer
+      rotations."""
+canonical_solution: |2
+      from qiskit.circuit.library import PauliEvolutionGate
+      from qiskit.quantum_info import SparsePauliOp
+
+      n = len(mixer_angles)
+      qc = QuantumCircuit(n)
+      qc.h(range(n))
+      for pauli_string, angle in cost_terms:
+          gate = PauliEvolutionGate(SparsePauliOp([pauli_string]), time=angle)
+          qc.append(gate, range(n))
+      for i, beta in enumerate(mixer_angles):
+          qc.rx(2 * beta, i)
+      return qc
+hidden_test: |
+  def check(candidate):
+      from qiskit import QuantumCircuit
+      from qiskit.circuit.library import PauliEvolutionGate
+      from qiskit.quantum_info import SparsePauliOp, Statevector
+
+      # Two cost terms (not one fully-symmetric ZZZZ term alone) so the qubits are not
+      # all interchangeable — with a single symmetric ZZZZ term, some non-uniform mixer
+      # angle sets are (surprisingly) statevector-equivalent to a uniform mixer with the
+      # same mean, which would silently defeat this test's purpose. Verified numerically
+      # during authoring; see this case's `notes`.
+      cost_terms = [("ZZZZ", 0.3), ("ZZII", 0.2)]
+      mixer_angles = [0.2, 0.5, 0.1, 0.9]  # deliberately non-uniform: distinguishes
+                                            # multi-angle QAOA from standard (shared-beta) QAOA
+      n = len(mixer_angles)
+
+      candidate_qc = candidate(cost_terms, mixer_angles)
+      assert candidate_qc.num_qubits == n, candidate_qc.num_qubits
+
+      reference = QuantumCircuit(n)
+      reference.h(range(n))
+      for pauli_string, angle in cost_terms:
+          reference.append(PauliEvolutionGate(SparsePauliOp([pauli_string]), time=angle), range(n))
+      for i, beta in enumerate(mixer_angles):
+          reference.rx(2 * beta, i)
+
+      sv_candidate = Statevector(candidate_qc)
+      sv_reference = Statevector(reference)
+      assert sv_candidate.equiv(sv_reference), (
+          "candidate does not match Eq. 18's per-term Pauli evolution + independent "
+          "per-qubit mixer angles"
+      )
+
+      # Negative control on the test itself: a UNIFORM mixer (standard QAOA, not
+      # multi-angle) must give a DIFFERENT state for these specific angles — otherwise
+      # this test would not actually be testing the "multi-angle" feature. Fixed at 0.3
+      # rather than derived from mixer_angles' own mean (an earlier version compared
+      # against the mean specifically and that happened to be equivalent for a
+      # single-symmetric-term cost operator — see notes).
+      uniform_angles = [0.3] * n
+      uniform_ref = QuantumCircuit(n)
+      uniform_ref.h(range(n))
+      for pauli_string, angle in cost_terms:
+          uniform_ref.append(PauliEvolutionGate(SparsePauliOp([pauli_string]), time=angle), range(n))
+      for i, beta in enumerate(uniform_angles):
+          uniform_ref.rx(2 * beta, i)
+      assert not sv_reference.equiv(Statevector(uniform_ref)), (
+          "internal test error: chosen angles do not actually distinguish multi-angle "
+          "from uniform-angle QAOA"
+      )
+grading_method: statevector
+qubits: 4
+notes: >
+  Verified 2026-09-23 against qiskit==2.5.2: `PauliEvolutionGate(SparsePauliOp([P]),
+  time=t)` implements exp(-i*t*P) exactly (checked directly against the closed-form 2x2
+  and 4x4 matrix exponentials for single- and two-qubit Pauli strings), and Qiskit's
+  `RX(theta) = exp(-i*theta/2*X)`, so `exp(-i*beta*X) = RX(2*beta)` — used directly rather
+  than re-derived by the grader. The specific mixer angles [0.2, 0.5, 0.1, 0.9] were checked
+  to genuinely distinguish multi-angle from uniform-angle mixing for the ZZZZ cost term (an
+  earlier candidate angle set, [0.2, 0.5, 0.1, 0.4], was accidentally equivalent to its
+  uniform-mixer counterpart under the fully-symmetric ZZZZ cost term and was replaced after
+  this was caught numerically — not asserted from memory). Full paper text (ar5iv HTML) also
+  confirms the smallest fully worked SYK instance is N=8 qubits (Section II.2, Table 1); this
+  task uses N=4 purely for a fast, exact statevector comparison and does not claim to
+  reproduce that specific instance size.
+
+  A genuine subtlety caught during authoring, not asserted from memory: with only ONE
+  fully qubit-symmetric cost term (`[("ZZZZ", 0.3)]`), a non-uniform mixer angle set was
+  found to be exactly `Statevector.equiv()` to a uniform mixer sharing the same MEAN angle
+  (verified: `[0.2, 0.5, 0.1, 0.9]` vs `[0.425, 0.425, 0.425, 0.425]` gave `equiv() == True`)
+  — a real degeneracy from the ZZZZ term's full permutation symmetry, not a grader bug. The
+  shipped test uses two terms (`ZZZZ` and `ZZII`) specifically so the qubits are no longer
+  fully interchangeable, and the mean-matched-uniform counterexample was re-verified to
+  correctly differ (`equiv() == False`) under this two-term cost operator before shipping.
+  Residual symmetry between qubits 0 and 1 specifically remains (both `ZZZZ` and `ZZII`
+  treat them identically), which is harmless for grading (the check compares the candidate
+  against the SAME angles it was given, never against a permutation) but is recorded here
+  so a future case-author extending this task doesn't rediscover it as a mystery.
