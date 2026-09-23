@@ -329,3 +329,82 @@ async def test_forking_a_published_qapp_succeeds_and_records_provenance(db):
     # cannot ride the source's proof of executability.
     with pytest.raises(qapps_repo.QappPublicationBlocked):
         await qapps_repo.set_visibility(forker, db, fork.id, "public")
+
+
+# ------------------------------------------------------------ example copies
+
+
+async def test_an_example_copy_is_private_to_the_caller_until_they_run_it(db):
+    """ai-ops 363: an example lands PRIVATE in the caller's own workspace, with
+    neither provenance column set (the database's both-or-neither fork check
+    has to accept that), and publishing it is refused until THIS copy has run.
+    A second person's copy is a separate Qapp that the first cannot see."""
+    from majorana_api.qapp_examples import EXAMPLES_REVISION, examples_by_key
+    from majorana_api.repos._base import NotFoundError
+
+    example = examples_by_key()["bell_pair"]
+    owner = await _owner_scope(db, "example-owner")
+    other = await _owner_scope(db, "example-other")
+
+    async def copy(scope, key=None, example_key=example.key):
+        return await qapps_repo.create_from_example(
+            scope,
+            db,
+            idempotency_key=key,
+            example_key=example_key,
+            example_revision=EXAMPLES_REVISION,
+            title=example.title,
+            description=example.description,
+            framework=example.framework,
+            qubits_estimate=example.qubits_estimate,
+            ui_document=example.ui_document,
+            quantum_source=example.quantum_source,
+            input_schema=example.input_schema,
+            output_schema=example.output_schema,
+        )
+
+    qapp, version, created = await copy(owner, key="press-1")
+    assert created is True
+    assert qapp.workspace_id == owner.workspace_id
+    assert qapp.owner_user_id == owner.user_id
+    assert qapp.visibility == "private"
+    assert qapp.published_at is None
+    assert qapp.created_by_run_id is None
+    assert qapp.forked_from_qapp_id is None and qapp.forked_from_version_id is None
+    assert version.quantum_source == example.quantum_source
+    assert version.ui_document == example.ui_document
+    assert "bell_pair" in version.generation_prompt
+
+    with pytest.raises(qapps_repo.QappPublicationBlocked):
+        await qapps_repo.set_visibility(owner, db, qapp.id, "public")
+
+    # Idempotent per REQUEST: a retry with the same key returns the same copy and
+    # writes nothing, while a new press (a new key, or none) is a deliberate
+    # second copy. The same key sent for a different example is refused.
+    again, again_version, created_again = await copy(owner, key="press-1")
+    assert created_again is False
+    assert again.id == qapp.id and again_version.id == version.id
+    second, _, second_created = await copy(owner, key="press-2")
+    assert second_created is True and second.id != qapp.id
+    third, _, third_created = await copy(owner)
+    assert third_created is True and third.id not in {qapp.id, second.id}
+    with pytest.raises(qapps_repo.QappExampleKeyReused):
+        await copy(owner, key="press-1", example_key="grover_search")
+
+    theirs, _, theirs_created = await copy(other, key="their-press")
+    assert theirs_created is True
+    assert theirs.id != qapp.id
+    assert theirs.slug != qapp.slug
+    with pytest.raises(NotFoundError):
+        await qapps_repo.get_qapp(other, db, qapp.id)
+
+    # The control: once the owner's copy has run, the same call publishes it.
+    published = await _publish(db, owner, qapp, version)
+    assert published.visibility == "public"
+    assert published.published_at is not None
+
+    # One key, at most one copy, ever: replaying a key whose copy was deleted is
+    # refused instead of quietly making a second copy.
+    await qapps_repo.soft_delete_qapp(other, db, theirs.id)
+    with pytest.raises(qapps_repo.QappExampleCopyDeleted):
+        await copy(other, key="their-press")

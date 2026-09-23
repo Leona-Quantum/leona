@@ -7,9 +7,9 @@ import binascii
 import os
 import uuid
 import datetime as dt
-from typing import Any
+from typing import Annotated, Any
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Header, HTTPException, Response
 from majorana_contracts import Qapp, QappExecution, QappRangeSmoke, QappVersion, PublicQapp
 from majorana_contracts.enums import Framework, Visibility
 from pydantic import BaseModel, ConfigDict, Field
@@ -17,6 +17,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from ..auth.deps import CurrentScope, DbSession
 from ..auth.qapp_deps import PublicQappScope
 from ..jobs import QAPP_EXECUTE_JOB_KIND
+from ..qapp_examples import EXAMPLES, EXAMPLES_REVISION, examples_by_key
 from ..qapp_validation import validate_qapp_inputs
 from ..request_models import RequestModel
 from ..repos import qapps as qapps_repo
@@ -89,6 +90,23 @@ class PublicQappSummary(BaseModel):
     qubits_estimate: int = Field(ge=1, le=27)
     version: int = Field(ge=1)
     published_at: dt.datetime
+
+
+class QappExampleSummary(BaseModel):
+    """One of Leona's example Qapps, as the "start from an example" list shows it.
+
+    Metadata only: the program and the document are copied server-side by
+    `POST /qapps/examples/{key}`, and the copy's own detail route serves them
+    to its owner.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    key: str
+    title: str
+    description: str
+    framework: Framework
+    qubits_estimate: int = Field(ge=1, le=27)
 
 
 class SetQappVisibilityRequest(RequestModel):
@@ -337,6 +355,78 @@ async def public_qapp(slug: str, scope: PublicQappScope, session: DbSession) -> 
         fingerprint=version.fingerprint,
         published_at=qapp.published_at,
     )
+
+
+# Both example routes are registered BEFORE `/qapps/{qapp_id}`. The GET would
+# otherwise reach `qapp_detail` with "examples" as the id and answer 422. The
+# POST has no same-method sibling of its shape, but it sits with its GET.
+@router.get("/qapps/examples", response_model=list[QappExampleSummary])
+async def list_qapp_examples(scope: CurrentScope) -> list[QappExampleSummary]:
+    """Leona's example Qapps that any signed-in person can copy (ai-ops 363)."""
+    del scope  # signed-in only, like the rest of the in-app Qapps surface
+    return [
+        QappExampleSummary(
+            key=example.key,
+            title=example.title,
+            description=example.description,
+            framework=Framework(example.framework),
+            qubits_estimate=example.qubits_estimate,
+        )
+        for example in EXAMPLES
+    ]
+
+
+@router.post("/qapps/examples/{key}", response_model=QappDetail, status_code=201)
+async def copy_qapp_example(
+    key: str,
+    scope: CurrentScope,
+    session: DbSession,
+    response: Response,
+    idempotency_key: Annotated[
+        str | None, Header(alias="Idempotency-Key", min_length=1, max_length=255)
+    ] = None,
+) -> QappDetail:
+    """Copy one example into the caller's own account as a new, private Qapp.
+
+    Takes an `Idempotency-Key`, with `POST /v1/runs`'s contract: a retry carrying
+    the same key gets the first attempt's copy back with 200 instead of a
+    duplicate, and the same key sent for a different example is 409. Without a
+    key, or with a new one, every request makes a new copy (201). The copy
+    publishes like any other Qapp: only after its owner has run it successfully
+    (`set_visibility`). Nothing about an example is public until then.
+    """
+    example = examples_by_key().get(key)
+    if example is None:
+        raise HTTPException(status_code=404, detail="example not found")
+    try:
+        qapp, version, created = await qapps_repo.create_from_example(
+            scope,
+            session,
+            idempotency_key=idempotency_key,
+            example_key=example.key,
+            example_revision=EXAMPLES_REVISION,
+            title=example.title,
+            description=example.description,
+            framework=example.framework,
+            qubits_estimate=example.qubits_estimate,
+            ui_document=example.ui_document,
+            quantum_source=example.quantum_source,
+            input_schema=example.input_schema,
+            output_schema=example.output_schema,
+        )
+    except qapps_repo.QappExampleKeyReused as exc:
+        raise HTTPException(
+            status_code=409,
+            detail={"title": str(exc), "reason": "idempotency_key_reused"},
+        ) from None
+    except qapps_repo.QappExampleCopyDeleted as exc:
+        raise HTTPException(
+            status_code=409,
+            detail={"title": str(exc), "reason": "copy_deleted"},
+        ) from None
+    if not created:
+        response.status_code = 200
+    return QappDetail(qapp=_qapp_resource(qapp), version=_version_resource(version))
 
 
 @router.get("/qapps/{qapp_id}", response_model=QappDetail)

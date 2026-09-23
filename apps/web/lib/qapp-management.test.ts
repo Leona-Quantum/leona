@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { readPublicQappPage } from "./qapp-management.ts";
+import { readPublicQappPage, readQappExamples } from "./qapp-management.ts";
 
 const item = {
   slug: "bell",
@@ -29,4 +29,28 @@ test("anything else is null, never a page with undefined items", () => {
 
 test("a non-string cursor is dropped rather than passed on", () => {
   assert.deepEqual(readPublicQappPage({ items: [item], next_cursor: 7 }), { items: [item], next_cursor: null });
+});
+
+const example = {
+  key: "bell_pair",
+  title: "Bell pair",
+  description: "Entangle two qubits.",
+  framework: "qiskit",
+  qubits_estimate: 2,
+};
+
+test("reads the example list the API returns", () => {
+  assert.deepEqual(readQappExamples([example]), [example]);
+  assert.deepEqual(readQappExamples([]), []);
+});
+
+test("an example list with one malformed row is refused whole, not trimmed", () => {
+  assert.equal(readQappExamples([example, { ...example, key: "" }]), null);
+  assert.equal(readQappExamples([example, { ...example, qubits_estimate: "2" }]), null);
+});
+
+test("an older API's refusal of the examples path reads as no list", () => {
+  for (const payload of [{ detail: [{ msg: "Input should be a valid UUID" }] }, { detail: "Not Found" }, null, "x"]) {
+    assert.equal(readQappExamples(payload), null, JSON.stringify(payload));
+  }
 });
