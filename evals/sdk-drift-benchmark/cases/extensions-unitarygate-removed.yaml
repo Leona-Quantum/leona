@@ -1,0 +1,42 @@
+task_id: extensions-unitarygate-removed
+change:
+  drift_topic: extensions-unitarygate-removed
+  old_api: "from qiskit.extensions import UnitaryGate"
+  new_api: "from qiskit.circuit.library import UnitaryGate"
+  changed_in_version: "1.0.0"
+  release_note_url: "https://quantum.cloud.ibm.com/docs/en/api/qiskit/release-notes/1.0"
+  release_note_quote: "Removed the qiskit.extensions module, which has been pending deprecation since the 0.45 release and has been fully deprecated in the 0.46 release."
+prompt: |
+  Using Qiskit, write a function `unitary_gate_matrix() -> np.ndarray` that wraps the
+  Pauli-X matrix [[0, 1], [1, 0]] in a `UnitaryGate` and returns `gate.to_matrix()`.
+
+  Requirements:
+  - Preserve the exact function name and signature.
+entry_point: unitary_gate_matrix
+scaffold: |
+  import numpy as np
+
+
+  def unitary_gate_matrix() -> np.ndarray:
+      """Build a single-qubit UnitaryGate wrapping the X matrix and return its matrix."""
+canonical_solution: |2
+      from qiskit.circuit.library import UnitaryGate
+
+      gate = UnitaryGate(np.array([[0, 1], [1, 0]]))
+      return gate.to_matrix()
+outdated_solution: |2
+      from qiskit.extensions import UnitaryGate
+
+      gate = UnitaryGate(np.array([[0, 1], [1, 0]]))
+      return gate.to_matrix()
+hidden_test: |
+  def check(candidate):
+      import numpy as np
+      matrix = candidate()
+      assert np.allclose(matrix, np.array([[0, 1], [1, 0]])), matrix
+expected_failure_pattern: "No module named 'qiskit\\.extensions'"
+qiskit_pin_at_authoring: "2.5.2"
+notes: >
+  Verified directly (2026-09-23): `from qiskit.extensions import UnitaryGate` raises
+  `ModuleNotFoundError: No module named 'qiskit.extensions'`; the `qiskit.circuit.library`
+  path constructs the gate correctly.

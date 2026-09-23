@@ -1,0 +1,53 @@
+task_id: c-if-removed
+change:
+  drift_topic: c-if-removed
+  old_api: "qc.x(1).c_if(cr, 1)"
+  new_api: "with qc.if_test((cr, 1)): qc.x(1)"
+  changed_in_version: "deprecated in 1.3, removed in 2.0"
+  release_note_url: "https://quantum.cloud.ibm.com/docs/en/api/qiskit/release-notes/2.0"
+  release_note_quote: "The deprecated methods for Instruction and Gate: c_if and condition_bits have been removed."
+prompt: |
+  Using Qiskit, write a function `conditional_x_circuit_ops() -> list` that builds a
+  2-qubit, 1-bit circuit which: applies H to qubit 0, measures qubit 0 into the classical
+  bit, then applies X to qubit 1 CONDITIONED on that classical bit being 1. Return the
+  list of instruction names in the built circuit, in order (`[instr.operation.name for
+  instr in qc.data]`).
+
+  Requirements:
+  - Preserve the exact function name and signature.
+entry_point: conditional_x_circuit_ops
+scaffold: |
+  from qiskit import ClassicalRegister, QuantumCircuit, QuantumRegister
+
+
+  def conditional_x_circuit_ops() -> list:
+      """Build a circuit with a conditioned X gate, and return its instruction names
+      in order."""
+canonical_solution: |2
+      qr = QuantumRegister(2)
+      cr = ClassicalRegister(1)
+      qc = QuantumCircuit(qr, cr)
+      qc.h(0)
+      qc.measure(0, 0)
+      with qc.if_test((cr, 1)):
+          qc.x(1)
+      return [instr.operation.name for instr in qc.data]
+outdated_solution: |2
+      qr = QuantumRegister(2)
+      cr = ClassicalRegister(1)
+      qc = QuantumCircuit(qr, cr)
+      qc.h(0)
+      qc.measure(0, 0)
+      qc.x(1).c_if(cr, 1)
+      return [instr.operation.name for instr in qc.data]
+hidden_test: |
+  def check(candidate):
+      names = candidate()
+      assert names == ["h", "measure", "if_else"], names
+expected_failure_pattern: "no attribute 'c_if'"
+qiskit_pin_at_authoring: "2.5.2"
+notes: >
+  Verified directly (2026-09-23): `qc.x(1).c_if(cr, 1)` raises
+  `AttributeError: 'InstructionSet' object has no attribute 'c_if'`; the `if_test` builder
+  produces instruction names `['h', 'measure', 'if_else']` (the conditioned X is nested
+  inside the `if_else` control-flow box, not a top-level instruction).

@@ -1,0 +1,51 @@
+task_id: qasm-method-removed
+change:
+  drift_topic: qasm-method-removed
+  old_api: "qc.qasm()"
+  new_api: "from qiskit import qasm2; qasm2.dumps(qc)"
+  changed_in_version: "deprecated in 0.45.0, removed in 1.0.0"
+  release_note_url: "https://quantum.cloud.ibm.com/docs/en/api/qiskit/release-notes/1.0"
+  release_note_quote: "Removed the Instruction.qasm method, which was deprecated in Qiskit 0.45.0. Use qiskit.qasm2.dump()... instead."
+prompt: |
+  Using Qiskit, write a function `circuit_to_qasm() -> str` that builds a 1-qubit circuit
+  (H, then measure into a 1-bit classical register) and returns its OpenQASM 2 text.
+
+  Requirements:
+  - Preserve the exact function name and signature.
+entry_point: circuit_to_qasm
+scaffold: |
+  from qiskit import QuantumCircuit
+
+
+  def circuit_to_qasm() -> str:
+      """Build a 1-qubit circuit (H then measure) and return its OpenQASM 2 text."""
+canonical_solution: |2
+      from qiskit import qasm2
+
+      qc = QuantumCircuit(1, 1)
+      qc.h(0)
+      qc.measure(0, 0)
+      return qasm2.dumps(qc)
+outdated_solution: |2
+      qc = QuantumCircuit(1, 1)
+      qc.h(0)
+      qc.measure(0, 0)
+      return qc.qasm()
+hidden_test: |
+  def check(candidate):
+      from qiskit import qasm2
+
+      text = candidate()
+      assert isinstance(text, str), text
+      parsed = qasm2.loads(text)
+      assert parsed.num_qubits == 1, parsed.num_qubits
+      assert parsed.num_clbits == 1, parsed.num_clbits
+      gate_names = [instr.operation.name for instr in parsed.data]
+      assert "h" in gate_names, gate_names
+      assert "measure" in gate_names, gate_names
+expected_failure_pattern: "no attribute 'qasm'"
+qiskit_pin_at_authoring: "2.5.2"
+notes: >
+  Verified directly (2026-09-23): `QuantumCircuit().qasm()` raises
+  `AttributeError: 'QuantumCircuit' object has no attribute 'qasm'`; `qasm2.dumps` +
+  `qasm2.loads` round-trips correctly under qiskit==2.5.2.
