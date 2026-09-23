@@ -1,0 +1,205 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Hydrogen molecule energy (VQE)</title>
+<style>
+:root{color-scheme:light dark;--bg:#ffffff;--fg:#1b1d21;--muted:#5b6270;--line:#d9dde3;--panel:#f5f6f8;--accent:#2f55d4;--accent-fg:#ffffff;--hf:#b95a0c;--exact:#1b1d21;--vqe:#2f55d4;--grid:#e3e6ea;--error:#b3261e}
+@media (prefers-color-scheme:dark){:root{--bg:#15171b;--fg:#e8eaed;--muted:#a3a9b3;--line:#30343b;--panel:#1d2025;--accent:#8ea8ff;--accent-fg:#0d1020;--hf:#ffb266;--exact:#e8eaed;--vqe:#8ea8ff;--grid:#2a2e35;--error:#ff8a80}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);font:15px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif}
+main{max-width:760px;margin:0 auto;padding:20px 16px 32px}
+h1{font-size:1.35rem;margin:0 0 4px}
+p{margin:0 0 12px}
+.lede{color:var(--muted)}
+.controls{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:12px;margin:16px 0}
+label{display:flex;flex-direction:column;gap:4px;font-weight:600;font-size:.9rem}
+input{font:inherit;padding:7px 9px;border:1px solid var(--line);border-radius:8px;background:var(--bg);color:var(--fg)}
+.hint{font-weight:400;color:var(--muted);font-size:.8rem}
+button{font:inherit;font-weight:600;padding:9px 18px;border:0;border-radius:8px;background:var(--accent);color:var(--accent-fg);cursor:pointer}
+button:disabled{opacity:.6;cursor:progress}
+button:focus-visible,input:focus-visible,summary:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.status{min-height:1.5em;color:var(--muted);margin:10px 0 0}
+.error{color:var(--error);margin:10px 0 0}
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:14px;margin-top:16px}
+.panel h2{font-size:1rem;margin:0 0 10px}
+.chart svg{display:block;width:100%;height:auto}
+.key{display:flex;flex-wrap:wrap;gap:14px;font-size:.82rem;color:var(--muted);margin-top:6px}
+.key span::before{content:"";display:inline-block;width:18px;height:3px;margin-right:6px;vertical-align:middle;background:currentColor}
+.key .hf{color:var(--hf)}
+.key .exact{color:var(--exact)}
+.key .vqe{color:var(--vqe)}
+.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px}
+.stat strong{display:block;font-size:1.3rem;font-variant-numeric:tabular-nums}
+.stat span{color:var(--muted);font-size:.8rem}
+.legend{color:var(--muted);font-size:.8rem}
+table{width:100%;border-collapse:collapse;font-size:.85rem;font-variant-numeric:tabular-nums}
+th,td{text-align:right;padding:4px 6px;border-bottom:1px solid var(--line)}
+th:first-child,td:first-child{text-align:left}
+summary{cursor:pointer;font-weight:600}
+</style>
+</head>
+<body>
+<main>
+<h1>Hydrogen molecule energy (VQE)</h1>
+<p class="lede">How much energy does an H₂ molecule have when its two atoms sit a given distance apart? At each distance a variational quantum eigensolver (VQE) tunes one rotation angle on a two-qubit circuit until the measured energy stops falling. The lowest point of the curve is the bond length. Hartree–Fock, the classical starting guess, is drawn for comparison.</p>
+
+<div class="controls">
+<label for="r_min">Shortest distance (Å)
+<input id="r_min" type="number" min="0.3" max="1.2" step="0.05" value="0.4" inputmode="decimal">
+<span class="hint">0.3 to 1.2 ångström</span>
+</label>
+<label for="r_max">Longest distance (Å)
+<input id="r_max" type="number" min="1.5" max="3.5" step="0.1" value="2.5" inputmode="decimal">
+<span class="hint">1.5 to 3.5 ångström</span>
+</label>
+<label for="points">Distances to try
+<input id="points" type="number" min="3" max="30" step="1" value="15" inputmode="numeric">
+<span class="hint">3 to 30, evenly spaced</span>
+</label>
+</div>
+
+<button id="run" type="button">Run the sweep</button>
+<p id="status" class="status" role="status" aria-live="polite"></p>
+<p id="error" class="error" role="alert" hidden></p>
+
+<section id="results" hidden aria-labelledby="results-title">
+<div class="panel">
+<h2 id="results-title">Energy against bond length</h2>
+<div class="chart" id="chart" role="img"></div>
+<div class="key"><span class="exact">Exact, in this basis</span><span class="vqe">VQE</span><span class="hf">Hartree–Fock</span></div>
+</div>
+<div class="panel">
+<h2>What the sweep found</h2>
+<div class="stats">
+<div class="stat"><strong id="bond"></strong><span id="bond-note">bond length (lowest energy)</span></div>
+<div class="stat"><strong id="bond-energy"></strong><span>energy there, in hartree</span></div>
+<div class="stat"><strong id="correlation"></strong><span>largest energy Hartree–Fock misses (correlation), in millihartree</span></div>
+<div class="stat"><strong id="vqe-error"></strong><span>largest gap between VQE and exact, in millihartree</span></div>
+</div>
+<p class="legend">Minimal STO-3G basis, ideal noiseless simulation. The circuit can reach every state this basis allows for the electron pair, so VQE lands on the exact answer here. The interesting part is how far Hartree–Fock drifts as the bond stretches. On real hardware, noise would open a gap.</p>
+</div>
+<div class="panel">
+<details>
+<summary>Every point</summary>
+<table>
+<thead><tr><th scope="col">Distance (Å)</th><th scope="col">Hartree–Fock</th><th scope="col">VQE</th><th scope="col">Exact</th><th scope="col">Weight on the excited pair</th></tr></thead>
+<tbody id="rows"></tbody>
+</table>
+</details>
+</div>
+</section>
+</main>
+<script>
+(() => {
+  const $ = (id) => document.getElementById(id);
+  const runButton = $("run");
+
+  function showError(message) {
+    $("error").textContent = message;
+    $("error").hidden = false;
+  }
+
+  function chart(curve) {
+    const w = 560, h = 300, left = 64, right = 14, upper = 14, lower = 44;
+    const xs = curve.map((row) => row.r_angstrom);
+    const ys = curve.flatMap((row) => [row.hartree_fock, row.exact]);
+    const x0 = Math.min(...xs), x1 = Math.max(...xs);
+    const pad = (Math.max(...ys) - Math.min(...ys)) * 0.06 || 0.01;
+    const y0 = Math.min(...ys) - pad, y1 = Math.max(...ys) + pad;
+    const px = (x) => left + ((x - x0) / (x1 - x0)) * (w - left - right);
+    const py = (y) => upper + ((y1 - y) / (y1 - y0)) * (h - upper - lower);
+    let svg = '<svg viewBox="0 0 ' + w + " " + h + '" aria-hidden="true">';
+    for (let i = 0; i <= 4; i++) {
+      const y = y0 + ((y1 - y0) * i) / 4;
+      svg += '<line x1="' + left + '" x2="' + (w - right) + '" y1="' + py(y) + '" y2="' + py(y) + '" style="stroke:var(--grid)"/>';
+      svg += '<text x="' + (left - 6) + '" y="' + (py(y) + 4) + '" text-anchor="end" font-size="11" style="fill:var(--muted)">' + y.toFixed(2) + "</text>";
+    }
+    for (let i = 0; i <= 4; i++) {
+      const x = x0 + ((x1 - x0) * i) / 4;
+      svg += '<text x="' + px(x) + '" y="' + (h - lower + 16) + '" text-anchor="middle" font-size="11" style="fill:var(--muted)">' + x.toFixed(2) + "</text>";
+    }
+    svg += '<text x="' + ((left + w - right) / 2) + '" y="' + (h - 6) + '" text-anchor="middle" font-size="12" style="fill:var(--muted)">distance between the atoms (Å)</text>';
+    svg += '<text transform="translate(14 ' + ((upper + h - lower) / 2) + ') rotate(-90)" text-anchor="middle" font-size="12" style="fill:var(--muted)">energy (hartree)</text>';
+    const line = (key, style) => '<polyline style="fill:none;' + style + '" points="' +
+      curve.map((row) => px(row.r_angstrom).toFixed(1) + "," + py(row[key]).toFixed(1)).join(" ") + '"/>';
+    svg += line("hartree_fock", "stroke:var(--hf);stroke-width:2;stroke-dasharray:6 4");
+    svg += line("exact", "stroke:var(--exact);stroke-width:2");
+    for (const row of curve) {
+      svg += '<circle cx="' + px(row.r_angstrom).toFixed(1) + '" cy="' + py(row.vqe).toFixed(1) + '" r="4" style="fill:var(--vqe)"/>';
+    }
+    $("chart").innerHTML = svg + "</svg>";
+  }
+
+  function render(result) {
+    const curve = result.curve;
+    chart(curve);
+    $("chart").setAttribute("aria-label", "Energy curve with " + curve.length + " points from " +
+      curve[0].r_angstrom.toFixed(2) + " to " + curve[curve.length - 1].r_angstrom.toFixed(2) +
+      " ångström. The lowest exact energy is " + result.equilibrium_energy.toFixed(4) + " hartree at " +
+      result.equilibrium_r_angstrom.toFixed(3) + " ångström.");
+    $("bond").textContent = result.equilibrium_r_angstrom.toFixed(3) + " Å";
+    $("bond-note").textContent = result.equilibrium_in_range
+      ? "bond length (lowest energy)"
+      : "lowest energy is at the edge of your range, so the bond length lies outside it. Widen the range.";
+    $("bond-energy").textContent = result.equilibrium_energy.toFixed(4);
+    $("correlation").textContent = result.max_correlation_millihartree.toFixed(1);
+    $("vqe-error").textContent = result.max_vqe_error_millihartree < 0.001
+      ? "< 0.001"
+      : result.max_vqe_error_millihartree.toFixed(3);
+    const rows = $("rows");
+    rows.replaceChildren();
+    for (const row of curve) {
+      const tr = document.createElement("tr");
+      for (const value of [row.r_angstrom.toFixed(3), row.hartree_fock.toFixed(5), row.vqe.toFixed(5), row.exact.toFixed(5), (100 * row.excited_weight).toFixed(1) + "%"]) {
+        const td = document.createElement("td");
+        td.textContent = value;
+        tr.append(td);
+      }
+      rows.append(tr);
+    }
+    $("results").hidden = false;
+  }
+
+  runButton.addEventListener("click", async () => {
+    $("error").hidden = true;
+    const r_min = Number($("r_min").value);
+    const r_max = Number($("r_max").value);
+    const points = Number($("points").value);
+    if (!(r_min >= 0.3 && r_min <= 1.2)) {
+      showError("The shortest distance must be between 0.3 and 1.2 Å.");
+      $("r_min").focus();
+      return;
+    }
+    if (!(r_max >= 1.5 && r_max <= 3.5)) {
+      showError("The longest distance must be between 1.5 and 3.5 Å.");
+      $("r_max").focus();
+      return;
+    }
+    if (!Number.isInteger(points) || points < 3 || points > 30) {
+      showError("Distances to try must be a whole number from 3 to 30.");
+      $("points").focus();
+      return;
+    }
+    runButton.disabled = true;
+    runButton.textContent = "Running…";
+    document.body.setAttribute("aria-busy", "true");
+    $("status").textContent = "Running VQE at " + points + " distances…";
+    try {
+      const result = await window.qapp.run({ r_min, r_max, points });
+      render(result);
+      $("status").textContent = "Done.";
+    } catch (error) {
+      $("status").textContent = "";
+      showError((error && error.message) || "The sweep did not finish. Please try again.");
+    } finally {
+      runButton.disabled = false;
+      runButton.textContent = "Run the sweep";
+      document.body.setAttribute("aria-busy", "false");
+    }
+  });
+})();
+</script>
+</body>
+</html>

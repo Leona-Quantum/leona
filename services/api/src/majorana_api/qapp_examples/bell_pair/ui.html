@@ -1,0 +1,171 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Bell pair</title>
+<style>
+:root{color-scheme:light dark;--bg:#ffffff;--fg:#1b1d21;--muted:#5b6270;--line:#d9dde3;--panel:#f5f6f8;--accent:#2f55d4;--accent-fg:#ffffff;--fill:#2f55d4;--ghost:#b9c6f2;--error:#b3261e}
+@media (prefers-color-scheme:dark){:root{--bg:#15171b;--fg:#e8eaed;--muted:#a3a9b3;--line:#30343b;--panel:#1d2025;--accent:#8ea8ff;--accent-fg:#0d1020;--fill:#8ea8ff;--ghost:#3a4570;--error:#ff8a80}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);font:15px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif}
+main{max-width:760px;margin:0 auto;padding:20px 16px 32px}
+h1{font-size:1.35rem;margin:0 0 4px}
+p{margin:0 0 12px}
+.lede{color:var(--muted)}
+.controls{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:12px;margin:16px 0}
+label{display:flex;flex-direction:column;gap:4px;font-weight:600;font-size:.9rem}
+select,input{font:inherit;padding:7px 9px;border:1px solid var(--line);border-radius:8px;background:var(--bg);color:var(--fg)}
+.hint{font-weight:400;color:var(--muted);font-size:.8rem}
+button{font:inherit;font-weight:600;padding:9px 18px;border:0;border-radius:8px;background:var(--accent);color:var(--accent-fg);cursor:pointer}
+button:disabled{opacity:.6;cursor:progress}
+button:focus-visible,select:focus-visible,input:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.status{min-height:1.5em;color:var(--muted);margin:10px 0 0}
+.error{color:var(--error);margin:10px 0 0}
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:14px;margin-top:16px}
+.panel h2{font-size:1rem;margin:0 0 10px}
+.row{display:grid;grid-template-columns:3.2rem 1fr 7.5rem;align-items:center;gap:10px;margin:6px 0}
+.code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
+.track{position:relative;height:18px;background:var(--bg);border:1px solid var(--line);border-radius:5px;overflow:hidden}
+.fill{height:100%;background:var(--fill)}
+.mark{position:absolute;top:-1px;bottom:-1px;width:2px;background:var(--fg)}
+.value{font-variant-numeric:tabular-nums;font-size:.85rem}
+.big{font-size:1.6rem;font-weight:700;font-variant-numeric:tabular-nums}
+pre{overflow-x:auto;background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:10px;font-size:.78rem;line-height:1.25}
+.legend{color:var(--muted);font-size:.8rem}
+</style>
+</head>
+<body>
+<main>
+<h1>Bell pair</h1>
+<p class="lede">Two qubits are entangled into one of the four Bell states, then both are measured the same way. Each result on its own is random, yet the two qubits always agree, or always disagree, depending on the state and the measurement.</p>
+
+<div class="controls">
+<label for="state">Bell state
+<select id="state">
+<option value="phi_plus">Φ⁺ = (|00⟩ + |11⟩) / √2</option>
+<option value="phi_minus">Φ⁻ = (|00⟩ − |11⟩) / √2</option>
+<option value="psi_plus">Ψ⁺ = (|01⟩ + |10⟩) / √2</option>
+<option value="psi_minus">Ψ⁻ = (|01⟩ − |10⟩) / √2</option>
+</select>
+</label>
+<label for="basis">Measure both qubits in
+<select id="basis">
+<option value="Z">Z basis (0 or 1)</option>
+<option value="X">X basis (+ or −)</option>
+</select>
+</label>
+<label for="shots">Shots
+<input id="shots" type="number" min="1" max="8192" step="1" value="1000" inputmode="numeric">
+<span class="hint">How many times to prepare and measure, 1 to 8192</span>
+</label>
+</div>
+
+<button id="run" type="button">Run</button>
+<p id="status" class="status" role="status" aria-live="polite"></p>
+<p id="error" class="error" role="alert" hidden></p>
+
+<section id="results" hidden aria-labelledby="results-title">
+<div class="panel">
+<h2 id="results-title">Correlation</h2>
+<div class="big" id="correlation"></div>
+<p id="correlation-note" class="legend"></p>
+</div>
+<div class="panel">
+<h2>Outcomes</h2>
+<p class="legend">First digit is qubit A, second is qubit B. The bar shows how many shots gave each outcome; the thin line marks the exact probability.</p>
+<div id="bars"></div>
+</div>
+<div class="panel">
+<h2>Circuit</h2>
+<pre id="circuit" class="code" aria-label="Circuit diagram"></pre>
+</div>
+</section>
+</main>
+<script>
+(() => {
+  const $ = (id) => document.getElementById(id);
+  const runButton = $("run");
+  const OUTCOMES = ["00", "01", "10", "11"];
+
+  function setBusy(busy) {
+    runButton.disabled = busy;
+    runButton.textContent = busy ? "Running…" : "Run";
+    document.body.setAttribute("aria-busy", String(busy));
+    $("status").textContent = busy ? "Preparing and measuring the pair…" : "";
+  }
+
+  function showError(message) {
+    $("error").textContent = message;
+    $("error").hidden = false;
+  }
+
+  function percent(value) {
+    return (100 * value).toFixed(1) + "%";
+  }
+
+  function render(result) {
+    const sign = result.correlation > 0 ? "+" : "";
+    $("correlation").textContent = sign + result.correlation.toFixed(3);
+    const basis = result.basis === "X" ? "X" : "Z";
+    const exact = result.exact_correlation > 0 ? "+1" : result.exact_correlation < 0 ? "−1" : "0";
+    $("correlation-note").textContent =
+      "Average of +1 when A and B agree and −1 when they differ, over " + result.shots +
+      " shots in the " + basis + " basis. The exact value for this state is " + exact + ".";
+    const bars = $("bars");
+    bars.replaceChildren();
+    for (const outcome of OUTCOMES) {
+      const count = result.counts[outcome] || 0;
+      const probability = result.probabilities[outcome] || 0;
+      const row = document.createElement("div");
+      row.className = "row";
+      const label = document.createElement("span");
+      label.className = "code";
+      label.textContent = outcome;
+      const track = document.createElement("div");
+      track.className = "track";
+      track.setAttribute("role", "img");
+      track.setAttribute("aria-label", outcome + ": " + count + " of " + result.shots + " shots, exact probability " + percent(probability));
+      const fill = document.createElement("div");
+      fill.className = "fill";
+      fill.style.width = percent(count / result.shots);
+      const mark = document.createElement("div");
+      mark.className = "mark";
+      mark.style.left = "calc(" + percent(probability) + " - 1px)";
+      track.append(fill, mark);
+      const value = document.createElement("span");
+      value.className = "value";
+      value.textContent = count + " (" + percent(count / result.shots) + ")";
+      row.append(label, track, value);
+      bars.append(row);
+    }
+    $("circuit").textContent = result.circuit;
+    $("results").hidden = false;
+  }
+
+  runButton.addEventListener("click", async () => {
+    $("error").hidden = true;
+    const shots = Number($("shots").value);
+    if (!Number.isInteger(shots) || shots < 1 || shots > 8192) {
+      showError("Shots must be a whole number from 1 to 8192.");
+      $("shots").focus();
+      return;
+    }
+    setBusy(true);
+    try {
+      const result = await window.qapp.run({ state: $("state").value, basis: $("basis").value, shots });
+      render(result);
+      $("status").textContent = "Done. Change the state or the basis and run again.";
+    } catch (error) {
+      $("status").textContent = "";
+      showError((error && error.message) || "The run did not finish. Please try again.");
+    } finally {
+      runButton.disabled = false;
+      runButton.textContent = "Run";
+      document.body.setAttribute("aria-busy", "false");
+    }
+  });
+})();
+</script>
+</body>
+</html>

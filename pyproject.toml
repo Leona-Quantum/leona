@@ -119,6 +119,13 @@ line-length = 100
 # checker. Syntax errors (E9) and everything else still apply here.
 [tool.ruff.lint.per-file-ignores]
 "curricula/**/*.nb.py" = ["E402", "F401", "F821"]
+# The example Qapp programs (ai-ops 363) are sandbox SOURCE, not modules: the
+# Qapp sandbox injects QAPP_INPUTS and QAPP_MAX_QUBITS into their namespace and
+# reads RESULT back, so F821 fires on the two injected names and nothing else.
+# Nothing imports these files. The real check on them is execution:
+# services/api/tests/test_qapp_examples.py runs each one at both ends of its
+# input range and validates what it returns.
+"services/api/src/majorana_api/qapp_examples/*/program.py" = ["F821"]
 
 # The formatter is a separate gate from the linter and needs the same exemption
 # for the same reason. Its only change to these files is PEP 8's "two blank

@@ -590,6 +590,102 @@ async def fork_qapp(
     return qapp, version
 
 
+async def create_from_example(
+    scope: Scope,
+    session: AsyncSession,
+    *,
+    example_key: str,
+    example_revision: int,
+    title: str,
+    description: str,
+    framework: str,
+    qubits_estimate: int,
+    ui_document: str,
+    quantum_source: str,
+    input_schema: dict[str, Any],
+    output_schema: dict[str, Any],
+) -> tuple[Qapp, QappVersion]:
+    """Copy one of Leona's example Qapps into the caller's own account.
+
+    The bundle is passed in whole (the route resolves it from
+    `majorana_api.qapp_examples`) so this layer stays free of any knowledge of
+    where examples come from. The copy is shaped exactly like a fork
+    (`fork_qapp` above): a NEW Qapp, PRIVATE, owned by the caller, with a first
+    version holding the bundle byte for byte. It has neither an originating run
+    nor a fork source, so both provenance columns are NULL, which
+    `ck_qapps_forked_from_pair` (migration 0064) permits because it only
+    requires the fork pair to be both-or-neither. Where it came from is recorded
+    instead in the version's `generation_prompt` and in the audit entry.
+
+    Publication is untouched: `set_visibility` still refuses until this copy's
+    own current version has run successfully, so an example is never public
+    until its new owner has run it (ai-ops 363).
+    """
+    require_write(scope)
+    if not QAPP_MIN_QUBITS <= qubits_estimate <= QAPP_MAX_QUBITS:
+        raise ValueError(
+            f"qubits_estimate must be between {QAPP_MIN_QUBITS} and {QAPP_MAX_QUBITS}, "
+            f"got {qubits_estimate}"
+        )
+    canonical = json.dumps(
+        {
+            "framework": framework,
+            "qubits_estimate": qubits_estimate,
+            "ui_document": ui_document,
+            "quantum_source": quantum_source,
+            "input_schema": input_schema,
+            "output_schema": output_schema,
+        },
+        sort_keys=True,
+        separators=(",", ":"),
+        ensure_ascii=False,
+    )
+    qapp_id = uuid7()
+    qapp = Qapp(
+        id=qapp_id,
+        workspace_id=scope.workspace_id,
+        owner_user_id=scope.user_id,
+        slug=_slug(title, qapp_id),
+        title=title,
+        description=description,
+        visibility=Visibility.PRIVATE.value,
+        created_by_run_id=None,
+        forked_from_qapp_id=None,
+        forked_from_version_id=None,
+    )
+    version = QappVersion(
+        id=uuid7(),
+        qapp_id=qapp_id,
+        seq=1,
+        framework=framework,
+        qubits_estimate=qubits_estimate,
+        ui_document=ui_document,
+        quantum_source=quantum_source,
+        input_schema=input_schema,
+        output_schema=output_schema,
+        fingerprint=hashlib.sha256(canonical.encode()).hexdigest(),
+        source_artifact_version_id=None,
+        generation_prompt=(
+            f"Copied from the Leona example Qapp {example_key!r} (revision {example_revision})."
+        ),
+        range_smoke=None,
+    )
+    session.add(qapp)
+    session.add(version)
+    await session.flush()
+    qapp.current_version_id = version.id
+    await record_audit(
+        scope,
+        session,
+        action="qapp.created",
+        target_kind="qapp",
+        target_id=qapp.id,
+        meta={"example": example_key, "example_revision": example_revision},
+    )
+    await session.flush()
+    return qapp, version
+
+
 async def set_visibility(
     scope: Scope, session: AsyncSession, qapp_id: uuid.UUID, visibility: Visibility
 ) -> Qapp:

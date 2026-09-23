@@ -1,0 +1,222 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>QAOA MaxCut</title>
+<style>
+:root{color-scheme:light dark;--bg:#ffffff;--fg:#1b1d21;--muted:#5b6270;--line:#d9dde3;--panel:#f5f6f8;--accent:#2f55d4;--accent-fg:#ffffff;--side-a:#2f55d4;--side-b:#b95a0c;--node-text:#ffffff;--cut:#1f8a4c;--edge:#9aa1ad;--error:#b3261e}
+@media (prefers-color-scheme:dark){:root{--bg:#15171b;--fg:#e8eaed;--muted:#a3a9b3;--line:#30343b;--panel:#1d2025;--accent:#8ea8ff;--accent-fg:#0d1020;--side-a:#8ea8ff;--side-b:#ffb266;--node-text:#0d1020;--cut:#5fd394;--edge:#5c636e;--error:#ff8a80}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);font:15px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif}
+main{max-width:760px;margin:0 auto;padding:20px 16px 32px}
+h1{font-size:1.35rem;margin:0 0 4px}
+p{margin:0 0 12px}
+.lede{color:var(--muted)}
+.layout{display:grid;grid-template-columns:minmax(0,1fr) 220px;gap:16px;align-items:start;margin:16px 0}
+@media (max-width:560px){.layout{grid-template-columns:1fr}}
+.controls{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px}
+label{display:flex;flex-direction:column;gap:4px;font-weight:600;font-size:.9rem}
+label.check{flex-direction:row;align-items:center;gap:8px}
+select,input{font:inherit;padding:7px 9px;border:1px solid var(--line);border-radius:8px;background:var(--bg);color:var(--fg)}
+input[type=range],input[type=checkbox]{padding:0}
+input:disabled{opacity:.5}
+.hint{font-weight:400;color:var(--muted);font-size:.8rem}
+button{font:inherit;font-weight:600;padding:9px 18px;border:0;border-radius:8px;background:var(--accent);color:var(--accent-fg);cursor:pointer}
+button:disabled{opacity:.6;cursor:progress}
+button:focus-visible,select:focus-visible,input:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.status{min-height:1.5em;color:var(--muted);margin:10px 0 0}
+.error{color:var(--error);margin:10px 0 0}
+.graph{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:8px}
+.graph svg{display:block;width:100%;height:auto}
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:14px;margin-top:16px}
+.panel h2{font-size:1rem;margin:0 0 10px}
+.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:12px}
+.stat strong{display:block;font-size:1.35rem;font-variant-numeric:tabular-nums}
+.stat span{color:var(--muted);font-size:.8rem}
+.legend{color:var(--muted);font-size:.8rem}
+table{width:100%;border-collapse:collapse;font-size:.88rem}
+th,td{text-align:left;padding:5px 6px;border-bottom:1px solid var(--line)}
+td.num{font-variant-numeric:tabular-nums}
+.code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
+</style>
+</head>
+<body>
+<main>
+<h1>QAOA MaxCut</h1>
+<p class="lede">Color every node of a graph one of two colors so that as many edges as possible join different colors. That is the MaxCut problem. The Quantum Approximate Optimization Algorithm (QAOA) tackles it with alternating layers of two operations, each set by an angle: γ rewards cut edges and β mixes the candidate answers.</p>
+
+<div class="layout">
+<div class="controls">
+<label for="graph">Graph
+<select id="graph"></select>
+</label>
+<label for="layers">QAOA layers (p)
+<select id="layers">
+<option value="1">1</option>
+<option value="2">2</option>
+<option value="3">3</option>
+</select>
+</label>
+<label class="check" for="optimize"><input id="optimize" type="checkbox" checked> Find the best angles</label>
+<label for="gamma">γ (cost angle): <output id="gamma-value" for="gamma">0.80</output>
+<input id="gamma" type="range" min="0" max="3.1416" step="0.01" value="0.8" disabled>
+</label>
+<label for="beta">β (mixer angle): <output id="beta-value" for="beta">0.40</output>
+<input id="beta" type="range" min="0" max="1.5708" step="0.01" value="0.4" disabled>
+<span class="hint">Your own γ and β apply to every layer. Untick "Find the best angles" to set them.</span>
+</label>
+</div>
+<div class="graph" id="graph-view" role="img" aria-label="Graph preview"></div>
+</div>
+
+<button id="run" type="button">Run QAOA</button>
+<p id="status" class="status" role="status" aria-live="polite"></p>
+<p id="error" class="error" role="alert" hidden></p>
+
+<section id="results" hidden aria-labelledby="results-title">
+<div class="panel">
+<h2 id="results-title">How good is the answer?</h2>
+<div class="stats">
+<div class="stat"><strong id="expected"></strong><span>expected cut edges, of the best possible <b id="max-cut"></b></span></div>
+<div class="stat"><strong id="ratio"></strong><span>approximation ratio (expected ÷ best)</span></div>
+<div class="stat"><strong id="p-opt"></strong><span>chance one measurement gives a best cut</span></div>
+</div>
+<p class="legend" id="angles"></p>
+</div>
+<div class="panel">
+<h2>Most likely answers</h2>
+<p class="legend">Each digit is the color of one node, node 0 first. The graph above shows the most likely answer: cut edges are drawn in green.</p>
+<table>
+<thead><tr><th scope="col">Answer</th><th scope="col">Cut edges</th><th scope="col">Probability</th></tr></thead>
+<tbody id="outcomes"></tbody>
+</table>
+</div>
+</section>
+</main>
+<script>
+(() => {
+  const GRAPHS = {"triangle": {"label": "Triangle (3 nodes)", "nodes": 3, "edges": [[0, 1], [1, 2], [0, 2]]}, "square": {"label": "Square (4 nodes)", "nodes": 4, "edges": [[0, 1], [1, 2], [2, 3], [0, 3]]}, "square_with_diagonal": {"label": "Square with a diagonal (4 nodes)", "nodes": 4, "edges": [[0, 1], [1, 2], [2, 3], [0, 3], [0, 2]]}, "complete_4": {"label": "Every pair joined (4 nodes)", "nodes": 4, "edges": [[0, 1], [0, 2], [0, 3], [1, 2], [1, 3], [2, 3]]}, "pentagon": {"label": "Pentagon (5 nodes)", "nodes": 5, "edges": [[0, 1], [1, 2], [2, 3], [3, 4], [0, 4]]}, "bowtie": {"label": "Bowtie (5 nodes)", "nodes": 5, "edges": [[0, 1], [1, 2], [0, 2], [2, 3], [3, 4], [2, 4]]}, "hexagon": {"label": "Hexagon (6 nodes)", "nodes": 6, "edges": [[0, 1], [1, 2], [2, 3], [3, 4], [4, 5], [0, 5]]}, "prism": {"label": "Triangular prism (6 nodes)", "nodes": 6, "edges": [[0, 1], [1, 2], [0, 2], [3, 4], [4, 5], [3, 5], [0, 3], [1, 4], [2, 5]]}};
+  const $ = (id) => document.getElementById(id);
+  const runButton = $("run");
+
+  for (const [key, graph] of Object.entries(GRAPHS)) {
+    const option = document.createElement("option");
+    option.value = key;
+    option.textContent = graph.label;
+    $("graph").append(option);
+  }
+  $("graph").value = "square";
+
+  function positions(count) {
+    return Array.from({ length: count }, (_, i) => {
+      const angle = -Math.PI / 2 + (2 * Math.PI * i) / count;
+      return [100 + 70 * Math.cos(angle), 100 + 70 * Math.sin(angle)];
+    });
+  }
+
+  function draw(key, answer) {
+    const graph = GRAPHS[key];
+    const at = positions(graph.nodes);
+    let svg = '<svg viewBox="0 0 200 200" aria-hidden="true">';
+    for (const [u, v] of graph.edges) {
+      const cut = answer && answer[u] !== answer[v];
+      svg += '<line x1="' + at[u][0] + '" y1="' + at[u][1] + '" x2="' + at[v][0] + '" y2="' + at[v][1] +
+        '" style="stroke:var(' + (cut ? "--cut" : "--edge") + ");stroke-width:" + (cut ? 4 : 2) +
+        (answer && !cut ? ";stroke-dasharray:4 4" : "") + '"/>';
+    }
+    at.forEach(([x, y], i) => {
+      const fill = answer ? (answer[i] === "1" ? "var(--side-b)" : "var(--side-a)") : "var(--bg)";
+      svg += '<circle cx="' + x + '" cy="' + y + '" r="14" style="fill:' + fill + ';stroke:var(--fg);stroke-width:1.5"/>';
+      svg += '<text x="' + x + '" y="' + (y + 4.5) + '" text-anchor="middle" font-size="13" font-weight="700" style="fill:' +
+        (answer ? "var(--node-text)" : "var(--fg)") + '">' + i + "</text>";
+    });
+    $("graph-view").innerHTML = svg + "</svg>";
+    const cutCount = answer ? graph.edges.filter(([u, v]) => answer[u] !== answer[v]).length : 0;
+    $("graph-view").setAttribute("aria-label", graph.label + " with " + graph.edges.length + " edges" +
+      (answer ? ". Most likely answer " + answer + " cuts " + cutCount + " of them." : "."));
+  }
+
+  function syncAngles() {
+    const manual = !$("optimize").checked;
+    $("gamma").disabled = !manual;
+    $("beta").disabled = !manual;
+    $("gamma-value").textContent = Number($("gamma").value).toFixed(2);
+    $("beta-value").textContent = Number($("beta").value).toFixed(2);
+  }
+
+  function showError(message) {
+    $("error").textContent = message;
+    $("error").hidden = false;
+  }
+
+  function percent(value) {
+    return (100 * value).toFixed(1) + "%";
+  }
+
+  function render(result) {
+    $("expected").textContent = result.expected_cut.toFixed(3);
+    $("max-cut").textContent = String(result.max_cut);
+    $("ratio").textContent = result.approximation_ratio.toFixed(3);
+    $("p-opt").textContent = percent(result.probability_optimal);
+    const fmt = (values) => values.map((v) => v.toFixed(3)).join(", ");
+    $("angles").textContent = (result.optimized ? "Best angles found" : "Your angles") +
+      ": γ = " + fmt(result.gammas) + "; β = " + fmt(result.betas) + " (one per layer, p = " + result.layers +
+      "). Probabilities are exact, from an ideal noiseless simulation.";
+    const body = $("outcomes");
+    body.replaceChildren();
+    for (const outcome of result.top_outcomes) {
+      const row = document.createElement("tr");
+      const answer = document.createElement("td");
+      answer.className = "code";
+      answer.textContent = outcome.assignment;
+      const cut = document.createElement("td");
+      cut.className = "num";
+      cut.textContent = outcome.cut + (outcome.cut === result.max_cut ? " (best)" : "");
+      const probability = document.createElement("td");
+      probability.className = "num";
+      probability.textContent = percent(outcome.probability);
+      row.append(answer, cut, probability);
+      body.append(row);
+    }
+    draw(result.graph, result.best_assignment);
+    $("results").hidden = false;
+  }
+
+  $("graph").addEventListener("change", () => { $("results").hidden = true; draw($("graph").value, null); });
+  $("optimize").addEventListener("change", syncAngles);
+  $("gamma").addEventListener("input", syncAngles);
+  $("beta").addEventListener("input", syncAngles);
+  syncAngles();
+  draw("square", null);
+
+  runButton.addEventListener("click", async () => {
+    $("error").hidden = true;
+    const inputs = {
+      graph: $("graph").value,
+      layers: Number($("layers").value),
+      optimize: $("optimize").checked,
+      gamma: Number($("gamma").value),
+      beta: Number($("beta").value),
+    };
+    runButton.disabled = true;
+    runButton.textContent = "Running…";
+    document.body.setAttribute("aria-busy", "true");
+    $("status").textContent = inputs.optimize ? "Searching for the best angles…" : "Simulating the circuit…";
+    try {
+      const result = await window.qapp.run(inputs);
+      render(result);
+      $("status").textContent = "Done. Add a layer and see how the ratio changes.";
+    } catch (error) {
+      $("status").textContent = "";
+      showError((error && error.message) || "The run did not finish. Please try again.");
+    } finally {
+      runButton.disabled = false;
+      runButton.textContent = "Run QAOA";
+      document.body.setAttribute("aria-busy", "false");
+    }
+  });
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,221 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Grover search</title>
+<style>
+:root{color-scheme:light dark;--bg:#ffffff;--fg:#1b1d21;--muted:#5b6270;--line:#d9dde3;--panel:#f5f6f8;--accent:#2f55d4;--accent-fg:#ffffff;--fill:#2f55d4;--hit:#1f8a4c;--ghost:#b9c6f2;--error:#b3261e}
+@media (prefers-color-scheme:dark){:root{--bg:#15171b;--fg:#e8eaed;--muted:#a3a9b3;--line:#30343b;--panel:#1d2025;--accent:#8ea8ff;--accent-fg:#0d1020;--fill:#8ea8ff;--hit:#5fd394;--ghost:#3a4570;--error:#ff8a80}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);font:15px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif}
+main{max-width:760px;margin:0 auto;padding:20px 16px 32px}
+h1{font-size:1.35rem;margin:0 0 4px}
+p{margin:0 0 12px}
+.lede{color:var(--muted)}
+.controls{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px;margin:16px 0}
+label{display:flex;flex-direction:column;gap:4px;font-weight:600;font-size:.9rem}
+select,input{font:inherit;padding:7px 9px;border:1px solid var(--line);border-radius:8px;background:var(--bg);color:var(--fg)}
+input[type=range]{padding:0}
+.hint{font-weight:400;color:var(--muted);font-size:.8rem}
+button{font:inherit;font-weight:600;padding:9px 18px;border:0;border-radius:8px;background:var(--accent);color:var(--accent-fg);cursor:pointer}
+button:disabled{opacity:.6;cursor:progress}
+button:focus-visible,select:focus-visible,input:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.status{min-height:1.5em;color:var(--muted);margin:10px 0 0}
+.error{color:var(--error);margin:10px 0 0}
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:14px;margin-top:16px}
+.panel h2{font-size:1rem;margin:0 0 10px}
+.big{font-size:1.6rem;font-weight:700;font-variant-numeric:tabular-nums}
+.legend{color:var(--muted);font-size:.8rem}
+.steps{display:grid;grid-template-columns:repeat(9,1fr);gap:6px;align-items:end;height:130px;margin-top:8px}
+.step{display:flex;flex-direction:column;align-items:center;justify-content:flex-end;height:100%;gap:4px}
+.step .col{width:100%;max-width:36px;background:var(--ghost);border-radius:4px 4px 0 0;min-height:2px}
+.step[data-chosen="true"] .col{background:var(--fill)}
+.step span{font-size:.75rem;color:var(--muted);font-variant-numeric:tabular-nums}
+.step[data-chosen="true"] span{color:var(--fg);font-weight:700}
+.row{display:grid;grid-template-columns:4.5rem 1fr 6.5rem;align-items:center;gap:10px;margin:5px 0}
+.code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
+.track{height:16px;background:var(--bg);border:1px solid var(--line);border-radius:5px;overflow:hidden}
+.fill{height:100%;background:var(--ghost)}
+.row[data-marked="true"] .fill{background:var(--hit)}
+.row[data-marked="true"] .code{font-weight:700}
+.value{font-variant-numeric:tabular-nums;font-size:.85rem}
+</style>
+</head>
+<body>
+<main>
+<h1>Grover search</h1>
+<p class="lede">Pick one item out of 2ⁿ and let Grover's algorithm find it. Each iteration asks the oracle once and pushes probability towards the marked item. Too many iterations push past it, so the chance of success rises and falls.</p>
+
+<div class="controls">
+<label for="qubits">Qubits
+<select id="qubits">
+<option value="2">2 (4 items)</option>
+<option value="3" selected>3 (8 items)</option>
+<option value="4">4 (16 items)</option>
+<option value="5">5 (32 items)</option>
+</select>
+</label>
+<label for="marked">Marked item
+<input id="marked" type="number" min="0" max="7" step="1" value="5" inputmode="numeric">
+<span class="hint" id="marked-hint">A number from 0 to 7</span>
+</label>
+<label for="iterations">Grover iterations: <output id="iterations-value" for="iterations">2</output>
+<input id="iterations" type="range" min="0" max="8" step="1" value="2">
+<span class="hint" id="optimal-hint"></span>
+</label>
+<label for="shots">Shots
+<input id="shots" type="number" min="1" max="8192" step="1" value="1000" inputmode="numeric">
+<span class="hint">Measurements to take, 1 to 8192</span>
+</label>
+</div>
+
+<button id="run" type="button">Search</button>
+<p id="status" class="status" role="status" aria-live="polite"></p>
+<p id="error" class="error" role="alert" hidden></p>
+
+<section id="results" hidden aria-labelledby="results-title">
+<div class="panel">
+<h2 id="results-title">Chance of finding the marked item</h2>
+<div class="big" id="success"></div>
+<p class="legend" id="success-note"></p>
+</div>
+<div class="panel">
+<h2>Probability after each iteration</h2>
+<div class="steps" id="steps" role="img"></div>
+<p class="legend">Exact probability of measuring the marked item after 0 to 8 iterations. Your choice is highlighted.</p>
+</div>
+<div class="panel">
+<h2>What the measurements found</h2>
+<div id="bars"></div>
+<p class="legend" id="bars-note"></p>
+</div>
+</section>
+</main>
+<script>
+(() => {
+  const $ = (id) => document.getElementById(id);
+  const runButton = $("run");
+
+  function optimalIterations(qubits) {
+    return Math.floor(Math.PI / (4 * Math.asin(1 / Math.sqrt(2 ** qubits))));
+  }
+
+  function syncControls() {
+    const qubits = Number($("qubits").value);
+    const highest = 2 ** qubits - 1;
+    $("marked").max = String(highest);
+    $("marked-hint").textContent = "A number from 0 to " + highest;
+    $("iterations-value").textContent = $("iterations").value;
+    $("optimal-hint").textContent = "About " + optimalIterations(qubits) + " is best for " + (highest + 1) + " items";
+  }
+
+  function showError(message) {
+    $("error").textContent = message;
+    $("error").hidden = false;
+  }
+
+  function percent(value) {
+    return (100 * value).toFixed(1) + "%";
+  }
+
+  function render(result) {
+    $("success").textContent = percent(result.success_probability);
+    $("success-note").textContent =
+      "Item " + result.marked + " is the bitstring " + result.marked_bitstring + ". After " + result.iterations +
+      " iteration" + (result.iterations === 1 ? "" : "s") + " the exact chance is " + percent(result.success_probability) +
+      "; " + percent(result.measured_success) + " of your " + result.shots + " shots found it. A random guess finds it " +
+      percent(1 / 2 ** result.qubits) + " of the time. The best number of iterations here is " + result.optimal_iterations + ".";
+
+    const steps = $("steps");
+    steps.replaceChildren();
+    steps.setAttribute("aria-label", "Probability after 0 to 8 iterations: " +
+      result.probability_by_iteration.map((p, k) => k + ": " + percent(p)).join(", "));
+    result.probability_by_iteration.forEach((probability, k) => {
+      const step = document.createElement("div");
+      step.className = "step";
+      step.dataset.chosen = String(k === result.iterations);
+      const col = document.createElement("div");
+      col.className = "col";
+      col.style.height = Math.max(probability * 100, 1.5) + "%";
+      const label = document.createElement("span");
+      label.textContent = String(k);
+      step.append(col, label);
+      steps.append(step);
+    });
+
+    const entries = Object.entries(result.counts).sort((a, b) => b[1] - a[1]);
+    let shown = entries.slice(0, 8);
+    if (!shown.some(([key]) => key === result.marked_bitstring)) {
+      shown = shown.slice(0, 7).concat([[result.marked_bitstring, result.counts[result.marked_bitstring] || 0]]);
+    }
+    const bars = $("bars");
+    bars.replaceChildren();
+    for (const [key, count] of shown) {
+      const row = document.createElement("div");
+      row.className = "row";
+      row.dataset.marked = String(key === result.marked_bitstring);
+      const label = document.createElement("span");
+      label.className = "code";
+      label.textContent = key;
+      const track = document.createElement("div");
+      track.className = "track";
+      track.setAttribute("role", "img");
+      track.setAttribute("aria-label", key + (key === result.marked_bitstring ? " (marked)" : "") + ": " + count + " shots");
+      const fill = document.createElement("div");
+      fill.className = "fill";
+      fill.style.width = percent(count / result.shots);
+      track.append(fill);
+      const value = document.createElement("span");
+      value.className = "value";
+      value.textContent = count + " (" + percent(count / result.shots) + ")";
+      row.append(label, track, value);
+      bars.append(row);
+    }
+    $("bars-note").textContent = entries.length > shown.length
+      ? "The " + shown.length + " most common outcomes of " + entries.length + " seen, with the marked item in green."
+      : "Every outcome seen, with the marked item in green.";
+    $("results").hidden = false;
+  }
+
+  $("qubits").addEventListener("change", syncControls);
+  $("iterations").addEventListener("input", syncControls);
+  syncControls();
+
+  runButton.addEventListener("click", async () => {
+    $("error").hidden = true;
+    const qubits = Number($("qubits").value);
+    const marked = Number($("marked").value);
+    const iterations = Number($("iterations").value);
+    const shots = Number($("shots").value);
+    if (!Number.isInteger(marked) || marked < 0 || marked > 2 ** qubits - 1) {
+      showError("With " + qubits + " qubits the marked item must be a whole number from 0 to " + (2 ** qubits - 1) + ".");
+      $("marked").focus();
+      return;
+    }
+    if (!Number.isInteger(shots) || shots < 1 || shots > 8192) {
+      showError("Shots must be a whole number from 1 to 8192.");
+      $("shots").focus();
+      return;
+    }
+    runButton.disabled = true;
+    runButton.textContent = "Searching…";
+    document.body.setAttribute("aria-busy", "true");
+    $("status").textContent = "Running the search on the simulator…";
+    try {
+      const result = await window.qapp.run({ qubits, marked, iterations, shots });
+      render(result);
+      $("status").textContent = "Done. Try one iteration more or fewer than the best number.";
+    } catch (error) {
+      $("status").textContent = "";
+      showError((error && error.message) || "The search did not finish. Please try again.");
+    } finally {
+      runButton.disabled = false;
+      runButton.textContent = "Search";
+      document.body.setAttribute("aria-busy", "false");
+    }
+  });
+})();
+</script>
+</body>
+</html>
