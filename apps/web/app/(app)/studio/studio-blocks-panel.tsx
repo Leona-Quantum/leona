@@ -28,6 +28,7 @@ export function BlocksPanel({
   onGrowQubits,
   onClose,
   copy,
+  initialOpenKey = null,
 }: {
   qubitCount: number;
   onInsert: (template: BlockTemplate, params: BlockParams, startQubit: number, requiredQubits: number) => void;
@@ -35,8 +36,10 @@ export function BlocksPanel({
   onGrowQubits: (by: number) => void;
   onClose: () => void;
   copy: StudioCopy;
+  /** A template key to open already-expanded, e.g. arriving from the Studio plan panel's "Insert" — read once, on mount, like any other initial state. */
+  initialOpenKey?: string | null;
 }) {
-  const [openKey, setOpenKey] = useState<string | null>(null);
+  const [openKey, setOpenKey] = useState<string | null>(initialOpenKey);
   const [formValues, setFormValues] = useState<Record<string, BlockParamFormValues>>({});
   const [startQubit, setStartQubit] = useState(0);
 
