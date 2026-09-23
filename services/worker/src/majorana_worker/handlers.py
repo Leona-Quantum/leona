@@ -410,6 +410,14 @@ async def handle_run_execute(
         source_intent=payload.get("source_intent") or "verify",
         source_framework=Framework(run.framework),
         parent_artifact_id=parent_artifact_id,
+        # Only a dict is trusted as the Atlas workflow context; anything else
+        # (absent key, or a malformed value on a payload nobody should be able
+        # to produce) becomes None rather than reaching the planner unchecked.
+        workflow_context=(
+            payload.get("workflow_context")
+            if isinstance(payload.get("workflow_context"), dict)
+            else None
+        ),
     )
     store = RepoRunStateStore(scope, session, run_id)
     timeout_s = float(run.timeout_s or DEFAULT_RUN_TIMEOUT_S)
@@ -1909,6 +1917,7 @@ async def _handle_agent_execution(
         allow_ai_assumptions=ctx.allow_ai_assumptions,
         rollback=session.rollback,
         research_sink=_research_sink_for(ctx),
+        workflow_context=ctx.workflow_context,
     )
     outcome = await SimpleCircuitPipeline(
         ports=ports,

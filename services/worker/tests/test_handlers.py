@@ -1467,6 +1467,71 @@ async def test_source_intent_deserializes_missing_and_explicit_values(
     assert delivered["ctx"].source_intent == expected
 
 
+@pytest.mark.parametrize(
+    ("payload_extra", "expected"),
+    [
+        # A job payload persisted BEFORE `workflow_context` existed carries no
+        # such key at all. It must deserialize to `None`, not a KeyError.
+        ({}, None),
+        (
+            {"workflow_context": {"version": 1, "problem": "vqe-h2"}},
+            {"version": 1, "problem": "vqe-h2"},
+        ),
+        # A malformed value on a payload nobody should be able to produce is
+        # never trusted through to the planner unchecked.
+        ({"workflow_context": "not-a-dict"}, None),
+        ({"workflow_context": None}, None),
+        ({"workflow_context": ["not", "a", "dict"]}, None),
+    ],
+)
+async def test_workflow_context_deserializes_missing_and_malformed_values(
+    monkeypatch, payload_extra, expected
+):
+    run_id = uuid.uuid4()
+    run = SimpleNamespace(
+        artifact_version_id=None,
+        task_prompt="Add a Grover oracle for 101",
+        mode=RunMode.EXECUTE.value,
+        framework=Framework.QISKIT.value,
+        seed=None,
+        shots=None,
+        timeout_s=30,
+        conversation_id=None,
+    )
+    delivered = {}
+
+    async def get_run(scope, session, requested_id):
+        return run
+
+    async def resolve(ctx, store, **_kwargs):
+        return ctx
+
+    async def title(ctx, store, **_kwargs):
+        return ctx
+
+    async def execution(ctx, store, **_kwargs):
+        delivered["ctx"] = ctx
+        return RunStatus.SUCCEEDED
+
+    monkeypatch.setattr(handlers.runs_repo, "get_run", get_run)
+    monkeypatch.setattr(handlers, "_resolve_mode", resolve)
+    monkeypatch.setattr(handlers, "_title_conversation", title)
+    monkeypatch.setattr(handlers, "_handle_agent_execution", execution)
+
+    await handlers.handle_run_execute(
+        object(),
+        {
+            "run_id": str(run_id),
+            "user_id": str(uuid.uuid4()),
+            "workspace_id": str(uuid.uuid4()),
+            "source_code": "x = 1",
+            **payload_extra,
+        },
+    )
+
+    assert delivered["ctx"].workflow_context == expected
+
+
 async def test_conversation_mode_passes_prior_execute_output_to_the_model():
     """The loading moved to `handle_run_execute`; what this boundary owes is
     ordering — history first, the current turn last, roles intact."""
