@@ -459,7 +459,12 @@
 /* Workflow planner (/repository/plan). A sentence in, a pipeline of Atlas blocks out.
    Stages nest the way the layer graph nests: a method's steps are an indented list under it,
    so a block opens one level at a time, as Studio's blocks do. */
-.mj-plan { display: grid; gap: var(--sp-5); margin-top: var(--sp-3); }
+/* `minmax(0, 1fr)` and `min-width: 0`, because a grid item defaults to `min-width: auto`: the
+   cost table's no-wrap cells set the column's minimum and the whole page grew past a phone's
+   width (planner children reached 450px inside a 343px column on a 375px viewport, measured
+   2026-09-22). The table scrolls inside its own wrapper instead. */
+.mj-plan { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--sp-5); margin-top: var(--sp-3); }
+.mj-plan > *, .mj-plan-section > *, .mj-plan-stage-card > * { min-width: 0; }
 .mj-plan-input { display: grid; gap: var(--sp-2); }
 .mj-plan-input label { font-size: var(--fs-13); color: var(--text-1); }
 .mj-plan-input textarea { width: 100%; min-height: calc(var(--sp-16) + var(--sp-4)); padding: var(--sp-3); font: inherit; font-size: var(--fs-16); color: var(--text-0); background: var(--bg-1); border: var(--border-hairline) solid var(--border-0); border-radius: var(--radius-control); resize: vertical; }
@@ -478,7 +483,7 @@
 .mj-plan-param-assumed .mj-plan-origin { color: var(--warn); }
 .mj-plan-param-unset .mj-plan-origin { color: var(--text-2); }
 .mj-plan-hint { font-size: var(--fs-12); color: var(--text-2); }
-.mj-plan-section { display: grid; gap: var(--sp-3); }
+.mj-plan-section { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--sp-3); }
 .mj-plan-subheading { font-size: var(--fs-14); margin: var(--sp-2) 0 0; }
 .mj-plan-stages { display: grid; gap: var(--sp-3); list-style: none; margin: 0; padding: 0; counter-reset: plan-stage; }
 .mj-plan-substages { margin-top: var(--sp-3); padding-left: var(--sp-5); border-left: var(--border-hairline) solid var(--border-0); }
@@ -528,3 +533,10 @@
   .mj-plan-substages { padding-left: var(--sp-3); }
   .mj-plan-stage-card { padding: var(--sp-3); }
 }
+
+/* The page heading of the two sentence-and-limits pages. Without this, both rendered their h1
+   at the body's 13px (measured on a production build, 2026-09-22), because nothing gives an
+   h1 a size outside the layer pages' own header rule, which this mirrors. */
+.mj-plan > h1,
+.mj-finder > h1 { margin: 0; font-family: var(--font-display); font-weight: 400; font-size: var(--fs-28); line-height: 1.2; }
+.mj-plan > h2, .mj-plan-section > h2 { margin: 0; font-size: var(--fs-20); font-weight: 500; line-height: 1.3; }

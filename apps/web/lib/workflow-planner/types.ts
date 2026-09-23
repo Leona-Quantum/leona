@@ -93,13 +93,15 @@ export type CostKind =
 export interface CostLine {
   id: string;
   label: Bilingual;
-  /** Null when a needed parameter is missing, or when the kind is "scaling". */
+  /** Null when a needed parameter is missing. On a "scaling" line it is a magnitude, never a count. */
   value: number | null;
   unit: Bilingual;
   /** The formula as plain text, e.g. "3n + 0.002·n·lg n". */
   formula: string;
   kind: CostKind;
   source: SourceKey | null;
+  /** Printed before the value when the source states a bound rather than a number ("less than a million"). */
+  qualifier?: "<" | "≤";
   /** How the number follows from the source, when it is arithmetic on the source rather than the source's own number. */
   note?: Bilingual;
   /** The parameters this line needs and does not have. */

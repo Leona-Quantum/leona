@@ -67,8 +67,8 @@ const COPY = {
     workflowIntro:
       "Each block is an Atlas method filling one step. Swap any block for another that fills the same step; the costs follow the blocks you pick.",
     compileHeading: "Running it on hardware",
-    compileNisq: "Starts on today's hardware because this method is built to run without error correction.",
-    compileFt: "Starts on error-corrected hardware because the costs above are counted in Toffoli and T gates.",
+    compileNisq: "The planner starts on today's hardware, because this method is built to run without error correction.",
+    compileFt: "The planner starts on error-corrected hardware, because the costs above are counted in Toffoli and T gates.",
     choice: {
       reader: "Your choice",
       published: "As the method's own source does it",
@@ -82,7 +82,7 @@ const COPY = {
     openInAtlas: "Open in the Atlas",
     repeats: "Runs",
     stopCycle: "This step already appears above, so it is not expanded again.",
-    stopDepth: "More steps inside; open this block in the Atlas to follow them.",
+    stopDepth: "This block has more steps inside. Open it in the Atlas to follow them.",
     costHeading: "What it costs",
     costColumns: ["Quantity", "Value", "Formula", "Kind", "Source"],
     needs: (names: string) => `needs ${names}`,
@@ -90,7 +90,7 @@ const COPY = {
     publishedHeading: "Published whole-machine estimates",
     logicalHeading: "Logical-level cost",
     logicalIntro:
-      "What the algorithm needs before a machine is chosen. Physical qubits and runtime also depend on the hardware; where a paper states them for this size, they are listed above.",
+      "This is what the algorithm needs before a machine is chosen. Physical qubits and runtime also depend on the hardware; where a paper states them for this size, they are listed above.",
     logicalQubits: "Logical qubits",
     toffolis: "Toffoli gates",
     tGates: "T gates",
@@ -216,7 +216,7 @@ function SourceCite({ source, papers, locale }: { source: SourceKey | null; pape
   if (!paper) return <span>{entry.paperId}</span>;
   return (
     <span className="mj-plan-cite">
-      <a href={paper.url} rel="noreferrer" target="_blank" title={`${paper.title} — “${entry.quote}”`}>
+      <a href={paper.url} rel="noreferrer" target="_blank" title={`${paper.title}: “${entry.quote}”`}>
         {shortAuthors(paper.authors, locale)} {paper.year}
       </a>
       , {locale === "ja" ? entry.locatorJa : entry.locator}
@@ -228,9 +228,11 @@ function formatValue(line: CostLine): string {
   if (line.value === null) return "—";
   if (line.unit.en === "probability") {
     const percent = line.value * 100;
-    return `${percent > 99.99 && percent < 100 ? percent.toFixed(4) : percent.toFixed(2)}%`;
+    // Two decimals round 99.9999…% up to "100.00%", which reads as certainty the formula does not give.
+    if (percent < 100 && percent >= 99.995) return "> 99.99%";
+    return `${percent.toFixed(2)}%`;
   }
-  return formatPlain(line.value);
+  return `${line.qualifier ? `${line.qualifier} ` : ""}${formatPlain(line.value)}`;
 }
 
 function CostRows({
@@ -440,9 +442,20 @@ export function AtlasWorkflowPlanner({
   const [typed, setTyped] = useState<Partial<Record<ParamKey, string>>>({});
   const [choices, setChoices] = useState<Record<string, string>>({});
 
+  // Read on load AND on `hashchange`: following a `#q=` link while already on
+  // this page changes only the fragment, so the browser keeps the document and
+  // a load-only read would leave the old sentence on screen.
   useEffect(() => {
-    const fromHash = readHashQuery();
-    if (fromHash) setText(fromHash);
+    const apply = () => {
+      const fromHash = readHashQuery();
+      if (fromHash) {
+        setPicked(null);
+        setText(fromHash);
+      }
+    };
+    apply();
+    window.addEventListener("hashchange", apply);
+    return () => window.removeEventListener("hashchange", apply);
   }, []);
 
   // Same client-side session read as the method finder, for the same reason:

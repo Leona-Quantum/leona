@@ -175,7 +175,7 @@ export const PROBLEMS: readonly ProblemClass[] = [
     params: [
       {
         key: "lambda",
-        label: { en: "λ, the sum of |coefficients| (hartree)", ja: "λ（係数の絶対値の和、ハートリー）" },
+        label: { en: "λ, the sum of |coefficients|", ja: "λ（係数の絶対値の和）" },
         hint: {
           en: "Write the Hamiltonian as a sum of Pauli strings; λ adds up the absolute values of their coefficients. Both costs below grow with it.",
           ja: "ハミルトニアンをパウリ列の和で書いたときの、係数の絶対値の合計です。下のどちらのコストもこれに比例して増えます。",
@@ -187,7 +187,7 @@ export const PROBLEMS: readonly ProblemClass[] = [
       },
       {
         key: "deltaE",
-        label: { en: "Target precision ΔE (hartree)", ja: "目標精度 ΔE（ハートリー）" },
+        label: { en: "Target precision ΔE", ja: "目標精度 ΔE" },
         hint: EPSILON_HINT,
         unit: { en: "Ha", ja: "Ha" },
         min: 1e-12,

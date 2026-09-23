@@ -88,8 +88,8 @@ function searchCosts(params: ParamValues, root: Stage | null): CostReport {
   const report: CostReport = { lines: [], classical: [], published: [], logical: { ...EMPTY_LOGICAL }, suggestions: [QUADRATIC_CAUTION], notes: [] };
   if (root?.method?.id !== "grover-fixed-iteration-search") {
     report.notes.push({
-      en: "The numbers below are for fixed-iteration Grover search. The block you chose has its cost stated on its card.",
-      ja: "下の数値は反復回数固定の Grover 探索のものです。選んだブロックのコストはそのカードに記載されています。",
+      en: "The numbers here are for fixed-iteration Grover search. The block you chose has its cost stated on its card.",
+      ja: "ここの数値は反復回数固定の Grover 探索のものです。選んだブロックのコストはそのカードに記載されています。",
     });
     return report;
   }
@@ -175,7 +175,7 @@ function searchCosts(params: ParamValues, root: Stage | null): CostReport {
       id: "unknown-count",
       title: { en: "If you do not know how many items the check accepts", ja: "受理される項目数がわからない場合" },
       body: {
-        en: `Fixing the iteration count needs M. Boyer, Brassard, Høyer and Tapp's randomised schedule finds an item without it, in at most (9/2)·m₀ ≈ ${formatPlain(expected)} expected iterations here (m₀ = 1/sin 2θ), against ${formatPlain(iterations ?? 0)} when M is known.`,
+        en: `A fixed iteration count needs M. Boyer, Brassard, Høyer and Tapp's randomised schedule finds an item without knowing it. Here its expected number of iterations is at most (9/2)·m₀ ≈ ${formatPlain(expected)} (m₀ = 1/sin 2θ), against ${formatPlain(iterations ?? 0)} when M is known.`,
         ja: `反復回数を固定するには M が必要です。Boyer、Brassard、Høyer、Tapp のランダム化スケジュールなら M なしで見つけられ、ここでは期待反復回数は (9/2)·m₀ ≈ ${formatPlain(expected)} 回以下です（m₀ = 1/sin 2θ）。M がわかっている場合は ${formatPlain(iterations ?? 0)} 回です。`,
       },
       source: "bbht-unknown-count",
@@ -200,7 +200,7 @@ export const GIDNEY_2025_TABLE_5: Readonly<Record<number, readonly [number, numb
 function factoringCosts(params: ParamValues, root: Stage | null): CostReport {
   const report: CostReport = { lines: [], classical: [], published: [], logical: { ...EMPTY_LOGICAL }, suggestions: [], notes: [] };
   if (root?.method?.id !== "cyclic-period-finding") {
-    report.notes.push({ en: "The numbers below are for Shor-style period finding. The block you chose has its cost stated on its card.", ja: "下の数値は Shor 型の周期発見のものです。選んだブロックのコストはそのカードに記載されています。" });
+    report.notes.push({ en: "The numbers here are for Shor-style period finding. The block you chose has its cost stated on its card.", ja: "ここの数値は Shor 型の周期発見のものです。選んだブロックのコストはそのカードに記載されています。" });
     return report;
   }
   const n = value(params, "bits");
@@ -248,7 +248,7 @@ function factoringCosts(params: ParamValues, root: Stage | null): CostReport {
         id: "trade-toffolis-for-qubits",
         title: { en: "Trade Toffoli gates for qubits", ja: "Toffoli ゲートと量子ビットを交換する" },
         body: {
-          en: `At ${n} bits, Gidney's 2025 construction uses ${formatPlain(qubits.value / row[1])}× fewer logical qubits than the 2019 one and ${formatPlain(row[0] / toffolis.value)}× more Toffoli gates. Fewer qubits make a smaller machine; more Toffolis make a longer run.`,
+          en: `At ${n} bits, Gidney's 2025 construction uses ${formatPlain(qubits.value / row[1])}× fewer logical qubits than the 2019 one and ${formatPlain(row[0] / toffolis.value)}× more Toffoli gates. The machine can be smaller, but the run is longer.`,
           ja: `${n} ビットでは、Gidney の 2025 年の構成は 2019 年の構成より論理量子ビットが ${formatPlain(qubits.value / row[1])} 分の 1 で、Toffoli ゲートは ${formatPlain(row[0] / toffolis.value)} 倍です。量子ビットが少ないほど機械は小さく、Toffoli が多いほど実行は長くなります。`,
         },
         source: "gidney2025-table5",
@@ -275,6 +275,7 @@ function factoringCosts(params: ParamValues, root: Stage | null): CostReport {
         id: "g2025-machine",
         label: { en: "Noisy qubits, under a week (Gidney 2025)", ja: "ノイズのある量子ビット、1 週間未満（Gidney 2025）" },
         value: 1e6,
+        qualifier: "<",
         unit: U.physicalQubits,
         formula: "less than a million; same assumptions as 2019",
         kind: "published",
@@ -288,7 +289,7 @@ function factoringCosts(params: ParamValues, root: Stage | null): CostReport {
 function ecdlpCosts(params: ParamValues, root: Stage | null): CostReport {
   const report: CostReport = { lines: [], classical: [], published: [], logical: { ...EMPTY_LOGICAL }, suggestions: [], notes: [] };
   if (root?.method?.id !== "cyclic-period-finding") {
-    report.notes.push({ en: "The numbers below are for Shor-style period finding. The block you chose has its cost stated on its card.", ja: "下の数値は Shor 型の周期発見のものです。選んだブロックのコストはそのカードに記載されています。" });
+    report.notes.push({ en: "The numbers here are for Shor-style period finding. The block you chose has its cost stated on its card.", ja: "ここの数値は Shor 型の周期発見のものです。選んだブロックのコストはそのカードに記載されています。" });
     return report;
   }
   const n = value(params, "bits");
@@ -334,8 +335,8 @@ function groundStateCosts(params: ParamValues, root: Stage | null): CostReport {
   if (rootId === "phase-estimation-ground-state") {
     if (chosenMethodFor(root, "hamiltonian-simulation") !== "qubitization-simulation") {
       report.notes.push({
-        en: "The query and T counts below are for phase estimation of the qubitized walk. Put the simulation block back on qubitization to see them.",
-        ja: "下の問い合わせ数と T 数は、量子ビット化したウォークの位相推定のものです。見るには、シミュレーションのブロックを量子ビット化に戻してください。",
+        en: "The query and T counts here are for phase estimation of the qubitized walk. Put the simulation block back on qubitization to see them.",
+        ja: "ここの問い合わせ数と T 数は、量子ビット化したウォークの位相推定のものです。見るには、シミュレーションのブロックを量子ビット化に戻してください。",
       });
       return report;
     }
@@ -534,7 +535,7 @@ function linearSystemCosts(params: ParamValues, root: Stage | null): CostReport 
     }
     report.logical = { ...EMPTY_LOGICAL, queries: steps, toffolis };
   } else {
-    report.notes.push({ en: "The numbers below are for the discrete adiabatic solver. The block you chose has its cost stated on its card.", ja: "下の数値は離散断熱法のものです。選んだブロックのコストはカードに記載されています。" });
+    report.notes.push({ en: "The numbers here are for the discrete adiabatic solver. The block you chose has its cost stated on its card.", ja: "ここの数値は離散断熱法のものです。選んだブロックのコストはカードに記載されています。" });
   }
   if (kappa !== null) {
     report.suggestions.push({
@@ -565,7 +566,7 @@ function linearSystemCosts(params: ParamValues, root: Stage | null): CostReport 
 function maxcutCosts(params: ParamValues, root: Stage | null): CostReport {
   const report: CostReport = { lines: [], classical: [], published: [], logical: { ...EMPTY_LOGICAL }, suggestions: [], notes: [] };
   if (root?.method?.id !== "qaoa-cost-mixer-alternation") {
-    report.notes.push({ en: "The gate counts below are for QAOA. The block you chose has its cost stated on its card.", ja: "下のゲート数は QAOA のものです。選んだブロックのコストはカードに記載されています。" });
+    report.notes.push({ en: "The gate counts here are for QAOA. The block you chose has its cost stated on its card.", ja: "ここのゲート数は QAOA のものです。選んだブロックのコストはカードに記載されています。" });
     return report;
   }
   const n = value(params, "nodes");
@@ -695,7 +696,7 @@ function amplitudeEstimationCosts(params: ParamValues, root: Stage | null): Cost
 function phaseEstimationCosts(params: ParamValues, root: Stage | null): CostReport {
   const report: CostReport = { lines: [], classical: [], published: [], logical: { ...EMPTY_LOGICAL }, suggestions: [], notes: [] };
   if (root?.method?.id !== "register-phase-estimation") {
-    report.notes.push({ en: "The numbers below are for phase estimation with a register. The block you chose has its cost stated on its card.", ja: "下の数値はレジスタを使う位相推定のものです。選んだブロックのコストはカードに記載されています。" });
+    report.notes.push({ en: "The numbers here are for phase estimation with a register. The block you chose has its cost stated on its card.", ja: "ここの数値はレジスタを使う位相推定のものです。選んだブロックのコストはカードに記載されています。" });
     return report;
   }
   const n = value(params, "precisionBits");

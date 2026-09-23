@@ -97,3 +97,16 @@ test("a sentence with nothing recognisable asks the reader to pick, instead of g
     restore();
   }
 });
+
+test("a #q= link followed while the page is open replaces the sentence, and near-certain success is not printed as 100%", async () => {
+  const { view, restore } = renderPlanner();
+  try {
+    window.location.hash = `q=${encodeURIComponent("Search a database of 2^20 records for the single record that matches.")}`;
+    window.dispatchEvent(new Event("hashchange"));
+    await waitFor(() => assert.match(row(view.container, /Grover iterations/).textContent ?? "", /804/));
+    assert.match(row(view.container, /Chance the measured item/).textContent ?? "", /> 99\.99%/);
+  } finally {
+    window.location.hash = "";
+    restore();
+  }
+});
