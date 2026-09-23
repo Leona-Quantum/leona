@@ -1,10 +1,10 @@
-"""The MCP server: seven tools over the public Atlas and, with a token, runs.
+"""The MCP server: eight tools over the public Atlas and, with a token, runs and Qapps.
 
 Run it as `leona-mcp`. It speaks MCP over stdin and stdout, opens no port, and
 makes network calls only through `leona_client` — the anonymous catalog endpoint for
 `search_methods`/`get_method`/`list_problem_areas`, and the authenticated control
-plane for `run_verified`/`get_run`/`list_my_runs`/`estimate_resources`. Logging goes
-to stderr, because stdout carries the protocol.
+plane for `run_verified`/`get_run`/`list_my_runs`/`estimate_resources`/`run_qapp`.
+Logging goes to stderr, because stdout carries the protocol.
 
 The acting tools (proposal 7 Phase C, ai-ops 349/362) take their token ONLY from the
 `LEONA_API_TOKEN` environment variable — never a tool argument, so no MCP client, log
@@ -13,6 +13,11 @@ telling the caller to mint one; the three read-only Atlas tools are unaffected. 
 hardware tool exists here: ai-ops 362's ruling was "hardware jobs come later under
 their own permission," and `leona_client.Client` has no method that could reach
 `POST /qpu/submissions` in the first place.
+
+`run_qapp` (ai-ops 349 option 2, "call it as an API") calls a published Qapp through
+the exact same `POST /v1/qapps/{slug}/executions` route the Qapp's own page calls —
+not a second execution path, only a second class of caller reaching the one ADR-0031
+already describes.
 """
 
 from __future__ import annotations
@@ -50,9 +55,10 @@ INSTRUCTIONS = (
     "This server reads the Quantum Atlas, the public catalog of quantum algorithms, gates, "
     "states and benchmark circuits at leonaqt.com, and — when the LEONA_API_TOKEN "
     "environment variable holds a personal access token minted on leonaqt.com (Account → "
-    "Access tokens) — can start a verified run, read its result and estimate physical "
-    "resources on the caller's behalf. It reads Leona's public, read-only API and nothing "
-    "else for search_methods/get_method/list_problem_areas: every answer comes from a "
+    "Access tokens) — can start a verified run, read its result, estimate physical "
+    "resources, and call a published Qapp for its result, on the caller's behalf. It reads "
+    "Leona's public, read-only API and nothing else for "
+    "search_methods/get_method/list_problem_areas: every answer comes from a "
     "published record and carries that record's page URL; get_method also returns the "
     "papers the record cites. A record is a claim from its cited sources, not a result "
     "this server checked or ran, so quote it as the record's claim. When a record does "
@@ -63,7 +69,9 @@ INSTRUCTIONS = (
     "website — nothing else here spends money or a quota. A run's status can be "
     "'succeeded' while its verification did not pass: read verifier_decision and "
     "verification_summary, never just status, before telling anyone a result is verified. "
-    "No tool here submits hardware jobs."
+    "run_qapp spends the caller's own Qapp-execution allowance exactly like opening the "
+    "Qapp's page and running it would — a private Qapp someone else owns is refused as not "
+    "found, never disclosed as existing. No tool here submits hardware jobs."
 )
 
 SEARCH_DESCRIPTION = (
@@ -134,6 +142,22 @@ ESTIMATE_DESCRIPTION = _NEEDS_TOKEN + (
     "or T count comes back with 'refused' explaining there is no magic-state cost to "
     "convert. Any signed-in token may call this — it is arithmetic over a public "
     "rate card, the same as the website's own estimate panel."
+)
+
+RUN_QAPP_DESCRIPTION = (
+    _NEEDS_TOKEN + "Calls a published Qapp with input values — the same "
+    "POST /v1/qapps/{slug}/executions route the Qapp's own page calls, and the same "
+    "sandboxed execution the page runs (no separate execution path exists for this "
+    "tool) — then polls for up to wait_s seconds for a terminal status (succeeded or "
+    "failed). inputs is validated server-side against the Qapp's own declared input "
+    "schema; an input outside its declared type, range or enum is refused (422) "
+    "before anything runs. This spends the caller's own Qapp-execution allowance "
+    "exactly like opening the Qapp's page and clicking run would, and is subject to "
+    "the same per-account, per-Qapp and deployment-wide hourly ceilings. A Qapp "
+    "someone else owns and has not published, or a slug that does not exist, is "
+    "refused as not found — this is not a way to probe who owns a slug. Needs the "
+    "token's run scope; a read-only token is refused. If wait_s runs out first the "
+    "execution is still going; poll it again with the returned id."
 )
 
 _READ_ONLY = ToolAnnotations(
@@ -437,6 +461,49 @@ def build_server(client: CatalogClient | None = None) -> FastMCP:
             [point.model_dump(exclude_none=True) for point in points],
             assumptions=assumptions,
         )
+
+    @server.tool(
+        name="run_qapp",
+        title="Call a published Qapp",
+        description=RUN_QAPP_DESCRIPTION,
+        annotations=_ACTING,
+    )
+    async def run_qapp(
+        slug: Annotated[
+            str,
+            Field(
+                min_length=1,
+                description="A Qapp's slug, as its leonaqt.com/q/<slug> page shows it.",
+            ),
+        ],
+        inputs: Annotated[
+            dict[str, Any] | None,
+            Field(
+                description=(
+                    "Input values, shaped to this Qapp's own declared input schema — read "
+                    "its /q/<slug> page, or ask its creator, for what it takes. Omit for a "
+                    "Qapp whose schema supplies defaults for everything."
+                ),
+            ),
+        ] = None,
+        wait_s: Annotated[
+            int,
+            Field(
+                ge=1,
+                le=MAX_WAIT_S,
+                description="How long THIS TOOL polls for a terminal state before giving up.",
+            ),
+        ] = DEFAULT_WAIT_S,
+    ) -> dict[str, Any]:
+        client = _token_client()
+        execution = await _in_thread(client.start_qapp_execution, slug, inputs)
+        execution = await _in_thread(
+            client.wait_for_qapp_execution,
+            str(execution.id),
+            wait_s=wait_s,
+            poll_s=DEFAULT_POLL_S,
+        )
+        return execution.model_dump(mode="json")
 
     return server
 

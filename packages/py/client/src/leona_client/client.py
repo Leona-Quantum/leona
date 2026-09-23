@@ -1,9 +1,11 @@
-"""The control-plane client: notebooks, verified runs and estimates.
+"""The control-plane client: notebooks, verified runs, estimates, and Qapps.
 
 One bearer-token client for everything `%nala`, the `leona-notebooks` CLI and
 `leona-mcp`'s acting tools need from the API. Generalised from
 `leona_notebooks.jupyter.Client` (proposal 7 Phase A/B); the notebook methods below
-are that class, unchanged in behaviour. `run`/`estimate` methods are new in Phase C.
+are that class, unchanged in behaviour. `run`/`estimate` methods are new in Phase C;
+`run_qapp` and its two lower-level halves are ai-ops 349 option 2's "call it as an
+API" endpoint.
 
 Configuration is two environment variables — never a token as a constructor argument
 from untrusted input, and never a token in a log line or an exception message:
@@ -29,8 +31,8 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any
 
-from majorana_contracts import Run
-from majorana_contracts.enums import RunStatus
+from majorana_contracts import QappExecution, Run
+from majorana_contracts.enums import QappExecutionStatus, RunStatus
 
 from .atlas import (
     SearchLimits,
@@ -63,6 +65,15 @@ DEFAULT_RUN_WAIT_S = 600
 DEFAULT_RUN_POLL_S = 3.0
 
 _TERMINAL_RUN_STATUSES = frozenset({RunStatus.SUCCEEDED, RunStatus.FAILED, RunStatus.CANCELLED})
+
+#: How long `wait_for_qapp_execution` polls before giving up. Shorter than a run's
+#: default: a Qapp execution is one sandboxed call capped at `MAX_TIMEOUT_S = 120`
+#: (ADR-0031), not a multi-stage pipeline, so there is no "still planning" phase to
+#: wait through.
+DEFAULT_QAPP_WAIT_S = 150
+DEFAULT_QAPP_POLL_S = 2.0
+
+_TERMINAL_QAPP_STATUSES = frozenset({QappExecutionStatus.SUCCEEDED, QappExecutionStatus.FAILED})
 
 
 class LeonaClientError(RuntimeError):
@@ -384,10 +395,83 @@ class Client:
             payload["assumptions"] = assumptions
         return self._authenticated_call("POST", "/estimates/logical", payload)
 
+    # -- Qapps: "call it as an API" (ai-ops 349 option 2, ai-ops 362) --------
+
+    def start_qapp_execution(
+        self, slug: str, inputs: dict[str, Any] | None = None
+    ) -> QappExecution:
+        """`POST /v1/qapps/{slug}/executions` — the SAME route the Qapp's own page
+        calls to run it, and the same sandboxed execution ADR-0031 describes; no
+        separate execution path exists for a token caller. Returns immediately with
+        the execution `queued`; `run_qapp` submits this and then waits. `inputs` are
+        validated server-side against the Qapp's own declared input schema. Needs
+        the token's `run` scope — a `read`-only token gets `INSUFFICIENT_SCOPE` from
+        `token_access.check`, surfaced here as a plain `LeonaClientError`. A private
+        Qapp somebody else owns, or one that does not exist, is refused the same way
+        (404) as any other absent resource — this is not a way to probe who owns a
+        slug."""
+        payload = {"inputs": inputs or {}}
+        return QappExecution.model_validate(
+            self._authenticated_call("POST", f"/qapps/{slug}/executions", payload)
+        )
+
+    def get_qapp_execution(self, execution_id: str) -> QappExecution:
+        """`GET /v1/qapps/executions/{id}`. Only the execution's own caller can read
+        it back — not even a co-member of the same workspace, per `get_execution`."""
+        return QappExecution.model_validate(
+            self._authenticated_call("GET", f"/qapps/executions/{execution_id}")
+        )
+
+    def wait_for_qapp_execution(
+        self,
+        execution_id: str,
+        *,
+        wait_s: int = DEFAULT_QAPP_WAIT_S,
+        poll_s: float = DEFAULT_QAPP_POLL_S,
+        sleep=time.sleep,
+    ) -> QappExecution:
+        """Poll `GET /v1/qapps/executions/{id}` until `succeeded`/`failed`, or
+        `wait_s` elapses. Returns the execution at whichever terminal state it
+        reached, including `failed` — the caller asked for that answer too — and
+        raises only when time runs out first, the same contract `wait_for_run` uses."""
+        deadline = time.monotonic() + wait_s
+        while True:
+            execution = self.get_qapp_execution(execution_id)
+            if execution.status in _TERMINAL_QAPP_STATUSES:
+                return execution
+            if time.monotonic() >= deadline:
+                raise LeonaClientError(
+                    f"qapp execution {execution_id} did not reach a terminal state within "
+                    f"{wait_s}s (still {execution.status}); call "
+                    f"get_qapp_execution({execution_id!r}) again later"
+                )
+            sleep(poll_s)
+
+    def run_qapp(
+        self,
+        slug: str,
+        inputs: dict[str, Any] | None = None,
+        *,
+        wait_s: int = DEFAULT_QAPP_WAIT_S,
+        poll_s: float = DEFAULT_QAPP_POLL_S,
+    ) -> QappExecution:
+        """Call a published Qapp with input values and wait for its result — the
+        one call `run_qapp(slug, inputs)` in the plan asks for. Starts the
+        execution (`start_qapp_execution`) and polls it (`wait_for_qapp_execution`)
+        so a caller who does not want to manage the two calls separately does not
+        have to; one that does can call them directly. This spends the caller's own
+        Qapp-execution allowance exactly as opening the Qapp's page and running it
+        would — the three ceilings in `routes/qapps.py` do not distinguish how the
+        request arrived."""
+        execution = self.start_qapp_execution(slug, inputs)
+        return self.wait_for_qapp_execution(str(execution.id), wait_s=wait_s, poll_s=poll_s)
+
 
 __all__ = [
     "Client",
     "DEFAULT_API_URL",
+    "DEFAULT_QAPP_POLL_S",
+    "DEFAULT_QAPP_WAIT_S",
     "DEFAULT_RUN_POLL_S",
     "DEFAULT_RUN_WAIT_S",
     "FixContext",
