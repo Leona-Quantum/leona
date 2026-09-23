@@ -116,11 +116,15 @@ class PaperToCodeTask(BaseModel):
     @model_validator(mode="after")
     def _excerpt_is_nonempty(self) -> "PaperToCodeTask":
         if not self.quoted_excerpt.strip():
-            raise ValueError("quoted_excerpt must not be empty — every task cites the paper's own words")
+            raise ValueError(
+                "quoted_excerpt must not be empty — every task cites the paper's own words"
+            )
         if not self.hidden_test.strip():
             raise ValueError("hidden_test must not be empty")
         if not self.novelty_reason.strip():
-            raise ValueError("novelty_reason must not be empty — the novelty classification needs a reason")
+            raise ValueError(
+                "novelty_reason must not be empty — the novelty classification needs a reason"
+            )
         return self
 
 

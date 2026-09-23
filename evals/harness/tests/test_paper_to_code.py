@@ -60,7 +60,9 @@ _BELL_SCAFFOLD = (
     "def make_bell_pair() -> QuantumCircuit:\n"
     '    """Return a 2-qubit circuit preparing (|00> + |11>) / sqrt(2)."""\n'
 )
-_BELL_CANONICAL_SOLUTION = "    qc = QuantumCircuit(2)\n    qc.h(0)\n    qc.cx(0, 1)\n    return qc\n"
+_BELL_CANONICAL_SOLUTION = (
+    "    qc = QuantumCircuit(2)\n    qc.h(0)\n    qc.cx(0, 1)\n    return qc\n"
+)
 _BELL_HIDDEN_TEST = (
     "def check(candidate):\n"
     "    from qiskit import QuantumCircuit\n"
@@ -244,9 +246,7 @@ def test_run_benchmark_separates_paper_specific_score_from_the_total():
 
     mixed_tasks = [
         _bell_task(task_id="a"),  # restated
-        _bell_task(
-            task_id="b", novelty="paper-specific", novelty_reason="test fixture override"
-        ),
+        _bell_task(task_id="b", novelty="paper-specific", novelty_reason="test fixture override"),
     ]
     mixed_report = run_benchmark(
         mixed_tasks, adapter=CanonicalAdapter(), run_mode="stub-canonical", dataset_sha256="x"
@@ -311,7 +311,5 @@ def test_loads_shipped_cases_and_controls_pass_100_and_0_percent():
     garbage_report = run_benchmark(
         tasks, adapter=GarbageAdapter(), run_mode="stub-garbage", dataset_sha256=sha
     )
-    assert garbage_report.passed == 0, [
-        r.task_id for r in garbage_report.results if r.passed
-    ]
+    assert garbage_report.passed == 0, [r.task_id for r in garbage_report.results if r.passed]
     assert garbage_report.paper_specific_passed == 0

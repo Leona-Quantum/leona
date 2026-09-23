@@ -43,7 +43,7 @@ def _write_markdown_summary(report: BenchmarkReport, path: Path) -> None:
         f"- passed (all): {report.passed} ({report.pass_rate:.1%})",
         f"- **paper-specific tasks only: {report.paper_specific_passed}/"
         f"{report.paper_specific_total} ({report.paper_specific_pass_rate:.1%})** — "
-        "only THIS figure supports a \"not memorizable\" claim; `restated` tasks predate "
+        'only THIS figure supports a "not memorizable" claim; `restated` tasks predate '
         "their cited paper and are excluded (see SPEC.md / PROVENANCE.md)",
         f"- pipeline commit: `{report.pipeline_commit_sha or 'unknown'}`",
         f"- dataset sha256: `{report.dataset_sha256}`",
