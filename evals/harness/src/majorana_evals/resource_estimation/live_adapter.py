@@ -125,7 +125,11 @@ def _parse(
         return {quantity: None for quantity in quantities_pinned}, None, f"parse error: {exc}"
 
     if not isinstance(obj, dict):
-        return {quantity: None for quantity in quantities_pinned}, None, "parsed JSON is not an object"
+        return (
+            {quantity: None for quantity in quantities_pinned},
+            None,
+            "parsed JSON is not an object",
+        )
 
     note_parts: list[str] = []
     for quantity in quantities_pinned:

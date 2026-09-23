@@ -77,7 +77,9 @@ def test_record_computes_cost_from_off_peak_rates():
     original = budget_mod.current_rates
     budget_mod.current_rates = lambda now=None: dict(OFF_PEAK_RATES)
     try:
-        cost = tracker.record(model="deepseek-v4-pro", input_tokens=1_000_000, output_tokens=1_000_000)
+        cost = tracker.record(
+            model="deepseek-v4-pro", input_tokens=1_000_000, output_tokens=1_000_000
+        )
     finally:
         budget_mod.current_rates = original
     assert cost == pytest.approx(OFF_PEAK_RATES["input"] + OFF_PEAK_RATES["output"])

@@ -94,9 +94,9 @@ class BudgetTracker:
         if model != PRICED_MODEL:
             self.unpriced_models.add(model)
         rates = current_rates()
-        cost = (input_tokens / 1_000_000) * rates["input"] + (
-            output_tokens / 1_000_000
-        ) * rates["output"]
+        cost = (input_tokens / 1_000_000) * rates["input"] + (output_tokens / 1_000_000) * rates[
+            "output"
+        ]
         self.spent_usd += cost
         self.calls += 1
         self.input_tokens += input_tokens
