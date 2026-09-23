@@ -81,14 +81,20 @@ const num = (group = 1) => (match: RegExpExecArray) => parseNumber(match[group] 
 function hartree(value: number | null, unit: string | undefined): number | null {
   if (value === null) return null;
   const u = (unit ?? "").toLowerCase().replace(/\s+/g, "");
-  if (u === "mha" || u === "millihartree" || u === "millihartrees") return value * 1e-3;
+  if (u === "mha" || u === "millihartree" || u === "millihartrees" || u === "ミリハートリー") return value * 1e-3;
   if (u === "kcal/mol") return value / 627.5095;
   if (u === "mev") return value / 27211.386;
   if (u === "ev") return value / 27.211386;
   return value;
 }
 
-const ENERGY_UNIT = String.raw`(?:\s*(mHa|millihartrees?|hartrees?|Ha|kcal\s*/\s*mol|meV|eV))?`;
+// ミリハートリー before ハートリー: the alternation takes the first that matches.
+const ENERGY_UNIT = String.raw`(?:\s*(mHa|millihartrees?|hartrees?|Ha|kcal\s*/\s*mol|meV|eV|ミリハートリー|ハートリー))?`;
+
+// A Japanese sentence joins a name to its number with a particle (λ は 500,
+// 条件数が 1000) or a full-width colon as often as with "=", so every
+// "name then number" rule below accepts those too.
+const JOIN_JA = String.raw`|：|は|が`;
 
 const RULES: Partial<Record<ParamKey, Rule[]>> = {
   bits: [
@@ -119,21 +125,21 @@ const RULES: Partial<Record<ParamKey, Rule[]>> = {
     { pattern: /(?<![\d０-９])(?:1|一)\s*件/, read: () => 1 },
   ],
   lambda: [
-    { pattern: new RegExp(String.raw`(?:λ|\blambda\b|\bone[- ]norm\b|\b1[- ]norm\b|\bL1[- ]norm\b)\s*(?:=|:|of|is|≈|~)?\s*(${N})${ENERGY_UNIT}`, "i"), read: (m) => hartree(parseNumber(m[1]), m[2]) },
+    { pattern: new RegExp(String.raw`(?:λ|\blambda\b|\bone[- ]norm\b|\b1[- ]norm\b|\bL1[- ]norm\b)\s*(?:=|:|of|is|≈|~${JOIN_JA})?\s*(${N})${ENERGY_UNIT}`, "i"), read: (m) => hartree(parseNumber(m[1]), m[2]) },
   ],
   deltaE: [
     { pattern: /\bchemical accuracy\b|化学精度/i, read: () => 0.0016 },
-    { pattern: new RegExp(String.raw`(?:ΔE|\bdelta ?E\b|\bprecision\b|\baccuracy\b|\berror\b|\bto within\b|\bwithin\b|精度|誤差)\s*(?:=|:|of|is|≈|~|to)?\s*(${N})${ENERGY_UNIT}`, "i"), read: (m) => hartree(parseNumber(m[1]), m[2]) },
+    { pattern: new RegExp(String.raw`(?:ΔE|\bdelta ?E\b|\bprecision\b|\baccuracy\b|\berror\b|\bto within\b|\bwithin\b|精度|誤差)\s*(?:=|:|of|is|≈|~|to${JOIN_JA})?\s*(${N})${ENERGY_UNIT}`, "i"), read: (m) => hartree(parseNumber(m[1]), m[2]) },
   ],
   orbitals: [
     { pattern: new RegExp(String.raw`(${N})\s*(?:spin[- ])?orbitals?\b`, "i"), read: num() },
-    { pattern: new RegExp(String.raw`(?:スピン)?軌道\s*(?:の数)?\s*(${N})|(${N})\s*(?:個の)?\s*(?:スピン)?軌道`), read: (m) => parseNumber(m[1] ?? m[2] ?? "") },
+    { pattern: new RegExp(String.raw`(?:スピン)?軌道\s*(?:の数)?\s*(?:は|が|：)?\s*(${N})|(${N})\s*(?:個の)?\s*(?:スピン)?軌道`), read: (m) => parseNumber(m[1] ?? m[2] ?? "") },
   ],
   kappa: [
-    { pattern: new RegExp(String.raw`(?:κ|\bkappa\b|\bcondition number\b|条件数)\s*(?:=|:|of|is|≈|~)?\s*(${N})`, "i"), read: num() },
+    { pattern: new RegExp(String.raw`(?:κ|\bkappa\b|\bcondition number\b|条件数)\s*(?:=|:|of|is|≈|~${JOIN_JA})?\s*(${N})`, "i"), read: num() },
   ],
   epsilon: [
-    { pattern: new RegExp(String.raw`(?:ε|\bepsilon\b|\berror\b|\bprecision\b|\baccuracy\b|\btolerance\b|\bto within\b|\bwithin\b|誤差|精度)\s*(?:=|:|of|is|≈|~|to|で)?\s*(${N})(\s*%)?`, "i"), read: (m) => { const v = parseNumber(m[1]); return v === null ? null : m[2] ? v / 100 : v; } },
+    { pattern: new RegExp(String.raw`(?:ε|\bepsilon\b|\berror\b|\bprecision\b|\baccuracy\b|\btolerance\b|\bto within\b|\bwithin\b|誤差|精度)\s*(?:=|:|of|is|≈|~|to|で${JOIN_JA})?\s*(${N})(\s*%)?`, "i"), read: (m) => { const v = parseNumber(m[1]); return v === null ? null : m[2] ? v / 100 : v; } },
   ],
   dimension: [
     { pattern: new RegExp(String.raw`(${N})\s+(?:unknowns|variables|equations|rows)\b`, "i"), read: num() },
