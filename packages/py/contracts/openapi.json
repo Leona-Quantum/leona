@@ -7531,6 +7531,34 @@
         "title": "QpuRunStatus",
         "type": "string"
       },
+      "RecordTourSignalRequest": {
+        "additionalProperties": false,
+        "description": "`POST /v1/tour-signals`'s body. Anonymous \u2014 no `Scope`, no identifier of\nany kind, on purpose: this counts events, never people (the same ceiling\n`apps/web/lib/pageview-signal.ts` states for the pageview counter it sits\nbeside in spirit).\n\n`track` and `step` are bounded here only by shape; the route rejects a\nvalue outside `tour_signal_vocabulary.KNOWN_TRACKS` /\n`.KNOWN_STEPS` with a 422 before anything reaches the repository. The 64\ncharacter ceiling is generous headroom over the longest real id today\n(`first-light`, `preferences`) and exists so a request this model refuses\nis refused for being the wrong SHAPE, independent of whether it also\nhappens to name a real track.",
+        "properties": {
+          "kind": {
+            "$ref": "#/components/schemas/TourSignalKind"
+          },
+          "step": {
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Step",
+            "type": "string"
+          },
+          "track": {
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Track",
+            "type": "string"
+          }
+        },
+        "required": [
+          "track",
+          "step",
+          "kind"
+        ],
+        "title": "RecordTourSignalRequest",
+        "type": "object"
+      },
       "Reference": {
         "additionalProperties": false,
         "properties": {
@@ -10415,6 +10443,23 @@
           "forbidden"
         ],
         "title": "TopLevelExecution",
+        "type": "string"
+      },
+      "TourSignalKind": {
+        "description": "What happened to a tour step. Mirrors `apps/web/lib/tour/signal.ts`'s\n`TOUR_SIGNAL_KINDS` exactly \u2014 ten members, no more, no fewer. A new kind\nneeds a change here (contracts version bump) AND a matching CHECK\nconstraint widening (a new migration), which is the review point: this\ncodebase's kind lists (see `TokenScope`) are closed by construction rather\nthan by convention.",
+        "enum": [
+          "tour_started",
+          "step_done",
+          "step_skipped",
+          "did_it_for_me",
+          "offline_skip",
+          "tour_done",
+          "tour_left",
+          "step_missed",
+          "ask_show_me",
+          "ask_nala"
+        ],
+        "title": "TourSignalKind",
         "type": "string"
       },
       "UpdateCommentRequest": {

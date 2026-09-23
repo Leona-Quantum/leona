@@ -218,8 +218,51 @@ async def test_a_forged_authorization_header_cannot_skip_the_limiter():
 def test_only_the_anonymous_serving_surface_is_metered():
     assert is_rate_limited_path("/v1/catalog/entries")
     assert is_rate_limited_path("/v1/catalog/entries/some-slug/estimate")
+    assert is_rate_limited_path("/v1/tour-signals")
     for path in ("/v1/runs", "/v1/artifacts/import-public", "/v1/workspace", "/health"):
         assert not is_rate_limited_path(path), path
+
+
+async def test_tour_signals_is_refused_with_a_problem_document_past_its_ceiling():
+    """`POST /v1/tour-signals` (ai-ops 326) shares the anonymous bucket and
+    ceiling `/v1/catalog/*` already lives under (rate_limit.py's
+    `LIMITED_PATH_PREFIXES` comment says why: same population, same threat,
+    and its own body-size cap is what bounds what one admitted request costs).
+    No DB needed — the same reason `_client`'s docstring gives: the limiter
+    answers before a session is ever attempted, so a request the limiter lets
+    through and a request the limiter refuses are distinguishable by status
+    code alone, independent of whether the handler behind it could run.
+    """
+    app = create_app(_settings(anon_rate_limit_per_minute=2))
+    headers = {"x-forwarded-for": "203.0.113.10"}
+    body = {"track": "build", "step": "code", "kind": "step_done"}
+    async with _client(app) as client:
+        for _ in range(2):
+            await client.post("/v1/tour-signals", json=body, headers=headers)
+        response = await client.post("/v1/tour-signals", json=body, headers=headers)
+
+    assert response.status_code == 429
+    assert response.headers["content-type"].startswith("application/problem+json")
+    assert response.headers["Retry-After"]
+    assert response.json()["reason"] == "anonymous_rate_limited"
+
+
+async def test_tour_signals_from_a_different_address_is_not_refused_by_a_floods_ceiling():
+    """The bystander property `/v1/catalog/*`'s own abuse run already proves
+    (`docs/gates/k6-abuse-2026-08-06.md`): the limiter is keyed per address, so
+    one flooded address exhausting its ceiling must not refuse a different one
+    reading through it.
+    """
+    app = create_app(_settings(anon_rate_limit_per_minute=2))
+    flooded = {"x-forwarded-for": "203.0.113.11"}
+    bystander = {"x-forwarded-for": "203.0.113.12"}
+    body = {"track": "build", "step": "code", "kind": "step_done"}
+    async with _client(app) as client:
+        for _ in range(3):
+            await client.post("/v1/tour-signals", json=body, headers=flooded)
+        response = await client.post("/v1/tour-signals", json=body, headers=bystander)
+
+    assert response.status_code != 429
 
 
 async def test_an_authenticated_caller_is_not_metered_off_the_public_surface():

@@ -12,6 +12,7 @@ from typing import Any
 from sqlalchemy import (
     TIMESTAMP,
     BigInteger,
+    Date,
     ForeignKey,
     ForeignKeyConstraint,
     Integer,
@@ -1131,3 +1132,24 @@ class PersonalAccessToken(Base):
     revoked_at: Mapped[dt.datetime | None]
     idempotency_key: Mapped[str | None]
     idempotency_request_hash: Mapped[str | None]
+
+
+class TourSignalCount(Base):
+    """A count of one guided-tour signal on one UTC day (migration 0071, ai-ops 326).
+
+    Carries no `id`: the natural key IS the row's identity, `repos/tour_signals.py`
+    writes it with `INSERT ... ON CONFLICT (day, track, step, kind) DO UPDATE SET
+    count = count + 1`, and a synthetic id would only invite a second way to name
+    the same row. No `workspace_id`, no `user_id` — this is anonymous, aggregate
+    product telemetry, not tenant data, and carries neither an RLS policy nor the
+    GUCs that would need one; see migration 0071's docstring for why that is a
+    deliberate classification rather than an omission.
+    """
+
+    __tablename__ = "tour_signal_counts"
+
+    day: Mapped[dt.date] = mapped_column(Date, primary_key=True)
+    track: Mapped[str] = mapped_column(primary_key=True)
+    step: Mapped[str] = mapped_column(primary_key=True)
+    kind: Mapped[str] = mapped_column(primary_key=True)
+    count: Mapped[int] = mapped_column(Integer, server_default=text("0"))

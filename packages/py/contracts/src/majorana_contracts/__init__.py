@@ -121,6 +121,7 @@ from .presence import (
     PresenceTargetType,
     PresenceViewer,
 )
+from .tour_signals import RecordTourSignalRequest, TourSignalKind
 from .courses import (
     Course,
     CourseGradebook,
@@ -467,7 +468,16 @@ from .lifecycle import (
 # looking at a run, a notebook or a saved circuit right now (migration 0070).
 # Additive: new names only. PresenceTargetType is its own enum, not a reuse of
 # CommentTargetType, so presence and comments can each grow independently.
-CONTRACTS_VERSION = "2.31.0"
+# 2.32.0: ai-ops 326, the owner's preferred destination on 324 (option 1) for the
+# guided tours' ten kinds of signal — "our own API, on a small endpoint that stores
+# the counts". New: RecordTourSignalRequest and the closed TourSignalKind enum,
+# behind POST /v1/tour-signals (migration 0071, anonymous — renumbered from 0070
+# to revise 0070_presence.py, which landed first). Additive: new names
+# only. `track`/`step` are bounded here by shape only, not by a contracts-level
+# enum — see tour_signals.py's module docstring for why: they are tour CONTENT,
+# checked against services/api's tour_signal_vocabulary.py instead, which changes
+# at the pace tours change rather than the pace this package's version does.
+CONTRACTS_VERSION = "2.32.0"
 
 __all__ = [
     "PresenceHeartbeatRequest",
@@ -485,6 +495,8 @@ __all__ = [
     "PersonalAccessTokenList",
     "TokenName",
     "TokenScope",
+    "RecordTourSignalRequest",
+    "TourSignalKind",
     "Comment",
     "CommentList",
     "CommentPeopleList",

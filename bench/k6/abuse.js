@@ -70,6 +70,15 @@ const EXPECTED_ADMITTED = Number(__ENV.EXPECTED_ADMITTED || "5");
 const FLOOD_ADDR = "198.51.100.10";
 const BYSTANDER_ADDR = "198.51.100.200";
 
+// ai-ops 326: POST /v1/tour-signals shares the SAME anon_limiter bucket and
+// ceiling `/v1/catalog/*` does (rate_limit.py's LIMITED_PATH_PREFIXES), so
+// this is the same demonstration on a different address rather than a new
+// mechanism. Separate addresses from the pair above so the two floods cannot
+// be confused with each other in the report, even though they would not
+// interfere either way — the limiter is keyed per address.
+const TOUR_FLOOD_ADDR = "198.51.100.30";
+const TOUR_BYSTANDER_ADDR = "198.51.100.230";
+
 // --- counters -------------------------------------------------------------
 // Named per scenario so a threshold can speak about one scenario alone. k6's
 // built-in http_req_failed cannot: it is global, and a scenario that is SUPPOSED
@@ -103,6 +112,18 @@ const soakServed = new Counter("soak_served");
 const soakRefused = new Counter("soak_refused");
 const serverErrors = new Counter("server_errors");
 
+const tourFloodAttempts = new Counter("tour_flood_attempts");
+const tourFloodRefused = new Counter("tour_flood_refused");
+const tourFloodServed = new Counter("tour_flood_served");
+const tourFloodUnexpected = new Counter("tour_flood_unexpected");
+
+const tourBystanderServed = new Counter("tour_bystander_served");
+const tourBystanderRefused = new Counter("tour_bystander_refused");
+
+const tourOversizeRefused = new Counter("tour_oversize_refused");
+const tourOversizeAccepted = new Counter("tour_oversize_accepted");
+const tourOrdinaryNotRefused = new Counter("tour_ordinary_not_refused");
+
 // --- helpers --------------------------------------------------------------
 
 // What the renderer actually fetches: a 100-record page of the list view, ~384 KB.
@@ -124,6 +145,13 @@ const CATALOG_PAGE = `${BASE}/v1/catalog/entries?limit=100&offset=0&view=list`;
 // A cheap request is what lets the load generator, rather than the service under
 // test, decide the rate.
 const CATALOG_PROBE = `${BASE}/v1/catalog/entries?limit=1&view=list`;
+
+// Anonymous, small, and the same tuple on every request — admitted requests
+// during the flood all collide on ONE row, which exercises `repos/tour_signals
+// .py`'s `INSERT ... ON CONFLICT DO UPDATE SET count = count + 1` under real
+// concurrency for free, the same argument `quota_storm` makes for its own lock.
+const TOUR_SIGNAL_URL = `${BASE}/v1/tour-signals`;
+const TOUR_SIGNAL_BODY = JSON.stringify({ track: "build", step: "code", kind: "step_done" });
 
 /**
  * The API keys its limiter on the FIRST X-Forwarded-For entry, and that entry
@@ -227,6 +255,55 @@ export const options = {
       exec: "soak",
       startTime: "95s",
     },
+    // ai-ops 326: the same demonstration as anon_flood, against the new route,
+    // on its own address. Scheduled FULLY SERIALISED after every other
+    // scenario (sustained_readers ends at 95s + 45s = 140s) rather than
+    // concurrently with the catalog flood or, worse, `quota_storm` — a first
+    // version of this schedule at 22s overlapped `quota_storm` (30-90s), and
+    // on a loaded host the combined DB pool pressure from both produced 503
+    // `capacity_exhausted` responses that `noteStatus` (>=500) counted as
+    // `tour_flood_unexpected`, indistinguishable in that reading from a bug.
+    // Full serialisation removes that confound rather than merely reducing it.
+    tour_signal_flood: {
+      executor: "constant-arrival-rate",
+      rate: Math.ceil((ANON_LIMIT * 3) / 20),
+      timeUnit: "1s",
+      duration: "20s",
+      preAllocatedVUs: 40,
+      maxVUs: 120,
+      exec: "tourSignalFlood",
+      startTime: "145s",
+    },
+    // Its bystander, same shape as `bystander` above.
+    tour_signal_bystander: {
+      executor: "constant-arrival-rate",
+      rate: 2,
+      timeUnit: "1s",
+      duration: "18s",
+      preAllocatedVUs: 4,
+      maxVUs: 8,
+      exec: "tourSignalBystander",
+      startTime: "146s",
+    },
+    // The route's OWN body-size cap (1 KiB — MAX_TOUR_SIGNAL_BODY_BYTES in
+    // routes/tour_signals.py), far below the API-wide 1 MiB `oversized_body`
+    // above already proves. After the flood above so its refusals are not
+    // confused with the limiter's.
+    tour_signal_oversized_body: {
+      executor: "per-vu-iterations",
+      vus: 4,
+      iterations: 3,
+      exec: "tourSignalOversizedBody",
+      startTime: "168s",
+    },
+    // The control for it.
+    tour_signal_ordinary_body: {
+      executor: "per-vu-iterations",
+      vus: 4,
+      iterations: 3,
+      exec: "tourSignalOrdinaryBody",
+      startTime: "168s",
+    },
   },
   thresholds: {
     // --- the flood is refused, and only ever with a 429 -------------------
@@ -282,6 +359,19 @@ export const options = {
 
     // --- and nothing anywhere 500s ----------------------------------------
     server_errors: ["count==0"],
+
+    // --- ai-ops 326: the same shared ceiling, demonstrated on the new route -
+    tour_flood_attempts: [`count>${ANON_LIMIT}`],
+    tour_flood_refused: ["count>0"],
+    tour_flood_unexpected: ["count==0"],
+    tour_flood_served: ["count>0"],
+    tour_bystander_served: ["count>0"],
+    tour_bystander_refused: ["count==0"],
+
+    // --- ai-ops 326: the route's own 1 KiB body cap -------------------------
+    tour_oversize_refused: ["count>0"],
+    tour_oversize_accepted: ["count==0"],
+    tour_ordinary_not_refused: ["count>0"],
   },
 };
 
@@ -406,4 +496,63 @@ export function soak() {
   const status = noteStatus(response);
   if (status === 429) soakRefused.add(1);
   else soakServed.add(1);
+}
+
+// --- ai-ops 326: tour signals -----------------------------------------------
+
+function tourSignalPost(addr, extraHeaders) {
+  return http.post(TOUR_SIGNAL_URL, TOUR_SIGNAL_BODY, {
+    headers: Object.assign(asAddress(addr), { "Content-Type": "text/plain" }, extraHeaders || {}),
+  });
+}
+
+export function tourSignalFlood() {
+  tourFloodAttempts.add(1);
+  const response = tourSignalPost(TOUR_FLOOD_ADDR);
+  const status = noteStatus(response);
+  if (status === 429) {
+    const retryAfter = Number(response.headers["Retry-After"] || "0");
+    const contentType = response.headers["Content-Type"] || "";
+    if (retryAfter < 1 || contentType.indexOf("application/problem+json") !== 0) {
+      tourFloodUnexpected.add(1);
+    } else {
+      tourFloodRefused.add(1);
+    }
+  } else if (status === 204) {
+    tourFloodServed.add(1);
+  } else {
+    tourFloodUnexpected.add(1);
+  }
+}
+
+export function tourSignalBystander() {
+  const response = tourSignalPost(TOUR_BYSTANDER_ADDR);
+  const status = noteStatus(response);
+  if (status === 429) tourBystanderRefused.add(1);
+  else tourBystanderServed.add(1);
+}
+
+export function tourSignalOversizedBody() {
+  // Over MAX_TOUR_SIGNAL_BODY_BYTES (1 KiB) but well under the API-wide 1 MiB
+  // `oversized_body` above already proves — this is the route's OWN, tighter
+  // gate, not the general one. Shapeless padding rather than a widened valid
+  // signal: the size check runs before the body is parsed as JSON at all, so
+  // what it contains is irrelevant to what is being tested, the same argument
+  // `oversizedBody` above makes for its own padding.
+  const body = "x".repeat(1024 + 100);
+  const response = http.post(TOUR_SIGNAL_URL, body, { headers: { "Content-Type": "text/plain" } });
+  const status = noteStatus(response);
+  if (status === 413) tourOversizeRefused.add(1);
+  else tourOversizeAccepted.add(1);
+}
+
+export function tourSignalOrdinaryBody() {
+  const response = tourSignalPost(`203.0.113.${50 + (exec.vu.idInTest % 50)}`);
+  const status = noteStatus(response);
+  // Anything but 413 proves the size gate let an ordinary signal through. Not
+  // asserting 204 specifically: this address is unshared with the flood above
+  // and unlikely to be refused, but this scenario's claim is about SIZE, and a
+  // 429 here would still correctly demonstrate the size gate was not what
+  // refused it.
+  if (status !== 413) tourOrdinaryNotRefused.add(1);
 }
