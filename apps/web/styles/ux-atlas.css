@@ -455,3 +455,76 @@
 .mj-finder-facts dd { margin: 0; color: var(--text-0); }
 .mj-finder-empty { display: grid; gap: var(--sp-2); padding: var(--sp-4); border: var(--border-hairline) dashed var(--border-0); border-radius: var(--radius-control); color: var(--text-1); }
 .mj-finder-empty ul { margin: 0; padding-left: var(--sp-5); }
+
+/* Workflow planner (/repository/plan). A sentence in, a pipeline of Atlas blocks out.
+   Stages nest the way the layer graph nests: a method's steps are an indented list under it,
+   so a block opens one level at a time, as Studio's blocks do. */
+.mj-plan { display: grid; gap: var(--sp-5); margin-top: var(--sp-3); }
+.mj-plan-input { display: grid; gap: var(--sp-2); }
+.mj-plan-input label { font-size: var(--fs-13); color: var(--text-1); }
+.mj-plan-input textarea { width: 100%; min-height: calc(var(--sp-16) + var(--sp-4)); padding: var(--sp-3); font: inherit; font-size: var(--fs-16); color: var(--text-0); background: var(--bg-1); border: var(--border-hairline) solid var(--border-0); border-radius: var(--radius-control); resize: vertical; }
+.mj-plan-examples { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-2); font-size: var(--fs-12); color: var(--text-2); }
+.mj-plan-chip { min-height: calc(var(--sp-8) + var(--sp-1)); padding: 0 var(--sp-3); font-size: var(--fs-12); color: var(--text-1); background: var(--bg-1); border: var(--border-hairline) solid var(--border-0); border-radius: var(--radius-control); cursor: pointer; }
+.mj-plan-chip:hover { color: var(--text-0); border-color: var(--accent); }
+.mj-plan-reading { display: grid; gap: var(--sp-1); }
+.mj-plan-reading label { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-2); font-size: var(--fs-13); color: var(--text-1); }
+.mj-plan-reading select { min-height: calc(var(--sp-10) + var(--sp-1)); }
+.mj-plan-muted { color: var(--text-2); font-size: var(--fs-13); }
+.mj-plan-params { display: grid; gap: var(--sp-4); grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr)); border: var(--border-hairline) solid var(--border-0); border-radius: var(--radius-control); padding: var(--sp-4); margin: 0; }
+.mj-plan-params legend { padding-inline: var(--sp-1); font-size: var(--fs-13); color: var(--text-1); }
+.mj-plan-param { display: grid; gap: var(--sp-1); font-size: var(--fs-13); color: var(--text-1); }
+.mj-plan-param input { min-height: calc(var(--sp-10) + var(--sp-1)); font-family: var(--font-mono); }
+.mj-plan-origin { font-size: var(--fs-12); color: var(--text-1); }
+.mj-plan-param-assumed .mj-plan-origin { color: var(--warn); }
+.mj-plan-param-unset .mj-plan-origin { color: var(--text-2); }
+.mj-plan-hint { font-size: var(--fs-12); color: var(--text-2); }
+.mj-plan-section { display: grid; gap: var(--sp-3); }
+.mj-plan-subheading { font-size: var(--fs-14); margin: var(--sp-2) 0 0; }
+.mj-plan-stages { display: grid; gap: var(--sp-3); list-style: none; margin: 0; padding: 0; counter-reset: plan-stage; }
+.mj-plan-substages { margin-top: var(--sp-3); padding-left: var(--sp-5); border-left: var(--border-hairline) solid var(--border-0); }
+.mj-plan-stage { counter-increment: plan-stage; }
+.mj-plan-stage-card { display: grid; gap: var(--sp-2); padding: var(--sp-3) var(--sp-4); background: var(--bg-1); border: var(--border-hairline) solid var(--border-0); border-radius: var(--radius-card); }
+.mj-plan-stage-card h3 { font-size: var(--fs-16); line-height: 1.4; margin: 0; }
+.mj-plan-stage-head { display: flex; flex-wrap: wrap; justify-content: space-between; gap: var(--sp-2); }
+.mj-plan-capability { font-size: var(--fs-12); color: var(--text-2); text-transform: uppercase; letter-spacing: 0.04em; }
+.mj-plan-capability::before { content: counters(plan-stage, ".") "  "; color: var(--accent); }
+.mj-plan-repeat { font-family: var(--font-mono); font-size: var(--fs-12); color: var(--warn); }
+.mj-plan-choice { font-size: var(--fs-12); color: var(--text-2); margin: 0; }
+.mj-plan-choice-published { color: var(--ok); }
+.mj-plan-choice-reader { color: var(--accent); }
+.mj-plan-summary { font-size: var(--fs-13); color: var(--text-1); margin: 0; }
+.mj-plan-swap { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-2); font-size: var(--fs-12); color: var(--text-2); }
+.mj-plan-swap select { min-height: calc(var(--sp-8) + var(--sp-1)); max-width: 100%; }
+.mj-plan-cost summary { font-size: var(--fs-12); color: var(--text-1); cursor: pointer; }
+.mj-plan-cost p { font-size: var(--fs-13); color: var(--text-1); }
+.mj-plan-atlas-link { font-size: var(--fs-12); }
+.mj-plan-callout { padding: var(--sp-3); border: var(--border-hairline) dashed var(--border-0); border-radius: var(--radius-control); color: var(--text-1); font-size: var(--fs-13); }
+.mj-plan-table-wrap { overflow-x: auto; }
+.mj-plan-table { width: 100%; border-collapse: collapse; font-size: var(--fs-13); }
+.mj-plan-table th, .mj-plan-table td { padding: var(--sp-2); text-align: left; vertical-align: top; border-bottom: var(--border-hairline) solid var(--border-0); }
+.mj-plan-table thead th { font-size: var(--fs-12); color: var(--text-2); font-weight: 500; }
+.mj-plan-table tbody th { font-weight: 500; color: var(--text-0); }
+.mj-plan-table code { font-family: var(--font-mono); font-size: var(--fs-12); white-space: nowrap; }
+.mj-plan-value { font-family: var(--font-mono); white-space: nowrap; }
+.mj-plan-note { display: block; margin-top: var(--sp-1); font-size: var(--fs-12); font-weight: 400; color: var(--text-2); }
+.mj-plan-group th { padding-top: var(--sp-4); font-size: var(--fs-12); color: var(--text-2); text-transform: uppercase; letter-spacing: 0.04em; }
+.mj-plan-kind { font-size: var(--fs-12); white-space: nowrap; }
+.mj-plan-kind-exact, .mj-plan-kind-upper-bound { color: var(--ok); }
+.mj-plan-kind-scaling, .mj-plan-kind-supplied { color: var(--warn); }
+.mj-plan-cite { font-size: var(--fs-12); }
+.mj-plan-kinds-help { font-size: var(--fs-12); }
+.mj-plan-tiles { display: grid; gap: var(--sp-3); grid-template-columns: repeat(auto-fit, minmax(10rem, 1fr)); margin: 0; }
+.mj-plan-tiles > div { display: grid; gap: var(--sp-1); padding: var(--sp-3); background: var(--bg-1); border: var(--border-hairline) solid var(--border-0); border-radius: var(--radius-control); }
+.mj-plan-tiles dt { font-size: var(--fs-12); color: var(--text-2); }
+.mj-plan-tiles dd { margin: 0; font-family: var(--font-mono); font-size: var(--fs-16); color: var(--text-0); }
+.mj-plan-tiles dd.mj-plan-muted { font-family: inherit; font-size: var(--fs-12); }
+.mj-plan-suggestions { display: grid; gap: var(--sp-3); grid-template-columns: repeat(auto-fill, minmax(18rem, 1fr)); list-style: none; margin: 0; padding: 0; }
+.mj-plan-suggestion { display: grid; gap: var(--sp-2); align-content: start; padding: var(--sp-3) var(--sp-4); border: var(--border-hairline) solid var(--border-0); border-radius: var(--radius-card); }
+.mj-plan-suggestion h3 { font-size: var(--fs-14); margin: 0; }
+.mj-plan-suggestion p { font-size: var(--fs-13); margin: 0; }
+.mj-plan-small { display: grid; gap: var(--sp-1); }
+.mj-plan-small h3 { font-size: var(--fs-16); margin: 0; }
+@media (max-width: 640px) {
+  .mj-plan-substages { padding-left: var(--sp-3); }
+  .mj-plan-stage-card { padding: var(--sp-3); }
+}

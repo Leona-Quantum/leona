@@ -92,6 +92,10 @@ const LOCALE_ROUTES = ["", "/about", "/contact", "/pricing", "/privacy", "/terms
  * qubit/depth limits, hardware era — is client-side React state, so the page
  * itself reads no `searchParams` and calls no Dynamic API.
  *
+ * `/repository/plan` (the workflow planner, owner directive 2026-09-22) is the
+ * same shape: every edit is client state, and a sentence passed by link rides
+ * in the URL fragment, which never reaches the server.
+ *
  * `/repository/papers/[id]` also prerenders — same recipe, one static page per
  * paper per locale — and unlike the entries above it cannot be named as a
  * clean path here: this list only ever holds paths with no dynamic segment,
@@ -99,7 +103,7 @@ const LOCALE_ROUTES = ["", "/about", "/contact", "/pricing", "/privacy", "/terms
  * dynamic route needs one CONCRETE example instead, in `REQUIRED_STATIC_ROUTES`
  * directly, below — see the paper picked there and why.
  */
-const LOCALE_ATLAS_ROUTES = ["/repository/claims", "/repository/find", "/repository/papers"];
+const LOCALE_ATLAS_ROUTES = ["/repository/claims", "/repository/find", "/repository/papers", "/repository/plan"];
 
 export const REQUIRED_STATIC_ROUTES = [
   { route: "/_not-found", why: "the boundary in every route's tree; dynamic here makes the whole app dynamic" },

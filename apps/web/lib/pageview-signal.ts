@@ -54,6 +54,7 @@ export const PAGEVIEW_ROUTES = [
   "/repository/papers/[id]",
   "/repository/claims",
   "/repository/find",
+  "/repository/plan",
   "/repository/folders",
   "/repository/[slug]",
 ] as const;
@@ -86,6 +87,8 @@ export const RESERVED_REPOSITORY_SEGMENTS = {
   claims: { subtree: "none" },
   // `find/page.tsx` — the method finder (proposal 2). One page, no child route.
   find: { subtree: "none" },
+  // `plan/page.tsx` — the workflow planner. One page, no child route.
+  plan: { subtree: "none" },
   // `folders/[[...path]]/page.tsx` — an optional catch-all, so every depth
   // below it is served by the same page.
   folders: { subtree: "catch-all" },
