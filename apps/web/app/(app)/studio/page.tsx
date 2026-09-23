@@ -3,6 +3,7 @@ import { getPublicLocale } from "../../../lib/public-locale-server";
 import { getAccountTier } from "../../../lib/account-tier-server";
 import { LAYER_GRAPH } from "../../../lib/repository/layer-graph.ts";
 import { slimLayerGraph } from "../../../lib/workflow-planner/graph.ts";
+import { leanPlannerGraph } from "../../../lib/workflow-planner/lean.ts";
 
 export const metadata = { title: "Studio" };
 
@@ -27,12 +28,12 @@ export default async function StudioPage({ searchParams }: { searchParams: Promi
   //
   // `plan` is a flag, not the plan itself — the sentence and numbers live
   // only in the URL fragment (`#plan=…`), which this server component never
-  // sees. It exists so the (about 190 KB) slimmed layer graph is shipped to
+  // sees. It exists so the planner graph (the lean one, about 30 KB: the panel renders no node prose) is shipped to
   // the client ONLY on a link that will actually read it, never on an
   // ordinary Studio load. The same `getPublicLocale()` this page already
   // reads decides which language the graph is slimmed to, matching how the
   // planner page itself slims it (`app/[locale]/repository/plan/page.tsx`).
-  const planGraph = params.plan === "1" ? slimLayerGraph(LAYER_GRAPH, locale) : null;
+  const planGraph = params.plan === "1" ? leanPlannerGraph(slimLayerGraph(LAYER_GRAPH, locale)) : null;
   return (
     <StudioWorkspace
       key={params.artifact ?? (params.example ? `example:${params.example}` : params.atlas ? `atlas:${params.atlas}` : params.new === "1" ? "new" : "browse")}
