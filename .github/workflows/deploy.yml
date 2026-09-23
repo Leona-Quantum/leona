@@ -312,6 +312,15 @@ jobs:
           # command; removing a key that is not set is a no-op, so this line is
           # safe to leave in permanently rather than reverting once the type is
           # fixed.
+          # LEONA_PERSONAL_ACCESS_TOKENS=true is declared here, not set by hand on the
+          # service, for the reason the paragraph above gives: a live-only setting is
+          # invisible to review and to rollback. It switches personal access tokens on
+          # (ai-ops 362, option 1: "Tokens may read and start verified runs, and expire
+          # after at most 90 days; hardware jobs come later under their own
+          # permission"). The last release-gate item, the k6 run against the per-token
+          # ceiling, is docs/gates/k6-personal-access-tokens-2026-09-23.md. To switch
+          # tokens off, change this to false: every /v1/tokens route then answers 404
+          # and an lq_pat_ bearer is refused before any lookup.
           gcloud run deploy majorana-api --project "$GCP_PROJECT" --region "$GCP_REGION" \
             --image "$IMAGE_REPO:${{ steps.tag.outputs.tag }}" \
             --set-cloudsql-instances "$CLOUDSQL_INSTANCE" \
@@ -319,7 +328,7 @@ jobs:
             --cpu "$API_CPU" --memory "${API_MEMORY_MI}Mi" --concurrency "$API_CONCURRENCY" \
             --timeout "$API_REQUEST_TIMEOUT_S" \
             --cpu-boost \
-            --update-env-vars "MAJORANA_SERVICE=api,MAJORANA_ENV=production,MAJORANA_RELEASE=${{ steps.tag.outputs.tag }},${{ steps.news.outputs.api_env }}" \
+            --update-env-vars "MAJORANA_SERVICE=api,MAJORANA_ENV=production,MAJORANA_RELEASE=${{ steps.tag.outputs.tag }},LEONA_PERSONAL_ACCESS_TOKENS=true,${{ steps.news.outputs.api_env }}" \
             --remove-env-vars SENTRY_DSN \
             --update-secrets SENTRY_DSN=SENTRY_DSN:latest \
             --no-traffic --tag verify
