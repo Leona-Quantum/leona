@@ -17,24 +17,27 @@ real citation, and must not be *oversold* as belonging to the Atlas corpus's
 own paper register when it does not (yet) have an entry there.
 
 - `ATLAS_PAPER_REGISTER` — the paper also has an entry in the Atlas corpus's
-  paper register (`apps/web/lib/repository/paper-register.ts`), so a reader
-  can follow the constant to the same page the catalogue itself links.
+  paper register (`apps/web/lib/repository/paper-register.ts`), so the
+  constant is tied to the same paper record the catalogue cites. No page
+  renders this as a link yet: the estimate panel prints the citation as text.
 - `CITED` — a real, checked citation (an arXiv id, DOI, or paper + section
   quoted in `assumptions.py` or `docs/estimation/assumption-sets.md`) for a
   paper that is not (yet) in that register. Still a source; just not (yet) a
-  cross-linkable one.
+  registered one.
 - `NO_SOURCE_RECORDED` — nothing states this. Reserved for values that are
   not physics claims at all: an engineering safety margin, a policy default.
   A `working_allowances` entry on an `AssumptionSet` renders exactly this
   claim on the public page ("It does not state the value(s) …"), so it is
   treated as this kind too.
 
-Four of the seven papers this estimator cites are not (yet) in the Atlas
-paper register — Gidney 2025 (arXiv:2505.15917), Babbush et al.
-(arXiv:2011.04149), Webber et al. (arXiv:2108.12371), and Litinski's *Magic
-state distillation: not as costly as you think* (Quantum 3, 205, no arXiv id
-given anywhere in this package). That is a corpus fact, not something this
-module invents a fix for — see `docs/estimation/assumption-sets.md`.
+Two of the seven papers this estimator cites are not (yet) in the Atlas paper
+register — Webber et al. (arXiv:2108.12371) and Litinski's *Magic state
+distillation: not as costly as you think* (Quantum 3, 205, no arXiv id given
+anywhere in this package). Gidney 2025 (arXiv:2505.15917) and Babbush et al.
+(arXiv:2011.04149) joined the register on 2026-09-22, when the Atlas workflow
+planner began citing both (PR 974), so the `gidney-2025` constants they source
+now classify as Atlas-registered. That is a corpus fact, not something this module invents — see
+`docs/estimation/assumption-sets.md`.
 """
 
 from __future__ import annotations
@@ -57,6 +60,8 @@ ATLAS_PAPER_IDS = frozenset(
         "arxiv:1808.06709",  # Fowler & Gidney, Low overhead quantum computation using lattice surgery
         "arxiv:1808.02892",  # Litinski, A Game of Surface Codes
         "arxiv:1403.2975",  # Ross & Selinger, Optimal ancilla-free Clifford+T approximation of z-rotations
+        "arxiv:2505.15917",  # Gidney 2025, How to factor 2048 bit RSA integers with less than a million noisy qubits
+        "arxiv:2011.04149",  # Babbush et al., Focus beyond quadratic speedups for error-corrected quantum advantage
     }
 )
 """Confirmed present in `apps/web/lib/repository/paper-register.ts` (grepped
@@ -140,13 +145,26 @@ def _cited_source(qualified_field: str, reference: str) -> ConstantSource:
     Substring matching on the id string itself, not on prose, because arXiv
     ids are precise and every citation in this package that names one spells
     it out in full (`arXiv:1808.06709`, not "Fowler and Gidney's paper").
+
+    **When a note names more than one registered paper, the earliest wins.**
+    Notes lead with their source and name other papers after it, often to
+    disown them: `rotation_t_coefficient`'s note cites Ross and Selinger and
+    then says "Not from arXiv:2505.15917". Returning the first id found while
+    iterating `ATLAS_PAPER_IDS` instead made the answer depend on a frozenset's
+    iteration order, which Python randomises per process through string
+    hashing: once Gidney 2025 joined the register, that constant was
+    attributed to the paper its own note rules out in 7 of 16 hash seeds.
     """
-    for atlas_id in ATLAS_PAPER_IDS:
-        arxiv_number = atlas_id.removeprefix("arxiv:")
-        if arxiv_number in reference:
-            return ConstantSource(
-                field=qualified_field, kind=SourceKind.ATLAS_PAPER_REGISTER, reference=atlas_id
-            )
+    positions = [
+        (reference.find(atlas_id.removeprefix("arxiv:")), atlas_id)
+        for atlas_id in ATLAS_PAPER_IDS
+        if atlas_id.removeprefix("arxiv:") in reference
+    ]
+    if positions:
+        _, atlas_id = min(positions)
+        return ConstantSource(
+            field=qualified_field, kind=SourceKind.ATLAS_PAPER_REGISTER, reference=atlas_id
+        )
     return ConstantSource(field=qualified_field, kind=SourceKind.CITED, reference=reference)
 
 

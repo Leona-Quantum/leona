@@ -131,6 +131,10 @@ export const LOCALE_ROUTES: readonly string[] = [
  * `searchParams` — every filter is client-side React state — and calls
  * `getMajoranaAuth()` nowhere, so it prerenders outright on the same terms as
  * `claims` and `papers`. See `app/[locale]/repository/find/page.tsx`.
+ *
+ * `/repository/plan`, the workflow planner (owner directive 2026-09-22), joined
+ * on the same terms: the sentence, the numbers and the swapped blocks are all
+ * client state, and a sentence handed in by link travels in the URL fragment.
  */
 export const LOCALE_PREFIX_ROUTES: readonly string[] = [
   "/repository/claims",
@@ -138,6 +142,7 @@ export const LOCALE_PREFIX_ROUTES: readonly string[] = [
   "/repository/folders",
   "/repository/layers",
   "/repository/papers",
+  "/repository/plan",
 ];
 
 /**

@@ -135,3 +135,8 @@
   .mj-run-code-actions { justify-content: flex-start; }
   .mj-run-connection { align-items: flex-start; flex-wrap: wrap; }
 }
+
+/* The workflow planner cue under the composer (components/nala-plan-cue.tsx). Quiet on purpose:
+   it is an offer beside the main action, not a second call to action. */
+.mj-run-plan-cue { max-width: 46rem; margin: var(--sp-2) auto 0; padding: 0 var(--sp-4); font-size: var(--fs-13); color: var(--text-2); text-align: center; }
+.mj-run-plan-cue strong { color: var(--text-1); font-weight: 500; }

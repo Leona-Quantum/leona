@@ -57,6 +57,9 @@ export function BlocksPanel({
           <h3>{copy.blocksPanelTitle}</h3>
           <button className="mj-secondary-button" type="button" onClick={onClose}>{copy.editBlockCancel}</button>
         </header>
+        <p className="mj-blocks-plan-link">
+          <a href="/repository/plan" target="_blank" rel="noreferrer">{copy.blocksPlanLink}</a>
+        </p>
         <div className="mj-blocks-list">
           {groups.map((group) => (
             <section key={group.category} className="mj-blocks-category">

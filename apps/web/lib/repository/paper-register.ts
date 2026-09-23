@@ -666,5 +666,13 @@ export const PAPER_REGISTER: PaperRegister = {
     { id: "arxiv:2603.08883", title: "Parallel iQCC Enables 200 Qubit Scale Quantum Chemistry on Accelerated Computing Platforms Surpassing Classical Benchmarks in Ruthenium Catalysts", authors: "Seyyed Mehdi Hosseini Jenab, Brandon Henderson, Scott N. Genin", year: "2026", url: "https://arxiv.org/abs/2603.08883", reports: { theory: "reported", simulation: "reported", hardware: "absent" }, reportsBasis: "abstract" },
     // "we execute the method on real quantum devices to compute absorption spectra for two benchmark molecular systems"
     { id: "arxiv:2606.15489", title: "Orbital-optimized spin-adapted multistate contracted VQE for excited states and properties on quantum hardware", authors: "Erik Rosendahl Kjellgren, Karl Michael Ziems, Peter Reinholdt, Stephan P. A. Sauer, Sonia Coriani, Jacob Kongsted", year: "2026", url: "https://arxiv.org/abs/2606.15489", reports: { theory: "absent", simulation: "reported", hardware: "reported" }, reportsBasis: "abstract" },
+    // Added 2026-09-22 for the workflow planner (`../workflow-planner/sources.ts`), which cites
+    // each by id and locator. Metadata copied from the arXiv API. No `reports`: nobody has read
+    // these for the theory/simulation/hardware axes, and absent is how the register says so.
+    { id: "arxiv:1905.09749", title: "How to factor 2048 bit RSA integers in 8 hours using 20 million noisy qubits", authors: "Craig Gidney, Martin Ekerå", year: "2019", url: "https://arxiv.org/abs/1905.09749" },
+    { id: "arxiv:2505.15917", title: "How to factor 2048 bit RSA integers with less than a million noisy qubits", authors: "Craig Gidney", year: "2025", url: "https://arxiv.org/abs/2505.15917" },
+    { id: "arxiv:1507.08969", title: "Towards Practical Quantum Variational Algorithms", authors: "D. Wecker, M. B. Hastings, M. Troyer", year: "2015", url: "https://arxiv.org/abs/1507.08969" },
+    { id: "arxiv:2011.04149", title: "Focus beyond quadratic speedups for error-corrected quantum advantage", authors: "Ryan Babbush, Jarrod McClean, Michael Newman, Craig Gidney, Sergio Boixo, Hartmut Neven", year: "2020", url: "https://arxiv.org/abs/2011.04149" },
+    { id: "arxiv:quant-ph/9708016", title: "Quantum Algorithms Revisited", authors: "Richard Cleve, Artur Ekert, Chiara Macchiavello, Michele Mosca", year: "1997", url: "https://arxiv.org/abs/quant-ph/9708016" },
   ],
 };

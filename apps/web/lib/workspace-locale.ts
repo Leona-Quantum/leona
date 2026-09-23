@@ -641,6 +641,8 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
     blockSaved: (name: string, uses: number) => string;
     blocksPanelOpen: string;
     blocksPanelTitle: string;
+    /** Link from the block library to the Atlas workflow planner. */
+    blocksPlanLink: string;
     blockCategoryLabel: Record<"state-preparation" | "transforms" | "oracles" | "arithmetic" | "simulation" | "variational", string>;
     insertAtQubit: string;
     insertBlock: string;
@@ -1725,6 +1727,7 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
       blockSaved: (name, uses) => uses === 1 ? `Saved ${name}. 1 use updated.` : `Saved ${name}. ${uses} uses updated.`,
       blocksPanelOpen: "Insert block",
       blocksPanelTitle: "Block library",
+      blocksPlanLink: "Not sure which blocks you need? Describe the problem and plan the workflow in the Atlas",
       blockCategoryLabel: {
         "state-preparation": "State preparation",
         transforms: "Transforms",
@@ -2905,6 +2908,7 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
       blockSaved: (name, uses) => `${name}を保存しました。使用${uses}件を更新しました。`,
       blocksPanelOpen: "ブロックを挿入",
       blocksPanelTitle: "ブロックライブラリ",
+      blocksPlanLink: "どのブロックが必要かわからない場合は、問題を書いてアトラスでワークフローを計画できます",
       blockCategoryLabel: {
         "state-preparation": "状態準備",
         transforms: "変換",
