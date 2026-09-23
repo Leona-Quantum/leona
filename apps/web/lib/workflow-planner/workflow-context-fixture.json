@@ -1,0 +1,287 @@
+{
+  "en": {
+    "version": 1,
+    "problem": "factoring",
+    "problem_label": "Factor an integer (RSA)",
+    "reading": [
+      "Factor a 2048-bit RSA modulus",
+      "RSA"
+    ],
+    "params": [
+      {
+        "key": "bits",
+        "label": "Size of the number (bits)",
+        "value": 2048,
+        "origin": "text",
+        "evidence": "2048-bit"
+      }
+    ],
+    "stages": [
+      {
+        "depth": 0,
+        "capability": "Recover the period of a periodic function",
+        "method": "Period finding in a finite cyclic group",
+        "why": "preferred",
+        "repeat": null
+      },
+      {
+        "depth": 0,
+        "capability": "Compile a circuit to a specific device",
+        "method": "Fault-tolerant compilation (Clifford+T pipeline)",
+        "why": "preferred",
+        "repeat": null
+      },
+      {
+        "depth": 1,
+        "capability": "Approximate a continuous rotation in a discrete gate set",
+        "method": "Solovay-Kitaev algorithm",
+        "why": "first",
+        "repeat": null
+      },
+      {
+        "depth": 1,
+        "capability": "Build logical qubits at a target logical error rate",
+        "method": "Surface code",
+        "why": "first",
+        "repeat": null
+      }
+    ],
+    "costs": [
+      {
+        "id": "ge2021-qubits",
+        "label": "Logical qubits (Gidney–Ekerå 2019)",
+        "value": 6190,
+        "unit": "logical qubits",
+        "formula": "3n + 0.002·n·lg n",
+        "kind": "leading-order",
+        "source": "arxiv:1905.09749, abstract",
+        "missing": []
+      },
+      {
+        "id": "ge2021-toffolis",
+        "label": "Toffoli gates (Gidney–Ekerå 2019)",
+        "value": 2624225017.856,
+        "unit": "Toffoli gates",
+        "formula": "0.3n³ + 0.0005·n³·lg n",
+        "kind": "leading-order",
+        "source": "arxiv:1905.09749, abstract",
+        "missing": []
+      },
+      {
+        "id": "ge2021-depth",
+        "label": "Measurement depth (Gidney–Ekerå 2019)",
+        "value": 2143289344,
+        "unit": "measurement layers",
+        "formula": "500n² + n²·lg n",
+        "kind": "leading-order",
+        "source": "arxiv:1905.09749, abstract",
+        "missing": []
+      },
+      {
+        "id": "g2025-qubits",
+        "label": "Logical qubits (Gidney 2025)",
+        "value": 1399,
+        "unit": "logical qubits",
+        "formula": "Table 5, n = 2048",
+        "kind": "published",
+        "source": "arxiv:2505.15917, Table 5",
+        "missing": []
+      },
+      {
+        "id": "g2025-toffolis",
+        "label": "Toffoli gates per factoring (Gidney 2025)",
+        "value": 6500000000,
+        "unit": "Toffoli gates",
+        "formula": "Table 5, n = 2048",
+        "kind": "published",
+        "source": "arxiv:2505.15917, Table 5",
+        "missing": []
+      },
+      {
+        "id": "ge2021-machine",
+        "label": "Noisy qubits, 8 hours (Gidney–Ekerå 2019)",
+        "value": 20000000,
+        "unit": "physical qubits",
+        "formula": "gate error 10⁻³, 1 µs cycle, 10 µs reaction time",
+        "kind": "published",
+        "source": "arxiv:1905.09749, title and abstract",
+        "missing": []
+      },
+      {
+        "id": "g2025-machine",
+        "label": "Noisy qubits, under a week (Gidney 2025)",
+        "value": 1000000,
+        "unit": "physical qubits",
+        "formula": "less than a million; same assumptions as 2019",
+        "kind": "published",
+        "source": "arxiv:2505.15917, abstract",
+        "missing": []
+      }
+    ],
+    "suggestions": [
+      {
+        "title": "Trade Toffoli gates for qubits",
+        "body": "At 2048 bits, Gidney's 2025 construction uses 4.42× fewer logical qubits than the 2019 one and 2.48× more Toffoli gates. The machine can be smaller, but the run is longer."
+      }
+    ],
+    "small_instance": {
+      "id": "shor-order-finding-15",
+      "title": "Shor finds the order of 7 mod 15"
+    },
+    "planner_path": "/repository/plan#q=Factor%20a%202048-bit%20RSA%20modulus."
+  },
+  "ja": {
+    "version": 1,
+    "problem": "ground-state",
+    "problem_label": "分子・物質の基底状態エネルギー",
+    "reading": [
+      "分子"
+    ],
+    "params": [
+      {
+        "key": "lambda",
+        "label": "λ（係数の絶対値の和）",
+        "value": null,
+        "origin": "unset",
+        "evidence": null
+      },
+      {
+        "key": "deltaE",
+        "label": "目標精度 ΔE",
+        "value": 0.0016,
+        "origin": "text",
+        "evidence": "化学精度"
+      },
+      {
+        "key": "orbitals",
+        "label": "スピン軌道の数 (N)",
+        "value": null,
+        "origin": "unset",
+        "evidence": null
+      }
+    ],
+    "stages": [
+      {
+        "depth": 0,
+        "capability": "ハミルトニアンの基底状態エネルギーを推定する",
+        "method": "位相推定による基底状態エネルギー",
+        "why": "preferred",
+        "repeat": null
+      },
+      {
+        "depth": 1,
+        "capability": "入力状態の準備",
+        "method": "一様制御回転による準備",
+        "why": "first",
+        "repeat": null
+      },
+      {
+        "depth": 1,
+        "capability": "ハミルトニアン時間発展のシミュレーション",
+        "method": "qubitization ウォークによるシミュレーション",
+        "why": "preferred",
+        "repeat": null
+      },
+      {
+        "depth": 2,
+        "capability": "行列のブロックエンコーディング",
+        "method": "スパースアクセスオラクルによる構成",
+        "why": "first",
+        "repeat": null
+      },
+      {
+        "depth": 2,
+        "capability": "QSP 位相因子の決定",
+        "method": "直接法 — 求根と層剥がし",
+        "why": "first",
+        "repeat": null
+      },
+      {
+        "depth": 1,
+        "capability": "ユニタリの固有位相を推定する",
+        "method": "補助レジスタへの位相推定",
+        "why": "first",
+        "repeat": null
+      },
+      {
+        "depth": 0,
+        "capability": "回路を実機向けにコンパイルする",
+        "method": "誤り耐性コンパイル（Clifford+T のパス列）",
+        "why": "preferred",
+        "repeat": null
+      },
+      {
+        "depth": 1,
+        "capability": "連続的な回転を離散ゲート集合で近似する",
+        "method": "Solovay–Kitaev アルゴリズム",
+        "why": "first",
+        "repeat": null
+      },
+      {
+        "depth": 1,
+        "capability": "目標の論理誤り率をもつ論理量子ビットを作る",
+        "method": "表面符号",
+        "why": "first",
+        "repeat": null
+      }
+    ],
+    "costs": [
+      {
+        "id": "babbush-qubits",
+        "label": "論理量子ビット（系＋補助）",
+        "value": null,
+        "unit": "論理量子ビット",
+        "formula": "N + log₂(4·√2·π·λ³·N⁵ / ΔE³)",
+        "kind": "leading-order",
+        "source": "arxiv:1805.03662, Eq. (55)",
+        "missing": [
+          "lambda",
+          "orbitals"
+        ]
+      },
+      {
+        "id": "babbush-t",
+        "label": "T ゲート（主要項）",
+        "value": null,
+        "unit": "T ゲート",
+        "formula": "24·√2·π·N·λ / ΔE",
+        "kind": "leading-order",
+        "source": "arxiv:1805.03662, Theorem 1",
+        "missing": [
+          "lambda",
+          "orbitals"
+        ]
+      },
+      {
+        "id": "babbush-queries",
+        "label": "ハミルトニアンの select 回路の呼び出し",
+        "value": null,
+        "unit": "回の問い合わせ",
+        "formula": "2^m < √2·π·λ / ΔE",
+        "kind": "upper-bound",
+        "source": "arxiv:1805.03662, Eqs. (24) and (26)",
+        "missing": [
+          "lambda"
+        ]
+      },
+      {
+        "id": "babbush-bits",
+        "label": "位相推定の量子ビット (m)",
+        "value": null,
+        "unit": "量子ビット",
+        "formula": "⌈log₂(√2·π·λ / 2ΔE)⌉",
+        "kind": "exact",
+        "source": "arxiv:1805.03662, Eqs. (24) and (26)",
+        "missing": [
+          "lambda"
+        ]
+      }
+    ],
+    "suggestions": [],
+    "small_instance": {
+      "id": "vqe-2q-transverse-ising",
+      "title": "vqe-2q-transverse-ising"
+    },
+    "planner_path": "/repository/plan#q=%E5%88%86%E5%AD%90%E3%81%AE%E5%9F%BA%E5%BA%95%E7%8A%B6%E6%85%8B%E3%82%A8%E3%83%8D%E3%83%AB%E3%82%AE%E3%83%BC%E3%82%92%E5%8C%96%E5%AD%A6%E7%B2%BE%E5%BA%A6%E3%81%A7%E6%B1%82%E3%82%81%E3%81%9F%E3%81%84%E3%80%82%E3%82%B9%E3%83%94%E3%83%B3%E8%BB%8C%E9%81%93%E3%81%AF%20100%20%E5%80%8B%E3%80%81%CE%BB%20%E3%81%AF%20500%20%E3%83%8F%E3%83%BC%E3%83%88%E3%83%AA%E3%83%BC%E3%80%82"
+  }
+}

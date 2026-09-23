@@ -2,7 +2,7 @@
 
 import type { FormEvent } from "react";
 import { useRouter } from "next/navigation";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { rememberChat } from "../../../lib/chat-history";
 import { refusalSentence, responseString, submittedId } from "../../../lib/api-error.ts";
 import { titleFromPrompt } from "../../../lib/chat-title";
@@ -20,9 +20,26 @@ import { RunComposer, type ComposerFramework } from "../../../components/run-com
 import { LionessField } from "../../../components/lioness-field";
 import { usePromptAttachments } from "../../../lib/use-prompt-attachments";
 import { NalaPlanCue } from "../../../components/nala-plan-cue";
+import { indexPlannerGraph, type PlannerGraph } from "../../../lib/workflow-planner/graph.ts";
+import { contextForPrompt } from "../../../lib/workflow-planner/run-context.ts";
 
-export function RunWorkspace({ demoMode = false, locale = "en" }: { demoMode?: boolean; locale?: PublicLocale } = {}) {
+/**
+ * The planner's graph (prose stripped, see `leanPlannerGraph`) and the worked
+ * examples' titles, passed by the signed-in Run page so a recognised prompt
+ * reaches Nala with its workflow. Absent in the public demo, which never sends.
+ */
+export interface RunPlanner {
+  graph: PlannerGraph;
+  exampleTitles: Record<string, string>;
+}
+
+export function RunWorkspace({
+  demoMode = false,
+  locale = "en",
+  planner,
+}: { demoMode?: boolean; locale?: PublicLocale; planner?: RunPlanner } = {}) {
   const copy = WORKSPACE_COPY[locale].run;
+  const plannerIndex = useMemo(() => (planner ? indexPlannerGraph(planner.graph) : null), [planner]);
   const router = useRouter();
   const [prompt, setPrompt] = useState("");
   const [mode, setMode] = useState<ComposerMode>("auto");
@@ -169,24 +186,42 @@ export function RunWorkspace({ demoMode = false, locale = "en" }: { demoMode?: b
     setPending(true);
     setError(null);
     try {
-      const response = await fetch("/api/runs", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "Idempotency-Key": crypto.randomUUID(),
-        },
-        body: JSON.stringify({
-          task_prompt: promptWithAttachments(taskPrompt),
-          // Auto remains the safe default, while a deliberate user selection is
-          // authoritative and bypasses intent reclassification in the worker.
-          mode,
-          framework,
-          response_locale: locale,
-          ...(contextArtifact?.code ? { source_code: contextArtifact.code } : {}),
-          ...(contextArtifact?.currentVersionId ? { artifact_version_id: contextArtifact.currentVersionId } : {}),
-        }),
-      });
-      const payload = (await response.json()) as unknown;
+      // The planner's reading of the typed prompt (not the attachments), when
+      // it recognises one: Nala plans with the cited workflow instead of
+      // guessing at the full-size cost. Only on a fresh run from here, never
+      // when an artifact is attached, where the task is that artifact.
+      const workflowContext =
+        plannerIndex && planner && !contextArtifact
+          ? contextForPrompt(plannerIndex, taskPrompt, locale, planner.exampleTitles)
+          : null;
+      const send = (withContext: boolean) =>
+        fetch("/api/runs", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "Idempotency-Key": crypto.randomUUID(),
+          },
+          body: JSON.stringify({
+            task_prompt: promptWithAttachments(taskPrompt),
+            // Auto remains the safe default, while a deliberate user selection is
+            // authoritative and bypasses intent reclassification in the worker.
+            mode,
+            framework,
+            response_locale: locale,
+            ...(contextArtifact?.code ? { source_code: contextArtifact.code } : {}),
+            ...(contextArtifact?.currentVersionId ? { artifact_version_id: contextArtifact.currentVersionId } : {}),
+            ...(withContext && workflowContext ? { workflow_context: workflowContext } : {}),
+          }),
+        });
+      let response = await send(true);
+      let payload = (await response.json()) as unknown;
+      // An API that predates `workflow_context` refuses it (its request model
+      // forbids unknown fields) with a 422 naming the field. The run the reader
+      // asked for matters more than the context, so send it once more without.
+      if (workflowContext && response.status === 422 && JSON.stringify(payload).includes("workflow_context")) {
+        response = await send(false);
+        payload = (await response.json()) as unknown;
+      }
       // `typeof`, not just truthiness: the cast above is an assertion about this
       // body, not a check of it, and a numeric `id` would satisfy `!payload.id`
       // and then be carried into a route and a stored chat as if it were the
@@ -270,7 +305,7 @@ export function RunWorkspace({ demoMode = false, locale = "en" }: { demoMode?: b
             />
           </div>
 
-          <NalaPlanCue prompt={prompt} locale={locale} />
+          <NalaPlanCue prompt={prompt} locale={locale} informsNala={Boolean(planner) && !contextArtifact} />
 
           {confirmingSend && contextArtifact ? (
             <div className="mj-run-confirm" ref={confirmationRef} tabIndex={-1} role="region" aria-labelledby="run-confirm-title" aria-describedby="run-confirm-body">
