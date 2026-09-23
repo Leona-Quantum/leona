@@ -76,15 +76,27 @@ READ_DENIED: frozenset[tuple[str, str]] = frozenset(
     }
 )
 
-#: Write-shaped requests a `read` token may make. Exactly one, and it earns its place
-#: by doing nothing a GET would not: `POST /qpu/estimates` is arithmetic over the rate
-#: card in `majorana_qpu` (`routes/qpu.py::qpu_estimate` takes no session), so it
-#: touches no database, no provider and no money. It is a POST only because it takes a
-#: body. The plan's own pitch for this feature is "an Atlas method, a verified run or
-#: an estimate", and an estimate should not need the power to start a run.
+#: Write-shaped requests a `read` token may make. Each earns its place by doing
+#: nothing a GET would not:
+#:
+#: - `POST /qpu/estimates` is arithmetic over the rate card in `majorana_qpu`
+#:   (`routes/qpu.py::qpu_estimate` takes no session), so it touches no database,
+#:   no provider and no money. It is a POST only because it takes a body.
+#: - `POST /estimates/logical` (proposal 7 Phase C, ai-ops 349/362) is the same
+#:   shape: `routes/estimates.py::estimate_logical` also takes no session and
+#:   costs exactly the numbers the caller sends through `majorana_estimation`,
+#:   nothing stored, nothing charged. Added here deliberately, not by default —
+#:   its own module docstring said "until someone allowlists it deliberately"
+#:   and this is that decision, made because a token-holding MCP client
+#:   (`leona_mcp`'s `estimate_resources` tool) is the first caller who needs it
+#:   and the route has no side effect a `read` token shouldn't already have.
+#:
+#: The plan's own pitch for this feature is "an Atlas method, a verified run or an
+#: estimate", and an estimate should not need the power to start a run.
 READ_WRITES: frozenset[tuple[str, str]] = frozenset(
     {
         ("POST", "/qpu/estimates"),
+        ("POST", "/estimates/logical"),
     }
 )
 
