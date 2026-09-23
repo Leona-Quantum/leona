@@ -102,6 +102,15 @@ hidden_test: |
       )
 grading_method: unitary
 qubits: 3
+novelty: paper-specific
+novelty_reason: >
+  The general PREPARE-SELECT LCU block-encoding FRAMEWORK is known prior technique (Low-
+  Chuang-era work, well before this paper), but the SPECIFIC operator being block-encoded
+  here — the polymerization rate matrix A = k*(S-I) for a cyclic-shift chemical-kinetics
+  model, and its concrete 2-term decomposition (Eq. 34) with equal-magnitude coefficients
+  — is this paper's own contribution/application. A model needs this paper's specific
+  rate-matrix structure to build the right PREPARE/SELECT pair; knowing LCU in the
+  abstract is not sufficient.
 notes: >
   Verified 2026-09-23 against qiskit==2.5.2 by direct computation (not asserted from the
   paper's prose alone): building exactly this circuit and extracting the ancilla=|0>

@@ -115,6 +115,16 @@ hidden_test: |
       assert abs(total - 1.0) < 1e-9, total
 grading_method: distribution
 qubits: 3
+novelty: paper-specific
+novelty_reason: >
+  The underlying two-CNOT "uniformly-controlled-rotation" gate PRIMITIVE is a known
+  circuit identity, but the SPECIFIC formula this task requires — connecting
+  belief-propagation-derived tree marginals/conditionals into per-node alpha/beta angles
+  and composing them recursively across a tree (Eqs. 34, 38-40) — is presented as this
+  paper's own circuit-construction method for its Ising-graphical-model application, not
+  cited from elsewhere in the fetched text. A model would need to correctly reproduce
+  THIS paper's specific angle-decomposition formula, not just "know how to build a
+  controlled rotation."
 notes: >
   Verified 2026-09-23 by direct simulation: for `p_r=0.36`, `P(a=1|r=0)=0.2`,
   `P(a=1|r=1)=0.7`, `P(b=1|r=0)=0.5`, `P(b=1|r=1)=0.1`, the circuit's measured

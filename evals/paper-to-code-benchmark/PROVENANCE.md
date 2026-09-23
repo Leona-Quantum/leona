@@ -11,6 +11,33 @@ had not yet processed it, `arxiv.org/html/<id>`) via a second, targeted fetch pe
 or explicitly marked as independently derived/verified** (never asserted from memory of
 "how this kind of circuit usually works").
 
+## How new is each task?
+
+Freshness (posted after every model's cutoff — `SPEC.md`) is a necessary but not
+sufficient condition for "a model can't have memorized this." A brand-new paper can still
+restate a construction that predates it by years. Each task below is classified
+`paper-specific` (the construction is the paper's own contribution, or needs a
+parameter/structure only this paper gives) or `restated` (the construction predates the
+paper), reviewed against the paper's own text rather than left as a self-assessment:
+
+| Task | `novelty` | One-line reason |
+|---|---|---|
+| `virtual-rz-single-layer-ansatz` | `restated` | A local-rotation + entangling-layer "hardware-efficient ansatz" is a generic, long-standing VQE/QML template; this paper applies it to PDE state prep rather than inventing the layer shape |
+| `dicke-state-k1-preparation` | `restated` | The k=1 Dicke state is the W state — textbook, and the paper's own Eq. 9 states it as a special case of a known result, not its novel contribution |
+| `belief-propagation-tree-state-prep` | `paper-specific` | The 2-CNOT rotation primitive is known, but the BP-marginal-to-angle formula and its recursive tree composition (Eqs. 34, 38-40) are presented as this paper's own method |
+| `ma-qaoa-single-layer` | `restated` | Multi-angle QAOA (independent angle per Pauli term) is a known ansatz variant from prior literature; Eq. 18 restates that general form for this paper's application |
+| `lcu-block-encoding-rate-matrix` | `paper-specific` | LCU/block-encoding is a known framework, but the specific rate matrix `A=k(S-I)` and its 2-term decomposition (Eq. 34) is this paper's own contribution |
+
+**Only `belief-propagation-tree-state-prep` and `lcu-block-encoding-rate-matrix` (2 of 5)
+support a freshness/"not memorizable" claim.** Every `BenchmarkReport` this harness
+produces carries the `paper-specific`-only score as a separate field
+(`paper_specific_total`/`paper_specific_passed`/`paper_specific_pass_rate`) precisely so a
+reader is never tempted to quote the combined 5-task figure as contamination-proof
+evidence — see `SPEC.md`'s "How new is each task?" for the full policy. The 3 `restated`
+tasks are not wasted: they exercise the same harness, the same sandbox guard, and the same
+grading machinery end to end, and still measure whether a model can correctly implement a
+real (if well-known) quantum construction — a genuine, if different, signal.
+
 ## Tasks shipped
 
 ### `virtual-rz-single-layer-ansatz` — arXiv:2608.17249
@@ -150,3 +177,30 @@ equivalence grading per its own abstract), 2608.05992 (native platform is high-d
 nuclear-spin qudits, not qubits — porting concerns), and 2608.28573 (QFT toolbox for
 GL_2(F_q)/wreath products — group-theory-heavy; not pursued given time budget, not because
 a problem was found).
+
+### Two further attempts to add a 6th/7th `paper-specific` task (both stopped short)
+
+After review flagged that only 2 of the 5 shipped tasks are genuinely `paper-specific`
+("How new is each task?" above), two of the already-dropped candidates were revisited
+specifically to see if a 6th or 7th `paper-specific` task could be added with the same
+verification discipline:
+
+- **2608.15161** (block-encoding matrix polynomials): a targeted follow-up fetch confirmed
+  the angle-computation pipeline for even the smallest (d=1) instance requires implementing
+  an FFT/DCT evaluation followed by a Gray-code-permuted Walsh-Hadamard transform (Eq. 30),
+  and the fetch's own verdict was explicit: "deriving those angles for even d=1 requires
+  code... not expanded enough in the text for manual calculation." Writing that pipeline
+  from scratch, without the paper's own reference implementation to check against, risked
+  producing a plausible-looking but unverifiable "reference" — the exact failure mode this
+  benchmark's own discipline exists to avoid. Not added.
+- **2609.08432 Model B** (the copolymer 5-term LCU, as opposed to Model A's single-monomer
+  2-term LCU which WAS shipped): a second targeted fetch confirmed the diagonal term's exact
+  unitary is never expressed in LCU form in the text ("the text states it uses 'value-to-
+  angle conversion' but doesn't express it as an explicit unitary U_0"), and no section
+  gives all 5 coefficients together for one concrete instance. Not added, for the same
+  reason as Model A's sibling case above: a genuinely fuzzy specification, not merely an
+  inconvenient one.
+
+Both attempts are recorded here rather than silently abandoned — per this benchmark's own
+"never hide a dropped candidate" convention (see the resource-estimation benchmark's own
+PROVENANCE.md for the precedent).

@@ -83,6 +83,45 @@ Each case (`cases/<task_id>.yaml`, validated against
 - `grading_method` — `statevector` / `unitary` / `distribution`.
 - `qubits` — the graded instance's qubit count (kept small enough for exact classical
   simulation; max 24 here, all tasks are 3-4 qubits).
+- `novelty` (required) — `"paper-specific"` or `"restated"`, plus a required one-line
+  `novelty_reason`. See "How new is each task?" below — this field exists because
+  freshness (posted after every model's cutoff) is NOT the same claim as "a model can't
+  have memorized this."
+
+## How new is each task?
+
+**A task built from a fresh paper is not automatically contamination-proof.** A paper
+posted last week can still restate a construction that has been in every textbook and
+every model's training data for years (a special case, a standard ansatz template the
+paper applies rather than invents). Passing such a task shows a model can build a known
+circuit correctly — a real, useful signal, but a different one from "this model read a
+paper it could not have seen before." `novelty` records which claim each task actually
+supports, checked against the paper by a human reviewer rather than left as a
+self-assessment:
+
+| Task | `novelty` | Why |
+|---|---|---|
+| `virtual-rz-single-layer-ansatz` | `restated` | Local-rotation + entangling-layer "hardware-efficient ansatz" templates predate this paper by years; it applies (not invents) that layer shape for a new problem (PDE state prep) |
+| `ma-qaoa-single-layer` | `restated` | Multi-angle QAOA (independent angle per Pauli term) is a known ansatz variant from prior literature; Eq. 18 restates that general form for this paper's SYK application |
+| `dicke-state-k1-preparation` | `restated` | The k=1 Dicke state is the W state — textbook, predates this paper; the paper's Eq. 9 is its own stated special case of a known result, not its novel contribution |
+| `belief-propagation-tree-state-prep` | `paper-specific` | The 2-CNOT rotation gate is a known primitive, but the specific BP-marginal-to-angle formula and its recursive tree composition (Eqs. 34, 38-40) are presented as this paper's own method, not cited from elsewhere |
+| `lcu-block-encoding-rate-matrix` | `paper-specific` | LCU/block-encoding is a known framework, but the specific rate matrix `A=k(S-I)` and its 2-term decomposition (Eq. 34) is this paper's own contribution for polymerization kinetics |
+
+**Only the `paper-specific` score supports a "not memorizable" claim.** Every
+`BenchmarkReport` carries BOTH the combined total (`total`/`passed`/`pass_rate`, across all
+5 tasks) and a `paper_specific_total`/`paper_specific_passed`/`paper_specific_pass_rate`
+restricted to the 2 `paper-specific` tasks. Quoting the combined figure as evidence a model
+"couldn't have memorized this" would be wrong — 3 of the 5 tasks test constructions a model
+could plausibly already know. The `restated` tasks are still shipped (they exercise the
+full harness end to end and give a broader correctness signal), just never as freshness
+evidence.
+
+**First-increment honesty, not a design flaw to fix silently**: 3 of 5 landing on
+`restated` reflects how hard it is to find SMALL, EXACTLY-VERIFIABLE circuits that are
+BOTH freshly-published AND genuinely the paper's own invention — see `PROVENANCE.md`'s
+"Candidates investigated and dropped" section for 6 papers whose potentially
+paper-specific content could not be pinned down precisely enough to trust a hand-written
+reference. Growing the `paper-specific` fraction is real future work, not a one-line fix.
 
 ## Grading rule
 
@@ -95,10 +134,10 @@ Same two-layer convention as `sdk_drift`:
 
 ## Controls (all zero-spend, no model API call of any kind)
 
-| Adapter | What it does | Required result | Measured result |
-|---|---|---|---|
-| `canonical` | Echoes each task's own `scaffold + canonical_solution` | 100% pass | **5/5 passed** |
-| `garbage` | The scaffold with a deliberately wrong body (`return None`) | 0% pass | **0/5 passed** |
+| Adapter | What it does | Required result (all 5) | Measured (all 5) | Measured (`paper-specific` only, 2 tasks) |
+|---|---|---|---|---|
+| `canonical` | Echoes each task's own `scaffold + canonical_solution` | 100% pass | **5/5 passed** | **2/2 passed** |
+| `garbage` | The scaffold with a deliberately wrong body (`return None`) | 0% pass | **0/5 passed** | **0/2 passed** |
 
 **Mutation-check performed during this build**: `grader.py`'s `if result.returncode == 0:`
 line was temporarily replaced with `if True:`. Re-running the `garbage` control against the

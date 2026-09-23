@@ -84,6 +84,14 @@ hidden_test: |
           assert amp.real > 0 and abs(amp.imag) < 1e-9, (i, amp)
 grading_method: distribution
 qubits: 4
+novelty: restated
+novelty_reason: >
+  The k=1 Dicke state is the W state — a textbook construction that has been standard in
+  quantum computing curricula and model training data for years, well before this paper.
+  The paper's own text confirms this is its stated MAXIMUM-SPIN special case (Eq. 9), not
+  its novel contribution (the general, non-uniform branching-path construction, for which
+  the paper gives no worked small example at all — see PROVENANCE.md). A model needs no
+  knowledge of this paper to pass this task.
 notes: >
   Verified 2026-09-23 by direct simulation for n=3, 4, 5: this recursive construction
   (`X` on qubit 0, then for each subsequent qubit a controlled-Ry from the previous qubit

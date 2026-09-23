@@ -46,6 +46,8 @@ def _minimal_task(**overrides) -> PaperToCodeTask:
         hidden_test="def check(candidate):\n    assert candidate() == 1\n",
         grading_method="statevector",
         qubits=1,
+        novelty="paper-specific",
+        novelty_reason="test fixture — not a real classification",
     )
     base.update(overrides)
     return PaperToCodeTask.model_validate(base)
@@ -83,6 +85,8 @@ def _bell_task(**overrides) -> PaperToCodeTask:
         hidden_test=_BELL_HIDDEN_TEST,
         grading_method="statevector",
         qubits=2,
+        novelty="restated",
+        novelty_reason="test fixture — a Bell pair is textbook, not a real classification",
     )
     base.update(overrides)
     return PaperToCodeTask.model_validate(base)
@@ -101,6 +105,16 @@ def test_schema_rejects_empty_quoted_excerpt():
 def test_schema_rejects_empty_hidden_test():
     with pytest.raises(ValidationError, match="hidden_test"):
         _minimal_task(hidden_test="")
+
+
+def test_schema_rejects_empty_novelty_reason():
+    with pytest.raises(ValidationError, match="novelty_reason"):
+        _minimal_task(novelty_reason="")
+
+
+def test_schema_rejects_unknown_novelty_value():
+    with pytest.raises(ValidationError):
+        _minimal_task(novelty="sort-of-new")
 
 
 def test_schema_rejects_qubits_out_of_bounds():
@@ -216,9 +230,63 @@ def test_run_benchmark_reports_100_percent_for_canonical_and_0_for_garbage():
     assert report_bad.pass_rate == 0.0
 
 
+def test_run_benchmark_separates_paper_specific_score_from_the_total():
+    # Both _bell_task()s default to novelty="restated" — a Bell pair is textbook.
+    restated_tasks = [_bell_task(task_id="a"), _bell_task(task_id="b")]
+    report = run_benchmark(
+        restated_tasks, adapter=CanonicalAdapter(), run_mode="stub-canonical", dataset_sha256="x"
+    )
+    assert report.total == 2
+    assert report.paper_specific_total == 0, (
+        "no paper-specific tasks in this fixture set — the breakdown must not fabricate one"
+    )
+    assert report.paper_specific_pass_rate == 0.0
+
+    mixed_tasks = [
+        _bell_task(task_id="a"),  # restated
+        _bell_task(
+            task_id="b", novelty="paper-specific", novelty_reason="test fixture override"
+        ),
+    ]
+    mixed_report = run_benchmark(
+        mixed_tasks, adapter=CanonicalAdapter(), run_mode="stub-canonical", dataset_sha256="x"
+    )
+    assert mixed_report.total == 2
+    assert mixed_report.passed == 2
+    assert mixed_report.paper_specific_total == 1
+    assert mixed_report.paper_specific_passed == 1
+    assert mixed_report.paper_specific_pass_rate == 1.0
+    assert [r.novelty for r in mixed_report.results] == ["restated", "paper-specific"]
+
+
 # ---------------------------------------------------------------------------
 # The shipped corpus itself — this is where the PR's quoted pass counts come from.
 # ---------------------------------------------------------------------------
+
+
+#: The honest classification this corpus ships with (see PROVENANCE.md's "How new is each
+#: task?" table) — pinned here as a regression: a case's `novelty` silently flipping (e.g.
+#: someone "fixing" a case to read as more impressive) is exactly the kind of drift a
+#: reviewer would otherwise have to re-derive from scratch.
+EXPECTED_NOVELTY = {
+    "virtual-rz-single-layer-ansatz": "restated",
+    "ma-qaoa-single-layer": "restated",
+    "dicke-state-k1-preparation": "restated",
+    "belief-propagation-tree-state-prep": "paper-specific",
+    "lcu-block-encoding-rate-matrix": "paper-specific",
+}
+
+
+def test_every_task_has_a_novelty_reason_and_matches_the_pinned_classification():
+    tasks, _ = load_paper_to_code_tasks()
+    for task in tasks:
+        assert task.novelty_reason.strip(), f"{task.task_id} has no novelty_reason"
+        if task.task_id in EXPECTED_NOVELTY:
+            assert task.novelty == EXPECTED_NOVELTY[task.task_id], (
+                f"{task.task_id}: novelty changed to {task.novelty!r} without updating "
+                "this regression pin — update EXPECTED_NOVELTY deliberately if that's "
+                "correct, don't let it drift silently"
+            )
 
 
 def test_loads_shipped_cases_and_controls_pass_100_and_0_percent():
@@ -233,6 +301,12 @@ def test_loads_shipped_cases_and_controls_pass_100_and_0_percent():
     assert canonical_report.passed == canonical_report.total, [
         (r.task_id, r.reasons) for r in canonical_report.results if not r.passed
     ]
+    # The paper-specific slice must also be 100% on its own — a reader trusting only that
+    # narrower figure still needs it to be a real positive control.
+    assert canonical_report.paper_specific_passed == canonical_report.paper_specific_total
+    assert canonical_report.paper_specific_total == sum(
+        1 for v in EXPECTED_NOVELTY.values() if v == "paper-specific"
+    )
 
     garbage_report = run_benchmark(
         tasks, adapter=GarbageAdapter(), run_mode="stub-garbage", dataset_sha256=sha
@@ -240,3 +314,4 @@ def test_loads_shipped_cases_and_controls_pass_100_and_0_percent():
     assert garbage_report.passed == 0, [
         r.task_id for r in garbage_report.results if r.passed
     ]
+    assert garbage_report.paper_specific_passed == 0

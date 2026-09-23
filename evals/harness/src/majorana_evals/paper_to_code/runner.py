@@ -51,6 +51,7 @@ def run_benchmark(
         results.append(
             TaskResult(
                 task_id=task.task_id,
+                novelty=task.novelty,
                 passed=passed,
                 reasons=reasons,
                 wall_time_s=time.monotonic() - started,
@@ -58,6 +59,9 @@ def run_benchmark(
         )
     total = len(results)
     passed_count = sum(1 for result in results if result.passed)
+    paper_specific_results = [result for result in results if result.novelty == "paper-specific"]
+    paper_specific_total = len(paper_specific_results)
+    paper_specific_passed = sum(1 for result in paper_specific_results if result.passed)
     return BenchmarkReport(
         run_mode=run_mode,
         adapter_name=adapter.name,
@@ -66,6 +70,11 @@ def run_benchmark(
         total=total,
         passed=passed_count,
         pass_rate=(passed_count / total if total else 0.0),
+        paper_specific_total=paper_specific_total,
+        paper_specific_passed=paper_specific_passed,
+        paper_specific_pass_rate=(
+            paper_specific_passed / paper_specific_total if paper_specific_total else 0.0
+        ),
         results=results,
         note=note,
     )

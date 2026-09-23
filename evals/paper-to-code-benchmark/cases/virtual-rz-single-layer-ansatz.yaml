@@ -84,6 +84,13 @@ hidden_test: |
       )
 grading_method: statevector
 qubits: 4
+novelty: restated
+novelty_reason: >
+  A local-rotation + entangling-layer "hardware-efficient ansatz" is a generic, long-
+  standing VQE/QML template (in wide use since well before 2026); this paper applies it
+  (with a virtual-Z hardware-efficiency framing) to a new problem (PDE state prep) rather
+  than inventing the layer structure itself, so a model can plausibly build this ansatz
+  correctly without ever having read this specific paper.
 notes: >
   Verified 2026-09-23 against qiskit==2.5.2: CZ gates are diagonal in the computational
   basis and therefore mutually commute regardless of qubit overlap, so the "nearest-

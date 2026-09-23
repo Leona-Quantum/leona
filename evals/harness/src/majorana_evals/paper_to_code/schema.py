@@ -17,7 +17,23 @@ Every task's `quoted_excerpt` is copied verbatim from the source paper (short �
 a figure/algorithm caption, never the whole paper) so a reviewer can check the task statement
 against the paper's own words without re-fetching it. `source.license` records why quoting
 that excerpt is permitted (arXiv's own default license covers this for essentially all new
-arXiv submissions)."""
+arXiv submissions).
+
+**Freshness (a paper posted after every model's cutoff) is necessary but not sufficient for
+the "a model can't have memorized this" claim.** A task can cite a brand-new paper while
+asking a model to build something that construction predates the paper by years (a textbook
+circuit the paper merely restates as a special case, or a standard ansatz template the paper
+applies rather than invents) — a model needs no knowledge of THIS paper to pass such a task.
+`novelty` records this honestly per task: `"paper-specific"` means the construction is the
+paper's own contribution, or needs a parameter/structure only this paper gives (so passing
+genuinely requires having read it); `"restated"` means the construction predates the paper
+(a model could plausibly pass without ever having seen it). `novelty_reason` is the one-line
+justification, checked by a human reviewer against the paper, not a self-assessment left
+implicit. See `../../paper-to-code-benchmark/PROVENANCE.md`'s "How new is each task?" table
+for the per-task classification and reasoning, and `SPEC.md`'s "Controls" section for how a
+report separates the two — only the `paper-specific` score supports a "not memorizable"
+claim; the `restated` tasks are still useful (they exercise the harness and give a broader
+correctness signal) but must never be quoted as contamination-proof evidence."""
 
 from __future__ import annotations
 
@@ -26,6 +42,12 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 GradingMethod = Literal["statevector", "unitary", "distribution"]
+
+#: "paper-specific": the construction is the paper's own contribution, or needs a
+#: parameter/structure only this paper gives. "restated": the construction predates the
+#: paper (a textbook result, or a standard technique the paper applies rather than
+#: invents) — passing such a task does not by itself show a model read this paper.
+Novelty = Literal["paper-specific", "restated"]
 
 RunMode = Literal["live", "stub-canonical", "stub-garbage"]
 
@@ -80,6 +102,13 @@ class PaperToCodeTask(BaseModel):
     #: Qubit count of the graded instance(s) — kept small enough for exact statevector/
     #: unitary comparison or a tractable output distribution.
     qubits: int = Field(gt=0, le=24)
+    #: Required — see the module docstring. Whether passing this task actually requires
+    #: having read THIS paper ("paper-specific") or could be done from prior knowledge
+    #: alone ("restated"). Never left to a report reader to guess.
+    novelty: Novelty
+    #: Required, one line: the specific reason for the `novelty` classification above,
+    #: checked against the paper by a human reviewer rather than left as a self-assessment.
+    novelty_reason: str
     #: One line per non-obvious modeling choice: which paper variant, which convention,
     #: what was simplified and why it still tests the paper's actual content.
     notes: str | None = None
@@ -90,6 +119,8 @@ class PaperToCodeTask(BaseModel):
             raise ValueError("quoted_excerpt must not be empty — every task cites the paper's own words")
         if not self.hidden_test.strip():
             raise ValueError("hidden_test must not be empty")
+        if not self.novelty_reason.strip():
+            raise ValueError("novelty_reason must not be empty — the novelty classification needs a reason")
         return self
 
 
@@ -97,6 +128,9 @@ class TaskResult(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     task_id: str
+    #: Denormalized from the task itself so a report is self-contained — a reader scoring
+    #: "does this support a not-memorizable claim" never has to cross-reference the corpus.
+    novelty: Novelty
     passed: bool
     #: Empty on a pass; on failure carries the guard's violation list or the subprocess's
     #: stderr tail, so a report shows why, not just that it failed.
@@ -121,5 +155,13 @@ class BenchmarkReport(BaseModel):
     total: int = Field(ge=0)
     passed: int = Field(ge=0)
     pass_rate: float = Field(ge=0.0, le=1.0)
+    #: The SAME totals, restricted to `novelty="paper-specific"` tasks only. This is the
+    #: number that actually supports a "a model can't have memorized this" claim — the
+    #: `restated` tasks inflate `total`/`passed` above with constructions that predate the
+    #: paper, so reporting only the combined figure would overstate what freshness buys.
+    #: See SPEC.md's "Controls" section and PROVENANCE.md's "How new is each task?" table.
+    paper_specific_total: int = Field(ge=0)
+    paper_specific_passed: int = Field(ge=0)
+    paper_specific_pass_rate: float = Field(ge=0.0, le=1.0)
     results: list[TaskResult]
     note: str | None = None

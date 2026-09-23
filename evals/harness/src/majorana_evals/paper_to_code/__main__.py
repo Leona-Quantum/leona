@@ -39,8 +39,12 @@ def _write_markdown_summary(report: BenchmarkReport, path: Path) -> None:
         f"# paper-to-code — {report.run_mode}",
         "",
         f"- adapter: `{report.adapter_name}`",
-        f"- tasks: {report.total}",
-        f"- passed: {report.passed} ({report.pass_rate:.1%})",
+        f"- tasks (all, including `restated`): {report.total}",
+        f"- passed (all): {report.passed} ({report.pass_rate:.1%})",
+        f"- **paper-specific tasks only: {report.paper_specific_passed}/"
+        f"{report.paper_specific_total} ({report.paper_specific_pass_rate:.1%})** — "
+        "only THIS figure supports a \"not memorizable\" claim; `restated` tasks predate "
+        "their cited paper and are excluded (see SPEC.md / PROVENANCE.md)",
         f"- pipeline commit: `{report.pipeline_commit_sha or 'unknown'}`",
         f"- dataset sha256: `{report.dataset_sha256}`",
     ]
@@ -76,8 +80,9 @@ def _run(args: argparse.Namespace) -> int:
     if args.markdown_out:
         _write_markdown_summary(report, Path(args.markdown_out))
     print(
-        f"{report.passed}/{report.total} passed ({report.pass_rate:.0%}) "
-        f"[{args.adapter}] -> {out_path}"
+        f"{report.passed}/{report.total} passed ({report.pass_rate:.0%}) [{args.adapter}]; "
+        f"paper-specific only: {report.paper_specific_passed}/{report.paper_specific_total} "
+        f"({report.paper_specific_pass_rate:.0%}) -> {out_path}"
     )
     return 0
 
