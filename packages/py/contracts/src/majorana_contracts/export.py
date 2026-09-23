@@ -21,6 +21,7 @@ from . import (
     models,
     notebook_shares,
     notebooks,
+    notifications,
     plan,
     presence,
     scope,
@@ -173,6 +174,10 @@ EXPORTED = [
     # exactly as much as any `_ResourceBase` type — the export test's `_ResourceBase`
     # filter is a floor on this list, not a ceiling.
     notebook_shares.PublicNotebookView,
+    # ai-ops 349, option 2, "Job-finished notifications" (migration 0073).
+    # NotificationKind is an enum and reaches the document as a hoisted $def.
+    notifications.Notification,
+    notifications.NotificationList,
 ]
 
 

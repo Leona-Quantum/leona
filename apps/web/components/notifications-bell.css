@@ -1,0 +1,217 @@
+/* The header bell (ai-ops 349, option 2). Sized and framed like the header's
+   "?" (tour/tour.css .mj-tour-help), so the two read as one row of icon
+   buttons rather than two different vocabularies. */
+
+.mj-notif-menu {
+  position: relative;
+}
+
+.mj-notif-bell {
+  position: relative;
+  display: inline-grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  border: var(--border-hairline) solid var(--border-0);
+  border-radius: 50%;
+  background: transparent;
+  color: var(--text-1);
+  cursor: pointer;
+}
+
+.mj-notif-bell:hover {
+  border-color: var(--accent);
+  color: var(--text-0);
+}
+
+.mj-notif-bell:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.mj-notif-badge {
+  position: absolute;
+  top: -4px;
+  right: -4px;
+  display: inline-grid;
+  place-items: center;
+  min-width: var(--sp-4);
+  height: var(--sp-4);
+  padding: 0 3px;
+  border-radius: 999px;
+  background: var(--accent);
+  color: var(--bg-0);
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 1;
+}
+
+/* Grows DOWNWARD out of the button, the mirror image of the sidebar account
+   drawer's upward grow (packages/ts/ui/styles.css .mj-sidebar-user-drawer):
+   this button sits in the top header, so its drawer has nowhere to go but
+   down. Same 0fr -> 1fr technique so it animates to its natural height
+   without measuring it, and the same reduced-motion escape hatch. */
+.mj-notif-drawer {
+  position: absolute;
+  z-index: 30;
+  top: 100%;
+  right: 0;
+  left: auto;
+  width: min(22rem, 90vw);
+  display: grid;
+  grid-template-rows: 0fr;
+  opacity: 0;
+  pointer-events: none;
+  transition:
+    grid-template-rows 160ms cubic-bezier(0.2, 0.8, 0.2, 1),
+    opacity 120ms ease;
+}
+
+.mj-notif-menu[data-open="true"] .mj-notif-drawer {
+  grid-template-rows: 1fr;
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.mj-notif-drawer-panel {
+  min-height: 0;
+  overflow: hidden;
+  display: grid;
+  align-content: start;
+}
+
+.mj-notif-drawer-items {
+  display: grid;
+  gap: var(--sp-2);
+  margin-top: var(--sp-1);
+  padding: var(--sp-2);
+  border: 1px solid var(--border-0);
+  border-radius: var(--radius-card);
+  background: var(--bg-1);
+  box-shadow: 0 8px 24px color-mix(in srgb, var(--text-0) 12%, transparent);
+}
+
+.mj-notif-header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--sp-2);
+  padding: 0 var(--sp-1);
+  color: var(--text-0);
+  font-size: var(--fs-13);
+  font-weight: 600;
+}
+
+.mj-notif-mark-all {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--accent);
+  font: inherit;
+  font-weight: 500;
+  font-size: var(--fs-12);
+  cursor: pointer;
+}
+
+.mj-notif-mark-all:hover,
+.mj-notif-mark-all:focus-visible {
+  text-decoration: underline;
+}
+
+.mj-notif-empty {
+  padding: var(--sp-3) var(--sp-1);
+  color: var(--text-2);
+  font-size: var(--fs-12);
+}
+
+.mj-notif-list {
+  display: grid;
+  gap: 1px;
+  max-height: 20rem;
+  overflow-y: auto;
+  list-style: none;
+}
+
+.mj-notif-item {
+  position: relative;
+  display: flex;
+  align-items: stretch;
+  border-radius: var(--radius-control);
+}
+
+.mj-notif-item[data-unread="true"] {
+  background: color-mix(in srgb, var(--accent) 7%, transparent);
+}
+
+.mj-notif-item > a,
+.mj-notif-item > button:first-child {
+  flex: 1;
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+  padding: var(--sp-2) var(--sp-1);
+  border: 0;
+  background: transparent;
+  color: var(--text-0);
+  font: inherit;
+  text-align: left;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.mj-notif-item > a:hover,
+.mj-notif-item > a:focus-visible,
+.mj-notif-item > button:first-child:hover,
+.mj-notif-item > button:first-child:focus-visible {
+  background: var(--bg-2);
+}
+
+.mj-notif-summary {
+  font-size: var(--fs-13);
+  line-height: 1.35;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+.mj-notif-time {
+  color: var(--text-2);
+  font-size: var(--fs-12);
+}
+
+.mj-notif-item-mark {
+  flex: 0 0 auto;
+  align-self: center;
+  width: var(--sp-4);
+  height: var(--sp-4);
+  margin-right: var(--sp-1);
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--accent);
+  font-size: var(--fs-14);
+  line-height: 1;
+  cursor: pointer;
+}
+
+.mj-notif-item-mark:hover,
+.mj-notif-item-mark:focus-visible {
+  background: color-mix(in srgb, var(--accent) 16%, transparent);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .mj-notif-drawer {
+    transition: none;
+  }
+}
+
+@media (max-width: 720px) {
+  .mj-notif-drawer {
+    position: fixed;
+    top: var(--sp-12);
+    right: var(--sp-2);
+    left: var(--sp-2);
+    width: auto;
+  }
+}

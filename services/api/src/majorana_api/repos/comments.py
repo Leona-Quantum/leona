@@ -45,6 +45,7 @@ from ..mentions import Member, handles_for, resolve_mentions
 from ..orm import Artifact, Comment, CommentMention, Membership, Notebook, User
 from . import artifacts as artifacts_repo
 from . import notebooks as notebooks_repo
+from . import notifications as notifications_repo
 from . import runs as runs_repo
 from ._base import ADMIN_ROLES, WRITE_ROLES, AuthzError, NotFoundError, RepoError
 from ._base import is_unique_violation, require_write, touched_now
@@ -361,18 +362,50 @@ async def read_one(scope: Scope, session: AsyncSession, row: Comment) -> Comment
 async def _replace_mentions(
     scope: Scope, session: AsyncSession, row: Comment, members: list[Member]
 ) -> None:
+    # Read BEFORE the delete, so a notification goes out only for a mention
+    # that was not already there. `_replace_mentions` deletes and reinserts
+    # the whole set on every save, including a plain edit that touches no
+    # `@`; without this, re-saving an unchanged comment would re-notify every
+    # person it mentions, every time.
+    already_mentioned = set(
+        (
+            await session.execute(
+                select(CommentMention.mentioned_user_id).where(
+                    CommentMention.workspace_id == scope.workspace_id,
+                    CommentMention.comment_id == row.id,
+                )
+            )
+        )
+        .scalars()
+        .all()
+    )
     await session.execute(
         delete(CommentMention).where(
             CommentMention.workspace_id == scope.workspace_id,
             CommentMention.comment_id == row.id,
         )
     )
-    for user_id in resolve_mentions(row.body, members, author_user_id=row.author_user_id):
+    resolved = resolve_mentions(row.body, members, author_user_id=row.author_user_id)
+    for user_id in resolved:
         session.add(
             CommentMention(
                 comment_id=row.id, mentioned_user_id=user_id, workspace_id=scope.workspace_id
             )
         )
+    newly_mentioned = set(resolved) - already_mentioned
+    if newly_mentioned:
+        author = next((m for m in members if m.user_id == row.author_user_id), None)
+        for user_id in newly_mentioned:
+            await notifications_repo.create_mention(
+                scope,
+                session,
+                user_id=user_id,
+                workspace_id=scope.workspace_id,
+                comment_id=row.id,
+                target_type=row.target_type,
+                target_id=row.target_id,
+                author_display_name=author.display_name if author else None,
+            )
 
 
 async def create_comment(

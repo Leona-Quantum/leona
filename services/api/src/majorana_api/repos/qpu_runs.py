@@ -20,6 +20,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..ids import uuid7
 from ..orm import QpuRun, User
+from . import notifications as notifications_repo
 from ._base import require_write
 
 _TERMINAL = {QpuRunStatus.DONE, QpuRunStatus.ERROR, QpuRunStatus.CANCELLED}
@@ -430,5 +431,23 @@ async def transition(
     )
     if result.rowcount != 1:
         raise RuntimeError(f"qpu_run {record_id} changed concurrently")
+    if status in _TERMINAL:
+        # The single funnel for "tell the owner their hardware job finished"
+        # (ai-ops 349, option 2): every real caller of `transition` — the API
+        # closing a record before it is ever submitted, and every branch of
+        # `worker.handlers.handle_qpu_run` — reaches this line on its way to a
+        # terminal status, so nothing else needs to remember to notify.
+        # `record.user_id` and `record.workspace_id` are read from the row
+        # fetched above, which predates this UPDATE and therefore cannot have
+        # raced with it.
+        await notifications_repo.create_qpu_run_terminal(
+            scope,
+            session,
+            user_id=record.user_id,
+            workspace_id=record.workspace_id,
+            qpu_run_id=record.id,
+            device_id=record.device_id,
+            status=status,
+        )
     await session.refresh(record)
     return record

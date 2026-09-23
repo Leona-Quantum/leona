@@ -42,6 +42,7 @@ from .routes.catalog import router as catalog_router
 from .routes.comments import router as comments_router
 from .routes.estimates import router as estimates_router
 from .routes.me import router as me_router
+from .routes.notifications import router as notifications_router
 from .routes.tokens import router as tokens_router
 from .routes.tour_signals import router as tour_signals_router
 from .routes.news import router as news_router
@@ -568,6 +569,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(courses_router, prefix="/v1")
     app.include_router(comments_router, prefix="/v1")
     app.include_router(presence_router, prefix="/v1")
+    app.include_router(notifications_router, prefix="/v1")
     app.include_router(billing_router, prefix="/v1")
     app.include_router(usage_router, prefix="/v1")
     _wire_observability(app)

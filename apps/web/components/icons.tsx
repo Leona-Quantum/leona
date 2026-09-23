@@ -225,3 +225,13 @@ export function SignOutIcon(props: IconProps) {
 export function MentionIcon(props: IconProps) {
   return <Icon {...props}><path d="M3 3.5h10v7H7.5L4.5 13v-2.5H3z" /><circle cx="8" cy="7" r="1.3" /><path d="M9.3 7v.6c0 .7.9.9 1.2.2.4-1.9-.9-3.1-2.5-3.1a2.3 2.3 0 1 0 1 4.4" /></Icon>;
 }
+
+/** A bell: the header's notifications button. */
+export function BellIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="M8 2.5c-1.7 0-3 1.4-3 3.1v1.6c0 .6-.2 1.2-.6 1.7L3.5 10.5h9l-.9-1.6a2.9 2.9 0 0 1-.6-1.7V5.6c0-1.7-1.3-3.1-3-3.1z" />
+      <path d="M6.5 12.5a1.6 1.6 0 0 0 3 0" />
+    </Icon>
+  );
+}

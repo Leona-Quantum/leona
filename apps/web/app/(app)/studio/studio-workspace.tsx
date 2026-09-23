@@ -51,7 +51,7 @@ import { simulator } from "../../../lib/simulator-client";
 import { CpuRunSlot } from "../../../lib/studio-cpu-run";
 import { TIER_LIMITS } from "../../../lib/account-tier";
 import { formatShare, simulationChartData, simulationReading, type SimulationChartData, type SimulationReading } from "../../../lib/simulation-visual";
-import { QPU_RUN_POLL_MS, QpuSubmissionRefused, afterRestore, backendNameOf, fetchLatestQpuRunFor, fetchQpuBackends, fetchQpuEstimate, fetchQpuRun, fetchQpuSubmissionGate, formatUsd, isPricedOnly, isUnfinishedRun, runForCircuit, submitQpuRun, type QpuBackendInfo, type QpuCostEstimate, type QpuRunRecord, type QpuSubmissionGate } from "../../../lib/qpu";
+import { QPU_RUN_POLL_MS, QpuSubmissionRefused, afterRestore, backendNameOf, fetchLatestQpuRunFor, fetchQpuBackends, fetchQpuEstimate, fetchQpuQueueStatus, fetchQpuRun, fetchQpuSubmissionGate, formatUsd, isPricedOnly, isUnfinishedRun, queueStatusLine, runForCircuit, submitQpuRun, type QpuBackendInfo, type QpuCostEstimate, type QpuQueueStatus, type QpuRunRecord, type QpuSubmissionGate } from "../../../lib/qpu";
 import { ZNE_SCALE_FACTORS } from "../../../lib/qpu-mitigation";
 import { WORKSPACE_COPY } from "../../../lib/workspace-locale";
 import { DEFAULT_RUN_SHOTS, sampling } from "../../../lib/studio-run-request";
@@ -3482,6 +3482,8 @@ function QpuLane({ artifact, shots, copy, limits, workingOut }: { artifact: Libr
   const [estimate, setEstimate] = useState<QpuCostEstimate | null>(null);
   const [estimateError, setEstimateError] = useState(false);
   const [estimating, setEstimating] = useState(false);
+  const [queueStatus, setQueueStatus] = useState<QpuQueueStatus | null>(null);
+  const [queueChecking, setQueueChecking] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [qpuRun, setQpuRun] = useState<QpuRunRecord | null>(null);
@@ -3537,6 +3539,39 @@ function QpuLane({ artifact, shots, copy, limits, workingOut }: { artifact: Libr
       cancelled = true;
     };
   }, [selected, shotCount, zneOn]);
+
+  // How busy the device is, before submitting. Only for a device Leona can
+  // actually submit to (today, the IBM Open Plan) — a priced-only Braket
+  // device offers no submit button either, so there is no "before you
+  // submit" moment to show a queue reading for. Polled at the same period as
+  // the API's own cache (`QUEUE_STATUS_CACHE_TTL_S`), so this never asks more
+  // often than the number can actually change.
+  useEffect(() => {
+    if (!selected || selectedBackend === null || isPricedOnly(selectedBackend)) {
+      setQueueStatus(null);
+      return;
+    }
+    let cancelled = false;
+    function poll() {
+      setQueueChecking(true);
+      fetchQpuQueueStatus(selected)
+        .then((result) => {
+          if (!cancelled) setQueueStatus(result);
+        })
+        .catch(() => {
+          if (!cancelled) setQueueStatus(null);
+        })
+        .finally(() => {
+          if (!cancelled) setQueueChecking(false);
+        });
+    }
+    poll();
+    const timer = window.setInterval(poll, 60_000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+    };
+  }, [selected, selectedBackend]);
 
   const backend = selectedBackend;
   const verified = artifact?.status === "verified" || artifact?.status === "verified_caveats";
@@ -3667,6 +3702,35 @@ function QpuLane({ artifact, shots, copy, limits, workingOut }: { artifact: Libr
                 )
               ) : null}
               <p className="mj-qpu-source"><a href={backend.rate_source} target="_blank" rel="noreferrer">{copy.hardwareRateSource} ↗</a></p>
+            </div>
+          ) : null}
+          {/* How busy the device is right now, before submitting. Only for a
+              device Leona can submit to — see the fetch effect above. */}
+          {backend && !isPricedOnly(backend) ? (
+            <div className="mj-qpu-queue" role="status">
+              <span className="mj-qpu-queue-title">{copy.hardwareQueueTitle}</span>
+              {queueChecking && !queueStatus ? <p className="mj-mono-muted">{copy.hardwareQueueChecking}</p> : null}
+              {queueStatus ? (
+                (() => {
+                  const line = queueStatusLine(queueStatus, {
+                    jobsAhead: copy.hardwareQueueJobsAhead,
+                    noneAhead: copy.hardwareQueueNoneAhead,
+                  });
+                  if (line) {
+                    return (
+                      <p className="mj-qpu-queue-line">
+                        {line}
+                        {queueStatus.backend_name ? (
+                          <span className="mj-mono-muted"> {copy.hardwareQueueMachine(queueStatus.backend_name)}</span>
+                        ) : null}
+                      </p>
+                    );
+                  }
+                  return queueStatus.unavailable_reason ? (
+                    <p className="mj-qpu-note">{copy.hardwareBlockedReason(queueStatus.unavailable_reason)}</p>
+                  ) : null;
+                })()
+              ) : null}
             </div>
           ) : null}
           {/* Before submitting: what the device's published error figures predict

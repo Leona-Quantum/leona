@@ -6150,6 +6150,99 @@
         "title": "NotebookVersionSummary",
         "type": "object"
       },
+      "Notification": {
+        "additionalProperties": false,
+        "description": "One event in the recipient's inbox. `read_at` is None until read.",
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "data": {
+            "additionalProperties": true,
+            "title": "Data",
+            "type": "object"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/NotificationKind"
+          },
+          "read_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Read At"
+          },
+          "summary": {
+            "title": "Summary",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "kind",
+          "summary",
+          "created_at"
+        ],
+        "title": "Notification",
+        "type": "object"
+      },
+      "NotificationKind": {
+        "enum": [
+          "qpu_run_terminal",
+          "mention"
+        ],
+        "title": "NotificationKind",
+        "type": "string"
+      },
+      "NotificationList": {
+        "additionalProperties": false,
+        "description": "A page of the caller's own notifications, newest first.",
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/Notification"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Next Cursor"
+          },
+          "unread_count": {
+            "title": "Unread Count",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "unread_count"
+        ],
+        "title": "NotificationList",
+        "type": "object"
+      },
       "NumericAnswer": {
         "additionalProperties": false,
         "description": "A number, compared with an ABSOLUTE tolerance.\n\n`tolerance` defaults to 0.0, which means exact equality \u2014 deliberate, so an\nauthor who omits it gets a grader that is strict rather than one that is\nsilently generous. A physical answer almost always wants a tolerance set.",
@@ -11601,7 +11694,7 @@
   "info": {
     "description": "Cross-boundary types only; API paths are owned by services/api.",
     "title": "majorana-contracts",
-    "version": "2.33.0"
+    "version": "2.34.0"
   },
   "openapi": "3.1.0",
   "paths": {}

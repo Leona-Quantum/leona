@@ -30,6 +30,7 @@ business does not need a CONTRACTS_VERSION bump.
 import asyncio
 import datetime as dt
 import logging
+import time
 import uuid
 from typing import Annotated, Literal
 
@@ -39,9 +40,12 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from majorana_qpu import (
     IbmCredentialRejected,
+    IbmRuntimeProvider,
     IbmVerificationUnavailable,
     QpuBackendInfo,
     QpuCostEstimate,
+    QpuDisabledError,
+    QpuQueueInfo,
     QpuRunJobPayload,
     QpuSubmissionBlockReason,
     UnknownDeviceError,
@@ -167,6 +171,127 @@ async def qpu_submission_gate(scope: CurrentScope, session: DbSession) -> QpuSub
         submission_available=reason is None,
         blocked_reason=None if reason is None else reason.value,
     )
+
+
+#: How long a queue reading is trusted before another IBM call is made. Not
+#: per-caller: every Open Plan account's submission draws from the SAME
+#: backend pool, so the answer does not vary by whose credential asked, and a
+#: shared window is what keeps a busy page — or several people looking at once
+#: — from turning into repeated IBM calls for a number that has not changed.
+QUEUE_STATUS_CACHE_TTL_S = 60.0
+
+#: A reading that could not be fetched just now — a transient IBM hiccup, or a
+#: credential that failed to decrypt — as opposed to a caller who was never
+#: going to be able to ask (no credential, wrong provider, dependency missing,
+#: which reuse `QpuSubmissionBlockReason`'s own values).
+QUEUE_UNAVAILABLE = "queue_unavailable"
+
+
+class _QueueCache:
+    """One slot, shared by every caller. See `QUEUE_STATUS_CACHE_TTL_S`."""
+
+    def __init__(self, ttl_s: float) -> None:
+        self._ttl_s = ttl_s
+        self._value: QpuQueueInfo | None = None
+        self._fetched_monotonic: float | None = None
+
+    def get(self) -> QpuQueueInfo | None:
+        if self._value is None or self._fetched_monotonic is None:
+            return None
+        if time.monotonic() - self._fetched_monotonic >= self._ttl_s:
+            return None
+        return self._value
+
+    def set(self, value: QpuQueueInfo) -> None:
+        self._value = value
+        self._fetched_monotonic = time.monotonic()
+
+
+_queue_cache = _QueueCache(QUEUE_STATUS_CACHE_TTL_S)
+
+
+class QpuQueueStatusResponse(BaseModel):
+    """How busy the device is, for the panel shown before submitting.
+
+    `pending_jobs` is IBM's own count, worded as "N jobs ahead of yours" —
+    never a minutes figure IBM does not publish. None with a reason means the
+    caller cannot be told right now; a client shows the reason's sentence
+    (`hardwareBlockedReason`, the same copy the submission gate already
+    renders) rather than hiding the panel.
+    """
+
+    device_id: str
+    backend_name: str | None
+    pending_jobs: int | None
+    unavailable_reason: str | None
+    checked_at: dt.datetime
+
+
+def _queue_status_response(
+    device_id: str, info: QpuQueueInfo | None, *, unavailable_reason: str | None
+) -> QpuQueueStatusResponse:
+    return QpuQueueStatusResponse(
+        device_id=device_id,
+        backend_name=info.backend_name if info else None,
+        pending_jobs=info.pending_jobs if info else None,
+        unavailable_reason=unavailable_reason,
+        checked_at=dt.datetime.now(dt.UTC),
+    )
+
+
+@router.get("/qpu/backends/{device_id}/queue", response_model=QpuQueueStatusResponse)
+async def qpu_queue_status(
+    device_id: str, scope: CurrentScope, session: DbSession
+) -> QpuQueueStatusResponse:
+    """How busy `device_id` is right now, cached for `QUEUE_STATUS_CACHE_TTL_S`.
+
+    Submittable only: a device Leona can only price (every Braket entry today
+    — `SUBMITTABLE_PROVIDERS` has no Braket adapter, so there is no "before you
+    submit" moment for one) answers `provider_not_supported`, the same reason
+    the submission gate gives for the same devices. IBM's Open Plan is priced
+    as ONE catalog entry (`ibm.open_plan`) because IBM picks the physical
+    backend at submit time; this reports the queue for whichever backend
+    `least_busy` would pick right now, which is the backend a real submission
+    would actually go to.
+    """
+    try:
+        backend = backend_info(device_id)
+    except UnknownDeviceError:
+        raise HTTPException(status_code=404, detail="unknown QPU device") from None
+    if not backend.submittable:
+        return _queue_status_response(
+            device_id,
+            None,
+            unavailable_reason=QpuSubmissionBlockReason.PROVIDER_NOT_SUPPORTED.value,
+        )
+    reason = submission_block_reason(has_credential=await _caller_can_submit(scope, session))
+    if reason is not None:
+        return _queue_status_response(device_id, None, unavailable_reason=reason.value)
+    cached = _queue_cache.get()
+    if cached is not None:
+        return _queue_status_response(device_id, cached, unavailable_reason=None)
+    record = await credentials_repo.get(scope, session, IBM_PROVIDER)
+    if record is None:
+        # `_caller_can_submit` just confirmed a decryptable row exists; a
+        # concurrent disconnect between that check and this read is the only
+        # way this is reached, and it is exactly the "ask again" case the
+        # transient reason names.
+        return _queue_status_response(device_id, None, unavailable_reason=QUEUE_UNAVAILABLE)
+    try:
+        token = credential_crypto.load_cipher().decrypt(record.ciphertext, key_id=record.key_id)
+    except credential_crypto.CredentialCryptoError:
+        log.warning("qpu queue status: stored credential (key %s) failed to decrypt", record.key_id)
+        return _queue_status_response(device_id, None, unavailable_reason=QUEUE_UNAVAILABLE)
+    provider = IbmRuntimeProvider(token, instance=record.instance)
+    try:
+        info = await asyncio.to_thread(provider.queue_status)
+    except QpuDisabledError as disabled:
+        return _queue_status_response(device_id, None, unavailable_reason=disabled.reason.value)
+    except Exception:  # noqa: BLE001 — a busy page must not 500 on an IBM hiccup
+        log.warning("qpu queue status unavailable", exc_info=True)
+        return _queue_status_response(device_id, None, unavailable_reason=QUEUE_UNAVAILABLE)
+    _queue_cache.set(info)
+    return _queue_status_response(device_id, info, unavailable_reason=None)
 
 
 class QpuCredentialStatus(BaseModel):

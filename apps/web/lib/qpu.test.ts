@@ -17,7 +17,13 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { QpuSubmissionRefused, fetchQpuEstimate, isPricedOnly, submitQpuRun } from "./qpu.ts";
+import {
+  QpuSubmissionRefused,
+  fetchQpuEstimate,
+  isPricedOnly,
+  queueStatusLine,
+  submitQpuRun,
+} from "./qpu.ts";
 import { WORKSPACE_COPY } from "./workspace-locale.ts";
 
 const REQUEST = {
@@ -228,4 +234,23 @@ test("the ZNE cost sentence names the circuits and both shot totals in both loca
     for (const part of ["3", "3,072", "1,024"]) assert.ok(sentence.includes(part), `${locale}: ${part}`);
     assert.equal(sentence.includes("\u2014"), false, "no em dashes in reader-facing copy");
   }
+});
+
+const QUEUE_COPY = { jobsAhead: (n: string) => `${n} jobs ahead of yours`, noneAhead: "No jobs ahead of yours" };
+
+test("the queue line reports the provider's own count and never a fabricated ETA", () => {
+  assert.equal(queueStatusLine({ pending_jobs: 12, unavailable_reason: null }, QUEUE_COPY), "12 jobs ahead of yours");
+  assert.equal(queueStatusLine({ pending_jobs: 0, unavailable_reason: null }, QUEUE_COPY), "No jobs ahead of yours");
+});
+
+test("the queue line is null when unavailable, whether or not a stale count is present", () => {
+  assert.equal(queueStatusLine({ pending_jobs: null, unavailable_reason: "credentials_unconfigured" }, QUEUE_COPY), null);
+  // A reason present alongside a non-null count (should never happen from the
+  // route, but the helper does not trust that) still refuses to show a number
+  // that came with a reason it could not be trusted.
+  assert.equal(queueStatusLine({ pending_jobs: 12, unavailable_reason: "queue_unavailable" }, QUEUE_COPY), null);
+});
+
+test("the queue line is null when the provider reported no count and no reason", () => {
+  assert.equal(queueStatusLine({ pending_jobs: null, unavailable_reason: null }, QUEUE_COPY), null);
 });

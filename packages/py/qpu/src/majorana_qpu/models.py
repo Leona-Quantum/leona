@@ -166,6 +166,23 @@ class QpuSubmissionBlockReason(StrEnum):
     PROVIDER_NOT_SUPPORTED = "provider_not_supported"
 
 
+class QpuQueueInfo(BaseModel):
+    """How busy a device is, right now, for the "before you submit" panel.
+
+    `pending_jobs` is IBM's own count of jobs ahead of a new one — never a
+    minutes figure IBM does not publish. `backend_name` is which physical
+    machine the number is FOR: the Open Plan catalog entry (`ibm.open_plan`)
+    does not name one, since IBM's own `least_busy` call picks it at submit
+    time, so this is the backend that call picked when the number was read,
+    which is the same call `submit()` makes for a real submission.
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    backend_name: str | None = None
+    pending_jobs: int | None = None
+
+
 class QpuJobStatus(StrEnum):
     QUEUED = "queued"
     RUNNING = "running"

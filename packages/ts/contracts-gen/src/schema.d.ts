@@ -3200,6 +3200,54 @@ export interface components {
             status: components["schemas"]["NotebookVersionStatus"];
         };
         /**
+         * Notification
+         * @description One event in the recipient's inbox. `read_at` is None until read.
+         */
+        Notification: {
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Data */
+            data?: {
+                [key: string]: unknown;
+            };
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            kind: components["schemas"]["NotificationKind"];
+            /**
+             * Read At
+             * @default null
+             */
+            read_at: string | null;
+            /** Summary */
+            summary: string;
+        };
+        /**
+         * NotificationKind
+         * @enum {string}
+         */
+        NotificationKind: "qpu_run_terminal" | "mention";
+        /**
+         * NotificationList
+         * @description A page of the caller's own notifications, newest first.
+         */
+        NotificationList: {
+            /** Items */
+            items: components["schemas"]["Notification"][];
+            /**
+             * Next Cursor
+             * @default null
+             */
+            next_cursor: string | null;
+            /** Unread Count */
+            unread_count: number;
+        };
+        /**
          * NumericAnswer
          * @description A number, compared with an ABSOLUTE tolerance.
          *
