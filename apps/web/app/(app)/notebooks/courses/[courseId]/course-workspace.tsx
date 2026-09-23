@@ -42,6 +42,8 @@ import {
 import type { PublicLocale } from "../../../../../lib/public-locale";
 import { useRunProgress } from "../../../../../lib/use-run-progress";
 import { WORKSPACE_COPY } from "../../../../../lib/workspace-locale";
+import { CourseCertificate } from "./course-certificate";
+import { CourseCohorts } from "./course-cohorts";
 import { CourseGradebook } from "./course-gradebook";
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -535,13 +537,22 @@ export function CourseWorkspace({ courseId, locale = "en" }: { courseId: string;
           could have been graded on, and an empty gradebook under a plan that is
           still being written reads as a failure rather than as "not yet". */}
       {courseHasGradableNotebook(course.modules ?? []) ? (
-        <CourseGradebook
-          courseId={course.id}
-          courseSlug={course.slug}
-          locale={locale}
-          refreshKey={gradebookRefresh}
-          onLoaded={setGradebook}
-        />
+        <>
+          <CourseGradebook
+            courseId={course.id}
+            courseSlug={course.slug}
+            locale={locale}
+            refreshKey={gradebookRefresh}
+            onLoaded={setGradebook}
+          />
+          <CourseCohorts courseId={course.id} locale={locale} members={gradebook?.rows} />
+          <CourseCertificate
+            courseId={course.id}
+            locale={locale}
+            viewerId={viewerId}
+            isCreator={isCreator}
+          />
+        </>
       ) : null}
     </section>
   );

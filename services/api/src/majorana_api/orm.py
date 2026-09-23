@@ -420,6 +420,66 @@ class CourseTurn(Base):
     created_at: Mapped[dt.datetime | None] = mapped_column(server_default=func.now())
 
 
+class CourseCohort(Base):
+    """Migration 0074. A named group within a course ("Section A"), so the
+    creator can filter the gradebook by section. No `workspace_id` column: the
+    tenant resolves through `courses`, exactly like `CourseModule`/`CourseTurn`."""
+
+    __tablename__ = "course_cohorts"
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True)
+    course_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("courses.id", ondelete="CASCADE"))
+    name: Mapped[str]
+    created_at: Mapped[dt.datetime | None] = mapped_column(server_default=func.now())
+    updated_at: Mapped[dt.datetime | None] = mapped_column(server_default=func.now())
+
+
+class CourseCohortMember(Base):
+    """Migration 0074. One member's cohort in one course. The primary key IS the
+    "at most one cohort per course" rule — see the migration's docstring — so
+    moving a member is an upsert onto `(course_id, user_id)`, never a delete
+    racing an insert. `cohort_id` carries a composite FK to `course_cohorts
+    (course_id, id)`, so a cohort from another course can never be named here;
+    only the two plain columns are declared here, which is all the queries need."""
+
+    __tablename__ = "course_cohort_members"
+
+    course_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("courses.id", ondelete="CASCADE"), primary_key=True
+    )
+    user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id"), primary_key=True)
+    cohort_id: Mapped[uuid.UUID] = mapped_column(_UUID)
+    created_at: Mapped[dt.datetime | None] = mapped_column(server_default=func.now())
+
+
+class CourseCertificate(Base):
+    """Migration 0074. A claimed Open Badges completion certificate.
+
+    `id` is NOT a `uuid7()` — it is the unguessable public token a hosted
+    assertion is served under (`GET /v1/certificates/{id}`, no auth), minted by
+    `repos.certificates.new_certificate_id` from 128 bits of OS-CSPRNG entropy.
+    See the migration's docstring for why `uuid7()`'s 74 bits is the wrong
+    choice for a value that IS the credential.
+    """
+
+    __tablename__ = "course_certificates"
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True)
+    course_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("courses.id", ondelete="CASCADE"))
+    user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id"))
+    #: Chosen by the learner at claim time (default their display name). Printed
+    #: on the badge and shown on the public page; never their email or score.
+    recipient_name: Mapped[str]
+    #: A SNAPSHOT of `courses.title` at claim time — see migration 0074's
+    #: docstring for why this is stored rather than joined live.
+    course_title: Mapped[str]
+    issued_at: Mapped[dt.datetime | None] = mapped_column(server_default=func.now())
+    revoked_at: Mapped[dt.datetime | None]
+    revoked_by_user_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id"))
+    created_at: Mapped[dt.datetime | None] = mapped_column(server_default=func.now())
+    updated_at: Mapped[dt.datetime | None] = mapped_column(server_default=func.now())
+
+
 class Comment(Base):
     """Migration 0068. A comment, or a one-level reply, on a run, notebook or
     artifact. `target_id` has no FK (it names a row in one of three tables); the
@@ -1164,7 +1224,7 @@ class TourSignalCount(Base):
     count = count + 1`, and a synthetic id would only invite a second way to name
     the same row. No `workspace_id`, no `user_id` — this is anonymous, aggregate
     product telemetry, not tenant data, and carries neither an RLS policy nor the
-    GUCs that would need one; see migration 0071's docstring for why that is a
+    GUCs that would need one; see migration 0074's docstring for why that is a
     deliberate classification rather than an omission.
     """
 

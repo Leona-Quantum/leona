@@ -134,6 +134,7 @@ test("canSetDueDate without a save handler renders no control rather than a dead
 
 const book: CourseGradebook = {
   course_id: "c1",
+  cohort_id: null,
   visibility: "all_members",
   modules: [
     { id: "m1", seq: 1, slug: "bell", title: "The Bell state", notebook_id: "nb-1", graded_cells: 2, due_at: DUE },
@@ -144,6 +145,7 @@ const book: CourseGradebook = {
       user_id: "u-ana",
       email: "ana@example.test",
       display_name: "Ana",
+      cohort_name: null,
       entries: [
         {
           module_id: "m1",
@@ -167,6 +169,7 @@ const book: CourseGradebook = {
       user_id: "u-cy",
       email: "cy@example.test",
       display_name: "Cy",
+      cohort_name: null,
       entries: [],
       total_passed: 0,
       total_graded_cells: 5,

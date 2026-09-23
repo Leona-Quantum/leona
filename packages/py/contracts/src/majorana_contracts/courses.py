@@ -432,6 +432,12 @@ class GradebookRow(_ResourceBase):
     user_id: UUID
     email: str
     display_name: str | None = None
+    #: The member's own cohort in this course (ai-ops 349 proposal 8), `None`
+    #: when they are in none. Shown to the creator on every row, and to a
+    #: member on their own row only — the same thing `CohortVisibility.
+    #: OWN_COHORT` already lets them see, so carrying it here adds no exposure
+    #: beyond what `GradebookVisibility.OWN_ROW` already grants this row.
+    cohort_name: str | None = None
     #: Only the modules this member has been graded on, in module order.
     entries: list[GradebookEntry] = Field(default_factory=list)
     #: Cells passed, summed over `entries`.
@@ -469,5 +475,10 @@ class CourseGradebook(_ResourceBase):
 
     course_id: UUID
     visibility: GradebookVisibility
+    #: The cohort `rows` was filtered to, from `?cohort_id=`, `None` for the whole
+    #: class. Echoed back rather than left for the caller to remember, so the CSV
+    #: (which carries the same parameter) and the table it was checked against
+    #: cannot silently disagree about which section is on screen.
+    cohort_id: UUID | None = None
     modules: list[GradebookModule] = Field(default_factory=list)
     rows: list[GradebookRow] = Field(default_factory=list)

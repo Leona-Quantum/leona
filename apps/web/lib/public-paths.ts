@@ -74,6 +74,12 @@ export const PUBLIC_PATHS: readonly string[] = [
   // no auth API at all (`app/embed/q/[slug]/page.tsx`), so being on this list
   // removes a gate that was never going to have anything to check anyway.
   "/embed/q",
+  // A learner's course certificate (ai-ops 349, Open Badges 2.0 hosted
+  // verification). A badge verifier fetches the assertion with no session at
+  // all, so this can never sit behind AuthKit. The page reads the certificate
+  // through the anonymous, rate-limited `/v1/certificates/{id}` route and shows
+  // only the name the learner chose, the course title, the date and the issuer.
+  "/certificates",
   "/contact",
   "/privacy",
   "/terms",

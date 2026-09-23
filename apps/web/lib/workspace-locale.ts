@@ -1049,6 +1049,58 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
     gradebookMissing: string;
     gradebookMissingHint: (date: string) => string;
     gradebookLegend: string;
+
+    // Cohorts (ai-ops 349 proposal 8): named sections within a course, so the
+    // creator can filter the gradebook by "Section A" instead of the whole class.
+    cohortsLabel: string;
+    cohortsLede: string;
+    cohortsEmpty: string;
+    newCohort: string;
+    cohortNamePlaceholder: string;
+    createCohort: string;
+    creatingCohort: string;
+    createCohortFailed: string;
+    cohortDuplicateName: (name: string) => string;
+    renameCohort: string;
+    renamingCohort: string;
+    renameCohortFailed: string;
+    deleteCohort: string;
+    deletingCohort: string;
+    deleteCohortFailed: string;
+    deleteCohortConfirmTitle: string;
+    deleteCohortConfirmWarning: (name: string) => string;
+    cohortMemberCount: (count: number) => string;
+    assignCohortLabel: string;
+    noCohort: string;
+    assignCohortFailed: string;
+    /** A non-creator's own view: just their section's name. */
+    yourCohortLabel: (name: string) => string;
+    noCohortAssigned: string;
+    cohortFilterLabel: string;
+    allCohorts: string;
+
+    // Certificates (ai-ops 349 proposal 8): an Open Badges 2.0 completion record.
+    certificateLabel: string;
+    certificateEligibleLede: string;
+    certificateNotEligibleLede: string;
+    certificateNameLabel: string;
+    certificateNamePlaceholder: string;
+    claimCertificate: string;
+    claimingCertificate: string;
+    claimCertificateFailed: string;
+    certificateClaimedLede: (name: string) => string;
+    certificateRevokedLede: string;
+    viewCertificate: string;
+    downloadAssertion: string;
+    revokeCertificate: string;
+    revokingCertificate: string;
+    revokeCertificateFailed: string;
+    revokeCertificateConfirmTitle: string;
+    revokeCertificateConfirmWarning: string;
+    /** The creator's roster of who has claimed one. */
+    certificatesIssuedLabel: string;
+    certificatesIssuedEmpty: string;
+    certificateRecipient: (name: string) => string;
   };
 }> = {
   en: {
@@ -2250,6 +2302,55 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
     gradebookMissing: "Missing",
     gradebookMissingHint: (date) => `Not started, and the due date (${date}) has passed.`,
     gradebookLegend: "Late: nothing was checked by the due date. Missing: not started, and the due date has passed.",
+
+    cohortsLabel: "Cohorts",
+    cohortsLede: "Split the class into sections, then filter the gradebook by one.",
+    cohortsEmpty: "No cohorts yet.",
+    newCohort: "New cohort",
+    cohortNamePlaceholder: "e.g. Section A",
+    createCohort: "Create cohort",
+    creatingCohort: "Creating…",
+    createCohortFailed: "The cohort could not be created.",
+    cohortDuplicateName: (name) => `This course already has a cohort named "${name}".`,
+    renameCohort: "Rename",
+    renamingCohort: "Saving…",
+    renameCohortFailed: "The cohort could not be renamed.",
+    deleteCohort: "Delete",
+    deletingCohort: "Deleting…",
+    deleteCohortFailed: "The cohort could not be deleted.",
+    deleteCohortConfirmTitle: "Delete this cohort?",
+    deleteCohortConfirmWarning: (name) =>
+      `"${name}" will be deleted. Its members are not moved to another cohort — they simply have none.`,
+    cohortMemberCount: (count) => (count === 1 ? "1 member" : `${count} members`),
+    assignCohortLabel: "Cohort",
+    noCohort: "No cohort",
+    assignCohortFailed: "The cohort could not be changed.",
+    yourCohortLabel: (name) => `Your cohort: ${name}`,
+    noCohortAssigned: "You are not in a cohort.",
+    cohortFilterLabel: "Filter by cohort",
+    allCohorts: "All cohorts",
+
+    certificateLabel: "Certificate",
+    certificateEligibleLede: "You have passed every graded exercise in this course.",
+    certificateNotEligibleLede: "Pass every graded exercise in this course to claim a certificate.",
+    certificateNameLabel: "Name on the certificate",
+    certificateNamePlaceholder: "Your name",
+    claimCertificate: "Claim certificate",
+    claimingCertificate: "Claiming…",
+    claimCertificateFailed: "The certificate could not be claimed.",
+    certificateClaimedLede: (name) => `Claimed as ${name}.`,
+    certificateRevokedLede: "This certificate has been revoked.",
+    viewCertificate: "View certificate",
+    downloadAssertion: "Download Open Badges assertion (JSON)",
+    revokeCertificate: "Revoke",
+    revokingCertificate: "Revoking…",
+    revokeCertificateFailed: "The certificate could not be revoked.",
+    revokeCertificateConfirmTitle: "Revoke this certificate?",
+    revokeCertificateConfirmWarning:
+      "Its public page will say it was revoked. This cannot be undone.",
+    certificatesIssuedLabel: "Certificates issued",
+    certificatesIssuedEmpty: "No one has claimed a certificate for this course yet.",
+    certificateRecipient: (name) => `Certificate: ${name}`,
   },
   },
   ja: {
@@ -3439,6 +3540,54 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
     gradebookMissing: "未提出",
     gradebookMissingHint: (date) => `未着手のまま、提出期限（${date}）を過ぎています。`,
     gradebookLegend: "期限後：提出期限までに採点された提出がありません。未提出：未着手のまま提出期限を過ぎています。",
+
+    cohortsLabel: "コホート",
+    cohortsLede: "クラスをセクションに分けて、成績表をセクションごとに絞り込めます。",
+    cohortsEmpty: "まだコホートがありません。",
+    newCohort: "新しいコホート",
+    cohortNamePlaceholder: "例：Aセクション",
+    createCohort: "コホートを作成",
+    creatingCohort: "作成しています…",
+    createCohortFailed: "コホートを作成できませんでした。",
+    cohortDuplicateName: (name) => `このコースには「${name}」という名前のコホートが既にあります。`,
+    renameCohort: "名前を変更",
+    renamingCohort: "保存しています…",
+    renameCohortFailed: "コホートの名前を変更できませんでした。",
+    deleteCohort: "削除",
+    deletingCohort: "削除しています…",
+    deleteCohortFailed: "コホートを削除できませんでした。",
+    deleteCohortConfirmTitle: "このコホートを削除しますか？",
+    deleteCohortConfirmWarning: (name) =>
+      `「${name}」を削除します。メンバーは他のコホートに移動されず、コホートなしの状態になります。`,
+    cohortMemberCount: (count) => `メンバー${count}人`,
+    assignCohortLabel: "コホート",
+    noCohort: "コホートなし",
+    assignCohortFailed: "コホートを変更できませんでした。",
+    yourCohortLabel: (name) => `あなたのコホート：${name}`,
+    noCohortAssigned: "コホートに属していません。",
+    cohortFilterLabel: "コホートで絞り込む",
+    allCohorts: "すべてのコホート",
+
+    certificateLabel: "証明書",
+    certificateEligibleLede: "このコースの採点対象の演習をすべて合格しました。",
+    certificateNotEligibleLede: "証明書を受け取るには、このコースの採点対象の演習をすべて合格してください。",
+    certificateNameLabel: "証明書に記載する名前",
+    certificateNamePlaceholder: "お名前",
+    claimCertificate: "証明書を受け取る",
+    claimingCertificate: "受け取っています…",
+    claimCertificateFailed: "証明書を受け取れませんでした。",
+    certificateClaimedLede: (name) => `${name}として発行されました。`,
+    certificateRevokedLede: "この証明書は取り消されています。",
+    viewCertificate: "証明書を見る",
+    downloadAssertion: "Open Badgesデータをダウンロード（JSON）",
+    revokeCertificate: "取り消す",
+    revokingCertificate: "取り消しています…",
+    revokeCertificateFailed: "証明書を取り消せませんでした。",
+    revokeCertificateConfirmTitle: "この証明書を取り消しますか？",
+    revokeCertificateConfirmWarning: "公開ページには取り消し済みと表示されます。元に戻せません。",
+    certificatesIssuedLabel: "発行済みの証明書",
+    certificatesIssuedEmpty: "このコースの証明書は、まだ誰も受け取っていません。",
+    certificateRecipient: (name) => `証明書：${name}`,
   },
   },
 };

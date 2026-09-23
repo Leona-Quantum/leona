@@ -30,6 +30,7 @@ from ..auth.deps import CurrentIdentity, CurrentScope, DbSession, get_settings
 from ..jobs import COURSE_PLAN_JOB_KIND, COURSE_REVISE_JOB_KIND
 from ..orm import Course as CourseRow
 from ..orm import CourseModule as CourseModuleRow
+from ..repos import cohorts as cohorts_repo
 from ..repos import courses as courses_repo
 from ..repos import notebooks as notebooks_repo
 from ..repos import runs as runs_repo
@@ -68,6 +69,18 @@ class GenerateCourseRequest(RequestModel, contracts.GenerateCourseRequest):
 
 
 class CreateCourseTurnRequest(RequestModel, contracts.CreateCourseTurnRequest):
+    pass
+
+
+class CreateCohortRequest(RequestModel, contracts.CreateCohortRequest):
+    pass
+
+
+class UpdateCohortRequest(RequestModel, contracts.UpdateCohortRequest):
+    pass
+
+
+class SetCohortMembershipRequest(RequestModel, contracts.SetCohortMembershipRequest):
     pass
 
 
@@ -486,7 +499,10 @@ async def export_course(course_id: uuid.UUID, scope: CurrentScope, session: DbSe
 
 @router.get("/courses/{course_id}/gradebook", response_model=contracts.CourseGradebook)
 async def get_course_gradebook(
-    course_id: uuid.UUID, scope: CurrentScope, session: DbSession
+    course_id: uuid.UUID,
+    scope: CurrentScope,
+    session: DbSession,
+    cohort_id: uuid.UUID | None = None,
 ) -> contracts.CourseGradebook:
     """How members are doing on this course's graded exercises.
 
@@ -495,8 +511,12 @@ async def get_course_gradebook(
     (owner ruling ai-ops 260, option 1) and why workspace role is not the test are on
     `courses_repo.course_gradebook`, which is where the rule is enforced: this route
     and the CSV beside it cannot disagree about it because neither applies it.
+
+    `?cohort_id=` (ai-ops 349 proposal 8, cohorts slice) restricts `rows` to that
+    cohort's members — enforced the same place, not here, so this route and the
+    CSV cannot disagree about that either.
     """
-    return await courses_repo.course_gradebook(scope, session, course_id)
+    return await courses_repo.course_gradebook(scope, session, course_id, cohort_id=cohort_id)
 
 
 #: A spreadsheet reads a cell that starts with one of these as a formula, or (tab,
@@ -525,6 +545,10 @@ _GRADEBOOK_CSV_HEADER = (
     "run_id",
     "course_cells_passed",
     "course_graded_cells",
+    # Appended, not inserted: unlike `due_at`, nothing needs this column to sit
+    # ahead of the totals, and appending it leaves every column position anyone
+    # already parses by index unchanged (ai-ops 349 proposal 8, cohorts slice).
+    "cohort",
 )
 
 
@@ -555,6 +579,11 @@ def render_gradebook_csv(book: contracts.CourseGradebook) -> str:
     empty where there is none, the way `outdated` is. `missing` is `yes` or `no` on
     every row: it is a fact about the member and the module, not about an attempt,
     and "no" is a real answer for a module that is not due yet.
+
+    `cohort` is the member's own cohort name, empty when they are in none — the
+    same fact `GradebookRow.cohort_name` carries on the JSON response, repeated on
+    every one of the member's rows so a spreadsheet's per-module filter and its
+    per-cohort filter can both be simple column equality.
     """
     buffer = io.StringIO()
     writer = csv.writer(buffer, lineterminator="\r\n")
@@ -580,6 +609,7 @@ def render_gradebook_csv(book: contracts.CourseGradebook) -> str:
                 entry.run_id if entry else None,
                 row.total_passed if row.entries else None,
                 row.total_graded_cells,
+                row.cohort_name or "",
             )
             writer.writerow([_csv_cell(cell) for cell in cells])
     return buffer.getvalue()
@@ -587,17 +617,21 @@ def render_gradebook_csv(book: contracts.CourseGradebook) -> str:
 
 @router.get("/courses/{course_id}/gradebook.csv")
 async def export_course_gradebook(
-    course_id: uuid.UUID, scope: CurrentScope, session: DbSession
+    course_id: uuid.UUID,
+    scope: CurrentScope,
+    session: DbSession,
+    cohort_id: uuid.UUID | None = None,
 ) -> Response:
     """The gradebook as a spreadsheet. Same rows as `GET .../gradebook`, from the
-    same call, so a member who downloads it gets their own row and nothing else.
+    same call (including the same `?cohort_id=` filter), so a member who downloads
+    it gets their own row and nothing else.
 
     UTF-8 with a byte-order mark. Without it Excel opens the file in the system
     code page and a Japanese member's name arrives as mojibake; every tool that
     reads CSV as UTF-8 skips the mark.
     """
     course = await courses_repo.get_course(scope, session, course_id)
-    book = await courses_repo.course_gradebook(scope, session, course_id)
+    book = await courses_repo.course_gradebook(scope, session, course_id, cohort_id=cohort_id)
     return Response(
         content="\ufeff" + render_gradebook_csv(book),
         media_type="text/csv; charset=utf-8",
@@ -682,3 +716,104 @@ async def list_course_turns(
 ) -> contracts.CourseTurnList:
     turns = await courses_repo.list_turns(scope, session, course_id)
     return contracts.CourseTurnList(items=[courses_repo.turn_to_resource(t) for t in turns])
+
+
+# ----------------------------------------------------------------------------- cohorts
+#
+# ai-ops 349 proposal 8, cohorts slice. Authz mirrors the gradebook exactly
+# (`cohorts_repo`'s module docstring and `CohortCreatorOnly`): the course's
+# creator manages every cohort; anyone else sees only their own cohort's name.
+
+
+def _cohort_creator_only_detail() -> dict[str, str]:
+    # Still the 403 every creator-only action answers with, but with a sentence —
+    # the same reason `update_course` gives one for `DueDateCreatorOnly`.
+    return {
+        "error": "Only the person who made this course can manage its cohorts.",
+        "reason": "course_cohort_creator_only",
+    }
+
+
+@router.post("/courses/{course_id}/cohorts", response_model=contracts.CourseCohort, status_code=201)
+async def create_course_cohort(
+    course_id: uuid.UUID, body: CreateCohortRequest, scope: CurrentScope, session: DbSession
+) -> contracts.CourseCohort:
+    try:
+        row = await cohorts_repo.create_cohort(scope, session, course_id, name=body.name)
+    except cohorts_repo.CohortCreatorOnly:
+        raise HTTPException(status_code=403, detail=_cohort_creator_only_detail()) from None
+    except cohorts_repo.DuplicateCohortName as exc:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "error": f'This course already has a cohort named "{exc.name}".',
+                "reason": "course_cohort_duplicate_name",
+            },
+        ) from None
+    return await cohorts_repo.cohort_to_resource(session, row)
+
+
+@router.get("/courses/{course_id}/cohorts", response_model=contracts.CourseCohortList)
+async def list_course_cohorts(
+    course_id: uuid.UUID, scope: CurrentScope, session: DbSession
+) -> contracts.CourseCohortList:
+    return await cohorts_repo.list_cohorts(scope, session, course_id)
+
+
+@router.patch("/courses/{course_id}/cohorts/{cohort_id}", response_model=contracts.CourseCohort)
+async def update_course_cohort(
+    course_id: uuid.UUID,
+    cohort_id: uuid.UUID,
+    body: UpdateCohortRequest,
+    scope: CurrentScope,
+    session: DbSession,
+) -> contracts.CourseCohort:
+    try:
+        row = await cohorts_repo.update_cohort(scope, session, course_id, cohort_id, name=body.name)
+    except cohorts_repo.CohortCreatorOnly:
+        raise HTTPException(status_code=403, detail=_cohort_creator_only_detail()) from None
+    except cohorts_repo.DuplicateCohortName as exc:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "error": f'This course already has a cohort named "{exc.name}".',
+                "reason": "course_cohort_duplicate_name",
+            },
+        ) from None
+    return await cohorts_repo.cohort_to_resource(session, row)
+
+
+@router.delete("/courses/{course_id}/cohorts/{cohort_id}", status_code=204)
+async def delete_course_cohort(
+    course_id: uuid.UUID, cohort_id: uuid.UUID, scope: CurrentScope, session: DbSession
+) -> None:
+    try:
+        await cohorts_repo.delete_cohort(scope, session, course_id, cohort_id)
+    except cohorts_repo.CohortCreatorOnly:
+        raise HTTPException(status_code=403, detail=_cohort_creator_only_detail()) from None
+
+
+@router.put("/courses/{course_id}/members/{user_id}/cohort", status_code=204)
+async def set_course_member_cohort(
+    course_id: uuid.UUID,
+    user_id: uuid.UUID,
+    body: SetCohortMembershipRequest,
+    scope: CurrentScope,
+    session: DbSession,
+) -> None:
+    """Assign, move or clear one member's cohort. `body.cohort_id: null` (or
+    simply omitted) removes them from every cohort of this course."""
+    try:
+        await cohorts_repo.set_membership(
+            scope, session, course_id, user_id, cohort_id=body.cohort_id
+        )
+    except cohorts_repo.CohortCreatorOnly:
+        raise HTTPException(status_code=403, detail=_cohort_creator_only_detail()) from None
+    except cohorts_repo.CourseMemberNotFound:
+        raise HTTPException(
+            status_code=404,
+            detail={
+                "error": "That person is not a current member of this course.",
+                "reason": "course_member_not_found",
+            },
+        ) from None

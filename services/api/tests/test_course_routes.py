@@ -1097,9 +1097,9 @@ def gradebook_course(monkeypatch):
     course, modules = _two_module_course(monkeypatch)
     book = _gradebook(course, modules)
 
-    async def fake_gradebook(_scope, _session, course_id):
+    async def fake_gradebook(_scope, _session, course_id, cohort_id=None):
         assert course_id == course.id
-        return book
+        return book if cohort_id is None else book.model_copy(update={"cohort_id": cohort_id})
 
     monkeypatch.setattr(courses_repo, "course_gradebook", fake_gradebook)
     return course, book
@@ -1122,7 +1122,7 @@ async def test_gradebook_returns_the_repo_answer_with_its_visibility(client, gra
 
 
 async def test_gradebook_of_a_course_in_another_workspace_is_404(client, monkeypatch):
-    async def fake_gradebook(_scope, _session, _course_id):
+    async def fake_gradebook(_scope, _session, _course_id, cohort_id=None):
         raise NotFoundError("course")
 
     async def fake_get_course(_scope, _session, _course_id):
@@ -1162,7 +1162,9 @@ async def test_gradebook_csv_is_one_row_per_member_per_module_with_totals(client
         "cells_passed",
         "graded_cells",
     ]
-    assert header[-2:] == ["course_cells_passed", "course_graded_cells"]
+    # `cohort` is appended after the totals (ai-ops 349 proposal 8), so it is the
+    # new last column and the totals are now third- and second-from-last.
+    assert header[-3:] == ["course_cells_passed", "course_graded_cells", "cohort"]
     assert len(body) == 6, "three members x two modules"
     record = [dict(zip(header, row, strict=True)) for row in body]
     # A module the member has not been graded on: passed EMPTY, not 0, and the
@@ -1512,9 +1514,10 @@ def test_the_csv_carries_due_at_late_and_missing_beside_graded_at():
     assert header is not None
     at = header.index("graded_at")
     assert header[at : at + 4] == ["graded_at", "due_at", "late", "missing"]
-    # PR 965's pinned ends are where they were.
+    # PR 965's pinned ends are where they were; `cohort` (ai-ops 349 proposal 8)
+    # is appended after them, so it is the new last column.
     assert header[:4] == ["member", "email", "module_number", "module"]
-    assert header[-2:] == ["course_cells_passed", "course_graded_cells"]
+    assert header[-3:] == ["course_cells_passed", "course_graded_cells", "cohort"]
     # In UTC, whatever offset the value arrived with.
     assert [r["due_at"] for r in records] == [
         "2026-09-30T08:00:00+00:00",

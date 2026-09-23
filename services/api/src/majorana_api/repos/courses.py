@@ -37,6 +37,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from ..ids import uuid7
 from ..orm import (
     Course,
+    CourseCohort as CourseCohortRow,
+    CourseCohortMember,
     CourseModule,
     CourseTurn,
     Membership,
@@ -814,14 +816,56 @@ def _is_late(graded_at: dt.datetime, due_at: dt.datetime | None) -> bool:
     return due_at is not None and graded_at > due_at
 
 
+async def _cohort_member_ids(
+    session: AsyncSession, course_id: uuid.UUID, cohort_id: uuid.UUID
+) -> set[uuid.UUID]:
+    """Every member's user id in one cohort of this course. `NotFoundError` for
+    a cohort id that does not belong to this course — the same "absent or not
+    yours" every course-scoped lookup gives, so `?cohort_id=` from another
+    course's cohort cannot be used to probe which ids exist."""
+    known = (
+        await session.execute(
+            select(CourseCohortRow.id).where(
+                CourseCohortRow.id == cohort_id, CourseCohortRow.course_id == course_id
+            )
+        )
+    ).scalar_one_or_none()
+    if known is None:
+        raise NotFoundError("course cohort")
+    rows = (
+        (
+            await session.execute(
+                select(CourseCohortMember.user_id).where(
+                    CourseCohortMember.course_id == course_id,
+                    CourseCohortMember.cohort_id == cohort_id,
+                )
+            )
+        )
+        .scalars()
+        .all()
+    )
+    return set(rows)
+
+
 async def course_gradebook(
     scope: Scope,
     session: AsyncSession,
     course_id: uuid.UUID,
     *,
     now: dt.datetime | None = None,
+    cohort_id: uuid.UUID | None = None,
 ) -> contracts.CourseGradebook:
     """Each current member's latest graded attempt at each module of a course.
+
+    ## Cohorts
+
+    `cohort_id`, when given, restricts `rows` to that cohort's members — a
+    filter on WHO the statement below reads, not a second query run over
+    everyone and trimmed after. A cohort id from another course answers
+    `NotFoundError`, same as a course id that is not this workspace's.
+    `GradebookRow.cohort_name` is attached for every row regardless of the
+    filter: it is exactly the fact `CohortVisibility.OWN_COHORT` already lets
+    that row's own member see (ai-ops 349 proposal 8's cohorts slice).
 
     ## Who sees which rows
 
@@ -896,6 +940,9 @@ async def course_gradebook(
         contracts.GradebookVisibility.ALL_MEMBERS
         if everyone
         else contracts.GradebookVisibility.OWN_ROW
+    )
+    cohort_member_ids = (
+        await _cohort_member_ids(session, course.id, cohort_id) if cohort_id is not None else None
     )
 
     notebook_ids = [row.notebook_id for row in modules if row.notebook_id is not None]
@@ -1000,6 +1047,7 @@ async def course_gradebook(
             Membership.user_id,
             User.email,
             User.display_name,
+            CourseCohortRow.name,
             graded.c.notebook_id,
             graded.c.version_id,
             graded.c.version_seq,
@@ -1014,6 +1062,20 @@ async def course_gradebook(
         )
         .select_from(Membership)
         .join(User, User.id == Membership.user_id)
+        # LEFT twice: a member in no cohort of this course still comes back with
+        # both columns NULL, the same "not started" shape the grades join below
+        # already uses. `CourseCohortMember.course_id` is filtered in the ON
+        # clause, not the WHERE clause, for the reason that join is always LEFT
+        # in the first place — a WHERE would turn every "no cohort" row into no
+        # row at all, silently dropping every member nobody has assigned yet.
+        .outerjoin(
+            CourseCohortMember,
+            and_(
+                CourseCohortMember.course_id == course.id,
+                CourseCohortMember.user_id == Membership.user_id,
+            ),
+        )
+        .outerjoin(CourseCohortRow, CourseCohortRow.id == CourseCohortMember.cohort_id)
         # LEFT: a member with no grading event still comes back, once, with every
         # grade column NULL. That row is "not started", which is the point.
         .outerjoin(graded, graded.c.user_id == Membership.user_id)
@@ -1021,13 +1083,19 @@ async def course_gradebook(
     )
     if not everyone:
         stmt = stmt.where(Membership.user_id == scope.user_id)
+    if cohort_member_ids is not None:
+        # A member filtering by a cohort that is not their own gets zero rows —
+        # this ANDs with the clause above rather than replacing it, so neither
+        # restriction can widen what the other already refused.
+        stmt = stmt.where(Membership.user_id.in_(cohort_member_ids))
 
-    people: dict[uuid.UUID, tuple[str, str | None]] = {}
+    people: dict[uuid.UUID, tuple[str, str | None, str | None]] = {}
     entries: dict[uuid.UUID, list[contracts.GradebookEntry]] = {}
     for (
         user_id,
         email,
         display_name,
+        cohort_name,
         notebook_id,
         version_id,
         version_seq,
@@ -1040,7 +1108,7 @@ async def course_gradebook(
         attempted,
         graded_cells,
     ) in (await session.execute(stmt)).all():
-        people[user_id] = (email, display_name)
+        people[user_id] = (email, display_name, cohort_name)
         found = entries.setdefault(user_id, [])
         module = module_by_notebook.get(notebook_id) if notebook_id is not None else None
         if module is None:
@@ -1079,12 +1147,13 @@ async def course_gradebook(
             if len(known) == len(ahead)
             else None
         )
-        email, display_name = people[user_id]
+        email, display_name, cohort_name = people[user_id]
         rows.append(
             contracts.GradebookRow(
                 user_id=user_id,
                 email=email,
                 display_name=display_name,
+                cohort_name=cohort_name,
                 entries=found,
                 total_passed=sum(entry.passed for entry in found),
                 total_graded_cells=total_graded_cells,
@@ -1096,5 +1165,5 @@ async def course_gradebook(
         )
     rows.sort(key=lambda row: ((row.display_name or row.email).casefold(), str(row.user_id)))
     return contracts.CourseGradebook(
-        course_id=course.id, visibility=visibility, modules=columns, rows=rows
+        course_id=course.id, visibility=visibility, cohort_id=cohort_id, modules=columns, rows=rows
     )

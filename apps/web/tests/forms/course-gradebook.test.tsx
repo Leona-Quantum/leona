@@ -17,6 +17,7 @@ const modules: CourseGradebook["modules"] = [
 
 const everyone: CourseGradebook = {
   course_id: "c1",
+  cohort_id: null,
   visibility: "all_members",
   modules,
   rows: [
@@ -24,6 +25,7 @@ const everyone: CourseGradebook = {
       user_id: "u-ana",
       email: "ana@example.test",
       display_name: "Ana",
+      cohort_name: null,
       entries: [
         {
           module_id: "m1",
@@ -46,6 +48,7 @@ const everyone: CourseGradebook = {
       user_id: "u-bo",
       email: "bo@example.test",
       display_name: null,
+      cohort_name: null,
       entries: [
         {
           module_id: "m2",
@@ -69,6 +72,7 @@ const everyone: CourseGradebook = {
       user_id: "u-cy",
       email: "cy@example.test",
       display_name: "Cy",
+      cohort_name: null,
       entries: [],
       total_passed: 0,
       total_graded_cells: 5,

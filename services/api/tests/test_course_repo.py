@@ -565,6 +565,7 @@ def _grade_row(
     *,
     email,
     name=None,
+    cohort=None,
     passed=1,
     graded=2,
     current=True,
@@ -577,12 +578,17 @@ def _grade_row(
     earliest grading of the same module by the same member. It defaults to `graded_at`,
     which is the truth whenever there has only ever been one attempt; pass it to
     describe somebody who tried more than once, which is what `late` turns on.
+
+    `cohort` is the member's own cohort NAME (ai-ops 349 proposal 8), `None` — the
+    default — for a member in no cohort of this course, which is every existing
+    caller of this helper.
     """
     version_id = uuid.uuid4()
     return (
         user_id,
         email,
         name,
+        cohort,
         notebook_id,
         version_id,
         3,
@@ -597,10 +603,10 @@ def _grade_row(
     )
 
 
-def _not_started(user_id, *, email, name=None):
+def _not_started(user_id, *, email, name=None, cohort=None):
     """The row the LEFT join returns for a member with no grading event: the member
-    columns filled, every grade column NULL."""
-    return (user_id, email, name, *([None] * 11))
+    (and cohort) columns filled, every grade column NULL."""
+    return (user_id, email, name, cohort, *([None] * 11))
 
 
 async def test_the_course_creator_gradebook_query_has_no_user_clause():
