@@ -27,7 +27,7 @@ export default async function StudioPage({ searchParams }: { searchParams: Promi
   //
   // `plan` is a flag, not the plan itself — the sentence and numbers live
   // only in the URL fragment (`#plan=…`), which this server component never
-  // sees. It exists so the (large, ~130 KB) slimmed layer graph is shipped to
+  // sees. It exists so the (about 190 KB) slimmed layer graph is shipped to
   // the client ONLY on a link that will actually read it, never on an
   // ordinary Studio load. The same `getPublicLocale()` this page already
   // reads decides which language the graph is slimmed to, matching how the

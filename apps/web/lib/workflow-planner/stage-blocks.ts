@@ -11,7 +11,6 @@
 // worked example ties a method this cleanly to a block, or the graph has no
 // distinct method node for the construction at all, it is left out rather
 // than guessed at — see the note on the quantum Fourier transform below.
-import { BLOCK_TEMPLATES } from "../circuit-blocks.ts";
 
 /** Atlas method id -> the Studio block keys that build a small instance of it, in placement order. */
 export const STAGE_BLOCKS: Readonly<Record<string, readonly string[]>> = {
@@ -52,12 +51,4 @@ export function stageBlockKeys(): string[] {
 /** Every method id this map cites — asserted to be a real method node in `LAYER_GRAPH` by the same test. */
 export function stageBlockMethodIds(): string[] {
   return Object.keys(STAGE_BLOCKS).sort();
-}
-
-// Self-check keeps the census above honest without adding a runtime cost to
-// the pages that import this module: every key is checked once, at import
-// time, against the actual template registry.
-const TEMPLATE_KEYS = new Set(BLOCK_TEMPLATES.map((template) => template.key));
-for (const key of stageBlockKeys()) {
-  if (!TEMPLATE_KEYS.has(key)) throw new Error(`STAGE_BLOCKS names an unknown block: ${key}`);
 }
