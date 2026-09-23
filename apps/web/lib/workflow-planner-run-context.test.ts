@@ -4,7 +4,7 @@
  * The lean graph must plan exactly as the full one does (it only drops prose),
  * the context must stay inside the API model's bounds whatever the reader
  * types, and the committed wire fixture must be what this code produces today:
- * `services/api/tests/test_run_workflow_context.py` validates the same file
+ * `services/api/tests/test_run_workflow_context_fixture.py` validates the same file
  * against the Python model, so the two definitions cannot drift apart silently.
  */
 

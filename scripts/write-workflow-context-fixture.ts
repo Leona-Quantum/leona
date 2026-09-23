@@ -2,7 +2,7 @@
 // `workflow_context` the Run composer sends for two fixed prompts. The web test
 // (`lib/workflow-planner-run-context.test.ts`) asserts the file is what the
 // code produces today, and the API test (`services/api/tests/
-// test_run_workflow_context.py`) validates the same file against the Python
+// test_run_workflow_context_fixture.py`) validates the same file against the Python
 // request model, so the two definitions cannot drift apart unnoticed.
 //
 // Run from the repo root: node --experimental-strip-types scripts/write-workflow-context-fixture.ts
