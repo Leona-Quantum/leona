@@ -1,10 +1,60 @@
-# k6 abuse scenario — `POST /v1/tour-signals` (ai-ops 326), two attempts, both inconclusive on this host
+# k6 abuse scenario — `POST /v1/tour-signals` (ai-ops 326): MET on the third attempt
 
-The evidence, or the honest lack of it, for `plans/rebuild/05-security.md` §1a/§2 on the
-new route added by ai-ops 326. Harness: `bench/k6/abuse.js` (extended with `tour_signal_*`
-scenarios), driven by `bench/k6/run-abuse.sh`. **Both attempts below FAILED (k6 exit 99).**
-This route ships with `Settings.tour_signals_enabled` defaulting to `False` as a direct
-consequence — see that setting's docstring and `routes/tour_signals.py`'s module docstring.
+The evidence for `plans/rebuild/05-security.md` §1a/§2 on the new route added by ai-ops
+326. Harness: `bench/k6/abuse.js` (extended with `tour_signal_*` scenarios), driven by
+`bench/k6/run-abuse.sh`. **The first two attempts below FAILED (k6 exit 99), both on host
+contention, not a defect — kept as history.** A third attempt, run against a quieter host
+(this section, first), **PASSED (k6 exit 0)** and is what `Settings.tour_signals_enabled`
+is switched on against — see the deploy.yml change this same PR makes.
+
+## Attempt 3 — the passing run
+
+| | attempt 3 |
+|---|---|
+| date | 2026-09-23 13:34–13:38 PDT |
+| k6 | v2.1.0 (commit/devel, go1.26.4, darwin/arm64) |
+| service | `majorana_api.app:create_app` under uvicorn, one worker, 127.0.0.1:8000, `LEONA_TOUR_SIGNALS=true` |
+| database | local PostgreSQL 17 in Docker, container `pg-s0923-tour` (port 55433, isolated from the two attempts below and from sibling sessions' own containers), database `majorana_k6` |
+| host `uptime` immediately before | `13:34  up 13 days, 22:37, 2 users, load averages: 8.28 16.76 63.43` — 10-core Mac, load back under nominal capacity |
+| scheduling | same fully-serialised schedule attempt 2 fixed: `tour_signal_*` start at 145s, after every other scenario including `sustained_readers` |
+| result | **PASSED**, k6 exit 0, every threshold in the file held (old and new) |
+
+Full counts, read directly off the k6 report (`bench/k6/out/summary.json`,
+`bench/k6/out/k6.log`):
+
+```
+tour_flood_attempts ............ 2701   (threshold: count>900   — held)
+tour_flood_refused .............. 1801  (threshold: count>0     — held)
+tour_flood_served ................ 900  (threshold: count>0     — held; EXACTLY the
+                                          real ANON_LIMIT=900, the shared anonymous
+                                          ceiling `rate_limit.py` enforces)
+tour_flood_unexpected .............. 0  (threshold: count==0    — held)
+tour_bystander_served .............37   (threshold: count>0     — held)
+tour_bystander_refused .............0   (threshold: count==0    — held)
+tour_oversize_refused ..............12  (threshold: count>0     — held)
+tour_oversize_accepted ..............0  (threshold: count==0    — held)
+tour_ordinary_not_refused ..........12  (threshold: count>0     — held)
+server_errors (whole run, all scenarios) 0  (threshold: count==0 — held)
+```
+
+Every pre-existing scenario this PR did not touch (`anon_flood`, `bystander`,
+`trusted_renderer`, `oversized_body`, `ordinary_body`, `quota_storm`,
+`sustained_readers`) also held, including `sustained_readers`'s p95, which had been the
+other collapse signal in attempts 1–2: `p(95)=317.17ms` against the 10-second COLLAPSE
+bound, versus 36.65s in attempt 2. That is the control this file's own attempt-2 section
+named as missing: the same unmodified scenarios now pass on the same host, which is what
+distinguishes "the host was oversubscribed" (attempts 1–2) from "the route is broken"
+(neither attempt ever showed this) from "the route works" (this attempt).
+
+This is the run `05-security.md` §2's "k6 abuse scenario" item was waiting on. It is now
+met. Reproducing this exact attempt needs a container and env var this repo's committed
+`run-abuse.sh` does not set by default — see "Reproducing" at the end of this file.
+
+## History: two earlier attempts, both inconclusive on a loaded host
+
+The section below is preserved as it was written at the time — it is the reason attempts
+1–2 did not settle the question, and the control (identical pre-existing scenarios failing
+too) that ruled out a defect in the new route before attempt 3 ran.
 
 ## What was run, twice
 
@@ -110,14 +160,9 @@ generator-throughput problem (shared with the pre-existing scenario) remains.
 
 ## What this means for shipping
 
-`05-security.md` §2's "k6 abuse scenario" item is not met, and this file says so rather
-than rounding up. `personal_access_tokens_enabled` (ai-ops 362) is the standing precedent
-for exactly this situation — a security-reviewed feature whose k6 run has not landed ships
-behind a flag defaulting off, rather than either blocking the PR indefinitely or merging
-unreviewed. `Settings.tour_signals_enabled` defaults to `False`; `POST /v1/tour-signals`
-answers 404 until the owner flips it on, which should happen after a k6 run completes
-cleanly — on this host once it is quieter, or in CI, where `bench.yml` already runs
-`postgres:17` in isolation.
+`05-security.md` §2's "k6 abuse scenario" item **is now met** — attempt 3, above. It was
+not met after attempts 1–2, and this file said so rather than rounding up; the fix was a
+quieter host, not a code change, exactly as attempt 2's diagnosis predicted.
 
 Everything else the gate asks of a new anonymous route (05-security.md §1a) is met and
 evidenced elsewhere in this PR: input validation and the size cap, both mutation-tested;
@@ -126,7 +171,14 @@ ceiling covers this path (with a lowered test ceiling, so they do not depend on 
 900); and `test_tour_signals_live.py::TestNothingIdentifying` proving nothing identifying
 reaches the table or a log line.
 
+With this item met, `Settings.tour_signals_enabled` is switched on for the deployed API in
+this same PR (`.github/workflows/deploy.yml`'s `--update-env-vars`, `LEONA_TOUR_SIGNALS=true`)
+— the same mechanism `LEONA_PERSONAL_ACCESS_TOKENS` uses. Off, `POST /v1/tour-signals`
+would answer 404; the switch makes it live.
+
 ## Reproducing
+
+Attempts 1–2 (`bench/k6/run-abuse.sh` unmodified):
 
 ```bash
 bench/k6/run-abuse.sh
@@ -134,3 +186,11 @@ bench/k6/run-abuse.sh
 
 Same requirements as the 2026-08-06 run (Docker, `k6`, `.env.db.local`). Check `uptime`
 first — this file's own finding is that the result depends on it.
+
+Attempt 3 additionally needed the route switched ON against the throwaway service (the
+committed script does not set this, since the route ships off by default) and its own
+Postgres container so it would not collide with a sibling session's `majorana-pg`:
+`LEONA_TOUR_SIGNALS=true` exported before `uvicorn` starts, and `.env.db.local` pointed at
+a fresh `postgres:17` container named `pg-s0923-tour` on port 55433 in place of the
+default `majorana-pg`/port 55432. Both are one-line changes to a local copy of
+`run-abuse.sh`; the committed script is unchanged by this PR.
