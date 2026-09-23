@@ -33,7 +33,6 @@ import { writeLandingPromptHandoff } from "../lib/landing-prompt-handoff";
 import { majoranaSignInPath } from "../lib/sign-in.ts";
 import { MathText } from "./math-text";
 import { SignInLink } from "./sign-in-link";
-import { majoranaSignInPath } from "../lib/sign-in";
 
 export interface PlannerPaper {
   id: string;

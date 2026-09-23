@@ -102,7 +102,7 @@ test("a sentence with nothing recognisable asks the reader to pick, instead of g
 });
 
 test("\"Build it in Studio with this plan\" links to the fragment only — no sentence or numbers in the query string", async () => {
-  const { view, restore } = renderPlanner();
+  const { view, restore } = await renderPlanner();
   try {
     fireEvent.change(screen.getByLabelText("Your problem"), {
       target: { value: "Search a database of 2^20 records for the single record that matches." },
