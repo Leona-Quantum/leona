@@ -81,6 +81,10 @@ LIVE_TABLES: tuple[tuple[str, str], ...] = (
     # Migration 0068. Both directly scoped on their own workspace_id.
     ("comments", "id"),
     ("comment_mentions", "comment_id"),
+    # Migration 0073. Directly scoped on its own workspace_id, same shape as
+    # the two above. `user_id` because presence's PK is composite and each
+    # tenant fixture writes exactly one row (see rls_helpers.py's comment).
+    ("presence", "user_id"),
 )
 
 #: (table, ancestor table an EXISTS predicate must name). Verified structurally —

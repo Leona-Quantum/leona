@@ -3356,6 +3356,63 @@ export interface components {
             topic: string;
         };
         /**
+         * PresenceHeartbeatRequest
+         * @description `I am still looking at this.` Sent every ~15s while the tab is visible.
+         */
+        PresenceHeartbeatRequest: {
+            /**
+             * Target Id
+             * Format: uuid
+             */
+            target_id: string;
+            target_type: components["schemas"]["PresenceTargetType"];
+        };
+        /**
+         * PresenceList
+         * @description Who else is here. Never includes the caller — a reader does not need to
+         *     be told they are looking at their own screen.
+         */
+        PresenceList: {
+            /** Viewers */
+            viewers?: components["schemas"]["PresenceViewer"][];
+        };
+        /**
+         * PresenceTargetType
+         * @description What presence is on. The same three kinds of thing `CommentTargetType`
+         *     names, and the same values, but its own closed enum: presence and comments
+         *     are independent features that happen to attach to the same three surfaces,
+         *     and neither should have to change because the other's enum grew a member.
+         * @enum {string}
+         */
+        PresenceTargetType: "run" | "notebook" | "artifact";
+        /**
+         * PresenceViewer
+         * @description One other current member looking at the same thing, right now.
+         *
+         *     `handle` is the same derivation `CommentPerson.handle` uses (the part of a
+         *     member's email before the `@`, widened to the full address on a collision),
+         *     so a viewer with no `display_name` still has something to show. There is no
+         *     email address here, for the same reason `CommentPerson` has none: everything
+         *     it could say, a member can already read in the workspace's own members list.
+         */
+        PresenceViewer: {
+            /**
+             * Display Name
+             * @default null
+             */
+            display_name: string | null;
+            /**
+             * Handle
+             * @default
+             */
+            handle: string;
+            /**
+             * User Id
+             * Format: uuid
+             */
+            user_id: string;
+        };
+        /**
          * ProblemTerm
          * @description One weighted term of a combinatorial instance, as data.
          *

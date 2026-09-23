@@ -179,6 +179,19 @@ DEFAULT_TRUSTED_LIMIT = 20_000
 #: exactly twenty.
 DEFAULT_COMMENT_LIMIT = 20
 
+#: Heartbeats one signed-in person may send per minute (`routes/presence.py`).
+#:
+#: Keyed by user id, the same reasoning as `DEFAULT_COMMENT_LIMIT`: presence is
+#: always authenticated, so the account is what is actually heartbeating. A tab
+#: heartbeats every ~15s while visible, so one open surface is 4/min; a person
+#: with a run, a notebook and a circuit open in three tabs at once is 12/min.
+#: 60 is several times that, which is what stops a buggy tab retrying in a tight
+#: loop rather than what a person doing several things at once would ever reach.
+#: Per instance, like the other limiters here. No warning thresholds, the same
+#: choice `DEFAULT_COMMENT_LIMIT` makes: one person hitting their own presence
+#: ceiling is nobody's business.
+DEFAULT_PRESENCE_LIMIT = 60
+
 #: Requests one PERSONAL ACCESS TOKEN may make per minute (proposal 7 Phase B, owner
 #: ruling ai-ops 362). A fourth independent bucket, for the same reason the comment
 #: limiter is a third: its subject is a credential, not an address and not an account.

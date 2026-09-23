@@ -12,6 +12,7 @@ from .rate_limit import (
     DEFAULT_ANON_LIMIT,
     DEFAULT_AUTH_FAILURE_LIMIT,
     DEFAULT_COMMENT_LIMIT,
+    DEFAULT_PRESENCE_LIMIT,
     DEFAULT_TOKEN_LIMIT,
     DEFAULT_TRUSTED_LIMIT,
 )
@@ -243,6 +244,10 @@ class Settings:
     #: `rate_limit.py` says why the default is what it is). `0` disables it,
     #: the same escape hatch as the limits above.
     comment_rate_limit_per_minute: int = DEFAULT_COMMENT_LIMIT
+    #: Heartbeats one person may send per minute (`DEFAULT_PRESENCE_LIMIT` in
+    #: `rate_limit.py` says why the default is what it is). `0` disables it, the
+    #: same escape hatch as the limits above.
+    presence_rate_limit_per_minute: int = DEFAULT_PRESENCE_LIMIT
     #: Requests one personal access token may make per minute
     #: (`DEFAULT_TOKEN_LIMIT` in `rate_limit.py` says why the default is what it
     #: is). `0` disables it, the same escape hatch as the limits above.
@@ -358,6 +363,9 @@ class Settings:
             auth_failure_limit=_int_env("AUTH_FAILURE_LIMIT", DEFAULT_AUTH_FAILURE_LIMIT),
             comment_rate_limit_per_minute=_int_env(
                 "COMMENT_RATE_LIMIT_PER_MINUTE", DEFAULT_COMMENT_LIMIT
+            ),
+            presence_rate_limit_per_minute=_int_env(
+                "PRESENCE_RATE_LIMIT_PER_MINUTE", DEFAULT_PRESENCE_LIMIT
             ),
             token_rate_limit_per_minute=_int_env(
                 "TOKEN_RATE_LIMIT_PER_MINUTE", DEFAULT_TOKEN_LIMIT

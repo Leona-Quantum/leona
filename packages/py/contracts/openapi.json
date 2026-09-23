@@ -6478,6 +6478,84 @@
         "title": "PlannedModule",
         "type": "object"
       },
+      "PresenceHeartbeatRequest": {
+        "additionalProperties": false,
+        "description": "`I am still looking at this.` Sent every ~15s while the tab is visible.",
+        "properties": {
+          "target_id": {
+            "format": "uuid",
+            "title": "Target Id",
+            "type": "string"
+          },
+          "target_type": {
+            "$ref": "#/components/schemas/PresenceTargetType"
+          }
+        },
+        "required": [
+          "target_type",
+          "target_id"
+        ],
+        "title": "PresenceHeartbeatRequest",
+        "type": "object"
+      },
+      "PresenceList": {
+        "additionalProperties": false,
+        "description": "Who else is here. Never includes the caller \u2014 a reader does not need to\nbe told they are looking at their own screen.",
+        "properties": {
+          "viewers": {
+            "items": {
+              "$ref": "#/components/schemas/PresenceViewer"
+            },
+            "title": "Viewers",
+            "type": "array"
+          }
+        },
+        "title": "PresenceList",
+        "type": "object"
+      },
+      "PresenceTargetType": {
+        "description": "What presence is on. The same three kinds of thing `CommentTargetType`\nnames, and the same values, but its own closed enum: presence and comments\nare independent features that happen to attach to the same three surfaces,\nand neither should have to change because the other's enum grew a member.",
+        "enum": [
+          "run",
+          "notebook",
+          "artifact"
+        ],
+        "title": "PresenceTargetType",
+        "type": "string"
+      },
+      "PresenceViewer": {
+        "additionalProperties": false,
+        "description": "One other current member looking at the same thing, right now.\n\n`handle` is the same derivation `CommentPerson.handle` uses (the part of a\nmember's email before the `@`, widened to the full address on a collision),\nso a viewer with no `display_name` still has something to show. There is no\nemail address here, for the same reason `CommentPerson` has none: everything\nit could say, a member can already read in the workspace's own members list.",
+        "properties": {
+          "display_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Display Name"
+          },
+          "handle": {
+            "default": "",
+            "title": "Handle",
+            "type": "string"
+          },
+          "user_id": {
+            "format": "uuid",
+            "title": "User Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "user_id"
+        ],
+        "title": "PresenceViewer",
+        "type": "object"
+      },
       "ProblemTerm": {
         "additionalProperties": false,
         "description": "One weighted term of a combinatorial instance, as data.\n\nThe reference for `brute_force` is declared data, never executed. An instance\nwritten as framework code would have to run in the sandbox to mean anything,\nmaking model-authored code the ground truth.",
@@ -11256,7 +11334,7 @@
   "info": {
     "description": "Cross-boundary types only; API paths are owned by services/api.",
     "title": "majorana-contracts",
-    "version": "2.30.0"
+    "version": "2.31.0"
   },
   "openapi": "3.1.0",
   "paths": {}

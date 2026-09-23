@@ -115,6 +115,12 @@ from .tokens import (
     TokenName,
     TokenScope,
 )
+from .presence import (
+    PresenceHeartbeatRequest,
+    PresenceList,
+    PresenceTargetType,
+    PresenceViewer,
+)
 from .courses import (
     Course,
     CourseGradebook,
@@ -456,9 +462,18 @@ from .lifecycle import (
 # Additive: new names only, no existing model changes. TokenScope has exactly `read`
 # and `run` — the absence of a `hardware` member IS the deferral in the ruling, so
 # adding one later is a widening a review can see.
-CONTRACTS_VERSION = "2.30.0"
+# 2.31.0: Proposal 9, second slice. PresenceViewer, PresenceList,
+# PresenceTargetType and PresenceHeartbeatRequest: who else in the workspace is
+# looking at a run, a notebook or a saved circuit right now (migration 0073).
+# Additive: new names only. PresenceTargetType is its own enum, not a reuse of
+# CommentTargetType, so presence and comments can each grow independently.
+CONTRACTS_VERSION = "2.31.0"
 
 __all__ = [
+    "PresenceHeartbeatRequest",
+    "PresenceList",
+    "PresenceTargetType",
+    "PresenceViewer",
     "MAX_COMMENT_CHARS",
     "MAX_TOKENS_PER_USER",
     "MAX_TOKEN_LIFETIME_DAYS",

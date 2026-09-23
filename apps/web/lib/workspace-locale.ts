@@ -4312,6 +4312,29 @@ export const COMMENTS_COPY: Record<PublicLocale, {
   },
 };
 
+export const PRESENCE_COPY: Record<PublicLocale, {
+  /** aria-label on the whole bar (role="group"): a screen reader gets the
+   * full roster in one announcement, not one per avatar. */
+  ariaLabel: (names: string[]) => string;
+  /** Native tooltip (`title`) on one avatar. */
+  viewing: (name: string) => string;
+  /** Native tooltip on the "+N" overflow badge, joining the rest by name. */
+  andMore: (names: string[]) => string;
+}> = {
+  en: {
+    ariaLabel: (names) =>
+      names.length === 1 ? `${names[0]} is also here` : `Also here: ${names.join(", ")}`,
+    viewing: (name) => `${name} is looking at this`,
+    andMore: (names) => `and ${names.join(", ")}`,
+  },
+  ja: {
+    ariaLabel: (names) =>
+      names.length === 1 ? `${names[0]}さんも見ています` : `他に見ている人: ${names.join("、")}`,
+    viewing: (name) => `${name}さんがこれを見ています`,
+    andMore: (names) => `他に${names.join("、")}`,
+  },
+};
+
 export const SHARING_COPY: Record<PublicLocale, {
   workspacesTitle: string;
   workspacesHelp: string;

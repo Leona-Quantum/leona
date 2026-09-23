@@ -213,6 +213,13 @@ export const OPTIMIZER_VALUES = [
   "L_BFGS_B",
 ] as const;
 
+/** PresenceTargetType — 3 members. */
+export const PRESENCE_TARGET_TYPE_VALUES = [
+  "run",
+  "notebook",
+  "artifact",
+] as const;
+
 /** QappExecutionStatus — 4 members. */
 export const QAPP_EXECUTION_STATUS_VALUES = [
   "queued",

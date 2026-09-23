@@ -8,7 +8,9 @@ import type { FormEvent } from "react";
 import { useEffect, useRef, useState } from "react";
 import { ChatMarkdown } from "../../../../components/chat-markdown";
 import { CommentsPanel } from "../../../../components/comments-panel";
+import { PresenceBar } from "../../../../components/presence-bar";
 import { isCommentableId } from "../../../../lib/comments";
+import { isPresenceTrackableId } from "../../../../lib/presence";
 import { NotebookDiffView } from "../../../../components/notebook-diff-view";
 import { NotebookReviewPanel } from "../../../../components/notebook-review-panel";
 import {
@@ -1088,6 +1090,12 @@ export function NotebookWorkspace({ notebookId, locale = "en" }: { notebookId: s
           ) : null}
         </div>
         <div className="mj-notebook-workspace-actions">
+          {/* Who else in the workspace is looking at this notebook right now
+              (proposal 9, second slice): about the notebook itself, not one
+              version of it, the same reasoning the comments panel below uses. */}
+          {isPresenceTrackableId(notebookId) ? (
+            <PresenceBar targetType="notebook" targetId={notebookId} locale={locale} />
+          ) : null}
           {versions.length > 0 ? (
             <label className="mj-notebook-version-picker mj-filter-select">
               <span className="sr-only">{copy.versionPickerLabel}</span>

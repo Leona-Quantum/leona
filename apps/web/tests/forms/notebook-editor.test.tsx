@@ -94,7 +94,12 @@ const VERSION = {
 };
 
 /** Answers the four GETs the workspace fires on mount, and records everything so a
- * test can assert on the exact POST body the editor sent. */
+ * test can assert on the exact POST body the editor sent.
+ *
+ * Presence (proposal 9, second slice) is answered here too, ahead of the
+ * generic POST branch: `NotebookWorkspace` also mounts `PresenceBar`, which
+ * heartbeats and reads the roster on its own schedule, and neither is the
+ * save this helper exists to observe. */
 function stubWorkspace(
   overrides: {
     version?: Record<string, unknown>;
@@ -102,6 +107,8 @@ function stubWorkspace(
   } = {},
 ) {
   return stubFetch((request) => {
+    if (request.url === "/api/presence/heartbeat") return { status: 204 };
+    if (request.url.startsWith("/api/presence?")) return { status: 200, body: { viewers: [] } };
     if (request.method === "POST") {
       return (
         overrides.onPost?.(request) ?? {
@@ -119,6 +126,16 @@ function stubWorkspace(
     }
     return { status: 200, body: NOTEBOOK };
   });
+}
+
+/**
+ * The notebook's own save POST, never any other request a mounted component
+ * happens to fire — `NotebookWorkspace` also mounts `PresenceBar`, which
+ * heartbeats with its own POST on mount, and "the first POST" stopped
+ * meaning "the save" the moment a second POST existed at all.
+ */
+function isSavePost(call: RecordedRequest): boolean {
+  return call.method === "POST" && call.url === `/api/notebooks/${NOTEBOOK_ID}/versions`;
 }
 
 async function openEditor() {
@@ -178,9 +195,9 @@ test("Save & run posts the EDITED spec, with the notebook's other fields intact"
     fireEvent.click(screen.getByRole("button", { name: "Save & run" }));
 
     await waitFor(() => {
-      assert.ok(fetchStub.calls.some((call) => call.method === "POST"));
+      assert.ok(fetchStub.calls.some(isSavePost));
     });
-    const post = fetchStub.calls.find((call) => call.method === "POST");
+    const post = fetchStub.calls.find(isSavePost);
     assert.ok(post);
     assert.equal(post.url, `/api/notebooks/${NOTEBOOK_ID}/versions`);
     const body = post.body as { spec: typeof SPEC; execute: boolean; run_until: string | null };
@@ -217,9 +234,9 @@ test("adding, moving and deleting a cell all reach the posted spec", async () =>
     fireEvent.click(screen.getByRole("button", { name: "Save & run" }));
 
     await waitFor(() => {
-      assert.ok(fetchStub.calls.some((call) => call.method === "POST"));
+      assert.ok(fetchStub.calls.some(isSavePost));
     });
-    const body = (fetchStub.calls.find((c) => c.method === "POST") as RecordedRequest).body as {
+    const body = (fetchStub.calls.find(isSavePost) as RecordedRequest).body as {
       spec: { cells: { id: string; source: string }[] };
     };
     assert.deepEqual(
@@ -242,9 +259,9 @@ test("Run to here appears on the focused cell and posts that cell's id as run_un
     fireEvent.click(await screen.findByRole("button", { name: "Run to here" }));
 
     await waitFor(() => {
-      assert.ok(fetchStub.calls.some((call) => call.method === "POST"));
+      assert.ok(fetchStub.calls.some(isSavePost));
     });
-    const body = (fetchStub.calls.find((c) => c.method === "POST") as RecordedRequest).body as {
+    const body = (fetchStub.calls.find(isSavePost) as RecordedRequest).body as {
       run_until: string;
       execute: boolean;
     };
@@ -262,9 +279,9 @@ test("Save without running posts execute:false", async () => {
     fireEvent.click(screen.getByRole("button", { name: "Save without running" }));
 
     await waitFor(() => {
-      assert.ok(fetchStub.calls.some((call) => call.method === "POST"));
+      assert.ok(fetchStub.calls.some(isSavePost));
     });
-    const body = (fetchStub.calls.find((c) => c.method === "POST") as RecordedRequest).body as {
+    const body = (fetchStub.calls.find(isSavePost) as RecordedRequest).body as {
       execute: boolean;
     };
     assert.equal(body.execute, false);
