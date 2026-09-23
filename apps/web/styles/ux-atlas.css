@@ -554,6 +554,18 @@
 .mj-plan-suggestion p { font-size: var(--fs-13); margin: 0; }
 .mj-plan-small { display: grid; gap: var(--sp-1); }
 .mj-plan-small h3 { font-size: var(--fs-16); margin: 0; }
+
+/* Studio's plan panel (studio-plan-panel.tsx): the same stage tree and cost
+   tiles the planner page draws, in the same tokens, beside the canvas the
+   plan was carried to. The tree itself is native `<details>`/`<summary>` —
+   collapsible for free, no JS state to keep in sync with what is open. */
+.mj-studio-plan-panel { display: grid; gap: var(--sp-4); padding: var(--sp-4); background: var(--bg-1); border: var(--border-hairline) solid var(--border-0); border-radius: var(--radius-card); }
+.mj-studio-plan-panel > header { display: grid; gap: var(--sp-1); }
+.mj-studio-plan-panel h3 { margin: 0; font-size: var(--fs-16); }
+.mj-plan-stage-card > summary { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--sp-2); cursor: pointer; font-size: var(--fs-13); color: var(--text-1); }
+.mj-plan-stage-blocks { margin-top: var(--sp-2); padding: var(--sp-2) var(--sp-3); border: var(--border-hairline) dashed var(--border-0); border-radius: var(--radius-control); }
+.mj-plan-stage-block-list { display: grid; gap: var(--sp-1); margin: var(--sp-1) 0 0; padding: 0; list-style: none; }
+.mj-plan-stage-block-list li { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-2); font-size: var(--fs-13); color: var(--text-1); }
 @media (max-width: 640px) {
   .mj-plan-substages { padding-left: var(--sp-3); }
   .mj-plan-stage-card { padding: var(--sp-3); }

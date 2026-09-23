@@ -24,13 +24,15 @@ import { planWorkflow, PROBLEMS, formatPlain, type PlannerGraph, type Stage, typ
 import { indexPlannerGraph } from "../lib/workflow-planner/graph.ts";
 import { parseNumber, PLAN_TEXT_MAX } from "../lib/workflow-planner/recognise.ts";
 import { PLANNER_SOURCES, type SourceKey } from "../lib/workflow-planner/sources.ts";
+import { STAGE_CHOICE_LABEL, COST_KIND_LABEL, REPEAT_LABEL, formatCostValue } from "../lib/workflow-planner/plan-copy.ts";
+import { studioPlanHref } from "../lib/workflow-planner/studio-link.ts";
 import type { Bilingual, CostKind, CostLine, ParamKey, ParamValue, ProblemId, Suggestion } from "../lib/workflow-planner/types.ts";
 import type { ProblemClass } from "../lib/workflow-planner/problems.ts";
 import { workedExampleSignInHref, workedExampleStudioHref } from "../lib/atlas-worked-example-steps";
 import { writeLandingPromptHandoff } from "../lib/landing-prompt-handoff";
+import { majoranaSignInPath } from "../lib/sign-in.ts";
 import { MathText } from "./math-text";
 import { SignInLink } from "./sign-in-link";
-import { majoranaSignInPath } from "../lib/sign-in";
 
 export interface PlannerPaper {
   id: string;
@@ -45,6 +47,13 @@ export interface PlannerExample {
   title: string;
   instance: string;
   blocks: string[];
+}
+
+/** A `Bilingual`-keyed table, read out in one language — used for the tables `plan-copy.ts` shares with the Studio plan panel, so the wording is written once. */
+function localize<K extends string>(table: Record<K, Bilingual>, locale: PublicLocale): Record<K, string> {
+  const out = {} as Record<K, string>;
+  for (const key of Object.keys(table) as K[]) out[key] = table[key][locale];
+  return out;
 }
 
 const COPY = {
@@ -80,18 +89,12 @@ const COPY = {
     compileHeading: "Running it on hardware",
     compileNisq: "The planner starts on today's hardware, because this method is built to run without error correction.",
     compileFt: "The planner starts on error-corrected hardware, because the costs above are counted in Toffoli and T gates.",
-    choice: {
-      reader: "Your choice",
-      published: "As the method's own source does it",
-      preferred: "Planner's pick",
-      first: "First listed in the Atlas; worth comparing",
-      none: "",
-    },
+    choice: localize(STAGE_CHOICE_LABEL, "en"),
     swapLabel: "Block",
     costAsStated: "Cost, as the source states it",
     noCostStated: "No cost is recorded for this block.",
     openInAtlas: "Open in the Atlas",
-    repeats: "Runs",
+    repeats: REPEAT_LABEL.en,
     stopCycle: "This step already appears above, so it is not expanded again.",
     stopDepth: "This block has more steps inside. Open it in the Atlas to follow them.",
     costHeading: "What it costs",
@@ -112,19 +115,11 @@ const COPY = {
     smallIntro: "A worked example in Studio builds the same algorithm at a size the browser can simulate.",
     blocksLine: "Blocks:",
     openInStudio: "Open in Studio",
+    buildInStudio: "Build it in Studio with this plan",
     openingSignIn: "Opening sign in…",
     askNala: "Ask Nala to build it",
     noSmall: "There is no small worked example for this problem yet. Nala can build one from the plan.",
-    kinds: {
-      exact: "Exact",
-      "upper-bound": "Upper bound",
-      "leading-order": "Leading order",
-      "numerical-estimate": "Paper's numerical estimate",
-      published: "Published figure",
-      derived: "Derived",
-      supplied: "From your input",
-      scaling: "Scaling only",
-    } satisfies Record<CostKind, string>,
+    kinds: localize(COST_KIND_LABEL, "en") satisfies Record<CostKind, string>,
     kindsHelp:
       "Exact: the count itself. Upper bound: at most this. Leading order: the paper's formula without its smaller terms. Derived: arithmetic on a stated formula, explained in the note.",
     nalaPrompt: (problem: string, method: string, stages: string) =>
@@ -162,18 +157,12 @@ const COPY = {
     compileHeading: "ハードウェアで動かす",
     compileNisq: "この手法は誤り訂正なしで動くように作られているので、現行のハードウェアから始めます。",
     compileFt: "上のコストは Toffoli と T ゲートで数えているので、誤り訂正付きのハードウェアから始めます。",
-    choice: {
-      reader: "あなたの選択",
-      published: "手法の出典どおり",
-      preferred: "プランナーの選択",
-      first: "アトラスで最初に載っている手法です。比較してみてください",
-      none: "",
-    },
+    choice: localize(STAGE_CHOICE_LABEL, "ja"),
     swapLabel: "ブロック",
     costAsStated: "コスト（出典の記述のまま）",
     noCostStated: "このブロックのコストは記録されていません。",
     openInAtlas: "アトラスで開く",
-    repeats: "実行回数",
+    repeats: REPEAT_LABEL.ja,
     stopCycle: "このステップは上ですでに現れているため、再度は展開しません。",
     stopDepth: "この中にもステップがあります。アトラスでこのブロックを開くとたどれます。",
     costHeading: "コスト",
@@ -194,19 +183,11 @@ const COPY = {
     smallIntro: "Studio の例題が、同じアルゴリズムをブラウザでシミュレートできる大きさで組み立てます。",
     blocksLine: "ブロック：",
     openInStudio: "Studio で開く",
+    buildInStudio: "この計画をもとに Studio で組み立てる",
     openingSignIn: "サインインを開いています…",
     askNala: "Nala に組み立ててもらう",
     noSmall: "この問題の小さな例題はまだありません。Nala が計画から組み立てられます。",
-    kinds: {
-      exact: "厳密",
-      "upper-bound": "上界",
-      "leading-order": "主要項",
-      "numerical-estimate": "論文の数値的見積もり",
-      published: "公表値",
-      derived: "導出",
-      supplied: "入力値から",
-      scaling: "スケーリングのみ",
-    } satisfies Record<CostKind, string>,
+    kinds: localize(COST_KIND_LABEL, "ja") satisfies Record<CostKind, string>,
     kindsHelp:
       "厳密：回数そのもの。上界：多くてもこの値。主要項：小さな項を除いた論文の式。導出：示された式からの計算で、説明は注記にあります。",
     nalaPrompt: (problem: string, method: string, stages: string) =>
@@ -245,16 +226,11 @@ function SourceCite({ source, papers, locale }: { source: SourceKey | null; pape
   );
 }
 
-function formatValue(line: CostLine): string {
-  if (line.value === null) return "—";
-  if (line.unit.en === "probability") {
-    const percent = line.value * 100;
-    // Two decimals round 99.9999…% up to "100.00%", which reads as certainty the formula does not give.
-    if (percent < 100 && percent >= 99.995) return "> 99.99%";
-    return `${percent.toFixed(2)}%`;
-  }
-  return `${line.qualifier ? `${line.qualifier} ` : ""}${formatPlain(line.value)}`;
-}
+// Formatting a cost line's value is shared with the Studio plan panel — see
+// `formatCostValue` in `lib/workflow-planner/plan-copy.ts` for the rule
+// (probability as a percentage, never rounding a near-certain success up to a
+// false "100%"; everything else through `formatPlain`).
+const formatValue = formatCostValue;
 
 function CostRows({
   lines,
@@ -613,6 +589,24 @@ export function AtlasWorkflowPlanner({
 
   const costs: CostReport | null = plan.costs;
   const example = plan.problem?.workedExample ? examples[plan.problem.workedExample] ?? null : null;
+  // "Build it in Studio with this plan" carries only what the reader actually
+  // TYPED — never a value the sentence supplied or a spec assumed, since
+  // Studio re-reads the sentence itself and would otherwise double-apply it.
+  // An unparseable typed value (`NaN`, kept as "invalid" so the box can show
+  // the reader's own typo) is dropped rather than encoded: the link's strict
+  // decoder only accepts a finite number or `null` (see `studio-link.ts`).
+  const studioPlanTarget = plan.problem?.workedExample
+    ? studioPlanHref(plan.problem.workedExample, {
+        text: text.trim(),
+        problem: plan.problem.id,
+        params: Object.fromEntries(
+          (Object.entries(readerParams) as [ParamKey, number | null | undefined][]).filter(
+            ([, value]) => value === null || (typeof value === "number" && Number.isFinite(value)),
+          ),
+        ) as Partial<Record<ParamKey, number | null>>,
+        choices,
+      })
+    : null;
   const recognition = plan.recognitions[0];
   const logical = costs?.logical;
   const logicalTiles: { label: string; line: CostLine }[] = [];
@@ -877,6 +871,21 @@ export function AtlasWorkflowPlanner({
                 ) : (
                   <SignInLink className="mj-primary-button" href={workedExampleSignInHref(example.id)} pendingLabel={copy.openingSignIn}>
                     {copy.openInStudio}
+                  </SignInLink>
+                )
+              ) : null}
+              {studioPlanTarget ? (
+                sessionState === "loading" ? (
+                  <button type="button" className="mj-secondary-button" disabled aria-busy="true">
+                    {copy.checkingSignIn}
+                  </button>
+                ) : isSignedIn ? (
+                  <a className="mj-secondary-button" href={studioPlanTarget}>
+                    {copy.buildInStudio}
+                  </a>
+                ) : (
+                  <SignInLink className="mj-secondary-button" href={majoranaSignInPath(studioPlanTarget)} pendingLabel={copy.openingSignIn}>
+                    {copy.buildInStudio}
                   </SignInLink>
                 )
               ) : null}

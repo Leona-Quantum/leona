@@ -101,6 +101,33 @@ test("a sentence with nothing recognisable asks the reader to pick, instead of g
   }
 });
 
+test("\"Build it in Studio with this plan\" links to the fragment only — no sentence or numbers in the query string", async () => {
+  const { view, restore } = await renderPlanner();
+  try {
+    fireEvent.change(screen.getByLabelText("Your problem"), {
+      target: { value: "Search a database of 2^20 records for the single record that matches." },
+    });
+    await waitFor(() =>
+      assert.ok([...view.container.querySelectorAll("a")].some((a) => /Build it in Studio with this plan/.test(a.textContent ?? ""))),
+    );
+    const link = [...view.container.querySelectorAll("a")].find((a) => /Build it in Studio with this plan/.test(a.textContent ?? ""));
+    assert.ok(link, "the button is shown for a problem with a worked example");
+    const href = link!.getAttribute("href") ?? "";
+    // Signed out (this render's stub), so the actual Studio target is folded
+    // into `returnTo` (`URLSearchParams.get` already undoes that one layer of
+    // percent-encoding) — check the same three things a signed-in reader's
+    // plain href would show directly.
+    const target = new URL(href, "https://example.test").searchParams.get("returnTo") ?? href;
+    const [beforeHash, afterHash] = target.split("#");
+    assert.match(beforeHash, /^\/studio\?example=grover-3q-101&plan=1$/);
+    assert.match(afterHash ?? "", /^plan=[A-Za-z0-9_-]+$/);
+    assert.ok(!beforeHash.includes("2^20"), "no sentence text before the #");
+    assert.ok(!beforeHash.includes("1048576"), "no numbers before the #");
+  } finally {
+    restore();
+  }
+});
+
 test("a #q= link followed while the page is open replaces the sentence, and near-certain success is not printed as 100%", async () => {
   const { view, restore } = await renderPlanner();
   try {

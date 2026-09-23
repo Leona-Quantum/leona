@@ -32,6 +32,8 @@ import { cloneWorkedExampleDraft } from "../../../lib/studio-example-draft";
 import { importedArtifactHref } from "../../../lib/atlas-studio-import";
 import { ExampleGallery } from "./studio-example-gallery";
 import { ExampleNotesPanel } from "./studio-example-notes-panel";
+import { StudioPlanPanel } from "./studio-plan-panel";
+import type { PlannerGraph } from "../../../lib/workflow-planner/graph.ts";
 import { circuitChangeSummary, type CircuitChangeSummary } from "../../../lib/circuit-change-summary";
 import { AskLeonaBox } from "./studio-ask-leona";
 import { QpuMeasuredVsIdeal } from "./qpu-measured-vs-ideal";
@@ -166,12 +168,17 @@ const STARTER_SEED: Omit<BuilderSeed, "key"> = {
   operationCount: STARTER_STEPS.length,
 };
 
-export function StudioWorkspace({ artifactId, newDraft = false, exampleId, atlasSlug, locale = "en", limits = TIER_LIMITS.free }: { artifactId?: string; newDraft?: boolean; exampleId?: string; atlasSlug?: string; locale?: PublicLocale; limits?: CpuSimulationLimits }) {
+export function StudioWorkspace({ artifactId, newDraft = false, exampleId, atlasSlug, locale = "en", limits = TIER_LIMITS.free, planGraph = null }: { artifactId?: string; newDraft?: boolean; exampleId?: string; atlasSlug?: string; locale?: PublicLocale; limits?: CpuSimulationLimits; planGraph?: PlannerGraph | null }) {
   const copy = WORKSPACE_COPY[locale].studio;
   const [artifacts, setArtifacts] = useState<LibraryArtifact[]>([]);
   const [artifact, setArtifact] = useState<LibraryArtifact | null>(null);
   const [showEditor, setShowEditor] = useState(Boolean(artifactId || newDraft || exampleId || atlasSlug));
   const [activeExample, setActiveExample] = useState<WorkedExample | null>(null);
+  // A block key the plan panel asked to insert. `CircuitBuilder` owns the
+  // actual insertion (`insertBlock`, the same path every other Insert already
+  // uses); this is only the handoff between two sibling components, cleared
+  // by `CircuitBuilder` once it has opened the Blocks panel on that key.
+  const [pendingBlockInsert, setPendingBlockInsert] = useState<{ key: string } | null>(null);
   const [showGallery, setShowGallery] = useState(false);
   const [askChangeSummary, setAskChangeSummary] = useState<CircuitChangeSummary | null>(null);
   const [askBackup, setAskBackup] = useState<{
@@ -1229,6 +1236,15 @@ export function StudioWorkspace({ artifactId, newDraft = false, exampleId, atlas
                 </div>
               </div>
 
+              {planGraph ? (
+                <StudioPlanPanel
+                  graph={planGraph}
+                  locale={locale}
+                  activeExample={activeExample}
+                  onInsertBlock={(key) => setPendingBlockInsert({ key })}
+                />
+              ) : null}
+
               {(artifactId || atlasSlug) && !newDraft && artifactHydration !== "ready" ? (
                 <div className="mj-studio-empty" role={artifactHydration === "error" ? "alert" : "status"}>
                   {artifactHydration === "loading"
@@ -1305,6 +1321,8 @@ export function StudioWorkspace({ artifactId, newDraft = false, exampleId, atlas
                     }}
                     activeExample={activeExample}
                     locale={locale}
+                    pendingBlockKey={pendingBlockInsert?.key ?? null}
+                    onPendingBlockHandled={() => setPendingBlockInsert(null)}
                   />
                   {panel === "simulation" ? (
                     <SimulationPanel
@@ -1640,7 +1658,7 @@ export const PALETTE_GROUPS: Array<{ id: "oneQubit" | "rotations" | "twoQubit" |
 // Exported for the focused CircuitBuilder form tests. The custom-gate <form>
 // inside it had never been submitted by any check before ai-ops issue 123.
 // Not part of the module's public surface otherwise; StudioWorkspace is.
-export function CircuitBuilder({ seed, framework, selectedGate, onSelectGate, onApply, onCircuitChange, hidden, popout, onTogglePopout, region, copy, syncState, onRebuildFromCode, sourceCode, liveSync = false, onLiveApply, keyboardActive = true, activeExample = null, locale = "en" }: { seed: BuilderSeed; framework: StudioFramework; selectedGate: string; onSelectGate: (gate: string) => void; onApply: (codes: BuilderCodeVariants) => void; onCircuitChange?: (circuit: { qubitCount: number; steps: BuilderStep[]; customGates: CustomGateDefinition[] }) => void; hidden: boolean; popout: boolean; onTogglePopout: () => void; region?: Record<string, string>; copy: StudioCopy; syncState: CircuitSyncState; onRebuildFromCode: () => void; sourceCode: string; liveSync?: boolean; onLiveApply?: (codes: BuilderCodeVariants) => void; keyboardActive?: boolean; activeExample?: WorkedExample | null; locale?: PublicLocale }) {
+export function CircuitBuilder({ seed, framework, selectedGate, onSelectGate, onApply, onCircuitChange, hidden, popout, onTogglePopout, region, copy, syncState, onRebuildFromCode, sourceCode, liveSync = false, onLiveApply, keyboardActive = true, activeExample = null, locale = "en", pendingBlockKey = null, onPendingBlockHandled }: { seed: BuilderSeed; framework: StudioFramework; selectedGate: string; onSelectGate: (gate: string) => void; onApply: (codes: BuilderCodeVariants) => void; onCircuitChange?: (circuit: { qubitCount: number; steps: BuilderStep[]; customGates: CustomGateDefinition[] }) => void; hidden: boolean; popout: boolean; onTogglePopout: () => void; region?: Record<string, string>; copy: StudioCopy; syncState: CircuitSyncState; onRebuildFromCode: () => void; sourceCode: string; liveSync?: boolean; onLiveApply?: (codes: BuilderCodeVariants) => void; keyboardActive?: boolean; activeExample?: WorkedExample | null; locale?: PublicLocale; /** A block key the Studio plan panel asked to insert — opens the Blocks panel with that block preselected, reusing the existing Insert flow rather than a second insertion path. */ pendingBlockKey?: string | null; onPendingBlockHandled?: () => void }) {
   const [qubitCount, setQubitCount] = useState(seed.qubitCount);
   const [steps, setSteps] = useState<BuilderStep[]>(seed.steps);
   const [pendingQubits, setPendingQubits] = useState<number[]>([]);
@@ -1654,6 +1672,18 @@ export function CircuitBuilder({ seed, framework, selectedGate, onSelectGate, on
   const [openStepIds, setOpenStepIds] = useState<ReadonlySet<string>>(new Set());
   const [editingBlockId, setEditingBlockId] = useState<string | null>(null);
   const [showBlocksPanel, setShowBlocksPanel] = useState(false);
+  // Which block the Blocks panel should open already expanded. Local state,
+  // not derived from `pendingBlockKey` at render time: the prop is cleared by
+  // the parent right after this effect reads it (so a second click on the
+  // same block still registers as a change), and `BlocksPanel` only reads its
+  // `initialOpenKey` once, on mount.
+  const [openBlocksKey, setOpenBlocksKey] = useState<string | null>(null);
+  useEffect(() => {
+    if (!pendingBlockKey) return;
+    setOpenBlocksKey(pendingBlockKey);
+    setShowBlocksPanel(true);
+    onPendingBlockHandled?.();
+  }, [pendingBlockKey, onPendingBlockHandled]);
   const [showCustomGateForm, setShowCustomGateForm] = useState(false);
   const [customGateName, setCustomGateName] = useState("");
   const [builderMessage, setBuilderMessage] = useState<string | null>(null);
@@ -2468,7 +2498,7 @@ export function CircuitBuilder({ seed, framework, selectedGate, onSelectGate, on
             {singleSelectedCustomStep && editingDefinition && !editingDefinition.opaque ? (
               <button className="mj-secondary-button" type="button" onClick={ungroupSelected}>{copy.ungroupBlock}</button>
             ) : null}
-            <button className="mj-secondary-button" type="button" onClick={() => setShowBlocksPanel(true)}>{copy.blocksPanelOpen}</button>
+            <button className="mj-secondary-button" type="button" onClick={() => { setOpenBlocksKey(null); setShowBlocksPanel(true); }}>{copy.blocksPanelOpen}</button>
             <button className="mj-secondary-button" type="button" onClick={clearAll} disabled={!steps.length}>{copy.clearAll}</button>
             <span className="mj-builder-controls-divider" aria-hidden="true" />
             <button className="mj-secondary-button" type="button" onClick={() => changeQubitCount(-1)} disabled={qubitCount <= 1}>{copy.removeQubit}</button>
@@ -2598,11 +2628,13 @@ export function CircuitBuilder({ seed, framework, selectedGate, onSelectGate, on
       {inspection && !hidden ? <GateInspectorCard inspection={inspection} customGates={customGates} copy={copy} /> : null}
       {showBlocksPanel ? (
         <BlocksPanel
+          key={openBlocksKey ?? "manual"}
           qubitCount={qubitCount}
           onInsert={insertBlock}
           onGrowQubits={growQubitsForBlock}
           onClose={() => setShowBlocksPanel(false)}
           copy={copy}
+          initialOpenKey={openBlocksKey}
         />
       ) : null}
       {editingBlockId ? (() => {
