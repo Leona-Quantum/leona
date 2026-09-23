@@ -419,6 +419,11 @@ async def copy_qapp_example(
             status_code=409,
             detail={"title": str(exc), "reason": "idempotency_key_reused"},
         ) from None
+    except qapps_repo.QappExampleCopyDeleted as exc:
+        raise HTTPException(
+            status_code=409,
+            detail={"title": str(exc), "reason": "copy_deleted"},
+        ) from None
     if not created:
         response.status_code = 200
     return QappDetail(qapp=_qapp_resource(qapp), version=_version_resource(version))

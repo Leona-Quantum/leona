@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { refusalSentence } from "../../../lib/api-error";
 import { readQappExamples, type QappExampleSummary } from "../../../lib/qapp-management";
 import type { PublicLocale } from "../../../lib/public-locale";
@@ -52,6 +52,12 @@ export function QappExamples({ locale = "en" }: { locale?: PublicLocale }) {
   const [reload, setReload] = useState(0);
   const [adding, setAdding] = useState<string | null>(null);
   const [error, setError] = useState<{ key: string; message: string } | null>(null);
+  // One Idempotency-Key per example until that attempt's outcome is known, the
+  // way the comments panel keeps its keys: a retry after a lost or unreadable
+  // response carries the SAME key and gets the copy already made back. The key
+  // is dropped on success or on a definitive refusal, so the next press of Add
+  // is a new, deliberate copy.
+  const pendingKeys = useRef(new Map<string, string>());
 
   useEffect(() => {
     const controller = new AbortController();
@@ -74,16 +80,23 @@ export function QappExamples({ locale = "en" }: { locale?: PublicLocale }) {
     setAdding(key);
     setError(null);
     try {
-      // One key per press: a retry of this request converges on one copy, while
-      // pressing Add again later is a deliberate second copy and gets a new key.
+      const idempotencyKey = pendingKeys.current.get(key) ?? crypto.randomUUID();
+      pendingKeys.current.set(key, idempotencyKey);
       const response = await fetch(`/api/qapps/examples/${encodeURIComponent(key)}`, {
         method: "POST",
-        headers: { "Idempotency-Key": crypto.randomUUID() },
+        headers: { "Idempotency-Key": idempotencyKey },
       });
+      // A 4xx other than 429 is a definitive answer about THIS attempt, so its key
+      // is spent. A 5xx, a 429, a network error or an unreadable body leaves the
+      // outcome unknown, and the key stays for the retry.
+      if (response.status >= 400 && response.status < 500 && response.status !== 429) {
+        pendingKeys.current.delete(key);
+      }
       const payload = await response.json() as { qapp?: { id?: string } } | { title?: string };
       if (!response.ok || !("qapp" in payload) || !payload.qapp?.id) {
         throw new Error(refusalSentence(payload) ?? copy.addFailed);
       }
+      pendingKeys.current.delete(key);
       router.push(`/qapps/${encodeURIComponent(payload.qapp.id)}`);
     } catch (cause) {
       setError({ key, message: cause instanceof Error ? cause.message : copy.addFailed });

@@ -45,6 +45,11 @@ class QappExampleKeyReused(RepoError):
     """An Idempotency-Key already used to copy one example was sent to copy another."""
 
 
+class QappExampleCopyDeleted(RepoError):
+    """The copy an Idempotency-Key made has since been deleted, so replaying it
+    cannot hand the copy back, and making a second one would break the key."""
+
+
 class QappExecutionCeiling(RepoError):
     """A spend ceiling refused this execution. ``scope_name`` says which one.
 
@@ -616,7 +621,9 @@ async def create_from_example(
     `Idempotency-Key` contract `POST /v1/runs` and `POST /v1/comments` use: a
     retry carrying the same key gets the copy the first attempt made
     (`created=False`, nothing written), and a key already used for a different
-    example raises `QappExampleKeyReused`. A new key, or no key, always makes a
+    example raises `QappExampleKeyReused`. A replay whose copy has since been
+    deleted raises `QappExampleCopyDeleted` rather than quietly making another:
+    one key, at most one copy, ever. A new key, or no key, always makes a
     new copy, so someone who wants a second clean copy of an example gets one,
     as with forking. The key is kept in the `qapp.created` audit entry's meta
     rather than a new column, and a transaction-scoped advisory lock on
@@ -662,7 +669,6 @@ async def create_from_example(
                     AuditLog.meta["idempotency_key"].astext == idempotency_key,
                     Qapp.workspace_id == scope.workspace_id,
                     Qapp.owner_user_id == scope.user_id,
-                    Qapp.deleted_at.is_(None),
                 )
                 .limit(1)
             )
@@ -672,6 +678,11 @@ async def create_from_example(
             if (meta or {}).get("example") != example_key:
                 raise QappExampleKeyReused(
                     "this Idempotency-Key was already used to copy a different example"
+                )
+            if existing.deleted_at is not None:
+                raise QappExampleCopyDeleted(
+                    "the copy this request made has since been deleted; add the example "
+                    "again to make a new one"
                 )
             return existing, await get_current_version(scope, session, existing), False
     canonical = json.dumps(

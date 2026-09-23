@@ -391,7 +391,7 @@ async def test_an_example_copy_is_private_to_the_caller_until_they_run_it(db):
     with pytest.raises(qapps_repo.QappExampleKeyReused):
         await copy(owner, key="press-1", example_key="grover_search")
 
-    theirs, _, theirs_created = await copy(other)
+    theirs, _, theirs_created = await copy(other, key="their-press")
     assert theirs_created is True
     assert theirs.id != qapp.id
     assert theirs.slug != qapp.slug
@@ -402,3 +402,9 @@ async def test_an_example_copy_is_private_to_the_caller_until_they_run_it(db):
     published = await _publish(db, owner, qapp, version)
     assert published.visibility == "public"
     assert published.published_at is not None
+
+    # One key, at most one copy, ever: replaying a key whose copy was deleted is
+    # refused instead of quietly making a second copy.
+    await qapps_repo.soft_delete_qapp(other, db, theirs.id)
+    with pytest.raises(qapps_repo.QappExampleCopyDeleted):
+        await copy(other, key="their-press")
