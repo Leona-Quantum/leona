@@ -236,7 +236,11 @@ function factoringCosts(params: ParamValues, root: Stage | null): CostReport {
     missing: needs,
   });
   report.lines.push(qubits, toffolis, depth);
-  report.logical = { logicalQubits: qubits, toffolis, tGates: null, queries: null };
+  // Gidney–Ekerå's measurement depth is the chain of dependent measurements
+  // the reaction time applies to, so it is the estimator's serial depth. At
+  // their 10 µs reaction time it gives 5.9 hours at 2048 bits, against the
+  // 8 hours their abstract states for the whole run.
+  report.logical = { logicalQubits: qubits, toffolis, tGates: null, queries: null, serialDepth: depth };
   const row = n !== null ? GIDNEY_2025_TABLE_5[n] : undefined;
   if (row) {
     report.lines.push(

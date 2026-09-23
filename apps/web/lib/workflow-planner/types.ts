@@ -119,6 +119,14 @@ export interface LogicalSummary {
   toffolis: CostLine | null;
   tGates: CostLine | null;
   queries: CostLine | null;
+  /**
+   * The serial chain of dependent non-Clifford steps, where the source states
+   * one. It is the estimator's `non_clifford_depth`: the runtime floor no
+   * number of magic-state factories can lower. Absent for every problem whose
+   * source gives no such figure, and then the physical estimate says its
+   * runtime is one factory's throughput rather than the fastest possible.
+   */
+  serialDepth?: CostLine | null;
 }
 
 export interface Suggestion {

@@ -1,0 +1,217 @@
+{
+ "assumptions": {
+  "identity": "gidney-2025@v2",
+  "name": "gidney-2025",
+  "version": 2,
+  "citation": "Gidney 2025 (arXiv:2505.15917), shortened for this fixture.",
+  "rotation_synthesis_epsilon": null,
+  "t_per_rotation": null,
+  "t_per_toffoli": 8,
+  "physical_error_rate": 0.001,
+  "cycle_time_s": 1e-06,
+  "reaction_time_s": 1e-05
+ },
+ "points": [
+  {
+   "label": "bits = 2,048",
+   "parameter_value": 2048.0,
+   "refused": null,
+   "distance": {
+    "code_distance": 31,
+    "logical_operations": 132690604193744,
+    "required_error_per_operation": 7.536328635144969e-17,
+    "achieved_error_per_operation": 1.0000000000000008e-17,
+    "physical_per_logical": 2048
+   },
+   "fastest": {
+    "footprint": {
+     "data_patch_qubits": 12677120,
+     "routing_qubits": 12677120,
+     "factory_qubits": 417792,
+     "total_physical_qubits": 25772032
+    },
+    "runtime": {
+     "magic_states": 20993800144,
+     "factory_count": 17,
+     "throughput_seconds": 21410.58882332941,
+     "reaction_limited_seconds": 21432.893440000003,
+     "seconds": 21432.893440000003,
+     "binding_term": "reaction",
+     "factory_crossover": 17
+    }
+   },
+   "smallest": {
+    "footprint": {
+     "data_patch_qubits": 12677120,
+     "routing_qubits": 12677120,
+     "factory_qubits": 24576,
+     "total_physical_qubits": 25378816
+    },
+    "runtime": {
+     "magic_states": 20993800144,
+     "factory_count": 1,
+     "throughput_seconds": 363980.0099965999,
+     "reaction_limited_seconds": 21432.893440000003,
+     "seconds": 363980.0099965999,
+     "binding_term": "throughput",
+     "factory_crossover": 17
+    }
+   },
+   "frontier": [
+    {
+     "assumption_set": "composed-trapped-ion@v2",
+     "factory_count": 1,
+     "total_physical_qubits": 20897168,
+     "runtime_seconds": 663142186.8936036
+    },
+    {
+     "assumption_set": "composed-trapped-ion@v2",
+     "factory_count": 2,
+     "total_physical_qubits": 20971176,
+     "runtime_seconds": 331571093.4468018
+    },
+    {
+     "assumption_set": "composed-trapped-ion@v2",
+     "factory_count": 5,
+     "total_physical_qubits": 21193200,
+     "runtime_seconds": 132628437.3787207
+    },
+    {
+     "assumption_set": "composed-trapped-ion@v2",
+     "factory_count": 10,
+     "total_physical_qubits": 21563240,
+     "runtime_seconds": 66314218.68936035
+    },
+    {
+     "assumption_set": "composed-trapped-ion@v2",
+     "factory_count": 21,
+     "total_physical_qubits": 22377328,
+     "runtime_seconds": 31578199.375885885
+    },
+    {
+     "assumption_set": "composed-trapped-ion@v2",
+     "factory_count": 46,
+     "total_physical_qubits": 24227528,
+     "runtime_seconds": 14416134.497687034
+    },
+    {
+     "assumption_set": "gidney-2025@v2",
+     "factory_count": 1,
+     "total_physical_qubits": 25378816,
+     "runtime_seconds": 363980.0099965999
+    },
+    {
+     "assumption_set": "gidney-2025@v2",
+     "factory_count": 2,
+     "total_physical_qubits": 25403392,
+     "runtime_seconds": 181990.00499829996
+    },
+    {
+     "assumption_set": "gidney-2025@v2",
+     "factory_count": 3,
+     "total_physical_qubits": 25427968,
+     "runtime_seconds": 121326.66999886667
+    },
+    {
+     "assumption_set": "gidney-2025@v2",
+     "factory_count": 4,
+     "total_physical_qubits": 25452544,
+     "runtime_seconds": 90995.00249914998
+    },
+    {
+     "assumption_set": "gidney-2025@v2",
+     "factory_count": 5,
+     "total_physical_qubits": 25477120,
+     "runtime_seconds": 72796.00199931998
+    },
+    {
+     "assumption_set": "gidney-2025@v2",
+     "factory_count": 6,
+     "total_physical_qubits": 25501696,
+     "runtime_seconds": 60663.33499943333
+    },
+    {
+     "assumption_set": "gidney-2025@v2",
+     "factory_count": 8,
+     "total_physical_qubits": 25550848,
+     "runtime_seconds": 45497.50124957499
+    },
+    {
+     "assumption_set": "gidney-2025@v2",
+     "factory_count": 10,
+     "total_physical_qubits": 25600000,
+     "runtime_seconds": 36398.00099965999
+    },
+    {
+     "assumption_set": "gidney-2025@v2",
+     "factory_count": 13,
+     "total_physical_qubits": 25673728,
+     "runtime_seconds": 27998.462307430767
+    },
+    {
+     "assumption_set": "gidney-2025@v2",
+     "factory_count": 17,
+     "total_physical_qubits": 25772032,
+     "runtime_seconds": 21432.893440000003
+    }
+   ]
+  },
+  {
+   "label": "no depth",
+   "parameter_value": 4096.0,
+   "refused": null,
+   "distance": {
+    "code_distance": 21,
+    "logical_operations": 8000000000,
+    "required_error_per_operation": 1.2500000000000001e-12,
+    "achieved_error_per_operation": 1.0000000000000006e-12,
+    "physical_per_logical": 968
+   },
+   "fastest": {
+    "footprint": {
+     "data_patch_qubits": 193600,
+     "routing_qubits": 193600,
+     "factory_qubits": 11616,
+     "total_physical_qubits": 398816
+    },
+    "runtime": {
+     "magic_states": 8000000000,
+     "factory_count": 1,
+     "throughput_seconds": 98700.0,
+     "reaction_limited_seconds": 0.0,
+     "seconds": 98700.0,
+     "binding_term": "throughput",
+     "factory_crossover": null
+    }
+   },
+   "smallest": null,
+   "frontier": [
+    {
+     "assumption_set": "composed-trapped-ion@v2",
+     "factory_count": 1,
+     "total_physical_qubits": 391608,
+     "runtime_seconds": 182989799.99999997
+    },
+    {
+     "assumption_set": "gidney-2025@v2",
+     "factory_count": 1,
+     "total_physical_qubits": 398816,
+     "runtime_seconds": 98700.0
+    }
+   ]
+  },
+  {
+   "label": "queries only",
+   "parameter_value": 8192.0,
+   "refused": "No Toffoli or T count was stated at this size, so there is no magic-state cost to turn into a machine.",
+   "distance": null,
+   "fastest": null,
+   "smallest": null,
+   "frontier": null
+  }
+ ],
+ "citations": {
+  "composed-trapped-ion@v2": "shortened for this fixture",
+  "gidney-2025@v2": "shortened for this fixture"
+ }
+}

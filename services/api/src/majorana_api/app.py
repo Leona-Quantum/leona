@@ -40,6 +40,7 @@ from .routes.artifacts import router as artifacts_router
 from .routes.billing import router as billing_router
 from .routes.catalog import router as catalog_router
 from .routes.comments import router as comments_router
+from .routes.estimates import router as estimates_router
 from .routes.me import router as me_router
 from .routes.tokens import router as tokens_router
 from .routes.news import router as news_router
@@ -546,6 +547,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     # here so that stays true if either side gains a wildcard.
     app.include_router(shares_router, prefix="/v1")
     app.include_router(catalog_router, prefix="/v1")
+    app.include_router(estimates_router, prefix="/v1")
     app.include_router(qpu_router, prefix="/v1")
     app.include_router(qapps_router, prefix="/v1")
     app.include_router(notebooks_router, prefix="/v1")
