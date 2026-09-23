@@ -149,8 +149,9 @@ export function formatDuration(seconds: number, locale: PublicLocale): string {
 }
 
 const SUPERSCRIPT = "⁰¹²³⁴⁵⁶⁷⁸⁹";
+/** An axis label: plain up to 100, a power of ten past it, so one axis never mixes "1,000" with "10⁵". */
 function tick(value: number): string {
-  if (value >= 1e5 || value < 1e-2) {
+  if (value >= 1e3 || value < 1e-2) {
     const exponent = Math.round(Math.log10(value));
     const sign = exponent < 0 ? "⁻" : "";
     return `10${sign}${String(Math.abs(exponent)).split("").map((d) => SUPERSCRIPT[Number(d)]).join("")}`;
@@ -255,7 +256,8 @@ function LogChart({
         ))}
         {xTicks.map((v) => (
           <text key={`x${v}`} className="mj-plan-chart-tick" x={sx(v)} y={H - 8} textAnchor="middle">
-            {tick(v)}
+            {/* Sweep values, not decades: 2,048 is not 10³. */}
+            {formatPlain(v)}
           </text>
         ))}
         {hover !== null && points[hover] ? (
