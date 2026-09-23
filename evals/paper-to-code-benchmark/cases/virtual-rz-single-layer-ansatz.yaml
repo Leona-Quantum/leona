@@ -1,0 +1,104 @@
+task_id: virtual-rz-single-layer-ansatz
+source:
+  arxiv_id: "2608.17249"
+  title: "Low-Depth and Noise-Resilient Quantum State Preparation for Partial Differential Equations via Virtual Rz"
+  authors: ["Toru Fujii"]
+  submitted: "2026-08-18"
+  venue: null
+  location: "Abstract; Figure 1 and its caption; Section on the ansatz (2n variational parameters)"
+  url: "https://arxiv.org/abs/2608.17249"
+  license: "arXiv.org's default non-exclusive, perpetual distribution license (arxiv.org/licenses/nonexclusive-distrib/1.0/), which every arXiv submission grants by default"
+  retrieved: "2026-09-23"
+quoted_excerpt: >
+  "a single-layer, hardware-aware ansatz with Ry rotations, a CZ entangling layer, and
+  virtual Rz frame updates" (abstract); "The layer has 2n variational parameters" (ansatz
+  description); Figure 1 caption: "The circuit uses RY and Rz rotations and a CZ entangling
+  layer."
+prompt: |
+  The paper arXiv:2608.17249 ("Low-Depth and Noise-Resilient Quantum State Preparation for
+  Partial Differential Equations via Virtual Rz") introduces a single-layer, hardware-aware
+  ansatz for real-amplitude state preparation, built from three sub-layers applied in order:
+
+  1. A layer of local Ry rotations: `Ry(theta_i)` on every qubit `i`.
+  2. A nearest-neighbor CZ entangling layer: a `CZ` gate between each adjacent pair of
+     qubits `(i, i+1)` for `i` from 0 to n-2 (CZ gates are diagonal and mutually commute,
+     so within this layer their relative order does not matter).
+  3. A layer of "virtual Rz" frame updates: `Rz(phi_i)` on every qubit `i`. The paper notes
+     virtual-Z adds no physical pulses and does not increase circuit duration on real
+     hardware, but it produces the mathematically IDENTICAL final quantum state as a
+     physical `Rz` gate at that circuit position — so implement it as an ordinary `Rz` gate.
+
+  Implement this ansatz as a Qiskit function `virtual_rz_ansatz(theta: list, phi: list) ->
+  QuantumCircuit`, where `theta` and `phi` are equal-length lists of rotation angles (one
+  per qubit; `n = len(theta) = len(phi)`).
+
+  Requirements:
+  - Preserve the exact function name and signature.
+  - Build exactly the three sub-layers above, in the stated order, on `n = len(theta)`
+    qubits with no measurements.
+  - Do not add any additional gates, layers, or repetitions — this is the paper's proposed
+    SINGLE-layer ansatz (Table 1 contrasts it against deeper variants that repeat the block;
+    this task is the 1-layer version only).
+entry_point: virtual_rz_ansatz
+scaffold: |
+  from qiskit import QuantumCircuit
+
+
+  def virtual_rz_ansatz(theta: list, phi: list) -> QuantumCircuit:
+      """Build the paper's single-layer ansatz: Ry rotations, a nearest-neighbor CZ
+      entangling layer, then Rz (virtual-Z) frame updates."""
+canonical_solution: |2
+      n = len(theta)
+      qc = QuantumCircuit(n)
+      for i in range(n):
+          qc.ry(theta[i], i)
+      for i in range(n - 1):
+          qc.cz(i, i + 1)
+      for i in range(n):
+          qc.rz(phi[i], i)
+      return qc
+hidden_test: |
+  def check(candidate):
+      from qiskit import QuantumCircuit
+      from qiskit.quantum_info import Statevector
+
+      theta = [0.3, 1.1, 0.7, 2.0]
+      phi = [0.5, -0.4, 1.3, 0.2]
+      n = len(theta)
+
+      candidate_qc = candidate(theta, phi)
+      assert candidate_qc.num_qubits == n, candidate_qc.num_qubits
+
+      reference = QuantumCircuit(n)
+      for i in range(n):
+          reference.ry(theta[i], i)
+      for i in range(n - 1):
+          reference.cz(i, i + 1)
+      for i in range(n):
+          reference.rz(phi[i], i)
+
+      sv_candidate = Statevector(candidate_qc)
+      sv_reference = Statevector(reference)
+      assert sv_candidate.equiv(sv_reference), (
+          "candidate ansatz does not match the paper's Ry -> CZ -> virtual-Rz single layer"
+      )
+grading_method: statevector
+qubits: 4
+novelty: restated
+novelty_reason: >
+  A local-rotation + entangling-layer "hardware-efficient ansatz" is a generic, long-
+  standing VQE/QML template (in wide use since well before 2026); this paper applies it
+  (with a virtual-Z hardware-efficiency framing) to a new problem (PDE state prep) rather
+  than inventing the layer structure itself, so a model can plausibly build this ansatz
+  correctly without ever having read this specific paper.
+notes: >
+  Verified 2026-09-23 against qiskit==2.5.2: CZ gates are diagonal in the computational
+  basis and therefore mutually commute regardless of qubit overlap, so the "nearest-
+  neighbor CZ layer" is unambiguous even though the paper does not spell out an explicit
+  numeric example — the fetched full text (ar5iv HTML render) confirms this is a genuine
+  SINGLE layer ("The layer has 2n variational parameters") with no repetition, and that the
+  paper leaves rotation angles as free variational parameters (optimized via COBYLA in the
+  paper's own PDE-fitting application) rather than giving fixed numeric values — this task
+  therefore grades the ansatz STRUCTURE for arbitrary input angles, which is exactly what a
+  model would need to get right to reproduce the paper's construction, independent of what
+  values an optimizer later finds for a specific PDE target.

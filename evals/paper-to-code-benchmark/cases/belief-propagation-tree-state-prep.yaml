@@ -1,0 +1,140 @@
+task_id: belief-propagation-tree-state-prep
+source:
+  arxiv_id: "2608.26840"
+  title: "Quantum Rare-Event Estimation for Ising Graphical Models with Belief-Propagation State Preparation"
+  authors: ["Miguel Hernández Vera", "Newsha Jamialahmadi", "Berat Mete", "Steffen Schneider", "Marco De Pascale"]
+  submitted: "2026-08-27"
+  venue: null
+  location: "Section 3.3.3, Equations (34), (38)-(40)"
+  url: "https://arxiv.org/abs/2608.26840"
+  license: "arXiv.org's default non-exclusive, perpetual distribution license (arxiv.org/licenses/nonexclusive-distrib/1.0/), which every arXiv submission grants by default"
+  retrieved: "2026-09-23"
+quoted_excerpt: >
+  Eq. (34): root rotation "Ry(theta_r)" with "theta_r = 2 arcsin(sqrt(p_r))"; Eq. (40),
+  the "two-CNOT block": "CX(pi(i) -> i) - Ry(beta_i) - CX(pi(i) -> i) - Ry(alpha_i)"; "The
+  full circuit is constructed by applying the root rotation ([34]), followed by the
+  conditional block ([40]) for every non-root node."
+prompt: |
+  The paper arXiv:2608.26840 ("Quantum Rare-Event Estimation for Ising Graphical Models
+  with Belief-Propagation State Preparation") compiles a tree-structured probability
+  distribution (from belief-propagation marginals) into a quantum circuit as follows:
+
+  - Root node: apply `Ry(theta_r)` where `theta_r = 2 * arcsin(sqrt(p_r))` encodes the
+    root's marginal probability `p_r = P(root = 1)` (Eq. 34).
+  - Every non-root node `i` with parent `pi(i)`: given the two conditional probabilities
+    `P(x_i = 1 | x_pi(i) = 0)` and `P(x_i = 1 | x_pi(i) = 1)`, define
+    `theta(i|0) = 2*arcsin(sqrt(P(x_i=1|x_pi(i)=0)))` and
+    `theta(i|1) = 2*arcsin(sqrt(P(x_i=1|x_pi(i)=1)))` (the paper's general conditional-
+    angle formula), then `alpha_i = (theta(i|0) + theta(i|1)) / 2` and
+    `beta_i = (theta(i|0) - theta(i|1)) / 2` (Eq. 39), and apply the two-CNOT block (Eq.
+    40): `CX(pi(i) -> i)`, `Ry(beta_i)` on `i`, `CX(pi(i) -> i)`, `Ry(alpha_i)` on `i` — in
+    that exact order.
+  - The full circuit is the root rotation followed by this conditional block for every
+    non-root node, in any order that respects parent-before-child (the paper: "The full
+    circuit is constructed by applying the root rotation..., followed by the conditional
+    block... for every non-root node.").
+
+  Implement this for a specific 3-node tree — root `r` (qubit 0) with two children `a`
+  (qubit 1) and `b` (qubit 2), BOTH with parent `r` — as a Qiskit function
+  `bayes_tree_state_prep(p_r: float, p_a_given_r0: float, p_a_given_r1: float,
+  p_b_given_r0: float, p_b_given_r1: float) -> QuantumCircuit`.
+
+  Requirements:
+  - Preserve the exact function name and signature.
+  - Build the root rotation on qubit 0, then the two-CNOT conditional block for `a` (qubit
+    1, parent qubit 0), then the two-CNOT conditional block for `b` (qubit 2, parent qubit
+    0), using the exact formulas and gate order above.
+  - The resulting 3-qubit state's measurement probabilities must equal the joint
+    distribution `P(r, a, b) = P(r) * P(a|r) * P(b|r)` implied by the given probabilities.
+entry_point: bayes_tree_state_prep
+scaffold: |
+  import numpy as np
+  from qiskit import QuantumCircuit
+
+
+  def bayes_tree_state_prep(
+      p_r: float,
+      p_a_given_r0: float,
+      p_a_given_r1: float,
+      p_b_given_r0: float,
+      p_b_given_r1: float,
+  ) -> QuantumCircuit:
+      """Build the belief-propagation tree-state-preparation circuit (Eqs. 34, 38-40) for
+      a 3-node tree: root r (qubit 0), children a (qubit 1) and b (qubit 2), both with
+      parent r."""
+canonical_solution: |2
+      def _theta(p):
+          return 2 * np.arcsin(np.sqrt(p))
+
+      qc = QuantumCircuit(3)
+      qc.ry(_theta(p_r), 0)
+
+      for child_qubit, p_given_0, p_given_1 in (
+          (1, p_a_given_r0, p_a_given_r1),
+          (2, p_b_given_r0, p_b_given_r1),
+      ):
+          theta0, theta1 = _theta(p_given_0), _theta(p_given_1)
+          alpha, beta = (theta0 + theta1) / 2, (theta0 - theta1) / 2
+          qc.cx(0, child_qubit)
+          qc.ry(beta, child_qubit)
+          qc.cx(0, child_qubit)
+          qc.ry(alpha, child_qubit)
+      return qc
+hidden_test: |
+  def check(candidate):
+      from qiskit.quantum_info import Statevector
+
+      p_r = 0.36
+      p_a0, p_a1 = 0.2, 0.7
+      p_b0, p_b1 = 0.5, 0.1
+
+      candidate_qc = candidate(p_r, p_a0, p_a1, p_b0, p_b1)
+      assert candidate_qc.num_qubits == 3, candidate_qc.num_qubits
+
+      probs = Statevector(candidate_qc).probabilities_dict()
+
+      def p_root(r):
+          return p_r if r == 1 else 1 - p_r
+
+      def p_child(x, r, p0, p1):
+          p = p1 if r == 1 else p0
+          return p if x == 1 else 1 - p
+
+      total = 0.0
+      for r in (0, 1):
+          for a in (0, 1):
+              for b in (0, 1):
+                  expected = p_root(r) * p_child(a, r, p_a0, p_a1) * p_child(b, r, p_b0, p_b1)
+                  # little-endian: qubit0=r rightmost, qubit1=a, qubit2=b leftmost
+                  bitstring = f"{b}{a}{r}"
+                  got = probs.get(bitstring, 0.0)
+                  assert abs(got - expected) < 1e-6, (
+                      f"bitstring {bitstring}: expected P={expected:.6f}, got {got:.6f}"
+                  )
+                  total += expected
+      assert abs(total - 1.0) < 1e-9, total
+grading_method: distribution
+qubits: 3
+novelty: paper-specific
+novelty_reason: >
+  The underlying two-CNOT "uniformly-controlled-rotation" gate PRIMITIVE is a known
+  circuit identity, but the SPECIFIC formula this task requires — connecting
+  belief-propagation-derived tree marginals/conditionals into per-node alpha/beta angles
+  and composing them recursively across a tree (Eqs. 34, 38-40) — is presented as this
+  paper's own circuit-construction method for its Ising-graphical-model application, not
+  cited from elsewhere in the fetched text. A model would need to correctly reproduce
+  THIS paper's specific angle-decomposition formula, not just "know how to build a
+  controlled rotation."
+notes: >
+  Verified 2026-09-23 by direct simulation: for `p_r=0.36`, `P(a=1|r=0)=0.2`,
+  `P(a=1|r=1)=0.7`, `P(b=1|r=0)=0.5`, `P(b=1|r=1)=0.1`, the circuit's measured
+  probabilities matched the classically-computed joint distribution
+  `P(r,a,b)=P(r)P(a|r)P(b|r)` exactly (all 8 outcomes, to floating-point precision) — this
+  confirms the Eq. 34/38-40 "two-CNOT uniformly-controlled-rotation" construction is
+  correctly reproduced, not merely plausible-looking. The paper's own text (fetched via
+  ar5iv HTML render) gives this general formula but no fully worked numeric toy example
+  (its own smallest studied system is a 20-node model, "too large to serve as a
+  pedagogical example" per the fetch); the specific 3-node tree and probability values
+  used here were constructed by applying the paper's own general formula, not vendored
+  from the paper's own numbers — stated plainly per this benchmark's own transcription
+  discipline.

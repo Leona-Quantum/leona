@@ -1,0 +1,124 @@
+task_id: lcu-block-encoding-rate-matrix
+source:
+  arxiv_id: "2609.08432"
+  title: "Explicit block encodings of rate matrices for simulating polymerization kinetics on quantum computers"
+  authors: ["Yuta Ikeda", "Hikaru Iwakiri", "Soichi Nishio", "Keisuke Matsumoto"]
+  submitted: "2026-09-08"
+  venue: null
+  location: "Section 2.5.1, Equation (34) (the two-term LCU decomposition), and its PREPARE/SELECT description"
+  url: "https://arxiv.org/abs/2609.08432"
+  license: "arXiv.org's default non-exclusive, perpetual distribution license (arxiv.org/licenses/nonexclusive-distrib/1.0/), which every arXiv submission grants by default"
+  retrieved: "2026-09-23"
+quoted_excerpt: >
+  "A=k_p[M](S − I), S: |j⟩ ↦ |j+1 mod N⟩" (Eq. 34, the two-term LCU decomposition, c_0=
+  -k_p[M] with U_0=I and c_1=+k_p[M] with U_1=S); "Prepare is a single Hadamard on one
+  index qubit"; "Select reduces to a single controlled S" (both Section 2.5.1).
+prompt: |
+  The paper arXiv:2609.08432 ("Explicit block encodings of rate matrices for simulating
+  polymerization kinetics on quantum computers") block-encodes the single-monomer
+  polymerization rate matrix `A = k * (S - I)`, where `S` is the cyclic down-shift
+  permutation on an `N`-dimensional register (`S: |j> -> |j+1 mod N>`) and `I` is the
+  identity, via the two-term LCU decomposition (Eq. 34): `c_0 = -k, U_0 = I` and `c_1 = +k,
+  U_1 = S`. Because the two coefficients have equal magnitude `|c_0| = |c_1| = k`, the
+  paper states: "PREPARE is a single Hadamard on one index qubit" and "SELECT reduces to a
+  single controlled S". The subnormalization factor is `lambda = |c_0| + |c_1| = 2k`.
+
+  Implement the PREPARE-SELECT-PREPARE-dagger block-encoding circuit as a Qiskit function
+  `block_encode_rate_matrix(k: float) -> QuantumCircuit` for the fixed dimension `N = 4`
+  (i.e. a 2-qubit system register), using qubit 0 as the single ancilla/index qubit and
+  qubits 1-2 as the system register. Concretely:
+
+  1. PREPARE: a Hadamard on the ancilla qubit (qubit 0).
+  2. SELECT: when the ancilla is `|0>`, apply `U_0 = -I` to the system register (the `-1`
+     sign folded in from `c_0 = -k`, since LCU's PREPARE step only encodes the coefficient
+     MAGNITUDES; the standard technique is to fold each term's sign into its own unitary).
+     When the ancilla is `|1>`, apply `U_1 = S` (the cyclic shift) to the system register.
+  3. PREPARE-dagger: a second Hadamard on the ancilla qubit.
+
+  The resulting circuit's top-left `N x N` block (the sub-block of its full unitary matrix
+  restricted to ancilla=`|0>` on input and output) must equal `A / lambda`.
+
+  Requirements:
+  - Preserve the exact function name and signature.
+  - Build the circuit on exactly 3 qubits (1 ancilla + 2 system), ancilla as qubit 0.
+  - Do not normalize or rescale the final circuit beyond what PREPARE/SELECT/PREPARE-dagger
+    naturally produce.
+entry_point: block_encode_rate_matrix
+scaffold: |
+  from qiskit import QuantumCircuit
+
+
+  def block_encode_rate_matrix(k: float) -> QuantumCircuit:
+      """Build the PREPARE-SELECT-PREPARE^dagger block encoding of A = k*(S - I) for the
+      N=4 cyclic shift S, using qubit 0 as the ancilla and qubits 1-2 as the system."""
+canonical_solution: |2
+      import numpy as np
+      from qiskit.circuit.library import UnitaryGate
+
+      qc = QuantumCircuit(3)
+      N = 4
+      S = np.zeros((N, N))
+      for j in range(N):
+          S[(j + 1) % N, j] = 1.0
+
+      qc.h(0)
+      # Fold the c_0 = -k sign into a phase of -1 exactly on ancilla = |0>: X;Z;X flips
+      # which computational value of the ancilla gets phase -1 (Z gives -1 on |1>; X;Z;X
+      # gives -1 on |0> instead).
+      qc.x(0)
+      qc.z(0)
+      qc.x(0)
+      controlled_s = UnitaryGate(S, label="S").control(1)
+      qc.append(controlled_s, [0, 1, 2])
+      qc.h(0)
+      return qc
+hidden_test: |
+  def check(candidate):
+      import numpy as np
+      from qiskit.quantum_info import Operator
+
+      k = 0.5
+      N = 4
+      candidate_qc = candidate(k)
+      assert candidate_qc.num_qubits == 3, candidate_qc.num_qubits
+
+      S = np.zeros((N, N))
+      for j in range(N):
+          S[(j + 1) % N, j] = 1.0
+      A = k * (S - np.eye(N))
+      lam = 2 * k
+      expected_block = A / lam
+
+      U = Operator(candidate_qc).data
+      # Little-endian: qubit 0 (ancilla) is the least-significant bit, so the ancilla=0
+      # subspace is every EVEN row/column index.
+      block = np.zeros((N, N), dtype=complex)
+      for i in range(N):
+          for j in range(N):
+              block[i, j] = U[2 * i, 2 * j]
+
+      assert np.allclose(block, expected_block, atol=1e-8), (
+          f"block-encoded operator mismatch:\n{block}\nvs expected\n{expected_block}"
+      )
+grading_method: unitary
+qubits: 3
+novelty: paper-specific
+novelty_reason: >
+  The general PREPARE-SELECT LCU block-encoding FRAMEWORK is known prior technique (Low-
+  Chuang-era work, well before this paper), but the SPECIFIC operator being block-encoded
+  here — the polymerization rate matrix A = k*(S-I) for a cyclic-shift chemical-kinetics
+  model, and its concrete 2-term decomposition (Eq. 34) with equal-magnitude coefficients
+  — is this paper's own contribution/application. A model needs this paper's specific
+  rate-matrix structure to build the right PREPARE/SELECT pair; knowing LCU in the
+  abstract is not sufficient.
+notes: >
+  Verified 2026-09-23 against qiskit==2.5.2 by direct computation (not asserted from the
+  paper's prose alone): building exactly this circuit and extracting the ancilla=|0>
+  sub-block of its full 8x8 unitary reproduces `A/lambda` to floating-point precision for
+  `k=0.5, N=4`. The "-1 sign via X;Z;X on the ancilla" step is a standard LCU technique for
+  folding a negative coefficient into its corresponding unitary (PREPARE only ever encodes
+  coefficient MAGNITUDES via real amplitudes) — the paper's own prose (fetched via ar5iv
+  HTML render) describes PREPARE/SELECT only qualitatively ("a single Hadamard", "a single
+  controlled S"); the sign-folding mechanics were derived independently and confirmed
+  numerically before being written into this task, exactly the discipline `verify-claims`
+  calls for before trusting a derived construction.
