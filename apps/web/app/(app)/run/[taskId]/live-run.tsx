@@ -39,6 +39,8 @@ import {
 import { resultVisualizationFromResult } from "../../../../lib/result-visualization";
 import { ThinkingLabel } from "../../../../components/thinking-label";
 import type { PublicLocale } from "../../../../lib/public-locale";
+import { AtlasWorkflowNote } from "../../../../components/atlas-workflow-note";
+import type { RunPlanner } from "../../../../lib/workflow-planner/run-planner.ts";
 import {
   contextualReviewFollowUps,
   followUpPrompts,
@@ -346,7 +348,7 @@ function fixtureTurns(events: RunEvent[], fixtureId?: string, locale: PublicLoca
   }];
 }
 
-export function LiveRun({ taskId, locale = "en" }: { taskId: string; locale?: PublicLocale }) {
+export function LiveRun({ taskId, locale = "en", planner }: { taskId: string; locale?: PublicLocale; planner?: RunPlanner }) {
   const router = useRouter();
   const fixtureEvents = RUN_FIXTURES[taskId] ?? null;
   const fixtureIsTerminal = Boolean(
@@ -939,6 +941,7 @@ export function LiveRun({ taskId, locale = "en" }: { taskId: string; locale?: Pu
                 <div className="mj-chat-message mj-chat-message--user">
                   <ChatMarkdown source={turn.prompt} />
                 </div>
+                {planner ? <AtlasWorkflowNote prompt={turn.prompt} graph={planner.graph} exampleTitles={planner.exampleTitles} locale={locale} /> : null}
                 {turn.answer || turn.terminal ? (
                   <CompletedAssistant
                     turn={turn}
@@ -956,6 +959,7 @@ export function LiveRun({ taskId, locale = "en" }: { taskId: string; locale?: Pu
             {showActiveUser ? (
               <div className="mj-chat-turn">
                 <div className="mj-chat-message mj-chat-message--user"><ChatMarkdown source={activePrompt ?? ""} /></div>
+                {planner && activePrompt ? <AtlasWorkflowNote prompt={activePrompt} graph={planner.graph} exampleTitles={planner.exampleTitles} locale={locale} /> : null}
                 {streamingText || reasoningText || liveEvents.length > 0 ? (
                   <AssistantMessage reasoning={reasoningText} text={streamingText} streaming={streaming} events={liveEvents} turnId={activeRunId} locale={locale} />
                 ) : pending ? <AssistantLoading turnId={activeRunId} locale={locale} queuePosition={queuePosition} /> : null}

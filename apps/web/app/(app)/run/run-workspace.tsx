@@ -20,18 +20,14 @@ import { RunComposer, type ComposerFramework } from "../../../components/run-com
 import { LionessField } from "../../../components/lioness-field";
 import { usePromptAttachments } from "../../../lib/use-prompt-attachments";
 import { NalaPlanCue } from "../../../components/nala-plan-cue";
-import { indexPlannerGraph, type PlannerGraph } from "../../../lib/workflow-planner/graph.ts";
+import { indexPlannerGraph } from "../../../lib/workflow-planner/graph.ts";
 import { contextForPrompt } from "../../../lib/workflow-planner/run-context.ts";
+import type { RunPlanner } from "../../../lib/workflow-planner/run-planner.ts";
 
-/**
- * The planner's graph (prose stripped, see `leanPlannerGraph`) and the worked
- * examples' titles, passed by the signed-in Run page so a recognised prompt
- * reaches Nala with its workflow. Absent in the public demo, which never sends.
- */
-export interface RunPlanner {
-  graph: PlannerGraph;
-  exampleTitles: Record<string, string>;
-}
+// The planner's lean graph and the worked examples' titles, passed by the
+// signed-in Run page (`runPlanner`) so a recognised prompt reaches Nala with
+// its workflow. Absent in the public demo, which never sends.
+export type { RunPlanner };
 
 export function RunWorkspace({
   demoMode = false,
