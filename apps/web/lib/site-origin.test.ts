@@ -396,9 +396,14 @@ test("a hostile path survives the host hop and is defused by the locale hop", ()
 /** The reconciliation itself: PR 558's fix must still be wired in. */
 test("the locale redirect still routes through the same-origin builder", () => {
   const source = readFileSync(fileURLToPath(new URL("../middleware.ts", import.meta.url)), "utf8");
+  // `canonicalLocaleTarget` still builds the target; `localePrefixOf` joined the
+  // same import line for ai-ops 329 (the locale-setting cookie), so the pin
+  // checks both names are on that line rather than the line being verbatim —
+  // a verbatim match would itself break on the very change this test exists to
+  // survive, a future import reordering that a formatter, not a merge, makes.
   assert.match(
     source,
-    /import \{ canonicalLocaleTarget \} from "\.\/lib\/canonical-locale-redirect"/,
+    /import \{[^}]*\bcanonicalLocaleTarget\b[^}]*\} from "\.\/lib\/canonical-locale-redirect"/,
     "middleware lost the canonical-locale-redirect import in a merge",
   );
   assert.match(
@@ -409,7 +414,13 @@ test("the locale redirect still routes through the same-origin builder", () => {
   // The pre-fix body built the target with the relative `new URL(rest, base)`
   // form. If a merge resolution took the wrong side of this hunk the open
   // redirect comes back with it, and nothing else in this file would notice.
-  const body = source.match(/function canonicalRedirect\(request: NextRequest\)[^}]*\}/);
+  //
+  // Matched to the function's own closing brace — a bare `}` at column 0 —
+  // rather than the first `}` at all: ai-ops 329 added an `if (locale !== ...)
+  // { ... }` block inside this function, whose own closing brace is indented
+  // and would otherwise end the match early and hide everything after it,
+  // including the `canonicalLocaleTarget(` call this test is checking for.
+  const body = source.match(/function canonicalRedirect\(request: NextRequest\)[\s\S]*?\n\}/);
   assert.ok(body, "canonicalRedirect disappeared");
   assert.match(body[0], /canonicalLocaleTarget\(/, "canonicalRedirect no longer uses the safe builder");
   assert.doesNotMatch(body[0], /new URL\(rest/, "the relative-URL open redirect came back");

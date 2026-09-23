@@ -16,6 +16,35 @@ export const PUBLIC_LOCALES: readonly PublicLocale[] = ["en", "ja"];
 export const PUBLIC_LOCALE_COOKIE = "leona.locale.v2";
 export const LEGACY_PUBLIC_LOCALE_COOKIE = "majorana.locale.v1";
 
+/** One year, in seconds — the same duration `language-toggle.tsx` has always
+ * written, now named so the second writer below cannot silently drift from it. */
+export const PUBLIC_LOCALE_COOKIE_MAX_AGE_SECONDS = 60 * 60 * 24 * 365;
+
+/**
+ * The cookie options every writer of `PUBLIC_LOCALE_COOKIE` must share: the
+ * client-side switcher (`components/language-toggle.tsx`) and the canonical
+ * redirect (`middleware.ts`'s `canonicalRedirect`, ai-ops 329 — a shared
+ * `/ja` link sets this cookie to `ja` on its way to the unprefixed address).
+ *
+ * Same shape and the same reason as `authHintCookieOptions` in
+ * `lib/auth-hint.ts`: a `path` or `sameSite` that drifts between two writers
+ * of the same cookie name produces TWO cookies of that name, and which one a
+ * reader is on then depends on write order rather than on the locale they
+ * actually chose.
+ *
+ * No `secure` and no `httpOnly` here, and both are matches rather than
+ * omissions: `document.cookie` from the switcher sets neither, and
+ * `readPublicLocaleCookie()` above has to be able to read this cookie back
+ * from the browser, which an `httpOnly` cookie would hide from it.
+ */
+export function publicLocaleCookieOptions() {
+  return {
+    path: "/",
+    maxAge: PUBLIC_LOCALE_COOKIE_MAX_AGE_SECONDS,
+    sameSite: "lax",
+  } as const;
+}
+
 export function parsePublicLocale(value: string | undefined): PublicLocale {
   return value === "ja" ? "ja" : "en";
 }

@@ -1,11 +1,56 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { canonicalLocaleTarget } from "./canonical-locale-redirect.ts";
+import { canonicalLocaleTarget, localePrefixOf } from "./canonical-locale-redirect.ts";
 import { PUBLIC_LOCALES } from "./public-locale.ts";
 
 const ORIGIN = "https://leonaqt.com";
 const REQUEST = `${ORIGIN}/en/pricing`;
+
+test("a query string on the request survives the redirect (ai-ops 329)", () => {
+  const withQuery = `${ORIGIN}/ja/pricing?ref=share`;
+  const target = canonicalLocaleTarget("/ja/pricing", withQuery, PUBLIC_LOCALES);
+  assert.equal(target?.pathname, "/pricing");
+  assert.equal(target?.search, "?ref=share");
+  assert.equal(target?.toString(), `${ORIGIN}/pricing?ref=share`);
+});
+
+/**
+ * `middleware.ts`'s `canonicalRedirect` sets `PUBLIC_LOCALE_COOKIE` to
+ * whatever this returns, so its correctness IS the correctness of that
+ * cookie — a wrong answer here is a wrong cookie value in production, not
+ * merely a wrong redirect target. Kept as its own test file section rather
+ * than folded into the target tests above so a change to either function is
+ * caught by the test that actually names it.
+ */
+test("localePrefixOf names the locale a canonical redirect will remember", () => {
+  assert.equal(localePrefixOf("/ja/pricing", PUBLIC_LOCALES), "ja");
+  assert.equal(localePrefixOf("/en/pricing", PUBLIC_LOCALES), "en");
+  assert.equal(localePrefixOf("/ja", PUBLIC_LOCALES), "ja");
+  assert.equal(localePrefixOf("/ja/", PUBLIC_LOCALES), "ja");
+  assert.equal(localePrefixOf("/en/repository/layers/abc", PUBLIC_LOCALES), "en");
+});
+
+test("localePrefixOf agrees with canonicalLocaleTarget about which paths are ours", () => {
+  // Same condition, read two ways: whenever one says "not ours", the other
+  // must say the same, or the redirect and the cookie it sets could disagree
+  // about whether this request named a locale at all.
+  for (const pathname of ["/pricing", "/account", "/", "/eng/pricing", "/e/pricing"]) {
+    assert.equal(localePrefixOf(pathname, PUBLIC_LOCALES), null, pathname);
+    assert.equal(canonicalLocaleTarget(pathname, REQUEST, PUBLIC_LOCALES), null, pathname);
+  }
+});
+
+test("localePrefixOf stays inside `locales` even on a hostile path", () => {
+  // The redirect target is proven never to leave the origin (below). This is
+  // the same property for the cookie: the value written is always literally
+  // "en" or "ja" — never a fragment of the attacker-controlled tail — even on
+  // the exact inputs that used to escape the origin before PR 558.
+  const bs = String.fromCharCode(92);
+  assert.equal(localePrefixOf("/en//evil.com", PUBLIC_LOCALES), "en");
+  assert.equal(localePrefixOf(`/en/${bs}evil.com`, PUBLIC_LOCALES), "en");
+  assert.equal(localePrefixOf("/ja//attacker.example", PUBLIC_LOCALES), "ja");
+});
 
 test("a locale-prefixed public page collapses onto its clean path", () => {
   assert.equal(canonicalLocaleTarget("/en/pricing", REQUEST, PUBLIC_LOCALES)?.toString(), `${ORIGIN}/pricing`);
