@@ -81,10 +81,11 @@ fi
 # that the web app did come to depend on would have been silently skipped
 # until someone remembered to edit this line. Naming the ones known not to reach
 # the web build means a new one is simply unrecognised, and unrecognised means build.
-# (`notebooks` is deliberately absent; see deploy-web.yml. `mcp` is the stdio MCP
-# server, a standalone HTTP client of the public API that nothing in apps/web imports.)
+# (`notebooks` is deliberately absent; see deploy-web.yml. `mcp` and `client` are
+# the stdio MCP server and the HTTP client it and `notebooks` share — both
+# standalone clients of the public API that nothing in apps/web imports.)
 IRRELEVANT='^(services/api/|services/worker/'
-IRRELEVANT="${IRRELEVANT}|packages/py/(agent|estimation|frameworks|llm|mcp|openqasm|qpu|sandbox|verification)/"
+IRRELEVANT="${IRRELEVANT}|packages/py/(agent|client|estimation|frameworks|llm|mcp|openqasm|qpu|sandbox|verification)/"
 IRRELEVANT="${IRRELEVANT}|evals/|infra/|db/|docs/|\.github/|[^/]*\.md$"
 # The root uv workspace files. `uv.lock` is one lockfile for every Python
 # package in this repo, and root `pyproject.toml` is uv's workspace manifest

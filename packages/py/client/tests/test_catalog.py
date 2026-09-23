@@ -4,10 +4,10 @@ from __future__ import annotations
 
 import httpx
 import pytest
-from leona_mcp_fixtures import FakeCatalogApi, raw_rows
+from leona_client_fixtures import FakeCatalogApi, raw_rows
 
-from leona_mcp import client as client_module
-from leona_mcp.client import (
+from leona_client import catalog as client_module
+from leona_client.catalog import (
     API_URL_ENV,
     DEFAULT_API_URL,
     CatalogClient,

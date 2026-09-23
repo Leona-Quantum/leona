@@ -1,0 +1,35 @@
+[project]
+name = "leona-client"
+version = "0.1.0"
+description = "The one Python HTTP client for Leona Quantum: the Atlas, verified runs and estimates"
+readme = "README.md"
+requires-python = ">=3.12"
+license = "MIT"
+dependencies = [
+    # The one HTTP dependency: async paging for the Atlas in catalog.py. The
+    # control-plane client in client.py deliberately stays on stdlib urllib (see
+    # its module docstring), so this does not grow with what client.py adds.
+    "httpx>=0.27,<1",
+    # Pure pydantic models only (see that package's own pyproject.toml) — no
+    # server, worker or database code, and, like this package, installable
+    # standalone from this repository's git history.
+    "majorana-contracts",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/leona_client"]
+
+[tool.uv.sources]
+# Resolved from the workspace member when this package is built inside the
+# monorepo (`uv sync --all-packages`, `uv lock`). A tool that installs this
+# package on its own — `pip install`, or `uv`/`uvx` outside the workspace — falls
+# back to `majorana-contracts`'s plain PyPI-style name above, which is not
+# published (see AGENTS.md's rename rules: nothing here goes to PyPI); such a
+# caller needs a git URL for it too, e.g.
+# `uv pip install "majorana-contracts @ git+https://github.com/Leona-Quantum/leona#subdirectory=packages/py/contracts"`
+# alongside this package. Documented in README.md's install section.
+majorana-contracts = { workspace = true }

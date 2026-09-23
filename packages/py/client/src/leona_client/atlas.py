@@ -1,7 +1,9 @@
 """What an Atlas record says, read the way the site reads it.
 
-Pure: no network, no MCP. `client.py` fetches rows and `server.py` turns these
-functions into tools.
+Pure: no network, no MCP. `catalog.py` fetches rows; `leona_mcp.server` and this
+package's own `client.py` turn these functions into tools/methods. Moved here from
+`leona_mcp.atlas` in proposal 7 Phase D, unchanged, so `leona-mcp` and a plain
+`leona_client.Client` answer Atlas questions identically.
 
 Every rule here is a copy of a TypeScript rule in `apps/web`, and the TypeScript is
 the source of truth:
@@ -15,7 +17,7 @@ the source of truth:
   in `apps/web/lib/studio-builder.ts`, reached through `getPublicRepositoryVariant`
   in `apps/web/lib/repository/entry-variant.ts`
 
-`tests/test_leona_mcp_mirrors.py` reads those files and fails when a vocabulary copied here
+`tests/test_mirrors.py` reads those files and fails when a vocabulary copied here
 stops matching them.
 
 Two differences from the site, both deliberate:

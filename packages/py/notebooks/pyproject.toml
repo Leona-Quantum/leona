@@ -9,6 +9,10 @@ dependencies = [
     "pyyaml>=6,<7",
     "majorana-contracts",
     "majorana-sandbox",
+    # `%nala`'s control-plane calls (proposal 7 Phase D): `leona_notebooks.jupyter.Client`
+    # is now a thin subclass of `leona_client.Client`, generalised out of this
+    # module so `leona-mcp`'s acting tools share it too.
+    "leona-client",
     # `leona_notebooks.circuits` parses a reader's pasted OpenQASM 3 circuit
     # seed with `qiskit.qasm3.loads` OUTSIDE the sandbox (parsing, not
     # execution — see AGENTS.md). Both packages were, until now, only
@@ -42,3 +46,4 @@ packages = ["src/leona_notebooks"]
 [tool.uv.sources]
 majorana-contracts = { workspace = true }
 majorana-sandbox = { workspace = true }
+leona-client = { workspace = true }

@@ -106,8 +106,10 @@ untrusted generated code runs only in ephemeral network-locked sandboxes
 - `apps/web` — Next.js App Router UI (Cloud Run `majorana-web`, behind Cloudflare and the Google load balancer)
 - `apps/news` — Leona Quantum News renderer and local editorial UI (Node.js)
 - `services/api`, `services/worker` — FastAPI control plane + job runner (Cloud Run)
-- `packages/py/*` — agent, contracts, estimation, frameworks, llm, mcp (leona-mcp: a read-only
-  stdio MCP server over the public Atlas API), notebooks (leona-notebooks: the
+- `packages/py/*` — agent, client (leona-client: the one HTTP client for the Atlas, runs
+  and estimates — used by mcp and notebooks below), contracts, estimation, frameworks,
+  llm, mcp (leona-mcp: a stdio MCP server over the public Atlas API and, with a personal
+  access token, verified runs), notebooks (leona-notebooks: the
   notebook lane's pure core), openqasm, qpu, sandbox,
   verification
 - `packages/ts/*` — ui (vendored components), ui-visual (render/diff harness),

@@ -20,103 +20,59 @@ version history. Configuration is two environment variables — never a token in
     LEONA_API_URL    default https://majorana-api-nikekeixtq-uw.a.run.app
     LEONA_API_TOKEN  a bearer token for the control plane
 
-The transport is stdlib `urllib` so the package adds no dependency; IPython is imported
-only when the extension is loaded. `Client` is usable without IPython at all.
+`Client` (proposal 7 Phase D) is `leona_client.Client`, generalised out of this module
+so `leona-mcp`'s acting tools and the `leona-notebooks` CLI share it too — this module
+now only adds the one thing that's genuinely notebook-specific: rendering a version's
+`.ipynb` from its stored `spec` when the API has not compiled one yet. IPython is
+imported only when the extension is loaded; `Client` is usable without IPython at all.
 """
 
 from __future__ import annotations
 
 import json
-import os
 import shlex
 import sys
-import time
 import traceback
-import urllib.error
-import urllib.request
 from collections.abc import Callable
-from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-#: The control plane's public address, the same one the website calls (its CSP
-#: `connect-src` names it). This was `https://api.leonaqt.com` until 2026-09-22, a name
-#: that has never resolved (NXDOMAIN, see rate_limit.py's note), so anyone who followed
-#: the docs and left LEONA_API_URL unset got a DNS error before their first request.
-#: If a vanity hostname is ever pointed at the API, change this and the docs together.
-DEFAULT_API_URL = "https://majorana-api-nikekeixtq-uw.a.run.app"
-Transport = Callable[[str, str, dict[str, str], bytes | None], tuple[int, bytes]]
+from leona_client import Client as _BaseClient
+from leona_client import LeonaClientError
+
 #: `() -> (cell_source, traceback_text) | None` — how `%nala fix` reads the last
 #: failure. `load_ipython_extension` binds this to the live shell; tests inject a
 #: fake so the magic is testable with no IPython running at all.
 FixContext = Callable[[], "tuple[str, str] | None"]
 
-
-class NalaError(RuntimeError):
-    pass
-
-
-def _urllib_transport(
-    method: str, url: str, headers: dict[str, str], body: bytes | None
-) -> tuple[int, bytes]:
-    request = urllib.request.Request(url, data=body, method=method, headers=headers)
-    try:
-        with urllib.request.urlopen(request, timeout=60) as response:  # noqa: S310 - https to the configured API
-            return response.status, response.read()
-    except urllib.error.HTTPError as exc:
-        return exc.code, exc.read()
+#: Kept as the name this module has always raised, so every existing `except
+#: NalaError` (here and in `cli.py`) and every test that catches it by name keeps
+#: working unchanged after the move to `leona_client`.
+NalaError = LeonaClientError
 
 
-@dataclass
-class Client:
-    api_url: str
-    token: str
-    transport: Transport = _urllib_transport
+class Client(_BaseClient):
+    """`leona_client.Client`, plus two things `%nala` needs that the base class
+    deliberately does not provide:
+
+    - Every `%nala`/CLI command is authenticated, so a missing token should fail
+      immediately and say so — unlike `leona_client.Client.from_env()`, which
+      accepts a missing token so a caller who only wants the Atlas (`leona-mcp`'s
+      read-only tools) never sees an error about a credential it does not need.
+    - Rendering a version's notebook from its stored `spec` when the API has not
+      compiled an `.ipynb` for it yet, which needs `leona_notebooks`'s own
+      `ipynb`/`spec` modules — modules `leona_client` cannot depend on and stay
+      installable standalone for a plain script that never touches a notebook.
+    """
 
     @classmethod
-    def from_env(cls, transport: Transport | None = None) -> Client:
-        token = os.environ.get("LEONA_API_TOKEN", "").strip()
-        if not token:
+    def from_env(cls, transport=None) -> Client:
+        client = super().from_env(transport)
+        if not client.token:
             raise NalaError(
                 "LEONA_API_TOKEN is not set. Put it in your shell environment (never in a notebook)."
             )
-        url = os.environ.get("LEONA_API_URL", DEFAULT_API_URL).rstrip("/")
-        return cls(api_url=url, token=token, transport=transport or _urllib_transport)
-
-    def _call(self, method: str, path: str, payload: dict[str, Any] | None = None) -> Any:
-        headers = {"Authorization": f"Bearer {self.token}", "Accept": "application/json"}
-        body: bytes | None = None
-        if payload is not None:
-            headers["Content-Type"] = "application/json"
-            body = json.dumps(payload).encode("utf-8")
-        status, raw = self.transport(method, f"{self.api_url}/v1{path}", headers, body)
-        if status >= 400:
-            try:
-                problem = json.loads(raw.decode("utf-8"))
-                detail = (
-                    problem.get("title") or problem.get("detail") or raw.decode("utf-8", "replace")
-                )
-            except (ValueError, AttributeError):
-                detail = raw.decode("utf-8", "replace")
-            raise NalaError(f"{method} {path} → {status}: {detail}")
-        if not raw:
-            return None
-        return json.loads(raw.decode("utf-8"))
-
-    # -- operations ------------------------------------------------------
-
-    def notebook(self, notebook_id: str) -> dict[str, Any]:
-        return self._call("GET", f"/notebooks/{notebook_id}")
-
-    def versions(self, notebook_id: str) -> list[dict[str, Any]]:
-        return self._call("GET", f"/notebooks/{notebook_id}/versions")["items"]
-
-    def version(self, notebook_id: str, seq: int | None) -> dict[str, Any]:
-        if seq is None:
-            seq = self.notebook(notebook_id).get("current_version_seq")
-            if seq is None:
-                raise NalaError("this notebook has no finished version yet")
-        return self._call("GET", f"/notebooks/{notebook_id}/versions/{seq}")
+        return client
 
     def pull(self, notebook_id: str, seq: int | None, out: Path) -> Path:
         version = self.version(notebook_id, seq)
@@ -133,110 +89,6 @@ class Client:
             ipynb = to_ipynb(NotebookSpec.model_validate(spec))
         out.write_text(json.dumps(ipynb, ensure_ascii=False, indent=1) + "\n", encoding="utf-8")
         return out
-
-    def push(self, path: Path, title: str | None) -> dict[str, Any]:
-        payload: dict[str, Any] = {
-            "ipynb": json.loads(path.read_text(encoding="utf-8")),
-            "execute": True,
-        }
-        if title:
-            payload["title"] = title
-        return self._call("POST", "/notebooks/import", payload)
-
-    def push_version(
-        self, notebook_id: str, path: Path, *, message: str = "", execute: bool = True
-    ) -> dict[str, Any]:
-        """`POST /v1/notebooks/{id}/versions` — a new version of a notebook you
-        already own, from a local `.ipynb`. Shaped like `AuthorNotebookVersionRequest`
-        (`spec|source|ipynb`, `message`, `execute`, `run_until`); this always sends
-        `ipynb`. Returns `{version: NotebookVersionSummary, run_id}`."""
-        payload: dict[str, Any] = {
-            "ipynb": json.loads(path.read_text(encoding="utf-8")),
-            "message": message,
-            "execute": execute,
-        }
-        return self._call("POST", f"/notebooks/{notebook_id}/versions", payload)
-
-    def create(self, brief: str, **fields: Any) -> dict[str, Any]:
-        """`POST /v1/notebooks`. `fields` (kind, audience, style, response_locale,
-        …) are merged over `{"brief": brief}`; a `None` value is dropped rather than
-        sent, so callers can pass every optional field unconditionally. Returns
-        `CreateNotebookResponse`-shaped JSON: `{notebook, version, run_id}`."""
-        payload: dict[str, Any] = {"brief": brief}
-        payload.update({key: value for key, value in fields.items() if value is not None})
-        return self._call("POST", "/notebooks", payload)
-
-    def wait_for_version(
-        self,
-        notebook_id: str,
-        *,
-        wait_s: int = 600,
-        poll_s: float = 3.0,
-        sleep=time.sleep,
-        on_tick: Callable[[], None] | None = None,
-    ) -> dict[str, Any]:
-        """Poll `GET /v1/notebooks/{id}` until `current_version_seq` is set (the
-        first version is ready) or `latest_status` is `failed`. `on_tick` fires once
-        per poll that finds neither — the default prints a friendly progress dot;
-        tests inject their own to stay silent and deterministic."""
-        tick = on_tick or (lambda: print(".", end="", flush=True))  # noqa: T201 - the point
-        deadline = time.monotonic() + wait_s
-        while True:
-            notebook = self.notebook(notebook_id)
-            if notebook.get("current_version_seq") is not None:
-                return notebook
-            if notebook.get("latest_status") == "failed":
-                raise NalaError(
-                    f"{notebook_id} failed to generate — open it on leonaqt.com to see why"
-                )
-            if time.monotonic() >= deadline:
-                raise NalaError(
-                    f"{notebook_id} is still generating after {wait_s}s — "
-                    f"pull it once it finishes: %nala pull {notebook_id}"
-                )
-            tick()
-            sleep(poll_s)
-
-    def status_summary(self, notebook_id: str) -> str:
-        """The newest version's status, author and message, plus — when its
-        execution report is present — how many cells ran, failed, or did not run."""
-        rows = self.versions(notebook_id)
-        if not rows:
-            return f"{notebook_id}: no versions yet"
-        latest = max(rows, key=lambda row: row["seq"])
-        detail = self.version(notebook_id, latest["seq"])
-        lines = [f"v{detail['seq']} {detail['status']} (by {detail['created_by']})"]
-        if detail.get("message"):
-            lines.append(f"message: {detail['message']}")
-        report = detail.get("report")
-        if report:
-            cells = report.get("cells", [])
-            ran = sum(1 for cell in cells if cell.get("status") == "ok")
-            failed = sum(1 for cell in cells if cell.get("status") == "error")
-            not_run = sum(1 for cell in cells if cell.get("status") in {"skipped", "not_run"})
-            lines.append(f"cells: {ran} ran, {failed} failed, {not_run} not run")
-        return "\n".join(lines)
-
-    def ask(
-        self,
-        notebook_id: str,
-        message: str,
-        *,
-        wait_s: int = 180,
-        poll_s: float = 3.0,
-        sleep=time.sleep,
-    ) -> str:
-        """Post a turn and wait for Nala's reply (the reply is a later `nala` turn)."""
-        response = self._call("POST", f"/notebooks/{notebook_id}/turns", {"message": message})
-        asked_seq = int(response["turn"]["seq"])
-        deadline = time.monotonic() + wait_s
-        while time.monotonic() < deadline:
-            turns = self._call("GET", f"/notebooks/{notebook_id}/turns")["items"]
-            replies = [t for t in turns if t["role"] == "nala" and int(t["seq"]) > asked_seq]
-            if replies:
-                return str(replies[-1]["content"])
-            sleep(poll_s)
-        raise NalaError("Nala has not replied yet — the run is still going; ask again in a minute")
 
 
 # --------------------------------------------------------------------------- magics
