@@ -5,11 +5,13 @@ import {
   applyCellEdit,
   cellsAreDirty,
   deleteCell,
+  duplicateCell,
   insertCellAfter,
   moveCell,
   nextCellId,
   raisesException,
   specWithCells,
+  undoStructuralChange,
 } from "./notebook-editing.ts";
 
 type Cell = Parameters<typeof deleteCell>[0][number];
@@ -205,4 +207,54 @@ test("cellsAreDirty ignores a field the editor never touches", () => {
   // moment the editor opens, or every open would prompt on navigate-away.
   const withTimeout = THREE.map((c) => ({ ...c, timeout_s: 30 }) as Cell);
   assert.equal(cellsAreDirty(THREE, withTimeout), false);
+});
+
+test("duplicateCell puts a copy directly below under the lowest free id", () => {
+  const cells = [cell("c01"), cell("c02", { tags: ["raises-exception"] }), cell("c04")];
+  const { cells: next, id } = duplicateCell(cells, "c02");
+  assert.equal(id, "c03");
+  assert.deepEqual(next.map((item) => item.id), ["c01", "c02", "c03", "c04"]);
+  assert.equal(next[2].source, next[1].source);
+  // The copy's tags are its own array: tagging one must not tag the other.
+  assert.notEqual(next[2].tags, next[1].tags);
+  assert.deepEqual(duplicateCell(cells, "nope"), { cells, id: null });
+});
+
+test("undo takes back one structural change and keeps what the reader typed since", () => {
+  const cells = [cell("c01"), cell("c02"), cell("c03")];
+
+  // A deletion comes back at its old place, next to edits made after it.
+  const afterDelete = applyCellEdit(deleteCell(cells, "c02"), "c01", { source: "typed later" });
+  const restored = undoStructuralChange(afterDelete, { kind: "deleted", cell: cells[1], index: 1 });
+  assert.deepEqual(restored.map((item) => item.id), ["c01", "c02", "c03"]);
+  assert.equal(restored[0].source, "typed later");
+
+  // A move goes back the other way.
+  const moved = moveCell(cells, "c03", "up");
+  assert.deepEqual(
+    undoStructuralChange(moved, { kind: "moved", id: "c03", direction: "up" }).map((item) => item.id),
+    ["c01", "c02", "c03"],
+  );
+
+  // A conversion restores the kind and the fields the flip cleared, not the source.
+  const tagged = [cell("c01", { tags: ["raises-exception"] })];
+  const flipped = applyCellEdit(applyCellEdit(tagged, "c01", { kind: "markdown" }), "c01", { source: "new words" });
+  const unflipped = undoStructuralChange(flipped, { kind: "converted", before: tagged[0] });
+  assert.equal(unflipped[0].kind, "code");
+  assert.deepEqual(unflipped[0].tags, ["raises-exception"]);
+  assert.equal(unflipped[0].source, "new words");
+});
+
+test("undo refuses to destroy work it did not create", () => {
+  const cells = [cell("c01")];
+  const { cells: added, id } = insertCellAfter(cells, "c01", "code");
+  assert.deepEqual(undoStructuralChange(added, { kind: "inserted", id, source: "" }).map((item) => item.id), ["c01"]);
+  // Typed into since: the added cell stays.
+  const typed = applyCellEdit(added, id, { source: "x = 1" });
+  assert.equal(undoStructuralChange(typed, { kind: "inserted", id, source: "" }).length, 2);
+  // A deleted cell whose id has been reused is not restored over the new one.
+  const reused = [cell("c01"), cell("c02", { source: "new" })];
+  const result = undoStructuralChange(reused, { kind: "deleted", cell: cell("c02"), index: 1 });
+  assert.equal(result.length, 2);
+  assert.equal(result[1].source, "new");
 });

@@ -155,3 +155,55 @@ export function cellsAreDirty(original: readonly Cell[], draft: readonly Cell[])
     );
   });
 }
+
+/** A copy of one cell directly below it, under the lowest free id. `id` is null when the
+ * cell is not there (a stale click), and the array comes back unchanged. */
+export function duplicateCell(cells: readonly Cell[], cellId: string): { cells: Cell[]; id: string | null } {
+  const index = cells.findIndex((cell) => cell.id === cellId);
+  if (index === -1) return { cells: [...cells], id: null };
+  const id = nextCellId(cells);
+  const copy: Cell = { ...cells[index], id, tags: [...tagsOf(cells[index])] };
+  return { cells: [...cells.slice(0, index + 1), copy, ...cells.slice(index + 1)], id };
+}
+
+/**
+ * The last change to the LIST of cells, kept so command mode's Z can take it back (one
+ * level, as in Jupyter). It records the change rather than a snapshot of the whole array
+ * on purpose: restoring a snapshot would also throw away everything the reader typed
+ * after the change, and "undo the delete" must not mean "and your last five minutes".
+ */
+export type StructuralChange =
+  /** A cell added (inserted or duplicated), with the source it was added with. */
+  | { kind: "inserted"; id: string; source: string }
+  | { kind: "deleted"; cell: Cell; index: number }
+  | { kind: "moved"; id: string; direction: "up" | "down" }
+  /** A code/markdown flip, with the cell as it was, for the fields the flip clears. */
+  | { kind: "converted"; before: Cell };
+
+/**
+ * `cells` with `change` taken back. Each case refuses to destroy work it did not create:
+ * an added cell the reader has since typed into is kept (undo would delete their text),
+ * and a deleted cell whose id has been reused is not restored over the new one.
+ */
+export function undoStructuralChange(cells: readonly Cell[], change: StructuralChange): Cell[] {
+  switch (change.kind) {
+    case "inserted": {
+      const added = cells.find((cell) => cell.id === change.id);
+      if (!added || added.source !== change.source) return [...cells];
+      return deleteCell(cells, change.id);
+    }
+    case "deleted": {
+      if (cells.some((cell) => cell.id === change.cell.id)) return [...cells];
+      const at = Math.min(change.index, cells.length);
+      return [...cells.slice(0, at), change.cell, ...cells.slice(at)];
+    }
+    case "moved":
+      return moveCell(cells, change.id, change.direction === "up" ? "down" : "up");
+    case "converted":
+      return cells.map((cell) =>
+        cell.id === change.before.id
+          ? { ...cell, kind: change.before.kind, stub: change.before.stub, tags: [...tagsOf(change.before)] }
+          : cell,
+      );
+  }
+}
