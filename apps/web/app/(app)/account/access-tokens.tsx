@@ -39,6 +39,10 @@ export function AccessTokens({ locale }: { locale: PublicLocale }) {
   const [minted, setMinted] = useState<string | null>(null);
   const [name, setName] = useState("");
   const [canRun, setCanRun] = useState(false);
+  // Off by default (ai-ops 376, option 2): a token must be deliberately widened to
+  // spend real provider time, never opted into by inertia the way `canRun` at least
+  // stays inside this deployment's own sandboxed runs.
+  const [canSubmitHardware, setCanSubmitHardware] = useState(false);
   const [days, setDays] = useState(90);
   const [busy, setBusy] = useState(false);
 
@@ -79,7 +83,14 @@ export function AccessTokens({ locale }: { locale: PublicLocale }) {
         body: JSON.stringify({
           name: name.trim(),
           expires_in_days: days,
-          scopes: canRun ? ["read", "run"] : ["read"],
+          // `run` and `hardware` are independent (neither implies the other —
+          // majorana_contracts.tokens.TokenScope's own docstring), so each
+          // checkbox adds its own scope rather than one standing in for both.
+          scopes: [
+            "read",
+            ...(canRun ? ["run"] : []),
+            ...(canSubmitHardware ? ["hardware"] : []),
+          ],
         }),
       });
       if (!response.ok) {
@@ -184,6 +195,14 @@ export function AccessTokens({ locale }: { locale: PublicLocale }) {
           />
           {copy.tokensAllowRuns}
         </label>
+        <label>
+          <input
+            type="checkbox"
+            checked={canSubmitHardware}
+            onChange={(event) => setCanSubmitHardware(event.target.checked)}
+          />
+          {copy.tokensAllowHardware}
+        </label>
         <button className="mj-primary-button" type="submit" disabled={busy || !name.trim()}>
           {copy.tokensCreate}
         </button>
@@ -215,6 +234,7 @@ export function AccessTokens({ locale }: { locale: PublicLocale }) {
                       ? copy.tokensRevoked
                       : copy.tokensExpired}
                   {row.scopes.includes("run") ? ` · ${copy.tokensCanRun}` : ""}
+                  {row.scopes.includes("hardware") ? ` · ${copy.tokensCanSubmitHardware}` : ""}
                   {row.last_used_at ? "" : ` · ${copy.tokensNeverUsed}`}
                   {state === "active" ? (
                     <button

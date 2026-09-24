@@ -410,4 +410,15 @@ async def get_scope(
 CurrentScope = Annotated[Scope, Depends(get_scope, scope="function")]
 CurrentIdentity = Annotated[tuple[User, Workspace], Depends(get_identity, scope="function")]
 DbSession = Annotated[AsyncSession, Depends(get_session, scope="function")]
-__all__ = ["CurrentIdentity", "CurrentScope", "DbSession"]
+#: `None` for a browser session, the resolved token for a personal-access-token
+#: request. A handler takes this only when it needs to tell the two apart in what it
+#: WRITES — `token_access.check` has already decided, before the handler runs at all,
+#: whether this request may proceed, so no handler needs this dependency to enforce a
+#: scope. `routes/qpu.py::qpu_submit` is the first caller (ai-ops 376): a
+#: token-initiated hardware submission records the token's id on the audit trail, the
+#: one thing a browser-authenticated row and a token-authenticated row would
+#: otherwise not let a reader tell apart.
+CurrentPresentedToken = Annotated[
+    PresentedToken | None, Depends(get_presented_token, scope="function")
+]
+__all__ = ["CurrentIdentity", "CurrentPresentedToken", "CurrentScope", "DbSession"]

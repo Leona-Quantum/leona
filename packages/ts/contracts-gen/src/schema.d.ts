@@ -5956,15 +5956,33 @@ export interface components {
          * @description What a token may do. Closed, and short on purpose.
          *
          *     `READ` is implied by every token and is what a token with nothing else can do.
-         *     `RUN` is additive: it does not replace `READ`, it adds starting a run to it, so a
-         *     token's scopes are either `{read}` or `{read, run}` and never `{run}` alone. That
-         *     is enforced at the database (`ck_personal_access_tokens_scopes`) as well as here,
-         *     because a row that reached the table another way must still be answerable.
+         *     `RUN` and `HARDWARE` are each additive on top of `READ`, and neither implies the
+         *     other. That is enforced at the database (`ck_personal_access_tokens_scopes`) as
+         *     well as here, because a row that reached the table another way must still be
+         *     answerable.
          *
-         *     There is no `hardware`. See this module's docstring.
+         *     ## Why `HARDWARE` does not imply `RUN`, and `RUN` does not imply `HARDWARE`
+         *
+         *     They are different powers over different things. `RUN` starts Leona's own
+         *     sandboxed, verified runs — generate a notebook, ask Nala a follow-up, execute a
+         *     Qapp — and spends the caller's weekly RUN allowance. `HARDWARE` submits an
+         *     already-built circuit straight to a real quantum provider (`POST
+         *     /qpu/submissions`) and spends the caller's weekly hardware allowance instead. A
+         *     token minted to do only one of those two things is a real, narrower use case —
+         *     the `%nala` CLI driving Leona's own pipeline should not, by that fact alone, also
+         *     be able to spend real provider time, and a token minted only to submit
+         *     pre-built circuits from a person's own code should not, by that fact alone, also
+         *     be able to start arbitrary generation runs. Pricing a circuit
+         *     (`POST /qpu/estimates`) needs neither: it is in `token_access.READ_WRITES`,
+         *     reachable by every token regardless of scope, so a `HARDWARE`-only token can
+         *     still price before it submits.
+         *
+         *     There is one `hardware` scope, added ai-ops 376 option 2. See this module's
+         *     docstring for the ruling and why it earns its own member rather than reusing
+         *     `RUN`.
          * @enum {string}
          */
-        TokenScope: "read" | "run";
+        TokenScope: "read" | "run" | "hardware";
         /**
          * TopLevelExecution
          * @enum {string}

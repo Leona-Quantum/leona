@@ -79,6 +79,16 @@ DEFAULT_RUN_POLL_S = 3.0
 DEFAULT_QAPP_WAIT_S = 150
 DEFAULT_QAPP_POLL_S = 2.0
 
+#: How long `wait_for_qpu_run` polls before giving up. Longer than a run's default:
+#: unlike Leona's own sandboxed pipeline, a hardware submission queues behind every
+#: OTHER job the provider's backend is running — IBM's Open Plan queue in particular
+#: can sit well past `DEFAULT_RUN_WAIT_S` at busy times, and this is polling a
+#: provider Leona does not control the pace of, not Leona's own worker. `poll_s` is
+#: coarser than a run's for the same reason: a hardware job queued behind other
+#: people's work is not going to finish sooner for being asked more often.
+DEFAULT_QPU_WAIT_S = 1800
+DEFAULT_QPU_POLL_S = 5.0
+
 #: `_TERMINAL_RUN_STATUSES`/`_TERMINAL_QAPP_STATUSES` used to be module-level
 #: frozensets built from `majorana_contracts.enums` at import time — moved into
 #: `wait_for_run`/`wait_for_qapp_execution` themselves (built once per call, not
@@ -92,7 +102,23 @@ class LeonaClientError(RuntimeError):
     Never constructed with a token in the message — every raise site here is
     reviewed for that; a caller that formats one of these into a log line is still
     safe.
+
+    `reason` carries the API's own machine-readable refusal code (the RFC 7807
+    `reason` extension field `app._problem` writes — `token_access.
+    INSUFFICIENT_SCOPE`/`FORBIDDEN_ROUTE`, `qpu_spend_exhausted`, and so on) when
+    this was raised from a parsed API response, and `None` otherwise — a network
+    failure, a body with no JSON, or a refusal this client makes itself before any
+    request went out (`_authenticated_call`'s missing-token message). It exists so
+    a caller can ask "did this fail because of a specific, known condition" by
+    comparing a fixed vocabulary field, not by matching against `str(exc)`, which
+    is a sentence for a person and is free to change (ai-ops 376: this is how
+    `leona_notebooks.leona.leona_submit` tells "this token has no hardware scope"
+    apart from every other way a submission can fail, without guessing from text).
     """
+
+    def __init__(self, message: str, *, reason: str | None = None) -> None:
+        super().__init__(message)
+        self.reason = reason
 
 
 def _urllib_transport(
@@ -148,14 +174,16 @@ class Client:
             body = json.dumps(payload).encode("utf-8")
         status, raw = self.transport(method, f"{self.api_url}/v1{path}", headers, body)
         if status >= 400:
+            reason: str | None = None
             try:
                 problem = json.loads(raw.decode("utf-8"))
                 detail = (
                     problem.get("title") or problem.get("detail") or raw.decode("utf-8", "replace")
                 )
+                reason = problem.get("reason")
             except (ValueError, AttributeError):
                 detail = raw.decode("utf-8", "replace")
-            raise LeonaClientError(f"{method} {path} → {status}: {detail}")
+            raise LeonaClientError(f"{method} {path} → {status}: {detail}", reason=reason)
         if not raw:
             return None
         return json.loads(raw.decode("utf-8"))
@@ -442,14 +470,18 @@ class Client:
                 )
             sleep(poll_s)
 
-    # -- QPU devices and pre-run price estimates ------------------------------
+    # -- QPU devices, pre-run price estimates, and hardware submission -------
     #
-    # Both routes are in `token_access.READ_WRITES`/always-readable: `qpu_backends`
-    # is a plain `GET`, and `qpu_estimate` is arithmetic over the published rate
-    # card (`routes/qpu.py::qpu_estimate` opens no session and touches no
-    # provider), so a `read`-only token can price a device without the `run`
-    # scope `POST /qpu/submissions` would need — and `POST /qpu/submissions`
-    # itself is reachable by no token at all (ai-ops 362's hardware deferral).
+    # `qpu_backends`/`qpu_estimate` are in `token_access.READ_WRITES`/always
+    # readable: `qpu_backends` is a plain `GET`, and `qpu_estimate` is arithmetic
+    # over the published rate card (`routes/qpu.py::qpu_estimate` opens no
+    # session and touches no provider), so a `read`-only token can price a
+    # device without any wider scope. `qpu_submit` (`POST /qpu/submissions`)
+    # needs the token's `hardware` scope specifically — ai-ops 376 option 2
+    # resolved the deferral ai-ops 362 left open ("hardware jobs come later
+    # under their own permission"), and neither `read` nor `run` alone reaches
+    # it (`auth/token_access.py::HARDWARE_WRITES`; `run` starts Leona's own
+    # sandboxed runs and does not imply spending real provider time).
 
     def qpu_backends(self) -> list[dict[str, Any]]:
         """`GET /qpu/backends`: every device Leona knows a rate card for, whether
@@ -463,6 +495,81 @@ class Client:
         takes no circuit at all)."""
         payload: dict[str, Any] = {"device_id": device_id, "shots": shots, "zne": zne}
         return self._authenticated_call("POST", "/qpu/estimates", payload)
+
+    def qpu_submit(
+        self,
+        device_id: str,
+        shots: int,
+        qasm: str,
+        source_fingerprint: str,
+        *,
+        zne: bool = False,
+    ) -> dict[str, Any]:
+        """`POST /qpu/submissions`: submit an already-built OpenQASM circuit to
+        real hardware, spending the caller's weekly hardware allowance under the
+        deployment gates and the credential the account holder connected
+        (`routes/qpu.py::qpu_submit`'s own docstring has the full account of
+        both). Needs the token's `hardware` scope — a token with only `read` or
+        only `run` gets `token_scope_insufficient` from `token_access.check`,
+        surfaced here as a plain `LeonaClientError` exactly as `start_run`'s
+        `run`-scope check is.
+
+        Returns the raw `QpuRunRecord` dict (matching `qpu_backends`/
+        `qpu_estimate` beside it, not `.model_validate`d): this method has no
+        need of anything `majorana_contracts` would add beyond a type, and
+        `wait_for_qpu_run` below compares the `status` field against the
+        provider-status literal strings directly for the same reason.
+
+        The QASM length ceiling (`MAX_SUBMISSION_QASM_CHARS`, 200,000 as of this
+        writing) is enforced server-side (`routes/qpu.py`), not duplicated here —
+        a caller over it gets a 422 from the route rather than a silent
+        truncation in this method.
+        """
+        payload: dict[str, Any] = {
+            "device_id": device_id,
+            "shots": shots,
+            "qasm": qasm,
+            "source_fingerprint": source_fingerprint,
+            "zne": zne,
+        }
+        return self._authenticated_call("POST", "/qpu/submissions", payload)
+
+    def get_qpu_run(self, run_id: str) -> dict[str, Any]:
+        """`GET /qpu/runs/{id}`: the current state of a submitted hardware run."""
+        return self._authenticated_call("GET", f"/qpu/runs/{run_id}")
+
+    def wait_for_qpu_run(
+        self,
+        run_id: str,
+        *,
+        wait_s: int = DEFAULT_QPU_WAIT_S,
+        poll_s: float = DEFAULT_QPU_POLL_S,
+        sleep=time.sleep,
+    ) -> dict[str, Any]:
+        """Poll `GET /qpu/runs/{id}` until it reaches a terminal status (`done`,
+        `error`, `cancelled` — `majorana_contracts.enums.QpuRunStatus`) or
+        `wait_s` elapses. Returns the record at whichever terminal state it
+        reached — including `error` — because that is itself an answer the
+        caller asked for, the same contract `wait_for_run` uses; only running
+        out of time raises. Compares the literal status strings rather than
+        importing `QpuRunStatus` (unlike `wait_for_run`, which does import
+        `RunStatus`): this whole QPU section stays free of the
+        `majorana_contracts` dependency, matching `qpu_backends`/`qpu_estimate`/
+        `qpu_submit` beside it, so the values are spelled out and pinned by
+        `test_client_qpu_and_notebook_run.py` against the real enum."""
+        terminal = {"done", "error", "cancelled"}
+        deadline = time.monotonic() + wait_s
+        while True:
+            record = self.get_qpu_run(run_id)
+            status = record.get("status")
+            if status in terminal:
+                return record
+            if time.monotonic() >= deadline:
+                raise LeonaClientError(
+                    f"qpu run {run_id} did not reach a terminal state within {wait_s}s "
+                    f"(still {status}); call get_qpu_run({run_id!r}) again later"
+                )
+            sleep(poll_s)
 
     # -- estimates -----------------------------------------------------------
 

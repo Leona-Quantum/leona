@@ -3946,6 +3946,7 @@ export const ACCOUNT_COPY: Record<PublicLocale, {
   tokensName: string;
   tokensExpiry: string;
   tokensAllowRuns: string;
+  tokensAllowHardware: string;
   tokensCreate: string;
   tokensLoading: string;
   tokensEmpty: string;
@@ -3956,6 +3957,7 @@ export const ACCOUNT_COPY: Record<PublicLocale, {
   tokensRevoked: string;
   tokensExpired: string;
   tokensCanRun: string;
+  tokensCanSubmitHardware: string;
   tokensNeverUsed: string;
   tokensExpiresIn: (days: number) => string;
   tokensLoadError: string;
@@ -4152,10 +4154,11 @@ export const ACCOUNT_COPY: Record<PublicLocale, {
     billingUpgradeLink: "Compare plans",
     qpuTitle: "Connect IBM Quantum",
     tokensTitle: "Access tokens",
-    tokensHelp: "Let a tool on your own computer — a code editor, or an AI assistant — read the Atlas and start verified runs as you, without opening this site. A token works in this workspace only. It cannot reach your IBM Quantum key, your billing, or this page.",
+    tokensHelp: "Let a tool on your own computer — a code editor, or an AI assistant — read the Atlas and start verified runs as you, without opening this site. A token works in this workspace only. It can never read your IBM Quantum key, your billing, or this page. Only a token with the hardware permission below can submit circuits, and those run on your IBM Quantum key.",
     tokensName: "What is it for?",
     tokensExpiry: "Days until it expires",
     tokensAllowRuns: "Also let it start verified runs",
+    tokensAllowHardware: "Also let it submit circuits to real quantum hardware from your own code, charged to your weekly hardware allowance. Leave this off unless you need it.",
     tokensCreate: "Create token",
     tokensLoading: "Loading your access tokens\u2026",
     tokensEmpty: "You have no access tokens.",
@@ -4166,6 +4169,7 @@ export const ACCOUNT_COPY: Record<PublicLocale, {
     tokensRevoked: "Revoked",
     tokensExpired: "Expired",
     tokensCanRun: "can start runs",
+    tokensCanSubmitHardware: "can submit to hardware",
     tokensNeverUsed: "never used",
     tokensExpiresIn: (days) => (days === 1 ? "Expires tomorrow" : `Expires in ${days} days`),
     tokensLoadError: "We could not load your tokens. Try again in a moment.",
@@ -4376,10 +4380,11 @@ export const ACCOUNT_COPY: Record<PublicLocale, {
     billingUpgradeLink: "プランを比較する",
     qpuTitle: "IBM Quantum と接続",
     tokensTitle: "アクセストークン",
-    tokensHelp: "お使いのコードエディタや AI アシスタントから、このサイトを開かずに Atlas を読んだり、検証付きの実行を開始したりできます。トークンが使えるのはこのワークスペースだけです。IBM Quantum のキー、請求、このページには一切届きません。",
+    tokensHelp: "お使いのコードエディタや AI アシスタントから、このサイトを開かずに Atlas を読んだり、検証付きの実行を開始したりできます。トークンが使えるのはこのワークスペースだけです。IBM Quantum のキー、請求、このページを読むことはできません。回路を実機に送れるのは、下のハードウェア権限を付けたトークンだけで、その回路はあなたの IBM Quantum のキーで実行されます。",
     tokensName: "用途",
     tokensExpiry: "有効期限（日数）",
     tokensAllowRuns: "検証付きの実行も許可する",
+    tokensAllowHardware: "お使いのコードから実際の量子ハードウェアに回路を送信できるようにします（費用は週ごとのハードウェア割り当てから差し引かれます）。必要な場合以外はオフのままにしてください。",
     tokensCreate: "トークンを作成",
     tokensLoading: "アクセストークンを読み込んでいます…",
     tokensEmpty: "アクセストークンはありません。",
@@ -4390,6 +4395,7 @@ export const ACCOUNT_COPY: Record<PublicLocale, {
     tokensRevoked: "無効化済み",
     tokensExpired: "期限切れ",
     tokensCanRun: "実行の開始が可能",
+    tokensCanSubmitHardware: "ハードウェアへの送信が可能",
     tokensNeverUsed: "未使用",
     tokensExpiresIn: (days) => (days === 1 ? "明日で期限切れ" : `あと ${days} 日で期限切れ`),
     tokensLoadError: "トークンを読み込めませんでした。少し時間をおいて再度お試しください。",

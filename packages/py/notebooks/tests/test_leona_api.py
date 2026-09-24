@@ -1,8 +1,14 @@
 """`leona_notebooks.leona`: the `Leona` script API and the LOCAL half of
-`leona_submit` (Bridge lane, ai-ops 362, 2026-09-23).
+`leona_submit` (Bridge lane, ai-ops 362, 2026-09-23; the `hardware` token scope
+that lets it submit for real is ai-ops 376, 2026-09-24).
 
-`leona_submit` never submits anything — these tests are all about what it prints
-and returns, never about a job reaching a sandbox or a provider.
+Every HTTP call in this file goes through the `Recording` fake transport below —
+never a live server, and never real hardware. A `hardware`-scoped token DOES make
+`leona_submit` call `POST /qpu/submissions` for real in production; the tests
+that exercise that path (`test_leona_submit_with_hardware_scope_...` and
+`test_hardware_run_...`) prove the plumbing against a stubbed response, the same
+way `test_leona_submit_fetches_a_price_estimate_when_a_token_is_set` always has
+for the pricing call.
 """
 
 from __future__ import annotations
@@ -17,6 +23,7 @@ from leona_client.client import LeonaClientError
 from leona_notebooks.jupyter import set_linked_notebook
 from leona_notebooks.leona import (
     DEFAULT_ESTIMATE_DEVICE_ID,
+    HardwareRun,
     HardwareSubmission,
     Leona,
     leona_submit,
@@ -227,10 +234,16 @@ def test_leona_submit_prints_the_linked_notebooks_url_when_one_is_linked(
 def test_leona_submit_fetches_a_price_estimate_when_a_token_is_set(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
+    """A token with no `hardware` scope: priced, then the submission attempt is
+    refused `token_scope_insufficient` and the function falls back to exactly
+    today's local-only behaviour — no "could not submit" noise printed, since
+    that refusal is the expected, silent case (see the dedicated hardware-scope
+    tests below for the case where it DOES carry the scope)."""
     monkeypatch.setenv("LEONA_API_TOKEN", "tok")
     monkeypatch.setenv("LEONA_API_URL", "https://api.test")
     responses = [
-        (200, {"device_id": DEFAULT_ESTIMATE_DEVICE_ID, "shots": 10, "basis": "free_queue"})
+        (200, {"device_id": DEFAULT_ESTIMATE_DEVICE_ID, "shots": 10, "basis": "free_queue"}),
+        (403, {"title": "no hardware scope", "reason": "token_scope_insufficient"}),
     ]
     transport = Recording(responses)
     monkeypatch.setattr(
@@ -241,21 +254,37 @@ def test_leona_submit_fetches_a_price_estimate_when_a_token_is_set(
             )
         ),
     )
-    leona_submit(_MEASURED_QASM, shots=10)
+    result = leona_submit(_MEASURED_QASM, shots=10)
+    assert isinstance(result, HardwareSubmission)
     out = capsys.readouterr().out
     assert "free_queue" in out
     assert "nothing was submitted" in out
+    assert "This ran locally only" in out
+    assert "could not submit" not in out
     assert transport.calls[0][2] == {
         "device_id": DEFAULT_ESTIMATE_DEVICE_ID,
         "shots": 10,
         "zne": False,
     }
+    submit_call = transport.calls[1]
+    assert submit_call[0] == "POST"
+    assert submit_call[1] == "https://api.test/v1/qpu/submissions"
+    assert submit_call[2]["device_id"] == DEFAULT_ESTIMATE_DEVICE_ID
+    assert submit_call[2]["shots"] == 10
+    assert submit_call[2]["source_fingerprint"].startswith("local:none:")
 
 
 def test_leona_submit_never_raises_when_the_estimate_call_itself_fails(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
+    """The estimate call fails; the submission attempt that follows it still
+    happens (the two are independent) and is refused `token_scope_insufficient`
+    over a STUBBED transport — never the real `_urllib_transport` default, which
+    would otherwise fire a real network call from this test."""
     monkeypatch.setenv("LEONA_API_TOKEN", "tok")
+    transport = Recording(
+        [(403, {"title": "no hardware scope", "reason": "token_scope_insufficient"})]
+    )
 
     class _Boom(Leona):
         def estimate(self, *args, **kwargs):  # noqa: D401 - test double
@@ -263,11 +292,184 @@ def test_leona_submit_never_raises_when_the_estimate_call_itself_fails(
 
     monkeypatch.setattr(
         "leona_notebooks.leona.Leona.from_env",
-        classmethod(lambda cls: _Boom(api_url="x", token="tok")),
+        classmethod(
+            lambda cls, transport=transport: _Boom(api_url="x", token="tok", transport=transport)
+        ),
     )
     result = leona_submit(_MEASURED_QASM, shots=10)
     assert isinstance(result, HardwareSubmission)
-    assert "could not fetch a price estimate" in capsys.readouterr().out
+    out = capsys.readouterr().out
+    assert "could not fetch a price estimate" in out
+    assert "could not submit" not in out
+
+
+# --------------------------------------------------------------- hardware scope
+
+
+def _leona_submit_with(
+    monkeypatch: pytest.MonkeyPatch, responses: list[tuple[int, dict]]
+) -> Recording:
+    """Point `leona_submit`'s internal `Leona.from_env()` at a `Recording`
+    transport carrying `responses`, in call order: the price estimate first,
+    then the submission attempt. Returns the transport for call inspection —
+    never a real network call, per this package's own testing discipline."""
+    monkeypatch.setenv("LEONA_API_TOKEN", "tok")
+    monkeypatch.setenv("LEONA_API_URL", "https://api.test")
+    transport = Recording(responses)
+    monkeypatch.setattr(
+        "leona_notebooks.leona.Leona.from_env",
+        classmethod(
+            lambda cls, transport=transport: Leona(
+                api_url="https://api.test", token="tok", transport=transport
+            )
+        ),
+    )
+    return transport
+
+
+def test_leona_submit_with_hardware_scope_submits_and_returns_a_hardware_run(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The core of ai-ops 376: a token that carries `hardware` gets a real
+    submission, not a printed price and a link."""
+    transport = _leona_submit_with(
+        monkeypatch,
+        [
+            (200, {"device_id": DEFAULT_ESTIMATE_DEVICE_ID, "shots": 10, "basis": "free_queue"}),
+            (201, {"id": "run-abc", "status": "queued", "device_id": DEFAULT_ESTIMATE_DEVICE_ID}),
+        ],
+    )
+    result = leona_submit(_MEASURED_QASM, shots=10)
+    assert isinstance(result, HardwareRun)
+    assert result.run_id == "run-abc"
+    assert result.device_id == DEFAULT_ESTIMATE_DEVICE_ID
+    out = capsys.readouterr().out
+    assert "Submitted to" in out
+    assert "run-abc" in out
+    # It did NOT run locally only -- the local-only messages must not appear.
+    assert "This ran locally only" not in out
+
+    submit_call = transport.calls[1]
+    assert submit_call[0] == "POST"
+    assert submit_call[1] == "https://api.test/v1/qpu/submissions"
+    body = submit_call[2]
+    assert body == {
+        "device_id": DEFAULT_ESTIMATE_DEVICE_ID,
+        "shots": 10,
+        "qasm": _MEASURED_QASM,
+        "source_fingerprint": body["source_fingerprint"],
+        "zne": False,
+    }
+    assert body["source_fingerprint"].startswith("local:none:")
+    assert len(body["source_fingerprint"]) <= 200
+
+
+def test_leona_submit_with_hardware_scope_defaults_to_the_free_queue_device(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """`device` unset -> `DEFAULT_ESTIMATE_DEVICE_ID`, never a paid device chosen
+    implicitly -- the brief's own requirement, checked at the SUBMISSION call
+    specifically (the estimate call already defaults the same way, covered by
+    `test_estimate_adds_num_qubits_from_the_circuit_without_changing_the_price`)."""
+    transport = _leona_submit_with(
+        monkeypatch,
+        [
+            (200, {"device_id": DEFAULT_ESTIMATE_DEVICE_ID, "shots": 10}),
+            (
+                201,
+                {"id": "run-default", "status": "queued", "device_id": DEFAULT_ESTIMATE_DEVICE_ID},
+            ),
+        ],
+    )
+    leona_submit(_MEASURED_QASM, shots=10)
+    assert transport.calls[1][2]["device_id"] == DEFAULT_ESTIMATE_DEVICE_ID
+
+
+def test_leona_submit_with_hardware_scope_uses_the_linked_notebook_id_in_the_fingerprint(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    set_linked_notebook("nb42")
+    transport = _leona_submit_with(
+        monkeypatch,
+        [
+            (200, {"device_id": DEFAULT_ESTIMATE_DEVICE_ID, "shots": 10}),
+            (201, {"id": "run-xyz", "status": "queued", "device_id": DEFAULT_ESTIMATE_DEVICE_ID}),
+        ],
+    )
+    leona_submit(_MEASURED_QASM, shots=10)
+    assert transport.calls[1][2]["source_fingerprint"].startswith("local:nb42:")
+
+
+def test_leona_submit_with_hardware_scope_submits_to_an_explicit_paid_device(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A paid device must be named explicitly -- `device=` on `leona_submit`
+    reaches the submission call exactly as it already reaches the estimate."""
+    transport = _leona_submit_with(
+        monkeypatch,
+        [
+            (200, {"device_id": "ibm.kyiv", "shots": 10}),
+            (201, {"id": "run-paid", "status": "queued", "device_id": "ibm.kyiv"}),
+        ],
+    )
+    leona_submit(_MEASURED_QASM, shots=10, device="ibm.kyiv")
+    assert transport.calls[0][2]["device_id"] == "ibm.kyiv"
+    assert transport.calls[1][2]["device_id"] == "ibm.kyiv"
+
+
+def test_leona_submit_reports_a_submission_failure_that_is_not_a_scope_refusal(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A token WITH hardware scope can still be refused for another reason -- no
+    IBM credential connected, the deployment gate closed, the weekly allowance
+    spent. Unlike the silent `token_scope_insufficient` case, this IS reported,
+    and the cell still falls back to the local-only record rather than raising."""
+    transport = _leona_submit_with(
+        monkeypatch,
+        [
+            (200, {"device_id": DEFAULT_ESTIMATE_DEVICE_ID, "shots": 10}),
+            (
+                409,
+                {
+                    "title": "no hardware account connected",
+                    "blocked_reason": "credentials_unconfigured",
+                },
+            ),
+        ],
+    )
+    result = leona_submit(_MEASURED_QASM, shots=10)
+    assert isinstance(result, HardwareSubmission)
+    out = capsys.readouterr().out
+    assert "could not submit to hardware" in out
+    assert "This ran locally only" in out
+    assert transport.calls[1][0] == "POST"
+
+
+def test_hardware_run_status_reads_the_qpu_run_route() -> None:
+    transport = Recording([(200, {"id": "run1", "status": "running"})])
+    lq = Leona(api_url="https://api.test", token="tok", transport=transport)
+    run = HardwareRun(run_id="run1", device_id="ibm.open_plan", _client=lq)
+    assert run.status() == "running"
+    assert transport.calls[0][:2] == ("GET", "https://api.test/v1/qpu/runs/run1")
+
+
+def test_hardware_run_result_returns_counts_on_a_done_run() -> None:
+    transport = Recording(
+        [(200, {"id": "run1", "status": "done", "raw_counts": {"0": 500, "1": 500}})]
+    )
+    lq = Leona(api_url="https://api.test", token="tok", transport=transport)
+    run = HardwareRun(run_id="run1", device_id="ibm.open_plan", _client=lq)
+    assert run.result(timeout=10) == {"0": 500, "1": 500}
+
+
+def test_hardware_run_result_raises_on_a_non_done_terminal_status() -> None:
+    transport = Recording(
+        [(200, {"id": "run1", "status": "error", "error": "provider rejected it"})]
+    )
+    lq = Leona(api_url="https://api.test", token="tok", transport=transport)
+    run = HardwareRun(run_id="run1", device_id="ibm.open_plan", _client=lq)
+    with pytest.raises(LeonaClientError, match="provider rejected it"):
+        run.result(timeout=10)
 
 
 @pytest.mark.parametrize(

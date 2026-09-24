@@ -61,6 +61,124 @@ def test_qpu_estimate_passes_zne_through():
     assert transport.calls[0][2]["zne"] is True
 
 
+_QASM = 'OPENQASM 3.0; include "stdgates.inc"; qubit[1] q; bit[1] c; h q[0]; c[0] = measure q[0];'
+
+
+def test_qpu_submit_posts_the_route_shape_and_returns_the_raw_record():
+    """`routes/qpu.py::QpuSubmissionRequest`'s exact fields, in the order that
+    route reads them — and the response comes back as a raw dict, matching
+    `qpu_backends`/`qpu_estimate` beside it, not a `majorana_contracts` model."""
+    client, transport = _client(
+        [(201, {"id": "run1", "status": "queued", "device_id": "ibm.open_plan"})]
+    )
+    record = client.qpu_submit("ibm.open_plan", 4096, _QASM, "local:none:deadbeef")
+    assert record == {"id": "run1", "status": "queued", "device_id": "ibm.open_plan"}
+    method, url, body = transport.calls[0]
+    assert (method, url) == ("POST", "https://api.test/v1/qpu/submissions")
+    assert body == {
+        "device_id": "ibm.open_plan",
+        "shots": 4096,
+        "qasm": _QASM,
+        "source_fingerprint": "local:none:deadbeef",
+        "zne": False,
+    }
+
+
+def test_qpu_submit_passes_zne_through():
+    client, transport = _client([(201, {"id": "run1", "status": "queued"})])
+    client.qpu_submit("d", 5, _QASM, "fp", zne=True)
+    assert transport.calls[0][2]["zne"] is True
+
+
+def test_qpu_submit_without_hardware_scope_raises_a_plain_client_error_not_an_http_error():
+    """The API answers 403 `token_scope_insufficient`; `_authenticated_call`
+    turns every 4xx/5xx into `LeonaClientError`, the same contract `start_run`
+    documents for a `read`-only token hitting `POST /runs`. `.reason` carries the
+    machine-readable code — this is the field `leona_submit` checks to tell "no
+    hardware scope" apart from any other failure, rather than matching on the
+    sentence, which is free to change."""
+    client, _ = _client(
+        [
+            (
+                403,
+                {
+                    "title": "this token cannot submit to hardware; mint one with "
+                    "the hardware scope",
+                    "reason": "token_scope_insufficient",
+                },
+            )
+        ]
+    )
+    with pytest.raises(LeonaClientError, match="hardware scope") as excinfo:
+        client.qpu_submit("ibm.open_plan", 4096, _QASM, "fp")
+    assert excinfo.value.reason == "token_scope_insufficient"
+
+
+def test_a_client_error_with_a_body_that_is_not_a_json_object_carries_no_reason():
+    """The other half of the same contract: a failure body that parses as JSON but
+    is not an object (here, a bare string — what an upstream proxy error page
+    JSON-wraps) must not accidentally look like a recognised reason code to a
+    caller that checks `.reason`; `problem.get` raises `AttributeError` on a str,
+    which `_call`'s existing `except (ValueError, AttributeError)` already
+    catches, leaving `reason` at its default."""
+    client, _ = _client([(502, "Bad Gateway")])  # type: ignore[list-item]
+    with pytest.raises(LeonaClientError) as excinfo:
+        client.qpu_backends()
+    assert excinfo.value.reason is None
+
+
+def test_get_qpu_run_calls_the_record_route():
+    client, transport = _client([(200, {"id": "run1", "status": "running"})])
+    record = client.get_qpu_run("run1")
+    assert record["status"] == "running"
+    assert transport.calls[0][:2] == ("GET", "https://api.test/v1/qpu/runs/run1")
+
+
+def test_wait_for_qpu_run_polls_until_a_terminal_status():
+    client, _ = _client(
+        [
+            (200, {"id": "run1", "status": "queued"}),
+            (200, {"id": "run1", "status": "running"}),
+            (200, {"id": "run1", "status": "done", "raw_counts": {"0": 512, "1": 488}}),
+        ]
+    )
+    record = client.wait_for_qpu_run("run1", wait_s=10, poll_s=0.01, sleep=lambda _s: None)
+    assert record["status"] == "done"
+    assert record["raw_counts"] == {"0": 512, "1": 488}
+
+
+def test_wait_for_qpu_run_returns_on_error_rather_than_raising():
+    """A hardware run that errored is itself a terminal answer, the same
+    contract `wait_for_run` gives for a `failed` verified run — only running
+    out of TIME raises, never a terminal status the caller did not want."""
+    client, _ = _client(
+        [(200, {"id": "run1", "status": "queued"}), (200, {"id": "run1", "status": "error"})]
+    )
+    record = client.wait_for_qpu_run("run1", wait_s=10, poll_s=0.01, sleep=lambda _s: None)
+    assert record["status"] == "error"
+
+
+def test_wait_for_qpu_run_times_out_rather_than_polling_forever():
+    client, _ = _client([(200, {"id": "run1", "status": "running"})] * 3)
+    with pytest.raises(LeonaClientError, match="still running"):
+        client.wait_for_qpu_run("run1", wait_s=0, poll_s=0.01, sleep=lambda _s: None)
+
+
+def test_the_hardcoded_terminal_qpu_statuses_match_the_real_enum():
+    """`wait_for_qpu_run` spells out `{"done", "error", "cancelled"}` as literals
+    rather than importing `QpuRunStatus` (see its own docstring for why); this is
+    the pin that docstring promises — if the enum ever gains or renames a
+    terminal member, this fails instead of `wait_for_qpu_run` silently polling
+    past a state it no longer recognises."""
+    from majorana_contracts.enums import QpuRunStatus
+
+    assert {QpuRunStatus.DONE.value, QpuRunStatus.ERROR.value, QpuRunStatus.CANCELLED.value} == {
+        "done",
+        "error",
+        "cancelled",
+    }
+
+
 # ------------------------------------------------------------------- notebook run
 
 

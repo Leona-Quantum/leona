@@ -122,16 +122,28 @@ def hash_token(presented: str) -> str:
 
 
 def normalise_scopes(scopes: list[TokenScope] | None) -> list[str]:
-    """Every token reads; `run` is added on top, never instead.
+    """Every token reads; `run` and `hardware` are each added on top, never instead,
+    and never because of each other.
 
     Applied here rather than in the request model so a row written by any path obeys
     it — the database check constraint says the same thing, and this is what keeps the
     two from disagreeing about a token minted by something that is not the route.
+
+    `hardware` does NOT imply `run`, on purpose (ai-ops 376; see `TokenScope`'s own
+    docstring for the argument in full): they spend two different allowances through
+    two different routes, and a token minted to do only one of those things is a real
+    use case this function must not widen. The one place they could plausibly be
+    conflated — "does hardware also let me price a circuit?" — is already `yes` for
+    every token regardless of scope, because `POST /qpu/estimates` sits in
+    `token_access.READ_WRITES` and is reachable by `read` alone; that is a route
+    decision, not a scope-normalisation one, so it is not repeated here.
     """
     asked = set(scopes or [])
     ordered = [TokenScope.READ]
     if TokenScope.RUN in asked:
         ordered.append(TokenScope.RUN)
+    if TokenScope.HARDWARE in asked:
+        ordered.append(TokenScope.HARDWARE)
     return [str(scope) for scope in ordered]
 
 
