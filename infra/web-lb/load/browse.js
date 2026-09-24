@@ -10,20 +10,29 @@
 // incident note §5): a document load, the prefetches the page's links fire, and
 // then client-side navigations, which are RSC requests (`RSC: 1` and an `_rsc=`
 // cache-buster, exactly as Next's router sends them) rather than documents.
-// The Atlas MAP is the exception, and the expensive one: it links with plain
-// `<a href>`, never `next/link` (repository-converge-view.tsx: a `<Link>` would
-// skip the cross-document view transition the map's zoom is built on), so every
-// click there is a full DOCUMENT load of a new `?focus=&open=` URL — a Cloudflare
-// cache miss and a ~1 s server render — with no prefetch in front of it. Think
-// time between steps is 2-6 s, which is a brisk reader rather than an average one.
+//
+// A LANE OR CARD CLICK ON AN ALREADY-OPEN MAP IS ALSO AN RSC REQUEST, corrected
+// 2026-09-24 21:40 UTC from a real-browser re-measurement: clicking a lane sent
+// `GET /repository/layers?open=…&sel=…&_rsc=<token>` with header `RSC: 1`, not a
+// document load. The document-load, ~1 s-server-render shape the 2026-09-24
+// incident actually saw was arrivals at a specific `?open=` URL from OUTSIDE the
+// app (a shared link, a bookmark, a crawler with no browser session) — this
+// script models that as the rarer "deep link" arrival (`DEEP_LINK_RATE` of
+// sessions), and everything else as clicks inside an already-open map. Next
+// does not expose the router-state hash for an arbitrary `open=`/`sel=` value
+// the way it does for a handful of fixed links, so a map click's `_rsc` is a
+// fresh random token per click rather than the learned value `rscParam` computes
+// for the small, fixed set of header links (see `get()`).
+//
+// Think time between steps is 2-6 s, which is a brisk reader rather than an
+// average one.
 //
 // Nothing here busts Cloudflare's cache on purpose: what reaches the origin is
 // what a real reader's requests would make reach it.
 //
 // Also models back/forward (a click to a state already visited this session,
-// same cost as any other map click: the map uses plain `<a href>`, so a
-// history navigation is a fresh document load, not a client-side transition)
-// and the occasional static chunk fetch a page load or cache miss produces.
+// same RSC cost as any other map click) and the occasional static chunk fetch a
+// page load or cache miss produces.
 import http from "k6/http";
 import { sleep } from "k6";
 import { SharedArray } from "k6/data";
@@ -44,6 +53,11 @@ const HOME_FOLLOW_UPS = ["/api/auth/session",
   "/workspace", "/repository", "/about", "/pricing", "/contact", "/",
   "/workspace", "/repository", "/about", "/pricing", "/contact", "/"];
 const UA = UA_BASE + " browse";
+// A minority of sessions arrive at a specific map state from OUTSIDE the app
+// (a shared link, a bookmark) rather than by clicking through an already-open
+// map -- see the file header. That arrival is a document load; everything
+// else is an RSC click.
+const DEEP_LINK_RATE = 0.1;
 
 const urls = new SharedArray("map-states", () => {
   const d = JSON.parse(open("./crawler-urls-20260924.json"));
@@ -76,16 +90,27 @@ function rscParam(path, headers) {
   return rscFor[key];
 }
 
+// A map click's own `_rsc`: unlike the handful of fixed links `rscParam`
+// learns a value for, the map's `open=`/`sel=` state is combinatorial, so
+// there is no small state space to learn against. Real clicks were measured
+// sending a fresh token each time, not a validated hash, so this doesn't
+// pretend to compute the "right" one either.
+function randomRsc() {
+  return Math.random().toString(36).slice(2, 10);
+}
+
 function get(path, cls, rsc) {
   const headers = { "User-Agent": UA };
   let url = `${HOST}${path}`;
   if (rsc) {
     headers.RSC = "1";
     if (rsc === "prefetch") headers["Next-Router-Prefetch"] = "1";
-    url += `${path.includes("?") ? "&" : "?"}_rsc=${rscParam(path, headers)}`;
+    const rscValue = rsc === "mapclick" ? randomRsc() : rscParam(path, headers);
+    url += `${path.includes("?") ? "&" : "?"}_rsc=${rscValue}`;
   }
   const r = http.get(url, { headers, timeout: "60s", tags: { name: cls } });
-  record("browse", rsc ? `${cls}:${rsc === "prefetch" ? "prefetch" : "rsc"}` : cls, r);
+  const suffix = rsc === "prefetch" ? "prefetch" : "rsc";
+  record("browse", rsc ? `${cls}:${suffix}` : cls, r);
   return r;
 }
 
@@ -124,28 +149,37 @@ export function browse() {
   think();
   get("/repository", "atlas", "nav");
   think();
-  // The map is a document load, from the Atlas page's link and on every click.
-  get("/repository/layers", "map");
-  // Exploring the map: a few clicks, each a new server-rendered state, plus
-  // back/forward through the ones already seen this session -- both are a
-  // fresh document GET of a URL already in `visited`, at the same cost as a
-  // new click, because the map never uses client-side navigation (see the
-  // file header).
-  const clicks = 3 + Math.floor(Math.random() * 4);
+  // Arrival at the map: either the index (a document load, from the Atlas
+  // page's own link) followed by clicking around inside it, or -- the
+  // minority case -- straight to a specific state from outside the app (a
+  // shared link), which is ALSO a document load, but with no index step and
+  // no RSC header. Either way, everything that follows from an already-open
+  // map is an RSC click (see the file header).
   const visited = [];
+  if (Math.random() < DEEP_LINK_RATE) {
+    const state = mapState();
+    get(state, "map"); // deep link: plain document GET, no RSC
+    visited.push(state);
+  } else {
+    get("/repository/layers", "map"); // the bare index
+  }
+  // Exploring the map: a few clicks, each an RSC request for a new state,
+  // plus back/forward through states already seen this session -- same RSC
+  // cost as a new click.
+  const clicks = 3 + Math.floor(Math.random() * 4);
   for (let i = 0; i < clicks; i++) {
     think();
     const goBack = visited.length > 1 && Math.random() < 0.3;
     const state = goBack ? visited[visited.length - 2] : mapState();
-    get(state, "map");
+    get(state, "map", "mapclick");
     if (!goBack) visited.push(state);
   }
   if (visited.length > 1 && Math.random() < 0.4) {
     // back once, then forward again to the state that was current before it.
     think();
-    get(visited[visited.length - 2], "map");
+    get(visited[visited.length - 2], "map", "mapclick");
     think();
-    get(visited[visited.length - 1], "map");
+    get(visited[visited.length - 1], "map", "mapclick");
   }
   think();
   get("/repository/amplitude-estimation", "record", "nav");

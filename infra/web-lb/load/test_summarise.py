@@ -159,6 +159,74 @@ def test_time_buckets_separate_transient_from_steady_state():
     print("test_time_buckets_separate_transient_from_steady_state: OK")
 
 
+def test_suffixed_class_still_classifies_as_atlas():
+    """browse.js tags an RSC/prefetch request's class with a suffix
+    ("atlas:prefetch", "map:rsc", ...) so the per-class breakdown can show the
+    request-type mix. Once map clicks became RSC requests (2026-09-24 21:40
+    UTC correction), MOST of the legitimate users' Atlas traffic carries a
+    suffix -- so if group_of() ever goes back to matching the raw tag against
+    ATLAS_CLASSES, this is the test that catches it: every one of these rows
+    would silently move from block (b) to block (c)."""
+    lines = [
+        _point("resp", "2026-09-24T12:00:00Z", 1, "browse", "atlas:prefetch", "200", "app"),
+        _point("resp", "2026-09-24T12:00:01Z", 1, "browse", "atlas:rsc", "200", "app"),
+        _point("resp", "2026-09-24T12:00:02Z", 1, "browse", "map:rsc", "200", "app"),
+        _point("resp", "2026-09-24T12:00:03Z", 1, "browse", "map:rsc", "200", "app"),
+        _point("resp", "2026-09-24T12:00:04Z", 1, "browse", "record:rsc", "200", "app"),
+        _point("resp", "2026-09-24T12:00:05Z", 1, "browse", "home:prefetch", "200", "app"),
+        _point("resp", "2026-09-24T12:00:06Z", 1, "browse", "page:prefetch", "200", "app"),
+    ]
+    fixture = "\n".join(lines) + "\n"
+    fd, path = tempfile.mkstemp(suffix=".json")
+    try:
+        with os.fdopen(fd, "w") as f:
+            f.write(fixture)
+        counts, durations, first, last = summarise.load([path])
+        report = summarise.build_report(counts, durations)
+        assert report["groups"]["b_users_atlas"]["total"]["n"] == 5, report["groups"].get("b_users_atlas")
+        assert report["groups"]["c_users_other"]["total"]["n"] == 2, report["groups"].get("c_users_other")
+        # per-class rows keep the suffix, for the request-type breakdown
+        assert set(report["groups"]["b_users_atlas"]["by_class"]) == {"atlas:prefetch", "atlas:rsc", "map:rsc", "record:rsc"}
+    finally:
+        os.unlink(path)
+    print("test_suffixed_class_still_classifies_as_atlas: OK")
+
+
+def test_challenged_is_reported_separately_from_refused():
+    """Cloudflare's Managed Challenge on /repository/layers* (added 2026-09-24
+    21:29 UTC) answers 403 with cf-mitigated: challenge -- who() in lib.js
+    tags that src=cf-challenge. It is an expected outcome for a raw crawler
+    GET, not a failure, so it must not be silently folded into "refused"."""
+    lines = [
+        _point("resp", "2026-09-24T12:00:00Z", 1, "crawler", "map", "200", "app"),
+        _point("resp_duration", "2026-09-24T12:00:00Z", 50, "crawler", "map", "200", "app"),
+        _point("resp", "2026-09-24T12:00:01Z", 1, "crawler", "map", "403", "cf-challenge"),
+        _point("resp_duration", "2026-09-24T12:00:01Z", 20, "crawler", "map", "403", "cf-challenge"),
+        _point("resp", "2026-09-24T12:00:02Z", 1, "crawler", "map", "403", "cf-challenge"),
+        _point("resp_duration", "2026-09-24T12:00:02Z", 22, "crawler", "map", "403", "cf-challenge"),
+        _point("resp", "2026-09-24T12:00:03Z", 1, "crawler", "map", "429", "cloudrun"),
+        _point("resp_duration", "2026-09-24T12:00:03Z", 5, "crawler", "map", "429", "cloudrun"),
+    ]
+    fixture = "\n".join(lines) + "\n"
+    fd, path = tempfile.mkstemp(suffix=".json")
+    try:
+        with os.fdopen(fd, "w") as f:
+            f.write(fixture)
+        counts, durations, first, last = summarise.load([path])
+        report = summarise.build_report(counts, durations)
+        s = report["groups"]["a_crawler"]["by_class"]["map"]
+        assert s["n"] == 4
+        assert s["success"] == 1
+        assert s["challenged"] == 2
+        assert s["429"] == 1
+        assert s["other"] == 0, s  # the two challenges must NOT land in "other" either
+        assert s["latency_challenged_ms"]["n"] == 2
+        assert s["latency_refused_ms"]["n"] == 1  # only the 429, not the challenges
+    finally:
+        os.unlink(path)
+    print("test_challenged_is_reported_separately_from_refused: OK")
+
+
 def test_ts_parsing_handles_offset_and_long_fraction():
     # k6 has been observed to emit a local-timezone offset (not just Z) and
     # more than six fractional-second digits; both must parse, not raise, and
@@ -175,6 +243,8 @@ ALL_TESTS = [
     test_group_split_counts,
     test_per_class_latency_not_pooled,
     test_time_buckets_separate_transient_from_steady_state,
+    test_suffixed_class_still_classifies_as_atlas,
+    test_challenged_is_reported_separately_from_refused,
     test_ts_parsing_handles_offset_and_long_fraction,
 ]
 

@@ -122,10 +122,20 @@ def group_of(scenario, cls):
     non-Atlas requests. Anything not tagged scenario=="crawler" is a
     legitimate user -- browse.js's `browse` scenario and atlas-flood.js's
     lighter `visitor` scenario both count, by design: neither one is the
-    distributed scraper."""
+    distributed scraper.
+
+    browse.js suffixes an RSC/prefetch request's class ("atlas:prefetch",
+    "map:rsc", ...) so the per-class breakdown can show the request-type mix.
+    The Atlas/non-Atlas split has to match on the class BEFORE that suffix --
+    matching the raw tag here previously put every RSC or prefetched Atlas
+    request (which is most of them, once map clicks became RSC requests) into
+    the non-Atlas block. See test_summarise.py's
+    test_suffixed_class_still_classifies_as_atlas, which fails without the
+    `.split(":", 1)[0]` below."""
     if scenario == "crawler":
         return "a_crawler"
-    return "b_users_atlas" if cls in ATLAS_CLASSES else "c_users_other"
+    base = (cls or "").split(":", 1)[0]
+    return "b_users_atlas" if base in ATLAS_CLASSES else "c_users_other"
 
 
 GROUP_TITLE = {
@@ -143,6 +153,17 @@ def is_5xx(code):
     return bool(code) and code.startswith("5")
 
 
+def is_challenged(code, src):
+    # Cloudflare's Managed Challenge rule on /repository/layers* (added
+    # 2026-09-24 21:29 UTC: any non-RSC GET with a query string, not a
+    # verified bot) answers 403 with `cf-mitigated: challenge`. who() in
+    # lib.js already tells this apart from a generic Cloudflare 429/403 and
+    # from Armor/Cloud Run -- it is the EXPECTED outcome for a raw crawler
+    # GET or a deep-link arrival, not a failure, so it gets its own bucket
+    # rather than being counted as "refused".
+    return code == "403" and src == "cf-challenge"
+
+
 def build_class_stats(keys, counts, durations):
     """One row of stats for a single (scenario, cls) pair, pooling every
     code/src under it. `keys` is the list of (scenario, cls, code, src)
@@ -151,17 +172,25 @@ def build_class_stats(keys, counts, durations):
     success = sum(counts[k] for k in keys if is_success(k[2]))
     fivexx = sum(counts[k] for k in keys if is_5xx(k[2]))
     n429 = sum(counts[k] for k in keys if k[2] == "429")
+    challenged = sum(counts[k] for k in keys if is_challenged(k[2], k[3]))
     by_src_429 = collections.Counter()
     for k in keys:
         if k[2] == "429":
             by_src_429[k[3]] += counts[k]
-    other = n - success - fivexx - n429
+    other = n - success - fivexx - n429 - challenged
+    by_src_other = collections.Counter()
+    for k in keys:
+        if not is_success(k[2]) and k[2] != "429" and not is_5xx(k[2]) and not is_challenged(k[2], k[3]):
+            by_src_other[k[3]] += counts[k]
     ok_lat = []
     refused_lat = []
+    challenged_lat = []
     for k in keys:
         vals = durations.get(k, [])
         if is_success(k[2]):
             ok_lat.extend(vals)
+        elif is_challenged(k[2], k[3]):
+            challenged_lat.extend(vals)
         else:
             refused_lat.extend(vals)
     return {
@@ -169,10 +198,13 @@ def build_class_stats(keys, counts, durations):
         "success": success,
         "429": n429,
         "429_by_src": dict(by_src_429),
+        "challenged": challenged,
         "5xx": fivexx,
         "other": other,
+        "other_by_src": dict(by_src_other),
         "latency_ok_ms": lat_stats(ok_lat),
         "latency_refused_ms": lat_stats(refused_lat),
+        "latency_challenged_ms": lat_stats(challenged_lat),
     }
 
 
@@ -217,12 +249,15 @@ def populate_buckets(paths, bucket_minutes, first):
         c = per_bucket[(idx, group)]
         c["n"] += int(data["value"])
         code = tags.get("code")
+        src = tags.get("src")
         if is_success(code):
             c["success"] += int(data["value"])
         if code == "429":
             c["429"] += int(data["value"])
         if is_5xx(code):
             c["5xx"] += int(data["value"])
+        if is_challenged(code, src):
+            c["challenged"] += int(data["value"])
     out = []
     for (idx, group) in sorted(per_bucket):
         c = per_bucket[(idx, group)]
@@ -234,6 +269,7 @@ def populate_buckets(paths, bucket_minutes, first):
             "success": c["success"],
             "429": c["429"],
             "5xx": c["5xx"],
+            "challenged": c["challenged"],
         })
     return out
 
@@ -247,11 +283,14 @@ def fmt_lat(lat):
 def fmt_class_row(name, s, indent="  "):
     pct429 = 100 * s["429"] / s["n"] if s["n"] else 0.0
     src_str = ", ".join(f"{k}:{v}" for k, v in sorted(s["429_by_src"].items(), key=lambda kv: -kv[1])) or "-"
+    other_str = ", ".join(f"{k}:{v}" for k, v in sorted(s["other_by_src"].items(), key=lambda kv: -kv[1])) or "-"
     lines = [
         f"{indent}{name:10} n={s['n']:6}  success={s['success']:6} ({100*s['success']/s['n'] if s['n'] else 0:5.1f}%)"
-        f"  429={s['429']:6} ({pct429:5.1f}%) [{src_str}]  5xx={s['5xx']:4}  other={s['other']:4}",
-        f"{indent}{'':10}  latency ok:      {fmt_lat(s['latency_ok_ms'])}",
-        f"{indent}{'':10}  latency refused: {fmt_lat(s['latency_refused_ms'])}",
+        f"  429={s['429']:6} ({pct429:5.1f}%) [{src_str}]"
+        f"  challenged={s['challenged']:5}  5xx={s['5xx']:4}  other={s['other']:4} [{other_str}]",
+        f"{indent}{'':10}  latency ok:         {fmt_lat(s['latency_ok_ms'])}",
+        f"{indent}{'':10}  latency refused:    {fmt_lat(s['latency_refused_ms'])}",
+        f"{indent}{'':10}  latency challenged: {fmt_lat(s['latency_challenged_ms'])}",
     ]
     return "\n".join(lines)
 
@@ -278,7 +317,7 @@ def print_report(report, first, last):
             pctok = 100 * b["success"] / b["n"] if b["n"] else 0.0
             print(
                 f"  t+{b['window_start_s']:6}s  {GROUP_TITLE.get(b['group'], b['group']):55}"
-                f" n={b['n']:6} success={pctok:5.1f}% 429={pct429:5.1f}% 5xx={b['5xx']:4}"
+                f" n={b['n']:6} success={pctok:5.1f}% 429={pct429:5.1f}% challenged={b['challenged']:5} 5xx={b['5xx']:4}"
             )
 
 
