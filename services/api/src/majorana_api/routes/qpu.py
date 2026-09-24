@@ -58,10 +58,17 @@ from majorana_qpu import (
 from majorana_qpu.mitigation import ZNE_SCALE_FACTORS, requested_zne_record
 
 from .. import credential_crypto
-from ..auth.deps import CurrentIdentity, CurrentScope, DbSession, get_settings
+from ..auth.deps import (
+    CurrentIdentity,
+    CurrentPresentedToken,
+    CurrentScope,
+    DbSession,
+    get_settings,
+)
 from ..request_models import RequestModel
 from ..jobs import QPU_RUN_JOB_KIND
 from ..orm import ProviderCredential, QpuRun as QpuRunRow
+from ..repos import audit as audit_repo
 from ..repos import provider_credentials as credentials_repo
 from ..repos import qpu_runs as qpu_runs_repo
 from ..repos import system
@@ -633,6 +640,15 @@ async def qpu_submit(
     session: DbSession,
     identity: CurrentIdentity,
     settings: Annotated[Settings, Depends(get_settings)],
+    # `= None` (unlike `identity`/`settings` above) so the many existing unit tests
+    # that call this handler directly, bypassing FastAPI's own dependency
+    # resolution, do not all have to learn about a parameter their scenario has
+    # nothing to do with. A real request always goes through `get_presented_token`
+    # regardless of this default — `Depends()` inside `Annotated` is what FastAPI
+    # resolves, and it does not consult the Python-level default at all; the
+    # precedent is `get_scope`'s own `token` parameter in `auth/deps.py`, which
+    # carries the identical default for the identical reason.
+    presented_token: CurrentPresentedToken = None,
 ) -> QpuRunRecord:
     """Real submission: device validated, every deployment gate consulted, the
     account's weekly hardware spend reserved under its own lock, and on an open
@@ -663,7 +679,28 @@ async def qpu_submit(
     `qpu.run` job for a submission that cannot be made, and the worker would
     close it as an errored hardware run — a failure record for something that
     never reached a provider, on a table whose whole purpose is attesting to
-    things that did."""
+    things that did.
+
+    ## Reachable by a token now too (ai-ops 376)
+
+    `auth/token_access.py` refuses a request here before it reaches this handler
+    unless it is either a browser session or a token carrying `TokenScope.HARDWARE`
+    — this function does not re-check that, the same way it does not re-check the
+    credential gate's caller identity twice. What it DOES do, that a scope check
+    alone cannot, is record which of the two authenticated this particular
+    submission: `qpu_runs.user_id` is the same either way (a token acts as its
+    owner, never as a separate identity), so a `qpu_runs` row alone cannot answer
+    "was this a person clicking Submit, or a leaked token being replayed
+    unattended at 3am". `presented_token` is `None` for a browser session and the
+    resolved token for a PAT request; when it is not `None`, its id is written
+    onto the EXISTING `audit_log` table (`audit_repo.record_audit`) rather than a
+    new column on `qpu_runs` or a new table — the row this table already writes
+    for security-relevant actions elsewhere in the app (`repos/qapps.py`'s
+    `qapp.created`/`qapp.published`/etc.) is exactly the place this fact belongs.
+    There is no `GET /v1/audit-log` route yet; `audit_repo.list_audit` (admin-only)
+    is how a future one, or an incident investigation reading the table directly,
+    would look this up by `target_kind="qpu_run"`/`target_id=<qpu_runs.id>`.
+    """
     try:
         backend = backend_info(body.device_id)
     except UnknownDeviceError:
@@ -718,6 +755,20 @@ async def qpu_submit(
         # so a new field there would be refused by a worker one deploy older.
         mitigation=requested_zne_record() if body.zne else None,
     )
+    if presented_token is not None:
+        # ai-ops 376: the one fact `qpu_runs` cannot record about itself — that a
+        # personal access token, not the account holder's own browser, made this
+        # request. `record` and this row are written in the same request-scoped
+        # transaction `get_session` commits once, so there is no window where the
+        # attestation exists without its provenance or the reverse.
+        await audit_repo.record_audit(
+            scope,
+            session,
+            action="qpu.submission.created",
+            target_kind="qpu_run",
+            target_id=record.id,
+            meta={"token_id": str(presented_token.id)},
+        )
     payload = QpuRunJobPayload(
         workspace_id=str(scope.workspace_id),
         user_id=str(scope.user_id),

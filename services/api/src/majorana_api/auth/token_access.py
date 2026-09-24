@@ -28,15 +28,29 @@ security review can actually be asked to look at.
 OpenAPI schema and asserts that every write template is either in a list here or
 provably refused, so "we forgot" fails in CI rather than in production.
 
-## There is no hardware entry, and that is the ruling
+## Hardware: the deferral resolved (ai-ops 376, option 2)
 
-`POST /qpu/submissions` — the route that spends a person's IBM time — appears in no
-allowlist, so it is refused by the default-shut rule rather than by a named exception.
-`majorana_contracts.tokens.TokenScope` correspondingly has no `hardware` member, so
-there is not even a scope a token could be minted with to reach it. "Hardware jobs come
-later under their own permission" is therefore enforced twice, in the alphabet of the
-scopes and in the absence of a route, and granting it later is a visible widening in
-both places.
+`POST /qpu/submissions` — the route that spends a person's own hardware allowance —
+used to appear in no allowlist at all, refused by the default-shut rule with no scope
+able to reach it, because `TokenScope` had no `hardware` member to grant. The owner's
+ruling on ai-ops 376, quoted in full because this whole block is one clause of it:
+
+    "Add a separate 'hardware' permission a person must tick when creating a token.
+    With it, leona_submit in their own Jupyter or VS Code submits directly, priced
+    and counted against the same weekly allowance."
+
+`HARDWARE_WRITES` below is that permission's allowlist entry, and `TokenScope.HARDWARE`
+(added CONTRACTS_VERSION 2.37.0) is the scope it is gated on. It is its own set, not
+folded into `RUN_WRITES`, and gated on its own scope, not `TokenScope.RUN`: starting a
+verified run and submitting to real hardware spend two different weekly allowances, and
+a token minted for one must not silently gain the other. A token holding `run` but not
+`hardware` is refused here exactly as a `read`-only token is — `check()` below does not
+special-case either. `TokenScope.HARDWARE` does not imply `RUN` either, for the same
+reason in the other direction: see `TokenScope`'s own docstring for why a token minted
+only to submit already-built circuits from a person's own code should not, by that fact
+alone, also be able to start Leona's own generation runs. Pricing a circuit (`POST
+/qpu/estimates`) needs neither scope — it is in `READ_WRITES`, reachable by every token
+— so a `hardware`-only token can still price before it submits.
 
 ## Matched on the route TEMPLATE, never the raw path
 
@@ -203,6 +217,16 @@ RUN_WRITES: frozenset[tuple[str, str]] = frozenset(
     }
 )
 
+#: What `hardware` adds, and the ONLY thing it adds: submit an already-built circuit
+#: to real quantum hardware, spending the caller's weekly hardware allowance. See the
+#: module docstring above ("Hardware: the deferral resolved") for the ruling and why
+#: this is its own set, gated on its own scope, rather than riding in on `RUN_WRITES`.
+HARDWARE_WRITES: frozenset[tuple[str, str]] = frozenset(
+    {
+        ("POST", "/qpu/submissions"),
+    }
+)
+
 _READ_METHODS = frozenset({"GET", "HEAD", "OPTIONS"})
 
 
@@ -257,6 +281,14 @@ def check(method: str, template: str, path: str, scopes: frozenset[str]) -> Refu
             )
         return None
 
+    if pair in HARDWARE_WRITES:
+        if TokenScope.HARDWARE not in scopes:
+            return Refusal(
+                INSUFFICIENT_SCOPE,
+                "this token cannot submit to hardware; mint one with the hardware scope",
+            )
+        return None
+
     return Refusal(
         FORBIDDEN_ROUTE,
         "personal access tokens cannot make this change; sign in on the website",
@@ -265,6 +297,7 @@ def check(method: str, template: str, path: str, scopes: frozenset[str]) -> Refu
 
 __all__ = [
     "FORBIDDEN_ROUTE",
+    "HARDWARE_WRITES",
     "INSUFFICIENT_SCOPE",
     "READ_DENIED",
     "READ_WRITES",

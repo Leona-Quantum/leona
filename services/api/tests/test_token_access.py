@@ -34,6 +34,10 @@ SETTINGS_KWARGS = dict(
 
 READ_ONLY = frozenset({str(TokenScope.READ)})
 READ_AND_RUN = frozenset({str(TokenScope.READ), str(TokenScope.RUN)})
+READ_AND_HARDWARE = frozenset({str(TokenScope.READ), str(TokenScope.HARDWARE)})
+READ_RUN_AND_HARDWARE = frozenset(
+    {str(TokenScope.READ), str(TokenScope.RUN), str(TokenScope.HARDWARE)}
+)
 
 _WRITE_METHODS = ("POST", "PATCH", "PUT", "DELETE")
 
@@ -82,13 +86,19 @@ def test_every_write_route_is_refused_unless_it_was_deliberately_allowed():
     existing token" a fact rather than an intention. It fails the moment somebody adds
     a write route AND adds it to an allowlist in `token_access` without thinking, and
     it fails the moment the default stops being refusal.
+
+    Checked against the WIDEST token a person can mint (`READ_RUN_AND_HARDWARE`, since
+    ai-ops 376 added a third scope) — this sweep is about whether a route has a way in
+    at all, not about which scope it needs; the scope-specific half (hardware needs
+    `hardware`, not merely `run`) is `test_a_hardware_token_may_submit_but_neither_a_
+    read_nor_a_run_only_token_may` below.
     """
-    allowed = token_access.READ_WRITES | token_access.RUN_WRITES
+    allowed = token_access.READ_WRITES | token_access.RUN_WRITES | token_access.HARDWARE_WRITES
     for method, path in _templates():
         if method not in _WRITE_METHODS:
             continue
         template = _template_without_prefix(path)
-        refusal = token_access.check(method, template, path, READ_AND_RUN)
+        refusal = token_access.check(method, template, path, READ_RUN_AND_HARDWARE)
         if (method, template) in allowed:
             assert refusal is None, f"{method} {path} is allowlisted but refused"
         else:
@@ -99,19 +109,48 @@ def test_every_write_route_is_refused_unless_it_was_deliberately_allowed():
             )
 
 
-def test_hardware_submission_is_refused_and_no_scope_can_grant_it():
-    """The ruling's deferral: "hardware jobs come later under their own permission".
+def test_a_hardware_token_may_submit_but_neither_a_read_nor_a_run_only_token_may():
+    """The deferral's resolution (ai-ops 376, option 2): hardware is now grantable,
+    but ONLY by its own scope — not by `run`, and not by `read` alone.
 
-    Two assertions, because the deferral is enforced twice. The route is refused by the
-    default-shut rule even to the widest token that can be minted; and there is no
-    scope that could be added to a request to change that, because `TokenScope` has no
-    hardware member. The second is what stops a future reader from "fixing" the first
-    by inventing a scope string.
+    Three calls, three different outcomes, because that is the whole shape of the
+    ruling: a `hardware` token may submit; a `read`-only token is refused with
+    INSUFFICIENT_SCOPE (fixable by minting a wider token); and — the case that would
+    silently reintroduce the old conflation — a `run`-only token, which can already
+    start Leona's own verified runs, is ALSO refused with INSUFFICIENT_SCOPE rather
+    than let through on the strength of `run`. `TokenScope` closing at three members
+    (not two) is asserted here too, so a fourth appearing later is caught by this
+    file rather than discovered in production.
     """
-    refusal = token_access.check("POST", "/qpu/submissions", "/v1/qpu/submissions", READ_AND_RUN)
-    assert refusal is not None
-    assert refusal.reason == token_access.FORBIDDEN_ROUTE
-    assert {str(scope) for scope in TokenScope} == {"read", "run"}
+    template, path = "/qpu/submissions", "/v1/qpu/submissions"
+
+    assert token_access.check("POST", template, path, READ_AND_HARDWARE) is None
+
+    read_only = token_access.check("POST", template, path, READ_ONLY)
+    assert read_only is not None
+    assert read_only.reason == token_access.INSUFFICIENT_SCOPE
+
+    run_only = token_access.check("POST", template, path, READ_AND_RUN)
+    assert run_only is not None
+    assert run_only.reason == token_access.INSUFFICIENT_SCOPE
+
+    assert {str(scope) for scope in TokenScope} == {"read", "run", "hardware"}
+    assert ("POST", template) in token_access.HARDWARE_WRITES
+    assert ("POST", template) not in token_access.RUN_WRITES
+    assert ("POST", template) not in token_access.READ_WRITES
+
+
+def test_hardware_does_not_widen_what_a_run_token_could_already_reach():
+    """The other direction of the same independence: minting `hardware` on top of
+    `run` must not be required for, or accidentally required by, anything `run`
+    already does alone. `RUN_WRITES` is swept with a `hardware`-only token (no
+    `run`) and every entry must still refuse — hardware access is not a backdoor
+    into starting runs."""
+    hardware_only = frozenset({str(TokenScope.READ), str(TokenScope.HARDWARE)})
+    for method, template in sorted(token_access.RUN_WRITES):
+        refusal = token_access.check(method, template, f"/v1{template}", hardware_only)
+        assert refusal is not None, f"{method} {template} was reachable by hardware alone"
+        assert refusal.reason == token_access.INSUFFICIENT_SCOPE
 
 
 @pytest.mark.parametrize(
@@ -229,7 +268,6 @@ def test_each_new_run_write_is_allowed_with_run_and_refused_with_only_read(metho
         ("POST", "/comments", "/v1/comments"),
         ("PATCH", "/comments/{comment_id}", "/v1/comments/c1"),
         ("DELETE", "/comments/{comment_id}", "/v1/comments/c1"),
-        ("POST", "/qpu/submissions", "/v1/qpu/submissions"),
         ("POST", "/courses", "/v1/courses"),
         ("POST", "/courses/{course_id}/turns", "/v1/courses/c1/turns"),
         ("DELETE", "/courses/{course_id}", "/v1/courses/c1"),
@@ -243,7 +281,6 @@ def test_each_new_run_write_is_allowed_with_run_and_refused_with_only_read(metho
         "create-comment",
         "patch-comment",
         "delete-comment",
-        "hardware-submission",
         "create-course",
         "course-turn",
         "delete-course",
@@ -256,10 +293,12 @@ def test_writes_the_bridge_lane_deliberately_left_out_stay_refused_even_with_run
     """The other half of the ai-ops 362 change: none of these widened by accident.
     A token making something public (a share link) is an account-level act, not a
     run; deleting/editing a notebook or course is neither reading nor starting a
-    run; comments are conversation, not notebook content; and hardware stays
-    refused to every token per `test_hardware_submission_is_refused_and_no_scope_
-    can_grant_it`, re-asserted here in the same breath as the routes that DID
-    change so a future reader sees both halves of the decision in one place.
+    run; comments are conversation, not notebook content. Hardware submission
+    (`POST /qpu/submissions`) used to be here too — refused outright, no scope
+    able to reach it — until ai-ops 376 gave it one; it has its own coverage now,
+    in `test_a_hardware_token_may_submit_but_neither_a_read_nor_a_run_only_token_
+    may`, because unlike everything still in this list it IS reachable, just not
+    by `run` (checked with `READ_AND_RUN` here, which still has no `hardware`).
     """
     assert (method, template) not in token_access.RUN_WRITES
     assert (method, template) not in token_access.READ_WRITES
@@ -327,12 +366,31 @@ def test_a_minted_token_hashes_to_what_the_auth_path_looks_up():
         ([TokenScope.RUN], ["read", "run"]),
         ([TokenScope.RUN, TokenScope.READ], ["read", "run"]),
         ([TokenScope.RUN, TokenScope.RUN], ["read", "run"]),
+        ([TokenScope.HARDWARE], ["read", "hardware"]),
+        ([TokenScope.HARDWARE, TokenScope.READ], ["read", "hardware"]),
+        ([TokenScope.HARDWARE, TokenScope.HARDWARE], ["read", "hardware"]),
+        ([TokenScope.RUN, TokenScope.HARDWARE], ["read", "run", "hardware"]),
     ],
-    ids=["none", "empty", "read", "run-alone", "both", "duplicated"],
+    ids=[
+        "none",
+        "empty",
+        "read",
+        "run-alone",
+        "both",
+        "duplicated",
+        "hardware-alone",
+        "hardware-and-read",
+        "hardware-duplicated",
+        "run-and-hardware",
+    ],
 )
-def test_every_token_reads_and_run_is_additive(asked, expected):
-    """`{run}` alone is not a thing a token can be. The database says so too
-    (`ck_personal_access_tokens_scopes`); this is the half that runs without one."""
+def test_every_token_reads_and_run_and_hardware_are_additive(asked, expected):
+    """`{run}` and `{hardware}` alone are not things a token can be. The database
+    says so too (`ck_personal_access_tokens_scopes`); this is the half that runs
+    without one. `run-and-hardware` is the case that would silently regress if
+    `normalise_scopes` ever made one imply the other: both must survive
+    independently, in the fixed `read, run, hardware` order, and neither
+    duplicates."""
     assert tokens_repo.normalise_scopes(asked) == expected
 
 
