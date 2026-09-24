@@ -184,6 +184,14 @@ DEFINITE: frozenset[str] = frozenset(
     }
 )
 
+#: A check that CANNOT fail, in one of the two obvious shapes a repair passing a check by
+#: weakening it (rather than fixing it) is caught in. Never a false alarm — either shape
+#: is unconditionally suspicious — but not `DEFINITE`: that set means "certain to raise,
+#: repair it before running", and these findings mean the opposite, "certain NOT to raise,
+#: even when the physics it is meant to prove is wrong", which is a reason to REFUSE a
+#: repair (`pipeline._apply_repair`), not to auto-fix a cell for having it.
+WEAKENS_CHECK: frozenset[str] = frozenset({"assert-always-true", "assertion-swallowed"})
+
 
 def _allowed_imports() -> frozenset[str] | None:
     """The guard's own list, or None when the guard is not installed (the Jupyter-only
@@ -388,6 +396,31 @@ class _Checker(ast.NodeVisitor):
             )
         self._emit("gate-returns-instructions", node, message)
 
+    def visit_Assert(self, node: ast.Assert) -> None:
+        if _is_trivially_true(node.test):
+            shown = ast.unparse(node.test)
+            self._emit(
+                "assert-always-true",
+                node,
+                f"`assert {shown}` can never fail — the condition is a constant, not "
+                "something computed from the circuit or its results. A check that always "
+                "passes proves nothing; assert a concrete value from the run instead.",
+            )
+        self.generic_visit(node)
+
+    def visit_Try(self, node: ast.Try) -> None:
+        if _wraps_an_assert(node.body) and _swallows_assertion_error(node.handlers):
+            self._emit(
+                "assertion-swallowed",
+                node,
+                "This `try`/`except` wraps an `assert` and does not re-raise, so the "
+                "assertion can never fail the cell — a caught-and-dropped AssertionError "
+                "is a check that cannot fail, which is not a check. Remove the "
+                "try/except, or re-raise, so a real disagreement with the simulator still "
+                "surfaces.",
+            )
+        self.generic_visit(node)
+
     def _check_state_of_measured(self, node: ast.Call) -> None:
         func = node.func
         name = None
@@ -410,12 +443,63 @@ class _Checker(ast.NodeVisitor):
             )
 
 
+#: Exception names that would catch an `AssertionError`, matched by NAME only — good
+#: enough here because a repair reaching for a custom exception class under one of these
+#: names to smuggle an assertion past this check would be a stranger and more deliberate
+#: evasion than anything seen so far, and the obvious forms are the ones this exists for.
+_ASSERTION_SWALLOWING_EXCEPTS: frozenset[str] = frozenset(
+    {"Exception", "BaseException", "AssertionError"}
+)
+
+
+def _is_trivially_true(test: ast.expr) -> bool:
+    """Whether `test` cannot evaluate to anything but a truthy value, so `assert test`
+    can never fail. Deliberately narrow — a `Constant` (`assert True`, `assert 1`,
+    `assert "ok"`) or a non-empty tuple literal (`assert True, "message"` parses `msg`
+    separately, but `assert (True, "message")` — the parenthesised mistake — is a
+    two-element tuple, and a non-empty tuple is always truthy). NOT constant-folded
+    (`assert 1 == 1` is not caught): the obvious forms are what a repair reaches for to
+    dodge a check, and folding arbitrary expressions risks a false alarm on code that
+    merely happens to be foldable, which would teach a reader to ignore this finding.
+    """
+    if isinstance(test, ast.Constant):
+        return bool(test.value)
+    if isinstance(test, ast.Tuple):
+        return len(test.elts) > 0
+    return False
+
+
+def _wraps_an_assert(body: list[ast.stmt]) -> bool:
+    return any(isinstance(node, ast.Assert) for stmt in body for node in ast.walk(stmt))
+
+
+def _catches_assertion_error(handler: ast.ExceptHandler) -> bool:
+    if handler.type is None:
+        return True  # bare `except:`
+    names = handler.type.elts if isinstance(handler.type, ast.Tuple) else [handler.type]
+    return any(
+        isinstance(name, ast.Name) and name.id in _ASSERTION_SWALLOWING_EXCEPTS for name in names
+    )
+
+
+def _reraises(body: list[ast.stmt]) -> bool:
+    return any(isinstance(node, ast.Raise) for stmt in body for node in ast.walk(stmt))
+
+
+def _swallows_assertion_error(handlers: list[ast.ExceptHandler]) -> bool:
+    return any(
+        _catches_assertion_error(handler) and not _reraises(handler.body) for handler in handlers
+    )
+
+
 _SEVERITY: dict[str, Severity] = {
     "gate-returns-instructions": "warning",
     "removed-qiskit-api": "error",
     "measured-circuit-has-no-statevector": "error",
     "forbidden-import": "error",
     "syntax-error": "error",
+    "assert-always-true": "error",
+    "assertion-swallowed": "error",
 }
 
 
@@ -470,4 +554,4 @@ def lint_spec(spec) -> dict[str, list[Diagnostic]]:
     return findings
 
 
-__all__ = ["DEFINITE", "Diagnostic", "GATE_METHODS", "lint_cell", "lint_spec"]
+__all__ = ["DEFINITE", "WEAKENS_CHECK", "Diagnostic", "GATE_METHODS", "lint_cell", "lint_spec"]

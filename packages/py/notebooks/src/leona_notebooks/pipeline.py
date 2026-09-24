@@ -279,9 +279,84 @@ def is_usable(report: ExecutionReport) -> bool:
     return report.ok or report.executed_count() > 0
 
 
-def _apply_repair(spec: NotebookSpec, cell_id: str, text: str) -> NotebookSpec:
+def _weakened_check_finding(source: str) -> str | None:
+    """The message of the first `leona_notebooks.lint.WEAKENS_CHECK` finding in `source`,
+    or `None`. Used to refuse a repair that passes a check by making it unable to fail,
+    rather than by fixing what it checks — see `REPAIR_SYSTEM_PROMPT` and
+    `_validate_repair_cells`."""
+    from leona_notebooks.lint import WEAKENS_CHECK
+
+    for finding in lint_cell(source):
+        if finding.code in WEAKENS_CHECK:
+            return finding.message
+    return None
+
+
+def _validate_repair_cells(
+    spec: NotebookSpec, cell_id: str, explicit_targets: list[Cell], replacement: list[Cell]
+) -> None:
+    """What `REPAIR_SYSTEM_PROMPT` asks for, checked rather than trusted: at most
+    `prompts.MAX_REPAIR_CELLS` cells touched, every one of them a cell that already
+    existed (never a new one smuggled in), each keeping the kind and role of the cell it
+    replaces, and none of them a check weakened into something that cannot fail. Raising
+    `_StageFailed` here is exactly what an unparseable repair already does — the caller
+    (`_execute_and_repair`) counts it as a failed repair attempt and tries again, up to
+    the budget, rather than applying it.
+
+    `replacement` (the cells with no `id=`, or `id=cell_id`, standing in for the failing
+    cell) is checked for a COUNT of at most one before this is called at all — see the
+    call site — because more than one there is new cells being inserted under cover of
+    "replacing the failing cell", which no amount of per-cell validation here can permit.
+    """
+    from leona_notebooks.prompts import MAX_REPAIR_CELLS
+
+    touched = 1 + len(explicit_targets)
+    if touched > MAX_REPAIR_CELLS:
+        raise _StageFailed(
+            "notebook.repair",
+            f"the repair touched {touched} cells; at most {MAX_REPAIR_CELLS} are allowed "
+            "in one repair",
+        )
+    candidates = list(explicit_targets)
+    if replacement:
+        candidates.append(replacement[0].model_copy(update={"id": cell_id}))
+    for candidate in candidates:
+        try:
+            original = spec.cell_by_id(candidate.id)
+        except KeyError:
+            # Cannot actually happen for `explicit_targets` (already filtered to ids in
+            # `named`) or for the primary replacement (its id IS `cell_id`, which the
+            # caller already has); kept as a named failure rather than an assertion so a
+            # future caller that stops filtering this way fails loudly, not silently.
+            raise _StageFailed(
+                "notebook.repair", f"the repair named cell {candidate.id!r}, which does not exist"
+            ) from None
+        if candidate.kind != original.kind or candidate.role != original.role:
+            raise _StageFailed(
+                "notebook.repair",
+                f"the repair changed cell {candidate.id}'s kind or role "
+                f"({original.kind}/{original.role} -> {candidate.kind}/{candidate.role}); "
+                "a repair may fix a cell's content, not what kind of cell it is",
+            )
+        if candidate.is_code:
+            weakened = _weakened_check_finding(candidate.source)
+            if weakened is not None:
+                raise _StageFailed(
+                    "notebook.repair",
+                    f"the repair of cell {candidate.id} weakens a check instead of fixing "
+                    f"it: {weakened}",
+                )
+
+
+def _apply_repair(
+    spec: NotebookSpec, cell_id: str, text: str
+) -> tuple[NotebookSpec, tuple[str, ...]]:
     """A repair is a replace of the failing cell, plus any earlier cell the model named
-    by id. Cells without an id become replacements of the failing cell, in order."""
+    by id. Cells without an id become replacements of the failing cell, in order.
+
+    Returns the new spec and the ids actually touched (for the attempt log — a repair
+    that fixed a claim in three places should say so, not just name the cell that failed).
+    """
     from leona_notebooks.revision import RevisionOp, explicit_ids
 
     body = text.strip()
@@ -294,6 +369,18 @@ def _apply_repair(spec: NotebookSpec, cell_id: str, text: str) -> NotebookSpec:
         c for c in fragment.cells if c.id in explicit and c.id in named and c.id != cell_id
     ]
     replacement = [c for c in fragment.cells if c not in explicit_targets]
+    if len(replacement) > 1:
+        # More than one cell standing in for the ONE failing cell is new cells being
+        # inserted under cover of a replace, not a fix of it — `no new cells` from
+        # `REPAIR_SYSTEM_PROMPT`. Checked before `_validate_repair_cells` because that
+        # function only looks at `replacement[0]`; without this, cell 2+ would be
+        # silently dropped from validation and then silently spliced in anyway.
+        raise _StageFailed(
+            "notebook.repair",
+            f"the repair replaced cell {cell_id} with {len(replacement)} cells; "
+            "a repair may only replace a cell with ONE cell, never insert new ones",
+        )
+    _validate_repair_cells(spec, cell_id, explicit_targets, replacement)
     plan_ops = [
         RevisionOp(op="replace", cell_id=target.id, cells_source=render_cells([target]))
         for target in explicit_targets
@@ -308,7 +395,13 @@ def _apply_repair(spec: NotebookSpec, cell_id: str, text: str) -> NotebookSpec:
         )
     if not plan_ops:
         raise _StageFailed("notebook.repair", "the repair returned no cells")
-    return apply_revision(spec, RevisionPlan(reply="", ops=plan_ops))
+    # `cell_id` is only in `touched` when something actually replaced it (`replacement`
+    # non-empty) — a repair that fixes only an EARLIER cell by id and leaves the failing
+    # cell as-is (the assertion was right; the circuit above it was wrong) touches that
+    # earlier cell, not the one the model was shown as failing.
+    touched_ids = [*(t.id for t in explicit_targets), *([cell_id] if replacement else [])]
+    touched = tuple(dict.fromkeys(touched_ids))
+    return apply_revision(spec, RevisionPlan(reply="", ops=plan_ops)), touched
 
 
 def render_cells(cells: list[Cell], *, include_ids: bool = True) -> str:
@@ -342,12 +435,12 @@ async def _execute_and_repair(
         )
         try:
             text = await ports.repair(spec, context)
-            spec = _apply_repair(spec, context.cell_id, text)
+            spec, touched = _apply_repair(spec, context.cell_id, text)
         except (SourceParseError, RevisionError, ValueError, _StageFailed) as exc:
             attempts.append(Attempt("notebook.repair", False, str(exc)))
             await ports.observe("notebook.repair", "failed", str(exc))
             continue
-        attempts.append(Attempt("notebook.repair", True, context.cell_id))
+        attempts.append(Attempt("notebook.repair", True, ", ".join(touched)))
         await ports.observe("notebook.repair", "finished", context.cell_id)
 
     await ports.observe("notebook.execute", "started")
@@ -372,12 +465,12 @@ async def _execute_and_repair(
         )
         try:
             text = await ports.repair(spec, context)
-            spec = _apply_repair(spec, context.cell_id, text)
+            spec, touched = _apply_repair(spec, context.cell_id, text)
         except (SourceParseError, RevisionError, ValueError, _StageFailed) as exc:
             attempts.append(Attempt("notebook.repair", False, str(exc)))
             await ports.observe("notebook.repair", "failed", str(exc))
             continue
-        attempts.append(Attempt("notebook.repair", True, context.cell_id))
+        attempts.append(Attempt("notebook.repair", True, ", ".join(touched)))
         await ports.observe("notebook.repair", "finished", context.cell_id)
         await ports.observe("notebook.execute", "started")
         report = await ports.run_notebook(spec)

@@ -5,7 +5,9 @@
     "removed-qiskit-api": "error",
     "measured-circuit-has-no-statevector": "error",
     "forbidden-import": "error",
-    "syntax-error": "error"
+    "syntax-error": "error",
+    "assert-always-true": "error",
+    "assertion-swallowed": "error"
   },
   "cases": [
     {"name": "chained gate assigned", "source": "qc = QuantumCircuit(1).h(0)\n", "expect": [{"code": "gate-returns-instructions", "line": 1}]},
@@ -35,6 +37,15 @@
     {"name": "measured in an earlier cell", "preceding": ["qc = QuantumCircuit(2)\nqc.h(0)\nqc.cx(0, 1)\nqc.measure_all()\n"], "source": "sv = Statevector(qc)\n", "expect": [{"code": "measured-circuit-has-no-statevector", "line": 1}]},
     {"name": "statevector before the measurement is fine", "source": "qc = QuantumCircuit(1)\nqc.h(0)\nsv = Statevector(qc)\nqc.measure_all()\n", "expect": []},
     {"name": "measured copy, unmeasured original", "source": "qc = QuantumCircuit(1)\nqc.h(0)\nmeasured = qc.measure_all(inplace=False)\nsv = Statevector(qc)\n", "expect": []},
+    {"name": "assert True is refused", "source": "assert True\n", "expect": [{"code": "assert-always-true", "line": 1}]},
+    {"name": "assert True with a message is refused", "source": "assert True, \"it is fine\"\n", "expect": [{"code": "assert-always-true", "line": 1}]},
+    {"name": "assert nonzero constant is refused", "source": "assert 1\n", "expect": [{"code": "assert-always-true", "line": 1}]},
+    {"name": "assert parenthesised as a tuple is refused", "source": "assert (counts.get(\"00\", 0) < 10, \"expected no 00\")\n", "expect": [{"code": "assert-always-true", "line": 1}]},
+    {"name": "assert on a real condition is fine", "source": "assert counts.get(\"00\", 0) < 10\n", "expect": []},
+    {"name": "bare except around an assert is refused", "source": "try:\n    assert counts.get(\"00\", 0) < 10\nexcept:\n    pass\n", "expect": [{"code": "assertion-swallowed", "line": 1}]},
+    {"name": "except Exception around an assert is refused", "source": "try:\n    assert counts.get(\"00\", 0) < 10\nexcept Exception:\n    pass\n", "expect": [{"code": "assertion-swallowed", "line": 1}]},
+    {"name": "except that re-raises is fine", "source": "try:\n    assert counts.get(\"00\", 0) < 10\nexcept AssertionError:\n    raise\n", "expect": []},
+    {"name": "except unrelated to an assert is fine", "source": "try:\n    counts = job.result()\nexcept ValueError:\n    pass\n", "expect": []},
     {"name": "forbidden import", "python_only": true, "source": "import os\n", "expect": [{"code": "forbidden-import", "line": 1}]},
     {"name": "forbidden from-import", "python_only": true, "source": "from subprocess import run\n", "expect": [{"code": "forbidden-import", "line": 1}]},
     {"name": "allowed imports", "python_only": true, "source": "import numpy as np\nfrom qiskit import QuantumCircuit\nimport matplotlib.pyplot as plt\n", "expect": []},
