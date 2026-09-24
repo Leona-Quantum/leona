@@ -5,6 +5,8 @@
     lq.estimate(circuit_or_qasm, device=..., shots=1024)   a pre-run price, no submission
     lq.ask(question, notebook=None)                 ask Nala about a notebook (default: linked)
     lq.run(prompt, framework="qiskit")               POST /v1/runs, then wait for the result
+    lq.qpu_submit(device_id, shots, qasm, source_fingerprint)  a real hardware submission
+                                                     (needs a token with the `hardware` scope)
 
 `Leona` is `leona_notebooks.jupyter.Client` (itself `leona_client.Client`) under a
 friendlier name and with `ask`/`run` convenience wrappers — the same token, the same
@@ -12,20 +14,23 @@ routes, the same `_gate_notebook_run`/`_enforce_execute_backstop` limits `%nala`
 already runs into, just a plain method call instead of a magic line for a script
 that is not running inside IPython at all.
 
-Bridge lane (ai-ops 362, 2026-09-23). Nothing here imports qiskit, `leona_notebooks`'s
-sandbox-facing modules, or anything else heavy at module scope — only `leona_client`/
-`leona_notebooks.jupyter`, which already keep this same discipline — so importing
-this module (or `leona_submit` below) costs nothing beyond what `%nala` already
-costs, in an environment that has never touched qiskit at all.
+Bridge lane (ai-ops 362, 2026-09-23; the `hardware` scope itself is ai-ops 376,
+2026-09-24). Nothing here imports qiskit, `leona_notebooks`'s sandbox-facing modules,
+or anything else heavy at module scope — only `leona_client`/`leona_notebooks.jupyter`,
+which already keep this same discipline — so importing this module (or `leona_submit`
+below) costs nothing beyond what `%nala` already costs, in an environment that has
+never touched qiskit at all.
 """
 
 from __future__ import annotations
 
+import hashlib
 import os
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
 
 from leona_client import LeonaClientError
+from leona_client.client import DEFAULT_QPU_WAIT_S
 from leona_notebooks.jupyter import Client as _JupyterClient
 from leona_notebooks.jupyter import get_linked_notebook, notebook_url
 
@@ -140,6 +145,80 @@ class HardwareSubmission:
     label: str | None = None
 
 
+@dataclass(frozen=True)
+class HardwareRun:
+    """A REAL submission `leona_submit` just made (ai-ops 376: the token carried
+    the `hardware` scope). Unlike `HardwareSubmission`, `qasm` is not kept here —
+    it is on the server's own attestation row (`GET /v1/qpu/runs/{run_id}`), which
+    `.status()`/`.result()` read from, so this object is a thin handle onto that
+    row rather than a second copy of the circuit.
+    """
+
+    run_id: str
+    device_id: str
+    #: The `Leona` client that made the submission, reused for every poll so
+    #: `.status()`/`.result()` need no token or transport of their own. Excluded
+    #: from `repr`/`==` the same way `Leona` itself is not the interesting part
+    #: of this object to a reader printing it in a cell.
+    _client: Leona = field(repr=False, compare=False)
+
+    def status(self) -> str:
+        """A fresh read of `GET /v1/qpu/runs/{run_id}` — never cached, since the
+        point of calling this is to learn whether anything has changed since the
+        last read."""
+        return str(self._client.get_qpu_run(self.run_id)["status"])
+
+    def result(self, *, timeout: int = DEFAULT_QPU_WAIT_S) -> dict[str, int]:
+        """Wait for a terminal status and return the counts (`raw_counts`).
+
+        Raises `LeonaClientError` if the run finished as `error`/`cancelled`
+        rather than `done` — asking for counts and getting none back silently
+        would read as an empty result rather than a failed one. `.status()`, or
+        `self._client.get_qpu_run(self.run_id)` directly, is how to inspect a
+        non-`done` terminal record instead of raising on it.
+        """
+        record = self._client.wait_for_qpu_run(self.run_id, wait_s=timeout)
+        status = record.get("status")
+        if status != "done":
+            detail = f": {record['error']}" if record.get("error") else ""
+            raise LeonaClientError(f"qpu run {self.run_id} finished as {status}{detail}")
+        return record.get("raw_counts") or {}
+
+
+#: `source_fingerprint`'s length ceiling on `POST /qpu/submissions`
+#: (`QpuSubmissionRequest`, `services/api/src/majorana_api/routes/qpu.py`) —
+#: mirrored as a literal for the same reason 0069 mirrors `TokenScope` into a
+#: migration: this needs to keep saying what it checked on the day it was
+#: written, not silently track a constant this package does not import (the
+#: route is behind `services/api`, which this package does not depend on).
+_MAX_SOURCE_FINGERPRINT_CHARS = 200
+
+#: How much of the QASM's SHA-256 to carry — enough to tell two different
+#: circuits apart at a glance without turning the fingerprint into another full
+#: hash, matching the four-character economy `TOKEN_TAIL_CHARS` uses for the
+#: same "recognisable, not exhaustive" purpose elsewhere in this product.
+_QASM_FINGERPRINT_HEX_CHARS = 16
+
+
+def _source_fingerprint(qasm: str) -> str:
+    """`local:<notebook id or "none">:<sha256 prefix of qasm>` — recognisable in
+    `GET /v1/qpu/runs` history as a LOCAL submission (the sandbox's own
+    `leona_submit` and Studio each write their own prefix), and stable for the
+    same circuit run twice from the same notebook, so a reader scanning their
+    history can tell "the same cell, run again" from "a different circuit".
+
+    Checked against `_MAX_SOURCE_FINGERPRINT_CHARS`: `"local:"` (6) + a uuid7
+    notebook id (36, the longest real id this product mints) + `":"` (1) +
+    `_QASM_FINGERPRINT_HEX_CHARS` (16) is 59 — well inside 200 — but a caller
+    could in principle have linked a notebook id of some other shape, so this
+    still truncates defensively rather than trusting the arithmetic silently.
+    """
+    notebook_id = get_linked_notebook() or "none"
+    digest = hashlib.sha256(qasm.encode("utf-8")).hexdigest()[:_QASM_FINGERPRINT_HEX_CHARS]
+    fingerprint = f"local:{notebook_id}:{digest}"
+    return fingerprint[:_MAX_SOURCE_FINGERPRINT_CHARS]
+
+
 def _size(num_qubits: int, shots: int) -> str:
     """Say "2 qubits, 1024 shots" the way the sandbox's own `leona_submit` does."""
     qubits = "1 qubit" if num_qubits == 1 else f"{num_qubits} qubits"
@@ -152,34 +231,57 @@ def leona_submit(
     *,
     label: str | None = None,
     device: str | None = None,
-) -> HardwareSubmission | None:
+) -> HardwareSubmission | HardwareRun | None:
     """The LOCAL half of `leona_submit` — importable as `from leona_notebooks
     import leona_submit` for a cell written and tested in a reader's own Jupyter,
     VS Code or Colab before it ever reaches Leona.
 
-    This never submits anything to hardware. Owner ruling ai-ops 362: "hardware
-    jobs come later under their own permission" — a personal access token may
-    read and start verified runs, not spend real QPU time, so nothing this
-    function does may either. Inside Leona's own sandbox, a DIFFERENT
-    `leona_submit` (Hardware lane) records the same request into the notebook's
-    execution report, which the web page then offers to run on a real device
-    with the reader's own IBM credential and an explicit confirmation
-    (`POST /v1/qpu/submissions`) — two functions with one name and (as far as
-    `circuit`/`shots`/`label` go) one contract, so a cell written against either
-    reads the same way in the other.
+    ## Whether this submits anything depends on the token's scope (ai-ops 376)
 
-    `device` is a LOCAL-ONLY convenience (which device to price, for the estimate
-    below) that the in-sandbox `leona_submit` does not accept — leave it unset in
-    a cell you also intend to run on Leona, or a copy that keeps `device=` will
-    raise `TypeError: unexpected keyword argument 'device'` there. Pricing a
-    specific device before uploading is still possible: call
-    `Leona.from_env().estimate(circuit, device=...)` instead.
+    Owner ruling ai-ops 362 deferred hardware access for a token to "under
+    their own permission"; ai-ops 376 option 2 is that permission. With
+    `LEONA_API_TOKEN` set to a token carrying the `hardware` scope, this prices
+    the circuit exactly as before and THEN submits it for real
+    (`POST /qpu/submissions`, the caller's own weekly hardware allowance),
+    returning a `HardwareRun` — a handle onto that real submission, with
+    `.status()`/`.result(timeout=...)`. A token without `hardware` — no token,
+    a `read`-only token, or a `run`-only token, none of which reach that route —
+    behaves exactly as this function always has: price, print, and return a
+    local-only `HardwareSubmission`. **There is no separate confirmation step
+    here** the way the in-product notebook page has one; minting a token with
+    `hardware` ticked IS the confirmation, matching the ruling's own wording,
+    "leona_submit in their own Jupyter or VS Code submits directly".
 
-    Never raises for an environment problem — a missing qiskit or an unset
-    `LEONA_API_TOKEN` — since the whole point of running this locally is to keep
-    iterating; both degrade to a printed message and `None`. An invalid circuit or
-    shot count still raises, the same way calling any other function with bad
-    arguments would.
+    Which of the two happened is never guessed from a token's shape or from
+    matching text in an error: it is read from the API's own answer. A
+    `token_scope_insufficient` refusal on the submission attempt (surfaced as
+    `LeonaClientError.reason`, not by pattern-matching the sentence) is the
+    authoritative "this token has no hardware scope" signal, and the ONLY one —
+    `GET /v1/tokens`, which would otherwise let a token read back its own
+    scopes, is itself refused to every token (`token_access.READ_DENIED`), so
+    there is no side channel this function could use to decide in advance.
+
+    Inside Leona's own sandbox, a DIFFERENT `leona_submit` (Hardware lane)
+    records a request into the notebook's execution report instead of
+    submitting outright, which the web page then offers to run with a device
+    picker, the estimate and allowance shown, and an explicit confirm step —
+    the product's own guided path, distinct from this direct one. The two
+    functions share one name and (as far as `circuit`/`shots`/`label` go) one
+    contract, so a cell written against either reads the same way in the other.
+
+    `device` is a LOCAL-ONLY convenience (which device to price and, with
+    `hardware` scope, submit to) that the in-sandbox `leona_submit` does not
+    accept — leave it unset in a cell you also intend to run on Leona, or a
+    copy that keeps `device=` will raise `TypeError: unexpected keyword
+    argument 'device'` there. The default is `DEFAULT_ESTIMATE_DEVICE_ID`
+    (IBM's free Open Plan queue); a paid device must be named explicitly.
+
+    Never raises for an environment problem — a missing qiskit, an unset
+    `LEONA_API_TOKEN`, or a failed price/submission call over the network —
+    since the whole point of running this locally is to keep iterating; all of
+    them degrade to a printed message and either `None` or a local-only
+    `HardwareSubmission`. An invalid circuit or shot count still raises, the
+    same way calling any other function with bad arguments would.
     """
     if not isinstance(circuit, str):
         try:
@@ -202,6 +304,7 @@ def leona_submit(
     submission = HardwareSubmission(qasm=qasm, shots=shots, num_qubits=num_qubits, label=label)
 
     token = os.environ.get("LEONA_API_TOKEN", "").strip()
+    lq: Leona | None = None
     if token:
         try:
             lq = Leona.from_env()
@@ -228,6 +331,40 @@ def leona_submit(
             "estimate here before you open this on Leona."
         )
 
+    if lq is not None:
+        # The one attempt this function makes at spending real money — see the
+        # docstring's "Whether this submits anything depends on the token's
+        # scope" section for why a refusal is read from `.reason`, never guessed.
+        try:
+            record = lq.qpu_submit(
+                device or DEFAULT_ESTIMATE_DEVICE_ID,
+                shots,
+                qasm,
+                _source_fingerprint(qasm),
+            )
+        except LeonaClientError as exc:
+            if exc.reason != "token_scope_insufficient":
+                # Some OTHER reason this token, with hardware scope or not,
+                # could not submit right now — no IBM credential connected, the
+                # deployment gate closed, the weekly allowance spent, an
+                # unknown device. Reported, not swallowed silently, but still
+                # never raised: the cell falls through to the local-only
+                # messages below exactly as a token-less run would.
+                print(f"leona_submit: could not submit to hardware ({exc})")  # noqa: T201
+        except Exception as exc:  # noqa: BLE001 - a submission failure must not stop the cell
+            print(f"leona_submit: could not submit to hardware ({exc})")  # noqa: T201
+        else:
+            print(  # noqa: T201
+                f"Submitted to {record.get('device_id')} as run {record.get('id')} "
+                f"({record.get('status')}) — charged to your weekly hardware allowance. "
+                "Call .status() or .result(timeout=...) on the returned object to check on it."
+            )
+            return HardwareRun(
+                run_id=str(record["id"]),
+                device_id=str(record.get("device_id") or ""),
+                _client=lq,
+            )
+
     linked = get_linked_notebook()
     if linked:
         print(  # noqa: T201
@@ -242,4 +379,10 @@ def leona_submit(
     return submission
 
 
-__all__ = ["DEFAULT_ESTIMATE_DEVICE_ID", "HardwareSubmission", "Leona", "leona_submit"]
+__all__ = [
+    "DEFAULT_ESTIMATE_DEVICE_ID",
+    "HardwareRun",
+    "HardwareSubmission",
+    "Leona",
+    "leona_submit",
+]
