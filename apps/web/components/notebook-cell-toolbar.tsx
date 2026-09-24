@@ -29,7 +29,16 @@ type NotebookActionCopy = {
  *
  * "Markdown cells get the structural buttons only" (the IDE lane brief): the status chip,
  * duration, Ask Nala and the raised-cell actions are all gated on `kind === "code"` here,
- * once, so no call site has to remember the rule.
+ * once, so no call site has to remember the rule. `onEditCell` and `onAskNalaToChange` are
+ * the exception — per-cell editing (ai-ops 375) offers both on a markdown cell too, since a
+ * reader edits and asks Nala to change a text cell exactly as they would a code one.
+ *
+ * `collapseStructural` (the read view, `notebook-view.tsx`) puts the structural group
+ * (add/move/duplicate/delete) behind one "More actions" disclosure instead of laying every
+ * button out flat: the read view now offers Edit and Ask Nala to change on every cell, and a
+ * flat toolbar with all of that plus the structural buttons reads as a wall of links. The
+ * bulk editor (`notebook-editor.tsx`) does not set it, so its existing flat layout — and the
+ * tests pinning it by accessible name — is unchanged.
  */
 export function NotebookCellToolbar({
   cellId,
@@ -43,6 +52,7 @@ export function NotebookCellToolbar({
   canMoveUp,
   canMoveDown,
   focused = false,
+  collapseStructural = false,
   onInsert,
   onMove,
   onDelete,
@@ -52,6 +62,8 @@ export function NotebookCellToolbar({
   onAskNala,
   onFixWithNala,
   onExplainError,
+  onEditCell,
+  onAskNalaToChange,
 }: {
   cellId: string;
   kind: "code" | "markdown";
@@ -67,6 +79,9 @@ export function NotebookCellToolbar({
   /** "Run to here" shows only on the focused cell, matching the plain-textarea editor
    * this replaces — a button on every cell would say "run" thirty times over one notebook. */
   focused?: boolean;
+  /** Wrap the structural group (add/move/duplicate/delete/convert) behind a "More
+   * actions" disclosure rather than laying it out flat. See the doc comment above. */
+  collapseStructural?: boolean;
   onInsert?: (kind: "code" | "markdown") => void;
   onMove?: (direction: "up" | "down") => void;
   onDelete?: () => void;
@@ -76,25 +91,14 @@ export function NotebookCellToolbar({
   onAskNala?: () => void;
   onFixWithNala?: () => void;
   onExplainError?: () => void;
+  /** Per-cell editing (ai-ops 375): turns this cell into its inline editor. Any kind. */
+  onEditCell?: () => void;
+  /** "as well as by Nala": starts a chat message about changing this cell. Any kind. */
+  onAskNalaToChange?: () => void;
 }) {
   const isCode = kind === "code";
-  return (
-    <div className="mj-notebook-ide-toolbar mj-library-row-actions" role="group" aria-label={ideCopy.toolbarLabel(cellId)}>
-      {isCode && chip ? (
-        <span className="mj-notebook-ide-chip" data-chip={chip}>
-          {ideCopy.chip[chip]}
-        </span>
-      ) : null}
-      {isCode && durationMs != null ? (
-        <span className="mj-notebook-ide-duration" title={ideCopy.durationHint}>
-          {ideCopy.duration(durationMs)}
-        </span>
-      ) : null}
-      {isCode && onRunToHere && focused ? (
-        <button type="button" className="mj-notebook-ide-run-to-here" disabled={busy} onClick={onRunToHere} title={ideCopy.runToHereHint}>
-          {copy.runToHere}
-        </button>
-      ) : null}
+  const structuralButtons = (
+    <>
       {onInsert ? (
         <>
           <button type="button" disabled={busy} onClick={() => onInsert("markdown")}>
@@ -130,9 +134,40 @@ export function NotebookCellToolbar({
           {copy.editDelete}
         </button>
       ) : null}
+    </>
+  );
+  const hasStructural = Boolean(onInsert || onMove || onDuplicate || onConvert || onDelete);
+  return (
+    <div className="mj-notebook-ide-toolbar mj-library-row-actions" role="group" aria-label={ideCopy.toolbarLabel(cellId)}>
+      {isCode && chip ? (
+        <span className="mj-notebook-ide-chip" data-chip={chip}>
+          {ideCopy.chip[chip]}
+        </span>
+      ) : null}
+      {isCode && durationMs != null ? (
+        <span className="mj-notebook-ide-duration" title={ideCopy.durationHint}>
+          {ideCopy.duration(durationMs)}
+        </span>
+      ) : null}
+      {isCode && onRunToHere && focused ? (
+        <button type="button" className="mj-notebook-ide-run-to-here" disabled={busy} onClick={onRunToHere} title={ideCopy.runToHereHint}>
+          {copy.runToHere}
+        </button>
+      ) : null}
+      {onEditCell ? (
+        <button type="button" disabled={busy} onClick={onEditCell}>
+          {ideCopy.editCell}
+        </button>
+      ) : null}
+      {!collapseStructural ? structuralButtons : null}
       {isCode && onAskNala ? (
         <button type="button" disabled={busy} onClick={onAskNala} title={ideCopy.askNalaHint}>
           {ideCopy.askNala}
+        </button>
+      ) : null}
+      {onAskNalaToChange ? (
+        <button type="button" disabled={busy} onClick={onAskNalaToChange} title={ideCopy.askNalaToChangeHint}>
+          {ideCopy.askNalaToChange}
         </button>
       ) : null}
       {isCode && raised && onFixWithNala ? (
@@ -144,6 +179,12 @@ export function NotebookCellToolbar({
         <button type="button" disabled={busy} onClick={onExplainError}>
           {copy.actionExplainError}
         </button>
+      ) : null}
+      {collapseStructural && hasStructural ? (
+        <details className="mj-notebook-ide-toolbar-more mj-notebooks-disclosure">
+          <summary>{ideCopy.cellMoreActions}</summary>
+          <div className="mj-notebook-toolbar-options">{structuralButtons}</div>
+        </details>
       ) : null}
     </div>
   );

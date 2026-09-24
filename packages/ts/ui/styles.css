@@ -15020,6 +15020,19 @@ html:not([data-auth="in"]) .mj-auth-slot[data-auth-slot="in"] {
 .mj-notebook-cell[data-kind="markdown"] {
   border-left-color: var(--border-0);
 }
+/* Per-cell editing (ai-ops 375): the read view's inline editor reuses `.mj-notebook-cell`
+   itself (same card, same read/edit width) rather than a separate shell, so nothing
+   shifts when a cell turns into its editor. This is the one visual difference. */
+.mj-notebook-cell[data-editing="true"] {
+  border-left-color: var(--accent);
+  border-color: var(--accent);
+}
+.mj-notebook-cell-edit-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-2);
+  margin-top: var(--sp-3);
+}
 .mj-notebook-cell-code {
   /* Reuses .mj-code-body's font/padding — this class exists so a cell-specific
      override (e.g. a max-height for very long generated cells) has somewhere
