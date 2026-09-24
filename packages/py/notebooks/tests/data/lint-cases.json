@@ -7,7 +7,9 @@
     "forbidden-import": "error",
     "syntax-error": "error",
     "assert-always-true": "error",
-    "assertion-swallowed": "error"
+    "assertion-swallowed": "error",
+    "data-meas-without-measure-all": "error",
+    "instructionset-has-no-attribute": "error"
   },
   "cases": [
     {"name": "chained gate assigned", "source": "qc = QuantumCircuit(1).h(0)\n", "expect": [{"code": "gate-returns-instructions", "line": 1}]},
@@ -49,6 +51,16 @@
     {"name": "forbidden import", "python_only": true, "source": "import os\n", "expect": [{"code": "forbidden-import", "line": 1}]},
     {"name": "forbidden from-import", "python_only": true, "source": "from subprocess import run\n", "expect": [{"code": "forbidden-import", "line": 1}]},
     {"name": "allowed imports", "python_only": true, "source": "import numpy as np\nfrom qiskit import QuantumCircuit\nimport matplotlib.pyplot as plt\n", "expect": []},
-    {"name": "syntax error", "python_only": true, "source": "def f(:\n    pass\n", "expect": [{"code": "syntax-error", "line": 1}]}
+    {"name": "syntax error", "python_only": true, "source": "def f(:\n    pass\n", "expect": [{"code": "syntax-error", "line": 1}]},
+    {"name": "c_if removed", "source": "qc.x(2).c_if(1, 1)\n", "expect": [{"code": "removed-qiskit-api", "line": 1}]},
+    {"name": "c_if removed regardless of receiver", "source": "instr = qc.h(0)\ninstr.c_if(0, 1)\n", "expect": [{"code": "removed-qiskit-api", "line": 2}]},
+    {"name": "QFTGate inverse keyword removed", "source": "from qiskit.circuit.library import QFTGate\nqft = QFTGate(3, inverse=True)\n", "expect": [{"code": "removed-qiskit-api", "line": 2}]},
+    {"name": "QFTGate do_swaps keyword removed", "source": "from qiskit.circuit.library import QFTGate\nqft = QFTGate(3, do_swaps=False)\n", "expect": [{"code": "removed-qiskit-api", "line": 2}]},
+    {"name": "QFTGate with only num_qubits is fine", "source": "from qiskit.circuit.library import QFTGate\nqft = QFTGate(3)\n", "expect": []},
+    {"name": "QFTGate.inverse() method is fine", "source": "from qiskit.circuit.library import QFTGate\nqft = QFTGate(3).inverse()\n", "expect": []},
+    {"name": "the old QFT class still accepts inverse (deprecated, not an error)", "source": "from qiskit.circuit.library import QFT\nqft = QFT(3, inverse=True)\n", "expect": []},
+    {"name": "chained gate call attribute access is certain to raise", "source": "QuantumCircuit(1).h(0).num_qubits\n", "expect": [{"code": "instructionset-has-no-attribute", "line": 1}]},
+    {"name": "chained gate call to a real InstructionSet attribute is fine", "source": "QuantumCircuit(1).h(0).instructions\n", "expect": []},
+    {"name": "chained gate call to a real InstructionSet attribute is fine across cells", "preceding": ["qc = QuantumCircuit(1)\n"], "source": "qc.h(0).qargs\n", "expect": []}
   ]
 }

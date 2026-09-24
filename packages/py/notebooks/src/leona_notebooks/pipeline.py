@@ -21,9 +21,10 @@ from leona_notebooks.execution import ExecutionReport
 from leona_notebooks.answer_audit import AnswerAudit, audit_answers, demote_unsound_answers
 from leona_notebooks.error_hints import hints_for
 from leona_notebooks.grader_audit import GraderAudit, audit_graders, demote_unsound_graders
-from leona_notebooks.lint import DEFINITE, lint_cell
+from leona_notebooks.lint import DEFINITE, lint_cell, lint_spec
 from leona_notebooks.prompts import NotebookOutline, NotebookReview, RepairContext
 from leona_notebooks.revision import RevisionError, RevisionPlan, apply_revision
+from leona_notebooks.sandbox_program import _default_guard, prepare_cell_source
 from leona_notebooks.source import SourceParseError, parse_source, render_source
 from leona_notebooks.spec import Cell, NotebookSpec, Seed
 from leona_notebooks.templates import check_structure
@@ -155,9 +156,10 @@ def _preceding_code(spec: NotebookSpec, cell_id: str) -> list[tuple[str, str]]:
 
 
 def _lint_notes(spec: NotebookSpec, cell_id: str) -> tuple[str, ...]:
-    cell = spec.cell_by_id(cell_id)
-    preceding = [source for _, source in _preceding_code(spec, cell_id)]
-    return tuple(finding.render() for finding in lint_cell(cell.source, preceding))
+    # `lint_spec`, not a direct `lint_cell(cell.source, preceding)` call: some findings
+    # (`data-meas-without-measure-all`) are a fact about the WHOLE notebook, not just the
+    # cells before this one -- see `lint.lint_spec` and `lint._never_creates_meas_register`.
+    return tuple(finding.render() for finding in lint_spec(spec).get(cell_id, []))
 
 
 def _repair_context(
@@ -199,27 +201,55 @@ def _first_definite_finding(
     checks — where `failed_fixes` carries whatever this cell has already failed on, so a
     second guard-caught repair is told the first one is not a fix to repeat).
     """
-    preceding: list[str] = []
+    # One `lint_spec` call over the whole notebook, not a hand-rolled per-cell loop: some
+    # findings (`data-meas-without-measure-all`) are certain only when NO cell anywhere in
+    # the notebook creates a "meas"-named register, which a loop re-deriving `preceding`
+    # cell by cell cannot see (see `lint._never_creates_meas_register`).
+    all_findings = lint_spec(spec)
     for cell in spec.cells:
-        if not cell.is_code:
+        if not cell.is_code or not cell.runs_in_sandbox:
             continue
-        if cell.runs_in_sandbox:
-            findings = lint_cell(cell.source, preceding)
-            definite = [f for f in findings if f.code in DEFINITE]
-            if definite:
+        findings = all_findings.get(cell.id, [])
+        definite = [f for f in findings if f.code in DEFINITE]
+        if definite:
+            return RepairContext(
+                cell_id=cell.id,
+                cell_source=cell.source,
+                error_name=definite[0].code,
+                error_value=definite[0].message,
+                traceback="",
+                preceding_sources=_preceding_code(spec, cell.id),
+                lint_notes=tuple(f.render() for f in findings),
+                hints=hints_for(definite[0].code, definite[0].message),
+                failed_fixes=tuple((failed_fixes or {}).get(cell.id, ())),
+                before_running=True,
+            )
+        # The sandbox's own guard, run exactly as `compose_notebook_program` runs it (on
+        # `cell.source`, for every code cell that will run). A refusal is certain to fail
+        # the WHOLE notebook, not the one cell: every cell comes back `skipped` and nothing
+        # executes. The linter sees only the import list; measured 2026-09-24, two of 24
+        # real notebooks were lost this way to `print(__import__("qiskit").__version__)`,
+        # which no lint rule covers, and the post-run fallback could not name a cell for it.
+        _prepared, skip_reason = prepare_cell_source(cell)
+        if skip_reason is None:
+            refused = _default_guard(cell.source)
+            if refused:
+                detail = ", ".join(refused)
                 return RepairContext(
                     cell_id=cell.id,
                     cell_source=cell.source,
-                    error_name=definite[0].code,
-                    error_value=definite[0].message,
+                    error_name="SandboxGuardRefusal",
+                    error_value=(
+                        "the sandbox's safety guard refuses this cell, so nothing in the "
+                        f"notebook would run: {detail}"
+                    ),
                     traceback="",
                     preceding_sources=_preceding_code(spec, cell.id),
                     lint_notes=tuple(f.render() for f in findings),
-                    hints=hints_for(definite[0].code, definite[0].message),
+                    hints=hints_for("SandboxGuardRefusal", detail),
                     failed_fixes=tuple((failed_fixes or {}).get(cell.id, ())),
                     before_running=True,
                 )
-        preceding.append(cell.source)
     return None
 
 

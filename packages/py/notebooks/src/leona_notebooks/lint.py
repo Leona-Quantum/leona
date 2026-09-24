@@ -139,13 +139,111 @@ _REMOVED_MODULES: dict[str, str] = {
 #: Removed METHODS, matched on the attribute name at any receiver. Both names are
 #: distinctive enough that a false alarm needs an object of some other library with the
 #: same method, which nothing this sandbox imports has.
+#:
+#: `c_if` verified removed on qiskit 2.5.2: `InstructionSet` no longer has it
+#: (`AttributeError: 'InstructionSet' object has no attribute 'c_if'`; `dir(InstructionSet)`
+#: is only `add`, `cargs`, `instructions`, `inverse`, `qargs`). The replacement,
+#: `with qc.if_test((clbit, value)):`, was probed too, and probing it surfaced a SECOND
+#: trap the message below exists to head off: `StatevectorSampler` cannot run the circuit
+#: `if_test` produces (`QiskitError: StatevectorSampler cannot handle ControlFlowOp`,
+#: reproduced on qiskit 2.5.2) — a repair that only swaps the method name still fails, one
+#: cell later, on a notebook whose header says `execution: local-statevector`.
+#: `AerSimulator().run(qc, shots=...).result().get_counts()` was verified to run the same
+#: circuit and return counts.
 _REMOVED_METHODS: dict[str, str] = {
     "bind_parameters": "`bind_parameters` was removed in Qiskit 1.0. Use `assign_parameters`.",
+    "c_if": (
+        "`.c_if(clbit, value)` was removed from `InstructionSet` in Qiskit 2. The replacement "
+        "is a context manager: `with qc.if_test((clbit, value)): qc.x(target)` (a bare int "
+        "clbit index works, exactly like the old `.c_if(index, value)`). But a circuit that "
+        "uses `if_test` cannot run on `StatevectorSampler` "
+        "(`QiskitError: StatevectorSampler cannot handle ControlFlowOp`) — run it with "
+        "`AerSimulator` instead: `from qiskit_aer import AerSimulator; "
+        "AerSimulator().run(qc, shots=...).result().get_counts()`."
+    ),
 }
+
+#: `QFTGate.__init__` takes only `num_qubits` on qiskit 2.5.2 (verified:
+#: `inspect.signature(QFTGate.__init__)` is `(self, num_qubits: int)`). Any other keyword —
+#: `inverse`, `do_swaps`, `approximation_degree` — belonged to the OLD `QFT` class
+#: (`qiskit.circuit.library.QFT`, still importable in 2.5.2 but deprecated since 2.1 and
+#: removed in 3.0) and raises `TypeError: QFTGate.__init__() got an unexpected keyword
+#: argument '...'`. Verified: `QFTGate(n).inverse()` is exactly the adjoint of `QFTGate(n)`
+#: (bit-for-bit equal, not just equal up to global phase, for n in 1..4).
+_QFTGATE_VALID_KEYWORDS: frozenset[str] = frozenset({"num_qubits"})
 
 #: Constructors and methods that need a circuit WITHOUT measurements.
 _STATE_BUILDERS: frozenset[str] = frozenset({"Statevector", "Operator", "DensityMatrix"})
 _STATE_METHODS: frozenset[str] = frozenset({"from_instruction", "evolve"})
+
+#: `InstructionSet`'s real public API on qiskit 2.5.2 (`dir(InstructionSet)`, names that
+#: don't start with `_`): `add`, `cargs`, `instructions`, `inverse`, `qargs`. `.c_if` is
+#: kept in this allowlist too, even though it is NOT part of that API any more, so the
+#: INNER gate call in `qc.h(0).c_if(...)` stays exempt from `instructionset-has-no-attribute`
+#: — the OUTER `.c_if(...)` call already gets the specific, correctly-remediated
+#: `removed-qiskit-api` finding (`_REMOVED_METHODS["c_if"]`), and this check's own generic
+#: "then use `qc.c_if`" advice would be wrong: `QuantumCircuit` does not have `.c_if` either.
+_INSTRUCTION_SET_ATTRS: frozenset[str] = frozenset(
+    {"add", "cargs", "instructions", "inverse", "qargs", "c_if"}
+)
+
+
+#: Calls that build a circuit from OpenQASM text (`qasm2.loads`, `qasm3.load`,
+#: `QuantumCircuit.from_qasm_str`, ...): matched by method name alone, so an unrelated
+#: `json.loads` also stands the rule down, which is the safe direction for it.
+_QASM_LOADERS = frozenset({"loads", "load", "from_qasm_str", "from_qasm_file"})
+
+
+def _never_creates_meas_register(sources: Iterable[str]) -> bool:
+    """Whether NO code cell in `sources` could ever create a classical register literally
+    named "meas" — the only two ways Qiskit does that are `measure_all()` (any receiver,
+    in place or not: even `inplace=False` still names the COPY's register "meas") and an
+    explicit `ClassicalRegister(size, "meas")` / `ClassicalRegister(size, name="meas")`.
+
+    Scoped to the WHOLE notebook (every code cell, not just the ones before the cell being
+    linted) on purpose: the read that raised `AttributeError: 'DataBin' object has no
+    attribute 'meas'` in production lived inside a helper function (`def run_and_count(qc):
+    ... return job.result()[0].data.meas...`) defined in one cell and called from another
+    with a circuit measured by plain `.measure(...)`, not `measure_all()` — the mistake is
+    provable only by knowing NO cell anywhere creates a "meas" register, since a per-cell,
+    preceding-only scan cannot see into a function body's own argument at call time. A cell
+    that fails to parse is treated as "might create one": the safe direction, since this
+    function existing to say "certain to raise" means it must never be fooled by code it
+    could not read into saying so.
+    """
+    for source in sources:
+        try:
+            tree = ast.parse(source)
+        except SyntaxError:
+            return False
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Call):
+                continue
+            func = node.func
+            if isinstance(func, ast.Attribute) and func.attr == "measure_all":
+                return False
+            # A circuit read from OpenQASM text carries whatever registers the text
+            # declares, "meas" included, and the text is not in the notebook's code.
+            if (isinstance(func, ast.Attribute) and func.attr in _QASM_LOADERS) or (
+                isinstance(func, ast.Name) and func.id in _QASM_LOADERS
+            ):
+                return False
+            is_classical_register = (
+                isinstance(func, ast.Name) and func.id == "ClassicalRegister"
+            ) or (isinstance(func, ast.Attribute) and func.attr == "ClassicalRegister")
+            if not is_classical_register:
+                continue
+            for index, arg in enumerate(node.args):
+                # A name that is not a string literal (a variable, an f-string) might be
+                # "meas": the safe reading, since this function may only say "never".
+                if index == 1 and not (isinstance(arg, ast.Constant) and arg.value != "meas"):
+                    return False
+            for kw in node.keywords:
+                if kw.arg == "name" and not (
+                    isinstance(kw.value, ast.Constant) and kw.value.value != "meas"
+                ):
+                    return False
+    return True
 
 
 @dataclass(frozen=True)
@@ -181,6 +279,8 @@ DEFINITE: frozenset[str] = frozenset(
         "measured-circuit-has-no-statevector",
         "forbidden-import",
         "syntax-error",
+        "data-meas-without-measure-all",
+        "instructionset-has-no-attribute",
     }
 )
 
@@ -220,9 +320,21 @@ def _keyword_is_false(call: ast.Call, name: str) -> bool:
 
 
 class _Checker(ast.NodeVisitor):
-    def __init__(self, *, report: bool, allowed: frozenset[str] | None) -> None:
+    def __init__(
+        self,
+        *,
+        report: bool,
+        allowed: frozenset[str] | None,
+        deny_meas_databin: bool = False,
+    ) -> None:
         self.report = report
         self.allowed = allowed
+        #: True only when NO code cell in the whole notebook could ever create a classical
+        #: register named "meas" (`_never_creates_meas_register`) — gates
+        #: `data-meas-without-measure-all`, which is a whole-notebook fact, not a per-cell
+        #: one, so this is computed once by the caller and threaded through, never derived
+        #: from what this one cell (or its preceding cells) happens to contain.
+        self.deny_meas_databin = deny_meas_databin
         #: name -> measured? for every name known to hold a QuantumCircuit.
         self.circuits: dict[str, bool] = {}
         self.parents: dict[ast.AST, ast.AST] = {}
@@ -366,7 +478,51 @@ class _Checker(ast.NodeVisitor):
                 and func.value.id == "qiskit"
             ):
                 self._emit("removed-qiskit-api", node, _REMOVED_FROM["qiskit"]["execute"])
+        self._check_qftgate_keywords(node, func)
         self._check_state_of_measured(node)
+        self.generic_visit(node)
+
+    def _check_qftgate_keywords(self, node: ast.Call, func: ast.expr) -> None:
+        is_qftgate = (isinstance(func, ast.Name) and func.id == "QFTGate") or (
+            isinstance(func, ast.Attribute) and func.attr == "QFTGate"
+        )
+        if not is_qftgate:
+            return
+        for kw in node.keywords:
+            if kw.arg is not None and kw.arg not in _QFTGATE_VALID_KEYWORDS:
+                self._emit(
+                    "removed-qiskit-api",
+                    node,
+                    f"`QFTGate.__init__` takes only `num_qubits` on qiskit 2.5.2 — "
+                    f"`{kw.arg}` raises `TypeError: QFTGate.__init__() got an unexpected "
+                    f"keyword argument '{kw.arg}'`. For the inverse QFT use "
+                    "`QFTGate(n).inverse()` (verified exactly the adjoint of `QFTGate(n)`, "
+                    "not just equal up to global phase). `do_swaps`, `approximation_degree` "
+                    "and `inverse` belonged to the OLD `qiskit.circuit.library.QFT` class, "
+                    "which still exists in 2.5.2 but is deprecated (removed in Qiskit 3.0) — "
+                    "prefer `QFTGate`.",
+                )
+                return
+
+    def visit_Attribute(self, node: ast.Attribute) -> None:
+        if (
+            self.deny_meas_databin
+            and node.attr == "meas"
+            and isinstance(node.value, ast.Attribute)
+            and node.value.attr == "data"
+        ):
+            self._emit(
+                "data-meas-without-measure-all",
+                node,
+                "`.data.meas` only exists when the circuit was measured with `measure_all()`, "
+                'which creates a classical register literally named "meas". No cell in this '
+                'notebook calls `measure_all()` or creates a register named "meas", so this '
+                "is certain to raise `AttributeError: 'DataBin' object has no attribute "
+                "'meas'`. Read the result by the classical register's own name instead — "
+                '`QuantumCircuit(n, m)` creates a register called `"c"` by default (so does '
+                "plain `.measure(...)` on a circuit built that way), read as "
+                "`.data.c.get_counts()`.",
+            )
         self.generic_visit(node)
 
     def _check_gate_value(self, node: ast.Call, func: ast.Attribute) -> None:
@@ -378,7 +534,23 @@ class _Checker(ast.NodeVisitor):
         if isinstance(parent, ast.Expr):
             return  # a statement: the result is thrown away, which is correct
         if isinstance(parent, ast.Attribute):
-            return  # `qc.h(0).c_if(...)`: using the InstructionSet on purpose
+            if parent.attr in _INSTRUCTION_SET_ATTRS:
+                return  # a real InstructionSet attribute, e.g. `qc.h(0).instructions`
+            shown = ast.unparse(node)
+            if len(shown) > 60:
+                shown = shown[:57] + "..."
+            self._emit(
+                "instructionset-has-no-attribute",
+                parent,
+                f"`{shown}.{parent.attr}` reads `.{parent.attr}` off the InstructionSet "
+                f"that `.{func.attr}(...)` returns, not the circuit. InstructionSet's real "
+                "attributes are `add`, `cargs`, `instructions`, `inverse` and `qargs` — "
+                f"nothing named `{parent.attr}` — so this is certain to raise "
+                f"`AttributeError: 'InstructionSet' object has no attribute '{parent.attr}'`. "
+                "Create the circuit first (for example `qc = QuantumCircuit(1)`), apply the "
+                f"gate on its own line (`qc.{func.attr}(0)`), then use `qc.{parent.attr}`.",
+            )
+            return
         shown = ast.unparse(node)
         if len(shown) > 60:
             shown = shown[:57] + "..."
@@ -500,15 +672,27 @@ _SEVERITY: dict[str, Severity] = {
     "syntax-error": "error",
     "assert-always-true": "error",
     "assertion-swallowed": "error",
+    "data-meas-without-measure-all": "error",
+    "instructionset-has-no-attribute": "error",
 }
 
 
-def lint_cell(source: str, preceding: Iterable[str] = ()) -> list[Diagnostic]:
+def lint_cell(
+    source: str,
+    preceding: Iterable[str] = (),
+    *,
+    deny_meas_databin: bool = False,
+) -> list[Diagnostic]:
     """Findings for one code cell, given the code cells that run before it, in order.
 
     Earlier cells are read only for the names they bind; their own mistakes are not
     reported here (lint each cell with its own call). An earlier cell that does not parse
     contributes nothing, rather than stopping the check of this one.
+
+    `deny_meas_databin` gates `data-meas-without-measure-all` — a WHOLE-NOTEBOOK fact
+    (`_never_creates_meas_register`), not something derivable from `source` and `preceding`
+    alone, so it defaults to False (the rule off) for any caller that has not computed it.
+    `lint_spec` computes it once, over every cell, and passes it to each call.
     """
     allowed = _allowed_imports()
     state = _Checker(report=False, allowed=allowed)
@@ -529,7 +713,7 @@ def lint_cell(source: str, preceding: Iterable[str] = ()) -> list[Diagnostic]:
                 message=f"This cell is not valid Python: {exc.msg}.",
             )
         ]
-    checker = _Checker(report=True, allowed=allowed)
+    checker = _Checker(report=True, allowed=allowed, deny_meas_databin=deny_meas_databin)
     checker.circuits = dict(state.circuits)
     checker.run(tree)
     checker.found.sort(key=lambda d: (d.line, d.col, d.code))
@@ -541,13 +725,16 @@ def lint_spec(spec) -> dict[str, list[Diagnostic]]:
     Cells with none are left out."""
     findings: dict[str, list[Diagnostic]] = {}
     preceding: list[str] = []
+    deny_meas_databin = _never_creates_meas_register(
+        cell.source for cell in spec.cells if cell.is_code
+    )
     for cell in spec.cells:
         if not cell.is_code:
             continue
         if not cell.runs_in_sandbox:
             preceding.append(cell.source)
             continue
-        found = lint_cell(cell.source, preceding)
+        found = lint_cell(cell.source, preceding, deny_meas_databin=deny_meas_databin)
         if found:
             findings[cell.id] = found
         preceding.append(cell.source)
