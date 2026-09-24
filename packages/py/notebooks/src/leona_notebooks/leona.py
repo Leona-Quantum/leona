@@ -144,9 +144,9 @@ class HardwareSubmission:
 
 
 def _size(num_qubits: int, shots: int) -> str:
-    """ "2 qubits, 1,024 shots": the same words the sandbox's `leona_submit` uses."""
+    """Say "2 qubits, 1024 shots" the way the sandbox's own `leona_submit` does."""
     qubits = "1 qubit" if num_qubits == 1 else f"{num_qubits} qubits"
-    return f"{qubits}, {'1 shot' if shots == 1 else f'{shots:,} shots'}"
+    return f"{qubits}, {'1 shot' if shots == 1 else f'{shots} shots'}"
 
 
 def leona_submit(

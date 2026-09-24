@@ -163,6 +163,9 @@ def test_leona_submit_with_a_circuit_returns_qasm_and_num_qubits(
     out = capsys.readouterr().out
     assert "Set LEONA_API_TOKEN" in out
     assert "This ran locally only" in out
+    # The sandbox's own leona_submit says "2 qubits, 256 shots"; the local one matches it.
+    assert out.startswith("2 qubits, 256 shots. ")
+    assert "qubit(s)" not in out
 
 
 def test_leona_submit_with_a_qasm_string_does_not_need_qiskit_for_parsing_the_input_type(
@@ -173,6 +176,7 @@ def test_leona_submit_with_a_qasm_string_does_not_need_qiskit_for_parsing_the_in
     result = leona_submit(qasm, shots=10)
     assert result.num_qubits == 1
     assert result.qasm == qasm
+    assert capsys.readouterr().out.startswith("1 qubit, 10 shots. ")
 
 
 def test_leona_submit_refuses_openqasm_2_with_a_clear_message() -> None:
