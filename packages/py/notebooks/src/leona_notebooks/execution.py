@@ -11,7 +11,16 @@ from majorana_contracts.notebooks import (
     CellResult,
     CellStatus,
     ExecutionReport,
+    HardwareRequest,
     OutputMime,
 )
 
-__all__ = ["CellError", "CellOutput", "CellResult", "CellStatus", "ExecutionReport", "OutputMime"]
+__all__ = [
+    "CellError",
+    "CellOutput",
+    "CellResult",
+    "CellStatus",
+    "ExecutionReport",
+    "HardwareRequest",
+    "OutputMime",
+]

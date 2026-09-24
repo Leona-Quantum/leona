@@ -31,7 +31,22 @@ from uuid import uuid4
 from majorana_sandbox.guard import check_python_code
 from majorana_sandbox.spec import MAX_OUTPUT_BYTES, ExecutionSpec
 
-from leona_notebooks.execution import CellError, CellOutput, CellResult, ExecutionReport
+from leona_notebooks import hardware
+from leona_notebooks.execution import (
+    CellError,
+    CellOutput,
+    CellResult,
+    ExecutionReport,
+    HardwareRequest,
+)
+from leona_notebooks.hardware import (
+    DEFAULT_SHOTS,
+    MAX_HARDWARE_QASM_TOTAL_CHARS,
+    MAX_HARDWARE_REQUEST_LABEL_CHARS,
+    MAX_HARDWARE_REQUEST_QASM_CHARS,
+    MAX_HARDWARE_REQUEST_SHOTS,
+    MAX_HARDWARE_REQUESTS_PER_NOTEBOOK,
+)
 from leona_notebooks.spec import Cell, NotebookSpec
 
 #: Default share of the 1 MiB evidence sidecar that figures may occupy.
@@ -239,8 +254,111 @@ def _ln_harvest_figures(cell):
     except _ln_exception as exc:
         _ln_add_text(cell, "text/plain", "<figure capture failed: " + _ln_type(exc).__name__ + ">")
 
+import re as _ln_re
+_ln_hw_cfg = {"max_shots": __HW_MAX_SHOTS__, "max_chars": __HW_MAX_CHARS__, "max_total": __HW_MAX_TOTAL__, "max_requests": __HW_MAX_REQUESTS__, "max_label": __HW_MAX_LABEL__}
+_ln_hw_state = {"count": 0, "chars": 0}
+_ln_hw_header = _ln_re.compile(__HW_RE_HEADER__, _ln_re.S)
+_ln_hw_qubit_array = _ln_re.compile(__HW_RE_QUBIT_ARRAY__)
+_ln_hw_qubit_single = _ln_re.compile(__HW_RE_QUBIT_SINGLE__)
+_ln_hw_qreg = _ln_re.compile(__HW_RE_QREG__)
+_ln_hw_physical = _ln_re.compile(__HW_RE_PHYSICAL__)
+_ln_hw_measure = _ln_re.compile(__HW_RE_MEASURE__)
+
+def _ln_hw_sentence(qubits, shots):
+    q = "1 qubit" if qubits == 1 else _ln_str(qubits) + " qubits"
+    s = "1 shot" if shots == 1 else _ln_str(shots) + " shots"
+    return "Hardware request recorded: " + q + ", " + s + ". Choose a device under this cell to run it."
+
+class _LnHardwareRequest:
+    __slots__ = ("qasm", "shots", "num_qubits", "label")
+    def __init__(self, qasm, shots, num_qubits, label):
+        self.qasm, self.shots, self.num_qubits, self.label = qasm, shots, num_qubits, label
+    def __repr__(self):
+        return _ln_hw_sentence(self.num_qubits, self.shots)
+
+def _ln_hw_qubit_count(text):
+    declared = 0
+    for n in _ln_hw_qubit_array.findall(text):
+        declared += _ln_int(n)
+    declared += _ln_len(_ln_hw_qubit_single.findall(text))
+    for n in _ln_hw_qreg.findall(text):
+        declared += _ln_int(n)
+    return declared + _ln_len(_ln_builtins.set(_ln_hw_physical.findall(text)))
+
+_ln_no_measure = "This circuit measures nothing, so a device would return no counts. Add measurements, for example qc.measure_all()."
+
+def _ln_hw_from_text(text):
+    header = _ln_hw_header.match(text)
+    if header is not None and header.group(1) == "2":
+        raise _ln_builtins.ValueError("This is OpenQASM 2. leona_submit sends OpenQASM 3: pass the QuantumCircuit itself, or load the text with qiskit.qasm2.loads first.")
+    if header is None or header.group(1) != "3":
+        raise _ln_builtins.ValueError("An OpenQASM string must start with 'OPENQASM 3;'.")
+    qubits = _ln_hw_qubit_count(text)
+    if qubits < 1:
+        raise _ln_builtins.ValueError("This circuit has no qubits, so there is nothing to run.")
+    if _ln_hw_measure.search(text) is None:
+        raise _ln_builtins.ValueError(_ln_no_measure)
+    return text, qubits
+
+def _ln_hw_from_circuit(circuit, qasm3):
+    if circuit.num_qubits < 1:
+        raise _ln_builtins.ValueError("This circuit has no qubits, so there is nothing to run.")
+    if circuit.parameters:
+        names = ", ".join(_ln_builtins.sorted(p.name for p in circuit.parameters)[:5])
+        raise _ln_builtins.ValueError(f"This circuit still has unbound parameters ({names}). Bind them with assign_parameters before submitting.")
+    if not _ln_builtins.any(item.operation.name == "measure" for item in circuit.data):
+        raise _ln_builtins.ValueError(_ln_no_measure)
+    try:
+        qasm = qasm3.dumps(circuit)
+    except _ln_exception as exc:
+        raise _ln_builtins.ValueError(f"This circuit could not be written as OpenQASM 3 ({_ln_type(exc).__name__}: {exc}). Nothing was recorded.") from exc
+    return qasm, _ln_int(circuit.num_qubits)
+
+def _ln_submit(circuit, shots=__HW_DEFAULT_SHOTS__, *, label=None):
+    # Records a request on the cell that is running; sends nothing anywhere. Mirrors
+    # `leona_notebooks.hardware.hardware_request` + `HardwareLedger.add`, check for
+    # check and message for message (test_hardware.py compares the two).
+    cell = _ln_state["cells"][-1] if _ln_state["cells"] else None
+    if cell is None:
+        raise _ln_builtins.RuntimeError("leona_submit can only be called from a notebook cell.")
+    if _ln_isinstance(shots, _ln_builtins.bool) or not _ln_isinstance(shots, _ln_int):
+        raise _ln_builtins.TypeError(f"shots must be a whole number, not {_ln_type(shots).__name__}.")
+    if shots < 1 or shots > _ln_hw_cfg["max_shots"]:
+        raise _ln_builtins.ValueError(f"shots must be between 1 and {_ln_hw_cfg['max_shots']:,}; got {shots}.")
+    if label is not None:
+        if not _ln_isinstance(label, _ln_str):
+            raise _ln_builtins.TypeError(f"label must be text, not {_ln_type(label).__name__}.")
+        if _ln_len(label) > _ln_hw_cfg["max_label"]:
+            raise _ln_builtins.ValueError(f"label is {_ln_len(label)} characters; the limit is {_ln_hw_cfg['max_label']}.")
+    if _ln_isinstance(circuit, _ln_str):
+        qasm, qubits = _ln_hw_from_text(circuit)
+    else:
+        try:
+            qiskit = _ln_builtins.__import__("qiskit", None, None, ["QuantumCircuit", "qasm3"])
+            circuit_type = qiskit.QuantumCircuit
+        except _ln_exception:
+            qiskit, circuit_type = None, None
+        if circuit_type is None or not _ln_isinstance(circuit, circuit_type):
+            raise _ln_builtins.TypeError(f"leona_submit takes a Qiskit QuantumCircuit or an OpenQASM 3 string, not {_ln_type(circuit).__name__}.")
+        qasm, qubits = _ln_hw_from_circuit(circuit, qiskit.qasm3)
+    # A plain `str` copy BEFORE anything is measured: a `str` subclass (passed in, or
+    # returned by a patched exporter) could report a false `len`, and what reaches the
+    # sidecar has to be exactly what the caps below measured.
+    qasm = "".join([qasm])
+    if _ln_len(qasm) > _ln_hw_cfg["max_chars"]:
+        raise _ln_builtins.ValueError(f"This circuit is {_ln_len(qasm):,} characters of OpenQASM; one request may be at most {_ln_hw_cfg['max_chars']:,}.")
+    if _ln_hw_state["count"] >= _ln_hw_cfg["max_requests"]:
+        raise _ln_builtins.ValueError(f"This notebook has already asked for {_ln_hw_cfg['max_requests']} hardware runs, the most one notebook can ask for.")
+    total = _ln_hw_state["chars"] + _ln_len(qasm)
+    if total > _ln_hw_cfg["max_total"]:
+        raise _ln_builtins.ValueError(f"This notebook's hardware requests would come to {total:,} characters of OpenQASM; together they may be at most {_ln_hw_cfg['max_total']:,}.")
+    cell["hardware_requests"].append({"qasm": qasm, "shots": _ln_int(shots), "num_qubits": qubits, "label": label})
+    _ln_hw_state["count"] += 1
+    _ln_hw_state["chars"] = total
+    return _LnHardwareRequest(qasm, _ln_int(shots), qubits, label)
+
 def _ln_run_cell(cell_id, source, tags=()):
-    cell = {"id": cell_id, "status": "ok", "stdout": "", "stderr": "", "outputs": [], "error": None, "duration_ms": 0, "execution_count": None, "note": ""}
+    cell = {"id": cell_id, "status": "ok", "stdout": "", "stderr": "", "outputs": [], "error": None, "duration_ms": 0, "execution_count": None, "note": "", "hardware_requests": []}
     _ln_state["cells"].append(cell)
     _ln_state["shown"] = _ln_builtins.set()
     if _ln_state["stopped"]:
@@ -272,6 +390,7 @@ _majorana_namespace["__leona_run_cell__"] = _ln_run_cell
 _majorana_namespace["__leona_display__"] = _ln_display
 _majorana_namespace["display"] = _ln_display
 _majorana_namespace["get_ipython"] = lambda: None
+_majorana_namespace["leona_submit"] = _ln_submit
 """
 
 _OBSERVER = r"""
@@ -283,6 +402,27 @@ _majorana_observation["notebook"] = {
     "stopped": _ln_state["stopped"],
 }
 """
+
+
+def _hardware_setup_values() -> dict[str, str]:
+    """What `leona_submit`'s half of the setup is parameterised by, taken from
+    `leona_notebooks.hardware` so the sandbox and the local builder read one set of
+    numbers and one set of patterns. Rendered with `repr`, so each lands in the setup
+    as a Python literal."""
+    return {
+        "__HW_MAX_SHOTS__": repr(int(MAX_HARDWARE_REQUEST_SHOTS)),
+        "__HW_MAX_CHARS__": repr(int(MAX_HARDWARE_REQUEST_QASM_CHARS)),
+        "__HW_MAX_TOTAL__": repr(int(MAX_HARDWARE_QASM_TOTAL_CHARS)),
+        "__HW_MAX_REQUESTS__": repr(int(MAX_HARDWARE_REQUESTS_PER_NOTEBOOK)),
+        "__HW_MAX_LABEL__": repr(int(MAX_HARDWARE_REQUEST_LABEL_CHARS)),
+        "__HW_DEFAULT_SHOTS__": repr(int(DEFAULT_SHOTS)),
+        "__HW_RE_HEADER__": repr(hardware._QASM_HEADER.pattern),
+        "__HW_RE_QUBIT_ARRAY__": repr(hardware._QUBIT_ARRAY.pattern),
+        "__HW_RE_QUBIT_SINGLE__": repr(hardware._QUBIT_SINGLE.pattern),
+        "__HW_RE_QREG__": repr(hardware._QREG.pattern),
+        "__HW_RE_PHYSICAL__": repr(hardware._PHYSICAL.pattern),
+        "__HW_RE_MEASURE__": repr(hardware._MEASURE.pattern),
+    }
 
 
 def _default_guard(source: str) -> list[str]:
@@ -316,7 +456,9 @@ def compose_notebook_program(
     which is the one where their content can actually execute. An unknown `run_until`
     raises `UnknownCellError` here, before any `ExecutionSpec` exists.
     """
-    if image_budget_bytes >= MAX_OUTPUT_BYTES:
+    if image_budget_bytes + MAX_HARDWARE_QASM_TOTAL_CHARS >= MAX_OUTPUT_BYTES:
+        # The hardware requests' OpenQASM shares the same sidecar (hardware.py says
+        # why that budget is as tight as it is).
         raise ValueError("image budget must leave room in the evidence sidecar")
     cut = len(spec.cells) - 1
     if run_until is not None:
@@ -355,6 +497,10 @@ def compose_notebook_program(
         .replace("__TEXT_CAP__", str(int(text_cap_bytes)))
         .replace("__REPR_CAP__", str(int(repr_cap_bytes)))
     )
+    for placeholder, value in _hardware_setup_values().items():
+        setup = setup.replace(placeholder, value)
+    if "__HW_" in setup:  # a placeholder added to the template and not to the table
+        raise RuntimeError("the notebook setup has an unfilled hardware placeholder")
     # The host function binds `_majorana_*` builtin aliases before `trusted_setup`
     # runs; the setup uses its own `_ln_*` names so a later change to that list
     # cannot silently break it. Bind them here from `builtins`.
@@ -402,6 +548,44 @@ def build_execution_spec(
 # --------------------------------------------------------------------------- the report
 
 
+class _HardwareReadLedger:
+    """Reads the hardware requests back out of the observation, re-checking them.
+
+    The sidecar is written by the provider-owned host, but the dicts in it were filled
+    in by `_ln_submit` while untrusted cell code shared the process, so this is the trust
+    boundary and nothing recorded there is taken on faith: each request is validated
+    against the contract, and the per-notebook ceilings are applied again across the
+    whole report. A request that fails is dropped and COUNTED, so the cell can say that
+    something was left out rather than quietly showing fewer cards than it asked for.
+    """
+
+    def __init__(self) -> None:
+        self.count = 0
+        self.chars = 0
+
+    def read(self, raw: Any) -> tuple[list[HardwareRequest], int]:
+        if not isinstance(raw, list):
+            return [], 0 if raw is None else 1
+        kept: list[HardwareRequest] = []
+        unreadable = 0
+        for item in raw:
+            try:
+                request = HardwareRequest.model_validate(item)
+            except ValueError:
+                unreadable += 1
+                continue
+            if (
+                self.count >= MAX_HARDWARE_REQUESTS_PER_NOTEBOOK
+                or self.chars + len(request.qasm) > MAX_HARDWARE_QASM_TOTAL_CHARS
+            ):
+                unreadable += 1
+                continue
+            self.count += 1
+            self.chars += len(request.qasm)
+            kept.append(request)
+        return kept, unreadable
+
+
 def report_from_observation(
     observation: dict[str, Any] | None,
     spec: NotebookSpec,
@@ -439,6 +623,7 @@ def report_from_observation(
 
     results: list[CellResult] = []
     reached_end = True
+    hardware_ledger = _HardwareReadLedger()
     for cell in spec.cells:
         if not cell.is_code:
             continue
@@ -463,6 +648,12 @@ def report_from_observation(
             )
             continue
         error = raw.get("error")
+        requests, unreadable = hardware_ledger.read(raw.get("hardware_requests"))
+        cell_note = str(raw.get("note") or "")
+        if unreadable:
+            cell_note = (cell_note + " " if cell_note else "") + (
+                f"{unreadable} hardware request(s) from this cell could not be read and were left out."
+            )
         results.append(
             CellResult(
                 id=cell.id,
@@ -492,7 +683,8 @@ def report_from_observation(
                 ),
                 duration_ms=max(0, int(raw.get("duration_ms") or 0)),
                 execution_count=raw.get("execution_count"),
-                note=str(raw.get("note") or ""),
+                note=cell_note,
+                hardware_requests=requests,
             )
         )
     ok = (

@@ -8,6 +8,7 @@ import { NotebookIdeBar } from "./notebook-ide-bar";
 import { NotebookCodeView, type EditorDiagnostic } from "./notebook-code-editor";
 import { cellDomId } from "../lib/notebook-ide";
 import { lintMessage, lintNotebook, type LintFinding } from "../lib/notebook-lint";
+import { NotebookHardwareRequests, type NotebookHardwareContext } from "./notebook-hardware-card";
 import type { NotebookCellStatus, NotebookCellView } from "../lib/notebook-view";
 import type { PublicLocale } from "../lib/public-locale";
 import { WORKSPACE_COPY } from "../lib/workspace-locale";
@@ -79,6 +80,7 @@ export function NotebookView({
   onRunAll,
   onAskNala,
   onFixWithNala,
+  hardware,
 }: {
   cells: NotebookCellView[];
   locale?: PublicLocale;
@@ -97,6 +99,8 @@ export function NotebookView({
   onRunAll?: () => void;
   onAskNala?: (cellId: string) => void;
   onFixWithNala?: (cellId: string) => void;
+  /** Which notebook version this is, so a `leona_submit` cell gets its "Run on hardware" card. Omit it and no card renders (the read-only share page). */
+  hardware?: Omit<NotebookHardwareContext, "locale">;
 }) {
   const copy = WORKSPACE_COPY[locale].notebooks;
   // Lint runs once per render of the version on screen (no debounce: unlike the editor,
@@ -133,6 +137,7 @@ export function NotebookView({
           // never arrive. Greptile caught it on PR 832. One at a time is also the
           // honest reading of a single sandbox dispatch per attempt.
           locked={busy || (gradingCellIds?.size ?? 0) > 0}
+          hardware={hardware ? { ...hardware, locale } : undefined}
         />
       ))}
     </div>
@@ -151,6 +156,7 @@ function NotebookCellCard({
   grading,
   locked,
   busy,
+  hardware,
 }: {
   cell: NotebookCellView;
   copy: NotebookCopy;
@@ -163,6 +169,7 @@ function NotebookCellCard({
   grading?: boolean;
   locked?: boolean;
   busy?: boolean;
+  hardware?: NotebookHardwareContext;
 }) {
   const [attemptOpen, setAttemptOpen] = useState(false);
   const [attemptText, setAttemptText] = useState("");
@@ -236,6 +243,7 @@ function NotebookCellCard({
         />
       ) : null}
       {cell.kind === "code" ? <NotebookCellOutputs cell={cell} copy={copy} /> : null}
+      <NotebookHardwareRequests cell={cell} context={hardware} />
       {grading ? <p className="mj-notebook-cell-grade" data-status="grading">{copy.gradePending}</p> : null}
       {!grading && grade ? (
         <div className="mj-notebook-cell-grade" data-status={grade.status}>

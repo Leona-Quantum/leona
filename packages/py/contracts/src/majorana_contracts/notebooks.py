@@ -503,6 +503,40 @@ class CellError(_Model):
 
 CellStatus = Literal["ok", "error", "skipped", "not_run"]
 
+#: Ceilings on what a notebook cell may ask to run on a real QPU (`leona_submit`).
+#:
+#: The first two are the SUBMISSION route's own bounds (`MAX_ESTIMATE_SHOTS` and
+#: `MAX_SUBMISSION_QASM_CHARS` in `majorana_api.routes.qpu`), restated here because
+#: this package imports nothing internal. They are the same numbers on purpose: a
+#: request the sandbox accepts and the route then refuses would reach the reader as
+#: a failure after they had already been shown a price and pressed confirm.
+#: `services/api/tests/test_notebook_hardware_caps.py` fails if the two drift.
+MAX_HARDWARE_REQUEST_SHOTS = 1_000_000
+MAX_HARDWARE_REQUEST_QASM_CHARS = 200_000
+#: Per notebook run, not per cell. Each request is a card with its own device picker
+#: and price under the cell, and a notebook that asks for more than a handful of QPU
+#: jobs is almost certainly a loop calling `leona_submit` by mistake.
+MAX_HARDWARE_REQUESTS_PER_NOTEBOOK = 8
+MAX_HARDWARE_REQUEST_LABEL_CHARS = 120
+
+
+class HardwareRequest(_Model):
+    """A circuit a cell asked to run on hardware, recorded by `leona_submit`.
+
+    A REQUEST, not a submission: nothing leaves the sandbox. The reader sees it as a
+    card under the cell, picks a device, is shown the price, confirms, and only then
+    does the web send it through `POST /v1/qpu/submissions` with their own IBM
+    credential — the same priced path Studio uses (plan rule 4, 2026-09-23).
+
+    `qasm` is OpenQASM 3, because that is what the worker parses
+    (`qiskit.qasm3.loads` in `majorana_qpu.ibm`).
+    """
+
+    qasm: str = Field(min_length=1, max_length=MAX_HARDWARE_REQUEST_QASM_CHARS)
+    shots: int = Field(ge=1, le=MAX_HARDWARE_REQUEST_SHOTS)
+    num_qubits: int = Field(ge=1)
+    label: str | None = Field(default=None, max_length=MAX_HARDWARE_REQUEST_LABEL_CHARS)
+
 
 class CellResult(_Model):
     id: str
@@ -514,6 +548,12 @@ class CellResult(_Model):
     duration_ms: int = Field(default=0, ge=0)
     execution_count: int | None = None
     note: str = ""
+    #: Circuits this cell asked to run on a QPU, in call order. Empty for every cell
+    #: that never called `leona_submit`, which includes every report stored before the
+    #: field existed — so those still parse unchanged.
+    hardware_requests: list[HardwareRequest] = Field(
+        default_factory=list, max_length=MAX_HARDWARE_REQUESTS_PER_NOTEBOOK
+    )
 
 
 class ExecutionReport(_Model):

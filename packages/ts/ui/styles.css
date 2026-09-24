@@ -7098,6 +7098,26 @@ div.mj-rail-row:hover {
   border-radius: var(--radius-card);
   background: var(--bg-2);
 }
+/* A notebook cell's "Run on hardware" card (components/notebook-hardware-card.tsx):
+   Studio's QPU lane classes under the cell's own outputs, with a row for its
+   buttons. The same lane, so a device, a price and a queue reading look the same in
+   a notebook as they do in Studio. */
+.mj-notebook-hardware {
+  display: grid;
+  gap: var(--sp-3);
+  margin-top: var(--sp-3);
+}
+.mj-notebook-hardware-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-2);
+}
+/* Two classes deep so it outranks `.mj-qpu-lane p`, which would mute the price. */
+.mj-notebook-hardware-card .mj-notebook-hardware-price {
+  margin: 0;
+  color: var(--text-0);
+  font-size: var(--fs-13);
+}
 /* The "measured against ideal" readout, inside .mj-qpu-record once a job is
    done. A lighter card than .mj-qpu-record itself, since it nests inside one. */
 .mj-qpu-ideal {
