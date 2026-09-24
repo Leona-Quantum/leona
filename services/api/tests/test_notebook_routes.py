@@ -236,6 +236,111 @@ async def test_turn_on_a_notebook_with_no_ready_version_is_409(client, monkeypat
     assert response.json()["reason"] == "notebook_not_ready"
 
 
+def _failed_first_build(*, with_spec: bool):
+    notebook = _notebook_row(current_version_id=None)
+    spec = {"slug": notebook.slug, "title": "t", "cells": [{"id": "c1", "kind": "code", "source": "x = 1\n"}]}
+    failed = _version_row(
+        notebook_id=notebook.id,
+        seq=1,
+        status="failed",
+        spec=spec if with_spec else None,
+        error="cell c1 failed: NameError: name 'y' is not defined",
+    )
+    return notebook, failed
+
+
+def _patch_for_a_run(monkeypatch, notebook, versions, captured: dict) -> None:
+    async def fake_get_notebook(_scope, _session, _notebook_id):
+        return notebook
+
+    async def fake_list_versions(_scope, _session, _notebook_id):
+        return versions
+
+    async def fake_create_run(_scope, _session, **_kwargs):
+        return SimpleNamespace(id=uuid_module.uuid4())
+
+    async def fake_append_run_event(*_a, **_k):
+        return None
+
+    async def fake_append_turn(_scope, _session, notebook_id, **kwargs):
+        return SimpleNamespace(
+            id=uuid_module.uuid4(), notebook_id=notebook_id, seq=1, role=kwargs["role"],
+            content=kwargs["content"], run_id=kwargs["run_id"], created_at=NOW,
+        )
+
+    async def fake_create_version(_scope, _session, notebook_id, **kwargs):
+        return _version_row(notebook_id=notebook_id, seq=2, created_by=kwargs["created_by"])
+
+    async def fake_enqueue_job(_session, *, kind, payload, run_id=None, **_kwargs):
+        captured["kind"] = kind
+        captured["payload"] = payload
+        return SimpleNamespace(id=uuid_module.uuid4())
+
+    monkeypatch.setattr(notebooks_repo, "get_notebook", fake_get_notebook)
+    monkeypatch.setattr(notebooks_repo, "list_versions", fake_list_versions)
+    monkeypatch.setattr(notebooks_repo, "append_turn", fake_append_turn)
+    monkeypatch.setattr(notebooks_repo, "create_version", fake_create_version)
+    monkeypatch.setattr(runs_repo, "create_run", fake_create_run)
+    monkeypatch.setattr(runs_repo, "append_run_event", fake_append_run_event)
+    monkeypatch.setattr(system_repo, "enqueue_job", fake_enqueue_job)
+
+
+async def test_a_turn_on_a_notebook_whose_only_build_failed_starts_from_that_build(client, monkeypatch):
+    # Plan 10-notebook-ide rule 2. The 2026-09-24 production notebook answered 409 to each
+    # message its owner sent, although its failed build carried all 36 cells.
+    notebook, failed = _failed_first_build(with_spec=True)
+    captured: dict = {}
+    _patch_for_a_run(monkeypatch, notebook, [failed], captured)
+
+    async with client as c:
+        response = await c.post(f"/v1/notebooks/{notebook.id}/turns", json={"message": "fix cell c1"})
+
+    assert response.status_code == 201, response.text
+    assert captured["kind"] == NOTEBOOK_REVISE_JOB_KIND
+    assert captured["payload"]["base_version_id"] == str(failed.id)
+
+
+async def test_a_rerun_of_a_notebook_whose_only_build_failed_starts_from_that_build(client, monkeypatch):
+    notebook, failed = _failed_first_build(with_spec=True)
+    captured: dict = {}
+    _patch_for_a_run(monkeypatch, notebook, [failed], captured)
+
+    async with client as c:
+        response = await c.post(f"/v1/notebooks/{notebook.id}/run")
+
+    assert response.status_code == 200, response.text
+    assert captured["payload"]["kind"] == "rerun"
+    assert captured["payload"]["base_version_id"] == str(failed.id)
+
+
+async def test_a_failed_build_with_no_spec_still_has_nothing_to_work_from(client, monkeypatch):
+    notebook, failed = _failed_first_build(with_spec=False)
+    captured: dict = {}
+    _patch_for_a_run(monkeypatch, notebook, [failed], captured)
+
+    async with client as c:
+        response = await c.post(f"/v1/notebooks/{notebook.id}/turns", json={"message": "hi"})
+
+    assert response.status_code == 409
+    assert response.json()["reason"] == "notebook_not_ready"
+    assert "kind" not in captured
+
+
+async def test_a_ready_version_is_still_preferred_over_a_newer_failed_one(client, monkeypatch):
+    ready = _version_row(seq=1, status="ready", spec={"slug": "s", "title": "t", "cells": []})
+    notebook = _notebook_row(current_version_id=ready.id)
+    ready = _version_row(id=ready.id, notebook_id=notebook.id, seq=1, status="ready", spec=ready.spec)
+    newer_failed = _version_row(notebook_id=notebook.id, seq=2, status="failed", spec=ready.spec)
+    captured: dict = {}
+    _patch_for_a_run(monkeypatch, notebook, [ready, newer_failed], captured)
+
+    async with client as c:
+        response = await c.post(f"/v1/notebooks/{notebook.id}/turns", json={"message": "hi"})
+
+    assert response.status_code == 201, response.text
+    assert captured["payload"]["base_version_id"] == str(ready.id)
+
+
 async def test_turn_while_a_revision_is_in_flight_is_409(client, monkeypatch):
     ready = _version_row(seq=1, status="ready")
     notebook = _notebook_row(current_version_id=ready.id)
