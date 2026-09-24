@@ -175,17 +175,31 @@ def setup_preamble(spec: NotebookSpec) -> dict[str, Any]:
     }
 
 
-#: The one place this URL is written down (Bridge lane, ai-ops 362): a reader's own
-#: `pip install` of `leona-notebooks` straight from this repository's git history,
-#: since it is not published to PyPI (`packages/py/notebooks/pyproject.toml`'s own
-#: `[tool.uv.sources]` — see also that file's dependency-on-`majorana-contracts`/
-#: `majorana-sandbox` comments, which is why a plain install of this alone is not
-#: enough for the FULL package, only for the `%nala`/`leona_submit` surface this
-#: bootstrap cell actually exercises).
-NOTEBOOKS_INSTALL_SPEC = (
-    "leona-notebooks @ git+https://github.com/Leona-Quantum/leona"
-    "#subdirectory=packages/py/notebooks"
+#: Where a reader installs from (Bridge lane, ai-ops 362). None of these packages is on
+#: PyPI, so they come straight from this repository's git history. Installing
+#: `leona-notebooks` ALONE does not work: its pyproject names `majorana-contracts`,
+#: `majorana-sandbox` and `leona-client` as plain dependencies, PyPI has none of them,
+#: and pip fails at dependency resolution before installing anything. Naming every one
+#: as a direct git requirement in the SAME `pip install` lets pip satisfy each dependency
+#: from its URL. All four are light (pydantic, httpx, nbformat, pyyaml, qiskit).
+#: `test_the_bootstrap_installs_every_workspace_dependency` derives the list from the
+#: packages' own pyproject files, so a workspace dependency added later fails a test
+#: instead of breaking every downloaded notebook's first cell.
+NOTEBOOKS_REPOSITORY = "https://github.com/Leona-Quantum/leona"
+NOTEBOOKS_INSTALL_REQUIREMENTS: tuple[str, ...] = tuple(
+    f"{name} @ git+{NOTEBOOKS_REPOSITORY}#subdirectory=packages/py/{path}"
+    for name, path in (
+        ("leona-notebooks", "notebooks"),
+        ("leona-client", "client"),
+        ("majorana-contracts", "contracts"),
+        ("majorana-sandbox", "sandbox"),
+    )
 )
+
+
+def notebooks_install_line() -> str:
+    """The one `%pip install` line the bootstrap cell and the docs both give."""
+    return "%pip install -q " + " ".join(f'"{req}"' for req in NOTEBOOKS_INSTALL_REQUIREMENTS)
 
 
 def bootstrap_cell(notebook_id: str) -> dict[str, Any]:
@@ -210,7 +224,7 @@ def bootstrap_cell(notebook_id: str) -> dict[str, Any]:
         "# Run this once to work on this notebook in your own Jupyter, VS Code or",
         "# Colab. Set LEONA_API_TOKEN in your shell environment first (mint one on",
         "# leonaqt.com: Account -> Access tokens) -- never paste a token into a cell.",
-        f'%pip install -q "{NOTEBOOKS_INSTALL_SPEC}"',
+        notebooks_install_line(),
         "%load_ext leona_notebooks.jupyter",
         f"%nala link {notebook_id}",
         "from leona_notebooks import leona_submit  # hardware cells call this; never submits locally",
