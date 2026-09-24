@@ -3902,6 +3902,7 @@ export const ACCOUNT_COPY: Record<PublicLocale, {
   tokensName: string;
   tokensExpiry: string;
   tokensAllowRuns: string;
+  tokensAllowHardware: string;
   tokensCreate: string;
   tokensLoading: string;
   tokensEmpty: string;
@@ -3912,6 +3913,7 @@ export const ACCOUNT_COPY: Record<PublicLocale, {
   tokensRevoked: string;
   tokensExpired: string;
   tokensCanRun: string;
+  tokensCanSubmitHardware: string;
   tokensNeverUsed: string;
   tokensExpiresIn: (days: number) => string;
   tokensLoadError: string;
@@ -4112,6 +4114,7 @@ export const ACCOUNT_COPY: Record<PublicLocale, {
     tokensName: "What is it for?",
     tokensExpiry: "Days until it expires",
     tokensAllowRuns: "Also let it start verified runs",
+    tokensAllowHardware: "Also let it submit circuits to real quantum hardware from your own code, charged to your weekly hardware allowance. Leave this off unless you need it.",
     tokensCreate: "Create token",
     tokensLoading: "Loading your access tokens\u2026",
     tokensEmpty: "You have no access tokens.",
@@ -4122,6 +4125,7 @@ export const ACCOUNT_COPY: Record<PublicLocale, {
     tokensRevoked: "Revoked",
     tokensExpired: "Expired",
     tokensCanRun: "can start runs",
+    tokensCanSubmitHardware: "can submit to hardware",
     tokensNeverUsed: "never used",
     tokensExpiresIn: (days) => (days === 1 ? "Expires tomorrow" : `Expires in ${days} days`),
     tokensLoadError: "We could not load your tokens. Try again in a moment.",
@@ -4336,6 +4340,7 @@ export const ACCOUNT_COPY: Record<PublicLocale, {
     tokensName: "用途",
     tokensExpiry: "有効期限（日数）",
     tokensAllowRuns: "検証付きの実行も許可する",
+    tokensAllowHardware: "お使いのコードから実際の量子ハードウェアに回路を送信できるようにします（費用は週ごとのハードウェア割り当てから差し引かれます）。必要な場合以外はオフのままにしてください。",
     tokensCreate: "トークンを作成",
     tokensLoading: "アクセストークンを読み込んでいます…",
     tokensEmpty: "アクセストークンはありません。",
@@ -4346,6 +4351,7 @@ export const ACCOUNT_COPY: Record<PublicLocale, {
     tokensRevoked: "無効化済み",
     tokensExpired: "期限切れ",
     tokensCanRun: "実行の開始が可能",
+    tokensCanSubmitHardware: "ハードウェアへの送信が可能",
     tokensNeverUsed: "未使用",
     tokensExpiresIn: (days) => (days === 1 ? "明日で期限切れ" : `あと ${days} 日で期限切れ`),
     tokensLoadError: "トークンを読み込めませんでした。少し時間をおいて再度お試しください。",
