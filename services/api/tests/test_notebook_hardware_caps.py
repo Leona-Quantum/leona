@@ -37,12 +37,7 @@ def test_a_request_at_every_cap_is_a_valid_submission_body() -> None:
         qasm=request.qasm,
         # The longest fingerprint the web builds: a UUID notebook id, a six-digit
         # version, a 32-character cell id and 12 hex digits (lib/notebook-hardware.ts).
-        source_fingerprint="notebook:"
-        + "0" * 36
-        + ":v999999:"
-        + "c" * 32
-        + ":"
-        + "f" * 12,
+        source_fingerprint="notebook:" + "0" * 36 + ":v999999:" + "c" * 32 + ":" + "f" * 12,
     )
     assert body.shots == MAX_HARDWARE_REQUEST_SHOTS
     assert len(body.qasm) == MAX_HARDWARE_REQUEST_QASM_CHARS
