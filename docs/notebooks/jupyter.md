@@ -3,17 +3,20 @@
 `leona_notebooks.jupyter` puts Nala, Leona Quantum's teaching assistant, in a cell
 magic that talks to the same `/v1/notebooks` control plane the web surface
 (leonaqt.com/notebooks) uses. A notebook you build with `%nala new`, edit locally in
-JupyterLab, and push back with `%nala push --to` is the *same object*, with the same
-version history, as one built or edited on the site — there is no separate local
-format to keep in sync.
+JupyterLab, VS Code or Colab, and push back with `%nala push --to` is the *same
+object*, with the same version history, as one built or edited on the site — there is
+no separate local format to keep in sync.
 
 Everything here also works with no Jupyter open at all, as `leona-notebooks`
-subcommands (`new`, `pull`, `push`, `status`) — see [CLI](#without-jupyter-the-cli)
-below.
+subcommands (`new`, `pull`, `push`, `status`, `run`, `open`) — see
+[CLI](#without-jupyter-the-cli) below.
 
 ## Install
 
-From a checkout of this repo:
+### From a checkout of this repository
+
+If you already have the `majorana` repo checked out (working on Leona itself, or in a
+notebook the product opens for you):
 
 ```bash
 uv pip install -e packages/py/notebooks
@@ -22,28 +25,70 @@ pip install -e packages/py/notebooks
 ```
 
 That installs the `leona_notebooks` package (and `leona-notebooks` on your `PATH`) into
-whatever Python environment your Jupyter kernel uses. `%nala` itself adds no dependency
-beyond IPython — its HTTP calls go through the standard library's `urllib`, not
-`requests` or `httpx`.
+whatever Python environment your Jupyter kernel uses, with everything the package can
+do — including the local `compile`/`execute`/`validate`/`build-curriculum` CLI
+subcommands, which need `majorana-contracts` and `majorana-sandbox`, both of which this
+form of install resolves from the workspace.
 
-## Configure — two environment variables, never a token in a cell
+### In your own Jupyter, VS Code or Colab, with no checkout
+
+```bash
+pip install -q "leona-notebooks @ git+https://github.com/Leona-Quantum/leona#subdirectory=packages/py/notebooks"
+```
+
+This is what the bootstrap cell at the top of a notebook downloaded from Leona runs
+for you automatically (see [The download you get](#the-download-you-get) below) — you
+only need to type it yourself for a notebook you are starting from scratch outside the
+product.
+
+**What this does and does not give you.** `leona-notebooks`' full feature set depends
+on two packages, `majorana-contracts` and `majorana-sandbox`, that are not published to
+PyPI and are not fetched by this command — a plain `pip install` only resolves a
+dependency it can find on an index or with a git URL of its own, and this project's
+`pyproject.toml` names those two by their plain package name. In practice that means:
+
+- `%load_ext leona_notebooks.jupyter` (the `%nala` magic), `%nala link`, `%nala run`,
+  `%nala open`, `%%nala ask`, `%%nala explain`, and `from leona_notebooks import
+  leona_submit` all work with nothing beyond this one install plus IPython — the module
+  code they run through was written specifically to avoid importing anything
+  workspace-only at load time.
+- The pure-local `leona-notebooks` CLI subcommands that compile or execute a `.nb.py`
+  source file directly (`compile`, `execute`, `validate`, `build-curriculum`) need the
+  full checkout install above instead; they will fail on import with `leona-notebooks`
+  installed this way.
+
+Verified in this session: in a scratch virtualenv with `ipython` plus this package's
+other PyPI-resolvable dependencies (`pydantic`, `nbformat`, `pyyaml`, `qiskit`,
+`qiskit-qasm3-import`, `httpx`) but **not** `majorana-contracts`/`majorana-sandbox`,
+`%load_ext leona_notebooks.jupyter` loaded, `%nala link`/`%nala open` worked, and
+`from leona_notebooks import leona_submit` imported and ran correctly (printed a price
+estimate, never submitted anything). A second, more minimal venv with no qiskit,
+nbformat or pydantic at all still imported both entry points, and `leona_submit`
+degraded to a printed message instead of raising. **Not verified in this session:** an
+actual `pip install` against the real `github.com/Leona-Quantum/leona` URL over the
+network — the venv tests above installed from a local path with `--no-deps` to
+reproduce the same dependency shape without a network fetch. If the git URL, the
+subdirectory path, or GitHub's own packaging of this repo ever changes, this command
+could need adjusting even though the import-safety work behind it is confirmed.
+
+## Mint a personal access token
+
+On leonaqt.com: **Account → Access tokens**. Give it a name, a lifetime, and check
+**"Also let it start verified runs"** — unchecked by default, and `%nala new`, `push`,
+`ask`, `fix`, `run` and the CLI equivalents all need it (they each start a run; a
+read-only token gets a clear "insufficient scope" error instead of silently doing
+nothing). The token is shown once; copy it somewhere safe, not into a notebook cell.
 
 ```bash
 export LEONA_API_URL=https://majorana-api-nikekeixtq-uw.a.run.app   # optional; this is the default
-export LEONA_API_TOKEN=<your bearer token>                           # required
+export LEONA_API_TOKEN=<your token>                                  # required
 ```
 
-A note on the token, because it is the part that does not work yet for most people:
-the control plane accepts the short-lived session token the website holds, which
-expires within the hour, and there is no way yet to make a longer-lived personal token
-in your account settings. That is being decided (ai-ops 362). Until it lands, `%nala`
-is practical only for someone who can copy a current session token by hand.
-
 Set these in your shell, a `.env` your shell sources, or your Jupyter kernel's
-environment — **never** paste a token into a notebook cell or pass it as a magic
-argument. Every command below reads `LEONA_API_TOKEN` from the process environment; none
-of them accept a `--token` (or similar) argument, and `%nala` prints a clear error if the
-variable is unset rather than silently failing.
+environment — **never** paste a token into a notebook cell or pass it as a magic or
+function argument. Every command and function below reads `LEONA_API_TOKEN` from the
+process environment; none of them accept a `--token` (or similar) argument, and `%nala`
+prints a clear error if the variable is unset rather than silently failing.
 
 ## Load the extension
 
@@ -52,9 +97,38 @@ variable is unset rather than silently failing.
 ```
 
 Run that once per kernel session (put it in the first cell, or your IPython startup
-profile). It registers both `%nala` (line magic) and `%%nala` (cell magic).
+profile). It registers both `%nala` (line magic) and `%%nala` (cell magic). Running it
+twice in the same kernel is harmless — IPython prints a notice that the extension is
+already loaded and does nothing further.
+
+## Link a notebook to this kernel — `%nala link`
+
+```
+%nala link [<notebook_id>]
+```
+
+```python
+%nala link 3f2a1c9e-...
+# linked 3f2a1c9e-...
+%nala link
+# linked to 3f2a1c9e-...
+```
+
+Remembers a notebook id for the rest of this kernel session, so `ask`, `fix`, `status`,
+`versions`, `run` and `open` below can all be typed without repeating the id every
+time — the common case once you are iterating on one notebook. Bare `%nala link` (no
+id) prints whatever is currently linked, or says nothing is.
+
+This is **process-local, in-memory state** — not saved to a file, and not shared
+between two kernels. It does not survive a kernel restart, and opening the same
+directory in a second kernel does not inherit the first kernel's link. If a command
+below is given an explicit id, that id wins over the link for that one call.
 
 ## Every magic
+
+Anywhere a command below takes `<notebook_id>` as its **last-resort** default, it means
+"the linked notebook if you have one, otherwise you must pass an id" — the commands say
+so explicitly if you have linked nothing and passed nothing.
 
 ### `%nala new` — ask Nala to build a notebook from scratch
 
@@ -116,7 +190,7 @@ notebook you already validated locally and don't want to spend sandbox time on a
 ### `%nala versions` — list a notebook's version history
 
 ```
-%nala versions <notebook_id>
+%nala versions [<notebook_id>]
 ```
 
 ```python
@@ -129,7 +203,7 @@ and its message.
 ### `%nala status` — the newest version at a glance
 
 ```
-%nala status <notebook_id>
+%nala status [<notebook_id>]
 ```
 
 ```python
@@ -146,7 +220,7 @@ cell failed first, Jupyter's Run-All semantics).
 ### `%nala fix` — explain the traceback you just hit
 
 ```
-%nala fix <notebook_id>
+%nala fix [<notebook_id>]
 ```
 
 ```python
@@ -165,10 +239,45 @@ raised it, and asks Nala: *"This cell failed in my Jupyter: ‹the cell›. Trac
 the reply. Run it right after a cell fails; if nothing has failed yet this session, it
 says so rather than guessing.
 
+### `%nala run` — push (or re-run) and wait, with a per-cell report
+
+```
+%nala run [<file.ipynb>] [--to <notebook_id>] [--until <cell_id>]
+```
+
+```python
+%nala run                              # re-run the linked notebook's current version
+%nala run --to 3f2a1c9e-...            # re-run a notebook you didn't link
+%nala run edited.ipynb --to 3f2a1c9e-...              # push edited.ipynb as a new version and run it
+%nala run edited.ipynb --to 3f2a1c9e-... --until c04   # ...but only through cell c04
+%nala run new.ipynb                    # import new.ipynb as a brand-new notebook and run it
+```
+
+Whichever form: pushes or re-runs, waits for the sandbox, and prints one line per cell
+— a checkmark for a cell that ran, an `✗` with the exception type, message and the last
+few lines of the traceback for a cell that raised, and a marker for a cell that never
+got to run. If any cell raised, `%nala run` raises too (in the CLI, `leona-notebooks
+run` exits with status 1) — so a failing run is unambiguous even if you are not reading
+every line of output.
+
+### `%nala open` — print the notebook's leonaqt.com URL
+
+```
+%nala open [<notebook_id>]
+```
+
+```python
+%nala open 3f2a1c9e-...
+# https://leonaqt.com/notebooks/3f2a1c9e-...
+```
+
+Just string formatting — no network call. Useful after `%nala link`, to get the URL of
+whatever you're working on without leaving the kernel.
+
 ### `%%nala ask` — ask Nala about a notebook, with code
 
 ```
-%%nala ask <notebook_id>
+%%nala ask [<notebook_id>]
 <your question>
 ---
 <optional: the code you're asking about>
@@ -185,7 +294,7 @@ turn — the same conversation the chat rail on leonaqt.com shows).
 ### `%%nala explain` — explain a cell, line by line
 
 ```
-%%nala explain <notebook_id> [--level newcomer|engineer|student|researcher]
+%%nala explain [<notebook_id>] [--level newcomer|engineer|student|researcher]
 <the code you want explained>
 ```
 
@@ -200,35 +309,185 @@ qc.cx(1, 2)
 Asks Nala to explain the cell body line by line, at the given level (default
 `engineer`), and prints the reply.
 
+## A small Python API — for scripts and cells that don't want a magic line
+
+```python
+from leona_notebooks.leona import Leona
+
+lq = Leona.from_env()          # reads LEONA_API_URL / LEONA_API_TOKEN, same as %nala
+lq.devices()                    # every device Leona has a rate card for
+lq.estimate(circuit, device="ibm.kyiv", shots=1024)   # a pre-run price, never a submission
+lq.ask("why did this fail?")    # asks Nala about the linked notebook (or pass notebook=)
+run = lq.run("Build a 3-qubit GHZ state and verify it", framework="qiskit")
+print(run.status, run.verified)
+```
+
+`Leona` is `leona_notebooks.jupyter.Client` (itself `leona_client.Client`) under a
+friendlier name, with `ask`/`run` convenience wrappers on top — the same token, the
+same routes, the same run-scope and rate limits `%nala` already runs into, just a plain
+method call for code that is not running inside IPython at all (a script, a scheduled
+job, a plain `.py` file). `circuit` to `estimate`/`leona_submit` below can be a qiskit
+`QuantumCircuit` or an OpenQASM 3 string; qiskit is only imported if you pass one, and
+only lazily, the moment it's needed.
+
+## `leona_submit` — write a hardware cell that works in both places
+
+```python
+from leona_notebooks import leona_submit
+
+leona_submit(circuit, shots=1024, label="ghz-check")
+```
+
+This one function name means two different things depending on where the cell runs,
+and a cell written against either reads the same way in the other:
+
+- **In your own Jupyter/VS Code/Colab** (this package, `leona_notebooks.leona`):
+  **never submits anything.** If `LEONA_API_TOKEN` is set, it fetches and prints a
+  pre-run price estimate for the circuit on the default (or given) device; either way
+  it prints one plain sentence telling you to open the notebook on Leona to actually
+  run it on hardware, and returns a small object (`.qasm`, `.shots`, `.num_qubits`)
+  for your own inspection. Owner ruling ai-ops 362: a personal access token may read
+  and start verified (simulated) runs, not spend real QPU time — "hardware jobs come
+  later under their own permission" — so nothing this local function does may either.
+  It never raises for a missing qiskit or a missing token (prints a message and
+  returns `None` instead); an invalid circuit, shot count or label still raises, like
+  calling any other function with bad arguments would.
+- **Inside Leona's own sandbox**, when the notebook actually runs there, a *different*
+  `leona_submit` (defined by the sandbox, not by this package) records the same
+  request into the notebook's execution report, which the web page then offers to run
+  on real hardware with your own IBM credential and an explicit confirmation.
+
+Only `circuit`, `shots` and `label` are common to both — the local version also takes
+a `device=` keyword (which device to price) that the in-sandbox one does not accept;
+leave it unset in a cell you intend to run on Leona too, or drop it before you push.
+
 ## The round trip
 
 1. **`%nala new "<brief>"`** — Nala builds a notebook and you get a local `.ipynb`.
-2. **Edit it in JupyterLab** — add a cell, change a parameter, fix a typo, whatever you
-   want. It's a normal notebook; edit it however you normally would.
-3. **`%nala push <file> --to <notebook_id>`** — your edit becomes the next version,
-   re-run in the sandbox.
-4. **The version appears on leonaqt.com** — anyone with access to the notebook sees your
-   version, with fresh outputs, in the version picker.
-5. **A cell breaks?** Run it, see the traceback, then **`%nala fix <notebook_id>`** —
-   Nala reads the traceback and the cell straight out of your session and proposes the
-   fix. Apply it, re-run, and push again.
+2. **`%nala link <notebook_id>`** — so the rest of this session can refer to it by
+   nothing at all.
+3. **Edit it in JupyterLab, VS Code or Colab** — add a cell, change a parameter, fix a
+   typo, whatever you want. It's a normal notebook; edit it however you normally would.
+4. **`%nala run edited.ipynb --to <notebook_id>`** — your edit becomes the next
+   version, re-run in the sandbox, with a per-cell report right there in your kernel.
+5. **The version appears on leonaqt.com** — anyone with access to the notebook sees
+   your version, with fresh outputs, in the version picker. `%nala open` prints the URL.
+6. **A cell breaks?** Run it, see the traceback, then **`%nala fix`** — Nala reads the
+   traceback and the cell straight out of your session and proposes the fix. Apply it,
+   re-run, and push again.
 
 ## Without Jupyter — the CLI
 
-Every control-plane operation above is also a `leona-notebooks` subcommand, sharing the
-same `Client` and the same two environment variables — useful in a plain terminal, a
-script, or CI:
+Every control-plane operation above except `link` is also a `leona-notebooks`
+subcommand, sharing the same `Client` and the same two environment variables — useful
+in a plain terminal, a script, or CI. (`link` is Jupyter-only: it is remembered for the
+life of a kernel, and a CLI invocation is a fresh process every time with nothing to
+remember it in — `status`/`run`/`open` take the notebook id directly instead.)
 
 ```bash
 leona-notebooks new "teach me the quantum Fourier transform" --level student -o qft.ipynb
 leona-notebooks pull 3f2a1c9e-... -o qft.ipynb
 leona-notebooks push qft.ipynb --to 3f2a1c9e-... --message "fixed the phase estimation cell"
 leona-notebooks status 3f2a1c9e-...
+leona-notebooks run edited.ipynb --to 3f2a1c9e-... --until c04
+leona-notebooks open 3f2a1c9e-...
 ```
 
+Exit status is 1 the moment any cell in a `run` raised, so a CI step can run it bare.
+
 (`leona-notebooks` also has purely local subcommands — `compile`, `execute`,
-`validate`, `build-curriculum`, `import`, `structure` — that never touch the network;
-`leona-notebooks --help` lists all of them.)
+`validate`, `build-curriculum`, `import`, `structure` — that never touch the network
+and need the full checkout install (see [Install](#install) above), not the plain
+`pip install` of this package alone; `leona-notebooks --help` lists all of them.)
+
+## VS Code
+
+VS Code's own Jupyter extension (`ms-toolsai.jupyter`) runs a real IPython kernel
+under the hood, the same one `%nala` and `%%nala` register against in JupyterLab or
+plain `jupyter notebook` — so everything on this page works unchanged in a `.ipynb`
+file opened in VS Code, or in a Python file's interactive window, once
+`leona-notebooks` is installed in the interpreter VS Code has selected for that
+notebook (Command Palette → "Notebook: Select Notebook Kernel", or the kernel picker
+in the notebook toolbar) and `LEONA_API_TOKEN` is set in the environment that
+interpreter/terminal sees.
+
+**Not independently verified in this session** (no VS Code available to test against
+here) — this follows from how the Jupyter extension and IPython magics are documented
+to work, not from having opened VS Code and run `%nala` in it. If something here does
+not match what you see, the code itself (`packages/py/notebooks/src/leona_notebooks/jupyter.py`)
+is the source of truth.
+
+### `leona-mcp` in VS Code, Claude Code, or GitHub Copilot
+
+For an AI assistant working *alongside* your notebook (not the magic above, a separate
+MCP server that looks up the Atlas and can start/read runs), `packages/py/mcp` ships
+`leona-mcp`. Its own `README.md` has the full tool list and settings; the short version
+for a client that reads standard MCP JSON config (VS Code's `mcp.json`, Claude
+Desktop, Cursor):
+
+```json
+{
+  "mcpServers": {
+    "leona-atlas": {
+      "command": "uvx",
+      "args": [
+        "--from",
+        "git+https://github.com/Leona-Quantum/leona#subdirectory=packages/py/mcp",
+        "leona-mcp"
+      ],
+      "env": {
+        "LEONA_API_TOKEN": "<your token>"
+      }
+    }
+  }
+}
+```
+
+For Claude Code specifically:
+
+```bash
+claude mcp add --transport stdio leona-atlas --env LEONA_API_TOKEN=<your token> -- \
+  uvx --from "git+https://github.com/Leona-Quantum/leona#subdirectory=packages/py/mcp" leona-mcp
+```
+
+GitHub Copilot's MCP support (in VS Code, "Chat: Add MCP Server") reads the same
+`mcp.json` shape as the JSON block above. This section is transcribed from
+`packages/py/mcp/README.md`, which is the maintained source for `leona-mcp` — read it
+directly for anything not covered here, including which of its tools need a token and
+which are read-only. That README currently still describes personal access tokens as
+"a Leona feature still being rolled out (proposal 7 Phase B)"; that line predates this
+page and is stale now that tokens are live — flagged for whoever next edits that file,
+not fixed here (out of this page's scope).
+
+## Colab
+
+A Colab notebook is a hosted Jupyter kernel with `pip` and `%pip` already available, so
+the same install line and `%load_ext` work:
+
+```python
+%pip install -q "leona-notebooks @ git+https://github.com/Leona-Quantum/leona#subdirectory=packages/py/notebooks"
+%load_ext leona_notebooks.jupyter
+```
+
+Set `LEONA_API_TOKEN` for the session with Colab's own "Secrets" panel (the key icon in
+the left sidebar) rather than typing it into a cell — `os.environ["LEONA_API_TOKEN"] =
+userdata.get("LEONA_API_TOKEN")` in a cell you run once, using Colab's `userdata` API,
+keeps the value out of the notebook's saved source.
+
+**Not independently verified in this session** — no Colab environment available to test
+against here. This describes how a standard IPython kernel and `%pip`/`%load_ext`
+behave in Colab as documented, not a run performed there.
+
+## The download you get
+
+Downloading a notebook from Leona (`GET /v1/notebooks/{id}/versions/{seq}/export.ipynb`,
+the download button on leonaqt.com) gives you a real `.ipynb` whose first cell is a
+short bootstrap: it runs the `pip install` line above, loads the extension, runs
+`%nala link <that notebook's id>`, and imports `leona_submit` — so a hardware cell
+copied straight out of Leona's sandbox does not `NameError` the moment you open the
+file elsewhere. It is safe to run twice (installing an already-installed package,
+loading an already-loaded extension, and re-linking the same id are all no-ops), and it
+never contains a token.
 
 ## A note on safety
 
@@ -236,4 +495,6 @@ leona-notebooks status 3f2a1c9e-...
 API, which runs generated code in Leona's own sandbox, the same one every notebook goes
 through regardless of how it was created. Nothing in this package reads your Jupyter
 kernel's variables, files, or environment except what `%nala fix` explicitly reads (the
-last traceback and the failing cell's own source) to ask Nala about it.
+last traceback and the failing cell's own source) to ask Nala about it, and
+`leona_submit`, run locally, never submits a job to hardware — see
+[`leona_submit`](#leona_submit--write-a-hardware-cell-that-works-in-both-places) above.
