@@ -669,7 +669,49 @@ async def test_a_cell_that_still_raises_after_repair_is_kept_ready_and_named(
     assert captured["status"] == RunStatus.SUCCEEDED
     [turn] = [t for t in store.turns if t.role == "nala"]
     assert "cell c05" in turn.content and "NameError" in turn.content
-    assert "3 fix(es)" in turn.content
+    assert "3 fixes" in turn.content
+
+
+def _kept_outcome(repairs: int):
+    from leona_notebooks.pipeline import Attempt, PipelineOutcome
+    from majorana_contracts.notebooks import CellError, CellResult, ExecutionReport
+
+    report = ExecutionReport(
+        notebook_slug="kept",
+        ok=False,
+        runner="sandbox",
+        cells=[
+            CellResult(id="c02", status="ok"),
+            CellResult(id="c05", status="error", error=CellError(ename="NameError", evalue="x")),
+        ],
+    )
+    return PipelineOutcome(
+        status="ready",
+        spec=None,
+        report=report,
+        attempts=[Attempt(stage="notebook.repair", ok=False) for _ in range(repairs)],
+        cell_errors="cell c05 failed: NameError: x",
+    )
+
+
+def test_the_kept_with_errors_note_never_counts_repairs_a_rerun_did_not_make():
+    # A plain re-run keeps a raising notebook without any repair; the note must not say
+    # "I tried 0 fixes". One repair reads as "one fix", not "1 fix(es)".
+    unrepaired = nh._kept_with_errors_note(_kept_outcome(0), "en")
+    assert "cell c05 raised NameError: x" in unrepaired
+    assert "tried" not in unrepaired and "0 fix" not in unrepaired
+    assert "I tried one fix and" in nh._kept_with_errors_note(_kept_outcome(1), "en")
+    assert "I tried 2 fixes and" in nh._kept_with_errors_note(_kept_outcome(2), "en")
+
+
+def test_the_kept_with_errors_note_is_japanese_all_the_way_through():
+    # The detail used to be the pipeline's English "cell c05 failed: ..." inside a Japanese
+    # sentence; the cell and error are now named in the reader's language.
+    note = nh._kept_with_errors_note(_kept_outcome(3), "ja")
+    assert "セル c05 で NameError: x が発生しました" in note
+    assert "3回修正" in note
+    assert "failed" not in note and "cell" not in note
+    assert "修正を試み" not in nh._kept_with_errors_note(_kept_outcome(0), "ja")
 
 
 async def test_a_guard_violating_draft_that_the_repair_fixes_runs(_fake_run_plumbing):
