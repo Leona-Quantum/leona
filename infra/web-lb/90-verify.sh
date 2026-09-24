@@ -150,13 +150,6 @@ fi
 #                                 line of this list again under another name.
 # ---------------------------------------------------------------------------
 echo "== public only through the load balancer, and as nobody in particular"
-svc_json=$(g run services describe "$SERVICE" --region "$REGION" --format=json 2>/dev/null || true)
-ingress=$(printf '%s' "$svc_json" | python3 -c 'import json,sys
-try: print(json.load(sys.stdin)["metadata"]["annotations"].get("run.googleapis.com/ingress",""))
-except Exception: print("")')
-runs_as=$(printf '%s' "$svc_json" | python3 -c 'import json,sys
-try: print(json.load(sys.stdin)["spec"]["template"]["spec"].get("serviceAccountName",""))
-except Exception: print("")')
 is_public() { # <service>
   g run services get-iam-policy "$1" --region "$REGION" --format=json 2>/dev/null | python3 -c 'import json,sys
 try: b=json.load(sys.stdin).get("bindings",[])
@@ -164,22 +157,46 @@ except Exception: b=[]
 m={x for i in b if i.get("role")=="roles/run.invoker" for x in i.get("members",[])}
 print("yes" if m & {"allUsers","allAuthenticatedUsers"} else "no")'
 }
-web_public=$(is_public "$SERVICE")
-if [ -z "$ingress" ]; then
-  note FAIL "could not read ${SERVICE}'s ingress setting"
-elif [ "$web_public" = yes ] && [ "$ingress" != "internal-and-cloud-load-balancing" ]; then
-  note FAIL "${SERVICE} is public with ingress '${ingress}' — it is reachable around Cloudflare"
-else
-  note OK "ingress ${ingress}; public: ${web_public}"
+# Both web services since 2026-09-24 (25-atlas-bulkhead.sh): each is a whole
+# copy of the site, so each must hold the same two properties.
+images=""
+for svc in $WEB_SERVICES; do
+  svc_json=$(g run services describe "$svc" --region "$REGION" --format=json 2>/dev/null || true)
+  if [ -z "$svc_json" ]; then
+    if [ "$svc" = "$ATLAS_SERVICE" ]; then note FAIL "${svc} does not exist — ./25-atlas-bulkhead.sh"; else note FAIL "${svc} does not exist"; fi
+    continue
+  fi
+  read -r ingress runs_as image <<EOF2
+$(printf '%s' "$svc_json" | python3 -c 'import json,sys
+d=json.load(sys.stdin); c=d["spec"]["template"]["spec"]
+print(d["metadata"]["annotations"].get("run.googleapis.com/ingress","-"), c.get("serviceAccountName","-") or "-", c["containers"][0].get("image","-"))')
+EOF2
+  images="${images}${image}"$'\n'
+  web_public=$(is_public "$svc")
+  if [ -z "$ingress" ] || [ "$ingress" = "-" ]; then
+    note FAIL "could not read ${svc}'s ingress setting"
+  elif [ "$web_public" = yes ] && [ "$ingress" != "internal-and-cloud-load-balancing" ]; then
+    note FAIL "${svc} is public with ingress '${ingress}' — it is reachable around Cloudflare"
+  else
+    note OK "${svc}: ingress ${ingress}; public: ${web_public}"
+  fi
+  case "$runs_as" in
+    majorana-web-runtime@*) note OK "${svc} runs as ${runs_as} (no project roles — ./05-runtime-identity.sh checks that)";;
+    *) if [ "$web_public" = yes ]; then
+         note FAIL "${svc} is public and runs as ${runs_as:-the default compute account}, which holds roles/editor"
+       else
+         note WARN "${svc} runs as ${runs_as:-the default compute account}; the next deploy-web run moves it to majorana-web-runtime"
+       fi;;
+  esac
+done
+# A page rendered by one service asks the other for its JavaScript chunks by
+# content hash; two images means chunks that 404. deploy-web.yml shifts both
+# back to back, so this is only ever true for the length of two API calls.
+if [ "$(printf '%s' "$images" | sort -u | grep -c .)" -gt 1 ]; then
+  note FAIL "the web services are on different images: $(printf '%s' "$images" | sed 's#.*/##' | tr '\n' ' ')"
+elif [ -n "$images" ]; then
+  note OK "both web services on one image ($(printf '%s' "$images" | head -1 | sed 's#.*/##'))"
 fi
-case "$runs_as" in
-  majorana-web-runtime@*) note OK "runs as ${runs_as} (no project roles — ./05-runtime-identity.sh checks that)";;
-  *) if [ "$web_public" = yes ]; then
-       note FAIL "${SERVICE} is public and runs as ${runs_as:-the default compute account}, which holds roles/editor"
-     else
-       note WARN "${SERVICE} runs as ${runs_as:-the default compute account}; the next deploy-web run moves it to majorana-web-runtime"
-     fi;;
-esac
 if exists run services describe majorana-web-verify --region "$REGION"; then
   case "$(is_public majorana-web-verify)" in
     no) note OK "the smoke-test twin is private";;
@@ -188,6 +205,71 @@ if exists run services describe majorana-web-verify --region "$REGION"; then
 else
   note WARN "no smoke-test twin yet (./07-verify-twin.sh); deploy-web.yml needs it"
 fi
+
+echo "== the Atlas bulkhead (25-atlas-bulkhead.sh)"
+for r in "compute network-endpoint-groups describe ${ATLAS_NEG_NAME} --region ${REGION}" \
+         "compute backend-services describe ${ATLAS_BACKEND_NAME} --global"; do
+  if exists $r; then note OK "${r%% describe*} ${r#* describe }"; else note FAIL "missing: $r"; fi
+done
+attached=$(g compute backend-services describe "$ATLAS_BACKEND_NAME" --global --format='value(securityPolicy)' 2>/dev/null || true)
+case "$attached" in *"$ARMOR_NAME") note OK "${ATLAS_BACKEND_NAME} carries the origin lock";;
+  *) note FAIL "${ATLAS_BACKEND_NAME} has no origin lock (${attached:-none}) — it would serve anyone who found the address";; esac
+for b in "$BACKEND_NAME" "$ATLAS_BACKEND_NAME"; do
+  logging=$(g compute backend-services describe "$b" --global --format='value(logConfig.enable)' 2>/dev/null || true)
+  case "$logging" in True|true) note OK "${b}: request logging on";;
+    *) note FAIL "${b}: request logging off — Cloud Armor's decisions and the 2026-09-24 kind of incident leave no record";; esac
+done
+g compute url-maps describe "$URLMAP_NAME" --format=json > /tmp/.urlmap.$$ 2>/dev/null || true
+if python3 - /tmp/.urlmap.$$ "$ATLAS_BACKEND_NAME" "$BACKEND_NAME" $ATLAS_PATHS <<'PY'
+import json,sys
+path,atlas,site,*want=sys.argv[1:]
+try: d=json.load(open(path))
+except Exception: print("  FAIL   could not read the url map"); raise SystemExit(1)
+routed={}
+for pm in d.get("pathMatchers",[]):
+    for rule in pm.get("pathRules",[]):
+        for p in rule.get("paths",[]): routed[p]=rule.get("service","").rsplit("/",1)[-1]
+bad=[p for p in want if routed.get(p)!=atlas]
+default=d.get("defaultService","").rsplit("/",1)[-1]
+hosts=[h for hr in d.get("hostRules",[]) for h in hr.get("hosts",[])]
+ok=True
+if bad: print("  FAIL   not routed to the Atlas backend:", " ".join(bad)); ok=False
+else: print(f"  OK     {len(want)} Atlas paths routed to {atlas}")
+if default!=site: print(f"  FAIL   default service is {default}, not {site}"); ok=False
+if want and "*" not in hosts: print("  FAIL   the Atlas rule applies to hosts", hosts, "not every host"); ok=False
+raise SystemExit(0 if ok else 1)
+PY
+then :; else fail=1; fi
+rm -f /tmp/.urlmap.$$
+
+echo "== per-visitor limits (15-visitor-limits.sh)"
+g compute security-policies describe "$ARMOR_NAME" --format=json > /tmp/.armor2.$$ 2>/dev/null || true
+if python3 - /tmp/.armor2.$$ <<'PY'
+import json,sys
+try: d=json.load(open(sys.argv[1])); d=d[0] if isinstance(d,list) else d
+except Exception: print("  FAIL   could not read the policy"); raise SystemExit(1)
+allow=set(x for r in d["rules"] if r["action"]=="allow" for x in r["match"]["config"]["srcIpRanges"])
+thr=[r for r in d["rules"] if r["action"]=="throttle"]
+if not thr: print("  WARN   no per-visitor throttle rules — nothing at the origin counts by visitor"); raise SystemExit(0)
+ranges=set(x for r in thr for x in r["match"]["config"]["srcIpRanges"])
+ok=True
+# A throttle's conforming action is allow, so a range here that the lock does
+# not allow is a hole in the lock, not a stricter rule.
+extra=ranges-allow
+if extra: print("  FAIL   throttle rules admit ranges the origin lock does not:", ", ".join(sorted(extra))); ok=False
+if allow-ranges: print("  WARN   Cloudflare ranges with no per-visitor limit:", ", ".join(sorted(allow-ranges)))
+for r in thr:
+    o=r.get("rateLimitOptions",{}); key=o.get("enforceOnKey"); name=o.get("enforceOnKeyName","")
+    if key!="HTTP_HEADER" or name.lower()!="cf-connecting-ip":
+        print(f"  FAIL   rule {r['priority']} keys on {key} {name} — behind Cloudflare that is one bucket per data centre, not per visitor"); ok=False
+th=o.get("rateLimitThreshold",{})
+mode="PREVIEW (log only)" if all(r.get("preview") for r in thr) else ("ENFORCED" if not any(r.get("preview") for r in thr) else "MIXED")
+if mode=="MIXED": print("  FAIL   some throttle rules are in preview and some are not"); ok=False
+else: print(f"  OK     {len(thr)} rules, {th.get('count')}/{th.get('intervalSec')}s per cf-connecting-ip, {mode}")
+raise SystemExit(0 if ok else 1)
+PY
+then :; else fail=1; fi
+rm -f /tmp/.armor2.$$
 
 # ---------------------------------------------------------------------------
 # The one setting that has to move at the same moment the load balancer does.

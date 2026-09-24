@@ -63,6 +63,8 @@ env:
   GCP_PROJECT: majorana-core
   GCP_REGION: us-west1
   SERVICE: majorana-web
+  # /repository* since 2026-09-24 (infra/web-lb/25-atlas-bulkhead.sh).
+  ATLAS_SERVICE: majorana-web-atlas
   VERIFY_SERVICE: majorana-web-verify
   VERIFY_AUDIENCE: majorana-web-verify
   # No project roles at all; reads the website's own secrets and nothing else
@@ -117,7 +119,7 @@ jobs:
       - name: load web sizing
         if: steps.expect.outputs.expected == 'yes'
         run: |
-          for key in WEB_MIN_INSTANCES WEB_MAX_INSTANCES WEB_XFF_TRUSTED_HOPS WEB_SIGN_IN; do
+          for key in WEB_MIN_INSTANCES WEB_MAX_INSTANCES WEB_CONCURRENCY WEB_ATLAS_MIN_INSTANCES WEB_ATLAS_MAX_INSTANCES WEB_ATLAS_CONCURRENCY WEB_XFF_TRUSTED_HOPS WEB_SIGN_IN; do
             grep -qE "^${key}=[0-9]+$" infra/fleet.env || {
               echo "::error::${key} is missing from infra/fleet.env or is not a plain integer"
               exit 1
@@ -371,33 +373,66 @@ jobs:
       #
       # --no-traffic, then the shift below: a revision whose container cannot
       # start fails HERE, with the previous revision still serving everybody.
-      - name: deploy majorana-web (no traffic)
+      #
+      # TWO services from one image since 2026-09-24: `majorana-web` serves
+      # everything except the Atlas, and `majorana-web-atlas` serves
+      # `/repository*` (the url map routes by path — infra/web-lb/25-atlas-bulkhead.sh).
+      # One service capped at four instances was a single capacity pool for the
+      # whole site, and an Atlas crawler used all of it: Cloud Run refused ~83%
+      # of every request, the home page included, for eight hours
+      # (ai-ops/desk/leona/plans/incidents/2026-09-24-gcp-web-429.md). Both get
+      # the same image, identity and settings, and differ only in sizing, which
+      # comes from infra/fleet.env. The atlas service must already exist — it is
+      # created by 25-atlas-bulkhead.sh with ingress restricted from birth, and
+      # `--no-traffic` cannot create a service — so its absence fails the run
+      # rather than letting this step invent one with defaults.
+      - name: deploy majorana-web and majorana-web-atlas (no traffic)
         id: dark
         if: steps.creds.outputs.have == 'true'
         run: |
-          previous=$(gcloud run services describe "$SERVICE" \
-            --project "$GCP_PROJECT" --region "$GCP_REGION" --format=json \
-            | jq -r '[.status.traffic[] | select((.percent // 0) > 0) | .revisionName] | first // ""')
+          serving() { # <service>
+            gcloud run services describe "$1" \
+              --project "$GCP_PROJECT" --region "$GCP_REGION" --format=json \
+              | jq -r '[.status.traffic[] | select((.percent // 0) > 0) | .revisionName] | first // ""'
+          }
+          gcloud run services describe "$ATLAS_SERVICE" --project "$GCP_PROJECT" --region "$GCP_REGION" \
+            --format='value(metadata.name)' >/dev/null 2>&1 || {
+            echo "::error::${ATLAS_SERVICE} does not exist. Run infra/web-lb/25-atlas-bulkhead.sh (it creates it with ingress restricted), then re-run this workflow."
+            exit 1
+          }
+          previous=$(serving "$SERVICE")
+          previous_atlas=$(serving "$ATLAS_SERVICE")
           echo "previous=${previous}" >> "$GITHUB_OUTPUT"
+          echo "previous_atlas=${previous_atlas}" >> "$GITHUB_OUTPUT"
 
-          gcloud run deploy "$SERVICE" \
-            --project "$GCP_PROJECT" --region "$GCP_REGION" \
-            --image "$WEB_IMAGE" \
-            --ingress internal-and-cloud-load-balancing \
-            --service-account "$RUNTIME_SA" \
-            --port 8080 \
-            --min-instances "$WEB_MIN_INSTANCES" \
-            --max-instances "$WEB_MAX_INSTANCES" \
-            --set-env-vars "$WEB_ENV_VARS" \
-            --set-secrets "$WEB_SECRETS" \
-            --no-traffic
-          echo "deployed dark, previously serving: ${previous:-<none>}"
+          deploy_dark() { # <service> <min> <max> <concurrency>
+            gcloud run deploy "$1" \
+              --project "$GCP_PROJECT" --region "$GCP_REGION" \
+              --image "$WEB_IMAGE" \
+              --ingress internal-and-cloud-load-balancing \
+              --service-account "$RUNTIME_SA" \
+              --port 8080 \
+              --min-instances "$2" \
+              --max-instances "$3" \
+              --concurrency "$4" \
+              --set-env-vars "$WEB_ENV_VARS" \
+              --set-secrets "$WEB_SECRETS" \
+              --no-traffic
+          }
+          deploy_dark "$SERVICE" "$WEB_MIN_INSTANCES" "$WEB_MAX_INSTANCES" "$WEB_CONCURRENCY"
+          deploy_dark "$ATLAS_SERVICE" "$WEB_ATLAS_MIN_INSTANCES" "$WEB_ATLAS_MAX_INSTANCES" "$WEB_ATLAS_CONCURRENCY"
+          echo "deployed dark; previously serving: ${previous:-<none>} / ${previous_atlas:-<none>}"
 
+      # Both shifts back to back, so the window in which the two services serve
+      # different builds (and a page from one asks the other for a chunk it
+      # does not have) is two API calls long rather than a whole deploy.
       - name: shift web traffic
         if: steps.creds.outputs.have == 'true'
         run: |
-          gcloud run services update-traffic "$SERVICE" \
-            --project "$GCP_PROJECT" --region "$GCP_REGION" --to-latest
+          for svc in "$SERVICE" "$ATLAS_SERVICE"; do
+            gcloud run services update-traffic "$svc" \
+              --project "$GCP_PROJECT" --region "$GCP_REGION" --to-latest
+          done
 
       # The shift is the only step between a revision that served nobody and one
       # that serves everybody, so it gets its own readback rather than being
@@ -411,31 +446,50 @@ jobs:
       # The second assertion is the dangerous pair, checked where it would be
       # created: a service that is public AND reachable directly is the whole
       # site with no Cloudflare, no rate limit and no origin lock in front of it.
-      - name: the shifted revision is the one serving
+      # The third is the one that makes the bulkhead a bulkhead: both services
+      # must be serving the same image, or a page from one references chunks
+      # the other cannot serve.
+      - name: the shifted revisions are the ones serving
         if: steps.creds.outputs.have == 'true'
         run: |
-          svc=$(gcloud run services describe "$SERVICE" \
-            --project "$GCP_PROJECT" --region "$GCP_REGION" --format=json)
-          serving=$(jq -r '[.status.traffic[] | select((.percent // 0) > 0) | .revisionName] | first // ""' <<<"$svc")
-          latest=$(jq -r '.status.latestCreatedRevisionName // ""' <<<"$svc")
-          if [ -z "$latest" ] || [ "$serving" != "$latest" ]; then
-            echo "::error::traffic is on ${serving:-<none>}, not the revision just built (${latest:-<none>})"
-            exit 1
+          fail=0
+          images=""
+          for svc in "$SERVICE" "$ATLAS_SERVICE"; do
+            json=$(gcloud run services describe "$svc" \
+              --project "$GCP_PROJECT" --region "$GCP_REGION" --format=json)
+            serving=$(jq -r '[.status.traffic[] | select((.percent // 0) > 0) | .revisionName] | first // ""' <<<"$json")
+            latest=$(jq -r '.status.latestCreatedRevisionName // ""' <<<"$json")
+            if [ -z "$latest" ] || [ "$serving" != "$latest" ]; then
+              echo "::error::${svc}: traffic is on ${serving:-<none>}, not the revision just built (${latest:-<none>})"
+              fail=1
+            fi
+            ingress=$(jq -r '.metadata.annotations["run.googleapis.com/ingress"] // ""' <<<"$json")
+            public=$(gcloud run services get-iam-policy "$svc" \
+              --project "$GCP_PROJECT" --region "$GCP_REGION" --format=json \
+              | jq -r '[.bindings[]? | select(.role=="roles/run.invoker") | .members[]] | map(select(.=="allUsers" or .=="allAuthenticatedUsers")) | length')
+            if [ "$public" != "0" ] && [ "$ingress" != "internal-and-cloud-load-balancing" ]; then
+              echo "::error::${svc} is public with ingress '${ingress}' — it is reachable around Cloudflare. Restrict ingress NOW: infra/web-lb/40-serve.sh"
+              fail=1
+            fi
+            image=$(jq -r '.spec.template.spec.containers[0].image // ""' <<<"$json")
+            images="${images}${image}"$'\n'
+            echo "${svc}: serving ${latest}; ingress ${ingress}; public through the load balancer: $([ "$public" != "0" ] && echo yes || echo 'not yet'); image ${image##*/}"
+          done
+          if [ "$(printf '%s' "$images" | grep -c . )" -ne 2 ] || [ "$(printf '%s' "$images" | sort -u | grep -c .)" -ne 1 ]; then
+            echo "::error::the two web services are not on one image:"; printf '%s' "$images"
+            fail=1
           fi
-          ingress=$(jq -r '.metadata.annotations["run.googleapis.com/ingress"] // ""' <<<"$svc")
-          public=$(gcloud run services get-iam-policy "$SERVICE" \
-            --project "$GCP_PROJECT" --region "$GCP_REGION" --format=json \
-            | jq -r '[.bindings[]? | select(.role=="roles/run.invoker") | .members[]] | map(select(.=="allUsers" or .=="allAuthenticatedUsers")) | length')
-          if [ "$public" != "0" ] && [ "$ingress" != "internal-and-cloud-load-balancing" ]; then
-            echo "::error::${SERVICE} is public with ingress '${ingress}' — it is reachable around Cloudflare. Restrict ingress NOW: infra/web-lb/40-serve.sh"
-            exit 1
-          fi
-          echo "serving ${latest}; ingress ${ingress}; public through the load balancer: $([ "$public" != "0" ] && echo yes || echo 'not yet')"
+          [ "$fail" -eq 0 ] || exit 1
 
       - name: roll web traffic back on failure
-        if: failure() && steps.creds.outputs.have == 'true' && steps.dark.outputs.previous != ''
+        if: failure() && steps.creds.outputs.have == 'true' && (steps.dark.outputs.previous != '' || steps.dark.outputs.previous_atlas != '')
         run: |
-          echo "::warning::rolling traffic back to ${{ steps.dark.outputs.previous }}"
-          gcloud run services update-traffic "$SERVICE" \
-            --project "$GCP_PROJECT" --region "$GCP_REGION" \
-            --to-revisions "${{ steps.dark.outputs.previous }}=100"
+          rollback() { # <service> <revision>
+            [ -n "$2" ] || return 0
+            echo "::warning::rolling ${1} back to ${2}"
+            gcloud run services update-traffic "$1" \
+              --project "$GCP_PROJECT" --region "$GCP_REGION" \
+              --to-revisions "${2}=100"
+          }
+          rollback "$SERVICE" "${{ steps.dark.outputs.previous }}"
+          rollback "$ATLAS_SERVICE" "${{ steps.dark.outputs.previous_atlas }}"

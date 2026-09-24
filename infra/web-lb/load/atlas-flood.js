@@ -18,11 +18,18 @@
 //   index and a record page, a static chunk and the OG image.
 //
 // Every response is recorded with WHO answered it, because a 429 from
-// Cloudflare, from Cloud Armor and from Cloud Run are three different findings:
-//   cloudrun  body is "Rate exceeded." (Cloud Run: no available instance)
-//   armor     x-cloud-trace-context present, not Cloud Run's body (the LB answered)
-//   cloudflare no x-cloud-trace-context (never reached Google)
-//   app       anything else that reached the service
+// Cloudflare, from Cloud Armor and from Cloud Run are three different findings
+// (`who()` below says how each is told apart):
+//   cloudrun     body is "Rate exceeded." (Cloud Run: no available instance)
+//   cf-cache     Cloudflare served it from cache; the origin was not asked
+//   cf-challenge Cloudflare challenged the client (Bot Fight Mode / a rule)
+//   cloudflare   no `Via: … google` — Cloudflare answered without asking Google
+//   armor        reached Google, 429/403, not Cloud Run's body
+//   app          anything else that reached the service
+//
+// Two streams, selectable with SCENARIO=crawler|visitor|both, so the crawler can
+// run from many machines while the visitor runs from one more (see
+// .github/workflows/loadtest-atlas.yml on the loadtest branch, and README.md).
 //
 // Point it only at a hostname you own and that serves no real visitors.
 import http from "k6/http";
@@ -33,6 +40,14 @@ const HOST = __ENV.HOST || "https://gcp-preview.leonaqt.com";
 const CRAWL_RPS = Number(__ENV.CRAWL_RPS || 40);
 const VISITOR_RPS = Number(__ENV.VISITOR_RPS || 2);
 const MINUTES = Number(__ENV.MINUTES || 5);
+// Which streams this process runs: "both" (default), "crawler" or "visitor".
+// The distributed test runs `crawler` on many machines (many source IPs, each
+// under Cloudflare's per-IP limit — the shape the real crawler must have had
+// to put ~58 requests/s on the origin for hours) and `visitor` on one more.
+const SCENARIO = __ENV.SCENARIO || "both";
+// Unix seconds; every process waits for it so that separately started
+// machines load the origin at the same time.
+const START_AT = Number(__ENV.START_AT || 0);
 const UA = "leona-loadtest/1 (+infra/web-lb/load)";
 
 const urls = new SharedArray("crawler", () => {
@@ -49,7 +64,7 @@ const resp = new Counter("resp");
 
 export const options = {
   discardResponseBodies: false,
-  scenarios: {
+  scenarios: Object.fromEntries(Object.entries({
     crawler: {
       executor: "constant-arrival-rate", exec: "crawler",
       rate: CRAWL_RPS, timeUnit: "1s", duration: `${MINUTES}m`,
@@ -60,8 +75,14 @@ export const options = {
       rate: VISITOR_RPS, timeUnit: "1s", duration: `${MINUTES}m`,
       preAllocatedVUs: 10, maxVUs: 60,
     },
-  },
+  }).filter(([name]) => SCENARIO === "both" || SCENARIO === name)
+    .map(([name, sc]) => [name, { ...sc, startTime: `${startDelay()}s` }])),
 };
+
+function startDelay() {
+  if (!START_AT) return 0;
+  return Math.max(0, Math.round(START_AT - Date.now() / 1000));
+}
 
 // `Via: 1.1 google` is added by Google's front end, so it is on everything that
 // reached the load balancer — including a response Cloudflare then cached, which
@@ -73,6 +94,8 @@ function who(r) {
   const body = typeof r.body === "string" ? r.body.slice(0, 40) : "";
   if (r.status === 429 && body.startsWith("Rate exceeded.")) return "cloudrun";
   if ((r.headers["Cf-Cache-Status"] || "") === "HIT") return "cf-cache";
+  // Bot Fight Mode / a managed challenge: Cloudflare answers for the origin.
+  if (r.headers["Cf-Mitigated"]) return "cf-challenge";
   const google = /google/i.test(r.headers["Via"] || "");
   if (!google) return "cloudflare";
   if (r.status === 429 || r.status === 403) return r.headers["X-Leona-Shed"] ? "app" : "armor";
