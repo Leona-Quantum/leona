@@ -286,7 +286,13 @@ async def test_export_sets_the_ipynb_content_type_and_filename(client, monkeypat
         response.headers["content-disposition"]
         == 'attachment; filename="bell-state-ab12cd34-v2.ipynb"'
     )
-    assert response.json() == {"cells": [], "nbformat": 4}
+    # An imported notebook (no spec) still gets the bootstrap cell prepended — Bridge
+    # lane, ai-ops 362 — even though none of the spec-based redaction logic applies to
+    # it; everything else about the reader's own bytes is untouched.
+    body = response.json()
+    assert body["nbformat"] == 4
+    assert [cell["id"] for cell in body["cells"]] == ["leona-bootstrap"]
+    assert f"%nala link {notebook.id}" in body["cells"][0]["source"]
 
 
 async def test_export_compiles_from_spec_when_no_executed_copy_exists(client, monkeypatch):
@@ -318,9 +324,14 @@ async def test_export_compiles_from_spec_when_no_executed_copy_exists(client, mo
     # reader meets outside our sandbox is `ModuleNotFoundError` on the first import, and
     # the version requirement was recorded only in `metadata.leona`, which no Jupyter,
     # JupyterLab or VS Code UI shows anybody.
-    assert body["cells"][0]["id"] == "leona-setup-note"
-    assert "pip install" in body["cells"][0]["source"]
-    assert body["cells"][1]["source"] == "# hi"
+    # Bootstrap cell first (runnable: install, load the magic, link, import
+    # leona_submit — Bridge lane, ai-ops 362), framework-version note second, the
+    # reader's own content after that.
+    assert body["cells"][0]["id"] == "leona-bootstrap"
+    assert f"%nala link {notebook.id}" in body["cells"][0]["source"]
+    assert body["cells"][1]["id"] == "leona-setup-note"
+    assert "pip install" in body["cells"][1]["source"]
+    assert body["cells"][2]["source"] == "# hi"
 
 
 async def test_a_quiz_downloads_without_its_answers(client, scope_identity, monkeypatch):
@@ -364,6 +375,7 @@ async def test_a_quiz_downloads_without_its_answers(client, scope_identity, monk
     assert reader.status_code == 200
     assert "Hadamard" not in reader.text
     assert [c["id"] for c in reader.json()["cells"]] == [
+        "leona-bootstrap",
         "leona-setup-note",
         "c01",
         "c02",
@@ -659,7 +671,15 @@ async def test_a_non_author_never_sees_a_downstream_cells_output_either(client, 
     assert by_id["pre"]["outputs"], "a cell before the redacted one must keep its output"
     assert by_id["solution"]["outputs"] == [], "the redacted cell itself carries no output"
     assert by_id["checkpoint"]["outputs"] == [], "a cell AFTER it must not leak the answer either"
-    assert "42" not in json_module.dumps(body)
+    # Scoped to OUTPUTS, not the whole body: the export now legitimately embeds the
+    # notebook's own id in the bootstrap cell's `%nala link` line (Bridge lane, ai-ops
+    # 362), and `notebook.id` is a random uuid4 here — its 32 hex digits have a real
+    # (not negligible) chance of containing "42" somewhere, which would fail a
+    # whole-body substring check for a reason that has nothing to do with redaction.
+    # Checking outputs alone is also the more precise assertion: the leak this test
+    # guards against is stdout, not an id.
+    all_outputs = json_module.dumps([cell.get("outputs", []) for cell in body["cells"]])
+    assert "42" not in all_outputs
 
 
 async def test_the_author_still_sees_every_cells_output(client, scope_identity, monkeypatch):

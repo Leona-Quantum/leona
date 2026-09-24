@@ -175,6 +175,59 @@ def setup_preamble(spec: NotebookSpec) -> dict[str, Any]:
     }
 
 
+#: The one place this URL is written down (Bridge lane, ai-ops 362): a reader's own
+#: `pip install` of `leona-notebooks` straight from this repository's git history,
+#: since it is not published to PyPI (`packages/py/notebooks/pyproject.toml`'s own
+#: `[tool.uv.sources]` — see also that file's dependency-on-`majorana-contracts`/
+#: `majorana-sandbox` comments, which is why a plain install of this alone is not
+#: enough for the FULL package, only for the `%nala`/`leona_submit` surface this
+#: bootstrap cell actually exercises).
+NOTEBOOKS_INSTALL_SPEC = (
+    "leona-notebooks @ git+https://github.com/Leona-Quantum/leona"
+    "#subdirectory=packages/py/notebooks"
+)
+
+
+def bootstrap_cell(notebook_id: str) -> dict[str, Any]:
+    """The first CELL in a downloaded notebook (Bridge lane, ai-ops 362): installs
+    `leona-notebooks` from this repository's git history, loads the `%nala` magic,
+    links THIS notebook (so `ask`/`fix`/`status`/`versions`/`run`/`open` need no id
+    typed again), and imports `leona_submit` so a hardware cell copied out of
+    Leona's sandbox does not `NameError` here instead of degrading to its local
+    message. A code cell, not markdown, unlike `setup_preamble` above — the whole
+    point is that a reader can just run it, not read it and type the commands by
+    hand.
+
+    Harmless run twice: `%pip install -q` is a no-op once installed, `%load_ext` on
+    an already-loaded extension only prints a notice (never raises), `%nala link`
+    just re-sets the same link, and a second `from leona_notebooks import
+    leona_submit` is an ordinary `sys.modules` cache hit. Contains no token —
+    `LEONA_API_TOKEN` is read from the shell environment `%nala`/`leona_submit`
+    already require (see `jupyter.py`'s module docstring); nothing here reads,
+    prints or writes one.
+    """
+    lines = [
+        "# Run this once to work on this notebook in your own Jupyter, VS Code or",
+        "# Colab. Set LEONA_API_TOKEN in your shell environment first (mint one on",
+        "# leonaqt.com: Account -> Access tokens) -- never paste a token into a cell.",
+        f'%pip install -q "{NOTEBOOKS_INSTALL_SPEC}"',
+        "%load_ext leona_notebooks.jupyter",
+        f"%nala link {notebook_id}",
+        "from leona_notebooks import leona_submit  # hardware cells call this; never submits locally",
+    ]
+    return {
+        "id": "leona-bootstrap",
+        "cell_type": "code",
+        "metadata": {
+            "leona": {"id": "leona-bootstrap", "role": "note", "execute": False},
+            "tags": ["note", "leona-export-preamble", "leona-bootstrap"],
+        },
+        "source": "\n".join(lines),
+        "execution_count": None,
+        "outputs": [],
+    }
+
+
 def to_ipynb(
     spec: NotebookSpec,
     *,
@@ -182,6 +235,7 @@ def to_ipynb(
     report: ExecutionReport | None = None,
     include_outputs: bool = True,
     preamble: bool = False,
+    notebook_id: str | None = None,
 ) -> dict[str, Any]:
     """Compile a spec to an nbformat v4.5 notebook dict.
 
@@ -190,9 +244,15 @@ def to_ipynb(
     downloads. Without one, or with `include_outputs=False`, outputs are empty, which is
     the only form ever committed to a repository.
 
-    `preamble=True` prepends `setup_preamble()` — for a file being downloaded, never for
-    one stored or re-imported, since it is not a cell of the spec and would come back as
-    one through `from_ipynb`.
+    `preamble=True` prepends `setup_preamble()`, and `notebook_id` (given) prepends
+    `bootstrap_cell()` before THAT — so a downloaded notebook opens with the runnable
+    bootstrap first and the framework-version note second. Both are for a file being
+    downloaded, never for one stored or re-imported: neither is a cell of the spec, and
+    either would come back as one through `from_ipynb` if it were ever saved back.
+    `notebook_id` is separate from `preamble` (not folded into one flag) because the
+    bootstrap needs an id to link and `setup_preamble` does not — a caller with no
+    notebook id yet (there is none, mid-generation) can still ask for the framework note
+    alone.
     """
     results = report.by_id() if (report is not None and include_outputs) else {}
     # A redacted cell must not carry the outputs of the cell it replaced. The stub keeps
@@ -272,6 +332,11 @@ def to_ipynb(
         )
     if preamble:
         cells.insert(0, setup_preamble(spec))
+    if notebook_id is not None:
+        # Inserted AFTER the (possible) markdown note above, at index 0, so it ends
+        # up BEFORE it — the runnable bootstrap is the very first cell, the
+        # framework-version note the second.
+        cells.insert(0, bootstrap_cell(notebook_id))
     language = "python"
     notebook = {
         "nbformat": 4,

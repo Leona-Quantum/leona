@@ -8,7 +8,12 @@ import nbformat
 
 from leona_notebooks import CellRole, from_ipynb, parse_source, to_ipynb
 from leona_notebooks.execution import CellError, CellOutput, CellResult, ExecutionReport
-from leona_notebooks.ipynb import cells_for_build
+from leona_notebooks.ipynb import (
+    NOTEBOOKS_INSTALL_SPEC,
+    bootstrap_cell,
+    cells_for_build,
+    setup_preamble,
+)
 
 CHALLENGE = """\
 # ---
@@ -398,3 +403,60 @@ def test_a_cell_the_build_drops_starts_the_redaction_too() -> None:
     assert {c["id"]: c for c in full["cells"]}["after"]["outputs"], (
         "the author's build keeps everything"
     )
+
+
+# ---------------------------------------------------------------- export bootstrap (ai-ops 362)
+
+
+def test_bootstrap_cell_is_a_runnable_code_cell_with_no_token() -> None:
+    cell = bootstrap_cell("nb_abc123")
+    assert cell["id"] == "leona-bootstrap"
+    assert cell["cell_type"] == "code"
+    source = cell["source"]
+    assert f'%pip install -q "{NOTEBOOKS_INSTALL_SPEC}"' in source
+    assert "%load_ext leona_notebooks.jupyter" in source
+    assert "%nala link nb_abc123" in source
+    assert "from leona_notebooks import leona_submit" in source
+    # No token: the function takes no token argument at all, so there is nothing to
+    # embed by accident — asserted anyway so a future signature change that DID add one
+    # cannot slip a real credential into a downloaded file without failing loudly here.
+    assert "LEONA_API_TOKEN=" not in source
+    assert "lq_pat_" not in source  # PAT prefix, in case a real token leaks in some day
+
+
+def test_bootstrap_cell_runs_before_the_setup_note_and_is_valid_nbformat() -> None:
+    spec = parse_source(CHALLENGE)
+    notebook = to_ipynb(spec, build="full", preamble=True, notebook_id="nb_xyz")
+    nbformat.validate(nbformat.from_dict(notebook))
+    ids = [cell["id"] for cell in notebook["cells"]]
+    assert ids[0] == "leona-bootstrap"
+    assert ids[1] == "leona-setup-note"
+    assert "c01" in ids  # the spec's own first cell, unmoved past the two preamble cells
+
+
+def test_notebook_id_alone_prepends_only_the_bootstrap_cell() -> None:
+    """`preamble` (the framework-version note) and `notebook_id` (the runnable
+    bootstrap) are independent flags — a caller can ask for one without the other.
+    `export_notebook_version` always passes both, but nothing else should have to."""
+    spec = parse_source(CHALLENGE)
+    notebook = to_ipynb(spec, build="full", notebook_id="nb_xyz")
+    ids = [cell["id"] for cell in notebook["cells"]]
+    assert ids[0] == "leona-bootstrap"
+    assert "leona-setup-note" not in ids
+
+
+def test_preamble_alone_still_works_exactly_as_before_the_bridge_lane() -> None:
+    spec = parse_source(CHALLENGE)
+    notebook = to_ipynb(spec, build="full", preamble=True)
+    ids = [cell["id"] for cell in notebook["cells"]]
+    assert ids[0] == "leona-setup-note"
+    assert "leona-bootstrap" not in ids
+    assert notebook["cells"][0]["source"] == setup_preamble(spec)["source"]
+
+
+def test_neither_flag_leaves_the_notebook_exactly_as_compiled() -> None:
+    spec = parse_source(CHALLENGE)
+    notebook = to_ipynb(spec, build="full")
+    ids = [cell["id"] for cell in notebook["cells"]]
+    assert "leona-bootstrap" not in ids
+    assert "leona-setup-note" not in ids

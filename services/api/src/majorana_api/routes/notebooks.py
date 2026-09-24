@@ -23,7 +23,7 @@ from fastapi import APIRouter, Depends, Header, HTTPException
 from fastapi.responses import JSONResponse
 from leona_notebooks import from_ipynb, to_ipynb
 from leona_notebooks.ipynb import Build as NotebookBuild
-from leona_notebooks.ipynb import build_for_kind
+from leona_notebooks.ipynb import bootstrap_cell, build_for_kind
 from leona_notebooks.courses import COURSE_STARTERS
 from leona_notebooks.authoring import (
     AuthoringInputError,
@@ -540,10 +540,16 @@ async def export_notebook_version(
             if version.report is not None
             else None
         )
-        ipynb = to_ipynb(spec, build=wanted, report=report, preamble=True)
+        ipynb = to_ipynb(
+            spec, build=wanted, report=report, preamble=True, notebook_id=str(notebook_id)
+        )
     elif version.ipynb is not None:
-        # An imported notebook: bytes the reader gave us, with no spec to recompile from.
-        ipynb = version.ipynb
+        # An imported notebook: bytes the reader gave us, with no spec to recompile
+        # from, so none of the redaction logic above applies — this is purely
+        # additive, the same bootstrap cell the spec branch gets, in front of
+        # whatever cells the reader's own file already had.
+        ipynb = dict(version.ipynb)
+        ipynb["cells"] = [bootstrap_cell(str(notebook_id)), *ipynb.get("cells", [])]
     else:
         raise HTTPException(
             status_code=404,
