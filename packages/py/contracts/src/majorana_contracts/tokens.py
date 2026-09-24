@@ -9,15 +9,25 @@ shaped by the owner's ruling on **ai-ops 362, option 1**, quoted:
 
 Three things in that sentence are load-bearing here and each has a name below:
 
-- **read and start verified runs** — the two scopes, and there is no third.
+- **read and start verified runs** — the two original scopes, and until now there was
+  no third.
 - **at most 90 days** — `MAX_TOKEN_LIFETIME_DAYS`, a ceiling rather than a fixed term,
   so somebody who wants a week can have a week.
-- **hardware jobs come later under their own permission** — there is deliberately no
-  `hardware` member of `TokenScope`. A token cannot be granted what does not exist,
-  so hardware is refused by there being nothing to select rather than by a check
-  somebody has to remember to write. Adding that member later is the whole of what
-  "under their own permission" will mean, and it is a widening, which is the
-  direction a security review can actually follow.
+- **hardware jobs come later under their own permission** — until now there was
+  deliberately no `hardware` member of `TokenScope`, so hardware was refused by there
+  being nothing to select rather than by a check somebody had to remember to write.
+
+That deferral is now resolved. **ai-ops 376, option 2**, quoted in full:
+
+    "Add a separate 'hardware' permission a person must tick when creating a token.
+    With it, leona_submit in their own Jupyter or VS Code submits directly, priced
+    and counted against the same weekly allowance."
+
+`TokenScope.HARDWARE` is the "own permission" ai-ops 362 named, and it is the widening
+that ruling asked a security review to be able to follow: a new member of a closed
+enum, additive, with the routes it unlocks named one line away in
+`auth/token_access.py`. It does not fold into `RUN`, and `RUN` does not fold into it —
+see `TokenScope`'s own docstring below for why the two stay independent.
 
 The secret itself appears in exactly one place in this module — `MintedToken.token`,
 the response to the one request that creates it — and in no other model, no list, and
@@ -62,16 +72,39 @@ class TokenScope(StrEnum):
     """What a token may do. Closed, and short on purpose.
 
     `READ` is implied by every token and is what a token with nothing else can do.
-    `RUN` is additive: it does not replace `READ`, it adds starting a run to it, so a
-    token's scopes are either `{read}` or `{read, run}` and never `{run}` alone. That
-    is enforced at the database (`ck_personal_access_tokens_scopes`) as well as here,
-    because a row that reached the table another way must still be answerable.
+    `RUN` and `HARDWARE` are each additive on top of `READ`, and neither implies the
+    other. That is enforced at the database (`ck_personal_access_tokens_scopes`) as
+    well as here, because a row that reached the table another way must still be
+    answerable.
 
-    There is no `hardware`. See this module's docstring.
+    ## Why `HARDWARE` does not imply `RUN`, and `RUN` does not imply `HARDWARE`
+
+    They are different powers over different things. `RUN` starts Leona's own
+    sandboxed, verified runs — generate a notebook, ask Nala a follow-up, execute a
+    Qapp — and spends the caller's weekly RUN allowance. `HARDWARE` submits an
+    already-built circuit straight to a real quantum provider (`POST
+    /qpu/submissions`) and spends the caller's weekly hardware allowance instead. A
+    token minted to do only one of those two things is a real, narrower use case —
+    the `%nala` CLI driving Leona's own pipeline should not, by that fact alone, also
+    be able to spend real provider time, and a token minted only to submit
+    pre-built circuits from a person's own code should not, by that fact alone, also
+    be able to start arbitrary generation runs. Pricing a circuit
+    (`POST /qpu/estimates`) needs neither: it is in `token_access.READ_WRITES`,
+    reachable by every token regardless of scope, so a `HARDWARE`-only token can
+    still price before it submits.
+
+    There is one `hardware` scope, added ai-ops 376 option 2. See this module's
+    docstring for the ruling and why it earns its own member rather than reusing
+    `RUN`.
     """
 
     READ = "read"
     RUN = "run"
+    #: Submit a circuit to real hardware, spending the caller's weekly hardware
+    #: allowance — ai-ops 376 option 2. See the class and module docstrings for why
+    #: it is independent of `RUN`, and `auth/token_access.py` for the one route it
+    #: unlocks.
+    HARDWARE = "hardware"
 
 
 TokenName = Annotated[str, StringConstraints(min_length=1, max_length=80, strip_whitespace=True)]

@@ -11140,10 +11140,11 @@
         "type": "object"
       },
       "TokenScope": {
-        "description": "What a token may do. Closed, and short on purpose.\n\n`READ` is implied by every token and is what a token with nothing else can do.\n`RUN` is additive: it does not replace `READ`, it adds starting a run to it, so a\ntoken's scopes are either `{read}` or `{read, run}` and never `{run}` alone. That\nis enforced at the database (`ck_personal_access_tokens_scopes`) as well as here,\nbecause a row that reached the table another way must still be answerable.\n\nThere is no `hardware`. See this module's docstring.",
+        "description": "What a token may do. Closed, and short on purpose.\n\n`READ` is implied by every token and is what a token with nothing else can do.\n`RUN` and `HARDWARE` are each additive on top of `READ`, and neither implies the\nother. That is enforced at the database (`ck_personal_access_tokens_scopes`) as\nwell as here, because a row that reached the table another way must still be\nanswerable.\n\n## Why `HARDWARE` does not imply `RUN`, and `RUN` does not imply `HARDWARE`\n\nThey are different powers over different things. `RUN` starts Leona's own\nsandboxed, verified runs \u2014 generate a notebook, ask Nala a follow-up, execute a\nQapp \u2014 and spends the caller's weekly RUN allowance. `HARDWARE` submits an\nalready-built circuit straight to a real quantum provider (`POST\n/qpu/submissions`) and spends the caller's weekly hardware allowance instead. A\ntoken minted to do only one of those two things is a real, narrower use case \u2014\nthe `%nala` CLI driving Leona's own pipeline should not, by that fact alone, also\nbe able to spend real provider time, and a token minted only to submit\npre-built circuits from a person's own code should not, by that fact alone, also\nbe able to start arbitrary generation runs. Pricing a circuit\n(`POST /qpu/estimates`) needs neither: it is in `token_access.READ_WRITES`,\nreachable by every token regardless of scope, so a `HARDWARE`-only token can\nstill price before it submits.\n\nThere is one `hardware` scope, added ai-ops 376 option 2. See this module's\ndocstring for the ruling and why it earns its own member rather than reusing\n`RUN`.",
         "enum": [
           "read",
-          "run"
+          "run",
+          "hardware"
         ],
         "title": "TokenScope",
         "type": "string"
@@ -12091,7 +12092,7 @@
   "info": {
     "description": "Cross-boundary types only; API paths are owned by services/api.",
     "title": "majorana-contracts",
-    "version": "2.36.0"
+    "version": "2.37.0"
   },
   "openapi": "3.1.0",
   "paths": {}

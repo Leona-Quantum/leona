@@ -530,7 +530,17 @@ from .lifecycle import (
 # Additive: new names only, no existing model changes. Not re-exported from this
 # module's `__all__`, matching `NotebookGrades` — a member of `RunEvent` validates and
 # emits through `run_event_adapter` without a top-level import.
-CONTRACTS_VERSION = "2.36.0"
+# 2.37.0: plan 10-notebook-ide, "Hardware" lane, the token half — ai-ops 376 option 2,
+# "Add a separate 'hardware' permission a person must tick when creating a token.
+# With it, leona_submit in their own Jupyter or VS Code submits directly, priced and
+# counted against the same weekly allowance." New: `TokenScope.HARDWARE`, the third
+# member of what the 2.30.0 entry above called a closed enum of exactly two — that
+# entry is left as written, a true record of what shipped then; `tokens.py`'s own
+# docstrings (not a changelog, so not append-only) are updated to say what is true
+# now. Additive: one new enum value, no existing model changes; `auth/token_access.py`
+# gates the one route it unlocks (migration 0075 widens the matching DB check
+# constraint in the same PR).
+CONTRACTS_VERSION = "2.37.0"
 
 __all__ = [
     "PresenceHeartbeatRequest",
