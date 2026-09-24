@@ -26,10 +26,13 @@ import {
   applyCellEdit,
   cellsAreDirty,
   deleteCell,
+  duplicateCell,
   insertCellAfter,
   moveCell,
   specWithCells,
+  undoStructuralChange,
   type CellEdit,
+  type StructuralChange,
 } from "../../../../lib/notebook-editing";
 import { notebookExportFilename } from "../../../../lib/notebook-export";
 import { canDownloadSolutions } from "../../../../lib/notebook-download";
@@ -149,6 +152,8 @@ export function NotebookWorkspace({ notebookId, locale = "en" }: { notebookId: s
   // The editor's draft. `null` means "not editing" — distinct from an empty array,
   // which is a notebook the reader has deleted every cell from and is about to save.
   const [draftCells, setDraftCells] = useState<Cell[] | null>(null);
+  // "Ask Nala" on a cell starts a message in this box and focuses it.
+  const chatInputRef = useRef<HTMLTextAreaElement | null>(null);
   const [focusedCellId, setFocusedCellId] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   // The version an in-flight save is writing, AND the run writing it. Pinned once
@@ -772,6 +777,19 @@ export function NotebookWorkspace({ notebookId, locale = "en" }: { notebookId: s
     setDraftCells((current) => (current === null ? current : moveCell(current, cellId, direction)));
   }
 
+  function duplicateDraftCell(cellId: string) {
+    setDraftCells((current) => {
+      if (current === null) return current;
+      const { cells: next, id } = duplicateCell(current, cellId);
+      if (id) setFocusedCellId(id);
+      return next;
+    });
+  }
+
+  function undoDraftChange(change: StructuralChange) {
+    setDraftCells((current) => (current === null ? current : undoStructuralChange(current, change)));
+  }
+
   /** Save the draft as a new user-authored version. `runUntil` is "Run to here". */
   async function saveDraft({ execute, runUntil }: { execute: boolean; runUntil?: string | null }) {
     const spec = version?.spec;
@@ -894,6 +912,31 @@ export function NotebookWorkspace({ notebookId, locale = "en" }: { notebookId: s
       exercise: `Turn cell ${cellId} into an exercise.`,
     };
     void sendTurn(templates[action]);
+  }
+
+  /** "Ask Nala" on a cell: start a message about it rather than send one, so the
+   * reader says what they want to know. A message already being typed is kept. */
+  function askNalaAbout(cellId: string) {
+    setMessage((current) => (current.trim() ? current : copy.ide.askNalaPrefix(cellId)));
+    chatInputRef.current?.focus();
+  }
+
+  /** "Fix with Nala" on a cell that raised: a revise turn aimed at that cell alone,
+   * carrying its traceback. "Explain this error" (`cellAction`) asks for an explanation
+   * as well; this one only asks for the fix. */
+  function fixWithNala(cellId: string) {
+    const cell = cells.find((item) => item.id === cellId);
+    void sendTurn(copy.ide.fixWithNalaTurn(cellId, errorTracebackText(cell?.error ?? null)));
+  }
+
+  /** From the editor, the Nala actions leave edit mode first: a turn revises the SAVED
+   * version, so they are offered only when there are no unsaved edits to lose. */
+  function leaveEditingThen(action: (cellId: string) => void): ((cellId: string) => void) | undefined {
+    if (dirty) return undefined;
+    return (cellId) => {
+      stopEditing();
+      action(cellId);
+    };
   }
 
   /** Workspace-level, not per-cell: creates a NEW notebook seeded from this
@@ -1253,6 +1296,14 @@ export function NotebookWorkspace({ notebookId, locale = "en" }: { notebookId: s
                 onMove={shiftCell}
                 onFocusCell={setFocusedCellId}
                 onRunToHere={(cellId) => void saveDraft({ execute: true, runUntil: cellId })}
+                cellResults={cells}
+                onRunAll={() => void saveDraft({ execute: true })}
+                onSave={() => void saveDraft({ execute: false })}
+                onDuplicate={duplicateDraftCell}
+                onUndoStructural={undoDraftChange}
+                onAskNala={leaveEditingThen(askNalaAbout)}
+                onFixWithNala={leaveEditingThen(fixWithNala)}
+                onExplainError={leaveEditingThen((cellId) => cellAction(cellId, "explainError"))}
               />
               <div className="mj-notebook-edit-bar" role="group" aria-label={copy.edit}>
                 <button
@@ -1299,6 +1350,9 @@ export function NotebookWorkspace({ notebookId, locale = "en" }: { notebookId: s
               locale={locale}
               framework={notebook.framework?.name ?? "qiskit"}
               onCellAction={cellAction}
+              onRunAll={() => void runAgain()}
+              onAskNala={askNalaAbout}
+              onFixWithNala={fixWithNala}
               grades={grades}
               gradingCellIds={gradingCellIds}
               hardware={{ notebookId, seq: version.seq }}
@@ -1346,6 +1400,7 @@ export function NotebookWorkspace({ notebookId, locale = "en" }: { notebookId: s
             <label>
               <span className="sr-only">{copy.chatLabel}</span>
               <textarea
+                ref={chatInputRef}
                 value={message}
                 onChange={(event) => setMessage(event.target.value)}
                 placeholder={copy.chatPlaceholder}

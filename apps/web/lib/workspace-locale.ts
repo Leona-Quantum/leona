@@ -2,6 +2,8 @@ import type { components } from "@majorana/contracts-gen";
 import type { AccountTier } from "./account-tier";
 import type { NotebookDiffCellStatus, NotebookDiffHeaderField } from "./notebook-diff";
 import type { NotebookMastery } from "./notebook-mastery";
+import type { CellRunChip } from "./notebook-ide";
+import type { NotebookLintCopy } from "./notebook-lint";
 import type { PublicLocale } from "./public-locale";
 
 type NotebookKind = components["schemas"]["NotebookKind"];
@@ -17,6 +19,202 @@ type NotebookDiffHeaderFieldKey = NotebookDiffHeaderField["field"];
 type CourseStatusCopyKey = "planning" | "planned" | "generating" | "ready" | "failed";
 type CourseModuleStatusCopyKey = "planned" | "queued" | "generating" | "ready" | "failed";
 type CourseModuleCountCopyKey = "auto" | "4" | "8" | "12";
+
+/**
+ * The notebook IDE's strings: the code editor, the per-cell toolbar, the notebook-level bar
+ * (Run all, the error navigator, the outline), command-mode help, and the linter's
+ * messages. Kept as one block, referenced once from each locale's `notebooks`, so the
+ * whole surface can be read (and translated) in one place.
+ *
+ * Plain register throughout, and honest about what a run is: every run replays the
+ * notebook from the top in a fresh sandbox (there is no kernel that remembers state), so
+ * "Run to here" says so rather than implying one cell runs on its own.
+ */
+export interface NotebookIdeCopy {
+  runToHereHint: string;
+  runAll: string;
+  runAllHint: string;
+  chip: Record<CellRunChip, string>;
+  duration: (ms: number) => string;
+  durationHint: string;
+  duplicate: string;
+  convertToText: string;
+  convertToCode: string;
+  askNala: string;
+  askNalaHint: string;
+  fixWithNala: string;
+  fixWithNalaHint: string;
+  /** What "Ask Nala" puts in the chat box: the start of a message, which the reader finishes. */
+  askNalaPrefix: (cellId: string) => string;
+  /** The turn "Fix with Nala" sends for a cell that raised, with its traceback. */
+  fixWithNalaTurn: (cellId: string, traceback: string) => string;
+  toolbarLabel: (cellId: string) => string;
+  cellLabel: (cellId: string) => string;
+  barLabel: string;
+  raised: (count: number) => string;
+  goToRaised: (count: number) => string;
+  outlineLabel: string;
+  problemsLabel: (cellId: string) => string;
+  problemsCount: (count: number) => string;
+  problemAt: (line: number) => string;
+  severity: Record<"error" | "warning", string>;
+  editorKeys: string;
+  commandKeys: string;
+  lint: NotebookLintCopy;
+}
+
+const NOTEBOOK_IDE_COPY: Record<PublicLocale, NotebookIdeCopy> = {
+  en: {
+    runToHereHint: "Runs every cell up to this one, from the top, in a fresh sandbox.",
+    runAll: "Run all",
+    runAllHint: "Runs the whole notebook from the top in a fresh sandbox.",
+    chip: {
+      ran: "Ran",
+      raised: "Raised an error",
+      not_run: "Not run",
+      running: "Running…",
+      edited: "Edited since last run",
+      skipped: "Skipped",
+    },
+    duration: (ms) => (ms < 1000 ? `${Math.round(ms)} ms` : `${(ms / 1000).toFixed(1)} s`),
+    durationHint: "How long this cell took in the last run",
+    duplicate: "Duplicate",
+    convertToText: "Change to text",
+    convertToCode: "Change to code",
+    askNala: "Ask Nala",
+    askNalaHint: "Ask Nala about this cell in the chat",
+    fixWithNala: "Fix with Nala",
+    fixWithNalaHint: "Ask Nala to fix the error in this cell",
+    askNalaPrefix: (cellId) => `About cell ${cellId}: `,
+    fixWithNalaTurn: (cellId, traceback) =>
+      `Cell \`${cellId}\` raised this error:\n\`\`\`\n${traceback}\n\`\`\`\nFix the cell so it runs. Keep the rest of the notebook as it is.`,
+    toolbarLabel: (cellId) => `Cell ${cellId} actions`,
+    cellLabel: (cellId) => `Cell ${cellId}`,
+    barLabel: "Notebook",
+    raised: (count) => (count === 1 ? "1 cell raised an error." : `${count} cells raised an error.`),
+    goToRaised: (count) => (count === 1 ? "Go to it" : "Go to the first"),
+    outlineLabel: "Outline",
+    problemsLabel: (cellId) => `Problems in cell ${cellId}`,
+    problemsCount: (count) =>
+      count === 1 ? "1 problem found before running" : `${count} problems found before running`,
+    problemAt: (line) => `Line ${line}`,
+    severity: { error: "Error", warning: "Warning" },
+    editorKeys:
+      "Tab indents and Shift+Tab outdents. Press Esc to leave the code, then Tab to move on. "
+      + "Ctrl+Enter runs to here. Shift+Enter runs to here and moves to the next cell.",
+    commandKeys:
+      "Enter edits this cell. A or B adds a cell above or below. Press D twice to delete it. "
+      + "M makes it text, Y makes it code. J and K move between cells. Z undoes the last change "
+      + "to the list of cells.",
+    lint: {
+      gateReturnsInstructions: (shown) =>
+        `\`${shown}\` adds the gate and returns an InstructionSet, not the circuit. Create the `
+        + "circuit first (for example `qc = QuantumCircuit(1)`), apply the gate on its own line "
+        + "(`qc.h(0)`), then use `qc`.",
+      measureAllReturnsNone: (shown) =>
+        `\`${shown}\` measures the circuit in place and returns None, not the circuit. Call it on `
+        + "its own line and then use the circuit, or use `measure_all(inplace=False)` for a measured copy.",
+      measuredCircuit: (name) =>
+        `\`${name}\` has measurements, so it has no statevector or operator. Build the state from `
+        + `the circuit before measuring it, or pass \`${name}.remove_final_measurements(inplace=False)\`.`,
+      removedApi: {
+        "qiskit.execute":
+          "`qiskit.execute` was removed in Qiskit 1.0. Run circuits with a primitive: `StatevectorSampler().run([qc], shots=1000)`.",
+        "qiskit.Aer":
+          "`Aer` is no longer importable from `qiskit`. Use `from qiskit_aer import AerSimulator`, or `StatevectorSampler` from `qiskit.primitives`.",
+        "qiskit.BasicAer": "`BasicAer` was removed in Qiskit 1.0. Use `StatevectorSampler` from `qiskit.primitives`.",
+        "qiskit.IBMQ":
+          "`IBMQ` was removed. Hardware access goes through `qiskit_ibm_runtime`, and on Leona through `leona_submit(qc)`.",
+        "qiskit.primitives.Sampler": "The V1 `Sampler` was removed in Qiskit 2.0. Use `StatevectorSampler`.",
+        "qiskit.primitives.Estimator": "The V1 `Estimator` was removed in Qiskit 2.0. Use `StatevectorEstimator`.",
+        "qiskit.primitives.BackendSampler": "`BackendSampler` was removed in Qiskit 2.0. Use `BackendSamplerV2`.",
+        "qiskit.primitives.BackendEstimator": "`BackendEstimator` was removed in Qiskit 2.0. Use `BackendEstimatorV2`.",
+        "qiskit.opflow": "`qiskit.opflow` was removed. Use `SparsePauliOp` from `qiskit.quantum_info`.",
+        "qiskit.algorithms":
+          "`qiskit.algorithms` was removed. The algorithms moved to the separate `qiskit_algorithms` package, which this sandbox does not have. Write the loop directly with a primitive.",
+        "qiskit.providers.aer": "`qiskit.providers.aer` was removed. Use `from qiskit_aer import AerSimulator`.",
+        "qiskit.test": "`qiskit.test` was removed.",
+        "qiskit.tools": "`qiskit.tools` was removed.",
+        bind_parameters: "`bind_parameters` was removed in Qiskit 1.0. Use `assign_parameters`.",
+        qasm: "`QuantumCircuit.qasm()` was removed in Qiskit 1.0. Use `qasm2.dumps(qc)` or `qasm3.dumps(qc)`.",
+      },
+    },
+  },
+  ja: {
+    runToHereHint: "このセルまでのすべてのセルを、最初から新しいサンドボックスで実行します。",
+    runAll: "すべて実行",
+    runAllHint: "ノートブック全体を、最初から新しいサンドボックスで実行します。",
+    chip: {
+      ran: "実行済み",
+      raised: "エラー",
+      not_run: "未実行",
+      running: "実行中…",
+      edited: "実行後に編集",
+      skipped: "スキップ",
+    },
+    duration: (ms) => (ms < 1000 ? `${Math.round(ms)} ms` : `${(ms / 1000).toFixed(1)} 秒`),
+    durationHint: "前回の実行でこのセルにかかった時間",
+    duplicate: "複製",
+    convertToText: "テキストに変更",
+    convertToCode: "コードに変更",
+    askNala: "Nalaに質問",
+    askNalaHint: "このセルについてチャットでNalaに質問します",
+    fixWithNala: "Nalaに修正を依頼",
+    fixWithNalaHint: "このセルのエラーの修正をNalaに依頼します",
+    askNalaPrefix: (cellId) => `セル ${cellId} について: `,
+    fixWithNalaTurn: (cellId, traceback) =>
+      `セル \`${cellId}\` で次のエラーが出ました:\n\`\`\`\n${traceback}\n\`\`\`\nこのセルが実行できるように直してください。ノートブックの他の部分はそのままにしてください。`,
+    toolbarLabel: (cellId) => `セル ${cellId} の操作`,
+    cellLabel: (cellId) => `セル ${cellId}`,
+    barLabel: "ノートブック",
+    raised: (count) => `${count}個のセルでエラーが出ました。`,
+    goToRaised: (count) => (count === 1 ? "そのセルへ移動" : "最初のセルへ移動"),
+    outlineLabel: "目次",
+    problemsLabel: (cellId) => `セル ${cellId} の問題`,
+    problemsCount: (count) => `実行前に${count}件の問題が見つかりました`,
+    problemAt: (line) => `${line}行目`,
+    severity: { error: "エラー", warning: "警告" },
+    editorKeys:
+      "Tabでインデント、Shift+Tabでインデントを戻します。Escでコードから抜け、続けてTabで次へ移動します。"
+      + "Ctrl+Enterでここまで実行し、Shift+Enterでここまで実行して次のセルへ移動します。",
+    commandKeys:
+      "Enterでこのセルを編集します。AまたはBで上または下にセルを追加し、Dを2回押すと削除します。"
+      + "Mでテキスト、Yでコードに変更します。JとKでセル間を移動し、Zでセル構成の直前の変更を元に戻します。",
+    lint: {
+      gateReturnsInstructions: (shown) =>
+        `\`${shown}\` はゲートを追加して InstructionSet を返します。回路そのものではありません。`
+        + "先に回路を作り（例：`qc = QuantumCircuit(1)`）、ゲートは別の行で適用して（`qc.h(0)`）、"
+        + "そのあとで `qc` を使ってください。",
+      measureAllReturnsNone: (shown) =>
+        `\`${shown}\` は回路をその場で測定して None を返します。回路は返しません。`
+        + "別の行で呼び出してから回路を使うか、測定済みのコピーが必要なら `measure_all(inplace=False)` を使ってください。",
+      measuredCircuit: (name) =>
+        `\`${name}\` には測定が含まれているため、状態ベクトルも演算子も持ちません。`
+        + `測定する前の回路から状態を作るか、\`${name}.remove_final_measurements(inplace=False)\` を渡してください。`,
+      removedApi: {
+        "qiskit.execute":
+          "`qiskit.execute` は Qiskit 1.0 で削除されました。回路はプリミティブで実行します：`StatevectorSampler().run([qc], shots=1000)`。",
+        "qiskit.Aer":
+          "`Aer` は `qiskit` からインポートできなくなりました。`from qiskit_aer import AerSimulator` か、`qiskit.primitives` の `StatevectorSampler` を使ってください。",
+        "qiskit.BasicAer": "`BasicAer` は Qiskit 1.0 で削除されました。`qiskit.primitives` の `StatevectorSampler` を使ってください。",
+        "qiskit.IBMQ":
+          "`IBMQ` は削除されました。ハードウェアへは `qiskit_ibm_runtime` から、Leona では `leona_submit(qc)` からアクセスします。",
+        "qiskit.primitives.Sampler": "V1 の `Sampler` は Qiskit 2.0 で削除されました。`StatevectorSampler` を使ってください。",
+        "qiskit.primitives.Estimator": "V1 の `Estimator` は Qiskit 2.0 で削除されました。`StatevectorEstimator` を使ってください。",
+        "qiskit.primitives.BackendSampler": "`BackendSampler` は Qiskit 2.0 で削除されました。`BackendSamplerV2` を使ってください。",
+        "qiskit.primitives.BackendEstimator": "`BackendEstimator` は Qiskit 2.0 で削除されました。`BackendEstimatorV2` を使ってください。",
+        "qiskit.opflow": "`qiskit.opflow` は削除されました。`qiskit.quantum_info` の `SparsePauliOp` を使ってください。",
+        "qiskit.algorithms":
+          "`qiskit.algorithms` は削除されました。アルゴリズムは別パッケージの `qiskit_algorithms` に移りましたが、このサンドボックスにはありません。プリミティブを使ってループを直接書いてください。",
+        "qiskit.providers.aer": "`qiskit.providers.aer` は削除されました。`from qiskit_aer import AerSimulator` を使ってください。",
+        "qiskit.test": "`qiskit.test` は削除されました。",
+        "qiskit.tools": "`qiskit.tools` は削除されました。",
+        bind_parameters: "`bind_parameters` は Qiskit 1.0 で削除されました。`assign_parameters` を使ってください。",
+        qasm: "`QuantumCircuit.qasm()` は Qiskit 1.0 で削除されました。`qasm2.dumps(qc)` か `qasm3.dumps(qc)` を使ってください。",
+      },
+    },
+  },
+};
 
 export const WORKSPACE_COPY: Record<PublicLocale, {
   surfaces: { brandedRun: string; preview: string };
@@ -923,6 +1121,8 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
     structureNotesLabel: string;
     structureNotesHint: string;
     cellNotRunBadge: string;
+    /** The notebook IDE: editor, cell toolbar, notebook bar, lint messages. */
+    ide: NotebookIdeCopy;
 
     teachMeInNotebook: string;
   };
@@ -2146,6 +2346,7 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
     structureNotesLabel: "Nala's structure notes",
     structureNotesHint: "Suggestions only — your version was saved as you wrote it.",
     cellNotRunBadge: "Not run",
+    ide: NOTEBOOK_IDE_COPY.en,
 
     teachMeInNotebook: "Teach me this in a notebook",
   },
@@ -3356,6 +3557,7 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
     structureNotesLabel: "Nalaからの構成メモ",
     structureNotesHint: "提案のみです。バージョンは書かれたとおりに保存されています。",
     cellNotRunBadge: "未実行",
+    ide: NOTEBOOK_IDE_COPY.ja,
 
     teachMeInNotebook: "ノートブックで学ぶ",
   },
