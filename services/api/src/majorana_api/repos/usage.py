@@ -28,6 +28,16 @@ async def record_usage(
     require_write(scope)
     if quantity < 0:  # append-only billing substrate: corrections are new kinds, not negatives
         raise ValueError("quantity must be non-negative")
+    # Normalised BEFORE the insert and again on the compare below, because the column is
+    # `Numeric` and a Python float does not survive the trip: Postgres casts a float8
+    # parameter to numeric at 15 significant digits, so a sum like
+    # 8.417 + 9.667 + 7.928 + 8.585 = 34.597000000000005 is stored as 34.597, read back
+    # unequal, and the idempotency check below rejected its OWN first insert as "reused
+    # with different content". Every notebook build that needed a repair (more than one
+    # sandbox run, so a summed duration) lost its sandbox seconds that way, logged and
+    # swallowed; observed in production 2026-09-24 01:08Z. Six decimal places keeps any
+    # quantity under 10^9 inside those 15 digits.
+    quantity = _normalised(quantity)
     if event_id is not None:
         await session.execute(
             insert(UsageEvent)
@@ -54,7 +64,7 @@ async def record_usage(
             raise ValueError("usage event id is unavailable in this scope")
         if (
             existing.kind != kind
-            or float(existing.quantity) != float(quantity)
+            or _normalised(existing.quantity) != quantity
             or existing.meta != meta
         ):
             raise ValueError("usage event idempotency key was reused with different content")
@@ -70,6 +80,10 @@ async def record_usage(
     session.add(event)
     await session.flush()
     return event
+
+
+def _normalised(quantity: Any) -> float:
+    return round(float(quantity), 6)
 
 
 async def sum_usage(

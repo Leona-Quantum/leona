@@ -99,6 +99,17 @@ import os
 os.system("echo hi")
 """
 
+STILL_VIOLATING_REPAIR = """\
+# %% role=run
+import os
+print(os.getcwd())
+"""
+
+SAFE_REPAIR = """\
+# %% role=run
+print("hi")
+"""
+
 CIRCUIT_SEED_PYTHON = """\
 from qiskit import QuantumCircuit
 
@@ -607,7 +618,10 @@ async def test_guard_violating_draft_ends_failed_with_the_guard_message(_fake_ru
             version_id=version_id,
             request={"brief": "do something unsafe"},
         ),
-        llm=QueueLLM([OUTLINE_JSON, GUARD_VIOLATING_DRAFT]),
+        # The linter sees `import os` before anything runs and asks for ONE repair; this
+        # repair keeps the violation, so the pre-run loop stops (same finding twice) and
+        # the guard, which still has the last word, refuses the program.
+        llm=QueueLLM([OUTLINE_JSON, GUARD_VIOLATING_DRAFT, STILL_VIOLATING_REPAIR]),
         sandbox=FakeSandbox(),
         store=store,
     )
@@ -616,6 +630,111 @@ async def test_guard_violating_draft_ends_failed_with_the_guard_message(_fake_ru
     assert version.status == "failed"
     assert "safety guard" in version.error
     assert store.turns and "couldn't finish" in store.turns[0].content
+
+
+async def test_a_cell_that_still_raises_after_repair_is_kept_ready_and_named(
+    _fake_run_plumbing, monkeypatch
+):
+    # Plan 10-notebook-ide rule 1, end to end through the handler: the notebook is saved
+    # `ready` with the failing cell in its report, the run SUCCEEDS with a reason that
+    # still tells a kept build from a clean one, and Nala's turn names the cell.
+    captured: dict = {}
+
+    class CapturingRunStore(FakeRunStore):
+        async def finish(self, status, payload, **fields):
+            captured.update(payload)
+            return await super().finish(status, payload, **fields)
+
+    monkeypatch.setattr(handlers, "RepoRunStateStore", CapturingRunStore)
+    run_id, notebook_id, version_id = uuid.uuid4(), uuid.uuid4(), uuid.uuid4()
+    store = MemoryNotebookStore()
+    store.seed_version(notebook_id, version_id)
+    session = Session()
+    same_cell = "# %% id=c05 role=run\nprint('still broken')\n"
+
+    await nh.handle_notebook_generate(
+        session,
+        _payload(
+            run_id=run_id, notebook_id=notebook_id, version_id=version_id, request={"brief": "b"}
+        ),
+        llm=QueueLLM([OUTLINE_JSON, LESSON, same_cell, same_cell, same_cell]),
+        sandbox=FakeSandbox(fail_cell_id="c05"),
+        store=store,
+    )
+
+    version = store.versions[version_id]
+    assert version.status == "ready", version.error
+    assert not version.error
+    statuses = {cell["id"]: cell["status"] for cell in version.report["cells"]}
+    assert statuses["c02"] == "ok" and statuses["c05"] == "error"
+    assert captured["reason_code"] == "notebook_generated_with_errors"
+    assert captured["status"] == RunStatus.SUCCEEDED
+    [turn] = [t for t in store.turns if t.role == "nala"]
+    assert "cell c05" in turn.content and "NameError" in turn.content
+    assert "3 fixes" in turn.content
+
+
+def _kept_outcome(repairs: int):
+    from leona_notebooks.pipeline import Attempt, PipelineOutcome
+    from majorana_contracts.notebooks import CellError, CellResult, ExecutionReport
+
+    report = ExecutionReport(
+        notebook_slug="kept",
+        ok=False,
+        runner="sandbox",
+        cells=[
+            CellResult(id="c02", status="ok"),
+            CellResult(id="c05", status="error", error=CellError(ename="NameError", evalue="x")),
+        ],
+    )
+    return PipelineOutcome(
+        status="ready",
+        spec=None,
+        report=report,
+        attempts=[Attempt(stage="notebook.repair", ok=False) for _ in range(repairs)],
+        cell_errors="cell c05 failed: NameError: x",
+    )
+
+
+def test_the_kept_with_errors_note_never_counts_repairs_a_rerun_did_not_make():
+    # A plain re-run keeps a raising notebook without any repair; the note must not say
+    # "I tried 0 fixes". One repair reads as "one fix", not "1 fix(es)".
+    unrepaired = nh._kept_with_errors_note(_kept_outcome(0), "en")
+    assert "cell c05 raised NameError: x" in unrepaired
+    assert "tried" not in unrepaired and "0 fix" not in unrepaired
+    assert "I tried one fix and" in nh._kept_with_errors_note(_kept_outcome(1), "en")
+    assert "I tried 2 fixes and" in nh._kept_with_errors_note(_kept_outcome(2), "en")
+
+
+def test_the_kept_with_errors_note_is_japanese_all_the_way_through():
+    # The detail used to be the pipeline's English "cell c05 failed: ..." inside a Japanese
+    # sentence; the cell and error are now named in the reader's language.
+    note = nh._kept_with_errors_note(_kept_outcome(3), "ja")
+    assert "セル c05 で NameError: x が発生しました" in note
+    assert "3回修正" in note
+    assert "failed" not in note and "cell" not in note
+    assert "修正を試み" not in nh._kept_with_errors_note(_kept_outcome(0), "ja")
+
+
+async def test_a_guard_violating_draft_that_the_repair_fixes_runs(_fake_run_plumbing):
+    run_id, notebook_id, version_id = uuid.uuid4(), uuid.uuid4(), uuid.uuid4()
+    store = MemoryNotebookStore()
+    store.seed_version(notebook_id, version_id)
+    session = Session()
+
+    await nh.handle_notebook_generate(
+        session,
+        _payload(
+            run_id=run_id, notebook_id=notebook_id, version_id=version_id, request={"brief": "b"}
+        ),
+        llm=QueueLLM([OUTLINE_JSON, GUARD_VIOLATING_DRAFT, SAFE_REPAIR]),
+        sandbox=FakeSandbox(),
+        store=store,
+    )
+
+    version = store.versions[version_id]
+    assert version.error in (None, ""), version.error
+    assert "import os" not in (version.source or "")
 
 
 async def test_provider_exception_ends_failed_with_an_error_and_the_run_failed(_fake_run_plumbing):
