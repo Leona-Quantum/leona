@@ -265,7 +265,7 @@ for r in thr:
 th=o.get("rateLimitThreshold",{})
 mode="PREVIEW (log only)" if all(r.get("preview") for r in thr) else ("ENFORCED" if not any(r.get("preview") for r in thr) else "MIXED")
 if mode=="MIXED": print("  FAIL   some throttle rules are in preview and some are not"); ok=False
-else: print(f"  OK     {len(thr)} rules, {th.get('count')}/{th.get('intervalSec')}s per cf-connecting-ip, {mode}")
+elif ok: print(f"  OK     {len(thr)} rules, {th.get('count')}/{th.get('intervalSec')}s per cf-connecting-ip, {mode}")
 raise SystemExit(0 if ok else 1)
 PY
 then :; else fail=1; fi

@@ -113,5 +113,36 @@ policy "Leona web is failing (5xx)" "$(cat <<JSON
  ]}
 JSON
 )"
+# The two uptime checks above, alerted the same way the hand-made
+# "Leona is not answering" policy alerts on leonaqt.com's: more than one of the
+# six checking regions failing. On the rehearsal hostname this is the only
+# outside view of the Google stack while production DNS points elsewhere.
+uptime_cond() { # <display> <check display name>
+  local id
+  id=$(g monitoring uptime list-configs --format=json | python3 -c '
+import json,sys
+print(next((c["name"].rsplit("/",1)[-1] for c in json.load(sys.stdin) if c["displayName"]==sys.argv[1]),""))' "$2")
+  [ -n "$id" ] || { echo "no uptime check named $2" >&2; exit 1; }
+  cat <<JSON
+{"displayName": "$1",
+ "conditionThreshold": {
+   "filter": "resource.type = \"uptime_url\" AND metric.type = \"monitoring.googleapis.com/uptime_check/check_passed\" AND metric.labels.check_id = \"${id}\"",
+   "aggregations": [{"alignmentPeriod": "1200s", "perSeriesAligner": "ALIGN_NEXT_OLDER",
+                     "crossSeriesReducer": "REDUCE_COUNT_FALSE", "groupByFields": ["resource.label.host"]}],
+   "comparison": "COMPARISON_GT", "thresholdValue": 1, "duration": "60s", "trigger": {"count": 1}}}
+JSON
+}
+policy "gcp-preview is not answering" "$(cat <<JSON
+{"displayName": "gcp-preview is not answering",
+ "combiner": "OR",
+ "documentation": {"mimeType": "text/markdown", "content": "gcp-preview.leonaqt.com goes Cloudflare -> the Google load balancer -> Cloud Run, the same path production takes after the cutover. If this fires, the Google stack is failing from outside; read ./90-verify.sh and the two web services' logs."},
+ "alertStrategy": {"autoClose": "1800s"},
+ "conditions": [
+   $(uptime_cond "gcp-preview home is down" "gcp-preview home"),
+   $(uptime_cond "gcp-preview Atlas is down" "gcp-preview Atlas node page")
+ ]}
+JSON
+)"
+
 echo
 echo "Done. The existing 'Leona is not answering' uptime policy is untouched."

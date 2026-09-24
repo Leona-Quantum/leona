@@ -50,7 +50,9 @@ exists() { # <resource-kind-args...>
     # priority N". Without that third pattern this prints an alarming error line
     # on the ordinary create path, which trains its reader to ignore the one
     # case it exists to surface.
-    *"was not found"*|*"NOT_FOUND"*|*"not found"*|*"does not contain a rule"*) return 1 ;;
+    # `gcloud run services describe` says "Cannot find service" — a fourth
+    # spelling of absent, met the first time a script here created a service.
+    *"was not found"*|*"NOT_FOUND"*|*"not found"*|*"does not contain a rule"*|*"Cannot find"*) return 1 ;;
     *) echo "  ! ${*}: ${err}" >&2; return "$rc" ;;
   esac
 }

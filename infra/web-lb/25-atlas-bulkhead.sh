@@ -130,8 +130,13 @@ for b in "$BACKEND_NAME" "$ATLAS_BACKEND_NAME"; do
 done
 
 step "${ATLAS_SERVICE} is Ready before anything is routed to it"
-ready=$(g run services describe "$ATLAS_SERVICE" --region "$REGION" \
-  --format='value(status.conditions.filter("type:Ready").extract("status"))' | tr -d "[]' ")
+# Parsed, not filtered: gcloud's `filter("type:Ready")` is a substring match, so it
+# also returns ConfigurationsReady and RoutesReady and prints "True,True,True" —
+# which this line once read as "not Ready" and refused, correctly but for the
+# wrong reason. The condition wanted is the one whose type is exactly "Ready".
+ready=$(g run services describe "$ATLAS_SERVICE" --region "$REGION" --format=json | python3 -c '
+import json,sys
+print(next((c.get("status","") for c in json.load(sys.stdin)["status"].get("conditions",[]) if c.get("type")=="Ready"),""))')
 [ "$ready" = "True" ] || { echo "${ATLAS_SERVICE} is not Ready (${ready:-unknown}); not routing to it" >&2; exit 1; }
 echo "   Ready"
 
