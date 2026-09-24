@@ -311,7 +311,7 @@ def print_report(report, first, last):
         print()
 
     if report["buckets"]:
-        print(f"=== time buckets ===")
+        print("=== time buckets ===")
         for b in report["buckets"]:
             pct429 = 100 * b["429"] / b["n"] if b["n"] else 0.0
             pctok = 100 * b["success"] / b["n"] if b["n"] else 0.0
