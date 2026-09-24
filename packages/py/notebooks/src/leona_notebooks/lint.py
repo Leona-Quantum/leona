@@ -460,7 +460,7 @@ def lint_spec(spec) -> dict[str, list[Diagnostic]]:
     for cell in spec.cells:
         if not cell.is_code:
             continue
-        if getattr(cell, "execute", True) is False:
+        if not cell.runs_in_sandbox:
             preceding.append(cell.source)
             continue
         found = lint_cell(cell.source, preceding)

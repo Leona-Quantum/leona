@@ -67,7 +67,9 @@ from leona_notebooks.pipeline import (
     NotebookPorts,
     PipelineOutcome,
     RevisionRequest,
+    describe_failure,
     generate,
+    is_usable,
     revise,
 )
 from leona_notebooks.prompts import (
@@ -708,11 +710,19 @@ async def _save_outcome(
     turn_content: str | None = None,
     success_reason_code: str,
     failure_reason_code: str,
+    response_locale: str = "en",
 ) -> None:
     """Persist a `PipelineOutcome` as the version's result, append the nala
-    turn, and finish the run. Shared by generate, revise and rerun."""
+    turn, and finish the run. Shared by generate, revise and rerun.
+
+    A `ready` outcome can carry a cell that raised (`outcome.cell_errors`): the pipeline
+    keeps a notebook whose cells ran even when one of them still fails after repair
+    (plan 10-notebook-ide, rule 1). The run then finishes SUCCEEDED with the success code
+    plus `_with_errors`, so a count of runs by reason can still tell a clean build from a
+    kept one, and the turn says which cell raised in words the reader can act on."""
     spec = outcome.spec
     ready = outcome.status == "ready"
+    with_errors = ready and bool(outcome.cell_errors)
     ipynb = to_ipynb(spec, report=outcome.report) if spec is not None else None
     await notebook_store.set_version_result(
         scope,
@@ -727,11 +737,15 @@ async def _save_outcome(
         error=outcome.error,
         message=outcome.summary or None,
     )
-    content = (
-        turn_content
-        or (outcome.summary if ready and outcome.summary else None)
-        or ("Built the notebook." if ready else f"I couldn't finish this: {outcome.error}")
-    )
+    if with_errors:
+        note = _kept_with_errors_note(outcome, response_locale)
+        content = f"{turn_content}\n\n{note}" if turn_content else note
+    else:
+        content = (
+            turn_content
+            or (outcome.summary if ready and outcome.summary else None)
+            or ("Built the notebook." if ready else f"I couldn't finish this: {outcome.error}")
+        )
     await notebook_store.append_turn(
         scope,
         session,
@@ -748,12 +762,62 @@ async def _save_outcome(
             {"stage": None, "code": failure_reason_code, "message": outcome.error[:2000]},
         )
     final_status = RunStatus.SUCCEEDED if ready else RunStatus.FAILED
-    await run_store.finish(
-        final_status,
-        {
-            "status": final_status,
-            "reason_code": success_reason_code if ready else failure_reason_code,
-        },
+    reason_code = success_reason_code if ready else failure_reason_code
+    if with_errors:
+        reason_code = f"{success_reason_code}_with_errors"
+    await run_store.finish(final_status, {"status": final_status, "reason_code": reason_code})
+
+
+#: What Nala says when a notebook is kept although a cell still raises. Not model output:
+#: the pipeline decided this, so the words are written here in both locales rather than
+#: left to a prompt that might soften "this cell raises" into "there may be an issue".
+#: Two shapes per locale, because a plain re-run makes no repair at all and "I tried 0
+#: fixes" would be a sentence about work that never happened.
+_KEPT_WITH_ERRORS: dict[str, dict[str, str]] = {
+    "en": {
+        "detail": "cell {cell} raised {error}",
+        "repaired": (
+            "Heads up: {detail}. I tried {repairs} and it still raises, so the notebook is "
+            "here with that cell marked. The cells before it ran. Ask me to fix it, or edit "
+            "the cell yourself and run it again."
+        ),
+        "unrepaired": (
+            "Heads up: {detail}. The notebook is here with that cell marked, and the cells "
+            "before it ran. Ask me to fix it, or edit the cell yourself and run it again."
+        ),
+    },
+    "ja": {
+        "detail": "セル {cell} で {error} が発生しました",
+        "repaired": (
+            "ご注意ください: {detail}。{repairs}回修正を試みましたが、まだ例外が出ます。"
+            "そのセルに印を付けた状態でノートブックを残しています。それより前のセルは実行できました。"
+            "修正を頼むか、セルを自分で編集してもう一度実行してください。"
+        ),
+        "unrepaired": (
+            "ご注意ください: {detail}。そのセルに印を付けた状態でノートブックを残しています。"
+            "それより前のセルは実行できました。修正を頼むか、セルを自分で編集してもう一度実行してください。"
+        ),
+    },
+}
+
+
+def _kept_with_errors_note(outcome: PipelineOutcome, locale: str) -> str:
+    copy = _KEPT_WITH_ERRORS.get(locale, _KEPT_WITH_ERRORS["en"])
+    first = outcome.report.first_error() if outcome.report is not None else None
+    if first is not None and first.error is not None:
+        error = f"{first.error.ename}: {first.error.evalue[:300]}"
+        detail = copy["detail"].format(cell=first.id, error=error)
+    else:
+        # No structured error to name (a report note, say): fall back to the pipeline's
+        # own one-line description rather than inventing a cell.
+        detail = outcome.cell_errors
+    repairs = sum(1 for attempt in outcome.attempts if attempt.stage == "notebook.repair")
+    if repairs == 0:
+        return copy["unrepaired"].format(detail=detail)
+    if locale == "ja":
+        return copy["repaired"].format(detail=detail, repairs=repairs)
+    return copy["repaired"].format(
+        detail=detail, repairs="one fix" if repairs == 1 else f"{repairs} fixes"
     )
 
 
@@ -988,6 +1052,7 @@ async def handle_notebook_generate(
             run_store=run_store,
             success_reason_code="notebook_generated",
             failure_reason_code="notebook_generation_failed",
+            response_locale=response_locale,
         )
     except CircuitSeedRejected as exc:
         log.warning("notebook.generate run %s: circuit seed rejected: %s", run_id, exc.findings)
@@ -1107,13 +1172,18 @@ async def handle_notebook_revise(
                     review = await ports.review(base_spec, report)
                 except Exception as exc:  # noqa: BLE001 - advisory, like the pipeline's own review stage
                     log.warning("notebook rerun %s: review failed: %s", run_id, exc)
+            # The same rule the pipeline applies (`is_usable`): a re-run whose cells ran is
+            # a result even when one raised, so the reader sees the traceback instead of a
+            # version marked failed that the page cannot show.
+            usable = is_usable(report)
             outcome = PipelineOutcome(
-                status="ready" if report.ok else "failed",
+                status="ready" if usable else "failed",
                 spec=base_spec,
                 report=report,
                 review=review,
                 summary="re-executed" if report.ok else "",
-                error="" if report.ok else (report.note or "the notebook did not execute cleanly"),
+                error="" if usable else (report.note or "the notebook did not execute cleanly"),
+                cell_errors="" if report.ok or not usable else describe_failure(report),
             )
             await _record_sandbox_usage(session, scope, run_id, ports)
             await _save_outcome(
@@ -1128,6 +1198,7 @@ async def handle_notebook_revise(
                 run_store=run_store,
                 success_reason_code="notebook_rerun",
                 failure_reason_code="notebook_rerun_failed",
+                response_locale=response_locale,
             )
             return
 
@@ -1195,6 +1266,7 @@ async def handle_notebook_revise(
             turn_content=outcome.reply or None,
             success_reason_code="notebook_revised",
             failure_reason_code="notebook_revision_failed",
+            response_locale=response_locale,
         )
     except Exception as exc:
         log.exception("notebook.revise run %s failed", run_id)
