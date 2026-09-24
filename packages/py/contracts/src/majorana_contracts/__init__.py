@@ -516,7 +516,15 @@ from .lifecycle import (
 # NotificationKind is closed at exactly `qpu_run_terminal` and `mention` — a
 # third producer needs its own migration and its own line here, the same
 # discipline 2.30.0 applies to TokenScope.
-CONTRACTS_VERSION = "2.34.0"
+# 2.35.0: plan 10-notebook-ide, "Live" lane — a notebook developing in real time. New
+# RunEvent members: NotebookDraftDelta (notebook.draft.delta), NotebookDraftParsed
+# (notebook.draft.parsed, carries NotebookLiveCell), NotebookCells (notebook.cells,
+# carries NotebookLiveCellResult) and NotebookRepair (notebook.repair) — emitted by
+# `ProductionNotebookPorts` (services/worker/notebook_handlers.py), no route changes.
+# Additive: new names only, no existing model changes. Not re-exported from this
+# module's `__all__`, matching `NotebookGrades` — a member of `RunEvent` validates and
+# emits through `run_event_adapter` without a top-level import.
+CONTRACTS_VERSION = "2.35.0"
 
 __all__ = [
     "PresenceHeartbeatRequest",

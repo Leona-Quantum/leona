@@ -5279,6 +5279,148 @@
         "title": "Notebook",
         "type": "object"
       },
+      "NotebookCells": {
+        "additionalProperties": false,
+        "description": "Every code cell's result after one sandbox dispatch \u2014 the initial run and each\nrepair's rerun alike, so \"attempt\" counts dispatches of `NotebookPorts.run_notebook`\nfor this run, not repairs specifically (a repair attempt and an execute attempt are\ndifferent counters watching the same loop).",
+        "properties": {
+          "attempt": {
+            "minimum": 1,
+            "title": "Attempt",
+            "type": "integer"
+          },
+          "cells": {
+            "items": {
+              "$ref": "#/components/schemas/NotebookLiveCellResult"
+            },
+            "title": "Cells",
+            "type": "array"
+          },
+          "ok": {
+            "title": "Ok",
+            "type": "boolean"
+          },
+          "run_id": {
+            "format": "uuid",
+            "title": "Run Id",
+            "type": "string"
+          },
+          "seq": {
+            "description": "Unique per run; powers replay and SSE Last-Event-ID",
+            "minimum": 0,
+            "title": "Seq",
+            "type": "integer"
+          },
+          "ts": {
+            "format": "date-time",
+            "title": "Ts",
+            "type": "string"
+          },
+          "type": {
+            "const": "notebook.cells",
+            "default": "notebook.cells",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "run_id",
+          "seq",
+          "ts",
+          "attempt",
+          "ok"
+        ],
+        "title": "NotebookCells",
+        "type": "object"
+      },
+      "NotebookDraftDelta": {
+        "additionalProperties": false,
+        "description": "A streamed fragment of the notebook lane's own model output \u2014 Nala writing a\nnotebook cell by cell (plan 10-notebook-ide, \"Live\" lane), not `llm.call`'s wrapper\n(`MeteredAgentLLM`, `services/worker/agent_llm.py`), which the notebook lane's\n`ProductionNotebookPorts._complete` does not go through.\n\n**Pre-redacted, not raw.** The run's event stream is workspace-scoped, not\nauthor-scoped (`services/api/.../repos/runs.py` `get_run` filters on\n`Run.workspace_id` alone), the same gap `NotebookSpec.for_learner()` closes for a\nfinished notebook (ai-ops#260) applies to every character streamed live. A cell\nwhose header (`# %%` line) marks it `role=solution`/`role=answer` or carries\n`check=`/`answer=` is withheld from this stream entirely by\n`leona_notebooks.live_draft.LiveDraftGuard` before a chunk ever reaches here \u2014 a\nlater, correctly redacted `notebook.draft.parsed` cannot un-send a byte that\nalready went out on the wire.",
+        "properties": {
+          "attempt": {
+            "minimum": 1,
+            "title": "Attempt",
+            "type": "integer"
+          },
+          "run_id": {
+            "format": "uuid",
+            "title": "Run Id",
+            "type": "string"
+          },
+          "seq": {
+            "description": "Unique per run; powers replay and SSE Last-Event-ID",
+            "minimum": 0,
+            "title": "Seq",
+            "type": "integer"
+          },
+          "text": {
+            "minLength": 1,
+            "title": "Text",
+            "type": "string"
+          },
+          "ts": {
+            "format": "date-time",
+            "title": "Ts",
+            "type": "string"
+          },
+          "type": {
+            "const": "notebook.draft.delta",
+            "default": "notebook.draft.delta",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "run_id",
+          "seq",
+          "ts",
+          "text",
+          "attempt"
+        ],
+        "title": "NotebookDraftDelta",
+        "type": "object"
+      },
+      "NotebookDraftParsed": {
+        "additionalProperties": false,
+        "description": "The draft's cells, once the streamed text parses as notebook source \u2014 the live\nview's replacement for the incremental parse it does itself from raw\n`notebook.draft.delta` text, with the roles and structure the incremental parse\ncannot see (a partial cell has no closing marker yet).",
+        "properties": {
+          "cells": {
+            "items": {
+              "$ref": "#/components/schemas/NotebookLiveCell"
+            },
+            "title": "Cells",
+            "type": "array"
+          },
+          "run_id": {
+            "format": "uuid",
+            "title": "Run Id",
+            "type": "string"
+          },
+          "seq": {
+            "description": "Unique per run; powers replay and SSE Last-Event-ID",
+            "minimum": 0,
+            "title": "Seq",
+            "type": "integer"
+          },
+          "ts": {
+            "format": "date-time",
+            "title": "Ts",
+            "type": "string"
+          },
+          "type": {
+            "const": "notebook.draft.parsed",
+            "default": "notebook.draft.parsed",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "run_id",
+          "seq",
+          "ts"
+        ],
+        "title": "NotebookDraftParsed",
+        "type": "object"
+      },
       "NotebookFramework": {
         "additionalProperties": false,
         "properties": {
@@ -5476,6 +5618,194 @@
           "items"
         ],
         "title": "NotebookList",
+        "type": "object"
+      },
+      "NotebookLiveCell": {
+        "additionalProperties": false,
+        "description": "One cell as parsed so far from a streaming draft \u2014 already redacted the way\n`NotebookSpec.for_learner()` redacts a finished one (same reason as\n`NotebookDraftDelta`).",
+        "properties": {
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "kind": {
+            "enum": [
+              "markdown",
+              "code"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "role": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Role"
+          },
+          "source": {
+            "default": "",
+            "title": "Source",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "kind"
+        ],
+        "title": "NotebookLiveCell",
+        "type": "object"
+      },
+      "NotebookLiveCellResult": {
+        "additionalProperties": false,
+        "description": "One cell's execution outcome, status and error name/value only \u2014 no stdout, no\noutputs, no figures. What raised is often exactly what a graded cell's assertion\nwas checking, so even this is not risk-free for a non-author viewer; see the\n\"Live\" lane's report for the residual flag this carries forward rather than\nresolves.",
+        "properties": {
+          "duration_ms": {
+            "default": 0,
+            "minimum": 0,
+            "title": "Duration Ms",
+            "type": "integer"
+          },
+          "ename": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Ename"
+          },
+          "evalue": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Evalue"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "ok",
+              "error",
+              "skipped",
+              "not_run"
+            ],
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "status"
+        ],
+        "title": "NotebookLiveCellResult",
+        "type": "object"
+      },
+      "NotebookRepair": {
+        "additionalProperties": false,
+        "description": "A repair's own lifecycle, cell-scoped: distinct from the generic\n`stage.started`/`stage.finished(stage=GENERATE)` pair `ProductionNotebookPorts.observe`\nalready emits for `notebook.repair`, which names no cell. `source` (the repaired\ncell's new text) is carried only on `status=\"finished\"`, and only when that cell is\nnot graded/solution-only \u2014 the same redaction `NotebookDraftDelta` applies, reused\nrather than re-derived because a cell being repaired is read from the SAME spec\n`for_learner()` would redact.",
+        "properties": {
+          "attempt": {
+            "minimum": 1,
+            "title": "Attempt",
+            "type": "integer"
+          },
+          "before_running": {
+            "default": false,
+            "title": "Before Running",
+            "type": "boolean"
+          },
+          "cell_id": {
+            "title": "Cell Id",
+            "type": "string"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Error"
+          },
+          "of": {
+            "minimum": 1,
+            "title": "Of",
+            "type": "integer"
+          },
+          "run_id": {
+            "format": "uuid",
+            "title": "Run Id",
+            "type": "string"
+          },
+          "seq": {
+            "description": "Unique per run; powers replay and SSE Last-Event-ID",
+            "minimum": 0,
+            "title": "Seq",
+            "type": "integer"
+          },
+          "source": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Source"
+          },
+          "status": {
+            "default": "started",
+            "enum": [
+              "started",
+              "finished",
+              "failed"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "ts": {
+            "format": "date-time",
+            "title": "Ts",
+            "type": "string"
+          },
+          "type": {
+            "const": "notebook.repair",
+            "default": "notebook.repair",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "run_id",
+          "seq",
+          "ts",
+          "cell_id",
+          "attempt",
+          "of"
+        ],
+        "title": "NotebookRepair",
         "type": "object"
       },
       "NotebookReview": {
@@ -8911,7 +9241,11 @@
             "export.classified": "#/components/schemas/ExportClassified",
             "llm.call": "#/components/schemas/LlmCall",
             "llm.delta": "#/components/schemas/LlmDelta",
+            "notebook.cells": "#/components/schemas/NotebookCells",
+            "notebook.draft.delta": "#/components/schemas/NotebookDraftDelta",
+            "notebook.draft.parsed": "#/components/schemas/NotebookDraftParsed",
             "notebook.grades": "#/components/schemas/NotebookGrades",
+            "notebook.repair": "#/components/schemas/NotebookRepair",
             "plan.produced": "#/components/schemas/PlanProduced",
             "qapp.generated": "#/components/schemas/QappGenerated",
             "research.completed": "#/components/schemas/ResearchCompleted",
@@ -8981,6 +9315,18 @@
           },
           {
             "$ref": "#/components/schemas/NotebookGrades"
+          },
+          {
+            "$ref": "#/components/schemas/NotebookDraftDelta"
+          },
+          {
+            "$ref": "#/components/schemas/NotebookDraftParsed"
+          },
+          {
+            "$ref": "#/components/schemas/NotebookCells"
+          },
+          {
+            "$ref": "#/components/schemas/NotebookRepair"
           },
           {
             "$ref": "#/components/schemas/CodeGenerated"
@@ -11694,7 +12040,7 @@
   "info": {
     "description": "Cross-boundary types only; API paths are owned by services/api.",
     "title": "majorana-contracts",
-    "version": "2.34.0"
+    "version": "2.35.0"
   },
   "openapi": "3.1.0",
   "paths": {}
