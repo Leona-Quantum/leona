@@ -124,6 +124,33 @@ export const CRAWLER_DISALLOWED_PATHS: readonly string[] = [
   "/welcome",
 ];
 
+/**
+ * robots.txt lines that keep crawlers out of the Atlas map's query-string
+ * permutations, and only those.
+ *
+ * `/repository/layers` resolves ten search parameters on the server by design
+ * (a shared link lands where its sender was standing, with JavaScript off), and
+ * every state the map can be in is an `<a href>` carrying them. For a crawler
+ * that follows links that is an unbounded set of distinct URLs, each a cache miss
+ * and a ~1 s render. On 2026-09-24 a crawler walked exactly that space at ~58
+ * requests a second and the site refused most requests for eight hours
+ * (ai-ops/desk/leona/plans/incidents/2026-09-24-gcp-web-429.md) — and the first
+ * request Google Cloud ever served on 2026-09-20 was Amazonbot on a map URL
+ * carrying nine `open=` values.
+ *
+ * Every one of those pages already names the bare path as canonical, so no
+ * search result is lost; this stops a crawler that honours robots.txt from
+ * fetching the permutations at all. It does nothing to one that ignores it,
+ * which is Cloudflare's to challenge. `*` and a trailing `?` are the pattern
+ * syntax Google, Bing and the AI crawlers document; `?` is literal there.
+ */
+export const CRAWLER_DISALLOWED_QUERY_VARIANTS: readonly string[] = [
+  "/repository/layers?",
+  "/repository/layers/*?",
+  "/ja/repository/layers?",
+  "/ja/repository/layers/*?",
+];
+
 export interface PublicSurface {
   /** Published corpus record slugs — `/repository/<slug>`. */
   entrySlugs: readonly string[];

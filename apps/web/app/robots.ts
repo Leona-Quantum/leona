@@ -13,7 +13,7 @@
  */
 import type { MetadataRoute } from "next";
 import { canonicalOrigin } from "../lib/site-origin";
-import { CRAWLER_DISALLOWED_PATHS } from "../lib/sitemap-paths";
+import { CRAWLER_DISALLOWED_PATHS, CRAWLER_DISALLOWED_QUERY_VARIANTS } from "../lib/sitemap-paths";
 
 export default function robots(): MetadataRoute.Robots {
   const origin = canonicalOrigin();
@@ -22,7 +22,7 @@ export default function robots(): MetadataRoute.Robots {
       {
         userAgent: "*",
         allow: "/",
-        disallow: [...CRAWLER_DISALLOWED_PATHS],
+        disallow: [...CRAWLER_DISALLOWED_PATHS, ...CRAWLER_DISALLOWED_QUERY_VARIANTS],
       },
     ],
     sitemap: `${origin}/sitemap.xml`,

@@ -52,6 +52,12 @@ val() { grep -E "^$1=[0-9]+$" "$fleet" | cut -d= -f2; }
 [ "$(val WEB_XFF_TRUSTED_HOPS)" = 1 ] && ok "WEB_XFF_TRUSTED_HOPS=1" || no "WEB_XFF_TRUSTED_HOPS is $(val WEB_XFF_TRUSTED_HOPS)"
 [ "$(val WEB_MIN_INSTANCES)" -ge 1 ] 2>/dev/null && ok "WEB_MIN_INSTANCES=$(val WEB_MIN_INSTANCES)" \
   || no "WEB_MIN_INSTANCES is $(val WEB_MIN_INSTANCES) — the first visitor after a quiet spell waits for a cold start"
+# The 2026-09-24 incident: one four-instance pool for everything. The Atlas has
+# its own now (25-atlas-bulkhead.sh); these are the numbers that make it one.
+[ "$(val WEB_ATLAS_MAX_INSTANCES)" -ge 4 ] 2>/dev/null && ok "WEB_ATLAS_MAX_INSTANCES=$(val WEB_ATLAS_MAX_INSTANCES)" \
+  || no "WEB_ATLAS_MAX_INSTANCES is '$(val WEB_ATLAS_MAX_INSTANCES)' — the Atlas has less room than the whole site had when it fell over"
+[ "$(val WEB_ATLAS_CONCURRENCY)" -le 16 ] 2>/dev/null && ok "WEB_ATLAS_CONCURRENCY=$(val WEB_ATLAS_CONCURRENCY)" \
+  || no "WEB_ATLAS_CONCURRENCY is '$(val WEB_ATLAS_CONCURRENCY)' — above 16, a busy instance queues renders instead of Cloud Run starting another"
 
 echo "== the serving revision carries them"
 g run services describe "$SERVICE" --region "$REGION" --format=json > /tmp/.svc.$$
@@ -123,9 +129,57 @@ if [ -n "${PREVIEW_HOST:-}" ]; then
     *) no "sign-in does not reach WorkOS (redirects to '${loc:-nothing}') — WEB_SIGN_IN, or a missing WORKOS_* value";;
   esac
   rm -f "$hdr" "$body"
+
+  # B6 (asked for by name in the 2026-09-24 review): an RSC payload must never
+  # come out of Cloudflare's cache — it is per-navigation, and a cached one hands
+  # one reader's router state to the next — and the page itself must be HTML.
+  rsc=$(curl -sSI --max-time 30 -H 'RSC: 1' "https://${PREVIEW_HOST}/repository?_rsc" | tr -d '\r' \
+        | awk -F': ' 'tolower($1)=="cf-cache-status"{print toupper($2)}')
+  case "$rsc" in DYNAMIC|BYPASS) ok "B6: RSC /repository?_rsc is ${rsc}";;
+    *) no "B6: RSC /repository?_rsc came back cf-cache-status '${rsc:-none}' — must be DYNAMIC or BYPASS, never HIT";; esac
+  page=$(curl -sSI --max-time 30 "https://${PREVIEW_HOST}/repository" | tr -d '\r')
+  pcode=$(printf '%s\n' "$page" | awk 'NR==1{print $2}')
+  ptype=$(printf '%s\n' "$page" | awk -F': ' 'tolower($1)=="content-type"{print $2}')
+  case "${pcode} ${ptype}" in "200 text/html"*) ok "B6: /repository is 200 ${ptype}";;
+    *) no "B6: /repository is ${pcode:-?} ${ptype:-?} — must be 200 text/html";; esac
+
+  # Which service answered the Atlas. Measured, not inferred from the url map:
+  # a marked request is sent and the load balancer's own log is read for it.
+  marker="preflight-$(date +%s)-$RANDOM"
+  curl -sS --max-time 30 -o /dev/null "https://${PREVIEW_HOST}/repository/layers/block-encoding?${marker}" || true
+  backend=""
+  for _ in 1 2 3 4 5 6 7 8 9 10 11 12; do
+    backend=$(g logging read "resource.type=\"http_load_balancer\" AND httpRequest.requestUrl:\"${marker}\"" \
+      --freshness=10m --limit 1 --format='value(resource.labels.backend_service_name)' 2>/dev/null || true)
+    [ -n "$backend" ] && break
+    sleep 10
+  done
+  case "$backend" in
+    "$ATLAS_BACKEND_NAME") ok "the Atlas is served by ${backend} — the bulkhead is in the path";;
+    "")                    no "no load-balancer log line for the marked Atlas request in two minutes — is request logging on (25-atlas-bulkhead.sh)?";;
+    *)                     no "the Atlas was served by ${backend}, not ${ATLAS_BACKEND_NAME} — one pool for the whole site again";;
+  esac
 else
   warn "no PREVIEW_HOST given — the path through Cloudflare has never carried a request. Ask for the rehearsal record first."
 fi
+
+echo "== per-visitor limits and the alert that watches for refusals"
+mode=$(g compute security-policies describe "$ARMOR_NAME" --format=json | python3 -c '
+import json,sys
+d=json.load(sys.stdin); d=d[0] if isinstance(d,list) else d
+t=[r for r in d["rules"] if r["action"]=="throttle"]
+print("none" if not t else ("preview" if all(r.get("preview") for r in t) else "enforced"))')
+case "$mode" in
+  enforced) ok "per-visitor throttle enforced (15-visitor-limits.sh)";;
+  preview)  warn "per-visitor throttle is still in PREVIEW — read its log, then ENFORCE=1 ./15-visitor-limits.sh";;
+  *)        no "no per-visitor throttle at all (./15-visitor-limits.sh)";;
+esac
+alert=$(g alpha monitoring policies list --format=json | python3 -c '
+import json,sys
+p=[p for p in json.load(sys.stdin) if p["displayName"]=="Leona web is turning visitors away (429)"]
+print("enabled" if p and p[0].get("enabled") else ("disabled" if p else "absent"))')
+[ "$alert" = enabled ] && ok "the 429 alert is enabled (95-monitoring.sh)" \
+  || no "the 429 alert is ${alert} — on 2026-09-24 the only signal was an uptime email that flapped for seven hours (./95-monitoring.sh)"
 
 echo
 if [ "$nogo" -eq 0 ]; then

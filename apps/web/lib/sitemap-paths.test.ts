@@ -4,6 +4,7 @@ import { test } from "node:test";
 import { fileURLToPath } from "node:url";
 import {
   CRAWLER_DISALLOWED_PATHS,
+  CRAWLER_DISALLOWED_QUERY_VARIANTS,
   MACHINE_READABLE_PATHS,
   PUBLIC_DYNAMIC_PATH_PREFIXES,
   PUBLIC_REDIRECT_ALIASES,
@@ -65,6 +66,45 @@ test("one address is listed once", () => {
   // refuses a collision, but this file does not get to rely on that.
   const paths = sitemapPaths({ entrySlugs: [], layerIds: ["algorithms", "algorithms"], paperSlugs: [], folderPaths: [] });
   assert.equal(paths.filter((path) => path === "/repository/layers/algorithms").length, 1);
+});
+
+/**
+ * robots.txt matching as Google documents it: a rule matches a URL (path plus
+ * query) that starts with it, `*` is any run of characters, `?` is literal.
+ */
+function robotsMatches(rule: string, url: string): boolean {
+  const pattern = rule.split("*").map((part) => part.replace(/[.+?^${}()|[\]\\]/g, "\\$&")).join(".*");
+  return new RegExp(`^${pattern}`).test(url);
+}
+
+test("the query-variant rules leave every published address crawlable", () => {
+  // Published addresses carry no query string, so none may match — including
+  // the map itself and every node page, which ARE in the sitemap.
+  const published = sitemapPaths(SURFACE);
+  assert.ok(published.includes("/repository/layers"));
+  for (const path of published) {
+    const blocked = CRAWLER_DISALLOWED_QUERY_VARIANTS.find((rule) => robotsMatches(rule, path));
+    assert.equal(blocked, undefined, `${path} is in the sitemap and disallowed by ${blocked}`);
+  }
+});
+
+test("the query-variant rules do match the permutations the 2026-09-24 crawler walked", () => {
+  // Real URLs from the request log (ai-ops/desk/leona/plans/incidents/2026-09-24-gcp-web-429.md).
+  // A rule that matches nothing is indistinguishable from no rule, so this is
+  // the half of the pair that can fail.
+  for (const url of [
+    "/repository/layers?focus=excited-state-energy&open=linear-ode-solve%3A0.5&open=nonlinear-ode-solve%3A1.0",
+    "/repository/layers?at=0%2C0%2C0.75&card=backward-euler&focus=nonlinear-ode-solve",
+    "/repository/layers/schrodingerisation?at=0,0,0.75&open=lchs-improved-kernel&open=linear-ode-solve:0.2.1",
+    "/ja/repository/layers?focus=gate-synthesis&open=lchs-route",
+    "/ja/repository/layers/block-encoding?open=x",
+  ]) {
+    assert.ok(
+      CRAWLER_DISALLOWED_QUERY_VARIANTS.some((rule) => robotsMatches(rule, url)),
+      `${url} is not disallowed`,
+    );
+  }
+  assert.equal(robotsMatches("/repository/layers?", "/repository/layersX?a=1"), false);
 });
 
 test("nothing published is also disallowed", () => {
