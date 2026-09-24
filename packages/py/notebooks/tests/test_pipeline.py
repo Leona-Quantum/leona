@@ -14,10 +14,15 @@ from leona_notebooks.pipeline import (
     generate,
     revise,
 )
-from leona_notebooks.prompts import NotebookOutline, NotebookReview, RepairContext
+from leona_notebooks.prompts import (
+    NotebookOutline,
+    NotebookReview,
+    RepairContext,
+    render_repair_user_prompt,
+)
 from leona_notebooks.revision import RevisionOp, RevisionPlan
 from leona_notebooks.source import parse_source
-from leona_notebooks.spec import NotebookSpec
+from leona_notebooks.spec import Cell, NotebookSpec
 
 from leona_notebook_fixtures import LESSON
 
@@ -50,6 +55,9 @@ class ScriptedPorts:
     review_raises: bool = False
     calls: list[str] = field(default_factory=list)
     events: list[tuple[str, str, str]] = field(default_factory=list)
+    contexts: list[RepairContext] = field(default_factory=list)
+    #: When set, every execution reports this and runs no cell: the sandbox failing.
+    sandbox_down: str | None = None
 
     async def outline(self, request: GenerationRequest) -> NotebookOutline:
         self.calls.append("outline")
@@ -61,6 +69,10 @@ class ScriptedPorts:
 
     async def run_notebook(self, spec: NotebookSpec) -> ExecutionReport:
         self.calls.append("execute")
+        if self.sandbox_down is not None:
+            return ExecutionReport(
+                notebook_slug=spec.slug, ok=False, runner="inprocess", note=self.sandbox_down
+            )
         cells = []
         stopped = False
         for cell in spec.cells:
@@ -87,6 +99,7 @@ class ScriptedPorts:
 
     async def repair(self, spec: NotebookSpec, context: RepairContext) -> str:
         self.calls.append(f"repair({context.cell_id})")
+        self.contexts.append(context)
         return self.repairs.pop(0)
 
     async def review(self, spec, report) -> NotebookReview:
@@ -142,16 +155,94 @@ async def test_a_failing_cell_is_repaired_by_id_and_rerun() -> None:
     assert [c.id for c in outcome.spec.cells] == [c.id for c in parse_source(LESSON).cells]
 
 
-async def test_repair_budget_is_bounded_and_failure_is_named() -> None:
+async def test_repair_budget_is_bounded_and_the_notebook_is_kept_with_the_error_named() -> None:
+    # Plan 10-notebook-ide rule 1: a cell that still raises after the repair budget is a
+    # RESULT the reader sees and can fix, not a notebook thrown away. Before 2026-09-23 this
+    # was `failed`, and the reader of the 2026-09-24 production failure got nothing.
     still_broken = "# %% id=c05 role=run\nundefined_name\n"
     ports = ScriptedPorts(drafts=[BROKEN_LESSON], repairs=[still_broken] * 5)
     outcome = await generate(ports, GenerationRequest(brief="b"), PipelineBudget(max_repairs=2))
-    assert outcome.status == "failed"
+    assert outcome.status == "ready"
+    assert outcome.error == ""
+    assert "cell c05 failed: NameError" in outcome.cell_errors
+    assert outcome.report is not None and not outcome.report.ok
     assert ports.calls.count("repair(c05)") == 2
     assert ports.calls.count("execute") == 3
-    assert "cell c05 failed: NameError" in outcome.error
-    assert "review" not in ports.calls
-    assert outcome.spec is not None  # the best attempt is kept for the reader to see
+    assert "review" not in ports.calls  # review is for a notebook that runs
+    assert outcome.spec is not None
+
+
+async def test_a_second_repair_is_told_the_first_one_failed_the_same_way() -> None:
+    still_broken = "# %% id=c05 role=run\nundefined_name\n"
+    ports = ScriptedPorts(drafts=[BROKEN_LESSON], repairs=[still_broken] * 3)
+    await generate(ports, GenerationRequest(brief="b"), PipelineBudget(max_repairs=3))
+    first, second, third = ports.contexts
+    assert first.failed_fixes == ()
+    assert len(second.failed_fixes) == 1 and "undefined_name" in second.failed_fixes[0][0]
+    assert "NameError" in second.failed_fixes[0][1]
+    assert len(third.failed_fixes) == 2
+    prompt = render_repair_user_prompt(third)
+    assert "YOUR EARLIER FIX #1 OF THIS CELL ALSO FAILED" in prompt
+    assert "YOUR EARLIER FIX #2 OF THIS CELL ALSO FAILED" in prompt
+
+
+async def test_a_run_where_nothing_executed_is_still_failed() -> None:
+    ports = ScriptedPorts(drafts=[LESSON], sandbox_down="sandbox provider failed")
+    outcome = await generate(ports, GenerationRequest(brief="b"))
+    assert outcome.status == "failed"
+    assert outcome.error == "sandbox provider failed"
+    assert outcome.cell_errors == ""
+    assert "repair(c05)" not in "".join(ports.calls)  # nothing to repair: no cell ran
+
+
+async def test_a_certain_lint_error_is_repaired_before_any_sandbox_run() -> None:
+    removed_api = LESSON.replace("qc.h(0)\n", "qc.h(0)\nfrom qiskit import execute\n")
+    fixed = "# %% id=c05 role=run\nfrom qiskit import QuantumCircuit\nqc = QuantumCircuit(1)\nqc.h(0)\n"
+    ports = ScriptedPorts(drafts=[removed_api], repairs=[fixed])
+    outcome = await generate(ports, GenerationRequest(brief="b"))
+    assert outcome.status == "ready" and outcome.report.ok
+    assert ports.calls[:4] == ["outline", "draft(feedback=no)", "repair(c05)", "execute"]
+    [context] = ports.contexts
+    assert context.before_running and context.traceback == ""
+    assert any("qiskit.execute" in note for note in context.lint_notes)
+    assert "has not run yet" in render_repair_user_prompt(context)
+
+
+async def test_a_heuristic_lint_finding_alone_does_not_spend_a_repair() -> None:
+    # `gate-returns-instructions` can be wrong, so it must never trigger a model call on
+    # a cell that has not failed.
+    chained = LESSON.replace("qc.h(0)\n", "qc.h(0)\nextra = qc.x(0)\n")
+    ports = ScriptedPorts(drafts=[chained])
+    await generate(ports, GenerationRequest(brief="b"))
+    assert ports.calls[:3] == ["outline", "draft(feedback=no)", "execute"]
+
+
+def test_the_production_failure_gets_the_lint_note_and_the_hint_in_its_repair_prompt() -> None:
+    from leona_notebooks.pipeline import _repair_context
+
+    source = (
+        "from qiskit.quantum_info import Statevector\nfrom qiskit import QuantumCircuit\n"
+        "sv = Statevector.from_label('0').evolve(QuantumCircuit(1).h(0))\n"
+    )
+    spec = NotebookSpec(slug="s", title="t", cells=[Cell(id="c28", kind="code", source=source)])
+    report = ExecutionReport(
+        notebook_slug="s",
+        ok=False,
+        runner="inprocess",
+        cells=[
+            CellResult(
+                id="c28",
+                status="error",
+                error=CellError(ename="QiskitError", evalue="'Invalid input data format for Operator'"),
+            )
+        ],
+    )
+    context = _repair_context(spec, report)
+    assert context is not None
+    assert any("InstructionSet" in note for note in context.lint_notes)
+    assert any("InstructionSet" in hint for hint in context.hints)
+    prompt = render_repair_user_prompt(context)
+    assert "LEONA'S LINTER ON THIS CELL" in prompt and "WHAT THIS ERROR USUALLY MEANS" in prompt
 
 
 async def test_structure_failure_feeds_back_into_a_second_draft() -> None:
@@ -235,7 +326,7 @@ async def test_revise_with_a_bad_op_fails_loudly() -> None:
 async def test_repair_returning_nothing_counts_as_a_failed_repair(bad: str) -> None:
     ports = ScriptedPorts(drafts=[BROKEN_LESSON], repairs=[bad, bad, bad])
     outcome = await generate(ports, GenerationRequest(brief="b"))
-    assert outcome.status == "failed"
+    assert outcome.status == "ready" and "cell c05 failed" in outcome.cell_errors
     assert all(not a.ok for a in outcome.attempts if a.stage == "notebook.repair")
 
 
@@ -559,7 +650,7 @@ async def test_the_answer_audit_runs_even_when_the_notebook_does_not_execute() -
     outcome = await generate(
         ports, GenerationRequest(brief="teach me a coin"), PipelineBudget(max_repairs=1)
     )
-    assert outcome.status == "failed"
+    assert outcome.status == "ready" and outcome.cell_errors  # kept, with the error named
     assert outcome.answers is not None
     assert [v.verdict for v in outcome.answers.verdicts] == ["cannot-fail"]
     assert all(cell.answer is None for cell in outcome.spec.cells)

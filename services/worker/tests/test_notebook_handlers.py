@@ -99,6 +99,17 @@ import os
 os.system("echo hi")
 """
 
+STILL_VIOLATING_REPAIR = """\
+# %% role=run
+import os
+print(os.getcwd())
+"""
+
+SAFE_REPAIR = """\
+# %% role=run
+print("hi")
+"""
+
 CIRCUIT_SEED_PYTHON = """\
 from qiskit import QuantumCircuit
 
@@ -607,7 +618,10 @@ async def test_guard_violating_draft_ends_failed_with_the_guard_message(_fake_ru
             version_id=version_id,
             request={"brief": "do something unsafe"},
         ),
-        llm=QueueLLM([OUTLINE_JSON, GUARD_VIOLATING_DRAFT]),
+        # The linter sees `import os` before anything runs and asks for ONE repair; this
+        # repair keeps the violation, so the pre-run loop stops (same finding twice) and
+        # the guard, which still has the last word, refuses the program.
+        llm=QueueLLM([OUTLINE_JSON, GUARD_VIOLATING_DRAFT, STILL_VIOLATING_REPAIR]),
         sandbox=FakeSandbox(),
         store=store,
     )
@@ -616,6 +630,65 @@ async def test_guard_violating_draft_ends_failed_with_the_guard_message(_fake_ru
     assert version.status == "failed"
     assert "safety guard" in version.error
     assert store.turns and "couldn't finish" in store.turns[0].content
+
+
+async def test_a_cell_that_still_raises_after_repair_is_kept_ready_and_named(
+    _fake_run_plumbing, monkeypatch
+):
+    # Plan 10-notebook-ide rule 1, end to end through the handler: the notebook is saved
+    # `ready` with the failing cell in its report, the run SUCCEEDS with a reason that
+    # still tells a kept build from a clean one, and Nala's turn names the cell.
+    captured: dict = {}
+
+    class CapturingRunStore(FakeRunStore):
+        async def finish(self, status, payload, **fields):
+            captured.update(payload)
+            return await super().finish(status, payload, **fields)
+
+    monkeypatch.setattr(handlers, "RepoRunStateStore", CapturingRunStore)
+    run_id, notebook_id, version_id = uuid.uuid4(), uuid.uuid4(), uuid.uuid4()
+    store = MemoryNotebookStore()
+    store.seed_version(notebook_id, version_id)
+    session = Session()
+    same_cell = "# %% id=c05 role=run\nprint('still broken')\n"
+
+    await nh.handle_notebook_generate(
+        session,
+        _payload(run_id=run_id, notebook_id=notebook_id, version_id=version_id, request={"brief": "b"}),
+        llm=QueueLLM([OUTLINE_JSON, LESSON, same_cell, same_cell, same_cell]),
+        sandbox=FakeSandbox(fail_cell_id="c05"),
+        store=store,
+    )
+
+    version = store.versions[version_id]
+    assert version.status == "ready", version.error
+    assert not version.error
+    statuses = {cell["id"]: cell["status"] for cell in version.report["cells"]}
+    assert statuses["c02"] == "ok" and statuses["c05"] == "error"
+    assert captured["reason_code"] == "notebook_generated_with_errors"
+    assert captured["status"] == RunStatus.SUCCEEDED
+    [turn] = [t for t in store.turns if t.role == "nala"]
+    assert "cell c05" in turn.content and "NameError" in turn.content
+    assert "3 fix(es)" in turn.content
+
+
+async def test_a_guard_violating_draft_that_the_repair_fixes_runs(_fake_run_plumbing):
+    run_id, notebook_id, version_id = uuid.uuid4(), uuid.uuid4(), uuid.uuid4()
+    store = MemoryNotebookStore()
+    store.seed_version(notebook_id, version_id)
+    session = Session()
+
+    await nh.handle_notebook_generate(
+        session,
+        _payload(run_id=run_id, notebook_id=notebook_id, version_id=version_id, request={"brief": "b"}),
+        llm=QueueLLM([OUTLINE_JSON, GUARD_VIOLATING_DRAFT, SAFE_REPAIR]),
+        sandbox=FakeSandbox(),
+        store=store,
+    )
+
+    version = store.versions[version_id]
+    assert version.error in (None, ""), version.error
+    assert "import os" not in (version.source or "")
 
 
 async def test_provider_exception_ends_failed_with_an_error_and_the_run_failed(_fake_run_plumbing):

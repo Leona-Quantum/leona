@@ -28,7 +28,7 @@ from leona_notebooks.templates import KIND_DESCRIPTIONS, structure_for
 #: qiskit 2.5.2 with DeprecationWarning raised as an error. A wrong "fact" here ships a
 #: failing cell to every reader, so this block changes only with a probe run.
 QISKIT_2_FACTS = """\
-Qiskit 2.5 facts (verified against 2.5.2):
+Qiskit 2.5 facts (verified against 2.5.2; the in-place and measurement lines re-probed 2026-09-23):
 - Imports: `from qiskit import QuantumCircuit`; `from qiskit.primitives import StatevectorSampler, StatevectorEstimator`;
   `from qiskit.quantum_info import SparsePauliOp, Statevector, Operator`;
   `from qiskit.transpiler import generate_preset_pass_manager`;
@@ -43,6 +43,13 @@ Qiskit 2.5 facts (verified against 2.5.2):
 - Transpilation: `backend = GenericBackendV2(num_qubits=5, seed=1)`; `pm = generate_preset_pass_manager(optimization_level=1, backend=backend)`;
   `isa = pm.run(qc)`; basis of that backend is cx, id, rz, sx, x (+ delay, measure, reset).
 - Bit order: Qiskit prints qubit 0 as the RIGHTMOST character of a bitstring ('q1q0').
+- Gate methods change the circuit IN PLACE: `qc.h(0)` returns an InstructionSet and `qc.measure_all()` returns None.
+  Never chain them or use their result (`QuantumCircuit(1).h(0)` is NOT a circuit, and passing it to
+  `Statevector.evolve` raises "Invalid input data format for Operator"). Write `qc = QuantumCircuit(1)`, then `qc.h(0)`
+  on its own line, then use `qc`. `qc.measure_all(inplace=False)` returns a measured copy and leaves `qc` alone.
+- A circuit with measurements has no statevector or operator: `Statevector(qc)`, `Operator(qc)` and `.evolve(qc)`
+  raise "Cannot apply instruction with classical bits: measure". Build states before measuring, or pass
+  `qc.remove_final_measurements(inplace=False)`.
 - Drawing: `qc.draw("text")` always works; `qc.draw("mpl")` needs the `pylatexenc` package and matplotlib —
   use it only when a figure is the point, and never let a missing optional package break a cell.
 - Visualisation: `from qiskit.visualization import plot_histogram, plot_bloch_multivector`; each returns a matplotlib Figure.
@@ -321,7 +328,9 @@ You are Nala. A cell of a notebook you wrote failed when it ran. Return the corr
 Leona notebook source (percent format), and nothing else. Keep the cell's role and intent; change the
 least that makes it run. If the failure reveals an error in an earlier cell, return that cell too,
 with its `id=` marker so it replaces the right one. Never silence an error with a bare `except`, and
-never delete an assertion to make a checkpoint pass — fix what it checks.
+never delete an assertion to make a checkpoint pass — fix what it checks. If you are told an earlier
+fix of yours failed the same way, do not return that fix again: find a different cause, and prefer the
+simplest code that demonstrates the same idea.
 """
 
 
@@ -334,15 +343,55 @@ class RepairContext:
     traceback: str
     preceding_sources: list[tuple[str, str]]  # (id, source) of earlier code cells
     stdout: str = ""
+    #: What `leona_notebooks.lint` says about this cell, one rendered finding per line.
+    #: A traceback points at where Qiskit gave up, which is often not where the mistake is
+    #: (the 2026-09-24 production failure pointed into `Operator.__init__`); the linter
+    #: points at the line that made it.
+    lint_notes: tuple[str, ...] = ()
+    #: Known meanings of this error message (`leona_notebooks.error_hints`).
+    hints: tuple[str, ...] = ()
+    #: Earlier repairs of THIS cell in this run that did not work, newest last, each as
+    #: (source the model returned, the error it then raised). Without this every repair
+    #: is the first repair, and a model that made a mistake once makes it three times —
+    #: which is what happened on 2026-09-24: three fixes, three identical failures.
+    failed_fixes: tuple[tuple[str, str], ...] = ()
+    #: `True` when there is no traceback because the cell has not run: the linter found a
+    #: certain error before any sandbox time was spent on it.
+    before_running: bool = False
 
 
 def render_repair_user_prompt(context: RepairContext, framework: str = "qiskit") -> str:
     earlier = "\n\n".join(
         f"# %% id={cid}\n{src.rstrip()}" for cid, src in context.preceding_sources[-6:]
     )
+    lint = (
+        "LEONA'S LINTER ON THIS CELL (line numbers are within the cell):\n"
+        + "\n".join(f"- {note}" for note in context.lint_notes)
+        + "\n\n"
+        if context.lint_notes
+        else ""
+    )
+    hints = (
+        "WHAT THIS ERROR USUALLY MEANS:\n" + "\n".join(f"- {hint}" for hint in context.hints) + "\n\n"
+        if context.hints
+        else ""
+    )
+    failed = "".join(
+        f"YOUR EARLIER FIX #{n} OF THIS CELL ALSO FAILED, with {error}. Do not return it again:\n"
+        f"{source.rstrip()}\n\n"
+        for n, (source, error) in enumerate(context.failed_fixes, start=1)
+    )
+    what = (
+        "This cell has not run yet. The linter found an error that will certainly raise, listed below.\n\n"
+        if context.before_running
+        else f"ERROR: {context.error_name}: {context.error_value}\n\nTRACEBACK:\n{context.traceback[-3000:]}\n\n"
+    )
     return (
         f"FAILED CELL (id={context.cell_id}):\n# %% id={context.cell_id}\n{context.cell_source.rstrip()}\n\n"
-        f"ERROR: {context.error_name}: {context.error_value}\n\nTRACEBACK:\n{context.traceback[-3000:]}\n\n"
+        + what
+        + lint
+        + hints
+        + failed
         + (f"STDOUT BEFORE THE ERROR:\n{context.stdout[-1500:]}\n\n" if context.stdout else "")
         + f"EARLIER CODE CELLS (for context; return one only if it is the real cause):\n{earlier}\n\n"
         f"FRAMEWORK FACTS:\n{FRAMEWORK_FACTS.get(framework, '')}\n\n{allowed_imports_text()}\n\n"

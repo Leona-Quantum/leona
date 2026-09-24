@@ -19,7 +19,9 @@ from typing import Literal, Protocol
 
 from leona_notebooks.execution import ExecutionReport
 from leona_notebooks.answer_audit import AnswerAudit, audit_answers, demote_unsound_answers
+from leona_notebooks.error_hints import hints_for
 from leona_notebooks.grader_audit import GraderAudit, audit_graders, demote_unsound_graders
+from leona_notebooks.lint import DEFINITE, lint_cell
 from leona_notebooks.prompts import NotebookOutline, NotebookReview, RepairContext
 from leona_notebooks.revision import RevisionError, RevisionPlan, apply_revision
 from leona_notebooks.source import SourceParseError, parse_source, render_source
@@ -95,6 +97,10 @@ class PipelineOutcome:
     summary: str = ""
     attempts: list[Attempt] = field(default_factory=list)
     error: str = ""
+    #: On a `ready` outcome whose report is not clean: which cell raised and how, for the
+    #: reader-facing turn. Empty when every cell ran, and always empty on `failed` (where
+    #: `error` carries it). See `is_usable` for why these are two different states.
+    cell_errors: str = ""
 
     @property
     def source(self) -> str:
@@ -138,26 +144,83 @@ class _StageFailed(Exception):
         self.detail = detail
 
 
-def _repair_context(spec: NotebookSpec, report: ExecutionReport) -> RepairContext | None:
+def _preceding_code(spec: NotebookSpec, cell_id: str) -> list[tuple[str, str]]:
+    preceding: list[tuple[str, str]] = []
+    for earlier in spec.cells:
+        if earlier.id == cell_id:
+            break
+        if earlier.is_code:
+            preceding.append((earlier.id, earlier.source))
+    return preceding
+
+
+def _lint_notes(spec: NotebookSpec, cell_id: str) -> tuple[str, ...]:
+    cell = spec.cell_by_id(cell_id)
+    preceding = [source for _, source in _preceding_code(spec, cell_id)]
+    return tuple(finding.render() for finding in lint_cell(cell.source, preceding))
+
+
+def _repair_context(
+    spec: NotebookSpec,
+    report: ExecutionReport,
+    failed_fixes: dict[str, list[tuple[str, str]]] | None = None,
+) -> RepairContext | None:
     failing = report.first_error()
     if failing is None or failing.error is None:
         return None
     cell = spec.cell_by_id(failing.id)
-    preceding: list[tuple[str, str]] = []
-    for earlier in spec.cells:
-        if earlier.id == cell.id:
-            break
-        if earlier.is_code:
-            preceding.append((earlier.id, earlier.source))
     return RepairContext(
         cell_id=cell.id,
         cell_source=cell.source,
         error_name=failing.error.ename,
         error_value=failing.error.evalue,
         traceback="".join(failing.error.traceback),
-        preceding_sources=preceding,
+        preceding_sources=_preceding_code(spec, cell.id),
         stdout=failing.stdout,
+        lint_notes=_lint_notes(spec, cell.id),
+        hints=hints_for(failing.error.ename, failing.error.evalue),
+        failed_fixes=tuple((failed_fixes or {}).get(cell.id, ())),
     )
+
+
+def _first_definite_finding(spec: NotebookSpec) -> RepairContext | None:
+    """The first executable code cell with a lint finding that is certain to raise, as a
+    repair context with no traceback. Heuristic findings (`gate-returns-instructions`) are
+    not enough to spend a model call before running: they go into the repair prompt only
+    once the cell has actually failed."""
+    preceding: list[str] = []
+    for cell in spec.cells:
+        if not cell.is_code:
+            continue
+        if cell.runs_in_sandbox:
+            findings = lint_cell(cell.source, preceding)
+            definite = [f for f in findings if f.code in DEFINITE]
+            if definite:
+                return RepairContext(
+                    cell_id=cell.id,
+                    cell_source=cell.source,
+                    error_name=definite[0].code,
+                    error_value=definite[0].message,
+                    traceback="",
+                    preceding_sources=_preceding_code(spec, cell.id),
+                    lint_notes=tuple(f.render() for f in findings),
+                    before_running=True,
+                )
+        preceding.append(cell.source)
+    return None
+
+
+def is_usable(report: ExecutionReport) -> bool:
+    """Whether a run produced a notebook worth handing to the reader.
+
+    A cell that raised is a RESULT, the rule `_handle_author` in the worker already
+    applies to a reader's own edit (plan 10-notebook-ide, rule 1). Before 2026-09-23 a
+    generated notebook with one failing cell was saved `failed` and shown as nothing: the
+    production notebook of 2026-09-24 01:07Z had 36 cells, 7 of its 9 code cells ran, and
+    the reader got a page that said it was still being prepared and a chat that refused
+    his messages. What is not usable is a run where nothing executed at all (the sandbox
+    failed, the guard refused everything): there is no result to show."""
+    return report.ok or report.executed_count() > 0
 
 
 def _apply_repair(spec: NotebookSpec, cell_id: str, text: str) -> NotebookSpec:
@@ -205,13 +268,38 @@ def render_cells(cells: list[Cell], *, include_ids: bool = True) -> str:
 async def _execute_and_repair(
     ports: NotebookPorts, spec: NotebookSpec, budget: PipelineBudget, attempts: list[Attempt]
 ) -> tuple[NotebookSpec, ExecutionReport]:
+    repairs = 0
+
+    # Before the first sandbox run: a cell the linter can PROVE will raise is repaired
+    # now, from the finding, rather than after a run that would only confirm it. Shares
+    # the repair budget, and stops the moment a repair leaves the same finding in place,
+    # so a model that cannot fix it here gets the traceback below instead.
+    last_seen: tuple[str, str] | None = None
+    while repairs < budget.max_repairs:
+        context = _first_definite_finding(spec)
+        if context is None or (context.cell_id, context.error_value) == last_seen:
+            break
+        last_seen = (context.cell_id, context.error_value)
+        repairs += 1
+        await ports.observe("notebook.repair", "started", f"{context.cell_id}: {context.error_name}")
+        try:
+            text = await ports.repair(spec, context)
+            spec = _apply_repair(spec, context.cell_id, text)
+        except (SourceParseError, RevisionError, ValueError, _StageFailed) as exc:
+            attempts.append(Attempt("notebook.repair", False, str(exc)))
+            await ports.observe("notebook.repair", "failed", str(exc))
+            continue
+        attempts.append(Attempt("notebook.repair", True, context.cell_id))
+        await ports.observe("notebook.repair", "finished", context.cell_id)
+
     await ports.observe("notebook.execute", "started")
     report = await ports.run_notebook(spec)
     await ports.observe("notebook.execute", "finished" if report.ok else "failed", report.note)
     attempts.append(Attempt("notebook.execute", report.ok, report.note))
-    repairs = 0
+    #: cell id -> [(source the model returned, the error that source then raised)].
+    failed_fixes: dict[str, list[tuple[str, str]]] = {}
     while not report.ok and repairs < budget.max_repairs:
-        context = _repair_context(spec, report)
+        context = _repair_context(spec, report, failed_fixes)
         if context is None:
             break  # not a cell error (the sandbox itself failed): nothing to repair
         repairs += 1
@@ -231,6 +319,11 @@ async def _execute_and_repair(
         report = await ports.run_notebook(spec)
         await ports.observe("notebook.execute", "finished" if report.ok else "failed", report.note)
         attempts.append(Attempt("notebook.execute", report.ok, report.note))
+        again = report.first_error()
+        if again is not None and again.id == context.cell_id and again.error is not None:
+            failed_fixes.setdefault(context.cell_id, []).append(
+                (spec.cell_by_id(context.cell_id).source, f"{again.error.ename}: {again.error.evalue[:300]}")
+            )
     return spec, report
 
 
@@ -445,8 +538,7 @@ async def generate(
                 await ports.observe("notebook.review", "failed", str(exc))
 
         review = _with_structure_warnings(review, spec)
-        status: Literal["ready", "failed"] = "ready" if report.ok else "failed"
-        error = "" if report.ok else _describe_failure(report)
+        status: Literal["ready", "failed"] = "ready" if is_usable(report) else "failed"
         return PipelineOutcome(
             status=status,
             spec=spec,
@@ -457,7 +549,8 @@ async def generate(
             answers=answers,
             summary=f"generated from brief: {request.brief[:80]}",
             attempts=attempts,
-            error=error,
+            error="" if status == "ready" else describe_failure(report),
+            cell_errors="" if report.ok or status == "failed" else describe_failure(report),
         )
     except _StageFailed as exc:
         await ports.observe(exc.stage, "failed", exc.detail)
@@ -527,8 +620,9 @@ async def revise(
     # faithfully, which is its job, so the only thing that can tell a reader their
     # notebook has stopped meeting its own contract is a check on the result.
     review = _with_structure_warnings(review, spec)
+    status: Literal["ready", "failed"] = "ready" if is_usable(report) else "failed"
     return PipelineOutcome(
-        status="ready" if report.ok else "failed",
+        status=status,
         spec=spec,
         report=report,
         review=review,
@@ -537,7 +631,8 @@ async def revise(
         reply=plan.reply,
         summary=plan.summary or "edited in chat",
         attempts=attempts,
-        error="" if report.ok else _describe_failure(report),
+        error="" if status == "ready" else describe_failure(report),
+        cell_errors="" if report.ok or status == "failed" else describe_failure(report),
     )
 
 
@@ -583,7 +678,7 @@ def _grader_proof_is_stale(before: NotebookSpec, after: NotebookSpec) -> bool:
     return executed(before) != executed(after)
 
 
-def _describe_failure(report: ExecutionReport) -> str:
+def describe_failure(report: ExecutionReport) -> str:
     first = report.first_error()
     if first is not None and first.error is not None:
         return f"cell {first.id} failed: {first.error.ename}: {first.error.evalue[:300]}"
