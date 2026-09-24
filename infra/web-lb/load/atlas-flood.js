@@ -19,7 +19,7 @@
 //
 // Every response is recorded with WHO answered it, because a 429 from
 // Cloudflare, from Cloud Armor and from Cloud Run are three different findings
-// (`who()` below says how each is told apart):
+// (`who()` in lib.js says how each is told apart):
 //   cloudrun     body is "Rate exceeded." (Cloud Run: no available instance)
 //   cf-cache     Cloudflare served it from cache; the origin was not asked
 //   cf-challenge Cloudflare challenged the client (Bot Fight Mode / a rule)
@@ -27,14 +27,17 @@
 //   armor        reached Google, 429/403, not Cloud Run's body
 //   app          anything else that reached the service
 //
-// Two streams, selectable with SCENARIO=crawler|visitor|both, so the crawler can
-// run from many machines while the visitor runs from one more (see
-// .github/workflows/loadtest-atlas.yml on the loadtest branch, and README.md).
+// Two streams, selectable with SCENARIO=crawler|visitor|both. The distributed
+// run puts `crawler` on many GitHub Actions runners and the legitimate-user
+// load on one more, behaving like a real Atlas reader (see browse.js) rather
+// than this file's own `visitor` scenario, which is the lighter single-page
+// shape used for quick, one-address checks (see
+// .github/workflows/loadtest-atlas.yml and README.md).
 //
 // Point it only at a hostname you own and that serves no real visitors.
 import http from "k6/http";
-import { Counter } from "k6/metrics";
 import { SharedArray } from "k6/data";
+import { record, startDelay, UA_BASE } from "./lib.js";
 
 const HOST = __ENV.HOST || "https://gcp-preview.leonaqt.com";
 const CRAWL_RPS = Number(__ENV.CRAWL_RPS || 40);
@@ -48,7 +51,6 @@ const SCENARIO = __ENV.SCENARIO || "both";
 // Unix seconds; every process waits for it so that separately started
 // machines load the origin at the same time.
 const START_AT = Number(__ENV.START_AT || 0);
-const UA = "leona-loadtest/1 (+infra/web-lb/load)";
 
 const urls = new SharedArray("crawler", () => {
   const d = JSON.parse(open("./crawler-urls-20260924.json"));
@@ -59,8 +61,6 @@ const VISITOR_PATHS = [
   "/", "/", "/", "/about", "/pricing", "/repository",
   "/repository/amplitude-estimation", "/opengraph-image", "/robots.txt",
 ];
-
-const resp = new Counter("resp");
 
 export const options = {
   discardResponseBodies: false,
@@ -76,35 +76,8 @@ export const options = {
       preAllocatedVUs: 10, maxVUs: 60,
     },
   }).filter(([name]) => SCENARIO === "both" || SCENARIO === name)
-    .map(([name, sc]) => [name, { ...sc, startTime: `${startDelay()}s` }])),
+    .map(([name, sc]) => [name, { ...sc, startTime: `${startDelay(START_AT)}s` }])),
 };
-
-function startDelay() {
-  if (!START_AT) return 0;
-  return Math.max(0, Math.round(START_AT - Date.now() / 1000));
-}
-
-// `Via: 1.1 google` is added by Google's front end, so it is on everything that
-// reached the load balancer — including a response Cloudflare then cached, which
-// is why `Cf-Cache-Status: HIT` is read first. `X-Cloud-Trace-Context` is NOT a
-// usable witness through k6: Cloudflare passes it to curl and it was absent on
-// every k6 response measured, so this does not key on it.
-function who(r) {
-  if (r.status === 0) return "network";
-  const body = typeof r.body === "string" ? r.body.slice(0, 40) : "";
-  if (r.status === 429 && body.startsWith("Rate exceeded.")) return "cloudrun";
-  if ((r.headers["Cf-Cache-Status"] || "") === "HIT") return "cf-cache";
-  // Bot Fight Mode / a managed challenge: Cloudflare answers for the origin.
-  if (r.headers["Cf-Mitigated"]) return "cf-challenge";
-  const google = /google/i.test(r.headers["Via"] || "");
-  if (!google) return "cloudflare";
-  if (r.status === 429 || r.status === 403) return r.headers["X-Leona-Shed"] ? "app" : "armor";
-  return "app";
-}
-
-function record(scenario, cls, r) {
-  resp.add(1, { scenario, cls, code: String(r.status), src: who(r) });
-}
 
 let staticChunk = null;
 
@@ -116,7 +89,7 @@ export function crawler() {
   const sep = path.includes("?") ? "&" : "?";
   const bust = `${__VU}-${__ITER}-${Math.floor(Math.random() * 1e9)}`;
   const r = http.get(`${HOST}${path}${sep}lt=${bust}`, {
-    headers: { "User-Agent": UA + " crawler" }, timeout: "60s",
+    headers: { "User-Agent": UA_BASE + " crawler" }, timeout: "60s",
     tags: { name: isMap ? "map?" : "node?" },
   });
   record("crawler", isMap ? "map" : "node", r);
@@ -126,14 +99,14 @@ export function visitor() {
   let path = VISITOR_PATHS[Math.floor(Math.random() * VISITOR_PATHS.length)];
   if (Math.random() < 0.15) {
     if (!staticChunk) {
-      const home = http.get(`${HOST}/`, { headers: { "User-Agent": UA + " visitor" } });
+      const home = http.get(`${HOST}/`, { headers: { "User-Agent": UA_BASE + " visitor" } });
       const m = typeof home.body === "string" ? home.body.match(/\/_next\/static\/[^"]+\.js/) : null;
       staticChunk = m ? m[0] : "/robots.txt";
     }
     path = staticChunk;
   }
   const r = http.get(`${HOST}${path}`, {
-    headers: { "User-Agent": UA + " visitor" }, timeout: "60s", tags: { name: path },
+    headers: { "User-Agent": UA_BASE + " visitor" }, timeout: "60s", tags: { name: path },
   });
   const cls = path === "/" ? "home" : path.startsWith("/_next/") ? "static" : path.startsWith("/repository") ? "atlas" : "page";
   record("visitor", cls, r);

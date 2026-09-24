@@ -10,23 +10,40 @@
 // incident note §5): a document load, the prefetches the page's links fire, and
 // then client-side navigations, which are RSC requests (`RSC: 1` and an `_rsc=`
 // cache-buster, exactly as Next's router sends them) rather than documents.
-// The Atlas MAP is the exception, and the expensive one: it links with plain
-// `<a href>`, never `next/link` (repository-converge-view.tsx: a `<Link>` would
-// skip the cross-document view transition the map's zoom is built on), so every
-// click there is a full DOCUMENT load of a new `?focus=&open=` URL — a Cloudflare
-// cache miss and a ~1 s server render — with no prefetch in front of it. Think
-// time between steps is 2-6 s, which is a brisk reader rather than an average one.
+//
+// A LANE OR CARD CLICK ON AN ALREADY-OPEN MAP IS ALSO AN RSC REQUEST, corrected
+// 2026-09-24 21:40 UTC from a real-browser re-measurement: clicking a lane sent
+// `GET /repository/layers?open=…&sel=…&_rsc=<token>` with header `RSC: 1`, not a
+// document load. The document-load, ~1 s-server-render shape the 2026-09-24
+// incident actually saw was arrivals at a specific `?open=` URL from OUTSIDE the
+// app (a shared link, a bookmark, a crawler with no browser session) — this
+// script models that as the rarer "deep link" arrival (`DEEP_LINK_RATE` of
+// sessions), and everything else as clicks inside an already-open map. Next
+// does not expose the router-state hash for an arbitrary `open=`/`sel=` value
+// the way it does for a handful of fixed links, so a map click's `_rsc` is a
+// fresh random token per click rather than the learned value `rscParam` computes
+// for the small, fixed set of header links (see `get()`).
+//
+// Think time between steps is 2-6 s, which is a brisk reader rather than an
+// average one.
 //
 // Nothing here busts Cloudflare's cache on purpose: what reaches the origin is
 // what a real reader's requests would make reach it.
+//
+// Also models back/forward (a click to a state already visited this session,
+// same RSC cost as any other map click) and the occasional static chunk fetch a
+// page load or cache miss produces.
 import http from "k6/http";
 import { sleep } from "k6";
-import { Counter } from "k6/metrics";
 import { SharedArray } from "k6/data";
+import { record, startDelay, UA_BASE } from "./lib.js";
 
 const HOST = __ENV.HOST || "https://gcp-preview.leonaqt.com";
 const VUS = Number(__ENV.VUS || 30);
 const MINUTES = Number(__ENV.MINUTES || 10);
+// Unix seconds; lets this run start in lockstep with the crawler matrix (see
+// atlas-flood.js and .github/workflows/loadtest-atlas.yml).
+const START_AT = Number(__ENV.START_AT || 0);
 // What a home-page view fires after the document, measured in a real browser on
 // gcp-preview 2026-09-24: the session probe, then RSC prefetches of the header's
 // links — each link twice, with different `_rsc` values (two router states).
@@ -35,29 +52,26 @@ const MINUTES = Number(__ENV.MINUTES || 10);
 const HOME_FOLLOW_UPS = ["/api/auth/session",
   "/workspace", "/repository", "/about", "/pricing", "/contact", "/",
   "/workspace", "/repository", "/about", "/pricing", "/contact", "/"];
-const UA = "leona-loadtest/1 (+infra/web-lb/load) browse";
+const UA = UA_BASE + " browse";
+// A minority of sessions arrive at a specific map state from OUTSIDE the app
+// (a shared link, a bookmark) rather than by clicking through an already-open
+// map -- see the file header. That arrival is a document load; everything
+// else is an RSC click.
+const DEEP_LINK_RATE = 0.1;
 
 const urls = new SharedArray("map-states", () => {
   const d = JSON.parse(open("./crawler-urls-20260924.json"));
   return d.map.concat(d.node);
 });
 
-const resp = new Counter("resp");
-
 export const options = {
-  scenarios: { browse: { executor: "constant-vus", vus: VUS, duration: `${MINUTES}m`, exec: "browse" } },
+  scenarios: {
+    browse: {
+      executor: "constant-vus", vus: VUS, duration: `${MINUTES}m`, exec: "browse",
+      startTime: `${startDelay(START_AT)}s`,
+    },
+  },
 };
-
-function who(r) {
-  if (r.status === 0) return "network";
-  const body = typeof r.body === "string" ? r.body.slice(0, 40) : "";
-  if (r.status === 429 && body.startsWith("Rate exceeded.")) return "cloudrun";
-  if ((r.headers["Cf-Cache-Status"] || "") === "HIT") return "cf-cache";
-  if (r.headers["Cf-Mitigated"]) return "cf-challenge";
-  if (!/google/i.test(r.headers["Via"] || "")) return "cloudflare";
-  if (r.status === 429 || r.status === 403) return "armor";
-  return "app";
-}
 
 // Next validates `_rsc` against a hash of the router headers and 307s a request
 // whose value does not match (measured: a random `_rsc` always costs a redirect
@@ -76,16 +90,27 @@ function rscParam(path, headers) {
   return rscFor[key];
 }
 
+// A map click's own `_rsc`: unlike the handful of fixed links `rscParam`
+// learns a value for, the map's `open=`/`sel=` state is combinatorial, so
+// there is no small state space to learn against. Real clicks were measured
+// sending a fresh token each time, not a validated hash, so this doesn't
+// pretend to compute the "right" one either.
+function randomRsc() {
+  return Math.random().toString(36).slice(2, 10);
+}
+
 function get(path, cls, rsc) {
   const headers = { "User-Agent": UA };
   let url = `${HOST}${path}`;
   if (rsc) {
     headers.RSC = "1";
     if (rsc === "prefetch") headers["Next-Router-Prefetch"] = "1";
-    url += `${path.includes("?") ? "&" : "?"}_rsc=${rscParam(path, headers)}`;
+    const rscValue = rsc === "mapclick" ? randomRsc() : rscParam(path, headers);
+    url += `${path.includes("?") ? "&" : "?"}_rsc=${rscValue}`;
   }
   const r = http.get(url, { headers, timeout: "60s", tags: { name: cls } });
-  resp.add(1, { scenario: "browse", cls: rsc ? `${cls}:${rsc === "prefetch" ? "prefetch" : "rsc"}` : cls, code: String(r.status), src: who(r) });
+  const suffix = rsc === "prefetch" ? "prefetch" : "rsc";
+  record("browse", rsc ? `${cls}:${suffix}` : cls, r);
   return r;
 }
 
@@ -98,8 +123,25 @@ function mapState() {
   return u;
 }
 
+// A page load or a cache miss pulls in a JS chunk; a static chunk on this
+// site is served through the same Cloudflare -> LB -> Cloud Run path as
+// everything else, so it belongs in the non-Atlas request count. Fetched at
+// most once per VU (browsers cache it after the first load).
+let staticChunk = null;
+function maybeStatic() {
+  if (Math.random() >= 0.15) return;
+  if (!staticChunk) {
+    const home = http.get(`${HOST}/`, { headers: { "User-Agent": UA } });
+    const m = typeof home.body === "string" ? home.body.match(/\/_next\/static\/[^"]+\.js/) : null;
+    staticChunk = m ? m[0] : "/robots.txt";
+  }
+  const r = http.get(`${HOST}${staticChunk}`, { headers: { "User-Agent": UA }, timeout: "60s", tags: { name: "static" } });
+  record("browse", "static", r);
+}
+
 export function browse() {
   get("/", "home");
+  maybeStatic();
   for (const p of HOME_FOLLOW_UPS) {
     if (p === "/api/auth/session") get(p, "session");
     else get(p, p === "/" ? "home" : p.startsWith("/repository") ? "atlas" : "page", "prefetch");
@@ -107,13 +149,37 @@ export function browse() {
   think();
   get("/repository", "atlas", "nav");
   think();
-  // The map is a document load, from the Atlas page's link and on every click.
-  get("/repository/layers", "map");
-  // Exploring the map: a few clicks, each a new server-rendered state.
+  // Arrival at the map: either the index (a document load, from the Atlas
+  // page's own link) followed by clicking around inside it, or -- the
+  // minority case -- straight to a specific state from outside the app (a
+  // shared link), which is ALSO a document load, but with no index step and
+  // no RSC header. Either way, everything that follows from an already-open
+  // map is an RSC click (see the file header).
+  const visited = [];
+  if (Math.random() < DEEP_LINK_RATE) {
+    const state = mapState();
+    get(state, "map"); // deep link: plain document GET, no RSC
+    visited.push(state);
+  } else {
+    get("/repository/layers", "map"); // the bare index
+  }
+  // Exploring the map: a few clicks, each an RSC request for a new state,
+  // plus back/forward through states already seen this session -- same RSC
+  // cost as a new click.
   const clicks = 3 + Math.floor(Math.random() * 4);
   for (let i = 0; i < clicks; i++) {
     think();
-    get(mapState(), "map");
+    const goBack = visited.length > 1 && Math.random() < 0.3;
+    const state = goBack ? visited[visited.length - 2] : mapState();
+    get(state, "map", "mapclick");
+    if (!goBack) visited.push(state);
+  }
+  if (visited.length > 1 && Math.random() < 0.4) {
+    // back once, then forward again to the state that was current before it.
+    think();
+    get(visited[visited.length - 2], "map", "mapclick");
+    think();
+    get(visited[visited.length - 1], "map", "mapclick");
   }
   think();
   get("/repository/amplitude-estimation", "record", "nav");

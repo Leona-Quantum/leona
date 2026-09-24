@@ -1,0 +1,153 @@
+# THROWAWAY: lives only on loadtest/* branches, never on dev.
+#
+# The distributed reproduction of the 2026-09-24 incident
+# (ai-ops/desk/leona/plans/incidents/2026-09-24-gcp-web-429.md), extended
+# 2026-09-24 for the Cloudflare collaborator's follow-up test (report the
+# crawler and legitimate users separately, at 60 requests/s and 30
+# shared-IP users, over a longer window). The real crawler put ~58
+# requests/s on the origin for hours while Cloudflare's per-IP limit (60 per
+# 10 s) was in place, which it can only do from many addresses -- measured,
+# Cloudflare refuses ~92% of a single address at that rate. So this SHARDS
+# the crawler across `shards` runners, each its own address, each at `rps`
+# (under the per-IP limit).
+#
+# The legitimate-user load runs from ONE runner (one address = the
+# shared-IP group browse.js models: 30 readers behind a classroom's or
+# office's single NAT address). Both jobs start at the same unix time
+# (`start_at`, computed once by `plan` and handed to every runner), so the
+# flood and the ordinary traffic actually overlap, the way the incident and
+# ai-ops#379's tests did. Earlier runs of this test had the legitimate-user
+# stream on a separate machine outside CI entirely (see git history /
+# ai-ops#372) -- folding it into this workflow means nothing has to run on
+# a developer's own machine to reproduce the full test.
+#
+# Against gcp-preview.leonaqt.com only -- the rehearsal hostname, which no
+# visitor uses.
+#
+# "Never triggered by dev" is enforced structurally, not just by the push
+# filter below: every job also guards on `github.ref` actually being a
+# loadtest/* branch. That matters once this file itself lives on dev (it
+# ships in the same PR as the rest of this tooling) -- workflow_dispatch has
+# no branch restriction of its own, so without the guard a dispatch against
+# dev (fat-fingered ref, or a future workflow that calls this one) would
+# still flood gcp-preview. With it, such a run's jobs simply skip.
+name: loadtest-atlas
+
+on:
+  push:
+    branches: ["loadtest/**"]
+  workflow_dispatch:
+    inputs:
+      shards:
+        description: "Crawler runners (each at `rps`, e.g. 15 x 4 = 60 req/s)"
+        default: "15"
+      rps:
+        description: "Requests/s per crawler runner"
+        default: "4"
+      duration_minutes:
+        description: "Run length in minutes"
+        default: "30"
+      users_vus:
+        description: "Legitimate users sharing one address"
+        default: "30"
+      host:
+        description: "Target host -- gcp-preview only, never leonaqt.com"
+        default: "https://gcp-preview.leonaqt.com"
+
+permissions:
+  contents: read
+
+env:
+  K6: "2.1.0"
+  RPS: ${{ github.event.inputs.rps || '4' }}
+  SHARDS: ${{ github.event.inputs.shards || '15' }}
+  MINUTES: ${{ github.event.inputs.duration_minutes || '30' }}
+  USERS_VUS: ${{ github.event.inputs.users_vus || '30' }}
+  HOST: ${{ github.event.inputs.host || 'https://gcp-preview.leonaqt.com' }}
+
+jobs:
+  plan:
+    if: startsWith(github.ref, 'refs/heads/loadtest/')
+    runs-on: ubuntu-latest
+    outputs:
+      shard_matrix: ${{ steps.plan.outputs.shard_matrix }}
+      start_at: ${{ steps.plan.outputs.start_at }}
+    steps:
+      - id: plan
+        run: |
+          n="${SHARDS:-15}"
+          matrix=$(python3 -c "import json; print(json.dumps(list(range(1, int('$n')+1))))")
+          echo "shard_matrix=$matrix" >> "$GITHUB_OUTPUT"
+          # Runner provisioning for up to ~16 jobs can take a couple of minutes;
+          # give every job (crawl and users alike) the same margin before the
+          # flood starts, so a slow-to-provision runner doesn't mean it floods
+          # alone after the others have already been running for a while.
+          echo "start_at=$(( $(date +%s) + 240 ))" >> "$GITHUB_OUTPUT"
+      - name: show the plan
+        run: |
+          echo "host=$HOST rps=$RPS shards=$SHARDS minutes=$MINUTES users_vus=$USERS_VUS"
+          echo "start_at=${{ steps.plan.outputs.start_at }} ($(date -u -d "@${{ steps.plan.outputs.start_at }}" +%FT%TZ 2>/dev/null || date -u -r "${{ steps.plan.outputs.start_at }}" +%FT%TZ))"
+
+  crawl:
+    needs: plan
+    if: startsWith(github.ref, 'refs/heads/loadtest/')
+    runs-on: ubuntu-latest
+    timeout-minutes: 180  # covers duration_minutes up to ~2.5h; the default run is 30 min
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: ${{ fromJSON(needs.plan.outputs.shard_matrix) }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with: { persist-credentials: false }
+      - name: k6
+        run: |
+          curl -fsSL -o k6.tgz "https://github.com/grafana/k6/releases/download/v${K6}/k6-v${K6}-linux-amd64.tar.gz"
+          tar xzf k6.tgz
+          sudo mv "k6-v${K6}-linux-amd64/k6" /usr/local/bin/k6
+          k6 version
+      - name: this runner's public address
+        run: curl -fsS https://api.ipify.org; echo
+      - name: crawl
+        working-directory: infra/web-lb/load
+        run: |
+          start_at="${{ needs.plan.outputs.start_at }}"
+          echo "starting at $(date -u -d "@${start_at}" +%FT%TZ 2>/dev/null || date -u -r "${start_at}" +%FT%TZ), ${RPS}/s for ${MINUTES} min"
+          k6 run -q -e HOST="$HOST" -e SCENARIO=crawler -e CRAWL_RPS="$RPS" -e MINUTES="$MINUTES" -e START_AT="$start_at" \
+            --out json="run-${{ matrix.shard }}.json" atlas-flood.js
+          gzip "run-${{ matrix.shard }}.json"
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: run-${{ matrix.shard }}
+          path: infra/web-lb/load/run-${{ matrix.shard }}.json.gz
+          retention-days: 7
+
+  users:
+    needs: plan
+    if: startsWith(github.ref, 'refs/heads/loadtest/')
+    runs-on: ubuntu-latest
+    timeout-minutes: 180  # covers duration_minutes up to ~2.5h; the default run is 30 min
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with: { persist-credentials: false }
+      - name: k6
+        run: |
+          curl -fsSL -o k6.tgz "https://github.com/grafana/k6/releases/download/v${K6}/k6-v${K6}-linux-amd64.tar.gz"
+          tar xzf k6.tgz
+          sudo mv "k6-v${K6}-linux-amd64/k6" /usr/local/bin/k6
+          k6 version
+      - name: this runner's public address (the shared-IP group's one address)
+        run: curl -fsS https://api.ipify.org; echo
+      - name: legitimate users -- 30 readers behind one address
+        working-directory: infra/web-lb/load
+        run: |
+          start_at="${{ needs.plan.outputs.start_at }}"
+          echo "starting at $(date -u -d "@${start_at}" +%FT%TZ 2>/dev/null || date -u -r "${start_at}" +%FT%TZ), ${USERS_VUS} VUs for ${MINUTES} min"
+          k6 run -q -e HOST="$HOST" -e VUS="$USERS_VUS" -e MINUTES="$MINUTES" -e START_AT="$start_at" \
+            --out json=run-users.json browse.js
+          gzip run-users.json
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: run-users
+          path: infra/web-lb/load/run-users.json.gz
+          retention-days: 7
