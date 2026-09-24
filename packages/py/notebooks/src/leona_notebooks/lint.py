@@ -43,12 +43,58 @@ Severity = Literal["error", "warning"]
 #: name alone — the receiver has to be a circuit as well.
 GATE_METHODS: frozenset[str] = frozenset(
     {
-        "h", "x", "y", "z", "s", "sdg", "t", "tdg", "sx", "sxdg",
-        "rx", "ry", "rz", "rxx", "ryy", "rzz", "rzx", "p", "u", "r",
-        "cx", "cy", "cz", "ch", "cp", "crx", "cry", "crz", "cu", "cs", "csdg", "csx",
-        "ccx", "ccz", "cswap", "swap", "iswap", "dcx", "ecr", "mcx", "mcp",
-        "rv", "id", "barrier", "measure", "measure_all", "reset", "append", "delay",
-        "initialize", "unitary", "prepare_state",
+        "h",
+        "x",
+        "y",
+        "z",
+        "s",
+        "sdg",
+        "t",
+        "tdg",
+        "sx",
+        "sxdg",
+        "rx",
+        "ry",
+        "rz",
+        "rxx",
+        "ryy",
+        "rzz",
+        "rzx",
+        "p",
+        "u",
+        "r",
+        "cx",
+        "cy",
+        "cz",
+        "ch",
+        "cp",
+        "crx",
+        "cry",
+        "crz",
+        "cu",
+        "cs",
+        "csdg",
+        "csx",
+        "ccx",
+        "ccz",
+        "cswap",
+        "swap",
+        "iswap",
+        "dcx",
+        "ecr",
+        "mcx",
+        "mcp",
+        "rv",
+        "id",
+        "barrier",
+        "measure",
+        "measure_all",
+        "reset",
+        "append",
+        "delay",
+        "initialize",
+        "unitary",
+        "prepare_state",
     }
 )
 
@@ -130,7 +176,12 @@ class Diagnostic:
 #: Findings that are never a false alarm on code that runs: each of these raises. The
 #: pipeline repairs a cell carrying one BEFORE spending a sandbox run on it.
 DEFINITE: frozenset[str] = frozenset(
-    {"removed-qiskit-api", "measured-circuit-has-no-statevector", "forbidden-import", "syntax-error"}
+    {
+        "removed-qiskit-api",
+        "measured-circuit-has-no-statevector",
+        "forbidden-import",
+        "syntax-error",
+    }
 )
 
 
@@ -343,8 +394,7 @@ class _Checker(ast.NodeVisitor):
         if isinstance(func, ast.Name) and func.id in _STATE_BUILDERS:
             name = func.id
         elif isinstance(func, ast.Attribute) and (
-            func.attr in _STATE_METHODS
-            or (func.attr in _STATE_BUILDERS)
+            func.attr in _STATE_METHODS or (func.attr in _STATE_BUILDERS)
         ):
             name = func.attr
         if name is None or not node.args:
