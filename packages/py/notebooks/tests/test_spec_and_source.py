@@ -203,6 +203,112 @@ def test_a_cell_with_no_answer_renders_no_answer_attribute() -> None:
     assert "answer=" not in render_source(parse_source(text))
 
 
+# --- a header list item that reads as `key: value` (ai-ops#375, prod-failure-2026-09-24-a)
+#
+# `yaml.safe_load` reads an unquoted list item containing `: ` as a one-pair mapping, not
+# a string — plain YAML block-mapping syntax, working exactly as documented, on text a
+# model writes very naturally: "Understand the basic concepts: superposition,
+# entanglement, and measurement." This is what threw away the production draft of
+# 2026-09-24 01:07Z: `objectives.0` arrived at `NotebookSpec.model_validate` as
+# `{'Understand the basic concepts': 'superposition, entanglement, and measurement.'}`.
+
+
+def _header_with_colon_objectives(third_has_colon: bool = True) -> str:
+    third = (
+        "Gain familiarity with Qiskit: tools, simulators, and visualization tools."
+        if third_has_colon
+        else "Gain familiarity with Qiskit tools, simulators, and visualization tools."
+    )
+    return (
+        "# ---\n# title: Quantum Computing and Qiskit Basics for Engineers\n# kind: lesson\n"
+        "# objectives:\n"
+        "#   - Understand the basic concepts: superposition, entanglement, and measurement.\n"
+        "#   - Build a simple one-qubit circuit and run it\n"
+        f"#   - {third}\n"
+        "# ---\n\n# %% role=run\nx = 1\n"
+    )
+
+
+def test_a_colon_bearing_objective_parses_as_the_string_it_reads_as() -> None:
+    spec = parse_source(_header_with_colon_objectives())
+    assert spec.objectives == [
+        "Understand the basic concepts: superposition, entanglement, and measurement.",
+        "Build a simple one-qubit circuit and run it",
+        "Gain familiarity with Qiskit: tools, simulators, and visualization tools.",
+    ]
+
+
+def test_the_exact_2026_09_24_header_no_longer_fails() -> None:
+    # The literal shape of the production error: TWO objectives with the mistake, not
+    # adjacent, with a clean one between them — so a fix that only looks at objectives[0]
+    # would still leave objectives[2] failing.
+    with_two_broken = _header_with_colon_objectives(third_has_colon=True)
+    spec = parse_source(with_two_broken)
+    assert len(spec.objectives) == 3
+    assert all(isinstance(o, str) for o in spec.objectives)
+
+
+def test_a_prerequisite_with_a_colon_is_repaired_the_same_way() -> None:
+    # The fix is read off `NotebookSpec`'s fields, not hard-coded to `objectives` — this
+    # is the check that it actually generalises to the OTHER `list[str]` header field.
+    text = (
+        "# ---\n# title: T\n# prerequisites:\n"
+        "#   - Comfortable with linear algebra: vectors, matrices, and dot products.\n"
+        "# ---\n\n# %% role=run\nx = 1\n"
+    )
+    spec = parse_source(text)
+    assert spec.prerequisites == [
+        "Comfortable with linear algebra: vectors, matrices, and dot products."
+    ]
+
+
+def test_a_nested_mapping_objective_is_still_refused() -> None:
+    # Not every dict-shaped list item is the colon mistake. A genuinely nested mapping —
+    # two keys, or a key whose value is itself structured — is a different authoring
+    # error, and pydantic's own "Input should be a valid string" is the right answer for
+    # it, not a guess at which piece of it was meant to be the text.
+    text = (
+        "# ---\n# title: T\n# objectives:\n"
+        "#   - first: 1\n#     second: 2\n"
+        "# ---\n\n# %% role=run\nx = 1\n"
+    )
+    with pytest.raises(ValidationError, match="objectives.0"):
+        parse_source(text)
+
+
+def test_an_objective_that_is_a_list_of_lists_is_still_refused() -> None:
+    text = "# ---\n# title: T\n# objectives:\n#   - - a\n#     - b\n# ---\n\n# %% role=run\nx = 1\n"
+    with pytest.raises(ValidationError, match="objectives.0"):
+        parse_source(text)
+
+
+def test_an_objective_ending_in_a_bare_colon_keeps_its_text() -> None:
+    # `- Understand the following:` (nothing after the colon) loads as one key mapped to
+    # `None`, and the rejoin keeps the colon rather than appending the word "None".
+    text = (
+        "# ---\n# title: T\n# objectives:\n#   - Understand the following:\n"
+        "# ---\n\n# %% role=run\nx = 1\n"
+    )
+    spec = parse_source(text)
+    assert spec.objectives == ["Understand the following:"]
+
+
+def test_an_objective_containing_a_colon_round_trips() -> None:
+    # `render_source` is the other half of the bug: the SAME text reaches it on every
+    # revise turn, because a repair or a chat edit sends the spec back through this
+    # format. If `render_source` ever stopped quoting a `": "`-bearing scalar, the header
+    # would break again on the very next round trip. `yaml.safe_dump` already quotes it
+    # (PyYAML must, or the string would not parse back as itself) — this proves that
+    # property holds for the module's own render call, not merely for PyYAML in the
+    # abstract.
+    spec = parse_source(_header_with_colon_objectives())
+    text = render_source(spec)
+    assert "'Understand the basic concepts: superposition" in text
+    again = parse_source(text)
+    assert again.objectives == spec.objectives
+    assert again == spec
+
+
 def test_an_unmatched_brace_inside_a_string_does_not_end_the_value() -> None:
     # This is the case the scanner's string-shielding exists for, and the LaTeX test
     # above does NOT cover it: `\ket{0}` and `\frac{1}{2}` are BALANCED, so a scanner
