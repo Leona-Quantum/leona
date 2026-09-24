@@ -13,6 +13,8 @@ Public surface (stable):
 - `ExecutionReport` — what a run produced, cell by cell (`execution`).
 - `RevisionPlan` / `apply_revision` — chat-driven edits as explicit operations (`revision`).
 - `CurriculumSpec` / `build_curriculum` — many notebooks as one course (`curriculum`).
+- `LiveDraftGuard` — redact a streaming draft/repair cell by cell, before its text
+  reaches the (workspace-scoped) run event stream (`live_draft`).
 """
 
 from leona_notebooks.authoring import (
@@ -22,6 +24,7 @@ from leona_notebooks.authoring import (
 )
 from leona_notebooks.execution import CellError, CellOutput, CellResult, ExecutionReport
 from leona_notebooks.ipynb import from_ipynb, to_ipynb
+from leona_notebooks.live_draft import LiveDraftGuard
 from leona_notebooks.revision import RevisionOp, RevisionPlan, apply_revision
 from leona_notebooks.sandbox_program import (
     NotebookGuardError,
@@ -53,6 +56,7 @@ __all__ = [
     "CellRole",
     "ExecutionReport",
     "Framework",
+    "LiveDraftGuard",
     "NotebookGuardError",
     "NotebookKind",
     "NotebookProgram",
