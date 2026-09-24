@@ -1093,3 +1093,39 @@ async def test_a_repair_cannot_change_a_cells_role_to_dodge_validation() -> None
     repair_attempts = [a for a in outcome.attempts if a.stage == "notebook.repair"]
     assert repair_attempts and not repair_attempts[0].ok
     assert "kind or role" in repair_attempts[0].detail
+
+
+async def test_a_repair_with_a_bare_header_keeps_the_cells_role_and_is_applied() -> None:
+    # Measured 2026-09-24 on the real model: repairs come back as a bare `# %%` header far
+    # more often than with the cell's role restated, and the kind/role check refused every
+    # one of them (`code/checkpoint -> code/None`), so a correctly-caught mistake was never
+    # fixed. An omitted role is the original's; only a DIFFERENT role is refused (the test
+    # above).
+    for header in ("# %%\n", "# %% id=c09\n"):
+        fixed = header + 'assert set(counts) <= {"00", "11"}, f"got {counts}"\n'
+        ports = ExecutingPorts(drafts=[ENTANGLEMENT_LESSON_WRONG_CLAIM], repairs=[fixed])
+        outcome = await generate(ports, GenerationRequest(brief="b"), PipelineBudget(max_repairs=1))
+        repair_attempts = [a for a in outcome.attempts if a.stage == "notebook.repair"]
+        assert repair_attempts and repair_attempts[0].ok, (header, repair_attempts)
+        assert outcome.spec.cell_by_id("c09").role.value == "checkpoint", header
+        assert '{"00", "11"}' in outcome.spec.cell_by_id("c09").source
+
+
+def test_what_a_repair_leaves_out_is_taken_from_the_cell_it_replaces() -> None:
+    # The same omission, before the check existed, silently dropped a grader: a repaired
+    # exercise cell without `check=` lost the test that grades the reader.
+    from leona_notebooks.pipeline import _with_omitted_from
+    from leona_notebooks.spec import Cell
+
+    spec = parse_source(ENTANGLEMENT_LESSON_WRONG_CLAIM)
+    original = spec.cell_by_id("c09")
+    graded = original.model_copy(update={"check": "assert ok", "tags": ["graded"], "timeout_s": 30})
+    spec = spec.model_copy(update={"cells": [graded if c.id == "c09" else c for c in spec.cells]})
+    bare = Cell(id="c01", kind="code", source="print('fixed')\n")  # positional id, as parsed
+    filled = _with_omitted_from(spec, bare, as_id="c09")
+    assert filled.role == original.role
+    assert filled.check == "assert ok" and filled.tags == ["graded"] and filled.timeout_s == 30
+    assert filled.source == "print('fixed')\n" and filled.id == "c01"
+    explicit = Cell(id="c09", kind="code", role="run", source="x\n")
+    kept = _with_omitted_from(spec, explicit)
+    assert kept.role.value == "run"  # what the repair SET is kept (and refused elsewhere)
