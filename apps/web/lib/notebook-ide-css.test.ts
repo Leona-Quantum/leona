@@ -66,3 +66,12 @@ test("the textarea is monospace with a selector that outranks the workspace shel
   assert.equal(decls.get("font-size"), declsFor(".mj-code-editor-metrics").get("font-size"));
   assert.equal(decls.get("line-height"), declsFor(".mj-code-editor-metrics").get("line-height"));
 });
+
+test("the focus ring is drawn around the whole editor, not across the line numbers", () => {
+  // The textarea starts at the gutter's edge; its own ring (2px, offset 3px) covered the
+  // line numbers. The surface draws the ring instead.
+  const off = declsFor(".mj-code-editor textarea.mj-code-editor-input:focus,\n.mj-code-editor textarea.mj-code-editor-input:focus-visible");
+  assert.equal(off.get("outline"), "none");
+  assert.ok(declsFor(".mj-code-editor-surface:focus-within").get("outline"), "the surface draws the ring");
+});
+

@@ -1043,6 +1043,7 @@ async def author_notebook_version(
     }
 
     if not body.execute:
+        carried = _report_if_code_unchanged(latest, spec)
         version = await notebooks_repo.create_version(
             scope,
             session,
@@ -1059,8 +1060,8 @@ async def author_notebook_version(
             status=contracts.NotebookVersionStatus.READY.value,
             spec=spec.model_dump(mode="json"),
             source=render_source(spec),
-            ipynb=to_ipynb(spec),
-            report=None,
+            ipynb=to_ipynb(spec, report=carried) if carried is not None else to_ipynb(spec),
+            report=carried.model_dump(mode="json") if carried is not None else None,
             review=_advisory_review(spec),
             error="",
             message=body.message,
@@ -1114,6 +1115,33 @@ async def author_notebook_version(
     return contracts.AuthorNotebookVersionResponse(
         version=notebooks_repo.version_to_resource(version, full=False), run_id=run.id
     )
+
+
+def _report_if_code_unchanged(
+    latest: NotebookVersionRow, spec: contracts.NotebookSpec
+) -> contracts.ExecutionReport | None:
+    """The newest version's report, when a save that does not run changes no code.
+
+    Every run replays the notebook from the top, so a cell's outputs depend only on the
+    code cells up to it. A save that edits, adds, deletes or moves only TEXT cells leaves
+    every code cell's outputs exactly as they were, and throwing them away turned a typo
+    fix in a heading into a notebook of "Not run yet" (seen with per-cell editing, where a
+    one-line text change is the common case). Carried only when the code cells (id,
+    source, execute) are identical and in the same order; any code change keeps the old
+    rule, no report until it runs.
+    """
+    if latest.status != contracts.NotebookVersionStatus.READY.value or latest.report is None:
+        return None
+    if latest.spec is None:
+        return None
+    before = contracts.NotebookSpec.model_validate(latest.spec)
+
+    def code(cells: list[contracts.Cell]) -> list[tuple[str, str, bool]]:
+        return [(c.id, c.source, c.execute) for c in cells if c.kind == "code"]
+
+    if code(before.cells) != code(spec.cells):
+        return None
+    return contracts.ExecutionReport.model_validate(latest.report)
 
 
 def _advisory_review(spec: contracts.NotebookSpec) -> dict[str, Any] | None:

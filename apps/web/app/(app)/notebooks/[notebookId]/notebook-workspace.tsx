@@ -17,6 +17,7 @@ import { NotebookReviewPanel } from "../../../../components/notebook-review-pane
 import {
   NotebookView,
   type NotebookCellActionKind,
+  type NotebookCellEditState,
   type NotebookCellGrade,
 } from "../../../../components/notebook-view";
 import { refusalSentence } from "../../../../lib/api-error";
@@ -29,6 +30,7 @@ import {
   duplicateCell,
   insertCellAfter,
   moveCell,
+  nextCellId,
   specWithCells,
   undoStructuralChange,
   type CellEdit,
@@ -156,6 +158,17 @@ export function NotebookWorkspace({ notebookId, locale = "en" }: { notebookId: s
   const chatInputRef = useRef<HTMLTextAreaElement | null>(null);
   const [focusedCellId, setFocusedCellId] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  // Per-cell editing, straight from the read view (ai-ops 375). `null` means no cell
+  // is being edited or added — distinct from the page-level `draftCells`, which the
+  // two must never both hold at once (rule 2 of the lane brief): the read view is not
+  // even rendered while `draftCells !== null` (see the ternary in the JSX below), so
+  // that direction is automatic; the page-level Edit button's own `disabled` is what
+  // keeps the other direction true.
+  const [cellEdit, setCellEdit] = useState<NotebookCellEditState | null>(null);
+  // Whether a per-cell save (edit, add, delete, move, duplicate) is in flight — kept
+  // apart from `saving`, which is specifically the page-level editor's own save, so the
+  // two surfaces' busy states cannot be confused for one another.
+  const [cellSaving, setCellSaving] = useState(false);
   // The version an in-flight save is writing, AND the run writing it. Pinned once
   // that run finishes, rather than immediately: a queued version has no spec to
   // render, and if the run FAILS the notebook's `current_version_id` never moves —
@@ -352,6 +365,8 @@ export function NotebookWorkspace({ notebookId, locale = "en" }: { notebookId: s
     setGradingRunId(null);
     setDraftCells(null);
     setFocusedCellId(null);
+    setCellEdit(null);
+    setCellSaving(false);
     setStaleGradeSeq(null);
     liveGradesSeen.current = false;
     openNotebookId.current = notebookId;
@@ -698,7 +713,12 @@ export function NotebookWorkspace({ notebookId, locale = "en" }: { notebookId: s
 
   async function sendTurn(text: string) {
     const trimmed = text.trim();
-    if (!trimmed || mutationPending.current || RUNNING_STATUSES.has(notebook?.latest_status ?? "")) return;
+    // A turn can revise the notebook into a NEW version, which would pull the cell
+    // array a per-cell edit's Save is about to build on out from under it (its
+    // `originalCells` snapshot would no longer be the newest version's). Blocked the
+    // same way the page-level editor already blocks it (`editing`, below) — see the
+    // chat form's own `disabled` for the visible half of this rule.
+    if (!trimmed || mutationPending.current || cellEdit !== null || RUNNING_STATUSES.has(notebook?.latest_status ?? "")) return;
     mutationPending.current = true;
     setSending(true);
     setActionError(null);
@@ -836,6 +856,152 @@ export function NotebookWorkspace({ notebookId, locale = "en" }: { notebookId: s
       mutationPending.current = false;
       setSaving(false);
     }
+  }
+
+  // ------------------------------------------------------------- per-cell editing
+  //
+  // Owner ruling ai-ops 375: every cell editable, addable, deletable and movable ON
+  // ITS OWN, straight from the read view, with no page-level edit mode. Every change
+  // below still goes through the exact same `POST .../versions` path `saveDraft`
+  // above does — `saveCellsAsVersion` is that function's body, generalised to take
+  // whatever cell array the caller already computed instead of `draftCells` — so a
+  // per-cell change is a new version exactly like a bulk edit is, undoable from the
+  // version picker the same way.
+
+  /** Whether the cell currently open in the inline editor has anything unsaved. A
+   * brand-new cell (`isNew`) is dirty once it has any text; an existing cell is dirty
+   * when its draft source differs from the saved spec's. */
+  function cellEditIsDirty(edit: NotebookCellEditState | null): boolean {
+    if (!edit) return false;
+    if (edit.isNew) return edit.source.trim() !== "";
+    const saved = originalCells.find((item) => item.id === edit.cellId);
+    return saved ? saved.source !== edit.source : edit.source !== "";
+  }
+
+  /** Runs `next` immediately, unless the inline editor currently open has unsaved
+   * changes — then it confirms first (rule 1's "Opening a second one while the first
+   * has unsaved changes asks first"). Shared by every way a new inline editor opens:
+   * editing a different cell, or adding one. */
+  function openCellEditor(next: () => void) {
+    if (cellEditIsDirty(cellEdit) && !window.confirm(copy.ide.switchCellConfirm)) return;
+    setActionError(null);
+    next();
+  }
+
+  function startEditCell(cellId: string) {
+    const cell = originalCells.find((item) => item.id === cellId);
+    if (!cell) return;
+    openCellEditor(() => setCellEdit({ cellId, kind: cell.kind, source: cell.source, isNew: false, insertAfterId: null }));
+  }
+
+  function startInsertCell(afterId: string, kind: Cell["kind"]) {
+    openCellEditor(() =>
+      setCellEdit({ cellId: nextCellId(originalCells), kind, source: "", isNew: true, insertAfterId: afterId }),
+    );
+  }
+
+  function changeCellEditSource(source: string) {
+    setCellEdit((current) => (current === null ? current : { ...current, source }));
+  }
+
+  function cancelCellEdit() {
+    setCellEdit(null);
+  }
+
+  /** The body of `saveDraft` above, generalised: POST whatever cell array the caller
+   * built, as a new version. Returns whether it succeeded, so a caller that opened an
+   * inline editor knows whether to close it — a FAILED save must keep the cell's text
+   * on screen (rule 4) rather than silently discard what the reader typed. */
+  async function saveCellsAsVersion(
+    nextCells: Cell[],
+    { execute, runUntil }: { execute: boolean; runUntil?: string | null },
+  ): Promise<boolean> {
+    const spec = version?.spec;
+    if (!spec || mutationPending.current) return false;
+    mutationPending.current = true;
+    setCellSaving(true);
+    setActionError(null);
+    try {
+      const response = await fetch(`/api/notebooks/${encodeURIComponent(notebookId)}/versions`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          spec: specWithCells(spec, nextCells),
+          message: "",
+          execute,
+          run_until: runUntil ?? null,
+        }),
+      });
+      const payload = (await response.json()) as unknown;
+      if (openNotebookId.current !== notebookId) return false;
+      if (!response.ok || !isRecord(payload) || !isRecord(payload.version)) {
+        throw new Error(refusalSentence(payload) ?? copy.saveFailed);
+      }
+      const created = payload.version as unknown as NotebookVersionSummary;
+      const runId = typeof payload.run_id === "string" ? payload.run_id : null;
+      loadNotebook();
+      loadVersions();
+      loadTurns();
+      if (runId) {
+        authored.current = { runId, seq: created.seq };
+        setFollowedRunId(runId);
+      } else {
+        setPinnedSeq(created.seq);
+      }
+      return true;
+    } catch (cause) {
+      if (openNotebookId.current !== notebookId) return false;
+      setActionError(cause instanceof Error ? cause.message : copy.saveFailed);
+      return false;
+    } finally {
+      // Not an early-`return` guard here, deliberately: a `return` inside `finally`
+      // would override whatever `try`/`catch` above decided to hand back, which is
+      // exactly the value `saveCellEdit` needs to know whether to close the editor.
+      // The lock is always released; the state update is skipped if the reader has
+      // since navigated to a different notebook.
+      mutationPending.current = false;
+      if (openNotebookId.current === notebookId) setCellSaving(false);
+    }
+  }
+
+  /** "Save" / "Save & run to here" on the inline editor. Builds the final cell array
+   * from the version's saved cells plus this one edit — an insert-then-set-source for
+   * a new cell (composing `insertCellAfter` and `applyCellEdit` rather than adding a
+   * third pure helper that would just call the other two), or a plain `applyCellEdit`
+   * for an existing one. */
+  async function saveCellEdit({ execute, runUntil }: { execute: boolean; runUntil?: string | null }) {
+    if (!cellEdit) return;
+    const nextCells = cellEdit.isNew
+      ? (() => {
+          const { cells: withInsert, id } = insertCellAfter(originalCells, cellEdit.insertAfterId, cellEdit.kind);
+          return applyCellEdit(withInsert, id, { source: cellEdit.source });
+        })()
+      : applyCellEdit(originalCells, cellEdit.cellId, { source: cellEdit.source });
+    const ok = await saveCellsAsVersion(nextCells, { execute, runUntil });
+    // Only on success: a failed save keeps the editor open with what was typed (rule 4).
+    if (ok) setCellEdit(null);
+  }
+
+  function deleteCellFromView(cellId: string) {
+    if (!window.confirm(copy.ide.deleteCellConfirm)) return;
+    void saveCellsAsVersion(deleteCell(originalCells, cellId), { execute: false });
+  }
+
+  function moveCellFromView(cellId: string, direction: "up" | "down") {
+    void saveCellsAsVersion(moveCell(originalCells, cellId, direction), { execute: false });
+  }
+
+  function duplicateCellFromView(cellId: string) {
+    const { cells: next } = duplicateCell(originalCells, cellId);
+    void saveCellsAsVersion(next, { execute: false });
+  }
+
+  /** "Ask Nala to change this cell" (rule 3, "as well as by Nala"): starts a chat
+   * message about the cell, the same shape `askNalaAbout` below does for "Ask Nala",
+   * with its own prefix so the two read as different requests in the transcript. */
+  function askNalaToChangeCell(cellId: string) {
+    setMessage((current) => (current.trim() ? current : copy.ide.changeCellPrefix(cellId)));
+    chatInputRef.current?.focus();
   }
 
   // Unsaved edits use native navigation so the browser's unload guard also
@@ -1162,7 +1328,7 @@ export function NotebookWorkspace({ notebookId, locale = "en" }: { notebookId: s
             <label className="mj-notebook-version-picker mj-filter-select">
               <span className="sr-only">{copy.versionPickerLabel}</span>
               <select
-                disabled={editing || saving}
+                disabled={editing || saving || cellEdit !== null}
                 value={selectedSeq ?? ""}
                 onChange={(event) => setPinnedSeq(Number(event.target.value))}
               >
@@ -1176,7 +1342,11 @@ export function NotebookWorkspace({ notebookId, locale = "en" }: { notebookId: s
             <button
               className="mj-primary-button"
               type="button"
-              disabled={saving}
+              // Rule 2: a single-cell edit and the page-level bulk editor must not fight.
+              // The other direction (bulk editing hides every per-cell button) is
+              // automatic — the read view containing them is not even rendered while
+              // `editing` is true, see the ternary around `NotebookView` below.
+              disabled={saving || cellEdit !== null}
               onClick={() => (editing ? discardEdits() : startEditing())}
             >
               {editing ? copy.editExit : copy.edit}
@@ -1345,7 +1515,7 @@ export function NotebookWorkspace({ notebookId, locale = "en" }: { notebookId: s
             {gradeSummaryStrip}
             <NotebookView
               key={`${notebookId}:${version.seq}`}
-              busy={sending || isGenerating || rerunning || quizzing}
+              busy={sending || isGenerating || rerunning || quizzing || cellSaving}
               cells={cells}
               locale={locale}
               framework={notebook.framework?.name ?? "qiskit"}
@@ -1356,6 +1526,21 @@ export function NotebookWorkspace({ notebookId, locale = "en" }: { notebookId: s
               grades={grades}
               gradingCellIds={gradingCellIds}
               hardware={{ notebookId, seq: version.seq }}
+              // Per-cell editing (rule 1 of the lane brief): offered under exactly the
+              // conditions the page-level Edit button uses — `canEdit`, defined above —
+              // so a share view, an older version, or a notebook mid-run shows none of
+              // this, the same "only render what a caller wires" rule every other
+              // optional callback on this component already follows.
+              cellEdit={canEdit ? cellEdit : null}
+              onStartEditCell={canEdit ? startEditCell : undefined}
+              onStartInsertCell={canEdit ? startInsertCell : undefined}
+              onChangeCellEditSource={canEdit ? changeCellEditSource : undefined}
+              onSaveCellEdit={canEdit ? (options) => void saveCellEdit(options) : undefined}
+              onCancelCellEdit={canEdit ? cancelCellEdit : undefined}
+              onMoveCell={canEdit ? moveCellFromView : undefined}
+              onDeleteCell={canEdit ? deleteCellFromView : undefined}
+              onDuplicateCell={canEdit ? duplicateCellFromView : undefined}
+              onAskNalaToChangeCell={askNalaToChangeCell}
             />
             </>
           ) : !isGenerating && !versionError ? (
@@ -1407,7 +1592,7 @@ export function NotebookWorkspace({ notebookId, locale = "en" }: { notebookId: s
                 rows={2}
               />
             </label>
-            <button className="mj-primary-button" type="submit" disabled={sending || isGenerating || saving || rerunning || quizzing || editing || !message.trim()}>
+            <button className="mj-primary-button" type="submit" disabled={sending || isGenerating || saving || rerunning || quizzing || editing || cellEdit !== null || !message.trim()}>
               {sending ? copy.chatSending : copy.chatSend}
             </button>
           </form>

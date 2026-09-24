@@ -1,17 +1,40 @@
 "use client";
 
 import type { components } from "@majorana/contracts-gen";
-import { useMemo, useState } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { ChatMarkdown } from "./chat-markdown";
 import { NotebookCellToolbar } from "./notebook-cell-toolbar";
 import { NotebookIdeBar } from "./notebook-ide-bar";
-import { NotebookCodeView, type EditorDiagnostic } from "./notebook-code-editor";
+import { NotebookCodeEditor, NotebookCodeView, type EditorDiagnostic } from "./notebook-code-editor";
 import { cellDomId } from "../lib/notebook-ide";
 import { lintMessage, lintNotebook, type LintFinding } from "../lib/notebook-lint";
 import { NotebookHardwareRequests, type NotebookHardwareContext } from "./notebook-hardware-card";
 import type { NotebookCellStatus, NotebookCellView } from "../lib/notebook-view";
 import type { PublicLocale } from "../lib/public-locale";
 import { WORKSPACE_COPY } from "../lib/workspace-locale";
+
+type Cell = components["schemas"]["Cell"];
+
+/**
+ * Per-cell editing, live in the read view (ai-ops 375, "each cell can be edited and
+ * deleted and added manually and independently as well as by Nala"). The state itself
+ * — which cell, its draft source, whether it is a brand-new cell not yet saved — lives
+ * in `notebook-workspace.tsx`, the one place a POST is ever made, exactly the way the
+ * page-level editor's `draftCells` does. This component only renders it and forwards
+ * every keystroke and button press back up.
+ */
+export interface NotebookCellEditState {
+  /** The cell being edited. For a new cell this is the id it will get on save
+   * (computed once, with `nextCellId`, when "Add" was pressed) — not yet a real cell. */
+  cellId: string;
+  kind: Cell["kind"];
+  source: string;
+  /** A cell inserted by "Add below" and not yet saved — never true for editing an
+   * existing cell in place. */
+  isNew: boolean;
+  /** For a new cell: the cell it goes after. Unused when `isNew` is false. */
+  insertAfterId: string | null;
+}
 
 function lintFindingsToDiagnostics(
   findings: readonly LintFinding[],
@@ -81,6 +104,16 @@ export function NotebookView({
   onAskNala,
   onFixWithNala,
   hardware,
+  cellEdit,
+  onStartEditCell,
+  onStartInsertCell,
+  onChangeCellEditSource,
+  onSaveCellEdit,
+  onCancelCellEdit,
+  onMoveCell,
+  onDeleteCell,
+  onDuplicateCell,
+  onAskNalaToChangeCell,
 }: {
   cells: NotebookCellView[];
   locale?: PublicLocale;
@@ -101,6 +134,28 @@ export function NotebookView({
   onFixWithNala?: (cellId: string) => void;
   /** Which notebook version this is, so a `leona_submit` cell gets its "Run on hardware" card. Omit it and no card renders (the read-only share page). */
   hardware?: Omit<NotebookHardwareContext, "locale">;
+  /**
+   * Per-cell editing (ai-ops 375). The workspace passes `cellEdit` and every
+   * `on*` handler below only when editing is allowed at all (the same conditions
+   * the page-level Edit button uses — `canEdit` there) — omit them, as the
+   * read-only share page does, and no per-cell edit/add/move/delete/duplicate
+   * button renders anywhere in this view, the same "only what a caller wires"
+   * rule `onAskNala`/`onFixWithNala` already follow above.
+   */
+  cellEdit?: NotebookCellEditState | null;
+  /** Turns an existing cell into its inline editor (or asks first, if another
+   * cell's edit is unsaved — that confirm lives in the workspace, not here). */
+  onStartEditCell?: (cellId: string) => void;
+  /** Inserts an empty cell after `afterId` and opens it for editing. */
+  onStartInsertCell?: (afterId: string, kind: Cell["kind"]) => void;
+  onChangeCellEditSource?: (source: string) => void;
+  onSaveCellEdit?: (options: { execute: boolean; runUntil?: string | null }) => void;
+  onCancelCellEdit?: () => void;
+  onMoveCell?: (cellId: string, direction: "up" | "down") => void;
+  onDeleteCell?: (cellId: string) => void;
+  onDuplicateCell?: (cellId: string) => void;
+  /** "Ask Nala to change this cell": starts a chat message about it. */
+  onAskNalaToChangeCell?: (cellId: string) => void;
 }) {
   const copy = WORKSPACE_COPY[locale].notebooks;
   // Lint runs once per render of the version on screen (no debounce: unlike the editor,
@@ -114,12 +169,24 @@ export function NotebookView({
     return map;
   }, [cells]);
   if (!cells.length) return null;
+  const editingExistingId = cellEdit && !cellEdit.isNew ? cellEdit.cellId : null;
+  const pendingInsertAfterId = cellEdit && cellEdit.isNew ? cellEdit.insertAfterId : null;
   return (
     <div className="mj-notebook-view">
       <NotebookIdeBar cells={cells} cellStatuses={cellStatuses} copy={copy.ide} busy={busy} onRunAll={onRunAll} />
-      {cells.map((cell) => (
+      {cells.map((cell, index) => (
+        <Fragment key={cell.id}>
+          {editingExistingId === cell.id && cellEdit ? (
+            <NotebookCellEditCard
+              cellEdit={cellEdit}
+              copy={copy}
+              busy={busy}
+              onChangeSource={onChangeCellEditSource}
+              onSave={onSaveCellEdit}
+              onCancel={onCancelCellEdit}
+            />
+          ) : (
         <NotebookCellCard
-          key={cell.id}
           cell={cell}
           copy={copy}
           framework={framework}
@@ -128,6 +195,14 @@ export function NotebookView({
           onCellAction={onCellAction}
           onAskNala={onAskNala}
           onFixWithNala={onFixWithNala}
+          onStartEditCell={onStartEditCell}
+          onStartInsertCell={onStartInsertCell}
+          onMoveCell={onMoveCell}
+          onDeleteCell={onDeleteCell}
+          onDuplicateCell={onDuplicateCell}
+          onAskNalaToChangeCell={onAskNalaToChangeCell}
+          canMoveUp={index > 0}
+          canMoveDown={index < cells.length - 1}
           grade={grades?.[cell.id]}
           grading={gradingCellIds?.has(cell.id) ?? false}
           // Any attempt in flight locks EVERY graded cell's submit, not just its own.
@@ -139,8 +214,108 @@ export function NotebookView({
           locked={busy || (gradingCellIds?.size ?? 0) > 0}
           hardware={hardware ? { ...hardware, locale } : undefined}
         />
+          )}
+          {pendingInsertAfterId === cell.id && cellEdit ? (
+            <NotebookCellEditCard
+              cellEdit={cellEdit}
+              copy={copy}
+              busy={busy}
+              onChangeSource={onChangeCellEditSource}
+              onSave={onSaveCellEdit}
+              onCancel={onCancelCellEdit}
+            />
+          ) : null}
+        </Fragment>
       ))}
     </div>
+  );
+}
+
+/**
+ * One cell's inline editor, in the read view (ai-ops 375): the same `NotebookCodeEditor`
+ * the page-level editor uses, for an existing cell's source or a brand-new one not yet
+ * saved. Markdown cells get it too (`python={false}`, as `NotebookCodeEditor` already
+ * supports) — only the source changes here, never kind/role/execute, which stay the
+ * page-level editor's job.
+ *
+ * Every save goes through the SAME `POST .../versions` path the page-level editor's
+ * "Save & run" does (`saveDraft` in `notebook-workspace.tsx`), just for one cell's worth
+ * of change — so every per-cell edit is a new version, undoable from the version picker
+ * exactly like a bulk edit is.
+ */
+function NotebookCellEditCard({
+  cellEdit,
+  copy,
+  busy,
+  onChangeSource,
+  onSave,
+  onCancel,
+}: {
+  cellEdit: NotebookCellEditState;
+  copy: NotebookCopy;
+  busy: boolean;
+  onChangeSource?: (source: string) => void;
+  onSave?: (options: { execute: boolean; runUntil?: string | null }) => void;
+  onCancel?: () => void;
+}) {
+  const isCode = cellEdit.kind === "code";
+  // Focused once, when this card first mounts — not on every keystroke's re-render,
+  // which is why this is a stable ref via useEffect rather than an inline callback ref
+  // (a fresh arrow function every render would make React re-run it every render too).
+  const textarea = useRef<HTMLTextAreaElement | null>(null);
+  useEffect(() => {
+    textarea.current?.focus();
+  }, []);
+  return (
+    <article
+      id={cellDomId(cellEdit.cellId)}
+      className="mj-notebook-cell"
+      data-kind={cellEdit.kind}
+      data-editing="true"
+      tabIndex={0}
+    >
+      <div className="mj-notebook-cell-head">
+        <span className="mj-notebook-edit-cell-id">{cellEdit.cellId}</span>
+      </div>
+      <NotebookCodeEditor
+        value={cellEdit.source}
+        onChange={(source) => onChangeSource?.(source)}
+        label={copy.editCellSourceLabel(cellEdit.cellId)}
+        problemsLabel={copy.ide.problemsLabel(cellEdit.cellId)}
+        copy={copy.ide}
+        language={isCode ? "python" : "markdown"}
+        python={isCode}
+        disabled={busy}
+        onEscape={() => onCancel?.()}
+        onSave={() => onSave?.({ execute: false })}
+        inputRef={(node) => {
+          textarea.current = node;
+        }}
+      />
+      <div className="mj-notebook-cell-edit-actions" role="group" aria-label={copy.ide.editCell}>
+        {isCode ? (
+          <button
+            type="button"
+            className="mj-primary-button"
+            disabled={busy}
+            onClick={() => onSave?.({ execute: true, runUntil: cellEdit.cellId })}
+          >
+            {busy ? copy.saving : copy.ide.saveCellAndRun}
+          </button>
+        ) : null}
+        <button
+          type="button"
+          className={isCode ? "mj-secondary-button" : "mj-primary-button"}
+          disabled={busy}
+          onClick={() => onSave?.({ execute: false })}
+        >
+          {busy ? copy.saving : copy.ide.saveCell}
+        </button>
+        <button type="button" className="mj-secondary-button" disabled={busy} onClick={() => onCancel?.()}>
+          {copy.ide.cancelCellEdit}
+        </button>
+      </div>
+    </article>
   );
 }
 
@@ -152,6 +327,14 @@ function NotebookCellCard({
   onCellAction,
   onAskNala,
   onFixWithNala,
+  onStartEditCell,
+  onStartInsertCell,
+  onMoveCell,
+  onDeleteCell,
+  onDuplicateCell,
+  onAskNalaToChangeCell,
+  canMoveUp,
+  canMoveDown,
   grade,
   grading,
   locked,
@@ -165,6 +348,14 @@ function NotebookCellCard({
   onCellAction?: (cellId: string, action: NotebookCellActionKind, detail?: string) => void;
   onAskNala?: (cellId: string) => void;
   onFixWithNala?: (cellId: string) => void;
+  onStartEditCell?: (cellId: string) => void;
+  onStartInsertCell?: (afterId: string, kind: Cell["kind"]) => void;
+  onMoveCell?: (cellId: string, direction: "up" | "down") => void;
+  onDeleteCell?: (cellId: string) => void;
+  onDuplicateCell?: (cellId: string) => void;
+  onAskNalaToChangeCell?: (cellId: string) => void;
+  canMoveUp?: boolean;
+  canMoveDown?: boolean;
   grade?: NotebookCellGrade;
   grading?: boolean;
   locked?: boolean;
@@ -229,17 +420,26 @@ function NotebookCellCard({
           copy={copy.ide}
         />
       )}
-      {cell.kind === "code" && (onAskNala || onFixWithNala) ? (
+      {onAskNala || onFixWithNala || onStartEditCell || onStartInsertCell || onMoveCell || onDeleteCell || onDuplicateCell || onAskNalaToChangeCell ? (
         <NotebookCellToolbar
           cellId={cell.id}
-          kind="code"
+          kind={cell.kind}
           copy={copy}
           ideCopy={copy.ide}
           busy={busy}
           raised={cell.error !== null}
-          durationMs={cell.durationMs}
+          durationMs={cell.kind === "code" ? cell.durationMs : null}
+          canMoveUp={canMoveUp}
+          canMoveDown={canMoveDown}
+          collapseStructural
           onAskNala={onAskNala ? () => onAskNala(cell.id) : undefined}
           onFixWithNala={onFixWithNala ? () => onFixWithNala(cell.id) : undefined}
+          onEditCell={onStartEditCell ? () => onStartEditCell(cell.id) : undefined}
+          onInsert={onStartInsertCell ? (kind) => onStartInsertCell(cell.id, kind) : undefined}
+          onMove={onMoveCell ? (direction) => onMoveCell(cell.id, direction) : undefined}
+          onDelete={onDeleteCell ? () => onDeleteCell(cell.id) : undefined}
+          onDuplicate={onDuplicateCell ? () => onDuplicateCell(cell.id) : undefined}
+          onAskNalaToChange={onAskNalaToChangeCell ? () => onAskNalaToChangeCell(cell.id) : undefined}
         />
       ) : null}
       {cell.kind === "code" ? <NotebookCellOutputs cell={cell} copy={copy} /> : null}

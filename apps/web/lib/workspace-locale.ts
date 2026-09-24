@@ -48,6 +48,30 @@ export interface NotebookIdeCopy {
   askNalaPrefix: (cellId: string) => string;
   /** The turn "Fix with Nala" sends for a cell that raised, with its traceback. */
   fixWithNalaTurn: (cellId: string, traceback: string) => string;
+  /** Per-cell editing (ai-ops 375): the read view's own per-cell "Edit" button. Its
+   * own string, distinct from the page-level `edit` ("Edit") — the read view renders
+   * one of these per cell ALONGSIDE that page-level button, and a reader (and a test
+   * querying by accessible name) needs to tell them apart. */
+  editCell: string;
+  /** A chat message start for a reader who wants Nala to change one specific cell,
+   * rather than fix a raised error. */
+  askNalaToChange: string;
+  askNalaToChangeHint: string;
+  changeCellPrefix: (cellId: string) => string;
+  /** The read view's per-cell toolbar: structural actions (add/move/duplicate/delete)
+   * collapse behind this disclosure, so a toolbar with the new inline-edit buttons on
+   * every cell does not read as a wall of links. */
+  cellMoreActions: string;
+  /** The inline single-cell editor's own Save row — distinct from the page-level
+   * editor's `saveAndRun`/`saveWithoutRunning`/`discard`, because these name what a
+   * ONE-CELL save does ("to here") rather than the whole notebook. */
+  saveCellAndRun: string;
+  saveCell: string;
+  cancelCellEdit: string;
+  /** `window.confirm` text: deleting a cell, and switching the inline editor to a
+   * different cell (or a new one) while the current cell has unsaved changes. */
+  deleteCellConfirm: string;
+  switchCellConfirm: string;
   toolbarLabel: (cellId: string) => string;
   cellLabel: (cellId: string) => string;
   barLabel: string;
@@ -88,6 +112,16 @@ const NOTEBOOK_IDE_COPY: Record<PublicLocale, NotebookIdeCopy> = {
     askNalaPrefix: (cellId) => `About cell ${cellId}: `,
     fixWithNalaTurn: (cellId, traceback) =>
       `Cell \`${cellId}\` raised this error:\n\`\`\`\n${traceback}\n\`\`\`\nFix the cell so it runs. Keep the rest of the notebook as it is.`,
+    editCell: "Edit this cell",
+    askNalaToChange: "Ask Nala to change this cell",
+    askNalaToChangeHint: "Ask Nala to change this cell in the chat",
+    changeCellPrefix: (cellId) => `Change cell ${cellId}: `,
+    cellMoreActions: "More actions",
+    saveCellAndRun: "Save & run to here",
+    saveCell: "Save",
+    cancelCellEdit: "Cancel",
+    deleteCellConfirm: "Delete this cell?",
+    switchCellConfirm: "Discard your unsaved changes to this cell?",
     toolbarLabel: (cellId) => `Cell ${cellId} actions`,
     cellLabel: (cellId) => `Cell ${cellId}`,
     barLabel: "Notebook",
@@ -164,6 +198,16 @@ const NOTEBOOK_IDE_COPY: Record<PublicLocale, NotebookIdeCopy> = {
     askNalaPrefix: (cellId) => `セル ${cellId} について: `,
     fixWithNalaTurn: (cellId, traceback) =>
       `セル \`${cellId}\` で次のエラーが出ました:\n\`\`\`\n${traceback}\n\`\`\`\nこのセルが実行できるように直してください。ノートブックの他の部分はそのままにしてください。`,
+    editCell: "このセルを編集",
+    askNalaToChange: "Nalaにこのセルの変更を依頼",
+    askNalaToChangeHint: "このセルの変更をチャットでNalaに依頼します",
+    changeCellPrefix: (cellId) => `セル ${cellId} を変更: `,
+    cellMoreActions: "その他の操作",
+    saveCellAndRun: "保存してここまで実行",
+    saveCell: "保存",
+    cancelCellEdit: "キャンセル",
+    deleteCellConfirm: "このセルを削除しますか？",
+    switchCellConfirm: "このセルの未保存の変更を破棄しますか？",
     toolbarLabel: (cellId) => `セル ${cellId} の操作`,
     cellLabel: (cellId) => `セル ${cellId}`,
     barLabel: "ノートブック",
