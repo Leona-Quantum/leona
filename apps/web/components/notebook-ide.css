@@ -292,3 +292,151 @@ button.mj-code-editor-problem:focus-visible {
 li[data-current="true"] .mj-code-editor-problem {
   color: var(--accent);
 }
+
+/* ------------------------------------------------------------- cell toolbar
+ * `notebook-cell-toolbar.tsx`. Sits inside a `.mj-library-row-actions` row
+ * (the same plain-text button strip every other cell action row on this page
+ * uses), so most buttons need no rule of their own here — only the three
+ * things that are not plain text buttons: the status chip, the duration, and
+ * "Run to here", which is the one PRIMARY action in the row (the brief calls
+ * it out as such) and needs enough specificity to actually beat
+ * `.mj-library-row-actions button`'s reset, not just sit beside it.
+ */
+.mj-notebook-ide-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: var(--fs-12);
+  color: var(--text-1);
+}
+
+.mj-notebook-ide-chip::before {
+  content: "";
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--text-2);
+}
+
+.mj-notebook-ide-chip[data-chip="ran"]::before {
+  background: var(--ok);
+}
+
+.mj-notebook-ide-chip[data-chip="raised"]::before {
+  background: var(--err);
+}
+
+.mj-notebook-ide-chip[data-chip="edited"]::before,
+.mj-notebook-ide-chip[data-chip="running"]::before {
+  background: var(--warn);
+}
+
+.mj-notebook-ide-duration {
+  font-size: var(--fs-12);
+  color: var(--text-2);
+  font-variant-numeric: tabular-nums;
+}
+
+.mj-notebook-ide-toolbar button.mj-notebook-ide-run-to-here {
+  min-height: 28px;
+  padding: 0 var(--sp-3);
+  border: 1px solid var(--accent);
+  border-radius: var(--radius-control);
+  background: var(--accent);
+  color: var(--bg-0);
+  font-weight: 500;
+}
+
+.mj-notebook-ide-toolbar button.mj-notebook-ide-run-to-here:hover,
+.mj-notebook-ide-toolbar button.mj-notebook-ide-run-to-here:focus-visible {
+  color: var(--bg-0);
+  text-decoration: none;
+  background: var(--accent-press);
+  border-color: var(--accent-press);
+}
+
+/* ---------------------------------------------------------------- IDE bar
+ * `notebook-ide-bar.tsx`: Run all, the error navigator, the outline. Sits
+ * above the cell list in both the editor and the read view. */
+.mj-notebook-ide-bar {
+  display: grid;
+  gap: var(--sp-2);
+  margin-bottom: var(--sp-2);
+}
+
+.mj-notebook-ide-bar-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sp-3);
+}
+
+.mj-notebook-ide-raised {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-1);
+  margin: 0;
+  padding: var(--sp-1) var(--sp-2);
+  border-radius: var(--radius-control);
+  background: color-mix(in srgb, var(--err) 12%, transparent);
+  color: var(--err);
+  font-size: var(--fs-13);
+}
+
+.mj-notebook-ide-raised button {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--err);
+  font: inherit;
+  font-weight: 500;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.mj-notebook-ide-outline {
+  padding: var(--sp-2) var(--sp-3);
+  border: 1px solid var(--border-0);
+  border-radius: var(--radius-control);
+  background: var(--bg-1);
+}
+
+.mj-notebook-ide-outline-label {
+  margin: 0 0 var(--sp-1);
+  color: var(--text-1);
+  font-size: var(--fs-12);
+  font-weight: 500;
+}
+
+.mj-notebook-ide-outline ul {
+  display: grid;
+  gap: 2px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.mj-notebook-ide-outline li[data-level="2"] {
+  padding-left: var(--sp-3);
+}
+
+.mj-notebook-ide-outline li[data-level="3"] {
+  padding-left: var(--sp-6);
+}
+
+.mj-notebook-ide-outline button {
+  padding: 2px 0;
+  border: 0;
+  background: transparent;
+  color: var(--text-1);
+  font: inherit;
+  font-size: var(--fs-13);
+  text-align: left;
+  cursor: pointer;
+}
+
+.mj-notebook-ide-outline button:hover,
+.mj-notebook-ide-outline button:focus-visible {
+  color: var(--accent);
+  text-decoration: underline;
+}

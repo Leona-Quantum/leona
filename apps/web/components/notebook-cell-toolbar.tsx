@@ -2,6 +2,7 @@
 
 import type { CellRunChip } from "../lib/notebook-ide";
 import type { NotebookIdeCopy } from "../lib/workspace-locale";
+import "./notebook-ide.css";
 
 type NotebookActionCopy = {
   editAddMarkdown: string;

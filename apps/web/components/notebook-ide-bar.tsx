@@ -2,6 +2,7 @@
 
 import { cellDomId, notebookOutline, raisedCellIds as raisedCellIdsOf, type OutlineEntry } from "../lib/notebook-ide";
 import type { NotebookIdeCopy } from "../lib/workspace-locale";
+import "./notebook-ide.css";
 
 /** Scrolls a cell's card into view and focuses it — the same DOM id scheme
  * (`cellDomId`) the editor and the read-only view both stamp on their cell cards, so
