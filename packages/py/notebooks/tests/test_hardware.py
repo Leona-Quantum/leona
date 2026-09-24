@@ -21,6 +21,8 @@ from leona_notebooks.hardware import (
 )
 from leona_notebooks.local_runner import execute_in_local_sandbox
 from leona_notebooks.sandbox_program import report_from_observation
+from leona_notebooks.spec import NotebookKind
+from leona_notebooks.templates import check_structure, structure_for
 
 HEADER = "# ---\n# title: T\n# kind: hardware\n# ---\n"
 
@@ -332,3 +334,119 @@ def test_recorded_sentence_is_singular_where_it_should_be() -> None:
     assert recorded_sentence(one) == (
         "Hardware request recorded: 1 qubit, 1 shot. Choose a device under this cell to run it."
     )
+
+
+# --------------------------------------------------------------------------- generation
+
+
+HARDWARE_LESSON = """\
+# ---
+# title: Your first hardware run
+# kind: hardware
+# ---
+# %% [markdown] role=objective
+# ## Run a Bell pair on a real device
+# %% role=run
+from qiskit import QuantumCircuit
+from qiskit.primitives import StatevectorSampler
+bell = QuantumCircuit(2)
+bell.h(0)
+bell.cx(0, 1)
+bell.measure_all()
+StatevectorSampler(seed=1).run([bell], shots=200).result()[0].data.meas.get_counts()
+# %% [markdown] role=explain
+# The next cell hands the same circuit to Leona. Nothing runs until you pick a device.
+# %% role=run
+leona_submit(bell, shots=1024, label="bell pair")
+# %% [markdown] role=note
+# To run it from your own machine you need an IBM Quantum token in `QISKIT_IBM_TOKEN`.
+# %% role=run execute=false
+from qiskit_ibm_runtime import QiskitRuntimeService, SamplerV2
+service = QiskitRuntimeService()
+# %% [markdown] role=summary
+# You ran a circuit on hardware.
+"""
+
+LEONA_CELL_RULE = (
+    "A cell that calls leona_submit(circuit, shots=...) is an ordinary execute=true cell"
+)
+LEONA_KIND_RULE = (
+    "At least one execute=true cell builds the measured circuit and calls leona_submit"
+)
+
+
+def _failures(text: str) -> list[str]:
+    return check_structure(parse_source(text))
+
+
+def test_a_hardware_notebook_that_follows_the_guidance_passes_structure_and_runs() -> None:
+    """The prompt, the structure rules and the sandbox have to agree: a notebook written
+    the way the prompt says passes every hardware-kind rule AND yields a request."""
+    spec = parse_source(HARDWARE_LESSON)
+    assert check_structure(spec) == []
+    report = execute_in_local_sandbox(spec)
+    assert report.ok, report.note
+    [request] = [r for cell in report.cells for r in cell.hardware_requests]
+    assert (request.num_qubits, request.shots, request.label) == (2, 1024, "bell pair")
+    assert report.by_id()[spec.cells[-2].id].status == "skipped"  # the IBM cell never ran
+
+
+def test_a_leona_submit_cell_marked_execute_false_fails_the_cell_rule() -> None:
+    text = HARDWARE_LESSON.replace(
+        "# %% role=run\nleona_submit(", "# %% role=run execute=false\nleona_submit("
+    )
+    failures = _failures(text)
+    assert any(f.startswith(LEONA_CELL_RULE) for f in failures)
+    # And with no other cell calling it, the hardware kind has no way to run on a device.
+    assert any(f.startswith(LEONA_KIND_RULE) for f in failures)
+
+
+def test_a_leona_submit_cell_tagged_skip_execution_fails_too() -> None:
+    text = HARDWARE_LESSON.replace(
+        "# %% role=run\nleona_submit(", '# %% role=run tags=["skip-execution"]\nleona_submit('
+    )
+    assert any(f.startswith(LEONA_CELL_RULE) for f in _failures(text))
+
+
+def test_leona_submit_beside_a_vendor_sdk_in_one_cell_fails() -> None:
+    """The vendor half forces the cell to execute=false, which would lose the request."""
+    text = HARDWARE_LESSON.replace(
+        'leona_submit(bell, shots=1024, label="bell pair")',
+        'from qiskit_ibm_runtime import SamplerV2\nleona_submit(bell, shots=1024, label="bell pair")',
+    )
+    assert any(f.startswith(LEONA_CELL_RULE) for f in _failures(text))
+
+
+def test_a_hardware_notebook_with_no_leona_submit_fails_the_kind_rule() -> None:
+    text = HARDWARE_LESSON.replace('leona_submit(bell, shots=1024, label="bell pair")', "bell")
+    failures = _failures(text)
+    assert any(f.startswith(LEONA_KIND_RULE) for f in failures)
+    assert not any(f.startswith(LEONA_CELL_RULE) for f in failures)
+
+
+def test_a_mention_in_a_comment_or_string_is_not_a_call() -> None:
+    text = HARDWARE_LESSON.replace(
+        'leona_submit(bell, shots=1024, label="bell pair")',
+        '# leona_submit(bell) would go here\nprint("leona_submit(bell)")',
+    )
+    assert any(f.startswith(LEONA_KIND_RULE) for f in _failures(text))
+
+
+def test_a_lesson_that_never_mentions_hardware_is_untouched_by_the_new_rules() -> None:
+    from leona_notebook_fixtures import LESSON
+
+    assert not any("leona_submit" in f for f in _failures(LESSON))
+
+
+def test_every_draft_repair_and_revise_prompt_tells_the_model_about_leona_submit() -> None:
+    from leona_notebooks.prompts import HARDWARE_SUBMIT_TEXT, allowed_imports_text
+
+    text = allowed_imports_text()
+    assert HARDWARE_SUBMIT_TEXT in text
+    assert "leona_submit(circuit, shots=1024)" in text
+    assert f"the limit is {MAX_HARDWARE_REQUESTS_PER_NOTEBOOK}" in text
+    # What the prompt promises must be true of the sandbox: no import is needed, which
+    # the round-trip test above proves by never importing it.
+    assert "no import" in text
+    # The hardware kind's structure requirements reach the draft prompt.
+    assert any("leona_submit" in rule for rule in structure_for(NotebookKind.HARDWARE))

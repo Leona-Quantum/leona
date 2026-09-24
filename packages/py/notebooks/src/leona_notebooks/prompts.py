@@ -17,7 +17,7 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from majorana_contracts.notebooks import NotebookReview
+from majorana_contracts.notebooks import MAX_HARDWARE_REQUESTS_PER_NOTEBOOK, NotebookReview
 
 from leona_notebooks.spec import Audience, CellRole, Framework, NotebookKind, Reference, Seed, Style
 from leona_notebooks.templates import KIND_DESCRIPTIONS, structure_for
@@ -65,8 +65,28 @@ def allowed_imports_text() -> str:
         "EXECUTION RULES: cells run in a network-locked sandbox. The ONLY top-level modules a cell may "
         f"import are: {names}. Never import sys, os, subprocess, pathlib, requests or pickle; never call "
         "open(), eval(), exec() or __import__(); never read environment variables. A cell that needs any "
-        "of these (a hardware submission reading a token) is marked execute=false and explained in prose."
+        "of these (a hardware submission reading a token) is marked execute=false and explained in prose.\n"
+        + HARDWARE_SUBMIT_TEXT
     )
+
+
+#: How a notebook runs a circuit on a real QPU from inside the product. Part of the
+#: execution rules rather than the hardware kind's structure alone, because any notebook
+#: may reasonably end on "now try it on a real device", and the rule that matters —
+#: this call goes in an ORDINARY cell — is the same whichever kind it appears in. The
+#: sandbox side is `sandbox_program._ln_submit`; what it refuses is `hardware.py`.
+HARDWARE_SUBMIT_TEXT = (
+    "RUNNING ON REAL HARDWARE: to let the reader run a circuit on a real QPU, call "
+    "`leona_submit(circuit, shots=1024)` in an ordinary execute=true cell. It is already defined — "
+    "no import, no account, no token — and it sends nothing: it records the circuit, and the reader "
+    "picks a device, sees the price and confirms under that cell. Give it a qiskit QuantumCircuit "
+    "that is measured (`measure_all()`) and has every parameter bound; an optional "
+    "`label='...'` names the run. Call it at most a few times per notebook (the limit is "
+    f"{MAX_HARDWARE_REQUESTS_PER_NOTEBOOK}). Put the "
+    "`leona_submit` call on the last line of its cell so its confirmation shows. Code that talks to "
+    "IBM directly (qiskit_ibm_runtime, QiskitRuntimeService, save_account) stays in its own "
+    "execute=false cell, for readers running the notebook on their own machine."
+)
 
 
 # --------------------------------------------------------------------------- source format
