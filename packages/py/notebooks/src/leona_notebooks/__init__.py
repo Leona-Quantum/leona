@@ -13,6 +13,8 @@ Public surface (stable):
 - `ExecutionReport` — what a run produced, cell by cell (`execution`).
 - `RevisionPlan` / `apply_revision` — chat-driven edits as explicit operations (`revision`).
 - `CurriculumSpec` / `build_curriculum` — many notebooks as one course (`curriculum`).
+- `LiveDraftGuard` — redact a streaming draft/repair cell by cell, before its text
+  reaches the (workspace-scoped) run event stream (`live_draft`).
 - `leona_submit` — record a hardware request LOCALLY, in a reader's own Jupyter/VS
   Code/Colab, without submitting anything (`leona.py`; Bridge lane, ai-ops 362).
   `from leona_notebooks.leona import Leona` for the rest of the small Python API
@@ -46,6 +48,7 @@ __all__ = [
     "CellRole",
     "ExecutionReport",
     "Framework",
+    "LiveDraftGuard",
     "NotebookGuardError",
     "NotebookKind",
     "NotebookProgram",
@@ -75,6 +78,7 @@ __all__ = [
 #: to agree with `__all__` above — a name in one but not the other is a bug a
 #: reader can spot by eye.
 _LAZY_MODULES = {
+    "LiveDraftGuard": "leona_notebooks.live_draft",
     "AuthoringInputError": "leona_notebooks.authoring",
     "advisory_structure": "leona_notebooks.authoring",
     "spec_from_author_request": "leona_notebooks.authoring",

@@ -15061,6 +15061,41 @@ html:not([data-auth="in"]) .mj-auth-slot[data-auth-slot="in"] {
 .mj-notebook-cell-actions {
   margin-left: auto;
 }
+/* The Live view, a notebook being written and run: the same cards as the finished
+   view (`.mj-notebook-cell` on each live cell), so nothing jumps when the finished
+   notebook replaces it. Its statuses are named differently from a report's (ran /
+   raised / queued / not_run), so they get their own colours here. */
+.mj-notebook-live {
+  display: grid;
+  gap: var(--sp-3);
+  margin-bottom: var(--sp-4);
+}
+.mj-notebook-live-phase {
+  margin: 0;
+  color: var(--text-1);
+  font-size: var(--fs-13);
+}
+.mj-notebook-live-repair-banner {
+  margin: 0;
+  padding: var(--sp-2) var(--sp-3);
+  border-radius: var(--radius-control);
+  background: color-mix(in srgb, var(--warn) 12%, transparent);
+  color: var(--warn);
+  font-size: var(--fs-13);
+}
+.mj-notebook-live-cells {
+  display: grid;
+  gap: var(--sp-4);
+}
+.mj-notebook-cell-pill[data-status="ran"] {
+  color: var(--ok);
+}
+.mj-notebook-cell-pill[data-status="raised"] {
+  color: var(--err);
+}
+.mj-notebook-live-caret {
+  color: var(--accent);
+}
 .mj-notebook-cell-attempt {
   display: grid;
   gap: var(--sp-2);
