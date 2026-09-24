@@ -4,6 +4,7 @@ import type { components } from "@majorana/contracts-gen";
 import { SyntaxHighlightedCode } from "@majorana/ui";
 import { useState } from "react";
 import { ChatMarkdown } from "./chat-markdown";
+import { NotebookHardwareRequests, type NotebookHardwareContext } from "./notebook-hardware-card";
 import type { NotebookCellStatus, NotebookCellView } from "../lib/notebook-view";
 import type { PublicLocale } from "../lib/public-locale";
 import { WORKSPACE_COPY } from "../lib/workspace-locale";
@@ -57,6 +58,7 @@ export function NotebookView({
   grades,
   gradingCellIds,
   busy = false,
+  hardware,
 }: {
   cells: NotebookCellView[];
   locale?: PublicLocale;
@@ -69,6 +71,8 @@ export function NotebookView({
   /** Cells whose attempt is in the sandbox right now. */
   gradingCellIds?: ReadonlySet<string>;
   busy?: boolean;
+  /** Which notebook version this is, so a `leona_submit` cell gets its "Run on hardware" card. Omit it and no card renders (the read-only share page). */
+  hardware?: Omit<NotebookHardwareContext, "locale">;
 }) {
   const copy = WORKSPACE_COPY[locale].notebooks;
   if (!cells.length) return null;
@@ -91,6 +95,7 @@ export function NotebookView({
           // never arrive. Greptile caught it on PR 832. One at a time is also the
           // honest reading of a single sandbox dispatch per attempt.
           locked={busy || (gradingCellIds?.size ?? 0) > 0}
+          hardware={hardware ? { ...hardware, locale } : undefined}
         />
       ))}
     </div>
@@ -106,6 +111,7 @@ function NotebookCellCard({
   grading,
   locked,
   busy,
+  hardware,
 }: {
   cell: NotebookCellView;
   copy: NotebookCopy;
@@ -115,6 +121,7 @@ function NotebookCellCard({
   grading?: boolean;
   locked?: boolean;
   busy?: boolean;
+  hardware?: NotebookHardwareContext;
 }) {
   const [attemptOpen, setAttemptOpen] = useState(false);
   const [attemptText, setAttemptText] = useState("");
@@ -165,6 +172,7 @@ function NotebookCellCard({
         </pre>
       )}
       {cell.kind === "code" ? <NotebookCellOutputs cell={cell} copy={copy} /> : null}
+      <NotebookHardwareRequests cell={cell} context={hardware} />
       {grading ? <p className="mj-notebook-cell-grade" data-status="grading">{copy.gradePending}</p> : null}
       {!grading && grade ? (
         <div className="mj-notebook-cell-grade" data-status={grade.status}>

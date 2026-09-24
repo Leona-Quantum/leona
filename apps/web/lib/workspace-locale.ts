@@ -4379,6 +4379,92 @@ export const PRESENCE_COPY: Record<PublicLocale, {
   },
 };
 
+/**
+ * The "Run on hardware" card under a notebook cell that called `leona_submit`
+ * (components/notebook-hardware-card.tsx). Only what the card says that Studio's
+ * hardware panel does not: the device, the price table, the queue reading and every
+ * refusal reason are Studio's own strings (`WORKSPACE_COPY[locale].studio.hardware*`),
+ * reused so one refusal reads the same sentence in both places.
+ */
+export const NOTEBOOK_HARDWARE_COPY: Record<PublicLocale, {
+  title: string;
+  /** "bell pair · 2 qubits · 1,024 shots" — the label is optional. */
+  summary: (qubits: number, shots: number, label: string | null) => string;
+  nothingSent: string;
+  seePrice: string;
+  confirmPriced: (price: string) => string;
+  confirmFree: string;
+  /** A tier with a hardware ceiling: how much of it is used. */
+  allowanceUsed: (used: string, limit: string, days: number) => string;
+  /** A tier with no ceiling: what has been authorized, so the number is never hidden. */
+  allowanceAuthorized: (amount: string, days: number) => string;
+  submitPriced: (price: string) => string;
+  submitFree: string;
+  cancel: string;
+  submitting: string;
+  queued: string;
+  running: string;
+  done: string;
+  measuredOn: (machine: string) => string;
+  simulatorAbove: string;
+  runAgain: string;
+  tryAgain: string;
+  credentialMissing: string;
+  credentialLink: string;
+  earlierVersion: (seq: number) => string;
+}> = {
+  en: {
+    title: "Run on a real quantum computer",
+    summary: (qubits, shots, label) =>
+      `${label ? `${label} · ` : ""}${qubits === 1 ? "1 qubit" : `${qubits} qubits`} · ${shots.toLocaleString("en-US")} ${shots === 1 ? "shot" : "shots"}`,
+    nothingSent: "Nothing is sent until you confirm, and you see the price first.",
+    seePrice: "See the price",
+    confirmPriced: (price) => `This run is estimated at ${price} on the provider's published rates.`,
+    confirmFree: "This device runs on IBM's free Open Plan time, so there is no charge.",
+    allowanceUsed: (used, limit, days) => `${used} of your ${limit} hardware allowance is used in the last ${days} days.`,
+    allowanceAuthorized: (amount, days) => `You have authorized ${amount} of hardware time in the last ${days} days.`,
+    submitPriced: (price) => `Submit for ${price}`,
+    submitFree: "Submit to the free queue",
+    cancel: "Cancel",
+    submitting: "Sending the job…",
+    queued: "Waiting in the device's queue. The result will show up here, even if you leave and come back.",
+    running: "Running on the device…",
+    done: "Finished.",
+    measuredOn: (machine) => `Measured on ${machine}.`,
+    simulatorAbove: "The simulator's output is above. This is what the device measured.",
+    runAgain: "Run again",
+    tryAgain: "Try again",
+    credentialMissing: "To run this on hardware, connect your IBM Quantum key. Jobs go through your own IBM account.",
+    credentialLink: "Add your IBM key",
+    earlierVersion: (seq) => `This result is from version ${seq} of this notebook, which ran the same circuit.`,
+  },
+  ja: {
+    title: "実機の量子コンピュータで実行",
+    summary: (qubits, shots, label) =>
+      `${label ? `${label}・` : ""}${qubits}量子ビット・${shots.toLocaleString("ja-JP")}ショット`,
+    nothingSent: "確認するまで何も送信されません。先に料金が表示されます。",
+    seePrice: "料金を確認する",
+    confirmPriced: (price) => `この実行の見積もりは、プロバイダーの公表料金で${price}です。`,
+    confirmFree: "このデバイスはIBMの無料枠（Open Plan）で動くため、料金はかかりません。",
+    allowanceUsed: (used, limit, days) => `直近${days}日間で、実機の利用枠${limit}のうち${used}を使っています。`,
+    allowanceAuthorized: (amount, days) => `直近${days}日間で${amount}分の実機利用を承認しています。`,
+    submitPriced: (price) => `${price}で送信する`,
+    submitFree: "無料枠で送信する",
+    cancel: "キャンセル",
+    submitting: "ジョブを送信しています…",
+    queued: "デバイスの待ち行列に入っています。ページを離れても、結果はここに表示されます。",
+    running: "デバイスで実行中です…",
+    done: "完了しました。",
+    measuredOn: (machine) => `${machine}で測定しました。`,
+    simulatorAbove: "上はシミュレーターの出力です。こちらはデバイスで測定した結果です。",
+    runAgain: "もう一度実行する",
+    tryAgain: "やり直す",
+    credentialMissing: "実機で実行するには、IBM QuantumのAPIキーを接続してください。ジョブはあなた自身のIBMアカウントで実行されます。",
+    credentialLink: "IBMのキーを追加する",
+    earlierVersion: (seq) => `この結果は、同じ回路を実行したこのノートブックのバージョン${seq}のものです。`,
+  },
+};
+
 export const SHARING_COPY: Record<PublicLocale, {
   workspacesTitle: string;
   workspacesHelp: string;
