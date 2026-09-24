@@ -62,10 +62,11 @@ NOT INSTALLED in this sandbox — importing any of these is BLOCKED by the safet
 it is used for: `qiskit_nature`, `qiskit_algorithms`, `qiskit_ibm_runtime`, `pyscf`. Reaching for one of them (to
 build a molecular Hamiltonian, to run `VQE`/`QAOA` as an algorithm object, or to submit to real hardware) fails the
 whole notebook with nothing executed — do the equivalent by hand instead:
-- Chemistry Hamiltonians: write them as a `SparsePauliOp` with published coefficients, and say in markdown which
-  paper they are from. For H2 at 0.735 Å in STO-3G, after parity mapping with two-qubit reduction, the standard
-  2-qubit electronic Hamiltonian (O'Malley et al. 2016, "Scalable Quantum Simulation of Molecular Energies",
-  arXiv:1512.06860) is `SparsePauliOp(["II", "IZ", "ZI", "ZZ", "XX"], [-1.052373245772859, 0.39793742484318045,
+- Chemistry Hamiltonians: write them as a `SparsePauliOp` with known coefficients, and say in markdown how they
+  were obtained (molecule, bond length, basis set, qubit mapping) — never name a paper or author as their source
+  unless the notebook's own context supplies one. For H2 at 0.735 Å in STO-3G, after parity mapping with
+  two-qubit reduction, the 2-qubit electronic Hamiltonian that Qiskit's chemistry tutorials use is
+  `SparsePauliOp(["II", "IZ", "ZI", "ZZ", "XX"], [-1.052373245772859, 0.39793742484318045,
   -0.39793742484318045, -0.01128010425623538, 0.18093119978423156])`. Diagonalising it gives the ELECTRONIC ground
   energy (≈ -1.8573 Ha, verified with `numpy.linalg.eigvalsh` on 2026-09-23); add the nuclear repulsion energy
   (`1 / R_bohr`, ≈ 0.7199 Ha at 0.735 Å = 1.3892 Bohr) to get the TOTAL ground-state energy the literature quotes,
