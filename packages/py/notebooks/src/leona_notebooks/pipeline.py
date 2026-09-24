@@ -348,6 +348,24 @@ def _validate_repair_cells(
                 )
 
 
+def _with_omitted_from(spec: NotebookSpec, cell: Cell, *, as_id: str | None = None) -> Cell:
+    """`cell` with every attribute it left unset taken from the existing cell it replaces
+    (`as_id`, or its own id). Only unset values are filled: `role`, `stub`, `check`,
+    `answer` and `timeout_s` when None, `tags` when empty. `kind`, `source` and `execute`
+    are always the repair's own."""
+    try:
+        original = spec.cell_by_id(as_id or cell.id)
+    except KeyError:
+        return cell
+    update: dict[str, object] = {}
+    for name in ("role", "stub", "check", "answer", "timeout_s"):
+        if getattr(cell, name) is None and getattr(original, name) is not None:
+            update[name] = getattr(original, name)
+    if not cell.tags and original.tags:
+        update["tags"] = list(original.tags)
+    return cell.model_copy(update=update) if update else cell
+
+
 def _apply_repair(
     spec: NotebookSpec, cell_id: str, text: str
 ) -> tuple[NotebookSpec, tuple[str, ...]]:
@@ -369,6 +387,16 @@ def _apply_repair(
         c for c in fragment.cells if c.id in explicit and c.id in named and c.id != cell_id
     ]
     replacement = [c for c in fragment.cells if c not in explicit_targets]
+    # A repair routinely writes a bare `# %%` header, leaving out the attributes of the cell
+    # it replaces. Read as written, an omitted `role` failed the kind/role check below
+    # (`code/run -> code/None`), so EVERY such repair was refused and the budget spent for
+    # nothing: measured 2026-09-24, a `QFTGate(inverse=True)` and a `c_if` the linter had
+    # correctly caught were never fixed. Before that check existed, the same omission
+    # silently dropped the role, and would drop a grader's `check`/`answer` too. What the
+    # repair left out is taken from the original cell; what it set explicitly is kept, so
+    # a repair that CHANGES a role is still refused.
+    explicit_targets = [_with_omitted_from(spec, c) for c in explicit_targets]
+    replacement = [_with_omitted_from(spec, c, as_id=cell_id) for c in replacement]
     if len(replacement) > 1:
         # More than one cell standing in for the ONE failing cell is new cells being
         # inserted under cover of a replace, not a fix of it — `no new cells` from
