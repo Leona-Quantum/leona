@@ -73,7 +73,7 @@ function LiveCell({
 }) {
   const cellErrorLabel = WORKSPACE_COPY[locale].notebooks.cellErrorLabel;
   return (
-    <article className="mj-notebook-live-cell" data-kind={cell.kind} data-status={cell.status}>
+    <article className="mj-notebook-cell mj-notebook-live-cell" data-kind={cell.kind} data-status={cell.status}>
       <div className="mj-notebook-cell-head">
         {cell.role ? <span className="mj-notebook-cell-role">{cell.role}</span> : null}
         {cell.kind === "code" ? (
