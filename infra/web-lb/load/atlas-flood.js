@@ -51,7 +51,6 @@ const SCENARIO = __ENV.SCENARIO || "both";
 // Unix seconds; every process waits for it so that separately started
 // machines load the origin at the same time.
 const START_AT = Number(__ENV.START_AT || 0);
-const UA = "leona-loadtest/1 (+infra/web-lb/load)";
 
 const urls = new SharedArray("crawler", () => {
   const d = JSON.parse(open("./crawler-urls-20260924.json"));
