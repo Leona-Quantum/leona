@@ -16,6 +16,22 @@ PROXY_NAME=majorana-web-https-proxy
 HTTP_PROXY_NAME=majorana-web-http-proxy
 CERT_MAP_NAME=majorana-web-certs
 
+# The Atlas bulkhead (2026-09-24 incident, plans/incidents/2026-09-24-gcp-web-429.md).
+# Same image as SERVICE, its own Cloud Run service, reached through its own
+# backend by a path rule on the url map, so a flood of Atlas renders can use up
+# only the Atlas's instances and never the home page's. See 25-atlas-bulkhead.sh.
+ATLAS_SERVICE="${ATLAS_SERVICE:-majorana-web-atlas}"
+ATLAS_NEG_NAME=majorana-web-atlas-neg
+ATLAS_BACKEND_NAME=majorana-web-atlas-backend
+# Every public spelling of the Atlas. The middleware rewrites the unprefixed
+# form to /en internally, but the load balancer routes on what the visitor
+# asked for, so all three prefixes are listed.
+ATLAS_PATHS="/repository /repository/* /en/repository /en/repository/* /ja/repository /ja/repository/*"
+
+# Both web services, for the checks that must hold for each (ingress, identity,
+# public-only-through-the-load-balancer).
+WEB_SERVICES="${SERVICE} ${ATLAS_SERVICE}"
+
 g() { gcloud --project="$PROJECT" "$@"; }
 
 # `gcloud ... describe` writes its "not found" to stderr and exits non-zero, and
