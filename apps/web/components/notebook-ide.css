@@ -1,0 +1,294 @@
+/* The notebook code editor: a syntax-highlighted `<pre>` and a line-number/underline
+ * layer, both drawn UNDER a real `<textarea>` whose own text is transparent — the reader
+ * types into the textarea, sees the highlight through it, and the caret is the textarea's
+ * own caret (`caret-color`). Every layer that draws text shares `.mj-code-editor-metrics`
+ * (font, size, line height, tab size, wrapping) so a glyph in any of them lands on the same
+ * pixel as the others; see the doc comment on `NotebookCodeEditor` in
+ * `notebook-code-editor.tsx` for why (CSP blocks CodeMirror/Monaco's injected `<style>`
+ * tags, so this is hand-built rather than a dependency).
+ *
+ * The gutter (line numbers, the small dot a lint finding leaves) is NOT part of the
+ * textarea's own box: the textarea starts to the right of it (`left: var(--mj-code-editor-
+ * gutter)`), so the gutter stays a real, hoverable, focusable strip rather than something
+ * an invisible full-width textarea would swallow every pointer event for.
+ */
+
+.mj-code-editor {
+  display: grid;
+  gap: var(--sp-1);
+}
+
+.mj-code-editor-surface {
+  position: relative;
+  border: 1px solid var(--border-0);
+  border-radius: var(--radius-control);
+  background: var(--bg-1);
+  /* One digit count in, one gutter width out — everything below reads this, never the
+     raw --mj-code-editor-digits var, so there is exactly one place the "+ a little
+     breathing room" constant lives. */
+  --mj-code-editor-gutter: calc(var(--mj-code-editor-digits, 2) * 1ch + var(--sp-2));
+}
+
+.mj-code-editor[data-disabled="true"] .mj-code-editor-surface {
+  opacity: 0.6;
+}
+
+.mj-code-editor-code {
+  position: relative;
+}
+
+/* Shared by the <pre>, the line layer and the <textarea>: same font metrics and
+   wrapping, so text in any of the three breaks at the same character. Vertical and
+   right padding are uniform; each element sets its OWN left padding/offset below,
+   because only the <pre> and the <textarea> need to clear the gutter as a flat
+   left inset — the line layer clears it per line (see .mj-code-editor-line), so its
+   line-number span has somewhere to sit at column 0. */
+.mj-code-editor-metrics {
+  margin: 0;
+  padding: var(--sp-2);
+  padding-left: 0;
+  font-family: var(--font-mono);
+  font-size: var(--fs-12);
+  line-height: 1.6;
+  tab-size: 4;
+  white-space: pre-wrap;
+  word-break: break-word;
+  overflow-wrap: anywhere;
+}
+
+/* The <pre> is in normal flow and gives `.mj-code-editor-code` its height (the
+   trailing "\n" CodeLayers appends is what makes a final blank line take a row, as
+   it does in a textarea). Everything else in this file overlays it. */
+.mj-code-editor-highlight {
+  position: relative;
+  padding-left: calc(var(--sp-2) + var(--mj-code-editor-gutter));
+  color: var(--text-0);
+}
+
+.mj-code-editor-highlight code {
+  font: inherit;
+  white-space: inherit;
+}
+
+/* The line-number/underline layer sits exactly on top of the <pre> it is drawn
+   parallel to — `.mj-code-editor-layers` stays in normal flow (so the <pre> inside
+   it still sets the height), and this is the one child positioned to cover it. */
+.mj-code-editor-layers {
+  position: relative;
+}
+
+.mj-code-editor-lines {
+  position: absolute;
+  inset: 0;
+  padding-left: 0;
+  color: transparent;
+  /* Text and underlines are decoration over the <pre> beneath; clicks must fall
+     through to the textarea. The gutter mark opts back in below, since it is the
+     one thing in this layer a reader can actually hover or focus. */
+  pointer-events: none;
+}
+
+.mj-code-editor-line {
+  position: relative;
+  padding-left: var(--mj-code-editor-gutter);
+  min-height: 1lh;
+}
+
+.mj-code-editor-line-number {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: calc(var(--mj-code-editor-gutter) - var(--sp-1));
+  text-align: right;
+  color: var(--text-2);
+  user-select: none;
+}
+
+.mj-code-editor-line-content {
+  color: var(--text-0);
+}
+
+/* A lint finding's underline. Wavy so it reads as "something is wrong here" rather
+   than as emphasis, and never the only signal — the same finding is also a gutter
+   mark and a line in the problems list below the cell. */
+.mj-code-editor-mark {
+  text-decoration-line: underline;
+  text-decoration-style: wavy;
+  text-decoration-skip-ink: none;
+  text-underline-offset: 3px;
+}
+
+.mj-code-editor-mark[data-severity="error"] {
+  text-decoration-color: var(--err);
+}
+
+.mj-code-editor-mark[data-severity="warning"] {
+  text-decoration-color: var(--warn);
+}
+
+/* The gutter's own dot for a line with a finding — small enough not to compete with
+   the line number, and the one part of this layer that takes pointer events back
+   (see .mj-code-editor-lines above) so it can be hovered or tabbed to. */
+.mj-code-editor-gutter-mark {
+  position: absolute;
+  left: calc(var(--mj-code-editor-gutter) - var(--sp-2));
+  top: 0.5em;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  pointer-events: auto;
+  cursor: default;
+}
+
+.mj-code-editor-gutter-mark[data-severity="error"] {
+  background: var(--err);
+}
+
+.mj-code-editor-gutter-mark[data-severity="warning"] {
+  background: var(--warn);
+}
+
+.mj-code-editor-gutter-mark:hover,
+.mj-code-editor-gutter-mark:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* A small tooltip built from the same message the underline and the problems list
+   carry (`data-message`), shown on hover or keyboard focus. `white-space: pre-line`
+   keeps the two-finding case (measured.line joins two messages with "\n") readable
+   as two lines rather than one run-on sentence. */
+.mj-code-editor-gutter-mark::after {
+  content: attr(data-message);
+  position: absolute;
+  left: 100%;
+  top: 50%;
+  transform: translateY(-50%);
+  margin-left: var(--sp-2);
+  z-index: 20;
+  display: none;
+  width: max-content;
+  max-width: 22rem;
+  padding: var(--sp-1) var(--sp-2);
+  border: 1px solid var(--border-0);
+  border-radius: var(--radius-control);
+  background: var(--bg-2);
+  color: var(--text-0);
+  font-family: var(--font-ui);
+  font-size: var(--fs-12);
+  line-height: 1.4;
+  white-space: pre-line;
+  box-shadow: var(--shadow-popover);
+}
+
+.mj-code-editor-gutter-mark:hover::after,
+.mj-code-editor-gutter-mark:focus-visible::after {
+  display: block;
+}
+
+/* The <textarea> that actually carries the reader's text: transparent so the <pre>
+   beneath shows through, offset past the gutter so the gutter strip stays a real,
+   clickable part of the page rather than something this covers. */
+.mj-code-editor-input {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: var(--mj-code-editor-gutter);
+  right: 0;
+  padding-left: var(--sp-2);
+  border: 0;
+  outline: none;
+  resize: none;
+  overflow: hidden;
+  background: transparent;
+  color: transparent;
+  caret-color: var(--text-0);
+}
+
+.mj-code-editor-input::selection {
+  background: color-mix(in srgb, var(--accent) 35%, transparent);
+  color: transparent;
+}
+
+.mj-code-editor[data-disabled="true"] .mj-code-editor-input {
+  cursor: not-allowed;
+}
+
+/* Read-only view (NotebookCodeView): the same two layers, no textarea, so the <pre>
+   itself is what carries the text to assistive tech (see `preHidden` in CodeLayers). */
+.mj-code-editor--view .mj-code-editor-code {
+  min-height: 0;
+}
+
+/* The findings list under a cell: one line per finding, in source order, so a
+   keyboard or screen-reader reader has every problem without hunting for underlines. */
+.mj-code-editor-problems {
+  display: grid;
+  gap: var(--sp-1);
+  padding: var(--sp-2) var(--sp-3);
+  border: 1px solid var(--border-0);
+  border-radius: var(--radius-control);
+  background: var(--bg-2);
+}
+
+.mj-code-editor-problems-count {
+  margin: 0;
+  color: var(--text-1);
+  font-size: var(--fs-12);
+}
+
+.mj-code-editor-problems ul {
+  display: grid;
+  gap: var(--sp-1);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.mj-code-editor-problem {
+  display: grid;
+  gap: 2px;
+  width: 100%;
+  padding: var(--sp-1) 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+}
+
+button.mj-code-editor-problem {
+  cursor: pointer;
+}
+
+button.mj-code-editor-problem:hover,
+button.mj-code-editor-problem:focus-visible {
+  color: var(--accent);
+}
+
+.mj-code-editor-problem-where {
+  font-size: var(--fs-12);
+  color: var(--text-1);
+}
+
+.mj-code-editor-problem-where strong[data-severity="error"] {
+  color: var(--err);
+}
+
+.mj-code-editor-problem-where strong[data-severity="warning"] {
+  color: var(--warn);
+}
+
+.mj-code-editor-problem-message {
+  font-size: var(--fs-13);
+}
+
+.mj-code-editor-problem-message code {
+  font-family: var(--font-mono);
+  font-size: var(--fs-12);
+  color: var(--mono-tint);
+}
+
+li[data-current="true"] .mj-code-editor-problem {
+  color: var(--accent);
+}
