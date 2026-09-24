@@ -457,6 +457,14 @@ async def _execute_and_repair(
             # "not a cell error: nothing to repair" and gives up. See
             # `_guard_blocked_context` and `_is_guard_blocked`.
             context = _guard_blocked_context(spec, failed_fixes)
+            if context is not None and (context.cell_id, context.error_value) == last_seen:
+                # The PRE-RUN loop above already spent a repair on this exact finding
+                # and gave up on it (that is what left `last_seen` set to it, and the
+                # cell still has it, so it reached the sandbox and the guard blocked
+                # it). Retrying here would be the same wasted model call the pre-run
+                # loop's own `last_seen` check exists to avoid; the difference is only
+                # WHERE the repeat would happen, not whether it is still a repeat.
+                context = None
         if context is None:
             break  # not a cell error (the sandbox itself failed): nothing to repair
         repairs += 1

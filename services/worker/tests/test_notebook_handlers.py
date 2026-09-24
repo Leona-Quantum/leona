@@ -674,25 +674,37 @@ async def test_a_cell_that_still_raises_after_repair_is_kept_ready_and_named(
     assert "3 fixes" in turn.content
 
 
-def _kept_outcome(repairs: int):
+def _kept_outcome(repairs: int, *, checkpoint: bool = False):
     from leona_notebooks.pipeline import Attempt, PipelineOutcome
+    from leona_notebooks.spec import Cell, NotebookSpec
     from majorana_contracts.notebooks import CellError, CellResult, ExecutionReport
 
+    ename, evalue = ("AssertionError", "expected X") if checkpoint else ("NameError", "x")
     report = ExecutionReport(
         notebook_slug="kept",
         ok=False,
         runner="sandbox",
         cells=[
             CellResult(id="c02", status="ok"),
-            CellResult(id="c05", status="error", error=CellError(ename="NameError", evalue="x")),
+            CellResult(id="c05", status="error", error=CellError(ename=ename, evalue=evalue)),
         ],
     )
+    spec = None
+    if checkpoint:
+        spec = NotebookSpec(
+            slug="kept",
+            title="kept",
+            cells=[
+                Cell(id="c02", kind="code", source="pass\n"),
+                Cell(id="c05", kind="code", role="checkpoint", source="assert False\n"),
+            ],
+        )
     return PipelineOutcome(
         status="ready",
-        spec=None,
+        spec=spec,
         report=report,
         attempts=[Attempt(stage="notebook.repair", ok=False) for _ in range(repairs)],
-        cell_errors="cell c05 failed: NameError: x",
+        cell_errors=f"cell c05 failed: {ename}: {evalue}",
     )
 
 
@@ -714,6 +726,41 @@ def test_the_kept_with_errors_note_is_japanese_all_the_way_through():
     assert "3回修正" in note
     assert "failed" not in note and "cell" not in note
     assert "修正を試み" not in nh._kept_with_errors_note(_kept_outcome(0), "ja")
+
+
+def test_a_checkpoints_own_assertion_is_named_as_the_notebooks_own_claim():
+    # ai-ops#375 round 1: 8 of 10 kept-with-errors notebooks in the 2026-09-24 eval
+    # failed on the model's OWN checkpoint disagreeing with the simulator, not a bug in
+    # generated code. The note should point a reader at the claim, not make them think
+    # their own (correct) code raised.
+    note = nh._kept_with_errors_note(_kept_outcome(1, checkpoint=True), "en")
+    assert "Nala's own check (cell c05) disagrees with the simulator" in note
+    assert "AssertionError: expected X" in note
+
+
+def test_a_checkpoints_own_assertion_is_named_in_japanese_too():
+    note = nh._kept_with_errors_note(_kept_outcome(1, checkpoint=True), "ja")
+    assert "Nala自身のチェック（セル c05）がシミュレーターの結果と食い違っています" in note
+
+
+def test_a_non_checkpoint_assertion_error_gets_the_ordinary_phrasing():
+    # The distinction is about WHICH cell raised, not the exception type: an
+    # AssertionError from a plain `role=run` cell (a reader's own `assert` in an edit,
+    # say) is not Nala's claim, and must not borrow the checkpoint's wording.
+    from leona_notebooks.spec import Cell, NotebookSpec
+
+    outcome = _kept_outcome(1, checkpoint=True)
+    outcome.spec = NotebookSpec(
+        slug="kept",
+        title="kept",
+        cells=[
+            Cell(id="c02", kind="code", source="pass\n"),
+            Cell(id="c05", kind="code", role="run", source="assert False\n"),
+        ],
+    )
+    note = nh._kept_with_errors_note(outcome, "en")
+    assert "Nala's own check" not in note
+    assert "cell c05 raised AssertionError: expected X" in note
 
 
 async def test_a_guard_violating_draft_that_the_repair_fixes_runs(_fake_run_plumbing):
