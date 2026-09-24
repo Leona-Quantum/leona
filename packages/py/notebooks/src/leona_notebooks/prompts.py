@@ -58,30 +58,9 @@ Qiskit 2.5 facts (verified against 2.5.2; the in-place and measurement lines re-
   the old CamelCase classes still exist but warn).
 - Keep every notebook under 60 seconds of total runtime and at most 12 qubits; seed every sampler so counts reproduce.
 
-NOT INSTALLED in this sandbox — importing any of these is BLOCKED by the safety guard before the cell runs, whatever
-it is used for: `qiskit_nature`, `qiskit_algorithms`, `qiskit_ibm_runtime`, `pyscf`. Reaching for one of them (to
-build a molecular Hamiltonian, to run `VQE`/`QAOA` as an algorithm object, or to submit to real hardware) fails the
-whole notebook with nothing executed — do the equivalent by hand instead:
-- Chemistry Hamiltonians: write them as a `SparsePauliOp` with known coefficients, and say in markdown how they
-  were obtained (molecule, bond length, basis set, qubit mapping) — never name a paper or author as their source
-  unless the notebook's own context supplies one. For H2 at 0.735 Å in STO-3G, after parity mapping with
-  two-qubit reduction, the 2-qubit electronic Hamiltonian that Qiskit's chemistry tutorials use is
-  `SparsePauliOp(["II", "IZ", "ZI", "ZZ", "XX"], [-1.052373245772859, 0.39793742484318045,
-  -0.39793742484318045, -0.01128010425623538, 0.18093119978423156])`. Diagonalising it gives the ELECTRONIC ground
-  energy (≈ -1.8573 Ha, verified with `numpy.linalg.eigvalsh` on 2026-09-23); add the nuclear repulsion energy
-  (`1 / R_bohr`, ≈ 0.7199 Ha at 0.735 Å = 1.3892 Bohr) to get the TOTAL ground-state energy the literature quotes,
-  ≈ -1.137 Ha — say which of the two numbers a cell is printing.
-- VQE: no `qiskit_algorithms.VQE`. Write the loop yourself — `est = StatevectorEstimator()`, a cost function
-  `lambda params: est.run([(ansatz, hamiltonian, params)]).result()[0].data.evs`, minimised with
-  `scipy.optimize.minimize(cost, x0, method="COBYLA")` (gradient-free, so no parameter-shift rule needed). Verified
-  on the H2 Hamiltonian above: converges to the exact electronic ground energy to 6 decimal places.
-- QAOA: no `qiskit_algorithms.QAOA`. Build the cost operator by hand as a `SparsePauliOp` — for max-cut on edges
-  `(i, j)`, the term is `0.5 * (I - Z_i Z_j)` per edge — then `QAOAAnsatz(cost_operator=cost_op, reps=p)` from
-  `qiskit.circuit.library` (this ships in core Qiskit, not the algorithms package) builds the circuit; optimise the
-  same way as VQE, over the SAME cost operator.
-- Real hardware needs `qiskit_ibm_runtime`, also absent. A cell that submits to real hardware is marked
-  `execute=false` and explained in prose (Leona's own submission path, not a package import) — simulate locally with
-  `StatevectorSampler`/`AerSimulator` instead, adding a noise model only if the point of the cell is noise.
+Not installed (the safety guard refuses importing them, even to test whether they exist): `qiskit_nature`,
+`qiskit_algorithms`, `qiskit_ibm_runtime`, `pyscf`. Use `qiskit.quantum_info.SparsePauliOp`, the V2 primitives and
+`scipy.optimize` directly instead.
 """
 
 FRAMEWORK_FACTS: dict[str, str] = {"qiskit": QISKIT_2_FACTS}
@@ -335,13 +314,7 @@ Writing rules:
   ends with the expression to display (a Figure, a dict of counts) when a picture or a value is the point.
 - Every `role=predict` markdown cell asks the reader to write down a specific guess before running.
 - Every `role=checkpoint` code cell asserts something concrete about earlier results, with a message
-  that says what was expected, and tolerates sampling noise (bands, not exact counts). Assert on
-  BEHAVIOUR — counts, probabilities, an expectation value, a statevector equal up to global phase
-  (`abs(np.vdot(a, b))` close to 1, never `a == b`) — never on circuit STRUCTURE such as a gate count
-  or a gate name surviving unchanged: `generate_preset_pass_manager` rewrites gates into its basis set
-  (cx, id, rz, sx, x) and can remove, fuse or reorder them while leaving the circuit's action identical,
-  so a check that counts `mcx` or expects a named gate to still be there after transpiling is checking
-  an implementation detail, not the claim, and breaks on a circuit that is still correct.
+  that says what was expected, and tolerates sampling noise (bands, not exact counts).
 - Every `role=modify` step changes exactly one thing and asks the reader to explain the changed result.
 - Cite seed material and papers by title in `role=references`; never invent a citation.
 - Obey the framework facts below to the letter. A deprecated or removed API is a failed notebook.

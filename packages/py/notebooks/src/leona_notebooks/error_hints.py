@@ -69,10 +69,14 @@ _HINTS: tuple[tuple[re.Pattern[str], str], ...] = (
     (
         re.compile(r"qiskit_nature"),
         "`qiskit_nature` is not installed in this sandbox — no import of it will ever run. "
-        "Write the molecular Hamiltonian by hand as a `SparsePauliOp` with published "
-        "coefficients instead (for H2 at 0.735 Å in STO-3G after parity mapping with "
-        "two-qubit reduction, use the standard 2-qubit Hamiltonian and cite where the "
-        "coefficients come from; see the framework facts above). Never re-import "
+        "Write the molecular Hamiltonian by hand as a `SparsePauliOp` and say in markdown how "
+        "it was obtained (molecule, bond length, basis, qubit mapping), never crediting a "
+        "paper you were not given. For H2 at 0.735 Å in STO-3G after parity mapping with "
+        'two-qubit reduction: `SparsePauliOp(["II", "IZ", "ZI", "ZZ", "XX"], '
+        "[-1.052373245772859, 0.39793742484318045, -0.39793742484318045, "
+        "-0.01128010425623538, 0.18093119978423156])`; its lowest eigenvalue is the "
+        "ELECTRONIC energy (≈ -1.8573 Ha), and adding nuclear repulsion (≈ 0.7200 Ha) gives "
+        "the total ≈ -1.1373 Ha. Say which one a cell prints. Never re-import "
         "`qiskit_nature` in the fix — that fails the whole notebook again with nothing run.",
     ),
     (
@@ -80,22 +84,25 @@ _HINTS: tuple[tuple[re.Pattern[str], str], ...] = (
         "`qiskit_algorithms` is not installed in this sandbox. Do not import `VQE`, `QAOA` "
         "or any other algorithm object from it. Write the optimisation loop directly: "
         "`StatevectorEstimator` for the expectation value and `scipy.optimize.minimize` to "
-        "drive the parameters (see the framework facts above for the exact calls).",
+        "drive the parameters: `cost = lambda p: est.run([(ansatz, H, p)]).result()[0].data.evs` "
+        'and `scipy.optimize.minimize(cost, x0, method="COBYLA", options={"maxiter": 100})`. '
+        "Keep the loop small (few parameters, capped iterations): the whole notebook must run "
+        "within 120 seconds.",
     ),
     (
         re.compile(r"qiskit_ibm_runtime"),
         "`qiskit_ibm_runtime` is not installed in this sandbox — a cell that imports it "
-        "cannot run at all. A cell that genuinely needs real hardware is marked "
-        "`execute=false` and explained in prose (Leona's own hardware submission path), "
-        "never imported and run here. If the point of the cell is to demonstrate the "
-        "circuit, run it locally with `StatevectorSampler` or `AerSimulator` instead.",
+        "cannot run at all. To run a circuit on real hardware, call "
+        "`leona_submit(circuit, shots=1024)` in an ordinary cell: it records the request and "
+        "the reader runs it from the notebook page, priced and confirmed. To demonstrate the "
+        "circuit here, run it with `StatevectorSampler` or `AerSimulator`.",
     ),
     (
         re.compile(r"pyscf"),
         "`pyscf` is not installed in this sandbox. Do not run a classical quantum-chemistry "
         "calculation to derive a Hamiltonian at request time; write the qubit Hamiltonian "
-        "as a `SparsePauliOp` with published coefficients and cite the source (see the "
-        "framework facts above for the H2/STO-3G example).",
+        "as a `SparsePauliOp` and say in markdown how it was obtained (molecule, bond "
+        "length, basis, qubit mapping), never crediting a paper you were not given.",
     ),
 )
 
