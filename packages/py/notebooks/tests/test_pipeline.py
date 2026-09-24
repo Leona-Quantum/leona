@@ -210,6 +210,124 @@ async def test_a_certain_lint_error_is_repaired_before_any_sandbox_run() -> None
     assert "has not run yet" in render_repair_user_prompt(context)
 
 
+# --- a cell the sandbox's own guard refuses, not the linter (ai-ops#375 round 1) ------
+#
+# `rnd-vqe-h2-a` in the 2026-09-24 real-model eval: a repair, chasing a genuine runtime
+# error, rewrote c04 to `import qiskit_nature` — a package this sandbox does not have.
+# `compose_notebook_program` guards EVERY executable cell before running any of them, so
+# the run never happened at all (0 of 9 code cells), and `report.first_error()` cannot
+# see a guard refusal (every cell comes back `skipped`, not `error` —
+# `ProductionNotebookPorts.run_notebook`) — so without `_guard_blocked_context` the loop
+# read this as "not a cell error, nothing to repair" and gave up.
+
+
+@dataclass
+class GuardAwarePorts(ScriptedPorts):
+    """`run_notebook` that runs the REAL sandbox guard against every code cell before
+    deciding anything else, exactly as `compose_notebook_program` does — so a repair that
+    reintroduces (or never removes) a disallowed import is caught the same way it would be
+    in production, not by a test-only shortcut that agrees with the fix by construction."""
+
+    async def run_notebook(self, spec: NotebookSpec) -> ExecutionReport:
+        from majorana_sandbox.guard import check_python_code
+
+        self.calls.append("execute")
+        violations: dict[str, list[str]] = {}
+        for cell in spec.cells:
+            if not cell.is_code:
+                continue
+            result = check_python_code(cell.source)
+            if not result.ok:
+                violations[cell.id] = result.violations
+        if violations:
+            summary = "; ".join(f"{cid}: {', '.join(r)}" for cid, r in violations.items())
+            note = f"notebook blocked by the Python safety guard — {summary}"
+            return ExecutionReport(
+                notebook_slug=spec.slug,
+                ok=False,
+                runner="sandbox",
+                cells=[
+                    CellResult(id=cell.id, status="skipped", note=note)
+                    for cell in spec.cells
+                    if cell.is_code
+                ],
+                note=note,
+            )
+        return await super().run_notebook(spec)
+
+
+_IMPORTS_QISKIT_NATURE = (
+    "# %% id=c05 role=run\nfrom qiskit_nature.second_q.drivers import PySCFDriver\n"
+    "driver = PySCFDriver()\n"
+)
+_BUILDS_HAMILTONIAN_BY_HAND = (
+    "# %% id=c05 role=run\nfrom qiskit.quantum_info import SparsePauliOp\n"
+    'hamiltonian = SparsePauliOp(["II", "ZZ"], [-1.05, 0.39])\nhamiltonian\n'
+)
+
+
+async def test_a_guard_blocked_cell_is_repaired_from_the_linter_not_ignored() -> None:
+    draft = LESSON.replace(
+        "# %% role=run\nfrom qiskit import QuantumCircuit\n"
+        "from qiskit.primitives import StatevectorSampler\nqc = QuantumCircuit(1)\nqc.h(0)\n"
+        "qc.measure_all()\n"
+        "counts = StatevectorSampler(seed=7).run([qc], shots=1000).result()[0].data.meas.get_counts()\n"
+        "counts\n",
+        _IMPORTS_QISKIT_NATURE,
+    )
+    ports = GuardAwarePorts(drafts=[draft], repairs=[_BUILDS_HAMILTONIAN_BY_HAND])
+    outcome = await generate(ports, GenerationRequest(brief="b"))
+    assert outcome.status == "ready", outcome.error
+    assert "qiskit_nature" not in outcome.spec.cell_by_id("c05").source
+    # The repair never reached the sandbox for the ORIGINAL cell (`compose_notebook_program`
+    # never runs anything once any cell fails the guard) — it was caught before running,
+    # from the linter's identical `forbidden-import` finding.
+    [context] = ports.contexts
+    assert context.before_running
+    assert any("qiskit_nature" in hint for hint in context.hints)
+
+
+async def test_a_repair_that_reintroduces_a_disallowed_import_is_told_so() -> None:
+    draft = LESSON.replace(
+        "# %% role=run\nfrom qiskit import QuantumCircuit\n"
+        "from qiskit.primitives import StatevectorSampler\nqc = QuantumCircuit(1)\nqc.h(0)\n"
+        "qc.measure_all()\n"
+        "counts = StatevectorSampler(seed=7).run([qc], shots=1000).result()[0].data.meas.get_counts()\n"
+        "counts\n",
+        "# %% role=run\nundefined_name\n",  # a genuine runtime error, not a guard block
+    )
+    still_reaches_for_it = "# %% id=c05 role=run\nimport qiskit_algorithms\nqiskit_algorithms.VQE\n"
+    ports = GuardAwarePorts(
+        drafts=[draft], repairs=[still_reaches_for_it, _BUILDS_HAMILTONIAN_BY_HAND]
+    )
+    outcome = await generate(ports, GenerationRequest(brief="b"), PipelineBudget(max_repairs=3))
+    assert outcome.status == "ready", outcome.error
+    assert "qiskit_algorithms" not in outcome.spec.cell_by_id("c05").source
+    assert ports.calls.count("repair(c05)") == 2
+    first, second = ports.contexts
+    assert first.failed_fixes == ()
+    assert len(second.failed_fixes) == 1
+    assert "qiskit_algorithms" in second.failed_fixes[0][1]
+
+
+def test_hints_match_a_guard_refusal_from_either_reporting_path() -> None:
+    # The lint's own wording ("The sandbox does not allow `import qiskit_nature`. ...")
+    # and the sandbox guard's own wording ("disallowed_import:qiskit_nature") disagree —
+    # `hints_for` has to recognise the package name under both.
+    from leona_notebooks.error_hints import hints_for
+
+    lint_shaped = hints_for(
+        "forbidden-import",
+        "The sandbox does not allow `import qiskit_nature`. Cells may import only: qiskit.",
+    )
+    guard_shaped = hints_for("SandboxGuard", "disallowed_import:qiskit_nature")
+    assert lint_shaped and guard_shaped
+    assert any("SparsePauliOp" in hint for hint in lint_shaped)
+    assert any("SparsePauliOp" in hint for hint in guard_shaped)
+    for package in ("qiskit_algorithms", "qiskit_ibm_runtime", "pyscf"):
+        assert hints_for("SandboxGuard", f"disallowed_import:{package}")
+
+
 async def test_a_heuristic_lint_finding_alone_does_not_spend_a_repair() -> None:
     # `gate-returns-instructions` can be wrong, so it must never trigger a model call on
     # a cell that has not failed.
@@ -797,3 +915,181 @@ async def test_a_chat_edit_that_deletes_the_objective_cell_is_reported() -> None
     assert all(cell.role is not CellRole.OBJECTIVE for cell in outcome.spec.cells)
     warnings = list(outcome.review.warnings) if outcome.review else []
     assert any(w.startswith("structure:") for w in warnings), warnings
+
+
+# --- a checkpoint that disagrees with the simulator (ai-ops#375 round 1, `educator-
+# entanglement-lab-b`) ------------------------------------------------------------------
+#
+# The model claimed, in markdown AND in the checkpoint's own assert, that |Φ+⟩ measured
+# in the X basis gives only 01/10. Real physics says the opposite — Φ+ is correlated in
+# the X basis too, so 00/11 is what a correct simulator returns — and the simulator's
+# counts (00: 503, 11: 497) said so. Three repairs each rewrote only the assert, so the
+# markdown kept stating the same wrong claim underneath a checkpoint that had been made
+# to match it. `ExecutingPorts` really execs the cells, so the checkpoint's AssertionError
+# and its message are the real ones a wrong claim produces, not a scripted stand-in.
+
+ENTANGLEMENT_LESSON_WRONG_CLAIM = (
+    LESSON.replace(
+        "# %% role=run\nfrom qiskit import QuantumCircuit\n"
+        "from qiskit.primitives import StatevectorSampler\nqc = QuantumCircuit(1)\nqc.h(0)\n"
+        "qc.measure_all()\n"
+        "counts = StatevectorSampler(seed=7).run([qc], shots=1000).result()[0].data.meas.get_counts()\n"
+        "counts\n",
+        # Stands in for "what the simulator returns for a Bell pair measured in the X basis"
+        # — a fixed dict rather than a real qiskit run, so the test is deterministic and has
+        # no dependency on qiskit being installed. The VALUES are the real eval's own numbers.
+        '# %% role=run\ncounts = {"00": 503, "11": 497}\ncounts\n',
+    )
+    .replace(
+        "# %% [markdown] role=explain\n# The Hadamard gate puts the qubit in an equal superposition.\n",
+        "# %% [markdown] role=explain\n# |Φ+⟩ measured in the X basis gives only 01 and 10.\n",
+    )
+    .replace(
+        "# %% role=modify\nqc2 = QuantumCircuit(1)\nqc2.x(0)\nqc2.measure_all()\n",
+        "# %% role=modify\nflipped = {k[::-1]: v for k, v in counts.items()}\n",
+    )
+    .replace(
+        '# %% role=checkpoint\nassert 400 < counts.get("1", 0) < 600, f"expected a fair coin, got {counts}"\n',
+        "# %% role=checkpoint\n"
+        'assert set(counts) <= {"01", "10"}, (\n'
+        '    f"Expected only 01 and 10 outcomes in the X basis, but got {counts}."\n'
+        ")\n",
+    )
+)
+
+_ENTANGLEMENT_REPAIR_DONE_RIGHT = (
+    "# %% id=c07 [markdown] role=explain\n"
+    "# Φ+ is correlated in the X basis too: measuring both qubits in X still gives\n"
+    "# only 00 or 11, never 01 or 10.\n\n"
+    "# %% id=c09 role=checkpoint\n"
+    'assert set(counts) <= {"00", "11"}, (\n'
+    '    f"Expected only 00/11 outcomes (X-basis correlation), but got {counts}."\n'
+    ")\n"
+)
+
+
+async def test_a_wrong_checkpoint_and_its_markdown_are_fixed_together() -> None:
+    ports = ExecutingPorts(
+        drafts=[ENTANGLEMENT_LESSON_WRONG_CLAIM], repairs=[_ENTANGLEMENT_REPAIR_DONE_RIGHT]
+    )
+    outcome = await generate(ports, GenerationRequest(brief="b"))
+    assert outcome.status == "ready", outcome.error
+    assert outcome.report is not None and outcome.report.ok
+    assert outcome.cell_errors == ""  # clean: the checkpoint actually passes now
+    assert "01 and 10" not in outcome.spec.cell_by_id("c07").source
+    assert "correlated" in outcome.spec.cell_by_id("c07").source
+    assert (
+        outcome.spec.cell_by_id("c09")
+        .source.strip()
+        .startswith('assert set(counts) <= {"00", "11"}')
+    )
+    # The attempt log names BOTH cells the repair actually changed, not just the one it
+    # was shown as failing — `_apply_repair`'s `touched` return value.
+    repair_attempts = [a for a in outcome.attempts if a.stage == "notebook.repair" and a.ok]
+    assert len(repair_attempts) == 1
+    assert repair_attempts[0].detail == "c07, c09"
+
+
+async def test_the_repair_prompt_carries_the_reasoning_requirement_and_observed_values() -> None:
+    from leona_notebooks.pipeline import _repair_context
+
+    spec = parse_source(ENTANGLEMENT_LESSON_WRONG_CLAIM)
+    report = ExecutionReport(
+        notebook_slug=spec.slug,
+        ok=False,
+        runner="inprocess",
+        cells=[
+            CellResult(
+                id="c09",
+                status="error",
+                error=CellError(
+                    ename="AssertionError",
+                    evalue="Expected only 01 and 10 outcomes in the X basis, but got "
+                    "{'00': 503, '11': 497}.",
+                ),
+            )
+        ],
+    )
+    context = _repair_context(spec, report)
+    assert context is not None and context.error_name == "AssertionError"
+    prompt = render_repair_user_prompt(context)
+    assert "SIMULATOR IS GROUND TRUTH" in prompt
+    assert "00': 503" in prompt  # the observed values reach the model
+
+
+async def test_a_repair_that_tries_assert_true_is_refused_not_applied() -> None:
+    ports = ExecutingPorts(
+        drafts=[ENTANGLEMENT_LESSON_WRONG_CLAIM],
+        repairs=["# %% id=c09 role=checkpoint\nassert True\n"] * 2,
+    )
+    outcome = await generate(ports, GenerationRequest(brief="b"), PipelineBudget(max_repairs=2))
+    assert outcome.status == "ready"
+    # Refused, not applied: the checkpoint still carries the ORIGINAL (wrong) assert, and
+    # the cell is still reported as failing — an `assert True` never reached the spec.
+    assert "assert True" not in outcome.spec.cell_by_id("c09").source
+    assert outcome.cell_errors != ""
+    repair_attempts = [a for a in outcome.attempts if a.stage == "notebook.repair"]
+    assert repair_attempts and all(not a.ok for a in repair_attempts)
+    assert any("weakens a check" in a.detail for a in repair_attempts)
+
+
+async def test_a_repair_that_swallows_the_assertion_is_also_refused() -> None:
+    ports = ExecutingPorts(
+        drafts=[ENTANGLEMENT_LESSON_WRONG_CLAIM],
+        repairs=[
+            "# %% id=c09 role=checkpoint\n"
+            "try:\n"
+            '    assert set(counts) <= {"01", "10"}, f"got {counts}"\n'
+            "except:\n"
+            "    pass\n"
+        ]
+        * 2,
+    )
+    outcome = await generate(ports, GenerationRequest(brief="b"), PipelineBudget(max_repairs=2))
+    assert outcome.status == "ready"
+    assert "except:" not in outcome.spec.cell_by_id("c09").source
+    repair_attempts = [a for a in outcome.attempts if a.stage == "notebook.repair"]
+    assert repair_attempts and all(not a.ok for a in repair_attempts)
+
+
+async def test_a_repair_touching_too_many_cells_is_refused() -> None:
+    too_many = (
+        "# %% id=c01 [markdown] role=objective\n# still the objective\n\n"
+        "# %% id=c03 [markdown] role=concept\n# still the concept\n\n"
+        "# %% id=c04 [markdown] role=predict\n# still the prediction\n\n"
+        "# %% id=c07 [markdown] role=explain\n# correlated, not anti-correlated\n\n"
+        "# %% id=c09 role=checkpoint\n"
+        'assert set(counts) <= {"00", "11"}, f"got {counts}"\n'
+    )
+    ports = ExecutingPorts(drafts=[ENTANGLEMENT_LESSON_WRONG_CLAIM], repairs=[too_many] * 2)
+    outcome = await generate(ports, GenerationRequest(brief="b"), PipelineBudget(max_repairs=2))
+    repair_attempts = [a for a in outcome.attempts if a.stage == "notebook.repair"]
+    assert repair_attempts and all(not a.ok for a in repair_attempts)
+    assert any("cells; at most" in a.detail for a in repair_attempts)
+
+
+async def test_a_repair_cannot_smuggle_in_a_new_cell() -> None:
+    inserted_new_cell = (
+        "# %% id=c09 role=checkpoint\n"
+        'assert set(counts) <= {"00", "11"}, f"got {counts}"\n\n'
+        "# %% [markdown] role=note\n# a bonus cell nobody asked for\n"
+    )
+    ports = ExecutingPorts(drafts=[ENTANGLEMENT_LESSON_WRONG_CLAIM], repairs=[inserted_new_cell])
+    outcome = await generate(ports, GenerationRequest(brief="b"), PipelineBudget(max_repairs=1))
+    assert len(outcome.spec.cells) == len(parse_source(ENTANGLEMENT_LESSON_WRONG_CLAIM).cells)
+    repair_attempts = [a for a in outcome.attempts if a.stage == "notebook.repair"]
+    assert repair_attempts and not repair_attempts[0].ok
+    assert "insert new ones" in repair_attempts[0].detail
+
+
+async def test_a_repair_cannot_change_a_cells_role_to_dodge_validation() -> None:
+    # A real (non-trivial) assert, so this fails ONLY the kind/role check and not also
+    # `WEAKENS_CHECK` — otherwise a mutation that disabled the role check alone would go
+    # unnoticed, hidden behind the OTHER guard also refusing this same repair.
+    role_changed = '# %% id=c09 role=note\nassert set(counts) <= {"00", "11"}, f"got {counts}"\n'
+    ports = ExecutingPorts(drafts=[ENTANGLEMENT_LESSON_WRONG_CLAIM], repairs=[role_changed])
+    outcome = await generate(ports, GenerationRequest(brief="b"), PipelineBudget(max_repairs=1))
+    assert outcome.spec.cell_by_id("c09").role.value == "checkpoint"
+    repair_attempts = [a for a in outcome.attempts if a.stage == "notebook.repair"]
+    assert repair_attempts and not repair_attempts[0].ok
+    assert "kind or role" in repair_attempts[0].detail

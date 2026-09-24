@@ -54,6 +54,56 @@ _HINTS: tuple[tuple[re.Pattern[str], str], ...] = (
         'An optional plotting library is missing. `qc.draw("text")` always works; use it '
         'instead of `qc.draw("mpl")` unless the figure is the point of the cell.',
     ),
+    # The four packages below are matched on their BARE name, not on the guard's or the
+    # linter's wrapping text, because the two paths that can produce this repair context
+    # word the violation differently: the sandbox guard's own message is
+    # `disallowed_import:qiskit_nature` (`majorana_sandbox.guard.check_python_code`),
+    # while the pre-run linter's is "The sandbox does not allow `import qiskit_nature`. ..."
+    # (`leona_notebooks.lint`, code `forbidden-import`). Matching the module name plays
+    # both wrappings, in `pipeline._first_definite_finding` (before any sandbox run) and
+    # in the fallback pipeline builds for a report the guard itself blocked (after a
+    # repair reintroduces the import — see `pipeline._guard_blocked_context`). Verified
+    # absent from the production sandbox image (`majorana-runner:nbide-local`) 2026-09-23,
+    # alongside qiskit 2.5.2, qiskit_aer, numpy, scipy, sympy, networkx, matplotlib,
+    # pennylane and cirq, which ARE present.
+    (
+        re.compile(r"qiskit_nature"),
+        "`qiskit_nature` is not installed in this sandbox — no import of it will ever run. "
+        "Write the molecular Hamiltonian by hand as a `SparsePauliOp` and say in markdown how "
+        "it was obtained (molecule, bond length, basis, qubit mapping), never crediting a "
+        "paper you were not given. For H2 at 0.735 Å in STO-3G after parity mapping with "
+        'two-qubit reduction: `SparsePauliOp(["II", "IZ", "ZI", "ZZ", "XX"], '
+        "[-1.052373245772859, 0.39793742484318045, -0.39793742484318045, "
+        "-0.01128010425623538, 0.18093119978423156])`; its lowest eigenvalue is the "
+        "ELECTRONIC energy (≈ -1.8573 Ha), and adding nuclear repulsion (≈ 0.7200 Ha) gives "
+        "the total ≈ -1.1373 Ha. Say which one a cell prints. Never re-import "
+        "`qiskit_nature` in the fix — that fails the whole notebook again with nothing run.",
+    ),
+    (
+        re.compile(r"qiskit_algorithms"),
+        "`qiskit_algorithms` is not installed in this sandbox. Do not import `VQE`, `QAOA` "
+        "or any other algorithm object from it. Write the optimisation loop directly: "
+        "`StatevectorEstimator` for the expectation value and `scipy.optimize.minimize` to "
+        "drive the parameters: `cost = lambda p: est.run([(ansatz, H, p)]).result()[0].data.evs` "
+        'and `scipy.optimize.minimize(cost, x0, method="COBYLA", options={"maxiter": 100})`. '
+        "Keep the loop small (few parameters, capped iterations): the whole notebook must run "
+        "within 120 seconds.",
+    ),
+    (
+        re.compile(r"qiskit_ibm_runtime"),
+        "`qiskit_ibm_runtime` is not installed in this sandbox — a cell that imports it "
+        "cannot run at all. To run a circuit on real hardware, call "
+        "`leona_submit(circuit, shots=1024)` in an ordinary cell: it records the request and "
+        "the reader runs it from the notebook page, priced and confirmed. To demonstrate the "
+        "circuit here, run it with `StatevectorSampler` or `AerSimulator`.",
+    ),
+    (
+        re.compile(r"pyscf"),
+        "`pyscf` is not installed in this sandbox. Do not run a classical quantum-chemistry "
+        "calculation to derive a Hamiltonian at request time; write the qubit Hamiltonian "
+        "as a `SparsePauliOp` and say in markdown how it was obtained (molecule, bond "
+        "length, basis, qubit mapping), never crediting a paper you were not given.",
+    ),
 )
 
 

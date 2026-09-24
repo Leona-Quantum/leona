@@ -100,11 +100,12 @@ from leona_notebooks.sandbox_program import (
 )
 from leona_notebooks.source import SourceParseError, parse_source, render_source
 from leona_notebooks.spec import (
+    SOLUTION_ONLY_ROLES,
     Audience,
+    CellRole,
     Framework,
     NotebookKind,
     NotebookSpec,
-    SOLUTION_ONLY_ROLES,
     Style,
 )
 
@@ -1042,6 +1043,12 @@ async def _save_outcome(
 _KEPT_WITH_ERRORS: dict[str, dict[str, str]] = {
     "en": {
         "detail": "cell {cell} raised {error}",
+        #: A `role=checkpoint` cell that raised `AssertionError` is not a bug the reader's
+        #: code has — it is Nala's OWN claim about the result disagreeing with what the
+        #: simulator actually returned (ai-ops#375 round 1: 8 of 10 kept-with-errors
+        #: notebooks in the 2026-09-24 eval were exactly this). Naming that distinction
+        #: here points the reader at the claim, not at their own (correct) code.
+        "checkpoint_detail": "Nala's own check (cell {cell}) disagrees with the simulator: {error}",
         "repaired": (
             "Heads up: {detail}. I tried {repairs} and it still raises, so the notebook is "
             "here with that cell marked. The cells before it ran. Ask me to fix it, or edit "
@@ -1054,6 +1061,7 @@ _KEPT_WITH_ERRORS: dict[str, dict[str, str]] = {
     },
     "ja": {
         "detail": "セル {cell} で {error} が発生しました",
+        "checkpoint_detail": "Nala自身のチェック（セル {cell}）がシミュレーターの結果と食い違っています: {error}",
         "repaired": (
             "ご注意ください: {detail}。{repairs}回修正を試みましたが、まだ例外が出ます。"
             "そのセルに印を付けた状態でノートブックを残しています。それより前のセルは実行できました。"
@@ -1067,12 +1075,35 @@ _KEPT_WITH_ERRORS: dict[str, dict[str, str]] = {
 }
 
 
+def _failing_cell_is_a_checkpoint(spec: NotebookSpec | None, cell_id: str) -> bool:
+    """Whether the cell that raised is `role=checkpoint` — the model's own assertion
+    about an earlier result, as opposed to code a reader wrote or edited. `spec` is
+    `None` on some test doubles and, defensively, whenever the pipeline could not build
+    one; either way "unknown" reads as "not a checkpoint" rather than raising."""
+    if spec is None:
+        return False
+    try:
+        cell = spec.cell_by_id(cell_id)
+    except KeyError:
+        return False
+    return cell.role == CellRole.CHECKPOINT
+
+
 def _kept_with_errors_note(outcome: PipelineOutcome, locale: str) -> str:
     copy = _KEPT_WITH_ERRORS.get(locale, _KEPT_WITH_ERRORS["en"])
     first = outcome.report.first_error() if outcome.report is not None else None
     if first is not None and first.error is not None:
         error = f"{first.error.ename}: {first.error.evalue[:300]}"
-        detail = copy["detail"].format(cell=first.id, error=error)
+        # An AssertionError from a checkpoint is the notebook disagreeing with itself,
+        # not a bug in the reader's code — say so, so the reader looks at the claim
+        # first rather than assuming their own (unrelated) edit broke something.
+        template = (
+            copy["checkpoint_detail"]
+            if first.error.ename == "AssertionError"
+            and _failing_cell_is_a_checkpoint(outcome.spec, first.id)
+            else copy["detail"]
+        )
+        detail = template.format(cell=first.id, error=error)
     else:
         # No structured error to name (a report note, say): fall back to the pipeline's
         # own one-line description rather than inventing a cell.

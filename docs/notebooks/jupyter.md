@@ -64,9 +64,10 @@ The single-package line failed as described. Then, in an IPython shell with no t
 set: `%load_ext leona_notebooks.jupyter` loaded, `%nala link` and `%nala open` worked,
 `from leona_notebooks import leona_submit` ran on a Bell circuit and printed its local
 message without submitting anything, `from leona_notebooks.leona import Leona`
-imported, and `leona-notebooks validate` checked a curriculum folder. **Not verified:**
-the same install over the network from `github.com`, and inside VS Code or Colab
-themselves.
+imported, and `leona-notebooks validate` checked a curriculum folder. The same line was then run over the network from `github.com` on 2026-09-24, after it
+reached `dev`, into another fresh venv: it installed, and `%nala link`, `%nala open`, a
+local `leona_submit` on a Bell circuit, and the refusal of a circuit with an unbound
+parameter all behaved as above. **Not verified:** inside VS Code or Colab themselves.
 
 ## Mint a personal access token
 

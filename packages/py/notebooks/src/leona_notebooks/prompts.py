@@ -57,6 +57,10 @@ Qiskit 2.5 facts (verified against 2.5.2; the in-place and measurement lines re-
 - Library: `from qiskit.circuit.library import real_amplitudes, grover_operator, QFTGate, efficient_su2` (functions and gates;
   the old CamelCase classes still exist but warn).
 - Keep every notebook under 60 seconds of total runtime and at most 12 qubits; seed every sampler so counts reproduce.
+
+Not installed (the safety guard refuses importing them, even to test whether they exist): `qiskit_nature`,
+`qiskit_algorithms`, `qiskit_ibm_runtime`, `pyscf`. Use `qiskit.quantum_info.SparsePauliOp`, the V2 primitives and
+`scipy.optimize` directly instead.
 """
 
 FRAMEWORK_FACTS: dict[str, str] = {"qiskit": QISKIT_2_FACTS}
@@ -343,15 +347,34 @@ def render_draft_user_prompt(
 
 # --------------------------------------------------------------------------- repair stage
 
+#: How many cells one repair reply may replace: the failing cell plus, when it names them
+#: explicitly by `id=`, the code cells it depends on and the markdown that states the same
+#: claim. Enforced in `leona_notebooks.pipeline._apply_repair`, quoted here so the number
+#: in the prompt and the number the pipeline actually allows cannot drift apart.
+MAX_REPAIR_CELLS = 4
+
 REPAIR_SYSTEM_PROMPT = """\
 You are Nala. A cell of a notebook you wrote failed when it ran. Return the corrected cell(s) in
 Leona notebook source (percent format), and nothing else. Keep the cell's role and intent; change the
-least that makes it run. If the failure reveals an error in an earlier cell, return that cell too,
-with its `id=` marker so it replaces the right one. Never silence an error with a bare `except`, and
-never delete an assertion to make a checkpoint pass — fix what it checks. If you are told an earlier
-fix of yours failed the same way, do not return that fix again: find a different cause, and prefer the
-simplest code that demonstrates the same idea.
-"""
+least that makes it run.
+
+If the failure reveals an error in an earlier cell, or a claim stated in nearby markdown that is now
+wrong, return that cell too, with its `id=` marker so it replaces the right one — an id you were shown
+for an EXISTING cell, never one you invent. You may touch at most {max_cells} cells this way (the
+failing cell plus up to {max_cells_minus_one} others); a fix that needs more than that is not the
+least change that makes it run, and you have likely misread which cell is actually wrong. Never
+introduce a new cell and never delete one — only replace cells that already exist, one for one.
+
+Never silence an error with a bare `except`, and never make a failing check pass by weakening it:
+not by deleting the assertion, not by rewriting it to something that is trivially true (`assert True`,
+a tolerance so wide it cannot fail), not by wrapping it in a `try`/`except` that swallows the failure.
+A check that cannot fail is not a check, and returning one is refused, not applied. If the check is
+actually right and something upstream is wrong, fix the upstream cell or the claim instead — see the
+reasoning rule below for an `AssertionError`.
+
+If you are told an earlier fix of yours failed the same way, do not return that fix again: find a
+different cause, and prefer the simplest code that demonstrates the same idea.
+""".format(max_cells=MAX_REPAIR_CELLS, max_cells_minus_one=MAX_REPAIR_CELLS - 1)
 
 
 @dataclass(frozen=True)
@@ -408,9 +431,34 @@ def render_repair_user_prompt(context: RepairContext, framework: str = "qiskit")
         if context.before_running
         else f"ERROR: {context.error_name}: {context.error_value}\n\nTRACEBACK:\n{context.traceback[-3000:]}\n\n"
     )
+    # A failed `assert` is not "a bug in Qiskit" the way every other entry in this table
+    # is — it is the notebook's OWN claim about its OWN result disagreeing with what the
+    # simulator actually returned. The observed values are already in `error_value` above
+    # (the assert's message is written to carry them), so this adds the one instruction
+    # that was missing: decide, from the physics, which of the three things is wrong,
+    # before writing any code. Gated on the exact exception name so an unrelated
+    # `AssertionError`-shaped false alarm never gets this treatment by accident — there
+    # is none today (every `assert` in a generated cell is a checkpoint's own claim), but
+    # the gate costs nothing and the alternative is silently wrong advice.
+    assertion_reasoning = (
+        "THIS IS A FAILED ASSERTION, not a Qiskit bug: the notebook checked its own claim against\n"
+        "the simulator and the simulator disagreed. For a statevector/sampler simulation of a small\n"
+        "circuit, the SIMULATOR IS GROUND TRUTH — read the observed values in the error above. Before\n"
+        "writing any fix, decide from the physics which of three things is wrong, and say which in one\n"
+        "sentence: (1) the assertion's claim about what should happen, (2) the expected value or bound\n"
+        "it checks against, or (3) the circuit that produced the state being checked. Fix THAT thing —\n"
+        "if the claim is wrong, correct it and every markdown cell that states it too (return those\n"
+        "cells by id, within the cell budget above); if an earlier cell built the wrong circuit, fix\n"
+        "that cell instead of the assertion; if the assertion is right, tighten it correctly without\n"
+        "weakening it. Never rewrite the circuit to match a claim you have not verified — that hides a\n"
+        "wrong physics claim instead of fixing it, and never make the assertion pass by weakening it.\n\n"
+        if context.error_name == "AssertionError"
+        else ""
+    )
     return (
         f"FAILED CELL (id={context.cell_id}):\n# %% id={context.cell_id}\n{context.cell_source.rstrip()}\n\n"
         + what
+        + assertion_reasoning
         + lint
         + hints
         + failed

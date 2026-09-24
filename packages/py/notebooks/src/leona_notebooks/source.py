@@ -35,6 +35,7 @@ from __future__ import annotations
 
 import json
 import re
+import typing
 from typing import Any
 
 import yaml
@@ -69,6 +70,83 @@ _CLOSERS = {"[": "]", "{": "}"}
 _CELL_HEADER_FIELDS = frozenset(
     {"id", "role", "tags", "execute", "stub", "check", "answer", "timeout_s"}
 )
+
+
+def _string_list_fields(model: type) -> frozenset[str]:
+    """Every field `model` types as `list[str]`, read off the model rather than named by
+    hand — so a header field added to `NotebookSpec` later (today it is `objectives` and
+    `prerequisites`) is covered here without anyone remembering to update this file too."""
+    names: set[str] = set()
+    for name, info in model.model_fields.items():
+        if typing.get_origin(info.annotation) is list and typing.get_args(info.annotation) == (
+            str,
+        ):
+            names.add(name)
+    return frozenset(names)
+
+
+#: Header fields a `.nb.py` document carries as a YAML list of plain strings. Computed
+#: once, from the model, not hard-coded — see `_string_list_fields`.
+_STRING_LIST_HEADER_FIELDS = _string_list_fields(NotebookSpec)
+
+
+def _yaml_scalar_text(value: Any) -> str:
+    """The plain-scalar spelling YAML would have read `value` back from, for rebuilding
+    a list item's original text (`_rejoin_one_pair_mapping`). Not a general YAML dumper —
+    just the handful of scalar shapes `yaml.safe_load` can hand back from a mapping key
+    or value (str, int, float, bool, None)."""
+    if value is None:
+        return ""
+    if isinstance(value, bool):
+        return "true" if value else "false"
+    return str(value)
+
+
+def _rejoin_one_pair_mapping(item: Any) -> Any:
+    """Undo the one YAML mistake this exists for: a header list item written as plain
+    text containing `: ` —
+
+        objectives:
+          - Understand the basic concepts: superposition, entanglement, and measurement.
+
+    — which `yaml.safe_load` reads not as a string but as a ONE-PAIR MAPPING, because
+    `key: value` is exactly what YAML block-mapping syntax is. The production failure of
+    2026-09-24 01:07Z died here: `NotebookSpec.objectives` wants `list[str]`, pydantic
+    saw `{'Understand the basic concepts': 'superposition, entanglement, and measurement.'}`
+    at index 0, and the whole draft was thrown away for a header line a reader would
+    read as perfectly good English.
+
+    `item` is left alone unless it is EXACTLY a dict of one scalar key to one scalar
+    value — the shape a single unquoted `text: text` line produces. A dict with more
+    than one pair, or whose key or value is itself a list or mapping, is not this
+    mistake (the author nested something on purpose, or wrote two list items as one),
+    and is left for pydantic to refuse with its own message naming the real shape.
+    """
+    if not (isinstance(item, dict) and len(item) == 1):
+        return item
+    ((key, value),) = item.items()
+    if isinstance(key, (dict, list)) or isinstance(value, (dict, list)):
+        return item
+    key_text = _yaml_scalar_text(key)
+    if value is None:
+        # `- Foo:` with nothing after the colon loads as `{"Foo": None}`; the colon is
+        # part of the author's text (it usually introduces a list on the next line that
+        # got flattened into one item), so it is kept rather than dropped.
+        return f"{key_text}:"
+    return f"{key_text}: {_yaml_scalar_text(value)}"
+
+
+def _repair_misparsed_string_lists(header: dict[str, Any]) -> dict[str, Any]:
+    """Apply `_rejoin_one_pair_mapping` to every item of every header field `NotebookSpec`
+    types as `list[str]`. Anything the rejoin does not recognise (a genuinely nested
+    mapping, a list-of-lists) is passed through unchanged, so `NotebookSpec.model_validate`
+    still refuses it — this function only ever turns a false validation error into no
+    error; it never hides a real one."""
+    for field in _STRING_LIST_HEADER_FIELDS:
+        value = header.get(field)
+        if isinstance(value, list):
+            header[field] = [_rejoin_one_pair_mapping(item) for item in value]
+    return header
 
 
 class SourceParseError(ValueError):
@@ -245,7 +323,7 @@ def parse_source(text: str, *, slug: str | None = None) -> NotebookSpec:
             raise SourceParseError(f"header is not valid YAML: {exc}") from exc
         if not isinstance(loaded, dict):
             raise SourceParseError("header must be a YAML mapping")
-        header = loaded
+        header = _repair_misparsed_string_lists(loaded)
 
     raw_cells: list[dict[str, Any]] = []
     current_kind: str | None = None
@@ -336,7 +414,17 @@ def _render_value(value: Any) -> str:
 
 
 def render_source(spec: NotebookSpec, *, include_ids: bool = True) -> str:
-    """Render a spec back to `.nb.py`. `parse_source(render_source(s)) == s`."""
+    """Render a spec back to `.nb.py`. `parse_source(render_source(s)) == s`.
+
+    An `objectives`/`prerequisites` item that contains `": "` — the shape
+    `_repair_misparsed_string_lists` exists to read back in — needs no special-casing
+    here: `yaml.safe_dump` already refuses to emit it as a plain (unquoted) scalar,
+    because unquoted it would parse back as a mapping, which is exactly the bug. Verified
+    with a probe (`test_an_objective_containing_a_colon_round_trips`) rather than assumed
+    from reading the PyYAML source — a dumper that got this wrong would silently
+    reintroduce the same failure on the very next revise turn, one call further downstream
+    of where a reader would ever look for it.
+    """
     header = spec.model_dump(mode="json", exclude={"cells"})
     header.pop("schema_version", None)
     # Drop defaults that add noise; parse_source restores them.

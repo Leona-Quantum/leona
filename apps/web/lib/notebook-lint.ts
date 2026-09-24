@@ -12,7 +12,7 @@
  *
  * Both implementations are tested against `packages/py/notebooks/tests/data/lint-cases.json`
  * (`lib/notebook-lint.test.ts` reads it from its repo path), so neither can grow a rule the
- * other lacks. Two rules are Python-only and deliberately absent here, marked `python_only`
+ * other lacks. Four rules are Python-only and deliberately absent here, marked `python_only`
  * in that file:
  *
  * - `forbidden-import` needs the sandbox guard's own import list, which is Python code the
@@ -20,6 +20,10 @@
  * - `syntax-error` needs a real Python parser. The one below is deliberately partial (see
  *   `parseLogicalLine`), so "my parser gave up" is not evidence that Python would, and
  *   reporting it as a syntax error would be exactly the false alarm this module refuses.
+ * - `assert-always-true` and `assertion-swallowed` refuse a repair that makes a failing check
+ *   pass by weakening it. They validate Nala's own repairs in the pipeline, which never runs
+ *   here; a reader typing in the editor does not need them. Their codes and severities are
+ *   listed below only so the two tables stay one list.
  *
  * Where the browser has to differ from Python it differs in the safe direction. Python
  * lints nothing in a cell that does not parse; the browser cannot know whether Python would
@@ -34,7 +38,9 @@ export type LintCode =
   | "removed-qiskit-api"
   | "measured-circuit-has-no-statevector"
   | "forbidden-import"
-  | "syntax-error";
+  | "syntax-error"
+  | "assert-always-true"
+  | "assertion-swallowed";
 
 export type LintSeverity = "error" | "warning";
 
@@ -46,6 +52,8 @@ export const LINT_SEVERITY: Record<LintCode, LintSeverity> = {
   "measured-circuit-has-no-statevector": "error",
   "forbidden-import": "error",
   "syntax-error": "error",
+  "assert-always-true": "error",
+  "assertion-swallowed": "error",
 };
 
 /** Which removed API a `removed-qiskit-api` finding is about, so its message can say what
