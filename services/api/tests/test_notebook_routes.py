@@ -238,7 +238,11 @@ async def test_turn_on_a_notebook_with_no_ready_version_is_409(client, monkeypat
 
 def _failed_first_build(*, with_spec: bool):
     notebook = _notebook_row(current_version_id=None)
-    spec = {"slug": notebook.slug, "title": "t", "cells": [{"id": "c1", "kind": "code", "source": "x = 1\n"}]}
+    spec = {
+        "slug": notebook.slug,
+        "title": "t",
+        "cells": [{"id": "c1", "kind": "code", "source": "x = 1\n"}],
+    }
     failed = _version_row(
         notebook_id=notebook.id,
         seq=1,
@@ -264,8 +268,13 @@ def _patch_for_a_run(monkeypatch, notebook, versions, captured: dict) -> None:
 
     async def fake_append_turn(_scope, _session, notebook_id, **kwargs):
         return SimpleNamespace(
-            id=uuid_module.uuid4(), notebook_id=notebook_id, seq=1, role=kwargs["role"],
-            content=kwargs["content"], run_id=kwargs["run_id"], created_at=NOW,
+            id=uuid_module.uuid4(),
+            notebook_id=notebook_id,
+            seq=1,
+            role=kwargs["role"],
+            content=kwargs["content"],
+            run_id=kwargs["run_id"],
+            created_at=NOW,
         )
 
     async def fake_create_version(_scope, _session, notebook_id, **kwargs):
@@ -285,7 +294,9 @@ def _patch_for_a_run(monkeypatch, notebook, versions, captured: dict) -> None:
     monkeypatch.setattr(system_repo, "enqueue_job", fake_enqueue_job)
 
 
-async def test_a_turn_on_a_notebook_whose_only_build_failed_starts_from_that_build(client, monkeypatch):
+async def test_a_turn_on_a_notebook_whose_only_build_failed_starts_from_that_build(
+    client, monkeypatch
+):
     # Plan 10-notebook-ide rule 2. The 2026-09-24 production notebook answered 409 to each
     # message its owner sent, although its failed build carried all 36 cells.
     notebook, failed = _failed_first_build(with_spec=True)
@@ -293,14 +304,18 @@ async def test_a_turn_on_a_notebook_whose_only_build_failed_starts_from_that_bui
     _patch_for_a_run(monkeypatch, notebook, [failed], captured)
 
     async with client as c:
-        response = await c.post(f"/v1/notebooks/{notebook.id}/turns", json={"message": "fix cell c1"})
+        response = await c.post(
+            f"/v1/notebooks/{notebook.id}/turns", json={"message": "fix cell c1"}
+        )
 
     assert response.status_code == 201, response.text
     assert captured["kind"] == NOTEBOOK_REVISE_JOB_KIND
     assert captured["payload"]["base_version_id"] == str(failed.id)
 
 
-async def test_a_rerun_of_a_notebook_whose_only_build_failed_starts_from_that_build(client, monkeypatch):
+async def test_a_rerun_of_a_notebook_whose_only_build_failed_starts_from_that_build(
+    client, monkeypatch
+):
     notebook, failed = _failed_first_build(with_spec=True)
     captured: dict = {}
     _patch_for_a_run(monkeypatch, notebook, [failed], captured)
@@ -329,7 +344,9 @@ async def test_a_failed_build_with_no_spec_still_has_nothing_to_work_from(client
 async def test_a_ready_version_is_still_preferred_over_a_newer_failed_one(client, monkeypatch):
     ready = _version_row(seq=1, status="ready", spec={"slug": "s", "title": "t", "cells": []})
     notebook = _notebook_row(current_version_id=ready.id)
-    ready = _version_row(id=ready.id, notebook_id=notebook.id, seq=1, status="ready", spec=ready.spec)
+    ready = _version_row(
+        id=ready.id, notebook_id=notebook.id, seq=1, status="ready", spec=ready.spec
+    )
     newer_failed = _version_row(notebook_id=notebook.id, seq=2, status="failed", spec=ready.spec)
     captured: dict = {}
     _patch_for_a_run(monkeypatch, notebook, [ready, newer_failed], captured)

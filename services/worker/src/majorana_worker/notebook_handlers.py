@@ -1037,24 +1037,54 @@ async def _save_outcome(
 #: What Nala says when a notebook is kept although a cell still raises. Not model output:
 #: the pipeline decided this, so the words are written here in both locales rather than
 #: left to a prompt that might soften "this cell raises" into "there may be an issue".
-_KEPT_WITH_ERRORS: dict[str, str] = {
-    "en": (
-        "Heads up: {detail}. I tried {repairs} fix(es) and the cell still raises, so the "
-        "notebook is here with that cell marked. The cells before it ran. Ask me to fix it, "
-        "or edit the cell yourself and run it again."
-    ),
-    "ja": (
-        "ご注意ください: {detail}。{repairs} 回修正を試みましたが、このセルはまだ例外を出します。"
-        "そのセルに印を付けた状態でノートブックを残しています。それより前のセルは実行できました。"
-        "修正を頼むか、セルを自分で編集してもう一度実行してください。"
-    ),
+#: Two shapes per locale, because a plain re-run makes no repair at all and "I tried 0
+#: fixes" would be a sentence about work that never happened.
+_KEPT_WITH_ERRORS: dict[str, dict[str, str]] = {
+    "en": {
+        "detail": "cell {cell} raised {error}",
+        "repaired": (
+            "Heads up: {detail}. I tried {repairs} and it still raises, so the notebook is "
+            "here with that cell marked. The cells before it ran. Ask me to fix it, or edit "
+            "the cell yourself and run it again."
+        ),
+        "unrepaired": (
+            "Heads up: {detail}. The notebook is here with that cell marked, and the cells "
+            "before it ran. Ask me to fix it, or edit the cell yourself and run it again."
+        ),
+    },
+    "ja": {
+        "detail": "セル {cell} で {error} が発生しました",
+        "repaired": (
+            "ご注意ください: {detail}。{repairs}回修正を試みましたが、まだ例外が出ます。"
+            "そのセルに印を付けた状態でノートブックを残しています。それより前のセルは実行できました。"
+            "修正を頼むか、セルを自分で編集してもう一度実行してください。"
+        ),
+        "unrepaired": (
+            "ご注意ください: {detail}。そのセルに印を付けた状態でノートブックを残しています。"
+            "それより前のセルは実行できました。修正を頼むか、セルを自分で編集してもう一度実行してください。"
+        ),
+    },
 }
 
 
 def _kept_with_errors_note(outcome: PipelineOutcome, locale: str) -> str:
-    template = _KEPT_WITH_ERRORS.get(locale, _KEPT_WITH_ERRORS["en"])
+    copy = _KEPT_WITH_ERRORS.get(locale, _KEPT_WITH_ERRORS["en"])
+    first = outcome.report.first_error() if outcome.report is not None else None
+    if first is not None and first.error is not None:
+        error = f"{first.error.ename}: {first.error.evalue[:300]}"
+        detail = copy["detail"].format(cell=first.id, error=error)
+    else:
+        # No structured error to name (a report note, say): fall back to the pipeline's
+        # own one-line description rather than inventing a cell.
+        detail = outcome.cell_errors
     repairs = sum(1 for attempt in outcome.attempts if attempt.stage == "notebook.repair")
-    return template.format(detail=outcome.cell_errors, repairs=repairs)
+    if repairs == 0:
+        return copy["unrepaired"].format(detail=detail)
+    if locale == "ja":
+        return copy["repaired"].format(detail=detail, repairs=repairs)
+    return copy["repaired"].format(
+        detail=detail, repairs="one fix" if repairs == 1 else f"{repairs} fixes"
+    )
 
 
 #: What the chat rail says after a reader's own edit ran. Not model output — there is

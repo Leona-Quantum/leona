@@ -152,6 +152,49 @@ def _hardware_cells_do_not_auto_execute(spec: NotebookSpec) -> bool:
     )
 
 
+def _calls_leona_submit(source: str) -> bool:
+    """Whether `source` CALLS `leona_submit` — a call node, not the word. A comment, a
+    string, or a markdown-style mention in a code cell does not ask for hardware.
+    Unparseable source counts as not calling it, the same way `_asserts_something` treats
+    it: a cell that cannot be parsed cannot be shown to ask for anything."""
+    try:
+        tree = ast.parse(source)
+    except SyntaxError:
+        return False
+    return any(
+        isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Name)
+        and node.func.id == "leona_submit"
+        for node in ast.walk(tree)
+    )
+
+
+def _leona_submit_cells_execute(spec: NotebookSpec) -> bool:
+    """Every cell that calls `leona_submit` is an ordinary cell the sandbox runs.
+
+    The opposite of the rule above, and the two have to be read together. `leona_submit`
+    only records a request while its cell RUNS (`sandbox_program._ln_submit`); an
+    `execute=false` cell never runs, so its request would silently never reach the page,
+    and the reader would see no way to run the circuit the prose promised. A cell that
+    ALSO reaches a vendor SDK is refused here too: the other rule forces it to
+    `execute=false`, which is the same silent loss by a longer road — the vendor half
+    belongs in its own cell.
+    """
+    return all(
+        cell.runs_in_sandbox and not _reaches_hardware(cell.source)
+        for cell in spec.cells
+        if cell.is_code and _calls_leona_submit(cell.source)
+    )
+
+
+def _some_cell_submits_through_leona(spec: NotebookSpec) -> bool:
+    return any(
+        cell.runs_in_sandbox and _calls_leona_submit(cell.source)
+        for cell in spec.cells
+        if cell.is_code
+    )
+
+
 # ------------------------------------------------------------------ audience-level predicates
 
 
@@ -349,6 +392,11 @@ _COMMON: tuple[StructureRule, ...] = (
         "Any cell that would talk to IBM Quantum (QiskitRuntimeService, save_account) is marked execute=false.",
         _hardware_cells_do_not_auto_execute,
     ),
+    StructureRule(
+        "A cell that calls leona_submit(circuit, shots=...) is an ordinary execute=true cell that "
+        "imports nothing from a vendor SDK and reads no token.",
+        _leona_submit_cells_execute,
+    ),
 )
 
 _RULES: dict[NotebookKind, tuple[StructureRule, ...]] = {
@@ -449,6 +497,12 @@ _RULES: dict[NotebookKind, tuple[StructureRule, ...]] = {
         StructureRule(
             "A local execute=true path (a simulated backend such as GenericBackendV2 or a fake backend) runs the same ISA circuit first.",
             _has_role(CellRole.RUN),
+        ),
+        StructureRule(
+            "At least one execute=true cell builds the measured circuit and calls "
+            "leona_submit(circuit, shots=...), so the reader can run it on a real device "
+            "from the notebook page after seeing the price.",
+            _some_cell_submits_through_leona,
         ),
     ),
     NotebookKind.BENCHMARK: (
@@ -693,7 +747,7 @@ STARTER_BRIEFS: tuple[dict[str, str], ...] = (
         "id": "hardware-first-job",
         "kind": "hardware",
         "title": "Your first job on IBM Quantum hardware",
-        "brief": "Take a Bell circuit from local simulation to a real IBM QPU with qiskit-ibm-runtime: account setup from an environment variable, ISA transpilation, SamplerV2 submission, job monitoring and retrieval. Never put a token in the notebook.",
+        "brief": "Take a Bell circuit from local simulation to a real IBM QPU: simulate it first, then hand it to leona_submit so I can pick a device, see the price and run it from this page. Also show the qiskit-ibm-runtime version (token from an environment variable, ISA transpilation, SamplerV2, retrieving the job) for running it from my own machine. Never put a token in the notebook.",
     },
     {
         "id": "certification-drill",

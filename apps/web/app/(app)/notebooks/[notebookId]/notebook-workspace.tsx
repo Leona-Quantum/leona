@@ -1301,6 +1301,7 @@ export function NotebookWorkspace({ notebookId, locale = "en" }: { notebookId: s
               onCellAction={cellAction}
               grades={grades}
               gradingCellIds={gradingCellIds}
+              hardware={{ notebookId, seq: version.seq }}
             />
             </>
           ) : !isGenerating && !versionError ? (

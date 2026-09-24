@@ -281,7 +281,9 @@ async def _execute_and_repair(
             break
         last_seen = (context.cell_id, context.error_value)
         repairs += 1
-        await ports.observe("notebook.repair", "started", f"{context.cell_id}: {context.error_name}")
+        await ports.observe(
+            "notebook.repair", "started", f"{context.cell_id}: {context.error_name}"
+        )
         try:
             text = await ports.repair(spec, context)
             spec = _apply_repair(spec, context.cell_id, text)
@@ -322,7 +324,10 @@ async def _execute_and_repair(
         again = report.first_error()
         if again is not None and again.id == context.cell_id and again.error is not None:
             failed_fixes.setdefault(context.cell_id, []).append(
-                (spec.cell_by_id(context.cell_id).source, f"{again.error.ename}: {again.error.evalue[:300]}")
+                (
+                    spec.cell_by_id(context.cell_id).source,
+                    f"{again.error.ename}: {again.error.evalue[:300]}",
+                )
             )
     return spec, report
 

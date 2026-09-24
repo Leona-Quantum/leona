@@ -197,7 +197,9 @@ async def test_a_run_where_nothing_executed_is_still_failed() -> None:
 
 async def test_a_certain_lint_error_is_repaired_before_any_sandbox_run() -> None:
     removed_api = LESSON.replace("qc.h(0)\n", "qc.h(0)\nfrom qiskit import execute\n")
-    fixed = "# %% id=c05 role=run\nfrom qiskit import QuantumCircuit\nqc = QuantumCircuit(1)\nqc.h(0)\n"
+    fixed = (
+        "# %% id=c05 role=run\nfrom qiskit import QuantumCircuit\nqc = QuantumCircuit(1)\nqc.h(0)\n"
+    )
     ports = ScriptedPorts(drafts=[removed_api], repairs=[fixed])
     outcome = await generate(ports, GenerationRequest(brief="b"))
     assert outcome.status == "ready" and outcome.report.ok
@@ -233,7 +235,9 @@ def test_the_production_failure_gets_the_lint_note_and_the_hint_in_its_repair_pr
             CellResult(
                 id="c28",
                 status="error",
-                error=CellError(ename="QiskitError", evalue="'Invalid input data format for Operator'"),
+                error=CellError(
+                    ename="QiskitError", evalue="'Invalid input data format for Operator'"
+                ),
             )
         ],
     )

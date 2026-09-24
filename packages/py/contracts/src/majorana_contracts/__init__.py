@@ -171,6 +171,7 @@ from .notebooks import (
     CreateNotebookTurnResponse,
     ExecutionReport,
     GradeReport,
+    HardwareRequest,
     ImportNotebookRequest,
     ImportNotebookResponse,
     Notebook,
@@ -516,7 +517,12 @@ from .lifecycle import (
 # NotificationKind is closed at exactly `qpu_run_terminal` and `mention` — a
 # third producer needs its own migration and its own line here, the same
 # discipline 2.30.0 applies to TokenScope.
-# 2.35.0: plan 10-notebook-ide, "Live" lane — a notebook developing in real time. New
+# 2.35.0: notebooks can ask for hardware (plan 10-notebook-ide, rule 4). New:
+# HardwareRequest, and `CellResult.hardware_requests` (default empty, so every
+# report stored before it still parses). Additive: one new model, one new field
+# with a default. The caps are module constants in `notebooks.py` rather than
+# exports, because only the sandbox program and its tests read them.
+# 2.36.0: plan 10-notebook-ide, "Live" lane — a notebook developing in real time. New
 # RunEvent members: NotebookDraftDelta (notebook.draft.delta), NotebookDraftParsed
 # (notebook.draft.parsed, carries NotebookLiveCell), NotebookCells (notebook.cells,
 # carries NotebookLiveCellResult) and NotebookRepair (notebook.repair) — emitted by
@@ -524,7 +530,7 @@ from .lifecycle import (
 # Additive: new names only, no existing model changes. Not re-exported from this
 # module's `__all__`, matching `NotebookGrades` — a member of `RunEvent` validates and
 # emits through `run_event_adapter` without a top-level import.
-CONTRACTS_VERSION = "2.35.0"
+CONTRACTS_VERSION = "2.36.0"
 
 __all__ = [
     "PresenceHeartbeatRequest",
@@ -676,6 +682,7 @@ __all__ = [
     "CellError",
     "CellOutput",
     "CellResult",
+    "HardwareRequest",
     "CellRole",
     "CreateNotebookRequest",
     "CreateNotebookResponse",

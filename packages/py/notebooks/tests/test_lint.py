@@ -56,9 +56,17 @@ def test_lint_spec_reads_names_across_cells_and_skips_markdown() -> None:
         slug="lint",
         title="lint",
         cells=[
-            Cell(id="c1", kind="code", source="from qiskit import QuantumCircuit\nqc = QuantumCircuit(2)\nqc.measure_all()\n"),
+            Cell(
+                id="c1",
+                kind="code",
+                source="from qiskit import QuantumCircuit\nqc = QuantumCircuit(2)\nqc.measure_all()\n",
+            ),
             Cell(id="c2", kind="markdown", source="Statevector(qc) is not code here."),
-            Cell(id="c3", kind="code", source="from qiskit.quantum_info import Statevector\nsv = Statevector(qc)\n"),
+            Cell(
+                id="c3",
+                kind="code",
+                source="from qiskit.quantum_info import Statevector\nsv = Statevector(qc)\n",
+            ),
             Cell(id="c4", kind="code", source="print('fine')\n"),
         ],
     )
