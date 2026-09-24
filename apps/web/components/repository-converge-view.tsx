@@ -86,6 +86,7 @@ import {
   legendMark,
   methodHasInterior,
   openableAddresses,
+  routeCoverageCounts,
   spokenName,
   type ConvergeDiagram,
   type ConvergeLane,
@@ -103,7 +104,6 @@ import {
   methodsRealizing,
   nodesWithEntries,
   rootCapabilities,
-  routeOf,
   type LayerCorpusEntry,
   type LayerGraph,
 } from "../lib/repository/layers";
@@ -921,13 +921,10 @@ export function ConvergeView({
 
   // The three route shapes, counted from the graph rather than typed into copy:
   // a number written into a translated sentence is a second copy of a fact and
-  // nothing fails when it drifts.
-  const decomposed = graph.nodes
-    .filter((item) => item.kind === "method" && item.steps.length > 0)
-    .map((item) => routeOf(graph, STATE_VOCABULARY, item as never));
-  const delegated = decomposed.filter((route) => route.coverage === "delegated").length;
-  const partly = decomposed.filter((route) => route.coverage === "partly-own").length;
-  const whole = decomposed.filter((route) => route.coverage === "all-own").length;
+  // nothing fails when it drifts. Memoized per `(graph, vocabulary)` — see
+  // `routeCoverageCounts` — because it depends on neither `open`, `focus`,
+  // `locale` nor the corpus, so recomputing it per request was pure waste.
+  const { delegated, partly, whole } = routeCoverageCounts(graph, STATE_VOCABULARY);
 
   // Summed the same way, over the same figures, because on the overview the
   // two sentences are about all four at once. `capped` used to be a `.some()`

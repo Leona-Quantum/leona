@@ -5635,6 +5635,61 @@ export function crossingsAt(
 }
 
 /**
+ * Caches a `(graph, vocabulary) => result` computation across every call for
+ * the SAME pair of object references, and only that pair — never across a
+ * change of either.
+ *
+ * ## Why this exists
+ *
+ * `drawableSlots`, `convergingSlots` and `routeCoverageCounts` below read
+ * nothing but `graph` and `vocabulary`: never `open`, `focus`, `locale`, a
+ * corpus, or anything else a `/repository/layers` query string carries. In
+ * production `graph` is always the same `LAYER_GRAPH` module singleton and
+ * `vocabulary` is always the same `STATE_VOCABULARY` singleton — imported
+ * once, at module load, and never rebuilt — so every request recomputing them
+ * from scratch was paying for the same answer over and over. Measured on
+ * gcp-preview 2026-09-24: a crawler walking distinct `?open=` permutations
+ * turned every one of those into a fresh, uncached render, and on this Mac a
+ * warm request paid ~28ms for `drawableSlots` + `convergingSlots` together and
+ * ~25-33ms for the route-shape count, regardless of which permutation was
+ * requested — both bigger, most of the time, than the one part of the render
+ * that actually depends on the URL (`layoutConverge` over the reader's own
+ * `open` set, ~1-13ms here). See PR body / incident note for the full
+ * breakdown.
+ *
+ * ## Why a `WeakMap`, and why keyed on the objects rather than on nothing
+ *
+ * A key on object identity, not a single memoized value, because
+ * `lib/repository-converge-layout.test.ts` calls these functions against a
+ * SECOND graph object of its own making (a `{ ...LAYER_GRAPH, nodes: [...] }`
+ * copy with a node stripped out) precisely to prove a mutation is caught —
+ * caching by nothing would hand that test the first graph's answer and make
+ * the mutation check pass for the wrong reason. Keyed on identity: the
+ * singleton pair hits on every call after the first, for the life of the
+ * process; a different graph or vocabulary object — a test fixture, or the
+ * next deploy's fresh module instance — gets its own entry and a real
+ * computation. No TTL, and none is needed: the only way `LAYER_GRAPH` or
+ * `STATE_VOCABULARY` changes identity is a new process.
+ */
+function memoizeByGraph<Vocabulary extends object, Result>(
+  compute: (graph: LayerGraph, vocabulary: Vocabulary) => Result,
+): (graph: LayerGraph, vocabulary: Vocabulary) => Result {
+  const byGraph = new WeakMap<LayerGraph, WeakMap<Vocabulary, Result>>();
+  return (graph, vocabulary) => {
+    let byVocabulary = byGraph.get(graph);
+    if (!byVocabulary) {
+      byVocabulary = new WeakMap();
+      byGraph.set(graph, byVocabulary);
+    }
+    const cached = byVocabulary.get(vocabulary);
+    if (cached !== undefined) return cached;
+    const result = compute(graph, vocabulary);
+    byVocabulary.set(vocabulary, result);
+    return result;
+  };
+}
+
+/**
  * Every focusable slot whose interior states converge — 2 of 18 on today's graph.
  *
  * Still a real and separate distinction after the method fan landed: these are
@@ -5642,8 +5697,13 @@ export function crossingsAt(
  * through this"*. It is no longer the list of slots the page can draw — see
  * `drawableSlots` — and conflating the two is what made 16 slots render a blank
  * page for three sessions.
+ *
+ * Memoized per `(graph, vocabulary)` — see `memoizeByGraph`.
  */
-export function convergingSlots(graph: LayerGraph, vocabulary: StateVocabulary): LayerCapability[] {
+export const convergingSlots = memoizeByGraph(function convergingSlots(
+  graph: LayerGraph,
+  vocabulary: StateVocabulary,
+): LayerCapability[] {
   return graph.nodes.filter((node): node is LayerCapability => {
     if (!isCapability(node)) return false;
     // The same predicate the figure is chosen by — one writer, so this census
@@ -5652,7 +5712,7 @@ export function convergingSlots(graph: LayerGraph, vocabulary: StateVocabulary):
     // methods' `bypasses`, which is exactly what this census must not count.
     return drawsAsStateChain(graph, vocabulary, node, expansionOf(graph, vocabulary, node));
   });
-}
+});
 
 /**
  * Every slot this surface can draw a figure for.
@@ -5663,11 +5723,54 @@ export function convergingSlots(graph: LayerGraph, vocabulary: StateVocabulary):
  * failure this replaces was a navigation list and a renderer disagreeing about
  * what exists, and the fix is not a second hand-maintained list that agrees
  * today.
+ *
+ * Memoized per `(graph, vocabulary)` — see `memoizeByGraph`. Called twice on
+ * every `/repository/layers` request as written today (once by the page, to
+ * validate `?inner=`, once by `ConvergeView`, for the rail) — a duplication
+ * this leaves in place, because collapsing it into one call means threading a
+ * prop across a page/component boundary that the memo already makes free.
  */
-export function drawableSlots(graph: LayerGraph, vocabulary: StateVocabulary): LayerCapability[] {
+export const drawableSlots = memoizeByGraph(function drawableSlots(
+  graph: LayerGraph,
+  vocabulary: StateVocabulary,
+): LayerCapability[] {
   return graph.nodes.filter((node): node is LayerCapability => {
     if (!isCapability(node)) return false;
     if (!expansionOf(graph, vocabulary, node).atomicAtThisLevel) return true;
     return methodFanOf(graph, node) !== null;
   });
+});
+
+/** The three route shapes, counted from the graph — see `routeCoverageCounts`. */
+export interface RouteCoverageCounts {
+  /** Built entirely from named slots. */
+  delegated: number;
+  /** Hands off part of the work and finishes the rest itself. */
+  partly: number;
+  /** One undivided act. */
+  whole: number;
 }
+
+/**
+ * The three route shapes, counted from the graph rather than typed into copy:
+ * a number written into a translated sentence is a second copy of a fact and
+ * nothing fails when it drifts.
+ *
+ * Moved out of `ConvergeView` (which read it as three loose `const`s computed
+ * inline on every render) so it can be memoized per `(graph, vocabulary)` —
+ * see `memoizeByGraph`. It has never depended on `open`, `focus`, `locale` or
+ * the corpus; it is a property of the authored graph alone.
+ */
+export const routeCoverageCounts = memoizeByGraph(function routeCoverageCounts(
+  graph: LayerGraph,
+  vocabulary: StateVocabulary,
+): RouteCoverageCounts {
+  const decomposed = graph.nodes
+    .filter((item) => item.kind === "method" && item.steps.length > 0)
+    .map((item) => routeOf(graph, vocabulary, item as never));
+  return {
+    delegated: decomposed.filter((route) => route.coverage === "delegated").length,
+    partly: decomposed.filter((route) => route.coverage === "partly-own").length,
+    whole: decomposed.filter((route) => route.coverage === "all-own").length,
+  };
+});
