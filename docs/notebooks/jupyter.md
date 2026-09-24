@@ -75,7 +75,18 @@ On leonaqt.com: **Account → Access tokens**. Give it a name, a lifetime, and c
 **"Also let it start verified runs"** — unchecked by default, and `%nala new`, `push`,
 `ask`, `fix`, `run` and the CLI equivalents all need it (they each start a run; a
 read-only token gets a clear "insufficient scope" error instead of silently doing
-nothing). The token is shown once; copy it somewhere safe, not into a notebook cell.
+nothing).
+
+There is a second, separate checkbox: **"Also let it submit circuits to real quantum
+hardware from your own code, charged to your weekly hardware allowance"** — also
+unchecked by default, and independent of the run checkbox (ticking one does not tick
+the other). This is what lets `leona_submit`, called from your own Jupyter, VS Code or
+Colab, submit a circuit directly instead of only pricing it — see
+[`leona_submit`](#leona_submit--write-a-hardware-cell-that-works-in-both-places)
+below for exactly what that changes, and the note on what leaking this kind of token
+means.
+
+The token is shown once; copy it somewhere safe, not into a notebook cell.
 
 ```bash
 export LEONA_API_URL=https://majorana-api-nikekeixtq-uw.a.run.app   # optional; this is the default
@@ -339,25 +350,62 @@ leona_submit(circuit, shots=1024, label="ghz-check")
 This one function name means two different things depending on where the cell runs,
 and a cell written against either reads the same way in the other:
 
-- **In your own Jupyter/VS Code/Colab** (this package, `leona_notebooks.leona`):
-  **never submits anything.** If `LEONA_API_TOKEN` is set, it fetches and prints a
-  pre-run price estimate for the circuit on the default (or given) device; either way
-  it prints one plain sentence telling you to open the notebook on Leona to actually
-  run it on hardware, and returns a small object (`.qasm`, `.shots`, `.num_qubits`)
-  for your own inspection. Owner ruling ai-ops 362: a personal access token may read
-  and start verified (simulated) runs, not spend real QPU time — "hardware jobs come
-  later under their own permission" — so nothing this local function does may either.
-  It never raises for a missing qiskit or a missing token (prints a message and
-  returns `None` instead); an invalid circuit, shot count or label still raises, like
+- **In your own Jupyter/VS Code/Colab** (this package, `leona_notebooks.leona`): if
+  `LEONA_API_TOKEN` is set, it fetches and prints a pre-run price estimate for the
+  circuit on the default (or given) device, exactly as it always has. What happens
+  next depends on whether that token has the **Hardware** box ticked (see
+  [Mint a personal access token](#mint-a-personal-access-token) above):
+
+  - **Ticked:** it then submits the circuit for real (`POST /qpu/submissions`),
+    charged to your weekly hardware allowance, and returns a `HardwareRun` instead
+    of the local-only object below — `.run_id`, `.status()` (a fresh read of where
+    the run is right now), and `.result(timeout=...)` (waits for it to finish and
+    returns the counts; raises if it finished as `error`/`cancelled` rather than
+    handing back an empty result). There is no separate confirmation step here —
+    ticking Hardware when you minted the token *is* the confirmation, so only tick
+    it on a token you are about to use this way.
+  - **Not ticked** (no token at all, a read-only token, or one that can start runs
+    but was not given Hardware): behaves exactly as before — one plain sentence
+    telling you to open the notebook on Leona to run it on hardware there, and a
+    `HardwareSubmission` (`.qasm`, `.shots`, `.num_qubits`) for your own inspection.
+    Nothing is sent anywhere.
+
+  Submits to `DEFAULT_ESTIMATE_DEVICE_ID` (IBM's free Open Plan queue) unless you
+  pass `device=`; a paid device always needs `device=` named explicitly, the same as
+  pricing one already does. It never raises for a missing qiskit, a missing token,
+  or a submission attempt that failed for any reason (no IBM credential connected on
+  your account, the weekly allowance already spent, a network hiccup) — all of those
+  degrade to a printed message and the local-only fallback, the same as a missing
+  token always has. An invalid circuit, shot count or label still raises, like
   calling any other function with bad arguments would.
 - **Inside Leona's own sandbox**, when the notebook actually runs there, a *different*
   `leona_submit` (defined by the sandbox, not by this package) records the same
   request into the notebook's execution report, which the web page then offers to run
-  on real hardware with your own IBM credential and an explicit confirmation.
+  on real hardware with your own IBM credential and an explicit confirmation — the
+  product's own guided path, distinct from the direct one above.
 
 Only `circuit`, `shots` and `label` are common to both — the local version also takes
-a `device=` keyword (which device to price) that the in-sandbox one does not accept;
-leave it unset in a cell you intend to run on Leona too, or drop it before you push.
+a `device=` keyword (which device to price, and with a Hardware-scoped token, submit
+to) that the in-sandbox one does not accept; leave it unset in a cell you intend to
+run on Leona too, or drop it before you push.
+
+### If a Hardware-scoped token leaks
+
+Charged to your account's weekly hardware allowance — the same figure your account
+page shows — but **as of this writing, no plan enforces a dollar ceiling on that
+figure**: the owner's ruling is that hardware spend is the account holder's own call,
+because it runs on *your* connected IBM credential rather than a shared one, so the
+number is recorded but not currently refused at any amount. That is unverified against
+a future change — check your account page for the current behaviour rather than
+trusting this paragraph indefinitely.
+
+What actually bounds the damage today: a Hardware-scoped token still cannot read or
+change your IBM credential, cannot reach billing, and cannot list, mint or revoke
+tokens (the same three surfaces every token is refused, regardless of scope). Every
+submission it makes shows up in your run history on leonaqt.com. If you suspect a
+token has leaked, revoke it on **Account → Access tokens** — that stops it
+immediately — and only tick Hardware on a token in the first place if you are actually
+about to call `leona_submit` with it.
 
 ## The round trip
 
@@ -494,5 +542,8 @@ API, which runs generated code in Leona's own sandbox, the same one every notebo
 through regardless of how it was created. Nothing in this package reads your Jupyter
 kernel's variables, files, or environment except what `%nala fix` explicitly reads (the
 last traceback and the failing cell's own source) to ask Nala about it, and
-`leona_submit`, run locally, never submits a job to hardware — see
-[`leona_submit`](#leona_submit--write-a-hardware-cell-that-works-in-both-places) above.
+`leona_submit`, run locally, submits a job to real hardware only if the token in
+`LEONA_API_TOKEN` was minted with the Hardware box ticked — otherwise it only prices
+and prints, the same as it always has. See
+[`leona_submit`](#leona_submit--write-a-hardware-cell-that-works-in-both-places) above,
+including what leaking a Hardware-scoped token does and does not expose.
