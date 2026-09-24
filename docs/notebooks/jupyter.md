@@ -32,44 +32,41 @@ form of install resolves from the workspace.
 
 ### In your own Jupyter, VS Code or Colab, with no checkout
 
+In a notebook cell:
+
+```python
+%pip install -q "leona-notebooks @ git+https://github.com/Leona-Quantum/leona#subdirectory=packages/py/notebooks" "leona-client @ git+https://github.com/Leona-Quantum/leona#subdirectory=packages/py/client" "majorana-contracts @ git+https://github.com/Leona-Quantum/leona#subdirectory=packages/py/contracts" "majorana-sandbox @ git+https://github.com/Leona-Quantum/leona#subdirectory=packages/py/sandbox"
+```
+
+From a terminal, the same four requirements without the leading `%`:
+
 ```bash
-pip install -q "leona-notebooks @ git+https://github.com/Leona-Quantum/leona#subdirectory=packages/py/notebooks"
+pip install -q "leona-notebooks @ git+https://github.com/Leona-Quantum/leona#subdirectory=packages/py/notebooks" "leona-client @ git+https://github.com/Leona-Quantum/leona#subdirectory=packages/py/client" "majorana-contracts @ git+https://github.com/Leona-Quantum/leona#subdirectory=packages/py/contracts" "majorana-sandbox @ git+https://github.com/Leona-Quantum/leona#subdirectory=packages/py/sandbox"
 ```
 
 This is what the bootstrap cell at the top of a notebook downloaded from Leona runs
-for you automatically (see [The download you get](#the-download-you-get) below) — you
-only need to type it yourself for a notebook you are starting from scratch outside the
-product.
+for you (see [The download you get](#the-download-you-get) below). You only need to
+type it yourself for a notebook you start outside the product.
 
-**What this does and does not give you.** `leona-notebooks`' full feature set depends
-on two packages, `majorana-contracts` and `majorana-sandbox`, that are not published to
-PyPI and are not fetched by this command — a plain `pip install` only resolves a
-dependency it can find on an index or with a git URL of its own, and this project's
-`pyproject.toml` names those two by their plain package name. In practice that means:
+**Why four packages, not one.** None of them is on PyPI. `leona-notebooks` names
+`leona-client`, `majorana-contracts` and `majorana-sandbox` as dependencies, so
+installing `leona-notebooks` on its own fails at dependency resolution ("No matching
+distribution found for leona-client") and installs nothing. Naming all four as git
+requirements in one command lets pip take each dependency from its URL. They are small:
+their other dependencies are pydantic, httpx, nbformat, pyyaml and qiskit, all from
+PyPI. A test (`test_the_bootstrap_installs_every_workspace_dependency`) derives this
+list from the packages' own `pyproject.toml` files, so it cannot silently fall behind.
 
-- `%load_ext leona_notebooks.jupyter` (the `%nala` magic), `%nala link`, `%nala run`,
-  `%nala open`, `%%nala ask`, `%%nala explain`, and `from leona_notebooks import
-  leona_submit` all work with nothing beyond this one install plus IPython — the module
-  code they run through was written specifically to avoid importing anything
-  workspace-only at load time.
-- The pure-local `leona-notebooks` CLI subcommands that compile or execute a `.nb.py`
-  source file directly (`compile`, `execute`, `validate`, `build-curriculum`) need the
-  full checkout install above instead; they will fail on import with `leona-notebooks`
-  installed this way.
-
-Verified in this session: in a scratch virtualenv with `ipython` plus this package's
-other PyPI-resolvable dependencies (`pydantic`, `nbformat`, `pyyaml`, `qiskit`,
-`qiskit-qasm3-import`, `httpx`) but **not** `majorana-contracts`/`majorana-sandbox`,
-`%load_ext leona_notebooks.jupyter` loaded, `%nala link`/`%nala open` worked, and
-`from leona_notebooks import leona_submit` imported and ran correctly (printed a price
-estimate, never submitted anything). A second, more minimal venv with no qiskit,
-nbformat or pydantic at all still imported both entry points, and `leona_submit`
-degraded to a printed message instead of raising. **Not verified in this session:** an
-actual `pip install` against the real `github.com/Leona-Quantum/leona` URL over the
-network — the venv tests above installed from a local path with `--no-deps` to
-reproduce the same dependency shape without a network fetch. If the git URL, the
-subdirectory path, or GitHub's own packaging of this repo ever changes, this command
-could need adjusting even though the import-safety work behind it is confirmed.
+**Verified 2026-09-24:** in a fresh virtualenv (Python 3.13, nothing else installed), the
+line above installed with pip from this repository's git history (the same
+requirements, with the GitHub URL swapped for a local `git+file://` of the same commit).
+The single-package line failed as described. Then, in an IPython shell with no token
+set: `%load_ext leona_notebooks.jupyter` loaded, `%nala link` and `%nala open` worked,
+`from leona_notebooks import leona_submit` ran on a Bell circuit and printed its local
+message without submitting anything, `from leona_notebooks.leona import Leona`
+imported, and `leona-notebooks validate` checked a curriculum folder. **Not verified:**
+the same install over the network from `github.com`, and inside VS Code or Colab
+themselves.
 
 ## Mint a personal access token
 
@@ -462,10 +459,10 @@ not fixed here (out of this page's scope).
 ## Colab
 
 A Colab notebook is a hosted Jupyter kernel with `pip` and `%pip` already available, so
-the same install line and `%load_ext` work:
+the same install line (all four packages) and `%load_ext` work:
 
 ```python
-%pip install -q "leona-notebooks @ git+https://github.com/Leona-Quantum/leona#subdirectory=packages/py/notebooks"
+%pip install -q "leona-notebooks @ git+https://github.com/Leona-Quantum/leona#subdirectory=packages/py/notebooks" "leona-client @ git+https://github.com/Leona-Quantum/leona#subdirectory=packages/py/client" "majorana-contracts @ git+https://github.com/Leona-Quantum/leona#subdirectory=packages/py/contracts" "majorana-sandbox @ git+https://github.com/Leona-Quantum/leona#subdirectory=packages/py/sandbox"
 %load_ext leona_notebooks.jupyter
 ```
 

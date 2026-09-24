@@ -143,6 +143,12 @@ class HardwareSubmission:
     label: str | None = None
 
 
+def _size(num_qubits: int, shots: int) -> str:
+    """ "2 qubits, 1,024 shots": the same words the sandbox's `leona_submit` uses."""
+    qubits = "1 qubit" if num_qubits == 1 else f"{num_qubits} qubits"
+    return f"{qubits}, {'1 shot' if shots == 1 else f'{shots:,} shots'}"
+
+
 def leona_submit(
     circuit: Any,
     shots: int = 1024,
@@ -210,13 +216,13 @@ def leona_submit(
             if per_shot is not None:
                 price_bits.append(f"${per_shot:.5f}/shot")
             print(  # noqa: T201
-                f"{num_qubits} qubit(s), {shots} shots. "
+                f"{_size(num_qubits, shots)}. "
                 + ", ".join(price_bits)
                 + " (pre-run estimate, not a charge — nothing was submitted)."
             )
     else:
         print(  # noqa: T201
-            f"{num_qubits} qubit(s), {shots} shots. Set LEONA_API_TOKEN to see a price "
+            f"{_size(num_qubits, shots)}. Set LEONA_API_TOKEN to see a price "
             "estimate here before you open this on Leona."
         )
 
