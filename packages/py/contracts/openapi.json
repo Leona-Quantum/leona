@@ -1517,6 +1517,14 @@
             "default": null,
             "title": "Execution Count"
           },
+          "hardware_requests": {
+            "items": {
+              "$ref": "#/components/schemas/HardwareRequest"
+            },
+            "maxItems": 8,
+            "title": "Hardware Requests",
+            "type": "array"
+          },
           "id": {
             "title": "Id",
             "type": "string"
@@ -4534,6 +4542,49 @@
         ],
         "title": "GradebookVisibility",
         "type": "string"
+      },
+      "HardwareRequest": {
+        "additionalProperties": false,
+        "description": "A circuit a cell asked to run on hardware, recorded by `leona_submit`.\n\nA REQUEST, not a submission: nothing leaves the sandbox. The reader sees it as a\ncard under the cell, picks a device, is shown the price, confirms, and only then\ndoes the web send it through `POST /v1/qpu/submissions` with their own IBM\ncredential \u2014 the same priced path Studio uses (plan rule 4, 2026-09-23).\n\n`qasm` is OpenQASM 3, because that is what the worker parses\n(`qiskit.qasm3.loads` in `majorana_qpu.ibm`).",
+        "properties": {
+          "label": {
+            "anyOf": [
+              {
+                "maxLength": 120,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Label"
+          },
+          "num_qubits": {
+            "minimum": 1,
+            "title": "Num Qubits",
+            "type": "integer"
+          },
+          "qasm": {
+            "maxLength": 200000,
+            "minLength": 1,
+            "title": "Qasm",
+            "type": "string"
+          },
+          "shots": {
+            "maximum": 1000000,
+            "minimum": 1,
+            "title": "Shots",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "qasm",
+          "shots",
+          "num_qubits"
+        ],
+        "title": "HardwareRequest",
+        "type": "object"
       },
       "ImportNotebookRequest": {
         "additionalProperties": false,
@@ -11694,7 +11745,7 @@
   "info": {
     "description": "Cross-boundary types only; API paths are owned by services/api.",
     "title": "majorana-contracts",
-    "version": "2.34.0"
+    "version": "2.35.0"
   },
   "openapi": "3.1.0",
   "paths": {}

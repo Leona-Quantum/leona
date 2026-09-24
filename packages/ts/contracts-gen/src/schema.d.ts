@@ -751,6 +751,8 @@ export interface components {
              * @default null
              */
             execution_count: number | null;
+            /** Hardware Requests */
+            hardware_requests?: components["schemas"]["HardwareRequest"][];
             /** Id */
             id: string;
             /**
@@ -2360,6 +2362,31 @@ export interface components {
          * @enum {string}
          */
         GradebookVisibility: "all_members" | "own_row";
+        /**
+         * HardwareRequest
+         * @description A circuit a cell asked to run on hardware, recorded by `leona_submit`.
+         *
+         *     A REQUEST, not a submission: nothing leaves the sandbox. The reader sees it as a
+         *     card under the cell, picks a device, is shown the price, confirms, and only then
+         *     does the web send it through `POST /v1/qpu/submissions` with their own IBM
+         *     credential — the same priced path Studio uses (plan rule 4, 2026-09-23).
+         *
+         *     `qasm` is OpenQASM 3, because that is what the worker parses
+         *     (`qiskit.qasm3.loads` in `majorana_qpu.ibm`).
+         */
+        HardwareRequest: {
+            /**
+             * Label
+             * @default null
+             */
+            label: string | null;
+            /** Num Qubits */
+            num_qubits: number;
+            /** Qasm */
+            qasm: string;
+            /** Shots */
+            shots: number;
+        };
         /**
          * ImportNotebookRequest
          * @description An existing `.ipynb` becomes a notebook the reader can then edit with Nala.

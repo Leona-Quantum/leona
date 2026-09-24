@@ -44,6 +44,7 @@ import {
 import type { PublicLocale } from "../../../../lib/public-locale";
 import { useRunProgress } from "../../../../lib/use-run-progress";
 import { authoredPinAfterRun, type AuthoredVersion } from "../../../../lib/run-stream-outcome";
+import { defaultVersionSeq } from "../../../../lib/notebook-version-choice";
 import { WORKSPACE_COPY } from "../../../../lib/workspace-locale";
 
 type Notebook = components["schemas"]["Notebook"];
@@ -360,7 +361,10 @@ export function NotebookWorkspace({ notebookId, locale = "en" }: { notebookId: s
   }, [notebookId]);
 
   // Follow the notebook's current version unless the reader pinned one from the picker.
-  const selectedSeq = notebook?.id === notebookId ? pinnedSeq ?? notebook.current_version_seq ?? null : null;
+  const selectedSeq =
+    notebook?.id === notebookId
+      ? pinnedSeq ?? defaultVersionSeq({ currentSeq: notebook.current_version_seq, versions })
+      : null;
   const version = loadedVersion?.notebook_id === notebookId && loadedVersion.seq === selectedSeq ? loadedVersion : null;
 
   useEffect(() => {
@@ -1212,9 +1216,9 @@ export function NotebookWorkspace({ notebookId, locale = "en" }: { notebookId: s
         <section className="mj-notebook-workspace-notebook">
           {version?.status === "failed" ? (
             <div className="mj-notebook-version-failed" role="alert">
-              <p><strong>{copy.versionFailedHeadline}</strong></p>
+              <p><strong>{version.spec ? copy.versionFailedHeadline : copy.versionFailedNoCellsHeadline}</strong></p>
               {version.error ? <p>{version.error}</p> : null}
-              <p>{copy.versionFailedHint}</p>
+              <p>{version.spec ? copy.versionFailedHint : copy.versionFailedNoCellsHint}</p>
             </div>
           ) : null}
           {versionError ? <div className="mj-notebooks-retry" role="alert"><p>{versionError}</p><button type="button" className="mj-secondary-button" onClick={() => setVersionAttempt((current) => current + 1)}>{locale === "ja" ? "再試行" : "Retry"}</button></div> : null}
@@ -1280,6 +1284,7 @@ export function NotebookWorkspace({ notebookId, locale = "en" }: { notebookId: s
               onCellAction={cellAction}
               grades={grades}
               gradingCellIds={gradingCellIds}
+              hardware={{ notebookId, seq: version.seq }}
             />
             </>
           ) : !isGenerating && !versionError ? (

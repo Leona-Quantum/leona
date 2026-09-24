@@ -16,6 +16,7 @@ type CellResult = components["schemas"]["CellResult"];
 type ExecutionReport = components["schemas"]["ExecutionReport"];
 type AnswerPrompt = components["schemas"]["AnswerPrompt"];
 type NotebookVersionStatus = components["schemas"]["NotebookVersionStatus"];
+type HardwareRequest = components["schemas"]["HardwareRequest"];
 
 export type NotebookCellStatus = "ok" | "error" | "skipped" | "not_run";
 
@@ -75,6 +76,8 @@ export interface NotebookCellView {
    * as a separate field precisely so no renderer ever reaches into `cell.answer`.
    */
   answerPrompt: AnswerPrompt | null;
+  /** Circuits this cell asked to run on a QPU with `leona_submit`, from the report. */
+  hardwareRequests: HardwareRequest[];
 }
 
 /**
@@ -146,6 +149,7 @@ export function notebookCellViews(
       durationMs: result ? result.duration_ms : null,
       graded: cell.check != null || cell.answer != null || cell.answer_prompt != null,
       answerPrompt: answerPromptOf(cell),
+      hardwareRequests: result?.hardware_requests ?? [],
     };
   });
 }
