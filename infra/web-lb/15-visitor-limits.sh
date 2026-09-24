@@ -41,19 +41,34 @@
 # lives where it can be exact: the Atlas has its own service
 # (25-atlas-bulkhead.sh), and Cloudflare holds the edge rules.
 #
-# ## The number
+# ## The number, and how preview set it
 #
-# THRESHOLD requests per INTERVAL seconds per visitor address, across all paths
-# that reach the origin (Cloudflare serves cached pages and static chunks
-# without asking). 1200/60 s is 20 a second, sustained for a minute, from one
-# address — roughly ten times one person exploring the map as fast as they can
-# click (measured, see the incident note §5), so a classroom behind one NAT
-# stays under it, and a single-address flood does not. It is the backstop for
-# one address; a crawler spread across many is Cloudflare's to challenge.
+# THRESHOLD requests per INTERVAL seconds per visitor address, across every path
+# that reaches the origin (Cloudflare answers cached pages and static chunks
+# without asking). Set from what preview recorded, not guessed:
+#
+# - One person reading the site: a home-page view is 14 origin requests (the
+#   document, the session probe and 12 RSC prefetches of the header's links),
+#   and every Atlas map click is one uncached document. A brisk reader is
+#   20-40 a minute.
+# - Thirty people behind one address (load/browse.js, 2026-09-24 18:14-18:25
+#   UTC, preview on): the load balancer logged up to 1,321 a minute from that
+#   one key — of which ~45% were redirect hops a browser never sends (the test
+#   then used a random `_rsc`; fixed since), so ~750 a minute is what a real
+#   classroom of thirty sends. The first threshold tried, 1,200, was therefore
+#   within a factor of 1.6 of a classroom and within 10% of the test's raw
+#   rate: exactly the false positive preview exists to catch.
+# - One address flooding at the incident's rate (~58 a second) is ~3,500 a
+#   minute.
+#
+# 2,400 a minute sits ~3x above the classroom and ~1.5x below the flood. It is
+# the backstop for one address hammering the origin; a crawler spread across
+# many addresses is not what it is for — that is the Atlas bulkhead's job
+# (25-atlas-bulkhead.sh) and Cloudflare's to challenge.
 set -euo pipefail
 cd "$(dirname "$0")" && . ./common.sh
 
-THRESHOLD="${THRESHOLD:-1200}"
+THRESHOLD="${THRESHOLD:-2400}"
 INTERVAL="${INTERVAL:-60}"
 FIRST_PRIORITY=900
 mode="--preview"; label="PREVIEW (log only)"

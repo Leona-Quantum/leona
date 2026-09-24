@@ -15,7 +15,7 @@ thing to be careful about.
 visitor -> Cloudflare (DNS, CDN, rate limit on /repository, bot fight mode)
         -> Google external Application Load Balancer (static IP, managed cert)
         -> Cloud Armor: only Cloudflare's edge may reach the origin,
-                        and at most 1200 requests a minute per visitor address
+                        and at most 2400 requests a minute per visitor address
         -> url map:  /repository*  -> Cloud Run: majorana-web-atlas  (max 8, 8 in flight each)
                      everything else -> Cloud Run: majorana-web      (max 4)
            both: ingress load balancer only, same image, request logging on

@@ -27,8 +27,14 @@ import { SharedArray } from "k6/data";
 const HOST = __ENV.HOST || "https://gcp-preview.leonaqt.com";
 const VUS = Number(__ENV.VUS || 30);
 const MINUTES = Number(__ENV.MINUTES || 10);
-// Prefetch requests a page's links fire on load. Measured on the map page.
-const PREFETCH = Number(__ENV.PREFETCH || 0);
+// What a home-page view fires after the document, measured in a real browser on
+// gcp-preview 2026-09-24: the session probe, then RSC prefetches of the header's
+// links — each link twice, with different `_rsc` values (two router states).
+// None of it is cached by Cloudflare (RSC is DYNAMIC), so all of it reaches the
+// origin. The Atlas and map pages fire none: the map links with plain anchors.
+const HOME_FOLLOW_UPS = ["/api/auth/session",
+  "/workspace", "/repository", "/about", "/pricing", "/contact", "/",
+  "/workspace", "/repository", "/about", "/pricing", "/contact", "/"];
 const UA = "leona-loadtest/1 (+infra/web-lb/load) browse";
 
 const urls = new SharedArray("map-states", () => {
@@ -53,13 +59,30 @@ function who(r) {
   return "app";
 }
 
+// Next validates `_rsc` against a hash of the router headers and 307s a request
+// whose value does not match (measured: a random `_rsc` always costs a redirect
+// hop). A browser computes the hash, so it never pays that hop; this learns the
+// right value once per (path, kind) from the redirect and reuses it, so the
+// origin sees what a browser's navigation would make it see. An earlier run of
+// this script used random values and sent 5,278 extra 307s in ten minutes.
+const rscFor = {};
+function rscParam(path, headers) {
+  const key = `${path}|${headers["Next-Router-Prefetch"] || ""}`;
+  if (rscFor[key] === undefined) {
+    const probe = http.get(`${HOST}${path}${path.includes("?") ? "&" : "?"}_rsc=x`, { headers, redirects: 0, timeout: "60s", tags: { name: "rsc-probe" } });
+    const m = (probe.headers["Location"] || "").match(/_rsc=([^&]+)/);
+    rscFor[key] = m ? m[1] : "x";
+  }
+  return rscFor[key];
+}
+
 function get(path, cls, rsc) {
   const headers = { "User-Agent": UA };
   let url = `${HOST}${path}`;
   if (rsc) {
     headers.RSC = "1";
     if (rsc === "prefetch") headers["Next-Router-Prefetch"] = "1";
-    url += `${path.includes("?") ? "&" : "?"}_rsc=${Math.random().toString(36).slice(2, 7)}`;
+    url += `${path.includes("?") ? "&" : "?"}_rsc=${rscParam(path, headers)}`;
   }
   const r = http.get(url, { headers, timeout: "60s", tags: { name: cls } });
   resp.add(1, { scenario: "browse", cls: rsc ? `${cls}:${rsc === "prefetch" ? "prefetch" : "rsc"}` : cls, code: String(r.status), src: who(r) });
@@ -77,10 +100,12 @@ function mapState() {
 
 export function browse() {
   get("/", "home");
+  for (const p of HOME_FOLLOW_UPS) {
+    if (p === "/api/auth/session") get(p, "session");
+    else get(p, p === "/" ? "home" : p.startsWith("/repository") ? "atlas" : "page", "prefetch");
+  }
   think();
   get("/repository", "atlas", "nav");
-  think();
-  for (let i = 0; i < PREFETCH; i++) get(`/repository/layers/${["block-encoding", "qsvt-transform", "linear-system"][i % 3]}`, "atlas", "prefetch");
   think();
   // The map is a document load, from the Atlas page's link and on every click.
   get("/repository/layers", "map");
