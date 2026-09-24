@@ -102,7 +102,23 @@ class LeonaClientError(RuntimeError):
     Never constructed with a token in the message — every raise site here is
     reviewed for that; a caller that formats one of these into a log line is still
     safe.
+
+    `reason` carries the API's own machine-readable refusal code (the RFC 7807
+    `reason` extension field `app._problem` writes — `token_access.
+    INSUFFICIENT_SCOPE`/`FORBIDDEN_ROUTE`, `qpu_spend_exhausted`, and so on) when
+    this was raised from a parsed API response, and `None` otherwise — a network
+    failure, a body with no JSON, or a refusal this client makes itself before any
+    request went out (`_authenticated_call`'s missing-token message). It exists so
+    a caller can ask "did this fail because of a specific, known condition" by
+    comparing a fixed vocabulary field, not by matching against `str(exc)`, which
+    is a sentence for a person and is free to change (ai-ops 376: this is how
+    `leona_notebooks.leona.leona_submit` tells "this token has no hardware scope"
+    apart from every other way a submission can fail, without guessing from text).
     """
+
+    def __init__(self, message: str, *, reason: str | None = None) -> None:
+        super().__init__(message)
+        self.reason = reason
 
 
 def _urllib_transport(
@@ -158,14 +174,16 @@ class Client:
             body = json.dumps(payload).encode("utf-8")
         status, raw = self.transport(method, f"{self.api_url}/v1{path}", headers, body)
         if status >= 400:
+            reason: str | None = None
             try:
                 problem = json.loads(raw.decode("utf-8"))
                 detail = (
                     problem.get("title") or problem.get("detail") or raw.decode("utf-8", "replace")
                 )
+                reason = problem.get("reason")
             except (ValueError, AttributeError):
                 detail = raw.decode("utf-8", "replace")
-            raise LeonaClientError(f"{method} {path} → {status}: {detail}")
+            raise LeonaClientError(f"{method} {path} → {status}: {detail}", reason=reason)
         if not raw:
             return None
         return json.loads(raw.decode("utf-8"))

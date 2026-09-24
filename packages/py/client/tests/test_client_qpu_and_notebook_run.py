@@ -93,7 +93,10 @@ def test_qpu_submit_passes_zne_through():
 def test_qpu_submit_without_hardware_scope_raises_a_plain_client_error_not_an_http_error():
     """The API answers 403 `token_scope_insufficient`; `_authenticated_call`
     turns every 4xx/5xx into `LeonaClientError`, the same contract `start_run`
-    documents for a `read`-only token hitting `POST /runs`."""
+    documents for a `read`-only token hitting `POST /runs`. `.reason` carries the
+    machine-readable code — this is the field `leona_submit` checks to tell "no
+    hardware scope" apart from any other failure, rather than matching on the
+    sentence, which is free to change."""
     client, _ = _client(
         [
             (
@@ -106,8 +109,22 @@ def test_qpu_submit_without_hardware_scope_raises_a_plain_client_error_not_an_ht
             )
         ]
     )
-    with pytest.raises(LeonaClientError, match="hardware scope"):
+    with pytest.raises(LeonaClientError, match="hardware scope") as excinfo:
         client.qpu_submit("ibm.open_plan", 4096, _QASM, "fp")
+    assert excinfo.value.reason == "token_scope_insufficient"
+
+
+def test_a_client_error_with_a_body_that_is_not_a_json_object_carries_no_reason():
+    """The other half of the same contract: a failure body that parses as JSON but
+    is not an object (here, a bare string — what an upstream proxy error page
+    JSON-wraps) must not accidentally look like a recognised reason code to a
+    caller that checks `.reason`; `problem.get` raises `AttributeError` on a str,
+    which `_call`'s existing `except (ValueError, AttributeError)` already
+    catches, leaving `reason` at its default."""
+    client, _ = _client([(502, "Bad Gateway")])  # type: ignore[list-item]
+    with pytest.raises(LeonaClientError) as excinfo:
+        client.qpu_backends()
+    assert excinfo.value.reason is None
 
 
 def test_get_qpu_run_calls_the_record_route():
