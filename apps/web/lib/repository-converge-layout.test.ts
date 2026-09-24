@@ -34,6 +34,7 @@ import {
   loopAllowance,
   ownStepName,
   openableAddresses as saturatedOpen,
+  routeCoverageCounts,
   spokenName,
   type ConvergeDiagram,
   type ConvergeLane,
@@ -1153,6 +1154,71 @@ test("`drawableSlots` is the list of slots that actually draw", () => {
     )
     .map((focus) => focus.id);
   assert.deepEqual(strippedOffer, strippedDraws);
+});
+
+/**
+ * `drawableSlots`, `convergingSlots` and `routeCoverageCounts` are memoized
+ * per `(graph, vocabulary)` (`memoizeByGraph` in converge-layout.ts) — the
+ * fix for ai-ops's 2026-09-24 crawler incident, where a flood of distinct
+ * `/repository/layers` permutations each recomputed these from scratch even
+ * though none of the three reads `open`, `focus`, `locale` or the corpus.
+ *
+ * Three things have to hold at once for the memo to be safe rather than
+ * merely fast: repeated calls on the SAME graph/vocabulary return the exact
+ * same result (so caching cannot change what a page renders), repeated calls
+ * return the exact same ARRAY/OBJECT reference (proof the second call didn't
+ * recompute — a test that only checked value equality would pass whether or
+ * not the cache fired), and a DIFFERENT graph object gets its own answer
+ * rather than the first graph's cached one (the failure mode that would make
+ * the `stripped`-graph test two tests up pass for the wrong reason, or worse,
+ * silently serve one map's slots on another's page after a redeploy swapped
+ * `LAYER_GRAPH` for a new module instance).
+ */
+test("drawableSlots, convergingSlots and routeCoverageCounts are memoized per (graph, vocabulary)", () => {
+  // Same objects in, same reference out — not just an equal one.
+  assert.equal(drawableSlots(LAYER_GRAPH, STATE_VOCABULARY), drawableSlots(LAYER_GRAPH, STATE_VOCABULARY));
+  assert.equal(convergingSlots(LAYER_GRAPH, STATE_VOCABULARY), convergingSlots(LAYER_GRAPH, STATE_VOCABULARY));
+  assert.equal(
+    routeCoverageCounts(LAYER_GRAPH, STATE_VOCABULARY),
+    routeCoverageCounts(LAYER_GRAPH, STATE_VOCABULARY),
+  );
+
+  // A different graph object — same shape as the `stripped` fixture two tests
+  // up — must NOT reuse `LAYER_GRAPH`'s cached answer. Built to differ in a
+  // way `routeCoverageCounts` can actually see: `carleman-euler-qls-route` is
+  // a method with non-empty `steps` (it decomposes into three), so dropping it
+  // changes which routes get counted — unlike a leaf method such as
+  // `forward-euler`, whose `steps` is `[]` and would leave the counts
+  // unchanged, passing this test whether the cache keyed on identity or not.
+  const strippedGraph: LayerGraph = {
+    ...LAYER_GRAPH,
+    nodes: LAYER_GRAPH.nodes.filter((node) => node.id !== "carleman-euler-qls-route"),
+  };
+  const baseline = routeCoverageCounts(LAYER_GRAPH, STATE_VOCABULARY);
+  const stripped = routeCoverageCounts(strippedGraph, STATE_VOCABULARY);
+  assert.notEqual(stripped, baseline, "a distinct graph object got the first graph's cached object back");
+  assert.notDeepEqual(
+    stripped,
+    baseline,
+    "removing a method with steps from the graph did not change its route-coverage counts — the cache is keying on something other than the graph identity",
+  );
+  // And it is internally consistent: the three counts are always a partition
+  // of every method that has steps, on whichever graph was asked about.
+  const methodsWithSteps = (graph: LayerGraph) =>
+    graph.nodes.filter((node) => node.kind === "method" && node.steps.length > 0).length;
+  assert.equal(baseline.delegated + baseline.partly + baseline.whole, methodsWithSteps(LAYER_GRAPH));
+  assert.equal(stripped.delegated + stripped.partly + stripped.whole, methodsWithSteps(strippedGraph));
+
+  // Asking about the SAME stripped graph object again must hit its own cache
+  // entry, not recompute and not fall back to LAYER_GRAPH's.
+  assert.equal(routeCoverageCounts(strippedGraph, STATE_VOCABULARY), stripped);
+
+  // The two call sites in production (`app/[locale]/repository/layers/page.tsx`
+  // and `ConvergeView`) both pass the literal `LAYER_GRAPH` / `STATE_VOCABULARY`
+  // singletons, so a memo keyed on those two references alone is exactly what a
+  // real deployment exercises — this last assertion pins that against a drift
+  // where either call site started passing a locally-rebuilt copy instead.
+  assert.equal(drawableSlots(LAYER_GRAPH, STATE_VOCABULARY).length, 32);
 });
 
 test("a method fan is the slot's own two states, one lane per filler", () => {
