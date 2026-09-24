@@ -19,14 +19,22 @@
 //
 // Nothing here busts Cloudflare's cache on purpose: what reaches the origin is
 // what a real reader's requests would make reach it.
+//
+// Also models back/forward (a click to a state already visited this session,
+// same cost as any other map click: the map uses plain `<a href>`, so a
+// history navigation is a fresh document load, not a client-side transition)
+// and the occasional static chunk fetch a page load or cache miss produces.
 import http from "k6/http";
 import { sleep } from "k6";
-import { Counter } from "k6/metrics";
 import { SharedArray } from "k6/data";
+import { record, startDelay, UA_BASE } from "./lib.js";
 
 const HOST = __ENV.HOST || "https://gcp-preview.leonaqt.com";
 const VUS = Number(__ENV.VUS || 30);
 const MINUTES = Number(__ENV.MINUTES || 10);
+// Unix seconds; lets this run start in lockstep with the crawler matrix (see
+// atlas-flood.js and .github/workflows/loadtest-atlas.yml).
+const START_AT = Number(__ENV.START_AT || 0);
 // What a home-page view fires after the document, measured in a real browser on
 // gcp-preview 2026-09-24: the session probe, then RSC prefetches of the header's
 // links — each link twice, with different `_rsc` values (two router states).
@@ -35,29 +43,21 @@ const MINUTES = Number(__ENV.MINUTES || 10);
 const HOME_FOLLOW_UPS = ["/api/auth/session",
   "/workspace", "/repository", "/about", "/pricing", "/contact", "/",
   "/workspace", "/repository", "/about", "/pricing", "/contact", "/"];
-const UA = "leona-loadtest/1 (+infra/web-lb/load) browse";
+const UA = UA_BASE + " browse";
 
 const urls = new SharedArray("map-states", () => {
   const d = JSON.parse(open("./crawler-urls-20260924.json"));
   return d.map.concat(d.node);
 });
 
-const resp = new Counter("resp");
-
 export const options = {
-  scenarios: { browse: { executor: "constant-vus", vus: VUS, duration: `${MINUTES}m`, exec: "browse" } },
+  scenarios: {
+    browse: {
+      executor: "constant-vus", vus: VUS, duration: `${MINUTES}m`, exec: "browse",
+      startTime: `${startDelay(START_AT)}s`,
+    },
+  },
 };
-
-function who(r) {
-  if (r.status === 0) return "network";
-  const body = typeof r.body === "string" ? r.body.slice(0, 40) : "";
-  if (r.status === 429 && body.startsWith("Rate exceeded.")) return "cloudrun";
-  if ((r.headers["Cf-Cache-Status"] || "") === "HIT") return "cf-cache";
-  if (r.headers["Cf-Mitigated"]) return "cf-challenge";
-  if (!/google/i.test(r.headers["Via"] || "")) return "cloudflare";
-  if (r.status === 429 || r.status === 403) return "armor";
-  return "app";
-}
 
 // Next validates `_rsc` against a hash of the router headers and 307s a request
 // whose value does not match (measured: a random `_rsc` always costs a redirect
@@ -85,7 +85,7 @@ function get(path, cls, rsc) {
     url += `${path.includes("?") ? "&" : "?"}_rsc=${rscParam(path, headers)}`;
   }
   const r = http.get(url, { headers, timeout: "60s", tags: { name: cls } });
-  resp.add(1, { scenario: "browse", cls: rsc ? `${cls}:${rsc === "prefetch" ? "prefetch" : "rsc"}` : cls, code: String(r.status), src: who(r) });
+  record("browse", rsc ? `${cls}:${rsc === "prefetch" ? "prefetch" : "rsc"}` : cls, r);
   return r;
 }
 
@@ -98,8 +98,25 @@ function mapState() {
   return u;
 }
 
+// A page load or a cache miss pulls in a JS chunk; a static chunk on this
+// site is served through the same Cloudflare -> LB -> Cloud Run path as
+// everything else, so it belongs in the non-Atlas request count. Fetched at
+// most once per VU (browsers cache it after the first load).
+let staticChunk = null;
+function maybeStatic() {
+  if (Math.random() >= 0.15) return;
+  if (!staticChunk) {
+    const home = http.get(`${HOST}/`, { headers: { "User-Agent": UA } });
+    const m = typeof home.body === "string" ? home.body.match(/\/_next\/static\/[^"]+\.js/) : null;
+    staticChunk = m ? m[0] : "/robots.txt";
+  }
+  const r = http.get(`${HOST}${staticChunk}`, { headers: { "User-Agent": UA }, timeout: "60s", tags: { name: "static" } });
+  record("browse", "static", r);
+}
+
 export function browse() {
   get("/", "home");
+  maybeStatic();
   for (const p of HOME_FOLLOW_UPS) {
     if (p === "/api/auth/session") get(p, "session");
     else get(p, p === "/" ? "home" : p.startsWith("/repository") ? "atlas" : "page", "prefetch");
@@ -109,11 +126,26 @@ export function browse() {
   think();
   // The map is a document load, from the Atlas page's link and on every click.
   get("/repository/layers", "map");
-  // Exploring the map: a few clicks, each a new server-rendered state.
+  // Exploring the map: a few clicks, each a new server-rendered state, plus
+  // back/forward through the ones already seen this session -- both are a
+  // fresh document GET of a URL already in `visited`, at the same cost as a
+  // new click, because the map never uses client-side navigation (see the
+  // file header).
   const clicks = 3 + Math.floor(Math.random() * 4);
+  const visited = [];
   for (let i = 0; i < clicks; i++) {
     think();
-    get(mapState(), "map");
+    const goBack = visited.length > 1 && Math.random() < 0.3;
+    const state = goBack ? visited[visited.length - 2] : mapState();
+    get(state, "map");
+    if (!goBack) visited.push(state);
+  }
+  if (visited.length > 1 && Math.random() < 0.4) {
+    // back once, then forward again to the state that was current before it.
+    think();
+    get(visited[visited.length - 2], "map");
+    think();
+    get(visited[visited.length - 1], "map");
   }
   think();
   get("/repository/amplitude-estimation", "record", "nav");
