@@ -16,8 +16,17 @@ Jupyter — see `leona_notebooks.jupyter`; a reader without Jupyter open still g
     leona-notebooks push <file.ipynb> [--title T]
     leona-notebooks push <file.ipynb> --to <notebook_id> [--message M] [--no-run]
     leona-notebooks status <notebook_id>
+    leona-notebooks run [<file.ipynb>] --to <notebook_id> [--until <cell_id>]
+    leona-notebooks run <file.ipynb>                        # import as a new notebook and run it
+    leona-notebooks open <notebook_id>
 
-Exit status is 1 on any failure, so a CI step can run it bare.
+No `link` subcommand here: `%nala link` remembers a notebook for the life of a
+Jupyter KERNEL, and a CLI invocation is a fresh process every time with nothing to
+remember it in — so `status`/`run`/`open` take the notebook id directly rather than
+silently drawing on state that could not survive between two shell commands.
+
+Exit status is 1 on any failure, so a CI step can run it bare — including `run`,
+which exits 1 the moment any cell raised, same as any other CI-run.
 """
 
 from __future__ import annotations
@@ -251,6 +260,29 @@ def cmd_status(args: argparse.Namespace) -> int:
     return _run_nala_line(["status", args.notebook_id])
 
 
+def cmd_run(args: argparse.Namespace) -> int:
+    if not args.file and not args.to:
+        print(
+            "error: leona-notebooks run needs a file, --to <notebook_id>, or both "
+            "(the CLI has no linked notebook to fall back on — see %nala link for "
+            "that, Jupyter-only)",
+            file=sys.stderr,
+        )
+        return 1
+    parts = ["run"]
+    if args.file:
+        parts.append(args.file)
+    if args.to:
+        parts += ["--to", args.to]
+    if args.until:
+        parts += ["--until", args.until]
+    return _run_nala_line(parts)
+
+
+def cmd_open(args: argparse.Namespace) -> int:
+    return _run_nala_line(["open", args.notebook_id])
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="leona-notebooks",
@@ -325,6 +357,16 @@ def build_parser() -> argparse.ArgumentParser:
     p = sub.add_parser("status", help="latest version's status and cell counts")
     p.add_argument("notebook_id")
     p.set_defaults(func=cmd_status)
+
+    p = sub.add_parser("run", help="push a file (or re-run --to) and wait, reporting cell by cell")
+    p.add_argument("file", nargs="?")
+    p.add_argument("--to", help="an existing notebook id — omit to import <file> as new")
+    p.add_argument("--until", help="a cell id — run only up to and including it (needs --to)")
+    p.set_defaults(func=cmd_run)
+
+    p = sub.add_parser("open", help="print the notebook's leonaqt.com URL")
+    p.add_argument("notebook_id")
+    p.set_defaults(func=cmd_open)
     return parser
 
 

@@ -104,6 +104,76 @@ READ_WRITES: frozenset[tuple[str, str]] = frozenset(
 #: Qapp's own sandboxed execution. Cancelling a run is here rather than in a scope of
 #: its own because a credential that can start work it cannot stop is worse for the
 #: account holder, not better.
+#:
+#: ## Notebooks (ai-ops 362, the Bridge lane, 2026-09-23)
+#:
+#: `%nala`/the `leona-notebooks` CLI drive notebooks over this same API with a
+#: personal access token — `jupyter.py`'s own module docstring has named
+#: `LEONA_API_TOKEN` from before this change, and the Bridge lane's brief opens
+#: by naming the symptom this fixes: "`%nala new/push/ask` cannot work with a
+#: PAT" today, because every notebook write was refused for a token
+#: unconditionally. Every one of those commands that does real work — generate,
+#: push (new or as a new version), ask Nala a follow-up, re-run, grade an
+#: attempt — is, underneath, one of the six `routes/notebooks.py` handlers that
+#: call `runs_repo.create_run(mode=RunMode.NOTEBOOK)`: the exact mechanism
+#: ai-ops 362 says a token may drive ("tokens may read and start verified
+#: runs"). Each one already goes through `_gate_notebook_run`, the identical
+#: abuse/tier backstop `POST /runs` applies, so a token cannot use a notebook
+#: route to start more sandboxed work than the `run` scope already lets it
+#: start directly.
+#:
+#: - `POST /notebooks` — `create_notebook`: generate a new notebook from a brief
+#:   (`%nala new`, `leona-notebooks new`).
+#: - `POST /notebooks/import` — `import_notebook`: `%nala push <file.ipynb>`
+#:   with no `--to` — a notebook imported whole from a reader's own `.ipynb`,
+#:   which spends a run only when the request asks to re-run it
+#:   (`execute: true`, the CLI/magic default). Named explicitly in the brief as
+#:   one of the three things a PAT could not do before this change, so it is
+#:   included even though the run it starts is conditional on the request body
+#:   — the same way `execute=false` on `author_notebook_version` below is.
+#: - `POST /notebooks/{notebook_id}/turns` — `create_notebook_turn`: a Nala
+#:   follow-up (`%nala ask`/`%nala fix`), which revises the notebook and costs
+#:   a run exactly as generation does.
+#: - `POST /notebooks/{notebook_id}/run` — `rerun_notebook`: re-run the current
+#:   version from a fresh sandbox (`%nala run` with no file).
+#: - `POST /notebooks/{notebook_id}/versions` — `author_notebook_version`: push
+#:   a version written locally (Jupyter, VS Code, `%nala push --to`/`%nala
+#:   run --to`). Only the `execute=true` branch spends a run; `execute=false`
+#:   writes a draft with no run at all, but the policy is checked by
+#:   route+method, not by request body, so both branches are reachable with
+#:   `run` — the same shape this route already had for a signed-in browser
+#:   session.
+#: - `POST /notebooks/{notebook_id}/attempts` — `grade_notebook_attempt`: grade
+#:   a reader's own answer, which executes THEIR code in the sandbox and so
+#:   costs a run under the identical gate a re-run does.
+#:
+#: All six `runs_repo.create_run(mode=RunMode.NOTEBOOK)` call sites in
+#: `routes/notebooks.py` are covered above — checked by grep, not assumed, so
+#: a seventh appearing later is caught by `test_every_write_route_is_refused_
+#: unless_it_was_deliberately_allowed` rather than silently inheriting whatever
+#: a token could already do to its neighbours.
+#:
+#: ## Courses (same ruling)
+#:
+#: `routes/courses.py` has three routes that call `runs_repo.create_run` — `POST
+#: /courses` (plans a course: `COURSE_PLAN_JOB_KIND`), `POST
+#: /courses/{course_id}/generate` (generates the selected modules' notebooks),
+#: and `POST /courses/{course_id}/turns` (revises the plan in chat:
+#: `COURSE_REVISE_JOB_KIND`) — but only the middle one is a *notebook
+#: generation* run in the sense this list already grants: `generate_course`
+#: creates the run itself and then calls the SAME `create_notebook_and_enqueue`
+#: that `POST /notebooks` uses, dispatching `NOTEBOOK_GENERATE_JOB_KIND` per
+#: module — the identical job a token can already start directly via `POST
+#: /notebooks`, just addressed at a course's module instead of typed by hand.
+#: Course planning and course-plan chat are a different action (there is no
+#: notebook yet for either to run), no `%nala`/CLI command reaches them, and
+#: the brief that asked for this change never named a course. Left out under
+#: the file's own default-shut rule ("a route added next month is unreachable
+#: ... until somebody adds it ... loud, and in the safe direction") pending an
+#: explicit ask rather than assumed in — flagged in the PR that adds this
+#: block for the lead/owner to confirm or widen.
+#:
+#: - `POST /courses/{course_id}/generate` — `generate_course`.
 RUN_WRITES: frozenset[tuple[str, str]] = frozenset(
     {
         ("POST", "/runs"),
@@ -120,6 +190,16 @@ RUN_WRITES: frozenset[tuple[str, str]] = frozenset(
         # exactly as opening the page and clicking run would; `read` alone must not
         # be able to spend that.
         ("POST", "/qapps/{slug}/executions"),
+        # Notebooks (see the module docstring above this set for the full account
+        # of all six call sites, why each is here).
+        ("POST", "/notebooks"),
+        ("POST", "/notebooks/import"),
+        ("POST", "/notebooks/{notebook_id}/turns"),
+        ("POST", "/notebooks/{notebook_id}/run"),
+        ("POST", "/notebooks/{notebook_id}/versions"),
+        ("POST", "/notebooks/{notebook_id}/attempts"),
+        # Courses: only the route that generates notebooks, not plan/revise.
+        ("POST", "/courses/{course_id}/generate"),
     }
 )
 

@@ -2,13 +2,21 @@
 
 from __future__ import annotations
 
+import re
+
 import json
 
 import nbformat
 
 from leona_notebooks import CellRole, from_ipynb, parse_source, to_ipynb
 from leona_notebooks.execution import CellError, CellOutput, CellResult, ExecutionReport
-from leona_notebooks.ipynb import cells_for_build
+from leona_notebooks.ipynb import (
+    NOTEBOOKS_INSTALL_REQUIREMENTS,
+    notebooks_install_line,
+    bootstrap_cell,
+    cells_for_build,
+    setup_preamble,
+)
 
 CHALLENGE = """\
 # ---
@@ -398,3 +406,103 @@ def test_a_cell_the_build_drops_starts_the_redaction_too() -> None:
     assert {c["id"]: c for c in full["cells"]}["after"]["outputs"], (
         "the author's build keeps everything"
     )
+
+
+# ---------------------------------------------------------------- export bootstrap (ai-ops 362)
+
+
+def test_bootstrap_cell_is_a_runnable_code_cell_with_no_token() -> None:
+    cell = bootstrap_cell("nb_abc123")
+    assert cell["id"] == "leona-bootstrap"
+    assert cell["cell_type"] == "code"
+    source = cell["source"]
+    assert notebooks_install_line() in source
+    assert "%load_ext leona_notebooks.jupyter" in source
+    assert "%nala link nb_abc123" in source
+    assert "from leona_notebooks import leona_submit" in source
+    # No token: the function takes no token argument at all, so there is nothing to
+    # embed by accident — asserted anyway so a future signature change that DID add one
+    # cannot slip a real credential into a downloaded file without failing loudly here.
+    assert "LEONA_API_TOKEN=" not in source
+    assert "lq_pat_" not in source  # PAT prefix, in case a real token leaks in some day
+
+
+def test_the_bootstrap_installs_every_workspace_dependency() -> None:
+    """A stranger's pip has only PyPI and the URLs the bootstrap names. Every workspace
+    package `leona-notebooks` depends on, directly or through another workspace package,
+    has to be named as a git requirement in the same install, or resolution fails on the
+    first missing name and the downloaded notebook's first cell errors. Derived from the
+    pyproject files, never restated, so a workspace dependency added later fails here."""
+    import tomllib
+    from pathlib import Path
+
+    packages = Path(__file__).resolve().parents[2]  # packages/py
+    by_name: dict[str, dict] = {}
+    for pyproject in packages.glob("*/pyproject.toml"):
+        project = tomllib.loads(pyproject.read_text())["project"]
+        by_name[project["name"]] = project
+    assert "leona-notebooks" in by_name and len(by_name) >= 5, sorted(by_name)
+
+    def dep_name(requirement: str) -> str:
+        return re.split(r"[\s<>=!~;\[@]", requirement, maxsplit=1)[0].strip().lower()
+
+    needed: set[str] = set()
+    frontier = ["leona-notebooks"]
+    while frontier:
+        name = frontier.pop()
+        if name in needed:
+            continue
+        needed.add(name)
+        frontier.extend(
+            d for d in map(dep_name, by_name[name].get("dependencies", [])) if d in by_name
+        )
+    named = {dep_name(req) for req in NOTEBOOKS_INSTALL_REQUIREMENTS}
+    assert named == needed, (
+        f"bootstrap installs {sorted(named)}, the packages need {sorted(needed)}"
+    )
+    for req in NOTEBOOKS_INSTALL_REQUIREMENTS:
+        name = dep_name(req)
+        folder = next(
+            p.parent.name
+            for p in packages.glob("*/pyproject.toml")
+            if tomllib.loads(p.read_text())["project"]["name"] == name
+        )
+        assert req.endswith(f"#subdirectory=packages/py/{folder}"), req
+
+
+def test_bootstrap_cell_runs_before_the_setup_note_and_is_valid_nbformat() -> None:
+    spec = parse_source(CHALLENGE)
+    notebook = to_ipynb(spec, build="full", preamble=True, notebook_id="nb_xyz")
+    nbformat.validate(nbformat.from_dict(notebook))
+    ids = [cell["id"] for cell in notebook["cells"]]
+    assert ids[0] == "leona-bootstrap"
+    assert ids[1] == "leona-setup-note"
+    assert "c01" in ids  # the spec's own first cell, unmoved past the two preamble cells
+
+
+def test_notebook_id_alone_prepends_only_the_bootstrap_cell() -> None:
+    """`preamble` (the framework-version note) and `notebook_id` (the runnable
+    bootstrap) are independent flags — a caller can ask for one without the other.
+    `export_notebook_version` always passes both, but nothing else should have to."""
+    spec = parse_source(CHALLENGE)
+    notebook = to_ipynb(spec, build="full", notebook_id="nb_xyz")
+    ids = [cell["id"] for cell in notebook["cells"]]
+    assert ids[0] == "leona-bootstrap"
+    assert "leona-setup-note" not in ids
+
+
+def test_preamble_alone_still_works_exactly_as_before_the_bridge_lane() -> None:
+    spec = parse_source(CHALLENGE)
+    notebook = to_ipynb(spec, build="full", preamble=True)
+    ids = [cell["id"] for cell in notebook["cells"]]
+    assert ids[0] == "leona-setup-note"
+    assert "leona-bootstrap" not in ids
+    assert notebook["cells"][0]["source"] == setup_preamble(spec)["source"]
+
+
+def test_neither_flag_leaves_the_notebook_exactly_as_compiled() -> None:
+    spec = parse_source(CHALLENGE)
+    notebook = to_ipynb(spec, build="full")
+    ids = [cell["id"] for cell in notebook["cells"]]
+    assert "leona-bootstrap" not in ids
+    assert "leona-setup-note" not in ids

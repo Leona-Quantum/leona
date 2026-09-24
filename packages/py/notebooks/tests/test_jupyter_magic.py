@@ -7,7 +7,24 @@ from pathlib import Path
 
 import pytest
 
-from leona_notebooks.jupyter import Client, NalaError, run_cell, run_line
+from leona_notebooks.jupyter import (
+    Client,
+    NalaError,
+    get_linked_notebook,
+    run_cell,
+    run_line,
+    set_linked_notebook,
+)
+
+
+@pytest.fixture(autouse=True)
+def _reset_link():
+    """`_linked_notebook_id` is a module global (by design — see `jupyter.py`'s
+    docstring), so it survives across tests in the same process unless reset. Every
+    test in this file gets a clean, unlinked kernel unless it links one itself."""
+    set_linked_notebook(None)
+    yield
+    set_linked_notebook(None)
 
 
 class Recording:
@@ -315,3 +332,185 @@ def test_fix_without_any_context_source_is_a_clear_error() -> None:
     client = Client(api_url="x", token="t", transport=lambda *a: (200, b"{}"))
     with pytest.raises(NalaError, match="only works inside a live IPython"):
         run_line("fix nb1", client=client)
+
+
+# ---------------------------------------------------------------------------- link
+
+
+def test_link_sets_and_reports_the_current_link() -> None:
+    assert run_line("link") == "no notebook linked"
+    assert run_line("link nb1") == "linked nb1"
+    assert get_linked_notebook() == "nb1"
+    assert run_line("link") == "linked to nb1"
+
+
+def test_link_needs_no_client_and_no_token(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The whole reason `link`/`open` are handled before `Client.from_env()` is
+    called: a reader running the exported-notebook bootstrap cell has not
+    necessarily set `LEONA_API_TOKEN` yet. `run_line` is called with no `client=`
+    at all, so if it tried to build one this would raise instead."""
+    monkeypatch.delenv("LEONA_API_TOKEN", raising=False)
+    assert run_line("link nb1") == "linked nb1"
+    assert run_line("open") == "https://leonaqt.com/notebooks/nb1"
+
+
+def test_versions_status_and_fix_use_the_link_when_the_id_is_omitted() -> None:
+    set_linked_notebook("nb1")
+    client, transport = _client(
+        [(200, {"items": [{"seq": 1, "status": "ready", "created_by": "u"}]})]
+    )
+    run_line("versions", client=client)
+    assert transport.calls[0][1] == "https://api.test/v1/notebooks/nb1/versions"
+
+
+def test_status_without_an_id_or_a_link_is_a_clear_usage_error() -> None:
+    client = Client(api_url="x", token="t", transport=lambda *a: (200, b"{}"))
+    with pytest.raises(NalaError, match="no notebook id given and none linked"):
+        run_line("status", client=client)
+
+
+def test_ask_cell_magic_falls_back_to_the_link() -> None:
+    set_linked_notebook("nb1")
+    client, transport = _client(
+        [
+            (200, {"turn": {"seq": 1}, "run_id": "r"}),
+            (200, {"items": [{"role": "nala", "seq": 2, "content": "ok"}]}),
+        ]
+    )
+    reply = run_cell("ask", "what does this do?", client=client)
+    assert reply == "ok"
+    assert transport.calls[0][1] == "https://api.test/v1/notebooks/nb1/turns"
+
+
+def test_ask_cell_magic_with_no_id_and_no_link_is_a_clear_error() -> None:
+    client = Client(api_url="x", token="t", transport=lambda *a: (200, b"{}"))
+    with pytest.raises(NalaError, match="no notebook id given and none linked"):
+        run_cell("ask", "hello?", client=client)
+
+
+# ----------------------------------------------------------------------------- open
+
+
+def test_open_prints_the_url_for_an_explicit_or_linked_id() -> None:
+    assert run_line("open nb1") == "https://leonaqt.com/notebooks/nb1"
+    set_linked_notebook("nb2")
+    assert run_line("open") == "https://leonaqt.com/notebooks/nb2"
+
+
+# ------------------------------------------------------------------------------ run
+
+
+def test_run_with_no_file_reruns_the_linked_notebook_and_reports_success() -> None:
+    set_linked_notebook("nb1")
+    client, transport = _client(
+        [
+            (200, {"version": {"seq": 3}, "run_id": "r1"}),
+            (
+                200,
+                {
+                    "seq": 3,
+                    "status": "ready",
+                    "report": {"cells": [{"id": "c1", "status": "ok"}]},
+                },
+            ),
+        ]
+    )
+    message = run_line("run", client=client)
+    assert "nb1 v3 (ready)" in message
+    assert "✓ c1" in message
+    assert transport.calls[0] == ("POST", "https://api.test/v1/notebooks/nb1/run", None)
+
+
+def test_run_with_no_file_and_no_link_needs_to_or_a_link() -> None:
+    client = Client(api_url="x", token="t", transport=lambda *a: (200, b"{}"))
+    with pytest.raises(NalaError, match="no notebook id given and none linked"):
+        run_line("run", client=client)
+
+
+def test_run_raises_and_reports_when_a_cell_failed() -> None:
+    client, _ = _client(
+        [
+            (200, {"version": {"seq": 4}, "run_id": "r2"}),
+            (
+                200,
+                {
+                    "seq": 4,
+                    "status": "ready",
+                    "report": {
+                        "cells": [
+                            {"id": "c1", "status": "ok"},
+                            {
+                                "id": "c2",
+                                "status": "error",
+                                "error": {
+                                    "ename": "ZeroDivisionError",
+                                    "evalue": "division by zero",
+                                    "traceback": ["Traceback...", "line 2", "ZeroDivisionError"],
+                                },
+                            },
+                            {"id": "c3", "status": "not_run"},
+                        ]
+                    },
+                },
+            ),
+        ]
+    )
+    with pytest.raises(NalaError) as excinfo:
+        run_line("run --to nb1", client=client)
+    text = str(excinfo.value)
+    assert "✓ c1" in text
+    assert "✗ c2: ZeroDivisionError: division by zero" in text
+    assert "· c3 not_run" in text
+
+
+def test_run_with_a_file_and_to_pushes_a_new_version(tmp_path: Path) -> None:
+    path = tmp_path / "mine.ipynb"
+    path.write_text(json.dumps({"nbformat": 4, "nbformat_minor": 5, "metadata": {}, "cells": []}))
+    client, transport = _client(
+        [
+            (200, {"version": {"seq": 5}, "run_id": "r3"}),
+            (200, {"seq": 5, "status": "ready", "report": {"cells": []}}),
+        ]
+    )
+    with pytest.raises(NalaError, match="no cells ran"):
+        # An empty report is itself the interesting case here (nothing executed);
+        # the request shape is what this test actually checks.
+        run_line(f"run {path} --to nb1 --until c02", client=client)
+    method, url, body = transport.calls[0]
+    assert (method, url) == ("POST", "https://api.test/v1/notebooks/nb1/versions")
+    assert body["run_until"] == "c02"
+
+
+def test_run_with_a_file_and_no_to_imports_and_waits_for_current_version(
+    tmp_path: Path,
+) -> None:
+    path = tmp_path / "mine.ipynb"
+    path.write_text(json.dumps({"nbformat": 4, "nbformat_minor": 5, "metadata": {}, "cells": []}))
+    client, transport = _client(
+        [
+            (200, {"notebook": {"id": "nb9", "title": "Mine"}, "version": {"seq": 1}}),
+            (200, {"id": "nb9", "current_version_seq": 2, "latest_status": "ready"}),
+            (
+                200,
+                {"seq": 2, "status": "ready", "report": {"cells": [{"id": "c1", "status": "ok"}]}},
+            ),
+        ]
+    )
+    message = run_line(f"run {path}", client=client)
+    assert "nb9 v2 (ready)" in message
+    assert transport.calls[0][1] == "https://api.test/v1/notebooks/import"
+    assert transport.calls[2][1] == "https://api.test/v1/notebooks/nb9/versions/2"
+
+
+def test_run_until_without_to_is_a_clear_usage_error(tmp_path: Path) -> None:
+    path = tmp_path / "mine.ipynb"
+    path.write_text(json.dumps({"nbformat": 4, "nbformat_minor": 5, "metadata": {}, "cells": []}))
+    client = Client(api_url="x", token="t", transport=lambda *a: (200, b"{}"))
+    with pytest.raises(NalaError, match="only applies with --to"):
+        run_line(f"run {path} --until c02", client=client)
+
+
+def test_run_until_without_a_file_is_a_clear_usage_error() -> None:
+    client = Client(api_url="x", token="t", transport=lambda *a: (200, b"{}"))
+    with pytest.raises(NalaError, match="needs a file"):
+        run_line("run --to nb1 --until c02", client=client)

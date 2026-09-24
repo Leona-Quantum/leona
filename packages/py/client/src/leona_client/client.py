@@ -29,10 +29,18 @@ import urllib.error
 import urllib.request
 from collections.abc import Callable
 from dataclasses import dataclass, field
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
-from majorana_contracts import QappExecution, Run
-from majorana_contracts.enums import QappExecutionStatus, RunStatus
+if TYPE_CHECKING:
+    # Type-only — used solely as return-type annotations below. Every runtime
+    # use (`.model_validate`, the terminal-status frozensets) is a lazy,
+    # function-local import instead, so this module — and, transitively,
+    # `leona_notebooks.jupyter`/`leona_notebooks.leona`/`leona_submit` — can be
+    # imported without `majorana-contracts` installed. `from __future__ import
+    # annotations` (above) already makes every annotation in this file a
+    # string at runtime, so these two names are never looked up unless
+    # something calls `typing.get_type_hints` on this module.
+    from majorana_contracts import QappExecution, Run
 
 from .atlas import (
     SearchLimits,
@@ -64,8 +72,6 @@ FixContext = Callable[[], "tuple[str, str] | None"]
 DEFAULT_RUN_WAIT_S = 600
 DEFAULT_RUN_POLL_S = 3.0
 
-_TERMINAL_RUN_STATUSES = frozenset({RunStatus.SUCCEEDED, RunStatus.FAILED, RunStatus.CANCELLED})
-
 #: How long `wait_for_qapp_execution` polls before giving up. Shorter than a run's
 #: default: a Qapp execution is one sandboxed call capped at `MAX_TIMEOUT_S = 120`
 #: (ADR-0031), not a multi-stage pipeline, so there is no "still planning" phase to
@@ -73,7 +79,11 @@ _TERMINAL_RUN_STATUSES = frozenset({RunStatus.SUCCEEDED, RunStatus.FAILED, RunSt
 DEFAULT_QAPP_WAIT_S = 150
 DEFAULT_QAPP_POLL_S = 2.0
 
-_TERMINAL_QAPP_STATUSES = frozenset({QappExecutionStatus.SUCCEEDED, QappExecutionStatus.FAILED})
+#: `_TERMINAL_RUN_STATUSES`/`_TERMINAL_QAPP_STATUSES` used to be module-level
+#: frozensets built from `majorana_contracts.enums` at import time — moved into
+#: `wait_for_run`/`wait_for_qapp_execution` themselves (built once per call, not
+#: once per module load) so importing this module never requires
+#: `majorana-contracts` to be installed. See the `TYPE_CHECKING` import above.
 
 
 class LeonaClientError(RuntimeError):
@@ -246,14 +256,56 @@ class Client:
         return self._authenticated_call("POST", "/notebooks/import", payload)
 
     def push_version(
-        self, notebook_id: str, path, *, message: str = "", execute: bool = True
+        self,
+        notebook_id: str,
+        path,
+        *,
+        message: str = "",
+        execute: bool = True,
+        run_until: str | None = None,
     ) -> dict[str, Any]:
         payload: dict[str, Any] = {
             "ipynb": json.loads(path.read_text(encoding="utf-8")),
             "message": message,
             "execute": execute,
         }
+        if run_until is not None:
+            payload["run_until"] = run_until
         return self._authenticated_call("POST", f"/notebooks/{notebook_id}/versions", payload)
+
+    def rerun(self, notebook_id: str) -> dict[str, Any]:
+        """`POST /notebooks/{id}/run`: re-run the current version from a fresh
+        sandbox dispatch. No body — `rerun_notebook` (routes/notebooks.py) takes
+        none — so this sends `payload=None` exactly as `cancel_run` does below."""
+        return self._authenticated_call("POST", f"/notebooks/{notebook_id}/run")
+
+    def wait_for_version_seq(
+        self,
+        notebook_id: str,
+        seq: int,
+        *,
+        wait_s: int = 600,
+        poll_s: float = 3.0,
+        sleep=time.sleep,
+        on_tick: Callable[[], None] | None = None,
+    ) -> dict[str, Any]:
+        """Poll ONE version (not "whichever is current") until it leaves
+        `queued`/`running`. Used after `rerun`/`push_version`, which both name the
+        exact version they just created — `wait_for_version` above answers a
+        different question ("has generation finished") and would return early if
+        another version raced ahead of this one in the meantime."""
+        tick = on_tick or (lambda: None)
+        deadline = time.monotonic() + wait_s
+        while True:
+            version = self.version(notebook_id, seq)
+            if version.get("status") not in {"queued", "running"}:
+                return version
+            if time.monotonic() >= deadline:
+                raise LeonaClientError(
+                    f"{notebook_id} v{seq} is still {version.get('status')} after {wait_s}s"
+                )
+            tick()
+            sleep(poll_s)
 
     def create(self, brief: str, **fields: Any) -> dict[str, Any]:
         payload: dict[str, Any] = {"brief": brief}
@@ -338,14 +390,20 @@ class Client:
         `None` value dropped so every field can be passed unconditionally. Needs the
         token's `run` scope — a `read`-only token gets `INSUFFICIENT_SCOPE` from
         `token_access.check`, surfaced here as a plain `LeonaClientError`."""
+        from majorana_contracts import Run
+
         payload: dict[str, Any] = {"task_prompt": prompt}
         payload.update({key: value for key, value in fields.items() if value is not None})
         return Run.model_validate(self._authenticated_call("POST", "/runs", payload))
 
     def get_run(self, run_id: str) -> Run:
+        from majorana_contracts import Run
+
         return Run.model_validate(self._authenticated_call("GET", f"/runs/{run_id}"))
 
     def list_runs(self, *, status: str | None = None, limit: int = 50) -> list[Run]:
+        from majorana_contracts import Run
+
         query = f"?limit={limit}"
         if status:
             query += f"&status={status}"
@@ -353,6 +411,8 @@ class Client:
         return [Run.model_validate(row) for row in rows]
 
     def cancel_run(self, run_id: str) -> Run:
+        from majorana_contracts import Run
+
         return Run.model_validate(self._authenticated_call("POST", f"/runs/{run_id}/cancel"))
 
     def wait_for_run(
@@ -367,10 +427,13 @@ class Client:
         (succeeded/failed/cancelled) or `wait_s` elapses. Returns the run at
         whichever terminal state it reached — including `failed` — because that is
         itself an answer the caller asked for; only running out of time raises."""
+        from majorana_contracts.enums import RunStatus
+
+        terminal = frozenset({RunStatus.SUCCEEDED, RunStatus.FAILED, RunStatus.CANCELLED})
         deadline = time.monotonic() + wait_s
         while True:
             run = self.get_run(run_id)
-            if run.status in _TERMINAL_RUN_STATUSES:
+            if run.status in terminal:
                 return run
             if time.monotonic() >= deadline:
                 raise LeonaClientError(
@@ -378,6 +441,28 @@ class Client:
                     f"(still {run.status}); call get_run({run_id!r}) again later"
                 )
             sleep(poll_s)
+
+    # -- QPU devices and pre-run price estimates ------------------------------
+    #
+    # Both routes are in `token_access.READ_WRITES`/always-readable: `qpu_backends`
+    # is a plain `GET`, and `qpu_estimate` is arithmetic over the published rate
+    # card (`routes/qpu.py::qpu_estimate` opens no session and touches no
+    # provider), so a `read`-only token can price a device without the `run`
+    # scope `POST /qpu/submissions` would need — and `POST /qpu/submissions`
+    # itself is reachable by no token at all (ai-ops 362's hardware deferral).
+
+    def qpu_backends(self) -> list[dict[str, Any]]:
+        """`GET /qpu/backends`: every device Leona knows a rate card for, whether
+        or not Leona can submit to it today (`QpuBackendInfo.submittable`)."""
+        return self._authenticated_call("GET", "/qpu/backends")["backends"]
+
+    def qpu_estimate(self, device_id: str, shots: int, *, zne: bool = False) -> dict[str, Any]:
+        """`POST /qpu/estimates`: a pre-run price for `shots` on `device_id`, from
+        the vendor's own published rate card — not a quote, and not a function of
+        the circuit's own qubit count or depth (`routes/qpu.py::QpuEstimateRequest`
+        takes no circuit at all)."""
+        payload: dict[str, Any] = {"device_id": device_id, "shots": shots, "zne": zne}
+        return self._authenticated_call("POST", "/qpu/estimates", payload)
 
     # -- estimates -----------------------------------------------------------
 
@@ -410,6 +495,8 @@ class Client:
         Qapp somebody else owns, or one that does not exist, is refused the same way
         (404) as any other absent resource — this is not a way to probe who owns a
         slug."""
+        from majorana_contracts import QappExecution
+
         payload = {"inputs": inputs or {}}
         return QappExecution.model_validate(
             self._authenticated_call("POST", f"/qapps/{slug}/executions", payload)
@@ -418,6 +505,8 @@ class Client:
     def get_qapp_execution(self, execution_id: str) -> QappExecution:
         """`GET /v1/qapps/executions/{id}`. Only the execution's own caller can read
         it back — not even a co-member of the same workspace, per `get_execution`."""
+        from majorana_contracts import QappExecution
+
         return QappExecution.model_validate(
             self._authenticated_call("GET", f"/qapps/executions/{execution_id}")
         )
@@ -434,10 +523,13 @@ class Client:
         `wait_s` elapses. Returns the execution at whichever terminal state it
         reached, including `failed` — the caller asked for that answer too — and
         raises only when time runs out first, the same contract `wait_for_run` uses."""
+        from majorana_contracts.enums import QappExecutionStatus
+
+        terminal = frozenset({QappExecutionStatus.SUCCEEDED, QappExecutionStatus.FAILED})
         deadline = time.monotonic() + wait_s
         while True:
             execution = self.get_qapp_execution(execution_id)
-            if execution.status in _TERMINAL_QAPP_STATUSES:
+            if execution.status in terminal:
                 return execution
             if time.monotonic() >= deadline:
                 raise LeonaClientError(
