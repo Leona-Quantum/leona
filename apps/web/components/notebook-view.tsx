@@ -1,13 +1,32 @@
 "use client";
 
 import type { components } from "@majorana/contracts-gen";
-import { SyntaxHighlightedCode } from "@majorana/ui";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { ChatMarkdown } from "./chat-markdown";
+import { NotebookCellToolbar } from "./notebook-cell-toolbar";
+import { NotebookIdeBar } from "./notebook-ide-bar";
+import { NotebookCodeView, type EditorDiagnostic } from "./notebook-code-editor";
+import { cellDomId } from "../lib/notebook-ide";
+import { lintMessage, lintNotebook, type LintFinding } from "../lib/notebook-lint";
 import { NotebookHardwareRequests, type NotebookHardwareContext } from "./notebook-hardware-card";
 import type { NotebookCellStatus, NotebookCellView } from "../lib/notebook-view";
 import type { PublicLocale } from "../lib/public-locale";
 import { WORKSPACE_COPY } from "../lib/workspace-locale";
+
+function lintFindingsToDiagnostics(
+  findings: readonly LintFinding[],
+  copy: (typeof WORKSPACE_COPY)[PublicLocale]["notebooks"]["ide"]["lint"],
+): EditorDiagnostic[] {
+  return findings.map((finding) => ({
+    line: finding.line,
+    col: finding.col,
+    endLine: finding.endLine,
+    endCol: finding.endCol,
+    severity: finding.severity,
+    code: finding.code,
+    message: lintMessage(finding, copy),
+  }));
+}
 
 export type NotebookCellActionKind =
   | "explain"
@@ -58,6 +77,9 @@ export function NotebookView({
   grades,
   gradingCellIds,
   busy = false,
+  onRunAll,
+  onAskNala,
+  onFixWithNala,
   hardware,
 }: {
   cells: NotebookCellView[];
@@ -71,13 +93,30 @@ export function NotebookView({
   /** Cells whose attempt is in the sandbox right now. */
   gradingCellIds?: ReadonlySet<string>;
   busy?: boolean;
+  /** The IDE bar's "Run all". Omit it and the bar still renders the error navigator
+   * and the outline, just without that button — a no-op-safe default for the
+   * workspace to wire once it decides what "run all" from the read view should do. */
+  onRunAll?: () => void;
+  onAskNala?: (cellId: string) => void;
+  onFixWithNala?: (cellId: string) => void;
   /** Which notebook version this is, so a `leona_submit` cell gets its "Run on hardware" card. Omit it and no card renders (the read-only share page). */
   hardware?: Omit<NotebookHardwareContext, "locale">;
 }) {
   const copy = WORKSPACE_COPY[locale].notebooks;
+  // Lint runs once per render of the version on screen (no debounce: unlike the editor,
+  // this surface's source never changes without a whole new `cells` array arriving), so
+  // a reader sees the same "certain-to-fail Qiskit mistake" flags Nala's own draft would
+  // have shown while writing this notebook, even before touching Edit.
+  const findings = useMemo(() => lintNotebook(cells), [cells]);
+  const cellStatuses = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const cell of cells) map.set(cell.id, cell.status);
+    return map;
+  }, [cells]);
   if (!cells.length) return null;
   return (
     <div className="mj-notebook-view">
+      <NotebookIdeBar cells={cells} cellStatuses={cellStatuses} copy={copy.ide} busy={busy} onRunAll={onRunAll} />
       {cells.map((cell) => (
         <NotebookCellCard
           key={cell.id}
@@ -85,7 +124,10 @@ export function NotebookView({
           copy={copy}
           framework={framework}
           busy={busy}
+          diagnostics={cell.kind === "code" ? lintFindingsToDiagnostics(findings[cell.id] ?? [], copy.ide.lint) : []}
           onCellAction={onCellAction}
+          onAskNala={onAskNala}
+          onFixWithNala={onFixWithNala}
           grade={grades?.[cell.id]}
           grading={gradingCellIds?.has(cell.id) ?? false}
           // Any attempt in flight locks EVERY graded cell's submit, not just its own.
@@ -106,7 +148,10 @@ function NotebookCellCard({
   cell,
   copy,
   framework,
+  diagnostics,
   onCellAction,
+  onAskNala,
+  onFixWithNala,
   grade,
   grading,
   locked,
@@ -116,7 +161,10 @@ function NotebookCellCard({
   cell: NotebookCellView;
   copy: NotebookCopy;
   framework: string;
+  diagnostics?: EditorDiagnostic[];
   onCellAction?: (cellId: string, action: NotebookCellActionKind, detail?: string) => void;
+  onAskNala?: (cellId: string) => void;
+  onFixWithNala?: (cellId: string) => void;
   grade?: NotebookCellGrade;
   grading?: boolean;
   locked?: boolean;
@@ -135,7 +183,13 @@ function NotebookCellCard({
   }
 
   return (
-    <article className="mj-notebook-cell" data-kind={cell.kind} data-status={cell.status}>
+    <article
+      id={cellDomId(cell.id)}
+      className="mj-notebook-cell"
+      data-kind={cell.kind}
+      data-status={cell.status}
+      tabIndex={0}
+    >
       <div className="mj-notebook-cell-head">
         {cell.role ? <span className="mj-notebook-cell-role">{cell.role}</span> : null}
         <span className="mj-notebook-cell-pill" data-status={cell.status}>{copy.cellStatus[cell.status]}</span>
@@ -167,10 +221,27 @@ function NotebookCellCard({
           <ChatMarkdown source={cell.source} />
         </div>
       ) : (
-        <pre className="mj-notebook-cell-code mj-code-body">
-          <SyntaxHighlightedCode code={cell.source} language={framework} />
-        </pre>
+        <NotebookCodeView
+          value={cell.source}
+          language={framework}
+          diagnostics={diagnostics ?? []}
+          problemsLabel={copy.ide.problemsLabel(cell.id)}
+          copy={copy.ide}
+        />
       )}
+      {cell.kind === "code" && (onAskNala || onFixWithNala) ? (
+        <NotebookCellToolbar
+          cellId={cell.id}
+          kind="code"
+          copy={copy}
+          ideCopy={copy.ide}
+          busy={busy}
+          raised={cell.error !== null}
+          durationMs={cell.durationMs}
+          onAskNala={onAskNala ? () => onAskNala(cell.id) : undefined}
+          onFixWithNala={onFixWithNala ? () => onFixWithNala(cell.id) : undefined}
+        />
+      ) : null}
       {cell.kind === "code" ? <NotebookCellOutputs cell={cell} copy={copy} /> : null}
       <NotebookHardwareRequests cell={cell} context={hardware} />
       {grading ? <p className="mj-notebook-cell-grade" data-status="grading">{copy.gradePending}</p> : null}
