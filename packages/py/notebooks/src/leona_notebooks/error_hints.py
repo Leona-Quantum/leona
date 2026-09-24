@@ -54,6 +54,49 @@ _HINTS: tuple[tuple[re.Pattern[str], str], ...] = (
         'An optional plotting library is missing. `qc.draw("text")` always works; use it '
         'instead of `qc.draw("mpl")` unless the figure is the point of the cell.',
     ),
+    # The four packages below are matched on their BARE name, not on the guard's or the
+    # linter's wrapping text, because the two paths that can produce this repair context
+    # word the violation differently: the sandbox guard's own message is
+    # `disallowed_import:qiskit_nature` (`majorana_sandbox.guard.check_python_code`),
+    # while the pre-run linter's is "The sandbox does not allow `import qiskit_nature`. ..."
+    # (`leona_notebooks.lint`, code `forbidden-import`). Matching the module name plays
+    # both wrappings, in `pipeline._first_definite_finding` (before any sandbox run) and
+    # in the fallback pipeline builds for a report the guard itself blocked (after a
+    # repair reintroduces the import — see `pipeline._guard_blocked_context`). Verified
+    # absent from the production sandbox image (`majorana-runner:nbide-local`) 2026-09-23,
+    # alongside qiskit 2.5.2, qiskit_aer, numpy, scipy, sympy, networkx, matplotlib,
+    # pennylane and cirq, which ARE present.
+    (
+        re.compile(r"qiskit_nature"),
+        "`qiskit_nature` is not installed in this sandbox — no import of it will ever run. "
+        "Write the molecular Hamiltonian by hand as a `SparsePauliOp` with published "
+        "coefficients instead (for H2 at 0.735 Å in STO-3G after parity mapping with "
+        "two-qubit reduction, use the standard 2-qubit Hamiltonian and cite where the "
+        "coefficients come from; see the framework facts above). Never re-import "
+        "`qiskit_nature` in the fix — that fails the whole notebook again with nothing run.",
+    ),
+    (
+        re.compile(r"qiskit_algorithms"),
+        "`qiskit_algorithms` is not installed in this sandbox. Do not import `VQE`, `QAOA` "
+        "or any other algorithm object from it. Write the optimisation loop directly: "
+        "`StatevectorEstimator` for the expectation value and `scipy.optimize.minimize` to "
+        "drive the parameters (see the framework facts above for the exact calls).",
+    ),
+    (
+        re.compile(r"qiskit_ibm_runtime"),
+        "`qiskit_ibm_runtime` is not installed in this sandbox — a cell that imports it "
+        "cannot run at all. A cell that genuinely needs real hardware is marked "
+        "`execute=false` and explained in prose (Leona's own hardware submission path), "
+        "never imported and run here. If the point of the cell is to demonstrate the "
+        "circuit, run it locally with `StatevectorSampler` or `AerSimulator` instead.",
+    ),
+    (
+        re.compile(r"pyscf"),
+        "`pyscf` is not installed in this sandbox. Do not run a classical quantum-chemistry "
+        "calculation to derive a Hamiltonian at request time; write the qubit Hamiltonian "
+        "as a `SparsePauliOp` with published coefficients and cite the source (see the "
+        "framework facts above for the H2/STO-3G example).",
+    ),
 )
 
 

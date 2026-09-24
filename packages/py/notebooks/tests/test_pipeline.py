@@ -210,6 +210,124 @@ async def test_a_certain_lint_error_is_repaired_before_any_sandbox_run() -> None
     assert "has not run yet" in render_repair_user_prompt(context)
 
 
+# --- a cell the sandbox's own guard refuses, not the linter (ai-ops#375 round 1) ------
+#
+# `rnd-vqe-h2-a` in the 2026-09-24 real-model eval: a repair, chasing a genuine runtime
+# error, rewrote c04 to `import qiskit_nature` — a package this sandbox does not have.
+# `compose_notebook_program` guards EVERY executable cell before running any of them, so
+# the run never happened at all (0 of 9 code cells), and `report.first_error()` cannot
+# see a guard refusal (every cell comes back `skipped`, not `error` —
+# `ProductionNotebookPorts.run_notebook`) — so without `_guard_blocked_context` the loop
+# read this as "not a cell error, nothing to repair" and gave up.
+
+
+@dataclass
+class GuardAwarePorts(ScriptedPorts):
+    """`run_notebook` that runs the REAL sandbox guard against every code cell before
+    deciding anything else, exactly as `compose_notebook_program` does — so a repair that
+    reintroduces (or never removes) a disallowed import is caught the same way it would be
+    in production, not by a test-only shortcut that agrees with the fix by construction."""
+
+    async def run_notebook(self, spec: NotebookSpec) -> ExecutionReport:
+        from majorana_sandbox.guard import check_python_code
+
+        self.calls.append("execute")
+        violations: dict[str, list[str]] = {}
+        for cell in spec.cells:
+            if not cell.is_code:
+                continue
+            result = check_python_code(cell.source)
+            if not result.ok:
+                violations[cell.id] = result.violations
+        if violations:
+            summary = "; ".join(f"{cid}: {', '.join(r)}" for cid, r in violations.items())
+            note = f"notebook blocked by the Python safety guard — {summary}"
+            return ExecutionReport(
+                notebook_slug=spec.slug,
+                ok=False,
+                runner="sandbox",
+                cells=[
+                    CellResult(id=cell.id, status="skipped", note=note)
+                    for cell in spec.cells
+                    if cell.is_code
+                ],
+                note=note,
+            )
+        return await super().run_notebook(spec)
+
+
+_IMPORTS_QISKIT_NATURE = (
+    "# %% id=c05 role=run\nfrom qiskit_nature.second_q.drivers import PySCFDriver\n"
+    "driver = PySCFDriver()\n"
+)
+_BUILDS_HAMILTONIAN_BY_HAND = (
+    "# %% id=c05 role=run\nfrom qiskit.quantum_info import SparsePauliOp\n"
+    'hamiltonian = SparsePauliOp(["II", "ZZ"], [-1.05, 0.39])\nhamiltonian\n'
+)
+
+
+async def test_a_guard_blocked_cell_is_repaired_from_the_linter_not_ignored() -> None:
+    draft = LESSON.replace(
+        "# %% role=run\nfrom qiskit import QuantumCircuit\n"
+        "from qiskit.primitives import StatevectorSampler\nqc = QuantumCircuit(1)\nqc.h(0)\n"
+        "qc.measure_all()\n"
+        "counts = StatevectorSampler(seed=7).run([qc], shots=1000).result()[0].data.meas.get_counts()\n"
+        "counts\n",
+        _IMPORTS_QISKIT_NATURE,
+    )
+    ports = GuardAwarePorts(drafts=[draft], repairs=[_BUILDS_HAMILTONIAN_BY_HAND])
+    outcome = await generate(ports, GenerationRequest(brief="b"))
+    assert outcome.status == "ready", outcome.error
+    assert "qiskit_nature" not in outcome.spec.cell_by_id("c05").source
+    # The repair never reached the sandbox for the ORIGINAL cell (`compose_notebook_program`
+    # never runs anything once any cell fails the guard) — it was caught before running,
+    # from the linter's identical `forbidden-import` finding.
+    [context] = ports.contexts
+    assert context.before_running
+    assert any("qiskit_nature" in hint for hint in context.hints)
+
+
+async def test_a_repair_that_reintroduces_a_disallowed_import_is_told_so() -> None:
+    draft = LESSON.replace(
+        "# %% role=run\nfrom qiskit import QuantumCircuit\n"
+        "from qiskit.primitives import StatevectorSampler\nqc = QuantumCircuit(1)\nqc.h(0)\n"
+        "qc.measure_all()\n"
+        "counts = StatevectorSampler(seed=7).run([qc], shots=1000).result()[0].data.meas.get_counts()\n"
+        "counts\n",
+        "# %% role=run\nundefined_name\n",  # a genuine runtime error, not a guard block
+    )
+    still_reaches_for_it = "# %% id=c05 role=run\nimport qiskit_algorithms\nqiskit_algorithms.VQE\n"
+    ports = GuardAwarePorts(
+        drafts=[draft], repairs=[still_reaches_for_it, _BUILDS_HAMILTONIAN_BY_HAND]
+    )
+    outcome = await generate(ports, GenerationRequest(brief="b"), PipelineBudget(max_repairs=3))
+    assert outcome.status == "ready", outcome.error
+    assert "qiskit_algorithms" not in outcome.spec.cell_by_id("c05").source
+    assert ports.calls.count("repair(c05)") == 2
+    first, second = ports.contexts
+    assert first.failed_fixes == ()
+    assert len(second.failed_fixes) == 1
+    assert "qiskit_algorithms" in second.failed_fixes[0][1]
+
+
+def test_hints_match_a_guard_refusal_from_either_reporting_path() -> None:
+    # The lint's own wording ("The sandbox does not allow `import qiskit_nature`. ...")
+    # and the sandbox guard's own wording ("disallowed_import:qiskit_nature") disagree —
+    # `hints_for` has to recognise the package name under both.
+    from leona_notebooks.error_hints import hints_for
+
+    lint_shaped = hints_for(
+        "forbidden-import",
+        "The sandbox does not allow `import qiskit_nature`. Cells may import only: qiskit.",
+    )
+    guard_shaped = hints_for("SandboxGuard", "disallowed_import:qiskit_nature")
+    assert lint_shaped and guard_shaped
+    assert any("SparsePauliOp" in hint for hint in lint_shaped)
+    assert any("SparsePauliOp" in hint for hint in guard_shaped)
+    for package in ("qiskit_algorithms", "qiskit_ibm_runtime", "pyscf"):
+        assert hints_for("SandboxGuard", f"disallowed_import:{package}")
+
+
 async def test_a_heuristic_lint_finding_alone_does_not_spend_a_repair() -> None:
     # `gate-returns-instructions` can be wrong, so it must never trigger a model call on
     # a cell that has not failed.

@@ -57,6 +57,30 @@ Qiskit 2.5 facts (verified against 2.5.2; the in-place and measurement lines re-
 - Library: `from qiskit.circuit.library import real_amplitudes, grover_operator, QFTGate, efficient_su2` (functions and gates;
   the old CamelCase classes still exist but warn).
 - Keep every notebook under 60 seconds of total runtime and at most 12 qubits; seed every sampler so counts reproduce.
+
+NOT INSTALLED in this sandbox — importing any of these is BLOCKED by the safety guard before the cell runs, whatever
+it is used for: `qiskit_nature`, `qiskit_algorithms`, `qiskit_ibm_runtime`, `pyscf`. Reaching for one of them (to
+build a molecular Hamiltonian, to run `VQE`/`QAOA` as an algorithm object, or to submit to real hardware) fails the
+whole notebook with nothing executed — do the equivalent by hand instead:
+- Chemistry Hamiltonians: write them as a `SparsePauliOp` with published coefficients, and say in markdown which
+  paper they are from. For H2 at 0.735 Å in STO-3G, after parity mapping with two-qubit reduction, the standard
+  2-qubit electronic Hamiltonian (O'Malley et al. 2016, "Scalable Quantum Simulation of Molecular Energies",
+  arXiv:1512.06860) is `SparsePauliOp(["II", "IZ", "ZI", "ZZ", "XX"], [-1.052373245772859, 0.39793742484318045,
+  -0.39793742484318045, -0.01128010425623538, 0.18093119978423156])`. Diagonalising it gives the ELECTRONIC ground
+  energy (≈ -1.8573 Ha, verified with `numpy.linalg.eigvalsh` on 2026-09-23); add the nuclear repulsion energy
+  (`1 / R_bohr`, ≈ 0.7199 Ha at 0.735 Å = 1.3892 Bohr) to get the TOTAL ground-state energy the literature quotes,
+  ≈ -1.137 Ha — say which of the two numbers a cell is printing.
+- VQE: no `qiskit_algorithms.VQE`. Write the loop yourself — `est = StatevectorEstimator()`, a cost function
+  `lambda params: est.run([(ansatz, hamiltonian, params)]).result()[0].data.evs`, minimised with
+  `scipy.optimize.minimize(cost, x0, method="COBYLA")` (gradient-free, so no parameter-shift rule needed). Verified
+  on the H2 Hamiltonian above: converges to the exact electronic ground energy to 6 decimal places.
+- QAOA: no `qiskit_algorithms.QAOA`. Build the cost operator by hand as a `SparsePauliOp` — for max-cut on edges
+  `(i, j)`, the term is `0.5 * (I - Z_i Z_j)` per edge — then `QAOAAnsatz(cost_operator=cost_op, reps=p)` from
+  `qiskit.circuit.library` (this ships in core Qiskit, not the algorithms package) builds the circuit; optimise the
+  same way as VQE, over the SAME cost operator.
+- Real hardware needs `qiskit_ibm_runtime`, also absent. A cell that submits to real hardware is marked
+  `execute=false` and explained in prose (Leona's own submission path, not a package import) — simulate locally with
+  `StatevectorSampler`/`AerSimulator` instead, adding a noise model only if the point of the cell is noise.
 """
 
 FRAMEWORK_FACTS: dict[str, str] = {"qiskit": QISKIT_2_FACTS}

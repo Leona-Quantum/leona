@@ -183,11 +183,22 @@ def _repair_context(
     )
 
 
-def _first_definite_finding(spec: NotebookSpec) -> RepairContext | None:
+def _first_definite_finding(
+    spec: NotebookSpec,
+    failed_fixes: dict[str, list[tuple[str, str]]] | None = None,
+) -> RepairContext | None:
     """The first executable code cell with a lint finding that is certain to raise, as a
     repair context with no traceback. Heuristic findings (`gate-returns-instructions`) are
     not enough to spend a model call before running: they go into the repair prompt only
-    once the cell has actually failed."""
+    once the cell has actually failed.
+
+    Two callers: the pre-run loop in `_execute_and_repair` (before any sandbox dispatch,
+    where `failed_fixes` is always empty — nothing has failed yet), and
+    `_guard_blocked_context` (after the sandbox's own guard has already refused a cell the
+    linter can also see — `forbidden-import` reads the same `ALLOWED_IMPORTS` set the guard
+    checks — where `failed_fixes` carries whatever this cell has already failed on, so a
+    second guard-caught repair is told the first one is not a fix to repeat).
+    """
     preceding: list[str] = []
     for cell in spec.cells:
         if not cell.is_code:
@@ -204,10 +215,55 @@ def _first_definite_finding(spec: NotebookSpec) -> RepairContext | None:
                     traceback="",
                     preceding_sources=_preceding_code(spec, cell.id),
                     lint_notes=tuple(f.render() for f in findings),
+                    hints=hints_for(definite[0].code, definite[0].message),
+                    failed_fixes=tuple((failed_fixes or {}).get(cell.id, ())),
                     before_running=True,
                 )
         preceding.append(cell.source)
     return None
+
+
+def _is_guard_blocked(report: ExecutionReport) -> bool:
+    """Whether `report` is the shape `ProductionNotebookPorts.run_notebook` returns for a
+    `NotebookGuardError`: EVERY code cell `skipped`, none `error` — see
+    `services/worker/src/majorana_worker/notebook_handlers.py`. `report.first_error()`
+    only looks at `status == "error"`, so it is blind to this, and without this check a
+    guard refusal reads to `_execute_and_repair` exactly like a sandbox that fell over:
+    "not a cell error, nothing to repair" — which is what happened to `rnd-vqe-h2-a`
+    (ai-ops#375 round 1): the guard blocked c04's `import qiskit_nature`, the repair loop
+    broke on the next iteration, and the run was reported `failed` with 0 of 9 code cells
+    ever executed."""
+    return (
+        not report.ok
+        and report.first_error() is None
+        and any(cell.status == "skipped" and "safety guard" in cell.note for cell in report.cells)
+    )
+
+
+def _guard_blocked_context(
+    spec: NotebookSpec, failed_fixes: dict[str, list[tuple[str, str]]]
+) -> RepairContext | None:
+    """A repair context for a guard-blocked report, built from the linter rather than
+    parsed out of the guard's own message text.
+
+    The guard's `NotebookGuardError` records which cells it refused and why, but
+    `ProductionNotebookPorts.run_notebook` folds that into one string shared by every
+    `CellResult.note` (see `_is_guard_blocked`) and the structured `dict[str, list[str]]`
+    the guard built goes nowhere the pipeline can read it back. Re-deriving it by
+    re-parsing that string would drift the moment the message wording changes; instead
+    this asks `leona_notebooks.lint` the SAME question the guard just answered —
+    `forbidden-import` reads off the identical `ALLOWED_IMPORTS` set
+    (`lint._allowed_imports`) the sandbox guard checks — so the cell this names is
+    guaranteed to be a cell the guard would also refuse.
+
+    Returns `None` when the block was for a violation `lint` cannot see (a denied
+    substring or call, not a disallowed import): there is nothing here to build a useful
+    repair context from, and the loop falls back to giving up, as it did before this
+    existed — narrower than "every guard violation is repairable" on purpose, since a
+    wrong finding here would send the repair model after a cell that was not the
+    problem.
+    """
+    return _first_definite_finding(spec, failed_fixes)
 
 
 def is_usable(report: ExecutionReport) -> bool:
@@ -302,6 +358,12 @@ async def _execute_and_repair(
     failed_fixes: dict[str, list[tuple[str, str]]] = {}
     while not report.ok and repairs < budget.max_repairs:
         context = _repair_context(spec, report, failed_fixes)
+        if context is None and _is_guard_blocked(report):
+            # `report.first_error()` cannot see a guard refusal (every cell is
+            # `skipped`, none `error`) — without this branch the loop below reads it as
+            # "not a cell error: nothing to repair" and gives up. See
+            # `_guard_blocked_context` and `_is_guard_blocked`.
+            context = _guard_blocked_context(spec, failed_fixes)
         if context is None:
             break  # not a cell error (the sandbox itself failed): nothing to repair
         repairs += 1
@@ -329,6 +391,17 @@ async def _execute_and_repair(
                     f"{again.error.ename}: {again.error.evalue[:300]}",
                 )
             )
+        elif _is_guard_blocked(report):
+            # The fix did not remove whatever the guard refuses — same cell or a
+            # different one, either way still 0 cells run. Recorded under THIS
+            # iteration's cell id (not re-derived from the new report) so a repair
+            # that keeps failing the guard the same way is told so, the same as a
+            # repair that keeps raising the same traceback.
+            again_context = _guard_blocked_context(spec, failed_fixes)
+            if again_context is not None and again_context.cell_id == context.cell_id:
+                failed_fixes.setdefault(context.cell_id, []).append(
+                    (spec.cell_by_id(context.cell_id).source, again_context.error_value)
+                )
     return spec, report
 
 
