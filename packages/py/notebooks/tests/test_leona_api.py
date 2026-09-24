@@ -145,6 +145,10 @@ def test_run_starts_and_waits_for_the_run():
 
 # ------------------------------------------------------------------------ leona_submit
 
+#: One qubit, measured: the smallest program the sandbox's `leona_submit` accepts, so the
+#: tests below reach the part they are about rather than the "measures nothing" refusal.
+_MEASURED_QASM = "OPENQASM 3;\nqubit[1] q;\nbit[1] c;\nc[0] = measure q[0];\n"
+
 
 def test_leona_submit_with_a_circuit_returns_qasm_and_num_qubits(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
@@ -172,7 +176,7 @@ def test_leona_submit_with_a_qasm_string_does_not_need_qiskit_for_parsing_the_in
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     monkeypatch.delenv("LEONA_API_TOKEN", raising=False)
-    qasm = 'OPENQASM 3;\ninclude "stdgates.inc";\nqubit[1] q;\nh q[0];\n'
+    qasm = 'OPENQASM 3;\ninclude "stdgates.inc";\nqubit[1] q;\nbit[1] c;\nh q[0];\nc[0] = measure q[0];\n'
     result = leona_submit(qasm, shots=10)
     assert result.num_qubits == 1
     assert result.qasm == qasm
@@ -180,7 +184,7 @@ def test_leona_submit_with_a_qasm_string_does_not_need_qiskit_for_parsing_the_in
 
 
 def test_leona_submit_refuses_openqasm_2_with_a_clear_message() -> None:
-    with pytest.raises(LeonaClientError, match="OpenQASM 2 is not accepted"):
+    with pytest.raises(ValueError, match="This is OpenQASM 2"):
         leona_submit("OPENQASM 2.0;\nqreg q[1];\n", shots=10)
 
 
@@ -199,14 +203,14 @@ def test_leona_submit_degrades_when_qiskit_is_absent(
 
 
 def test_leona_submit_rejects_bad_shots() -> None:
-    with pytest.raises(ValueError, match="shots must be a positive int"):
+    with pytest.raises(ValueError, match="shots must be between 1 and"):
         leona_submit("OPENQASM 3;\nqubit[1] q;\n", shots=0)
-    with pytest.raises(ValueError, match="shots must be a positive int"):
+    with pytest.raises(TypeError, match="shots must be a whole number"):
         leona_submit("OPENQASM 3;\nqubit[1] q;\n", shots=True)  # bool is not an int here
 
 
 def test_leona_submit_rejects_a_non_string_label() -> None:
-    with pytest.raises(TypeError, match="label must be a str or None"):
+    with pytest.raises(TypeError, match="label must be text"):
         leona_submit("OPENQASM 3;\nqubit[1] q;\n", shots=10, label=123)
 
 
@@ -215,7 +219,7 @@ def test_leona_submit_prints_the_linked_notebooks_url_when_one_is_linked(
 ) -> None:
     monkeypatch.delenv("LEONA_API_TOKEN", raising=False)
     set_linked_notebook("nb42")
-    leona_submit("OPENQASM 3;\nqubit[1] q;\n", shots=10)
+    leona_submit(_MEASURED_QASM, shots=10)
     out = capsys.readouterr().out
     assert "https://leonaqt.com/notebooks/nb42" in out
 
@@ -237,7 +241,7 @@ def test_leona_submit_fetches_a_price_estimate_when_a_token_is_set(
             )
         ),
     )
-    leona_submit("OPENQASM 3;\nqubit[1] q;\n", shots=10)
+    leona_submit(_MEASURED_QASM, shots=10)
     out = capsys.readouterr().out
     assert "free_queue" in out
     assert "nothing was submitted" in out
@@ -261,6 +265,36 @@ def test_leona_submit_never_raises_when_the_estimate_call_itself_fails(
         "leona_notebooks.leona.Leona.from_env",
         classmethod(lambda cls: _Boom(api_url="x", token="tok")),
     )
-    result = leona_submit("OPENQASM 3;\nqubit[1] q;\n", shots=10)
+    result = leona_submit(_MEASURED_QASM, shots=10)
     assert isinstance(result, HardwareSubmission)
     assert "could not fetch a price estimate" in capsys.readouterr().out
+
+
+@pytest.mark.parametrize(
+    "make",
+    [
+        pytest.param(lambda: _unbound_circuit(), id="unbound parameter"),
+        pytest.param(lambda: QuantumCircuit(2), id="measures nothing"),
+        pytest.param(lambda: "OPENQASM 3;\nqubit[1] q;\nh q[0];\n", id="qasm measures nothing"),
+    ],
+)
+def test_the_local_leona_submit_refuses_what_the_sandbox_refuses_in_the_same_words(make) -> None:
+    """The local shim used to accept circuits Leona's sandbox refuses, so a cell tested
+    in a reader's own Jupyter failed the moment it ran on Leona. Both now go through
+    `hardware_request`; this holds them to the same exception and message."""
+    from leona_notebooks.hardware import hardware_request
+
+    with pytest.raises(Exception) as sandbox:
+        hardware_request(make(), 100)
+    with pytest.raises(type(sandbox.value)) as local:
+        leona_submit(make(), shots=100)
+    assert str(local.value) == str(sandbox.value)
+
+
+def _unbound_circuit() -> QuantumCircuit:
+    from qiskit.circuit import Parameter
+
+    qc = QuantumCircuit(1)
+    qc.rx(Parameter("theta"), 0)
+    qc.measure_all()
+    return qc

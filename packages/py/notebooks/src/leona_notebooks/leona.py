@@ -104,13 +104,10 @@ def _qasm_and_qubits(circuit_or_qasm: Any) -> tuple[str, int]:
     module scope) is what a caller with no qiskit installed gets to skip, by never
     calling `estimate`/`leona_submit` with a circuit at all.
 
-    Shared by `Leona.estimate` and `leona_submit` so the two cannot disagree about
-    what a circuit's qubit count is. `leona_notebooks.hardware.hardware_request`
-    (the Hardware lane's in-sandbox equivalent, ai-ops 362) applies the same
-    conversion plus the sandbox's own request-shape limits (max shots, max qasm
-    length, requests per notebook) — this function is intentionally the SMALLER,
-    conversion-only piece of that, since `leona_submit` below is local-only and
-    unbounded by those product limits (nothing here is ever billed or queued).
+    Used by `Leona.estimate`, which only needs a qubit count to show beside a price.
+    `leona_submit` below does NOT use it: it goes through `leona_notebooks.hardware.
+    hardware_request`, the checks the sandbox's own `leona_submit` is held to, so a
+    circuit Leona would refuse is refused here first, in the same words.
     """
     if isinstance(circuit_or_qasm, str):
         text = circuit_or_qasm
@@ -184,18 +181,23 @@ def leona_submit(
     shot count still raises, the same way calling any other function with bad
     arguments would.
     """
-    try:
-        qasm, num_qubits = _qasm_and_qubits(circuit)
-    except ImportError as exc:
-        print(  # noqa: T201 - the whole point of a local shim is console feedback
-            f"leona_submit: qiskit is not installed here ({exc}) — install it, or "
-            "pass an OpenQASM 3 string instead of a QuantumCircuit"
-        )
-        return None
-    if not isinstance(shots, int) or isinstance(shots, bool) or shots < 1:
-        raise ValueError(f"shots must be a positive int, got {shots!r}")
-    if label is not None and not isinstance(label, str):
-        raise TypeError(f"label must be a str or None, got {type(label).__name__}")
+    if not isinstance(circuit, str):
+        try:
+            import qiskit  # noqa: F401 - only to learn whether a circuit can be converted
+        except ImportError as exc:
+            print(  # noqa: T201 - the whole point of a local shim is console feedback
+                f"leona_submit: qiskit is not installed here ({exc}) — install it, or "
+                "pass an OpenQASM 3 string instead of a QuantumCircuit"
+            )
+            return None
+    # The SAME checks, in the same words, as the leona_submit inside Leona's sandbox
+    # (`hardware_request` is what `test_hardware.py` holds the sandbox to): unbound
+    # parameters, a circuit that measures nothing, OpenQASM 2, shots and size limits.
+    # A cell that passes here must not be refused the moment it runs on Leona.
+    from leona_notebooks.hardware import hardware_request
+
+    request = hardware_request(circuit, shots, label=label)
+    qasm, shots, num_qubits, label = request.qasm, request.shots, request.num_qubits, request.label
 
     submission = HardwareSubmission(qasm=qasm, shots=shots, num_qubits=num_qubits, label=label)
 
