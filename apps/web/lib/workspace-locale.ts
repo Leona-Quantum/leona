@@ -2185,7 +2185,11 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
     saveTitle: "Save",
     versionPickerLabel: "Version",
     versionLabel: (seq) => `Version ${seq}`,
-    download: "Download .ipynb",
+    // The file itself already carries a bootstrap cell (install, load the %nala
+    // magic, link this notebook, import leona_submit) since the Bridge lane
+    // (ai-ops 362) -- this label just says where it's meant to be opened; the
+    // download call and the file it fetches are unchanged.
+    download: "Open in Jupyter or VS Code (.ipynb)",
     downloadFailed: "The notebook could not be downloaded.",
     runAgain: "Run again",
     running: "Running…",
@@ -3401,7 +3405,7 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
     saveTitle: "保存",
     versionPickerLabel: "バージョン",
     versionLabel: (seq) => `バージョン ${seq}`,
-    download: ".ipynbをダウンロード",
+    download: "Jupyter・VS Codeで開く（.ipynb）",
     downloadFailed: "ノートブックをダウンロードできませんでした。",
     runAgain: "再実行",
     running: "実行中…",

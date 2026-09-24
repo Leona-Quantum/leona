@@ -167,6 +167,108 @@ def test_a_run_token_may_call_a_qapp_as_an_api_but_a_read_token_may_not():
     assert refusal.reason == token_access.INSUFFICIENT_SCOPE
 
 
+@pytest.mark.parametrize(
+    ("method", "template", "path"),
+    [
+        ("POST", "/notebooks", "/v1/notebooks"),
+        ("POST", "/notebooks/import", "/v1/notebooks/import"),
+        ("POST", "/notebooks/{notebook_id}/turns", "/v1/notebooks/nb1/turns"),
+        ("POST", "/notebooks/{notebook_id}/run", "/v1/notebooks/nb1/run"),
+        ("POST", "/notebooks/{notebook_id}/versions", "/v1/notebooks/nb1/versions"),
+        ("POST", "/notebooks/{notebook_id}/attempts", "/v1/notebooks/nb1/attempts"),
+        ("POST", "/courses/{course_id}/generate", "/v1/courses/c1/generate"),
+    ],
+    ids=[
+        "generate",
+        "import",
+        "turn",
+        "rerun",
+        "authored-version",
+        "graded-attempt",
+        "course-generate",
+    ],
+)
+def test_each_new_run_write_is_allowed_with_run_and_refused_with_only_read(method, template, path):
+    """The Bridge lane's ai-ops 362 addition, one entry at a time — named
+    explicitly, like `test_a_run_token_may_call_a_qapp_as_an_api_but_a_read_token_
+    may_not` above, so dropping ONE of these seven entries from `RUN_WRITES` fails
+    THIS test rather than hiding inside the generic sweep in
+    `test_a_run_token_may_start_and_cancel_a_run`, which only proves properties of
+    whatever the set happens to contain.
+
+    Mutation check performed by hand: removed `("POST", "/notebooks/import")` from
+    `RUN_WRITES`, saw the `import` case go red with every other case still green,
+    restored it; repeated for `("POST", "/courses/{course_id}/generate")` and saw
+    the `course-generate` case (and only that one) go red. Both restored before
+    this file was committed.
+    """
+    assert (method, template) in token_access.RUN_WRITES
+
+    assert token_access.check(method, template, path, READ_AND_RUN) is None
+
+    refusal = token_access.check(method, template, path, READ_ONLY)
+    assert refusal is not None
+    assert refusal.reason == token_access.INSUFFICIENT_SCOPE
+
+
+@pytest.mark.parametrize(
+    ("method", "template", "path"),
+    [
+        ("DELETE", "/notebooks/{notebook_id}", "/v1/notebooks/nb1"),
+        ("PATCH", "/notebooks/{notebook_id}", "/v1/notebooks/nb1"),
+        (
+            "POST",
+            "/notebooks/{notebook_id}/share-links",
+            "/v1/notebooks/nb1/share-links",
+        ),
+        (
+            "DELETE",
+            "/notebooks/{notebook_id}/share-links/{link_id}",
+            "/v1/notebooks/nb1/share-links/l1",
+        ),
+        ("POST", "/comments", "/v1/comments"),
+        ("PATCH", "/comments/{comment_id}", "/v1/comments/c1"),
+        ("DELETE", "/comments/{comment_id}", "/v1/comments/c1"),
+        ("POST", "/qpu/submissions", "/v1/qpu/submissions"),
+        ("POST", "/courses", "/v1/courses"),
+        ("POST", "/courses/{course_id}/turns", "/v1/courses/c1/turns"),
+        ("DELETE", "/courses/{course_id}", "/v1/courses/c1"),
+        ("PATCH", "/courses/{course_id}", "/v1/courses/c1"),
+    ],
+    ids=[
+        "delete-notebook",
+        "patch-notebook",
+        "create-share-link",
+        "revoke-share-link",
+        "create-comment",
+        "patch-comment",
+        "delete-comment",
+        "hardware-submission",
+        "create-course",
+        "course-turn",
+        "delete-course",
+        "patch-course",
+    ],
+)
+def test_writes_the_bridge_lane_deliberately_left_out_stay_refused_even_with_run(
+    method, template, path
+):
+    """The other half of the ai-ops 362 change: none of these widened by accident.
+    A token making something public (a share link) is an account-level act, not a
+    run; deleting/editing a notebook or course is neither reading nor starting a
+    run; comments are conversation, not notebook content; and hardware stays
+    refused to every token per `test_hardware_submission_is_refused_and_no_scope_
+    can_grant_it`, re-asserted here in the same breath as the routes that DID
+    change so a future reader sees both halves of the decision in one place.
+    """
+    assert (method, template) not in token_access.RUN_WRITES
+    assert (method, template) not in token_access.READ_WRITES
+
+    refusal = token_access.check(method, template, path, READ_AND_RUN)
+    assert refusal is not None
+    assert refusal.reason == token_access.FORBIDDEN_ROUTE
+
+
 def test_a_path_outside_the_versioned_api_is_refused_whatever_the_template_says():
     """The mount point is checked, not assumed. A second mount of the same sub-router
     would otherwise let an allowlisted template through at an unreviewed address."""

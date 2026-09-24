@@ -113,3 +113,72 @@ def test_cli_reports_a_nala_error_on_stderr_and_exits_1(
     exit_code, _ = _run(monkeypatch, ["status", "missing"], [(404, {"title": "not found"})])
     assert exit_code == 1
     assert "error:" in capsys.readouterr().err
+
+
+def test_cli_open_prints_the_url(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    exit_code, _ = _run(monkeypatch, ["open", "nb1"], [])
+    assert exit_code == 0
+    assert "https://leonaqt.com/notebooks/nb1" in capsys.readouterr().out
+
+
+def test_cli_run_with_to_reruns_and_reports_success(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    exit_code, transport = _run(
+        monkeypatch,
+        ["run", "--to", "nb1"],
+        [
+            (200, {"version": {"seq": 2}, "run_id": "r1"}),
+            (
+                200,
+                {"seq": 2, "status": "ready", "report": {"cells": [{"id": "c1", "status": "ok"}]}},
+            ),
+        ],
+    )
+    assert exit_code == 0
+    assert (transport.calls[0][0], transport.calls[0][1]) == (
+        "POST",
+        "https://api.test/v1/notebooks/nb1/run",
+    )
+    assert "nb1 v2 (ready)" in capsys.readouterr().out
+
+
+def test_cli_run_exits_1_when_a_cell_raised(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    exit_code, _ = _run(
+        monkeypatch,
+        ["run", "--to", "nb1"],
+        [
+            (200, {"version": {"seq": 2}, "run_id": "r1"}),
+            (
+                200,
+                {
+                    "seq": 2,
+                    "status": "ready",
+                    "report": {
+                        "cells": [
+                            {
+                                "id": "c1",
+                                "status": "error",
+                                "error": {"ename": "ValueError", "evalue": "bad", "traceback": []},
+                            }
+                        ]
+                    },
+                },
+            ),
+        ],
+    )
+    assert exit_code == 1
+    err = capsys.readouterr().err
+    assert "c1: ValueError: bad" in err
+
+
+def test_cli_run_with_neither_a_file_nor_to_is_a_clear_error(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    exit_code = cli.main(["run"])
+    assert exit_code == 1
+    assert "needs a file, --to" in capsys.readouterr().err
