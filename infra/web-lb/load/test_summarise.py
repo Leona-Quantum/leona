@@ -22,11 +22,17 @@ import summarise
 
 
 def _point(metric, t, value, scenario, cls, code, src):
-    return json.dumps({
-        "metric": metric,
-        "type": "Point",
-        "data": {"time": t, "value": value, "tags": {"scenario": scenario, "cls": cls, "code": code, "src": src}},
-    })
+    return json.dumps(
+        {
+            "metric": metric,
+            "type": "Point",
+            "data": {
+                "time": t,
+                "value": value,
+                "tags": {"scenario": scenario, "cls": cls, "code": code, "src": src},
+            },
+        }
+    )
 
 
 def make_fixture():
@@ -78,7 +84,11 @@ def make_fixture():
 
     # legit users' non-Atlas (browse/home): all successes, all in the SECOND bucket
     for t, dur in [(0, 150), (30, 160), (60, 170), (90, 180), (120, 200)]:
-        ts = f"2026-09-24T12:06:{t%60:02d}Z" if t < 60 else f"2026-09-24T12:0{6+t//60}:{t%60:02d}Z"
+        ts = (
+            f"2026-09-24T12:06:{t % 60:02d}Z"
+            if t < 60
+            else f"2026-09-24T12:0{6 + t // 60}:{t % 60:02d}Z"
+        )
         add([("resp", 1)], ts, "browse", "home", "200", "app")
         add([("resp_duration", dur)], ts, "browse", "home", "200", "app")
 
@@ -114,6 +124,7 @@ def test_group_split_counts():
         # the crawler's own "map" class must never be confused with the users' "map" class
         assert g["a_crawler"]["by_class"]["map"]["n"] == 5
         assert g["b_users_atlas"]["by_class"]["map"]["n"] == 5
+
     with_fixture(run)
     print("test_group_split_counts: OK")
 
@@ -138,7 +149,10 @@ def test_per_class_latency_not_pooled():
         # refused-response latency is reported separately from successful-response latency
         crawler_map_refused = report["groups"]["a_crawler"]["by_class"]["map"]["latency_refused_ms"]
         assert crawler_map_refused["n"] == 2
-        assert crawler_map_refused["p50"] == 5  # sorted [5,6], index round(0.5*1)=0 -> 5, disjoint from the 100-120 success range
+        assert (
+            crawler_map_refused["p50"] == 5
+        )  # sorted [5,6], index round(0.5*1)=0 -> 5, disjoint from the 100-120 success range
+
     with_fixture(run)
     print("test_per_class_latency_not_pooled: OK")
 
@@ -155,6 +169,7 @@ def test_time_buckets_separate_transient_from_steady_state():
         assert (1, "c_users_other") in by_key, sorted(by_key)
         assert (0, "c_users_other") not in by_key, "non-Atlas traffic leaked into the wrong bucket"
         assert by_key[(1, "c_users_other")]["n"] == 5
+
     with_fixture(run)
     print("test_time_buckets_separate_transient_from_steady_state: OK")
 
@@ -183,10 +198,19 @@ def test_suffixed_class_still_classifies_as_atlas():
             f.write(fixture)
         counts, durations, first, last = summarise.load([path])
         report = summarise.build_report(counts, durations)
-        assert report["groups"]["b_users_atlas"]["total"]["n"] == 5, report["groups"].get("b_users_atlas")
-        assert report["groups"]["c_users_other"]["total"]["n"] == 2, report["groups"].get("c_users_other")
+        assert report["groups"]["b_users_atlas"]["total"]["n"] == 5, report["groups"].get(
+            "b_users_atlas"
+        )
+        assert report["groups"]["c_users_other"]["total"]["n"] == 2, report["groups"].get(
+            "c_users_other"
+        )
         # per-class rows keep the suffix, for the request-type breakdown
-        assert set(report["groups"]["b_users_atlas"]["by_class"]) == {"atlas:prefetch", "atlas:rsc", "map:rsc", "record:rsc"}
+        assert set(report["groups"]["b_users_atlas"]["by_class"]) == {
+            "atlas:prefetch",
+            "atlas:rsc",
+            "map:rsc",
+            "record:rsc",
+        }
     finally:
         os.unlink(path)
     print("test_suffixed_class_still_classifies_as_atlas: OK")
@@ -201,9 +225,13 @@ def test_challenged_is_reported_separately_from_refused():
         _point("resp", "2026-09-24T12:00:00Z", 1, "crawler", "map", "200", "app"),
         _point("resp_duration", "2026-09-24T12:00:00Z", 50, "crawler", "map", "200", "app"),
         _point("resp", "2026-09-24T12:00:01Z", 1, "crawler", "map", "403", "cf-challenge"),
-        _point("resp_duration", "2026-09-24T12:00:01Z", 20, "crawler", "map", "403", "cf-challenge"),
+        _point(
+            "resp_duration", "2026-09-24T12:00:01Z", 20, "crawler", "map", "403", "cf-challenge"
+        ),
         _point("resp", "2026-09-24T12:00:02Z", 1, "crawler", "map", "403", "cf-challenge"),
-        _point("resp_duration", "2026-09-24T12:00:02Z", 22, "crawler", "map", "403", "cf-challenge"),
+        _point(
+            "resp_duration", "2026-09-24T12:00:02Z", 22, "crawler", "map", "403", "cf-challenge"
+        ),
         _point("resp", "2026-09-24T12:00:03Z", 1, "crawler", "map", "429", "cloudrun"),
         _point("resp_duration", "2026-09-24T12:00:03Z", 5, "crawler", "map", "429", "cloudrun"),
     ]

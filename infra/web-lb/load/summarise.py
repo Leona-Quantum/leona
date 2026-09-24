@@ -180,7 +180,12 @@ def build_class_stats(keys, counts, durations):
     other = n - success - fivexx - n429 - challenged
     by_src_other = collections.Counter()
     for k in keys:
-        if not is_success(k[2]) and k[2] != "429" and not is_5xx(k[2]) and not is_challenged(k[2], k[3]):
+        if (
+            not is_success(k[2])
+            and k[2] != "429"
+            and not is_5xx(k[2])
+            and not is_challenged(k[2], k[3])
+        ):
             by_src_other[k[3]] += counts[k]
     ok_lat = []
     refused_lat = []
@@ -259,18 +264,20 @@ def populate_buckets(paths, bucket_minutes, first):
         if is_challenged(code, src):
             c["challenged"] += int(data["value"])
     out = []
-    for (idx, group) in sorted(per_bucket):
+    for idx, group in sorted(per_bucket):
         c = per_bucket[(idx, group)]
-        out.append({
-            "bucket": idx,
-            "window_start_s": idx * bucket_seconds,
-            "group": group,
-            "n": c["n"],
-            "success": c["success"],
-            "429": c["429"],
-            "5xx": c["5xx"],
-            "challenged": c["challenged"],
-        })
+        out.append(
+            {
+                "bucket": idx,
+                "window_start_s": idx * bucket_seconds,
+                "group": group,
+                "n": c["n"],
+                "success": c["success"],
+                "429": c["429"],
+                "5xx": c["5xx"],
+                "challenged": c["challenged"],
+            }
+        )
     return out
 
 
@@ -282,10 +289,16 @@ def fmt_lat(lat):
 
 def fmt_class_row(name, s, indent="  "):
     pct429 = 100 * s["429"] / s["n"] if s["n"] else 0.0
-    src_str = ", ".join(f"{k}:{v}" for k, v in sorted(s["429_by_src"].items(), key=lambda kv: -kv[1])) or "-"
-    other_str = ", ".join(f"{k}:{v}" for k, v in sorted(s["other_by_src"].items(), key=lambda kv: -kv[1])) or "-"
+    src_str = (
+        ", ".join(f"{k}:{v}" for k, v in sorted(s["429_by_src"].items(), key=lambda kv: -kv[1]))
+        or "-"
+    )
+    other_str = (
+        ", ".join(f"{k}:{v}" for k, v in sorted(s["other_by_src"].items(), key=lambda kv: -kv[1]))
+        or "-"
+    )
     lines = [
-        f"{indent}{name:10} n={s['n']:6}  success={s['success']:6} ({100*s['success']/s['n'] if s['n'] else 0:5.1f}%)"
+        f"{indent}{name:10} n={s['n']:6}  success={s['success']:6} ({100 * s['success'] / s['n'] if s['n'] else 0:5.1f}%)"
         f"  429={s['429']:6} ({pct429:5.1f}%) [{src_str}]"
         f"  challenged={s['challenged']:5}  5xx={s['5xx']:4}  other={s['other']:4} [{other_str}]",
         f"{indent}{'':10}  latency ok:         {fmt_lat(s['latency_ok_ms'])}",
@@ -322,15 +335,28 @@ def print_report(report, first, last):
 
 
 def main(argv=None):
-    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("paths", nargs="+", help="k6 --out json= file(s), plain or .gz. Pass several to summarise a merged run without a separate `cat` step.")
+    ap = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+    )
+    ap.add_argument(
+        "paths",
+        nargs="+",
+        help="k6 --out json= file(s), plain or .gz. Pass several to summarise a merged run without a separate `cat` step.",
+    )
     ap.add_argument("--json", metavar="OUT", help="also write the full structured report as JSON")
-    ap.add_argument("--bucket-minutes", type=float, default=5, help="time-bucket width; 0 disables bucketing (default: 5)")
+    ap.add_argument(
+        "--bucket-minutes",
+        type=float,
+        default=5,
+        help="time-bucket width; 0 disables bucketing (default: 5)",
+    )
     args = ap.parse_args(argv)
 
     counts, durations, first, last = load(args.paths)
     if not counts:
-        print("no `resp` points found -- wrong file, or the scripts' lib.js is stale", file=sys.stderr)
+        print(
+            "no `resp` points found -- wrong file, or the scripts' lib.js is stale", file=sys.stderr
+        )
         return 1
     buckets = populate_buckets(args.paths, args.bucket_minutes, first) if first is not None else []
     report = build_report(counts, durations)
