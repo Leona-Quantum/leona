@@ -834,6 +834,26 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
     runStreamLost: string;
     progressLabel: string;
 
+    /** The "Live" lane's own copy (plan 10-notebook-ide): what to call each phase
+     * while a notebook is developing in real time, and the banner shown during a
+     * repair. Kept as its own nested object rather than flattened, since it is one
+     * cohesive feature's worth of strings. */
+    live: {
+      phase: Record<
+        "idle" | "outlining" | "drafting" | "checking" | "running" | "repairing" | "reviewing" | "done" | "failed",
+        string
+      >;
+      /** sr-only label on the writing caret after the cell Nala is typing. */
+      writingLabel: string;
+      cellStatus: Record<"queued" | "ran" | "raised" | "not_run", string>;
+      /** "Nala is fixing cell {cellId}: attempt {attempt} of {of}." */
+      repairBanner: (cellId: string, attempt: number, of: number) => string;
+      /** The pre-execution case: a lint finding is being fixed before the cell has
+       * run at all, so there is no "attempt N of M" to show yet — only that Nala
+       * is heading it off. */
+      checkingBanner: (cellId: string) => string;
+    };
+
     cellStatus: Record<NotebookCellStatusCopyKey, string>;
     cellStdout: string;
     cellStderr: string;
@@ -2036,6 +2056,24 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
     runStreamLost: "The live view of this run dropped out. Reload the page to see how it finished.",
     progressLabel: "Working",
 
+    live: {
+      phase: {
+        idle: "Waiting to start",
+        outlining: "Planning the notebook",
+        drafting: "Writing the notebook",
+        checking: "Checking a cell before running it",
+        running: "Running the notebook",
+        repairing: "Fixing a cell",
+        reviewing: "Reviewing the result",
+        done: "Done",
+        failed: "Something went wrong",
+      },
+      writingLabel: "Nala is writing this cell",
+      cellStatus: { queued: "Queued", ran: "Ran", raised: "Raised an error", not_run: "Not run" },
+      repairBanner: (cellId, attempt, of) => `Nala is fixing cell ${cellId}: attempt ${attempt} of ${of}.`,
+      checkingBanner: (cellId) => `Nala is checking cell ${cellId} before running it.`,
+    },
+
     cellStatus: { ok: "Passed", error: "Error", skipped: "Skipped", not_run: "Not run yet" },
     cellStdout: "Output",
     cellStderr: "Error output",
@@ -3231,6 +3269,24 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
     chatSendFailed: "メッセージを送信できませんでした。",
     runStreamLost: "この実行のライブ表示が切断されました。結果を確認するにはページを再読み込みしてください。",
     progressLabel: "処理中",
+
+    live: {
+      phase: {
+        idle: "開始を待っています",
+        outlining: "ノートブックの構成を考えています",
+        drafting: "ノートブックを書いています",
+        checking: "実行前にセルを確認しています",
+        running: "ノートブックを実行しています",
+        repairing: "セルを修正しています",
+        reviewing: "結果を確認しています",
+        done: "完了しました",
+        failed: "問題が発生しました",
+      },
+      writingLabel: "Nalaがこのセルを書いています",
+      cellStatus: { queued: "実行待ち", ran: "実行済み", raised: "エラーが発生", not_run: "未実行" },
+      repairBanner: (cellId, attempt, of) => `セル${cellId}を修正しています（${attempt}/${of}回目の試行）。`,
+      checkingBanner: (cellId) => `セル${cellId}を実行前に確認しています。`,
+    },
 
     cellStatus: { ok: "成功", error: "エラー", skipped: "スキップ", not_run: "未実行" },
     cellStdout: "出力",
