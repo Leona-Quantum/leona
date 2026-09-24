@@ -1499,3 +1499,52 @@ async def test_a_concurrent_retry_is_409_not_500(client, graded_state, monkeypat
     assert response.status_code == 409, response.text
     assert response.json()["reason"] == "idempotency_key_in_flight"
     assert graded_state["jobs"] == []
+
+
+_CARRIED_REPORT = {
+    "notebook_slug": "edited",
+    "ok": True,
+    "runner": "sandbox",
+    "cells": [
+        {"id": "c02", "status": "ok", "stdout": "one\n"},
+        {"id": "c03", "status": "ok", "stdout": "two\n"},
+    ],
+}
+
+
+async def test_a_text_only_save_keeps_the_previous_outputs(client, author_state):
+    # Per-cell editing makes a one-line text change the common save. Every run replays
+    # from the top, so outputs depend only on the code cells; when those are identical the
+    # previous report is still exactly right, and dropping it showed "Not run yet" on
+    # every cell after fixing a typo in a heading.
+    v1 = author_state["versions"][0]
+    v1.spec, v1.report = SPEC_FIXTURE, _CARRIED_REPORT
+    edited = {**SPEC_FIXTURE, "cells": [dict(c) for c in SPEC_FIXTURE["cells"]]}
+    edited["cells"][0]["source"] = "# Hello, with the typo fixed"
+    async with client as c:
+        response = await c.post(
+            f"/v1/notebooks/{author_state['notebook'].id}/versions",
+            json={"spec": edited, "execute": False},
+        )
+    assert response.status_code == 201, response.text
+    carried = author_state["result_kwargs"]["report"]
+    assert carried is not None and [cell["id"] for cell in carried["cells"]] == ["c02", "c03"]
+
+
+async def test_a_save_that_changes_code_does_not_keep_the_old_outputs(client, author_state):
+    v1 = author_state["versions"][0]
+    v1.spec, v1.report = SPEC_FIXTURE, _CARRIED_REPORT
+    async with client as c:
+        for change in ("source", "order"):
+            edited = {**SPEC_FIXTURE, "cells": [dict(cell) for cell in SPEC_FIXTURE["cells"]]}
+            if change == "source":
+                edited["cells"][1]["source"] = "print('changed')"
+            else:
+                edited["cells"][1], edited["cells"][2] = edited["cells"][2], edited["cells"][1]
+            response = await c.post(
+                f"/v1/notebooks/{author_state['notebook'].id}/versions",
+                json={"spec": edited, "execute": False},
+            )
+            assert response.status_code == 201, response.text
+            assert author_state["result_kwargs"]["report"] is None, change
+            author_state["versions"][:] = [v1]
