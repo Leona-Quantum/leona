@@ -44,6 +44,10 @@ export interface NotebookIdeCopy {
   askNalaHint: string;
   fixWithNala: string;
   fixWithNalaHint: string;
+  /** What "Ask Nala" puts in the chat box: the start of a message, which the reader finishes. */
+  askNalaPrefix: (cellId: string) => string;
+  /** The turn "Fix with Nala" sends for a cell that raised, with its traceback. */
+  fixWithNalaTurn: (cellId: string, traceback: string) => string;
   toolbarLabel: (cellId: string) => string;
   cellLabel: (cellId: string) => string;
   barLabel: string;
@@ -81,6 +85,9 @@ const NOTEBOOK_IDE_COPY: Record<PublicLocale, NotebookIdeCopy> = {
     askNalaHint: "Ask Nala about this cell in the chat",
     fixWithNala: "Fix with Nala",
     fixWithNalaHint: "Ask Nala to fix the error in this cell",
+    askNalaPrefix: (cellId) => `About cell ${cellId}: `,
+    fixWithNalaTurn: (cellId, traceback) =>
+      `Cell \`${cellId}\` raised this error:\n\`\`\`\n${traceback}\n\`\`\`\nFix the cell so it runs. Keep the rest of the notebook as it is.`,
     toolbarLabel: (cellId) => `Cell ${cellId} actions`,
     cellLabel: (cellId) => `Cell ${cellId}`,
     barLabel: "Notebook",
@@ -154,6 +161,9 @@ const NOTEBOOK_IDE_COPY: Record<PublicLocale, NotebookIdeCopy> = {
     askNalaHint: "このセルについてチャットでNalaに質問します",
     fixWithNala: "Nalaに修正を依頼",
     fixWithNalaHint: "このセルのエラーの修正をNalaに依頼します",
+    askNalaPrefix: (cellId) => `セル ${cellId} について: `,
+    fixWithNalaTurn: (cellId, traceback) =>
+      `セル \`${cellId}\` で次のエラーが出ました:\n\`\`\`\n${traceback}\n\`\`\`\nこのセルが実行できるように直してください。ノートブックの他の部分はそのままにしてください。`,
     toolbarLabel: (cellId) => `セル ${cellId} の操作`,
     cellLabel: (cellId) => `セル ${cellId}`,
     barLabel: "ノートブック",
